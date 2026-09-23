@@ -58,6 +58,11 @@ export RELAX_CUDA_LIB="$RUN_ROOT/librelax_cuda.so"
 sha256sum "$RELAX_CUDA_LIB"
 ```
 
+Load a CUDA toolkit module (for example `module load cudatoolkit/12.8`) only
+for the `make` step, in its own shell. With the module loaded, the pixi
+environment's JAX reports that no CUDA-enabled jaxlib is installed and falls
+back to the CPU; run Python without it.
+
 This is relax's EM library. RECOVAR's own library is built from the installed
 recovar package; `RECOVAR_CUDA_LIB` selects an explicit copy of it, and the
 loaders refuse a library that lacks their own symbols.
