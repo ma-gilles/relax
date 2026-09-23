@@ -538,6 +538,18 @@ def _should_use_adaptive_search(
     return int(n_rotations) > 16 or str(symmetry).upper() != "C1"
 
 
+def _relion_auto_refine_transitions(*, native_sampling_boundary: bool, k_class_enabled: bool) -> bool:
+    """Return whether this iteration runs RELION's auto-refine sampling and convergence steps.
+
+    relion_refine calls ``updateAngularSampling`` only under auto-refine or
+    auto-sampling (ml_optimiser.cpp:3936-3938) and ``checkConvergence`` only
+    under auto-refine (ml_optimiser.cpp:3670-3675). Class3D does neither: it
+    keeps its ``--healpix_order`` and runs every ``--iter`` iteration, so its
+    expected accuracy is reported but never gates.
+    """
+    return bool(native_sampling_boundary) and not bool(k_class_enabled)
+
+
 def _sigma_offset_for_half(current_sigma_offset_angstrom, current_sigma_offset_angstrom_per_half, half_index):
     if current_sigma_offset_angstrom_per_half is None:
         return float(current_sigma_offset_angstrom)
@@ -1091,7 +1103,10 @@ def refine_single_volume(
         # expectation n-1.  If true, iteration n is the unnumbered joined
         # all-data pass rather than another numbered half-set iteration.
         if (
-            native_sampling_boundary
+            _relion_auto_refine_transitions(
+                native_sampling_boundary=native_sampling_boundary,
+                k_class_enabled=k_class_enabled,
+            )
             and not schedule.force_max_iter_after_convergence
             and iteration > 0
             and check_convergence(state)
@@ -1572,7 +1587,14 @@ def refine_single_volume(
         # Expectation (iterations > 1), using the previous iteration's stall
         # counters.  Sampling must therefore be prepared here, not after this
         # iteration's M-step statistics are recorded.
-        if native_sampling_boundary and iteration > 0 and adaptive.relion_healpix_orders is None:
+        if (
+            _relion_auto_refine_transitions(
+                native_sampling_boundary=native_sampling_boundary,
+                k_class_enabled=k_class_enabled,
+            )
+            and iteration > 0
+            and adaptive.relion_healpix_orders is None
+        ):
             state = update_angular_sampling(state)
         if adaptive.relion_healpix_orders is not None:
             target_healpix_order = int(adaptive.relion_healpix_orders[iteration])
@@ -3890,8 +3912,8 @@ def refine_single_volume(
             previous_classes=previous_combined_classes,
             ave_pmax_override=ave_pmax,
             voxel_size_angstrom=float(cryo.voxel_size if cryo.voxel_size > 0 else 1.0),
-            update_sampling=not native_sampling_boundary,
-            check_convergence_now=not native_sampling_boundary,
+            update_sampling=not native_sampling_boundary and not k_class_enabled,
+            check_convergence_now=not native_sampling_boundary and not k_class_enabled,
             **({"symmetry_label": symmetry} if symmetry != "C1" else {}),
         )
         if accuracy_replay.metadata is not None:

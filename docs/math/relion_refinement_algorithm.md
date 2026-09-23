@@ -73,6 +73,15 @@ any RELION output. Each piece is opt-in until its default is decided:
   ([`_find_relion_optimiser_star`](../../scripts/run_full_refinement.py)). The
   mask, `ini_high` and `max_significants` then come from `--particle_diameter_ang`,
   `--apply-initial-lowpass --init_resolution` and relion_refine's `--maxsig -1`.
+- Fixed schedule: Class3D keeps `--healpix_order` and runs every `--iter`
+  iteration. relion_refine calls `updateAngularSampling` only under auto-refine
+  or auto-sampling and `checkConvergence` only under auto-refine
+  (`ml_optimiser.cpp:3670-3675, 3936-3938`), so K>1 skips both
+  ([`_relion_auto_refine_transitions`](../../relax/refinement/iteration_loop.py));
+  its expected accuracy is written to the history but never gates. Before this,
+  a K>1 run could latch fine-enough sampling once the overall accuracy exceeded
+  4/3 of the order-1 step, then stop early on convergence and run an all-data
+  pass RELION Class3D never runs.
 
 This page describes RECOVAR's current dense-volume refinement implementation,
 including its K-class and exact local-search routes. Function names identify
