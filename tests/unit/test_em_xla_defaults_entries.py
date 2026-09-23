@@ -34,11 +34,11 @@ def test_the_em_entry_sets_the_marker_before_importing_jax(ENTRY):
     assert marker_at, f"{ENTRY.name} does not opt in to the EM XLA defaults"
     first_import = next(
         i for i, l in enumerate(lines)
-        if re.match(r"^(import jax|from jax|import recovar|from recovar)", l)
+        if re.match(r"^(import jax|from jax|import recovar|from recovar|import relax|from relax)", l)
     )
     assert marker_at[0] < first_import, (
         f"the marker is set at line {marker_at[0] + 1}, after the first jax or "
-        f"recovar import at line {first_import + 1}; XLA_FLAGS would already have been read"
+        f"recovar or relax import at line {first_import + 1}; XLA_FLAGS would already have been read"
     )
 
 

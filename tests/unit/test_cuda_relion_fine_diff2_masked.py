@@ -8,7 +8,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from helpers.cuda_source import read_cuda_source, read_em_cuda_source
+from helpers.cuda_source import EM_CUDA_DIR, read_cuda_source, read_em_cuda_source
 
 
 def _operands(rng, batch_size, rotation_count, translation_count, compact, full):
@@ -29,7 +29,7 @@ def _operands(rng, batch_size, rotation_count, translation_count, compact, full)
 
 
 def test_masked_fine_diff2_source_pins_rectangular_body_and_zero_fill():
-    source = read_cuda_source("../em/cuda/relion_scoring.cuh")
+    source = read_cuda_source("relion_scoring.cuh", EM_CUDA_DIR)
     start = source.index("void relion_fine_diff2_rectangular_masked_kernel(")
     body = source[start : source.index("cudaError_t launch_relion_fine_diff2_rectangular_masked(")]
     assert "if (candidate_mask[hypothesis] == 0) {" in body

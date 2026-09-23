@@ -396,7 +396,7 @@ def test_relion_vdam_ordered_scatter_cuda_graph_is_opt_in_and_fail_closed():
 def test_relion_vdam_exact_native_ptx_discriminator_is_opt_in_and_fail_closed():
     source = read_em_cuda_source()
     makefile = (
-        Path(__file__).resolve().parents[2] / "recovar" / "cuda" / "Makefile"
+        Path(__file__).resolve().parents[2] / "relax" / "cuda" / "Makefile"
     ).read_text()
 
     assert '"RECOVAR_VDAM_EXACT_NATIVE_PTX"' in source

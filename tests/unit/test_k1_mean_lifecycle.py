@@ -56,7 +56,7 @@ def test_k1_mean_release_precedes_tau_and_reconstruction():
 
 
 def test_production_runner_leaves_cold_start_host_owned_until_normalization():
-    repo_root = Path(iteration_loop.__file__).resolve().parents[3]
+    repo_root = Path(iteration_loop.__file__).resolve().parents[2]
     runner_source = (repo_root / "scripts" / "run_full_refinement.py").read_text()
     call_start = runner_source.index("result = refine_single_volume(")
     call_stop = runner_source.index("options=RefinementOptions(", call_start)

@@ -431,7 +431,7 @@ def test_physical_class_boundary_stays_on_runtime_bound_engine_route():
     assert lower.logical_spec.use_window is True
     assert boundary.logical_spec.use_window is True
     engine_source = (
-        Path(__file__).resolve().parents[3] / 'recovar' / 'em' / 'local' / 'local_em_engine.py'
+        Path(__file__).resolve().parents[3] / 'relax' / 'local' / 'local_em_engine.py'
     ).read_text()
     assert (
         "stable_fourier_window_shapes and "
@@ -441,7 +441,7 @@ def test_physical_class_boundary_stays_on_runtime_bound_engine_route():
 
 def test_stable_bpref_has_one_fail_closed_source_operand_route():
     engine_source = (
-        Path(__file__).resolve().parents[3] / 'recovar' / 'em' / 'local' / 'local_em_engine.py'
+        Path(__file__).resolve().parents[3] / 'relax' / 'local' / 'local_em_engine.py'
     ).read_text()
 
     assert "if stable_window_active and not (" in engine_source

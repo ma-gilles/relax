@@ -130,9 +130,9 @@ def test_dispatcher_waits_for_both_before_raising():
 def _runner_path():
     from pathlib import Path
 
-    import recovar
+    import relax
 
-    return Path(recovar.__file__).resolve().parent.parent / "scripts" / "run_full_refinement.py"
+    return Path(relax.__file__).resolve().parent.parent / "scripts" / "run_full_refinement.py"
 
 
 def test_runner_registers_the_overlap_flag():

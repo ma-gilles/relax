@@ -1,0 +1,11 @@
+include relax/cuda/Makefile
+include relax/cuda/relax_kernels.cu
+include relax/cuda/relion_coarse_diff2_projector_body.inc
+include relax/cuda/noise_residual.cuh
+include relax/cuda/relion_vdam_mstep.cuh
+include relax/cuda/relion_scoring.cuh
+include relax/cuda/relion_posterior.cuh
+include relax/cuda/vdam_trace.cuh
+include relax/cuda/relion_preprocess.cuh
+include relax/cuda/sparse_pass2_posterior.cuh
+include relax/cuda/relion_translate_sum.cuh
