@@ -112,7 +112,7 @@ def test_completion_jobs_reuse_setup_relion_binding_build_dir(tmp_path):
     assert "--local_search_profile off" in k1_text
     assert "--local-search-profile" not in k1_text
     assert "RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE=0" in submission_env_text
-    assert "TRAJECTORY_ARGS=(--relion_init_dir" in k1_text
+    assert f'--relion_init_dir "{DEFAULT_K1_RELION_DIR}"' in k1_text
     assert 'if [[ "autonomous" == "relion-replay" ]]' in k1_text
     assert "export RELAX_RELION_EM_BATCH_PROJECTION_FRACTION=0.40" in k1_text
     assert "RELAX_RELION_EM_BATCH_PROJECTION_FRACTION=0.40" in submission_env_text
@@ -426,3 +426,18 @@ def test_completion_k1_replay_does_not_request_a_fresh_order(tmp_path):
     _run_launcher(env, "--k1-only")
     k1_text = (scratch / "jobs" / "em_completion_k1_100k256.sh").read_text()
     assert "--relion-particle-shuffle" not in k1_text
+
+
+def test_completion_k1_standalone_mode_reads_no_relion_output(tmp_path):
+    """Standalone K=1 starts from relion_refine's inputs; the RELION run is only the comparison."""
+    scratch = tmp_path / "scratch"
+    env = _launcher_env(tmp_path, scratch)
+    env["K1_TRAJECTORY_MODE"] = "standalone"
+    _run_launcher(env, "--k1-only")
+    k1_text = (scratch / "jobs" / "em_completion_k1_100k256.sh").read_text()
+    submission_env_text = (scratch / "submission.env").read_text()
+    assert "TRAJECTORY_ARGS=(--relion-half-sets-from-input --initial-noise-bootstrap relion)" in k1_text
+    assert "TRAJECTORY_ARGS+=(--relion-particle-shuffle mt19937)\n" in k1_text
+    assert 'if [[ "standalone" == "standalone" ]]' in k1_text
+    assert "K1_TRAJECTORY_MODE=standalone" in submission_env_text
+    assert "RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE=0" in submission_env_text

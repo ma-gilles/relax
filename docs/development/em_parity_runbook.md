@@ -150,6 +150,47 @@ gives an unmasked resolution of 6.650052 A while the modern ordering gives
 Detailed source findings and dump variables belong in
 `docs/math/relion_parity_agent_notes.md`, not in this contract.
 
+### Standalone K1 auto-refine launch
+
+A K1 auto-refine that counts as qualification evidence reads only what
+`relion_refine` reads: `<data_dir>/particles.star`, its stacks, the reference
+map and the values on the RELION command line. For a real-data run the input
+STAR may be a RELION InitialModel/VDAM `run_itNNN_data.star`, since RELION's
+own auto-refine starts from it. The RELION auto-refine run is read only
+afterwards, for comparison. Map the RELION command to `run_full_refinement.py`
+as follows:
+
+| RELION | relax |
+| --- | --- |
+| `--split_random_halves --random_seed S` | `--relion-half-sets-from-input --seed S` (input `rlnRandomSubset` if every row has one, else glibc `srand(S)`/`rand()%2+1` in micrograph order; groups from `rlnGroupName`/micrograph) |
+| 5.0.1 f2c1a3 particle order | `--relion-particle-shuffle mt19937` |
+| start-up noise from the images | `--initial-noise-bootstrap relion` |
+| `--particle_diameter D` | `--particle_diameter_ang D` |
+| `--ini_high H` | `--apply-initial-lowpass --init_resolution H` |
+| `--firstiter_cc` | `--firstiter_cc` |
+| `--healpix_order`, `--offset_range`, `--offset_step` | same names with underscores |
+| `--oversampling 1` / `0` | `--adaptive_oversampling 1` / `0` |
+| `--tau2_fudge` (auto-refine default 1) | `--tau2_fudge 1.0` |
+| `--perturb 0.5` (default) | `--perturb_factor 0.5` |
+| `--maxsig` (default -1) | default, resolved as RELION does |
+| `--offset 10` (default) | default `--offset_sigma_angstrom 10` |
+
+Start-up norm corrections come from the input `rlnNormCorrection` and tau2
+and `data_vs_prior` from `initialiseDataVersusPrior` on the low-passed
+reference (see [the start-up state](../math/relion_refinement_algorithm.md)).
+`--image-fourier-backend relion_cuda` is required by the fresh K1 defaults.
+
+Harness entry points: `K1_TRAJECTORY_MODE=standalone` in
+`scripts/run_em_completion_bench_slurm.sh`, the `[standalone]` cases of
+`test_em_parity_fast_k1_coldstart` and `test_em_parity_long_k1_full`.
+
+Debug-only starts, labelled as such wherever they appear: `--relion_init_dir`,
+`--relion_half_sets <run_it000_data.star or a STAR carrying RELION's split>`,
+`--relion_optimiser`, `--perturb_replay_relion_dir`, the completion modes
+`autonomous` (RELION-seeded run_it000) and `relion-replay`, and the
+`[relion_seeded_debug]` test cases. They pin RELION state for first-divergence
+hunts and fixed-state replays; they are not standalone evidence.
+
 ## Benchmark Design And Reporting
 
 High-resolution completion fixtures must come from target-grid PDB/mmCIF

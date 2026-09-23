@@ -260,15 +260,37 @@ def _assert_relion_initialmodel_reference(relion_dir: Path, *, expected_iter: in
         )
 
 
+# Start-up state for the long K1 run. ``standalone`` reads only relion_refine's
+# inputs (particles.star, the stack, the reference and the command values below);
+# the RELION run is read afterwards for comparison. ``relion_seeded_debug`` takes
+# the half sets and optimiser values from RELION's output; it is a debugging aid.
+K1_LONG_START_ARGS = {
+    "standalone": [
+        "--relion-half-sets-from-input",
+        "--initial-noise-bootstrap",
+        "relion",
+    ],
+    "relion_seeded_debug": [
+        "--relion_optimiser",
+        str(K1_LONG_RELION_DIR / "run_it000_optimiser.star"),
+        "--relion_half_sets",
+        str(K1_LONG_RELION_DATA_STAR),
+    ],
+}
+
+
 @pytest.mark.em_parity_long
 @pytest.mark.gpu
 @pytest.mark.integration
-def test_em_parity_long_k1_full(tmp_path):
-    """K=1 256² 50k full auto-refine replay (~3.5 hr on A100).
+@pytest.mark.parametrize("start", sorted(K1_LONG_START_ARGS))
+def test_em_parity_long_k1_full(tmp_path, start):
+    """K=1 256² 50k full auto-refine (~3.5 hr on A100).
 
     Runs ``run_full_refinement.py --max_iter 15`` with the RELION reference's
     auto-refine command and compares iter-by-iter Pmax to RELION auto-refine's
-    ``rlnAveragePmax`` plus the final gold-standard FSC@0.5 resolution.
+    ``rlnAveragePmax`` plus the final gold-standard FSC@0.5 resolution. The
+    standalone start rebuilds relion_refine's split, groups and order from the
+    seed (equal to RELION's here), so both starts are held to the same bars.
 
     Pass criteria:
       * RECOVAR's half-set FSC<0.5 resolution at its last numbered iteration
@@ -312,7 +334,7 @@ def test_em_parity_long_k1_full(tmp_path):
     assert float(_read_relion_star_scalar(relion_it000_model, "_rlnTau2FudgeFactor")) == 1.0
     assert "5.0.1-commit-f2c1a3" in relion_optimiser.read_text().splitlines()[0]
 
-    output_dir = tmp_path / "k1_long"
+    output_dir = tmp_path / f"k1_long_{start}"
     output_dir.mkdir()
     timing_dir = output_dir / "timing"
     perf_ledger_path = output_dir / "benchmark_ledger.json"
@@ -344,8 +366,7 @@ def test_em_parity_long_k1_full(tmp_path):
         "1775735620",
         "--relion-particle-shuffle",
         "mt19937",
-        "--relion_optimiser",
-        str(relion_optimiser),
+        *K1_LONG_START_ARGS[start],
         "--particle_diameter_ang",
         "200",
         "--firstiter_cc",
@@ -363,8 +384,6 @@ def test_em_parity_long_k1_full(tmp_path):
         "64",
         "--rotation_block_size",
         "8192",
-        "--relion_half_sets",
-        str(K1_LONG_RELION_DATA_STAR),
         "--timing_dir",
         str(timing_dir),
         "--benchmark_ledger_json",
@@ -457,8 +476,10 @@ def test_em_parity_long_k1_full(tmp_path):
         "k1_long_recovar_perf_ledger_path": str(perf_ledger_path),
         "k1_long_recovar_timing_dir": str(timing_dir),
     }
-    ledger = _write_quality_ledger("k1_long", payload, output_dir=output_dir)
-    logger.info("K=1 long ledger: %s", ledger)
+    # Only the standalone case is reported; the debug case is not tier evidence.
+    if start == "standalone":
+        ledger = _write_quality_ledger("k1_long", payload, output_dir=output_dir)
+        logger.info("K=1 long ledger: %s", ledger)
 
     print(file=sys.stderr, flush=True)
     print("=== K=1 long parity (256² 50k 15-iter ab-initio) ===", file=sys.stderr, flush=True)

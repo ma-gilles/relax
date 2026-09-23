@@ -521,20 +521,47 @@ def test_em_parity_fast_kclass_replay(tmp_path):
     )
 
 
+# Start-up state for the K1 cold start. ``standalone`` reads only relion_refine's
+# inputs (particles.star, the stack, the reference and the RELION command values):
+# relion_refine's split/groups/order from the seed, RELION start-up noise and tau2.
+# ``relion_seeded_debug`` takes the half sets RELION's run wrote into
+# particles_with_halfsets.star and discovers RELION's optimiser STAR; it is a
+# debugging aid, not standalone evidence.
+K1_COLDSTART_START_ARGS = {
+    "standalone": [
+        "--relion-half-sets-from-input",
+        "--relion-particle-shuffle",
+        "mt19937",
+        "--initial-noise-bootstrap",
+        "relion",
+        "--particle_diameter_ang",
+        "544",  # RELION --particle_diameter
+        "--apply-initial-lowpass",  # RELION --ini_high 30 (with --init_resolution)
+    ],
+    "relion_seeded_debug": [
+        "--relion_half_sets",
+        str(K1_FIXTURE_DIR / "particles_with_halfsets.star"),
+    ],
+}
+
+
 @pytest.mark.gpu
 @pytest.mark.integration
 @pytest.mark.slow
-def test_em_parity_fast_k1_coldstart(tmp_path):
+@pytest.mark.parametrize("start", sorted(K1_COLDSTART_START_ARGS))
+def test_em_parity_fast_k1_coldstart(tmp_path, start):
     """Run three K1 iterations from raw 5k/128 inputs and the initial map.
 
-    Preserve RELION half-set membership and CUDA image preprocessing, while
-    letting RECOVAR initialize and update noise, tau, sigma and FSC state.
-    Compare iteration-3 half maps/Pmax and check the sigma-offset update.
+    RECOVAR initializes and updates noise, tau, sigma and FSC state with
+    RELION's CUDA image preprocessing. The standalone start rebuilds
+    relion_refine's half split from the seed (equal to RELION's on this
+    fixture), so iteration 3 is compared with RELION's iteration 3 in both
+    start modes: half maps, Pmax and the sigma-offset update.
     """
     _assert_parity_ancestors_or_skip()
     _require_fixture(REFINE_SCRIPT, K1_FIXTURE_DIR, K1_RELION_DIR, K1_DATA_STAR)
 
-    output_dir = tmp_path / "k1_coldstart"
+    output_dir = tmp_path / f"k1_coldstart_{start}"
     output_dir.mkdir(parents=True)
 
     cmd = [
@@ -566,13 +593,9 @@ def test_em_parity_fast_k1_coldstart(tmp_path):
         "200",
         "--rotation_block_size",
         "2000",
-        # Use RELION's exact half-set assignment so halfmap comparison is meaningful.
-        # Without this flag recovar uses a random split via --seed, and recovar's
-        # half-1 ends up containing different particles than RELION's half-1
-        # (corr would be nearly anti-correlated with magnitude ≈ recovar's
-        # half-2 vs RELION's half-1 — meaningless for parity).
-        "--relion_half_sets",
-        str(K1_FIXTURE_DIR / "particles_with_halfsets.star"),
+        # Both starts use RELION's half-set membership (standalone rebuilds it from
+        # the seed), so the half-map comparison with RELION is meaningful.
+        *K1_COLDSTART_START_ARGS[start],
         # The fresh K=1 defaults (source-faithful powerClass normalization, exact
         # BPref operands) score from RELION's CUDA image preprocessing, as the
         # K1 completion launcher does.
@@ -634,8 +657,10 @@ def test_em_parity_fast_k1_coldstart(tmp_path):
         "k1_coldstart_sigma_offset_used_trajectory": sigma_used_traj.tolist(),
         "k1_coldstart_walltime_s": elapsed,
     }
-    ledger = _write_quality_ledger("k1_coldstart", payload, output_dir=output_dir)
-    logger.info("K=1 cold-start ledger: %s", ledger)
+    # Only the standalone case is reported; the debug case is not tier evidence.
+    if start == "standalone":
+        ledger = _write_quality_ledger("k1_coldstart", payload, output_dir=output_dir)
+        logger.info("K=1 cold-start ledger: %s", ledger)
 
     print(file=sys.stderr, flush=True)
     print("=== K=1 cold-start parity (3-iter ab-initio vs RELION it003) ===", file=sys.stderr, flush=True)

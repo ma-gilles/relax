@@ -144,9 +144,12 @@ Environment overrides:
   K1_RELION_PARTICLE_SHUFFLE K=1 fresh AutoRefine particle order for autonomous runs: auto (default;
                              from the oracle optimiser header: f2c1a3 -> mt19937, d476e6 -> legacy),
                              legacy or mt19937
-  K1_TRAJECTORY_MODE         K=1 state policy: autonomous (default; exact it000 cold start,
-                             then RECOVAR-owned trajectory) or relion-replay (controlled
-                             per-iteration RELION state substitution)
+  K1_TRAJECTORY_MODE         K=1 state policy: standalone (relion_refine's inputs only: split,
+                             groups and order from particles.star and the seed, RELION start-up
+                             noise and tau2 from the images and reference), autonomous (default;
+                             debug: RELION-seeded run_it000 cold start, then RECOVAR-owned
+                             trajectory) or relion-replay (debug: controlled per-iteration
+                             RELION state substitution). Only standalone reads no RELION output.
   K1_SAVE_INTERMEDIATES      Save regularized per-iteration K=1 maps/metadata for full
                              FSC trajectories (default: ${K1_SAVE_INTERMEDIATES}); set 0 for
                              timing-only runs. Unregularized maps and local profiles stay off.
@@ -269,9 +272,9 @@ for arg in "$@"; do
 done
 
 case "${K1_TRAJECTORY_MODE}" in
-  autonomous|relion-replay) ;;
+  standalone|autonomous|relion-replay) ;;
   *)
-    echo "K1_TRAJECTORY_MODE must be autonomous or relion-replay, got: ${K1_TRAJECTORY_MODE}" >&2
+    echo "K1_TRAJECTORY_MODE must be standalone, autonomous or relion-replay, got: ${K1_TRAJECTORY_MODE}" >&2
     exit 2
     ;;
 esac
@@ -380,9 +383,9 @@ capture_git_provenance_snapshot() {
   )
 }
 
-# Job-script lines selecting the fresh K=1 particle order (autonomous runs only).
+# Job-script lines selecting the fresh K=1 particle order (standalone and autonomous runs).
 k1_particle_order_lines() {
-  if [[ "${K1_TRAJECTORY_MODE}" == "autonomous" ]]; then
+  if [[ "${K1_TRAJECTORY_MODE}" != "relion-replay" ]]; then
     printf 'TRAJECTORY_ARGS+=(--relion-particle-shuffle %s)\n' "${K1_RELION_PARTICLE_SHUFFLE}"
     printf 'echo "K1_RELION_PARTICLE_SHUFFLE=%s"\n' "${K1_RELION_PARTICLE_SHUFFLE}"
   fi
@@ -401,7 +404,7 @@ require_file "${K1_RELION_DIR}/run_it000_optimiser.star"
 # 100 rows are the expected-accuracy trial particles, so the order must be the one
 # of the build that wrote the oracle: f2c1a3 uses mt19937/std::shuffle and d476e6
 # libc random_shuffle. Replays take their state from the oracle instead.
-if [[ "${K1_TRAJECTORY_MODE}" == "autonomous" && "${K1_RELION_PARTICLE_SHUFFLE}" == "auto" ]]; then
+if [[ "${K1_TRAJECTORY_MODE}" != "relion-replay" && "${K1_RELION_PARTICLE_SHUFFLE}" == "auto" ]]; then
   k1_relion_version="$(head -n 1 "${K1_RELION_DIR}/run_it000_optimiser.star")"
   case "${k1_relion_version}" in
     *"version 5.0.1-commit-f2c1a3"*) K1_RELION_PARTICLE_SHUFFLE=mt19937 ;;
@@ -412,7 +415,7 @@ if [[ "${K1_TRAJECTORY_MODE}" == "autonomous" && "${K1_RELION_PARTICLE_SHUFFLE}"
       ;;
   esac
 fi
-if [[ "${K1_TRAJECTORY_MODE}" == "autonomous" ]]; then
+if [[ "${K1_TRAJECTORY_MODE}" != "relion-replay" ]]; then
   case "${K1_RELION_PARTICLE_SHUFFLE}" in
     legacy|mt19937) ;;
     *)
@@ -937,7 +940,16 @@ PY
 
 START_EPOCH="\$(date +%s)"
 REFINEMENT_EXTRA_ARGS=()
-TRAJECTORY_ARGS=(--relion_init_dir "${K1_RELION_DIR}")
+if [[ "${K1_TRAJECTORY_MODE}" == "standalone" ]]; then
+    # relion_refine's inputs only; the RELION run is read after the run, for comparison.
+    TRAJECTORY_ARGS=(--relion-half-sets-from-input --initial-noise-bootstrap relion)
+else
+    TRAJECTORY_ARGS=(
+        --relion_half_sets "${K1_RELION_DIR}/run_it000_data.star"
+        --relion_optimiser "${K1_RELION_DIR}/run_it000_optimiser.star"
+        --relion_init_dir "${K1_RELION_DIR}"
+    )
+fi
 if [[ "${K1_TRAJECTORY_MODE}" == "relion-replay" ]]; then
     TRAJECTORY_ARGS+=(--perturb_replay_relion_dir "${K1_RELION_DIR}")
 fi
@@ -964,8 +976,6 @@ set +e
   --rotation_block_size "${K1_ROTATION_BLOCK_SIZE}" \\
   --seed 1775735620 \\
   --perturb_seed 1775735620 \\
-  --relion_half_sets "${K1_RELION_DIR}/run_it000_data.star" \\
-  --relion_optimiser "${K1_RELION_DIR}/run_it000_optimiser.star" \\
   "\${TRAJECTORY_ARGS[@]}" \\
   --particle_diameter_ang 200 \\
   --tau2_fudge 1.0 \\
