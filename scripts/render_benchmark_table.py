@@ -10,7 +10,8 @@ baseline changes, edit the JSON and run
 null measurement without a reason, a time ratio that does not follow from
 the row's two wall times, and a time ratio without its like-for-like record
 (``time_check`` a-d: GPU and MPI layout, relax diagnostic options, timing
-scope, GPU model per job).
+scope, GPU model per job). A masked value must name the dataset's frozen mask
+from docs/benchmarks/frozen_masks.json by key and SHA-256.
 """
 
 import argparse
@@ -20,26 +21,65 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_JSON = REPO / "tests" / "baselines" / "relion_vs_relax_benchmarks.json"
 DEFAULT_MARKDOWN = REPO / "docs" / "benchmarks" / "relion_vs_relax.md"
+DEFAULT_REGISTRY = REPO / "docs" / "benchmarks" / "frozen_masks.json"
 
 ENGINES = ("relion", "relax")
-ENGINE_FIELDS = ("resolution_A", "masked_resolution_A", "wall_s", "gpu_model", "gpu_count", "iterations")
-ROW_FIELDS = ("gt", "cross_engine", "time_ratio_relax_over_relion")
+ENGINE_FIELDS = (
+    "resolution_A",
+    "masked_resolution_A",
+    "masked_band_auc",
+    "wall_s",
+    "gpu_model",
+    "gpu_count",
+    "iterations",
+)
+ROW_FIELDS = ("gt", "cross_engine", "cross_engine_masked_band_auc", "time_ratio_relax_over_relion", "mask")
+MASKED_DEFINITION = "relion_postprocess_masked_frozen"
 SECTIONS = (("real", "Real data"), ("synthetic", "Synthetic data"))
 MATCHED = ("yes", "workload", "no")
 RATIO_TOLERANCE = 0.006
 # Null reasons repeated in the rendered notes: the fields the table shows.
-SHOWN_NULLS = ("resolution_A", "wall_s", "time_ratio_relax_over_relion", "gt", "relax", "relion")
+SHOWN_NULLS = (
+    "resolution_A",
+    "masked_resolution_A",
+    "wall_s",
+    "time_ratio_relax_over_relion",
+    "gt",
+    "relax",
+    "relion",
+    "mask",
+)
 
 
-def load_and_validate(path):
+def load_and_validate(path, registry=DEFAULT_REGISTRY):
     table = json.loads(Path(path).read_text())
     definitions = table["resolution_definitions"]
+    masks = json.loads(Path(registry).read_text())["masks"]
     ids = [row["id"] for row in table["rows"]]
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate row id")
     for row in table["rows"]:
         _validate_row(row, definitions)
+        _validate_masked(row, masks)
     return table
+
+
+def _validate_masked(row, masks):
+    """Masked values come only from the dataset's registered frozen mask."""
+    rid = row["id"]
+    masked = [row[e][f] for e in ENGINES for f in ("masked_resolution_A", "masked_band_auc")]
+    masked.append(row["cross_engine_masked_band_auc"])
+    if all(value is None for value in masked):
+        return
+    mask = row["mask"]
+    if mask is None:
+        raise ValueError(f"{rid}: masked values without a frozen mask")
+    if masks.get(mask["dataset"], {}).get("mask_sha256") != mask["sha256"]:
+        raise ValueError(f"{rid}: mask {mask['dataset']} is not the registered frozen mask")
+    for engine in ENGINES:
+        if row[engine]["masked_resolution_A"] is not None:
+            if row[engine].get("masked_resolution_definition") != MASKED_DEFINITION:
+                raise ValueError(f"{rid}: {engine} masked resolution must use {MASKED_DEFINITION}")
 
 
 def _validate_row(row, definitions):
@@ -87,15 +127,25 @@ def render_markdown(table):
         "",
     ]
     lines += [f"- **{letters[name]}**: {text}" for name, text in table["resolution_definitions"].items()]
-    lines += ["", "Matched column:", ""]
+    lines += [
+        "",
+        "Masked columns: relion_postprocess corrected masked resolution with the dataset's frozen mask (RELION's"
+        " convention, `rlnFinalResolution`); Masked X-AUC is the cross-engine FSC-AUC of the two merged maps, both"
+        " multiplied by that mask, over the scorecard band. Reporting only; no gate reads them. Masks, method and"
+        " per-run curves: [masked FSC](masked_fsc.md).",
+        "",
+        "Matched column:",
+        "",
+    ]
     lines += [f"- **{key}**: {text}" for key, text in table["matched_definition"].items()]
     footnotes = []
     for section, title in SECTIONS:
         rows = [row for row in table["rows"] if row["section"] == section]
         lines += ["", f"## {title}", ""]
         lines += [
-            "| Dataset | Workflow | N / box | RELION res (Å) | relax res (Å) | RELION time | relax time | Ratio | GPU | Matched? | Date |",
-            "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
+            "| Dataset | Workflow | N / box | RELION res (Å) | relax res (Å) | RELION masked (Å) | relax masked (Å)"
+            " | Masked X-AUC | RELION time | relax time | Ratio | GPU | Matched? | Date |",
+            "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
         ]
         for row in rows:
             footnotes.append(row)
@@ -109,6 +159,9 @@ def render_markdown(table):
                         f"{row['particles']:,} / {row['box']}",
                         _resolution(row, "relion", letters),
                         _resolution(row, "relax", letters),
+                        _masked(row, "relion"),
+                        _masked(row, "relax"),
+                        _masked_cross(row),
                         _time(row, "relion"),
                         _time(row, "relax"),
                         _ratio(row),
@@ -144,6 +197,18 @@ def _resolution(row, engine, letters):
     return f"{value:.2f} {letters[row[engine]['resolution_definition']]}"
 
 
+def _masked(row, engine):
+    value = row[engine]["masked_resolution_A"]
+    if value is None:
+        return "pending" if row["status"] == "pending" and engine == "relax" else "—"
+    return f"{value:.2f}"
+
+
+def _masked_cross(row):
+    value = row["cross_engine_masked_band_auc"]
+    return "—" if value is None else f"{value:.4f}"
+
+
 def _time(row, engine):
     wall = row[engine]["wall_s"]
     if wall is None:
@@ -165,6 +230,13 @@ def _gpu(row):
 def _note(row):
     relax = row["relax"]
     text = [f"`{row['id']}`: relax source `{relax['source_sha'][:9]}`, {relax['source_repo']}."]
+    if row["mask"] is not None:
+        mask = row["mask"]
+        auc = [row[e]["masked_band_auc"] for e in ENGINES]
+        text.append(
+            f"Frozen mask `{mask['dataset']}` (`{mask['sha256'][:12]}`); masked FSC-AUC over the scorecard band"
+            f" RELION {_value(auc[0])}, relax {_value(auc[1])}."
+        )
     if row["gt"] is not None:
         gt = row["gt"]
         text.append(f"GT {gt['metric']}: RELION {_value(gt['relion'])}, relax {_value(gt['relax'])}.")

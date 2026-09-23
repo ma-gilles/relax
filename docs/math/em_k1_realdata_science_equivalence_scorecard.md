@@ -253,9 +253,31 @@ hashes in the external collector. Production evidence also binds and hashes
 the launch manifest, finalizer command and canonical argv, and a separate
 immutable execution envelope; any supplied binding is checked fail-closed.
 
+## Frozen-mask masked FSC (reporting only)
+
+Each dataset has one frozen mask used for every arm (registry
+`docs/benchmarks/frozen_masks.json`; method in `docs/benchmarks/masked_fsc_method.md`).
+Masked resolution is relion_postprocess `rlnFinalResolution` (RELION's convention), with the
+sustained three-shell crossing in parentheses; AUCs use this scorecard's jointly resolved band.
+No gate reads these values. All rows, including synthetic data: `docs/benchmarks/masked_fsc.md`.
+
+| Run | Mask | Band | RELION masked (Å) | relax masked (Å) | RELION masked AUC | relax masked AUC | Unmasked AUC RELION / relax | Cross-engine masked AUC merged / h1 / h2 | GT masked AUC RELION / relax |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `empiar10073_cand2_087287024` | `empiar10073_c1` `030ad3a85199` | 1-80 | 4.12 (4.09) | 4.12 (4.09) | 0.9230 | 0.9230 | 0.7193 / 0.7193 | 0.9988 / 0.9968 / 0.9966 | — |
+| `empiar10081_hcn1_relion_reference_14313014` | `empiar10081_hcn1_c4` `4003c7dea2f3` | — | 3.70 (3.66) | — | — | — | — / — | — | — |
+| `empiar10097_10k_B1_j1_abba_r2` | `empiar10097_c1` `3c184a29e87c` | 1-20 | 22.36 (15.97) | 22.36 (15.24) | 0.6804 | 0.6902 | 0.6610 / 0.6615 | 0.9945 / 0.9871 / 0.9855 | — |
+| `empiar10097_10k_B2_j1_abba_r2` | `empiar10097_c1` `3c184a29e87c` | 1-20 | 22.36 (15.97) | 22.36 (15.24) | 0.6804 | 0.6930 | 0.6610 / 0.6625 | 0.9943 / 0.9869 / 0.9857 | — |
+| `empiar10097_10k_B3_j2_baab_r2` | `empiar10097_c1` `3c184a29e87c` | 1-20 | 22.36 (15.97) | 22.36 (15.24) | 0.6804 | 0.6929 | 0.6610 / 0.6614 | 0.9945 / 0.9875 / 0.9860 | — |
+| `empiar10097_10k_B4_j2_baab_r2` | `empiar10097_c1` `3c184a29e87c` | 1-20 | 22.36 (15.97) | 22.36 (15.97) | 0.6804 | 0.6893 | 0.6610 / 0.6600 | 0.9944 / 0.9868 / 0.9852 | — |
+| `empiar10097_cand2_087287024` | `empiar10097_c1` `3c184a29e87c` | 1-44 | 5.78 (5.68) | 5.99 (5.50) | 0.8725 | 0.8740 | 0.6826 / 0.6827 | 0.9827 / 0.9610 / 0.9619 | — |
+| `empiar10097_relion_repeat_r1` | `empiar10097_c1` `3c184a29e87c` | — | 6.10 (5.99) | — | — | — | — / — | — | — |
+| `empiar10097_relion_repeat_r2` | `empiar10097_c1` `3c184a29e87c` | — | 5.99 (5.88) | — | — | — | — / — | — | — |
+| `empiar10345_cand2_087287024` | `empiar10345_c1` `f8c6764657f8` | 1-48 | 5.31 (5.24) | 5.24 (5.17) | 0.9274 | 0.9273 | 0.6726 / 0.6722 | 0.9979 / 0.9963 / 0.9965 | — |
+
 ## Code references
 
 - `scripts/summarize_em_k1_realdata_science_equivalence.py`: scorecard validation, FSC band metrics, provenance gates, and rendering.
 - `scripts/collect_em_k1_science_diagnostics.py`: continuous proper-SO(3)+translation fitting and common-mask FSC artifacts.
+- `scripts/masked_fsc.py`: frozen masks, relion_postprocess masked FSC and the frozen-mask table.
 - `tests/unit/test_summarize_em_k1_realdata_science_equivalence.py`: deterministic metric, provenance, calibration, and non-rescue tests.
 - `/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/scripts/collect_metrics.py`: external signed-FSC artifact collector pinned by SHA-256 in the manifest.

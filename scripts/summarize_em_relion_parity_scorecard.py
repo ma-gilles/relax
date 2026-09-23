@@ -13,6 +13,7 @@ import csv
 import hashlib
 import json
 import re
+import sys
 from collections import Counter
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -292,6 +293,52 @@ def load_and_validate_k4_snapshot(path: Path) -> dict:
     return snapshot
 
 
+def _frozen_mask_section(cases: list[dict]) -> list[str]:
+    """Masked FSC of the fixed-suite fixtures with their frozen GT masks (reporting only)."""
+    repo = str(Path(__file__).resolve().parents[1])
+    if repo not in sys.path:
+        sys.path.insert(0, repo)
+    from scripts.masked_fsc import DEFAULT_SCORES
+
+    rows = {}
+    for row in json.loads(DEFAULT_SCORES.read_text())["rows"]:
+        match = re.fullmatch(r"fixed34_k1(\d\d)_ac5177d2_job(\d+)", row["label"])
+        if match:
+            rows[f"k1-{match.group(1)}"] = (row, match.group(2))
+    lines = [
+        "",
+        "## Frozen-mask masked FSC (reporting only)",
+        "",
+        "Each fixture has one frozen mask made from its ground-truth map (registry `docs/benchmarks/frozen_masks.json`,",
+        "method `docs/benchmarks/masked_fsc_method.md`). Maps are those of the autonomous run",
+        "`em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z`; a case whose scorecard science job",
+        "differs was superseded by a later run and its masked values describe the ac5177d2 maps. No gate reads these values.",
+        "",
+        "| Case | Maps job | Scorecard job? | RELION masked (Å) | relax masked (Å) | Masked AUC RELION / relax "
+        "| Cross-engine masked AUC | GT masked AUC RELION / relax |",
+        "|---|---|---|---:|---:|---:|---:|---:|",
+    ]
+
+    def fmt(value, digits):
+        return "—" if value is None else f"{value:.{digits}f}"
+
+    for case in cases:
+        if case["id"] not in rows:
+            lines.append(f"| `{case['id']}` | — | — | — | — | — | — | — |")
+            continue
+        row, job = rows[case["id"]]
+        engines = {e: row[e] or {} for e in ("relion", "relax")}
+        cross = row["cross_engine_masked_band_auc"]
+        gt = row["gt_masked_band_auc"] or {"relion": None, "relax": None}
+        lines.append(
+            f"| `{case['id']}` | {job} | {'yes' if job == case['jobs']['science'] else 'no'} | "
+            f"{fmt(engines['relion'].get('masked_resolution_A'), 2)} | {fmt(engines['relax'].get('masked_resolution_A'), 2)} | "
+            f"{fmt(engines['relion'].get('masked_corrected_band_auc'), 4)} / {fmt(engines['relax'].get('masked_corrected_band_auc'), 4)} | "
+            f"{fmt(None if cross is None else cross['merged'], 4)} | {fmt(gt['relion'], 4)} / {fmt(gt['relax'], 4)} |"
+        )
+    return lines
+
+
 def render_markdown(
     scorecard: dict,
     fixture_manifest: dict,
@@ -411,6 +458,7 @@ def render_markdown(
             f"{snapshot_counts['not_run']} |"
         )
         prior_passed = snapshot_counts["pass"]
+    lines += _frozen_mask_section(cases)
     lines += [
         "",
         "## Archived experiment history",

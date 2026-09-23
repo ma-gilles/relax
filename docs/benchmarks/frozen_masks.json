@@ -1,0 +1,425 @@
+{
+ "schema": "relax-frozen-mask-registry-v1",
+ "masks": {
+  "empiar10073_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10073/masks/empiar10073_c1/MASK.json",
+   "mask_sha256": "030ad3a85199cfffbfaee1f78d291a365e73452b2f6fbf0e9edf5de5f77d809f",
+   "symmetry": "C1",
+   "box": 380,
+   "pixel_size_A": 1.4000112,
+   "source_role": "RELION reference final merged map (job 13093155)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.040, 1 component(s), captures 0.731 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "empiar10081_hcn1_c4": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10081_hcn1/masks/empiar10081_hcn1_c4/MASK.json",
+   "mask_sha256": "4003c7dea2f37cb8db7f32f1903d5b82a9b2519af7d1ece0c149fca70c9fb0af",
+   "symmetry": "C4",
+   "box": 256,
+   "pixel_size_A": 1.3,
+   "source_role": "RELION C4 reference final merged map (job 14313014)",
+   "generation": "adopted",
+   "sanity": "PASS: box fraction 0.034, 1 component(s), captures 0.806 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "empiar10097_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10097/masks/empiar10097_c1/MASK.json",
+   "mask_sha256": "3c184a29e87c7e7c6b7bc2691226209a6e621241eafcd4dd6212a5ed555481d3",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 1.3099979,
+   "source_role": "RELION reference final merged map (job 13124450)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.058, 6 component(s), captures 0.740 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "empiar10345_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10345/masks/empiar10345_c1/MASK.json",
+   "mask_sha256": "f8c6764657f894224b4196ec7f3eee06b9e8f87cdecd6ebc5cbb84b2493e3fd5",
+   "symmetry": "C1",
+   "box": 300,
+   "pixel_size_A": 1.3450001,
+   "source_role": "RELION reference final merged map (job 13093157)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.030, 2 component(s), captures 0.732 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k101_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-01/masks/fixed34_k101_c1/MASK.json",
+   "mask_sha256": "74253532c379621cea0f730c89b7245b9f67506d54f8b09a021116e791d316d2",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-01 (1_baseline_100k_g256_white_noise1_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.938 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k102_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-02/masks/fixed34_k102_c1/MASK.json",
+   "mask_sha256": "93be0774b34061cfdd66c42c0162db14bb1e3ba19e2edf4eeeebcf0cd0b2373b",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-02 (2_more_images_200k_g256_white_noise1_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.938 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k103_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-03/masks/fixed34_k103_c1/MASK.json",
+   "mask_sha256": "93be0774b34061cfdd66c42c0162db14bb1e3ba19e2edf4eeeebcf0cd0b2373b",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-03 (3_more_images_300k_g256_white_noise1_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.938 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k104_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-04/masks/fixed34_k104_c1/MASK.json",
+   "mask_sha256": "74253532c379621cea0f730c89b7245b9f67506d54f8b09a021116e791d316d2",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-04 (4_high_noise_100k_g256_white_noise3_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.938 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k105_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-05/masks/fixed34_k105_c1/MASK.json",
+   "mask_sha256": "74253532c379621cea0f730c89b7245b9f67506d54f8b09a021116e791d316d2",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-05 (5_very_high_noise_100k_g256_white_noise10_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.938 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k106_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-06/masks/fixed34_k106_c1/MASK.json",
+   "mask_sha256": "74253532c379621cea0f730c89b7245b9f67506d54f8b09a021116e791d316d2",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-06 (6_noctf_control_100k_g256_white_noise3_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.938 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k107_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-07/masks/fixed34_k107_c1/MASK.json",
+   "mask_sha256": "74253532c379621cea0f730c89b7245b9f67506d54f8b09a021116e791d316d2",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-07 (7_anisotropic_100k_g256_white_noise1_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.938 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k108_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-08/masks/fixed34_k108_c1/MASK.json",
+   "mask_sha256": "74253532c379621cea0f730c89b7245b9f67506d54f8b09a021116e791d316d2",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-08 (8_anisotropic_high_noise_100k_g256_white_noise3_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.938 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k109_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-09/masks/fixed34_k109_c1/MASK.json",
+   "mask_sha256": "e973df81e78837dbbea107be6ce566c3da4401870c8e1d58b19d20ad1538022d",
+   "symmetry": "C1",
+   "box": 384,
+   "pixel_size_A": 1.4166666666666667,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-09 (9_high_res_near_nyquist_100k_g384_white_noise1_bf0)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.053, 1 component(s), captures 0.894 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k110_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-10/masks/fixed34_k110_c1/MASK.json",
+   "mask_sha256": "e973df81e78837dbbea107be6ce566c3da4401870c8e1d58b19d20ad1538022d",
+   "symmetry": "C1",
+   "box": 384,
+   "pixel_size_A": 1.4166666666666667,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-10 (10_high_res_anisotropic_100k_g384_radial_noise3_bf0)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.053, 1 component(s), captures 0.894 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k111_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-11/masks/fixed34_k111_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-11 (11_small_baseline_3k_g128_white_noise1_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k112_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-12/masks/fixed34_k112_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-12 (12_small_very_high_noise_3k_g128_white_noise10_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k113_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-13/masks/fixed34_k113_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-13 (13_small_anisotropic_3k_g128_white_noise3_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k114_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-14/masks/fixed34_k114_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-14 (14_small_noctf_3k_g128_white_noise3_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k115_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-15/masks/fixed34_k115_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-15 (15_small_outliers_3k_g128_pct20_noise1_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k116_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-16/masks/fixed34_k116_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-16 (16_small_anisotropic_outliers_3k_g128_pct25_noise3_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k117_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-17/masks/fixed34_k117_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-17 (17_small_extra_particles_3k_g128_noise1_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k118_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-18/masks/fixed34_k118_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-18 (18_small_contrast_noise_scale_3k_g128_noise1_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k119_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-19/masks/fixed34_k119_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-19 (19_small_image_offset_3k_g128_noise1_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k120_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-20/masks/fixed34_k120_c1/MASK.json",
+   "mask_sha256": "20a9c01e23266f760df68baa17b43a4380760d725b8cf8ab823802df365173fd",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-20 (20_small_high_res_radial_3k_g256_noise3_bf0)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.049, 1 component(s), captures 0.848 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k121_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-21/masks/fixed34_k121_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-21 (21_small_kent_angles_3k_g128_white_noise3_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k122_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-22/masks/fixed34_k122_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-22 (22_small_severe_outliers_3k_g128_radial_noise5_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k123_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-23/masks/fixed34_k123_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-23 (23_small_noctf_radial_3k_g128_noise3_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k124_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-24/masks/fixed34_k124_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-24 (24_small_kent_outliers_3k_g128_pct20_noise3_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k125_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-25/masks/fixed34_k125_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-25 (25_tiny_baseline_1k_g128_white_noise3_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k126_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-26/masks/fixed34_k126_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-26 (26_tiny_severe_1k_g128_radial_noise5_nonuniform_pct30_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k127_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-27/masks/fixed34_k127_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-27 (27_small_extreme_outliers_3k_g128_pct70_noise1_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k128_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-28/masks/fixed34_k128_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-28 (28_small_kent_extra_offset_3k_g128_noise3_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k129_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-29/masks/fixed34_k129_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-29 (29_small_low_noise_3k_g128_white_noise0p2_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k130_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-30/masks/fixed34_k130_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-30 (30_small_low_noise_kent_3k_g128_white_noise0p2_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k131_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-31/masks/fixed34_k131_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-31 (31_mid_10k_g128_white_noise1_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k132_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-32/masks/fixed34_k132_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-32 (32_mid_10k_kent_g128_radial_noise3_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k133_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-33/masks/fixed34_k133_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-33 (33_max_images_400k_g128_white_noise1_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "fixed34_k134_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-34/masks/fixed34_k134_c1/MASK.json",
+   "mask_sha256": "b7993a32a549f5eff2dc8607836f43c18ae368b9d5aeefeb0217fd94d86ce76d",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth map (relax file frame) of fixed-suite case k1-34 (34_max_images_400k_g128_radial_noise3_nonuniform_bf80)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "noise1_k1_50k256_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_noise1_50k_256_normalized/masks/noise1_k1_50k256_c1/MASK.json",
+   "mask_sha256": "afaa22523e9f2cc16b794adc9f50e7788ea03c52f561d8f3b553be5d150391cb",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth map (relax file frame)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.048, 1 component(s), captures 0.917 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "pdb_k1_100k256_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/pdb_k1_g256_n100000_noise1_bf80/masks/pdb_k1_100k256_c1/MASK.json",
+   "mask_sha256": "74253532c379621cea0f730c89b7245b9f67506d54f8b09a021116e791d316d2",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth map (relax file frame)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.938 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "pdb_k4_50k256_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_pdb_k4_50k_256/masks/pdb_k4_50k256_c1/MASK.json",
+   "mask_sha256": "72b04bea86924aa5240d3245d5c40a0ba110c40120346b718ec5326e366cd0d2",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "mean of the four ground-truth class maps (relax file frame)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.030, 1 component(s), captures 0.954 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "ribosembly_k4_100k256_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/ribosembly_k4_g256_n100000/masks/ribosembly_k4_100k256_c1/MASK.json",
+   "mask_sha256": "df91001bda61b529c9602ab630906cbb11db881f23aaa4f8e762d4fddd0526bf",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "mean of the four ground-truth class maps (relax file frame)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.013, 1 component(s), captures 0.928 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  }
+ }
+}

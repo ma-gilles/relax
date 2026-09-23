@@ -2252,6 +2252,28 @@ def _fmt(value: Any, digits: int = 6) -> str:
     return f"{float(value):.{digits}f}"
 
 
+def _frozen_mask_section() -> list[str]:
+    """Masked FSC of the real datasets with their frozen masks (reporting only)."""
+
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from scripts.masked_fsc import DEFAULT_SCORES, render_scores_table
+
+    table = json.loads(DEFAULT_SCORES.read_text())
+    return [
+        "## Frozen-mask masked FSC (reporting only)",
+        "",
+        "Each dataset has one frozen mask used for every arm (registry",
+        "`docs/benchmarks/frozen_masks.json`; method in `docs/benchmarks/masked_fsc_method.md`).",
+        "Masked resolution is relion_postprocess `rlnFinalResolution` (RELION's convention), with the",
+        "sustained three-shell crossing in parentheses; AUCs use this scorecard's jointly resolved band.",
+        "No gate reads these values. All rows, including synthetic data: `docs/benchmarks/masked_fsc.md`.",
+        "",
+        *render_scores_table(table, "real"),
+        "",
+    ]
+
+
 def render_markdown(report: Mapping[str, Any]) -> str:
     """Render the compact checked scorecard and its rigid-alignment policy."""
 
@@ -2654,10 +2676,12 @@ def render_markdown(report: Mapping[str, Any]) -> str:
             "the launch manifest, finalizer command and canonical argv, and a separate",
             "immutable execution envelope; any supplied binding is checked fail-closed.",
             "",
+            *_frozen_mask_section(),
             "## Code references",
             "",
             "- `scripts/summarize_em_k1_realdata_science_equivalence.py`: scorecard validation, FSC band metrics, provenance gates, and rendering.",
             "- `scripts/collect_em_k1_science_diagnostics.py`: continuous proper-SO(3)+translation fitting and common-mask FSC artifacts.",
+            "- `scripts/masked_fsc.py`: frozen masks, relion_postprocess masked FSC and the frozen-mask table.",
             "- `tests/unit/test_summarize_em_k1_realdata_science_equivalence.py`: deterministic metric, provenance, calibration, and non-rescue tests.",
             "- `/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/scripts/collect_metrics.py`: external signed-FSC artifact collector pinned by SHA-256 in the manifest.",
             "",
