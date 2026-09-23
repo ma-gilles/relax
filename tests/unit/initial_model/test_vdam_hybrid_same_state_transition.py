@@ -2231,7 +2231,7 @@ def test_same_state_runner_seals_abba_and_exact_snapshot_contract() -> None:
     assert ".execution_contract.all_optimized_profile_exact == true" in sbatch
     assert "helpers/fourier_window.py" in sbatch
     assert "make -B -C \"${REPO_ROOT}/recovar/cuda\"" in sbatch
-    assert '"${REPO_ROOT}/recovar/em/local/local_backprojection.py"' in sbatch
+    assert '"${REPO_ROOT}/relax/local/local_backprojection.py"' in sbatch
     assert "status --porcelain=v1 --untracked-files=all" in sbatch
     assert "VDAM_SAME_STATE_NOISE_SPLIT_DIAGNOSTICS" in sbatch
     assert "RECOVAR_NOISE_DEBUG_DUMP_DIR=${RUNTIME}/noise_split_enabled" in sbatch
