@@ -1554,12 +1554,19 @@ def _find_relion_optimiser_star(args):
     fixtures that name their RELION output ``relion_ref_os0/`` or similar).
     Picks the latest ``run_it{NNN}_optimiser.star`` if no plain
     ``run_optimiser.star`` is present in a candidate directory.
+
+    With ``--relion-half-sets-from-input`` the run starts from relion_refine's
+    inputs alone, so only an explicit ``--relion_optimiser`` is used: a RELION
+    output found next to the data must not supply the mask, ``ini_high``,
+    ``max_significants`` or CTF flag.
     """
     explicit = getattr(args, "relion_optimiser", None)
     if explicit:
         p = Path(explicit).resolve()
         if p.exists():
             return p
+    if getattr(args, "relion_half_sets_from_input", False):
+        return None
 
     search_dirs = []
     # Strict-parity --relion_init_dir / --perturb_replay_relion_dir point
@@ -2191,7 +2198,8 @@ def _parse_args(argv=None):
             "Rebuild RELION's start-up particle table from <data_dir>/particles.star and --seed "
             "(RELION's --random_seed) as relion_refine does: micrograph-name order, random halves "
             "(input rlnRandomSubset, else srand/rand), scale groups. It replaces --relion_half_sets "
-            "and is written to <output>/relion_input_state/. K=1 only."
+            "and is written to <output>/relion_input_state/, and RELION optimiser STARs are then "
+            "not discovered under --data_dir (only --relion_optimiser is read). K=1 only."
         ),
     )
     parser.add_argument(

@@ -141,6 +141,23 @@ def test_from_input_flag_rejects_combinations_relion_would_not_build():
             _validate_relion_half_sets_from_input(SimpleNamespace(**{**base, **change}))
 
 
+def test_from_input_flag_does_not_discover_relion_optimiser_outputs(tmp_path):
+    from types import SimpleNamespace
+
+    from scripts.run_full_refinement import _find_relion_optimiser_star
+
+    discovered = tmp_path / "relion_ref_os0" / "run_optimiser.star"
+    discovered.parent.mkdir()
+    discovered.write_text("data_optimiser_general\n")
+    base = dict(relion_optimiser=None, relion_init_dir=None, perturb_replay_relion_dir=None, relion_half_sets=None)
+    args = SimpleNamespace(data_dir=str(tmp_path), relion_half_sets_from_input=False, **base)
+    assert _find_relion_optimiser_star(args) == discovered.resolve()
+    args.relion_half_sets_from_input = True
+    assert _find_relion_optimiser_star(args) is None
+    args.relion_optimiser = str(discovered)
+    assert _find_relion_optimiser_star(args) == discovered.resolve()
+
+
 def test_written_table_round_trips_input_values(tmp_path):
     from scripts.run_full_refinement import _write_relion_start_particle_table
 
