@@ -7,6 +7,60 @@ import numpy as np
 from relax.relion import relion_metadata
 
 
+def _input_numeric_columns(input_particles, columns, *, field: str) -> np.ndarray:
+    """Read finite float64 input-STAR columns as an ``(N, len(columns))`` array."""
+    missing = [column for column in columns if column not in input_particles.columns]
+    if missing:
+        raise ValueError(
+            f"RECOVAR input STAR is missing {field} columns: {', '.join(missing)}",
+        )
+    try:
+        values = np.stack(
+            [np.asarray(input_particles[column], dtype=np.float64) for column in columns],
+            axis=1,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"RECOVAR input STAR {field} columns must be numeric") from exc
+    expected_shape = (len(input_particles), len(columns))
+    if values.shape != expected_shape:
+        raise ValueError(
+            f"RECOVAR input STAR {field} array has shape {values.shape}, "
+            f"expected {expected_shape}",
+        )
+    if not np.all(np.isfinite(values)):
+        raise ValueError(f"RECOVAR input STAR {field} values must be finite")
+    return values
+
+
+def _input_star_origins_pixels(input_particles, *, voxel_size: float):
+    """Return input origins in pixels and their source units.
+
+    rlnOriginX/YAngst are divided by ``voxel_size``; pixel origins are used as
+    read; absent origins are zero, as relion_refine reads them
+    (Experiment::read, exp_model.cpp:1104-1144).
+    """
+    angstrom_columns = ("rlnOriginXAngst", "rlnOriginYAngst")
+    pixel_columns = ("rlnOriginX", "rlnOriginY")
+    has_angstrom = [column in input_particles.columns for column in angstrom_columns]
+    has_pixels = [column in input_particles.columns for column in pixel_columns]
+    if any(has_angstrom) and not all(has_angstrom):
+        raise ValueError("RECOVAR input STAR must provide both rlnOriginXAngst and rlnOriginYAngst")
+    if any(has_pixels) and not all(has_pixels):
+        raise ValueError("RECOVAR input STAR must provide both rlnOriginX and rlnOriginY")
+    if all(has_angstrom):
+        if not np.isfinite(voxel_size) or float(voxel_size) <= 0.0:
+            raise ValueError("voxel_size must be positive and finite for Angstrom origins")
+        translations = _input_numeric_columns(
+            input_particles,
+            angstrom_columns,
+            field="Angstrom-origin",
+        ) / float(voxel_size)
+        return translations, "angstrom"
+    if all(has_pixels):
+        return _input_numeric_columns(input_particles, pixel_columns, field="pixel-origin"), "pixel"
+    return np.zeros((len(input_particles), 2), dtype=np.float64), "implicit_zero"
+
+
 def _load_input_star_previous_best_poses(
     input_particles,
     relion_halfset_particles,
@@ -95,29 +149,6 @@ def _load_input_star_previous_best_poses(
                 f"{bad_rows.size} input rows",
             )
 
-    def _numeric_columns(columns, *, field: str) -> np.ndarray:
-        missing = [column for column in columns if column not in input_particles.columns]
-        if missing:
-            raise ValueError(
-                f"RECOVAR input STAR is missing {field} columns: {', '.join(missing)}",
-            )
-        try:
-            values = np.stack(
-                [np.asarray(input_particles[column], dtype=np.float64) for column in columns],
-                axis=1,
-            )
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"RECOVAR input STAR {field} columns must be numeric") from exc
-        expected_shape = (n_particles, len(columns))
-        if values.shape != expected_shape:
-            raise ValueError(
-                f"RECOVAR input STAR {field} array has shape {values.shape}, "
-                f"expected {expected_shape}",
-            )
-        if not np.all(np.isfinite(values)):
-            raise ValueError(f"RECOVAR input STAR {field} values must be finite")
-        return values
-
     # relion_refine sets each absent angle label to 0 when it reads the input
     # (Experiment::read, exp_model.cpp:1104-1136), so a STAR without angles is
     # seeded with zeros rather than rejected.
@@ -125,30 +156,14 @@ def _load_input_star_previous_best_poses(
     eulers = np.zeros((n_particles, len(angle_columns)), dtype=np.float64)
     for axis, column in enumerate(angle_columns):
         if column in input_particles.columns:
-            eulers[:, axis] = _numeric_columns((column,), field="Euler-angle")[:, 0]
+            eulers[:, axis] = _input_numeric_columns(
+                input_particles, (column,), field="Euler-angle"
+            )[:, 0]
 
-    angstrom_columns = ("rlnOriginXAngst", "rlnOriginYAngst")
-    pixel_columns = ("rlnOriginX", "rlnOriginY")
-    has_angstrom = [column in input_particles.columns for column in angstrom_columns]
-    has_pixels = [column in input_particles.columns for column in pixel_columns]
-    if any(has_angstrom) and not all(has_angstrom):
-        raise ValueError("RECOVAR input STAR must provide both rlnOriginXAngst and rlnOriginYAngst")
-    if any(has_pixels) and not all(has_pixels):
-        raise ValueError("RECOVAR input STAR must provide both rlnOriginX and rlnOriginY")
-    if all(has_angstrom):
-        if not np.isfinite(voxel_size) or float(voxel_size) <= 0.0:
-            raise ValueError("voxel_size must be positive and finite for Angstrom origins")
-        translations = _numeric_columns(
-            angstrom_columns,
-            field="Angstrom-origin",
-        ) / float(voxel_size)
-        translation_units = "angstrom"
-    elif all(has_pixels):
-        translations = _numeric_columns(pixel_columns, field="pixel-origin")
-        translation_units = "pixel"
-    else:
-        translations = np.zeros((n_particles, 2), dtype=np.float64)
-        translation_units = "implicit_zero"
+    translations, translation_units = _input_star_origins_pixels(
+        input_particles,
+        voxel_size=voxel_size,
+    )
 
     eulers_per_half = [
         np.ascontiguousarray(eulers[indices], dtype=np.float32)
@@ -177,18 +192,50 @@ def _load_input_star_previous_best_poses(
     }
 
 
+def _load_input_star_class3d_translations(input_particles, rows, *, voxel_size: float):
+    """Return a fresh Class3D run's input origins in its all-data particle order.
+
+    Class3D rounds and applies the input origins before the image FFT but does
+    not centre its first global search on the input orientations (see
+    ``_kclass_firstiter_translation_seed``), so only translations are
+    returned: ``rows`` indexes the input STAR in the order of the single
+    all-data accumulator, and the second accumulator is empty.
+    """
+    rows = np.asarray(rows, dtype=np.int64)
+    n_particles = len(input_particles)
+    if rows.ndim != 1:
+        raise ValueError(f"Class3D particle rows must be one-dimensional, got {rows.shape}")
+    if not np.array_equal(np.sort(rows), np.arange(n_particles, dtype=np.int64)):
+        raise ValueError("Class3D particle rows must be a permutation of the input STAR rows")
+    translations, translation_units = _input_star_origins_pixels(
+        input_particles,
+        voxel_size=voxel_size,
+    )
+    selected = np.ascontiguousarray(translations[rows], dtype=np.float32)
+    if not np.all(np.isfinite(selected)):
+        raise ValueError("Class3D input origins are not finite after float32 conversion")
+    return {
+        "iteration": "input_star_translation_only",
+        "previous_best_rotation_eulers": [None, None],
+        "previous_best_translations": [selected, np.empty((0, 2), dtype=np.float32)],
+        "translation_units": translation_units,
+    }
+
+
 def _add_initial_pose_source_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--initial-pose-source",
         choices=("auto", "input-star", "none"),
         default="auto",
         help=(
-            "Initial previous-best poses for a fresh K=1 refinement. 'auto' "
-            "loads Euler angles and origins from <data_dir>/particles.star when "
+            "Initial previous-best poses for a fresh refinement. 'auto' "
+            "loads K=1 Euler angles and origins from <data_dir>/particles.star when "
             "--relion_half_sets or --relion-half-sets-from-input supplies the matched "
             "random halves (absent angles are 0, as in relion_refine); 'input-star' "
-            "requires that production path explicitly; 'none' preserves an "
-            "unseeded search. Diagnostic/replay pose sources retain ownership."
+            "requires that production path explicitly, and for a fresh Class3D (K>1) "
+            "run loads only the input origins, which RELION applies before the first "
+            "global search; 'none' preserves an unseeded search. Diagnostic/replay "
+            "pose sources retain ownership."
         ),
     )
 
@@ -210,12 +257,13 @@ def _resolve_input_star_pose_seed(
     if source == "none":
         return False
 
+    class3d = int(n_classes) > 1
     incompatibilities = []
-    if int(n_classes) != 1:
-        incompatibilities.append("it is K=1-only")
     if int(init_relion_iteration) != 0:
         incompatibilities.append("it requires a fresh --init_relion_iteration 0 run")
-    if not bool(has_relion_half_sets):
+    if class3d and bool(has_relion_half_sets):
+        incompatibilities.append("Class3D splits no random halves; drop --relion_half_sets")
+    if not class3d and not bool(has_relion_half_sets):
         incompatibilities.append("it requires --relion_half_sets")
     if bool(has_competing_pose_source):
         incompatibilities.append("a diagnostic/replay pose source already owns initialization")
@@ -223,7 +271,8 @@ def _resolve_input_star_pose_seed(
         incompatibilities.append("it requires both gold-standard halves")
 
     if source == "auto":
-        return not incompatibilities
+        # Class3D input origins stay opt-in (explicit 'input-star') for now.
+        return not class3d and not incompatibilities
     if incompatibilities:
         raise ValueError("--initial-pose-source input-star " + "; ".join(incompatibilities))
     return True
@@ -235,9 +284,11 @@ def _kclass_firstiter_translation_seed(
     n_classes,
     init_relion_iteration,
 ):
-    """Select only RELION's input origins for a fresh Class3D search.
+    """Select RELION's run_it000 origins for a fresh Class3D search (debug path).
 
-    RELION Class3D does not center its first global angular search on the
+    This serves ``--relion_init_dir`` comparisons only; a standalone run reads
+    the same origins from the input STAR
+    (``_load_input_star_class3d_translations``). RELION Class3D does not center its first global angular search on the
     input orientations, but it does round and apply the input origins before
     taking the image FFT.  Keep those two pieces of state independent: this
     helper deliberately returns translations only and cannot expose the

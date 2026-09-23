@@ -4306,6 +4306,27 @@ def main():
             initial_pose_source_sha256,
             [int(arr.shape[0]) for arr in kclass_firstiter_translations],
         )
+    elif use_input_star_pose_seed and int(args.n_classes) > 1:
+        input_pose_path = (Path(args.data_dir) / "particles.star").resolve()
+        try:
+            init_previous_best_poses = input_poses._load_input_star_class3d_translations(
+                our_particles,
+                half1_idx,
+                voxel_size=ds.voxel_size,
+            )
+        except (TypeError, ValueError) as exc:
+            raise SystemExit(f"Invalid input-STAR Class3D origin initialization: {exc}") from exc
+        resolved_initial_pose_source = "input_star_translations"
+        initial_pose_source_path = input_pose_path
+        initial_pose_source_sha256 = _sha256_file(input_pose_path)
+        logger.info(
+            "Fresh Class3D translation initialization: source=%s sha256=%s "
+            "translation_units=%s particles=%d (orientations intentionally unset)",
+            input_pose_path,
+            initial_pose_source_sha256,
+            init_previous_best_poses["translation_units"],
+            int(init_previous_best_poses["previous_best_translations"][0].shape[0]),
+        )
     elif use_input_star_pose_seed:
         input_pose_path = (Path(args.data_dir) / "particles.star").resolve()
         try:

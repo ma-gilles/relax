@@ -27,6 +27,22 @@ check ordering, units/dtype and mode exclusions. GPU source-wiring, state and
 trajectory qualification are still required; the option is not a new default
 or a claim that the remaining parity gap is closed.
 
+## Class3D standalone start-up
+
+A fresh Class3D (K>1) run can start from what `relion_refine` reads, without
+any RELION output. Each piece is opt-in until its default is decided:
+
+- Startup noise: `--initial-noise-bootstrap relion` (section above).
+- Input origins: `--initial-pose-source input-star` loads only the input
+  `rlnOriginX/YAngst` (or pixel origins; absent origins are zero) in the
+  all-data particle order
+  ([`_load_input_star_class3d_translations`](../../relax/relion/input_poses.py)).
+  RELION rounds and applies them before the image FFT but does not centre the
+  first global search on the input angles. The `--relion_init_dir` route
+  (`_kclass_firstiter_translation_seed`, from `run_it000_data.star`) is kept
+  for debug comparison; on the K4 50k/256 fixture the two are bitwise equal, and
+  on EMPIAR-10097 (non-zero origins) the input origins equal `run_it000`'s.
+
 This page describes RECOVAR's current dense-volume refinement implementation,
 including its K-class and exact local-search routes. Function names identify
 implementation owners; line numbers are deliberately omitted because code moves

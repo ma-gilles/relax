@@ -8,6 +8,7 @@ import pytest
 
 from relax.relion.input_poses import (
     _add_initial_pose_source_argument,
+    _load_input_star_class3d_translations,
     _load_input_star_previous_best_poses,
     _resolve_input_star_pose_seed,
 )
@@ -161,4 +162,50 @@ def test_explicit_input_star_pose_source_fails_closed_on_competing_state():
             has_relion_half_sets=True,
             has_competing_pose_source=True,
             diagnostic_single_half=False,
+        )
+
+
+@pytest.mark.parametrize("angstrom_origins", [False, True])
+def test_class3d_input_origins_follow_all_data_order_without_orientations(angstrom_origins):
+    input_particles, _ = _particle_tables(angstrom_origins=angstrom_origins)
+    seed = _load_input_star_class3d_translations(
+        input_particles,
+        np.asarray([2, 0, 3, 1]),
+        voxel_size=2.0,
+    )
+    assert seed["previous_best_rotation_eulers"] == [None, None]
+    assert seed["translation_units"] == ("angstrom" if angstrom_origins else "pixel")
+    first, second = seed["previous_best_translations"]
+    np.testing.assert_array_equal(
+        first,
+        np.asarray([[2.5, -2.5], [0.5, -0.5], [3.5, -3.5], [1.5, -1.5]], dtype=np.float32),
+    )
+    assert first.dtype == np.float32
+    assert second.shape == (0, 2) and second.dtype == np.float32
+
+
+def test_class3d_input_origins_absent_are_zero_and_rows_must_cover_the_input():
+    input_particles, _ = _particle_tables()
+    input_particles = input_particles.drop(columns=["rlnOriginX", "rlnOriginY"])
+    seed = _load_input_star_class3d_translations(input_particles, np.arange(4), voxel_size=1.0)
+    assert seed["translation_units"] == "implicit_zero"
+    np.testing.assert_array_equal(seed["previous_best_translations"][0], np.zeros((4, 2), np.float32))
+    with pytest.raises(ValueError, match="permutation"):
+        _load_input_star_class3d_translations(input_particles, np.arange(3), voxel_size=1.0)
+
+
+def test_class3d_input_star_origins_are_explicit_and_need_no_half_sets():
+    kwargs = dict(
+        n_classes=4,
+        init_relion_iteration=0,
+        has_competing_pose_source=False,
+        diagnostic_single_half=False,
+    )
+    assert _resolve_input_star_pose_seed("input-star", has_relion_half_sets=False, **kwargs)
+    assert not _resolve_input_star_pose_seed("auto", has_relion_half_sets=False, **kwargs)
+    with pytest.raises(ValueError, match="splits no random halves"):
+        _resolve_input_star_pose_seed("input-star", has_relion_half_sets=True, **kwargs)
+    with pytest.raises(ValueError, match="already owns initialization"):
+        _resolve_input_star_pose_seed(
+            "input-star", has_relion_half_sets=False, **(kwargs | {"has_competing_pose_source": True})
         )
