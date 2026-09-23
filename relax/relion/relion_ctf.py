@@ -234,6 +234,15 @@ def _relion_exact_ctf_half_from_source_star_host(
         def optics_value(name: str) -> float:
             return float(optics[name] if name in optics else optics[f"_{name}"])
 
+        def ctf_value(name: str, default: float) -> float:
+            # CTF::readValue (ctf.cpp:71-74, 81-91): the particle row, then its
+            # optics group, then RELION's default.
+            for table in (particle, optics):
+                for key in (name, f"_{name}"):
+                    if key in table:
+                        return float(table[key])
+            return float(default)
+
         native = np.asarray(
             cache["relion_bind"].get_ctf_image(
                 particle_value("rlnDefocusU"),
@@ -242,15 +251,15 @@ def _relion_exact_ctf_half_from_source_star_host(
                 optics_value("rlnVoltage"),
                 optics_value("rlnSphericalAberration"),
                 optics_value("rlnAmplitudeContrast"),
-                0.0,
+                ctf_value("rlnCtfBfactor", 0.0),
                 optics_value("rlnImagePixelSize"),
                 image_w,
                 image_h,
                 False,
                 False,
                 False,
-                particle_value("rlnPhaseShift"),
-                1.0,
+                ctf_value("rlnPhaseShift", 0.0),
+                ctf_value("rlnCtfScalefactor", 1.0),
             ),
             dtype=np.float64,
         )
