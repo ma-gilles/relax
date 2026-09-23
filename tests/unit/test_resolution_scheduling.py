@@ -313,7 +313,12 @@ def test_initial_fsc_seeding_preserves_input_and_sets_both_resolution_fields(dty
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
-def test_initial_fsc_without_resolved_shell_preserves_state(dtype):
+def test_initial_fsc_without_resolved_shell_seeds_minres_map(dtype):
+    """An unresolved FSC gives RELION's --minres_map floor of 5 shells.
+
+    relion/src/ml_optimiser.cpp:6819 (``maxres = XMIPP_MAX(maxres, minres_map)``)
+    with the default at :1298.
+    """
     state = SimpleNamespace(current_resolution=100.0, previous_resolution=200.0)
     options = SimpleNamespace(
         schedule=SimpleNamespace(init_fsc=np.zeros(65, dtype=dtype), init_current_size=128),
@@ -322,8 +327,7 @@ def test_initial_fsc_without_resolved_shell_preserves_state(dtype):
     resolution_helpers.initialize_resolution_from_fsc(
         state, options, grid_size=128, voxel_size=3.28, dtype=dtype,
     )
-    assert state.current_resolution == 100.0
-    assert state.previous_resolution == 200.0
+    assert state.current_resolution == state.previous_resolution == 128 * 3.28 / 5
 
 
 @pytest.mark.parametrize(
@@ -374,3 +378,39 @@ def test_initial_lowpass_seeding_preserves_pixel_fallback_and_shell_clamps(pixel
         )
         assert fsc[whole_shell] >= 1.0 / 7.0 > fsc[whole_shell + 1]
         assert fsc[half_shell] >= 0.5 > fsc[half_shell + 1]
+
+    def test_current_resolution_scan_stops_one_shell_below_nyquist(self):
+        """RELION scans ``ires < ori_size/2`` and rechecks from ``ori_size/2 - 1``.
+
+        relion/src/ml_optimiser.cpp:6780-6792: a curve that never drops below 1
+        reports shell ``ori_size/2 - 1``, not Nyquist.
+        """
+        saturated = np.full(33, 5.0, dtype=np.float32)
+        for recovery in (False, True):
+            assert regularization_relion.resolution_from_data_vs_prior(
+                saturated, allow_high_res_recovery=recovery
+            ) == 31
+            assert regularization_relion.resolution_from_data_vs_prior(
+                saturated, ori_size=64, allow_high_res_recovery=recovery
+            ) == 31
+        # Only Nyquist above 1 after an early dip: the recheck starts at 31.
+        dip_then_nyquist = np.full(33, 0.5, dtype=np.float32)
+        dip_then_nyquist[:10] = 5.0
+        dip_then_nyquist[32] = 5.0
+        assert regularization_relion.resolution_from_data_vs_prior(
+            dip_then_nyquist, ori_size=64, allow_high_res_recovery=True
+        ) == 9
+
+    def test_current_resolution_is_floored_at_minres_map(self):
+        """``maxres = XMIPP_MAX(maxres, minres_map)`` with --minres_map 5.
+
+        relion/src/ml_optimiser.cpp:6819 (floor) and :1298 (default 5).
+        """
+        early = np.full(33, 0.5, dtype=np.float32)
+        early[:3] = 5.0
+        assert regularization_relion.RELION_MINRES_MAP == 5
+        assert regularization_relion.resolution_from_data_vs_prior(early, ori_size=64) == 5
+        assert regularization_relion.resolution_from_data_vs_prior(early, ori_size=64, minres_map=0) == 2
+        assert resolution_helpers.relion_current_resolution_shell(
+            np.stack([early, early]), k_class_enabled=True, current_size=64, grid_size=64
+        ) == 5

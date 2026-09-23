@@ -105,48 +105,65 @@ class TestComputeDataVsPrior:
 
 
 class TestResolutionFromDataVsPrior:
-    """Test resolution_from_data_vs_prior shell finding."""
+    """Test resolution_from_data_vs_prior shell finding.
 
-    def test_all_above_one_returns_last_shell(self):
-        """If data_vs_prior > 1 everywhere, return the last shell."""
+    RELION's updateCurrentResolution (relion/src/ml_optimiser.cpp:6780-6792)
+    scans ``1 <= ires < ori_size/2`` and floors the result at ``--minres_map``
+    (default 5, ml_optimiser.cpp:1298 and :6819). ``minres_map=0`` exposes the
+    raw scan on these short curves.
+    """
+
+    def test_all_above_one_returns_shell_below_nyquist(self):
+        """If data_vs_prior > 1 everywhere, return ori_size/2 - 1."""
         dvp = np.array([10.0, 5.0, 3.0, 2.0, 1.5])
-        assert resolution_from_data_vs_prior(dvp) == 4
+        assert resolution_from_data_vs_prior(dvp) == 5
+        assert resolution_from_data_vs_prior(dvp, minres_map=0) == 3
 
     def test_drops_at_shell_3(self):
-        """data_vs_prior drops below 1 at shell 3 -> return shell 2."""
+        """data_vs_prior drops below 1 at shell 3 -> scan gives shell 2."""
         dvp = np.array([10.0, 5.0, 2.0, 0.5, 0.1])
-        assert resolution_from_data_vs_prior(dvp) == 2
+        assert resolution_from_data_vs_prior(dvp) == 5
+        assert resolution_from_data_vs_prior(dvp, minres_map=0) == 2
 
     def test_drops_at_shell_1(self):
-        """data_vs_prior drops below 1 at shell 1 -> return shell 0."""
+        """data_vs_prior drops below 1 at shell 1 -> scan gives shell 0."""
         dvp = np.array([10.0, 0.5, 0.1, 0.01])
-        assert resolution_from_data_vs_prior(dvp) == 0
+        assert resolution_from_data_vs_prior(dvp) == 5
+        assert resolution_from_data_vs_prior(dvp, minres_map=0) == 0
 
-    def test_all_below_one_returns_zero(self):
-        """If data_vs_prior < 1 from shell 1 onward, return 0."""
+    def test_all_below_one_returns_minres_map(self):
+        """If data_vs_prior < 1 from shell 1 onward, the scan gives 0."""
         dvp = np.array([0.5, 0.3, 0.1])
-        assert resolution_from_data_vs_prior(dvp) == 0
+        assert resolution_from_data_vs_prior(dvp) == 5
+        assert resolution_from_data_vs_prior(dvp, minres_map=0) == 0
 
     def test_single_shell(self):
-        """Single-element array: return shell 0."""
+        """Single-element array: the scan gives shell 0."""
         dvp = np.array([5.0])
-        assert resolution_from_data_vs_prior(dvp) == 0
+        assert resolution_from_data_vs_prior(dvp) == 5
+        assert resolution_from_data_vs_prior(dvp, minres_map=0) == 0
 
     def test_jax_array_input(self):
         """Should work with JAX arrays too."""
         dvp = jnp.array([10.0, 5.0, 0.5, 0.1])
-        assert resolution_from_data_vs_prior(dvp) == 1
+        assert resolution_from_data_vs_prior(dvp) == 5
+        assert resolution_from_data_vs_prior(dvp, minres_map=0) == 1
 
     def test_relion_high_res_recovery_prefers_later_shell(self):
-        """RELION keeps a later shell when the curve rises again well beyond the first dip."""
+        """RELION keeps a later shell when the curve rises again well beyond the first dip.
+
+        The recheck starts at ori_size/2 - 1 (shell 6 here), not at Nyquist.
+        """
         dvp = np.array([5.0, 4.0, 0.8, 0.7, 0.6, 0.5, 1.2, 1.1], dtype=np.float32)
-        assert resolution_from_data_vs_prior(dvp) == 1
-        assert resolution_from_data_vs_prior(dvp, allow_high_res_recovery=True) == 7
+        assert resolution_from_data_vs_prior(dvp) == 5
+        assert resolution_from_data_vs_prior(dvp, minres_map=0) == 1
+        assert resolution_from_data_vs_prior(dvp, allow_high_res_recovery=True) == 6
 
     def test_relion_high_res_recovery_ignores_small_bumps(self):
         """A small post-dip bump within three shells should not move the limit."""
         dvp = np.array([5.0, 4.0, 0.8, 0.7, 1.2, 0.5], dtype=np.float32)
-        assert resolution_from_data_vs_prior(dvp, allow_high_res_recovery=True) == 1
+        assert resolution_from_data_vs_prior(dvp, allow_high_res_recovery=True) == 5
+        assert resolution_from_data_vs_prior(dvp, allow_high_res_recovery=True, minres_map=0) == 1
 
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@
  * Binds:
  *   E5: convert_squared_differences_to_weights (ml_optimiser.cpp:7704)
  *   E7: compute_weighted_noise (ml_optimiser.cpp:8241, noise part)
- *   M5: find_current_resolution (ml_optimiser.cpp:5579)
+ *   M5: find_current_resolution (ml_optimiser.cpp:6780-6819)
  *   M9: update_noise_estimate (ml_optimiser.cpp:5246)
  */
 
@@ -172,27 +172,34 @@ static py::array_t<double> compute_weighted_noise(
 /**
  * M5: Find current resolution from data_vs_prior array.
  *
- * Reimplements updateCurrentResolution (ml_optimiser.cpp:5579-5620).
- * Returns the last shell index where data_vs_prior >= 1.0.
+ * Reimplements the MAP branch of updateCurrentResolution for one class
+ * without the split-half high-resolution recheck
+ * (relion/src/ml_optimiser.cpp:6780-6792 and :6819). data_vs_prior holds
+ * ori_size/2 + 1 shells, so RELION scans 1 <= ires < ori_size/2 and never
+ * reports Nyquist; the result is floored at --minres_map (default 5,
+ * ml_optimiser.cpp:1298).
  */
 static int find_current_resolution(
     py::array_t<double, py::array::c_style | py::array::forcecast> data_vs_prior_in,
-    int minres_shell
+    int minres_map
 ) {
     auto buf = data_vs_prior_in.request();
     long n = buf.shape[0];
     double* dvp = (double*)buf.ptr;
+    const long half_ori_size = n - 1;
 
-    int maxres = 0;
-    for (long ires = 1; ires < n; ires++) {
-        if (dvp[ires] < 1.0)
+    long ires;
+    for (ires = 1; ires < half_ori_size; ires++)
+    {
+        if (dvp[ires] < 1.)
             break;
-        maxres = (int)ires;
     }
+    // Subtract one shell to be back on the safe side
+    ires--;
 
-    if (maxres < minres_shell)
-        maxres = minres_shell;
-
+    int maxres = (int)std::max(ires, 0L);
+    // Never allow smaller maxres than minres_map
+    maxres = std::max(maxres, minres_map);
     return maxres;
 }
 
@@ -316,10 +323,10 @@ Returns: (n_shells,) accumulated weighted squared residuals
 
     m.def("find_current_resolution", &find_current_resolution,
           py::arg("data_vs_prior"),
-          py::arg("minres_shell") = 0,
+          py::arg("minres_map") = 5,
           R"doc(
-M5: Find highest shell where data_vs_prior >= 1.0.
-Returns shell index (int).
+M5: RELION updateCurrentResolution shell for one class (no split-half recheck).
+Scans 1 <= ires < len - 1 and floors at minres_map. Returns shell index (int).
 )doc");
 
     m.def("update_noise_estimate", &update_noise_estimate,

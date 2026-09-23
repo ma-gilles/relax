@@ -159,6 +159,7 @@ from relax.helpers.resolution import (
 from relax.helpers.types import make_noise_stats, make_relion_stats
 from relax.local.local_layout import _selected_rotation_matrices
 from relax.reconstruction.regularization_relion import (
+    RELION_MINRES_MAP,
     compute_current_size_relion,
     fsc_to_relion_ssnr,
     resolution_from_data_vs_prior,
@@ -282,9 +283,6 @@ def _relion_k1_translation_angle_scale(
     return model_pixel_size / float(unique_optics[0])
 
 
-# RELION's --minres_map default: do not add the Wiener prior term to the
-# lowest Fourier shells during MAP reconstruction.
-RELION_MINRES_MAP = 5
 
 
 class _CoarseGrids(NamedTuple):
@@ -1346,6 +1344,7 @@ def refine_single_volume(
                 previous_data_vs_prior_for_scheduling = data_vs_prior_iter
                 res_shell = resolution_from_data_vs_prior(
                     data_vs_prior_iter,
+                    ori_size=grid_size,
                     allow_high_res_recovery=True,
                 )
                 relion_incr_size, relion_has_high_fsc_at_limit = update_relion_growth_state_from_fsc(
@@ -1380,7 +1379,7 @@ def refine_single_volume(
                     data_vs_prior_prev[..., min(data_vs_prior_prev.shape[-1], prev_cs // 2 + 1) :] = 0.0
                 per_class_res_shell = np.asarray(
                     [
-                        resolution_from_data_vs_prior(dvp_class, allow_high_res_recovery=False)
+                        resolution_from_data_vs_prior(dvp_class, ori_size=grid_size, allow_high_res_recovery=False)
                         for dvp_class in np.asarray(data_vs_prior_prev)
                     ],
                     dtype=np.int32,
@@ -1451,6 +1450,7 @@ def refine_single_volume(
                 previous_data_vs_prior_for_scheduling = data_vs_prior_iter
                 res_shell = resolution_from_data_vs_prior(
                     data_vs_prior_iter,
+                    ori_size=grid_size,
                     allow_high_res_recovery=True,
                 )
                 relion_incr_size, relion_has_high_fsc_at_limit = update_relion_growth_state_from_fsc(

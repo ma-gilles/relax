@@ -1347,58 +1347,74 @@ def compute_data_vs_prior(
     return data_vs_prior
 
 
+# RELION's --minres_map default (relion/src/ml_optimiser.cpp:1298): the
+# smallest shell updateCurrentResolution may report, and the lowest shells
+# that MAP reconstruction leaves without the Wiener prior term.
+RELION_MINRES_MAP = 5
+
+
 def resolution_from_data_vs_prior(
     data_vs_prior,
     *,
+    ori_size=None,
     allow_high_res_recovery=False,
     recovery_margin_shells=3,
+    minres_map=RELION_MINRES_MAP,
 ):
-    """Find the resolution shell where data_vs_prior drops below 1.0.
+    """RELION ``updateCurrentResolution`` shell for one data_vs_prior curve.
 
-    Scans from shell 1 outward (skipping DC) and returns the last shell
-    where ``data_vs_prior >= 1.0``.
+    Mirrors relion/src/ml_optimiser.cpp:6776-6819. Scans shells
+    ``1 <= ires < ori_size // 2`` (skipping DC) and returns the last shell
+    before ``data_vs_prior < 1``; a curve that never drops returns
+    ``ori_size // 2 - 1``, one shell below Nyquist, as RELION does.
 
-    When ``allow_high_res_recovery`` is enabled, mimic RELION's
-    ``updateCurrentResolution()`` behavior for split-half auto-refine: if the
-    curve dips below 1.0 and then rises again at substantially higher shells,
-    keep the later shell instead of the first crossing. This handles the
+    When ``allow_high_res_recovery`` is enabled, mimic RELION's check for
+    split-half auto-refine: scanning down from ``ori_size // 2 - 1``, if the
+    curve rises above 1.0 again more than ``recovery_margin_shells`` shells
+    past the first crossing, keep the later shell. This handles the
     phase-randomization / tight-mask artefact check in RELION.
+
+    The result is never below ``minres_map`` (``maxres = XMIPP_MAX(maxres,
+    minres_map)``, ml_optimiser.cpp:6819). RELION floors the class maximum;
+    flooring each class first gives the same maximum.
 
     Parameters
     ----------
     data_vs_prior : array-like, shape (n_shells,)
         Per-shell data_vs_prior ratio from :func:`compute_data_vs_prior`.
-
+    ori_size : int, optional
+        Box size. Defaults to ``2 * (n_shells - 1)``, RELION's
+        ``ori_size / 2 + 1`` shell layout.
     allow_high_res_recovery : bool, optional
         Enable RELION's high-resolution recheck.
     recovery_margin_shells : int, optional
         Minimum number of shells by which the recovered high-resolution shell
         must exceed the first crossing.
+    minres_map : int, optional
+        RELION ``--minres_map``.
 
     Returns
     -------
     int
-        Shell index of the resolution limit.  Returns ``len(data_vs_prior) - 1``
-        if data_vs_prior never drops below 1.0.
+        Shell index of the resolution limit.
     """
     dvp = np.asarray(data_vs_prior)
-    for ires in range(1, len(dvp)):
-        if dvp[ires] < 1.0:
-            maxres = ires - 1
-            break
-    else:
-        maxres = len(dvp) - 1
+    limit = len(dvp) - 1 if ori_size is None else min(int(ori_size) // 2, len(dvp))
+    ires = 1
+    while ires < limit and not dvp[ires] < 1.0:
+        ires += 1
+    maxres = ires - 1
 
     if allow_high_res_recovery:
         recovered = maxres
-        for ires2 in range(len(dvp) - 1, maxres - 1, -1):
+        for ires2 in range(limit - 1, maxres - 1, -1):
             if dvp[ires2] > 1.0:
                 recovered = ires2
                 break
         if recovered > maxres + int(recovery_margin_shells):
             maxres = recovered
 
-    return maxres
+    return max(maxres, int(minres_map))
 
 
 def fsc_to_relion_ssnr(fsc, tau2_fudge=1.0, is_whole_instead_of_half=False):

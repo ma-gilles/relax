@@ -1179,8 +1179,9 @@ def test_final_all_data_runs_with_cold_start_only_override(
     assert result["final_all_data_ran"] is True
 
     # RELION updates rlnCurrentResolution from the final all-data DVP too.
-    # The mock data carry no signal (shell 0), so the final call is forced to
-    # a known shell to check that its result reaches the returned state.
+    # The mock data carry no signal, so the split-half value sits at the
+    # --minres_map floor of 5 shells (ml_optimiser.cpp:6819) and the final call
+    # is forced to a known shell to check that its result reaches the state.
     grid = int(half_datasets[0].image_shape[0])
     voxel = float(half_datasets[0].voxel_size)
     final_call = resolution_calls[-1]
@@ -1189,7 +1190,7 @@ def test_final_all_data_runs_with_cold_start_only_override(
     np.testing.assert_array_equal(final_call["dvp"], result["tau2_ssnr_final_all_data"].astype(np.float32))
     state = result["convergence_state"]
     assert state.current_resolution == grid * voxel / forced_final_shell
-    assert state.previous_resolution == float("inf")
+    assert state.previous_resolution == grid * voxel / 5
 
 
 def test_last_numbered_state_does_not_trigger_post_cap_final_all_data(

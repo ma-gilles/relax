@@ -278,10 +278,10 @@ def relion_current_resolution_shell(data_vs_prior, *, k_class_enabled, current_s
     )
     if k_class_enabled:
         return max(
-            resolution_from_data_vs_prior(dvp_class, allow_high_res_recovery=False)
+            resolution_from_data_vs_prior(dvp_class, ori_size=grid_size, allow_high_res_recovery=False)
             for dvp_class in np.asarray(dvp)
         )
-    return resolution_from_data_vs_prior(dvp, allow_high_res_recovery=True)
+    return resolution_from_data_vs_prior(dvp, ori_size=grid_size, allow_high_res_recovery=True)
 
 
 def _truncate_fsc_for_current_size_growth(fsc, *, current_size, grid_size, dtype=np.float32):
@@ -308,7 +308,7 @@ def initialize_resolution_from_fsc(
     if previous_current_size < grid_size:
         fsc[min(len(fsc), previous_current_size // 2) :] = 0.0
     data_vs_prior = np.asarray(fsc_to_relion_ssnr(fsc, tau2_fudge=options.parity.tau2_fudge))
-    resolution_shell = resolution_from_data_vs_prior(data_vs_prior, allow_high_res_recovery=True)
+    resolution_shell = resolution_from_data_vs_prior(data_vs_prior, ori_size=grid_size, allow_high_res_recovery=True)
     resolution_angstrom = shell_index_to_resolution_angstrom(resolution_shell, grid_size, voxel_size)
     if np.isfinite(resolution_angstrom) and resolution_angstrom > 0.0:
         state.current_resolution = float(resolution_angstrom)

@@ -29,6 +29,7 @@ from typing import Callable, Literal, Sequence
 import numpy as np
 
 from relax.helpers.convergence import _relion_optimizer_average_pmax
+from relax.reconstruction.regularization_relion import resolution_from_data_vs_prior
 from relax.vdam.estep_meta_updates import update_noise_from_estep_meta, update_probabilities_from_estep_meta
 from relax.vdam.m_step import vdam_m_step
 from relax.vdam.schedules import (
@@ -134,18 +135,6 @@ def default_schedule_update(
     )
 
 
-def _resolution_shell_from_data_vs_prior(data_vs_prior: np.ndarray, ori_size: int) -> int:
-    """RELION updateCurrentResolution shell scan for one class."""
-    dvp = np.asarray(data_vs_prior, dtype=np.float64)
-    limit = min(int(ori_size) // 2, int(dvp.size))
-    ires = 1
-    while ires < limit:
-        if float(dvp[ires]) < 1.0:
-            break
-        ires += 1
-    return max(0, ires - 1)
-
-
 def update_current_resolution_from_data_vs_prior(
     state: InitialModelState,
     *,
@@ -159,10 +148,14 @@ def update_current_resolution_from_data_vs_prior(
     ``current_size`` when expectation setup calls
     ``updateImageSizeAndResolutionPointers``.
     """
-    maxres = 0
-    for k in range(int(state.K)):
-        maxres = max(maxres, _resolution_shell_from_data_vs_prior(state.data_vs_prior_class[k], state.ori_size))
-    maxres = max(maxres, int(minres_map))
+    maxres = max(
+        resolution_from_data_vs_prior(
+            np.asarray(state.data_vs_prior_class[k], dtype=np.float64),
+            ori_size=state.ori_size,
+            minres_map=minres_map,
+        )
+        for k in range(int(state.K))
+    )
 
     return replace(
         state,
