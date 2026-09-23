@@ -113,6 +113,7 @@ from relax.helpers.convergence import (
 from relax.helpers.dtype_policy import _local_search_precision_flags
 from relax.helpers.env_flags import parse_env_true_flag
 from relax.helpers.expected_accuracy import (
+    RELION_DEFAULT_SIGMA2_FUDGE,
     Half1AccuracyInputs,
     _expected_accuracy_class_ids,
     prepare_relion_half1_trial_order,
@@ -961,7 +962,7 @@ def refine_single_volume(
         dataset=experiment_datasets[0],
         volume_shape=volume_shape,
         padding_factor=PROJECTION_PADDING_FACTOR,
-        tau2_fudge=tau2_fudge,
+        sigma2_fudge=RELION_DEFAULT_SIGMA2_FUDGE,
         optimizer_random_seed=effective_optimizer_random_seed,
         expected_accuracy=expected_accuracy,
     )

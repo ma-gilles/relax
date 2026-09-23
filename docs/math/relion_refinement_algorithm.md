@@ -50,6 +50,16 @@ any RELION output. Each piece is opt-in until its default is decided:
   `_rlnReferenceImage`). A RELION 5.0.1 `--iter 0` run on the K4 5k/128
   fixture with a 0.7/0.1/0.1/0.1 `--ref` STAR wrote 0.25 for every class in
   `run_it000_model.star`.
+- Expected-accuracy trials (always on for a fresh Class3D run without half
+  sets): RELION shuffles the whole micrograph-sorted vector once with
+  `std::shuffle(mt19937(random_seed + iter))`, stable-sorts it by optics group
+  (`exp_model.cpp:449-456`) and takes the first 100 entries; each trial's
+  `part_id` seeds its draws
+  ([`relion_class3d_trial_layout`](../../relax/helpers/expected_accuracy.py)).
+  The estimator divides by `sigma2_fudge * sigma2_noise` with RELION's default
+  `sigma2_fudge = 1` (`ml_optimiser.cpp:1308, 11219`), never by `tau2_fudge`.
+  With RELION's iteration-1 state this reproduces `run_it002`'s per-class
+  `rlnAccuracyRotations` to 1e-14 on the K4 5k/128 and 50k/256 fixtures.
 
 This page describes RECOVAR's current dense-volume refinement implementation,
 including its K-class and exact local-search routes. Function names identify

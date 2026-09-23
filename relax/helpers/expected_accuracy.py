@@ -25,6 +25,12 @@ class ExpectedAccuracy:
     trial_particle_ids: np.ndarray
 
 
+# relion_refine's --sigma2_fudge default (ml_optimiser.cpp:1308). The refinement
+# CLI exposes no --sigma2_fudge, and calculateExpectedAngularErrors divides by
+# sigma2_fudge * sigma2_noise (ml_optimiser.cpp:11219), never by tau2_fudge.
+RELION_DEFAULT_SIGMA2_FUDGE = 1.0
+
+
 class Half1AccuracyInputs(NamedTuple):
     """Run-constant inputs of RELION's expected-accuracy estimation on half 1."""
 
@@ -32,7 +38,7 @@ class Half1AccuracyInputs(NamedTuple):
     dataset: object
     volume_shape: tuple
     padding_factor: float
-    tau2_fudge: float
+    sigma2_fudge: float
     optimizer_random_seed: object
     expected_accuracy: object
 
@@ -66,7 +72,7 @@ class Half1AccuracyInputs(NamedTuple):
             trial_order_local=self.trial_order_local,
             current_image_size=int(current_image_size),
             padding_factor=self.padding_factor,
-            sigma2_fudge=float(self.tau2_fudge),
+            sigma2_fudge=float(self.sigma2_fudge),
             random_seed=int(self.optimizer_random_seed),
             random_seed_particle_ids=self.expected_accuracy.half1_particle_ids,
             ctf_params_override=self.expected_accuracy.half1_ctf_params,
@@ -332,6 +338,46 @@ def relion_half1_trial_order(
         # shuffled half by numeric optics group.
         order = order[np.argsort(optics[order], kind="stable")]
     return order
+
+
+def relion_class3d_trial_layout(
+    sorted_rows,
+    random_seed: int,
+    first_iteration: int = 1,
+    *,
+    optics_group_ids=None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return Class3D's expected-accuracy trial order and RELION particle ids.
+
+    Without random halves ``Experiment::randomiseParticlesOrder`` shuffles the
+    whole micrograph-sorted vector once with ``std::shuffle(mt19937(seed +
+    iter))`` and stable-sorts it by optics group (exp_model.cpp:449-456); the
+    first 100 entries are the trials (ml_optimiser.cpp:3930-3934).
+    ``sorted_rows[j]`` is the input row of RELION ``part_id`` ``j``. Returns
+    the trial order over input rows and each input row's ``part_id``, which
+    seeds the per-trial random draws.
+    """
+    from relax.relion_bind import _relion_bind_core as bind
+
+    rows = np.asarray(sorted_rows, dtype=np.int64).reshape(-1)
+    n_particles = int(rows.size)
+    if not np.array_equal(np.sort(rows), np.arange(n_particles, dtype=np.int64)):
+        raise ValueError("sorted_rows must be a permutation of input rows")
+    positions = np.asarray(
+        bind.auto_refine_randomise_half_orders_mt19937(
+            n_particles, 0, int(random_seed) + int(first_iteration)
+        )[0],
+        dtype=np.int64,
+    )
+    order = rows[positions]
+    if optics_group_ids is not None:
+        optics = np.asarray(optics_group_ids, dtype=np.int64).reshape(-1)
+        if optics.shape != (n_particles,):
+            raise ValueError(f"optics_group_ids must have shape ({n_particles},), got {optics.shape}")
+        order = order[np.argsort(optics[order], kind="stable")]
+    particle_ids = np.empty(n_particles, dtype=np.int64)
+    particle_ids[rows] = np.arange(n_particles, dtype=np.int64)
+    return order, particle_ids
 
 
 def prepare_relion_half1_trial_order(

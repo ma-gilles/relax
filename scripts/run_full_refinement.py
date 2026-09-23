@@ -2847,6 +2847,23 @@ def main():
                 "Using RELION Class3D all-data split: %d particles + empty second accumulator",
                 len(half1_idx),
             )
+            # RELION's whole-vector Class3D shuffle picks the expected-accuracy trials.
+            from relax.helpers.expected_accuracy import relion_class3d_trial_layout
+            from relax.relion.input_particle_table import relion_particle_order
+
+            (
+                expected_accuracy_half1_trial_order_local,
+                expected_accuracy_half1_particle_ids,
+            ) = relion_class3d_trial_layout(
+                relion_particle_order(our_particles),
+                int(args.seed),
+                first_iteration=max(1, int(args.init_relion_iteration) + 1),
+                optics_group_ids=(
+                    np.asarray(our_particles["rlnOpticsGroup"], dtype=np.int64)
+                    if "rlnOpticsGroup" in our_particles.columns
+                    else None
+                ),
+            )
             if args.initial_noise_bootstrap == "relion":
                 (
                     relion_fresh_initial_noise_source_rows,
