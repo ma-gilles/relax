@@ -262,8 +262,6 @@ def _assert_relion_initialmodel_reference(relion_dir: Path, *, expected_iter: in
 K1_LONG_START_ARGS = {
     "standalone": [
         "--relion-half-sets-from-input",
-        "--initial-noise-bootstrap",
-        "relion",
     ],
     "relion_seeded_debug": [
         "--relion_optimiser",

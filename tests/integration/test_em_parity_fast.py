@@ -533,8 +533,6 @@ K1_COLDSTART_START_ARGS = {
         "--relion-half-sets-from-input",
         "--relion-particle-shuffle",
         "mt19937",
-        "--initial-noise-bootstrap",
-        "relion",
         "--particle_diameter_ang",
         "544",  # RELION --particle_diameter
         "--apply-initial-lowpass",  # RELION --ini_high 30 (with --init_resolution)

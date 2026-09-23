@@ -92,7 +92,7 @@ def test_input_random_subsets_are_kept_and_validated():
 
 @pytest.mark.parametrize("case", sorted(RELION_START_CASES))
 def test_rebuilt_table_reproduces_relion_run_it000(case):
-    from scripts.run_full_refinement import _default_refinement_subsets, _relion_fresh_initial_noise_layout
+    from scripts.run_full_refinement import _relion_fresh_initial_noise_layout
 
     input_star, target_star, optimiser_star = _case_paths(case)
     particles = starfile.read(input_star, always_dict=True)["particles"]
@@ -109,15 +109,6 @@ def test_rebuilt_table_reproduces_relion_run_it000(case):
     for rebuilt, relion in zip(rebuilt_noise, relion_noise, strict=True):
         np.testing.assert_array_equal(rebuilt, relion)
 
-    if "rlnRandomSubset" not in particles.columns:
-        # The seeded fallback RECOVAR used without a RELION STAR is not RELION's split.
-        half1, _half2 = _default_refinement_subsets(len(particles), seed, 1)
-        fallback = np.full(len(particles), 2)
-        fallback[half1] = 1
-        by_name = dict(zip(target["rlnImageName"].astype(str), target["rlnRandomSubset"].to_numpy(int)))
-        relion_in_input_order = np.asarray([by_name[name] for name in particles["rlnImageName"].astype(str)])
-        assert np.mean(fallback == relion_in_input_order) < 0.6
-
 
 def test_from_input_flag_rejects_combinations_relion_would_not_build():
     from types import SimpleNamespace
@@ -129,11 +120,47 @@ def test_from_input_flag_rejects_combinations_relion_would_not_build():
     for change, message in (
         ({"relion_half_sets": "run_data.star"}, "replaces --relion_half_sets"),
         ({"n_classes": 4}, "K=1"),
-        ({"seed": None}, "explicit --seed"),
         ({"frozen_boundary_dir": "boundary"}, "frozen boundary"),
     ):
         with pytest.raises(SystemExit, match=message):
             _validate_relion_half_sets_from_input(SimpleNamespace(**{**base, **change}))
+
+
+def test_fresh_k1_start_without_relion_output_resolves_to_standalone():
+    """A fresh K=1 start rebuilds RELION's particle table; debug starts supply their own half sets."""
+    from types import SimpleNamespace
+
+    from scripts.run_full_refinement import _resolve_standalone_k1_start
+
+    def resolve(**change):
+        args = SimpleNamespace(
+            **{
+                **dict(
+                    relion_half_sets_from_input=None,
+                    relion_half_sets=None,
+                    relion_init_dir=None,
+                    perturb_replay_relion_dir=None,
+                    frozen_boundary_dir=None,
+                    init_relion_iteration=0,
+                    n_classes=1,
+                    seed=None,
+                ),
+                **change,
+            }
+        )
+        _resolve_standalone_k1_start(args)
+        return args.relion_half_sets_from_input
+
+    assert resolve() is True
+    assert resolve(relion_half_sets="run_it000_data.star") is False
+    assert resolve(relion_init_dir="relion_ref") is False
+    assert resolve(perturb_replay_relion_dir="relion_ref") is False
+    assert resolve(frozen_boundary_dir="boundary") is False
+    assert resolve(init_relion_iteration=3) is False
+    assert resolve(n_classes=4) is False
+    assert resolve(relion_half_sets_from_input=False) is False
+    with pytest.raises(SystemExit, match="K=1"):
+        resolve(n_classes=4, relion_half_sets_from_input=True)
 
 
 def test_from_input_flag_does_not_discover_relion_optimiser_outputs(tmp_path):

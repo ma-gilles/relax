@@ -9,8 +9,7 @@ comparison scripts:
 - ``reference_init.mrc`` (low-pass initial reference)
 - ``reference_gt.mrc`` (ground-truth map)
 
-The output layout matches what ``scripts/run_full_refinement.py``,
-``scripts/run_comparison.py``, and ``scripts/compare_vs_relion.py`` expect.
+The output layout matches what ``scripts/run_full_refinement.py`` expects.
 """
 
 import argparse

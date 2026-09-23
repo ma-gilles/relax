@@ -1,4 +1,4 @@
-"""Noise-only bootstrap must not require or enable full-state oracle replay."""
+"""RELION's start-up noise estimate is the only initial-noise estimator of a refinement."""
 
 import argparse
 import sys
@@ -12,8 +12,15 @@ from scripts import run_full_refinement as driver
 pytestmark = pytest.mark.unit
 
 
-@pytest.mark.parametrize('option, expected', [([], 'pipeline'), (['--initial-noise-bootstrap', 'relion'], 'relion')])
-def test_noise_bootstrap_cli_is_opt_in_without_full_state_replay(monkeypatch, option, expected):
+@pytest.mark.parametrize('option', ['--initial-noise-bootstrap', '--initial_noise_cache_dir'])
+def test_cli_has_no_other_noise_estimator(monkeypatch, capsys, option):
+    monkeypatch.setattr(sys, 'argv', ['run_full_refinement.py', option, 'pipeline'])
+    with pytest.raises(SystemExit):
+        driver._parse_args()
+    assert 'unrecognized arguments' in capsys.readouterr().err
+
+
+def test_parsed_defaults_never_enable_full_state_replay(monkeypatch):
     class Parsed(BaseException):
         pass
 
@@ -21,12 +28,12 @@ def test_noise_bootstrap_cli_is_opt_in_without_full_state_replay(monkeypatch, op
 
     def stop_after_parse(parser, *args, **kwargs):
         parsed = original(parser, *args, **kwargs)
-        assert parsed.initial_noise_bootstrap == expected
         assert parsed.relion_init_dir is None
+        assert parsed.perturb_replay_relion_dir is None
         raise Parsed
 
     monkeypatch.setattr(argparse.ArgumentParser, 'parse_args', stop_after_parse)
-    monkeypatch.setattr(sys, 'argv', ['run_full_refinement.py', *option])
+    monkeypatch.setattr(sys, 'argv', ['run_full_refinement.py'])
     with pytest.raises(Parsed):
         driver.main()
 
@@ -34,11 +41,10 @@ def test_noise_bootstrap_cli_is_opt_in_without_full_state_replay(monkeypatch, op
 def _args(**overrides):
     return SimpleNamespace(**(dict(n_classes=1, init_relion_iteration=0,
         perturb_replay_relion_dir=None, relion_init_dir=None,
-        init_noise_from_npz=None, initial_noise_cache_dir=None,
-        relion_half_sets="particles.star") | overrides))
+        init_noise_from_npz=None, relion_half_sets="particles.star") | overrides))
 
 
-def test_noise_only_bootstrap_preserves_order_and_float32_boundary(monkeypatch):
+def test_startup_noise_preserves_order_and_float32_boundary(monkeypatch):
     dataset = SimpleNamespace(grid_size=8)
     rows = np.array([4, 1, 2], dtype=np.int64)
     optics = np.array([7, 7, 7], dtype=np.int64)
@@ -56,7 +62,7 @@ def test_noise_only_bootstrap_preserves_order_and_float32_boundary(monkeypatch):
         return sigma
 
     monkeypatch.setattr(driver, '_compute_relion_fresh_k1_initial_sigma2', compute)
-    radial, noise = driver._compute_relion_noise_only_bootstrap(
+    radial, noise = driver._compute_relion_startup_noise(
         dataset, args=_args(), frozen_boundary=None, source_rows=rows,
         optics_group_ids=optics, mask_params=(12., 3),
         optics_pixel_sizes=np.array([1.25]))
@@ -67,15 +73,37 @@ def test_noise_only_bootstrap_preserves_order_and_float32_boundary(monkeypatch):
         sigma[0], grid_size=8, output_dtype=np.float32))
 
 
+def test_startup_noise_float64_output_for_double_scoring(monkeypatch):
+    sigma = np.array([[.5, .4, .3, .2, .1]], dtype=np.float64)
+    monkeypatch.setattr(driver, '_compute_relion_fresh_k1_initial_sigma2', lambda ds, **kwargs: sigma)
+    _radial, noise = driver._compute_relion_startup_noise(
+        SimpleNamespace(grid_size=8), args=_args(), frozen_boundary=None,
+        source_rows=np.arange(3), optics_group_ids=np.ones(3), mask_params=(12., 3),
+        optics_pixel_sizes=np.array([1.25]), output_dtype=np.float64)
+    assert noise.dtype == np.float64
+
+
 @pytest.mark.parametrize('overrides', [
-    dict(n_classes=4), dict(init_relion_iteration=1),
-    dict(perturb_replay_relion_dir='replay'), dict(relion_init_dir='oracle'),
-    dict(init_noise_from_npz='noise.npz'), dict(initial_noise_cache_dir='cache'),
-    dict(relion_half_sets=None),
+    dict(init_relion_iteration=1), dict(perturb_replay_relion_dir='replay'),
 ])
-def test_noise_only_bootstrap_rejects_conflicting_modes(overrides):
-    with pytest.raises(ValueError, match='noise-only bootstrap'):
-        driver._compute_relion_noise_only_bootstrap(SimpleNamespace(grid_size=8),
+def test_startup_noise_starts_replays_without_their_model_noise(monkeypatch, overrides):
+    # A replay injects RELION's model noise only from its first loaded state on;
+    # the start of a fresh replay is RELION's estimate from the images.
+    sigma = np.array([[.5, .4, .3, .2, .1]], dtype=np.float64)
+    monkeypatch.setattr(driver, '_compute_relion_fresh_k1_initial_sigma2', lambda ds, **kwargs: sigma)
+    radial, _noise = driver._compute_relion_startup_noise(
+        SimpleNamespace(grid_size=8), args=_args(**overrides), frozen_boundary=None,
+        source_rows=np.arange(3), optics_group_ids=np.ones(3), mask_params=(12., 3),
+        optics_pixel_sizes=np.array([1.25]))
+    np.testing.assert_array_equal(radial, sigma[0] * 8**4)
+
+
+@pytest.mark.parametrize('overrides', [
+    dict(init_noise_from_npz='noise.npz'), dict(relion_half_sets=None),
+])
+def test_startup_noise_rejects_loaded_noise_and_missing_half_sets(overrides):
+    with pytest.raises(ValueError, match='start-up noise'):
+        driver._compute_relion_startup_noise(SimpleNamespace(grid_size=8),
             args=_args(**overrides), frozen_boundary=None,
             source_rows=np.arange(3), optics_group_ids=np.ones(3), mask_params=(12., 3),
             optics_pixel_sizes=np.array([1.25]))
@@ -87,16 +115,16 @@ def test_noise_only_bootstrap_rejects_conflicting_modes(overrides):
     dict(optics_group_ids=np.array([1, 2, 1])), dict(optics_pixel_sizes=None),
     dict(optics_pixel_sizes=np.array([1.25, 1.3])),
 ])
-def test_noise_only_bootstrap_rejects_missing_or_unsupported_inputs(overrides):
+def test_startup_noise_rejects_missing_or_unsupported_inputs(overrides):
     params = dict(frozen_boundary=None, source_rows=np.arange(3),
                   optics_group_ids=np.ones(3), mask_params=(12., 3),
                   optics_pixel_sizes=np.array([1.25])) | overrides
-    with pytest.raises(ValueError, match='noise-only bootstrap'):
-        driver._compute_relion_noise_only_bootstrap(SimpleNamespace(grid_size=8),
+    with pytest.raises(ValueError, match='start-up noise'):
+        driver._compute_relion_startup_noise(SimpleNamespace(grid_size=8),
             args=_args(), **params)
 
 
-def test_class3d_noise_only_bootstrap_takes_unsplit_order(monkeypatch):
+def test_class3d_startup_noise_takes_unsplit_order(monkeypatch):
     rows = np.array([2, 0, 1], dtype=np.int64)
     seen = {}
 
@@ -105,7 +133,7 @@ def test_class3d_noise_only_bootstrap_takes_unsplit_order(monkeypatch):
         return np.array([[.5, .4, .3, .2, .1]], dtype=np.float64)
 
     monkeypatch.setattr(driver, '_compute_relion_fresh_k1_initial_sigma2', compute)
-    driver._compute_relion_noise_only_bootstrap(
+    driver._compute_relion_startup_noise(
         SimpleNamespace(grid_size=8), args=_args(n_classes=4, relion_half_sets=None),
         frozen_boundary=None, source_rows=rows, optics_group_ids=np.ones(3, dtype=np.int64),
         mask_params=(12., 3), optics_pixel_sizes=np.array([1.25]))

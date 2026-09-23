@@ -18,7 +18,6 @@ Environment variables:
 """
 
 import argparse
-import hashlib
 import importlib
 import json
 import logging
@@ -465,7 +464,6 @@ def _validate_fixed_diagnostic_arm_cli(args) -> None:
         "init_volume",
         "init_previous_best_poses_npz",
         "init_noise_from_npz",
-        "initial_noise_cache_dir",
         "relion_init_dir",
         "relion_optimiser",
         "relion_current_sizes",
@@ -891,17 +889,6 @@ def _select_authoritative_group_particles(
     return None, None
 
 
-def _default_refinement_subsets(n_images, seed, n_classes):
-    """Return default dataset splits for RELION-style refinement."""
-
-    indices = np.arange(int(n_images), dtype=np.int64)
-    if int(n_classes) > 1:
-        return indices, np.empty(0, dtype=np.int64)
-    rng = np.random.RandomState(seed)
-    rng.shuffle(indices)
-    return np.sort(indices[: int(n_images) // 2]), np.sort(indices[int(n_images) // 2 :])
-
-
 def _relion_halfset_and_accuracy_layout(
     our_particles,
     relion_particles,
@@ -1146,34 +1133,32 @@ def _compute_relion_fresh_k1_initial_sigma2(
     return sigma2_per_group
 
 
-def _compute_relion_noise_only_bootstrap(
+def _compute_relion_startup_noise(
     dataset, *, args, frozen_boundary, source_rows, optics_group_ids, mask_params,
-    optics_pixel_sizes,
+    optics_pixel_sizes, output_dtype=np.float32,
 ):
-    """Compute startup noise without replaying any model/particle state.
+    """RELION's start-up noise estimate from the images; the start of every refinement.
 
-    Qualification-only single-optics path; preserve the existing host F64
-    bootstrap and explicitly supply F32 noise to production scoring. K=1 takes
-    the source order of its supplied half sets; Class3D (K>1) has no halves and
+    Single-optics path; the host F64 estimate is supplied to scoring in
+    ``output_dtype`` (F32 in production, F64 for double-scoring diagnostics).
+    K=1 takes the source order of its half sets; Class3D (K>1) has no halves and
     takes the micrograph-sorted order (``_relion_class3d_initial_noise_layout``).
-    See docs/math/relion_refinement_algorithm.md#noise-only-bootstrap-qualification.
+    A replay's later iterations and a --relion_init_dir start replace it with
+    RELION's model noise. See docs/math/relion_refinement_algorithm.md#start-up-noise.
     """
     k1 = int(args.n_classes) == 1
     if (
-        int(args.init_relion_iteration) != 0
-        or frozen_boundary is not None or args.perturb_replay_relion_dir is not None
-        or args.relion_init_dir is not None or args.init_noise_from_npz is not None
-        or args.initial_noise_cache_dir is not None or (args.relion_half_sets is None) == k1
+        frozen_boundary is not None or args.init_noise_from_npz is not None
+        or (k1 and args.relion_half_sets is None)
         or source_rows is None or optics_group_ids is None or mask_params is None
         or optics_pixel_sizes is None
     ):
         raise ValueError(
-            "RELION noise-only bootstrap requires a fresh start (K1 with supplied half "
-            "sets, Class3D without) with order/mask metadata and no state replay, noise "
-            "replay or noise cache"
+            "RELION start-up noise needs K=1 half sets (Class3D uses the input order), the "
+            "particle-diameter mask and the optics pixel size, and no frozen or loaded noise"
         )
     if np.unique(optics_group_ids).size != 1 or np.asarray(optics_pixel_sizes).size != 1:
-        raise ValueError("RELION noise-only bootstrap currently requires one optics group")
+        raise ValueError("RELION start-up noise currently requires one optics group")
     sigma2 = _compute_relion_fresh_k1_initial_sigma2(
         dataset, source_rows=source_rows, optics_group_ids=optics_group_ids,
         image_pixel_size=float(np.asarray(optics_pixel_sizes).reshape(-1)[0]),
@@ -1181,7 +1166,7 @@ def _compute_relion_noise_only_bootstrap(
     )[0]
     radial = sigma2 * float(dataset.grid_size) ** 4
     noise = _relion_sigma2_to_native_noise_variance(
-        sigma2, grid_size=int(dataset.grid_size), output_dtype=np.float32,
+        sigma2, grid_size=int(dataset.grid_size), output_dtype=output_dtype,
     )
     return radial, noise
 
@@ -1531,91 +1516,6 @@ def _make_frozen_boundary_noise_variance(noise_radial_per_half, image_shape):
     ]
 
 
-def _initial_noise_cache_key(ds, args, image_subset, *, batch_size: int, apply_image_mask: bool):
-    """Build an exact-cache key for the deterministic bootstrap noise estimate."""
-
-    data_dir = Path(args.data_dir).resolve()
-    file_fingerprints = []
-    if data_dir.exists():
-        for path in sorted(data_dir.iterdir()):
-            if not path.is_file():
-                continue
-            if path.suffix.lower() not in {".star", ".mrc", ".mrcs", ".npz", ".pkl", ".cs"}:
-                continue
-            try:
-                stat = path.stat()
-            except OSError:
-                continue
-            file_fingerprints.append(
-                {
-                    "name": path.name,
-                    "size": int(stat.st_size),
-                    "mtime_ns": int(stat.st_mtime_ns),
-                }
-            )
-    payload = {
-        "version": 1,
-        "data_dir": str(data_dir),
-        "files": file_fingerprints,
-        "n_units": int(ds.n_units),
-        "image_shape": tuple(int(x) for x in ds.image_shape),
-        "voxel_size": float(ds.voxel_size),
-        "subset": np.asarray(image_subset, dtype=np.int32).tolist(),
-        "batch_size": int(batch_size),
-        "apply_image_mask": bool(apply_image_mask),
-        "relion_mask_params": None if getattr(args, "_relion_mask_params", None) is None else tuple(
-            float(x) for x in args._relion_mask_params
-        ),
-    }
-    digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8"))
-    image_mask = getattr(ds, "image_mask", None)
-    if image_mask is not None:
-        mask_arr = np.asarray(image_mask, dtype=np.float32)
-        digest.update(str(mask_arr.shape).encode("utf-8"))
-        digest.update(mask_arr.tobytes(order="C"))
-    return digest.hexdigest()
-
-
-def _load_initial_noise_cache(cache_dir, cache_key, image_shape):
-    cache_path = Path(cache_dir) / f"initial_noise_{cache_key}.npz"
-    if not cache_path.exists():
-        return None, cache_path
-    with np.load(cache_path, allow_pickle=False) as npz:
-        stored_key = str(npz["cache_key"]) if "cache_key" in npz.files else ""
-        if stored_key != str(cache_key):
-            raise ValueError(f"Initial noise cache key mismatch in {cache_path}")
-        stored_shape = tuple(int(x) for x in np.asarray(npz["image_shape"], dtype=np.int64))
-        expected_shape = tuple(int(x) for x in image_shape)
-        if stored_shape != expected_shape:
-            raise ValueError(
-                f"Initial noise cache image_shape mismatch in {cache_path}: {stored_shape} vs {expected_shape}"
-            )
-        noise_radial = _validate_initial_noise_radial(
-            npz["noise_radial"],
-            label=f"{cache_path}:noise_radial",
-        )
-    return noise_radial, cache_path
-
-
-def _save_initial_noise_cache(cache_dir, cache_key, image_shape, noise_radial):
-    cache_dir = Path(cache_dir)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        (cache_dir / "SAFE_TO_DELETE").touch(exist_ok=True)
-    except OSError:
-        pass
-    cache_path = cache_dir / f"initial_noise_{cache_key}.npz"
-    tmp_path = cache_dir / f".{cache_path.name}.{os.getpid()}.tmp.npz"
-    np.savez_compressed(
-        tmp_path,
-        cache_key=np.asarray(str(cache_key)),
-        image_shape=np.asarray(image_shape, dtype=np.int64),
-        noise_radial=np.asarray(noise_radial, dtype=np.float64),
-    )
-    os.replace(tmp_path, cache_path)
-    return cache_path
-
-
 def _find_relion_optimiser_star(args):
     """Locate a RELION run_optimiser.star to source mask + max_significants from.
 
@@ -1753,6 +1653,27 @@ def _effective_perturb_seed(args):
     return None if seed is None else int(seed)
 
 
+def _resolve_standalone_k1_start(args) -> None:
+    """Default a fresh K=1 start with no RELION output to RELION's particle table from the input.
+
+    Standalone means relion_refine's own inputs: the particle table rebuilt from
+    ``<data_dir>/particles.star`` and the seed (half sets, groups, order). A run
+    given ``--relion_half_sets``, ``--relion_init_dir``, a replay directory or a
+    frozen boundary is a RELION-seeded debug start and supplies its own half sets.
+    """
+    fresh_k1 = (
+        int(args.n_classes) == 1
+        and int(args.init_relion_iteration) == 0
+        and args.frozen_boundary_dir is None
+        and args.perturb_replay_relion_dir is None
+    )
+    if args.relion_half_sets_from_input is None:
+        args.relion_half_sets_from_input = bool(
+            fresh_k1 and args.relion_half_sets is None and args.relion_init_dir is None
+        )
+    _validate_relion_half_sets_from_input(args)
+
+
 def _validate_relion_half_sets_from_input(args) -> None:
     """Reject an input-derived RELION particle table where RELION would not build one this way."""
     if not getattr(args, "relion_half_sets_from_input", False):
@@ -1762,8 +1683,6 @@ def _validate_relion_half_sets_from_input(args) -> None:
         problems.append("it replaces --relion_half_sets")
     if int(args.n_classes) != 1:
         problems.append("it is K=1 auto-refine only")
-    if args.seed is None:
-        problems.append("it needs RELION's --random_seed as an explicit --seed")
     if args.frozen_boundary_dir is not None:
         problems.append("a frozen boundary seals its own half sets")
     if problems:
@@ -1974,10 +1893,10 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--relion-particle-shuffle",
         choices=("legacy", "mt19937"),
-        default="legacy",
-        help="Fresh K=1 AutoRefine particle order: legacy libc random_shuffle "
-        "or mt19937/std::shuffle (RELION f2c1a384). Also selects the accuracy "
-        "trial particles. Legacy remains default while the correction is qualified.",
+        default="mt19937",
+        help="Fresh K=1 AutoRefine particle order: mt19937/std::shuffle (RELION 5.0.1 "
+        "f2c1a384, default) or the older libc random_shuffle. Also selects the accuracy "
+        "trial particles.",
     )
     parser.add_argument(
         "--perturb_replay_relion_dir",
@@ -2274,14 +2193,15 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--relion-half-sets-from-input",
         dest="relion_half_sets_from_input",
-        action="store_true",
-        default=False,
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help=(
             "Rebuild RELION's start-up particle table from <data_dir>/particles.star and --seed "
             "(RELION's --random_seed) as relion_refine does: micrograph-name order, random halves "
             "(input rlnRandomSubset, else srand/rand), scale groups. It replaces --relion_half_sets "
             "and is written to <output>/relion_input_state/, and RELION optimiser STARs are then "
-            "not discovered under --data_dir (only --relion_optimiser is read). K=1 only."
+            "not discovered under --data_dir (only --relion_optimiser is read). K=1 only. "
+            "Default: on for a fresh K=1 start that is given no RELION output (standalone)."
         ),
     )
     parser.add_argument(
@@ -2403,16 +2323,6 @@ def _parse_args(argv=None):
         ),
     )
     parser.add_argument(
-        "--initial-noise-bootstrap",
-        choices=("pipeline", "relion"), default="pipeline",
-        help=(
-            "Initial noise estimator. Default pipeline preserves existing behavior. "
-            "relion is an opt-in noise-only qualification path for a fresh single-optics "
-            "run (K1 with supplied halfsets, or Class3D K>1 from the micrograph-sorted "
-            "input order); no model or particle-state replay."
-        ),
-    )
-    parser.add_argument(
         "--init_noise_from_npz",
         default=None,
         help=(
@@ -2425,15 +2335,6 @@ def _parse_args(argv=None):
         "--init_noise_iter",
         default="last",
         help="Iteration selector for --init_noise_from_npz. Use an integer or 'last'.",
-    )
-    parser.add_argument(
-        "--initial_noise_cache_dir",
-        default=None,
-        help=(
-            "Diagnostic speed cache for the masked bootstrap initial sigma2_noise "
-            "estimate. On a cache miss the estimate is computed normally and saved; "
-            "on a hit the exact cached radial spectrum is reused."
-        ),
     )
     parser.add_argument(
         "--skip_final_iteration",
@@ -2521,7 +2422,7 @@ def _parse_args(argv=None):
 
 def main():
     args = _parse_args()
-    _validate_relion_half_sets_from_input(args)
+    _resolve_standalone_k1_start(args)
     if (
         args.state_swap_target_relion_iteration is not None
         or args.state_swap_variant is not None
@@ -2784,6 +2685,10 @@ def main():
     expected_accuracy_half1_ctf_params = None
     expected_accuracy_do_ctf_correction = None
     use_relion_live_initial_noise = _k1_relion_live_initial_noise_enabled()
+    # A run that loads no noise state starts from RELION's estimate from the images.
+    relion_startup_noise_needed = (
+        frozen_boundary is None and args.init_noise_from_npz is None and args.relion_init_dir is None
+    )
     exact_relion_bpref_operands_requested = (
         os.environ.get("RELAX_K1_RELION_EXACT_BPREF_OPERANDS", "")
         .strip()
@@ -2863,21 +2768,7 @@ def main():
                 half1_idx.size,
                 dtype=np.int64,
             )
-        live_initial_noise_layout_candidate = bool(
-            use_fresh_auto_refine_order
-            and args.perturb_replay_relion_dir is None
-            and args.relion_init_dir is not None
-            and relion_mask_params is not None
-        )
-        if live_initial_noise_layout_candidate:
-            (
-                relion_fresh_initial_noise_source_rows,
-                relion_fresh_initial_noise_optics_group_ids,
-            ) = _relion_fresh_initial_noise_layout(our_particles, relion_particles)
-        if (
-            (use_relion_live_initial_noise or args.initial_noise_bootstrap == "relion")
-            and relion_fresh_initial_noise_source_rows is None
-        ):
+        if args.n_classes == 1 and (relion_startup_noise_needed or use_relion_live_initial_noise):
             (
                 relion_fresh_initial_noise_source_rows,
                 relion_fresh_initial_noise_optics_group_ids,
@@ -2900,44 +2791,51 @@ def main():
                 args.relion_particle_shuffle,
                 int(args.seed) + 1,
             )
+    elif args.n_classes == 1:
+        raise SystemExit(
+            "K=1 auto-refine uses RELION's half sets: a fresh start rebuilds them from the "
+            "input STAR (--relion-half-sets-from-input, the default); a RELION-seeded, "
+            "replayed or frozen start needs --relion_half_sets"
+        )
     else:
-        half1_idx, half2_idx = _default_refinement_subsets(n_images, args.seed, args.n_classes)
-        if args.n_classes > 1:
-            logger.info(
-                "Using RELION Class3D all-data split: %d particles + empty second accumulator",
-                len(half1_idx),
-            )
-            # RELION's whole-vector Class3D shuffle picks the expected-accuracy trials.
-            from relax.helpers.expected_accuracy import relion_class3d_trial_layout
-            from relax.relion.input_particle_table import relion_particle_order
+        # RELION Class3D refines all particles once; the second accumulator stays empty.
+        half1_idx = np.arange(n_images, dtype=np.int64)
+        half2_idx = np.empty(0, dtype=np.int64)
+        logger.info(
+            "Using RELION Class3D all-data split: %d particles + empty second accumulator",
+            len(half1_idx),
+        )
+        # RELION's whole-vector Class3D shuffle picks the expected-accuracy trials.
+        from relax.helpers.expected_accuracy import relion_class3d_trial_layout
+        from relax.relion.input_particle_table import relion_particle_order
 
-            (
-                expected_accuracy_half1_trial_order_local,
-                expected_accuracy_half1_particle_ids,
-            ) = relion_class3d_trial_layout(
-                relion_particle_order(our_particles),
-                int(args.seed),
-                first_iteration=max(1, int(args.init_relion_iteration) + 1),
-                optics_group_ids=(
-                    np.asarray(our_particles["rlnOpticsGroup"], dtype=np.int64)
-                    if "rlnOpticsGroup" in our_particles.columns
-                    else None
-                ),
-            )
-            if args.initial_noise_bootstrap == "relion":
-                (
-                    relion_fresh_initial_noise_source_rows,
-                    relion_fresh_initial_noise_optics_group_ids,
-                ) = _relion_class3d_initial_noise_layout(our_particles)
-                if not isinstance(our_star, dict) or "optics" not in our_star:
-                    raise SystemExit("Class3D RELION noise bootstrap needs an optics table in the particle STAR")
-                class3d_noise_optics_pixel_sizes = np.asarray(
-                    our_star["optics"]["rlnImagePixelSize"],
-                    dtype=np.float64,
-                )
+        (
+            expected_accuracy_half1_trial_order_local,
+            expected_accuracy_half1_particle_ids,
+        ) = relion_class3d_trial_layout(
+            relion_particle_order(our_particles),
+            int(args.seed),
+            first_iteration=max(1, int(args.init_relion_iteration) + 1),
+            optics_group_ids=(
+                np.asarray(our_particles["rlnOpticsGroup"], dtype=np.int64)
+                if "rlnOpticsGroup" in our_particles.columns
+                else None
+            ),
+        )
+    if args.n_classes > 1 and relion_startup_noise_needed:
+        (
+            relion_fresh_initial_noise_source_rows,
+            relion_fresh_initial_noise_optics_group_ids,
+        ) = _relion_class3d_initial_noise_layout(our_particles)
+        if not isinstance(our_star, dict) or "optics" not in our_star:
+            raise SystemExit("Class3D RELION start-up noise needs an optics table in the particle STAR")
+        class3d_noise_optics_pixel_sizes = np.asarray(
+            our_star["optics"]["rlnImagePixelSize"],
+            dtype=np.float64,
+        )
 
-    if args.relion_particle_shuffle != "legacy" and not use_fresh_auto_refine_order:
-        raise ValueError("--relion-particle-shuffle requires fresh K=1 AutoRefine ordering")
+    if args.relion_particle_shuffle == "legacy" and not use_fresh_auto_refine_order:
+        raise ValueError("--relion-particle-shuffle legacy requires fresh K=1 AutoRefine ordering")
 
     local_stop_requested = (
         bool(args.stop_after_local_search_profile)
@@ -3636,21 +3534,7 @@ def main():
 
     from recovar.reconstruction import noise as recon_noise
 
-    if args.initial_noise_bootstrap == "relion":
-        if _double_image_preprocessing or use_relion_live_initial_noise:
-            raise ValueError("RELION noise-only bootstrap requires production image precision and no live-noise replay")
-        initial_noise_radial, noise_variance = _compute_relion_noise_only_bootstrap(
-            ds, args=args, frozen_boundary=frozen_boundary,
-            source_rows=relion_fresh_initial_noise_source_rows,
-            optics_group_ids=relion_fresh_initial_noise_optics_group_ids,
-            mask_params=relion_mask_params,
-            optics_pixel_sizes=(
-                relion_optics_pixel_sizes if args.n_classes == 1 else class3d_noise_optics_pixel_sizes
-            ),
-        )
-        logger.info("Noise-only RELION bootstrap: %d shells, scoring dtype=%s; no state replay",
-                    initial_noise_radial.size, noise_variance.dtype)
-    elif frozen_boundary is not None:
+    if frozen_boundary is not None:
         noise_variance = _make_frozen_boundary_noise_variance(
             frozen_boundary.noise_radial_per_half,
             ds.image_shape,
@@ -3675,56 +3559,25 @@ def main():
             float(np.median(np.asarray(initial_noise_radial))),
             float(np.max(np.asarray(initial_noise_radial))),
         )
-    else:
-        initial_noise_subset = np.arange(min(1000, ds.n_units), dtype=np.int32)
-        initial_noise_batch_size = min(args.image_batch_size, initial_noise_subset.size)
-        initial_noise_cache_key = None
-        initial_noise_cache_path = None
+    elif args.relion_init_dir is not None:
+        # The RELION-seeded debug start loads RELION's iteration-0 model noise below.
         initial_noise_radial = None
-        if args.initial_noise_cache_dir is not None:
-            initial_noise_cache_key = _initial_noise_cache_key(
-                ds,
-                args,
-                initial_noise_subset,
-                batch_size=initial_noise_batch_size,
-                apply_image_mask=True,
-            )
-            initial_noise_radial, initial_noise_cache_path = _load_initial_noise_cache(
-                args.initial_noise_cache_dir,
-                initial_noise_cache_key,
-                ds.image_shape,
-            )
-            if initial_noise_radial is not None:
-                logger.info(
-                    "Initial sigma2_noise cache hit: %s",
-                    initial_noise_cache_path,
-                )
-        # In RELION mode the E-step scores masked images, so the bootstrap noise
-        # MUST come from masked images too — otherwise sigma2 is dominated by the
-        # solvent area and the iter-1 chi² is ~3.3-6× too small (verified
-        # 2026-04-08 against the tiny parity dataset, see tmp/check_sigma2_mask.py).
-        if initial_noise_radial is None:
-            initial_noise_radial = recon_noise.estimate_initial_noise_spectrum_from_unaligned_images(
-                ds,
-                initial_noise_subset,
-                batch_size=initial_noise_batch_size,
-                apply_image_mask=True,
-            )
-            if args.initial_noise_cache_dir is not None:
-                initial_noise_cache_path = _save_initial_noise_cache(
-                    args.initial_noise_cache_dir,
-                    initial_noise_cache_key,
-                    ds.image_shape,
-                    initial_noise_radial,
-                )
-                logger.info("Initial sigma2_noise cache saved: %s", initial_noise_cache_path)
-        noise_variance = recon_noise.make_radial_noise(initial_noise_radial, ds.image_shape)
+        noise_variance = None
+    else:
+        initial_noise_radial, noise_variance = _compute_relion_startup_noise(
+            ds, args=args, frozen_boundary=frozen_boundary,
+            source_rows=relion_fresh_initial_noise_source_rows,
+            optics_group_ids=relion_fresh_initial_noise_optics_group_ids,
+            mask_params=relion_mask_params,
+            optics_pixel_sizes=(
+                relion_optics_pixel_sizes if args.n_classes == 1 else class3d_noise_optics_pixel_sizes
+            ),
+            output_dtype=np.float64 if _double_image_preprocessing else np.float32,
+        )
         logger.info(
-            "Initial sigma2_noise estimate from %d images: min=%.3e median=%.3e max=%.3e",
-            initial_noise_subset.size,
-            float(np.min(np.asarray(initial_noise_radial))),
-            float(np.median(np.asarray(initial_noise_radial))),
-            float(np.max(np.asarray(initial_noise_radial))),
+            "RELION start-up noise from the images: %d shells, scoring dtype=%s",
+            initial_noise_radial.size,
+            noise_variance.dtype,
         )
 
     # Compute initial signal prior from init volume (weak prior). For K>1
@@ -3939,13 +3792,13 @@ def main():
                 )
 
     relion_start_data_vs_prior = None
-    # RELION's start-up tau2 is defined against RELION's start-up noise; the pipeline
-    # noise estimator keeps its own tau2 start.
+    # RELION's start-up tau2 is defined against RELION's start-up noise.
     if (
         relion_start_reference_real is not None
+        and frozen_boundary is None
+        and args.init_noise_from_npz is None
         and args.relion_init_dir is None
         and int(args.init_relion_iteration) == 0
-        and args.initial_noise_bootstrap == "relion"
     ):
         mean_variance, relion_start_data_vs_prior = _relion_k1_start_tau2_and_data_vs_prior(
             relion_start_reference_real,
@@ -4791,7 +4644,6 @@ def main():
         "initial_pose_source_path": np.asarray(str(initial_pose_source_path or "")),
         "initial_pose_source_sha256": np.asarray(initial_pose_source_sha256 or ""),
         "relion_particle_shuffle": np.asarray(args.relion_particle_shuffle),
-        "initial_noise_bootstrap": np.asarray(args.initial_noise_bootstrap),
         "relion_fresh_particle_order_applied": np.bool_(use_fresh_auto_refine_order),
         "current_sizes": np.array(result["current_sizes"]),
         "pixel_resolutions": np.array(result["pixel_resolutions"]),

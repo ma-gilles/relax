@@ -231,7 +231,7 @@ def test_optimizer_seed_is_resolved_before_halfset_splitting():
 
     assert "default=None" in source[source.index('parser.add_argument(\n        "--seed"') :]
     assert source.index("args.seed, optimizer_seed_source = _resolve_optimizer_random_seed") < source.index(
-        "_default_refinement_subsets(n_images, args.seed"
+        "args.relion_half_sets = str(\n            _write_relion_start_particle_table("
     )
 
 

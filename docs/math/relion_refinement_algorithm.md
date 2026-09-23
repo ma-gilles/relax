@@ -1,38 +1,42 @@
 # RELION-style refinement: algorithm and code map
 
-## Noise-only bootstrap qualification
+## Start-up noise
 
-`scripts/run_full_refinement.py --initial-noise-bootstrap relion` is an opt-in
-fresh, single-optics diagnostic. The default `pipeline` estimator is unchanged.
-Unlike complete iteration-0 replay, this mode computes only initial noise from
-the particles: up to 1000 particles per optics group and rounded-radius
-half-spectrum shell power. K1 takes the stable subset-1 then subset-2 source
-order of its supplied half sets. Class3D (K>1) splits no halves, so RELION's
-`sorted_idx` is the micrograph-sorted input order itself
+Every refinement starts from RELION's start-up noise estimate from the images;
+`scripts/run_full_refinement.py` has no other estimator. It computes only the
+initial noise from the particles: up to 1000 particles per optics group and
+rounded-radius half-spectrum shell power. K1 takes the stable subset-1 then
+subset-2 source order of its half sets. Class3D (K>1) splits no halves, so
+RELION's `sorted_idx` is the micrograph-sorted input order itself
 ([`_relion_class3d_initial_noise_layout`](../../scripts/run_full_refinement.py),
 `ml_optimiser.cpp:3068-3072`, `exp_model.cpp:900-901`). It does not load oracle
-tau2, poses, priors or normalization corrections. Conflicting replay/cache
-inputs, K1 without half sets, Class3D with half sets and multiple optics groups
-are rejected. On the K4 50k/256 and 5k/128 fixtures the Class3D spectrum agrees
-with RELION's `run_it000_model.star` to its six-digit serialization (maximum
-relative difference 3.4e-7); the pipeline estimator differs by up to 8.4%.
+tau2, poses, priors or normalization corrections. On the K4 50k/256 and 5k/128
+fixtures the Class3D spectrum agrees with RELION's `run_it000_model.star` to its
+six-digit serialization (maximum relative difference 3.4e-7); the former RECOVAR
+pipeline estimator, removed from relax refinement on 2026-09-24, differed by up
+to 8.4%.
 
-[`_compute_relion_noise_only_bootstrap`](../../scripts/run_full_refinement.py)
-uses the existing host float64 bootstrap, scales its native sigma2 by the image
-side length to the fourth power, and supplies a float32 pixel-noise array to
-the controller. Deliberate host precision and the separate diagnostic NPZ
-loader remain unchanged. Tests in
-[`test_k1_noise_only_bootstrap.py`](../../tests/unit/test_k1_noise_only_bootstrap.py)
-check ordering, units/dtype and mode exclusions. GPU source-wiring, state and
-trajectory qualification are still required; the option is not a new default
-or a claim that the remaining parity gap is closed.
+Three debug inputs replace it: a frozen boundary's sealed noise, the
+diagnostic `--init_noise_from_npz`, and a `--relion_init_dir` start, which
+loads RELION's `run_it000` model noise. A `--perturb_replay_relion_dir` replay
+starts from the estimate and injects RELION's model noise from its first loaded
+state on. K1 without half sets and multiple optics groups are rejected.
+
+[`_compute_relion_startup_noise`](../../scripts/run_full_refinement.py)
+uses the host float64 estimate, scales its native sigma2 by the image side
+length to the fourth power, and supplies a float32 pixel-noise array to the
+controller (float64 for double-scoring diagnostics). Tests in
+[`test_relion_startup_noise.py`](../../tests/unit/test_relion_startup_noise.py)
+check ordering, units/dtype and mode exclusions. The standalone K1 start was
+qualified end to end on the K1 50k/256 fixture (see the standalone start-up
+section below).
 
 ## Class3D standalone start-up
 
 A fresh Class3D (K>1) run can start from what `relion_refine` reads, without
 any RELION output. Each piece is opt-in until its default is decided:
 
-- Startup noise: `--initial-noise-bootstrap relion` (section above).
+- Startup noise: RELION's estimate, always (section above).
 - Input origins: `--initial-pose-source input-star` loads only the input
   `rlnOriginX/YAngst` (or pixel origins; absent origins are zero) in the
   all-data particle order
@@ -153,7 +157,13 @@ Trajectory/FSC qualification remains separate from the fixed-input regression.
 ### Standalone K1 start-up state
 
 A fresh K1 start builds RELION's iteration-0 model from `relion_refine`'s own
-inputs rather than from a RELION `run_it000` output.
+inputs rather than from a RELION `run_it000` output. This is the default when
+the run is given no RELION output (no `--relion_half_sets`, `--relion_init_dir`,
+replay directory or frozen boundary):
+[`_resolve_standalone_k1_start`](../../scripts/run_full_refinement.py) turns on
+`--relion-half-sets-from-input`. The mt19937 order and RELION's start-up noise
+are the defaults of every run. A run given RELION output is a debug start and
+must supply `--relion_half_sets`; relax has no other K1 half split.
 
 - Norm corrections. `relion_refine` reads each particle's `rlnNormCorrection`
   and uses 1 when the label is absent; `avg_norm_correction` starts at 1. The
@@ -171,8 +181,8 @@ inputs rather than from a RELION `run_it000` output.
   [`relion_initial_tau2_and_data_vs_prior`](../../relax/vdam/init.py) implements
   one class and is shared with the InitialModel start;
   [`_relion_k1_start_tau2_and_data_vs_prior`](../../scripts/run_full_refinement.py)
-  applies it when the start-up noise is RELION's (`--initial-noise-bootstrap
-  relion`); the pipeline noise estimator keeps its own tau2 start. The start-up `data_vs_prior` selects the iteration-1
+  applies it to every fresh K1 start that does not load a noise or tau2 state
+  (frozen boundary, `--init_noise_from_npz`, `--relion_init_dir`). The start-up `data_vs_prior` selects the iteration-1
   scale-correction shells (`data_vs_prior > 3`), which matters for starts
   without `--firstiter_cc`; later iterations use the updated spectrum. Like
   those later iterations, the controller uses half 1's spectrum for both halves.

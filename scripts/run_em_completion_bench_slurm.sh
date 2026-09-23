@@ -76,7 +76,7 @@ K4_IMAGE_BATCH_SIZE="${K4_IMAGE_BATCH_SIZE:-50}"
 K4_ROTATION_BLOCK_SIZE="${K4_ROTATION_BLOCK_SIZE:-2000}"
 K1_MAX_ITER="${K1_MAX_ITER:-17}"
 K4_MAX_ITER="${K4_MAX_ITER:-15}"
-K1_TRAJECTORY_MODE="${K1_TRAJECTORY_MODE:-autonomous}"
+K1_TRAJECTORY_MODE="${K1_TRAJECTORY_MODE:-standalone}"
 K1_RELION_PARTICLE_SHUFFLE="${K1_RELION_PARTICLE_SHUFFLE:-auto}"
 K1_SAVE_INTERMEDIATES="${K1_SAVE_INTERMEDIATES:-1}"
 # Sized from measured peak RSS (sacct MaxRSS): K1 100k/256 135 GB (Q 14320204), K4 100k/256
@@ -151,10 +151,10 @@ Environment overrides:
   K1_RELION_PARTICLE_SHUFFLE K=1 fresh AutoRefine particle order for autonomous runs: auto (default;
                              from the oracle optimiser header: f2c1a3 -> mt19937, d476e6 -> legacy),
                              legacy or mt19937
-  K1_TRAJECTORY_MODE         K=1 state policy: standalone (relion_refine's inputs only: split,
-                             groups and order from particles.star and the seed, RELION start-up
-                             noise and tau2 from the images and reference), autonomous (default;
-                             debug: RELION-seeded run_it000 cold start, then RECOVAR-owned
+  K1_TRAJECTORY_MODE         K=1 state policy: standalone (default; relion_refine's inputs only:
+                             split, groups and order from particles.star and the seed, RELION
+                             start-up noise and tau2 from the images and reference), autonomous
+                             (debug: RELION-seeded run_it000 cold start, then RECOVAR-owned
                              trajectory) or relion-replay (debug: controlled per-iteration
                              RELION state substitution). Only standalone reads no RELION output.
   K1_SAVE_INTERMEDIATES      Save regularized per-iteration K=1 maps/metadata for full
@@ -947,7 +947,7 @@ START_EPOCH="\$(date +%s)"
 REFINEMENT_EXTRA_ARGS=()
 if [[ "${K1_TRAJECTORY_MODE}" == "standalone" ]]; then
     # relion_refine's inputs only; the RELION run is read after the run, for comparison.
-    TRAJECTORY_ARGS=(--relion-half-sets-from-input --initial-noise-bootstrap relion)
+    TRAJECTORY_ARGS=(--relion-half-sets-from-input)
 else
     TRAJECTORY_ARGS=(
         --relion_half_sets "${K1_RELION_DIR}/run_it000_data.star"
