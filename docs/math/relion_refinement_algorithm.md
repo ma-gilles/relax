@@ -60,6 +60,13 @@ any RELION output. Each piece is opt-in until its default is decided:
   `sigma2_fudge = 1` (`ml_optimiser.cpp:1308, 11219`), never by `tau2_fudge`.
   With RELION's iteration-1 state this reproduces `run_it002`'s per-class
   `rlnAccuracyRotations` to 1e-14 on the K4 5k/128 and 50k/256 fixtures.
+- Group scales: a standalone run is single-process, like a non-MPI
+  `relion_refine`, so it keeps one group-scale state and needs no dispatch
+  schedule (`--relion-scale-followers` resolves to 0 without
+  `--relion_init_dir`/`--perturb_replay_relion_dir`). Emulating
+  `relion_refine_mpi`'s follower-local scales
+  ([`relion_worker_scale`](../../relax/relion/relion_worker_scale.py)) needs a
+  captured dispatch schedule and stays a debug replay tool.
 
 This page describes RECOVAR's current dense-volume refinement implementation,
 including its K-class and exact local-search routes. Function names identify
