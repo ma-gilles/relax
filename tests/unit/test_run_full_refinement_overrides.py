@@ -1398,6 +1398,7 @@ def test_native_group_layout_preserves_full_group_axis_when_half_max_is_absent()
         particles,
         half1_idx=np.asarray([0, 1], dtype=np.int64),
         half2_idx=np.asarray([2, 3], dtype=np.int64),
+        relion_particles=particles,
     )
 
     assert layout is not None
@@ -1434,6 +1435,18 @@ def test_native_group_layout_numbers_relion_groups_when_the_star_has_none():
     np.testing.assert_array_equal(layout.group_ids_per_half[1], [1, 2])
     np.testing.assert_array_equal(layout.particle_ids_per_half[0], [1, 0])
     np.testing.assert_array_equal(layout.particle_ids_per_half[1], [2, 3])
+
+    # An input rlnGroupNumber that disagrees with RELION's numbering is ignored,
+    # as relion_refine ignores it (exp_model.cpp:963-965).
+    stale = our_particles.assign(rlnGroupNumber=[9, 4, 2, 7])
+    renumbered = _resolve_native_group_layout(
+        stale,
+        half1_idx=np.asarray([0, 1], dtype=np.int64),
+        half2_idx=np.asarray([2, 3], dtype=np.int64),
+    )
+    assert renumbered.n_groups == 3
+    np.testing.assert_array_equal(renumbered.group_ids_per_half[0], [1, 0])
+    np.testing.assert_array_equal(renumbered.group_ids_per_half[1], [1, 2])
 
     # No group or micrograph name: RELION reads an empty micrograph name for
     # every particle (exp_model.cpp:154-167), so all share one group.

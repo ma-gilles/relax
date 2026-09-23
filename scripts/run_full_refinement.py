@@ -745,10 +745,11 @@ def _resolve_native_group_layout(
     """Map RELION groups to RECOVAR rows without assuming equal STAR order.
 
     The supplied RELION data table is authoritative when it carries
-    ``rlnGroupNumber``.  Otherwise this falls back to the RECOVAR input table,
-    and without ``rlnGroupNumber`` there it numbers the groups as relion_refine
-    does (rlnGroupName, else the micrograph name, by first appearance in the
-    micrograph-sorted order; exp_model.cpp:900-901, 926-965).
+    ``rlnGroupNumber`` (the RELION-pinned path).  Otherwise the groups are
+    numbered from the RECOVAR input table as relion_refine does: rlnGroupName,
+    else the micrograph name, by first appearance in the micrograph-sorted
+    order (exp_model.cpp:900-901, 926-965).  An input ``rlnGroupNumber`` is
+    ignored, because relion_refine never reads it (exp_model.cpp:963-965).
     Group numbers remain on RELION's full model axis even when a half-set does
     not contain the highest-numbered group.
     """
@@ -756,9 +757,6 @@ def _resolve_native_group_layout(
     if relion_particles is not None and "rlnGroupNumber" in relion_particles.columns:
         group_particles = relion_particles
         source = "supplied RELION data STAR"
-    elif "rlnGroupNumber" in our_particles.columns:
-        group_particles = our_particles
-        source = "RECOVAR input particles STAR"
     else:
         from relax.relion.input_particle_table import relion_particle_order, relion_scale_group_numbers
 
