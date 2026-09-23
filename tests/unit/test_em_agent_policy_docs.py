@@ -18,7 +18,7 @@ def test_em_agent_guides_pin_validation_policy():
     # Procedures belong to the runbook; the always-loaded guide must link to them.
     guide = CLAUDE.read_text()
     for anchor in ("validation-ladder", "benchmark-design-and-reporting"):
-        assert f"../../docs/development/em_parity_runbook.md#{anchor}" in guide
+        assert f"../docs/development/em_parity_runbook.md#{anchor}" in guide
     assert "cmp relax/AGENTS.md relax/CLAUDE.md" in CONTRIBUTING.read_text()
     runbook = RUNBOOK.read_text()
     required = [
