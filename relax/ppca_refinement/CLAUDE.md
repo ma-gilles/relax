@@ -6,10 +6,10 @@ K-class or GT volumes. It is not a native InitialModel / VDAM PPCA controller.
 Current branch facts:
 
 - K-class dense/local orchestration lives in
-  `recovar/em/classification/k_class.py`.
+  `relax/classification/k_class.py`.
 - Exact-local support must use `LocalHypothesisLayout` from
-  `recovar/em/local/local_layout.py`.
-- Parent EM testing rules in `recovar/em/CLAUDE.md` apply. Do not run the full
+  `relax/local/local_layout.py`.
+- Parent EM testing rules in `relax/CLAUDE.md` apply. Do not run the full
   RECOVAR long suite for PPCA/EM-only changes.
 - `z ~ N(0, I_q)` with real latent coordinates. Eigenvalue scale lives in
   `W`; complex Fourier phases belong to the Hermitian loading volumes, not to

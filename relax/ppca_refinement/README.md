@@ -100,25 +100,25 @@ re-exports nothing.
 
 ```python
 # Single iteration
-from recovar.em.ppca_refinement.dense_dataset import (
+from relax.ppca_refinement.dense_dataset import (
     run_dense_ppca_fused_em_iteration,         # dense flavor
     run_dense_ppca_halfset_fused_em_iteration, # gold-standard halfsets
 )
-from recovar.em.ppca_refinement.local_dataset import (
+from relax.ppca_refinement.local_dataset import (
     run_local_ppca_fused_em_iteration,         # exact-local flavor
     run_local_ppca_halfset_fused_em_iteration,
 )
 # Multi-iteration loops
-from recovar.em.ppca_refinement.refinement_loop import run_dense_ppca_refinement_loop
+from relax.ppca_refinement.refinement_loop import run_dense_ppca_refinement_loop
 # State + schedule
-from recovar.em.ppca_refinement.state import PoseMarginalPPCAEMState
-from recovar.em.ppca_refinement.schedule import PPCARefinementScheduleState
+from relax.ppca_refinement.state import PoseMarginalPPCAEMState
+from relax.ppca_refinement.schedule import PPCARefinementScheduleState
 # Configs
-from recovar.em.ppca_refinement.config import (
+from relax.ppca_refinement.config import (
     GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config,
 )
-from recovar.em.ppca_refinement.mean_regularization import MeanRegularizationConfig
-from recovar.em.ppca_refinement.postprocess import PostprocessConfig
+from relax.ppca_refinement.mean_regularization import MeanRegularizationConfig
+from relax.ppca_refinement.postprocess import PostprocessConfig
 ```
 
 A typical caller passes 2–4 configs:
@@ -147,7 +147,7 @@ result = run_dense_ppca_fused_em_iteration(
   most-load-bearing imports.
 - **Half-Fourier helpers, FFT conventions** → `recovar/core/fourier_transform_utils.py`.
 - **Preprocessing, batch fetch, half-spectrum weights** →
-  `recovar/em/helpers/`.
+  `relax/helpers/`.
 - **Noise model expansion** → `recovar/reconstruction/noise.py`.
 
 The single rule: **if it's used by `dense_dataset.py` and `local_dataset.py`,

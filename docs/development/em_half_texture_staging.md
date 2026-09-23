@@ -1,8 +1,8 @@
 # EM half-volume texture staging
 
 The projection route in
-[`_project_relion_projector_texture`](../../recovar/em/helpers/projection.py)
-reuses [`project_relion_half_capacity`](../../recovar/em/cuda/kernels.py) without
+[`_project_relion_projector_texture`](../../relax/helpers/projection.py)
+reuses [`project_relion_half_capacity`](../../relax/cuda/kernels.py) without
 changing its native kernel. The kernel reads the supplied half-volume directly
 instead of constructing a
 full cubic JAX buffer and then extracting its positive-frequency half again.

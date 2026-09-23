@@ -23,7 +23,7 @@ def check_guides(root: Path) -> list[str]:
             errors.append(f"agent contracts differ: {first} and {second}")
 
     guides = {root / name for pair in MIRRORS for name in pair}
-    guides.update(root / name for name in ("CONTRIBUTING.md", "recovar/CLAUDE.md", "tests/CLAUDE.md"))
+    guides.update(root / name for name in ("CONTRIBUTING.md", "tests/CLAUDE.md"))
     guides.update((root / "docs/development").glob("*.md"))
     for guide in sorted(guides):
         if not guide.is_file():

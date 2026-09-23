@@ -22,7 +22,7 @@ labeled diagnostic only.
 
 ## Architecture and ownership
 
-`recovar/em/` is the implementation root. Standard refinement and VDAM retain
+`relax/` is the implementation root. Standard refinement and VDAM retain
 separate controllers and schedules while sharing sampling, scoring, candidate
 layouts and accumulation where their semantics match. RELION runtime adapters,
 replay tools, diagnostics and independent references have explicit owners. See
@@ -78,6 +78,6 @@ speed qualification.
 
 Use frozen pixi environments, Slurm for integration and long GPU work, and
 sealed identified native libraries. Follow the local GPU0 reservation, the
-[EM contract](../../recovar/em/AGENTS.md), [benchmark contract](benchmarks.md)
+[EM contract](../../relax/AGENTS.md), [benchmark contract](benchmarks.md)
 and [agent workflow](agent_workflow.md). Repeat checks only for changed behavior,
 failures, unresolved concerns or required qualification.

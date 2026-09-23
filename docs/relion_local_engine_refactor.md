@@ -1,7 +1,7 @@
 # Local-search implementation lessons
 
-The current implementation lives in [local/](../recovar/em/local/); refinement
-scheduling lives in [refinement/](../recovar/em/refinement/). Follow the
+The current implementation lives in [local/](../relax/local); refinement
+scheduling lives in [refinement/](../relax/refinement). Follow the
 [EM validation ladder](development/em_parity_runbook.md#validation-ladder)
 for current checks. Historical timings below are not current qualification.
 

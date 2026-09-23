@@ -66,7 +66,7 @@ binary in a dedicated directory and make both the file and directory read-only
 before loading. Record the actual loaded path; successful import alone does not
 prove that the intended extension ran. Never rebuild a shared library while
 another process uses it. End-user pip installation is described in
-[installation](docs/getting-started/installation.md).
+[installation](https://github.com/ma-gilles/recovar/blob/dev/docs/getting-started/installation.md).
 
 ## Validation during development
 
@@ -80,13 +80,13 @@ empty or were warmed by a specified command.
 | Scope | Starting check | Further qualification |
 | --- | --- | --- |
 | Pure helpers and reporting | `pixi run python -m pytest -v tests/unit/<affected_test>.py` on CPU | Real missing/invalid/duplicate input cases; affected callers |
-| Dense/local EM | `pixi run test-em-fast-guard` | [EM ladder](recovar/em/AGENTS.md), including GPU and K1/K4 gates |
+| Dense/local EM | `pixi run test-em-fast-guard` | [EM ladder](relax/AGENTS.md), including GPU and K1/K4 gates |
 | Shared pipeline | Affected unit/integration tests | SPA, cryo-ET, outlier and downstream quality/performance under Slurm |
 | GUI or docs | Applicable scoped checks | Build and relevant user workflow checks |
 
 The dense/local fast guard first checks undefined names with the installed Ruff
 before importing JAX or compiling tests. This check covers
-`recovar/em`; it is not repository-wide lint or scientific
+`relax`; it is not repository-wide lint or scientific
 qualification.
 
 Use focused tests between edits. Group related changes into a frozen checkpoint
@@ -104,7 +104,7 @@ status. Preserve full logs; a truncated console tail is not a result archive.
 
 CPU placement does not remove native dependencies: some unit tests require the
 RELION extension even without a GPU. For those tests, preflight the required
-exports from `recovar.relion_bind._relion_bind_core` and record the loaded path
+exports from `relax.relion_bind._relion_bind_core` and record the loaded path
 and binary hash; an isolated existing build can be selected with
 `RECOVAR_RELION_BIND_BUILD_DIR`. Missing required exports are setup failures,
 not passing or skipped checks. Report CPU-only, native-oracle, GPU and scientific
@@ -147,7 +147,7 @@ For shared/non-EM changes, including this codebase cleanup:
    **REGRESSED**. Missing or incompatible hardware measurements are not “OK.”
 4. Include exact source identities, test commands, Slurm IDs and linked logs.
 
-EM-only changes follow [the EM contract](recovar/em/AGENTS.md), including its
+EM-only changes follow [the EM contract](relax/AGENTS.md), including its
 scoped suites and completion evidence, instead of unrelated SPA/ET suites.
 A change spanning both scopes requires both sets of applicable checks when
 covered by the task; do not infer repeated permission requirements from scope.
@@ -182,6 +182,6 @@ with its original source and an explicit historical label.
 
 ```bash
 cmp AGENTS.md CLAUDE.md
-cmp recovar/em/AGENTS.md recovar/em/CLAUDE.md
+cmp relax/AGENTS.md relax/CLAUDE.md
 pixi run python scripts/check_agent_guides.py
 ```

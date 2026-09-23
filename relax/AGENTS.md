@@ -5,14 +5,14 @@ GUI excluded**, before new-engine development. Root instructions also apply.
 
 ## Start and ownership
 
-- Read [current EM status](../../docs/development/em_status.md) and the current
+- Read [current EM status](../docs/development/em_status.md) and the current
   work-package handoff. Load historical evidence only for the active question.
-  Follow [the efficient workflow](../../docs/development/agent_workflow.md).
+  Follow [the efficient workflow](https://github.com/ma-gilles/recovar/blob/dev/docs/development/agent_workflow.md).
 - State scope: structural, docs, diagnostic, algorithmic, performance or PR
   preparation. Establish one measurable question and its cheapest useful check.
 - Before validation, record HEAD, branch, `git status --short --branch`,
   `git diff HEAD --stat`, diff SHA-256 and untracked inputs. Confirm required
-  ancestors with `recovar.em.diagnostics.parity_provenance`. Names are not provenance.
+  ancestors with `relax.diagnostics.parity_provenance`. Names are not provenance.
 - Preserve unrelated changes, pinned PR158 controls and every queued/running
   source snapshot. One writer per source/build; consult the status-linked board.
   The primary owns integration and claims. Parallel work requires authorization
@@ -21,10 +21,10 @@ GUI excluded**, before new-engine development. Root instructions also apply.
   unused forwarding wrappers. Preserve scientific defaults, casts, reduction
   order, JIT boundaries, memory lifetime and non-EM APIs/formats during
   structural work. Keep numerical and runtime repairs separate.
-- `recovar/em/` is the refinement implementation root. Keep responsibility
+- `relax/` is the refinement implementation root. Keep responsibility
   package initializers free of execution imports. Import `refine_single_volume`
-  from `recovar.em.refinement.iteration_loop`, K-class execution from `recovar.em.classification.k_class`
-  and result assembly/types from `recovar.em.classification.k_class_results`. Helpers and
+  from `relax.refinement.iteration_loop`, K-class execution from `relax.classification.k_class`
+  and result assembly/types from `relax.classification.k_class_results`. Helpers and
   diagnostics must not initialize schedulers, dense/local engines or sparse
   scoring. EM/VDAM APIs, CLIs and historical Python object names have no backward
   compatibility requirement; migrate maintained callers to current owners.
@@ -53,7 +53,7 @@ GUI excluded**, before new-engine development. Root instructions also apply.
   accumulators. If fixed-state arithmetic agrees, move one state boundary earlier.
   Confirm RELION source/dump behavior, add a failing targeted regression, make
   the smallest repair, climb validation, and record negative findings as well.
-  Follow the [investigation/capture procedure](../../docs/development/em_parity_runbook.md#investigation-loop)
+  Follow the [investigation/capture procedure](../docs/development/em_parity_runbook.md#investigation-loop)
   for deep parity work; its state inventory is required.
 - GPU score/Pmax gaps around `1e-4` are normally arithmetic-level parity;
   investigate reproducible `1e-3` gaps or systematic drift. Require exact discrete
@@ -79,7 +79,7 @@ GUI excluded**, before new-engine development. Root instructions also apply.
 
 - Use pixi with clean Python environment and checkout/JAX import provenance.
   Use focused checks per edit and one review/publication per cohesive package.
-  Read the [validation ladder](../../docs/development/em_parity_runbook.md#validation-ladder)
+  Read the [validation ladder](../docs/development/em_parity_runbook.md#validation-ladder)
   before selecting tests; the full fast parity tier runs at most once per 3–4
   hours unless its path changed, it is being fixed, or final validation is due.
 - EM-only work must not run repo-wide full/long suites or SPA/ET table extraction.
@@ -88,13 +88,13 @@ GUI excluded**, before new-engine development. Root instructions also apply.
 - **Leave physical local GPU0 free.** Immediately check nvidia-smi; use only idle
   GPUs1–3, at most three across agents. Restrict CUDA_VISIBLE_DEVICES by selected
   idle UUID before any GPU-capable process. In Slurm preserve assigned visibility.
-- Before jobs read [environment and scratch procedures](../../docs/development/em_parity_runbook.md#environment-gpu-and-scratch).
+- Before jobs read [environment and scratch procedures](../docs/development/em_parity_runbook.md#environment-gpu-and-scratch).
   Set PYTHONNOUSERSITE=1, XLA_PYTHON_CLIENT_PREALLOCATE=false; unset contaminating
   Python/conda variables and use per-job runtime roots. Keep long-lived sources
   under CRYOEM/gilleslab/mg6942/em_dev; disposable outputs under
   CRYOEM/gilleslab/em_work/codex with SAFE_TO_DELETE. Preserve curated fixtures.
 - Before RELION comparisons, captures or builds read the
-  [oracle rules](../../docs/development/em_parity_runbook.md#relion-oracle-rules).
+  [oracle rules](../docs/development/em_parity_runbook.md#relion-oracle-rules).
   The oracle is RELION 5.0.1 throughout; that section pins the source commit,
   the dump build and the reference binaries. Any comparison against it must use
   `--relion-particle-shuffle mt19937`, because the CLI default reproduces the
@@ -104,7 +104,7 @@ GUI excluded**, before new-engine development. Root instructions also apply.
   subset/MPI layout and hardware. Restarted per-half captures fail closed unless
   the loaded noise is proved to match the target subset shellwise.
 - Before quality/performance claims read
-  [benchmark requirements](../../docs/development/em_parity_runbook.md#benchmark-design-and-reporting)
+  [benchmark requirements](../docs/development/em_parity_runbook.md#benchmark-design-and-reporting)
   and quantitative gates in `docs/math/em_parity_program.md`. Completion requires
   production-float32 K1 and exactly K4, each >=100k particles and >=256x256,
   matched inputs/seeds/maps/masks and same-GPU-class RECOVAR/RELION pairs. Close

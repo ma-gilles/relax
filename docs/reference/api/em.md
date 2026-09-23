@@ -1,4 +1,4 @@
-# recovar.em
+# relax
 
 Expectation-Maximization algorithms for pose refinement and
 heterogeneous reconstruction.
@@ -7,7 +7,7 @@ heterogeneous reconstruction.
 
 Reference state containers for homogeneous and heterogeneous EM.
 
-::: recovar.em.reference.states
+::: relax.reference.states
     options:
       members_order: source
 
@@ -15,7 +15,7 @@ Reference state containers for homogeneous and heterogeneous EM.
 
 High-level EM loop orchestration and convergence tracking.
 
-::: recovar.em.reference.iterations
+::: relax.reference.iterations
     options:
       members_order: source
 
@@ -23,7 +23,7 @@ High-level EM loop orchestration and convergence tracking.
 
 Core EM iteration logic: cross-correlation, residual computation.
 
-::: recovar.em.reference.core
+::: relax.reference.core
     options:
       members_order: source
 
@@ -31,7 +31,7 @@ Core EM iteration logic: cross-correlation, residual computation.
 
 E-step: posterior probability computation over poses and translations.
 
-::: recovar.em.reference.e_step
+::: relax.reference.e_step
     options:
       members_order: source
 
@@ -39,6 +39,6 @@ E-step: posterior probability computation over poses and translations.
 
 M-step: volume update via weighted backprojection.
 
-::: recovar.em.reference.m_step
+::: relax.reference.m_step
     options:
       members_order: source

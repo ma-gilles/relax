@@ -33,7 +33,7 @@ built, point `--relion-src-dir` at the `src/` directory of a compatible RELION
 source checkout and build with:
 
 ```bash
-RELION_SRC_DIR=/path/to/relion/src pixi run python recovar/relion_bind/build.py
+RELION_SRC_DIR=/path/to/relion/src pixi run python relax/relion_bind/build.py
 ```
 
 Alternatively, pass `--relion-src-dir /path/to/relion/src` to the launcher;

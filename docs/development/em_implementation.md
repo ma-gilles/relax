@@ -3,13 +3,13 @@
 Start with the [workflow map](codebase.md) to select the correct controller.
 Read the relevant owner below for the current task; this is implementation
 reference, not a requirement to load every module description on each resume.
-The [EM contract](../../recovar/em/AGENTS.md) remains authoritative for scientific
+The [EM contract](../../relax/AGENTS.md) remains authoritative for scientific
 rules and the [current status](em_status.md) identifies reviewed source/evidence.
 
 ## Dense and local EM ownership
 
 Pose-stack preparation for convergence belongs to
-[`helpers.convergence.concatenate_pose_stacks_or_none`](../../recovar/em/helpers/convergence.py).
+[`helpers.convergence.concatenate_pose_stacks_or_none`](../../relax/helpers/convergence.py).
 The iteration controller supplies precision and logging context and retains the
 four current/previous rotation/translation call sites. Empty half-sets, missing
 poses, malformed-shape warnings and concatenation ownership are preserved.
@@ -26,7 +26,7 @@ Class3D uses each half's retained M-step posterior mass, K=1 the half's noise
 `sumw`, and `_relion_optimizer_average_pmax` divides half 1's Pmax sum by it.
 
 Learned direction priors belong to
-[`mean_helpers.update_learned_direction_priors`](../../recovar/em/refinement/mean_helpers.py).
+[`mean_helpers.update_learned_direction_priors`](../../relax/refinement/mean_helpers.py).
 K=1 collapses each half's rotation posterior at the order used for scoring and
 skips a half whose prior cannot form a RELION log prior, with the warning routed
 through the controller logger; K-class combines both halves' per-class posteriors
@@ -43,7 +43,7 @@ Snapshot initialization of those priors belongs to
 carries the previous iteration's `pdf_direction` per half (per class for K-class),
 normalized to the scoring dtype with the HEALPix order inferred from its length.
 Scoring with those priors follows RELION through one owner,
-[`orientation_priors.relion_direction_log_priors_for_half`](../../recovar/em/helpers/orientation_priors.py),
+[`orientation_priors.relion_direction_log_priors_for_half`](../../relax/helpers/orientation_priors.py),
 which both the regular iterations and the final all-data pass call per half.
 RELION (`ml_optimiser.cpp`) multiplies orientation weights by the class's
 `pdf_direction` value at the sampled direction only in `NOPRIOR` mode, so local searches
@@ -67,9 +67,9 @@ orientational prior widths (configured widths kept, psi falling back to rot,
 twice the oversampled angular step when unset; `updateAngularSampling`) for
 both passes ([`test_local_search_sigma_owner.py`](../../tests/unit/test_local_search_sigma_owner.py)).
 
-The [refinement controller](../../recovar/em/refinement/iteration_loop.py)
+The [refinement controller](../../relax/refinement/iteration_loop.py)
 owns iteration history, half-set dispatch, sampling updates, convergence and
-finalization scheduling/state mutation. The existing [sampling module](../../recovar/em/sampling.py)
+finalization scheduling/state mutation. The existing [sampling module](../../relax/sampling.py)
 owns pure grid construction. Its helpers
 `_relion_mstep_source_eulers` and `_perturbed_trial_grid` hold the two sampling rules
 both passes share: the exact M-step rotations are seeded from the sealed grid's own
@@ -96,14 +96,14 @@ scoring grid; the final pass sizes its parent pass with
 ([`test_local_fine_grid_owner.py`](../../tests/unit/test_local_fine_grid_owner.py)).
 Grid tests substitute primitives at their sampling owner; sealed-state replay remains
 at the refinement boundary. The exact local-search stage is implemented in
-[`local_search_iteration`](../../recovar/em/refinement/local_search_iteration.py).
+[`local_search_iteration`](../../relax/refinement/local_search_iteration.py).
 That module builds local pose neighborhoods, asks
-[`batch_planning`](../../recovar/em/helpers/batch_planning.py) for
+[`batch_planning`](../../relax/helpers/batch_planning.py) for
 batch sizes, calls the selected kernel and returns `_LocalSearchIterationResult`
 with named accumulators, pose fields, statistics and optional class summaries.
 The controller reads those fields directly.
 The exact sparse pass-2 kernels in
-[`sparse_pass2_bucketed`](../../recovar/em/sparse_pass2/sparse_pass2_bucketed.py)
+[`sparse_pass2_bucketed`](../../relax/sparse_pass2/sparse_pass2_bucketed.py)
 reproduce RELION's CUDA `powerClass` through one operand owner:
 `_relion_powerclass_packed_image` (RELION's unshifted `Faux` layout and
 amplitude convention), `_relion_powerclass_operands` (CUDA shell map and pixel
@@ -117,11 +117,11 @@ terms a sparse pass-2 batch needs for both sparse scorers
 reconstruction windows, RELION x-half reconstruction indices and the windowed-prepare
 decision for both sparse scorers
 ([`test_sparse_pass2_window_setup_owner.py`](../../tests/unit/test_sparse_pass2_window_setup_owner.py)).
-In [`local_score_pass`](../../recovar/em/local/local_score_pass.py),
+In [`local_score_pass`](../../relax/local/local_score_pass.py),
 `_support_from_local_probs` is the one reconstruction-support rule (full-sort
 significance or per-image threshold, else the rotation mask) used by every fused
 score pass ([`test_local_support_owner.py`](../../tests/unit/test_local_support_owner.py)).
-In [`k_class`](../../recovar/em/classification/k_class.py),
+In [`k_class`](../../relax/classification/k_class.py),
 `_override_class_assignments_with_coarse_winner` applies RELION's coarse-grid
 binarization to a pass-2 result (winning class, that class's fine pose, decoded
 best-pose details) for both adaptive pass-2 paths
@@ -131,13 +131,13 @@ Replay and finalization have separate selection and mutation boundaries:
 
 | Responsibility | Owner | Inputs and preserved behavior |
 | --- | --- | --- |
-| Final-pass admission and gridding selector | [`finalization_policy.py`](../../recovar/em/refinement/finalization_policy.py) | Receives convergence/cap state and the controller logger. Reads diagnostic flags when called; does not mutate refinement state. |
-| Replay numbering and cutoff | [`relion_replay.py`](../../recovar/em/diagnostics/relion_replay.py) | `_numbered_relion_iteration` maps restart-local indices; `_native_sampling_boundary_for_iteration` checks cutoff and sealed state. The controller retains scheduling. |
+| Final-pass admission and gridding selector | [`finalization_policy.py`](../../relax/refinement/finalization_policy.py) | Receives convergence/cap state and the controller logger. Reads diagnostic flags when called; does not mutate refinement state. |
+| Replay numbering and cutoff | [`relion_replay.py`](../../relax/diagnostics/relion_replay.py) | `_numbered_relion_iteration` maps restart-local indices; `_native_sampling_boundary_for_iteration` checks cutoff and sealed state. The controller retains scheduling. |
 | Numbered optimiser accuracy override | `relion_replay.read_optimiser_accuracy_replay` | Selects this iteration's numbered optimiser STAR when replay is active and unsealed; finite RELION rotation/translation accuracies replace the reported and convergence accuracies. Read or parse failures warn and keep values assigned before the failure. Returns `OptimiserAccuracyReplay`; the controller passes its metadata to `apply_optimiser_convergence_replay` after the state update. |
 | Class3D captured tau2 selection | `relion_replay._class_tau2_replay` | Selects same-iteration captured spectra when the diagnostic is enabled, preserves fallback logging and validates captured shapes even when disabled. Returns spectra, enable flag and source label; M-step arithmetic stays in refinement. |
 | Final override selection | `relion_replay._select_final_replay_override` | Receives the requested index, explicit override, recorded history and its already-computed presence flag. Returns an index and the original override object; no copying or state updates. |
 | Final reference substitution | `relion_replay._prepare_final_replay_references` | Validates source iteration, K1 restriction, two-map count and shapes in order; casts each map to its half's dtype. With no maps, returns the original reference list. |
-| Applying selected state | [`iteration_loop.py`](../../recovar/em/refinement/iteration_loop.py) | Retains sigma, pose, corrections, noise and direction-prior updates in their original order, including casts and half-set handling. |
+| Applying selected state | [`iteration_loop.py`](../../relax/refinement/iteration_loop.py) | Retains sigma, pose, corrections, noise and direction-prior updates in their original order, including casts and half-set handling. |
 
 Read `_should_run_final_all_data_iteration` in decision order: forced-cap mode
 rejects the extra pass first; otherwise convergence admits it. Without
@@ -163,7 +163,7 @@ module's logger. Review [replay-state tests](../../tests/unit/test_relion_replay
 and [controller tests](../../tests/unit/test_refine_relion_mode.py) for selection
 identity, missing-slot errors, cutoff behavior and cold-start finalization.
 
-[`mean_helpers`](../../recovar/em/refinement/mean_helpers.py) owns two
+[`mean_helpers`](../../relax/refinement/mean_helpers.py) owns two
 M-step boundaries that the regular iterations and the final all-data pass used
 to repeat inline. `join_half_accumulators_at_low_resolution` applies RELION's
 `--low_resol_join_halves` to the K=1 half accumulators before the Wiener solve;
@@ -183,7 +183,7 @@ exercise the controller boundary, while
 pins the owner arguments, dtypes and record layout.
 
 The local kernel returns `LocalEMResult` from
-[`helpers.types`](../../recovar/em/helpers/types.py):
+[`helpers.types`](../../relax/helpers/types.py):
 `Ft_y`, `Ft_ctf`, `hard_assignments`, `stats`, optional best-pose fields,
 `noise_stats`, `profile` and `significant_counts`. All sixteen return-flag
 combinations have the same field layout; disabled fields are `None`. The
@@ -200,7 +200,7 @@ plus K2/exact-K4 pose, noise and class-summary settings. Returned arrays retain
 their layouts, dtypes and identities; saved refinement field names are unchanged.
 
 Per-half dispatch belongs to
-[`half_scoring`](../../recovar/em/refinement/half_scoring.py).
+[`half_scoring`](../../relax/refinement/half_scoring.py).
 Its dense and local adapters prepare engine arguments, retain adaptive/first-CC
 routing, and write class/pose fields into the caller-owned `PerHalfOutputs`.
 `_dense_uses_adaptive_engine` states the engine rule for K=1 and K-class scoring:
@@ -225,7 +225,7 @@ reads the `RECOVAR_K1_DENSE_PASS2` / `RECOVAR_K_CLASS_DENSE_PASS2` diagnostic sw
 for the three adaptive call sites, and `_coarse_pose_assignments` collapses fine pose
 assignments onto the coarse grid when a fine pass ran
 ([`test_adaptive_engine_call_owner.py`](../../tests/unit/test_adaptive_engine_call_owner.py)).
-In [`local_em_engine`](../../recovar/em/local/local_em_engine.py), the
+In [`local_em_engine`](../../relax/local/local_em_engine.py), the
 exact-local BPref contribution capture binds its fixed operands once per run through
 `_exact_local_bpref_capture_static_kwargs` (raw batch data, CTF parameters, image masks
 and shadow comparisons recorded as absent; padding factors, x-half layout, adjoint radius,
@@ -233,59 +233,59 @@ window indices and shapes from the M-step geometry) and derives each captured bu
 candidate mask and prior-free scores through `_bpref_capture_priors`; the fused and big-JIT
 capture sites pass only their per-bucket operands
 ([`test_bpref_capture_operands_owner.py`](../../tests/unit/test_bpref_capture_operands_owner.py)).
-[`heterogeneity._fixed_rotation_covariance_images`](../../recovar/em/reference/heterogeneity.py) accumulates the
+[`heterogeneity._fixed_rotation_covariance_images`](../../relax/reference/heterogeneity.py) accumulates the
 fixed-rotation covariance-column update in image space (right-hand side and normal
 operator per rotation) for both the Equinox and the classic accumulator, which only
-convert to half images and back-project. In [`vdam.layout`](../../recovar/em/vdam/layout.py),
+convert to half images and back-project. In [`vdam.layout`](../../relax/vdam/layout.py),
 `_centered_bpref_sources` validates and centers the data/weight cubes once for the
 dense and the RELION-x-half BPref converters, and `_bpref_slab_outputs` applies RELION's
 double-precision cast and denormal-weight clamp
 ([`test_covariance_rhs_and_bpref_source_owner.py`](../../tests/unit/test_covariance_rhs_and_bpref_source_owner.py)).
-[`local_debug._requested_dump_rows`](../../recovar/em/diagnostics/local_debug.py) decides once
+[`local_debug._requested_dump_rows`](../../relax/diagnostics/local_debug.py) decides once
 whether a local debug dump writes anything (dump directory, pending original image ids,
 requested current sizes and iterations) and which bucket rows it covers; the fused-posterior,
 score and noise-component dump writers only serialize the selected rows
 ([`test_debug_dump_rows_owner.py`](../../tests/unit/test_debug_dump_rows_owner.py)).
-[`state_swap_runtime._apply_state_swap_probe`](../../recovar/em/diagnostics/state_swap_runtime.py)
+[`state_swap_runtime._apply_state_swap_probe`](../../relax/diagnostics/state_swap_runtime.py)
 returns a `_StateSwapValues` named tuple (current size, maps, tau2, noise, poses, sigma offset and
 direction priors in the controller's unpacking order); the unchanged value is built once from the
 inputs and returned by both early exits
 ([`test_state_swap_values_owner.py`](../../tests/unit/test_state_swap_values_owner.py)).
-[`k_class._PerClassSubsetResults`](../../recovar/em/classification/k_class.py) collects the
+[`k_class._PerClassSubsetResults`](../../relax/classification/k_class.py) collects the
 per-class outputs of the dense and sparse firstiter-CC global-winner subset passes in class
 order: a class without images gets zero accumulators, `-inf` best scores and zero posteriors,
 and a scored class has its subset accumulators, statistics, noise and best poses expanded to
 the full image axis. Each route states whether it hosts the appended accumulators
 ([`test_kclass_results_owner.py`](../../tests/unit/test_kclass_results_owner.py)).
-[`scoring._e_step_block_score_components`](../../recovar/em/scoring/scoring.py)
+[`scoring._e_step_block_score_components`](../../relax/scoring/scoring.py)
 computes the two HIGHEST-precision GEMMs every dense scorer is built from (the cross term
 `-2 Re(conj(shifted) . proj_weighted)` and the model energy `ctf2_over_nv . proj_abs2`);
 the residual, windowed, normalized-CC and coarse Gaussian scorers only combine them
 ([`test_score_components_owner.py`](../../tests/unit/test_score_components_owner.py)).
-[`projection._relion_projector_fftw_block`](../../recovar/em/helpers/projection.py)
+[`projection._relion_projector_fftw_block`](../../relax/helpers/projection.py)
 projects one rotation block through RELION's Projector onto the clamped `2 r_max` (or
 requested) square with the scorer rotations transposed at the handoff; the centered-row
 projector reorders its rows and the indexed projector gathers its pixels from that block
 ([`test_projector_fftw_block_owner.py`](../../tests/unit/test_projector_fftw_block_owner.py)).
-[`pass2_diagnostics._optional_operand_row_fields`](../../recovar/em/diagnostics/pass2.py)
+[`pass2_diagnostics._optional_operand_row_fields`](../../relax/diagnostics/pass2.py)
 captures one image's optional RELION score operands for the K=1 pass-2 dump, recording
 operands the caller did not supply as absent (empty arrays of the capture dtype, or NaN for
 the per-image normalization factor and batch corrections); the selected-rows and
 effective-grid schemas both write these fields
 ([`test_pass2_dump_operand_fields_owner.py`](../../tests/unit/test_pass2_dump_operand_fields_owner.py)).
-[`sparse_pass2_bucketed._gaussian_algebraic_score_terms`](../../recovar/em/sparse_pass2/sparse_pass2_bucketed.py)
+[`sparse_pass2_bucketed._gaussian_algebraic_score_terms`](../../relax/sparse_pass2/sparse_pass2_bucketed.py)
 computes the historical algebraic Gaussian scores of one bucket before candidate masking
 (HIGHEST-precision weighted cross einsum and projection norm, prior-free and prior-added
 scores); the production algebraic scorer and its components variant only apply their masks
 ([`test_gaussian_algebraic_terms_owner.py`](../../tests/unit/test_gaussian_algebraic_terms_owner.py)).
-[`types.SparsePass2Output`](../../recovar/em/helpers/types.py) carries sparse
+[`types.SparsePass2Output`](../../relax/helpers/types.py) carries sparse
 pass-2 accumulators, poses and optional diagnostics in named fields. The bucketed
 and per-image reference paths construct it directly; K-class callers no longer
 need a positional decoder or flags to locate fields. Unrequested diagnostics are
 `None`. Score log-Z still requires statistics, and the normalizer-only probe
 retains its separate two-value result. Independent bucketed/reference comparisons
 remain in [`test_sparse_pass2_bucketed_parity.py`](../../tests/unit/test_sparse_pass2_bucketed_parity.py).
-In [`significance`](../../recovar/em/scoring/significance.py),
+In [`significance`](../../relax/scoring/significance.py),
 `_coarse_gaussian_ffi_default` applies the fresh-InitialModel coarse Gaussian FFI
 default only when the supplied RELION projector operands exist; a dense pass
 without a projector keeps the JAX coarse path and an explicit environment request
@@ -296,7 +296,7 @@ local engine, the InitialModel adapter and the controller's early fresh-K=1 chec
 it ([`test_relion_cuda_preprocess_owner.py`](../../tests/unit/test_relion_cuda_preprocess_owner.py)).
 The controller calls its two BPref-scoped entry points and retains iteration
 scheduling, state transitions, reconstruction and device-buffer lifetime.
-[`scoring_policy`](../../recovar/em/dense/scoring_policy.py)
+[`scoring_policy`](../../relax/dense/scoring_policy.py)
 owns shared padding/window constants, the import-time static kwargs object,
 and the existing call-time environment selectors. Their override precedence,
 invalid-value handling and float32 defaults are preserved. The controller and
@@ -305,28 +305,28 @@ These owners have no imports back into the controller. Log messages are unchange
 with namespaces following the owner of each moved function.
 
 The dense single-class kernel is
-[`em_engine.run_em`](../../recovar/em/dense/em_engine.py).
+[`em_engine.run_em`](../../relax/dense/em_engine.py).
 It returns `DenseEMResult` from
-[`helpers.types`](../../recovar/em/helpers/types.py), with
+[`helpers.types`](../../relax/helpers/types.py), with
 named `mean`, `hard_assignments`, `Ft_y`, `Ft_ctf`, `stats`, `noise_stats` and
 `profile` fields. Optional outputs are `None` when their existing flags are
 disabled; changing flags no longer changes tuple positions. The container does
 not copy arrays. Controller and K-class callers read these fields directly.
 The local single-class kernel is
-[`local_em_engine.run_local_em_exact`](../../recovar/em/local/local_em_engine.py).
+[`local_em_engine.run_local_em_exact`](../../relax/local/local_em_engine.py).
 
-[`local_batch_planning`](../../recovar/em/local/local_batch_planning.py)
+[`local_batch_planning`](../../relax/local/local_batch_planning.py)
 owns exact-local row limits, environment overrides, automatic boosts and memory
 probes. The engine applies these policies at the same dispatch boundaries;
 reporting imports the planning owner directly. Layout padding stays in
 `local_layout`. The existing device-memory query/cache behavior is preserved,
 including the all-device `nvidia-smi` query; it is not a visibility-aware probe.
-[`k_class`](../../recovar/em/classification/k_class.py) supplies dense,
+[`k_class`](../../relax/classification/k_class.py) supplies dense,
 adaptive and local K-class orchestration.
-[`k_class_inputs`](../../recovar/em/classification/k_class_inputs.py) owns
+[`k_class_inputs`](../../relax/classification/k_class_inputs.py) owns
 class-axis validation, shared/per-class array selection and local prior layouts.
 It imports no execution engines; engine-specific keyword filtering stays in `k_class`.
-[`k_class_results`](../../recovar/em/classification/k_class_results.py) owns
+[`k_class_results`](../../relax/classification/k_class_results.py) owns
 the shared result type, joint result assembly and host/device publication.
 Accumulator offloading and scheduling stay in the orchestrator.
 Class evidence and posterior mass
@@ -334,19 +334,19 @@ must be handled at the K-class level, not inferred from independently normalized
 single-class probabilities.
 
 Fixed-capacity hypothesis packing, call selection and validation belong to
-[`fixed_capacity_local.py`](../../recovar/em/local/fixed_capacity_local.py),
+[`fixed_capacity_local.py`](../../relax/local/fixed_capacity_local.py),
 with the sealed plan/operand/hypothesis binding types. The engine delegates those
 checks at the same pre-JIT boundaries. Callers use the general call-index API;
 the test-only call-0 wrappers are removed. Canonical byte/dtype checks, poisoned-tail
 rejection and authoritative dataset fetch order remain mandatory. Bucket geometry
 and the dtype-preserving adjoint rotation accessor belong to
-[`local_layout.py`](../../recovar/em/local/local_layout.py).
+[`local_layout.py`](../../relax/local/local_layout.py).
 Both owners import independently of execution modules. The
 [original executor proposal](https://github.com/ma-gilles/recovar-experiments/blob/6d3fbd7905047a6bb48fe483a6fca14995c89cae/docs/math/shared_fixed_capacity_local_executor_plan_20260831.md)
 is archived as historical design context.
 
 Scale-group ID validation and full-axis sizing have one host owner,
-[`helpers/scale_groups.py`](../../recovar/em/helpers/scale_groups.py).
+[`helpers/scale_groups.py`](../../relax/helpers/scale_groups.py).
 Local EM, both sparse scorers and the K-class subset router use it. Explicit
 counts retain groups absent from a class subset; missing IDs disable engine
 scale-statistics allocation, while routing still retains an explicit count.
@@ -355,7 +355,7 @@ the flattened image axis; the router has no image-count constraint. The helper
 preserves existing casts and errors and imports independently of execution.
 
 External normalization inputs are prepared by
-[`helpers/normalization_inputs.py`](../../recovar/em/helpers/normalization_inputs.py).
+[`helpers/normalization_inputs.py`](../../relax/helpers/normalization_inputs.py).
 `prepare_local_normalization_inputs` returns named log-Z, log-evidence, Pmax and
 reconstruction-threshold arrays. It owns the local modes' validation order and
 exclusivity; sparse and K-class callers reuse only optional F64 image-vector
@@ -364,7 +364,7 @@ posterior arithmetic and normalization kernels remain at their execution sites.
 It preserves input strides and avoids copying already suitable F64 arrays.
 
 Local projector slab normalization has one owner,
-[`relion_projector_setup.prepare_local_projector_slab`](../../recovar/em/relion/relion_projector_setup.py).
+[`relion_projector_setup.prepare_local_projector_slab`](../../relax/relion/relion_projector_setup.py).
 Bucket projection, packed-noise projection and the main BigJIT path accept the
 same three-dimensional slab or singleton class axis. The helper preserves JAX
 dtype conversion and path-specific errors. Radius requirements, pixel selection,
@@ -381,7 +381,7 @@ packed projection sources
 ([`test_packed_noise_chunk_owner.py`](../../tests/unit/test_packed_noise_chunk_owner.py)).
 
 Sealed VDAM worker and block-chronology replay lives in
-[`helpers/vdam_replay.py`](../../recovar/em/diagnostics/vdam_replay.py).
+[`helpers/vdam_replay.py`](../../relax/diagnostics/vdam_replay.py).
 It owns NPZ schema validation, four cached loaders, stack-ID joins, worker/launch
 ordering, iteration selectors and physical-row gathers. The local engine calls
 this owner directly while retaining kernel execution and the capture call site.
@@ -391,9 +391,9 @@ compatibility. Replay defaults, caches, stable ordering and error behavior are
 preserved; importing the helper does not initialize the execution engine.
 
 The exact coarse Gaussian path in
-[`helpers/significance.py`](../../recovar/em/scoring/significance.py)
+[`helpers/significance.py`](../../relax/scoring/significance.py)
 passes its existing host pixel indices to the shared source-precision CTF owner
-[`helpers/relion_ctf.py`](../../recovar/em/relion/relion_ctf.py).
+[`helpers/relion_ctf.py`](../../relax/relion/relion_ctf.py).
 Coarse, local and sparse scoring call that owner directly; its single process
 cache and native binding remain independent of the execution engines.
 That loader gathers each cached CTF row before stacking and device placement;
@@ -410,7 +410,7 @@ block. The materialized NumPy comparison lives in
 It has no production callers and retains a separate mask-building algorithm
 for checking lazy blocks and explicit/complement coarse support.
 
-[`score_outputs`](../../recovar/em/dense/score_outputs.py) owns
+[`score_outputs`](../../relax/dense/score_outputs.py) owns
 the scoring containers and class/coarse-grid result adapters. It also owns
 optional half-accumulator combination, shape/axis resolution and profile-row
 recording. The controller retains scheduling and device-buffer offloading.
@@ -432,7 +432,7 @@ controller and scorer must be patched at both consumers. Patch the call site
 exercised by the test; do not add reverse imports to preserve an old monkeypatch
 location.
 
-[`diagnostics.iteration`](../../recovar/em/diagnostics/iteration.py) owns the
+[`diagnostics.iteration`](../../relax/diagnostics/iteration.py) owns the
 half-selection policy for terminating significance/noise captures and numbered
 BPref device captures, together with iteration dump writers. The controller
 calls those selectors at the same dispatch boundaries and retains diagnostic
@@ -440,12 +440,12 @@ completion/stop control. Selector errors and log messages are unchanged; log rec
 module that owns each operation. Capture state and counters belong to the
 separate diagnostic owner below.
 
-[`diagnostics.reconstruction`](../../recovar/em/diagnostics/reconstruction.py)
+[`diagnostics.reconstruction`](../../relax/diagnostics/reconstruction.py)
 serializes pre-mask maps, K-class current-size/M-step and tau2-update NPZ
 captures. Refinement callers retain the environment gates and call
 boundaries; writers preserve historical fields, casts and optional entries.
 
-[`helpers.coarse_score_diagnostics`](../../recovar/em/diagnostics/coarse_score_diagnostics.py)
+[`helpers.coarse_score_diagnostics`](../../relax/diagnostics/coarse_score_diagnostics.py)
 owns host NumPy summaries of direct/GEMM score deltas, ULPs, winner margins,
 support changes, repeated runs and scale panels, plus the qualification decision.
 It also validates selector audits, hashes exact support and attaches diagnostic
@@ -454,12 +454,12 @@ scripts import these helpers directly; saved-audit validation does not require
 loading `significance`. `significance` calls this owner directly. JAX scoring/M-step kernels remain in
 `helpers.scoring`; diagnostic imports do not initialize those execution modules.
 
-[`diagnostics.pass2`](../../recovar/em/diagnostics/pass2.py)
+[`diagnostics.pass2`](../../relax/diagnostics/pass2.py)
 owns K1/K-class score dumps and target-row selection, including staging effective K-class raw operands after
 scoring. It reads the shared numbered-half context from `bpref_diagnostics`;
 it does not import sparse scoring. The scorer retains scheduling and numerical
 operand preparation, calling the capture helpers at their original boundaries. Capture schemas, casts and reduction order are unchanged.
-[`diagnostics.norm_scale`](../../recovar/em/diagnostics/norm_scale.py) owns
+[`diagnostics.norm_scale`](../../relax/diagnostics/norm_scale.py) owns
 normalization-residual and chunked scale-AA captures. The diagnostics package
 itself imports no engines or capture modules; import specific writers directly.
 
@@ -468,7 +468,7 @@ K1 and fused K-class preprocessing captures share
 preprocessing tuple to preserve operand lifetime and invoke the builder at the
 original capture gate; schema, defaults, masks and dtype casts stay unchanged.
 
-[`helpers.bpref_diagnostics`](../../recovar/em/diagnostics/bpref_diagnostics.py)
+[`helpers.bpref_diagnostics`](../../relax/diagnostics/bpref_diagnostics.py)
 owns the numbered-half capture context, contribution and membership counters,
 membership selectors/rotation-mass writers, device-panel state, capture validation
 and artifact writers shared by sparse and exact-local EM. Fused K-class capture-row
@@ -507,7 +507,7 @@ controller. Helper-only callers import sign alignment and combined noise
 statistics from `mean_helpers`, rotation metadata from `relion_metadata`, and
 replay iteration mapping from `relion_replay`.
 
-[`relion_normalization`](../../recovar/em/relion/relion_normalization.py)
+[`relion_normalization`](../../relax/relion/relion_normalization.py)
 owns per-image norm and per-group scale formulas and their result type. It
 depends on NumPy/JAX, not the controller, mean reconstruction or follower
 dispatch. The controller retains state installation and temporary lifetimes;
@@ -528,7 +528,7 @@ Both use `(prior - rounded_old_offset) / pixel_size`, as before. The separate
 pixel-space formula without that division.
 
 Split local bucket preparation belongs to
-[`local_preprocessing.prepare_local_bucket`](../../recovar/em/local/local_preprocessing.py).
+[`local_preprocessing.prepare_local_bucket`](../../relax/local/local_preprocessing.py).
 It owns mask/cache selection, CTF weighting, translation operands and batch norms;
 `local_big_jit` retains the compiled preprocessing primitive and fused kernel.
 Masked/unmasked reconstruction share one exact BPref translation operation.
@@ -537,9 +537,9 @@ local engine retains execution scheduling and one final `LocalEMResult` assembly
 profile construction and synchronization run only when requested.
 
 Raw and processed-image cache limits belong to
-[`local_caches.py`](../../recovar/em/local/local_caches.py).
+[`local_caches.py`](../../relax/local/local_caches.py).
 Bounded RELION projection caches belong to
-[`local_projection_cache.py`](../../recovar/em/local/local_projection_cache.py):
+[`local_projection_cache.py`](../../relax/local/local_projection_cache.py):
 budget parsing, stable bucket sorting/grouping, rotation-ID mapping and chunked
 projection construction share that owner. `plan_cache` returns a
 `ProjectionCachePlan` containing the ordered buckets, groups and capacity
@@ -550,7 +550,7 @@ valid rows may be consumed; unused capacity keeps its existing uninitialized
 padding. Cache consumers and tests import the owner directly, without engine
 re-exports. Importing it does not initialize execution controllers.
 Profile fields and `LocalBucketProgress` belong to
-[`local_timing.py`](../../recovar/em/local/local_timing.py).
+[`local_timing.py`](../../relax/local/local_timing.py).
 The reporter owns progress counters, environment cadence and log formatting;
 the engine marks completed buckets and forces the final message at the original
 execution sites. Importing this owner does not load execution modules.
@@ -587,7 +587,7 @@ the helpers preserve their distinct order choices.
 For an extraction, identify the actual boundary first: array layout, casts,
 reduction order, JIT scope, device placement, buffer ownership and returned
 statistics. Preserve those contracts during structural cleanup. The
-[EM development guide](../../recovar/em/AGENTS.md) and
+[EM development guide](../../relax/AGENTS.md) and
 [mathematical algorithm map](../math/relion_refinement_algorithm.md) describe the
 validation ladder and scientific state transitions.
 
@@ -606,10 +606,10 @@ production imports no test helpers.
 
 Common transport and command mechanics have narrow owners:
 
-- [`file_hash.sha256_file`](../../recovar/utils/file_hash.py) hashes files in
+- [`file_hash.sha256_file`](https://github.com/ma-gilles/recovar/blob/dev/recovar/utils/file_hash.py) hashes files in
   8 MiB blocks for RECOVAR-dependent diagnostics. A hash alone does not make a
   mutable file immutable or validate a manifest.
-- [`json_utils.to_jsonable`](../../recovar/utils/json_utils.py) converts NumPy
+- [`json_utils.to_jsonable`](https://github.com/ma-gilles/recovar/blob/dev/recovar/utils/json_utils.py) converts NumPy
   values, paths and nested containers. Finite-value and report acceptance rules
   remain the caller's responsibility.
 - [`scripts.file_hash.sha256_file`](../../scripts/file_hash.py) supplies the same
@@ -712,9 +712,9 @@ metadata reads. End-to-end controller behavior remains in
 Import execution entry points explicitly from their owners:
 
 ```python
-from recovar.em.refinement.iteration_loop import refine_single_volume
-from recovar.em.classification.k_class_results import KClassEMResult
-from recovar.em.classification.k_class import (
+from relax.refinement.iteration_loop import refine_single_volume
+from relax.classification.k_class_results import KClassEMResult
+from relax.classification.k_class import (
     run_dense_k_class_em,
     run_local_k_class_em,
 )
@@ -728,9 +728,9 @@ the definitions and their serialized module identities are unchanged.
 
 ## Ground-truth reporting
 
-[`diagnostics/gt_registration.py`](../../recovar/em/diagnostics/gt_registration.py)
+[`diagnostics/gt_registration.py`](../../relax/diagnostics/gt_registration.py)
 owns the optional CPU rigid fitter and immutable fit-once transform. The existing
-[`gt_metrics.py`](../../recovar/em/diagnostics/gt_metrics.py) keeps its legacy
+[`gt_metrics.py`](../../relax/diagnostics/gt_metrics.py) keeps its legacy
 rotation-only alignment API and result type. The reporting CLI
 [`evaluate_ab_initio_gt.py`](../../scripts/evaluate_ab_initio_gt.py) opts into the
 new fitter or applies a saved transform without fitting. [The reporting guide](gt_reporting.md)
@@ -738,6 +738,6 @@ explains geometry, common-frame comparisons and limitations. These are diagnosti
 reporting tools; E/M execution, precision and quality gates are independent.
 
 Noise initialization, half-set aggregation and posterior updates live in
-[`refinement/noise_updates.py`](../../recovar/em/refinement/noise_updates.py).
+[`refinement/noise_updates.py`](../../relax/refinement/noise_updates.py).
 The refinement controller and replay diagnostics import that owner directly;
 volume reconstruction remains in `refinement/mean_helpers.py`.

@@ -9,22 +9,22 @@ The [development contract](../../AGENTS.md) defines change scope and validation.
 
 | Workflow | Entry point | Main implementation |
 | --- | --- | --- |
-| Covariance pipeline | [`standard_recovar_pipeline`](../../recovar/commands/pipeline.py), the `recovar pipeline` command | [`principal_components`](../../recovar/heterogeneity/principal_components.py), covariance estimation, then embedding |
-| Pipeline PPCA | The same pipeline with `--use-ppca`; `_run_ppca_refinement` selects the PPCA path | [`recovar.ppca.ppca.EM`](../../recovar/ppca/ppca.py), using the supplied dataset poses |
-| RELION-style K1/K-class refinement | [`scripts/run_full_refinement.py`](../../scripts/run_full_refinement.py) resolves inputs and options | [`iteration_loop.refine_single_volume`](../../recovar/em/refinement/iteration_loop.py); despite the name, this controller also handles K-class refinement |
-| Pose-marginal PPCA refinement | [`refinement_loop`](../../recovar/em/ppca_refinement/refinement_loop.py) exposes dense and local refinement loops | [`dense_dataset`](../../recovar/em/ppca_refinement/dense_dataset.py), [`local_dataset`](../../recovar/em/ppca_refinement/local_dataset.py), and their fused kernels |
-| InitialModel/VDAM | [`vdam.iteration_loop.run_vdam_iterations`](../../recovar/em/vdam/iteration_loop.py) | Initial-model schedules, subset selection, state and reconstruction |
-| Earlier and independent EM references | Import directly from the owning module; `recovar.em` performs no workflow imports | [`states`](../../recovar/em/reference/states.py), [`iterations`](../../recovar/em/reference/iterations.py), the E-step/M-step and heterogeneity modules, and the independent [normalized-CC](../../recovar/em/reference/normalized_cc_replay.py) and [Gaussian-reduction](../../recovar/em/reference/gaussian_reduction_replay.py) replays |
+| Covariance pipeline | [`standard_recovar_pipeline`](https://github.com/ma-gilles/recovar/blob/dev/recovar/commands/pipeline.py), the `recovar pipeline` command | [`principal_components`](https://github.com/ma-gilles/recovar/blob/dev/recovar/heterogeneity/principal_components.py), covariance estimation, then embedding |
+| Pipeline PPCA | The same pipeline with `--use-ppca`; `_run_ppca_refinement` selects the PPCA path | [`recovar.ppca.ppca.EM`](https://github.com/ma-gilles/recovar/blob/dev/recovar/ppca/ppca.py), using the supplied dataset poses |
+| RELION-style K1/K-class refinement | [`scripts/run_full_refinement.py`](../../scripts/run_full_refinement.py) resolves inputs and options | [`iteration_loop.refine_single_volume`](../../relax/refinement/iteration_loop.py); despite the name, this controller also handles K-class refinement |
+| Pose-marginal PPCA refinement | [`refinement_loop`](../../relax/ppca_refinement/refinement_loop.py) exposes dense and local refinement loops | [`dense_dataset`](../../relax/ppca_refinement/dense_dataset.py), [`local_dataset`](../../relax/ppca_refinement/local_dataset.py), and their fused kernels |
+| InitialModel/VDAM | [`vdam.iteration_loop.run_vdam_iterations`](../../relax/vdam/iteration_loop.py) | Initial-model schedules, subset selection, state and reconstruction |
+| Earlier and independent EM references | Import directly from the owning module; `relax` performs no workflow imports | [`states`](../../relax/reference/states.py), [`iterations`](../../relax/reference/iterations.py), the E-step/M-step and heterogeneity modules, and the independent [normalized-CC](../../relax/reference/normalized_cc_replay.py) and [Gaussian-reduction](../../relax/reference/gaussian_reduction_replay.py) replays |
 
 Pipeline PPCA and pose-marginal PPCA have different entry points and state
 contracts. Choose the implementation reached by the actual command. The
 pipeline PPCA path currently rejects tilt-series input. Consult the
-[PPCA refinement guide](../../recovar/em/ppca_refinement/AGENTS.md) when working
+[PPCA refinement guide](../../relax/ppca_refinement/AGENTS.md) when working
 on pose refinement, and the [paper-data runbook](della.md) for pinned inputs.
 
 ## EM package layout
 
-`recovar/em/` is the common implementation package. Standard refinement and
+`relax/` is the common implementation package. Standard refinement and
 VDAM have separate controllers and schedules, and share numerical owners where
 their semantics already match:
 
@@ -46,14 +46,14 @@ their semantics already match:
 The [dense reference formulation](../math/em_dense_reference.md) documents the
 independent algorithmic core under `reference/`.
 
-RELION diagnostic checkpoint restoration lives in [`relion/vdam_checkpoint.py`](../../recovar/em/relion/vdam_checkpoint.py), separate from the VDAM execution driver. Native moment/reference and BPref overrides, including post-M-step reference-map replay, live in [`diagnostics/vdam_mstep_replay.py`](../../recovar/em/diagnostics/vdam_mstep_replay.py); [`vdam/mstep_single_class.py`](../../recovar/em/vdam/mstep_single_class.py) retains the reconstruction transaction and its numerical boundary calls.
+RELION diagnostic checkpoint restoration lives in [`relion/vdam_checkpoint.py`](../../relax/relion/vdam_checkpoint.py), separate from the VDAM execution driver. Native moment/reference and BPref overrides, including post-M-step reference-map replay, live in [`diagnostics/vdam_mstep_replay.py`](../../relax/diagnostics/vdam_mstep_replay.py); [`vdam/mstep_single_class.py`](../../relax/vdam/mstep_single_class.py) retains the reconstruction transaction and its numerical boundary calls.
 
 InitialModel STAR import/export is owned by
-[`relion/initial_model_io.py`](../../recovar/em/relion/initial_model_io.py).
-[`vdam/output.py`](../../recovar/em/vdam/output.py) handles artifact paths,
+[`relion/initial_model_io.py`](../../relax/relion/initial_model_io.py).
+[`vdam/output.py`](../../relax/vdam/output.py) handles artifact paths,
 startup metadata and write cadence; it delegates STAR serialization to that
 adapter. Optics and particle records live in
-[`vdam/state.py`](../../recovar/em/vdam/state.py), so sampling does not import
+[`vdam/state.py`](../../relax/vdam/state.py), so sampling does not import
 serialization. Column lookup is shared in `data_io.starfile.star_column`, while
 strict list-style checkpoint scalars live in `relion.relion_metadata`.
 The refinement CLI also reads RELION initialization metadata there; captured
@@ -63,9 +63,9 @@ restart readers; `diagnostics.parity_dump` owns timing artifact readers and
 summaries. The CLI retains argument declarations, input/option precedence,
 refinement invocation, destination selection and final output writes.
 
-Particle bootstrap is owned by [`vdam/bootstrap_iref.py`](../../recovar/em/vdam/bootstrap_iref.py): it loads the bootstrap images and constructs the initial reference/state. [`vdam/init.py`](../../recovar/em/vdam/init.py) contains the state-only initialization formulas, while [`relion/initial_noise.py`](../../recovar/em/relion/initial_noise.py) owns the image iterator, initial noise estimate, single-optics noise input and MPI process-start half-set noise policy. The driver coordinates these stages; sampling geometry stays in [`vdam/native_sampling.py`](../../recovar/em/vdam/native_sampling.py).
+Particle bootstrap is owned by [`vdam/bootstrap_iref.py`](../../relax/vdam/bootstrap_iref.py): it loads the bootstrap images and constructs the initial reference/state. [`vdam/init.py`](../../relax/vdam/init.py) contains the state-only initialization formulas, while [`relion/initial_noise.py`](../../relax/relion/initial_noise.py) owns the image iterator, initial noise estimate, single-optics noise input and MPI process-start half-set noise policy. The driver coordinates these stages; sampling geometry stays in [`vdam/native_sampling.py`](../../relax/vdam/native_sampling.py).
 
-VDAM coarse-call naming and result diagnostic packaging live with the shared [`coarse_gaussian_diagnostics.py`](../../recovar/em/diagnostics/coarse_gaussian_diagnostics.py) and [`coarse_score_diagnostics.py`](../../recovar/em/diagnostics/coarse_score_diagnostics.py) owners. The sparse E-step invokes them but does not implement report bookkeeping. These extracted helpers remain counted in the VDAM size budget.
+VDAM coarse-call naming and result diagnostic packaging live with the shared [`coarse_gaussian_diagnostics.py`](../../relax/diagnostics/coarse_gaussian_diagnostics.py) and [`coarse_score_diagnostics.py`](../../relax/diagnostics/coarse_score_diagnostics.py) owners. The sparse E-step invokes them but does not implement report bookkeeping. These extracted helpers remain counted in the VDAM size budget.
 
 There is no second EM stack for VDAM. Its adapters supply the existing shared
 kernels with VDAM-specific inputs. Scheduling and state transitions remain with
@@ -79,14 +79,14 @@ required. Historical logger names remain stable.
 
 | Boundary | Owner | Contract to inspect |
 | --- | --- | --- |
-| Particle loading and batch identity | [`CryoEMDataset`](../../recovar/data_io/cryoem_dataset.py), image loaders and half-set utilities | Original image/particle IDs, subset-local positions, half-set membership, image backend and CTF metadata |
-| Forward-model configuration and state | [`core.configs`](../../recovar/core/configs.py) | `ForwardModelConfig` static fields versus dynamic `ModelState` arrays; changing a static value may change JIT specialization |
-| Fourier transforms and volume I/O | [`fourier_transform_utils`](../../recovar/core/fourier_transform_utils.py), [`utils.helpers`](../../recovar/utils/helpers.py) | Centered Fourier conventions, flattened arrays, full versus half spectrum, and the RELION axis/sign conversion |
-| Mean, noise and regularization | [`homogeneous`](../../recovar/reconstruction/homogeneous.py), [`noise`](../../recovar/reconstruction/noise.py), [`regularization`](../../recovar/reconstruction/regularization.py); EM-only RELION variants in [`em/reconstruction`](../../recovar/em/reconstruction/regularization_relion.py) | Half-set ownership, shell support, normalization, prior construction and reconstruction units |
-| Saved results | [`output`](../../recovar/output/output.py), [`ResultPaths`](../../recovar/output/output_paths.py) | Serialized field names, shapes, original IDs, and downstream `PipelineOutput` consumers |
-| CUDA and RELION references | [`cuda_backproject`](../../recovar/cuda_backproject.py) (pipeline library `libcuda_backproject.so` and its loader), [`cuda_build`](../../recovar/cuda_build.py) (`NativeLibrary`, public CUDA headers), [`em/cuda/kernels`](../../recovar/em/cuda/kernels.py) (EM library), [`relion_bind`](../../recovar/relion_bind/__init__.py) | Loaded binary identity, device placement, native layouts and independent reference behavior |
+| Particle loading and batch identity | [`CryoEMDataset`](https://github.com/ma-gilles/recovar/blob/dev/recovar/data_io/cryoem_dataset.py), image loaders and half-set utilities | Original image/particle IDs, subset-local positions, half-set membership, image backend and CTF metadata |
+| Forward-model configuration and state | [`core.configs`](https://github.com/ma-gilles/recovar/blob/dev/recovar/core/configs.py) | `ForwardModelConfig` static fields versus dynamic `ModelState` arrays; changing a static value may change JIT specialization |
+| Fourier transforms and volume I/O | [`fourier_transform_utils`](https://github.com/ma-gilles/recovar/blob/dev/recovar/core/fourier_transform_utils.py), [`utils.helpers`](https://github.com/ma-gilles/recovar/blob/dev/recovar/utils/helpers.py) | Centered Fourier conventions, flattened arrays, full versus half spectrum, and the RELION axis/sign conversion |
+| Mean, noise and regularization | [`homogeneous`](https://github.com/ma-gilles/recovar/blob/dev/recovar/reconstruction/homogeneous.py), [`noise`](https://github.com/ma-gilles/recovar/blob/dev/recovar/reconstruction/noise.py), [`regularization`](https://github.com/ma-gilles/recovar/blob/dev/recovar/reconstruction/regularization.py); EM-only RELION variants in [`em/reconstruction`](../../relax/reconstruction/regularization_relion.py) | Half-set ownership, shell support, normalization, prior construction and reconstruction units |
+| Saved results | [`output`](https://github.com/ma-gilles/recovar/blob/dev/recovar/output/output.py), [`ResultPaths`](https://github.com/ma-gilles/recovar/blob/dev/recovar/output/output_paths.py) | Serialized field names, shapes, original IDs, and downstream `PipelineOutput` consumers |
+| CUDA and RELION references | [`cuda_backproject`](https://github.com/ma-gilles/recovar/blob/dev/recovar/cuda_backproject.py) (pipeline library `libcuda_backproject.so` and its loader), [`cuda_build`](https://github.com/ma-gilles/recovar/blob/dev/recovar/cuda_build.py) (`NativeLibrary`, public CUDA headers), [`em/cuda/kernels`](../../relax/cuda/kernels.py) (EM library), [`relion_bind`](../../relax/relion_bind/__init__.py) | Loaded binary identity, device placement, native layouts and independent reference behavior |
 
-The [source conventions](../../recovar/CLAUDE.md) give the exact FFT and
+The [source conventions](https://github.com/ma-gilles/recovar/blob/dev/recovar/CLAUDE.md) give the exact FFT and
 RELION-frame rules. Follow those helpers when loading volumes for a comparison;
 raw MRC arrays and uncentered FFT calls are not interchangeable with them.
 
@@ -97,15 +97,15 @@ for detailed module contracts. Start with the boundary being changed:
 
 | Boundary | Main owner |
 | --- | --- |
-| Iteration scheduling and state mutation | [`iteration_loop.py`](../../recovar/em/refinement/iteration_loop.py) |
-| Dense E/M execution | [`em_engine.py`](../../recovar/em/dense/em_engine.py) |
-| Local search orchestration and kernels | [`local_search_iteration.py`](../../recovar/em/refinement/local_search_iteration.py), [`local_em_engine.py`](../../recovar/em/local/local_em_engine.py) |
-| Fixed-capacity hypothesis packing and execution binding | [`fixed_capacity_local.py`](../../recovar/em/local/fixed_capacity_local.py) |
-| Class routing and joint result assembly | [`k_class.py`](../../recovar/em/classification/k_class.py), [`k_class_results.py`](../../recovar/em/classification/k_class_results.py) |
-| Replay selection and final-pass admission | [`relion_replay.py`](../../recovar/em/diagnostics/relion_replay.py), [`finalization_policy.py`](../../recovar/em/refinement/finalization_policy.py) |
-| Sparse engine dispatch and independent reference | [`sparse_pass2/dispatch.py`](../../recovar/em/sparse_pass2/dispatch.py), [`reference/sparse_pass2.py`](../../recovar/em/reference/sparse_pass2.py); grid and support arithmetic stay in `helpers/oversampling.py` |
-| Standard half-set and first-iteration adapters | [`refinement/half_scoring.py`](../../recovar/em/refinement/half_scoring.py), [`refinement/firstiter_cc.py`](../../recovar/em/refinement/firstiter_cc.py) |
-| Coarse/sparse scoring | [`scoring/significance.py`](../../recovar/em/scoring/significance.py), [`sparse_pass2/sparse_pass2_bucketed.py`](../../recovar/em/sparse_pass2/sparse_pass2_bucketed.py) |
+| Iteration scheduling and state mutation | [`iteration_loop.py`](../../relax/refinement/iteration_loop.py) |
+| Dense E/M execution | [`em_engine.py`](../../relax/dense/em_engine.py) |
+| Local search orchestration and kernels | [`local_search_iteration.py`](../../relax/refinement/local_search_iteration.py), [`local_em_engine.py`](../../relax/local/local_em_engine.py) |
+| Fixed-capacity hypothesis packing and execution binding | [`fixed_capacity_local.py`](../../relax/local/fixed_capacity_local.py) |
+| Class routing and joint result assembly | [`k_class.py`](../../relax/classification/k_class.py), [`k_class_results.py`](../../relax/classification/k_class_results.py) |
+| Replay selection and final-pass admission | [`relion_replay.py`](../../relax/diagnostics/relion_replay.py), [`finalization_policy.py`](../../relax/refinement/finalization_policy.py) |
+| Sparse engine dispatch and independent reference | [`sparse_pass2/dispatch.py`](../../relax/sparse_pass2/dispatch.py), [`reference/sparse_pass2.py`](../../relax/reference/sparse_pass2.py); grid and support arithmetic stay in `helpers/oversampling.py` |
+| Standard half-set and first-iteration adapters | [`refinement/half_scoring.py`](../../relax/refinement/half_scoring.py), [`refinement/firstiter_cc.py`](../../relax/refinement/firstiter_cc.py) |
+| Coarse/sparse scoring | [`scoring/significance.py`](../../relax/scoring/significance.py), [`sparse_pass2/sparse_pass2_bucketed.py`](../../relax/sparse_pass2/sparse_pass2_bucketed.py) |
 
 Coarse window metadata is published by `scoring/coarse_publication.py`; local
 reconstruction-group admission belongs to `local/local_batch_planning.py`.
@@ -122,7 +122,7 @@ not from the size of this overview. Current evidence belongs in [EM status](em_s
 ## Diagnostics and reusable evidence
 
 The optional iteration, reconstruction, pass-2 operand and normalization capture
-writers live in [`recovar/em/diagnostics`](../../recovar/em/diagnostics/__init__.py).
+writers live in [`relax/diagnostics`](../../relax/diagnostics/__init__.py).
 Production engines call them at the existing capture boundaries. The package
 initializer imports nothing; the individual writers still use shared numerical
 utilities and the BPref capture context. This is an ownership boundary, not a
@@ -130,7 +130,7 @@ claim that all diagnostics have already been removed from normal import paths.
 Local operand comparison and parity-worktree provenance also live there; they
 are EM/RELION diagnostics rather than general RECOVAR utilities.
 
-[`recovar/relion_bind`](../../recovar/relion_bind/__init__.py) currently mixes
+[`relax/relion_bind`](../../relax/relion_bind/__init__.py) currently mixes
 native runtime dependencies with independent validation interfaces. RELION-style
 EM uses its sampling, particle ordering, CTF and reconstruction routines; those
 are not removable merely because the package also supports parity tests.
@@ -162,7 +162,7 @@ in source manifests when freezing or copying either reporter; the reporter file
 alone no longer contains the full metric implementation.
 
 Shared RELION projector construction lives in
-[`relion_projector_setup.py`](../../recovar/em/relion/relion_projector_setup.py):
+[`relion_projector_setup.py`](../../relax/relion/relion_projector_setup.py):
 `reference_to_relion_projector_half_maps_and_power` selects native/JAX setup and
 performs the established frame and dtype conversion; the maps-only wrapper
 releases the unused power spectrum. EM projector caching and VDAM both use this
@@ -170,8 +170,8 @@ owner directly. VDAM's `dense_adapter` retains state-specific preparation and
 accumulator conversion, so EM no longer imports the VDAM execution adapter to
 construct projectors. The same shared owner normalizes local projector slab
 shapes without changing dtype. Shared host/device x=0 Hermitian enforcement
-lives in [`helpers/half_volume_mstep.py`](../../recovar/em/helpers/half_volume_mstep.py);
-resident capacity ladders use [`helpers/env_flags.py`](../../recovar/em/helpers/env_flags.py).
+lives in [`helpers/half_volume_mstep.py`](../../relax/helpers/half_volume_mstep.py);
+resident capacity ladders use [`helpers/env_flags.py`](../../relax/helpers/env_flags.py).
 
 ## VDAM code budgets
 
@@ -196,7 +196,7 @@ are unchanged.
 | **Total** | **8,680** | **8,930** | **250 lines of total headroom** |
 
 Noise failure reports and optional noise-boundary captures now live in
-[`diagnostics/vdam_noise.py`](../../recovar/em/diagnostics/vdam_noise.py);
+[`diagnostics/vdam_noise.py`](../../relax/diagnostics/vdam_noise.py);
 `vdam/estep_meta_updates.py` owns the numerical update. This move transfers
 110 budget lines from E-step to diagnostics without increasing the 8,850 total.
 Solvent masking now lives with reconstruction in `vdam/m_step.py`; state precision

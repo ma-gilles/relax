@@ -1,7 +1,7 @@
 # EM validation and oracle runbook
 
 Read the section needed for the current test, submission or scientific review.
-The [EM contract](../../recovar/em/AGENTS.md) contains always-applicable rules.
+The [EM contract](../../relax/AGENTS.md) contains always-applicable rules.
 These procedures remain mandatory when their scope applies; moving them here
 does not waive a gate. Current work is in [EM status](em_status.md).
 
