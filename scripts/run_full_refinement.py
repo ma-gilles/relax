@@ -3190,15 +3190,21 @@ def main():
             optimiser_star,
         )
     if args.max_significants is None:
-        args.max_significants = 500
-        max_significants_resolution = {
-            "maximum_significants_argument": None,
-            "active_max_significants": 500,
-            "source": "recovar_default",
-            "gradient_refine": False,
-            "do_grad": False,
-            "target_iteration": int(args.init_relion_iteration) + 1,
-        }
+        from relax.relion.relion_metadata import resolve_relion_runtime_max_significants
+
+        # Without a RELION optimiser STAR, use relion_refine's own --maxsig default of -1
+        # (ml_optimiser.cpp:1109) and its runtime resolution (ml_optimiser.cpp:3692-3699).
+        max_significants_resolution = resolve_relion_runtime_max_significants(
+            override=None,
+            optimiser_metadata={"maximum_significants_arg": -1},
+            target_iteration=int(args.init_relion_iteration) + 1,
+            do_firstiter_cc=bool(args.firstiter_cc),
+            n_classes=int(args.n_classes),
+            reference_dimension=3,
+        )
+        max_significants_resolution["source"] = "relion_cli_default"
+        args.max_significants = int(max_significants_resolution["active_max_significants"])
+        logger.info("RELION max_significants: --maxsig default -1 -> active %d", args.max_significants)
     elif max_significants_resolution is None:
         max_significants_resolution = {
             "maximum_significants_argument": None,
