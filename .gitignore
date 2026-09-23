@@ -1,0 +1,14 @@
+site/
+__pycache__/
+*.py[cod]
+*.so
+build/
+dist/
+*.egg-info/
+relax/_version.py
+.pixi
+.tmp/
+.pytest_cache/
+.coverage
+*.log
+relax/relion_bind/build/

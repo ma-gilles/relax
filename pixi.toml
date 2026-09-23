@@ -1,0 +1,114 @@
+[workspace]
+name = "relax"
+version = "0.1.0"
+description = "relax: RELION-style cryo-EM refinement in JAX, built on RECOVAR"
+authors = ["Marc Aurele Gilles <gilles@princeton.edu>"]
+channels = ["conda-forge", "pytorch", "nvidia"]
+platforms = ["linux-64"]
+
+# The dependency set below is RECOVAR's (recovar pixi.toml at the pinned commit), so shared packages resolve to
+# the same builds. scripts/check_lock_parity.py (P3) compares name, version and sha256 of every shared package
+# between recovar's frozen pixi.lock and this one; any difference fails bitwise qualification.
+
+[system-requirements]
+cuda = "12.6"
+
+[dependencies]
+python = ">=3.11, <3.12"
+pip = "*"
+setuptools = "*"
+wheel = "*"
+git = "*"
+make = "*"
+cxx-compiler = "*"
+numpy = ">=2.2.0,<2.3.0"
+scipy = ">=1.15.0"
+matplotlib = ">=3.10.0"
+pandas = ">=2.2.0"
+scikit-learn = ">=1.6.0"
+scikit-image = "*"
+psutil = ">=5.9.0"
+jupyterlab = "*"
+notebook = "<7"
+ipython = ">=8.12.0"
+ipywidgets = ">=8.1.0"
+ipykernel = "*"
+pillow = "*"
+seaborn = ">=0.13.0"
+plotly = ">=6.0.0"
+h5py = "*"
+typing_extensions = "*"
+nvtx = ">=0.2.13"
+pytest = ">=8.0"
+pytest-cov = ">=5.0"
+# RELION binding (relax/relion_bind): pybind11 + FFTW headers from this environment (CMakeLists.txt looks in
+# ../../.pixi/envs/default).
+pybind11 = "*"
+
+[pypi-dependencies]
+mkdocstrings = { extras = ["python"], version = "*" }
+mypy = "==1.20.0"
+ruff = ">=0.8.0"
+jax = { extras = ["cuda12"], version = "==0.9.0.1" }
+jax-cuda12-plugin = "==0.9.0.1"
+jax-cuda12-pjrt = "==0.9.0.1"
+twine = "*"
+dataframe_image = "==0.2.7"
+finufft = "==2.3.1"
+healpy = "==1.18.0"
+jax_finufft = "==0.1.0"
+jaxopt = "==0.8.5"
+jaxwt = "==0.1.1"
+jaxtyping = "==0.2.38"
+kneed = "==0.8.5"
+lineax = "==0.0.7"
+matplotlib_scalebar = "==0.9.0"
+more_itertools = "==10.6.0"
+mrcfile = "==1.5.4"
+cufflinks = "*"
+pyproximal = "==0.11.1"
+starfile = "==0.5.11"
+tensorflow_cpu = "*"
+umap-learn = { extras = ["plot"] }
+optax = "==0.2.7"
+grain = "==0.2.16"
+equinox = "==0.13.4"
+relax = { path = ".", editable = true }
+
+[feature.cuda.dependencies]
+pytorch = { version = ">=2.3.1", channel = "pytorch" }
+
+# Immutable RECOVAR pin: recovar.__file__ then identifies the exact commit (direct_url.json).
+# PIN: recovar dev2 427a08bd8 (Q) for the scaffold; P3/P4 re-pins to R.
+[feature.pinned.pypi-dependencies]
+recovar = { git = "https://github.com/ma-gilles/recovar", rev = "427a08bd8550116f6fdc3f66ad202760372a813e" }
+
+# Co-development against a local RECOVAR checkout (editable). Scaffold: the relax split P1 worktree.
+[feature.dev.pypi-dependencies]
+recovar = { path = "../recovar_relax_split_p1_20260923", editable = true }
+
+[feature.docs.dependencies]
+python = ">=3.11, <3.12"
+
+[feature.docs.pypi-dependencies]
+mkdocs = "==1.6.1"
+mkdocs-material = "==9.7.6"
+mkdocstrings = { extras = ["python"], version = "==1.0.6" }
+mkdocstrings-python = "==2.0.7"
+
+[feature.docs.tasks]
+docs-build = "mkdocs build --strict"
+
+[environments]
+default = { features = ["cuda", "pinned"] }
+dev = { features = ["cuda", "dev"] }
+docs = { features = ["docs"], no-default-feature = true }
+
+[tasks]
+build-cuda = "python -m relax.command_line build_cuda"
+build-relion-bind = "python -m relax.command_line build_relion_bind"
+smoke-import-relax = "python -c \"import relax, recovar; print('relax', relax.__file__); print('recovar', recovar.__file__)\""
+test-fast = "python -m pytest tests/ -q"
+# EM-parity fast tier: K=1 + K-class 128² 5k replay vs RELION. Needs RECOVAR_RELION_BIND_BUILD_DIR pointing at a
+# built _relion_bind_core*.so (harness trap 1).
+test-em-parity-fast = "python -m pytest -v -s --run-slow --run-integration --run-gpu tests/integration/test_em_parity_fast.py"
