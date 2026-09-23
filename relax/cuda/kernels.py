@@ -1973,7 +1973,7 @@ def _run_vdam_external_host_replay_callback(
     if not exact_ptx:
         raise RuntimeError("external VDAM host replay requires exact native PTX")
 
-    helper = pathlib.Path(__file__).resolve().parents[1] / "scripts" / (
+    helper = pathlib.Path(__file__).resolve().parents[2] / "scripts" / (
         "run_vdam_exact_native_host_replay.py"
     )
     if not helper.is_file():

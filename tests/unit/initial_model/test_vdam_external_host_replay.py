@@ -18,9 +18,9 @@ HELPER = ROOT / "scripts" / "run_vdam_exact_native_host_replay.py"
 @pytest.mark.integration
 def test_compiled_host_replay_rejects_missing_operands():
     """Check the actual C export without initializing a CUDA device."""
-    library_path = os.environ.get("RECOVAR_CUDA_LIB")
+    library_path = os.environ.get("RELAX_CUDA_LIB")
     if not library_path:
-        pytest.skip("requires an explicitly built RECOVAR_CUDA_LIB")
+        pytest.skip("requires an explicitly built RELAX_CUDA_LIB")
     library = ctypes.CDLL(str(Path(library_path).resolve(strict=True)))
     replay = library.recovar_relion_vdam_exact_native_host_replay
     replay.argtypes = [ctypes.POINTER(run_vdam_exact_native_host_replay.ReplayArguments)]
