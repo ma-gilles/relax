@@ -125,7 +125,7 @@ def test_env_gate_default_off(monkeypatch):
 
 
 def test_row_state_bytes_match_header():
-    header = os.path.join(os.path.dirname(cb.__file__), "em", "cuda", "sparse_pass2_posterior.cuh")
+    header = os.path.join(os.path.dirname(em_cuda_kernels.__file__), "sparse_pass2_posterior.cuh")
     body = open(header).read().split("struct RowState", 1)[1].split("};", 1)[0]
     sizes = {"float": 4, "double": 8, "int": 4}
     fields = [line.split()[0] for line in body.splitlines() if line.strip() and line.strip()[0] not in "{/"]

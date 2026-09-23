@@ -97,7 +97,7 @@ def test_full_refinement_supports_stop_after_pass2_operand_dump():
     assert "Pass2DumpComplete" in source
     assert "requested fine-score boundary" in source
 ITERATION_LOOP = (
-    Path(__file__).resolve().parents[2] / 'recovar' / 'em' / 'refinement' / 'iteration_loop.py'
+    Path(__file__).resolve().parents[2] / 'relax' / 'refinement' / 'iteration_loop.py'
 )
 
 

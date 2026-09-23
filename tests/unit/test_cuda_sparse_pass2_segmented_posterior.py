@@ -143,7 +143,7 @@ def _assert_same(actual, expected, context=""):
 def test_segment_state_bytes_match_header():
     """The Python scratch size tracks sizeof(SegmentState) in the CUDA header."""
 
-    header = os.path.join(os.path.dirname(cb.__file__), "em", "cuda", "sparse_pass2_posterior.cuh")
+    header = os.path.join(os.path.dirname(em_cuda_kernels.__file__), "sparse_pass2_posterior.cuh")
     body = open(header).read().split("struct SegmentState", 1)[1].split("};", 1)[0]
     sizes = {"RowState": em_cuda_kernels._SPARSE_PASS2_ROW_STATE_BYTES, "int": 4, "int64_t": 8}
     fields = [line.split()[0] for line in body.splitlines() if line.strip() and line.strip()[0] not in "{/"]
