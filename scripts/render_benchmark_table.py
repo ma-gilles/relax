@@ -7,8 +7,10 @@ baseline changes, edit the JSON and run
     python scripts/render_benchmark_table.py
 
 ``--check`` exits non-zero when the Markdown is stale. Validation rejects a
-null measurement without a reason and a time ratio that does not follow from
-the row's two wall times.
+null measurement without a reason, a time ratio that does not follow from
+the row's two wall times, and a time ratio without its like-for-like record
+(``time_check`` a-d: GPU and MPI layout, relax diagnostic options, timing
+scope, GPU model per job).
 """
 
 import argparse
@@ -60,6 +62,8 @@ def _validate_row(row, definitions):
     ratio = row["time_ratio_relax_over_relion"]
     walls = (row["relion"]["wall_s"], row["relax"]["wall_s"])
     if ratio is not None:
+        if set(row.get("time_check", {})) != set("abcd"):
+            raise ValueError(f"{rid}: a time ratio needs time_check entries a-d")
         if None in walls:
             raise ValueError(f"{rid}: time ratio without both wall times")
         if abs(walls[1] / walls[0] - ratio) > RATIO_TOLERANCE:
