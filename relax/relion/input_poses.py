@@ -118,10 +118,14 @@ def _load_input_star_previous_best_poses(
             raise ValueError(f"RECOVAR input STAR {field} values must be finite")
         return values
 
-    eulers = _numeric_columns(
-        ("rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi"),
-        field="Euler-angle",
-    )
+    # relion_refine sets each absent angle label to 0 when it reads the input
+    # (Experiment::read, exp_model.cpp:1104-1136), so a STAR without angles is
+    # seeded with zeros rather than rejected.
+    angle_columns = ("rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi")
+    eulers = np.zeros((n_particles, len(angle_columns)), dtype=np.float64)
+    for axis, column in enumerate(angle_columns):
+        if column in input_particles.columns:
+            eulers[:, axis] = _numeric_columns((column,), field="Euler-angle")[:, 0]
 
     angstrom_columns = ("rlnOriginXAngst", "rlnOriginYAngst")
     pixel_columns = ("rlnOriginX", "rlnOriginY")
@@ -181,7 +185,8 @@ def _add_initial_pose_source_argument(parser: argparse.ArgumentParser) -> None:
         help=(
             "Initial previous-best poses for a fresh K=1 refinement. 'auto' "
             "loads Euler angles and origins from <data_dir>/particles.star when "
-            "--relion_half_sets supplies the matched random halves; 'input-star' "
+            "--relion_half_sets or --relion-half-sets-from-input supplies the matched "
+            "random halves (absent angles are 0, as in relion_refine); 'input-star' "
             "requires that production path explicitly; 'none' preserves an "
             "unseeded search. Diagnostic/replay pose sources retain ownership."
         ),

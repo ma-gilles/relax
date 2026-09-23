@@ -110,6 +110,24 @@ def test_input_star_pose_seed_rejects_nonpartition_and_nonfinite_pose():
         )
 
 
+def test_input_star_pose_seed_sets_absent_angles_to_zero_like_relion():
+    input_particles, halfset_particles = _particle_tables()
+    input_particles = input_particles.drop(columns=["rlnAngleRot", "rlnAnglePsi"])
+
+    seed = _load_input_star_previous_best_poses(
+        input_particles,
+        halfset_particles,
+        half1_idx=np.asarray([2, 0]),
+        half2_idx=np.asarray([3, 1]),
+        voxel_size=1.0,
+    )
+
+    np.testing.assert_array_equal(
+        seed["previous_best_rotation_eulers"][0],
+        np.asarray([[0.0, 31.0, 0.0], [0.0, 11.0, 0.0]], dtype=np.float32),
+    )
+
+
 def test_initial_pose_source_cli_defaults_to_fresh_k1_halfset_auto():
     parser = argparse.ArgumentParser()
     _add_initial_pose_source_argument(parser)
