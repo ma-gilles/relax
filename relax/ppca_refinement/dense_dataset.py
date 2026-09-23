@@ -58,6 +58,7 @@ from relax.ppca_refinement.pose_selection import (
     top_pose_candidate_count,
 )
 from relax.ppca_refinement.postprocess import PostprocessConfig, postprocess_ppca_half_volumes
+from relax.ppca_refinement.residual_statistics import full_float32, residual_statistics_precision
 from relax.ppca_refinement.state import PoseMarginalPPCAEMState
 
 
@@ -99,6 +100,14 @@ def _dense_top_rotation_matrices(rotations: np.ndarray, top_rotation_idx: np.nda
     if np.any(valid):
         out[valid] = np.asarray(rotations, dtype=np.float32)[top_rotation_idx[valid]]
     return out
+
+
+def _latent_covariance_trace_from_packed_moments(G_tri, alpha, basis_size: int):
+    """Read only latent diagonal entries of the packed second moment."""
+    diagonal = np.asarray(
+        [i * basis_size - i * (i - 1) // 2 for i in range(1, basis_size)], dtype=np.int32
+    )
+    return jnp.sum(jnp.take(G_tri, diagonal, axis=-1), axis=-1) - jnp.sum(alpha[..., 1:] ** 2, axis=-1)
 
 
 def _coerce_one_volume_to_half(volume, volume_shape, *, volume_domain: str) -> jax.Array:
@@ -185,6 +194,7 @@ def prepare_dense_ppca_dataset_inputs(
     current_size: int | None = None,
     relion_unit_half_weights: bool = False,
     square_window: bool = False,
+    full_real_observation: bool = False,
 ) -> DensePPCADatasetBlockInputs:
     """Resolve augmented volumes and Fourier-window masks for dense PPCA."""
 
@@ -210,7 +220,8 @@ def prepare_dense_ppca_dataset_inputs(
         image_shape,
         relion_half_sum=relion_unit_half_weights,
     )
-    score_mask = _mask_from_indices(n_half, window_spec.score_indices) * half_weights
+    score_indices = window_spec.recon_indices if full_real_observation else window_spec.score_indices
+    score_mask = _mask_from_indices(n_half, score_indices) * half_weights
     recon_mask = _mask_from_indices(n_half, window_spec.recon_indices)
     return DensePPCADatasetBlockInputs(
         augmented_half_volumes=augmented_half,
@@ -219,7 +230,7 @@ def prepare_dense_ppca_dataset_inputs(
         volume_shape=volume_shape,
         score_mask=score_mask.astype(jnp.float32),
         recon_mask=recon_mask.astype(jnp.float32),
-        score_indices=window_spec.score_indices,
+        score_indices=score_indices,
         recon_indices=window_spec.recon_indices,
         use_window=bool(window_spec.use_window),
         backprojection_max_r=window_spec.max_r,
@@ -372,6 +383,8 @@ def iter_dense_ppca_dataset_blocks(
     square_window: bool = False,
     relion_texture_interp: bool = True,
     skip_empty_pose_blocks: bool = False,
+    collect_observation: bool = False,
+    full_real_observation: bool = False,
 ) -> Iterable[DensePPCAFusedBlock]:
     """Yield prepared dense PPCA fused blocks directly from a dataset."""
 
@@ -395,6 +408,7 @@ def iter_dense_ppca_dataset_blocks(
         current_size=current_size,
         relion_unit_half_weights=relion_unit_half_weights,
         square_window=square_window,
+        full_real_observation=full_real_observation,
     )
     config = ForwardModelConfig.from_dataset(
         experiment_dataset,
@@ -437,6 +451,12 @@ def iter_dense_ppca_dataset_blocks(
         else:
             shifted_recon_half = shifted_score_half
 
+        observation_power = None
+        if collect_observation:
+            if score_with_masked_images or relion_unit_half_weights or image_scale_corrections is not None:
+                raise ValueError("Residual statistics require unmasked, unit-contrast full-Hermitian observations")
+            processed = experiment_dataset.process_images_half(batch_data, apply_image_mask=False)
+            observation_power = jnp.sum(jnp.abs(processed.reshape(batch_count, -1)) ** 2, axis=0)
         F = int(shifted_score_half.shape[-1])
         if image_scale_corrections is None:
             batch_scale = jnp.ones((batch_count,), dtype=shifted_score_half.real.dtype)
@@ -519,6 +539,9 @@ def iter_dense_ppca_dataset_blocks(
                 backprojection_max_r=resolved.backprojection_max_r,
                 batch_start=batch_start,
                 rotation_start=r0,
+                score_window_indices=resolved.score_indices,
+                observation_power=observation_power,
+                coefficient_noise=noise_variance_half if collect_observation else None,
             )
         batch_start += batch_count
 
@@ -566,6 +589,24 @@ def _score_block_to_rotation_major_flat(score) -> jax.Array:
     return jnp.swapaxes(jnp.asarray(score), 1, 2).reshape(jnp.asarray(score).shape[0], -1)
 
 
+def _centered_score_partition(block_scores: list[jax.Array]) -> tuple[jax.Array, jax.Array]:
+    """Normalize pose scores in float32 without rounding an absolute logZ.
+
+    Each score block is already retained by the cached-moments path. Reduce
+    within those blocks, keeping memory bounded by the computational schedule.
+    See the pose-marginal normalization in ``docs/math/vdam_ppca_algorithm.md``.
+    """
+    center = jnp.max(jnp.stack([
+        jnp.max(score, axis=(1, 2)) for score in block_scores
+    ]), axis=0)
+    partition = jnp.zeros_like(center, dtype=jnp.float32)
+    for score in block_scores:
+        partition = partition + jnp.sum(
+            jnp.exp(score - center[:, None, None]), axis=(1, 2)
+        )
+    return center, jnp.log(partition)
+
+
 def compute_dense_ppca_adaptive_significance(
     experiment_dataset,
     mu,
@@ -591,7 +632,7 @@ def compute_dense_ppca_adaptive_significance(
 
     The returned ``significant_sample_indices`` use rotation-major packed pose
     IDs (``rotation_idx * n_translations + translation_idx``), matching
-    :func:`recovar.em.local.local_layout.build_pass2_hypothesis_layout`.
+    :func:`relax.local.local_layout.build_pass2_hypothesis_layout`.
     """
 
     geometry = geometry if geometry is not None else GeometryConfig()
@@ -641,6 +682,7 @@ def compute_dense_ppca_adaptive_significance(
         score_with_masked_images=scoring.score_with_masked_images,
         relion_unit_half_weights=scoring.relion_unit_half_weights,
         square_window=scoring.square_window,
+        full_real_observation=scoring.full_real_observation,
         relion_texture_interp=scoring.relion_texture_interp,
         skip_empty_pose_blocks=skip_empty_pose_blocks,
     )
@@ -758,13 +800,12 @@ def compute_dense_ppca_adaptive_significance(
     )
 
 
-def run_dense_ppca_fused_em_iteration(
+@residual_statistics_precision
+def accumulate_dense_ppca_statistics(
     experiment_dataset,
     mu,
     W=None,
     *,
-    mean_prior,
-    W_prior,
     noise_variance,
     rotations,
     translations,
@@ -773,28 +814,28 @@ def run_dense_ppca_fused_em_iteration(
     scoring: ScoringConfig | None = None,
     sparse_pass2: SparsePass2Config | None = None,
     mean_reg: MeanRegularizationConfig | None = None,
-    postprocess: PostprocessConfig | None = None,
     disc_type: str = "linear_interp",
     image_indices: np.ndarray | None = None,
     rotation_log_prior: np.ndarray | None = None,
     translation_log_prior: np.ndarray | None = None,
     rotation_translation_mask: np.ndarray | None = None,
     enforce_x0: bool = True,
-    freeze_mean: bool = False,
+    collect_residuals: bool = False,
     skip_empty_pose_blocks: bool = False,
     top_pose_count: int = 1,
     pose_selection: PoseSelectionConfig | None = None,
-) -> DensePPCAFusedEMResult:
-    """Run one dataset-backed dense PPCA EM iteration."""
+) -> AugmentedPPCAStats:
+    """Accumulate unregularized PPCA statistics without solving or postprocessing.
+
+    Model geometry determines sizes; no artificial prior arrays are needed.
+    """
     geometry = geometry if geometry is not None else GeometryConfig()
     schedule = schedule if schedule is not None else ScheduleConfig()
     scoring = scoring if scoring is not None else ScoringConfig()
     sparse_pass2_cfg = sparse_pass2 if sparse_pass2 is not None else SparsePass2Config()
     mean_reg = mean_reg if mean_reg is not None else MeanRegularizationConfig()
-    postprocess = postprocess if postprocess is not None else PostprocessConfig()
     # Local aliases keep the rest of the body readable; configs are the public API.
     image_scale_corrections = scoring.image_scale_corrections
-    mstep_chunk_size = schedule.mstep_chunk_size
     sparse_pass2_enabled = sparse_pass2_cfg.enabled
     sparse_pass2_log_threshold = sparse_pass2_cfg.log_threshold
     pose_selection = (
@@ -804,6 +845,8 @@ def run_dense_ppca_fused_em_iteration(
     )
     top_pose_count = int(pose_selection.top_p_poses)
 
+    if collect_residuals and sparse_pass2_cfg.enabled:
+        raise ValueError("Residual statistics require all declared posterior support (disable sparse culling)")
     block_groups = _iter_dense_ppca_dataset_block_groups(
         experiment_dataset,
         mu,
@@ -826,22 +869,33 @@ def run_dense_ppca_fused_em_iteration(
         score_with_masked_images=scoring.score_with_masked_images,
         relion_unit_half_weights=scoring.relion_unit_half_weights,
         square_window=scoring.square_window,
+        full_real_observation=scoring.full_real_observation,
         relion_texture_interp=scoring.relion_texture_interp,
         skip_empty_pose_blocks=skip_empty_pose_blocks,
+        collect_observation=collect_residuals,
     )
-    q_resolved = int(jnp.asarray(W_prior).shape[1])
+    augmented, q_resolved = coerce_augmented_half_volumes(
+        mu,
+        W,
+        volume_shape=experiment_dataset.volume_shape,
+        q=geometry.q,
+        volume_domain=geometry.volume_domain,
+    )
+    half_size = augmented.shape[1]
     P = q_resolved + 1
     tri = _tri_size(P)
     image_shape = tuple(int(x) for x in experiment_dataset.image_shape)
     volume_shape = tuple(int(x) for x in experiment_dataset.volume_shape)
     image_scale_min, image_scale_max = resolve_image_scale_range(image_scale_corrections, image_indices)
-    mean_prior = jnp.asarray(mean_prior)
-    W_prior = jnp.asarray(W_prior)
-    if W_prior.shape != (mean_prior.shape[0], q_resolved):
-        raise ValueError(f"W_prior shape {W_prior.shape} != ({mean_prior.shape[0]}, {q_resolved})")
-
-    rhs_volume = jnp.zeros((P, mean_prior.shape[0]), dtype=jnp.complex64)
-    lhs_tri_volume = jnp.zeros((tri, mean_prior.shape[0]), dtype=jnp.float32)
+    rhs_volume = jnp.zeros((P, half_size), dtype=jnp.complex64)
+    lhs_tri_volume = jnp.zeros((tri, half_size), dtype=jnp.float32)
+    residual_volume = jnp.zeros_like(rhs_volume) if collect_residuals else None
+    residual_power = jnp.zeros(int(np.prod(image_shape[:-1])) * (image_shape[-1] // 2 + 1), jnp.float32)
+    embedding_batches = []
+    offset_second_sum = jnp.float32(0)
+    rotation_mass = jnp.zeros(len(rotations), jnp.float32)
+    latent_covariance_trace_sum = jnp.float32(0)
+    pose_entropy_sum = jnp.float32(0)
     log_likelihood = 0.0
     n_images = 0
     pmax_values = []
@@ -865,6 +919,9 @@ def run_dense_ppca_fused_em_iteration(
         if not group:
             continue
         batch_size = int(group[0].Y1.shape[0])
+        if collect_residuals:
+            residual_power = residual_power + group[0].observation_power
+            batch_embedding = jnp.zeros((batch_size, q_resolved), jnp.float32)
         if postprocess_bandlimit_max_r is None and bool(group[0].use_recon_window):
             postprocess_bandlimit_max_r = group[0].backprojection_max_r
         if score_fourier_size is None:
@@ -957,23 +1014,39 @@ def run_dense_ppca_fused_em_iteration(
             block_top_scores.append(top_scores)
             block_top_rotations.append(top_rot)
             block_top_translations.append(top_trans)
-        logZ = block_logZ[0]
-        for next_logZ in block_logZ[1:]:
-            logZ = jnp.logaddexp(logZ, next_logZ)
+        if cache_moments:
+            # Keep posterior normalization near zero. Adding absolute block
+            # log-partitions at scores around -1700 loses an entire float32
+            # ULP when the computational rotation block width changes.
+            # Scores are already retained for the cached-moments pass, and
+            # each reduction stays within one block's bounded score tensor.
+            score_center, centered_logZ = _centered_score_partition(block_scores)
+            logZ = score_center + centered_logZ
+            top_scores_for_posterior = [
+                scores - score_center[:, None] for scores in block_top_scores
+            ]
+        else:
+            logZ = block_logZ[0]
+            for next_logZ in block_logZ[1:]:
+                logZ = jnp.logaddexp(logZ, next_logZ)
+            centered_logZ = logZ
+            top_scores_for_posterior = block_top_scores
 
         log_likelihood += float(jnp.sum(logZ))
         n_images += batch_size
         batch_nsig = jnp.zeros((batch_size,), dtype=jnp.int32)
         top_selection = merge_top_p_pose_scores(
-            block_top_scores,
+            top_scores_for_posterior,
             block_top_rotations,
             block_top_translations,
-            logZ,
+            centered_logZ,
             rotations=np.asarray(rotations, dtype=np.float32),
             translations=np.asarray(translations, dtype=np.float32),
             config=pose_selection,
         )
         top_scores = jnp.asarray(top_selection.log_score, dtype=jnp.float32)
+        if cache_moments:
+            top_scores = top_scores + score_center[:, None]
         top_rotations = jnp.asarray(top_selection.rotation_idx, dtype=jnp.int32)
         top_translations = jnp.asarray(top_selection.translation_idx, dtype=jnp.int32)
         top_posteriors = jnp.asarray(top_selection.posterior, dtype=jnp.float32)
@@ -1022,15 +1095,63 @@ def run_dense_ppca_fused_em_iteration(
         for block_idx, block in enumerate(group):
             if id(block) not in retained_block_ids:
                 continue
+            if collect_residuals:
+                from relax.helpers.adjoint import batch_adjoint_slice_volume_maybe_windowed
+                from relax.helpers.half_spectrum import make_half_image_weights
+                from relax.ppca_refinement.residual_statistics import residual_image_statistics
+
+                residual_images, correction, embedding = residual_image_statistics(
+                    block_scores[block_idx] - score_center[:, None, None],
+                    block_alphas[block_idx],
+                    block_G_tris[block_idx],
+                    centered_logZ,
+                    block.Y1,
+                    block.ctf2_over_noise,
+                    block.proj_aug,
+                )
+                indices = block.score_window_indices
+                weights = make_half_image_weights(image_shape)
+                weights = weights if indices is None else weights[indices]
+                # The half-image adjoint supplies conjugate scatters itself.
+                residual_volume = batch_adjoint_slice_volume_maybe_windowed(
+                    residual_images / weights[None, None, :],
+                    indices,
+                    block.rotations,
+                    residual_volume,
+                    image_shape,
+                    volume_shape,
+                    disc_type,
+                    True,
+                    True,
+                    use_window=indices is not None,
+                    max_r=block.backprojection_max_r,
+                )
+                nv = jnp.broadcast_to(block.coefficient_noise, (residual_power.size,))
+                if indices is None:
+                    residual_power = residual_power + correction * nv / weights
+                else:
+                    residual_power = residual_power.at[indices].add(correction * nv[indices] / weights)
+                batch_embedding = batch_embedding + embedding
+                gamma = jnp.exp(block_scores[block_idx] - score_center[:, None, None] - centered_logZ[:, None, None])
+                latent_covariance_trace = _latent_covariance_trace_from_packed_moments(
+                    block_G_tris[block_idx], block_alphas[block_idx], P
+                )
+                latent_covariance_trace_sum += jnp.sum(gamma * latent_covariance_trace)
+                centered_score = block_scores[block_idx] - score_center[:, None, None] - centered_logZ[:, None, None]
+                pose_entropy_sum -= jnp.sum(jnp.where(gamma > 0, gamma * centered_score, 0))
+                start = block.rotation_start
+                rotation_mass = rotation_mass.at[start : start + gamma.shape[2]].add(jnp.sum(gamma, axis=(0, 1)))
+                shift_squared = jnp.sum(jnp.asarray(translations, jnp.float32) ** 2, axis=-1)
+                offset_second_sum = offset_second_sum + jnp.sum(gamma * shift_squared[None, :, None])
             if cache_moments and block_scores[block_idx] is not None:
                 # Fast path: pass-1 already computed score + (α, G_tri). Skip
                 # the duplicate `_per_pose_stats_block` einsum that
                 # `fused_dense_pose_ppca_block` would otherwise redo.
                 rhs_volume, lhs_tri_volume, n_sig_block, _pmax_block = accumulate_pose_ppca_block_cached(
-                    block_scores[block_idx],
+                    block_scores[block_idx] - score_center[:, None, None],
                     block_alphas[block_idx],
                     block_G_tris[block_idx],
-                    logZ,
+                    centered_logZ,
                     block.Y1_recon if block.Y1_recon is not None else block.Y1,
                     block.ctf2_over_noise_recon if block.ctf2_over_noise_recon is not None else block.ctf2_over_noise,
                     block.rotations,
@@ -1065,6 +1186,8 @@ def run_dense_ppca_fused_em_iteration(
                     backprojection_max_r=block.backprojection_max_r,
                 )
                 batch_nsig = batch_nsig + posterior.n_significant_per_image
+        if collect_residuals:
+            embedding_batches.append(batch_embedding)
         pmax_values.append(batch_pmax)
         nsig_values.append(batch_nsig)
         best_rotations.append(batch_best_rotation)
@@ -1124,13 +1247,190 @@ def run_dense_ppca_fused_em_iteration(
             "top_pose_min_translation_px": float(pose_selection.top_pose_min_translation_px),
         },
     )
+    residual_num = residual_den = original_ids = None
+    if collect_residuals:
+        from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
+
+        weights = make_half_image_weights(image_shape)
+        shells = make_shell_indices_half(image_shape)
+        n_shells = int(np.max(np.asarray(shells))) + 1
+        residual_num = jnp.zeros(n_shells, jnp.float32).at[shells].add(weights * residual_power)
+        residual_den = jnp.zeros(n_shells, jnp.float32).at[shells].add(weights * n_images)
+        local_ids = np.arange(experiment_dataset.n_images) if image_indices is None else np.asarray(image_indices)
+        original_ids = experiment_dataset.original_image_indices_from_local(local_ids)
     stats = AugmentedPPCAStats(
         rhs=jnp.swapaxes(rhs_volume, 0, 1),
         lhs_tri=jnp.swapaxes(lhs_tri_volume, 0, 1),
         log_likelihood=log_likelihood,
         n_images=n_images,
+        residual_gradient=None if residual_volume is None else residual_volume.T,
+        residual_num=residual_num,
+        residual_den=residual_den,
+        embeddings=jnp.concatenate(embedding_batches) if collect_residuals else None,
+        original_image_ids=original_ids,
         diagnostics=diagnostics,
     )
+    diagnostics["postprocess_bandlimit_max_r"] = postprocess_bandlimit_max_r
+    if collect_residuals:
+        diagnostics["offset_second_sum_px2"] = float(offset_second_sum)
+        diagnostics["rotation_mass"] = np.asarray(rotation_mass)
+        diagnostics["latent_covariance_trace_mean"] = float(latent_covariance_trace_sum / n_images)
+        diagnostics["pose_entropy_mean"] = float(pose_entropy_sum / n_images)
+    return stats
+
+
+
+class DensePPCAEmbeddings(NamedTuple):
+    """Final pose-marginal coordinates and stable original particle IDs."""
+
+    embeddings: jax.Array
+    original_image_ids: np.ndarray
+    n_images: int
+
+
+@full_float32
+def compute_dense_ppca_embeddings(
+    experiment_dataset,
+    mu,
+    W=None,
+    *,
+    noise_variance,
+    rotations,
+    translations,
+    geometry: GeometryConfig,
+    schedule: ScheduleConfig,
+    scoring: ScoringConfig,
+    disc_type: str = "linear_interp",
+    image_indices: np.ndarray | None = None,
+    rotation_log_prior: np.ndarray | None = None,
+    translation_log_prior: np.ndarray | None = None,
+    rotation_translation_mask: np.ndarray | None = None,
+) -> DensePPCAEmbeddings:
+    """Compute final embeddings on the same complete pose support as accumulation.
+
+    This repeats the dense pass-1 score/moment blocks and centered posterior
+    normalization. It omits only the M-step adjoints and expected-noise terms, which are
+    unused after the final full-data update. See algorithm section 14.
+    """
+    blocks = _iter_dense_ppca_dataset_block_groups(
+        experiment_dataset,
+        mu,
+        W,
+        noise_variance,
+        rotations,
+        translations,
+        disc_type=disc_type,
+        image_batch_size=schedule.image_batch_size,
+        rotation_block_size=schedule.rotation_block_size,
+        current_size=geometry.current_size,
+        q=geometry.q,
+        volume_domain=geometry.volume_domain,
+        image_indices=image_indices,
+        rotation_log_prior=rotation_log_prior,
+        translation_log_prior=translation_log_prior,
+        rotation_translation_mask=rotation_translation_mask,
+        image_scale_corrections=scoring.image_scale_corrections,
+        class_log_prior=scoring.class_log_prior,
+        score_with_masked_images=scoring.score_with_masked_images,
+        relion_unit_half_weights=scoring.relion_unit_half_weights,
+        square_window=scoring.square_window,
+        full_real_observation=scoring.full_real_observation,
+        relion_texture_interp=scoring.relion_texture_interp,
+    )
+    embedding_batches = []
+    n_images = 0
+    for group in blocks:
+        scored = [
+            dense_pose_ppca_score_with_moments_blocked(
+                block.Y1,
+                block.proj_aug,
+                block.ctf2_over_noise,
+                block.y_norm,
+                block.pose_log_prior,
+            )
+            for block in group
+        ]
+        center, centered_logZ = _centered_score_partition([block.score for block in scored])
+        batch_embedding = jnp.zeros((int(group[0].Y1.shape[0]), geometry.q), jnp.float32)
+        for block in scored:
+            gamma = jnp.exp(block.score - center[:, None, None] - centered_logZ[:, None, None])
+            batch_embedding = batch_embedding + jnp.einsum("btr,btrq->bq", gamma, block.alpha[..., 1:])
+        embedding_batches.append(batch_embedding)
+        n_images += int(group[0].Y1.shape[0])
+    selected = (
+        np.arange(experiment_dataset.n_images, dtype=np.int64)
+        if image_indices is None else np.asarray(image_indices, dtype=np.int64)
+    )
+    original_ids = experiment_dataset.original_image_indices_from_local(selected)
+    if n_images != len(original_ids):
+        raise ValueError("Embedding pass did not cover each selected image")
+    return DensePPCAEmbeddings(jnp.concatenate(embedding_batches), original_ids, n_images)
+
+
+
+def run_dense_ppca_fused_em_iteration(
+    experiment_dataset,
+    mu,
+    W=None,
+    *,
+    mean_prior,
+    W_prior,
+    noise_variance,
+    rotations,
+    translations,
+    geometry: GeometryConfig | None = None,
+    schedule: ScheduleConfig | None = None,
+    scoring: ScoringConfig | None = None,
+    sparse_pass2: SparsePass2Config | None = None,
+    mean_reg: MeanRegularizationConfig | None = None,
+    postprocess: PostprocessConfig | None = None,
+    disc_type: str = "linear_interp",
+    image_indices: np.ndarray | None = None,
+    rotation_log_prior: np.ndarray | None = None,
+    translation_log_prior: np.ndarray | None = None,
+    rotation_translation_mask: np.ndarray | None = None,
+    enforce_x0: bool = True,
+    freeze_mean: bool = False,
+    skip_empty_pose_blocks: bool = False,
+    top_pose_count: int = 1,
+    pose_selection: PoseSelectionConfig | None = None,
+) -> DensePPCAFusedEMResult:
+    """Run the established regularized refinement M-step after shared accumulation."""
+    geometry = geometry if geometry is not None else GeometryConfig()
+    schedule = schedule if schedule is not None else ScheduleConfig()
+    mean_reg = mean_reg if mean_reg is not None else MeanRegularizationConfig()
+    postprocess = postprocess if postprocess is not None else PostprocessConfig()
+    stats = accumulate_dense_ppca_statistics(
+        experiment_dataset,
+        mu,
+        W,
+        noise_variance=noise_variance,
+        rotations=rotations,
+        translations=translations,
+        geometry=geometry,
+        schedule=schedule,
+        scoring=scoring,
+        sparse_pass2=sparse_pass2,
+        mean_reg=mean_reg,
+        disc_type=disc_type,
+        image_indices=image_indices,
+        rotation_log_prior=rotation_log_prior,
+        translation_log_prior=translation_log_prior,
+        rotation_translation_mask=rotation_translation_mask,
+        enforce_x0=enforce_x0,
+        skip_empty_pose_blocks=skip_empty_pose_blocks,
+        top_pose_count=top_pose_count,
+        pose_selection=pose_selection,
+    )
+    diagnostics = stats.diagnostics
+    n_images = stats.n_images
+    volume_shape = tuple(int(x) for x in experiment_dataset.volume_shape)
+    q_resolved = stats.rhs.shape[1] - 1
+    mean_prior, W_prior = jnp.asarray(mean_prior), jnp.asarray(W_prior)
+    if W_prior.shape != (mean_prior.shape[0], q_resolved):
+        raise ValueError("Prior shape does not match the model")
+    mstep_chunk_size = schedule.mstep_chunk_size
+    postprocess_bandlimit_max_r = diagnostics.pop("postprocess_bandlimit_max_r")
     mean_precision = resolve_mean_precision(stats, mean_prior, volume_shape, mean_reg)
     input_augmented_half, _input_q = coerce_augmented_half_volumes(
         mu,

@@ -261,6 +261,10 @@ def make_parser() -> argparse.ArgumentParser:
         type=_positive_int,
         default=DEFAULTS.rotation_block_size,
     )
+    parser.add_argument("--stochastic-batch-size", type=_positive_int, help="Optional fixed nonfinal VDAM subset")
+    parser.add_argument("--max-fourier-radius", type=_positive_int, help="Optional pilot current-size radius cap")
+    parser.add_argument("--max-healpix-order", type=_nonnegative_int, help="Optional pilot angular-order cap")
+    parser.add_argument("--stop-file", help="Stop between iterations after writing an iteration artifact")
     parser.add_argument(
         "--pass2-engine",
         "--pass2_engine",
@@ -511,6 +515,10 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
         "random_perturbation": args.random_perturbation,
         "image_batch_size": args.image_batch_size,
         "rotation_block_size": args.rotation_block_size,
+        "stochastic_batch_size": args.stochastic_batch_size,
+        "max_fourier_radius": args.max_fourier_radius,
+        "max_healpix_order": args.max_healpix_order,
+        "stop_file": args.stop_file,
         "pass2_engine": args.pass2_engine,
         "relion_wavg_sequential_cuda": args.relion_wavg_sequential_cuda,
         "exact_local_bucket_radix": args.exact_local_bucket_radix,

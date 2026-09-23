@@ -28,9 +28,12 @@ from relax.ppca_refinement.config import (
     SparsePass2Config,
 )
 from relax.ppca_refinement.dense_dataset import (
+    _centered_score_partition,
+    prepare_dense_ppca_dataset_inputs,
+)
+from relax.ppca_refinement.dense_dataset import (
     _project_augmented_half_volumes as _project_local_augmented,
 )
-from relax.ppca_refinement.dense_dataset import prepare_dense_ppca_dataset_inputs
 from relax.ppca_refinement.diagnostics import build_iteration_diagnostics, resolve_image_scale_range
 from relax.ppca_refinement.engine import (
     DensePPCAFusedEMResult,
@@ -275,8 +278,9 @@ def _score_gamma_and_moments_local_bucket(
     score = score_pre + jnp.swapaxes(jnp.asarray(pose_log_prior), -1, -2)
     B, T, R = score.shape
     score_flat = score.reshape(B, T * R)
-    logZ = jax.scipy.special.logsumexp(score_flat, axis=-1)
-    gamma = jnp.exp(score - logZ[:, None, None])
+    center, centered_logZ = _centered_score_partition([score])
+    logZ = center + centered_logZ
+    gamma = jnp.exp(score - center[:, None, None] - centered_logZ[:, None, None])
     best_flat = jnp.argmax(score_flat, axis=-1)
     pmax = jnp.max(gamma.reshape(B, T * R), axis=-1)
     k = max(1, min(int(top_pose_count), int(score_flat.shape[-1])))
@@ -329,8 +333,9 @@ def score_local_pose_ppca_bucket(
     score = score_pre + jnp.swapaxes(jnp.asarray(pose_log_prior), -1, -2)
     B, T, R = score.shape
     score_flat = score.reshape(B, T * R)
-    logZ = jax.scipy.special.logsumexp(score_flat, axis=-1)
-    gamma = jnp.exp(score - logZ[:, None, None])
+    center, centered_logZ = _centered_score_partition([score])
+    logZ = center + centered_logZ
+    gamma = jnp.exp(score - center[:, None, None] - centered_logZ[:, None, None])
     best_flat = jnp.argmax(score_flat, axis=-1)
     pmax = jnp.max(gamma.reshape(B, T * R), axis=-1)
     k = max(1, min(int(top_pose_count), int(score_flat.shape[-1])))
@@ -529,8 +534,9 @@ def _score_local_pose_ppca_bucket_with_moments(
     score = score_pre + jnp.swapaxes(jnp.asarray(pose_log_prior), -1, -2)
     B, T, R = score.shape
     score_flat = score.reshape(B, T * R)
-    logZ = jax.scipy.special.logsumexp(score_flat, axis=-1)
-    gamma = jnp.exp(score - logZ[:, None, None])
+    center, centered_logZ = _centered_score_partition([score])
+    logZ = center + centered_logZ
+    gamma = jnp.exp(score - center[:, None, None] - centered_logZ[:, None, None])
     best_flat = jnp.argmax(score_flat, axis=-1)
     pmax = jnp.max(gamma.reshape(B, T * R), axis=-1)
     k = max(1, min(int(top_pose_count), int(score_flat.shape[-1])))

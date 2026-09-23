@@ -220,7 +220,7 @@ def gridding_correct_volume_real(volume_real: jnp.ndarray, ori_size: int, paddin
     """
     N = volume_real.shape[0]
     c = N // 2
-    coord = jnp.arange(N, dtype=jnp.float64) - c
+    coord = jnp.arange(N, dtype=volume_real.dtype) - c
     K, I, J = jnp.meshgrid(coord, coord, coord, indexing="ij")
     r = jnp.sqrt(K * K + I * I + J * J)
     # Avoid /0 at center: sinc(0) = 1 → divide by 1 there.

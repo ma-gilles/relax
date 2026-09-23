@@ -140,3 +140,32 @@ def test_unknown_backend_rejected():
         relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
             np.zeros((1, 8, 8, 8)), current_size=8, projector_setup_backend="typo"
         )
+
+
+def test_float32_projector_route_rejects_native_fallback(monkeypatch):
+    refs = np.random.default_rng(41).normal(size=(1, 8, 8, 8)).astype(np.float32)
+    captured = []
+    original = relion_projector_setup.setup_relion_projector
+
+    def capture(*args, **kwargs):
+        result = original(*args, **kwargs)
+        captured.append(result)
+        return result
+
+    monkeypatch.setattr(relion_projector_setup, "setup_relion_projector", capture)
+    halves, power, radius = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
+        refs, current_size=8, projector_setup_backend="jax", compute_dtype=np.float32,
+    )
+    assert radius == 4
+    assert halves.dtype == np.complex64
+    assert captured[0][0].dtype == np.complex64
+    assert captured[0][1].dtype == np.float32
+    assert power.dtype == np.float64  # tau2 host metadata keeps its precision.
+    with pytest.raises(ValueError, match="Float32 projector setup requires"):
+        relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
+            refs, current_size=8, projector_setup_backend="native", compute_dtype=np.float32,
+        )
+    with pytest.raises(ValueError, match="Float32 projector setup requires"):
+        relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
+            refs, current_size=8, interpolator=0, projector_setup_backend="jax", compute_dtype=np.float32,
+        )

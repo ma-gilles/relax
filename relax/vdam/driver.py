@@ -11,6 +11,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 import numpy as np
 from recovar.data_io.cryoem_dataset import load_dataset
@@ -128,6 +129,7 @@ def _native_expectation_step(
                     state,
                     padding_factor=int(opts.padding_factor),
                     projector_setup_backend=opts.projector_setup_backend,
+                    projector_compute_dtype=opts.mstep_compute_dtype,
                 )
             accuracy_meta = _estimate_native_sampling_accuracy(
                 sampling_state,
@@ -303,6 +305,8 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         # relion_refine's default --random_seed -1 takes the time (ml_optimiser.cpp:2827).
         opts = replace(opts, random_seed=int(time.time()))
         logger.info("InitialModel random seed %d (RELION default -1: the time)", opts.random_seed)
+    if opts.mstep_compute_dtype == "float32" and opts.projector_setup_backend != "jax":
+        raise ValueError("Float32 EM requires JAX projector setup")
     if opts.mstep_compute_dtype == "float32" and os.environ.get(
         INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV, ""
     ).strip():
@@ -363,6 +367,8 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         grad_ini_subset_size, grad_fin_subset_size = (
             default_subset_sizes_for_3d_initial_model(int(dataset.n_images))
         )
+        if opts.stochastic_batch_size is not None:
+            grad_ini_subset_size = grad_fin_subset_size = min(int(opts.stochastic_batch_size), int(dataset.n_images))
         grad_ini_frac = float(opts.grad_ini_frac)
         grad_fin_frac = float(opts.grad_fin_frac)
         continuation_phase_lengths = None
@@ -412,7 +418,10 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     ).strip().lower()
     projector_context = (
         None if exact_projector_setting in {"0", "false", "no", "off"}
-        else dense_adapter._IterationProjectorContext(projector_setup_backend=opts.projector_setup_backend)
+        else dense_adapter._IterationProjectorContext(
+            projector_setup_backend=opts.projector_setup_backend,
+            projector_compute_dtype=opts.mstep_compute_dtype,
+        )
     )
     expectation_step = _native_expectation_step(
         dataset,
@@ -495,6 +504,8 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         optics_group_by_particle=optics_group_by_particle,
         grad_ini_subset_size=grad_ini_subset_size,
         grad_fin_subset_size=grad_fin_subset_size,
+        max_fourier_radius=opts.max_fourier_radius,
+        stop_requested=(lambda: Path(opts.stop_file).exists()) if opts.stop_file is not None else None,
         tau2_fudge_arg=float(opts.tau2_fudge),
         grad_em_iters=int(opts.grad_em_iters),
         random_seed=int(opts.random_seed),
@@ -515,6 +526,8 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         diagnostic_stop_after_iteration=opts.diagnostic_stop_after_iteration,
     )
     profile.record("iterations")
+    if opts.stop_file is not None and Path(opts.stop_file).exists() and final_state.iter < opts.nr_iter:
+        raise RuntimeError(f"VDAM stopped at saved iteration {final_state.iter} before final output")
     final_mrc, class_mrcs = _write_final_outputs(opts.outputname, final_state)
     final_model_star = f"{opts.outputname}_it{final_state.iter:03d}_model.star"
     if not os.path.exists(final_model_star):

@@ -179,27 +179,30 @@ def _initial_state_from_particles(
     voltage, Cs, Q0, pixel_size = initial_model_io._single_optics_scalars(sorted_star, optics_star, dataset)
     profile.record("optics_metadata")
 
-    iref = compute_bootstrap_iref_via_cpp(
-        images=images,
-        defU=np.asarray(sorted_star["_rlnDefocusU"].astype(float).to_numpy(), dtype=np.float64),
-        defV=np.asarray(sorted_star["_rlnDefocusV"].astype(float).to_numpy(), dtype=np.float64),
-        defAngle=np.asarray(sorted_star["_rlnDefocusAngle"].astype(float).to_numpy(), dtype=np.float64),
-        phase_shift=initial_model_io._phase_shift(sorted_star),
-        voltage=voltage,
-        Cs=Cs,
-        Q0=Q0,
-        pixel_size=pixel_size,
-        ori_size=ori_size,
-        nr_classes=int(opts.nr_classes),
-        particle_diameter_ang=float(opts.particle_diameter),
-        width_mask_edge_px=float(opts.width_mask_edge_px),
-        do_zero_mask=bool(opts.do_zero_mask),
-        do_ctf_correction=bool(opts.do_ctf_correction),
-        random_seed=int(opts.random_seed),
-        padding_factor=int(opts.padding_factor),
-        current_size=-1,
-        minimum_nr_particles=int(opts.bootstrap_min_particles),
-    )
+    override_path = os.environ.get("RELAX_INITIAL_IREF_OVERRIDE")
+    iref = None
+    if not override_path:
+        iref = compute_bootstrap_iref_via_cpp(
+            images=images,
+            defU=np.asarray(sorted_star["_rlnDefocusU"].astype(float).to_numpy(), dtype=np.float64),
+            defV=np.asarray(sorted_star["_rlnDefocusV"].astype(float).to_numpy(), dtype=np.float64),
+            defAngle=np.asarray(sorted_star["_rlnDefocusAngle"].astype(float).to_numpy(), dtype=np.float64),
+            phase_shift=initial_model_io._phase_shift(sorted_star),
+            voltage=voltage,
+            Cs=Cs,
+            Q0=Q0,
+            pixel_size=pixel_size,
+            ori_size=ori_size,
+            nr_classes=int(opts.nr_classes),
+            particle_diameter_ang=float(opts.particle_diameter),
+            width_mask_edge_px=float(opts.width_mask_edge_px),
+            do_zero_mask=bool(opts.do_zero_mask),
+            do_ctf_correction=bool(opts.do_ctf_correction),
+            random_seed=int(opts.random_seed),
+            padding_factor=int(opts.padding_factor),
+            current_size=-1,
+            minimum_nr_particles=int(opts.bootstrap_min_particles),
+        )
     profile.record("bootstrap")
 
     state = initialise_denovo_state(
@@ -221,7 +224,6 @@ def _initial_state_from_particles(
     profile.record("state_init")
     # RELAX_INITIAL_IREF_OVERRIDE lets a parity caller swap in RELION's
     # iter000 ref directly when isolating E/M-step behavior from bootstrap.
-    override_path = os.environ.get("RELAX_INITIAL_IREF_OVERRIDE")
     if override_path:
         # Parity hook: load Iref directly. Comma-separated paths for K-class,
         # single path broadcast across K, or a "{k}" template expanded k=1..K.

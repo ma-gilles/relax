@@ -57,6 +57,7 @@ class _IterationProjectorContext:
     """One refresh-to-E-step handoff; never a cache across iterations."""
 
     projector_setup_backend: Literal["native", "jax"] = "native"
+    projector_compute_dtype: str = "float64"
     prepared: tuple | None = None
     reference: np.ndarray | None = None
     geometry: tuple | None = None
@@ -67,6 +68,7 @@ class _IterationProjectorContext:
         inputs, power = prepare_relion_projector_class_inputs_and_power(
             state, padding_factor=padding_factor, interpolator=interpolator,
             projector_setup_backend=self.projector_setup_backend,
+            projector_compute_dtype=self.projector_compute_dtype,
         )
         self.prepared = inputs
         self.reference = state.Iref
@@ -288,6 +290,7 @@ def _dense_estep_config(
         stable_fourier_window_shapes=bool(opts.stable_fourier_window_shapes),
         padding_factor=int(opts.padding_factor),
         projector_setup_backend=opts.projector_setup_backend,
+        projector_compute_dtype=opts.mstep_compute_dtype,
         relion_bpref_frame=True,
         relion_projector_frame=True,
         class_log_priors=class_log_priors,
@@ -466,6 +469,7 @@ def prepare_relion_projector_class_inputs(
     *,
     padding_factor: int,
     projector_setup_backend: ProjectorSetupBackend = "native",
+    projector_compute_dtype: str = "float64",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     """Build InitialModel's production RELION projector once per iteration."""
     projector_half_by_class, projector_r_max = relion_projector_setup.reference_to_relion_projector_half_maps(
@@ -473,6 +477,7 @@ def prepare_relion_projector_class_inputs(
         current_size=state.current_size if state.current_size > 0 else state.ori_size,
         padding_factor=padding_factor,
         projector_setup_backend=projector_setup_backend,
+        compute_dtype=projector_compute_dtype,
     )
     return _finish_relion_projector_class_inputs(
         state, padding_factor, projector_half_by_class, projector_r_max
@@ -484,6 +489,7 @@ def prepare_relion_projector_class_inputs_and_power(
     *,
     padding_factor: int,
     projector_setup_backend: ProjectorSetupBackend = "native",
+    projector_compute_dtype: str = "float64",
     interpolator: int = 1,
 ) -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray, int], np.ndarray]:
     """Produce scoring operands and tau2 from the identical corrected FFT."""
@@ -492,6 +498,7 @@ def prepare_relion_projector_class_inputs_and_power(
         current_size=state.current_size if state.current_size > 0 else state.ori_size,
         padding_factor=padding_factor,
         projector_setup_backend=projector_setup_backend,
+        compute_dtype=projector_compute_dtype,
         interpolator=interpolator,
     )
     inputs = _finish_relion_projector_class_inputs(state, padding_factor, half_maps, r_max)
@@ -555,6 +562,7 @@ def _resolve_class_inputs(
                 state,
                 padding_factor=config.padding_factor,
                 projector_setup_backend=config.projector_setup_backend,
+                projector_compute_dtype=config.projector_compute_dtype,
             )
         )
         if mean_variance is None:

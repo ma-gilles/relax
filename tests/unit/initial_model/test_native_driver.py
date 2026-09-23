@@ -17,17 +17,16 @@ from relax import sampling
 from relax.diagnostics import vdam_mstep_replay
 from relax.helpers.particle_io import ParticleReadPolicy
 from relax.helpers.orientation_priors import relion_round_away_from_zero
-from relax.relion import vdam_checkpoint
+from relax.relion import initial_model_io, vdam_checkpoint
 from relax.vdam import (
     bootstrap_iref,
     dense_adapter,
     estep_meta_updates,
     native_options,
     native_sampling,
+    output,
     schedules,
 )
-from relax.relion import initial_model_io
-from relax.vdam import output
 from relax.vdam.init import initialise_denovo_state
 from relax.vdam.state import NativeOpticsState, NativeParticleState
 from relax.vdam.subset_schedule import select_subset_for_iter
@@ -1517,6 +1516,18 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
         value for name, value in profile.items() if name != "total_time_s"
     )
 
+    from recovar.utils import helpers
+
+    monkeypatch.setenv("RECOVAR_INITIAL_IREF_OVERRIDE", "seed.mrc")
+    monkeypatch.setattr(
+        bootstrap_iref,
+        "compute_bootstrap_iref_via_cpp",
+        lambda **_kwargs: pytest.fail("Override must bypass native double bootstrap"),
+    )
+    monkeypatch.setattr(helpers, "load_relion_volume", lambda _path: post_iref[0].copy())
+    overridden, _ = bootstrap_iref._initial_state_from_particles(dataset, main, optics, opts)
+    np.testing.assert_array_equal(overridden.Iref, post_iref)
+
 
 def test_native_expectation_step_rebuilds_sampling_per_iteration(monkeypatch):
     calls = []
@@ -1806,8 +1817,9 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
     prepared_variance = np.zeros((1, 8**3), dtype=np.float32)
     prepared_half = np.zeros((1, 3, 3, 2), dtype=np.complex64)
 
-    def fake_prepare_projector(state, *, padding_factor, projector_setup_backend):
+    def fake_prepare_projector(state, *, padding_factor, projector_setup_backend, projector_compute_dtype):
         assert projector_setup_backend == backend
+        assert projector_compute_dtype == "float64"
         event_order.append("prepare_projector")
         assert padding_factor == 2
         return prepared_means, prepared_variance, prepared_half, 2

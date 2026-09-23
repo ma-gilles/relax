@@ -35,6 +35,9 @@ class DensePPCAFusedBlock(NamedTuple):
     backprojection_max_r: float | None = None
     batch_start: int = 0
     rotation_start: int = 0
+    score_window_indices: jax.Array | None = None
+    observation_power: jax.Array | None = None
+    coefficient_noise: jax.Array | None = None
 
 
 class DensePPCAFusedEMResult(NamedTuple):

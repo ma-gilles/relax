@@ -28,7 +28,7 @@ from relax.helpers.deterministic_reduce import (
 from relax.relion.relion_project import gridding_correct_volume_real
 
 
-@partial(jax.jit, static_argnames=("ori_size", "padding_factor"))
+@partial(jax.jit, static_argnames=("ori_size", "padding_factor", "compute_dtype"))
 def setup_relion_projector(
     reference_relion,
     r_max,
@@ -36,22 +36,28 @@ def setup_relion_projector(
     ori_size: int,
     padding_factor: int = 1,
     do_gridding=True,
+    compute_dtype=jnp.float64,
 ):
-    """Return fixed-capacity complex128 projector data and float64 power.
+    """Return corrected projector data and power at ``compute_dtype``.
 
     ``r_max`` is the unpadded logical radius; negative means original Nyquist,
     zero means DC only, and larger radii are clamped like native initialiseData.
     For native comparison, crop the centered y/z region of width
     ``2*(padding_factor*r_max+1)+1`` and the corresponding positive-x prefix.
-    Cast to complex64 only at a consumer boundary that already requires it.
+    The default is the existing float64 native-oracle route. Opt-in float32
+    performs gridding correction, FFT and power calculation in float32.
+    See ``docs/math/vdam_ppca_algorithm.md`` for the production precision path.
 
     The global RECOVAR x64 policy is required. No Python callbacks, host
     materialization, persistent mutable cache, or per-class batching is used.
     """
     _validate_reference(reference_relion, ori_size, padding_factor)
-    if not jax.config.x64_enabled:
-        raise ValueError("RELION projector setup requires JAX float64 support")
-    reference = jnp.asarray(reference_relion, dtype=jnp.float64)
+    dtype = jnp.dtype(compute_dtype)
+    if dtype not in (jnp.dtype(jnp.float32), jnp.dtype(jnp.float64)):
+        raise ValueError("Projector computation dtype must be float32 or float64")
+    if dtype == jnp.dtype(jnp.float64) and not jax.config.x64_enabled:
+        raise ValueError("Float64 projector setup requires JAX float64 support")
+    reference = jnp.asarray(reference_relion, dtype=dtype)
     reference = jax.lax.cond(
         jnp.asarray(do_gridding, dtype=jnp.bool_),
         lambda volume: gridding_correct_volume_real(volume, ori_size, padding_factor),
@@ -160,6 +166,7 @@ def reference_to_relion_projector_half_maps(
     interpolator: int = 1,
     projector_setup_backend: ProjectorSetupBackend = "native",
     projector_data_dtype=None,
+    compute_dtype=np.float64,
 ) -> tuple[np.ndarray, int]:
     """Convert references to RELION half maps without retaining their spectrum."""
     half_maps, _power, r_max = reference_to_relion_projector_half_maps_and_power(
@@ -169,6 +176,7 @@ def reference_to_relion_projector_half_maps(
         interpolator=interpolator,
         projector_data_dtype=projector_data_dtype,
         projector_setup_backend=projector_setup_backend,
+        compute_dtype=compute_dtype,
     )
     return half_maps, r_max
 
@@ -181,12 +189,13 @@ def reference_to_relion_projector_half_maps_and_power(
     interpolator: int = 1,
     projector_setup_backend: ProjectorSetupBackend = "native",
     projector_data_dtype=None,
+    compute_dtype=np.float64,
 ) -> tuple[np.ndarray, np.ndarray, int]:
     """Convert references to native-layout half maps and their corrected spectrum.
 
-    The opt-in JAX backend keeps its FP64 FFT at full capacity as current_size
-    changes. Only the logical crop and the consumer conversion vary.
-    Unsupported projector geometry retains the native implementation.
+    The JAX backend uses ``compute_dtype`` for gridding correction, FFT and
+    power. Unsupported geometry retains the native implementation only for
+    the default float64 route.
 
     ``projector_data_dtype`` is what the caller wants the slab in. ``None``
     keeps each backend's own output: complex64 from the JAX path, whose
@@ -200,6 +209,9 @@ def reference_to_relion_projector_half_maps_and_power(
 
     if projector_setup_backend not in {"native", "jax"}:
         raise ValueError(f"Unknown projector_setup_backend: {projector_setup_backend!r}")
+    compute_dtype = np.dtype(compute_dtype)
+    if compute_dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
+        raise ValueError("Projector computation dtype must be float32 or float64")
     refs = np.asarray(references)
     if refs.ndim != 4:
         raise ValueError(f"references must have shape (K, N, N, N), got {refs.shape}")
@@ -211,6 +223,8 @@ def reference_to_relion_projector_half_maps_and_power(
         and int(padding_factor) in {1, 2}
         and int(interpolator) == 1
     )
+    if compute_dtype == np.dtype(np.float32) and not use_jax:
+        raise ValueError("Float32 projector setup requires supported JAX geometry and backend")
     if use_jax:
         import jax
         import jax.numpy as jnp
@@ -230,6 +244,7 @@ def reference_to_relion_projector_half_maps_and_power(
             projector_data, power = setup_relion_projector(
                 ref_relion, np.int32(r_max), ori_size=n,
                 padding_factor=int(padding_factor),
+                compute_dtype=compute_dtype.type,
             )
             logical_size = 2 * (int(padding_factor) * r_max + 1) + 1
             start = projector_data.shape[0] // 2 - logical_size // 2

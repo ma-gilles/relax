@@ -164,7 +164,9 @@ def update_current_resolution_from_data_vs_prior(
     )
 
 
-def update_image_size_and_resolution_pointers(state: InitialModelState) -> InitialModelState:
+def update_image_size_and_resolution_pointers(
+    state: InitialModelState, *, max_fourier_radius: int | None = None
+) -> InitialModelState:
     """Mirror the current-size part of RELION ``updateImageSizeAndResolutionPointers``."""
     maxres = _relion_round(float(state.current_resolution) * float(state.pixel_size) * float(state.ori_size))
     if float(state.ave_Pmax) > 0.1 and bool(state.has_high_fsc_at_limit):
@@ -172,6 +174,8 @@ def update_image_size_and_resolution_pointers(state: InitialModelState) -> Initi
     else:
         maxres += int(state.incr_size)
     current_size = min(max(2 * maxres, 2), int(state.ori_size))
+    if max_fourier_radius is not None:
+        current_size = min(current_size, 2 * int(max_fourier_radius))
 
     return replace(state, current_size=int(current_size))
 
@@ -205,6 +209,8 @@ def run_vdam_iterations(
     optics_group_by_particle: Sequence[int],
     grad_ini_subset_size: int,
     grad_fin_subset_size: int,
+    max_fourier_radius: int | None = None,
+    stop_requested: Callable[[], bool] | None = None,
     tau2_fudge_arg: float,
     grad_em_iters: int,
     random_seed: int,
@@ -290,7 +296,7 @@ def run_vdam_iterations(
         if profile_iterations:
             _record_stage("subset")
 
-        current = update_image_size_and_resolution_pointers(current)
+        current = update_image_size_and_resolution_pointers(current, max_fourier_radius=max_fourier_radius)
         if refresh_tau2_from_projector:
             refresh = projector_refresh_fn or refresh_tau2_from_projector_power
             current = refresh(
@@ -348,6 +354,8 @@ def run_vdam_iterations(
             meta["vdam_iteration_profile_summary"] = iteration_profile
             stage_started = time.perf_counter()
         iter_artifact_sink(current, it, meta)
+        if stop_requested is not None and stop_requested():
+            break
         if profile_iterations:
             _record_stage("artifact")
             iteration_profile["total_time_s"] = float(time.perf_counter() - iteration_started)

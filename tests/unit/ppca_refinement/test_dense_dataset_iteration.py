@@ -747,3 +747,155 @@ def test_exact_local_topk_mstep_records_retained_mass(tiny_inputs):
     assert retained.shape == (dataset.n_images,)
     assert np.all(retained > 0)
     assert np.all(retained <= 1.0 + 1e-6)
+
+
+def test_statistics_only_residual_blocking_and_pooling():
+    from relax.ppca_refinement.dense_dataset import accumulate_dense_ppca_statistics
+
+    rng = np.random.default_rng(812)
+    images = np.asarray(ftu.get_dft2_real(rng.normal(size=(4, 4, 4)).astype(np.float32))).reshape(4, -1)
+    dataset = _TinyPPCAData(images)
+    dataset.original_image_indices_from_local = lambda ids: np.asarray(ids) + 50
+    mu = _make_half_fourier_volume(37) * 0.02
+    W = np.stack([_make_half_fourier_volume(38), _make_half_fourier_volume(39)], axis=-1) * 0.01
+    rotations = np.stack([np.eye(3), np.diag([-1, -1, 1])]).astype(np.float32)
+    kwargs = dict(
+        noise_variance=np.ones(N_HALF, np.float32) * 16,
+        rotations=rotations,
+        translations=np.zeros((1, 2), np.float32),
+        geometry=GeometryConfig(q=2, volume_domain="fourier_half"),
+        scoring=ScoringConfig(relion_texture_interp=False),
+        sparse_pass2=SparsePass2Config(enabled=False),
+        collect_residuals=True,
+    )
+    pooled = accumulate_dense_ppca_statistics(
+        dataset, mu, W, **kwargs, schedule=ScheduleConfig(image_batch_size=4, rotation_block_size=2)
+    )
+    blocked = accumulate_dense_ppca_statistics(
+        dataset, mu, W, **kwargs, schedule=ScheduleConfig(image_batch_size=2, rotation_block_size=1)
+    )
+    reordered = accumulate_dense_ppca_statistics(
+        dataset,
+        mu,
+        W,
+        **{**kwargs, "rotations": rotations[::-1].copy()},
+        image_indices=np.array([3, 2, 1, 0]),
+        schedule=ScheduleConfig(image_batch_size=2, rotation_block_size=1),
+    )
+    halves = [
+        accumulate_dense_ppca_statistics(
+            dataset,
+            mu,
+            W,
+            **kwargs,
+            image_indices=np.array(ids),
+            schedule=ScheduleConfig(image_batch_size=2, rotation_block_size=1),
+        )
+        for ids in [[0, 2], [1, 3]]
+    ]
+    for name in ["rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den"]:
+        np.testing.assert_allclose(getattr(pooled, name), getattr(blocked, name), rtol=2e-5, atol=2e-5)
+        np.testing.assert_allclose(getattr(pooled, name), getattr(reordered, name), rtol=2e-5, atol=2e-5)
+        np.testing.assert_allclose(getattr(pooled, name), sum(getattr(h, name) for h in halves), rtol=2e-5, atol=2e-5)
+    np.testing.assert_array_equal(pooled.original_image_ids, np.arange(50, 54))
+    np.testing.assert_allclose(pooled.embeddings, blocked.embeddings, rtol=2e-5, atol=2e-5)
+    np.testing.assert_array_equal(reordered.original_image_ids, np.arange(50, 54)[::-1])
+    np.testing.assert_allclose(pooled.embeddings, reordered.embeddings[::-1], rtol=2e-5, atol=2e-5)
+    assert pooled.residual_gradient.dtype == jnp.complex64
+    assert pooled.residual_num.dtype == jnp.float32
+
+
+def test_direct_spatial_residual_matches_observed_score_derivative():
+    from scipy.spatial.transform import Rotation
+
+    from relax.ppca_refinement.dense_dataset import accumulate_dense_ppca_statistics
+
+    rng = np.random.default_rng(912)
+    images = np.asarray(ftu.get_dft2_real(rng.normal(size=(2, 4, 4)).astype(np.float32))).reshape(2, -1)
+    data = _TinyPPCAData(images)
+    data.original_image_indices_from_local = lambda ids: np.asarray(ids)
+    theta = np.stack([_make_half_fourier_volume(k) * 0.03 for k in (40, 41, 42)], axis=-1)
+    perturbation = np.stack([_make_half_fourier_volume(k) * 0.03 for k in (43, 44, 45)], axis=-1)
+    rotations = Rotation.from_euler("xyz", [[14, 23, 7], [48, -19, 31]], degrees=True).as_matrix().astype(np.float32)
+    kwargs = dict(
+        noise_variance=np.full(N_HALF, 16, np.float32),
+        rotations=rotations,
+        translations=np.zeros((1, 2), np.float32),
+        geometry=GeometryConfig(q=2, volume_domain="fourier_half"),
+        scoring=ScoringConfig(relion_texture_interp=False),
+        sparse_pass2=SparsePass2Config(enabled=False),
+        collect_residuals=True,
+    )
+    stats = accumulate_dense_ppca_statistics(data, theta[:, 0], theta[:, 1:], **kwargs)
+    step = 0.03
+    plus, minus = theta + step * perturbation, theta - step * perturbation
+    a = accumulate_dense_ppca_statistics(data, plus[:, 0], plus[:, 1:], **kwargs)
+    b = accumulate_dense_ppca_statistics(data, minus[:, 0], minus[:, 1:], **kwargs)
+    finite_difference = (a.log_likelihood - b.log_likelihood) / (2 * step)
+    adjoint = np.vdot(stats.residual_gradient, perturbation).real
+    np.testing.assert_allclose(adjoint, finite_difference, rtol=2e-3, atol=2e-5)
+
+
+def test_full_real_observation_has_dc_and_outside_support_noise():
+    from relax.helpers.half_spectrum import make_shell_indices_half
+    from relax.ppca_refinement.dense_dataset import (
+        accumulate_dense_ppca_statistics,
+        prepare_dense_ppca_dataset_inputs,
+    )
+
+    images = np.ones((2, N_HALF), np.complex64) * 2
+    data = _TinyPPCAData(images)
+    data.original_image_indices_from_local = lambda ids: np.asarray(ids)
+    mu = np.zeros(HALF_VOL, np.complex64)
+    W = np.zeros((HALF_VOL, 2), np.complex64)
+    resolved = prepare_dense_ppca_dataset_inputs(
+        data, mu, W, q=2, volume_domain="fourier_half", current_size=2, full_real_observation=True
+    )
+    np.testing.assert_array_equal(resolved.score_indices, resolved.recon_indices)
+    assert N_HALF // 2 in np.asarray(resolved.score_indices)
+    stats = accumulate_dense_ppca_statistics(
+        data,
+        mu,
+        W,
+        noise_variance=np.ones(N_HALF, np.float32),
+        rotations=np.eye(3, dtype=np.float32)[None],
+        translations=np.zeros((1, 2), np.float32),
+        geometry=GeometryConfig(q=2, volume_domain="fourier_half", current_size=2),
+        scoring=ScoringConfig(full_real_observation=True, relion_texture_interp=False),
+        sparse_pass2=SparsePass2Config(enabled=False),
+        collect_residuals=True,
+    )
+    shells = np.asarray(make_shell_indices_half(IMAGE_SHAPE))
+    weights = np.asarray(make_half_image_weights(IMAGE_SHAPE))
+    np.testing.assert_array_equal(stats.residual_num, np.bincount(shells, weights=weights * 8))
+    np.testing.assert_array_equal(stats.residual_den, np.bincount(shells, weights=weights * 2))
+    np.testing.assert_array_equal(stats.residual_gradient[:, 1:], 0)
+    np.testing.assert_array_equal(stats.embeddings, 0)
+
+
+def test_embedding_only_matches_full_posterior_on_fixed_support(tiny_inputs):
+    from relax.ppca_refinement.dense_dataset import (
+        accumulate_dense_ppca_statistics,
+        compute_dense_ppca_embeddings,
+    )
+
+    dataset, mu, W, rotations, translations = tiny_inputs
+    dataset.original_image_indices_from_local = lambda ids: np.asarray(ids) + 50
+    common = dict(
+        noise_variance=jnp.ones((N_HALF,), jnp.float32),
+        rotations=rotations,
+        translations=translations,
+        geometry=GeometryConfig(current_size=4, q=1, volume_domain="fourier_half"),
+        schedule=ScheduleConfig(image_batch_size=2, rotation_block_size=1),
+        scoring=ScoringConfig(relion_texture_interp=False, full_real_observation=True),
+        image_indices=np.asarray([3, 1, 0], np.int32),
+        rotation_log_prior=np.log(np.asarray([0.3, 0.7], np.float32)),
+        translation_log_prior=np.log(np.asarray([0.6, 0.4], np.float32)),
+    )
+    full = accumulate_dense_ppca_statistics(
+        dataset, mu, W, collect_residuals=True, sparse_pass2=SparsePass2Config(enabled=False), **common
+    )
+    only = compute_dense_ppca_embeddings(dataset, mu, W, **common)
+    np.testing.assert_array_equal(only.original_image_ids, full.original_image_ids)
+    np.testing.assert_array_equal(only.embeddings, full.embeddings)
+    assert only.n_images == full.n_images == 3

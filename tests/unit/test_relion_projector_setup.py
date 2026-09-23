@@ -110,6 +110,23 @@ def test_radius_and_gridding_reuse_one_compiled_shape():
     assert_matches(outputs[2][0], outputs[3][0])
 
 
+def test_corrected_projector_float32_keeps_compute_precision():
+    reference = np.random.default_rng(73).normal(size=(8, 8, 8)).astype(np.float32)
+    lowered = setup_relion_projector.lower(
+        reference, np.int32(4), ori_size=8, do_gridding=True,
+        compute_dtype=np.float32,
+    )
+    assert "f64" not in str(lowered.compiler_ir(dialect="stablehlo"))
+    projector, power = setup_relion_projector(
+        reference, np.int32(4), ori_size=8, do_gridding=True,
+        compute_dtype=np.float32,
+    )
+    assert projector.dtype == np.complex64
+    assert power.dtype == np.float32
+    assert np.all(np.isfinite(np.asarray(projector)))
+    assert np.all(np.isfinite(np.asarray(power)))
+
+
 def test_positive_nyquist_only_and_inclusive_sphere():
     from relax.relion_bind import _relion_bind_core as bind
 

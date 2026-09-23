@@ -93,6 +93,7 @@ class NativeSamplingState:
     offset_range_ori_angstrom: float
     offset_step_ori_angstrom: float
     pixel_size: float
+    max_healpix_order: int | None = None
     auto_local_healpix_order: int = RELION_INITIALMODEL_LOCAL_SEARCH_HEALPIX_ORDER
     # acc_rot=0 means "not fine enough yet" pending calculateExpectedAngularErrors port.
     acc_rot: float = 0.0
@@ -141,6 +142,7 @@ def _initial_sampling_state(opts: NativeInitialModelOptions, *, pixel_size: floa
         offset_range_ori_angstrom=float(opts.offset_range_px) * pixel_size,
         offset_step_ori_angstrom=float(opts.offset_step_px) * pixel_size,
         pixel_size=pixel_size,
+        max_healpix_order=opts.max_healpix_order,
     )
 
 
@@ -229,7 +231,10 @@ def _relion_update_native_sampling_state(
         and not bool(do_auto_refine)
         and requested_healpix_order >= int(sampling_state.auto_local_healpix_order)
     )
-    if not gradient_ceiling_reached:
+    if not gradient_ceiling_reached and (
+        sampling_state.max_healpix_order is None
+        or requested_healpix_order <= sampling_state.max_healpix_order
+    ):
         new_healpix_order = requested_healpix_order
 
     if new_step > float(sampling_state.offset_step_angstrom):

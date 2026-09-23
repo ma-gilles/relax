@@ -1,0 +1,243 @@
+{
+  "schema": "recovar-vdam-ppca-pilot-scorecard-v1",
+  "fixture": {
+    "training_manifest_sha256": "0bc91e4b98e4739cac378897dfd50afbada2fa2fba62fed91286db2be888613f",
+    "fixture_verification_sha256": "a3951227fc5706c69d4500b011b5fc0d3aef83adce22a10744084e8aa380d460",
+    "particles": 20000,
+    "box": 64,
+    "voxel_size_ang": 6.0,
+    "states": 3,
+    "noise_level": 0.01,
+    "training_star_sha256": "b7c24bfb5d1ec8c0e877ba078ac9883148d430cb8fe8eefd6b40b4f3b7b3a696"
+  },
+  "implementation_validation": {
+    "affected_cpu_passed": 170,
+    "em_fast_guard_passed": 99,
+    "final_delta_passed": 47,
+    "gpu_ppca_passed": 65,
+    "projector_cpu_passed": 49,
+    "cpu_resume": "exact",
+    "gpu_bitwise_resume": "failed; controlled same-state GPU repeat differs in fine backprojection before loading, while checkpoint roundtrip is exact",
+    "controlled_gpu_resume_job": 14307910,
+    "controlled_gpu_resume_status": "checkpoint fields exact; first differing fine backprojection; same-state repeat and restored continuation both vary on GPU; fixed-statistics relative L2 below existing 2e-5 float32 bound",
+    "controlled_gpu_resume_restored_theta_max_abs": 3.725290298461914e-09,
+    "controlled_gpu_resume_repeat_theta_max_abs": 7.46511830129748e-09,
+    "controlled_gpu_resume_restored_embedding_max_abs": 8.58306884765625e-06,
+    "controlled_gpu_resume_repeat_embedding_max_abs": 3.337860107421875e-06,
+    "controlled_gpu_resume_restored_rhs_relative_l2": 6.289958975034793e-08,
+    "controlled_gpu_resume_repeat_rhs_relative_l2": 8.984246171316938e-08,
+    "readiness_cpu_affected_passed": 22,
+    "readiness_gpu_ppca_passed": 69,
+    "evaluation_pipeline_tiny_job": 14294234,
+    "evaluation_pipeline_tiny_status": "completed; 3 per-state rows, diagnostic only",
+    "evaluation_pipeline_tiny_float32_job": 14295823,
+    "evaluation_pipeline_tiny_float32_status": "completed; 3 per-state rows using corrected float32 K3 maps, diagnostic only; not threshold-qualified",
+    "gpu_no_custom_cuda_replay_job": 14294639,
+    "gpu_no_custom_cuda_replay_status": "completed diagnostic; bitwise mismatch persists with custom CUDA disabled (theta max 7.07e-9, first 1.49e-8, second 2.26e-6, noise 4.55e-13)"
+  },
+  "feasibility": {
+    "late_grid_job": 14292869,
+    "late_grid_status": "completed on 12-particle cold-start diagnostic, A100 80GB",
+    "late_grid_elapsed_seconds": 790.1327772568911,
+    "late_grid_seconds_per_particle_including_compile": 65.84439810474093,
+    "late_grid_peak_gpu_mib": 16883,
+    "late_grid_fine_rotation_count": 1195680,
+    "late_grid_coarse_hypotheses_per_particle": 1069056,
+    "late_grid_warm_job": 14293635,
+    "late_grid_warm_status": "completed on A100 80GB; iterations 2 and 3",
+    "late_grid_iteration_2_elapsed_seconds": 756.75,
+    "late_grid_iteration_2_fine_rotation_count": 532136,
+    "late_grid_iteration_3_elapsed_seconds": 124.93,
+    "late_grid_iteration_3_fine_rotation_count": 131784,
+    "late_grid_warm_peak_gpu_mib": 8691,
+    "coarse_only_job": 14294678,
+    "coarse_only_seconds": 59.28973469301127,
+    "coarse_only_support_total": 4379,
+    "coarse_throughput_job": 14294837,
+    "coarse_throughput_status": "completed on A100; fixed tiny-trained state applied to pilot particles; coarse pass only",
+    "coarse_24_particles_seconds": 20.15319004585035,
+    "coarse_48_particles_seconds": 24.74098434485495,
+    "coarse_48_support_total": 72173,
+    "unmatched_gpu_warm_attempt": "14293515 cancelled before an iteration completed because Slurm selected H100; A100 baseline is 14292869",
+    "pilot_200_iteration_feasible": "exploratory computational estimate only; GPU replay acceptance decision pending",
+    "representative_schedule_job": 14307408,
+    "representative_schedule_status": "completed A100 fixed-state batch profile; actual support retained; compile may be included",
+    "representative_schedule_peak_gpu_mib": 2583,
+    "late_2000_update_seconds": 972.7756984480657,
+    "late_2000_update_coarse_retained": 2453553,
+    "late_2000_update_fine_rotations": 8122176,
+    "final_embedding_2000_job": 14307696,
+    "final_embedding_2000_seconds_compile_inclusive": 420.46140123996884,
+    "final_embedding_2000_repeat_job": 14307750,
+    "final_embedding_2000_repeat_cold_seconds": 402.2149876980111,
+    "final_embedding_2000_repeat_warm_seconds": 272.98927978705615,
+    "final_embedding_2000_repeat_outputs_equal": true,
+    "final_embedding_2000_coarse_retained": 2453553,
+    "final_embedding_2000_fine_rotations": 8122176,
+    "final_embedding_8_matched_full_warm_seconds": 9.552291106199846,
+    "final_embedding_8_matched_embedding_only_warm_seconds": 3.1848068069666624,
+    "final_embedding_8_same_output_sha256": "f2b727dc115aa250d01d28709048bf8b86d10bedd700f74eefeef740c42fd6a2",
+    "projected_full_trajectory_gpu_hours_warm_embedding": 29.60280282538173,
+    "projected_full_trajectory_gpu_hours_compile_inclusive_embedding": 30.012447607195373,
+    "projection_status": "fixed-state scaling, not a performance bound; includes final all-20k update and final all-particle embeddings; evolving support unmeasured"
+  },
+  "runs": {
+    "k3_tiny64_one_iteration": {
+      "job": 14293103,
+      "status": "completed",
+      "elapsed_seconds": 298,
+      "seed_maps_exact_at_iteration_zero": true,
+      "precision": "mixed diagnostic: float32 scoring, complex64 projection consumption and float32 M-step; corrected projector gridding/FFT/power actually float64 before cast; native double bootstrap bypassed by seed-map override"
+    },
+    "k3_tiny64_float32_one_iteration": {
+      "job": 14295622,
+      "status": "completed on assigned GPU; diagnostic one iteration on 12 particles",
+      "elapsed_seconds_including_cuda_build": 380,
+      "em_elapsed_seconds": 28.76,
+      "seed_maps_exact_at_iteration_zero": true,
+      "projector_stablehlo_f64_operations": 0,
+      "cuda_library_sha256": "604bd2c777a72239f5260e27a9be65d11fb0795881d742ebc13040b4a2ed7b56",
+      "precision": "float32 corrected JAX projector gridding/FFT/power; complex64 projection consumption; float32 scoring/accumulation and JAX M-step; native double bootstrap bypassed; deliberate tau2/noise/host metadata remain float64"
+    },
+    "ppca_seed11_20k": null,
+    "k3_seed21_23_20k": null,
+    "ppca_seed21_23_20k": null
+  },
+  "per_state_quality": [],
+  "scientific_acceptance": "not threshold-qualified; no completed recovery measurements",
+  "em_k1_k4_completion": "not assessed by this 20k/64 pilot",
+  "small_pilot_2k": {
+    "status": "completed exploratory T60 first pair and one confirmed-bug repair follow-up",
+    "handoff": "docs/development/vdam_ppca_small_pilot_handoff.md",
+    "training_manifest_sha256": "bed5a2647f2e071bd20700dfb0a5490aa7d819c7138b4d3520a60129ee20aca6",
+    "subset_indices_sha256": "f865f13721dd70737e4d7a12acf83382aa590e8b07b2a8048761e8cdd6f6b802",
+    "particles": 2000,
+    "state_counts": [
+      679,
+      656,
+      665
+    ],
+    "seed": 11,
+    "iterations": 60,
+    "schedule": "200 particles iterations 1-59; all 2000 final update; PPCA all-2000 embeddings; radius4/HP1 to iteration20 then radius8/HP2",
+    "replay_scope": "controlled exact checkpoint restoration; repeated GPU fine-backprojection variability within existing float32 reference envelope; historical bitwise failure retained",
+    "first_pair": {
+      "ppca_job_ids": [
+        14310672,
+        14311112,
+        14311291,
+        14311500,
+        14311709
+      ],
+      "k3_job_id": 14310948,
+      "evaluation_job_id": 14311715,
+      "ppca_active_raw_fsc_auc": [
+        0.1421,
+        0.1215,
+        0.0723
+      ],
+      "k3_active_raw_fsc_auc": [
+        0.29,
+        0.4209,
+        0.3128
+      ],
+      "finding": "PPCA loader inverted unit-contrast images; exact processed PPCA Fourier input = negative of raw/K3 for IDs 0,1,1999",
+      "report": "paired_evaluation/report.json",
+      "ppca_completed": true,
+      "k3_completed": true
+    },
+    "followup": {
+      "hypothesis": "repair confirmed PPCA input-sign bug, rerun both methods on byte-matched corrected seed maps",
+      "source_candidate": "candidate2",
+      "ppca_job_id": 14312498,
+      "k3_job_id": 14312499,
+      "evaluation_job_id": 14312509,
+      "plots_job_id": 14312548,
+      "status": "completed",
+      "ppca_elapsed_gpu_seconds": 2282,
+      "k3_elapsed_gpu_seconds": 329,
+      "ppca_peak_gpu_mib": 1831,
+      "k3_peak_gpu_mib": 1033,
+      "ppca_checkpoint_sha256": "bc9e555cb26a2f61d6d2d8756dec74b56243628d7299d7bac454423db4602343",
+      "ppca_embeddings_sha256": "15a3b2b7020cb6dddcf1996230c393a2a33869ea1f3c6d308bd25a53d87e9512",
+      "postcheck": "60 exact iterations; all-2000 final update and embeddings; finite fields and support bounds",
+      "report": "ppca_fix/paired_evaluation/report.json"
+    },
+    "scientific_acceptance": "supports recovery of three coarse PPCA shapes in this seed/subset after independent rigid fitting; K3 has two strong matches and a nearly empty class; shared frame/hand is diagnostic; no agreed recovery threshold or 20k approval",
+    "package_gpu_hours": 1.59417,
+    "corrected_states": [
+      {
+        "state": 0,
+        "count": 679,
+        "k3_class": 1,
+        "ppca_shared_active_raw_auc": 0.45546051781500796,
+        "k3_shared_active_raw_auc": 0.2899412590759588,
+        "ppca_shared_full_raw_auc": 0.10459147592514721,
+        "k3_shared_full_raw_auc": 0.05416643783377293,
+        "ppca_shared_active_masked_auc": 0.45626462032317106,
+        "k3_shared_active_masked_auc": 0.2903655065544823,
+        "ppca_individual_active_raw_auc_diagnostic": 0.9874764068008474
+      },
+      {
+        "state": 1,
+        "count": 656,
+        "k3_class": 2,
+        "ppca_shared_active_raw_auc": 0.6011302865739385,
+        "k3_shared_active_raw_auc": 0.421851202119536,
+        "ppca_shared_full_raw_auc": 0.14128781230910384,
+        "k3_shared_full_raw_auc": 0.10320572745273629,
+        "ppca_shared_active_masked_auc": 0.6007260043845548,
+        "k3_shared_active_masked_auc": 0.42291335894982884,
+        "ppca_individual_active_raw_auc_diagnostic": 0.9863227186890832
+      },
+      {
+        "state": 2,
+        "count": 665,
+        "k3_class": 0,
+        "ppca_shared_active_raw_auc": 0.2511591922788525,
+        "k3_shared_active_raw_auc": 0.3133718912413841,
+        "ppca_shared_full_raw_auc": 0.06203202080651101,
+        "k3_shared_full_raw_auc": 0.07255310140952297,
+        "ppca_shared_active_masked_auc": 0.252325108127606,
+        "k3_shared_active_masked_auc": 0.3152121799527403,
+        "ppca_individual_active_raw_auc_diagnostic": 0.9851492297766524
+      }
+    ],
+    "visual_comparison": {
+      "job_id": 14315426,
+      "report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_ppca_visual_comparison_20260923/comparison/report.json",
+      "report_sha256": "90cdfd0914455d726f166c80fba3bffdc7c746591b49e6660f81721f1f0a085b",
+      "policy": "Per-state rigid rotation/translation/reflection for both methods; K3 Hungarian matching after all nine class/GT fits. Shared frame is diagnostic, not a recovery requirement.",
+      "active_radius": 8,
+      "states": [
+        {
+          "state": 0,
+          "ppca_active_raw_auc": 0.9874764068008474,
+          "k3_active_raw_auc": 0.41677611942450393,
+          "k3_class_one_based": 3,
+          "k3_class_fraction": 0.009005214725514278,
+          "ppca_fit_converged": false,
+          "k3_fit_converged": false
+        },
+        {
+          "state": 1,
+          "ppca_active_raw_auc": 0.9863227186890832,
+          "k3_active_raw_auc": 0.9474038861248374,
+          "k3_class_one_based": 2,
+          "k3_class_fraction": 0.6675000025463105,
+          "ppca_fit_converged": true,
+          "k3_fit_converged": true
+        },
+        {
+          "state": 2,
+          "ppca_active_raw_auc": 0.9851492297766524,
+          "k3_active_raw_auc": 0.984574248176076,
+          "k3_class_one_based": 1,
+          "k3_class_fraction": 0.3234947827281753,
+          "ppca_fit_converged": true,
+          "k3_fit_converged": true
+        }
+      ]
+    }
+  }
+}

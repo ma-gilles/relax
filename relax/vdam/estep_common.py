@@ -49,6 +49,7 @@ class DenseInitialModelEstepConfig:
     relion_bpref_frame: bool = True
     relion_projector_frame: bool = False
     projector_setup_backend: ProjectorSetupBackend = "native"
+    projector_compute_dtype: str = "float64"
     relion_projector_half_by_class: Any | None = None
     relion_projector_r_max: int | None = None
     engine_kwargs: dict[str, Any] = field(default_factory=dict)

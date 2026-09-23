@@ -58,6 +58,7 @@ class ScoringConfig:
     relion_texture_interp: bool = True
     class_log_prior: float = 0.0
     image_scale_corrections: np.ndarray | None = None
+    full_real_observation: bool = False
 
 
 @dataclass(frozen=True)

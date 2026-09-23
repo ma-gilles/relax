@@ -263,6 +263,10 @@ class TestRunVdamIterations:
         assert out.current_size == 60
         assert out.current_resolution_shell == 20
 
+        capped = update_image_size_and_resolution_pointers(state, max_fourier_radius=8)
+        assert capped.current_size == 16
+        assert capped.current_resolution_shell == 20
+
     def test_iteration_loop_feeds_updated_current_size_to_next_estep(self, monkeypatch):
         import relax.vdam.iteration_loop as loop
 
