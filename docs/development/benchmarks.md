@@ -5,6 +5,11 @@ control. Report standing against RELION and synthetic ground truth separately.
 Historical results from another commit remain historical evidence until their
 workload is reproduced at the intended source.
 
+The standing RELION-vs-relax resolution and wall-time table is
+[docs/benchmarks/relion_vs_relax.md](../benchmarks/relion_vs_relax.md), generated from
+`tests/baselines/relion_vs_relax_benchmarks.json` by `scripts/render_benchmark_table.py`.
+Update the JSON and regenerate it when a baseline changes.
+
 ## Keep definitions, runs and reports separate
 
 Maintain three independently identified artifacts:
