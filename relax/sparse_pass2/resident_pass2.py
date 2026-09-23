@@ -1392,7 +1392,7 @@ def compute_pass2_stats_resident(
         ):
             relion_projector_half = relion_projector_half.astype(jnp.complex64)
     if projection_padding_factor > 1 and not use_relion_projector:
-        from recovar.reconstruction.relion_functions import pad_volume_for_projection
+        from relax.reconstruction.relion_functions_relion import pad_volume_for_projection
 
         mean_for_proj, proj_volume_shape = pad_volume_for_projection(
             volume,
