@@ -555,6 +555,14 @@ def _score_local_pose_ppca_bucket_with_moments(
     return LocalScoreAndMomentsStats(score=score, alpha=alpha, G_tri=G_tri, diagnostics=diagnostics)
 
 
+def _centered_cached_pose_weights(score, selected_scores=None):
+    """Normalize cached local scores before optional top-k M-step selection."""
+    center, centered_logZ = _centered_score_partition([score])
+    if selected_scores is None:
+        return jnp.exp(score - center[:, None, None] - centered_logZ[:, None, None])
+    return jnp.exp(selected_scores - center[:, None] - centered_logZ[:, None])
+
+
 @partial(
     jax.jit,
     static_argnames=(
@@ -590,14 +598,13 @@ def _accumulate_local_pose_ppca_bucket_cached(
     score = jnp.asarray(score)
     alpha = jnp.asarray(alpha)
     G_tri = jnp.asarray(G_tri)
-    logZ = jnp.asarray(logZ)
     rotations_bucket = jnp.asarray(rotations_bucket)
     rhs_volume = jnp.asarray(rhs_volume)
     lhs_tri_volume = jnp.asarray(lhs_tri_volume)
     Y1_recon = jnp.asarray(Y1_recon)
     ctf2_over_noise_recon = jnp.asarray(ctf2_over_noise_recon)
     B, T, R = score.shape
-    gamma = jnp.exp(score - logZ[:, None, None])
+    gamma = _centered_cached_pose_weights(score)
     rhs_dtype = rhs_volume.dtype
     lhs_dtype = lhs_tri_volume.dtype
     flat_rotations = rotations_bucket.reshape(B * R, 3, 3)
@@ -685,7 +692,6 @@ def _accumulate_local_pose_ppca_bucket_topk_cached(
     score = jnp.asarray(score)
     alpha = jnp.asarray(alpha)
     G_tri = jnp.asarray(G_tri)
-    logZ = jnp.asarray(logZ)
     rotations_bucket = jnp.asarray(rotations_bucket)
     rhs_volume = jnp.asarray(rhs_volume)
     lhs_tri_volume = jnp.asarray(lhs_tri_volume)
@@ -698,7 +704,7 @@ def _accumulate_local_pose_ppca_bucket_topk_cached(
     F_recon = Y1_recon.shape[-1]
     k = max(1, min(int(top_k_mstep), int(T * R)))
     top_scores, top_flat = jax.lax.top_k(score.reshape(B, T * R), k)
-    top_gamma = jnp.exp(top_scores - logZ[:, None])
+    top_gamma = _centered_cached_pose_weights(score, top_scores)
     top_rot = (top_flat % R).astype(jnp.int32)
     top_trans = (top_flat // R).astype(jnp.int32)
     alpha_top = jnp.take_along_axis(alpha.reshape(B, T * R, P), top_flat[..., None], axis=1)

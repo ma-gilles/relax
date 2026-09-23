@@ -89,3 +89,22 @@ def test_small_pilot_fixed_stochastic_batch_and_resume_identity(tmp_path):
     assert load(path, config, {"fixture": "fixed"}).iteration == 20
     with pytest.raises(ValueError, match="identity mismatch"):
         load(path, dataclasses.replace(config, stochastic_batch_size=None), {"fixture": "fixed"})
+def test_rejected_resume_preserves_existing_run_metadata(tmp_path, monkeypatch):
+    """A source/config mismatch must not damage the prior run receipt."""
+    from relax.commands import ppca_initial_model as command
+    from relax.ppca_initial_model import checkpoint, iteration_loop
+
+    output = tmp_path / "run"
+    output.mkdir()
+    receipt = output / "run.json"
+    receipt.write_bytes(b'{"original":true}\n')
+    resume = output / "checkpoint_0110.npz"
+    resume.write_bytes(b"mismatched checkpoint")
+    monkeypatch.setenv("SLURM_JOB_ID", "test")
+    monkeypatch.setattr(command, "load_training", lambda _path: (object(), {"particle_diameter_ang": 1}, {}))
+    monkeypatch.setattr(command, "source_identity", lambda: {"test": True})
+    monkeypatch.setattr(checkpoint, "load", lambda *_args: (_ for _ in ()).throw(ValueError("identity mismatch")))
+    monkeypatch.setattr(iteration_loop, "run", lambda *_args, **_kwargs: pytest.fail("run called"))
+    with pytest.raises(ValueError, match="identity mismatch"):
+        command.main(["manifest.json", "-o", str(output), "--resume", str(resume)])
+    assert receipt.read_bytes() == b'{"original":true}\n'

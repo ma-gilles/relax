@@ -9,11 +9,12 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import pytest
+from recovar.data_io.starfile import read_star
+from recovar.utils.helpers import R_from_relion, write_relion_mrc
 
 import relax.vdam.driver as driver
-from relax.commands import initial_model
-from recovar.data_io.starfile import read_star
 from relax import sampling
+from relax.commands import initial_model
 from relax.diagnostics import vdam_mstep_replay
 from relax.helpers.particle_io import ParticleReadPolicy
 from relax.helpers.orientation_priors import relion_round_away_from_zero
@@ -30,7 +31,6 @@ from relax.vdam import (
 from relax.vdam.init import initialise_denovo_state
 from relax.vdam.state import NativeOpticsState, NativeParticleState
 from relax.vdam.subset_schedule import select_subset_for_iter
-from recovar.utils.helpers import R_from_relion, write_relion_mrc
 from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
@@ -1518,7 +1518,7 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
 
     from recovar.utils import helpers
 
-    monkeypatch.setenv("RECOVAR_INITIAL_IREF_OVERRIDE", "seed.mrc")
+    monkeypatch.setenv("RELAX_INITIAL_IREF_OVERRIDE", "seed.mrc")
     monkeypatch.setattr(
         bootstrap_iref,
         "compute_bootstrap_iref_via_cpp",

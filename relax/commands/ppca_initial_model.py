@@ -143,6 +143,11 @@ def main(args=None):
     output.mkdir(parents=True, exist_ok=True)
     if not args.resume and list(output.glob("checkpoint_*.npz")):
         raise ValueError("Output already contains checkpoints; use --resume or a new directory")
+    if args.resume:
+        from relax.ppca_initial_model.checkpoint import load
+
+        # Reject a mismatched checkpoint before changing existing run metadata.
+        load(args.resume, config, identity)
     (output / "run.json").write_text(
         json.dumps({"config": dataclasses.asdict(config), "identity": identity}, indent=2) + "\n"
     )

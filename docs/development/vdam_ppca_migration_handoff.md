@@ -1,7 +1,7 @@
 # VDAM–PPCA migration status (2026-09-23)
 
 RELAX `codex/vdam-ppca` is based on `origin/main` at
-`f58b55e19f82466102ad0e1f4b280b9ac353a758`. It selectively ports the
+`96b1eab` (including the P5 environment split). It selectively ports the
 frozen RECOVAR candidate-6 ab-initio q=2 PPCA controller and dense statistics,
 including the independently qualified float32 block-normalization repair.
 It also adds opt-in native VDAM controls and the float32 projector coordinate
@@ -14,7 +14,7 @@ identify the old source snapshots and new owners. The
 [block repair receipt](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_ppca_blocks_20260923/README.md)
 pins its candidate-6-relative patch and fixed-state tests. The shared
 `AugmentedPPCAStats` optional fields are in isolated RECOVAR `dev2` feature
-commit `0cb6a0ea263da53acfbc12c40006e3a413704ded`; that commit is local
+commit `6fcb8a995aba33a22a42c989f2be75f3bddca298`; that commit is local
 pending review, so RELAX's published dependency pin and lock still point to
 `a63df5a623abda24b87fefab23d2ef236e9c7a9c`. Cross-repository validation
 must identify explicitly when it uses the local RECOVAR feature checkout. The
@@ -49,10 +49,13 @@ The initial affected VDAM/projector/dense run passed 200/201: the all-retained
 local versus dense RHS comparison differed in 5/96 entries after the centered
 dense posterior repair (maximum absolute difference `1.38e-4`, existing
 tolerance `2e-5`). An in-memory fixed-input replay that centered only the local
-posterior passed this exact case. The production local path now uses the same
-centered-score helper as dense; after the RELAX main fast-forward to
-`f58b55e19f82466102ad0e1f4b280b9ac353a758`, the complete affected CPU
-selection passed **238/238**. No tolerance or baseline changed.
+posterior passed this exact case. The production local score and cached exact/top-k M-step paths use the same
+centered-score helper as dense. A large-offset regression covers exact and top-k
+mass without renormalizing retained top-k mass. Rejected resume now validates
+its checkpoint before changing `run.json`; a regression confirms byte-preserved
+metadata after rejection. Against the rebased RECOVAR feature source and the
+rebuilt P5 RELION binding, the complete affected CPU selection passed
+**308/308** (8 skipped). No tolerance or baseline changed.
 
 The next gate is a bounded matched-state float32 check of the migrated source,
 then explicit checkpoint import and continuation of the same 5k trajectory toward its final update
