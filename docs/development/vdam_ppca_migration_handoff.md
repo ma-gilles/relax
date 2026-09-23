@@ -14,12 +14,13 @@ identify the old source snapshots and new owners. The
 [block repair receipt](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_ppca_blocks_20260923/README.md)
 pins its candidate-6-relative patch and fixed-state tests. The shared
 `AugmentedPPCAStats` optional fields are in isolated RECOVAR `dev2` feature
-commit `6fcb8a995aba33a22a42c989f2be75f3bddca298`; that commit is local
-pending review, so RELAX's published dependency pin and lock still point to
-`a63df5a623abda24b87fefab23d2ef236e9c7a9c`. Cross-repository validation
-must identify explicitly when it uses the local RECOVAR feature checkout. The
-[repin sequence](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/relax_ppca_migration_20260923/RECOVAR_REPIN_PENDING.md)
-keeps the final lock reproducible after coordinated publication.
+commit `7c418660e39da7b452facf7fadd8eede4223b982`, fast-forward published
+to `dev2` after focused compatibility review. RELAX's pinned pixi environment
+now resolves that commit; `pixi install --frozen` and import provenance confirm
+the three optional fields. The [repin receipt](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/relax_ppca_migration_20260923/RECOVAR_REPIN_PENDING.md)
+records the coordinated dependency lineage. The earlier A100 readiness probe
+was queued against the immutable pre-repin `a2097a4` snapshot, whose numerical
+PPCA source and shared stats container bytes are unchanged by this repin.
 
 The [managed science gallery](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_ppca_managed_science_20260923/README.md)
 shows the completed 2k paired panels and 5k native-K3-only panels. The
