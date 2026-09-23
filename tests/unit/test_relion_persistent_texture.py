@@ -436,11 +436,11 @@ def test_bound_cuda_library_keeps_persistent_texture_handles_live(
         copy = tmp_path / "second_copy" / "librelax_cuda.so"
         copy.parent.mkdir()
         shutil.copy(bound, copy)
-        monkeypatch.setenv("RECOVAR_RELAX_CUDA_LIB", str(copy))
+        monkeypatch.setenv("RELAX_CUDA_LIB", str(copy))
         with pytest.raises(RuntimeError, match="bound to"):
             project()
         # Without an explicit request, native calls keep using the bound library.
-        monkeypatch.delenv("RECOVAR_RELAX_CUDA_LIB")
+        monkeypatch.delenv("RELAX_CUDA_LIB")
         np.testing.assert_array_equal(project().view(np.uint32), reference.view(np.uint32))
     assert em_cuda_kernels._LIBRARY.loaded_path == bound
 

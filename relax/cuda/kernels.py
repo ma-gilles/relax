@@ -7660,7 +7660,7 @@ def dual_weighted_sums_f32(
 # EM CUDA library (relax split seam S3/S4): librelax_cuda.so, built from recovar/em/cuda
 # ──────────────────────────────────────────────────────────────────────
 
-_RELAX_CUDA_LIB_ENV = "RECOVAR_RELAX_CUDA_LIB"
+_RELAX_CUDA_LIB_ENV = "RELAX_CUDA_LIB"
 _RELAX_CUDA_BUILD_SOURCE_NAMES = (
     "relax_kernels.cu",
     "noise_residual.cuh",

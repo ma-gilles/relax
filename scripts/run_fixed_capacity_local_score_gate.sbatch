@@ -133,13 +133,13 @@ printf '%s  %s\n' "${cuda_sha256}" "${CUDA_BINARY}" \
   > "${PROVENANCE}/qualified_cuda.sha256"
 
 unset PYTHONPATH PYTHONHOME CONDA_PREFIX VIRTUAL_ENV CONDA_DEFAULT_ENV JAX_PLATFORM_NAME
-unset RECOVAR_DISABLE_CUDA RECOVAR_CUDA_LIB RECOVAR_RELAX_CUDA_LIB RELAX_ENABLE_CUSTOM_CUDA
+unset RECOVAR_DISABLE_CUDA RECOVAR_CUDA_LIB RELAX_CUDA_LIB RELAX_ENABLE_CUSTOM_CUDA
 unset RELAX_REQUIRE_CUSTOM_CUDA_FOR_TESTS
 export PYTHONNOUSERSITE=1
 export PYTHONUNBUFFERED=1
 export CUDA_VISIBLE_DEVICES=${selected_gpu_uuid}
 export RECOVAR_EXPECTED_REPO_ROOT=${REPO_ROOT}
-export RECOVAR_RELAX_CUDA_LIB=${CUDA_BINARY}
+export RELAX_CUDA_LIB=${CUDA_BINARY}
 export RELAX_REQUIRE_CUSTOM_CUDA_FOR_TESTS=1
 export RELAX_ENABLE_CUSTOM_CUDA=1
 export JAX_PLATFORMS=cuda,cpu
@@ -172,7 +172,7 @@ assert ".pixi/envs/default/" in str(pathlib.Path(jax.__file__).resolve())
 assert jax.default_backend() == "gpu"
 assert len(jax.devices("gpu")) == 1
 assert cuda_backproject.cuda_available(), cuda_backproject.cuda_unavailable_error()
-cuda_binary = pathlib.Path(os.environ["RECOVAR_RELAX_CUDA_LIB"]).resolve()
+cuda_binary = pathlib.Path(os.environ["RELAX_CUDA_LIB"]).resolve()
 assert cuda_binary.is_file()
 assert not str(cuda_binary).startswith(str(repo) + "/")
 assert_parity_ancestors()

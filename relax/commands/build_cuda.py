@@ -1,7 +1,7 @@
 """``relax build_cuda``: build the EM CUDA library ``librelax_cuda.so`` from ``relax/cuda``.
 
 The library includes RECOVAR's public CUDA headers (``recovar.cuda_build.include_dir()``), so each shared device
-helper has one implementation. ``RECOVAR_RELAX_CUDA_LIB`` selects the library at run time.
+helper has one implementation. ``RELAX_CUDA_LIB`` selects the library at run time.
 """
 
 import argparse

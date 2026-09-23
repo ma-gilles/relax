@@ -583,11 +583,11 @@ export RECOVAR_CACHE_DIR="\${RECOVAR_CACHE_DIR-}"
 # leave on: the 100k/256 completion stacks are about 26 GB.
 export RECOVAR_PREREAD_IMAGES="\${RECOVAR_PREREAD_IMAGES:-1}"
 export RECOVAR_PREREAD_MAX_GB="\${RECOVAR_PREREAD_MAX_GB:-64}"
-export RECOVAR_RELAX_CUDA_LIB="${CUDA_LIB}"
+export RELAX_CUDA_LIB="${CUDA_LIB}"
 export RECOVAR_CUDA_CACHE_DIR="${SCRATCH_DIR}/cuda_cache/${job_name}_\${SLURM_JOB_ID}"
 export RECOVAR_RELION_BIND_BUILD_DIR="${SCRATCH_DIR}/relion_bind_build/shared"
 export RELION_SRC_DIR="${RELION_SRC_DIR}"
-mkdir -p "\${TMPDIR}" "\${PIXI_HOME}" "\${RATTLER_CACHE_DIR}" "\${RECOVAR_JAX_CACHE_DIR}" "\${RECOVAR_CUDA_CACHE_DIR}" "\${RECOVAR_RELION_BIND_BUILD_DIR}" "\$(dirname "\${RECOVAR_RELAX_CUDA_LIB}")"
+mkdir -p "\${TMPDIR}" "\${PIXI_HOME}" "\${RATTLER_CACHE_DIR}" "\${RECOVAR_JAX_CACHE_DIR}" "\${RECOVAR_CUDA_CACHE_DIR}" "\${RECOVAR_RELION_BIND_BUILD_DIR}" "\$(dirname "\${RELAX_CUDA_LIB}")"
 
 if [[ -f /etc/profile.d/modules.sh ]]; then
   # shellcheck disable=SC1091
@@ -686,7 +686,7 @@ echo "RECOVAR_CACHE_DIR=\${RECOVAR_CACHE_DIR:-<staging disabled>}"
 echo "RECOVAR_PREREAD_IMAGES=\${RECOVAR_PREREAD_IMAGES} RECOVAR_PREREAD_MAX_GB=\${RECOVAR_PREREAD_MAX_GB}"
 echo "JAX_COMPILATION_CACHE_DIR=\${JAX_COMPILATION_CACHE_DIR}"
 echo "PYTHONFAULTHANDLER=\${PYTHONFAULTHANDLER}"
-echo "RECOVAR_RELAX_CUDA_LIB=\${RECOVAR_RELAX_CUDA_LIB}"
+echo "RELAX_CUDA_LIB=\${RELAX_CUDA_LIB}"
 echo "RECOVAR_RELION_BIND_BUILD_DIR=\${RECOVAR_RELION_BIND_BUILD_DIR}"
 echo "RELION_SRC_DIR=\${RELION_SRC_DIR:-<unset>}"
 echo "CUDA_HOME=\${CUDA_HOME}"
@@ -745,9 +745,9 @@ EOF
 
 write_build_cuda_lib() {
   cat <<EOF
-mkdir -p "\$(dirname "\${RECOVAR_RELAX_CUDA_LIB}")"
+mkdir -p "\$(dirname "\${RELAX_CUDA_LIB}")"
 flock "${SCRATCH_DIR}/cuda/build.lock" \\
-  env PYTHON="\${PIXI_PY}" make -C relax/cuda LIB="\${RECOVAR_RELAX_CUDA_LIB}" all
+  env PYTHON="\${PIXI_PY}" make -C relax/cuda LIB="\${RELAX_CUDA_LIB}" all
 EOF
 }
 

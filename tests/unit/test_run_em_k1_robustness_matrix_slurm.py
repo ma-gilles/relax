@@ -551,12 +551,12 @@ def test_case_jobs_build_cuda_lib_atomically_under_lock(tmp_path):
     case_scripts = list((scratch / "jobs").glob("em_k1_matrix_14_*.sh"))
     assert len(case_scripts) == 1
     text = case_scripts[0].read_text()
-    assert 'CUDA_LIB_TMP="${RECOVAR_RELAX_CUDA_LIB}.${SLURM_JOB_ID:-$$}.tmp"' in text
+    assert 'CUDA_LIB_TMP="${RELAX_CUDA_LIB}.${SLURM_JOB_ID:-$$}.tmp"' in text
     assert "export CUDA_LIB_TMP PIXI_PY" in text
     assert f'flock "{scratch}/cuda/build.lock" bash -lc' in text
     assert 'rm -f "${CUDA_LIB_TMP}"' in text
     assert 'make -C relax/cuda LIB="${CUDA_LIB_TMP}" all' in text
-    assert 'mv -f "${CUDA_LIB_TMP}" "${RECOVAR_RELAX_CUDA_LIB}"' in text
+    assert 'mv -f "${CUDA_LIB_TMP}" "${RELAX_CUDA_LIB}"' in text
 
 
 def test_bpref_and_relion_mstep_diagnostic_dump_dirs_are_case_scoped(tmp_path):

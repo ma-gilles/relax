@@ -54,8 +54,8 @@ JAX FFI headers. Build explicitly into an exclusive run directory:
 # Set RUN_ROOT to a new writable run directory before this command.
 PIXI_PY="$(pixi run which python)"
 PYTHON="$PIXI_PY" make -C relax/cuda LIB="$RUN_ROOT/librelax_cuda.so" all
-export RECOVAR_RELAX_CUDA_LIB="$RUN_ROOT/librelax_cuda.so"
-sha256sum "$RECOVAR_RELAX_CUDA_LIB"
+export RELAX_CUDA_LIB="$RUN_ROOT/librelax_cuda.so"
+sha256sum "$RELAX_CUDA_LIB"
 ```
 
 This is relax's EM library. RECOVAR's own library is built from the installed
@@ -65,7 +65,7 @@ loaders refuse a library that lacks their own symbols.
 Record source, lock, compiler, headers, loaded library path and library hash.
 Verify the library hash before loading, immediately after loading, and after
 each paired run. The loader can rebuild a missing or stale library, including
-an explicit `RECOVAR_RELAX_CUDA_LIB` or `RECOVAR_CUDA_LIB` path. For qualification, place a freshly copied
+an explicit `RELAX_CUDA_LIB` or `RECOVAR_CUDA_LIB` path. For qualification, place a freshly copied
 binary in a dedicated directory and make both the file and directory read-only
 before loading. Record the actual loaded path; successful import alone does not
 prove that the intended extension ran. Never rebuild a shared library while
