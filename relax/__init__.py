@@ -3,10 +3,10 @@
 Standard refinement lives in ``refinement`` and InitialModel/VDAM in ``vdam``.
 Import functions and types directly from their owning modules.
 
-The InitialModel launch hooks below run before any submodule imports
-``recovar`` (and with it ``recovar.jax_config``), so ``relax initial_model``
-and ``python -m relax.commands.initial_model`` reach JAX with the EM XLA
-defaults and the requested allocator.
+The launch hooks below run before any submodule imports ``recovar`` (and
+with it ``recovar.jax_config``), so every relax process reaches JAX with the
+EM XLA defaults, and ``relax initial_model`` and
+``python -m relax.commands.initial_model`` with the requested allocator.
 """
 
 import os
@@ -41,24 +41,23 @@ def _configure_initial_model_cuda_allocator(*, argv=None, orig_argv=None, enviro
     return environ.get("TF_GPU_ALLOCATOR")
 
 
-def _configure_initial_model_xla_defaults(*, argv=None, orig_argv=None, environ=None):
-    """Opt the InitialModel CLI into the EM XLA defaults before JAX initializes.
+def _configure_em_xla_defaults(*, environ=None):
+    """Opt every relax process into the EM XLA defaults before JAX initializes.
 
-    ``relax initial_model`` and ``python -m relax.commands.initial_model``
-    import this package before ``recovar``, and with it ``recovar.jax_config``,
-    so the EM defaults (``--xla_gpu_autotune_level=0``) reach XLA only if they
-    are set here. An explicit ``RECOVAR_EM_XLA_DEFAULTS`` in the environment
-    still wins.
+    Every relax entry point is an EM workflow, and ``relax initial_model`` and
+    ``python -m relax.commands.initial_model`` import this package before
+    ``recovar``, and with it ``recovar.jax_config``, so the EM
+    defaults (``--xla_gpu_autotune_level=0``) reach XLA only if they are set
+    here. An explicit ``RECOVAR_EM_XLA_DEFAULTS`` in the environment still wins.
     """
 
     environ = os.environ if environ is None else environ
-    if _initial_model_cli_requested(argv=argv, orig_argv=orig_argv):
-        environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
+    environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
     return environ.get("RECOVAR_EM_XLA_DEFAULTS")
 
 
 _configure_initial_model_cuda_allocator()
-_configure_initial_model_xla_defaults()
+_configure_em_xla_defaults()
 
 try:
     # recovar's package import applies the XLA configuration (including the EM defaults marker set above);

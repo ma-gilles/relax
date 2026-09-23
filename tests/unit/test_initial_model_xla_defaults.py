@@ -7,8 +7,8 @@ own imports, but ``relax initial_model`` (console script) and
 ``--xla_gpu_autotune_level=0`` therefore never reached XLA for InitialModel,
 and autotuning stayed on (with it XLA's fusion autotuner, whose Triton
 reductions over-read their operands on Hopper; D2 10345 diagnosis). The ``relax``
-package sets the marker itself, before importing ``recovar``, when it is imported
-for the InitialModel CLI.
+package now sets the marker itself, before importing ``recovar``, whenever it is
+imported.
 
 The end-to-end cases run the real invocations in child interpreters and read
 ``XLA_FLAGS`` at exit through a ``sitecustomize`` hook.
@@ -32,32 +32,16 @@ MARKER = "RECOVAR_EM_XLA_DEFAULTS"
 FLAG = "--xla_gpu_autotune_level=0"
 
 
-@pytest.mark.parametrize(
-    ("argv", "orig_argv"),
-    [
-        (["/env/bin/relax", "initial_model", "--help"], ["/env/bin/python", "/env/bin/relax", "initial_model"]),
-        (["-m", "--help"], ["/env/bin/python", "-m", "relax.commands.initial_model", "--help"]),
-    ],
-    ids=["console-script", "python-m"],
-)
-def test_the_initial_model_cli_sets_the_marker(argv, orig_argv):
+def test_importing_relax_sets_the_marker():
     environ: dict[str, str] = {}
-    assert relax._configure_initial_model_xla_defaults(argv=argv, orig_argv=orig_argv, environ=environ) == "1"
+    assert relax._configure_em_xla_defaults(environ=environ) == "1"
     assert environ == {MARKER: "1"}
-
-
-def test_other_commands_do_not_set_the_marker():
-    environ: dict[str, str] = {}
-    argv = ["/env/bin/relax", "build_cuda", "--help"]
-    assert relax._configure_initial_model_xla_defaults(argv=argv, orig_argv=argv, environ=environ) is None
-    assert environ == {}
 
 
 @pytest.mark.parametrize("explicit", ["0", ""])
 def test_an_explicit_marker_wins(explicit):
     environ = {MARKER: explicit}
-    argv = ["/env/bin/relax", "initial_model"]
-    assert relax._configure_initial_model_xla_defaults(argv=argv, orig_argv=argv, environ=environ) == explicit
+    assert relax._configure_em_xla_defaults(environ=environ) == explicit
 
 
 def _xla_flags_at_exit(cmd: list[str], tmp_path: Path, extra_env: dict[str, str] | None = None) -> str:
@@ -96,6 +80,10 @@ def test_end_to_end_python_m_reaches_xla_with_the_em_default(tmp_path):
     assert FLAG in _xla_flags_at_exit(cmd, tmp_path).split()
 
 
-def test_end_to_end_other_commands_keep_autotuning(tmp_path):
+def test_end_to_end_any_relax_import_reaches_xla_with_the_em_default(tmp_path):
     code = "import sys; sys.argv = ['relax', 'build_cuda', '--help']; import relax, recovar"
-    assert FLAG not in _xla_flags_at_exit([sys.executable, "-c", code], tmp_path).split()
+    assert FLAG in _xla_flags_at_exit([sys.executable, "-c", code], tmp_path).split()
+
+
+def test_end_to_end_recovar_alone_keeps_autotuning(tmp_path):
+    assert FLAG not in _xla_flags_at_exit([sys.executable, "-c", "import recovar"], tmp_path).split()
