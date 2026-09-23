@@ -141,7 +141,7 @@ def test_bpref_target_rows_accept_slurm_safe_semicolon_list(monkeypatch):
         dataset_indices=np.asarray([10, 20, 30, 40], dtype=np.int64)
     )
     monkeypatch.setenv(
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES",
         "10; 30;40",
     )
 

@@ -7,12 +7,12 @@ from relax.classification.k_class_results import SparseKClassHostStatistics
 @pytest.mark.parametrize("noise", [False, True])
 @pytest.mark.parametrize("device_scalars", [False, True])
 def test_vectorized_replay_matches_ordered_multibucket_results(monkeypatch, noise, device_scalars):
-    flags={"RECOVAR_DISABLE_CUDA":"1", "RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS":"1",
-           "RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE":"1",
-           "RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH":"1",
-           "RECOVAR_SPARSE_PASS2_IMAGE_CAPACITY":"1",
-           "RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_DEVICE_INDEX":"1",
-           "RECOVAR_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS":str(int(device_scalars))}
+    flags={"RECOVAR_DISABLE_CUDA":"1", "RELAX_SPARSE_KCLASS_COMPACT_PAIRS":"1",
+           "RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE":"1",
+           "RELAX_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH":"1",
+           "RELAX_SPARSE_PASS2_IMAGE_CAPACITY":"1",
+           "RELAX_SPARSE_KCLASS_COMPACT_PAIR_DEVICE_INDEX":"1",
+           "RELAX_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS":str(int(device_scalars))}
     for name,value in flags.items():monkeypatch.setenv(name,value)
     monkeypatch.setattr(engine,"quantized_image_capacity",lambda n,**kw:4)
     calls=[]
@@ -24,7 +24,7 @@ def test_vectorized_replay_matches_ordered_multibucket_results(monkeypatch, nois
     kwargs=_fused_kclass_capacity_fixture();kwargs["accumulate_noise"]=noise
     outputs=[]
     for mode in ["0","1"]:
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_VECTORIZED_STATS_REPLAY",mode)
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_VECTORIZED_STATS_REPLAY",mode)
         outputs.append(_fused_kclass_result_arrays(engine.compute_k_class_pass2_stats_sparse_fused(**kwargs)))
     assert calls.count(True)>1 and calls.count(False)==calls.count(True)
     assert outputs[0].keys()==outputs[1].keys()

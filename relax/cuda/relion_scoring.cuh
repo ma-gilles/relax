@@ -735,11 +735,11 @@ void relion_coarse_diff2_projector_f32_kernel(
     int model_max_r2,
     float projector_scale,
     float padding_factor)
-#define RECOVAR_RELION_COARSE_STAGE_WEIGHT(pixel_weight)
-#define RECOVAR_RELION_COARSE_DIFF2_UPDATE relion_fine_diff2_update_f32
+#define RELAX_RELION_COARSE_STAGE_WEIGHT(pixel_weight)
+#define RELAX_RELION_COARSE_DIFF2_UPDATE relion_fine_diff2_update_f32
 #include "relion_coarse_diff2_projector_body.inc"
-#undef RECOVAR_RELION_COARSE_DIFF2_UPDATE
-#undef RECOVAR_RELION_COARSE_STAGE_WEIGHT
+#undef RELAX_RELION_COARSE_DIFF2_UPDATE
+#undef RELAX_RELION_COARSE_STAGE_WEIGHT
 
 template <int EULERS_PER_BLOCK, bool CAPTURE_LANES = false>
 __global__ __launch_bounds__(kRelionCoarseDiff2BlockSize)
@@ -767,13 +767,13 @@ void relion_coarse_diff2_projector_prehalf_f32_kernel(
     float padding_factor)
 #define CANONICAL_REDUCTION false
 #define SINGLE_LANE_CANONICAL false
-#define RECOVAR_RELION_COARSE_STAGE_WEIGHT(pixel_weight) \
+#define RELAX_RELION_COARSE_STAGE_WEIGHT(pixel_weight) \
     pixel_weight = __fmul_rn(pixel_weight, 0.5f);
-#define RECOVAR_RELION_COARSE_DIFF2_UPDATE \
+#define RELAX_RELION_COARSE_DIFF2_UPDATE \
     relion_fine_diff2_update_prehalf_f32
 #include "relion_coarse_diff2_projector_body.inc"
-#undef RECOVAR_RELION_COARSE_DIFF2_UPDATE
-#undef RECOVAR_RELION_COARSE_STAGE_WEIGHT
+#undef RELAX_RELION_COARSE_DIFF2_UPDATE
+#undef RELAX_RELION_COARSE_STAGE_WEIGHT
 #undef SINGLE_LANE_CANONICAL
 #undef CANONICAL_REDUCTION
 

@@ -252,7 +252,7 @@ def test_module_entrypoint_keeps_default_allocator_without_override():
     environ = dict(os.environ)
     environ["JAX_PLATFORMS"] = "cpu"
     environ.pop("TF_GPU_ALLOCATOR", None)
-    environ.pop("RECOVAR_INITIAL_MODEL_CUDA_ALLOCATOR", None)
+    environ.pop("RELAX_INITIAL_MODEL_CUDA_ALLOCATOR", None)
 
     completed = subprocess.run(
         repo_python_command("-m", "relax.commands.initial_model", "--i", "particles.star", "--dry-run"),
@@ -330,7 +330,7 @@ def test_initial_model_bootstrap_keeps_default_allocator(argv, orig_argv):
 
 @pytest.mark.unit
 def test_initial_model_bootstrap_applies_requested_allocator():
-    environ = {"RECOVAR_INITIAL_MODEL_CUDA_ALLOCATOR": "cuda_malloc_async"}
+    environ = {"RELAX_INITIAL_MODEL_CUDA_ALLOCATOR": "cuda_malloc_async"}
 
     resolved = relax._configure_initial_model_cuda_allocator(
         argv=["relax", "initial_model"],
@@ -347,7 +347,7 @@ def test_initial_model_bootstrap_respects_allocator_override_and_optout():
     argv = ["relax", "initial_model"]
     caller_selected = {
         "TF_GPU_ALLOCATOR": "platform",
-        "RECOVAR_INITIAL_MODEL_CUDA_ALLOCATOR": "cuda_malloc_async",
+        "RELAX_INITIAL_MODEL_CUDA_ALLOCATOR": "cuda_malloc_async",
     }
     assert (
         relax._configure_initial_model_cuda_allocator(
@@ -358,7 +358,7 @@ def test_initial_model_bootstrap_respects_allocator_override_and_optout():
         == "platform"
     )
 
-    opted_out = {"RECOVAR_INITIAL_MODEL_CUDA_ALLOCATOR": "default"}
+    opted_out = {"RELAX_INITIAL_MODEL_CUDA_ALLOCATOR": "default"}
     assert (
         relax._configure_initial_model_cuda_allocator(
             argv=argv,

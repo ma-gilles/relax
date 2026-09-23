@@ -265,10 +265,10 @@ def test_proposal_runtime_contract_accepts_unset_or_explicitly_off_grid_correcti
     (run_root / "submission.env").write_text(
         "EM_K1_MATRIX_TRAJECTORY_MODE=autonomous\n"
         "EM_K1_MATRIX_RUN_RELION=1\n"
-        f"RECOVAR_FINAL_ALL_DATA_GRID_CORRECT={grid_value}\n"
+        f"RELAX_FINAL_ALL_DATA_GRID_CORRECT={grid_value}\n"
     )
     (jobs / "em_k1_matrix_26_tiny_severe.sh").write_text(
-        "unset RECOVAR_FINAL_ALL_DATA_AFTER_MAX_ITER\n"
+        "unset RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER\n"
     )
 
     MODULE._validate_runtime_contract(run_root, case_root, "k1-26")
@@ -288,10 +288,10 @@ def test_proposal_runtime_contract_rejects_enabled_grid_correction(
     (run_root / "submission.env").write_text(
         "EM_K1_MATRIX_TRAJECTORY_MODE=autonomous\n"
         "EM_K1_MATRIX_RUN_RELION=1\n"
-        f"RECOVAR_FINAL_ALL_DATA_GRID_CORRECT={grid_value}\n"
+        f"RELAX_FINAL_ALL_DATA_GRID_CORRECT={grid_value}\n"
     )
     (jobs / "em_k1_matrix_26_tiny_severe.sh").write_text(
-        "unset RECOVAR_FINAL_ALL_DATA_AFTER_MAX_ITER\n"
+        "unset RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER\n"
     )
 
     with pytest.raises(ValueError, match="grid correction was enabled"):

@@ -95,7 +95,7 @@ def test_receipt_records_native_and_cache_overrides_without_unrelated_env(
             monkeypatch.delenv(key, raising=False)
         else:
             monkeypatch.setenv(key, value)
-    monkeypatch.setenv("RECOVAR_TEST_SECRET", "must-not-be-recorded")
+    monkeypatch.setenv("RELAX_TEST_SECRET", "must-not-be-recorded")
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
     monkeypatch.setattr(package, "snapshot", lambda repo: {"head": "abc", "diff_sha256": "123"})
     monkeypatch.setattr(package.subprocess, "run", Mock(return_value=SimpleNamespace(returncode=0)))
@@ -103,5 +103,5 @@ def test_receipt_records_native_and_cache_overrides_without_unrelated_env(
     text = (tmp_path / "receipt.json").read_text()
     environment = json.loads(text)["environment"]
     assert {key: environment[key] for key in keys} == expected
-    assert "RECOVAR_TEST_SECRET" not in environment
+    assert "RELAX_TEST_SECRET" not in environment
     assert "must-not-be-recorded" not in text

@@ -179,7 +179,7 @@ def _arrays_to_accumulators(
     data_scale, weight_scale = (1.0, 1.0)
     if relion_bpref_frame:
         data_scale, weight_scale = relion_bpref_frame_scales(state.ori_size)
-    dump_dir = os.environ.get("RECOVAR_INITIAL_MODEL_ACCUM_DUMP_DIR")
+    dump_dir = os.environ.get("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR")
 
     grouped = halfset_idx is None
     if grouped:

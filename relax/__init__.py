@@ -33,7 +33,7 @@ def _configure_initial_model_cuda_allocator(*, argv=None, orig_argv=None, enviro
     if not _initial_model_cli_requested(argv=argv, orig_argv=orig_argv):
         return environ.get("TF_GPU_ALLOCATOR")
     requested = environ.get(
-        "RECOVAR_INITIAL_MODEL_CUDA_ALLOCATOR",
+        "RELAX_INITIAL_MODEL_CUDA_ALLOCATOR",
         "default",
     ).strip()
     if requested.lower() not in {"", "default", "none", "off"}:
@@ -56,6 +56,38 @@ def _configure_em_xla_defaults(*, environ=None):
     return environ.get("RECOVAR_EM_XLA_DEFAULTS")
 
 
+def _reject_renamed_environment(*, environ=None):
+    """Refuse to start while a renamed relax-only ``RECOVAR_*`` variable is set.
+
+    relax's own environment variables are named ``RELAX_*`` (relax split P5); the list of renamed names, and
+    of the ``RECOVAR_*`` names that stay because recovar also reads them or sealed JSON records them, is
+    ``renamed_environment.json``. A harness that still sets an old name would otherwise have its setting
+    ignored without notice, so the old name is an error, not an alias. A name ending in ``_`` is a prefix.
+    """
+
+    import json
+    import pathlib
+
+    environ = os.environ if environ is None else environ
+    table = json.loads((pathlib.Path(__file__).with_name("renamed_environment.json")).read_text())
+    renamed = table["renamed"]
+    exempt = {name for names in table["exempt"].values() for name in names}
+    prefixes = [old for old in renamed if old.endswith("_")]
+    stale = []
+    for name in sorted(environ):
+        if not name.startswith("RECOVAR_") or name in exempt:
+            continue
+        if name in renamed:
+            stale.append(f"{name} -> {renamed[name]}")
+        elif any(name.startswith(prefix) for prefix in prefixes):
+            stale.append(f"{name} -> RELAX_{name[len('RECOVAR_'):]}")
+    if stale:
+        raise RuntimeError(
+            "relax reads RELAX_* names for its own settings; rename these environment variables: " + ", ".join(stale)
+        )
+
+
+_reject_renamed_environment()
 _configure_initial_model_cuda_allocator()
 _configure_em_xla_defaults()
 

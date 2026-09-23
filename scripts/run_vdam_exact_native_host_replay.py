@@ -85,15 +85,15 @@ def _optional_pointer(value: np.ndarray | None) -> ctypes.c_void_p:
 def run_replay(input_path: Path, output_path: Path, library_path: Path) -> dict:
     if output_path.exists():
         raise FileExistsError(f"refusing to overwrite {output_path}")
-    if not os.environ.get("RECOVAR_VDAM_EXACT_NATIVE_PTX", "").strip():
-        raise RuntimeError("RECOVAR_VDAM_EXACT_NATIVE_PTX is required")
+    if not os.environ.get("RELAX_VDAM_EXACT_NATIVE_PTX", "").strip():
+        raise RuntimeError("RELAX_VDAM_EXACT_NATIVE_PTX is required")
     if not library_path.is_file():
         raise FileNotFoundError(library_path)
     prelaunch_capture_dir_text = os.environ.get(
-        "RECOVAR_VDAM_QUIESCED_PRELAUNCH_CAPTURE_DIR", ""
+        "RELAX_VDAM_QUIESCED_PRELAUNCH_CAPTURE_DIR", ""
     ).strip()
     prelaunch_target_text = os.environ.get(
-        "RECOVAR_VDAM_QUIESCED_PRELAUNCH_PARTICLE_ID", ""
+        "RELAX_VDAM_QUIESCED_PRELAUNCH_PARTICLE_ID", ""
     ).strip()
     if bool(prelaunch_capture_dir_text) != bool(prelaunch_target_text):
         raise RuntimeError(

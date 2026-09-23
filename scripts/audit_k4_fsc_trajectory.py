@@ -32,7 +32,7 @@ from scripts.summarize_em_completion_bench import (
 
 SCHEMA = "em_k4_fsc_trajectory_audit_v2"
 N_CLASSES = 4
-RECOVAR_MAP_RE = re.compile(r"^it(\d{3})_half([12])_class(\d{1,3})_reg\.mrc$")
+RELAX_MAP_RE = re.compile(r"^it(\d{3})_half([12])_class(\d{1,3})_reg\.mrc$")
 RELION_MAP_RE = re.compile(r"^run_it(\d{3})_class(\d{3})\.mrc$")
 
 
@@ -88,7 +88,7 @@ def _hungarian_max(scores: np.ndarray, *, label: str) -> list[int]:
 def _discover_recovar_maps(directory: Path) -> dict[int, dict[int, dict[int, Path]]]:
     grouped: dict[int, dict[int, dict[int, Path]]] = {}
     for path in directory.glob("*.mrc"):
-        match = RECOVAR_MAP_RE.match(path.name)
+        match = RELAX_MAP_RE.match(path.name)
         if match is None:
             continue
         iteration, half, class_id = (int(match.group(i)) for i in range(1, 4))

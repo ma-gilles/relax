@@ -98,8 +98,8 @@ def test_transaction_matches_primitives_exactly(
 
 def test_dump_keeps_primitive_boundaries(transaction_bind, monkeypatch, tmp_path):
     state, accumulators = _case(1, True, 8, False)
-    monkeypatch.setenv("RECOVAR_MSTEP_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RECOVAR_MSTEP_DUMP_ITER", "48")
+    monkeypatch.setenv("RELAX_MSTEP_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_MSTEP_DUMP_ITER", "48")
 
     def forbidden(*args, **kwargs):
         raise AssertionError("dump bypassed primitive boundaries")
@@ -164,8 +164,8 @@ def test_device_request_keeps_native_dump_boundaries(transaction_bind, monkeypat
     from relax.relion import relion_vdam_mstep
 
     state, accumulators = _case(1, True, 8, False)
-    monkeypatch.setenv("RECOVAR_MSTEP_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RECOVAR_MSTEP_DUMP_ITER", "48")
+    monkeypatch.setenv("RELAX_MSTEP_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_MSTEP_DUMP_ITER", "48")
 
     def forbidden(*args, **kwargs):
         raise AssertionError("device request bypassed native diagnostic boundaries")

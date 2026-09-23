@@ -218,17 +218,17 @@ def test_compact_k1_route_gate_requires_host_c64_and_no_diagnostics(monkeypatch)
     monkeypatch.setattr(sparse.sparse_pass2_budget, "_device_memory_limit_bytes", lambda: 85 * 1024**3)
     monkeypatch.setattr(sparse.sparse_pass2_budget, "_jax_allocator_free_memory_bytes", lambda: 40 * 1024**3)
     for name in (
-        "RECOVAR_K1_RELION_EXACT_BPREF_OPERANDS",
-        "RECOVAR_K1_RELION_FIRSTITER_FUSED_BPREF",
-        "RECOVAR_RELION_FIRSTITER_DEFERRED_BPREF",
+        "RELAX_K1_RELION_EXACT_BPREF_OPERANDS",
+        "RELAX_K1_RELION_FIRSTITER_FUSED_BPREF",
+        "RELAX_RELION_FIRSTITER_DEFERRED_BPREF",
         "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR",
-        "RECOVAR_BPREF_MEMBERSHIP_DUMP_DIR",
-        "RECOVAR_BPREF_ACCUMULATOR_DELTA_DUMP_DIR",
-        "RECOVAR_PASS2_DUMP_DIR",
-        "RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
-        "RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS",
-        "RECOVAR_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
+        "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
+        "RELAX_BPREF_ACCUMULATOR_DELTA_DUMP_DIR",
+        "RELAX_PASS2_DUMP_DIR",
+        "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
+        "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",
+        "RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -252,7 +252,7 @@ def test_compact_k1_route_gate_requires_host_c64_and_no_diagnostics(monkeypatch)
         device_owned = _compact_route_decision(projector_half=DeviceProjector())
         assert device_owned.enabled is False
 
-        monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", "/tmp/diagnostic")
+        monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", "/tmp/diagnostic")
         diagnostic = _compact_route_decision(projector_half=host_projector)
         assert diagnostic.enabled is False
         assert diagnostic.deferred_firstiter_bpref is False
@@ -269,18 +269,18 @@ def test_compact_k1_route_gate_honors_explicit_route_env(monkeypatch):
     monkeypatch.setattr(sparse.sparse_pass2_budget, "_jax_allocator_free_memory_bytes", lambda: None)
     sparse.bpref_diagnostics.set_bpref_contribution_dump_context(iteration=1, half=1)
     try:
-        monkeypatch.setenv("RECOVAR_RELION_FIRSTITER_DEFERRED_BPREF", "1")
+        monkeypatch.setenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "1")
         forced_deferred = _compact_route_decision(projector_half=host_projector)
         assert forced_deferred.enabled is True
         assert forced_deferred.deferred_firstiter_bpref is True
 
-        monkeypatch.setenv("RECOVAR_RELION_FIRSTITER_DEFERRED_BPREF", "0")
+        monkeypatch.setenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "0")
         disabled_deferred = _compact_route_decision(projector_half=host_projector)
         assert disabled_deferred.enabled is False
         assert disabled_deferred.deferred_firstiter_bpref is False
 
-        monkeypatch.delenv("RECOVAR_RELION_FIRSTITER_DEFERRED_BPREF")
-        monkeypatch.setenv("RECOVAR_K1_RELION_FIRSTITER_FUSED_BPREF", "0")
+        monkeypatch.delenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF")
+        monkeypatch.setenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "0")
         disabled_fused = _compact_route_decision(projector_half=host_projector)
         assert disabled_fused.enabled is False
     finally:
@@ -296,13 +296,13 @@ def test_soft_compact_k1_route_gate_is_windowed_exact_and_diagnostic_free(
     )
     for name in (
         "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR",
-        "RECOVAR_BPREF_MEMBERSHIP_DUMP_DIR",
-        "RECOVAR_BPREF_ACCUMULATOR_DELTA_DUMP_DIR",
-        "RECOVAR_PASS2_DUMP_DIR",
-        "RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
-        "RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS",
-        "RECOVAR_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
+        "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
+        "RELAX_BPREF_ACCUMULATOR_DELTA_DUMP_DIR",
+        "RELAX_PASS2_DUMP_DIR",
+        "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
+        "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",
+        "RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -331,15 +331,15 @@ def test_soft_compact_k1_route_gate_is_windowed_exact_and_diagnostic_free(
             **(common | override)
         )
 
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", "/tmp/diagnostic")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", "/tmp/diagnostic")
     assert not sparse._relion_soft_compact_batch_planning_safe(**common)
 
 
-@pytest.mark.parametrize("diagnostic_env", ["RECOVAR_EM_FINITE_CHECK", "RECOVAR_SPARSE_PASS2_NATIVE_DUMP_DIR"])
+@pytest.mark.parametrize("diagnostic_env", ["RELAX_EM_FINITE_CHECK", "RELAX_SPARSE_PASS2_NATIVE_DUMP_DIR"])
 def test_compact_planning_excludes_current_runtime_diagnostics(monkeypatch, diagnostic_env):
     monkeypatch.setenv(diagnostic_env, "1")
     host = SimpleNamespace(shape=(1603, 1603, 802), dtype=np.dtype(np.complex64))
-    monkeypatch.delenv("RECOVAR_RELION_FIRSTITER_DEFERRED_BPREF", raising=False)
+    monkeypatch.delenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", raising=False)
     firstiter_bpref.bpref_diagnostics.set_bpref_contribution_dump_context(iteration=1, half=1)
     try:
         decision = _compact_route_decision(projector_half=host)
@@ -409,10 +409,10 @@ def test_adaptive_planner_distinguishes_allocation_phases_with_equal_windows():
 def test_firstiter_compact_budget_requires_single_class_bucketed_route(monkeypatch, override):
     from relax.refinement.firstiter_cc import single_class_bucketed_pass2_selected
     from relax.classification.k1_local_pass2 import K1_PASS2_ENGINE_ENV
-    for name in ["RECOVAR_K_CLASS_DENSE_PASS2", "RECOVAR_SPARSE_KCLASS_FUSED", K1_PASS2_ENGINE_ENV]:
+    for name in ["RELAX_K_CLASS_DENSE_PASS2", "RELAX_SPARSE_KCLASS_FUSED", K1_PASS2_ENGINE_ENV]:
         monkeypatch.delenv(name, raising=False)
-    if override == "dense": monkeypatch.setenv("RECOVAR_K_CLASS_DENSE_PASS2", "1")
-    if override == "fused": monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "1")
+    if override == "dense": monkeypatch.setenv("RELAX_K_CLASS_DENSE_PASS2", "1")
+    if override == "fused": monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "1")
     if override == "local": monkeypatch.setenv(K1_PASS2_ENGINE_ENV, "local")
     assert single_class_bucketed_pass2_selected(firstiter=True) is (override is None)
 
@@ -421,8 +421,8 @@ def test_firstiter_compact_budget_requires_single_class_bucketed_route(monkeypat
 def test_soft_compact_budget_requires_bucketed_route(monkeypatch, override):
     from relax.refinement.firstiter_cc import single_class_bucketed_pass2_selected
     from relax.classification.k1_local_pass2 import K1_PASS2_ENGINE_ENV
-    names = {"dense": "RECOVAR_K1_DENSE_PASS2", "fused": "RECOVAR_SPARSE_KCLASS_FUSED",
-             "local": K1_PASS2_ENGINE_ENV, "resident": "RECOVAR_SPARSE_PASS2_RESIDENT"}
+    names = {"dense": "RELAX_K1_DENSE_PASS2", "fused": "RELAX_SPARSE_KCLASS_FUSED",
+             "local": K1_PASS2_ENGINE_ENV, "resident": "RELAX_SPARSE_PASS2_RESIDENT"}
     for name in names.values(): monkeypatch.delenv(name, raising=False)
     if override is not None: monkeypatch.setenv(names[override], "local" if override == "local" else "1")
     assert single_class_bucketed_pass2_selected(firstiter=False) is (override is None)

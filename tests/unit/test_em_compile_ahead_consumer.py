@@ -333,29 +333,29 @@ def test_the_warm_up_reads_the_same_path_decision_as_the_chunk_loop(monkeypatch)
     statement both sides now read.
     """
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_JIT", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_RESIDENT_GLUE_JIT", "1")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT", "1")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "1")
     assert rp.chunk_program_path() == "fused"
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_JIT", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT", "0")
     assert rp.chunk_program_path() == "per-stage"
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_RESIDENT_GLUE_JIT", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "0")
     assert rp.chunk_program_path() == "eager"
 
 
 def test_the_default_path_is_the_one_production_runs(monkeypatch):
     """No flags set: the fused program is off, so the per-stage path is it."""
 
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_JIT", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT", raising=False)
     assert rp._chunk_jit_enabled() is False
 
 
 def test_nothing_is_queued_when_there_is_no_program_to_warm(monkeypatch):
     """The eager path submits no program, so the warm-up must submit no job."""
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_JIT", "0")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_RESIDENT_GLUE_JIT", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "0")
 
     class Refuse:
         def submit_thunk(self, *a, **k):
@@ -613,12 +613,12 @@ def test_the_environment_fields_are_read_by_the_constructor(monkeypatch):
     get two different values is to change the environment mid-iteration.
     """
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_BLOCK_UNROLL", "1")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_BLOCK_UNROLL", "1")
     one = rp._make_chunk_program_spec(
         row_capacity=8192, image_capacity=32, use_rfloat_ctf_wavg=False,
         use_translate_sum_kernel=True, bpref_recon_operand=False, **_spec_kwargs(),
     )
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_BLOCK_UNROLL", "2")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_BLOCK_UNROLL", "2")
     two = rp._make_chunk_program_spec(
         row_capacity=8192, image_capacity=32, use_rfloat_ctf_wavg=False,
         use_translate_sum_kernel=True, bpref_recon_operand=False, **_spec_kwargs(),

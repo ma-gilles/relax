@@ -750,7 +750,7 @@ def test_ctf_probs_matches_the_resident_block_reduction(
     # XLA side's reduction plan for this expression is not fixed across
     # sessions.
     #
-    # ``RECOVAR_EM_DETERMINISTIC_REDUCTIONS=1`` does **not** rescue the bitwise
+    # ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` does **not** rescue the bitwise
     # form here, and that is measured, not assumed: with the flag set, this
     # comparison still fails, because the flag pins recovar's own racing
     # scatters and not the XLA reduction inside

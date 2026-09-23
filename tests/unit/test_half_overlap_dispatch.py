@@ -47,8 +47,8 @@ def test_overlap_refuses_a_half_subset(halves):
 @pytest.mark.parametrize(
     "env_var",
     [
-        "RECOVAR_BPREF_MEMBERSHIP_DUMP_DIR",
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR",
+        "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
         "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
     ],
 )
@@ -59,7 +59,7 @@ def test_overlap_refuses_while_a_bpref_dump_is_armed(monkeypatch, tmp_path, env_
 
 
 def test_overlap_ignores_a_blank_dump_variable(monkeypatch):
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR", "   ")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", "   ")
     assert _half_overlap_active(True, diagnostic_half_indices=(0, 1), log=LOG) is True
 
 
@@ -194,7 +194,7 @@ def test_device_share_divides_the_budget(monkeypatch):
     """
     from relax.sparse_pass2 import sparse_pass2_budget as budget
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_DEVICE_MEMORY_GB", "80")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB", "80")
     whole = budget._device_memory_limit_bytes()
     previous = budget.set_concurrent_device_shares(2)
     try:

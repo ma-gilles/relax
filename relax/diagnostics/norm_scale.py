@@ -56,12 +56,12 @@ def _maybe_dump_norm_residual_inputs(
     consumes the reconstruction/noise window and its squared projections.
     """
 
-    if not parse_env_flag("RECOVAR_PASS2_DUMP_NORM_RESIDUAL_INPUTS", default=False):
+    if not parse_env_flag("RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS", default=False):
         return 0
     dump_dir = os.environ.get(_PASS2_DUMP_DIR_ENV)
     if not dump_dir:
-        raise ValueError("RECOVAR_PASS2_DUMP_NORM_RESIDUAL_INPUTS requires RECOVAR_PASS2_DUMP_DIR")
-    target_iteration = os.environ.get("RECOVAR_PASS2_DUMP_ITERATION")
+        raise ValueError("RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS requires RELAX_PASS2_DUMP_DIR")
+    target_iteration = os.environ.get("RELAX_PASS2_DUMP_ITERATION")
     context_iteration = int(bpref_diagnostics._bpref_contribution_context["iteration"])
     if target_iteration and context_iteration != int(target_iteration):
         return 0
@@ -646,7 +646,7 @@ def _maybe_dump_direct_wavg_norm(
     logger,
 ):
     """Record direct Wavg norm components and their original particle IDs."""
-    norm_dump_dir = os.environ.get("RECOVAR_NOISE_DEBUG_DUMP_DIR")
+    norm_dump_dir = os.environ.get("RELAX_NOISE_DEBUG_DUMP_DIR")
     if norm_dump_dir:
         os.makedirs(norm_dump_dir, exist_ok=True)
         context_iteration = int(bpref_diagnostics._bpref_contribution_context["iteration"])

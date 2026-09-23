@@ -1,14 +1,14 @@
 """RELION parity dump: per-iter and per-particle observables for diff comparison.
 
-Activated by env var ``RECOVAR_PARITY_DUMP_DIR``. When unset, all hook calls
+Activated by env var ``RELAX_PARITY_DUMP_DIR``. When unset, all hook calls
 no-op so the dump has zero behavioral effect. Optional env vars:
 
-- ``RECOVAR_PARITY_DUMP_TAG`` — per-particle full-tensor capture, comma-separated
+- ``RELAX_PARITY_DUMP_TAG`` — per-particle full-tensor capture, comma-separated
   global indices (default: empty).
-- ``RECOVAR_PARITY_DUMP_VOLUME_DOWNSAMPLE`` — int factor to shrink half volumes
+- ``RELAX_PARITY_DUMP_VOLUME_DOWNSAMPLE`` — int factor to shrink half volumes
   before saving (default 2 → 64³ for 128³ box).
-- ``RECOVAR_PARITY_TIMING_DIR`` — lightweight per-iteration timing-only NPZs.
-  Unlike ``RECOVAR_PARITY_DUMP_DIR``, this does not collect E-step tensors or
+- ``RELAX_PARITY_TIMING_DIR`` — lightweight per-iteration timing-only NPZs.
+  Unlike ``RELAX_PARITY_DUMP_DIR``, this does not collect E-step tensors or
   downsampled volumes, so it is suitable for performance guardrails.
 """
 
@@ -26,16 +26,16 @@ _E_STEP: dict[int, dict[str, Any]] = {}
 # Per-iter wall-time tracking. Keyed by iteration index (the ``iteration``
 # variable inside ``refine_single_volume``), holds:
 #   {"t0": float, "stages": {stage_name: cumulative_seconds_since_t0}}
-# All hooks no-op when ``RECOVAR_PARITY_DUMP_DIR`` is unset.
+# All hooks no-op when ``RELAX_PARITY_DUMP_DIR`` is unset.
 _ITER_TIMERS: dict[int, dict[str, Any]] = {}
 
 
 def is_active() -> bool:
-    return bool(os.environ.get("RECOVAR_PARITY_DUMP_DIR"))
+    return bool(os.environ.get("RELAX_PARITY_DUMP_DIR"))
 
 
 def timing_is_active() -> bool:
-    return is_active() or bool(os.environ.get("RECOVAR_PARITY_TIMING_DIR"))
+    return is_active() or bool(os.environ.get("RELAX_PARITY_TIMING_DIR"))
 
 
 def start_iteration(iteration: int) -> None:
@@ -81,7 +81,7 @@ def _reset_iteration_timer(iteration: int) -> None:
 
 
 def dump_dir() -> Path | None:
-    raw = os.environ.get("RECOVAR_PARITY_DUMP_DIR")
+    raw = os.environ.get("RELAX_PARITY_DUMP_DIR")
     if not raw:
         return None
     p = Path(raw)
@@ -90,7 +90,7 @@ def dump_dir() -> Path | None:
 
 
 def timing_dir() -> Path | None:
-    raw = os.environ.get("RECOVAR_PARITY_TIMING_DIR")
+    raw = os.environ.get("RELAX_PARITY_TIMING_DIR")
     if not raw:
         return None
     p = Path(raw)
@@ -362,7 +362,7 @@ def dump_timing_iteration(
 
 def _downsample_volume_real(volume_ft_flat, volume_shape) -> np.ndarray:
     """Downsample by a stored env factor, returning a real-space crop."""
-    factor = int(os.environ.get("RECOVAR_PARITY_DUMP_VOLUME_DOWNSAMPLE", "2"))
+    factor = int(os.environ.get("RELAX_PARITY_DUMP_VOLUME_DOWNSAMPLE", "2"))
     factor = max(1, factor)
     from recovar.core import fourier_transform_utils as ftu
 

@@ -219,9 +219,9 @@ def _initial_state_from_particles(
     state.sigma2_offset = float(init_sigma_offset_angstrom) ** 2
     state.Mavg = Mavg
     profile.record("state_init")
-    # RECOVAR_INITIAL_IREF_OVERRIDE lets a parity caller swap in RELION's
+    # RELAX_INITIAL_IREF_OVERRIDE lets a parity caller swap in RELION's
     # iter000 ref directly when isolating E/M-step behavior from bootstrap.
-    override_path = os.environ.get("RECOVAR_INITIAL_IREF_OVERRIDE")
+    override_path = os.environ.get("RELAX_INITIAL_IREF_OVERRIDE")
     if override_path:
         # Parity hook: load Iref directly. Comma-separated paths for K-class,
         # single path broadcast across K, or a "{k}" template expanded k=1..K.
@@ -232,13 +232,13 @@ def _initial_state_from_particles(
         if len(paths) == 1 and "{k" in paths[0]:
             paths = [paths[0].format(k=k + 1) for k in range(K)]
         if len(paths) not in (1, K):
-            raise ValueError(f"RECOVAR_INITIAL_IREF_OVERRIDE expects 1 or K={K} paths, got {len(paths)}")
+            raise ValueError(f"RELAX_INITIAL_IREF_OVERRIDE expects 1 or K={K} paths, got {len(paths)}")
         vols = np.stack(
             [np.asarray(load_relion_volume(p), dtype=np.float64) for p in paths],
             axis=0,
         )
         if vols.shape[1:] != (ori_size, ori_size, ori_size):
-            raise ValueError(f"RECOVAR_INITIAL_IREF_OVERRIDE volume shape {vols.shape[1:]} != {(ori_size,) * 3}")
+            raise ValueError(f"RELAX_INITIAL_IREF_OVERRIDE volume shape {vols.shape[1:]} != {(ori_size,) * 3}")
         state.Iref = np.broadcast_to(vols, (K, ori_size, ori_size, ori_size)).copy() if len(paths) == 1 else vols
     else:
         state.Iref = postprocess_bootstrap_iref_via_cpp(

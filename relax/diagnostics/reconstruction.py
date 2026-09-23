@@ -80,7 +80,7 @@ def write_kclass_mstep(
     import pathlib
 
     pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
-    _preserve_kclass_dump_dtype = os.environ.get("RECOVAR_KCLASS_DUMP_PRESERVE_DTYPE", "").strip().lower() not in {
+    _preserve_kclass_dump_dtype = os.environ.get("RELAX_KCLASS_DUMP_PRESERVE_DTYPE", "").strip().lower() not in {
         "",
         "0",
         "false",
@@ -227,7 +227,7 @@ def write_premask_mean(
     import pathlib
 
     pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
-    preserve_dtype = os.environ.get("RECOVAR_PREMASK_DUMP_PRESERVE_DTYPE", "").strip().lower() not in {
+    preserve_dtype = os.environ.get("RELAX_PREMASK_DUMP_PRESERVE_DTYPE", "").strip().lower() not in {
         "", "0", "false", "no", "off",
     }
     fourier = np.asarray(mean)

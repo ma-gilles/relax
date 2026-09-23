@@ -19,7 +19,7 @@ from relax.helpers.env_flags import parse_env_binary_flag, parse_env_flag
 from relax.helpers.shape_buckets import power_of_two_bucket
 from relax.local.local_layout import _exact_bucket_rotation_size
 
-_LARGE_BUCKET_POW2_ENV = "RECOVAR_SPARSE_PASS2_LARGE_BUCKET_POW2"
+_LARGE_BUCKET_POW2_ENV = "RELAX_SPARSE_PASS2_LARGE_BUCKET_POW2"
 _LARGE_BUCKET_POW2_THRESHOLD = 1024
 def _pass2_bucket_rotation_size(count: int, rotation_block_size_for_quantization: int) -> int:
     """Padded rotation rows for one pass-2 image.
@@ -28,7 +28,7 @@ def _pass2_bucket_rotation_size(count: int, rotation_block_size_for_quantization
     multiples of a ~4096 quantum, which at HEALPix order 3 produced 17-31
     distinct large sizes per half (12288, 20480, 24576, 28672, ..., 217088);
     each distinct size compiles its own set of bucket programs.  With
-    ``RECOVAR_SPARSE_PASS2_LARGE_BUCKET_POW2=1`` (default off, measurement
+    ``RELAX_SPARSE_PASS2_LARGE_BUCKET_POW2=1`` (default off, measurement
     knob) sizes above the engine cap are rounded up to a power of two instead,
     bounding the large sizes to about eight and costing at most 2x padding on
     those rows.  Padded rows carry zero posterior mass, so this changes shape
@@ -380,7 +380,7 @@ def _coalesce_tail_bucket_sizes(
     return assigned_sizes[inverse]
 
 
-_SPARSE_KCLASS_PAIR_BUCKET_QUANTUM_ENV = "RECOVAR_SPARSE_KCLASS_PAIR_BUCKET_QUANTUM"
+_SPARSE_KCLASS_PAIR_BUCKET_QUANTUM_ENV = "RELAX_SPARSE_KCLASS_PAIR_BUCKET_QUANTUM"
 _AUTO_COMPACT_PAIR_QUANTUM_MIN = 4096
 _AUTO_COMPACT_PAIR_QUANTUM_MAX = 32768
 _AUTO_COMPACT_PAIR_QUANTUM_MEAN_MULTIPLE = 2.0
@@ -394,7 +394,7 @@ def _compact_pair_bucket_quantum(pair_counts_by_class=None) -> int | None:
     distinct widths and 112 distinct bucket shapes in one 100k/256 iteration
     (job 13807792), each compiling the whole per-class stage chain. With masked
     pairs skipped by the fused score kernel and the pair-sparse sums, pair
-    padding is nearly free, so ``RECOVAR_SPARSE_KCLASS_PAIR_BUCKET_QUANTUM``
+    padding is nearly free, so ``RELAX_SPARSE_KCLASS_PAIR_BUCKET_QUANTUM``
     (for example 32768) trades a little padding for far fewer programs. Rows are
     not affected. ``None`` keeps the default ladder.
 
@@ -556,7 +556,7 @@ def _bucket_sparse_k_class_compact_pair_counts(
 
 
 
-VECTORIZED_HYPOTHESIS_PREP_ENV = "RECOVAR_SPARSE_PASS2_VECTORIZED_HYPOTHESIS_PREP"
+VECTORIZED_HYPOTHESIS_PREP_ENV = "RELAX_SPARSE_PASS2_VECTORIZED_HYPOTHESIS_PREP"
 
 
 def vectorized_hypothesis_prep_enabled() -> bool:
@@ -696,7 +696,7 @@ def _prepare_coarse_images_vectorized(
         "candidate_mask": [],
     }
     # Flat coarse tables and row parents for the device index builder
-    # (RECOVAR_SPARSE_KCLASS_RESIDENT_HYPOTHESIS_TABLES): one upload per class
+    # (RELAX_SPARSE_KCLASS_RESIDENT_HYPOTHESIS_TABLES): one upload per class
     # and iteration instead of a host (images, cR, cT)/(images, rows) build and
     # upload per class-chunk. ``token`` identifies this content for the cache.
     import uuid
@@ -1318,9 +1318,9 @@ def _build_compact_pair_bucket_arrays_from_per_image_inputs(
     }
 
 
-BUCKET_ROTATIONS_DEVICE_ENV = "RECOVAR_SPARSE_KCLASS_BUCKET_ROTATIONS_DEVICE"
-ROTATIONS_BY_INDEX_ENV = "RECOVAR_SPARSE_KCLASS_ROTATIONS_BY_INDEX"
-RESIDENT_HYPOTHESIS_TABLES_ENV = "RECOVAR_SPARSE_KCLASS_RESIDENT_HYPOTHESIS_TABLES"
+BUCKET_ROTATIONS_DEVICE_ENV = "RELAX_SPARSE_KCLASS_BUCKET_ROTATIONS_DEVICE"
+ROTATIONS_BY_INDEX_ENV = "RELAX_SPARSE_KCLASS_ROTATIONS_BY_INDEX"
+RESIDENT_HYPOTHESIS_TABLES_ENV = "RELAX_SPARSE_KCLASS_RESIDENT_HYPOTHESIS_TABLES"
 _ROTATION_TABLE_DEVICE_CACHE: dict = {}
 _RESIDENT_ROW_INDEX_CACHE: dict = {}
 
@@ -1356,7 +1356,7 @@ def resident_hypothesis_tables_enabled() -> bool:
 def rotations_by_index_enabled() -> bool:
     """Gather the padded bucket rotations from a device-resident fine-grid table.
 
-    With ``RECOVAR_SPARSE_KCLASS_BUCKET_ROTATIONS_DEVICE`` the host still
+    With ``RELAX_SPARSE_KCLASS_BUCKET_ROTATIONS_DEVICE`` the host still
     concatenates every image's (rows, 3, 3) float32 rows per class-chunk and
     uploads them (13.6 s of device_put plus ~7 s of host concatenation in the
     100k/256 K=4 iteration 2, job 13834297).  When the per-image inputs carry
@@ -1799,9 +1799,9 @@ def _rows_at_capacity(values, capacity_rows, fill):
 
 
 
-IMAGE_CAPACITY_ENV = "RECOVAR_SPARSE_PASS2_IMAGE_CAPACITY"
+IMAGE_CAPACITY_ENV = "RELAX_SPARSE_PASS2_IMAGE_CAPACITY"
 IMAGE_CAPACITY_FLOOR = 16
-IMAGE_CAPACITY_MAX_GROWTH_ENV = "RECOVAR_SPARSE_PASS2_IMAGE_CAPACITY_MAX_GROWTH"
+IMAGE_CAPACITY_MAX_GROWTH_ENV = "RELAX_SPARSE_PASS2_IMAGE_CAPACITY_MAX_GROWTH"
 DEFAULT_IMAGE_CAPACITY_MAX_GROWTH = 2.0
 
 
@@ -2043,7 +2043,7 @@ def _group_static_pad_to(bucket_meta, class_index: int) -> int | None:
     return int(targets[int(class_index)])
 
 
-LADDER_CHUNKS_ENV = "RECOVAR_SPARSE_PASS2_LADDER_CHUNKS"
+LADDER_CHUNKS_ENV = "RELAX_SPARSE_PASS2_LADDER_CHUNKS"
 LADDER_CHUNK_FLOOR = 16
 
 def ladder_chunks_enabled() -> bool:

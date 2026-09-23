@@ -295,12 +295,12 @@ def _dump(tmp_path, bundle):
     summed = np.ones((ROWS, n, 1), dtype=np.complex64)
     scores = -np.ones((ROWS, n, 1), dtype=np.float32)
     probs = np.full((ROWS, n, 1), 0.25, dtype=np.float32)
-    env = {"RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR": str(out),
-           "RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION": "8",
-           "RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF": "1",
-           "RECOVAR_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE": "4",
-           "RECOVAR_BPREF_CONTRIBUTION_STACK_SHA256": "0" * 64,
-           "RECOVAR_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY": str(mapping)}
+    env = {"RELAX_BPREF_CONTRIBUTION_DUMP_DIR": str(out),
+           "RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION": "8",
+           "RELAX_BPREF_CONTRIBUTION_DUMP_HALF": "1",
+           "RELAX_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE": "4",
+           "RELAX_BPREF_CONTRIBUTION_STACK_SHA256": "0" * 64,
+           "RELAX_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY": str(mapping)}
     with mock.patch.dict(os.environ, env, clear=False):
         bpref_diagnostics.set_bpref_contribution_dump_context(iteration=8, half=1)
         try:

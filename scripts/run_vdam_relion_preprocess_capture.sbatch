@@ -60,7 +60,7 @@ fi
 
 unset PYTHONPATH PYTHONHOME CONDA_PREFIX VIRTUAL_ENV CONDA_DEFAULT_ENV
 while IFS='=' read -r variable_name _; do
-    case "${variable_name}" in RECOVAR_*|RELION_ACC_DUMP_*|RELION_DUMP_*) unset "${variable_name}" ;; esac
+    case "${variable_name}" in RECOVAR_*|RELAX_*|RELION_ACC_DUMP_*|RELION_DUMP_*) unset "${variable_name}" ;; esac
 done < <(env)
 
 export TMPDIR=${ROOT}/runtime/${SLURM_JOB_ID}/tmp
@@ -100,8 +100,8 @@ if [[ "${CAPTURE_PARTICLE_BPREF}" = 1 ]]; then
     export RELION_ACC_DUMP_PARTICLE_BPREF=1
 fi
 if [[ "${CAPTURE_MSTEP}" = 1 ]]; then
-    export RECOVAR_DEBUG_DUMP_DIR=${CAPTURE}
-    export RECOVAR_DEBUG_DUMP_MSTEP_ITER=${CAPTURE_ITERATION}
+    export RELAX_DEBUG_DUMP_DIR=${CAPTURE}
+    export RELAX_DEBUG_DUMP_MSTEP_ITER=${CAPTURE_ITERATION}
 fi
 
 COMMAND=(

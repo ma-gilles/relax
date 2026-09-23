@@ -1,6 +1,6 @@
 """Bitwise tests for the jitted RELION coarse operand assemblies (P3-I).
 
-``RECOVAR_COARSE_OPERAND_PROGRAM=1`` traces the coarse operand assembly once
+``RELAX_COARSE_OPERAND_PROGRAM=1`` traces the coarse operand assembly once
 per batch shape instead of dispatching one compiled program per primitive. The
 eager path stays the oracle, so every test here compares the program's output
 against the eager function it is ``jax.jit`` of, with
@@ -9,7 +9,7 @@ against the eager function it is ``jax.jit`` of, with
 The three assemblies are the generic coarse sincosf operands, the exact-source
 operands, and the normalized-CC (``--firstiter_cc``) tree-rescore operands. The
 padded last coarse batch and the inactive-support mask are covered because both
-reach the production path that P3-B's ``RECOVAR_COARSE_PAD_FINAL_IMAGE_BATCH``
+reach the production path that P3-B's ``RELAX_COARSE_PAD_FINAL_IMAGE_BATCH``
 and T18b's fix ``1431919a7`` created.
 """
 
@@ -159,7 +159,7 @@ def test_exact_program_is_bitwise_against_the_eager_assembly(
 def test_exact_program_holds_on_a_repeat_padded_last_batch():
     """The padded coarse batch must give the live rows the unpadded answer.
 
-    ``RECOVAR_COARSE_PAD_FINAL_IMAGE_BATCH`` repeats image row zero to fill the
+    ``RELAX_COARSE_PAD_FINAL_IMAGE_BATCH`` repeats image row zero to fill the
     last batch of a half set. Padding may not move a science row, and the
     program must agree with the eager assembly on the padded extent as well.
     """

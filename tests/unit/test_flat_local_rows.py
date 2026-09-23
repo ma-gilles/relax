@@ -244,7 +244,7 @@ def test_local_fused_pairs_reuse_compact_source_order_and_map_flat_projection_ro
     np.testing.assert_array_equal(actual["job_plan"][:7], expected_jobs)
     assert np.all(actual["job_plan"][7:] == -1)
 
-    monkeypatch.setenv("RECOVAR_EXACT_FINE_JOB_BUCKET_QUANTUM", "8192")
+    monkeypatch.setenv("RELAX_EXACT_FINE_JOB_BUCKET_QUANTUM", "8192")
     capacities = local_bucket_stages._plan_local_fine_job_capacities([bucket])
     assert capacities == {(3, dense_rotation_count): 144}
     stable = local_bucket_stages._build_local_fused_pair_fine_arguments(
@@ -845,12 +845,12 @@ def test_flat_local_pool_size_changes_padding_only(monkeypatch):
     assert pairs_three == expected
     assert rows_one < rows_three
 
-    monkeypatch.setenv("RECOVAR_EXACT_LOCAL_FLAT_POOL_SIZE", "1")
+    monkeypatch.setenv("RELAX_EXACT_LOCAL_FLAT_POOL_SIZE", "1")
     assert resolve_flat_local_pool_size() == 1
-    monkeypatch.delenv("RECOVAR_EXACT_LOCAL_FLAT_POOL_SIZE")
+    monkeypatch.delenv("RELAX_EXACT_LOCAL_FLAT_POOL_SIZE")
     assert resolve_flat_local_pool_size() == 3
     assert resolve_flat_local_pool_size(2) == 2
-    monkeypatch.setenv("RECOVAR_EXACT_LOCAL_FLAT_POOL_SIZE", "0")
+    monkeypatch.setenv("RELAX_EXACT_LOCAL_FLAT_POOL_SIZE", "0")
     with pytest.raises(ValueError, match="positive integer"):
         resolve_flat_local_pool_size()
 
@@ -887,11 +887,11 @@ def test_flat_local_row_rounding_off_packs_exactly_the_needed_rows(monkeypatch):
             zip(plan.image_indices[valid].tolist(), plan.rotation_rows[valid].tolist())
         ) == expected
 
-    monkeypatch.setenv("RECOVAR_EXACT_LOCAL_FLAT_ROW_ROUNDING", "0")
+    monkeypatch.setenv("RELAX_EXACT_LOCAL_FLAT_ROW_ROUNDING", "0")
     assert resolve_flat_local_row_rounding() is False
-    monkeypatch.delenv("RECOVAR_EXACT_LOCAL_FLAT_ROW_ROUNDING")
+    monkeypatch.delenv("RELAX_EXACT_LOCAL_FLAT_ROW_ROUNDING")
     assert resolve_flat_local_row_rounding() is True
-    monkeypatch.setenv("RECOVAR_EXACT_LOCAL_FLAT_ROW_ROUNDING", "yes")
+    monkeypatch.setenv("RELAX_EXACT_LOCAL_FLAT_ROW_ROUNDING", "yes")
     with pytest.raises(ValueError, match="must be 0 or 1"):
         resolve_flat_local_row_rounding()
 

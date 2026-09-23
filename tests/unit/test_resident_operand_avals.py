@@ -451,7 +451,7 @@ def test_the_optional_operands_against_a_star_backed_preparation(
     production has it on. Shapes and dtypes only, so the RELION-labelled
     Nyquist row on the full box does not enter.
 
-    Point `RECOVAR_P4J_STAR_FIXTURE` at the particles STAR. Unset, the test
+    Point `RELAX_P4J_STAR_FIXTURE` at the particles STAR. Unset, the test
     says so rather than passing quietly.
     """
 
@@ -475,10 +475,10 @@ def test_the_optional_operands_against_a_star_backed_preparation(
     )
     from recovar.reconstruction import noise as noise_utils
 
-    star = os.environ.get("RECOVAR_P4J_STAR_FIXTURE", "").strip()
+    star = os.environ.get("RELAX_P4J_STAR_FIXTURE", "").strip()
     if not star:
         pytest.skip(
-            "set RECOVAR_P4J_STAR_FIXTURE to a RELION particles STAR whose dataset "
+            "set RELAX_P4J_STAR_FIXTURE to a RELION particles STAR whose dataset "
             "takes the relion_cuda preprocess backend"
         )
     _gpu_case(monkeypatch, custom_cuda_lib)

@@ -439,7 +439,7 @@ inline cudaError_t launch(
     if (shared_bytes_for(rows, translation_count) > kMaxSharedBytes)
         return cudaErrorInvalidValue;
 
-#define RECOVAR_TRANSLATE_SUM_DISPATCH(R, BPREF)                  \
+#define RELAX_TRANSLATE_SUM_DISPATCH(R, BPREF)                  \
     case R:                                                       \
         return launch_templated<R, BPREF>(                        \
             stream, recon_image, noise_image, recon_weight,       \
@@ -452,23 +452,23 @@ inline cudaError_t launch(
 
     if (recon_weight != nullptr) {
         switch (rows) {
-            RECOVAR_TRANSLATE_SUM_DISPATCH(1, true);
-            RECOVAR_TRANSLATE_SUM_DISPATCH(2, true);
-            RECOVAR_TRANSLATE_SUM_DISPATCH(4, true);
-            RECOVAR_TRANSLATE_SUM_DISPATCH(8, true);
+            RELAX_TRANSLATE_SUM_DISPATCH(1, true);
+            RELAX_TRANSLATE_SUM_DISPATCH(2, true);
+            RELAX_TRANSLATE_SUM_DISPATCH(4, true);
+            RELAX_TRANSLATE_SUM_DISPATCH(8, true);
             default:
                 return cudaErrorInvalidValue;
         }
     }
     switch (rows) {
-        RECOVAR_TRANSLATE_SUM_DISPATCH(1, false);
-        RECOVAR_TRANSLATE_SUM_DISPATCH(2, false);
-        RECOVAR_TRANSLATE_SUM_DISPATCH(4, false);
-        RECOVAR_TRANSLATE_SUM_DISPATCH(8, false);
+        RELAX_TRANSLATE_SUM_DISPATCH(1, false);
+        RELAX_TRANSLATE_SUM_DISPATCH(2, false);
+        RELAX_TRANSLATE_SUM_DISPATCH(4, false);
+        RELAX_TRANSLATE_SUM_DISPATCH(8, false);
         default:
             return cudaErrorInvalidValue;
     }
-#undef RECOVAR_TRANSLATE_SUM_DISPATCH
+#undef RELAX_TRANSLATE_SUM_DISPATCH
 }
 
 ffi::Error impl(

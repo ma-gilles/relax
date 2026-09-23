@@ -22,7 +22,7 @@ instead of a few GB.
 
 Scope and selection
 -------------------
-Everything here is opt-in behind ``RECOVAR_COARSE_SIGNIFICANCE_DEVICE=1`` and
+Everything here is opt-in behind ``RELAX_COARSE_SIGNIFICANCE_DEVICE=1`` and
 K=1 only.  The host path stays the oracle: the CSR must equal its
 ``significant_sample_indices`` per image bitwise, and the tables built here
 must equal the tables built through ``_prepare_per_image_pass2_inputs`` field
@@ -74,7 +74,7 @@ __all__ = [
     "resident_significance_csr",
 ]
 
-COARSE_SIGNIFICANCE_DEVICE_ENV = "RECOVAR_COARSE_SIGNIFICANCE_DEVICE"
+COARSE_SIGNIFICANCE_DEVICE_ENV = "RELAX_COARSE_SIGNIFICANCE_DEVICE"
 
 # Compacted-id buffers are traced at a power-of-two capacity, so one program
 # serves every batch whose support falls in the same octave instead of one
@@ -736,7 +736,7 @@ def resident_candidate_tables(
     """Candidate tables from the device-compacted CSR, or from the host path.
 
     ``significance_csr`` is present only when the coarse pass compacted its
-    support on the device (ticket T13, ``RECOVAR_COARSE_SIGNIFICANCE_DEVICE``);
+    support on the device (ticket T13, ``RELAX_COARSE_SIGNIFICANCE_DEVICE``);
     both routes return the same ``ResidentCandidateTables``.
     """
 

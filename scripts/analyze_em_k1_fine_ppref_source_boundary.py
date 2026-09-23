@@ -448,7 +448,7 @@ def build_report(
             "jax_devices": [str(device) for device in jax.devices()],
             "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
             "recovar_relion_projector_texture_interp": os.environ.get(
-                "RECOVAR_RELION_PROJECTOR_TEXTURE_INTERP"
+                "RELAX_RELION_PROJECTOR_TEXTURE_INTERP"
             ),
             "relion_bind_module": binding_path,
             "relion_bind_module_sha256": binding_sha256,

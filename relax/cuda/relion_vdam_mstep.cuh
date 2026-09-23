@@ -3035,7 +3035,7 @@ extern "C" int recovar_relion_vdam_exact_native_host_replay(
     cudaError_t error = cudaStreamCreate(&stream);
     if (error != cudaSuccess) goto cleanup_host_replay;
 
-#define RECOVAR_HOST_REPLAY_ALLOC_COPY(device_pointer, host_pointer, count)       \
+#define RELAX_HOST_REPLAY_ALLOC_COPY(device_pointer, host_pointer, count)       \
     do {                                                                          \
         error = recovar::scratch_alloc(                                                       \
             reinterpret_cast<void**>(&(device_pointer)),                         \
@@ -3050,43 +3050,43 @@ extern "C" int recovar_relion_vdam_exact_native_host_replay(
         if (error != cudaSuccess) goto cleanup_host_replay;                       \
     } while (false)
 
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_projector, arguments->projector_full, projector_count);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_images, arguments->images, image_count);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(device_ctf, arguments->ctf, image_count);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(device_ctf, arguments->ctf, image_count);
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_minvsigma2, arguments->minvsigma2, image_count);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_posterior, arguments->posterior_over_weight_norm, posterior_count);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_translations, arguments->translation_angles,
         arguments->translation_count * 2);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_eulers, arguments->projector_eulers, rotation_count * 9);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_compact_rotations, arguments->compact_rotations, rotation_count * 6);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_reconstruction_groups, arguments->reconstruction_group_ids,
         arguments->n_particles);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_worker_lanes, arguments->worker_lane_ids, arguments->n_particles);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_particle_trace_ids, arguments->particle_trace_ids,
         arguments->n_particles);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_rotation_order, arguments->rotation_replay_order, rotation_count);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_rotation_counts, arguments->rotation_replay_counts,
         arguments->n_particles);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_particle_offsets, arguments->particle_start_offsets_ns,
         arguments->n_particles);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_data_real, arguments->data_real_volume, accumulator_count);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_data_imag, arguments->data_imag_volume, accumulator_count);
-    RECOVAR_HOST_REPLAY_ALLOC_COPY(
+    RELAX_HOST_REPLAY_ALLOC_COPY(
         device_weight, arguments->weight_volume, accumulator_count);
     error = recovar::scratch_alloc(
         reinterpret_cast<void**>(&device_denominator),
@@ -3156,7 +3156,7 @@ extern "C" int recovar_relion_vdam_exact_native_host_replay(
         arguments->quiesced_prelaunch_reconstruction_group);
     if (error != cudaSuccess) goto cleanup_host_replay;
 
-#define RECOVAR_HOST_REPLAY_COPY_OUTPUT(host_pointer, device_pointer, count)      \
+#define RELAX_HOST_REPLAY_COPY_OUTPUT(host_pointer, device_pointer, count)      \
     do {                                                                          \
         error = cudaMemcpyAsync(                                                  \
             (host_pointer),                                                       \
@@ -3167,19 +3167,19 @@ extern "C" int recovar_relion_vdam_exact_native_host_replay(
         if (error != cudaSuccess) goto cleanup_host_replay;                       \
     } while (false)
 
-    RECOVAR_HOST_REPLAY_COPY_OUTPUT(
+    RELAX_HOST_REPLAY_COPY_OUTPUT(
         arguments->data_real_volume, device_data_real, accumulator_count);
-    RECOVAR_HOST_REPLAY_COPY_OUTPUT(
+    RELAX_HOST_REPLAY_COPY_OUTPUT(
         arguments->data_imag_volume, device_data_imag, accumulator_count);
-    RECOVAR_HOST_REPLAY_COPY_OUTPUT(
+    RELAX_HOST_REPLAY_COPY_OUTPUT(
         arguments->weight_volume, device_weight, accumulator_count);
-    RECOVAR_HOST_REPLAY_COPY_OUTPUT(
+    RELAX_HOST_REPLAY_COPY_OUTPUT(
         arguments->denominator_sum, device_denominator, denominator_count);
     error = cudaStreamSynchronize(stream);
 
 cleanup_host_replay:
-#undef RECOVAR_HOST_REPLAY_ALLOC_COPY
-#undef RECOVAR_HOST_REPLAY_COPY_OUTPUT
+#undef RELAX_HOST_REPLAY_ALLOC_COPY
+#undef RELAX_HOST_REPLAY_COPY_OUTPUT
     if (device_projector) recovar::scratch_free(device_projector, stream);
     if (device_images) recovar::scratch_free(device_images, stream);
     if (device_ctf) recovar::scratch_free(device_ctf, stream);

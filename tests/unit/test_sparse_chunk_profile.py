@@ -16,7 +16,7 @@ def events(monkeypatch):
 
 @pytest.mark.parametrize("spec", ["", "1:0", "0:3"])
 def test_unselected_call_has_no_effect(monkeypatch, events, spec):
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_PROFILE_CHUNK", spec)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_PROFILE_CHUNK", spec)
     with chunk_profile.SparseChunkProfile(3) as profile:
         for i in range(3):
             profile.begin_bucket(i, "before")
@@ -26,7 +26,7 @@ def test_unselected_call_has_no_effect(monkeypatch, events, spec):
 
 @pytest.mark.parametrize("fail", [False, True])
 def test_selected_bucket_stops_once_even_on_error(monkeypatch, events, fail):
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_PROFILE_CHUNK", "0:1:trace")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_PROFILE_CHUNK", "0:1:trace")
     try:
         with chunk_profile.SparseChunkProfile(3) as profile:
             profile.begin_bucket(0, "ignored")
@@ -40,7 +40,7 @@ def test_selected_bucket_stops_once_even_on_error(monkeypatch, events, fail):
 
 
 def test_wildcard_matches_each_eligible_call(monkeypatch, events):
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_PROFILE_CHUNK", "*:1:trace")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_PROFILE_CHUNK", "*:1:trace")
     for size in [1, 2, 3]:
         with chunk_profile.SparseChunkProfile(size) as profile:
             for i in range(size):
@@ -51,7 +51,7 @@ def test_wildcard_matches_each_eligible_call(monkeypatch, events):
 
 
 def test_cleanup_when_completion_wait_fails(monkeypatch, events):
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_PROFILE_CHUNK", "0:0:trace")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_PROFILE_CHUNK", "0:0:trace")
     with pytest.raises(RuntimeError, match="wait failed"):
         with chunk_profile.SparseChunkProfile(1) as profile:
             profile.begin_bucket(0, "before")

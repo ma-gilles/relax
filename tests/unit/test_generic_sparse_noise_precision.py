@@ -6,7 +6,7 @@ from relax.sparse_pass2.sparse_pass2_bucket_io import prepare_unshifted_bucket_o
 
 @pytest.mark.parametrize("diagnostic", [False, True])
 def test_generic_noise_operands_follow_selected_precision(monkeypatch, diagnostic):
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_F64_NOISE_OPERANDS", str(int(diagnostic)))
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_F64_NOISE_OPERANDS", str(int(diagnostic)))
     ds=MockDataset(n_images=3,seed=612)
     ids=np.arange(3)
     config=ForwardModelConfig.from_dataset(ds,disc_type="linear_interp",process_fn=ds.process_images)

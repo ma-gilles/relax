@@ -97,14 +97,14 @@ _CONCRETE_RECOVAR_PROVENANCE_MODULES = (
     "relax.classification.k_class",
     "relax.scoring.significance",
 )
-_INITIAL_PROJECTOR_USE_REAL_REFERENCE_ENV = "RECOVAR_INITIAL_PROJECTOR_USE_REAL_REFERENCE"
+_INITIAL_PROJECTOR_USE_REAL_REFERENCE_ENV = "RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE"
 _FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV = (
-    "RECOVAR_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN"
+    "RELAX_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN"
 )
 _FIRSTITER_CC_TREE_TOP2_RESCORE_DEFAULT_MAX_MARGIN = "4e-6"
-_K1_RELION_LIVE_INITIAL_NOISE_ENV = "RECOVAR_K1_RELION_LIVE_INITIAL_NOISE"
+_K1_RELION_LIVE_INITIAL_NOISE_ENV = "RELAX_K1_RELION_LIVE_INITIAL_NOISE"
 _STATE_SWAP_FORCE_FRESH_PARTICLE_ORDER_ENV = (
-    "RECOVAR_STATE_SWAP_FORCE_FRESH_PARTICLE_ORDER"
+    "RELAX_STATE_SWAP_FORCE_FRESH_PARTICLE_ORDER"
 )
 
 
@@ -398,7 +398,7 @@ def _fixed_diagnostic_runtime_config(
         "do_norm_correction": True,
         "do_scale_correction": False,
         "refs_are_ctf_corrected": True,
-        "disc_type": os.environ.get("RECOVAR_DISC_TYPE_OVERRIDE", "linear_interp"),
+        "disc_type": os.environ.get("RELAX_DISC_TYPE_OVERRIDE", "linear_interp"),
         "image_fourier_backend": str(args.image_fourier_backend),
         "local_search_translation_prior_mode": "coarse",
         "declared_relion_command_line": str(args.frozen_boundary_relion_command_line),
@@ -412,14 +412,14 @@ def _fixed_diagnostic_runtime_config(
 
 _FIXED_ARM_ALLOWED_RECOVAR_ENV = frozenset(
     {
-        "RECOVAR_COMPACT_CANDIDATE_CAPTURE_DIR",
-        "RECOVAR_COMPACT_CANDIDATE_CAPTURE_ITERATION",
+        "RELAX_COMPACT_CANDIDATE_CAPTURE_DIR",
+        "RELAX_COMPACT_CANDIDATE_CAPTURE_ITERATION",
         "RECOVAR_CUDA_LIB",
         "RECOVAR_EXPECTED_REPO_ROOT",
-        "RECOVAR_PARITY_TIMING_DIR",
-        "RECOVAR_PROVENANCE_MODULES",
+        "RELAX_PARITY_TIMING_DIR",
+        "RELAX_PROVENANCE_MODULES",
         "RECOVAR_RELION_BIND_BUILD_DIR",
-        "RECOVAR_RELION_BIND_COPY_TO_PACKAGE",
+        "RELAX_RELION_BIND_COPY_TO_PACKAGE",
     }
 )
 
@@ -500,7 +500,7 @@ def _validate_fixed_diagnostic_math_environment(environ=None) -> None:
     forbidden_recovar = sorted(
         name
         for name, value in environment.items()
-        if name.startswith("RECOVAR_")
+        if name.startswith(("RECOVAR_", "RELAX_"))
         and str(value) != ""
         and name not in _FIXED_ARM_ALLOWED_RECOVAR_ENV
     )
@@ -2358,7 +2358,7 @@ def _parse_args(argv=None):
         default=None,
         help=(
             "Optional directory for lightweight per-iteration timing NPZs. "
-            "This uses RECOVAR_PARITY_TIMING_DIR internally and does not "
+            "This uses RELAX_PARITY_TIMING_DIR internally and does not "
             "write full parity tensor/volume dumps."
         ),
     )
@@ -2605,7 +2605,7 @@ def main():
     if args.timing_dir:
         timing_dir_path = Path(args.timing_dir)
         timing_dir_path.mkdir(parents=True, exist_ok=True)
-        os.environ["RECOVAR_PARITY_TIMING_DIR"] = str(timing_dir_path)
+        os.environ["RELAX_PARITY_TIMING_DIR"] = str(timing_dir_path)
     else:
         timing_dir_path = None
 
@@ -2623,7 +2623,7 @@ def main():
     from recovar.data_io.cryoem_dataset import load_dataset
 
     _double_image_preprocessing = (
-        os.environ.get("RECOVAR_USE_FLOAT64_SCORING", "0").strip().lower()
+        os.environ.get("RELAX_USE_FLOAT64_SCORING", "0").strip().lower()
         in {"1", "true", "yes", "on"}
     )
     ds = load_dataset(
@@ -2691,7 +2691,7 @@ def main():
     expected_accuracy_do_ctf_correction = None
     use_relion_live_initial_noise = _k1_relion_live_initial_noise_enabled()
     exact_relion_bpref_operands_requested = (
-        os.environ.get("RECOVAR_K1_RELION_EXACT_BPREF_OPERANDS", "")
+        os.environ.get("RELAX_K1_RELION_EXACT_BPREF_OPERANDS", "")
         .strip()
         .lower()
         in {"1", "true", "yes", "on"}
@@ -3249,17 +3249,17 @@ def main():
     # (MultidimArray<Complex>, Complex = tComplex<RFLOAT>) -- then runs at
     # that same double precision. Match that here instead of narrowing to
     # float32/complex64 immediately after the (inherently float32-on-disk)
-    # MRC read, which would otherwise defeat RECOVAR_USE_FLOAT64_PROJECTIONS
+    # MRC read, which would otherwise defeat RELAX_USE_FLOAT64_PROJECTIONS
     # no matter how carefully every later cast is fixed (a "narrow-then-
     # widen" bug: DensePrecisionPolicy.cast_projection_volume, gated on this
     # same flag, cannot recover precision already lost here). Gated on
-    # RECOVAR_USE_FLOAT64_PROJECTIONS specifically (not also
+    # RELAX_USE_FLOAT64_PROJECTIONS specifically (not also
     # _SCORING/_dense_global_scoring_dtype's OR) to match
     # projection_complex_dtype's own condition exactly and avoid forcing an
     # unrequested precision/memory cost on the projection path when a
     # caller wants float64 scoring without float64 projections.
     _init_volume_use_float64 = bool(
-        os.environ.get("RECOVAR_USE_FLOAT64_PROJECTIONS", "0").strip().lower() in {"1", "true", "yes", "on"}
+        os.environ.get("RELAX_USE_FLOAT64_PROJECTIONS", "0").strip().lower() in {"1", "true", "yes", "on"}
     )
     _init_volume_dtype = np.float64 if _init_volume_use_float64 else np.float32
     _init_volume_complex_dtype = np.complex128 if _init_volume_use_float64 else np.complex64
@@ -4324,7 +4324,7 @@ def main():
         translations=translations_jnp,
         options=RefinementOptions(
             symmetry=SymmetryOptions(point_group=symmetry),
-            disc_type=os.environ.get("RECOVAR_DISC_TYPE_OVERRIDE", "linear_interp"),
+            disc_type=os.environ.get("RELAX_DISC_TYPE_OVERRIDE", "linear_interp"),
             schedule=RefinementSchedule(
                 max_iter=args.max_iter,
                 init_current_size=init_current_size,
@@ -5050,7 +5050,7 @@ if __name__ == "__main__":
     except RuntimeError as exc:
         if (
             exc.__class__.__name__ == "SignificanceDumpComplete"
-            and os.environ.get("RECOVAR_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET") == "1"
+            and os.environ.get("RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET") == "1"
         ):
             logger.info(
                 "RECOVAR coarse-significance dump completed; stopping before "
@@ -5060,7 +5060,7 @@ if __name__ == "__main__":
             sys.exit(0)
         if (
             exc.__class__.__name__ == "BPrefContributionDumpComplete"
-            and os.environ.get("RECOVAR_BPREF_CONTRIBUTION_STOP_AFTER_TARGET") == "1"
+            and os.environ.get("RELAX_BPREF_CONTRIBUTION_STOP_AFTER_TARGET") == "1"
         ):
             logger.info(
                 "RECOVAR BPref contribution dump completed; stopping at the "
@@ -5071,8 +5071,8 @@ if __name__ == "__main__":
         if (
             exc.__class__.__name__ == "Pass2DumpComplete"
             and (
-                os.environ.get("RECOVAR_PASS2_DUMP_STOP_AFTER_TARGET") == "1"
-                or os.environ.get("RECOVAR_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET") == "1"
+                os.environ.get("RELAX_PASS2_DUMP_STOP_AFTER_TARGET") == "1"
+                or os.environ.get("RELAX_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET") == "1"
             )
         ):
             logger.info(

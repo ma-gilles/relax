@@ -5,9 +5,9 @@ from relax.diagnostics import local_debug
 
 def test_parsers_delegate_to_the_owner(monkeypatch, tmp_path):
     for fn, prefix in (
-        (local_debug.parse_debug_score_dump_request, "RECOVAR_LOCAL_SCORE_DUMP"),
-        (local_debug.parse_debug_fused_posterior_dump_request, "RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP"),
-        (local_debug.parse_debug_noise_component_dump_request, "RECOVAR_LOCAL_NOISE_COMPONENT_DUMP"),
+        (local_debug.parse_debug_score_dump_request, "RELAX_LOCAL_SCORE_DUMP"),
+        (local_debug.parse_debug_fused_posterior_dump_request, "RELAX_LOCAL_FUSED_POSTERIOR_DUMP"),
+        (local_debug.parse_debug_noise_component_dump_request, "RELAX_LOCAL_NOISE_COMPONENT_DUMP"),
     ):
         for key in ("_DIR", "_GLOBAL_INDICES", "_CURRENT_SIZE", "_ITERATION"):
             monkeypatch.delenv(prefix + key, raising=False)

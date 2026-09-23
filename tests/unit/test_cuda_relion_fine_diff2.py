@@ -412,8 +412,8 @@ def test_relion_fused_coarse_projector_source_pins_vdam_support_and_segmentation
     assert "relion_score_translate_f32(" in block
     assert "tex3D<float>(" in block
     assert "projector_scale * tex3D<float>(" in block
-    assert "RECOVAR_RELION_COARSE_STAGE_WEIGHT(pixel_weight)" in block
-    assert "RECOVAR_RELION_COARSE_DIFF2_UPDATE(" in block
+    assert "RELAX_RELION_COARSE_STAGE_WEIGHT(pixel_weight)" in block
+    assert "RELAX_RELION_COARSE_DIFF2_UPDATE(" in block
     assert "relion_fine_diff2_update_f32(" not in block
     assert "__fmul_rn(pixel_weight, 0.5f)" not in block
     start = source.index("relion_coarse_diff2_projector_f32_kernel")
@@ -428,7 +428,7 @@ def test_relion_fused_coarse_projector_source_pins_vdam_support_and_segmentation
     ]
     assert "bool SINGLE_LANE_CANONICAL = false>" in default_kernel
     assert "PREHALF_WEIGHT" not in default_kernel
-    assert "#define RECOVAR_RELION_COARSE_STAGE_WEIGHT(pixel_weight)\n" in default_kernel
+    assert "#define RELAX_RELION_COARSE_STAGE_WEIGHT(pixel_weight)\n" in default_kernel
     assert "relion_fine_diff2_update_f32" in default_kernel
     assert "relion_coarse_diff2_projector_body.inc" in default_kernel
     assert "__fmul_rn(pixel_weight, 0.5f)" in prehalf_kernel
@@ -1101,7 +1101,7 @@ def test_k1_coarse_gaussian_exact_operand_flags_honor_default_and_opt_out(monkey
     assert "shifted_corrected = translate_fn(" in assembler
     # P3-I: the elementwise operand chain that used to sit inline here now
     # lives in _relion_exact_coarse_operands, which the assembler calls
-    # eagerly or, under RECOVAR_COARSE_OPERAND_PROGRAM, as jax.jit of the same
+    # eagerly or, under RELAX_COARSE_OPERAND_PROGRAM, as jax.jit of the same
     # function. The expression itself is unchanged and still owned by this
     # module.
     assert "_relion_exact_coarse_operand_program" in assembler
@@ -1139,17 +1139,17 @@ def test_exact_relion_ctf_source_defaults_to_dataset_star(monkeypatch, tmp_path)
 
     dataset_star = tmp_path / "particles.star"
     explicit_star = tmp_path / "override.star"
-    monkeypatch.delenv("RECOVAR_K1_RELION_EXACT_CTF_STAR", raising=False)
+    monkeypatch.delenv("RELAX_K1_RELION_EXACT_CTF_STAR", raising=False)
     assert _relion_exact_ctf_source_star(
         SimpleNamespace(particles_file=str(dataset_star)),
     ) == dataset_star.resolve()
 
-    monkeypatch.setenv("RECOVAR_K1_RELION_EXACT_CTF_STAR", str(explicit_star))
+    monkeypatch.setenv("RELAX_K1_RELION_EXACT_CTF_STAR", str(explicit_star))
     assert _relion_exact_ctf_source_star(
         SimpleNamespace(particles_file=str(dataset_star)),
     ) == explicit_star.resolve()
 
-    monkeypatch.delenv("RECOVAR_K1_RELION_EXACT_CTF_STAR", raising=False)
+    monkeypatch.delenv("RELAX_K1_RELION_EXACT_CTF_STAR", raising=False)
     with pytest.raises(ValueError, match="STAR-backed dataset"):
         _relion_exact_ctf_source_star(SimpleNamespace(particles_file="particles.mrcs"))
 
@@ -3437,7 +3437,7 @@ def test_sparse_pass2_fused_flag_routes_supported_operand_layouts(
         )
         return jnp.zeros(reference.shape[:2], dtype=jnp.float32)
 
-    monkeypatch.setenv("RECOVAR_RELION_FINE_DIFF2_FUSED_FFI", "1")
+    monkeypatch.setenv("RELAX_RELION_FINE_DIFF2_FUSED_FFI", "1")
     monkeypatch.setattr(
         em_cuda_kernels,
         "relion_fine_diff2_rectangular_f32",
@@ -3470,7 +3470,7 @@ def test_sparse_pass2_fused_flag_routes_float64_to_f64_ffi(monkeypatch):
             dtype=jnp.float64,
         )
 
-    monkeypatch.setenv("RECOVAR_RELION_FINE_DIFF2_FUSED_FFI", "1")
+    monkeypatch.setenv("RELAX_RELION_FINE_DIFF2_FUSED_FFI", "1")
     monkeypatch.setattr(
         em_cuda_kernels,
         "relion_fine_diff2_rectangular_f64",

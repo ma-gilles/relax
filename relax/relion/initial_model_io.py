@@ -352,9 +352,9 @@ def _initial_model_random_subsets(main_star) -> np.ndarray:
 
 
 def _write_data_star(path: str, main_star, optics_star, dataset, particle_state: NativeParticleState) -> None:
-    array_rows_token = os.environ.get("RECOVAR_VDAM_STAR_ARRAY_ROWS", "0").strip()
+    array_rows_token = os.environ.get("RELAX_VDAM_STAR_ARRAY_ROWS", "0").strip()
     if array_rows_token not in {"0", "1"}:
-        raise ValueError("RECOVAR_VDAM_STAR_ARRAY_ROWS must be 0 or 1")
+        raise ValueError("RELAX_VDAM_STAR_ARRAY_ROWS must be 0 or 1")
     n_images = int(getattr(dataset, "n_images", len(main_star)))
     if len(main_star) != n_images:
         raise ValueError(f"STAR table has {len(main_star)} particles but dataset has {n_images} images")

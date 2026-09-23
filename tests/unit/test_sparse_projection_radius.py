@@ -18,7 +18,7 @@ def test_generic_sparse_projection_preserves_radius(monkeypatch, radius_kwargs, 
         return np.zeros((len(rotations), 40), np.complex64), None
 
     monkeypatch.setattr(blocks, "_compute_projections_block", project)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", raising=False)
     result, abs2 = blocks._compute_sparse_pass2_projections_block(
         np.zeros(512, np.complex64),
         np.broadcast_to(np.eye(3, dtype=np.float32), (3, 3, 3)),

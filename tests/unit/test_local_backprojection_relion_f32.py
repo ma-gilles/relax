@@ -78,7 +78,7 @@ def test_local_weighted_sums_match_explicit_highest_precision_matmul():
 def test_local_mstep_sums_env_gate_preserves_xfloat_precision(
     monkeypatch, real_dtype, complex_dtype
 ):
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION", "1")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION", "1")
     probs = np.array([[[1.0, 1.0, 1.0]]], dtype=real_dtype)
     shifted = np.array(
         [[[1.0e8 + 0j], [1.0 + 0j], [-1.0e8 + 0j]]], dtype=complex_dtype
@@ -198,7 +198,7 @@ def test_local_noise_scalar_terms_inline_the_mature_big_jit_primitives():
 
 
 def test_local_mstep_sums_preserve_promoted_precision_for_mixed_operands(monkeypatch):
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION", "1")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION", "1")
     probs = np.array([[[1.0, 1.0, 1.0]]], dtype=np.float64)
     shifted = np.array([[[1.0e8 + 0j], [1.0 + 0j], [-1.0e8 + 0j]]], dtype=np.complex64)
     ctf2_over_nv = np.array([[2.0]], dtype=np.float64)

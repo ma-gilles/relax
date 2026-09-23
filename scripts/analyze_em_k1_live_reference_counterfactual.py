@@ -37,8 +37,8 @@ from scripts.validate_relion_coarse_pass1_capture import (
 )
 
 COMPONENT_DOMINANCE_FRACTION = 0.5
-RECOVAR_REPLAY_P95_GATE = 5.0e-5
-RECOVAR_REPLAY_MAX_GATE = 2.0e-4
+RELAX_REPLAY_P95_GATE = 5.0e-5
+RELAX_REPLAY_MAX_GATE = 2.0e-4
 
 
 def _require(condition: bool, message: str) -> None:
@@ -630,8 +630,8 @@ def build_report(
                 "translation_count": int(recovar["translations"].shape[0]),
                 "recovar_replay": recovar_replay,
                 "recovar_replay_passed": bool(
-                    recovar_replay["p95_abs"] <= RECOVAR_REPLAY_P95_GATE
-                    and recovar_replay["max_abs"] <= RECOVAR_REPLAY_MAX_GATE
+                    recovar_replay["p95_abs"] <= RELAX_REPLAY_P95_GATE
+                    and recovar_replay["max_abs"] <= RELAX_REPLAY_MAX_GATE
                 ),
                 "reference_relative_l2": float(np.linalg.norm(reference_delta) / np.linalg.norm(recovar["references"])),
                 "reference_max_abs": float(np.max(np.abs(reference_delta))),
@@ -681,8 +681,8 @@ def build_report(
         "fixed_metric": fixed_metric,
         "fixed_gates": {
             "component_dominance_fraction_strictly_greater_than": (COMPONENT_DOMINANCE_FRACTION),
-            "recovar_replay_p95_abs_max": RECOVAR_REPLAY_P95_GATE,
-            "recovar_replay_max_abs_max": RECOVAR_REPLAY_MAX_GATE,
+            "recovar_replay_p95_abs_max": RELAX_REPLAY_P95_GATE,
+            "recovar_replay_max_abs_max": RELAX_REPLAY_MAX_GATE,
         },
         "fixed_conventions": {
             "relion_reference_to_recovar_scale": -(full_image_size**2),

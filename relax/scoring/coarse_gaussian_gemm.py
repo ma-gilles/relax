@@ -73,17 +73,17 @@ _COARSE_GAUSSIAN_GEMM_HYBRID_BLOCK_CAPACITY_ENV = (
 
 
 _COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR_ENV = (
-    "RECOVAR_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR"
+    "RELAX_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR"
 )
 
 
 _COARSE_GAUSSIAN_GEMM_DEVICE_TRANSACTION_ENV = (
-    "RECOVAR_COARSE_GAUSSIAN_GEMM_DEVICE_TRANSACTION"
+    "RELAX_COARSE_GAUSSIAN_GEMM_DEVICE_TRANSACTION"
 )
 
 
 _COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE_ENV = (
-    "RECOVAR_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE"
+    "RELAX_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE"
 )
 
 
@@ -142,7 +142,7 @@ def _coarse_gaussian_gemm_device_transaction_enabled() -> bool:
 
 def _coarse_shared_pretranslated_enabled() -> bool:
     """Opt into shared staging only for full runtime-prefix coarse scoring."""
-    name = "RECOVAR_COARSE_SHARED_PRETRANSLATED"
+    name = "RELAX_COARSE_SHARED_PRETRANSLATED"
     token = os.environ.get(name, "0").strip()
     if token not in {"0", "1"}:
         raise ValueError(f"Unsupported {name}={token!r}")
@@ -151,7 +151,7 @@ def _coarse_shared_pretranslated_enabled() -> bool:
 
 def _coarse_gaussian_gemm_real_cross_enabled() -> bool:
     """Use FP64 real-component GEMM only in the coarse certificate."""
-    name = "RECOVAR_COARSE_GAUSSIAN_GEMM_REAL_CROSS"
+    name = "RELAX_COARSE_GAUSSIAN_GEMM_REAL_CROSS"
     token = os.environ.get(name, "0").strip()
     if token not in {"0", "1"}:
         raise ValueError(f"Unsupported {name}={token!r}")

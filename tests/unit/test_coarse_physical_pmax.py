@@ -30,7 +30,7 @@ def test_physical_pmax_preserves_active_bytes(active, tail):
 
 @pytest.mark.parametrize("token, expected", [(None, False), ("0", False), ("1", True), (" 1 ", True)])
 def test_physical_pmax_selector(monkeypatch, token, expected):
-    name = "RECOVAR_COARSE_MAX_POSTERIOR_PHYSICAL_BATCH"
+    name = "RELAX_COARSE_MAX_POSTERIOR_PHYSICAL_BATCH"
     if token is None:
         monkeypatch.delenv(name, raising=False)
     else:
@@ -40,8 +40,8 @@ def test_physical_pmax_selector(monkeypatch, token, expected):
 
 @pytest.mark.parametrize("token", ["", "2", "true", "false", "-1"])
 def test_physical_pmax_selector_rejects_invalid(monkeypatch, token):
-    monkeypatch.setenv("RECOVAR_COARSE_MAX_POSTERIOR_PHYSICAL_BATCH", token)
-    with pytest.raises(ValueError, match="RECOVAR_COARSE_MAX_POSTERIOR_PHYSICAL_BATCH"):
+    monkeypatch.setenv("RELAX_COARSE_MAX_POSTERIOR_PHYSICAL_BATCH", token)
+    with pytest.raises(ValueError, match="RELAX_COARSE_MAX_POSTERIOR_PHYSICAL_BATCH"):
         significance._coarse_max_posterior_physical_batch_enabled()
 
 

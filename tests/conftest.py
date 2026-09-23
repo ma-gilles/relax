@@ -13,7 +13,7 @@ TESTS_DIR = Path(__file__).resolve().parent
 if str(TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(TESTS_DIR))
 
-_REQUIRE_CUSTOM_CUDA_FOR_TESTS_ENV = "RECOVAR_REQUIRE_CUSTOM_CUDA_FOR_TESTS"
+_REQUIRE_CUSTOM_CUDA_FOR_TESTS_ENV = "RELAX_REQUIRE_CUSTOM_CUDA_FOR_TESTS"
 _CUSTOM_CUDA_LIB_UNSET = object()
 _custom_cuda_test_lib = _CUSTOM_CUDA_LIB_UNSET
 _custom_cuda_test_error = None
@@ -84,12 +84,12 @@ def gpu_subprocess_env():
     if _env_flag("RECOVAR_DISABLE_CUDA"):
         # An explicit disable must override inherited custom-CUDA settings.
         env.pop("RECOVAR_CUDA_LIB", None)
-        env.pop("RECOVAR_ENABLE_CUSTOM_CUDA", None)
+        env.pop("RELAX_ENABLE_CUSTOM_CUDA", None)
     else:
         lib_path = _resolve_custom_cuda_test_lib(require=_env_flag(_REQUIRE_CUSTOM_CUDA_FOR_TESTS_ENV))
         if lib_path is not None:
             env["RECOVAR_CUDA_LIB"] = str(lib_path)
-            env["RECOVAR_ENABLE_CUSTOM_CUDA"] = "1"
+            env["RELAX_ENABLE_CUSTOM_CUDA"] = "1"
             env.pop("RECOVAR_DISABLE_CUDA", None)
     return env
 
@@ -417,4 +417,4 @@ def _strict_em_operand_precision(monkeypatch):
     unless a test opts out by setting the variable itself.
     """
 
-    monkeypatch.setenv("RECOVAR_EM_OPERAND_PRECISION_CHECK", "raise")
+    monkeypatch.setenv("RELAX_EM_OPERAND_PRECISION_CHECK", "raise")

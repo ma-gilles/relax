@@ -91,8 +91,8 @@ def test_shared_tau2_keeps_original_object(classes):
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_half_tau2_values_and_existing_promoted_average(dtype, monkeypatch):
-    monkeypatch.setenv("RECOVAR_USE_FLOAT64_SCORING", "0")
-    monkeypatch.setenv("RECOVAR_USE_FLOAT64_PROJECTIONS", "0")
+    monkeypatch.setenv("RELAX_USE_FLOAT64_SCORING", "0")
+    monkeypatch.setenv("RELAX_USE_FLOAT64_PROJECTIONS", "0")
     source = np.array([[1, 2**24, 3], [2**-20, -(2**24), 5]], dtype=dtype)
     initial = jnp.asarray(source)
     shared, halves = prepare_initial_mean_variance(

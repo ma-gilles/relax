@@ -446,7 +446,7 @@ def test_capture_rejects_nonorthogonal_rotation(tmp_path, monkeypatch):
 @pytest.mark.unit
 def test_compact_capture_env_does_not_request_materialized_dump(tmp_path, monkeypatch):
     monkeypatch.setenv(capture.CAPTURE_DIR_ENV, str(tmp_path))
-    monkeypatch.delenv("RECOVAR_PASS2_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_PASS2_DUMP_DIR", raising=False)
     assert not _pass2_dump_requested_for_bucket(
         experiment_dataset=object(),
         image_indices=np.asarray([0], dtype=np.int64),

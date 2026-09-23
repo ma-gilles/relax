@@ -64,8 +64,8 @@ def test_local_engine_defaults_to_pr179_spectrum_and_forwards_opt_in(monkeypatch
     fixture = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(fixture)
     args = fixture._sparse_big_jit_local_case(np.random.default_rng(891))
-    monkeypatch.setenv("RECOVAR_DISABLE_LOCAL_BIG_JIT", "1" if split else "0")
-    monkeypatch.setenv("RECOVAR_EXACT_LOCAL_PROCESSED_HALF_CACHE_MAX_GB", "0")
+    monkeypatch.setenv("RELAX_DISABLE_LOCAL_BIG_JIT", "1" if split else "0")
+    monkeypatch.setenv("RELAX_EXACT_LOCAL_PROCESSED_HALF_CACHE_MAX_GB", "0")
     options = dict(
         image_batch_size=3,
         rotation_block_size=8,

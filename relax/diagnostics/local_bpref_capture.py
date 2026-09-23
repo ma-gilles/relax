@@ -111,7 +111,7 @@ def _bpref_capture_priors(scores, probs_shape, *, bucket, rotation_log_prior) ->
     return _BprefCapturePriors(candidate_mask, rotation_log_prior, translation_log_prior, preprior_scores)
 
 
-_HIGH_PRECISION_OPERAND_BUNDLE_ENV = "RECOVAR_BPREF_HIGH_PRECISION_OPERAND_BUNDLE"
+_HIGH_PRECISION_OPERAND_BUNDLE_ENV = "RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE"
 # The preprocessing implementations a capture bucket can actually have run.
 _PREPROCESS_PATHS = frozenset(
     {"big_jit_relion_cuda", "big_jit_jax", "split_exact", "split_backend"}
@@ -166,7 +166,7 @@ def _exact_local_bpref_operand_bundle(
 
     Exact-local search reaches the shared contribution schema through a route that
     historically declared these operands absent. The existing
-    ``RECOVAR_BPREF_HIGH_PRECISION_OPERAND_BUNDLE`` request already selects them on the
+    ``RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE`` request already selects them on the
     bucketed sparse-pass-2 route; honour the same request here so a replay can *check* a
     host reconstruction against the operands the kernel actually received.
 
@@ -196,7 +196,7 @@ def _exact_local_bpref_operand_bundle(
         return static_kwargs
     if raw_batch_data is None:
         raise RuntimeError(
-            "RECOVAR_BPREF_HIGH_PRECISION_OPERAND_BUNDLE requires raw real-space image batches; "
+            "RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE requires raw real-space image batches; "
             "this bucket ran from a preprocessed cache with no raw source rows"
         )
     rows = int(unpadded_batch_size)
@@ -366,7 +366,7 @@ def _maybe_dump_exact_local_bpref_contribution_rows(**kwargs) -> None:
     before execution rather than silently emitting an incomplete capture.
     """
 
-    if not os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR", "").strip():
+    if not os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", "").strip():
         return
     if os.environ.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "").strip():
         raise RuntimeError(
@@ -414,15 +414,15 @@ def _exact_local_bpref_contribution_capture_active(
 ) -> bool:
     """Return whether this exact-local half is the explicitly targeted boundary."""
 
-    if not os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR", "").strip():
+    if not os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", "").strip():
         return False
     context = bpref_diagnostics._bpref_contribution_context
     context_iteration = int(context["iteration"])
     context_half = int(context["half"])
-    target_iteration = os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION", "").strip()
-    target_half = os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF", "").strip()
+    target_iteration = os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION", "").strip()
+    target_half = os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_HALF", "").strip()
     target_current_size = os.environ.get(
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE", ""
+        "RELAX_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE", ""
     ).strip()
     if not (target_iteration and target_half and target_current_size):
         return False

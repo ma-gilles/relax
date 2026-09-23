@@ -681,7 +681,7 @@ def _validate_runtime_contract(run_root: Path, case_root: Path, case_id: str) ->
     )
     _require(submission.get("EM_K1_MATRIX_RUN_RELION") == "1", f"{case_id}: RELION was not enabled")
     grid_correction = submission.get(
-        "RECOVAR_FINAL_ALL_DATA_GRID_CORRECT",
+        "RELAX_FINAL_ALL_DATA_GRID_CORRECT",
         "",
     ).strip().lower()
     _require(
@@ -691,7 +691,7 @@ def _validate_runtime_contract(run_root: Path, case_root: Path, case_id: str) ->
     job_scripts = sorted((run_root / "jobs").glob(f"em_k1_matrix_*{case_root.name}*.sh"))
     _require(len(job_scripts) == 1, f"{case_id}: could not identify the science job script")
     _require(
-        "unset RECOVAR_FINAL_ALL_DATA_AFTER_MAX_ITER" in job_scripts[0].read_text(),
+        "unset RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER" in job_scripts[0].read_text(),
         f"{case_id}: science job did not fail closed on forced after-max finalization",
     )
 

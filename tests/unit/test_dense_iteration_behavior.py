@@ -214,7 +214,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
         )
         return outputs
 
-    monkeypatch.delenv("RECOVAR_K1_RELION_X_HALF_MSTEP", raising=False)
+    monkeypatch.delenv("RELAX_K1_RELION_X_HALF_MSTEP", raising=False)
     monkeypatch.setattr(scoring_policy, "_k1_relion_x_half_mstep_default_available", lambda: True)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
 

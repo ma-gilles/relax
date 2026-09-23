@@ -98,7 +98,7 @@ def _dump(output: Path) -> None:
 def _run_dump(script: Path, library: Path, output: Path) -> None:
     env = dict(os.environ)
     env["RECOVAR_CUDA_LIB"] = str(library)
-    env["RECOVAR_REQUIRE_CUSTOM_CUDA_FOR_TESTS"] = "1"
+    env["RELAX_REQUIRE_CUSTOM_CUDA_FOR_TESTS"] = "1"
     env.pop("RECOVAR_DISABLE_CUDA", None)
     subprocess.run(
         [sys.executable, str(script), "--dump", str(output)],

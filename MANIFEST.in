@@ -1,3 +1,4 @@
+include relax/renamed_environment.json
 include relax/cuda/Makefile
 include relax/cuda/relax_kernels.cu
 include relax/cuda/relion_coarse_diff2_projector_body.inc

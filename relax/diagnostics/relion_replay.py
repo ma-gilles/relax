@@ -58,7 +58,7 @@ from relax.sampling import (
 
 logger = logging.getLogger(__name__)
 
-_KCLASS_REPLAY_TAU2_ENV = "RECOVAR_KCLASS_REPLAY_TAU2"
+_KCLASS_REPLAY_TAU2_ENV = "RELAX_KCLASS_REPLAY_TAU2"
 
 
 def _class_tau2_replay(*, iteration, n_classes, iter_replay_override, replay, logger):

@@ -48,7 +48,7 @@ def test_selector_rejects_non_boolean_before_cuda(monkeypatch, value):
 
 
 def test_external_replay_rejects_omitted_output_before_cuda(monkeypatch):
-    monkeypatch.setenv('RECOVAR_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY', '/nonexistent')
+    monkeypatch.setenv('RELAX_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY', '/nonexistent')
     monkeypatch.setattr(cb, '_ensure_ffi', lambda: pytest.fail('CUDA loaded before mode validation'))
     monkeypatch.setattr(em_cuda_kernels, '_ensure_ffi', lambda: pytest.fail('CUDA loaded before mode validation'))
     with pytest.raises(ValueError, match='external host replay'):
@@ -58,7 +58,7 @@ def test_external_replay_rejects_omitted_output_before_cuda(monkeypatch):
 @pytest.mark.parametrize('grouped', [False, True])
 @pytest.mark.parametrize('stable', [False, True])
 def test_optional_result_preserves_all_ffi_operands_attributes_and_aliases(monkeypatch, grouped, stable):
-    monkeypatch.delenv('RECOVAR_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY', raising=False)
+    monkeypatch.delenv('RELAX_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY', raising=False)
     monkeypatch.setattr(cb, '_ensure_ffi', lambda: None)
     monkeypatch.setattr(em_cuda_kernels, '_ensure_ffi', lambda: None)
     records = []

@@ -57,7 +57,7 @@ test -z "$(find "${OUTPUT}" "${CAPTURE}" -mindepth 1 -print -quit)"
 
 unset PYTHONPATH PYTHONHOME CONDA_PREFIX VIRTUAL_ENV CONDA_DEFAULT_ENV
 while IFS='=' read -r variable_name _; do
-    case "${variable_name}" in RECOVAR_*|RELION_ACC_DUMP_*|RELION_DUMP_*) unset "${variable_name}" ;; esac
+    case "${variable_name}" in RECOVAR_*|RELAX_*|RELION_ACC_DUMP_*|RELION_DUMP_*) unset "${variable_name}" ;; esac
 done < <(env)
 
 export TMPDIR=${ROOT}/runtime/${SLURM_JOB_ID}/tmp
@@ -97,8 +97,8 @@ if [[ -n "${BPREF_TOPOLOGY_PATH}" ]]; then
 fi
 if [[ -n "${MSTEP_DUMP_DIR}" ]]; then
     mkdir -p "${MSTEP_DUMP_DIR}"
-    export RECOVAR_DEBUG_DUMP_DIR=${MSTEP_DUMP_DIR}
-    export RECOVAR_DEBUG_DUMP_MSTEP_ITER=${ITERATION}
+    export RELAX_DEBUG_DUMP_DIR=${MSTEP_DUMP_DIR}
+    export RELAX_DEBUG_DUMP_MSTEP_ITER=${ITERATION}
 fi
 
 if [[ "${CAPTURE_ENABLED}" == 1 ]]; then

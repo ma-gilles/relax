@@ -56,10 +56,10 @@ PDB_K4_DIR = FIXTURE_BASE / "data_pdb_k4_5k_128"
 
 # RELION nr_iter=10 reference dumps. By default we look at the
 # `_agent_scratch/abem_long10_*` location; users can override via
-# RECOVAR_INITIALMODEL_ITER10_RELION_REF=<dir> if their cache lives elsewhere.
+# RELAX_INITIALMODEL_ITER10_RELION_REF=<dir> if their cache lives elsewhere.
 DEFAULT_RELION_REF_BASE = Path(
     os.environ.get(
-        "RECOVAR_INITIALMODEL_ITER10_RELION_REF",
+        "RELAX_INITIALMODEL_ITER10_RELION_REF",
         "/scratch/gpfs/GILLES/mg6942/_agent_scratch/abem_long10_20260508_143725_31556",
     )
 )
@@ -233,7 +233,7 @@ def _load_relion_iter10_classes(relion_dir: Path, K: int) -> list[np.ndarray]:
     if missing:
         pytest.skip(
             "RELION iter-10 reference dumps not present for this K; "
-            "set RECOVAR_INITIALMODEL_ITER10_RELION_REF if your cache lives elsewhere.\n  " + "\n  ".join(missing)
+            "set RELAX_INITIALMODEL_ITER10_RELION_REF if your cache lives elsewhere.\n  " + "\n  ".join(missing)
         )
     return [np.asarray(mrcfile.read(str(p)), dtype=np.float64) for p in paths]
 
@@ -296,7 +296,7 @@ def test_initialmodel_iter10_parity(tmp_path, K, data_dir, relion_subdir, baseli
         "mean_cc": float(mean_cc),
         "wall_time_sec": float(elapsed),
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "git_head": os.environ.get("RECOVAR_GIT_HEAD", ""),
+        "git_head": os.environ.get("RELAX_GIT_HEAD", ""),
     }
     _write_ledger(payload, output_dir=output_dir)
 

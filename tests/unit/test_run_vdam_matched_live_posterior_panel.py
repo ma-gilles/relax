@@ -19,8 +19,8 @@ def test_runner_is_one_allocation_matched_panel():
 
 def test_runner_captures_production_fused_scores_for_native_particle_set():
     text = _runner_text()
-    assert "RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES=${target_indices}" in text
-    assert "RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_SCORES=1" in text
+    assert "RELAX_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES=${target_indices}" in text
+    assert "RELAX_LOCAL_FUSED_POSTERIOR_DUMP_SCORES=1" in text
     assert 'test "${target_count}" -eq 200' in text
     assert "posterior identity closure failed" in text
 

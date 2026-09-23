@@ -94,13 +94,13 @@ NVTX_DOMAIN_EM = "recovar_em"
 EXACT_LOCAL_PACKED_NOISE_TARGET_ROW_PIXELS = 64_000_000
 
 
-EXACT_LOCAL_PACKED_NOISE_TARGET_ROW_PIXELS_ENV = "RECOVAR_EXACT_LOCAL_PACKED_NOISE_TARGET_ROW_PIXELS"
+EXACT_LOCAL_PACKED_NOISE_TARGET_ROW_PIXELS_ENV = "RELAX_EXACT_LOCAL_PACKED_NOISE_TARGET_ROW_PIXELS"
 
 
 EXACT_LOCAL_RECONSTRUCTION_PACK_QUANTUM = 512
 
 
-EXACT_LOCAL_RECONSTRUCTION_PACK_QUANTUM_ENV = "RECOVAR_EXACT_LOCAL_RECONSTRUCTION_PACK_QUANTUM"
+EXACT_LOCAL_RECONSTRUCTION_PACK_QUANTUM_ENV = "RELAX_EXACT_LOCAL_RECONSTRUCTION_PACK_QUANTUM"
 
 
 @dataclass
@@ -643,7 +643,7 @@ def _unpadded_bucket_rows(bucket, unpadded_batch_size: int) -> dict:
 # **per local iteration**, because the bucket loop calls ``jax.clear_caches()``
 # at the end of every bucket and every program is traced again. Folding them
 # into one program leaves one program per bucket shape class.
-LOCAL_POSTPROCESS_ROW_PROGRAM_ENV = "RECOVAR_LOCAL_POSTPROCESS_ROW_PROGRAM"
+LOCAL_POSTPROCESS_ROW_PROGRAM_ENV = "RELAX_LOCAL_POSTPROCESS_ROW_PROGRAM"
 
 
 @partial(jax.jit, static_argnames=("unpadded_batch_size",))
@@ -695,7 +695,7 @@ def trim_local_postprocess_rows(values: dict, *, unpadded_batch_size: int) -> di
 # ``convert_element_type`` and then a ``broadcast_in_dim``), and P3-E's census
 # measured 1620 of them per local iteration at state D. Building them in one
 # program per bucket shape leaves one dispatch for the set.
-LOCAL_BUCKET_CONSTANT_PROGRAM_ENV = "RECOVAR_LOCAL_BUCKET_CONSTANT_PROGRAM"
+LOCAL_BUCKET_CONSTANT_PROGRAM_ENV = "RELAX_LOCAL_BUCKET_CONSTANT_PROGRAM"
 
 
 def local_bucket_constant_specs(
@@ -1330,7 +1330,7 @@ def _flat_local_row_class_blocks(
     return plan.class_row_counts
 
 
-_FINE_JOB_BUCKET_QUANTUM_ENV = "RECOVAR_EXACT_FINE_JOB_BUCKET_QUANTUM"
+_FINE_JOB_BUCKET_QUANTUM_ENV = "RELAX_EXACT_FINE_JOB_BUCKET_QUANTUM"
 
 
 _FINE_JOB_BUCKET_QUANTUM_DEFAULT = 65536

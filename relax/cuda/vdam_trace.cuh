@@ -93,13 +93,13 @@ private:
     {
         if (initialized_) return;
         initialized_ = true;
-        const char* path = std::getenv("RECOVAR_VDAM_CANDIDATE_BLOCK_TRACE");
+        const char* path = std::getenv("RELAX_VDAM_CANDIDATE_BLOCK_TRACE");
         if (path == nullptr || path[0] == '\0') return;
         requested_ = true;
         const char* iteration_text =
-            std::getenv("RECOVAR_VDAM_CANDIDATE_BLOCK_TRACE_ITER");
+            std::getenv("RELAX_VDAM_CANDIDATE_BLOCK_TRACE_ITER");
         const char* capacity_text =
-            std::getenv("RECOVAR_VDAM_CANDIDATE_BLOCK_TRACE_CAPACITY");
+            std::getenv("RELAX_VDAM_CANDIDATE_BLOCK_TRACE_CAPACITY");
         if (iteration_text == nullptr || iteration_text[0] == '\0') return;
         errno = 0;
         char* iteration_end = nullptr;

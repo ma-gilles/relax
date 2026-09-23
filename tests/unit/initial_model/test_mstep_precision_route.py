@@ -29,7 +29,7 @@ REPLAYS = [
     vdam_mstep_replay.VDAM_NATIVE_BPREF_DATA_REPLAY_ENV,
     vdam_mstep_replay.VDAM_NATIVE_BPREF_WEIGHT_REPLAY_ENV,
     vdam_mstep_replay.VDAM_NATIVE_IREF_INPUT_REPLAY_ENV,
-    "RECOVAR_MSTEP_DUMP_DIR",
+    "RELAX_MSTEP_DUMP_DIR",
 ]
 
 

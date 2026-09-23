@@ -678,14 +678,14 @@ def test_completion_metadata_keeps_k4_sparse_env_provenance(tmp_path):
                 "EM_COMPLETION_TIMING_PROBE=1",
                 "K4_MEM=128G",
                 "K4_TIME_LIMIT=04:00:00",
-                "RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES=19",
-                "RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_INFLATION=2.0",
-                "RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MIN_BUCKET_SIZE=4096",
-                "RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MSTEP=pair_sparse",
-                "RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES=4294967296",
-                "RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE=512",
-                "RECOVAR_SPARSE_KCLASS_GROUP_TIMING=1",
-                "RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS=1",
+                "RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES=19",
+                "RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_INFLATION=2.0",
+                "RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MIN_BUCKET_SIZE=4096",
+                "RELAX_SPARSE_KCLASS_COMPACT_PAIR_MSTEP=pair_sparse",
+                "RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES=4294967296",
+                "RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE=512",
+                "RELAX_SPARSE_KCLASS_GROUP_TIMING=1",
+                "RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS=1",
             ]
         )
         + "\n"
@@ -697,14 +697,14 @@ def test_completion_metadata_keeps_k4_sparse_env_provenance(tmp_path):
     assert metadata["env"]["EM_COMPLETION_TIMING_PROBE"] == "1"
     assert metadata["env"]["K4_MEM"] == "128G"
     assert metadata["env"]["K4_TIME_LIMIT"] == "04:00:00"
-    assert metadata["env"]["RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES"] == "19"
-    assert metadata["env"]["RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_INFLATION"] == "2.0"
-    assert metadata["env"]["RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MIN_BUCKET_SIZE"] == "4096"
-    assert metadata["env"]["RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MSTEP"] == "pair_sparse"
-    assert metadata["env"]["RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES"] == "4294967296"
-    assert metadata["env"]["RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE"] == "512"
-    assert metadata["env"]["RECOVAR_SPARSE_KCLASS_GROUP_TIMING"] == "1"
-    assert metadata["env"]["RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS"] == "1"
+    assert metadata["env"]["RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES"] == "19"
+    assert metadata["env"]["RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_INFLATION"] == "2.0"
+    assert metadata["env"]["RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MIN_BUCKET_SIZE"] == "4096"
+    assert metadata["env"]["RELAX_SPARSE_KCLASS_COMPACT_PAIR_MSTEP"] == "pair_sparse"
+    assert metadata["env"]["RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES"] == "4294967296"
+    assert metadata["env"]["RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE"] == "512"
+    assert metadata["env"]["RELAX_SPARSE_KCLASS_GROUP_TIMING"] == "1"
+    assert metadata["env"]["RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS"] == "1"
 
 
 def test_completion_metadata_discovers_matrix_provenance_from_case_directory(tmp_path):

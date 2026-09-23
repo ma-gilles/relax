@@ -16,7 +16,7 @@ set -euo pipefail
 : "${VDAM_NATIVE_DIRECTORY:?set the matched native M-step directory}"
 : "${VDAM_RECOVAR_DIRECTORY:?set the matched RECOVAR M-step directory}"
 : "${VDAM_TARGET_GPU_UUID:?pin the physical H100}"
-: "${RECOVAR_VDAM_EXACT_NATIVE_PTX:?set the exact RELION PTX}"
+: "${RELAX_VDAM_EXACT_NATIVE_PTX:?set the exact RELION PTX}"
 VDAM_TOPOLOGY=${VDAM_TOPOLOGY:-}
 VDAM_TOPOLOGY_DATA_STAR=${VDAM_TOPOLOGY_DATA_STAR:-}
 VDAM_NATIVE_PANEL_DIRECTORY=${VDAM_NATIVE_PANEL_DIRECTORY:-}
@@ -46,7 +46,7 @@ fi
 cd "${VDAM_REPO_ROOT}"
 test "$(git rev-parse HEAD)" = "${VDAM_EXPECTED_HEAD}"
 test -f "${VDAM_LIBRARY}"
-test -f "${RECOVAR_VDAM_EXACT_NATIVE_PTX}"
+test -f "${RELAX_VDAM_EXACT_NATIVE_PTX}"
 
 visible_gpu_uuid=$(nvidia-smi --query-gpu=uuid --format=csv,noheader | tr -d '[:space:]')
 if [[ "${visible_gpu_uuid}" != "${VDAM_TARGET_GPU_UUID}" ]]; then

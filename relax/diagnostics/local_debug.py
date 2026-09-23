@@ -108,24 +108,24 @@ def _parse_dump_request(env_prefix: str):
 def parse_debug_score_dump_request():
     """Return the optional debug score-dump request from the environment."""
 
-    return _parse_dump_request("RECOVAR_LOCAL_SCORE_DUMP")
+    return _parse_dump_request("RELAX_LOCAL_SCORE_DUMP")
 
 
 def parse_debug_fused_posterior_dump_request():
     """Return optional fused-path posterior dump settings.
 
-    This is intentionally separate from ``RECOVAR_LOCAL_SCORE_DUMP_*``:
+    This is intentionally separate from ``RELAX_LOCAL_SCORE_DUMP_*``:
     score dumps need the materialized score tensor and therefore force the
     non-fused path, while this hook records the actual production fused path.
     """
 
-    return _parse_dump_request("RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP")
+    return _parse_dump_request("RELAX_LOCAL_FUSED_POSTERIOR_DUMP")
 
 
 def parse_debug_noise_component_dump_request():
     """Return optional per-particle local noise component dump settings."""
 
-    return _parse_dump_request("RECOVAR_LOCAL_NOISE_COMPONENT_DUMP")
+    return _parse_dump_request("RELAX_LOCAL_NOISE_COMPONENT_DUMP")
 
 
 def current_size_matches_request(requested_current_sizes: set[int] | None, current_size) -> bool:
@@ -156,9 +156,9 @@ def iteration_matches_request(requested_iterations: set[int] | None, debug_itera
 def parse_dense_noise_component_dump_request():
     """Return optional per-particle dense noise component dump settings."""
 
-    dump_dir = os.environ.get("RECOVAR_DENSE_NOISE_COMPONENT_DUMP_DIR")
-    dump_indices = os.environ.get("RECOVAR_DENSE_NOISE_COMPONENT_DUMP_GLOBAL_INDICES")
-    dump_current_size = os.environ.get("RECOVAR_DENSE_NOISE_COMPONENT_DUMP_CURRENT_SIZE")
+    dump_dir = os.environ.get("RELAX_DENSE_NOISE_COMPONENT_DUMP_DIR")
+    dump_indices = os.environ.get("RELAX_DENSE_NOISE_COMPONENT_DUMP_GLOBAL_INDICES")
+    dump_current_size = os.environ.get("RELAX_DENSE_NOISE_COMPONENT_DUMP_CURRENT_SIZE")
     if not dump_dir or not dump_indices:
         return None, set(), None
     targets = parse_int_set(dump_indices) or set()
@@ -173,8 +173,8 @@ def parse_dense_noise_component_dump_request():
 def parse_dense_per_pose_score_dump_request() -> DensePerPoseScoreDumpRequest:
     """Return optional dense/global per-pose score dump settings."""
 
-    dump_dir = os.environ.get("RECOVAR_DEBUG_PER_POSE_DUMP_DIR")
-    dump_target = os.environ.get("RECOVAR_DEBUG_PER_POSE_DUMP_TARGET")
+    dump_dir = os.environ.get("RELAX_DEBUG_PER_POSE_DUMP_DIR")
+    dump_target = os.environ.get("RELAX_DEBUG_PER_POSE_DUMP_TARGET")
     if not dump_dir or dump_target is None:
         return DensePerPoseScoreDumpRequest()
     try:
@@ -183,8 +183,8 @@ def parse_dense_per_pose_score_dump_request() -> DensePerPoseScoreDumpRequest:
         return DensePerPoseScoreDumpRequest()
     dump_path = Path(dump_dir)
     dump_path.mkdir(parents=True, exist_ok=True)
-    dump_preprior = os.environ.get("RECOVAR_DEBUG_PER_POSE_DUMP_PREPRIOR")
-    target_is_original = os.environ.get("RECOVAR_DEBUG_PER_POSE_DUMP_TARGET_IS_ORIGINAL")
+    dump_preprior = os.environ.get("RELAX_DEBUG_PER_POSE_DUMP_PREPRIOR")
+    target_is_original = os.environ.get("RELAX_DEBUG_PER_POSE_DUMP_TARGET_IS_ORIGINAL")
     return DensePerPoseScoreDumpRequest(
         dump_dir=dump_path,
         target=target,
@@ -201,8 +201,8 @@ def score_dump_label(label: str, *, local: bool = False):
     Call sites create a fresh scope for each engine invocation.
     """
     names = (
-        ("RECOVAR_LOCAL_SCORE_DUMP_LABEL", "RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_LABEL")
-        if local else ("RECOVAR_DEBUG_PER_POSE_DUMP_LABEL",)
+        ("RELAX_LOCAL_SCORE_DUMP_LABEL", "RELAX_LOCAL_FUSED_POSTERIOR_DUMP_LABEL")
+        if local else ("RELAX_DEBUG_PER_POSE_DUMP_LABEL",)
     )
     previous = {}
     for name in names:
@@ -229,8 +229,8 @@ def _dump_label_suffix(label: str | None) -> str:
 def _local_debug_dump_label_suffix() -> str:
     """Return a sanitized optional label suffix for local score diagnostics."""
 
-    label = os.environ.get("RECOVAR_LOCAL_SCORE_DUMP_LABEL") or os.environ.get(
-        "RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_LABEL",
+    label = os.environ.get("RELAX_LOCAL_SCORE_DUMP_LABEL") or os.environ.get(
+        "RELAX_LOCAL_FUSED_POSTERIOR_DUMP_LABEL",
     )
     return _dump_label_suffix(label)
 
@@ -262,8 +262,8 @@ def _local_fused_posterior_dump_label_suffix() -> str:
     output filename.
     """
 
-    label = os.environ.get("RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_LABEL") or os.environ.get(
-        "RECOVAR_LOCAL_SCORE_DUMP_LABEL",
+    label = os.environ.get("RELAX_LOCAL_FUSED_POSTERIOR_DUMP_LABEL") or os.environ.get(
+        "RELAX_LOCAL_SCORE_DUMP_LABEL",
     )
     return _dump_label_suffix(label)
 
@@ -288,7 +288,7 @@ def _debug_capture_dtype(array, *, complex_values: bool = False):
 
 def dense_score_dump_label_suffix() -> str:
     """Return the sanitized optional label suffix shared by dense score dumps."""
-    return _dump_label_suffix(os.environ.get("RECOVAR_DEBUG_PER_POSE_DUMP_LABEL"))
+    return _dump_label_suffix(os.environ.get("RELAX_DEBUG_PER_POSE_DUMP_LABEL"))
 
 def maybe_write_dense_per_pose_score_dump(
     *,
@@ -326,8 +326,8 @@ def noise_split_diagnostics_requested() -> bool:
     """Return whether per-shell A2/XA noise split diagnostics are needed."""
 
     return bool(
-        os.environ.get("RECOVAR_NOISE_DEBUG_DUMP_DIR")
-        or os.environ.get("RECOVAR_LOCAL_NOISE_COMPONENT_DUMP_DIR")
+        os.environ.get("RELAX_NOISE_DEBUG_DUMP_DIR")
+        or os.environ.get("RELAX_LOCAL_NOISE_COMPONENT_DUMP_DIR")
     )
 
 
@@ -935,7 +935,7 @@ def maybe_write_debug_score_dump(
     reconstruction_sample_mask_np = _target_rows_to_numpy(reconstruction_sample_mask, target_rows, bool)
     reconstruction_rotation_mask_np = _target_rows_to_numpy(reconstruction_rotation_mask, target_rows, bool)
     n_significant_samples_np = _target_rows_to_numpy(n_significant_samples, target_rows, np.int32)
-    dump_operands = os.environ.get("RECOVAR_LOCAL_SCORE_DUMP_OPERANDS", "").lower() in {
+    dump_operands = os.environ.get("RELAX_LOCAL_SCORE_DUMP_OPERANDS", "").lower() in {
         "1",
         "true",
         "yes",

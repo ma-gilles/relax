@@ -147,7 +147,7 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
     from relax.scoring import significance
     from relax.sparse_pass2 import sparse_pass2_posterior
 
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_SCORE_CACHE", cache_mode)
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_SCORE_CACHE", cache_mode)
     monkeypatch.setattr(significance, "_k1_relion_f32_coarse_support_enabled", lambda **kwargs: False)
     captured = []
     original = sparse_pass2_posterior._relion_f32_fine_posterior
@@ -220,7 +220,7 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch, cac
     from relax.helpers import oversampling
     from relax.scoring import significance
 
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_SCORE_CACHE", cache_mode)
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_SCORE_CACHE", cache_mode)
     monkeypatch.setattr(significance, "_k1_relion_f32_coarse_support_enabled", lambda **kwargs: True)
     original_weights = oversampling.relion_cuda_f32_coarse_log_weights
     original_posterior = oversampling.relion_cuda_f32_coarse_posterior

@@ -251,7 +251,7 @@ def test_optional_registration_preserves_qualified_legacy_library(monkeypatch):
 
 
 def test_capacity_radius_operand_preserves_aliases_geometry_and_one_trace(monkeypatch):
-    monkeypatch.delenv("RECOVAR_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY", raising=False)
+    monkeypatch.delenv("RELAX_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY", raising=False)
     monkeypatch.setattr(cb, "_ensure_ffi", lambda: None)
     monkeypatch.setattr(em_cuda_kernels, "_ensure_ffi", lambda: None)
     monkeypatch.setattr(cb, "_ensure_optional_ffi", lambda _target: None)

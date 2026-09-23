@@ -21,11 +21,11 @@ from relax.sparse_pass2.sparse_pass2_policy import _pass2_dump_enabled
 logger = logging.getLogger(__name__)
 
 
-_PASS2_DUMP_STOP_AFTER_TARGET_ENV = "RECOVAR_PASS2_DUMP_STOP_AFTER_TARGET"
+_PASS2_DUMP_STOP_AFTER_TARGET_ENV = "RELAX_PASS2_DUMP_STOP_AFTER_TARGET"
 
 
 _NORM_RESIDUAL_DUMP_STOP_AFTER_TARGET_ENV = (
-    "RECOVAR_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET"
+    "RELAX_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET"
 )
 
 
@@ -190,7 +190,7 @@ def _prioritize_stopped_pass2_dump_buckets(
         _PASS2_DUMP_STOP_AFTER_TARGET_ENV, default=False
     )
     stopped_norm_dump = parse_env_flag(
-        "RECOVAR_PASS2_DUMP_NORM_RESIDUAL_INPUTS", default=False
+        "RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS", default=False
     ) and parse_env_flag(
         _NORM_RESIDUAL_DUMP_STOP_AFTER_TARGET_ENV, default=False
     )
@@ -221,13 +221,13 @@ def _prioritize_stopped_pass2_dump_buckets(
     return requested + remaining
 
 
-_SPARSE_KCLASS_GROUP_TIMING_SYNC_ENV = "RECOVAR_SPARSE_KCLASS_GROUP_TIMING_SYNC"
+_SPARSE_KCLASS_GROUP_TIMING_SYNC_ENV = "RELAX_SPARSE_KCLASS_GROUP_TIMING_SYNC"
 _GROUP_TIMING_SYNC_STATE: dict[str, object] = {}
 
 def _group_timing_device_barrier_s() -> float:
     """Wait on a default-stream diagnostic token; return the wait in seconds.
 
-    Diagnostic only (``RECOVAR_SPARSE_KCLASS_GROUP_TIMING_SYNC=1``). JAX
+    Diagnostic only (``RELAX_SPARSE_KCLASS_GROUP_TIMING_SYNC=1``). JAX
     dispatches asynchronously, so a host-side stage timer otherwise charges
     the GPU work of one stage to whichever later stage first pulls a value.
     The donor uses a tiny computation as a default compute-stream fence.

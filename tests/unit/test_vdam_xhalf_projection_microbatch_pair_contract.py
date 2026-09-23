@@ -327,7 +327,7 @@ def test_vdam_xhalf_projection_pair_is_same_gpu_warm_balanced_and_pinned():
 
     required = [
         'ACTUAL_REPO_HEAD=$(git -C "${REPO_ROOT}" rev-parse HEAD)',
-        ': "${RECOVAR_CUDA_LIB_OVERRIDE:?',
+        ': "${RELAX_CUDA_LIB_OVERRIDE:?',
         ': "${LAYOUT_EVIDENCE_META:?',
         "#SBATCH --exclusive",
         'vdam_select_target_gpu "${TARGET_GPU_UUID}" 0',
@@ -342,7 +342,7 @@ def test_vdam_xhalf_projection_pair_is_same_gpu_warm_balanced_and_pinned():
         "warmup-control warmup-candidate",
         "scored-control-1 scored-candidate-1 scored-candidate-2 scored-control-2",
         'VDAM_JAX_COMPILATION_CACHE_DIR="${cache_dir}"',
-        "export RECOVAR_EXACT_LOCAL_XHALF_PROJECTION_TARGET_ROW_PIXELS=${row_pixels}",
+        "export RELAX_EXACT_LOCAL_XHALF_PROJECTION_TARGET_ROW_PIXELS=${row_pixels}",
         "unset RECOVAR_INITIAL_MODEL_PROFILE",
         'vdam_verify_selected_gpu "${selected_gpu_uuid}"',
         "CAPTURE_NATIVE_REPLAY=0",
@@ -355,12 +355,12 @@ def test_vdam_xhalf_projection_pair_is_same_gpu_warm_balanced_and_pinned():
     for text in required:
         assert text in runner
 
-    assert "RECOVAR_CUDA_LIB_OVERRIDE) ;;" in runner
-    assert "RECOVAR_*) unset" in runner
+    assert "RELAX_CUDA_LIB_OVERRIDE) ;;" in runner
+    assert "RECOVAR_*|RELAX_*) unset" in runner
     for variable in (
         "RECOVAR_K1_COARSE_GAUSSIAN_NATIVE_TEXTURE",
         "RECOVAR_K1_COARSE_FUSED_PROJECTOR",
-        "RECOVAR_K1_COARSE_GAUSSIAN_SKIP_PADDED_IMAGES",
+        "RELAX_K1_COARSE_GAUSSIAN_SKIP_PADDED_IMAGES",
         "RECOVAR_K1_COARSE_GAUSSIAN_FFI",
         "RECOVAR_K1_COARSE_GAUSSIAN_SINCOSF",
         "RECOVAR_K1_RELION_EXACT_COARSE_OPERANDS",
@@ -371,8 +371,8 @@ def test_vdam_xhalf_projection_pair_is_same_gpu_warm_balanced_and_pinned():
 
 
 def test_gf46_it80_layout_derives_2x_3x_and_5x_bucket_counts(monkeypatch):
-    monkeypatch.delenv("RECOVAR_EXACT_LOCAL_TARGET_ROW_PIXELS", raising=False)
-    monkeypatch.delenv("RECOVAR_EXACT_LOCAL_BIG_JIT_MATMUL_MAX_GB", raising=False)
+    monkeypatch.delenv("RELAX_EXACT_LOCAL_TARGET_ROW_PIXELS", raising=False)
+    monkeypatch.delenv("RELAX_EXACT_LOCAL_BIG_JIT_MATMUL_MAX_GB", raising=False)
     evidence = {
         "n_translations": 84,
         "halfset_0_profile_summary": {

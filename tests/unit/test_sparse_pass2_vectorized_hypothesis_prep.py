@@ -244,9 +244,9 @@ def test_preparation_and_resident_tables_preserve_fused_results(monkeypatch, noi
     from relax.sparse_pass2 import sparse_pass2_bucketed as engine
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_DEVICE_INDEX", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_DEVICE_INDEX", "1")
     flags = (sba.VECTORIZED_HYPOTHESIS_PREP_ENV, sba.BUCKET_ROTATIONS_DEVICE_ENV,
              sba.ROTATIONS_BY_INDEX_ENV, sba.RESIDENT_HYPOTHESIS_TABLES_ENV)
     for flag in flags:

@@ -1,4 +1,4 @@
-"""``RECOVAR_SPARSE_PASS2_LADDER_CHUNKS``: power-of-two bucket chunking so K-class bucket shapes repeat."""
+"""``RELAX_SPARSE_PASS2_LADDER_CHUNKS``: power-of-two bucket chunking so K-class bucket shapes repeat."""
 
 import numpy as np
 import pytest

@@ -73,13 +73,13 @@ fi
 RELION_BINARY=${RELION_BINARY:-/scratch/gpfs/GILLES/mg6942/relion/build_patched/bin/relion_refine}
 REFERENCE_RELION_DIR=${REFERENCE_RELION_DIR:-$(dirname "${RELION_OPTIMISER}")}
 NATIVE_ROOT=${OUTPUT_ROOT}/native_continuation
-RECOVAR_ROOT=${OUTPUT_ROOT}/recovar_prefix
-RECOVAR_CAPTURE=${OUTPUT_ROOT}/recovar_fused
-RECOVAR_SCORE_CAPTURE=${OUTPUT_ROOT}/recovar_score
-RECOVAR_COARSE_CAPTURE=${OUTPUT_ROOT}/recovar_coarse
+RELAX_ROOT=${OUTPUT_ROOT}/recovar_prefix
+RELAX_CAPTURE=${OUTPUT_ROOT}/recovar_fused
+RELAX_SCORE_CAPTURE=${OUTPUT_ROOT}/recovar_score
+RELAX_COARSE_CAPTURE=${OUTPUT_ROOT}/recovar_coarse
 PROVENANCE=${OUTPUT_ROOT}/provenance
 PIXI_PY=${PIXI_PY_OVERRIDE:-${REPO_ROOT}/.pixi/envs/default/bin/python}
-CUDA_SOURCE_BINARY=${RECOVAR_CUDA_LIB_OVERRIDE:-${REPO_ROOT}/relax/cuda/librelax_cuda.so}
+CUDA_SOURCE_BINARY=${RELAX_CUDA_LIB_OVERRIDE:-${REPO_ROOT}/relax/cuda/librelax_cuda.so}
 CUDA_BINARY=${OUTPUT_ROOT}/runtime/native/libcuda_backproject.so
 RELION_BIND_BINARY=${REPO_ROOT}/relax/relion_bind/_relion_bind_core.cpython-311-x86_64-linux-gnu.so
 
@@ -126,8 +126,8 @@ test "$(sha256sum "${RELION_BIND_BINARY}" | awk '{print $1}')" = "${EXPECTED_REL
 source "${REPO_ROOT}/scripts/vdam_gpu_selection.sh"
 vdam_select_target_gpu "${TARGET_GPU_UUID}" 0
 gpu_uuid_before=${VDAM_SELECTED_GPU_UUID}
-mkdir -p "${NATIVE_ROOT}" "${RECOVAR_ROOT}" "${RECOVAR_CAPTURE}" "${RECOVAR_SCORE_CAPTURE}" "${RECOVAR_COARSE_CAPTURE}" "${PROVENANCE}"
-test -z "$(find "${NATIVE_ROOT}" "${RECOVAR_ROOT}" "${RECOVAR_CAPTURE}" "${RECOVAR_SCORE_CAPTURE}" "${RECOVAR_COARSE_CAPTURE}" "${PROVENANCE}" -mindepth 1 -print -quit)"
+mkdir -p "${NATIVE_ROOT}" "${RELAX_ROOT}" "${RELAX_CAPTURE}" "${RELAX_SCORE_CAPTURE}" "${RELAX_COARSE_CAPTURE}" "${PROVENANCE}"
+test -z "$(find "${NATIVE_ROOT}" "${RELAX_ROOT}" "${RELAX_CAPTURE}" "${RELAX_SCORE_CAPTURE}" "${RELAX_COARSE_CAPTURE}" "${PROVENANCE}" -mindepth 1 -print -quit)"
 mkdir -p "$(dirname "${CUDA_BINARY}")"
 cp --reflink=auto "${CUDA_SOURCE_BINARY}" "${CUDA_BINARY}"
 chmod 0755 "${CUDA_BINARY}"
@@ -264,33 +264,33 @@ export TMPDIR=${OUTPUT_ROOT}/runtime/${SLURM_JOB_ID}/tmp
 export PIXI_HOME=${OUTPUT_ROOT}/runtime/${SLURM_JOB_ID}/pixi_home
 export RATTLER_CACHE_DIR=${OUTPUT_ROOT}/runtime/${SLURM_JOB_ID}/rattler_cache
 if [[ "${CAPTURE_FUSED_SCORES}" == 1 ]]; then
-  export RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_DIR=${RECOVAR_CAPTURE}
-  export RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES=${TARGET_ORIGINAL_INDEX}
-  export RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_ITERATION=${TARGET_ITERATION}
-  export RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_SCORES=1
+  export RELAX_LOCAL_FUSED_POSTERIOR_DUMP_DIR=${RELAX_CAPTURE}
+  export RELAX_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES=${TARGET_ORIGINAL_INDEX}
+  export RELAX_LOCAL_FUSED_POSTERIOR_DUMP_ITERATION=${TARGET_ITERATION}
+  export RELAX_LOCAL_FUSED_POSTERIOR_DUMP_SCORES=1
 else
-  unset RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_DIR
-  unset RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES
-  unset RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_ITERATION
-  unset RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_SCORES
+  unset RELAX_LOCAL_FUSED_POSTERIOR_DUMP_DIR
+  unset RELAX_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES
+  unset RELAX_LOCAL_FUSED_POSTERIOR_DUMP_ITERATION
+  unset RELAX_LOCAL_FUSED_POSTERIOR_DUMP_SCORES
 fi
-unset RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT RECOVAR_LOCAL_SCORE_DUMP_TARGET_ONLY
+unset RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT RELAX_LOCAL_SCORE_DUMP_TARGET_ONLY
 if [[ "${CAPTURE_LOCAL_SCORE}" == 1 ]]; then
-  export RECOVAR_LOCAL_SCORE_DUMP_DIR=${RECOVAR_SCORE_CAPTURE}
-  export RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES=${TARGET_ORIGINAL_INDEX}
-  export RECOVAR_LOCAL_SCORE_DUMP_ITERATION=${TARGET_ITERATION}
-  export RECOVAR_LOCAL_SCORE_DUMP_OPERANDS=1
+  export RELAX_LOCAL_SCORE_DUMP_DIR=${RELAX_SCORE_CAPTURE}
+  export RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES=${TARGET_ORIGINAL_INDEX}
+  export RELAX_LOCAL_SCORE_DUMP_ITERATION=${TARGET_ITERATION}
+  export RELAX_LOCAL_SCORE_DUMP_OPERANDS=1
 else
-  unset RECOVAR_LOCAL_SCORE_DUMP_DIR RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES
-  unset RECOVAR_LOCAL_SCORE_DUMP_ITERATION RECOVAR_LOCAL_SCORE_DUMP_OPERANDS
+  unset RELAX_LOCAL_SCORE_DUMP_DIR RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES
+  unset RELAX_LOCAL_SCORE_DUMP_ITERATION RELAX_LOCAL_SCORE_DUMP_OPERANDS
 fi
 if [[ "${CAPTURE_COARSE_SCORE}" == 1 ]]; then
-  export RECOVAR_SIGNIFICANCE_DUMP_DIR=${RECOVAR_COARSE_CAPTURE}
-  export RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES=${TARGET_ORIGINAL_INDEX}
-  export RECOVAR_SIGNIFICANCE_DUMP_ITERATION=${TARGET_ITERATION}
+  export RELAX_SIGNIFICANCE_DUMP_DIR=${RELAX_COARSE_CAPTURE}
+  export RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES=${TARGET_ORIGINAL_INDEX}
+  export RELAX_SIGNIFICANCE_DUMP_ITERATION=${TARGET_ITERATION}
 else
-  unset RECOVAR_SIGNIFICANCE_DUMP_DIR RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES
-  unset RECOVAR_SIGNIFICANCE_DUMP_ITERATION
+  unset RELAX_SIGNIFICANCE_DUMP_DIR RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES
+  unset RELAX_SIGNIFICANCE_DUMP_ITERATION
 fi
 mkdir -p "${JAX_COMPILATION_CACHE_DIR}" "${TMPDIR}" "${PIXI_HOME}" "${RATTLER_CACHE_DIR}"
 touch "${JAX_COMPILATION_CACHE_DIR}/SAFE_TO_DELETE"
@@ -298,7 +298,7 @@ touch "${JAX_COMPILATION_CACHE_DIR}/SAFE_TO_DELETE"
 if [[ -n "${VDAM_SCORECARD}" ]]; then
   command_json=${PROVENANCE}/recovar_command.json
   "${PIXI_PY}" - "${VDAM_SCORECARD}" "${CASE_ID}" "${DATA_DIR}" \
-    "${RECOVAR_ROOT}/run" "${TARGET_ITERATION}" "${NR_ITER_SCHEDULE}" \
+    "${RELAX_ROOT}/run" "${TARGET_ITERATION}" "${NR_ITER_SCHEDULE}" \
     "${command_json}" <<'PY'
 import json
 import sys
@@ -355,7 +355,7 @@ else
   COMMAND=(
     "${PIXI_PY}" -m relax.commands.initial_model
     --i "${DATA_DIR}/particles.star"
-    --o "${RECOVAR_ROOT}/run"
+    --o "${RELAX_ROOT}/run"
     --nr_iter "${NR_ITER_SCHEDULE}"
     --grad_write_iter 1
     --K 1
@@ -424,20 +424,20 @@ fi
 (
   cd "${REPO_ROOT}"
   "${RUN_COMMAND[@]}"
-) > "${RECOVAR_ROOT}/runner.stdout" 2> "${RECOVAR_ROOT}/runner.stderr"
+) > "${RELAX_ROOT}/runner.stdout" 2> "${RELAX_ROOT}/runner.stderr"
 wall_s=$(( $(date +%s) - start_epoch ))
 
 if [[ -n "${VDAM_NSYS_OUTPUT}" ]]; then
   test -s "${VDAM_NSYS_OUTPUT}.nsys-rep"
 fi
 
-test -s "${RECOVAR_ROOT}/run_it${iteration_tag}_class001.mrc"
-test -s "${RECOVAR_ROOT}/run_it${iteration_tag}_data.star"
-test -s "${RECOVAR_ROOT}/run_it${iteration_tag}_model.star"
-test -s "${RECOVAR_ROOT}/run_it${iteration_tag}_recovar_meta.json"
+test -s "${RELAX_ROOT}/run_it${iteration_tag}_class001.mrc"
+test -s "${RELAX_ROOT}/run_it${iteration_tag}_data.star"
+test -s "${RELAX_ROOT}/run_it${iteration_tag}_model.star"
+test -s "${RELAX_ROOT}/run_it${iteration_tag}_recovar_meta.json"
 if [[ "${CAPTURE_FUSED_SCORES}" == 1 ]]; then
-  test "$(find "${RECOVAR_CAPTURE}" -maxdepth 1 -type f -name 'local_fused_posterior_*.npz' | wc -l)" -eq 1
-  "${PIXI_PY}" - "${RECOVAR_CAPTURE}" <<'PY'
+  test "$(find "${RELAX_CAPTURE}" -maxdepth 1 -type f -name 'local_fused_posterior_*.npz' | wc -l)" -eq 1
+  "${PIXI_PY}" - "${RELAX_CAPTURE}" <<'PY'
 import sys
 from pathlib import Path
 
@@ -460,17 +460,17 @@ with np.load(paths[0], allow_pickle=False) as payload:
         raise SystemExit("fused score/posterior capture shapes differ")
 PY
 else
-  test -z "$(find "${RECOVAR_CAPTURE}" -mindepth 1 -print -quit)"
+  test -z "$(find "${RELAX_CAPTURE}" -mindepth 1 -print -quit)"
 fi
 if [[ "${CAPTURE_LOCAL_SCORE}" == 1 ]]; then
-  test "$(find "${RECOVAR_SCORE_CAPTURE}" -maxdepth 1 -type f -name 'local_score_*.npz' | wc -l)" -eq 1
+  test "$(find "${RELAX_SCORE_CAPTURE}" -maxdepth 1 -type f -name 'local_score_*.npz' | wc -l)" -eq 1
 else
-  test -z "$(find "${RECOVAR_SCORE_CAPTURE}" -mindepth 1 -print -quit)"
+  test -z "$(find "${RELAX_SCORE_CAPTURE}" -mindepth 1 -print -quit)"
 fi
 if [[ "${CAPTURE_COARSE_SCORE}" == 1 ]]; then
-  test "$(find "${RECOVAR_COARSE_CAPTURE}" -maxdepth 1 -type f -name 'significance_*.npz' | wc -l)" -eq 1
+  test "$(find "${RELAX_COARSE_CAPTURE}" -maxdepth 1 -type f -name 'significance_*.npz' | wc -l)" -eq 1
 else
-  test -z "$(find "${RECOVAR_COARSE_CAPTURE}" -mindepth 1 -print -quit)"
+  test -z "$(find "${RELAX_COARSE_CAPTURE}" -mindepth 1 -print -quit)"
 fi
 test "$(git -C "${REPO_ROOT}" rev-parse HEAD)" = "${EXPECTED_REPO_HEAD}"
 test -z "$(git -C "${REPO_ROOT}" status --porcelain=v1 --untracked-files=no)"

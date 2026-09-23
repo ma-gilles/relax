@@ -1,6 +1,6 @@
 """The exact-local BPref capture must honour the existing operand-bundle request.
 
-``RECOVAR_BPREF_HIGH_PRECISION_OPERAND_BUNDLE`` already selects the image-side
+``RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE`` already selects the image-side
 operands on the bucketed sparse-pass-2 route, but the exact-local route -- the one
 class-segmented K>1 buckets take -- hardwired ``high_precision_operand_bundle=False``
 and every operand to ``None``.  A live class-2 capture (job 14031860) therefore stored
@@ -394,12 +394,12 @@ def _dump_through_real_writer(tmp_path, static_kwargs):
     np.save(mapping, np.array([f"{i + 1}@{out / 'stack.mrcs'}" for i in range(32)]),
             allow_pickle=False)
     env = {
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR": str(out),
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION": "8",
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF": "1",
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE": "4",
-        "RECOVAR_BPREF_CONTRIBUTION_STACK_SHA256": "0" * 64,
-        "RECOVAR_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY": str(mapping),
+        "RELAX_BPREF_CONTRIBUTION_DUMP_DIR": str(out),
+        "RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION": "8",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_HALF": "1",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE": "4",
+        "RELAX_BPREF_CONTRIBUTION_STACK_SHA256": "0" * 64,
+        "RELAX_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY": str(mapping),
     }
     n = 3
     summed = (np.arange(UNPADDED * n, dtype=np.float32) + 100.0).reshape(UNPADDED, n, 1).astype(np.complex64)

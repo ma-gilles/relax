@@ -41,7 +41,7 @@ def test_deferred_plan_preserves_geometry(monkeypatch, order, oversampling, pert
 
 
 def test_deferred_plan_cannot_enter_dense_execution(monkeypatch):
-    monkeypatch.setenv("RECOVAR_DISABLE_SPARSE_PASS2", "1")
+    monkeypatch.setenv("RELAX_DISABLE_SPARSE_PASS2", "1")
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", healpix_order=0)
     plan = native_sampling._build_sampling_plan(opts, defer_fine_rotations=True)
     with pytest.raises(ValueError, match="Deferred fine rotations require sparse"):
@@ -59,8 +59,8 @@ def test_deferred_plan_cannot_enter_dense_execution(monkeypatch):
 
 @pytest.mark.parametrize("selector", ["0", "1", "invalid"])
 def test_expectation_deferred_plan_routing_and_metadata(monkeypatch, selector):
-    monkeypatch.setenv("RECOVAR_VDAM_DEFER_SPARSE_ROTATIONS", selector)
-    monkeypatch.delenv("RECOVAR_DISABLE_SPARSE_PASS2", raising=False)
+    monkeypatch.setenv("RELAX_VDAM_DEFER_SPARSE_ROTATIONS", selector)
+    monkeypatch.delenv("RELAX_DISABLE_SPARSE_PASS2", raising=False)
     opts = native_options.NativeInitialModelOptions(
         fn_img="particles.star",
         healpix_order=0,

@@ -1,4 +1,4 @@
-"""``RECOVAR_EM_OPERAND_PRECISION_CHECK``: catch operands carried wider than the precision policy.
+"""``RELAX_EM_OPERAND_PRECISION_CHECK``: catch operands carried wider than the precision policy.
 
 Production EM precision is float32 (``relax/CLAUDE.md``). The ``DensePrecisionPolicy.cast_*``
 helpers narrow the score operands unconditionally but narrow the reconstruction operands only when

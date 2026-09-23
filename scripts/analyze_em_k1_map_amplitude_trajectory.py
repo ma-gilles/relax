@@ -41,12 +41,12 @@ def parse_case_spec(value: str) -> CaseSpec:
     fields = value.split("=", 1)
     _require(
         len(fields) == 2 and fields[0].strip() and fields[1].strip(),
-        "--case must be LABEL=RECOVAR_INTERMEDIATES,RELION_REFERENCE",
+        "--case must be LABEL=RELAX_INTERMEDIATES,RELION_REFERENCE",
     )
     paths = fields[1].split(",", 1)
     _require(
         len(paths) == 2 and paths[0].strip() and paths[1].strip(),
-        "--case must be LABEL=RECOVAR_INTERMEDIATES,RELION_REFERENCE",
+        "--case must be LABEL=RELAX_INTERMEDIATES,RELION_REFERENCE",
     )
     return CaseSpec(
         label=fields[0].strip(),
@@ -322,7 +322,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         required=True,
         type=parse_case_spec,
-        help="repeatable LABEL=RECOVAR_INTERMEDIATES,RELION_REFERENCE",
+        help="repeatable LABEL=RELAX_INTERMEDIATES,RELION_REFERENCE",
     )
     parser.add_argument(
         "--reference-iterations",

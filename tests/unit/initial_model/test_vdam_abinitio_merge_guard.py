@@ -103,12 +103,12 @@ def test_merge_guard_plan_contains_cpu_and_gpu_gates():
 def test_merge_guard_output_root_can_use_overflow_scratch(monkeypatch, tmp_path):
     overflow = tmp_path / "overflow"
     monkeypatch.setenv("VDAM_ABINITIO_GUARD_OUTPUT_ROOT", str(overflow))
-    monkeypatch.delenv("RECOVAR_AGENT_SCRATCH_ROOT", raising=False)
+    monkeypatch.delenv("RELAX_AGENT_SCRATCH_ROOT", raising=False)
     assert _default_output_root() == overflow
 
     agent_root = tmp_path / "agent-root"
     monkeypatch.delenv("VDAM_ABINITIO_GUARD_OUTPUT_ROOT", raising=False)
-    monkeypatch.setenv("RECOVAR_AGENT_SCRATCH_ROOT", str(agent_root))
+    monkeypatch.setenv("RELAX_AGENT_SCRATCH_ROOT", str(agent_root))
     assert _default_output_root() == agent_root
 
 
@@ -240,7 +240,7 @@ def test_vdam_frozen_trajectory_runner_and_fsc_auditor_are_merge_guarded():
         "VDAM_PREPROCESS_REQUIRE_UNMASKED_WAVG_IMAGE",
         'test "${actual_part_count}" -eq "${EXPECTED_PART_COUNT}"',
         "export RELION_ACC_DUMP_PART_IDS=",
-        "export RECOVAR_DEBUG_DUMP_DIR=",
+        "export RELAX_DEBUG_DUMP_DIR=",
         "pipe_it1_c0_bp_data_h_pre_reweight.bin",
         "img0_part${capture_part_id}_storeWavg_${suffix}.bin",
         'if [[ "${REQUIRE_UNMASKED_WAVG_IMAGE}" = 1 ]]',
@@ -264,8 +264,8 @@ def test_vdam_fixed12_matrix_maps_array_tasks_to_frozen_case_ids():
     ]
     missing = [token for token in expected_tokens if token not in matrix]
     assert not missing, f"VDAM fixed12 matrix lost task-to-case wiring: {missing}"
-    assert "RECOVAR_VDAM_IMAGE_BATCH_SIZE" not in matrix
-    assert "RECOVAR_EXACT_LOCAL_SPARSE_BIG_JIT_MSTEP_MAX_GB" not in matrix
+    assert "RELAX_VDAM_IMAGE_BATCH_SIZE" not in matrix
+    assert "RELAX_EXACT_LOCAL_SPARSE_BIG_JIT_MSTEP_MAX_GB" not in matrix
 
 
 def test_vdam_parameter_suite_freezes_user_facing_variants_and_default_resources():
@@ -286,7 +286,7 @@ def test_vdam_parameter_suite_freezes_user_facing_variants_and_default_resources
     assert {definition["symmetry"] for definition in definitions} >= {"C1", "C2"}
     assert "#SBATCH --array=1-11%4" in matrix
     assert "VDAM_SCORECARD" in matrix and "VDAM_SCORECARD" in case_runner
-    assert "RECOVAR_VDAM_IMAGE_BATCH_SIZE" not in matrix
+    assert "RELAX_VDAM_IMAGE_BATCH_SIZE" not in matrix
 
 
 def test_vdam_long_trajectory_suite_freezes_all_late_checkpoints():
@@ -346,7 +346,7 @@ def test_vdam_robustness_suite_covers_em_outlier_pose_and_noise_matrix():
     assert "printf 'vdam-b%02d'" in matrix
     assert "VDAM_SCORECARD" in matrix
     assert "run_vdam_relion_parity_case.sbatch" in matrix
-    assert "RECOVAR_VDAM_IMAGE_BATCH_SIZE" not in matrix
+    assert "RELAX_VDAM_IMAGE_BATCH_SIZE" not in matrix
 
 
 def test_vdam_robustness_long_suite_carries_stress_cases_through_late_schedule():
@@ -431,7 +431,7 @@ def test_vdam_gui_default_full_suite_audits_every_200_iteration_checkpoint():
     assert "JAX_COMPILATION_CACHE_DIR" in matrix
     assert "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS" in matrix
     assert "printf 'vdam-gf%02d'" in matrix
-    assert "RECOVAR_VDAM_IMAGE_BATCH_SIZE" not in matrix
+    assert "RELAX_VDAM_IMAGE_BATCH_SIZE" not in matrix
     assert "run_vdam_relion_parity_case.sbatch" in matrix
 
 
@@ -509,14 +509,14 @@ def test_vdam_first_state_boundary_capture_preserves_full_schedule():
         "VDAM_RELION_CONT_CAPTURE=1",
         "VDAM_RELION_CONT_STACK_INDEX=${TARGET_STACK_INDEX}",
         "VDAM_RELION_CONT_PERTURBATION=${TARGET_RELION_PERTURBATION}",
-        "RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES=${TARGET_ORIGINAL_INDEX}",
+        "RELAX_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES=${TARGET_ORIGINAL_INDEX}",
         "CAPTURE_FUSED_SCORES=${CAPTURE_FUSED_SCORES:-0}",
         "CAPTURE_COARSE_SCORE=${CAPTURE_COARSE_SCORE:-0}",
-        "RECOVAR_SIGNIFICANCE_DUMP_DIR=${RECOVAR_COARSE_CAPTURE}",
-        "RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES=${TARGET_ORIGINAL_INDEX}",
-        "RECOVAR_SIGNIFICANCE_DUMP_ITERATION=${TARGET_ITERATION}",
+        "RELAX_SIGNIFICANCE_DUMP_DIR=${RELAX_COARSE_CAPTURE}",
+        "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES=${TARGET_ORIGINAL_INDEX}",
+        "RELAX_SIGNIFICANCE_DUMP_ITERATION=${TARGET_ITERATION}",
         "significance_*.npz",
-        "export RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_SCORES=1",
+        "export RELAX_LOCAL_FUSED_POSTERIOR_DUMP_SCORES=1",
         '"capture_coarse_score": bool(int(sys.argv[12]))',
         "TARGET_ORIGINAL_INDEX=${TARGET_ORIGINAL_INDEX:-1002}",
         "TARGET_STACK_INDEX=${TARGET_STACK_INDEX:-1003}",
@@ -544,11 +544,11 @@ def test_vdam_first_state_boundary_capture_preserves_full_schedule():
         '"cuda_launch_blocking": int(sys.argv[19])',
         'if [[ "${CAPTURE_NATIVE_REPLAY}" == 1 ]]; then',
         'test -z "$(find "${NATIVE_ROOT}" -mindepth 1 -print -quit)"',
-        "RECOVAR_LOCAL_SCORE_DUMP_DIR=${RECOVAR_SCORE_CAPTURE}",
-        "RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES=${TARGET_ORIGINAL_INDEX}",
-        "RECOVAR_LOCAL_SCORE_DUMP_ITERATION=${TARGET_ITERATION}",
-        "RECOVAR_LOCAL_SCORE_DUMP_OPERANDS=1",
-        "RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT RECOVAR_LOCAL_SCORE_DUMP_TARGET_ONLY",
+        "RELAX_LOCAL_SCORE_DUMP_DIR=${RELAX_SCORE_CAPTURE}",
+        "RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES=${TARGET_ORIGINAL_INDEX}",
+        "RELAX_LOCAL_SCORE_DUMP_ITERATION=${TARGET_ITERATION}",
+        "RELAX_LOCAL_SCORE_DUMP_OPERANDS=1",
+        "RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT RELAX_LOCAL_SCORE_DUMP_TARGET_ONLY",
         "native_replay_state_audit.json",
         "MetaDataTable::getValueToString uses %12.5f for negative doubles",
         'serialized_expected = float(format(expected, ".5f" if expected < 0.0 else ".6f"))',
@@ -567,8 +567,8 @@ def test_vdam_first_state_boundary_capture_preserves_full_schedule():
         '"stopped_after_iteration": int(sys.argv[6])',
         '"capture_native_replay": bool(int(sys.argv[13]))',
         'test "${gpu_uuid_after_recovar}" = "${gpu_uuid_before}"',
-        "RECOVAR_CUDA_LIB_OVERRIDE",
-        "CUDA_SOURCE_BINARY=${RECOVAR_CUDA_LIB_OVERRIDE:-${REPO_ROOT}/relax/cuda/librelax_cuda.so}",
+        "RELAX_CUDA_LIB_OVERRIDE",
+        "CUDA_SOURCE_BINARY=${RELAX_CUDA_LIB_OVERRIDE:-${REPO_ROOT}/relax/cuda/librelax_cuda.so}",
         "CUDA_BINARY=${OUTPUT_ROOT}/runtime/native/libcuda_backproject.so",
         'cp --reflink=auto "${CUDA_SOURCE_BINARY}" "${CUDA_BINARY}"',
         'export RECOVAR_RELAX_CUDA_LIB=${CUDA_BINARY}',
@@ -585,22 +585,22 @@ def test_vdam_first_state_boundary_capture_disables_unrequested_fused_dump():
     capture = (REPO_ROOT / "scripts/run_vdam_first_state_boundary_capture.sbatch").read_text()
 
     setup = """if [[ "${CAPTURE_FUSED_SCORES}" == 1 ]]; then
-  export RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_DIR=${RECOVAR_CAPTURE}
-  export RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES=${TARGET_ORIGINAL_INDEX}
-  export RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_ITERATION=${TARGET_ITERATION}
-  export RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_SCORES=1
+  export RELAX_LOCAL_FUSED_POSTERIOR_DUMP_DIR=${RELAX_CAPTURE}
+  export RELAX_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES=${TARGET_ORIGINAL_INDEX}
+  export RELAX_LOCAL_FUSED_POSTERIOR_DUMP_ITERATION=${TARGET_ITERATION}
+  export RELAX_LOCAL_FUSED_POSTERIOR_DUMP_SCORES=1
 else
-  unset RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_DIR
-  unset RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES
-  unset RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_ITERATION
-  unset RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_SCORES
+  unset RELAX_LOCAL_FUSED_POSTERIOR_DUMP_DIR
+  unset RELAX_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES
+  unset RELAX_LOCAL_FUSED_POSTERIOR_DUMP_ITERATION
+  unset RELAX_LOCAL_FUSED_POSTERIOR_DUMP_SCORES
 fi"""
     validation = """if [[ "${CAPTURE_FUSED_SCORES}" == 1 ]]; then
-  test "$(find "${RECOVAR_CAPTURE}" -maxdepth 1 -type f -name 'local_fused_posterior_*.npz' | wc -l)" -eq 1"""
+  test "$(find "${RELAX_CAPTURE}" -maxdepth 1 -type f -name 'local_fused_posterior_*.npz' | wc -l)" -eq 1"""
 
     assert setup in capture
     assert validation in capture
-    assert 'test -z "$(find "${RECOVAR_CAPTURE}" -mindepth 1 -print -quit)"' in capture
+    assert 'test -z "$(find "${RELAX_CAPTURE}" -mindepth 1 -print -quit)"' in capture
 
 
 def test_vdam_sampling_gate_can_stop_at_pretransition_boundary():
@@ -670,10 +670,10 @@ def test_vdam_mstep_boundary_capture_preserves_full_schedule_in_both_engines():
         '--j "${RELION_THREADS}"',
         '--nr_iter "${NR_ITER_SCHEDULE}"',
         '--diagnostic-stop-after-iteration "${TARGET_ITERATION}"',
-        'RECOVAR_DEBUG_DUMP_DIR=${NATIVE_MSTEP}',
-        'RECOVAR_DEBUG_DUMP_MSTEP_ITER=${TARGET_ITERATION}',
-        'RECOVAR_MSTEP_DUMP_DIR=${RECOVAR_MSTEP}',
-        'RECOVAR_MSTEP_DUMP_ITER=${TARGET_ITERATION}',
+        'RELAX_DEBUG_DUMP_DIR=${NATIVE_MSTEP}',
+        'RELAX_DEBUG_DUMP_MSTEP_ITER=${TARGET_ITERATION}',
+        'RELAX_MSTEP_DUMP_DIR=${RELAX_MSTEP}',
+        'RELAX_MSTEP_DUMP_ITER=${TARGET_ITERATION}',
         "NATIVE_SECOND_MOMENT_REPLAY=${VDAM_NATIVE_SECOND_MOMENT_REPLAY:-0}",
         "NATIVE_SECOND_MOMENT_REPLAY_ALL=${VDAM_NATIVE_SECOND_MOMENT_REPLAY_ALL:-0}",
         "NATIVE_FIRST_MOMENT_REPLAY=${VDAM_NATIVE_FIRST_MOMENT_REPLAY:-0}",
@@ -682,26 +682,26 @@ def test_vdam_mstep_boundary_capture_preserves_full_schedule_in_both_engines():
         "NATIVE_BPREF_REPLAY_ALL=${VDAM_NATIVE_BPREF_REPLAY_ALL:-0}",
         "NATIVE_IREF_INPUT_REPLAY=${VDAM_NATIVE_IREF_INPUT_REPLAY:-0}",
         "NATIVE_IREF_INPUT_REPLAY_ALL=${VDAM_NATIVE_IREF_INPUT_REPLAY_ALL:-0}",
-        'RECOVAR_VDAM_NATIVE_SECOND_MOMENT_REPLAY_BIN=${NATIVE_SECOND_MOMENT_REPLAY_BIN}',
-        'RECOVAR_VDAM_NATIVE_SECOND_MOMENT_REPLAY_ITER=${TARGET_ITERATION}',
-        'RECOVAR_VDAM_NATIVE_SECOND_MOMENT_REPLAY_ITER=all',
+        'RELAX_VDAM_NATIVE_SECOND_MOMENT_REPLAY_BIN=${NATIVE_SECOND_MOMENT_REPLAY_BIN}',
+        'RELAX_VDAM_NATIVE_SECOND_MOMENT_REPLAY_ITER=${TARGET_ITERATION}',
+        'RELAX_VDAM_NATIVE_SECOND_MOMENT_REPLAY_ITER=all',
         'pipe_it{iteration}_c0_Igrad2_post.bin',
         'native_second_moment_replay":%d',
         'native_second_moment_replay_all":%d',
-        'RECOVAR_VDAM_NATIVE_FIRST_MOMENT_REPLAY_BIN=${NATIVE_FIRST_MOMENT_REPLAY_BIN}',
-        'RECOVAR_VDAM_NATIVE_FIRST_MOMENT_REPLAY_ITER=all',
+        'RELAX_VDAM_NATIVE_FIRST_MOMENT_REPLAY_BIN=${NATIVE_FIRST_MOMENT_REPLAY_BIN}',
+        'RELAX_VDAM_NATIVE_FIRST_MOMENT_REPLAY_ITER=all',
         'Igrad1{half_suffix}_post.bin',
         'native_first_moment_replay":%d',
         'native_first_moment_replay_all":%d',
-        'RECOVAR_VDAM_NATIVE_BPREF_DATA_REPLAY_BIN=${NATIVE_BPREF_DATA_REPLAY_BIN}',
-        'RECOVAR_VDAM_NATIVE_BPREF_WEIGHT_REPLAY_BIN=${NATIVE_BPREF_WEIGHT_REPLAY_BIN}',
-        'RECOVAR_VDAM_NATIVE_BPREF_REPLAY_ITER=all',
+        'RELAX_VDAM_NATIVE_BPREF_DATA_REPLAY_BIN=${NATIVE_BPREF_DATA_REPLAY_BIN}',
+        'RELAX_VDAM_NATIVE_BPREF_WEIGHT_REPLAY_BIN=${NATIVE_BPREF_WEIGHT_REPLAY_BIN}',
+        'RELAX_VDAM_NATIVE_BPREF_REPLAY_ITER=all',
         'bp_data{half_suffix}_pre_reweight.bin',
         'bp_weight{half_suffix}.bin',
         'native_bpref_replay":%d',
         'native_bpref_replay_all":%d',
-        'RECOVAR_VDAM_NATIVE_IREF_INPUT_REPLAY_BIN=${NATIVE_IREF_INPUT_REPLAY_BIN}',
-        'RECOVAR_VDAM_NATIVE_IREF_INPUT_REPLAY_ITER=all',
+        'RELAX_VDAM_NATIVE_IREF_INPUT_REPLAY_BIN=${NATIVE_IREF_INPUT_REPLAY_BIN}',
+        'RELAX_VDAM_NATIVE_IREF_INPUT_REPLAY_ITER=all',
         'mstep_it{iteration}_c{class_idx}_iref_before.bin',
         'native_iref_input_replay":%d',
         'native_iref_input_replay_all":%d',
@@ -716,7 +716,7 @@ def test_vdam_mstep_boundary_capture_preserves_full_schedule_in_both_engines():
         "unset LD_LIBRARY_PATH",
         "unset MPI_ROOT CUDA_HOME",
         'test "${gpu_uuid_after_recovar}" = "${gpu_uuid_before}"',
-        "CUDA_SOURCE_BINARY=${RECOVAR_CUDA_LIB_SOURCE:-",
+        "CUDA_SOURCE_BINARY=${RELAX_CUDA_LIB_SOURCE:-",
         'CUDA_BINARY=${OUTPUT_ROOT}/runtime/${SLURM_JOB_ID}/cuda/libcuda_backproject.so',
         'cp --no-preserve=mode,ownership,timestamps "${CUDA_SOURCE_BINARY}" "${CUDA_BINARY}"',
         'test "$(sha256sum "${CUDA_SOURCE_BINARY}"',
@@ -730,12 +730,12 @@ def test_vdam_mstep_boundary_capture_preserves_full_schedule_in_both_engines():
         "BPREF_CONTRIBUTION_CAPTURE_HALF=${BPREF_CONTRIBUTION_CAPTURE_HALF:-${BPREF_CONTRIBUTION_HALF}}",
         "BPREF_CONTRIBUTION_RECONSTRUCTION_GROUP=${BPREF_CONTRIBUTION_RECONSTRUCTION_GROUP:-}",
         "BPREF_CONTRIBUTION_ORIGINAL_INDICES=${BPREF_CONTRIBUTION_ORIGINAL_INDICES:-}",
-        'RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION=${TARGET_ITERATION}',
-        'RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF=${BPREF_CONTRIBUTION_CAPTURE_HALF}',
-        'RECOVAR_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE=${BPREF_CONTRIBUTION_CURRENT_SIZE}',
-        'RECOVAR_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES=${BPREF_CONTRIBUTION_ORIGINAL_INDICES}',
-        "RECOVAR_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY",
-        "RECOVAR_BPREF_CONTRIBUTION_STACK_SHA256",
+        'RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION=${TARGET_ITERATION}',
+        'RELAX_BPREF_CONTRIBUTION_DUMP_HALF=${BPREF_CONTRIBUTION_CAPTURE_HALF}',
+        'RELAX_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE=${BPREF_CONTRIBUTION_CURRENT_SIZE}',
+        'RELAX_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES=${BPREF_CONTRIBUTION_ORIGINAL_INDICES}',
+        "RELAX_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY",
+        "RELAX_BPREF_CONTRIBUTION_STACK_SHA256",
         "resolved_image_names = np.asarray(",
         'bpref_contribution_rows_it${target_tag}_h*.npz',
         "scripts.analyze_vdam_bpref_accumulator_boundary",
@@ -749,11 +749,11 @@ def test_vdam_mstep_boundary_capture_preserves_full_schedule_in_both_engines():
         "EXPECTED_WORKER_SCHEDULE_SHA256",
         "VDAM_BLOCK_CHRONOLOGY_NPZ",
         "EXPECTED_BLOCK_CHRONOLOGY_SHA256",
-        'RECOVAR_RELION_VDAM_WORKER_SCHEDULE_NPZ=${CANDIDATE_WORKER_SCHEDULE}',
+        'RELAX_RELION_VDAM_WORKER_SCHEDULE_NPZ=${CANDIDATE_WORKER_SCHEDULE}',
         'REPLAY_BLOCK_CHRONOLOGY=${BLOCK_CHRONOLOGY}',
         'REPLAY_BLOCK_CHRONOLOGY=${EXTERNAL_BLOCK_CHRONOLOGY}',
-        'RECOVAR_RELION_VDAM_BLOCK_CHRONOLOGY_NPZ=${REPLAY_BLOCK_CHRONOLOGY}',
-        "RECOVAR_INITIALMODEL_IREF_REPLAY_TEMPLATE",
+        'RELAX_RELION_VDAM_BLOCK_CHRONOLOGY_NPZ=${REPLAY_BLOCK_CHRONOLOGY}',
+        "RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE",
         "VDAM_REPLAY_NATIVE_REFERENCES",
         'IREF_REPLAY_TEMPLATE=${RELION_OUTPUT}/run_it{iteration:03d}_class{k:03d}.mrc',
         '"replay_native_references":%d',

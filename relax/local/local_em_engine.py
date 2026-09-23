@@ -232,33 +232,33 @@ logger = logging.getLogger(__name__)
 # memory. This cap is total projected row-pixels across the active image batch,
 # i.e. about a 512 MB complex64 projection temporary before JAX overhead.
 EXACT_LOCAL_SOURCE_BPREF_FUSED_SERIAL_PARTICLES_ENV = (
-    "RECOVAR_EXACT_LOCAL_SOURCE_BPREF_FUSED_SERIAL_PARTICLES"
+    "RELAX_EXACT_LOCAL_SOURCE_BPREF_FUSED_SERIAL_PARTICLES"
 )
 EXACT_LOCAL_SOURCE_BPREF_FUSED_SERIAL_ROTATIONS_ENV = (
-    "RECOVAR_EXACT_LOCAL_SOURCE_BPREF_FUSED_SERIAL_ROTATIONS"
+    "RELAX_EXACT_LOCAL_SOURCE_BPREF_FUSED_SERIAL_ROTATIONS"
 )
 EXACT_LOCAL_SOURCE_BPREF_LAUNCH_SERIAL_ROTATIONS_ENV = (
-    "RECOVAR_EXACT_LOCAL_SOURCE_BPREF_LAUNCH_SERIAL_ROTATIONS"
+    "RELAX_EXACT_LOCAL_SOURCE_BPREF_LAUNCH_SERIAL_ROTATIONS"
 )
-EXACT_LOCAL_DEFER_PACKED_MSTEP_ENV = "RECOVAR_EXACT_LOCAL_DEFER_PACKED_MSTEP"
-EXACT_LOCAL_BIG_JIT_DEFER_PACKED_MSTEP_ENV = "RECOVAR_EXACT_LOCAL_BIG_JIT_DEFER_PACKED_MSTEP"
-EXACT_LOCAL_PROJECTOR_CAPACITY_ENV = "RECOVAR_EXACT_LOCAL_PROJECTOR_CAPACITY"
-EXACT_LOCAL_BPREF_PROJECTOR_CAPACITY_ENV = "RECOVAR_EXACT_LOCAL_BPREF_PROJECTOR_CAPACITY"
-EXACT_LOCAL_NOISE_STABLE_CORE_ENV = "RECOVAR_EXACT_LOCAL_NOISE_STABLE_CORE"
-EXACT_LOCAL_NOISE_NATIVE_RESIDUAL_ENV = "RECOVAR_EXACT_LOCAL_NOISE_NATIVE_RESIDUAL"
-EXACT_LOCAL_NOISE_NORM_CAPACITY_ENV = "RECOVAR_EXACT_LOCAL_NOISE_NORM_CAPACITY"
-EXACT_LOCAL_NOISE_PIXEL_CAPACITY_ENV = "RECOVAR_EXACT_LOCAL_NOISE_PIXEL_CAPACITY"
-EXACT_LOCAL_HOST_PLAN_PACK_ENV = "RECOVAR_EXACT_LOCAL_HOST_PLAN_PACK"
-EXACT_LOCAL_HOST_PUBLICATION_ENV = "RECOVAR_EXACT_LOCAL_HOST_PUBLICATION"
-EXACT_LOCAL_BPREF_TRANSACTION_ENV = "RECOVAR_EXACT_LOCAL_BPREF_TRANSACTION"
-EXACT_LOCAL_BPREF_PARTICLE_CAPACITY_ENV = "RECOVAR_EXACT_LOCAL_BPREF_PARTICLE_CAPACITY"
-EXACT_LOCAL_BPREF_CUDA_PACKING_ENV = "RECOVAR_EXACT_LOCAL_BPREF_CUDA_PACKING"
-EXACT_LOCAL_HOST_PLAN_CUDA_ENV = "RECOVAR_EXACT_LOCAL_HOST_PLAN_CUDA"
-EXACT_LOCAL_SKIP_DEFERRED_ZERO_NORM_ENV = "RECOVAR_EXACT_LOCAL_SKIP_DEFERRED_ZERO_NORM"
-LOCAL_SCORE_DUMP_FORCE_SPLIT_ENV = "RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT"
-LOCAL_SCORE_DUMP_OPERANDS_ENV = "RECOVAR_LOCAL_SCORE_DUMP_OPERANDS"
-LOCAL_SCORE_DUMP_TARGET_ONLY_ENV = "RECOVAR_LOCAL_SCORE_DUMP_TARGET_ONLY"
-EXACT_LOCAL_SPARSE_ADJOINT_TARGET_ROWS_ENV = "RECOVAR_EXACT_LOCAL_SPARSE_ADJOINT_TARGET_ROWS"
+EXACT_LOCAL_DEFER_PACKED_MSTEP_ENV = "RELAX_EXACT_LOCAL_DEFER_PACKED_MSTEP"
+EXACT_LOCAL_BIG_JIT_DEFER_PACKED_MSTEP_ENV = "RELAX_EXACT_LOCAL_BIG_JIT_DEFER_PACKED_MSTEP"
+EXACT_LOCAL_PROJECTOR_CAPACITY_ENV = "RELAX_EXACT_LOCAL_PROJECTOR_CAPACITY"
+EXACT_LOCAL_BPREF_PROJECTOR_CAPACITY_ENV = "RELAX_EXACT_LOCAL_BPREF_PROJECTOR_CAPACITY"
+EXACT_LOCAL_NOISE_STABLE_CORE_ENV = "RELAX_EXACT_LOCAL_NOISE_STABLE_CORE"
+EXACT_LOCAL_NOISE_NATIVE_RESIDUAL_ENV = "RELAX_EXACT_LOCAL_NOISE_NATIVE_RESIDUAL"
+EXACT_LOCAL_NOISE_NORM_CAPACITY_ENV = "RELAX_EXACT_LOCAL_NOISE_NORM_CAPACITY"
+EXACT_LOCAL_NOISE_PIXEL_CAPACITY_ENV = "RELAX_EXACT_LOCAL_NOISE_PIXEL_CAPACITY"
+EXACT_LOCAL_HOST_PLAN_PACK_ENV = "RELAX_EXACT_LOCAL_HOST_PLAN_PACK"
+EXACT_LOCAL_HOST_PUBLICATION_ENV = "RELAX_EXACT_LOCAL_HOST_PUBLICATION"
+EXACT_LOCAL_BPREF_TRANSACTION_ENV = "RELAX_EXACT_LOCAL_BPREF_TRANSACTION"
+EXACT_LOCAL_BPREF_PARTICLE_CAPACITY_ENV = "RELAX_EXACT_LOCAL_BPREF_PARTICLE_CAPACITY"
+EXACT_LOCAL_BPREF_CUDA_PACKING_ENV = "RELAX_EXACT_LOCAL_BPREF_CUDA_PACKING"
+EXACT_LOCAL_HOST_PLAN_CUDA_ENV = "RELAX_EXACT_LOCAL_HOST_PLAN_CUDA"
+EXACT_LOCAL_SKIP_DEFERRED_ZERO_NORM_ENV = "RELAX_EXACT_LOCAL_SKIP_DEFERRED_ZERO_NORM"
+LOCAL_SCORE_DUMP_FORCE_SPLIT_ENV = "RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT"
+LOCAL_SCORE_DUMP_OPERANDS_ENV = "RELAX_LOCAL_SCORE_DUMP_OPERANDS"
+LOCAL_SCORE_DUMP_TARGET_ONLY_ENV = "RELAX_LOCAL_SCORE_DUMP_TARGET_ONLY"
+EXACT_LOCAL_SPARSE_ADJOINT_TARGET_ROWS_ENV = "RELAX_EXACT_LOCAL_SPARSE_ADJOINT_TARGET_ROWS"
 # Disabled by default: on the 50k/256 local-search target this cache made the
 # iteration slower by precomputing more spectra than the bucket schedule reuses.
 # Upper bound for the extra M-step tensors materialized by the sparse big-JIT
@@ -468,7 +468,7 @@ def run_local_em_exact(
     """Run exact local EM over per-image local hypothesis sets.
 
     ``debug_pass_label`` is diagnostic-only: it is appended verbatim to
-    ``RECOVAR_LOCAL_SCORE_DUMP_*`` filenames (see
+    ``RELAX_LOCAL_SCORE_DUMP_*`` filenames (see
     ``local_debug.maybe_write_debug_score_dump``). Callers that invoke this
     function more than once per iteration for the *same* image/current_size/
     debug_iteration (e.g. local search's pass-1 "parent" probe followed by
@@ -568,7 +568,7 @@ def run_local_em_exact(
     ):
         raise ValueError("noise norm capacity requires stable deferred packed final-noise accumulation")
     noise_pixel_capacity_enabled = parse_env_binary_flag(EXACT_LOCAL_NOISE_PIXEL_CAPACITY_ENV)
-    noise_pixel_cuda_enabled = parse_env_binary_flag('RECOVAR_EXACT_LOCAL_NOISE_PIXEL_CUDA')
+    noise_pixel_cuda_enabled = parse_env_binary_flag('RELAX_EXACT_LOCAL_NOISE_PIXEL_CUDA')
     if noise_pixel_cuda_enabled and not noise_pixel_capacity_enabled:
         raise ValueError("noise pixel CUDA packing requires noise pixel capacity")
     if noise_pixel_capacity_enabled and not noise_norm_capacity_enabled:
@@ -638,7 +638,7 @@ def run_local_em_exact(
             "BPref, a RELION projector, noise accumulation, and a full M-step"
         )
     if stable_fourier_window_shapes and os.environ.get(
-        "RECOVAR_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY", ""
+        "RELAX_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY", ""
     ).strip():
         raise ValueError(
             "stable Fourier-window shapes do not support external VDAM host replay"
@@ -833,7 +833,7 @@ def run_local_em_exact(
     )
     debug_fused_posterior_dump_scores = bool(
         debug_fused_posterior_dump_filter_matches
-        and parse_env_true_flag("RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_SCORES")
+        and parse_env_true_flag("RELAX_LOCAL_FUSED_POSTERIOR_DUMP_SCORES")
     )
     debug_noise_dump_filter_matches = (
         debug_noise_dump_dir is not None
@@ -1683,7 +1683,7 @@ def run_local_em_exact(
         and local_support_rows >= int(np.ceil(max(n_images, 1) / EXACT_LOCAL_BIG_JIT_MIN_SIGNIFICANT_ROW_FRACTION))
     )
     compact_relion_projector_big_jit = bool(use_relion_projector and window_spec.use_window)
-    disable_big_jit_buckets = os.environ.get("RECOVAR_DISABLE_LOCAL_BIG_JIT", "").lower() in {
+    disable_big_jit_buckets = os.environ.get("RELAX_DISABLE_LOCAL_BIG_JIT", "").lower() in {
         "1",
         "true",
         "yes",
@@ -1811,7 +1811,7 @@ def run_local_em_exact(
                 and relion_projector_half_big_jit.shape == (
                     logical_pad, logical_pad, logical_pad // 2 + 1
                 )
-                and not os.environ.get("RECOVAR_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY", "").strip()
+                and not os.environ.get("RELAX_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY", "").strip()
             )
             if source_vdam_consume_accumulators:
                 # Ft_y/Ft_ctf are this engine's exclusive carry, replaced by
@@ -3025,7 +3025,7 @@ def run_local_em_exact(
                     if (
                         return_source_vdam_operands
                         and os.environ.get(
-                            "RECOVAR_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES",
+                            "RELAX_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES",
                             "",
                         ).strip()
                     ):

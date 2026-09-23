@@ -27,14 +27,14 @@ _ROTATION = np.array(
 
 @pytest.mark.parametrize("token,expected", [(None, False), ("0", False), ("1", True)])
 def test_optin(monkeypatch, token, expected):
-    monkeypatch.delenv("RECOVAR_K1_COARSE_ROTATED_RADIUS", raising=False)
+    monkeypatch.delenv("RELAX_K1_COARSE_ROTATED_RADIUS", raising=False)
     if token is not None:
-        monkeypatch.setenv("RECOVAR_K1_COARSE_ROTATED_RADIUS", token)
+        monkeypatch.setenv("RELAX_K1_COARSE_ROTATED_RADIUS", token)
     assert significance._coarse_rotated_radius_enabled() is expected
 
 
 def test_invalid_optin(monkeypatch):
-    monkeypatch.setenv("RECOVAR_K1_COARSE_ROTATED_RADIUS", "typo")
+    monkeypatch.setenv("RELAX_K1_COARSE_ROTATED_RADIUS", "typo")
     with pytest.raises(ValueError, match="must be 0 or 1"):
         significance._coarse_rotated_radius_enabled()
 
@@ -140,9 +140,9 @@ def test_gpu_invalid_image_radius_is_nan(radius):
 
 
 def test_canonical_default_can_be_explicitly_overridden(monkeypatch):
-    monkeypatch.delenv("RECOVAR_K1_COARSE_ROTATED_RADIUS", raising=False)
+    monkeypatch.delenv("RELAX_K1_COARSE_ROTATED_RADIUS", raising=False)
     assert significance._coarse_rotated_radius_enabled(default=True)
-    monkeypatch.setenv("RECOVAR_K1_COARSE_ROTATED_RADIUS", "0")
+    monkeypatch.setenv("RELAX_K1_COARSE_ROTATED_RADIUS", "0")
     assert not significance._coarse_rotated_radius_enabled(default=True)
 
 

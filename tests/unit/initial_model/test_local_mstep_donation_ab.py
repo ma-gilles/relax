@@ -863,8 +863,8 @@ def test_runner_rejects_inherited_iref_replay_environment(tmp_path):
     )
     assert contract["exact_allowlist"] is True
 
-    environment["RECOVAR_INITIALMODEL_IREF_REPLAY_TEMPLATE"] = "/path/to/unpinned_replay.mrc"
-    with pytest.raises(RuntimeError, match="unexpected=.*RECOVAR_INITIALMODEL_IREF_REPLAY_TEMPLATE"):
+    environment["RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE"] = "/path/to/unpinned_replay.mrc"
+    with pytest.raises(RuntimeError, match="unexpected=.*RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE"):
         runner._assert_sealed_arm_environment(
             repo_root=repo_root,
             cache_dir=cache_dir,
@@ -880,7 +880,7 @@ def test_aggregate_cannot_qualify_a_reported_replay_environment(tmp_path):
     root, git_head, gpu_uuid = _analysis_tree(tmp_path)
     report_path = root / "runs/repeat-01/donated/result/donation_arm_summary.json"
     report = json.loads(report_path.read_text())
-    replay_name = "RECOVAR_INITIALMODEL_IREF_REPLAY_TEMPLATE"
+    replay_name = "RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE"
     report["sealed_environment"]["observed"][replay_name] = "/path/to/unpinned_replay.mrc"
     report["sealed_environment"]["unexpected_names"] = [replay_name]
     report_path.write_text(json.dumps(report, indent=2) + "\n")

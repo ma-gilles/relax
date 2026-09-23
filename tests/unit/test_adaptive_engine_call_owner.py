@@ -7,7 +7,7 @@ from relax.refinement import half_scoring
 
 
 def test_sparse_pass2_switch_reads_only_positive_values(monkeypatch):
-    for env_name in ("RECOVAR_K1_DENSE_PASS2", "RECOVAR_K_CLASS_DENSE_PASS2"):
+    for env_name in ("RELAX_K1_DENSE_PASS2", "RELAX_K_CLASS_DENSE_PASS2"):
         monkeypatch.delenv(env_name, raising=False)
         assert k_class._sparse_pass2_selected(env_name) is True
         for value in ("1", "true", " YES ", "on"):

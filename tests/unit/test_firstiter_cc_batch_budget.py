@@ -58,18 +58,18 @@ def test_firstiter_cc_budget_env_override_lifts_debug_cap(monkeypatch):
     default_batch = _safe_firstiter_cc_image_batch_size(116, (256, 256))
     assert default_batch == 70
 
-    monkeypatch.setenv("RECOVAR_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", str(3 * 268_435_456))
+    monkeypatch.setenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", str(3 * 268_435_456))
 
     assert _safe_firstiter_cc_image_batch_size(116, (256, 256)) >= 187
 
 
 def test_firstiter_cc_budget_env_override_rejects_invalid(monkeypatch):
-    monkeypatch.setenv("RECOVAR_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", "0")
+    monkeypatch.setenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", "0")
 
     try:
         _safe_firstiter_cc_image_batch_size(116, (256, 256))
     except ValueError as exc:
-        assert "RECOVAR_RELION_FIRSTITER_RECON_COMPLEX_BUDGET" in str(exc)
+        assert "RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET" in str(exc)
     else:
         raise AssertionError("invalid firstiter budget override did not raise")
 

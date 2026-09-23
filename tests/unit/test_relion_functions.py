@@ -218,7 +218,7 @@ def test_pad_volume_for_projection_host_preserves_double_precision():
     directly in the per-iteration projection path
     (pad_volume_for_projection, taken whenever projection_padding_factor >
     1), so an unconditional complex64 cast here would defeat
-    RECOVAR_USE_FLOAT64_PROJECTIONS no matter how carefully every other
+    RELAX_USE_FLOAT64_PROJECTIONS no matter how carefully every other
     site is fixed. Regression for that narrow-then-widen bug.
     """
     volume_shape = (8, 8, 8)
@@ -1033,7 +1033,7 @@ def test_join_halves_at_low_resolution_host_fallback_matches_join(monkeypatch):
         grid_size=4,
         low_resol_join_halves_angstrom=40.0,
     )
-    monkeypatch.setenv("RECOVAR_LOWRES_JOIN_HOST_FALLBACK", "never")
+    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "never")
     device_joined = regularization_relion.join_halves_at_low_resolution(
         jnp.array(ft_y_0.reshape(-1)),
         jnp.array(ft_y_1.reshape(-1)),
@@ -1042,7 +1042,7 @@ def test_join_halves_at_low_resolution_host_fallback_matches_join(monkeypatch):
         **kwargs,
     )
 
-    monkeypatch.setenv("RECOVAR_LOWRES_JOIN_HOST_FALLBACK", "always")
+    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "always")
     host_joined = regularization_relion.join_halves_at_low_resolution(
         jnp.array(ft_y_0.reshape(-1)),
         jnp.array(ft_y_1.reshape(-1)),
@@ -1070,8 +1070,8 @@ def test_join_halves_at_low_resolution_host_fallback_matches_join(monkeypatch):
 
 
 def test_low_resolution_join_host_fallback_auto_catches_padded_384(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOWRES_JOIN_HOST_FALLBACK", raising=False)
-    monkeypatch.delenv("RECOVAR_LOWRES_JOIN_HOST_FALLBACK_MIN_ELEMENTS", raising=False)
+    monkeypatch.delenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", raising=False)
+    monkeypatch.delenv("RELAX_LOWRES_JOIN_HOST_FALLBACK_MIN_ELEMENTS", raising=False)
 
     unpadded_384_half_size = 384 * 384 * (384 // 2 + 1)
     padded_384_half_size = (2 * 384) * (2 * 384) * (384 + 1)
@@ -2069,7 +2069,7 @@ def test_large_host_staged_pre_ifft_split_matches_monolith_bitwise(monkeypatch):
             **common,
         )
     )
-    monkeypatch.setenv("RECOVAR_RELION_HOST_IRFFT", "never")
+    monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", "never")
     device_staged = np.asarray(
         mean_helpers._reconstruct_volume_eager(
             ft_ctf,
@@ -2082,7 +2082,7 @@ def test_large_host_staged_pre_ifft_split_matches_monolith_bitwise(monkeypatch):
             **common,
         )
     )
-    monkeypatch.setenv("RECOVAR_RELION_HOST_IRFFT", "always")
+    monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", "always")
     host_staged = np.asarray(
         mean_helpers._reconstruct_volume_eager(
             ft_ctf,
@@ -2829,7 +2829,7 @@ def test_large_host_irfft_is_already_normalized(monkeypatch):
     def reject_double_normalization(*_args, **_kwargs):
         raise AssertionError("SciPy's backward inverse FFT must not be normalized twice")
 
-    monkeypatch.setenv("RECOVAR_RELION_HOST_FFT_WORKERS", "3")
+    monkeypatch.setenv("RELAX_RELION_HOST_FFT_WORKERS", "3")
     monkeypatch.setattr(
         mean_helpers,
         "_should_host_stage_large_relion_ifft",
@@ -3068,7 +3068,7 @@ def test_join_halves_host_fallback_retains_bitwise_exact_half0_device_numerator(
     ft_ctf_0 = rng.uniform(0.5, 1.5, volume_shape).astype(np.float32)
     ft_ctf_1 = rng.uniform(0.5, 1.5, volume_shape).astype(np.float32)
 
-    monkeypatch.setenv("RECOVAR_LOWRES_JOIN_HOST_FALLBACK", "always")
+    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "always")
     joined = regularization_relion.join_halves_at_low_resolution(
         jnp.asarray(ft_y_0).reshape(-1),
         jnp.asarray(ft_y_1).reshape(-1),
@@ -3124,7 +3124,7 @@ def test_join_halves_host_fallback_reserves_joined_numpy_half0_for_crop(monkeypa
     ft_ctf_0 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
     ft_ctf_1 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
 
-    monkeypatch.setenv("RECOVAR_LOWRES_JOIN_HOST_FALLBACK", "always")
+    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "always")
     caplog.set_level("INFO", logger=regularization.__name__)
     joined = regularization_relion.join_halves_at_low_resolution(
         ft_y_0,
@@ -3178,7 +3178,7 @@ def test_join_halves_at_low_resolution_host_fallback_can_reuse_numpy_storage(mon
     ft_y_0[idx_outside] = 20.0
     ft_y_1[idx_outside] = 4.0
 
-    monkeypatch.setenv("RECOVAR_LOWRES_JOIN_HOST_FALLBACK", "always")
+    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "always")
     joined = regularization_relion.join_halves_at_low_resolution(
         ft_y_0,
         ft_y_1,

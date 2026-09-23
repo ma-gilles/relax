@@ -47,7 +47,7 @@ def test_real_data_sbatch_sets_paired_launch_mode_before_gpu_gate():
     launch_mode = text.index("export CUDA_LAUNCH_BLOCKING=1")
     gpu_gate = text.index('"${PIXI_PY}" - <<\'PY\'')
     assert launch_mode < gpu_gate
-    assert "RECOVAR_CUDA_MODE_ARGS+=(--deterministic_cuda)" in text
+    assert "RELAX_CUDA_MODE_ARGS+=(--deterministic_cuda)" in text
     assert '"cuda_launch_blocking_value"' in text
     assert 'export RECOVAR_CACHE_DIR="${RECOVAR_CACHE_DIR-}"' in text
     assert '"recovar_cache_dir": os.environ.get("RECOVAR_CACHE_DIR")' in text
@@ -55,9 +55,9 @@ def test_real_data_sbatch_sets_paired_launch_mode_before_gpu_gate():
     assert 'SOURCE_GIT_HEAD="$(git rev-parse HEAD)"' in text
     assert 'PIXI_PY="${PIXI_PY_OVERRIDE:-${REPO_ROOT}/.pixi/envs/default/bin/python}"' in text
     assert 'EXPECTED_REPO_HEAD="${EXPECTED_REPO_HEAD:-}"' in text
-    assert 'RECOVAR_CUDA_LIB_OVERRIDE' in text
+    assert 'RELAX_CUDA_LIB_OVERRIDE' in text
     assert 'EXPECTED_CUDA_SHA256="${EXPECTED_CUDA_SHA256:-}"' in text
-    assert '"cuda_library_sha256": os.environ["RECOVAR_CUDA_LIB_SHA256"]' in text
+    assert '"cuda_library_sha256": os.environ["RELAX_CUDA_LIB_SHA256"]' in text
     assert "VDAM real-data CUDA library changed during import" in text
     assert "VDAM real-data CUDA library changed during science" in text
     assert '"${PIXI_PY}" -m relax.commands.initial_model' in text
@@ -66,7 +66,7 @@ def test_real_data_sbatch_sets_paired_launch_mode_before_gpu_gate():
     assert "qualification worktree changed during execution" in text
     assert '"git_head": sys.argv[8]' in text
     assert '"tracked_worktree_clean_at_provenance"' in text
-    assert '"RECOVAR_RELION_X_HALF_F32_FINE_POSTERIOR"' in text
+    assert '"RELAX_RELION_X_HALF_F32_FINE_POSTERIOR"' in text
 
 
 def test_real_data_suite_maps_array_tasks_to_frozen_case_ids_and_isolated_roots():

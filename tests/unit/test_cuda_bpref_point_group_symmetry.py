@@ -312,7 +312,7 @@ def test_complex_ranged_cuda_is_bitwise_equal_to_full_output(symmetry, via_final
     if via_finalizer:
         import logging
         from relax.helpers.half_volume_mstep import finalize_half_volume_bpref
-        monkeypatch.setenv("RECOVAR_RELION_BPREF_SYMMETRY_CHUNK_VOXELS", "37")
+        monkeypatch.setenv("RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS", "37")
         split_data, split_weight = finalize_half_volume_bpref(
             jnp.asarray(raw_data.reshape(-1)),
             jnp.asarray(raw_weight.reshape(-1)),

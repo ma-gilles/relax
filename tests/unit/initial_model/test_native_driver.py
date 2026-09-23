@@ -928,7 +928,7 @@ def _raw_cache_dataset(loader):
 def test_initial_model_raw_cache_persists_across_passes_and_iterations(monkeypatch):
     loader = _PersistentRawLoader()
     monkeypatch.setenv("RECOVAR_EM_RAW_IMAGE_CACHE", "auto")
-    monkeypatch.setenv("RECOVAR_EM_RAW_IMAGE_CACHE_MAX_GB", "1")
+    monkeypatch.setenv("RELAX_EM_RAW_IMAGE_CACHE_MAX_GB", "1")
 
     maybe_cache_raw_image_loaders((_raw_cache_dataset(loader),))
     for _iteration in range(3):
@@ -942,7 +942,7 @@ def test_initial_model_raw_cache_persists_across_passes_and_iterations(monkeypat
 def test_initial_model_raw_cache_guard_preserves_lazy_loading(monkeypatch):
     loader = _PersistentRawLoader(n=1024, D=1024)
     monkeypatch.setenv("RECOVAR_EM_RAW_IMAGE_CACHE", "auto")
-    monkeypatch.setenv("RECOVAR_EM_RAW_IMAGE_CACHE_MAX_GB", "0.001")
+    monkeypatch.setenv("RELAX_EM_RAW_IMAGE_CACHE_MAX_GB", "0.001")
 
     maybe_cache_raw_image_loaders((_raw_cache_dataset(loader),))
 
@@ -1451,7 +1451,7 @@ def test_random_perturbation_sequence_matches_relion_initialmodel_fixture():
 
 
 def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys):
-    monkeypatch.delenv("RECOVAR_INITIAL_IREF_OVERRIDE", raising=False)
+    monkeypatch.delenv("RELAX_INITIAL_IREF_OVERRIDE", raising=False)
     monkeypatch.setenv("RECOVAR_INITIAL_MODEL_PROFILE", "1")
     raw_iref = np.full((1, 8, 8, 8), 2.0, dtype=np.float64)
     post_iref = np.full((1, 8, 8, 8), 3.0, dtype=np.float64)
@@ -2038,8 +2038,8 @@ def test_sampling_accuracy_binding_uses_sigma2_fudge_not_dynamic_tau2(monkeypatc
         phase_shift=np.zeros(2),
     )
 
-    monkeypatch.setenv("RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS", "80,90")
+    monkeypatch.setenv("RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS", "80,90")
     meta = native_sampling._estimate_native_sampling_accuracy(
         native_sampling._initial_sampling_state(
             native_options.NativeInitialModelOptions(fn_img="particles.star"),
@@ -2143,7 +2143,7 @@ def test_native_expectation_step_records_sampling_changes_each_gradient_iteratio
 def test_native_expectation_step_expands_class_rotation_prior_for_dense_fallback(monkeypatch):
     captured = {}
 
-    monkeypatch.setenv("RECOVAR_DISABLE_SPARSE_PASS2", "1")
+    monkeypatch.setenv("RELAX_DISABLE_SPARSE_PASS2", "1")
 
     def fake_build_sampling_plan(opts, *, iteration, sampling_state=None):
         return native_sampling.NativeSamplingPlan(
@@ -2446,7 +2446,7 @@ def test_iteration_zero_artifacts_use_the_normal_iteration_writer(monkeypatch, t
 
 @pytest.mark.parametrize("array_rows", ["0", "1"])
 def test_data_star_preserves_optics_and_updates_particle_metadata(tmp_path, monkeypatch, array_rows):
-    monkeypatch.setenv("RECOVAR_VDAM_STAR_ARRAY_ROWS", array_rows)
+    monkeypatch.setenv("RELAX_VDAM_STAR_ARRAY_ROWS", array_rows)
     main = pd.DataFrame(
         {
             "_rlnImageName": ["2@stack.mrcs", "1@stack.mrcs"],
@@ -2492,7 +2492,7 @@ def test_data_star_preserves_optics_and_updates_particle_metadata(tmp_path, monk
 
 @pytest.mark.parametrize("array_rows", ["0", "1"])
 def test_data_star_zeros_unvisited_rows_and_writes_best_pose_eulers(tmp_path, monkeypatch, array_rows):
-    monkeypatch.setenv("RECOVAR_VDAM_STAR_ARRAY_ROWS", array_rows)
+    monkeypatch.setenv("RELAX_VDAM_STAR_ARRAY_ROWS", array_rows)
     main = pd.DataFrame(
         {
             "_rlnImageName": ["3@stack.mrcs", "1@stack.mrcs", "2@stack.mrcs"],

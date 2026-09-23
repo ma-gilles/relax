@@ -40,12 +40,12 @@ logger = logging.getLogger(__name__)
 
 
 _SPARSE_KCLASS_GROUP_PAIR_BUCKETS_BY_ROTATION_SIGNATURE_ENV = (
-    "RECOVAR_SPARSE_KCLASS_GROUP_PAIR_BUCKETS_BY_ROTATION_SIGNATURE"
+    "RELAX_SPARSE_KCLASS_GROUP_PAIR_BUCKETS_BY_ROTATION_SIGNATURE"
 )
 
 
 _RELION_X_HALF_BP_PARTICLE_POOL_SIZE_ENV = (
-    "RECOVAR_K1_RELION_X_HALF_BP_PARTICLE_POOL_SIZE"
+    "RELAX_K1_RELION_X_HALF_BP_PARTICLE_POOL_SIZE"
 )
 
 
@@ -168,7 +168,7 @@ def _accumulate_relion_x_half_per_particle_launches(
         ):
             raise RuntimeError(
                 "RELION fused-atomics diagnostic requires "
-                "RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH=1"
+                "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH=1"
             )
         if (
             diagnostic_fused_atomics

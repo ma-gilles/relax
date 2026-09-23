@@ -1472,7 +1472,7 @@ unset CONDA_DEFAULT_ENV CONDA_EXE CONDA_PYTHON_EXE CONDA_PROMPT_MODIFIER CONDA_S
 # Strict matrix jobs do not inherit experiment/debug toggles from the submitter.
 while IFS='=' read -r ENV_NAME _; do
   case "${{ENV_NAME}}" in
-    RECOVAR_*|RELION_*|JAX_*|XLA_*) unset "${{ENV_NAME}}" ;;
+    RECOVAR_*|RELAX_*|RELION_*|JAX_*|XLA_*) unset "${{ENV_NAME}}" ;;
   esac
 done < <(env)
 unset TF_GPU_ALLOCATOR
@@ -1494,7 +1494,7 @@ export PIP_NO_INDEX=1
 export PIP_DISABLE_PIP_VERSION_CHECK=1
 export CMAKE_INCLUDE_PATH={q(pixi_env_root / "include" / "fftw")}:{q(pixi_env_root / "include")}:${{CMAKE_INCLUDE_PATH:-}}
 export CMAKE_LIBRARY_PATH={q(pixi_env_root / "lib")}:${{CMAKE_LIBRARY_PATH:-}}
-export RECOVAR_RELION_BIND_JOBS="${{SLURM_CPUS_ON_NODE:-${{SLURM_CPUS_PER_TASK:-1}}}}"
+export RELAX_RELION_BIND_JOBS="${{SLURM_CPUS_ON_NODE:-${{SLURM_CPUS_PER_TASK:-1}}}}"
 RUNTIME_ROOT={q(DEFAULT_RUNTIME_ROOT / job_name)}_${{SLURM_JOB_ID}}
 export TMPDIR="${{RUNTIME_ROOT}}/tmp"
 export PIXI_HOME="${{RUNTIME_ROOT}}/pixi_home"
@@ -1741,8 +1741,8 @@ echo "Using holdout outlier PDB: ${{OUTLIER_PDB}}"
 
 CASE_ROOT={q(case_root)}
 DATA_DIR={q(data_dir)}
-RECOVAR_DIR="${{CASE_ROOT}}/recovar"
-RECOVAR_INTERMEDIATES_DIR="${{RECOVAR_DIR}}/intermediates"
+RELAX_DIR="${{CASE_ROOT}}/recovar"
+RELAX_INTERMEDIATES_DIR="${{RELAX_DIR}}/intermediates"
 RELION_DIR={q(relion_dir)}
 RELION_DISPATCH_LOG="${{RELION_DIR}}/dispatch.tsv"
 RELION_DISPATCH_SCHEDULE="${{RELION_DIR}}/dispatch_schedule.npz"
@@ -1771,7 +1771,7 @@ if [[ "${{RUN_RELION}}" == "1" && -n "${{SHARED_RELION_MANIFEST}}" ]]; then
     exit 2
   fi
 fi
-mkdir -p "${{CASE_ROOT}}" "${{RECOVAR_DIR}}" "${{RECOVAR_INTERMEDIATES_DIR}}"
+mkdir -p "${{CASE_ROOT}}" "${{RELAX_DIR}}" "${{RELAX_INTERMEDIATES_DIR}}"
 if [[ "${{GENERATE_INPUT}}" == "1" ]]; then
   mkdir -p "${{DATA_DIR}}" "${{SUB_PDB_DIR}}"
 fi
@@ -2121,27 +2121,27 @@ if [[ -n "${{SHARED_INPUT_GROUP}}" ]]; then
 fi
 
 echo "=== Run RECOVAR K-class refinement: {case.name} ==="
-RECOVAR_GPU_UUID="$(capture_physical_gpu_uuid)"
-if [[ "${{RECOVAR_GPU_UUID}}" != "${{CASE_GPU_UUID}}" ]]; then
-  echo "ERROR: RECOVAR physical GPU changed: expected ${{CASE_GPU_UUID}}, got ${{RECOVAR_GPU_UUID}}" >&2
+RELAX_GPU_UUID="$(capture_physical_gpu_uuid)"
+if [[ "${{RELAX_GPU_UUID}}" != "${{CASE_GPU_UUID}}" ]]; then
+  echo "ERROR: RECOVAR physical GPU changed: expected ${{CASE_GPU_UUID}}, got ${{RELAX_GPU_UUID}}" >&2
   exit 2
 fi
-if [[ "${{RUN_RELION}}" == "1" && "${{RECOVAR_GPU_UUID}}" != "${{RELION_GPU_UUID}}" ]]; then
-  echo "ERROR: RECOVAR and RELION did not use the same physical GPU: RELION=${{RELION_GPU_UUID}} RECOVAR=${{RECOVAR_GPU_UUID}}" >&2
+if [[ "${{RUN_RELION}}" == "1" && "${{RELAX_GPU_UUID}}" != "${{RELION_GPU_UUID}}" ]]; then
+  echo "ERROR: RECOVAR and RELION did not use the same physical GPU: RELION=${{RELION_GPU_UUID}} RECOVAR=${{RELAX_GPU_UUID}}" >&2
   exit 2
 fi
-printf '%s\\n' "${{RECOVAR_GPU_UUID}}" > "${{RECOVAR_DIR}}/physical_gpu_uuid.txt"
+printf '%s\\n' "${{RELAX_GPU_UUID}}" > "${{RELAX_DIR}}/physical_gpu_uuid.txt"
 cat > "${{CASE_ROOT}}/paired_gpu_uuid.json" <<JSON
-{{"physical_gpu_uuid":"${{CASE_GPU_UUID}}","relion_gpu_uuid":"${{RELION_GPU_UUID}}","recovar_gpu_uuid":"${{RECOVAR_GPU_UUID}}","relion_ran_in_case":$([[ "${{RUN_RELION}}" == "1" ]] && echo true || echo false),"hardware_comparable":$([[ "${{RUN_RELION}}" == "1" ]] && echo true || echo false)}}
+{{"physical_gpu_uuid":"${{CASE_GPU_UUID}}","relion_gpu_uuid":"${{RELION_GPU_UUID}}","recovar_gpu_uuid":"${{RELAX_GPU_UUID}}","relion_ran_in_case":$([[ "${{RUN_RELION}}" == "1" ]] && echo true || echo false),"hardware_comparable":$([[ "${{RUN_RELION}}" == "1" ]] && echo true || echo false)}}
 JSON
-rm -rf "${{RECOVAR_INTERMEDIATES_DIR}}"
-mkdir -p "${{RECOVAR_INTERMEDIATES_DIR}}"
+rm -rf "${{RELAX_INTERMEDIATES_DIR}}"
+mkdir -p "${{RELAX_INTERMEDIATES_DIR}}"
 START_EPOCH="$(date +%s)"
 start_engine_gpu_monitor "${{CASE_ROOT}}/recovar_gpu_monitor.csv"
 set +e
 "${{PIXI_PY}}" -m scripts.run_full_refinement \\
   --data_dir "${{DATA_DIR}}" \\
-  --output "${{RECOVAR_DIR}}" \\
+  --output "${{RELAX_DIR}}" \\
   --max_iter {case.max_iter} \\
   --n_classes {case.n_classes} \\
   --healpix_order 1 \\
@@ -2162,28 +2162,28 @@ set +e
   --relion-dispatch-schedule "${{RELION_DISPATCH_SCHEDULE}}" \\
   --particle_diameter_ang {particle_diameter:g} \\
   --tau2_fudge 4.0 \\
-  --benchmark_ledger_json "${{RECOVAR_DIR}}/benchmark_ledger.json" \\
-  --timing_dir "${{RECOVAR_DIR}}/timing" \\
-  --save_intermediates_dir "${{RECOVAR_INTERMEDIATES_DIR}}" \\
-  2>&1 | tee "${{RECOVAR_DIR}}/run_full_refinement.log"
+  --benchmark_ledger_json "${{RELAX_DIR}}/benchmark_ledger.json" \\
+  --timing_dir "${{RELAX_DIR}}/timing" \\
+  --save_intermediates_dir "${{RELAX_INTERMEDIATES_DIR}}" \\
+  2>&1 | tee "${{RELAX_DIR}}/run_full_refinement.log"
 STATUS="${{PIPESTATUS[0]}}"
 set -e
 END_EPOCH="$(date +%s)"
 stop_engine_gpu_monitor
-cat > "${{RECOVAR_DIR}}/slurm_walltime.json" <<JSON
+cat > "${{RELAX_DIR}}/slurm_walltime.json" <<JSON
 {{"slurm_job_id":"${{SLURM_JOB_ID}}","start_epoch":${{START_EPOCH}},"end_epoch":${{END_EPOCH}},"external_wall_s":$((END_EPOCH - START_EPOCH)),"exit_status":${{STATUS}}}}
 JSON
 if [[ "${{STATUS}}" -ne 0 ]]; then
   exit "${{STATUS}}"
 fi
-RECOVAR_POST_GPU_UUID="$(capture_physical_gpu_uuid)"
-if [[ "${{RECOVAR_POST_GPU_UUID}}" != "${{CASE_GPU_UUID}}" ]]; then
-  echo "ERROR: RECOVAR runtime physical GPU changed: expected ${{CASE_GPU_UUID}}, got ${{RECOVAR_POST_GPU_UUID}}" >&2
+RELAX_POST_GPU_UUID="$(capture_physical_gpu_uuid)"
+if [[ "${{RELAX_POST_GPU_UUID}}" != "${{CASE_GPU_UUID}}" ]]; then
+  echo "ERROR: RECOVAR runtime physical GPU changed: expected ${{CASE_GPU_UUID}}, got ${{RELAX_POST_GPU_UUID}}" >&2
   exit 2
 fi
-printf '%s\\n' "${{RECOVAR_POST_GPU_UUID}}" > "${{RECOVAR_DIR}}/runtime_physical_gpu_uuid.txt"
+printf '%s\\n' "${{RELAX_POST_GPU_UUID}}" > "${{RELAX_DIR}}/runtime_physical_gpu_uuid.txt"
 
-"${{PIXI_PY}}" - "${{RECOVAR_INTERMEDIATES_DIR}}" "${{RELION_DIR}}" {case.n_classes} <<'PY'
+"${{PIXI_PY}}" - "${{RELAX_INTERMEDIATES_DIR}}" "${{RELION_DIR}}" {case.n_classes} <<'PY'
 import pathlib
 import sys
 
@@ -2208,7 +2208,7 @@ REC_ARGS=()
 REL_ARGS=()
 GT_ARGS=()
 for class_no in $(seq -f "%03g" 1 {case.n_classes}); do
-  REC_ARGS+=(--volume "${{RECOVAR_DIR}}/final_class${{class_no}}.mrc")
+  REC_ARGS+=(--volume "${{RELAX_DIR}}/final_class${{class_no}}.mrc")
   REL_ARGS+=(--volume "${{RELION_DIR}}/run_it${{ITER_PADDED}}_class${{class_no}}.mrc")
   GT_ARGS+=(--gt_volume "${{DATA_DIR}}/reference_gt_class${{class_no}}.mrc")
 done
@@ -2288,7 +2288,7 @@ cd {q(REPO_ROOT)}
 unset PYTHONPATH PYTHONHOME CONDA_PREFIX VIRTUAL_ENV
 while IFS='=' read -r ENV_NAME _; do
   case "${{ENV_NAME}}" in
-    RECOVAR_*|RELION_*|JAX_*|XLA_*) unset "${{ENV_NAME}}" ;;
+    RECOVAR_*|RELAX_*|RELION_*|JAX_*|XLA_*) unset "${{ENV_NAME}}" ;;
   esac
 done < <(env)
 unset TF_GPU_ALLOCATOR

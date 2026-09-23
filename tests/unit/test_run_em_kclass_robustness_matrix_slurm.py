@@ -236,20 +236,20 @@ def test_relion_class_population_audit_records_then_fails_on_collapse(tmp_path):
 def test_noise_rng_batch_size_generates_clean_prepare_command(tmp_path, monkeypatch):
     jobs_dir = tmp_path / "jobs"
     jobs_dir.mkdir()
-    monkeypatch.setenv("RECOVAR_FINAL_ALL_DATA_GRID_CORRECT", "1")
-    monkeypatch.setenv("RECOVAR_K_CLASS_DENSE_PASS2", "1")
-    monkeypatch.setenv("RECOVAR_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", "0")
-    monkeypatch.setenv("RECOVAR_K_CLASS_RELION_X_HALF_MSTEP", "1")
-    monkeypatch.setenv("RECOVAR_K_CLASS_FULL_VOLUME_MSTEP", "1")
-    monkeypatch.setenv("RECOVAR_K_CLASS_HALF_VOLUME_MSTEP", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "0")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "8192")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO", "0.5")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES", "2147483648")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES", "1073741824")
-    monkeypatch.setenv("RECOVAR_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", "805306368")
-    monkeypatch.setenv("RECOVAR_KCLASS_DUMP_DIR", str(tmp_path / "kclass_dumps"))
+    monkeypatch.setenv("RELAX_FINAL_ALL_DATA_GRID_CORRECT", "1")
+    monkeypatch.setenv("RELAX_K_CLASS_DENSE_PASS2", "1")
+    monkeypatch.setenv("RELAX_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", "0")
+    monkeypatch.setenv("RELAX_K_CLASS_RELION_X_HALF_MSTEP", "1")
+    monkeypatch.setenv("RELAX_K_CLASS_FULL_VOLUME_MSTEP", "1")
+    monkeypatch.setenv("RELAX_K_CLASS_HALF_VOLUME_MSTEP", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "8192")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO", "0.5")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES", "2147483648")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES", "1073741824")
+    monkeypatch.setenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", "805306368")
+    monkeypatch.setenv("RELAX_KCLASS_DUMP_DIR", str(tmp_path / "kclass_dumps"))
     script = launcher.write_case_script(
         case=launcher.DEFAULT_CASES[0],
         scratch_dir=tmp_path,
@@ -277,14 +277,14 @@ def test_noise_rng_batch_size_generates_clean_prepare_command(tmp_path, monkeypa
     assert "  --noise-rng-batch-size 256 \\\n  --relion-normalize \\" in text
     assert f"export RECOVAR_JAX_CACHE_DIR={tmp_path}/jax_cache" in text
     assert 'export JAX_COMPILATION_CACHE_DIR="${RECOVAR_JAX_CACHE_DIR}"' in text
-    assert 'RECOVAR_*|RELION_*|JAX_*|XLA_*) unset "${ENV_NAME}"' in text
+    assert 'RECOVAR_*|RELAX_*|RELION_*|JAX_*|XLA_*) unset "${ENV_NAME}"' in text
     assert "unset TF_GPU_ALLOCATOR" in text
     assert "export XLA_PYTHON_CLIENT_PREALLOCATE=false" in text
-    assert "export RECOVAR_FINAL_ALL_DATA_GRID_CORRECT" not in text
-    assert "export RECOVAR_FINAL_ALL_DATA_AFTER_MAX_ITER" not in text
-    assert "export RECOVAR_K_CLASS_DENSE_PASS2" not in text
-    assert "export RECOVAR_K_CLASS_RELION_X_HALF_MSTEP" not in text
-    assert "export RECOVAR_KCLASS_DUMP_DIR" not in text
+    assert "export RELAX_FINAL_ALL_DATA_GRID_CORRECT" not in text
+    assert "export RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER" not in text
+    assert "export RELAX_K_CLASS_DENSE_PASS2" not in text
+    assert "export RELAX_K_CLASS_RELION_X_HALF_MSTEP" not in text
+    assert "export RELAX_KCLASS_DUMP_DIR" not in text
     assert 'external_bind_dir = os.environ.get("RECOVAR_RELION_BIND_BUILD_DIR")' in text
     assert 'str(relion_bind_file).startswith(str(external_bind_root) + "/")' in text
     assert "      --firstiter_cc \\\n" in text
@@ -298,14 +298,14 @@ def test_noise_rng_batch_size_generates_clean_prepare_command(tmp_path, monkeypa
     assert "  --sym C1 \\\n" in text
     assert "  --init_resolution 30" not in text
     assert "  --image-fourier-backend relion_cuda \\\n" in text
-    assert 'RECOVAR_INTERMEDIATES_DIR="${RECOVAR_DIR}/intermediates"' in text
-    assert '--save_intermediates_dir "${RECOVAR_INTERMEDIATES_DIR}"' in text
+    assert 'RELAX_INTERMEDIATES_DIR="${RELAX_DIR}/intermediates"' in text
+    assert '--save_intermediates_dir "${RELAX_INTERMEDIATES_DIR}"' in text
     assert "from scripts.run_em_kclass_robustness_matrix_slurm import audit_numbered_class_maps" in text
-    assert '"${RECOVAR_INTERMEDIATES_DIR}" "${RELION_DIR}" 2' in text
+    assert '"${RELAX_INTERMEDIATES_DIR}" "${RELION_DIR}" 2' in text
     assert "for iteration in $(seq 0" not in text
     assert "Numbered class-map audit ok" in text
     assert 'RELION_GPU_UUID="$(capture_physical_gpu_uuid)"' in text
-    assert 'RECOVAR_GPU_UUID="$(capture_physical_gpu_uuid)"' in text
+    assert 'RELAX_GPU_UUID="$(capture_physical_gpu_uuid)"' in text
     assert "paired_gpu_uuid.json" in text
     assert 'start_engine_gpu_monitor "${CASE_ROOT}/relion_gpu_monitor.csv"' in text
     assert 'start_engine_gpu_monitor "${CASE_ROOT}/recovar_gpu_monitor.csv"' in text

@@ -78,7 +78,7 @@ test "$(sha256sum "${RELION_BINARY}" | awk '{print $1}')" = "${EXPECTED_RELION_S
 
 unset PYTHONPATH PYTHONHOME CONDA_PREFIX VIRTUAL_ENV CONDA_DEFAULT_ENV
 while IFS='=' read -r variable_name _; do
-    case "${variable_name}" in RECOVAR_*|RELION_ACC_DUMP_*|RELION_DUMP_*) unset "${variable_name}" ;; esac
+    case "${variable_name}" in RECOVAR_*|RELAX_*|RELION_ACC_DUMP_*|RELION_DUMP_*) unset "${variable_name}" ;; esac
 done < <(env)
 export PYTHONNOUSERSITE=1
 export CUDA_LAUNCH_BLOCKING=0

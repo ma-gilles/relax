@@ -1,7 +1,7 @@
 """K=1 adaptive pass 2 through the exact local engine (opt-in, shape-stable route).
 
 The compact engine (``sparse_pass2_bucketed.compute_pass2_stats_sparse_bucketed``)
-stays the default and the numerical oracle.  With ``RECOVAR_K1_PASS2_ENGINE=local``
+stays the default and the numerical oracle.  With ``RELAX_K1_PASS2_ENGINE=local``
 the same significant coarse samples are laid out as a per-image local hypothesis
 set (``build_pass2_hypothesis_layout``) and scored, normalised and back-projected
 by ``run_local_em_exact`` in its flat-row, stable-capacity, stable-Fourier-window
@@ -29,14 +29,14 @@ from relax.sampling import get_oversampled_translation_grid, infer_translation_s
 
 logger = logging.getLogger(__name__)
 
-K1_PASS2_ENGINE_ENV = "RECOVAR_K1_PASS2_ENGINE"
-_FLAT_ROWS_ENV = "RECOVAR_K1_LOCAL_PASS2_FLAT_ROWS"
-_STABLE_ROW_CAPACITY_ENV = "RECOVAR_K1_LOCAL_PASS2_STABLE_ROW_CAPACITY"
-_PACKED_PROJECTION_ENV = "RECOVAR_K1_LOCAL_PASS2_PACKED_PROJECTION"
-_STABLE_WINDOWS_ENV = "RECOVAR_K1_LOCAL_PASS2_STABLE_WINDOWS"
-_FUSED_PAIR_SCORE_ENV = "RECOVAR_K1_LOCAL_PASS2_FUSED_PAIR_SCORE"
-_UNIFY_BUCKET_SIZES_ENV = "RECOVAR_K1_LOCAL_PASS2_UNIFY_BUCKET_SIZES"
-_SOURCE_FAITHFUL_BPREF_ENV = "RECOVAR_K1_LOCAL_PASS2_SOURCE_FAITHFUL_BPREF"
+K1_PASS2_ENGINE_ENV = "RELAX_K1_PASS2_ENGINE"
+_FLAT_ROWS_ENV = "RELAX_K1_LOCAL_PASS2_FLAT_ROWS"
+_STABLE_ROW_CAPACITY_ENV = "RELAX_K1_LOCAL_PASS2_STABLE_ROW_CAPACITY"
+_PACKED_PROJECTION_ENV = "RELAX_K1_LOCAL_PASS2_PACKED_PROJECTION"
+_STABLE_WINDOWS_ENV = "RELAX_K1_LOCAL_PASS2_STABLE_WINDOWS"
+_FUSED_PAIR_SCORE_ENV = "RELAX_K1_LOCAL_PASS2_FUSED_PAIR_SCORE"
+_UNIFY_BUCKET_SIZES_ENV = "RELAX_K1_LOCAL_PASS2_UNIFY_BUCKET_SIZES"
+_SOURCE_FAITHFUL_BPREF_ENV = "RELAX_K1_LOCAL_PASS2_SOURCE_FAITHFUL_BPREF"
 
 
 def k1_local_pass2_engine_selected() -> bool:

@@ -787,7 +787,7 @@ static py::array_t<double> vdam_bootstrap_iref(
 
             // ---- RECOVAR DEBUG: dump first 3 particles' Fimg+Fctf+A ----
             {
-                const char* dbg_dir = getenv("RECOVAR_DEBUG_DUMP_DIR_OURS");
+                const char* dbg_dir = getenv("RELAX_DEBUG_DUMP_DIR_OURS");
                 if (dbg_dir != NULL && part_id_sorted < 3) {
                     char p[1024]; FILE* f;
                     snprintf(p, sizeof(p), "%s/p%ld_Fimg_preCTF.bin", dbg_dir, part_id_sorted);
@@ -834,7 +834,7 @@ static py::array_t<double> vdam_bootstrap_iref(
     for (int k = 0; k < nr_classes; k++) {
         // ---- RECOVAR DEBUG DUMP: our BP accumulator before reconstruct ----
         {
-            const char* dbg_dir = getenv("RECOVAR_DEBUG_DUMP_DIR");
+            const char* dbg_dir = getenv("RELAX_DEBUG_DUMP_DIR");
             if (dbg_dir != NULL) {
                 char path[1024]; FILE* f;
                 snprintf(path, sizeof(path), "%s/our_bpref_c%d_data_before.bin", dbg_dir, k);

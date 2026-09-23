@@ -143,7 +143,7 @@ def _active_coarse_score_indices(current_size: int) -> np.ndarray:
 
 def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
     monkeypatch.setenv(
-        "RECOVAR_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
+        "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
         "32",
     )
     logical_size = 70
@@ -231,7 +231,7 @@ def test_fused_lookup_strips_q32_physical_tail_for_current_size_26(monkeypatch):
     """Regression for the live current_size=26, physical_size=32 fused failure."""
 
     monkeypatch.setenv(
-        "RECOVAR_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
+        "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
         "32",
     )
     logical_size = 26
@@ -262,7 +262,7 @@ def test_stable_coarse_projector_keeps_logical_disk_boundary(monkeypatch):
     """Physical size 96 must retain the logical size-86 projector disk."""
 
     monkeypatch.setenv(
-        "RECOVAR_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
+        "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
         "32",
     )
     logical_size = 86
@@ -346,7 +346,7 @@ def test_stable_coarse_projector_keeps_logical_disk_boundary(monkeypatch):
 
 def test_stable_coarse_square_has_one_shape_across_q32_class(monkeypatch):
     monkeypatch.setenv(
-        "RECOVAR_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
+        "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
         "32",
     )
     layouts = [
@@ -367,7 +367,7 @@ def test_stable_coarse_square_has_one_shape_across_q32_class(monkeypatch):
 
 def test_disabled_coarse_square_layout_is_legacy_exact(monkeypatch):
     monkeypatch.setenv(
-        "RECOVAR_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
+        "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
         "32",
     )
     current_size = 70
@@ -891,7 +891,7 @@ def test_stable_bpref_wrapper_packs_logical_rows_and_poison_tail(monkeypatch):
 
         return call
 
-    monkeypatch.delenv("RECOVAR_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY", raising=False)
+    monkeypatch.delenv("RELAX_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY", raising=False)
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
     monkeypatch.setattr(em_cuda_kernels, "_ensure_ffi", lambda: None)
     monkeypatch.setattr(cuda_backproject.jax.ffi, "ffi_call", fake_ffi_call)
@@ -1041,7 +1041,7 @@ def test_runtime_bpref_lowering_and_jit_cache_ignore_logical_size(monkeypatch):
 
         return call
 
-    monkeypatch.delenv("RECOVAR_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY", raising=False)
+    monkeypatch.delenv("RELAX_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY", raising=False)
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
     monkeypatch.setattr(em_cuda_kernels, "_ensure_ffi", lambda: None)
     monkeypatch.setattr(cuda_backproject.jax.ffi, "ffi_call", fake_ffi_call)
@@ -1184,7 +1184,7 @@ def test_stable_window_engine_requires_complete_bpref_accumulators(disabled_adjo
 def test_stable_window_engine_rejects_external_host_replay(monkeypatch):
     from relax.local.local_em_engine import run_local_em_exact
 
-    monkeypatch.setenv("RECOVAR_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY", "/tmp/replay.so")
+    monkeypatch.setenv("RELAX_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY", "/tmp/replay.so")
     with pytest.raises(ValueError, match="do not support external VDAM host replay"):
         run_local_em_exact(
             None,

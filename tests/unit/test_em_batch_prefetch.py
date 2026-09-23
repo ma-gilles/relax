@@ -52,7 +52,7 @@ def test_exit_releases_full_queue(consumer_error):
 
 @pytest.mark.parametrize("value", ["-1", "invalid", "1.5"])
 def test_invalid_depth_rejected(monkeypatch, value):
-    monkeypatch.setenv("RECOVAR_EM_PREFETCH_BATCHES", value)
+    monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", value)
     with pytest.raises(ValueError, match="non-negative integer"):
         prefetch_depth()
 
@@ -67,10 +67,10 @@ def test_fused_pass2_prefetch_preserves_all_outputs(monkeypatch, device_scalars)
     from relax.sparse_pass2 import sparse_pass2_bucketed as engine
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "4")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS", str(int(device_scalars)))
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "4")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS", str(int(device_scalars)))
     kwargs = _fused_kclass_multibucket_fixture(n_images=13)
     kwargs.update(accumulate_noise=True, relion_f32_fine_posterior=True)
     threads = []
@@ -81,11 +81,11 @@ def test_fused_pass2_prefetch_preserves_all_outputs(monkeypatch, device_scalars)
         return original(*args, **kw)
 
     monkeypatch.setattr(engine, "fetch_indexed_batch", capture)
-    monkeypatch.setenv("RECOVAR_EM_PREFETCH_BATCHES", "0")
+    monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "0")
     expected = _fused_kclass_result_arrays(engine.compute_k_class_pass2_stats_sparse_fused(**kwargs))
     assert threads and set(threads) == {threading.get_ident()}
     threads.clear()
-    monkeypatch.setenv("RECOVAR_EM_PREFETCH_BATCHES", "2")
+    monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "2")
     actual = _fused_kclass_result_arrays(engine.compute_k_class_pass2_stats_sparse_fused(**kwargs))
     assert threads and threading.get_ident() not in threads
     _assert_fused_arrays_identical(expected, actual, "prefetch")
@@ -106,11 +106,11 @@ def test_coarse_prefetch_preserves_all_outputs(monkeypatch):
             yield batch
 
     monkeypatch.setattr(args[0], "iter_batches", capture)
-    monkeypatch.setenv("RECOVAR_EM_PREFETCH_BATCHES", "0")
+    monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "0")
     expected = significance._compute_k_class_significance_batched(*args, **kwargs)
     assert threads and set(threads) == {threading.get_ident()}
     threads.clear()
-    monkeypatch.setenv("RECOVAR_EM_PREFETCH_BATCHES", "2")
+    monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "2")
     actual = significance._compute_k_class_significance_batched(*args, **kwargs)
     assert threads and threading.get_ident() not in threads
     _assert_significance_results_identical(actual, expected)

@@ -53,8 +53,8 @@ PREPARED_STAR = PREPARATION_MANIFEST.parent / "prepared/particles_set06_optics.s
 PARTICLE_STACK = Path("/projects/CRYOEM/singerlab/mg6942/10202/06_Final_Stack/2017-12-27_MagCorrect_Frames05-19.mrcs")
 PARTICLE_STACK_SHA256 = "8eecf0fbf8e645ac51feff278a86e43e7e4be117921333dc6d3e22e52a628453"
 PARTICLE_STACK_SIZE_BYTES = 78_118_401_024
-RECOVAR_REFERENCE = PREPARATION_MANIFEST.parent / "prepared/initial_reference_recovar_I1_30A_box800.mrc"
-RECOVAR_REFERENCE_SHA256 = "d77516a08e5e3ccdef07d9039e36d65b174afe5d56fe20d7775eef188d2e6cc6"
+RELAX_REFERENCE = PREPARATION_MANIFEST.parent / "prepared/initial_reference_recovar_I1_30A_box800.mrc"
+RELAX_REFERENCE_SHA256 = "d77516a08e5e3ccdef07d9039e36d65b174afe5d56fe20d7775eef188d2e6cc6"
 RELION_REFERENCE = PREPARATION_MANIFEST.parent / "prepared/initial_reference_relion_I1_30A_box800.mrc"
 RELION_REFERENCE_SHA256 = "4f83710c999276d4f65cff586266ee121f271e8bed382dba329b384860af96bb"
 CANONICAL_REFERENCE_SHA256 = "b617f90d55ef4b7a637bd495397f2c6f291371263f66b16a7fbc020bf6dbad09"
@@ -92,7 +92,7 @@ SMOKE_STAR_SHA256 = "500dc2b76fdd5554d1dba759168184109f16d91deed0fce1fc2d9f5daf1
 SMOKE_HALF_ASSIGNMENT_SHA256 = "3a8f3eb11efce69ae772bed68639f05ac73b3e7162cc2316be987a28806227fc"
 SMOKE_SOURCE_IMAGE_NAMES_SHA256 = "44d98ac85bc83243cd7cd38180fa480ab979a49aefc25c6f4e928ce11d5f1240"
 SMOKE_SOURCE_ROWS = tuple(range(62)) + (63, 66)
-FINAL_ENVIRONMENT_TEXT = "RECOVAR_FINAL_ALL_DATA_GRID_CORRECT=unset\nRECOVAR_FINAL_ALL_DATA_AFTER_MAX_ITER=unset\n"
+FINAL_ENVIRONMENT_TEXT = "RELAX_FINAL_ALL_DATA_GRID_CORRECT=unset\nRECOVAR_FINAL_ALL_DATA_AFTER_MAX_ITER=unset\n"
 SLURM_TEMPLATE_SHA256 = {
     "recovar_smoke": "72dad390b3714eca443ee433629cacae5fd1dbe3c28055d02b910ffbd91f534f",
     "relion_smoke": "5934121c2bcddc29b3c776edd9138d862aa72c19fdb69bb1a73086f8ee1fe22e",
@@ -648,8 +648,8 @@ def _validate_preparation_and_inputs(
         "particle_stack": str(PARTICLE_STACK),
         "particle_stack_sha256": PARTICLE_STACK_SHA256,
         "particle_stack_size_bytes": PARTICLE_STACK_SIZE_BYTES,
-        "recovar_reference": str(RECOVAR_REFERENCE),
-        "recovar_reference_sha256": RECOVAR_REFERENCE_SHA256,
+        "recovar_reference": str(RELAX_REFERENCE),
+        "recovar_reference_sha256": RELAX_REFERENCE_SHA256,
         "relion_reference": str(RELION_REFERENCE),
         "relion_reference_sha256": RELION_REFERENCE_SHA256,
         "canonical_reference_sha256": CANONICAL_REFERENCE_SHA256,
@@ -689,8 +689,8 @@ def _validate_preparation_and_inputs(
     for phase in ("smoke", "full"):
         require_input_link(
             root / f"inputs/{phase}/reference_init.mrc",
-            RECOVAR_REFERENCE,
-            RECOVAR_REFERENCE_SHA256,
+            RELAX_REFERENCE,
+            RELAX_REFERENCE_SHA256,
             f"{phase} RECOVAR reference",
         )
         require_input_link(

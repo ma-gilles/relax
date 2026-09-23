@@ -62,22 +62,22 @@ from recovar.cuda_build import NativeLibrary, include_dir
 from recovar.data_io import image_backends as _image_backends
 
 _RELION_BATCHED_POSTERIOR_PRIMITIVES_ENV = (
-    "RECOVAR_RELION_BATCHED_POSTERIOR_PRIMITIVES"
+    "RELAX_RELION_BATCHED_POSTERIOR_PRIMITIVES"
 )
 
 
 _VDAM_EXTERNAL_HOST_REPLAY_LIBRARY_ENV = (
-    "RECOVAR_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY"
+    "RELAX_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY"
 )
 
 
 _VDAM_EXTERNAL_HOST_REPLAY_REPORT_DIR_ENV = (
-    "RECOVAR_VDAM_EXTERNAL_HOST_REPLAY_REPORT_DIR"
+    "RELAX_VDAM_EXTERNAL_HOST_REPLAY_REPORT_DIR"
 )
 
 
 _VDAM_EXTERNAL_HOST_REPLAY_CAPTURE_DIR_ENV = (
-    "RECOVAR_VDAM_EXTERNAL_HOST_REPLAY_CAPTURE_DIR"
+    "RELAX_VDAM_EXTERNAL_HOST_REPLAY_CAPTURE_DIR"
 )
 
 
@@ -335,7 +335,7 @@ def relion_point_group_symmetrise_bpref_split_host(
 
     if chunk_voxels is None:
         raw_chunk_voxels = os.environ.get(
-            "RECOVAR_RELION_BPREF_SYMMETRY_CHUNK_VOXELS",
+            "RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS",
         )
         chunk_voxels = 16 * 1024 * 1024 if raw_chunk_voxels is None else int(raw_chunk_voxels)
     chunk_voxels = int(chunk_voxels)
@@ -488,7 +488,7 @@ def relion_point_group_symmetrise_bpref_host(
 
     if chunk_voxels is None:
         raw_chunk_voxels = os.environ.get(
-            "RECOVAR_RELION_BPREF_SYMMETRY_CHUNK_VOXELS",
+            "RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS",
         )
         chunk_voxels = 16 * 1024 * 1024 if raw_chunk_voxels is None else int(raw_chunk_voxels)
     chunk_voxels = int(chunk_voxels)
@@ -1105,7 +1105,7 @@ SPARSE_PASS2_SORT_SCAN_AUTO = -1
 SPARSE_PASS2_SEGMENTED_CELLS_PER_SEGMENT_MAX = 262144
 
 
-_SPARSE_PASS2_SORT_SCAN_ENV = "RECOVAR_SPARSE_PASS2_SEGMENTED_SORT_SCAN"
+_SPARSE_PASS2_SORT_SCAN_ENV = "RELAX_SPARSE_PASS2_SEGMENTED_SORT_SCAN"
 
 
 _SPARSE_PASS2_SORT_SCAN_NAMES = {
@@ -1131,7 +1131,7 @@ _SPARSE_PASS2_SORT_SCAN_DEFAULT = SPARSE_PASS2_SORT_SCAN_AUTO
 def sparse_pass2_segmented_sort_scan_mode() -> int:
     """Default sort/scan structure of the segmented pass-2 posterior.
 
-    ``RECOVAR_SPARSE_PASS2_SEGMENTED_SORT_SCAN`` selects ``auto`` (the default),
+    ``RELAX_SPARSE_PASS2_SEGMENTED_SORT_SCAN`` selects ``auto`` (the default),
     ``per_segment`` (0), ``segmented_sort`` (1), ``segmented`` (2),
     ``partitioned_sort`` (3) or ``partitioned`` (4).  The value is read once per
     process: it is baked into compiled programs, so changing the environment
@@ -1969,7 +1969,7 @@ def _run_vdam_external_host_replay_callback(
     library = pathlib.Path(library_text).expanduser().resolve()
     if not library.is_file():
         raise FileNotFoundError(library)
-    exact_ptx = os.environ.get("RECOVAR_VDAM_EXACT_NATIVE_PTX", "").strip()
+    exact_ptx = os.environ.get("RELAX_VDAM_EXACT_NATIVE_PTX", "").strip()
     if not exact_ptx:
         raise RuntimeError("external VDAM host replay requires exact native PTX")
 
@@ -7127,7 +7127,7 @@ def relion_preprocess_real_f32(
     read-back of the per-image sums.
 
     ``deferred_finite_check`` (default from
-    ``RECOVAR_RELION_PREPROCESS_DEFERRED_CHECK``, off) removes that per-call
+    ``RELAX_RELION_PREPROCESS_DEFERRED_CHECK``, off) removes that per-call
     read-back and stream synchronization: the device counts invalid images
     into a small array that is queued for
     :func:`drain_relion_preprocess_checks`, which the K-class pass-2 loop
@@ -7162,7 +7162,7 @@ def relion_preprocess_real_f32(
 relion_preprocess_real_f32.__wrapped__ = _relion_preprocess_real_f32_impl
 
 
-RELION_PREPROCESS_DEFERRED_CHECK_ENV = "RECOVAR_RELION_PREPROCESS_DEFERRED_CHECK"
+RELION_PREPROCESS_DEFERRED_CHECK_ENV = "RELAX_RELION_PREPROCESS_DEFERRED_CHECK"
 
 
 _RELION_PREPROCESS_PENDING_CHECKS: list[jax.Array] = []
@@ -7175,7 +7175,7 @@ _RELION_PREPROCESS_PENDING_LIMIT = 1024
 
 
 def relion_preprocess_deferred_check_requested() -> bool:
-    """Strict 0/1 read of ``RECOVAR_RELION_PREPROCESS_DEFERRED_CHECK`` (unset is off)."""
+    """Strict 0/1 read of ``RELAX_RELION_PREPROCESS_DEFERRED_CHECK`` (unset is off)."""
 
     token = os.environ.get(RELION_PREPROCESS_DEFERRED_CHECK_ENV, "0").strip()
     if token not in {"0", "1"}:

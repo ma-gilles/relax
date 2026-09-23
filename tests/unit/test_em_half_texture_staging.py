@@ -65,7 +65,7 @@ def test_half_staging_preserves_current_crop_mask_and_scaling(
         expected = p._texture_centered_crop_at_indices(raw, indices, **output_kwargs)
     else:
         expected = p._texture_centered_crop_to_full(raw, **output_kwargs)
-    monkeypatch.delenv("RECOVAR_DENSE_MEANS_SCALE", raising=False)
+    monkeypatch.delenv("RELAX_DENSE_MEANS_SCALE", raising=False)
     if dense_scale:
         expected = expected * -(48**2)
     projected, abs2 = p.compute_relion_projector_projections_block(

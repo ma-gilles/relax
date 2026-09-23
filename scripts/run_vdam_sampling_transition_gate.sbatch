@@ -34,7 +34,7 @@ fi
 CUDA_BINARY=${REPO_ROOT}/relax/cuda/librelax_cuda.so
 DATA_DIR=${BASELINE_ROOT}/data
 RELION_DIR=${BASELINE_ROOT}/relion
-RECOVAR_DIR=${OUTPUT_ROOT}/recovar
+RELAX_DIR=${OUTPUT_ROOT}/recovar
 ANALYSIS_DIR=${OUTPUT_ROOT}/analysis
 PROVENANCE_DIR=${OUTPUT_ROOT}/provenance
 
@@ -45,11 +45,11 @@ test -x "${PIXI_PY}"
 test "$(git -C "${REPO_ROOT}" rev-parse HEAD)" = "${EXPECTED_REPO_HEAD}"
 test -z "$(git -C "${REPO_ROOT}" status --porcelain=v1 --untracked-files=no)"
 test "$(sha256sum "${CUDA_BINARY}" | awk '{print $1}')" = "${EXPECTED_CUDA_SHA256}"
-mkdir -p "${RECOVAR_DIR}" "${ANALYSIS_DIR}" "${PROVENANCE_DIR}"
-test -z "$(find "${RECOVAR_DIR}" -mindepth 1 -print -quit)"
+mkdir -p "${RELAX_DIR}" "${ANALYSIS_DIR}" "${PROVENANCE_DIR}"
+test -z "$(find "${RELAX_DIR}" -mindepth 1 -print -quit)"
 
 unset PYTHONHOME CONDA_PREFIX VIRTUAL_ENV CONDA_DEFAULT_ENV
-unset JAX_PLATFORMS JAX_PLATFORM_NAME RECOVAR_DISABLE_CUDA RECOVAR_CUDA_DISABLE
+unset JAX_PLATFORMS JAX_PLATFORM_NAME RECOVAR_DISABLE_CUDA RELAX_CUDA_DISABLE
 export PYTHONPATH=${REPO_ROOT}
 export PYTHONNOUSERSITE=1
 export PYTHONUNBUFFERED=1
@@ -58,8 +58,8 @@ export CUDA_LAUNCH_BLOCKING=0
 export RECOVAR_EXPECTED_REPO_ROOT=${REPO_ROOT}
 export RECOVAR_RELAX_CUDA_LIB=${CUDA_BINARY}
 if (( STOP_ITERATION >= 90 )); then
-  export RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR=${OUTPUT_ROOT}/accuracy_inputs
-  export RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS=90
+  export RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR=${OUTPUT_ROOT}/accuracy_inputs
+  export RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS=90
 fi
 if [[ "${PROFILE_ITERATIONS}" =~ ^(1|true|TRUE|yes|YES|on|ON)$ ]]; then
   export RECOVAR_INITIAL_MODEL_PROFILE=1
@@ -71,7 +71,7 @@ export PIXI_HOME=${OUTPUT_ROOT}/runtime/${SLURM_JOB_ID}/pixi_home
 export RATTLER_CACHE_DIR=${OUTPUT_ROOT}/runtime/${SLURM_JOB_ID}/rattler_cache
 mkdir -p "${TMPDIR}" "${PIXI_HOME}" "${RATTLER_CACHE_DIR}" "${JAX_COMPILATION_CACHE_DIR}"
 if (( STOP_ITERATION >= 90 )); then
-  mkdir -p "${RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR}"
+  mkdir -p "${RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR}"
 fi
 
 git -C "${REPO_ROOT}" rev-parse HEAD > "${PROVENANCE_DIR}/repo_head.txt"
@@ -84,7 +84,7 @@ printf 'audit_mode=%s\nstop_iteration=%s\nprofile_iterations=%s\nrandom_seed=%s\
 COMMAND=(
   "${PIXI_PY}" -m relax.commands.initial_model
   --i "${DATA_DIR}/particles.star"
-  --o "${RECOVAR_DIR}/run"
+  --o "${RELAX_DIR}/run"
   --nr_iter 200
   --grad_write_iter 1
   --K 1
@@ -108,16 +108,16 @@ printf '%q ' "${COMMAND[@]}" > "${PROVENANCE_DIR}/recovar_command.sh"
 printf '\n' >> "${PROVENANCE_DIR}/recovar_command.sh"
 
 /usr/bin/time -v srun --ntasks=1 --cpus-per-task="${SLURM_CPUS_PER_TASK:-8}" --cpu-bind=none \
-  "${COMMAND[@]}" > "${RECOVAR_DIR}/runner.stdout" 2> "${RECOVAR_DIR}/runner.stderr"
+  "${COMMAND[@]}" > "${RELAX_DIR}/runner.stdout" 2> "${RELAX_DIR}/runner.stderr"
 touch "${OUTPUT_ROOT}/SCIENCE_COMPLETED"
 
 if (( STOP_ITERATION >= 90 )); then
   "${PIXI_PY}" "${REPO_ROOT}/scripts/audit_vdam_expected_accuracy.py" \
     --input-star "${DATA_DIR}/particles.star" \
-    --previous-prefix "${RECOVAR_DIR}/run_it089" \
+    --previous-prefix "${RELAX_DIR}/run_it089" \
     --target-prefix "${RELION_DIR}/run_it090" \
-    --candidate-meta "${RECOVAR_DIR}/run_it090_recovar_meta.json" \
-    --live-inputs "${RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR}/iter090_expected_accuracy_inputs.npz" \
+    --candidate-meta "${RELAX_DIR}/run_it090_recovar_meta.json" \
+    --live-inputs "${RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR}/iter090_expected_accuracy_inputs.npz" \
     --output "${ANALYSIS_DIR}/expected_accuracy_it090.json"
 fi
 
@@ -156,21 +156,21 @@ else
 fi
 set +e
 "${PIXI_PY}" -m scripts.audit_vdam_kclass_trajectory \
-  --candidate-dir "${RECOVAR_DIR}" --reference-dir "${RELION_DIR}" --K 1 \
+  --candidate-dir "${RELAX_DIR}" --reference-dir "${RELION_DIR}" --K 1 \
   "${map_args[@]}" --minimum-fsc-auc 0.999 --minimum-assignment-accuracy 0.999 \
   --output-json "${map_report}" \
   --output-shells-npz "${shell_report}"
 map_status=$?
 
 "${PIXI_PY}" -m scripts.audit_vdam_particle_state_trajectory \
-  --recovar-dir "${RECOVAR_DIR}" --relion-dir "${RELION_DIR}" \
+  --recovar-dir "${RELAX_DIR}" --relion-dir "${RELION_DIR}" \
   --iterations "${particle_iterations[@]}" \
   --output "${particle_report}"
 particle_status=$?
 
 if [[ "${AUDIT_MODE}" == full ]]; then
   "${PIXI_PY}" "${REPO_ROOT}/scripts/audit_vdam_sampling_trajectory.py" \
-    --candidate-dir "${RECOVAR_DIR}" --relion-dir "${RELION_DIR}" \
+    --candidate-dir "${RELAX_DIR}" --relion-dir "${RELION_DIR}" \
     --pixel-size "${PIXEL_SIZE}" \
     --output "${ANALYSIS_DIR}/full_sampling_trajectory.json"
   schedule_status=$?
@@ -180,7 +180,7 @@ fi
 
 if [[ -n "${RECOVAR_INITIAL_MODEL_PROFILE:-}" ]]; then
   "${PIXI_PY}" "${REPO_ROOT}/scripts/summarize_vdam_iteration_profiles.py" \
-    --recovar-dir "${RECOVAR_DIR}" \
+    --recovar-dir "${RELAX_DIR}" \
     --output "${ANALYSIS_DIR}/iteration_profile_summary.json"
   profile_status=$?
 else

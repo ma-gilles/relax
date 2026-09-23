@@ -331,7 +331,7 @@ def _result_fields(result):
 # reproduce run to run: ``Ft_y``/``Ft_ctf`` are built by atomic backprojection
 # scatters whose order the GPU driver chooses, so two identical calls in one
 # process already disagree in their last bits (measured on an A100:
-# ``RECOVAR_EM_DETERMINISTIC_REDUCTIONS=1`` does not remove it either).  They
+# ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` does not remove it either).  They
 # are therefore compared against that same-process self-repeat rather than
 # bitwise; every other field must be bitwise equal.
 _ACCUMULATOR_FIELDS = ("Ft_y", "Ft_ctf")

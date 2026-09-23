@@ -41,12 +41,12 @@ def _dump(tmp_path, *, requested, counts=COUNTS, segment=SEGMENT):
     np.save(mapping, np.array([f"{i + 1}@{out / 'stack.mrcs'}" for i in range(32)]),
             allow_pickle=False)
     env = {
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR": str(out),
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION": "8",
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF": "1",
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE": "4",
-        "RECOVAR_BPREF_CONTRIBUTION_STACK_SHA256": "0" * 64,
-        "RECOVAR_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY": str(mapping),
+        "RELAX_BPREF_CONTRIBUTION_DUMP_DIR": str(out),
+        "RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION": "8",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_HALF": "1",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE": "4",
+        "RELAX_BPREF_CONTRIBUTION_STACK_SHA256": "0" * 64,
+        "RELAX_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY": str(mapping),
     }
     if requested is not None:
         env[bpref_diagnostics._BPREF_CONTRIBUTION_DUMP_CLASS_ENV] = str(requested)

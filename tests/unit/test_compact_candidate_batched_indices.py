@@ -184,7 +184,7 @@ def test_images_with_different_rotation_row_counts_share_the_batched_path(seed, 
 
 
 # ---------------------------------------------------------------------------
-# Device-built pair index arrays (RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_DEVICE_INDEX)
+# Device-built pair index arrays (RELAX_SPARSE_KCLASS_COMPACT_PAIR_DEVICE_INDEX)
 # ---------------------------------------------------------------------------
 
 
@@ -317,10 +317,10 @@ def test_auto_pair_bucket_quantum_follows_mean_valid_pairs(monkeypatch, mean_val
         np.asarray([mean_valid - 10.0, mean_valid + 10.0], dtype=np.int64),
         np.asarray([mean_valid, mean_valid], dtype=np.int64),
     )
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_PAIR_BUCKET_QUANTUM", "auto")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_PAIR_BUCKET_QUANTUM", "auto")
     assert bucketed_mod._compact_pair_bucket_quantum(counts) == expected
     assert bucketed_mod._compact_pair_bucket_quantum(()) is None
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_PAIR_BUCKET_QUANTUM", "12345")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_PAIR_BUCKET_QUANTUM", "12345")
     assert bucketed_mod._compact_pair_bucket_quantum(counts) == 12345
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_PAIR_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_PAIR_BUCKET_QUANTUM", raising=False)
     assert bucketed_mod._compact_pair_bucket_quantum(counts) is None

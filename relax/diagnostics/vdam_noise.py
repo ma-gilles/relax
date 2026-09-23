@@ -33,7 +33,7 @@ def _array_finite_summary(name: str, value: object, *, max_indices: int = 5) -> 
 
 
 def _dump_noise_failure_meta(state: InitialModelState, meta: dict, summaries: Sequence[str]) -> str | None:
-    dump_root = os.environ.get("RECOVAR_INITIALMODEL_NOISE_FAILURE_DUMP_DIR")
+    dump_root = os.environ.get("RELAX_INITIALMODEL_NOISE_FAILURE_DUMP_DIR")
     if not dump_root:
         return None
     path = Path(dump_root)
@@ -68,10 +68,10 @@ def _maybe_dump_noise_update_boundary(
 ) -> str | None:
     """Write VDAM noise sufficient statistics only when explicitly requested."""
 
-    dump_root = os.environ.get("RECOVAR_INITIALMODEL_NOISE_UPDATE_DUMP_DIR")
+    dump_root = os.environ.get("RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_DIR")
     if not dump_root:
         return None
-    requested = os.environ.get("RECOVAR_INITIALMODEL_NOISE_UPDATE_DUMP_ITERATION")
+    requested = os.environ.get("RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_ITERATION")
     if requested:
         requested_iterations = {int(token.strip()) for token in requested.split(",") if token.strip()}
         if int(state.iter) not in requested_iterations:

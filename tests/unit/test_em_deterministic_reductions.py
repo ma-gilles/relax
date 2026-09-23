@@ -1,4 +1,4 @@
-"""Fixed-order segment sums behind RECOVAR_EM_DETERMINISTIC_REDUCTIONS.
+"""Fixed-order segment sums behind RELAX_EM_DETERMINISTIC_REDUCTIONS.
 
 The opt-in replaces duplicate-index scatter-adds (shell binning, per-group
 scale terms, per-image residual totals) with masked reductions.  These checks

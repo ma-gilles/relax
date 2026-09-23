@@ -55,9 +55,9 @@ from relax.scoring.significant_samples import ComplementSignificantSampleIndices
 logger = logging.getLogger(__name__)
 NVTX_DOMAIN_EM = "recovar_em"
 _RUN_EM_ALLOWED_KWARGS = frozenset(inspect.signature(run_em).parameters)
-_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE_ENV = "RECOVAR_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE"
-_RELION_X_HALF_BP_FUSED_ATOMICS_ENV = "RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS"
-_LOCAL_HOST_RESULT_PUBLICATION_ENV = "RECOVAR_EXACT_LOCAL_HOST_RESULT_PUBLICATION"
+_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE_ENV = "RELAX_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE"
+_RELION_X_HALF_BP_FUSED_ATOMICS_ENV = "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS"
+_LOCAL_HOST_RESULT_PUBLICATION_ENV = "RELAX_EXACT_LOCAL_HOST_RESULT_PUBLICATION"
 
 
 def _local_host_result_publication_requested():
@@ -104,7 +104,7 @@ def _env_value_or_none(name: str) -> str | None:
 def _sparse_pass2_selected(env_name: str) -> bool:
     """Whether an adaptive route keeps the sparse-bucketed pass 2.
 
-    ``RECOVAR_K1_DENSE_PASS2=1`` and ``RECOVAR_K_CLASS_DENSE_PASS2=1`` swap the
+    ``RELAX_K1_DENSE_PASS2=1`` and ``RELAX_K_CLASS_DENSE_PASS2=1`` swap the
     K=1 and K-class adaptive pass 2 from the sparse-bucketed engine to the dense
     in-place reduction. Diagnostic only: it tests whether the sparse-bucket
     reduction order carries a structural bias versus the dense reduction. Only
@@ -119,8 +119,8 @@ def _use_fused_sparse_k_class_pass2(n_classes: int) -> bool:
     # chunks broad full-support pass-2 work by rotation and is the safer RELION
     # parity route for first-iteration/default-GUI refinements.  Multi-class
     # runs still default to the fused path, and K=1 fused remains available for
-    # explicit experiments via RECOVAR_SPARSE_KCLASS_FUSED=1.
-    return parse_env_flag("RECOVAR_SPARSE_KCLASS_FUSED", default=int(n_classes) > 1)
+    # explicit experiments via RELAX_SPARSE_KCLASS_FUSED=1.
+    return parse_env_flag("RELAX_SPARSE_KCLASS_FUSED", default=int(n_classes) > 1)
 
 
 def _apply_bpref_particle_order_policy(
@@ -181,17 +181,17 @@ def _compact_sparse_pass2_preferred_over_dense(n_classes: int, n_images: int) ->
     Explicit dense-threshold env overrides keep their historical meaning.
     """
 
-    min_images = _positive_k_class_threshold(n_classes, "RECOVAR_K_CLASS_COMPACT_SPARSE_PASS2_MIN_IMAGES", 20_000)
+    min_images = _positive_k_class_threshold(n_classes, "RELAX_K_CLASS_COMPACT_SPARSE_PASS2_MIN_IMAGES", 20_000)
     if min_images is None or int(n_images) < min_images:
         return False
     if (
-        _env_value_or_none("RECOVAR_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION") is not None
-        or _env_value_or_none("RECOVAR_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION") is not None
+        _env_value_or_none("RELAX_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION") is not None
+        or _env_value_or_none("RELAX_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION") is not None
     ):
         return False
-    compact_pair_check = parse_env_flag("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", default=False)
+    compact_pair_check = parse_env_flag("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", default=False)
     compact_pairs = parse_env_flag(
-        "RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS",
+        "RELAX_SPARSE_KCLASS_COMPACT_PAIRS",
         default=not compact_pair_check,
     )
     return bool(compact_pairs and not compact_pair_check)
@@ -1236,7 +1236,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
             debug_iteration=engine_kwargs.get("debug_iteration"),
         ),
         return_class_best=True,
-        return_class_second=bool(os.environ.get("RECOVAR_GLOBAL_WINNER_SUMMARY_PATH", "").strip()),
+        return_class_second=bool(os.environ.get("RELAX_GLOBAL_WINNER_SUMMARY_PATH", "").strip()),
         debug_iteration=engine_kwargs.get("debug_iteration"),
         coarse_healpix_order=engine_kwargs.get("coarse_healpix_order"),
         coarse_rotation_ids=engine_kwargs.get("coarse_rotation_ids"),
@@ -2618,7 +2618,7 @@ def run_dense_k_class_em_adaptive(
         and evaluate the full fine grid with no mask.
     coarse_relion_projector_texture_interp : bool or None
         Explicitly select the supplied-PPref coarse projector.  ``None``
-        defers to ``RECOVAR_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP``;
+        defers to ``RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP``;
         the strict-parity default is RELION texture interpolation.
     """
     # Lazy import to avoid the formatter stripping a top-level name that is
@@ -2989,7 +2989,7 @@ def run_dense_k_class_em_adaptive(
     )
     if fused_atomic_diagnostic_requested and not fused_atomic_diagnostic_supported:
         raise RuntimeError(
-            "RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS is qualified only for the sparse "
+            "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS is qualified only for the sparse "
             "first-iteration global-winner subset or explicitly scoped later "
             "soft-posterior pass 2"
         )
@@ -3052,7 +3052,7 @@ def run_dense_k_class_em_adaptive(
         )
         return _with_significant_counts(result)
 
-    dense_support_threshold = _positive_k_class_threshold(n_classes, "RECOVAR_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION", 0.50)
+    dense_support_threshold = _positive_k_class_threshold(n_classes, "RELAX_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION", 0.50)
     if (
         sparse_pass2_requested
         and not non_c1_symmetry
@@ -3065,7 +3065,7 @@ def run_dense_k_class_em_adaptive(
         and not reuse_zero_oversampling_coarse_state
     ):
         dense_mean_support_threshold = _positive_k_class_threshold(
-            n_classes, "RECOVAR_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", 0.15,
+            n_classes, "RELAX_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", 0.15,
         )
         support_stats = _fine_support_stats(
             sig_sample_indices_by_class,
@@ -3078,7 +3078,7 @@ def run_dense_k_class_em_adaptive(
         )
         compact_sparse_preferred = _compact_sparse_pass2_preferred_over_dense(n_classes, n_images)
         compact_sparse_min_images = _positive_k_class_threshold(
-            n_classes, "RECOVAR_K_CLASS_COMPACT_SPARSE_PASS2_MIN_IMAGES", 20_000,
+            n_classes, "RELAX_K_CLASS_COMPACT_SPARSE_PASS2_MIN_IMAGES", 20_000,
         )
         dense_by_median = (
             not compact_sparse_preferred
@@ -3090,10 +3090,10 @@ def run_dense_k_class_em_adaptive(
             and support_stats["rotation_mean_fraction"] >= dense_mean_support_threshold
         )
         dense_small_n_threshold = _positive_k_class_threshold(
-            n_classes, "RECOVAR_K_CLASS_DENSE_PASS2_SMALL_DATASET_IMAGES", 1500,
+            n_classes, "RELAX_K_CLASS_DENSE_PASS2_SMALL_DATASET_IMAGES", 1500,
         )
         dense_small_mean_threshold = _positive_k_class_threshold(
-            n_classes, "RECOVAR_K_CLASS_DENSE_PASS2_SMALL_DATASET_MEAN_SUPPORT_FRACTION", 0.10,
+            n_classes, "RELAX_K_CLASS_DENSE_PASS2_SMALL_DATASET_MEAN_SUPPORT_FRACTION", 0.10,
         )
         dense_by_small_dataset = (
             dense_small_n_threshold is not None

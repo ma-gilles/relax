@@ -219,10 +219,10 @@ def test_relion_vdam_fused_source_uses_native_separate_accumulator_storage():
         "launch_runtime_sgd(std::false_type{}, std::false_type{})"
         in projector_launcher
     )
-    assert "RECOVAR_VDAM_PREPROJECT_PERSISTENT_ROTATIONS" in source
-    assert "RECOVAR_VDAM_PRECOMPUTE_PERSISTENT_RESIDUALS" in source
-    assert "RECOVAR_VDAM_PRECOMPUTE_ORDERED_RESIDUALS" in source
-    assert "RECOVAR_VDAM_FIXED_WARP_ORDER_SCATTER" in source
+    assert "RELAX_VDAM_PREPROJECT_PERSISTENT_ROTATIONS" in source
+    assert "RELAX_VDAM_PRECOMPUTE_PERSISTENT_RESIDUALS" in source
+    assert "RELAX_VDAM_PRECOMPUTE_ORDERED_RESIDUALS" in source
+    assert "RELAX_VDAM_FIXED_WARP_ORDER_SCATTER" in source
     assert (
         "for (unsigned active_warp = 0; active_warp < 4; ++active_warp)"
         in native_kernel
@@ -277,7 +277,7 @@ def test_relion_vdam_fused_source_uses_native_separate_accumulator_storage():
     assert "relion_vdam_cast_accumulator_kernel<float, double>" in projector_launcher
     assert "VdamCandidateBlockTraceRecord" in source
     assert "vdam_candidate_globaltimer" in source
-    assert "RECOVAR_VDAM_CANDIDATE_BLOCK_TRACE" in source
+    assert "RELAX_VDAM_CANDIDATE_BLOCK_TRACE" in source
     assert "candidate_trace_active && candidate_trace_writer->requested()" in source
     assert "candidate_trace_writer->append" in projector_launcher
     assert "VdamCandidateBlockTraceRecord* candidate_trace_records = nullptr" in projector_launcher
@@ -326,7 +326,7 @@ def test_relion_vdam_ordered_scatter_cuda_graph_is_opt_in_and_fail_closed():
         "cudaError_t launch_relion_vdam_mstep_fused_projector_x_half(", 1
     )[1].split("__device__ __forceinline__ float relion_fine_diff2_update_f32", 1)[0]
 
-    assert '"RECOVAR_VDAM_ORDERED_SCATTER_CUDA_GRAPH"' in source
+    assert '"RELAX_VDAM_ORDERED_SCATTER_CUDA_GRAPH"' in source
     fail_closed = launcher.split(
         "if (ordered_scatter_cuda_graph_requested &&", 1
     )[1].split("return cudaErrorInvalidValue;", 1)[0]
@@ -399,7 +399,7 @@ def test_relion_vdam_exact_native_ptx_discriminator_is_opt_in_and_fail_closed():
         Path(__file__).resolve().parents[2] / "relax" / "cuda" / "Makefile"
     ).read_text()
 
-    assert '"RECOVAR_VDAM_EXACT_NATIVE_PTX"' in source
+    assert '"RELAX_VDAM_EXACT_NATIVE_PTX"' in source
     assert 'exact_native_ptx_path[0] != \'\\0\'' in source
     assert "cuModuleLoad(" in source
     assert "cuModuleGetFunction(" in source
@@ -1264,7 +1264,7 @@ def test_relion_vdam_mstep_fused_projector_zero_matches_preprojected_zero(
                 launch_serial_nonzero,
             )
         )
-        monkeypatch.setenv("RECOVAR_VDAM_PREPROJECT_PERSISTENT_ROTATIONS", "1")
+        monkeypatch.setenv("RELAX_VDAM_PREPROJECT_PERSISTENT_ROTATIONS", "1")
         preprojected_nonzero = em_cuda_kernels.relion_vdam_mstep_fused_projector_x_half(
             *common,
             jnp.asarray(projector_values),
@@ -1280,7 +1280,7 @@ def test_relion_vdam_mstep_fused_projector_zero_matches_preprojected_zero(
             parallel_worker_replay=False,
         )
         jax.block_until_ready(preprojected_nonzero)
-        monkeypatch.setenv("RECOVAR_VDAM_PRECOMPUTE_PERSISTENT_RESIDUALS", "1")
+        monkeypatch.setenv("RELAX_VDAM_PRECOMPUTE_PERSISTENT_RESIDUALS", "1")
         precomputed_nonzero = (
             em_cuda_kernels.relion_vdam_mstep_fused_projector_x_half(
                 *common,
@@ -1299,12 +1299,12 @@ def test_relion_vdam_mstep_fused_projector_zero_matches_preprojected_zero(
         )
         jax.block_until_ready(precomputed_nonzero)
         monkeypatch.delenv(
-            "RECOVAR_VDAM_PRECOMPUTE_PERSISTENT_RESIDUALS", raising=False
+            "RELAX_VDAM_PRECOMPUTE_PERSISTENT_RESIDUALS", raising=False
         )
         monkeypatch.delenv(
-            "RECOVAR_VDAM_PREPROJECT_PERSISTENT_ROTATIONS", raising=False
+            "RELAX_VDAM_PREPROJECT_PERSISTENT_ROTATIONS", raising=False
         )
-        monkeypatch.setenv("RECOVAR_VDAM_PRECOMPUTE_ORDERED_RESIDUALS", "1")
+        monkeypatch.setenv("RELAX_VDAM_PRECOMPUTE_ORDERED_RESIDUALS", "1")
         precomputed_launch_serial_nonzero = (
             em_cuda_kernels.relion_vdam_mstep_fused_projector_x_half(
                 *common,
@@ -1385,9 +1385,9 @@ def test_relion_vdam_ordered_scatter_cuda_graph_matches_launch_serial(
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
     monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
-    monkeypatch.setenv("RECOVAR_VDAM_PRECOMPUTE_ORDERED_RESIDUALS", "1")
-    monkeypatch.setenv("RECOVAR_VDAM_FIXED_WARP_ORDER_SCATTER", "1")
-    monkeypatch.delenv("RECOVAR_VDAM_ORDERED_SCATTER_CUDA_GRAPH", raising=False)
+    monkeypatch.setenv("RELAX_VDAM_PRECOMPUTE_ORDERED_RESIDUALS", "1")
+    monkeypatch.setenv("RELAX_VDAM_FIXED_WARP_ORDER_SCATTER", "1")
+    monkeypatch.delenv("RELAX_VDAM_ORDERED_SCATTER_CUDA_GRAPH", raising=False)
 
     image_shape = (8, 8)
     volume_shape = (11, 11, 11)
@@ -1473,7 +1473,7 @@ def test_relion_vdam_ordered_scatter_cuda_graph_matches_launch_serial(
         )
         jax.block_until_ready(launch_serial)
 
-        monkeypatch.setenv("RECOVAR_VDAM_ORDERED_SCATTER_CUDA_GRAPH", "1")
+        monkeypatch.setenv("RELAX_VDAM_ORDERED_SCATTER_CUDA_GRAPH", "1")
         graph_replay = (
             em_cuda_kernels.relion_vdam_mstep_fused_projector_x_half(
                 *arguments,

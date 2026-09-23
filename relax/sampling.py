@@ -342,7 +342,7 @@ def get_relion_translation_grid(
     return grid[squared_radius < max_pixel * max_pixel + squared_tolerance_pixels]
 
 
-_K1_RELION_EXACT_TRANSLATION_GRID_ENV = "RECOVAR_K1_RELION_EXACT_TRANSLATION_GRID"
+_K1_RELION_EXACT_TRANSLATION_GRID_ENV = "RELAX_K1_RELION_EXACT_TRANSLATION_GRID"
 
 
 def _k1_relion_exact_translation_grid_enabled(environ=None):

@@ -33,7 +33,7 @@ from scripts.relion_reference import euler_matrices
 SCHEMA = "em_particle_state_distribution_audit_v1"
 ARRAY_SCHEMA = "em_particle_state_distribution_arrays_v1"
 STAR_ITERATION_RE = re.compile(r"(?:^|_)it(\d+)(?:_|$)")
-RECOVAR_ITERATION_RE = re.compile(
+RELAX_ITERATION_RE = re.compile(
     r"^(?:pmax_per_(?:image_by_image|half_order|image)|sig_counts(?:_by_image|_half_order)?|"
     r"best_rotation_eulers_by_image|best_translations_by_image|class_assignments_by_image)_iter_(\d{3})$"
 )
@@ -1183,7 +1183,7 @@ def audit(
                 f"RECOVAR NPZ n_images={int(np.asarray(npz['n_images']))} disagrees with identity STAR rows={n_images}"
             )
         available_rec_iterations = sorted(
-            {int(match.group(1)) for key in npz.files if (match := RECOVAR_ITERATION_RE.match(key)) is not None}
+            {int(match.group(1)) for key in npz.files if (match := RELAX_ITERATION_RE.match(key)) is not None}
         )
         if recovar_iterations is None:
             rec_iterations = available_rec_iterations

@@ -153,7 +153,7 @@ def test_multi_iter_parity_supports_stop_after_coarse_significance_dump():
     import scripts.run_multi_iter_parity as runner
 
     source = inspect.getsource(runner)
-    assert "RECOVAR_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET" in source
+    assert "RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET" in source
     assert "SignificanceDumpComplete" in source
     assert "coarse-significance dump completed" in source
     assert "pass-2/M-step work" in source
@@ -810,9 +810,9 @@ def test_replay_override_cutoff_does_not_inject_boundary_state(slot, cutoff, exp
     ("environ", "expected"),
     [
         ({}, np.float32),
-        ({"RECOVAR_USE_FLOAT64_SCORING": "1"}, np.float64),
-        ({"RECOVAR_USE_FLOAT64_PROJECTIONS": "true"}, np.float64),
-        ({"RECOVAR_USE_FLOAT64_SCORING": "off", "RECOVAR_USE_FLOAT64_PROJECTIONS": "0"}, np.float32),
+        ({"RELAX_USE_FLOAT64_SCORING": "1"}, np.float64),
+        ({"RELAX_USE_FLOAT64_PROJECTIONS": "true"}, np.float64),
+        ({"RELAX_USE_FLOAT64_SCORING": "off", "RELAX_USE_FLOAT64_PROJECTIONS": "0"}, np.float32),
     ],
 )
 def test_parity_runtime_real_dtype_matches_dense_precision_switches(environ, expected):

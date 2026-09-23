@@ -20,7 +20,7 @@ set -euo pipefail
 : "${EXPECTED_CUDA_SHA256:?pin the qualified RECOVAR CUDA binary}"
 : "${EXPECTED_RELION_BIND_SHA256:?pin the qualified RELION binding binary}"
 : "${VDAM_RELION_BINARY:?set the isolated patched non-MPI RELION binary}"
-: "${RECOVAR_CUDA_LIB_SOURCE:?set the immutable qualified CUDA binary}"
+: "${RELAX_CUDA_LIB_SOURCE:?set the immutable qualified CUDA binary}"
 
 REPO_ROOT=${REPO_ROOT:-${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}
 PIXI_PY=${PIXI_PY_OVERRIDE:-${REPO_ROOT}/.pixi/envs/default/bin/python}
@@ -38,7 +38,7 @@ test -x "${PIXI_PY}"
 test -s "${DATA_DIR}/particles.star"
 test "$(git -C "${REPO_ROOT}" rev-parse HEAD)" = "${EXPECTED_REPO_HEAD}"
 test -z "$(git -C "${REPO_ROOT}" status --porcelain=v1 --untracked-files=no)"
-test "$(sha256sum "${RECOVAR_CUDA_LIB_SOURCE}" | awk '{print $1}')" = "${EXPECTED_CUDA_SHA256}"
+test "$(sha256sum "${RELAX_CUDA_LIB_SOURCE}" | awk '{print $1}')" = "${EXPECTED_CUDA_SHA256}"
 test -z "$(find "${PANEL_ROOT}" -mindepth 1 ! -name SAFE_TO_DELETE -print -quit)"
 
 gpu_uuid_before=$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -n 1 | tr -d '[:space:]')
@@ -57,9 +57,9 @@ run_repeat() {
 
   mode_env=(
     env
-    -u RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH
-    -u RECOVAR_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION
-    -u RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS
+    -u RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH
+    -u RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION
+    -u RELAX_RELION_X_HALF_BP_FUSED_ATOMICS
     -u RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY
   )
   case "${mode}" in
@@ -67,16 +67,16 @@ run_repeat() {
       ;;
     fused_block)
       mode_env+=(
-        RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH=1
-        RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS=1
+        RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH=1
+        RELAX_RELION_X_HALF_BP_FUSED_ATOMICS=1
         RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY=1
       )
       ;;
     sequential_fused_block)
       mode_env+=(
-        RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH=1
-        RECOVAR_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION=1
-        RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS=1
+        RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH=1
+        RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION=1
+        RELAX_RELION_X_HALF_BP_FUSED_ATOMICS=1
         RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY=1
       )
       ;;
@@ -93,7 +93,7 @@ run_repeat() {
     EXPECTED_CUDA_SHA256="${EXPECTED_CUDA_SHA256}" \
     EXPECTED_RELION_BIND_SHA256="${EXPECTED_RELION_BIND_SHA256}" \
     VDAM_RELION_BINARY="${VDAM_RELION_BINARY}" \
-    RECOVAR_CUDA_LIB_SOURCE="${RECOVAR_CUDA_LIB_SOURCE}" \
+    RELAX_CUDA_LIB_SOURCE="${RELAX_CUDA_LIB_SOURCE}" \
     REPO_ROOT="${REPO_ROOT}" \
     PIXI_PY_OVERRIDE="${PIXI_PY}" \
     TARGET_ITERATION="${TARGET_ITERATION}" \
@@ -119,7 +119,7 @@ done
 
 test "$(git -C "${REPO_ROOT}" rev-parse HEAD)" = "${EXPECTED_REPO_HEAD}"
 test -z "$(git -C "${REPO_ROOT}" status --porcelain=v1 --untracked-files=no)"
-test "$(sha256sum "${RECOVAR_CUDA_LIB_SOURCE}" | awk '{print $1}')" = "${EXPECTED_CUDA_SHA256}"
+test "$(sha256sum "${RELAX_CUDA_LIB_SOURCE}" | awk '{print $1}')" = "${EXPECTED_CUDA_SHA256}"
 printf '{"schema":"recovar.vdam_reduction_mode_panel.v1","job_id":"%s","physical_gpu_uuid":"%s","target_gpu_uuid":"%s","target_iteration":%d,"nr_iter_schedule":%d,"random_seed":%d,"modes":"%s"}\n' \
   "${SLURM_JOB_ID}" "${gpu_uuid_before}" "${TARGET_GPU_UUID}" "${TARGET_ITERATION}" "${NR_ITER_SCHEDULE}" \
   "${RANDOM_SEED}" "$(IFS=,; printf '%s' "${reduction_modes[*]}")" \

@@ -21,7 +21,7 @@ AMBIENT_RECOVAR_ENV=()
 AMBIENT_RECOVAR_NAMES=()
 while IFS= read -r -d '' assignment; do
   name=${assignment%%=*}
-  if [[ "${name}" == RECOVAR_* ]]; then
+  if [[ "${name}" == RECOVAR_* || "${name}" == RELAX_* ]]; then
     AMBIENT_RECOVAR_ENV+=("${assignment}")
     AMBIENT_RECOVAR_NAMES+=("${name}")
     unset "${name}"
@@ -59,7 +59,7 @@ PROVENANCE=${ROOT}/provenance
 RUNTIME=${ROOT}/runtime
 NATIVE_PLAIN=${ROOT}/native_unprofiled
 NATIVE_PROFILE=${ROOT}/native_profiled
-RECOVAR_PROFILE=${ROOT}/recovar_profiled
+RELAX_PROFILE=${ROOT}/recovar_profiled
 NSIGHT=${ROOT}/nsight
 CUDA_BINARY=${RUNTIME}/cuda/libcuda_backproject.so
 RELION_BIND_DIR=${RUNTIME}/relion_bind
@@ -453,30 +453,30 @@ fi
 sha256sum --check "${PROVENANCE}/static_inputs.sha256" \
   > "${PROVENANCE}/static_inputs_after_native.stdout"
 
-RECOVAR_NSYS_BASE=${NSIGHT}/recovar_it$(printf '%03d' "${PROFILED_ITERATION}")_warm
-RECOVAR_NSYS_TRACE=cuda,nvtx,osrt
-RECOVAR_NSYS_EXTRA=(--sample=none --cpuctxsw=none)
-RECOVAR_COMMAND_PREFIX=(env "LD_PRELOAD=${CUSPARSE_LIBRARY}")
+RELAX_NSYS_BASE=${NSIGHT}/recovar_it$(printf '%03d' "${PROFILED_ITERATION}")_warm
+RELAX_NSYS_TRACE=cuda,nvtx,osrt
+RELAX_NSYS_EXTRA=(--sample=none --cpuctxsw=none)
+RELAX_COMMAND_PREFIX=(env "LD_PRELOAD=${CUSPARSE_LIBRARY}")
 if [[ "${HOST_ATTRIBUTION}" = 1 ]]; then
-  RECOVAR_NSYS_TRACE=cuda,nvtx,osrt,python-gil
+  RELAX_NSYS_TRACE=cuda,nvtx,osrt,python-gil
   # Nsight's Python/GIL/OSRT injection must launch Python directly.  Its
   # injection interposes the cuSPARSE version probe, so bypass only that
   # diagnostic check after the normal runtime gate above has passed.
-  RECOVAR_NSYS_EXTRA+=(
+  RELAX_NSYS_EXTRA+=(
     "--env-var=LD_PRELOAD=${CUSPARSE_LIBRARY},JAX_SKIP_CUDA_CONSTRAINTS_CHECK=1"
     --python-sampling=true
     --python-sampling-frequency=1000
   )
-  RECOVAR_COMMAND_PREFIX=()
+  RELAX_COMMAND_PREFIX=()
 fi
-RECOVAR_COMMAND=(
-  "${RECOVAR_COMMAND_PREFIX[@]}"
+RELAX_COMMAND=(
+  "${RELAX_COMMAND_PREFIX[@]}"
   "${PIXI_PY}" -m scripts.run_vdam_late_iteration_profile
   --checkpoint-optimiser "${CHECKPOINT}"
   --input-star "${DATA_STAR}"
   --data-dir "${DATA_DIR}"
   --static-input-manifest "${PROVENANCE}/static_inputs.sha256"
-  --output-root "${RECOVAR_PROFILE}"
+  --output-root "${RELAX_PROFILE}"
   --checkpoint-iteration "${CHECKPOINT_ITERATION}"
   --nr-iter "${NR_ITER_SCHEDULE}"
   --random-seed 29
@@ -489,45 +489,45 @@ RECOVAR_COMMAND=(
   --cuda-profiler-range
 )
 if [[ "${STABLE_FOURIER_WINDOW_SHAPES}" = 1 ]]; then
-  RECOVAR_COMMAND+=(--stable-fourier-window-shapes)
+  RELAX_COMMAND+=(--stable-fourier-window-shapes)
 fi
 if [[ "${AUDIT_RAW_IMAGE_CACHE}" = 1 ]]; then
-  RECOVAR_COMMAND+=(--audit-raw-image-cache)
+  RELAX_COMMAND+=(--audit-raw-image-cache)
 fi
 if [[ "${COLD_COMPILE_ATTRIBUTION}" = 1 ]]; then
-  RECOVAR_COMMAND+=(
+  RELAX_COMMAND+=(
     --cold-compile-callsite-log "${PROVENANCE}/cold_compile_calls.jsonl"
   )
 fi
 if [[ "${STAGE_PROFILE_MODE}" = certify-off ]]; then
-  RECOVAR_COMMAND+=(
+  RELAX_COMMAND+=(
     --expected-schedule-json "${EXPECTED_SCHEDULE_JSON}"
     --expected-selected-particle-sha256 "${EXPECTED_SELECTED_PARTICLE_SHA256}"
   )
 fi
-printf '%q ' "${NSYS}" profile --trace="${RECOVAR_NSYS_TRACE}" \
-  "${RECOVAR_NSYS_EXTRA[@]}" \
+printf '%q ' "${NSYS}" profile --trace="${RELAX_NSYS_TRACE}" \
+  "${RELAX_NSYS_EXTRA[@]}" \
   --kill=none --force-overwrite=true --capture-range=cudaProfilerApi \
-  --capture-range-end=stop -o "${RECOVAR_NSYS_BASE}" "${RECOVAR_COMMAND[@]}" \
+  --capture-range-end=stop -o "${RELAX_NSYS_BASE}" "${RELAX_COMMAND[@]}" \
   > "${PROVENANCE}/recovar_nsys_command.sh"
 printf '\n' >> "${PROVENANCE}/recovar_nsys_command.sh"
 recovar_profile_started=$(date +%s.%N)
 (
   cd "${REPO_ROOT}"
-  "${NSYS}" profile --trace="${RECOVAR_NSYS_TRACE}" \
-    "${RECOVAR_NSYS_EXTRA[@]}" \
+  "${NSYS}" profile --trace="${RELAX_NSYS_TRACE}" \
+    "${RELAX_NSYS_EXTRA[@]}" \
     --kill=none --force-overwrite=true --capture-range=cudaProfilerApi \
-    --capture-range-end=stop -o "${RECOVAR_NSYS_BASE}" \
-    "${RECOVAR_COMMAND[@]}"
-) > "${RECOVAR_PROFILE}.stdout" 2> "${RECOVAR_PROFILE}.stderr"
+    --capture-range-end=stop -o "${RELAX_NSYS_BASE}" \
+    "${RELAX_COMMAND[@]}"
+) > "${RELAX_PROFILE}.stdout" 2> "${RELAX_PROFILE}.stderr"
 recovar_profile_finished=$(date +%s.%N)
-test -s "${RECOVAR_NSYS_BASE}.nsys-rep"
-test -s "${RECOVAR_PROFILE}/profile_summary.json"
-test -s "${RECOVAR_PROFILE}/warm/run_it$(printf '%03d' "${PROFILED_ITERATION}")_recovar_meta.json"
-test ! -e "${RECOVAR_PROFILE}/warm/run_it$(printf '%03d' "$((PROFILED_ITERATION + 1))")_recovar_meta.json"
+test -s "${RELAX_NSYS_BASE}.nsys-rep"
+test -s "${RELAX_PROFILE}/profile_summary.json"
+test -s "${RELAX_PROFILE}/warm/run_it$(printf '%03d' "${PROFILED_ITERATION}")_recovar_meta.json"
+test ! -e "${RELAX_PROFILE}/warm/run_it$(printf '%03d' "$((PROFILED_ITERATION + 1))")_recovar_meta.json"
 vdam_verify_selected_gpu "${selected_gpu_uuid}"
 
-"${PIXI_PY}" - "${RECOVAR_PROFILE}/profile_summary.json" \
+"${PIXI_PY}" - "${RELAX_PROFILE}/profile_summary.json" \
   "${PROVENANCE}/recovar_execution_contract.json" <<'PY'
 import json
 import sys
@@ -594,7 +594,7 @@ for implementation in native recovar; do
   if [[ "${implementation}" == native ]]; then
     report=${NATIVE_NSYS_BASE}.nsys-rep
   else
-    report=${RECOVAR_NSYS_BASE}.nsys-rep
+    report=${RELAX_NSYS_BASE}.nsys-rep
   fi
   sqlite=${NSIGHT}/${implementation}.sqlite
   "${NSYS}" export --type=sqlite --force-overwrite=true --output="${sqlite}" "${report}"

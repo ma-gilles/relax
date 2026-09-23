@@ -50,11 +50,11 @@ def _direct_scores(projected, shifted, weight, initial):
             significance._coarse_gaussian_gemm_macro_enabled,
         ),
         (
-            'RECOVAR_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS',
+            'RELAX_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS',
             significance._k1_relion_exact_coarse_skip_generic_operands_enabled,
         ),
         (
-            'RECOVAR_K1_RELION_EXACT_COMPACT_PREPROCESS',
+            'RELAX_K1_RELION_EXACT_COMPACT_PREPROCESS',
             significance._k1_relion_exact_compact_preprocess_enabled,
         ),
         (
@@ -85,7 +85,7 @@ def test_coarse_gaussian_flags_are_default_off_and_fail_closed(
 def test_exact_coarse_skip_generic_operands_is_default_off_and_fail_closed(
     monkeypatch,
 ):
-    variable = "RECOVAR_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS"
+    variable = "RELAX_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS"
 
     assert not significance._resolve_k1_relion_exact_coarse_skip_generic_operands(
         requested=False,
@@ -105,7 +105,7 @@ def test_exact_coarse_skip_generic_operands_is_default_off_and_fail_closed(
             exact_coarse_operands_enabled=False,
         )
 
-    profile_variable = "RECOVAR_K1_RELION_EXACT_COARSE_ASSEMBLY_PROFILE"
+    profile_variable = "RELAX_K1_RELION_EXACT_COARSE_ASSEMBLY_PROFILE"
     monkeypatch.delenv(profile_variable, raising=False)
     assert not significance._k1_relion_exact_coarse_assembly_profile_enabled()
     monkeypatch.setenv(profile_variable, "1")
@@ -116,7 +116,7 @@ def test_exact_coarse_skip_generic_operands_is_default_off_and_fail_closed(
 
 
 def test_exact_compact_preprocess_is_default_off_and_fail_closed(monkeypatch):
-    variable = "RECOVAR_K1_RELION_EXACT_COMPACT_PREPROCESS"
+    variable = "RELAX_K1_RELION_EXACT_COMPACT_PREPROCESS"
 
     valid = {
         "exact_coarse_skip_generic_operands_enabled": True,
@@ -1407,7 +1407,7 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
         "RECOVAR_COARSE_GAUSSIAN_GEMM_MACRO": "1",
         "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE": "1",
         "RECOVAR_COARSE_GAUSSIAN_GEMM_HYBRID": "1",
-        "RECOVAR_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR": (
+        "RELAX_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR": (
             "1" if compact_posterior else "0"
         ),
         "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB": "0.001",
@@ -1421,21 +1421,21 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
         "RECOVAR_K1_COARSE_MULTISTREAM_WORKERS": "0",
         "RECOVAR_K1_COARSE_GAUSSIAN_NATIVE_TEXTURE": "0",
         "RECOVAR_K1_RELION_EXACT_COARSE_OPERANDS": "1",
-        "RECOVAR_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS": "0",
-        "RECOVAR_K1_RELION_EXACT_COARSE_ASSEMBLY_PROFILE": "1",
-        "RECOVAR_K1_RELION_EXACT_COMPACT_PREPROCESS": "0",
+        "RELAX_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS": "0",
+        "RELAX_K1_RELION_EXACT_COARSE_ASSEMBLY_PROFILE": "1",
+        "RELAX_K1_RELION_EXACT_COMPACT_PREPROCESS": "0",
         "RECOVAR_K1_RELION_F32_COARSE_SUPPORT": "1",
-        "RECOVAR_SIGNIFICANCE_SCORE_CACHE": "0",
+        "RELAX_SIGNIFICANCE_SCORE_CACHE": "0",
         "RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT": "1",
     }.items():
         monkeypatch.setenv(name, value)
     monkeypatch.delenv(
-        "RECOVAR_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE",
+        "RELAX_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE",
         raising=False,
     )
     if hybrid_image_batch_size is not None:
         monkeypatch.setenv(
-            "RECOVAR_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE",
+            "RELAX_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE",
             str(hybrid_image_batch_size),
         )
 
@@ -1810,7 +1810,7 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
     process_calls.clear()
     fused_calls.clear()
     monkeypatch.setenv(
-        "RECOVAR_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS",
+        "RELAX_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS",
         "1",
     )
     result = run()
@@ -2098,7 +2098,7 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
     translation_calls.clear()
     process_calls.clear()
     monkeypatch.setenv(
-        "RECOVAR_K1_RELION_EXACT_COMPACT_PREPROCESS",
+        "RELAX_K1_RELION_EXACT_COMPACT_PREPROCESS",
         "1",
     )
     specialized = run()
@@ -2458,20 +2458,20 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
 
     diagnostic_dir = tmp_path / "paired_scores"
     monkeypatch.setenv(
-        "RECOVAR_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_DIR",
+        "RELAX_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_DIR",
         str(diagnostic_dir),
     )
     monkeypatch.setenv(
-        "RECOVAR_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_ORIGINAL_INDICES",
+        "RELAX_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_ORIGINAL_INDICES",
         "0,1",
     )
     stream_diagnostic_dir = tmp_path / "streaming_scores"
     monkeypatch.setenv(
-        "RECOVAR_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR",
+        "RELAX_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR",
         str(stream_diagnostic_dir),
     )
     monkeypatch.setenv(
-        "RECOVAR_COARSE_GAUSSIAN_GEMM_STREAM_TOPK",
+        "RELAX_COARSE_GAUSSIAN_GEMM_STREAM_TOPK",
         "12",
     )
 

@@ -8,7 +8,7 @@ def test_padded_active_row_count_matches_the_row_builder(monkeypatch):
     ``pad_to`` pads with repeated first indices under a zero mask, never past the slots."""
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_DEVICE_ACTIVE_ROW_INDICES", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_DEVICE_ACTIVE_ROW_INDICES", "0")
     rows = 64
     for counts in ([3, 0, 5], [64, 64, 64], [1], [17, 40, 2, 9], [0, 0]):
         for pad_multiple in (1, 8, 1024):
@@ -72,13 +72,13 @@ def test_group_static_active_rows_change_no_result(monkeypatch):
 
     def run(flag):
         monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "4")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", "0")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_ACTIVE_ROW_PAD_MULTIPLE", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_GROUP_STATIC_ACTIVE_ROWS", flag)
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "4")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", "0")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_ACTIVE_ROW_PAD_MULTIPLE", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_GROUP_STATIC_ACTIVE_ROWS", flag)
         pad_to_seen.clear()
         kwargs = _fused_kclass_multibucket_fixture(n_images=13)
         kwargs["accumulate_noise"] = True

@@ -199,7 +199,7 @@ def _ctf_over_noise_weighted_pair(processed_score_half_raw, processed_recon_half
     )
 
 
-_SPARSE_PASS2_F64_NOISE_OPERANDS_ENV = "RECOVAR_SPARSE_PASS2_F64_NOISE_OPERANDS"
+_SPARSE_PASS2_F64_NOISE_OPERANDS_ENV = "RELAX_SPARSE_PASS2_F64_NOISE_OPERANDS"
 
 
 @jax.jit

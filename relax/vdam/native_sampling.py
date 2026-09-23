@@ -52,7 +52,7 @@ RELION_INITIALMODEL_SMALL_CHANGE_INIT_ORIENTATIONS = 999.0
 RELION_INITIALMODEL_SMALL_CHANGE_INIT_CLASSES = 9999999.0
 
 
-INITIAL_MODEL_ISOLATE_EXPECTED_ACCURACY_ENV = "RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS"
+INITIAL_MODEL_ISOLATE_EXPECTED_ACCURACY_ENV = "RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS"
 
 
 @dataclass(frozen=True)
@@ -414,9 +414,9 @@ def _estimate_native_sampling_accuracy(
         # not the original input-table row ids carried by RECOVAR's dataset.
         random_seed_particle_ids=random_seed_particle_ids,
     )
-    dump_dir = os.environ.get("RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR", "").strip()
+    dump_dir = os.environ.get("RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR", "").strip()
     dump_iterations = os.environ.get(
-        "RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS",
+        "RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS",
         "",
     ).strip()
     selected_dump_iterations = {
@@ -659,7 +659,7 @@ def _build_sampling_plan(
 
 
 def _random_perturbation_for_iteration(opts: NativeInitialModelOptions, iteration: int) -> float:
-    env_override = os.environ.get("RECOVAR_RANDOM_PERTURBATION")
+    env_override = os.environ.get("RELAX_RANDOM_PERTURBATION")
     if env_override is not None:
         return float(env_override)
     if opts.random_perturbation is not None:

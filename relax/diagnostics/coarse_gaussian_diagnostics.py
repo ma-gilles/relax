@@ -31,39 +31,39 @@ from relax.scoring.coarse_gemm_streaming import (
 logger = logging.getLogger(__name__)
 
 
-_COARSE_RUNTIME_PREFIX_DUMP_DIR_ENV = "RECOVAR_COARSE_RUNTIME_PREFIX_DUMP_DIR"
+_COARSE_RUNTIME_PREFIX_DUMP_DIR_ENV = "RELAX_COARSE_RUNTIME_PREFIX_DUMP_DIR"
 
 
 _COARSE_RUNTIME_PREFIX_DUMP_INDICES_ENV = (
-    "RECOVAR_COARSE_RUNTIME_PREFIX_DUMP_ORIGINAL_INDICES"
+    "RELAX_COARSE_RUNTIME_PREFIX_DUMP_ORIGINAL_INDICES"
 )
 
 
-_COARSE_RUNTIME_PREFIX_DUMP_LABEL_ENV = "RECOVAR_COARSE_RUNTIME_PREFIX_DUMP_LABEL"
+_COARSE_RUNTIME_PREFIX_DUMP_LABEL_ENV = "RELAX_COARSE_RUNTIME_PREFIX_DUMP_LABEL"
 
 
 _COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_DIR_ENV = (
-    "RECOVAR_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_DIR"
+    "RELAX_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_DIR"
 )
 
 
 _COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_INDICES_ENV = (
-    "RECOVAR_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_ORIGINAL_INDICES"
+    "RELAX_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_ORIGINAL_INDICES"
 )
 
 
 _COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR_ENV = (
-    "RECOVAR_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR"
+    "RELAX_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR"
 )
 
 
 _COARSE_GAUSSIAN_GEMM_STREAM_TOPK_ENV = (
-    "RECOVAR_COARSE_GAUSSIAN_GEMM_STREAM_TOPK"
+    "RELAX_COARSE_GAUSSIAN_GEMM_STREAM_TOPK"
 )
 
 
 _SIGNIFICANCE_DUMP_STOP_AFTER_TARGET_ENV = (
-    "RECOVAR_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET"
+    "RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET"
 )
 
 
@@ -95,7 +95,7 @@ def _maybe_stop_after_significance_dump(
             "RECOVAR significance stop target is missing its dump file: "
             f"{dump_path}"
         )
-    target_iteration = os.environ.get("RECOVAR_SIGNIFICANCE_DUMP_ITERATION")
+    target_iteration = os.environ.get("RELAX_SIGNIFICANCE_DUMP_ITERATION")
     iteration_suffix = (
         ""
         if not target_iteration
@@ -726,16 +726,16 @@ def _write_coarse_gaussian_gemm_diagnostic(
 def _significance_debug_dump_matches(*, current_size, debug_iteration) -> bool:
     """Return whether significance capture applies at this scoring boundary."""
 
-    if not os.environ.get("RECOVAR_SIGNIFICANCE_DUMP_DIR"):
+    if not os.environ.get("RELAX_SIGNIFICANCE_DUMP_DIR"):
         return False
-    if not parse_env_int_set("RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES"):
+    if not parse_env_int_set("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES"):
         return False
-    target_current_size = os.environ.get("RECOVAR_SIGNIFICANCE_DUMP_CURRENT_SIZE")
+    target_current_size = os.environ.get("RELAX_SIGNIFICANCE_DUMP_CURRENT_SIZE")
     if target_current_size and (
         current_size is None or int(current_size) != int(target_current_size)
     ):
         return False
-    target_iteration = os.environ.get("RECOVAR_SIGNIFICANCE_DUMP_ITERATION")
+    target_iteration = os.environ.get("RELAX_SIGNIFICANCE_DUMP_ITERATION")
     if target_iteration and (
         debug_iteration is None or int(debug_iteration) != int(target_iteration)
     ):
@@ -1007,13 +1007,13 @@ def _maybe_dump_tree_rescore_batch(
     ):
         return
     target_original_indices = parse_env_int_set(
-        "RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES"
+        "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES"
     )
     batch_original_indices = original_image_indices(experiment_dataset, indices)
     ambiguous_original_indices = batch_original_indices[
         np.asarray(ambiguous_rows, dtype=np.int64)
     ]
-    dump_dir = os.environ["RECOVAR_SIGNIFICANCE_DUMP_DIR"]
+    dump_dir = os.environ["RELAX_SIGNIFICANCE_DUMP_DIR"]
     os.makedirs(dump_dir, exist_ok=True)
     candidate_pose_ids = np.asarray(candidate_pose_ids, dtype=np.int32)
     original_best_pose = np.asarray(original_best_pose, dtype=np.int32)
@@ -1125,9 +1125,9 @@ def _maybe_dump_k_class_significance_batch(
         debug_iteration=debug_iteration,
     ):
         return
-    dump_dir = os.environ["RECOVAR_SIGNIFICANCE_DUMP_DIR"]
-    target_original_indices = parse_env_int_set("RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES")
-    target_iteration = os.environ.get("RECOVAR_SIGNIFICANCE_DUMP_ITERATION")
+    dump_dir = os.environ["RELAX_SIGNIFICANCE_DUMP_DIR"]
+    target_original_indices = parse_env_int_set("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES")
+    target_iteration = os.environ.get("RELAX_SIGNIFICANCE_DUMP_ITERATION")
 
     local_indices = np.asarray(indices, dtype=np.int64)
     original_indices = original_image_indices(experiment_dataset, local_indices)

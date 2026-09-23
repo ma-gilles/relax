@@ -38,7 +38,7 @@ def _python() -> str:
 
 def _default_output_root() -> Path:
     override = os.environ.get("VDAM_ABINITIO_GUARD_OUTPUT_ROOT") or os.environ.get(
-        "RECOVAR_AGENT_SCRATCH_ROOT"
+        "RELAX_AGENT_SCRATCH_ROOT"
     )
     if override:
         return Path(override).expanduser()

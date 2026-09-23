@@ -129,7 +129,7 @@ def test_queue_rejects_unsupported_cuda_configuration(options):
     "value,expected", [(None, False), ("0", False), ("1", True), (" 1 ", True), ("", None), ("true", None), ("2", None)]
 )
 def test_cuda_packing_selector(monkeypatch, value, expected):
-    name = "RECOVAR_EXACT_LOCAL_BPREF_CUDA_PACKING"
+    name = "RELAX_EXACT_LOCAL_BPREF_CUDA_PACKING"
     monkeypatch.delenv(name, raising=False)
     if value is not None:
         monkeypatch.setenv(name, value)

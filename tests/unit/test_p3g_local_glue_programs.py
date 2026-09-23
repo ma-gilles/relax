@@ -208,7 +208,7 @@ def test_the_adapter_walks_the_same_blocks_in_both_forms(monkeypatch):
             row_capacity, 2
         )
     )
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_RESIDENT_GLUE_JIT", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "0")
 
     carry = rp._ChunkMstepCarry(
         **{name: None for name in rp._ChunkMstepCarry._fields}

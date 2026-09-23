@@ -713,8 +713,8 @@ class TestRunVdamIterations:
             "wsum_noise_xa": np.asarray([5.0, 6.0, 7.0, 8.0, 9.0]),
             "noise_sumw": 4.0,
         }
-        monkeypatch.setenv("RECOVAR_INITIALMODEL_NOISE_UPDATE_DUMP_DIR", str(tmp_path))
-        monkeypatch.setenv("RECOVAR_INITIALMODEL_NOISE_UPDATE_DUMP_ITERATION", "1")
+        monkeypatch.setenv("RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_DIR", str(tmp_path))
+        monkeypatch.setenv("RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_ITERATION", "1")
 
         out = update_noise_from_estep_meta(state, meta, do_grad=False)
 

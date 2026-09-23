@@ -19,7 +19,7 @@ set -euo pipefail
 : "${VDAM_INPUT_DIRECTORY:?set the sealed host-replay input directory}"
 : "${VDAM_NATIVE_DIRECTORY:?set the matched native M-step directory}"
 : "${VDAM_RECOVAR_DIRECTORY:?set the matched RECOVAR M-step directory}"
-: "${RECOVAR_VDAM_EXACT_NATIVE_PTX:?set the exact RELION PTX}"
+: "${RELAX_VDAM_EXACT_NATIVE_PTX:?set the exact RELION PTX}"
 : "${VDAM_EXPECTED_EXACT_PTX_SHA256:?pin the exact RELION PTX}"
 
 REPEAT_COUNT=${VDAM_REPEAT_COUNT:-4}
@@ -48,7 +48,7 @@ test -x "${VDAM_RELION_BINARY}"
 test -f "${VDAM_CUDA_LIBRARY}"
 test "$(sha256sum "${VDAM_CUDA_LIBRARY}" | awk '{print $1}')" = \
   "${VDAM_EXPECTED_CUDA_SHA256}"
-test "$(sha256sum "${RECOVAR_VDAM_EXACT_NATIVE_PTX}" | awk '{print $1}')" = \
+test "$(sha256sum "${RELAX_VDAM_EXACT_NATIVE_PTX}" | awk '{print $1}')" = \
   "${VDAM_EXPECTED_EXACT_PTX_SHA256}"
 if [[ "${NATIVE_REPEAT_OPERANDS}" = 0 ]]; then
   test -s "${VDAM_TOPOLOGY}"
@@ -83,7 +83,7 @@ for repeat in $(seq 1 "${REPEAT_COUNT}"); do
     EXPECTED_CUDA_SHA256="${VDAM_EXPECTED_CUDA_SHA256}" \
     EXPECTED_RELION_BIND_SHA256="${VDAM_EXPECTED_RELION_BIND_SHA256}" \
     VDAM_RELION_BINARY="${VDAM_RELION_BINARY}" \
-    RECOVAR_CUDA_LIB_SOURCE="${VDAM_CUDA_LIBRARY}" \
+    RELAX_CUDA_LIB_SOURCE="${VDAM_CUDA_LIBRARY}" \
     REPO_ROOT="${VDAM_REPO_ROOT}" \
     TARGET_ITERATION=1 \
     NR_ITER_SCHEDULE=200 \
@@ -114,7 +114,7 @@ done
 
 python - "${VDAM_PANEL_ROOT}/submission_provenance.json" \
   "${VDAM_EXPECTED_HEAD}" "${physical_gpu_uuid}" \
-  "${VDAM_EXPECTED_CUDA_SHA256}" "${RECOVAR_VDAM_EXACT_NATIVE_PTX}" \
+  "${VDAM_EXPECTED_CUDA_SHA256}" "${RELAX_VDAM_EXACT_NATIVE_PTX}" \
   "${VDAM_EXPECTED_EXACT_PTX_SHA256}" "${REPEAT_COUNT}" \
   "${NATIVE_REPEAT_OPERANDS}" <<'PY'
 import json
@@ -173,7 +173,7 @@ for kind in private shared; do
       VDAM_NATIVE_DIRECTORY="${VDAM_NATIVE_DIRECTORY}" \
       VDAM_RECOVAR_DIRECTORY="${VDAM_RECOVAR_DIRECTORY}" \
       VDAM_TARGET_GPU_UUID="${physical_gpu_uuid}" \
-      RECOVAR_VDAM_EXACT_NATIVE_PTX="${RECOVAR_VDAM_EXACT_NATIVE_PTX}" \
+      RELAX_VDAM_EXACT_NATIVE_PTX="${RELAX_VDAM_EXACT_NATIVE_PTX}" \
       VDAM_TOPOLOGY="${topology}" \
       VDAM_TOPOLOGY_DATA_STAR="${topology_data_star}" \
       VDAM_NATIVE_PANEL_DIRECTORY="${native_panel_directory}" \

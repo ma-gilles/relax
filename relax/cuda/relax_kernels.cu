@@ -73,27 +73,27 @@ namespace ffi = xla::ffi;
 #include "noise_residual.cuh"
 
 constexpr char kRelionVdamExactNativePtxEnv[] =
-    "RECOVAR_VDAM_EXACT_NATIVE_PTX";
+    "RELAX_VDAM_EXACT_NATIVE_PTX";
 constexpr char kRelionVdamExactWavgPredecessorEnv[] =
-    "RECOVAR_VDAM_EXACT_WAVG_PREDECESSOR";
+    "RELAX_VDAM_EXACT_WAVG_PREDECESSOR";
 constexpr char kRelionVdamRuntimeBprefWithExactWavgEnv[] =
-    "RECOVAR_VDAM_RUNTIME_BPREF_WITH_EXACT_WAVG";
+    "RELAX_VDAM_RUNTIME_BPREF_WITH_EXACT_WAVG";
 constexpr char kRelionVdamWavgBprefHostGapNsEnv[] =
-    "RECOVAR_VDAM_WAVG_BPREF_HOST_GAP_NS";
+    "RELAX_VDAM_WAVG_BPREF_HOST_GAP_NS";
 constexpr char kRelionVdamWavgBprefHostGapTraceEnv[] =
-    "RECOVAR_VDAM_WAVG_BPREF_HOST_GAP_TRACE";
+    "RELAX_VDAM_WAVG_BPREF_HOST_GAP_TRACE";
 constexpr char kRelionVdamWavgBprefHostGapTraceParticleEnv[] =
-    "RECOVAR_VDAM_WAVG_BPREF_HOST_GAP_TRACE_PARTICLE_ID";
+    "RELAX_VDAM_WAVG_BPREF_HOST_GAP_TRACE_PARTICLE_ID";
 constexpr char kRelionVdamPreprojectPersistentRotationsEnv[] =
-    "RECOVAR_VDAM_PREPROJECT_PERSISTENT_ROTATIONS";
+    "RELAX_VDAM_PREPROJECT_PERSISTENT_ROTATIONS";
 constexpr char kRelionVdamPrecomputePersistentResidualsEnv[] =
-    "RECOVAR_VDAM_PRECOMPUTE_PERSISTENT_RESIDUALS";
+    "RELAX_VDAM_PRECOMPUTE_PERSISTENT_RESIDUALS";
 constexpr char kRelionVdamPrecomputeOrderedResidualsEnv[] =
-    "RECOVAR_VDAM_PRECOMPUTE_ORDERED_RESIDUALS";
+    "RELAX_VDAM_PRECOMPUTE_ORDERED_RESIDUALS";
 constexpr char kRelionVdamFixedWarpOrderScatterEnv[] =
-    "RECOVAR_VDAM_FIXED_WARP_ORDER_SCATTER";
+    "RELAX_VDAM_FIXED_WARP_ORDER_SCATTER";
 constexpr char kRelionVdamOrderedScatterCudaGraphEnv[] =
-    "RECOVAR_VDAM_ORDERED_SCATTER_CUDA_GRAPH";
+    "RELAX_VDAM_ORDERED_SCATTER_CUDA_GRAPH";
 constexpr char kRelionVdamExactNativePtxKernel[] =
     "_Z29cuda_kernel_backproject3D_SGDILb0ELb0EEv18AccProjectorKernel"
     "PfS1_S1_S1_S1_S1_S1_S1_mffS1_S1_S1_S1_iifjjjjjjii";

@@ -116,13 +116,13 @@ from relax.sparse_pass2.resident_significance import (
     coarse_significance_device_requested,
 )
 
-_SIGNIFICANCE_SCORE_CACHE_ENV = "RECOVAR_SIGNIFICANCE_SCORE_CACHE"
-_SIGNIFICANCE_SCORE_CACHE_MAX_GB_ENV = "RECOVAR_SIGNIFICANCE_SCORE_CACHE_MAX_GB"
+_SIGNIFICANCE_SCORE_CACHE_ENV = "RELAX_SIGNIFICANCE_SCORE_CACHE"
+_SIGNIFICANCE_SCORE_CACHE_MAX_GB_ENV = "RELAX_SIGNIFICANCE_SCORE_CACHE_MAX_GB"
 _SIGNIFICANCE_SCORE_CACHE_DEFAULT_MAX_GB = 2.0
-_SIGNIFICANCE_FUSED_PASS1_ENV = "RECOVAR_PASS1_FUSED"
-_GLOBAL_PASS1_RELION_PROJECTOR_TEXTURE_ENV = "RECOVAR_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP"
+_SIGNIFICANCE_FUSED_PASS1_ENV = "RELAX_PASS1_FUSED"
+_GLOBAL_PASS1_RELION_PROJECTOR_TEXTURE_ENV = "RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP"
 _FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV = (
-    "RECOVAR_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN"
+    "RELAX_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN"
 )
 _K1_COARSE_GAUSSIAN_FFI_ENV = "RECOVAR_K1_COARSE_GAUSSIAN_FFI"
 _K1_COARSE_GAUSSIAN_SINCOSF_ENV = "RECOVAR_K1_COARSE_GAUSSIAN_SINCOSF"
@@ -148,7 +148,7 @@ _K1_COARSE_GAUSSIAN_NATIVE_TEXTURE_ENV = (
     "RECOVAR_K1_COARSE_GAUSSIAN_NATIVE_TEXTURE"
 )
 _COARSE_PAD_FINAL_IMAGE_BATCH_ENV = (
-    "RECOVAR_COARSE_PAD_FINAL_IMAGE_BATCH"
+    "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH"
 )
 NVTX_DOMAIN_EM = "recovar_em"
 logger = logging.getLogger(__name__)
@@ -398,9 +398,9 @@ def _coarse_gaussian_fused_logical_lookup(
 
 def _coarse_rotated_radius_enabled(*, default: bool = False) -> bool:
     """Select canonical clipping when the active projector supports it."""
-    token = os.environ.get("RECOVAR_K1_COARSE_ROTATED_RADIUS", "1" if default else "0")
+    token = os.environ.get("RELAX_K1_COARSE_ROTATED_RADIUS", "1" if default else "0")
     if token not in {"0", "1"}:
-        raise ValueError("RECOVAR_K1_COARSE_ROTATED_RADIUS must be 0 or 1")
+        raise ValueError("RELAX_K1_COARSE_ROTATED_RADIUS must be 0 or 1")
     return token == "1"
 
 
@@ -539,7 +539,7 @@ def _k1_coarse_multistream_worker_count(*, default: int = 0) -> int:
 
 def _coarse_max_posterior_physical_batch_enabled() -> bool:
     """Keep the physical row count through coarse Pmax publication."""
-    return parse_env_binary_flag("RECOVAR_COARSE_MAX_POSTERIOR_PHYSICAL_BATCH")
+    return parse_env_binary_flag("RELAX_COARSE_MAX_POSTERIOR_PHYSICAL_BATCH")
 
 
 def _coarse_max_posterior_for_host(
@@ -740,11 +740,11 @@ def _firstiter_cc_tree_top2_rescore_max_margin() -> float | None:
 def _dense_projection_scale(image_shape) -> float:
     """Match the dense E-step projection scaling used by the shared helper."""
 
-    token = (os.environ.get("RECOVAR_DENSE_MEANS_SCALE") or "-N2").strip()
+    token = (os.environ.get("RELAX_DENSE_MEANS_SCALE") or "-N2").strip()
     n = int(image_shape[0])
     scale = {"-N2": -(n**2), "N2": float(n**2)}.get(token)
     if scale is None:
-        raise ValueError(f"Unsupported RECOVAR_DENSE_MEANS_SCALE={token!r}")
+        raise ValueError(f"Unsupported RELAX_DENSE_MEANS_SCALE={token!r}")
     return scale
 
 
@@ -752,7 +752,7 @@ def _pass1_fused_enabled() -> bool:
     """Whether the fused-pass1 fast path is enabled.
 
     Off by default while the path is being validated. Set
-    ``RECOVAR_PASS1_FUSED=1`` to opt in. Bit-identical to the unfused path
+    ``RELAX_PASS1_FUSED=1`` to opt in. Bit-identical to the unfused path
     when active (same ops, same order, same dtypes).
     """
     return parse_env_true_flag(_SIGNIFICANCE_FUSED_PASS1_ENV)
@@ -1350,13 +1350,13 @@ def _compute_k_class_significance_batched(
     )
     coarse_gaussian_gemm_real_cross_requested = _coarse_gaussian_gemm_real_cross_enabled()
     coarse_max_posterior_physical_batch = _coarse_max_posterior_physical_batch_enabled()
-    partition_token = os.environ.get("RECOVAR_COARSE_ROW_PARTITION", "0")
+    partition_token = os.environ.get("RELAX_COARSE_ROW_PARTITION", "0")
     if partition_token not in {"0", "1"}:
-        raise ValueError("RECOVAR_COARSE_ROW_PARTITION must be 0 or 1")
+        raise ValueError("RELAX_COARSE_ROW_PARTITION must be 0 or 1")
     coarse_row_partition_requested = partition_token == "1"
-    posterior_token = os.environ.get("RECOVAR_COARSE_POSTERIOR_TRANSACTION", "0")
+    posterior_token = os.environ.get("RELAX_COARSE_POSTERIOR_TRANSACTION", "0")
     if posterior_token not in {"0", "1"}:
-        raise ValueError("RECOVAR_COARSE_POSTERIOR_TRANSACTION must be 0 or 1")
+        raise ValueError("RELAX_COARSE_POSTERIOR_TRANSACTION must be 0 or 1")
     coarse_cuda_posterior_requested = posterior_token == "1"
     if coarse_cuda_posterior_requested and (
         not coarse_row_partition_requested or relion_f32_coarse_tie_ulps != 0
@@ -1565,7 +1565,7 @@ def _compute_k_class_significance_batched(
         and coarse_runtime_prefix_dump_dir is None
     ):
         raise ValueError(
-            "RECOVAR_COARSE_ROW_PARTITION requires the K=1 compact host hybrid "
+            "RELAX_COARSE_ROW_PARTITION requires the K=1 compact host hybrid "
             "with ordinary full scoring, float32 posterior, and no score dumps/class diagnostics"
         )
     exact_compact_preprocess_requested = (
@@ -3262,7 +3262,7 @@ def _compute_k_class_significance_batched(
             )
             dump_target_local_positions = None
             if debug_dump_enabled:
-                _dump_targets = parse_env_int_set("RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES")
+                _dump_targets = parse_env_int_set("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES")
                 if _dump_targets:
                     _local_for_dump = np.asarray(indices, dtype=np.int64)
                     _orig = original_image_indices(experiment_dataset, _local_for_dump)
@@ -3604,7 +3604,7 @@ def _compute_k_class_significance_batched(
                 )
             )
             cached_class_score_blocks = [] if cache_score_blocks else None
-            # ``RECOVAR_PASS1_FUSED=1`` swaps the per-block 4-5 separate JIT
+            # ``RELAX_PASS1_FUSED=1`` swaps the per-block 4-5 separate JIT
             # dispatches (project/score, padding-mask, add-priors, 2× logsumexp)
             # for one fused @jit call. Bit-identical when active; disabled if any
             # debug-dump path is on so per-block pre/post-prior captures still
@@ -4589,7 +4589,7 @@ def _compute_k_class_significance_batched(
                 projected_reference_norm_score_per_class = None
                 projected_cross_score_per_class = None
                 requested_projection_rotations = sorted(
-                    parse_env_int_set("RECOVAR_SIGNIFICANCE_DUMP_PROJECTION_ROTATIONS") or (),
+                    parse_env_int_set("RELAX_SIGNIFICANCE_DUMP_PROJECTION_ROTATIONS") or (),
                 )
                 if requested_projection_rotations and target_local_positions_for_dump is not None:
                     projected_reference_rotation_ids = np.asarray(requested_projection_rotations, dtype=np.int32)
@@ -4598,7 +4598,7 @@ def _compute_k_class_significance_batched(
                         or int(projected_reference_rotation_ids[-1]) >= n_rot
                     ):
                         raise ValueError(
-                            "RECOVAR_SIGNIFICANCE_DUMP_PROJECTION_ROTATIONS contains an out-of-range rotation",
+                            "RELAX_SIGNIFICANCE_DUMP_PROJECTION_ROTATIONS contains an out-of-range rotation",
                         )
                     projection_rotations = jnp.asarray(rotations[projected_reference_rotation_ids])
                     projection_values = []

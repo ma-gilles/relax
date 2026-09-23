@@ -1366,10 +1366,10 @@ class TestRefinementPolicy:
             acc_rot=float("inf"),
         )
 
-        monkeypatch.delenv("RECOVAR_EM_LOW_PMAX_REFINE_GUARD", raising=False)
+        monkeypatch.delenv("RELAX_EM_LOW_PMAX_REFINE_GUARD", raising=False)
         assert _refines_angular_sampling(state)
 
-        monkeypatch.setenv("RECOVAR_EM_LOW_PMAX_REFINE_GUARD", "1")
+        monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_GUARD", "1")
         assert not _refines_angular_sampling(state)
 
         confident = RefinementState(
@@ -1405,11 +1405,11 @@ class TestRefinementPolicy:
         )
         assert not state.do_local_search
 
-        monkeypatch.setenv("RECOVAR_EM_LOW_PMAX_REFINE_GUARD", "1")
-        monkeypatch.delenv("RECOVAR_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL", raising=False)
+        monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_GUARD", "1")
+        monkeypatch.delenv("RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL", raising=False)
         assert _refines_angular_sampling(state)
 
-        monkeypatch.setenv("RECOVAR_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL", "0")
+        monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL", "0")
         assert not _refines_angular_sampling(state)
 
     def test_local_search_keeps_exhaustive_grid_at_last_prelocal_order(self):
@@ -1425,7 +1425,7 @@ class TestRefinementPolicy:
     def test_approx_acc_rot_convergence_policy_is_diagnostic_by_default(self, monkeypatch):
         from relax.helpers import convergence as convergence_helpers
 
-        monkeypatch.delenv("RECOVAR_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", raising=False)
+        monkeypatch.delenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", raising=False)
         allow, reason = convergence_helpers._approx_acc_rot_policy_for_convergence()
 
         assert not allow
@@ -1434,7 +1434,7 @@ class TestRefinementPolicy:
     def test_approx_acc_rot_convergence_policy_opt_in(self, monkeypatch):
         from relax.helpers import convergence as convergence_helpers
 
-        monkeypatch.setenv("RECOVAR_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", "1")
+        monkeypatch.setenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", "1")
         allow, reason = convergence_helpers._approx_acc_rot_policy_for_convergence()
         assert allow
         assert reason == "forced-by-env"

@@ -39,8 +39,8 @@ def test_kclass_dense_pass2_dump_trims_padded_raw_diff2(monkeypatch, tmp_path):
     )
 
     dump_dir = tmp_path / "pass2"
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(dump_dir))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(dump_dir))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "42")
     sparse_pass2_mod._maybe_dump_k_class_pass2_bucket(
         experiment_dataset=experiment_dataset,
         image_indices=np.asarray([0], dtype=np.int64),

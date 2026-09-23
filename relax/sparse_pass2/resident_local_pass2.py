@@ -10,7 +10,7 @@ per capacity class, accumulators that stay on the device and one pull per half.
 
 Scope, and how to select it
 ---------------------------
-``RECOVAR_LOCAL_SEARCH_RESIDENT=1`` selects :func:`compute_local_search_resident`
+``RELAX_LOCAL_SEARCH_RESIDENT=1`` selects :func:`compute_local_search_resident`
 for the **fine pass 2** of a K=1 local search, which is also the pass the final
 all-data iteration runs (``iteration_loop.py`` reaches it through the same
 ``local_outputs = _run_local_search_iteration`` call site in
@@ -142,21 +142,21 @@ from relax.sparse_pass2.sparse_pass2_window import (
 
 logger = logging.getLogger(__name__)
 
-RESIDENT_LOCAL_SEARCH_ENV = "RECOVAR_LOCAL_SEARCH_RESIDENT"
-_ROW_CAPACITY_LADDER_ENV = "RECOVAR_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES"
-_IMAGE_CAPACITY_LADDER_ENV = "RECOVAR_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES"
+RESIDENT_LOCAL_SEARCH_ENV = "RELAX_LOCAL_SEARCH_RESIDENT"
+_ROW_CAPACITY_LADDER_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES"
+_IMAGE_CAPACITY_LADDER_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES"
 # Diagnostic only: log one line per chunk with its occupancy, padding and
 # per-stage seconds. It inserts ``block_until_ready`` between stages, so it
 # serialises work that normally overlaps and inflates the loop; never use a
 # profiled arm for a wall-time comparison.
-_CHUNK_PROFILE_ENV = "RECOVAR_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE"
+_CHUNK_PROFILE_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE"
 # P3-G, opt-in and off by default. Hand the M-step entry point the chunk's
 # whole row arrays instead of a Python callback that slices a block out of them
 # per block: the block program then takes its own ``dynamic_slice`` of the row
 # ids and reads the rows inside the jit. The callback is kept as the oracle
 # every bitwise comparison of this change is made against.
-_BLOCK_ROW_PROGRAM_ENV = "RECOVAR_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM"
-_PROJECTION_CALL_MAX_BYTES_ENV = "RECOVAR_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MAX_BYTES"
+_BLOCK_ROW_PROGRAM_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM"
+_PROJECTION_CALL_MAX_BYTES_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MAX_BYTES"
 # One projector call's transient. The exact local engine budgets its own fused
 # projection matmul at 4 GiB by default
 # (local_batch_planning.EXACT_LOCAL_BIG_JIT_MATMUL_MAX_GB); use the same figure
@@ -191,7 +191,7 @@ __all__ = [
 
 
 def resident_local_search_requested() -> bool:
-    """Return whether ``RECOVAR_LOCAL_SEARCH_RESIDENT`` selects this driver."""
+    """Return whether ``RELAX_LOCAL_SEARCH_RESIDENT`` selects this driver."""
 
     return parse_env_flag(RESIDENT_LOCAL_SEARCH_ENV, default=False)
 
@@ -596,7 +596,7 @@ def compute_local_search_resident(
     # decides float32 projection arithmetic and whether the texture projector
     # or the vmapped fallback runs, so an arm with any other precision is both
     # a different computation and a differently timed one than its control.
-    # The compact engine's RECOVAR_SPARSE_PASS2_PROJECTOR_COMPLEX64 gate is not
+    # The compact engine's RELAX_SPARSE_PASS2_PROJECTOR_COMPLEX64 gate is not
     # read here, because the exact local engine does not read it. Do exactly
     # what the exact local engine does.
     relion_projector_half = cast_relion_projector_for_execution(

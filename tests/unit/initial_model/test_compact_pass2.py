@@ -58,7 +58,7 @@ def test_sparse_residual_mstep_matches_vdam_formula():
 
 
 def test_compact_mstep_can_preserve_relion_translation_reduction(monkeypatch):
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION", "1")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION", "1")
     pair_probs = jnp.asarray([[0.2, 0.3, 0.1, 0.4]], dtype=jnp.float32)
     rotation_rows = jnp.asarray([[0, 0, 1, 1]], dtype=jnp.int32)
     translation_ids = jnp.asarray([[0, 1, 0, 1]], dtype=jnp.int32)

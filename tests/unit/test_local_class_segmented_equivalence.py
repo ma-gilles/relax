@@ -412,11 +412,11 @@ def test_the_pre_cast_normalizer_is_materialized_only_for_the_capture(segmented,
     that nothing read. Assert the switched-off value is absent, and that the same
     switch still produces a usable array, so a gate that never fires also fails.
     """
-    monkeypatch.delenv("RECOVAR_VDAM_KCLASS_STATS_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_VDAM_KCLASS_STATS_DUMP_DIR", raising=False)
     off = _run(segmented=segmented, float64=False)
     assert off.uncast_log_evidence_per_image is None
 
-    monkeypatch.setenv("RECOVAR_VDAM_KCLASS_STATS_DUMP_DIR", "/nonexistent-capture-target")
+    monkeypatch.setenv("RELAX_VDAM_KCLASS_STATS_DUMP_DIR", "/nonexistent-capture-target")
     on = _run(segmented=segmented, float64=False)
     captured = on.uncast_log_evidence_per_image
     assert captured is not None

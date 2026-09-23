@@ -998,7 +998,7 @@ def test_late_profile_certify_off_rejects_cross_arm_drift(tmp_path, drift):
         for moment in ("before", "after"):
             warm["sealed_recovar_environment"][moment][
                 "present_recovar_environment"
-            ]["RECOVAR_DISABLE_SPARSE_PASS2"] = "1"
+            ]["RELAX_DISABLE_SPARSE_PASS2"] = "1"
     elif drift == "profile_zero":
         for moment in ("before", "after"):
             warm["sealed_recovar_environment"][moment][
@@ -1024,17 +1024,17 @@ def test_late_profile_certify_off_rejects_cross_arm_drift(tmp_path, drift):
 
 def test_late_profile_contract_environment_rejects_mislabeled_runs():
     candidate = _all_optimized_q32_environment()
-    assert candidate["RECOVAR_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR"] == "1"
-    assert candidate["RECOVAR_INITIAL_MODEL_PACKED_FINAL_NOISE"] == "1"
-    assert candidate["RECOVAR_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS"] == "1"
-    assert candidate["RECOVAR_K1_RELION_EXACT_COMPACT_PREPROCESS"] == "1"
-    assert candidate["RECOVAR_EXACT_LOCAL_FUSED_PAIR_FINE_SCORE"] == "0"
-    assert candidate["RECOVAR_RELION_BATCHED_POSTERIOR_PRIMITIVES"] == "1"
-    assert candidate["RECOVAR_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM"] == "32"
-    assert candidate["RECOVAR_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE"] == "200"
+    assert candidate["RELAX_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR"] == "1"
+    assert candidate["RELAX_INITIAL_MODEL_PACKED_FINAL_NOISE"] == "1"
+    assert candidate["RELAX_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS"] == "1"
+    assert candidate["RELAX_K1_RELION_EXACT_COMPACT_PREPROCESS"] == "1"
+    assert candidate["RELAX_EXACT_LOCAL_FUSED_PAIR_FINE_SCORE"] == "0"
+    assert candidate["RELAX_RELION_BATCHED_POSTERIOR_PRIMITIVES"] == "1"
+    assert candidate["RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM"] == "32"
+    assert candidate["RELAX_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE"] == "200"
 
     missing_compact = dict(candidate)
-    del missing_compact["RECOVAR_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR"]
+    del missing_compact["RELAX_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR"]
     with pytest.raises(RuntimeError, match="qualified stack"):
         _validate_profile_contract_environment(
             "all_optimized_q32",
@@ -1071,10 +1071,10 @@ def test_late_profile_sealed_environment_accepts_only_exact_qualified_map():
 @pytest.mark.parametrize(
     "ambient_name",
     [
-        "RECOVAR_DISABLE_SPARSE_PASS2",
-        "RECOVAR_DISABLE_LOCAL_BIG_JIT",
-        "RECOVAR_INITIAL_MODEL_EXACT_RELION_PROJECTOR",
-        "RECOVAR_INITIAL_MODEL_EXACT_FINE_DIFF2",
+        "RELAX_DISABLE_SPARSE_PASS2",
+        "RELAX_DISABLE_LOCAL_BIG_JIT",
+        "RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR",
+        "RELAX_INITIAL_MODEL_EXACT_FINE_DIFF2",
     ],
 )
 def test_late_profile_sealed_environment_rejects_ambient_routes(ambient_name):
@@ -1218,7 +1218,7 @@ def test_late_profile_slurm_gate_is_one_iteration_and_fail_closed():
     assert "VDAM_LATE_PROFILE_REUSE_NATIVE_ROOT" in launcher
     assert "EXPECTED_REUSED_NATIVE_NSYS_SHA256" in launcher
     assert 'AUDIT_RAW_IMAGE_CACHE=${AUDIT_RAW_IMAGE_CACHE:-0}' in launcher
-    assert 'RECOVAR_COMMAND+=(--audit-raw-image-cache)' in launcher
+    assert 'RELAX_COMMAND+=(--audit-raw-image-cache)' in launcher
     assert "VDAM_LATE_PROFILE_CONTRACT" in launcher
     assert "_all_optimized_q32_environment" in launcher
     assert '--execution-contract "${EXECUTION_CONTRACT}"' in launcher
@@ -1248,8 +1248,8 @@ def test_late_profile_slurm_gate_is_one_iteration_and_fail_closed():
     assert "cuda,nvtx,osrt,python-gil" in launcher
     assert "JAX_SKIP_CUDA_CONSTRAINTS_CHECK=1" in launcher
     assert "unset JAX_SKIP_CUDA_CONSTRAINTS_CHECK" in launcher
-    assert 'RECOVAR_COMMAND_PREFIX=(env "LD_PRELOAD=${CUSPARSE_LIBRARY}")' in launcher
-    assert "RECOVAR_COMMAND_PREFIX=()" in launcher
+    assert 'RELAX_COMMAND_PREFIX=(env "LD_PRELOAD=${CUSPARSE_LIBRARY}")' in launcher
+    assert "RELAX_COMMAND_PREFIX=()" in launcher
     assert "cold_compile_calls.jsonl" in launcher
     assert 'bool(int(sys.argv[16]))' in launcher
     assert 'bool(int(sys.argv[17]))' in launcher

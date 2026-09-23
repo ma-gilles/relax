@@ -250,8 +250,8 @@ def test_exact_local_microbatch_boosts_high_res_local_batch_without_full_floor(m
     monkeypatch.delenv(EXACT_LOCAL_TARGET_ROW_PIXELS_ENV, raising=False)
     monkeypatch.delenv(EXACT_LOCAL_BIG_JIT_MATMUL_MAX_GB_ENV, raising=False)
     monkeypatch.delenv(EXACT_LOCAL_AUTO_MICROBATCH_BOOST_ENV, raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
-    monkeypatch.delenv("RECOVAR_EXACT_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_EXACT_LOCAL_BUCKET_QUANTUM", raising=False)
 
     n_images = 13
     local_rotations = 1536
@@ -293,8 +293,8 @@ def test_exact_local_microbatch_boost_can_be_disabled_for_mstep_pass2(monkeypatc
     monkeypatch.delenv(EXACT_LOCAL_TARGET_ROW_PIXELS_ENV, raising=False)
     monkeypatch.delenv(EXACT_LOCAL_BIG_JIT_MATMUL_MAX_GB_ENV, raising=False)
     monkeypatch.delenv(EXACT_LOCAL_AUTO_MICROBATCH_BOOST_ENV, raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
-    monkeypatch.delenv("RECOVAR_EXACT_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_EXACT_LOCAL_BUCKET_QUANTUM", raising=False)
 
     n_images = 13
     local_rotations = 1536
@@ -668,10 +668,10 @@ def test_relion_em_batch_sizing_projection_budget_override_expands_pass1_blocks(
         current_size=100,
     )
 
-    monkeypatch.delenv("RECOVAR_RELION_EM_BATCH_PROJECTION_FRACTION", raising=False)
+    monkeypatch.delenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", raising=False)
     default = _estimate_relion_em_batch_sizes(**common)
 
-    monkeypatch.setenv("RECOVAR_RELION_EM_BATCH_PROJECTION_FRACTION", "0.40")
+    monkeypatch.setenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", "0.40")
     expanded = _estimate_relion_em_batch_sizes(**common)
 
     assert expanded.rotation_block_size > default.rotation_block_size
@@ -680,9 +680,9 @@ def test_relion_em_batch_sizing_projection_budget_override_expands_pass1_blocks(
 
 
 def test_relion_em_batch_sizing_projection_budget_override_rejects_invalid(monkeypatch):
-    monkeypatch.setenv("RECOVAR_RELION_EM_BATCH_PROJECTION_FRACTION", "0")
+    monkeypatch.setenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", "0")
 
-    with pytest.raises(ValueError, match="RECOVAR_RELION_EM_BATCH_PROJECTION_FRACTION"):
+    with pytest.raises(ValueError, match="RELAX_RELION_EM_BATCH_PROJECTION_FRACTION"):
         _estimate_relion_em_batch_sizes(
             requested_image_batch_size=64,
             requested_rotation_block_size=8192,

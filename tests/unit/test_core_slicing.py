@@ -23,13 +23,13 @@ def _configure_custom_cuda_for_test(request, monkeypatch):
 
     if request.node.get_closest_marker("gpu") is None:
         monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-        monkeypatch.delenv("RECOVAR_ENABLE_CUSTOM_CUDA", raising=False)
+        monkeypatch.delenv("RELAX_ENABLE_CUSTOM_CUDA", raising=False)
         monkeypatch.delenv("RECOVAR_CUDA_LIB", raising=False)
         return
 
     lib_path = request.getfixturevalue("custom_cuda_lib")
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(lib_path))
-    monkeypatch.setenv("RECOVAR_ENABLE_CUSTOM_CUDA", "1")
+    monkeypatch.setenv("RELAX_ENABLE_CUSTOM_CUDA", "1")
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
 
 

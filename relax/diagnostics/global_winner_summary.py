@@ -11,7 +11,7 @@ import numpy as np
 
 SCHEMA = "k4_global_winner_summary_v1"
 MAX_SUPPORTED_BYTES = 32 * 1024 * 1024
-_PATH_ENV = "RECOVAR_GLOBAL_WINNER_SUMMARY_PATH"
+_PATH_ENV = "RELAX_GLOBAL_WINNER_SUMMARY_PATH"
 
 
 def _required_env(name: str) -> str:
@@ -65,19 +65,19 @@ def maybe_dump_global_winner_summary(
     if not path_value:
         return None
 
-    target_iteration = _required_int_env("RECOVAR_GLOBAL_WINNER_SUMMARY_ITERATION")
+    target_iteration = _required_int_env("RELAX_GLOBAL_WINNER_SUMMARY_ITERATION")
     if iteration is None:
         raise RuntimeError(f"{_PATH_ENV} requires a concrete debug iteration")
     if int(iteration) != target_iteration:
         return None
 
-    expected_particles = _required_int_env("RECOVAR_GLOBAL_WINNER_SUMMARY_EXPECTED_PARTICLES")
-    expected_classes = _required_int_env("RECOVAR_GLOBAL_WINNER_SUMMARY_EXPECTED_CLASSES")
-    max_bytes = _required_int_env("RECOVAR_GLOBAL_WINNER_SUMMARY_MAX_BYTES")
+    expected_particles = _required_int_env("RELAX_GLOBAL_WINNER_SUMMARY_EXPECTED_PARTICLES")
+    expected_classes = _required_int_env("RELAX_GLOBAL_WINNER_SUMMARY_EXPECTED_CLASSES")
+    max_bytes = _required_int_env("RELAX_GLOBAL_WINNER_SUMMARY_MAX_BYTES")
     if expected_particles <= 0 or expected_classes != 4 or n_classes != expected_classes:
         raise RuntimeError("RECOVAR global-winner summary is bounded to a positive particle count and K=4")
     if not 0 < max_bytes <= MAX_SUPPORTED_BYTES:
-        raise RuntimeError(f"RECOVAR_GLOBAL_WINNER_SUMMARY_MAX_BYTES must be in (0, {MAX_SUPPORTED_BYTES}]")
+        raise RuntimeError(f"RELAX_GLOBAL_WINNER_SUMMARY_MAX_BYTES must be in (0, {MAX_SUPPORTED_BYTES}]")
 
     class_scores = np.asarray(full_stats["class_best_offset_free_log_score_per_image"])
     class_second_scores = np.asarray(full_stats["class_second_best_offset_free_log_score_per_image"])
@@ -149,12 +149,12 @@ def maybe_dump_global_winner_summary(
     metadata = {
         "schema": SCHEMA,
         "engine": "recovar",
-        "run_id": _required_env("RECOVAR_GLOBAL_WINNER_SUMMARY_RUN_ID"),
-        "source_id": _required_env("RECOVAR_GLOBAL_WINNER_SUMMARY_SOURCE_ID"),
-        "executable_sha256": _required_env("RECOVAR_GLOBAL_WINNER_SUMMARY_EXECUTABLE_SHA256"),
-        "gpu_uuid": _required_env("RECOVAR_GLOBAL_WINNER_SUMMARY_GPU_UUID"),
-        "input_manifest_sha256": _required_env("RECOVAR_GLOBAL_WINNER_SUMMARY_INPUT_MANIFEST_SHA256"),
-        "dispatch_oracle_sha256": _required_env("RECOVAR_GLOBAL_WINNER_SUMMARY_DISPATCH_ORACLE_SHA256"),
+        "run_id": _required_env("RELAX_GLOBAL_WINNER_SUMMARY_RUN_ID"),
+        "source_id": _required_env("RELAX_GLOBAL_WINNER_SUMMARY_SOURCE_ID"),
+        "executable_sha256": _required_env("RELAX_GLOBAL_WINNER_SUMMARY_EXECUTABLE_SHA256"),
+        "gpu_uuid": _required_env("RELAX_GLOBAL_WINNER_SUMMARY_GPU_UUID"),
+        "input_manifest_sha256": _required_env("RELAX_GLOBAL_WINNER_SUMMARY_INPUT_MANIFEST_SHA256"),
+        "dispatch_oracle_sha256": _required_env("RELAX_GLOBAL_WINNER_SUMMARY_DISPATCH_ORACLE_SHA256"),
         "iteration": target_iteration,
         "expected_particles": expected_particles,
         "expected_classes": expected_classes,

@@ -254,7 +254,7 @@ def resolve_statistics_config(
         )
     source_faithful_spectrum_norm = bool(source_faithful_spectrum_norm)
     deterministic_norm_reduction = source_faithful_spectrum_norm or parse_env_flag(
-        "RECOVAR_K1_RELION_DETERMINISTIC_NORM_REDUCTION",
+        "RELAX_K1_RELION_DETERMINISTIC_NORM_REDUCTION",
         default=False,
     )
     cutoff = None if current_size is None else int(current_size) // 2
@@ -315,7 +315,7 @@ def segment_sum_by_image(values, row_image_local, image_capacity: int):
     ``values`` has the row axis first and any trailing axes; the result has the
     image axis first. Uses the same duplicate-index scatter as the host path,
     or the fixed-order masked reduction under
-    ``RECOVAR_EM_DETERMINISTIC_REDUCTIONS=1``.
+    ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1``.
     """
 
     values = jnp.asarray(values)

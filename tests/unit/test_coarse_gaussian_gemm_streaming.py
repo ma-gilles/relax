@@ -459,7 +459,7 @@ def test_streaming_request_defaults_above_maxsig_and_rejects_orphan_topk(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv(
-        "RECOVAR_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR",
+        "RELAX_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR",
         str(tmp_path),
     )
     directory, topk = _coarse_gaussian_gemm_streaming_diagnostic_request(
@@ -468,8 +468,8 @@ def test_streaming_request_defaults_above_maxsig_and_rejects_orphan_topk(
     assert directory == str(tmp_path.resolve())
     assert topk == 2048
 
-    monkeypatch.delenv("RECOVAR_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR")
-    monkeypatch.setenv("RECOVAR_COARSE_GAUSSIAN_GEMM_STREAM_TOPK", "2048")
+    monkeypatch.delenv("RELAX_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR")
+    monkeypatch.setenv("RELAX_COARSE_GAUSSIAN_GEMM_STREAM_TOPK", "2048")
     with pytest.raises(ValueError, match="requires"):
         _coarse_gaussian_gemm_streaming_diagnostic_request(max_significants=500)
 

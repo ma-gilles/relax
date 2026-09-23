@@ -50,7 +50,7 @@ from relax.vdam.schedules import (
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
 from relax.vdam.subset_schedule import restore_subset_order_for_continuation
 
-INITIAL_MODEL_SKIP_EXPECTED_ACCURACY_ENV = "RECOVAR_INITIALMODEL_SKIP_EXPECTED_ACCURACY"
+INITIAL_MODEL_SKIP_EXPECTED_ACCURACY_ENV = "RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY"
 
 
 @dataclass(frozen=True)
@@ -82,9 +82,9 @@ def _native_expectation_step(
     projector_context: dense_adapter._IterationProjectorContext | None = None,
 ):
     def _expectation_step(state: InitialModelState, particle_ids: np.ndarray, halfset_ids: np.ndarray):
-        defer_token = os.environ.get("RECOVAR_VDAM_DEFER_SPARSE_ROTATIONS", "0").strip()
+        defer_token = os.environ.get("RELAX_VDAM_DEFER_SPARSE_ROTATIONS", "0").strip()
         if defer_token not in {"0", "1"}:
-            raise ValueError("RECOVAR_VDAM_DEFER_SPARSE_ROTATIONS must be 0 or 1")
+            raise ValueError("RELAX_VDAM_DEFER_SPARSE_ROTATIONS must be 0 or 1")
         sampling_kwargs = {"defer_fine_rotations": True} if defer_token == "1" else {}
         iteration = max(1, int(state.iter))
         do_grad = schedules._native_initialmodel_do_grad(
@@ -383,7 +383,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     state = _prepare_mstep_state_precision(state, opts.mstep_compute_dtype)
     profile.record("state_setup")
     exact_projector_setting = os.environ.get(
-        "RECOVAR_INITIAL_MODEL_EXACT_RELION_PROJECTOR", "1"
+        "RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR", "1"
     ).strip().lower()
     projector_context = (
         None if exact_projector_setting in {"0", "false", "no", "off"}

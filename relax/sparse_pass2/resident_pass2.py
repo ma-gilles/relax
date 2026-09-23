@@ -18,7 +18,7 @@ signature and return type of
 
 Selection and scope
 -------------------
-The driver is selected only by ``RECOVAR_SPARSE_PASS2_RESIDENT=1`` and only in
+The driver is selected only by ``RELAX_SPARSE_PASS2_RESIDENT=1`` and only in
 the production K=1 configuration (RELION x-half M-step, exact RELION fine
 Gaussian scoring, float32 fine posterior, fine M-step prune, float32 scoring,
 no diagnostics or dumps). Every other configuration raises
@@ -188,22 +188,22 @@ from relax.sparse_pass2.sparse_pass2_window import (
 
 logger = logging.getLogger(__name__)
 
-RESIDENT_PASS2_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT"
-_ROW_CAPACITY_LADDER_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES"
-_IMAGE_CAPACITY_LADDER_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES"
-_MSTEP_BLOCK_ROWS_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS"
+RESIDENT_PASS2_ENV = "RELAX_SPARSE_PASS2_RESIDENT"
+_ROW_CAPACITY_LADDER_ENV = "RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES"
+_IMAGE_CAPACITY_LADDER_ENV = "RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES"
+_MSTEP_BLOCK_ROWS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS"
 # Attribution only, default off. Logs one line per chunk with its occupancy,
 # its M-step block count and a device-synchronised wall, and counts the T7
 # offsets readbacks. The synchronisation perturbs the wall, so an arm with
 # this set is a diagnostic arm and never a timing arm.
-_CHUNK_TIMING_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_TIMING"
+_CHUNK_TIMING_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING"
 # T14: the chunk body as one jitted program per capacity class. Opt-in; the
 # per-stage path is the default and the oracle both paths are compared against. ``..._CHUNK_STATIC_BLOCKS`` runs the M-step block loop over
 # the whole row capacity instead of the chunk's live blocks; both forms trace
 # one program per capacity class and are bitwise equal, because a padded block
 # carries a zero posterior and contributes exact zeros.
-_CHUNK_JIT_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_JIT"
-_CHUNK_STATIC_BLOCKS_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_STATIC_BLOCKS"
+_CHUNK_JIT_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT"
+_CHUNK_STATIC_BLOCKS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_STATIC_BLOCKS"
 # How many M-step blocks the chunk program emits per device-loop iteration.
 # XLA:GPU reads a while predicate back to the host once per iteration, so an
 # unroll of u divides those readbacks by u; it also multiplies the live
@@ -212,25 +212,25 @@ _CHUNK_STATIC_BLOCKS_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_STATIC_BLOCKS"
 # state's second iteration that program asked the allocator for 54.5 GiB, and
 # T16's branch point 6c2dad33e carried that fully unrolled form, which OOMs at
 # hp3 (181 GiB); 7a29c2776's bounded unroll supersedes it and is kept here.
-_CHUNK_BLOCK_UNROLL_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_BLOCK_UNROLL"
+_CHUNK_BLOCK_UNROLL_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_BLOCK_UNROLL"
 # T16: prepare the per-image operands once per half and keep them resident, and
 # take the M-step's weighted sums with T15's flat-row translate-and-sum kernel
 # instead of a gathered ``[images, translations, pixels]`` tile. Default on;
-# ``RECOVAR_SPARSE_PASS2_RESIDENT_OPERANDS=0`` selects the per-chunk
+# ``RELAX_SPARSE_PASS2_RESIDENT_OPERANDS=0`` selects the per-chunk
 # ``_prepare_bucket_io`` preparation and the XLA tile reduction, which stay as
 # the oracle both forms are compared against.
-_RESIDENT_OPERANDS_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_OPERANDS"
+_RESIDENT_OPERANDS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS"
 # Diagnostic, default off. For the first chunk of a half it also runs the
 # per-chunk preparation and checks, on that chunk's real operands, that
 # translating the resident per-image arrays reproduces the pre-shifted tiles
 # bitwise and that the kernel's weighted sums equal the XLA reduction. It
 # doubles that chunk's preparation cost, so an arm with it set is a diagnostic
 # arm, never a timing arm.
-_RESIDENT_OPERANDS_VERIFY_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY"
+_RESIDENT_OPERANDS_VERIFY_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY"
 # Take ``ctf_probs`` from the translate-and-sum kernel's fourth output instead
 # of the XLA statement. Measurement only: see
 # ``_resident_block_weighted_sums_kernel`` for why it is not the default.
-_KERNEL_CTF_PROBS_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS"
+_KERNEL_CTF_PROBS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS"
 # P4-G phase 2: square the chunk's Wavg rectangle once per image and gather the
 # float32 result, instead of gathering the complex rectangle to the block's rows
 # and squaring once per row. Squaring is elementwise, so squaring then gathering
@@ -238,25 +238,25 @@ _KERNEL_CTF_PROBS_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS"
 # that follows keeps its shapes and its reduction order; the two settings are
 # bitwise. Default off while the measurement arms are the ones in the ticket's
 # report; `_resident_block_wavg_rectangle_terms` holds both paths.
-_WAVG_POWER_PER_IMAGE_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_WAVG_POWER_PER_IMAGE"
+_WAVG_POWER_PER_IMAGE_ENV = "RELAX_SPARSE_PASS2_RESIDENT_WAVG_POWER_PER_IMAGE"
 # P3-A: dispatch the per-stage chunk loop's three stages as jitted programs
 # keyed on the capacity class instead of as loose eager operations. Default on.
-# ``RECOVAR_SPARSE_PASS2_RESIDENT_GLUE_JIT=0`` restores the loose dispatch,
+# ``RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT=0`` restores the loose dispatch,
 # which stays the oracle every bitwise comparison of this change is made
 # against. The stage bodies are the same functions in both settings, so the
 # flag changes only where the JIT boundary sits.
-_RESIDENT_GLUE_JIT_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_GLUE_JIT"
+_RESIDENT_GLUE_JIT_ENV = "RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT"
 # Diagnostic, default off. Checks the statically computed M-step carry avals
 # against a ``jax.eval_shape`` probe of the same block stages, once per
 # capacity class. The probes are what this change removes from the chunk loop;
 # the flag exists so a test, or a suspicious run, can prove the arithmetic
 # still agrees with them.
-_CARRY_AVAL_PROBE_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE"
+_CARRY_AVAL_PROBE_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE"
 # Relative band the racing shell-binning scatter is allowed in the verification
 # arm: 12x the measured same-call spread of 5.8e-8, still far inside one
 # float32 ulp of the accumulated shell power.
 _RACING_SCATTER_RELATIVE_BAND = 7e-7
-_SOFT_POSTERIOR_BLOCK_BPREF_PROTOTYPE_ENV = "RECOVAR_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF"
+_SOFT_POSTERIOR_BLOCK_BPREF_PROTOTYPE_ENV = "RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF"
 
 # Row capacities are multiples of the M-step block so every chunk decomposes
 # into whole blocks; image capacities follow the design's ladder. The design's
@@ -282,7 +282,7 @@ __all__ = [
 
 
 def resident_pass2_requested() -> bool:
-    """Return whether ``RECOVAR_SPARSE_PASS2_RESIDENT`` selects this driver."""
+    """Return whether ``RELAX_SPARSE_PASS2_RESIDENT`` selects this driver."""
 
     return parse_env_flag(RESIDENT_PASS2_ENV, default=False)
 
@@ -293,20 +293,20 @@ def resident_pass2_requested() -> bool:
 
 _DIAGNOSTIC_DIR_ENVS = (
     "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
-    "RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR",
-    "RECOVAR_BPREF_MEMBERSHIP_DUMP_DIR",
-    "RECOVAR_PASS2_DUMP_DIR",
-    "RECOVAR_BPREF_EXECUTION_ORDER_LOCAL_FILE",
-    "RECOVAR_VDAM_KCLASS_STATS_DUMP_DIR",
+    "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
+    "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
+    "RELAX_PASS2_DUMP_DIR",
+    "RELAX_BPREF_EXECUTION_ORDER_LOCAL_FILE",
+    "RELAX_VDAM_KCLASS_STATS_DUMP_DIR",
 )
 
 _DIAGNOSTIC_FLAG_ENVS = (
-    "RECOVAR_PASS2_DUMP_NORM_RESIDUAL_INPUTS",
-    "RECOVAR_K1_RELION_TRANSLATED_WAVG_NORM",
-    "RECOVAR_SPARSE_PASS2_LOG_CANDIDATE_DENSITY",
-    "RECOVAR_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION",
-    "RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
-    "RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS",
+    "RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS",
+    "RELAX_K1_RELION_TRANSLATED_WAVG_NORM",
+    "RELAX_SPARSE_PASS2_LOG_CANDIDATE_DENSITY",
+    "RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION",
+    "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
+    "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",
 )
 
 
@@ -426,7 +426,7 @@ def require_resident_production_configuration(**kwargs) -> None:
         (not bool(kwargs["preserve_bpref_particle_order"]))
         or bool(kwargs["soft_posterior_block_bpref"]),
         "strict per-particle BPref launches are not implemented; set "
-        "RECOVAR_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=1 (the production "
+        "RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=1 (the production "
         "setting) so BPref accumulates per block, or clear "
         "preserve_bpref_particle_order",
     )
@@ -2737,7 +2737,7 @@ def _prepare_chunk_reconstruction_operands(
     """Build one chunk's translated reconstruction, noise and Wavg tiles.
 
     The oracle path, kept selectable by
-    ``RECOVAR_SPARSE_PASS2_RESIDENT_OPERANDS=0``. These tiles carry the
+    ``RELAX_SPARSE_PASS2_RESIDENT_OPERANDS=0``. These tiles carry the
     ``(images, translations, pixels)`` axis, so they are the one operand family
     that cannot be kept resident for a whole half (17 GiB at the hp3 state);
     they are rebuilt per chunk from the same :func:`_prepare_bucket_io` call,
@@ -2923,7 +2923,7 @@ def _chunk_timing_enabled() -> bool:
 def _chunk_jit_enabled() -> bool:
     """Whether the chunk body runs as one jitted program (T14).
 
-    Opt-in: ``RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_JIT=1`` selects it, and the
+    Opt-in: ``RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT=1`` selects it, and the
     per-stage path is both the default and the oracle. Both paths call the same
     stage helpers on the same operands, so only the JIT boundary and the M-step
     loop's trip mechanism differ.
@@ -2976,7 +2976,7 @@ def _wavg_power_per_image_enabled() -> bool:
     Default **on** since the P4-F/P4-G merge. P4-G measured the two forms
     bitwise on GPU at production shapes, 0 ULP over 6.3 million values, and the
     hoisted form 2.2 s per steady hp3 iteration faster;
-    ``RECOVAR_SPARSE_PASS2_RESIDENT_WAVG_POWER_PER_IMAGE=0`` restores the
+    ``RELAX_SPARSE_PASS2_RESIDENT_WAVG_POWER_PER_IMAGE=0`` restores the
     per-row square as the oracle that equality is measured against.
     """
 
@@ -3071,7 +3071,7 @@ def _verify_resident_chunk_operands(
     # duplicate indices. That races: two calls on the same array in one process
     # differ by about 6e-8 relative, so no two preparations of it are bitwise,
     # including two of the per-chunk path. It is checked against that spread
-    # here, and exactly under ``RECOVAR_EM_DETERMINISTIC_REDUCTIONS=1``, where
+    # here, and exactly under ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1``, where
     # the binning becomes a fixed-order masked reduction.
     racing_scatter = () if deterministic_reductions_enabled() else ("relion_norm_high_shell",)
     mismatched = []
@@ -3092,7 +3092,7 @@ def _verify_resident_chunk_operands(
             logger.info(
                 "Resident pass-2 operand verification on %s: %s is inside its racing "
                 "scatter-add band (%d/%d cells, max |delta| %.3e, max relative %.3e); "
-                "set RECOVAR_EM_DETERMINISTIC_REDUCTIONS=1 for an exact check",
+                "set RELAX_EM_DETERMINISTIC_REDUCTIONS=1 for an exact check",
                 label, name, differing, actual.size, worst, relative,
             )
             continue
@@ -3118,7 +3118,7 @@ def _verify_resident_chunk_operands(
 def _resident_operands_requested() -> bool:
     """Whether the per-image operands are prepared once per half (T16).
 
-    Default on. ``RECOVAR_SPARSE_PASS2_RESIDENT_OPERANDS=0`` keeps the per-chunk
+    Default on. ``RELAX_SPARSE_PASS2_RESIDENT_OPERANDS=0`` keeps the per-chunk
     ``_prepare_bucket_io`` preparation and the XLA tile reduction, which are the
     oracle for every bitwise comparison of the new path.
     """
@@ -4103,7 +4103,7 @@ def _run_resident_chunk_stages(
 ):
     """Per-stage oracle: the same stages, dispatched one at a time.
 
-    Kept selectable by ``RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_JIT=0`` so the
+    Kept selectable by ``RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT=0`` so the
     fused program can be compared against the path it replaces inside one
     process. ``timing_hook(name)`` is called after each stage when the chunk
     timing diagnostic is on; it synchronizes, so an arm that passes it is a

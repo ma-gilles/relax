@@ -102,11 +102,11 @@ for repeat in $(seq 1 "${REPEATS}"); do
     mkdir -p "${run_root}"
     touch "${run_root}/SAFE_TO_DELETE"
     if [[ "${mode}" == skip ]]; then
-      export RECOVAR_INITIALMODEL_SKIP_EXPECTED_ACCURACY=1
+      export RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY=1
     else
-      export RECOVAR_INITIALMODEL_SKIP_EXPECTED_ACCURACY=0
+      export RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY=0
     fi
-    export RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS=0
+    export RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS=0
     printf '%02d\t%s\n' "${repeat}" "${mode}" >> "${OUTPUT_ROOT}/provenance/execution_order.tsv"
 
     OUTPUT_ROOT="${run_root}" \
@@ -137,6 +137,6 @@ for repeat in $(seq 1 "${REPEATS}"); do
   done
 done
 
-unset RECOVAR_INITIALMODEL_SKIP_EXPECTED_ACCURACY
-unset RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS
+unset RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY
+unset RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS
 touch "${OUTPUT_ROOT}/COMPLETED"

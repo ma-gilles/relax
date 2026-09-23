@@ -25,9 +25,9 @@ def test_expected_accuracy_ab_panel_is_same_allocation_and_fail_closed() -> None
     assert text.index('for repeat in $(seq 1 "${REPEATS}")') < text.index(
         'for mode in "${modes[@]}"'
     )
-    assert "RECOVAR_INITIALMODEL_SKIP_EXPECTED_ACCURACY=1" in text
-    assert "RECOVAR_INITIALMODEL_SKIP_EXPECTED_ACCURACY=0" in text
-    assert "RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS=0" in text
+    assert "RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY=1" in text
+    assert "RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY=0" in text
+    assert "RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS=0" in text
     assert 'TARGET_GPU_UUID="${TARGET_GPU_UUID}"' in text
     assert 'test "${GPU_MISS_HOLD_SECONDS}" -le 60' in text
     assert 'source "${REPO_ROOT}/scripts/vdam_gpu_selection.sh"' in text
@@ -111,14 +111,14 @@ def test_bpref_particle_chunk_panel_reuses_and_interleaves_the_boundary_runner()
     assert "repeat % 2 == 0" in text
     assert "unsupported BPref particle chunk arm" in text
     assert "duplicate BPref particle chunk arm" in text
-    assert "unset RECOVAR_EXACT_LOCAL_SOURCE_BPREF_PARTICLE_CHUNK_SIZE" in text
-    assert "unset RECOVAR_EXACT_LOCAL_SOURCE_BPREF_FUSED_SERIAL_PARTICLES" in text
-    assert "unset RECOVAR_EXACT_LOCAL_SOURCE_BPREF_FUSED_SERIAL_ROTATIONS" in text
-    assert "export RECOVAR_EXACT_LOCAL_SOURCE_BPREF_PARTICLE_CHUNK_SIZE=${arm}" in text
+    assert "unset RELAX_EXACT_LOCAL_SOURCE_BPREF_PARTICLE_CHUNK_SIZE" in text
+    assert "unset RELAX_EXACT_LOCAL_SOURCE_BPREF_FUSED_SERIAL_PARTICLES" in text
+    assert "unset RELAX_EXACT_LOCAL_SOURCE_BPREF_FUSED_SERIAL_ROTATIONS" in text
+    assert "export RELAX_EXACT_LOCAL_SOURCE_BPREF_PARTICLE_CHUNK_SIZE=${arm}" in text
     assert '"${arm}" == fused-serial' in text
-    assert "export RECOVAR_EXACT_LOCAL_SOURCE_BPREF_FUSED_SERIAL_PARTICLES=1" in text
+    assert "export RELAX_EXACT_LOCAL_SOURCE_BPREF_FUSED_SERIAL_PARTICLES=1" in text
     assert '"${arm}" == fused-serial-rotations' in text
-    assert "export RECOVAR_EXACT_LOCAL_SOURCE_BPREF_FUSED_SERIAL_ROTATIONS=1" in text
+    assert "export RELAX_EXACT_LOCAL_SOURCE_BPREF_FUSED_SERIAL_ROTATIONS=1" in text
     assert "VDAM_EXPECTED_ACCURACY_MODES=baseline" in text
     assert "VDAM_CAPTURE_LOCAL_SCORE=0" in text
     assert "VDAM_CAPTURE_FUSED_SCORES=0" in text

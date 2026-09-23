@@ -521,7 +521,7 @@ def _score_half_dense(
                 adaptive_em_kwargs["image_batch_size"],
                 adaptive_em_kwargs["rotation_block_size"],
             )
-            kclass_sparse_pass2 = _sparse_pass2_selected("RECOVAR_K_CLASS_DENSE_PASS2")
+            kclass_sparse_pass2 = _sparse_pass2_selected("RELAX_K_CLASS_DENSE_PASS2")
             if symmetry != "C1" and not kclass_sparse_pass2:
                 raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
             adaptive_em_kwargs["sparse_pass2"] = kclass_sparse_pass2
@@ -643,7 +643,7 @@ def _score_half_dense(
         if symmetry != "C1" and not k1_relion_x_half_mstep:
             raise RuntimeError(
                 f"{symmetry} reconstruction requires RELION x-half BPref accumulation; "
-                "RECOVAR_K1_RELION_X_HALF_MSTEP=0, CPU-only execution, or disabled "
+                "RELAX_K1_RELION_X_HALF_MSTEP=0, CPU-only execution, or disabled "
                 "custom CUDA is unsupported for non-C1 symmetry"
             )
         means_single = jnp.asarray(means_k)[None, :]
@@ -687,7 +687,7 @@ def _score_half_dense(
             n_trans_fine_for_collapse = pass2_grids.n_fine_translations
             fine_rotations_for_pose = pass2_grids.fine_rotations
             adaptive_em_kwargs = dict(em_kwargs)
-            k1_sparse_pass2 = _sparse_pass2_selected("RECOVAR_K1_DENSE_PASS2")
+            k1_sparse_pass2 = _sparse_pass2_selected("RELAX_K1_DENSE_PASS2")
             if symmetry != "C1" and not k1_sparse_pass2:
                 raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
             k1_skip_significance_pruning = _k1_skip_significance_pruning_enabled()
@@ -1315,9 +1315,9 @@ def _score_half_local(
         local_debug_env_names = [
             name
             for name in os.environ
-            if name.startswith("RECOVAR_LOCAL_SCORE_DUMP_")
-            or name.startswith("RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_")
-            or name.startswith("RECOVAR_LOCAL_NOISE_COMPONENT_DUMP_")
+            if name.startswith("RELAX_LOCAL_SCORE_DUMP_")
+            or name.startswith("RELAX_LOCAL_FUSED_POSTERIOR_DUMP_")
+            or name.startswith("RELAX_LOCAL_NOISE_COMPONENT_DUMP_")
         ]
         saved_local_debug_env = {name: os.environ.pop(name) for name in local_debug_env_names}
         try:
@@ -1387,7 +1387,7 @@ def _score_half_local(
     local_disable_adjoint_ctf = bool(disable_adjoint_ctf or diagnostic_score_only)
     logger.info(
         "RELION local fine pass 2: supplied-PPref interpolation follows "
-        "RECOVAR_RELION_PROJECTOR_TEXTURE_INTERP (default texture)"
+        "RELAX_RELION_PROJECTOR_TEXTURE_INTERP (default texture)"
     )
     local_outputs = _run_local_search_iteration(
         experiment_dataset,

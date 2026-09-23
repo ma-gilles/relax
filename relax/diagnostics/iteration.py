@@ -3,7 +3,7 @@
 Extracted from ``iteration_loop.py``:
 
 - ``_maybe_dump_noise_update_debug`` writes per-iteration RELION-parity
-  noise-update sufficient statistics when ``RECOVAR_NOISE_DEBUG_DUMP_DIR``
+  noise-update sufficient statistics when ``RELAX_NOISE_DEBUG_DUMP_DIR``
   is set.
 - ``_save_iteration_intermediates`` writes per-iteration regularized and
   unregularized volumes, FSC, noise, tau2, hard assignments, and metadata
@@ -30,8 +30,8 @@ from relax.symmetry import canonicalize_rotational_symmetry, symmetry_operator_s
 logger = logging.getLogger(__name__)
 
 
-_SIGNIFICANCE_DUMP_TARGET_HALF_ENV = "RECOVAR_SIGNIFICANCE_DUMP_TARGET_HALF"
-_PASS2_NORM_DUMP_TARGET_HALF_ENV = "RECOVAR_PASS2_DUMP_TARGET_HALF"
+_SIGNIFICANCE_DUMP_TARGET_HALF_ENV = "RELAX_SIGNIFICANCE_DUMP_TARGET_HALF"
+_PASS2_NORM_DUMP_TARGET_HALF_ENV = "RELAX_PASS2_DUMP_TARGET_HALF"
 
 
 def _significance_dump_half_indices(
@@ -61,20 +61,20 @@ def _significance_dump_half_indices(
     )
     raw_half = raw_pass2_half if pass2_norm_mode else raw_significance_half
     if pass2_norm_mode:
-        if str(env.get("RECOVAR_PASS2_DUMP_NORM_RESIDUAL_INPUTS", "")).strip() != "1":
+        if str(env.get("RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS", "")).strip() != "1":
             raise RuntimeError(
                 f"{_PASS2_NORM_DUMP_TARGET_HALF_ENV} requires "
-                "RECOVAR_PASS2_DUMP_NORM_RESIDUAL_INPUTS=1"
+                "RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS=1"
             )
-        if str(env.get("RECOVAR_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET", "")).strip() != "1":
+        if str(env.get("RELAX_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET", "")).strip() != "1":
             raise RuntimeError(
                 f"{_PASS2_NORM_DUMP_TARGET_HALF_ENV} requires "
-                "RECOVAR_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET=1"
+                "RELAX_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET=1"
             )
-    elif str(env.get("RECOVAR_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "")).strip() != "1":
+    elif str(env.get("RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "")).strip() != "1":
         raise RuntimeError(
             f"{_SIGNIFICANCE_DUMP_TARGET_HALF_ENV} requires "
-            "RECOVAR_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET=1"
+            "RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET=1"
         )
     if int(n_classes) != 1:
         raise RuntimeError(f"{target_half_env} is K=1 diagnostic-only")
@@ -85,7 +85,7 @@ def _significance_dump_half_indices(
     if target_half not in {1, 2}:
         raise ValueError(f"{target_half_env} must be 1 or 2")
 
-    prefix = "RECOVAR_PASS2_DUMP" if pass2_norm_mode else "RECOVAR_SIGNIFICANCE_DUMP"
+    prefix = "RELAX_PASS2_DUMP" if pass2_norm_mode else "RELAX_SIGNIFICANCE_DUMP"
     raw_iteration = str(env.get(f"{prefix}_ITERATION", "")).strip()
     raw_targets = str(env.get(f"{prefix}_ORIGINAL_INDICES", "")).strip()
     dump_dir = str(env.get(f"{prefix}_DIR", "")).strip()
@@ -138,12 +138,12 @@ def _bpref_device_signature_active_for_numbered_half(
     env = os.environ if environ is None else environ
     if not str(env.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "")).strip():
         return False
-    raw_iteration = str(env.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION", "")).strip()
-    raw_half = str(env.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF", "")).strip()
+    raw_iteration = str(env.get("RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION", "")).strip()
+    raw_half = str(env.get("RELAX_BPREF_CONTRIBUTION_DUMP_HALF", "")).strip()
     if not raw_iteration or not raw_half:
         raise RuntimeError(
             "Scoped BPref device capture requires explicit positive "
-            "RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION and half 1 or 2"
+            "RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION and half 1 or 2"
         )
     try:
         target_iteration = int(raw_iteration)
@@ -188,7 +188,7 @@ def _save_bpref_accumulators(
     np.savez(
         pathlib.Path(dump_dir) / f"recovar_bpref_{stage}_it{iteration + 1:03d}.npz",
         schema=np.asarray(f"recovar-bpref-{stage}-v2"),
-        run_id=np.asarray(os.environ.get("RECOVAR_BPREF_BOUNDARY_DUMP_RUN_ID", "unset")),
+        run_id=np.asarray(os.environ.get("RELAX_BPREF_BOUNDARY_DUMP_RUN_ID", "unset")),
         iteration=np.int32(iteration + 1),
         current_size=np.int32(current_size),
         padding_factor=np.int32(padding_factor),
@@ -404,10 +404,10 @@ def _maybe_dump_noise_update_debug(
 ):
     """Write raw noise M-step terms for RELION parity debugging when requested."""
 
-    dump_dir = os.environ.get("RECOVAR_NOISE_DEBUG_DUMP_DIR")
+    dump_dir = os.environ.get("RELAX_NOISE_DEBUG_DUMP_DIR")
     if not dump_dir:
         return
-    requested_iterations = parse_int_set(os.environ.get("RECOVAR_NOISE_DEBUG_DUMP_ITERATION"))
+    requested_iterations = parse_int_set(os.environ.get("RELAX_NOISE_DEBUG_DUMP_ITERATION"))
     if requested_iterations is not None and int(iteration) not in requested_iterations:
         return
 

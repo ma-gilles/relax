@@ -79,7 +79,7 @@ def test_repeat_panel_runner_pins_same_gpu_and_nested_capture_contract():
         "#SBATCH --constraint=h100",
         "#SBATCH --gres=gpu:h100:1",
         '${EXPECTED_REPO_HEAD:?pin the tracked source head}',
-        '${RECOVAR_CUDA_LIB_SOURCE:?set the immutable qualified CUDA binary}',
+        '${RELAX_CUDA_LIB_SOURCE:?set the immutable qualified CUDA binary}',
         'mapfile -t visible_gpu_uuids < <(nvidia-smi --query-gpu=uuid',
         'gpu_uuid_before=${visible_gpu_uuids[0]//[[:space:]]/}',
         'for arm in a b; do',
@@ -89,9 +89,9 @@ def test_repeat_panel_runner_pins_same_gpu_and_nested_capture_contract():
         'status --porcelain=v1 --untracked-files=no',
         'sha256sum "${REPORT}"',
         "RELION_VDAM_BLOCK_TRACE_REPLAY",
-        "RECOVAR_RELION_VDAM_WORKER_REPLAY_TOPOLOGY",
-        "RECOVAR_VDAM_CANDIDATE_BLOCK_TRACE_CAPTURE",
-        "RECOVAR_VDAM_CANDIDATE_BLOCK_MAP_CAPTURE",
+        "RELAX_RELION_VDAM_WORKER_REPLAY_TOPOLOGY",
+        "RELAX_VDAM_CANDIDATE_BLOCK_TRACE_CAPTURE",
+        "RELAX_VDAM_CANDIDATE_BLOCK_MAP_CAPTURE",
         "scripts.analyze_vdam_mapped_block_chronology",
     )
     missing = [token for token in required if token not in runner]

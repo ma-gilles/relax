@@ -29,7 +29,7 @@ from scripts.summarize_em_completion_bench import (
 )
 
 SCHEMA = "em_k1_fsc_trajectory_audit_v3"
-RECOVAR_MAP_RE = re.compile(r"^it(\d{3})_half([12])_reg\.mrc$")
+RELAX_MAP_RE = re.compile(r"^it(\d{3})_half([12])_reg\.mrc$")
 RELION_MAP_RE = re.compile(r"^run_it(\d{3})_half([12])_class001\.mrc$")
 
 
@@ -386,7 +386,7 @@ def audit_case(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, np.n
         pairs: list[tuple[int, int]] = []
         topology_failures: list[str] = []
     else:
-        recovar_maps = _discover_maps(intermediates, RECOVAR_MAP_RE, engine="RECOVAR")
+        recovar_maps = _discover_maps(intermediates, RELAX_MAP_RE, engine="RECOVAR")
         all_relion_maps = _discover_maps(relion_dir, RELION_MAP_RE, engine="RELION")
         relion_maps = {
             iteration: paths

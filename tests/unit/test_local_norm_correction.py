@@ -471,7 +471,7 @@ def test_relion_wavg_norm_translation_uses_raw_windowed_image(monkeypatch):
 
 
 def test_translated_wavg_norm_replaces_only_untranslated_low_shell_power(monkeypatch):
-    monkeypatch.setenv("RECOVAR_K1_RELION_POWERCLASS_SPECTRUM_NORM", "1")
+    monkeypatch.setenv("RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM", "1")
     processed = np.asarray([[3 + 4j, 5 + 12j, 8 + 15j, 7 + 24j]], dtype=np.complex64)
     shifted = np.asarray(
         [

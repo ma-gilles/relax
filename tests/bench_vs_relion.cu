@@ -285,7 +285,7 @@ __global__ void relion_project3D(
 /*  Reimplemented standalone.  Full-volume, full-image, no CONJ_MODE. */
 /* ================================================================== */
 
-#define RECOVAR_BLOCK_SIZE 256
+#define RELAX_BLOCK_SIZE 256
 
 __global__ void recovar_backproject(
     float* __restrict__ vol,          /* interleaved complex: [2*(N0*N1*N2)] */
@@ -299,7 +299,7 @@ __global__ void recovar_backproject(
     int upsampling,
     float max_r2)
 {
-    int gid = blockIdx.x * RECOVAR_BLOCK_SIZE + threadIdx.x;
+    int gid = blockIdx.x * RELAX_BLOCK_SIZE + threadIdx.x;
     int total = n_images * n_pixels;
     if (gid >= total) return;
 
@@ -354,22 +354,22 @@ __global__ void recovar_backproject(
     float mfx = 1.0f - fx, mfy = 1.0f - fy, mfz = 1.0f - fz;
 
     /* 8 neighbors × 2 floats (real, imag) = 16 atomicAdds */
-    #define RECOVAR_SCATTER(ix, iy, iz, w) \
+    #define RELAX_SCATTER(ix, iy, iz, w) \
     { \
         int idx = ((ix) * N1 * N2 + (iy) * N2 + (iz)) * 2; \
         atomicAdd(&vol[idx + 0], (w) * val_re); \
         atomicAdd(&vol[idx + 1], (w) * val_im); \
     }
 
-    RECOVAR_SCATTER(x0, y0, z0, mfx * mfy * mfz);
-    RECOVAR_SCATTER(x0, y0, z1, mfx * mfy *  fz);
-    RECOVAR_SCATTER(x0, y1, z0, mfx *  fy * mfz);
-    RECOVAR_SCATTER(x0, y1, z1, mfx *  fy *  fz);
-    RECOVAR_SCATTER(x1, y0, z0,  fx * mfy * mfz);
-    RECOVAR_SCATTER(x1, y0, z1,  fx * mfy *  fz);
-    RECOVAR_SCATTER(x1, y1, z0,  fx *  fy * mfz);
-    RECOVAR_SCATTER(x1, y1, z1,  fx *  fy *  fz);
-    #undef RECOVAR_SCATTER
+    RELAX_SCATTER(x0, y0, z0, mfx * mfy * mfz);
+    RELAX_SCATTER(x0, y0, z1, mfx * mfy *  fz);
+    RELAX_SCATTER(x0, y1, z0, mfx *  fy * mfz);
+    RELAX_SCATTER(x0, y1, z1, mfx *  fy *  fz);
+    RELAX_SCATTER(x1, y0, z0,  fx * mfy * mfz);
+    RELAX_SCATTER(x1, y0, z1,  fx * mfy *  fz);
+    RELAX_SCATTER(x1, y1, z0,  fx *  fy * mfz);
+    RELAX_SCATTER(x1, y1, z1,  fx *  fy *  fz);
+    #undef RELAX_SCATTER
 }
 
 
@@ -385,7 +385,7 @@ __global__ void recovar_project(
     int upsampling,
     float max_r2)
 {
-    int gid = blockIdx.x * RECOVAR_BLOCK_SIZE + threadIdx.x;
+    int gid = blockIdx.x * RELAX_BLOCK_SIZE + threadIdx.x;
     int total = n_images * n_pixels;
     if (gid >= total) return;
 
@@ -434,22 +434,22 @@ __global__ void recovar_project(
     {
         float mfx = 1.0f - fx, mfy = 1.0f - fy, mfz = 1.0f - fz;
 
-        #define RECOVAR_GATHER(ix, iy, iz, w) \
+        #define RELAX_GATHER(ix, iy, iz, w) \
         { \
             int idx = ((ix) * N1 * N2 + (iy) * N2 + (iz)) * 2; \
             val_re += (w) * vol[idx + 0]; \
             val_im += (w) * vol[idx + 1]; \
         }
 
-        RECOVAR_GATHER(x0, y0, z0, mfx * mfy * mfz);
-        RECOVAR_GATHER(x0, y0, z1, mfx * mfy *  fz);
-        RECOVAR_GATHER(x0, y1, z0, mfx *  fy * mfz);
-        RECOVAR_GATHER(x0, y1, z1, mfx *  fy *  fz);
-        RECOVAR_GATHER(x1, y0, z0,  fx * mfy * mfz);
-        RECOVAR_GATHER(x1, y0, z1,  fx * mfy *  fz);
-        RECOVAR_GATHER(x1, y1, z0,  fx *  fy * mfz);
-        RECOVAR_GATHER(x1, y1, z1,  fx *  fy *  fz);
-        #undef RECOVAR_GATHER
+        RELAX_GATHER(x0, y0, z0, mfx * mfy * mfz);
+        RELAX_GATHER(x0, y0, z1, mfx * mfy *  fz);
+        RELAX_GATHER(x0, y1, z0, mfx *  fy * mfz);
+        RELAX_GATHER(x0, y1, z1, mfx *  fy *  fz);
+        RELAX_GATHER(x1, y0, z0,  fx * mfy * mfz);
+        RELAX_GATHER(x1, y0, z1,  fx * mfy *  fz);
+        RELAX_GATHER(x1, y1, z0,  fx *  fy * mfz);
+        RELAX_GATHER(x1, y1, z1,  fx *  fy *  fz);
+        #undef RELAX_GATHER
     }
 
     imgs[out_idx + 0] = val_re;
@@ -475,7 +475,7 @@ __global__ void recovar_backproject_half(
     int upsampling,
     float max_r2)
 {
-    int gid = blockIdx.x * RECOVAR_BLOCK_SIZE + threadIdx.x;
+    int gid = blockIdx.x * RELAX_BLOCK_SIZE + threadIdx.x;
     int total = n_images * n_pixels;
     if (gid >= total) return;
 
@@ -516,22 +516,22 @@ __global__ void recovar_backproject_half(
 
     float mfx = 1.0f - fx, mfy = 1.0f - fy, mfz = 1.0f - fz;
 
-    #define RECOVAR_HALF_SCATTER(ix, iy, iz, w) \
+    #define RELAX_HALF_SCATTER(ix, iy, iz, w) \
     { \
         int idx = ((ix) * N1 * N2 + (iy) * N2 + (iz)) * 2; \
         atomicAdd(&vol[idx + 0], (w) * val_re); \
         atomicAdd(&vol[idx + 1], (w) * val_im); \
     }
 
-    RECOVAR_HALF_SCATTER(x0, y0, z0, mfx * mfy * mfz);
-    RECOVAR_HALF_SCATTER(x0, y0, z1, mfx * mfy *  fz);
-    RECOVAR_HALF_SCATTER(x0, y1, z0, mfx *  fy * mfz);
-    RECOVAR_HALF_SCATTER(x0, y1, z1, mfx *  fy *  fz);
-    RECOVAR_HALF_SCATTER(x1, y0, z0,  fx * mfy * mfz);
-    RECOVAR_HALF_SCATTER(x1, y0, z1,  fx * mfy *  fz);
-    RECOVAR_HALF_SCATTER(x1, y1, z0,  fx *  fy * mfz);
-    RECOVAR_HALF_SCATTER(x1, y1, z1,  fx *  fy *  fz);
-    #undef RECOVAR_HALF_SCATTER
+    RELAX_HALF_SCATTER(x0, y0, z0, mfx * mfy * mfz);
+    RELAX_HALF_SCATTER(x0, y0, z1, mfx * mfy *  fz);
+    RELAX_HALF_SCATTER(x0, y1, z0, mfx *  fy * mfz);
+    RELAX_HALF_SCATTER(x0, y1, z1, mfx *  fy *  fz);
+    RELAX_HALF_SCATTER(x1, y0, z0,  fx * mfy * mfz);
+    RELAX_HALF_SCATTER(x1, y0, z1,  fx * mfy *  fz);
+    RELAX_HALF_SCATTER(x1, y1, z0,  fx *  fy * mfz);
+    RELAX_HALF_SCATTER(x1, y1, z1,  fx *  fy *  fz);
+    #undef RELAX_HALF_SCATTER
 }
 
 
@@ -548,7 +548,7 @@ __global__ void recovar_project_half(
     int upsampling,
     float max_r2)
 {
-    int gid = blockIdx.x * RECOVAR_BLOCK_SIZE + threadIdx.x;
+    int gid = blockIdx.x * RELAX_BLOCK_SIZE + threadIdx.x;
     int total = n_images * n_pixels;
     if (gid >= total) return;
 
@@ -589,21 +589,21 @@ __global__ void recovar_project_half(
     if (x0 >= 0 && x1 < N0 && y0 >= 0 && y1 < N1 && z0 >= 0 && z1 < N2)
     {
         float mfx = 1.0f - fx, mfy = 1.0f - fy, mfz = 1.0f - fz;
-        #define RECOVAR_HALF_GATHER(ix, iy, iz, w) \
+        #define RELAX_HALF_GATHER(ix, iy, iz, w) \
         { \
             int idx = ((ix) * N1 * N2 + (iy) * N2 + (iz)) * 2; \
             val_re += (w) * vol[idx + 0]; \
             val_im += (w) * vol[idx + 1]; \
         }
-        RECOVAR_HALF_GATHER(x0, y0, z0, mfx * mfy * mfz);
-        RECOVAR_HALF_GATHER(x0, y0, z1, mfx * mfy *  fz);
-        RECOVAR_HALF_GATHER(x0, y1, z0, mfx *  fy * mfz);
-        RECOVAR_HALF_GATHER(x0, y1, z1, mfx *  fy *  fz);
-        RECOVAR_HALF_GATHER(x1, y0, z0,  fx * mfy * mfz);
-        RECOVAR_HALF_GATHER(x1, y0, z1,  fx * mfy *  fz);
-        RECOVAR_HALF_GATHER(x1, y1, z0,  fx *  fy * mfz);
-        RECOVAR_HALF_GATHER(x1, y1, z1,  fx *  fy *  fz);
-        #undef RECOVAR_HALF_GATHER
+        RELAX_HALF_GATHER(x0, y0, z0, mfx * mfy * mfz);
+        RELAX_HALF_GATHER(x0, y0, z1, mfx * mfy *  fz);
+        RELAX_HALF_GATHER(x0, y1, z0, mfx *  fy * mfz);
+        RELAX_HALF_GATHER(x0, y1, z1, mfx *  fy *  fz);
+        RELAX_HALF_GATHER(x1, y0, z0,  fx * mfy * mfz);
+        RELAX_HALF_GATHER(x1, y0, z1,  fx * mfy *  fz);
+        RELAX_HALF_GATHER(x1, y1, z0,  fx *  fy * mfz);
+        RELAX_HALF_GATHER(x1, y1, z1,  fx *  fy *  fz);
+        #undef RELAX_HALF_GATHER
     }
     imgs[out_idx + 0] = val_re;
     imgs[out_idx + 1] = val_im;
@@ -846,10 +846,10 @@ int main(int argc, char** argv)
 
     /* ---- Recovar backproject ---- */
     int total_threads_bp = n_images * recovar_n_pixels;
-    int grid_bp = (total_threads_bp + RECOVAR_BLOCK_SIZE - 1) / RECOVAR_BLOCK_SIZE;
+    int grid_bp = (total_threads_bp + RELAX_BLOCK_SIZE - 1) / RELAX_BLOCK_SIZE;
     auto recovar_bp = [&]() {
         cudaMemset(d_vol_interleaved, 0, recovar_vol_size * 2 * sizeof(float));
-        recovar_backproject<<<grid_bp, RECOVAR_BLOCK_SIZE>>>(
+        recovar_backproject<<<grid_bp, RELAX_BLOCK_SIZE>>>(
             d_vol_interleaved, d_imgs_interleaved, d_eulers_6,
             n_images, recovar_n_pixels, img_N, img_N,
             vol_N, vol_N, vol_N, padding,
@@ -861,7 +861,7 @@ int main(int argc, char** argv)
     /* ---- Recovar BP without max_r ---- */
     auto recovar_bp_nomr = [&]() {
         cudaMemset(d_vol_interleaved, 0, recovar_vol_size * 2 * sizeof(float));
-        recovar_backproject<<<grid_bp, RECOVAR_BLOCK_SIZE>>>(
+        recovar_backproject<<<grid_bp, RELAX_BLOCK_SIZE>>>(
             d_vol_interleaved, d_imgs_interleaved, d_eulers_6,
             n_images, recovar_n_pixels, img_N, img_N,
             vol_N, vol_N, vol_N, padding,
@@ -902,9 +902,9 @@ int main(int argc, char** argv)
 
     /* ---- Recovar project ---- */
     int total_threads_proj = n_images * recovar_n_pixels;
-    int grid_proj = (total_threads_proj + RECOVAR_BLOCK_SIZE - 1) / RECOVAR_BLOCK_SIZE;
+    int grid_proj = (total_threads_proj + RELAX_BLOCK_SIZE - 1) / RELAX_BLOCK_SIZE;
     auto recovar_proj = [&]() {
-        recovar_project<<<grid_proj, RECOVAR_BLOCK_SIZE>>>(
+        recovar_project<<<grid_proj, RELAX_BLOCK_SIZE>>>(
             d_vol_interleaved, d_out_interleaved, d_eulers_6,
             n_images, recovar_n_pixels, img_N, img_N,
             vol_N, vol_N, vol_N, padding,
@@ -915,7 +915,7 @@ int main(int argc, char** argv)
 
     /* ---- Recovar project no max_r ---- */
     auto recovar_proj_nomr = [&]() {
-        recovar_project<<<grid_proj, RECOVAR_BLOCK_SIZE>>>(
+        recovar_project<<<grid_proj, RELAX_BLOCK_SIZE>>>(
             d_vol_interleaved, d_out_interleaved, d_eulers_6,
             n_images, recovar_n_pixels, img_N, img_N,
             vol_N, vol_N, vol_N, padding,
@@ -944,12 +944,12 @@ int main(int argc, char** argv)
     printf("=================================================================\n");
 
     int total_half_bp = n_images * recovar_half_pixels;
-    int grid_half_bp = (total_half_bp + RECOVAR_BLOCK_SIZE - 1) / RECOVAR_BLOCK_SIZE;
+    int grid_half_bp = (total_half_bp + RELAX_BLOCK_SIZE - 1) / RELAX_BLOCK_SIZE;
 
     /* ---- Recovar half-image backproject with max_r ---- */
     auto recovar_half_bp = [&]() {
         cudaMemset(d_vol_interleaved, 0, recovar_vol_size * 2 * sizeof(float));
-        recovar_backproject_half<<<grid_half_bp, RECOVAR_BLOCK_SIZE>>>(
+        recovar_backproject_half<<<grid_half_bp, RELAX_BLOCK_SIZE>>>(
             d_vol_interleaved, d_imgs_half, d_eulers_6,
             n_images, recovar_half_pixels, img_N, recovar_half_w, img_N,
             vol_N, vol_N, vol_N, padding,
@@ -965,7 +965,7 @@ int main(int argc, char** argv)
 
     /* ---- Recovar half-image project with max_r ---- */
     auto recovar_half_proj = [&]() {
-        recovar_project_half<<<grid_half_bp, RECOVAR_BLOCK_SIZE>>>(
+        recovar_project_half<<<grid_half_bp, RELAX_BLOCK_SIZE>>>(
             d_vol_interleaved, d_out_half, d_eulers_6,
             n_images, recovar_half_pixels, img_N, recovar_half_w, img_N,
             vol_N, vol_N, vol_N, padding,
@@ -992,7 +992,7 @@ int main(int argc, char** argv)
 
         auto bp_sweep = [&]() {
             cudaMemset(d_vol_interleaved, 0, recovar_vol_size * 2 * sizeof(float));
-            recovar_backproject<<<grid_bp, RECOVAR_BLOCK_SIZE>>>(
+            recovar_backproject<<<grid_bp, RELAX_BLOCK_SIZE>>>(
                 d_vol_interleaved, d_imgs_interleaved, d_eulers_6,
                 n_images, recovar_n_pixels, img_N, img_N,
                 vol_N, vol_N, vol_N, padding,

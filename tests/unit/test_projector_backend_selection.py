@@ -133,7 +133,7 @@ def test_the_projector_cache_distinguishes_the_backends(tmp_path, monkeypatch):
         _relion_projector_half_maps_for_scoring,
     )
 
-    monkeypatch.setenv("RECOVAR_RELION_PROJECTOR_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_RELION_PROJECTOR_CACHE_DIR", str(tmp_path))
     rng = np.random.default_rng(1)
     reference = rng.standard_normal((1, 32, 32, 32)).astype(np.float64)
     # means_k is validated even when real_references supplies the volume, so

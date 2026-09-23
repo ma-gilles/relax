@@ -547,7 +547,7 @@ def test_firstiter_fused_bpref_prefix_capture_uses_immutable_identity_and_global
 
 
 def test_firstiter_fused_bpref_defaults_only_inside_complete_fresh_k1_guard(monkeypatch):
-    monkeypatch.delenv("RECOVAR_K1_RELION_FIRSTITER_FUSED_BPREF", raising=False)
+    monkeypatch.delenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", raising=False)
     monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "iteration", 1)
     monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "half", 2)
     kwargs = dict(
@@ -576,10 +576,10 @@ def test_firstiter_fused_bpref_override_can_disable_but_not_expand_scope(monkeyp
         use_relion_x_half_mstep=True,
         score_only=False,
     )
-    monkeypatch.setenv("RECOVAR_K1_RELION_FIRSTITER_FUSED_BPREF", "0")
+    monkeypatch.setenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "0")
     assert not sparse._relion_firstiter_fused_bpref_enabled(**kwargs)
 
-    monkeypatch.setenv("RECOVAR_K1_RELION_FIRSTITER_FUSED_BPREF", "1")
+    monkeypatch.setenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "1")
     with pytest.raises(ValueError, match="requires the fresh K=1"):
         sparse._relion_firstiter_fused_bpref_enabled(
             **{**kwargs, "fresh_k1_guard": False}
@@ -690,9 +690,9 @@ def test_deferred_firstiter_bpref_replay_matches_eager_native_accumulators_bitwi
 
 
 @pytest.mark.parametrize('name', [
-    'RECOVAR_SPARSE_PASS2_NATIVE_DUMP_DIR',
-    'RECOVAR_BPREF_ACCUMULATOR_DELTA_DUMP_DIR',
-    'RECOVAR_PASS2_DUMP_DIR',
+    'RELAX_SPARSE_PASS2_NATIVE_DUMP_DIR',
+    'RELAX_BPREF_ACCUMULATOR_DELTA_DUMP_DIR',
+    'RELAX_PASS2_DUMP_DIR',
 ])
 def test_deferred_firstiter_preserves_requested_capture_route(monkeypatch, name):
     monkeypatch.setenv(name, '/requested/capture')

@@ -77,23 +77,23 @@ RELION_RES_RE = re.compile(
     re.IGNORECASE,
 )
 RELION_PROGRESS_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?/[0-9]+(?:\.[0-9]+)?\s+(?:hrs|min))")
-RECOVAR_ITER_START_RE = re.compile(
+RELAX_ITER_START_RE = re.compile(
     r"=== RELION Iteration\s+([0-9]+)(?:/([0-9]+))?:\s+current_size=([0-9]+)",
     re.IGNORECASE,
 )
-RECOVAR_ITER_DONE_RE = re.compile(
+RELAX_ITER_DONE_RE = re.compile(
     r"RELION Iteration\s+([0-9]+):\s+current_size=([0-9]+),.*?time=([0-9]+(?:\.[0-9]+)?)s",
     re.IGNORECASE,
 )
-RECOVAR_SPARSE_GROUP_RE = re.compile(
+RELAX_SPARSE_GROUP_RE = re.compile(
     r"Sparse(?: fused)?(?: K-class)? pass-2 bucket group (start|done):.*?(?:pair_)?bucket_size=([0-9]+).*?chunks=([0-9]+).*?images=([0-9]+)(?:.*?wall=([0-9]+(?:\.[0-9]+)?)s)?",
     re.IGNORECASE,
 )
-RECOVAR_SPARSE_DONE_RE = re.compile(
+RELAX_SPARSE_DONE_RE = re.compile(
     r"Sparse(?: fused)?(?: K-class)? pass-2(?: \(bucketed\))?:\s+([0-9]+)\s+images(?:,\s+[0-9]+\s+classes)?,\s+([0-9]+)\s+buckets,\s+([0-9]+(?:\.[0-9]+)?)s",
     re.IGNORECASE,
 )
-RECOVAR_COMPLETE_RE = re.compile(r"Refinement complete in\s+([0-9]+(?:\.[0-9]+)?)s", re.IGNORECASE)
+RELAX_COMPLETE_RE = re.compile(r"Refinement complete in\s+([0-9]+(?:\.[0-9]+)?)s", re.IGNORECASE)
 SLURM_JOB_HEADER_RE = re.compile(r"^Slurm job:\s*([0-9]+)\b", re.IGNORECASE)
 SLURM_MEMORY_RE = re.compile(r"^([0-9]+(?:\.[0-9]+)?)([KMGTP]?)(?:i?[bB])?$", re.IGNORECASE)
 NVIDIA_SMI_NUMBER_RE = re.compile(r"[-+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)")
@@ -1132,7 +1132,7 @@ def merge_recovar_progress(case: CaseSummary) -> None:
         return
     for line in read_tail(Path(raw), max_lines=5000):
         text = line.strip()
-        match = RECOVAR_ITER_START_RE.search(text)
+        match = RELAX_ITER_START_RE.search(text)
         if match:
             case.recovar_iteration = as_int(match.group(1)) or case.recovar_iteration
             case.recovar_total_iterations = as_int(match.group(2)) or case.recovar_total_iterations
@@ -1140,7 +1140,7 @@ def merge_recovar_progress(case: CaseSummary) -> None:
             total = f"/{case.recovar_total_iterations}" if case.recovar_total_iterations is not None else ""
             case.recovar_latest_stage = f"iter {case.recovar_iteration}{total} setup"
             continue
-        match = RECOVAR_SPARSE_GROUP_RE.search(text)
+        match = RELAX_SPARSE_GROUP_RE.search(text)
         if match:
             phase = match.group(1).lower()
             bucket_size = match.group(2)
@@ -1155,13 +1155,13 @@ def merge_recovar_progress(case: CaseSummary) -> None:
                     f"sparse pass-2 bucket {bucket_size} done: {chunks} chunks/{images} images{suffix}"
                 )
             continue
-        match = RECOVAR_SPARSE_DONE_RE.search(text)
+        match = RELAX_SPARSE_DONE_RE.search(text)
         if match:
             case.recovar_latest_stage = (
                 f"sparse pass-2 done: {match.group(1)} images/{match.group(2)} buckets/{match.group(3)}s"
             )
             continue
-        match = RECOVAR_ITER_DONE_RE.search(text)
+        match = RELAX_ITER_DONE_RE.search(text)
         if match:
             case.recovar_iteration = as_int(match.group(1)) or case.recovar_iteration
             case.recovar_current_size = as_int(match.group(2)) or case.recovar_current_size
@@ -1173,7 +1173,7 @@ def merge_recovar_progress(case: CaseSummary) -> None:
                 else f"iter {case.recovar_iteration}{total} complete"
             )
             continue
-        match = RECOVAR_COMPLETE_RE.search(text)
+        match = RELAX_COMPLETE_RE.search(text)
         if match:
             case.recovar_latest_stage = f"complete in {match.group(1)}s"
 

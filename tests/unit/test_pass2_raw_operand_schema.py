@@ -17,14 +17,14 @@ pytestmark = pytest.mark.unit
 def test_raw_operand_capture_preserves_rows_dtypes_and_padding(
     tmp_path, monkeypatch, selected, dtype,
 ):
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "42")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_RAW_OPERANDS", "1")
-    monkeypatch.delenv("RECOVAR_PASS2_DUMP_CURRENT_SIZE", raising=False)
-    monkeypatch.delenv("RECOVAR_PASS2_DUMP_ITERATION", raising=False)
-    monkeypatch.delenv("RECOVAR_PASS2_DUMP_ROTATION_ROWS", raising=False)
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_RAW_OPERANDS", "1")
+    monkeypatch.delenv("RELAX_PASS2_DUMP_CURRENT_SIZE", raising=False)
+    monkeypatch.delenv("RELAX_PASS2_DUMP_ITERATION", raising=False)
+    monkeypatch.delenv("RELAX_PASS2_DUMP_ROTATION_ROWS", raising=False)
     if selected:
-        monkeypatch.setenv("RECOVAR_PASS2_DUMP_ROTATION_ROWS", "2,0")
+        monkeypatch.setenv("RELAX_PASS2_DUMP_ROTATION_ROWS", "2,0")
     monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "iteration", 3)
     monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "half", 2)
 
@@ -110,17 +110,17 @@ def test_inactive_pass2_writer_preserves_validation_short_circuit(
     # Every required data operand is unusable: an inactive writer must return
     # before touching arrays, creating files or parsing later invalid controls.
     for name in ("DIR", "ORIGINAL_INDICES", "CURRENT_SIZE", "ITERATION", "CLASS"):
-        monkeypatch.delenv("RECOVAR_PASS2_DUMP_" + name, raising=False)
-    monkeypatch.delenv("RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", raising=False)
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(tmp_path / "uncreated"))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "42")
+        monkeypatch.delenv("RELAX_PASS2_DUMP_" + name, raising=False)
+    monkeypatch.delenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", raising=False)
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(tmp_path / "uncreated"))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "42")
     monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "iteration", 3)
     monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "half", 2)
     for name, value in overrides.items():
         if value is None:
-            monkeypatch.delenv("RECOVAR_PASS2_DUMP_" + name, raising=False)
+            monkeypatch.delenv("RELAX_PASS2_DUMP_" + name, raising=False)
         else:
-            monkeypatch.setenv("RECOVAR_PASS2_DUMP_" + name, value)
+            monkeypatch.setenv("RELAX_PASS2_DUMP_" + name, value)
     kwargs = {
         name: None for name, parameter in inspect.signature(writer).parameters.items()
         if parameter.default is inspect.Parameter.empty

@@ -1570,7 +1570,7 @@ def test_override_environment_rejects_all_declared_prefixes_and_exact_names() ->
         "VDAM_TRUE200_ROOT": "/sealed/output",
     }
     for name in (
-        "RECOVAR_K1_UNDECLARED_OVERRIDE",
+        "RELAX_K1_UNDECLARED_OVERRIDE",
         "VDAM_UNDECLARED_OVERRIDE",
         "JAX_UNDECLARED_OVERRIDE",
         "XLA_UNDECLARED_OVERRIDE",
@@ -1615,9 +1615,9 @@ def test_science_override_allowlist_is_explicit_and_does_not_admit_unknowns() ->
         "RECOVAR_K1_COARSE_NATIVE_ATOMIC_REDUCTION",
         "JAX_COMPILATION_CACHE_DIR",
     }
-    with pytest.raises(resolver.LaunchResolutionError, match="RECOVAR_UNSEALED"):
+    with pytest.raises(resolver.LaunchResolutionError, match="RELAX_UNSEALED"):
         resolver._validate_override_environment(
-            {"RECOVAR_UNSEALED": "1"}, contract, include_science=True
+            {"RELAX_UNSEALED": "1"}, contract, include_science=True
         )
 
 

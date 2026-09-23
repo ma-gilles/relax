@@ -186,7 +186,7 @@ def mask_relion_noise_shell_indices_to_current_window(
 def bin_shell_values_jax(values, shell_indices, n_shells):
     """Bin per-pixel values into shell indices, dropping RELION sentinel pixels.
 
-    Under ``RECOVAR_EM_DETERMINISTIC_REDUCTIONS=1`` the scatter-add is replaced
+    Under ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` the scatter-add is replaced
     by a fixed-order masked reduction with the same operands and dtype.
     """
 

@@ -32,7 +32,7 @@ def original_image_indices(experiment_dataset, local_indices) -> np.ndarray:
     return np.asarray(original_indices_all, dtype=np.int64)[local_indices]
 
 
-PREFETCH_BATCHES_ENV = "RECOVAR_EM_PREFETCH_BATCHES"
+PREFETCH_BATCHES_ENV = "RELAX_EM_PREFETCH_BATCHES"
 
 
 def prefetch_depth() -> int:

@@ -17,7 +17,7 @@ import numpy as np
 
 from relax.helpers.types import NoiseStats, RelionStats, make_noise_stats, make_relion_stats
 
-_K1_POSE_PUBLISH_DIRECT_ENV = "RECOVAR_K1_POSE_PUBLISH_DIRECT"
+_K1_POSE_PUBLISH_DIRECT_ENV = "RELAX_K1_POSE_PUBLISH_DIRECT"
 
 
 class KClassEMResult(NamedTuple):

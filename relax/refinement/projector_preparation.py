@@ -37,7 +37,7 @@ def prepare_initial_real_references(init_reference_real, *, volume_shape, n_clas
     if init_reference_real is not None and int(init_relion_iteration) != 0:
         raise InitialReferenceReplayError(
             "direct initial real-reference handoff (the K=1 --firstiter_cc default or "
-            "RECOVAR_INITIAL_PROJECTOR_USE_REAL_REFERENCE=1) would score the first loop "
+            "RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE=1) would score the first loop "
             "iteration against the start-up reference, but this run resumes after RELION "
             f"iteration {int(init_relion_iteration)}; drop --firstiter_cc (and the "
             "environment override) for --init_relion_iteration > 0"
@@ -130,7 +130,7 @@ def _relion_projector_half_maps_for_scoring(
                 f"got {refs_real_override.shape}, expected {expected_shape}",
             )
     resolved_current_size = int(current_size) if current_size is not None else int(volume_shape[0])
-    cache_dir = os.environ.get("RECOVAR_RELION_PROJECTOR_CACHE_DIR", "").strip()
+    cache_dir = os.environ.get("RELAX_RELION_PROJECTOR_CACHE_DIR", "").strip()
     cache_path = None
     if cache_dir:
         refs_for_hash = np.ascontiguousarray(
@@ -210,7 +210,7 @@ def _relion_projector_half_maps_for_scoring(
             logger.info("RELION mode: saved Projector::data cache to %s", cache_path)
         except Exception as exc:
             logger.warning("Could not write RELION projector cache %s: %s", cache_path, exc)
-    dump_dir = os.environ.get("RECOVAR_RELION_PROJECTOR_DUMP_DIR")
+    dump_dir = os.environ.get("RELAX_RELION_PROJECTOR_DUMP_DIR")
     if dump_dir:
         label = dump_label or "projector"
         safe_label = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in str(label))

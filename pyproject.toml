@@ -46,6 +46,7 @@ where = ["."]
 include = ["relax*"]
 
 [tool.setuptools.package-data]
+"relax" = ["renamed_environment.json"]
 "relax.cuda" = ["*.cu", "*.cuh", "*.inc", "Makefile"]
 "relax.relion_bind" = ["*.cpp", "*.h", "CMakeLists.txt"]
 

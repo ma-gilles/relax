@@ -142,7 +142,7 @@ def test_adaptive_coarse_state_activation_is_zero_soft_k1_only(
 
     monkeypatch.setattr(significance, "_compute_k_class_significance_batched", coarse)
     monkeypatch.setattr(k_class_module, "_run_sparse_k_class_adaptive_pass2", fine)
-    monkeypatch.setenv("RECOVAR_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION", "0")
+    monkeypatch.setenv("RELAX_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION", "0")
     actual = run_dense_k_class_em_adaptive(
         SimpleNamespace(n_images=1), jnp.zeros((n_classes, 4), dtype=jnp.complex64),
         jnp.ones(4), jnp.ones(1), np.eye(3)[None], np.zeros((1, 2)),
@@ -166,11 +166,11 @@ def test_adaptive_coarse_state_activation_is_zero_soft_k1_only(
 
 
 def test_large_k_class_prefers_compact_sparse_pass2_over_dense_fallback(monkeypatch):
-    monkeypatch.delenv("RECOVAR_K_CLASS_COMPACT_SPARSE_PASS2_MIN_IMAGES", raising=False)
-    monkeypatch.delenv("RECOVAR_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION", raising=False)
-    monkeypatch.delenv("RECOVAR_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
+    monkeypatch.delenv("RELAX_K_CLASS_COMPACT_SPARSE_PASS2_MIN_IMAGES", raising=False)
+    monkeypatch.delenv("RELAX_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION", raising=False)
+    monkeypatch.delenv("RELAX_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
 
     assert _compact_sparse_pass2_preferred_over_dense(n_classes=4, n_images=50_000)
     assert not _compact_sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
@@ -178,29 +178,29 @@ def test_large_k_class_prefers_compact_sparse_pass2_over_dense_fallback(monkeypa
 
 
 def test_compact_sparse_pass2_preference_respects_env_overrides(monkeypatch):
-    monkeypatch.delenv("RECOVAR_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION", raising=False)
-    monkeypatch.delenv("RECOVAR_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
+    monkeypatch.delenv("RELAX_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION", raising=False)
+    monkeypatch.delenv("RELAX_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
 
-    monkeypatch.setenv("RECOVAR_K_CLASS_COMPACT_SPARSE_PASS2_MIN_IMAGES", "1000")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_K_CLASS_COMPACT_SPARSE_PASS2_MIN_IMAGES", "1000")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
     assert _compact_sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "0")
     assert not _compact_sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", "0.2")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", "0.2")
     assert not _compact_sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
 
-    monkeypatch.setenv("RECOVAR_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", "")
-    monkeypatch.setenv("RECOVAR_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION", "  ")
+    monkeypatch.setenv("RELAX_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", "")
+    monkeypatch.setenv("RELAX_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION", "  ")
     assert _compact_sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
 
-    monkeypatch.delenv("RECOVAR_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", raising=False)
-    monkeypatch.delenv("RECOVAR_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", "1")
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", raising=False)
+    monkeypatch.delenv("RELAX_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", raising=False)
+    monkeypatch.delenv("RELAX_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", "1")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", raising=False)
     assert not _compact_sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
 
 
@@ -1636,7 +1636,7 @@ def test_sparse_k_class_adaptive_mstep_uses_score_space_log_z(monkeypatch):
 
     # This probe exercises the legacy 2K-1 normalization choreography. The
     # production default is the joint fused path, covered separately.
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "0")
 
     from relax.sparse_pass2 import dispatch as sparse_dispatch
     from relax.sampling import rotation_grid_size
@@ -1740,7 +1740,7 @@ def test_sparse_k_class_adaptive_single_pass_uses_largest_support_class(monkeypa
     """Avoid duplicating the most expensive class in the current sparse scheme."""
 
     # Largest-support-class reuse is specific to the legacy 2K-1 path.
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "0")
 
     from relax.sparse_pass2 import dispatch as sparse_dispatch
     from relax.sampling import rotation_grid_size

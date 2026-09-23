@@ -360,9 +360,9 @@ def run_vdam_iterations(
             iteration_profile["total_time_s"] = float(time.perf_counter() - iteration_started)
             print(f"VDAM iteration {it} profile: {iteration_profile}", flush=True)
 
-        # RECOVAR_CLEAR_JAX_CACHES_PER_ITER=1: release scratch buffers to avoid
+        # RELAX_CLEAR_JAX_CACHES_PER_ITER=1: release scratch buffers to avoid
         # CUFFT_ALLOC_FAILED at 50k×256² (forces next-iter recompile).
-        if os.environ.get("RECOVAR_CLEAR_JAX_CACHES_PER_ITER", "") in ("1", "true", "TRUE"):
+        if os.environ.get("RELAX_CLEAR_JAX_CACHES_PER_ITER", "") in ("1", "true", "TRUE"):
             import gc
 
             import jax

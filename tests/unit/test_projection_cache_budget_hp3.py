@@ -23,8 +23,8 @@ _A100_40_BYTES = 40 * 1024**3
 
 
 def _clear_env(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", raising=False)
 
 
 def test_hp3_cs92_cache_estimate_matches_logged_value():
@@ -58,7 +58,7 @@ def test_cache_cap_change_leaves_per_call_rotation_budget_alone(monkeypatch):
 
 
 def test_env_override_still_wins(monkeypatch):
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", "654321")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", "654321")
     assert _projection_cache_max_bytes_for_pass(_H100_BYTES) == 654321
 
 
@@ -70,7 +70,7 @@ def test_cache_build_rotations_per_call_scales_scoring_budget(monkeypatch):
     # never more rotations than the fine grid holds, never below one
     assert _projection_cache_build_max_rotations_per_call(809, 1000) == 1000
     assert _projection_cache_build_max_rotations_per_call(None, 294912) is None
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "4096")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "4096")
     assert _projection_cache_build_max_rotations_per_call(809, 294912) == 4096
 
 
@@ -112,7 +112,7 @@ def test_per_particle_launches_pad_to_rungs_with_zeroed_spare_rows(monkeypatch):
     # 41128dcd0 made per-particle launches donate the accumulator; the
     # donating adjoint keeps the non-donating positional signature.
     monkeypatch.setattr(adjoint_mod, "_adjoint_slice_volume_windowed_donating", fake_adjoint)
-    monkeypatch.delenv("RECOVAR_RELION_X_HALF_BP_PARTICLE_POOL_SIZE", raising=False)
+    monkeypatch.delenv("RELAX_RELION_X_HALF_BP_PARTICLE_POOL_SIZE", raising=False)
     adjoint_mod._accumulate_relion_x_half_per_particle_launches(
         values, ctf_values, rotations, actual_counts, jnp.zeros((4,), jnp.complex64), jnp.zeros((4,), jnp.float32),
         window_indices=jnp.arange(2), image_shape=(8, 8), volume_shape=(8, 8, 8), disc_type="linear_interp",
@@ -129,11 +129,11 @@ def test_per_particle_launches_pad_to_rungs_with_zeroed_spare_rows(monkeypatch):
 def test_large_bucket_pow2_rung_is_opt_in(monkeypatch):
     from relax.scoring import sparse_bucket_arrays as sba
 
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_LARGE_BUCKET_POW2", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_LARGE_BUCKET_POW2", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     default = [sba._pass2_bucket_rotation_size(c, 5000) for c in (7, 100, 900, 5000, 9000, 20000, 100000, 217000)]
     assert default[:3] == [16, 128, 1024]  # small supports: shared power-of-two rule, unchanged
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_LARGE_BUCKET_POW2", "1")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_LARGE_BUCKET_POW2", "1")
     pow2 = [sba._pass2_bucket_rotation_size(c, 5000) for c in (7, 100, 900, 5000, 9000, 20000, 100000, 217000)]
     assert pow2[:3] == default[:3]
     assert pow2[3:] == [8192, 16384, 32768, 131072, 262144]
@@ -148,7 +148,7 @@ def test_candidate_density_logging_is_default_off(monkeypatch):
     assert bucketed._candidate_density_logging_enabled() is False
     monkeypatch.setenv(bucketed._CANDIDATE_DENSITY_LOG_ENV, "1")
     assert bucketed._candidate_density_logging_enabled() is True
-    assert bucketed._CANDIDATE_DENSITY_LOG_ENV == "RECOVAR_SPARSE_PASS2_LOG_CANDIDATE_DENSITY"
+    assert bucketed._CANDIDATE_DENSITY_LOG_ENV == "RELAX_SPARSE_PASS2_LOG_CANDIDATE_DENSITY"
 
 
 def test_texture_projector_fallback_is_reported_once_per_reason(monkeypatch, caplog):
@@ -189,7 +189,7 @@ def test_pass2_projector_complex64_knob_is_default_off(monkeypatch):
     assert bucketed._pass2_projector_complex64_enabled() is True
     assert (
         bucketed._PASS2_PROJECTOR_COMPLEX64_ENV
-        == "RECOVAR_SPARSE_PASS2_PROJECTOR_COMPLEX64"
+        == "RELAX_SPARSE_PASS2_PROJECTOR_COMPLEX64"
     )
 
 

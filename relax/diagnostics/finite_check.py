@@ -8,7 +8,7 @@ that ``joinTwoHalvesAtLowResolution`` copies across from half 2. The sums cannot
 say which row produced the first ``inf``, because a sum hides its terms.
 
 This module adds that missing step. The per-bucket checks are off unless
-``RECOVAR_EM_FINITE_CHECK=1``: the clean path reduces on the device and pulls
+``RELAX_EM_FINITE_CHECK=1``: the clean path reduces on the device and pulls
 back one boolean per field, so it costs a reduction and a synchronisation
 rather than a transfer, but it still serialises the pass it watches. An arm
 with it set is a diagnostic arm and never a timing arm. The once-per-iteration
@@ -17,7 +17,7 @@ by default, see :func:`half_accumulator_guard_mode`.
 
 On the first non-finite value it reports the half, the bucket, the field, how
 many entries are bad, the first bad flat index, and the operands at that index,
-then raises unless ``RECOVAR_EM_FINITE_CHECK_WARN=1`` asks it to keep going and
+then raises unless ``RELAX_EM_FINITE_CHECK_WARN=1`` asks it to keep going and
 collect every occurrence.
 """
 
@@ -30,8 +30,8 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-FINITE_CHECK_ENV = "RECOVAR_EM_FINITE_CHECK"
-FINITE_CHECK_WARN_ENV = "RECOVAR_EM_FINITE_CHECK_WARN"
+FINITE_CHECK_ENV = "RELAX_EM_FINITE_CHECK"
+FINITE_CHECK_WARN_ENV = "RELAX_EM_FINITE_CHECK_WARN"
 
 __all__ = [
     "FINITE_CHECK_ENV",
@@ -52,7 +52,7 @@ __all__ = [
     "track_max_host",
 ]
 
-HALF_ACCUMULATOR_GUARD_ENV = "RECOVAR_EM_BPREF_FINITE_GUARD"
+HALF_ACCUMULATOR_GUARD_ENV = "RELAX_EM_BPREF_FINITE_GUARD"
 HALF_ACCUMULATOR_GUARD_MODES = ("raise", "warn", "off")
 _GUARD_OFF_VALUES = frozenset({"0", "false", "no", "off"})
 _GUARD_RAISE_VALUES = frozenset({"", "1", "true", "yes", "on", "raise"})
@@ -473,9 +473,9 @@ def half_accumulator_guard_mode() -> str:
     pays nothing measurable for stopping where the damage is instead of four
     stages later.
 
-    ``RECOVAR_EM_BPREF_FINITE_GUARD=0`` (also ``off``, ``false``, ``no``) opts
+    ``RELAX_EM_BPREF_FINITE_GUARD=0`` (also ``off``, ``false``, ``no``) opts
     out; ``warn`` logs the offending accumulators and continues;
-    ``RECOVAR_EM_FINITE_CHECK_WARN=1`` demotes it to ``warn`` as well, as it
+    ``RELAX_EM_FINITE_CHECK_WARN=1`` demotes it to ``warn`` as well, as it
     does the per-bucket checks. Any other value is a configuration error and
     raises, rather than silently running with a guard the caller did not ask
     for.
@@ -512,7 +512,7 @@ def check_half_accumulators(accumulators: dict, *, context: str = ""):
     Unlike the per-bucket checks this costs one reduction per accumulator and
     one synchronisation per iteration, against a pass that takes tens of
     seconds, so it is affordable in production and runs by default in raise
-    mode (:func:`half_accumulator_guard_mode`; ``RECOVAR_EM_BPREF_FINITE_GUARD=0``
+    mode (:func:`half_accumulator_guard_mode`; ``RELAX_EM_BPREF_FINITE_GUARD=0``
     opts out, ``warn`` logs and continues). Turning it off restores the
     earlier behaviour of failing four stages later on ``wsum_norm_correction``.
     """

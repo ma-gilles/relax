@@ -44,8 +44,8 @@ INITIAL_MODEL_LOCAL_BATCH_REFERENCE_SIZE = 256
 INITIAL_MODEL_LOCAL_BATCH_REFERENCE_COUNT_40GB = 32
 
 _INACTIVE_CLASS_LOG_PRIOR = -1.0e30
-_EXACT_RELION_PROJECTOR_ENV = "RECOVAR_INITIAL_MODEL_EXACT_RELION_PROJECTOR"
-_RELION_PROJECTOR_DUMP_DIR_ENV = "RECOVAR_INITIAL_MODEL_PROJECTOR_DUMP_DIR"
+_EXACT_RELION_PROJECTOR_ENV = "RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR"
+_RELION_PROJECTOR_DUMP_DIR_ENV = "RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR"
 
 
 logger = logging.getLogger(__name__)
@@ -202,7 +202,7 @@ def _dense_estep_config(
             raise ValueError("translation_parent contains indices outside the coarse translation prior")
         translation_log_prior = coarse_translation_log_prior[:, translation_parent]
 
-    sparse_pass2_enabled = os.environ.get("RECOVAR_DISABLE_SPARSE_PASS2", "") not in (
+    sparse_pass2_enabled = os.environ.get("RELAX_DISABLE_SPARSE_PASS2", "") not in (
         "1",
         "true",
         "TRUE",
@@ -217,7 +217,7 @@ def _dense_estep_config(
         "relion_firstiter_score_mode": "gaussian",
         "image_pre_shifts": image_pre_shifts,
         "translation_prior_centers": relion_sigma_offset_prior_center(translation_offsets),
-        # RECOVAR_DISABLE_SPARSE_PASS2=1 forces dense path (cuFFT plan OOM at 256²+).
+        # RELAX_DISABLE_SPARSE_PASS2=1 forces dense path (cuFFT plan OOM at 256²+).
         # Oversampling zero is still RELION's adaptive two-pass algorithm: its
         # fine children are the coarse samples themselves.  Keep it on the
         # same exact significance/local route as positive oversampling instead
@@ -235,18 +235,18 @@ def _dense_estep_config(
             pass1_healpix_order=int(pass1_healpix_order),
             return_profile=bool(os.environ.get("RECOVAR_INITIAL_MODEL_PROFILE")),
         )
-        if _af := os.environ.get("RECOVAR_ADAPTIVE_FRACTION"):
+        if _af := os.environ.get("RELAX_ADAPTIVE_FRACTION"):
             engine_kwargs["adaptive_fraction"] = float(_af)
     for env_var, kwarg in (
-        ("RECOVAR_USE_FLOAT64_SCORING", "use_float64_scoring"),
-        ("RECOVAR_HALF_SPECTRUM_SCORING", "half_spectrum_scoring"),
-        ("RECOVAR_SQUARE_WINDOW", "square_window"),
+        ("RELAX_USE_FLOAT64_SCORING", "use_float64_scoring"),
+        ("RELAX_HALF_SPECTRUM_SCORING", "half_spectrum_scoring"),
+        ("RELAX_SQUARE_WINDOW", "square_window"),
     ):
         if os.environ.get(env_var):
             engine_kwargs[kwarg] = True
-    if (_recon_sq := os.environ.get("RECOVAR_RECON_SQUARE_WINDOW")) is not None:
+    if (_recon_sq := os.environ.get("RELAX_RECON_SQUARE_WINDOW")) is not None:
         engine_kwargs["recon_square_window"] = bool(int(_recon_sq))
-    if os.environ.get("RECOVAR_DISABLE_SUBTRACT_PROJECTED_REFERENCE"):
+    if os.environ.get("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE"):
         engine_kwargs["reconstruction_subtract_projected_reference"] = False
     if translation_log_prior is not None:
         engine_kwargs["translation_log_prior"] = translation_log_prior
@@ -416,8 +416,8 @@ def relion_projector_half_maps_to_dense_means(projector_half_maps: np.ndarray, o
     means = []
     for projector_data in np.asarray(projector_half_maps):
         dense = _relion_projector_to_dense_volume(np.asarray(projector_data), n)
-        # RECOVAR_DENSE_MEANS_SCALE diag override (see project_k2_c2_cc_root_cause_2026_05_03).
-        tok = (os.environ.get("RECOVAR_DENSE_MEANS_SCALE") or "-N2").strip()
+        # RELAX_DENSE_MEANS_SCALE diag override (see project_k2_c2_cc_root_cause_2026_05_03).
+        tok = (os.environ.get("RELAX_DENSE_MEANS_SCALE") or "-N2").strip()
         scale = {"-N2": -(n**2), "N2": float(n**2)}.get(tok)
         if scale is None:
             scale = float(tok)

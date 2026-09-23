@@ -26,7 +26,7 @@ PARTICLES = 5
 def populated_cache(monkeypatch, tmp_path):
     star = tmp_path / "particles.star"
     star.write_text("")
-    monkeypatch.setenv("RECOVAR_K1_RELION_EXACT_CTF_STAR", str(star))
+    monkeypatch.setenv("RELAX_K1_RELION_EXACT_CTF_STAR", str(star))
 
     rows = np.arange(PARTICLES * PIXELS, dtype=np.float64).reshape(PARTICLES, PIXELS)
     key = (str(star.resolve()), (4, 4))
@@ -105,7 +105,7 @@ def test_exact_ctf_takes_relion_defaults_for_absent_ctf_columns(monkeypatch, tmp
 
     star = tmp_path / "particles.star"
     star.write_text("")
-    monkeypatch.setenv("RECOVAR_K1_RELION_EXACT_CTF_STAR", str(star))
+    monkeypatch.setenv("RELAX_K1_RELION_EXACT_CTF_STAR", str(star))
     relion_ctf.clear_exact_ctf_result_cache()
     calls = []
 

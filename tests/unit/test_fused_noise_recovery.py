@@ -64,7 +64,7 @@ def build_device_chunk_scalars_gpu_fixture():
 @pytest.mark.gpu
 def test_device_chunk_scalars_gpu_fused_noise_accumulator_calls(monkeypatch, custom_cuda_lib, gpu_device):
     """GPU-only guard: with the fused weighted-sums/noise path (native CUDA dual sums, RELION
-    x-half M-step, image capacity padding) RECOVAR_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS must
+    x-half M-step, image capacity padding) RELAX_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS must
     actually run the device noise accumulator (call count asserted, lead review 2026-09-13);
     the assignments and the two noise totals must equal the host accumulation bit for bit,
     while the CUDA-atomic Ft_y/Ft_ctf are bounded at 1e-6 relative."""
@@ -103,20 +103,20 @@ def test_device_chunk_scalars_gpu_fused_noise_accumulator_calls(monkeypatch, cus
         )
 
     def run(flag):
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
         # 7 images in one microbatch of up to 16: the capacity ladder floor is 16, the
         # growth limit max(16, 2*7) = 16 and the budget 16, so the chunk pads to 16 images
         # (nine duplicate indices).
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "16")
-        monkeypatch.setenv("RECOVAR_SPARSE_PASS2_IMAGE_CAPACITY", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_NATIVE_PAIR_SPARSE_SUMS", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_NATIVE_DUAL_WEIGHTED_SUMS", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED_MSTEP_NOISE", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_DEFERRED_HOST_STATS", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS", flag)
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE", "joint")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "16")
+        monkeypatch.setenv("RELAX_SPARSE_PASS2_IMAGE_CAPACITY", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_NATIVE_PAIR_SPARSE_SUMS", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_NATIVE_DUAL_WEIGHTED_SUMS", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED_MSTEP_NOISE", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_DEFERRED_HOST_STATS", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS", flag)
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE", "joint")
         monkeypatch.setattr(results, "_accumulate_noise_totals_device", spy)
         calls.clear()
         native_calls.clear()
@@ -184,15 +184,15 @@ def test_defer_fused_noise_totals_is_bit_identical_and_defers_two_leaves(
                 deferred_residual_leaves.append(len(device))
             return original_append(queue, update, host=host, device=device)
         monkeypatch.setattr(results.DeferredHostUpdates, "append", spy)
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "4")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_DEFERRED_HOST_STATS", flag)
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS", "0")
-        monkeypatch.setenv("RECOVAR_SPARSE_PASS2_IMAGE_CAPACITY", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_NATIVE_DUAL_WEIGHTED_SUMS", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED_MSTEP_NOISE", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "4")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_DEFERRED_HOST_STATS", flag)
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS", "0")
+        monkeypatch.setenv("RELAX_SPARSE_PASS2_IMAGE_CAPACITY", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_NATIVE_DUAL_WEIGHTED_SUMS", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED_MSTEP_NOISE", "1")
         kwargs = _fused_kclass_multibucket_fixture(n_images=13)
         kwargs["accumulate_noise"] = True
         kwargs["relion_f32_fine_posterior"] = True
@@ -208,7 +208,7 @@ def test_defer_fused_noise_totals_is_bit_identical_and_defers_two_leaves(
     off_a, leaves_off = run("0")
     off_b, _ = run("0")
     on, leaves_on = run("1")
-    label = f"RECOVAR_SPARSE_KCLASS_DEFERRED_HOST_STATS ({noise_mode})"
+    label = f"RELAX_SPARSE_KCLASS_DEFERRED_HOST_STATS ({noise_mode})"
 
     def _num(value):
         arr = np.asarray(value)

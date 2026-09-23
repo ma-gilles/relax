@@ -221,7 +221,7 @@ identically to `run_dense_k_class_em_adaptive` (noise accumulation, RELION's ada
 fraction, the fine M-step rotations pruned only for sparse pass 2); the K=1 call adds
 significance skipping, the diagnostic float64 pass 2 and the host-double coarse
 translation phases, and the K-class call plans its own batches. `k_class._sparse_pass2_selected`
-reads the `RECOVAR_K1_DENSE_PASS2` / `RECOVAR_K_CLASS_DENSE_PASS2` diagnostic switches
+reads the `RELAX_K1_DENSE_PASS2` / `RELAX_K_CLASS_DENSE_PASS2` diagnostic switches
 for the three adaptive call sites, and `_coarse_pose_assignments` collapses fine pose
 assignments onto the coarse grid when a fine pass ran
 ([`test_adaptive_engine_call_owner.py`](../../tests/unit/test_adaptive_engine_call_owner.py)).

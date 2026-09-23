@@ -49,13 +49,13 @@ def test_completion_jobs_reuse_setup_relion_binding_build_dir(tmp_path):
     runtime = tmp_path / "runtime"
     env = _launcher_env(tmp_path, scratch)
     env.update({
-        'RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MSTEP': 'pair_sparse',
-        'RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES': '4294967296',
-        'RECOVAR_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES': '2147483648',
-        'RECOVAR_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES': '1073741824',
-        'RECOVAR_EXACT_LOCAL_PROGRESS_CHUNKS': '500',
-        'RECOVAR_EXACT_LOCAL_PROGRESS_SECONDS': '120',
-        'RECOVAR_RELION_FIRSTITER_RECON_COMPLEX_BUDGET': '805306368',
+        'RELAX_SPARSE_KCLASS_COMPACT_PAIR_MSTEP': 'pair_sparse',
+        'RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES': '4294967296',
+        'RELAX_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES': '2147483648',
+        'RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES': '1073741824',
+        'RELAX_EXACT_LOCAL_PROGRESS_CHUNKS': '500',
+        'RELAX_EXACT_LOCAL_PROGRESS_SECONDS': '120',
+        'RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET': '805306368',
     })
 
     _run_launcher(env, "--k1-only")
@@ -84,22 +84,22 @@ def test_completion_jobs_reuse_setup_relion_binding_build_dir(tmp_path):
     assert jax_cache_export in setup_text
     assert jax_cache_export in k1_text
     assert jax_cache_export in summary_text
-    assert "RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MSTEP=pair_sparse" in k1_text
-    assert "RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MSTEP=pair_sparse" in submission_env_text
-    assert "RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES=4294967296" in k1_text
-    assert "RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES=4294967296" in submission_env_text
-    assert "RECOVAR_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES=2147483648" in k1_text
-    assert "RECOVAR_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES=2147483648" in submission_env_text
-    assert "RECOVAR_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES=1073741824" in k1_text
-    assert "RECOVAR_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES=1073741824" in submission_env_text
-    assert "RECOVAR_LOCAL_ADAPTIVE_PASS2_FULL_PARENT=0" in k1_text
-    assert "RECOVAR_LOCAL_ADAPTIVE_PASS2_FULL_PARENT=0" in submission_env_text
-    assert "RECOVAR_EXACT_LOCAL_PROGRESS_CHUNKS=500" in k1_text
-    assert "RECOVAR_EXACT_LOCAL_PROGRESS_CHUNKS=500" in submission_env_text
-    assert "RECOVAR_EXACT_LOCAL_PROGRESS_SECONDS=120" in k1_text
-    assert "RECOVAR_EXACT_LOCAL_PROGRESS_SECONDS=120" in submission_env_text
-    assert "RECOVAR_RELION_FIRSTITER_RECON_COMPLEX_BUDGET=805306368" in k1_text
-    assert "RECOVAR_RELION_FIRSTITER_RECON_COMPLEX_BUDGET=805306368" in submission_env_text
+    assert "RELAX_SPARSE_KCLASS_COMPACT_PAIR_MSTEP=pair_sparse" in k1_text
+    assert "RELAX_SPARSE_KCLASS_COMPACT_PAIR_MSTEP=pair_sparse" in submission_env_text
+    assert "RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES=4294967296" in k1_text
+    assert "RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES=4294967296" in submission_env_text
+    assert "RELAX_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES=2147483648" in k1_text
+    assert "RELAX_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES=2147483648" in submission_env_text
+    assert "RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES=1073741824" in k1_text
+    assert "RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES=1073741824" in submission_env_text
+    assert "RELAX_LOCAL_ADAPTIVE_PASS2_FULL_PARENT=0" in k1_text
+    assert "RELAX_LOCAL_ADAPTIVE_PASS2_FULL_PARENT=0" in submission_env_text
+    assert "RELAX_EXACT_LOCAL_PROGRESS_CHUNKS=500" in k1_text
+    assert "RELAX_EXACT_LOCAL_PROGRESS_CHUNKS=500" in submission_env_text
+    assert "RELAX_EXACT_LOCAL_PROGRESS_SECONDS=120" in k1_text
+    assert "RELAX_EXACT_LOCAL_PROGRESS_SECONDS=120" in submission_env_text
+    assert "RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET=805306368" in k1_text
+    assert "RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET=805306368" in submission_env_text
     assert '--image_batch_size "187"' in k1_text
     assert '--rotation_block_size "8192"' in k1_text
     assert "K1_IMAGE_BATCH_SIZE=187" in submission_env_text
@@ -111,11 +111,11 @@ def test_completion_jobs_reuse_setup_relion_binding_build_dir(tmp_path):
     assert "--save_intermediates_skip_unregularized" in k1_text
     assert "--local_search_profile off" in k1_text
     assert "--local-search-profile" not in k1_text
-    assert "RECOVAR_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE=0" in submission_env_text
+    assert "RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE=0" in submission_env_text
     assert "TRAJECTORY_ARGS=(--relion_init_dir" in k1_text
     assert 'if [[ "autonomous" == "relion-replay" ]]' in k1_text
-    assert "export RECOVAR_RELION_EM_BATCH_PROJECTION_FRACTION=0.40" in k1_text
-    assert "RECOVAR_RELION_EM_BATCH_PROJECTION_FRACTION=0.40" in submission_env_text
+    assert "export RELAX_RELION_EM_BATCH_PROJECTION_FRACTION=0.40" in k1_text
+    assert "RELAX_RELION_EM_BATCH_PROJECTION_FRACTION=0.40" in submission_env_text
     assert "#SBATCH --mem=128G" in k1_text
     assert "#SBATCH --time=04:00:00" in k1_text
     assert "K1_MEM=128G" in submission_env_text
@@ -226,7 +226,7 @@ def test_completion_k1_relion_replay_mode_is_explicit(tmp_path):
     assert "--relion_init_dir" in k1_text
     assert "--perturb_replay_relion_dir" in k1_text
     assert "K1_TRAJECTORY_MODE=relion-replay" in submission_env_text
-    assert "RECOVAR_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE=1" in submission_env_text
+    assert "RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE=1" in submission_env_text
 
 
 def test_completion_k1_intermediates_can_be_disabled(tmp_path):
@@ -273,9 +273,9 @@ def test_completion_k4_resource_overrides_are_written(tmp_path):
             "K4_MEM": "128G",
             "K4_TIME_LIMIT": "04:00:00",
             "K4_RELION_DISPATCH_SCHEDULE": str(dispatch_schedule),
-            "RECOVAR_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES": "3221225472",
-            "RECOVAR_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES": "1610612736",
-            "RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO": "0.5",
+            "RELAX_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES": "3221225472",
+            "RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES": "1610612736",
+            "RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO": "0.5",
         }
     )
 
@@ -300,13 +300,13 @@ def test_completion_k4_resource_overrides_are_written(tmp_path):
     assert 'mkdir -p "${OUTPUT_DIR}" "${OUTPUT_DIR}/intermediates"' in k4_text
     assert '--save_intermediates_dir "${OUTPUT_DIR}/intermediates"' in k4_text
     assert "--save_intermediates_skip_unregularized" in k4_text
-    assert "RECOVAR_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES=3221225472" in k4_text
-    assert "RECOVAR_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES=3221225472" in submission_env_text
-    assert "RECOVAR_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES=1610612736" in k4_text
-    assert "RECOVAR_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES=1610612736" in submission_env_text
-    assert "RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO=0.5" in k4_text
+    assert "RELAX_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES=3221225472" in k4_text
+    assert "RELAX_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES=3221225472" in submission_env_text
+    assert "RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES=1610612736" in k4_text
+    assert "RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES=1610612736" in submission_env_text
+    assert "RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO=0.5" in k4_text
     assert (
-        "RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO=0.5"
+        "RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO=0.5"
         in submission_env_text
     )
 

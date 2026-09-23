@@ -99,7 +99,7 @@ def test_current_size_schema_and_casts(capture_inputs):
 @pytest.mark.parametrize("token,preserve", [("", False), (" OFF ", False), ("1", True), ("unrecognized", True)])
 @pytest.mark.parametrize("missing_half", [False, True])
 def test_mstep_class_selection_and_dtype(capture_inputs, monkeypatch, token, preserve, missing_half):
-    monkeypatch.setenv("RECOVAR_KCLASS_DUMP_PRESERVE_DTYPE", token)
+    monkeypatch.setenv("RELAX_KCLASS_DUMP_PRESERVE_DTYPE", token)
     if missing_half:
         capture_inputs["Ft_ctf_1"] = None
     invoke(dumps.write_kclass_mstep, capture_inputs)

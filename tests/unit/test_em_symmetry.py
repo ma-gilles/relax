@@ -923,7 +923,7 @@ def _k1_symmetric_dense_half_kwargs(**overrides):
 def test_non_c1_k1_adaptive_refinement_without_x_half_fails_before_scoring(monkeypatch, firstiter_cc):
     """Final Q a087087cc: without x-half BPref accumulation a point group would never be applied.
 
-    CPU-only execution, disabled custom CUDA or RECOVAR_K1_RELION_X_HALF_MSTEP=0
+    CPU-only execution, disabled custom CUDA or RELAX_K1_RELION_X_HALF_MSTEP=0
     select the full-volume M-step, which has no point-group finalizer, so the
     K=1 adaptive route must refuse instead of returning an unsymmetrized map.
     """

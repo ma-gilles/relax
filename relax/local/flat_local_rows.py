@@ -17,19 +17,19 @@ from relax.local.local_layout import (
 # Consecutive images share a padded rotation width. Larger pools produce fewer
 # compiled shapes and more padding; ``valid_mask`` keeps the result unchanged.
 EXACT_LOCAL_FLAT_POOL_SIZE = 3
-EXACT_LOCAL_FLAT_POOL_SIZE_ENV = "RECOVAR_EXACT_LOCAL_FLAT_POOL_SIZE"
+EXACT_LOCAL_FLAT_POOL_SIZE_ENV = "RELAX_EXACT_LOCAL_FLAT_POOL_SIZE"
 
 # Per-image widths retain the earlier exact-local bucket rounding. Packed rows
 # no longer require it for correctness, but it can make neighboring pools share
 # capacity, so keep the measured default configurable.
 EXACT_LOCAL_FLAT_ROW_ROUNDING = True
-EXACT_LOCAL_FLAT_ROW_ROUNDING_ENV = "RECOVAR_EXACT_LOCAL_FLAT_ROW_ROUNDING"
+EXACT_LOCAL_FLAT_ROW_ROUNDING_ENV = "RELAX_EXACT_LOCAL_FLAT_ROW_ROUNDING"
 
 # Quantizing the running packed-row capacity lets neighboring iterations reuse
 # compiled shapes. The value is ladder steps per power of two; zero preserves
 # the exact running maximum. Padding stays score-inert through ``valid_mask``.
 EXACT_LOCAL_FLAT_ROW_CAPACITY_STEPS = 0
-EXACT_LOCAL_FLAT_ROW_CAPACITY_STEPS_ENV = "RECOVAR_EXACT_LOCAL_FLAT_ROW_CAPACITY_STEPS"
+EXACT_LOCAL_FLAT_ROW_CAPACITY_STEPS_ENV = "RELAX_EXACT_LOCAL_FLAT_ROW_CAPACITY_STEPS"
 
 
 def resolve_flat_local_row_capacity_steps(explicit: int | None = None) -> int:

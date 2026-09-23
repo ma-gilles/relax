@@ -15,7 +15,7 @@ def test_elapsed_includes_fence_wait(monkeypatch):
 
 
 def test_sync_default_off_does_not_create_device_token(monkeypatch):
-    monkeypatch.delenv('RECOVAR_SPARSE_KCLASS_GROUP_TIMING_SYNC', raising=False)
+    monkeypatch.delenv('RELAX_SPARSE_KCLASS_GROUP_TIMING_SYNC', raising=False)
     monkeypatch.setattr(timing, '_GROUP_TIMING_SYNC_STATE', {})
     assert timing._group_timing_device_barrier_s() == 0.
     assert timing._GROUP_TIMING_SYNC_STATE == {'enabled': False}

@@ -10,8 +10,8 @@ from relax.sparse_pass2 import sparse_pass2_bucketed as sparse
 
 
 def test_norm_residual_only_mode_does_not_enable_full_pass2_dump(tmp_path, monkeypatch):
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_NORM_RESIDUAL_ONLY", "1")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_NORM_RESIDUAL_ONLY", "1")
     assert not sparse._pass2_dump_enabled()
 
 
@@ -25,11 +25,11 @@ def test_norm_residual_input_capture_preserves_exact_target_arrays(
     bucket_group_ids,
     expected_group_id,
 ):
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "66")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_CURRENT_SIZE", "56")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ITERATION", "1")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_NORM_RESIDUAL_INPUTS", "1")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "66")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_CURRENT_SIZE", "56")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ITERATION", "1")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS", "1")
     monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "iteration", 1)
     monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "half", 2)
     proj = jnp.asarray([[[1 + 2j, 3 + 4j]]], dtype=jnp.complex64)
@@ -126,8 +126,8 @@ def test_norm_residual_input_capture_preserves_exact_target_arrays(
 
 @pytest.mark.parametrize("input_dtype", [np.complex64, np.complex128])
 def test_deterministic_norm_reduction_uses_float64_sum(monkeypatch, input_dtype):
-    monkeypatch.setenv("RECOVAR_K1_RELION_DETERMINISTIC_NORM_REDUCTION", "1")
-    monkeypatch.delenv("RECOVAR_K1_RELION_POWERCLASS_SPECTRUM_NORM", raising=False)
+    monkeypatch.setenv("RELAX_K1_RELION_DETERMINISTIC_NORM_REDUCTION", "1")
+    monkeypatch.delenv("RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM", raising=False)
     processed = np.asarray(
         [[10000 + 0j, 1 + 0j, 1 + 0j, 1 + 0j, 1 + 0j, 1 + 0j, 1 + 0j, 1 + 0j]],
         dtype=input_dtype,
@@ -153,8 +153,8 @@ def test_deterministic_norm_reduction_uses_float64_sum(monkeypatch, input_dtype)
     [(np.complex64, np.float32), (np.complex128, np.float64)],
 )
 def test_default_norm_reduction_preserves_input_precision(monkeypatch, input_dtype, output_dtype):
-    monkeypatch.delenv("RECOVAR_K1_RELION_DETERMINISTIC_NORM_REDUCTION", raising=False)
-    monkeypatch.delenv("RECOVAR_K1_RELION_POWERCLASS_SPECTRUM_NORM", raising=False)
+    monkeypatch.delenv("RELAX_K1_RELION_DETERMINISTIC_NORM_REDUCTION", raising=False)
+    monkeypatch.delenv("RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM", raising=False)
 
     shells, per_image = sparse._weighted_image_power_shells_and_per_image(
         jnp.asarray([[3 + 0j, 4 + 0j]], dtype=input_dtype),
@@ -170,7 +170,7 @@ def test_default_norm_reduction_preserves_input_precision(monkeypatch, input_dty
 
 
 def test_powerclass_spectrum_norm_preserves_float64_per_image(monkeypatch):
-    monkeypatch.setenv("RECOVAR_K1_RELION_POWERCLASS_SPECTRUM_NORM", "1")
+    monkeypatch.setenv("RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM", "1")
     processed = jnp.asarray([[3 + 4j, 5 + 12j]], dtype=jnp.complex64)
 
     _, per_image = sparse._weighted_image_power_shells_and_per_image(
@@ -189,11 +189,11 @@ def test_powerclass_spectrum_norm_preserves_float64_per_image(monkeypatch):
 def test_norm_capture_slices_and_reshapes_raw_translation_rows(tmp_path, monkeypatch):
     from relax.cuda import kernels as em_cuda_kernels
 
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "66")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_CURRENT_SIZE", "56")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ITERATION", "1")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_NORM_RESIDUAL_INPUTS", "1")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "66")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_CURRENT_SIZE", "56")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ITERATION", "1")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS", "1")
     monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "iteration", 1)
     monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "half", 2)
 

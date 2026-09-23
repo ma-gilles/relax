@@ -197,7 +197,7 @@ def parity_runtime_real_dtype(environ=None) -> type[np.float32] | type[np.float6
     enabled = {"1", "true", "yes", "on"}
     use_double = any(
         str(env.get(name, "0")).strip().lower() in enabled
-        for name in ("RECOVAR_USE_FLOAT64_SCORING", "RECOVAR_USE_FLOAT64_PROJECTIONS")
+        for name in ("RELAX_USE_FLOAT64_SCORING", "RELAX_USE_FLOAT64_PROJECTIONS")
     )
     return np.float64 if use_double else np.float32
 
@@ -1661,10 +1661,10 @@ def main():
     # the RELION source citations). Widen real-space inputs to float64 *before*
     # ftu.get_dft3: casting an already-computed complex64 result cannot recover
     # precision discarded by a float32 FFT. Gate this specifically on
-    # RECOVAR_USE_FLOAT64_PROJECTIONS to match DensePrecisionPolicy's
+    # RELAX_USE_FLOAT64_PROJECTIONS to match DensePrecisionPolicy's
     # projection dtype behavior.
     _init_volume_use_float64 = bool(
-        os.environ.get("RECOVAR_USE_FLOAT64_PROJECTIONS", "0").strip().lower()
+        os.environ.get("RELAX_USE_FLOAT64_PROJECTIONS", "0").strip().lower()
         in {"1", "true", "yes", "on"}
     )
     _init_volume_dtype = np.float64 if _init_volume_use_float64 else np.float32
@@ -1724,7 +1724,7 @@ def main():
         vol_ft_h2 = np.array(ftu.get_dft3(jnp.array(vol_h2))).reshape(-1)
 
     # ---- Dataset + half-set split ----
-    double_image_preprocessing = os.environ.get("RECOVAR_USE_FLOAT64_SCORING", "0").strip().lower() in {
+    double_image_preprocessing = os.environ.get("RELAX_USE_FLOAT64_SCORING", "0").strip().lower() in {
         "1",
         "true",
         "yes",
@@ -2236,7 +2236,7 @@ def main():
             iteration + 1,
             process_start=False,
         )
-        os.environ["RECOVAR_FINAL_ALL_DATA_AFTER_MAX_ITER"] = "1"
+        os.environ["RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER"] = "1"
         print(
             "  Diagnostic final-only replay: forcing K=1 final all-data after zero numbered iterations "
             f"from RELION state {iteration:03d}"
@@ -3255,7 +3255,7 @@ if __name__ == "__main__":
     except RuntimeError as exc:
         if (
             exc.__class__.__name__ == "SignificanceDumpComplete"
-            and os.environ.get("RECOVAR_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET") == "1"
+            and os.environ.get("RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET") == "1"
         ):
             print(
                 "RECOVAR coarse-significance dump completed; stopping before "

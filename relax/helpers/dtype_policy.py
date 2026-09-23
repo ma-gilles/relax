@@ -12,7 +12,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-OPERAND_PRECISION_CHECK_ENV = "RECOVAR_EM_OPERAND_PRECISION_CHECK"
+OPERAND_PRECISION_CHECK_ENV = "RELAX_EM_OPERAND_PRECISION_CHECK"
 _REPORTED_PRECISION_VIOLATIONS: set[tuple[str, tuple[str, ...]]] = set()
 
 
@@ -48,7 +48,7 @@ def audit_operand_precision(policy, operands: Mapping[str, object], *, where: st
 
     This audit reads dtypes only (no device synchronisation) and is meant to sit
     at operand boundaries. It warns once per distinct violation by default;
-    ``RECOVAR_EM_OPERAND_PRECISION_CHECK=raise`` turns it into an error for tests
+    ``RELAX_EM_OPERAND_PRECISION_CHECK=raise`` turns it into an error for tests
     and ``off`` disables it.
     """
 
@@ -217,14 +217,14 @@ class DensePrecisionPolicy:
 def _diagnostic_float64_pass2_matches(debug_iteration: int | None) -> bool:
     """Select genuine-f64 pass 2 without perturbing an earlier f32 boundary."""
 
-    raw = os.environ.get("RECOVAR_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "")
+    raw = os.environ.get("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "")
     if debug_iteration is None or not raw.strip():
         return False
     try:
         requested = {int(token.strip()) for token in raw.split(",") if token.strip()}
     except ValueError as exc:
         raise ValueError(
-            "RECOVAR_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS must be comma-separated integers"
+            "RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS must be comma-separated integers"
         ) from exc
     return int(debug_iteration) in requested
 

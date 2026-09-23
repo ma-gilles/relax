@@ -67,14 +67,14 @@ def _validate_mstep_precision_route(
     if mstep_backend != "jax" or not use_native_transaction:
         raise ValueError("float32 M-step requires the JAX transaction backend")
     for name in (
-        "RECOVAR_MSTEP_DUMP_DIR",
+        "RELAX_MSTEP_DUMP_DIR",
         replay.VDAM_NATIVE_SECOND_MOMENT_REPLAY_ENV,
         replay.VDAM_NATIVE_FIRST_MOMENT_REPLAY_ENV,
         replay.VDAM_NATIVE_BPREF_DATA_REPLAY_ENV,
         replay.VDAM_NATIVE_BPREF_WEIGHT_REPLAY_ENV,
         replay.VDAM_NATIVE_IREF_INPUT_REPLAY_ENV,
     ):
-        if name in os.environ and (name == "RECOVAR_MSTEP_DUMP_DIR" or os.environ[name].strip()):
+        if name in os.environ and (name == "RELAX_MSTEP_DUMP_DIR" or os.environ[name].strip()):
             raise ValueError(f"float32 M-step is incompatible with {name}")
 
 
@@ -161,9 +161,9 @@ def _run_m_step_transaction(
 
     if mstep_compute_dtype == "float32":
         _validate_mstep_state_precision(state)
-    copy_token = os.environ.get("RECOVAR_VDAM_MSTEP_COPY_UNTOUCHED", "0")
+    copy_token = os.environ.get("RELAX_VDAM_MSTEP_COPY_UNTOUCHED", "0")
     if copy_token not in {"0", "1"}:
-        raise ValueError("RECOVAR_VDAM_MSTEP_COPY_UNTOUCHED must be 0 or 1")
+        raise ValueError("RELAX_VDAM_MSTEP_COPY_UNTOUCHED must be 0 or 1")
     copy_untouched = copy_token == "1"
     slot_h0 = half_slot_index(k, 0, state.K, state.pseudo_halfsets)
     slot_h1 = half_slot_index(k, 1, state.K, True) if state.pseudo_halfsets else None
@@ -289,9 +289,9 @@ def vdam_m_step_single_class(
     # backprojector.h:335/343 EMA defaults
     mu_first, mu_second = 0.9, 0.999
 
-    _dump_dir = os.environ.get("RECOVAR_MSTEP_DUMP_DIR")
+    _dump_dir = os.environ.get("RELAX_MSTEP_DUMP_DIR")
     _do_dump = _dump_dir is not None and int(getattr(state, "iter", 0)) == int(
-        os.environ.get("RECOVAR_MSTEP_DUMP_ITER", "1")
+        os.environ.get("RELAX_MSTEP_DUMP_ITER", "1")
     )
     _dump_prefix = f"c{k}_" if state.K > 1 else ""
 

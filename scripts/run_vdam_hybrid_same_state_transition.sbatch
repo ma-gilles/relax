@@ -241,7 +241,7 @@ if [[ "${NOISE_SPLIT_DIAGNOSTICS}" = 1 ]]; then
   # This enables aggregate A2/XA returns without requesting per-particle
   # dumps, so the production local big-JIT path remains active.
   diagnostic_environment+=(
-    "RECOVAR_NOISE_DEBUG_DUMP_DIR=${RUNTIME}/noise_split_enabled"
+    "RELAX_NOISE_DEBUG_DUMP_DIR=${RUNTIME}/noise_split_enabled"
   )
 fi
 command=(
@@ -257,15 +257,15 @@ command=(
   "RECOVAR_EXPECTED_REPO_ROOT=${REPO_ROOT}"
   "RECOVAR_RELION_BIND_BUILD_DIR=${RELION_BIND_DIR}"
   "RECOVAR_COARSE_GAUSSIAN_GEMM_HYBRID=0"
-  "RECOVAR_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR=0"
+  "RELAX_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR=0"
   "RECOVAR_COARSE_GAUSSIAN_GEMM_MACRO=0"
   "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE=0"
   "RECOVAR_INITIAL_MODEL_FLAT_LOCAL_ROWS=0"
-  "RECOVAR_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY=0"
+  "RELAX_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY=0"
   "RECOVAR_INITIAL_MODEL_PACKED_LOCAL_PROJECTION=0"
   "RECOVAR_INITIAL_MODEL_DEFER_PACKED_VDAM=0"
-  "RECOVAR_INITIAL_MODEL_PACKED_FINAL_NOISE=0"
-  "RECOVAR_SAME_STATE_GPU_MONITOR_CSV=${PROVENANCE}/gpu_monitor.csv"
+  "RELAX_INITIAL_MODEL_PACKED_FINAL_NOISE=0"
+  "RELAX_SAME_STATE_GPU_MONITOR_CSV=${PROVENANCE}/gpu_monitor.csv"
   "TMPDIR=${RUNTIME}/tmp"
   "PIXI_HOME=${RUNTIME}/pixi_home"
   "RATTLER_CACHE_DIR=${RUNTIME}/rattler_cache"
@@ -498,9 +498,9 @@ if [[ "${CANDIDATE_MODE}" == all_optimized_stable_shapes ]]; then
     .compact_science_contract.hard_exact_contract_passed == true
       and .checkpoint_execution_contract.environment_exact == true
       and .checkpoint_execution_contract.stable_fourier_window_shapes == true
-      and .checkpoint_execution_contract.effective_environment.RECOVAR_RELION_BATCHED_POSTERIOR_PRIMITIVES == "1"
-      and .checkpoint_execution_contract.effective_environment.RECOVAR_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM == "32"
-      and .checkpoint_execution_contract.effective_environment.RECOVAR_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY == "1"
+      and .checkpoint_execution_contract.effective_environment.RELAX_RELION_BATCHED_POSTERIOR_PRIMITIVES == "1"
+      and .checkpoint_execution_contract.effective_environment.RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM == "32"
+      and .checkpoint_execution_contract.effective_environment.RELAX_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY == "1"
       and .same_state_contract.checkpoint_trajectory_backend
         == "all_optimized_stable_shapes_on_q32_batched"
       and .same_state_contract.only_transition_differences
@@ -778,7 +778,7 @@ if [[ "${MIRRORED_HYBRID_IMAGE_BATCH_PANELS}" = 1 ]]; then
       and ([.batch110.measurements[], .batch200.measurements[]]
            | all(length == 4 and all(. > 0)))
   ' "${SCIENCE}/report.json" >/dev/null
-  jq -e --arg env_name RECOVAR_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE '
+  jq -e --arg env_name RELAX_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE '
     .arms.direct_oracle
     | .candidate_enabled == false
       and .backend_mode == "direct"
@@ -799,7 +799,7 @@ if [[ "${MIRRORED_HYBRID_IMAGE_BATCH_PANELS}" = 1 ]]; then
       | .candidate_enabled == true
         and .backend_mode == "all_optimized"
         and .execution_contract.environment_exact == true
-        and .execution_contract.effective_environment.RECOVAR_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE == "110"
+        and .execution_contract.effective_environment.RELAX_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE == "110"
         and .execution_contract.compact_requested == true
         and .execution_contract.compact_effective == true
         and .execution_contract.all_optimized_profile_exact == true
@@ -833,7 +833,7 @@ if [[ "${MIRRORED_HYBRID_IMAGE_BATCH_PANELS}" = 1 ]]; then
       | .candidate_enabled == true
         and .backend_mode == "all_optimized"
         and .execution_contract.environment_exact == true
-        and .execution_contract.effective_environment.RECOVAR_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE == "500"
+        and .execution_contract.effective_environment.RELAX_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE == "500"
         and .execution_contract.compact_requested == true
         and .execution_contract.compact_effective == true
         and .execution_contract.all_optimized_profile_exact == true

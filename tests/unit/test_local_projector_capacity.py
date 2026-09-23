@@ -105,7 +105,7 @@ def test_compact_mapping_scaling_and_runtime_trace(monkeypatch):
     monkeypatch.setattr(proj, "_cuda_projection_available", lambda: True)
     monkeypatch.setattr(proj, "project_half_spectrum", lambda *a, **kw: crop)
     monkeypatch.setenv(proj._RELION_PROJECTOR_TEXTURE_ENV, "1")
-    monkeypatch.setenv("RECOVAR_DENSE_MEANS_SCALE", "-N2")
+    monkeypatch.setenv("RELAX_DENSE_MEANS_SCALE", "-N2")
 
     def capacity(half, rotations, radius, **kw):
         records.append((half.shape, radius.aval, kw))

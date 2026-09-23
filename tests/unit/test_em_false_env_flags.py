@@ -13,7 +13,7 @@ from relax.helpers.env_flags import (
 )
 
 pytestmark = pytest.mark.unit
-NAME = "RECOVAR_TEST_FALSE_FLAG"
+NAME = "RELAX_TEST_FALSE_FLAG"
 LOG = logging.getLogger(__name__)
 
 

@@ -458,7 +458,7 @@ cudaError_t launch_relion_preprocess_real_f32(
     // Default failure semantics are those of the per-image launcher: a
     // non-positive or non-finite background weight, or a non-finite weighted
     // background, aborts the call.  One read-back per call replaces one per
-    // image.  Deferring it (RECOVAR_RELION_PREPROCESS_DEFERRED_CHECK) moves
+    // image.  Deferring it (RELAX_RELION_PREPROCESS_DEFERRED_CHECK) moves
     // the same check to the caller's drain point; NaN fills the affected
     // exterior in the meantime.
     std::vector<float> host_sums(static_cast<size_t>(2 * batch_size));

@@ -389,10 +389,10 @@ def test_k1_pass2_dump_progress_requires_complete_target_set(tmp_path):
 
 
 def test_pass2_dump_does_not_change_planner_without_conservative_opt_in(monkeypatch):
-    monkeypatch.delenv("RECOVAR_PASS2_DUMP_DIR", raising=False)
-    monkeypatch.delenv("RECOVAR_PASS2_DUMP_CONSERVATIVE_EXECUTION", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_MAX_HYPOTHESES", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_SCORE_ONLY_MAX_HYPOTHESES", raising=False)
+    monkeypatch.delenv("RELAX_PASS2_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_PASS2_DUMP_CONSERVATIVE_EXECUTION", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_HYPOTHESES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_SCORE_ONLY_MAX_HYPOTHESES", raising=False)
 
     def planned_cap():
         return _max_hypotheses_per_microbatch_for_pass(
@@ -405,19 +405,19 @@ def test_pass2_dump_does_not_change_planner_without_conservative_opt_in(monkeypa
         )
 
     production_cap = planned_cap()
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", "/tmp/pass2-dump")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", "/tmp/pass2-dump")
     assert _pass2_dump_enabled()
     assert not _pass2_conservative_dump_execution_enabled()
     assert planned_cap() == production_cap
 
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_CONSERVATIVE_EXECUTION", "1")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_CONSERVATIVE_EXECUTION", "1")
     assert _pass2_conservative_dump_execution_enabled()
     assert planned_cap() < production_cap
 
 
 def test_pass2_projection_cache_override_supports_matched_dump_ab(monkeypatch):
     fine_rotations = np.zeros((3, 3, 3), dtype=np.float32)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_PROJECTION_CACHE", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE", raising=False)
 
     assert _projection_cache_enabled_for_pass(
         fine_rotations_override=fine_rotations,
@@ -428,7 +428,7 @@ def test_pass2_projection_cache_override_supports_matched_dump_ab(monkeypatch):
         dump_pass2_operands=True,
     )
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_PROJECTION_CACHE", "on")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE", "on")
     assert _projection_cache_enabled_for_pass(
         fine_rotations_override=fine_rotations,
         dump_pass2_operands=False,
@@ -438,7 +438,7 @@ def test_pass2_projection_cache_override_supports_matched_dump_ab(monkeypatch):
         dump_pass2_operands=True,
     )
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_PROJECTION_CACHE", "off")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE", "off")
     assert not _projection_cache_enabled_for_pass(
         fine_rotations_override=fine_rotations,
         dump_pass2_operands=False,
@@ -452,7 +452,7 @@ def test_pass2_projection_cache_override_supports_matched_dump_ab(monkeypatch):
         dump_pass2_operands=False,
     )
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_PROJECTION_CACHE", "invalid")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE", "invalid")
     with pytest.raises(ValueError, match="must be 'auto', 'on', or 'off'"):
         _projection_cache_enabled_for_pass(
             fine_rotations_override=fine_rotations,
@@ -1024,7 +1024,7 @@ def test_default_sparse_pass2_budget_keeps_broad_support_batched():
 def test_single_class_sparse_pass2_can_coalesce_small_bucket_tail(monkeypatch):
     """Small sparse tails can opt into fewer execution shapes."""
 
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     n_fine_trans = 116
     counts = [16] * 12 + [32] * 7 + [64] * 5 + [128] * 3 + [256]
     per_image = {
@@ -1055,45 +1055,45 @@ def test_single_class_sparse_pass2_can_coalesce_small_bucket_tail(monkeypatch):
 
 
 def test_sparse_pass2_auto_small_bucket_coalescing_is_small_dataset_only(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_SMALL_BUCKET_COALESCE_SIZE", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_AUTO_SMALL_BUCKET_COALESCE_MAX_IMAGES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_SMALL_BUCKET_COALESCE_SIZE", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_AUTO_SMALL_BUCKET_COALESCE_MAX_IMAGES", raising=False)
 
     assert _small_bucket_coalesce_size_for_pass(1_000) == 128
     assert _small_bucket_coalesce_size_for_pass(100_000) is None
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_AUTO_SMALL_BUCKET_COALESCE_MAX_IMAGES", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_AUTO_SMALL_BUCKET_COALESCE_MAX_IMAGES", "0")
     assert _small_bucket_coalesce_size_for_pass(1_000) is None
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_SMALL_BUCKET_COALESCE_SIZE", "256")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_SMALL_BUCKET_COALESCE_SIZE", "256")
     assert _small_bucket_coalesce_size_for_pass(100_000) == 256
 
 
 def test_sparse_pass2_tail_bucket_coalescing_is_opt_in(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_IMAGES", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_INFLATION", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MIN_BUCKET_SIZE", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_IMAGES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_INFLATION", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MIN_BUCKET_SIZE", raising=False)
 
     assert _tail_bucket_coalesce_params_for_pass(fused_k_class=False) == (None, None, None)
     assert _tail_bucket_coalesce_params_for_pass(fused_k_class=True) == (None, None, None)
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_IMAGES", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_IMAGES", "0")
     assert _tail_bucket_coalesce_params_for_pass(fused_k_class=True) == (None, None, None)
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_IMAGES", "7")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_INFLATION", "1.25")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MIN_BUCKET_SIZE", "8192")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_IMAGES", "7")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_INFLATION", "1.25")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MIN_BUCKET_SIZE", "8192")
     assert _tail_bucket_coalesce_params_for_pass(fused_k_class=False) == (7, 1.25, 8192)
     assert _tail_bucket_coalesce_params_for_pass(fused_k_class=True) == (7, 1.25, 8192)
 
 
 def test_compact_pair_tail_bucket_coalescing_defaults_to_bounded_tail(monkeypatch):
     for name in (
-        "RECOVAR_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_IMAGES",
-        "RECOVAR_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_INFLATION",
-        "RECOVAR_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MIN_BUCKET_SIZE",
-        "RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES",
-        "RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_INFLATION",
-        "RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MIN_BUCKET_SIZE",
+        "RELAX_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_IMAGES",
+        "RELAX_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_INFLATION",
+        "RELAX_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MIN_BUCKET_SIZE",
+        "RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES",
+        "RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_INFLATION",
+        "RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MIN_BUCKET_SIZE",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -1105,12 +1105,12 @@ def test_compact_pair_tail_bucket_coalescing_defaults_to_bounded_tail(monkeypatc
         default_min_bucket_size=1,
     ) == (1024, 8.0, 1)
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES", "0")
     assert _compact_pair_tail_bucket_coalesce_params_for_pass() == (None, None, None)
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES", "5")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_INFLATION", "1.5")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MIN_BUCKET_SIZE", "8192")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES", "5")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_INFLATION", "1.5")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MIN_BUCKET_SIZE", "8192")
     assert _compact_pair_tail_bucket_coalesce_params_for_pass() == (5, 1.5, 8192)
     assert _compact_pair_tail_bucket_coalesce_params_for_pass(
         default_max_images=1024,
@@ -1153,8 +1153,8 @@ def test_sparse_pass2_tail_bucket_coalescing_respects_inflation_cap():
 
 
 def test_score_only_sparse_pass_uses_larger_default_bucket_budget(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_MAX_HYPOTHESES", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_SCORE_ONLY_MAX_HYPOTHESES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_HYPOTHESES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_SCORE_ONLY_MAX_HYPOTHESES", raising=False)
 
     device_memory = 80 * 1024**3
     n_score_pixels = 652
@@ -1195,7 +1195,7 @@ def test_score_only_sparse_pass_uses_larger_default_bucket_budget(monkeypatch):
         )
     )
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_SCORE_ONLY_MAX_HYPOTHESES", "12345")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_SCORE_ONLY_MAX_HYPOTHESES", "12345")
     assert (
         _max_hypotheses_per_microbatch_for_pass(
             score_only=True,
@@ -1210,8 +1210,8 @@ def test_score_only_sparse_pass_uses_larger_default_bucket_budget(monkeypatch):
 
 
 def test_sparse_pass2_auto_hypothesis_cap_matches_80gb_probe_scale(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_MAX_HYPOTHESES", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_SCORE_ONLY_MAX_HYPOTHESES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_HYPOTHESES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_SCORE_ONLY_MAX_HYPOTHESES", raising=False)
 
     device_memory = 80 * 1024**3
     n_score_pixels = 652
@@ -1228,8 +1228,8 @@ def test_sparse_pass2_auto_hypothesis_cap_matches_80gb_probe_scale(monkeypatch):
 
 
 def test_sparse_pass2_hypothesis_cap_accounts_for_score_dtype(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_MAX_HYPOTHESES", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_SCORE_ONLY_MAX_HYPOTHESES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_HYPOTHESES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_SCORE_ONLY_MAX_HYPOTHESES", raising=False)
 
     device_memory = 80 * 1024**3
     n_score_pixels = 1103
@@ -1260,7 +1260,7 @@ def test_sparse_pass2_hypothesis_cap_accounts_for_score_dtype(monkeypatch):
 
 
 def test_fused_k_class_sparse_pass2_reserves_extra_headroom(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_MAX_HYPOTHESES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_HYPOTHESES", raising=False)
 
     device_memory = 80 * 1024**3
     n_score_pixels = 1103
@@ -1330,7 +1330,7 @@ def test_fused_k_class_sparse_pass2_reserves_extra_headroom(monkeypatch):
         )
         assert estimated_two_gather_bytes <= 0.10 * device_memory
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_HYPOTHESES", "12345")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_HYPOTHESES", "12345")
     assert (
         _max_hypotheses_per_microbatch_for_pass(
             score_only=False,
@@ -1347,7 +1347,7 @@ def test_fused_k_class_sparse_pass2_reserves_extra_headroom(monkeypatch):
 
 
 def test_sparse_pass2_warns_when_env_cap_is_below_auto(monkeypatch, caplog):
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_HYPOTHESES", "2000000")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_HYPOTHESES", "2000000")
 
     caplog.set_level(logging.WARNING, logger="relax.sparse_pass2.sparse_pass2_budget")
     cap = _max_hypotheses_per_microbatch_for_pass(
@@ -1367,11 +1367,11 @@ def test_sparse_pass2_warns_when_env_cap_is_below_auto(monkeypatch, caplog):
 
 
 def test_sparse_pass2_memory_budgets_auto_scale_with_device_memory(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_MAX_TRANSLATION_TILE_BYTES", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_TRANSLATION_TILE_BYTES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", raising=False)
 
     small_gpu = 20 * 1024**3
     mid_gpu = 40 * 1024**3
@@ -1449,18 +1449,18 @@ def test_sparse_pass2_memory_budgets_auto_scale_with_device_memory(monkeypatch):
         max_tile_bytes=_max_translation_tile_bytes_for_pass(large_gpu, fused_k_class=True),
     ) <= 22
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_TRANSLATION_TILE_BYTES", "123456")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", "345678")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES", "234567")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES", "456789")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", "654321")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_TRANSLATION_TILE_BYTES", "123456")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", "345678")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES", "234567")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES", "456789")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", "654321")
     assert _max_translation_tile_bytes_for_pass(large_gpu) == 123456
     assert _max_projection_gather_bytes_for_pass(large_gpu) == 345678
     assert _max_noise_block_bytes_for_pass(large_gpu) == 234567
     assert _max_adjoint_block_bytes_for_pass(large_gpu) == 456789
     assert _projection_cache_max_bytes_for_pass(large_gpu) == 654321
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", "0")
     assert _projection_cache_max_bytes_for_pass(large_gpu) == 0
 
 
@@ -1500,7 +1500,7 @@ def test_compact_pair_projection_gather_budget_splits_large_bucket():
 
 def test_compact_pair_projection_budget_groups_rotation_signatures_by_default(monkeypatch):
     monkeypatch.delenv(
-        "RECOVAR_SPARSE_KCLASS_GROUP_PAIR_BUCKETS_BY_ROTATION_SIGNATURE",
+        "RELAX_SPARSE_KCLASS_GROUP_PAIR_BUCKETS_BY_ROTATION_SIGNATURE",
         raising=False,
     )
     rotation_counts_by_class = (
@@ -1550,7 +1550,7 @@ def test_compact_pair_projection_budget_groups_rotation_signatures_by_default(mo
 
 def test_compact_pair_rotation_signature_grouping_can_be_disabled(monkeypatch):
     monkeypatch.setenv(
-        "RECOVAR_SPARSE_KCLASS_GROUP_PAIR_BUCKETS_BY_ROTATION_SIGNATURE",
+        "RELAX_SPARSE_KCLASS_GROUP_PAIR_BUCKETS_BY_ROTATION_SIGNATURE",
         "0",
     )
     bucket = {
@@ -1574,8 +1574,8 @@ def test_compact_pair_rotation_signature_grouping_can_be_disabled(monkeypatch):
 
 
 def test_relion_windowed_projection_budget_accounts_for_centered_full_half_transient(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", raising=False)
 
     large_gpu = 80 * 1024**3
     n_half = 128 * (128 // 2 + 1)
@@ -1638,7 +1638,7 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
     )
     assert relion_chunk_bytes <= 512 * 1024**2
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", "0")
     assert (
         _max_projected_rotations_per_call_for_pass(
             device_memory_bytes=large_gpu,
@@ -2239,7 +2239,7 @@ def test_sparse_pass2_residual_terms_fused_matches_legacy_nonfinite_masks(monkey
     shell_indices = jnp.asarray(np.arange(n_pixels) % n_shells, dtype=jnp.int32)
     flat_image_indices = jnp.asarray([0, 1, 2, 0, 1, 2], dtype=jnp.int32)
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RESIDUAL_TERMS_FUSED", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_RESIDUAL_TERMS_FUSED", "0")
     legacy_noise, legacy_norm = _compute_noise_block_and_norm_residual_chunked(
         proj_half,
         proj_abs2_half,
@@ -2252,7 +2252,7 @@ def test_sparse_pass2_residual_terms_fused_matches_legacy_nonfinite_masks(monkey
         batch_size=batch_size,
         max_block_bytes=None,
     )
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RESIDUAL_TERMS_FUSED", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_RESIDUAL_TERMS_FUSED", "1")
     fused_noise, fused_norm = _compute_noise_block_and_norm_residual_chunked(
         proj_half,
         proj_abs2_half,
@@ -2323,9 +2323,9 @@ def test_sparse_pass2_adjoint_block_chunking_accumulates_all_rows(monkeypatch):
 def test_relion_x_half_bp_per_particle_launch_is_off_by_default(monkeypatch):
     from relax.diagnostics import bpref_diagnostics
 
-    monkeypatch.delenv("RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", raising=False)
+    monkeypatch.delenv("RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", raising=False)
     assert bpref_diagnostics.relion_x_half_bp_per_particle_launch_enabled() is False
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", "1")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", "1")
     assert bpref_diagnostics.relion_x_half_bp_per_particle_launch_enabled() is True
 
 
@@ -2370,9 +2370,9 @@ def test_scoped_bpref_ownership_gate_ignores_unrelated_bucket_order():
 def test_relion_x_half_bp_fused_atomics_is_off_by_default(monkeypatch):
     from relax.diagnostics import bpref_diagnostics
 
-    monkeypatch.delenv("RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS", raising=False)
+    monkeypatch.delenv("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS", raising=False)
     assert bpref_diagnostics.relion_x_half_bp_fused_atomics_enabled() is False
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS", "1")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS", "1")
     assert bpref_diagnostics.relion_x_half_bp_fused_atomics_enabled() is True
 
 
@@ -2478,9 +2478,9 @@ def test_relion_x_half_bp_fused_atomics_threads_both_accumulators_per_particle(m
             ctf_volume + jnp.sum(particle_ctf_values),
         )
 
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", "1")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", "1")
     monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY", "1")
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS", "1")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS", "1")
     monkeypatch.setattr(em_cuda_kernels, "relion_fused_x_half_backproject_indexed", fake_fused)
 
     y_volume, ctf_volume = bucketed_mod._accumulate_relion_x_half_per_particle_launches(
@@ -2538,7 +2538,7 @@ def test_fresh_k1_particle_pool_preserves_consecutive_particle_order(monkeypatch
         )
         return y_volume, ctf_volume
 
-    monkeypatch.setenv("RECOVAR_K1_RELION_X_HALF_BP_PARTICLE_POOL_SIZE", "2")
+    monkeypatch.setenv("RELAX_K1_RELION_X_HALF_BP_PARTICLE_POOL_SIZE", "2")
     monkeypatch.setattr(em_cuda_kernels, "relion_fused_x_half_backproject_indexed", fake_fused)
 
     bucketed_mod._accumulate_relion_x_half_per_particle_launches(
@@ -2577,7 +2577,7 @@ def test_fresh_k1_particle_pool_preserves_consecutive_particle_order(monkeypatch
 def test_particle_pool_rejects_non_fresh_k1_path(monkeypatch):
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
-    monkeypatch.setenv("RECOVAR_K1_RELION_X_HALF_BP_PARTICLE_POOL_SIZE", "3")
+    monkeypatch.setenv("RELAX_K1_RELION_X_HALF_BP_PARTICLE_POOL_SIZE", "3")
     with pytest.raises(RuntimeError, match="fresh K=1 winner-take-all"):
         bucketed_mod._accumulate_relion_x_half_per_particle_launches(
             jnp.ones((1, 1, 1), dtype=jnp.complex64),
@@ -2600,9 +2600,9 @@ def test_fresh_k1_firstiter_cc_uses_fused_atomics_without_diagnostic_env(monkeyp
     from relax.cuda import kernels as em_cuda_kernels
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
-    monkeypatch.delenv("RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", raising=False)
+    monkeypatch.delenv("RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", raising=False)
     monkeypatch.delenv("RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY", raising=False)
-    monkeypatch.delenv("RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS", raising=False)
+    monkeypatch.delenv("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS", raising=False)
     calls = []
 
     def fake_fused(
@@ -2644,9 +2644,9 @@ def test_fresh_k1_firstiter_cc_casts_rows_to_bpref_accumulator_dtype(monkeypatch
     from relax.cuda import kernels as em_cuda_kernels
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
-    monkeypatch.delenv("RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", raising=False)
+    monkeypatch.delenv("RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", raising=False)
     monkeypatch.delenv("RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY", raising=False)
-    monkeypatch.delenv("RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS", raising=False)
+    monkeypatch.delenv("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS", raising=False)
     observed = {}
 
     def fake_fused(*args, **kwargs):
@@ -2685,8 +2685,8 @@ def test_relion_x_half_bp_fused_atomics_requires_block_topology(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", "1")
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS", "1")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", "1")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS", "1")
     monkeypatch.delenv("RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY", raising=False)
     assert cuda_backproject.relion_x_half_bp_block_topology_enabled() is False
 
@@ -2724,7 +2724,7 @@ def test_later_soft_posterior_scoped_fused_signature_fixture(
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
     monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY", "1")
-    monkeypatch.delenv("RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS", raising=False)
+    monkeypatch.delenv("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS", raising=False)
     monkeypatch.delenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", raising=False)
 
     image_shape = (8, 8)
@@ -2839,8 +2839,8 @@ def test_later_soft_posterior_scoped_fused_signature_fixture(
         b_data, b_weight = _accumulate_separate(*sequential_rows, "fixture-B-sequential")
 
         # C: reuse the exact B rows and change only to fused data/weight atomics.
-        monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", "1")
-        monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS", "1")
+        monkeypatch.setenv("RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", "1")
+        monkeypatch.setenv("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS", "1")
         monkeypatch.setenv(
             "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
             str(tmp_path / "device-signatures"),
@@ -3217,8 +3217,8 @@ def test_sparse_pass2_translation_tile_can_budget_window_pixels():
 
 
 def test_sparse_pass2_windowed_translation_tile_budget_defaults_to_active_pixels(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_WINDOWED_TRANSLATION_TILE_CAP", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_WINDOWED_TRANSLATION_TILE_CAP", raising=False)
 
     assert (
         _translation_tile_half_pixels_for_budget(
@@ -3237,7 +3237,7 @@ def test_sparse_pass2_windowed_translation_tile_budget_defaults_to_active_pixels
         is None
     )
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_WINDOWED_TRANSLATION_TILE_CAP", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_WINDOWED_TRANSLATION_TILE_CAP", "0")
     assert (
         _translation_tile_half_pixels_for_budget(
             use_window=True,
@@ -3247,8 +3247,8 @@ def test_sparse_pass2_windowed_translation_tile_budget_defaults_to_active_pixels
         is None
     )
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_WINDOWED_TRANSLATION_TILE_CAP", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_WINDOWED_TRANSLATION_TILE_CAP", "1")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_WINDOWED_PREPARE", "0")
     assert (
         _translation_tile_half_pixels_for_budget(
             use_window=True,
@@ -3260,7 +3260,7 @@ def test_sparse_pass2_windowed_translation_tile_budget_defaults_to_active_pixels
 
 
 def test_sparse_pass2_windowed_translation_tile_image_cap_is_bounded(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_WINDOWED_TRANSLATION_TILE_MAX_MULTIPLIER", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_WINDOWED_TRANSLATION_TILE_MAX_MULTIPLIER", raising=False)
 
     image_shape = (8, 8)
     n_fine_trans = 2
@@ -3281,7 +3281,7 @@ def test_sparse_pass2_windowed_translation_tile_image_cap_is_bounded(monkeypatch
     assert multiplier == 4
     assert chosen == 20
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_WINDOWED_TRANSLATION_TILE_MAX_MULTIPLIER", "2")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_WINDOWED_TRANSLATION_TILE_MAX_MULTIPLIER", "2")
     chosen, full_cap, window_cap, multiplier = _max_images_for_sparse_pass2_translation_tile(
         image_shape,
         n_fine_trans,
@@ -3297,13 +3297,13 @@ def test_sparse_pass2_windowed_translation_tile_image_cap_is_bounded(monkeypatch
 
 
 def test_sparse_kclass_windowed_translation_tile_cap_defaults_on(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_WINDOWED_TRANSLATION_TILE_CAP", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_WINDOWED_TRANSLATION_TILE_CAP", raising=False)
     assert _windowed_translation_tile_cap_enabled_for_pass() is True
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_WINDOWED_TRANSLATION_TILE_CAP", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_WINDOWED_TRANSLATION_TILE_CAP", "0")
     assert _windowed_translation_tile_cap_enabled_for_pass() is False
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_WINDOWED_TRANSLATION_TILE_CAP", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_WINDOWED_TRANSLATION_TILE_CAP", "1")
     assert _windowed_translation_tile_cap_enabled_for_pass() is True
 
 
@@ -3402,7 +3402,7 @@ def test_relion_windowed_projection_cache_estimate_admits_retained_window_cache(
 def test_fused_k_class_sparse_pass2_uses_coarse_tail_bucket_quantum(monkeypatch):
     """Pin the coarse default tail bucketing used by local sparse pass-2."""
 
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     counts = [1025, 1152, 1537, 2049]
 
     def per_class_inputs():
@@ -3423,7 +3423,7 @@ def test_fused_k_class_sparse_pass2_uses_coarse_tail_bucket_quantum(monkeypatch)
     default_sizes = sorted({int(bucket["bucket_size"]) for bucket in buckets})
     assert default_sizes == [4096]
 
-    monkeypatch.setenv("RECOVAR_LOCAL_BUCKET_QUANTUM", "128")
+    monkeypatch.setenv("RELAX_LOCAL_BUCKET_QUANTUM", "128")
     finer_buckets = _bucket_sparse_k_class_pass2_inputs(
         [per_class_inputs() for _ in range(4)],
         n_fine_trans=116,
@@ -3439,7 +3439,7 @@ def test_fused_k_class_sparse_pass2_uses_coarse_tail_bucket_quantum(monkeypatch)
 def test_single_class_sparse_pass2_bucket_quantum_can_coarsen_pathological_tail(monkeypatch):
     """Document tail coarsening for outlier-heavy K=1 cases."""
 
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     n_fine_trans = 116
     counts = [1812, 4461, 9728, 12801, 23041, 45057, 76800]
     per_image_inputs = {
@@ -3458,7 +3458,7 @@ def test_single_class_sparse_pass2_bucket_quantum_can_coarsen_pathological_tail(
     )
     default_sizes = [int(bucket["bucket_size"]) for bucket in default_buckets]
 
-    monkeypatch.setenv("RECOVAR_LOCAL_BUCKET_QUANTUM", "512")
+    monkeypatch.setenv("RELAX_LOCAL_BUCKET_QUANTUM", "512")
     fine_buckets = _bucket_pass2_inputs(
         per_image_inputs,
         n_fine_trans=n_fine_trans,
@@ -3475,7 +3475,7 @@ def test_single_class_sparse_pass2_bucket_quantum_can_coarsen_pathological_tail(
 
 
 def test_sparse_pass2_auto_projection_cap_prevents_one_image_tail_oversize(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", raising=False)
     n_half = 128 * (128 // 2 + 1)
     cap = _max_projected_rotations_per_call_for_pass(
         device_memory_bytes=80 * 1024**3,
@@ -3496,7 +3496,7 @@ def test_sparse_pass2_auto_projection_cap_prevents_one_image_tail_oversize(monke
     assert cap_with_abs2 is not None
     assert cap_with_abs2 < cap
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "1234")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "1234")
     assert (
         _max_projected_rotations_per_call_for_pass(
             device_memory_bytes=80 * 1024**3,
@@ -3542,7 +3542,7 @@ def _minimal_per_image_inputs(rotation_counts, n_fine_trans):
 def test_compact_fused_k_class_bucket_arrays_reduce_rectangular_padding(monkeypatch):
     """Opt-in compact fused buckets avoid padding every class to the largest class."""
 
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     n_fine_trans = 4
     bucket = {
         "bucket_size": 128,
@@ -3579,7 +3579,7 @@ def test_compact_fused_k_class_bucket_arrays_reduce_rectangular_padding(monkeypa
 def test_compact_pair_execution_bucket_arrays_skip_unused_dense_score_fields(monkeypatch):
     """Compact-pair execution does not need dense R x T score masks."""
 
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     n_fine_trans = 4
     bucket = {
         "bucket_size": 128,
@@ -3624,7 +3624,7 @@ def test_compact_pair_execution_bucket_arrays_skip_unused_dense_score_fields(mon
 
 
 def test_fused_k_class_sparse_pass2_projection_cap_does_not_fragment_buckets(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     counts = [1025] * 5 + [1537] * 5 + [2049] * 5
 
     def per_class_inputs():
@@ -3657,7 +3657,7 @@ def test_fused_k_class_sparse_pass2_projection_cap_does_not_fragment_buckets(mon
 
 
 def test_fused_k_class_sparse_pass2_budget_caps_real_score_tensors(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     n_classes = 4
     n_fine_trans = 116
     max_hypotheses = 10_001_475
@@ -3689,7 +3689,7 @@ def test_fused_k_class_sparse_pass2_budget_caps_real_score_tensors(monkeypatch):
 
 
 def test_fused_k_class_sparse_pass2_can_chunk_small_buckets_larger(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     n_classes = 4
     n_fine_trans = 116
     counts = [16] * 40 + [1024] * 40
@@ -3742,7 +3742,7 @@ def test_fused_k_class_sparse_pass2_can_chunk_small_buckets_larger(monkeypatch):
 
 
 def test_fused_k_class_sparse_pass2_can_coalesce_small_bucket_tail(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     n_classes = 4
     n_fine_trans = 116
     counts = [16] * 7 + [32] * 12 + [64] * 23 + [128] * 64 + [256] * 3
@@ -3778,7 +3778,7 @@ def test_fused_k_class_sparse_pass2_can_coalesce_small_bucket_tail(monkeypatch):
 
 
 def test_fused_k_class_sparse_pass2_can_coalesce_high_bucket_tail(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     n_classes = 4
     n_fine_trans = 116
     counts = [4097] * 2 + [8193] * 3 + [12289] * 2
@@ -4322,7 +4322,7 @@ def test_compact_pair_weighted_rotation_and_image_sums_match_separate_helpers(mo
         jnp.asarray(shifted_noise),
         n_rotation_rows=n_rot,
     )
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSE_COMPACT_IMAGE_SUMS", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSE_COMPACT_IMAGE_SUMS", "0")
     legacy_summed, legacy_image_summed, legacy_ctf_probs, legacy_probs_sum_t, legacy_translation_posterior = (
         _compact_pair_weighted_rotation_and_image_sums(
             jnp.asarray(pair_probs),
@@ -4357,7 +4357,7 @@ def test_compact_pair_weighted_rotation_and_image_sums_match_separate_helpers(mo
         atol=1e-6,
     )
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSE_COMPACT_IMAGE_SUMS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSE_COMPACT_IMAGE_SUMS", "1")
     (
         fused_combined_summed,
         fused_combined_image_summed,
@@ -4525,7 +4525,7 @@ def test_compact_pair_pair_sparse_rotation_sums_match_dense_cpu_float64():
 
 def test_compact_pair_pair_sparse_image_and_combined_sums_match_dense_cpu_float64(monkeypatch):
     case = _make_compact_pair_sparse_mstep_case(dtype=np.float64)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MSTEP", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MSTEP", raising=False)
     with jax.default_device(jax.devices("cpu")[0]):
         dense_image = _call_image_sums(_compact_pair_weighted_image_sums_dense, case)
         pair_sparse_image = _call_image_sums(_compact_pair_weighted_image_sums_pair_sparse, case)
@@ -4541,7 +4541,7 @@ def test_compact_pair_pair_sparse_image_and_combined_sums_match_dense_cpu_float6
 
 def test_compact_pair_mstep_pair_sparse_env_matches_dense_cpu_float64(monkeypatch):
     case = _make_compact_pair_sparse_mstep_case(dtype=np.float64)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MSTEP", "pair_sparse")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MSTEP", "pair_sparse")
     assert _compact_pair_mstep_mode_for_pass() == "pair_sparse"
     with jax.default_device(jax.devices("cpu")[0]):
         expected = _call_rotation_sums(_compact_pair_weighted_rotation_sums_dense, case)
@@ -4557,7 +4557,7 @@ def test_compact_pair_mstep_default_remains_dense(monkeypatch):
     )
 
     case = _make_compact_pair_sparse_mstep_case(dtype=np.float64)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MSTEP", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MSTEP", raising=False)
     assert _compact_pair_mstep_mode_for_pass() == "dense"
 
     def fail_pair_sparse(*_args, **_kwargs):
@@ -4757,7 +4757,7 @@ def test_relion_joint_mstep_prune_drops_weak_class_tail_that_per_class_keeps():
 
 
 def test_relion_fine_mstep_prune_mode_override_beats_env(monkeypatch):
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE", "per_class")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE", "per_class")
 
     assert (
         _relion_fine_mstep_prune_mode(
@@ -4783,7 +4783,7 @@ def test_relion_fine_mstep_prune_mode_override_beats_env(monkeypatch):
 
 
 def test_k_class_fused_prune_mode_allows_explicit_env_override(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE", raising=False)
     assert (
         _k_class_fused_relion_fine_mstep_prune_mode_override(relion_fine_mstep_prune=False)
         is None
@@ -4807,7 +4807,7 @@ def test_k_class_fused_prune_mode_allows_explicit_env_override(monkeypatch):
         == "joint_keep_all"
     )
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE", "none")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE", "none")
     assert (
         _k_class_fused_relion_fine_mstep_prune_mode_override(relion_fine_mstep_prune=True)
         is None
@@ -5065,7 +5065,7 @@ def test_k1_relion_fine_mstep_prune_keeps_unweighted_high_shell_image_power(monk
         fine_translation_parent_override=fine_translation_parent,
     )
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", str(1024**3))
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", str(1024**3))
     def prune_everything(probs, *, adaptive_fraction):
         del adaptive_fraction
         return jnp.zeros_like(probs), jnp.zeros(probs.shape[0], dtype=jnp.int32), jnp.zeros(probs.shape[0], dtype=jnp.int32)
@@ -5197,7 +5197,7 @@ def _make_late_iter_sparse_kclass_inputs(*, n_classes=4, n_images=8, n_rot=512, 
 
 
 def test_compact_pair_plan_reports_late_iter_candidate_reduction(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     n_classes = 4
     n_fine_trans = 116
     per_image_inputs_by_class = _make_late_iter_sparse_kclass_inputs(
@@ -5239,10 +5239,10 @@ def test_compact_pair_plan_reports_late_iter_candidate_reduction(monkeypatch):
 
 
 def test_compact_pair_chunk_cap_defaults_to_dense_cap_unless_explicit(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", raising=False)
     assert _compact_pair_max_images_per_microbatch_for_pass(19) == 19
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "128")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "128")
     assert _compact_pair_max_images_per_microbatch_for_pass(19) == 128
 
 
@@ -5264,7 +5264,7 @@ def test_compact_pair_prepare_cap_can_tighten_but_not_raise_dense_cap():
 
 
 def test_compact_pair_bucketing_can_coalesce_high_pair_tail(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     counts = [4096] * 20 + [8192] * 2 + [12288] * 3 + [16384] * 2
     compact_inputs_by_class = tuple(
         {"pair_counts": np.asarray(counts, dtype=np.int64)}
@@ -5300,7 +5300,7 @@ def test_compact_pair_bucketing_can_coalesce_high_pair_tail(monkeypatch):
 
 
 def test_compact_pair_tail_coalescing_keeps_executed_chunks_under_hypothesis_cap(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     counts = [
         282_624,
         286_720,
@@ -5351,7 +5351,7 @@ def test_compact_pair_tail_coalescing_keeps_executed_chunks_under_hypothesis_cap
 
 
 def test_compact_pair_tail_coalescing_preserves_masked_image_partition(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     counts = np.asarray(
         [128, 4096, 8192, 12288, 16384, 256, 20480, 24576, 32768, 512],
         dtype=np.int64,
@@ -5399,9 +5399,9 @@ def test_compact_pair_tail_coalescing_preserves_masked_image_partition(monkeypat
 
 
 def test_compact_pair_planner_can_decouple_from_dense_image_cap(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_STATS", "1")
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_STATS", "1")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", raising=False)
 
     n_classes = 4
     n_images = 64
@@ -5431,7 +5431,7 @@ def test_compact_pair_planner_can_decouple_from_dense_image_cap(monkeypatch):
     assert max(len(bucket["image_indices"]) for bucket in dense_capped.buckets) == 19
     assert len(dense_capped.buckets) > 1
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "64")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "64")
     decoupled = _maybe_prepare_sparse_k_class_compact_pair_plan(
         per_image_inputs_by_class,
         dense_buckets,
@@ -5465,9 +5465,9 @@ def test_compact_pair_planner_can_decouple_from_dense_image_cap(monkeypatch):
 
 
 def test_compact_pair_execution_split_honors_dense_mstep_budget(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_STATS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "64")
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_STATS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "64")
 
     n_classes = 4
     n_images = 64
@@ -5517,10 +5517,10 @@ def test_compact_pair_execution_split_honors_dense_mstep_budget(monkeypatch):
 
 
 def test_compact_pair_dense_mstep_budget_env_override(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_DENSE_MSTEP_MAX_BYTES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_DENSE_MSTEP_MAX_BYTES", raising=False)
     assert _compact_pair_dense_mstep_max_bytes_for_pass(None) > 0
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_DENSE_MSTEP_MAX_BYTES", "12345")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_DENSE_MSTEP_MAX_BYTES", "12345")
     assert _compact_pair_dense_mstep_max_bytes_for_pass(None) == 12345
 
 
@@ -5528,7 +5528,7 @@ def test_native_dual_weighted_sums_defaults_only_on_exact_gpu_contract(monkeypat
     import recovar.cuda_backproject as cuda_backproject
     from relax.cuda import kernels as em_cuda_kernels
 
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_NATIVE_DUAL_WEIGHTED_SUMS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_NATIVE_DUAL_WEIGHTED_SUMS", raising=False)
     kwargs = dict(
         use_exact_relion_gaussian=True,
         use_relion_x_half_mstep=True,
@@ -5552,10 +5552,10 @@ def test_native_dual_weighted_sums_defaults_only_on_exact_gpu_contract(monkeypat
         disabled[disabled_contract_key] = False
         assert not _native_dual_weighted_sums_enabled_for_pass(**disabled)
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_NATIVE_DUAL_WEIGHTED_SUMS", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_NATIVE_DUAL_WEIGHTED_SUMS", "0")
     assert not _native_dual_weighted_sums_enabled_for_pass(**kwargs)
     monkeypatch.setattr(jax, "default_backend", lambda: "cpu")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_NATIVE_DUAL_WEIGHTED_SUMS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_NATIVE_DUAL_WEIGHTED_SUMS", "1")
     assert _native_dual_weighted_sums_enabled_for_pass(**kwargs)
 
 
@@ -5583,8 +5583,8 @@ def test_native_dual_dispatch_checks_actual_operand_dtypes(
 
 
 def test_fused_mstep_noise_defaults_on_and_rejects_incompatible_contracts(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_FUSED_MSTEP_NOISE", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_RESIDUAL_TERMS_FUSED", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_FUSED_MSTEP_NOISE", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_RESIDUAL_TERMS_FUSED", raising=False)
     kwargs = dict(
         native_dual_weighted_sums=True,
         use_exact_relion_gaussian=True,
@@ -5594,9 +5594,9 @@ def test_fused_mstep_noise_defaults_on_and_rejects_incompatible_contracts(monkey
     )
     assert _fused_mstep_noise_enabled_for_pass(**kwargs)
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED_MSTEP_NOISE", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED_MSTEP_NOISE", "0")
     assert not _fused_mstep_noise_enabled_for_pass(**kwargs)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED_MSTEP_NOISE", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED_MSTEP_NOISE", "1")
     assert _fused_mstep_noise_enabled_for_pass(**kwargs)
     for disabled_contract_key in (
         "native_dual_weighted_sums",
@@ -5610,49 +5610,49 @@ def test_fused_mstep_noise_defaults_on_and_rejects_incompatible_contracts(monkey
 
     compact_reuse = dict(kwargs, compact_noise_sums_match_mstep=True)
     assert not _fused_mstep_noise_enabled_for_pass(**compact_reuse)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RESIDUAL_TERMS_FUSED", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_RESIDUAL_TERMS_FUSED", "0")
     assert not _fused_mstep_noise_enabled_for_pass(**kwargs)
 
 
 def test_compact_pair_execution_defaults_to_high_bucket_hybrid(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", raising=False)
 
     assert _compact_pair_execution_enabled_for_pass() is True
     assert _compact_pair_min_bucket_size_for_pass() == 512
     assert _compact_pair_min_bucket_size_for_pass(1) == 1
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "0")
     assert _compact_pair_execution_enabled_for_pass() is False
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1024")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1024")
     assert _compact_pair_execution_enabled_for_pass() is True
     assert _compact_pair_min_bucket_size_for_pass() == 1024
     assert _compact_pair_min_bucket_size_for_pass(1) == 1024
 
 
 def test_compact_pair_execution_treats_blank_env_flags_as_unset(monkeypatch):
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", " ")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", "")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", " ")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", "")
 
     assert _compact_pair_execution_enabled_for_pass() is True
 
 
 def test_compact_pair_check_mode_disables_auto_execution(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", "1")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", "1")
 
     assert _compact_pair_execution_enabled_for_pass() is False
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
     assert _compact_pair_execution_enabled_for_pass() is True
 
 
 def test_compact_pair_planner_is_opt_in_and_can_be_disabled(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_STATS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_STATS", raising=False)
     per_image_inputs_by_class = _make_late_iter_sparse_kclass_inputs(
         n_classes=2,
         n_images=2,
@@ -5676,7 +5676,7 @@ def test_compact_pair_planner_is_opt_in_and_can_be_disabled(monkeypatch):
         is None
     )
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_STATS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_STATS", "1")
     stats = _maybe_prepare_sparse_k_class_compact_pair_plan(
         per_image_inputs_by_class,
         dense_buckets,
@@ -5688,7 +5688,7 @@ def test_compact_pair_planner_is_opt_in_and_can_be_disabled(monkeypatch):
     assert stats.valid_pair_candidates > 0
     assert stats.rectangular_candidates > stats.valid_pair_candidates
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_STATS", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_STATS", "0")
     assert (
         _maybe_prepare_sparse_k_class_compact_pair_plan(
             per_image_inputs_by_class,
@@ -6812,7 +6812,7 @@ def test_fine_rotation_override_can_follow_relion_parent_execution_order():
 def test_exact_relion_fine_posterior_implies_relion_parent_execution_order(monkeypatch):
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
-    monkeypatch.delenv("RECOVAR_RELION_FINE_ROTATION_EXECUTION_ORDER", raising=False)
+    monkeypatch.delenv("RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER", raising=False)
     assert not bucketed_mod._relion_fine_parent_execution_order_enabled(
         use_relion_f32_fine_posterior=False,
     )
@@ -6820,7 +6820,7 @@ def test_exact_relion_fine_posterior_implies_relion_parent_execution_order(monke
         use_relion_f32_fine_posterior=True,
     )
 
-    monkeypatch.setenv("RECOVAR_RELION_FINE_ROTATION_EXECUTION_ORDER", "1")
+    monkeypatch.setenv("RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER", "1")
     assert bucketed_mod._relion_fine_parent_execution_order_enabled(
         use_relion_f32_fine_posterior=False,
     )
@@ -6916,10 +6916,10 @@ def test_sparse_pass2_projection_cache_reuses_fine_grid_projection_chunks(monkey
     noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
     translations = jnp.array([[0.0, 0.0], [1.0, 0.0]], dtype=jnp.float32)
 
-    monkeypatch.delenv("RECOVAR_PASS2_DUMP_DIR", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_HYPOTHESES", "16")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "4")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", str(1024**3))
+    monkeypatch.delenv("RELAX_PASS2_DUMP_DIR", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_HYPOTHESES", "16")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "4")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", str(1024**3))
 
     from relax.sparse_pass2 import (
         sparse_pass2_projection_blocks,
@@ -6980,9 +6980,9 @@ def test_sparse_pass2_full_support_projection_cache_chunks_scores(monkeypatch):
     mean_variance = jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 10.0
     noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
 
-    monkeypatch.delenv("RECOVAR_PASS2_DUMP_DIR", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", str(1024**3))
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_HYPOTHESES", "1000000")
+    monkeypatch.delenv("RELAX_PASS2_DUMP_DIR", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", str(1024**3))
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_HYPOTHESES", "1000000")
 
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
     from relax.sparse_pass2 import (
@@ -7034,7 +7034,7 @@ def test_sparse_pass2_full_support_projection_cache_chunks_scores(monkeypatch):
         fine_translation_parent_override=fine_translation_parent,
     )
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_CACHED_SCORE_ROT_CHUNK", "64")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_CACHED_SCORE_ROT_CHUNK", "64")
     unchunked = compute_pass2_stats_sparse(**kwargs)
 
     score_chunk_sizes = []
@@ -7063,7 +7063,7 @@ def test_sparse_pass2_full_support_projection_cache_chunks_scores(monkeypatch):
 
     monkeypatch.setattr(bucketed_mod, "_score_pass2_bucket_relion_gpu_diff2", counting_score)
     monkeypatch.setattr(bucketed_mod, "_score_pass2_bucket_relion_gpu_diff2_raw", counting_raw_score)
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_CACHED_SCORE_ROT_CHUNK", "4")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_CACHED_SCORE_ROT_CHUNK", "4")
     chunked = compute_pass2_stats_sparse(**kwargs)
 
     np.testing.assert_allclose(np.asarray(chunked.Ft_y), np.asarray(unchunked.Ft_y), rtol=1e-5, atol=1e-5)
@@ -7112,9 +7112,9 @@ def test_sparse_pass2_projection_cache_chunks_non_identity_indices(monkeypatch):
         )
     ]
 
-    monkeypatch.delenv("RECOVAR_PASS2_DUMP_DIR", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", str(1024**3))
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_HYPOTHESES", "1000000")
+    monkeypatch.delenv("RELAX_PASS2_DUMP_DIR", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", str(1024**3))
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_HYPOTHESES", "1000000")
 
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
@@ -7154,7 +7154,7 @@ def test_sparse_pass2_projection_cache_chunks_non_identity_indices(monkeypatch):
         fine_translation_parent_override=fine_translation_parent,
     )
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_CACHED_SCORE_ROT_CHUNK", "64")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_CACHED_SCORE_ROT_CHUNK", "64")
     unchunked = compute_pass2_stats_sparse(**kwargs)
 
     score_chunk_sizes = []
@@ -7165,7 +7165,7 @@ def test_sparse_pass2_projection_cache_chunks_non_identity_indices(monkeypatch):
         return original_score(*args, **score_kwargs)
 
     monkeypatch.setattr(bucketed_mod, "_score_pass2_bucket_relion_gpu_diff2", counting_score)
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_CACHED_SCORE_ROT_CHUNK", "4")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_CACHED_SCORE_ROT_CHUNK", "4")
     chunked = compute_pass2_stats_sparse(**kwargs)
 
     np.testing.assert_allclose(np.asarray(chunked.Ft_y), np.asarray(unchunked.Ft_y), rtol=1e-5, atol=1e-5)
@@ -7203,7 +7203,7 @@ def test_score_log_z_only_matches_full_score_probe(monkeypatch):
     noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
     translations = jnp.array([[0.0, 0.0], [1.0, 0.0]], dtype=jnp.float32)
 
-    monkeypatch.delenv("RECOVAR_PASS2_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_PASS2_DUMP_DIR", raising=False)
     full = compute_pass2_stats_sparse(
         ds,
         volume,
@@ -7327,7 +7327,7 @@ def test_fused_other_class_log_z_matches_two_pass_normalization(monkeypatch):
         fine_translation_parent_override=fine_translation_parent,
     )
 
-    monkeypatch.delenv("RECOVAR_PASS2_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_PASS2_DUMP_DIR", raising=False)
     _, score_a = compute_pass2_stats_sparse(
         ds,
         volume_a,
@@ -7409,7 +7409,7 @@ def test_sparse_pass2_rotation_chunking_matches_unchunked_windowed_path(
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.delenv("RECOVAR_PASS2_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_PASS2_DUMP_DIR", raising=False)
     monkeypatch.delenv(capture_mod.CAPTURE_DIR_ENV, raising=False)
     monkeypatch.delenv(capture_mod.CAPTURE_ITERATION_ENV, raising=False)
     monkeypatch.setattr(capture_mod, "_capture_counter", 0)
@@ -7478,7 +7478,7 @@ def test_sparse_pass2_rotation_chunking_matches_unchunked_windowed_path(
             "maybe_capture_k1_production_bucket",
             fail_if_disabled_capture_is_called,
         )
-        monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", str(1024**3))
+        monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", str(1024**3))
         disabled_unchunked = compute_pass2_stats_sparse(**common)
         monkeypatch.setattr(
             bucketed_mod,
@@ -7490,11 +7490,11 @@ def test_sparse_pass2_rotation_chunking_matches_unchunked_windowed_path(
     monkeypatch.setenv(capture_mod.CAPTURE_ITERATION_ENV, "3")
     try:
         bpref_diagnostics.set_bpref_contribution_dump_context(iteration=3, half=1)
-        monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", str(1024**3))
+        monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", str(1024**3))
         unchunked = compute_pass2_stats_sparse(**common)
         ds.dataset_indices = np.arange(n_images, dtype=np.int64) + n_images
         bpref_diagnostics.set_bpref_contribution_dump_context(iteration=3, half=2)
-        monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", "512")
+        monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", "512")
         chunked = compute_pass2_stats_sparse(**common)
     finally:
         bpref_diagnostics.clear_bpref_contribution_dump_context()
@@ -7646,9 +7646,9 @@ def test_sparse_pass2_rotation_chunking_matches_unchunked_windowed_path(
     common_pruned = dict(common)
     common_pruned["relion_fine_mstep_prune"] = True
     common_pruned["adaptive_fraction"] = 0.5
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", str(1024**3))
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", str(1024**3))
     unchunked_pruned = compute_pass2_stats_sparse(**common_pruned)
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", "512")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", "512")
     chunked_pruned = compute_pass2_stats_sparse(**common_pruned)
     _assert_noise_stats_close((chunked_pruned.noise_stats,), (unchunked_pruned.noise_stats,), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(
@@ -7670,10 +7670,10 @@ def test_sparse_pass2_rotation_chunking_matches_unchunked_windowed_path(
     else:
         assert pruned_rotation_mass < unpruned_rotation_mass
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", str(1024**3))
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", str(1024**3))
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_WINDOWED_PREPARE", "0")
     full_prepare = compute_pass2_stats_sparse(**common)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
     windowed_prepare = compute_pass2_stats_sparse(**common)
     np.testing.assert_allclose(np.asarray(windowed_prepare.Ft_y), np.asarray(full_prepare.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(windowed_prepare.Ft_ctf), np.asarray(full_prepare.Ft_ctf), rtol=1e-5, atol=1e-5)
@@ -7682,18 +7682,18 @@ def test_sparse_pass2_rotation_chunking_matches_unchunked_windowed_path(
     _assert_relion_stats_close(windowed_prepare.relion_stats, full_prepare.relion_stats, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(np.asarray(windowed_prepare.score_log_z), np.asarray(full_prepare.score_log_z), rtol=1e-6, atol=1e-6)
     _assert_noise_stats_close((windowed_prepare.noise_stats,), (full_prepare.noise_stats,), rtol=1e-5, atol=1e-5)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
 
     common_no_noise = dict(common)
     common_no_noise["accumulate_noise"] = False
     external_log_z = np.asarray(unchunked.score_log_z, dtype=np.float64) + 0.25
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", str(1024**3))
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", str(1024**3))
     unchunked_external = compute_pass2_stats_sparse(
         **common_no_noise,
         normalization_log_z=external_log_z,
         normalization_score_mode="gaussian",
     )
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", "512")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", "512")
     chunked_external = compute_pass2_stats_sparse(
         **common_no_noise,
         normalization_log_z=external_log_z,
@@ -7739,9 +7739,9 @@ def test_exact_raw_diff2_cache_matches_fallback_bitwise_and_removes_recompute(mo
     )
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", "512")
-    monkeypatch.delenv("RECOVAR_DISABLE_RELION_EXACT_FINE_GAUSSIAN", raising=False)
-    monkeypatch.delenv("RECOVAR_PASS2_DUMP_DIR", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", "512")
+    monkeypatch.delenv("RELAX_DISABLE_RELION_EXACT_FINE_GAUSSIAN", raising=False)
+    monkeypatch.delenv("RELAX_PASS2_DUMP_DIR", raising=False)
     monkeypatch.setattr(bucketed_mod, "_projection_cache_fits_budget", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(sparse_pass2_window, "_device_memory_limit_bytes", lambda: 80 * 1024**3)
     monkeypatch.setattr(bucketed_mod, "_jax_allocator_free_memory_bytes", lambda: 20 * 1024**3)
@@ -7799,7 +7799,7 @@ def test_exact_raw_diff2_cache_matches_fallback_bitwise_and_removes_recompute(mo
     cached_combined_score_calls = combined_score_calls
 
     combined_score_calls = 0
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_EXACT_RAW_DIFF2_CACHE_MAX_BYTES", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_EXACT_RAW_DIFF2_CACHE_MAX_BYTES", "0")
     disabled = compute_pass2_stats_sparse(**common)
     disabled_combined_score_calls = combined_score_calls
 
@@ -7835,16 +7835,16 @@ def test_sparse_pass2_rotation_chunking_applies_to_relion_x_half_mstep_with_nonm
     )
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "0")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_CURRENT_SIZE", "999")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", "512")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "0")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_CURRENT_SIZE", "999")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", "512")
     if f32_fine_posterior:
-        monkeypatch.setenv("RECOVAR_RELION_X_HALF_F32_FINE_POSTERIOR", "1")
+        monkeypatch.setenv("RELAX_RELION_X_HALF_F32_FINE_POSTERIOR", "1")
     else:
-        monkeypatch.setenv("RECOVAR_RELION_X_HALF_F32_FINE_POSTERIOR", "0")
+        monkeypatch.setenv("RELAX_RELION_X_HALF_F32_FINE_POSTERIOR", "0")
     monkeypatch.setenv(
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
         str(tmp_path / "contributions"),
     )
     monkeypatch.setattr(bucketed_mod, "_projection_cache_fits_budget", lambda *_args, **_kwargs: False)
@@ -7943,7 +7943,7 @@ def test_sparse_pass2_rotation_chunking_applies_to_relion_x_half_mstep_with_nonm
         adaptive_fraction=0.5,
     )
     captured_result = compute_pass2_stats_sparse(**common)
-    monkeypatch.delenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR")
+    monkeypatch.delenv("RELAX_BPREF_CONTRIBUTION_DUMP_DIR")
     baseline_result = compute_pass2_stats_sparse(**common)
 
     assert projection_call_rows
@@ -8014,8 +8014,8 @@ def test_sparse_pass2_chunked_fine_mstep_prune_is_uncapped(monkeypatch):
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.delenv("RECOVAR_PASS2_DUMP_DIR", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", "512")
+    monkeypatch.delenv("RELAX_PASS2_DUMP_DIR", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES", "512")
     monkeypatch.setattr(bucketed_mod, "_projection_cache_fits_budget", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(
         bucketed_mod,
@@ -8192,19 +8192,19 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
         },
     )
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "3")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "3")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "0")
     with pytest.raises(RuntimeError, match="requires fused scoring"):
         _run_sparse_k_class_adaptive_pass2(**kwargs)
     kwargs["engine_kwargs"]["relion_exact_fine_gaussian"] = False
     legacy = _run_sparse_k_class_adaptive_pass2(**kwargs)
     kwargs["engine_kwargs"].pop("relion_exact_fine_gaussian")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "1")
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_STATS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "0")
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_BUCKETS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "1")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_STATS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "0")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_BUCKETS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
 
     def fail_if_compact_pair_scorer_is_called(*args, **kwargs):
         del args, kwargs
@@ -8215,7 +8215,7 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
         "_score_pass2_pairs_relion_gpu_diff2_raw",
         fail_if_compact_pair_scorer_is_called,
     )
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED_NOISE_NORM", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED_NOISE_NORM", "0")
 
     def unsupported_fused_pass2(*args, **kwargs):
         del args, kwargs
@@ -8248,14 +8248,14 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
     )
     assert fused.profile_summary["sparse_kclass_raw_host_staging_s"] >= 0.0
     assert fused.profile_summary["sparse_kclass_exact_relion_gaussian"] is True
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RAW_HOST_STAGING_MAX_BYTES", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_RAW_HOST_STAGING_MAX_BYTES", "1")
     with pytest.raises(MemoryError, match="raw diff2 host staging would exceed"):
         _run_sparse_k_class_adaptive_pass2(**kwargs)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_RAW_HOST_STAGING_MAX_BYTES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_RAW_HOST_STAGING_MAX_BYTES", raising=False)
     assert fused.profile_summary["sparse_kclass_rectangular_active_rows"] is True
     assert fused.profile_summary["sparse_kclass_rectangular_active_prematmul"] is False
     assert fused.profile_summary["sparse_kclass_rectangular_active_rows_min_bucket_size"] == 4096
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS_MIN_BUCKET_SIZE", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS_MIN_BUCKET_SIZE", "1")
     active_fused = _run_sparse_k_class_adaptive_pass2(**kwargs)
     assert active_fused.profile_summary["sparse_kclass_rectangular_active_rows_min_bucket_size"] == 1
     assert active_fused.profile_summary["sparse_kclass_rectangular_mstep_active_rows"] > 0
@@ -8273,8 +8273,8 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
     )
     _assert_noise_residual_terms_close(active_fused.noise_stats, legacy.noise_stats, rtol=1e-5, atol=1e-5)
     _assert_k_class_noise_sumw_matches_class_mass(active_fused, rtol=1e-4, atol=1e-4)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO", "999")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO", "999")
     prematmul_active_fused = _run_sparse_k_class_adaptive_pass2(**kwargs)
     assert prematmul_active_fused.profile_summary["sparse_kclass_rectangular_active_prematmul"] is True
     assert prematmul_active_fused.profile_summary["sparse_kclass_rectangular_active_prematmul_attempts"] > 0
@@ -8303,10 +8303,10 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
         atol=1e-5,
     )
     _assert_k_class_noise_sumw_matches_class_mass(prematmul_active_fused, rtol=1e-4, atol=1e-4)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS_MIN_BUCKET_SIZE", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_FUSED_NOISE_NORM", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS_MIN_BUCKET_SIZE", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_FUSED_NOISE_NORM", raising=False)
     fused_noise_norm = _run_sparse_k_class_adaptive_pass2(**kwargs)
     np.testing.assert_allclose(np.asarray(fused_noise_norm.Ft_y), np.asarray(fused.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(
@@ -8337,9 +8337,9 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
     _assert_k_class_extra_outputs_close(fused_noise_norm, fused)
     assert fused.profile_summary["sparse_kclass_fused_noise_norm"] is False
     assert fused_noise_norm.profile_summary["sparse_kclass_fused_noise_norm"] is True
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_FUSED_NOISE_NORM", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_BUCKETS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_STATS", "1")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_FUSED_NOISE_NORM", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_BUCKETS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_STATS", "1")
     compact = _run_sparse_k_class_adaptive_pass2(**kwargs)
 
     np.testing.assert_allclose(np.asarray(fused.Ft_y), np.asarray(legacy.Ft_y), rtol=1e-5, atol=1e-5)
@@ -8381,9 +8381,9 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
         # covered separately and rejects this full-spectrum configuration.
         "relion_exact_fine_gaussian": False,
     }
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_WINDOWED_PREPARE", "0")
     window_full_prepare = _run_sparse_k_class_adaptive_pass2(**window_kwargs)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
     windowed_prepare = _run_sparse_k_class_adaptive_pass2(**window_kwargs)
     np.testing.assert_allclose(
         np.asarray(windowed_prepare.Ft_y),
@@ -8424,14 +8424,14 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
     _assert_k_class_extra_outputs_close(windowed_prepare, window_full_prepare)
     assert window_full_prepare.profile_summary["sparse_kclass_windowed_prepare"] is False
     assert windowed_prepare.profile_summary["sparse_kclass_windowed_prepare"] is True
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "0")
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_BUCKETS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_STATS", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "0")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_BUCKETS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_STATS", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_WINDOWED_PREPARE", "0")
     legacy_window_full_prepare = _run_sparse_k_class_adaptive_pass2(**window_kwargs)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
     legacy_windowed_prepare = _run_sparse_k_class_adaptive_pass2(**window_kwargs)
     np.testing.assert_allclose(
         np.asarray(legacy_windowed_prepare.Ft_y),
@@ -8470,10 +8470,10 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
         atol=1e-6,
     )
     _assert_k_class_extra_outputs_close(legacy_windowed_prepare, legacy_window_full_prepare)
-    monkeypatch.delenv("RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_BUCKETS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_STATS", "1")
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_WINDOWED_PREPARE", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_BUCKETS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_STATS", "1")
 
     np.testing.assert_allclose(np.asarray(compact.Ft_y), np.asarray(fused.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(compact.Ft_ctf), np.asarray(fused.Ft_ctf), rtol=1e-5, atol=1e-5)
@@ -8509,10 +8509,10 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
         "_score_pass2_pairs_relion_gpu_diff2_raw",
         _score_pass2_pairs_relion_gpu_diff2_raw,
     )
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_BUCKETS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_BUCKETS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
     compact_pairs = _run_sparse_k_class_adaptive_pass2(**kwargs)
     np.testing.assert_allclose(np.asarray(compact_pairs.Ft_y), np.asarray(fused.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(compact_pairs.Ft_ctf), np.asarray(fused.Ft_ctf), rtol=1e-5, atol=1e-5)
@@ -8547,7 +8547,7 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
     assert compact_pairs.profile_summary["sparse_kclass_compact_mstep_active_ratio"] <= 1.0
     assert compact_pairs.profile_summary["sparse_kclass_compact_mstep_padded_active_ratio"] <= 1.0
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", "0")
     compact_pairs_no_active = _run_sparse_k_class_adaptive_pass2(**kwargs)
     np.testing.assert_allclose(
         np.asarray(compact_pairs_no_active.Ft_y),
@@ -8589,11 +8589,11 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
     assert compact_pairs_no_active.profile_summary["sparse_kclass_compact_pairs"] is True
     assert compact_pairs_no_active.profile_summary["sparse_kclass_compact_active_rows"] is False
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "0")
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS_MIN_BUCKET_SIZE", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "0")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS_MIN_BUCKET_SIZE", "1")
     rectangular_active = _run_sparse_k_class_adaptive_pass2(**kwargs)
     np.testing.assert_allclose(
         np.asarray(rectangular_active.Ft_y),
@@ -8642,8 +8642,8 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
     )
     assert rectangular_active.profile_summary["sparse_kclass_rectangular_mstep_active_ratio"] <= 1.0
     assert rectangular_active.profile_summary["sparse_kclass_rectangular_mstep_padded_active_ratio"] <= 1.0
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO", "999")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO", "999")
     rectangular_active_prematmul = _run_sparse_k_class_adaptive_pass2(**kwargs)
     np.testing.assert_allclose(
         np.asarray(rectangular_active_prematmul.Ft_y),
@@ -8701,11 +8701,11 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
     assert rectangular_active_prematmul.profile_summary[
         "sparse_kclass_rectangular_mstep_padded_active_ratio"
     ] <= 1.0
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS_MIN_BUCKET_SIZE", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS_MIN_BUCKET_SIZE", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
 
     scorer_calls = {"rectangular": 0, "compact_pair": 0}
 
@@ -8727,7 +8727,7 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
         "_score_pass2_pairs_relion_gpu_diff2_raw",
         counting_compact_pair_score,
     )
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "32")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "32")
     hybrid = _run_sparse_k_class_adaptive_pass2(**kwargs)
     np.testing.assert_allclose(np.asarray(hybrid.Ft_y), np.asarray(fused.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(hybrid.Ft_ctf), np.asarray(fused.Ft_ctf), rtol=1e-5, atol=1e-5)
@@ -8763,7 +8763,7 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
     )
 
     scorer_calls = {"rectangular": 0, "compact_pair": 0}
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", "1")
     hybrid_active = _run_sparse_k_class_adaptive_pass2(**kwargs)
     np.testing.assert_allclose(np.asarray(hybrid_active.Ft_y), np.asarray(fused.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(hybrid_active.Ft_ctf), np.asarray(fused.Ft_ctf), rtol=1e-5, atol=1e-5)
@@ -8811,11 +8811,11 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
         "_score_pass2_pairs_relion_gpu_diff2",
         _score_pass2_pairs_relion_gpu_diff2,
     )
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_BUCKETS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", "1")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_BUCKETS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", "1")
     checked = _run_sparse_k_class_adaptive_pass2(**kwargs)
     assert checked.profile_summary["sparse_kclass_compact_pair_check_rows"] > 0
     np.testing.assert_allclose(np.asarray(checked.Ft_y), np.asarray(fused.Ft_y), rtol=1e-6, atol=1e-6)
@@ -8835,7 +8835,7 @@ def test_fused_sparse_k1_default_compact_pairs_matches_existing_sparse_path(monk
     from relax.sampling import rotation_grid_size
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "3")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "3")
 
     n_images = 5
     n_classes = 1
@@ -8897,12 +8897,12 @@ def test_fused_sparse_k1_default_compact_pairs_matches_existing_sparse_path(monk
         },
     )
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "0")
     legacy = _run_sparse_k_class_adaptive_pass2(**kwargs)
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
     fused = _run_sparse_k_class_adaptive_pass2(**kwargs)
 
     np.testing.assert_allclose(np.asarray(fused.Ft_y), np.asarray(legacy.Ft_y), rtol=1e-5, atol=1e-5)
@@ -8957,8 +8957,8 @@ def test_fused_sparse_k_class_capture_requires_companion_contribution_dump(monke
     assert "bpref_device_signature_active" in signature.parameters
 
     monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "/tmp/device")
-    monkeypatch.delenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR", raising=False)
-    with pytest.raises(RuntimeError, match="requires RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR"):
+    monkeypatch.delenv("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", raising=False)
+    with pytest.raises(RuntimeError, match="requires RELAX_BPREF_CONTRIBUTION_DUMP_DIR"):
         bucketed_mod.compute_k_class_pass2_stats_sparse_fused(
             None,
             np.zeros((2, 1), dtype=np.complex64),
@@ -8981,7 +8981,7 @@ def test_bpref_contribution_stop_requires_completed_target_files(monkeypatch, tm
 
     contribution_path = tmp_path / "contribution.npz"
     device_path = tmp_path / "contribution.device.npz"
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_STOP_AFTER_TARGET", "1")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_STOP_AFTER_TARGET", "1")
     monkeypatch.delenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", raising=False)
 
     with pytest.raises(RuntimeError, match="missing its contribution file"):
@@ -9029,16 +9029,16 @@ def test_fused_sparse_k_class_capture_is_observational(monkeypatch, tmp_path, tr
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", "0")
     monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", str(tmp_path / "device"))
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR", str(tmp_path / "contributions"))
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES", "0")
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_CLASS", "2")
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION", "1")
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", "1")
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS", "1")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", str(tmp_path / "contributions"))
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES", "0")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_CLASS", "2")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION", "1")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", "1")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS", "1")
     monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY", "1")
     monkeypatch.setattr(bpref_diagnostics, "_require_bpref_device_soft_particle_arm", lambda **_kwargs: None)
     monkeypatch.setattr(
@@ -9111,14 +9111,14 @@ def test_fused_sparse_k_class_capture_is_observational(monkeypatch, tmp_path, tr
 
 
 def test_sparse_kclass_fused_default_keeps_k1_on_single_class_path(monkeypatch):
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_FUSED", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_FUSED", raising=False)
     assert _use_fused_sparse_k_class_pass2(1) is False
     assert _use_fused_sparse_k_class_pass2(2) is True
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "1")
     assert _use_fused_sparse_k_class_pass2(1) is True
 
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "0")
     assert _use_fused_sparse_k_class_pass2(2) is False
 
 
@@ -9129,12 +9129,12 @@ def test_compact_pair_half_spectrum_reuses_mstep_sums_for_noise(monkeypatch):
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "3")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_STATS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "3")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_STATS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
 
     n_images = 5
     n_coarse_rot = rotation_grid_size(1)
@@ -9210,10 +9210,10 @@ def test_compact_pair_half_spectrum_reuses_mstep_sums_for_noise(monkeypatch):
             counting_weighted_sums,
         )
         if enabled is None:
-            monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS", raising=False)
+            monkeypatch.delenv("RELAX_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS", raising=False)
         else:
             monkeypatch.setenv(
-                "RECOVAR_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS",
+                "RELAX_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS",
                 "1" if enabled else "0",
             )
         result = _run_sparse_k_class_adaptive_pass2(**kwargs)
@@ -9250,7 +9250,7 @@ def test_compact_pair_half_spectrum_reuses_mstep_sums_for_noise(monkeypatch):
     _assert_k_class_extra_outputs_close(reused, disabled)
     _assert_k_class_extra_outputs_close(defaulted, disabled)
 
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS", raising=False)
 
 
 def test_compact_pair_tail_coalesced_execution_matches_uncoalesced(monkeypatch):
@@ -9259,13 +9259,13 @@ def test_compact_pair_tail_coalesced_execution_matches_uncoalesced(monkeypatch):
     from relax.sampling import rotation_grid_size
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "16")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_HYPOTHESES", "1000000")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_STATS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "16")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_HYPOTHESES", "1000000")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_STATS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
 
     n_images = 4
     n_coarse_rot = rotation_grid_size(1)
@@ -9359,12 +9359,12 @@ def test_compact_pair_tail_coalesced_execution_matches_uncoalesced(monkeypatch):
         _assert_k_class_extra_outputs_close(actual, expected)
 
     for active_rows in ("1", "0"):
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", active_rows)
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES", "0")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", active_rows)
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES", "0")
         uncoalesced = _run_sparse_k_class_adaptive_pass2(**kwargs)
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES", "4")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_INFLATION", "2.0")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MIN_BUCKET_SIZE", "16")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES", "4")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_INFLATION", "2.0")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MIN_BUCKET_SIZE", "16")
         coalesced = _run_sparse_k_class_adaptive_pass2(**kwargs)
 
         assert coalesced.profile_summary["sparse_kclass_compact_pair_buckets"] < uncoalesced.profile_summary[
@@ -9378,10 +9378,10 @@ def test_compact_pair_tail_coalesced_execution_matches_uncoalesced(monkeypatch):
         assert coalesced.profile_summary["sparse_kclass_compact_pair_tail_coalesce_min_bucket_size"] == 16
         assert_same_result(coalesced, uncoalesced)
 
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_INFLATION", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MIN_BUCKET_SIZE", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_IMAGES", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MAX_INFLATION", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_TAIL_COALESCE_MIN_BUCKET_SIZE", raising=False)
 
 
 def test_compact_pair_masked_scoring_reuses_noise_ctf_sums(monkeypatch):
@@ -9391,12 +9391,12 @@ def test_compact_pair_masked_scoring_reuses_noise_ctf_sums(monkeypatch):
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "3")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_STATS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "3")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_STATS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
 
     n_images = 5
     n_coarse_rot = rotation_grid_size(1)
@@ -9493,7 +9493,7 @@ def test_compact_pair_masked_scoring_reuses_noise_ctf_sums(monkeypatch):
             counting_fused_sums,
         )
         monkeypatch.setenv(
-            "RECOVAR_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS",
+            "RELAX_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS",
             "1" if enabled else "0",
         )
         result = _run_sparse_k_class_adaptive_pass2(**kwargs)
@@ -9537,7 +9537,7 @@ def test_compact_pair_masked_scoring_reuses_noise_ctf_sums(monkeypatch):
     _assert_noise_stats_close(reused.noise_stats, disabled.noise_stats, rtol=1e-5, atol=1e-5)
     _assert_k_class_extra_outputs_close(reused, disabled)
 
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS", raising=False)
 
 
 def test_fused_sparse_k_class_relion_half_mstep_keeps_half_accumulators(monkeypatch):
@@ -9547,11 +9547,11 @@ def test_fused_sparse_k_class_relion_half_mstep_keeps_half_accumulators(monkeypa
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "1")
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_STATS", raising=False)
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "0")
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_BUCKETS", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "1")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_STATS", raising=False)
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "0")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_BUCKETS", raising=False)
 
     def fail_if_full_expansion_is_called(*_args, **_kwargs):
         raise AssertionError("sparse fused K-class should keep half-volume accumulators")
@@ -9620,10 +9620,10 @@ def test_fused_sparse_k_class_fine_mstep_pruning(
     from relax.sampling import rotation_grid_size
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE", prune_flag)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE", prune_flag)
 
     n_images = 2
     n_classes = 2
@@ -9844,8 +9844,8 @@ def test_compact_pair_filter_routes_complement_masks_to_rectangular():
 def test_compact_pair_xhalf_gpu_matches_rectangular_fused(monkeypatch, raw_device_budget):
     """GPU-only guard for compact-pair parity in RELION x-half M-step mode."""
 
-    if os.environ.get("RECOVAR_RUN_CUDA_XHALF_TEST") != "1":
-        pytest.skip("set RECOVAR_RUN_CUDA_XHALF_TEST=1 to run the CUDA x-half compact-pair guard")
+    if os.environ.get("RELAX_RUN_CUDA_XHALF_TEST") != "1":
+        pytest.skip("set RELAX_RUN_CUDA_XHALF_TEST=1 to run the CUDA x-half compact-pair guard")
 
     import jax
 
@@ -9920,13 +9920,13 @@ def test_compact_pair_xhalf_gpu_matches_rectangular_fused(monkeypatch, raw_devic
         },
     )
 
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "3")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MSTEP", "pair_sparse")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "3")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MSTEP", "pair_sparse")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "0")
     fused = _run_sparse_k_class_adaptive_pass2(**kwargs)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
     compact_pairs = _run_sparse_k_class_adaptive_pass2(**kwargs)
 
     for result in (fused, compact_pairs):
@@ -10075,14 +10075,14 @@ def test_sparse_pass2_native_firstiter_preserves_prefix_and_normalizes_once(
 
     for name in (
         "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR",
-        "RECOVAR_BPREF_MEMBERSHIP_DUMP_DIR",
-        "RECOVAR_BPREF_ACCUMULATOR_DELTA_DUMP_DIR",
-        "RECOVAR_PASS2_DUMP_DIR",
-        "RECOVAR_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION",
-        "RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
-        "RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS",
-        "RECOVAR_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
+        "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
+        "RELAX_BPREF_ACCUMULATOR_DELTA_DUMP_DIR",
+        "RELAX_PASS2_DUMP_DIR",
+        "RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION",
+        "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
+        "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",
+        "RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
         sparse_pass2_policy._BPREF_EXECUTION_ORDER_LOCAL_FILE_ENV,
         sparse_pass2_policy._BPREF_REVERSE_PHYSICAL_ORDER_ENV,
         sparse_pass2_policy._BPREF_EXECUTION_BATCH_CONSECUTIVE_EQUAL_SUPPORT_ENV,
@@ -10272,14 +10272,14 @@ def test_sparse_pass2_deferred_firstiter_bpref_runs_full_driver_lifecycle(
 
     for name in (
         "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR",
-        "RECOVAR_BPREF_MEMBERSHIP_DUMP_DIR",
-        "RECOVAR_BPREF_ACCUMULATOR_DELTA_DUMP_DIR",
-        "RECOVAR_PASS2_DUMP_DIR",
-        "RECOVAR_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION",
-        "RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
-        "RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS",
-        "RECOVAR_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
+        "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
+        "RELAX_BPREF_ACCUMULATOR_DELTA_DUMP_DIR",
+        "RELAX_PASS2_DUMP_DIR",
+        "RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION",
+        "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
+        "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",
+        "RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
         sparse_pass2_policy._BPREF_EXECUTION_ORDER_LOCAL_FILE_ENV,
         sparse_pass2_policy._BPREF_REVERSE_PHYSICAL_ORDER_ENV,
         sparse_pass2_policy._BPREF_EXECUTION_BATCH_CONSECUTIVE_EQUAL_SUPPORT_ENV,

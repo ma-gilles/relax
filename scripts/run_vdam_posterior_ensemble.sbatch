@@ -14,8 +14,8 @@ set -euo pipefail
 : "${NATIVE_PANEL_ROOT:?set the root containing repeat-NN/capture directories}"
 : "${NATIVE_REPEAT_COUNT:?set the native repeat count}"
 : "${RELION_DATA_STAR:?set the matching RELION data STAR}"
-: "${RECOVAR_HALF1_DIRECTORY:?set the half-1 contribution directory}"
-: "${RECOVAR_HALF2_DIRECTORY:?set the half-2 contribution directory}"
+: "${RELAX_HALF1_DIRECTORY:?set the half-1 contribution directory}"
+: "${RELAX_HALF2_DIRECTORY:?set the half-2 contribution directory}"
 : "${OUTPUT_JSON:?set a new output JSON path}"
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -29,8 +29,8 @@ export RATTLER_CACHE_DIR="/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/runtime/$
 mkdir -p "${TMPDIR}" "${PIXI_HOME}" "${RATTLER_CACHE_DIR}" /scratch/gpfs/GILLES/mg6942/slurmo
 
 PIXI_PY="${REPO_ROOT}/.pixi/envs/default/bin/python"
-mapfile -t HALF1_CAPTURES < <(find "${RECOVAR_HALF1_DIRECTORY}" -maxdepth 1 -type f -name '*.npz' | sort)
-mapfile -t HALF2_CAPTURES < <(find "${RECOVAR_HALF2_DIRECTORY}" -maxdepth 1 -type f -name '*.npz' | sort)
+mapfile -t HALF1_CAPTURES < <(find "${RELAX_HALF1_DIRECTORY}" -maxdepth 1 -type f -name '*.npz' | sort)
+mapfile -t HALF2_CAPTURES < <(find "${RELAX_HALF2_DIRECTORY}" -maxdepth 1 -type f -name '*.npz' | sort)
 test "${#HALF1_CAPTURES[@]}" -eq 2
 test "${#HALF2_CAPTURES[@]}" -eq 2
 test "${NATIVE_REPEAT_COUNT}" -ge 2

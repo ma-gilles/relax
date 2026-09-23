@@ -16,9 +16,9 @@ from scripts.analyze_k1_half1_raw_accumulator import _load_recovar
 @pytest.mark.parametrize("run_id", [None, "repeat-2"])
 def test_dump_round_trip(tmp_path, monkeypatch, stage, loaded_stage, dtype, run_id):
     if run_id is None:
-        monkeypatch.delenv("RECOVAR_BPREF_BOUNDARY_DUMP_RUN_ID", raising=False)
+        monkeypatch.delenv("RELAX_BPREF_BOUNDARY_DUMP_RUN_ID", raising=False)
     else:
-        monkeypatch.setenv("RECOVAR_BPREF_BOUNDARY_DUMP_RUN_ID", run_id)
+        monkeypatch.setenv("RELAX_BPREF_BOUNDARY_DUMP_RUN_ID", run_id)
     numerators = [np.array([1 + 2j, 3 - 4j], dtype=dtype), np.array([5j, 6], dtype=dtype)]
     weights = [np.array([7 + 8j, 9], dtype=dtype), np.array([10, 11j], dtype=dtype)]
     original = [value.copy() for value in numerators + weights]

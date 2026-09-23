@@ -22,7 +22,7 @@ PIXI_PY="${PIXI_PY_OVERRIDE:-${REPO_ROOT}/.pixi/envs/default/bin/python}"
 cd "${REPO_ROOT}"
 SOURCE_GIT_HEAD="$(git rev-parse HEAD)"
 EXPECTED_REPO_HEAD="${EXPECTED_REPO_HEAD:-}"
-RECOVAR_CUDA_LIB_PATH="${RECOVAR_CUDA_LIB_OVERRIDE:-${REPO_ROOT}/relax/cuda/librelax_cuda.so}"
+RELAX_CUDA_LIB_PATH="${RELAX_CUDA_LIB_OVERRIDE:-${REPO_ROOT}/relax/cuda/librelax_cuda.so}"
 EXPECTED_CUDA_SHA256="${EXPECTED_CUDA_SHA256:-}"
 if [[ -n "${EXPECTED_REPO_HEAD}" ]] && [[ "${SOURCE_GIT_HEAD}" != "${EXPECTED_REPO_HEAD}" ]]; then
   echo "VDAM real-data qualification source differs from EXPECTED_REPO_HEAD" >&2
@@ -32,15 +32,15 @@ if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   echo "VDAM real-data qualification requires a clean tracked worktree" >&2
   exit 2
 fi
-test -s "${RECOVAR_CUDA_LIB_PATH}"
-CUDA_LIBRARY_SHA256="$(sha256sum "${RECOVAR_CUDA_LIB_PATH}" | awk '{print $1}')"
+test -s "${RELAX_CUDA_LIB_PATH}"
+CUDA_LIBRARY_SHA256="$(sha256sum "${RELAX_CUDA_LIB_PATH}" | awk '{print $1}')"
 if [[ -n "${EXPECTED_CUDA_SHA256}" ]] && [[ "${CUDA_LIBRARY_SHA256}" != "${EXPECTED_CUDA_SHA256}" ]]; then
   echo "VDAM real-data CUDA library differs from EXPECTED_CUDA_SHA256" >&2
   exit 2
 fi
 
 unset PYTHONPATH PYTHONHOME CONDA_PREFIX VIRTUAL_ENV
-unset JAX_PLATFORMS JAX_PLATFORM_NAME RECOVAR_DISABLE_CUDA RECOVAR_CUDA_DISABLE
+unset JAX_PLATFORMS JAX_PLATFORM_NAME RECOVAR_DISABLE_CUDA RELAX_CUDA_DISABLE
 export PYTHONNOUSERSITE=1
 export PYTHONUNBUFFERED=1
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
@@ -49,10 +49,10 @@ if [[ "${VDAM_ALLOW_ASYNC_CUDA:-}" =~ ^(1|true|TRUE|yes|YES|on|ON)$ ]] &&
   echo "VDAM_ALLOW_ASYNC_CUDA and VDAM_DETERMINISTIC_CUDA are mutually exclusive" >&2
   exit 2
 fi
-RECOVAR_CUDA_MODE_ARGS=()
+RELAX_CUDA_MODE_ARGS=()
 if [[ "${VDAM_DETERMINISTIC_CUDA:-}" =~ ^(1|true|TRUE|yes|YES|on|ON)$ ]]; then
   export CUDA_LAUNCH_BLOCKING=1
-  RECOVAR_CUDA_MODE_ARGS+=(--deterministic_cuda)
+  RELAX_CUDA_MODE_ARGS+=(--deterministic_cuda)
 else
   export CUDA_LAUNCH_BLOCKING=0
 fi
@@ -68,8 +68,8 @@ export RATTLER_CACHE_DIR="${RUNTIME_ROOT}/rattler_cache"
 export RECOVAR_CACHE_DIR="${RECOVAR_CACHE_DIR-}"
 export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-${OUTPUT_ROOT}/jax_cache}"
 export JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS="${JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS:-0}"
-export RECOVAR_RELAX_CUDA_LIB="${RECOVAR_CUDA_LIB_PATH}"
-export RECOVAR_CUDA_LIB_SHA256="${CUDA_LIBRARY_SHA256}"
+export RECOVAR_RELAX_CUDA_LIB="${RELAX_CUDA_LIB_PATH}"
+export RELAX_CUDA_LIB_SHA256="${CUDA_LIBRARY_SHA256}"
 mkdir -p "${TMPDIR}" "${PIXI_HOME}" "${RATTLER_CACHE_DIR}" "${JAX_COMPILATION_CACHE_DIR}" \
   "${OUTPUT_ROOT}/relion" "${OUTPUT_ROOT}/recovar" /scratch/gpfs/GILLES/mg6942/slurmo
 touch "${OUTPUT_ROOT}/SAFE_TO_DELETE"
@@ -143,7 +143,7 @@ RELION_CMD=(
   --j "${SLURM_CPUS_PER_TASK:-8}" --gpu 0
 )
 
-RECOVAR_CMD=(
+RELAX_CMD=(
   "${PIXI_PY}" -m relax.commands.initial_model
   --i "${INPUT_STAR}" --o "${OUTPUT_ROOT}/recovar/run"
   --nr_iter "${NR_ITER}" --grad_write_iter 1 --K "${K}" --tau2_fudge "${TAU2_FUDGE}"
@@ -153,10 +153,10 @@ RECOVAR_CMD=(
   --offset_step "${OFFSET_STEP}" --padding_factor "${PAD}"
   --image_batch_size "${IMAGE_BATCH_SIZE}" --datadir "${DATA_DIR}"
   --gpu 0 --require-custom-cuda
-  "${RECOVAR_CUDA_MODE_ARGS[@]}"
+  "${RELAX_CUDA_MODE_ARGS[@]}"
 )
 
-"${PIXI_PY}" - "${OUTPUT_ROOT}" "${RELION_CMD[@]}" __RECOVAR_COMMAND__ "${RECOVAR_CMD[@]}" <<'PY'
+"${PIXI_PY}" - "${OUTPUT_ROOT}" "${RELION_CMD[@]}" __RECOVAR_COMMAND__ "${RELAX_CMD[@]}" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -177,8 +177,8 @@ SECONDS=0
 RELION_WALL_S="${SECONDS}"
 GPU_UUID_AFTER_RELION="$(nvidia-smi --query-gpu=uuid --format=csv,noheader | tr -d '[:space:]')"
 SECONDS=0
-"${RECOVAR_CMD[@]}" >"${OUTPUT_ROOT}/recovar/recovar.log" 2>&1
-RECOVAR_WALL_S="${SECONDS}"
+"${RELAX_CMD[@]}" >"${OUTPUT_ROOT}/recovar/recovar.log" 2>&1
+RELAX_WALL_S="${SECONDS}"
 GPU_UUID_AFTER_RECOVAR="$(nvidia-smi --query-gpu=uuid --format=csv,noheader | tr -d '[:space:]')"
 test "${GPU_UUID_BEFORE}" = "${GPU_UUID_AFTER_RELION}"
 test "${GPU_UUID_BEFORE}" = "${GPU_UUID_AFTER_RECOVAR}"
@@ -193,7 +193,7 @@ if [[ "$(git rev-parse HEAD)" != "${SOURCE_GIT_HEAD}" ]] ||
   exit 2
 fi
 
-"${PIXI_PY}" - "${OUTPUT_ROOT}" "${SCORECARD}" "${CASE_ID}" "${RELION_WALL_S}" "${RECOVAR_WALL_S}" "${GPU_UUID_BEFORE}" "${RELION_REFINE}" "${SOURCE_GIT_HEAD}" <<'PY'
+"${PIXI_PY}" - "${OUTPUT_ROOT}" "${SCORECARD}" "${CASE_ID}" "${RELION_WALL_S}" "${RELAX_WALL_S}" "${GPU_UUID_BEFORE}" "${RELION_REFINE}" "${SOURCE_GIT_HEAD}" <<'PY'
 import hashlib
 import json
 import os
@@ -247,13 +247,13 @@ report = {
     "relion_wall_s": int(sys.argv[4]),
     "recovar_wall_s": int(sys.argv[5]),
     "cuda_library": os.environ["RECOVAR_RELAX_CUDA_LIB"],
-    "cuda_library_sha256": os.environ["RECOVAR_CUDA_LIB_SHA256"],
+    "cuda_library_sha256": os.environ["RELAX_CUDA_LIB_SHA256"],
     "cuda_launch_blocking": os.environ.get("CUDA_LAUNCH_BLOCKING") == "1",
     "cuda_launch_blocking_value": os.environ.get("CUDA_LAUNCH_BLOCKING"),
     "recovar_cache_dir": os.environ.get("RECOVAR_CACHE_DIR"),
     "jax_compilation_cache_dir": os.environ.get("JAX_COMPILATION_CACHE_DIR"),
     "relion_x_half_f32_fine_posterior": os.environ.get(
-        "RECOVAR_RELION_X_HALF_F32_FINE_POSTERIOR"
+        "RELAX_RELION_X_HALF_F32_FINE_POSTERIOR"
     ),
 }
 (root / "run_provenance.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")

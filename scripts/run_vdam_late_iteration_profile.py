@@ -52,7 +52,7 @@ _PROFILE_RUNTIME_ENVIRONMENT = frozenset(
 )
 _PROFILE_ALL_OPTIMIZED_Q32_EXTRA_ENVIRONMENT = {
     "RECOVAR_COARSE_GAUSSIAN_GEMM_HYBRID_BLOCK_CAPACITY": "64",
-    "RECOVAR_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE": "200",
+    "RELAX_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE": "200",
     "RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB": "2",
     "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB": "40",
     "RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT": "0",
@@ -68,8 +68,8 @@ _PROFILE_ALL_OPTIMIZED_Q32_EXTRA_ENVIRONMENT = {
     "RECOVAR_K1_RELION_EXACT_COARSE_OPERANDS": "1",
     "RECOVAR_K1_RELION_F32_COARSE_SUPPORT": "1",
     "RECOVAR_RELION_COARSE_CANONICAL_REDUCTION": "0",
-    "RECOVAR_RELION_BATCHED_POSTERIOR_PRIMITIVES": "1",
-    "RECOVAR_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM": "32",
+    "RELAX_RELION_BATCHED_POSTERIOR_PRIMITIVES": "1",
+    "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM": "32",
 }
 _NATIVE_REUSE_RELOCATABLE_SUFFIXES = (
     Path("scripts/vdam_relion_one_iteration.gdb"),
@@ -470,7 +470,7 @@ def _validate_sealed_recovar_environment(
     effective = {
         name: environ[name]
         for name in sorted(environ)
-        if name.startswith("RECOVAR_")
+        if name.startswith(("RECOVAR_", "RELAX_"))
     }
     if effective != dict(sorted(expected.items())):
         raise RuntimeError(
@@ -1981,7 +1981,7 @@ def main(argv: list[str] | None = None) -> int:
             if cache_events is not None:
                 reports[label]["raw_image_cache_audit"] = {
                     "mode": os.environ.get("RECOVAR_EM_RAW_IMAGE_CACHE", "auto"),
-                    "max_gb": float(os.environ.get("RECOVAR_EM_RAW_IMAGE_CACHE_MAX_GB", "16")),
+                    "max_gb": float(os.environ.get("RELAX_EM_RAW_IMAGE_CACHE_MAX_GB", "16")),
                     "load_all_events": [dict(event) for event in cache_events[event_start:]],
                 }
             if compile_records is not None:

@@ -1016,7 +1016,7 @@ def _reconstruct_and_postprocess_means(
 
     for k in range(2):
         # Diagnostic: dump pre-mask Wiener output when env var set.
-        _premask_dump = os.environ.get("RECOVAR_PREMASK_DUMP_DIR")
+        _premask_dump = os.environ.get("RELAX_PREMASK_DUMP_DIR")
         if _premask_dump:
             from relax.diagnostics.reconstruction import write_premask_mean
 
@@ -1199,21 +1199,21 @@ def _large_irfft_requires_explicit_normalization(volume_shape) -> bool:
 def _large_relion_host_irfft_enabled(volume_shape) -> bool:
     """Return whether a padded RELION inverse FFT should execute on the host."""
 
-    mode = os.environ.get("RECOVAR_RELION_HOST_IRFFT", "auto").strip().lower()
+    mode = os.environ.get("RELAX_RELION_HOST_IRFFT", "auto").strip().lower()
     if mode in {"0", "false", "no", "off", "never"}:
         return False
     if mode in {"1", "true", "yes", "on", "always"}:
         return True
     if mode != "auto":
         logger.warning(
-            "Unrecognised RECOVAR_RELION_HOST_IRFFT=%r; using auto",
+            "Unrecognised RELAX_RELION_HOST_IRFFT=%r; using auto",
             mode,
         )
     return _large_irfft_requires_explicit_normalization(volume_shape)
 
 
 def _relion_host_fft_workers() -> int:
-    configured = os.environ.get("RECOVAR_RELION_HOST_FFT_WORKERS")
+    configured = os.environ.get("RELAX_RELION_HOST_FFT_WORKERS")
     if configured is None:
         configured = os.environ.get("SLURM_CPUS_PER_TASK", "1")
     try:

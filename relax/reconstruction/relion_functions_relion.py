@@ -110,7 +110,7 @@ def _pad_volume_for_projection_host(
     (``pad_volume_for_projection``, called every iteration whenever
     ``projection_padding_factor > 1``). Hardcoding complex64 here silently
     discarded whatever double precision the caller had already arranged
-    for the input volume, regardless of RECOVAR_USE_FLOAT64_PROJECTIONS.
+    for the input volume, regardless of RELAX_USE_FLOAT64_PROJECTIONS.
     """
 
     N = int(volume_shape[0])

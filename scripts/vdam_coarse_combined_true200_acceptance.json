@@ -308,6 +308,7 @@
   "runtime_contract": {
     "override_prefixes_rejected_unless_allowlisted": [
       "RECOVAR_",
+      "RELAX_",
       "VDAM_",
       "JAX_",
       "XLA_",

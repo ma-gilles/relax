@@ -18,7 +18,7 @@ def test_pipeline_tail_knob_defaults_on_and_is_disableable(monkeypatch):
     assert bucketed._pipeline_tail_enabled() is True
     monkeypatch.setenv(bucketed._PIPELINE_TAIL_ENV, "0")
     assert bucketed._pipeline_tail_enabled() is False
-    assert bucketed._PIPELINE_TAIL_ENV == "RECOVAR_SPARSE_PASS2_PIPELINE_TAIL"
+    assert bucketed._PIPELINE_TAIL_ENV == "RELAX_SPARSE_PASS2_PIPELINE_TAIL"
 
 
 def test_runner_preserves_submission_order_and_runs_off_main_thread():
@@ -122,7 +122,7 @@ def test_bucket_loop_leaves_no_namespace_cycle(monkeypatch):
 
     monkeypatch.setattr(bucketed._BucketTailRunner, "submit", counting_submit)
     # Keep one bucket per rotation-count size, as for a production-size dataset.
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_AUTO_SMALL_BUCKET_COALESCE_MAX_IMAGES", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_AUTO_SMALL_BUCKET_COALESCE_MAX_IMAGES", "0")
     sig_indices = [
         np.array([0, 1], dtype=np.int32),
         np.array([0, 1, 2, 3, 4], dtype=np.int32),

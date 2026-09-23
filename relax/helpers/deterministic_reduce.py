@@ -3,7 +3,7 @@
 ``array.at[ids].add(values)`` with repeated ids lowers to GPU atomics whose
 association order depends on the scheduler, so float sums differ at the ulp
 level between otherwise identical runs.  Under
-``RECOVAR_EM_DETERMINISTIC_REDUCTIONS=1`` the EM engines route their
+``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` the EM engines route their
 duplicate-index accumulations (per-shell noise/power binning, per-group scale
 terms, per-image residual totals) through :func:`fixed_order_segment_sum`,
 a masked reduction whose order is fixed by XLA.  Same operands and dtype; only
@@ -18,7 +18,7 @@ import numpy as np
 
 from relax.helpers.env_flags import parse_env_binary_flag
 
-DETERMINISTIC_REDUCTIONS_ENV = "RECOVAR_EM_DETERMINISTIC_REDUCTIONS"
+DETERMINISTIC_REDUCTIONS_ENV = "RELAX_EM_DETERMINISTIC_REDUCTIONS"
 
 
 def deterministic_reductions_enabled() -> bool:

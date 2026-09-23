@@ -20,25 +20,25 @@ from relax.scoring.coarse_gaussian_gemm import (
     _K1_RELION_F32_COARSE_SUPPORT_ENV,
 )
 
-_RELION_ACC_DOUBLE_FLOORF_QUIRK_ENV = "RECOVAR_RELION_ACC_DOUBLE_FLOORF_QUIRK"
+_RELION_ACC_DOUBLE_FLOORF_QUIRK_ENV = "RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK"
 
 
 _K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS_ENV = (
-    "RECOVAR_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS"
+    "RELAX_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS"
 )
 
 
 _K1_RELION_EXACT_COARSE_ASSEMBLY_PROFILE_ENV = (
-    "RECOVAR_K1_RELION_EXACT_COARSE_ASSEMBLY_PROFILE"
+    "RELAX_K1_RELION_EXACT_COARSE_ASSEMBLY_PROFILE"
 )
 
 
 _K1_RELION_EXACT_COMPACT_PREPROCESS_ENV = (
-    "RECOVAR_K1_RELION_EXACT_COMPACT_PREPROCESS"
+    "RELAX_K1_RELION_EXACT_COMPACT_PREPROCESS"
 )
 
 
-_COARSE_OPERAND_PROGRAM_ENV = "RECOVAR_COARSE_OPERAND_PROGRAM"
+_COARSE_OPERAND_PROGRAM_ENV = "RELAX_COARSE_OPERAND_PROGRAM"
 
 
 def _repeat_pad_batch_axis(value, target_size: int):
@@ -183,7 +183,7 @@ def _relion_coarse_sincosf_operands(
     after the call.
 
     :data:`_relion_coarse_sincosf_operand_program` is ``jax.jit`` of this exact
-    function, which is what ``RECOVAR_COARSE_OPERAND_PROGRAM=1`` selects: the
+    function, which is what ``RELAX_COARSE_OPERAND_PROGRAM=1`` selects: the
     two paths share their source, so the only difference between them is that
     XLA sees the whole chain at once. Nothing here reduces along an axis and no
     multiply feeds an add, so that cannot re-associate an expression or
@@ -386,7 +386,7 @@ def assemble_relion_cc_coarse_operands(
 ) -> RelionCcCoarseOperands:
     """Build one coarse batch's ``--firstiter_cc`` tree-rescore operands.
 
-    ``RECOVAR_COARSE_OPERAND_PROGRAM=1`` traces the assembly once per batch
+    ``RELAX_COARSE_OPERAND_PROGRAM=1`` traces the assembly once per batch
     shape; the default eager path is the oracle. ``ctf_rfloat`` is already
     repeat-padded by the caller when the coarse image batch is padded, so every
     operand carries the padded extent and the caller slices the repeated rows

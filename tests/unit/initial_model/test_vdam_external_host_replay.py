@@ -64,7 +64,7 @@ def test_external_host_replay_is_fresh_process_and_ordered_callback():
 def test_external_host_replay_requires_exact_ptx_and_protects_outputs():
     helper = HELPER.read_text()
 
-    assert 'os.environ.get("RECOVAR_VDAM_EXACT_NATIVE_PTX"' in helper
+    assert 'os.environ.get("RELAX_VDAM_EXACT_NATIVE_PTX"' in helper
     assert "refusing to overwrite" in helper
     assert "allow_pickle=False" in helper
     assert "clean-process CUDA replay failed" in helper
@@ -79,7 +79,7 @@ def test_external_host_replay_report_names_include_parent_pid():
 def test_external_host_replay_can_preserve_input_bundles_fail_closed():
     wrapper = PYTHON_WRAPPER.read_text()
 
-    assert "RECOVAR_VDAM_EXTERNAL_HOST_REPLAY_CAPTURE_DIR" in wrapper
+    assert "RELAX_VDAM_EXTERNAL_HOST_REPLAY_CAPTURE_DIR" in wrapper
     assert 'f"pid-{os.getpid()}-call-{call:04d}-input.npz"' in wrapper
     assert "refusing to overwrite VDAM host-replay capture" in wrapper
     assert "shutil.copy2(input_path, capture_path)" in wrapper
@@ -94,8 +94,8 @@ def test_external_host_replay_can_capture_quiesced_prelaunch_state():
     assert "std::shared_mutex quiesced_prelaunch_launch_gate" in cuda_source
     assert "std::unique_lock<std::shared_mutex>" in cuda_source
     assert "std::shared_lock<std::shared_mutex>" in cuda_source
-    assert "RECOVAR_VDAM_QUIESCED_PRELAUNCH_CAPTURE_DIR" in helper
-    assert "RECOVAR_VDAM_QUIESCED_PRELAUNCH_PARTICLE_ID" in helper
+    assert "RELAX_VDAM_QUIESCED_PRELAUNCH_CAPTURE_DIR" in helper
+    assert "RELAX_VDAM_QUIESCED_PRELAUNCH_PARTICLE_ID" in helper
     assert "recovar.vdam_quiesced_prelaunch.v1" in helper
     assert "refusing to overwrite" in helper
 
@@ -108,9 +108,9 @@ def test_quiesced_prelaunch_capture_requires_directory_and_particle_id(
     library_path = tmp_path / "libcuda_backproject.so"
     input_path.touch()
     library_path.touch()
-    monkeypatch.setenv("RECOVAR_VDAM_EXACT_NATIVE_PTX", str(tmp_path / "exact.ptx"))
+    monkeypatch.setenv("RELAX_VDAM_EXACT_NATIVE_PTX", str(tmp_path / "exact.ptx"))
     monkeypatch.setenv(
-        "RECOVAR_VDAM_QUIESCED_PRELAUNCH_CAPTURE_DIR",
+        "RELAX_VDAM_QUIESCED_PRELAUNCH_CAPTURE_DIR",
         str(tmp_path / "capture"),
     )
 
@@ -130,12 +130,12 @@ def test_quiesced_prelaunch_capture_rejects_negative_particle_id(
     library_path = tmp_path / "libcuda_backproject.so"
     input_path.touch()
     library_path.touch()
-    monkeypatch.setenv("RECOVAR_VDAM_EXACT_NATIVE_PTX", str(tmp_path / "exact.ptx"))
+    monkeypatch.setenv("RELAX_VDAM_EXACT_NATIVE_PTX", str(tmp_path / "exact.ptx"))
     monkeypatch.setenv(
-        "RECOVAR_VDAM_QUIESCED_PRELAUNCH_CAPTURE_DIR",
+        "RELAX_VDAM_QUIESCED_PRELAUNCH_CAPTURE_DIR",
         str(tmp_path / "capture"),
     )
-    monkeypatch.setenv("RECOVAR_VDAM_QUIESCED_PRELAUNCH_PARTICLE_ID", "-1")
+    monkeypatch.setenv("RELAX_VDAM_QUIESCED_PRELAUNCH_PARTICLE_ID", "-1")
 
     with pytest.raises(ValueError, match="must be nonnegative"):
         run_vdam_exact_native_host_replay.run_replay(
@@ -148,7 +148,7 @@ def test_quiesced_prelaunch_capture_rejects_negative_particle_id(
 def test_exact_wavg_predecessor_uses_relion_ptx_and_same_particle_stream():
     cuda_source = read_em_cuda_source()
 
-    assert "RECOVAR_VDAM_EXACT_WAVG_PREDECESSOR" in cuda_source
+    assert "RELAX_VDAM_EXACT_WAVG_PREDECESSOR" in cuda_source
     assert "_Z16cuda_kernel_wavgILb1ELb1ELb0ELi256E" in cuda_source
     assert "cuModuleGetFunction(wavg)" in cuda_source
     assert "cuLaunchKernel(wavg)" in cuda_source
@@ -159,7 +159,7 @@ def test_exact_wavg_predecessor_uses_relion_ptx_and_same_particle_stream():
 def test_runtime_bpref_launch_discriminator_is_fail_closed():
     cuda_source = read_em_cuda_source()
 
-    assert "RECOVAR_VDAM_RUNTIME_BPREF_WITH_EXACT_WAVG" in cuda_source
+    assert "RELAX_VDAM_RUNTIME_BPREF_WITH_EXACT_WAVG" in cuda_source
     assert "runtime_bpref_with_exact_wavg_requested &&" in cuda_source
     assert "!exact_wavg_predecessor_requested" in cuda_source
     assert "trace_runtime_gap" in cuda_source
@@ -169,7 +169,7 @@ def test_runtime_bpref_launch_discriminator_is_fail_closed():
 def test_wavg_bpref_host_gap_is_fail_closed_and_measures_from_wavg_return():
     cuda_source = read_em_cuda_source()
 
-    assert "RECOVAR_VDAM_WAVG_BPREF_HOST_GAP_NS" in cuda_source
+    assert "RELAX_VDAM_WAVG_BPREF_HOST_GAP_NS" in cuda_source
     assert "wavg_bpref_host_gap_requested && !exact_wavg_predecessor_requested" in cuda_source
     assert "exact_wavg_return_time = std::chrono::steady_clock::now()" in cuda_source
     assert "exact_wavg_return_time +" in cuda_source
@@ -181,8 +181,8 @@ def test_wavg_bpref_host_gap_trace_is_targeted_and_fail_closed():
     local_engine = LOCAL_ENGINE.read_text()
     replay_helper = REPLAY_HELPER.read_text()
 
-    assert "RECOVAR_VDAM_WAVG_BPREF_HOST_GAP_TRACE" in cuda_source
-    assert "RECOVAR_VDAM_WAVG_BPREF_HOST_GAP_TRACE_PARTICLE_ID" in cuda_source
+    assert "RELAX_VDAM_WAVG_BPREF_HOST_GAP_TRACE" in cuda_source
+    assert "RELAX_VDAM_WAVG_BPREF_HOST_GAP_TRACE_PARTICLE_ID" in cuda_source
     assert "wavg_bpref_intrinsic_gap_ns" in cuda_source
     assert "wavg_bpref_effective_gap_ns" in cuda_source
     assert "wavg_host_enqueue_ns" in cuda_source
@@ -192,7 +192,7 @@ def test_wavg_bpref_host_gap_trace_is_targeted_and_fail_closed():
     assert "callbacks do not contain the requested global particle ID" in cuda_source
     assert "std::ios::app" in cuda_source
     assert "if (trace.tellp() == 0)" in cuda_source
-    assert 'VDAM_WAVG_BPREF_HOST_GAP_TRACE_ENV = "RECOVAR_VDAM_WAVG_BPREF_HOST_GAP_TRACE"' in replay_helper
+    assert 'VDAM_WAVG_BPREF_HOST_GAP_TRACE_ENV = "RELAX_VDAM_WAVG_BPREF_HOST_GAP_TRACE"' in replay_helper
     for diagnostic_gate in (
         "block_trace_active",
         "host_gap_trace_active",

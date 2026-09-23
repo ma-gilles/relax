@@ -1,6 +1,6 @@
 """Opt-in profiler for one fused pass-2 bucket per selected call.
 
-RECOVAR_SPARSE_KCLASS_PROFILE_CHUNK=call:bucket[:directory] uses zero-based
+RELAX_SPARSE_KCLASS_PROFILE_CHUNK=call:bucket[:directory] uses zero-based
 indices. A wildcard call selects the bucket in every call containing it,
 matching the final donor implementation. Profiling is diagnostic, not timing
 qualification; its synchronization changes execution overlap.
@@ -24,7 +24,7 @@ class SparseChunkProfile(AbstractContextManager):
         self.call_index = next(_CALLS)
         self.bucket_index = None
         self.active = False
-        spec = os.environ.get("RECOVAR_SPARSE_KCLASS_PROFILE_CHUNK", "").strip()
+        spec = os.environ.get("RELAX_SPARSE_KCLASS_PROFILE_CHUNK", "").strip()
         if not spec:
             return
         parts = spec.split(":", 2)

@@ -19,7 +19,7 @@ def test_gui_full_envelope_runner_reuses_one_candidate_for_native_repeats():
     assert "scripts.run_vdam_relion_native_repeat" in source
     assert 'for repeat_index in $(seq 2 "${VDAM_REPEAT_COUNT}")' in source
     assert "EXPECTED_REPO_HEAD" in source
-    assert "RECOVAR_CUDA_LIB_OVERRIDE" in source
+    assert "RELAX_CUDA_LIB_OVERRIDE" in source
     assert "EXPECTED_CUDA_SHA256" in source
     assert '"cuda_library_sha256"' in source
     assert "VDAM envelope GPU/CUDA-FFI gate passed" in source

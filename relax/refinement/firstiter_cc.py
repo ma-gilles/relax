@@ -27,7 +27,7 @@ def single_class_bucketed_pass2_selected(*, firstiter: bool) -> bool:
     from relax.classification.k_class import _use_fused_sparse_k_class_pass2
     from relax.sparse_pass2.resident_pass2 import resident_pass2_requested
     return bool(
-        _sparse_pass2_selected("RECOVAR_K_CLASS_DENSE_PASS2" if firstiter else "RECOVAR_K1_DENSE_PASS2")
+        _sparse_pass2_selected("RELAX_K_CLASS_DENSE_PASS2" if firstiter else "RELAX_K1_DENSE_PASS2")
         and (firstiter or not resident_pass2_requested())
         and not _use_fused_sparse_k_class_pass2(1)
         and not k1_local_pass2_engine_selected()
@@ -111,7 +111,7 @@ def _score_kclass_firstiter_cc_pass2(
     n_classes = int(np.asarray(mean).shape[0]) if np.asarray(mean).ndim >= 2 else 1
     firstiter_significance_image_batch_size = None
     firstiter_significance_rotation_block_size = None
-    firstiter_sparse_pass2 = _sparse_pass2_selected("RECOVAR_K_CLASS_DENSE_PASS2")
+    firstiter_sparse_pass2 = _sparse_pass2_selected("RELAX_K_CLASS_DENSE_PASS2")
     if symmetry != "C1":
         if not firstiter_sparse_pass2 or not em_kwargs.get("mstep_relion_x_half", False):
             raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")

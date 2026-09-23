@@ -31,7 +31,7 @@ logger = logging.getLogger("relax.local.local_search_iteration")
 
 # Mirror iteration_loop's constant locally so the helper has a stable home.
 EXACT_LOCAL_PRECOMPUTE_FINE_GRID_MAX_ROTATIONS = 3_000_000
-EXACT_LOCAL_XHALF_BATCH_GUARD_ENV = "RECOVAR_LOCAL_XHALF_BATCH_GUARD"
+EXACT_LOCAL_XHALF_BATCH_GUARD_ENV = "RELAX_LOCAL_XHALF_BATCH_GUARD"
 
 
 
@@ -132,7 +132,7 @@ def _run_local_search_iteration(
     caller invokes this function more than once for the same image at the
     same ``current_size``/``debug_iteration`` (e.g. local search's pass-1
     "parent" probe vs. its pass-2 fine call), or the later call's
-    ``RECOVAR_LOCAL_SCORE_DUMP_*`` output silently overwrites the earlier
+    ``RELAX_LOCAL_SCORE_DUMP_*`` output silently overwrites the earlier
     one at the same path.
 
     Optional fields are None when their corresponding return flags are disabled.

@@ -349,9 +349,9 @@ def test_k_class_replay_rejects_stop_after_pass2_with_contribution_capture(
 ):
     import scripts.run_k_class_parity as run_k_class_parity
 
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", "/tmp/pass2")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "53722")
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR", "/tmp/contribution")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", "/tmp/pass2")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "53722")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", "/tmp/contribution")
     monkeypatch.setattr(
         sys,
         "argv",
@@ -379,7 +379,7 @@ def test_k_class_replay_stop_after_contribution_requires_exact_target_filters(
 ):
     import scripts.run_k_class_parity as run_k_class_parity
 
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR", "/tmp/contribution")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", "/tmp/contribution")
     monkeypatch.setattr(
         sys,
         "argv",
@@ -398,7 +398,7 @@ def test_k_class_replay_stop_after_contribution_requires_exact_target_filters(
 
     error = capsys.readouterr().err
     assert "--stop-after-contribution-dump requires exact target filters" in error
-    assert "RECOVAR_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES" in error
+    assert "RELAX_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES" in error
 
 
 

@@ -235,8 +235,8 @@ class _DenseDebugOptions:
             noise_component_dump_enabled=bool(dump_enabled),
             per_pose_score_dump=parse_dense_per_pose_score_dump_request(),
             return_noise_split=bool(
-                os.environ.get("RECOVAR_NOISE_DEBUG_DUMP_DIR")
-                or os.environ.get("RECOVAR_DENSE_NOISE_COMPONENT_DUMP_DIR")
+                os.environ.get("RELAX_NOISE_DEBUG_DUMP_DIR")
+                or os.environ.get("RELAX_DENSE_NOISE_COMPONENT_DUMP_DIR")
             ),
         )
 
@@ -1215,7 +1215,7 @@ def run_em(
 
         indices_np_for_debug = None
         original_indices_np_for_debug = None
-        if debug_options.per_pose_score_dump.enabled or os.environ.get("RECOVAR_DEBUG_CC_COMPONENT_DUMP_DIR"):
+        if debug_options.per_pose_score_dump.enabled or os.environ.get("RELAX_DEBUG_CC_COMPONENT_DUMP_DIR"):
             indices_np_for_debug = np.asarray(indices, dtype=np.int64)
             original_indices_np_for_debug = np.asarray(
                 experiment_dataset.original_image_indices_from_local(indices_np_for_debug),
@@ -1495,18 +1495,18 @@ def run_em(
             )
 
             # Env-gated cross/norms component dump for CC parity bisection.
-            # When RECOVAR_DEBUG_CC_COMPONENT_DUMP_DIR is set, recompute cross
+            # When RELAX_DEBUG_CC_COMPONENT_DUMP_DIR is set, recompute cross
             # and norms outside the JIT block and dump alongside batch_norm
             # (Xi2_image) for the target image. Allows decomposing the recovar
             # vs RELION CC ratio into numerator vs Xi2 vs suma2 contributors.
-            _cc_comp_dir = os.environ.get("RECOVAR_DEBUG_CC_COMPONENT_DUMP_DIR")
-            _cc_comp_target = os.environ.get("RECOVAR_DEBUG_CC_COMPONENT_DUMP_TARGET")
+            _cc_comp_dir = os.environ.get("RELAX_DEBUG_CC_COMPONENT_DUMP_DIR")
+            _cc_comp_target = os.environ.get("RELAX_DEBUG_CC_COMPONENT_DUMP_TARGET")
             if _cc_comp_dir and _cc_comp_target is not None:
                 try:
                     _target_idx = int(_cc_comp_target)
                     _match_indices = (
                         original_indices_np_for_debug
-                        if os.environ.get("RECOVAR_DEBUG_CC_COMPONENT_DUMP_TARGET_IS_ORIGINAL", "0") != "0"
+                        if os.environ.get("RELAX_DEBUG_CC_COMPONENT_DUMP_TARGET_IS_ORIGINAL", "0") != "0"
                         else indices_np_for_debug
                     )
                     _hits = np.where(np.asarray(_match_indices, dtype=np.int64) == _target_idx)[0]

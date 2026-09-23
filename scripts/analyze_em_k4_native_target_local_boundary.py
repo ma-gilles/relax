@@ -19,7 +19,7 @@ from scripts.analyze_em_k4_allclass_native_boundary import (
 
 SCHEMA = "recovar.em_k4_native_target_local_boundary.v1"
 TARGET_ADMISSION_SCHEMA = "recovar-k4-native-target-artifact-repeatability-v1"
-RECOVAR_REPEATABILITY_SCHEMA = "recovar.em_k4_allclass_recovar_repeatability.v1"
+RELAX_REPEATABILITY_SCHEMA = "recovar.em_k4_allclass_recovar_repeatability.v1"
 TARGET_CLASSES = (2, 3, 4)
 
 
@@ -63,7 +63,7 @@ def validate_admissions(
     )
 
     _require(
-        recovar_repeatability.get("schema") == RECOVAR_REPEATABILITY_SCHEMA,
+        recovar_repeatability.get("schema") == RELAX_REPEATABILITY_SCHEMA,
         "RECOVAR repeatability schema changed",
     )
     recovar_metric = recovar_repeatability.get("fixed_metric")

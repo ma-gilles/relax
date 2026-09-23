@@ -75,7 +75,7 @@ def test_memo_can_be_disabled_and_then_hands_back_fresh_arrays(prepared_cache, m
     unmemoized assembly, which is the oracle the memo is measured against.
     """
 
-    monkeypatch.setenv("RECOVAR_RELION_EXACT_CTF_CACHE_GB", "0")
+    monkeypatch.setenv("RELAX_RELION_EXACT_CTF_CACHE_GB", "0")
     first = _call(range(N_IMAGES))
     second = _call(range(N_IMAGES))
     np.testing.assert_array_equal(first, second)
@@ -88,16 +88,16 @@ def test_memo_budget_defaults_to_four_gigabytes(monkeypatch):
 
     from relax.relion import relion_ctf
 
-    monkeypatch.delenv("RECOVAR_RELION_EXACT_CTF_CACHE_GB", raising=False)
+    monkeypatch.delenv("RELAX_RELION_EXACT_CTF_CACHE_GB", raising=False)
     assert relion_ctf._exact_ctf_result_cache_budget_bytes() == 4 * (1024 ** 3)
-    monkeypatch.setenv("RECOVAR_RELION_EXACT_CTF_CACHE_GB", "0")
+    monkeypatch.setenv("RELAX_RELION_EXACT_CTF_CACHE_GB", "0")
     assert relion_ctf._exact_ctf_result_cache_budget_bytes() == 0
 
 
 def test_memo_returns_the_identical_bytes(prepared_cache, monkeypatch):
-    monkeypatch.delenv("RECOVAR_RELION_EXACT_CTF_CACHE_GB", raising=False)
+    monkeypatch.delenv("RELAX_RELION_EXACT_CTF_CACHE_GB", raising=False)
     control = _call(range(N_IMAGES))
-    monkeypatch.setenv("RECOVAR_RELION_EXACT_CTF_CACHE_GB", "1")
+    monkeypatch.setenv("RELAX_RELION_EXACT_CTF_CACHE_GB", "1")
     first = _call(range(N_IMAGES))
     second = _call(range(N_IMAGES))
     assert first is second, "a repeated request must not rebuild the operand"
@@ -107,7 +107,7 @@ def test_memo_returns_the_identical_bytes(prepared_cache, monkeypatch):
 
 
 def test_memo_distinguishes_index_sets_and_pixel_plans(prepared_cache, monkeypatch):
-    monkeypatch.setenv("RECOVAR_RELION_EXACT_CTF_CACHE_GB", "1")
+    monkeypatch.setenv("RELAX_RELION_EXACT_CTF_CACHE_GB", "1")
     pixels_a = np.array([0, 3, 7, 11], dtype=np.int32)
     pixels_b = np.array([1, 3, 7, 11], dtype=np.int32)
     whole = _call(range(N_IMAGES))
@@ -130,7 +130,7 @@ def test_memo_distinguishes_index_sets_and_pixel_plans(prepared_cache, monkeypat
 
 
 def test_memo_repeats_every_shape_and_stays_bitwise(prepared_cache, monkeypatch):
-    monkeypatch.delenv("RECOVAR_RELION_EXACT_CTF_CACHE_GB", raising=False)
+    monkeypatch.delenv("RELAX_RELION_EXACT_CTF_CACHE_GB", raising=False)
     plans = [
         (range(N_IMAGES), None),
         (range(3, 9), None),
@@ -138,7 +138,7 @@ def test_memo_repeats_every_shape_and_stays_bitwise(prepared_cache, monkeypatch)
         (range(0, N_IMAGES, 2), np.array([0, 1], dtype=np.int64)),
     ]
     controls = [_call(indices, pixels) for indices, pixels in plans]
-    monkeypatch.setenv("RECOVAR_RELION_EXACT_CTF_CACHE_GB", "1")
+    monkeypatch.setenv("RELAX_RELION_EXACT_CTF_CACHE_GB", "1")
     for (indices, pixels), control in zip(plans, controls):
         for _ in range(2):
             candidate = _call(indices, pixels)
@@ -151,7 +151,7 @@ def test_memo_respects_its_budget(prepared_cache, monkeypatch):
     # One whole-half operand is N_IMAGES * HALF_PIXELS * 8 bytes; a budget of
     # one such operand must hold one entry and evict the older one.
     one_operand = N_IMAGES * HALF_PIXELS * 8
-    monkeypatch.setenv("RECOVAR_RELION_EXACT_CTF_CACHE_GB", str(one_operand / (1024 ** 3)))
+    monkeypatch.setenv("RELAX_RELION_EXACT_CTF_CACHE_GB", str(one_operand / (1024 ** 3)))
     whole = _call(range(N_IMAGES))
     assert _call(range(N_IMAGES)) is whole
     _call(list(reversed(range(N_IMAGES))))
@@ -162,11 +162,11 @@ def test_memo_respects_its_budget(prepared_cache, monkeypatch):
 
 
 def test_memo_rejects_an_unparsable_budget(prepared_cache, monkeypatch):
-    monkeypatch.setenv("RECOVAR_RELION_EXACT_CTF_CACHE_GB", "lots")
-    with pytest.raises(ValueError, match="RECOVAR_RELION_EXACT_CTF_CACHE_GB"):
+    monkeypatch.setenv("RELAX_RELION_EXACT_CTF_CACHE_GB", "lots")
+    with pytest.raises(ValueError, match="RELAX_RELION_EXACT_CTF_CACHE_GB"):
         _call(range(N_IMAGES))
-    monkeypatch.setenv("RECOVAR_RELION_EXACT_CTF_CACHE_GB", "-1")
-    with pytest.raises(ValueError, match="RECOVAR_RELION_EXACT_CTF_CACHE_GB"):
+    monkeypatch.setenv("RELAX_RELION_EXACT_CTF_CACHE_GB", "-1")
+    with pytest.raises(ValueError, match="RELAX_RELION_EXACT_CTF_CACHE_GB"):
         _call(range(N_IMAGES))
 
 

@@ -320,7 +320,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
     ft_y_1 = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
     ft_ctf_0 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
     ft_ctf_1 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
-    monkeypatch.setenv("RECOVAR_LOWRES_JOIN_HOST_FALLBACK", "always")
+    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "always")
     joined = regularization_relion.join_halves_at_low_resolution(
         ft_y_0,
         ft_y_1,

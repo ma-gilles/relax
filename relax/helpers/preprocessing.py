@@ -15,7 +15,7 @@ from relax.helpers.half_spectrum import make_half_image_weights
 
 SUPPORTED_IMAGE_MASK_MODES = frozenset({"relion_background_fill", "multiply"})
 
-_JIT_STAGE_GLUE_ENV = "RECOVAR_EM_JIT_STAGE_GLUE"
+_JIT_STAGE_GLUE_ENV = "RELAX_EM_JIT_STAGE_GLUE"
 
 
 def jit_stage_glue_enabled(*, default: bool = False) -> bool:

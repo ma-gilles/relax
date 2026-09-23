@@ -23,7 +23,7 @@ set -euo pipefail
 : "${EXPECTED_REPO_HEAD:?pin the tracked source head}"
 : "${EXPECTED_CUDA_SHA256:?pin the qualified RECOVAR CUDA binary}"
 : "${EXPECTED_RELION_BIND_SHA256:?pin the qualified RELION binding binary}"
-: "${RECOVAR_CUDA_LIB_OVERRIDE:?set the qualified CUDA binary path}"
+: "${RELAX_CUDA_LIB_OVERRIDE:?set the qualified CUDA binary path}"
 : "${TARGET_RELION_PERTURBATION_SOURCE:?pin the full-precision perturbation source}"
 : "${LAYOUT_EVIDENCE_META:?pin the qualified it80 PROFILE layout evidence}"
 
@@ -58,13 +58,13 @@ test -s "${RELION_OPTIMISER}"
 test -s "${VDAM_SCORECARD}"
 test -s "${TARGET_RELION_PERTURBATION_SOURCE}"
 test -s "${LAYOUT_EVIDENCE_META}"
-test -s "${RECOVAR_CUDA_LIB_OVERRIDE}"
+test -s "${RELAX_CUDA_LIB_OVERRIDE}"
 test -s "${RELION_BIND_BINARY}"
 ACTUAL_REPO_HEAD=$(git -C "${REPO_ROOT}" rev-parse HEAD)
 EXPECTED_REPO_COMMIT=$(git -C "${REPO_ROOT}" rev-parse "${EXPECTED_REPO_HEAD}^{commit}")
 test "${ACTUAL_REPO_HEAD}" = "${EXPECTED_REPO_COMMIT}"
 test -z "$(git -C "${REPO_ROOT}" status --porcelain=v1 --untracked-files=no)"
-test "$(sha256sum "${RECOVAR_CUDA_LIB_OVERRIDE}" | awk '{print $1}')" = "${EXPECTED_CUDA_SHA256}"
+test "$(sha256sum "${RELAX_CUDA_LIB_OVERRIDE}" | awk '{print $1}')" = "${EXPECTED_CUDA_SHA256}"
 test "$(sha256sum "${RELION_BIND_BINARY}" | awk '{print $1}')" = "${EXPECTED_RELION_BIND_SHA256}"
 
 for ((iteration = 1; iteration <= TARGET_ITERATION; ++iteration)); do
@@ -109,7 +109,7 @@ printf '%s\n' "${exclusive_gpu_local_index:-explicit-uuid}" \
 printf '%s\n' "${VDAM_VISIBLE_GPU_UUIDS_CSV}" > "${OUTPUT_ROOT}/provenance/allocated_gpu_uuids.csv"
 printf 'control\t%s\ncandidate\t%s\n' "${CONTROL_ROW_PIXELS}" "${CANDIDATE_ROW_PIXELS}" \
   > "${OUTPUT_ROOT}/provenance/arms.tsv"
-sha256sum "${RECOVAR_CUDA_LIB_OVERRIDE}" "${RELION_BIND_BINARY}" \
+sha256sum "${RELAX_CUDA_LIB_OVERRIDE}" "${RELION_BIND_BINARY}" \
   "${LAYOUT_EVIDENCE_META}" > "${OUTPUT_ROOT}/provenance/input_evidence.sha256"
 nvidia-smi -q > "${OUTPUT_ROOT}/provenance/nvidia_smi.txt"
 env | LC_ALL=C sort > "${OUTPUT_ROOT}/provenance/submission_environment.txt"
@@ -119,20 +119,20 @@ env | LC_ALL=C sort > "${OUTPUT_ROOT}/provenance/submission_environment.txt"
 # execution-policy difference between arms.
 while IFS='=' read -r name _; do
   case "${name}" in
-    RECOVAR_CUDA_LIB_OVERRIDE) ;;
-    RECOVAR_*) unset "${name}" ;;
+    RELAX_CUDA_LIB_OVERRIDE) ;;
+    RECOVAR_*|RELAX_*) unset "${name}" ;;
   esac
 done < <(env)
 unset RECOVAR_INITIAL_MODEL_PROFILE
 unset RECOVAR_K1_COARSE_GAUSSIAN_NATIVE_TEXTURE
 unset RECOVAR_K1_COARSE_FUSED_PROJECTOR
-unset RECOVAR_K1_COARSE_GAUSSIAN_SKIP_PADDED_IMAGES
+unset RELAX_K1_COARSE_GAUSSIAN_SKIP_PADDED_IMAGES
 unset RECOVAR_K1_COARSE_GAUSSIAN_FFI
 unset RECOVAR_K1_COARSE_GAUSSIAN_SINCOSF
 unset RECOVAR_K1_RELION_EXACT_COARSE_OPERANDS
 unset RECOVAR_K1_RELION_F32_COARSE_SUPPORT
 unset RECOVAR_RELION_COARSE_CANONICAL_REDUCTION
-unset RECOVAR_EXACT_LOCAL_XHALF_PROJECTION_TARGET_ROW_PIXELS
+unset RELAX_EXACT_LOCAL_XHALF_PROJECTION_TARGET_ROW_PIXELS
 env | LC_ALL=C sort > "${OUTPUT_ROOT}/provenance/production_default_environment.txt"
 
 labels=(
@@ -151,7 +151,7 @@ for index in "${!labels[@]}"; do
     row_pixels=${CANDIDATE_ROW_PIXELS}
     cache_dir=${cache_candidate}
   fi
-  export RECOVAR_EXACT_LOCAL_XHALF_PROJECTION_TARGET_ROW_PIXELS=${row_pixels}
+  export RELAX_EXACT_LOCAL_XHALF_PROJECTION_TARGET_ROW_PIXELS=${row_pixels}
   unset RECOVAR_INITIAL_MODEL_PROFILE
 
   run_root=${OUTPUT_ROOT}/${label}
@@ -226,7 +226,7 @@ for index in "${!labels[@]}"; do
   fi
   vdam_verify_selected_gpu "${selected_gpu_uuid}"
 done
-unset RECOVAR_EXACT_LOCAL_XHALF_PROJECTION_TARGET_ROW_PIXELS
+unset RELAX_EXACT_LOCAL_XHALF_PROJECTION_TARGET_ROW_PIXELS
 
 iterations=()
 for ((iteration = 1; iteration <= TARGET_ITERATION; ++iteration)); do

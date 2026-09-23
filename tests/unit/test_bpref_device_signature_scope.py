@@ -24,8 +24,8 @@ pytestmark = pytest.mark.unit
 def _capture_environment() -> dict[str, str]:
     return {
         "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR": "/tmp/device",
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION": "5",
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF": "1",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION": "5",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_HALF": "1",
     }
 
 
@@ -60,8 +60,8 @@ def test_device_signature_scope_activates_only_target_numbered_half():
 def test_device_signature_scope_rejects_missing_or_invalid_target():
     env = _capture_environment()
     for missing in (
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION",
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_HALF",
     ):
         invalid = dict(env)
         invalid.pop(missing)
@@ -73,9 +73,9 @@ def test_device_signature_scope_rejects_missing_or_invalid_target():
             )
 
     for name, value in (
-        ("RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION", "0"),
-        ("RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF", "3"),
-        ("RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION", "not-an-int"),
+        ("RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION", "0"),
+        ("RELAX_BPREF_CONTRIBUTION_DUMP_HALF", "3"),
+        ("RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION", "not-an-int"),
     ):
         invalid = dict(env)
         invalid[name] = value
@@ -90,11 +90,11 @@ def test_device_signature_scope_rejects_missing_or_invalid_target():
 def test_scoped_capture_ignores_all_process_flags_off_target(monkeypatch):
     monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "/tmp/device")
     for name in (
-        "RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
-        "RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS",
-        "RECOVAR_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION",
+        "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
+        "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",
+        "RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION",
         "RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY",
-        "RECOVAR_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
+        "RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
     ):
         monkeypatch.setenv(name, "1")
 
@@ -118,8 +118,8 @@ def test_scoped_capture_ignores_all_process_flags_off_target(monkeypatch):
 
 def test_scoped_device_capture_keeps_live_reduction_and_adjoint_modes_ordinary(monkeypatch):
     monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "/tmp/device")
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION", "1")
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", "1")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION", "1")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", "1")
     flags = bpref_diagnostics._scoped_bpref_diagnostic_flags(active=True)
 
     modes = sparse_pass2_policy._resolve_bpref_execution_modes(
@@ -189,7 +189,7 @@ def test_scoped_device_capture_activates_only_bucket_with_target_rows():
 
 def test_device_panel_flush_writes_separate_class_artifacts(tmp_path, monkeypatch):
     monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_RUN_ID", "class-aware")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_RUN_ID", "class-aware")
     prefix = (1, 2, "class-aware")
     common = {
         "current_size": 4,
@@ -225,8 +225,8 @@ def test_device_panel_flush_writes_separate_class_artifacts(tmp_path, monkeypatc
 
 
 def test_legacy_native_half_dump_remains_independent_of_class_index(tmp_path, monkeypatch):
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_NATIVE_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_NATIVE_DUMP_RUN_ID", "native-control")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_NATIVE_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_NATIVE_DUMP_RUN_ID", "native-control")
     monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "iteration", 1)
     monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "half", 1)
 
@@ -322,13 +322,13 @@ def test_zero_contributor_class_capture_writes_manifest_only_signature(
         np.asarray(["1@/tmp/frozen.mrcs"]),
         allow_pickle=False,
     )
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR", str(contribution_dir))
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", str(contribution_dir))
     monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", str(signature_dir))
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION", "10")
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF", "1")
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY", str(image_names_path))
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_STACK_SHA256", "a" * 64)
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_RUN_ID", "zero-class")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION", "10")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_HALF", "1")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY", str(image_names_path))
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_STACK_SHA256", "a" * 64)
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_RUN_ID", "zero-class")
     monkeypatch.setattr(
         bpref_diagnostics,
         "_require_bpref_device_soft_particle_arm",
@@ -590,11 +590,11 @@ def test_posterior_mask_and_reduced_operand_diagnostic_branches_agree_on_cpu():
 def test_standalone_diagnostics_keep_legacy_flags_without_device_capture(monkeypatch):
     monkeypatch.delenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", raising=False)
     for name in (
-        "RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
-        "RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS",
-        "RECOVAR_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION",
+        "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
+        "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",
+        "RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION",
         "RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY",
-        "RECOVAR_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
+        "RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
     ):
         monkeypatch.setenv(name, "1")
 
@@ -606,7 +606,7 @@ def test_standalone_diagnostics_keep_legacy_flags_without_device_capture(monkeyp
 
 def test_target_half2_cannot_leak_into_final_all_data_or_local_search(monkeypatch):
     env = _capture_environment()
-    env["RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF"] = "2"
+    env["RELAX_BPREF_CONTRIBUTION_DUMP_HALF"] = "2"
     assert debug_dumps._bpref_device_signature_active_for_numbered_half(
         iteration=5,
         half=2,
@@ -650,7 +650,7 @@ def test_exact_local_contribution_adapter_is_explicit_and_rejects_device_claims(
     local_em_engine._maybe_dump_exact_local_bpref_contribution_rows(marker="off")
     assert forwarded == []
 
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR", "/tmp/contributions")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", "/tmp/contributions")
     local_em_engine._maybe_dump_exact_local_bpref_contribution_rows(marker="local")
     assert forwarded == [{"marker": "local"}]
 
@@ -671,12 +671,12 @@ def test_exact_local_contribution_adapter_writes_versioned_pre_scatter_fixture(
         np.asarray(["1@/tmp/frozen.mrcs", "2@/tmp/frozen.mrcs"]),
         allow_pickle=False,
     )
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR", str(dump_dir))
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION", "7")
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF", "2")
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE", "4")
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY", str(image_names_path))
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_STACK_SHA256", "a" * 64)
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", str(dump_dir))
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION", "7")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_HALF", "2")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE", "4")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY", str(image_names_path))
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_STACK_SHA256", "a" * 64)
     bpref_diagnostics.set_bpref_contribution_dump_context(iteration=7, half=2)
     try:
         scores = np.asarray(
@@ -754,7 +754,7 @@ def test_exact_local_contribution_adapter_writes_versioned_pre_scatter_fixture(
 
 
 def test_exact_local_contribution_capture_routes_only_the_target_boundary(monkeypatch):
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR", "/tmp/contributions")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", "/tmp/contributions")
     bpref_diagnostics.set_bpref_contribution_dump_context(iteration=7, half=2)
     try:
         assert not local_bpref_capture._exact_local_bpref_contribution_capture_active(
@@ -764,9 +764,9 @@ def test_exact_local_contribution_capture_routes_only_the_target_boundary(monkey
     finally:
         bpref_diagnostics.clear_bpref_contribution_dump_context()
 
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION", "7")
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF", "2")
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE", "50")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION", "7")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_HALF", "2")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE", "50")
     bpref_diagnostics.set_bpref_contribution_dump_context(iteration=7, half=2)
     try:
         assert local_bpref_capture._exact_local_bpref_contribution_capture_active(
@@ -845,13 +845,13 @@ def test_iteration_loop_clears_dump_context_before_every_final_exit_or_half():
 
 def test_bucketed_source_has_no_unscoped_capture_branches():
     source = inspect.getsource(sparse_pass2_bucketed.compute_pass2_stats_sparse_bucketed)
-    assert 'if os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR")' not in source
+    assert 'if os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_DIR")' not in source
     assert "relion_x_half_bp_per_particle_launch_enabled()" not in source
     assert "device_signature_active=bucket_device_signature_requested" in source
 
 
 def test_active_capture_accepts_fused_kclass_route(monkeypatch):
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "1")
     k_class._validate_bpref_device_signature_sparse_route(
         active=True,
         n_classes=4,
@@ -864,16 +864,16 @@ def test_active_capture_accepts_fused_kclass_route(monkeypatch):
 
 
 def test_bpref_contribution_class_filter_uses_relion_one_based_numbers(monkeypatch):
-    monkeypatch.delenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_CLASS", raising=False)
+    monkeypatch.delenv("RELAX_BPREF_CONTRIBUTION_DUMP_CLASS", raising=False)
     assert bpref_diagnostics._bpref_contribution_class_enabled(0)
     assert bpref_diagnostics._bpref_contribution_class_enabled(3)
 
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_CLASS", "2")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_CLASS", "2")
     assert not bpref_diagnostics._bpref_contribution_class_enabled(0)
     assert bpref_diagnostics._bpref_contribution_class_enabled(1)
     assert not bpref_diagnostics._bpref_contribution_class_enabled(2)
 
-    monkeypatch.setenv("RECOVAR_BPREF_CONTRIBUTION_DUMP_CLASS", "0")
+    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_CLASS", "0")
     with pytest.raises(ValueError, match="positive integer"):
         bpref_diagnostics._bpref_contribution_class_enabled(0)
 

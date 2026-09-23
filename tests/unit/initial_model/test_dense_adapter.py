@@ -31,7 +31,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_initial_model_coarse_tie_ulp_diagnostic_override(monkeypatch):
-    variable = "RECOVAR_INITIAL_MODEL_RELION_F32_COARSE_TIE_ULPS"
+    variable = "RELAX_INITIAL_MODEL_RELION_F32_COARSE_TIE_ULPS"
     monkeypatch.delenv(variable, raising=False)
     assert _initial_model_relion_f32_coarse_tie_ulps() == 0
     monkeypatch.setenv(variable, "2")
@@ -858,7 +858,7 @@ def test_resolve_class_inputs_relion_projector_uses_exact_path_by_default(monkey
     np.testing.assert_array_equal(exact_half, projector_half)
     assert exact_rmax == 2
 
-    monkeypatch.setenv("RECOVAR_INITIAL_MODEL_EXACT_RELION_PROJECTOR", "0")
+    monkeypatch.setenv("RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR", "0")
     _means, _mean_variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)
 
     assert len(computed_variances) == 2
@@ -906,7 +906,7 @@ def test_resolve_class_inputs_can_dump_exact_projector_operand(monkeypatch, tmp_
         "relax.vdam.dense_adapter.relion_projector_half_maps_to_dense_means",
         lambda *args, **kwargs: dense_means,
     )
-    monkeypatch.setenv("RECOVAR_INITIAL_MODEL_PROJECTOR_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", str(tmp_path))
     state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
     state.iter = 7
     state.current_size = 4
@@ -976,12 +976,12 @@ def test_dense_initial_model_estep_sparse_pass2_uses_coarse_parent_prior(monkeyp
         "relax.vdam.dense_adapter._dense_rotations_for_config",
         unused_dense_conversion,
     )
-    monkeypatch.delenv("RECOVAR_INITIAL_MODEL_EXACT_FINE_DIFF2", raising=False)
+    monkeypatch.delenv("RELAX_INITIAL_MODEL_EXACT_FINE_DIFF2", raising=False)
     monkeypatch.delenv("RECOVAR_INITIAL_MODEL_FLAT_LOCAL_ROWS", raising=False)
-    monkeypatch.delenv("RECOVAR_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY", raising=False)
+    monkeypatch.delenv("RELAX_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY", raising=False)
     monkeypatch.delenv("RECOVAR_INITIAL_MODEL_PACKED_LOCAL_PROJECTION", raising=False)
     monkeypatch.delenv("RECOVAR_INITIAL_MODEL_DEFER_PACKED_VDAM", raising=False)
-    monkeypatch.delenv("RECOVAR_INITIAL_MODEL_PACKED_FINAL_NOISE", raising=False)
+    monkeypatch.delenv("RELAX_INITIAL_MODEL_PACKED_FINAL_NOISE", raising=False)
 
     from relax.diagnostics import bpref_diagnostics as sparse_diagnostics
 
@@ -2035,7 +2035,7 @@ def test_vdam_probe_reads_follow_scoped_environment(monkeypatch):
 
 @pytest.mark.parametrize("value", ["", "bad", "1.5", "-1", "17"])
 def test_initial_model_coarse_tie_ulps_reject_invalid(value, monkeypatch):
-    monkeypatch.setenv("RECOVAR_INITIAL_MODEL_RELION_F32_COARSE_TIE_ULPS", value)
+    monkeypatch.setenv("RELAX_INITIAL_MODEL_RELION_F32_COARSE_TIE_ULPS", value)
     with pytest.raises(ValueError, match="must be"):
         _initial_model_relion_f32_coarse_tie_ulps()
 

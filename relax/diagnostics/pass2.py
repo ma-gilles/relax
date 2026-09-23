@@ -18,9 +18,9 @@ from relax.diagnostics import bpref_diagnostics
 from relax.helpers.batch_fetch import original_image_indices
 from relax.helpers.env_flags import parse_env_flag, parse_env_int_set
 
-_PASS2_DUMP_DIR_ENV = "RECOVAR_PASS2_DUMP_DIR"
-_PASS2_DUMP_RAW_OPERANDS_ENV = "RECOVAR_PASS2_DUMP_RAW_OPERANDS"
-_PASS2_DUMP_ROTATION_ROWS_ENV = "RECOVAR_PASS2_DUMP_ROTATION_ROWS"
+_PASS2_DUMP_DIR_ENV = "RELAX_PASS2_DUMP_DIR"
+_PASS2_DUMP_RAW_OPERANDS_ENV = "RELAX_PASS2_DUMP_RAW_OPERANDS"
+_PASS2_DUMP_ROTATION_ROWS_ENV = "RELAX_PASS2_DUMP_ROTATION_ROWS"
 
 
 def _pass2_dump_target_rows(
@@ -31,19 +31,19 @@ def _pass2_dump_target_rows(
 ) -> np.ndarray:
     """Return batch rows selected by the explicit pass-2 dump contract."""
 
-    dump_dir = os.environ.get("RECOVAR_PASS2_DUMP_DIR")
+    dump_dir = os.environ.get("RELAX_PASS2_DUMP_DIR")
     if not dump_dir:
         return np.empty((0,), dtype=np.int64)
-    target_original_indices = parse_env_int_set("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES")
+    target_original_indices = parse_env_int_set("RELAX_PASS2_DUMP_ORIGINAL_INDICES")
     if not target_original_indices:
-        target_original_indices = parse_env_int_set("RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES")
+        target_original_indices = parse_env_int_set("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES")
     if not target_original_indices:
         return np.empty((0,), dtype=np.int64)
-    target_iteration = os.environ.get("RECOVAR_PASS2_DUMP_ITERATION")
+    target_iteration = os.environ.get("RELAX_PASS2_DUMP_ITERATION")
     context_iteration = int(bpref_diagnostics._bpref_contribution_context["iteration"])
     if target_iteration and context_iteration != int(target_iteration):
         return np.empty((0,), dtype=np.int64)
-    target_current_size = os.environ.get("RECOVAR_PASS2_DUMP_CURRENT_SIZE")
+    target_current_size = os.environ.get("RELAX_PASS2_DUMP_CURRENT_SIZE")
     if target_current_size:
         if current_size is None or int(current_size) != int(target_current_size):
             return np.empty((0,), dtype=np.int64)
@@ -94,21 +94,21 @@ def _k1_raw_operand_fields(
 
 def _pass2_dump_context(current_size):
     """Resolve the shared K1/K-class capture gate in validation order."""
-    dump_dir = os.environ.get("RECOVAR_PASS2_DUMP_DIR")
+    dump_dir = os.environ.get("RELAX_PASS2_DUMP_DIR")
     if not dump_dir:
         return None
-    target_original_indices = parse_env_int_set("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES")
+    target_original_indices = parse_env_int_set("RELAX_PASS2_DUMP_ORIGINAL_INDICES")
     if not target_original_indices:
-        target_original_indices = parse_env_int_set("RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES")
+        target_original_indices = parse_env_int_set("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES")
     if not target_original_indices:
         return None
-    target_current_size = os.environ.get("RECOVAR_PASS2_DUMP_CURRENT_SIZE")
+    target_current_size = os.environ.get("RELAX_PASS2_DUMP_CURRENT_SIZE")
     if target_current_size:
         if current_size is None or int(current_size) != int(target_current_size):
             return None
     context_iteration = int(bpref_diagnostics._bpref_contribution_context["iteration"])
     context_half = int(bpref_diagnostics._bpref_contribution_context["half"])
-    target_iteration = os.environ.get("RECOVAR_PASS2_DUMP_ITERATION")
+    target_iteration = os.environ.get("RELAX_PASS2_DUMP_ITERATION")
     if target_iteration and context_iteration != int(target_iteration):
         return None
     return dump_dir, target_original_indices, context_iteration, context_half
@@ -697,7 +697,7 @@ def _maybe_dump_k_class_pass2_bucket(
     if dump_context is None:
         return 0
     dump_dir, target_original_indices, context_iteration, context_half = dump_context
-    target_class = os.environ.get("RECOVAR_PASS2_DUMP_CLASS")
+    target_class = os.environ.get("RELAX_PASS2_DUMP_CLASS")
     if target_class and int(target_class) != int(class_index) + 1:
         return 0
 

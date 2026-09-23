@@ -68,15 +68,15 @@ from relax.sparse_pass2.sparse_pass2_wavg import _relion_cuda_translate_wavg_nor
 
 logger = logging.getLogger(__name__)
 
-RESIDENT_OPERANDS_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_OPERANDS"
+RESIDENT_OPERANDS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS"
 # Host cap on the resident per-image operands of one half, as a fraction of the
 # device's memory. The operands scale with the half's image count, so a large
 # particle count at a large box can outgrow the budget; the driver then keeps
 # the per-chunk preparation and says so, instead of failing part way through.
-_RESIDENT_OPERAND_BYTES_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES"
+_RESIDENT_OPERAND_BYTES_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES"
 _RESIDENT_OPERAND_DEVICE_FRACTION = 0.10
 _DEFAULT_RESIDENT_OPERAND_MAX_BYTES = 6 * 1024**3
-_PREPARE_IMAGE_BATCH_ENV = "RECOVAR_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH"
+_PREPARE_IMAGE_BATCH_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH"
 _DEFAULT_PREPARE_IMAGE_BATCH = 256
 
 __all__ = [
@@ -130,7 +130,7 @@ class ResidentHalfOperands:
         calls on the same array in one process differ by about 6e-8 relative,
         and a different batch size differs by the same amount, so preparing it
         once per half is inside its own run-to-run spread. Under
-        ``RECOVAR_EM_DETERMINISTIC_REDUCTIONS=1`` the binning becomes a
+        ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` the binning becomes a
         fixed-order masked reduction and every one of those comparisons is
         exact, which is how the driver's verification arm checks it.
     """

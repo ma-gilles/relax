@@ -606,8 +606,8 @@ def test_streamed_packed_half_backprojector_fsc_avoids_padded_full_allocation(
         "_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS",
         0,
     )
-    monkeypatch.setenv("RECOVAR_MSTEP_FSC_DUMP_AVG", "1")
-    monkeypatch.delenv("RECOVAR_MSTEP_FSC_DUMP_DIR", raising=False)
+    monkeypatch.setenv("RELAX_MSTEP_FSC_DUMP_AVG", "1")
+    monkeypatch.delenv("RELAX_MSTEP_FSC_DUMP_DIR", raising=False)
     original_empty = regularization.np.empty
     original_zeros = regularization.np.zeros
 
@@ -647,9 +647,9 @@ def test_streamed_fsc_preserves_requested_output_precision(monkeypatch, output_d
     data = [(rng.normal(size=half_shape) + 1j * rng.normal(size=half_shape)).astype(np.complex64) for _ in range(2)]
     weights = [(0.25 + rng.random(size=half_shape)).astype(np.float32) for _ in range(2)]
     kwargs = dict(padding_factor=2, r_max=3, accumulator_volume_shape=accumulator_shape, output_dtype=output_dtype)
-    monkeypatch.setenv("RECOVAR_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS", "1000000")
+    monkeypatch.setenv("RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS", "1000000")
     expected = regularization_relion.compute_relion_fsc_from_backprojector(*data, *weights, shape, **kwargs)
-    monkeypatch.setenv("RECOVAR_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS", "0")
+    monkeypatch.setenv("RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS", "0")
     actual = regularization_relion.compute_relion_fsc_from_backprojector(*data, *weights, shape, **kwargs)
     assert actual.dtype == expected.dtype == output_dtype
     np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))

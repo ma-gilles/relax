@@ -234,13 +234,13 @@ def test_relion_optimizer_average_pmax_preserves_double_particle_values():
 
 
 def test_diagnostic_float64_pass2_iteration_selector(monkeypatch):
-    monkeypatch.delenv("RECOVAR_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
+    monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
     assert dtype_policy_module._diagnostic_float64_pass2_matches(4) is False
-    monkeypatch.setenv("RECOVAR_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "4, 7")
+    monkeypatch.setenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "4, 7")
     assert dtype_policy_module._diagnostic_float64_pass2_matches(3) is False
     assert dtype_policy_module._diagnostic_float64_pass2_matches(4) is True
     assert dtype_policy_module._diagnostic_float64_pass2_matches(7) is True
-    monkeypatch.setenv("RECOVAR_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "4,bad")
+    monkeypatch.setenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "4,bad")
     with pytest.raises(ValueError, match="comma-separated integers"):
         dtype_policy_module._diagnostic_float64_pass2_matches(4)
 
@@ -248,7 +248,7 @@ def test_diagnostic_float64_pass2_iteration_selector(monkeypatch):
 def test_local_search_precision_defaults_to_production_float32(monkeypatch):
     monkeypatch.setitem(scoring_policy._DENSE_EM_STATIC_KWARGS, "use_float64_scoring", False)
     monkeypatch.setitem(scoring_policy._DENSE_EM_STATIC_KWARGS, "use_float64_projections", False)
-    monkeypatch.delenv("RECOVAR_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
+    monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
 
     assert dtype_policy_module._local_search_precision_flags(
         12,
@@ -265,7 +265,7 @@ def test_local_search_precision_defaults_to_production_float32(monkeypatch):
 def test_local_search_precision_targeted_diagnostic_upgrades_only_pass2(monkeypatch):
     monkeypatch.setitem(scoring_policy._DENSE_EM_STATIC_KWARGS, "use_float64_scoring", False)
     monkeypatch.setitem(scoring_policy._DENSE_EM_STATIC_KWARGS, "use_float64_projections", False)
-    monkeypatch.setenv("RECOVAR_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "12")
+    monkeypatch.setenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "12")
 
     assert dtype_policy_module._local_search_precision_flags(
         12,
@@ -287,7 +287,7 @@ def test_local_search_precision_targeted_diagnostic_upgrades_only_pass2(monkeypa
 def test_local_search_precision_global_switches_upgrade_both_passes(monkeypatch):
     monkeypatch.setitem(scoring_policy._DENSE_EM_STATIC_KWARGS, "use_float64_scoring", True)
     monkeypatch.setitem(scoring_policy._DENSE_EM_STATIC_KWARGS, "use_float64_projections", True)
-    monkeypatch.delenv("RECOVAR_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
+    monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
 
     assert dtype_policy_module._local_search_precision_flags(
         12,
@@ -445,7 +445,7 @@ def test_dense_global_prior_helpers_honor_explicit_float64_dtype():
 
 
 def test_local_search_precision_rejects_unknown_pass(monkeypatch):
-    monkeypatch.delenv("RECOVAR_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
+    monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
     with pytest.raises(ValueError, match="pass_index"):
         dtype_policy_module._local_search_precision_flags(
             12,
@@ -487,7 +487,7 @@ def test_significance_offset_free_capture_preserves_margin_lost_after_large_comm
 
 
 def test_final_all_data_grid_correct_env_defaults_to_gui_quality(monkeypatch):
-    env_name = "RECOVAR_FINAL_ALL_DATA_GRID_CORRECT"
+    env_name = "RELAX_FINAL_ALL_DATA_GRID_CORRECT"
     monkeypatch.delenv(env_name, raising=False)
     assert finalization_policy._final_all_data_grid_correct_enabled(logger=iteration_loop_module.logger) is False
 
@@ -505,7 +505,7 @@ def test_final_all_data_grid_correct_env_defaults_to_gui_quality(monkeypatch):
 
 
 def test_final_all_data_after_max_iter_env_defaults_to_disabled(monkeypatch):
-    env_name = "RECOVAR_FINAL_ALL_DATA_AFTER_MAX_ITER"
+    env_name = "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER"
     monkeypatch.delenv(env_name, raising=False)
     assert (
         finalization_policy._should_run_final_all_data_iteration(
@@ -618,7 +618,7 @@ def test_local_debug_current_size_minus_one_is_wildcard():
 
 
 def test_k1_skip_significance_pruning_env_defaults_to_disabled(monkeypatch):
-    env_name = "RECOVAR_K1_SKIP_SIGNIFICANCE_PRUNING"
+    env_name = "RELAX_K1_SKIP_SIGNIFICANCE_PRUNING"
     monkeypatch.delenv(env_name, raising=False)
     assert scoring_policy._k1_skip_significance_pruning_enabled() is False
 
@@ -801,7 +801,7 @@ def test_k1_translation_grid_matches_relion_ceil_boundary_without_changing_k4(mo
         rounded_step,
         n_classes=4,
     )
-    monkeypatch.setenv("RECOVAR_K1_RELION_EXACT_TRANSLATION_GRID", "0")
+    monkeypatch.setenv("RELAX_K1_RELION_EXACT_TRANSLATION_GRID", "0")
     diagnostic_control_grid = sampling_module._translation_grid_for_class_count(
         rounded_range,
         rounded_step,
@@ -820,7 +820,7 @@ def test_k1_translation_grid_matches_relion_ceil_boundary_without_changing_k4(mo
 
 
 def test_k1_translation_grid_rejects_invalid_diagnostic_switch(monkeypatch):
-    monkeypatch.setenv("RECOVAR_K1_RELION_EXACT_TRANSLATION_GRID", "sometimes")
+    monkeypatch.setenv("RELAX_K1_RELION_EXACT_TRANSLATION_GRID", "sometimes")
     with pytest.raises(ValueError, match="must be a boolean value"):
         sampling_module._translation_grid_for_class_count(3.0, 1.0, n_classes=1)
 
@@ -1382,7 +1382,7 @@ class _RawCacheFakeDataset:
 def test_relion_raw_image_cache_loads_unique_loaders(monkeypatch):
     loader = _RawCacheFakeLoader()
     monkeypatch.setenv("RECOVAR_EM_RAW_IMAGE_CACHE", "auto")
-    monkeypatch.setenv("RECOVAR_EM_RAW_IMAGE_CACHE_MAX_GB", "1")
+    monkeypatch.setenv("RELAX_EM_RAW_IMAGE_CACHE_MAX_GB", "1")
 
     iteration_loop_module.maybe_cache_raw_image_loaders([_RawCacheFakeDataset(loader), _RawCacheFakeDataset(loader)])
 
@@ -1393,7 +1393,7 @@ def test_relion_raw_image_cache_loads_unique_loaders(monkeypatch):
 def test_relion_raw_image_cache_respects_memory_guard(monkeypatch):
     loader = _RawCacheFakeLoader(n=1024, D=1024)
     monkeypatch.setenv("RECOVAR_EM_RAW_IMAGE_CACHE", "auto")
-    monkeypatch.setenv("RECOVAR_EM_RAW_IMAGE_CACHE_MAX_GB", "0.001")
+    monkeypatch.setenv("RELAX_EM_RAW_IMAGE_CACHE_MAX_GB", "0.001")
 
     iteration_loop_module.maybe_cache_raw_image_loaders([_RawCacheFakeDataset(loader)])
 
@@ -1901,7 +1901,7 @@ def test_expand_significant_samples_to_full_parent_translations_preserves_rotati
     ],
 )
 def test_local_adaptive_pass2_denominator_support_mode(monkeypatch, value, expected):
-    monkeypatch.setenv("RECOVAR_LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT", value)
+    monkeypatch.setenv("RELAX_LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT", value)
 
     assert scoring_policy._local_adaptive_pass2_denominator_support_mode() == expected
 
@@ -2327,7 +2327,7 @@ def test_score_half_local_forwards_mstep_grid_for_each_class_count(monkeypatch, 
 
     monkeypatch.setitem(scoring_policy._DENSE_EM_STATIC_KWARGS, "use_float64_scoring", True)
     monkeypatch.setitem(scoring_policy._DENSE_EM_STATIC_KWARGS, "use_float64_projections", True)
-    monkeypatch.delenv("RECOVAR_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
+    monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
     with pytest.raises(DispatchCaptured):
         half_scoring._score_half_local(
@@ -2557,9 +2557,9 @@ def test_build_local_hypothesis_layout_factorized_chunking_preserves_support(mon
         grid_metadata=grid_metadata,
     )
 
-    monkeypatch.delenv("RECOVAR_LOCAL_SELECTOR_CHUNK_SIZE", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SELECTOR_CHUNK_SIZE", raising=False)
     full_layout = build_local_hypothesis_layout(prior_eulers, rotation_grid, **kwargs)
-    monkeypatch.setenv("RECOVAR_LOCAL_SELECTOR_CHUNK_SIZE", "1")
+    monkeypatch.setenv("RELAX_LOCAL_SELECTOR_CHUNK_SIZE", "1")
     chunked_layout = build_local_hypothesis_layout(prior_eulers, rotation_grid, **kwargs)
 
     np.testing.assert_array_equal(chunked_layout.rotation_offsets, full_layout.rotation_offsets)
@@ -2679,7 +2679,7 @@ def test_bucket_local_hypothesis_layout_coarsens_large_exact_neighborhoods_witho
 
 
 def test_bucket_local_hypothesis_layout_quantum_env_can_request_finer_tail_shapes(monkeypatch):
-    monkeypatch.setenv("RECOVAR_LOCAL_BUCKET_QUANTUM", "128")
+    monkeypatch.setenv("RELAX_LOCAL_BUCKET_QUANTUM", "128")
     layout = LocalHypothesisLayout(
         n_global_rotations=2000,
         n_pixels=768,
@@ -2704,8 +2704,8 @@ def test_bucket_local_hypothesis_layout_quantum_env_can_request_finer_tail_shape
 
 
 def test_bucket_local_hypothesis_layout_batches_moderate_local_search_neighborhoods(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
-    monkeypatch.delenv("RECOVAR_EXACT_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_EXACT_LOCAL_BUCKET_QUANTUM", raising=False)
     n_images = 120
     rotation_counts = np.full(n_images, 198, dtype=np.int32)
     rotation_offsets = np.concatenate([[0], np.cumsum(rotation_counts)]).astype(np.int64)
@@ -2737,7 +2737,7 @@ def test_bucket_local_hypothesis_layout_batches_moderate_local_search_neighborho
 
 
 def test_reconstruction_pack_uses_compact_default_quantum(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     monkeypatch.delenv(EXACT_LOCAL_RECONSTRUCTION_PACK_QUANTUM_ENV, raising=False)
     significant = np.ones((2, 1536), dtype=bool)
     local_mask = np.ones((2, 1536), dtype=bool)
@@ -2755,7 +2755,7 @@ def test_reconstruction_pack_uses_compact_default_quantum(monkeypatch):
 
 
 def test_reconstruction_pack_quantum_env_can_coarsen(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_QUANTUM", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     monkeypatch.setenv(EXACT_LOCAL_RECONSTRUCTION_PACK_QUANTUM_ENV, "2048")
     significant = np.ones((2, 1536), dtype=bool)
     local_mask = np.ones((2, 1536), dtype=bool)
@@ -2773,7 +2773,7 @@ def test_reconstruction_pack_quantum_env_can_coarsen(monkeypatch):
 
 
 def test_bucket_local_hypothesis_layout_unify_env_collapses_shape_classes(monkeypatch):
-    """RECOVAR_LOCAL_BUCKET_UNIFY=1 collapses ~13 unique bucket shape classes
+    """RELAX_LOCAL_BUCKET_UNIFY=1 collapses ~13 unique bucket shape classes
     into one max-sized class so the JIT only compiles one shape per layout.
     Pins the 7.3× perf win measured on 50k/256 K=1 (commit 8e868d5e)."""
 
@@ -2794,7 +2794,7 @@ def test_bucket_local_hypothesis_layout_unify_env_collapses_shape_classes(monkey
         translation_log_priors=np.zeros((len(rotation_counts), 4), dtype=np.float32),
     )
 
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_UNIFY", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_UNIFY", raising=False)
     default_buckets = bucket_local_hypothesis_layout(
         layout,
         image_batch_size=10,
@@ -2804,7 +2804,7 @@ def test_bucket_local_hypothesis_layout_unify_env_collapses_shape_classes(monkey
     default_unique_sizes = sorted({int(b.bucket_rotation_count) for b in default_buckets})
     assert len(default_unique_sizes) >= 6  # power-of-2 spread
 
-    monkeypatch.setenv("RECOVAR_LOCAL_BUCKET_UNIFY", "1")
+    monkeypatch.setenv("RELAX_LOCAL_BUCKET_UNIFY", "1")
     unified_buckets = bucket_local_hypothesis_layout(
         layout,
         image_batch_size=10,
@@ -2820,7 +2820,7 @@ def test_bucket_local_hypothesis_layout_unify_env_collapses_shape_classes(monkey
 
 
 def test_bucket_local_hypothesis_layout_unify_argument_collapses_shape_classes(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_UNIFY", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_UNIFY", raising=False)
     rotation_counts = np.array([16, 128, 512, 1408], dtype=np.int32)
     rotation_ids = np.arange(int(rotation_counts.sum()), dtype=np.int32)
     rotation_offsets = np.concatenate([[0], np.cumsum(rotation_counts)]).astype(np.int64)
@@ -2862,7 +2862,7 @@ def test_bucket_local_hypothesis_layout_unify_argument_collapses_shape_classes(m
 
 
 def test_bucket_local_hypothesis_layout_can_preserve_physical_image_order(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_UNIFY", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_UNIFY", raising=False)
     rotation_counts = np.array([16, 64, 16, 64], dtype=np.int32)
     rotation_offsets = np.concatenate([[0], np.cumsum(rotation_counts)]).astype(np.int64)
     n_total = int(rotation_counts.sum())
@@ -2899,7 +2899,7 @@ def test_bucket_local_hypothesis_layout_can_preserve_physical_image_order(monkey
 
 
 def test_bucket_local_hypothesis_layout_aligns_preserved_chunks_to_pool_three(monkeypatch):
-    monkeypatch.delenv("RECOVAR_LOCAL_BUCKET_UNIFY", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_BUCKET_UNIFY", raising=False)
     rotation_counts = np.full(7, 16, dtype=np.int32)
     rotation_offsets = np.concatenate([[0], np.cumsum(rotation_counts)]).astype(np.int64)
     n_total = int(rotation_counts.sum())
@@ -3320,14 +3320,14 @@ def test_relion_projector_texture_route_defaults_on_and_can_be_disabled(monkeypa
     rotations = jnp.eye(3, dtype=jnp.float32)[None]
     calls = []
 
-    monkeypatch.delenv("RECOVAR_RELION_PROJECTOR_TEXTURE_INTERP", raising=False)
+    monkeypatch.delenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", raising=False)
     monkeypatch.setattr(projection_helpers, "_cuda_projection_available", lambda: True)
     assert projection_helpers._relion_projector_texture_enabled(
         projector_half,
         r_max=1,
         padding_factor=1,
     )
-    monkeypatch.setenv("RECOVAR_RELION_PROJECTOR_TEXTURE_INTERP", "1")
+    monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "1")
 
     def fake_texture(projector, rotations_block, image_shape, **kwargs):
         calls.append((tuple(projector.shape), tuple(rotations_block.shape), tuple(image_shape), dict(kwargs)))
@@ -3354,7 +3354,7 @@ def test_relion_projector_texture_route_defaults_on_and_can_be_disabled(monkeypa
         )
     ]
 
-    monkeypatch.setenv("RECOVAR_RELION_PROJECTOR_TEXTURE_INTERP", "0")
+    monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "0")
     monkeypatch.setattr(
         projection_helpers,
         "project_relion_projector_half_spectrum_centered_rows",
@@ -3373,7 +3373,7 @@ def test_relion_projector_texture_route_defaults_on_and_can_be_disabled(monkeypa
     np.testing.assert_array_equal(np.asarray(fallback), np.full((1, 12), 7.0 + 0.0j, dtype=np.complex64))
     assert len(calls) == 1
 
-    monkeypatch.setenv("RECOVAR_RELION_PROJECTOR_TEXTURE_INTERP", "1")
+    monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "1")
     explicit_fallback, _ = projection_helpers.compute_relion_projector_projections_block(
         projector_half,
         rotations,
@@ -3395,27 +3395,27 @@ def test_relion_projector_texture_route_defaults_on_and_can_be_disabled(monkeypa
 def test_global_pass1_relion_projector_texture_defaults_to_texture(monkeypatch):
     from relax.scoring import significance
 
-    monkeypatch.delenv("RECOVAR_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP", raising=False)
-    monkeypatch.setenv("RECOVAR_RELION_PROJECTOR_TEXTURE_INTERP", "1")
+    monkeypatch.delenv("RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP", raising=False)
+    monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "1")
     assert significance._global_pass1_relion_projector_texture_enabled()
 
-    monkeypatch.setenv("RECOVAR_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP", "1")
+    monkeypatch.setenv("RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP", "1")
     assert significance._global_pass1_relion_projector_texture_enabled()
 
-    monkeypatch.setenv("RECOVAR_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP", "invalid")
-    with pytest.raises(ValueError, match="RECOVAR_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP"):
+    monkeypatch.setenv("RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP", "invalid")
+    with pytest.raises(ValueError, match="RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP"):
         significance._global_pass1_relion_projector_texture_enabled()
 
 
 def test_global_pass1_relion_projector_floorf_quirk_gate(monkeypatch):
     from relax.scoring import significance
 
-    monkeypatch.delenv("RECOVAR_RELION_ACC_DOUBLE_FLOORF_QUIRK", raising=False)
+    monkeypatch.delenv("RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK", raising=False)
     assert not significance._relion_acc_double_floorf_quirk_enabled()
-    monkeypatch.setenv("RECOVAR_RELION_ACC_DOUBLE_FLOORF_QUIRK", "1")
+    monkeypatch.setenv("RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK", "1")
     assert significance._relion_acc_double_floorf_quirk_enabled()
-    monkeypatch.setenv("RECOVAR_RELION_ACC_DOUBLE_FLOORF_QUIRK", "invalid")
-    with pytest.raises(ValueError, match="RECOVAR_RELION_ACC_DOUBLE_FLOORF_QUIRK"):
+    monkeypatch.setenv("RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK", "invalid")
+    with pytest.raises(ValueError, match="RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK"):
         significance._relion_acc_double_floorf_quirk_enabled()
 
 
@@ -3872,7 +3872,7 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
         return projector_half, int(current_size // 2)
 
     monkeypatch.setattr(projector_setup, "reference_to_relion_projector_half_maps", fake_projector_builder)
-    monkeypatch.setenv("RECOVAR_RELION_PROJECTOR_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_RELION_PROJECTOR_CACHE_DIR", str(tmp_path))
 
     mean_ft = np.zeros((4, 4, 4), dtype=np.complex64)
     mean_ft[0, 0, 0] = 1.0
@@ -4047,7 +4047,7 @@ def test_exact_local_fused_posterior_missing_warning_respects_filters():
 
 
 def test_local_score_debug_dump_records_attempted_pose_metadata(tmp_path, monkeypatch):
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_OPERANDS", "1")
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_OPERANDS", "1")
     class _Dataset:
         def original_image_indices_from_local(self, indices):
             _ = indices
@@ -4516,7 +4516,7 @@ def test_run_local_search_iteration_relion_xhalf_uses_windowed_batch_guard_by_de
         )
 
     monkeypatch.setattr(local_iteration_module, "run_local_em_exact", fake_run_local_em_exact)
-    monkeypatch.delenv("RECOVAR_LOCAL_XHALF_BATCH_GUARD", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_XHALF_BATCH_GUARD", raising=False)
 
     local_search_iteration._run_local_search_iteration(
         Dataset256(),
@@ -4548,7 +4548,7 @@ def test_run_local_search_iteration_relion_xhalf_uses_windowed_batch_guard_by_de
     # exact local engine has an intentional minimum tile of 64 rotations.
     assert captured["rotation_block_size"] == 64
 
-    monkeypatch.setenv("RECOVAR_LOCAL_XHALF_BATCH_GUARD", "full")
+    monkeypatch.setenv("RELAX_LOCAL_XHALF_BATCH_GUARD", "full")
     local_search_iteration._run_local_search_iteration(
         Dataset256(),
         jnp.zeros(1, dtype=jnp.complex64),
@@ -5431,7 +5431,7 @@ def test_run_local_em_exact_class_log_prior_shifts_evidence_only(rng):
 
 
 def test_run_local_em_exact_external_log_evidence_scales_posterior(rng, monkeypatch):
-    monkeypatch.setenv("RECOVAR_DISABLE_LOCAL_BIG_JIT", "1")
+    monkeypatch.setenv("RELAX_DISABLE_LOCAL_BIG_JIT", "1")
     dataset = MockDataset(1, rng)
     mean = _hermitian_volume(VOLUME_SHAPE, seed=131)
     noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
@@ -5541,9 +5541,9 @@ def test_run_local_em_exact_external_pmax_scales_in_one_score_pass(
     disable_big_jit,
 ):
     if disable_big_jit:
-        monkeypatch.setenv("RECOVAR_DISABLE_LOCAL_BIG_JIT", "1")
+        monkeypatch.setenv("RELAX_DISABLE_LOCAL_BIG_JIT", "1")
     else:
-        monkeypatch.delenv("RECOVAR_DISABLE_LOCAL_BIG_JIT", raising=False)
+        monkeypatch.delenv("RELAX_DISABLE_LOCAL_BIG_JIT", raising=False)
     dataset = MockDataset(1, rng)
     mean = _hermitian_volume(VOLUME_SHAPE, seed=132)
     noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
@@ -5606,7 +5606,7 @@ def test_run_local_em_exact_external_pmax_scales_in_one_score_pass(
 
 
 def test_run_local_em_exact_deferred_packed_mstep_matches_fused(rng, monkeypatch):
-    monkeypatch.setenv("RECOVAR_DISABLE_LOCAL_BIG_JIT", "1")
+    monkeypatch.setenv("RELAX_DISABLE_LOCAL_BIG_JIT", "1")
     dataset = MockDataset(2, rng)
     mean = _hermitian_volume(VOLUME_SHAPE, seed=137)
     noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
@@ -5642,7 +5642,7 @@ def test_run_local_em_exact_deferred_packed_mstep_matches_fused(rng, monkeypatch
     ha_base = local_result.hard_assignments
     stats_base = local_result.stats
     del local_result
-    monkeypatch.setenv("RECOVAR_EXACT_LOCAL_DEFER_PACKED_MSTEP", "1")
+    monkeypatch.setenv("RELAX_EXACT_LOCAL_DEFER_PACKED_MSTEP", "1")
     local_result = run_local_em_exact(
         dataset,
         mean,
@@ -6824,9 +6824,9 @@ def test_run_local_em_exact_default_path_matches_debug_split_path(monkeypatch, r
         max_significants=-1,
     )
 
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
     default = run_local_em_exact(
         dataset,
         mean,
@@ -6835,9 +6835,9 @@ def test_run_local_em_exact_default_path_matches_debug_split_path(monkeypatch, r
         "linear_interp",
         **common_kwargs,
     )
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", str(tmp_path / "score_dump"))
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", "0")
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT", "1")
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_DIR", str(tmp_path / "score_dump"))
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", "0")
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT", "1")
     split = run_local_em_exact(
         dataset,
         mean,
@@ -6972,9 +6972,9 @@ def test_run_local_em_exact_big_jit_bucket_matches_debug_split(monkeypatch, rng,
         source_faithful_spectrum_norm=True,
     )
 
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
     big = run_local_em_exact(
         dataset,
         mean,
@@ -6983,9 +6983,9 @@ def test_run_local_em_exact_big_jit_bucket_matches_debug_split(monkeypatch, rng,
         "linear_interp",
         **common_kwargs,
     )
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", str(tmp_path / "score_dump"))
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", "0")
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT", "1")
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_DIR", str(tmp_path / "score_dump"))
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", "0")
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT", "1")
     split = run_local_em_exact(
         dataset,
         mean,
@@ -7120,10 +7120,10 @@ def test_run_local_em_exact_big_jit_cache_ignores_bound_dataset_process_method(
         disable_adjoint_ctf=score_only,
         score_only=score_only,
     )
-    monkeypatch.delenv("RECOVAR_DISABLE_LOCAL_BIG_JIT", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
+    monkeypatch.delenv("RELAX_DISABLE_LOCAL_BIG_JIT", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
 
     function = local_big_jit.run_local_bucket_big_jit
     function.clear_cache()
@@ -7191,9 +7191,9 @@ def test_run_local_em_exact_big_jit_cache_ignores_bound_dataset_process_method(
 @pytest.mark.parametrize("use_big_jit", [True, False])
 def test_run_local_em_exact_score_only_big_jit_matches_debug_split(monkeypatch, rng, tmp_path, use_big_jit):
     if use_big_jit:
-        monkeypatch.delenv("RECOVAR_DISABLE_LOCAL_BIG_JIT", raising=False)
+        monkeypatch.delenv("RELAX_DISABLE_LOCAL_BIG_JIT", raising=False)
     else:
-        monkeypatch.setenv("RECOVAR_DISABLE_LOCAL_BIG_JIT", "1")
+        monkeypatch.setenv("RELAX_DISABLE_LOCAL_BIG_JIT", "1")
     dataset = RawRealImageDataset(3, rng)
     mean = _hermitian_volume(VOLUME_SHAPE, seed=561)
     noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
@@ -7215,9 +7215,9 @@ def test_run_local_em_exact_score_only_big_jit_matches_debug_split(monkeypatch, 
         score_only=True,
     )
 
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
     big = run_local_em_exact(
         dataset,
         mean,
@@ -7226,9 +7226,9 @@ def test_run_local_em_exact_score_only_big_jit_matches_debug_split(monkeypatch, 
         "linear_interp",
         **common_kwargs,
     )
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", str(tmp_path / "score_dump"))
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", "0")
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT", "1")
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_DIR", str(tmp_path / "score_dump"))
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", "0")
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT", "1")
     split = run_local_em_exact(
         dataset,
         mean,
@@ -7288,13 +7288,13 @@ def test_local_score_debug_dump_defaults_to_big_jit(monkeypatch, rng, tmp_path):
 
     score_dump_dir = tmp_path / "score_dump"
     fused_dump_dir = tmp_path / "fused_dump"
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", str(score_dump_dir))
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", "0")
-    monkeypatch.setenv("RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_DIR", str(fused_dump_dir))
-    monkeypatch.setenv("RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES", "0")
-    monkeypatch.setenv("RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_SCORES", "1")
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_OPERANDS", raising=False)
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_DIR", str(score_dump_dir))
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", "0")
+    monkeypatch.setenv("RELAX_LOCAL_FUSED_POSTERIOR_DUMP_DIR", str(fused_dump_dir))
+    monkeypatch.setenv("RELAX_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES", "0")
+    monkeypatch.setenv("RELAX_LOCAL_FUSED_POSTERIOR_DUMP_SCORES", "1")
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_OPERANDS", raising=False)
 
     result = run_local_em_exact(
         dataset,
@@ -7369,10 +7369,10 @@ def test_local_score_debug_dump_operands_stay_on_big_jit(monkeypatch, rng, tmp_p
     )
 
     big_dump_dir = tmp_path / "score_dump_big"
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", str(big_dump_dir))
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", "0")
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_OPERANDS", "1")
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_DIR", str(big_dump_dir))
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", "0")
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_OPERANDS", "1")
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
     big = run_local_em_exact(
         dataset,
         mean,
@@ -7383,8 +7383,8 @@ def test_local_score_debug_dump_operands_stay_on_big_jit(monkeypatch, rng, tmp_p
     )
 
     split_dump_dir = tmp_path / "score_dump_split"
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", str(split_dump_dir))
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT", "1")
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_DIR", str(split_dump_dir))
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT", "1")
     split = run_local_em_exact(
         dataset,
         mean,
@@ -7395,8 +7395,8 @@ def test_local_score_debug_dump_operands_stay_on_big_jit(monkeypatch, rng, tmp_p
     )
 
     float64_dump_dir = tmp_path / "score_dump_float64"
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", str(float64_dump_dir))
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_DIR", str(float64_dump_dir))
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
     run_local_em_exact(
         dataset,
         mean,
@@ -7470,10 +7470,10 @@ def test_local_score_debug_dump_does_not_filter_science_buckets_by_default(
         score_only=True,
     )
     for name in (
-        "RECOVAR_LOCAL_SCORE_DUMP_DIR",
-        "RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES",
-        "RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_DIR",
-        "RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES",
+        "RELAX_LOCAL_SCORE_DUMP_DIR",
+        "RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES",
+        "RELAX_LOCAL_FUSED_POSTERIOR_DUMP_DIR",
+        "RELAX_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES",
         LOCAL_SCORE_DUMP_TARGET_ONLY_ENV,
     ):
         monkeypatch.delenv(name, raising=False)
@@ -7488,13 +7488,13 @@ def test_local_score_debug_dump_does_not_filter_science_buckets_by_default(
 
     score_dump_dir = tmp_path / "score_dump"
     fused_dump_dir = tmp_path / "fused_dump"
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", str(score_dump_dir))
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", "2")
-    monkeypatch.setenv("RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_DIR", str(fused_dump_dir))
-    monkeypatch.setenv("RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES", "2")
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_DIR", str(score_dump_dir))
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", "2")
+    monkeypatch.setenv("RELAX_LOCAL_FUSED_POSTERIOR_DUMP_DIR", str(fused_dump_dir))
+    monkeypatch.setenv("RELAX_LOCAL_FUSED_POSTERIOR_DUMP_GLOBAL_INDICES", "2")
     monkeypatch.delenv(LOCAL_SCORE_DUMP_TARGET_ONLY_ENV, raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_OPERANDS", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_OPERANDS", raising=False)
 
     result = run_local_em_exact(
         dataset,
@@ -7533,9 +7533,9 @@ def test_local_score_debug_dump_does_not_filter_science_buckets_by_default(
 
     target_only_score_dump_dir = tmp_path / "target_only_score_dump"
     target_only_fused_dump_dir = tmp_path / "target_only_fused_dump"
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", str(target_only_score_dump_dir))
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_DIR", str(target_only_score_dump_dir))
     monkeypatch.setenv(
-        "RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_DIR", str(target_only_fused_dump_dir)
+        "RELAX_LOCAL_FUSED_POSTERIOR_DUMP_DIR", str(target_only_fused_dump_dir)
     )
     monkeypatch.setenv(LOCAL_SCORE_DUMP_TARGET_ONLY_ENV, "1")
 
@@ -7571,11 +7571,11 @@ def test_local_score_debug_force_split_only_splits_target_bucket(monkeypatch, rn
     all_rotations = _make_rotations(5, seed=570)
     local_layout = _three_image_local_layout(all_rotations)
     score_dump_dir = tmp_path / "score_dump"
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", str(score_dump_dir))
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", "2")
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_FORCE_SPLIT", "1")
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_DIR", str(score_dump_dir))
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", "2")
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_FORCE_SPLIT", "1")
     monkeypatch.setenv(LOCAL_SCORE_DUMP_TARGET_ONLY_ENV, "0")
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_OPERANDS", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_OPERANDS", raising=False)
 
     result = run_local_em_exact(
         dataset,
@@ -7634,7 +7634,7 @@ def test_local_score_debug_recon_projection_materialization_is_bucket_scoped():
 def test_local_fused_posterior_debug_requests_scores_only_with_explicit_flag():
     src = inspect.getsource(run_local_em_exact)
     assert "debug_fused_posterior_dump_scores = bool(" in src
-    assert 'and parse_env_true_flag("RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_SCORES")' in src
+    assert 'and parse_env_true_flag("RELAX_LOCAL_FUSED_POSTERIOR_DUMP_SCORES")' in src
     debug_scores_block = src[
         src.index("return_big_jit_debug_scores = bool(") :
         src.index("return_big_jit_debug_operands = bool(")
@@ -7798,8 +7798,8 @@ def test_run_local_em_exact_windowed_relion_projector_big_jit_matches_split(monk
         fail_if_native_projection_padding_is_built,
     )
 
-    monkeypatch.delenv("RECOVAR_DISABLE_LOCAL_BIG_JIT", raising=False)
-    monkeypatch.delenv("RECOVAR_EXACT_LOCAL_BIG_JIT_MAX_BUCKET_ROTATIONS", raising=False)
+    monkeypatch.delenv("RELAX_DISABLE_LOCAL_BIG_JIT", raising=False)
+    monkeypatch.delenv("RELAX_EXACT_LOCAL_BIG_JIT_MAX_BUCKET_ROTATIONS", raising=False)
     big = run_local_em_exact(
         dataset,
         mean,
@@ -7809,7 +7809,7 @@ def test_run_local_em_exact_windowed_relion_projector_big_jit_matches_split(monk
         **common_kwargs,
     )
 
-    monkeypatch.setenv("RECOVAR_EXACT_LOCAL_BIG_JIT_MAX_BUCKET_ROTATIONS", "7")
+    monkeypatch.setenv("RELAX_EXACT_LOCAL_BIG_JIT_MAX_BUCKET_ROTATIONS", "7")
     original_project = engine_module._project_local_bucket
     previous_projection = None
     split_projection_calls = 0
@@ -7888,7 +7888,7 @@ def test_run_local_em_exact_relion_projection_cache_matches_uncached_big_jit(mon
         relion_projector_r_max=4,
     )
 
-    monkeypatch.delenv("RECOVAR_DISABLE_LOCAL_BIG_JIT", raising=False)
+    monkeypatch.delenv("RELAX_DISABLE_LOCAL_BIG_JIT", raising=False)
     monkeypatch.setenv(EXACT_LOCAL_RELION_PROJECTION_CACHE_MAX_GB_ENV, "1")
     cached = run_local_em_exact(
         dataset,
@@ -8122,9 +8122,9 @@ def test_local_mstep_rotation_override_changes_only_adjoint_outputs(monkeypatch,
         max_significants=-1,
     )
 
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
-    monkeypatch.delenv("RECOVAR_DISABLE_LOCAL_BIG_JIT", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
+    monkeypatch.delenv("RELAX_DISABLE_LOCAL_BIG_JIT", raising=False)
     monkeypatch.delenv(EXACT_LOCAL_BIG_JIT_DEFER_PACKED_MSTEP_ENV, raising=False)
     monkeypatch.delenv(EXACT_LOCAL_SPARSE_BIG_JIT_MSTEP_MAX_GB_ENV, raising=False)
     if route == "sparse_big_jit":
@@ -8132,7 +8132,7 @@ def test_local_mstep_rotation_override_changes_only_adjoint_outputs(monkeypatch,
     elif route == "deferred_big_jit":
         monkeypatch.setenv(EXACT_LOCAL_SPARSE_BIG_JIT_MSTEP_MAX_GB_ENV, "0")
     elif route == "split":
-        monkeypatch.setenv("RECOVAR_DISABLE_LOCAL_BIG_JIT", "1")
+        monkeypatch.setenv("RELAX_DISABLE_LOCAL_BIG_JIT", "1")
 
     baseline = run_local_em_exact(
         dataset,
@@ -8176,8 +8176,8 @@ def test_local_mstep_rotation_override_changes_only_adjoint_outputs(monkeypatch,
 def test_run_local_em_exact_significant_support_uses_sparse_big_jit_packed_backprojection(monkeypatch, rng):
     dataset, mean, noise_variance, local_layout = _sparse_big_jit_local_case(rng)
 
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
     outputs = run_local_em_exact(
         dataset,
         mean,
@@ -8215,8 +8215,8 @@ def test_run_local_em_exact_over_cap_significant_support_defaults_to_deferred_bi
         max_significants=-1,
     )
 
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
     monkeypatch.delenv(EXACT_LOCAL_BIG_JIT_DEFER_PACKED_MSTEP_ENV, raising=False)
     monkeypatch.setenv(EXACT_LOCAL_SPARSE_BIG_JIT_MSTEP_MAX_GB_ENV, "1000")
     sparse = run_local_em_exact(
@@ -8254,10 +8254,10 @@ def test_local_noise_calls_use_logical_cutoff(monkeypatch, rng, deferred, curren
     from relax.local import local_em_engine as engine
 
     case = _sparse_big_jit_local_case(rng)
-    for key in ("RECOVAR_LOCAL_SCORE_DUMP_DIR", "RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES",
+    for key in ("RELAX_LOCAL_SCORE_DUMP_DIR", "RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES",
                 EXACT_LOCAL_BIG_JIT_DEFER_PACKED_MSTEP_ENV):
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("RECOVAR_DISABLE_LOCAL_BIG_JIT", "0" if deferred else "1")
+    monkeypatch.setenv("RELAX_DISABLE_LOCAL_BIG_JIT", "0" if deferred else "1")
     monkeypatch.setenv(EXACT_LOCAL_SPARSE_BIG_JIT_MSTEP_MAX_GB_ENV, "0")
     original = engine._noise_image_power_shells_and_per_image
     calls = []
@@ -8293,8 +8293,8 @@ def test_skip_deferred_zero_norm_preserves_real_local_outputs(
     from relax.local import local_em_engine as engine
 
     case = _sparse_big_jit_local_case(rng)
-    for key in ("RECOVAR_LOCAL_SCORE_DUMP_DIR", "RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES",
-                "RECOVAR_DISABLE_LOCAL_BIG_JIT", EXACT_LOCAL_BIG_JIT_DEFER_PACKED_MSTEP_ENV):
+    for key in ("RELAX_LOCAL_SCORE_DUMP_DIR", "RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES",
+                "RELAX_DISABLE_LOCAL_BIG_JIT", EXACT_LOCAL_BIG_JIT_DEFER_PACKED_MSTEP_ENV):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv(EXACT_LOCAL_SPARSE_BIG_JIT_MSTEP_MAX_GB_ENV, "0" if deferred else "1000")
     original = engine._invoke_local_bucket_big_jit
@@ -8392,7 +8392,7 @@ def test_skip_deferred_zero_norm_selector(monkeypatch, token, expected):
 def test_skip_deferred_zero_norm_rejects_invalid_selector(monkeypatch, token):
     from relax.local import local_em_engine as engine
     monkeypatch.setenv(engine.EXACT_LOCAL_SKIP_DEFERRED_ZERO_NORM_ENV, token)
-    with pytest.raises(ValueError, match="RECOVAR_EXACT_LOCAL_SKIP_DEFERRED_ZERO_NORM"):
+    with pytest.raises(ValueError, match="RELAX_EXACT_LOCAL_SKIP_DEFERRED_ZERO_NORM"):
         parse_env_binary_flag(engine.EXACT_LOCAL_SKIP_DEFERRED_ZERO_NORM_ENV)
 
 
@@ -8410,8 +8410,8 @@ def test_run_local_em_exact_deferred_big_jit_no_noise_matches_sparse_big_jit(mon
         max_significants=-1,
     )
 
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
     monkeypatch.delenv(EXACT_LOCAL_BIG_JIT_DEFER_PACKED_MSTEP_ENV, raising=False)
     monkeypatch.setenv(EXACT_LOCAL_SPARSE_BIG_JIT_MSTEP_MAX_GB_ENV, "1000")
     sparse = run_local_em_exact(
@@ -8489,8 +8489,8 @@ def test_run_local_em_exact_processed_half_cache_matches_uncached_split(monkeypa
         max_significants=-1,
     )
 
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_DIR", raising=False)
-    monkeypatch.delenv("RECOVAR_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SCORE_DUMP_GLOBAL_INDICES", raising=False)
     monkeypatch.setenv(EXACT_LOCAL_PROCESSED_HALF_CACHE_MAX_GB_ENV, "0")
     uncached = run_local_em_exact(
         dataset,
@@ -8939,7 +8939,7 @@ def translations():
 def _clear_parity_dump_env(monkeypatch):
     """Isolate these tests from ambient RELION-parity-dump debugging env vars.
 
-    ``_parity_dump.is_active()`` reads ``RECOVAR_PARITY_DUMP_DIR`` directly, and
+    ``_parity_dump.is_active()`` reads ``RELAX_PARITY_DUMP_DIR`` directly, and
     it feeds the ``need_unreg_means`` gate in ``refine_single_volume`` via
     an ``or`` -- so a var left exported in a developer's shell from an earlier
     parity-debugging session silently changes reconstruction call counts and
@@ -8947,8 +8947,8 @@ def _clear_parity_dump_env(monkeypatch):
     test's own ``options`` request. ``monkeypatch.delenv`` restores whatever
     value (or absence) existed once the test finishes.
     """
-    monkeypatch.delenv("RECOVAR_PARITY_DUMP_DIR", raising=False)
-    monkeypatch.delenv("RECOVAR_PARITY_TIMING_DIR", raising=False)
+    monkeypatch.delenv("RELAX_PARITY_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_PARITY_TIMING_DIR", raising=False)
 
 
 # ===========================================================================
@@ -10315,7 +10315,7 @@ class TestRelionModeSmokeTest:
             final_all_data_pass_count += 1
             return original_prepare_final_references(*args, **kwargs)
 
-        monkeypatch.setenv("RECOVAR_FINAL_ALL_DATA_AFTER_MAX_ITER", "1")
+        monkeypatch.setenv("RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER", "1")
         monkeypatch.setattr(
             iteration_loop_module.replay_policy,
             "_prepare_final_replay_references",
@@ -10599,10 +10599,10 @@ class TestRelionModeSmokeTest:
             )
             return list(adaptive_calls)
 
-        monkeypatch.delenv("RECOVAR_K_CLASS_DENSE_PASS2", raising=False)
+        monkeypatch.delenv("RELAX_K_CLASS_DENSE_PASS2", raising=False)
         assert run_once() == [True, True]
 
-        monkeypatch.setenv("RECOVAR_K_CLASS_DENSE_PASS2", "1")
+        monkeypatch.setenv("RELAX_K_CLASS_DENSE_PASS2", "1")
         assert run_once() == [False, False]
 
     def test_relion_mode_finite_outputs(
@@ -11382,7 +11382,7 @@ class TestRelionModeSmokeTest:
         _ = em_result.Ft_ctf
         del em_result
 
-        monkeypatch.setenv("RECOVAR_SIGNIFICANCE_SCORE_CACHE", "off")
+        monkeypatch.setenv("RELAX_SIGNIFICANCE_SCORE_CACHE", "off")
         _, _, actual_ha, _, _, _ = _compute_k_class_significance_batched(
             dataset,
             init_volume[None, :],
@@ -11407,7 +11407,7 @@ class TestRelionModeSmokeTest:
 
         np.testing.assert_array_equal(np.asarray(actual_ha), np.asarray(expected_ha))
 
-        monkeypatch.setenv("RECOVAR_SIGNIFICANCE_SCORE_CACHE", "force")
+        monkeypatch.setenv("RELAX_SIGNIFICANCE_SCORE_CACHE", "force")
         cached_result = _compute_k_class_significance_batched(
             dataset,
             init_volume[None, :],
@@ -11429,7 +11429,7 @@ class TestRelionModeSmokeTest:
             projection_padding_factor=2,
             use_float64_scoring=True,
         )
-        monkeypatch.setenv("RECOVAR_SIGNIFICANCE_SCORE_CACHE", "off")
+        monkeypatch.setenv("RELAX_SIGNIFICANCE_SCORE_CACHE", "off")
         uncached_result = _compute_k_class_significance_batched(
             dataset,
             init_volume[None, :],
@@ -11498,7 +11498,7 @@ class TestRelionModeSmokeTest:
             use_float64_scoring=True,
         )
 
-        monkeypatch.setenv("RECOVAR_SIGNIFICANCE_SCORE_CACHE", "force")
+        monkeypatch.setenv("RELAX_SIGNIFICANCE_SCORE_CACHE", "force")
         cached_result = _compute_k_class_significance_batched(
             dataset,
             means,
@@ -11508,7 +11508,7 @@ class TestRelionModeSmokeTest:
             "linear_interp",
             **common_kwargs,
         )
-        monkeypatch.setenv("RECOVAR_SIGNIFICANCE_SCORE_CACHE", "off")
+        monkeypatch.setenv("RELAX_SIGNIFICANCE_SCORE_CACHE", "off")
         uncached_result = _compute_k_class_significance_batched(
             dataset,
             means,
@@ -11623,7 +11623,7 @@ class TestRelionModeSmokeTest:
             score_mode="gaussian",
         )
 
-        monkeypatch.setenv("RECOVAR_PASS1_FUSED", "0")
+        monkeypatch.setenv("RELAX_PASS1_FUSED", "0")
         unfused_result = _compute_k_class_significance_batched(
             dataset,
             means,
@@ -11633,7 +11633,7 @@ class TestRelionModeSmokeTest:
             "linear_interp",
             **common_kwargs,
         )
-        monkeypatch.setenv("RECOVAR_PASS1_FUSED", "1")
+        monkeypatch.setenv("RELAX_PASS1_FUSED", "1")
         fused_result = _compute_k_class_significance_batched(
             dataset,
             means,
@@ -11846,7 +11846,7 @@ class TestRelionModeSmokeTest:
         rotations = _make_rotations(2, seed=6322)
         translations = jnp.zeros((1, 2), dtype=jnp.float32)
         monkeypatch.setenv(
-            "RECOVAR_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN",
+            "RELAX_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN",
             "4e-6",
         )
         monkeypatch.setattr(significance_module.jax, "default_backend", lambda: "gpu")
@@ -12088,7 +12088,7 @@ class TestRelionModeSmokeTest:
         Regression for codex_k2_dump_20260508_064420_5026: prior to wiring
         ``_maybe_dump_k_class_significance_batch`` into the K-class branch, the
         InitialModel K=2 sparse pass-2 emitted no significance debug files even
-        with ``RECOVAR_SIGNIFICANCE_DUMP_DIR`` and the matching original-index
+        with ``RELAX_SIGNIFICANCE_DUMP_DIR`` and the matching original-index
         target set.
         """
         dataset = half_datasets[0]
@@ -12099,12 +12099,12 @@ class TestRelionModeSmokeTest:
 
         dump_dir = tmp_path / "k_class_sig_dump"
         target_local = 0
-        monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
+        monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
         monkeypatch.setenv(
-            "RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES",
+            "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES",
             str(target_local),
         )
-        monkeypatch.delenv("RECOVAR_SIGNIFICANCE_DUMP_PROJECTION_ROTATIONS", raising=False)
+        monkeypatch.delenv("RELAX_SIGNIFICANCE_DUMP_PROJECTION_ROTATIONS", raising=False)
 
         _compute_k_class_significance_batched(
             dataset,
@@ -12152,8 +12152,8 @@ class TestRelionModeSmokeTest:
         class_log_priors = np.log(np.array([0.55, 0.45], dtype=np.float64))
 
         dump_dir = tmp_path / "k_class_score_probe_dump"
-        monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
-        monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "0")
+        monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
+        monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "0")
 
         *_, full_stats = _compute_k_class_significance_batched(
             dataset,
@@ -12226,7 +12226,7 @@ class TestRelionModeSmokeTest:
         from relax.reconstruction import regularization_relion
 
         monkeypatch.setitem(iteration_loop_module._DENSE_EM_STATIC_KWARGS, "use_float64_scoring", double_scoring)
-        monkeypatch.setenv("RECOVAR_USE_FLOAT64_SCORING", "1" if double_scoring else "0")
+        monkeypatch.setenv("RELAX_USE_FLOAT64_SCORING", "1" if double_scoring else "0")
         called = {"tau2": 0}
 
         original_tau2 = regularization_relion.compute_relion_tau2_from_weights
@@ -13030,7 +13030,7 @@ class TestRelionModeSmokeTest:
         """K=1 adaptive counts remain diagnostic when exact accuracy is unavailable."""
         import relax.refinement.iteration_loop as refine_mod
 
-        monkeypatch.delenv("RECOVAR_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", raising=False)
+        monkeypatch.delenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", raising=False)
         counts_by_half = [
             np.array([4, 5], dtype=np.int32),
             np.array([6, 7], dtype=np.int32),
@@ -13226,7 +13226,7 @@ class TestRelionModeSmokeTest:
     ):
         """K-class significant counts are diagnostics, not convergence inputs."""
 
-        monkeypatch.delenv("RECOVAR_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", raising=False)
+        monkeypatch.delenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", raising=False)
         counts_by_half = [
             np.array([8, 9], dtype=np.int32),
             np.array([10, 11], dtype=np.int32),
@@ -14765,9 +14765,9 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
     """Class3D M-step tau2 comes from current Iref power, not previous model.star."""
 
     if capture_dump:
-        monkeypatch.setenv("RECOVAR_KCLASS_DUMP_DIR", str(tmp_path))
+        monkeypatch.setenv("RELAX_KCLASS_DUMP_DIR", str(tmp_path))
     else:
-        monkeypatch.delenv("RECOVAR_KCLASS_DUMP_DIR", raising=False)
+        monkeypatch.delenv("RELAX_KCLASS_DUMP_DIR", raising=False)
     floor_calls = []
     shell_stats = regularization_relion._compute_relion_weight_shell_stats
 
@@ -14924,7 +14924,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
     assert iref_tau2_calls == [0, 1, 0, 1]
 
     same_iter_tau2 = class_tau2 + 1000.0
-    monkeypatch.setenv("RECOVAR_KCLASS_REPLAY_TAU2", "1")
+    monkeypatch.setenv("RELAX_KCLASS_REPLAY_TAU2", "1")
     replay_result = refine_single_volume(
         half_datasets,
         init_volume,
@@ -15731,8 +15731,8 @@ def test_local_k4_f32_ctf_batch_block_wide_split_factorial(monkeypatch):
     # Counts 65--73 pad to 128 rotations for block 128, but to 256 for block
     # 64.  The fixed 192 ceiling therefore crosses image batching with both
     # the normal fused bucket and the production wide/split fallback.
-    monkeypatch.setenv("RECOVAR_EXACT_LOCAL_BIG_JIT_MAX_BUCKET_ROTATIONS", "192")
-    monkeypatch.delenv("RECOVAR_DISABLE_LOCAL_BIG_JIT", raising=False)
+    monkeypatch.setenv("RELAX_EXACT_LOCAL_BIG_JIT_MAX_BUCKET_ROTATIONS", "192")
+    monkeypatch.delenv("RELAX_DISABLE_LOCAL_BIG_JIT", raising=False)
     arms = {
         "normal_batch3_block128": (3, 128, 128, False),
         "normal_batch2_block128": (2, 128, 128, False),
@@ -16373,7 +16373,7 @@ def test_k4_numbered_global_to_exact_local_preserves_per_half_pose_state(
         )
         return result
 
-    monkeypatch.setenv("RECOVAR_K_CLASS_RELION_X_HALF_MSTEP", "0")
+    monkeypatch.setenv("RELAX_K_CLASS_RELION_X_HALF_MSTEP", "0")
     monkeypatch.setattr(
         iteration_loop_module,
         "update_refinement_state",

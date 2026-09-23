@@ -87,11 +87,11 @@ def test_compact_adjoint_real_rows_matches_dense_rows(monkeypatch, noise_mode):
 
     def run(flag):
         monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", "0")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "4")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", flag)
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS", "0")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "4")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", flag)
         kwargs = _fused_kclass_multibucket_fixture(n_images=13)
         if noise_mode == "noise":
             kwargs["accumulate_noise"] = True
@@ -149,7 +149,7 @@ def test_real_flat_row_indices_from_actual_counts_layout():
 @pytest.mark.parametrize("defer_flag", ["0", "1"])
 @pytest.mark.parametrize("noise_mode", ["noise", "noise_with_scale_groups"])
 def test_flat_real_rows_sums_and_noise_are_bit_identical(monkeypatch, custom_cuda_lib, gpu_device, device_scalars, defer_flag, noise_mode):
-    """RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_FLAT_ROWS computes the pair-sparse weighted sums,
+    """RELAX_SPARSE_KCLASS_COMPACT_PAIR_FLAT_ROWS computes the pair-sparse weighted sums,
     CTF sums and noise terms only for the real rotation rows (flat [rows, pixel] layout)
     instead of the padded [images, rows, pixel] layout. Each real row is the padded row
     bit for bit and padded rows carry exactly zero mass, so every output must be
@@ -169,16 +169,16 @@ def test_flat_real_rows_sums_and_noise_are_bit_identical(monkeypatch, custom_cud
         return original(*a, **kw)
 
     def run(flat):
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "4")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS", device_scalars)
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_DEFERRED_HOST_STATS", defer_flag)
-        monkeypatch.setenv("RECOVAR_SPARSE_PASS2_IMAGE_CAPACITY", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_LAZY_TABLES", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_NATIVE_PAIR_SPARSE_SUMS", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_FLAT_ROWS", flat)
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "4")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS", device_scalars)
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_DEFERRED_HOST_STATS", defer_flag)
+        monkeypatch.setenv("RELAX_SPARSE_PASS2_IMAGE_CAPACITY", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_LAZY_TABLES", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_NATIVE_PAIR_SPARSE_SUMS", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_FLAT_ROWS", flat)
         monkeypatch.setattr(em_cuda_kernels, "dual_weighted_sums_pairs_rows_f32", spy)
         # the fused stage is jitted: retrace so the (Python-level) spy sees the kernel call
         bucketed_mod._compact_pair_weighted_sums_and_noise_native.clear_cache()
@@ -238,9 +238,9 @@ def test_flat_real_rows_flag_requires_its_prerequisites(monkeypatch):
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_FLAT_ROWS", "1")
-    monkeypatch.delenv("RECOVAR_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", raising=False)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_FLAT_ROWS", "1")
+    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", raising=False)
     kwargs = _fused_kclass_multibucket_fixture(n_images=6)
     with pytest.raises(ValueError, match="compact pair flat rows require"):
         bucketed_mod.compute_k_class_pass2_stats_sparse_fused(**kwargs)
@@ -250,7 +250,7 @@ def test_flat_real_rows_flag_requires_its_prerequisites(monkeypatch):
 
 def test_fused_translate_capacity_skips_only_absent_pair_gather(monkeypatch):
     from relax.sparse_pass2.sparse_pass2_adjoint import _split_compact_pair_buckets_by_projection_gather_budget
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_GROUP_PAIR_BUCKETS_BY_ROTATION_SIGNATURE", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_GROUP_PAIR_BUCKETS_BY_ROTATION_SIGNATURE", "0")
     bucket = {"pair_bucket_size": 1024, "image_indices": np.array([0, 1]), "class_bucket_sizes": (4,)}
     kwargs = dict(n_score_pixels=16, n_recon_pixels=16, projection_complex_dtype=np.complex64,
                   max_gather_bytes=65536, max_prepare_images_per_microbatch=16,

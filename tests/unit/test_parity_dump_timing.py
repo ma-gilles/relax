@@ -13,7 +13,7 @@ def parity_env(tmp_path, monkeypatch):
     """Activate parity dump for the duration of one test."""
     dump = tmp_path / "dump"
     dump.mkdir()
-    monkeypatch.setenv("RECOVAR_PARITY_DUMP_DIR", str(dump))
+    monkeypatch.setenv("RELAX_PARITY_DUMP_DIR", str(dump))
     # Reload the module so its globals see the env. parity_dump reads the env on
     # every call via is_active(), so a reload is not strictly necessary, but
     # it ensures _ITER_TIMERS starts empty.
@@ -25,8 +25,8 @@ def parity_env(tmp_path, monkeypatch):
 
 
 def test_inactive_when_env_unset(monkeypatch):
-    monkeypatch.delenv("RECOVAR_PARITY_DUMP_DIR", raising=False)
-    monkeypatch.delenv("RECOVAR_PARITY_TIMING_DIR", raising=False)
+    monkeypatch.delenv("RELAX_PARITY_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_PARITY_TIMING_DIR", raising=False)
     from relax.diagnostics import parity_dump as p
 
     p._ITER_TIMERS.clear()
@@ -135,9 +135,9 @@ def test_dump_iteration_falls_back_to_iteration_start_arg(parity_env):
 
 
 def test_timing_only_dump_does_not_require_full_parity_env(tmp_path, monkeypatch):
-    monkeypatch.delenv("RECOVAR_PARITY_DUMP_DIR", raising=False)
+    monkeypatch.delenv("RELAX_PARITY_DUMP_DIR", raising=False)
     timing = tmp_path / "timing"
-    monkeypatch.setenv("RECOVAR_PARITY_TIMING_DIR", str(timing))
+    monkeypatch.setenv("RELAX_PARITY_TIMING_DIR", str(timing))
 
     from relax.diagnostics import parity_dump as p
 

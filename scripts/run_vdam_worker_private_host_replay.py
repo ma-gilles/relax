@@ -596,8 +596,8 @@ def replay(
     if worker_count <= 0:
         raise ValueError("worker count must be positive")
     for name in (
-        "RECOVAR_VDAM_QUIESCED_PRELAUNCH_CAPTURE_DIR",
-        "RECOVAR_VDAM_QUIESCED_PRELAUNCH_PARTICLE_ID",
+        "RELAX_VDAM_QUIESCED_PRELAUNCH_CAPTURE_DIR",
+        "RELAX_VDAM_QUIESCED_PRELAUNCH_PARTICLE_ID",
     ):
         if os.environ.get(name, "").strip():
             raise RuntimeError(f"worker-private replay cannot mix with {name}")

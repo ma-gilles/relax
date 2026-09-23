@@ -79,21 +79,21 @@ RUN_FULL_REFINEMENT = Path(__file__).resolve().parents[2] / "scripts" / "run_ful
 
 def test_full_refinement_supports_stop_after_coarse_significance_dump():
     source = RUN_FULL_REFINEMENT.read_text()
-    assert "RECOVAR_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET" in source
+    assert "RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET" in source
     assert "SignificanceDumpComplete" in source
     assert "pass-2/M-step work" in source
 
 
 def test_full_refinement_supports_stop_after_bpref_contribution_dump():
     source = RUN_FULL_REFINEMENT.read_text()
-    assert "RECOVAR_BPREF_CONTRIBUTION_STOP_AFTER_TARGET" in source
+    assert "RELAX_BPREF_CONTRIBUTION_STOP_AFTER_TARGET" in source
     assert "BPrefContributionDumpComplete" in source
     assert "requested pass-2 boundary" in source
 
 
 def test_full_refinement_supports_stop_after_pass2_operand_dump():
     source = RUN_FULL_REFINEMENT.read_text()
-    assert "RECOVAR_PASS2_DUMP_STOP_AFTER_TARGET" in source
+    assert "RELAX_PASS2_DUMP_STOP_AFTER_TARGET" in source
     assert "Pass2DumpComplete" in source
     assert "requested fine-score boundary" in source
 ITERATION_LOOP = (
@@ -152,7 +152,7 @@ def test_state_swap_diagnostic_can_preserve_fresh_auto_refine_particle_order():
         state_swap_variant="all_relion",
         state_swap_target_relion_iteration=2,
     )
-    env = {"RECOVAR_STATE_SWAP_FORCE_FRESH_PARTICLE_ORDER": "1"}
+    env = {"RELAX_STATE_SWAP_FORCE_FRESH_PARTICLE_ORDER": "1"}
 
     assert _use_fresh_auto_refine_particle_order(args, None, environ=env)
     assert not _use_fresh_auto_refine_particle_order(args, object(), environ=env)
@@ -165,21 +165,21 @@ def test_state_swap_diagnostic_can_preserve_fresh_auto_refine_particle_order():
 @pytest.mark.parametrize("token", ["1", "true", "YES", "on"])
 def test_k1_relion_live_initial_noise_truthy_tokens(token):
     assert _k1_relion_live_initial_noise_enabled(
-        {"RECOVAR_K1_RELION_LIVE_INITIAL_NOISE": token},
+        {"RELAX_K1_RELION_LIVE_INITIAL_NOISE": token},
     )
 
 
 @pytest.mark.parametrize("token", ["0", "false", "NO", "off", ""])
 def test_k1_relion_live_initial_noise_falsey_tokens(token):
     assert not _k1_relion_live_initial_noise_enabled(
-        {"RECOVAR_K1_RELION_LIVE_INITIAL_NOISE": token},
+        {"RELAX_K1_RELION_LIVE_INITIAL_NOISE": token},
     )
 
 
 def test_k1_relion_live_initial_noise_rejects_unknown_token():
-    with pytest.raises(ValueError, match="Unsupported RECOVAR_K1_RELION_LIVE_INITIAL_NOISE"):
+    with pytest.raises(ValueError, match="Unsupported RELAX_K1_RELION_LIVE_INITIAL_NOISE"):
         _k1_relion_live_initial_noise_enabled(
-            {"RECOVAR_K1_RELION_LIVE_INITIAL_NOISE": "maybe"},
+            {"RELAX_K1_RELION_LIVE_INITIAL_NOISE": "maybe"},
         )
 
 
@@ -585,7 +585,7 @@ def test_fixed_diagnostic_arm_rejects_alternate_projector_and_float_mode():
         _validate_fixed_diagnostic_arm_cli(args)
     with pytest.raises(ValueError, match="unsealed RECOVAR environment"):
         _validate_fixed_diagnostic_math_environment(
-            {"RECOVAR_USE_FLOAT64_SCORING": "1"}
+            {"RELAX_USE_FLOAT64_SCORING": "1"}
         )
 
 

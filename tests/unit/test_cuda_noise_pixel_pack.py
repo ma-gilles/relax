@@ -107,19 +107,19 @@ def test_noop_returns_original_objects_before_cuda(no_spare, monkeypatch):
     "token,expected", [(None, False), ("0", False), ("1", True), (" 1 ", True), ("", None), ("true", None), ("2", None)]
 )
 def test_selector(monkeypatch, token, expected):
-    name = "RECOVAR_EXACT_LOCAL_NOISE_PIXEL_CUDA"
+    name = "RELAX_EXACT_LOCAL_NOISE_PIXEL_CUDA"
     monkeypatch.delenv(name, raising=False)
     if token is not None:
         monkeypatch.setenv(name, token)
     if expected is None:
         with pytest.raises(ValueError, match="must be 0 or 1"):
-            parse_env_binary_flag('RECOVAR_EXACT_LOCAL_NOISE_PIXEL_CUDA')
+            parse_env_binary_flag('RELAX_EXACT_LOCAL_NOISE_PIXEL_CUDA')
     else:
-        assert parse_env_binary_flag('RECOVAR_EXACT_LOCAL_NOISE_PIXEL_CUDA') is expected
+        assert parse_env_binary_flag('RELAX_EXACT_LOCAL_NOISE_PIXEL_CUDA') is expected
 
 
 def test_requires_pixel_capacity_before_dataset_access(monkeypatch):
-    monkeypatch.setenv("RECOVAR_EXACT_LOCAL_NOISE_PIXEL_CUDA", "1")
+    monkeypatch.setenv("RELAX_EXACT_LOCAL_NOISE_PIXEL_CUDA", "1")
     monkeypatch.setenv(engine.EXACT_LOCAL_NOISE_PIXEL_CAPACITY_ENV, "0")
     with pytest.raises(ValueError, match="CUDA packing requires noise pixel capacity"):
         engine.run_local_em_exact(

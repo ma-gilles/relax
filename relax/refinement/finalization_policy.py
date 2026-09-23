@@ -2,8 +2,8 @@
 
 from relax.helpers.env_flags import parse_env_flag_or_false
 
-_FINAL_ALL_DATA_GRID_CORRECT_ENV = "RECOVAR_FINAL_ALL_DATA_GRID_CORRECT"
-_FINAL_ALL_DATA_AFTER_MAX_ITER_ENV = "RECOVAR_FINAL_ALL_DATA_AFTER_MAX_ITER"
+_FINAL_ALL_DATA_GRID_CORRECT_ENV = "RELAX_FINAL_ALL_DATA_GRID_CORRECT"
+_FINAL_ALL_DATA_AFTER_MAX_ITER_ENV = "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER"
 
 
 def _final_all_data_grid_correct_enabled(*, logger) -> bool:
@@ -12,7 +12,7 @@ def _final_all_data_grid_correct_enabled(*, logger) -> bool:
     The reviewed implementation defaults this off; the strict-parity target
     specifies on and requires a separately qualified policy change. Explicit
     replay can enable it with
-    ``RECOVAR_FINAL_ALL_DATA_GRID_CORRECT=1``.
+    ``RELAX_FINAL_ALL_DATA_GRID_CORRECT=1``.
     """
 
     return parse_env_flag_or_false(_FINAL_ALL_DATA_GRID_CORRECT_ENV, logger=logger)

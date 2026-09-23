@@ -344,31 +344,31 @@ logger = logging.getLogger(__name__)
 # Keep those two gathers within 10% of physical memory.  A K=4 cap that allowed
 # 6,587,373 total candidates formed two 8 GiB gathers and requested a 17.04 GiB
 # compiled temporary on the 100k/256 fixture after earlier JIT fragmentation.
-_EXACT_RAW_DIFF2_CACHE_MAX_BYTES_ENV = "RECOVAR_SPARSE_PASS2_EXACT_RAW_DIFF2_CACHE_MAX_BYTES"
-_SMALL_BUCKET_MAX_TRANSLATION_TILE_BYTES_ENV = "RECOVAR_SPARSE_PASS2_SMALL_BUCKET_MAX_TRANSLATION_TILE_BYTES"
-_SMALL_BUCKET_THRESHOLD_ENV = "RECOVAR_SPARSE_PASS2_SMALL_BUCKET_THRESHOLD"
+_EXACT_RAW_DIFF2_CACHE_MAX_BYTES_ENV = "RELAX_SPARSE_PASS2_EXACT_RAW_DIFF2_CACHE_MAX_BYTES"
+_SMALL_BUCKET_MAX_TRANSLATION_TILE_BYTES_ENV = "RELAX_SPARSE_PASS2_SMALL_BUCKET_MAX_TRANSLATION_TILE_BYTES"
+_SMALL_BUCKET_THRESHOLD_ENV = "RELAX_SPARSE_PASS2_SMALL_BUCKET_THRESHOLD"
 
-_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS_ENV = "RECOVAR_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS"
-_SPARSE_KCLASS_COMPACT_BUCKETS_ENV = "RECOVAR_SPARSE_KCLASS_COMPACT_BUCKETS"
-_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS_ENV = "RECOVAR_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS"
-_SPARSE_KCLASS_GROUP_TIMING_ENV = "RECOVAR_SPARSE_KCLASS_GROUP_TIMING"
+_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS_ENV = "RELAX_SPARSE_KCLASS_COMPACT_ACTIVE_ROWS"
+_SPARSE_KCLASS_COMPACT_BUCKETS_ENV = "RELAX_SPARSE_KCLASS_COMPACT_BUCKETS"
+_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS_ENV = "RELAX_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS"
+_SPARSE_KCLASS_GROUP_TIMING_ENV = "RELAX_SPARSE_KCLASS_GROUP_TIMING"
 _SPARSE_KCLASS_EXECUTION_SIGNATURES_ENV = (
-    "RECOVAR_SPARSE_KCLASS_EXECUTION_SIGNATURES"
+    "RELAX_SPARSE_KCLASS_EXECUTION_SIGNATURES"
 )
-_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS_ENV = "RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS"
+_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS_ENV = "RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS"
 _SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS_MIN_BUCKET_SIZE_ENV = (
-    "RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS_MIN_BUCKET_SIZE"
+    "RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS_MIN_BUCKET_SIZE"
 )
-_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_ENV = "RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL"
+_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_ENV = "RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL"
 _SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO_ENV = (
-    "RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO"
+    "RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO"
 )
-_SPARSE_KCLASS_FUSED_NOISE_NORM_ENV = "RECOVAR_SPARSE_KCLASS_FUSED_NOISE_NORM"
-_RELION_TRANSLATED_WAVG_NORM_ENV = "RECOVAR_K1_RELION_TRANSLATED_WAVG_NORM"
-_SPARSE_PASS2_GROUP_PROGRESS_CHUNKS_ENV = "RECOVAR_SPARSE_PASS2_GROUP_PROGRESS_CHUNKS"
-_SPARSE_PASS2_GROUP_PROGRESS_SECONDS_ENV = "RECOVAR_SPARSE_PASS2_GROUP_PROGRESS_SECONDS"
+_SPARSE_KCLASS_FUSED_NOISE_NORM_ENV = "RELAX_SPARSE_KCLASS_FUSED_NOISE_NORM"
+_RELION_TRANSLATED_WAVG_NORM_ENV = "RELAX_K1_RELION_TRANSLATED_WAVG_NORM"
+_SPARSE_PASS2_GROUP_PROGRESS_CHUNKS_ENV = "RELAX_SPARSE_PASS2_GROUP_PROGRESS_CHUNKS"
+_SPARSE_PASS2_GROUP_PROGRESS_SECONDS_ENV = "RELAX_SPARSE_PASS2_GROUP_PROGRESS_SECONDS"
 _SPARSE_KCLASS_RAW_HOST_STAGING_MAX_BYTES_ENV = (
-    "RECOVAR_SPARSE_KCLASS_RAW_HOST_STAGING_MAX_BYTES"
+    "RELAX_SPARSE_KCLASS_RAW_HOST_STAGING_MAX_BYTES"
 )
 _DEFAULT_RECTANGULAR_ACTIVE_ROWS_MIN_BUCKET_SIZE = 4096
 _DEFAULT_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO = 0.05
@@ -420,7 +420,7 @@ class SparseKClassPass2FusedResult(NamedTuple):
 # ---------------------------------------------------------------------------
 
 
-_CANDIDATE_DENSITY_LOG_ENV = "RECOVAR_SPARSE_PASS2_LOG_CANDIDATE_DENSITY"
+_CANDIDATE_DENSITY_LOG_ENV = "RELAX_SPARSE_PASS2_LOG_CANDIDATE_DENSITY"
 
 
 def _candidate_density_logging_enabled() -> bool:
@@ -434,7 +434,7 @@ def _candidate_density_logging_enabled() -> bool:
     return parse_env_flag(_CANDIDATE_DENSITY_LOG_ENV, default=False)
 
 
-_PASS2_PROJECTOR_COMPLEX64_ENV = "RECOVAR_SPARSE_PASS2_PROJECTOR_COMPLEX64"
+_PASS2_PROJECTOR_COMPLEX64_ENV = "RELAX_SPARSE_PASS2_PROJECTOR_COMPLEX64"
 
 
 def _pass2_projector_complex64_enabled() -> bool:
@@ -451,7 +451,7 @@ def _pass2_projector_complex64_enabled() -> bool:
     return parse_env_flag(_PASS2_PROJECTOR_COMPLEX64_ENV, default=False)
 
 
-_PIPELINE_TAIL_ENV = "RECOVAR_SPARSE_PASS2_PIPELINE_TAIL"
+_PIPELINE_TAIL_ENV = "RELAX_SPARSE_PASS2_PIPELINE_TAIL"
 
 _BUCKET_TAIL_SNAPSHOT_NAMES = (
     "actual_counts",
@@ -642,7 +642,7 @@ def compute_pass2_stats_sparse_bucketed(
         device_signature_configured and bpref_device_signature_active
     )
     contribution_diagnostics_active = bool(
-        os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR", "").strip()
+        os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", "").strip()
         and (bpref_device_signature_active or not device_signature_configured)
     )
     membership_diagnostics_active = bpref_diagnostics._bpref_membership_dump_requested()
@@ -680,10 +680,10 @@ def compute_pass2_stats_sparse_bucketed(
         # launch boundary authoritative even when no diagnostic flag is set.
         use_per_particle_launches = True
     if device_signature_requested:
-        if not os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR"):
+        if not os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_DIR"):
             raise RuntimeError(
                 "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR requires "
-                "RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR"
+                "RELAX_BPREF_CONTRIBUTION_DUMP_DIR"
             )
         bpref_diagnostics._require_bpref_device_soft_particle_arm(
             use_relion_x_half_mstep=bool(relion_x_half_mstep),
@@ -858,7 +858,7 @@ def compute_pass2_stats_sparse_bucketed(
     )
     if use_cuda_posterior:
         logger.info(
-            "Sparse pass-2 posterior: fused CUDA log-Z%s enabled via RECOVAR_SPARSE_PASS2_CUDA_POSTERIOR",
+            "Sparse pass-2 posterior: fused CUDA log-Z%s enabled via RELAX_SPARSE_PASS2_CUDA_POSTERIOR",
             " and fused normalization/float32 fine posterior" if use_cuda_fused_posterior else "",
         )
     reuse_coarse_normalization = relion_f32_normalization_sum_weight is not None
@@ -1703,9 +1703,9 @@ def compute_pass2_stats_sparse_bucketed(
             else:
                 shifted_noise_split = shifted_score.reshape(batch, n_fine_trans, -1)
             summed_masked_noise = compute_local_weighted_sums(noise_probs, shifted_noise_split)
-            if parse_env_flag("RECOVAR_NOISE_DTYPE_DEBUG", default=False):
+            if parse_env_flag("RELAX_NOISE_DTYPE_DEBUG", default=False):
                 logger.info(
-                    "RECOVAR_NOISE_DTYPE_DEBUG(unchunked): proj_for_noise=%s proj_abs2_for_noise=%s "
+                    "RELAX_NOISE_DTYPE_DEBUG(unchunked): proj_for_noise=%s proj_abs2_for_noise=%s "
                     "summed_masked_noise=%s ctf_probs=%s noise_variance_for_noise=%s",
                     proj_for_noise.dtype,
                     proj_abs2_for_noise.dtype,
@@ -1723,9 +1723,9 @@ def compute_pass2_stats_sparse_bucketed(
                 n_shells,
                 max_block_bytes=max_noise_block_bytes,
             )
-            if parse_env_flag("RECOVAR_NOISE_DTYPE_DEBUG", default=False):
+            if parse_env_flag("RELAX_NOISE_DTYPE_DEBUG", default=False):
                 logger.info(
-                    "RECOVAR_NOISE_DTYPE_DEBUG(unchunked): block_noise_shells=%s",
+                    "RELAX_NOISE_DTYPE_DEBUG(unchunked): block_noise_shells=%s",
                     block_noise_shells.dtype,
                 )
             block_noise_shells_np = np.asarray(block_noise_shells, dtype=np.float64)
@@ -2267,7 +2267,7 @@ def compute_pass2_stats_sparse_bucketed(
         diagnostic_wavg_atomic_capture = bool(
             accumulate_noise
             and parse_env_flag(
-                "RECOVAR_PASS2_DUMP_NORM_RESIDUAL_INPUTS",
+                "RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS",
                 default=False,
             )
         )
@@ -2894,7 +2894,7 @@ def compute_pass2_stats_sparse_bucketed(
                         current_size=current_size,
                     )
                     if parse_env_flag(
-                        "RECOVAR_PASS2_DUMP_NORM_RESIDUAL_INPUTS",
+                        "RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS",
                         default=False,
                     )
                     else np.empty((0,), dtype=np.int64)
@@ -3181,9 +3181,9 @@ def compute_pass2_stats_sparse_bucketed(
                         )
                     chunk_support_mass += np.asarray(jnp.sum(noise_probs, axis=(1, 2)), dtype=np.float64)
                     summed_masked_noise = compute_local_weighted_sums(noise_probs, shifted_noise_split)
-                    if parse_env_flag("RECOVAR_NOISE_DTYPE_DEBUG", default=False):
+                    if parse_env_flag("RELAX_NOISE_DTYPE_DEBUG", default=False):
                         logger.info(
-                            "RECOVAR_NOISE_DTYPE_DEBUG: proj_for_noise_chunk=%s proj_abs2_for_noise_chunk=%s "
+                            "RELAX_NOISE_DTYPE_DEBUG: proj_for_noise_chunk=%s proj_abs2_for_noise_chunk=%s "
                             "summed_masked_noise=%s ctf_probs=%s noise_variance_for_noise=%s",
                             proj_for_noise_chunk.dtype,
                             proj_abs2_for_noise_chunk.dtype,
@@ -3201,9 +3201,9 @@ def compute_pass2_stats_sparse_bucketed(
                         n_shells,
                         max_block_bytes=max_noise_block_bytes,
                     )
-                    if parse_env_flag("RECOVAR_NOISE_DTYPE_DEBUG", default=False):
+                    if parse_env_flag("RELAX_NOISE_DTYPE_DEBUG", default=False):
                         logger.info(
-                            "RECOVAR_NOISE_DTYPE_DEBUG: block_noise_shells=%s",
+                            "RELAX_NOISE_DTYPE_DEBUG: block_noise_shells=%s",
                             block_noise_shells.dtype,
                         )
                     block_noise_shells_np = np.asarray(
@@ -3776,8 +3776,8 @@ def compute_pass2_stats_sparse_bucketed(
                     dump_dir = os.environ.get(pass2_diagnostics._PASS2_DUMP_DIR_ENV)
                     if not dump_dir:
                         raise ValueError(
-                            "RECOVAR_PASS2_DUMP_NORM_RESIDUAL_INPUTS requires "
-                            "RECOVAR_PASS2_DUMP_DIR"
+                            "RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS requires "
+                            "RELAX_PASS2_DUMP_DIR"
                         )
                     chunked_scale_aa_dump_count = norm_scale_diagnostics._write_chunked_scale_aa_dump(
                         dump_dir=dump_dir,
@@ -4391,11 +4391,11 @@ def compute_pass2_stats_sparse_bucketed(
                 default=False,
             ):
                 target_original_indices = parse_env_int_set(
-                    "RECOVAR_PASS2_DUMP_ORIGINAL_INDICES"
+                    "RELAX_PASS2_DUMP_ORIGINAL_INDICES"
                 )
                 if not target_original_indices:
                     target_original_indices = parse_env_int_set(
-                        "RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES"
+                        "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES"
                     )
                 completed_dump_count, expected_dump_count = _k1_pass2_dump_progress(
                     dump_dir=os.environ[pass2_diagnostics._PASS2_DUMP_DIR_ENV],
@@ -4625,7 +4625,7 @@ def compute_pass2_stats_sparse_bucketed(
             if bucket_fused_atomics_requested and not diagnostic_particle_launches_effective:
                 raise RuntimeError(
                     "RELION fused-atomics diagnostic requires the x-half M-step and "
-                    "RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH=1"
+                    "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH=1"
                 )
             if diagnostic_particle_launches_effective:
                 positive_rotation_rows = np.count_nonzero(
@@ -5054,10 +5054,10 @@ def compute_k_class_pass2_stats_sparse_fused(
     )
     use_per_particle_launches = execution_modes["live_per_particle_launches"]
     if device_signature_requested:
-        if not os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR"):
+        if not os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_DIR"):
             raise RuntimeError(
                 "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR requires "
-                "RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR"
+                "RELAX_BPREF_CONTRIBUTION_DUMP_DIR"
             )
         bpref_diagnostics._require_bpref_device_soft_particle_arm(
             use_relion_x_half_mstep=bool(relion_x_half_mstep),
@@ -5087,7 +5087,7 @@ def compute_k_class_pass2_stats_sparse_fused(
         relion_f32_fine_posterior=relion_f32_fine_posterior,
     )
     relion_exact_bpref_operands = parse_env_flag(
-        "RECOVAR_K1_RELION_EXACT_BPREF_OPERANDS",
+        "RELAX_K1_RELION_EXACT_BPREF_OPERANDS",
         default=False,
     )
     if relion_exact_bpref_operands:
@@ -5510,9 +5510,9 @@ def compute_k_class_pass2_stats_sparse_fused(
         (-1.0 if device_memory_bytes is None else device_memory_bytes / float(1024**3)),
     )
     compact_pair_device_index = parse_env_binary_flag(
-        "RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_DEVICE_INDEX"
+        "RELAX_SPARSE_KCLASS_COMPACT_PAIR_DEVICE_INDEX"
     )
-    device_chunk_scalars = parse_env_flag("RECOVAR_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS", default=False)
+    device_chunk_scalars = parse_env_flag("RELAX_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS", default=False)
     vectorized_stats_replay = vectorized_stats_replay_enabled()
     compact_pairs_env = os.environ.get(_SPARSE_KCLASS_COMPACT_PAIRS_ENV)
     compact_pairs = _compact_pair_execution_enabled_for_pass()
@@ -5570,8 +5570,8 @@ def compute_k_class_pass2_stats_sparse_fused(
     if rectangular_active_rows_min_bucket_size is None:
         rectangular_active_rows_min_bucket_size = _DEFAULT_RECTANGULAR_ACTIVE_ROWS_MIN_BUCKET_SIZE
     active_row_pad_multiple = _active_row_pad_multiple_for_pass()
-    compact_adjoint_real_rows = parse_env_flag("RECOVAR_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", default=False)
-    compact_pair_flat_rows = parse_env_flag("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_FLAT_ROWS", default=False)
+    compact_adjoint_real_rows = parse_env_flag("RELAX_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", default=False)
+    compact_pair_flat_rows = parse_env_flag("RELAX_SPARSE_KCLASS_COMPACT_PAIR_FLAT_ROWS", default=False)
     if compact_pair_flat_rows and not (compact_adjoint_real_rows and native_dual_weighted_sums and fused_mstep_noise):
         raise ValueError("compact pair flat rows require real-row adjoint, native sums and fused M-step noise")
     compact_pair_buckets = None
@@ -6576,7 +6576,7 @@ def compute_k_class_pass2_stats_sparse_fused(
             bucket_diagnostic_modes = bpref_diagnostics._resolve_bpref_bucket_diagnostic_modes(
                 device_signature_requested=device_signature_requested,
                 contribution_diagnostics_active=bool(
-                    os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR", "").strip()
+                    os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", "").strip()
                     and bpref_device_signature_active
                 ),
                 target_particle_rows=target_particle_rows,
@@ -7065,7 +7065,7 @@ def compute_k_class_pass2_stats_sparse_fused(
                             )
                     if not use_exact_relion_gaussian:
                         class_log_z_for_bucket = _logsumexp_pass2_bucket_score_only(scores)
-                target_dump_class = os.environ.get("RECOVAR_PASS2_DUMP_CLASS")
+                target_dump_class = os.environ.get("RELAX_PASS2_DUMP_CLASS")
                 if (
                     use_exact_relion_gaussian
                     and pass2_dump_rows.size
@@ -7237,7 +7237,7 @@ def compute_k_class_pass2_stats_sparse_fused(
                 class_score_log_z_bucket = []
                 for class_index, raw_diff2 in enumerate(raw_diff2_by_class):
                     target_dump_class = os.environ.get(
-                        "RECOVAR_PASS2_DUMP_CLASS"
+                        "RELAX_PASS2_DUMP_CLASS"
                     )
                     if (
                         pass2_dump_rows.size
@@ -7608,13 +7608,13 @@ def compute_k_class_pass2_stats_sparse_fused(
                         )
                 if bucket_dump_count:
                     target_original_indices = parse_env_int_set(
-                        "RECOVAR_PASS2_DUMP_ORIGINAL_INDICES"
+                        "RELAX_PASS2_DUMP_ORIGINAL_INDICES"
                     )
                     if not target_original_indices:
                         target_original_indices = parse_env_int_set(
-                            "RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES"
+                            "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES"
                         )
-                    target_class = os.environ.get("RECOVAR_PASS2_DUMP_CLASS")
+                    target_class = os.environ.get("RELAX_PASS2_DUMP_CLASS")
                     target_classes_one_based = (
                         {int(target_class)}
                         if target_class
@@ -8525,9 +8525,9 @@ def compute_k_class_pass2_stats_sparse_fused(
                         flat_proj_abs2_for_noise = flatten_bucket_rows(proj_abs2_by_class[class_index])
                         flat_summed_masked_noise = flatten_bucket_rows(summed_masked_noise)
                         flat_ctf_probs_for_noise = flatten_bucket_rows(ctf_probs_for_noise)
-                    if parse_env_flag("RECOVAR_NOISE_DTYPE_DEBUG", default=False):
+                    if parse_env_flag("RELAX_NOISE_DTYPE_DEBUG", default=False):
                         logger.info(
-                            "RECOVAR_NOISE_DTYPE_DEBUG(fused): bucket_uses_active_rows=%s "
+                            "RELAX_NOISE_DTYPE_DEBUG(fused): bucket_uses_active_rows=%s "
                             "bucket_uses_compact_pairs=%s fused_noise_norm=%s "
                             "proj_for_noise=%s proj_abs2=%s ctf_probs_for_noise=%s "
                             "noise_variance_for_noise=%s summed_masked_noise=%s",
@@ -8559,9 +8559,9 @@ def compute_k_class_pass2_stats_sparse_fused(
                             batch_size=batch,
                             max_block_bytes=max_noise_block_bytes,
                         )
-                        if parse_env_flag("RECOVAR_NOISE_DTYPE_DEBUG", default=False):
+                        if parse_env_flag("RELAX_NOISE_DTYPE_DEBUG", default=False):
                             logger.info(
-                                "RECOVAR_NOISE_DTYPE_DEBUG(fused): block_noise_shells=%s",
+                                "RELAX_NOISE_DTYPE_DEBUG(fused): block_noise_shells=%s",
                                 block_noise_shells.dtype,
                             )
                         queue_noise_residual(
@@ -8626,9 +8626,9 @@ def compute_k_class_pass2_stats_sparse_fused(
                                 ctf_probs_for_noise,
                                 noise_variance_for_noise,
                             )
-                        if parse_env_flag("RECOVAR_NOISE_DTYPE_DEBUG", default=False):
+                        if parse_env_flag("RELAX_NOISE_DTYPE_DEBUG", default=False):
                             logger.info(
-                                "RECOVAR_NOISE_DTYPE_DEBUG(fused): block_noise_shells=%s",
+                                "RELAX_NOISE_DTYPE_DEBUG(fused): block_noise_shells=%s",
                                 block_noise_shells.dtype,
                             )
                         queue_noise_residual(

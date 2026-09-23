@@ -106,28 +106,28 @@ def test_same_state_dataclass_manifest_is_value_stable_and_sensitive() -> None:
 
 
 def test_same_state_environment_is_restored_after_each_arm(monkeypatch) -> None:
-    monkeypatch.setenv("RECOVAR_TEST_SAME_STATE_EXISTING", "before")
-    monkeypatch.delenv("RECOVAR_TEST_SAME_STATE_MISSING", raising=False)
+    monkeypatch.setenv("RELAX_TEST_SAME_STATE_EXISTING", "before")
+    monkeypatch.delenv("RELAX_TEST_SAME_STATE_MISSING", raising=False)
 
     with runner._temporary_environment(
         {
-            "RECOVAR_TEST_SAME_STATE_EXISTING": "during",
-            "RECOVAR_TEST_SAME_STATE_MISSING": "new",
+            "RELAX_TEST_SAME_STATE_EXISTING": "during",
+            "RELAX_TEST_SAME_STATE_MISSING": "new",
         }
     ):
-        assert runner.os.environ["RECOVAR_TEST_SAME_STATE_EXISTING"] == "during"
-        assert runner.os.environ["RECOVAR_TEST_SAME_STATE_MISSING"] == "new"
+        assert runner.os.environ["RELAX_TEST_SAME_STATE_EXISTING"] == "during"
+        assert runner.os.environ["RELAX_TEST_SAME_STATE_MISSING"] == "new"
 
-    assert runner.os.environ["RECOVAR_TEST_SAME_STATE_EXISTING"] == "before"
-    assert "RECOVAR_TEST_SAME_STATE_MISSING" not in runner.os.environ
+    assert runner.os.environ["RELAX_TEST_SAME_STATE_EXISTING"] == "before"
+    assert "RELAX_TEST_SAME_STATE_MISSING" not in runner.os.environ
 
 
 def test_fused_posterior_dump_keeps_arm_label_when_score_label_is_also_set(
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv("RECOVAR_LOCAL_SCORE_DUMP_LABEL", "single class")
+    monkeypatch.setenv("RELAX_LOCAL_SCORE_DUMP_LABEL", "single class")
     monkeypatch.setenv(
-        "RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_LABEL",
+        "RELAX_LOCAL_FUSED_POSTERIOR_DUMP_LABEL",
         "stable_all_on_1 single class",
     )
 
@@ -2174,14 +2174,14 @@ def test_same_state_runner_seals_abba_and_exact_snapshot_contract() -> None:
         "stable_flat_off_1,stable_flat_on_1,stable_flat_on_2,stable_flat_off_2"
         in sbatch
     )
-    assert '"RECOVAR_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY=0"' in sbatch
+    assert '"RELAX_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY=0"' in sbatch
     assert (
         "stable_all_off_1,stable_all_on_1,stable_all_on_2,stable_all_off_2"
         in sbatch
     )
     assert "all_optimized_stable_shapes_on_q32_batched" in source
     assert 'values[BATCHED_POSTERIOR_ENVIRONMENT] = "1"' in source
-    assert "RECOVAR_LOCAL_FUSED_POSTERIOR_DUMP_SCORES" in source
+    assert "RELAX_LOCAL_FUSED_POSTERIOR_DUMP_SCORES" in source
     assert "VDAM_SAME_STATE_FUSED_POSTERIOR_DUMP_ORIGINAL_INDEX" in sbatch
     assert (
         "single_translate_off_1,single_translate_on_1,"
@@ -2212,20 +2212,20 @@ def test_same_state_runner_seals_abba_and_exact_snapshot_contract() -> None:
     assert "VDAM_SAME_STATE_TARGET_IMAGE_NAME" in sbatch
     assert "--native-checkpoint-optimiser" in source
     assert "native_relion_load_only" in source
-    assert "RECOVAR_K1_RELION_EXACT_COARSE_ASSEMBLY_PROFILE" in source
-    assert "RECOVAR_K1_RELION_EXACT_COMPACT_PREPROCESS" in source
+    assert "RELAX_K1_RELION_EXACT_COARSE_ASSEMBLY_PROFILE" in source
+    assert "RELAX_K1_RELION_EXACT_COMPACT_PREPROCESS" in source
     assert "profile_free_wall_timing" in sbatch
     assert "translate_score_call_count" in sbatch
     assert "generic_score_preprocess_count" in sbatch
     assert "exact_source_preprocess_count" in sbatch
     assert "generic_full_translation_count" in sbatch
     assert "raise_before_generic_score_fallback" in sbatch
-    assert "RECOVAR_EXACT_LOCAL_FUSED_PAIR_FINE_SCORE" in source
+    assert "RELAX_EXACT_LOCAL_FUSED_PAIR_FINE_SCORE" in source
     assert "FUSED_PAIR_FINE_SCORE_ENVIRONMENT in os.environ" in source
     assert "timed_arms_add_no_target_family_programs_after_prewarm" in sbatch
     assert "pair_pixel_gathers_materialized == false" in sbatch
     assert "stdbuf -oL nvidia-smi" in sbatch
-    assert "RECOVAR_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR=0" in sbatch
+    assert "RELAX_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR=0" in sbatch
     assert ".compact_effective == true" in sbatch
     assert ".packed_deferred_effective == true" in sbatch
     assert ".execution_contract.all_optimized_profile_exact == true" in sbatch
@@ -2234,7 +2234,7 @@ def test_same_state_runner_seals_abba_and_exact_snapshot_contract() -> None:
     assert '"${REPO_ROOT}/relax/local/local_backprojection.py"' in sbatch
     assert "status --porcelain=v1 --untracked-files=all" in sbatch
     assert "VDAM_SAME_STATE_NOISE_SPLIT_DIAGNOSTICS" in sbatch
-    assert "RECOVAR_NOISE_DEBUG_DUMP_DIR=${RUNTIME}/noise_split_enabled" in sbatch
+    assert "RELAX_NOISE_DEBUG_DUMP_DIR=${RUNTIME}/noise_split_enabled" in sbatch
     assert "VDAM_SAME_STATE_MIRRORED_INCREMENTAL_PANELS" in sbatch
     assert "--mirrored-incremental-panels" in source
     assert "for backend_mode in (\"packed_deferred\", \"packed_final_noise\")" in source

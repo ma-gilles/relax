@@ -61,8 +61,8 @@ printf '%s\n' "${VDAM_VISIBLE_GPU_UUIDS_CSV}" > "${OUTPUT_ROOT}/provenance/alloc
 nvidia-smi -q > "${OUTPUT_ROOT}/provenance/nvidia_smi.txt"
 env | LC_ALL=C sort > "${OUTPUT_ROOT}/provenance/submission_environment.txt"
 
-export RECOVAR_INITIALMODEL_SKIP_EXPECTED_ACCURACY=0
-export RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS=0
+export RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY=0
+export RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS=0
 
 for repeat in 1 2; do
   run_root=$(printf '%s/repeat-%02d' "${OUTPUT_ROOT}" "${repeat}")
@@ -107,6 +107,6 @@ for repeat in 1 2; do
   vdam_verify_selected_gpu "${selected_gpu_uuid}"
 done
 
-unset RECOVAR_INITIALMODEL_SKIP_EXPECTED_ACCURACY
-unset RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS
+unset RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY
+unset RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS
 touch "${OUTPUT_ROOT}/COMPLETED"

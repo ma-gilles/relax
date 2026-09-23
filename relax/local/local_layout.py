@@ -30,7 +30,7 @@ from relax.sampling import (
 from relax.scoring.significant_samples import significant_sample_ids
 from relax.symmetry import canonicalize_rotational_symmetry, rotational_operators
 
-EXACT_LOCAL_BUCKET_QUANTUM_ENV = "RECOVAR_EXACT_LOCAL_BUCKET_QUANTUM"
+EXACT_LOCAL_BUCKET_QUANTUM_ENV = "RELAX_EXACT_LOCAL_BUCKET_QUANTUM"
 
 # Global bucket-size unification pads every image to the halfset's largest local
 # neighborhood. That buys one compiled shape per layout, which is worth a lot while
@@ -46,7 +46,7 @@ EXACT_LOCAL_BUCKET_QUANTUM_ENV = "RECOVAR_EXACT_LOCAL_BUCKET_QUANTUM"
 # The bound is on rows the unification would add. 15.4 M was neutral in that run and
 # 150.7 M was a large loss, so the default sits between them with margin.
 EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS = 32_000_000
-EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS_ENV = "RECOVAR_EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS"
+EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS_ENV = "RELAX_EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS"
 
 # When the bound above drops unification, each image keeps its own size, which at
 # K=4 100k/256 produced 7 new bucket shapes at the all-data iteration and 67.4 s of
@@ -54,11 +54,11 @@ EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS_ENV = "RECOVAR_EXACT_LOCAL_UNIFY_MAX_PADDED_RO
 # the number of distinct sizes trades a little of the padding win back for fewer
 # compiled shapes. 0 means uncapped, which is the measured 1426.1 s behavior.
 EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES = 0
-EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES_ENV = "RECOVAR_EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES"
-EXACT_LOCAL_BUCKET_RADIX_ENV = "RECOVAR_EXACT_LOCAL_BUCKET_RADIX"
+EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES_ENV = "RELAX_EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES"
+EXACT_LOCAL_BUCKET_RADIX_ENV = "RELAX_EXACT_LOCAL_BUCKET_RADIX"
 EXACT_LOCAL_BUCKET_MIN_QUANTUM = 256
 
-LOCAL_IMAGE_CAPACITY_LADDER_ENV = "RECOVAR_LOCAL_IMAGE_CAPACITY_LADDER"
+LOCAL_IMAGE_CAPACITY_LADDER_ENV = "RELAX_LOCAL_IMAGE_CAPACITY_LADDER"
 DEFAULT_LOCAL_IMAGE_CAPACITY_LADDER = (16, 32, 64, 128, 256)
 
 
@@ -197,12 +197,12 @@ def _exact_bucket_rotation_size(
                 minimum=16,
             ),
         )
-    # ``RECOVAR_LOCAL_BUCKET_QUANTUM`` lets callers override the large-bucket
+    # ``RELAX_LOCAL_BUCKET_QUANTUM`` lets callers override the large-bucket
     # quantization. The default is deliberately coarser than the exact-local
     # engine cap: outlier-heavy/local-search tails otherwise generate hundreds
     # of near-duplicate XLA shapes. Hypothesis/tile caps still chunk each
     # bucket, so this changes padding/shape reuse rather than the candidate set.
-    env_quantum = os.environ.get("RECOVAR_LOCAL_BUCKET_QUANTUM", "")
+    env_quantum = os.environ.get("RELAX_LOCAL_BUCKET_QUANTUM", "")
     if env_quantum:
         large_bucket_quantum = max(1, int(env_quantum))
     elif large_bucket_quantum is None:
@@ -387,11 +387,11 @@ def _resolve_prior_rotations(prior_rotations: np.ndarray, healpix_order: int, gr
 
 
 def _local_selector_chunk_size(n_images: int, n_pixels: int, n_psi: int, use_direction: bool, use_psi: bool) -> int:
-    explicit = os.environ.get("RECOVAR_LOCAL_SELECTOR_CHUNK_SIZE", "")
+    explicit = os.environ.get("RELAX_LOCAL_SELECTOR_CHUNK_SIZE", "")
     if explicit:
         return max(1, min(int(n_images), int(explicit)))
 
-    max_elements = int(os.environ.get("RECOVAR_LOCAL_SELECTOR_MAX_ELEMENTS", "16000000"))
+    max_elements = int(os.environ.get("RELAX_LOCAL_SELECTOR_MAX_ELEMENTS", "16000000"))
     per_image_elements = 0
     if use_direction:
         per_image_elements += int(n_pixels)
@@ -1562,14 +1562,14 @@ def plan_local_hypothesis_buckets(
         ],
         dtype=np.int32,
     )
-    # ``RECOVAR_LOCAL_BUCKET_UNIFY=1`` forces all images to share a single
+    # ``RELAX_LOCAL_BUCKET_UNIFY=1`` forces all images to share a single
     # rotation-count bucket class so the JIT only compiles one shape per
     # layout. At 50k/256 K=1 this collapses ~13 unique shapes (per-image
     # significant rotation counts vary widely across iters) into 1, removing
     # per-bucket JIT compilation overhead. Memory cost: smaller-significance
     # images carry extra rotation padding.
     if unify_bucket_sizes is None:
-        unify_bucket_sizes = os.environ.get("RECOVAR_LOCAL_BUCKET_UNIFY", "").lower() in {"1", "true", "yes", "on"}
+        unify_bucket_sizes = os.environ.get("RELAX_LOCAL_BUCKET_UNIFY", "").lower() in {"1", "true", "yes", "on"}
     if consecutive_mixed_bucket_size is not None:
         consecutive_mixed_bucket_size = int(consecutive_mixed_bucket_size)
         if consecutive_mixed_bucket_size <= 0:
@@ -1936,7 +1936,7 @@ def bucket_class_local_hypothesis_layouts(
         dtype=np.int32,
     )
     if unify_bucket_sizes is None:
-        unify_bucket_sizes = os.environ.get("RECOVAR_LOCAL_BUCKET_UNIFY", "").lower() in {"1", "true", "yes", "on"}
+        unify_bucket_sizes = os.environ.get("RELAX_LOCAL_BUCKET_UNIFY", "").lower() in {"1", "true", "yes", "on"}
     if consecutive_mixed_bucket_size is not None:
         consecutive_mixed_bucket_size = int(consecutive_mixed_bucket_size)
         if consecutive_mixed_bucket_size <= 0:

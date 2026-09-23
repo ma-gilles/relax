@@ -189,5 +189,5 @@ def test_half_accumulator_guard_opt_out_and_warn_modes(monkeypatch, caplog):
 
     monkeypatch.delenv(finite_check.FINITE_CHECK_WARN_ENV, raising=False)
     monkeypatch.setenv(finite_check.HALF_ACCUMULATOR_GUARD_ENV, "maybe")
-    with pytest.raises(ValueError, match="RECOVAR_EM_BPREF_FINITE_GUARD"):
+    with pytest.raises(ValueError, match="RELAX_EM_BPREF_FINITE_GUARD"):
         finite_check.half_accumulator_guard_mode()

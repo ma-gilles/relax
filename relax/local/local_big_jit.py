@@ -338,7 +338,7 @@ def _noise_image_power_shells_and_per_image(
 # fixed-order XLA float32 reduction over the rotation axis uses the same
 # operands and dtype; only the association order differs.  Diagnostic opt-in;
 # see docs/development/em_status.md (determinism) for the qualification.
-RELION_WAVG_DETERMINISTIC_ROTATION_SUM_ENV = "RECOVAR_RELION_WAVG_DETERMINISTIC_ROTATION_SUM"
+RELION_WAVG_DETERMINISTIC_ROTATION_SUM_ENV = "RELAX_RELION_WAVG_DETERMINISTIC_ROTATION_SUM"
 
 
 def _relion_wavg_direct_triplet_shells(

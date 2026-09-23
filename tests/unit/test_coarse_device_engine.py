@@ -13,7 +13,7 @@ from relax.scoring.coarse_gemm_hybrid import CoarseGemmHybridCompactScores, plan
 
 pytestmark = pytest.mark.unit
 MODULE = "relax.scoring.coarse_device_rescore"
-VARIABLE = "RECOVAR_COARSE_GAUSSIAN_GEMM_DEVICE_TRANSACTION"
+VARIABLE = "RELAX_COARSE_GAUSSIAN_GEMM_DEVICE_TRANSACTION"
 
 
 class _DeviceOnly:
@@ -218,12 +218,12 @@ def test_device_route_rejects_noncompact_request(monkeypatch):
 
 @pytest.mark.parametrize("token, expected", [("0", False), ("1", True)])
 def test_real_cross_selector_is_explicit(monkeypatch, token, expected):
-    monkeypatch.setenv("RECOVAR_COARSE_GAUSSIAN_GEMM_REAL_CROSS", token)
+    monkeypatch.setenv("RELAX_COARSE_GAUSSIAN_GEMM_REAL_CROSS", token)
     assert significance._coarse_gaussian_gemm_real_cross_enabled() is expected
 
 
 def test_real_cross_selector_rejects_unknown_token(monkeypatch):
-    monkeypatch.setenv("RECOVAR_COARSE_GAUSSIAN_GEMM_REAL_CROSS", "true")
+    monkeypatch.setenv("RELAX_COARSE_GAUSSIAN_GEMM_REAL_CROSS", "true")
     with pytest.raises(ValueError, match="REAL_CROSS"):
         significance._coarse_gaussian_gemm_real_cross_enabled()
 

@@ -1198,7 +1198,7 @@ def main() -> None:
         "--stop-after-pass2-dump",
         action="store_true",
         help=(
-            "Diagnostic-only: stop successfully as soon as RECOVAR_PASS2_DUMP_DIR "
+            "Diagnostic-only: stop successfully as soon as RELAX_PASS2_DUMP_DIR "
             "has written the requested sparse pass-2 target dump. This avoids "
             "running the rest of the replay M-step when only score tensors are needed."
         ),
@@ -1208,7 +1208,7 @@ def main() -> None:
         type=_positive_one_based_class,
         help=(
             "One-based K-class selector for --stop-after-pass2-dump. This sets "
-            "RECOVAR_PASS2_DUMP_CLASS inside the replay process so the capture "
+            "RELAX_PASS2_DUMP_CLASS inside the replay process so the capture "
             "does not depend on launcher environment propagation."
         ),
     )
@@ -1235,38 +1235,38 @@ def main() -> None:
     if args.pass2_dump_class is not None:
         if not args.stop_after_pass2_dump:
             parser.error("--pass2-dump-class requires --stop-after-pass2-dump")
-        os.environ["RECOVAR_PASS2_DUMP_CLASS"] = str(args.pass2_dump_class)
+        os.environ["RELAX_PASS2_DUMP_CLASS"] = str(args.pass2_dump_class)
     if args.stop_after_pass2_dump:
-        if not os.environ.get("RECOVAR_PASS2_DUMP_DIR"):
-            parser.error("--stop-after-pass2-dump requires RECOVAR_PASS2_DUMP_DIR")
+        if not os.environ.get("RELAX_PASS2_DUMP_DIR"):
+            parser.error("--stop-after-pass2-dump requires RELAX_PASS2_DUMP_DIR")
         if not (
-            os.environ.get("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES")
-            or os.environ.get("RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES")
+            os.environ.get("RELAX_PASS2_DUMP_ORIGINAL_INDICES")
+            or os.environ.get("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES")
         ):
             parser.error(
-                "--stop-after-pass2-dump requires RECOVAR_PASS2_DUMP_ORIGINAL_INDICES "
-                "or RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES"
+                "--stop-after-pass2-dump requires RELAX_PASS2_DUMP_ORIGINAL_INDICES "
+                "or RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES"
             )
-        if os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR", "").strip():
+        if os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", "").strip():
             parser.error(
                 "--stop-after-pass2-dump is incompatible with "
-                "RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR because contribution "
+                "RELAX_BPREF_CONTRIBUTION_DUMP_DIR because contribution "
                 "capture runs during the M-step"
             )
-        os.environ["RECOVAR_PASS2_DUMP_STOP_AFTER_TARGET"] = "1"
-        os.environ["RECOVAR_K_CLASS_PARITY_STOP_AFTER_PASS2_DUMP"] = "1"
+        os.environ["RELAX_PASS2_DUMP_STOP_AFTER_TARGET"] = "1"
+        os.environ["RELAX_K_CLASS_PARITY_STOP_AFTER_PASS2_DUMP"] = "1"
         print(
             "  pass2 dump class filter: "
-            f"{os.environ.get('RECOVAR_PASS2_DUMP_CLASS', 'all')}"
+            f"{os.environ.get('RELAX_PASS2_DUMP_CLASS', 'all')}"
         )
     if args.stop_after_contribution_dump:
         required_filters = (
-            "RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR",
-            "RECOVAR_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES",
-            "RECOVAR_BPREF_CONTRIBUTION_DUMP_CLASS",
-            "RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION",
-            "RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF",
-            "RECOVAR_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE",
+            "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
+            "RELAX_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES",
+            "RELAX_BPREF_CONTRIBUTION_DUMP_CLASS",
+            "RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION",
+            "RELAX_BPREF_CONTRIBUTION_DUMP_HALF",
+            "RELAX_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE",
         )
         missing_filters = [
             name for name in required_filters if not os.environ.get(name, "").strip()
@@ -1279,17 +1279,17 @@ def main() -> None:
         target_indices = {
             value.strip()
             for value in os.environ[
-                "RECOVAR_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES"
+                "RELAX_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES"
             ].split(",")
             if value.strip()
         }
         if len(target_indices) != 1:
             parser.error(
                 "--stop-after-contribution-dump requires exactly one "
-                "RECOVAR_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES target"
+                "RELAX_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES target"
             )
-        os.environ["RECOVAR_BPREF_CONTRIBUTION_STOP_AFTER_TARGET"] = "1"
-        os.environ["RECOVAR_K_CLASS_PARITY_STOP_AFTER_CONTRIBUTION_DUMP"] = "1"
+        os.environ["RELAX_BPREF_CONTRIBUTION_STOP_AFTER_TARGET"] = "1"
+        os.environ["RELAX_K_CLASS_PARITY_STOP_AFTER_CONTRIBUTION_DUMP"] = "1"
 
     import jax
     import jax.numpy as jnp
@@ -2216,14 +2216,14 @@ if __name__ == "__main__":
     except RuntimeError as exc:
         if (
             exc.__class__.__name__ == "Pass2DumpComplete"
-            and os.environ.get("RECOVAR_K_CLASS_PARITY_STOP_AFTER_PASS2_DUMP") == "1"
+            and os.environ.get("RELAX_K_CLASS_PARITY_STOP_AFTER_PASS2_DUMP") == "1"
         ):
             print(f"RECOVAR pass-2 dump completed; stopping replay before remaining M-step work: {exc}")
             sys.exit(0)
         if (
             exc.__class__.__name__ == "BPrefContributionDumpComplete"
             and os.environ.get(
-                "RECOVAR_K_CLASS_PARITY_STOP_AFTER_CONTRIBUTION_DUMP"
+                "RELAX_K_CLASS_PARITY_STOP_AFTER_CONTRIBUTION_DUMP"
             )
             == "1"
         ):

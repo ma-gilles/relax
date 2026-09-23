@@ -37,7 +37,7 @@ from relax.sparse_pass2.sparse_pass2_policy import (
 logger = logging.getLogger(__name__)
 
 
-_SPARSE_KCLASS_FUSE_COMPACT_IMAGE_SUMS_ENV = "RECOVAR_SPARSE_KCLASS_FUSE_COMPACT_IMAGE_SUMS"
+_SPARSE_KCLASS_FUSE_COMPACT_IMAGE_SUMS_ENV = "RELAX_SPARSE_KCLASS_FUSE_COMPACT_IMAGE_SUMS"
 
 
 _active_noise_gather_chunk_log_keys: set[tuple[int, int, int, int]] = set()
@@ -1440,4 +1440,4 @@ def _real_flat_row_indices_from_actual_counts(
     return padded_indices, active_mask, total
 
 
-_SPARSE_KCLASS_DEVICE_ACTIVE_ROW_INDICES_ENV = "RECOVAR_SPARSE_KCLASS_DEVICE_ACTIVE_ROW_INDICES"
+_SPARSE_KCLASS_DEVICE_ACTIVE_ROW_INDICES_ENV = "RELAX_SPARSE_KCLASS_DEVICE_ACTIVE_ROW_INDICES"

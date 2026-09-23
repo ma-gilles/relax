@@ -283,7 +283,7 @@ def test_relion_f32_posterior_cuda_primitives_fail_closed_without_gpu(monkeypatc
 def test_relion_batched_posterior_primitive_selector_is_explicit(monkeypatch):
     from relax.cuda import kernels as em_cuda_kernels
 
-    monkeypatch.delenv("RECOVAR_RELION_BATCHED_POSTERIOR_PRIMITIVES", raising=False)
+    monkeypatch.delenv("RELAX_RELION_BATCHED_POSTERIOR_PRIMITIVES", raising=False)
     assert not em_cuda_kernels.relion_batched_posterior_primitives_requested()
-    monkeypatch.setenv("RECOVAR_RELION_BATCHED_POSTERIOR_PRIMITIVES", "1")
+    monkeypatch.setenv("RELAX_RELION_BATCHED_POSTERIOR_PRIMITIVES", "1")
     assert em_cuda_kernels.relion_batched_posterior_primitives_requested()

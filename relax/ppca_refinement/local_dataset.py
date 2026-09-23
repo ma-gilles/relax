@@ -52,7 +52,7 @@ from relax.ppca_refinement.state import PoseMarginalPPCAEMState
 # ``EXACT_LOCAL_TARGET_ROW_PIXELS`` (190 M scoring pixels per microbatch),
 # scaled down by the PPCA augmented-volume row factor ``P = 1 + q``.
 PPCA_LOCAL_TARGET_ROW_PIXELS = 190_000_000
-PPCA_LOCAL_TARGET_ROW_PIXELS_ENV = "RECOVAR_PPCA_LOCAL_TARGET_ROW_PIXELS"
+PPCA_LOCAL_TARGET_ROW_PIXELS_ENV = "RELAX_PPCA_LOCAL_TARGET_ROW_PIXELS"
 PPCA_LOCAL_MAX_HYPO_FLOOR = 2_048
 PPCA_LOCAL_MAX_HYPO_CEIL = 16_384
 PPCA_LOCAL_IMAGE_BATCH_FLOOR = 1
@@ -61,7 +61,7 @@ PPCA_LOCAL_IMAGE_BATCH_FLOOR = 1
 # ``image_batch × R × P × F × 8`` bytes plus working buffers, typically
 # ~3-5× that). At 8 we comfortably fit in ~10 GiB; 16 needs ~20 GiB. Bump
 # only when the GPU has plenty of free memory.
-PPCA_LOCAL_IMAGE_BATCH_CEIL = int(os.environ.get("RECOVAR_PPCA_LOCAL_IMAGE_BATCH_CEIL", "8"))
+PPCA_LOCAL_IMAGE_BATCH_CEIL = int(os.environ.get("RELAX_PPCA_LOCAL_IMAGE_BATCH_CEIL", "8"))
 
 
 def _ppca_local_smart_max_hypotheses_per_microbatch(default: int | None, n_windowed: int, q: int) -> int:
@@ -1403,7 +1403,7 @@ def _score_local_ppca_pose_diagnostics(
     ):
         candidate_count = int(block.rotations.shape[1]) * int(local_layout.translation_grid.shape[0])
         score_top_k = top_pose_candidate_count(pose_selection, candidate_count)
-        # ``RECOVAR_PPCA_LOCAL_R_CHUNK_SIZE`` opt-in enables R-chunked scoring
+        # ``RELAX_PPCA_LOCAL_R_CHUNK_SIZE`` opt-in enables R-chunked scoring
         # for the pose-only path: each bucket's R dim is tiled into chunks of
         # the requested size. Cuts per-bucket peak working memory by
         # ``R / chunk`` so users can raise ``--image-batch-size`` past 1 on
@@ -1411,7 +1411,7 @@ def _score_local_ppca_pose_diagnostics(
         # ~1700-2900 rotations/image; full bucket peaks 3-5x proj_aug).
         # Historical design and timings:
         # https://github.com/ma-gilles/recovar-experiments/blob/9c2e4b0b8c10cd58efe86b693f811f0195329b25/docs/perf/ppca_local_hp6_topp_runtime.md
-        r_chunk_env = os.environ.get("RECOVAR_PPCA_LOCAL_R_CHUNK_SIZE", "")
+        r_chunk_env = os.environ.get("RELAX_PPCA_LOCAL_R_CHUNK_SIZE", "")
         r_chunk = int(r_chunk_env) if r_chunk_env.strip().lstrip("-").isdigit() else 0
         if r_chunk > 0 and r_chunk < int(block.proj_aug.shape[1]):
             posterior = _score_local_pose_ppca_bucket_rotation_chunked(

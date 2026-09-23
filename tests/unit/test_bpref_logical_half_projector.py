@@ -21,7 +21,7 @@ def test_invalid_logical_half_rejected_before_cuda(monkeypatch, shape):
 
 
 def test_logical_half_external_host_replay_rejected(monkeypatch):
-    monkeypatch.setenv('RECOVAR_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY', '/nonexistent')
+    monkeypatch.setenv('RELAX_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY', '/nonexistent')
     monkeypatch.setattr(cb, '_ensure_ffi', lambda: pytest.fail('unexpected CUDA load'))
     monkeypatch.setattr(em_cuda_kernels, '_ensure_ffi', lambda: pytest.fail('unexpected CUDA load'))
     values = arguments(False, False)
@@ -132,10 +132,10 @@ _rlnPhaseShift #5
 1 15000 14000 31 0
 ''')
     dataset.particles_file = str(star)
-    monkeypatch.delenv('RECOVAR_K1_RELION_EXACT_CTF_STAR', raising=False)
-    monkeypatch.delenv('RECOVAR_DISABLE_LOCAL_BIG_JIT', raising=False)
-    monkeypatch.setenv('RECOVAR_EXACT_LOCAL_BIG_JIT_MAX_BUCKET_ROTATIONS', '64')
-    monkeypatch.setenv('RECOVAR_EXACT_LOCAL_RELION_PROJECTION_CACHE_MAX_GB', '0')
+    monkeypatch.delenv('RELAX_K1_RELION_EXACT_CTF_STAR', raising=False)
+    monkeypatch.delenv('RELAX_DISABLE_LOCAL_BIG_JIT', raising=False)
+    monkeypatch.setenv('RELAX_EXACT_LOCAL_BIG_JIT_MAX_BUCKET_ROTATIONS', '64')
+    monkeypatch.setenv('RELAX_EXACT_LOCAL_RELION_PROJECTION_CACHE_MAX_GB', '0')
     layout = LocalHypothesisLayout(
         n_global_rotations=48, n_pixels=48, n_psi=1,
         rotation_offsets=np.asarray([0, 16, 48], np.int64),

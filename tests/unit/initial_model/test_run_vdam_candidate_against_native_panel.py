@@ -22,7 +22,7 @@ def test_candidate_panel_runner_is_strict_reusable_and_fail_closed():
     assert 'source "${REPO_ROOT}/scripts/vdam_gpu_selection.sh"' in source
     assert 'vdam_select_target_gpu "${TARGET_GPU_UUID}" 0' in source
     assert source.index('vdam_select_target_gpu "${TARGET_GPU_UUID}" 0') < source.index(
-        'mkdir -p "${RECOVAR_DIR}"'
+        'mkdir -p "${RELAX_DIR}"'
     )
     assert "VISIBLE_GPU_UUID=${VDAM_SELECTED_GPU_UUID}" in source
     assert "expected exactly one visible physical GPU" not in source
@@ -34,14 +34,14 @@ def test_candidate_panel_runner_is_strict_reusable_and_fail_closed():
     assert "NATIVE_REFERENCE_ROOT" in source
     assert 'repeat / "provenance" / "completion.json"' in source
     assert 'NATIVE_REFERENCE_ROOT=${NATIVE_REFERENCE_ROOT}' in source
-    assert 'case "${variable_name}" in RECOVAR_*) unset "${variable_name}"' in source
-    assert source.index('case "${variable_name}" in RECOVAR_*) unset') < source.index(
+    assert 'case "${variable_name}" in RECOVAR_*|RELAX_*) unset "${variable_name}"' in source
+    assert source.index('case "${variable_name}" in RECOVAR_*|RELAX_*) unset') < source.index(
         "vdam_select_target_gpu"
     )
     assert "VDAM_WORKER_SCHEDULE_NPZ" in source
     assert "EXPECTED_WORKER_SCHEDULE_SHA256" in source
-    assert "RECOVAR_RELION_VDAM_WORKER_SCHEDULE_NPZ" in source
-    assert "RECOVAR_RELION_VDAM_WORKER_REPLAY_TOPOLOGY" in source
+    assert "RELAX_RELION_VDAM_WORKER_SCHEDULE_NPZ" in source
+    assert "RELAX_RELION_VDAM_WORKER_REPLAY_TOPOLOGY" in source
     assert "single_rotation_sm132" in source
     assert "captured_block_start" in source
     assert "captured_particle_timing" in source
@@ -57,11 +57,11 @@ def test_candidate_panel_runner_is_strict_reusable_and_fail_closed():
     assert "materialized_native_grid_trace_shape" in source
     assert "VDAM_BLOCK_CHRONOLOGY_NPZ" in source
     assert "EXPECTED_BLOCK_CHRONOLOGY_SHA256" in source
-    assert "RECOVAR_RELION_VDAM_BLOCK_CHRONOLOGY_NPZ" in source
-    assert source.index('case "${variable_name}" in RECOVAR_*) unset') < source.index(
-        "export RECOVAR_RELION_VDAM_WORKER_SCHEDULE_NPZ"
+    assert "RELAX_RELION_VDAM_BLOCK_CHRONOLOGY_NPZ" in source
+    assert source.index('case "${variable_name}" in RECOVAR_*|RELAX_*) unset') < source.index(
+        "export RELAX_RELION_VDAM_WORKER_SCHEDULE_NPZ"
     )
-    assert "RECOVAR_INITIAL_MODEL_RELION_F32_COARSE_TIE_ULPS" not in source
+    assert "RELAX_INITIAL_MODEL_RELION_F32_COARSE_TIE_ULPS" not in source
     assert "build_recovar_command" in source
     assert 'int(definition["nr_classes"]) != 1' in source
     assert 'int(definition["nr_iter"]) != 200' in source

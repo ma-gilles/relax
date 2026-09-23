@@ -229,9 +229,9 @@ from relax.sparse_pass2 import firstiter_bpref, sparse_pass2_budget
 logger = logging.getLogger(__name__)
 
 
-_FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV = "RECOVAR_FINAL_ALL_DATA_USE_MERGED_REFERENCE"
-_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV = "RECOVAR_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE"
-_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV = "RECOVAR_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE"
+_FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV = "RELAX_FINAL_ALL_DATA_USE_MERGED_REFERENCE"
+_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE"
+_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE"
 
 
 def _fresh_k1_spectrum_norm_default(
@@ -349,8 +349,8 @@ def _initial_coarse_grids(
 
 
 _BPREF_DUMP_ENV_VARS = (
-    "RECOVAR_BPREF_MEMBERSHIP_DUMP_DIR",
-    "RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR",
+    "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
+    "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
     "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
 )
 
@@ -822,7 +822,7 @@ def refine_single_volume(
         """Reduce batch sizes using the selected phase's pending allocations."""
         use_float64_scoring_for_batch = bool(
             _DENSE_EM_STATIC_KWARGS["use_float64_scoring"]
-            or os.environ.get("RECOVAR_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "").strip()
+            or os.environ.get("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "").strip()
         )
         runtime_free_memory_gb = None
         if compact_k1_relion_layout:
@@ -1236,7 +1236,7 @@ def refine_single_volume(
                     incr_size=relion_incr_size,
                 )
                 computed_cs = quantize_current_size(raw_cs, ori_size=grid_size)
-                _kclass_dump_dir = os.environ.get("RECOVAR_KCLASS_DUMP_DIR")
+                _kclass_dump_dir = os.environ.get("RELAX_KCLASS_DUMP_DIR")
                 if _kclass_dump_dir:
                     reconstruction_diagnostics.write_kclass_current_size(
                         output_dir=_kclass_dump_dir,
@@ -2201,7 +2201,7 @@ def refine_single_volume(
             compact_precision = not (
                 _DENSE_EM_STATIC_KWARGS["use_float64_scoring"]
                 or _DENSE_EM_STATIC_KWARGS["use_float64_projections"]
-                or os.environ.get("RECOVAR_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "").strip()
+                or os.environ.get("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "").strip()
             )
             if (
                 use_adaptive and not use_local and not k_class_enabled
@@ -2236,7 +2236,7 @@ def refine_single_volume(
                     from relax.scoring.significance import _global_pass1_relion_projector_texture_enabled
                     if (projector_half.dtype == np.dtype(np.complex64)
                         and _global_pass1_relion_projector_texture_enabled()
-                        and not os.environ.get("RECOVAR_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN", "").strip()):
+                        and not os.environ.get("RELAX_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN", "").strip()):
                         significance_safe_batch_sizes_for_half = partial(
                             safe_batch_sizes_for_half,
                             score_projector_staging_bytes=int(projector_half.nbytes),
@@ -2845,8 +2845,8 @@ def refine_single_volume(
             default_axis=-1,
         )
 
-        _bpref_prejoin_dir = os.environ.get("RECOVAR_BPREF_PREJOIN_DUMP_DIR")
-        _bpref_boundary_target_iteration = os.environ.get("RECOVAR_BPREF_BOUNDARY_DUMP_ITERATION")
+        _bpref_prejoin_dir = os.environ.get("RELAX_BPREF_PREJOIN_DUMP_DIR")
+        _bpref_boundary_target_iteration = os.environ.get("RELAX_BPREF_BOUNDARY_DUMP_ITERATION")
         _bpref_boundary_iteration_matches = (
             not _bpref_boundary_target_iteration
             or iteration + 1 == int(_bpref_boundary_target_iteration)
@@ -3027,7 +3027,7 @@ def refine_single_volume(
                 mean_signal_variance_shells_per_class.append(tau2_shells_recovar_frame_k)
                 data_vs_prior_per_class.append(data_vs_prior_k)
                 tau2_update_details_per_class.append(class_tau2_details_k)
-                _kclass_dump_dir = os.environ.get("RECOVAR_KCLASS_DUMP_DIR")
+                _kclass_dump_dir = os.environ.get("RELAX_KCLASS_DUMP_DIR")
                 if _kclass_dump_dir:
                     reconstruct_floor_stats_k = regularization_relion._compute_relion_weight_shell_stats(
                         Ft_ctf_combined[class_idx],
@@ -3086,9 +3086,9 @@ def refine_single_volume(
         else:
             mean_signal_variance_shells = None
             # Optional dump of post-join Ft_y, Ft_ctf for shell-by-shell parity
-            # comparison against RELION's RECOVAR_MSTEP_DUMP_DIR. Activated by
-            # RECOVAR_BPREF_ACCUM_DUMP_DIR. One npz per iteration.
-            _bpref_accum_dir = os.environ.get("RECOVAR_BPREF_ACCUM_DUMP_DIR")
+            # comparison against RELION's RELAX_MSTEP_DUMP_DIR. Activated by
+            # RELAX_BPREF_ACCUM_DUMP_DIR. One npz per iteration.
+            _bpref_accum_dir = os.environ.get("RELAX_BPREF_ACCUM_DUMP_DIR")
             if _bpref_accum_dir and _bpref_boundary_iteration_matches:
                 _save_bpref_accumulators(
                     _bpref_accum_dir,
@@ -3536,7 +3536,7 @@ def refine_single_volume(
                 int(pixel_res),
                 int(dvp_res_shell),
             )
-        _tau2_debug_dump_dir = os.environ.get("RECOVAR_RELION_TAU2_DEBUG_DUMP_DIR")
+        _tau2_debug_dump_dir = os.environ.get("RELAX_RELION_TAU2_DEBUG_DUMP_DIR")
         if _tau2_debug_dump_dir:
             reconstruction_diagnostics.write_tau2_update(
                 _replay_meta=_replay_meta,
@@ -4034,7 +4034,7 @@ def refine_single_volume(
         mean_signal_variance_per_half = mean_signal_variance_shells_per_half = tau2_update_details_per_half = None
         noise_stats_per_half = noise_stats_per_half_per_class = None
         gc.collect()
-        if parse_env_true_flag("RECOVAR_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"):
+        if parse_env_true_flag("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"):
             jax.clear_caches()
 
         if state.has_converged and not schedule.force_max_iter_after_convergence:

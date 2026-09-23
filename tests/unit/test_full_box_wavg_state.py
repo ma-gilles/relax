@@ -81,10 +81,10 @@ def test_full_box_native_host_noise_route(monkeypatch, direct_norm):
     from test_resident_pass2_driver import _driver_fixture_args
     from relax.sparse_pass2 import sparse_pass2_bucketed as sp
 
-    monkeypatch.setenv("RECOVAR_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
-    monkeypatch.setenv("RECOVAR_RELION_WAVG_ATOMIC_SCALE_AA", "1")
-    monkeypatch.setenv("RECOVAR_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "0" if direct_norm else "1")
-    monkeypatch.setenv("RECOVAR_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", "1" if direct_norm else "0")
+    monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
+    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_SCALE_AA", "1")
+    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "0" if direct_norm else "1")
+    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", "1" if direct_norm else "0")
     original = sp._replace_low_shell_noise_with_relion_wavg_direct_residual
     calls = []
 

@@ -71,7 +71,7 @@ def test_fused_translate_compact_pairs_match_gathered_path(
     """Fused route == FFI pairs kernel bitwise; a few ULP from the JAX emulation.
 
     The pure-JAX 256-lane emulation used by the gathered path when
-    ``RECOVAR_RELION_FINE_DIFF2_FUSED_FFI`` is off differs from the CUDA
+    ``RELAX_RELION_FINE_DIFF2_FUSED_FFI`` is off differs from the CUDA
     kernels by one or two binary32 ULP on a minority of pairs even with zero
     translations, so the kernel, not the emulation, is the bitwise reference.
     """

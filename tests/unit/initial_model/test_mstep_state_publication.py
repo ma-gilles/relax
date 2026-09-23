@@ -9,7 +9,7 @@ from relax.vdam import m_step, mstep_single_class
 from relax.vdam.state import InitialModelState, half_slot_index
 
 pytestmark = pytest.mark.unit
-SELECTOR = "RECOVAR_VDAM_MSTEP_COPY_UNTOUCHED"
+SELECTOR = "RELAX_VDAM_MSTEP_COPY_UNTOUCHED"
 CHANGED = {"Iref", "Igrad1", "Igrad2", "tau2_class", "sigma2_class", "data_vs_prior_class", "fourier_coverage_class"}
 
 

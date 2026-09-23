@@ -17,7 +17,7 @@ path they replace:
 The exact-BPref reconstruction operand needs a RELION source STAR and RELION
 CUDA preprocessing, which this fixture's dataset does not have; that
 configuration is covered on a real chunk by the driver's
-``RECOVAR_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY=1`` arm, which runs the same
+``RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY=1`` arm, which runs the same
 comparison against the per-chunk preparation inside a production pass.
 """
 
@@ -527,7 +527,7 @@ def test_shell_binning_is_a_racing_scatter_and_the_opt_in_fixes_it(
     process disagree. That is why the once-per-half preparation of it is not
     held to bitwise equality against a per-chunk preparation -- no two
     preparations of it are equal, including two of the per-chunk path. Under
-    ``RECOVAR_EM_DETERMINISTIC_REDUCTIONS=1`` the binning becomes a fixed-order
+    ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` the binning becomes a fixed-order
     masked reduction and all three comparisons below are exact.
     """
 
@@ -551,7 +551,7 @@ def test_shell_binning_is_a_racing_scatter_and_the_opt_in_fixes_it(
         )
 
     for deterministic in (False, True):
-        monkeypatch.setenv("RECOVAR_EM_DETERMINISTIC_REDUCTIONS", "1" if deterministic else "0")
+        monkeypatch.setenv("RELAX_EM_DETERMINISTIC_REDUCTIONS", "1" if deterministic else "0")
         # The flag is read at trace time, and JAX caches a traced program by
         # shape alone, so the second pass would reuse the first's program.
         jax.clear_caches()

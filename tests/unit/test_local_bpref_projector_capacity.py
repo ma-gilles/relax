@@ -183,7 +183,7 @@ def test_both_engine_accumulator_calls_bind_the_selected_projector():
 
 
 def test_logical_noncapacity_projector_reuses_slab_and_exclusive_carry(monkeypatch):
-    monkeypatch.delenv("RECOVAR_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY", raising=False)
+    monkeypatch.delenv("RELAX_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY", raising=False)
     selected = _run_actual_projector_selection(monkeypatch, False, shared_capacity=False)
     assert selected["source_vdam_consume_accumulators"] is True
 

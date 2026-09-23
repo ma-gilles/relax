@@ -14,7 +14,7 @@ from scripts.file_hash import sha256_file as _sha256
 
 SCHEMA = "recovar.em_k4_admitted_fine_operand_comparison.v3"
 NATIVE_SCHEMA = "recovar.em_k4_native_class1_fine_operand_admission.v1"
-RECOVAR_SCHEMA = "recovar.em_k4_contribution_repeatability.v1"
+RELAX_SCHEMA = "recovar.em_k4_contribution_repeatability.v1"
 COMPARISON_SCHEMA = "k4_relion_recovar_fine_operand_comparison_v10"
 EXPECTED_SCOPE = "iteration2_half1_source53722_class1_only"
 EXPECTED_NATIVE_GATES = 7
@@ -77,7 +77,7 @@ def validate_admissions(
         "native operand admission did not pass the fixed target-local 7/7 gate",
     )
     _require(
-        recovar.get("schema") == RECOVAR_SCHEMA
+        recovar.get("schema") == RELAX_SCHEMA
         and recovar.get("status") == "complete"
         and recovar.get("accepted") is True
         and recovar.get("cross_engine_attribution_allowed") is True

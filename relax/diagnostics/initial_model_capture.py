@@ -11,7 +11,7 @@ import pathlib
 
 import numpy as np
 
-_KCLASS_STATS_DUMP_ENV = "RECOVAR_VDAM_KCLASS_STATS_DUMP_DIR"
+_KCLASS_STATS_DUMP_ENV = "RELAX_VDAM_KCLASS_STATS_DUMP_DIR"
 
 
 def k_class_statistics_capture_enabled() -> bool:
@@ -63,7 +63,7 @@ def _maybe_dump_k_class_statistics(result, *, iteration: int, halfset: int, imag
     np.savez(target / f"kclass_stats_it{int(iteration):03d}_half{int(halfset)}.npz", **payload)
 
 
-_CLASS_CANDIDATE_COUNT_DUMP_ENV = "RECOVAR_VDAM_CLASS_CANDIDATE_COUNT_DUMP_DIR"
+_CLASS_CANDIDATE_COUNT_DUMP_ENV = "RELAX_VDAM_CLASS_CANDIDATE_COUNT_DUMP_DIR"
 
 
 def _maybe_dump_class_candidate_counts(class_layouts, *, iteration: int, halfset: int) -> None:

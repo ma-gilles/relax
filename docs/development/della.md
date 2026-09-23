@@ -62,7 +62,7 @@ Use this runbook, then verify each path exists before submitting Slurm jobs.
 Canonical metadata/mask root:
 
 ```bash
-RECOVAR_DATASETS_ROOT=/home/mg6942/mytigress/RECOVAR_datasets
+RELAX_DATASETS_ROOT=/home/mg6942/mytigress/RECOVAR_datasets
 ```
 
 This root contains `poses.pkl`, `ctf.pkl`, masks, focus masks, and indices. It
@@ -74,10 +74,10 @@ Default real paper-dataset inputs and run modes:
 
 | Dataset | Particles | Metadata/masks | Focused/paper run | Solvent survey run |
 | --- | --- | --- | --- |
-| `10073` | `/tigress/CRYOEM/singerlab/mg6942/10073/recovar_data/particles.256.mrcs` | `$RECOVAR_DATASETS_ROOT/10073/{poses.pkl,ctf.pkl,mask.mrc,focus_mask.mrc,ind.pkl}` | `--zdim 4`, `--mask`, `--focus-mask`, `--ind`, `--correct-contrast` | `--zdim 20`, `--mask`, `--correct-contrast`; no focus mask or index |
-| `10076` | `/tigress/CRYOEM/singerlab/mg6942/10076/particles.256.mrcs` | `$RECOVAR_DATASETS_ROOT/10076/{poses.pkl,ctf.pkl,mask.mrc}` | `--zdim 20`, `--mask`, `--correct-contrast`; no canonical focus mask or index | `--zdim 20`, `--mask`, `--correct-contrast`; no focus mask or index |
-| `10180` | `/scratch/gpfs/AMITS/mg6942/cryodrgn_empiar/empiar10180/inputs/particles.256.mrcs` | `$RECOVAR_DATASETS_ROOT/10180/{poses.pkl,ctf.pkl,mask.mrc,focus_mask.mrc,filtered.ind.pkl}` | `--zdim 4`, `--mask`, `--focus-mask`, `--ind filtered.ind.pkl`, `--correct-contrast` | `--zdim 20`, `--mask`, `--correct-contrast`; no focus mask or index |
-| `10345` | `/tigress/CRYOEM/singerlab/mg6942/10345/recovar_data/particles.256.mrcs` | `$RECOVAR_DATASETS_ROOT/10345/{poses.pkl,ctf.pkl,mask.mrc,focus_mask.mrc,ind.pkl}` | `--zdim 4`, `--mask`, `--focus-mask`, `--ind`, `--correct-contrast` | `--zdim 20`, `--mask`, `--correct-contrast`; no focus mask or index |
+| `10073` | `/tigress/CRYOEM/singerlab/mg6942/10073/recovar_data/particles.256.mrcs` | `$RELAX_DATASETS_ROOT/10073/{poses.pkl,ctf.pkl,mask.mrc,focus_mask.mrc,ind.pkl}` | `--zdim 4`, `--mask`, `--focus-mask`, `--ind`, `--correct-contrast` | `--zdim 20`, `--mask`, `--correct-contrast`; no focus mask or index |
+| `10076` | `/tigress/CRYOEM/singerlab/mg6942/10076/particles.256.mrcs` | `$RELAX_DATASETS_ROOT/10076/{poses.pkl,ctf.pkl,mask.mrc}` | `--zdim 20`, `--mask`, `--correct-contrast`; no canonical focus mask or index | `--zdim 20`, `--mask`, `--correct-contrast`; no focus mask or index |
+| `10180` | `/scratch/gpfs/AMITS/mg6942/cryodrgn_empiar/empiar10180/inputs/particles.256.mrcs` | `$RELAX_DATASETS_ROOT/10180/{poses.pkl,ctf.pkl,mask.mrc,focus_mask.mrc,filtered.ind.pkl}` | `--zdim 4`, `--mask`, `--focus-mask`, `--ind filtered.ind.pkl`, `--correct-contrast` | `--zdim 20`, `--mask`, `--correct-contrast`; no focus mask or index |
+| `10345` | `/tigress/CRYOEM/singerlab/mg6942/10345/recovar_data/particles.256.mrcs` | `$RELAX_DATASETS_ROOT/10345/{poses.pkl,ctf.pkl,mask.mrc,focus_mask.mrc,ind.pkl}` | `--zdim 4`, `--mask`, `--focus-mask`, `--ind`, `--correct-contrast` | `--zdim 20`, `--mask`, `--correct-contrast`; no focus mask or index |
 
 The standard workflow is: first run a zdim-20 solvent-mask-only survey on every
 dataset, then use curated indices and focus masks for the focused rerun. In the

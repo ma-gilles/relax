@@ -57,7 +57,7 @@ def test_coarse_gaussian_gemm_hybrid_is_default_off_and_fail_closed(monkeypatch)
 def test_coarse_gaussian_gemm_compact_posterior_is_strict_default_off(
     monkeypatch,
 ):
-    variable = "RECOVAR_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR"
+    variable = "RELAX_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR"
     monkeypatch.delenv(variable, raising=False)
     assert not significance._coarse_gaussian_gemm_compact_posterior_enabled()
     assert significance._coarse_gaussian_gemm_compact_posterior_enabled(default=True)
@@ -77,7 +77,7 @@ def test_coarse_gaussian_gemm_compact_posterior_is_strict_default_off(
 
 
 def test_compact_hybrid_image_batch_override_is_explicit_and_strict(monkeypatch):
-    variable = "RECOVAR_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE"
+    variable = "RELAX_COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE"
     monkeypatch.delenv(variable, raising=False)
     assert significance._coarse_gaussian_gemm_hybrid_image_batch_size_request() is None
 
@@ -380,7 +380,7 @@ def _selected_diff2_from_ids(
 
 @pytest.mark.parametrize("shared", [False, True])
 def test_hybrid_publishes_only_selected_exact_source16_scores(monkeypatch, shared):
-    monkeypatch.setenv("RECOVAR_COARSE_SHARED_PRETRANSLATED", str(int(shared)))
+    monkeypatch.setenv("RELAX_COARSE_SHARED_PRETRANSLATED", str(int(shared)))
     cache, shifted, weight, initial, topology = _hybrid_operands()
     full_callback_calls = 0
     monkeypatch.setattr(
@@ -453,7 +453,7 @@ def test_every_hybrid_full_dense_exit_uses_lazy_callback(
     fallback_case,
     expected_reason,
 ):
-    monkeypatch.setenv("RECOVAR_COARSE_SHARED_PRETRANSLATED", str(int(shared)))
+    monkeypatch.setenv("RELAX_COARSE_SHARED_PRETRANSLATED", str(int(shared)))
     cache, shifted, weight, initial, topology = _hybrid_operands()
     callback_calls = 0
 
@@ -949,7 +949,7 @@ def test_omitting_certified_zero_weight_blocks_preserves_f64_logsumexp_bits(
 
 
 def test_shared_pretranslated_dispatch_flag_is_strict_and_default_off(monkeypatch):
-    name = "RECOVAR_COARSE_SHARED_PRETRANSLATED"
+    name = "RELAX_COARSE_SHARED_PRETRANSLATED"
     monkeypatch.delenv(name, raising=False)
     assert not coarse_gaussian_gemm._coarse_shared_pretranslated_enabled()
     monkeypatch.setenv(name, "1")
@@ -965,7 +965,7 @@ def test_shared_pretranslated_dispatch_flag_is_strict_and_default_off(monkeypatc
 def test_full_scoring_dispatch_preserves_operands_and_reports_kernel(
     monkeypatch, shared, runtime, route,
 ):
-    monkeypatch.setenv("RECOVAR_COARSE_SHARED_PRETRANSLATED", str(int(shared)))
+    monkeypatch.setenv("RELAX_COARSE_SHARED_PRETRANSLATED", str(int(shared)))
     cache, shifted, weight, initial, topology = _hybrid_operands()
     calls = []
     expected_kernel = (

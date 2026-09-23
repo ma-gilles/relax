@@ -22,23 +22,23 @@ from relax.helpers.env_flags import parse_env_flag, parse_env_int_set
 from relax.helpers.preprocessing import image_preprocess_backend, resolve_image_mask_for_half_preprocess
 from relax.local.local_backprojection import relion_x_half_sequential_translation_reduction_enabled
 
-_BPREF_MEMBERSHIP_DUMP_DIR_ENV = "RECOVAR_BPREF_MEMBERSHIP_DUMP_DIR"
-_BPREF_MEMBERSHIP_DUMP_ITERATION_ENV = "RECOVAR_BPREF_MEMBERSHIP_DUMP_ITERATION"
-_BPREF_MEMBERSHIP_DUMP_HALF_ENV = "RECOVAR_BPREF_MEMBERSHIP_DUMP_HALF"
+_BPREF_MEMBERSHIP_DUMP_DIR_ENV = "RELAX_BPREF_MEMBERSHIP_DUMP_DIR"
+_BPREF_MEMBERSHIP_DUMP_ITERATION_ENV = "RELAX_BPREF_MEMBERSHIP_DUMP_ITERATION"
+_BPREF_MEMBERSHIP_DUMP_HALF_ENV = "RELAX_BPREF_MEMBERSHIP_DUMP_HALF"
 
 _bpref_membership_dump_counter = 0
 
 
-_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH_ENV = "RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH"
+_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH_ENV = "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH"
 
 
-_RELION_X_HALF_BP_FUSED_ATOMICS_ENV = "RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS"
+_RELION_X_HALF_BP_FUSED_ATOMICS_ENV = "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS"
 
 
-_BPREF_CONTRIBUTION_DUMP_CLASS_ENV = "RECOVAR_BPREF_CONTRIBUTION_DUMP_CLASS"
+_BPREF_CONTRIBUTION_DUMP_CLASS_ENV = "RELAX_BPREF_CONTRIBUTION_DUMP_CLASS"
 
 
-_BPREF_CONTRIBUTION_STOP_AFTER_TARGET_ENV = "RECOVAR_BPREF_CONTRIBUTION_STOP_AFTER_TARGET"
+_BPREF_CONTRIBUTION_STOP_AFTER_TARGET_ENV = "RELAX_BPREF_CONTRIBUTION_STOP_AFTER_TARGET"
 
 
 _native_mstep_dump_counter = 0
@@ -131,7 +131,7 @@ def _bpref_contribution_target_rows(experiment_dataset, image_indices) -> np.nda
 
     local_indices = np.asarray(image_indices, dtype=np.int64)
     target_values = parse_env_int_set(
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES"
+        "RELAX_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES"
     )
     if not target_values:
         return np.arange(local_indices.size, dtype=np.int64)
@@ -328,10 +328,10 @@ def _bpref_image_identities_for_original_indices(original_indices: np.ndarray) -
     the diagnostic never needs pickle.
     """
 
-    mapping_path = os.environ.get("RECOVAR_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY", "").strip()
+    mapping_path = os.environ.get("RELAX_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY", "").strip()
     if not mapping_path:
         raise RuntimeError(
-            "RECOVAR_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY is required when RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR is enabled"
+            "RELAX_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY is required when RELAX_BPREF_CONTRIBUTION_DUMP_DIR is enabled"
         )
     resolved = str(Path(mapping_path).expanduser().resolve())
     identities = _bpref_image_identity_cache.get(resolved)
@@ -362,9 +362,9 @@ def _bpref_image_identities_for_original_indices(original_indices: np.ndarray) -
 
 
 def _bpref_required_stack_checksum() -> str:
-    checksum = os.environ.get("RECOVAR_BPREF_CONTRIBUTION_STACK_SHA256", "").strip().lower()
+    checksum = os.environ.get("RELAX_BPREF_CONTRIBUTION_STACK_SHA256", "").strip().lower()
     if len(checksum) != 64 or any(char not in "0123456789abcdef" for char in checksum):
-        raise RuntimeError("RECOVAR_BPREF_CONTRIBUTION_STACK_SHA256 must contain the frozen source stack SHA256")
+        raise RuntimeError("RELAX_BPREF_CONTRIBUTION_STACK_SHA256 must contain the frozen source stack SHA256")
     return checksum
 
 
@@ -372,13 +372,13 @@ def flush_selected_bpref_device_panel(*, iteration_index: int, half_index: int) 
     """Flush the requested numbered capture, given zero-based loop indices."""
 
     _device_signature_target_iteration = os.environ.get(
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION"
+        "RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION"
     )
     _device_signature_target_half = os.environ.get(
-        "RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF"
+        "RELAX_BPREF_CONTRIBUTION_DUMP_HALF"
     )
     if _device_signature_target_half and int(_device_signature_target_half) not in {1, 2}:
-        raise ValueError("RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF must be 1 or 2")
+        raise ValueError("RELAX_BPREF_CONTRIBUTION_DUMP_HALF must be 1 or 2")
     if (
         os.environ.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR")
         and (
@@ -402,7 +402,7 @@ def flush_bpref_device_panel_accumulator(*, iteration: int, half: int) -> None:
     dump_dir = os.environ.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "").strip()
     if not dump_dir:
         return
-    run_id = os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_RUN_ID", "unset")
+    run_id = os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_RUN_ID", "unset")
     prefix = (int(iteration), int(half), run_id)
     keys = sorted(key for key in _bpref_device_panel_metadata if key[:3] == prefix)
     if not keys:
@@ -456,12 +456,12 @@ def _maybe_dump_native_half_mstep(
     recon_volume_shape,
     stage,
 ):
-    dump_dir = os.environ.get("RECOVAR_SPARSE_PASS2_NATIVE_DUMP_DIR")
+    dump_dir = os.environ.get("RELAX_SPARSE_PASS2_NATIVE_DUMP_DIR")
     if not dump_dir:
         return
     context_iteration = int(_bpref_contribution_context["iteration"])
     context_half = int(_bpref_contribution_context["half"])
-    target_iteration = os.environ.get("RECOVAR_SPARSE_PASS2_NATIVE_DUMP_ITERATION")
+    target_iteration = os.environ.get("RELAX_SPARSE_PASS2_NATIVE_DUMP_ITERATION")
     if target_iteration and context_iteration != int(target_iteration):
         return
 
@@ -471,7 +471,7 @@ def _maybe_dump_native_half_mstep(
 
     path = Path(dump_dir)
     path.mkdir(parents=True, exist_ok=True)
-    run_id = os.environ.get("RECOVAR_SPARSE_PASS2_NATIVE_DUMP_RUN_ID", "unset")
+    run_id = os.environ.get("RELAX_SPARSE_PASS2_NATIVE_DUMP_RUN_ID", "unset")
     np.savez_compressed(
         path
         / (
@@ -688,7 +688,7 @@ def _maybe_dump_bpref_contribution_rows(
 
     if os.environ.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "").strip() and device_signature_active is not True:
         return
-    dump_dir = os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR")
+    dump_dir = os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_DIR")
     if not dump_dir:
         return
     class_index = int(class_index)
@@ -699,16 +699,16 @@ def _maybe_dump_bpref_contribution_rows(
     _bpref_contribution_call_counter += 1
     context_iteration = int(_bpref_contribution_context["iteration"])
     context_half = int(_bpref_contribution_context["half"])
-    target_iteration = os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_ITERATION")
+    target_iteration = os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION")
     if target_iteration and context_iteration != int(target_iteration):
         return
-    target_half = os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF")
+    target_half = os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_HALF")
     if target_half:
         if int(target_half) not in {1, 2}:
-            raise ValueError("RECOVAR_BPREF_CONTRIBUTION_DUMP_HALF must be 1 or 2")
+            raise ValueError("RELAX_BPREF_CONTRIBUTION_DUMP_HALF must be 1 or 2")
         if context_half != int(target_half):
             return
-    target_current_size = os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE")
+    target_current_size = os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_CURRENT_SIZE")
     if target_current_size:
         if current_size is None or int(current_size) != int(target_current_size):
             return
@@ -726,7 +726,7 @@ def _maybe_dump_bpref_contribution_rows(
         experiment_dataset,
         local_indices,
     )
-    if os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES", "").strip():
+    if os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES", "").strip():
         if selected_particle_rows.size == 0:
             return
         local_indices = local_indices[selected_particle_rows]
@@ -881,7 +881,7 @@ def _maybe_dump_bpref_contribution_rows(
     _bpref_contribution_dump_counter += 1
     path = Path(dump_dir)
     path.mkdir(parents=True, exist_ok=True)
-    run_id = os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_RUN_ID", "unset")
+    run_id = os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_RUN_ID", "unset")
     stack_indices = np.asarray([int(value.split("@", 1)[0]) for value in image_identities], dtype=np.int64)
     stack_paths = np.asarray([value.split("@", 1)[1] for value in image_identities])
     if high_precision_operand_bundle:
@@ -964,7 +964,7 @@ def _maybe_dump_bpref_contribution_rows(
         call_index=np.int64(call_idx),
         iteration=np.int32(context_iteration),
         half=np.int32(context_half),
-        rank=np.int32(int(os.environ.get("RECOVAR_BPREF_CONTRIBUTION_RANK", "0"))),
+        rank=np.int32(int(os.environ.get("RELAX_BPREF_CONTRIBUTION_RANK", "0"))),
         pass_index=np.int32(2),
         # The emitted scalar identifies what this file holds, not the call default:
         # the selected class when one is in scope, -1 when several are.
@@ -1245,7 +1245,7 @@ def _maybe_dump_bpref_contribution_rows(
             "volume_shape": tuple(int(value) for value in volume_shape),
             "reconstruction_padding_factor": int(reconstruction_padding_factor),
             "source_stack_sha256": stack_sha256,
-            "rank": int(os.environ.get("RECOVAR_BPREF_CONTRIBUTION_RANK", "0")),
+            "rank": int(os.environ.get("RELAX_BPREF_CONTRIBUTION_RANK", "0")),
             "causal_arm": (
                 "winner-take-all-per-particle-fused-xhalf"
                 if winner_take_all
@@ -1303,7 +1303,7 @@ def _maybe_dump_bpref_contribution_rows(
             run_id=np.asarray(run_id),
             iteration=np.int32(context_iteration),
             half=np.int32(context_half),
-            rank=np.int32(int(os.environ.get("RECOVAR_BPREF_CONTRIBUTION_RANK", "0"))),
+            rank=np.int32(int(os.environ.get("RELAX_BPREF_CONTRIBUTION_RANK", "0"))),
             pass_index=np.int32(2),
             class_index=np.int32(class_index),
             call_index=np.int64(call_idx),
@@ -1412,7 +1412,7 @@ def _scoped_bpref_diagnostic_flags(*, active: bool) -> dict[str, bool]:
         "high_precision_operand_bundle": bool(
             scope_active
             and parse_env_flag(
-                "RECOVAR_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
+                "RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
                 default=False,
             )
         ),
@@ -1499,11 +1499,11 @@ def _require_bpref_device_soft_particle_arm(*, use_relion_x_half_mstep: bool) ->
     if not use_relion_x_half_mstep:
         raise RuntimeError("RECOVAR device signature requires the RELION x-half M-step")
     if not relion_x_half_bp_per_particle_launch_enabled():
-        raise RuntimeError("RECOVAR device signature requires RECOVAR_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH=1")
+        raise RuntimeError("RECOVAR device signature requires RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH=1")
     if not relion_x_half_sequential_translation_reduction_enabled():
-        raise RuntimeError("RECOVAR device signature requires RECOVAR_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION=1")
+        raise RuntimeError("RECOVAR device signature requires RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION=1")
     if not relion_x_half_bp_fused_atomics_enabled():
-        raise RuntimeError("RECOVAR device signature requires RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS=1")
+        raise RuntimeError("RECOVAR device signature requires RELAX_RELION_X_HALF_BP_FUSED_ATOMICS=1")
     from recovar import cuda_backproject
 
     if not cuda_backproject.relion_x_half_bp_block_topology_requested():
@@ -1719,26 +1719,26 @@ def build_bpref_preprocess_capture(
     }
 
 
-_BPREF_ACCUMULATOR_DELTA_DUMP_DIR_ENV = "RECOVAR_BPREF_ACCUMULATOR_DELTA_DUMP_DIR"
+_BPREF_ACCUMULATOR_DELTA_DUMP_DIR_ENV = "RELAX_BPREF_ACCUMULATOR_DELTA_DUMP_DIR"
 
 
 _BPREF_ACCUMULATOR_DELTA_ORIGINAL_INDICES_ENV = (
-    "RECOVAR_BPREF_ACCUMULATOR_DELTA_ORIGINAL_INDICES"
+    "RELAX_BPREF_ACCUMULATOR_DELTA_ORIGINAL_INDICES"
 )
 
 
-_BPREF_ACCUMULATOR_DELTA_ITERATION_ENV = "RECOVAR_BPREF_ACCUMULATOR_DELTA_ITERATION"
+_BPREF_ACCUMULATOR_DELTA_ITERATION_ENV = "RELAX_BPREF_ACCUMULATOR_DELTA_ITERATION"
 
 
-_BPREF_ACCUMULATOR_DELTA_HALF_ENV = "RECOVAR_BPREF_ACCUMULATOR_DELTA_HALF"
+_BPREF_ACCUMULATOR_DELTA_HALF_ENV = "RELAX_BPREF_ACCUMULATOR_DELTA_HALF"
 
 
 _BPREF_ACCUMULATOR_DELTA_MAX_PARTICLES_ENV = (
-    "RECOVAR_BPREF_ACCUMULATOR_DELTA_MAX_PARTICLES"
+    "RELAX_BPREF_ACCUMULATOR_DELTA_MAX_PARTICLES"
 )
 
 
-_BPREF_ACCUMULATOR_DELTA_MAX_BYTES_ENV = "RECOVAR_BPREF_ACCUMULATOR_DELTA_MAX_BYTES"
+_BPREF_ACCUMULATOR_DELTA_MAX_BYTES_ENV = "RELAX_BPREF_ACCUMULATOR_DELTA_MAX_BYTES"
 
 
 def _positive_accumulator_delta_env(name: str) -> int | None:
@@ -1940,7 +1940,7 @@ def _relion_firstiter_bpref_diagnostics_active(
     return bool(
         (device_signature_configured and bpref_device_signature_active)
         or (
-            os.environ.get("RECOVAR_BPREF_CONTRIBUTION_DUMP_DIR", "").strip()
+            os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", "").strip()
             and (bpref_device_signature_active or not device_signature_configured)
         )
         or _bpref_membership_dump_requested()
@@ -1948,6 +1948,6 @@ def _relion_firstiter_bpref_diagnostics_active(
             _scoped_bpref_diagnostic_flags(active=bpref_device_signature_active)
         )
         or os.environ.get(_BPREF_ACCUMULATOR_DELTA_DUMP_DIR_ENV, "").strip()
-        or os.environ.get("RECOVAR_PASS2_DUMP_DIR", "").strip()
-        or os.environ.get("RECOVAR_SPARSE_PASS2_NATIVE_DUMP_DIR", "").strip()
+        or os.environ.get("RELAX_PASS2_DUMP_DIR", "").strip()
+        or os.environ.get("RELAX_SPARSE_PASS2_NATIVE_DUMP_DIR", "").strip()
     )

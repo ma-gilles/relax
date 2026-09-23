@@ -20,7 +20,7 @@ from relax.helpers.fourier_window import make_fourier_window_indices_np, relion_
 from relax.helpers.half_spectrum import bin_shell_values_jax, make_relion_noise_shell_indices_half
 from relax.sparse_pass2.sparse_pass2_policy import _RELION_POWERCLASS_SPECTRUM_NORM_ENV
 
-_RELION_WAVG_SEQUENTIAL_CUDA_ENV = "RECOVAR_K1_RELION_WAVG_SEQUENTIAL_CUDA"
+_RELION_WAVG_SEQUENTIAL_CUDA_ENV = "RELAX_K1_RELION_WAVG_SEQUENTIAL_CUDA"
 
 
 class RelionWavgRectangle(NamedTuple):
@@ -56,7 +56,7 @@ def _weighted_image_power_shells_and_per_image(
         )
     source_faithful_spectrum_norm = bool(source_faithful_spectrum_norm)
     deterministic_norm_reduction = source_faithful_spectrum_norm or parse_env_flag(
-        "RECOVAR_K1_RELION_DETERMINISTIC_NORM_REDUCTION",
+        "RELAX_K1_RELION_DETERMINISTIC_NORM_REDUCTION",
         default=False,
     )
     return _weighted_image_power_shells_and_per_image_core(

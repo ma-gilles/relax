@@ -42,14 +42,14 @@ def get_pybind11_cmake_dir():
 def get_build_jobs() -> int:
     """Return the requested build parallelism without escaping a Slurm allocation."""
 
-    configured = os.environ.get("RECOVAR_RELION_BIND_JOBS")
+    configured = os.environ.get("RELAX_RELION_BIND_JOBS")
     if configured is not None:
         try:
             jobs = int(configured)
         except ValueError as exc:
-            raise ValueError("RECOVAR_RELION_BIND_JOBS must be a positive integer") from exc
+            raise ValueError("RELAX_RELION_BIND_JOBS must be a positive integer") from exc
         if jobs <= 0:
-            raise ValueError("RECOVAR_RELION_BIND_JOBS must be a positive integer")
+            raise ValueError("RELAX_RELION_BIND_JOBS must be a positive integer")
         return jobs
     try:
         return max(1, len(os.sched_getaffinity(0)))
@@ -87,7 +87,7 @@ def build():
         sys.exit(1)
 
     if os.environ.get("RECOVAR_RELION_BIND_BUILD_DIR") and os.environ.get(
-        "RECOVAR_RELION_BIND_COPY_TO_PACKAGE", "0"
+        "RELAX_RELION_BIND_COPY_TO_PACKAGE", "0"
     ).strip().lower() not in {"1", "true", "yes", "on"}:
         print(f"Built external RELION binding: {so_files[0]}")
         return

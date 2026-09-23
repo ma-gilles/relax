@@ -51,11 +51,11 @@ def test_shadow_output_difference_is_named():
 
 @pytest.mark.parametrize('mode', ['0', '1', 'check'])
 def test_mode(monkeypatch, mode):
-    monkeypatch.setenv('RECOVAR_SPARSE_KCLASS_DEFERRED_HOST_STATS', mode)
+    monkeypatch.setenv('RELAX_SPARSE_KCLASS_DEFERRED_HOST_STATS', mode)
     assert deferred_host_statistics_mode() == mode
 
 def test_invalid_mode(monkeypatch):
-    monkeypatch.setenv('RECOVAR_SPARSE_KCLASS_DEFERRED_HOST_STATS', 'typo')
+    monkeypatch.setenv('RELAX_SPARSE_KCLASS_DEFERRED_HOST_STATS', 'typo')
     with pytest.raises(ValueError):
         deferred_host_statistics_mode()
 

@@ -245,8 +245,8 @@ def _run(
 
 @pytest.fixture
 def _resident_local_env(monkeypatch):
-    monkeypatch.setenv("RECOVAR_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "64,256,1024")
-    monkeypatch.setenv("RECOVAR_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
+    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "64,256,1024")
+    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
 
 
 def test_flag_is_off_by_default(monkeypatch):
@@ -772,7 +772,7 @@ def test_local_chunk_runs_with_the_once_per_half_operand_flag(
     iteration 16, while every global-order matched pair passed.
 
     The local pass prepares its own pre-shifted per-chunk tiles, so
-    ``RECOVAR_SPARSE_PASS2_RESIDENT_OPERANDS`` must be inert here: both
+    ``RELAX_SPARSE_PASS2_RESIDENT_OPERANDS`` must be inert here: both
     settings have to run the adapter and agree to the driver's own repeat band.
     """
 
@@ -825,7 +825,7 @@ def test_local_chunk_runs_with_the_once_per_half_operand_flag(
 def test_block_row_program_matches_the_slicing_callback(monkeypatch, _resident_local_env):
     """P3-G: the chunk-array form against the per-block Python callback.
 
-    With ``RECOVAR_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM=1`` the chunk's three
+    With ``RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM=1`` the chunk's three
     row arrays go to ``run_resident_mstep_blocks`` whole and the block program
     reads its own rows; with the flag off the callback slices them per block.
     The rows the two forms hand the M-step body are bitwise equal, which

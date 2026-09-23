@@ -209,7 +209,7 @@ def test_complete_cuda_publication_matches_existing_gpu_path(monkeypatch, ties):
     import jax
 
     assert jax.default_backend() == "gpu"
-    monkeypatch.setenv("RECOVAR_RELION_BATCHED_POSTERIOR_PRIMITIVES", "1")
+    monkeypatch.setenv("RELAX_RELION_BATCHED_POSTERIOR_PRIMITIVES", "1")
     groups = mixed_groups()
     if ties:
         selected, full = groups
@@ -258,7 +258,7 @@ def test_actual_significance_engine_publishes_identical_complete_state(
         "RECOVAR_COARSE_GAUSSIAN_GEMM_MACRO": "1",
         "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE": "1",
         "RECOVAR_COARSE_GAUSSIAN_GEMM_HYBRID": "1",
-        "RECOVAR_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR": "1",
+        "RELAX_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR": "1",
         "RECOVAR_COARSE_GAUSSIAN_GEMM_HYBRID_BLOCK_CAPACITY": "2" if first_group == "small_grid" else "1",
         "RECOVAR_K1_COARSE_GAUSSIAN_FFI": "1",
         "RECOVAR_K1_COARSE_GAUSSIAN_SINCOSF": "1",
@@ -270,8 +270,8 @@ def test_actual_significance_engine_publishes_identical_complete_state(
         "RECOVAR_K1_COARSE_GAUSSIAN_NATIVE_TEXTURE": "0",
         "RECOVAR_K1_RELION_EXACT_COARSE_OPERANDS": "1",
         "RECOVAR_K1_RELION_F32_COARSE_SUPPORT": "1",
-        "RECOVAR_COARSE_ROW_PARTITION": "0",
-        "RECOVAR_COARSE_POSTERIOR_TRANSACTION": "0",
+        "RELAX_COARSE_ROW_PARTITION": "0",
+        "RELAX_COARSE_POSTERIOR_TRANSACTION": "0",
     }.items():
         monkeypatch.setenv(name, value)
     monkeypatch.setattr(significance.jax, "default_backend", lambda: "gpu")
@@ -380,8 +380,8 @@ def test_actual_significance_engine_publishes_identical_complete_state(
 
     control = run()
     assert not partition_calls
-    monkeypatch.setenv("RECOVAR_COARSE_ROW_PARTITION", "1")
-    monkeypatch.setenv("RECOVAR_COARSE_POSTERIOR_TRANSACTION", str(int(cuda_posterior)))
+    monkeypatch.setenv("RELAX_COARSE_ROW_PARTITION", "1")
+    monkeypatch.setenv("RELAX_COARSE_POSTERIOR_TRANSACTION", str(int(cuda_posterior)))
     candidate = run()
     assert len(partition_calls) == (0 if first_group == "small_grid" else 1 if first_group == "all_overflow" else 2)
     for i in range(4):

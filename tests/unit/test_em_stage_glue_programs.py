@@ -2,12 +2,12 @@
 
 Three changes are covered, all of them program-count changes only:
 
-* ``RECOVAR_COARSE_PAD_FINAL_IMAGE_BATCH`` pads a half set's last coarse image
+* ``RELAX_COARSE_PAD_FINAL_IMAGE_BATCH`` pads a half set's last coarse image
   batch up to ``image_batch_size`` by repeating image row zero, so the coarse
   pass, significance and image preprocessing see a single image extent per run
   instead of one per remainder. The repeated rows are dropped from every
   science output.
-* ``RECOVAR_EM_JIT_STAGE_GLUE`` runs the post-transform preprocessing chain and
+* ``RELAX_EM_JIT_STAGE_GLUE`` runs the post-transform preprocessing chain and
   the windowed score-operand gather as one jitted program each, instead of one
   XLA program per primitive per extent.
 * ``_collate_batch_to_jax`` builds the host array before the device transfer,
@@ -249,12 +249,12 @@ def _run_padding_pair(monkeypatch, *, jit_glue=False):
     from relax.scoring import significance
 
     args, kwargs = _significance_call()
-    monkeypatch.delenv("RECOVAR_COARSE_PAD_FINAL_IMAGE_BATCH", raising=False)
-    monkeypatch.delenv("RECOVAR_EM_JIT_STAGE_GLUE", raising=False)
+    monkeypatch.delenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", raising=False)
+    monkeypatch.delenv("RELAX_EM_JIT_STAGE_GLUE", raising=False)
     control = significance._compute_k_class_significance_batched(*args, **kwargs)
-    monkeypatch.setenv("RECOVAR_COARSE_PAD_FINAL_IMAGE_BATCH", "1")
+    monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "1")
     if jit_glue:
-        monkeypatch.setenv("RECOVAR_EM_JIT_STAGE_GLUE", "1")
+        monkeypatch.setenv("RELAX_EM_JIT_STAGE_GLUE", "1")
     candidate = significance._compute_k_class_significance_batched(*args, **kwargs)
     return candidate, control
 
@@ -298,12 +298,12 @@ def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
 
     monkeypatch.setattr(preprocessing, "preprocess_batch", record)
 
-    monkeypatch.delenv("RECOVAR_COARSE_PAD_FINAL_IMAGE_BATCH", raising=False)
+    monkeypatch.delenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", raising=False)
     significance._compute_k_class_significance_batched(*args, **kwargs)
     unpadded = list(seen)
 
     seen.clear()
-    monkeypatch.setenv("RECOVAR_COARSE_PAD_FINAL_IMAGE_BATCH", "1")
+    monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "1")
     significance._compute_k_class_significance_batched(*args, **kwargs)
     padded = list(seen)
 
@@ -318,10 +318,10 @@ def test_jit_stage_glue_preserves_every_significance_output(monkeypatch):
     from relax.scoring import significance
 
     args, kwargs = _significance_call()
-    monkeypatch.delenv("RECOVAR_COARSE_PAD_FINAL_IMAGE_BATCH", raising=False)
-    monkeypatch.delenv("RECOVAR_EM_JIT_STAGE_GLUE", raising=False)
+    monkeypatch.delenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", raising=False)
+    monkeypatch.delenv("RELAX_EM_JIT_STAGE_GLUE", raising=False)
     control = significance._compute_k_class_significance_batched(*args, **kwargs)
-    monkeypatch.setenv("RECOVAR_EM_JIT_STAGE_GLUE", "1")
+    monkeypatch.setenv("RELAX_EM_JIT_STAGE_GLUE", "1")
     candidate = significance._compute_k_class_significance_batched(*args, **kwargs)
     _assert_significance_results_identical(candidate, control)
 
@@ -434,11 +434,11 @@ def test_collate_keeps_device_arrays_on_device():
     "name, reader",
     [
         (
-            "RECOVAR_COARSE_PAD_FINAL_IMAGE_BATCH",
+            "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH",
             "relax.scoring.significance:_coarse_pad_final_image_batch_enabled",
         ),
         (
-            "RECOVAR_EM_JIT_STAGE_GLUE",
+            "RELAX_EM_JIT_STAGE_GLUE",
             "relax.helpers.preprocessing:jit_stage_glue_enabled",
         ),
     ],
@@ -463,7 +463,7 @@ def test_stage_glue_flags_fail_closed_on_bad_tokens(monkeypatch, name, reader):
 def test_source_star_ctf_pads_with_the_rest_of_the_coarse_batch():
     """The firstiter-CC operand rebuilt from the source STAR must pad too.
 
-    ``RECOVAR_COARSE_PAD_FINAL_IMAGE_BATCH`` pads the coarse batch's images,
+    ``RELAX_COARSE_PAD_FINAL_IMAGE_BATCH`` pads the coarse batch's images,
     CTF parameters, pre-shifts, corrections and scales, but the normalized-CC
     tree-rescore branch of ``_compute_k_class_significance_batched`` rebuilds one
     more per-image operand from the source STAR at the *unpadded* ``indices``.

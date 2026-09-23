@@ -60,7 +60,7 @@ def test_relion_texture_uses_one_canonical_boolean_ffi_mode(monkeypatch):
 
     # The retired diagnostic environment variable must not create a hidden
     # third mode: True always means the production RELION texture convention.
-    monkeypatch.setenv("RECOVAR_RELION_TEXTURE_POSITIVE_NYQUIST", "1")
+    monkeypatch.setenv("RELAX_RELION_TEXTURE_POSITIVE_NYQUIST", "1")
     texture, _, _ = _project_ffi_kwargs(*args, relion_texture_interp=True)
     assert int(texture["relion_texture_interp"]) == 1
 

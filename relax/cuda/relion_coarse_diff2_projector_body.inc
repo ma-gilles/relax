@@ -1,7 +1,7 @@
 /* Shared body for the default RELION coarse projector and the optional
  * prehalved-weight specialization.  The including wrapper must define
- * RECOVAR_RELION_COARSE_STAGE_WEIGHT(weight) and
- * RECOVAR_RELION_COARSE_DIFF2_UPDATE before including this file. */
+ * RELAX_RELION_COARSE_STAGE_WEIGHT(weight) and
+ * RELAX_RELION_COARSE_DIFF2_UPDATE before including this file. */
 {
     static_assert(
         !SINGLE_LANE_CANONICAL || CANONICAL_REDUCTION,
@@ -150,7 +150,7 @@
                     images[batch * compact_pixel_count + compact_pixel];
                 pixel_weight =
                     weight[batch * compact_pixel_count + compact_pixel];
-                RECOVAR_RELION_COARSE_STAGE_WEIGHT(pixel_weight)
+                RELAX_RELION_COARSE_STAGE_WEIGHT(pixel_weight)
             }
             shared_images[threadIdx.x] = image_value;
             shared_weights[threadIdx.x] = pixel_weight;
@@ -189,7 +189,7 @@
                      ++local_rotation) {
                     const int rotation = rotation_start + local_rotation;
                     if (rotation >= rotation_offset + rotation_count) continue;
-                    lane_sums[local_rotation] = RECOVAR_RELION_COARSE_DIFF2_UPDATE(
+                    lane_sums[local_rotation] = RELAX_RELION_COARSE_DIFF2_UPDATE(
                         shared_references[
                             pixel_in_chunk * EULERS_PER_BLOCK + local_rotation],
                         shifted,

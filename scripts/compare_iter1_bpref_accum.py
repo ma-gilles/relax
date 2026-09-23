@@ -2,9 +2,9 @@
 """Compare recovar's iter-1 backprojection accumulators vs RELION's downsampled-FSC ingredients.
 
 Loads:
-  * recovar's RECOVAR_BPREF_ACCUM_DUMP_DIR / recovar_bpref_accum_it001.npz
+  * recovar's RELAX_BPREF_ACCUM_DUMP_DIR / recovar_bpref_accum_it001.npz
     (post-join Ft_y, Ft_ctf in centered Fourier order, full pf*N grid)
-  * RELION's RECOVAR_MSTEP_DUMP_DIR / downsampled_avg_rank{01,02}_call0000.txt
+  * RELION's RELAX_MSTEP_DUMP_DIR / downsampled_avg_rank{01,02}_call0000.txt
     (post-getDownsampledAverage data: k, i, j, real, imag, weight)
 
 Then runs recovar's compute_relion_fsc_from_backprojector internal downsample
@@ -310,8 +310,8 @@ def scan_coordinate_mappings(avg, weight, down_radius, relion_dump, *, min_valid
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--recovar-npz", required=True, help="RECOVAR_BPREF_ACCUM_DUMP_DIR/recovar_bpref_accum_it001.npz")
-    ap.add_argument("--relion-dir", required=True, help="RECOVAR_MSTEP_DUMP_DIR with downsampled_avg_rank?_call?.txt")
+    ap.add_argument("--recovar-npz", required=True, help="RELAX_BPREF_ACCUM_DUMP_DIR/recovar_bpref_accum_it001.npz")
+    ap.add_argument("--relion-dir", required=True, help="RELAX_MSTEP_DUMP_DIR with downsampled_avg_rank?_call?.txt")
     ap.add_argument(
         "--relion-call",
         type=int,

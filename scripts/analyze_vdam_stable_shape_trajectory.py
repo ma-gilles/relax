@@ -596,14 +596,14 @@ def analyze(
             ),
             *(
                 [
-                    "RECOVAR_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM="
+                    "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM="
                     f"{int(stable_fourier_window_quantum)}"
                 ]
                 if stable_fourier_window_shapes
                 else []
             ),
             *(
-                ["RECOVAR_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY=1"]
+                ["RELAX_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY=1"]
                 if stable_flat_row_capacity
                 else []
             ),

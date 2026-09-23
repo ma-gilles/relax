@@ -91,7 +91,7 @@ def test_relion_x_half_public_layout_guard_avoids_full_expand_when_forced(monkey
     def fail_half_volume_to_full_volume(*args, **kwargs):
         raise AssertionError("JAX half-volume expansion should not be used")
 
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_TO_NATIVE_HALF", "1")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "1")
     monkeypatch.setattr(
         half_volume_mstep.fourier_transform_utils,
         "half_volume_to_full_volume",
@@ -109,16 +109,16 @@ def test_relion_x_half_public_layout_guard_avoids_full_expand_when_forced(monkey
 
 
 def test_relion_x_half_native_half_threshold_keeps_default_256_padded_grid_off(monkeypatch):
-    monkeypatch.delenv("RECOVAR_RELION_X_HALF_TO_NATIVE_HALF", raising=False)
-    monkeypatch.delenv("RECOVAR_RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS", raising=False)
+    monkeypatch.delenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", raising=False)
+    monkeypatch.delenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS", raising=False)
 
     assert not half_volume_mstep._large_relion_x_half_to_native_half_enabled(512**3)
     assert half_volume_mstep._large_relion_x_half_to_native_half_enabled(768**3)
 
 
 def test_relion_x_half_full_host_threshold_enables_default_256_padded_grid(monkeypatch):
-    monkeypatch.delenv("RECOVAR_RELION_X_HALF_FULL_HOST", raising=False)
-    monkeypatch.delenv("RECOVAR_RELION_X_HALF_FULL_HOST_MIN_VOXELS", raising=False)
+    monkeypatch.delenv("RELAX_RELION_X_HALF_FULL_HOST", raising=False)
+    monkeypatch.delenv("RELAX_RELION_X_HALF_FULL_HOST_MIN_VOXELS", raising=False)
 
     assert not half_volume_mstep._large_relion_x_half_full_host_enabled(259**3)
     assert half_volume_mstep._large_relion_x_half_full_host_enabled(512**3)
@@ -127,9 +127,9 @@ def test_relion_x_half_full_host_threshold_enables_default_256_padded_grid(monke
 
 def test_relion_x_half_host_x0_threshold_is_memory_safety_default(monkeypatch):
     monkeypatch.delenv(half_volume_mstep._RELION_X_HALF_HOST_X0_ENV, raising=False)
-    monkeypatch.delenv("RECOVAR_RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS", raising=False)
-    monkeypatch.delenv("RECOVAR_RELION_X_HALF_HOST_X0_MIN_VOXELS", raising=False)
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_TO_NATIVE_HALF", "0")
+    monkeypatch.delenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS", raising=False)
+    monkeypatch.delenv("RELAX_RELION_X_HALF_HOST_X0_MIN_VOXELS", raising=False)
+    monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "0")
 
     assert not half_volume_mstep._large_relion_x_half_host_x0_enabled(512**3)
     assert half_volume_mstep._large_relion_x_half_host_x0_enabled(768**3)
@@ -359,14 +359,14 @@ def test_relion_x_half_public_layout_shape_switch(monkeypatch):
     half_shape = ftu.volume_shape_to_half_volume_shape(volume_shape)
     half_grid = _valid_relion_x_half_grid(volume_shape, seed=789)
 
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_TO_NATIVE_HALF", "0")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "0")
     full = half_volume_mstep.relion_x_half_volume_to_public_layout(
         jnp.asarray(half_grid).reshape(-1),
         volume_shape,
     )
     assert full.shape == (int(np.prod(volume_shape)),)
 
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_TO_NATIVE_HALF", "1")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "1")
     native_half = half_volume_mstep.relion_x_half_volume_to_public_layout(
         jnp.asarray(half_grid).reshape(-1),
         volume_shape,
@@ -382,8 +382,8 @@ def test_relion_x_half_public_full_layout_uses_host_expand_when_forced(monkeypat
     def fail_half_volume_to_full_volume(*args, **kwargs):
         raise AssertionError("JAX half-volume expansion should not be used")
 
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_TO_NATIVE_HALF", "0")
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_FULL_HOST", "0")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "0")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_FULL_HOST", "0")
     monkeypatch.setattr(
         half_volume_mstep.fourier_transform_utils,
         "half_volume_to_full_volume",
@@ -404,7 +404,7 @@ def test_relion_x_half_public_full_layout_uses_host_expand_when_forced(monkeypat
 def test_relion_x_half_public_full_tau2_shell_stats_use_relion_x_axis(monkeypatch):
     """Tau2 shell stats must match RELION x-half storage after public-full expansion."""
 
-    monkeypatch.setenv("RECOVAR_RELION_X_HALF_TO_NATIVE_HALF", "0")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "0")
     volume_shape = (8, 8, 8)
     half_shape = ftu.volume_shape_to_half_volume_shape(volume_shape)
     rng = np.random.default_rng(112)

@@ -158,7 +158,7 @@ COMMON_ENVIRONMENT=(
   "RECOVAR_INITIAL_MODEL_FLAT_LOCAL_ROWS=1"
   "RECOVAR_INITIAL_MODEL_PACKED_LOCAL_PROJECTION=1"
   "RECOVAR_INITIAL_MODEL_DEFER_PACKED_VDAM=1"
-  "RECOVAR_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY=0"
+  "RELAX_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY=0"
   # This intentional late override must follow the frozen environment.  It
   # lets focused gates force the whole-batch fallback without silently being
   # reset to the acceptance contract's ordinary capacity.
@@ -275,8 +275,8 @@ Path(target).write_text(json.dumps({
 PY
   science_environment=(
     "${COMMON_ENVIRONMENT[@]}"
-    "RECOVAR_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY=${stable_flat}"
-    "RECOVAR_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM=${stable_quantum}"
+    "RELAX_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY=${stable_flat}"
+    "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM=${stable_quantum}"
     "TMPDIR=${tmp}"
     "JAX_COMPILATION_CACHE_DIR=${cache}"
   )

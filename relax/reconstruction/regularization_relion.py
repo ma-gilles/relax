@@ -76,21 +76,21 @@ def _low_resolution_join_flat_indices(volume_shape, half_layout, lowres_r2_max):
 
 
 def _low_resolution_join_host_fallback_enabled_for_size(values_size, join_size):
-    mode = os.environ.get("RECOVAR_LOWRES_JOIN_HOST_FALLBACK", "auto").strip().lower()
+    mode = os.environ.get("RELAX_LOWRES_JOIN_HOST_FALLBACK", "auto").strip().lower()
     if mode in {"0", "false", "no", "off", "never"}:
         return False
     if mode in {"1", "true", "yes", "on", "always"}:
         return True
     if mode != "auto":
         logger.warning(
-            "Unrecognised RECOVAR_LOWRES_JOIN_HOST_FALLBACK=%r; using auto",
+            "Unrecognised RELAX_LOWRES_JOIN_HOST_FALLBACK=%r; using auto",
             mode,
         )
     if int(join_size) >= int(values_size):
         return False
     threshold = int(
         os.environ.get(
-            "RECOVAR_LOWRES_JOIN_HOST_FALLBACK_MIN_ELEMENTS",
+            "RELAX_LOWRES_JOIN_HOST_FALLBACK_MIN_ELEMENTS",
             _LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS,
         )
     )
@@ -673,7 +673,7 @@ _RELION_FSC_PACKED_STREAM_MIN_ELEMENTS = 200_000_000
 def _relion_fsc_packed_stream_enabled(half_size):
     threshold = int(
         os.environ.get(
-            "RECOVAR_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS",
+            "RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS",
             _RELION_FSC_PACKED_STREAM_MIN_ELEMENTS,
         )
     )
@@ -933,9 +933,9 @@ def compute_relion_fsc_from_backprojector(
     input_sizes = tuple(
         int(np.size(value)) for value in (Ft_y_0, Ft_y_1, Ft_ctf_0, Ft_ctf_1)
     )
-    dump_dir = os.environ.get("RECOVAR_MSTEP_FSC_DUMP_DIR")
+    dump_dir = os.environ.get("RELAX_MSTEP_FSC_DUMP_DIR")
     dump_avg = bool(dump_dir) and os.environ.get(
-        "RECOVAR_MSTEP_FSC_DUMP_AVG", ""
+        "RELAX_MSTEP_FSC_DUMP_AVG", ""
     ).lower() in {"1", "true", "yes", "on"}
     packed_stream_eligible = (
         half_size < full_size
@@ -966,7 +966,7 @@ def compute_relion_fsc_from_backprojector(
         )
         if dump_dir:
             pathlib.Path(dump_dir).mkdir(parents=True, exist_ok=True)
-            tag = os.environ.get("RECOVAR_MSTEP_FSC_DUMP_TAG", "recovar")
+            tag = os.environ.get("RELAX_MSTEP_FSC_DUMP_TAG", "recovar")
             np.savetxt(
                 pathlib.Path(dump_dir) / f"{tag}_downsampled_fsc.txt",
                 np.column_stack(
@@ -1090,16 +1090,16 @@ def compute_relion_fsc_from_backprojector(
     fsc[nonzero] = numerator[nonzero] / np.sqrt(denom0[nonzero] * denom1[nonzero])
     fsc[0] = 1.0
 
-    dump_dir = os.environ.get("RECOVAR_MSTEP_FSC_DUMP_DIR")
+    dump_dir = os.environ.get("RELAX_MSTEP_FSC_DUMP_DIR")
     if dump_dir:
         pathlib.Path(dump_dir).mkdir(parents=True, exist_ok=True)
-        tag = os.environ.get("RECOVAR_MSTEP_FSC_DUMP_TAG", "recovar")
+        tag = os.environ.get("RELAX_MSTEP_FSC_DUMP_TAG", "recovar")
         np.savetxt(
             pathlib.Path(dump_dir) / f"{tag}_downsampled_fsc.txt",
             np.column_stack([np.arange(shell_count), numerator, denom0, denom1, fsc]),
             header="shell num den1 den2 fsc",
         )
-        if os.environ.get("RECOVAR_MSTEP_FSC_DUMP_AVG", "").lower() in {"1", "true", "yes", "on"}:
+        if os.environ.get("RELAX_MSTEP_FSC_DUMP_AVG", "").lower() in {"1", "true", "yes", "on"}:
             coords = np.column_stack(
                 [
                     rz[shell_valid].reshape(-1).astype(np.int64),

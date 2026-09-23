@@ -27,17 +27,17 @@ def _sha256(path: Path) -> str:
 
 def _recovar_env(monkeypatch, path: Path, *, n_images: int = 4, iteration: int = 1):
     values = {
-        "RECOVAR_GLOBAL_WINNER_SUMMARY_PATH": str(path),
-        "RECOVAR_GLOBAL_WINNER_SUMMARY_ITERATION": str(iteration),
-        "RECOVAR_GLOBAL_WINNER_SUMMARY_EXPECTED_PARTICLES": str(n_images),
-        "RECOVAR_GLOBAL_WINNER_SUMMARY_EXPECTED_CLASSES": "4",
-        "RECOVAR_GLOBAL_WINNER_SUMMARY_MAX_BYTES": str(MAX_SUPPORTED_BYTES),
-        "RECOVAR_GLOBAL_WINNER_SUMMARY_RUN_ID": "unit-test",
-        "RECOVAR_GLOBAL_WINNER_SUMMARY_SOURCE_ID": "a" * 64,
-        "RECOVAR_GLOBAL_WINNER_SUMMARY_EXECUTABLE_SHA256": "b" * 64,
-        "RECOVAR_GLOBAL_WINNER_SUMMARY_GPU_UUID": "GPU-unit-test",
-        "RECOVAR_GLOBAL_WINNER_SUMMARY_INPUT_MANIFEST_SHA256": "c" * 64,
-        "RECOVAR_GLOBAL_WINNER_SUMMARY_DISPATCH_ORACLE_SHA256": "d" * 64,
+        "RELAX_GLOBAL_WINNER_SUMMARY_PATH": str(path),
+        "RELAX_GLOBAL_WINNER_SUMMARY_ITERATION": str(iteration),
+        "RELAX_GLOBAL_WINNER_SUMMARY_EXPECTED_PARTICLES": str(n_images),
+        "RELAX_GLOBAL_WINNER_SUMMARY_EXPECTED_CLASSES": "4",
+        "RELAX_GLOBAL_WINNER_SUMMARY_MAX_BYTES": str(MAX_SUPPORTED_BYTES),
+        "RELAX_GLOBAL_WINNER_SUMMARY_RUN_ID": "unit-test",
+        "RELAX_GLOBAL_WINNER_SUMMARY_SOURCE_ID": "a" * 64,
+        "RELAX_GLOBAL_WINNER_SUMMARY_EXECUTABLE_SHA256": "b" * 64,
+        "RELAX_GLOBAL_WINNER_SUMMARY_GPU_UUID": "GPU-unit-test",
+        "RELAX_GLOBAL_WINNER_SUMMARY_INPUT_MANIFEST_SHA256": "c" * 64,
+        "RELAX_GLOBAL_WINNER_SUMMARY_DISPATCH_ORACLE_SHA256": "d" * 64,
     }
     for key, value in values.items():
         monkeypatch.setenv(key, value)
@@ -173,7 +173,7 @@ def test_recovar_summary_rejects_unexpected_k_or_n(monkeypatch, tmp_path):
             n_translations=2,
             iteration=1,
         )
-    monkeypatch.setenv("RECOVAR_GLOBAL_WINNER_SUMMARY_EXPECTED_CLASSES", "3")
+    monkeypatch.setenv("RELAX_GLOBAL_WINNER_SUMMARY_EXPECTED_CLASSES", "3")
     with pytest.raises(RuntimeError, match="K=4"):
         maybe_dump_global_winner_summary(
             experiment_dataset=_dataset(np.arange(4)),
@@ -196,7 +196,7 @@ def test_recovar_loader_rejects_artifact_over_hard_cap(tmp_path):
 def test_recovar_writer_enforces_configured_artifact_cap(monkeypatch, tmp_path):
     path = tmp_path / "recovar.npz"
     _recovar_env(monkeypatch, path)
-    monkeypatch.setenv("RECOVAR_GLOBAL_WINNER_SUMMARY_MAX_BYTES", "1")
+    monkeypatch.setenv("RELAX_GLOBAL_WINNER_SUMMARY_MAX_BYTES", "1")
     with pytest.raises(RuntimeError, match="exceeding cap"):
         maybe_dump_global_winner_summary(
             experiment_dataset=_dataset(np.arange(4)),
@@ -543,7 +543,7 @@ def test_analysis_reports_repeat_normalization_sign_and_ulp(monkeypatch, tmp_pat
     for label in ("a", "b"):
         path = tmp_path / f"recovar_{label}.npz"
         _recovar_env(monkeypatch, path)
-        monkeypatch.setenv("RECOVAR_GLOBAL_WINNER_SUMMARY_RUN_ID", label)
+        monkeypatch.setenv("RELAX_GLOBAL_WINNER_SUMMARY_RUN_ID", label)
         maybe_dump_global_winner_summary(
             experiment_dataset=_dataset(np.arange(4)),
             full_stats=_full_stats(),
@@ -582,7 +582,7 @@ def test_analysis_accepts_exact_paired_per_arm_dispatch_contexts(monkeypatch, tm
     for label in ("a", "b"):
         path = tmp_path / f"recovar_{label}.npz"
         _recovar_env(monkeypatch, path)
-        monkeypatch.setenv("RECOVAR_GLOBAL_WINNER_SUMMARY_RUN_ID", label)
+        monkeypatch.setenv("RELAX_GLOBAL_WINNER_SUMMARY_RUN_ID", label)
         maybe_dump_global_winner_summary(
             experiment_dataset=_dataset(np.arange(4)),
             full_stats=_full_stats(),

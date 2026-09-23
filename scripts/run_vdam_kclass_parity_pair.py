@@ -28,7 +28,7 @@ class PairRunError(RuntimeError):
 def _recovar_environment(env: dict[str, str]) -> dict[str, str]:
     """Return parity-affecting RECOVAR overrides for the evidence record."""
 
-    return {key: value for key, value in sorted(env.items()) if key.startswith("RECOVAR_")}
+    return {key: value for key, value in sorted(env.items()) if key.startswith(("RECOVAR_", "RELAX_"))}
 
 
 def _sha256(path: Path) -> str:

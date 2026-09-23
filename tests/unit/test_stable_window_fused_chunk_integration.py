@@ -74,12 +74,12 @@ def test_fused_translate_scorer_runtime_logical_size_matches_static_kernel(
 
 
 def _stable_window_fixture_env(monkeypatch, flag):
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "4")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_FUSED_TRANSLATE", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_STABLE_WINDOWS", flag)
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "4")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_FUSED_TRANSLATE", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_STABLE_WINDOWS", flag)
 
 
 def test_stable_windows_fall_back_to_the_logical_window_without_the_fused_scorer(monkeypatch, caplog):
@@ -122,12 +122,12 @@ def test_fused_chunk_scoring_matches_the_chunk_loop_on_gpu(monkeypatch, caplog, 
     monkeypatch.setattr(bucketed_mod, "_fused_chunk_scores_and_log_z", spy)
 
     def run(flag):
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "4")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_FUSED_TRANSLATE", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", "1")
-        monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_FUSED_CHUNK", flag)
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "4")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_FUSED_TRANSLATE", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_ADJOINT_REAL_ROWS", "1")
+        monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED_CHUNK", flag)
         calls.clear()
         kwargs = _fused_kclass_multibucket_fixture(n_images=13)
         kwargs["accumulate_noise"] = True

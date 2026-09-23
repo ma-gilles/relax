@@ -29,7 +29,7 @@ _RELION_EXACT_CTF_SOURCE_CACHE: dict[tuple[str, tuple[int, int]], dict] = {}
 # very same object: bit-for-bit by construction, not by re-derivation.
 _EXACT_CTF_RESULT_CACHE: "collections.OrderedDict[tuple, tuple]" = collections.OrderedDict()
 _EXACT_CTF_RESULT_BYTES = 0
-_EXACT_CTF_CACHE_GB_ENV = "RECOVAR_RELION_EXACT_CTF_CACHE_GB"
+_EXACT_CTF_CACHE_GB_ENV = "RELAX_RELION_EXACT_CTF_CACHE_GB"
 
 
 def _exact_ctf_result_cache_budget_bytes() -> int:
@@ -132,7 +132,7 @@ def clear_exact_ctf_result_cache() -> None:
 def _relion_exact_ctf_source_star(experiment_dataset) -> Path:
     """Resolve the immutable source STAR for exact RELION CTF evaluation."""
 
-    source_star = os.environ.get("RECOVAR_K1_RELION_EXACT_CTF_STAR", "").strip()
+    source_star = os.environ.get("RELAX_K1_RELION_EXACT_CTF_STAR", "").strip()
     if not source_star:
         dataset_source = getattr(experiment_dataset, "particles_file", None)
         if dataset_source and Path(dataset_source).suffix.lower() == ".star":
@@ -140,7 +140,7 @@ def _relion_exact_ctf_source_star(experiment_dataset) -> Path:
     if not source_star:
         raise ValueError(
             "exact RELION operands require a STAR-backed dataset or "
-            "RECOVAR_K1_RELION_EXACT_CTF_STAR"
+            "RELAX_K1_RELION_EXACT_CTF_STAR"
         )
     return Path(source_star).expanduser().resolve()
 

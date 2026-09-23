@@ -20,7 +20,7 @@ from relax.helpers.env_flags import parse_env_flag
 from relax.helpers.half_spectrum import bin_shell_values_jax
 from relax.sparse_pass2.sparse_pass2_posterior import _logsumexp_pass2_pairs_score_only
 
-_RELION_FINE_DIFF2_FUSED_FFI_ENV = "RECOVAR_RELION_FINE_DIFF2_FUSED_FFI"
+_RELION_FINE_DIFF2_FUSED_FFI_ENV = "RELAX_RELION_FINE_DIFF2_FUSED_FFI"
 
 
 _RELION_CUDA_FINE_REF3D_BLOCK_SIZE = 256
@@ -198,7 +198,7 @@ def _relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, compact_
     return lookup
 
 
-_RELION_FINE_DIFF2_MASKED_ENV = "RECOVAR_RELION_FINE_DIFF2_MASKED"
+_RELION_FINE_DIFF2_MASKED_ENV = "RELAX_RELION_FINE_DIFF2_MASKED"
 _DEFAULT_RELION_FINE_DIFF2_MASKED = True
 
 

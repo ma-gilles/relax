@@ -44,8 +44,8 @@ from scripts.analyze_k1_scale_aa_pixels import analyze
 
 
 def test_wavg_direct_noise_only_is_independent_from_direct_norm(monkeypatch):
-    monkeypatch.delenv("RECOVAR_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", raising=False)
-    monkeypatch.setenv("RECOVAR_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "1")
+    monkeypatch.delenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", raising=False)
+    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "1")
 
     assert _relion_wavg_direct_modes(
         accumulate_noise=True,
@@ -62,8 +62,8 @@ def test_wavg_direct_noise_only_is_independent_from_direct_norm(monkeypatch):
 
 
 def test_fresh_k1_default_enables_direct_noise_but_explicit_zero_disables(monkeypatch):
-    monkeypatch.delenv("RECOVAR_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", raising=False)
-    monkeypatch.delenv("RECOVAR_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", raising=False)
+    monkeypatch.delenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", raising=False)
+    monkeypatch.delenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", raising=False)
 
     kwargs = dict(
         accumulate_noise=True,
@@ -73,7 +73,7 @@ def test_fresh_k1_default_enables_direct_noise_but_explicit_zero_disables(monkey
     )
     assert _relion_wavg_direct_modes(**kwargs) == (True, False)
 
-    monkeypatch.setenv("RECOVAR_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "0")
+    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "0")
     assert _relion_wavg_direct_modes(**kwargs) == (False, False)
 
 
@@ -119,7 +119,7 @@ def test_powerclass_spectrum_norm_defaults_to_explicit_fresh_k1_guard(
     monkeypatch,
     fresh_k1_guard,
 ):
-    monkeypatch.delenv("RECOVAR_K1_RELION_POWERCLASS_SPECTRUM_NORM", raising=False)
+    monkeypatch.delenv("RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM", raising=False)
 
     assert (
         _relion_powerclass_spectrum_norm_enabled(fresh_k1_guard=fresh_k1_guard)
@@ -128,10 +128,10 @@ def test_powerclass_spectrum_norm_defaults_to_explicit_fresh_k1_guard(
 
 
 def test_powerclass_spectrum_norm_explicit_env_overrides_guard(monkeypatch):
-    monkeypatch.setenv("RECOVAR_K1_RELION_POWERCLASS_SPECTRUM_NORM", "0")
+    monkeypatch.setenv("RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM", "0")
     assert not _relion_powerclass_spectrum_norm_enabled(fresh_k1_guard=True)
 
-    monkeypatch.setenv("RECOVAR_K1_RELION_POWERCLASS_SPECTRUM_NORM", "1")
+    monkeypatch.setenv("RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM", "1")
     assert _relion_powerclass_spectrum_norm_enabled(fresh_k1_guard=False)
 
 
@@ -150,7 +150,7 @@ def test_exact_bpref_defaults_only_with_fresh_k1_spectrum(
     spectrum_norm,
     expected,
 ):
-    monkeypatch.delenv("RECOVAR_K1_RELION_EXACT_BPREF_OPERANDS", raising=False)
+    monkeypatch.delenv("RELAX_K1_RELION_EXACT_BPREF_OPERANDS", raising=False)
 
     assert (
         _relion_exact_bpref_operands_enabled(
@@ -163,7 +163,7 @@ def test_exact_bpref_defaults_only_with_fresh_k1_spectrum(
 
 @pytest.mark.parametrize(("override", "expected"), [("0", False), ("1", True)])
 def test_exact_bpref_explicit_env_overrides_default(monkeypatch, override, expected):
-    monkeypatch.setenv("RECOVAR_K1_RELION_EXACT_BPREF_OPERANDS", override)
+    monkeypatch.setenv("RELAX_K1_RELION_EXACT_BPREF_OPERANDS", override)
 
     assert (
         _relion_exact_bpref_operands_enabled(
@@ -179,8 +179,8 @@ def test_exact_bpref_explicit_env_overrides_default(monkeypatch, override, expec
 
 
 def test_wavg_direct_modes_reject_overlapping_factorial_arms(monkeypatch):
-    monkeypatch.setenv("RECOVAR_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", "1")
-    monkeypatch.setenv("RECOVAR_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "1")
+    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", "1")
+    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "1")
 
     with pytest.raises(ValueError, match="mutually exclusive"):
         _relion_wavg_direct_modes(
@@ -191,8 +191,8 @@ def test_wavg_direct_modes_reject_overlapping_factorial_arms(monkeypatch):
 
 
 def test_wavg_direct_residual_preserves_coupled_noise_and_norm(monkeypatch):
-    monkeypatch.setenv("RECOVAR_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", "1")
-    monkeypatch.delenv("RECOVAR_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", raising=False)
+    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", "1")
+    monkeypatch.delenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", raising=False)
 
     assert _relion_wavg_direct_modes(
         accumulate_noise=True,
@@ -202,7 +202,7 @@ def test_wavg_direct_residual_preserves_coupled_noise_and_norm(monkeypatch):
 
 
 def test_stopped_pass2_dump_prioritizes_only_requested_bucket(monkeypatch):
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_STOP_AFTER_TARGET", "1")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_STOP_AFTER_TARGET", "1")
     monkeypatch.setattr(
         "relax.diagnostics.sparse_pass2_dump._pass2_dump_enabled",
         lambda: True,
@@ -227,7 +227,7 @@ def test_stopped_pass2_dump_prioritizes_only_requested_bucket(monkeypatch):
 
 
 def test_nonstopped_pass2_dump_preserves_bucket_order(monkeypatch):
-    monkeypatch.delenv("RECOVAR_PASS2_DUMP_STOP_AFTER_TARGET", raising=False)
+    monkeypatch.delenv("RELAX_PASS2_DUMP_STOP_AFTER_TARGET", raising=False)
     monkeypatch.setattr(
         "relax.diagnostics.sparse_pass2_dump._pass2_dump_enabled",
         lambda: True,
@@ -251,8 +251,8 @@ def test_stopped_norm_residual_dump_prioritizes_requested_bucket(monkeypatch):
         "relax.diagnostics.sparse_pass2_dump._pass2_dump_enabled",
         lambda: False,
     )
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_NORM_RESIDUAL_INPUTS", "1")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET", "1")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS", "1")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET", "1")
     monkeypatch.setattr(
         "relax.diagnostics.sparse_pass2_dump._pass2_dump_requested_for_bucket",
         lambda **kwargs: int(np.asarray(kwargs["image_indices"])[0]) == 7,

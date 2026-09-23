@@ -14,8 +14,8 @@ import recovar.core.fourier_transform_utils as fourier_transform_utils
 _RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS = 200_000_000
 _RELION_X_HALF_FULL_HOST_MIN_VOXELS = 100_000_000
 _RELION_X_HALF_HOST_X0_MIN_VOXELS = 200_000_000
-_RELION_X_HALF_MSTEP_DOUBLE_ENV = "RECOVAR_RELION_X_HALF_MSTEP_DOUBLE"
-_RELION_X_HALF_HOST_X0_ENV = "RECOVAR_RELION_X_HALF_HOST_X0"
+_RELION_X_HALF_MSTEP_DOUBLE_ENV = "RELAX_RELION_X_HALF_MSTEP_DOUBLE"
+_RELION_X_HALF_HOST_X0_ENV = "RELAX_RELION_X_HALF_HOST_X0"
 
 
 def _env_enabled(name: str, *, default: bool) -> bool:
@@ -50,10 +50,10 @@ def relion_x_half_mstep_accumulator_dtypes(dataset_dtype, *, use_relion_x_half_m
 def _large_relion_x_half_to_native_half_enabled(full_voxels: int) -> bool:
     """Return whether large RELION x-half accumulators should stay half-packed."""
 
-    raw = os.environ.get("RECOVAR_RELION_X_HALF_TO_NATIVE_HALF")
+    raw = os.environ.get("RELAX_RELION_X_HALF_TO_NATIVE_HALF")
     if raw is not None:
         return raw.strip().lower() not in {"0", "false", "no", "off"}
-    min_voxels_raw = os.environ.get("RECOVAR_RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS")
+    min_voxels_raw = os.environ.get("RELAX_RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS")
     min_voxels = _RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS
     if min_voxels_raw is not None:
         try:
@@ -66,10 +66,10 @@ def _large_relion_x_half_to_native_half_enabled(full_voxels: int) -> bool:
 def _large_relion_x_half_full_host_enabled(full_voxels: int) -> bool:
     """Return whether large RELION x-half full expansion should run on host."""
 
-    raw = os.environ.get("RECOVAR_RELION_X_HALF_FULL_HOST")
+    raw = os.environ.get("RELAX_RELION_X_HALF_FULL_HOST")
     if raw is not None:
         return raw.strip().lower() not in {"0", "false", "no", "off"}
-    min_voxels_raw = os.environ.get("RECOVAR_RELION_X_HALF_FULL_HOST_MIN_VOXELS")
+    min_voxels_raw = os.environ.get("RELAX_RELION_X_HALF_FULL_HOST_MIN_VOXELS")
     min_voxels = _RELION_X_HALF_FULL_HOST_MIN_VOXELS
     if min_voxels_raw is not None:
         try:
@@ -85,7 +85,7 @@ def _large_relion_x_half_host_x0_enabled(full_voxels: int) -> bool:
     raw = os.environ.get(_RELION_X_HALF_HOST_X0_ENV)
     if raw is not None:
         return raw.strip().lower() not in {"0", "false", "no", "off"}
-    min_voxels_raw = os.environ.get("RECOVAR_RELION_X_HALF_HOST_X0_MIN_VOXELS")
+    min_voxels_raw = os.environ.get("RELAX_RELION_X_HALF_HOST_X0_MIN_VOXELS")
     min_voxels = _RELION_X_HALF_HOST_X0_MIN_VOXELS
     if min_voxels_raw is not None:
         try:

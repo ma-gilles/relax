@@ -79,10 +79,10 @@ def _fused_kclass_result_arrays(result):
 @pytest.mark.parametrize("device_index", [False, True])
 def test_capacity_and_device_indices_preserve_all_results(monkeypatch, noise, device_index):
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_IMAGE_CAPACITY", "0")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_DEVICE_INDEX", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_IMAGE_CAPACITY", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_DEVICE_INDEX", "0")
     kwargs = _fused_kclass_capacity_fixture()
     kwargs["accumulate_noise"] = noise
     expected = _fused_kclass_result_arrays(bucketed_mod.compute_k_class_pass2_stats_sparse_fused(**kwargs))
@@ -96,8 +96,8 @@ def test_capacity_and_device_indices_preserve_all_results(monkeypatch, noise, de
     # Tiny fixture byte budgets are intentionally overridden to exercise padding.
     # The capacity arithmetic and budget ceilings have separate donor tests.
     monkeypatch.setattr(bucketed_mod, "quantized_image_capacity", lambda n, **kw: max(16, 1 << (n - 1).bit_length()))
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_IMAGE_CAPACITY", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_DEVICE_INDEX", str(int(device_index)))
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_IMAGE_CAPACITY", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_DEVICE_INDEX", str(int(device_index)))
     actual = _fused_kclass_result_arrays(bucketed_mod.compute_k_class_pass2_stats_sparse_fused(**kwargs))
     assert pads and all(cap > real for real, cap in pads)
     assert expected.keys() == actual.keys()
@@ -107,15 +107,15 @@ def test_capacity_and_device_indices_preserve_all_results(monkeypatch, noise, de
 @pytest.mark.parametrize("noise", [False, True])
 def test_device_chunk_scalars_preserve_multibucket_results(monkeypatch, noise):
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_IMAGE_CAPACITY", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_COMPACT_PAIR_DEVICE_INDEX", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_MIN_BUCKET_SIZE", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_MAX_IMAGES_PER_MICROBATCH", "1")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_IMAGE_CAPACITY", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIR_DEVICE_INDEX", "1")
     monkeypatch.setattr(bucketed_mod, "quantized_image_capacity", lambda n, **kw: 4)
     kwargs = _fused_kclass_capacity_fixture()
     kwargs["accumulate_noise"] = noise
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS", "0")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS", "0")
     expected = _fused_kclass_result_arrays(bucketed_mod.compute_k_class_pass2_stats_sparse_fused(**kwargs))
     calls = []
     original = bucketed_mod._log_score_offset_from_min_diff2_device
@@ -123,7 +123,7 @@ def test_device_chunk_scalars_preserve_multibucket_results(monkeypatch, noise):
         calls.append(min_diff2.shape)
         return original(min_diff2)
     monkeypatch.setattr(bucketed_mod, "_log_score_offset_from_min_diff2_device", offset)
-    monkeypatch.setenv("RECOVAR_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_KCLASS_DEVICE_CHUNK_SCALARS", "1")
     actual = _fused_kclass_result_arrays(bucketed_mod.compute_k_class_pass2_stats_sparse_fused(**kwargs))
     assert len(calls) > 1, "must exercise multiple chunks and bounded host flushes"
     for name in expected:

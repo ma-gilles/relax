@@ -21,7 +21,7 @@ from relax.helpers.half_spectrum import bin_shell_values_jax
 logger = logging.getLogger(__name__)
 
 DEFAULT_PROJECTION_MAX_R = object()
-_RELION_PROJECTOR_TEXTURE_ENV = "RECOVAR_RELION_PROJECTOR_TEXTURE_INTERP"
+_RELION_PROJECTOR_TEXTURE_ENV = "RELAX_RELION_PROJECTOR_TEXTURE_INTERP"
 
 
 @partial(jax.jit, static_argnums=(2, 3, 4, 5))
@@ -635,7 +635,7 @@ def compute_relion_projector_projections_block(
 
     Strict parity defaults to RELION's CUDA texture interpolator when the
     custom CUDA projector is available.  Set
-    ``RECOVAR_RELION_PROJECTOR_TEXTURE_INTERP=0`` to force the manual/JAX
+    ``RELAX_RELION_PROJECTOR_TEXTURE_INTERP=0`` to force the manual/JAX
     diagnostic fallback.
 
     ``relion_acc_double_floorf_quirk`` only applies to that manual/JAX
@@ -762,11 +762,11 @@ def compute_relion_projector_projections_block(
             relion_acc_double_floorf_quirk,
         )
     if dense_scale:
-        token = (os.environ.get("RECOVAR_DENSE_MEANS_SCALE") or "-N2").strip()
+        token = (os.environ.get("RELAX_DENSE_MEANS_SCALE") or "-N2").strip()
         n = int(image_shape[0])
         scale = {"-N2": -(n**2), "N2": float(n**2)}.get(token)
         if scale is None:
-            raise ValueError(f"Unsupported RECOVAR_DENSE_MEANS_SCALE={token!r}")
+            raise ValueError(f"Unsupported RELAX_DENSE_MEANS_SCALE={token!r}")
         proj_half = proj_half * scale
     proj_abs2_half = jnp.abs(proj_half) ** 2 if return_abs2 else None
     return proj_half, proj_abs2_half

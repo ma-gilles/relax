@@ -184,7 +184,7 @@ def compute_pass2_stats_sparse(
         )
         from relax.sparse_pass2.sparse_pass2_bucketed import compute_pass2_stats_sparse_bucketed
 
-        # RECOVAR_SPARSE_PASS2_RESIDENT selects the device-resident K=1 driver.
+        # RELAX_SPARSE_PASS2_RESIDENT selects the device-resident K=1 driver.
         # Inside the path it covers it raises a named NotImplementedError on
         # any configuration mismatch rather than falling back, so a measured
         # comparison always knows which engine produced a result. The scoring

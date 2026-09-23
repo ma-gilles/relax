@@ -130,8 +130,8 @@ def test_gate_accepts_production_bpref_order_with_the_block_prototype():
 
 
 def test_gate_refuses_a_diagnostic_dump(monkeypatch):
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", "/tmp/does-not-matter")
-    with pytest.raises(NotImplementedError, match="RECOVAR_PASS2_DUMP_DIR"):
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", "/tmp/does-not-matter")
+    with pytest.raises(NotImplementedError, match="RELAX_PASS2_DUMP_DIR"):
         rp.require_resident_production_configuration(**_production_gate_kwargs())
 
 
@@ -649,12 +649,12 @@ def _driver_fixture_args(seed=20260918):
 
 @pytest.fixture
 def _resident_production_env(monkeypatch):
-    monkeypatch.setenv("RECOVAR_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
-    monkeypatch.setenv("RECOVAR_RELION_WAVG_ATOMIC_SCALE_AA", "1")
-    monkeypatch.setenv("RECOVAR_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "1")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", "256,1024,4096")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES", "4,16,64")
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "128")
+    monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
+    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_SCALE_AA", "1")
+    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "1")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", "256,1024,4096")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES", "4,16,64")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "128")
 
 
 @requires_resident_gpu
@@ -766,7 +766,7 @@ def test_resident_driver_repeats_itself(_resident_production_env):
 def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkeypatch):
     """P3-A: where the chunk loop's JIT boundary sits changes no output.
 
-    ``RECOVAR_SPARSE_PASS2_RESIDENT_GLUE_JIT`` picks between one program per
+    ``RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT`` picks between one program per
     M-step block and the loose sequence of eager operations the per-stage path
     used before P3-A. The stage bodies are the same functions in both
     settings, so the discrete state and the ordered statistics must be
@@ -781,14 +781,14 @@ def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkey
     )
 
     args = _driver_fixture_args()
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_RESIDENT_GLUE_JIT", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "0")
     loose = rp.compute_pass2_stats_resident(**args)
     # The loose path's own repeat, in this process: the self-repeat band the
     # racing accumulators below are read against. It is measured, not assumed,
     # because the float32 BPref atomics and the CUDA shell binning do not
     # reproduce between two identical calls.
     loose_repeat = rp.compute_pass2_stats_resident(**args)
-    monkeypatch.setenv("RECOVAR_SPARSE_PASS2_RESIDENT_GLUE_JIT", "1")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "1")
     programs = rp.compute_pass2_stats_resident(**args)
 
     np.testing.assert_array_equal(loose.hard_assignment, programs.hard_assignment)
@@ -813,7 +813,7 @@ def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkey
         )
     # ``wsum_sigma2_noise`` and ``wsum_norm_correction`` are shell sums fed by
     # the CUDA binning scatter, so they are bitwise only when the order is
-    # pinned. Under ``RECOVAR_EM_DETERMINISTIC_REDUCTIONS=1`` that is the
+    # pinned. Under ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` that is the
     # assertion; otherwise each is held to the loose path's own repeat spread
     # measured just above, never to a fixed tolerance. Holding them to bitwise
     # without the opt-in is what made this test fail in long GPU sessions at

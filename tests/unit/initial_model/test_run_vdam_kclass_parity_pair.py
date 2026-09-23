@@ -76,14 +76,14 @@ def test_pair_report_records_only_recovar_environment():
     captured = runner._recovar_environment(
         {
             "PATH": "/bin",
-            "RECOVAR_Z_OVERRIDE": "z",
-            "RECOVAR_RELION_FINE_DIFF2_FUSED_FFI": "1",
+            "RELAX_Z_OVERRIDE": "z",
+            "RELAX_RELION_FINE_DIFF2_FUSED_FFI": "1",
         }
     )
 
     assert captured == {
-        "RECOVAR_RELION_FINE_DIFF2_FUSED_FFI": "1",
-        "RECOVAR_Z_OVERRIDE": "z",
+        "RELAX_RELION_FINE_DIFF2_FUSED_FFI": "1",
+        "RELAX_Z_OVERRIDE": "z",
     }
 
 

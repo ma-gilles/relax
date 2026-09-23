@@ -11,9 +11,9 @@ def test_k1_bpref_membership_dump_preserves_identity_padding_and_weights(
     tmp_path,
 ):
     dump_dir = tmp_path / "membership"
-    monkeypatch.setenv("RECOVAR_BPREF_MEMBERSHIP_DUMP_DIR", str(dump_dir))
-    monkeypatch.setenv("RECOVAR_BPREF_MEMBERSHIP_DUMP_ITERATION", "2")
-    monkeypatch.setenv("RECOVAR_BPREF_MEMBERSHIP_DUMP_HALF", "1")
+    monkeypatch.setenv("RELAX_BPREF_MEMBERSHIP_DUMP_DIR", str(dump_dir))
+    monkeypatch.setenv("RELAX_BPREF_MEMBERSHIP_DUMP_ITERATION", "2")
+    monkeypatch.setenv("RELAX_BPREF_MEMBERSHIP_DUMP_HALF", "1")
     monkeypatch.setattr(bpref_diagnostics, "_bpref_membership_dump_counter", 0)
     bpref_diagnostics.set_bpref_contribution_dump_context(iteration=2, half=1)
 
@@ -80,9 +80,9 @@ def test_k1_bpref_membership_dump_preserves_identity_padding_and_weights(
 
 
 def test_k1_bpref_membership_dump_respects_physical_context(monkeypatch, tmp_path):
-    monkeypatch.setenv("RECOVAR_BPREF_MEMBERSHIP_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RECOVAR_BPREF_MEMBERSHIP_DUMP_ITERATION", "2")
-    monkeypatch.setenv("RECOVAR_BPREF_MEMBERSHIP_DUMP_HALF", "1")
+    monkeypatch.setenv("RELAX_BPREF_MEMBERSHIP_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_BPREF_MEMBERSHIP_DUMP_ITERATION", "2")
+    monkeypatch.setenv("RELAX_BPREF_MEMBERSHIP_DUMP_HALF", "1")
     bpref_diagnostics.set_bpref_contribution_dump_context(iteration=1, half=1)
     try:
         bpref_diagnostics._maybe_dump_k1_bpref_membership(
@@ -121,9 +121,9 @@ def test_k1_bpref_membership_dump_respects_physical_context(monkeypatch, tmp_pat
     ],
 )
 def test_membership_selector_preserves_filter_order(monkeypatch, directory, iteration, half, context, expected):
-    monkeypatch.setenv("RECOVAR_BPREF_MEMBERSHIP_DUMP_DIR", directory)
+    monkeypatch.setenv("RELAX_BPREF_MEMBERSHIP_DUMP_DIR", directory)
     for name, value in [("ITERATION", iteration), ("HALF", half)]:
-        name = "RECOVAR_BPREF_MEMBERSHIP_DUMP_" + name
+        name = "RELAX_BPREF_MEMBERSHIP_DUMP_" + name
         if value is None:
             monkeypatch.delenv(name, raising=False)
         else:
@@ -138,9 +138,9 @@ def test_membership_selector_preserves_filter_order(monkeypatch, directory, iter
 
 @pytest.mark.unit
 def test_membership_counter_continues_across_half_contexts(monkeypatch, tmp_path):
-    monkeypatch.setenv("RECOVAR_BPREF_MEMBERSHIP_DUMP_DIR", str(tmp_path))
-    monkeypatch.delenv("RECOVAR_BPREF_MEMBERSHIP_DUMP_ITERATION", raising=False)
-    monkeypatch.delenv("RECOVAR_BPREF_MEMBERSHIP_DUMP_HALF", raising=False)
+    monkeypatch.setenv("RELAX_BPREF_MEMBERSHIP_DUMP_DIR", str(tmp_path))
+    monkeypatch.delenv("RELAX_BPREF_MEMBERSHIP_DUMP_ITERATION", raising=False)
+    monkeypatch.delenv("RELAX_BPREF_MEMBERSHIP_DUMP_HALF", raising=False)
     monkeypatch.setattr(bpref_diagnostics, "_bpref_membership_dump_counter", 0)
     monkeypatch.setattr(bpref_diagnostics, "_bpref_contribution_context", {"iteration": -1, "half": -1})
     for half in (1, 2):

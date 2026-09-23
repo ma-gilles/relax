@@ -23,13 +23,13 @@ pytestmark = pytest.mark.unit
 def test_kclass_mstep_defaults_to_relion_x_half_with_full_volume_escape_hatch(monkeypatch):
     """K-class quality parity should use RELION x-half BPref accumulators by default."""
 
-    monkeypatch.delenv("RECOVAR_K_CLASS_RELION_X_HALF_MSTEP", raising=False)
+    monkeypatch.delenv("RELAX_K_CLASS_RELION_X_HALF_MSTEP", raising=False)
     assert scoring_policy._k_class_relion_x_half_mstep_enabled() is True
 
-    monkeypatch.setenv("RECOVAR_K_CLASS_RELION_X_HALF_MSTEP", "0")
+    monkeypatch.setenv("RELAX_K_CLASS_RELION_X_HALF_MSTEP", "0")
     assert scoring_policy._k_class_relion_x_half_mstep_enabled() is False
 
-    monkeypatch.setenv("RECOVAR_K_CLASS_RELION_X_HALF_MSTEP", "1")
+    monkeypatch.setenv("RELAX_K_CLASS_RELION_X_HALF_MSTEP", "1")
     assert scoring_policy._k_class_relion_x_half_mstep_enabled() is True
 
 def test_k1_relion_x_half_mstep_defaults_on_with_escape_hatch(monkeypatch):
@@ -167,24 +167,24 @@ def test_significance_dump_work_is_gated_before_scoring(monkeypatch, tmp_path):
     """A future-only dump request must not activate diagnostic scoring work."""
 
     for name in (
-        "RECOVAR_SIGNIFICANCE_DUMP_DIR",
-        "RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES",
-        "RECOVAR_SIGNIFICANCE_DUMP_CURRENT_SIZE",
-        "RECOVAR_SIGNIFICANCE_DUMP_ITERATION",
+        "RELAX_SIGNIFICANCE_DUMP_DIR",
+        "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES",
+        "RELAX_SIGNIFICANCE_DUMP_CURRENT_SIZE",
+        "RELAX_SIGNIFICANCE_DUMP_ITERATION",
     ):
         monkeypatch.delenv(name, raising=False)
 
     matches = sig_mod._significance_debug_dump_matches
     assert not matches(current_size=32, debug_iteration=1)
 
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(tmp_path))
     assert not matches(current_size=32, debug_iteration=1)
 
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "42")
     assert matches(current_size=32, debug_iteration=1)
 
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_CURRENT_SIZE", "64")
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_ITERATION", "11")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_CURRENT_SIZE", "64")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ITERATION", "11")
     assert not matches(current_size=32, debug_iteration=1)
     assert not matches(current_size=64, debug_iteration=1)
     assert not matches(current_size=32, debug_iteration=11)
@@ -259,9 +259,9 @@ def test_kclass_dump_writes_operand_arrays_to_npz(monkeypatch, tmp_path):
 
     dump_dir = tmp_path / "dump"
     dump_dir.mkdir()
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "42")
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_ITERATION", "2")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ITERATION", "2")
     sig_mod._maybe_dump_k_class_significance_batch(
         experiment_dataset=experiment_dataset,
         indices=indices,
@@ -363,9 +363,9 @@ def test_kclass_dump_writes_operand_arrays_to_npz(monkeypatch, tmp_path):
 
 def test_kclass_significance_dump_iteration_gate_suppresses_other_iterations(monkeypatch, tmp_path):
     dump_dir = tmp_path / "dump"
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "42")
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_ITERATION", "2")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ITERATION", "2")
 
     sig_mod._maybe_dump_k_class_significance_batch(
         experiment_dataset=None,
@@ -397,10 +397,10 @@ def test_kclass_significance_dump_can_stop_after_durable_target(monkeypatch, tmp
     """The opt-in short-run diagnostic stops only after writing its target."""
 
     dump_dir = tmp_path / "dump"
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "42")
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_ITERATION", "2")
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "1")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ITERATION", "2")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "1")
 
     with pytest.raises(coarse_gaussian_diagnostics.SignificanceDumpComplete) as exc_info:
         sig_mod._maybe_dump_k_class_significance_batch(
@@ -440,8 +440,8 @@ def test_kclass_significance_stop_without_iteration_uses_unsuffixed_path(monkeyp
     dump_dir.mkdir()
     dump_path = dump_dir / "significance_orig000042_cs014.npz"
     dump_path.write_bytes(b"durable")
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "1")
-    monkeypatch.delenv("RECOVAR_SIGNIFICANCE_DUMP_ITERATION", raising=False)
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "1")
+    monkeypatch.delenv("RELAX_SIGNIFICANCE_DUMP_ITERATION", raising=False)
 
     with pytest.raises(coarse_gaussian_diagnostics.SignificanceDumpComplete):
         coarse_gaussian_diagnostics._maybe_stop_after_significance_dump(
@@ -456,10 +456,10 @@ def test_kclass_significance_stop_respects_iteration_gate(monkeypatch, tmp_path)
     """A future target must not stop the current scoring boundary."""
 
     dump_dir = tmp_path / "dump"
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "42")
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_ITERATION", "3")
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "1")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ITERATION", "3")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "1")
 
     sig_mod._maybe_dump_k_class_significance_batch(
         experiment_dataset=None,
@@ -490,8 +490,8 @@ def test_kclass_significance_stop_respects_iteration_gate(monkeypatch, tmp_path)
 def test_significance_stop_waits_for_complete_target_set(monkeypatch, tmp_path):
     dump_dir = tmp_path / "dump"
     dump_dir.mkdir()
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "1")
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_ITERATION", "2")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "1")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ITERATION", "2")
     first_path = dump_dir / "significance_orig000042_it002_cs014.npz"
     second_path = dump_dir / "significance_orig000043_it002_cs014.npz"
     first_path.touch()
@@ -520,11 +520,11 @@ def test_significance_dump_half_selector_is_scoped_to_target_iteration(tmp_path)
         SimpleNamespace(dataset_indices=np.asarray([1, 3], dtype=np.int64)),
     ]
     environ = {
-        "RECOVAR_SIGNIFICANCE_DUMP_TARGET_HALF": "2",
-        "RECOVAR_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET": "1",
-        "RECOVAR_SIGNIFICANCE_DUMP_DIR": str(tmp_path),
-        "RECOVAR_SIGNIFICANCE_DUMP_ITERATION": "2",
-        "RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES": "1,3",
+        "RELAX_SIGNIFICANCE_DUMP_TARGET_HALF": "2",
+        "RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET": "1",
+        "RELAX_SIGNIFICANCE_DUMP_DIR": str(tmp_path),
+        "RELAX_SIGNIFICANCE_DUMP_ITERATION": "2",
+        "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES": "1,3",
     }
 
     assert debug_dumps._significance_dump_half_indices(
@@ -546,10 +546,10 @@ def test_significance_dump_half_selector_fails_closed(tmp_path):
         SimpleNamespace(dataset_indices=np.asarray([1, 3], dtype=np.int64)),
     ]
     base_environ = {
-        "RECOVAR_SIGNIFICANCE_DUMP_TARGET_HALF": "2",
-        "RECOVAR_SIGNIFICANCE_DUMP_DIR": str(tmp_path),
-        "RECOVAR_SIGNIFICANCE_DUMP_ITERATION": "2",
-        "RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES": "1",
+        "RELAX_SIGNIFICANCE_DUMP_TARGET_HALF": "2",
+        "RELAX_SIGNIFICANCE_DUMP_DIR": str(tmp_path),
+        "RELAX_SIGNIFICANCE_DUMP_ITERATION": "2",
+        "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES": "1",
     }
     with pytest.raises(RuntimeError, match="STOP_AFTER_TARGET"):
         debug_dumps._significance_dump_half_indices(
@@ -560,8 +560,8 @@ def test_significance_dump_half_selector_fails_closed(tmp_path):
         )
 
     target_missing = dict(base_environ)
-    target_missing["RECOVAR_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET"] = "1"
-    target_missing["RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES"] = "2"
+    target_missing["RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET"] = "1"
+    target_missing["RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES"] = "2"
     with pytest.raises(RuntimeError, match="not all present"):
         debug_dumps._significance_dump_half_indices(
             numbered_iteration=2,
@@ -574,7 +574,7 @@ def test_significance_dump_half_selector_fails_closed(tmp_path):
             numbered_iteration=2,
             n_classes=4,
             experiment_datasets=datasets,
-            environ={**base_environ, "RECOVAR_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET": "1"},
+            environ={**base_environ, "RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET": "1"},
         )
 
 def test_pass2_norm_dump_half_selector_reaches_only_target_half(tmp_path):
@@ -583,12 +583,12 @@ def test_pass2_norm_dump_half_selector_reaches_only_target_half(tmp_path):
         SimpleNamespace(dataset_indices=np.asarray([1, 3], dtype=np.int64)),
     ]
     environ = {
-        "RECOVAR_PASS2_DUMP_TARGET_HALF": "2",
-        "RECOVAR_PASS2_DUMP_NORM_RESIDUAL_INPUTS": "1",
-        "RECOVAR_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET": "1",
-        "RECOVAR_PASS2_DUMP_DIR": str(tmp_path),
-        "RECOVAR_PASS2_DUMP_ITERATION": "2",
-        "RECOVAR_PASS2_DUMP_ORIGINAL_INDICES": "1,3",
+        "RELAX_PASS2_DUMP_TARGET_HALF": "2",
+        "RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS": "1",
+        "RELAX_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET": "1",
+        "RELAX_PASS2_DUMP_DIR": str(tmp_path),
+        "RELAX_PASS2_DUMP_ITERATION": "2",
+        "RELAX_PASS2_DUMP_ORIGINAL_INDICES": "1,3",
     }
 
     assert debug_dumps._significance_dump_half_indices(
@@ -610,10 +610,10 @@ def test_pass2_norm_dump_half_selector_fails_closed(tmp_path):
         SimpleNamespace(dataset_indices=np.asarray([1, 3], dtype=np.int64)),
     ]
     base = {
-        "RECOVAR_PASS2_DUMP_TARGET_HALF": "2",
-        "RECOVAR_PASS2_DUMP_DIR": str(tmp_path),
-        "RECOVAR_PASS2_DUMP_ITERATION": "2",
-        "RECOVAR_PASS2_DUMP_ORIGINAL_INDICES": "1",
+        "RELAX_PASS2_DUMP_TARGET_HALF": "2",
+        "RELAX_PASS2_DUMP_DIR": str(tmp_path),
+        "RELAX_PASS2_DUMP_ITERATION": "2",
+        "RELAX_PASS2_DUMP_ORIGINAL_INDICES": "1",
     }
     with pytest.raises(RuntimeError, match="NORM_RESIDUAL_INPUTS"):
         debug_dumps._significance_dump_half_indices(
@@ -627,7 +627,7 @@ def test_pass2_norm_dump_half_selector_fails_closed(tmp_path):
             numbered_iteration=2,
             n_classes=1,
             experiment_datasets=datasets,
-            environ={**base, "RECOVAR_PASS2_DUMP_NORM_RESIDUAL_INPUTS": "1"},
+            environ={**base, "RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS": "1"},
         )
     with pytest.raises(RuntimeError, match="mutually exclusive"):
         debug_dumps._significance_dump_half_indices(
@@ -636,7 +636,7 @@ def test_pass2_norm_dump_half_selector_fails_closed(tmp_path):
             experiment_datasets=datasets,
             environ={
                 **base,
-                "RECOVAR_SIGNIFICANCE_DUMP_TARGET_HALF": "2",
+                "RELAX_SIGNIFICANCE_DUMP_TARGET_HALF": "2",
             },
         )
 
@@ -684,8 +684,8 @@ def test_kclass_significance_dump_uses_original_index_mapper(monkeypatch, tmp_pa
         original_image_indices_from_local=original_image_indices_from_local,
     )
     dump_dir = tmp_path / "dump"
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
-    monkeypatch.setenv("RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "42")
 
     sig_mod._maybe_dump_k_class_significance_batch(
         experiment_dataset=experiment_dataset,
@@ -746,9 +746,9 @@ def test_sparse_pass2_dump_writes_score_and_recon_operand_arrays(monkeypatch, tm
     ctf_recon = np.ones((1, n_recon_pix), dtype=np.float64) * 4.0
 
     dump_dir = tmp_path / "pass2"
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(dump_dir))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "42")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ITERATION", "2")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(dump_dir))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ITERATION", "2")
     monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "iteration", 2)
     monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "half", 1)
     pass2_diagnostics._maybe_dump_pass2_bucket(
@@ -846,10 +846,10 @@ def test_sparse_pass2_dump_can_retain_only_selected_rotation_rows(monkeypatch, t
     scores = np.arange(n_rot * n_trans, dtype=np.float64).reshape(1, n_rot, n_trans)
     probs = np.full((1, n_rot, n_trans), 1.0 / (n_rot * n_trans), dtype=np.float64)
     dump_dir = tmp_path / "pass2"
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(dump_dir))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "42")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ROTATION_ROWS", "1,3")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_RAW_OPERANDS", "1")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(dump_dir))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ROTATION_ROWS", "1,3")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_RAW_OPERANDS", "1")
     raw_diff2 = np.arange(n_rot * n_trans, dtype=np.float32).reshape(
         1, n_rot, n_trans
     ) + np.float32(100)
@@ -961,10 +961,10 @@ def test_sparse_pass2_raw_operand_dump_fails_closed_without_raw_diff2(
         "oversampled_rot_indices": [np.asarray([7], dtype=np.int64)],
         "parent_map": [np.asarray([0], dtype=np.int32)],
     }
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "42")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ROTATION_ROWS", "0")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_RAW_OPERANDS", "1")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ROTATION_ROWS", "0")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_RAW_OPERANDS", "1")
 
     with pytest.raises(ValueError, match="requires the production K=1 RELION raw-diff2"):
         pass2_diagnostics._maybe_dump_pass2_bucket(
@@ -1000,10 +1000,10 @@ def test_sparse_pass2_raw_operand_dump_uses_normalized_cc_score_without_diff2(
         "oversampled_rot_indices": [np.asarray([7], dtype=np.int64)],
         "parent_map": [np.asarray([0], dtype=np.int32)],
     }
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "42")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ROTATION_ROWS", "0")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_RAW_OPERANDS", "1")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ROTATION_ROWS", "0")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_RAW_OPERANDS", "1")
     score = np.asarray([[[0.25, 0.5]]], dtype=np.float32)
     rotation_prior = np.asarray([[0.125]], dtype=np.float32)
     translation_prior = np.asarray([[0.0, -0.25]], dtype=np.float32)
@@ -1058,8 +1058,8 @@ def test_sparse_pass2_dump_uses_original_index_mapper(monkeypatch, tmp_path):
     }
 
     dump_dir = tmp_path / "pass2"
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(dump_dir))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(dump_dir))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "42")
     pass2_diagnostics._maybe_dump_pass2_bucket(
         experiment_dataset=experiment_dataset,
         image_indices=np.asarray([local_index], dtype=np.int64),
@@ -1117,9 +1117,9 @@ def test_kclass_compact_pass2_dump_uses_original_index_mapper(monkeypatch, tmp_p
     min_diff2 = np.asarray([100.0], dtype=np.float32)
 
     dump_dir = tmp_path / "pass2"
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(dump_dir))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "42")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_CLASS", "2")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(dump_dir))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_CLASS", "2")
     pass2_diagnostics._maybe_dump_k_class_pass2_bucket(
         experiment_dataset=experiment_dataset,
         image_indices=np.asarray([local_index], dtype=np.int64),
@@ -1201,8 +1201,8 @@ def test_kclass_dense_pass2_dump_preserves_selected_raw_diff2(monkeypatch, tmp_p
     raw_diff2 = raw_diff2_padded[:n_rot]
 
     dump_dir = tmp_path / "pass2"
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(dump_dir))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(dump_dir))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "42")
     pass2_diagnostics._maybe_dump_k_class_pass2_bucket(
         experiment_dataset=experiment_dataset,
         image_indices=np.asarray([0], dtype=np.int64),
@@ -1270,8 +1270,8 @@ def test_kclass_pass2_dump_preserves_effective_raw_operands(monkeypatch, tmp_pat
     )
 
     dump_dir = tmp_path / "pass2"
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(dump_dir))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "42")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(dump_dir))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "42")
     pass2_diagnostics._maybe_dump_k_class_pass2_bucket(
         experiment_dataset=experiment_dataset,
         image_indices=np.asarray([0], dtype=np.int64),
@@ -1359,9 +1359,9 @@ def test_pass2_dump_target_rows_use_original_index_mapping(monkeypatch, tmp_path
             dtype=np.int64,
         )
     )
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "42,300")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_CURRENT_SIZE", "14")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "42,300")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_CURRENT_SIZE", "14")
 
     rows = pass2_diagnostics._pass2_dump_target_rows(
         experiment_dataset=experiment_dataset,
@@ -1378,10 +1378,10 @@ def test_pass2_dump_target_rows_require_requested_iteration(monkeypatch, tmp_pat
             dtype=np.int64,
         )
     )
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ORIGINAL_INDICES", "42,300")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_CURRENT_SIZE", "14")
-    monkeypatch.setenv("RECOVAR_PASS2_DUMP_ITERATION", "2")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ORIGINAL_INDICES", "42,300")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_CURRENT_SIZE", "14")
+    monkeypatch.setenv("RELAX_PASS2_DUMP_ITERATION", "2")
 
     try:
         bpref_diagnostics.set_bpref_contribution_dump_context(iteration=1, half=1)
@@ -1424,15 +1424,15 @@ def test_pass2_dump_target_rows_require_requested_iteration(monkeypatch, tmp_pat
     ],
 )
 def test_pass1_fused_enabled_env_var_contract(monkeypatch, value, expected):
-    """``RECOVAR_PASS1_FUSED`` is the public opt-in for the fused pass1
+    """``RELAX_PASS1_FUSED`` is the public opt-in for the fused pass1
     path; the K-class call site at ``use_fused_pass1 = ...`` reads it.
     The string contract is stable: 1/true/yes/on are truthy
     (case-insensitive), anything else is off, unset is off.
     """
     if value is None:
-        monkeypatch.delenv("RECOVAR_PASS1_FUSED", raising=False)
+        monkeypatch.delenv("RELAX_PASS1_FUSED", raising=False)
     else:
-        monkeypatch.setenv("RECOVAR_PASS1_FUSED", value)
+        monkeypatch.setenv("RELAX_PASS1_FUSED", value)
     assert sig_mod._pass1_fused_enabled() is expected
 
     # K1 adaptive scoring uses this same K-class significance path.
