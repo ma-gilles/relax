@@ -2630,6 +2630,8 @@ def main():
         os.path.join(args.data_dir, "particles.star"),
         lazy=False,
         dtype=np.complex128 if _double_image_preprocessing else np.complex64,
+        # relion_refine reads a particle STAR without angles as zero angles.
+        absent_angles_zero=True,
     )
     if _double_image_preprocessing:
         logger.info(
