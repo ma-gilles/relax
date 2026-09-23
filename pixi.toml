@@ -75,6 +75,15 @@ grain = "==0.2.16"
 equinox = "==0.13.4"
 relax = { path = ".", editable = true }
 
+# RECOVAR installs itself with --no-deps, so its pyproject == pins are not what its own environment holds; the
+# conda solve decides these packages (recovar's pixi.lock). Relax installs recovar as a resolved pypi dependency,
+# so relax relaxes those pins to recovar's own pixi.toml ranges and keeps the conda builds from recovar's lock.
+[pypi-options.dependency-overrides]
+matplotlib = ">=3.10.0"
+pandas = ">=2.2.0"
+scikit-learn = ">=1.6.0"
+scipy = ">=1.15.0"
+
 [feature.cuda.dependencies]
 pytorch = { version = ">=2.3.1", channel = "pytorch" }
 
@@ -82,6 +91,41 @@ pytorch = { version = ">=2.3.1", channel = "pytorch" }
 # PIN: recovar dev2 commit R (relax split P4), which removes the EM code from recovar.
 [feature.pinned.pypi-dependencies]
 recovar = { git = "https://github.com/ma-gilles/recovar", rev = "162dc9477a64888beb53af757649f141034c3cbd" }
+
+# The pinned environment's pypi packages are held at the builds in recovar's pixi.lock at the pinned commit, so
+# the relax default environment holds the same shared packages as recovar's (scripts/check_lock_parity.py, P3).
+[feature.pinned.pypi-options.dependency-overrides]
+astropy-iers-data = "==0.2026.8.18.14.22.31"
+click = "==8.4.2"
+cryptography = "==50.0.0"
+dask = "==2026.7.1"
+fsspec = "==2026.7.0"
+greenlet = "==3.5.5"
+griffelib = "==2.2.0"
+grpcio = "==1.83.0"
+holoviews = "==1.23.1"
+linkify-it-py = "==2.1.0"
+lxml = "==6.1.2"
+mkdocstrings-python = "==2.0.7"
+multidict = "==6.7.1"
+nh3 = "==0.3.6"
+nvidia-cudnn-cu12 = "==9.24.0.43"
+nvidia-nccl-cu12 = "==2.31.2"
+nvidia-nvshmem-cu12 = "==3.7.2"
+panel-material-ui = "==0.14.2"
+param = "==2.4.1"
+playwright = "==1.62.0"
+propcache = "==0.5.2"
+protobuf = "==7.36.0"
+pydantic = "==2.13.4"
+pydantic-core = "==2.46.4"
+pymdown-extensions = "==11.0.1"
+readme-renderer = "==45.0"
+ruff = "==0.16.3"
+tqdm = "==4.70.0"
+wrapt = "==2.3.0"
+xyzservices = "==2026.3.0"
+yarl = "==1.24.5"
 
 # Co-development against a local RECOVAR checkout (editable), here the relax split P4 worktree at R.
 [feature.dev.pypi-dependencies]
