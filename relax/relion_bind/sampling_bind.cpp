@@ -11,6 +11,10 @@
 #include <src/euler.h>
 #include <src/symmetries.h>
 
+#include <map>
+#include <string>
+#include <utility>
+
 namespace py = pybind11;
 
 
@@ -245,20 +249,50 @@ static bool is_c1_symmetry(const std::string& symmetry) {
 
 
 /**
- * Build the symmetry-reduced sampling used by getOrientations.
+ * Process-wide cache of symmetry-reduced samplings, keyed on
+ * (healpix_order, symmetry label).
  *
  * Construction enumerates and reduces the whole point-group grid, which costs
- * milliseconds per call at HEALPix order 3-4 for I1. Batched callers build it
- * once and reuse it for every row.
+ * about 100 ms per call at HEALPix order 4 for C4. Local search asks for
+ * oversampled orientations once per image, so building per call dominated
+ * non-C1 runs. The build does not depend on the perturbation, and
+ * getOrientations only reads the sampling apart from random_perturbation
+ * (relion/src/healpix_sampling.cpp), so one cached sampling reproduces a
+ * fresh build exactly. Calls run under the GIL, so the cache needs no lock.
  */
-static HealpixSampling make_symmetric_oversampling(
+static std::map<std::pair<int, std::string>, HealpixSampling> symmetric_sampling_cache;
+static long symmetric_sampling_builds = 0;
+
+
+/** Return the cached symmetry-reduced sampling with this call's perturbation. */
+static HealpixSampling& make_symmetric_oversampling(
     int healpix_order,
     double random_perturbation,
     const std::string& symmetry
 ) {
-    HealpixSampling sampling = make_3d_sampling(healpix_order, -1.0, symmetry);
-    sampling.random_perturbation = random_perturbation;
-    return sampling;
+    const std::pair<int, std::string> key(healpix_order, symmetry);
+    auto entry = symmetric_sampling_cache.find(key);
+    if (entry == symmetric_sampling_cache.end()) {
+        entry = symmetric_sampling_cache.emplace(
+            key, make_3d_sampling(healpix_order, -1.0, symmetry)).first;
+        ++symmetric_sampling_builds;
+    }
+    entry->second.random_perturbation = random_perturbation;
+    return entry->second;
+}
+
+
+static py::dict symmetric_sampling_cache_info() {
+    py::dict result;
+    result["builds"] = symmetric_sampling_builds;
+    result["entries"] = static_cast<long>(symmetric_sampling_cache.size());
+    return result;
+}
+
+
+static void clear_symmetric_sampling_cache() {
+    symmetric_sampling_cache.clear();
+    symmetric_sampling_builds = 0;
 }
 
 
@@ -320,7 +354,7 @@ static void append_oversampled_orientations(
     const std::string& symmetry
 ) {
     if (!is_c1_symmetry(symmetry)) {
-        HealpixSampling sampling = make_symmetric_oversampling(
+        HealpixSampling& sampling = make_symmetric_oversampling(
             healpix_order, random_perturbation, symmetry);
         append_symmetric_oversampled_orientations(
             sampling, oversampling_order, idir, ipsi, my_rot, my_tilt, my_psi);
@@ -434,7 +468,7 @@ static py::array_t<double> get_oversampled_orientations_batch(
     my_tilt.reserve(idir_values.shape(0) * children_per_parent);
     my_psi.reserve(idir_values.shape(0) * children_per_parent);
     if (!is_c1_symmetry(symmetry) && idir_values.shape(0) > 0) {
-        HealpixSampling sampling = make_symmetric_oversampling(
+        HealpixSampling& sampling = make_symmetric_oversampling(
             healpix_order, random_perturbation, symmetry);
         for (py::ssize_t i = 0; i < idir_values.shape(0); i++)
             append_symmetric_oversampled_orientations(
@@ -680,6 +714,12 @@ Returns (n_oversampled, 3) with [rot, tilt, psi] in degrees.
           py::arg("random_perturbation") = 0.0,
           py::arg("symmetry") = "C1",
           "Get oversampled Euler rows for arrays of coarse direction/psi IDs.");
+
+    m.def("symmetric_sampling_cache_info", &symmetric_sampling_cache_info,
+          "Return {builds, entries} for the cached non-C1 oversampling samplings.");
+
+    m.def("clear_symmetric_sampling_cache", &clear_symmetric_sampling_cache,
+          "Drop the cached non-C1 oversampling samplings and reset the build count.");
 
     m.def("get_coarse_translations", &get_coarse_translations,
           py::arg("offset_range"),

@@ -56,35 +56,67 @@ def test_batched_symmetry_rows_match_scalar_source_for_random_rows(symmetry, ord
     np.testing.assert_array_equal(actual, expected)
 
 
-def test_batched_symmetry_rows_reuse_one_symmetry_reduced_sampling():
-    """A local-search batch must not rebuild the point-group grid per row.
+def test_symmetric_sampling_is_built_once_per_order_and_symmetry():
+    """Per-image local-search calls must not rebuild the point-group grid.
 
     Rebuilding it per row made 10202's I1 order-4 local-search layout take
-    11 h per half-iteration. The ratio bound is machine-independent: reuse
-    costs about one scalar call, rebuilding costs one call per row.
+    11 h per half-iteration; rebuilding it per call (one call per image) cost
+    about 100 ms per image for HCN1's C4 order-4 local search.
     """
-    import time
-
     from relax.relion_bind._relion_bind_core import (
+        clear_symmetric_sampling_cache,
         get_healpix_sampling_metadata,
         get_oversampled_orientations,
         get_oversampled_orientations_batch,
+        symmetric_sampling_cache_info,
     )
 
-    order, n_rows = 4, 4096
-    metadata = get_healpix_sampling_metadata(order, -1.0, "I1")
-    rng = np.random.default_rng(10202)
-    directions = rng.integers(0, len(metadata["rot"]), size=n_rows, dtype=np.int64)
-    psi = rng.integers(0, len(metadata["psi"]), size=n_rows, dtype=np.int64)
+    metadata = get_healpix_sampling_metadata(4, -1.0, "C4")
+    rng = np.random.default_rng(4)
+    directions = rng.integers(0, len(metadata["rot"]), size=64, dtype=np.int64)
+    psi = rng.integers(0, len(metadata["psi"]), size=64, dtype=np.int64)
 
-    single_seconds = []
-    for _ in range(3):
-        start = time.perf_counter()
-        get_oversampled_orientations(order, 0, int(directions[0]), int(psi[0]), 0.1, "I1")
-        single_seconds.append(time.perf_counter() - start)
-    start = time.perf_counter()
-    rows = get_oversampled_orientations_batch(order, 0, directions, psi, 0.1, "I1")
-    batch_seconds = time.perf_counter() - start
+    clear_symmetric_sampling_cache()
+    for perturbation in (0.1, -0.3, 0.1):
+        for image in range(8):
+            rows = slice(8 * image, 8 * image + 8)
+            get_oversampled_orientations_batch(4, 1, directions[rows], psi[rows], perturbation, "C4")
+    get_oversampled_orientations(4, 0, int(directions[0]), int(psi[0]), 0.2, "C4")
+    assert symmetric_sampling_cache_info() == {"builds": 1, "entries": 1}
 
-    assert rows.shape == (n_rows, 3)
-    assert batch_seconds < 64.0 * float(np.median(single_seconds))
+    get_oversampled_orientations_batch(3, 1, directions[:4] % 4, psi[:4] % 4, 0.1, "C4")
+    get_oversampled_orientations_batch(4, 1, directions[:4] % 4, psi[:4], 0.1, "D5")
+    get_oversampled_orientations_batch(4, 1, directions[:4], psi[:4], 0.1, "C1")
+    assert symmetric_sampling_cache_info() == {"builds": 3, "entries": 3}
+
+
+@pytest.mark.parametrize("symmetry", ["C4", "D5", "I1"])
+@pytest.mark.parametrize("oversampling", [0, 1])
+def test_cached_symmetric_sampling_rows_equal_a_fresh_build(symmetry, oversampling):
+    """Reuse, including after another perturbation, is bitwise a fresh build."""
+    from relax.relion_bind._relion_bind_core import (
+        clear_symmetric_sampling_cache,
+        get_healpix_sampling_metadata,
+        get_oversampled_orientations_batch,
+        symmetric_sampling_cache_info,
+    )
+
+    order = 4
+    metadata = get_healpix_sampling_metadata(order, -1.0, symmetry)
+    rng = np.random.default_rng(oversampling)
+    directions = rng.integers(0, len(metadata["rot"]), size=32, dtype=np.int64)
+    psi = rng.integers(0, len(metadata["psi"]), size=32, dtype=np.int64)
+    perturbation = 0.2718
+
+    fresh = {}
+    for value in (perturbation, -0.5):
+        clear_symmetric_sampling_cache()
+        fresh[value] = get_oversampled_orientations_batch(order, oversampling, directions, psi, value, symmetry)
+        assert symmetric_sampling_cache_info()["builds"] == 1
+
+    cached_other = get_oversampled_orientations_batch(order, oversampling, directions, psi, perturbation, symmetry)
+    cached_again = get_oversampled_orientations_batch(order, oversampling, directions, psi, -0.5, symmetry)
+    assert symmetric_sampling_cache_info()["builds"] == 1
+    for cached, value in ((cached_other, perturbation), (cached_again, -0.5)):
+        assert cached.dtype == fresh[value].dtype == np.float64
+        np.testing.assert_array_equal(cached, fresh[value])
