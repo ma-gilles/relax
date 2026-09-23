@@ -3,12 +3,19 @@
 ## Noise-only bootstrap qualification
 
 `scripts/run_full_refinement.py --initial-noise-bootstrap relion` is an opt-in
-fresh, single-optics K1 diagnostic. The default `pipeline` estimator is unchanged.
+fresh, single-optics diagnostic. The default `pipeline` estimator is unchanged.
 Unlike complete iteration-0 replay, this mode computes only initial noise from
-the particles: stable subset-1 then subset-2 source order, up to 1000 particles,
-and rounded-radius half-spectrum shell power. It does not load oracle tau2,
-poses, priors or normalization corrections. Conflicting replay/cache inputs and
-unsupported optics/K-class modes are rejected.
+the particles: up to 1000 particles per optics group and rounded-radius
+half-spectrum shell power. K1 takes the stable subset-1 then subset-2 source
+order of its supplied half sets. Class3D (K>1) splits no halves, so RELION's
+`sorted_idx` is the micrograph-sorted input order itself
+([`_relion_class3d_initial_noise_layout`](../../scripts/run_full_refinement.py),
+`ml_optimiser.cpp:3068-3072`, `exp_model.cpp:900-901`). It does not load oracle
+tau2, poses, priors or normalization corrections. Conflicting replay/cache
+inputs, K1 without half sets, Class3D with half sets and multiple optics groups
+are rejected. On the K4 50k/256 and 5k/128 fixtures the Class3D spectrum agrees
+with RELION's `run_it000_model.star` to its six-digit serialization (maximum
+relative difference 3.4e-7); the pipeline estimator differs by up to 8.4%.
 
 [`_compute_relion_noise_only_bootstrap`](../../scripts/run_full_refinement.py)
 uses the existing host float64 bootstrap, scales its native sigma2 by the image

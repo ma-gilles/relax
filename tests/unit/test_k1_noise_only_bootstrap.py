@@ -94,3 +94,34 @@ def test_noise_only_bootstrap_rejects_missing_or_unsupported_inputs(overrides):
     with pytest.raises(ValueError, match='noise-only bootstrap'):
         driver._compute_relion_noise_only_bootstrap(SimpleNamespace(grid_size=8),
             args=_args(), **params)
+
+
+def test_class3d_noise_only_bootstrap_takes_unsplit_order(monkeypatch):
+    rows = np.array([2, 0, 1], dtype=np.int64)
+    seen = {}
+
+    def compute(ds, **kwargs):
+        seen.update(kwargs)
+        return np.array([[.5, .4, .3, .2, .1]], dtype=np.float64)
+
+    monkeypatch.setattr(driver, '_compute_relion_fresh_k1_initial_sigma2', compute)
+    driver._compute_relion_noise_only_bootstrap(
+        SimpleNamespace(grid_size=8), args=_args(n_classes=4, relion_half_sets=None),
+        frozen_boundary=None, source_rows=rows, optics_group_ids=np.ones(3, dtype=np.int64),
+        mask_params=(12., 3), optics_pixel_sizes=np.array([1.25]))
+    np.testing.assert_array_equal(seen['source_rows'], rows)
+
+
+def test_class3d_noise_layout_is_the_micrograph_sorted_input_order():
+    import pandas as pd
+
+    # relion_refine stable-sorts rlnMicrographName byte-wise (exp_model.cpp:900-901);
+    # Class3D keeps that order unsplit for the startup noise.
+    particles = pd.DataFrame({
+        'rlnImageName': ['1@s.mrcs', '2@s.mrcs', '3@s.mrcs', '4@s.mrcs'],
+        'rlnMicrographName': ['2', '10', '1', '10'],
+        'rlnOpticsGroup': [1, 1, 2, 1],
+    })
+    rows, optics = driver._relion_class3d_initial_noise_layout(particles)
+    np.testing.assert_array_equal(rows, [2, 1, 3, 0])
+    np.testing.assert_array_equal(optics, [2, 1, 1, 1])

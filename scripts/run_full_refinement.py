@@ -1037,6 +1037,24 @@ def _relion_fresh_initial_noise_layout(our_particles, relion_particles):
     return source_rows, optics_group_ids
 
 
+def _relion_class3d_initial_noise_layout(our_particles):
+    """Return RELION Class3D's startup-noise source rows and optics labels.
+
+    Class3D does not split random halves, so ``sorted_idx`` is the identity
+    over the micrograph-sorted particles (exp_model.cpp:900-901) when
+    ``calculateSumOfPowerSpectraAndAverageImage`` takes the first particles of
+    each optics group (ml_optimiser.cpp:3068-3072).
+    """
+    from relax.relion.input_particle_table import relion_particle_order
+
+    source_rows = relion_particle_order(our_particles)
+    if "rlnOpticsGroup" in our_particles.columns:
+        optics_group_ids = np.asarray(our_particles["rlnOpticsGroup"], dtype=np.int64)[source_rows]
+    else:
+        optics_group_ids = np.ones(source_rows.size, dtype=np.int64)
+    return source_rows, optics_group_ids
+
+
 def _compute_relion_fresh_k1_initial_sigma2(
     dataset,
     *,
@@ -1128,21 +1146,25 @@ def _compute_relion_noise_only_bootstrap(
 ):
     """Compute startup noise without replaying any model/particle state.
 
-    Qualification-only single-optics K1 path; preserve the existing host F64
-    bootstrap and explicitly supply F32 noise to production scoring. See
-    docs/math/relion_refinement_algorithm.md#noise-only-bootstrap-qualification.
+    Qualification-only single-optics path; preserve the existing host F64
+    bootstrap and explicitly supply F32 noise to production scoring. K=1 takes
+    the source order of its supplied half sets; Class3D (K>1) has no halves and
+    takes the micrograph-sorted order (``_relion_class3d_initial_noise_layout``).
+    See docs/math/relion_refinement_algorithm.md#noise-only-bootstrap-qualification.
     """
+    k1 = int(args.n_classes) == 1
     if (
-        int(args.n_classes) != 1 or int(args.init_relion_iteration) != 0
+        int(args.init_relion_iteration) != 0
         or frozen_boundary is not None or args.perturb_replay_relion_dir is not None
         or args.relion_init_dir is not None or args.init_noise_from_npz is not None
-        or args.initial_noise_cache_dir is not None or args.relion_half_sets is None
+        or args.initial_noise_cache_dir is not None or (args.relion_half_sets is None) == k1
         or source_rows is None or optics_group_ids is None or mask_params is None
         or optics_pixel_sizes is None
     ):
         raise ValueError(
-            "RELION noise-only bootstrap requires a fresh K1 start with half-set "
-            "order/mask metadata and no state replay, noise replay or noise cache"
+            "RELION noise-only bootstrap requires a fresh start (K1 with supplied half "
+            "sets, Class3D without) with order/mask metadata and no state replay, noise "
+            "replay or noise cache"
         )
     if np.unique(optics_group_ids).size != 1 or np.asarray(optics_pixel_sizes).size != 1:
         raise ValueError("RELION noise-only bootstrap currently requires one optics group")
@@ -2321,8 +2343,9 @@ def _parse_args(argv=None):
         choices=("pipeline", "relion"), default="pipeline",
         help=(
             "Initial noise estimator. Default pipeline preserves existing behavior. "
-            "relion is an opt-in noise-only qualification path for fresh single-optics "
-            "K1 with supplied halfsets; no model or particle-state replay."
+            "relion is an opt-in noise-only qualification path for a fresh single-optics "
+            "run (K1 with supplied halfsets, or Class3D K>1 from the micrograph-sorted "
+            "input order); no model or particle-state replay."
         ),
     )
     parser.add_argument(
@@ -2698,6 +2721,7 @@ def main():
     )
     relion_fresh_initial_noise_source_rows = None
     relion_fresh_initial_noise_optics_group_ids = None
+    class3d_noise_optics_pixel_sizes = None
     relion_particles = None
     relion_group_particles = None
     relion_group_source = None
@@ -2812,6 +2836,17 @@ def main():
                 "Using RELION Class3D all-data split: %d particles + empty second accumulator",
                 len(half1_idx),
             )
+            if args.initial_noise_bootstrap == "relion":
+                (
+                    relion_fresh_initial_noise_source_rows,
+                    relion_fresh_initial_noise_optics_group_ids,
+                ) = _relion_class3d_initial_noise_layout(our_particles)
+                if not isinstance(our_star, dict) or "optics" not in our_star:
+                    raise SystemExit("Class3D RELION noise bootstrap needs an optics table in the particle STAR")
+                class3d_noise_optics_pixel_sizes = np.asarray(
+                    our_star["optics"]["rlnImagePixelSize"],
+                    dtype=np.float64,
+                )
 
     if args.relion_particle_shuffle != "legacy" and not use_fresh_auto_refine_order:
         raise ValueError("--relion-particle-shuffle requires fresh K=1 AutoRefine ordering")
@@ -3499,7 +3534,9 @@ def main():
             source_rows=relion_fresh_initial_noise_source_rows,
             optics_group_ids=relion_fresh_initial_noise_optics_group_ids,
             mask_params=relion_mask_params,
-            optics_pixel_sizes=relion_optics_pixel_sizes,
+            optics_pixel_sizes=(
+                relion_optics_pixel_sizes if args.n_classes == 1 else class3d_noise_optics_pixel_sizes
+            ),
         )
         logger.info("Noise-only RELION bootstrap: %d shells, scoring dtype=%s; no state replay",
                     initial_noise_radial.size, noise_variance.dtype)
