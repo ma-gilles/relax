@@ -88,9 +88,9 @@ scipy = ">=1.15.0"
 pytorch = { version = ">=2.3.1", channel = "pytorch" }
 
 # Immutable RECOVAR pin: recovar.__file__ then identifies the exact commit (direct_url.json).
-# PIN: recovar dev2 commit R (relax split P4), which removes the EM code from recovar.
+# PIN: recovar dev2 a63df5a62 (R 162dc9477, which removes the EM code from recovar, plus absent_angles_zero).
 [feature.pinned.pypi-dependencies]
-recovar = { git = "https://github.com/ma-gilles/recovar", rev = "162dc9477a64888beb53af757649f141034c3cbd" }
+recovar = { git = "https://github.com/ma-gilles/recovar", rev = "a63df5a623abda24b87fefab23d2ef236e9c7a9c" }
 
 # The pinned environment's pypi packages are held at the builds in recovar's pixi.lock at the pinned commit, so
 # the relax default environment holds the same shared packages as recovar's (scripts/check_lock_parity.py, P3).

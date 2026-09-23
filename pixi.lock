@@ -473,7 +473,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/13/5a/f8c0868199bbb231a02616286ce8a4ccb85f5387b9215510297dcfedd214/pyviz_comms-3.0.6-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/04/11/432f32f8097b03e3cd5fe57e88efb685d964e2e5178a48ed61e841f7fdce/pyyaml_env_tag-1.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/97/1b/295bf2fa3e740131778065e5ffa2c481f0e7210182d408e9a2c244ff5b0c/readme_renderer-45.0-py3-none-any.whl
-      - pypi: git+https://github.com/ma-gilles/recovar?rev=162dc9477a64888beb53af757649f141034c3cbd#162dc9477a64888beb53af757649f141034c3cbd
+      - pypi: git+https://github.com/ma-gilles/recovar?rev=a63df5a623abda24b87fefab23d2ef236e9c7a9c#a63df5a623abda24b87fefab23d2ef236e9c7a9c
       - pypi: https://files.pythonhosted.org/packages/3f/51/d4db610ef29373b879047326cbf6fa98b6c1969d6f6dc423279de2b1be2c/requests_toolbelt-1.0.0-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ff/9a/9afaade874b2fa6c752c36f1548f718b5b83af81ed9b76628329dab81c1b/rfc3986-2.0.0-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl
@@ -10821,9 +10821,9 @@ packages:
   - pre-commit>=3.0 ; extra == 'dev'
   - recovar[dev,gpu,gui,interactive] ; extra == 'all'
   requires_python: '>=3.11'
-- pypi: git+https://github.com/ma-gilles/recovar?rev=162dc9477a64888beb53af757649f141034c3cbd#162dc9477a64888beb53af757649f141034c3cbd
+- pypi: git+https://github.com/ma-gilles/recovar?rev=a63df5a623abda24b87fefab23d2ef236e9c7a9c#a63df5a623abda24b87fefab23d2ef236e9c7a9c
   name: recovar
-  version: 20260924.dev10
+  version: 20260924.dev13
   requires_dist:
   - equinox==0.13.4
   - finufft==2.3.1
