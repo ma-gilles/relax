@@ -1667,6 +1667,39 @@ def _effective_perturb_seed(args):
     return None if seed is None else int(seed)
 
 
+def _validate_relion_half_sets_from_input(args) -> None:
+    """Reject an input-derived RELION particle table where RELION would not build one this way."""
+    if not getattr(args, "relion_half_sets_from_input", False):
+        return
+    problems = []
+    if args.relion_half_sets is not None:
+        problems.append("it replaces --relion_half_sets")
+    if int(args.n_classes) != 1:
+        problems.append("it is K=1 auto-refine only")
+    if args.seed is None:
+        problems.append("it needs RELION's --random_seed as an explicit --seed")
+    if args.frozen_boundary_dir is not None:
+        problems.append("a frozen boundary seals its own half sets")
+    if problems:
+        raise SystemExit("--relion-half-sets-from-input: " + "; ".join(problems))
+
+
+def _write_relion_start_particle_table(our_star, *, seed, output_dir) -> Path:
+    """Write RELION's start-up particle table rebuilt from the input STAR and return its path."""
+    import starfile
+
+    from relax.relion.input_particle_table import build_relion_start_particle_table
+
+    if not isinstance(our_star, dict) or "optics" not in our_star:
+        raise SystemExit("--relion-half-sets-from-input needs an optics table in <data_dir>/particles.star")
+    table = build_relion_start_particle_table(our_star["particles"], seed=int(seed))
+    path = Path(output_dir) / "relion_input_state" / "particles_relion_start.star"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # %.17g round-trips every parsed float, so the table carries the input values exactly.
+    starfile.write({"optics": our_star["optics"], "particles": table}, path, float_format="%.17g", overwrite=True)
+    return path
+
+
 def _maybe_apply_relion_image_mask(ds, args, *, sealed_optimiser_star=None):
     """Override the dataset scoring mask with RELION's particle-diameter mask."""
     explicit_particle_diameter = getattr(args, "particle_diameter_ang", None)
@@ -2154,6 +2187,18 @@ def _parse_args(argv=None):
         "If given, use RELION's half-set assignments instead of random seed.",
     )
     parser.add_argument(
+        "--relion-half-sets-from-input",
+        dest="relion_half_sets_from_input",
+        action="store_true",
+        default=False,
+        help=(
+            "Rebuild RELION's start-up particle table from <data_dir>/particles.star and --seed "
+            "(RELION's --random_seed) as relion_refine does: micrograph-name order, random halves "
+            "(input rlnRandomSubset, else srand/rand), scale groups. It replaces --relion_half_sets "
+            "and is written to <output>/relion_input_state/. K=1 only."
+        ),
+    )
+    parser.add_argument(
         "--relion_optimiser",
         default=None,
         help="Explicit path to a RELION run_optimiser.star (or "
@@ -2380,6 +2425,7 @@ def _parse_args(argv=None):
 
 def main():
     args = _parse_args()
+    _validate_relion_half_sets_from_input(args)
     if (
         args.state_swap_target_relion_iteration is not None
         or args.state_swap_variant is not None
@@ -2645,6 +2691,16 @@ def main():
     relion_group_particles = None
     relion_group_source = None
     use_fresh_auto_refine_order = False
+
+    if args.relion_half_sets_from_input:
+        args.relion_half_sets = str(
+            _write_relion_start_particle_table(our_star, seed=int(args.seed), output_dir=args.output)
+        )
+        logger.info(
+            "RELION start-up particle table rebuilt from the input STAR with seed %d: %s",
+            int(args.seed),
+            args.relion_half_sets,
+        )
 
     if args.relion_half_sets is not None:
         # Use RELION's half-set split from rlnRandomSubset
