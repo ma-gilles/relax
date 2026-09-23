@@ -99,7 +99,7 @@ print(recovar_file)
 print(jax_file)
 print(jax.devices())
 print(relion_bind_file)
-assert str(recovar_file).startswith(str(repo) + "/"), recovar_file
+assert str(pathlib.Path(__import__("relax").__file__).resolve()).startswith(str(repo) + "/"), __import__("relax").__file__
 assert ".pixi/envs/default/" in str(jax_file), jax_file
 assert str(relion_bind_file).startswith(str(repo) + "/"), relion_bind_file
 PY

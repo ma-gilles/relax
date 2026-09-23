@@ -167,7 +167,7 @@ from recovar import cuda_backproject
 from relax.diagnostics.parity_provenance import assert_parity_ancestors
 
 repo = pathlib.Path(os.environ["RECOVAR_EXPECTED_REPO_ROOT"]).resolve()
-assert str(pathlib.Path(recovar.__file__).resolve()).startswith(str(repo) + "/")
+assert str(pathlib.Path(__import__("relax").__file__).resolve()).startswith(str(repo) + "/")
 assert ".pixi/envs/default/" in str(pathlib.Path(jax.__file__).resolve())
 assert jax.default_backend() == "gpu"
 assert len(jax.devices("gpu")) == 1

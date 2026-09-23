@@ -361,7 +361,7 @@ from relax.diagnostics.parity_provenance import assert_parity_ancestors
 
 repo = pathlib.Path(os.environ["RECOVAR_EXPECTED_REPO_ROOT"]).resolve()
 pixi_env = (repo / ".pixi" / "envs" / "default").resolve()
-assert pathlib.Path(recovar.__file__).resolve().is_relative_to(repo)
+assert pathlib.Path(__import__("relax").__file__).resolve().is_relative_to(repo)
 assert pathlib.Path(sys.prefix).resolve() == pixi_env
 assert pathlib.Path(sys.executable).resolve().is_relative_to(pixi_env)
 assert pathlib.Path(jax.__file__).resolve().is_relative_to(pixi_env)

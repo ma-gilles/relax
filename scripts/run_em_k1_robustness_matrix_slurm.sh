@@ -891,7 +891,7 @@ external_bind_root = pathlib.Path(external_bind_dir).resolve() if external_bind_
 print("recovar.__file__ =", recovar_file)
 print("relion_bind.__file__ =", relion_bind_file)
 print("jax.__file__ =", jax_file)
-assert str(recovar_file).startswith(str(repo) + "/"), recovar_file
+assert str(pathlib.Path(__import__("relax").__file__).resolve()).startswith(str(repo) + "/"), __import__("relax").__file__
 assert str(relion_bind_file).startswith(str(repo) + "/") or (
     external_bind_root is not None
     and str(relion_bind_file).startswith(str(external_bind_root) + "/")
@@ -1142,7 +1142,7 @@ import recovar
 
 repo = pathlib.Path.cwd().resolve()
 recovar_file = pathlib.Path(recovar.__file__).resolve()
-assert str(recovar_file).startswith(str(repo) + "/"), recovar_file
+assert str(pathlib.Path(__import__("relax").__file__).resolve()).startswith(str(repo) + "/"), __import__("relax").__file__
 PY
 then
   echo "RECOVAR editable install failed provenance check; reinstalling under lock"
@@ -1161,7 +1161,7 @@ repo = pathlib.Path.cwd().resolve()
 relion_bind_file = pathlib.Path(relion_bind.__file__).resolve()
 external_bind_dir = os.environ.get("RECOVAR_RELION_BIND_BUILD_DIR")
 external_bind_root = pathlib.Path(external_bind_dir).resolve() if external_bind_dir else None
-assert str(pathlib.Path(recovar.__file__).resolve()).startswith(str(repo) + "/")
+assert str(pathlib.Path(__import__("relax").__file__).resolve()).startswith(str(repo) + "/")
 assert str(relion_bind_file).startswith(str(repo) + "/") or (
     external_bind_root is not None
     and str(relion_bind_file).startswith(str(external_bind_root) + "/")

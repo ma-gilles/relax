@@ -205,13 +205,14 @@ def _provenance(env: dict[str, str]) -> dict[str, Any]:
             _python(),
             "-c",
             (
-                "import json,pathlib,recovar,jax;"
+                "import json,pathlib,relax,recovar,jax;"
                 "repo=pathlib.Path.cwd().resolve();"
+                "xf=pathlib.Path(relax.__file__).resolve();"
                 "rf=pathlib.Path(recovar.__file__).resolve();"
                 "jf=pathlib.Path(jax.__file__).resolve();"
-                "assert str(rf).startswith(str(repo) + '/'), rf;"
+                "assert str(xf).startswith(str(repo) + '/'), xf;"
                 "assert '.pixi/envs/default/' in str(jf), jf;"
-                "print(json.dumps({'recovar_file':str(rf),'jax_file':str(jf)}))"
+                "print(json.dumps({'relax_file':str(xf),'recovar_file':str(rf),'jax_file':str(jf)}))"
             ),
         ),
         env=env,

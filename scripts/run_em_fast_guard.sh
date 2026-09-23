@@ -46,7 +46,7 @@ repo = pathlib.Path.cwd().resolve()
 recovar_file = pathlib.Path(recovar.__file__).resolve()
 jax_file = pathlib.Path(jax.__file__).resolve()
 pixi_env = (repo / ".pixi" / "envs" / "default").resolve()
-assert str(recovar_file).startswith(str(repo) + "/"), recovar_file
+assert str(pathlib.Path(__import__("relax").__file__).resolve()).startswith(str(repo) + "/"), __import__("relax").__file__
 assert str(jax_file).startswith(str(pixi_env) + "/"), (jax_file, pixi_env)
 for helper in (
     "helpers.oversampling", "helpers.half_volume_mstep", "relion.relion_projector_setup",

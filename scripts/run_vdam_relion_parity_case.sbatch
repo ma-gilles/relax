@@ -65,7 +65,7 @@ import recovar.cuda_backproject as cuda_backproject
 from relax.relion_bind import _relion_bind_core
 
 repo = pathlib.Path.cwd().resolve()
-assert str(pathlib.Path(recovar.__file__).resolve()).startswith(str(repo) + "/")
+assert str(pathlib.Path(__import__("relax").__file__).resolve()).startswith(str(repo) + "/")
 assert ".pixi/envs/default/" in str(pathlib.Path(jax.__file__).resolve())
 binding_path = pathlib.Path(_relion_bind_core.__file__).resolve()
 assert binding_path.is_file()

@@ -325,7 +325,7 @@ from relax.relion_bind import _relion_bind_core
 from relax.diagnostics.parity_provenance import assert_parity_ancestors
 
 repo = pathlib.Path(__import__("os").environ["RECOVAR_EXPECTED_REPO_ROOT"]).resolve()
-assert str(pathlib.Path(recovar.__file__).resolve()).startswith(str(repo) + "/")
+assert str(pathlib.Path(__import__("relax").__file__).resolve()).startswith(str(repo) + "/")
 assert jax.default_backend() == "gpu" and len(jax.devices("gpu")) == 1
 assert cuda_backproject.cuda_available(), cuda_backproject.cuda_unavailable_error()
 assert callable(getattr(_relion_bind_core, "vdam_rnd_unif_sequence", None))

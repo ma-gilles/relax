@@ -187,7 +187,7 @@ import recovar.cuda_backproject as cuda_backproject
 from relax.relion_bind import _relion_bind_core
 
 repo = pathlib.Path(__import__("os").environ["RECOVAR_EXPECTED_REPO_ROOT"]).resolve()
-assert str(pathlib.Path(recovar.__file__).resolve()).startswith(str(repo) + "/")
+assert str(pathlib.Path(__import__("relax").__file__).resolve()).startswith(str(repo) + "/")
 binding_path = pathlib.Path(_relion_bind_core.__file__).resolve()
 assert binding_path.is_file()
 assert any(device.platform in {"gpu", "cuda"} for device in jax.devices())

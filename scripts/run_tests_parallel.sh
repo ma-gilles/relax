@@ -182,7 +182,7 @@ export PATH="\$(dirname "\$PIXI_PY"):\$PATH"
 "\$PIXI_PY" -c "
 import os, pathlib, recovar, jax
 repo = pathlib.Path.cwd().resolve()
-assert str(pathlib.Path(recovar.__file__).resolve()).startswith(str(repo)+'/'), 'WRONG recovar'
+assert str(pathlib.Path(__import__('relax').__file__).resolve()).startswith(str(repo)+'/'), 'WRONG relax'
 assert '.pixi/envs/default/' in str(pathlib.Path(jax.__file__).resolve()), 'WRONG jax'
 devices = jax.devices()
 assert len(devices) == 1 and devices[0].platform == 'gpu', f'EXPECTED ONE GPU, GOT {devices}'
