@@ -129,7 +129,11 @@ def _manifest_volume_paths_in_recovar_order(
     recovar_to_relion: list[int] | tuple[int, ...] | np.ndarray | None,
 ) -> list[Path]:
     manifest = json.loads(Path(manifest_path).read_text())
-    by_class = {int(row["class_index"]): _resolve_existing_path(row["volume_path"]) for row in manifest}
+    # ``gt_volume_path`` is the simulated truth; ``volume_path`` the simulator input (older manifests).
+    by_class = {
+        int(row["class_index"]): _resolve_existing_path(row.get("gt_volume_path", row["volume_path"]))
+        for row in manifest
+    }
     if recovar_to_relion is None:
         order = sorted(by_class)
     else:

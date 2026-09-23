@@ -19,7 +19,7 @@ from recovar.core import fourier_transform_utils as ftu
 from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.output.output import mkdir_safe, save_volume
 from recovar.simulation import simulate_scattering_potential as ssp
-from recovar.simulation import simulator, synthetic_dataset
+from recovar.simulation import simulator, solvent_contrast, synthetic_dataset
 from recovar.simulation.trajectory_generation import compute_bfactor_scaling
 from recovar.utils.helpers import write_relion_mrc
 
@@ -286,6 +286,15 @@ def _write_class_references(output_dir: Path, grid_size: int, n_classes: int, in
             }
         )
 
+    # The class manifest's volume_path points at the uncorrected PDB maps; record the
+    # simulated per-class truth (atomic-volume transform and scale applied) beside it.
+    manifest_path = output_dir / "class_manifest.json"
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text())
+        for row in manifest:
+            row["gt_volume_path"] = str(output_dir / f"reference_gt_class{int(row['class_index']) + 1:03d}.mrc")
+        manifest_path.write_text(json.dumps(manifest, indent=2))
+
     save_volume(
         np.asarray(heterogeneous_volumes.get_mean().reshape(-1)),
         str(output_dir / "reference_gt"),
@@ -328,6 +337,7 @@ def prepare_benchmark(
     seed: int,
     symmetry: str,
     force_volumes: bool,
+    atomic_volume_kwargs: dict | None = None,
 ) -> None:
     if n_images <= 0:
         raise ValueError(f"n_images must be positive, got {n_images}")
@@ -399,6 +409,17 @@ def prepare_benchmark(
             streaming_mmap,
             disc_type,
         )
+        # EM/VDAM development default: the recovar atomic-volume preset (solvent contrast
+        # plus B_atomic); pass {'atomic_solvent_correction': False} for experimental maps.
+        if atomic_volume_kwargs is None:
+            atomic_volume_kwargs = {"atomic_solvent_correction": True}
+        if (
+            pdb_bfactor > 0
+            and atomic_volume_kwargs.get("atomic_solvent_correction")
+            and atomic_volume_kwargs.get("atomic_bfactor") is None
+        ):
+            # The PDB volumes already carry pdb_bfactor; add only the solvent term.
+            atomic_volume_kwargs = {**atomic_volume_kwargs, "atomic_bfactor": 0.0}
         simulator.generate_synthetic_dataset(
             str(output_dir),
             voxel_size,
@@ -424,6 +445,7 @@ def prepare_benchmark(
             streaming_chunk_size=streaming_chunk_size,
             image_offset_n_std=image_offset_n_std,
             noise_rng_batch_size=noise_rng_batch_size,
+            **atomic_volume_kwargs,
         )
     else:
         logger.info("Reusing existing dataset files in %s", output_dir)
@@ -516,6 +538,7 @@ def main() -> None:
         help="Projection discretization for synthetic particles. Default cubic avoids slow NUFFT generation.",
     )
     parser.add_argument("--force-volumes", action="store_true")
+    solvent_contrast.add_cli_arguments(parser, enabled_by_default=True)
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -545,6 +568,7 @@ def main() -> None:
         seed=args.seed,
         symmetry=args.symmetry,
         force_volumes=args.force_volumes,
+        atomic_volume_kwargs=solvent_contrast.kwargs_from_cli_args(args),
     )
 
 

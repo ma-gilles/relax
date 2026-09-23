@@ -13,7 +13,7 @@ import numpy as np
 
 from recovar.core import fourier_transform_utils as ftu
 from relax.ppca_refinement.initialization import initialize_ppca_from_gt_volumes
-from recovar.simulation import synthetic_dataset
+from recovar.simulation import solvent_contrast, synthetic_dataset
 from recovar.utils import helpers
 from recovar.utils.json_utils import to_jsonable
 
@@ -87,6 +87,11 @@ def prepare_gt_weighted_ppca_init(
                 _vol, voxel_size = _load_volume(path, frame=frame)
                 voxel_sizes.append(float(voxel_size.x) if hasattr(voxel_size, "x") else float(voxel_size))
     else:
+        if solvent_contrast.record_from_simulation_info(simulation_info) is not None:
+            raise ValueError(
+                "simulation_info records the atomic solvent/B-factor transform; the raw --volume-glob maps are "
+                "not the simulated truth. Use --apply-simulation-scale to load it through recovar."
+            )
         volumes = []
         input_shapes = []
         for path in volume_paths:

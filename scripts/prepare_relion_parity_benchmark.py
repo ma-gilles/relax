@@ -24,7 +24,7 @@ import recovar
 from recovar import utils
 from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.output.output import mkdir_safe
-from recovar.simulation import simulator, synthetic_dataset
+from recovar.simulation import simulator, solvent_contrast, synthetic_dataset
 
 logging.basicConfig(
     level=logging.INFO,
@@ -100,7 +100,16 @@ def _write_reference_volumes(output_dir, grid_size):
     )
 
 
-def prepare_benchmark(output_dir, *, n_images, grid_size, noise_level, relion_normalize=False, disc_type="cubic"):
+def prepare_benchmark(
+    output_dir,
+    *,
+    n_images,
+    grid_size,
+    noise_level,
+    relion_normalize=False,
+    disc_type="cubic",
+    atomic_volume_kwargs=None,
+):
     mkdir_safe(output_dir)
 
     particles_star = os.path.join(output_dir, "particles.star")
@@ -126,6 +135,10 @@ def prepare_benchmark(output_dir, *, n_images, grid_size, noise_level, relion_no
             relion_normalize,
             disc_type,
         )
+        # EM/VDAM development default: the recovar atomic-volume preset (solvent contrast
+        # plus B_atomic); pass {'atomic_solvent_correction': False} for experimental maps.
+        if atomic_volume_kwargs is None:
+            atomic_volume_kwargs = {"atomic_solvent_correction": True}
         simulator.generate_synthetic_dataset(
             output_dir,
             voxel_size,
@@ -146,6 +159,7 @@ def prepare_benchmark(output_dir, *, n_images, grid_size, noise_level, relion_no
             n_tilts=-1,
             outlier_file_input=None,
             relion_normalize=relion_normalize,
+            **atomic_volume_kwargs,
         )
     else:
         logger.info("Dataset files already present in %s; reusing them", output_dir)
@@ -181,6 +195,7 @@ def main():
         default="cubic",
         help="Projection discretization for synthetic particles. Default cubic avoids slow NUFFT generation.",
     )
+    solvent_contrast.add_cli_arguments(parser, enabled_by_default=True)
     args = parser.parse_args()
 
     prepare_benchmark(
@@ -190,6 +205,7 @@ def main():
         noise_level=args.noise_level,
         relion_normalize=args.relion_normalize,
         disc_type=args.disc_type,
+        atomic_volume_kwargs=solvent_contrast.kwargs_from_cli_args(args),
     )
 
 

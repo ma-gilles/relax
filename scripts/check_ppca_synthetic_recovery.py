@@ -15,7 +15,7 @@ import jax.numpy as jnp
 
 from recovar.core import fourier_transform_utils as ftu
 from relax.sampling import get_rotation_grid_at_order, get_translation_grid
-from recovar.simulation import synthetic_dataset
+from recovar.simulation import solvent_contrast, synthetic_dataset
 from recovar.utils import helpers
 from recovar.utils.json_utils import to_jsonable
 
@@ -260,6 +260,11 @@ def run_checks(
         volume_paths = []
         gt_mean, gt_pcs, gt_scores, _volumes = _gt_pca_from_simulation_info(simulation_info, assignments, int(q))
     elif gt_volume_source == "mrc-glob":
+        if solvent_contrast.record_from_simulation_info(simulation_info) is not None:
+            raise ValueError(
+                "simulation_info records the atomic solvent/B-factor transform; raw MRCs are not the simulated "
+                "truth. Use --gt-volume-source simulation-info."
+            )
         volume_paths = [Path(path) for path in sorted(glob.glob(volume_glob))]
         if not volume_paths:
             raise ValueError(f"no volumes matched {volume_glob!r}")

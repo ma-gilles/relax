@@ -22,7 +22,7 @@ from recovar import utils
 from recovar.core import fourier_transform_utils as ftu
 from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.output.output import mkdir_safe, save_volume
-from recovar.simulation import simulator, synthetic_dataset
+from recovar.simulation import simulator, solvent_contrast, synthetic_dataset
 from recovar.utils.helpers import write_relion_mrc
 
 import jax.numpy as jnp
@@ -119,6 +119,7 @@ def prepare_benchmark(
     init_radius: int,
     relion_normalize: bool,
     disc_type: str,
+    atomic_volume_kwargs: dict | None = None,
 ):
     mkdir_safe(output_dir)
 
@@ -142,6 +143,10 @@ def prepare_benchmark(
             relion_normalize,
             disc_type,
         )
+        # EM/VDAM development default: the recovar atomic-volume preset (solvent contrast
+        # plus B_atomic); pass {'atomic_solvent_correction': False} for experimental maps.
+        if atomic_volume_kwargs is None:
+            atomic_volume_kwargs = {"atomic_solvent_correction": True}
         simulator.generate_synthetic_dataset(
             output_dir,
             voxel_size,
@@ -162,6 +167,7 @@ def prepare_benchmark(
             n_tilts=-1,
             outlier_file_input=None,
             relion_normalize=relion_normalize,
+            **atomic_volume_kwargs,
         )
     else:
         logger.info("Dataset files already present in %s; reusing them", output_dir)
@@ -190,6 +196,7 @@ def main():
         default="cubic",
         help="Projection discretization for synthetic particles. Default cubic avoids slow NUFFT generation.",
     )
+    solvent_contrast.add_cli_arguments(parser, enabled_by_default=True)
     args = parser.parse_args()
 
     prepare_benchmark(
@@ -201,6 +208,7 @@ def main():
         init_radius=args.init_radius,
         relion_normalize=args.relion_normalize,
         disc_type=args.disc_type,
+        atomic_volume_kwargs=solvent_contrast.kwargs_from_cli_args(args),
     )
 
 
