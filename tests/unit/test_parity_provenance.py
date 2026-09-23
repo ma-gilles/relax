@@ -46,3 +46,14 @@ def test_git_worktree_fingerprint_includes_untracked_file_content(tmp_path, monk
     assert first["status_porcelain"] == second["status_porcelain"]
     assert first["diff_sha256"] == second["diff_sha256"]
     assert first["worktree_fingerprint_sha256"] != second["worktree_fingerprint_sha256"]
+
+
+def test_required_parity_ancestors_are_in_relax_history():
+    from pathlib import Path
+
+    from relax.diagnostics.parity_provenance import REQUIRED_PARITY_ANCESTORS
+
+    repo = Path(__file__).resolve().parents[2]
+    for sha, desc in REQUIRED_PARITY_ANCESTORS:
+        result = subprocess.run(["git", "-C", str(repo), "merge-base", "--is-ancestor", sha, "HEAD"])
+        assert result.returncode == 0, f"{sha} ({desc}) is not in HEAD's ancestry"

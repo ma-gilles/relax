@@ -25,12 +25,16 @@ from pathlib import Path
 # HEAD, the worktree is missing a known-required parity fix and replay
 # results will not be machine-precision against RELION. Update only when
 # adding new fixes.
+#
+# relax's history starts at its import commit, which imported RECOVAR
+# 0e77fe5b0. That RECOVAR commit contains the five fixes this table named
+# while the EM code lived in RECOVAR: 7834dc0b (current_size off-by-one +
+# circular Fourier window), 5f21574a (float64 scoring + current_size replay
+# from model.star), 0650b550 (image pre-centering, normcorr, prior sign,
+# float64 logsumexp), b125883f (shell-mapping at pf=2) and 0903a64c (pf^3
+# tau2 correction + join radius scaling). Those SHAs are not in relax's history.
 REQUIRED_PARITY_ANCESTORS: tuple[tuple[str, str], ...] = (
-    ("7834dc0b", "current_size off-by-one + circular Fourier window"),
-    ("5f21574a", "float64 scoring + current_size replay from model.star"),
-    ("0650b550", "image pre-centering, normcorr, prior sign, float64 logsumexp"),
-    ("b125883f", "shell-mapping at pf=2"),
-    ("0903a64c", "pf^3 tau2 correction + join radius scaling"),
+    ("49b1773d", "relax import of RECOVAR 0e77fe5b0 (carries the RECOVAR parity fixes listed above)"),
 )
 
 
