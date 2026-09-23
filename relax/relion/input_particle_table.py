@@ -119,13 +119,18 @@ def _post_job_micrograph_name(name: str) -> str:
 
 
 def relion_scale_group_numbers(particles_in_order: pd.DataFrame) -> np.ndarray:
-    """One-based RELION scale-group numbers for particles already in RELION order."""
+    """One-based RELION scale-group numbers for particles already in RELION order.
+
+    Without rlnGroupName or rlnMicrographName every particle reads an empty
+    micrograph name (Experiment::getMicrographName, exp_model.cpp:154-167) and
+    so shares one group.
+    """
     if "rlnGroupName" in particles_in_order.columns:
         group_names = particles_in_order["rlnGroupName"].astype(str).tolist()
     elif "rlnMicrographName" in particles_in_order.columns:
         group_names = [_post_job_micrograph_name(name) for name in particles_in_order["rlnMicrographName"].astype(str)]
     else:
-        raise ValueError("RELION scale groups need rlnGroupName or rlnMicrographName")
+        group_names = [""] * len(particles_in_order)
     numbers: dict[str, int] = {}
     return np.asarray([numbers.setdefault(name, len(numbers) + 1) for name in group_names], dtype=np.int64)
 

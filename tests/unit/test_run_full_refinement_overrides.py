@@ -1406,6 +1406,46 @@ def test_native_group_layout_preserves_full_group_axis_when_half_max_is_absent()
     np.testing.assert_array_equal(layout.group_ids_per_half[1], [6, 3])
 
 
+def test_native_group_layout_numbers_relion_groups_when_the_star_has_none():
+    """Without rlnGroupNumber anywhere, groups follow relion_refine, not a silent None.
+
+    RELION sorts by micrograph name and numbers groups by first appearance of
+    rlnGroupName, else the post-job micrograph name (exp_model.cpp:900-901, 926-965).
+    """
+    pd = pytest.importorskip("pandas")
+    our_particles = pd.DataFrame(
+        {
+            "rlnImageName": ["1@x.mrcs", "2@x.mrcs", "3@x.mrcs", "4@x.mrcs"],
+            "rlnMicrographName": ["Extract/job007/mic_b.mrc", "Extract/job007/mic_a.mrc",
+                                  "Extract/job007/mic_b.mrc", "Extract/job007/mic_c.mrc"],
+        },
+    )
+
+    layout = _resolve_native_group_layout(
+        our_particles,
+        half1_idx=np.asarray([0, 1], dtype=np.int64),
+        half2_idx=np.asarray([2, 3], dtype=np.int64),
+    )
+
+    assert layout is not None
+    assert layout.n_groups == 3
+    # Sorted order: mic_a (row 1), mic_b (rows 0, 2), mic_c (row 3).
+    np.testing.assert_array_equal(layout.group_ids_per_half[0], [1, 0])
+    np.testing.assert_array_equal(layout.group_ids_per_half[1], [1, 2])
+    np.testing.assert_array_equal(layout.particle_ids_per_half[0], [1, 0])
+    np.testing.assert_array_equal(layout.particle_ids_per_half[1], [2, 3])
+
+    # No group or micrograph name: RELION reads an empty micrograph name for
+    # every particle (exp_model.cpp:154-167), so all share one group.
+    single = _resolve_native_group_layout(
+        our_particles[["rlnImageName"]],
+        half1_idx=np.asarray([0, 1], dtype=np.int64),
+        half2_idx=np.asarray([2, 3], dtype=np.int64),
+    )
+    assert single.n_groups == 1
+    np.testing.assert_array_equal(np.concatenate(single.group_ids_per_half), [0, 0, 0, 0])
+
+
 @pytest.mark.parametrize(
     ("relion_names", "message"),
     [
