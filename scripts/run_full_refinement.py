@@ -90,7 +90,7 @@ logger = logging.getLogger(__name__)
 
 
 _CONCRETE_RECOVAR_PROVENANCE_MODULES = (
-    "recovar",
+    "relax",
     "relax.refinement.iteration_loop",
     "relax.refinement.half_scoring",
     "relax.dense.scoring_policy",
@@ -187,20 +187,28 @@ def _configure_relion_firstiter_controls(
 
 
 def _assert_expected_repo_imports() -> None:
-    """Fail fast if EM modules were imported from another editable checkout."""
+    """Fail fast if EM modules were imported from another editable checkout.
+
+    ``RECOVAR_EXPECTED_REPO_ROOT`` names the relax checkout that must own every concrete EM module;
+    ``RELAX_EXPECTED_RECOVAR_ROOT``, when set, names the RECOVAR checkout that must own ``recovar``.
+    """
     expected_root_value = os.environ.get("RECOVAR_EXPECTED_REPO_ROOT")
     if not expected_root_value:
         return
 
     expected_root = Path(expected_root_value).expanduser().resolve()
+    checks = [(module_name, expected_root) for module_name in _CONCRETE_RECOVAR_PROVENANCE_MODULES]
+    recovar_root_value = os.environ.get("RELAX_EXPECTED_RECOVAR_ROOT")
+    if recovar_root_value:
+        checks.append(("recovar", Path(recovar_root_value).expanduser().resolve()))
     failures = []
-    for module_name in _CONCRETE_RECOVAR_PROVENANCE_MODULES:
+    for module_name, module_root in checks:
         module = importlib.import_module(module_name)
         module_file_value = getattr(module, "__file__", None)
         module_file = Path(module_file_value).resolve() if module_file_value else None
         logger.info("Import provenance: %s=%s", module_name, module_file)
-        if module_file is None or not module_file.is_relative_to(expected_root):
-            failures.append(f"{module_name}={module_file}")
+        if module_file is None or not module_file.is_relative_to(module_root):
+            failures.append(f"{module_name}={module_file} (expected under {module_root})")
 
     if failures:
         raise RuntimeError(

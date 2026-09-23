@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 from conftest import repo_python_command, repo_subprocess_env
 
-import recovar
+import relax
 from relax.commands import initial_model
 from relax.commands.initial_model import GuiInitialModelDefaults
 from relax.vdam import driver, native_options
@@ -308,7 +308,7 @@ def test_rejects_mpi_before_cuda_runtime_gate(monkeypatch):
 @pytest.mark.parametrize(
     ("argv", "orig_argv"),
     [
-        (["recovar", "initial_model", "--i", "particles.star"], ["python", "recovar"]),
+        (["relax", "initial_model", "--i", "particles.star"], ["python", "relax"]),
         (
             ["relax.commands.initial_model", "--i", "particles.star"],
             ["python", "-m", "relax.commands.initial_model", "--i", "particles.star"],
@@ -318,7 +318,7 @@ def test_rejects_mpi_before_cuda_runtime_gate(monkeypatch):
 def test_initial_model_bootstrap_keeps_default_allocator(argv, orig_argv):
     environ = {}
 
-    resolved = recovar._configure_initial_model_cuda_allocator(
+    resolved = relax._configure_initial_model_cuda_allocator(
         argv=argv,
         orig_argv=orig_argv,
         environ=environ,
@@ -332,8 +332,8 @@ def test_initial_model_bootstrap_keeps_default_allocator(argv, orig_argv):
 def test_initial_model_bootstrap_applies_requested_allocator():
     environ = {"RECOVAR_INITIAL_MODEL_CUDA_ALLOCATOR": "cuda_malloc_async"}
 
-    resolved = recovar._configure_initial_model_cuda_allocator(
-        argv=["recovar", "initial_model"],
+    resolved = relax._configure_initial_model_cuda_allocator(
+        argv=["relax", "initial_model"],
         orig_argv=(),
         environ=environ,
     )
@@ -344,13 +344,13 @@ def test_initial_model_bootstrap_applies_requested_allocator():
 
 @pytest.mark.unit
 def test_initial_model_bootstrap_respects_allocator_override_and_optout():
-    argv = ["recovar", "initial_model"]
+    argv = ["relax", "initial_model"]
     caller_selected = {
         "TF_GPU_ALLOCATOR": "platform",
         "RECOVAR_INITIAL_MODEL_CUDA_ALLOCATOR": "cuda_malloc_async",
     }
     assert (
-        recovar._configure_initial_model_cuda_allocator(
+        relax._configure_initial_model_cuda_allocator(
             argv=argv,
             orig_argv=(),
             environ=caller_selected,
@@ -360,7 +360,7 @@ def test_initial_model_bootstrap_respects_allocator_override_and_optout():
 
     opted_out = {"RECOVAR_INITIAL_MODEL_CUDA_ALLOCATOR": "default"}
     assert (
-        recovar._configure_initial_model_cuda_allocator(
+        relax._configure_initial_model_cuda_allocator(
             argv=argv,
             orig_argv=(),
             environ=opted_out,
@@ -375,8 +375,8 @@ def test_initial_model_allocator_bootstrap_is_scoped_to_initial_model():
     environ = {}
 
     assert (
-        recovar._configure_initial_model_cuda_allocator(
-            argv=["recovar", "pipeline"],
+        relax._configure_initial_model_cuda_allocator(
+            argv=["relax", "build_cuda"],
             orig_argv=["python", "-m", "pytest"],
             environ=environ,
         )
