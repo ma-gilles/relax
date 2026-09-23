@@ -338,3 +338,39 @@ def test_initial_lowpass_seeding_preserves_pixel_fallback_and_shell_clamps(pixel
         state, options, grid_size=128, voxel_size=pixel,
     )
     assert state.current_resolution == state.previous_resolution == expected
+
+    def test_current_resolution_shell_matches_relion_update_current_resolution(self):
+        """Last shell before DVP < 1, class maximum for K>1, K=1 recheck."""
+        dvp = np.full(33, 5.0, dtype=np.float32)
+        dvp[12:] = 0.5
+        assert resolution_helpers.relion_current_resolution_shell(
+            dvp, k_class_enabled=False, current_size=64, grid_size=64
+        ) == 11
+        # Shells beyond current_size // 2 are unavailable before the scan.
+        assert resolution_helpers.relion_current_resolution_shell(
+            np.full(33, 5.0, dtype=np.float32), k_class_enabled=False, current_size=20, grid_size=64
+        ) == 10
+        # Split-half auto-refine keeps a rise more than three shells later.
+        rising = dvp.copy()
+        rising[20] = 2.0
+        assert resolution_helpers.relion_current_resolution_shell(
+            rising, k_class_enabled=False, current_size=64, grid_size=64
+        ) == 20
+        classes = np.stack([dvp, np.where(np.arange(33) < 16, 5.0, 0.5).astype(np.float32), rising])
+        assert resolution_helpers.relion_current_resolution_shell(
+            classes, k_class_enabled=True, current_size=64, grid_size=64
+        ) == 15
+
+    def test_whole_data_dvp_crosses_at_fsc_0143(self):
+        """The final all-data DVP (whole-map conversion) crosses 1 at FSC 1/7."""
+        fsc = np.linspace(1.0, 0.0, 33)
+        whole = regularization_relion.fsc_to_relion_ssnr(fsc, is_whole_instead_of_half=True)
+        half = regularization_relion.fsc_to_relion_ssnr(fsc)
+        whole_shell = resolution_helpers.relion_current_resolution_shell(
+            whole, k_class_enabled=False, current_size=64, grid_size=64
+        )
+        half_shell = resolution_helpers.relion_current_resolution_shell(
+            half, k_class_enabled=False, current_size=64, grid_size=64
+        )
+        assert fsc[whole_shell] >= 1.0 / 7.0 > fsc[whole_shell + 1]
+        assert fsc[half_shell] >= 0.5 > fsc[half_shell + 1]

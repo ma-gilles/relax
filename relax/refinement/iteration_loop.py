@@ -152,6 +152,7 @@ from relax.helpers.resolution import (
     initialize_resolution_from_fsc,
     relion_expectation_coarse_size_order,
     relion_local_pass1_current_size,
+    relion_current_resolution_shell,
     relion_optics_image_current_sizes,
     shell_index_to_resolution_angstrom,
 )
@@ -3490,40 +3491,33 @@ def refine_single_volume(
         # K>1: data_vs_prior comes from the shared per-class prior and the
         # combined class accumulators.
         if k_class_enabled:
-            dvp_iter = _truncate_data_vs_prior_for_current_size(
-                history.data_vs_prior_trajectory[-1],
-                current_size=current_size,
-                grid_size=grid_size,
+            dvp_iter = history.data_vs_prior_trajectory[-1]
+        elif tau2_update_details is not None and tau2_update_details.get("ssnr_shells") is not None:
+            dvp_iter = np.asarray(
+                tau2_update_details["ssnr_shells"],
                 dtype=_dense_global_scoring_dtype(),
-            )
-            dvp_res_shell = max(
-                resolution_from_data_vs_prior(dvp_class, allow_high_res_recovery=False)
-                for dvp_class in np.asarray(dvp_iter)
-            )
+            ).copy()
         else:
-            if tau2_update_details is not None and tau2_update_details.get("ssnr_shells") is not None:
-                dvp_iter = np.asarray(
-                    tau2_update_details["ssnr_shells"],
-                    dtype=_dense_global_scoring_dtype(),
-                ).copy()
-            else:
-                dvp_iter = np.asarray(
-                    fsc_to_relion_ssnr(
-                        np.asarray(fsc, dtype=_dense_global_scoring_dtype()),
-                        tau2_fudge=tau2_fudge,
-                    ),
-                    dtype=_dense_global_scoring_dtype(),
-                )
-            dvp_iter = _truncate_data_vs_prior_for_current_size(
-                dvp_iter,
-                current_size=current_size,
-                grid_size=grid_size,
+            dvp_iter = np.asarray(
+                fsc_to_relion_ssnr(
+                    np.asarray(fsc, dtype=_dense_global_scoring_dtype()),
+                    tau2_fudge=tau2_fudge,
+                ),
                 dtype=_dense_global_scoring_dtype(),
             )
-            dvp_res_shell = resolution_from_data_vs_prior(
-                dvp_iter,
-                allow_high_res_recovery=True,
-            )
+        dvp_iter = _truncate_data_vs_prior_for_current_size(
+            dvp_iter,
+            current_size=current_size,
+            grid_size=grid_size,
+            dtype=_dense_global_scoring_dtype(),
+        )
+        dvp_res_shell = relion_current_resolution_shell(
+            dvp_iter,
+            k_class_enabled=k_class_enabled,
+            current_size=current_size,
+            grid_size=grid_size,
+            dtype=_dense_global_scoring_dtype(),
+        )
         pixel_res = float(
             _firstiter_cc_scheduling_resolution_shell(
                 dvp_res_shell,
@@ -5074,6 +5068,32 @@ def refine_single_volume(
             float(np.asarray(final_iter_fsc)[1]) if np.asarray(final_iter_fsc).size > 1 else float("nan"),
             time.time() - _t_final_tau2,
         )
+
+    # RELION calls updateCurrentResolution after the final all-data
+    # iteration too (ml_optimiser_mpi.cpp:4329), from that iteration's
+    # whole-data DVP, so rlnCurrentResolution reports the final half-map FSC
+    # at 0.143 rather than the last split-half iteration's 0.5 crossing.
+    # Nothing after this point schedules on the resolution.
+    final_dvp = (
+        final_data_vs_prior
+        if k_class_enabled
+        else np.asarray(final_tau2_update_details["ssnr_shells"], dtype=_dense_global_scoring_dtype())
+    )
+    final_res_shell = relion_current_resolution_shell(
+        final_dvp,
+        k_class_enabled=k_class_enabled,
+        current_size=final_current_size,
+        grid_size=grid_size,
+        dtype=_dense_global_scoring_dtype(),
+    )
+    state.previous_resolution = state.current_resolution
+    state.current_resolution = shell_index_to_resolution_angstrom(final_res_shell, cryo.image_shape[0], cryo.voxel_size)
+    logger.info(
+        "RELION final all-data current resolution: shell=%d res=%.2f A (last split-half iteration %.2f A)",
+        int(final_res_shell),
+        state.current_resolution,
+        state.previous_resolution,
+    )
 
     final_grid_correct = finalization_policy._final_all_data_grid_correct_enabled(logger=logger)
     if final_grid_correct:

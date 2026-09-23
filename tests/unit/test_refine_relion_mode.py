@@ -1167,6 +1167,16 @@ def test_final_all_data_runs_with_cold_start_only_override(
         "update_refinement_state",
         force_convergence_after_first_iter,
     )
+    original_shell = iteration_loop_module.relion_current_resolution_shell
+    forced_final_shell = 3
+    resolution_calls = []
+
+    def record_resolution_shell(dvp, **kwargs):
+        resolution_calls.append({"dvp": np.asarray(dvp).copy(), **kwargs})
+        shell = original_shell(dvp, **kwargs)
+        return forced_final_shell if len(resolution_calls) == 2 else shell
+
+    monkeypatch.setattr(iteration_loop_module, "relion_current_resolution_shell", record_resolution_shell)
 
     result = refine_single_volume(
         half_datasets,
@@ -1185,6 +1195,19 @@ def test_final_all_data_runs_with_cold_start_only_override(
 
     assert result["convergence_state"].has_converged is True
     assert result["final_all_data_ran"] is True
+
+    # RELION updates rlnCurrentResolution from the final all-data DVP too.
+    # The mock data carry no signal (shell 0), so the final call is forced to
+    # a known shell to check that its result reaches the returned state.
+    grid = int(half_datasets[0].image_shape[0])
+    voxel = float(half_datasets[0].voxel_size)
+    final_call = resolution_calls[-1]
+    assert len(resolution_calls) == 2
+    assert final_call["current_size"] == grid
+    np.testing.assert_array_equal(final_call["dvp"], result["tau2_ssnr_final_all_data"].astype(np.float32))
+    state = result["convergence_state"]
+    assert state.current_resolution == grid * voxel / forced_final_shell
+    assert state.previous_resolution == float("inf")
 
 
 def test_last_numbered_state_does_not_trigger_post_cap_final_all_data(

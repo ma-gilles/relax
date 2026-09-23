@@ -259,6 +259,31 @@ def _truncate_data_vs_prior_for_current_size(data_vs_prior, *, current_size, gri
     return truncated
 
 
+def relion_current_resolution_shell(data_vs_prior, *, k_class_enabled, current_size, grid_size, dtype=np.float32):
+    """Return RELION's ``updateCurrentResolution`` shell from a DVP curve.
+
+    Mirrors ``MlOptimiser::updateCurrentResolution`` (relion/src/
+    ml_optimiser.cpp:6753): the last shell before data_vs_prior drops below
+    1, maximised over classes. Split-half auto-refine (K=1) also applies the
+    high-resolution recheck. ``data_vs_prior`` is ``(n_shells,)`` for K=1 and
+    ``(n_classes, n_shells)`` for K>1. Shells beyond ``current_size`` are
+    unavailable and zeroed first. See docs/math/relion_refinement_algorithm.md
+    section 7 for the split-half and final all-data curves.
+    """
+    dvp = _truncate_data_vs_prior_for_current_size(
+        data_vs_prior,
+        current_size=current_size,
+        grid_size=grid_size,
+        dtype=dtype,
+    )
+    if k_class_enabled:
+        return max(
+            resolution_from_data_vs_prior(dvp_class, allow_high_res_recovery=False)
+            for dvp_class in np.asarray(dvp)
+        )
+    return resolution_from_data_vs_prior(dvp, allow_high_res_recovery=True)
+
+
 def _truncate_fsc_for_current_size_growth(fsc, *, current_size, grid_size, dtype=np.float32):
     """Zero FSC shells beyond RELION's inclusive current-size boundary.
 
