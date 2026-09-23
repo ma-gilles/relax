@@ -1,13 +1,14 @@
 """InitialModel's CLI invocations reach XLA with the EM defaults.
 
 ``relax/commands/initial_model.py`` sets ``RECOVAR_EM_XLA_DEFAULTS`` before its
-own imports, but ``recovar initial_model`` (console script and GUI) and
-``python -m recovar.commands.initial_model`` import the ``recovar`` package, and
-with it ``recovar.jax_config``, before that module runs. The EM default
+own imports, but ``relax initial_model`` (console script) and
+``python -m relax.commands.initial_model`` import ``recovar``, and with it
+``recovar.jax_config``, before that module runs. The EM default
 ``--xla_gpu_autotune_level=0`` therefore never reached XLA for InitialModel,
 and autotuning stayed on (with it XLA's fusion autotuner, whose Triton
-reductions over-read their operands on Hopper; D2 10345 diagnosis). The package
-now sets the marker itself when it is imported for the InitialModel CLI.
+reductions over-read their operands on Hopper; D2 10345 diagnosis). The ``relax``
+package sets the marker itself, before importing ``recovar``, when it is imported
+for the InitialModel CLI.
 
 The end-to-end cases run the real invocations in child interpreters and read
 ``XLA_FLAGS`` at exit through a ``sitecustomize`` hook.
@@ -15,13 +16,14 @@ The end-to-end cases run the real invocations in child interpreters and read
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-import recovar
+import relax
 
 pytestmark = pytest.mark.unit
 
@@ -33,29 +35,29 @@ FLAG = "--xla_gpu_autotune_level=0"
 @pytest.mark.parametrize(
     ("argv", "orig_argv"),
     [
-        (["/env/bin/recovar", "initial_model", "--help"], ["/env/bin/python", "/env/bin/recovar", "initial_model"]),
+        (["/env/bin/relax", "initial_model", "--help"], ["/env/bin/python", "/env/bin/relax", "initial_model"]),
         (["-m", "--help"], ["/env/bin/python", "-m", "relax.commands.initial_model", "--help"]),
     ],
     ids=["console-script", "python-m"],
 )
 def test_the_initial_model_cli_sets_the_marker(argv, orig_argv):
     environ: dict[str, str] = {}
-    assert recovar._configure_initial_model_xla_defaults(argv=argv, orig_argv=orig_argv, environ=environ) == "1"
+    assert relax._configure_initial_model_xla_defaults(argv=argv, orig_argv=orig_argv, environ=environ) == "1"
     assert environ == {MARKER: "1"}
 
 
 def test_other_commands_do_not_set_the_marker():
     environ: dict[str, str] = {}
-    argv = ["/env/bin/recovar", "pipeline", "--help"]
-    assert recovar._configure_initial_model_xla_defaults(argv=argv, orig_argv=argv, environ=environ) is None
+    argv = ["/env/bin/relax", "build_cuda", "--help"]
+    assert relax._configure_initial_model_xla_defaults(argv=argv, orig_argv=argv, environ=environ) is None
     assert environ == {}
 
 
 @pytest.mark.parametrize("explicit", ["0", ""])
 def test_an_explicit_marker_wins(explicit):
     environ = {MARKER: explicit}
-    argv = ["/env/bin/recovar", "initial_model"]
-    assert recovar._configure_initial_model_xla_defaults(argv=argv, orig_argv=argv, environ=environ) == explicit
+    argv = ["/env/bin/relax", "initial_model"]
+    assert relax._configure_initial_model_xla_defaults(argv=argv, orig_argv=argv, environ=environ) == explicit
 
 
 def _xla_flags_at_exit(cmd: list[str], tmp_path: Path, extra_env: dict[str, str] | None = None) -> str:
@@ -66,7 +68,8 @@ def _xla_flags_at_exit(cmd: list[str], tmp_path: Path, extra_env: dict[str, str]
     )
     env = {
         "PATH": "/usr/bin:/bin",
-        "PYTHONPATH": f"{tmp_path}:{REPO}",
+        # The pinned recovar may come from PYTHONPATH (co-development) rather than site-packages.
+        "PYTHONPATH": os.pathsep.join(p for p in (str(tmp_path), str(REPO), os.environ.get("PYTHONPATH", "")) if p),
         "JAX_PLATFORMS": "cpu",
         "RECOVAR_DISABLE_CUDA": "1",
         "PYTHONNOUSERSITE": "1",
@@ -82,8 +85,8 @@ def _xla_flags_at_exit(cmd: list[str], tmp_path: Path, extra_env: dict[str, str]
 
 def test_end_to_end_console_script_reaches_xla_with_the_em_default(tmp_path):
     code = (
-        "import sys; sys.argv = ['recovar', 'initial_model', '--help'];"
-        " from recovar.command_line import main_commands; main_commands()"
+        "import sys; sys.argv = ['relax', 'initial_model', '--help'];"
+        " from relax.command_line import main_commands; main_commands()"
     )
     assert FLAG in _xla_flags_at_exit([sys.executable, "-c", code], tmp_path).split()
 
@@ -94,5 +97,5 @@ def test_end_to_end_python_m_reaches_xla_with_the_em_default(tmp_path):
 
 
 def test_end_to_end_other_commands_keep_autotuning(tmp_path):
-    code = "import sys; sys.argv = ['recovar', 'pipeline', '--help']; import recovar"
+    code = "import sys; sys.argv = ['relax', 'build_cuda', '--help']; import relax, recovar"
     assert FLAG not in _xla_flags_at_exit([sys.executable, "-c", code], tmp_path).split()
