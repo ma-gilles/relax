@@ -222,7 +222,7 @@ for arm in "${ARM_ORDER[@]}"; do
   mkdir -p "${output}" "${cache}" "${tmp}"
   touch "${cache}/SAFE_TO_DELETE" "${tmp}/SAFE_TO_DELETE"
   command=(
-    "${PIXI_PY}" -m recovar.commands.initial_model
+    "${PIXI_PY}" -m relax.commands.initial_model
     --i "${FIXTURE}/particles.star"
     --o "${output}/run"
     --nr_iter 200

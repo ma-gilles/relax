@@ -89,7 +89,7 @@ pixi run python - <<'PY'
 import pathlib
 import jax
 import recovar
-from recovar.relion_bind import _relion_bind_core as relion_bind
+from relax.relion_bind import _relion_bind_core as relion_bind
 
 repo = pathlib.Path.cwd().resolve()
 recovar_file = pathlib.Path(recovar.__file__).resolve()

@@ -55,7 +55,7 @@ if [[ ! -f "${RELION_SRC_DIR}/projector.h" ]]; then
 fi
 export RELION_SRC_DIR
 
-# run_full_refinement.py imports recovar.relion_bind._relion_bind_core for the RELION
+# run_full_refinement.py imports relax.relion_bind._relion_bind_core for the RELION
 # half-set ordering, and a fresh checkout has no built extension, so every K=1 rung
 # dies in seconds with an ImportError. Build it once here, into this tier's own scratch
 # directory, and let the jobs load it through RECOVAR_RELION_BIND_BUILD_DIR -- the same
@@ -65,7 +65,7 @@ export RELION_SRC_DIR
 export RECOVAR_RELION_BIND_BUILD_DIR="${SCRATCH_DIR}/relion_bind_build"
 mkdir -p "${RECOVAR_RELION_BIND_BUILD_DIR}"
 echo "Building the RELION binding into ${RECOVAR_RELION_BIND_BUILD_DIR} ..."
-"${REPO_ROOT}/.pixi/envs/default/bin/python" "${REPO_ROOT}/recovar/relion_bind/build.py"
+"${REPO_ROOT}/.pixi/envs/default/bin/python" "${REPO_ROOT}/relax/relion_bind/build.py"
 ls -1 "${RECOVAR_RELION_BIND_BUILD_DIR}"/_relion_bind_core*.so \
   || { echo "RELION binding build produced no extension" >&2; exit 2; }
 

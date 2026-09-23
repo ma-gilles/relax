@@ -82,7 +82,7 @@ printf 'audit_mode=%s\nstop_iteration=%s\nprofile_iterations=%s\nrandom_seed=%s\
   > "${PROVENANCE_DIR}/run_mode.txt"
 
 COMMAND=(
-  "${PIXI_PY}" -m recovar.commands.initial_model
+  "${PIXI_PY}" -m relax.commands.initial_model
   --i "${DATA_DIR}/particles.star"
   --o "${RECOVAR_DIR}/run"
   --nr_iter 200

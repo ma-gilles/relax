@@ -180,14 +180,14 @@ readonly -a SOURCE_FILES=(
   recovar/cuda/Makefile
   recovar/cuda/cuda_backproject.cu
   recovar/cuda_backproject.py
-  recovar/em/local/local_big_jit.py
-  recovar/em/local/local_em_engine.py
-  recovar/em/vdam/dense_adapter.py
-  recovar/em/vdam/driver.py
-  recovar/em/vdam/iteration_loop.py
-  recovar/em/vdam/schedules.py
-  recovar/em/diagnostics/parity_provenance.py
-  recovar/commands/initial_model.py
+  relax/local/local_big_jit.py
+  relax/local/local_em_engine.py
+  relax/vdam/dense_adapter.py
+  relax/vdam/driver.py
+  relax/vdam/iteration_loop.py
+  relax/vdam/schedules.py
+  relax/diagnostics/parity_provenance.py
+  relax/commands/initial_model.py
   scripts/run_vdam_late_iteration_profile.py
   scripts/run_local_mstep_donation_ab.py
   scripts/analyze_local_mstep_donation_ab.py
@@ -356,8 +356,8 @@ import sys
 import jax
 import recovar
 from recovar import cuda_backproject
-from recovar.relion_bind import _relion_bind_core as relion_bind_core
-from recovar.em.diagnostics.parity_provenance import assert_parity_ancestors
+from relax.relion_bind import _relion_bind_core as relion_bind_core
+from relax.diagnostics.parity_provenance import assert_parity_ancestors
 
 repo = pathlib.Path(os.environ["RECOVAR_EXPECTED_REPO_ROOT"]).resolve()
 pixi_env = (repo / ".pixi" / "envs" / "default").resolve()

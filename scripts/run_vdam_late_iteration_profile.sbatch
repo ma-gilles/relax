@@ -373,7 +373,7 @@ touch "${JAX_COMPILATION_CACHE_DIR}/SAFE_TO_DELETE"
 import jax
 import recovar
 import recovar.cuda_backproject as cuda_backproject
-from recovar.relion_bind import _relion_bind_core as relion_bind_core
+from relax.relion_bind import _relion_bind_core as relion_bind_core
 
 assert recovar.__file__ is not None
 assert any(device.platform in {"gpu", "cuda"} for device in jax.devices())

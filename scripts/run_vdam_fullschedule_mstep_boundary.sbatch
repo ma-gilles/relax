@@ -81,7 +81,7 @@ RELION_RUNTIME=${VDAM_RELION_RUNTIME:-/scratch/gpfs/GILLES/mg6942/recovar_dev/re
 PIXI_PY=${PIXI_PY_OVERRIDE:-${REPO_ROOT}/.pixi/envs/default/bin/python}
 CUDA_SOURCE_BINARY=${RECOVAR_CUDA_LIB_SOURCE:-${REPO_ROOT}/recovar/cuda/libcuda_backproject.so}
 CUDA_BINARY=${OUTPUT_ROOT}/runtime/${SLURM_JOB_ID}/cuda/libcuda_backproject.so
-RELION_BIND_BINARY=${REPO_ROOT}/recovar/relion_bind/_relion_bind_core.cpython-311-x86_64-linux-gnu.so
+RELION_BIND_BINARY=${REPO_ROOT}/relax/relion_bind/_relion_bind_core.cpython-311-x86_64-linux-gnu.so
 RELION_OUTPUT=${OUTPUT_ROOT}/relion
 RECOVAR_OUTPUT=${OUTPUT_ROOT}/recovar
 NATIVE_MSTEP=${OUTPUT_ROOT}/native_mstep
@@ -735,7 +735,7 @@ PY
 fi
 
 RECOVAR_COMMAND=(
-  "${PIXI_PY}" -m recovar.commands.initial_model
+  "${PIXI_PY}" -m relax.commands.initial_model
   --i "${DATA_DIR}/particles.star"
   --o "${RECOVAR_OUTPUT}/run"
   --nr_iter "${NR_ITER_SCHEDULE}"

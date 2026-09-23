@@ -210,18 +210,18 @@ scontrol show job "${SLURM_JOB_ID}" > "${PROVENANCE}/slurm_job.txt"
 sha256sum \
   "${REPO_ROOT}/scripts/run_vdam_hybrid_same_state_transition.py" \
   "${REPO_ROOT}/scripts/run_vdam_hybrid_same_state_transition.sbatch" \
-  "${REPO_ROOT}/recovar/em/scoring/coarse_gemm_hybrid.py" \
-  "${REPO_ROOT}/recovar/em/helpers/oversampling.py" \
-  "${REPO_ROOT}/recovar/em/local/flat_local_rows.py" \
-  "${REPO_ROOT}/recovar/em/helpers/fourier_window.py" \
-  "${REPO_ROOT}/recovar/em/scoring/significance.py" \
-  "${REPO_ROOT}/recovar/em/sparse_pass2/sparse_pass2_bucketed.py" \
-  "${REPO_ROOT}/recovar/em/local/local_backprojection.py" \
-  "${REPO_ROOT}/recovar/em/local/local_big_jit.py" \
-  "${REPO_ROOT}/recovar/em/local/local_em_engine.py" \
-  "${REPO_ROOT}/recovar/em/vdam/dense_adapter.py" \
-  "${REPO_ROOT}/recovar/em/vdam/driver.py" \
-  "${REPO_ROOT}/recovar/em/vdam/iteration_loop.py" \
+  "${REPO_ROOT}/relax/scoring/coarse_gemm_hybrid.py" \
+  "${REPO_ROOT}/relax/helpers/oversampling.py" \
+  "${REPO_ROOT}/relax/local/flat_local_rows.py" \
+  "${REPO_ROOT}/relax/helpers/fourier_window.py" \
+  "${REPO_ROOT}/relax/scoring/significance.py" \
+  "${REPO_ROOT}/relax/sparse_pass2/sparse_pass2_bucketed.py" \
+  "${REPO_ROOT}/relax/local/local_backprojection.py" \
+  "${REPO_ROOT}/relax/local/local_big_jit.py" \
+  "${REPO_ROOT}/relax/local/local_em_engine.py" \
+  "${REPO_ROOT}/relax/vdam/dense_adapter.py" \
+  "${REPO_ROOT}/relax/vdam/driver.py" \
+  "${REPO_ROOT}/relax/vdam/iteration_loop.py" \
   "${REPO_ROOT}/recovar/cuda/cuda_backproject.cu" \
   "${REPO_ROOT}/recovar/cuda_backproject.py" \
   "${ACCEPTANCE}" "${LAUNCH_MANIFEST}" "${PIXI_PY}" "${CUDA_BINARY}" \

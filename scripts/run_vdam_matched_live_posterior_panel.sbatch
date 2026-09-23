@@ -40,7 +40,7 @@ test "$(sha256sum "${VDAM_CUDA_LIBRARY}" | awk '{print $1}')" = \
   "${VDAM_EXPECTED_CUDA_SHA256}"
 
 PIXI_PY=${VDAM_REPO_ROOT}/.pixi/envs/default/bin/python
-RELION_BIND_BINARY=${VDAM_REPO_ROOT}/recovar/relion_bind/_relion_bind_core.cpython-311-x86_64-linux-gnu.so
+RELION_BIND_BINARY=${VDAM_REPO_ROOT}/relax/relion_bind/_relion_bind_core.cpython-311-x86_64-linux-gnu.so
 test -x "${PIXI_PY}"
 test -s "${RELION_BIND_BINARY}"
 test "$(sha256sum "${RELION_BIND_BINARY}" | awk '{print $1}')" = \
@@ -130,7 +130,7 @@ for repeat in $(seq 1 "${REPEAT_COUNT}"); do
   mkdir -p "${TMPDIR}" "${PIXI_HOME}" "${RATTLER_CACHE_DIR}"
 
   start_epoch=$(date +%s)
-  "${PIXI_PY}" -m recovar.commands.initial_model \
+  "${PIXI_PY}" -m relax.commands.initial_model \
     --i "${VDAM_DATA_DIR}/particles.star" \
     --o "${recovar_root}/run" \
     --nr_iter 200 \

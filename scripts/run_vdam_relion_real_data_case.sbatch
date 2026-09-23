@@ -144,7 +144,7 @@ RELION_CMD=(
 )
 
 RECOVAR_CMD=(
-  "${PIXI_PY}" -m recovar.commands.initial_model
+  "${PIXI_PY}" -m relax.commands.initial_model
   --i "${INPUT_STAR}" --o "${OUTPUT_ROOT}/recovar/run"
   --nr_iter "${NR_ITER}" --grad_write_iter 1 --K "${K}" --tau2_fudge "${TAU2_FUDGE}"
   --sym "${SYM}" --run-in-c1 --particle_diameter "${PARTICLE_DIAMETER}"

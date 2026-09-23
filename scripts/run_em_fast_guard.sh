@@ -32,7 +32,7 @@ fi
 
 # Catch incomplete caller migrations before importing JAX or compiling tests.
 # This guard covers the dense/local package; shared/legacy EM has separate gates.
-"$PYTHON_BIN" -m ruff check --select F821 "$ROOT/recovar/em"
+"$PYTHON_BIN" -m ruff check --select F821 "$ROOT/relax"
 
 "$PYTHON_BIN" - <<'PY'
 import pathlib
@@ -55,16 +55,16 @@ for helper in (
     "helpers.expected_accuracy", "scoring.significant_samples", "diagnostics.coarse_score_diagnostics", "scoring.sparse_bucket_arrays", "scoring.compact_candidates", "relion.relion_ctf", "helpers.scale_groups", "helpers.normalization_inputs",
     "diagnostics.vdam_replay", "relion.vdam_checkpoint", "local.fixed_capacity_local", "local.local_layout", "diagnostics.local_debug", "local.local_projection_cache", "local.local_timing",
 ):
-    importlib.import_module(f"recovar.em.{helper}")
+    importlib.import_module(f"relax.{helper}")
 for diagnostic in ("iteration", "pass2", "norm_scale", "reconstruction"):
-    importlib.import_module(f"recovar.em.diagnostics.{diagnostic}")
+    importlib.import_module(f"relax.diagnostics.{diagnostic}")
 execution_modules = (
     "refinement.iteration_loop", "refinement.half_scoring", "classification.k_class", "dense.em_engine", "local.local_em_engine", "local.local_big_jit",
     "scoring.significance", "sparse_pass2.sparse_pass2_bucketed", "sparse_pass2.dispatch",
     "refinement.firstiter_cc", "refinement.local_search_iteration",
 )
 loaded = [name for name in execution_modules
-          if f"recovar.em.{name}" in sys.modules]
+          if f"relax.{name}" in sys.modules]
 assert not loaded, f"EM helper imports must not load execution modules: {loaded}"
 print(f"provenance_ok recovar={recovar_file} jax={jax_file}")
 print("helper_import_boundary_ok")

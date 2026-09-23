@@ -81,7 +81,7 @@ PROVENANCE=${OUTPUT_ROOT}/provenance
 PIXI_PY=${PIXI_PY_OVERRIDE:-${REPO_ROOT}/.pixi/envs/default/bin/python}
 CUDA_SOURCE_BINARY=${RECOVAR_CUDA_LIB_OVERRIDE:-${REPO_ROOT}/recovar/cuda/libcuda_backproject.so}
 CUDA_BINARY=${OUTPUT_ROOT}/runtime/native/libcuda_backproject.so
-RELION_BIND_BINARY=${REPO_ROOT}/recovar/relion_bind/_relion_bind_core.cpython-311-x86_64-linux-gnu.so
+RELION_BIND_BINARY=${REPO_ROOT}/relax/relion_bind/_relion_bind_core.cpython-311-x86_64-linux-gnu.so
 
 test -f "${OUTPUT_ROOT}/SAFE_TO_DELETE"
 test -s "${DATA_DIR}/particles.star"
@@ -353,7 +353,7 @@ PY
   )
 else
   COMMAND=(
-    "${PIXI_PY}" -m recovar.commands.initial_model
+    "${PIXI_PY}" -m relax.commands.initial_model
     --i "${DATA_DIR}/particles.star"
     --o "${RECOVAR_ROOT}/run"
     --nr_iter "${NR_ITER_SCHEDULE}"

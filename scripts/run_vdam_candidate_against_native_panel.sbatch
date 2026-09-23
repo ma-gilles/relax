@@ -89,7 +89,7 @@ test -z "$(git -C "${REPO_ROOT}" status --porcelain=v1 --untracked-files=no)"
 test "$(sha256sum "${RECOVAR_CUDA_LIB_PATH}" | awk '{print $1}')" = "${EXPECTED_CUDA_SHA256}"
 
 shopt -s nullglob
-RELION_BIND_MATCHES=("${REPO_ROOT}"/recovar/relion_bind/_relion_bind_core*.so)
+RELION_BIND_MATCHES=("${REPO_ROOT}"/relax/relion_bind/_relion_bind_core*.so)
 shopt -u nullglob
 if (( ${#RELION_BIND_MATCHES[@]} != 1 )); then
     echo "expected exactly one local RELION binding" >&2
@@ -184,7 +184,7 @@ import pathlib
 import jax
 import recovar
 import recovar.cuda_backproject as cuda_backproject
-from recovar.relion_bind import _relion_bind_core
+from relax.relion_bind import _relion_bind_core
 
 repo = pathlib.Path(__import__("os").environ["RECOVAR_EXPECTED_REPO_ROOT"]).resolve()
 assert str(pathlib.Path(recovar.__file__).resolve()).startswith(str(repo) + "/")

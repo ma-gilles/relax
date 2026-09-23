@@ -880,7 +880,7 @@ import pathlib
 
 import jax
 import recovar
-from recovar.relion_bind import _relion_bind_core as relion_bind
+from relax.relion_bind import _relion_bind_core as relion_bind
 
 repo = pathlib.Path.cwd().resolve()
 recovar_file = pathlib.Path(recovar.__file__).resolve()
@@ -1156,7 +1156,7 @@ import pathlib
 import jax
 import recovar
 import recovar.cuda_backproject as cb
-from recovar.relion_bind import _relion_bind_core as relion_bind
+from relax.relion_bind import _relion_bind_core as relion_bind
 repo = pathlib.Path.cwd().resolve()
 relion_bind_file = pathlib.Path(relion_bind.__file__).resolve()
 external_bind_dir = os.environ.get("RECOVAR_RELION_BIND_BUILD_DIR")

@@ -131,7 +131,7 @@ export LD_LIBRARY_PATH=${RELION_RUNTIME}/system_dev_overlay/lib:${MPI_ROOT}/lib6
 import jax
 import recovar
 import recovar.cuda_backproject as cuda_backproject
-from recovar.relion_bind import _relion_bind_core as relion_bind_core
+from relax.relion_bind import _relion_bind_core as relion_bind_core
 
 assert recovar.__file__ is not None
 assert any(device.platform in {"gpu", "cuda"} for device in jax.devices())

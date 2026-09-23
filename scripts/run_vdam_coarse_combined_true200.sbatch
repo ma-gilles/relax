@@ -321,8 +321,8 @@ import pathlib
 import jax
 import recovar
 import recovar.cuda_backproject as cuda_backproject
-from recovar.relion_bind import _relion_bind_core
-from recovar.em.diagnostics.parity_provenance import assert_parity_ancestors
+from relax.relion_bind import _relion_bind_core
+from relax.diagnostics.parity_provenance import assert_parity_ancestors
 
 repo = pathlib.Path(__import__("os").environ["RECOVAR_EXPECTED_REPO_ROOT"]).resolve()
 assert str(pathlib.Path(recovar.__file__).resolve()).startswith(str(repo) + "/")

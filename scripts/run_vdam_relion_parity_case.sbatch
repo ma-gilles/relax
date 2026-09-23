@@ -62,7 +62,7 @@ import pathlib
 import jax
 import recovar
 import recovar.cuda_backproject as cuda_backproject
-from recovar.relion_bind import _relion_bind_core
+from relax.relion_bind import _relion_bind_core
 
 repo = pathlib.Path.cwd().resolve()
 assert str(pathlib.Path(recovar.__file__).resolve()).startswith(str(repo) + "/")
