@@ -1023,7 +1023,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/57/5b/28365212062939d213802e5e5fe855cdb231e1c2a93254ba1690066504e3/xarray-2026.7.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a8/71/9219fe65ef32bddc0b5d14e1d98dfefe9d2c9c1b1d1e93efca1f29fcbd4d/xyzservices-2026.9.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/95/0c/a71501bbc1a674ff72c4d6c2b75f4d9a5af819f5244c3a7558080a8802c5/yarl-1.25.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
-      - pypi: ../recovar_relax_split_p4_20260923
+      - pypi: ../recovar
       - pypi: ./
   docs:
     channels:
@@ -10741,10 +10741,9 @@ packages:
   - pygments>=2.5.1
   - comrak>=0.0.13 ; extra == 'md'
   requires_python: '>=3.10'
-- pypi: ../recovar_relax_split_p4_20260923
+- pypi: git+https://github.com/ma-gilles/recovar?rev=a63df5a623abda24b87fefab23d2ef236e9c7a9c#a63df5a623abda24b87fefab23d2ef236e9c7a9c
   name: recovar
-  version: 20260924.dev10
-  sha256: 6e49c6020efa5aeffda119dada2ebf2e73d159a8120c9d1540c79a5bec4c5720
+  version: 20260924.dev13
   requires_dist:
   - equinox==0.13.4
   - finufft==2.3.1
@@ -10821,9 +10820,10 @@ packages:
   - pre-commit>=3.0 ; extra == 'dev'
   - recovar[dev,gpu,gui,interactive] ; extra == 'all'
   requires_python: '>=3.11'
-- pypi: git+https://github.com/ma-gilles/recovar?rev=a63df5a623abda24b87fefab23d2ef236e9c7a9c#a63df5a623abda24b87fefab23d2ef236e9c7a9c
+- pypi: ../recovar
   name: recovar
-  version: 20260924.dev13
+  version: 20260924.dev15
+  sha256: 6e49c6020efa5aeffda119dada2ebf2e73d159a8120c9d1540c79a5bec4c5720
   requires_dist:
   - equinox==0.13.4
   - finufft==2.3.1
@@ -10932,8 +10932,8 @@ packages:
   timestamp: 1760379115194
 - pypi: ./
   name: relax
-  version: 0.0.1.dev16
-  sha256: 4dfe13fc87f5f0580a3828e19b85fab11cd5ecba091062f55e903972d2e17e43
+  version: 0.0.1.dev44
+  sha256: b83e78e915d2221fee2ca0417a999670bd78789dc64d7dc3192aea75f64c6b01
   requires_dist:
   - recovar
   - jax[cuda12]==0.9.0.1 ; extra == 'gpu'

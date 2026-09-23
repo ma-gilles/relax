@@ -127,9 +127,9 @@ wrapt = "==2.3.0"
 xyzservices = "==2026.3.0"
 yarl = "==1.24.5"
 
-# Co-development against a local RECOVAR checkout (editable), here the relax split P4 worktree at R.
+# Co-development against a RECOVAR checkout cloned next to relax (../recovar), installed editable.
 [feature.dev.pypi-dependencies]
-recovar = { path = "../recovar_relax_split_p4_20260923", editable = true }
+recovar = { path = "../recovar", editable = true }
 
 [feature.docs.dependencies]
 python = ">=3.11, <3.12"

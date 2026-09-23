@@ -30,16 +30,30 @@ export PYTHONNOUSERSITE=1
 export CUDA_VISIBLE_DEVICES='' JAX_PLATFORMS=cpu
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 pixi install --frozen
-pixi run install-recovar
 pixi run python - <<'PYCODE'
+import json
 from pathlib import Path
-import recovar, jax
+import jax, recovar, relax
 repo = Path.cwd().resolve()
-assert Path(recovar.__file__).resolve().is_relative_to(repo)
+assert Path(relax.__file__).resolve().is_relative_to(repo)
 assert Path(jax.__file__).resolve().is_relative_to(repo / '.pixi/envs/default')
-print(recovar.__file__, jax.__file__, jax.__version__, jax.devices())
+direct_url = next(Path(recovar.__file__).resolve().parents[1].glob('recovar-*.dist-info')) / 'direct_url.json'
+print(relax.__file__, recovar.__file__, json.loads(direct_url.read_text())['vcs_info']['commit_id'])
+print(jax.__version__, jax.devices())
 PYCODE
 ```
+
+The default environment installs the RECOVAR commit pinned in `pixi.toml`. To
+change RECOVAR alongside relax, clone RECOVAR next to this checkout and use the
+`dev` environment, which installs `../recovar` editable:
+
+```bash
+git clone https://github.com/ma-gilles/recovar ../recovar   # then check out the branch you work on
+pixi install -e dev
+pixi run -e dev python -c "import recovar; print(recovar.__file__)"
+```
+
+RECOVAR changes land on RECOVAR `dev2` first; relax then re-pins to that commit.
 
 The empty GPU visibility above is for CPU setup. For GPU execution, start a
 separate process with the assigned visibility and `JAX_PLATFORMS=cuda,cpu` before
