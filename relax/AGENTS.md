@@ -130,7 +130,7 @@ touches, read its current value first, and write the new value back.
 
 The last row is the loop that closes: run a tier, collect its ledgers, extract
 the table, put the table in the PR body. `scripts/extract_em_parity_tables.py`
-exists for EM-scoped PRs precisely so that `scripts/extract_regression_tables.py`,
+exists for EM-scoped PRs precisely so that recovar's `scripts/extract_regression_tables.py`,
 which serves the SPA/ET pipeline suite, is not used instead.
 
 Two traps that hid this system for two weeks, both real, both worth checking

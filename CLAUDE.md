@@ -1,6 +1,7 @@
-# RECOVAR development contract
+# relax development contract
 
-RECOVAR estimates conformational heterogeneity from cryo-EM and cryo-ET data.
+relax is RELION in JAX. It imports RECOVAR (pinned in `pyproject.toml` and `pixi.toml`)
+for the shared numerical core; RECOVAR never imports relax.
 Engineering priorities are correctness, GPU performance, then clarity.
 
 ## Agent collaboration
@@ -68,13 +69,12 @@ substitute for them.
 
 | Affected area | Read before working |
 | --- | --- |
-| Python source and numerical conventions | [recovar/CLAUDE.md](https://github.com/ma-gilles/recovar/blob/dev/recovar/CLAUDE.md) |
+| Python source and numerical conventions | [recovar/CLAUDE.md](https://github.com/ma-gilles/recovar/blob/dev2/recovar/CLAUDE.md) (applies to relax source too) |
 | Tests, tolerances and baselines | [tests/CLAUDE.md](tests/CLAUDE.md) |
 | EM and RELION parity | [relax/AGENTS.md](relax/AGENTS.md) |
 | PPCA refinement | [relax/ppca_refinement/AGENTS.md](relax/ppca_refinement/AGENTS.md) |
-| CUDA and FFI | [recovar/cuda/CLAUDE.md](https://github.com/ma-gilles/recovar/blob/dev/recovar/cuda/CLAUDE.md) |
-| GUI | [recovar/gui_v2/CLAUDE.md](https://github.com/ma-gilles/recovar/blob/dev/recovar/gui_v2/CLAUDE.md) |
-| Documentation | [docs/CLAUDE.md](https://github.com/ma-gilles/recovar/blob/dev/docs/CLAUDE.md) |
+| CUDA and FFI | [recovar/cuda/CLAUDE.md](https://github.com/ma-gilles/recovar/blob/dev2/recovar/cuda/CLAUDE.md) (applies to `relax/cuda/` too) |
+| Documentation | [recovar docs/CLAUDE.md](https://github.com/ma-gilles/recovar/blob/dev2/docs/CLAUDE.md) (same conventions for relax `docs/`) |
 
 ## Context and work packages
 
@@ -111,7 +111,8 @@ Cost control must not reduce the scientific goal or gates.
 
 Use the checkout's frozen pixi environment. Before Python imports, select CPU
 or assigned GPU visibility and remove Python/conda contamination. Verify
-RECOVAR imports from this checkout and JAX from its `.pixi/envs/default`.
+relax imports from this checkout, and RECOVAR (at the pinned commit) and JAX from its
+`.pixi/envs/default`.
 Explicitly build and identify custom CUDA libraries before GPU qualification;
 the current runtime loader can build missing libraries automatically.
 
@@ -129,8 +130,10 @@ a genuinely new scientific objective requires a separate decision.
 
 ## Branches and delivery
 
-Work on a feature branch (`codex/<task>` for Codex), never directly on `dev`.
-Target `dev`, not the old public `main`. Preserve an explicitly pinned control.
+relax `main` is the integration branch. Feature branches are fine for isolation, but
+merge each into `main` as a fast-forward as soon as its checks pass; do not park
+finished branches. recovar changes follow "Changing recovar from relax work" above.
+Preserve an explicitly pinned control.
 Rebasing an implementation creates a new candidate that needs fresh validation.
 Never force-push unless explicitly asked. Before pushing or opening a PR, follow
 all applicable checks and table requirements in CONTRIBUTING.md and scoped guides.
@@ -140,5 +143,6 @@ limitations, reproduction commands, artifact paths, `git status --short --branch
 and `git diff HEAD --stat`. Distinguish executed, quality-accepted and
 performance-qualified results. Do not claim completion with required jobs pending.
 
-This file and root `CLAUDE.md` must remain byte-for-byte identical. The same rule
-applies to the EM AGENTS/CLAUDE pair. Check both with `cmp` after editing.
+Every `AGENTS.md` and `CLAUDE.md` in the same directory must remain byte-for-byte
+identical (root, `relax/`, `relax/ppca_refinement/`, `tests/`). Run
+`python scripts/check_agent_guides.py` after editing any of them.
