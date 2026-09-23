@@ -55,7 +55,11 @@ mass without renormalizing retained top-k mass. Rejected resume now validates
 its checkpoint before changing `run.json`; a regression confirms byte-preserved
 metadata after rejection. Against the rebased RECOVAR feature source and the
 rebuilt P5 RELION binding, the complete affected CPU selection passed
-**308/308** (8 skipped). No tolerance or baseline changed.
+**308/308** (8 skipped). After the P6 main rebase, focused PPCA, VDAM and
+CUDA-policy tests passed **157/157** (5 GPU-only skips). The RELION binding
+(SHA256 `9f212e74be4b82be750b25e1dc23d589a1191befb61b34890228227f80148f56`)
+and A100 CUDA library (SHA256 `32491776e8eb15bb7e6b6ed557f9940ab00801d3430d032a0d04895c3ae71278`)
+were rebuilt from the current source. No tolerance or baseline changed.
 
 The next gate is a bounded matched-state float32 check of the migrated source,
 then explicit checkpoint import and continuation of the same 5k trajectory toward its final update

@@ -10,7 +10,7 @@ def render_small_pilot(pilot):
     lines = [
         "## Separate 2,000-particle exploratory pilot",
         "",
-        "The [small-pilot handoff](../development/vdam_ppca_small_pilot_handoff.md) records "
+        "The [small-pilot handoff](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_small_pilot_handoff.md) records "
         "the original pair and confirmed input-sign repair. These are separate from the 20k rows above.",
         "",
         f"Seed {pilot['seed']}; {pilot['iterations']} iterations; state counts {pilot['state_counts']}. "
@@ -41,7 +41,7 @@ def render_small_pilot(pilot):
             "### Current per-state shape comparison",
             "",
             "The user clarified that common frame/hand is diagnostic, not a recovery requirement. "
-            "The [six-column panels and protocol](../development/vdam_ppca_visual_comparison.md) "
+            "The [six-column panels and protocol](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_visual_comparison.md) "
             "use independent rigid rotation/translation/reflection for both methods and "
             "Hungarian matching after all nine K3/GT fits. Older shared-frame assignments above "
             "remain historical evidence.",
@@ -75,6 +75,8 @@ def render(scorecard):
     runs = scorecard["runs"]
     lines = [
         "# VDAM/PPCA three-state pilot scorecard",
+        "",
+        "> Historical RECOVAR-source evidence. No RELAX-source 5k PPCA final quality or paired runtime is yet measured.",
         "",
         "This pilot uses 20,000 particles at box 64 and does not assess the K1/K4 completion gates.",
         "No numerical recovery threshold has been selected.",
@@ -141,7 +143,7 @@ def render(scorecard):
     ]
     if "small_pilot_2k" in scorecard:
         lines.extend([render_small_pilot(scorecard["small_pilot_2k"]), ""])
-    return "\n".join(lines)
+    return "\n".join(lines).rstrip("\n") + "\n"
 
 
 def main():
