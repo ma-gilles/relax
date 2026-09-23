@@ -79,7 +79,7 @@ BPREF_CONTRIBUTION_ORIGINAL_INDICES=${BPREF_CONTRIBUTION_ORIGINAL_INDICES:-}
 RELION_SOURCE=${VDAM_RELION_SOURCE:-/scratch/gpfs/GILLES/mg6942/relion}
 RELION_RUNTIME=${VDAM_RELION_RUNTIME:-/scratch/gpfs/GILLES/mg6942/recovar_dev/relion_k4_100k_dispatchv2_20260717}
 PIXI_PY=${PIXI_PY_OVERRIDE:-${REPO_ROOT}/.pixi/envs/default/bin/python}
-CUDA_SOURCE_BINARY=${RECOVAR_CUDA_LIB_SOURCE:-${REPO_ROOT}/recovar/cuda/libcuda_backproject.so}
+CUDA_SOURCE_BINARY=${RECOVAR_CUDA_LIB_SOURCE:-${REPO_ROOT}/relax/cuda/librelax_cuda.so}
 CUDA_BINARY=${OUTPUT_ROOT}/runtime/${SLURM_JOB_ID}/cuda/libcuda_backproject.so
 RELION_BIND_BINARY=${REPO_ROOT}/relax/relion_bind/_relion_bind_core.cpython-311-x86_64-linux-gnu.so
 RELION_OUTPUT=${OUTPUT_ROOT}/relion
@@ -322,7 +322,7 @@ export RATTLER_CACHE_DIR=${OUTPUT_ROOT}/runtime/${SLURM_JOB_ID}/rattler_cache
 export JAX_COMPILATION_CACHE_DIR=${OUTPUT_ROOT}/jax_cache
 export JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0
 export RECOVAR_EXPECTED_REPO_ROOT=${REPO_ROOT}
-export RECOVAR_CUDA_LIB=${CUDA_BINARY}
+export RECOVAR_RELAX_CUDA_LIB=${CUDA_BINARY}
 mkdir -p "${TMPDIR}" "${PIXI_HOME}" "${RATTLER_CACHE_DIR}" "${JAX_COMPILATION_CACHE_DIR}"
 mkdir -p "$(dirname "${CUDA_BINARY}")"
 cp --no-preserve=mode,ownership,timestamps "${CUDA_SOURCE_BINARY}" "${CUDA_BINARY}"

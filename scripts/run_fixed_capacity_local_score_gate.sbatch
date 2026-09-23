@@ -40,9 +40,9 @@ JOB_TMP_ROOT=/scratch/gpfs/GILLES/mg6942/tmp/${SLURM_JOB_ID}
 JOB_PIXI_HOME=/scratch/gpfs/GILLES/mg6942/pixi_home/${SLURM_JOB_ID}
 JOB_RATTLER_CACHE=/scratch/gpfs/GILLES/mg6942/rattler_cache/${SLURM_JOB_ID}
 SOURCE_FILES=(
-  recovar/cuda/Makefile
-  recovar/cuda/cuda_backproject.cu
-  recovar/cuda_backproject.py
+  relax/cuda/Makefile
+  relax/cuda/relax_kernels.cu
+  relax/cuda/kernels.py
   relax/diagnostics/parity_provenance.py
   relax/helpers/batch_planning.py
   relax/local/fixed_capacity_local.py
@@ -119,7 +119,7 @@ env | LC_ALL=C sort > "${PROVENANCE}/submission_environment.txt"
 "${CUDA_BUILD_TOOLKIT}/bin/nvcc" --version > "${PROVENANCE}/nvcc_version.txt"
 
 build_started=$(date +%s.%N)
-make -B -C "${REPO_ROOT}/recovar/cuda" \
+make -B -C "${REPO_ROOT}/relax/cuda" \
   PYTHON="${PIXI_PY}" \
   NVCC="${CUDA_BUILD_TOOLKIT}/bin/nvcc" \
   "CUDA_ARCH=${CUDA_ARCH_FLAGS}" \
@@ -133,13 +133,13 @@ printf '%s  %s\n' "${cuda_sha256}" "${CUDA_BINARY}" \
   > "${PROVENANCE}/qualified_cuda.sha256"
 
 unset PYTHONPATH PYTHONHOME CONDA_PREFIX VIRTUAL_ENV CONDA_DEFAULT_ENV JAX_PLATFORM_NAME
-unset RECOVAR_DISABLE_CUDA RECOVAR_CUDA_LIB RECOVAR_ENABLE_CUSTOM_CUDA
+unset RECOVAR_DISABLE_CUDA RECOVAR_CUDA_LIB RECOVAR_RELAX_CUDA_LIB RECOVAR_ENABLE_CUSTOM_CUDA
 unset RECOVAR_REQUIRE_CUSTOM_CUDA_FOR_TESTS
 export PYTHONNOUSERSITE=1
 export PYTHONUNBUFFERED=1
 export CUDA_VISIBLE_DEVICES=${selected_gpu_uuid}
 export RECOVAR_EXPECTED_REPO_ROOT=${REPO_ROOT}
-export RECOVAR_CUDA_LIB=${CUDA_BINARY}
+export RECOVAR_RELAX_CUDA_LIB=${CUDA_BINARY}
 export RECOVAR_REQUIRE_CUSTOM_CUDA_FOR_TESTS=1
 export RECOVAR_ENABLE_CUSTOM_CUDA=1
 export JAX_PLATFORMS=cuda,cpu
@@ -172,7 +172,7 @@ assert ".pixi/envs/default/" in str(pathlib.Path(jax.__file__).resolve())
 assert jax.default_backend() == "gpu"
 assert len(jax.devices("gpu")) == 1
 assert cuda_backproject.cuda_available(), cuda_backproject.cuda_unavailable_error()
-cuda_binary = pathlib.Path(os.environ["RECOVAR_CUDA_LIB"]).resolve()
+cuda_binary = pathlib.Path(os.environ["RECOVAR_RELAX_CUDA_LIB"]).resolve()
 assert cuda_binary.is_file()
 assert not str(cuda_binary).startswith(str(repo) + "/")
 assert_parity_ancestors()

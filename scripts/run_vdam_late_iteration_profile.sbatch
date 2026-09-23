@@ -321,7 +321,7 @@ PY
 fi
 
 build_started=$(date +%s.%N)
-make -C "${REPO_ROOT}/recovar/cuda" \
+make -C "${REPO_ROOT}/relax/cuda" \
   PYTHON="${PIXI_PY}" \
   NVCC="${CUDA_TOOLKIT}/bin/nvcc" \
   CUDA_ARCH='-gencode arch=compute_90,code=sm_90' \
@@ -354,7 +354,7 @@ export PYTHONUNBUFFERED=1
 export CUDA_VISIBLE_DEVICES=${selected_gpu_uuid}
 export CUDA_LAUNCH_BLOCKING=0
 export RECOVAR_EXPECTED_REPO_ROOT=${REPO_ROOT}
-export RECOVAR_CUDA_LIB=${CUDA_BINARY}
+export RECOVAR_RELAX_CUDA_LIB=${CUDA_BINARY}
 export RECOVAR_RELION_BIND_BUILD_DIR=${RELION_BIND_DIR}
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export JAX_COMPILATION_CACHE_DIR=${RUNTIME}/jax_cache

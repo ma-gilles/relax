@@ -41,7 +41,7 @@ export PIXI_HOME="${RUNTIME_ROOT}/pixi_home"
 export RATTLER_CACHE_DIR="${RUNTIME_ROOT}/rattler_cache"
 export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-${OUTPUT_ROOT}/jax_cache}"
 export JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS="${JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS:-0}"
-export RECOVAR_CUDA_LIB="${REPO_ROOT}/recovar/cuda/libcuda_backproject.so"
+export RECOVAR_RELAX_CUDA_LIB="${REPO_ROOT}/relax/cuda/librelax_cuda.so"
 mkdir -p "${TMPDIR}" "${PIXI_HOME}" "${RATTLER_CACHE_DIR}" "${JAX_COMPILATION_CACHE_DIR}" \
   /scratch/gpfs/GILLES/mg6942/slurmo
 if [[ -n "${RELION_ACC_DUMP_DIR:-}" ]]; then

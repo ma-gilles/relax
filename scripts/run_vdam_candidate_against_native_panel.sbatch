@@ -34,7 +34,7 @@ VDAM_WORKER_REPLAY_TOPOLOGY=${VDAM_WORKER_REPLAY_TOPOLOGY:-}
 EXPECTED_WORKER_SCHEDULE_SHA256=${EXPECTED_WORKER_SCHEDULE_SHA256:-}
 VDAM_BLOCK_CHRONOLOGY_NPZ=${VDAM_BLOCK_CHRONOLOGY_NPZ:-}
 EXPECTED_BLOCK_CHRONOLOGY_SHA256=${EXPECTED_BLOCK_CHRONOLOGY_SHA256:-}
-RECOVAR_CUDA_LIB_PATH=${RECOVAR_CUDA_LIB_OVERRIDE:-${REPO_ROOT}/recovar/cuda/libcuda_backproject.so}
+RECOVAR_CUDA_LIB_PATH=${RECOVAR_CUDA_LIB_OVERRIDE:-${REPO_ROOT}/relax/cuda/librelax_cuda.so}
 CANDIDATE_ROOT=${OUTPUT_ROOT}/${CASE_ID}
 RECOVAR_DIR=${CANDIDATE_ROOT}/recovar
 PROVENANCE_DIR=${CANDIDATE_ROOT}/provenance
@@ -163,7 +163,7 @@ export PYTHONUNBUFFERED=1
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export CUDA_LAUNCH_BLOCKING=0
 export RECOVAR_EXPECTED_REPO_ROOT=${REPO_ROOT}
-export RECOVAR_CUDA_LIB=${RECOVAR_CUDA_LIB_PATH}
+export RECOVAR_RELAX_CUDA_LIB=${RECOVAR_CUDA_LIB_PATH}
 if [[ -n "${VDAM_WORKER_SCHEDULE_NPZ}" ]]; then
     export RECOVAR_RELION_VDAM_WORKER_SCHEDULE_NPZ=${VDAM_WORKER_SCHEDULE_NPZ}
     export RECOVAR_RELION_VDAM_WORKER_REPLAY_TOPOLOGY=${VDAM_WORKER_REPLAY_TOPOLOGY}
@@ -239,7 +239,7 @@ PY
 )
 
 git -C "${REPO_ROOT}" rev-parse HEAD > "${PROVENANCE_DIR}/repo_head.txt"
-sha256sum "${RECOVAR_CUDA_LIB}" "${RELION_BIND_MATCHES[0]}" "${VDAM_SCORECARD}" \
+sha256sum "${RECOVAR_RELAX_CUDA_LIB}" "${RELION_BIND_MATCHES[0]}" "${VDAM_SCORECARD}" \
     "${FIXTURE_DIR}/particles.star" "${FIXTURE_DIR}/fixture_materialization.json" \
     "${REPO_ROOT}/scripts/vdam_gpu_selection.sh" \
     > "${PROVENANCE_DIR}/input_sha256.txt"
@@ -264,7 +264,7 @@ wall_s=$(( $(date +%s) - start_epoch ))
 test -s "${RECOVAR_DIR}/run_it200_model.star"
 test "$(git -C "${REPO_ROOT}" rev-parse HEAD)" = "${EXPECTED_REPO_HEAD}"
 test -z "$(git -C "${REPO_ROOT}" status --porcelain=v1 --untracked-files=no)"
-test "$(sha256sum "${RECOVAR_CUDA_LIB}" | awk '{print $1}')" = "${EXPECTED_CUDA_SHA256}"
+test "$(sha256sum "${RECOVAR_RELAX_CUDA_LIB}" | awk '{print $1}')" = "${EXPECTED_CUDA_SHA256}"
 vdam_verify_selected_gpu "${VISIBLE_GPU_UUID}"
 printf '{"schema":"recovar.vdam_candidate_panel_science.v1","job_id":"%s","wall_s":%d,"gpu_uuid":"%s"}\n' \
     "${SLURM_JOB_ID}" "${wall_s}" "${VISIBLE_GPU_UUID}" > "${PROVENANCE_DIR}/completion.json"

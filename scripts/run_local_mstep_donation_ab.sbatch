@@ -177,9 +177,9 @@ readonly SEALED_BUILD_HOME=${PREARM_TMP}/build_home
 readonly SEALED_PROCESS_PATH=${CUDA_RUNTIME_TOOLKIT}/bin:${REPO_ROOT}/.pixi/envs/default/bin:/usr/bin:/bin
 readonly SEALED_LD_LIBRARY_PATH=${RELION_RUNTIME}/system_dev_overlay/lib:${MPI_ROOT}/lib64:${CUDA_BUILD_TOOLKIT}/lib64:${CUDA_BUILD_TOOLKIT}/targets/x86_64-linux/lib:${CUDA_RUNTIME_TOOLKIT}/lib64:${CUDA_RUNTIME_TOOLKIT}/targets/x86_64-linux/lib
 readonly -a SOURCE_FILES=(
-  recovar/cuda/Makefile
-  recovar/cuda/cuda_backproject.cu
-  recovar/cuda_backproject.py
+  relax/cuda/Makefile
+  relax/cuda/relax_kernels.cu
+  relax/cuda/kernels.py
   relax/local/local_big_jit.py
   relax/local/local_em_engine.py
   relax/vdam/dense_adapter.py
@@ -297,7 +297,7 @@ test "${input_manifest_sha256}" = "${EXPECTED_INPUT_MANIFEST_SHA256}"
 
 /usr/bin/mkdir -p "${SEALED_BUILD_HOME}"
 /usr/bin/env -i HOME="${SEALED_BUILD_HOME}" PATH=/usr/bin:/bin LANG=C LC_ALL=C \
-  /usr/bin/make -rR -B -C "${REPO_ROOT}/recovar/cuda" \
+  /usr/bin/make -rR -B -C "${REPO_ROOT}/relax/cuda" \
   PYTHON="${PIXI_PY}" \
   NVCC="${CUDA_BUILD_TOOLKIT}/bin/nvcc" \
   CUDA_ARCH='-gencode arch=compute_90,code=sm_90' \
@@ -331,7 +331,7 @@ readonly -a SEALED_COMMON_ENV=(
   CUDA_VISIBLE_DEVICES="${selected_gpu_uuid}"
   CUDA_LAUNCH_BLOCKING=0
   RECOVAR_EXPECTED_REPO_ROOT="${REPO_ROOT}"
-  RECOVAR_CUDA_LIB="${CUDA_BINARY}"
+  RECOVAR_RELAX_CUDA_LIB="${CUDA_BINARY}"
   RECOVAR_ENABLE_CUSTOM_CUDA=1
   RECOVAR_INITIAL_MODEL_PROFILE=1
   RECOVAR_RELION_BIND_BUILD_DIR="${RELION_BIND_DIR}"

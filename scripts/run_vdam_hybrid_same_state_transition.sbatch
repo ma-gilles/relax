@@ -165,7 +165,7 @@ cp --reflink=auto "${RELION_BIND_SOURCE}" "${RELION_BIND_BINARY}"
 chmod 0755 "${RELION_BIND_BINARY}"
 
 "${NVCC}" --version > "${PROVENANCE}/nvcc_version.txt"
-make -B -C "${REPO_ROOT}/recovar/cuda" \
+make -B -C "${REPO_ROOT}/relax/cuda" \
   "PYTHON=${PIXI_PY}" \
   "NVCC=${NVCC}" \
   "CUDA_ARCH=${CUDA_ARCH_FLAGS}" \
@@ -222,8 +222,8 @@ sha256sum \
   "${REPO_ROOT}/relax/vdam/dense_adapter.py" \
   "${REPO_ROOT}/relax/vdam/driver.py" \
   "${REPO_ROOT}/relax/vdam/iteration_loop.py" \
-  "${REPO_ROOT}/recovar/cuda/cuda_backproject.cu" \
-  "${REPO_ROOT}/recovar/cuda_backproject.py" \
+  "${REPO_ROOT}/relax/cuda/relax_kernels.cu" \
+  "${REPO_ROOT}/relax/cuda/kernels.py" \
   "${ACCEPTANCE}" "${LAUNCH_MANIFEST}" "${PIXI_PY}" "${CUDA_BINARY}" \
   "${RELION_BIND_BINARY}" "${CUSPARSE_LIBRARY}" "${FIXTURE}/particles.star" \
   "${FIXTURE}/particles.128.mrcs" > "${PROVENANCE}/static_inputs.sha256"
@@ -253,7 +253,7 @@ command=(
   "LD_PRELOAD=${CUSPARSE_LIBRARY}"
   "PYTHONPATH=${REPO_ROOT}"
   "RECOVAR_CACHE_DIR="
-  "RECOVAR_CUDA_LIB=${CUDA_BINARY}"
+  "RECOVAR_RELAX_CUDA_LIB=${CUDA_BINARY}"
   "RECOVAR_EXPECTED_REPO_ROOT=${REPO_ROOT}"
   "RECOVAR_RELION_BIND_BUILD_DIR=${RELION_BIND_DIR}"
   "RECOVAR_COARSE_GAUSSIAN_GEMM_HYBRID=0"

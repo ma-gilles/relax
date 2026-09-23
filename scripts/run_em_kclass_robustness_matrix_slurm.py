@@ -1407,31 +1407,31 @@ def sbatch_directive(flag: str, value: str | None) -> str:
 
 
 def build_cuda_lib_command() -> str:
-    return """mkdir -p "$(dirname "${RECOVAR_CUDA_LIB}")"
-CUDA_LIB_TMP="${RECOVAR_CUDA_LIB}.${SLURM_JOB_ID:-$$}.tmp"
+    return """mkdir -p "$(dirname "${RECOVAR_RELAX_CUDA_LIB}")"
+CUDA_LIB_TMP="${RECOVAR_RELAX_CUDA_LIB}.${SLURM_JOB_ID:-$$}.tmp"
 export CUDA_LIB_TMP PIXI_PY
-flock "$(dirname "${RECOVAR_CUDA_LIB}")/build.lock" bash -lc '
+flock "$(dirname "${RECOVAR_RELAX_CUDA_LIB}")/build.lock" bash -lc '
   set -euo pipefail
-  if [[ -s "${RECOVAR_CUDA_LIB}" && -s "${RECOVAR_CUDA_LIB}.sha256" ]]; then
-    sha256sum --check "${RECOVAR_CUDA_LIB}.sha256"
-    echo "Reusing sealed CUDA library ${RECOVAR_CUDA_LIB}"
+  if [[ -s "${RECOVAR_RELAX_CUDA_LIB}" && -s "${RECOVAR_RELAX_CUDA_LIB}.sha256" ]]; then
+    sha256sum --check "${RECOVAR_RELAX_CUDA_LIB}.sha256"
+    echo "Reusing sealed CUDA library ${RECOVAR_RELAX_CUDA_LIB}"
     exit 0
   fi
   rm -f "${CUDA_LIB_TMP}"
-  env PYTHON="${PIXI_PY}" make -C recovar/cuda LIB="${CUDA_LIB_TMP}" all
-  mv -f "${CUDA_LIB_TMP}" "${RECOVAR_CUDA_LIB}"
-  sha256sum "${RECOVAR_CUDA_LIB}" > "${RECOVAR_CUDA_LIB}.sha256"
+  env PYTHON="${PIXI_PY}" make -C relax/cuda LIB="${CUDA_LIB_TMP}" all
+  mv -f "${CUDA_LIB_TMP}" "${RECOVAR_RELAX_CUDA_LIB}"
+  sha256sum "${RECOVAR_RELAX_CUDA_LIB}" > "${RECOVAR_RELAX_CUDA_LIB}.sha256"
 '
-sha256sum --check "${RECOVAR_CUDA_LIB}.sha256"
+sha256sum --check "${RECOVAR_RELAX_CUDA_LIB}.sha256"
 """
 
 
 def verify_cuda_lib_command() -> str:
-    return """if [[ ! -s "${RECOVAR_CUDA_LIB}" || ! -s "${RECOVAR_CUDA_LIB}.sha256" ]]; then
-  echo "ERROR: setup did not seal the shared CUDA library: ${RECOVAR_CUDA_LIB}" >&2
+    return """if [[ ! -s "${RECOVAR_RELAX_CUDA_LIB}" || ! -s "${RECOVAR_RELAX_CUDA_LIB}.sha256" ]]; then
+  echo "ERROR: setup did not seal the shared CUDA library: ${RECOVAR_RELAX_CUDA_LIB}" >&2
   exit 2
 fi
-sha256sum --check "${RECOVAR_CUDA_LIB}.sha256"
+sha256sum --check "${RECOVAR_RELAX_CUDA_LIB}.sha256"
 """
 
 
@@ -1501,10 +1501,10 @@ export PIXI_HOME="${{RUNTIME_ROOT}}/pixi_home"
 export RATTLER_CACHE_DIR="${{RUNTIME_ROOT}}/rattler_cache"
 export RECOVAR_JAX_CACHE_DIR={q(scratch_dir)}/jax_cache
 export JAX_COMPILATION_CACHE_DIR="${{RECOVAR_JAX_CACHE_DIR}}"
-export RECOVAR_CUDA_LIB={q(cuda_lib)}
+export RECOVAR_RELAX_CUDA_LIB={q(cuda_lib)}
 export RECOVAR_CUDA_CACHE_DIR={q(scratch_dir)}/cuda_cache/{job_name}_${{SLURM_JOB_ID}}
 export RECOVAR_RELION_BIND_BUILD_DIR={q(shared_relion_bind_dir)}
-mkdir -p "${{TMPDIR}}" "${{PIXI_HOME}}" "${{RATTLER_CACHE_DIR}}" "${{RECOVAR_JAX_CACHE_DIR}}" "${{RECOVAR_CUDA_CACHE_DIR}}" "$(dirname "${{RECOVAR_CUDA_LIB}}")"
+mkdir -p "${{TMPDIR}}" "${{PIXI_HOME}}" "${{RATTLER_CACHE_DIR}}" "${{RECOVAR_JAX_CACHE_DIR}}" "${{RECOVAR_CUDA_CACHE_DIR}}" "$(dirname "${{RECOVAR_RELAX_CUDA_LIB}}")"
 touch "${{RUNTIME_ROOT}}/SAFE_TO_DELETE"
 
 if [[ -f /etc/profile.d/modules.sh ]]; then
@@ -1550,7 +1550,7 @@ echo "Slurm job: ${{SLURM_JOB_ID}}"
 echo "Host: $(hostname)"
 echo "CUDA_VISIBLE_DEVICES=${{CUDA_VISIBLE_DEVICES:-}}"
 echo "TMPDIR=${{TMPDIR}}"
-echo "RECOVAR_CUDA_LIB=${{RECOVAR_CUDA_LIB}}"
+echo "RECOVAR_RELAX_CUDA_LIB=${{RECOVAR_RELAX_CUDA_LIB}}"
 echo "RECOVAR_RELION_BIND_BUILD_DIR=${{RECOVAR_RELION_BIND_BUILD_DIR}}"
 nvidia-smi --query-gpu=index,name,uuid,memory.total --format=csv,noheader || true
 """
@@ -2634,7 +2634,7 @@ def main() -> int:
                 f"EM_KCLASS_MATRIX_VENV={scratch_dir / 'venv'}",
                 f"PIXI_PY={scratch_dir / 'venv' / 'bin' / 'python'}",
                 f"EM_KCLASS_MATRIX_PIXI_PY={base_python}",
-                f"RECOVAR_CUDA_LIB={shared_cuda_lib}",
+                f"RECOVAR_RELAX_CUDA_LIB={shared_cuda_lib}",
                 f"RECOVAR_RELION_BIND_BUILD_DIR={scratch_dir / 'relion_bind_build' / 'shared'}",
                 f"EM_KCLASS_MATRIX_SETUP_PARTITION={setup_partition}",
                 f"EM_KCLASS_MATRIX_SETUP_CONSTRAINT={setup_constraint}",

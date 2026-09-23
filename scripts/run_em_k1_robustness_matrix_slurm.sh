@@ -648,11 +648,11 @@ export JAX_COMPILATION_CACHE_DIR="\${RECOVAR_JAX_CACHE_DIR}"
 # stack staging disabled unless the submitter explicitly points RECOVAR_CACHE_DIR
 # at fast local storage.
 export RECOVAR_CACHE_DIR="\${RECOVAR_CACHE_DIR-}"
-export RECOVAR_CUDA_LIB="${CUDA_LIB}"
+export RECOVAR_RELAX_CUDA_LIB="${CUDA_LIB}"
 export RECOVAR_CUDA_CACHE_DIR="${SCRATCH_DIR}/cuda_cache/${job_name}_\${SLURM_JOB_ID}"
 export RECOVAR_RELION_BIND_BUILD_DIR="${SCRATCH_DIR}/relion_bind_build/shared"
 export RELION_SRC_DIR="${RELION_SRC_DIR}"
-mkdir -p "\${TMPDIR}" "\${PIXI_HOME}" "\${RATTLER_CACHE_DIR}" "\${RECOVAR_JAX_CACHE_DIR}" "\${RECOVAR_CUDA_CACHE_DIR}" "\${RECOVAR_RELION_BIND_BUILD_DIR}" "\$(dirname "\${RECOVAR_CUDA_LIB}")"
+mkdir -p "\${TMPDIR}" "\${PIXI_HOME}" "\${RATTLER_CACHE_DIR}" "\${RECOVAR_JAX_CACHE_DIR}" "\${RECOVAR_CUDA_CACHE_DIR}" "\${RECOVAR_RELION_BIND_BUILD_DIR}" "\$(dirname "\${RECOVAR_RELAX_CUDA_LIB}")"
 
 if [[ -f /etc/profile.d/modules.sh ]]; then
   # shellcheck disable=SC1091
@@ -754,7 +754,7 @@ echo "CUDA_VISIBLE_DEVICES=\${CUDA_VISIBLE_DEVICES:-}"
 echo "TMPDIR=\${TMPDIR}"
 echo "RECOVAR_CACHE_DIR=\${RECOVAR_CACHE_DIR:-<disabled>}"
 echo "PYTHONFAULTHANDLER=\${PYTHONFAULTHANDLER}"
-echo "RECOVAR_CUDA_LIB=\${RECOVAR_CUDA_LIB}"
+echo "RECOVAR_RELAX_CUDA_LIB=\${RECOVAR_RELAX_CUDA_LIB}"
 echo "RECOVAR_RELION_BIND_BUILD_DIR=\${RECOVAR_RELION_BIND_BUILD_DIR}"
 echo "RELION_SRC_DIR=\${RELION_SRC_DIR:-<unset>}"
 echo "CUDA_HOME=\${CUDA_HOME}"
@@ -820,18 +820,18 @@ EOF
 
 write_build_cuda_lib() {
   cat <<EOF
-mkdir -p "\$(dirname "\${RECOVAR_CUDA_LIB}")"
-CUDA_LIB_TMP="\${RECOVAR_CUDA_LIB}.\${SLURM_JOB_ID:-\$\$}.tmp"
+mkdir -p "\$(dirname "\${RECOVAR_RELAX_CUDA_LIB}")"
+CUDA_LIB_TMP="\${RECOVAR_RELAX_CUDA_LIB}.\${SLURM_JOB_ID:-\$\$}.tmp"
 export CUDA_LIB_TMP PIXI_PY
 flock "${SCRATCH_DIR}/cuda/build.lock" bash -lc '
   set -euo pipefail
-  if [[ -s "\${RECOVAR_CUDA_LIB}" ]]; then
-    echo "Reusing shared CUDA library \${RECOVAR_CUDA_LIB}"
+  if [[ -s "\${RECOVAR_RELAX_CUDA_LIB}" ]]; then
+    echo "Reusing shared CUDA library \${RECOVAR_RELAX_CUDA_LIB}"
     exit 0
   fi
   rm -f "\${CUDA_LIB_TMP}"
-  env PYTHON="\${PIXI_PY}" make -C recovar/cuda LIB="\${CUDA_LIB_TMP}" all
-  mv -f "\${CUDA_LIB_TMP}" "\${RECOVAR_CUDA_LIB}"
+  env PYTHON="\${PIXI_PY}" make -C relax/cuda LIB="\${CUDA_LIB_TMP}" all
+  mv -f "\${CUDA_LIB_TMP}" "\${RECOVAR_RELAX_CUDA_LIB}"
 '
 EOF
 }

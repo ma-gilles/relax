@@ -22,7 +22,7 @@ PIXI_PY="${PIXI_PY_OVERRIDE:-${REPO_ROOT}/.pixi/envs/default/bin/python}"
 cd "${REPO_ROOT}"
 SOURCE_GIT_HEAD="$(git rev-parse HEAD)"
 EXPECTED_REPO_HEAD="${EXPECTED_REPO_HEAD:-}"
-RECOVAR_CUDA_LIB_PATH="${RECOVAR_CUDA_LIB_OVERRIDE:-${REPO_ROOT}/recovar/cuda/libcuda_backproject.so}"
+RECOVAR_CUDA_LIB_PATH="${RECOVAR_CUDA_LIB_OVERRIDE:-${REPO_ROOT}/relax/cuda/librelax_cuda.so}"
 EXPECTED_CUDA_SHA256="${EXPECTED_CUDA_SHA256:-}"
 if [[ -n "${EXPECTED_REPO_HEAD}" ]] && [[ "${SOURCE_GIT_HEAD}" != "${EXPECTED_REPO_HEAD}" ]]; then
   echo "VDAM real-data qualification source differs from EXPECTED_REPO_HEAD" >&2
@@ -68,7 +68,7 @@ export RATTLER_CACHE_DIR="${RUNTIME_ROOT}/rattler_cache"
 export RECOVAR_CACHE_DIR="${RECOVAR_CACHE_DIR-}"
 export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-${OUTPUT_ROOT}/jax_cache}"
 export JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS="${JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS:-0}"
-export RECOVAR_CUDA_LIB="${RECOVAR_CUDA_LIB_PATH}"
+export RECOVAR_RELAX_CUDA_LIB="${RECOVAR_CUDA_LIB_PATH}"
 export RECOVAR_CUDA_LIB_SHA256="${CUDA_LIBRARY_SHA256}"
 mkdir -p "${TMPDIR}" "${PIXI_HOME}" "${RATTLER_CACHE_DIR}" "${JAX_COMPILATION_CACHE_DIR}" \
   "${OUTPUT_ROOT}/relion" "${OUTPUT_ROOT}/recovar" /scratch/gpfs/GILLES/mg6942/slurmo
@@ -124,7 +124,7 @@ assert any(device.platform in {"gpu", "cuda"} for device in jax.devices())
 assert cuda_backproject.cuda_available(), cuda_backproject.cuda_unavailable_error()
 print("VDAM real-data GPU/CUDA-FFI gate passed", jax.devices())
 PY
-if [[ "$(sha256sum "${RECOVAR_CUDA_LIB}" | awk '{print $1}')" != "${CUDA_LIBRARY_SHA256}" ]]; then
+if [[ "$(sha256sum "${RECOVAR_RELAX_CUDA_LIB}" | awk '{print $1}')" != "${CUDA_LIBRARY_SHA256}" ]]; then
   echo "VDAM real-data CUDA library changed during import" >&2
   exit 2
 fi
@@ -182,7 +182,7 @@ RECOVAR_WALL_S="${SECONDS}"
 GPU_UUID_AFTER_RECOVAR="$(nvidia-smi --query-gpu=uuid --format=csv,noheader | tr -d '[:space:]')"
 test "${GPU_UUID_BEFORE}" = "${GPU_UUID_AFTER_RELION}"
 test "${GPU_UUID_BEFORE}" = "${GPU_UUID_AFTER_RECOVAR}"
-if [[ "$(sha256sum "${RECOVAR_CUDA_LIB}" | awk '{print $1}')" != "${CUDA_LIBRARY_SHA256}" ]]; then
+if [[ "$(sha256sum "${RECOVAR_RELAX_CUDA_LIB}" | awk '{print $1}')" != "${CUDA_LIBRARY_SHA256}" ]]; then
   echo "VDAM real-data CUDA library changed during science" >&2
   exit 2
 fi
@@ -246,7 +246,7 @@ report = {
     "relion_reference": relion_reference,
     "relion_wall_s": int(sys.argv[4]),
     "recovar_wall_s": int(sys.argv[5]),
-    "cuda_library": os.environ["RECOVAR_CUDA_LIB"],
+    "cuda_library": os.environ["RECOVAR_RELAX_CUDA_LIB"],
     "cuda_library_sha256": os.environ["RECOVAR_CUDA_LIB_SHA256"],
     "cuda_launch_blocking": os.environ.get("CUDA_LAUNCH_BLOCKING") == "1",
     "cuda_launch_blocking_value": os.environ.get("CUDA_LAUNCH_BLOCKING"),

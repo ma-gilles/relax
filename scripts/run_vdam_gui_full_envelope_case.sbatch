@@ -24,7 +24,7 @@ VDAM_SCORECARD=${VDAM_SCORECARD:-${REPO_ROOT}/docs/math/vdam_k1_gui_default_full
 VDAM_REPEAT_COUNT=${VDAM_REPEAT_COUNT:-4}
 RELION_REFINE=${RELION_REFINE:-/scratch/gpfs/GILLES/mg6942/relion/build_patched/bin/relion_refine}
 EXPECTED_REPO_HEAD=${EXPECTED_REPO_HEAD:-}
-RECOVAR_CUDA_LIB_PATH=${RECOVAR_CUDA_LIB_OVERRIDE:-${REPO_ROOT}/recovar/cuda/libcuda_backproject.so}
+RECOVAR_CUDA_LIB_PATH=${RECOVAR_CUDA_LIB_OVERRIDE:-${REPO_ROOT}/relax/cuda/librelax_cuda.so}
 EXPECTED_CUDA_SHA256=${EXPECTED_CUDA_SHA256:-}
 
 if [[ ! "${SLURM_ARRAY_TASK_ID}" =~ ^[0-9]+$ ]] || \
@@ -77,7 +77,7 @@ unset JAX_PLATFORMS JAX_PLATFORM_NAME RECOVAR_DISABLE_CUDA RECOVAR_CUDA_DISABLE
 export PYTHONNOUSERSITE=1
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export CUDA_LAUNCH_BLOCKING=0
-export RECOVAR_CUDA_LIB=${RECOVAR_CUDA_LIB_PATH}
+export RECOVAR_RELAX_CUDA_LIB=${RECOVAR_CUDA_LIB_PATH}
 export RECOVAR_CUDA_LIB_SHA256=${CUDA_LIBRARY_SHA256}
 export JAX_COMPILATION_CACHE_DIR=${OUTPUT_ROOT}/jax_compilation_cache
 export JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0.01
@@ -94,7 +94,7 @@ assert any(device.platform in {"gpu", "cuda"} for device in jax.devices())
 assert cuda_backproject.cuda_available(), cuda_backproject.cuda_unavailable_error()
 print("VDAM envelope GPU/CUDA-FFI gate passed", jax.devices())
 PY
-if [[ "$(sha256sum "${RECOVAR_CUDA_LIB}" | awk '{print $1}')" != "${CUDA_LIBRARY_SHA256}" ]]; then
+if [[ "$(sha256sum "${RECOVAR_RELAX_CUDA_LIB}" | awk '{print $1}')" != "${CUDA_LIBRARY_SHA256}" ]]; then
     echo "VDAM envelope CUDA library changed during import" >&2
     exit 2
 fi
@@ -134,7 +134,7 @@ for repeat_index in $(seq 2 "${VDAM_REPEAT_COUNT}"); do
         --threads 8
 done
 
-if [[ "$(sha256sum "${RECOVAR_CUDA_LIB}" | awk '{print $1}')" != "${CUDA_LIBRARY_SHA256}" ]]; then
+if [[ "$(sha256sum "${RECOVAR_RELAX_CUDA_LIB}" | awk '{print $1}')" != "${CUDA_LIBRARY_SHA256}" ]]; then
     echo "VDAM envelope CUDA library changed during science" >&2
     exit 2
 fi
@@ -178,7 +178,7 @@ report = {
     "repeat_count": repeat_count,
     "repeat_roots": repeats,
     "slurm_job_id": str(__import__("os").environ.get("SLURM_JOB_ID", "")),
-    "cuda_library": __import__("os").environ["RECOVAR_CUDA_LIB"],
+    "cuda_library": __import__("os").environ["RECOVAR_RELAX_CUDA_LIB"],
     "cuda_library_sha256": __import__("os").environ["RECOVAR_CUDA_LIB_SHA256"],
 }
 (root / "science_manifest.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")

@@ -31,7 +31,7 @@ if [[ "${AUDIT_MODE}" != transition && "${AUDIT_MODE}" != pretransition && "${AU
   echo "AUDIT_MODE must be transition, pretransition, or full" >&2
   exit 2
 fi
-CUDA_BINARY=${REPO_ROOT}/recovar/cuda/libcuda_backproject.so
+CUDA_BINARY=${REPO_ROOT}/relax/cuda/librelax_cuda.so
 DATA_DIR=${BASELINE_ROOT}/data
 RELION_DIR=${BASELINE_ROOT}/relion
 RECOVAR_DIR=${OUTPUT_ROOT}/recovar
@@ -56,7 +56,7 @@ export PYTHONUNBUFFERED=1
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export CUDA_LAUNCH_BLOCKING=0
 export RECOVAR_EXPECTED_REPO_ROOT=${REPO_ROOT}
-export RECOVAR_CUDA_LIB=${CUDA_BINARY}
+export RECOVAR_RELAX_CUDA_LIB=${CUDA_BINARY}
 if (( STOP_ITERATION >= 90 )); then
   export RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR=${OUTPUT_ROOT}/accuracy_inputs
   export RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS=90
