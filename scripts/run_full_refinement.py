@@ -1623,7 +1623,9 @@ def _find_relion_optimiser_star(args):
     With ``--relion-half-sets-from-input`` the run starts from relion_refine's
     inputs alone, so only an explicit ``--relion_optimiser`` is used: a RELION
     output found next to the data must not supply the mask, ``ini_high``,
-    ``max_significants`` or CTF flag.
+    ``max_significants`` or CTF flag. A Class3D (K>1) run given no RELION
+    state (optimiser, init/replay directory or half-set STAR) is such a
+    standalone start too.
     """
     explicit = getattr(args, "relion_optimiser", None)
     if explicit:
@@ -1631,6 +1633,12 @@ def _find_relion_optimiser_star(args):
         if p.exists():
             return p
     if getattr(args, "relion_half_sets_from_input", False):
+        return None
+    class3d_standalone = int(getattr(args, "n_classes", 1)) > 1 and not any(
+        getattr(args, name, None)
+        for name in ("relion_init_dir", "perturb_replay_relion_dir", "relion_half_sets")
+    )
+    if class3d_standalone:
         return None
 
     search_dirs = []

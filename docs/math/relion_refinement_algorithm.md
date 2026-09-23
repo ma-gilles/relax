@@ -67,6 +67,12 @@ any RELION output. Each piece is opt-in until its default is decided:
   `relion_refine_mpi`'s follower-local scales
   ([`relion_worker_scale`](../../relax/relion/relion_worker_scale.py)) needs a
   captured dispatch schedule and stays a debug replay tool.
+- No RELION output: without `--relion_optimiser`, `--relion_init_dir`,
+  `--perturb_replay_relion_dir` or `--relion_half_sets`, a Class3D run does not
+  pick up a RELION optimiser STAR found next to the data
+  ([`_find_relion_optimiser_star`](../../scripts/run_full_refinement.py)). The
+  mask, `ini_high` and `max_significants` then come from `--particle_diameter_ang`,
+  `--apply-initial-lowpass --init_resolution` and relion_refine's `--maxsig -1`.
 
 This page describes RECOVAR's current dense-volume refinement implementation,
 including its K-class and exact local-search routes. Function names identify
