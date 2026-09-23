@@ -5,7 +5,7 @@ RELION in JAX.
 ## Install (development)
 
 relax depends on [RECOVAR](https://github.com/ma-gilles/recovar) and pins one
-RECOVAR commit in `pyproject.toml` and `pixi.toml`.
+RECOVAR commit in `pixi.toml`.
 
 ```bash
 pixi install
@@ -21,6 +21,4 @@ relax build_cuda
 relax build_relion_bind
 ```
 
-## License
-
-GPL-2.0-or-later; see `LICENSE`.
+License: GPL-2.0-or-later
