@@ -8,6 +8,7 @@ import pytest
 
 from relax.relion.input_poses import (
     _add_initial_pose_source_argument,
+    _initial_corrections_from_norm,
     _load_input_star_class3d_translations,
     _load_input_star_previous_best_poses,
     _resolve_input_star_pose_seed,
@@ -127,6 +128,58 @@ def test_input_star_pose_seed_sets_absent_angles_to_zero_like_relion():
         seed["previous_best_rotation_eulers"][0],
         np.asarray([[0.0, 31.0, 0.0], [0.0, 11.0, 0.0]], dtype=np.float32),
     )
+
+
+def test_input_star_norm_corrections_follow_half_local_order():
+    input_particles, halfset_particles = _particle_tables()
+    input_particles["rlnNormCorrection"] = [0.5, 0.8, 1.25, 2.0]
+
+    seed = _load_input_star_previous_best_poses(
+        input_particles,
+        halfset_particles,
+        half1_idx=np.asarray([2, 0]),
+        half2_idx=np.asarray([3, 1]),
+        voxel_size=1.0,
+    )
+
+    np.testing.assert_array_equal(seed["norm_corrections"][0], np.asarray([1.25, 0.5]))
+    np.testing.assert_array_equal(seed["norm_corrections"][1], np.asarray([2.0, 0.8]))
+    image_corrections, scale_corrections = _initial_corrections_from_norm(seed["norm_corrections"])
+    np.testing.assert_array_equal(image_corrections[0], np.asarray([0.8, 2.0], dtype=np.float32))
+    np.testing.assert_array_equal(image_corrections[1], np.asarray([0.5, 1.25], dtype=np.float32))
+    for half in scale_corrections:
+        np.testing.assert_array_equal(half, np.ones(2, dtype=np.float32))
+
+
+def test_input_star_without_norm_corrections_starts_at_unit_like_relion():
+    input_particles, halfset_particles = _particle_tables()
+
+    seed = _load_input_star_previous_best_poses(
+        input_particles,
+        halfset_particles,
+        half1_idx=np.asarray([2, 0]),
+        half2_idx=np.asarray([3, 1]),
+        voxel_size=1.0,
+    )
+
+    for half in seed["norm_corrections"]:
+        np.testing.assert_array_equal(half, np.ones(2))
+    assert _initial_corrections_from_norm(seed["norm_corrections"]) == (None, None)
+
+
+@pytest.mark.parametrize("bad_value", [0.0, -1.0, np.nan])
+def test_input_star_norm_corrections_reject_nonpositive_or_nonfinite(bad_value):
+    input_particles, halfset_particles = _particle_tables()
+    input_particles["rlnNormCorrection"] = [1.0, bad_value, 1.0, 1.0]
+
+    with pytest.raises(ValueError, match="norm-correction|rlnNormCorrection"):
+        _load_input_star_previous_best_poses(
+            input_particles,
+            halfset_particles,
+            half1_idx=np.asarray([2, 0]),
+            half2_idx=np.asarray([3, 1]),
+            voxel_size=1.0,
+        )
 
 
 def test_initial_pose_source_cli_defaults_to_fresh_k1_halfset_auto():

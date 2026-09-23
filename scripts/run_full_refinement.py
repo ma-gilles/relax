@@ -4310,6 +4310,8 @@ def main():
     initial_pose_source_path = None
     initial_pose_source_sha256 = None
     init_previous_best_poses = None
+    initial_image_corrections = None
+    initial_scale_corrections = None
     if frozen_boundary is not None:
         init_previous_best_poses = {
             "iteration": f"{frozen_boundary.completed_relion_iteration - 1:03d}",
@@ -4384,12 +4386,15 @@ def main():
             )
         except (TypeError, ValueError) as exc:
             raise SystemExit(f"Invalid input-STAR pose initialization: {exc}") from exc
+        initial_image_corrections, initial_scale_corrections = input_poses._initial_corrections_from_norm(
+            init_previous_best_poses["norm_corrections"],
+        )
         resolved_initial_pose_source = "input_star"
         initial_pose_source_path = input_pose_path
         initial_pose_source_sha256 = _sha256_file(input_pose_path)
         logger.info(
             "Production fresh-run pose initialization: source=%s sha256=%s "
-            "translation_units=%s half_sizes=%s",
+            "translation_units=%s half_sizes=%s norm_corrections=%s",
             input_pose_path,
             initial_pose_source_sha256,
             init_previous_best_poses["translation_units"],
@@ -4397,6 +4402,7 @@ def main():
                 int(arr.shape[0])
                 for arr in init_previous_best_poses["previous_best_rotation_eulers"]
             ],
+            "unit" if initial_image_corrections is None else "from input rlnNormCorrection",
         )
 
     state_swap_probe = build_state_swap_probe(
@@ -4527,10 +4533,10 @@ def main():
                     else init_previous_best_poses["previous_best_rotation_eulers"]
                 ),
                 init_image_corrections=(
-                    None if frozen_boundary is None else frozen_boundary.image_corrections
+                    initial_image_corrections if frozen_boundary is None else frozen_boundary.image_corrections
                 ),
                 init_scale_corrections=(
-                    None if frozen_boundary is None else frozen_boundary.scale_corrections
+                    initial_scale_corrections if frozen_boundary is None else frozen_boundary.scale_corrections
                 ),
                 init_direction_prior=(
                     None if frozen_boundary is None else frozen_boundary.direction_prior_per_half

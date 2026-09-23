@@ -1,4 +1,4 @@
-"""Input-STAR pose initialization in matched half-local particle order."""
+"""Input-STAR pose and norm-correction initialization in matched half-local particle order."""
 
 import argparse
 
@@ -69,14 +69,15 @@ def _load_input_star_previous_best_poses(
     *,
     voxel_size: float,
 ):
-    """Load deposited poses in the exact half-local order used by refinement.
+    """Load deposited poses and norm corrections in the half-local refinement order.
 
     ``half1_idx`` and ``half2_idx`` index the RECOVAR input particle table,
     whereas ``--relion_half_sets`` may be in a different row order.  Bind the
     two tables by full RELION image identity and fail closed if the supplied
     split is stale, incomplete, or inconsistent with the half-local layout.
     Translations are returned in pixels, matching ``ReplayState`` and RELION's
-    previous-best-pose convention.
+    previous-best-pose convention. Norm corrections are float64 and 1 when
+    the input STAR has no ``rlnNormCorrection``, as in relion_refine.
     """
 
     input_rows = relion_metadata._particle_identity_rows(
@@ -165,6 +166,18 @@ def _load_input_star_previous_best_poses(
         voxel_size=voxel_size,
     )
 
+    # relion_refine reads rlnNormCorrection as each particle's starting norm
+    # correction and uses 1 when the label is absent (exp_model.cpp:1112,1145;
+    # ml_optimiser.cpp:12376-12377).
+    if "rlnNormCorrection" in input_particles.columns:
+        norm_corrections = _input_numeric_columns(
+            input_particles, ("rlnNormCorrection",), field="norm-correction"
+        )[:, 0]
+        if np.any(norm_corrections <= 0.0):
+            raise ValueError("RECOVAR input STAR rlnNormCorrection values must be positive")
+    else:
+        norm_corrections = np.ones(n_particles, dtype=np.float64)
+
     eulers_per_half = [
         np.ascontiguousarray(eulers[indices], dtype=np.float32)
         for indices in half_indices
@@ -189,6 +202,10 @@ def _load_input_star_previous_best_poses(
         "previous_best_rotation_eulers": eulers_per_half,
         "previous_best_translations": translations_per_half,
         "translation_units": translation_units,
+        "norm_corrections": [
+            np.ascontiguousarray(norm_corrections[indices], dtype=np.float64)
+            for indices in half_indices
+        ],
     }
 
 
@@ -220,6 +237,25 @@ def _load_input_star_class3d_translations(input_particles, rows, *, voxel_size: 
         "previous_best_translations": [selected, np.empty((0, 2), dtype=np.float32)],
         "translation_units": translation_units,
     }
+
+
+def _initial_corrections_from_norm(norm_corrections_per_half):
+    """Return the start-up ``(image_corrections, scale_corrections)`` half pairs.
+
+    RELION starts ``avg_norm_correction`` at 1 (ml_optimiser.cpp:1268) and every
+    group scale at 1, so the scoring operand ``(avg_norm / normcorr) * scale``
+    is ``1 / normcorr`` and the scale operand is 1. Unit norms return
+    ``(None, None)``, the refinement's representation of unit corrections.
+    """
+
+    halves = [np.asarray(values, dtype=np.float64).reshape(-1) for values in norm_corrections_per_half]
+    if len(halves) != 2:
+        raise ValueError("norm corrections must be a two-half pair")
+    if all(np.all(half == 1.0) for half in halves):
+        return None, None
+    image_corrections = [np.asarray(1.0 / half, dtype=np.float32) for half in halves]
+    scale_corrections = [np.ones(half.shape, dtype=np.float32) for half in halves]
+    return image_corrections, scale_corrections
 
 
 def _add_initial_pose_source_argument(parser: argparse.ArgumentParser) -> None:
