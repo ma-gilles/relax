@@ -66,7 +66,7 @@ from relax.sampling import (
     rotation_grid_size,
 )
 
-logger = logging.getLogger("recovar.em.dense.half_scoring")
+logger = logging.getLogger("relax.dense.half_scoring")
 
 
 def _expand_significant_samples_to_full_parent_translations(

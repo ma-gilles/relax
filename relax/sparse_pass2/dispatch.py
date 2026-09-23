@@ -7,7 +7,7 @@ import numpy as np
 from relax.reference.sparse_pass2 import _compute_pass2_stats_sparse_perimage_reference
 
 # Preserve the category consumed by existing run-log collectors.
-logger = logging.getLogger("recovar.em.helpers.oversampling")
+logger = logging.getLogger("relax.helpers.oversampling")
 
 
 def compute_pass2_stats_sparse(

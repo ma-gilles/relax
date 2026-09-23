@@ -9,7 +9,7 @@ from relax.helpers.oversampling import _map_translation_log_prior_to_fine_grid
 from relax.helpers.types import SparsePass2Output, make_noise_stats, make_relion_stats
 
 # Preserve the category consumed by existing run-log collectors.
-logger = logging.getLogger("recovar.em.helpers.oversampling")
+logger = logging.getLogger("relax.helpers.oversampling")
 
 
 def _compute_pass2_stats_sparse_perimage_reference(

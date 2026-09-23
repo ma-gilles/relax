@@ -1080,7 +1080,7 @@ def test_follower_replay_completion_returns_copies_and_logs_after_validation(cap
         source="completion accounting",
     )
     observed = np.asarray([2, 4], dtype=np.int64)
-    completion_logger = logging.getLogger("recovar.test.follower_completion")
+    completion_logger = logging.getLogger("relax.test.follower_completion")
     caplog.set_level(logging.INFO, logger=completion_logger.name)
 
     requested, applied = _finalize_relion_follower_scale_replay_telemetry(
@@ -1105,7 +1105,7 @@ def test_follower_replay_completion_never_logs_success_for_invalid_accounting(ca
         **_REPLAY_KWARGS,
         source="incomplete accounting",
     )
-    completion_logger = logging.getLogger("recovar.test.follower_completion")
+    completion_logger = logging.getLogger("relax.test.follower_completion")
     caplog.set_level(logging.INFO, logger=completion_logger.name)
 
     for observed in ([], [2], [4, 2], [2, 2, 4], [2, 3, 4], [2.0, 4.0]):
