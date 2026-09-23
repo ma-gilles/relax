@@ -8,7 +8,7 @@ dynamic = ["version"]
 authors = [
   { name = "Marc Aurele Gilles", email = "gilles@princeton.edu" }
 ]
-description = "relax: RELION-style cryo-EM refinement in JAX, built on RECOVAR"
+description = "relax: RELION in JAX"
 readme = "README.md"
 license = "GPL-2.0-or-later"
 license-files = ["LICENSE"]
