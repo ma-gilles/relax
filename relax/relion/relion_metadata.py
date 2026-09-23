@@ -289,6 +289,42 @@ def _parse_relion_cli_ini_high(text):
 
 
 
+def read_relion_reference_star(ref_star_path):
+    """Return the reference map paths and class distribution of a ``--ref`` STAR.
+
+    relion_refine reads ``_rlnReferenceImage`` from the ``model_classes`` table
+    (or the first table carrying it) and sets K to its row count
+    (MlModel::initialiseFromImages, ml_model.cpp:877-936). A fresh run then
+    starts from ``pdf_class = 1/K`` (MlModel::initialise, ml_model.cpp:53):
+    ``_rlnClassDistribution`` is returned for reporting only, because RELION
+    reads it solely from a model STAR on continuation (ml_model.cpp:248).
+    Relative map paths are resolved against the STAR's directory, which is
+    relion_refine's working directory in the RELION reference runs.
+    """
+    import starfile
+
+    ref_star_path = Path(ref_star_path)
+    tables = starfile.read(ref_star_path, always_dict=True)
+    ordered = [tables["model_classes"]] if "model_classes" in tables else []
+    ordered += [table for name, table in tables.items() if name != "model_classes"]
+    table = next(
+        (table for table in ordered if hasattr(table, "columns") and "rlnReferenceImage" in table.columns),
+        None,
+    )
+    if table is None:
+        raise ValueError(f"--ref STAR has no _rlnReferenceImage column: {ref_star_path}")
+    paths = []
+    for name in table["rlnReferenceImage"].astype(str):
+        path = Path(name)
+        paths.append(path if path.is_absolute() else ref_star_path.parent / path)
+    distribution = (
+        np.asarray(table["rlnClassDistribution"], dtype=np.float64)
+        if "rlnClassDistribution" in table.columns
+        else None
+    )
+    return paths, distribution
+
+
 def _read_relion_mrc_model_pixel_size(path):
     """Read RELION's binary64 sampling rate from MRC cell length/grid size.
 

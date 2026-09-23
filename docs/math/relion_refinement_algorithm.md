@@ -42,6 +42,14 @@ any RELION output. Each piece is opt-in until its default is decided:
   (`_kclass_firstiter_translation_seed`, from `run_it000_data.star`) is kept
   for debug comparison; on the K4 50k/256 fixture the two are bitwise equal, and
   on EMPIAR-10097 (non-zero origins) the input origins equal `run_it000`'s.
+- References and class distribution: `--ref_star` reads relion_refine's `--ref`
+  STAR ([`read_relion_reference_star`](../../relax/relion/relion_metadata.py));
+  its maps are RELION-frame and load with `load_relion_volume`. A fresh run
+  starts from `pdf_class = 1/K` whatever `_rlnClassDistribution` says
+  (`MlModel::initialise`, `ml_model.cpp:53`; `initialiseFromImages` reads only
+  `_rlnReferenceImage`). A RELION 5.0.1 `--iter 0` run on the K4 5k/128
+  fixture with a 0.7/0.1/0.1/0.1 `--ref` STAR wrote 0.25 for every class in
+  `run_it000_model.star`.
 
 This page describes RECOVAR's current dense-volume refinement implementation,
 including its K-class and exact local-search routes. Function names identify

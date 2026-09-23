@@ -2313,6 +2313,15 @@ def _parse_args(argv=None):
         "<data_dir>/reference_init_class00{1..K}.mrc when omitted.",
     )
     parser.add_argument(
+        "--ref_star",
+        default=None,
+        help="relion_refine's --ref STAR for Class3D: the _rlnReferenceImage maps "
+        "(RELION-frame MRCs, relative paths resolved against the STAR's directory) "
+        "are the K initial references, K must equal --n_classes, and the class "
+        "distribution starts at 1/K as in relion_refine (a _rlnClassDistribution "
+        "column is not read). Exclusive with --init_class_volumes.",
+    )
+    parser.add_argument(
         "--init_volume",
         default=None,
         help=(
@@ -2694,6 +2703,8 @@ def main():
     n_images = ds.n_units
     if args.n_classes < 1:
         raise SystemExit(f"--n_classes must be >= 1, got {args.n_classes}")
+    if args.ref_star is not None and args.n_classes == 1:
+        raise SystemExit("--ref_star is the Class3D (K>1) reference list; use --init_volume for K=1")
 
     import starfile as _starfile
 
@@ -3421,7 +3432,24 @@ def main():
             relion_model_pixel_size,
         )
     else:
-        if args.init_class_volumes:
+        load_class_volume = _load_mrc
+        if args.ref_star is not None:
+            if args.init_class_volumes:
+                raise SystemExit("--ref_star and --init_class_volumes are exclusive")
+            from recovar.utils.helpers import load_relion_volume
+
+            class_paths, star_distribution = relion_metadata.read_relion_reference_star(args.ref_star)
+            class_paths = [str(p) for p in class_paths]
+            load_class_volume = load_relion_volume
+            if star_distribution is not None and not np.allclose(
+                star_distribution, 1.0 / len(class_paths), rtol=0.0, atol=1e-6
+            ):
+                logger.warning(
+                    "--ref_star rlnClassDistribution %s is not read; relion_refine starts "
+                    "a fresh Class3D run from 1/K",
+                    star_distribution.tolist(),
+                )
+        elif args.init_class_volumes:
             class_paths = [p.strip() for p in args.init_class_volumes.split(",")]
         else:
             class_paths = [
@@ -3432,7 +3460,7 @@ def main():
         per_class_ft = []
         per_class_real_for_projector = []
         for k, p in enumerate(class_paths):
-            vol_real = _load_mrc(p).astype(_init_volume_dtype)
+            vol_real = np.asarray(load_class_volume(p)).astype(_init_volume_dtype)
             assert vol_real.shape == ds.volume_shape, (
                 f"Class {k + 1} volume shape mismatch at {p}: {vol_real.shape} vs {ds.volume_shape}"
             )
@@ -3463,7 +3491,7 @@ def main():
             )
         # For downstream init_PS estimation, use class-1 as the representative
         # (K-class noise/prior bootstrap currently uses a single spectrum).
-        init_vol_real = _load_mrc(class_paths[0]).astype(_init_volume_dtype)
+        init_vol_real = np.asarray(load_class_volume(class_paths[0])).astype(_init_volume_dtype)
 
     # ---- Set up rotation and translation grids ----
     from relax.sampling import get_translation_grid, rotation_grid_size
