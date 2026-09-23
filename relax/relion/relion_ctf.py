@@ -14,8 +14,8 @@ from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
-
 from recovar.data_io.starfile import star_column
+
 from relax.helpers.batch_fetch import original_image_indices
 
 _RELION_EXACT_CTF_SOURCE_CACHE: dict[tuple[str, tuple[int, int]], dict] = {}
@@ -168,6 +168,7 @@ def _relion_exact_ctf_half_from_source_star_host(
     cache = _RELION_EXACT_CTF_SOURCE_CACHE.get(cache_key)
     if cache is None:
         from recovar.data_io.starfile import read_star
+
         from relax.relion_bind import _relion_bind_core as relion_bind
 
         particles, optics = read_star(str(source_path))

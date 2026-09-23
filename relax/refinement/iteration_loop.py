@@ -20,10 +20,10 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar import utils
 from recovar.core import fourier_transform_utils
 from recovar.data_io import cryoem_dataset
+
 from relax import sampling
 from relax.classification.k_class_inputs import _select_projector_half_for_class
 from relax.dense.score_outputs import (

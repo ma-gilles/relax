@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from recovar.utils.helpers import R_to_relion, recovar_volume_to_relion
 
 from relax import sampling
 from relax.helpers.convergence import (
@@ -26,7 +27,6 @@ from relax.helpers.expected_accuracy import (
 )
 from relax.vdam.native_options import InitialModelDefaults, NativeInitialModelOptions
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
-from recovar.utils.helpers import R_to_relion, recovar_volume_to_relion
 
 RELION_INITIALMODEL_LOCAL_SEARCH_HEALPIX_ORDER = 4
 

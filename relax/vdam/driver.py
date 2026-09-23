@@ -11,9 +11,9 @@ import os
 from dataclasses import dataclass, replace
 
 import numpy as np
-
 from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.data_io.starfile import read_star
+
 from relax.diagnostics.vdam_mstep_replay import (
     INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV,
     _maybe_replay_iteration_references,

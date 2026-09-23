@@ -7,8 +7,8 @@ from dataclasses import dataclass
 
 import jax.numpy as jnp
 import numpy as np
-
 import recovar.core.fourier_transform_utils as fourier_transform_utils
+
 from relax.helpers.deterministic_reduce import deterministic_reductions_enabled, fixed_order_segment_sum
 
 

@@ -12,6 +12,7 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
+from recovar.utils.nvtx_shim import nvtx
 
 from relax.classification.k1_local_pass2 import (
     k1_local_pass2_engine_selected,
@@ -50,7 +51,6 @@ from relax.helpers.types import NoiseStats, RelionStats, make_relion_stats
 from relax.local.local_em_engine import run_local_em_exact
 from relax.local.local_layout import LocalHypothesisLayout
 from relax.scoring.significant_samples import ComplementSignificantSampleIndices, significant_sample_count
-from recovar.utils.nvtx_shim import nvtx
 
 logger = logging.getLogger(__name__)
 NVTX_DOMAIN_EM = "recovar_em"

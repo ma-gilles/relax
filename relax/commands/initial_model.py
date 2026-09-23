@@ -460,7 +460,6 @@ def _configure_jax_compilation_cache(*, enabled: bool, requested_dir: str) -> di
 
 def _require_custom_cuda_runtime() -> dict[str, object]:
     import jax
-
     import recovar.cuda_backproject as cuda_backproject
     from recovar.core import slicing
 

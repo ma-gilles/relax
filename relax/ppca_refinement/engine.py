@@ -14,7 +14,6 @@ from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
-
 from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.ppca.pose_marginal import compute_ppca_pose_scores_and_moments_no_contrast
 from recovar.ppca.triangular import tri_size as _tri_size

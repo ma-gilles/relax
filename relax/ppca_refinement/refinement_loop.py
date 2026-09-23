@@ -7,8 +7,9 @@ from typing import Callable
 
 import jax.numpy as jnp
 import numpy as np
-
 import recovar.core.fourier_transform_utils as ftu
+from recovar.reconstruction import regularization
+
 from relax.ppca_refinement.config import (
     GeometryConfig,
     PoseSelectionConfig,
@@ -23,7 +24,6 @@ from relax.ppca_refinement.schedule import (
     loading_subspace_agreement,
 )
 from relax.ppca_refinement.state import PoseMarginalPPCAEMState
-from recovar.reconstruction import regularization
 
 
 @dataclass(frozen=True)

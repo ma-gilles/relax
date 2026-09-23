@@ -24,8 +24,8 @@ from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
-
 import recovar.core.fourier_transform_utils as ftu
+
 from relax.helpers.shape_buckets import round_up_to_multiple
 
 # Representative sizes kept for explicit callers that still want a bounded set.

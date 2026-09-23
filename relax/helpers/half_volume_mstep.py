@@ -9,7 +9,6 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 import recovar.core.fourier_transform_utils as fourier_transform_utils
 
 _RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS = 200_000_000

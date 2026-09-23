@@ -16,8 +16,8 @@ from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
-
 from recovar import utils
+
 from relax.helpers.convergence import healpix_angular_step
 from relax.helpers.env_flags import parse_env_flag_or_false
 from relax.helpers.orientation_priors import (

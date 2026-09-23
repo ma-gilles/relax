@@ -16,6 +16,7 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
+from recovar.utils.nvtx_shim import nvtx
 
 from relax.diagnostics.coarse_gaussian_diagnostics import (
     _COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_INDICES_ENV,
@@ -114,7 +115,6 @@ from relax.scoring.significant_samples import compact_significant_sample_indices
 from relax.sparse_pass2.resident_significance import (
     coarse_significance_device_requested,
 )
-from recovar.utils.nvtx_shim import nvtx
 
 _SIGNIFICANCE_SCORE_CACHE_ENV = "RECOVAR_SIGNIFICANCE_SCORE_CACHE"
 _SIGNIFICANCE_SCORE_CACHE_MAX_GB_ENV = "RECOVAR_SIGNIFICANCE_SCORE_CACHE_MAX_GB"
@@ -992,6 +992,8 @@ def _compute_k_class_significance_batched(
 
     from recovar import core
     from recovar.core.configs import ForwardModelConfig
+    from recovar.reconstruction import noise as noise_utils
+
     from relax.helpers.fourier_window import make_fourier_window_spec, relion_fftw_order_for_square_score_window
     from relax.helpers.half_spectrum import make_half_image_weights, make_scoring_half_image_weights
     from relax.helpers.image_shifts import apply_relion_integer_pre_shifts, tiled_half_image_phase_factors
@@ -1018,7 +1020,6 @@ def _compute_k_class_significance_batched(
         _relion_coarse_normalized_cc_rescore,
         _update_logsumexp,
     )
-    from recovar.reconstruction import noise as noise_utils
 
     score_mode = str(score_mode)
     if score_mode not in {"gaussian", "normalized_cc"}:
@@ -1653,6 +1654,7 @@ def _compute_k_class_significance_batched(
                 f"translations, got {n_trans}"
             )
         from recovar import cuda_backproject
+
         from relax.helpers.projection import relion_projector_half_to_texture_full
         from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star
         from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
@@ -1989,6 +1991,7 @@ def _compute_k_class_significance_batched(
                 "half-spectrum scoring",
             )
         from recovar import cuda_backproject
+
         from relax.helpers.projection import relion_projector_half_to_texture_full
         from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star
         from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32

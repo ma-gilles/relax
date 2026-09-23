@@ -17,8 +17,8 @@ import time
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar.core import fourier_transform_utils, mask
+
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
 from relax.helpers.orientation_priors import (
     class_weights_from_direction_prior,
@@ -495,8 +495,9 @@ def _reconstruct_volume_eager(
     letting the local exact path keep its accumulators in packed half-volume
     layout until the final iDFT boundary.
     """
-    from relax.reconstruction import relion_functions_relion
     from recovar.reconstruction import relion_functions
+
+    from relax.reconstruction import relion_functions_relion
 
     Ft_ctf, Ft_y = _pack_compact_full_accumulators_for_large_relion_ifft(
         Ft_ctf,

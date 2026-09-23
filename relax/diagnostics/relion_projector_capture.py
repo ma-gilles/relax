@@ -12,7 +12,6 @@ import struct
 from pathlib import Path
 
 import numpy as np
-
 from recovar.utils.file_hash import sha256_file
 
 STATE_RE = re.compile(

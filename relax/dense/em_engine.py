@@ -17,8 +17,10 @@ from dataclasses import dataclass
 
 import jax.numpy as jnp
 import numpy as np
-
 from recovar.core.configs import ForwardModelConfig
+from recovar.reconstruction import noise as noise_utils
+from recovar.utils.nvtx_shim import nvtx
+
 from relax.dense.dense_big_jit import run_dense_bucket_big_jit
 from relax.diagnostics.local_debug import (
     dense_score_dump_label_suffix,
@@ -72,8 +74,6 @@ from relax.scoring.scoring import (
     _update_logsumexp,
     _winner_take_all_probs_for_block,
 )
-from recovar.reconstruction import noise as noise_utils
-from recovar.utils.nvtx_shim import nvtx
 
 logger = logging.getLogger(__name__)
 NVTX_DOMAIN_EM = "recovar_em"

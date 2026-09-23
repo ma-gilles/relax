@@ -20,7 +20,6 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar.core import fourier_transform_utils as ftu
 
 PPCA_POSTPROCESS_HEURISTIC_WARNING = "heuristic_post_solve_mask_grid_correction_not_masked_pcg_objective"

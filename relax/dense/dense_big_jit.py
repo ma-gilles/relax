@@ -12,8 +12,8 @@ from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
-
 from recovar import core
+
 from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.projection import DEFAULT_PROJECTION_MAX_R, compute_noise_block, project_half_spectrum
 from relax.scoring.score_constraints import apply_dense_score_constraints

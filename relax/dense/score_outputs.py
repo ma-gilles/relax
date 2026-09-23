@@ -10,8 +10,8 @@ from dataclasses import dataclass, field
 
 import jax
 import numpy as np
-
 from recovar import utils
+
 from relax.helpers.types import make_relion_stats
 
 

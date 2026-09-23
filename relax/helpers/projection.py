@@ -11,9 +11,9 @@ from types import SimpleNamespace
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar import core
 from recovar.cuda_backproject import cuda_available as _cuda_projection_available
+
 from relax.cuda.kernels import project_indexed
 from relax.helpers.env_flags import parse_env_strict_flag
 from relax.helpers.half_spectrum import bin_shell_values_jax

@@ -4,7 +4,6 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar import core
 from recovar.core import fourier_transform_utils
 from recovar.core.configs import ForwardModelConfig

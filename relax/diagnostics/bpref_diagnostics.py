@@ -15,12 +15,12 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import numpy as np
+from recovar.utils.file_hash import sha256_file
 
 from relax.helpers.batch_fetch import original_image_indices
 from relax.helpers.env_flags import parse_env_flag, parse_env_int_set
 from relax.helpers.preprocessing import image_preprocess_backend, resolve_image_mask_for_half_preprocess
 from relax.local.local_backprojection import relion_x_half_sequential_translation_reduction_enabled
-from recovar.utils.file_hash import sha256_file
 
 _BPREF_MEMBERSHIP_DUMP_DIR_ENV = "RECOVAR_BPREF_MEMBERSHIP_DUMP_DIR"
 _BPREF_MEMBERSHIP_DUMP_ITERATION_ENV = "RECOVAR_BPREF_MEMBERSHIP_DUMP_ITERATION"

@@ -9,10 +9,10 @@ from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
+from recovar.utils.helpers import write_relion_mrc
 
 from relax.relion.initial_model_io import _write_data_star, _write_model_star
 from relax.vdam.state import InitialModelState, NativeParticleState
-from recovar.utils.helpers import write_relion_mrc
 
 
 def _initial_model_mrc_from_prefix(outputname: str) -> str:

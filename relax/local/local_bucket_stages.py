@@ -17,6 +17,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 import numpy as np
+from recovar.utils.nvtx_shim import nvtx
 
 from relax.helpers.adjoint import adjoint_slice_volume_maybe_windowed as _adjoint_slice_volume_maybe_windowed
 from relax.helpers.adjoint import adjoint_slice_volume_windowed_donating as _adjoint_slice_volume_windowed_donating
@@ -58,7 +59,6 @@ from relax.local.local_layout import LocalBucketSpec, _exact_bucket_rotation_siz
 from relax.relion.relion_projector_setup import prepare_local_projector_slab
 from relax.scoring import compact_candidates
 from relax.sparse_pass2 import sparse_pass2_bucketed
-from recovar.utils.nvtx_shim import nvtx
 
 logger = logging.getLogger(__name__)
 

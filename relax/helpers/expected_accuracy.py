@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import Any, Literal, NamedTuple
 
 import numpy as np
-
 from recovar.core.ctf import CTFParamIndex
 
 logger = logging.getLogger(__name__)

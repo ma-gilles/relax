@@ -11,9 +11,10 @@ import time
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 import recovar.core.fourier_transform_utils as fourier_transform_utils
 from recovar.core.configs import ForwardModelConfig
+from recovar.reconstruction import noise as noise_utils
+
 from relax.dense.deferred_noise_pack import pack_noise_pixel_capacity
 from relax.diagnostics import bpref_diagnostics, initial_model_capture, vdam_replay
 from relax.diagnostics.local_bpref_capture import (
@@ -222,7 +223,6 @@ from relax.relion import relion_ctf
 from relax.relion.relion_projector_setup import prepare_local_projector_slab
 from relax.sparse_pass2 import sparse_pass2_bucketed
 from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle, _make_stable_relion_wavg_rectangle
-from recovar.reconstruction import noise as noise_utils
 
 logger = logging.getLogger(__name__)
 

@@ -13,6 +13,8 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 import numpy as np
+from recovar.reconstruction.noise import make_radial_noise
+from recovar.utils.helpers import get_gpu_memory_total
 
 from relax.classification.k_class import run_dense_k_class_em
 from relax.helpers.orientation_priors import (
@@ -37,8 +39,6 @@ from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import NativeSamplingPlan
 from relax.vdam.sparse_pass2_estep import _run_sparse_pass2_initial_model_estep
 from relax.vdam.state import InitialModelState, VdamAccumulator
-from recovar.reconstruction.noise import make_radial_noise
-from recovar.utils.helpers import get_gpu_memory_total
 
 INITIAL_MODEL_LOCAL_BATCH_REFERENCE_SIZE = 256
 INITIAL_MODEL_LOCAL_BATCH_REFERENCE_COUNT_40GB = 32
@@ -438,7 +438,6 @@ def _dense_rotations_for_config(rotations: Any, config: DenseInitialModelEstepCo
 def reference_to_dense_means(references: np.ndarray) -> np.ndarray:
     """Convert recovar-frame InitialModel references to unnormalised centered FFTs for dense scoring."""
     import jax.numpy as jnp
-
     from recovar.core import fourier_transform_utils as ftu
     from recovar.reconstruction.relion_functions import griddingCorrect
 

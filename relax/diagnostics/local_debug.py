@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-
 from recovar import utils
+
 from relax.helpers.env_flags import parse_int_set
 from relax.helpers.half_spectrum import bin_shell_values_np
 

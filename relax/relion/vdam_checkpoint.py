@@ -97,7 +97,6 @@ def _load_native_vdam_continuation(
     """
 
     import starfile
-
     from recovar.utils.helpers import load_relion_volume
 
     optimiser_path = Path(optimiser_star).expanduser().resolve(strict=True)

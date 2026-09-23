@@ -158,6 +158,7 @@ def _accumulate_relion_x_half_per_particle_launches(
         )
     if use_fused_atomics:
         import recovar.cuda_backproject as cuda_backproject
+
         from relax.cuda import kernels as em_cuda_kernels
 
         if (

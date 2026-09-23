@@ -297,8 +297,9 @@ def update_posterior_noise_variance(
     first-iter noise update).
     """
 
-    from relax.reconstruction import noise_relion
     from recovar.reconstruction import noise
+
+    from relax.reconstruction import noise_relion
 
     if noise_stats_per_half[0] is None or noise_stats_per_half[1] is None:
         raise RuntimeError(

@@ -18,8 +18,8 @@ from typing import Literal
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar.core import fourier_transform_utils as ftu
+
 from relax.helpers.deterministic_reduce import (
     deterministic_reductions_enabled,
     fixed_order_shell_sums,

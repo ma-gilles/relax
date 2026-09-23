@@ -15,9 +15,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from recovar.utils.file_hash import sha256_file
 
 from relax.refinement.refinement_options import RefinementOptions
-from recovar.utils.file_hash import sha256_file
 
 logger = logging.getLogger(__name__)
 

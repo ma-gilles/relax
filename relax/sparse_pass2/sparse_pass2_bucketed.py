@@ -36,6 +36,7 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
+from recovar.reconstruction import noise as noise_utils
 
 from relax.classification.k_class_results import (
     DeferredHostUpdates,
@@ -332,7 +333,6 @@ from relax.sparse_pass2.sparse_pass2_window import (
     subtract_projected_reference_from_sparse_mstep_rotation_sums,
     subtract_projected_reference_from_sparse_mstep_sums,
 )
-from recovar.reconstruction import noise as noise_utils
 
 logger = logging.getLogger(__name__)
 

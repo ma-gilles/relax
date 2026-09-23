@@ -310,6 +310,7 @@ def _accumulate_relion_firstiter_bpref_fused_impl(
     """Shared operand preparation and ordered firstiter particle launches."""
 
     from recovar import cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     if split_accumulators:

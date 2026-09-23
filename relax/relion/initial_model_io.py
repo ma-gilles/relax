@@ -6,11 +6,11 @@ import os
 from pathlib import Path
 
 import numpy as np
-
 from recovar.data_io.starfile import star_column, write_star
+from recovar.utils.helpers import R_from_relion, R_to_relion
+
 from relax import sampling
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
-from recovar.utils.helpers import R_from_relion, R_to_relion
 
 
 def _optics_group_indices(main_star) -> np.ndarray:

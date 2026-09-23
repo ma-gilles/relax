@@ -6,9 +6,9 @@ import logging
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar import core, utils
 from recovar.core.configs import ForwardModelConfig
+
 from relax.sampling import translations_to_indices
 
 from .core import (

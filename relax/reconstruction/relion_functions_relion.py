@@ -9,7 +9,6 @@ import functools
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 import recovar.core.fourier_transform_utils as fourier_transform_utils
 from recovar.core import mask, padding
 from recovar.reconstruction.relion_functions import (

@@ -66,8 +66,9 @@ def refresh_tau2_from_projector_power(
     interpolator: int = 1,
 ) -> InitialModelState:
     """``MlModel::setFourierTransformMaps(!fix_tau)``."""
-    from relax.relion_bind import _relion_bind_core as bind
     from recovar.utils.helpers import recovar_volume_to_relion
+
+    from relax.relion_bind import _relion_bind_core as bind
 
     current_size = int(state.current_size if state.current_size > 0 else state.ori_size)
     new_tau2 = np.asarray(state.tau2_class, dtype=np.float64).copy()

@@ -12,7 +12,6 @@ from dataclasses import dataclass
 
 import jax.numpy as jnp
 import numpy as np
-
 from recovar import utils
 from recovar.core import fourier_transform_utils as ftu
 from recovar.ppca.pose_accumulators import AugmentedPPCAStats

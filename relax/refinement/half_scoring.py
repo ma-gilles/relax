@@ -13,8 +13,8 @@ from typing import NamedTuple
 
 import jax.numpy as jnp
 import numpy as np
-
 from recovar import utils
+
 from relax.classification.k_class import (
     _sparse_pass2_selected,
     run_dense_k_class_em,

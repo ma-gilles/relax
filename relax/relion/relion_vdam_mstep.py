@@ -18,18 +18,18 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar.core import fourier_transform_utils as ftu
 from recovar.core import mask
+from recovar.reconstruction.relion_functions import (
+    relion_window_centered_half_fourier as _relion_window_centered_half_fourier,
+)
+
 from relax.helpers.deterministic_reduce import (
     deterministic_reductions_enabled,
     fixed_order_shell_sums,
     static_shell_voxel_lists,
 )
 from relax.relion.relion_projector_setup import setup_relion_projector, setup_relion_projector_uncorrected
-from recovar.reconstruction.relion_functions import (
-    relion_window_centered_half_fourier as _relion_window_centered_half_fourier,
-)
 
 
 def _compute_dtypes(compute_dtype):

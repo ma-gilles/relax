@@ -360,6 +360,7 @@ def _relion_f32_fine_posterior(
     use_native_cuda = False
     if jax.default_backend() == "gpu":
         from recovar import cuda_backproject
+
         from relax.cuda import kernels as em_cuda_kernels
 
         use_native_cuda = cuda_backproject.custom_cuda_requested()

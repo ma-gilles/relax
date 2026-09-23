@@ -15,10 +15,14 @@ from typing import Iterable, NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 import recovar.core.fourier_transform_utils as ftu
 from recovar import core
 from recovar.core.configs import ForwardModelConfig
+from recovar.ppca.augmented_mstep import augmented_ppca_mstep_objective, solve_augmented_ppca_mstep
+from recovar.ppca.pose_accumulators import AugmentedPPCAStats
+from recovar.ppca.triangular import tri_size as _tri_size
+from recovar.reconstruction import noise as noise_utils
+
 from relax.helpers.fourier_window import make_fourier_window_spec
 from relax.helpers.half_spectrum import make_scoring_half_image_weights
 from relax.helpers.oversampling import find_significant_mask
@@ -55,10 +59,6 @@ from relax.ppca_refinement.pose_selection import (
 )
 from relax.ppca_refinement.postprocess import PostprocessConfig, postprocess_ppca_half_volumes
 from relax.ppca_refinement.state import PoseMarginalPPCAEMState
-from recovar.ppca.augmented_mstep import augmented_ppca_mstep_objective, solve_augmented_ppca_mstep
-from recovar.ppca.pose_accumulators import AugmentedPPCAStats
-from recovar.ppca.triangular import tri_size as _tri_size
-from recovar.reconstruction import noise as noise_utils
 
 
 class DensePPCASignificanceResult(NamedTuple):

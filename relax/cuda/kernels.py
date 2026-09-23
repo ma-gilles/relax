@@ -23,7 +23,6 @@ from typing import Tuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar import cuda_backproject
 from recovar.cuda_backproject import (  # noqa: F401  (staying helpers and shared loader state)
     TARGET_PROJECT_INDEXED as _TARGET_PROJECT_INDEXED,

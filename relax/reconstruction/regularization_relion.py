@@ -11,7 +11,6 @@ import pathlib
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 import recovar.core.fourier_transform_utils as fourier_transform_utils
 from recovar import jax_config
 from recovar.reconstruction.regularization import (  # noqa: F401  (staying helpers and shared loader state)
@@ -238,8 +237,9 @@ def compute_relion_tau2_from_iref_power_spectrum(
     volume_shape = tuple(int(s) for s in volume_shape)
     current_size = None if current_size is None else int(current_size)
     from recovar.core import fourier_transform_utils as _ftu
-    from relax.relion_bind._relion_bind_core import compute_fourier_transform_map
     from recovar.utils.helpers import recovar_volume_to_relion
+
+    from relax.relion_bind._relion_bind_core import compute_fourier_transform_map
 
     vol_ft = jnp.asarray(Iref_padded_fourier).reshape(volume_shape)
     vol_real = np.asarray(_ftu.get_idft3(vol_ft).real, dtype=np.float64)

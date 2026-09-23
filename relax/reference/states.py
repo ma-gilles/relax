@@ -2,7 +2,6 @@
 
 import jax
 import numpy as np
-
 from recovar import jax_config, utils
 from recovar.core import mask as mask_fn
 from recovar.heterogeneity import principal_components

@@ -46,8 +46,9 @@ def compute_bootstrap_iref_via_cpp(
     particle_seed_ids: np.ndarray | None = None,
 ) -> np.ndarray:
     """Run the full RELION InitialModel bootstrap in C++; returns Iref in recovar frame."""
-    from relax.relion_bind import _relion_bind_core as bind
     from recovar.utils.helpers import relion_volume_to_recovar
+
+    from relax.relion_bind import _relion_bind_core as bind
 
     if current_size <= 0:
         # RELION wsum_model.current_size = ROUND(0.07 * ori_size) (shell count, not Å).
@@ -97,8 +98,9 @@ def postprocess_bootstrap_iref_via_cpp(
     Call immediately after ``compute_bootstrap_iref_via_cpp`` to preserve RELION's
     global ``rand()`` state for the blob draws.
     """
-    from relax.relion_bind import _relion_bind_core as bind
     from recovar.utils.helpers import recovar_volume_to_relion, relion_volume_to_recovar
+
+    from relax.relion_bind import _relion_bind_core as bind
 
     arr = np.asarray(Iref, dtype=np.float64)
     if arr.ndim != 4 or arr.shape[1] != arr.shape[2] or arr.shape[2] != arr.shape[3]:

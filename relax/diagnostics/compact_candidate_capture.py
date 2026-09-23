@@ -13,7 +13,6 @@ import os
 from pathlib import Path
 
 import numpy as np
-
 from recovar.utils.file_hash import sha256_file
 
 SCHEMA = "recovar-k1-production-candidate-bucket-v2"

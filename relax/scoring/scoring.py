@@ -137,6 +137,7 @@ def _relion_coarse_normalized_cc_rescore(
             )
     if jax.default_backend() == "gpu":
         from recovar import cuda_backproject
+
         from relax.cuda import kernels as em_cuda_kernels
 
         if cuda_backproject.custom_cuda_requested():

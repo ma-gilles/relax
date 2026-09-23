@@ -4,8 +4,8 @@ import functools
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar import cuda_backproject as cb
+
 from relax.cuda import kernels as em_cuda_kernels
 
 

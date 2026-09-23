@@ -7,8 +7,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
-
 from recovar import utils
+
 from relax.helpers.batch_planning import (
     _plan_consecutive_padded_batches,
 )

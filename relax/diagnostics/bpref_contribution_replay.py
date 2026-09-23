@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-
 from recovar.utils.file_hash import sha256_file
 
 MAGIC = "RECOVAR_BPREF_CONTRIBUTION_ROWS"

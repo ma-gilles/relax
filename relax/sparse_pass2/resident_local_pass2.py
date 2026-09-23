@@ -73,6 +73,7 @@ import time
 import jax
 import jax.numpy as jnp
 import numpy as np
+from recovar.reconstruction import noise as noise_utils
 
 from relax.helpers.env_flags import parse_env_capacity_ladder, parse_env_flag
 from relax.helpers.half_spectrum import (
@@ -138,7 +139,6 @@ from relax.sparse_pass2.sparse_pass2_window import (
     _pass2_window_setup,
     _sparse_pass2_window_setup,
 )
-from recovar.reconstruction import noise as noise_utils
 
 logger = logging.getLogger(__name__)
 
@@ -390,6 +390,7 @@ def compute_local_search_resident(
     """
 
     from recovar import cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     overall_t0 = time.time()

@@ -6,8 +6,8 @@ import healpy as hp
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar import utils
+
 from relax.symmetry import canonicalize_rotational_symmetry
 
 # Cached per-order geometry used by the exact RELION local-search selector.

@@ -109,6 +109,7 @@ def _relion_projector_half_maps_for_scoring(
     """
 
     from recovar.core import fourier_transform_utils as ftu
+
     from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps
 
     refs_ft = np.asarray(means_k)

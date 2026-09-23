@@ -15,8 +15,8 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar.core.configs import ForwardModelConfig
+
 from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.env_flags import parse_env_flag
 from relax.helpers.fourier_window import centered_half_indices_to_fftw_half_indices, make_fourier_window_spec

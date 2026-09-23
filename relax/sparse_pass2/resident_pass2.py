@@ -73,6 +73,7 @@ from typing import Callable, NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
+from recovar.reconstruction import noise as noise_utils
 
 from relax.helpers.batch_fetch import fetch_indexed_batch
 from relax.helpers.deterministic_reduce import deterministic_reductions_enabled
@@ -184,7 +185,6 @@ from relax.sparse_pass2.sparse_pass2_window import (
     _pass2_window_setup,
     _sparse_pass2_window_setup,
 )
-from recovar.reconstruction import noise as noise_utils
 
 logger = logging.getLogger(__name__)
 
@@ -1224,6 +1224,7 @@ def compute_pass2_stats_resident(
     """
 
     from recovar import cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
     from relax.sampling import (
         get_oversampled_translation_grid,
@@ -4035,6 +4036,7 @@ def _run_resident_chunk_program(
     """
 
     from recovar import cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     Ft_y_total, Ft_ctf_total, stats = carry
