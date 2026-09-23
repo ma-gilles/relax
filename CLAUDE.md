@@ -27,6 +27,21 @@ Engineering priorities are correctness, GPU performance, then clarity.
 See [the agent workflow](docs/development/agent_workflow.md) for session-specific
 model/delegation evidence and compact task handoffs.
 
+## Changing recovar from relax work
+
+relax imports recovar and pins one recovar commit (`pyproject.toml`, `pixi.toml`).
+When relax work needs recovar to change (a new optional argument, a fix, a hook or a
+shared helper), make that change in recovar itself. This is permitted and encouraged.
+Do not copy recovar code into relax with a twist, wrap it to patch its behaviour, or
+keep a second variant of a recovar formula: one implementation, in recovar.
+
+1. Branch from recovar `origin/dev2`, commit the change with its focused tests, and
+   push it to recovar `dev2` as a fast-forward (never force; never `dev` or `main`).
+   Keep recovar's own defaults and public API unchanged unless the user decides
+   otherwise; recovar must keep working without relax, and must never import relax.
+2. Repin relax to the new `dev2` commit in `pyproject.toml` and `pixi.toml`,
+   regenerate `pixi.lock`, and land the relax side on relax `main` in the same batch.
+
 ## Start and resume
 
 1. Establish the task, checkout, branch and current evidence before editing.
