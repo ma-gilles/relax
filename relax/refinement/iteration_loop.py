@@ -150,9 +150,9 @@ from relax.helpers.resolution import (
     compute_coarse_image_size,
     initialize_resolution_from_firstiter_ini_high,
     initialize_resolution_from_fsc,
+    relion_current_resolution_shell,
     relion_expectation_coarse_size_order,
     relion_local_pass1_current_size,
-    relion_current_resolution_shell,
     relion_optics_image_current_sizes,
     shell_index_to_resolution_angstrom,
 )
