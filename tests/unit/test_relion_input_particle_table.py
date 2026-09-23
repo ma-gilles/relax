@@ -122,3 +122,41 @@ def test_rebuilt_table_reproduces_relion_run_it000(case):
         by_name = dict(zip(target["rlnImageName"].astype(str), target["rlnRandomSubset"].to_numpy(int)))
         relion_in_input_order = np.asarray([by_name[name] for name in particles["rlnImageName"].astype(str)])
         assert np.mean(fallback == relion_in_input_order) < 0.6
+
+
+def test_from_input_flag_rejects_combinations_relion_would_not_build():
+    from types import SimpleNamespace
+
+    from scripts.run_full_refinement import _validate_relion_half_sets_from_input
+
+    base = dict(relion_half_sets_from_input=True, relion_half_sets=None, n_classes=1, seed=11, frozen_boundary_dir=None)
+    _validate_relion_half_sets_from_input(SimpleNamespace(**base))
+    for change, message in (
+        ({"relion_half_sets": "run_data.star"}, "replaces --relion_half_sets"),
+        ({"n_classes": 4}, "K=1"),
+        ({"seed": None}, "explicit --seed"),
+        ({"frozen_boundary_dir": "boundary"}, "frozen boundary"),
+    ):
+        with pytest.raises(SystemExit, match=message):
+            _validate_relion_half_sets_from_input(SimpleNamespace(**{**base, **change}))
+
+
+def test_written_table_round_trips_input_values(tmp_path):
+    from scripts.run_full_refinement import _write_relion_start_particle_table
+
+    input_star, relion_dir = RELION_START_CASES["k1_5k_128"]
+    if not input_star.exists():
+        pytest.skip("missing 5k fixture")
+    our_star = starfile.read(input_star, always_dict=True)
+    path = _write_relion_start_particle_table(
+        our_star, input_star, seed=_relion_random_seed(relion_dir), output_dir=tmp_path
+    )
+    written = starfile.read(path, always_dict=True)
+    order = relion_particle_order(our_star["particles"])
+    source = our_star["particles"].iloc[order].reset_index(drop=True)
+    for column in source.columns:
+        if column == "rlnRandomSubset":
+            continue
+        np.testing.assert_array_equal(written["particles"][column].to_numpy(), source[column].to_numpy())
+    for column in our_star["optics"].columns:
+        np.testing.assert_array_equal(written["optics"][column].to_numpy(), our_star["optics"][column].to_numpy())

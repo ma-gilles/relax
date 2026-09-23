@@ -1684,19 +1684,15 @@ def _validate_relion_half_sets_from_input(args) -> None:
         raise SystemExit("--relion-half-sets-from-input: " + "; ".join(problems))
 
 
-def _write_relion_start_particle_table(our_star, *, seed, output_dir) -> Path:
+def _write_relion_start_particle_table(our_star, input_star, *, seed, output_dir) -> Path:
     """Write RELION's start-up particle table rebuilt from the input STAR and return its path."""
-    import starfile
-
-    from relax.relion.input_particle_table import build_relion_start_particle_table
+    from relax.relion.input_particle_table import write_relion_start_particle_star
 
     if not isinstance(our_star, dict) or "optics" not in our_star:
         raise SystemExit("--relion-half-sets-from-input needs an optics table in <data_dir>/particles.star")
-    table = build_relion_start_particle_table(our_star["particles"], seed=int(seed))
     path = Path(output_dir) / "relion_input_state" / "particles_relion_start.star"
     path.parent.mkdir(parents=True, exist_ok=True)
-    # %.17g round-trips every parsed float, so the table carries the input values exactly.
-    starfile.write({"optics": our_star["optics"], "particles": table}, path, float_format="%.17g", overwrite=True)
+    write_relion_start_particle_star(input_star, path, seed=int(seed))
     return path
 
 
@@ -2694,7 +2690,12 @@ def main():
 
     if args.relion_half_sets_from_input:
         args.relion_half_sets = str(
-            _write_relion_start_particle_table(our_star, seed=int(args.seed), output_dir=args.output)
+            _write_relion_start_particle_table(
+                our_star,
+                os.path.join(args.data_dir, "particles.star"),
+                seed=int(args.seed),
+                output_dir=args.output,
+            )
         )
         logger.info(
             "RELION start-up particle table rebuilt from the input STAR with seed %d: %s",

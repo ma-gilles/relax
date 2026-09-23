@@ -138,3 +138,54 @@ def build_relion_start_particle_table(particles: pd.DataFrame, *, seed: int) -> 
     table["rlnRandomSubset"] = relion_random_subsets(existing, seed=seed, n_particles=len(table))
     table["rlnGroupNumber"] = relion_scale_group_numbers(table)
     return table
+
+
+def _particles_block_bounds(lines: list[str]) -> tuple[int, int, int]:
+    """Return (loop header start, first data row, end) of the ``data_particles`` loop."""
+    try:
+        block = next(i for i, line in enumerate(lines) if line.strip() == "data_particles")
+    except StopIteration:
+        raise ValueError("STAR file has no data_particles block") from None
+    loop = next(i for i in range(block + 1, len(lines)) if lines[i].strip() == "loop_")
+    first = loop + 1
+    while first < len(lines) and lines[first].strip().startswith("_rln"):
+        first += 1
+    end = first
+    while end < len(lines) and lines[end].strip() and not lines[end].strip().startswith("data_"):
+        end += 1
+    return loop + 1, first, end
+
+
+def write_relion_start_particle_star(input_star, output_star, *, seed: int) -> pd.DataFrame:
+    """Write the start-up table as STAR text, keeping every input field's text unchanged.
+
+    Rows are reordered and ``rlnRandomSubset``/``rlnGroupNumber`` set; all other tokens,
+    and the blocks before ``data_particles`` (e.g. ``data_optics``), are copied verbatim,
+    so any reader parses exactly the values it would parse from the input.
+    """
+    import starfile
+
+    particles = starfile.read(input_star, always_dict=True)["particles"]
+    table = build_relion_start_particle_table(particles, seed=seed)
+    order = relion_particle_order(particles)
+    lines = open(input_star).read().splitlines()
+    header_start, first, end = _particles_block_bounds(lines)
+    labels = [lines[i].split()[0] for i in range(header_start, first)]
+    rows = [lines[i].split() for i in range(first, end)]
+    if len(rows) != len(particles) or any(len(row) != len(labels) for row in rows):
+        raise ValueError(f"cannot map {input_star} data rows one-to-one onto its particle table")
+    for label in ("_rlnRandomSubset", "_rlnGroupNumber"):
+        if label not in labels:
+            labels.append(label)
+            rows = [row + [""] for row in rows]
+    subset_col, group_col = labels.index("_rlnRandomSubset"), labels.index("_rlnGroupNumber")
+    out = lines[: header_start - 1] + ["loop_"] + [f"{label} #{i + 1}" for i, label in enumerate(labels)]
+    for new_row, source_row in enumerate(order):
+        row = list(rows[source_row])
+        row[subset_col] = str(int(table["rlnRandomSubset"].iat[new_row]))
+        row[group_col] = str(int(table["rlnGroupNumber"].iat[new_row]))
+        out.append("\t".join(row))
+    out += [""] + lines[end:]
+    with open(output_star, "w") as handle:
+        handle.write("\n".join(out).rstrip("\n") + "\n")
+    return table
