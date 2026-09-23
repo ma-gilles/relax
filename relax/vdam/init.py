@@ -6,7 +6,7 @@ setup. Three public callables:
 
 - ``initialise_denovo_state`` — particle-independent state fields.
 - ``seed_noise_from_mavg`` — write per-optics-group sigma2_noise.
-- ``initialise_data_vs_prior_from_references`` — seed tau2_class.
+- ``initialise_data_vs_prior_from_references`` — seed tau2_class (shared per class with auto-refine).
 """
 
 from __future__ import annotations
@@ -124,6 +124,39 @@ def _relion_power_spectrum_3d(volume: np.ndarray, n_shells: int) -> np.ndarray:
     return out
 
 
+def relion_initial_tau2_and_data_vs_prior(
+    iref_relion: np.ndarray,
+    *,
+    tau2_fudge: float,
+    avg_sigma2_noise: np.ndarray,
+    nr_particles: int,
+    pdf_class: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """One class of ``MlModel::initialiseDataVersusPrior`` (ml_model.cpp:1557-1626).
+
+    ``iref_relion`` is the start-up reference in RELION's frame (after
+    ``initialLowPassFilterReferences``); ``avg_sigma2_noise`` is the RELION-unit
+    noise spectrum averaged over optics groups with noise. Returns the RELION-unit
+    ``tau2_class`` and ``data_vs_prior_class`` spectra, ``ori_size // 2 + 1`` shells.
+    """
+    iref = np.asarray(iref_relion, dtype=np.float64)
+    ori_size = int(iref.shape[0])
+    avg_sigma2_noise = np.asarray(avg_sigma2_noise, dtype=np.float64).reshape(-1)
+    if avg_sigma2_noise.shape != (ori_size // 2 + 1,) or np.any(avg_sigma2_noise <= 0.0) or nr_particles <= 0:
+        raise ValueError("need a positive noise spectrum of ori_size // 2 + 1 shells and nr_particles > 0")
+    spectrum = _relion_power_spectrum_3d(iref, ori_size // 2 + 1)
+    spectrum *= float(ori_size * ori_size) / 2.0
+    tau2 = float(tau2_fudge) * spectrum
+    return tau2, _relion_data_vs_prior(tau2, avg_sigma2_noise, nr_particles, pdf_class)
+
+
+def _relion_data_vs_prior(tau2, avg_sigma2_noise, nr_particles, pdf_class):
+    """``data_vs_prior = N * pdf_class * tau2 / (sigma2 * 2i)``, shell 0 without the ``2i``."""
+    shell_factor = np.maximum(1.0, 2.0 * np.arange(avg_sigma2_noise.size, dtype=np.float64))
+    evidence = float(nr_particles) * float(pdf_class) / avg_sigma2_noise
+    return evidence / shell_factor * tau2
+
+
 def initialise_data_vs_prior_from_references(
     state: InitialModelState,
     *,
@@ -143,17 +176,11 @@ def initialise_data_vs_prior_from_references(
     if np.any(avg_sigma2_noise <= 0.0):
         raise ValueError("avg sigma2_noise must be positive in all Fourier shells")
 
-    n_shells = state.ori_size // 2 + 1
     new_tau2 = np.asarray(state.tau2_class, dtype=np.float64).copy()
     new_data_vs_prior = np.zeros_like(new_tau2)
     pdf_class = np.asarray(state.pdf_class, dtype=np.float64)
     if pdf_class.shape != (state.K,):
         raise ValueError(f"pdf_class must have shape ({state.K},), got {pdf_class.shape}")
-
-    normfft = float(state.ori_size * state.ori_size)
-    shells = np.arange(n_shells, dtype=np.float64)
-    shell_factor = np.ones(n_shells, dtype=np.float64)
-    shell_factor[1:] = 2.0 * shells[1:]
 
     from recovar.utils.helpers import recovar_volume_to_relion
 
@@ -163,14 +190,17 @@ def initialise_data_vs_prior_from_references(
             # traversal is not invariant to swapping RECOVAR's X/Z axes, so
             # convert at this native boundary just as reconstruction does.
             iref_relion = recovar_volume_to_relion(np.asarray(state.Iref[k], dtype=np.float64))
-            spectrum = _relion_power_spectrum_3d(iref_relion, n_shells)
-            spectrum *= normfft / 2.0
-            new_tau2[k] = float(state.tau2_fudge_factor) * spectrum
-        evidence = float(nr_particles) * float(pdf_class[k]) / avg_sigma2_noise
-        evidence = evidence / shell_factor
+            new_tau2[k], new_data_vs_prior[k] = relion_initial_tau2_and_data_vs_prior(
+                iref_relion,
+                tau2_fudge=float(state.tau2_fudge_factor),
+                avg_sigma2_noise=avg_sigma2_noise,
+                nr_particles=nr_particles,
+                pdf_class=float(pdf_class[k]),
+            )
+        else:
+            new_data_vs_prior[k] = _relion_data_vs_prior(new_tau2[k], avg_sigma2_noise, nr_particles, pdf_class[k])
         if np.any(new_tau2[k] < 0.0):
             raise ValueError("initial tau2_class must be non-negative after reference-spectrum initialisation")
-        new_data_vs_prior[k] = evidence * new_tau2[k]
 
     new_state = replace(state)
     new_state.tau2_class = new_tau2

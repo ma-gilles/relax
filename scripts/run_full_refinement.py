@@ -1180,6 +1180,44 @@ def _compute_relion_noise_only_bootstrap(
     return radial, noise
 
 
+def _relion_k1_start_tau2_and_data_vs_prior(
+    reference_real,
+    initial_noise_radial,
+    *,
+    grid_size: int,
+    volume_shape,
+    tau2_fudge: float,
+    nr_particles: int,
+):
+    """RELION's K=1 start-up tau2 (RECOVAR units) and data_vs_prior (RELION units).
+
+    ``MlModel::initialiseDataVersusPrior`` (ml_model.cpp:1557) on the start-up
+    reference after ``initialLowPassFilterReferences``, with one optics group's
+    initial noise and the half set's particle count, as each auto-refine half
+    model counts its own particles. ``reference_real`` is in RECOVAR's frame and
+    ``initial_noise_radial`` is RELION sigma2 times ``grid_size**4``.
+    """
+
+    from recovar.utils.helpers import recovar_volume_to_relion
+    from relax.vdam.init import relion_initial_tau2_and_data_vs_prior
+
+    n4 = float(grid_size) ** 4
+    sigma2 = np.asarray(initial_noise_radial, dtype=np.float64).reshape(-1) / n4
+    n_shells = int(grid_size) // 2 + 1
+    if sigma2.size < n_shells:
+        raise ValueError(f"initial noise spectrum has {sigma2.size} shells, need {n_shells}")
+    tau2, data_vs_prior = relion_initial_tau2_and_data_vs_prior(
+        recovar_volume_to_relion(np.asarray(reference_real, dtype=np.float64)),
+        tau2_fudge=float(tau2_fudge),
+        avg_sigma2_noise=sigma2[:n_shells],
+        nr_particles=int(nr_particles),
+    )
+    mean_variance = jnp.asarray(
+        utils.make_radial_image(tau2 * n4, volume_shape, extend_last_frequency=True)
+    ).reshape(-1)
+    return mean_variance, data_vs_prior
+
+
 def _relion_sigma2_to_native_noise_variance(
     sigma2,
     *,
@@ -3387,6 +3425,7 @@ def main():
             "(K=1 firstiter_cc default or explicit environment override)",
         )
     init_reference_real_for_projector = None
+    relion_start_reference_real = None
 
     if frozen_boundary is not None:
         if frozen_boundary.volume_shape != tuple(int(value) for value in ds.volume_shape):
@@ -3430,13 +3469,16 @@ def main():
             )
             if _use_initial_projector_real:
                 init_reference_real_for_projector = filtered_real
+            relion_start_reference_real = filtered_real
             init_vol_real = filtered_real.astype(_init_volume_dtype, copy=False)
             logger.info(
                 "Applied RELION initialLowPassFilterReferences to init reference: ini_high=%.2f A, fmask_edge=%d shells",
                 _ini_high_for_lowpass, _RELION_FMASK_EDGE,
             )
-        elif _use_initial_projector_real:
-            init_reference_real_for_projector = np.asarray(init_vol_real, dtype=np.float64)
+        else:
+            relion_start_reference_real = np.asarray(init_vol_real, dtype=np.float64)
+            if _use_initial_projector_real:
+                init_reference_real_for_projector = relion_start_reference_real
         init_vol_ft = (
             np.array(ftu.get_dft3(jnp.asarray(init_vol_real)))
             .astype(_init_volume_complex_dtype)
@@ -3872,6 +3914,28 @@ def main():
                     "STRICT-PARITY: --offset_sigma_angstrom override from RELION it000: %.3f Å",
                     relion_init_sigma_offset_angstrom,
                 )
+
+    relion_start_data_vs_prior = None
+    # RELION's start-up tau2 is defined against RELION's start-up noise; the pipeline
+    # noise estimator keeps its own tau2 start.
+    if (
+        relion_start_reference_real is not None
+        and args.relion_init_dir is None
+        and int(args.init_relion_iteration) == 0
+        and args.initial_noise_bootstrap == "relion"
+    ):
+        mean_variance, relion_start_data_vs_prior = _relion_k1_start_tau2_and_data_vs_prior(
+            relion_start_reference_real,
+            initial_noise_radial,
+            grid_size=int(ds.grid_size),
+            volume_shape=ds.volume_shape,
+            tau2_fudge=_resolve_tau2_fudge(args.n_classes, args.tau2_fudge, None)[0],
+            nr_particles=int(ds_half1.n_units),
+        )
+        logger.info(
+            "RELION start-up tau2/data_vs_prior (initialiseDataVersusPrior): %d shells with data_vs_prior > 3",
+            int(np.sum(relion_start_data_vs_prior > 3.0)),
+        )
 
     if frozen_boundary is not None:
         mean_variance = jnp.asarray(
@@ -4438,6 +4502,7 @@ def main():
                 max_iter=args.max_iter,
                 init_current_size=init_current_size,
                 init_fsc=None if frozen_boundary is None else frozen_boundary.fsc,
+                init_data_vs_prior=relion_start_data_vs_prior,
                 init_ave_Pmax=None if frozen_boundary is None else frozen_boundary.ave_pmax,
                 init_has_high_fsc_at_limit=(
                     None if frozen_boundary is None else frozen_boundary.has_high_fsc_at_limit

@@ -900,7 +900,11 @@ def refine_single_volume(
         group_ids=replay.init_group_ids,
         group_count=replay.init_group_count,
     )
-    previous_data_vs_prior_for_scheduling = None
+    previous_data_vs_prior_for_scheduling = (
+        None
+        if schedule.init_data_vs_prior is None
+        else np.asarray(schedule.init_data_vs_prior, dtype=_dense_global_scoring_dtype())
+    )
     tau2_update_details = None
     tau2_update_details_per_half = None
 

@@ -128,6 +128,38 @@ is tested by `test_k1_coldstart_supplies_gaussian_translation_prior` in
 [`test_refine_relion_mode.py`](../../tests/unit/test_refine_relion_mode.py).
 Trajectory/FSC qualification remains separate from the fixed-input regression.
 
+### Standalone K1 start-up state
+
+A fresh K1 start builds RELION's iteration-0 model from `relion_refine`'s own
+inputs rather than from a RELION `run_it000` output.
+
+- Norm corrections. `relion_refine` reads each particle's `rlnNormCorrection`
+  and uses 1 when the label is absent; `avg_norm_correction` starts at 1. The
+  E-step multiplies each image by `avg_norm / normcorr`, so the start-up image
+  correction is `1 / normcorr` with unit group scales.
+  [`_load_input_star_previous_best_poses`](../../relax/relion/input_poses.py)
+  reads the column with the input poses in half-local order and
+  [`_initial_corrections_from_norm`](../../relax/relion/input_poses.py) forms the
+  corrections; unit norms keep the unit (`None`) representation.
+- Signal prior and data-vs-prior. `MlModel::initialiseDataVersusPrior` sets
+  `tau2 = tau2_fudge * P(Iref) * N^2 / 2`, with `P` the rounded-radius
+  half-spectrum power of the low-passed start-up reference, and
+  `data_vs_prior = n_half * tau2 / (sigma2 * 2 i)` (shell `i > 0`), with the
+  half set's particle count and the initial noise.
+  [`relion_initial_tau2_and_data_vs_prior`](../../relax/vdam/init.py) implements
+  one class and is shared with the InitialModel start;
+  [`_relion_k1_start_tau2_and_data_vs_prior`](../../scripts/run_full_refinement.py)
+  applies it when the start-up noise is RELION's (`--initial-noise-bootstrap
+  relion`); the pipeline noise estimator keeps its own tau2 start. The start-up `data_vs_prior` selects the iteration-1
+  scale-correction shells (`data_vs_prior > 3`), which matters for starts
+  without `--firstiter_cc`; later iterations use the updated spectrum. Like
+  those later iterations, the controller uses half 1's spectrum for both halves.
+- Offset prior. `--offset_sigma_angstrom` defaults to RELION's `--offset` 10 A.
+
+`test_relion_start_tau2.py` checks the formula and RELION's `run_it000` model
+on the 5k and 50k K1 fixtures; `test_run_full_refinement_input_pose_seed.py`
+checks the norm column.
+
 ## 2. Sampling grids and units
 
 [`sampling.py`](../../recovar/em/sampling.py) owns rotation and translation grids,

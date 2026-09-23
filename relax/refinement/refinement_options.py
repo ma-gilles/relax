@@ -30,6 +30,9 @@ class RefinementSchedule:
     particle_diameter_ang: float | None = None
     init_relion_iteration: int = 0
     init_fsc: Any | None = None
+    # RELION-unit data_vs_prior spectrum of the start-up model (initialiseDataVersusPrior);
+    # it selects the iteration-1 scale-correction shells (ml_optimiser.cpp:10473).
+    init_data_vs_prior: Any | None = None
     init_ave_Pmax: float | None = None
     init_has_high_fsc_at_limit: bool | None = None
     force_max_iter_after_convergence: bool = False
