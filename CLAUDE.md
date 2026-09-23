@@ -133,6 +133,10 @@ a genuinely new scientific objective requires a separate decision.
 relax `main` is the integration branch. Feature branches are fine for isolation, but
 merge each into `main` as a fast-forward as soon as its checks pass; do not park
 finished branches. recovar changes follow "Changing recovar from relax work" above.
+Branches are fine for isolation, but they are temporary: once a branch is merged, delete it
+(local and remote); if it is abandoned, record why in the task handoff and delete it. Do not
+leave finished or dead branches behind. Keep only `main`/`dev`/`dev2`, active work and
+branches the user explicitly asked to keep.
 Preserve an explicitly pinned control.
 Rebasing an implementation creates a new candidate that needs fresh validation.
 Never force-push unless explicitly asked. Before pushing or opening a PR, follow
