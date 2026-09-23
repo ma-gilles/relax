@@ -79,13 +79,13 @@ relax = { path = ".", editable = true }
 pytorch = { version = ">=2.3.1", channel = "pytorch" }
 
 # Immutable RECOVAR pin: recovar.__file__ then identifies the exact commit (direct_url.json).
-# PIN: recovar dev2 427a08bd8 (Q) for the scaffold; P3/P4 re-pins to R.
+# PIN: recovar dev2 commit R (relax split P4), which removes the EM code from recovar.
 [feature.pinned.pypi-dependencies]
-recovar = { git = "https://github.com/ma-gilles/recovar", rev = "427a08bd8550116f6fdc3f66ad202760372a813e" }
+recovar = { git = "https://github.com/ma-gilles/recovar", rev = "162dc9477a64888beb53af757649f141034c3cbd" }
 
-# Co-development against a local RECOVAR checkout (editable). Scaffold: the relax split P1 worktree.
+# Co-development against a local RECOVAR checkout (editable), here the relax split P4 worktree at R.
 [feature.dev.pypi-dependencies]
-recovar = { path = "../recovar_relax_split_p1_20260923", editable = true }
+recovar = { path = "../recovar_relax_split_p4_20260923", editable = true }
 
 [feature.docs.dependencies]
 python = ">=3.11, <3.12"
