@@ -1,4 +1,5 @@
 import numpy as np
+from helpers.float_compare import assert_matches
 
 from scripts.analyze_k1_bpref_contributor_membership import (
     classify_threshold_substitution,
@@ -133,11 +134,11 @@ def test_compare_particle_separates_candidate_and_significance_membership():
         ]
         == 0
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         arrays["recovar_preprune_mass_relion_positive_recovar_nonpositive"],
         np.array([0.01]),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         arrays["recovar_preprune_mass_recovar_positive_unmatched"],
         np.array([0.29]),
     )

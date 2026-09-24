@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 import scripts.compare_k4_relion_recovar_fine_operands as comparator
 from scripts.compare_k4_relion_recovar_fine_operands import (
@@ -62,8 +63,8 @@ def test_compact_indices_roundtrip_non_self_inverse_score_lookup():
         lookup,
     )
 
-    np.testing.assert_array_equal(recovered, expected)
-    np.testing.assert_array_equal(
+    assert_matches(recovered, expected)
+    assert_matches(
         lookup,
         np.asarray([-1, 2, -1, -1, -1, 0, 1, -1, -1, -1, -1, -1]),
     )
@@ -89,8 +90,8 @@ def test_fine_operand_tree_replay_preserves_float32_topology():
         reference, shifted, corr, np.float32(7)
     )
 
-    np.testing.assert_array_equal(contribution, np.asarray([1, 1, 3], dtype=np.float32))
-    np.testing.assert_array_equal(lanes[:3], contribution)
+    assert_matches(contribution, np.asarray([1, 1, 3], dtype=np.float32))
+    assert_matches(lanes[:3], contribution)
     assert raw == np.float32(12)
 
 
@@ -150,7 +151,7 @@ def test_fine_operand_jax_tree_preserves_full_grid_gap_topology():
         sum_init,
     )
 
-    np.testing.assert_array_equal(compact, full)
+    assert_matches(compact, full)
 
 
 def test_fine_operand_counterfactual_can_identify_jax_arithmetic():
@@ -431,8 +432,8 @@ def test_fine_operand_score_weight_applies_production_dc_zero():
         image_shape,
     )
 
-    np.testing.assert_array_equal(dc_mask, np.asarray([True, False, False, False]))
-    np.testing.assert_array_equal(result, np.asarray([0, 2, 3, 4], dtype=np.float32))
+    assert_matches(dc_mask, np.asarray([True, False, False, False]))
+    assert_matches(result, np.asarray([0, 2, 3, 4], dtype=np.float32))
 
 
 def test_fine_operand_direct_score_factor_tracks_preprocess_backend():
@@ -474,7 +475,7 @@ def test_fine_operand_relion_cuda_counterfactual_derives_normalization():
         captured_backend_is_relion_cuda=False,
     )
 
-    np.testing.assert_array_equal(captured, np.asarray([7.0, 8.0], dtype=np.float32))
+    assert_matches(captured, np.asarray([7.0, 8.0], dtype=np.float32))
     np.testing.assert_allclose(
         derived,
         np.asarray([1.5, 0.5], dtype=np.float32),
@@ -555,7 +556,7 @@ def test_fine_operand_relion_cuda_counterfactual_routes_reduction_tree(
     assert replay_mode == mode
     assert processed.shape == (1, 12)
     assert captured["native_lane_reduction"] is expected_native_lane
-    np.testing.assert_array_equal(
+    assert_matches(
         captured["normalization_factors"],
         np.asarray([np.float32(0.9) / np.float32(0.6)], dtype=np.float32),
     )
@@ -584,7 +585,7 @@ def test_fine_operand_dataset_native_counterfactual_accepts_relion_capture():
     )
 
     assert replay_mode == "dataset_native_jax_fft"
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(processed),
         np.asarray(
             comparator._centered_rfft2_jax(

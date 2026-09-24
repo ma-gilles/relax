@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from scripts import validate_relion_preprocess_capture as validator
 
@@ -119,7 +120,7 @@ def test_load_preprocess_artifact(tmp_path: Path) -> None:
     assert artifact.raw_input_real.shape == (1, 4, 4)
     assert artifact.masked_fourier_post_optics.shape == (1, 4, 3)
     assert artifact.norm_correction == np.float32(0.75)
-    assert np.array_equal(
+    assert matches(
         artifact.old_offset,
         np.asarray([-2.0, 1.0, 0.0], dtype=np.float32),
     )

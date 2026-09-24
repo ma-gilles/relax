@@ -5,6 +5,7 @@ import struct
 import numpy as np
 import pandas as pd
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts.analyze_k1_native_wavg_pixels import (
     _comparison,
@@ -38,7 +39,7 @@ def test_load_counted_round_trip(tmp_path):
     values = np.asarray([1.25, -2.5, 3.75], dtype="<f8")
     path.write_bytes(struct.pack("<Q", values.size) + values.tobytes())
 
-    np.testing.assert_array_equal(_load_counted(path, "<f8"), values)
+    assert_matches(_load_counted(path, "<f8"), values)
 
 
 def test_current_rectangle_mapping_matches_centered_window():
@@ -62,7 +63,7 @@ def test_current_rectangle_mapping_matches_centered_window():
         ((centered[::-1] // half_width - image_size // 2) % image_size) * half_width
         + centered[::-1] % half_width
     )
-    np.testing.assert_array_equal(recovar_standard[rows], native_standard)
+    assert_matches(recovar_standard[rows], native_standard)
 
 
 def test_wavg_components_and_bit_comparison():
@@ -74,9 +75,9 @@ def test_wavg_components_and_bit_comparison():
     result = _wavg_components(projections, images, ctf, probabilities)
     # These literals follow the kernel's separate float32 real/imag multiplies
     # and add, rather than NumPy's complex absolute-value implementation.
-    np.testing.assert_array_equal(result["wdiff2"], np.asarray([28.0625, 3.8125], np.float32))
-    np.testing.assert_array_equal(result["aa"], np.asarray([20.0, 0.3125], np.float32))
-    np.testing.assert_array_equal(result["xa"], np.asarray([-3.5, 0.75], np.float32))
+    assert_matches(result["wdiff2"], np.asarray([28.0625, 3.8125], np.float32))
+    assert_matches(result["aa"], np.asarray([20.0, 0.3125], np.float32))
+    assert_matches(result["xa"], np.asarray([-3.5, 0.75], np.float32))
 
     comparison = _comparison(result["wdiff2"], result["wdiff2"], np.asarray([True, True]))
     assert comparison["bit_exact_count"] == 2
@@ -97,7 +98,7 @@ def test_replace_window_with_native_preprocess_scatter_direction():
         np.float32(0.5),
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         replaced,
         np.asarray([2 + 10j, 6 + 14j, 30 + 3j, 4 + 12j], np.complex64),
     )
@@ -109,7 +110,7 @@ def test_normalise_native_weights_replaces_relion_sentinel():
 
     result = _normalise_native_weights(raw, 2, 3)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         result,
         np.asarray([[0.0, 0.25, 0.75], [0.0, 0.0, 0.0]], np.float32),
     )

@@ -1,10 +1,11 @@
 import numpy as np
+from helpers.float_compare import assert_matches
 
 from scripts.compare_k4_preprocess_live_pair import _center, _require, _residual_summary
 
 
 def test_live_preprocess_center_removes_common_score_offset():
-    np.testing.assert_array_equal(
+    assert_matches(
         _center(np.asarray([101, 103, 108], dtype=np.float32)),
         np.asarray([-3, -1, 4], dtype=np.float64),
     )
@@ -16,7 +17,7 @@ def test_live_preprocess_residual_summary_tracks_centered_energy():
         np.asarray([111, 118, 131], dtype=np.float32),
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         report["delta_recovar_minus_relion"],
         np.asarray([1, -2, 1], dtype=np.float64),
     )

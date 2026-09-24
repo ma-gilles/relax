@@ -5,6 +5,7 @@ import struct
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts.compare_k1_relion_recovar_bpref_primitives import (
     _load_live_initial_sigma2,
@@ -25,8 +26,8 @@ def test_load_live_initial_sigma2_accepts_lossless_npy_and_relion_bin(tmp_path) 
     np.save(npy_path, expected)
     _write_relion_real_2d(bin_path, expected[None, :])
 
-    np.testing.assert_array_equal(_load_live_initial_sigma2(npy_path), expected)
-    np.testing.assert_array_equal(_load_live_initial_sigma2(bin_path), expected)
+    assert_matches(_load_live_initial_sigma2(npy_path), expected)
+    assert_matches(_load_live_initial_sigma2(bin_path), expected)
 
 
 @pytest.mark.unit

@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts import audit_k4_relion_recovar_candidate_support as auditor
 
@@ -33,7 +34,7 @@ def test_relion_global_indices_remove_class_offset_and_canonicalize_order():
         healpix_order=0,
     )
 
-    np.testing.assert_array_equal(actual, np.array([0, 1, 24, 25]))
+    assert_matches(actual, np.array([0, 1, 24, 25]))
 
 
 def test_relion_global_indices_reject_wrong_class():

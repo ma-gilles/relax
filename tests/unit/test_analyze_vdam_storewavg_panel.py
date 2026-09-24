@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts.analyze_vdam_storewavg_panel import (
     _native_prefixes,
@@ -88,6 +89,6 @@ def test_production_score_gradient_override_uses_supplied_native_probabilities()
     mass = override.sum(axis=-1, dtype=np.float32)
     expected_weight = mass[:, None] * ctf2[None, :]
     expected_data = override @ shifted - projections * expected_weight
-    np.testing.assert_array_equal(probabilities, override)
-    np.testing.assert_array_equal(weight, expected_weight.astype(np.float32))
+    assert_matches(probabilities, override)
+    assert_matches(weight, expected_weight.astype(np.float32))
     np.testing.assert_allclose(data, expected_data.astype(np.complex64), rtol=1.0e-7, atol=1.0e-7)

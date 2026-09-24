@@ -8,6 +8,7 @@ Exact parity required: rel_err < 1e-12.
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from relax.relion_bind._relion_bind_core import update_noise_estimate
 
 
@@ -55,7 +56,7 @@ class TestM9Parity:
         relion = update_noise_estimate(wsum, npix, sumw)
         reference = _reference_noise_update(wsum, npix, sumw)
 
-        np.testing.assert_array_equal(relion, reference)
+        assert_matches(relion, reference)
 
     def test_hole_filling(self):
         """Very small values should be filled from previous shell."""
@@ -67,7 +68,7 @@ class TestM9Parity:
         relion = update_noise_estimate(wsum, npix, sumw)
         reference = _reference_noise_update(wsum, npix, sumw)
 
-        np.testing.assert_array_equal(relion, reference)
+        assert_matches(relion, reference)
 
     @pytest.mark.parametrize("seed", range(10))
     def test_random(self, seed):

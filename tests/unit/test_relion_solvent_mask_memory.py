@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 jnp = pytest.importorskip("jax.numpy")
 mask = pytest.importorskip("recovar.core.mask")
@@ -35,7 +36,7 @@ def test_compiled_relion_solvent_mask_is_bitwise_exact(volume_shape, offset):
     )
 
     assert actual.dtype == expected.dtype == jnp.float64
-    np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
+    assert_matches(np.asarray(actual), np.asarray(expected))
     mean_helpers._compiled_relion_solvent_mask.cache_clear()
 
 
@@ -89,7 +90,7 @@ def test_box800_relion_solvent_mask_routes_to_compiled_builder(monkeypatch, capl
         ("factory", volume_shape),
         ("build", np.float64(100.0), np.float64(105.0), (0.0, 0.0, 0.0)),
     ]
-    np.testing.assert_array_equal(np.asarray(result), np.asarray([7.0]))
+    assert_matches(np.asarray(result), np.asarray([7.0]))
     assert (
         "RELION box-scale solvent mask fused construction: shape=(800, 800, 800) "
         f"estimated_unfused_coordinate_bytes={expected_bytes}"
@@ -129,7 +130,7 @@ def test_box_scale_solvent_flatten_lifecycle_is_bitwise_exact(monkeypatch, volum
     assert actual.flags.owndata
     assert actual.shape == (int(np.prod(volume_shape)),)
     assert actual.dtype == expected.dtype == jnp.complex128
-    np.testing.assert_array_equal(actual, np.asarray(expected))
+    assert_matches(actual, np.asarray(expected))
     assert not volume_actual.is_deleted()
     assert mask_actual.is_deleted()
 
@@ -203,7 +204,7 @@ def test_box_scale_solvent_flatten_releases_dead_inputs_in_order(monkeypatch, ca
     assert result is not flattened_host_source
     assert result.flags.c_contiguous
     assert result.flags.owndata
-    np.testing.assert_array_equal(result, flattened_host_source)
+    assert_matches(result, flattened_host_source)
     assert events == [
         ("reshape", "volume_ft", (800, 800, 800)),
         ("idft", "volume_ft"),
@@ -371,5 +372,5 @@ def test_compiled_mask_preserves_requested_precision(dtype):
     expected = mask.raised_cosine_mask(shape, **kwargs, dtype=dtype)
     actual = mean_helpers._compiled_relion_solvent_mask(shape, dtype=dtype)(**kwargs)
     assert actual.dtype == expected.dtype == dtype
-    np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
+    assert_matches(np.asarray(actual), np.asarray(expected))
     mean_helpers._compiled_relion_solvent_mask.cache_clear()

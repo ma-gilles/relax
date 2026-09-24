@@ -5,6 +5,7 @@ import json
 import jax
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.relion.relion_projector_setup import setup_relion_projector
 
@@ -73,7 +74,7 @@ def test_native_projector_and_power_fp64_and_consumer_cast(size, padding, full, 
         if field == 0:
             candidates_field = [_crop(value, radius, padding) for value in candidates_field]
             assert candidates_field[0].dtype == np.complex128
-            np.testing.assert_array_equal(candidates_field[0] == 0, controls_field[0] == 0)
+            assert_matches(candidates_field[0] == 0, controls_field[0] == 0)
         else:
             assert candidates_field[0].dtype == np.float64
         metrics = _relative_metrics(controls_field[0], candidates_field[0])
@@ -90,7 +91,7 @@ def test_native_projector_and_power_fp64_and_consumer_cast(size, padding, full, 
                 controls_field[1].astype(cast_dtype),
             ),
         }
-    np.testing.assert_array_equal(reference, before)
+    assert_matches(reference, before)
     print(json.dumps({"size": size, "padding": padding, "full": full, "gridding": gridding, "metrics": records}))
 
 
@@ -106,7 +107,7 @@ def test_radius_and_gridding_reuse_one_compiled_shape():
         outputs.append(result)
     assert setup_relion_projector._cache_size() == 1
     assert all(value[0].shape == (19, 19, 10) and value[1].shape == (5,) for value in outputs)
-    np.testing.assert_array_equal(outputs[2][0], outputs[3][0])
+    assert_matches(outputs[2][0], outputs[3][0])
 
 
 def test_positive_nyquist_only_and_inclusive_sphere():
@@ -117,7 +118,7 @@ def test_positive_nyquist_only_and_inclusive_sphere():
     candidate, power = setup_relion_projector(reference, np.int32(4), ori_size=8, do_gridding=False)
     actual = np.asarray(candidate)
     native, native_power, *_ = bind.compute_fourier_transform_map(reference, 8, 1, 1, 8, False, 2)
-    np.testing.assert_array_equal(actual, native)
+    assert_matches(actual, native)
     np.testing.assert_allclose(power, native_power, rtol=1e-12, atol=0)
     center = actual.shape[0] // 2
     assert actual[center + 4, center, 0] != 0

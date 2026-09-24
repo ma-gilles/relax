@@ -21,6 +21,7 @@ from scripts.analyze_vdam_native_translation_boundary import (
     _top_pair_score_boundary,
     analyze,
 )
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -34,14 +35,14 @@ def test_native_crop_rows_map_centered_half_to_relion_fftw_crop():
 
     crop = _native_crop_rows(score_indices, full_size, current_size)
 
-    np.testing.assert_array_equal(crop, np.asarray([10, 0, 5], dtype=np.int32))
+    assert_matches(crop, np.asarray([10, 0, 5], dtype=np.int32))
 
 
 def test_current_crop_to_compact_preserves_native_pixel_lanes():
     lookup = _current_crop_to_compact(np.asarray([10, 0, 5]), current_size=4)
 
     assert lookup.shape == (12,)
-    np.testing.assert_array_equal(lookup[[0, 5, 10]], np.asarray([1, 2, 0]))
+    assert_matches(lookup[[0, 5, 10]], np.asarray([1, 2, 0]))
     assert np.count_nonzero(lookup < 0) == 9
 
 
@@ -65,7 +66,7 @@ def test_candidate_reference_rows_maps_rotation_rows_exactly_once():
 
     candidate = _candidate_reference_rows(by_rotation, np.asarray([2, 0, 2, 1]))
 
-    np.testing.assert_array_equal(candidate, by_rotation[[2, 0, 2, 1]])
+    assert_matches(candidate, by_rotation[[2, 0, 2, 1]])
 
 
 def test_positive_weight_metric_factors_out_common_scale():
@@ -221,8 +222,8 @@ def test_load_native_projector_preserves_capture_layout(tmp_path):
     assert projector.dtype == np.complex64
     assert r_max == 1
     assert padding_factor == 1
-    np.testing.assert_array_equal(loaded_dims, dims)
-    np.testing.assert_array_equal(
+    assert_matches(loaded_dims, dims)
+    assert_matches(
         projector.reshape(-1),
         values.astype(np.float32) - np.complex64(1j) * values.astype(np.float32),
     )
@@ -293,7 +294,7 @@ def test_preprocess_capture_loads_relion_verbose_boundaries(tmp_path):
     assert capture["masked"].shape == (4, 4)
     assert capture["masked_fourier_pre_optics"].shape == (4,)
     assert capture["masked_fourier_post_optics"].shape == (4,)
-    np.testing.assert_array_equal(
+    assert_matches(
         capture["masked_fourier_post_optics"],
         np.arange(fourier_size, dtype=np.float32)
         + 4

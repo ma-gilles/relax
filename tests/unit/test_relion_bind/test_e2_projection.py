@@ -6,6 +6,7 @@ matches recovar's slice_volume on identical inputs.
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from relax.relion_bind._relion_bind_core import (
     TRILINEAR,
     compute_fourier_transform_map,
@@ -135,7 +136,7 @@ class TestComputeFourierTransformMap:
             do_gridding=False,
             data_dim=3,
         )
-        np.testing.assert_array_equal(default_map, dense_em_map)
+        assert_matches(default_map, dense_em_map)
 
         default_projection = project_volume(
             vol,
@@ -154,7 +155,7 @@ class TestComputeFourierTransformMap:
             do_gridding=False,
             data_dim=3,
         )
-        np.testing.assert_array_equal(default_projection, dense_em_projection)
+        assert_matches(default_projection, dense_em_projection)
 
     @pytest.mark.parametrize("N", [16, 32])
     def test_projector_data_matches_numpy(self, N):

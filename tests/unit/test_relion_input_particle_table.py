@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 import starfile
 from helpers.em_fixtures import fixture_file
+from helpers.float_compare import assert_matches
 
 from relax.relion.input_particle_table import (
     build_relion_start_particle_table,
@@ -56,7 +57,7 @@ def test_glibc_rand_sequence_matches_libc(seed):
         pytest.skip("glibc is required as the reference")
     libc.srand(ctypes.c_uint(seed))
     expected = np.asarray([libc.rand() for _ in range(2000)], dtype=np.int64)
-    np.testing.assert_array_equal(glibc_rand_sequence(seed, 2000), expected)
+    assert_matches(glibc_rand_sequence(seed, 2000), expected)
 
 
 def test_order_split_and_groups_follow_relion_rules():
@@ -68,24 +69,24 @@ def test_order_split_and_groups_follow_relion_rules():
     )
     order = relion_particle_order(particles)
     # Byte-wise std::string order ("1" < "10" < "M..." < "b"), stable for the two "b" rows.
-    np.testing.assert_array_equal(order, [4, 3, 1, 0, 2])
+    assert_matches(order, [4, 3, 1, 0, 2])
     table = build_relion_start_particle_table(particles, seed=2)
-    np.testing.assert_array_equal(table["rlnRandomSubset"], glibc_rand_sequence(2, 5) % 2 + 1)
+    assert_matches(table["rlnRandomSubset"], glibc_rand_sequence(2, 5) % 2 + 1)
     # srand(7) puts all five particles in half 2; RELION stops on an empty half.
     with pytest.raises(ValueError, match="both random halves"):
         build_relion_start_particle_table(particles, seed=7)
     # The pipeline job directory is stripped from the group name, and ids follow first appearance.
-    np.testing.assert_array_equal(table["rlnGroupNumber"], [1, 2, 3, 4, 4])
+    assert_matches(table["rlnGroupNumber"], [1, 2, 3, 4, 4])
     assert relion_scale_group_numbers(pd.DataFrame({"rlnGroupName": ["g2", "g1", "g2"]})).tolist() == [1, 2, 1]
 
 
 def test_input_random_subsets_are_kept_and_validated():
-    np.testing.assert_array_equal(relion_random_subsets([2, 1, 2], seed=3, n_particles=3), [2, 1, 2])
+    assert_matches(relion_random_subsets([2, 1, 2], seed=3, n_particles=3), [2, 1, 2])
     with pytest.raises(ValueError, match="all zero or all non-zero"):
         relion_random_subsets([1, 0, 2], seed=3, n_particles=3)
     with pytest.raises(ValueError, match="must be 1 or 2"):
         relion_random_subsets([1, 3, 2], seed=3, n_particles=3)
-    np.testing.assert_array_equal(
+    assert_matches(
         relion_random_subsets([0, 0, 0, 0], seed=5, n_particles=4), glibc_rand_sequence(5, 4) % 2 + 1
     )
 
@@ -101,13 +102,13 @@ def test_rebuilt_table_reproduces_relion_run_it000(case):
 
     table = build_relion_start_particle_table(particles, seed=seed)
 
-    np.testing.assert_array_equal(table["rlnImageName"].astype(str), target["rlnImageName"].astype(str))
-    np.testing.assert_array_equal(table["rlnRandomSubset"].to_numpy(int), target["rlnRandomSubset"].to_numpy(int))
-    np.testing.assert_array_equal(table["rlnGroupNumber"].to_numpy(int), target["rlnGroupNumber"].to_numpy(int))
+    assert_matches(table["rlnImageName"].astype(str), target["rlnImageName"].astype(str))
+    assert_matches(table["rlnRandomSubset"].to_numpy(int), target["rlnRandomSubset"].to_numpy(int))
+    assert_matches(table["rlnGroupNumber"].to_numpy(int), target["rlnGroupNumber"].to_numpy(int))
     rebuilt_noise = _relion_fresh_initial_noise_layout(particles, table)
     relion_noise = _relion_fresh_initial_noise_layout(particles, target)
     for rebuilt, relion in zip(rebuilt_noise, relion_noise, strict=True):
-        np.testing.assert_array_equal(rebuilt, relion)
+        assert_matches(rebuilt, relion)
 
 
 def test_from_input_flag_rejects_combinations_relion_would_not_build():
@@ -212,6 +213,6 @@ def test_written_table_round_trips_input_values(tmp_path):
     for column in source.columns:
         if column == "rlnRandomSubset":
             continue
-        np.testing.assert_array_equal(written["particles"][column].to_numpy(), source[column].to_numpy())
+        assert_matches(written["particles"][column].to_numpy(), source[column].to_numpy())
     for column in our_star["optics"].columns:
-        np.testing.assert_array_equal(written["optics"][column].to_numpy(), our_star["optics"][column].to_numpy())
+        assert_matches(written["optics"][column].to_numpy(), our_star["optics"][column].to_numpy())

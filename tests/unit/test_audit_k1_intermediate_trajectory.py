@@ -3,6 +3,7 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts.audit_k1_intermediate_trajectory import (
     AuditError,
@@ -58,7 +59,7 @@ def test_relion_particle_values_are_restored_to_original_image_order():
     reordered, identity = _values_in_original_image_order(
         particles, "rlnMaxValueProbDistribution"
     )
-    np.testing.assert_array_equal(reordered, np.arange(1.0, 11.0))
+    assert_matches(reordered, np.arange(1.0, 11.0))
     assert identity["exact_permutation"]
     assert identity["identity_count"] == 10
 
@@ -86,5 +87,5 @@ def test_relion_particle_values_use_exact_reference_identities_across_stacks():
         "value",
         ["1@stack_a.mrcs", "1@stack_b.mrcs"],
     )
-    np.testing.assert_array_equal(reordered, [10.0, 20.0])
+    assert_matches(reordered, [10.0, 20.0])
     assert identity["exact_identity_set"]

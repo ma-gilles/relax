@@ -17,6 +17,7 @@ reproduce the formula exactly.
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 healpy = pytest.importorskip("healpy")
 
@@ -149,7 +150,7 @@ class TestExactSinglePriorParity:
             _SIGMA_CUTOFF,
         )
 
-        np.testing.assert_array_equal(actual_indices, expected_indices)
+        assert_matches(actual_indices, expected_indices)
         np.testing.assert_allclose(actual_log_prior[0], expected_log_prior, rtol=1e-6, atol=1e-6)
 
     @pytest.mark.parametrize("order", [2, 3])
@@ -185,7 +186,7 @@ class TestExactSinglePriorParity:
             per_image=True,
         )
 
-        np.testing.assert_array_equal(from_indices[0], from_eulers[0])
+        assert_matches(from_indices[0], from_eulers[0])
         np.testing.assert_allclose(from_indices[1], from_eulers[1], rtol=1e-6, atol=1e-6)
 
 
@@ -223,7 +224,7 @@ class TestPerImageUnionParity:
             positions = np.array([union_pos[int(idx)] for idx in indices.tolist()], dtype=np.int64)
             expected_log_prior[row, positions] = log_prior
 
-        np.testing.assert_array_equal(actual_indices, expected_union)
+        assert_matches(actual_indices, expected_union)
         np.testing.assert_allclose(actual_log_prior, expected_log_prior, rtol=1e-6, atol=1e-6)
 
     @pytest.mark.parametrize("order", [2, 3])

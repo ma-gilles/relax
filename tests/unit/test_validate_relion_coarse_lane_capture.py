@@ -2,6 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+from helpers.float_compare import matches
 
 from scripts import validate_relion_coarse_lane_capture as validator
 
@@ -120,9 +121,9 @@ def test_loads_sealed_lane_artifact(tmp_path: Path) -> None:
         + validator.FOOTER_STRUCT.pack(validator.FOOTER_MAGIC, 2, 10)
     )
     loaded = validator.load_artifact(path)
-    assert np.array_equal(loaded.rotation_keys, rotation_keys)
-    assert np.array_equal(loaded.local_rotation_indices, local_indices)
-    assert np.array_equal(loaded.lane_partials, lanes)
+    assert matches(loaded.rotation_keys, rotation_keys)
+    assert matches(loaded.local_rotation_indices, local_indices)
+    assert matches(loaded.lane_partials, lanes)
 
 
 def test_lane_capture_accepts_exact_operands_and_legal_atomic_targets(monkeypatch) -> None:

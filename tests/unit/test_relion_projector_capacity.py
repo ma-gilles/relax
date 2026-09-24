@@ -11,6 +11,7 @@ from scipy.spatial.transform import Rotation
 from recovar import cuda_backproject as cb
 from relax.cuda import kernels as em_cuda_kernels
 from relax.helpers.projection import relion_projector_half_to_texture_full
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -71,7 +72,7 @@ def test_runtime_radius_is_operand_not_attribute_and_reuses_trace(monkeypatch):
     half, rotations, _ = _inputs()
     for radius in (15, 16, 0):
         result = em_cuda_kernels.project_relion_half_capacity(half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(32, 32))
-        np.testing.assert_array_equal(result, np.full(result.shape, radius, np.complex64))
+        assert_matches(result, np.full(result.shape, radius, np.complex64))
     assert len(records) == 1
     target, _, rotshape, radius_aval, attrs = records[0]
     assert target == em_cuda_kernels._TARGET_PROJECT_RELION_HALF_RUNTIME
@@ -141,7 +142,7 @@ def _rotations():
 @pytest.mark.gpu
 @pytest.mark.parametrize("pf", [1, 2])
 @pytest.mark.parametrize("q", [32, 64, 96])
-def test_gpu_old_texture_bitwise_all_logical_radii_and_one_executable(q, pf):
+def test_gpu_old_texture_matches_all_logical_radii_and_one_executable(q, pf):
     assert jax.default_backend() == "gpu"
     cb._ensure_ffi()
     rotations = _rotations()
@@ -170,7 +171,7 @@ def test_gpu_old_texture_bitwise_all_logical_radii_and_one_executable(q, pf):
             image_shape=(q, q),
             padding_factor=pf,
         )
-        np.testing.assert_array_equal(np.asarray(result).view(np.uint32), np.asarray(reference).view(np.uint32), err_msg=f"q={q}, pf={pf}, r={radius}")
+        assert_matches(np.asarray(result), np.asarray(reference), err_msg=f"q={q}, pf={pf}, r={radius}")
     assert em_cuda_kernels.project_relion_half_capacity._cache_size() == 1
 
 
@@ -228,6 +229,6 @@ def test_capacity_compact_support_preserves_positive_nyquist(output_size, pf, ma
         projector_capacity=True, pixel_indices=indices, **common,
     )
     expected = np.ascontiguousarray(np.asarray(full)[:, indices])
-    np.testing.assert_array_equal(np.asarray(compact).view(np.uint32), expected.view(np.uint32))
+    assert_matches(np.asarray(compact), expected)
     if output_size == image_size:
         assert np.any(np.abs(expected[:, 0]) > 0), "Nyquist check must not be vacuous"

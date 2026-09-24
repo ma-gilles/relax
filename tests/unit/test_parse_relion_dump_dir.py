@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts.parse_relion_dump_dir import parse_dump_dir
 
@@ -88,20 +89,20 @@ def test_parse_relion_dump_dir_reads_known_file_types(tmp_path):
 
     assert int(parsed["header_nr_dir"]) == 4
     assert float(parsed["header_pixel_size"]) == pytest.approx(4.25)
-    np.testing.assert_array_equal(parsed["Fctf"], np.arange(6, dtype=np.float64).reshape(2, 3))
-    np.testing.assert_array_equal(parsed["Fimg_unweighted"], np.arange(6, dtype=np.float64).reshape(2, 3) + 1j)
-    np.testing.assert_array_equal(parsed["exp_Mweight_posterior"], np.array([1.0, 2.0, 3.0]))
-    np.testing.assert_array_equal(parsed["candidate_weight_normalized"], np.array([0.1, 0.2, 0.3]))
-    np.testing.assert_array_equal(parsed["candidate_combined_log_prior"], np.array([-3.0, -2.0, -1.0]))
-    np.testing.assert_array_equal(parsed["candidate_translation_x"], np.array([0.0, 1.5, 0.0]))
-    np.testing.assert_array_equal(parsed["candidate_translation_y"], np.array([0.0, -0.5, 1.5]))
-    np.testing.assert_array_equal(parsed["directions_prior"], np.array([0.25, 0.75]))
-    np.testing.assert_array_equal(parsed["pdf_offset"], np.array([-0.5, -0.25, 0.0]))
-    np.testing.assert_array_equal(parsed["pdf_orientation"], np.array([-1.5, -1.0, -0.5, 0.0]))
-    np.testing.assert_array_equal(parsed["pointer_dir_nonzeroprior"], np.array([5, 8], dtype=np.int32))
-    np.testing.assert_array_equal(parsed["candidate_in_denominator_set"], np.array([1, 1, 1], dtype=np.int32))
-    np.testing.assert_array_equal(parsed["candidate_class_idx"], np.array([0, 2, 1], dtype=np.int32))
-    np.testing.assert_array_equal(parsed["candidate_coarse_trans_idx"], np.array([0, 0, 1], dtype=np.int32))
+    assert_matches(parsed["Fctf"], np.arange(6, dtype=np.float64).reshape(2, 3))
+    assert_matches(parsed["Fimg_unweighted"], np.arange(6, dtype=np.float64).reshape(2, 3) + 1j)
+    assert_matches(parsed["exp_Mweight_posterior"], np.array([1.0, 2.0, 3.0]))
+    assert_matches(parsed["candidate_weight_normalized"], np.array([0.1, 0.2, 0.3]))
+    assert_matches(parsed["candidate_combined_log_prior"], np.array([-3.0, -2.0, -1.0]))
+    assert_matches(parsed["candidate_translation_x"], np.array([0.0, 1.5, 0.0]))
+    assert_matches(parsed["candidate_translation_y"], np.array([0.0, -0.5, 1.5]))
+    assert_matches(parsed["directions_prior"], np.array([0.25, 0.75]))
+    assert_matches(parsed["pdf_offset"], np.array([-0.5, -0.25, 0.0]))
+    assert_matches(parsed["pdf_orientation"], np.array([-1.5, -1.0, -0.5, 0.0]))
+    assert_matches(parsed["pointer_dir_nonzeroprior"], np.array([5, 8], dtype=np.int32))
+    assert_matches(parsed["candidate_in_denominator_set"], np.array([1, 1, 1], dtype=np.int32))
+    assert_matches(parsed["candidate_class_idx"], np.array([0, 2, 1], dtype=np.int32))
+    assert_matches(parsed["candidate_coarse_trans_idx"], np.array([0, 0, 1], dtype=np.int32))
     assert int(parsed["candidate_denominator_count"]) == 3
     assert int(parsed["candidate_threshold_count"]) == 2
     assert int(parsed["candidate_threshold_idx"]) == 1
@@ -125,18 +126,18 @@ def test_parse_relion_dump_dir_classifies_pass_prefixed_files(tmp_path):
 
     parsed = parse_dump_dir(tmp_path)
 
-    np.testing.assert_array_equal(parsed["pass0_Fctf"], np.arange(6, dtype=np.float64).reshape(2, 3))
-    np.testing.assert_array_equal(parsed["pass0_over0_sigma2_noise"], np.arange(4, dtype=np.float64).reshape(1, 4))
-    np.testing.assert_array_equal(parsed["pass0_candidate_weight_normalized"], np.array([0.7, 0.2, 0.1]))
-    np.testing.assert_array_equal(parsed["pass1_exp_Mweight_raw_preprior"], np.array([-3.0, -2.0]))
-    np.testing.assert_array_equal(parsed["pass0_img0_corr_img"], np.array([4.0, 5.0]))
-    np.testing.assert_array_equal(parsed["pass0_img0_Fimg_corrected_real"], np.array([1.0, 2.0]))
-    np.testing.assert_array_equal(parsed["pass0_img0_Fimg_corrected_imag"], np.array([-1.0, -2.0]))
-    np.testing.assert_array_equal(
+    assert_matches(parsed["pass0_Fctf"], np.arange(6, dtype=np.float64).reshape(2, 3))
+    assert_matches(parsed["pass0_over0_sigma2_noise"], np.arange(4, dtype=np.float64).reshape(1, 4))
+    assert_matches(parsed["pass0_candidate_weight_normalized"], np.array([0.7, 0.2, 0.1]))
+    assert_matches(parsed["pass1_exp_Mweight_raw_preprior"], np.array([-3.0, -2.0]))
+    assert_matches(parsed["pass0_img0_corr_img"], np.array([4.0, 5.0]))
+    assert_matches(parsed["pass0_img0_Fimg_corrected_real"], np.array([1.0, 2.0]))
+    assert_matches(parsed["pass0_img0_Fimg_corrected_imag"], np.array([-1.0, -2.0]))
+    assert_matches(
         parsed["pass0_candidate_in_fine_threshold_set"],
         np.array([1, 0, 1], dtype=np.int32),
     )
-    np.testing.assert_array_equal(parsed["pass0_coarse_candidate_rot_idx"], np.array([4, 5, 6], dtype=np.int32))
+    assert_matches(parsed["pass0_coarse_candidate_rot_idx"], np.array([4, 5, 6], dtype=np.int32))
     assert int(parsed["pass0_acc_iter"]) == 2
 
 
@@ -150,18 +151,18 @@ def test_parse_relion_dump_dir_classifies_firstiter_cc_files(tmp_path):
 
     parsed = parse_dump_dir(tmp_path)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         parsed["pass1_firstiter_cc_exp_Mweight_raw_preonehot"],
         np.array([-4.0, -5.0, -3.0]),
     )
-    np.testing.assert_array_equal(parsed["pass1_firstiter_cc_raw_rot_idx"], np.array([8, 9, 10], dtype=np.int32))
-    np.testing.assert_array_equal(parsed["pass1_firstiter_cc_raw_trans_idx"], np.array([80, 81, 82], dtype=np.int32))
-    np.testing.assert_array_equal(parsed["pass1_firstiter_cc_raw_rot_id"], np.array([18, 19, 20], dtype=np.int32))
-    np.testing.assert_array_equal(
+    assert_matches(parsed["pass1_firstiter_cc_raw_rot_idx"], np.array([8, 9, 10], dtype=np.int32))
+    assert_matches(parsed["pass1_firstiter_cc_raw_trans_idx"], np.array([80, 81, 82], dtype=np.int32))
+    assert_matches(parsed["pass1_firstiter_cc_raw_rot_id"], np.array([18, 19, 20], dtype=np.int32))
+    assert_matches(
         parsed["pass1_firstiter_cc_raw_ihidden_overs"],
         np.array([0, 1, 2], dtype=np.int32),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         parsed["pass1_firstiter_cc_weight_dims"],
         np.array([7, 1, 1, 1, 3, 1, 1], dtype=np.int32),
     )
@@ -181,20 +182,20 @@ def test_parse_relion_dump_dir_classifies_part_specific_acc_files(tmp_path):
 
     parsed = parse_dump_dir(tmp_path)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         parsed["img0_part7778_pass1_class0_pass1_diff2_weights"],
         np.array([-0.4, -0.3]),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         parsed["img0_part7778_pass1_class0_pass1_Fimg"],
         np.array([1.0 + 2.0j, -1.0 - 2.0j], dtype=np.complex128),
     )
-    np.testing.assert_array_equal(parsed["img0_part7778_pass1_class0_pass1_corr_img"], np.array([3.0, 4.0]))
-    np.testing.assert_array_equal(
+    assert_matches(parsed["img0_part7778_pass1_class0_pass1_corr_img"], np.array([3.0, 4.0]))
+    assert_matches(
         parsed["img0_part7778_pass1_class0_pass1_eulers_matrices"],
         np.arange(18, dtype=np.float64),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         parsed["img0_part7778_pass1_class0_pass1_trans_xyz_phases"],
         np.array([0.1, 0.2, 0.3]),
     )
@@ -223,26 +224,26 @@ def test_parse_relion_dump_dir_classifies_projector_and_component_files(tmp_path
 
     parsed = parse_dump_dir(tmp_path)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         parsed["pass1_class0_ppref_dims"],
         np.array([58, 115, 115, 0, -57, -57, 28], dtype=np.int32),
     )
-    np.testing.assert_array_equal(parsed["pass1_class0_ppref_real"], np.array([1.0, 2.0, 3.0]))
-    np.testing.assert_array_equal(parsed["pass1_class0_ppref_imag"], np.array([-1.0, -2.0, -3.0]))
-    np.testing.assert_array_equal(parsed["pass1_class0_fine_ref_real"], np.array([0.5, 0.25]))
-    np.testing.assert_array_equal(parsed["pass1_class0_fine_ref_imag"], np.array([-0.5, -0.25]))
-    np.testing.assert_array_equal(parsed["pass1_class0_fine_shifted_real"], np.array([1.5, 1.25]))
-    np.testing.assert_array_equal(parsed["pass1_class0_fine_shifted_imag"], np.array([-1.5, -1.25]))
-    np.testing.assert_array_equal(parsed["pass1_class0_fine_eulers"], np.arange(18, dtype=np.float64))
-    np.testing.assert_array_equal(parsed["pass1_class0_fine_rots"], np.array([10.0, 20.0]))
-    np.testing.assert_array_equal(parsed["pass1_class0_fine_tilts"], np.array([30.0, 40.0]))
-    np.testing.assert_array_equal(parsed["pass1_class0_fine_psis"], np.array([50.0, 60.0]))
-    np.testing.assert_array_equal(parsed["pass1_class0_fine_iorientclasses"], np.array([0, 1], dtype=np.int32))
-    np.testing.assert_array_equal(parsed["pass1_class0_fine_iover_rots"], np.array([2, 3], dtype=np.int32))
-    np.testing.assert_array_equal(parsed["pass1_class0_fine_class_entries"], np.array([4], dtype=np.int32))
-    np.testing.assert_array_equal(parsed["pass1_class0_fine_class_idx"], np.array([5, 6], dtype=np.int32))
-    np.testing.assert_array_equal(parsed["pass0_class0_cc_component_weight"], np.array([7.0, 8.0]))
-    np.testing.assert_array_equal(parsed["pass0_class0_cc_component_norm"], np.array([9.0, 10.0]))
+    assert_matches(parsed["pass1_class0_ppref_real"], np.array([1.0, 2.0, 3.0]))
+    assert_matches(parsed["pass1_class0_ppref_imag"], np.array([-1.0, -2.0, -3.0]))
+    assert_matches(parsed["pass1_class0_fine_ref_real"], np.array([0.5, 0.25]))
+    assert_matches(parsed["pass1_class0_fine_ref_imag"], np.array([-0.5, -0.25]))
+    assert_matches(parsed["pass1_class0_fine_shifted_real"], np.array([1.5, 1.25]))
+    assert_matches(parsed["pass1_class0_fine_shifted_imag"], np.array([-1.5, -1.25]))
+    assert_matches(parsed["pass1_class0_fine_eulers"], np.arange(18, dtype=np.float64))
+    assert_matches(parsed["pass1_class0_fine_rots"], np.array([10.0, 20.0]))
+    assert_matches(parsed["pass1_class0_fine_tilts"], np.array([30.0, 40.0]))
+    assert_matches(parsed["pass1_class0_fine_psis"], np.array([50.0, 60.0]))
+    assert_matches(parsed["pass1_class0_fine_iorientclasses"], np.array([0, 1], dtype=np.int32))
+    assert_matches(parsed["pass1_class0_fine_iover_rots"], np.array([2, 3], dtype=np.int32))
+    assert_matches(parsed["pass1_class0_fine_class_entries"], np.array([4], dtype=np.int32))
+    assert_matches(parsed["pass1_class0_fine_class_idx"], np.array([5, 6], dtype=np.int32))
+    assert_matches(parsed["pass0_class0_cc_component_weight"], np.array([7.0, 8.0]))
+    assert_matches(parsed["pass0_class0_cc_component_norm"], np.array([9.0, 10.0]))
 
 
 def test_parse_relion_dump_dir_classifies_store_wavg_and_candidate_files(tmp_path):
@@ -267,35 +268,35 @@ def test_parse_relion_dump_dir_classifies_store_wavg_and_candidate_files(tmp_pat
 
     parsed = parse_dump_dir(tmp_path)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         parsed["img0_part2355_storeWavg_sorted_weights"],
         np.array([0.9, 0.5, 0.1]),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         parsed["img0_part2355_storeWavg_wavg_ppref_dims"],
         np.array([58, 115, 115, 0, -57, -57, 28], dtype=np.int32),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         parsed["img0_part2355_storeWavg_wavg_ppref_real"],
         np.array([1.0, 2.0, 3.0]),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         parsed["img0_part2355_storeWavg_wavg_ppref_imag"],
         np.array([-1.0, -2.0, -3.0]),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         parsed["store_candidate0_Fimg_store"],
         np.ones((2, 3), dtype=np.complex128),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         parsed["store_candidate0_Frefctf"],
         np.arange(6, dtype=np.float64).reshape(2, 3) + 2j,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         parsed["store_candidate0_Mctf"],
         np.arange(6, dtype=np.float64).reshape(2, 3),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         parsed["store_candidate0_Minvsigma2"],
         np.arange(6, dtype=np.float64).reshape(2, 3) + 0.5,
     )
@@ -311,4 +312,4 @@ def test_parse_relion_dump_dir_can_restrict_filename_stems(tmp_path):
     parsed = parse_dump_dir(tmp_path, include_names={"pass1_diff2_weights"})
 
     assert set(parsed) == {"pass1_diff2_weights"}
-    np.testing.assert_array_equal(parsed["pass1_diff2_weights"], np.array([1.0, 2.0]))
+    assert_matches(parsed["pass1_diff2_weights"], np.array([1.0, 2.0]))

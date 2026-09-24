@@ -11,6 +11,7 @@ set's CTFs, off by default, and bounded.
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 
@@ -78,7 +79,7 @@ def test_memo_can_be_disabled_and_then_hands_back_fresh_arrays(prepared_cache, m
     monkeypatch.setenv("RELAX_RELION_EXACT_CTF_CACHE_GB", "0")
     first = _call(range(N_IMAGES))
     second = _call(range(N_IMAGES))
-    np.testing.assert_array_equal(first, second)
+    assert_matches(first, second)
     assert first is not second
     assert first.flags.writeable
 
@@ -102,7 +103,7 @@ def test_memo_returns_the_identical_bytes(prepared_cache, monkeypatch):
     second = _call(range(N_IMAGES))
     assert first is second, "a repeated request must not rebuild the operand"
     assert not first.flags.writeable, "a shared operand must not be mutable"
-    np.testing.assert_array_equal(first, control)
+    assert_matches(first, control)
     assert first.dtype == control.dtype and first.shape == control.shape
 
 
@@ -118,14 +119,14 @@ def test_memo_distinguishes_index_sets_and_pixel_plans(prepared_cache, monkeypat
     assert whole.shape == (N_IMAGES, HALF_PIXELS)
     assert first_half.shape == (N_IMAGES // 2, HALF_PIXELS)
     assert gathered_a.shape == (N_IMAGES, pixels_a.size)
-    np.testing.assert_array_equal(first_half, whole[: N_IMAGES // 2])
-    np.testing.assert_array_equal(gathered_a, whole[:, pixels_a])
-    np.testing.assert_array_equal(gathered_b, whole[:, pixels_b])
+    assert_matches(first_half, whole[: N_IMAGES // 2])
+    assert_matches(gathered_a, whole[:, pixels_a])
+    assert_matches(gathered_b, whole[:, pixels_b])
     assert gathered_a is not gathered_b
 
     # A permuted index set is a different operand, not a cache hit.
     permuted = _call(list(reversed(range(N_IMAGES))))
-    np.testing.assert_array_equal(permuted, whole[::-1])
+    assert_matches(permuted, whole[::-1])
     assert permuted is not whole
 
 
@@ -144,7 +145,7 @@ def test_memo_repeats_every_shape_and_stays_bitwise(prepared_cache, monkeypatch)
             candidate = _call(indices, pixels)
             assert candidate.dtype == control.dtype
             assert candidate.shape == control.shape
-            np.testing.assert_array_equal(candidate, control)
+            assert_matches(candidate, control)
 
 
 def test_memo_respects_its_budget(prepared_cache, monkeypatch):
@@ -158,7 +159,7 @@ def test_memo_respects_its_budget(prepared_cache, monkeypatch):
     assert relion_ctf._EXACT_CTF_RESULT_BYTES <= one_operand
     # The evicted entry is rebuilt with the identical bytes.
     rebuilt = _call(range(N_IMAGES))
-    np.testing.assert_array_equal(rebuilt, whole)
+    assert_matches(rebuilt, whole)
 
 
 def test_memo_rejects_an_unparsable_budget(prepared_cache, monkeypatch):

@@ -4,6 +4,7 @@ import struct
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts.analyze_k1_bpref_integrated_kernel import _float32_from_bits, _metric
 
@@ -12,7 +13,7 @@ from scripts.analyze_k1_bpref_integrated_kernel import _float32_from_bits, _metr
 def test_float32_from_bits_preserves_native_controls() -> None:
     expected = np.float32(0.999)
     bits = struct.unpack("<I", struct.pack("<f", expected))[0]
-    assert _float32_from_bits(bits).tobytes() == expected.tobytes()
+    assert_matches(_float32_from_bits(bits), expected, strict=True)
 
 
 @pytest.mark.unit

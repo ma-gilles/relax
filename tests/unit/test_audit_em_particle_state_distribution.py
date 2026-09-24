@@ -9,6 +9,7 @@ import pytest
 
 from recovar.data_io.starfile import write_star
 from scripts import audit_em_particle_state_distribution as auditor
+from helpers.float_compare import assert_matches
 
 
 def _write_star(path: Path, rows: dict[str, object]) -> Path:
@@ -221,7 +222,7 @@ def test_cross_iteration_tail_enrichment_uses_exact_aligned_state_and_is_diagnos
     assert pmax["contingency"]["exposure_and_next_pose_tail"] == 1
     assert pmax["enrichment_vs_unexposed"] == pytest.approx(5.5)
     assert pmax["next_pose_tail_capture_fraction"] == pytest.approx(1 / 3)
-    np.testing.assert_array_equal(
+    assert_matches(
         arrays["it001_to_it002_support_mismatch_at_t"],
         np.asarray([False, True, False, True, False, True, False, True, False, True, False, True]),
     )
@@ -322,7 +323,7 @@ def test_identical_euler_arrays_have_exact_zero_angular_error():
 
     errors = auditor._angular_error_deg(eulers, eulers.copy())
 
-    np.testing.assert_array_equal(errors, np.zeros(2))
+    assert_matches(errors, np.zeros(2))
 
 
 @pytest.mark.unit
@@ -520,7 +521,7 @@ def test_model_class_resolution_parser_accepts_underscored_and_legacy_bare_label
         estimated_label=estimated_label,
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         auditor._star_loop_numeric_values(path, "rlnEstimatedResolution"),
         np.asarray([32.0]),
     )

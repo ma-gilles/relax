@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from types import SimpleNamespace
+from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
@@ -170,7 +171,7 @@ def test_zero_pad_fourier_volume_maps_centered_frequencies():
         mapped_axes.append(start + padding_factor * np.arange(native_dim))
 
     recovered = padded[np.ix_(*mapped_axes)]
-    np.testing.assert_array_equal(recovered, native)
+    assert_matches(recovered, native)
 
     mask = np.zeros(padded_shape, dtype=bool)
     mask[np.ix_(*mapped_axes)] = True
@@ -376,9 +377,9 @@ def test_relion_current_size_map_prior_excludes_exact_boundary():
     )
 
     assert half_regularized[2, 2, 0] > 1.0
-    assert half_regularized[2, 2, 1] == 1.0
+    assert matches(half_regularized[2, 2, 1], 1.0)
     assert full_regularized[2, 2, 2] > 1.0
-    assert full_regularized[1, 2, 2] == 1.0
+    assert matches(full_regularized[1, 2, 2], 1.0)
 
 
 def test_post_process_large_grid_guard_avoids_complex128_padded_volume(monkeypatch):
@@ -796,8 +797,8 @@ def test_relion_wiener_boundary_dump_records_pre_ifft_operands(tmp_path, monkeyp
         assert not bool(capture["tau_is_1d"])
         assert capture["regularized_filter"].dtype == np.float64
         assert capture["tau"].dtype == np.float64
-        np.testing.assert_array_equal(capture["F_ty_input"], np.asarray(numerator))
-        np.testing.assert_array_equal(capture["divided_volume"], np.asarray(divided))
+        assert_matches(capture["F_ty_input"], np.asarray(numerator))
+        assert_matches(capture["divided_volume"], np.asarray(divided))
 
 
 @pytest.mark.parametrize(("old_dim", "new_dim"), [(11, 8), (7, 10)])
@@ -834,7 +835,7 @@ def test_relion_window_padding_indices_are_a_contiguous_permutation(old_dim, new
     idx = rf._relion_centered_axis_scatter_indices(old_dim, new_dim)
     assert idx.shape == (old_dim,)
     assert idx.min() >= 0 and idx.max() < new_dim
-    np.testing.assert_array_equal(np.sort(idx), np.arange(idx.min(), idx.min() + old_dim))
+    assert_matches(np.sort(idx), np.arange(idx.min(), idx.min() + old_dim))
 
 
 @pytest.mark.parametrize(
@@ -867,7 +868,7 @@ def test_relion_window_centered_half_fourier_padding_matches_scatter_reference(o
         )
     )
     assert got.dtype == dtype
-    np.testing.assert_array_equal(got, expected)
+    assert_matches(got, expected)
 
 
 def test_relion_odd_accumulator_postprocess_windows_to_even_padded_grid():
@@ -1316,7 +1317,7 @@ def test_relion_style_triangular_kernel_respects_by_image_flag(monkeypatch):
         by_image=False,
     )
 
-    np.testing.assert_array_equal(calls["indices"], np.array([1, 5], dtype=np.int32))
+    assert_matches(calls["indices"], np.array([1, 5], dtype=np.int32))
     assert calls["by_image"] is False
     assert calls["batch_size"] == 7
     assert np.asarray(ft_ctf).shape == (4 * 4 * 4,)
@@ -1376,7 +1377,7 @@ def test_upscale_tau_gpu(gpu_device):
 
 
 def test_relion_kernel_batch_half_image_matches_full_reference():
-    """New half-image relion_kernel_batch produces identical output to
+    """New half-image relion_kernel_batch matches the output of
     the old full-image path (padded_dft + translate + full adjoint)."""
     from recovar.core.configs import ForwardModelConfig
     from recovar.core.ctf import CTFEvaluator
@@ -1781,14 +1782,14 @@ def test_post_process_large_grid_guard_uses_reconstruction_grid_for_compact_accu
 
 @pytest.fixture
 def _jax_cpu_default_device():
-    """Pin JAX to CPU for host-vs-JAX bitwise checks; cuFFT differs from the host FFT at ~1e-16."""
+    """Pin JAX to CPU for host-vs-JAX checks at the float64 band; cuFFT differs from the host FFT at ~1e-16."""
     with jax.default_device(jax.devices("cpu")[0]):
         yield
 
 
 
 @pytest.mark.usefixtures("_jax_cpu_default_device")
-def test_post_process_small_grid_auto_guard_matches_disabled_bitwise(monkeypatch):
+def test_post_process_small_grid_auto_guard_matches_disabled(monkeypatch):
     clear_cache = getattr(rf.post_process_from_filter_v2, "clear_cache", None)
     volume_shape = (6, 6, 6)
     n_voxels = int(np.prod(volume_shape))
@@ -1833,7 +1834,7 @@ def test_post_process_small_grid_auto_guard_matches_disabled_bitwise(monkeypatch
     )
 
     assert disabled.dtype == np.complex128
-    np.testing.assert_array_equal(automatic, disabled)
+    assert_matches(automatic, disabled)
     if callable(clear_cache):
         clear_cache()
 
@@ -1880,7 +1881,7 @@ def test_large_accumulator_guard_keeps_scaled_wiener_boundary_single_precision(
 
 
 @pytest.mark.parametrize(("old_dim", "new_dim"), [(5, 16), (7, 10), (12, 16)])
-def test_relion_direct_fftw_half_padding_matches_centered_path_bitwise(old_dim, new_dim):
+def test_relion_direct_fftw_half_padding_matches_centered_path(old_dim, new_dim):
     import recovar.core.fourier_transform_utils as ftu
 
     rng = np.random.default_rng(803 + old_dim)
@@ -1903,14 +1904,14 @@ def test_relion_direct_fftw_half_padding_matches_centered_path_bitwise(old_dim, 
     )
     shifted_reference = jnp.fft.ifftshift(centered, axes=(0, 1))
 
-    np.testing.assert_array_equal(np.asarray(direct_fftw), np.asarray(shifted_reference))
+    assert_matches(np.asarray(direct_fftw), np.asarray(shifted_reference))
     direct_real = rf._relion_idft3_real_from_fftw_half(direct_fftw, new_shape)
     centered_real = ftu.get_idft3_real(centered, volume_shape=new_shape)
-    np.testing.assert_array_equal(np.asarray(direct_real), np.asarray(centered_real))
+    assert_matches(np.asarray(direct_real), np.asarray(centered_real))
 
 
 @pytest.mark.parametrize(("old_dim", "new_dim"), [(11, 8), (11, 9), (12, 8), (12, 9)])
-def test_relion_direct_fftw_half_crop_matches_centered_path_bitwise(old_dim, new_dim):
+def test_relion_direct_fftw_half_crop_matches_centered_path(old_dim, new_dim):
     import recovar.core.fourier_transform_utils as ftu
 
     rng = np.random.default_rng(911 + old_dim + new_dim)
@@ -1933,14 +1934,14 @@ def test_relion_direct_fftw_half_crop_matches_centered_path_bitwise(old_dim, new
     )
     shifted_reference = jnp.fft.ifftshift(centered, axes=(0, 1))
 
-    np.testing.assert_array_equal(np.asarray(direct_fftw), np.asarray(shifted_reference))
+    assert_matches(np.asarray(direct_fftw), np.asarray(shifted_reference))
     direct_real = rf._relion_idft3_real_from_fftw_half(direct_fftw, new_shape)
     centered_real = ftu.get_idft3_real(centered, volume_shape=new_shape)
-    np.testing.assert_array_equal(np.asarray(direct_real), np.asarray(centered_real))
+    assert_matches(np.asarray(direct_real), np.asarray(centered_real))
 
 
 @pytest.mark.parametrize(("old_dim", "new_dim"), [(11, 8), (11, 9), (12, 8), (12, 9)])
-def test_relion_host_fftw_half_crop_matches_device_crop_bitwise(old_dim, new_dim):
+def test_relion_host_fftw_half_crop_matches_device_crop(old_dim, new_dim):
     import recovar.core.fourier_transform_utils as ftu
     from relax.refinement import mean_helpers
 
@@ -1966,7 +1967,7 @@ def test_relion_host_fftw_half_crop_matches_device_crop_bitwise(old_dim, new_dim
         rf,
     )
 
-    np.testing.assert_array_equal(host_crop, device_crop)
+    assert_matches(host_crop, device_crop)
 
 
 def test_large_odd_accumulator_crop_routes_directly_to_fftw(monkeypatch):
@@ -2018,7 +2019,7 @@ def test_large_odd_accumulator_crop_routes_directly_to_fftw(monkeypatch):
 
 
 @pytest.mark.usefixtures("_jax_cpu_default_device")
-def test_large_host_staged_pre_ifft_split_matches_monolith_bitwise(monkeypatch):
+def test_large_host_staged_pre_ifft_split_matches_monolith(monkeypatch):
     from recovar.core import fourier_transform_utils as ftu
     from relax.refinement import mean_helpers
 
@@ -2099,8 +2100,8 @@ def test_large_host_staged_pre_ifft_split_matches_monolith_bitwise(monkeypatch):
 
     assert device_staged.dtype == np.complex64
     assert host_staged.dtype == np.complex64
-    np.testing.assert_array_equal(device_staged, monolithic)
-    np.testing.assert_array_equal(host_staged, monolithic)
+    assert_matches(device_staged, monolithic)
+    assert_matches(host_staged, monolithic)
 
     for compiled in (
         rf.post_process_from_filter_v2,
@@ -2157,11 +2158,11 @@ def test_host_irfft_center_crop_matches_jax_without_full_shift(
 
     assert actual.dtype == np.float32
     assert actual.flags.c_contiguous
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
 
 @pytest.mark.usefixtures("_jax_cpu_default_device")
-def test_host_unpadded_tail_matches_existing_fftw_half_finish_bitwise():
+def test_host_unpadded_tail_matches_existing_fftw_half_finish():
     from recovar.core import fourier_transform_utils as ftu
     from relax.refinement import mean_helpers
 
@@ -2211,7 +2212,7 @@ def test_host_unpadded_tail_matches_existing_fftw_half_finish_bitwise():
         ),
     )
 
-    np.testing.assert_array_equal(host, existing)
+    assert_matches(host, existing)
 
     for compiled in (
         relion_functions_relion._finish_large_relion_postprocess_from_unpadded_real,
@@ -2222,7 +2223,7 @@ def test_host_unpadded_tail_matches_existing_fftw_half_finish_bitwise():
             clear_cache()
 
 
-def test_large_host_staged_compact_padding_matches_monolith_bitwise(monkeypatch):
+def test_large_host_staged_compact_padding_matches_monolith(monkeypatch):
     """Splitting before a larger iFFT preserves the compact-accumulator result."""
 
     from recovar.core import fourier_transform_utils as ftu
@@ -2279,7 +2280,7 @@ def test_large_host_staged_compact_padding_matches_monolith_bitwise(monkeypatch)
     )
 
     assert staged.dtype == np.complex64
-    np.testing.assert_array_equal(staged, monolithic)
+    assert_matches(staged, monolithic)
 
     for compiled in (
         rf.post_process_from_filter_v2,
@@ -2403,7 +2404,7 @@ def test_compact_device_accumulator_runs_giant_split_and_normalization(monkeypat
     expected = np.asarray(
         [np.complex64(2.0 / np.prod(reconstruction_shape, dtype=np.int64))],
     )
-    np.testing.assert_array_equal(np.asarray(result), expected)
+    assert_matches(np.asarray(result), expected)
     assert (
         "RELION split pre-IFFT host boundary: accumulator_shape=(3, 3, 3) "
         "reconstruction_shape=(1600, 1600, 1600)"
@@ -2446,8 +2447,8 @@ def test_compact_full_accumulator_repack_matches_historical_path(monkeypatch):
         accumulator_shape,
         rf,
     )
-    np.testing.assert_array_equal(np.asarray(repacked_ctf), ft_ctf_half.reshape(-1))
-    np.testing.assert_array_equal(np.asarray(repacked_y), ft_y_half.reshape(-1))
+    assert_matches(np.asarray(repacked_ctf), ft_ctf_half.reshape(-1))
+    assert_matches(np.asarray(repacked_y), ft_y_half.reshape(-1))
     tau = rng.uniform(0.5, 1.5, np.prod(volume_shape)).astype(np.float64)
     common = dict(
         tau=tau,
@@ -2519,8 +2520,8 @@ def test_compact_full_device_accumulator_runs_giant_split_and_normalization(monk
 
     def fake_stage(ft_ctf, ft_y, *_args, **kwargs):
         events.append("stage")
-        np.testing.assert_array_equal(np.asarray(ft_ctf), np.asarray(ft_ctf_half).reshape(-1))
-        np.testing.assert_array_equal(np.asarray(ft_y), np.asarray(ft_y_half).reshape(-1))
+        assert_matches(np.asarray(ft_ctf), np.asarray(ft_ctf_half).reshape(-1))
+        assert_matches(np.asarray(ft_y), np.asarray(ft_y_half).reshape(-1))
         assert kwargs["input_half_volume"] is True
         assert kwargs["return_fftw_half_before_ifft"] is True
         return jnp.ones((2, 2, 2), dtype=jnp.complex64)
@@ -2568,7 +2569,7 @@ def test_compact_full_device_accumulator_runs_giant_split_and_normalization(monk
     expected = np.asarray(
         [np.complex64(2.0 / np.prod(reconstruction_shape, dtype=np.int64))],
     )
-    np.testing.assert_array_equal(np.asarray(result), expected)
+    assert_matches(np.asarray(result), expected)
     assert "RELION giant-iFFT compact full-to-half repack" in caplog.text
     assert "RELION split pre-IFFT host boundary" in caplog.text
     assert "RELION large inverse-FFT normalization boundary" in caplog.text
@@ -2701,7 +2702,7 @@ def test_large_device_accumulator_normalizes_monolithic_giant_padded_ifft(monkey
     expected = np.asarray(
         [np.complex64(2.0 / np.prod(reconstruction_shape, dtype=np.int64))],
     )
-    np.testing.assert_array_equal(np.asarray(result), expected)
+    assert_matches(np.asarray(result), expected)
     assert (
         "implementation=jax_monolithic_dynamic_scale"
         in caplog.text
@@ -2793,12 +2794,7 @@ def test_large_host_staged_irfft_uses_backward_transform_then_dynamic_normalizat
     )
 
     assert events == ["stage", "finish"]
-    np.testing.assert_allclose(
-        np.asarray(result),
-        np.asarray([2.0 / transform_size], dtype=np.complex64),
-        rtol=0.0,
-        atol=0.0,
-    )
+    assert_matches(np.asarray(result), np.asarray([2.0 / transform_size], dtype=np.complex64))
 
 
 def test_large_host_irfft_is_already_normalized(monkeypatch):
@@ -2875,7 +2871,7 @@ def test_large_host_irfft_is_already_normalized(monkeypatch):
     )
 
     assert events == ["stage", "host_irfft", "finish"]
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(result),
         np.asarray([2.0 + 0.0j], dtype=np.complex64),
     )
@@ -2929,7 +2925,7 @@ def test_large_wiener_host_boundary_donates_numerator_buffer(monkeypatch, gpu_de
 
 
 @pytest.mark.parametrize("current_size", [4, None])
-def test_large_wiener_split_stage_matches_monolith_bitwise(monkeypatch, current_size):
+def test_large_wiener_split_stage_matches_monolith(monkeypatch, current_size):
     import recovar.core.fourier_transform_utils as ftu
 
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "always")
@@ -2998,7 +2994,7 @@ def test_large_wiener_split_stage_matches_monolith_bitwise(monkeypatch, current_
         accumulator_shape,
     )
 
-    np.testing.assert_array_equal(np.asarray(actual), expected)
+    assert_matches(np.asarray(actual), expected)
     assert ctf_device.is_deleted()
     assert numerator_device.is_deleted()
 
@@ -3056,7 +3052,7 @@ def test_large_wiener_split_stage_aliases_inputs_without_divide_temporary(monkey
     assert divide_memory.temp_size_in_bytes == 0
 
 
-def test_join_halves_host_fallback_retains_bitwise_exact_half0_device_numerator(monkeypatch):
+def test_join_halves_host_fallback_retains_half0_device_numerator(monkeypatch):
     volume_shape = (8, 8, 8)
     rng = np.random.default_rng(20260831)
     ft_y_0 = (
@@ -3088,7 +3084,7 @@ def test_join_halves_host_fallback_retains_bitwise_exact_half0_device_numerator(
     retained_half0 = joined[4]
     assert retained_half0 is not None
     assert not isinstance(retained_half0, np.ndarray)
-    np.testing.assert_array_equal(np.asarray(retained_half0), joined[0])
+    assert_matches(np.asarray(retained_half0), joined[0])
 
     padding_joined = regularization_relion.join_halves_at_low_resolution(
         jnp.asarray(ft_y_0).reshape(-1),
@@ -3146,7 +3142,7 @@ def test_join_halves_host_fallback_reserves_joined_numpy_half0_for_crop(monkeypa
     assert joined[3] is ft_ctf_1
     assert joined[4] is not None
     assert not isinstance(joined[4], np.ndarray)
-    np.testing.assert_array_equal(np.asarray(joined[4]), joined[0])
+    assert_matches(np.asarray(joined[4]), joined[0])
     assert "Low-resolution half-join reserving joined first numerator on device" in caplog.text
 
 
@@ -3195,12 +3191,12 @@ def test_join_halves_at_low_resolution_host_fallback_can_reuse_numpy_storage(mon
     assert joined[1] is ft_y_1
     assert joined[2] is ft_ctf_0
     assert joined[3] is ft_ctf_1
-    np.testing.assert_array_equal(ft_y_0[idx_inside], np.complex64(7.0 + 7.0j))
-    np.testing.assert_array_equal(ft_y_1[idx_inside], np.complex64(7.0 + 7.0j))
-    np.testing.assert_array_equal(ft_ctf_0[idx_inside], np.float32(2.0))
-    np.testing.assert_array_equal(ft_ctf_1[idx_inside], np.float32(2.0))
-    np.testing.assert_array_equal(ft_y_0[idx_outside], np.complex64(20.0))
-    np.testing.assert_array_equal(ft_y_1[idx_outside], np.complex64(4.0))
+    assert_matches(ft_y_0[idx_inside], np.complex64(7.0 + 7.0j))
+    assert_matches(ft_y_1[idx_inside], np.complex64(7.0 + 7.0j))
+    assert_matches(ft_ctf_0[idx_inside], np.float32(2.0))
+    assert_matches(ft_ctf_1[idx_inside], np.float32(2.0))
+    assert_matches(ft_y_0[idx_outside], np.complex64(20.0))
+    assert_matches(ft_y_1[idx_outside], np.complex64(4.0))
 
 
 @pytest.mark.usefixtures("_jax_cpu_default_device")

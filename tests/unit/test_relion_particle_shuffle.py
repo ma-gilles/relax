@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.expected_accuracy import relion_auto_refine_half_orders, relion_class3d_trial_layout
 
@@ -15,8 +16,8 @@ def test_mt19937_paired_reference():
     # Independent GCC 11 transcription of RELION f2c1a384 exp_model.cpp;
     # importantly, half 2 continues the generator consumed by half 1.
     first, second = bind.auto_refine_randomise_half_orders_mt19937(10, 7, 1712)
-    np.testing.assert_array_equal(first, [5, 6, 8, 4, 7, 0, 2, 1, 9, 3])
-    np.testing.assert_array_equal(second, [5, 0, 2, 3, 4, 1, 6])
+    assert_matches(first, [5, 6, 8, 4, 7, 0, 2, 1, 9, 3])
+    assert_matches(second, [5, 0, 2, 3, 4, 1, 6])
 
 
 def test_python_dispatch_and_stable_optics_sort(monkeypatch):
@@ -33,8 +34,8 @@ def test_python_dispatch_and_stable_optics_sort(monkeypatch):
     )
     first, second = relion_auto_refine_half_orders([1, 2, 1, 2, 1], 42, optics_group_ids=[2, 1, 1, 1, 2])
     assert calls == [(3, 2, 43)]
-    np.testing.assert_array_equal(first, [2, 4, 0])
-    np.testing.assert_array_equal(second, [3, 1])
+    assert_matches(first, [2, 4, 0])
+    assert_matches(second, [3, 1])
 
 
 def test_missing_binding_fails_closed(monkeypatch):
@@ -51,15 +52,15 @@ def test_half1_trial_order_is_the_paired_first_half():
 
     # Half 1 is shuffled first from a fresh generator, so it does not depend on half 2.
     first, _second = bind.auto_refine_randomise_half_orders_mt19937(10, 7, 1712)
-    np.testing.assert_array_equal(relion_half1_trial_order(10, 1711), first)
+    assert_matches(relion_half1_trial_order(10, 1711), first)
 
 
 def test_class3d_whole_vector_shuffle_is_the_first_half_generator():
     # Class3D shuffles the entire vector with the same fresh mt19937 draw that
     # AutoRefine spends on half 1 (exp_model.cpp:449-456).
     order, particle_ids = relion_class3d_trial_layout(np.arange(10), 1711)
-    np.testing.assert_array_equal(order, [5, 6, 8, 4, 7, 0, 2, 1, 9, 3])
-    np.testing.assert_array_equal(particle_ids, np.arange(10))
+    assert_matches(order, [5, 6, 8, 4, 7, 0, 2, 1, 9, 3])
+    assert_matches(particle_ids, np.arange(10))
 
 
 def test_class3d_layout_maps_part_ids_to_input_rows_then_sorts_optics(monkeypatch):
@@ -79,8 +80,8 @@ def test_class3d_layout_maps_part_ids_to_input_rows_then_sorts_optics(monkeypatc
         [2, 0, 3, 1], 42, first_iteration=3, optics_group_ids=[1, 2, 1, 1]
     )
     assert calls == [(4, 0, 45)]
-    np.testing.assert_array_equal(order, [2, 3, 0, 1])
-    np.testing.assert_array_equal(particle_ids, [1, 3, 0, 2])
+    assert_matches(order, [2, 3, 0, 1])
+    assert_matches(particle_ids, [1, 3, 0, 2])
 
 
 def test_class3d_layout_rejects_non_permutation():

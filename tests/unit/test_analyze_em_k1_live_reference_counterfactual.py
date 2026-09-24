@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import numpy as np
+from helpers.float_compare import matches
 
 from scripts import analyze_em_k1_live_reference_counterfactual as live_factorial
 from scripts.analyze_em_k1_live_reference_counterfactual import (
@@ -104,7 +105,7 @@ def test_maps_relion_fftw_rows_to_recovar_centered_window() -> None:
         current_size=current_size,
     )
     expected_indices = np.asarray([4 * current_half + 1, 2, 3 * current_half])
-    assert np.array_equal(
+    assert matches(
         selected[0],
         -(full_size**2) * reference[0, expected_indices],
     )

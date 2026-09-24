@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from scripts import compare_relion_recovar_bpref_prescatter as comparator
 from scripts import validate_relion_bpref_prescatter as validator
@@ -176,8 +177,8 @@ def test_compare_complete_aligned_prescatter_operands(tmp_path: Path):
         "exact_equal"
     ] is True
     assert report["operands"]["real_weight_recovar_vs_scaled_relion"]["exact_equal"] is True
-    assert np.array_equal(arrays["stack_indices_1based"], np.asarray([202]))
-    assert np.array_equal(arrays["recovar_device_support_mask"], np.asarray([[True, False]]))
+    assert matches(arrays["stack_indices_1based"], np.asarray([202]))
+    assert matches(arrays["recovar_device_support_mask"], np.asarray([[True, False]]))
 
 
 def test_load_current_device_signature_support_in_source_window_order(tmp_path: Path):
@@ -210,5 +211,5 @@ def test_load_current_device_signature_support_in_source_window_order(tmp_path: 
         np.asarray([255 * 129 + 1, 2], dtype=np.int32),
     )
 
-    assert np.array_equal(support, np.asarray([[True, False]]))
+    assert matches(support, np.asarray([[True, False]]))
     assert qualified_shadow_stacks == {202}

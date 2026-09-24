@@ -10,6 +10,7 @@ import relax.diagnostics.relion_replay as relion_replay_module
 import relax.helpers.orientation_priors as orientation_priors_module
 import relax.refinement.projector_preparation as projector_preparation
 from relax.refinement.half_inputs import HalfInputState
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 IMAGE_SIZE = 64
@@ -57,7 +58,7 @@ def test_sealed_sampling_directly_materializes_restricted_eulers_and_translation
         voxel_size_angstrom=2.0,
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         eulers,
         np.asarray(
             [
@@ -71,11 +72,11 @@ def test_sealed_sampling_directly_materializes_restricted_eulers_and_translation
             dtype=np.float32,
         ),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(translations),
         np.asarray([[-1.0, 0.0], [0.0, 0.5], [1.0, 0.0]], dtype=np.float32),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         relion_replay_module._sealed_sampling_rotation_ids(sampling),
         np.asarray([7, 19, 503, 775, 787, 1271], dtype=np.int64),
     )
@@ -83,7 +84,7 @@ def test_sealed_sampling_directly_materializes_restricted_eulers_and_translation
     expected_prior = np.log(
         np.tile(direction_prior[np.asarray([7, 19, 503])], 2)
     ).astype(np.float32)
-    np.testing.assert_array_equal(
+    assert_matches(
         orientation_priors_module._sealed_direction_log_prior(direction_prior, sampling),
         expected_prior,
     )
@@ -143,7 +144,7 @@ def test_sealed_sampling_override_never_reads_external_replay_files(monkeypatch,
 
     assert result.cs == 56
     assert result.replay_meta["sealed_v3"] is True
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(result.prior_translations),
         np.asarray([[-1.0, 0.0], [0.0, 0.5], [1.0, 0.0]], dtype=np.float32),
     )
@@ -222,8 +223,8 @@ def test_frozen_replay_explicitly_suppresses_external_direction_prior_reload(
         preserve_existing_direction_prior=True,
     )
 
-    np.testing.assert_array_equal(priors[0], np.full(768, 1.0 / 768.0, dtype=np.float32))
-    np.testing.assert_array_equal(priors[1], np.full(768, 1.0 / 768.0, dtype=np.float32))
+    assert_matches(priors[0], np.full(768, 1.0 / 768.0, dtype=np.float32))
+    assert_matches(priors[1], np.full(768, 1.0 / 768.0, dtype=np.float32))
 
 
 def _captured_projector_override(projector):
@@ -407,7 +408,7 @@ def test_final_reference_substitution_preserves_each_half_dtype(dtype):
     )
     for index in range(2):
         assert result[index].dtype == means[index].dtype
-        np.testing.assert_array_equal(result[index], refs[index].astype(means[index].dtype))
+        assert_matches(result[index], refs[index].astype(means[index].dtype))
 
 
 def test_absent_final_reference_substitution_preserves_list_identity():
@@ -504,7 +505,7 @@ def test_replay_keeps_prior_grid_identity_across_sampling_change(
     assert orders == [old_order, old_order]
     for value in loaded:
         assert value.shape == prior.shape
-        np.testing.assert_array_equal(value, prior)
+        assert_matches(value, prior)
     for half in range(2):
         result = orientation_priors_module.relion_direction_log_priors_for_half(
             use_local=False, scoring_healpix_order=new_order, n_classes=n_classes,

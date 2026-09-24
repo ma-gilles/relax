@@ -3,6 +3,7 @@
 import inspect
 
 import numpy as np
+from helpers.float_compare import assert_matches
 
 from relax.helpers.oversampling import (
     _relion_cuda_f32_tail_target,
@@ -72,7 +73,7 @@ def test_relion_cuda_f32_coarse_posterior_matches_numpy_reference():
         )
     )
     for actual_value, expected_value in zip(actual[1:4], expected[1:4]):
-        np.testing.assert_array_equal(actual_value, expected_value)
+        assert_matches(actual_value, expected_value)
     for actual_value, expected_value in (
         (actual[0], expected[0]),
         (actual[4], expected[4]),
@@ -103,7 +104,7 @@ def test_relion_cuda_f32_coarse_positive_filter_is_explicit_and_default_off():
         filter_positive_before_sort=True,
     )
     for default_value, filtered_value in zip(default, positive_filter):
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(default_value),
             np.asarray(filtered_value),
         )
@@ -139,9 +140,9 @@ def test_relion_cuda_f32_coarse_log_weights_preserves_boundary_ulp():
     absolute_target_one = np.float32(np.float32(raw_scores[0, 1, 0] + rotation_prior[1]) + translation_prior[0])
     absolute_target_two = np.float32(np.float32(raw_scores[0, 2, 1] + rotation_prior[2]) + translation_prior[1])
 
-    np.testing.assert_array_equal(
-        np.asarray([ordered[1, 0], ordered[2, 1]], dtype=np.float32).view(np.uint32),
-        np.asarray([-16.83837890625, -16.8385009765625], dtype=np.float32).view(np.uint32),
+    assert_matches(
+        np.asarray([ordered[1, 0], ordered[2, 1]], dtype=np.float32),
+        np.asarray([-16.83837890625, -16.8385009765625], dtype=np.float32),
     )
     assert absolute_target_one == absolute_target_two
     assert ordered[1, 0] > ordered[2, 1]
@@ -156,9 +157,9 @@ def test_relion_cuda_f32_coarse_posterior_expands_cutoff_ties_after_rank_cap():
             max_significants=2,
         )
     )
-    np.testing.assert_array_equal(np.asarray(mask), [[True, True, True, True, False]])
-    np.testing.assert_array_equal(np.asarray(n_significant), [4])
-    np.testing.assert_array_equal(np.asarray(cutoff_count), [2])
+    assert_matches(np.asarray(mask), [[True, True, True, True, False]])
+    assert_matches(np.asarray(n_significant), [4])
+    assert_matches(np.asarray(cutoff_count), [2])
 
 
 def test_relion_cuda_f32_coarse_posterior_preserves_min_diff2_score_frame():
@@ -181,10 +182,10 @@ def test_relion_cuda_f32_coarse_posterior_preserves_min_diff2_score_frame():
         min_diff2_offsets=np.asarray([6.2932538986206055], dtype=np.float32),
     )
 
-    np.testing.assert_array_equal(np.asarray(unshifted_mask), [[True, True, True]])
-    np.testing.assert_array_equal(np.asarray(unshifted_count), [3])
-    np.testing.assert_array_equal(np.asarray(native_frame_mask), [[True, True, False]])
-    np.testing.assert_array_equal(np.asarray(native_frame_count), [2])
+    assert_matches(np.asarray(unshifted_mask), [[True, True, True]])
+    assert_matches(np.asarray(unshifted_count), [3])
+    assert_matches(np.asarray(native_frame_mask), [[True, True, False]])
+    assert_matches(np.asarray(native_frame_count), [2])
 
 
 def test_diagnostic_coarse_support_can_absorb_two_ulp_atomic_cutoff_split():
@@ -202,21 +203,21 @@ def test_diagnostic_coarse_support_can_absorb_two_ulp_atomic_cutoff_split():
         tie_score_ulps=2,
     )
 
-    np.testing.assert_array_equal(np.asarray(strict_mask), [[True, False]])
-    np.testing.assert_array_equal(np.asarray(strict_count), [1])
-    np.testing.assert_array_equal(np.asarray(strict_cutoff), [1])
-    np.testing.assert_array_equal(np.asarray(expanded_mask), [[True, True]])
-    np.testing.assert_array_equal(np.asarray(expanded_count), [2])
+    assert_matches(np.asarray(strict_mask), [[True, False]])
+    assert_matches(np.asarray(strict_count), [1])
+    assert_matches(np.asarray(strict_cutoff), [1])
+    assert_matches(np.asarray(expanded_mask), [[True, True]])
+    assert_matches(np.asarray(expanded_count), [2])
     # The diagnostic preserves the pre-envelope rank while expanding the
     # materialized support.
-    np.testing.assert_array_equal(np.asarray(expanded_cutoff), [1])
+    assert_matches(np.asarray(expanded_cutoff), [1])
 
 
 def test_relion_cuda_f32_tail_target_preserves_text_to_float_semantics():
     sum_weight = np.asarray([2.8323050236340316e22], dtype=np.float32)
     target = np.asarray(_relion_cuda_f32_tail_target(sum_weight, 0.999))
 
-    np.testing.assert_array_equal(target.view(np.uint32), [1606715186])
+    assert_matches(target, [1606715186])
 
 
 def test_relion_f32_coarse_support_gate_honors_scoped_default(monkeypatch):

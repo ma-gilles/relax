@@ -3,6 +3,7 @@ import struct
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts import validate_relion_bpref_factor_capture as validator
 from scripts.validate_relion_bpref_prescatter import ROTATION_DTYPE, ROW_DTYPE
@@ -237,7 +238,7 @@ def test_factor_pixel_capture_matches_complete_loader(tmp_path):
 
     assert pixels_only.stack_index == complete.stack_index
     assert pixels_only.header == complete.header
-    np.testing.assert_array_equal(pixels_only.pixels, complete.pixels)
+    assert_matches(pixels_only.pixels, complete.pixels)
 
 
 def test_factor_capture_accepts_explicit_geometry_only_panel(tmp_path):

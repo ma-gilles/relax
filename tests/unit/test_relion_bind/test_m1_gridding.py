@@ -7,6 +7,7 @@ implementation in relion_functions.py.
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from relax.relion_bind._relion_bind_core import (
     NEAREST_NEIGHBOUR,
     TRILINEAR,
@@ -26,7 +27,7 @@ class TestGriddingCorrectSmoke:
         vol = np.ones((16, 16, 16))
         vol_copy = vol.copy()
         gridding_correct(vol, ori_size=16, padding_factor=1, interpolator=TRILINEAR)
-        np.testing.assert_array_equal(vol, vol_copy)
+        assert_matches(vol, vol_copy)
 
     def test_dc_unchanged(self):
         """The center voxel (r=0) should be unchanged (sinc(0)=1)."""

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics import vdam_replay
 from scripts.build_vdam_worker_schedule import load_worker_trace, validate_worker_trace
@@ -55,8 +56,8 @@ def test_valid_worker_trace_is_sealed_by_sorted_position(tmp_path):
         n_threads=8,
         pool_size=24,
     )
-    np.testing.assert_array_equal(schedule["owner_by_sorted_position"], np.arange(30) % 8)
-    np.testing.assert_array_equal(
+    assert_matches(schedule["owner_by_sorted_position"], np.arange(30) % 8)
+    assert_matches(
         schedule["internal_particle_id_by_sorted_position"], np.arange(29, -1, -1)
     )
     assert schedule["stack_index_by_sorted_position"] is None
@@ -83,10 +84,10 @@ def test_v2_worker_trace_preserves_stack_index_join_key(tmp_path):
         pool_size=24,
     )
     assert schedule["schema_version"] == 2
-    np.testing.assert_array_equal(
+    assert_matches(
         schedule["stack_index_by_sorted_position"], np.arange(70, 100)
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         schedule["owner_by_sorted_position"], np.arange(30) % 8
     )
 
@@ -113,7 +114,7 @@ def test_v2_schedule_resolves_worker_lanes_by_stack_index(tmp_path, monkeypatch)
     lanes = vdam_replay._relion_vdam_worker_lanes_for_images(
         Dataset(), np.asarray([1, 2, 0], dtype=np.int64)
     )
-    np.testing.assert_array_equal(lanes, np.asarray([6, 2, 5], dtype=np.int32))
+    assert_matches(lanes, np.asarray([6, 2, 5], dtype=np.int32))
 
 
 def test_v2_schedule_rejects_an_untraced_selected_stack_index(tmp_path, monkeypatch):
@@ -162,7 +163,7 @@ def test_v2_schedule_can_serialize_all_particles_on_one_worker(tmp_path, monkeyp
     lanes = vdam_replay._relion_vdam_worker_lanes_for_images(
         Dataset(), np.asarray([1, 2, 0], dtype=np.int64)
     )
-    np.testing.assert_array_equal(lanes, np.zeros(3, dtype=np.int32))
+    assert_matches(lanes, np.zeros(3, dtype=np.int32))
 
 
 def test_v2_schedule_can_also_serialize_rotations(tmp_path, monkeypatch):
@@ -190,7 +191,7 @@ def test_v2_schedule_can_also_serialize_rotations(tmp_path, monkeypatch):
     lanes = vdam_replay._relion_vdam_worker_lanes_for_images(
         Dataset(), np.asarray([0, 1, 2], dtype=np.int64)
     )
-    np.testing.assert_array_equal(lanes, np.zeros(3, dtype=np.int32))
+    assert_matches(lanes, np.zeros(3, dtype=np.int32))
     assert vdam_replay._relion_vdam_serial_rotation_replay()
 
     monkeypatch.setenv(

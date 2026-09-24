@@ -23,6 +23,7 @@ import math
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.vdam.schedules import compute_phase_lengths, compute_stepsize, compute_subset_size, compute_tau2_fudge
 
@@ -306,11 +307,11 @@ class TestRandomiseParticlesOrderBinding:
     def test_deterministic_with_same_seed(self, bind):
         a = np.asarray(bind.vdam_randomise_particles_order(500, 12345))
         b = np.asarray(bind.vdam_randomise_particles_order(500, 12345))
-        np.testing.assert_array_equal(a, b)
+        assert_matches(a, b)
 
     def test_matches_relion_std_shuffle_reference(self, bind):
         order = np.asarray(bind.vdam_randomise_particles_order(10, 1))
-        np.testing.assert_array_equal(order, [9, 0, 2, 5, 7, 4, 6, 3, 1, 8])
+        assert_matches(order, [9, 0, 2, 5, 7, 4, 6, 3, 1, 8])
 
     def test_different_seeds_differ(self, bind):
         a = np.asarray(bind.vdam_randomise_particles_order(500, 12345))
@@ -367,14 +368,14 @@ class TestAutoRefineExpectedAccuracyBinding:
 
         assert isolated.acc_rot == direct.acc_rot
         assert isolated.acc_trans_angstrom == direct.acc_trans_angstrom
-        np.testing.assert_array_equal(isolated.acc_rot_per_class, direct.acc_rot_per_class)
-        np.testing.assert_array_equal(
+        assert_matches(isolated.acc_rot_per_class, direct.acc_rot_per_class)
+        assert_matches(
             isolated.acc_trans_per_class_angstrom,
             direct.acc_trans_per_class_angstrom,
         )
-        np.testing.assert_array_equal(isolated.class_counts, direct.class_counts)
-        np.testing.assert_array_equal(isolated.trial_local_indices, direct.trial_local_indices)
-        np.testing.assert_array_equal(isolated.trial_particle_ids, direct.trial_particle_ids)
+        assert_matches(isolated.class_counts, direct.class_counts)
+        assert_matches(isolated.trial_local_indices, direct.trial_local_indices)
+        assert_matches(isolated.trial_particle_ids, direct.trial_particle_ids)
 
     def test_python_order_applies_relion_base_order_and_stable_optics_sort(self, bind):
         from relax.helpers.expected_accuracy import relion_half1_trial_order
@@ -391,7 +392,7 @@ class TestAutoRefineExpectedAccuracyBinding:
             base_order_local=base,
             optics_group_ids=optics,
         )
-        np.testing.assert_array_equal(actual, expected)
+        assert_matches(actual, expected)
 
     @staticmethod
     def _accuracy_fixture(bind, class_ids, pdf_class=(0.5, 0.5), *, q0=0.07, do_ctf=False):
@@ -449,20 +450,20 @@ class TestAutoRefineExpectedAccuracyBinding:
         if not hasattr(bind, "auto_refine_randomise_half_orders_mt19937"):
             pytest.skip("relion_bind must be rebuilt with corrected expected-error semantics")
         out = self._accuracy_fixture(bind, class_ids=[0, 0])
-        np.testing.assert_array_equal(np.asarray(out["class_counts"]), [2, 2])
-        np.testing.assert_array_equal(np.asarray(out["acc_rot_class"]), [out["acc_rot"], out["acc_rot"]])
-        np.testing.assert_array_equal(np.asarray(out["acc_trans_class"]), [out["acc_trans"], out["acc_trans"]])
+        assert_matches(np.asarray(out["class_counts"]), [2, 2])
+        assert_matches(np.asarray(out["acc_rot_class"]), [out["acc_rot"], out["acc_rot"]])
+        assert_matches(np.asarray(out["acc_trans_class"]), [out["acc_trans"], out["acc_trans"]])
 
         invalid_labels = self._accuracy_fixture(bind, class_ids=[-7, 99])
-        np.testing.assert_array_equal(out["acc_rot_class"], invalid_labels["acc_rot_class"])
-        np.testing.assert_array_equal(out["acc_trans_class"], invalid_labels["acc_trans_class"])
-        np.testing.assert_array_equal(out["class_counts"], invalid_labels["class_counts"])
+        assert_matches(out["acc_rot_class"], invalid_labels["acc_rot_class"])
+        assert_matches(out["acc_trans_class"], invalid_labels["acc_trans_class"])
+        assert_matches(out["class_counts"], invalid_labels["class_counts"])
 
     def test_inactive_class_is_skipped(self, bind):
         if not hasattr(bind, "auto_refine_randomise_half_orders_mt19937"):
             pytest.skip("relion_bind must be rebuilt with corrected expected-error semantics")
         out = self._accuracy_fixture(bind, class_ids=[0, 1], pdf_class=(0.991, 0.009))
-        np.testing.assert_array_equal(np.asarray(out["class_counts"]), [2, 0])
+        assert_matches(np.asarray(out["class_counts"]), [2, 0])
         assert np.asarray(out["acc_rot_class"])[1] == 999.0
         assert np.asarray(out["acc_trans_class"])[1] == 999.0
 
@@ -508,7 +509,7 @@ class TestRndUnifRangeBinding:
 
         draw = np.asarray(bind.vdam_rnd_unif_range_sequence(1, 1, 0.25, 0.5))
 
-        np.testing.assert_array_equal(draw, np.asarray([0.4600469470024109]))
+        assert_matches(draw, np.asarray([0.4600469470024109]))
 
 
 class TestPostprocessInitialIrefBinding:
@@ -537,7 +538,7 @@ class TestPostprocessInitialIrefBinding:
             )
         )
 
-        np.testing.assert_array_equal(a, b)
+        assert_matches(a, b)
         assert a.shape == iref.shape
         assert np.all(np.isfinite(a))
         assert not np.allclose(a, iref)
@@ -593,7 +594,7 @@ class TestExpectedAngularErrorsBinding:
         assert float(out["acc_trans"]) > 0.0
         assert np.asarray(out["acc_rot_class"]).shape == (1,)
         assert np.asarray(out["acc_trans_class"]).shape == (1,)
-        np.testing.assert_array_equal(np.asarray(out["class_counts"]), [2])
+        assert_matches(np.asarray(out["class_counts"]), [2])
         assert np.all(np.isfinite(np.asarray(out["acc_rot_class"])))
 
 

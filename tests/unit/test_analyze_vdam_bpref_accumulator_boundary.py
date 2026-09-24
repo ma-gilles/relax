@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics.bpref_contribution_replay import BPrefAccumulatorReplay
 from relax.diagnostics.bpref_diagnostics import _bpref_contribution_target_rows
@@ -81,8 +82,8 @@ def test_relion_bpref_frame_conversion_applies_fft_sign_and_scales():
 
     converted = _to_relion_bpref_frame(replay, ori_size=4)
 
-    np.testing.assert_array_equal(converted.data, np.asarray([-16 - 32j]))
-    np.testing.assert_array_equal(converted.weight, np.asarray([768.0]))
+    assert_matches(converted.data, np.asarray([-16 - 32j]))
+    assert_matches(converted.weight, np.asarray([768.0]))
     assert converted.backend == "raw_relion_bpref_frame"
     assert converted.order == replay.order
     assert converted.precision == replay.precision
@@ -123,11 +124,11 @@ def test_inline_projector_replay_selects_joint_reconstruction_group():
         ori_size=4,
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         replays["sequential_float32"].data,
         2.0 * group_zero["sequential_float32"].data,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         replays["sequential_float32"].weight,
         3.0 * group_zero["sequential_float32"].weight,
     )
@@ -150,7 +151,7 @@ def test_bpref_target_rows_accept_slurm_safe_semicolon_list(monkeypatch):
         np.asarray([0, 1, 2, 3], dtype=np.int64),
     )
 
-    np.testing.assert_array_equal(selected, np.asarray([0, 2, 3], dtype=np.int64))
+    assert_matches(selected, np.asarray([0, 2, 3], dtype=np.int64))
 
 
 @pytest.mark.unit

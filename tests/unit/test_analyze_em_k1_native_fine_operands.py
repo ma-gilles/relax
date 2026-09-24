@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts.analyze_em_k1_native_fine_operands import (
     _alternate_projected_reference,
@@ -21,7 +22,7 @@ def test_tree_sum_matches_relion_lane_order():
     for width in (128, 64, 32, 16, 8, 4, 2, 1):
         lanes = lanes[:, :width] + lanes[:, width : 2 * width]
 
-    np.testing.assert_array_equal(_tree_sum(values), lanes[:, 0])
+    assert_matches(_tree_sum(values), lanes[:, 0])
 
 
 def test_full_to_compact_maps_centered_rows_to_relion_fftw_rows():
@@ -33,7 +34,7 @@ def test_full_to_compact_maps_centered_rows_to_relion_fftw_rows():
 
     expected = np.full(12, -1, dtype=np.int32)
     expected[[2 * 3, 3 * 3 + 1, 2]] = np.arange(3, dtype=np.int32)
-    np.testing.assert_array_equal(lookup, expected)
+    assert_matches(lookup, expected)
 
 
 def test_infer_float32_common_addend_replays_large_costs():
@@ -43,7 +44,7 @@ def test_infer_float32_common_addend_replays_large_costs():
 
     inferred, exact = _infer_float32_common_addend(base, target)
 
-    np.testing.assert_array_equal(base + inferred, target)
+    assert_matches(base + inferred, target)
     assert exact == base.size
 
 
@@ -63,4 +64,4 @@ def test_alternate_projected_reference_accepts_raw_local_score_dump():
         "debug_proj_weighted": projected * half_weights[None, :],
     }
 
-    np.testing.assert_array_equal(_alternate_projected_reference(rec, raw), projected)
+    assert_matches(_alternate_projected_reference(rec, raw), projected)

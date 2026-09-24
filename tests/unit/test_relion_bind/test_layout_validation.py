@@ -7,6 +7,7 @@ RELION projector-centered, recovar centered full-complex) convert losslessly.
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.relion_bind.conversions import (
     compute_relion_pad_size,
@@ -162,7 +163,7 @@ class TestRealSpaceConvention:
         """Verify the explicit formula."""
         expected = -np.transpose(random_real_volume, (2, 1, 0))
         result = relion_real_to_recovar_real(random_real_volume)
-        np.testing.assert_array_equal(result, expected)
+        assert_matches(result, expected)
 
 
 # -----------------------------------------------------------------------

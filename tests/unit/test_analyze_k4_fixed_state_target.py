@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts.analyze_k4_fixed_state_target import (
     relative_to_absolute_translations,
@@ -15,7 +16,7 @@ def test_relion_round_away_from_zero_preserves_tie_policy():
     values = np.asarray([-3.5, -3.49, -0.5, 0.5, 3.49, 3.5])
     expected = np.asarray([-4.0, -3.0, -1.0, 1.0, 3.0, 4.0], dtype=np.float32)
 
-    np.testing.assert_array_equal(relion_round_away_from_zero(values), expected)
+    assert_matches(relion_round_away_from_zero(values), expected)
 
 
 def test_relative_pass2_winner_maps_to_absolute_phase_winner():
@@ -36,7 +37,7 @@ def test_relative_pass2_winner_maps_to_absolute_phase_winner():
         previous_absolute,
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         absolute,
         np.asarray(
             [

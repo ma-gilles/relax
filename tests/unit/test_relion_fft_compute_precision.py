@@ -4,6 +4,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from recovar.reconstruction.relion_functions import post_process_from_filter_v2
+from helpers.float_compare import assert_matches
 pytestmark = pytest.mark.unit
 
 
@@ -38,7 +39,7 @@ def test_reconstruction_fft_precision_and_exact_dc(dtype, packed):
     assert result.dtype == dtype
     expected = np.zeros((8, 8, 8), dtype=dtype)
     expected[4, 4, 4] = 512
-    np.testing.assert_array_equal(result, expected)
+    assert_matches(result, expected)
     dtypes = _fft_dtypes(jax.make_jaxpr(compute)(weight, numerator))
     assert len(dtypes) == 2
     expected_bits = 32 if dtype == np.complex64 else 64

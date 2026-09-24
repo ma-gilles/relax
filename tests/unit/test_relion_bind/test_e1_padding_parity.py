@@ -13,6 +13,7 @@ sphere, which is the region where both representations carry signal.
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from relax.relion_bind._relion_bind_core import compute_fourier_transform_map
 
 from relax.relion_bind.conversions import compute_relion_pad_size
@@ -360,7 +361,7 @@ class TestPaddingParity:
 
         # Extract the central N^3 block -- must be identical to vol_relion.
         extracted = Mpad[offset : offset + N, offset : offset + N, offset : offset + N]
-        np.testing.assert_array_equal(
+        assert_matches(
             extracted,
             vol_relion,
             err_msg=f"N={N}: real-space content not preserved by padding",

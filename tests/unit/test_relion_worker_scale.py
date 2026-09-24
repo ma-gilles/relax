@@ -45,6 +45,7 @@ from relax.relion.relion_worker_scale import (
     validate_relion_follower_scale_start,
     verify_relion_dispatch_schedule_oracle,
 )
+from helpers.float_compare import assert_matches
 
 _ORACLE_MANIFEST = "0" * 64
 _PARTICLE_ORDER = "1" * 64
@@ -118,7 +119,7 @@ def test_serialized_replay_preserves_live_follower_scale_between_iterations():
     )
 
     assert applied == ["image_corrections", "serialized_scale_corrections"]
-    np.testing.assert_array_equal(half_inputs.scale_corrections[0], live_scales)
+    assert_matches(half_inputs.scale_corrections[0], live_scales)
     np.testing.assert_allclose(half_inputs.image_corrections[0], live_scales)
 
 
@@ -140,8 +141,8 @@ def test_dynamic_dispatch_chunks_cover_every_sorted_position_once():
 
     # Ranks in this fixture are 1 and 2 (zero-based owners 0 and 1); the
     # runtime owner of the same sorted chunk changes between iterations.
-    np.testing.assert_array_equal(schedule.owner_by_sorted_position[0], [0, 0, 0, 1, 1, 1, 0])
-    np.testing.assert_array_equal(schedule.owner_by_sorted_position[1], [1, 1, 1, 0, 0, 0, 1])
+    assert_matches(schedule.owner_by_sorted_position[0], [0, 0, 0, 1, 1, 1, 0])
+    assert_matches(schedule.owner_by_sorted_position[1], [1, 1, 1, 0, 0, 0, 1])
 
 
 def test_dynamic_dispatch_rejects_overlap_and_missing_positions():
@@ -180,7 +181,7 @@ def test_class3d_shuffle_is_always_original_seed_plus_one():
 
     # Captured independently from all three ranks in the K=4 fixture.
     assert int(np.flatnonzero(sorted_particle_ids == 5989)[0]) == 626
-    np.testing.assert_array_equal(np.sort(sorted_particle_ids), particle_ids)
+    assert_matches(np.sort(sorted_particle_ids), particle_ids)
 
 
 def test_captured_schedule_maps_dynamic_owners_to_recovar_image_order():
@@ -218,7 +219,7 @@ def test_captured_schedule_maps_dynamic_owners_to_recovar_image_order():
     # The persisted identity map, not a regenerated shuffle, resolves owners.
     assert iter1[5989] == owners[sorted_position]
     assert iter2[5989] == 1 - owners[sorted_position]
-    np.testing.assert_array_equal(iter2, 1 - iter1)
+    assert_matches(iter2, 1 - iter1)
 
 
 def test_dispatch_schedule_npz_loads_and_fails_closed_on_seed_mismatch(tmp_path):
@@ -483,8 +484,8 @@ def test_dispatch_builder_accepts_v2_identity_records(tmp_path, monkeypatch):
 
     build_relion_dispatch_schedule.main()
     schedule = load_relion_dispatch_schedule(output)
-    np.testing.assert_array_equal(schedule.owner_by_sorted_position, [[0, 1, 0]])
-    np.testing.assert_array_equal(
+    assert_matches(schedule.owner_by_sorted_position, [[0, 1, 0]])
+    assert_matches(
         schedule.original_particle_id_by_sorted_position, [[2, 0, 1]]
     )
     verify_relion_dispatch_schedule_oracle(schedule, oracle)
@@ -626,7 +627,7 @@ def test_dispatch_schedule_allows_idle_followers_but_rejects_invalid_owners(tmp_
     )
 
     loaded = load_relion_dispatch_schedule(path)
-    np.testing.assert_array_equal(loaded.owner_by_sorted_position, [[2, 2, 2, 2]])
+    assert_matches(loaded.owner_by_sorted_position, [[2, 2, 2, 2]])
     assert loaded.n_followers == 4
 
     np.savez(
@@ -682,8 +683,8 @@ def test_follower_scale_replay_loads_sparse_complete_states_and_validates_topolo
 
     replay = load_relion_follower_scale_replay(path)
 
-    np.testing.assert_array_equal(replay.relion_iterations, [2, 4])
-    np.testing.assert_array_equal(replay.follower_scales, scales)
+    assert_matches(replay.relion_iterations, [2, 4])
+    assert_matches(replay.follower_scales, scales)
     assert replay.source == "causal unit replay"
     validate_relion_follower_scale_replay(
         replay,
@@ -820,8 +821,8 @@ def test_follower_scale_replay_application_requires_every_row_exactly_once():
         replay,
         applied_iterations=[2, 4],
     )
-    np.testing.assert_array_equal(requested, [2, 4])
-    np.testing.assert_array_equal(applied, [2, 4])
+    assert_matches(requested, [2, 4])
+    assert_matches(applied, [2, 4])
 
     for observed in ([], [2], [2, 2, 4], [2, 3, 4]):
         with np.testing.assert_raises_regex(RuntimeError, "not applied exactly once"):
@@ -884,7 +885,7 @@ def test_worker_group_axis_and_owner_change_select_runtime_scale():
     )
     groups = np.asarray([1, 2])
 
-    np.testing.assert_array_equal(
+    assert_matches(
         relion_worker_group_ids(groups, [0, 1], n_groups=3),
         [1, 5],
     )
@@ -954,7 +955,7 @@ def test_final_dispatch_remaps_scoring_scale_norm_ratio_and_xa_aa_group_ids():
 
     np.testing.assert_allclose(half_inputs.scale_corrections[0], [0.8, 1.2])
     np.testing.assert_allclose(half_inputs.image_corrections[0], [1.6, 3.6])
-    np.testing.assert_array_equal(stats_group_ids[0], [3, 1])
+    assert_matches(stats_group_ids[0], [3, 1])
     assert stats_group_ids[1].size == 0
 
 
@@ -1087,8 +1088,8 @@ def test_follower_replay_completion_returns_copies_and_logs_after_validation(cap
         replay, applied_iterations=observed, logger=completion_logger,
     )
 
-    np.testing.assert_array_equal(requested, [2, 4])
-    np.testing.assert_array_equal(applied, [2, 4])
+    assert_matches(requested, [2, 4])
+    assert_matches(applied, [2, 4])
     assert requested.dtype == applied.dtype == np.dtype(np.int64)
     assert not np.shares_memory(requested, replay.relion_iterations)
     assert not np.shares_memory(applied, observed)
@@ -1191,12 +1192,7 @@ def test_captured_group5989_rank_states_reproduce_runtime_and_star_values():
         rtol=0.0,
         atol=2e-15,
     )
-    np.testing.assert_allclose(
-        relion_rank1_serialized_scales(updated)[target_group],
-        updated.scales[0, target_group],
-        rtol=0.0,
-        atol=0.0,
-    )
+    assert_matches(relion_rank1_serialized_scales(updated)[target_group], updated.scales[0, target_group])
 
 
 def test_firstiter_cc_preserves_follower_scale_state_exactly():
@@ -1243,7 +1239,7 @@ def test_file_combined_oracle_reduces_every_physical_group():
 
     np.testing.assert_allclose(updated.scales[:, 0] / updated.scales[:, 2], [3.0, 3.0])
     np.testing.assert_allclose(updated.scales[:, 1] / updated.scales[:, 2], [5.0, 5.0])
-    np.testing.assert_array_equal(updated.scales[0], updated.scales[1])
+    assert_matches(updated.scales[0], updated.scales[1])
 
 
 def test_scale_reduction_mode_follows_the_oracle_weight_combination():
@@ -1330,4 +1326,4 @@ def test_no_strict_topology_is_array_identical_to_legacy_global_updater():
         "scale_corrections_per_half",
     ):
         for expected, actual in zip(getattr(legacy, field), getattr(routed, field), strict=True):
-            np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
+            assert_matches(np.asarray(actual), np.asarray(expected))

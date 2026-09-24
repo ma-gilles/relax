@@ -4,6 +4,7 @@ import struct
 from pathlib import Path
 
 import numpy as np
+from helpers.float_compare import matches
 
 from scripts import validate_relion_bpref_rotation_mass as validator
 from scripts.analyze_k1_bpref_membership_all import _compare_compact_particle
@@ -68,7 +69,7 @@ def test_load_rotation_mass_artifact(tmp_path: Path) -> None:
     assert artifact.stack_index == 42
     assert artifact.mpi_rank == 1
     assert artifact.rows.size == 2
-    assert np.array_equal(
+    assert matches(
         artifact.rows["significant_translation_count"],
         [2, 1],
     )

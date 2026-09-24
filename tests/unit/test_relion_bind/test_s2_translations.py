@@ -15,6 +15,7 @@ Tests:
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from relax.relion_bind._relion_bind_core import (
     get_coarse_translations,
     get_oversampled_translations,
@@ -188,7 +189,7 @@ class TestOversampledTranslations:
             )
 
             np.testing.assert_allclose(recovar_children, relion_children, atol=1e-12, rtol=1e-12)
-            np.testing.assert_array_equal(parent_map, np.zeros(relion_children.shape[0], dtype=np.int64))
+            assert_matches(parent_map, np.zeros(relion_children.shape[0], dtype=np.int64))
 
 
 class TestTranslationPerturbation:

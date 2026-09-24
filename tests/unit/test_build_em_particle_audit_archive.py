@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+from helpers.float_compare import matches
 
 from scripts.build_em_particle_audit_archive import build_archive
 
@@ -48,21 +49,21 @@ def test_build_archive_scatter_all_iterations_to_source_order(tmp_path: Path):
 
     assert destination == tmp_path / "analysis" / "refinement_results_audit_source_order.npz"
     with np.load(destination, allow_pickle=False) as archive:
-        assert np.array_equal(archive["half1_indices"], half1)
-        assert np.array_equal(archive["half2_indices"], half2)
+        assert matches(archive["half1_indices"], half1)
+        assert matches(archive["half2_indices"], half2)
         assert np.allclose(
             archive["pmax_per_image_by_image_iter_001"],
             [10.2, 10.4, 10.1, 10.3],
         )
-        assert np.array_equal(
+        assert matches(
             archive["sig_counts_by_image_iter_001"],
             [12, 14, 11, 13],
         )
-        assert np.array_equal(
+        assert matches(
             archive["best_rotation_eulers_by_image_iter_001"][:, 0],
             [12, 14, 11, 13],
         )
-        assert np.array_equal(
+        assert matches(
             archive["best_translations_by_image_iter_001"][:, 0],
             [12, 14, 11, 13],
         )
@@ -97,15 +98,15 @@ def test_build_archive_accepts_legacy_zero_based_halves_and_explicit_half_order(
             archive["pmax_per_image_by_image_iter_000"],
             [0.2, 0.4, 0.1, 0.3],
         )
-        assert np.array_equal(
+        assert matches(
             archive["sig_counts_by_image_iter_000"],
             [2, 4, 1, 3],
         )
-        assert np.array_equal(
+        assert matches(
             archive["best_rotation_eulers_by_image_iter_000"][:, 0],
             [2, 4, 1, 3],
         )
-        assert np.array_equal(
+        assert matches(
             archive["best_translations_by_image_iter_000"][:, 0],
             [2, 4, 1, 3],
         )

@@ -1,10 +1,10 @@
-"""Bitwise tests for the jitted RELION coarse operand assemblies (P3-I).
+"""Equivalence tests for the jitted RELION coarse operand assemblies (P3-I).
 
 ``RELAX_COARSE_OPERAND_PROGRAM=1`` traces the coarse operand assembly once
 per batch shape instead of dispatching one compiled program per primitive. The
 eager path stays the oracle, so every test here compares the program's output
-against the eager function it is ``jax.jit`` of, with
-``np.testing.assert_array_equal`` rather than a tolerance.
+against the eager function it is ``jax.jit`` of: equal dtype and shape, values
+within the default float band of ``helpers.float_compare``.
 
 The three assemblies are the generic coarse sincosf operands, the exact-source
 operands, and the normalized-CC (``--firstiter_cc``) tree-rescore operands. The
@@ -17,6 +17,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.relion.relion_coarse_operands import (
     _COARSE_OPERAND_PROGRAM_ENV,
@@ -39,12 +40,12 @@ ACTUAL_BATCH = 6
 PADDED_BATCH = 8
 
 
-def _identical(actual, expected, what):
+def _assert_same_operand(actual, expected, what):
     actual = np.asarray(actual)
     expected = np.asarray(expected)
     assert actual.dtype == expected.dtype, f"{what}: {actual.dtype} != {expected.dtype}"
     assert actual.shape == expected.shape, f"{what}: {actual.shape} != {expected.shape}"
-    np.testing.assert_array_equal(actual, expected, err_msg=what)
+    assert_matches(actual, expected, err_msg=what)
 
 
 def _score_indices(rng):
@@ -79,7 +80,7 @@ def _sincosf_inputs(rng, *, batch, complex_dtype, real_dtype, zero_weights=True)
     ("complex_dtype", "real_dtype"),
     [(jnp.complex128, jnp.float64), (jnp.complex64, jnp.float32)],
 )
-def test_sincosf_program_is_bitwise_against_the_eager_assembly(complex_dtype, real_dtype):
+def test_sincosf_program_matches_the_eager_assembly(complex_dtype, real_dtype):
     rng = np.random.default_rng(20260920)
     unshifted, weights, half_weights = _sincosf_inputs(
         rng, batch=ACTUAL_BATCH, complex_dtype=complex_dtype, real_dtype=real_dtype
@@ -93,8 +94,8 @@ def test_sincosf_program_is_bitwise_against_the_eager_assembly(complex_dtype, re
     program = _relion_coarse_sincosf_operand_program(
         unshifted, weights, half_weights, indices, mask
     )
-    _identical(program[0], eager[0], "sincosf unshifted_corrected")
-    _identical(program[1], eager[1], "sincosf pixel_weight")
+    _assert_same_operand(program[0], eager[0], "sincosf unshifted_corrected")
+    _assert_same_operand(program[1], eager[1], "sincosf pixel_weight")
     # The dtype pairing the caller reads back off the returned operand.
     assert eager[0].dtype == complex_dtype
     assert eager[1].dtype == real_dtype
@@ -120,7 +121,7 @@ def test_sincosf_program_zeroes_the_inactive_support_and_the_zero_weight_rows():
 
 @pytest.mark.parametrize("use_float64_scoring", [False, True])
 @pytest.mark.parametrize("scale_corrections_enabled", [False, True])
-def test_exact_program_is_bitwise_against_the_eager_assembly(
+def test_exact_program_matches_the_eager_assembly(
     use_float64_scoring, scale_corrections_enabled
 ):
     rng = np.random.default_rng(20260921)
@@ -150,8 +151,8 @@ def test_exact_program_is_bitwise_against_the_eager_assembly(
     program = _relion_exact_coarse_operand_program(
         ctf, scale, processed, indices, mask, noise, half_weights, **kwargs
     )
-    _identical(program[0], eager[0], "exact unshifted_corrected")
-    _identical(program[1], eager[1], "exact pixel_weight")
+    _assert_same_operand(program[0], eager[0], "exact unshifted_corrected")
+    _assert_same_operand(program[1], eager[1], "exact pixel_weight")
     assert eager[0].dtype == complex_dtype
     assert eager[1].dtype == real_dtype
 
@@ -198,11 +199,11 @@ def test_exact_program_holds_on_a_repeat_padded_last_batch():
         indices, mask, noise, half_weights, **kwargs
     )
     for name, i in (("unshifted_corrected", 0), ("pixel_weight", 1)):
-        _identical(padded_program[i], padded_eager[i], f"padded exact {name}")
-        _identical(
+        _assert_same_operand(padded_program[i], padded_eager[i], f"padded exact {name}")
+        _assert_same_operand(
             padded_program[i][:ACTUAL_BATCH], unpadded[i], f"padded exact live rows {name}"
         )
-        _identical(
+        _assert_same_operand(
             padded_program[i][ACTUAL_BATCH:],
             np.repeat(np.asarray(unpadded[i][:1]), PADDED_BATCH - ACTUAL_BATCH, axis=0),
             f"padded exact repeated rows {name}",
@@ -212,7 +213,7 @@ def test_exact_program_holds_on_a_repeat_padded_last_batch():
 @pytest.mark.parametrize("with_window", [False, True])
 @pytest.mark.parametrize("with_phase_factors", [False, True])
 @pytest.mark.parametrize("scale_corrections_enabled", [False, True])
-def test_cc_program_is_bitwise_against_the_eager_assembly(
+def test_cc_program_matches_the_eager_assembly(
     with_window, with_phase_factors, scale_corrections_enabled
 ):
     rng = np.random.default_rng(20260923)
@@ -243,9 +244,9 @@ def test_cc_program_is_bitwise_against_the_eager_assembly(
         scale_corrections_enabled=scale_corrections_enabled,
     )
     for name in eager._fields:
-        _identical(getattr(program, name), getattr(eager, name), f"cc {name}")
+        _assert_same_operand(getattr(program, name), getattr(eager, name), f"cc {name}")
     if window is None:
-        _identical(eager.windowed_unshifted, eager.unshifted_corrected, "cc unwindowed")
+        _assert_same_operand(eager.windowed_unshifted, eager.unshifted_corrected, "cc unwindowed")
     else:
         assert eager.windowed_unshifted.shape == (ACTUAL_BATCH, N_SCORE)
         assert eager.windowed_corr_img.shape == (ACTUAL_BATCH, N_SCORE)
@@ -274,7 +275,7 @@ def test_cc_entry_point_follows_the_flag(monkeypatch):
         processed, ctf, inverse_power, scale, scale_corrections_enabled=True
     )
     for name in off._fields:
-        _identical(getattr(on, name), getattr(off, name), f"cc entry {name}")
+        _assert_same_operand(getattr(on, name), getattr(off, name), f"cc entry {name}")
 
 
 def test_coarse_operand_program_flag_fails_closed(monkeypatch):

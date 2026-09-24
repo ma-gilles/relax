@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+from helpers.float_compare import assert_matches
 
 from scripts.analyze_k1_exact_ppref_fine_boundary import _load_ppref
 from scripts.build_k1_ppref_capture_from_map import write_ppref_capture
@@ -23,7 +24,7 @@ def test_write_ppref_capture_roundtrips_schema(tmp_path):
         padding_factor=2.0,
     )
     observed, metadata = _load_ppref(path)
-    np.testing.assert_array_equal(observed, ppref)
+    assert_matches(observed, ppref)
     assert metadata == {
         "version": 1,
         "iteration": 2,

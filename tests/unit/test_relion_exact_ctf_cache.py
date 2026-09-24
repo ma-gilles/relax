@@ -15,6 +15,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.relion import relion_ctf
 
@@ -56,7 +57,7 @@ def test_cached_ctf_batch_preserves_order_and_duplicates(populated_cache):
 
     assert out.dtype == np.float64
     assert out.shape == (indices.size, PIXELS)
-    np.testing.assert_array_equal(out, rows[indices])
+    assert_matches(out, rows[indices])
 
 
 @pytest.mark.unit
@@ -71,7 +72,7 @@ def test_cached_ctf_batch_selects_requested_pixels(populated_cache):
     )
 
     assert out.shape == (indices.size, pixel_indices.size)
-    np.testing.assert_array_equal(out, rows[indices][:, pixel_indices])
+    assert_matches(out, rows[indices][:, pixel_indices])
 
 
 @pytest.mark.unit

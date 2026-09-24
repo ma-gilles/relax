@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts import compare_k4_relion_recovar_bpref_factors as comparator
 from scripts import validate_relion_bpref_factor_capture as validator
@@ -16,7 +17,7 @@ def test_compact_indices_preserve_packed_columns_and_center_rows():
 
     compact = comparator._compact_indices(values)
 
-    np.testing.assert_array_equal(compact, [6, 8, 9, 2, 4])
+    assert_matches(compact, [6, 8, 9, 2, 4])
 
 
 def test_recovar_exp50_weight_normalizer_uses_captured_global_logsum():
@@ -46,8 +47,8 @@ def test_dataset_native_processed_reconstruction_inputs_preserve_source_factors(
 
     shifted = comparator.apply_relion_integer_pre_shifts(raw, values["integer_pre_shifts"])
     expected = comparator._centered_rfft2_numpy(shifted).reshape(1, -1).astype(np.complex64)
-    np.testing.assert_array_equal(processed, expected)
-    np.testing.assert_array_equal(reconstruction_correction, values["image_corrections"])
+    assert_matches(processed, expected)
+    assert_matches(reconstruction_correction, values["image_corrections"])
 
 
 def test_dataset_native_processed_reconstruction_inputs_reject_active_relion_normalization():
@@ -85,7 +86,7 @@ def test_relion_cuda_processed_reconstruction_replays_captured_native_lane(monke
     fourier = np.arange(12, dtype=np.complex64).reshape(1, 4, 3)
 
     def fake_fft(images):
-        np.testing.assert_array_equal(images, raw)
+        assert_matches(images, raw)
         return fourier
 
     monkeypatch.setattr(comparator, "relion_preprocess_real_f32", fake_preprocess)
@@ -105,9 +106,9 @@ def test_relion_cuda_processed_reconstruction_replays_captured_native_lane(monke
         values
     )
 
-    np.testing.assert_array_equal(processed, fourier.reshape(1, 12))
+    assert_matches(processed, fourier.reshape(1, 12))
     assert captured["native_lane_reduction"] is True
-    np.testing.assert_array_equal(reconstruction_correction, values["scale_corrections"])
+    assert_matches(reconstruction_correction, values["scale_corrections"])
 
 
 def test_scalar_rotation_records_are_identity_bound(tmp_path):
@@ -182,7 +183,7 @@ def test_pixel_rows_use_centered_packed_y_coordinates():
 
     rows = comparator._pixel_rows(capture, compact)
 
-    np.testing.assert_array_equal(rows, [0, 11])
+    assert_matches(rows, [0, 11])
 
 
 def test_relion_rotation_matrix_converts_column_major_capture_layout():
@@ -190,7 +191,7 @@ def test_relion_rotation_matrix_converts_column_major_capture_layout():
     rotations["matrix"][0] = np.arange(9, dtype=np.float32)
     capture = SimpleNamespace(rotations=rotations)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         comparator._relion_rotation_matrix(capture, 0),
         np.arange(9, dtype=np.float32).reshape(3, 3).T,
     )

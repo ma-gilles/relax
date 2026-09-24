@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts import audit_vdam_live_posterior_repeat_panel as audit
 from scripts.audit_vdam_repeat_panel import RepeatPanelError
@@ -67,7 +68,7 @@ def test_load_candidate_capture_selects_active_rotation(tmp_path: Path):
     result = audit._load_candidate_capture(path, iteration=1)
     assert result["original_index"] == 7
     assert result["posterior"].shape == (1, 2)
-    np.testing.assert_array_equal(result["centered_scores"], [[0.0, -1.0]])
+    assert_matches(result["centered_scores"], [[0.0, -1.0]])
 
 
 def test_load_candidate_capture_accepts_masked_translation_scores(tmp_path: Path):
@@ -84,7 +85,7 @@ def test_load_candidate_capture_accepts_masked_translation_scores(tmp_path: Path
     )
     result = audit._load_candidate_capture(path, iteration=1)
     np.testing.assert_allclose(result["posterior"], [[0.7, 0.3, 0.0]])
-    np.testing.assert_array_equal(result["centered_scores"][:, :2], [[0.0, -1.0]])
+    assert_matches(result["centered_scores"][:, :2], [[0.0, -1.0]])
     assert np.isneginf(result["centered_scores"][0, 2])
 
 
@@ -131,7 +132,7 @@ def test_load_native_repeat_uses_complete_panel_capture(monkeypatch, tmp_path: P
     )
     result = audit._load_native_repeat(tmp_path, iteration=1)
     assert set(result) == {7}
-    np.testing.assert_array_equal(result[7]["rotations"], _rotation())
+    assert_matches(result[7]["rotations"], _rotation())
     np.testing.assert_allclose(result[7]["probabilities"], [[0.75, 0.25]])
 
 

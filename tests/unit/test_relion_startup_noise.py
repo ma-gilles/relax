@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts import run_full_refinement as driver
 
@@ -53,8 +54,8 @@ def test_startup_noise_preserves_order_and_float32_boundary(monkeypatch):
 
     def compute(ds, **kwargs):
         assert ds is dataset
-        np.testing.assert_array_equal(kwargs['source_rows'], rows)
-        np.testing.assert_array_equal(kwargs['optics_group_ids'], optics)
+        assert_matches(kwargs['source_rows'], rows)
+        assert_matches(kwargs['optics_group_ids'], optics)
         assert kwargs['particle_diameter_ang'] == 12
         assert kwargs['width_mask_edge_px'] == 3
         assert kwargs['image_pixel_size'] == 1.25
@@ -68,8 +69,8 @@ def test_startup_noise_preserves_order_and_float32_boundary(monkeypatch):
         optics_pixel_sizes=np.array([1.25]))
     assert len(calls) == 1
     assert radial.dtype == np.float64 and noise.dtype == np.float32
-    np.testing.assert_array_equal(radial, sigma[0] * 8**4)
-    np.testing.assert_array_equal(noise, driver._relion_sigma2_to_native_noise_variance(
+    assert_matches(radial, sigma[0] * 8**4)
+    assert_matches(noise, driver._relion_sigma2_to_native_noise_variance(
         sigma[0], grid_size=8, output_dtype=np.float32))
 
 
@@ -95,7 +96,7 @@ def test_startup_noise_starts_replays_without_their_model_noise(monkeypatch, ove
         SimpleNamespace(grid_size=8), args=_args(**overrides), frozen_boundary=None,
         source_rows=np.arange(3), optics_group_ids=np.ones(3), mask_params=(12., 3),
         optics_pixel_sizes=np.array([1.25]))
-    np.testing.assert_array_equal(radial, sigma[0] * 8**4)
+    assert_matches(radial, sigma[0] * 8**4)
 
 
 @pytest.mark.parametrize('overrides', [
@@ -145,7 +146,7 @@ def test_class3d_startup_noise_takes_unsplit_order(monkeypatch):
         SimpleNamespace(grid_size=8), args=_args(n_classes=4, relion_half_sets=None),
         frozen_boundary=None, source_rows=rows, optics_group_ids=np.ones(3, dtype=np.int64),
         mask_params=(12., 3), optics_pixel_sizes=np.array([1.25]))
-    np.testing.assert_array_equal(seen['source_rows'], rows)
+    assert_matches(seen['source_rows'], rows)
 
 
 def test_class3d_noise_layout_is_the_micrograph_sorted_input_order():
@@ -159,5 +160,5 @@ def test_class3d_noise_layout_is_the_micrograph_sorted_input_order():
         'rlnOpticsGroup': [1, 1, 2, 1],
     })
     rows, optics = driver._relion_class3d_initial_noise_layout(particles)
-    np.testing.assert_array_equal(rows, [2, 1, 3, 0])
-    np.testing.assert_array_equal(optics, [2, 1, 1, 1])
+    assert_matches(rows, [2, 1, 3, 0])
+    assert_matches(optics, [2, 1, 1, 1])

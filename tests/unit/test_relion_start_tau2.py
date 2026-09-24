@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import starfile
 from helpers.em_fixtures import fixture_file
+from helpers.float_compare import assert_matches
 
 from relax.vdam.init import relion_initial_tau2_and_data_vs_prior
 from scripts import run_full_refinement
@@ -88,5 +89,5 @@ def test_k1_start_matches_relion_run_it000_model(fixture):
     # The STAR prints six significant digits; shells past the ini_high filter hold ~1e-37 round-off.
     signal = relion_tau2 > 1e-12 * relion_tau2.max()
     np.testing.assert_allclose(dvp[signal], relion_dvp[signal], rtol=5e-6)
-    np.testing.assert_array_equal(dvp > 3.0, relion_dvp > 3.0)
+    assert_matches(dvp > 3.0, relion_dvp > 3.0)
     assert mean_variance.shape == (n**3,)

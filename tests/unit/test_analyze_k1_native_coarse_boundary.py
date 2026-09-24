@@ -3,6 +3,7 @@ from __future__ import annotations
 import struct
 
 import numpy as np
+from helpers.float_compare import assert_matches
 
 from scripts.analyze_k1_native_coarse_boundary import (
     _float32_ulp_distance,
@@ -33,10 +34,10 @@ def test_load_native_coarse_capture(tmp_path):
     )
     capture = load_native_coarse_capture(path)
     assert int(capture.header[2]) == 1204
-    np.testing.assert_array_equal(capture.raw_diff2, np.arange(4, dtype=np.float32))
-    np.testing.assert_array_equal(capture.orientation_zero, [False, True])
-    np.testing.assert_array_equal(capture.translation_zero, [True, False])
-    np.testing.assert_array_equal(capture.cumulative_weights, np.arange(4) + 40)
+    assert_matches(capture.raw_diff2, np.arange(4, dtype=np.float32))
+    assert_matches(capture.orientation_zero, [False, True])
+    assert_matches(capture.translation_zero, [True, False])
+    assert_matches(capture.cumulative_weights, np.arange(4) + 40)
 
 
 def test_float_header_layout_is_little_endian():

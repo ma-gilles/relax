@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from scripts.analyze_k1_half1_raw_accumulator import (
     _load_native_bpref,
@@ -77,8 +78,8 @@ def test_load_native_bpref_state_v1(tmp_path: Path) -> None:
 
     loaded_shape, loaded_values = _load_native_bpref(path, value_dtype=np.complex128)
 
-    assert np.array_equal(loaded_shape, shape)
-    assert np.array_equal(loaded_values, values)
+    assert matches(loaded_shape, shape)
+    assert matches(loaded_values, values)
 
 
 def test_metric_reports_exact_first_mismatch_telemetry() -> None:

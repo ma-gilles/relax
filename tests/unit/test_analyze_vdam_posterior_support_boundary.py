@@ -1,4 +1,5 @@
 import numpy as np
+from helpers.float_compare import assert_matches
 
 from scripts.analyze_vdam_posterior_support_boundary import (
     _partial_rotation_match,
@@ -16,8 +17,8 @@ def test_partial_rotation_match_reports_both_unmatched_sides():
     native = np.stack([_rotation(0.0), _rotation(0.1), _rotation(0.2)])
     recovar = np.stack([_rotation(0.0), _rotation(0.2), _rotation(0.3)])
     mapping, recovar_only, distances = _partial_rotation_match(native, recovar, 1.0e-6)
-    np.testing.assert_array_equal(mapping, np.asarray([0, -1, 1]))
-    np.testing.assert_array_equal(recovar_only, np.asarray([2]))
+    assert_matches(mapping, np.asarray([0, -1, 1]))
+    assert_matches(recovar_only, np.asarray([2]))
     assert distances[1] > 1.0e-6
 
 

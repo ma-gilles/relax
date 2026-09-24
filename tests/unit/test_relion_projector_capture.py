@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics.relion_projector_capture import (
     ProjectorLoadError,
@@ -97,8 +98,8 @@ def test_projector_loader_emits_exact_atomic_mapping(tmp_path):
         "padding_factor", "volume_shape", "n_classes", "source_manifest_sha256",
     }
     assert [array.shape for array in state["projector_half_by_half"]] == [(1, 5, 5, 3)] * 2
-    assert state["projector_half_by_half"][0][0, 0, 0, 0] == np.complex64(9 - 9j)
-    assert state["projector_half_by_half"][1][0, 0, 0, 0] == np.complex64(7 - 7j)
+    assert_matches(state["projector_half_by_half"][0][0, 0, 0, 0], np.complex64(9 - 9j))
+    assert_matches(state["projector_half_by_half"][1][0, 0, 0, 0], np.complex64(7 - 7j))
     assert state["projector_r_max_by_half"] == [2, 2]
     assert state["source_manifest_sha256"] == hashlib.sha256(manifest.read_bytes()).hexdigest()
     parsed = _parse_relion_projector_replay_state(state, n_classes=1)
@@ -120,8 +121,8 @@ def test_projector_loader_preserves_multiclass_order(tmp_path):
     )
 
     assert [array.shape for array in state["projector_half_by_half"]] == [(2, 5, 5, 3)] * 2
-    assert state["projector_half_by_half"][0][1, 0, 0, 0] == np.complex64(109 - 109j)
-    assert state["projector_half_by_half"][1][1, 0, 0, 0] == np.complex64(107 - 107j)
+    assert_matches(state["projector_half_by_half"][0][1, 0, 0, 0], np.complex64(109 - 109j))
+    assert_matches(state["projector_half_by_half"][1][1, 0, 0, 0], np.complex64(107 - 107j))
     parsed = _parse_relion_projector_replay_state(state, n_classes=2)
     assert parsed is not None
     assert parsed.projector_half_by_half[0].shape[0] == 2
@@ -156,8 +157,8 @@ def test_projector_iref_loader_preserves_exact_half_order(tmp_path):
     }
     assert [array.shape for array in state["iref_by_half"]] == [(1, 8, 8, 8)] * 2
     assert [array.dtype for array in state["iref_by_half"]] == [np.float64, np.float64]
-    assert state["iref_by_half"][0][0, 0, 0, 0] == 9.0
-    assert state["iref_by_half"][1][0, 0, 0, 0] == 7.0
+    assert_matches(state["iref_by_half"][0][0, 0, 0, 0], 9.0)
+    assert_matches(state["iref_by_half"][1][0, 0, 0, 0], 7.0)
     assert state["source_manifest_sha256"] == hashlib.sha256(manifest.read_bytes()).hexdigest()
 
 

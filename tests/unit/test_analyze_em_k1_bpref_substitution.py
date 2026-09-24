@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts.analyze_em_k1_bpref_substitution import (
     align_discrete_map_sign,
@@ -33,7 +34,7 @@ def test_load_relion_raw_round_trip(tmp_path, dtype):
     header, loaded = load_relion_raw(path, value_dtype=dtype)
 
     assert header.tolist() == [1, 1, 3, 5, 5, 0, -2, -2]
-    np.testing.assert_array_equal(loaded, values)
+    assert_matches(loaded, values)
 
 
 def test_load_relion_raw_fails_closed_on_truncated_payload(tmp_path):
@@ -75,7 +76,7 @@ def test_align_discrete_map_sign_reports_exact_frame_flip():
     aligned, sign = align_discrete_map_sign(-target, target)
 
     assert sign == -1
-    np.testing.assert_array_equal(aligned, target)
+    assert_matches(aligned, target)
 
 
 def test_classify_accumulator_substitution_uses_accumulator_label():

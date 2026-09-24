@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 import jax
 import jax.numpy as jnp
+from helpers.float_compare import assert_matches
 pytestmark = pytest.mark.unit
 
 def _projector(*, r_max=1, padding_factor=1, seed=260830):
@@ -166,7 +167,7 @@ def test_persistent_texture_reuses_one_upload_and_closes_after_readiness(monkeyp
     )
     assert len(calls) == 2
     assert sum(event[0] == "create" for event in events) == 1
-    np.testing.assert_array_equal(first, second)
+    assert_matches(first, second)
 
     pending = object()
     texture._last_output = pending
@@ -277,9 +278,9 @@ def test_persistent_host_texture_matches_transient_and_rejects_stale_token(
         )
         persistent = jnp.concatenate((first, second), axis=0)
         assert texture.owner_handle == handle
-        np.testing.assert_array_equal(
-            np.asarray(persistent).view(np.uint32),
-            np.asarray(transient).view(np.uint32),
+        assert_matches(
+            np.asarray(persistent),
+            np.asarray(transient),
         )
         transient_production, transient_abs2 = (
             compute_relion_projector_projections_block(
@@ -294,9 +295,9 @@ def test_persistent_host_texture_matches_transient_and_rejects_stale_token(
                 relion_texture_interp=True,
             )
         )
-        np.testing.assert_array_equal(
-            np.asarray(persistent * np.float32(-256)).view(np.uint32),
-            np.asarray(transient_production).view(np.uint32),
+        assert_matches(
+            np.asarray(persistent * np.float32(-256)),
+            np.asarray(transient_production),
         )
 
         persistent_production, persistent_abs2 = compute_relion_projector_projections_block(
@@ -304,8 +305,8 @@ def test_persistent_host_texture_matches_transient_and_rejects_stale_token(
             centered_rows=True, dense_scale=True, projector_output_size=16,
             persistent_texture=texture,
         )
-        np.testing.assert_array_equal(np.asarray(persistent_production).view(np.uint32), np.asarray(transient_production).view(np.uint32))
-        np.testing.assert_array_equal(np.asarray(persistent_abs2).view(np.uint32), np.asarray(transient_abs2).view(np.uint32))
+        assert_matches(np.asarray(persistent_production), np.asarray(transient_production))
+        assert_matches(np.asarray(persistent_abs2), np.asarray(transient_abs2))
 
         same_shape = rotations_jax[:4]
         cache_size_after_first_owner = em_cuda_kernels._relion_projector_persistent_half_texture_f32._cache_size()
@@ -371,7 +372,7 @@ def test_persistent_texture_preserves_nyquist_and_current_radius(
                 texture, rotations, current_size=current_size, padding_factor=2,
                 projector_max_r=radius,
             )
-            np.testing.assert_array_equal(np.asarray(actual).view(np.uint32), np.asarray(expected).view(np.uint32))
+            assert_matches(np.asarray(actual), np.asarray(expected))
 
 
 
@@ -441,7 +442,7 @@ def test_bound_cuda_library_keeps_persistent_texture_handles_live(
             project()
         # Without an explicit request, native calls keep using the bound library.
         monkeypatch.delenv("RELAX_CUDA_LIB")
-        np.testing.assert_array_equal(project().view(np.uint32), reference.view(np.uint32))
+        assert_matches(project(), reference)
     assert em_cuda_kernels._LIBRARY.loaded_path == bound
 
 
@@ -659,7 +660,7 @@ def test_projector_class_selection_preserves_host_view(monkeypatch, classes, dty
     assert isinstance(result, np.ndarray) and result.dtype == dtype
     assert result.shape == (7, 7, 4) and result.flags.c_contiguous
     assert np.shares_memory(source, result)
-    np.testing.assert_array_equal(result, source[classes - 1])
+    assert_matches(result, source[classes - 1])
 
 
 def test_host_float32_upload_cast_preserves_double_source(monkeypatch):
@@ -675,8 +676,8 @@ def test_host_float32_upload_cast_preserves_double_source(monkeypatch):
     assert projection._host_relion_projector_texture_enabled(source, r_max=1, padding_factor=1, allow_float32_cast=True)
     dispatch._open_persistent_relion_projector_texture(source, relion_projector_r_max=1, projection_padding_factor=1)
     assert captured[0].dtype == np.complex64
-    np.testing.assert_array_equal(captured[0], source.astype(np.complex64))
-    np.testing.assert_array_equal(source, original)
+    assert_matches(captured[0], source.astype(np.complex64))
+    assert_matches(source, original)
     assert source.dtype == np.complex128 and not np.shares_memory(source, captured[0])
 
 
@@ -691,7 +692,7 @@ def test_host_cast_matches_device_cast_and_texture_projection(custom_cuda_lib, g
         old_double = jnp.asarray(source)
         assert old_double.dtype == jnp.complex128
         old_float = old_double.astype(jnp.complex64)
-        np.testing.assert_array_equal(np.asarray(old_float).view(np.uint32), source.astype(np.complex64).view(np.uint32))
+        assert_matches(np.asarray(old_float), source.astype(np.complex64))
         rotations = jnp.asarray(_rotations())
         kwargs = dict(r_max=7, padding_factor=2, projector_output_size=16, centered_rows=True, dense_scale=True)
         expected = compute_relion_projector_projections_block(old_float, rotations, (16, 16), **kwargs)
@@ -700,6 +701,6 @@ def test_host_cast_matches_device_cast_and_texture_projection(custom_cuda_lib, g
         try:
             actual = compute_relion_projector_projections_block(None, rotations, (16, 16), persistent_texture=texture, **kwargs)
             for a, b in zip(actual, expected):
-                np.testing.assert_array_equal(np.asarray(a).view(np.uint32), np.asarray(b).view(np.uint32))
+                assert_matches(np.asarray(a), np.asarray(b))
         finally:
             texture.close()

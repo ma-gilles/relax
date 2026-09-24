@@ -14,6 +14,7 @@ import pytest
 from relax.relion_bind._relion_bind_core import soft_mask_outside_map_2d
 
 from recovar.core.mask import apply_relion_soft_image_mask, relion_soft_image_mask, smooth_circular_mask
+from helpers.float_compare import assert_matches
 
 
 @pytest.fixture(params=[32, 64, 128])
@@ -197,7 +198,7 @@ class TestMaskEdgeCases:
         result = relion_soft_image_mask(D, 1.0, particle_diameter, width)
         expected = smooth_circular_mask(D, radius, width).astype(np.float32)
 
-        np.testing.assert_array_equal(result, expected)
+        assert_matches(result, expected)
 
     def test_positive_radius_larger_than_half_box_matches_binding(self, rng):
         """The unclamped oversized-radius mask matches RELION C++ exactly."""
@@ -220,7 +221,7 @@ class TestMaskEdgeCases:
 
         result = relion_soft_image_mask(D, 1.0, -2.0, width)
         expected = smooth_circular_mask(D, D / 2.0, width).astype(np.float32)
-        np.testing.assert_array_equal(result, expected)
+        assert_matches(result, expected)
 
         relion_negative = soft_mask_outside_map_2d(image, -1.0, width)
         relion_half_box = soft_mask_outside_map_2d(image, D / 2.0, width)

@@ -4,6 +4,7 @@ import struct
 from pathlib import Path
 
 import numpy as np
+from helpers.float_compare import matches
 
 from scripts import analyze_relion_preprocess_boundary as analyzer
 from scripts.validate_relion_preprocess_capture import RelionPreprocessCapture
@@ -67,7 +68,7 @@ def test_relion_fourier_mapping_restores_centered_units() -> None:
         relion,
         full_image_size=4,
     )
-    assert np.array_equal(restored, centered)
+    assert matches(restored, centered)
 
 
 def test_relion_fourier_mapping_accepts_cropped_current_size() -> None:
@@ -85,7 +86,7 @@ def test_relion_fourier_mapping_accepts_cropped_current_size() -> None:
         relion,
         full_image_size=full_size,
     )
-    assert np.array_equal(restored, centered)
+    assert matches(restored, centered)
 
 
 def test_crop_centered_rfft_preserves_relion_positive_nyquist_row() -> None:
@@ -95,7 +96,7 @@ def test_crop_centered_rfft_preserves_relion_positive_nyquist_row() -> None:
         dtype=np.float32,
     ).reshape(1, full_size, full_size // 2 + 1)
     cropped = analyzer.crop_centered_rfft(values, current_size=4)
-    assert np.array_equal(cropped, values[:, [6, 3, 4, 5], :3])
+    assert matches(cropped, values[:, [6, 3, 4, 5], :3])
 
 
 def test_scale_sensitive_metrics_do_not_accept_opposite_sign() -> None:

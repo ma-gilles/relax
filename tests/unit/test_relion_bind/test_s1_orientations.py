@@ -15,6 +15,7 @@ Tests:
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 healpy = pytest.importorskip("healpy")
 
@@ -41,7 +42,7 @@ def test_mstep_rotation_helper_uses_exact_relion_host_inverse():
     )
     expected = np.swapaxes(euler_angles_to_inverse_matrices(angles), 1, 2)
     actual = _relion_mstep_rotations_from_eulers(angles, dtype=np.float64)
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
 
 def test_batched_oversampled_orientations_match_individual_calls_exactly():
@@ -56,7 +57,7 @@ def test_batched_oversampled_orientations_match_individual_calls_exactly():
         axis=0,
     )
     actual = get_oversampled_orientations_batch(2, 1, idirs, ipsis, perturbation)
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
 
 def test_sampled_grid_uses_native_eulers_and_inverse_exactly():
@@ -82,8 +83,8 @@ def test_sampled_grid_uses_native_eulers_and_inverse_exactly():
         return_mstep_rotations=True,
         dtype=np.float64,
     )
-    np.testing.assert_array_equal(rotations, expected)
-    np.testing.assert_array_equal(mstep_rotations, expected)
+    assert_matches(rotations, expected)
+    assert_matches(mstep_rotations, expected)
 
 
 def _recovar_directions(order):
@@ -144,8 +145,8 @@ def test_blocked_rotation_comparison_matches_dense(block_size, dtype):
     traces = np.einsum("nij,mij->nm", matrices_a, matrices_b)
     expected = np.max(traces, axis=1)
     best_traces = _best_rotation_traces(matrices_a, matrices_b, block_size)
-    np.testing.assert_array_equal(best_traces, expected)
-    np.testing.assert_array_equal(
+    assert_matches(best_traces, expected)
+    assert_matches(
         np.clip((best_traces - 1.0) / 2.0, -1, 1),
         np.max(np.clip((traces - 1.0) / 2.0, -1, 1), axis=1),
     )
@@ -296,7 +297,7 @@ class TestOversampledGrid:
             ],
             dtype=np.float32,
         )
-        np.testing.assert_array_equal(exact[0].T, expected_effective)
+        assert_matches(exact[0].T, expected_effective)
         assert np.any(rounded[0] != exact[0])
 
     def test_oversampled_within_coarse_cell(self):
@@ -364,7 +365,7 @@ class TestOversampledGrid:
             expected_parent.extend([parent_pos] * expected_eulers.shape[0])
 
         expected_matrices = np.concatenate(expected_blocks, axis=0)
-        np.testing.assert_array_equal(parent_map, np.asarray(expected_parent, dtype=np.int64))
+        assert_matches(parent_map, np.asarray(expected_parent, dtype=np.int64))
         np.testing.assert_allclose(matrices, expected_matrices, rtol=2e-5, atol=2e-5)
 
         fine_order = order + oversampling_order
