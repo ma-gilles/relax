@@ -133,6 +133,12 @@ def make_relion_stats(
     )
 
 
+def total_sumw(sumw) -> float:
+    """A noise statistic's total weight: the value itself, or the sum over its optics groups."""
+
+    return float(sumw) if np.ndim(sumw) == 0 else float(np.sum(np.asarray(sumw, dtype=np.float64)))
+
+
 def make_noise_stats(
     *,
     wsum_sigma2_noise,

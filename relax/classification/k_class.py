@@ -47,7 +47,7 @@ from relax.helpers.env_flags import parse_env_flag
 from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
 from relax.helpers.normalization_inputs import optional_normalization_vector
 from relax.helpers.scale_groups import prepare_scale_correction_groups
-from relax.helpers.types import NoiseStats, RelionStats, make_relion_stats
+from relax.helpers.types import NoiseStats, RelionStats, make_relion_stats, total_sumw
 from relax.local.local_em_engine import run_local_em_exact
 from relax.local.local_layout import LocalHypothesisLayout
 from relax.scoring.significant_samples import ComplementSignificantSampleIndices, significant_sample_count
@@ -2179,7 +2179,7 @@ def run_local_k_class_em(
             return None
         if noise_values is None:
             raise ValueError("class_posterior_sums_from_noise requires accumulate_noise=True")
-        return np.asarray([float(stats.sumw) for stats in noise_values], dtype=np.float64)
+        return np.asarray([total_sumw(stats.sumw) for stats in noise_values], dtype=np.float64)
 
     class_log_evidence_np = None
     if class_log_evidence is not None:

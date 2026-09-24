@@ -15,7 +15,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.types import NoiseStats, RelionStats, make_noise_stats, make_relion_stats
+from relax.helpers.types import NoiseStats, RelionStats, make_noise_stats, make_relion_stats, total_sumw
 
 _K1_POSE_PUBLISH_DIRECT_ENV = "RELAX_K1_POSE_PUBLISH_DIRECT"
 
@@ -124,12 +124,6 @@ def _summed_sumw(noise_stats):
     return np.sum([np.asarray(value, dtype=np.float64) for value in values], axis=0)
 
 
-def _total_sumw(sumw) -> float:
-    """One noise statistic's total weight, over its optics groups when it has several."""
-
-    return float(sumw) if np.ndim(sumw) == 0 else float(np.sum(np.asarray(sumw, dtype=np.float64)))
-
-
 def _sum_noise_stats(noise_stats: tuple[NoiseStats, ...] | None, *, host_arrays=False) -> NoiseStats | None:
     if not noise_stats:
         return None
@@ -208,7 +202,7 @@ def _sum_k_class_noise_stats(
         return None
     responsibilities = np.asarray(class_posterior_sums, dtype=np.float64).reshape(-1)
     relion_sumw = float(np.sum(responsibilities))
-    raw_sumw = np.asarray([_total_sumw(stats.sumw) for stats in noise_stats], dtype=np.float64)
+    raw_sumw = np.asarray([total_sumw(stats.sumw) for stats in noise_stats], dtype=np.float64)
     if responsibilities.shape != raw_sumw.shape:
         raise ValueError(
             "class_posterior_sums and noise_stats disagree on class count: "
@@ -221,6 +215,12 @@ def _sum_k_class_noise_stats(
             if class_sumw <= 0.0:
                 continue
             image_power += np.asarray(stats.wsum_img_power, dtype=np.float64) * (responsibility / class_sumw)
+    if np.ndim(aggregate.sumw) != 0:
+        # One weight sum per optics group (K=1 only): the class mass is their total, so the
+        # per-group sums stand as they are for the per-group noise update.
+        if len(noise_stats) != 1:
+            raise NotImplementedError("per-optics-group noise statistics are K=1 only")
+        relion_sumw = aggregate.sumw
     return aggregate._replace(
         wsum_img_power=(np.asarray if host_arrays else jnp.asarray)(image_power, dtype=aggregate.wsum_img_power.dtype), sumw=relion_sumw
     )
@@ -247,7 +247,7 @@ def _resolve_class_mstep_posterior_sums(
     if class_posterior_sums_override is not None:
         resolved = np.asarray(class_posterior_sums_override, dtype=np.float64)
     elif noise_stats is not None and len(noise_stats) == 1:
-        resolved = np.asarray([_total_sumw(noise_stats[0].sumw)], dtype=np.float64)
+        resolved = np.asarray([total_sumw(noise_stats[0].sumw)], dtype=np.float64)
     else:
         resolved = np.asarray(class_posterior_sums_full, dtype=np.float64)
     if resolved.shape != np.asarray(class_posterior_sums_full).shape:

@@ -26,6 +26,7 @@ from typing import Optional
 import numpy as np
 
 from relax.helpers.env_flags import parse_env_float_or_default, parse_env_int_or_default, parse_env_true_flag
+from relax.helpers.types import total_sumw
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,8 @@ def _relion_pmax_normalization_mass_per_half(*, k_class_enabled: bool, class_pos
             for mass in class_posterior_per_half
         ]
     return [
-        None if stats is None else float(np.asarray(stats.sumw, dtype=np.float64))
+        # The particle mass over all optics groups when the half carries one sum per group.
+        None if stats is None else total_sumw(stats.sumw)
         for stats in noise_stats_per_half
     ]
 

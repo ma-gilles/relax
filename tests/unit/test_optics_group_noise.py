@@ -123,3 +123,31 @@ def test_k1_class_mass_and_sums_take_per_group_weight_sums():
     np.testing.assert_array_equal(results._summed_sumw((groups, groups)), [6.0, 9.0])
     assert results._summed_sumw((single, single)) == 15.0 and type(results._summed_sumw((single,))) is float
     np.testing.assert_array_equal(results._sum_noise_stats((groups,), host_arrays=True).sumw, [3.0, 4.5])
+
+
+@pytest.mark.unit
+def test_k1_aggregate_noise_keeps_per_group_weight_sums():
+    from relax.classification import k_class_results as results
+
+    groups = make_noise_stats(
+        wsum_sigma2_noise=np.ones((2, 5)), wsum_img_power=np.ones((2, 5)),
+        wsum_sigma2_offset=1.0, sumw=np.array([3.0, 4.5]),
+    )
+    for host in (True, False):
+        aggregate = results._sum_k_class_noise_stats((groups,), np.array([7.5]), host_arrays=host)
+        np.testing.assert_array_equal(np.asarray(aggregate.sumw), [3.0, 4.5])
+        np.testing.assert_array_equal(np.asarray(aggregate.wsum_img_power), np.ones((2, 5)))
+
+
+@pytest.mark.unit
+def test_sigma_offset_update_uses_the_total_weight_over_optics_groups():
+    groups = make_noise_stats(
+        wsum_sigma2_noise=np.ones((2, 5)), wsum_img_power=np.zeros((2, 5)),
+        wsum_sigma2_offset=60.0, sumw=np.array([3.0, 7.0]),
+    )
+    single = make_noise_stats(wsum_sigma2_noise=np.ones(5), wsum_img_power=np.zeros(5), wsum_sigma2_offset=60.0, sumw=10.0)
+    kwargs = dict(noise_stats_per_half_per_class=None, current_sigma_offset_angstrom_per_half=[5.0, 5.0],
+                  n_classes=1, state_fallback_offsets_angstrom=np.nan)
+    a = noise_updates.update_c1_sigma_offset_from_posterior(noise_stats_per_half=[groups, groups], **kwargs)
+    b = noise_updates.update_c1_sigma_offset_from_posterior(noise_stats_per_half=[single, single], **kwargs)
+    assert a.current_sigma_offset_angstrom_per_half == b.current_sigma_offset_angstrom_per_half

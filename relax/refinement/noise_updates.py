@@ -12,7 +12,7 @@ from dataclasses import dataclass as _dataclass
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.types import make_noise_stats
+from relax.helpers.types import make_noise_stats, total_sumw
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,8 @@ def update_c1_sigma_offset_from_posterior(
         wsum_k = sumw_k = 0.0
         if stats_k is not None:
             wsum_k = float(getattr(stats_k, "wsum_sigma2_offset", 0.0))
-            sumw_k = float(getattr(stats_k, "sumw", 0.0))
+            # RELION's sum_weight is the total class mass over all optics groups (ml_optimiser.cpp:5099-5101).
+            sumw_k = total_sumw(getattr(stats_k, "sumw", 0.0))
             pooled_wsum += wsum_k
             pooled_sumw += sumw_k
         per_half_values.append(
