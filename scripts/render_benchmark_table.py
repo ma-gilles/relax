@@ -17,6 +17,11 @@ Optional per-row fields: ``result_marker`` ({symbol, note}) flags the relax
 result and adds a footnote; ``cross_engine_by_relion_run`` and
 ``relion_vs_relion`` list the band FSC-AUCs of relax against every same-command
 RELION run and of the RELION runs against each other (``render_per_reference``).
+
+Rows with ``"table": "initialmodel"`` are InitialModel (VDAM) runs, rendered in
+their own sections: they have no half maps, so their quality block
+``initial_model`` holds FSC-AUCs of rigidly aligned final maps against a
+reference and against each other instead of half-map resolutions.
 """
 
 import argparse
@@ -41,6 +46,11 @@ ENGINE_FIELDS = (
 ROW_FIELDS = ("gt", "cross_engine", "cross_engine_masked_band_auc", "time_ratio_relax_over_relion", "mask")
 MASKED_DEFINITION = "relion_postprocess_masked_frozen"
 SECTIONS = (("real", "Real data"), ("synthetic", "Synthetic data"))
+IM_SECTIONS = (("real", "InitialModel (VDAM): real data"), ("synthetic", "InitialModel (VDAM): synthetic data"))
+IM_ENGINE_FIELDS = ("wall_s", "gpu_model", "gpu_count", "iterations")
+IM_ROW_FIELDS = ("time_ratio_relax_over_relion", "mask")
+IM_METRICS = ("fsc_auc", "masked_fsc_auc", "res_05_A", "masked_res_05_A")
+IM_CROSS = ("fsc_auc", "masked_fsc_auc")
 MATCHED = ("yes", "workload", "no")
 RATIO_TOLERANCE = 0.006
 PER_REFERENCE_AUCS = ("merged", "half1", "half2")
@@ -66,10 +76,47 @@ def load_and_validate(path, registry=DEFAULT_REGISTRY):
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate row id")
     for row in table["rows"]:
+        if _is_initialmodel(row):
+            _validate_initialmodel(row, masks)
+            continue
         _validate_row(row, definitions)
         _validate_masked(row, masks)
         _validate_per_reference(row)
     return table
+
+
+def _is_initialmodel(row):
+    return row.get("table") == "initialmodel"
+
+
+def _validate_initialmodel(row, masks):
+    """InitialModel rows: aligned-map FSC-AUCs with a reason for every missing value."""
+    rid = row["id"]
+    if row["section"] not in dict(IM_SECTIONS):
+        raise ValueError(f"{rid}: unknown section {row['section']!r}")
+    if row["matched"] not in MATCHED:
+        raise ValueError(f"{rid}: matched must be one of {MATCHED}")
+    reasons = row.get("null_reasons", {})
+    nulls = [f"{e}.{f}" for e in ENGINES for f in IM_ENGINE_FIELDS if row[e][f] is None]
+    nulls += [f for f in IM_ROW_FIELDS if row[f] is None]
+    im = row["initial_model"]
+    nulls += [f"initial_model.{e}.{f}" for e in ENGINES for f in IM_METRICS if im[e][f] is None]
+    nulls += [f"initial_model.cross.{f}" for f in IM_CROSS if im["cross"][f] is None]
+    if im.get("relion_repeat") is None:
+        nulls.append("initial_model.relion_repeat")
+    missing = [field for field in nulls if not reasons.get(field)]
+    if missing:
+        raise ValueError(f"{rid}: null without a reason: {missing}")
+    masked = [im[e][f] for e in ENGINES for f in ("masked_fsc_auc", "masked_res_05_A")] + [
+        im["cross"]["masked_fsc_auc"]
+    ]
+    if any(value is not None for value in masked):
+        mask = row["mask"]
+        if mask is None:
+            raise ValueError(f"{rid}: masked values without a frozen mask")
+        if masks.get(mask["dataset"], {}).get("mask_sha256") != mask["sha256"]:
+            raise ValueError(f"{rid}: mask {mask['dataset']} is not the registered frozen mask")
+    _validate_ratio(row)
 
 
 def _validate_masked(row, masks):
@@ -123,6 +170,11 @@ def _validate_row(row, definitions):
     for engine in ENGINES:
         if row[engine]["resolution_definition"] not in definitions:
             raise ValueError(f"{rid}: unknown resolution definition for {engine}")
+    _validate_ratio(row)
+
+
+def _validate_ratio(row):
+    rid = row["id"]
     ratio = row["time_ratio_relax_over_relion"]
     walls = (row["relion"]["wall_s"], row["relax"]["wall_s"])
     if ratio is not None:
@@ -165,7 +217,7 @@ def render_markdown(table):
     lines += [f"- **{key}**: {text}" for key, text in table["matched_definition"].items()]
     footnotes = []
     for section, title in SECTIONS:
-        rows = [row for row in table["rows"] if row["section"] == section]
+        rows = [row for row in table["rows"] if row["section"] == section and not _is_initialmodel(row)]
         lines += ["", f"## {title}", ""]
         lines += [
             "| Dataset | Workflow | N / box | RELION res (Å) unmasked / masked | relax res (Å) unmasked / masked"
@@ -185,6 +237,46 @@ def render_markdown(table):
                         f"{_resolution(row, 'relion', letters)} / {_masked(row, 'relion')}",
                         f"{_resolution(row, 'relax', letters)} / {_masked(row, 'relax')}",
                         _masked_cross(row),
+                        _time(row, "relion"),
+                        _time(row, "relax"),
+                        _ratio(row),
+                        _gpu(row),
+                        row["matched"],
+                        row["date"],
+                    ]
+                )
+                + " |"
+            )
+    im_rows = [row for row in table["rows"] if _is_initialmodel(row)]
+    if im_rows:
+        lines += ["", "## InitialModel (VDAM) method", "", *table["initial_model_intro"]]
+    for section, title in IM_SECTIONS:
+        rows = [row for row in im_rows if row["section"] == section]
+        if not rows:
+            continue
+        lines += ["", f"## {title}", ""]
+        lines += [
+            "| Dataset | Workflow | N / box | Ref FSC-AUC RELION / relax | Masked ref FSC-AUC RELION / relax"
+            " | Ref FSC 0.5 (Å) RELION / relax | X-AUC unmasked / masked | RELION repeat X-AUC unmasked / masked"
+            " | RELION time | relax time | Ratio | GPU | Matched? | Date |",
+            "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
+        ]
+        for row in rows:
+            footnotes.append(row)
+            im = row["initial_model"]
+            repeat = im.get("relion_repeat") or {}
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        f"{row['dataset']} [{len(footnotes)}]",
+                        _workflow(row),
+                        f"{row['particles']:,} / {row['box']}",
+                        f"{_auc(im['relion']['fsc_auc'])} / {_auc(im['relax']['fsc_auc'])}",
+                        f"{_auc(im['relion']['masked_fsc_auc'])} / {_auc(im['relax']['masked_fsc_auc'])}",
+                        f"{_angstrom(im['relion']['res_05_A'])} / {_angstrom(im['relax']['res_05_A'])}",
+                        f"{_auc(im['cross']['fsc_auc'])} / {_auc(im['cross']['masked_fsc_auc'])}",
+                        f"{_auc(repeat.get('fsc_auc'))} / {_auc(repeat.get('masked_fsc_auc'))}",
                         _time(row, "relion"),
                         _time(row, "relax"),
                         _ratio(row),
@@ -250,6 +342,10 @@ def _auc(value):
     return "—" if value is None else f"{value:.4f}"
 
 
+def _angstrom(value):
+    return "—" if value is None else f"{value:.1f}"
+
+
 def _escape(symbol):
     return symbol.replace("*", "\\*")
 
@@ -299,6 +395,8 @@ def _gpu(row):
 def _note(row):
     relax = row["relax"]
     text = [f"`{row['id']}`: relax source `{relax['source_sha'][:9]}`, {relax['source_repo']}."]
+    if _is_initialmodel(row):
+        return " ".join(text + _initialmodel_note(row))
     if row["mask"] is not None:
         mask = row["mask"]
         auc = [row[e]["masked_band_auc"] for e in ENGINES]
@@ -324,6 +422,27 @@ def _note(row):
     if jobs:
         text.append(f"Jobs: relax {', '.join(relax['jobs']) or '—'}; RELION {', '.join(row['relion']['jobs']) or '—'}.")
     return " ".join(text)
+
+
+def _initialmodel_note(row):
+    im = row["initial_model"]
+    text = [f"Reference: {im['reference']}. Runs scored: RELION {im['relion']['run']}, relax {im['relax']['run']}."]
+    if row["mask"] is not None:
+        text.append(f"Frozen mask `{row['mask']['dataset']}` (`{row['mask']['sha256'][:12]}`).")
+    if im.get("aggregate"):
+        text.append(f"{im['aggregate'].rstrip('.')}.")
+    if im.get("relion_repeat"):
+        rep = im["relion_repeat"]
+        text.append(f"RELION repeat pair: {rep['pair'].rstrip('.')}.")
+    text += list(row.get("notes", []))
+    text += [f"`{field}` is null: {reason}." for field, reason in row.get("null_reasons", {}).items()]
+    jobs = row["relax"]["jobs"] + row["relion"]["jobs"]
+    if jobs:
+        text.append(
+            f"Jobs: relax {', '.join(row['relax']['jobs']) or '—'}; RELION {', '.join(row['relion']['jobs']) or '—'}."
+        )
+    text.append(f"Scores: `{im['score_json']}`.")
+    return text
 
 
 def _value(value):

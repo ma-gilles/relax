@@ -441,3 +441,15 @@ def test_completion_k1_standalone_mode_reads_no_relion_output(tmp_path):
     assert 'if [[ "standalone" == "standalone" ]]' in k1_text
     assert "K1_TRAJECTORY_MODE=standalone" in submission_env_text
     assert "RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE=0" in submission_env_text
+
+
+def test_completion_jobs_share_nodes_and_reject_the_retired_exclusive_mode(tmp_path):
+    scratch = tmp_path / "scratch"
+    env = _launcher_env(tmp_path, scratch)
+    _run_launcher(env, "--k1-only")
+    for script in (scratch / "jobs").glob("*.sh"):
+        assert "--exclusive" not in script.read_text(), script
+    env["EM_COMPLETION_EXCLUSIVE"] = "1"
+    proc = subprocess.run(["bash", str(LAUNCHER), "--dry-run", "--k1-only"], cwd=REPO_ROOT, env=env, text=True,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+    assert proc.returncode == 2 and "--gres=gpu:2" in proc.stdout

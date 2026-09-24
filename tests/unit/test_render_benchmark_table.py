@@ -93,3 +93,45 @@ def test_resolution_cells_read_unmasked_then_masked():
     letter = "abcdefgh"[list(table["resolution_definitions"]).index(row["relax"]["resolution_definition"])]
     assert f"{row['relax']['resolution_A']:.2f} {letter}" in rendered
     assert f" / {row['relax']['masked_resolution_A']:.2f} |" in rendered
+
+
+def _initialmodel_row(table):
+    return next(row for row in table["rows"] if row.get("table") == "initialmodel" and row["mask"] is not None)
+
+
+@pytest.mark.unit
+def test_initialmodel_rows_render_in_their_own_sections():
+    table = load_and_validate(DEFAULT_JSON)
+    rendered = render_markdown(table)
+    im_rows = [row for row in table["rows"] if row.get("table") == "initialmodel"]
+    assert im_rows
+    assert "## InitialModel (VDAM): synthetic data" in rendered
+    head, _, rest = rendered.partition("## InitialModel (VDAM)")
+    for row in im_rows:
+        im = row["initial_model"]
+        cells = f"{im['relion']['fsc_auc']:.4f} / {im['relax']['fsc_auc']:.4f}"
+        assert cells in rest
+        assert f"`{row['id']}`" not in head
+
+
+@pytest.mark.unit
+def test_initialmodel_null_needs_a_reason(tmp_path):
+    table = json.loads(DEFAULT_JSON.read_text())
+    row = _initialmodel_row(table)
+    row["initial_model"]["relax"]["masked_fsc_auc"] = None
+    row["null_reasons"].pop("initial_model.relax.masked_fsc_auc", None)
+    path = tmp_path / "table.json"
+    path.write_text(json.dumps(table))
+    with pytest.raises(ValueError, match="initial_model.relax.masked_fsc_auc"):
+        load_and_validate(path)
+
+
+@pytest.mark.unit
+def test_initialmodel_masked_value_needs_the_registered_frozen_mask(tmp_path):
+    table = json.loads(DEFAULT_JSON.read_text())
+    row = _initialmodel_row(table)
+    row["mask"]["sha256"] = "0" * 64
+    path = tmp_path / "table.json"
+    path.write_text(json.dumps(table))
+    with pytest.raises(ValueError, match="not the registered frozen mask"):
+        load_and_validate(path)

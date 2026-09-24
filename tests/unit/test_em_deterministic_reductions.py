@@ -18,7 +18,12 @@ import jax.numpy as jnp
 from relax.helpers import deterministic_reduce as dr
 from relax.helpers.half_spectrum import bin_shell_values_jax, bin_shell_values_np
 
-jax.config.update("jax_platform_name", "cpu")
+
+@pytest.fixture(autouse=True, scope="module")
+def _on_cpu():
+    """Run this module on CPU without changing the process-wide platform for later test files."""
+    with jax.default_device(jax.devices("cpu")[0]):
+        yield
 
 
 def _shell_case(seed: int = 0):
