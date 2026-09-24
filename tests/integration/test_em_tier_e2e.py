@@ -109,11 +109,8 @@ def test_k1_5k128_standalone_autorefine(tmp_path):
         "1775735620",
         "--perturb_seed",
         "1775735620",
-        "--relion-particle-shuffle",
-        "mt19937",
         "--relion-half-sets-from-input",
-        "--initial-noise-bootstrap",
-        "relion",
+        "--no-firstiter_cc",  # the os1 oracle ran without --firstiter_cc
         "--particle_diameter_ang",
         "544",
         "--apply-initial-lowpass",
