@@ -19,7 +19,7 @@ value in that audit.
 | Method | relax before | relax now (RELION) | RELION source | Changed |
 | --- | --- | --- | --- | --- |
 | K=1 half sets | seeded NumPy split unless `--relion_half_sets` or `--relion-half-sets-from-input` | input `rlnRandomSubset` when every row has one, else RELION's seeded assignment; default for a fresh K=1 start (`--relion-half-sets-from-input`), debug starts pass `--relion_half_sets` | `exp_model.cpp:261-403` | yes |
-| K=1 particle order | libc `random_shuffle` (`legacy`) | `std::shuffle` with `mt19937(seed + iter)`, then stable sort by optics group | `exp_model.cpp:406-456` | yes |
+| K=1 particle order | libc `random_shuffle` (`legacy`) | `std::shuffle` with `mt19937(seed + iter)`, then stable sort by optics group; the only order (the libc order and `--relion-particle-shuffle` are removed) | `exp_model.cpp:406-456` | yes |
 | Start-up noise | recovar pipeline estimator, RELION's with `--initial-noise-bootstrap relion` | RELION's estimate from up to 1000 masked images per optics group; the only estimator | `ml_optimiser.cpp:3068-3072` and [start-up noise](../math/relion_refinement_algorithm.md#start-up-noise) | yes |
 | K=1 start tau2 / data_vs_prior | heuristic unless RELION noise | `MlModel::initialiseDataVersusPrior` on the low-passed reference | `ml_model.cpp:1557` | yes |
 | Random seed | 42 | the time, as for `--random_seed -1`; logged and saved | `ml_optimiser.cpp:1232, 2827` | yes |

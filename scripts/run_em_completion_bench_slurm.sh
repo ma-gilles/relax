@@ -77,7 +77,6 @@ K4_ROTATION_BLOCK_SIZE="${K4_ROTATION_BLOCK_SIZE:-2000}"
 K1_MAX_ITER="${K1_MAX_ITER:-17}"
 K4_MAX_ITER="${K4_MAX_ITER:-15}"
 K1_TRAJECTORY_MODE="${K1_TRAJECTORY_MODE:-standalone}"
-K1_RELION_PARTICLE_SHUFFLE="${K1_RELION_PARTICLE_SHUFFLE:-auto}"
 K1_SAVE_INTERMEDIATES="${K1_SAVE_INTERMEDIATES:-1}"
 # Sized from measured peak RSS (sacct MaxRSS): K1 100k/256 135 GB (Q 14320204), K4 100k/256
 # 98 GB (Q 14320218, 14299479).
@@ -148,9 +147,6 @@ Environment overrides:
   K1_IMAGE_BATCH_SIZE        K=1 image batch size (default: ${K1_IMAGE_BATCH_SIZE})
   K1_ROTATION_BLOCK_SIZE     K=1 rotation block size (default: ${K1_ROTATION_BLOCK_SIZE})
   K1_MAX_ITER                K=1 max iteration cap (default: ${K1_MAX_ITER}; high enough for stored RELION final pass)
-  K1_RELION_PARTICLE_SHUFFLE K=1 fresh AutoRefine particle order for autonomous runs: auto (default;
-                             from the oracle optimiser header: f2c1a3 -> mt19937, d476e6 -> legacy),
-                             legacy or mt19937
   K1_TRAJECTORY_MODE         K=1 state policy: standalone (default; relion_refine's inputs only:
                              split, groups and order from particles.star and the seed, RELION
                              start-up noise and tau2 from the images and reference), autonomous
@@ -390,14 +386,6 @@ capture_git_provenance_snapshot() {
   )
 }
 
-# Job-script lines selecting the fresh K=1 particle order (standalone and autonomous runs).
-k1_particle_order_lines() {
-  if [[ "${K1_TRAJECTORY_MODE}" != "relion-replay" ]]; then
-    printf 'TRAJECTORY_ARGS+=(--relion-particle-shuffle %s)\n' "${K1_RELION_PARTICLE_SHUFFLE}"
-    printf 'echo "K1_RELION_PARTICLE_SHUFFLE=%s"\n' "${K1_RELION_PARTICLE_SHUFFLE}"
-  fi
-}
-
 require_dir "${REPO_ROOT}/relax"
 require_dir "${K1_DATA_DIR}"
 require_dir "${K1_RELION_DIR}"
@@ -407,29 +395,16 @@ require_file "${K1_RELION_DIR}/run_it000_data.star"
 require_file "${K1_RELION_DIR}/run_it000_half1_model.star"
 require_file "${K1_RELION_DIR}/run_it000_half2_model.star"
 require_file "${K1_RELION_DIR}/run_it000_optimiser.star"
-# An autonomous K=1 run owns RELION's fresh AutoRefine particle order, whose first
-# 100 rows are the expected-accuracy trial particles, so the order must be the one
-# of the build that wrote the oracle: f2c1a3 uses mt19937/std::shuffle and d476e6
-# libc random_shuffle. Replays take their state from the oracle instead.
-if [[ "${K1_TRAJECTORY_MODE}" != "relion-replay" && "${K1_RELION_PARTICLE_SHUFFLE}" == "auto" ]]; then
-  k1_relion_version="$(head -n 1 "${K1_RELION_DIR}/run_it000_optimiser.star")"
-  case "${k1_relion_version}" in
-    *"version 5.0.1-commit-f2c1a3"*) K1_RELION_PARTICLE_SHUFFLE=mt19937 ;;
-    *"version 5.0.1-commit-d476e6"*) K1_RELION_PARTICLE_SHUFFLE=legacy ;;
-    *)
-      echo "ERROR: cannot infer the K=1 RELION particle order from '${k1_relion_version}'; set K1_RELION_PARTICLE_SHUFFLE=legacy|mt19937" >&2
-      exit 2
-      ;;
-  esac
-fi
+# A standalone or autonomous K=1 run owns RELION's fresh AutoRefine particle order,
+# whose first 100 rows are the expected-accuracy trial particles. relax uses RELION
+# 5.0.1's mt19937 order (f2c1a3); an oracle from a build with the older libc order
+# would not correspond. Replays take their state from the oracle instead.
 if [[ "${K1_TRAJECTORY_MODE}" != "relion-replay" ]]; then
-  case "${K1_RELION_PARTICLE_SHUFFLE}" in
-    legacy|mt19937) ;;
-    *)
-      echo "ERROR: K1_RELION_PARTICLE_SHUFFLE must be auto, legacy or mt19937, got: ${K1_RELION_PARTICLE_SHUFFLE}" >&2
-      exit 2
-      ;;
-  esac
+  k1_relion_version="$(head -n 1 "${K1_RELION_DIR}/run_it000_optimiser.star")"
+  if [[ "${k1_relion_version}" != *"version 5.0.1-commit-f2c1a3"* ]]; then
+    echo "ERROR: the K=1 RELION oracle must come from RELION 5.0.1-commit-f2c1a3 (mt19937 particle order), got: ${k1_relion_version}" >&2
+    exit 2
+  fi
 fi
 require_file "${K1_RELION_DIR}/run_it015_half1_class001.mrc"
 require_file "${K1_RELION_DIR}/run_it015_half2_class001.mrc"
@@ -958,7 +933,6 @@ fi
 if [[ "${K1_TRAJECTORY_MODE}" == "relion-replay" ]]; then
     TRAJECTORY_ARGS+=(--perturb_replay_relion_dir "${K1_RELION_DIR}")
 fi
-$(k1_particle_order_lines)
 echo "K1_TRAJECTORY_MODE=${K1_TRAJECTORY_MODE}"
 echo "K1_SAVE_INTERMEDIATES=${K1_SAVE_INTERMEDIATES}"
 ${intermediates_setup}
@@ -1257,7 +1231,7 @@ echo "RELION module/executable: ${RELION_MODULE}/${RELION_REFINE_MPI}"
 echo "K=1 fixture: ${K1_DATA_DIR}"
 echo "K=1 RELION:  ${K1_RELION_DIR}"
 echo "K=1 max iter: ${K1_MAX_ITER}"
-echo "K=1 particle order: ${K1_RELION_PARTICLE_SHUFFLE} (trajectory ${K1_TRAJECTORY_MODE})"
+echo "K=1 trajectory: ${K1_TRAJECTORY_MODE}"
 echo "K=1 save intermediates: ${K1_SAVE_INTERMEDIATES}"
 echo "K=1 Slurm mem/time: ${K1_MEM}/${K1_TIME_LIMIT}"
 echo "K=4 fixture: ${K4_DATA_DIR}"

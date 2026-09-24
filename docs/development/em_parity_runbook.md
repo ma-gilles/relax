@@ -117,8 +117,9 @@ text about column names renamed in 3.1, from `motioncorr_runner.cpp` and
 half-set orders in `Experiment::randomiseParticlesOrder` (`src/exp_model.cpp`)
 with `std::mt19937` seeded by `random_seed + iter`, followed by a stable sort
 on numeric optics group. Commit `f2c1a38` is where that replaced the older
-libc `rand` / `std::random_shuffle` path. relax uses `mt19937` by default
-(`--relion-particle-shuffle`). The MOLBIO module build
+libc `rand` / `std::random_shuffle` path. relax implements only the `mt19937`
+order (the libc order and `--relion-particle-shuffle` were removed on
+2026-09-24). The MOLBIO module build
 (`relion/5.0.1/gcc-11.5.0-gpu`, whose STAR headers say `version 5.0.1`
 without a commit) still has the libc path, so oracles written by it
 (`em_fixtures/k4_fast_oracles/*`, the K4 100k dispatch oracle, the symmetry

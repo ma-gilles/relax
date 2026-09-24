@@ -300,7 +300,7 @@ def test_em_parity_long_k1_full(tmp_path, start):
     # (checked in the iteration-0 model). --ctf, --flatten_solvent, --zero_mask,
     # --low_resol_join_halves 40, --norm, --scale and --pad 2 are fixed RELION
     # defaults in the refinement. RELION 5.0.1-commit-f2c1a3 orders particles with
-    # mt19937, hence --relion-particle-shuffle mt19937.
+    # mt19937, relax's only order.
     _assert_relion_command_tokens(
         relion_optimiser,
         (
@@ -358,8 +358,6 @@ def test_em_parity_long_k1_full(tmp_path, start):
         "1775735620",
         "--perturb_seed",
         "1775735620",
-        "--relion-particle-shuffle",
-        "mt19937",
         *K1_LONG_START_ARGS[start],
         "--particle_diameter_ang",
         "200",

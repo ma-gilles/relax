@@ -1534,8 +1534,7 @@ def test_relion_expected_accuracy_layout_supports_repeated_indices_across_stacks
     np.testing.assert_array_equal(particle_ids, [2, 0, 3])
 
 
-@pytest.mark.parametrize("shuffle_algorithm", ["legacy", "mt19937"])
-def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials(shuffle_algorithm):
+def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials():
     pd = pytest.importorskip("pandas")
     from relax.helpers.expected_accuracy import relion_auto_refine_half_orders
 
@@ -1562,7 +1561,6 @@ def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials(shu
         relion_particles["rlnRandomSubset"],
         1711,
         optics_group_ids=relion_particles["rlnOpticsGroup"],
-        shuffle_algorithm=shuffle_algorithm,
     )
     our_row_by_name = {
         name: row
@@ -1576,7 +1574,6 @@ def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials(shu
             our_particles,
             relion_particles,
             random_seed=1711,
-            shuffle_algorithm=shuffle_algorithm,
         )
     )
 
