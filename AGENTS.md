@@ -144,7 +144,8 @@ rule, not a hook.
 | a default flip, an engine replacement, a milestone | `pixi run test-long` |
 
 Every tier runs on Slurm in the cryoem partition, each as one job (smoke 1 GPU,
-medium and long one multi-GPU job). The medium tier also runs
+medium and long one multi-GPU job). Only smoke may run locally: when cryoem cannot
+start it promptly, it runs on one idle local GPU 1-3 (never GPU 0). The medium tier also runs
 periodically on `main`. Baseline regeneration (`pixi run regen-*`) runs only on
 the user's explicit request.
 

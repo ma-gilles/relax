@@ -9,8 +9,9 @@
 ``<run-root>/src``, verifies the tier's fixture sets against the manifest, builds the
 native libraries once (``scripts/build_test_natives.sh``) and starts the tier:
 
-* smoke runs as a one-GPU Slurm job (``--where local`` runs it on one idle local GPU 1-3,
-  selected by UUID, only when the user allows local GPU use);
+* smoke runs as a one-GPU cryoem job when it would start within ``--queue-wait-minutes``,
+  otherwise on one idle local GPU 1-3 (never GPU 0), selected by UUID after an nvidia-smi
+  check; medium and long never run locally;
 * medium runs as ONE Slurm job on three GPUs (fast parity cases, GPU unit shards, VDAM and
   the end-to-end run share it);
 * long runs as ONE Slurm job on four GPUs: the four EM long-tier arms (K1 50k standalone and
@@ -830,10 +831,15 @@ def cmd_submit(args: argparse.Namespace) -> int:
     queue = args.queue
     start = expected_start(write_sbatch(run_root, tier, natives, queue, args.gpu_model))
     print(f"expected start on {queue}: {start}", flush=True)
-    if tier == "smoke" and args.where == "local":
+    busy = start is None or (start - dt.datetime.now()).total_seconds() > args.queue_wait_minutes * 60
+    if tier == "smoke" and args.where != "slurm" and (args.where == "local" or busy):
+        # Only smoke may run locally: when the cryoem queue cannot start it promptly, on one idle
+        # physical GPU 1-3 (never GPU 0), chosen by UUID after an nvidia-smi check.
         uuid = idle_local_gpu(args.gpu_model)
         if uuid is None:
-            raise SystemExit("no idle local GPU among 1-3")
+            if args.where == "local":
+                raise SystemExit("no idle local GPU among 1-3")
+            print("the cryoem queue is busy and no local GPU 1-3 is idle; submitting to Slurm anyway")
         else:
             spec["where"] = f"local:{uuid}"
             (run_root / "PLAN.json").write_text(json.dumps(spec, indent=1) + "\n")
@@ -841,6 +847,7 @@ def cmd_submit(args: argparse.Namespace) -> int:
             env_script = run_root / "smoke_local.sh"
             env_script.write_text(
                 f"#!/bin/bash\nset -uo pipefail\n{_env_lines(run_root, natives)}\nexport CUDA_VISIBLE_DEVICES={uuid}\n"
+                "export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8\n"
                 f"cd {src}\n{src}/.pixi/envs/default/bin/python {src}/scripts/run_test_tier.py run smoke --run-root {run_root}\n"
             )
             return subprocess.run(["bash", str(env_script)]).returncode
@@ -857,8 +864,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("tier", choices=["smoke", "medium", "long"])
     p.add_argument("--run-root", type=Path)
     p.add_argument("--base", default="origin/main", help="changes against this ref select smoke's GPU unit files")
-    p.add_argument("--where", choices=["slurm", "local"], default="slurm",
-                   help="smoke only; local needs the user's permission for local GPU use")
+    p.add_argument("--where", choices=["auto", "slurm", "local"], default="auto",
+                   help="smoke only: auto = cryoem if it starts within --queue-wait-minutes, else one idle local GPU 1-3")
+    p.add_argument("--queue-wait-minutes", type=int, default=15)
     p.add_argument(
         "--gpu-model",
         choices=["any", "a100", "h100"],
