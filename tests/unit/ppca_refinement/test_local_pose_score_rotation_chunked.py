@@ -13,6 +13,7 @@ from __future__ import annotations
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.ppca_refinement.local_dataset import (
     _score_local_pose_ppca_bucket_rotation_chunked,
@@ -82,10 +83,10 @@ def test_chunked_matches_unchunked(B, T, R, P, F, chunk, top_k):
         rtol=1e-5, atol=1e-4,
         err_msg="best_log_score_per_image is exact max — chunked must match",
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(chunked.best_rotation_idx), np.asarray(ref.best_rotation_idx),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(chunked.best_translation_idx), np.asarray(ref.best_translation_idx),
     )
     np.testing.assert_allclose(
@@ -97,10 +98,10 @@ def test_chunked_matches_unchunked(B, T, R, P, F, chunk, top_k):
         rtol=1e-5, atol=1e-4,
         err_msg="top-K log scores are the largest K values — chunked aggregation must match",
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(chunked.top_rotation_idx), np.asarray(ref.top_rotation_idx),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(chunked.top_translation_idx), np.asarray(ref.top_translation_idx),
     )
 
@@ -118,4 +119,4 @@ def test_chunked_skips_when_chunk_size_exceeds_R():
         Y1, proj_aug, ctf2_over_noise, y_norm, pose_log_prior,
         significance_threshold=1e-3, top_pose_count=2, rotation_chunk_size=64,
     )
-    np.testing.assert_array_equal(np.asarray(delegated.pmax), np.asarray(ref.pmax))
+    assert_matches(np.asarray(delegated.pmax), np.asarray(ref.pmax))

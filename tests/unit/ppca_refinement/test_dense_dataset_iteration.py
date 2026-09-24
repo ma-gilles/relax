@@ -25,6 +25,7 @@ from relax.ppca_refinement.refinement_loop import (
 )
 from relax.ppca_refinement.state import PoseMarginalPPCAEMState
 from relax.scoring.scoring import _e_step_block_scores
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -185,7 +186,7 @@ def test_dataset_blocks_apply_known_image_scale_corrections(tiny_inputs):
         )
     )
 
-    np.testing.assert_allclose(np.asarray(scaled.y_norm), np.asarray(raw.y_norm), rtol=0.0, atol=0.0)
+    assert_matches(np.asarray(scaled.y_norm), np.asarray(raw.y_norm))
     np.testing.assert_allclose(np.asarray(scaled.Y1[0]), np.asarray(raw.Y1[0]) * 2.0, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(np.asarray(scaled.Y1[1]), np.asarray(raw.Y1[1]) * 0.5, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(
@@ -246,7 +247,7 @@ def test_dataset_backed_dense_ppca_iteration_freeze_mean_keeps_input_mean(tiny_i
         geometry=GeometryConfig(current_size=4, volume_domain="fourier_half"),
     )
 
-    np.testing.assert_allclose(np.asarray(result.mu_half), np.asarray(mu), rtol=0.0, atol=0.0)
+    assert_matches(np.asarray(result.mu_half), np.asarray(mu))
     assert result.diagnostics["mean_frozen"] is True
     assert result.diagnostics["mstep_mode"] == "fixed_mean_conditional_W"
     assert result.diagnostics["mstep_objective_solved_delta"] >= -1e-5
@@ -320,11 +321,11 @@ def test_dense_ppca_skip_empty_pose_blocks_matches_masked_full_grid(tiny_inputs)
 
     np.testing.assert_allclose(np.asarray(skipped.mu_half), np.asarray(full.mu_half), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(skipped.W_half), np.asarray(full.W_half), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(skipped.diagnostics["best_rotation_idx"]),
         np.asarray(full.diagnostics["best_rotation_idx"]),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(skipped.diagnostics["best_translation_idx"]),
         np.asarray(full.diagnostics["best_translation_idx"]),
     )
@@ -371,7 +372,7 @@ def test_dense_ppca_sparse_pass2_matches_full_with_zero_posterior_blocks(tiny_in
     np.testing.assert_allclose(np.asarray(sparse.stats.lhs_tri), np.asarray(full.stats.lhs_tri), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(sparse.mu_half), np.asarray(full.mu_half), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(sparse.W_half), np.asarray(full.W_half), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(sparse.diagnostics["best_rotation_idx"]),
         np.asarray(full.diagnostics["best_rotation_idx"]),
     )
@@ -418,11 +419,11 @@ def test_dataset_backed_dense_ppca_iteration_is_invariant_to_rotation_blocking(t
     )
     np.testing.assert_allclose(np.asarray(split.mu_half), np.asarray(unsplit.mu_half), rtol=3e-3, atol=2e-3)
     np.testing.assert_allclose(np.asarray(split.W_half), np.asarray(unsplit.W_half), rtol=3e-3, atol=2e-3)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(split.diagnostics["best_rotation_idx"]),
         np.asarray(unsplit.diagnostics["best_rotation_idx"]),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(split.diagnostics["best_translation_idx"]),
         np.asarray(unsplit.diagnostics["best_translation_idx"]),
     )
@@ -592,7 +593,7 @@ def test_exact_local_all_retained_support_matches_dense(tiny_inputs):
     np.testing.assert_allclose(np.asarray(local.stats.lhs_tri), np.asarray(dense.stats.lhs_tri), rtol=2e-5, atol=2e-5)
     np.testing.assert_allclose(np.asarray(local.mu_half), np.asarray(dense.mu_half), rtol=2e-5, atol=2e-5)
     np.testing.assert_allclose(np.asarray(local.W_half), np.asarray(dense.W_half), rtol=2e-5, atol=2e-5)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(local.diagnostics["best_rotation_id"]),
         np.asarray(dense.diagnostics["best_rotation_idx"]),
     )
@@ -642,7 +643,7 @@ def test_exact_local_subset_layout_matches_dense_subset(tiny_inputs):
     np.testing.assert_allclose(np.asarray(local.stats.lhs_tri), np.asarray(dense.stats.lhs_tri), rtol=5e-4, atol=1e-4)
     np.testing.assert_allclose(np.asarray(local.mu_half), np.asarray(dense.mu_half), rtol=5e-4, atol=1e-4)
     np.testing.assert_allclose(np.asarray(local.W_half), np.asarray(dense.W_half), rtol=5e-4, atol=1e-4)
-    np.testing.assert_array_equal(np.asarray(local.diagnostics["image_indices"]), image_indices)
+    assert_matches(np.asarray(local.diagnostics["image_indices"]), image_indices)
     assert (dense.diagnostics["image_scale_min"], dense.diagnostics["image_scale_max"]) == pytest.approx((0.5, 0.9))
     assert (local.diagnostics["image_scale_min"], local.diagnostics["image_scale_max"]) == pytest.approx((0.5, 0.9))
 
@@ -687,7 +688,7 @@ def test_exact_local_image_sharded_accumulation_matches_monolithic(tiny_inputs):
     np.testing.assert_allclose(np.asarray(sharded.W_half), np.asarray(monolithic.W_half), rtol=2e-5, atol=2e-5)
     assert sharded.diagnostics["local_image_sharded"] is True
     assert sharded.diagnostics["local_image_shard_count"] == 2
-    np.testing.assert_array_equal(
+    assert_matches(
         np.sort(np.asarray(sharded.diagnostics["image_indices"])),
         np.sort(np.asarray(monolithic.diagnostics["image_indices"])),
     )

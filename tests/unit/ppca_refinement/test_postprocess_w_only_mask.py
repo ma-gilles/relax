@@ -10,6 +10,7 @@ from relax.ppca_refinement.postprocess import (
     PostprocessConfig,
     postprocess_ppca_half_volumes,
 )
+from helpers.float_compare import assert_matches
 
 
 def _half_size(volume_shape):
@@ -44,7 +45,7 @@ def test_w_only_mask_leaves_mu_untouched_and_masks_W():
     )
     # mu must pass through identically — strategy 'w_only_mask' should never
     # touch mu, mask or no mask.
-    np.testing.assert_array_equal(np.asarray(result.mu_half), np.asarray(mu))
+    assert_matches(np.asarray(result.mu_half), np.asarray(mu))
 
     # W must be zero outside the mask (in real space). Reconstruct one PC's
     # real-space volume to verify.
@@ -79,7 +80,7 @@ def test_w_only_mask_with_zero_q_returns_inputs_unchanged():
             grid_correct=False,
         ),
     )
-    np.testing.assert_array_equal(np.asarray(result.mu_half), np.asarray(mu))
+    assert_matches(np.asarray(result.mu_half), np.asarray(mu))
     assert result.W_half.shape == W.shape
 
 

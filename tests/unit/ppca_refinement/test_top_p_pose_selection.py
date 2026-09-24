@@ -1,6 +1,7 @@
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.ppca_refinement.config import PoseSelectionConfig
 from relax.ppca_refinement.pose_selection import (
@@ -24,13 +25,13 @@ def test_top_p_from_score_block_matches_numpy_sort_and_p1_best():
     flat = np.asarray(score).reshape(2, -1)
     expected_order = np.argsort(flat, axis=1)[:, ::-1][:, :3]
     np.testing.assert_allclose(np.asarray(top_scores), np.take_along_axis(flat, expected_order, axis=1))
-    np.testing.assert_array_equal(np.asarray(top_rot), expected_order % 3 + 10)
-    np.testing.assert_array_equal(np.asarray(top_trans), expected_order // 3)
+    assert_matches(np.asarray(top_rot), expected_order % 3 + 10)
+    assert_matches(np.asarray(top_trans), expected_order // 3)
 
     p1_scores, p1_rot, p1_trans = top_p_from_score_block(score, rotation_offset=0, candidate_count=1)
     np.testing.assert_allclose(np.asarray(p1_scores[:, 0]), np.max(flat, axis=1))
-    np.testing.assert_array_equal(np.asarray(p1_rot[:, 0]), np.argmax(flat, axis=1) % 3)
-    np.testing.assert_array_equal(np.asarray(p1_trans[:, 0]), np.argmax(flat, axis=1) // 3)
+    assert_matches(np.asarray(p1_rot[:, 0]), np.argmax(flat, axis=1) % 3)
+    assert_matches(np.asarray(p1_trans[:, 0]), np.argmax(flat, axis=1) // 3)
 
 
 def test_distinct_top_p_filters_near_duplicates_and_pads():
@@ -51,8 +52,8 @@ def test_distinct_top_p_filters_near_duplicates_and_pads():
             top_pose_min_translation_px=0.5,
         ),
     )
-    np.testing.assert_array_equal(selection.rotation_idx, np.asarray([[0, 2, -1]], dtype=np.int32))
-    np.testing.assert_array_equal(selection.translation_idx, np.asarray([[0, 2, -1]], dtype=np.int32))
+    assert_matches(selection.rotation_idx, np.asarray([[0, 2, -1]], dtype=np.int32))
+    assert_matches(selection.translation_idx, np.asarray([[0, 2, -1]], dtype=np.int32))
     assert np.isneginf(selection.log_score[0, 2])
     assert selection.posterior[0, 2] == 0.0
 
@@ -78,6 +79,6 @@ def test_merge_top_p_pose_scores_matches_full_grid_sort():
     flat = score.reshape(2, -1)
     order = np.argsort(flat, axis=1)[:, ::-1][:, :3]
     np.testing.assert_allclose(merged.log_score, np.take_along_axis(flat, order, axis=1))
-    np.testing.assert_array_equal(merged.rotation_idx, order % 4)
-    np.testing.assert_array_equal(merged.translation_idx, order // 4)
+    assert_matches(merged.rotation_idx, order % 4)
+    assert_matches(merged.translation_idx, order // 4)
     np.testing.assert_allclose(merged.posterior, np.exp(merged.log_score - logZ[:, None]), rtol=1e-6)

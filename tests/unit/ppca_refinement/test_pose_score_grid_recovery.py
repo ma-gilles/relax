@@ -9,6 +9,7 @@ from relax.ppca_refinement.dense_dataset import _project_augmented_half_volumes,
 from relax.ppca_refinement.engine import _score_gamma_and_moments, dense_pose_ppca_score_stats_blocked
 from relax.ppca_refinement.initialization import real_volume_to_centered_fourier_half
 from relax.sampling import get_rotation_grid_at_order
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -141,9 +142,9 @@ def test_dense_ppca_score_moments_and_prior_axes_match_numpy_reference():
     ).logZ
     np.testing.assert_allclose(np.asarray(score_only_logZ), expected["logZ"], rtol=2e-5, atol=2e-5)
     np.testing.assert_allclose(np.asarray(diagnostics.pmax), expected["pmax"], rtol=2e-5, atol=2e-5)
-    np.testing.assert_array_equal(np.asarray(diagnostics.best_rotation_idx), expected["best_rotation_idx"])
-    np.testing.assert_array_equal(np.asarray(diagnostics.best_translation_idx), expected["best_translation_idx"])
-    np.testing.assert_array_equal(
+    assert_matches(np.asarray(diagnostics.best_rotation_idx), expected["best_rotation_idx"])
+    assert_matches(np.asarray(diagnostics.best_translation_idx), expected["best_translation_idx"])
+    assert_matches(
         np.asarray(diagnostics.n_significant_per_image),
         expected["n_significant_per_image"],
     )
@@ -183,10 +184,10 @@ def test_dense_ppca_score_recovers_synthetic_rotation_translation_with_high_pmax
         y_norm,
     )
 
-    np.testing.assert_array_equal(np.asarray(diagnostics.best_rotation_idx), true_rot)
-    np.testing.assert_array_equal(np.asarray(diagnostics.best_translation_idx), true_trans)
+    assert_matches(np.asarray(diagnostics.best_rotation_idx), true_rot)
+    assert_matches(np.asarray(diagnostics.best_translation_idx), true_trans)
     assert np.all(np.asarray(diagnostics.pmax) > 0.999)
-    np.testing.assert_array_equal(np.asarray(diagnostics.n_significant_per_image), np.ones(n_images, dtype=np.int32))
+    assert_matches(np.asarray(diagnostics.n_significant_per_image), np.ones(n_images, dtype=np.int32))
 
 
 def test_dense_ppca_moments_recover_latent_coordinates_at_identifiable_pose():
@@ -215,7 +216,7 @@ def test_dense_ppca_moments_recover_latent_coordinates_at_identifiable_pose():
         y_norm,
     )
 
-    np.testing.assert_array_equal(np.asarray(diagnostics.best_rotation_idx), true_rot)
+    assert_matches(np.asarray(diagnostics.best_rotation_idx), true_rot)
     assert np.all(np.asarray(diagnostics.pmax) > 0.999)
     expected_posterior_mean = (precision / (1.0 + precision)) * z_true
     np.testing.assert_allclose(
@@ -292,8 +293,8 @@ def test_healpix_grid_projected_q0_score_recovers_exact_grid_rotation():
     Y1, ctf2_over_noise, y_norm = _weighted_score_inputs(raw_shifted, raw_norm, precision)
     _alpha_aug_acc, _G_aug_tri_acc, diagnostics = _dense_estep(Y1, proj_aug, ctf2_over_noise, y_norm)
 
-    np.testing.assert_array_equal(np.asarray(diagnostics.best_rotation_idx), true_rot)
-    np.testing.assert_array_equal(np.asarray(diagnostics.best_translation_idx), np.zeros(true_rot.shape, dtype=np.int32))
+    assert_matches(np.asarray(diagnostics.best_rotation_idx), true_rot)
+    assert_matches(np.asarray(diagnostics.best_translation_idx), np.zeros(true_rot.shape, dtype=np.int32))
     assert np.all(np.asarray(diagnostics.pmax) > 0.999)
 
 
@@ -327,8 +328,8 @@ def test_healpix_grid_projected_q0_score_recovers_rotation_and_translation_phase
     Y1, ctf2_over_noise, y_norm = _weighted_score_inputs(raw_shifted, raw_norm, precision)
     _alpha_aug_acc, _G_aug_tri_acc, diagnostics = _dense_estep(Y1, proj_aug, ctf2_over_noise, y_norm)
 
-    np.testing.assert_array_equal(np.asarray(diagnostics.best_rotation_idx), true_rot)
-    np.testing.assert_array_equal(np.asarray(diagnostics.best_translation_idx), true_trans)
+    assert_matches(np.asarray(diagnostics.best_rotation_idx), true_rot)
+    assert_matches(np.asarray(diagnostics.best_translation_idx), true_trans)
     assert np.all(np.asarray(diagnostics.pmax) > 0.999)
 
 
@@ -433,8 +434,8 @@ def test_preprocess_batch_identity_ctf_feeds_dense_ppca_translation_score():
         ctf2_over_noise,
         batch_norm.reshape(true_rot.shape[0]),
     )
-    np.testing.assert_array_equal(np.asarray(diagnostics.best_rotation_idx), true_rot)
-    np.testing.assert_array_equal(np.asarray(diagnostics.best_translation_idx), true_trans)
+    assert_matches(np.asarray(diagnostics.best_rotation_idx), true_rot)
+    assert_matches(np.asarray(diagnostics.best_translation_idx), true_trans)
     assert np.all(np.asarray(diagnostics.pmax) > 0.999)
 
 
@@ -488,8 +489,8 @@ def test_iter_dense_ppca_dataset_blocks_recovers_healpix_pose_on_tiny_fake_datas
         pose_log_prior=block.pose_log_prior,
     )
 
-    np.testing.assert_array_equal(np.asarray(diagnostics.best_rotation_idx), true_rot)
-    np.testing.assert_array_equal(np.asarray(diagnostics.best_translation_idx), true_trans)
+    assert_matches(np.asarray(diagnostics.best_rotation_idx), true_rot)
+    assert_matches(np.asarray(diagnostics.best_translation_idx), true_trans)
     assert np.all(np.asarray(diagnostics.pmax) > 0.999)
 
 
@@ -528,6 +529,6 @@ def test_healpix_grid_projected_ppca_score_recovers_rotation_with_latent_signal(
     Y1, ctf2_over_noise, y_norm = _weighted_score_inputs(raw_shifted, raw_norm, precision)
     _alpha_aug_acc, _G_aug_tri_acc, diagnostics = _dense_estep(Y1, proj_aug, ctf2_over_noise, y_norm)
 
-    np.testing.assert_array_equal(np.asarray(diagnostics.best_rotation_idx), true_rot)
-    np.testing.assert_array_equal(np.asarray(diagnostics.best_translation_idx), np.zeros(true_rot.shape, dtype=np.int32))
+    assert_matches(np.asarray(diagnostics.best_rotation_idx), true_rot)
+    assert_matches(np.asarray(diagnostics.best_translation_idx), np.zeros(true_rot.shape, dtype=np.int32))
     assert np.all(np.asarray(diagnostics.pmax) > 0.99)

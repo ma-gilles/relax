@@ -18,6 +18,7 @@ from relax.ppca_refinement.schedule import loading_subspace_agreement
 from recovar.simulation import synthetic_dataset
 from recovar.utils import helpers as utils
 from scripts.prepare_gt_weighted_ppca_init import prepare_gt_weighted_ppca_init
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -57,8 +58,8 @@ def test_pipeline_variance_prior_splits_total_variance_across_loadings():
     split = pipeline_variance_W_prior(total_variance, q=4)
     unsplit = pipeline_variance_W_prior(total_variance, q=4, divide_by_q=False)
 
-    np.testing.assert_array_equal(split, np.ones((16, 4), dtype=np.float32))
-    np.testing.assert_array_equal(unsplit, np.full((16, 4), 4.0, dtype=np.float32))
+    assert_matches(split, np.ones((16, 4), dtype=np.float32))
+    assert_matches(unsplit, np.full((16, 4), 4.0, dtype=np.float32))
 
 
 def test_relion_to_recovar_volume_conversion_is_applied_once():
@@ -144,7 +145,7 @@ def test_real_volume_fourier_conversion_matches_recovar_simulator_convention():
     actual = real_volume_to_centered_fourier(volume)
     expected = np.asarray(ftu.get_dft3(volume), dtype=np.complex64)
 
-    np.testing.assert_allclose(actual, expected, rtol=0.0, atol=0.0)
+    assert_matches(actual, expected)
 
 
 def test_gt_loading_row_norm_prior_uses_scaled_w_without_q_division():

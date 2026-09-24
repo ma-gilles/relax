@@ -8,6 +8,7 @@ from relax.ppca_refinement.postprocess import (
     PostprocessConfig,
     postprocess_ppca_half_volumes,
 )
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -93,7 +94,7 @@ def test_ppca_postprocess_bandlimits_heuristic_output():
 
     coords = np.asarray(ftu.get_k_coordinate_of_each_pixel_3d_real(volume_shape, 1, scaled=False))
     outside = np.sum(coords**2, axis=-1) > max_r**2
-    np.testing.assert_allclose(np.asarray(result.mu_half)[outside], 0.0, rtol=0.0, atol=0.0)
-    np.testing.assert_allclose(np.asarray(result.W_half)[outside], 0.0, rtol=0.0, atol=0.0)
+    assert_matches(np.asarray(result.mu_half)[outside], 0.0)
+    assert_matches(np.asarray(result.W_half)[outside], 0.0)
     assert result.diagnostics["postprocess_bandlimit_max_r"] == pytest.approx(max_r)
     assert 0.0 < result.diagnostics["postprocess_bandlimit_fraction"] < 1.0

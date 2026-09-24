@@ -1,6 +1,7 @@
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.ppca_refinement.engine import dense_pose_ppca_score_with_moments_blocked
 
@@ -56,5 +57,5 @@ def test_dense_w_zero_matches_q0_log_evidence_and_best_pose():
     scored_w0 = dense_pose_ppca_score_with_moments_blocked(*w0)
 
     np.testing.assert_allclose(np.asarray(scored_w0.logZ), np.asarray(scored_q0.logZ), rtol=1e-6, atol=1e-6)
-    np.testing.assert_array_equal(np.asarray(scored_w0.best_rotation_idx), np.asarray(scored_q0.best_rotation_idx))
-    np.testing.assert_array_equal(np.asarray(scored_w0.best_translation_idx), np.asarray(scored_q0.best_translation_idx))
+    assert_matches(np.asarray(scored_w0.best_rotation_idx), np.asarray(scored_q0.best_rotation_idx))
+    assert_matches(np.asarray(scored_w0.best_translation_idx), np.asarray(scored_q0.best_translation_idx))

@@ -3,6 +3,7 @@ import pytest
 
 from scripts.check_ppca_synthetic_recovery import _assignment_and_contrast_checks, _linear_r2, _pose_checks
 from scripts.compute_ppca_best_pose_embedding import _candidate_rotations_from_source
+from helpers.float_compare import assert_matches
 
 
 pytestmark = pytest.mark.unit
@@ -54,7 +55,7 @@ def test_assignment_and_contrast_checks_separate_class_signal_from_contrast():
 
     assert checks["assignment_onehot_mean_r2"] > 0.95
     assert checks["contrast_r2"] < 0.2
-    np.testing.assert_array_equal(checks["assignment_counts"], np.asarray([4, 4, 4]))
+    assert_matches(checks["assignment_counts"], np.asarray([4, 4, 4]))
 
 
 def test_embedding_candidate_rotations_support_exact_plus_healpix():
