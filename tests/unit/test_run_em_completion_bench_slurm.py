@@ -146,7 +146,7 @@ def test_completion_jobs_reuse_setup_relion_binding_build_dir(tmp_path):
     assert (
         f'export CMAKE_LIBRARY_PATH="{pixi_root}/lib:${{CMAKE_LIBRARY_PATH:-}}"'
     ) in setup_text
-    assert '-m venv --system-site-packages "${EM_COMPLETION_VENV}"' in setup_text
+    assert '-m venv --system-site-packages --without-pip "${EM_COMPLETION_VENV}"' in setup_text
     assert (
         '"${PIXI_PY}" -m pip install -e . --no-deps --no-build-isolation '
         "--ignore-installed"

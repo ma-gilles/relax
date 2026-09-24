@@ -485,7 +485,7 @@ def test_case_jobs_reuse_setup_relion_binding_build_dir(tmp_path):
     ) in setup_text
     for text in (setup_text, case_text):
         assert "if command -v nvidia-smi >/dev/null 2>&1; then" in text
-    assert '-m venv --system-site-packages "${EM_K1_MATRIX_VENV}"' in setup_text
+    assert '-m venv --system-site-packages --without-pip "${EM_K1_MATRIX_VENV}"' in setup_text
     assert (
         '"${PIXI_PY}" -m pip install -e . --no-deps --no-build-isolation '
         "--ignore-installed"

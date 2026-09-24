@@ -785,7 +785,7 @@ set -euo pipefail
 rm -rf "\${RECOVAR_RELION_BIND_BUILD_DIR:?}"
 mkdir -p "\${RECOVAR_RELION_BIND_BUILD_DIR}"
 rm -rf "\${EM_COMPLETION_VENV:?}"
-"\${EM_COMPLETION_BASE_PIXI_PY}" -m venv --system-site-packages "\${EM_COMPLETION_VENV}"
+"\${EM_COMPLETION_BASE_PIXI_PY}" -m venv --system-site-packages --without-pip "\${EM_COMPLETION_VENV}"
 "\${PIXI_PY}" -m pip install -e . --no-deps --no-build-isolation --ignore-installed
 if ! "\${PIXI_PY}" -c "import pybind11" >/dev/null 2>&1; then
   echo "ERROR: pybind11 is missing from the pixi environment; run pixi install before submitting EM jobs." >&2

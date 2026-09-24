@@ -1616,7 +1616,7 @@ set -euo pipefail
 rm -rf "${{RECOVAR_RELION_BIND_BUILD_DIR:?}}"
 rm -rf "${{EM_KCLASS_MATRIX_VENV:?}}"
 mkdir -p "${{RECOVAR_RELION_BIND_BUILD_DIR}}"
-"${{BASE_PIXI_PY}}" -m venv --system-site-packages "${{EM_KCLASS_MATRIX_VENV}}"
+"${{BASE_PIXI_PY}}" -m venv --system-site-packages --without-pip "${{EM_KCLASS_MATRIX_VENV}}"
 "${{PIXI_PY}}" -m pip install -e . --no-deps --no-build-isolation --ignore-installed
 "${{PIXI_PY}}" relax/relion_bind/build.py
 '
