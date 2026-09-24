@@ -4576,6 +4576,7 @@ def run_resident_mstep_blocks(
     relion_x_half_recon_indices,
     max_adjoint_block_bytes,
     cuda_backproject,
+    n_optics_groups: int = 1,
 ):
     """Walk one chunk's pixel axis in row blocks: Wavg, noise and both adjoints.
 
@@ -4654,7 +4655,7 @@ def run_resident_mstep_blocks(
         image_shape=tuple(int(v) for v in image_shape),
         recon_volume_shape=tuple(int(v) for v in recon_volume_shape),
         max_adjoint_block_bytes=int(max_adjoint_block_bytes),
-        stats_config=_MstepOnlyStatsConfig(n_shells=int(n_shells)),
+        stats_config=_MstepOnlyStatsConfig(n_shells=int(n_shells), n_optics_groups=int(n_optics_groups)),
         use_rfloat_ctf_wavg=recon["direct_ctf_rfloat_recon"] is not None,
         # T12's local pass hands pre-shifted per-chunk operands, not T16's
         # once-per-half resident images, so the M-step body takes its weighted
@@ -4688,6 +4689,7 @@ def run_resident_mstep_blocks(
         scale=recon["scale"],
         group_ids=None,
         translation_sqdist_ang=None,
+        optics_groups=recon.get("optics_groups"),
     )
     tables = _ChunkStageTables(
         projection_score_cache=None,

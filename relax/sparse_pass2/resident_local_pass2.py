@@ -380,8 +380,12 @@ def compute_local_search_resident(
     source_faithful_spectrum_norm=False,
     class_log_priors=None,
     score_only=False,
+    optics_group_ids=None,
 ) -> LocalEMResult:
     """Run one K=1 local-search fine pass 2 on the device-resident stages.
+
+    ``noise_variance`` may be ``[G, P]`` rows of G optics groups with
+    ``optics_group_ids`` giving each image's row, as in the global resident pass.
 
     Returns the same :class:`~recovar.em.helpers.types.LocalEMResult` the exact
     local engine returns for this configuration. See the module docstring for
@@ -525,11 +529,19 @@ def compute_local_search_resident(
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(
         noise_variance, image_shape
     ).squeeze().astype(precision_policy.score_real_dtype)
-    if noise_variance_half.ndim != 1:
-        raise NotImplementedError(
-            "device-resident local search keeps one optics group's noise spectrum; "
-            "per-optics-group noise is implemented in the global resident pass only"
-        )
+    n_optics_groups = 1 if noise_variance_half.ndim == 1 else int(noise_variance_half.shape[0])
+    optics_groups_np = None
+    if n_optics_groups > 1:
+        if optics_group_ids is None:
+            raise ValueError("a per-optics-group noise table needs optics_group_ids")
+        optics_groups_np = np.asarray(optics_group_ids, dtype=np.int32).reshape(-1)
+        if optics_groups_np.shape != (n_images,) or np.any(optics_groups_np < 0) or np.any(
+            optics_groups_np >= n_optics_groups
+        ):
+            raise ValueError(
+                f"optics_group_ids must give each of {n_images} images a row of the "
+                f"{n_optics_groups}-group noise table"
+            )
     relion_score_translation_angles = _relion_cuda_score_translation_angles_if_available(
         fine_translations,
         image_shape,
@@ -725,6 +737,7 @@ def compute_local_search_resident(
         # ``CTF^2 / sigma2`` operand order, not RELION's RFLOAT-square order,
         # so keep that here rather than silently switching operand families.
         relion_exact_bpref_operands=False,
+        noise_optics_groups=optics_groups_np,
     )
     fine_translation_prior_2d = np.asarray(
         tables.translation_log_prior, dtype=precision_policy.score_real_dtype
@@ -744,6 +757,7 @@ def compute_local_search_resident(
         relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
         accumulate_scale=scale_groups_available,
         source_faithful_spectrum_norm=resolved_spectrum_norm,
+        n_optics_groups=n_optics_groups,
     )
     stats = make_resident_statistics(
         stats_config, max_posterior_dtype=precision_policy.score_real_dtype
@@ -822,6 +836,7 @@ def compute_local_search_resident(
             noise_variance_for_noise=noise_variance_for_noise_device,
             shell_indices_noise=shell_indices_noise_device,
             group_ids_np=group_ids_np,
+            optics_groups_np=optics_groups_np,
             scale_corrections_np=scale_corrections_np,
             translation_prior_centers_np=translation_prior_centers_np,
             fine_translations=fine_translations,
@@ -998,6 +1013,7 @@ def _run_resident_local_chunk(
     accumulate_noise,
     source_faithful_spectrum_norm,
     stats,
+    optics_groups_np=None,
     stats_config,
     image_tables,
     Ft_y_total,
@@ -1070,6 +1086,7 @@ def _run_resident_local_chunk(
         exact_positions_device=exact_positions_device,
         scale_corrections_np=scale_corrections_np,
         group_ids_np=group_ids_np,
+        optics_groups_np=optics_groups_np,
     )
 
     mark("operands", recon["shifted_recon"], recon["score_input"])
@@ -1216,6 +1233,7 @@ def _run_resident_local_chunk(
         relion_x_half_recon_indices=relion_x_half_recon_indices,
         max_adjoint_block_bytes=max_adjoint_block_bytes,
         cuda_backproject=cuda_backproject,
+        n_optics_groups=int(stats_config.n_optics_groups),
     )
 
     mark("mstep", Ft_y_total, Ft_ctf_total, wavg_triplet_pixels, block_noise_shells)
@@ -1283,6 +1301,7 @@ def _run_resident_local_chunk(
         max_posterior=max_posterior,
         best_cell_index=jnp.asarray(best_cell_index, dtype=jnp.int64),
         best_fine_rot=best_global_row,
+        optics_groups=recon.get("optics_groups"),
     )
     stats = rp._accumulate_chunk_image_terms(
         stats, chunk_operands, chunk_tables, config=stats_config
