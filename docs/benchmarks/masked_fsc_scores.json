@@ -95,6 +95,40 @@
    "gt_masked_band_auc": null
   },
   {
+   "label": "hcn1_relax_a32798c_14332336",
+   "dataset": "empiar10081_hcn1_c4",
+   "section": "real",
+   "mask_sha256": "4003c7dea2f37cb8db7f32f1903d5b82a9b2519af7d1ece0c149fca70c9fb0af",
+   "band": [
+    1,
+    79
+   ],
+   "evidence": {
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/hcn1_relax_a32798c_14332336_masked/masked_fsc.json",
+    "sha256": "3b9810a64f0464788f5c9f78961676d933422b2d7ce8cc07487de6ce6df7b430"
+   },
+   "null_reasons": {},
+   "relion": {
+    "masked_resolution_A": 3.697778,
+    "masked_sustained_resolution_A": 3.6571428571428575,
+    "masked_corrected_band_auc": 0.9158623525641025,
+    "unmasked_band_auc": 0.7023629743589742
+   },
+   "relax": {
+    "masked_resolution_A": 3.578494,
+    "masked_sustained_resolution_A": 3.540425531914894,
+    "masked_corrected_band_auc": 0.9155750897435896,
+    "unmasked_band_auc": 0.7020781730769233
+   },
+   "cross_engine_masked_band_auc": {
+    "merged": 0.9658186035391861,
+    "half1": 0.930294432824247,
+    "half2": 0.9226339845276973
+   },
+   "frame_correlation_in_mask": 0.985134332054397,
+   "gt_masked_band_auc": null
+  },
+  {
    "label": "10097_q427a08bd8_mt19937",
    "dataset": "empiar10097_c1",
    "section": "real",
@@ -1798,6 +1832,40 @@
     "relion": 0.6793588065095265,
     "relax": 0.6836063242629314
    }
+  },
+  {
+   "label": "pdb_k1_100k256_q427a08bd8_14320204",
+   "dataset": "pdb_k1_100k256_c1",
+   "section": "synthetic",
+   "mask_sha256": "74253532c379621cea0f730c89b7245b9f67506d54f8b09a021116e791d316d2",
+   "band": [
+    1,
+    90
+   ],
+   "evidence": {
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/k1_completion_q427a08bd8_masked/masked_fsc.json",
+    "sha256": "c589ffcd71ae92aa9032001199f83ad7b729bccc384265df1955b850af33fd90"
+   },
+   "null_reasons": {},
+   "relion": {
+    "masked_resolution_A": 4.352,
+    "masked_sustained_resolution_A": 4.317460317460317,
+    "masked_corrected_band_auc": 0.918415988764045,
+    "unmasked_band_auc": 0.7018966966292134
+   },
+   "relax": {
+    "masked_resolution_A": 4.352,
+    "masked_sustained_resolution_A": 4.317460317460317,
+    "masked_corrected_band_auc": 0.9187639101123595,
+    "unmasked_band_auc": 0.7022547191011237
+   },
+   "cross_engine_masked_band_auc": {
+    "merged": 0.9980574275949521,
+    "half1": 0.9979410280264635,
+    "half2": 0.9979146773338702
+   },
+   "frame_correlation_in_mask": 0.9991991921101482,
+   "gt_masked_band_auc": null
   },
   {
    "label": "pdb_k1_100k256_relion_8314160",

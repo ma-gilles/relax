@@ -153,8 +153,9 @@ def render_markdown(table):
     lines += [f"- **{letters[name]}**: {text}" for name, text in table["resolution_definitions"].items()]
     lines += [
         "",
-        "Masked columns: relion_postprocess corrected masked resolution with the dataset's frozen mask (RELION's"
-        " convention, `rlnFinalResolution`); Masked X-AUC is the cross-engine FSC-AUC of the two merged maps, both"
+        "Resolution cells read unmasked / masked. The unmasked value carries its definition letter; the masked"
+        " value is the relion_postprocess corrected masked resolution with the dataset's frozen mask (RELION's"
+        " convention, `rlnFinalResolution`); a dash marks a missing part. Masked X-AUC is the cross-engine FSC-AUC of the two merged maps, both"
         " multiplied by that mask, over the scorecard band. Reporting only; no gate reads them. Masks, method and"
         " per-run curves: [masked FSC](masked_fsc.md).",
         "",
@@ -167,9 +168,9 @@ def render_markdown(table):
         rows = [row for row in table["rows"] if row["section"] == section]
         lines += ["", f"## {title}", ""]
         lines += [
-            "| Dataset | Workflow | N / box | RELION res (Å) | relax res (Å) | RELION masked (Å) | relax masked (Å)"
+            "| Dataset | Workflow | N / box | RELION res (Å) unmasked / masked | relax res (Å) unmasked / masked"
             " | Masked X-AUC | RELION time | relax time | Ratio | GPU | Matched? | Date |",
-            "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
+            "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
         ]
         for row in rows:
             footnotes.append(row)
@@ -181,10 +182,8 @@ def render_markdown(table):
                         f"{row['dataset']} {mark}",
                         _workflow(row),
                         f"{row['particles']:,} / {row['box']}",
-                        _resolution(row, "relion", letters),
-                        _resolution(row, "relax", letters),
-                        _masked(row, "relion"),
-                        _masked(row, "relax"),
+                        f"{_resolution(row, 'relion', letters)} / {_masked(row, 'relion')}",
+                        f"{_resolution(row, 'relax', letters)} / {_masked(row, 'relax')}",
                         _masked_cross(row),
                         _time(row, "relion"),
                         _time(row, "relax"),

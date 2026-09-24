@@ -82,3 +82,14 @@ def test_per_reference_entries_need_every_auc_and_marker_needs_a_note(tmp_path):
     path.write_text(json.dumps(table))
     with pytest.raises(ValueError, match="result_marker needs a symbol and a note"):
         load_and_validate(path)
+
+
+@pytest.mark.unit
+def test_resolution_cells_read_unmasked_then_masked():
+    table = load_and_validate(DEFAULT_JSON)
+    rendered = render_markdown(table)
+    assert "| RELION res (Å) unmasked / masked | relax res (Å) unmasked / masked | Masked X-AUC |" in rendered
+    row = next(r for r in table["rows"] if r["relax"]["resolution_A"] is not None and r["relax"]["masked_resolution_A"] is not None)
+    letter = "abcdefgh"[list(table["resolution_definitions"]).index(row["relax"]["resolution_definition"])]
+    assert f"{row['relax']['resolution_A']:.2f} {letter}" in rendered
+    assert f" / {row['relax']['masked_resolution_A']:.2f} |" in rendered
