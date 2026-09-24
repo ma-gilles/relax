@@ -11,7 +11,11 @@ RELION in JAX.
 | 3D classification (Class3D), K>1 | `python -m scripts.run_full_refinement --n_classes K` |
 
 Single GPU. Refine3D (K=1) accepts several optics groups, including groups on other pixel sizes
-and boxes (unit-tested on CPU; end-to-end GPU qualification against RELION pending);
+and boxes, but the default command refuses them for now: they run only on the device-resident
+pass 2 and without the first-iteration cross-correlation, i.e. with `--no-firstiter_cc` and
+`RELAX_SPARSE_PASS2_RESIDENT=1 RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=1
+RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM=1 RELAX_K1_RELION_EXACT_BPREF_OPERANDS=1`
+(end-to-end GPU qualification against RELION in progress).
 InitialModel and Class3D take one optics group. Not yet: cryo-ET subtomograms,
 CTF-premultiplied particles, beam tilt, higher-order aberrations and magnification. More to come.
 
