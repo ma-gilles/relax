@@ -281,6 +281,40 @@
    "gt_masked_band_auc": null
   },
   {
+   "label": "10345_q427a08bd8_mt19937",
+   "dataset": "empiar10345_c1",
+   "section": "real",
+   "mask_sha256": "f8c6764657f894224b4196ec7f3eee06b9e8f87cdecd6ebc5cbb84b2493e3fd5",
+   "band": [
+    1,
+    48
+   ],
+   "evidence": {
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10345_q427a08bd8_mt19937_masked/masked_fsc.json",
+    "sha256": "8097d2deeee79387d997023cc8da50fe1aded10f5f3debe3bf4b8e30756e7814"
+   },
+   "null_reasons": {},
+   "relion": {
+    "masked_resolution_A": 5.309211,
+    "masked_sustained_resolution_A": 5.240260129870131,
+    "masked_corrected_band_auc": 0.9273564361702126,
+    "unmasked_band_auc": 0.6726454255319149
+   },
+   "relax": {
+    "masked_resolution_A": 5.309211,
+    "masked_sustained_resolution_A": 5.240260129870131,
+    "masked_corrected_band_auc": 0.9273675531914893,
+    "unmasked_band_auc": 0.6725231276595746
+   },
+   "cross_engine_masked_band_auc": {
+    "merged": 0.9979762883748435,
+    "half1": 0.9964091329048222,
+    "half2": 0.9966542502946706
+   },
+   "frame_correlation_in_mask": 0.9995462111662362,
+   "gt_masked_band_auc": null
+  },
+  {
    "label": "empiar10345_cand2_087287024",
    "dataset": "empiar10345_c1",
    "section": "real",
