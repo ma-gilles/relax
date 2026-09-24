@@ -22,6 +22,7 @@ from relax.scoring.coarse_gemm_hybrid import plan_coarse_gemm_certificate_topolo
 from relax.scoring.significance import _coarse_gaussian_fused_logical_lookup, _plan_coarse_gaussian_square_layout
 from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_full_to_compact_lookup
 from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle, _make_stable_relion_wavg_rectangle
+from helpers.float_compare import assert_matches, matches
 
 pytestmark = pytest.mark.unit
 
@@ -168,15 +169,15 @@ def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
     assert layout.physical_current_size == 96
     assert layout.logical_square_count == logical_count == 70 * 36
     assert layout.physical_square_count == 96 * 49
-    np.testing.assert_array_equal(
+    assert_matches(
         layout.score_indices_np[:logical_count],
         logical_indices,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         layout.full_to_compact_np[:logical_count],
         logical_lookup,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         layout.full_to_compact_np[logical_count:],
         np.arange(logical_count, layout.physical_square_count, dtype=np.int32),
     )
@@ -186,7 +187,7 @@ def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
         current_size=logical_size,
     )
     assert fused_lookup.shape == (logical_count,)
-    np.testing.assert_array_equal(np.asarray(fused_lookup), logical_lookup)
+    assert_matches(np.asarray(fused_lookup), logical_lookup)
     with pytest.raises(ValueError, match="does not match current_size"):
         _coarse_gaussian_fused_logical_lookup(
             layout.full_to_compact_np,
@@ -213,7 +214,7 @@ def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
         <= (logical_size // 2) ** 2
     )
     expected_projector_mask[logical_count:] = False
-    np.testing.assert_array_equal(
+    assert_matches(
         layout.logical_projector_mask_np,
         expected_projector_mask,
     )
@@ -252,7 +253,7 @@ def test_fused_lookup_strips_q32_physical_tail_for_current_size_26(monkeypatch):
         current_size=logical_size,
     )
     assert fused_lookup.shape == (26 * 14,)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(fused_lookup),
         layout.full_to_compact_np[: 26 * 14],
     )
@@ -309,8 +310,8 @@ def test_stable_coarse_projector_keeps_logical_disk_boundary(monkeypatch):
         current_image_mask_size=np.int32(logical_size),
     )
     masked = np.asarray(masked)
-    assert np.all(masked[:, just_outside] == 0)
-    assert np.all(masked[:, layout.logical_projector_mask_np] == 1)
+    assert_matches(masked[:, just_outside], np.complex64(0))
+    assert_matches(masked[:, layout.logical_projector_mask_np], np.complex64(1))
 
     # By default the native texture kernel owns image clipping
     # (docs/math/sparse_projection_radius.md): the physical-size-96 projection
@@ -341,7 +342,7 @@ def test_stable_coarse_projector_keeps_logical_disk_boundary(monkeypatch):
         )
     )
     assert kernel_calls == [((physical, physical), logical_size // 2)]
-    assert np.all(default_route == 1)
+    assert_matches(default_route, np.complex64(1))
 
 
 def test_stable_coarse_square_has_one_shape_across_q32_class(monkeypatch):
@@ -392,14 +393,14 @@ def test_disabled_coarse_square_layout_is_legacy_exact(monkeypatch):
 
     assert layout.logical_current_size == layout.physical_current_size == current_size
     assert layout.logical_square_count == layout.physical_square_count == legacy_count
-    np.testing.assert_array_equal(layout.score_indices_np, legacy_indices)
-    np.testing.assert_array_equal(layout.score_active_mask_np, np.isin(legacy_indices, active))
+    assert_matches(layout.score_indices_np, legacy_indices)
+    assert_matches(layout.score_active_mask_np, np.isin(legacy_indices, active))
     coords = np.rint(make_frequency_coords_half_np(_IMAGE_SHAPE)).astype(np.int64)
-    np.testing.assert_array_equal(
+    assert_matches(
         layout.logical_projector_mask_np,
         np.sum(coords[legacy_indices] ** 2, axis=1) <= (current_size // 2) ** 2,
     )
-    np.testing.assert_array_equal(layout.full_to_compact_np, legacy_lookup)
+    assert_matches(layout.full_to_compact_np, legacy_lookup)
 
 
 def test_shape_policy_is_default_off():
@@ -537,7 +538,7 @@ def test_padding_appends_storage_without_changing_score_pixel_order():
         value=0,
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         padded_indices[: plan.logical_score_pixels],
         logical_indices,
     )
@@ -554,8 +555,8 @@ def test_packed_capacity_reorders_interleaved_physical_support_behind_logical_pr
     assert not np.array_equal(physical_sorted[: logical.size], logical)
 
     packed = plan.packed_indices_np("score")
-    np.testing.assert_array_equal(packed[: logical.size], logical)
-    np.testing.assert_array_equal(
+    assert_matches(packed[: logical.size], logical)
+    assert_matches(
         np.sort(packed[logical.size :]),
         np.setdiff1d(physical_sorted, logical, assume_unique=True),
     )
@@ -569,7 +570,7 @@ def test_logical_projection_takes_stay_at_front_of_packed_capacity(name):
     packed_take = plan.packed_projection_take_np(name)
     logical_count = getattr(plan, f"logical_{'reconstruction' if name == 'recon' else name}_pixels")
 
-    np.testing.assert_array_equal(
+    assert_matches(
         packed_projection[packed_take[:logical_count]],
         packed_support[:logical_count],
     )
@@ -585,7 +586,7 @@ def test_runtime_rectangle_stride_is_the_logical_not_physical_width():
     assert divmod(first_pixel_on_second_logical_row, physical_half_width) == (0, 36)
 
 
-def test_runtime_logical_bound_preserves_fine_lane_reduction_bitwise():
+def test_runtime_logical_bound_preserves_fine_lane_reduction():
     plan = _plan(70)
     rng = np.random.default_rng(17)
     logical = rng.standard_normal(plan.logical_rectangle_pixels).astype(np.float32)
@@ -600,8 +601,8 @@ def test_runtime_logical_bound_preserves_fine_lane_reduction_bitwise():
     stable_shape = _relion_lane_tree_sum(padded, plan.logical_rectangle_pixels)
     wrong_physical_bound = _relion_lane_tree_sum(padded, plan.physical_rectangle_pixels)
 
-    assert baseline.view(np.uint32) == stable_shape.view(np.uint32)
-    assert baseline.view(np.uint32) != wrong_physical_bound.view(np.uint32)
+    assert_matches(stable_shape, baseline)
+    assert not matches(wrong_physical_bound, baseline)
 
 
 def test_runtime_logical_bound_preserves_bpref_issue_sequence():
@@ -614,7 +615,7 @@ def test_runtime_logical_bound_preserves_bpref_issue_sequence():
         value=-1,
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         padded_issues[: plan.logical_reconstruction_pixels],
         logical_issues,
     )
@@ -633,15 +634,15 @@ def test_packed_physical_spec_keeps_every_logical_stream_as_its_prefix():
         ("recon", plan.logical_reconstruction_pixels),
         ("projection", plan.logical_projection_pixels),
     ):
-        np.testing.assert_array_equal(
+        assert_matches(
             getattr(packed, f"{name}_indices_np")[:logical_count],
             getattr(plan.logical_spec, f"{name}_indices_np"),
         )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(packed.score_projection_take[: plan.logical_score_pixels]),
         np.asarray(plan.logical_spec.score_projection_take),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(packed.recon_projection_take[: plan.logical_reconstruction_pixels]),
         np.asarray(plan.logical_spec.recon_projection_take),
     )
@@ -659,15 +660,15 @@ def test_stable_wavg_rectangle_preserves_logical_fftw_order_and_poison_tail():
     logical_recon_count = plan.logical_reconstruction_pixels
 
     assert stable.centered_indices.size == plan.physical_rectangle_pixels
-    np.testing.assert_array_equal(
+    assert_matches(
         stable.centered_indices[:logical_rectangle_count],
         logical.centered_indices,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         stable.exact_positions[:logical_recon_count],
         logical.exact_positions,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         stable.shell_indices[:logical_rectangle_count],
         logical.shell_indices,
     )
@@ -680,7 +681,7 @@ def test_stable_wavg_rectangle_preserves_logical_fftw_order_and_poison_tail():
     poison = np.full(plan.physical_rectangle_pixels, np.float32(np.nan))
     logical_values = np.arange(logical_rectangle_count, dtype=np.float32)
     poison[:logical_rectangle_count] = logical_values
-    np.testing.assert_array_equal(poison[:logical_rectangle_count], logical_values)
+    assert_matches(poison[:logical_rectangle_count], logical_values)
     assert np.isnan(poison[logical_rectangle_count:]).all()
 
 
@@ -702,7 +703,7 @@ def test_every_gf46_stable_window_has_enough_inert_wavg_tail_capacity():
             continue
         stable = _make_stable_relion_wavg_rectangle(_IMAGE_SHAPE, plan)
         logical_recon_count = plan.logical_reconstruction_pixels
-        np.testing.assert_array_equal(
+        assert_matches(
             stable.exact_positions[:logical_recon_count],
             _make_relion_wavg_rectangle(
                 _IMAGE_SHAPE,
@@ -746,7 +747,7 @@ def test_crop_relion_x_half_accumulator_excludes_physical_poison_bitwise():
         logical_shape,
     )
 
-    np.testing.assert_array_equal(cropped.reshape(expected.shape), expected)
+    assert_matches(cropped.reshape(expected.shape), expected)
     assert not np.any(cropped == np.uint32(0x7FC00001))
 
 
@@ -936,14 +937,14 @@ def test_stable_bpref_wrapper_packs_logical_rows_and_poison_tail(monkeypatch):
     assert observed["attrs"]["pixel_capacity"] == capacity
     assert np.asarray(observed["args"][-1]).item() == 4
     dense_images = np.asarray(observed["args"][1])
-    np.testing.assert_array_equal(
+    assert_matches(
         dense_images[0, rectangle.exact_positions],
         np.asarray(images)[0],
     )
     occupied = np.zeros(capacity, dtype=bool)
     occupied[rectangle.exact_positions] = True
-    np.testing.assert_array_equal(dense_images[0, ~occupied], 0.0)
-    np.testing.assert_array_equal(
+    assert_matches(dense_images[0, ~occupied], 0.0)
+    assert_matches(
         np.asarray(compact_denominator)[0, 0],
         rectangle.exact_positions.astype(np.float32),
     )

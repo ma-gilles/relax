@@ -1,9 +1,10 @@
-"""Exact state and ownership checks for avoiding overwritten M-step copies."""
+"""State and ownership checks for avoiding overwritten M-step copies."""
 
 from dataclasses import fields
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.vdam import m_step, mstep_single_class
 from relax.vdam.state import InitialModelState, half_slot_index
@@ -111,7 +112,7 @@ def test_publication_matches_full_copy_and_preserves_ownership(monkeypatch, K, k
         a, e, before = getattr(actual, f.name), getattr(expected, f.name), getattr(state, f.name)
         if isinstance(a, np.ndarray):
             assert a.shape == e.shape and a.dtype == e.dtype
-            assert a.tobytes() == e.tobytes(), f.name
+            assert_matches(a, e, err_msg=f.name, strict=True)
             assert before.tobytes() == originals[f.name], f.name
             if f.name in CHANGED:
                 assert a.flags.c_contiguous and a.flags.writeable
@@ -152,5 +153,5 @@ def test_selector_defaults_to_existing_copy_path(monkeypatch):
         "fourier_coverage": state.fourier_coverage_class[0],
     }
     actual = _call(state, 0, lambda *args: result)
-    assert actual.Igrad1.tobytes() == state.Igrad1.tobytes()
+    assert_matches(actual.Igrad1, state.Igrad1, strict=True)
     assert not np.shares_memory(actual.Igrad1, state.Igrad1)

@@ -12,6 +12,7 @@ from relax.diagnostics import vdam_mstep_replay
 from relax.vdam import dense_adapter, driver, iteration_loop, m_step, mstep_single_class, native_options
 from relax.relion import initial_model_io
 from relax.vdam.init import initialise_denovo_state
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -82,7 +83,7 @@ def test_one_time_conversion_only_changes_m_owned_state(K):
         original, actual = getattr(state, f.name), getattr(converted, f.name)
         if f.name in F32_STATE:
             assert actual.dtype == np.dtype(F32_STATE[f.name])
-            np.testing.assert_array_equal(actual, original.astype(F32_STATE[f.name]))
+            assert_matches(actual, original.astype(F32_STATE[f.name]))
             assert not np.shares_memory(actual, original)
         else:
             assert actual is original
@@ -219,10 +220,10 @@ def test_real_host_device_transaction_publishes_f32_and_preserves_k4_other_slots
     for name, dtype in F32_STATE.items():
         assert getattr(actual, name).dtype == np.dtype(dtype)
         slots = [0, 1, 2, 4, 5, 6] if name == "Igrad1" else [0, 1, 2]
-        assert getattr(actual, name)[slots].tobytes() == before[name][slots].tobytes()
-        assert getattr(state, name).tobytes() == before[name].tobytes()
-    np.testing.assert_array_equal(actual.Iref[3], state.Iref[3])
-    assert actual.tau2_class.tobytes() == state.tau2_class.tobytes()
+        assert_matches(getattr(actual, name)[slots], before[name][slots], strict=True)
+        assert_matches(getattr(state, name), before[name], strict=True)
+    assert_matches(actual.Iref[3], state.Iref[3])
+    assert_matches(actual.tau2_class, state.tau2_class, strict=True)
     assert actual.tau2_class.dtype == np.float64
     assert helper.relion_vdam_m_step_host is not None
 
@@ -296,8 +297,8 @@ def test_solvent_route_uses_explicit_f32_product_and_preserves_default():
     mask = np.full((16,) * 3, 1.0000000596046446, dtype=np.float64)
     default = m_step.relion_solvent_flatten_state(state, mask=mask)
     actual = m_step.relion_solvent_flatten_state(state, mask=mask, compute_dtype="float32")
-    np.testing.assert_array_equal(default.Iref, (state.Iref * mask).astype(np.float32))
-    np.testing.assert_array_equal(actual.Iref, state.Iref * mask.astype(np.float32))
+    assert_matches(default.Iref, (state.Iref * mask).astype(np.float32))
+    assert_matches(actual.Iref, state.Iref * mask.astype(np.float32))
     assert actual.Iref.dtype == np.float32 and actual.tau2_class is state.tau2_class
     assert np.any(default.Iref != actual.Iref)
     with pytest.raises(ValueError, match="float32 state.Iref"):

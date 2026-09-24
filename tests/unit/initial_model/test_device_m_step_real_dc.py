@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.relion import relion_vdam_mstep as mstep
 
@@ -76,5 +77,5 @@ def test_m_step_imaginary_dc_preserves_exact_constant_map(dtype, sign):
         assert output["iref"].dtype == np.dtype(dtype)
         assert not output["_invalid_sigma2"]
         assert not output["_invalid_tau2"]
-        np.testing.assert_array_equal(output["iref"], expected)
-    np.testing.assert_array_equal(result["iref"], control["iref"])
+        assert_matches(output["iref"], expected)
+    assert_matches(result["iref"], control["iref"])

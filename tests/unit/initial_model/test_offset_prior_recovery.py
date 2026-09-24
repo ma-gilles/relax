@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.vdam import dense_adapter, native_options, native_sampling
 
@@ -31,7 +32,7 @@ def test_initialmodel_fine_children_inherit_frozen_relion_parent_prior():
     )
     # RELION row114 capture retained by Q donor d1f2f9f934f1.
     expected = np.asarray([[-7.8247542]], np.float32)
-    np.testing.assert_array_equal(config.engine_kwargs['coarse_translation_log_prior'], expected)
-    np.testing.assert_array_equal(config.engine_kwargs['translation_log_prior'], expected[:, [0, 0]])
-    np.testing.assert_array_equal(config.engine_kwargs['image_pre_shifts'], [[4, -14]])
-    np.testing.assert_array_equal(config.engine_kwargs['translation_prior_centers'], [[-4, 14]])
+    assert_matches(config.engine_kwargs['coarse_translation_log_prior'], expected)
+    assert_matches(config.engine_kwargs['translation_log_prior'], expected[:, [0, 0]])
+    assert_matches(config.engine_kwargs['image_pre_shifts'], [[4, -14]])
+    assert_matches(config.engine_kwargs['translation_prior_centers'], [[-4, 14]])

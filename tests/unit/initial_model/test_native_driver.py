@@ -32,6 +32,7 @@ from relax.vdam.init import initialise_denovo_state
 from relax.vdam.state import NativeOpticsState, NativeParticleState
 from relax.vdam.subset_schedule import select_subset_for_iter
 from recovar.utils.helpers import R_from_relion, write_relion_mrc
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -267,15 +268,15 @@ def test_native_vdam_diagnostic_continuation_loads_complete_gradient_state(tmp_p
     assert checkpoint.grad_ini_frac == pytest.approx(0.3)
     assert checkpoint.grad_fin_frac == pytest.approx(0.2)
     assert checkpoint.grad_suspended_local_searches_iter == -1
-    np.testing.assert_array_equal(
+    assert_matches(
         checkpoint.state.Iref[0],
         relion_volume_to_recovar(expected["reference"]),
     )
-    np.testing.assert_array_equal(checkpoint.state.Igrad1[0], expected["moment1"])
-    np.testing.assert_array_equal(checkpoint.state.Igrad1[1], expected["moment2"])
-    np.testing.assert_array_equal(checkpoint.state.Igrad2[0], expected["second_moment"])
-    np.testing.assert_array_equal(checkpoint.state.sigma2_noise[0], [0.01, 0.02, 0.03])
-    np.testing.assert_array_equal(checkpoint.state.tau2_class[0], [4.0, 5.0, 6.0])
+    assert_matches(checkpoint.state.Igrad1[0], expected["moment1"])
+    assert_matches(checkpoint.state.Igrad1[1], expected["moment2"])
+    assert_matches(checkpoint.state.Igrad2[0], expected["second_moment"])
+    assert_matches(checkpoint.state.sigma2_noise[0], [0.01, 0.02, 0.03])
+    assert_matches(checkpoint.state.tau2_class[0], [4.0, 5.0, 6.0])
     assert checkpoint.sampling_state.healpix_order == 3
     assert checkpoint.sampling_state.uniform_local_orientation_prior is True
 
@@ -351,8 +352,8 @@ def test_iteration_reference_replay_expands_iteration_and_class(monkeypatch, tmp
 
     replayed = vdam_mstep_replay._maybe_replay_iteration_references(state, iteration=3, meta=meta)
 
-    np.testing.assert_array_equal(replayed.Iref, np.asarray(expected))
-    np.testing.assert_array_equal(state.Iref, 0.0)
+    assert_matches(replayed.Iref, np.asarray(expected))
+    assert_matches(state.Iref, 0.0)
     assert meta["diagnostic_iref_replay_paths"] == [str(path) for path in paths]
     assert meta["diagnostic_iref_replay_iteration"] == 3
 
@@ -416,8 +417,8 @@ def test_seed_zero_halfsets_use_relion_experiment_position_parity(monkeypatch):
         particle_order=initial_model_io._experiment_read_order(main),
     )
 
-    np.testing.assert_array_equal(out.subset_particle_ids, [0, 2, 3, 4, 1])
-    np.testing.assert_array_equal(out.subset_halfset_ids, [0, 1, 0, 1, 0])
+    assert_matches(out.subset_particle_ids, [0, 2, 3, 4, 1])
+    assert_matches(out.subset_halfset_ids, [0, 1, 0, 1, 0])
 
 
 def test_translation_log_prior_matches_relion_pdf_offset_scaling():
@@ -462,7 +463,7 @@ def test_image_pre_shifts_from_star_converts_angstrom_origins_to_rounded_pixels(
         rtol=1e-6,
         atol=1e-6,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         shifts,
         np.asarray([[2.0, -4.0], [-2.0, 1.0], [0.0, 0.0]], dtype=np.float32),
     )
@@ -475,7 +476,7 @@ def test_image_pre_shifts_from_star_uses_legacy_pixel_origins():
         initial_model_io._image_origin_offsets_pixels_from_star(main, SimpleNamespace(voxel_size=2.0))
     )
 
-    np.testing.assert_array_equal(shifts, np.asarray([[1.0, 2.0], [-2.0, 0.0]], dtype=np.float32))
+    assert_matches(shifts, np.asarray([[1.0, 2.0], [-2.0, 0.0]], dtype=np.float32))
 
 
 def test_image_pre_shifts_from_star_rounds_before_float32_downcast():
@@ -490,7 +491,7 @@ def test_image_pre_shifts_from_star_rounds_before_float32_downcast():
         initial_model_io._image_origin_offsets_pixels_from_star(main, SimpleNamespace(voxel_size=2.0))
     )
 
-    np.testing.assert_array_equal(shifts, np.asarray([[0.0, 0.0], [1.0, -1.0]], dtype=np.float32))
+    assert_matches(shifts, np.asarray([[0.0, 0.0], [1.0, -1.0]], dtype=np.float32))
 
 
 def test_image_pre_shifts_from_star_defaults_to_zero_without_origins():
@@ -500,7 +501,7 @@ def test_image_pre_shifts_from_star_defaults_to_zero_without_origins():
         initial_model_io._image_origin_offsets_pixels_from_star(main, SimpleNamespace(voxel_size=2.0))
     )
 
-    np.testing.assert_array_equal(shifts, np.zeros((2, 2), dtype=np.float32))
+    assert_matches(shifts, np.zeros((2, 2), dtype=np.float32))
 
 
 def test_particle_state_from_star_preserves_class_and_pmax_columns():
@@ -514,10 +515,10 @@ def test_particle_state_from_star_preserves_class_and_pmax_columns():
 
     state = initial_model_io._particle_state_from_star(main, SimpleNamespace(voxel_size=1.0, n_images=2))
 
-    np.testing.assert_array_equal(state.translation_offsets, np.zeros((2, 2), dtype=np.float32))
-    np.testing.assert_array_equal(state.class_assignments, [1, 0])
+    assert_matches(state.translation_offsets, np.zeros((2, 2), dtype=np.float32))
+    assert_matches(state.class_assignments, [1, 0])
     np.testing.assert_allclose(state.max_posterior, [0.9, 0.25])
-    np.testing.assert_array_equal(state.pose_assignments, [-1, -1])
+    assert_matches(state.pose_assignments, [-1, -1])
     assert state.best_pose_rotations is None
 
 
@@ -555,8 +556,8 @@ def test_particle_state_from_star_normalizes_verified_k1_restart_sentinels():
         nr_classes=1,
     )
 
-    np.testing.assert_array_equal(state.class_assignments, [0, 0, 0])
-    np.testing.assert_array_equal(state.visited, [True, False, True])
+    assert_matches(state.class_assignments, [0, 0, 0])
+    assert_matches(state.visited, [True, False, True])
     np.testing.assert_allclose(state.max_posterior, [0.75, 0.0, 0.25])
 
 
@@ -640,11 +641,11 @@ def test_particle_state_from_star_seeds_input_euler_orientations_for_all_particl
     state = initial_model_io._particle_state_from_star(main, SimpleNamespace(voxel_size=1.0, n_images=3))
 
     expected_eulers = main[["_rlnAngleRot", "_rlnAngleTilt", "_rlnAnglePsi"]].to_numpy(dtype=np.float64)
-    np.testing.assert_array_equal(
+    assert_matches(
         state.best_pose_rotations,
         R_from_relion(expected_eulers, degrees=True).astype(np.float32),
     )
-    np.testing.assert_array_equal(state.visited, np.zeros(3, dtype=bool))
+    assert_matches(state.visited, np.zeros(3, dtype=bool))
     assert native_sampling._best_eulers_from_particle_state(
         state,
         np.asarray([2, 0, 1], dtype=np.int64),
@@ -709,12 +710,12 @@ def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(
 
     assert meta is not None
     assert meta["estimated_acc_trans_angstrom"] == 1.25
-    np.testing.assert_array_equal(captured["particle_ids"], np.asarray([2, 0], dtype=np.int64))
-    np.testing.assert_array_equal(
+    assert_matches(captured["particle_ids"], np.asarray([2, 0], dtype=np.int64))
+    assert_matches(
         captured["eulers"],
         main[["_rlnAngleRot", "_rlnAngleTilt", "_rlnAnglePsi"]].to_numpy(dtype=np.float64)[[2, 0]],
     )
-    np.testing.assert_array_equal(particle_state.visited, np.zeros(3, dtype=bool))
+    assert_matches(particle_state.visited, np.zeros(3, dtype=bool))
 
 
 @pytest.mark.parametrize("missing_name", ["_rlnAngleRot", "_rlnAngleTilt", "_rlnAnglePsi"])
@@ -760,7 +761,7 @@ def test_sampling_plan_oversamples_relion_grid():
 
     assert plan.rotations.shape == (4608, 3, 3)
     assert plan.translations.shape == (116, 2)
-    np.testing.assert_array_equal(plan.translation_parent, np.repeat(np.arange(29), 4))
+    assert_matches(plan.translation_parent, np.repeat(np.arange(29), 4))
     assert plan.translations.dtype == np.float32
     assert plan.metadata_translations.shape == plan.translations.shape
     assert plan.metadata_translations.dtype == np.float64
@@ -944,7 +945,7 @@ def test_initial_sampling_state_uses_relion_angstrom_internal_units():
     assert plan.offset_step_angstrom == pytest.approx(4.25)
     assert plan.rotations.shape == (4608, 3, 3)
     assert plan.translations.shape == (116, 2)
-    np.testing.assert_array_equal(plan.translation_parent, np.repeat(np.arange(29), 4))
+    assert_matches(plan.translation_parent, np.repeat(np.arange(29), 4))
 
 
 def test_sampling_plan_applies_relion_radius_tolerance_in_angstroms():
@@ -1293,7 +1294,7 @@ def test_uniform_local_orientation_prior_replaces_learned_direction_prior():
     prior = native_sampling._class_rotation_log_prior_for_sampling(state, sampling_state, healpix_order=0)
 
     assert prior.shape == (1, sampling.rotation_grid_size(0))
-    np.testing.assert_array_equal(prior, np.zeros_like(prior))
+    assert_matches(prior, np.zeros_like(prior))
 
 
 def test_noprior_sampling_uses_learned_direction_prior(monkeypatch):
@@ -1332,16 +1333,17 @@ def test_direction_prior_preserves_relion_absolute_log_scale_and_cutoff_tie():
 
     expected_9 = np.float32(np.log(state.pdf_direction[0, 9]))
     expected_10 = np.float32(np.log(state.pdf_direction[0, 10]))
-    np.testing.assert_array_equal(prior[0, 9 * n_psi : (9 + 1) * n_psi], expected_9)
-    np.testing.assert_array_equal(prior[0, 10 * n_psi : (10 + 1) * n_psi], expected_10)
+    assert_matches(prior[0, 9 * n_psi : (9 + 1) * n_psi], expected_9)
+    assert_matches(prior[0, 10 * n_psi : (10 + 1) * n_psi], expected_10)
 
     # Frozen gf10 coarse operands: RELION's absolute log(pdf_direction)
-    # makes these rank-21/rank-22 values bitwise tied. Dividing pdf_direction
-    # by its mean before log separated them by one float32 ULP and dropped an
+    # makes these rank-21/rank-22 values tie. Dividing pdf_direction by its
+    # mean before log separated them by one float32 ULP and dropped an
     # eight-child fine-rotation parent from the inclusive cutoff support.
+    # The check is the float32 band, not bit equality (no bitwise float tests).
     raw_scores = np.asarray([-346.5836181640625, -346.6419677734375], dtype=np.float32)
     tied = raw_scores + np.asarray([expected_9, expected_10], dtype=np.float32)
-    assert tied[0].view(np.uint32) == tied[1].view(np.uint32)
+    assert_matches(tied[0], tied[1])
 
 
 def test_active_relion_initialmodel_max_significants_matches_gradient_default():
@@ -1399,7 +1401,7 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
         return np.zeros((8, 8), dtype=np.float64), np.ones((1, 5), dtype=np.float64)
 
     def fake_load_raw_images(dataset, particle_ids, *, batch_size):
-        np.testing.assert_array_equal(particle_ids, np.asarray([1, 0], dtype=np.int64))
+        assert_matches(particle_ids, np.asarray([1, 0], dtype=np.int64))
         return np.zeros((2, 8, 8), dtype=np.float64)
 
     def fake_bootstrap(**kwargs):
@@ -1410,7 +1412,7 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
         return raw_iref.copy()
 
     def fake_postprocess(iref, **kwargs):
-        np.testing.assert_array_equal(iref, raw_iref)
+        assert_matches(iref, raw_iref)
         calls.append(kwargs)
         return post_iref.copy()
 
@@ -1453,8 +1455,8 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
         opts,
     )
 
-    np.testing.assert_array_equal(state.Iref, post_iref)
-    np.testing.assert_array_equal(optics_groups, np.zeros(2, dtype=np.int64))
+    assert_matches(state.Iref, post_iref)
+    assert_matches(optics_groups, np.zeros(2, dtype=np.int64))
     assert calls == [
         {
             "pixel_size": 2.0,
@@ -1499,7 +1501,7 @@ def test_native_expectation_step_rebuilds_sampling_per_iteration(monkeypatch):
     def fake_run_dense(dataset, state, config, *, particle_ids, halfset_ids):
         assert config.rotations.shape == (3, 3, 3)
         assert config.translations.shape == (4, 2)
-        np.testing.assert_array_equal(
+        assert_matches(
             config.engine_kwargs["image_pre_shifts"],
             np.asarray([[1.0, -1.0], [0.0, 2.0]], dtype=np.float32),
         )
@@ -1582,8 +1584,8 @@ def test_native_expectation_step_updates_translation_offsets_between_iterations(
     expectation_step(state, np.asarray([0, 1]), np.asarray([0, 1], dtype=np.int8))
     expectation_step(state, np.asarray([0, 1]), np.asarray([0, 1], dtype=np.int8))
 
-    np.testing.assert_array_equal(calls[0]["pre_shifts"], np.asarray([[0.0, 0.0], [1.0, -1.0]], dtype=np.float32))
-    np.testing.assert_array_equal(calls[1]["pre_shifts"], np.asarray([[2.0, -1.0], [5.0, -1.0]], dtype=np.float32))
+    assert_matches(calls[0]["pre_shifts"], np.asarray([[0.0, 0.0], [1.0, -1.0]], dtype=np.float32))
+    assert_matches(calls[1]["pre_shifts"], np.asarray([[2.0, -1.0], [5.0, -1.0]], dtype=np.float32))
     assert calls[0]["prior"].shape == (2, 3)
     assert calls[1]["prior"].shape == (2, 3)
     np.testing.assert_allclose(
@@ -1610,13 +1612,13 @@ def test_native_expectation_step_updates_translation_offsets_between_iterations(
         rtol=1e-6,
         atol=1e-8,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         particle_state.translation_offsets,
         np.asarray([[4.0, -2.0], [9.0, -1.0]], dtype=np.float32),
     )
-    np.testing.assert_array_equal(particle_state.class_assignments, [1, 0])
+    assert_matches(particle_state.class_assignments, [1, 0])
     np.testing.assert_allclose(particle_state.max_posterior, [0.9, 0.8])
-    np.testing.assert_array_equal(particle_state.pose_assignments, [1, 2])
+    assert_matches(particle_state.pose_assignments, [1, 2])
 
 
 def test_update_particle_state_preserves_best_pose_metadata():
@@ -1648,15 +1650,15 @@ def test_update_particle_state_preserves_best_pose_metadata():
         np.asarray([[0.0, 2.0], [3.0, -1.0]], dtype=np.float32),
     )
 
-    np.testing.assert_array_equal(particle_state.pose_assignments, [0, -1, 1])
+    assert_matches(particle_state.pose_assignments, [0, -1, 1])
     np.testing.assert_allclose(particle_state.best_pose_rotations[[2, 0]], rotations)
     np.testing.assert_allclose(
         particle_state.best_pose_translations,
         np.asarray([[0.0, 2.0], [0.0, 0.0], [3.0, -1.0]], dtype=np.float32),
     )
-    np.testing.assert_array_equal(particle_state.best_pose_rotation_ids, [7, -1, 11])
-    np.testing.assert_array_equal(particle_state.best_pose_rotation_orders, [2, -1, 2])
-    np.testing.assert_array_equal(particle_state.visited, [True, False, True])
+    assert_matches(particle_state.best_pose_rotation_ids, [7, -1, 11])
+    assert_matches(particle_state.best_pose_rotation_orders, [2, -1, 2])
+    assert_matches(particle_state.visited, [True, False, True])
 
     estep_meta_updates._update_particle_state_from_estep_meta(
         particle_state,
@@ -1669,9 +1671,9 @@ def test_update_particle_state_preserves_best_pose_metadata():
 
     # RELION writes the latest state for every particle visited by any earlier
     # VDAM subset, not only the identities selected by the current iteration.
-    np.testing.assert_array_equal(particle_state.visited, [True, True, True])
+    assert_matches(particle_state.visited, [True, True, True])
     np.testing.assert_allclose(particle_state.best_pose_rotations[[2, 0]], rotations)
-    np.testing.assert_array_equal(particle_state.best_pose_rotation_ids, [7, -1, 11])
+    assert_matches(particle_state.best_pose_rotation_ids, [7, -1, 11])
 
 
 def test_best_eulers_from_particle_state_prefers_stored_rotation_matrices():
@@ -1882,7 +1884,7 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
     assert len(estimate_calls) == 1
     assert estimate_calls[0]["healpix_order"] == 1
     assert estimate_calls[0]["offset_range_angstrom"] == pytest.approx(12.75)
-    np.testing.assert_array_equal(estimate_calls[0]["particle_order"], np.asarray([1, 0], dtype=np.int64))
+    assert_matches(estimate_calls[0]["particle_order"], np.asarray([1, 0], dtype=np.int64))
     assert estimate_calls[0]["random_seed"] == 17
     assert estimate_calls[0]["padding_factor"] == 2
     assert estimate_calls[0]["sigma2_fudge"] == pytest.approx(1.0)
@@ -1995,16 +1997,16 @@ def test_sampling_accuracy_binding_uses_sigma2_fudge_not_dynamic_tau2(monkeypatc
     assert captured["sigma2_fudge"] == pytest.approx(1.0)
     assert captured["sigma2_fudge"] != pytest.approx(state.tau2_fudge_factor)
     assert captured["interpolator"] == 1
-    np.testing.assert_array_equal(captured["random_seed_particle_ids"], np.asarray([9, 4]))
+    assert_matches(captured["random_seed_particle_ids"], np.asarray([9, 4]))
     assert not np.array_equal(captured["random_seed_particle_ids"], np.asarray([1, 0]))
     assert meta["estimated_acc_sigma2_fudge"] == pytest.approx(1.0)
-    np.testing.assert_array_equal(meta["estimated_acc_seed_part_ids"], np.asarray([9, 4]))
+    assert_matches(meta["estimated_acc_seed_part_ids"], np.asarray([9, 4]))
     dump = np.load(tmp_path / "iter090_expected_accuracy_inputs.npz")
     assert float(dump["sigma2_fudge"]) == pytest.approx(1.0)
     assert float(dump["acc_rot"]) == pytest.approx(1.823)
     assert float(dump["acc_trans"]) == pytest.approx(1.717)
-    np.testing.assert_array_equal(dump["trial_particle_ids"], np.asarray([1, 0]))
-    np.testing.assert_array_equal(dump["random_seed_particle_ids"], np.asarray([9, 4]))
+    assert_matches(dump["trial_particle_ids"], np.asarray([1, 0]))
+    assert_matches(dump["random_seed_particle_ids"], np.asarray([9, 4]))
 
 
 @pytest.mark.parametrize("visited, expected_class_changes", [([False, True], 0.5), ([True, True], 0.0)])
@@ -2069,8 +2071,8 @@ def test_native_expectation_step_records_sampling_changes_each_gradient_iteratio
     # The E-step marks both rows visited before recording sampling changes.
     # RELION nevertheless compares against each row's old class-zero sentinel.
     assert meta["current_changes_optimal_classes"] == expected_class_changes
-    np.testing.assert_array_equal(particle_state.class_assignments, [0, 0])
-    np.testing.assert_array_equal(particle_state.visited, [True, True])
+    assert_matches(particle_state.class_assignments, [0, 0])
+    assert_matches(particle_state.visited, [True, True])
 
     _accumulators, repeated = expectation_step(
         state, np.asarray([0, 1]), np.asarray([0, 1], dtype=np.int8)
@@ -2156,7 +2158,7 @@ def test_expand_class_rotation_prior_for_dense_fine_grid_uses_parent_map(monkeyp
     parent_map = np.asarray([0, 0, 1, 1, 2, 2], dtype=np.int64)
 
     def fake_oversampled(parent_rotation_indices, parent_nside_level, oversampling_order, *, random_perturbation):
-        np.testing.assert_array_equal(parent_rotation_indices, np.arange(3, dtype=np.int64))
+        assert_matches(parent_rotation_indices, np.arange(3, dtype=np.int64))
         assert parent_nside_level == 2
         assert oversampling_order == 1
         assert random_perturbation == pytest.approx(0.125)
@@ -2423,8 +2425,8 @@ def test_data_star_preserves_optics_and_updates_particle_metadata(tmp_path, monk
     np.testing.assert_allclose(data["_rlnOriginYAngst"].astype(float).to_numpy(), [1.875, -1.5])
     np.testing.assert_allclose(data["_rlnOriginX"].astype(float).to_numpy(), [0.5, 2.0])
     np.testing.assert_allclose(data["_rlnOriginY"].astype(float).to_numpy(), [1.25, -1.0])
-    np.testing.assert_array_equal(data["_rlnClassNumber"].astype(int).to_numpy(), [1, 2])
-    np.testing.assert_array_equal(data["_rlnRandomSubset"].astype(int).to_numpy(), [1, 2])
+    assert_matches(data["_rlnClassNumber"].astype(int).to_numpy(), [1, 2])
+    assert_matches(data["_rlnRandomSubset"].astype(int).to_numpy(), [1, 2])
     np.testing.assert_allclose(data["_rlnMaxValueProbDistribution"].astype(float).to_numpy(), [0.25, 0.875])
 
 
@@ -2466,8 +2468,8 @@ def test_data_star_zeros_unvisited_rows_and_writes_best_pose_eulers(tmp_path, mo
     data, _ = read_star(str(out))
     expected_eulers = sampling.get_relion_rotation_grid_eulers(1, rotation_index_order="relion")
     assert data["_rlnImageName"].tolist() == ["1@stack.mrcs", "2@stack.mrcs", "3@stack.mrcs"]
-    np.testing.assert_array_equal(data["_rlnClassNumber"].astype(int).to_numpy(), [0, 1, 1])
-    np.testing.assert_array_equal(data["_rlnRandomSubset"].astype(int).to_numpy(), [1, 2, 1])
+    assert_matches(data["_rlnClassNumber"].astype(int).to_numpy(), [0, 1, 1])
+    assert_matches(data["_rlnRandomSubset"].astype(int).to_numpy(), [1, 2, 1])
     np.testing.assert_allclose(data["_rlnMaxValueProbDistribution"].astype(float).to_numpy(), [0.0, 0.625, 0.75])
     np.testing.assert_allclose(data["_rlnAngleRot"].astype(float).to_numpy()[[1, 2]], expected_eulers[[9, 5], 0])
     np.testing.assert_allclose(data["_rlnAngleTilt"].astype(float).to_numpy()[[1, 2]], expected_eulers[[9, 5], 1])

@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import starfile
+from helpers.float_compare import assert_matches
 
 from scripts.prepare_vdam_real_data_fixture import (
     materialize_cryodrgn_source_star,
@@ -30,7 +31,7 @@ def test_balanced_half_selection_is_deterministic_sorted_and_exactly_balanced():
     first = select_balanced_half_indices(particles, particles_per_half=4, seed=23)
     second = select_balanced_half_indices(particles, particles_per_half=4, seed=23)
 
-    np.testing.assert_array_equal(first, second)
+    assert_matches(first, second)
     assert np.all(np.diff(first) > 0)
     selected_halves = np.asarray(particles.iloc[first]["rlnRandomSubset"])
     assert np.count_nonzero(selected_halves == 1) == 4
@@ -55,8 +56,8 @@ def test_synthetic_half_selection_is_deterministic_sorted_and_balanced():
     first_indices, first_halves = select_synthetic_half_indices(20, particles_per_half=4, seed=23)
     second_indices, second_halves = select_synthetic_half_indices(20, particles_per_half=4, seed=23)
 
-    np.testing.assert_array_equal(first_indices, second_indices)
-    np.testing.assert_array_equal(first_halves, second_halves)
+    assert_matches(first_indices, second_indices)
+    assert_matches(first_halves, second_halves)
     assert np.all(np.diff(first_indices) > 0)
     assert np.count_nonzero(first_halves == 1) == 4
     assert np.count_nonzero(first_halves == 2) == 4
@@ -80,9 +81,9 @@ def test_promote_legacy_optics_preserves_particles_and_computes_pixel_size():
     output_particles = promoted["particles"]
     assert optics.loc[0, "rlnImagePixelSize"] == pytest.approx(5.0 * 10_000.0 / 35714.0)
     assert optics.loc[0, "rlnImageSize"] == 256
-    np.testing.assert_array_equal(output_particles["rlnOpticsGroup"], [1, 1])
-    np.testing.assert_array_equal(output_particles["rlnPhaseShift"], [0.0, 0.0])
-    np.testing.assert_array_equal(output_particles["rlnDefocusU"], [10_000.0, 11_000.0])
+    assert_matches(output_particles["rlnOpticsGroup"], [1, 1])
+    assert_matches(output_particles["rlnPhaseShift"], [0.0, 0.0])
+    assert_matches(output_particles["rlnDefocusU"], [10_000.0, 11_000.0])
     np.testing.assert_allclose(
         output_particles["rlnOriginXAngst"],
         np.asarray([2.0, -3.0]) * optics.loc[0, "rlnImagePixelSize"],
@@ -91,7 +92,7 @@ def test_promote_legacy_optics_preserves_particles_and_computes_pixel_size():
         output_particles["rlnOriginYAngst"],
         np.asarray([-1.0, 4.0]) * optics.loc[0, "rlnImagePixelSize"],
     )
-    np.testing.assert_array_equal(output_particles["rlnMaxValueProbDistribution"], [0.0, 0.0])
+    assert_matches(output_particles["rlnMaxValueProbDistribution"], [0.0, 0.0])
     assert "rlnDetectorPixelSize" not in output_particles
     assert "rlnMagnification" not in output_particles
 

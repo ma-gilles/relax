@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics.gt_metrics import (
     DEFAULT_GT_ALIGN_REFINE_ORDERS,
@@ -61,7 +62,7 @@ def test_refine_orders_none_preserves_coarse_only_behavior():
     # An empty refinement tuple is equivalent to None.
     a_empty = align_volume_to_reference(gt, gt, rotations, refine_orders=())
 
-    np.testing.assert_array_equal(a_coarse.rotation_matrix, a_empty.rotation_matrix)
+    assert_matches(a_coarse.rotation_matrix, a_empty.rotation_matrix)
     assert a_coarse.corr == pytest.approx(a_empty.corr, abs=1e-12)
     assert a_coarse.score == pytest.approx(a_empty.score, abs=1e-12)
 

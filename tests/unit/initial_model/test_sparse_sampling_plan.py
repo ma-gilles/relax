@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax import sampling
 from relax.vdam import dense_adapter, driver, native_options, native_sampling
@@ -34,10 +35,10 @@ def test_deferred_plan_preserves_geometry(monkeypatch, order, oversampling, pert
     if oversampling:
         assert sparse.rotations is None
     else:
-        np.testing.assert_array_equal(sparse.rotations, dense.rotations)
+        assert_matches(sparse.rotations, dense.rotations)
     for field in fields(dense):
         if field.name != "rotations":
-            np.testing.assert_array_equal(getattr(sparse, field.name), getattr(dense, field.name))
+            assert_matches(getattr(sparse, field.name), getattr(dense, field.name))
 
 
 def test_deferred_plan_cannot_enter_dense_execution(monkeypatch):
@@ -76,8 +77,8 @@ def test_expectation_deferred_plan_routing_and_metadata(monkeypatch, selector):
         if selector == "1":
             assert config.rotations is None
         else:
-            np.testing.assert_array_equal(config.rotations, dense.rotations)
-        np.testing.assert_array_equal(config.translations, dense.translations)
+            assert_matches(config.rotations, dense.rotations)
+        assert_matches(config.translations, dense.translations)
         assert config.engine_kwargs["sparse_pass2"]
         return SimpleNamespace(accumulators=[], meta={})
 

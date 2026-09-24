@@ -36,6 +36,7 @@ from relax.vdam.init import (
     seed_noise_from_mavg,
 )
 from relax.vdam.state import MOM2_INIT_CONSTANT, half_slot_count, half_slot_index
+from helpers.float_compare import assert_matches, matches
 
 pytestmark = pytest.mark.unit
 
@@ -94,7 +95,7 @@ class TestInitialiseDenovoState:
         state = initialise_denovo_state(ori_size=16, pixel_size=1.0, K=2, nr_iter=50, n_directions=48)
         assert state.Iref.shape == (2, 16, 16, 16)
         assert state.Iref.dtype == np.float64
-        np.testing.assert_array_equal(state.Iref, 0.0)
+        assert_matches(state.Iref, 0.0)
 
     def test_igrad1_zero_slots(self):
         K = 3
@@ -109,7 +110,7 @@ class TestInitialiseDenovoState:
         # H=2 with pseudo_halfsets, pad=1 -> (2K, 16, 16, 9)
         assert state.Igrad1.shape == (2 * K, 16, 16, 9)
         assert state.Igrad1.dtype == np.complex128
-        np.testing.assert_array_equal(state.Igrad1, 0.0)
+        assert_matches(state.Igrad1, 0.0)
 
     def test_igrad1_without_pseudo_halfsets_k_slots(self):
         K = 3
@@ -128,7 +129,7 @@ class TestInitialiseDenovoState:
         assert state.Igrad2.shape == (2, 16, 16, 9)
         assert state.Igrad2.dtype == np.complex128
         expected = MOM2_INIT_CONSTANT + 1j * MOM2_INIT_CONSTANT
-        assert np.all(state.Igrad2 == expected)
+        assert matches(state.Igrad2, expected)
 
     def test_pdf_class_uniform(self):
         for K in [1, 2, 5]:
@@ -196,9 +197,9 @@ class TestSeedNoiseFromMavg:
         state = initialise_denovo_state(ori_size=16, pixel_size=1.0, K=1, nr_iter=10, n_directions=12)
         sigma = np.arange(9, dtype=np.float64).reshape(1, 9) * 0.1
         new_state = seed_noise_from_mavg(state, sigma)
-        np.testing.assert_array_equal(new_state.sigma2_noise, sigma)
+        assert_matches(new_state.sigma2_noise, sigma)
         # Original unchanged
-        np.testing.assert_array_equal(state.sigma2_noise, 0.0)
+        assert_matches(state.sigma2_noise, 0.0)
 
     def test_shape_mismatch_raises(self):
         state = initialise_denovo_state(
@@ -247,8 +248,8 @@ class TestInitialiseDataVsPrior:
         avg_sigma2_shell1 = (state.sigma2_noise[0, 1] + state.sigma2_noise[1, 1]) / 2.0
         expected_dvp_shell1 = 200.0 * 0.5 / avg_sigma2_shell1 / 2.0 * expected_tau2_c0
         assert out.data_vs_prior_class[0, 1] == pytest.approx(expected_dvp_shell1, rel=1e-12)
-        np.testing.assert_array_equal(state.tau2_class, 0.0)
-        np.testing.assert_array_equal(state.data_vs_prior_class, 0.0)
+        assert_matches(state.tau2_class, 0.0)
+        assert_matches(state.data_vs_prior_class, 0.0)
 
     def test_reference_spectrum_uses_relion_volume_frame(self):
         from relax.vdam.init import _relion_power_spectrum_3d
@@ -293,18 +294,18 @@ class TestMinvsigma2DcZero:
     def test_1d_input(self):
         sigma = np.array([1.0, 2.0, 4.0, 8.0])
         out = minvsigma2_with_dc_zero(sigma)
-        np.testing.assert_array_equal(out, np.array([0.0, 0.5, 0.25, 0.125]))
+        assert_matches(out, np.array([0.0, 0.5, 0.25, 0.125]))
 
     def test_2d_input(self):
         sigma = np.array([[1.0, 2.0, 4.0], [1.0, 1.0, 0.5]])
         out = minvsigma2_with_dc_zero(sigma)
         expected = np.array([[0.0, 0.5, 0.25], [0.0, 1.0, 2.0]])
-        np.testing.assert_array_equal(out, expected)
+        assert_matches(out, expected)
 
     def test_zero_sigma_stays_zero(self):
         sigma = np.array([1.0, 0.0, 0.5])
         out = minvsigma2_with_dc_zero(sigma)
-        np.testing.assert_array_equal(out, np.array([0.0, 0.0, 2.0]))
+        assert_matches(out, np.array([0.0, 0.0, 2.0]))
 
     def test_invalid_ndim(self):
         with pytest.raises(ValueError):
@@ -315,7 +316,7 @@ class TestHermitianWeightsRelion:
     def test_all_ones(self):
         w = hermitian_weights_relion(8)
         assert w.shape == (8, 5)
-        np.testing.assert_array_equal(w, 1.0)
+        assert_matches(w, 1.0)
 
     def test_invalid_size(self):
         with pytest.raises(ValueError):
@@ -327,16 +328,16 @@ class TestFourierCropHalf:
         rng = np.random.default_rng(0)
         img = rng.standard_normal((8, 5)) + 1j * rng.standard_normal((8, 5))
         out = fourier_crop_half(img, current_size=8)
-        np.testing.assert_array_equal(out, img)
+        assert_matches(out, img)
 
     def test_crop_to_half(self):
         img = np.arange(8 * 5).reshape(8, 5).astype(np.complex128)
         out = fourier_crop_half(img, current_size=4)
         assert out.shape == (4, 3)
         # First half: rows [0, 1]  (half_cs = 2, so rows [0:2])
-        np.testing.assert_array_equal(out[:2, :3], img[:2, :3])
+        assert_matches(out[:2, :3], img[:2, :3])
         # Second half: rows [6, 7] (out_y - half_cs = 2, ori_size - 2 = 6)
-        np.testing.assert_array_equal(out[2:, :3], img[6:, :3])
+        assert_matches(out[2:, :3], img[6:, :3])
 
     def test_invalid_current_size(self):
         img = np.zeros((8, 5), dtype=np.complex128)

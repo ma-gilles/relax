@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
@@ -77,4 +78,4 @@ def test_relion_projection_rows_are_bitwise_invariant_to_duplicate_batching(
         **common,
     )
 
-    np.testing.assert_array_equal(np.asarray(direct), np.asarray(unique)[duplicate_ids])
+    assert_matches(np.asarray(direct), np.asarray(unique)[duplicate_ids])

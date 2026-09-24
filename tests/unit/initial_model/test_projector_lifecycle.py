@@ -8,6 +8,7 @@ from relax.vdam import dense_adapter as adapter
 from relax.vdam import iteration_loop as loop
 from relax.vdam.init import initialise_denovo_state
 from recovar.utils.helpers import recovar_volume_to_relion
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -39,7 +40,7 @@ def test_shared_projector_matches_both_original_native_calls(
     )
     assert len(builds) == classes
     with np.load(tmp_path / "iter000_relion_projector_half.npz") as dumped:
-        np.testing.assert_array_equal(dumped["projector_half"], inputs[2])
+        assert_matches(dumped["projector_half"], inputs[2])
         assert int(dumped["current_size"]) == current_size
         assert int(dumped["padding_factor"]) == padding
     expected_half = []
@@ -56,13 +57,13 @@ def test_shared_projector_matches_both_original_native_calls(
         ))
         assert inputs[3] == radius
     assert inputs[2].dtype == np.asarray(expected_half).dtype
-    np.testing.assert_array_equal(inputs[2], np.asarray(expected_half))
+    assert_matches(inputs[2], np.asarray(expected_half))
     assert power.dtype == np.asarray(expected_power).dtype
-    np.testing.assert_array_equal(power, np.asarray(expected_power))
+    assert_matches(power, np.asarray(expected_power))
     old_inputs = adapter.prepare_relion_projector_class_inputs(state, padding_factor=padding)
     for actual, expected in zip(inputs, old_inputs):
-        np.testing.assert_array_equal(actual, expected)
-    np.testing.assert_array_equal(state.Iref, references_before)
+        assert_matches(actual, expected)
+    assert_matches(state.Iref, references_before)
 
 
 @pytest.mark.parametrize("backend", ["native", "jax"])
@@ -84,10 +85,10 @@ def test_context_builds_once_and_consumes_once(monkeypatch, backend):
         state = replace(state, iter=iteration, Iref=state.Iref + 1)
         before = state.tau2_class.copy()
         refreshed = ctx.refresh(state, padding_factor=1, interpolator=1)
-        np.testing.assert_array_equal(state.tau2_class, before)
-        np.testing.assert_array_equal(refreshed.tau2_class, np.full((1, 5), iteration))
+        assert_matches(state.tau2_class, before)
+        assert_matches(refreshed.tau2_class, np.full((1, 5), iteration))
         inputs = ctx.take(refreshed, padding_factor=1)
-        np.testing.assert_array_equal(inputs[2], state.Iref)
+        assert_matches(inputs[2], state.Iref)
         assert ctx.take(refreshed, padding_factor=1) is None
         assert ctx.reference is None
     assert len(calls) == 2

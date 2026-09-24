@@ -30,6 +30,7 @@ from relax.vdam.mstep_single_class import (
     vdam_m_step_single_class,
 )
 from relax.vdam.state import VdamAccumulator
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -116,7 +117,7 @@ def test_native_second_moment_replay_is_explicit_iteration_gated_and_exact(tmp_p
     assert vdam_mstep_replay._maybe_replay_native_second_moment(
         computed, iteration=1, class_idx=0
     ) is computed
-    np.testing.assert_array_equal(
+    assert_matches(
         vdam_mstep_replay._maybe_replay_native_second_moment(computed, iteration=2, class_idx=0),
         replay,
     )
@@ -130,7 +131,7 @@ def test_native_second_moment_replay_is_explicit_iteration_gated_and_exact(tmp_p
     monkeypatch.setenv(vdam_mstep_replay.VDAM_NATIVE_SECOND_MOMENT_REPLAY_ENV, str(replay_all_path))
     monkeypatch.setenv(vdam_mstep_replay.VDAM_NATIVE_SECOND_MOMENT_REPLAY_ITER_ENV, "all")
     for iteration in (1, 2):
-        np.testing.assert_array_equal(
+        assert_matches(
             vdam_mstep_replay._maybe_replay_native_second_moment(
                 computed, iteration=iteration, class_idx=0
             ),
@@ -158,8 +159,8 @@ def test_native_first_moment_replay_supports_all_iterations_and_halfsets(
         replay_h0, replay_h1 = vdam_mstep_replay._maybe_replay_native_first_moments(
             computed, computed, iteration=iteration, class_idx=0
         )
-        np.testing.assert_array_equal(replay_h0, expected[iteration, 0])
-        np.testing.assert_array_equal(replay_h1, expected[iteration, 1])
+        assert_matches(replay_h0, expected[iteration, 0])
+        assert_matches(replay_h1, expected[iteration, 1])
 
 
 def test_native_bpref_replay_supports_all_iterations_and_halfsets(tmp_path, monkeypatch):
@@ -200,8 +201,8 @@ def test_native_bpref_replay_supports_all_iterations_and_halfsets(tmp_path, monk
             *accumulators, iteration=iteration, class_idx=0
         )
         for halfset, replay in enumerate((replay_h0, replay_h1)):
-            np.testing.assert_array_equal(replay.data, expected[iteration, halfset][0])
-            np.testing.assert_array_equal(replay.weight, expected[iteration, halfset][1])
+            assert_matches(replay.data, expected[iteration, halfset][0])
+            assert_matches(replay.weight, expected[iteration, halfset][1])
 
 
 def test_native_reference_input_replay_is_explicit_iteration_gated_and_exact(
@@ -219,7 +220,7 @@ def test_native_reference_input_replay_is_explicit_iteration_gated_and_exact(
     assert vdam_mstep_replay._maybe_replay_native_reference_input(
         computed, iteration=1, class_idx=0
     ) is computed
-    np.testing.assert_array_equal(
+    assert_matches(
         vdam_mstep_replay._maybe_replay_native_reference_input(
             computed, iteration=2, class_idx=0
         ),
@@ -386,7 +387,7 @@ class TestMstepSingleClass:
         # At least some cells were updated (differ from 1+1j)
         mask_updated = new_state.Igrad2[0] != (1.0 + 1.0j)
         assert mask_updated.any(), "getSecondMoment did not update any cells"
-        np.testing.assert_array_equal(new_state.Igrad2[0].imag[mask_updated], 0.0)
+        assert_matches(new_state.Igrad2[0].imag[mask_updated], 0.0)
         assert np.all(new_state.Igrad2[0].real[mask_updated] >= 0.0)
         assert np.any(new_state.data_vs_prior_class[0] > 1.0)
 
@@ -423,12 +424,12 @@ class TestMstepSingleClass:
             tau2_fudge_factor=1.0,
         )
 
-        np.testing.assert_array_equal(new_state.Iref, iref_before)
-        np.testing.assert_array_equal(new_state.Igrad1, igrad1_before)
-        np.testing.assert_array_equal(new_state.Igrad2, igrad2_before)
-        np.testing.assert_array_equal(new_state.tau2_class, tau2_before)
-        np.testing.assert_array_equal(new_state.sigma2_class, sigma2_before)
-        np.testing.assert_array_equal(new_state.data_vs_prior_class, data_vs_prior_before)
+        assert_matches(new_state.Iref, iref_before)
+        assert_matches(new_state.Igrad1, igrad1_before)
+        assert_matches(new_state.Igrad2, igrad2_before)
+        assert_matches(new_state.tau2_class, tau2_before)
+        assert_matches(new_state.sigma2_class, sigma2_before)
+        assert_matches(new_state.data_vs_prior_class, data_vs_prior_before)
 
     def test_input_state_unchanged(self, bind):
         ori = 16
@@ -450,11 +451,11 @@ class TestMstepSingleClass:
             grad_current_stepsize=0.5,
             tau2_fudge_factor=1.0,
         )
-        np.testing.assert_array_equal(state.Iref, iref_before)
-        np.testing.assert_array_equal(state.Igrad1, igrad1_before)
-        np.testing.assert_array_equal(state.Igrad2, igrad2_before)
-        np.testing.assert_array_equal(state.tau2_class, tau2_before)
-        np.testing.assert_array_equal(state.data_vs_prior_class, data_vs_prior_before)
+        assert_matches(state.Iref, iref_before)
+        assert_matches(state.Igrad1, igrad1_before)
+        assert_matches(state.Igrad2, igrad2_before)
+        assert_matches(state.tau2_class, tau2_before)
+        assert_matches(state.data_vs_prior_class, data_vs_prior_before)
 
     def test_pseudo_halfsets_mismatch_raises(self, bind):
         state = initialise_denovo_state(

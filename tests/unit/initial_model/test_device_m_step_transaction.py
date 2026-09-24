@@ -4,6 +4,7 @@ from copy import deepcopy
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from helpers.vdam import relative_metrics
 
 from relax.relion.relion_vdam_mstep import relion_vdam_m_step_device, relion_vdam_m_step_host
@@ -100,21 +101,21 @@ def _assert_case(bind, case):
         metrics = relative_metrics(expected[key], actual[key])
         # Existing native-projector FP64 contract; never widened for this port.
         assert np.all(metrics < 1e-12), (key, metrics)
-    np.testing.assert_array_equal(actual["tau2"], case["tau2"])
+    assert_matches(actual["tau2"], case["tau2"])
     for key in case:
         if isinstance(case[key], np.ndarray):
-            np.testing.assert_array_equal(case[key], before[key], err_msg=key)
+            assert_matches(case[key], before[key], err_msg=key)
     m = padding * size
     coord = np.arange(m) - m // 2
     r2 = coord[:, None, None] ** 2 + coord[None, :, None] ** 2 + np.arange(m // 2 + 1)[None, None, :] ** 2
     outside = r2 >= (padding * case["r_max"]) ** 2
-    np.testing.assert_array_equal(actual["mom1_h0"][outside], case["mom1_h0"][outside])
-    np.testing.assert_array_equal(actual["mom2"][outside], case["mom2"][outside])
+    assert_matches(actual["mom1_h0"][outside], case["mom1_h0"][outside])
+    assert_matches(actual["mom2"][outside], case["mom2"][outside])
     if pseudo:
-        np.testing.assert_array_equal(actual["mom2"].imag[~outside], 0.0)
+        assert_matches(actual["mom2"].imag[~outside], 0.0)
     else:
-        np.testing.assert_array_equal(actual["mom2"], case["mom2"])
-        np.testing.assert_array_equal(actual["mom1_noise_power"], 0.0)
+        assert_matches(actual["mom2"], case["mom2"])
+        assert_matches(actual["mom1_noise_power"], 0.0)
 
 
 def test_native_branch_certificate_real_only_and_serial_order(bind):
@@ -209,7 +210,7 @@ def test_host_backend_capability_attestation(bind, monkeypatch, size, padding, e
         if expected[key] is None:
             assert actual[key] is None
         elif expected_backend == "native":
-            np.testing.assert_array_equal(actual[key], expected[key])
+            assert_matches(actual[key], expected[key])
         else:
             assert np.all(relative_metrics(actual[key], expected[key]) < 1e-12)
 

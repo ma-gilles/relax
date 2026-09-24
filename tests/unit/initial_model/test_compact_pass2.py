@@ -7,6 +7,7 @@ from typing import NamedTuple
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from helpers.mstep_reference import numpy_relion_f32_mstep_sums
 
 from relax.helpers.types import make_relion_stats
@@ -47,14 +48,14 @@ def test_sparse_residual_mstep_matches_vdam_formula():
         * np.asarray(projected_reference)
         * np.asarray(ctf2_over_noise)[:, None, :]
     )
-    np.testing.assert_allclose(actual, expected, rtol=0.0, atol=0.0)
+    assert_matches(actual, expected)
     from_mass = subtract_projected_reference_from_sparse_mstep_rotation_sums(
         summed,
         posterior_mass,
         projected_reference,
         ctf2_over_noise,
     )
-    np.testing.assert_allclose(from_mass, expected, rtol=0.0, atol=0.0)
+    assert_matches(from_mass, expected)
 
 
 def test_compact_mstep_can_preserve_relion_translation_reduction(monkeypatch):
@@ -87,9 +88,9 @@ def test_compact_mstep_can_preserve_relion_translation_reduction(monkeypatch):
         shifted,
         ctf2,
     )
-    np.testing.assert_array_equal(summed, expected_summed)
-    np.testing.assert_array_equal(weight, expected_weight)
-    np.testing.assert_array_equal(probs_sum_t, jnp.sum(dense_probs, axis=-1))
+    assert_matches(summed, expected_summed)
+    assert_matches(weight, expected_weight)
+    assert_matches(probs_sum_t, jnp.sum(dense_probs, axis=-1))
 
 
 class _StatsResult(NamedTuple):

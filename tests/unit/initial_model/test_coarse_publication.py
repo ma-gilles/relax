@@ -12,6 +12,7 @@ from relax.scoring.coarse_gemm_hybrid import (
     assemble_coarse_gemm_hybrid_compact_scores_f32,
 )
 from relax.scoring.coarse_partition import CoarseRowResult
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -84,12 +85,12 @@ def publish(groups, **kwargs):
 def test_mixed_publication_restores_source_ids_and_excludes_poisoned_padding(one_winner):
     result = publish(mixed_groups())
     for key in ("winner", "best_pose", "support_ids"):
-        np.testing.assert_array_equal(result[key], [35, 5, 4])
-    np.testing.assert_array_equal(result["support_offsets"], [0, 1, 2, 3])
+        assert_matches(result[key], [35, 5, 4])
+    assert_matches(result["support_offsets"], [0, 1, 2, 3])
     for key in ("n_significant", "cutoff_count", "pmax", "sum_weight", "threshold"):
-        np.testing.assert_array_equal(result[key], [1, 1, 1])
+        assert_matches(result[key], [1, 1, 1])
     for key in ("best_score", "raw_max", "global_log_z"):
-        np.testing.assert_array_equal(result[key], [0.0, 0.0, 0.0])
+        assert_matches(result[key], [0.0, 0.0, 0.0])
     assert len(result) == 12
 
 
@@ -156,7 +157,7 @@ def test_cuda_publication_restores_all_fields_and_dtypes(packed_one_winner):
     assert actual.keys() == expected.keys()
     for key in expected:
         assert actual[key].dtype == expected[key].dtype, key
-        np.testing.assert_array_equal(actual[key], expected[key], err_msg=key)
+        assert_matches(actual[key], expected[key], err_msg=key)
 
 
 @pytest.mark.parametrize("count,capacity", [(0, 0), (1, 1), (3, 4), (17, 32), (33, 40), (40, 40)])
@@ -168,7 +169,7 @@ def test_packed_transfer_uses_bounded_capacity(monkeypatch, count, capacity):
         return value
 
     monkeypatch.setattr(pub.jax, "device_get", transfer)
-    np.testing.assert_array_equal(pub._packed_support_prefix(np.arange(40, dtype=np.int32), count), np.arange(count))
+    assert_matches(pub._packed_support_prefix(np.arange(40, dtype=np.int32), count), np.arange(count))
     assert transfers == ([] if count == 0 else [capacity])
 
 
@@ -227,11 +228,11 @@ def test_complete_cuda_publication_matches_existing_gpu_path(monkeypatch, ties):
     for key, want in reference.items():
         got = candidate[key]
         assert got.dtype == want.dtype, key
-        np.testing.assert_array_equal(got, want, err_msg=key)
+        assert_matches(got, want, err_msg=key)
         if want.dtype.kind == "f":
-            np.testing.assert_array_equal(got.view(np.uint8), want.view(np.uint8), err_msg=key)
+            assert_matches(got, want, err_msg=key)
     if ties:
-        np.testing.assert_array_equal(np.diff(candidate["support_offsets"]), [32, 64, 32])
+        assert_matches(np.diff(candidate["support_offsets"]), [32, 64, 32])
 
 
 @pytest.mark.parametrize("first_group", ["mixed", "all_overflow", "invalid_certificate", "small_grid"])
@@ -347,7 +348,7 @@ def test_actual_significance_engine_publishes_identical_complete_state(
     def partition(*args, **kwargs):
         partition_calls.append(kwargs)
         assert kwargs["actual_image_count"] == 3
-        np.testing.assert_array_equal(kwargs["translation_log_prior"], np.zeros((3, 2), np.float32))
+        assert_matches(kwargs["translation_log_prior"], np.zeros((3, 2), np.float32))
         if len(partition_calls) > 1:
             return all_selected_plan, (all_selected,)
         return (plan, groups) if first_group == "mixed" else (full_plan, (full_group,))
@@ -386,15 +387,15 @@ def test_actual_significance_engine_publishes_identical_complete_state(
     assert len(partition_calls) == (0 if first_group == "small_grid" else 1 if first_group == "all_overflow" else 2)
     for i in range(4):
         assert candidate[i].dtype == control[i].dtype
-        np.testing.assert_array_equal(candidate[i], control[i])
+        assert_matches(candidate[i], control[i])
     for actual, expected in zip(candidate[4][0], control[4][0], strict=True):
         assert actual.dtype == expected.dtype == np.int32
-        np.testing.assert_array_equal(actual, expected)
+        assert_matches(actual, expected)
     fields = [key for key, value in control[5].items() if isinstance(value, np.ndarray)]
     assert "relion_f32_sum_weight" in fields and "normalization_log_z" in fields
     for key in fields:
         assert candidate[5][key].dtype == control[5][key].dtype
-        np.testing.assert_array_equal(candidate[5][key], control[5][key])
+        assert_matches(candidate[5][key], control[5][key])
     audit = candidate[5]["coarse_gaussian_gemm_hybrid"]
     assert audit["row_partition"]["mixed_input_batch_count"] == int(first_group == "mixed")
     assert audit["row_partition"]["input_batch_count"] == 2

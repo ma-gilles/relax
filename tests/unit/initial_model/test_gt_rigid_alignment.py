@@ -6,6 +6,7 @@ import sys
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from scipy.spatial.transform import Rotation
 
 from relax.diagnostics import gt_registration as rigid
@@ -53,12 +54,12 @@ def test_forward_inverse_integer_transform_is_exact(hand):
         destination = (6 + rotation @ mirror @ (index - 6) + translation).astype(int)
         expected[tuple(destination)] = source[tuple(index)]
     actual = rigid.apply_rigid_volume_transform(source, rotation, translation, mirror_x=hand, order=0)
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
     inverse = (rotation @ mirror).T
     restored = rigid.apply_rigid_volume_transform(
         actual, inverse @ mirror, -inverse @ translation, mirror_x=hand, order=0
     )
-    np.testing.assert_array_equal(restored, source)
+    assert_matches(restored, source)
 
 
 def test_continuous_true_shift_beats_interpolation_knot(save):
@@ -99,7 +100,7 @@ def test_known_rigid_fit_and_no_mutation(case, hand, save):
     original = [v.copy() for v in (moving, reference, grid)]
     result = rigid.align_volume_rigid_to_reference(moving, reference, grid)
     for current, before in zip((moving, reference, grid), original):
-        np.testing.assert_array_equal(current, before)
+        assert_matches(current, before)
     expected_a, expected_t = transform.T, -transform.T @ translation
     actual_a = result.rotation_matrix @ np.diag([-1 if result.mirror_x else 1, 1, 1])
     hand_correct = result.mirror_x == hand
@@ -131,14 +132,14 @@ def test_known_rigid_fit_and_no_mutation(case, hand, save):
         mirror_x=result.mirror_x,
         order=result.receipt.controls.final_interpolation_order,
     )
-    np.testing.assert_array_equal(reapplied, result.aligned_volume)
+    assert_matches(reapplied, result.aligned_volume)
     transport = rigid.RigidVolumeTransform.from_alignment(
         result,
         volume_shape=reference.shape,
         voxel_size=2.5,
         gt_sha256="a" * 64,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         transport.apply(moving, voxel_size=2.5, gt_sha256="a" * 64),
         result.aligned_volume,
     )
@@ -229,8 +230,8 @@ def test_transform_roundtrip_identity_and_apply_are_exact(transform, monkeypatch
     rotation = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]])
     target = 6 + rotation @ np.diag([-1, 1, 1]) @ (np.array([3, 4, 7]) - 6) + np.array([1, -2, 1])
     expected[tuple(target)] = 2
-    np.testing.assert_array_equal(restored.apply(volume, voxel_size=2.5, gt_sha256="a" * 64), expected)
-    np.testing.assert_array_equal(volume[3, 4, 7], 2)
+    assert_matches(restored.apply(volume, voxel_size=2.5, gt_sha256="a" * 64), expected)
+    assert_matches(volume[3, 4, 7], 2)
     changed = dataclasses.replace(transform, translation_voxels=(1.0, -1.0, 1.0))
     assert changed.identity_sha256 != transform.identity_sha256
 

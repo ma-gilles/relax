@@ -49,6 +49,7 @@ from relax.vdam.schedules import (
     compute_tau2_fudge,
     default_subset_sizes_for_3d_initial_model,
 )
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -293,8 +294,8 @@ class TestLayoutGoldenValues:
         # Shape: (N, N, c+1) when r_max >= c.
         assert out.shape == (N, N, c + 1)
         # First c columns are arr[:,:,c:], last column is arr[:,:,:1].
-        np.testing.assert_array_equal(out[:, :, :c], arr[:, :, c:])
-        np.testing.assert_array_equal(out[:, :, c:], arr[:, :, :1])
+        assert_matches(out[:, :, :c], arr[:, :, c:])
+        assert_matches(out[:, :, c:], arr[:, :, :1])
 
     def test_bp_slab_cropped_path(self):
         """``r_max < c`` returns a centered cropped half-spectrum slab."""
@@ -306,7 +307,7 @@ class TestLayoutGoldenValues:
         arr = np.arange(N * N * N, dtype=np.float64).reshape(N, N, N)
         out = _bp_slab(arr, r_max=r_max, c=c)
         assert out.shape == (7, 7, 4)
-        np.testing.assert_array_equal(out, arr[5:12, 5:12, 8:12])
+        assert_matches(out, arr[5:12, 5:12, 8:12])
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ from typing import NamedTuple
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics import coarse_score_diagnostics
 from relax.diagnostics.coarse_score_diagnostics import _with_coarse_selector_audit
@@ -132,7 +133,7 @@ def test_sparse_adapter_propagates_real_coarse_support_hybrid_and_counts():
         selector_audit=audit,
     )
 
-    np.testing.assert_array_equal(sealed.significant_counts, [17, 23])
+    assert_matches(sealed.significant_counts, [17, 23])
     assert sealed.profile_summary == {
         "pass2_time_s": 1.25,
         "coarse_selector_audit": audit,

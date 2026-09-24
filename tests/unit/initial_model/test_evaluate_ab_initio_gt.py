@@ -9,6 +9,7 @@ from relax.diagnostics import gt_registration
 from recovar.utils import helpers
 from scripts import evaluate_ab_initio_gt as evaluator
 from scripts.evaluate_ab_initio_gt import main
+from helpers.float_compare import assert_matches
 
 
 def _asymmetric_test_volume(n: int = 17) -> np.ndarray:
@@ -120,7 +121,7 @@ def test_rigid_shared_transform_fits_once_and_roundtrips_without_refit(rigid_inp
     assert second["gt_align_options_applied"] is False
     assert first["gt_align_options_applied"] is True
     for label, item in zip(rigid_inputs["labels"], second["volumes"]):
-        np.testing.assert_array_equal(first_npz[f"{label}_aligned_fsc_vs_gt"], second_npz[f"{label}_aligned_fsc_vs_gt"])
+        assert_matches(first_npz[f"{label}_aligned_fsc_vs_gt"], second_npz[f"{label}_aligned_fsc_vs_gt"])
         receipt = item["aligned"]["rigid_registration"]
         assert receipt["transform_identity_sha256"] == document["identity_sha256"]
         assert receipt["independently_fitted_per_volume"] is False

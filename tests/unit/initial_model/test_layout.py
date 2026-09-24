@@ -15,6 +15,7 @@ import pytest
 from helpers.vdam import bpref_to_run_em_output
 
 from relax.vdam.layout import relion_x_public_output_to_bpref, run_em_output_to_bpref
+from helpers.float_compare import assert_matches
 
 
 def _make_full_with_centered_slab(ori_size: int, r_max: int, slab: np.ndarray) -> np.ndarray:
@@ -86,7 +87,7 @@ def test_run_em_output_to_bpref_preserves_typical_weights():
 
     _bp_data, bp_weight = run_em_output_to_bpref(Fy, Fc, ori_size, r_max)
 
-    np.testing.assert_array_equal(bp_weight, raw_real.astype(np.float64))
+    assert_matches(bp_weight, raw_real.astype(np.float64))
 
 
 def test_run_em_output_to_bpref_clamp_threshold_boundary():
@@ -161,8 +162,8 @@ def test_run_em_output_to_bpref_round_trip_on_realistic_data():
     Ft_y, Ft_ctf = bpref_to_run_em_output(bp_data, bp_weight, ori_size, r_max)
     bp_data_rt, bp_weight_rt = run_em_output_to_bpref(Ft_y, Ft_ctf, ori_size, r_max)
 
-    np.testing.assert_array_equal(bp_data, bp_data_rt, "data round-trip lossy")
-    np.testing.assert_array_equal(bp_weight, bp_weight_rt, "weight round-trip lossy")
+    assert_matches(bp_data, bp_data_rt, "data round-trip lossy")
+    assert_matches(bp_weight, bp_weight_rt, "weight round-trip lossy")
 
 
 @pytest.mark.parametrize(("ori_size", "r_max"), [(128, 19), (256, 28)])
@@ -184,8 +185,8 @@ def test_run_em_output_to_bpref_accepts_shared_compact_backprojector_cube(ori_si
     )
 
     center = compact_size // 2
-    np.testing.assert_array_equal(bp_data, data_cube[:, :, center:])
-    np.testing.assert_array_equal(bp_weight, weight_cube[:, :, center:].astype(np.float64))
+    assert_matches(bp_data, data_cube[:, :, center:])
+    assert_matches(bp_weight, weight_cube[:, :, center:].astype(np.float64))
     assert bp_data.shape == (compact_size, compact_size, r_max + 2)
 
 
@@ -219,8 +220,8 @@ def test_relion_x_public_output_to_bpref_exactly_inverts_shared_public_layout():
         padding_factor=1,
     )
 
-    np.testing.assert_array_equal(actual_data, bp_data.astype(np.complex128))
-    np.testing.assert_array_equal(actual_weight, bp_weight.astype(np.float64))
+    assert_matches(actual_data, bp_data.astype(np.complex128))
+    assert_matches(actual_weight, bp_weight.astype(np.float64))
 
 
 def test_run_em_output_to_bpref_rejects_unknown_compact_accumulator_shape():

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from scripts import run_vdam_worker_private_host_replay as worker_private
 
@@ -34,8 +35,8 @@ def test_private_bundle_maps_each_group_worker_pair_to_one_accumulator() -> None
     assert packed["reconstruction_group_count"] == 6
     assert packed["reconstruction_group_ids"].tolist() == [2, 3, 1, 5]
     assert packed["parallel_worker_replay"] == 1
-    assert np.array_equal(packed["data_real_volume"], private.reshape(6, 5))
-    assert np.array_equal(source["reconstruction_group_ids"], [0, 1, 0, 1])
+    assert matches(packed["data_real_volume"], private.reshape(6, 5))
+    assert matches(source["reconstruction_group_ids"], [0, 1, 0, 1])
 
 
 def test_private_bundle_rejects_worker_outside_topology() -> None:
@@ -166,9 +167,9 @@ def test_native_panel_remap_places_active_rows_at_exact_native_eulers() -> None:
     assert int(result["rotation_count"]) == 5
     assert result["worker_lane_ids"].tolist() == [3]
     assert result["rotation_replay_counts"].tolist() == [5]
-    assert np.array_equal(result["projector_eulers"][0], native_eulers)
-    assert np.array_equal(result["posterior_over_weight_norm"][0, 0], [0.75, 0.0])
-    assert np.array_equal(result["posterior_over_weight_norm"][0, 4], [0.25, 0.5])
+    assert matches(result["projector_eulers"][0], native_eulers)
+    assert matches(result["posterior_over_weight_norm"][0, 0], [0.75, 0.0])
+    assert matches(result["posterior_over_weight_norm"][0, 4], [0.25, 0.5])
     assert np.count_nonzero(result["posterior_over_weight_norm"][0, 1:4]) == 0
 
 
@@ -257,8 +258,8 @@ def test_read_native_panel_is_fail_closed_and_preserves_float32(tmp_path) -> Non
 
     assert panel["orientation_count"] == 2
     assert panel["translation_count"] == 3
-    assert np.array_equal(panel["eulers"], eulers.reshape(2, 9))
-    assert np.array_equal(panel["weights"], weights.reshape(2, 3))
+    assert matches(panel["eulers"], eulers.reshape(2, 9))
+    assert matches(panel["weights"], weights.reshape(2, 3))
 
 
 def test_merge_callbacks_removes_bucket_barrier_in_native_launch_order() -> None:

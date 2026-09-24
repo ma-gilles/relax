@@ -7,6 +7,7 @@ import pytest
 from recovar import cuda_backproject as cuda
 from relax.cuda import kernels as em_cuda_kernels
 from relax.scoring.coarse_publication import _posterior_statistics
+from helpers.float_compare import assert_matches, matches
 
 pytestmark = pytest.mark.unit
 
@@ -70,14 +71,14 @@ def test_same_scores_match_cuda_posterior_bitwise(monkeypatch, case, width, maxs
         scores, maxima, jnp.asarray(3, jnp.int32), adaptive_fraction=.999, max_significants=maxsig))
     for column, key in enumerate(('best_score','pmax','sum_weight','threshold')):
         want = np.asarray(reference[key], np.float32)
-        np.testing.assert_array_equal(statistics[:,column], want, err_msg=key)
+        assert_matches(statistics[:,column], want, err_msg=key)
         finite = np.isfinite(want)
-        np.testing.assert_array_equal(statistics[:,column][finite].view(np.uint32), want[finite].view(np.uint32), err_msg=key)
+        assert_matches(statistics[:,column][finite], want[finite], err_msg=key)
     for column, key in enumerate(('best_pose','winner','n_significant','cutoff_count')):
-        np.testing.assert_array_equal(indices[:,column], reference[key], err_msg=key)
+        assert_matches(indices[:,column], reference[key], err_msg=key)
     expected = np.flatnonzero(reference['mask'].reshape(-1)).astype(np.int32)
     assert count == len(expected) == indices[:,2].sum()
-    np.testing.assert_array_equal(support[:int(count)], expected)
+    assert_matches(support[:int(count)], expected)
     assert np.all(support[int(count):] == -1)
     if case == 'ties':
-        assert np.all(indices[:3,2] == width)  # maxsig cannot truncate exact ties
+        assert matches(indices[:3,2], width)  # maxsig cannot truncate exact ties

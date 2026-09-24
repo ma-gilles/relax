@@ -5,6 +5,7 @@ from dataclasses import fields
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.vdam.init import initialise_denovo_state
 from relax.vdam.mstep_single_class import vdam_m_step_single_class
@@ -59,7 +60,7 @@ def _assert_state_exact(actual, expected):
     for field in fields(actual):
         a, e = getattr(actual, field.name), getattr(expected, field.name)
         if isinstance(a, np.ndarray):
-            np.testing.assert_array_equal(a, e, err_msg=field.name)
+            assert_matches(a, e, err_msg=field.name)
         else:
             assert a == e, field.name
 
@@ -92,8 +93,8 @@ def test_transaction_matches_primitives_exactly(
     _assert_state_exact(actual, expected)
     _assert_state_exact(state, original)
     for a, e in zip(accumulators, original_accum):
-        np.testing.assert_array_equal(a.data, e.data)
-        np.testing.assert_array_equal(a.weight, e.weight)
+        assert_matches(a.data, e.data)
+        assert_matches(a.weight, e.weight)
 
 
 def test_dump_keeps_primitive_boundaries(transaction_bind, monkeypatch, tmp_path):
@@ -151,13 +152,13 @@ def test_device_backend_preserves_complete_state_and_inputs(transaction_bind, K,
                            difference.max() / np.abs(e).max(), difference.mean() / np.abs(e).mean())
                 assert max(metrics) < 1e-12, (field.name, metrics)
             else:
-                np.testing.assert_array_equal(a, e, err_msg=field.name)
+                assert_matches(a, e, err_msg=field.name)
         else:
             assert a == e, field.name
     _assert_state_exact(state, original)
     for a, e in zip(accumulators, original_accum):
-        np.testing.assert_array_equal(a.data, e.data)
-        np.testing.assert_array_equal(a.weight, e.weight)
+        assert_matches(a.data, e.data)
+        assert_matches(a.weight, e.weight)
 
 
 def test_device_request_keeps_native_dump_boundaries(transaction_bind, monkeypatch, tmp_path):

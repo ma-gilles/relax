@@ -5,6 +5,7 @@ from copy import deepcopy
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.relion.relion_vdam_mstep import relion_vdam_m_step_device, relion_vdam_m_step_host
 
@@ -51,20 +52,20 @@ def test_constant_reference_zero_update_and_dtype_contract(dtype):
         expected = np.complex64 if dtype == np.float32 else np.complex128
         assert result[key].dtype == np.dtype(expected), key
     # A constant map has only DC; zero stepsize preserves it through FFT/mask.
-    np.testing.assert_array_equal(result["iref"], case["reference_relion"])
-    np.testing.assert_array_equal(result["mom1_h0"], 0)
-    np.testing.assert_array_equal(result["mom1_h1"], 0)
-    np.testing.assert_array_equal(result["mom1_noise_power"], 0)
+    assert_matches(result["iref"], case["reference_relion"])
+    assert_matches(result["mom1_h0"], 0)
+    assert_matches(result["mom1_h1"], 0)
+    assert_matches(result["mom1_noise_power"], 0)
     assert result["sigma2"][0] == dtype(1)
     assert result["fourier_coverage"][0] == dtype(1)
     assert not result["_invalid_sigma2"]
     assert not result["_invalid_tau2"]
     # update_tau2_with_fsc=false must not round the authoritative F64 vector.
     assert result["tau2"].dtype == np.dtype(np.float64)
-    np.testing.assert_array_equal(result["tau2"], original["tau2"])
+    assert_matches(result["tau2"], original["tau2"])
     assert np.asarray(result["tau2"])[0] != float(np.float32(original["tau2"][0]))
     for key, value in original.items():
-        np.testing.assert_array_equal(case[key], value)
+        assert_matches(case[key], value)
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
@@ -91,7 +92,7 @@ def test_default_precision_is_explicit_float64():
     default = relion_vdam_m_step_device(**case)
     explicit = relion_vdam_m_step_device(**case, compute_dtype=jnp.float64)
     for key in default:
-        np.testing.assert_array_equal(default[key], explicit[key])
+        assert_matches(default[key], explicit[key])
 
 
 @pytest.mark.parametrize("dtype", [np.float16, np.int32, np.complex64, np.bool_])
@@ -142,4 +143,4 @@ def test_authoritative_negative_tau_cannot_round_away(dtype):
     case["tau2"][0] = -1e-100
     result = relion_vdam_m_step_device(**case, compute_dtype=dtype)
     assert result["_invalid_tau2"]
-    np.testing.assert_array_equal(result["tau2"], case["tau2"])
+    assert_matches(result["tau2"], case["tau2"])

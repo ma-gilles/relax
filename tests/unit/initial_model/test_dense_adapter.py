@@ -26,6 +26,7 @@ from relax.vdam.sparse_pass2_estep import (
     _resolve_sparse_pass1_current_size,
     _safe_coarse_significance_image_batch_size,
 )
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -244,8 +245,8 @@ def test_arrays_to_accumulators_inverts_relion_x_public_layout_without_projector
     )[0]
 
     data_scale, weight_scale = relion_bpref_frame_scales(state.ori_size)
-    np.testing.assert_array_equal(actual.data, bp_data.astype(np.complex128) * data_scale)
-    np.testing.assert_array_equal(actual.weight, bp_weight.astype(np.float64) * weight_scale)
+    assert_matches(actual.data, bp_data.astype(np.complex128) * data_scale)
+    assert_matches(actual.weight, bp_weight.astype(np.float64) * weight_scale)
 
 
 def test_arrays_to_accumulators_splits_grouped_halfsets():
@@ -356,12 +357,12 @@ def test_dense_initial_model_estep_runs_separate_k_class_calls_for_pseudo_halfse
 
     assert len(conversions) == 1
     assert conversions[0] is config.rotations
-    np.testing.assert_array_equal(config.rotations, np.eye(3, dtype=np.float32)[None])
+    assert_matches(config.rotations, np.eye(3, dtype=np.float32)[None])
     assert len(calls) == 2
     assert calls[0]["means_shape"] == (2, 8**3)
     assert calls[1]["means_shape"] == (2, 8**3)
-    np.testing.assert_array_equal(calls[0]["image_indices"], [0, 2])
-    np.testing.assert_array_equal(calls[1]["image_indices"], [1, 3])
+    assert_matches(calls[0]["image_indices"], [0, 2])
+    assert_matches(calls[1]["image_indices"], [1, 3])
     assert calls[0]["has_reconstruction_group_ids"] is False
     assert calls[1]["has_reconstruction_group_ids"] is False
     assert calls[0]["has_reconstruction_group_count"] is False
@@ -390,10 +391,10 @@ def test_dense_initial_model_estep_runs_separate_k_class_calls_for_pseudo_halfse
         result.meta["class_direction_posterior_sums"],
         np.asarray([[2.0, 2.0, 2.0], [4.0, 4.0, 4.0]]),
     )
-    np.testing.assert_array_equal(result.meta["selected_particle_ids"], [0, 2, 1, 3])
-    np.testing.assert_array_equal(result.meta["pose_assignments"], [0, 1, 0, 1])
-    np.testing.assert_array_equal(result.meta["class_assignments"], [0, 0, 0, 0])
-    np.testing.assert_array_equal(result.meta["best_pose_rotation_ids"], [0, 1, 0, 1])
+    assert_matches(result.meta["selected_particle_ids"], [0, 2, 1, 3])
+    assert_matches(result.meta["pose_assignments"], [0, 1, 0, 1])
+    assert_matches(result.meta["class_assignments"], [0, 0, 0, 0])
+    assert_matches(result.meta["best_pose_rotation_ids"], [0, 1, 0, 1])
     np.testing.assert_allclose(
         result.meta["best_pose_translations"],
         np.asarray([[0, 1], [2, 3], [0, 1], [2, 3]], dtype=np.float32),
@@ -491,8 +492,8 @@ def test_dense_initial_model_estep_slices_full_translation_prior_for_pseudo_half
     )
 
     assert len(calls) == 2
-    np.testing.assert_array_equal(calls[0], full_prior[[0, 2]])
-    np.testing.assert_array_equal(calls[1], full_prior[[1, 3]])
+    assert_matches(calls[0], full_prior[[0, 2]])
+    assert_matches(calls[1], full_prior[[1, 3]])
 
 
 def test_dense_initial_model_estep_meta_includes_optional_profiles(monkeypatch):
@@ -536,8 +537,8 @@ def test_dense_initial_model_estep_meta_includes_optional_profiles(monkeypatch):
     assert result.meta["halfset_0_profile_summary"] == {"em_time_s": 1.25, "batches": 1}
     np.testing.assert_allclose(result.meta["class_posterior_sums"], [0.0])
     np.testing.assert_allclose(result.meta["class_direction_posterior_sums"], [[1.0, 1.0, 1.0]])
-    np.testing.assert_array_equal(result.meta["selected_particle_ids"], [0, 1, 2, 3])
-    np.testing.assert_array_equal(result.meta["class_assignments"], [0, 0, 0, 0])
+    assert_matches(result.meta["selected_particle_ids"], [0, 1, 2, 3])
+    assert_matches(result.meta["class_assignments"], [0, 0, 0, 0])
     np.testing.assert_allclose(
         result.meta["max_posterior_per_image"],
         np.linspace(0.25, 0.75, 4, dtype=np.float32),
@@ -674,7 +675,7 @@ def test_relion_projector_to_dense_volume_embeds_cropped_slab(monkeypatch):
     assert captured["shape"] == (4, 4, 4)
     half = captured["half"]
     assert half.shape == (4, 4, 3)
-    np.testing.assert_array_equal(half[1:4, 1:4, :2], slab[::-1, :, :])
+    assert_matches(half[1:4, 1:4, :2], slab[::-1, :, :])
     np.testing.assert_allclose(out, half + 1.0j)
 
 
@@ -698,7 +699,7 @@ def test_relion_projector_to_dense_volume_handles_ori_size_boundary(monkeypatch)
     assert half.shape == (4, 4, 3)
     # Index iz=4 (extra Nyquist) must be dropped, not raise.
     # The first 4 rows (iz=0..3) of the reversed slab map to half[0..3, :, :].
-    np.testing.assert_array_equal(half[0:4, 0:4, :3], slab[::-1, :, :][0:4, 0:4, :3])
+    assert_matches(half[0:4, 0:4, :3], slab[::-1, :, :][0:4, 0:4, :3])
 
 
 def test_relion_projector_to_dense_volume_truncates_oversize(monkeypatch):
@@ -723,8 +724,8 @@ def test_relion_projector_to_dense_volume_truncates_oversize(monkeypatch):
     # iz=3 → z = 3-3+2 = 2 ✓, iz=2 → z = 1, iz=4 → z = 3, iz=0/1/5/6 → out of range.
     # Reversed slab[::-1] at iz=2 = original slab[4]; at iz=3 = slab[3]; etc.
     rev = slab[::-1, :, :]
-    np.testing.assert_array_equal(half[1, 1, :3], rev[2, 2, :3])
-    np.testing.assert_array_equal(half[2, 2, :3], rev[3, 3, :3])
+    assert_matches(half[1, 1, :3], rev[2, 2, :3])
+    assert_matches(half[2, 2, :3], rev[3, 3, :3])
 
 
 def test_projector_conversion_uses_relion_frame(monkeypatch):
@@ -850,19 +851,21 @@ def test_resolve_class_inputs_relion_projector_uses_exact_path_by_default(monkey
     means, mean_variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)
 
     assert len(computed_variances) == 1
-    np.testing.assert_array_equal(mean_variance, expected_variance)
+    assert_matches(mean_variance, expected_variance)
     assert mean_variance.dtype == expected_variance.dtype
     if override_variance:
         assert mean_variance is variance_override
-    np.testing.assert_array_equal(means, dense_means)
-    np.testing.assert_array_equal(exact_half, projector_half)
+    assert_matches(means, dense_means)
+    assert_matches(exact_half, projector_half)
     assert exact_rmax == 2
 
     monkeypatch.setenv("RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR", "0")
+    # assert_matches also calls np.abs, so count only this call's variances.
+    calls_before = len(computed_variances)
     _means, _mean_variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)
 
-    assert len(computed_variances) == 2
-    np.testing.assert_array_equal(_mean_variance, expected_variance)
+    assert len(computed_variances) == calls_before + 1
+    assert_matches(_mean_variance, expected_variance)
     assert exact_half is None
     assert exact_rmax is None
 
@@ -891,7 +894,7 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
 
     assert means is dense_means
     assert variance is mean_variance
-    np.testing.assert_array_equal(exact_half, projector_half)
+    assert_matches(exact_half, projector_half)
     assert exact_rmax == 2
 
 
@@ -920,7 +923,7 @@ def test_resolve_class_inputs_can_dump_exact_projector_operand(monkeypatch, tmp_
     _resolve_class_inputs(state, config)
 
     with np.load(tmp_path / "iter007_relion_projector_half.npz") as dumped:
-        np.testing.assert_array_equal(dumped["projector_half"], projector_half)
+        assert_matches(dumped["projector_half"], projector_half)
         assert int(dumped["projector_r_max"]) == 2
         assert int(dumped["current_size"]) == 4
         assert int(dumped["iteration"]) == 7
@@ -959,7 +962,7 @@ def test_dense_initial_model_estep_handles_empty_halfset(monkeypatch):
     )
 
     assert len(calls) == 1
-    np.testing.assert_array_equal(calls[0], [0, 2])
+    assert_matches(calls[0], [0, 2])
     assert len(result.accumulators) == 2
     np.testing.assert_allclose(result.accumulators[1].data, 0.0)
     np.testing.assert_allclose(result.accumulators[1].weight, 0.0)
@@ -1206,7 +1209,7 @@ def test_dense_initial_model_estep_sparse_pass2_uses_coarse_parent_prior(monkeyp
     assert calls["rotation_perturbation"] == (0.25, 60.0)
     assert calls["device_coarse"][0].shape == (72, 3)
     assert calls["device_coarse"][1:] == (0.25, 60.0)
-    np.testing.assert_array_equal(calls["pass1_rotations"], np.full((72, 3, 3), 9.0, dtype=np.float32))
+    assert_matches(calls["pass1_rotations"], np.full((72, 3, 3), 9.0, dtype=np.float32))
     np.testing.assert_allclose(calls["pass2_parent_prior"], coarse_prior[[1, 3]])
     assert calls["fine_prior"] is None
     np.testing.assert_allclose(calls["local_pre_shifts"], pre_shifts[[1, 3]])
@@ -1253,8 +1256,8 @@ def test_dense_initial_model_estep_sparse_pass2_uses_coarse_parent_prior(monkeyp
     assert result.meta["effective_stable_flat_row_capacity"] is False
     assert result.meta["effective_fused_pair_fine_score"] is False
     assert result.meta["effective_exact_local_physical_order_chunk_size"] is None
-    np.testing.assert_array_equal(result.meta["selected_particle_ids"], [1, 3])
-    np.testing.assert_array_equal(result.meta["best_pose_rotation_ids"], [0, 1])
+    assert_matches(result.meta["selected_particle_ids"], [1, 3])
+    assert_matches(result.meta["best_pose_rotation_ids"], [0, 1])
     np.testing.assert_allclose(result.meta["best_pose_translations"], [[0, 1], [2, 3]])
 
 
@@ -1335,7 +1338,7 @@ def test_dense_initial_model_estep_os0_uses_device_coarse_rotations(monkeypatch)
     assert calls["source_eulers"].shape == (72, 3)
     assert calls["random_perturbation"] == 0.25
     assert calls["angular_sampling_deg"] == 60.0
-    np.testing.assert_array_equal(calls["pass1_rotations"], device_rotations)
+    assert_matches(calls["pass1_rotations"], device_rotations)
 
 
 def test_dense_initial_model_estep_os0_keeps_coarse_normalization_pose_and_support(monkeypatch):
@@ -1463,14 +1466,14 @@ def test_dense_initial_model_estep_os0_keeps_coarse_normalization_pose_and_suppo
     )
 
     assert calls["pass1_current_size"] == state.current_size
-    np.testing.assert_array_equal(calls["class_log_evidence"], coarse_class_evidence)
-    np.testing.assert_array_equal(calls["normalization_max_posterior"], coarse_pmax)
+    assert_matches(calls["class_log_evidence"], coarse_class_evidence)
+    assert_matches(calls["normalization_max_posterior"], coarse_pmax)
     assert calls["reconstruct_significant_only"] is False
-    np.testing.assert_array_equal(result.meta["pose_assignments"], coarse_hard)
-    np.testing.assert_array_equal(result.meta["best_pose_rotation_ids"], [2, 3])
-    np.testing.assert_array_equal(result.meta["best_pose_rotations"], coarse_rotations[[2, 3]])
-    np.testing.assert_array_equal(result.meta["best_pose_translations"], coarse_translations[[1, 0]])
-    np.testing.assert_array_equal(result.meta["max_posterior_per_image"], coarse_pmax)
+    assert_matches(result.meta["pose_assignments"], coarse_hard)
+    assert_matches(result.meta["best_pose_rotation_ids"], [2, 3])
+    assert_matches(result.meta["best_pose_rotations"], coarse_rotations[[2, 3]])
+    assert_matches(result.meta["best_pose_translations"], coarse_translations[[1, 0]])
+    assert_matches(result.meta["max_posterior_per_image"], coarse_pmax)
 
 
 def test_zero_oversampling_restores_k_class_coarse_argmax_metadata():
@@ -1522,14 +1525,14 @@ def test_zero_oversampling_restores_k_class_coarse_argmax_metadata():
         coarse_translations=coarse_translations,
     )
 
-    np.testing.assert_array_equal(restored.class_assignments, coarse_classes)
-    np.testing.assert_array_equal(restored.pose_assignments, coarse_hard)
-    np.testing.assert_array_equal(restored.per_class_hard_assignments, fine_per_class_hard)
-    np.testing.assert_array_equal(restored.best_pose_rotation_ids, [2, 3])
-    np.testing.assert_array_equal(restored.best_pose_rotations, coarse_rotations[[2, 3]])
-    np.testing.assert_array_equal(restored.best_pose_translations, coarse_translations[[1, 0]])
-    np.testing.assert_array_equal(restored.stats.max_posterior_per_image, coarse_pmax)
-    np.testing.assert_array_equal(
+    assert_matches(restored.class_assignments, coarse_classes)
+    assert_matches(restored.pose_assignments, coarse_hard)
+    assert_matches(restored.per_class_hard_assignments, fine_per_class_hard)
+    assert_matches(restored.best_pose_rotation_ids, [2, 3])
+    assert_matches(restored.best_pose_rotations, coarse_rotations[[2, 3]])
+    assert_matches(restored.best_pose_translations, coarse_translations[[1, 0]])
+    assert_matches(restored.stats.max_posterior_per_image, coarse_pmax)
+    assert_matches(
         restored.per_class_stats[0].max_posterior_per_image,
         fine_stats.max_posterior_per_image,
     )
@@ -1644,19 +1647,19 @@ def test_dense_initial_model_estep_sparse_pass2_preserves_k_class_state(monkeypa
         assert layout_call["fine_prior"] is None
         assert layout_call["rotation_index_order"] == "relion_hidden"
         assert layout_call["allow_empty"] is True
-    np.testing.assert_array_equal(calls["layouts"][0]["significant_samples"][0], [0])
-    np.testing.assert_array_equal(calls["layouts"][0]["significant_samples"][1], [0])
-    np.testing.assert_array_equal(calls["layouts"][1]["significant_samples"][0], [1])
-    np.testing.assert_array_equal(calls["layouts"][1]["significant_samples"][1], [1])
+    assert_matches(calls["layouts"][0]["significant_samples"][0], [0])
+    assert_matches(calls["layouts"][0]["significant_samples"][1], [0])
+    assert_matches(calls["layouts"][1]["significant_samples"][0], [1])
+    assert_matches(calls["layouts"][1]["significant_samples"][1], [1])
     assert [(a.halfset_idx, a.class_idx) for a in result.accumulators] == [(0, 0), (0, 1)]
     np.testing.assert_allclose(result.meta["class_posterior_sums"], [0.0, 1.0])
     np.testing.assert_allclose(
         result.meta["class_direction_posterior_sums"],
         np.asarray([[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]]),
     )
-    np.testing.assert_array_equal(result.meta["selected_particle_ids"], [1, 3])
-    np.testing.assert_array_equal(result.meta["class_assignments"], [0, 0])
-    np.testing.assert_array_equal(result.meta["best_pose_rotation_ids"], [0, 1])
+    assert_matches(result.meta["selected_particle_ids"], [1, 3])
+    assert_matches(result.meta["class_assignments"], [0, 0])
+    assert_matches(result.meta["best_pose_rotation_ids"], [0, 1])
     assert result.meta["best_pose_rotations"].shape == (2, 3, 3)
     assert result.meta["sparse_pass2"] is True
 
@@ -1758,12 +1761,12 @@ def test_dense_initial_model_estep_sparse_pass2_pseudo_halfsets_use_separate_loc
         {"has_image_indices": False, "current_size": state.current_size, "n_images": 2},
     ]
     assert len(calls["layouts"]) == 2
-    np.testing.assert_array_equal(calls["layouts"][0]["pass2_parent_prior"], fine_prior[[0, 2]])
-    np.testing.assert_array_equal(calls["layouts"][1]["pass2_parent_prior"], fine_prior[[1, 3]])
-    np.testing.assert_array_equal(calls["layouts"][0]["significant_samples"][0], [0])
-    np.testing.assert_array_equal(calls["layouts"][0]["significant_samples"][1], [0])
-    np.testing.assert_array_equal(calls["layouts"][1]["significant_samples"][0], [0])
-    np.testing.assert_array_equal(calls["layouts"][1]["significant_samples"][1], [0])
+    assert_matches(calls["layouts"][0]["pass2_parent_prior"], fine_prior[[0, 2]])
+    assert_matches(calls["layouts"][1]["pass2_parent_prior"], fine_prior[[1, 3]])
+    assert_matches(calls["layouts"][0]["significant_samples"][0], [0])
+    assert_matches(calls["layouts"][0]["significant_samples"][1], [0])
+    assert_matches(calls["layouts"][1]["significant_samples"][0], [0])
+    assert_matches(calls["layouts"][1]["significant_samples"][1], [0])
     assert calls["local"] == [
         {
             "has_image_indices": False,
@@ -1778,8 +1781,8 @@ def test_dense_initial_model_estep_sparse_pass2_pseudo_halfsets_use_separate_loc
             "n_images": 2,
         },
     ]
-    np.testing.assert_array_equal(result.meta["selected_particle_ids"], [0, 2, 1, 3])
-    np.testing.assert_array_equal(result.meta["best_pose_rotation_ids"], [0, 1, 0, 1])
+    assert_matches(result.meta["selected_particle_ids"], [0, 2, 1, 3])
+    assert_matches(result.meta["best_pose_rotation_ids"], [0, 1, 0, 1])
     assert "fused_pseudo_halfsets" not in result.meta
 
 
@@ -1916,13 +1919,13 @@ def test_exact_k1_sparse_pass2_preserves_joint_halfset_particle_stream(monkeypat
     assert calls["significance"] == [4]
     assert calls["significance_stable_shapes"] == [True]
     assert len(calls["local"]) == 1
-    np.testing.assert_array_equal(calls["local"][0]["group_ids"], halfset_ids)
+    assert_matches(calls["local"][0]["group_ids"], halfset_ids)
     assert calls["local"][0]["group_count"] == 2
     assert calls["local"][0]["preserve_order"] is True
     assert calls["local"][0]["unify_buckets"] is False
     assert calls["local"][0]["chunk_size"] == 220
     assert calls["local"][0]["stable_fourier_window_shapes"] is True
-    np.testing.assert_array_equal(result.meta["selected_particle_ids"], particle_ids)
+    assert_matches(result.meta["selected_particle_ids"], particle_ids)
     assert result.meta["halfset_ids"] == (0, 1)
     assert result.meta["joint_halfset_particle_stream"] is True
     assert result.meta["requested_exact_local_physical_order_chunk_size"] == 220
@@ -1999,8 +2002,8 @@ def test_initial_model_pass2_layout_uses_relion_direction_ids_for_posterior_bins
     out = _initial_model_pass2_layout(layout)
 
     assert out.n_global_rotations == 2
-    np.testing.assert_array_equal(out.rotation_posterior_ids_flat, np.array([0, 0, 1, 1], dtype=np.int32))
-    np.testing.assert_array_equal(out.rotation_ids_flat, layout.rotation_ids_flat)
+    assert_matches(out.rotation_posterior_ids_flat, np.array([0, 0, 1, 1], dtype=np.int32))
+    assert_matches(out.rotation_ids_flat, layout.rotation_ids_flat)
 
 
 @pytest.mark.parametrize("default", [False, True])
@@ -2067,7 +2070,7 @@ def test_sparse_control_split_preserves_input_and_array_identity():
     assert cleaned["image_pre_shifts"] is options["coarse_translations"] is metadata
 
 
-def test_arrays_to_accumulators_k4_compact_and_full_layouts_are_identical():
+def test_arrays_to_accumulators_k4_compact_and_full_layouts_match():
     state = SimpleNamespace(K=4, ori_size=8, current_size=4)
     r_max = state.current_size // 2
     compact_size = 2 * (r_max + 1) + 1
@@ -2113,8 +2116,8 @@ def test_arrays_to_accumulators_k4_compact_and_full_layouts_are_identical():
         (1, 3),
     ]
     for compact_accumulator, full_accumulator in zip(compact, full):
-        np.testing.assert_array_equal(compact_accumulator.data, full_accumulator.data)
-        np.testing.assert_array_equal(compact_accumulator.weight, full_accumulator.weight)
+        assert_matches(compact_accumulator.data, full_accumulator.data)
+        assert_matches(compact_accumulator.weight, full_accumulator.weight)
 
 
 @pytest.mark.parametrize(
@@ -2181,5 +2184,5 @@ def test_arrays_to_accumulators_accepts_compact_k4_backprojector_cubes():
     for class_index, accumulator in enumerate(accumulators):
         assert accumulator.data.shape == (59, 59, 30)
         assert accumulator.weight.shape == (59, 59, 30)
-        np.testing.assert_array_equal(accumulator.data, np.complex128(class_index + 1j))
-        np.testing.assert_array_equal(accumulator.weight, np.float64(class_index + 1))
+        assert_matches(accumulator.data, np.complex128(class_index + 1j))
+        assert_matches(accumulator.weight, np.float64(class_index + 1))

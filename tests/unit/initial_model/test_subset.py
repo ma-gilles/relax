@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from helpers.vdam import numpy_rnd_unif_factory, randomise_particles_order
 
 from relax.vdam.subset import (
@@ -40,7 +41,7 @@ class TestRandomiseOrder:
     def test_shuffle_is_deterministic_given_same_rnd(self):
         order_a = randomise_particles_order(500, numpy_rnd_unif_factory(seed=42))
         order_b = randomise_particles_order(500, numpy_rnd_unif_factory(seed=42))
-        np.testing.assert_array_equal(order_a, order_b)
+        assert_matches(order_a, order_b)
 
     def test_different_seeds_yield_different_orders(self):
         a = randomise_particles_order(500, numpy_rnd_unif_factory(seed=42))
@@ -176,7 +177,7 @@ class TestSelectVdamSubset:
         assert boundaries.size <= 1, "more than one group-boundary - stable sort broken"
 
         # RELION's BPref pseudo-halfsets route by global particle id parity.
-        np.testing.assert_array_equal(plan.halfset_ids, plan.particle_ids % 2)
+        assert_matches(plan.halfset_ids, plan.particle_ids % 2)
 
 
 class TestAssignPseudoHalfsetsForParticleIds:

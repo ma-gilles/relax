@@ -11,6 +11,7 @@ from relax.vdam import estep_meta_updates, native_sampling, sparse_pass2_estep
 from relax.relion import initial_model_io
 from relax.vdam.state import NativeParticleState
 from recovar.utils.helpers import R_from_relion, R_to_relion
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -32,11 +33,11 @@ def test_subset_source_validity_and_mixed_legacy_rows():
         ),
         np.zeros((1, 2)),
     )
-    np.testing.assert_array_equal(value.best_pose_eulers_valid, [False, False, True])
+    assert_matches(value.best_pose_eulers_valid, [False, False, True])
     value.best_pose_rotations[0] = R_from_relion(eulers[1:], degrees=True).astype(np.float32)[0]
     got = native_sampling._best_eulers_from_particle_state(value, np.array([2, 0]), rotation_grid_order=0)
-    np.testing.assert_array_equal(got[0], eulers[0])
-    np.testing.assert_array_equal(
+    assert_matches(got[0], eulers[0])
+    assert_matches(
         got[1], R_to_relion(value.best_pose_rotations[[0]].astype(np.float64), degrees=True)[0]
     )
     # A matrix-only replacement invalidates that row, never a different particle.
@@ -45,8 +46,8 @@ def test_subset_source_validity_and_mixed_legacy_rows():
         dict(selected_particle_ids=np.array([0]), best_pose_rotations=np.eye(3, dtype=np.float32)[None]),
         np.zeros((1, 2)),
     )
-    np.testing.assert_array_equal(value.best_pose_eulers_valid, [False, False, True])
-    np.testing.assert_array_equal(value.best_pose_eulers_deg[2], eulers[0])
+    assert_matches(value.best_pose_eulers_valid, [False, False, True])
+    assert_matches(value.best_pose_eulers_deg[2], eulers[0])
     estep_meta_updates._update_particle_state_from_estep_meta(
         value,
         dict(selected_particle_ids=np.array([2]), best_pose_rotations=np.eye(3, dtype=np.float32)[None]),
@@ -67,7 +68,7 @@ def test_input_star_source_is_valid_before_first_visit():
     )
     value = initial_model_io._particle_state_from_star(frame, SimpleNamespace(voxel_size=1.0, n_images=1))
     assert not value.visited[0] and value.best_pose_eulers_valid[0]
-    np.testing.assert_array_equal(native_sampling._best_eulers_from_particle_state(value, [0], rotation_grid_order=0), eulers)
+    assert_matches(native_sampling._best_eulers_from_particle_state(value, [0], rotation_grid_order=0), eulers)
     assert value.best_pose_rotations.dtype == np.float32
 
 
@@ -94,13 +95,13 @@ def test_mixed_halfset_rows_keep_identity_and_validity():
     source = np.array([[2.0 + 2**-40, 30.0, 4.0]])
     results = {1: SimpleNamespace(best_pose_eulers_deg=source), 0: SimpleNamespace()}
     meta = sparse_pass2_estep._sparse_pass2_estep_meta(results, {1: np.array([2]), 0: np.array([1, 0])})
-    np.testing.assert_array_equal(meta["selected_particle_ids"], [1, 0, 2])
-    np.testing.assert_array_equal(meta["best_pose_eulers_valid"], [False, False, True])
-    np.testing.assert_array_equal(meta["best_pose_eulers_deg"][2], source[0])
+    assert_matches(meta["selected_particle_ids"], [1, 0, 2])
+    assert_matches(meta["best_pose_eulers_valid"], [False, False, True])
+    assert_matches(meta["best_pose_eulers_deg"][2], source[0])
     value = state()
     estep_meta_updates._update_particle_state_from_estep_meta(value, meta, np.zeros((1, 2)))
-    np.testing.assert_array_equal(value.best_pose_eulers_valid, [False, False, True])
-    np.testing.assert_array_equal(value.best_pose_eulers_deg[2], source[0])
+    assert_matches(value.best_pose_eulers_valid, [False, False, True])
+    assert_matches(value.best_pose_eulers_deg[2], source[0])
 
 
 def test_coarse_winner_replaces_or_invalidates_fine_source_metadata():
@@ -135,5 +136,5 @@ def test_coarse_winner_replaces_or_invalidates_fine_source_metadata():
     assert legacy.best_pose_eulers_deg is None and legacy.per_class_best_pose_eulers_deg is None
     source = np.array([[0.0, 0.0, 0.0], [17.0 + 2**-40, 22.0, 31.0]])
     exact = sparse_pass2_estep._restore_zero_oversampling_coarse_metadata(result, coarse_source_eulers=source, **kwargs)
-    np.testing.assert_array_equal(exact.best_pose_eulers_deg, source[1:2])
-    np.testing.assert_array_equal(exact.best_pose_rotations, legacy.best_pose_rotations)
+    assert_matches(exact.best_pose_eulers_deg, source[1:2])
+    assert_matches(exact.best_pose_rotations, legacy.best_pose_rotations)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.vdam.estep_meta_updates import update_noise_from_estep_meta, update_probabilities_from_estep_meta
 from relax.vdam.init import initialise_denovo_state
@@ -193,7 +194,7 @@ def test_refresh_tau2_from_projector_power_updates_all_classes(bind):
     assert np.all(out.tau2_class >= 0.0)
     assert not np.array_equal(out.tau2_class, state.tau2_class)
     assert not np.array_equal(out.tau2_class[0], out.tau2_class[1])
-    np.testing.assert_array_equal(state.tau2_class, np.full((2, ori // 2 + 1), 123.0))
+    assert_matches(state.tau2_class, np.full((2, ori // 2 + 1), 123.0))
 
     from recovar.utils.helpers import recovar_volume_to_relion
 
@@ -219,7 +220,7 @@ def test_refresh_tau2_from_projector_power_updates_all_classes(bind):
             2,
         )
     )
-    np.testing.assert_array_equal(out.tau2_class[0], expected)
+    assert_matches(out.tau2_class[0], expected)
     assert not np.array_equal(out.tau2_class[0], direct_wrong_frame)
 
 
@@ -409,7 +410,7 @@ class TestRunVdamIterations:
         )
 
         assert seen["refresh_current_size"] == 16
-        np.testing.assert_array_equal(seen["estep_tau2"], np.full((1, 9), 7.0))
+        assert_matches(seen["estep_tau2"], np.full((1, 9), 7.0))
 
     def test_iteration_loop_passes_projector_padding_to_m_step(self, monkeypatch):
         import relax.vdam.iteration_loop as loop
@@ -723,10 +724,10 @@ class TestRunVdamIterations:
             assert str(payload["schema"]) == "recovar.initialmodel.noise_update_boundary.v1"
             assert int(payload["iteration"][0]) == 1
             assert int(payload["current_size"][0]) == 6
-            np.testing.assert_array_equal(payload["half0_wsum_sigma2_noise"], meta["wsum_sigma2_noise"])
-            np.testing.assert_array_equal(payload["half0_wsum_img_power"], meta["wsum_img_power"])
-            np.testing.assert_array_equal(payload["half0_wsum_noise_a2"], meta["wsum_noise_a2"])
-            np.testing.assert_array_equal(payload["half0_wsum_noise_xa"], meta["wsum_noise_xa"])
+            assert_matches(payload["half0_wsum_sigma2_noise"], meta["wsum_sigma2_noise"])
+            assert_matches(payload["half0_wsum_img_power"], meta["wsum_img_power"])
+            assert_matches(payload["half0_wsum_noise_a2"], meta["wsum_noise_a2"])
+            assert_matches(payload["half0_wsum_noise_xa"], meta["wsum_noise_xa"])
             np.testing.assert_allclose(payload["half0_sigma2_noise"] / 8**4, out.sigma2_noise[0])
 
     def test_iteration_loop_feeds_updated_sigma2_noise_to_next_estep(self, monkeypatch):
@@ -854,8 +855,8 @@ class TestRunVdamIterations:
             do_grad=True,
         )
 
-        np.testing.assert_array_equal(out.subset_particle_ids, np.array([0, 2, 1, 3]))
-        np.testing.assert_array_equal(out.subset_halfset_ids, np.array([0, 0, 1, 1], dtype=np.int8))
+        assert_matches(out.subset_particle_ids, np.array([0, 2, 1, 3]))
+        assert_matches(out.subset_halfset_ids, np.array([0, 0, 1, 1], dtype=np.int8))
 
     def test_random_seed_zero_preserves_relion_sorted_idx_base_order(self, monkeypatch):
         state = initialise_denovo_state(
@@ -885,8 +886,8 @@ class TestRunVdamIterations:
             particle_order=np.array([5, 0, 3, 4, 1, 2], dtype=np.int64),
         )
 
-        np.testing.assert_array_equal(out.subset_particle_ids, np.array([0, 4, 2, 5, 3, 1]))
-        np.testing.assert_array_equal(out.subset_halfset_ids, np.array([1, 1, 1, 0, 0, 0], dtype=np.int8))
+        assert_matches(out.subset_particle_ids, np.array([0, 4, 2, 5, 3, 1]))
+        assert_matches(out.subset_halfset_ids, np.array([1, 1, 1, 0, 0, 0], dtype=np.int8))
 
     def test_rejects_invalid_particle_order(self):
         state = initialise_denovo_state(
@@ -941,10 +942,10 @@ class TestRunVdamIterations:
             particle_order=particle_order,
         )
 
-        np.testing.assert_array_equal(second.subset_particle_ids, first.subset_particle_ids)
-        np.testing.assert_array_equal(second.subset_halfset_ids, first.subset_halfset_ids)
-        np.testing.assert_array_equal(second.sorted_particle_ids, first.sorted_particle_ids)
-        np.testing.assert_array_equal(second.sorted_particle_part_ids, first.sorted_particle_part_ids)
+        assert_matches(second.subset_particle_ids, first.subset_particle_ids)
+        assert_matches(second.subset_halfset_ids, first.subset_halfset_ids)
+        assert_matches(second.sorted_particle_ids, first.sorted_particle_ids)
+        assert_matches(second.sorted_particle_part_ids, first.sorted_particle_part_ids)
 
     def test_nonzero_seed_true_subset_reshuffles_previous_sorted_idx(self, bind):
         state = initialise_denovo_state(
@@ -984,10 +985,10 @@ class TestRunVdamIterations:
         prefix_order = np.argsort(optics[expected_rows[:4]], kind="stable")
         expected_rows[:4] = expected_rows[:4][prefix_order]
         expected_parts[:4] = expected_parts[:4][prefix_order]
-        np.testing.assert_array_equal(second.sorted_particle_ids, expected_rows)
-        np.testing.assert_array_equal(second.sorted_particle_part_ids, expected_parts)
-        np.testing.assert_array_equal(second.subset_particle_ids, expected_rows[:4])
-        np.testing.assert_array_equal(second.subset_halfset_ids, (expected_parts[:4] % 2).astype(np.int8))
+        assert_matches(second.sorted_particle_ids, expected_rows)
+        assert_matches(second.sorted_particle_part_ids, expected_parts)
+        assert_matches(second.subset_particle_ids, expected_rows[:4])
+        assert_matches(second.subset_halfset_ids, (expected_parts[:4] % 2).astype(np.int8))
 
     def test_continuation_replays_complete_relion_sorted_idx_history(self, bind):
         state = initialise_denovo_state(
@@ -1034,10 +1035,10 @@ class TestRunVdamIterations:
             expected_rows[:subset_size] = expected_rows[:subset_size][prefix_order]
             expected_parts[:subset_size] = expected_parts[:subset_size][prefix_order]
 
-        np.testing.assert_array_equal(restored.sorted_particle_ids, expected_rows)
-        np.testing.assert_array_equal(restored.sorted_particle_part_ids, expected_parts)
-        np.testing.assert_array_equal(restored.subset_particle_ids, expected_rows[:4])
-        np.testing.assert_array_equal(
+        assert_matches(restored.sorted_particle_ids, expected_rows)
+        assert_matches(restored.sorted_particle_part_ids, expected_parts)
+        assert_matches(restored.subset_particle_ids, expected_rows[:4])
+        assert_matches(
             restored.subset_halfset_ids,
             (expected_parts[:4] % 2).astype(np.int8),
         )
@@ -1061,12 +1062,12 @@ class TestRunVdamIterations:
         next_prefix_order = np.argsort(optics[expected_rows[:4]], kind="stable")
         expected_rows[:4] = expected_rows[:4][next_prefix_order]
         expected_parts[:4] = expected_parts[:4][next_prefix_order]
-        np.testing.assert_array_equal(resumed_next.sorted_particle_ids, expected_rows)
-        np.testing.assert_array_equal(
+        assert_matches(resumed_next.sorted_particle_ids, expected_rows)
+        assert_matches(
             resumed_next.sorted_particle_part_ids,
             expected_parts,
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             resumed_next.subset_particle_ids,
             expected_rows[:4],
         )

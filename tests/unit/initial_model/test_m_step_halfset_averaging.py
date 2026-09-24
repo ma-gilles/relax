@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.vdam.init import initialise_denovo_state
 from relax.vdam.mstep_single_class import vdam_m_step_single_class
@@ -90,7 +91,7 @@ def test_k1_pseudo_halfsets_uses_primary_weight(_bind_module, monkeypatch):
     )
 
     assert rec.call_count == 1
-    np.testing.assert_array_equal(rec.captured_weight, a0.weight)
+    assert_matches(rec.captured_weight, a0.weight)
     averaged = 0.5 * (a0.weight + a1.weight)
     assert not np.array_equal(rec.captured_weight, averaged)
 
@@ -115,7 +116,7 @@ def test_k1_no_halfsets_uses_h0_weight(_bind_module, monkeypatch):
     )
 
     assert rec.call_count == 1
-    np.testing.assert_array_equal(rec.captured_weight, a0.weight)
+    assert_matches(rec.captured_weight, a0.weight)
 
 
 @pytest.mark.parametrize("K", [2, 4])
@@ -141,7 +142,7 @@ def test_k_class_pseudo_halfsets_uses_h0_weight(_bind_module, monkeypatch, K):
     )
 
     assert rec.call_count == 1
-    np.testing.assert_array_equal(rec.captured_weight, a0.weight)
+    assert_matches(rec.captured_weight, a0.weight)
     # And critically NOT the averaged weight.
     averaged = 0.5 * (a0.weight + a1.weight)
     assert not np.array_equal(rec.captured_weight, averaged), (

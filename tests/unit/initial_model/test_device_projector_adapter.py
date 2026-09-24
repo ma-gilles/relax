@@ -10,6 +10,7 @@ from relax.relion import relion_projector_setup
 from relax.vdam import dense_adapter as adapter
 from relax.vdam.init import initialise_denovo_state
 from recovar.utils.helpers import recovar_volume_to_relion
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -65,7 +66,7 @@ def test_adapter_native_radius_layout_frame_and_consumer_policy(size, padding, c
     assert candidates[0][0].shape == controls[0][0].shape
     assert candidates[0][0].dtype == np.complex64
     assert candidates[0][1].dtype == np.float64
-    np.testing.assert_array_equal(candidates[0][0] == 0, controls[0][0] == 0)
+    assert_matches(candidates[0][0] == 0, controls[0][0] == 0)
     for field in (0, 1):
         _assert_existing_consumer_policy(
             controls[0][field], candidates[0][field], candidates[1][field], controls[1][field]
@@ -87,7 +88,7 @@ def test_adapter_native_radius_layout_frame_and_consumer_policy(size, padding, c
         cropped = full[start : start + logical_size, start : start + logical_size, : native[0].shape[2]]
         assert np.all(relative_metrics(native[0], cropped) < 1e-12)
         assert np.all(relative_metrics(native[1], power) < 1e-12)
-    np.testing.assert_array_equal(references, before)
+    assert_matches(references, before)
 
 
 @pytest.mark.parametrize("size,padding,interpolator", [(8, 1, 0), (8, 3, 1), (9, 1, 1)])
@@ -103,7 +104,7 @@ def test_unsupported_projector_geometry_uses_native(size, padding, interpolator,
     native = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(refs, **kwargs)
     requested = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(refs, **kwargs, projector_setup_backend="jax")
     for left, right in zip(native, requested):
-        np.testing.assert_array_equal(left, right)
+        assert_matches(left, right)
 
 
 def test_config_opt_in_state_default_size_and_dump(monkeypatch, tmp_path):
@@ -125,12 +126,12 @@ def test_config_opt_in_state_default_size_and_dump(monkeypatch, tmp_path):
     for field in (0, 1, 2):
         _assert_existing_consumer_policy(native[field], candidate[field], candidate[field], native[field])
     with np.load(tmp_path / "iter000_relion_projector_half.npz") as dumped:
-        np.testing.assert_array_equal(dumped["projector_half"], candidate[2])
+        assert_matches(dumped["projector_half"], candidate[2])
         assert int(dumped["current_size"]) == 8
     inputs, power = adapter.prepare_relion_projector_class_inputs_and_power(
         state, padding_factor=1, projector_setup_backend="jax"
     )
-    np.testing.assert_array_equal(inputs[2], candidate[2])
+    assert_matches(inputs[2], candidate[2])
     assert power.shape == (1, 5)
 
 

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.half_spectrum import make_half_image_weights
 from relax.helpers.preprocessing import half_translation_phase_table
@@ -58,9 +59,9 @@ def _exercise_prepare(monkeypatch: pytest.MonkeyPatch, *, backend: str):
 def test_split_local_exact_supplies_identity_operands_to_relion_cuda(monkeypatch):
     images, captured = _exercise_prepare(monkeypatch, backend="relion_cuda")
 
-    np.testing.assert_array_equal(captured["batch"], images)
-    np.testing.assert_array_equal(captured["kwargs"]["relion_normalization_factors"], np.ones(2, np.float32))
-    np.testing.assert_array_equal(captured["kwargs"]["relion_integer_shifts"], np.zeros((2, 2), np.int32))
+    assert_matches(captured["batch"], images)
+    assert_matches(captured["kwargs"]["relion_normalization_factors"], np.ones(2, np.float32))
+    assert_matches(captured["kwargs"]["relion_integer_shifts"], np.zeros((2, 2), np.int32))
     assert captured["apply_image_mask"] is True
 
 
@@ -68,7 +69,7 @@ def test_split_local_exact_supplies_identity_operands_to_relion_cuda(monkeypatch
 def test_split_local_exact_leaves_general_backend_operands_unset(monkeypatch):
     images, captured = _exercise_prepare(monkeypatch, backend="jax_gpu")
 
-    np.testing.assert_array_equal(captured["batch"], images)
+    assert_matches(captured["batch"], images)
     assert captured["kwargs"] is None
 
 
@@ -179,15 +180,15 @@ def test_prepare_local_exact_bucket_preserves_relion_bpref_operand_orders(
         inverse_noise[None, :].astype(np.float64) * ctf_rfloat * ctf_rfloat
     ).astype(np.float32)
     expected_recon_weight = expected_weighted_ctf * ctf_f32
-    np.testing.assert_array_equal(np.asarray(processed_score), expected_score)
-    np.testing.assert_array_equal(np.asarray(shifted_score), expected_score * expected_weighted_ctf)
-    np.testing.assert_array_equal(np.asarray(shifted_recon), processed * expected_weighted_ctf)
-    np.testing.assert_array_equal(np.asarray(score_weight), expected_score_weight)
-    np.testing.assert_array_equal(np.asarray(recon_weight), expected_recon_weight)
-    np.testing.assert_array_equal(captured_bpref["images"], processed)
-    np.testing.assert_array_equal(captured_bpref["weighted_ctf"], expected_weighted_ctf)
-    np.testing.assert_array_equal(captured_bpref["translation_angles"], np.zeros((1, 2), np.float32))
-    np.testing.assert_array_equal(captured_bpref["pixel_indices"], np.arange(n_half, dtype=np.int32))
+    assert_matches(np.asarray(processed_score), expected_score)
+    assert_matches(np.asarray(shifted_score), expected_score * expected_weighted_ctf)
+    assert_matches(np.asarray(shifted_recon), processed * expected_weighted_ctf)
+    assert_matches(np.asarray(score_weight), expected_score_weight)
+    assert_matches(np.asarray(recon_weight), expected_recon_weight)
+    assert_matches(captured_bpref["images"], processed)
+    assert_matches(captured_bpref["weighted_ctf"], expected_weighted_ctf)
+    assert_matches(captured_bpref["translation_angles"], np.zeros((1, 2), np.float32))
+    assert_matches(captured_bpref["pixel_indices"], np.arange(n_half, dtype=np.int32))
     assert captured_bpref["image_shape"] == dataset.image_shape
     expected_norm = np.sum(
         np.abs(expected_score) ** 2
@@ -199,9 +200,9 @@ def test_prepare_local_exact_bucket_preserves_relion_bpref_operand_orders(
     np.testing.assert_allclose(np.asarray(batch_norm), expected_norm, rtol=1e-6, atol=1e-5)
     assert pre_shift_applied is False
     assert mask_calls == ([True, False] if score_with_masked_images else [False])
-    np.testing.assert_array_equal(captured_score["images"], expected_score * expected_weighted_ctf)
-    np.testing.assert_array_equal(captured_score["translation_angles"], np.zeros((1, 2), np.float32))
-    np.testing.assert_array_equal(captured_score["pixel_indices"], np.arange(n_half, dtype=np.int32))
+    assert_matches(captured_score["images"], expected_score * expected_weighted_ctf)
+    assert_matches(captured_score["translation_angles"], np.zeros((1, 2), np.float32))
+    assert_matches(captured_score["pixel_indices"], np.arange(n_half, dtype=np.int32))
     assert captured_score["image_shape"] == dataset.image_shape
 
 
@@ -247,9 +248,9 @@ def test_cached_bucket_preserves_image_order_and_reconstruction_source(cached_bu
     indices = cached_bucket["image_indices"]
     expected_score = cache.score_half[indices]
     expected_recon = cache.recon_half[indices] if score_with_masked_images else expected_score
-    np.testing.assert_array_equal(processed_score, expected_score)
-    np.testing.assert_array_equal(shifted_score, expected_score)
-    np.testing.assert_array_equal(shifted_recon, expected_recon)
+    assert_matches(processed_score, expected_score)
+    assert_matches(shifted_score, expected_score)
+    assert_matches(shifted_recon, expected_recon)
     assert pre_shift_applied is True
     if not score_with_masked_images:
         assert shifted_recon is shifted_score

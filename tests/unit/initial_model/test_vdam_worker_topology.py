@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics import vdam_replay
 from relax.local import local_physical_grid
@@ -132,7 +133,7 @@ def test_round_robin_vdam_worker_topology_selects_eight_host_workers(monkeypatch
         np.arange(10, dtype=np.int64),
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         owners,
         np.asarray([0, 1, 2, 3, 4, 5, 6, 7, 0, 1], dtype=np.int32),
     )
@@ -151,7 +152,7 @@ def test_round_robin_vdam_worker_topology_preserves_bucket_shape(monkeypatch):
     )
 
     assert owners.shape == (3, 4)
-    np.testing.assert_array_equal(owners.ravel(), np.arange(12, dtype=np.int32) % 8)
+    assert_matches(owners.ravel(), np.arange(12, dtype=np.int32) % 8)
 
 
 def test_round_robin_vdam_worker_topology_can_target_one_iteration(monkeypatch):
@@ -170,7 +171,7 @@ def test_round_robin_vdam_worker_topology_can_target_one_iteration(monkeypatch):
         )
         is None
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         vdam_replay._relion_vdam_worker_lanes_for_images(
             object(),
             np.arange(8, dtype=np.int64),
@@ -260,8 +261,8 @@ def test_captured_particle_issue_replay_joins_stack_ids_and_orders_bucket(
         debug_iteration=58,
     )
 
-    np.testing.assert_array_equal(order, np.asarray([1, 2, 0], dtype=np.int32))
-    np.testing.assert_array_equal(owners, np.asarray([2, 0, 1], dtype=np.int32))
+    assert_matches(order, np.asarray([1, 2, 0], dtype=np.int32))
+    assert_matches(owners, np.asarray([2, 0, 1], dtype=np.int32))
 
 
 def test_captured_particle_timing_joins_native_offsets_and_issue_order(
@@ -289,8 +290,8 @@ def test_captured_particle_timing_joins_native_offsets_and_issue_order(
         debug_iteration=58,
     )
 
-    np.testing.assert_array_equal(offsets, np.asarray([500, 0, 250], dtype=np.int32))
-    np.testing.assert_array_equal(order, np.asarray([1, 2, 0], dtype=np.int32))
+    assert_matches(offsets, np.asarray([500, 0, 250], dtype=np.int32))
+    assert_matches(order, np.asarray([1, 2, 0], dtype=np.int32))
     assert (
         vdam_replay._relion_vdam_particle_start_offsets_for_images(
             dataset,
@@ -381,11 +382,11 @@ def test_captured_particle_native_grid_composes_with_issue_and_timing(
         debug_iteration=58,
     )
 
-    np.testing.assert_array_equal(counts, np.asarray([2, 2, 2], dtype=np.int32))
+    assert_matches(counts, np.asarray([2, 2, 2], dtype=np.int32))
     if expected_offsets is None:
         assert offsets is None
     else:
-        np.testing.assert_array_equal(offsets, expected_offsets)
+        assert_matches(offsets, expected_offsets)
     assert vdam_replay._relion_vdam_identity_native_grid_replay() is identity_rows
 
 
@@ -509,17 +510,17 @@ def test_particle_issue_order_reorders_every_particle_operand_and_serializes_con
         particle_replay_order=np.asarray([1, 2, 0], dtype=np.int32),
     )
 
-    np.testing.assert_array_equal(captured["images"][:, 0].real, [20, 30, 10])
-    np.testing.assert_array_equal(captured["ctf"][:, 0], [20, 30, 10])
-    np.testing.assert_array_equal(captured["posterior"][:, 0, 0], [20, 30, 10])
-    np.testing.assert_array_equal(
+    assert_matches(captured["images"][:, 0].real, [20, 30, 10])
+    assert_matches(captured["ctf"][:, 0], [20, 30, 10])
+    assert_matches(captured["posterior"][:, 0, 0], [20, 30, 10])
+    assert_matches(
         captured["scoring_rotations"][:, 0, 0, 0], [20, 30, 10]
     )
-    np.testing.assert_array_equal(captured["groups"], [1, 0, 0])
-    np.testing.assert_array_equal(captured["workers"], [5, 6, 4])
-    np.testing.assert_array_equal(captured["trace_ids"], [200, 300, 100])
-    np.testing.assert_array_equal(captured["rotation_counts"], [22, 33, 11])
-    np.testing.assert_array_equal(captured["start_offsets"], [200, 300, 100])
+    assert_matches(captured["groups"], [1, 0, 0])
+    assert_matches(captured["workers"], [5, 6, 4])
+    assert_matches(captured["trace_ids"], [200, 300, 100])
+    assert_matches(captured["rotation_counts"], [22, 33, 11])
+    assert_matches(captured["start_offsets"], [200, 300, 100])
     assert captured["parallel"] is False
 
 
