@@ -1,6 +1,6 @@
 {
  "schema": "relax.renamed_environment.v1",
- "note": "relax split P5: relax-only RECOVAR_* environment names renamed to RELAX_*. A name ending in '_' is a prefix. importing relax raises if a renamed name is set; exempt names keep RECOVAR_*.",
+ "note": "relax split P5: relax-only RECOVAR_* environment names renamed to RELAX_*. A name ending in '_' is a prefix. importing relax raises if a renamed name is set; exempt names keep RECOVAR_*. Retired names select behaviour that no longer exists; importing relax raises if one is set.",
  "renamed": {
   "RECOVAR_ADAPTIVE_FRACTION": "RELAX_ADAPTIVE_FRACTION",
   "RECOVAR_AGENT_SCRATCH_ROOT": "RELAX_AGENT_SCRATCH_ROOT",
@@ -158,7 +158,6 @@
   "RECOVAR_EXTRA_ARGS": "RELAX_EXTRA_ARGS",
   "RECOVAR_FINAL_ALL_DATA_AFTER_MAX_ITER": "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER",
   "RECOVAR_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE": "RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE",
-  "RECOVAR_FINAL_ALL_DATA_GRID_CORRECT": "RELAX_FINAL_ALL_DATA_GRID_CORRECT",
   "RECOVAR_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE": "RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE",
   "RECOVAR_FINAL_ALL_DATA_USE_MERGED_REFERENCE": "RELAX_FINAL_ALL_DATA_USE_MERGED_REFERENCE",
   "RECOVAR_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN": "RELAX_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN",
@@ -627,5 +626,9 @@
    "RECOVAR_RELION_EM_COMPARISON",
    "RECOVAR_SELECTED_GPU_UUID"
   ]
+ },
+ "retired": {
+  "RECOVAR_FINAL_ALL_DATA_GRID_CORRECT": "final all-data maps are always gridding-corrected, as in RELION",
+  "RELAX_FINAL_ALL_DATA_GRID_CORRECT": "final all-data maps are always gridding-corrected, as in RELION"
  }
 }

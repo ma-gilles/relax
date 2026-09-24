@@ -30,6 +30,12 @@ def test_a_renamed_prefix_is_an_error():
         relax._reject_renamed_environment(environ={prefix + "X": "1"})
 
 
+@pytest.mark.parametrize("name", sorted(TABLE["retired"]))
+def test_a_retired_name_is_an_error(name):
+    with pytest.raises(RuntimeError, match=re.escape(f"{name} is retired")):
+        relax._reject_renamed_environment(environ={name: "0"})
+
+
 @pytest.mark.parametrize("group", ["read_by_recovar", "recorded_in_json"])
 def test_exempt_names_and_new_names_are_accepted(group):
     environ = {name: "1" for name in TABLE["exempt"][group]}
@@ -40,6 +46,7 @@ def test_exempt_names_and_new_names_are_accepted(group):
 def test_exempt_and_renamed_are_disjoint_and_names_are_relax_only():
     exempt = {name for names in TABLE["exempt"].values() for name in names}
     assert not exempt & set(TABLE["renamed"])
+    assert not set(TABLE["retired"]) & (exempt | set(TABLE["renamed"]) | set(TABLE["renamed"].values()))
     assert {"RECOVAR_DISABLE_CUDA", "RECOVAR_CUDA_LIB", "RECOVAR_EM_XLA_DEFAULTS"} <= exempt
 
 

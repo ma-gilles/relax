@@ -154,12 +154,10 @@ gives an unmasked resolution of 6.650052 A while the modern ordering gives
 - Current-size BPref half joins use the explicit RELION padding factor.
 - K-class quality claims use the RELION x-half/current-size BPref path. Native
   half-volume K-class accumulation is diagnostic unless explicitly selected.
-- Do not force K-class final-all-data after non-convergence. The strict-parity
-  target specifies final gridding correction on. The reviewed PR158 source
-  actually defaults it off; preserve that implementation during cleanup and
-  record the effective setting. Resolving this scientific-policy discrepancy
-  requires a separate, explicitly qualified change. Do not label the off path
-  as satisfying the on-policy contract.
+- Do not force K-class final-all-data after non-convergence. Every final
+  all-data map is gridding-corrected, as in RELION. The former default-off
+  selector cost K1 100k/256 about 0.0008 masked GT FSC over shells 1-60 against
+  same-command RELION repeats and was retired.
 - Preserve shared contracts: `run_halfset_em_iteration` reads `state.Ft_y` and
   `state.Ft_CTF` after `finish_up_M_step`.
 

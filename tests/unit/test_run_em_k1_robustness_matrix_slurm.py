@@ -236,25 +236,11 @@ def test_scorecard_mode_requires_exact_fixture_pair(tmp_path):
     assert "--scorecard requires EM_K1_MATRIX_FIXTURE_MANIFEST" in proc.stdout
 
 
-def test_scorecard_mode_rejects_grid_correction(tmp_path):
-    fixture_root = tmp_path / "fixtures"
-    fixture_root.mkdir()
-    fixture_manifest = tmp_path / "fixtures.json"
-    fixture_manifest.write_text('{"schema":"recovar.em_k1_fixture_manifest.v1","cases":[]}\n')
-
-    proc, _ = _dry_run_launcher(
-        tmp_path,
-        case="2",
-        extra_env={
-            "EM_K1_MATRIX_FIXTURE_MANIFEST": str(fixture_manifest),
-            "EM_K1_MATRIX_FIXTURE_ROOT": str(fixture_root),
-            "RELAX_FINAL_ALL_DATA_GRID_CORRECT": "1",
-        },
-        extra_args=["--scorecard"],
-    )
+def test_launcher_rejects_retired_final_grid_correct(tmp_path):
+    proc, _ = _dry_run_launcher(tmp_path, case="2", extra_env={"RELAX_FINAL_ALL_DATA_GRID_CORRECT": "0"})
 
     assert proc.returncode == 2
-    assert "RELAX_FINAL_ALL_DATA_GRID_CORRECT unset/off" in proc.stdout
+    assert "RELAX_FINAL_ALL_DATA_GRID_CORRECT is retired" in proc.stdout
 
 
 def test_scorecard_mode_rejects_legacy_k1_translation_grid(tmp_path):
@@ -663,17 +649,6 @@ def test_relion_projector_diagnostic_dump_dir_is_forwarded_and_case_scoped(tmp_p
     assert 'mkdir -p "${RELAX_RELION_PROJECTOR_DUMP_DIR}"' in text
     submission = (scratch / "submission.env").read_text()
     assert f"RELAX_RELION_PROJECTOR_DUMP_DIR={dump_root}" in submission
-
-
-def test_final_all_data_grid_correct_defaults_to_quality_mode(tmp_path):
-    proc, scratch = _dry_run_launcher(tmp_path, case="28")
-
-    assert proc.returncode == 0, proc.stdout
-    scripts = list((scratch / "jobs").glob("em_k1_matrix_28_*.sh"))
-    assert len(scripts) == 1
-    text = scripts[0].read_text()
-    assert "export RELAX_FINAL_ALL_DATA_GRID_CORRECT=" not in text
-    assert "RELAX_FINAL_ALL_DATA_GRID_CORRECT=\n" in (scratch / "submission.env").read_text()
 
 
 def test_launcher_records_submission_and_runtime_git_fingerprints(tmp_path):

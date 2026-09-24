@@ -63,6 +63,7 @@ def _reject_renamed_environment(*, environ=None):
     of the ``RECOVAR_*`` names that stay because recovar also reads them or sealed JSON records them, is
     ``renamed_environment.json``. A harness that still sets an old name would otherwise have its setting
     ignored without notice, so the old name is an error, not an alias. A name ending in ``_`` is a prefix.
+    A retired name selected behaviour that no longer exists and is an error for the same reason.
     """
 
     import json
@@ -73,8 +74,12 @@ def _reject_renamed_environment(*, environ=None):
     renamed = table["renamed"]
     exempt = {name for names in table["exempt"].values() for name in names}
     prefixes = [old for old in renamed if old.endswith("_")]
+    retired = table["retired"]
     stale = []
     for name in sorted(environ):
+        if name in retired:
+            stale.append(f"{name} is retired ({retired[name]})")
+            continue
         if not name.startswith("RECOVAR_") or name in exempt:
             continue
         if name in renamed:
@@ -83,7 +88,8 @@ def _reject_renamed_environment(*, environ=None):
             stale.append(f"{name} -> RELAX_{name[len('RECOVAR_'):]}")
     if stale:
         raise RuntimeError(
-            "relax reads RELAX_* names for its own settings; rename these environment variables: " + ", ".join(stale)
+            "relax reads RELAX_* names for its own settings; rename or unset these environment variables: "
+            + ", ".join(stale)
         )
 
 

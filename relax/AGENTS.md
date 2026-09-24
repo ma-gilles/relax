@@ -71,8 +71,8 @@ GUI excluded**, before new-engine development. Root instructions also apply.
   later opt-in quality differences must be named, tested and GT-qualified.
   Major policies belong in typed configuration/CLI options, not env-only forks.
   Never label intentional differences strict parity or tune until outputs agree.
-- Preserve the reviewed final-grid-correction default (off); the strict target
-  specifies on. Resolve this discrepancy separately with explicit qualification.
+- Every final all-data map is gridding-corrected, as RELION's reconstruct always
+  is; there is no option to skip it.
   Preserve `run_halfset_em_iteration` reading state.Ft_y/Ft_CTF after finish_up_M_step.
 
 ## Validation and hardware
