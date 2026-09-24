@@ -168,6 +168,15 @@ metric: check a control-candidate difference with `python scripts/em_tier_noise_
 check --control <basetemp> --candidate <basetemp>` instead of rerunning. A difference outside
 the envelope is a real change of the numbers, which the gates then judge.
 
+No bitwise floats (user rule, 2026-09-24): no test or merge check requires bitwise or
+ULP-exact equality of floating-point values, not even under
+`RELAX_EM_DETERMINISTIC_REDUCTIONS=1`. Compare floats with relative bands sized to the
+measured noise plus a margin (`tests/helpers/float_compare.py`); integers and discrete logic
+(shapes, counts, indices, capacities) stay exact, and float-tie-dependent discrete outputs
+(hard assignments, significance counts) allow a small measured flip fraction. This approves
+turning bitwise float asserts into measured bands, not widening an existing tolerance beyond
+noise.
+
 Merge as you go: land each qualified piece on `main` as soon as its checks pass, not at the
 end of the task. Keep a list of your unmerged commits (SHA, subject, what blocks each) in
 your handoff. Rebasing an implementation creates a new candidate that needs fresh

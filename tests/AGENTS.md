@@ -5,6 +5,19 @@
 ### NEVER widen tolerance to make tests pass
 Do not change `_TOL`, `tol_frac`, `HIGH_VARIANCE_TOKENS`, or add skip/ignore logic for specific metrics. If a test fails, **fix the code**, not the test. You may **suggest** a tolerance change and wait for explicit approval, but never implement it unilaterally.
 
+### No bitwise or ULP-exact float asserts
+No test requires bitwise or ULP-exact equality of floating-point values, not even under
+`RELAX_EM_DETERMINISTIC_REDUCTIONS=1` (user rule, 2026-09-24): GPU reductions race, and CPU
+results move in their last bits with a compiler, library or fusion change. Use
+`helpers.float_compare.assert_matches` / `matches`: exact for integers, booleans and strings,
+and for floats a relative band against the array's largest magnitude (defaults float32 1e-6,
+float64 1e-13, sized to the measured same-code noise of about 1 float32 ULP and a few float64
+ULP). Pass a larger `rtol` only with the measured noise cited next to it. Float-tie-dependent
+discrete outputs (hard assignments, significance counts) allow a small measured flip fraction
+(`flip_fraction`). Exact byte checks remain for data that no float computation touches: an
+input buffer that must not be modified, and file or fixture checksums. This rule converts
+bitwise asserts into bands; it does not approve widening an existing tolerance beyond noise.
+
 ### Float64 companion required when tolerance is loosened
 If a new or modified test must use a tolerance wider than machine-epsilon (e.g. `atol=1e-5` for float32 code), **add a float64 companion test** that runs the same comparison with tighter tolerances (e.g. `atol=1e-8`). The companion helps test whether rounding explains the gap. Pattern:
 ```python
