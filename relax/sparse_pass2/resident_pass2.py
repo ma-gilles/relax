@@ -90,7 +90,7 @@ from relax.helpers.half_volume_mstep import (
     relion_x_half_mstep_accumulator_dtypes,
 )
 from relax.helpers.preprocessing import half_translation_phase_table
-from relax.helpers.projection import compute_noise_block
+from relax.helpers.projection import compute_noise_block, compute_noise_block_per_optics_group
 from relax.helpers.projection import (
     relion_scale_correction_pixel_mask as _relion_scale_correction_pixel_mask,
 )
@@ -688,27 +688,46 @@ def _resident_block_noise_and_norm(
     proj_abs2,  # real [block, P]
     summed_masked,  # complex [block, P]
     ctf_probs,  # real [block, P]
-    noise_variance,  # real [P]
+    noise_variance,  # real [P], or [G, P] per optics group
     shell_indices,  # int32 [P]
     row_image_local,  # int32 [block]
+    row_optics_groups=None,  # int32 [block] with a [G, P] noise table
     *,
     n_shells: int,
     image_capacity: int,
 ):
-    """One row block's noise shells plus its per-image ``A2``/``XA`` partials."""
+    """One row block's noise shells plus its per-image ``A2``/``XA`` partials.
 
-    block_noise_shells, _, _ = compute_noise_block(
-        proj,
-        proj_abs2,
-        summed_masked,
-        ctf_probs,
-        noise_variance,
-        shell_indices,
-        int(n_shells),
-        return_split=False,
-    )
+    With a per-optics-group noise table each row uses its image's group spectrum
+    and the shells come back per group, ``[G, n_shells]``.
+    """
+
+    if row_optics_groups is None:
+        block_noise_shells, _, _ = compute_noise_block(
+            proj,
+            proj_abs2,
+            summed_masked,
+            ctf_probs,
+            noise_variance,
+            shell_indices,
+            int(n_shells),
+            return_split=False,
+        )
+        row_noise = jnp.asarray(noise_variance)
+    else:
+        block_noise_shells = compute_noise_block_per_optics_group(
+            proj,
+            proj_abs2,
+            summed_masked,
+            ctf_probs,
+            noise_variance,
+            row_optics_groups,
+            shell_indices,
+            int(n_shells),
+        )
+        row_noise = jnp.asarray(noise_variance)[row_optics_groups]
     a2_per_row, xa_per_row = _flat_row_norm_and_scale_terms(
-        proj, proj_abs2, summed_masked, ctf_probs, jnp.asarray(noise_variance)
+        proj, proj_abs2, summed_masked, ctf_probs, row_noise
     )
     a2_per_image = segment_sum_by_image(a2_per_row, row_image_local, int(image_capacity))
     xa_per_image = segment_sum_by_image(xa_per_row, row_image_local, int(image_capacity))
@@ -726,6 +745,7 @@ def _resident_block_wavg_algebraic_terms(
     raw_shifted_images,  # complex64 [C_B, T, P]
     row_posterior,  # float32 [block, T]
     row_image_local,  # int32 [block]
+    row_optics_groups=None,  # int32 [block] with a [G, P] noise table
 ):
     """Flat-row twin of ``_relion_wavg_atomic_triplet_terms``.
 
@@ -742,17 +762,21 @@ def _resident_block_wavg_algebraic_terms(
     proj_abs2 = jnp.asarray(proj_abs2, dtype=jnp.float32)
     summed_masked = jnp.asarray(summed_masked, dtype=jnp.complex64)
     ctf_probs = jnp.asarray(ctf_probs, dtype=jnp.float32)
-    noise_variance = jnp.asarray(noise_variance, dtype=jnp.float32).reshape(-1)
+    noise_variance = (
+        jnp.asarray(noise_variance, dtype=jnp.float32).reshape(-1)[None, :]
+        if row_optics_groups is None
+        else jnp.asarray(noise_variance, dtype=jnp.float32)[row_optics_groups]
+    )
     row_image_local = jnp.asarray(row_image_local, dtype=jnp.int32)
     row_scale = jnp.asarray(scale, dtype=jnp.float32).reshape(-1)[row_image_local]
     posterior = jnp.asarray(row_posterior, dtype=jnp.float32)
 
     ctf_has_mass = ctf_probs != 0.0
-    ctf_posterior_raw = jnp.where(ctf_has_mass, ctf_probs * noise_variance[None, :], 0.0)
+    ctf_posterior_raw = jnp.where(ctf_has_mass, ctf_probs * noise_variance, 0.0)
     aa_raw = jnp.where(ctf_has_mass, proj_abs2 * ctf_posterior_raw, 0.0).astype(jnp.float32)
     cross_has_mass = summed_masked != 0.0
     cross = jnp.where(cross_has_mass, proj * jnp.conj(summed_masked), 0.0)
-    xa_raw = (noise_variance[None, :] * cross.real).astype(jnp.float32)
+    xa_raw = (noise_variance * cross.real).astype(jnp.float32)
     safe_scale = jnp.maximum(row_scale, jnp.asarray(1e-30, dtype=jnp.float32))
     xa = (xa_raw / safe_scale[:, None]).astype(jnp.float32)
     aa = (aa_raw / (safe_scale[:, None] ** 2)).astype(jnp.float32)
@@ -837,6 +861,7 @@ class _ChunkImageOperands(NamedTuple):
     max_posterior: jax.Array  # float32 [C_B]
     best_cell_index: jax.Array  # int64 [C_B], segment-relative (r_local * T + t)
     best_fine_rot: jax.Array  # int64 [C_B], global fine rotation id of the winner
+    optics_groups: jax.Array | None = None  # int32 [C_B] with G > 1 optics groups
 
 
 class _ChunkImageTables(NamedTuple):
@@ -883,7 +908,15 @@ def _accumulate_chunk_image_terms(
         )
     support_mass = jnp.sum(translation_posterior, axis=1)
     support_mass = jnp.where(valid_image, support_mass, jnp.zeros((), support_mass.dtype))
-    sumw = stats.sumw + jnp.sum(support_mass.astype(jnp.float64))
+    n_optics_groups = int(config.n_optics_groups)
+    if n_optics_groups == 1:
+        sumw = stats.sumw + jnp.sum(support_mass.astype(jnp.float64))
+    else:
+        # RELION's sumw_group[optics_group]: the support mass of each group's images.
+        image_optics = jnp.asarray(operands.optics_groups, dtype=jnp.int32)
+        sumw = stats.sumw + jax.ops.segment_sum(
+            support_mass.astype(jnp.float64), image_optics, num_segments=n_optics_groups
+        )
 
     # --- 3. weighted image power shells and per-image norm power -----------
     weighted_img_shells, weighted_img_per_image = _weighted_image_power_shells_and_per_image_core(
@@ -908,16 +941,46 @@ def _accumulate_chunk_image_terms(
     )
 
     # --- 5/6. noise shells with RELION's direct low-shell replacement ------
-    residual_shells, image_power_shells = (
-        _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
-            jnp.asarray(operands.block_noise_shells, dtype=jnp.float64),
-            weighted_img_shells.astype(jnp.float64),
-            operands.wavg_triplet_pixels[:, :, 2],
-            tables.wavg_shell_indices,
-            exclusive_shell_stop=int(config.direct_noise_exclusive_shell_stop),
-            shell_count=n_shells,
+    if n_optics_groups == 1:
+        residual_shells, image_power_shells = (
+            _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
+                jnp.asarray(operands.block_noise_shells, dtype=jnp.float64),
+                weighted_img_shells.astype(jnp.float64),
+                operands.wavg_triplet_pixels[:, :, 2],
+                tables.wavg_shell_indices,
+                exclusive_shell_stop=int(config.direct_noise_exclusive_shell_stop),
+                shell_count=n_shells,
+            )
         )
-    )
+    else:
+        # The same two steps once per optics group, over that group's images only.
+        residual_per_group, power_per_group = [], []
+        for group in range(n_optics_groups):
+            in_group = valid_image & (image_optics == group)
+            group_img_shells, _ = _weighted_image_power_shells_and_per_image_core(
+                operands.processed_image_half,
+                tables.shell_indices_half,
+                jnp.where(in_group, support_mass, jnp.zeros((), support_mass.dtype)),
+                operands.relion_norm_high_shell,
+                in_group,
+                shell_count=n_shells,
+                norm_unweighted_shell_cutoff=config.norm_unweighted_shell_cutoff,
+                include_unweighted_high_shell=config.include_unweighted_high_shell,
+                disable_cuda_binning=config.disable_cuda_binning,
+                deterministic_norm_reduction=config.deterministic_norm_reduction,
+            )
+            group_residual, group_power = _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
+                jnp.asarray(operands.block_noise_shells[group], dtype=jnp.float64),
+                group_img_shells.astype(jnp.float64),
+                jnp.where(in_group[:, None], operands.wavg_triplet_pixels[:, :, 2], jnp.float32(0.0)),
+                tables.wavg_shell_indices,
+                exclusive_shell_stop=int(config.direct_noise_exclusive_shell_stop),
+                shell_count=n_shells,
+            )
+            residual_per_group.append(group_residual)
+            power_per_group.append(group_power)
+        residual_shells = jnp.stack(residual_per_group)
+        image_power_shells = jnp.stack(power_per_group)
     wsum_sigma2_noise = stats.wsum_sigma2_noise + residual_shells
     wsum_img_power = stats.wsum_img_power + image_power_shells
 
@@ -1214,6 +1277,7 @@ def compute_pass2_stats_resident(
     source_faithful_spectrum_norm: bool = False,
     symmetry_label: str = "C1",
     relion_translation_angle_scale: float = 1.0,
+    optics_group_ids=None,
 ):
     """Device-resident K=1 sparse pass 2; same signature and return as the compact engine.
 
@@ -1221,6 +1285,11 @@ def compute_pass2_stats_resident(
     what is a deliberate reduction-order change. The configuration gate runs
     before any device work, so an unsupported pass fails immediately instead of
     part way through a half.
+
+    ``noise_variance`` is one shared spectrum, or ``[G, P]`` rows of G optics
+    groups with ``optics_group_ids`` giving each image's row; each image then
+    scores, backprojects and adds its noise sums with its own group
+    (:mod:`relax.helpers.optics_noise`), and the noise statistics come back per group.
     """
 
     from recovar import cuda_backproject
@@ -1534,6 +1603,19 @@ def compute_pass2_stats_resident(
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(
         noise_variance, image_shape
     ).squeeze()
+    n_optics_groups = 1 if noise_variance_half.ndim == 1 else int(noise_variance_half.shape[0])
+    optics_groups_np = None
+    if n_optics_groups > 1:
+        if optics_group_ids is None:
+            raise ValueError("a per-optics-group noise table needs optics_group_ids")
+        optics_groups_np = np.asarray(optics_group_ids, dtype=np.int32).reshape(-1)
+        if optics_groups_np.shape != (n_images,) or np.any(optics_groups_np < 0) or np.any(
+            optics_groups_np >= n_optics_groups
+        ):
+            raise ValueError(
+                f"optics_group_ids must give each of {n_images} images a row of the "
+                f"{n_optics_groups}-group noise table"
+            )
     relion_score_translation_angles = _relion_cuda_score_translation_angles_if_available(
         fine_translations_source,
         image_shape,
@@ -1720,6 +1802,7 @@ def compute_pass2_stats_resident(
         return_windowed_shifted=windowed_prepare,
         relion_exact_normalized_cc_operands=relion_exact_fine_normalized_cc,
         relion_exact_bpref_operands=relion_exact_bpref_operands,
+        noise_optics_groups=optics_groups_np,
     )
 
     # ---- resident row-aligned tables --------------------------------------
@@ -1757,6 +1840,7 @@ def compute_pass2_stats_resident(
         relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
         accumulate_scale=scale_groups_available,
         source_faithful_spectrum_norm=resolved_spectrum_norm,
+        n_optics_groups=n_optics_groups,
     )
     stats = make_resident_statistics(
         stats_config, max_posterior_dtype=precision_policy.score_real_dtype
@@ -1793,7 +1877,7 @@ def compute_pass2_stats_resident(
             n_images=int(n_images),
             n_score_pixels=int(n_windowed),
             n_recon_pixels=int(n_recon_windowed),
-            n_half_pixels=int(np.asarray(noise_variance_half).size),
+            n_half_pixels=int(np.shape(noise_variance_half)[-1]),
             n_fine_trans=int(n_fine_trans),
             score_complex_bytes=np.dtype(precision_policy.score_complex_dtype).itemsize,
             real_bytes=np.dtype(precision_policy.score_real_dtype).itemsize,
@@ -1838,7 +1922,7 @@ def compute_pass2_stats_resident(
                             n_images=int(n_images),
                             n_score_pixels=int(n_windowed),
                             n_recon_pixels=int(n_recon_windowed),
-                            n_half_pixels=int(np.asarray(noise_variance_half).size),
+                            n_half_pixels=int(np.shape(noise_variance_half)[-1]),
                             n_fine_trans=int(n_fine_trans),
                             score_complex_dtype=precision_policy.score_complex_dtype,
                             score_real_dtype=precision_policy.score_real_dtype,
@@ -1937,6 +2021,7 @@ def compute_pass2_stats_resident(
                         scale_corrections_np=scale_corrections_np,
                         group_ids_np=group_ids_np,
                         precision_policy=precision_policy,
+                        optics_groups_np=optics_groups_np,
                     )
                 except ResidentOperandsUnsupported as reason:
                     logger.info(
@@ -2064,6 +2149,7 @@ def compute_pass2_stats_resident(
             Ft_ctf_total=Ft_ctf_total,
             cuda_backproject=em_cuda_kernels,
             submitted_keys=submitted_keys,
+            optics_groups_np=optics_groups_np,
         )
     loop_s = time.time() - loop_t0
     if warmup is not None:
@@ -2295,6 +2381,7 @@ def _make_chunk_stage_operands(recon, translation_sqdist_ang) -> _ChunkStageOper
         scale=recon["scale"],
         group_ids=recon["group_ids"],
         translation_sqdist_ang=translation_sqdist_ang,
+        optics_groups=recon.get("optics_groups"),
     )
 
 
@@ -2733,6 +2820,7 @@ def _prepare_chunk_reconstruction_operands(
     exact_positions_device,
     scale_corrections_np,
     group_ids_np,
+    optics_groups_np=None,
 ):
     """Build one chunk's translated reconstruction, noise and Wavg tiles.
 
@@ -2886,6 +2974,12 @@ def _prepare_chunk_reconstruction_operands(
         group_ids_chunk[:n_valid_images] = np.asarray(
             group_ids_np[image_indices], dtype=np.int32
         )
+    optics_groups_chunk = None
+    if optics_groups_np is not None:
+        optics_groups_chunk = np.zeros(image_capacity, dtype=np.int32)
+        optics_groups_chunk[:n_valid_images] = np.asarray(
+            optics_groups_np[image_indices], dtype=np.int32
+        )
 
     translation_prior = jnp.asarray(
         np.zeros((image_capacity, int(n_fine_trans)), dtype=np.float32)
@@ -2911,6 +3005,7 @@ def _prepare_chunk_reconstruction_operands(
         "raw_translated_wavg_for_atomic": raw_translated_wavg_for_atomic,
         "scale": jnp.asarray(scale_chunk),
         "group_ids": jnp.asarray(group_ids_chunk),
+        "optics_groups": None if optics_groups_chunk is None else jnp.asarray(optics_groups_chunk),
     }
 
 
@@ -3058,6 +3153,7 @@ def _verify_resident_chunk_operands(
         "raw_translated_wavg_for_atomic",
         "scale",
         "group_ids",
+        "optics_groups",
     ):
         expected = reference_recon.get(name)
         actual = resident_recon.get(name)
@@ -3257,6 +3353,7 @@ class _MstepOnlyStatsConfig(NamedTuple):
     """
 
     n_shells: int
+    n_optics_groups: int = 1
 
 
 class _ChunkRowArrays(NamedTuple):
@@ -3300,6 +3397,8 @@ class _ChunkStageOperands(NamedTuple):
     scale: jax.Array
     group_ids: jax.Array
     translation_sqdist_ang: jax.Array | None
+    # int32 [C_B] optics-group row of each image, only with a [G, P] noise table.
+    optics_groups: jax.Array | None = None
 
 
 class _ChunkStageTables(NamedTuple):
@@ -3343,7 +3442,7 @@ class _ChunkMstepCarry(NamedTuple):
     Ft_y: jax.Array
     Ft_ctf: jax.Array
     wavg_triplet_pixels: jax.Array  # float32 [C_B, P_rect, 3]
-    noise_shells: jax.Array  # float64 [n_shells]
+    noise_shells: jax.Array  # float64 [n_shells], [G, n_shells] with G optics groups
     a2_per_image: jax.Array  # real [C_B]
     xa_per_image: jax.Array  # real [C_B]
 
@@ -3479,6 +3578,9 @@ def _resident_mstep_block(
     proj, proj_abs2, block_mstep_rotations = block_projections
     logical_recon_pixels = jnp.asarray(spec.n_recon_pixels, dtype=jnp.int32)
     logical_rect_pixels = jnp.asarray(spec.n_rect, dtype=jnp.int32)
+    block_optics_groups = (
+        None if operands.optics_groups is None else operands.optics_groups[block_row_image]
+    )
 
     if spec.use_translate_sum_kernel:
         summed, summed_masked, ctf_probs, _probs_sum_t = _resident_block_weighted_sums_kernel(
@@ -3520,6 +3622,7 @@ def _resident_mstep_block(
             operands.raw_translated_wavg_for_atomic,
             block_posterior,
             block_row_image,
+            block_optics_groups,
         )
     else:
         exact_terms = cuda_backproject.relion_wavg_sequential_runtime_flat_rows_triplet_f32(
@@ -3556,6 +3659,7 @@ def _resident_mstep_block(
         tables.noise_variance_for_noise,
         tables.shell_indices_noise,
         block_row_image,
+        block_optics_groups,
         n_shells=int(spec.stats_config.n_shells),
         image_capacity=int(spec.image_capacity),
     )
@@ -3696,7 +3800,7 @@ def _probe_mstep_block_output_avals(
     n_pixels = int(spec.n_recon_pixels)
     image_capacity = int(spec.image_capacity)
 
-    def probe(summed_masked, ctf_probs, proj, proj_abs2, noise, shells, row_image):
+    def probe(summed_masked, ctf_probs, proj, proj_abs2, noise, shells, row_image, row_groups):
         return _resident_block_noise_and_norm(
             proj,
             proj_abs2,
@@ -3705,6 +3809,7 @@ def _probe_mstep_block_output_avals(
             noise,
             shells,
             row_image,
+            row_groups,
             n_shells=int(spec.stats_config.n_shells),
             image_capacity=image_capacity,
         )
@@ -3718,6 +3823,11 @@ def _probe_mstep_block_output_avals(
         tables.noise_variance_for_noise,
         tables.shell_indices_noise,
         jax.ShapeDtypeStruct((block_rows,), jnp.int32),
+        (
+            jax.ShapeDtypeStruct((block_rows,), jnp.int32)
+            if int(spec.stats_config.n_optics_groups) > 1
+            else None
+        ),
     )
 
 
@@ -3733,7 +3843,7 @@ def _check_mstep_carry_avals(
         tables, spec=spec, dtypes=dtypes
     )
     expected = (
-        ((int(spec.stats_config.n_shells),), dtypes["noise_shells"]),
+        (_noise_shell_shape(spec.stats_config), dtypes["noise_shells"]),
         ((int(spec.image_capacity),), dtypes["a2"]),
         ((int(spec.image_capacity),), dtypes["xa"]),
     )
@@ -3771,6 +3881,13 @@ def _zero_block_partials(shapes_and_dtypes: tuple) -> Callable[[], tuple]:
     return build
 
 
+def _noise_shell_shape(stats_config) -> tuple:
+    """``(n_shells,)``, or ``(G, n_shells)`` with G optics groups."""
+
+    groups = int(stats_config.n_optics_groups)
+    return ((groups,) if groups > 1 else ()) + (int(stats_config.n_shells),)
+
+
 def _initial_mstep_carry(
     Ft_y,
     Ft_ctf,
@@ -3802,7 +3919,7 @@ def _initial_mstep_carry(
     wavg_triplet_pixels, noise_shells, a2_per_image, xa_per_image = _zero_block_partials(
         (
             ((image_capacity, int(spec.n_rect), 3), jnp.dtype(jnp.float32)),
-            ((int(spec.stats_config.n_shells),), jnp.dtype(dtypes["noise_shells"])),
+            (_noise_shell_shape(spec.stats_config), jnp.dtype(dtypes["noise_shells"])),
             ((image_capacity,), jnp.dtype(dtypes["a2"])),
             ((image_capacity,), jnp.dtype(dtypes["xa"])),
         )
@@ -4005,6 +4122,7 @@ def _resident_chunk_statistics(
         max_posterior=posterior.max_posterior,
         best_cell_index=posterior.best_cell_index,
         best_fine_rot=best_fine_rot,
+        optics_groups=operands.optics_groups,
     )
     stats = _accumulate_chunk_image_terms(
         stats, chunk_operands, image_tables, config=spec.stats_config
@@ -4218,6 +4336,7 @@ def _run_resident_chunk(
     Ft_ctf_total,
     cuda_backproject,
     submitted_keys=None,
+    optics_groups_np=None,
 ):
     """Run every resident stage for one capacity chunk.
 
@@ -4268,6 +4387,7 @@ def _run_resident_chunk(
             exact_positions_device=exact_positions_device,
             scale_corrections_np=scale_corrections_np,
             group_ids_np=group_ids_np,
+            optics_groups_np=optics_groups_np,
         )
     else:
         # The chunk's image slots are the half's images ``image_start`` to
@@ -4308,6 +4428,7 @@ def _run_resident_chunk(
                     exact_positions_device=exact_positions_device,
                     scale_corrections_np=scale_corrections_np,
                     group_ids_np=group_ids_np,
+                    optics_groups_np=optics_groups_np,
                 ),
                 translation_angles=translation_angles,
                 recon_pixel_indices=recon_pixel_indices,

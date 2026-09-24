@@ -23,6 +23,7 @@ from relax.helpers.dtype_policy import DensePrecisionPolicy, audit_operand_preci
 from relax.helpers.env_flags import parse_env_binary_flag
 from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.helpers.image_shifts import apply_relion_integer_pre_shifts, half_image_phase_factors
+from relax.helpers.optics_noise import noise_rows, pixel_rows
 from relax.helpers.preprocessing import (
     apply_half_translation_phases,
     half_translation_phase_table,
@@ -179,7 +180,7 @@ def _gaussian_batch_norm(processed_score_half_raw, noise_operand, norm_half_weig
 
     power = jnp.abs(processed_score_half_raw) ** 2
     if multiply_inverse_noise:
-        score_power_over_noise = power * noise_operand[None, :]
+        score_power_over_noise = power * pixel_rows(noise_operand)
     else:
         score_power_over_noise = power / noise_operand
     return jnp.sum(
@@ -212,16 +213,18 @@ def _weighted_ctf_pair(processed_score_half_raw, processed_recon_half_raw, weigh
     )
 
 
-def _generic_inverse_noise_operands(noise_variance_half) -> bool:
+def _generic_inverse_noise_operands(noise_variance_half, *, optics_group_rows: bool = False) -> bool:
     """Use the XFLOAT-reciprocal noise operand on the generic (non-exact) path.
 
-    Only the shared one-dimensional spectrum layout is handled here; per-image
-    noise keeps the historical division so its broadcasting is unchanged.
+    The shared one-dimensional spectrum and per-optics-group rows
+    (:mod:`relax.helpers.optics_noise`) are handled here, so every group gets the
+    one-group arithmetic; other per-image noise keeps the historical division so
+    its broadcasting is unchanged.
     """
 
     if parse_env_binary_flag(_SPARSE_PASS2_F64_NOISE_OPERANDS_ENV):
         return False
-    return int(jnp.ndim(noise_variance_half)) == 1
+    return optics_group_rows or int(jnp.ndim(noise_variance_half)) == 1
 
 
 @jax.jit
@@ -275,6 +278,7 @@ class UnshiftedBucketOperands(NamedTuple):
     folded_normalized_cc_operands: object
     sparse_score_input_half: object
     processed_score_half_for_noise: object
+    noise_variance_half: object
 
 
 def prepare_unshifted_bucket_operands(
@@ -297,6 +301,7 @@ def prepare_unshifted_bucket_operands(
     relion_exact_normalized_cc_operands=False,
     relion_exact_bpref_operands=False,
     stage_timing=None,
+    noise_optics_groups=None,
 ) -> UnshiftedBucketOperands:
     """Per-image half of :func:`_prepare_bucket_io`, statement for statement.
 
@@ -304,8 +309,13 @@ def prepare_unshifted_bucket_operands(
     half instead of once per chunk. Nothing here depends on the fine translations,
     so a call covering any set of images returns exactly the rows a per-bucket
     call would; the translation-dependent work stays in :func:`_prepare_bucket_io`.
+
+    ``noise_variance_half`` is one shared spectrum or a per-optics-group table
+    whose rows ``noise_optics_groups`` selects per image (:mod:`relax.helpers.optics_noise`).
     """
 
+    optics_group_rows = jnp.ndim(noise_variance_half) == 2 and noise_optics_groups is not None
+    noise_variance_half = noise_rows(noise_variance_half, noise_optics_groups, image_indices)
     if score_mode not in {"gaussian", "normalized_cc"}:
         raise ValueError(f"score_mode must be 'gaussian' or 'normalized_cc', got {score_mode!r}")
 
@@ -363,22 +373,22 @@ def prepare_unshifted_bucket_operands(
         inverse_noise_half = jnp.reciprocal(
             jnp.asarray(noise_variance_half, dtype=jnp.float64)
         ).astype(acc_real_dtype)
-        weighted_ctf_half = ctf_half * inverse_noise_half[None, :]
+        weighted_ctf_half = ctf_half * pixel_rows(inverse_noise_half)
         ctf2_over_nv_half = weighted_ctf_half * ctf_half
         relion_score_corr_img_half = _relion_cuda_corr_img_from_native_noise_variance(
-            noise_variance_half[None, :],
+            pixel_rows(noise_variance_half),
             ctf_half_rfloat,
             image_shape,
             batch_scale[:, None] if scale_corrections is not None else None,
             output_dtype=acc_real_dtype,
         )
         ctf2_score_half = ctf_half**2
-    elif _generic_inverse_noise_operands(noise_variance_half):
+    elif _generic_inverse_noise_operands(noise_variance_half, optics_group_rows=optics_group_rows):
         # Preserve RELION's binary64 reciprocal -> accumulation-precision cast.
         inverse_noise_half = jnp.reciprocal(
             jnp.asarray(noise_variance_half, dtype=jnp.float64)
         ).astype(acc_real_dtype)
-        weighted_ctf_half = ctf_half * inverse_noise_half[None, :]
+        weighted_ctf_half = ctf_half * pixel_rows(inverse_noise_half)
         ctf2_over_nv_half = weighted_ctf_half * ctf_half
         ctf2_score_half = ctf_half**2
     else:
@@ -598,6 +608,7 @@ def prepare_unshifted_bucket_operands(
         folded_normalized_cc_operands=folded_normalized_cc_operands,
         sparse_score_input_half=sparse_score_input_half,
         processed_score_half_for_noise=processed_score_half_for_noise,
+        noise_variance_half=noise_variance_half,
     )
 
 
@@ -631,6 +642,7 @@ def _prepare_bucket_io(
     relion_exact_bpref_operands=False,
     return_native_bpref_operands=False,
     stage_timing=None,
+    noise_optics_groups=None,
 ):
     """Run preprocessing for a batch of images (translations tiled, CTF/noise ratios).
 
@@ -663,6 +675,7 @@ def _prepare_bucket_io(
         relion_exact_normalized_cc_operands=relion_exact_normalized_cc_operands,
         relion_exact_bpref_operands=relion_exact_bpref_operands,
         stage_timing=stage_timing,
+        noise_optics_groups=noise_optics_groups,
     )
     substage_t0 = time.time()
     (
@@ -693,6 +706,7 @@ def _prepare_bucket_io(
         folded_normalized_cc_operands,
         sparse_score_input_half,
         processed_score_half_for_noise,
+        noise_variance_half,
     ) = unshifted
 
 

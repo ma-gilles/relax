@@ -153,6 +153,9 @@ class ResidentHalfOperands:
     relion_norm_high_shell: jax.Array | None
     scale: jax.Array
     group_ids: jax.Array
+    # Optics-group row of each image, only with a per-group noise table
+    # (relax.helpers.optics_noise); None keeps the one-group programs unchanged.
+    optics_groups: jax.Array | None = None
 
     def __post_init__(self):
         score_shape = (self.n_images, self.n_score_pixels)
@@ -192,6 +195,7 @@ class ResidentHalfOperands:
             "relion_norm_high_shell",
             "scale",
             "group_ids",
+            "optics_groups",
         ):
             value = getattr(self, name)
             parts[name] = 0 if value is None else int(value.size) * int(value.dtype.itemsize)
@@ -550,6 +554,7 @@ def prepare_resident_half_operands(
     group_ids_np=None,
     precision_policy: DensePrecisionPolicy | None = None,
     image_batch_size: int | None = None,
+    optics_groups_np=None,
 ) -> ResidentHalfOperands:
     """Run the per-image preparation once for ``image_indices`` and keep it resident.
 
@@ -618,6 +623,7 @@ def prepare_resident_half_operands(
             kwargs.get("relion_exact_normalized_cc_operands", False)
         ),
         relion_exact_bpref_operands=relion_exact_bpref_operands,
+        noise_optics_groups=kwargs.get("noise_optics_groups"),
     )
 
     score_indices = jnp.asarray(window_indices, dtype=jnp.int32)
@@ -764,6 +770,11 @@ def prepare_resident_half_operands(
         relion_norm_high_shell=stack("relion_norm_high_shell"),
         scale=jnp.asarray(scale),
         group_ids=jnp.asarray(group_ids),
+        optics_groups=(
+            None
+            if optics_groups_np is None
+            else jnp.asarray(np.asarray(optics_groups_np, dtype=np.int32)[image_indices])
+        ),
     )
     logger.info(
         "Resident pass-2 per-half operands: %d images, %d score / %d recon / %d half pixels, "
@@ -815,6 +826,7 @@ def _gather_chunk_arrays(
     relion_norm_high_shell,
     scale,
     group_ids,
+    optics_groups,
     translation_angles,
     rect_indices,
     exact_positions,
@@ -861,6 +873,7 @@ def _gather_chunk_arrays(
         _gather_rows(relion_norm_high_shell, safe_slots, valid),
         _gather_rows(scale, safe_slots, valid, fill=1.0),
         _gather_rows(group_ids, safe_slots, valid, fill=-1),
+        _gather_rows(optics_groups, safe_slots, valid),
         raw_translated_wavg_rectangle,
         raw_translated_wavg_rectangle[:, :, jnp.asarray(exact_positions, dtype=jnp.int32)],
     )
@@ -897,6 +910,7 @@ def gather_resident_chunk_operands(
         relion_norm_high_shell,
         scale,
         group_ids,
+        optics_groups,
         raw_translated_wavg_rectangle,
         raw_translated_wavg_for_atomic,
     ) = _gather_chunk_arrays(
@@ -914,6 +928,7 @@ def gather_resident_chunk_operands(
         operands.relion_norm_high_shell,
         operands.scale,
         operands.group_ids,
+        operands.optics_groups,
         jnp.asarray(translation_angles, dtype=jnp.float32),
         jnp.asarray(rect_indices, dtype=jnp.int32),
         jnp.asarray(exact_positions, dtype=jnp.int32),
@@ -935,4 +950,5 @@ def gather_resident_chunk_operands(
         "raw_translated_wavg_for_atomic": raw_translated_wavg_for_atomic,
         "scale": scale,
         "group_ids": group_ids,
+        "optics_groups": optics_groups,
     }

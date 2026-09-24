@@ -946,6 +946,38 @@ def compute_noise_block(
     return noise_shells, a2_shells, xa_shells
 
 
+def compute_noise_block_per_optics_group(
+    proj_half,
+    proj_abs2_half,
+    summed_masked,
+    ctf_probs,
+    noise_table,
+    row_optics_groups,
+    shell_indices,
+    shell_count,
+):
+    """:func:`compute_noise_block` with one noise spectrum per optics group.
+
+    Row ``r`` carries its image's group ``row_optics_groups[r]`` and is weighted by
+    that group's row of ``noise_table`` ``[G, P]``. The ``A2 - 2*XA`` terms are summed
+    per group, statement for statement as the one-group function sums them over all
+    rows (``A2`` per row, then the group's noise times its summed cross term), and
+    binned to ``[G, shell_count]``: RELION's ``wsum_model.sigma2_noise[optics_group]``.
+    """
+    n_groups = int(noise_table.shape[0])
+    noise_rows = noise_table[row_optics_groups]
+    ctf_has_mass = ctf_probs != 0.0
+    ctf_probs_raw = jnp.where(ctf_has_mass, ctf_probs * noise_rows, 0.0)
+    a2_terms = jnp.where(ctf_has_mass, proj_abs2_half * ctf_probs_raw, 0.0)
+    a2 = jax.ops.segment_sum(a2_terms, row_optics_groups, num_segments=n_groups)
+
+    cross_terms = jnp.where(summed_masked != 0.0, proj_half * jnp.conj(summed_masked), 0.0)
+    cross = jax.ops.segment_sum(cross_terms, row_optics_groups, num_segments=n_groups)
+    xa = jnp.where(cross.real != 0.0, noise_table * cross.real, 0.0)
+    block_noise = a2 - 2.0 * xa
+    return jax.vmap(lambda values: bin_shell_values_jax(values, shell_indices, shell_count))(block_noise)
+
+
 @jax.jit
 def compute_norm_residual_per_image(
     proj_half,

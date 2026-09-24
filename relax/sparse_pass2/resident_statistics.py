@@ -63,6 +63,7 @@ from relax.helpers.deterministic_reduce import (
     fixed_order_segment_sum,
 )
 from relax.helpers.env_flags import parse_env_flag
+from relax.helpers.optics_noise import pixel_rows
 from relax.helpers.projection import compute_noise_block
 from relax.sparse_pass2.sparse_pass2_policy import _RELION_POWERCLASS_SPECTRUM_NORM_ENV
 from relax.sparse_pass2.sparse_pass2_wavg import (
@@ -103,10 +104,10 @@ class ResidentStatistics(NamedTuple):
     what the host's ``hard_assignment`` counts in.
     """
 
-    wsum_sigma2_noise: jax.Array  # float64 [n_shells]
-    wsum_img_power: jax.Array  # float64 [n_shells]
+    wsum_sigma2_noise: jax.Array  # float64 [n_shells], [G, n_shells] for G optics groups
+    wsum_img_power: jax.Array  # float64 [n_shells], [G, n_shells] for G optics groups
     sigma2_offset: jax.Array  # float64 []
-    sumw: jax.Array  # float64 []
+    sumw: jax.Array  # float64 [], [G] for G optics groups
     norm_correction: jax.Array  # float64 [n_images]
     scale_xa: jax.Array  # float64 [n_scale_groups]
     scale_aa: jax.Array  # float64 [n_scale_groups]
@@ -202,6 +203,10 @@ class ResidentStatisticsConfig:
     # ``relion_wavg_atomic_direct_noise`` is set.
     direct_noise_exclusive_shell_stop: int
     accumulate_scale: bool
+    # RELION optics groups with their own noise spectrum (relax.helpers.optics_noise).
+    # With more than one, the noise and image-power shells are [G, n_shells] and
+    # ``sumw`` is [G] (``wsum_model.sigma2_noise[g]``, ``sumw_group[g]``).
+    n_optics_groups: int = 1
 
     def __post_init__(self):
         for name in (
@@ -237,6 +242,7 @@ def resolve_statistics_config(
     relion_wavg_atomic_scale_aa: bool = True,
     accumulate_scale: bool = True,
     source_faithful_spectrum_norm: bool | None = None,
+    n_optics_groups: int = 1,
 ) -> ResidentStatisticsConfig:
     """Build a config, reading the same environment the host tail reads.
 
@@ -273,6 +279,7 @@ def resolve_statistics_config(
         relion_wavg_atomic_scale_aa=bool(relion_wavg_atomic_scale_aa),
         direct_noise_exclusive_shell_stop=int(n_shells) if cutoff is None else cutoff + 1,
         accumulate_scale=bool(accumulate_scale),
+        n_optics_groups=int(n_optics_groups),
     )
 
 
@@ -290,11 +297,12 @@ def make_resident_statistics(
 
     n_images = int(config.n_images)
     zeros_images = jnp.zeros(n_images, dtype=jnp.float64)
+    groups = () if int(config.n_optics_groups) == 1 else (int(config.n_optics_groups),)
     return ResidentStatistics(
-        wsum_sigma2_noise=jnp.zeros(int(config.n_shells), dtype=jnp.float64),
-        wsum_img_power=jnp.zeros(int(config.n_shells), dtype=jnp.float64),
+        wsum_sigma2_noise=jnp.zeros(groups + (int(config.n_shells),), dtype=jnp.float64),
+        wsum_img_power=jnp.zeros(groups + (int(config.n_shells),), dtype=jnp.float64),
         sigma2_offset=jnp.zeros((), dtype=jnp.float64),
-        sumw=jnp.zeros((), dtype=jnp.float64),
+        sumw=jnp.zeros(groups, dtype=jnp.float64),
         norm_correction=zeros_images,
         scale_xa=jnp.zeros(int(config.n_scale_groups), dtype=jnp.float64),
         scale_aa=jnp.zeros(int(config.n_scale_groups), dtype=jnp.float64),
@@ -366,10 +374,11 @@ def _flat_row_norm_and_scale_terms(
         pixel_mask = jnp.asarray(pixel_mask, dtype=bool).reshape(-1)
         ctf_has_mass = ctf_has_mass & pixel_mask[None, :]
         cross_has_mass = cross_has_mass & pixel_mask[None, :]
-    ctf_probs_raw = jnp.where(ctf_has_mass, ctf_probs * noise_variance[None, :], 0.0)
+    noise_variance = pixel_rows(noise_variance)
+    ctf_probs_raw = jnp.where(ctf_has_mass, ctf_probs * noise_variance, 0.0)
     a2_terms = jnp.where(ctf_has_mass, proj_abs2 * ctf_probs_raw, 0.0)
     cross_terms = jnp.where(cross_has_mass, proj * jnp.conj(summed_masked), 0.0)
-    xa_terms = noise_variance[None, :] * cross_terms.real
+    xa_terms = noise_variance * cross_terms.real
     return jnp.sum(a2_terms, axis=1), jnp.sum(xa_terms, axis=1)
 
 
@@ -628,6 +637,8 @@ def accumulate_chunk_statistics(
 
     if not isinstance(config, ResidentStatisticsConfig):
         raise TypeError(f"config must be a ResidentStatisticsConfig, got {type(config)!r}")
+    if int(config.n_optics_groups) != 1:
+        raise NotImplementedError("the T9a statistics stage keeps one optics group's noise")
     if operands.row_posterior.shape[1] != int(config.n_fine_trans):
         raise ValueError(
             "row posterior translation axis does not match the configured fine translation count: "
@@ -652,7 +663,7 @@ class FinalizedStatistics(NamedTuple):
     wsum_sigma2_noise: np.ndarray
     wsum_img_power: np.ndarray
     wsum_sigma2_offset: float
-    sumw: float
+    sumw: float | np.ndarray
     wsum_norm_correction: np.ndarray
     wsum_scale_correction_xa: np.ndarray | None
     wsum_scale_correction_aa: np.ndarray | None
@@ -724,7 +735,7 @@ def finalize_statistics(
         wsum_sigma2_noise=np.asarray(wsum_sigma2_noise, dtype=np.float64),
         wsum_img_power=np.asarray(wsum_img_power, dtype=np.float64),
         wsum_sigma2_offset=float(sigma2_offset),
-        sumw=float(sumw),
+        sumw=float(sumw) if np.ndim(sumw) == 0 else np.asarray(sumw, dtype=np.float64),
         wsum_norm_correction=np.asarray(norm_correction, dtype=np.float64),
         wsum_scale_correction_xa=(
             np.asarray(scale_xa, dtype=np.float64) if config.accumulate_scale else None

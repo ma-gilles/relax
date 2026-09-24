@@ -525,6 +525,11 @@ def compute_local_search_resident(
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(
         noise_variance, image_shape
     ).squeeze().astype(precision_policy.score_real_dtype)
+    if noise_variance_half.ndim != 1:
+        raise NotImplementedError(
+            "device-resident local search keeps one optics group's noise spectrum; "
+            "per-optics-group noise is implemented in the global resident pass only"
+        )
     relion_score_translation_angles = _relion_cuda_score_translation_angles_if_available(
         fine_translations,
         image_shape,

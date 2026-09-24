@@ -627,6 +627,7 @@ def compute_pass2_stats_sparse_bucketed(
     source_faithful_spectrum_norm: bool = False,
     symmetry_label: str = "C1",
     relion_translation_angle_scale: float = 1.0,
+    optics_group_ids=None,
 ):
     """Bucketed batched implementation of sparse pass-2 oversampling.
 
@@ -634,7 +635,14 @@ def compute_pass2_stats_sparse_bucketed(
 
     ``relion_exact_fine_gaussian`` enables RELION's direct fine-search
     diff2/minimum ordering in the active ACC precision (float32 or float64).
+    It keeps one optics group's noise spectrum; per-optics-group noise runs on the
+    device-resident driver only.
     """
+    if optics_group_ids is not None:
+        raise NotImplementedError(
+            "the compact/bucketed sparse pass 2 keeps one optics group's noise spectrum; "
+            "select the device-resident driver (RELAX_SPARSE_PASS2_RESIDENT=1) for several"
+        )
     device_signature_configured = bool(
         os.environ.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "").strip()
     )
