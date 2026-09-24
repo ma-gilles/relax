@@ -1,5 +1,6 @@
 """Select the supported sparse pass-2 engine without changing admission policy."""
 
+import functools
 import logging
 
 import numpy as np
@@ -224,6 +225,19 @@ def compute_pass2_stats_sparse(
                 relion_projector_half,
                 relion_projector_r_max=relion_projector_r_max,
                 projection_padding_factor=projection_padding_factor,
+            )
+        from relax.diagnostics import resident_shadow
+
+        if sparse_pass2_impl is compute_pass2_stats_resident and resident_shadow.shadow_dir() is not None:
+            sparse_pass2_impl = functools.partial(
+                resident_shadow.run_resident_with_compact_shadow,
+                compute_pass2_stats_resident,
+                compute_pass2_stats_sparse_bucketed,
+                lambda: _open_persistent_relion_projector_texture(
+                    relion_projector_half,
+                    relion_projector_r_max=relion_projector_r_max,
+                    projection_padding_factor=projection_padding_factor,
+                ),
             )
         return _call_with_persistent_texture_cleanup(
             texture, sparse_pass2_impl,
