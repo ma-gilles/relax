@@ -407,6 +407,12 @@ def test_exact_local_xhalf_tail_microbatch_keeps_cap_for_planned_neighborhoods()
 
 def test_exact_local_xhalf_projection_cap_matches_case10_proven_bucket_boundary(monkeypatch):
     monkeypatch.delenv(EXACT_LOCAL_XHALF_PROJECTION_TARGET_ROW_PIXELS_ENV, raising=False)
+    # Case 10's boundary comes from the fixed row-pixel floor. Without a device the free-memory
+    # probe returns None and the floor applies; on a GPU the probe raises the budget with free
+    # memory (test_xhalf_projection_budget_follows_device_memory), so pin it to the floor here.
+    from relax.local import local_batch_planning
+
+    monkeypatch.setattr(local_batch_planning, "_exact_local_runtime_free_memory_bytes", lambda: None)
     layout = _identity_layout(np.asarray([128, 256, 520], dtype=np.int32), n_trans=116)
 
     cap = _exact_local_xhalf_projection_microbatch_cap(
