@@ -231,3 +231,27 @@ def test_full_box_reference_size_is_explicit_for_a_class_on_another_grid():
     kwargs = dict(experiment_dataset=half, cs_for_engine=None)
     assert optics_shapes.class_kwargs(kwargs, half.classes[1], 5)["reference_current_size"] == REF_BOX
     assert optics_shapes.class_kwargs(kwargs, half.classes[0], 5)["reference_current_size"] is None
+
+
+@pytest.mark.unit
+def test_class_pre_shifts_are_rounded_in_the_class_pixels():
+    # RELION rounds a particle's stored offset in its own image pixels (ml_optimiser.cpp:6085),
+    # so a class's pre-shift is round(offset * factor), not round(offset) * factor.
+    from relax.refinement import iteration_loop
+
+    half = _half()
+    previous = np.array([[1.4, -2.6], [2.5, 1.1], [-0.6, 3.3], [0.2, 0.2], [4.4, -4.4]])
+    grid = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+    out = iteration_loop._class_translation_kwargs(
+        half, previous, sigma_offset_angstrom=10.0, base_translations=grid, current_translations=grid,
+        with_log_prior=True, zero_cold_center=True,
+    )["class_translation_overrides"]
+    for shape_class, values in zip(half.classes, out):
+        in_class = previous[shape_class.image_indices] * shape_class.translation_factor
+        expected = np.sign(in_class) * np.floor(np.abs(in_class) + 0.5)
+        np.testing.assert_array_equal(values["translation_search_base"], expected.astype(np.float32))
+        assert values["translation_log_prior"].shape == (shape_class.image_indices.size, 3)
+    assert iteration_loop._class_translation_kwargs(
+        object(), previous, sigma_offset_angstrom=1.0, base_translations=grid, current_translations=grid,
+        with_log_prior=False, zero_cold_center=False,
+    ) == {}

@@ -601,6 +601,64 @@ def _optics_group_kwargs(
     return kwargs
 
 
+def _class_translation_kwargs(
+    dataset,
+    previous_translations,
+    *,
+    sigma_offset_angstrom,
+    base_translations,
+    current_translations,
+    with_log_prior: bool,
+    zero_cold_center: bool,
+) -> dict:
+    """Each shape class's translation operands, rebuilt in its own pixels.
+
+    RELION converts a particle's stored offset to its own image pixels and rounds it
+    there for the image pre-shift (``my_old_offset.selfROUND()``, ml_optimiser.cpp:6085);
+    the prior center and ``pdf_offset`` follow from that rounded offset in Angstrom. A
+    class's values therefore come from the same helpers applied to its offsets in its
+    pixels, not from scaling the reference class's rounded values. Empty for one shape.
+    """
+
+    if not isinstance(dataset, MultiShapeHalf):
+        return {}
+    dtype = _dense_global_scoring_dtype()
+    overrides = []
+    for shape_class in dataset.classes:
+        factor = shape_class.translation_factor
+        previous = (
+            None
+            if previous_translations is None
+            else np.asarray(previous_translations, dtype=np.float64)[shape_class.image_indices] * factor
+        )
+        inputs = relion_half_translation_prior_inputs(
+            previous,
+            voxel_size=shape_class.pixel_size,
+            base_translations=None if base_translations is None else np.asarray(base_translations) * factor,
+            current_translations=np.asarray(current_translations) * factor,
+            dtype=dtype,
+        )
+        values = {
+            "translation_search_base": relion_translation_search_base(previous, dtype=dtype),
+            "trans_prior_center": inputs.local_prior_center,
+            "trans_prior_center_for_engine": inputs.engine_prior_center,
+        }
+        if with_log_prior:
+            center = inputs.prior_center
+            if center is None and zero_cold_center:
+                center = np.zeros(2, dtype=dtype)
+            values["translation_log_prior"] = make_relion_translation_log_prior(
+                inputs.prior_translations,
+                shape_class.pixel_size,
+                sigma_offset_angstrom,
+                center,
+                offset_range_pixels=None,
+                dtype=dtype,
+            )
+        overrides.append(values)
+    return {"class_translation_overrides": tuple(overrides)}
+
+
 def _largest_image_size(dataset) -> int:
     """The largest image box of a half (its shape classes' for several shapes)."""
 
@@ -2626,6 +2684,15 @@ def refine_single_volume(
                         coarse_size_step_deg,
                         particle_diameter_ang,
                     ),
+                    **_class_translation_kwargs(
+                        experiment_datasets[k],
+                        previous_translations_k,
+                        sigma_offset_angstrom=sigma_offset_k,
+                        base_translations=base_translations,
+                        current_translations=current_translations,
+                        with_log_prior=not use_local,
+                        zero_cold_center=not k_class_enabled,
+                    ),
                     bpref_device_signature_active=bpref_device_signature_active,
                     k=k,
                     experiment_dataset=experiment_datasets[k],
@@ -2697,6 +2764,15 @@ def refine_single_volume(
                         previous_noise_radial_per_half[k],
                         coarse_size_step_deg,
                         particle_diameter_ang,
+                    ),
+                    **_class_translation_kwargs(
+                        experiment_datasets[k],
+                        previous_translations_k,
+                        sigma_offset_angstrom=sigma_offset_k,
+                        base_translations=base_translations,
+                        current_translations=current_translations,
+                        with_log_prior=not use_local,
+                        zero_cold_center=not k_class_enabled,
                     ),
                     bpref_device_signature_active=bpref_device_signature_active,
                     k=k,
@@ -4927,6 +5003,15 @@ def refine_single_volume(
                     final_local_pass1_step_deg,
                     particle_diameter_ang,
                 ),
+                **_class_translation_kwargs(
+                    experiment_datasets[k],
+                    previous_translations_k,
+                    sigma_offset_angstrom=final_sigma_offset_k,
+                    base_translations=final_base_translations,
+                    current_translations=final_current_translations,
+                    with_log_prior=False,
+                    zero_cold_center=False,
+                ),
                 bpref_device_signature_active=False,
                 k=k,
                 experiment_dataset=experiment_datasets[k],
@@ -4979,6 +5064,15 @@ def refine_single_volume(
             final_result = _score_half_dense_in_bpref_scope(
                 **_optics_group_kwargs(
                     optics_group_ids_per_half[k], experiment_datasets[k], previous_noise_radial_per_half[k]
+                ),
+                **_class_translation_kwargs(
+                    experiment_datasets[k],
+                    previous_translations_k,
+                    sigma_offset_angstrom=final_sigma_offset_k,
+                    base_translations=final_base_translations,
+                    current_translations=final_current_translations,
+                    with_log_prior=True,
+                    zero_cold_center=False,
                 ),
                 bpref_device_signature_active=False,
                 k=k,

@@ -444,7 +444,8 @@ def score_half_by_shape(score_fn, kwargs):
     ``kwargs`` are ``score_fn``'s keywords for the whole half plus ``noise_radial_k``,
     the half's ``[G, n_ref]`` reference-shell noise spectra, and optionally
     ``class_batch_overrides``, one dict of batch-size keywords per class planned for
-    that class's own image box and sizes.
+    that class's own image box and sizes, and ``class_translation_overrides``, each
+    class's translation operands rebuilt in its own pixels.
     """
 
     from relax.dense.score_outputs import PerHalfOutputs
@@ -453,6 +454,7 @@ def score_half_by_shape(score_fn, kwargs):
     half = kwargs["experiment_dataset"]
     noise_radial = kwargs.pop("noise_radial_k")
     batch_overrides = kwargs.pop("class_batch_overrides", None)
+    translation_overrides = kwargs.pop("class_translation_overrides", None)
     if batch_overrides is not None and len(batch_overrides) != len(half.classes):
         raise ValueError("class_batch_overrides needs one entry per shape class")
     if kwargs.get("optics_group_ids_k") is None:
@@ -464,6 +466,10 @@ def score_half_by_shape(score_fn, kwargs):
         class_kw = class_kwargs(kwargs, shape_class, half.n_units)
         if batch_overrides is not None:
             class_kw.update(batch_overrides[index])
+        if translation_overrides is not None:
+            # The class's own rounded pre-shifts, prior centers and pdf_offset replace the
+            # scaled reference values, for the operands this call takes.
+            class_kw.update({key: value for key, value in translation_overrides[index].items() if key in class_kw})
         class_kw["noise_variance_k"] = class_noise_table(noise_radial, shape_class, ref_box)
         class_kw["outputs"] = PerHalfOutputs()
         results.append(score_fn(**class_kw))
