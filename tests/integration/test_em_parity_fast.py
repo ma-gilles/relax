@@ -588,7 +588,7 @@ def test_em_parity_fast_k1_coldstart(tmp_path, start):
 @pytest.mark.gpu
 @pytest.mark.integration
 @pytest.mark.slow
-def test_em_parity_fast_k1_coldstart_os1(tmp_path):
+def test_em_parity_fast_k1_os1_coldstart_standalone(tmp_path):
     """The standalone K1 cold start at --oversampling 1 against RELION's os1 run.
 
     Every other K=1 case here is oversampling 0 or a replay, so this is the
@@ -603,7 +603,7 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling):
     _assert_parity_ancestors_or_skip()
     relion_set = "k1_5k128_relion_os1" if oversampling else "k1_5k128_relion_os0"
     relion_dir = K1_OS1_RELION_DIR if oversampling else K1_RELION_DIR
-    case = "k1_coldstart_os1" if oversampling else "k1_coldstart"
+    case = "k1_os1_coldstart" if oversampling else "k1_coldstart"
     require_fixture_sets("k1_5k128_data", relion_set)
     _require_fixture(REFINE_SCRIPT, K1_FIXTURE_DIR, relion_dir, K1_DATA_STAR)
 
