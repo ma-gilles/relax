@@ -626,6 +626,7 @@ def _run_sparse_k_class_adaptive_pass2(
         scale_corrections=base_engine_kwargs.get("scale_corrections"),
         group_ids=base_engine_kwargs.get("group_ids"),
         optics_group_ids=base_engine_kwargs.get("optics_group_ids"),
+        reconstruction_volume_current_size=base_engine_kwargs.get("reconstruction_volume_current_size"),
         scale_correction_group_count=base_engine_kwargs.get("scale_correction_group_count"),
         scale_correction_data_vs_prior=base_engine_kwargs.get("scale_correction_data_vs_prior"),
         image_pre_shifts=base_engine_kwargs.get("image_pre_shifts"),
@@ -2667,9 +2668,10 @@ def run_dense_k_class_em_adaptive(
     means_array = _as_class_means(means)
     n_classes = int(means_array.shape[0])
     log_priors = _class_log_priors(n_classes, class_log_priors)
-    if engine_kwargs.get("optics_group_ids") is not None and (
-        n_classes != 1 or firstiter_cc_pass2_only_best_coarse
-    ):
+    if (
+        engine_kwargs.get("optics_group_ids") is not None
+        or engine_kwargs.get("reconstruction_volume_current_size") is not None
+    ) and (n_classes != 1 or firstiter_cc_pass2_only_best_coarse):
         raise NotImplementedError(
             "per-optics-group noise is implemented for the K=1 Gaussian adaptive route "
             "(coarse significance + device-resident pass 2)"

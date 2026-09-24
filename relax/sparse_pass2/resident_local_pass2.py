@@ -381,11 +381,14 @@ def compute_local_search_resident(
     class_log_priors=None,
     score_only=False,
     optics_group_ids=None,
+    reconstruction_volume_current_size=None,
 ) -> LocalEMResult:
     """Run one K=1 local-search fine pass 2 on the device-resident stages.
 
     ``noise_variance`` may be ``[G, P]`` rows of G optics groups with
-    ``optics_group_ids`` giving each image's row, as in the global resident pass.
+    ``optics_group_ids`` giving each image's row, and ``reconstruction_volume_current_size``
+    keeps the backprojector on the reference model size for images on another grid,
+    as in the global resident pass.
 
     Returns the same :class:`~recovar.em.helpers.types.LocalEMResult` the exact
     local engine returns for this configuration. See the module docstring for
@@ -590,10 +593,15 @@ def compute_local_search_resident(
     )
 
     # ---- accumulator layout (identical to the exact engine's x-half BPref) -
+    volume_current_size = (
+        mstep_current_size
+        if reconstruction_volume_current_size is None
+        else int(reconstruction_volume_current_size)
+    )
     recon_volume_shape = relion_backprojector_volume_shape(
         volume_shape,
         reconstruction_padding_factor,
-        current_size=mstep_current_size,
+        current_size=volume_current_size,
     )
     recon_accum_shape = half_volume_accumulator_shape(recon_volume_shape)
     recon_volume_size = int(np.prod(recon_accum_shape))
@@ -830,7 +838,7 @@ def compute_local_search_resident(
             rect_indices_device=rect_indices_device,
             image_shape=image_shape,
             current_size=current_size,
-            mstep_current_size=mstep_current_size,
+            mstep_current_size=volume_current_size,
             recon_volume_shape=recon_volume_shape,
             max_adjoint_block_bytes=max_adjoint_block_bytes,
             noise_variance_for_noise=noise_variance_for_noise_device,

@@ -465,6 +465,7 @@ def run_local_em_exact(
     _defer_packed_vdam_enabled: bool = False,
     _packed_final_noise_enabled: bool = False,
     optics_group_ids=None,
+    reconstruction_volume_current_size: int | None = None,
 ) -> LocalEMResult:
     """Run exact local EM over per-image local hypothesis sets.
 
@@ -896,6 +897,15 @@ def run_local_em_exact(
         relion_projector_half, use_float64_projections=use_float64_projections,
     )
 
+    # Images on another grid than the reference keep the backprojector on the
+    # reference model size (relax.refinement.optics_shapes).
+    if reconstruction_volume_current_size is not None and (
+        stable_fourier_window_shapes or not mstep_relion_x_half
+    ):
+        raise NotImplementedError(
+            "images on another grid than the reference need the RELION x-half M-step "
+            "without stable Fourier windows"
+        )
     if mstep_relion_x_half:
         # RELION BPref::initZeros(current_size) sizes the accumulator from the
         # iteration r_max.  The reconstruction boundary then crops the output
@@ -903,12 +913,20 @@ def run_local_em_exact(
         logical_recon_volume_shape = relion_backprojector_volume_shape(
             volume_shape,
             reconstruction_padding_factor,
-            current_size=mstep_current_size,
+            current_size=(
+                mstep_current_size
+                if reconstruction_volume_current_size is None
+                else int(reconstruction_volume_current_size)
+            ),
         )
         recon_volume_shape = relion_backprojector_volume_shape(
             volume_shape,
             reconstruction_padding_factor,
-            current_size=physical_mstep_current_size,
+            current_size=(
+                physical_mstep_current_size
+                if reconstruction_volume_current_size is None
+                else int(reconstruction_volume_current_size)
+            ),
         )
     elif reconstruction_padding_factor > 1:
         recon_volume_shape = tuple(d * reconstruction_padding_factor for d in volume_shape)
@@ -968,6 +986,9 @@ def run_local_em_exact(
         recon_window_indices=recon_window_indices,
         mstep_relion_x_half=bool(mstep_relion_x_half),
     )
+    if reconstruction_volume_current_size is not None:
+        # RELION's backprojector bounds the rotated (reference-grid) radius by its r_max.
+        mstep_adjoint_max_r = float(int(reconstruction_volume_current_size) // 2)
     capture_static_kwargs = (
         _exact_local_bpref_capture_static_kwargs(
             experiment_dataset=experiment_dataset,

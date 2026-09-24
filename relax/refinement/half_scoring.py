@@ -247,7 +247,7 @@ def _coarse_pose_assignments(ha, *, rot_parent_map, trans_parent_map, n_trans_co
     )
 
 
-def _score_half_dense(
+def _score_half_dense_one_shape(
     *,
     k: int,
     experiment_dataset,
@@ -308,12 +308,19 @@ def _score_half_dense(
     coarse_scoring_rotations=None,
     symmetry: str = "C1",
     optics_group_ids_k=None,
+    projection_scale: float = 1.0,
+    reference_current_size=None,
 ) -> HalfScoreResult:
     """Dense (non-local-search) E+M scoring for one half-set.
 
     ``optics_group_ids_k`` gives each image's row of a per-optics-group
     ``noise_variance_k`` table (:mod:`relax.helpers.optics_noise`); only the K=1
     adaptive route carries it, every other engine refuses it.
+
+    ``projection_scale`` and ``reference_current_size`` describe images on another grid
+    than the reference (one shape class of :mod:`relax.refinement.optics_shapes`): the
+    projection and backprojection matrices are divided by the scale and the
+    backprojector keeps the reference model size; reported poses stay unscaled.
 
     Used by both the single-pass (``else``) and adaptive-2-pass
     (``elif use_adaptive``) branches of the half-set loop. The two modes
@@ -703,6 +710,8 @@ def _score_half_dense(
                 adaptive_em_kwargs["group_ids"] = group_ids_k
             if k1_relion_x_half_mstep:
                 adaptive_em_kwargs["mstep_relion_x_half"] = True
+            if reference_current_size is not None:
+                adaptive_em_kwargs["reconstruction_volume_current_size"] = int(reference_current_size)
             logger.info(
                 "RELION adaptive K=1 routing through run_dense_k_class_em_adaptive "
                 "(oversampling=%d, pass2_backend=%s, skip_significance_pruning=%s, "
@@ -731,12 +740,16 @@ def _score_half_dense(
                 bpref_device_signature_active=bpref_device_signature_active,
                 debug_iteration=debug_iteration,
             )
+            if projection_scale != 1.0:
+                shared_kwargs["fine_mstep_rotations_override"] = _projection_rotations(
+                    shared_kwargs["fine_mstep_rotations_override"], projection_scale
+                )
             k1_adaptive_result = run_dense_k_class_em_adaptive(
                 experiment_dataset,
                 means_single,
                 mean_variance,
                 noise_variance_k,
-                (
+                _projection_rotations(
                     coarse_scoring_rotations
                     if coarse_scoring_rotations is not None
                     and adaptive_os_local == 0
@@ -744,10 +757,11 @@ def _score_half_dense(
                     and k1_relion_x_half_mstep
                     and firstiter_score_mode_this_iter == "gaussian"
                     and not diagnostic_float64_pass2
-                    else pass2_grids.coarse_rotations
+                    else pass2_grids.coarse_rotations,
+                    projection_scale,
                 ),
                 pass2_grids.coarse_translations,
-                pass2_grids.fine_rotations,
+                _projection_rotations(pass2_grids.fine_rotations, projection_scale),
                 pass2_grids.fine_translations,
                 rot_pmap_for_collapse,
                 trans_pmap_for_collapse,
@@ -788,6 +802,9 @@ def _score_half_dense(
                 raise RuntimeError("K=1 adaptive path did not return best pose details")
             pose_dtype = _dense_global_scoring_dtype()
             best_rots = np.asarray(k1_adaptive_result.best_pose_rotations, dtype=pose_dtype)
+            if projection_scale != 1.0:
+                # Poses are reported unscaled; only projection used the scaled matrices.
+                best_rots = np.asarray(best_rots * projection_scale, dtype=pose_dtype)
             outputs.best_pose_rotations[k] = best_rots
             outputs.best_pose_rotation_eulers[k] = (
                 np.asarray(k1_adaptive_result.best_pose_eulers_deg, dtype=np.float64)
@@ -870,6 +887,40 @@ def _score_half_dense(
     )
 
 
+def _projection_rotations(rotations, scale: float):
+    """Rotation matrices for projection of images on another grid (RELION applyScaleDifference).
+
+    The projector samples the reference at image pixel ``k`` times the matrix, so a grid
+    ``s`` times coarser in reference voxels per image pixel divides the matrix by ``s``.
+    """
+
+    if rotations is None or scale == 1.0:
+        return rotations
+    return np.asarray(rotations) / float(scale)
+
+
+def _score_half_dense(**kwargs) -> HalfScoreResult:
+    """Dense E+M scoring for one half; a half of several image shapes runs per shape class."""
+
+    from relax.refinement.optics_shapes import MultiShapeHalf, score_half_by_shape
+
+    if isinstance(kwargs["experiment_dataset"], MultiShapeHalf):
+        return score_half_by_shape(_score_half_dense_one_shape, kwargs)
+    kwargs.pop("noise_radial_k", None)
+    return _score_half_dense_one_shape(**kwargs)
+
+
+def _score_half_local(**kwargs) -> HalfScoreResult:
+    """Local-search E+M scoring for one half; several image shapes run per shape class."""
+
+    from relax.refinement.optics_shapes import MultiShapeHalf, score_half_by_shape
+
+    if isinstance(kwargs["experiment_dataset"], MultiShapeHalf):
+        return score_half_by_shape(_score_half_local_one_shape, kwargs)
+    kwargs.pop("noise_radial_k", None)
+    return _score_half_local_one_shape(**kwargs)
+
+
 def _score_half_dense_in_bpref_scope(
     *,
     bpref_device_signature_active: bool,
@@ -920,7 +971,7 @@ def _relion_coarse_significant_counts(significant_sample_indices):
     )
 
 
-def _score_half_local(
+def _score_half_local_one_shape(
     *,
     k: int,
     experiment_dataset,
@@ -972,6 +1023,8 @@ def _score_half_local(
     relion_translation_angle_scale: float = 1.0,
     symmetry: str = "C1",
     optics_group_ids_k=None,
+    projection_scale: float = 1.0,
+    reference_current_size=None,
 ) -> HalfScoreResult:
     """Local-search E+M scoring for one half-set.
 
@@ -1122,6 +1175,14 @@ def _score_half_local(
         "translation_prior_centers": trans_prior_center_for_engine,
         "source_faithful_spectrum_norm": source_faithful_spectrum_norm,
         **({} if optics_group_ids_k is None else {"optics_group_ids": optics_group_ids_k}),
+        **(
+            {}
+            if projection_scale == 1.0 and reference_current_size is None
+            else {
+                "projection_scale": float(projection_scale),
+                "reconstruction_volume_current_size": reference_current_size,
+            }
+        ),
     }
     if float(relion_translation_angle_scale) != 1.0:
         if k_class_enabled:

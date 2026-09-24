@@ -1278,6 +1278,7 @@ def compute_pass2_stats_resident(
     symmetry_label: str = "C1",
     relion_translation_angle_scale: float = 1.0,
     optics_group_ids=None,
+    reconstruction_volume_current_size=None,
 ):
     """Device-resident K=1 sparse pass 2; same signature and return as the compact engine.
 
@@ -1290,6 +1291,11 @@ def compute_pass2_stats_resident(
     groups with ``optics_group_ids`` giving each image's row; each image then
     scores, backprojects and adds its noise sums with its own group
     (:mod:`relax.helpers.optics_noise`), and the noise statistics come back per group.
+
+    ``reconstruction_volume_current_size`` is the backprojector's model size when the
+    images are on another grid than the reference (an optics group with another box
+    or pixel size): the image-side windows keep ``reconstruction_current_size`` in image
+    pixels, the accumulator and its adjoint radius use the reference model size.
     """
 
     from recovar import cuda_backproject
@@ -1419,10 +1425,15 @@ def compute_pass2_stats_resident(
     )
 
     # ---- accumulator layout (identical to the compact engine) -------------
+    volume_current_size = (
+        mstep_current_size
+        if reconstruction_volume_current_size is None
+        else int(reconstruction_volume_current_size)
+    )
     recon_volume_shape = relion_backprojector_volume_shape(
         volume_shape,
         reconstruction_padding_factor,
-        current_size=mstep_current_size,
+        current_size=volume_current_size,
     )
     recon_accum_shape = half_volume_accumulator_shape(recon_volume_shape)
     recon_volume_size = int(np.prod(recon_accum_shape))
@@ -1973,7 +1984,7 @@ def compute_pass2_stats_resident(
                                 mstep_block_rows=mstep_block_rows,
                                 adaptive_fraction=adaptive_fraction,
                                 current_size=current_size,
-                                mstep_current_size=mstep_current_size,
+                                mstep_current_size=volume_current_size,
                                 image_shape=image_shape,
                                 recon_volume_shape=recon_volume_shape,
                                 max_adjoint_block_bytes=max_adjoint_block_bytes,
@@ -2129,7 +2140,7 @@ def compute_pass2_stats_resident(
             verify_operands=verify_operands and chunk is chunks[0],
             image_shape=image_shape,
             current_size=current_size,
-            mstep_current_size=mstep_current_size,
+            mstep_current_size=volume_current_size,
             recon_volume_shape=recon_volume_shape,
             max_adjoint_block_bytes=max_adjoint_block_bytes,
             noise_variance_for_noise=noise_variance_for_noise_device,

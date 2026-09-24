@@ -7,6 +7,7 @@ refinement controller. Dependencies are imported from their owning modules.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 import time
@@ -125,6 +126,8 @@ def _run_local_search_iteration(
     symmetry: str = "C1",
     batch_size_planner=None,
     optics_group_ids=None,
+    projection_scale: float = 1.0,
+    reconstruction_volume_current_size=None,
 ) -> _LocalSearchIterationResult:
     """Run exact local search and return named halfset statistics and pose fields.
 
@@ -323,6 +326,18 @@ def _run_local_search_iteration(
         )
     image_batch_size = planned_image_batch_size
     rotation_block_size = planned_rotation_block_size
+    if projection_scale != 1.0:
+        # Images on another grid than the reference (RELION applyScaleDifference): only the
+        # projection and backprojection matrices are scaled; priors and reported poses are not.
+        local_layout = dataclasses.replace(
+            local_layout,
+            rotations_flat=np.asarray(local_layout.rotations_flat) / float(projection_scale),
+            mstep_rotations_flat=(
+                None
+                if local_layout.mstep_rotations_flat is None
+                else np.asarray(local_layout.mstep_rotations_flat) / float(projection_scale)
+            ),
+        )
 
     if class_log_priors is not None:
         if resident_local_search_requested():
@@ -465,7 +480,8 @@ def _run_local_search_iteration(
             relion_translation_angle_scale=relion_translation_angle_scale,
             class_log_priors=None,
             score_only=score_only,
-            **({"optics_group_ids": optics_group_ids} if optics_group_ids is not None else {}),
+            optics_group_ids=optics_group_ids,
+            reconstruction_volume_current_size=reconstruction_volume_current_size,
         )
     else:
         class_details = None
@@ -542,7 +558,8 @@ def _run_local_search_iteration(
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             relion_translation_angle_scale=relion_translation_angle_scale,
             **({"symmetry_label": symmetry} if symmetry != "C1" else {}),
-            **({"optics_group_ids": optics_group_ids} if optics_group_ids is not None else {}),
+            optics_group_ids=optics_group_ids,
+            reconstruction_volume_current_size=reconstruction_volume_current_size,
         )
 
     if class_details is None:
@@ -556,7 +573,11 @@ def _run_local_search_iteration(
         relion_stats=engine_outputs.stats,
         noise_stats=engine_outputs.noise_stats,
         profile_summary=engine_outputs.profile if return_profile else None,
-        best_pose_rotations=engine_outputs.best_pose_rotations,
+        best_pose_rotations=(
+            engine_outputs.best_pose_rotations
+            if projection_scale == 1.0 or engine_outputs.best_pose_rotations is None
+            else np.asarray(engine_outputs.best_pose_rotations) * float(projection_scale)
+        ),
         best_pose_translations=engine_outputs.best_pose_translations,
         best_pose_eulers_deg=engine_outputs.best_pose_eulers_deg,
         class_assignments=class_assignments,
