@@ -1205,28 +1205,31 @@
     "iterations": 15,
     "jobs": [
      "14284884",
-     "14298976"
+     "14298976",
+     "14334517",
+     "14334518",
+     "14334519"
     ],
     "masked_band_auc": null
    },
    "relax": {
-    "source_sha": "427a08bd8550116f6fdc3f66ad202760372a813e",
-    "source_repo": "recovar (frozen Q, last tree with EM in recovar)",
+    "source_sha": "083ace2b07e54f5d5e5f36de671f1ee7e847146c",
+    "source_repo": "relax main",
     "resolution_A": null,
     "resolution_definition": "engine_current_resolution",
     "masked_resolution_A": null,
-    "wall_s": 5554,
+    "wall_s": 5158,
     "wall_definition": "pytest job wall of the chained replay",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 15,
     "jobs": [
-     "14320192"
+     "14333923"
     ],
     "masked_band_auc": null
    },
    "gt": null,
-   "cross_engine": "long-tier test PASS: per-class FSC(1-16) vs RELION 0.99998-1.00000, class agreement 0.9964; RELION repeats vs the reference: same seed 0.99992-0.99999 (agreement 0.994, two runs), other seed 0.99886-0.99926 (agreement 0.933)",
+   "cross_engine": "long-tier test PASS: per-class FSC(1-16) vs RELION 0.999977/0.999990/0.999990/0.999995, class agreement 0.9966; RELION repeats vs the reference: same seed (two runs) 0.999921-0.999993 (agreement 0.994/0.994), other seed 0.998855-0.999265 (agreement 0.933); relax is at or above the same-seed repeats in every class",
    "time_ratio_relax_over_relion": null,
    "matched": "no",
    "matched_detail": {
@@ -1238,7 +1241,9 @@
     "timing_controlled": false
    },
    "notes": [
-    "Chained replay: RELION state is injected at every iteration, so this is step-wise parity, not an autonomous trajectory or a speed comparison. The RELION repeat took 1762 s."
+    "Chained replay: RELION state is injected at every iteration, so this is step-wise parity, not an autonomous trajectory or a speed comparison.",
+    "RELION repeats of the identical Class3D command (jobs 14334517/18 seed 1775735620, 14334519 seed 42; ~28 min each); the earlier repeat took 1762 s.",
+    "Q 427a08bd8 (14320192) gave 0.99998-1.00000, agreement 0.9964, 5554 s; kept in history."
    ],
    "null_reasons": {
     "relax.resolution_A": "not reported by the long-tier test",
@@ -1250,18 +1255,12 @@
     "relax.masked_band_auc": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
     "cross_engine_masked_band_auc": "Class3D has no gold-standard half maps; masked half-map resolution does not apply"
    },
-   "pending": {
-    "jobs": [
-     "14333923"
-    ],
-    "note": "long-tier K4 on relax main 083ace2 running"
-   },
    "evidence": {
     "run_roots": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/long_kclass_full_q427a08bd8",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_coverage_20260924/runs/long_kclass_full_relax_083ace2",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_pdb_k4_50k_256/relion_pdb_k4_os0_ref"
     ],
-    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/long_kclass_full_q427a08bd8/job-14320192.log",
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_coverage_20260924/runs/long_kclass_full_relax_083ace2/pytest.log",
     "relion_repeat_band": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_coverage_20260924/relion_repeats_k4_50k_256/band.json"
    },
    "date": "2026-09-24",
@@ -1275,6 +1274,16 @@
      "relax_wall_s": 6683,
      "relax_resolution_A": null,
      "cross_engine": "long-tier test PASS: per-class FSC(1-16) vs RELION 0.99998-0.99999, class agreement 0.9965; RELION same-command repeat 0.99994-0.99999 / 0.9941"
+    },
+    {
+     "date": "2026-09-24",
+     "source_sha": "427a08bd8550116f6fdc3f66ad202760372a813e",
+     "jobs": [
+      "14320192"
+     ],
+     "relax_wall_s": 5554,
+     "relax_resolution_A": null,
+     "cross_engine": "long-tier test PASS: per-class FSC(1-16) vs RELION 0.99998-1.00000, class agreement 0.9964; RELION repeats vs the reference: same seed 0.99992-0.99999 (agreement 0.994, two runs), other seed 0.99886-0.99926 (agreement 0.933)"
     }
    ],
    "cross_engine_masked_band_auc": null,
