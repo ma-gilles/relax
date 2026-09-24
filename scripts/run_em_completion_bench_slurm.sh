@@ -76,6 +76,7 @@ K4_IMAGE_BATCH_SIZE="${K4_IMAGE_BATCH_SIZE:-50}"
 K4_ROTATION_BLOCK_SIZE="${K4_ROTATION_BLOCK_SIZE:-2000}"
 K1_MAX_ITER="${K1_MAX_ITER:-17}"
 K4_MAX_ITER="${K4_MAX_ITER:-15}"
+K4_TRAJECTORY_MODE="${K4_TRAJECTORY_MODE:-standalone}"
 K1_TRAJECTORY_MODE="${K1_TRAJECTORY_MODE:-standalone}"
 K1_SAVE_INTERMEDIATES="${K1_SAVE_INTERMEDIATES:-1}"
 # Sized from measured peak RSS (sacct MaxRSS): K1 100k/256 135 GB (Q 14320204), K4 100k/256
@@ -161,6 +162,11 @@ Environment overrides:
   K4_IMAGE_BATCH_SIZE        K=4 image batch size (default: ${K4_IMAGE_BATCH_SIZE})
   K4_ROTATION_BLOCK_SIZE     K=4 rotation block size (default: ${K4_ROTATION_BLOCK_SIZE})
   K4_MAX_ITER                K=4 max iteration cap (default: ${K4_MAX_ITER}; matches stored RELION Class3D fixture)
+  K4_TRAJECTORY_MODE         K=4 state policy: standalone (default; relion_refine's inputs only:
+                             the --ref STAR, input origins, RELION start-up noise, one
+                             single-process group-scale state) or relion-replay (debug:
+                             RELION run_it000 start, per-iteration RELION state substitution and
+                             the MPI follower scales from K4_RELION_DISPATCH_SCHEDULE).
   K4_MEM                     K=4 Slurm memory request (default: ${K4_MEM})
   K4_TIME_LIMIT              K=4 Slurm time limit (default: ${K4_TIME_LIMIT})
   RELAX_SPARSE_PASS2_MAX_TRANSLATION_TILE_BYTES
@@ -278,6 +284,13 @@ case "${K1_TRAJECTORY_MODE}" in
   standalone|autonomous|relion-replay) ;;
   *)
     echo "K1_TRAJECTORY_MODE must be standalone, autonomous or relion-replay, got: ${K1_TRAJECTORY_MODE}" >&2
+    exit 2
+    ;;
+esac
+case "${K4_TRAJECTORY_MODE}" in
+  standalone|relion-replay) ;;
+  *)
+    echo "K4_TRAJECTORY_MODE must be standalone or relion-replay, got: ${K4_TRAJECTORY_MODE}" >&2
     exit 2
     ;;
 esac
@@ -430,9 +443,10 @@ done
 require_file "${K4_RELION_DIR}/run_it000_model.star"
 require_file "${K4_RELION_DIR}/run_it001_optimiser.star"
 require_file "${K4_RELION_DIR}/run_it015_optimiser.star"
-if [[ "${RUN_K4}" -eq 1 ]]; then
+require_file "${K4_DATA_DIR}/reference_init_classes_relion.star"
+if [[ "${RUN_K4}" -eq 1 && "${K4_TRAJECTORY_MODE}" == "relion-replay" ]]; then
   if [[ -z "${K4_RELION_DISPATCH_SCHEDULE}" ]]; then
-    echo "K4_RELION_DISPATCH_SCHEDULE is required for strict K>1 RELION parity." >&2
+    echo "K4_RELION_DISPATCH_SCHEDULE is required for K4_TRAJECTORY_MODE=relion-replay." >&2
     echo "Capture the dynamic MPI dispatch from the same K4_RELION_DIR oracle run." >&2
     exit 2
   fi
@@ -1036,6 +1050,18 @@ PY
 
 START_EPOCH="\$(date +%s)"
 REFINEMENT_EXTRA_ARGS=()
+if [[ "${K4_TRAJECTORY_MODE}" == "standalone" ]]; then
+  # relion_refine's inputs only; the RELION run is read after the run, for comparison.
+  TRAJECTORY_ARGS=(--ref_star "${K4_DATA_DIR}/reference_init_classes_relion.star")
+else
+  TRAJECTORY_ARGS=(
+    --relion_optimiser "${K4_RELION_DIR}/run_it015_optimiser.star"
+    --relion_init_dir "${K4_RELION_DIR}"
+    --perturb_replay_relion_dir "${K4_RELION_DIR}"
+    --relion-dispatch-schedule "${K4_RELION_DISPATCH_SCHEDULE}"
+  )
+fi
+echo "K4_TRAJECTORY_MODE=${K4_TRAJECTORY_MODE}"
 if [[ "${EM_COMPLETION_TIMING_PROBE}" == "1" ]]; then
   REFINEMENT_EXTRA_ARGS+=(--skip-large-outputs)
 fi
@@ -1053,10 +1079,7 @@ set +e
   --image_batch_size "${K4_IMAGE_BATCH_SIZE}" \\
   --rotation_block_size "${K4_ROTATION_BLOCK_SIZE}" \\
   --seed 1778628798 \\
-  --relion_optimiser "${K4_RELION_DIR}/run_it015_optimiser.star" \\
-  --relion_init_dir "${K4_RELION_DIR}" \\
-  --perturb_replay_relion_dir "${K4_RELION_DIR}" \\
-  --relion-dispatch-schedule "${K4_RELION_DISPATCH_SCHEDULE}" \\
+  "\${TRAJECTORY_ARGS[@]}" \\
   --particle_diameter_ang 380 \\
   --no-firstiter_cc \\
   --no-apply-initial-lowpass \\
@@ -1324,6 +1347,7 @@ K4_RELION_DISPATCH_SCHEDULE=${K4_RELION_DISPATCH_SCHEDULE}
 K4_IMAGE_BATCH_SIZE=${K4_IMAGE_BATCH_SIZE}
 K4_ROTATION_BLOCK_SIZE=${K4_ROTATION_BLOCK_SIZE}
 K4_MAX_ITER=${K4_MAX_ITER}
+K4_TRAJECTORY_MODE=${K4_TRAJECTORY_MODE}
 K4_MEM=${K4_MEM}
 K4_TIME_LIMIT=${K4_TIME_LIMIT}
 CUDA_LIB=${CUDA_LIB}

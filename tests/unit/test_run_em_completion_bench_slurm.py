@@ -272,6 +272,7 @@ def test_completion_k4_resource_overrides_are_written(tmp_path):
             "EM_COMPLETION_SUMMARY_GRES": "",
             "K4_MEM": "128G",
             "K4_TIME_LIMIT": "04:00:00",
+            "K4_TRAJECTORY_MODE": "relion-replay",
             "K4_RELION_DISPATCH_SCHEDULE": str(dispatch_schedule),
             "RELAX_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES": "3221225472",
             "RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES": "1610612736",
@@ -312,6 +313,22 @@ def test_completion_k4_resource_overrides_are_written(tmp_path):
         "RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO=0.5"
         in submission_env_text
     )
+
+
+def test_completion_k4_defaults_to_standalone_and_reads_no_relion_output(tmp_path):
+    """Standalone K=4 starts from relion_refine's inputs and needs no dispatch schedule."""
+    scratch = tmp_path / "scratch"
+    env = _launcher_env(tmp_path, scratch)
+    env.pop("K4_TRAJECTORY_MODE", None)
+    env.pop("K4_RELION_DISPATCH_SCHEDULE", None)
+    _run_launcher(env, "--k4-only")
+    k4_text = (scratch / "jobs" / "em_completion_k4_100k256.sh").read_text()
+    submission_env_text = (scratch / "submission.env").read_text()
+    assert 'if [[ "standalone" == "standalone" ]]' in k4_text
+    assert "--ref_star" in k4_text and "reference_init_classes_relion.star" in k4_text
+    assert "--no-firstiter_cc" in k4_text and "--no-apply-initial-lowpass" in k4_text
+    assert '"${TRAJECTORY_ARGS[@]}"' in k4_text
+    assert "K4_TRAJECTORY_MODE=standalone" in submission_env_text
 
 
 def test_completion_setup_defaults_to_cpu_partition(tmp_path):

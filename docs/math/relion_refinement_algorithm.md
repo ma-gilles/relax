@@ -33,13 +33,15 @@ section below).
 
 ## Class3D standalone start-up
 
-A fresh Class3D (K>1) run can start from what `relion_refine` reads, without
-any RELION output. Each piece is opt-in until its default is decided:
+A fresh Class3D (K>1) run starts from what `relion_refine` reads, without any
+RELION output; this standalone start is the Class3D default (launch recipe and
+qualification in the [runbook](../development/em_parity_runbook.md#standalone-class3d-launch)).
+The pieces:
 
 - Startup noise: RELION's estimate, always (section above).
-- Input origins: `--initial-pose-source input-star` loads only the input
-  `rlnOriginX/YAngst` (or pixel origins; absent origins are zero) in the
-  all-data particle order
+- Input origins: the default `--initial-pose-source auto` (or an explicit
+  `input-star`) loads only the input `rlnOriginX/YAngst` (or pixel origins;
+  absent origins are zero) in the all-data particle order
   ([`_load_input_star_class3d_translations`](../../relax/relion/input_poses.py)).
   RELION rounds and applies them before the image FFT but does not centre the
   first global search on the input angles. The `--relion_init_dir` route

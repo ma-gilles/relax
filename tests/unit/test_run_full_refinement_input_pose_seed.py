@@ -247,7 +247,7 @@ def test_class3d_input_origins_absent_are_zero_and_rows_must_cover_the_input():
         _load_input_star_class3d_translations(input_particles, np.arange(3), voxel_size=1.0)
 
 
-def test_class3d_input_star_origins_are_explicit_and_need_no_half_sets():
+def test_class3d_input_star_origins_are_the_default_and_need_no_half_sets():
     kwargs = dict(
         n_classes=4,
         init_relion_iteration=0,
@@ -255,7 +255,12 @@ def test_class3d_input_star_origins_are_explicit_and_need_no_half_sets():
         diagnostic_single_half=False,
     )
     assert _resolve_input_star_pose_seed("input-star", has_relion_half_sets=False, **kwargs)
-    assert not _resolve_input_star_pose_seed("auto", has_relion_half_sets=False, **kwargs)
+    assert _resolve_input_star_pose_seed("auto", has_relion_half_sets=False, **kwargs)
+    assert not _resolve_input_star_pose_seed("none", has_relion_half_sets=False, **kwargs)
+    # A replay/diagnostic pose source keeps ownership; 'auto' then stays unseeded.
+    assert not _resolve_input_star_pose_seed(
+        "auto", has_relion_half_sets=False, **(kwargs | {"has_competing_pose_source": True})
+    )
     with pytest.raises(ValueError, match="splits no random halves"):
         _resolve_input_star_pose_seed("input-star", has_relion_half_sets=True, **kwargs)
     with pytest.raises(ValueError, match="already owns initialization"):

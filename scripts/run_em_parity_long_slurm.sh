@@ -148,7 +148,8 @@ EOF
 
 K1_SCRIPT="$(make_test_script em_parity_long_k1 "${REPO_ROOT}/tests/long_test/test_em_parity_long.py::test_em_parity_long_k1_full")"
 K1_NATIVE_SCRIPT="$(make_test_script em_parity_long_k1_native "${REPO_ROOT}/tests/long_test/test_em_parity_long.py::test_em_parity_long_k1_native_initialmodel_quality")"
-K4_SCRIPT="$(make_test_script em_parity_long_k4 "${REPO_ROOT}/tests/long_test/test_em_parity_long.py::test_em_parity_long_kclass_full")"
+# The K4 rung runs the standalone start only; relion_replay_debug is a debugging aid.
+K4_SCRIPT="$(make_test_script em_parity_long_k4 "${REPO_ROOT}/tests/long_test/test_em_parity_long.py::test_em_parity_long_kclass_full[standalone]")"
 
 K1_JOB=$(sbatch --parsable "${K1_SCRIPT}")
 K1_NATIVE_JOB=$(sbatch --parsable "${K1_NATIVE_SCRIPT}")

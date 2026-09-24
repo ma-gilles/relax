@@ -267,11 +267,11 @@ def _add_initial_pose_source_argument(parser: argparse.ArgumentParser) -> None:
             "Initial previous-best poses for a fresh refinement. 'auto' "
             "loads K=1 Euler angles and origins from <data_dir>/particles.star when "
             "--relion_half_sets or --relion-half-sets-from-input supplies the matched "
-            "random halves (absent angles are 0, as in relion_refine); 'input-star' "
-            "requires that production path explicitly, and for a fresh Class3D (K>1) "
-            "run loads only the input origins, which RELION applies before the first "
-            "global search; 'none' preserves an unseeded search. Diagnostic/replay "
-            "pose sources retain ownership."
+            "random halves (absent angles are 0, as in relion_refine), and for a fresh "
+            "Class3D (K>1) run loads only the input origins, which RELION applies "
+            "before the first global search (absent origins are 0); 'input-star' "
+            "requires that production path explicitly; 'none' preserves an unseeded "
+            "search. Diagnostic/replay pose sources retain ownership."
         ),
     )
 
@@ -307,8 +307,7 @@ def _resolve_input_star_pose_seed(
         incompatibilities.append("it requires both gold-standard halves")
 
     if source == "auto":
-        # Class3D input origins stay opt-in (explicit 'input-star') for now.
-        return not class3d and not incompatibilities
+        return not incompatibilities
     if incompatibilities:
         raise ValueError("--initial-pose-source input-star " + "; ".join(incompatibilities))
     return True

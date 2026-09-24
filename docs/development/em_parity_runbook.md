@@ -211,6 +211,57 @@ Debug-only starts, labelled as such wherever they appear: `--relion_init_dir`,
 `[relion_seeded_debug]` test cases. They pin RELION state for first-divergence
 hunts and fixed-state replays; they are not standalone evidence.
 
+### Standalone Class3D launch
+
+Standalone is the default Class3D (K>1) start. A run reads only what a
+non-MPI `relion_refine` Class3D reads: `<data_dir>/particles.star` with its
+origins, its stacks, the `--ref` STAR and its maps, and the values on the
+RELION command line. The RELION run is read only afterwards, for comparison.
+Map the RELION command to `run_full_refinement.py` as follows:
+
+| RELION | relax |
+| --- | --- |
+| `--K K --ref refs.star` | `--n_classes K --ref_star refs.star` (class distribution starts at 1/K, as in RELION) |
+| `--random_seed S` | `--seed S` (whole-vector mt19937 order and accuracy trials; without `--seed` the time is used, as RELION does) |
+| input `rlnOriginX/YAngst` | default `--initial-pose-source auto` (origins only; absent origins are 0) |
+| start-up noise from the images | default (the only estimator) |
+| `--particle_diameter D` | `--particle_diameter_ang D` (default 200, the GUI's) |
+| `--ini_high H` / no `--ini_high` | `--init_resolution H` (the low-pass is on by default) / `--no-apply-initial-lowpass` |
+| `--firstiter_cc` / none | default / `--no-firstiter_cc` |
+| `--healpix_order`, `--offset_range`, `--offset_step` | same names with underscores |
+| `--oversampling 1` / `0` | `--adaptive_oversampling 1` / `0` |
+| `--tau2_fudge T` | `--tau2_fudge T` |
+| `--perturb 0.5` (default) | `--perturb_factor 0.5` |
+| `--iter N` | `--max_iter N` (Class3D runs every iteration; no auto-refine sampling or convergence) |
+
+The run is single-process, like a non-MPI `relion_refine`; it keeps one
+group-scale state and needs no dispatch schedule. See
+[the Class3D start-up state](../math/relion_refinement_algorithm.md#class3d-standalone-start-up).
+
+Harness entry points: `K4_TRAJECTORY_MODE=standalone` (default) in
+`scripts/run_em_completion_bench_slurm.sh` and the `[standalone]` case of
+`test_em_parity_long_kclass_full`, which is the case the long-tier launcher
+runs. Debug-only starts: `--relion_init_dir`, `--relion_optimiser`,
+`--perturb_replay_relion_dir`, `--relion-dispatch-schedule` with
+`--relion-scale-followers`, `K4_TRAJECTORY_MODE=relion-replay` and the
+`[relion_replay_debug]` case. They are not standalone evidence.
+
+Qualification (2026-09-24, K4 50k/256 fixture against its non-MPI RELION
+reference): two standalone runs at `05d9e00` (Slurm 14336207 on an H100 and one
+local A100 run) reach the same final resolution as RELION (14.70 A). Their
+ground-truth FSC-AUC is not worse (mean 0.24118 and 0.24117 against RELION's
+0.24116 and 0.24115-0.24122 for three same-seed repeats), class agreement is
+0.9928-0.9934 (repeats 0.9939-0.9941) and per-class mean FSC over shells 1-16
+against RELION is at least 0.99992. The 5k/128 fixture matches RELION to an
+FSC-AUC of 0.99999998 per class. OPEN: per-class FSC-AUC against the RELION
+reference lies 0.0002-0.0007 below the band of three same-seed non-MPI RELION
+repeats (14298976 and two relax_coverage repeats), in all four classes for the
+H100 run and three of four for the A100 run. The miss is comparable to the
+difference between the two relax runs (up to 8e-4), and a different-seed RELION
+run is 0.05-0.3 lower. The user accepted the flip on this functional evidence;
+the gap is unexplained. Evidence:
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclassstandalone_20260923/band50k/GATE.json`.
+
 ## Benchmark Design And Reporting
 
 High-resolution completion fixtures must come from target-grid PDB/mmCIF

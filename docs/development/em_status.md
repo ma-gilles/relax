@@ -59,6 +59,15 @@ change or a rounding-noise dismissal. A BPref accumulator guard now stops a
 known non-finite compact-engine failure at its source; the mechanism remains an
 open defect.
 
+Class3D (K>1) starts standalone by default: it reads only relion_refine's inputs
+([launch recipe](em_parity_runbook.md#standalone-class3d-launch)). On the K4
+50k/256 fixture two standalone runs match the non-MPI RELION reference's final
+resolution, ground-truth FSC-AUC and class agreement. OPEN (small): their
+per-class FSC-AUC against the RELION reference is 0.0002-0.0007 below the band
+of three same-seed RELION repeats, comparable to the 8e-4 difference between the
+two relax runs (A100 and H100); the cause is unexplained. Evidence:
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclassstandalone_20260923/band50k/GATE.json`.
+
 On the 10k EMPIAR-10097 fixture at 256 px on one H100, the resident K1 path
 reduced the cold auto-refine gap from 3.26x to about 1.7-1.8x RELION, with a
 further small gain from building the projector on device. This qualifies only

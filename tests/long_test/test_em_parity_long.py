@@ -713,23 +713,47 @@ def test_em_parity_long_k1_native_initialmodel_quality(tmp_path):
     )
 
 
+# Start-up state for the long K4 run. ``standalone`` reads only relion_refine's
+# inputs (particles.star with its origins, the stack, the --ref STAR and the
+# command values): RELION start-up noise, 1/K class distribution, the whole-vector
+# mt19937 accuracy trials and one single-process group-scale state; the RELION run
+# is read afterwards for comparison. ``relion_replay_debug`` substitutes the state
+# each RELION iteration wrote; it is a debugging aid, not standalone evidence.
+KCLASS_LONG_START_ARGS = {
+    "standalone": [
+        "--ref_star",
+        str(K4_LONG_FIXTURE_DIR / "reference_init_classes_relion.star"),
+    ],
+    "relion_replay_debug": [
+        "--perturb_replay_relion_dir",
+        str(K4_LONG_RELION_DIR),
+        "--relion-scale-followers",
+        "0",
+        "--relion_optimiser",
+        str(K4_LONG_RELION_DIR / "run_it000_optimiser.star"),
+    ],
+}
+
+
 @pytest.mark.em_parity_long
 @pytest.mark.gpu
 @pytest.mark.integration
-def test_em_parity_long_kclass_full(tmp_path):
+@pytest.mark.parametrize("start", sorted(KCLASS_LONG_START_ARGS))
+def test_em_parity_long_kclass_full(tmp_path, start):
     """K=4 256² 50k 15-iteration Class3D trajectory against RELION (~2-4 hr on H100).
 
-    Runs ``run_full_refinement.py --n_classes 4 --max_iter 15`` from the fixture's
-    initial class references with the RELION reference's Class3D command. Like
-    ``test_em_parity_fast_kclass_coldstart`` this is a controlled replay, not an
-    autonomous trajectory: iteration 1 derives its noise, tau2 and sigma locally,
-    and every later iteration takes the state RELION's previous iteration wrote
-    (``--perturb_replay_relion_dir``: sampling perturbation, noise spectrum, per-class
-    tau2, sigma_offset, direction prior, per-particle norm/scale corrections and
-    previous best poses). The class maps and class assignments are RECOVAR's own and
-    are carried through all 15 iterations. The reference is a single non-MPI
-    ``relion_refine`` process, so it has no MPI followers or dispatch schedule and the
-    replay runs with ``--relion-scale-followers 0``.
+    Runs ``run_full_refinement.py --n_classes 4 --max_iter 15`` with the RELION
+    reference's Class3D command. The ``standalone`` start reads no RELION output
+    and runs its own trajectory; its maps are judged functionally, since its
+    random draws need not follow RELION's. ``relion_replay_debug`` is a controlled
+    replay: iteration 1 derives its noise, tau2 and sigma locally, and every later
+    iteration takes the state RELION's previous iteration wrote
+    (``--perturb_replay_relion_dir``: sampling perturbation, noise spectrum,
+    per-class tau2, sigma_offset, direction prior, per-particle norm/scale
+    corrections and previous best poses). In both, the class maps and class
+    assignments are RECOVAR's own and are carried through all 15 iterations. The
+    reference is a single non-MPI ``relion_refine`` process, so it has no MPI
+    followers or dispatch schedule; the standalone run is single-process too.
 
     The four final class maps are Hungarian-matched to RELION's
     ``run_it015_class00N.mrc`` on mean FSC over shells 1-16, and each matched pair
@@ -790,7 +814,7 @@ def test_em_parity_long_kclass_full(tmp_path):
         f"records: {mpi_layout}"
     )
 
-    output_dir = tmp_path / "kclass_long"
+    output_dir = tmp_path / f"kclass_long_{start}"
     output_dir.mkdir()
     cmd = [
         sys.executable,
@@ -815,12 +839,7 @@ def test_em_parity_long_kclass_full(tmp_path):
         "4.0",
         "--perturb_factor",
         "0.5",
-        "--perturb_replay_relion_dir",
-        str(K4_LONG_RELION_DIR),
-        "--relion-scale-followers",
-        "0",
-        "--relion_optimiser",
-        str(relion_optimiser),
+        *KCLASS_LONG_START_ARGS[start],
         "--particle_diameter_ang",
         "200",
         "--seed",
@@ -916,8 +935,10 @@ def test_em_parity_long_kclass_full(tmp_path):
         "kclass_long_target_iter": final_iter,
         "kclass_long_command": cmd,
     }
-    ledger = _write_quality_ledger("kclass_long", payload, output_dir=output_dir)
-    logger.info("K-class long ledger: %s", ledger)
+    # Only the standalone case is reported; the debug case is not tier evidence.
+    if start == "standalone":
+        ledger = _write_quality_ledger("kclass_long", payload, output_dir=output_dir)
+        logger.info("K-class long ledger: %s", ledger)
 
     print(file=sys.stderr, flush=True)
     print("=== K=4 long parity (256² 50k, 15-iteration trajectory vs RELION it015) ===", file=sys.stderr, flush=True)
