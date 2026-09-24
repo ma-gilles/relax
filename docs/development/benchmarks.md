@@ -84,10 +84,16 @@ first divergent boundary and keep independent analytic/float64 references.
 
 ## Performance contract
 
-Run repeated control/candidate pairs sequentially on the same physical GPU,
-with identical inputs, initialization, seeds, masks, batches, memory budgets,
-thread/MPI layout and analysis settings. Retain all samples and report measured
-variability. Record queue wait separately from compute time.
+For implementation placement, compilation amortization and simplicity tradeoffs,
+see the optional [performance design guide](performance_design.md).
+
+For Slurm control/candidate or RELION/relax comparisons, put both arms in one
+job on two matching GPUs, one arm per GPU, with symmetric load. Follow current
+user resource instructions and the [Della runbook](della.md). Match inputs,
+initialization, seeds, masks, batches, memory budgets, thread/MPI layout and
+analysis settings as applicable; record necessary engine-specific differences.
+Retain repeated samples and report variability; swap arms across devices when
+practical. Record queue wait separately from compute time.
 
 Separate cold compilation, warmed device compute, data preparation and complete
 process wall time. Synchronize pending device work at timing boundaries when
