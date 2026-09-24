@@ -169,3 +169,51 @@ def test_class_coarse_size_is_relions_formula_at_the_class_grid():
     assert got == [12, 12]
     out = optics_shapes.class_kwargs(dict(kwargs, coarse_sizing=None), half.classes[1], 5)
     assert out["firstiter_coarse_current_size"] == 2 * int(np.ceil(0.5 * half.classes[1].scale * 12)) == 14
+
+
+@pytest.mark.unit
+def test_adaptive_batches_are_planned_per_class_box():
+    from relax.helpers.batch_planning import _AdaptiveDenseBatchSizes
+    from relax.refinement import iteration_loop
+
+    ds_a = SimpleNamespace(image_shape=(32, 32), voxel_size=4.0)
+    ds_b = SimpleNamespace(image_shape=(40, 40), voxel_size=4.0)  # larger box than the reference
+    classes = optics_shapes.make_shape_classes(
+        [(ds_a, np.array([0, 2])), (ds_b, np.array([1]))], ref_box=REF_BOX, ref_pixel=REF_PIX
+    )
+    half = optics_shapes.MultiShapeHalf(classes, image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0)
+    seen = []
+
+    def plan(*, image_shape, cs_for_engine, coarse_cs):
+        seen.append((tuple(image_shape), cs_for_engine, coarse_cs))
+        n = image_shape[0]
+        return _AdaptiveDenseBatchSizes(1000 // n, 2000 // n, 3000 // n, 4000 // n)
+
+    sizing = (34.5, 100.0)
+    overrides = iteration_loop._class_adaptive_batch_overrides(
+        half, plan=plan, cs_for_engine=20, coarse_cs=12, coarse_sizing=sizing
+    )
+    expected_sizes = [optics_shapes.class_adaptive_sizes(c, 20, 12, sizing) for c in classes]
+    assert seen == [((32, 32),) + expected_sizes[0], ((40, 40),) + expected_sizes[1]]
+    assert expected_sizes[1][0] == 26  # 2 ceil(0.5 * 1.25 * 20)
+    assert overrides[1] == {
+        "k_class_image_batch_size_override": 25,
+        "k_class_rotation_block_size_override": 50,
+        "significance_image_batch_size_override": 75,
+        "significance_rotation_block_size_override": 100,
+    }
+    assert iteration_loop._largest_image_size(half) == 40
+
+    # Each class's call receives its own plan.
+    received = []
+    optics_shapes.score_half_by_shape(
+        lambda **kw: received.append(kw["k_class_image_batch_size_override"])
+        or _fake_result(len(kw["image_corrections_k"]), np.asarray(kw["image_corrections_k"]).astype(int), 1.0,
+                        box=kw["experiment_dataset"].image_shape[0]),
+        dict(
+            experiment_dataset=half, k=0, outputs=PerHalfOutputs(), image_corrections_k=np.arange(3.0),
+            optics_group_ids_k=np.array([0, 1, 0]), noise_variance_k=None,
+            noise_radial_k=np.ones((2, 17)) * REF_BOX**4, cs_for_engine=None, class_batch_overrides=overrides,
+        ),
+    )
+    assert received == [1000 // 32, 25]

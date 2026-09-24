@@ -165,7 +165,7 @@ from relax.reconstruction.regularization_relion import (
     resolution_from_data_vs_prior,
     update_relion_growth_state_from_fsc,
 )
-from relax.refinement import finalization_policy
+from relax.refinement import finalization_policy, optics_shapes
 from relax.refinement.firstiter_cc import single_class_bucketed_pass2_selected
 from relax.refinement.half_inputs import (
     HalfInputState,
@@ -588,6 +588,34 @@ def _optics_group_kwargs(
         if coarse_step_deg is not None:
             kwargs["coarse_sizing"] = (float(coarse_step_deg), particle_diameter_ang)
     return kwargs
+
+
+def _largest_image_size(dataset) -> int:
+    """The largest image box of a half (its shape classes' for several shapes)."""
+
+    if isinstance(dataset, MultiShapeHalf):
+        return max(int(c.box_size) for c in dataset.classes)
+    return int(dataset.image_shape[0])
+
+
+def _class_adaptive_batch_overrides(half, *, plan, cs_for_engine, coarse_cs, coarse_sizing):
+    """Adaptive dense batch sizes planned per shape class, from the class's own box and sizes."""
+
+    overrides = []
+    for shape_class in half.classes:
+        class_cs, class_coarse = optics_shapes.class_adaptive_sizes(
+            shape_class, cs_for_engine, coarse_cs, coarse_sizing
+        )
+        class_plan = plan(image_shape=shape_class.dataset.image_shape, cs_for_engine=class_cs, coarse_cs=class_coarse)
+        overrides.append(
+            {
+                "k_class_image_batch_size_override": class_plan.pass2_image_batch_size,
+                "k_class_rotation_block_size_override": class_plan.pass2_rotation_block_size,
+                "significance_image_batch_size_override": class_plan.significance_image_batch_size,
+                "significance_rotation_block_size_override": class_plan.significance_rotation_block_size,
+            }
+        )
+    return tuple(overrides)
 
 
 def refine_single_volume(
@@ -2344,7 +2372,8 @@ def refine_single_volume(
                     projector_half=SimpleNamespace(shape=projector_half.shape, dtype=np.dtype(np.complex64)),
                     score_complex_dtype=np.complex64,
                     model_current_size=model_size,
-                    image_size=int(experiment_datasets[k].image_shape[0]),
+                    # The largest image box among the half's shape classes.
+                    image_size=_largest_image_size(experiment_datasets[k]),
                     bpref_device_signature_active=bpref_device_signature_active,
                 ):
                     local_staging_bytes = 0
@@ -2380,6 +2409,23 @@ def refine_single_volume(
                 dense_k_class_rotation_block_size = adaptive_batch_plan.pass2_rotation_block_size
                 significance_image_batch_size = adaptive_batch_plan.significance_image_batch_size
                 significance_rotation_block_size = adaptive_batch_plan.significance_rotation_block_size
+                class_batch_overrides = None
+                if multi_shape_halves:
+                    # Each shape class is planned for its own image box and sizes.
+                    class_batch_overrides = _class_adaptive_batch_overrides(
+                        experiment_datasets[k],
+                        plan=partial(
+                            _plan_adaptive_dense_batch_sizes,
+                            n_rot=effective_rotations.shape[0],
+                            n_trans=current_translations.shape[0],
+                            n_classes=n_classes,
+                            significance_safe_batch_sizes=significance_safe_batch_sizes_for_half,
+                            safe_batch_sizes=safe_batch_sizes_for_half,
+                        ),
+                        cs_for_engine=cs_for_engine,
+                        coarse_cs=coarse_cs,
+                        coarse_sizing=(coarse_size_step_deg, particle_diameter_ang),
+                    )
             elif k_class_enabled:
                 k_class_image_batch_size, dense_k_class_rotation_block_size = _safe_batch_sizes(
                     effective_rotations.shape[0],
@@ -2705,6 +2751,11 @@ def refine_single_volume(
                             firstiter_fine_current_size=cs_for_engine,
                             firstiter_log_label="",
                             firstiter_updates_em_kwargs_ibs=True,
+                            **(
+                                {"class_batch_overrides": class_batch_overrides}
+                                if class_batch_overrides is not None
+                                else {}
+                            ),
                         )
                         if use_adaptive
                         else {}

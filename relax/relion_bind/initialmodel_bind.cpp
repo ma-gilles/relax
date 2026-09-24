@@ -1086,6 +1086,13 @@ static py::tuple auto_refine_randomise_half_orders(
  * MlOptimiser::calculateExpectedAngularErrors, expressed as a stateless helper
  * so native InitialModel can feed updateAngularSampling with the same units and
  * thresholds as RELION without constructing a full MlOptimiser.
+ *
+ * Trial particles of an optics group on another pixel size or box pass that
+ * group's pixel_size and image_full_size with the model's model_pixel_size and
+ * the model current size as projector_current_size: their matrices take
+ * applyScaleDifference, their noise shells the E-step remap
+ * ROUND(ires * ori_size * model_pixel_size / (image_full_size * pixel_size))
+ * (ml_optimiser.cpp:9353, 9536-9576, 9628-9634). The defaults are one grid.
  */
 static py::dict vdam_expected_angular_errors(
     py::array_t<double, py::array::c_style | py::array::forcecast> references,
@@ -1110,8 +1117,20 @@ static py::dict vdam_expected_angular_errors(
     int random_seed,
     bool do_ctf_correction,
     bool do_ctf_padding,
-    py::object random_seed_particle_ids_obj
+    py::object random_seed_particle_ids_obj,
+    double model_pixel_size,
+    int image_full_size,
+    int projector_current_size
 ) {
+    if (model_pixel_size <= 0.0)
+        model_pixel_size = pixel_size;
+    if (image_full_size <= 0)
+        image_full_size = ori_size;
+    if (projector_current_size <= 0)
+        projector_current_size = current_image_size;
+    // ObservationModel::applyScaleDifference and remap_image_sizes (ml_optimiser.cpp:9353).
+    const double scale_difference = (image_full_size * pixel_size) / (ori_size * model_pixel_size);
+    const double remap_image_sizes = (ori_size * model_pixel_size) / (image_full_size * pixel_size);
     auto refs_buf = references.request();
     auto euler_buf = eulers_deg.request();
     auto particle_buf = particle_ids.request();
@@ -1155,8 +1174,10 @@ static py::dict vdam_expected_angular_errors(
         throw std::runtime_error("CTF parameter arrays must be 1D");
     if (defV_buf.shape[0] != n_particles || defA_buf.shape[0] != n_particles || phase_buf.shape[0] != n_particles)
         throw std::runtime_error("CTF parameter arrays must have matching lengths");
-    if (current_image_size <= 0 || current_image_size > ori_size || current_image_size % 2 != 0)
-        throw std::runtime_error("current_image_size must be a positive even size <= ori_size");
+    if (current_image_size <= 0 || current_image_size > image_full_size || current_image_size % 2 != 0)
+        throw std::runtime_error("current_image_size must be a positive even size <= image_full_size");
+    if (projector_current_size <= 0 || projector_current_size > ori_size || projector_current_size % 2 != 0)
+        throw std::runtime_error("projector_current_size must be a positive even size <= ori_size");
     if (pixel_size <= 0.0)
         throw std::runtime_error("pixel_size must be positive");
     if (sigma2_fudge <= 0.0)
@@ -1181,7 +1202,7 @@ static py::dict vdam_expected_angular_errors(
         std::memcpy(vol.data, refs_ptr + k * nvox, nvox * sizeof(RFLOAT));
         Projector projector(ori_size, interpolator, (RFLOAT)padding_factor, 10, 2);
         MultidimArray<RFLOAT> power_spectrum;
-        projector.computeFourierTransformMap(vol, power_spectrum, current_image_size, 1, true);
+        projector.computeFourierTransformMap(vol, power_spectrum, projector_current_size, 1, true);
         projectors.push_back(projector);
     }
 
@@ -1227,8 +1248,8 @@ static py::dict vdam_expected_angular_errors(
                 );
                 ctf.getFftwImage(
                     Fctf,
-                    ori_size,
-                    ori_size,
+                    image_full_size,
+                    image_full_size,
                     pixel_size,
                     false,
                     false,
@@ -1313,13 +1334,15 @@ static py::dict vdam_expected_angular_errors(
                     F2.initZeros();
                     Matrix2D<RFLOAT> A1(3, 3), A2(3, 3);
                     Euler_angles2matrix(rot1, tilt1, psi1, A1, false);
+                    A1 *= scale_difference;
                     projectors[(size_t)k].get2DFourierTransform(F1, A1);
 
                     if (imode == 0) {
                         Euler_angles2matrix(rot2, tilt2, psi2, A2, false);
+                        A2 *= scale_difference;
                         projectors[(size_t)k].get2DFourierTransform(F2, A2);
                     } else {
-                        shiftImageInFourierTransform(F1, F2, (RFLOAT)ori_size, (RFLOAT)(-xshift), (RFLOAT)(-yshift), (RFLOAT)0.0);
+                        shiftImageInFourierTransform(F1, F2, (RFLOAT)image_full_size, (RFLOAT)(-xshift), (RFLOAT)(-yshift), (RFLOAT)0.0);
                     }
 
                     if (do_ctf_correction) {
@@ -1338,6 +1361,7 @@ static py::dict vdam_expected_angular_errors(
                             ? iy_linear
                             : (iy_linear - current_image_size);
                         const int ires = ROUND(std::sqrt((double)(iy * iy + ix * ix)));
+                        const int ires_remapped = ROUND(remap_image_sizes * ires);
                         // Match Mresol_fine/Mresol_coarse: the packed x=0
                         // Fourier column stores both Hermitian y halves, so
                         // RELION counts only y>=0.  It also excludes shells
@@ -1346,9 +1370,9 @@ static py::dict vdam_expected_angular_errors(
                             ires > 0
                             && ires < current_image_size / 2 + 1
                             && !(ix == 0 && iy < 0)
-                            && ires < sigma_buf.shape[0]
+                            && ires_remapped < sigma_buf.shape[0]
                         ) {
-                            const double sigma = sigma_ptr[ires];
+                            const double sigma = sigma_ptr[ires_remapped];
                             if (sigma > 0.0) {
                                 const Complex diff = DIRECT_MULTIDIM_ELEM(F1, n) - DIRECT_MULTIDIM_ELEM(F2, n);
                                 my_snr += norm(diff) / (2.0 * sigma2_fudge * sigma);
@@ -1785,6 +1809,9 @@ Returns -1 when subset should span all particles.
           py::arg("do_ctf_correction") = true,
           py::arg("do_ctf_padding") = false,
           py::arg("random_seed_particle_ids") = py::none(),
+          py::arg("model_pixel_size") = -1.0,
+          py::arg("image_full_size") = -1,
+          py::arg("projector_current_size") = -1,
           R"doc(
 SPA 3D InitialModel accuracy estimator from
 MlOptimiser::calculateExpectedAngularErrors. Returns acc_rot/acc_trans plus

@@ -74,3 +74,68 @@ def test_groups_with_different_constants_and_noise():
     assert result.acc_rot < 999.0 and int(result.class_counts[0]) == 6
     with pytest.raises(NotImplementedError):
         estimate_relion_expected_accuracy(sigma2_noise_native=sigma2[0], **kwargs)
+
+
+def _multi_shape_half(kwargs, groups_of_images, boxes_and_pixels):
+    """A MultiShapeHalf over ``kwargs``' images; class c holds images with group c."""
+    from relax.refinement.optics_shapes import MultiShapeHalf, make_shape_classes
+
+    ctf = kwargs["dataset"].CTF_params
+    pairs = []
+    for c, (box, pixel) in enumerate(boxes_and_pixels):
+        positions = np.flatnonzero(groups_of_images == c)
+        pairs.append((SimpleNamespace(image_shape=(box, box), voxel_size=pixel, CTF_params=ctf[positions]), positions))
+    classes = make_shape_classes(pairs, ref_box=N, ref_pixel=4.0)
+    return MultiShapeHalf(classes, image_shape=(N, N), volume_shape=SHAPE, voxel_size=4.0)
+
+
+@pytest.mark.unit
+def test_one_shape_class_reproduces_the_single_grid_estimate():
+    bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
+    if "image_full_size" not in bind.vdam_expected_angular_errors.__doc__:
+        pytest.skip("binding predates applyScaleDifference")
+    rng = np.random.default_rng(2)
+    kwargs = _inputs(rng, [300.0] * 8)
+    sigma2 = np.linspace(2.0, 1.0, N // 2 + 1) * 1e-6 * float(N) ** 4
+    today = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **kwargs)
+    assert today.acc_rot < 5.0 and today.acc_trans_angstrom < 5.0  # well inside the search caps
+    # One class on the model grid: exactly today's estimate.
+    half = _multi_shape_half(kwargs, np.zeros(8, dtype=int), [(N, 4.0)])
+    got = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **dict(kwargs, dataset=half))
+    assert got.acc_rot == today.acc_rot and got.acc_trans_angstrom == today.acc_trans_angstrom
+    np.testing.assert_array_equal(got.class_counts, today.class_counts)
+    np.testing.assert_array_equal(got.trial_local_indices, today.trial_local_indices)
+    np.testing.assert_array_equal(got.trial_particle_ids, today.trial_particle_ids)
+    # Two classes both on the model grid: the same estimate up to the count-weighted mean.
+    half = _multi_shape_half(kwargs, np.array([0, 1, 1, 0, 1, 0, 0, 1]), [(N, 4.0), (N, 4.0)])
+    got = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **dict(kwargs, dataset=half))
+    np.testing.assert_allclose(got.acc_rot, today.acc_rot, rtol=1e-12)
+    np.testing.assert_allclose(got.acc_trans_angstrom, today.acc_trans_angstrom, rtol=1e-12)
+    np.testing.assert_array_equal(got.trial_particle_ids, today.trial_particle_ids)
+
+
+@pytest.mark.unit
+def test_class_on_another_grid_takes_the_scale_difference():
+    bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
+    if "image_full_size" not in bind.vdam_expected_angular_errors.__doc__:
+        pytest.skip("binding predates applyScaleDifference")
+    rng = np.random.default_rng(3)
+    kwargs = _inputs(rng, [300.0] * 8)
+    sigma2 = np.linspace(2.0, 1.0, N // 2 + 1) * 1e-6 * float(N) ** 4
+    groups = np.array([0, 1, 1, 0, 1, 0, 0, 1])
+    # Group 1 sees the same field of view at half the pixel size (s = 1): its projections,
+    # CTFs and noise shells are the same, so the angular estimate is unchanged.
+    same_view = estimate_relion_expected_accuracy(
+        sigma2_noise_native=sigma2,
+        **dict(kwargs, dataset=_multi_shape_half(kwargs, groups, [(N, 4.0), (2 * N, 2.0)]), current_image_size=8),
+    )
+    today = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **dict(kwargs, current_image_size=8))
+    assert same_view.acc_rot < 999.0
+    np.testing.assert_allclose(same_view.acc_rot, today.acc_rot, rtol=1e-12)
+    # A wider field of view (s = 1.25) is sampled more finely at each shell: more signal per shell.
+    wider = estimate_relion_expected_accuracy(
+        sigma2_noise_native=sigma2,
+        **dict(kwargs, dataset=_multi_shape_half(kwargs, groups, [(N, 4.0), (20, 4.0)])),
+    )
+    assert int(wider.class_counts[0]) == 8
+    assert wider.acc_rot <= estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **kwargs).acc_rot

@@ -236,6 +236,17 @@ def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
     return out
 
 
+def class_adaptive_sizes(shape_class: ShapeClass, cs_for_engine, coarse_cs, coarse_sizing):
+    """A class's (pass-2, pass-1) image sizes, exactly as ``class_kwargs`` gives them."""
+
+    out = class_kwargs(
+        {"cs_for_engine": cs_for_engine, "firstiter_coarse_current_size": coarse_cs, "coarse_sizing": coarse_sizing},
+        shape_class,
+        0,
+    )
+    return out["cs_for_engine"], out["firstiter_coarse_current_size"]
+
+
 def _class_coarse_size(coarse_sizing, shape_class: ShapeClass, class_current_size):
     """A class's adaptive pass-1 size, None for its full box (ml_optimiser.cpp:5761-5777).
 
@@ -400,7 +411,9 @@ def score_half_by_shape(score_fn, kwargs):
     """Run ``score_fn`` (a half scoring function) once per shape class and merge.
 
     ``kwargs`` are ``score_fn``'s keywords for the whole half plus ``noise_radial_k``,
-    the half's ``[G, n_ref]`` reference-shell noise spectra.
+    the half's ``[G, n_ref]`` reference-shell noise spectra, and optionally
+    ``class_batch_overrides``, one dict of batch-size keywords per class planned for
+    that class's own image box and sizes.
     """
 
     from relax.dense.score_outputs import PerHalfOutputs
@@ -408,13 +421,18 @@ def score_half_by_shape(score_fn, kwargs):
     kwargs = dict(kwargs)
     half = kwargs["experiment_dataset"]
     noise_radial = kwargs.pop("noise_radial_k")
+    batch_overrides = kwargs.pop("class_batch_overrides", None)
+    if batch_overrides is not None and len(batch_overrides) != len(half.classes):
+        raise ValueError("class_batch_overrides needs one entry per shape class")
     if kwargs.get("optics_group_ids_k") is None:
         raise ValueError("a half with several image shapes needs each image's optics group")
     outputs, k = kwargs["outputs"], kwargs["k"]
     ref_box = int(half.image_shape[0])
     results = []
-    for shape_class in half.classes:
+    for index, shape_class in enumerate(half.classes):
         class_kw = class_kwargs(kwargs, shape_class, half.n_units)
+        if batch_overrides is not None:
+            class_kw.update(batch_overrides[index])
         class_kw["noise_variance_k"] = class_noise_table(noise_radial, shape_class, ref_box)
         class_kw["outputs"] = PerHalfOutputs()
         results.append(score_fn(**class_kw))

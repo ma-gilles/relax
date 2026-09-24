@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import multiprocessing
 import traceback
@@ -114,12 +115,17 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     random_seed: int,
     do_ctf_correction: bool,
     random_seed_particle_ids,
+    group_grid=None,
 ) -> ExpectedAccuracy:
     """Call RELION's expected-accuracy binding from prepared native inputs.
 
     Supplied-map EM and InitialModel have different state containers and noise
     conventions, but the native calculation itself must have one owner.
     Callers prepare their layouts, then cross this shared binding boundary.
+    ``group_grid`` (``model_pixel_size``, ``image_full_size``,
+    ``projector_current_size``) describes trials of an optics group on another
+    pixel size or box (``pixel_size`` and ``current_image_size`` are then the
+    group's); None is the model grid.
     """
     from relax.relion_bind import _relion_bind_core as bind
 
@@ -166,6 +172,7 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
         bool(do_ctf_correction),
         False,
         np.ascontiguousarray(trial_particles),
+        **({} if group_grid is None else dict(group_grid)),
     )
     return ExpectedAccuracy(
         acc_rot=float(out["acc_rot"]),
@@ -487,6 +494,7 @@ def estimate_relion_expected_accuracy(
     do_ctf_correction: bool | None = None,
     max_trials: int = 100,
     optics_group_ids=None,
+    group_grid=None,
 ) -> ExpectedAccuracy:
     """Evaluate RELION ``calculateExpectedAngularErrors`` on half 1.
 
@@ -500,7 +508,8 @@ def estimate_relion_expected_accuracy(
     particle (``ml_optimiser.cpp:9291``). The binding takes one group's constants,
     so it runs once per group on that group's trials; a particle's error depends
     only on its own seed and inputs, and the per-class means are recombined with
-    the trial counts.
+    the trial counts. A ``MultiShapeHalf`` runs the same way once per shape class,
+    on the class's grid (``_estimate_by_shape_class``).
     """
     from recovar.core import fourier_transform_utils
     from recovar.utils.helpers import recovar_volume_to_relion
@@ -508,11 +517,24 @@ def estimate_relion_expected_accuracy(
     from relax.refinement.optics_shapes import MultiShapeHalf
 
     if isinstance(dataset, MultiShapeHalf):
-        # RELION projects each trial particle with its group's scaled matrix and
-        # remapped sizes (ml_optimiser.cpp:9291-9380); the binding takes one grid.
-        raise NotImplementedError(
-            "expected accuracy for optics groups on another pixel size or box needs "
-            "applyScaleDifference in the RELION expected-accuracy binding"
+        return _estimate_by_shape_class(
+            dataset,
+            reference_fourier=reference_fourier,
+            volume_shape=volume_shape,
+            best_eulers_deg=best_eulers_deg,
+            class_ids=class_ids,
+            class_weights=class_weights,
+            sigma2_noise_native=sigma2_noise_native,
+            trial_order_local=trial_order_local,
+            current_image_size=current_image_size,
+            padding_factor=padding_factor,
+            sigma2_fudge=sigma2_fudge,
+            random_seed=random_seed,
+            random_seed_particle_ids=random_seed_particle_ids,
+            ctf_params_override=ctf_params_override,
+            do_ctf_correction=do_ctf_correction,
+            max_trials=max_trials,
+            optics_group_ids=optics_group_ids,
         )
     eulers = np.asarray(best_eulers_deg, dtype=np.float64)
     if eulers.ndim != 2 or eulers.shape[1] != 3:
@@ -591,6 +613,7 @@ def estimate_relion_expected_accuracy(
                     ctf_params_override=ctf_params_override,
                     do_ctf_correction=do_ctf_correction,
                     max_trials=int(np.count_nonzero(in_group[trial_local])),
+                    group_grid=group_grid,
                 )
             )
         return _combine_group_expected_accuracies(per_group, trial_local, trial_particle_ids)
@@ -627,4 +650,67 @@ def estimate_relion_expected_accuracy(
         random_seed=int(random_seed),
         do_ctf_correction=bool(do_ctf_correction),
         random_seed_particle_ids=trial_particle_ids,
+        group_grid=group_grid,
     )
+
+
+def _estimate_by_shape_class(half, *, best_eulers_deg, class_ids, trial_order_local, current_image_size,
+                             random_seed_particle_ids, ctf_params_override, optics_group_ids, max_trials, **shared):
+    """Expected accuracy of a half whose optics groups differ in pixel size or box.
+
+    RELION scores each trial particle on its own group's grid: the projector stays
+    at the model current size, the matrix takes applyScaleDifference, the image
+    sizes and noise shells are remapped (ml_optimiser.cpp:9336-9353, 9536-9634).
+    The binding runs once per shape class on that class's trials (the half's first
+    ``max_trials`` in trial order), and class means recombine with trial counts.
+    """
+    from relax.helpers import optics_scale
+
+    eulers = np.asarray(best_eulers_deg, dtype=np.float64)
+    n_particles = int(half.n_units)
+    order = np.asarray(trial_order_local, dtype=np.int64).reshape(-1)
+    if order.shape != (n_particles,):
+        raise ValueError(f"trial_order_local must have shape ({n_particles},), got {order.shape}")
+    trial_local = order[: min(int(max_trials), n_particles)]
+    particle_ids = np.asarray(
+        half._index_layout.original_image_indices_for_local(np.arange(n_particles))
+        if random_seed_particle_ids is None
+        else random_seed_particle_ids,
+        dtype=np.int64,
+    ).reshape(-1)
+    per_class = []
+    for shape_class in half.classes:
+        positions = shape_class.image_indices
+        local_of_position = np.full(n_particles, -1, dtype=np.int64)
+        local_of_position[positions] = np.arange(positions.size)
+        class_trials = local_of_position[trial_local[local_of_position[trial_local] >= 0]]
+        if class_trials.size == 0:
+            continue
+        rest = np.setdiff1d(np.arange(positions.size), class_trials, assume_unique=True)
+        per_class.append(
+            estimate_relion_expected_accuracy(
+                dataset=shape_class.dataset,
+                best_eulers_deg=eulers[positions],
+                class_ids=np.asarray(class_ids).reshape(-1)[positions],
+                trial_order_local=np.concatenate([class_trials, rest]),
+                current_image_size=optics_scale.group_current_size(
+                    current_image_size, shape_class.box_size, shape_class.scale
+                ),
+                random_seed_particle_ids=particle_ids[positions],
+                ctf_params_override=None if ctf_params_override is None else np.asarray(ctf_params_override)[positions],
+                optics_group_ids=None if optics_group_ids is None else np.asarray(optics_group_ids)[positions],
+                max_trials=int(class_trials.size),
+                group_grid=dict(
+                    model_pixel_size=float(half.voxel_size),
+                    image_full_size=int(shape_class.box_size),
+                    projector_current_size=int(current_image_size),
+                ),
+                **shared,
+            )
+        )
+    if len(per_class) == 1:
+        # All trials in one class: its estimate as the binding returned it.
+        return dataclasses.replace(
+            per_class[0], trial_local_indices=trial_local.copy(), trial_particle_ids=particle_ids[trial_local]
+        )
+    return _combine_group_expected_accuracies(per_class, trial_local, particle_ids[trial_local])
