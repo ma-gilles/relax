@@ -192,7 +192,7 @@ def compute_pass2_stats_sparse(
         # comparison always knows which engine produced a result. The scoring
         # routes it was never scoped to cover are different (RELION's
         # --firstiter_cc scoring, zero-oversampling coarse-normalization reuse
-        # and the replayed-particle-order Wavg arithmetic; see
+        # and the unordered Wavg arithmetic of subset replays; see
         # resident_pass2_out_of_scope_reason), so those passes go to the
         # compact engine and the log says which and why.
         sparse_pass2_impl = compute_pass2_stats_sparse_bucketed

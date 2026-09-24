@@ -1301,12 +1301,15 @@ def _use_fresh_auto_refine_particle_order(
             f"{_STATE_SWAP_FORCE_FRESH_PARTICLE_ORDER_ENV}=1 requires a complete "
             "state-swap replay diagnostic"
         )
+    # A perturbation replay from iteration 0 is still RELION's fresh run, so it
+    # takes the fresh order and the production arithmetic that comes with it.
+    # A state-swap diagnostic keeps the order it was captured with unless forced.
     return (
         int(args.n_classes) == 1
         and int(args.init_relion_iteration) == 0
         and frozen_boundary is None
         and (
-            args.perturb_replay_relion_dir is None
+            getattr(args, "state_swap_variant", None) is None
             or force_state_swap_order
         )
     )

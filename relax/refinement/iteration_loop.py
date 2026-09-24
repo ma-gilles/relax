@@ -238,13 +238,16 @@ _FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_D
 def _fresh_k1_spectrum_norm_default(
     *,
     preserve_bpref_particle_order: bool,
-    allow_replayed_bpref_particle_order: bool,
 ) -> bool:
-    """Enable source-faithful powerClass normalization only for a fresh run."""
+    """Enable the production K=1 arithmetic wherever RELION's order is preserved.
 
-    return bool(
-        preserve_bpref_particle_order and not allow_replayed_bpref_particle_order
-    )
+    This selects source-faithful powerClass normalization and, through it, the
+    exact BPref operands and the atomic Wavg triplet. Imported-boundary
+    replays preserve RELION's native order too, so they run the same
+    arithmetic as a fresh run rather than a second, replay-only variant.
+    """
+
+    return bool(preserve_bpref_particle_order)
 
 
 def _relion_k1_translation_angle_scale(
@@ -833,7 +836,6 @@ def refine_single_volume(
     )
     source_faithful_spectrum_norm = _fresh_k1_spectrum_norm_default(
         preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
-        allow_replayed_bpref_particle_order=parity.allow_replayed_bpref_particle_order,
     )
     class_log_priors, class_weights = _initialize_class_log_priors(
         n_classes,

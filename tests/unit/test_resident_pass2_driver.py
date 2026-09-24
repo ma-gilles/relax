@@ -1056,11 +1056,12 @@ def test_zero_oversampling_coarse_reuse_is_out_of_scope():
 
 
 def test_replayed_particle_order_wavg_arithmetic_is_out_of_scope(monkeypatch):
-    """Outside the fresh K=1 guard the compact engine uses non-atomic Wavg.
+    """Without RELION's preserved order the compact engine uses non-atomic Wavg.
 
-    k1_adaptive_replay (os1, replayed BPref particle order) hit the gate's
-    atomic-Wavg refusal in 14363460. The fresh guard, or the explicit RELION
-    operand flags a replay can set, keeps the pass in scope.
+    k1_adaptive_replay (os1, then replayed without RELION's order) hit the
+    gate's atomic-Wavg refusal in 14363460. Replays now preserve the native
+    order (production arithmetic); a subset replay that cannot still routes to
+    the compact engine. The explicit RELION operand flags keep a pass in scope.
     """
 
     for name in (

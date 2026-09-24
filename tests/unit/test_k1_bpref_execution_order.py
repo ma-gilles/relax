@@ -448,6 +448,20 @@ def test_sparse_pass_order_policy_is_k1_only_and_dormant_by_default():
         )
 
 
+def test_fresh_k1_bpref_order_scope_accepts_perturbation_replay_from_iteration_zero():
+    """A fresh run that replays RELION's perturbations keeps RELION's order."""
+
+    _validate_bpref_particle_order_scope(
+        preserve_bpref_particle_order=True,
+        n_classes=1,
+        init_relion_iteration=0,
+        perturb_replay_relion_dir="relion",
+        replay_iteration_overrides=[None, {"state": 1}],
+        sealed_sampling_state=None,
+        sealed_scoring_context=None,
+    )
+
+
 def test_fresh_k1_bpref_order_scope_accepts_only_unsealed_iteration_zero():
     kwargs = {
         "preserve_bpref_particle_order": True,
@@ -462,9 +476,8 @@ def test_fresh_k1_bpref_order_scope_accepts_only_unsealed_iteration_zero():
 
     for override, match in (
         ({"n_classes": 4}, "K=1-only"),
-        ({"init_relion_iteration": 1}, "fresh iteration-0"),
-        ({"perturb_replay_relion_dir": "relion"}, "perturbation replay"),
-        ({"replay_iteration_overrides": [None, {"state": 1}]}, "numbered replay"),
+        ({"init_relion_iteration": 1}, "requires the native RELION order"),
+        ({"replay_iteration_overrides": [None, {"state": 1}]}, "without perturbation replay"),
         ({"sealed_sampling_state": object()}, "sealed boundary"),
         ({"sealed_scoring_context": object()}, "sealed boundary"),
     ):

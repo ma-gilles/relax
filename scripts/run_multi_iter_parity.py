@@ -1006,9 +1006,10 @@ def main():
         type=int,
         default=None,
         help=(
-            "Diagnostic imported-boundary A/B only: reconstruct the native RELION "
-            "run's one-time paired half order using this optimizer seed, and preserve "
-            "that order through K=1 BPref. Requires --iter greater than 0."
+            "Reconstruct the native RELION run's one-time paired half order using "
+            "this optimizer seed, and preserve that order through K=1 BPref. Requires "
+            "--iter greater than 0. Defaults to the RELION optimiser seed for a "
+            "complete-table replay, which selects the production K=1 arithmetic."
         ),
     )
     parser.add_argument(
@@ -1755,6 +1756,25 @@ def main():
 
     relion_idx_map = {_idx(relion_names[i]): relion_subsets[i] for i in range(len(relion_names))}
     our_subsets = np.array([relion_idx_map.get(_idx(n), 0) for n in our_names])
+    # An imported-boundary replay of the complete table reconstructs RELION's
+    # native order from the optimiser seed by default. Preserving that order
+    # selects the production K=1 arithmetic, so the replay checks the arithmetic
+    # a fresh run uses instead of a replay-only variant. Subset and focused
+    # replays cannot reconstruct the order and keep the compact engine's
+    # unordered arithmetic.
+    if (
+        args.diagnostic_native_relion_particle_order_seed is None
+        and args.diagnostic_fresh_particle_order_seed is None
+        and int(args.iter) > 0
+        and not args.keep_stack_indices
+        and args.max_particles is None
+        and optimizer_random_seed is not None
+    ):
+        args.diagnostic_native_relion_particle_order_seed = int(optimizer_random_seed)
+        print(
+            "  Native RELION particle order from the optimiser seed "
+            f"{optimizer_random_seed} (production K=1 arithmetic)"
+        )
     selected_order_seed = (
         args.diagnostic_fresh_particle_order_seed
         if args.diagnostic_fresh_particle_order_seed is not None

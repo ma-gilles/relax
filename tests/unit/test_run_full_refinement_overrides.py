@@ -128,7 +128,7 @@ def test_complete_initial_particle_state_is_autorefine_only():
     assert not _replay_complete_initial_particle_state(1, 1)
 
 
-def test_fresh_auto_refine_particle_order_excludes_kclass_and_replays():
+def test_fresh_auto_refine_particle_order_excludes_kclass_imports_and_state_swaps():
     args = SimpleNamespace(
         n_classes=1,
         init_relion_iteration=0,
@@ -142,8 +142,12 @@ def test_fresh_auto_refine_particle_order_excludes_kclass_and_replays():
     args.init_relion_iteration = 1
     assert not _use_fresh_auto_refine_particle_order(args, None)
     args.init_relion_iteration = 0
+    # A perturbation replay from iteration 0 is RELION's fresh run.
     args.perturb_replay_relion_dir = "/sealed/restart"
+    assert _use_fresh_auto_refine_particle_order(args, None)
+    args.state_swap_variant = "all_relion"
     assert not _use_fresh_auto_refine_particle_order(args, None)
+    args.state_swap_variant = None
     args.perturb_replay_relion_dir = None
     assert not _use_fresh_auto_refine_particle_order(args, object())
 

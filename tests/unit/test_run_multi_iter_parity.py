@@ -550,7 +550,7 @@ def test_replayed_bpref_particle_order_requires_explicit_diagnostic_scope():
         "sealed_sampling_state": None,
         "sealed_scoring_context": None,
     }
-    with pytest.raises(ValueError, match="requires a fresh iteration-0 run"):
+    with pytest.raises(ValueError, match="requires the native RELION order"):
         _validate_bpref_particle_order_scope(**kwargs)
 
     _validate_bpref_particle_order_scope(
@@ -559,19 +559,20 @@ def test_replayed_bpref_particle_order_requires_explicit_diagnostic_scope():
     )
 
 
-def test_source_faithful_spectrum_norm_excludes_replayed_particle_order():
-    assert _fresh_k1_spectrum_norm_default(
-        preserve_bpref_particle_order=True,
-        allow_replayed_bpref_particle_order=False,
-    )
-    assert not _fresh_k1_spectrum_norm_default(
-        preserve_bpref_particle_order=True,
-        allow_replayed_bpref_particle_order=True,
-    )
-    assert not _fresh_k1_spectrum_norm_default(
-        preserve_bpref_particle_order=False,
-        allow_replayed_bpref_particle_order=False,
-    )
+def test_preserved_particle_order_selects_production_arithmetic_in_replays_too():
+    """One K=1 arithmetic: a replay that preserves RELION's order uses it too."""
+
+    assert _fresh_k1_spectrum_norm_default(preserve_bpref_particle_order=True)
+    assert not _fresh_k1_spectrum_norm_default(preserve_bpref_particle_order=False)
+
+
+def test_complete_table_replays_default_to_the_native_relion_order():
+    from scripts import run_multi_iter_parity
+
+    source = inspect.getsource(run_multi_iter_parity.main)
+    assert "args.diagnostic_native_relion_particle_order_seed = int(optimizer_random_seed)" in source
+    assert "and args.max_particles is None" in source
+    assert "and not args.keep_stack_indices" in source
 
 
 def test_replayed_bpref_particle_order_cannot_alter_sealed_boundary():

@@ -376,10 +376,10 @@ def resident_pass2_out_of_scope_reason(
     - zero oversampling (``--adaptive_oversampling 0``) reuses the coarse
       float32 normalization and hard assignment, whose winner/Pmax
       substitution the resident driver does not implement;
-    - a production-shaped pass (noise and group-scale statistics) outside the
-      fresh K=1 guard, i.e. a replay of RELION's BPref particle order, uses
-      the non-atomic Wavg arithmetic; the resident statistics stage implements
-      only the atomic triplet.
+    - a production-shaped pass (noise and group-scale statistics) that does not
+      preserve RELION's particle order (a subset or focused debugging replay)
+      uses the compact engine's unordered, non-atomic Wavg arithmetic; the
+      resident statistics stage implements only the atomic triplet.
 
     Everything else still raises through
     :func:`require_resident_production_configuration`, because a silent
@@ -406,8 +406,8 @@ def resident_pass2_out_of_scope_reason(
         )[3]
         if not atomic_scale_aa:
             return (
-                "the non-atomic Wavg arithmetic outside the fresh K=1 guard "
-                "(replayed BPref particle order)"
+                "the non-atomic Wavg arithmetic of a pass without RELION's "
+                "preserved particle order (subset or focused replay)"
             )
     return None
 
