@@ -570,7 +570,7 @@
     "masked_resolution_definition": "relion_postprocess_masked_frozen"
    },
    "gt": null,
-   "cross_engine": "masked cross-engine band FSC-AUC merged/halves 0.9658/0.9303/0.9226; relax converged after 18 iterations (RELION 19); its own convergence tracker read 6.53 A at convergence (RELION rlnCurrentResolution 4.21 A); the final half maps agree",
+   "cross_engine": "masked cross-engine band FSC-AUC merged/halves 0.9658/0.9303/0.9226; relax converged after 18 iterations (RELION 19); its own convergence tracker read 6.53 A at convergence (RELION rlnCurrentResolution 4.21 A)",
    "time_ratio_relax_over_relion": 0.86,
    "matched": "workload",
    "matched_detail": {
@@ -585,7 +585,7 @@
     "Published resolution 3.5 A (EMD-8511). Input: particle STAR plus EMD-8511 low-passed to 60 A; no RELION EM output.",
     "The earlier Q 427a08bd8 runs on the old code (standalone 14320030, seeded 14320031) were cancelled for queue load on 2026-09-24 before finishing; the seeded row is dropped. On that source non-C1 local search was CPU-bound (iteration 14 took 6160 s with the GPU idle).",
     "Timing not controlled: separate jobs and nodes; RELION used 12 CPUs (3 ranks x 4 threads), relax 4 CPUs.",
-    "The tracker gap is the known pre-f58b55e reporting issue: relax a32798c reports its last split-half value (6.53 A), and RELION's own last split-half value (run_it019_half1_model.star) is 6.40 A, one shell away; RELION's 4.21 A comes from after the final all-data iteration, which f58b55e now mirrors."
+    "Open issue (unexplained): the reporting fix f58b55e (not in a32798c) explains only which iteration's value relax printed (its last split-half 6.53 A instead of a post-final value). relax is one shell behind RELION at the last split-half iteration (6.53 vs 6.40 A, RELION run_it019_half1_model.star) and in the final unmasked resolution (4.21 vs 4.16 A); this is not shown to be RELION seed variation and stays unexplained pending a RELION different-seed repeat. The frozen-mask result (3.58 vs 3.70 A) favours relax."
    ],
    "null_reasons": {
     "gt": "real data: no ground truth"
