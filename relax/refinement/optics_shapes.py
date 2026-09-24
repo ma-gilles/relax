@@ -230,9 +230,14 @@ def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
         out["model_current_size_for_engine"] = optics_scale.group_current_size(
             reference_size, shape_class.box_size, shape_class.scale
         )
+    half = kwargs.get("experiment_dataset")
+    if reference_size is None and half is not None and (
+        shape_class.box_size != int(half.image_shape[0]) or shape_class.scale != 1.0
+    ):
+        # The full reference box, stated explicitly: the class's own "full box" is another size.
+        reference_size = int(half.image_shape[0])
     out["reference_current_size"] = reference_size
     out["projection_scale"] = shape_class.scale
-    half = kwargs.get("experiment_dataset")
     out["experiment_dataset"] = (
         shape_class.dataset if half is None else _engine_dataset(shape_class, half.volume_shape)
     )

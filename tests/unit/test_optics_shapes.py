@@ -222,3 +222,12 @@ def test_adaptive_batches_are_planned_per_class_box():
         ),
     )
     assert received == [1000 // 32, 25]
+
+
+@pytest.mark.unit
+def test_full_box_reference_size_is_explicit_for_a_class_on_another_grid():
+    # A full-box pass (no current size) still fills the backprojector at the reference box.
+    half = _half()
+    kwargs = dict(experiment_dataset=half, cs_for_engine=None)
+    assert optics_shapes.class_kwargs(kwargs, half.classes[1], 5)["reference_current_size"] == REF_BOX
+    assert optics_shapes.class_kwargs(kwargs, half.classes[0], 5)["reference_current_size"] is None

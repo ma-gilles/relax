@@ -1566,7 +1566,12 @@ def _score_half_local_one_shape(
             relion_backprojector_volume_shape(
                 experiment_dataset.volume_shape,
                 PADDING_FACTOR,
-                current_size=reconstruction_current_size_for_engine,
+                # Images on another grid fill the backprojector at the reference model size.
+                current_size=(
+                    reconstruction_current_size_for_engine
+                    if reference_current_size is None
+                    else reference_current_size
+                ),
             )
             if local_relion_x_half_mstep
             else None
