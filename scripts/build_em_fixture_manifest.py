@@ -56,6 +56,8 @@ SETS: dict[str, tuple[str, list[str], list[str], str, list[str]]] = {
         "RELION auto-refine of k1_5k128_data with --oversampling 1",
         ["../GENERATION.json"],
     ),
+    "k1_5k128_relion_os0_repeats": (f"{FX}/data_noise1_5k_normalized_os0_repeats", RUN, [], "Two same-command RELION repeats of k1_5k128_relion_os0 (all iterations; Slurm 14363910)", ["PROVENANCE.json"]),
+    "k1_5k128_relion_os1_repeats": (f"{FX}/data_noise1_5k_normalized_os1/relion_repeats", RUN, [], "Two same-command RELION repeats of k1_5k128_relion_os1 (all iterations; Slurm 14363910)", ["PROVENANCE.json"]),
     "k2_5k128_data": (
         f"{PROJ}/data_pdb_k2_5k_128",
         TOP,
@@ -70,6 +72,7 @@ SETS: dict[str, tuple[str, list[str], list[str], str, list[str]]] = {
         "RELION K2 Class3D of k2_5k128_data",
         [],
     ),
+    "k2_5k128_relion_repeats": (f"{FX}/data_pdb_k2_5k_128_relion_repeats", RUN, [], "Two same-command RELION repeats of k2_5k128_relion_os0 (Slurm 14363910)", ["PROVENANCE.json"]),
     "k4_5k128_data": (
         f"{PROJ}/data_pdb_k4_5k_128",
         TOP,

@@ -18,6 +18,10 @@ Use the cheapest sufficient rung and advance only after it passes:
 7. 100k/256 K=1 and K=4 completion pair, with RECOVAR and RELION for each pair
    run on the same GPU model.
 
+Rungs 3-4 are the smoke and medium [test tiers](../../CONTRIBUTING.md#test-tiers)
+(`pixi run test-smoke`, `pixi run test-medium`), and rung 7 is part of the long tier
+(`pixi run test-long`); the change decides the tier.
+
 During normal iteration, run the whole fast parity tier at most once every 3-4 hours
 unless fixing that tier, changing its path, or doing final validation.
 Prefer the directly affected test between tier runs.
@@ -28,7 +32,8 @@ recovar from relax work"), run recovar's applicable qualification in a recovar
 checkout: `pixi run test-full`, `./scripts/run_tests_parallel.sh long-test` and
 `scripts/extract_regression_tables.py`. Never run them for relax-only changes.
 
-The EM long tier is Slurm-only:
+The EM long tier is Slurm-only. `pixi run test-long` runs it together with the
+100k/256 completions; on its own:
 
 ```bash
 ./scripts/run_em_parity_long_slurm.sh

@@ -1,0 +1,7 @@
+{
+ "note": "FSC pass criteria of the smoke/medium tiers (relax vs RELION oracle, scripts/em_tier_fsc.py) and the tolerance of the pinned relax outputs (scripts/em_tier_pinned.py). PROPOSED, not approved: nothing here is enforced until the user approves and 'approved' is set to true. The existing correlation checks in the tests stay until then.",
+ "approved": false,
+ "approved_by": null,
+ "cases": {},
+ "pinned_tolerance": {"min_fsc_auc_drop": null, "min_shell_fsc_drop": null}
+}
