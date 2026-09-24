@@ -202,8 +202,8 @@
     "masked_resolution_definition": "relion_postprocess_masked_frozen"
    },
    "gt": null,
-   "cross_engine": "scorecard PASS: merged band FSC-AUC 0.9797, halves 0.9614/0.9613",
-   "cross_engine_masked_band_auc": 0.9972,
+   "cross_engine": "scorecard PASS: merged band FSC-AUC 0.9790, halves 0.9614/0.9613",
+   "cross_engine_masked_band_auc": 0.9973,
    "time_ratio_relax_over_relion": 0.72,
    "matched": "workload",
    "matched_detail": {
@@ -230,9 +230,9 @@
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speedbench_20260923/runs/10073_relion_r1",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speedbench_20260923/runs/10073_relax_r1"
     ],
-    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speedbench_20260923/scores/10073_r1.json",
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/gridpost_rescore_20260924/speedbench_10073_r1.json",
     "masked_fsc_json": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speedbench_20260923/scores/10073_r1_masked/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/gridpost_rescore_20260924/speedbench_10073_r1_masked_prov/masked_fsc.json"
     ],
     "results_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speedbench_20260923/results.json"
    },
@@ -247,6 +247,27 @@
    "mask": {
     "dataset": "empiar10073_c1",
     "sha256": "030ad3a85199cfffbfaee1f78d291a365e73452b2f6fbf0e9edf5de5f77d809f"
+   },
+   "provenance": {
+    "note": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+    "date": "2026-09-24",
+    "maps": {
+     "merged": {
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/gridding_posthoc_20260924/SB10073/final_merged.mrc",
+      "corrected_sha256": "82dde91d68cd492e5d64fb053f53fce586da5e1d6af4ba3b63c9da05ea43739e",
+      "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speedbench_20260923/runs/10073_relax_r1/outputs/final_merged.mrc",
+      "source_sha256": "24e111117fdc635e2051ea70630ff0814990d0fd0304bb4308053d328a2b6280"
+     }
+    },
+    "evidence": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/gridpost_rescore_20260924/speedbench_10073_r1.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/gridpost_rescore_20260924/speedbench_10073_r1_masked_prov/masked_fsc.json"
+    ],
+    "previous_values": {
+     "cross_engine": "scorecard PASS: merged band FSC-AUC 0.9797, halves 0.9614/0.9613",
+     "cross_engine_masked_band_auc": 0.9972
+    },
+    "final_all_data_grid_correct_of_producing_runs": false
    }
   },
   {
@@ -790,7 +811,7 @@
     "masked_resolution_definition": "relion_postprocess_masked_frozen"
    },
    "gt": null,
-   "cross_engine": "masked cross-engine band FSC-AUC vs the RELION reference merged/halves 0.9999/0.9998/0.9998; vs the RELION seed repeat 0.9920/0.9503/0.9491, equal to reference vs repeat 0.9920/0.9504/0.9492",
+   "cross_engine": "masked cross-engine band FSC-AUC vs the RELION reference merged/halves 0.9999/0.9998/0.9998; vs the RELION seed repeat 0.9919/0.9503/0.9491 (unmasked merged 0.9295), equal to reference vs repeat 0.9920/0.9504/0.9492 (unmasked merged 0.9296)",
    "time_ratio_relax_over_relion": 3.0,
    "matched": "workload",
    "matched_detail": {
@@ -818,11 +839,10 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10081_hcn1",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relion_hcn1_seed_repeat_20260924/relion_refine_c4_seed20260924"
     ],
-    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/hcn1_seed_band_20260924/pairs_4arms.json",
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/gridpost_rescore_20260924/hcn1_pairs_4arms.json",
     "masked_fsc_json": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/hcn1_seed_band_20260924/main_vs_ref/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/hcn1_seed_band_20260924/repeat_vs_main/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/hcn1_seed_band_20260924/repeat_vs_a327/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/gridpost_rescore_20260924/hcn1_main_vs_ref_prov/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/gridpost_rescore_20260924/hcn1_repeat_vs_main/masked_fsc.json"
     ]
    },
    "date": "2026-09-24",
@@ -859,6 +879,28 @@
     "b": "relax: standalone recipe flags; default BFC allocator; --projector_setup_backend native; --timing_dir and --benchmark_ledger_json records; no intermediates dump, capture, replay or deterministic-reduction options.",
     "c": "relax: run_full_refinement process wall (EXECUTED.json seconds), including compilation and data loading. RELION: Slurm elapsed of the refinement job.",
     "d": "RELION 14313014 della-h19g1 H100 (2026-09-23); relax 14364095 della-h20g5 H100 (2026-09-24)"
+   },
+   "provenance": {
+    "note": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+    "date": "2026-09-24",
+    "maps": {
+     "merged": {
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/gridding_posthoc_20260924/HCN1main/final_merged.mrc",
+      "corrected_sha256": "683050fd7028e0e7d7c731f660eb92fac5dff729f1d354366457cc941af34f59",
+      "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_hcn1_main_rerun_20260924/runs/hcn1_relax_standalone_460a763_v1/outputs/final_merged.mrc",
+      "source_sha256": "fbfb1cf6cb7ed0a2ff227f525e666af53f813c322b80bf932802cf2903e8618e"
+     }
+    },
+    "evidence": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/gridpost_rescore_20260924/hcn1_main_vs_ref_prov/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/gridpost_rescore_20260924/hcn1_pairs_4arms.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/gridpost_rescore_20260924/hcn1_repeat_vs_main/masked_fsc.json"
+    ],
+    "previous_values": {
+     "cross_engine": "masked cross-engine band FSC-AUC vs the RELION reference merged/halves 0.9999/0.9998/0.9998; vs the RELION seed repeat 0.9920/0.9503/0.9491, equal to reference vs repeat 0.9920/0.9504/0.9492",
+     "cross_engine_masked_band_auc": 0.9999
+    },
+    "final_all_data_grid_correct_of_producing_runs": false
    }
   },
   {
