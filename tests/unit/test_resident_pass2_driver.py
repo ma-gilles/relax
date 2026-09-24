@@ -742,12 +742,11 @@ def test_resident_driver_repeats_itself(_resident_production_env):
     second = rp.compute_pass2_stats_resident(**args)
     np.testing.assert_array_equal(first.hard_assignment, second.hard_assignment)
     # The statistics whose reductions are ordered are bit-reproducible.
-    for field in ("wsum_sigma2_noise", "wsum_norm_correction"):
-        np.testing.assert_array_equal(
-            np.asarray(getattr(first.noise_stats, field)),
-            np.asarray(getattr(second.noise_stats, field)),
-            err_msg=field,
-        )
+    np.testing.assert_array_equal(
+        np.asarray(first.noise_stats.wsum_sigma2_noise),
+        np.asarray(second.noise_stats.wsum_sigma2_noise),
+        err_msg="wsum_sigma2_noise",
+    )
 
     def rel_l2(a, b):
         a = np.asarray(a)
@@ -760,6 +759,14 @@ def test_resident_driver_repeats_itself(_resident_production_env):
     # band on an A100: 1.5e-8 for the maps, 1.4e-8 for the image power.
     assert rel_l2(first.Ft_y, second.Ft_y) < 1e-7
     assert rel_l2(first.noise_stats.wsum_img_power, second.noise_stats.wsum_img_power) < 1e-7
+    # wsum_norm_correction adds the per-image relion_norm_high_shell term,
+    # whose shell binning is the same racing scatter-add (resident_operands.py:
+    # about 6e-8 relative between identical calls). H100 repeats missed by
+    # 3.5e-8 on one image. Band approved by the user 2026-09-24; the exact
+    # check is the deterministic-reductions arm below.
+    assert rel_l2(
+        first.noise_stats.wsum_norm_correction, second.noise_stats.wsum_norm_correction
+    ) < 1e-7
 
 
 @requires_resident_gpu
