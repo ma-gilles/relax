@@ -151,6 +151,11 @@ CASE_METRICS = {
         ("k1_local_replay_half2_corr_vs_relion", False, ".6f"),
         ("k1_local_replay_pmax_abs_diff", True, ".6f"),
     ),
+    "k1_adaptive_replay": (
+        ("k1_adaptive_replay_half1_corr_vs_relion", False, ".6f"),
+        ("k1_adaptive_replay_half2_corr_vs_relion", False, ".6f"),
+        ("k1_adaptive_replay_pmax_abs_diff", True, ".6f"),
+    ),
     "kclass_replay": (
         ("kclass_replay_mean_corr", False, ".6f"),
         ("kclass_replay_pmax_abs_mean", True, ".6f"),
@@ -211,6 +216,7 @@ TIER_CASES = {
     "fast": (
         "k1_replay",
         "k1_local_replay",
+        "k1_adaptive_replay",
         "kclass_replay",
         "k1_coldstart",
         "k1_perturbreplay",

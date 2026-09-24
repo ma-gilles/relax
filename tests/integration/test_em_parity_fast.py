@@ -1,9 +1,10 @@
 """GPU regressions for EM replay, initialization and sampling paths.
 
-The eight cases cover K1 global replay/local replay/cold start/perturbation
-replay, K2 replay, and three K4 initialization/sampling combinations. The K1
-local replay is the only K1 case that builds RELION's Projector::data, so it
-alone reaches the default texture projector. K4 replay requires a
+The nine cases cover K1 global replay/local replay/adaptive replay/cold
+start/perturbation replay, K2 replay, and three K4 initialization/sampling
+combinations. Only the K1 local and adaptive replays build RELION's
+Projector::data, so only they reach the default texture projector; the
+adaptive replay alone reaches the compact texture score rows of pass 1. K4 replay requires a
 same-oracle dispatch schedule; choose the oracle for each case's grid.
 Set EM_PARITY_FAST_K4_H{order}_OS{oversampling}_RELION_DIR and the matching
 _DISPATCH_SCHEDULE for (2, 1), (1, 0), and (1, 1). Admission verifies grid and
@@ -51,6 +52,11 @@ K1_RELION_DIR = K1_FIXTURE_DIR / "relion_ref_os0"
 K1_DATA_STAR = K1_FIXTURE_DIR / "particles.star"
 K1_GT_VOLUME = K1_FIXTURE_DIR / "reference_gt.mrc"
 K1_RELION_RANDOM_SEED = 1775735620
+# Same data and command as K1_RELION_DIR except --oversampling 1 (record in the
+# fixture's GENERATION.json).
+K1_OS1_RELION_DIR = Path(
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_noise1_5k_normalized_os1/relion_ref_os1"
+)
 
 K2_FIXTURE_DIR = FIXTURE_BASE / "data_pdb_k2_5k_128"
 K2_RELION_DIR = K2_FIXTURE_DIR / "relion_pdb_k2_os0_ref"
@@ -314,6 +320,104 @@ def test_em_parity_fast_k1_local_replay(tmp_path):
     assert half2_corr >= 0.999, f"K=1 local replay half2 corr {half2_corr:.6f} below threshold 0.999."
     assert pmax_abs_diff < 1e-3, (
         f"K=1 local replay |ΔPmax| {pmax_abs_diff:.6f} exceeds threshold 1e-3 vs RELION it007={relion_pmax_reference}."
+    )
+
+
+@pytest.mark.gpu
+@pytest.mark.integration
+@pytest.mark.slow
+def test_em_parity_fast_k1_adaptive_replay(tmp_path):
+    """Replay K1 iteration 3→4 of RELION's oversampling-1 auto-refine (global, healpix 3).
+
+    Adaptive oversampling runs a coarse pass-1 significance search before the
+    fine pass. With the default texture interpolation and a current size below
+    the box, pass 1 projects only the compact score rows through RELION's
+    texture projector, which no oversampling-0 case reaches. Compare both half
+    maps and optimizer Pmax with RELION iteration 4, with the same bounds as
+    the global replay.
+    """
+    _assert_parity_ancestors_or_skip()
+    model_path = K1_OS1_RELION_DIR / "run_it004_half1_model.star"
+    _require_fixture(PARITY_SCRIPT, K1_OS1_RELION_DIR, K1_DATA_STAR, K1_GT_VOLUME, model_path)
+
+    output_dir = tmp_path / "k1_adaptive_replay"
+    output_dir.mkdir(parents=True)
+
+    cmd = [
+        sys.executable,
+        str(PARITY_SCRIPT),
+        "--relion_dir",
+        str(K1_OS1_RELION_DIR),
+        "--data_star",
+        str(K1_DATA_STAR),
+        "--iter",
+        "3",
+        "--max_iter",
+        "1",
+        "--skip_final_iteration",
+        "--gt_volume",
+        str(K1_GT_VOLUME),
+        "--output_dir",
+        str(output_dir),
+    ]
+    logger.info("K=1 adaptive replay cmd: %s", " ".join(cmd))
+    t0 = time.time()
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    elapsed = time.time() - t0
+
+    if proc.returncode == 2:
+        pytest.fail(
+            "Parity provenance gate failed (exit 2). The worktree is missing "
+            "required parity-fix commits.\nstdout:\n" + proc.stdout + "\nstderr:\n" + proc.stderr
+        )
+    assert proc.returncode == 0, (
+        f"run_multi_iter_parity.py exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    # The case exists to cover the adaptive pass-1 projector path; fail if the
+    # replay took another route rather than passing on a path it was not meant to test.
+    log = proc.stdout + proc.stderr
+    assert "healpix_order=3, local_search=False" in log, "K=1 adaptive replay did not run a global iteration"
+    assert "Adaptive oversampling: pass 1 at coarse_size=" in log, "K=1 adaptive replay did not run pass 1"
+    assert "built exact Projector::data" in log, "K=1 adaptive replay did not build RELION's Projector::data"
+
+    npz_path = output_dir / "refinement_results.npz"
+    assert npz_path.exists(), f"Missing refinement_results.npz at {npz_path}"
+    npz = np.load(npz_path)
+
+    half1_corr = float(npz["final_half1_corr_vs_relion"])
+    half2_corr = float(npz["final_half2_corr_vs_relion"])
+    recovar_pmax = float(np.asarray(npz["ave_Pmax_trajectory"], dtype=np.float64)[0])
+
+    relion_pmax_reference = float(starfile.read(model_path)["model_general"]["rlnAveragePmax"])
+    pmax_abs_diff = abs(recovar_pmax - relion_pmax_reference)
+
+    baseline_h1 = _read_baseline("em_parity_quality_fast_baseline.json", "k1_adaptive_replay_half1_corr_vs_relion")
+    baseline_h2 = _read_baseline("em_parity_quality_fast_baseline.json", "k1_adaptive_replay_half2_corr_vs_relion")
+    baseline_pmax = _read_baseline("em_parity_quality_fast_baseline.json", "k1_adaptive_replay_pmax_abs_diff")
+
+    print(file=sys.stderr, flush=True)
+    print("=== K=1 adaptive replay parity (os1 iter 3→4 vs RELION it004) ===", file=sys.stderr, flush=True)
+    _log_comparison("k1_adaptive_replay_half1_corr_vs_relion", half1_corr, baseline_h1)
+    _log_comparison("k1_adaptive_replay_half2_corr_vs_relion", half2_corr, baseline_h2)
+    _log_comparison("k1_adaptive_replay_pmax_abs_diff", pmax_abs_diff, baseline_pmax, lower_is_better=True)
+    print(f"  walltime_s={elapsed:.1f}", file=sys.stderr, flush=True)
+
+    payload = {
+        "k1_adaptive_replay_half1_corr_vs_relion": half1_corr,
+        "k1_adaptive_replay_half2_corr_vs_relion": half2_corr,
+        "k1_adaptive_replay_pmax_recovar": recovar_pmax,
+        "k1_adaptive_replay_pmax_relion_reference": relion_pmax_reference,
+        "k1_adaptive_replay_pmax_abs_diff": pmax_abs_diff,
+        "k1_adaptive_replay_walltime_s": elapsed,
+    }
+    ledger = _write_quality_ledger("k1_adaptive_replay", payload, output_dir=output_dir)
+    logger.info("K=1 adaptive replay ledger: %s", ledger)
+
+    # NEVER widen tolerance to make a test pass. Fix the code instead.
+    assert half1_corr >= 0.999, f"K=1 adaptive replay half1 corr {half1_corr:.6f} below threshold 0.999."
+    assert half2_corr >= 0.999, f"K=1 adaptive replay half2 corr {half2_corr:.6f} below threshold 0.999."
+    assert pmax_abs_diff < 1e-3, (
+        f"K=1 adaptive replay |ΔPmax| {pmax_abs_diff:.6f} exceeds threshold 1e-3 vs RELION it004={relion_pmax_reference}."
     )
 
 

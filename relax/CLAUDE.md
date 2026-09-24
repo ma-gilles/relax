@@ -138,7 +138,7 @@ Two traps that hid this system for two weeks, both real, both worth checking
 before concluding a tier is broken:
 
 - **The fast tier needs the native RELION binding**, and it is not built in
-  every checkout. Without it three of the eight cases fail at import and never
+  every checkout. Without it three of the nine cases fail at import and never
   reach a comparison. Point `RECOVAR_RELION_BIND_BUILD_DIR` at a built
   `_relion_bind_core*.so` before deciding the tier is red for numerical reasons.
   Ad-hoc harnesses supply their own, which is why they run when the tier does not.
