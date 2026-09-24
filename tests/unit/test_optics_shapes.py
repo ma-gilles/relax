@@ -18,8 +18,8 @@ REF_BOX, REF_PIX = 32, 4.0
 
 
 def _half():
-    ds_a = SimpleNamespace(image_shape=(32, 32), voxel_size=4.0)
-    ds_b = SimpleNamespace(image_shape=(28, 28), voxel_size=4.0 * 32 / 24)
+    ds_a = SimpleNamespace(image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0)
+    ds_b = SimpleNamespace(image_shape=(28, 28), volume_shape=(28,) * 3, voxel_size=4.0 * 32 / 24)
     classes = optics_shapes.make_shape_classes(
         [(ds_a, np.array([0, 3, 4])), (ds_b, np.array([1, 2]))], ref_box=REF_BOX, ref_pixel=REF_PIX
     )
@@ -78,7 +78,10 @@ def test_class_kwargs_units_and_sizes():
     np.testing.assert_array_equal(out["translation_log_prior"], np.zeros(2))  # not per image
     assert out["cs_for_engine"] == out["model_current_size_for_engine"] == 2 * int(np.ceil(0.5 * b.scale * 20))
     assert out["reference_current_size"] == 20 and out["projection_scale"] == b.scale
-    assert out["experiment_dataset"] is b.dataset
+    # The engines see the class's images on the reference volume grid.
+    assert out["experiment_dataset"].volume_shape == (32, 32, 32)
+    assert out["experiment_dataset"].image_shape == (28, 28) and out["experiment_dataset"]._dataset is b.dataset
+    assert optics_shapes.class_kwargs(kwargs, half.classes[0], 5)["experiment_dataset"] is half.classes[0].dataset
 
 
 def _fake_result(n, images, value, groups=2, box=32):
@@ -133,7 +136,9 @@ def test_score_half_by_shape_places_images_and_adds_sums():
             cs_for_engine=None,
         ),
     )
-    assert [kw["experiment_dataset"] for kw in seen] == [c.dataset for c in half.classes]
+    assert [getattr(kw["experiment_dataset"], "_dataset", kw["experiment_dataset"]) for kw in seen] == [
+        c.dataset for c in half.classes
+    ]
     assert seen[1]["noise_variance_k"].shape == (2, 28 * 28)
     np.testing.assert_array_equal(merged.ha, np.arange(5))
     np.testing.assert_array_equal(merged.em_stats.log_evidence_per_image, np.arange(5.0))
@@ -176,8 +181,8 @@ def test_adaptive_batches_are_planned_per_class_box():
     from relax.helpers.batch_planning import _AdaptiveDenseBatchSizes
     from relax.refinement import iteration_loop
 
-    ds_a = SimpleNamespace(image_shape=(32, 32), voxel_size=4.0)
-    ds_b = SimpleNamespace(image_shape=(40, 40), voxel_size=4.0)  # larger box than the reference
+    ds_a = SimpleNamespace(image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0)
+    ds_b = SimpleNamespace(image_shape=(40, 40), volume_shape=(40,) * 3, voxel_size=4.0)  # larger box
     classes = optics_shapes.make_shape_classes(
         [(ds_a, np.array([0, 2])), (ds_b, np.array([1]))], ref_box=REF_BOX, ref_pixel=REF_PIX
     )

@@ -232,8 +232,34 @@ def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
         )
     out["reference_current_size"] = reference_size
     out["projection_scale"] = shape_class.scale
-    out["experiment_dataset"] = shape_class.dataset
+    half = kwargs.get("experiment_dataset")
+    out["experiment_dataset"] = (
+        shape_class.dataset if half is None else _engine_dataset(shape_class, half.volume_shape)
+    )
     return out
+
+
+class _ReferenceGridView:
+    """A shape class's dataset as the engines see it: its own images on the reference volume grid.
+
+    The engines read ``volume_shape`` as the grid of the reference they project and of the
+    backprojector they fill (both on the model's ``ori_size``); every other attribute is the
+    class dataset's.
+    """
+
+    def __init__(self, dataset, volume_shape):
+        self._dataset = dataset
+        self.volume_shape = tuple(int(size) for size in volume_shape)
+
+    def __getattr__(self, name):
+        return getattr(self._dataset, name)
+
+
+def _engine_dataset(shape_class: ShapeClass, reference_volume_shape):
+    dataset = shape_class.dataset
+    if tuple(dataset.volume_shape) == tuple(int(size) for size in reference_volume_shape):
+        return dataset
+    return _ReferenceGridView(dataset, reference_volume_shape)
 
 
 def class_adaptive_sizes(shape_class: ShapeClass, cs_for_engine, coarse_cs, coarse_sizing):
