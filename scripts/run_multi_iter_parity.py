@@ -1119,11 +1119,12 @@ def main():
     )
     parser.add_argument(
         "--image-fourier-backend",
-        choices=("host_numpy", "jax_gpu", "relion_cuda"),
-        default="host_numpy",
+        choices=("auto", "host_numpy", "jax_gpu", "relion_cuda"),
+        default="auto",
         help=(
-            "Fourier preprocessing backend for RELION-masked images. Use "
-            "relion_cuda for source-level CUDA operand comparisons."
+            "Fourier preprocessing backend for RELION-masked images. auto (default) "
+            "is relion_cuda when RELION's particle order is preserved (the production "
+            "K=1 arithmetic requires it) and host_numpy otherwise."
         ),
     )
     parser.add_argument(
@@ -1725,6 +1726,36 @@ def main():
         "yes",
         "on",
     }
+    # An imported-boundary replay of the complete table reconstructs RELION's
+    # native order from the optimiser seed by default. Preserving that order
+    # selects the production K=1 arithmetic, so the replay checks the arithmetic
+    # a fresh run uses instead of a replay-only variant. Subset and focused
+    # replays cannot reconstruct the order and keep the compact engine's
+    # unordered arithmetic.
+    if (
+        args.diagnostic_native_relion_particle_order_seed is None
+        and args.diagnostic_fresh_particle_order_seed is None
+        and int(args.iter) > 0
+        and not args.keep_stack_indices
+        and args.max_particles is None
+        and optimizer_random_seed is not None
+    ):
+        args.diagnostic_native_relion_particle_order_seed = int(optimizer_random_seed)
+        print(
+            "  Native RELION particle order from the optimiser seed "
+            f"{optimizer_random_seed} (production K=1 arithmetic)"
+        )
+    # The preserved RELION order runs the production K=1 arithmetic, which scores
+    # from RELION's CUDA image preprocessing (as run_full_refinement's auto does).
+    if args.image_fourier_backend == "auto":
+        args.image_fourier_backend = (
+            "relion_cuda"
+            if (
+                args.diagnostic_native_relion_particle_order_seed is not None
+                or args.diagnostic_fresh_particle_order_seed is not None
+            )
+            else "host_numpy"
+        )
     ds = load_dataset(
         args.data_star,
         dtype=np.complex128 if double_image_preprocessing else np.complex64,
@@ -1756,25 +1787,6 @@ def main():
 
     relion_idx_map = {_idx(relion_names[i]): relion_subsets[i] for i in range(len(relion_names))}
     our_subsets = np.array([relion_idx_map.get(_idx(n), 0) for n in our_names])
-    # An imported-boundary replay of the complete table reconstructs RELION's
-    # native order from the optimiser seed by default. Preserving that order
-    # selects the production K=1 arithmetic, so the replay checks the arithmetic
-    # a fresh run uses instead of a replay-only variant. Subset and focused
-    # replays cannot reconstruct the order and keep the compact engine's
-    # unordered arithmetic.
-    if (
-        args.diagnostic_native_relion_particle_order_seed is None
-        and args.diagnostic_fresh_particle_order_seed is None
-        and int(args.iter) > 0
-        and not args.keep_stack_indices
-        and args.max_particles is None
-        and optimizer_random_seed is not None
-    ):
-        args.diagnostic_native_relion_particle_order_seed = int(optimizer_random_seed)
-        print(
-            "  Native RELION particle order from the optimiser seed "
-            f"{optimizer_random_seed} (production K=1 arithmetic)"
-        )
     selected_order_seed = (
         args.diagnostic_fresh_particle_order_seed
         if args.diagnostic_fresh_particle_order_seed is not None

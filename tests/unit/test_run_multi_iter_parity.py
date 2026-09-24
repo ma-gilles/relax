@@ -573,6 +573,8 @@ def test_complete_table_replays_default_to_the_native_relion_order():
     assert "args.diagnostic_native_relion_particle_order_seed = int(optimizer_random_seed)" in source
     assert "and args.max_particles is None" in source
     assert "and not args.keep_stack_indices" in source
+    # the production arithmetic scores from RELION's CUDA preprocessing
+    assert 'if args.image_fourier_backend == "auto":' in source
 
 
 def test_replayed_bpref_particle_order_cannot_alter_sealed_boundary():
