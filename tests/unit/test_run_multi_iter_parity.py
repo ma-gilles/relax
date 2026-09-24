@@ -735,7 +735,7 @@ def test_select_final_replay_override_uses_last_slot_and_requested_groups():
         {"image_corrections": "wrong-slot"},
         {
             "image_corrections": "images",
-            "scale_corrections": "scales",
+            "serialized_scale_corrections": "scales",
             "noise_variance": "noise",
             "direction_prior": "directions",
             "previous_best_translations": "translations",
@@ -751,14 +751,14 @@ def test_select_final_replay_override_uses_last_slot_and_requested_groups():
     assert selected == {
         "image_corrections": "images",
         "noise_variance": "noise",
-        "scale_corrections": "scales",
+        "serialized_scale_corrections": "scales",
     }
 
 
 def test_select_final_replay_override_all_is_complete_union():
     source = {
         "image_corrections": object(),
-        "scale_corrections": object(),
+        "serialized_scale_corrections": object(),
         "noise_variance": object(),
         "direction_prior": object(),
         "previous_best_translations": object(),
@@ -771,7 +771,7 @@ def test_select_final_replay_override_all_is_complete_union():
     assert set(select_final_replay_override([source], "all")) == set(source)
     assert set(select_final_replay_override([source], "corrections")) == {
         "image_corrections",
-        "scale_corrections",
+        "serialized_scale_corrections",
         "noise_variance",
         "direction_prior",
     }
@@ -915,3 +915,15 @@ def test_relion_final_gt_series_accepts_unnumbered_all_data_without_half_maps():
 
     assert set(series) == {"relion_merged"}
     np.testing.assert_array_equal(series["relion_merged"], merged)
+
+
+def test_iteration_overrides_use_the_replay_scale_keys():
+    """The replay refuses a bare scale_corrections key (relion_replay); the
+    harness hands the model-STAR group scale as serialized provenance. The
+    forced final-only replay at 10097 it22 stopped on the bare key (14373953)."""
+
+    from scripts import run_multi_iter_parity
+
+    source = inspect.getsource(run_multi_iter_parity.main)
+    assert '"serialized_scale_corrections": [scale_corr_h1_iter, scale_corr_h2_iter]' in source
+    assert '"scale_corrections": [scale_corr_h1_iter' not in source

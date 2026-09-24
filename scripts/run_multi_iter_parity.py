@@ -816,7 +816,7 @@ _FINAL_REPLAY_FIELD_GROUPS = {
             "translation_sigma_angstrom_per_half",
         }
     ),
-    "normalization": frozenset({"image_corrections", "scale_corrections"}),
+    "normalization": frozenset({"image_corrections", "serialized_scale_corrections"}),
     "noise": frozenset({"noise_variance"}),
     "direction_prior": frozenset({"direction_prior"}),
 }
@@ -2207,7 +2207,9 @@ def main():
                 dtype=replay_real_dtype,
             ),
             "image_corrections": [corr_h1_iter, corr_h2_iter],
-            "scale_corrections": [scale_corr_h1_iter, scale_corr_h2_iter],
+            # RELION model-STAR group scale: the replay applies it as serialized
+            # provenance and keeps the live scoring scale (relion_replay).
+            "serialized_scale_corrections": [scale_corr_h1_iter, scale_corr_h2_iter],
             "previous_best_translations": [trans_h1_iter, trans_h2_iter],
             "previous_best_rotations": [rot_h1_iter, rot_h2_iter],
             "previous_best_rotation_eulers": [euler_h1_iter, euler_h2_iter],
