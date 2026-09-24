@@ -685,18 +685,19 @@ def _run_sparse_k_class_adaptive_pass2(
         base_engine_kwargs,
         n_classes=n_classes,
     )
+    # Images on another grid fill the backprojector at the reference model size.
+    mstep_current_size = (
+        common["reconstruction_volume_current_size"]
+        if common.get("reconstruction_volume_current_size") is not None
+        else common["current_size"]
+        if common["reconstruction_current_size"] is None
+        else common["reconstruction_current_size"]
+    )
     mstep_accumulator_shape = (
         relion_backprojector_volume_shape(
             experiment_dataset.volume_shape,
             common["reconstruction_padding_factor"],
-            # Images on another grid fill the backprojector at the reference model size.
-            current_size=(
-                common["reconstruction_volume_current_size"]
-                if common.get("reconstruction_volume_current_size") is not None
-                else common["current_size"]
-                if common["reconstruction_current_size"] is None
-                else common["reconstruction_current_size"]
-            ),
+            current_size=mstep_current_size,
         )
         if common["relion_x_half_mstep"]
         else None
@@ -1722,18 +1723,19 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
         pass2_kwargs,
         n_classes=n_classes,
     )
+    # Images on another grid fill the backprojector at the reference model size.
+    mstep_current_size = (
+        common["reconstruction_volume_current_size"]
+        if common.get("reconstruction_volume_current_size") is not None
+        else common["current_size"]
+        if common["reconstruction_current_size"] is None
+        else common["reconstruction_current_size"]
+    )
     mstep_accumulator_shape = (
         relion_backprojector_volume_shape(
             experiment_dataset.volume_shape,
             common["reconstruction_padding_factor"],
-            # Images on another grid fill the backprojector at the reference model size.
-            current_size=(
-                common["reconstruction_volume_current_size"]
-                if common.get("reconstruction_volume_current_size") is not None
-                else common["current_size"]
-                if common["reconstruction_current_size"] is None
-                else common["reconstruction_current_size"]
-            ),
+            current_size=mstep_current_size,
         )
         if common["relion_x_half_mstep"]
         else None
