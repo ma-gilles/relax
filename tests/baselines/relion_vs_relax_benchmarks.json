@@ -1607,6 +1607,7 @@
    },
    "notes": [
     "Both arms ran the 2026-09-19 cross-dataset matrix command (RELION default InitialModel schedule, 200 iterations, same seed, sampling and diameter) as separate whole-node jobs on H100 nodes; matched stays at workload (single run per arm, separate jobs and nodes, relax profiling options on).",
+    "OPEN bug candidate (recorded 2026-09-24): relax's population-weighted reference FSC-AUC is below RELION's by 0.021 with no RELION repeat to show it as RELION variation.",
     "All scored runs (FSC-AUC unmasked / masked): relion_s29 vs reference 0.3277 unmasked / 0.3288 masked; relax_s29 vs reference 0.3070 unmasked / 0.3080 masked; relion_s29 vs relax_s29 0.9476 / 0.9671.",
     "relax minus RELION reference FSC-AUC: -0.0207 unmasked, -0.0208 masked; no RELION repeat exists, so a relax deficit here is open, not attributed to RELION variation."
    ],
@@ -1720,6 +1721,7 @@
    },
    "notes": [
     "Both arms ran the 2026-09-19 cross-dataset matrix command (RELION default InitialModel schedule, 200 iterations, same seed, sampling and diameter) as separate whole-node jobs on H100 nodes; matched stays at workload (single run per arm, separate jobs and nodes, relax profiling options on).",
+    "OPEN bug candidate (recorded 2026-09-24): relax's population-weighted reference FSC-AUC is below RELION's by 0.0066 with no RELION repeat; the relax-main pair with a RELION same-seed repeat (job 14373890) will give this fixture its band.",
     "All scored runs (FSC-AUC unmasked / masked): relion_s29 vs reference 0.1435 unmasked / 0.1427 masked; relax_s29 vs reference 0.1369 unmasked / 0.1363 masked; relion_s29 vs relax_s29 0.8821 / 0.8815.",
     "relax minus RELION reference FSC-AUC: -0.0066 unmasked, -0.0064 masked; no RELION repeat exists, so a relax deficit here is open, not attributed to RELION variation."
    ],
@@ -1833,7 +1835,8 @@
    },
    "notes": [
     "Both arms ran the 2026-09-19 cross-dataset matrix command (RELION default InitialModel schedule, 200 iterations, same seed, sampling and diameter) as separate whole-node jobs on H100 nodes; matched stays at workload (single run per arm, separate jobs and nodes, relax profiling options on).",
-    "The 2026-09-20 quality gate (vdam_matrix_quality_20260920, evaluate_kclass_gt, every class aligned to every GT class independently, plain mean) read 0.039139 relax vs 0.039154 RELION; with one rigid frame per run and population weights (this table) relax is below RELION. The population-weighted value follows the class occupancies each engine converged to (RELION's most populated class reaches 15.1 A against its GT class, relax's 68.0 A).",
+    "OPEN bug candidate (recorded 2026-09-24): relax's population-weighted reference FSC-AUC is below RELION's by 0.046 with no RELION repeat.",
+    "The 2026-09-20 quality gate (vdam_matrix_quality_20260920, evaluate_kclass_gt, every class aligned to every GT class independently, plain mean) read 0.039139 relax vs 0.039154 RELION; with one rigid frame per run and population weights (this table) relax is below RELION. The population-weighted value follows the class occupancies each engine converged to (RELION's most populated class reaches 15.1 A against its GT class, relax's 68.0 A). One rigid frame per run is the right registration: a run's classes share one set of pose assignments, so they share one frame, and aligning each class separately lets every class find its own best rotation against every GT class, which inflates agreement for poorly resolved classes.",
     "All scored runs (FSC-AUC unmasked / masked): relion_s29 vs reference 0.1435 unmasked / 0.1514 masked; relax_s29 vs reference 0.0974 unmasked / 0.0985 masked; relion_s29 vs relax_s29 0.2267 / 0.2690.",
     "relax minus RELION reference FSC-AUC: -0.0461 unmasked, -0.0529 masked; no RELION repeat exists, so a relax deficit here is open, not attributed to RELION variation."
    ],
@@ -1951,6 +1954,7 @@
    },
    "notes": [
     "Both arms ran the 2026-09-19 cross-dataset matrix command (RELION default InitialModel schedule, 200 iterations, same seed, sampling and diameter) as separate whole-node jobs on H100 nodes; matched stays at workload (single run per arm, separate jobs and nodes, relax profiling options on).",
+    "OPEN bug candidate (recorded 2026-09-24): relax's population-weighted reference FSC-AUC 0.0489 is below both RELION seeds (0.0677 seed 41, 0.0718 seed 29), so RELION's own seed variation does not cover it.",
     "The seed-29 relax arm (job 14148550) was cancelled before finishing; only RELION ran at seed 29.",
     "All scored runs (FSC-AUC unmasked / masked): relion_s29 vs reference 0.0718 unmasked / 0.0741 masked; relion_s41 vs reference 0.0677 unmasked / 0.0692 masked; relax_s41 vs reference 0.0489 unmasked / 0.0504 masked; relion_s29 vs relion_s41 0.0521 / 0.0706; relion_s29 vs relax_s41 0.0513 / 0.0713; relion_s41 vs relax_s41 0.0770 / 0.1351.",
     "relax minus RELION reference FSC-AUC: -0.0188 unmasked, -0.0188 masked; relax-vs-RELION X-AUC 0.0770/0.1351 is at or above the RELION repeat pair 0.0521/0.0706; the 2 RELION runs span reference FSC-AUC 0.0677-0.0718 (masked 0.0692-0.0741), relax 0.0489 is below (masked 0.0504, below); the deficit is outside the RELION runs' spread, so it is open."
