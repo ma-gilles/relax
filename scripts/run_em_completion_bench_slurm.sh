@@ -41,7 +41,8 @@ SINGLE_VISIBLE_GPU="${EM_COMPLETION_SINGLE_VISIBLE_GPU:-1}"
 CUDA_MODULE="${CUDA_MODULE:-cudatoolkit/12.8}"
 RELION_MODULE="${RELION_MODULE:-relion/5.0.1/gcc-11.5.0-gpu}"
 RELION_REFINE_MPI="${RELION_REFINE_MPI:-relion_refine_mpi}"
-RELION_SRC_DIR="${RELION_SRC_DIR:-}"
+# The shared RELION 5.0.1 source (relax/AGENTS.md oracle rules); the setup job builds the binding from it.
+RELION_SRC_DIR="${RELION_SRC_DIR:-/scratch/gpfs/GILLES/mg6942/relion/src}"
 SBATCH_CONSTRAINT_DIRECTIVE=""
 if [[ -n "${CONSTRAINT}" ]]; then
   SBATCH_CONSTRAINT_DIRECTIVE="#SBATCH --constraint=${CONSTRAINT}"
