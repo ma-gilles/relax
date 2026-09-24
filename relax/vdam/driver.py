@@ -21,6 +21,7 @@ from relax.diagnostics.vdam_mstep_replay import (
 from relax.helpers.batch_planning import maybe_cache_raw_image_loaders
 from relax.relion import initial_model_io, vdam_checkpoint
 from relax.relion.initial_model_io import _experiment_read_order, _particle_state_from_star, _write_model_star
+from relax.relion.relion_metadata import refuse_unsupported_optics
 from relax.vdam import dense_adapter, estep_meta_updates, native_sampling, output, schedules
 from relax.vdam.bootstrap_iref import _initial_state_from_particles
 from relax.vdam.dense_adapter import (
@@ -298,6 +299,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     profile.record("validation")
 
     main_star, optics_star = read_star(opts.fn_img)
+    refuse_unsupported_optics(optics_star, source=str(opts.fn_img))
     particle_order = _experiment_read_order(main_star)
     profile.record("input_star")
     dataset = load_dataset(

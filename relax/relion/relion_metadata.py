@@ -575,3 +575,46 @@ def resolve_relion_runtime_max_significants(
         "do_grad": bool(do_grad),
         "target_iteration": int(target_iteration),
     }
+
+
+def refuse_unsupported_optics(optics_table, *, source) -> None:
+    """Refuse optics-group features relax does not model yet (deferred by the user, 2026-09-24).
+
+    RELION applies beam tilt and odd/even Zernike aberrations to the CTF phase,
+    anisotropic magnification to every projection (``obs_model.cpp``), and treats
+    CTF-premultiplied images differently throughout. relax implements none of them,
+    so a table that uses one raises instead of being silently ignored. Columns that
+    have no effect (zero tilt and coefficients, identity magnification,
+    ``rlnCtfDataAreCtfPremultiplied 0``) are accepted.
+    """
+
+    if optics_table is None:
+        return
+    columns = {str(name).lstrip("_"): name for name in optics_table.columns}
+    found = []
+
+    def values(label):
+        return optics_table[columns[label]] if label in columns else None
+
+    for label in ("rlnBeamTiltX", "rlnBeamTiltY"):
+        column = values(label)
+        if column is not None and np.any(np.asarray(column, dtype=np.float64) != 0.0):
+            found.append(label)
+    for label in ("rlnOddZernike", "rlnEvenZernike"):
+        column = values(label)
+        if column is not None and any(
+            np.any(np.asarray(re.findall(r"[-+0-9.eE]+", str(value)), dtype=np.float64) != 0.0) for value in column
+        ):
+            found.append(label)
+    for label, identity in (("rlnMagMat00", 1.0), ("rlnMagMat01", 0.0), ("rlnMagMat10", 0.0), ("rlnMagMat11", 1.0)):
+        column = values(label)
+        if column is not None and np.any(np.asarray(column, dtype=np.float64) != identity):
+            found.append(label)
+    column = values("rlnCtfDataAreCtfPremultiplied")
+    if column is not None and np.any(np.asarray(column, dtype=np.float64) != 0.0):
+        found.append("rlnCtfDataAreCtfPremultiplied")
+    if found:
+        raise NotImplementedError(
+            f"{source}: optics table uses {', '.join(found)}; beam tilt, Zernike aberrations, "
+            "anisotropic magnification and CTF-premultiplied images are not supported by relax yet"
+        )
