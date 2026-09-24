@@ -538,7 +538,7 @@ def test_setup_script_allows_external_relion_bind_build_dir(tmp_path):
     shared_bind = tmp_path / "relion_bind_build" / "shared"
     assert f"export PIXI_PY={matrix_python}" in text
     assert f"export RECOVAR_RELION_BIND_BUILD_DIR={shared_bind}" in text
-    assert '-m venv --system-site-packages "${EM_KCLASS_MATRIX_VENV}"' in text
+    assert '-m venv --system-site-packages --without-pip "${EM_KCLASS_MATRIX_VENV}"' in text
     assert '"${PIXI_PY}" -m pip install -e . --no-deps --no-build-isolation --ignore-installed' in text
     assert '"${PIXI_PY}" relax/relion_bind/build.py' in text
     assert 'CUDA_LIB_TMP="${RELAX_CUDA_LIB}.${SLURM_JOB_ID:-$$}.tmp"' in text

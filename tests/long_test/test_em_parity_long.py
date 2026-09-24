@@ -2,10 +2,7 @@
 
 Production-scale parity gates that exercise full ab-initio refinement on
 the 256² 50k fixture. Run via the dedicated EM-long Slurm wrapper at
-``scripts/run_em_parity_long_slurm.sh`` — DO NOT invoke
-``./scripts/run_tests_parallel.sh long-test`` from this branch (that runs
-the cross-cutting SPA/ET pipeline regression suite, which is forbidden
-for EM-only PRs per ``relax/CLAUDE.md``).
+``scripts/run_em_parity_long_slurm.sh``.
 
 Tests:
 1. K=1 256² 50k full auto-refine parity (15 iters) — assert per-iter Pmax within

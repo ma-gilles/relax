@@ -1661,7 +1661,9 @@ def _find_relion_optimiser_star(args):
     With ``--relion-half-sets-from-input`` the run starts from relion_refine's
     inputs alone, so only an explicit ``--relion_optimiser`` is used: a RELION
     output found next to the data must not supply the mask, ``ini_high``,
-    ``max_significants`` or CTF flag.
+    ``max_significants`` or CTF flag. A Class3D (K>1) run given no RELION
+    state (optimiser, init/replay directory or half-set STAR) is such a
+    standalone start too.
     """
     explicit = getattr(args, "relion_optimiser", None)
     if explicit:
@@ -1669,6 +1671,12 @@ def _find_relion_optimiser_star(args):
         if p.exists():
             return p
     if getattr(args, "relion_half_sets_from_input", False):
+        return None
+    class3d_standalone = int(getattr(args, "n_classes", 1)) > 1 and not any(
+        getattr(args, name, None)
+        for name in ("relion_init_dir", "perturb_replay_relion_dir", "relion_half_sets")
+    )
+    if class3d_standalone:
         return None
 
     search_dirs = []
@@ -2151,9 +2159,11 @@ def _parse_args(argv=None):
         type=int,
         default=None,
         help=(
-            "Strict Class3D parity topology for RELION's follower-local group-scale state. "
-            "Requires --relion-dispatch-schedule because RELION assigns --pool chunks "
-            "dynamically. Pass 0 explicitly only for a non-parity diagnostic."
+            "Debug-only emulation of relion_refine_mpi's follower-local group-scale state "
+            "for a replay against an MPI RELION run. Requires --relion-dispatch-schedule "
+            "because RELION assigns --pool chunks dynamically. A standalone run (no "
+            "--relion_init_dir/--perturb_replay_relion_dir) is single-process, like a "
+            "non-MPI relion_refine, and needs neither; 0 selects that path for a replay."
         ),
     )
     parser.add_argument(
@@ -3208,7 +3218,8 @@ def main():
                 "Strict K>1 RELION replay requires --relion-dispatch-schedule captured "
                 "from the same oracle run: expectation follower ownership is a dynamic "
                 "MPI work queue and cannot be reconstructed from --seed. Pass "
-                "--relion-scale-followers 0 only for an explicit non-parity diagnostic."
+                "--relion-scale-followers 0 for a non-MPI RELION oracle (single-process "
+                "group scales)."
             )
         relion_scale_followers = (
             0 if relion_dispatch_schedule is None else relion_dispatch_schedule.n_followers

@@ -130,7 +130,7 @@ def test_long_native_quality_guard_uses_relion_initialmodel_reference():
 
     expected_long_tokens = [
         "K1_NATIVE_RELION_DIR",
-        "relion_initialmodel_k1_it008",
+        'fixture_root("k1_50k256_relion_initialmodel_it008")',
         "_assert_relion_initialmodel_reference",
         "--grad",
         "--denovo_3dref",
@@ -146,17 +146,15 @@ def test_long_native_quality_guard_uses_relion_initialmodel_reference():
     missing = [token for token in expected_long_tokens if token not in long_test]
     assert not missing, f"native InitialModel long guard lost RELION --grad reference checks: {missing}"
 
-    expected_launcher_tokens = [
-        "em_parity_long_k1_native_ref",
-        "relion_initialmodel_k1_it008",
-        "--grad",
-        "--denovo_3dref",
-        "--dependency=afterok:${K1_NATIVE_REF_JOB}",
-        "_rlnDoGradientRefine[[:space:]]*1",
-        "_rlnDoAutoRefine[[:space:]]*0",
-    ]
+    # The RELION --grad InitialModel reference is a curated manifest fixture; the launcher
+    # verifies it before submitting and the test checks its command header.
+    expected_launcher_tokens = ["tests/helpers/em_fixtures.py", "k1_50k256_relion_initialmodel_it008"]
     missing = [token for token in expected_launcher_tokens if token not in slurm_launcher]
-    assert not missing, f"EM-long launcher no longer prepares the RELION InitialModel reference: {missing}"
+    assert not missing, f"EM-long launcher no longer verifies the RELION InitialModel reference: {missing}"
+    manifest = json.loads((REPO_ROOT / "tests/fixtures/em_fixture_manifest.json").read_text())["sets"]
+    headers = manifest["k1_50k256_relion_initialmodel_it008"]["provenance"]["relion_optimiser_headers"]
+    command = next(iter(headers.values()))["command"]
+    assert "--grad" in command and "--denovo_3dref" in command, command
 
 
 def test_native_vdam_subset_order_uses_relion_sorted_idx_base_order():

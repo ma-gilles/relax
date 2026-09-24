@@ -155,20 +155,12 @@ directly, and record the docs lockfile identity with build evidence.
 
 ## Before pushing or creating a PR
 
-For shared/non-EM changes, including this codebase cleanup:
-
-1. Fetch and rebase the implementation onto `origin/dev`. Keep the pinned
-   control unchanged; record the rebased candidate separately.
-2. Submit `./scripts/run_tests_parallel.sh long-test` and wait for its summary.
-   All required unit, smoke, SPA, ET, outlier, downstream, trajectory, indices,
-   stress and isolated-function checks must pass. Fix failures and rerun the
-   affected qualification; do not push a failing candidate.
-3. Run `pixi run python scripts/extract_regression_tables.py` on the completed
-   results and put the quality and performance comparison tables in the PR.
-   Include SPA and ET, hardware, baseline/current values and signed percent
-   changes. Use ↑/↓ for increase/decrease and mark regressions over 10% as
-   **REGRESSED**. Missing or incompatible hardware measurements are not “OK.”
-4. Include exact source identities, test commands, Slurm IDs and linked logs.
+relax holds no SPA/ET pipeline suites. When relax work changes recovar, the
+recovar side follows recovar's own CONTRIBUTING before it is pushed to recovar
+`dev2`: in a recovar checkout, `./scripts/run_tests_parallel.sh long-test` and
+`pixi run python scripts/extract_regression_tables.py`, with their quality and
+performance tables in the report. Include exact source identities, test
+commands, Slurm IDs and linked logs.
 
 EM-only changes follow [the EM contract](relax/AGENTS.md), including its
 scoped suites and completion evidence, instead of unrelated SPA/ET suites.

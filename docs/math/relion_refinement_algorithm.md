@@ -60,6 +60,28 @@ any RELION output. Each piece is opt-in until its default is decided:
   `sigma2_fudge = 1` (`ml_optimiser.cpp:1308, 11219`), never by `tau2_fudge`.
   With RELION's iteration-1 state this reproduces `run_it002`'s per-class
   `rlnAccuracyRotations` to 1e-14 on the K4 5k/128 and 50k/256 fixtures.
+- Group scales: a standalone run is single-process, like a non-MPI
+  `relion_refine`, so it keeps one group-scale state and needs no dispatch
+  schedule (`--relion-scale-followers` resolves to 0 without
+  `--relion_init_dir`/`--perturb_replay_relion_dir`). Emulating
+  `relion_refine_mpi`'s follower-local scales
+  ([`relion_worker_scale`](../../relax/relion/relion_worker_scale.py)) needs a
+  captured dispatch schedule and stays a debug replay tool.
+- No RELION output: without `--relion_optimiser`, `--relion_init_dir`,
+  `--perturb_replay_relion_dir` or `--relion_half_sets`, a Class3D run does not
+  pick up a RELION optimiser STAR found next to the data
+  ([`_find_relion_optimiser_star`](../../scripts/run_full_refinement.py)). The
+  mask, `ini_high` and `max_significants` then come from `--particle_diameter_ang`,
+  `--apply-initial-lowpass --init_resolution` and relion_refine's `--maxsig -1`.
+- Fixed schedule: Class3D keeps `--healpix_order` and runs every `--iter`
+  iteration. relion_refine calls `updateAngularSampling` only under auto-refine
+  or auto-sampling and `checkConvergence` only under auto-refine
+  (`ml_optimiser.cpp:3670-3675, 3936-3938`), so K>1 skips both
+  ([`_relion_auto_refine_transitions`](../../relax/refinement/iteration_loop.py));
+  its expected accuracy is written to the history but never gates. Before this,
+  a K>1 run could latch fine-enough sampling once the overall accuracy exceeded
+  4/3 of the order-1 step, then stop early on convergence and run an all-data
+  pass RELION Class3D never runs.
 
 This page describes RECOVAR's current dense-volume refinement implementation,
 including its K-class and exact local-search routes. Function names identify

@@ -570,7 +570,7 @@
     "masked_resolution_definition": "relion_postprocess_masked_frozen"
    },
    "gt": null,
-   "cross_engine": "masked cross-engine band FSC-AUC merged/halves 0.9658/0.9303/0.9226; relax converged after 18 iterations (RELION 19); its own convergence tracker read 6.53 A at convergence (RELION rlnCurrentResolution 4.21 A); the final half maps agree",
+   "cross_engine": "masked cross-engine band FSC-AUC merged/halves 0.9658/0.9303/0.9226; relax converged after 18 iterations (RELION 19); its own convergence tracker read 6.53 A at convergence (RELION rlnCurrentResolution 4.21 A)",
    "time_ratio_relax_over_relion": 0.86,
    "matched": "workload",
    "matched_detail": {
@@ -585,7 +585,9 @@
     "Published resolution 3.5 A (EMD-8511). Input: particle STAR plus EMD-8511 low-passed to 60 A; no RELION EM output.",
     "The earlier Q 427a08bd8 runs on the old code (standalone 14320030, seeded 14320031) were cancelled for queue load on 2026-09-24 before finishing; the seeded row is dropped. On that source non-C1 local search was CPU-bound (iteration 14 took 6160 s with the GPU idle).",
     "Timing not controlled: separate jobs and nodes; RELION used 12 CPUs (3 ranks x 4 threads), relax 4 CPUs.",
-    "The tracker gap is the known pre-f58b55e reporting issue: relax a32798c reports its last split-half value (6.53 A), and RELION's own last split-half value (run_it019_half1_model.star) is 6.40 A, one shell away; RELION's 4.21 A comes from after the final all-data iteration, which f58b55e now mirrors."
+    "Open issue (unexplained): the reporting fix f58b55e (not in a32798c) explains only which iteration's value relax printed (its last split-half 6.53 A instead of a post-final value). relax is one shell behind RELION at the last split-half iteration (6.53 vs 6.40 A, RELION run_it019_half1_model.star) and in the final unmasked resolution (4.21 vs 4.16 A); this is not shown to be RELION seed variation and stays unexplained pending a RELION different-seed repeat. The frozen-mask result (3.58 vs 3.70 A) favours relax.",
+    "Evidence: the seeded run 14320031 (Q 427a08bd8, started from RELION's run_it000 state) matches RELION's per-iteration rlnCurrentResolution exactly for iterations 1-14 (55.47, 17.52, 14.47, 11.09, 9.51, 8.76, 8.76, 8.53, 8.53, 7.74, 7.56, 7.56, 7.56, 6.93 A) and is one shell apart at iteration 15 (6.93 vs 6.79 A) before its cancellation. The standalone run 14332336 departs at iteration 2 (10.74 vs 17.52 A), which points at the standalone start-up; a32798c predates the start-up tau2/data_vs_prior change 301b89f and 679bd66.",
+    "14332336 is standalone only in the sense that it reads no RELION EM output: it used relax's pipeline start-up noise, its own half split and the legacy particle shuffle, not RELION's start-up (the ceeb8e7 recipe flags --initial-noise-bootstrap relion, --relion-half-sets-from-input and --relion-particle-shuffle mt19937 were not set). That is the leading explanation for the iteration-2 departure, pending the rerun on relax main 460a763 with those flags (job 14364095) and the RELION seed repeat (job 14363852)."
    ],
    "null_reasons": {
     "gt": "real data: no ground truth"
@@ -800,7 +802,9 @@
    "notes": [
     "RELION's same-command repeats (14305945/46) converge at iteration 18 like relax; the reference converged at 16 and scores highest against GT.",
     "Unmasked resolution for both arms: relion_postprocess unmasked FSC 0.143 (RELION convention); RELION's recomputed value equals its rlnCurrentResolution 6.044 A.",
-    "relax is seeded from the reference's run_it000 state (--relion_init_dir, half sets, optimiser) and then runs an autonomous trajectory (no per-iteration RELION replay, --relion-particle-shuffle mt19937)."
+    "relax is seeded from the reference's run_it000 state (--relion_init_dir, half sets, optimiser) and then runs an autonomous trajectory (no per-iteration RELION replay, --relion-particle-shuffle mt19937).",
+    "OPEN: masked GT FSC-AUC (frozen mask pdb_k1_100k256_c1) is below the RELION band. Full spectrum: relax 0.51271 vs RELION reference 0.54353 and repeats 0.51285/0.51283 (1.2e-4 below the lowest); over the scorecard band (shells 1-90): relax 0.69177 vs 0.71857/0.69228/0.69225 (4.8e-4 below). The unmasked GT FSC-AUC is inside the band. Per shell, relax's masked GT FSC is 0.0007-0.0012 below both repeats over shells 1-60 and about 0.0006 above them over shells 76-90; unexplained.",
+    "Cause identified (k1gap diagnosis, 2026-09-24): relax's final all-data pass skips RELION's gridding correction on the merged map (finalization_policy default off; RELION backprojector.cpp:2021 always applies it). Applying it on CPU to this run moves relax to 0.512817 masked (full spectrum; repeats 0.512852/0.512833) and 0.469904 unmasked (repeats 0.469929/0.469911). A fix is under qualification. A residual of 1-3.5e-5 below the repeats stays open pending more RELION repeats."
    ],
    "null_reasons": {
     "time_ratio_relax_over_relion": "not a timing-controlled pair: the RELION reference ran 2026-05-16 on another node and layout; its repeats took 14871 s (rep1)"
@@ -814,6 +818,11 @@
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/k1_completion_summary_band_rule/summary_metrics.json",
     "masked_fsc_json": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/k1_completion_q427a08bd8_masked/masked_fsc.json"
+    ],
+    "masked_gt_fsc_json": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/k1_100k_masked_gt_20260924/vs_ref/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/k1_100k_masked_gt_20260924/vs_rep1/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/k1_100k_masked_gt_20260924/vs_rep2/masked_fsc.json"
     ]
    },
    "date": "2026-09-24",
@@ -909,7 +918,8 @@
    "notes": [
     "Not like-for-like for time: relax ran with per-iteration dumps, per-group timing instrumentation and preread, replaying RELION's dispatch schedule; RELION ran an instrumented dispatch-logging build.",
     "relax replays RELION's per-iteration sampling perturbation from the oracle; M-step noise statistics are 58% of relax's group wall.",
-    "Class3D resolution is each engine's current-resolution estimate, not a gold-standard FSC."
+    "Class3D resolution is each engine's current-resolution estimate, not a gold-standard FSC.",
+    "Closed as RELION run-to-run variation (manager decision 2026-09-24). The fixture holds two RELION 15-iteration runs of this command (clean9d9, --pool 3, build_patched; the dispatch-logging oracle, --pool 12, which relax replays; both seed 1778628798; no different-seed repeat). Per-class cross-engine FSC-AUC: relax vs the oracle 0.9985/0.9976/0.9979/0.9984; relax vs clean9d9 0.9433/0.9385/0.9277/0.9297, equal to oracle vs clean9d9 0.9432/0.9380/0.9279/0.9294 (mean FSC shells 1-16 >= 0.9998 in all pairs). Per-class GT FSC-AUC relax / oracle / clean9d9: 0.267825/0.267857/0.267908, 0.263671/0.263656/0.263563, 0.263163/0.263219/0.262984, 0.270335/0.270357/0.271023; relax-minus-oracle deltas (<= 3.2e-5) are far inside the oracle-vs-clean9d9 spread (up to 6.7e-4). Class sizes agree within 0.2%."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
@@ -923,7 +933,8 @@
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/completion_k4_q427a08bd8",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k4_oracle_dispatchv2_100k256_h100_400ad81e4_20260910/run"
     ],
-    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/completion_k4_q427a08bd8/summary_metrics.json"
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/completion_k4_q427a08bd8/summary_metrics.json",
+    "per_class_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/k4_100k_per_class_20260924/k4_per_class.json"
    },
    "date": "2026-09-24",
    "history": [
@@ -1194,28 +1205,31 @@
     "iterations": 15,
     "jobs": [
      "14284884",
-     "14298976"
+     "14298976",
+     "14334517",
+     "14334518",
+     "14334519"
     ],
     "masked_band_auc": null
    },
    "relax": {
-    "source_sha": "427a08bd8550116f6fdc3f66ad202760372a813e",
-    "source_repo": "recovar (frozen Q, last tree with EM in recovar)",
+    "source_sha": "083ace2b07e54f5d5e5f36de671f1ee7e847146c",
+    "source_repo": "relax main",
     "resolution_A": null,
     "resolution_definition": "engine_current_resolution",
     "masked_resolution_A": null,
-    "wall_s": 5554,
+    "wall_s": 5158,
     "wall_definition": "pytest job wall of the chained replay",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 15,
     "jobs": [
-     "14320192"
+     "14333923"
     ],
     "masked_band_auc": null
    },
    "gt": null,
-   "cross_engine": "long-tier test PASS: per-class FSC(1-16) vs RELION 0.99998-1.00000, class agreement 0.9964; RELION repeats vs the reference: same seed 0.99992-0.99999 (agreement 0.994, two runs), other seed 0.99886-0.99926 (agreement 0.933)",
+   "cross_engine": "long-tier test PASS: per-class FSC(1-16) vs RELION 0.999977/0.999990/0.999990/0.999995, class agreement 0.9966; RELION repeats vs the reference: same seed (two runs) 0.999921-0.999993 (agreement 0.994/0.994), other seed 0.998855-0.999265 (agreement 0.933); relax is at or above the same-seed repeats in every class",
    "time_ratio_relax_over_relion": null,
    "matched": "no",
    "matched_detail": {
@@ -1227,7 +1241,9 @@
     "timing_controlled": false
    },
    "notes": [
-    "Chained replay: RELION state is injected at every iteration, so this is step-wise parity, not an autonomous trajectory or a speed comparison. The RELION repeat took 1762 s."
+    "Chained replay: RELION state is injected at every iteration, so this is step-wise parity, not an autonomous trajectory or a speed comparison.",
+    "RELION repeats of the identical Class3D command (jobs 14334517/18 seed 1775735620, 14334519 seed 42; ~28 min each); the earlier repeat took 1762 s.",
+    "Q 427a08bd8 (14320192) gave 0.99998-1.00000, agreement 0.9964, 5554 s; kept in history."
    ],
    "null_reasons": {
     "relax.resolution_A": "not reported by the long-tier test",
@@ -1239,18 +1255,12 @@
     "relax.masked_band_auc": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
     "cross_engine_masked_band_auc": "Class3D has no gold-standard half maps; masked half-map resolution does not apply"
    },
-   "pending": {
-    "jobs": [
-     "14333923"
-    ],
-    "note": "long-tier K4 on relax main 083ace2 running"
-   },
    "evidence": {
     "run_roots": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/long_kclass_full_q427a08bd8",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_coverage_20260924/runs/long_kclass_full_relax_083ace2",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_pdb_k4_50k_256/relion_pdb_k4_os0_ref"
     ],
-    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/long_kclass_full_q427a08bd8/job-14320192.log",
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_coverage_20260924/runs/long_kclass_full_relax_083ace2/pytest.log",
     "relion_repeat_band": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_coverage_20260924/relion_repeats_k4_50k_256/band.json"
    },
    "date": "2026-09-24",
@@ -1264,6 +1274,16 @@
      "relax_wall_s": 6683,
      "relax_resolution_A": null,
      "cross_engine": "long-tier test PASS: per-class FSC(1-16) vs RELION 0.99998-0.99999, class agreement 0.9965; RELION same-command repeat 0.99994-0.99999 / 0.9941"
+    },
+    {
+     "date": "2026-09-24",
+     "source_sha": "427a08bd8550116f6fdc3f66ad202760372a813e",
+     "jobs": [
+      "14320192"
+     ],
+     "relax_wall_s": 5554,
+     "relax_resolution_A": null,
+     "cross_engine": "long-tier test PASS: per-class FSC(1-16) vs RELION 0.99998-1.00000, class agreement 0.9964; RELION repeats vs the reference: same seed 0.99992-0.99999 (agreement 0.994, two runs), other seed 0.99886-0.99926 (agreement 0.933)"
     }
    ],
    "cross_engine_masked_band_auc": null,

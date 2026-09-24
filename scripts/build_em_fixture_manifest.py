@@ -98,6 +98,8 @@ SETS: dict[str, tuple[str, list[str], list[str], str, list[str]]] = {
         "RELION K4 3-iteration oracle with dispatch capture, healpix 1 os 1 (Slurm 13605775)",
         ["../PROVENANCE.json", "../attempt/invocation.json"],
     ),
+    "k4_5k128_oracle_h2_os1_repeat": (f"{FX}/k4_fast_oracles/h2_os1_14248155", RUN, [], "Second RELION capture (Slurm 14248155) of the healpix 2 os 1 K4 oracle: RELION repeat", ["PROVENANCE.json"]),
+    "k4_5k128_oracle_h1_os1_repeat": (f"{FX}/k4_fast_oracles/h1_os1_14248154", RUN, [], "Second RELION capture (Slurm 14248154) of the healpix 1 os 1 K4 oracle: RELION repeat", ["PROVENANCE.json"]),
     "k1_50k256_data": (
         f"{PROJ}/data_noise1_50k_256_normalized",
         TOP,

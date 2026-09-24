@@ -153,6 +153,24 @@ def test_from_input_flag_does_not_discover_relion_optimiser_outputs(tmp_path):
     assert _find_relion_optimiser_star(args) == discovered.resolve()
 
 
+def test_class3d_without_relion_state_does_not_discover_relion_optimiser_outputs(tmp_path):
+    from types import SimpleNamespace
+
+    from scripts.run_full_refinement import _find_relion_optimiser_star
+
+    discovered = tmp_path / "relion_pdb_k4_os0_ref" / "run_it015_optimiser.star"
+    discovered.parent.mkdir()
+    discovered.write_text("data_optimiser_general\n")
+    base = dict(relion_optimiser=None, relion_init_dir=None, perturb_replay_relion_dir=None, relion_half_sets=None)
+    args = SimpleNamespace(data_dir=str(tmp_path), relion_half_sets_from_input=False, n_classes=4, **base)
+    assert _find_relion_optimiser_star(args) is None
+    args.perturb_replay_relion_dir = str(discovered.parent)
+    assert _find_relion_optimiser_star(args) == discovered.resolve()
+    args.perturb_replay_relion_dir = None
+    args.relion_optimiser = str(discovered)
+    assert _find_relion_optimiser_star(args) == discovered.resolve()
+
+
 def test_written_table_round_trips_input_values(tmp_path):
     from scripts.run_full_refinement import _write_relion_start_particle_table
 
