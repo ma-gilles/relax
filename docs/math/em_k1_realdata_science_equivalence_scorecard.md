@@ -263,8 +263,10 @@ No gate reads these values. All rows, including synthetic data: `docs/benchmarks
 
 | Run | Mask | Band | RELION masked (Å) | relax masked (Å) | RELION masked AUC | relax masked AUC | Unmasked AUC RELION / relax | Cross-engine masked AUC merged / h1 / h2 | GT masked AUC RELION / relax |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `10073_q427a08bd8_mt19937` | `empiar10073_c1` `030ad3a85199` | 1-80 | 4.12 (4.09) | 4.12 (4.09) | 0.9230 | 0.9233 | 0.7193 / 0.7194 | 0.9986 / 0.9962 / 0.9964 | — |
 | `empiar10073_cand2_087287024` | `empiar10073_c1` `030ad3a85199` | 1-80 | 4.12 (4.09) | 4.12 (4.09) | 0.9230 | 0.9230 | 0.7193 / 0.7193 | 0.9988 / 0.9968 / 0.9966 | — |
 | `empiar10081_hcn1_relion_reference_14313014` | `empiar10081_hcn1_c4` `4003c7dea2f3` | — | 3.70 (3.66) | — | — | — | — / — | — | — |
+| `10097_q427a08bd8_mt19937` | `empiar10097_c1` `3c184a29e87c` | 1-44 | 5.78 (5.68) | 5.99 (5.88) | 0.8725 | 0.8724 | 0.6826 / 0.6824 | 0.9826 / 0.9603 / 0.9623 | — |
 | `empiar10097_10k_B1_j1_abba_r2` | `empiar10097_c1` `3c184a29e87c` | 1-20 | 22.36 (15.97) | 22.36 (15.24) | 0.6804 | 0.6902 | 0.6610 / 0.6615 | 0.9945 / 0.9871 / 0.9855 | — |
 | `empiar10097_10k_B2_j1_abba_r2` | `empiar10097_c1` `3c184a29e87c` | 1-20 | 22.36 (15.97) | 22.36 (15.24) | 0.6804 | 0.6930 | 0.6610 / 0.6625 | 0.9943 / 0.9869 / 0.9857 | — |
 | `empiar10097_10k_B3_j2_baab_r2` | `empiar10097_c1` `3c184a29e87c` | 1-20 | 22.36 (15.97) | 22.36 (15.24) | 0.6804 | 0.6929 | 0.6610 / 0.6614 | 0.9945 / 0.9875 / 0.9860 | — |
@@ -272,7 +274,34 @@ No gate reads these values. All rows, including synthetic data: `docs/benchmarks
 | `empiar10097_cand2_087287024` | `empiar10097_c1` `3c184a29e87c` | 1-44 | 5.78 (5.68) | 5.99 (5.50) | 0.8725 | 0.8740 | 0.6826 / 0.6827 | 0.9827 / 0.9610 / 0.9619 | — |
 | `empiar10097_relion_repeat_r1` | `empiar10097_c1` `3c184a29e87c` | — | 6.10 (5.99) | — | — | — | — / — | — | — |
 | `empiar10097_relion_repeat_r2` | `empiar10097_c1` `3c184a29e87c` | — | 5.99 (5.88) | — | — | — | — / — | — | — |
+| `empiar10202_relion_reference_13217551` | `empiar10202_set6_i1` `dcc3fd17e7f7` | — | 2.12 (2.12) | — | — | — | — / — | — | — |
+| `10345_q427a08bd8_mt19937` | `empiar10345_c1` `f8c6764657f8` | 1-48 | 5.31 (5.24) | 5.31 (5.24) | 0.9274 | 0.9274 | 0.6726 / 0.6725 | 0.9980 / 0.9964 / 0.9967 | — |
 | `empiar10345_cand2_087287024` | `empiar10345_c1` `f8c6764657f8` | 1-48 | 5.31 (5.24) | 5.24 (5.17) | 0.9274 | 0.9273 | 0.6726 / 0.6722 | 0.9979 / 0.9963 / 0.9965 | — |
+
+## Current relax runs against every RELION run (reporting only)
+
+Rows from `tests/baselines/relion_vs_relax_benchmarks.json` whose RELION reference has same-command
+repeats. These are the current relax runs, not the frozen calibration runs above.
+
+### EMPIAR-10097\* (relax `427a08bd8`)
+
+\* RELION's own three same-command runs split into two pose basins: the reference and r1 agree (merged/halves band FSC-AUC 0.9756/0.9564/0.9601), r2 differs from both (reference vs r2 0.9294/0.8805/0.8851, r1 vs r2 0.9294/0.8802/0.8848). relax lands in r2's basin: it meets the thresholds (merged >= 0.95, each half >= 0.90) against r2 (0.9740/0.9514/0.9562) but not against the reference (0.9313/0.8793/0.8840) or r1 (0.9312/0.8789/0.8837). It passes under the user's 2026-09-23 rule (thresholds met against at least one same-command RELION run; band condition dropped). Masked cross-engine FSC-AUC with the frozen mask is 0.9826 vs reference, 0.9825 vs r1, 0.9935 vs r2 (merged). All comparisons: see the per-reference table.
+
+relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
+
+| RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| reference | 13124450 | 0.9313 | 0.8793 | 0.8840 | 0.9826 | 0.9603 | 0.9623 | not met |
+| r1 | 14281010 | 0.9312 | 0.8789 | 0.8837 | 0.9825 | 0.9601 | 0.9623 | not met |
+| r2 | 14281011 | 0.9740 | 0.9514 | 0.9562 | 0.9935 | 0.9841 | 0.9856 | met |
+
+RELION against RELION (same band FSC-AUCs):
+
+| Pair | Merged | Half 1 | Half 2 |
+| --- | ---: | ---: | ---: |
+| reference vs r1 | 0.9756 | 0.9564 | 0.9601 |
+| reference vs r2 | 0.9294 | 0.8805 | 0.8851 |
+| r1 vs r2 | 0.9294 | 0.8802 | 0.8848 |
 
 ## Code references
 

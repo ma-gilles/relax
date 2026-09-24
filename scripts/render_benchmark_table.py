@@ -12,6 +12,11 @@ the row's two wall times, and a time ratio without its like-for-like record
 (``time_check`` a-d: GPU and MPI layout, relax diagnostic options, timing
 scope, GPU model per job). A masked value must name the dataset's frozen mask
 from docs/benchmarks/frozen_masks.json by key and SHA-256.
+
+Optional per-row fields: ``result_marker`` ({symbol, note}) flags the relax
+result and adds a footnote; ``cross_engine_by_relion_run`` and
+``relion_vs_relion`` list the band FSC-AUCs of relax against every same-command
+RELION run and of the RELION runs against each other (``render_per_reference``).
 """
 
 import argparse
@@ -38,6 +43,8 @@ MASKED_DEFINITION = "relion_postprocess_masked_frozen"
 SECTIONS = (("real", "Real data"), ("synthetic", "Synthetic data"))
 MATCHED = ("yes", "workload", "no")
 RATIO_TOLERANCE = 0.006
+PER_REFERENCE_AUCS = ("merged", "half1", "half2")
+MASKED_PER_REFERENCE_AUCS = ("masked_merged", "masked_half1", "masked_half2")
 # Null reasons repeated in the rendered notes: the fields the table shows.
 SHOWN_NULLS = (
     "resolution_A",
@@ -61,6 +68,7 @@ def load_and_validate(path, registry=DEFAULT_REGISTRY):
     for row in table["rows"]:
         _validate_row(row, definitions)
         _validate_masked(row, masks)
+        _validate_per_reference(row)
     return table
 
 
@@ -80,6 +88,22 @@ def _validate_masked(row, masks):
         if row[engine]["masked_resolution_A"] is not None:
             if row[engine].get("masked_resolution_definition") != MASKED_DEFINITION:
                 raise ValueError(f"{rid}: {engine} masked resolution must use {MASKED_DEFINITION}")
+
+
+def _validate_per_reference(row):
+    """A result marker carries its footnote; per-reference entries carry every band AUC."""
+    rid = row["id"]
+    marker = row.get("result_marker")
+    if marker is not None and not (marker.get("symbol") and marker.get("note")):
+        raise ValueError(f"{rid}: result_marker needs a symbol and a note")
+    for key, label_key in (("cross_engine_by_relion_run", "run"), ("relion_vs_relion", "pair")):
+        for entry in row.get(key, []):
+            if not entry.get(label_key):
+                raise ValueError(f"{rid}: {key} entry without a {label_key}")
+            fields = PER_REFERENCE_AUCS + (MASKED_PER_REFERENCE_AUCS if key == "cross_engine_by_relion_run" else ())
+            for field in fields:
+                if not isinstance(entry.get(field), (int, float)) and not entry.get("null_reasons", {}).get(field):
+                    raise ValueError(f"{rid}: {key} {entry[label_key]} needs {field} or a null reason")
 
 
 def _validate_row(row, definitions):
@@ -175,6 +199,16 @@ def render_markdown(table):
     lines += ["", "## Notes", ""]
     for index, row in enumerate(footnotes, start=1):
         lines.append(f"{index}. {_note(row)}")
+    for row in footnotes:
+        if row.get("result_marker"):
+            marker = row["result_marker"]
+            lines += ["", f"{_escape(marker['symbol'])} {row['dataset']}: {marker['note']}"]
+    per_reference = [row for row in footnotes if row.get("cross_engine_by_relion_run")]
+    if per_reference:
+        lines += ["", "## Comparisons against every RELION run", ""]
+        for row in per_reference:
+            lines += [f"### {row['dataset']}", "", *render_per_reference(row), ""]
+        lines.pop()
     lines += ["", "## Related scorecards", ""]
     lines += [
         "- [Accepted-best completion ledger](../math/em_parity_best_metrics.md)",
@@ -186,6 +220,41 @@ def render_markdown(table):
     return "\n".join(lines) + "\n"
 
 
+def render_per_reference(row):
+    """Band FSC-AUC tables: relax against each same-command RELION run, then RELION against RELION."""
+    lines = [
+        "relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use"
+        " the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):",
+        "",
+        "| RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+    ]
+    for entry in row["cross_engine_by_relion_run"]:
+        cells = [entry["run"], ", ".join(entry.get("jobs", [])) or "—"]
+        cells += [_auc(entry.get(field)) for field in PER_REFERENCE_AUCS + MASKED_PER_REFERENCE_AUCS]
+        cells.append("met" if entry.get("meets_thresholds") else "not met")
+        lines.append("| " + " | ".join(cells) + " |")
+    if row.get("relion_vs_relion"):
+        lines += [
+            "",
+            "RELION against RELION (same band FSC-AUCs):",
+            "",
+            "| Pair | Merged | Half 1 | Half 2 |",
+            "| --- | ---: | ---: | ---: |",
+        ]
+        for entry in row["relion_vs_relion"]:
+            lines.append("| " + " | ".join([entry["pair"], *(_auc(entry[f]) for f in PER_REFERENCE_AUCS)]) + " |")
+    return lines
+
+
+def _auc(value):
+    return "—" if value is None else f"{value:.4f}"
+
+
+def _escape(symbol):
+    return symbol.replace("*", "\\*")
+
+
 def _workflow(row):
     return f"{row['workflow']}, {row['symmetry']}, {row['relion_dependence']}"
 
@@ -194,7 +263,8 @@ def _resolution(row, engine, letters):
     value = row[engine]["resolution_A"]
     if value is None:
         return "pending" if row["status"] == "pending" and engine == "relax" else "—"
-    return f"{value:.2f} {letters[row[engine]['resolution_definition']]}"
+    marker = _escape(row["result_marker"]["symbol"]) if engine == "relax" and row.get("result_marker") else ""
+    return f"{value:.2f} {letters[row[engine]['resolution_definition']]}{marker}"
 
 
 def _masked(row, engine):

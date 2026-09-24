@@ -1,6 +1,6 @@
 {
  "schema": "relax-relion-benchmarks-v1",
- "updated": "2026-09-23",
+ "updated": "2026-09-24",
  "purpose": "Standing RELION-vs-relax resolution and wall-time table for every synthetic and real dataset run so far. relax is the RECOVAR EM code; rows before the relax split (2026-09-23) cite the RECOVAR source SHA that ran. Rendered by scripts/render_benchmark_table.py into docs/benchmarks/relion_vs_relax.md.",
  "rules": [
   "Missing measurements are null and carry a reason in null_reasons; no value is interpolated or invented.",
@@ -208,7 +208,9 @@
     ],
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10097_q427a08bd8_mt19937.json",
     "masked_fsc_json": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10097_q427a08bd8_mt19937_masked/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10097_q427a08bd8_mt19937_masked/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10097_q427a08bd8_mt19937_masked_vs_relion_r1/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10097_q427a08bd8_mt19937_masked_vs_relion_r2/masked_fsc.json"
     ]
    },
    "date": "2026-09-24",
@@ -238,7 +240,75 @@
    "mask": {
     "dataset": "empiar10097_c1",
     "sha256": "3c184a29e87c7e7c6b7bc2691226209a6e621241eafcd4dd6212a5ed555481d3"
-   }
+   },
+   "result_marker": {
+    "symbol": "*",
+    "note": "RELION's own three same-command runs split into two pose basins: the reference and r1 agree (merged/halves band FSC-AUC 0.9756/0.9564/0.9601), r2 differs from both (reference vs r2 0.9294/0.8805/0.8851, r1 vs r2 0.9294/0.8802/0.8848). relax lands in r2's basin: it meets the thresholds (merged >= 0.95, each half >= 0.90) against r2 (0.9740/0.9514/0.9562) but not against the reference (0.9313/0.8793/0.8840) or r1 (0.9312/0.8789/0.8837). It passes under the user's 2026-09-23 rule (thresholds met against at least one same-command RELION run; band condition dropped). Masked cross-engine FSC-AUC with the frozen mask is 0.9826 vs reference, 0.9825 vs r1, 0.9935 vs r2 (merged). All comparisons: see the per-reference table."
+   },
+   "cross_engine_by_relion_run": [
+    {
+     "run": "reference",
+     "jobs": [
+      "13124450"
+     ],
+     "merged": 0.9313,
+     "half1": 0.8793,
+     "half2": 0.884,
+     "masked_merged": 0.9826,
+     "masked_half1": 0.9603,
+     "masked_half2": 0.9623,
+     "meets_thresholds": false,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10097_q427a08bd8_mt19937_masked/masked_fsc.json"
+    },
+    {
+     "run": "r1",
+     "jobs": [
+      "14281010"
+     ],
+     "merged": 0.9312,
+     "half1": 0.8789,
+     "half2": 0.8837,
+     "masked_merged": 0.9825,
+     "masked_half1": 0.9601,
+     "masked_half2": 0.9623,
+     "meets_thresholds": false,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10097_q427a08bd8_mt19937_masked_vs_relion_r1/masked_fsc.json"
+    },
+    {
+     "run": "r2",
+     "jobs": [
+      "14281011"
+     ],
+     "merged": 0.974,
+     "half1": 0.9514,
+     "half2": 0.9562,
+     "masked_merged": 0.9935,
+     "masked_half1": 0.9841,
+     "masked_half2": 0.9856,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10097_q427a08bd8_mt19937_masked_vs_relion_r2/masked_fsc.json"
+    }
+   ],
+   "relion_vs_relion": [
+    {
+     "pair": "reference vs r1",
+     "merged": 0.9756,
+     "half1": 0.9564,
+     "half2": 0.9601
+    },
+    {
+     "pair": "reference vs r2",
+     "merged": 0.9294,
+     "half1": 0.8805,
+     "half2": 0.8851
+    },
+    {
+     "pair": "r1 vs r2",
+     "merged": 0.9294,
+     "half1": 0.8802,
+     "half2": 0.8848
+    }
+   ]
   },
   {
    "id": "empiar10345_k1_autorefine",

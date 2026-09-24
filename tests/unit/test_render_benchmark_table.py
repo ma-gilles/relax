@@ -52,3 +52,33 @@ def test_masked_value_needs_the_registered_frozen_mask(tmp_path):
     path.write_text(json.dumps(table))
     with pytest.raises(ValueError, match="without a frozen mask"):
         load_and_validate(path)
+
+
+@pytest.mark.unit
+def test_result_marker_and_per_reference_tables_render(tmp_path):
+    table = json.loads(DEFAULT_JSON.read_text())
+    row = next(row for row in table["rows"] if row.get("cross_engine_by_relion_run"))
+    rendered = render_markdown(load_and_validate(DEFAULT_JSON))
+    symbol = row["result_marker"]["symbol"].replace("*", "\\*")
+    assert f"{symbol} {row['dataset']}: {row['result_marker']['note']}" in rendered
+    assert "## Comparisons against every RELION run" in rendered
+    for entry in row["cross_engine_by_relion_run"]:
+        assert f"| {entry['run']} | {', '.join(entry['jobs'])} | {entry['merged']:.4f} |" in rendered
+    for entry in row["relion_vs_relion"]:
+        assert f"| {entry['pair']} | {entry['merged']:.4f} |" in rendered
+
+
+@pytest.mark.unit
+def test_per_reference_entries_need_every_auc_and_marker_needs_a_note(tmp_path):
+    table = json.loads(DEFAULT_JSON.read_text())
+    row = next(row for row in table["rows"] if row.get("cross_engine_by_relion_run"))
+    path = tmp_path / "table.json"
+    row["cross_engine_by_relion_run"][0]["masked_half1"] = None
+    path.write_text(json.dumps(table))
+    with pytest.raises(ValueError, match="needs masked_half1 or a null reason"):
+        load_and_validate(path)
+    row["cross_engine_by_relion_run"][0]["null_reasons"] = {"masked_half1": "test"}
+    row["result_marker"]["note"] = ""
+    path.write_text(json.dumps(table))
+    with pytest.raises(ValueError, match="result_marker needs a symbol and a note"):
+        load_and_validate(path)

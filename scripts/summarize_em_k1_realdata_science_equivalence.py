@@ -2274,6 +2274,36 @@ def _frozen_mask_section() -> list[str]:
     ]
 
 
+def _per_reference_section() -> list[str]:
+    """Current relax real-data runs against every same-command RELION run (reporting only).
+
+    Read from the RELION-vs-relax benchmark record so both pages show the same numbers.
+    """
+
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from scripts.render_benchmark_table import DEFAULT_JSON, render_per_reference
+
+    rows = [row for row in json.loads(DEFAULT_JSON.read_text())["rows"] if row.get("cross_engine_by_relion_run")]
+    if not rows:
+        return []
+    lines = [
+        "## Current relax runs against every RELION run (reporting only)",
+        "",
+        "Rows from `tests/baselines/relion_vs_relax_benchmarks.json` whose RELION reference has same-command",
+        "repeats. These are the current relax runs, not the frozen calibration runs above.",
+        "",
+    ]
+    for row in rows:
+        marker = row.get("result_marker")
+        symbol = marker["symbol"].replace("*", "\\*") if marker else ""
+        lines += [f"### {row['dataset']}{symbol} (relax `{row['relax']['source_sha'][:9]}`)", ""]
+        if marker:
+            lines += [f"{symbol} {marker['note']}", ""]
+        lines += [*render_per_reference(row), ""]
+    return lines
+
+
 def render_markdown(report: Mapping[str, Any]) -> str:
     """Render the compact checked scorecard and its rigid-alignment policy."""
 
@@ -2677,6 +2707,7 @@ def render_markdown(report: Mapping[str, Any]) -> str:
             "immutable execution envelope; any supplied binding is checked fail-closed.",
             "",
             *_frozen_mask_section(),
+            *_per_reference_section(),
             "## Code references",
             "",
             "- `scripts/summarize_em_k1_realdata_science_equivalence.py`: scorecard validation, FSC band metrics, provenance gates, and rendering.",

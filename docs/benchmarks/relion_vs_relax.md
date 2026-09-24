@@ -4,7 +4,7 @@
 
 Regenerate with `python scripts/render_benchmark_table.py` after updating the JSON when a baseline changes.
 
-Source of record: [`tests/baselines/relion_vs_relax_benchmarks.json`](../../tests/baselines/relion_vs_relax_benchmarks.json) (updated 2026-09-23). relax is the RECOVAR EM code; rows that ran before the relax split cite the RECOVAR source SHA in the JSON. Ratio is relax wall / RELION wall (lower is faster for relax).
+Source of record: [`tests/baselines/relion_vs_relax_benchmarks.json`](../../tests/baselines/relion_vs_relax_benchmarks.json) (updated 2026-09-24). relax is the RECOVAR EM code; rows that ran before the relax split cite the RECOVAR source SHA in the JSON. Ratio is relax wall / RELION wall (lower is faster for relax).
 
 Resolution definitions (letter after each value):
 
@@ -28,7 +28,7 @@ Matched column:
 | Dataset | Workflow | N / box | RELION res (Å) | relax res (Å) | RELION masked (Å) | relax masked (Å) | Masked X-AUC | RELION time | relax time | Ratio | GPU | Matched? | Date |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
 | EMPIAR-10073 [1] | auto-refine K=1, C1, seeded | 138,899 / 380 | 6.57 a | 6.57 a | 4.12 | 4.12 | 0.9986 | 12,012 s | 38,602 s | 3.21x | 1x H100 | no | 2026-09-24 |
-| EMPIAR-10097 [2] | auto-refine K=1, C1, seeded | 130,000 / 256 | 7.45 a | 7.45 a | 5.78 | 5.99 | 0.9826 | 8,416 s | 40,236 s | 4.78x | 1x H100 | no | 2026-09-24 |
+| EMPIAR-10097 [2] | auto-refine K=1, C1, seeded | 130,000 / 256 | 7.45 a | 7.45 a\* | 5.78 | 5.99 | 0.9826 | 8,416 s | 40,236 s | 4.78x | 1x H100 | no | 2026-09-24 |
 | EMPIAR-10345 [3] | auto-refine K=1, C1, seeded | 84,266 / 300 | 8.23 a | 8.23 a | 5.31 | 5.31 | 0.9980 | 5,011 s | 24,939 s | 4.98x | 1x H100 | no | 2026-09-23 |
 | EMPIAR-10202 (AAV2 L336C, set 06) [4] | auto-refine K=1, I1, standalone | 30,515 / 800 | 2.51 c | pending | 2.12 | pending | — | 51,007 s | pending | — | RELION 2x H100, relax 1x H100 | no | 2026-09-23 |
 | EMPIAR-10081 (HCN1) [5] | auto-refine K=1, C4, standalone | 55,870 / 256 | 4.16 c | pending | 3.70 | pending | — | 2,732 s | pending | — | 1x H100 | workload | 2026-09-23 |
@@ -63,6 +63,28 @@ Matched column:
 12. `noise1_k1_50k256_autorefine_seeded`: relax source `14a45d23f`, recovar (long-tier test repair branch). Frozen mask `noise1_k1_50k256_c1` (`afaa22523e9f`); masked FSC-AUC over the scorecard band RELION 0.9719, relax 0.9718. GT merged GT FSC-AUC (rigidly aligned): RELION 0.35129, relax 0.35431. Cross-engine: final merged FSC-AUC vs RELION reference 0.9956. relax and the RELION repeat ran one after the other on the same physical H100 (della-h19g1), as separate jobs. Same configuration as the long-tier K1 case, which fails its per-iteration Pmax gate (1.23e-3 at iteration 11 vs 1e-3; jobs 14287534, 14292408) while the final resolution matches (half FSC 0.5 12.95 A both); the offset comes from the start-up noise estimate. CPU layouts differ (relax 8 CPUs, RELION 12); otherwise production settings on both sides, so matched stays at workload. Pending: long-tier K1 case on Q 427a08bd8 pending in the queue (job 14320190). Jobs: relax 14301250; RELION 14298975.
 13. `pdb_k4_50k256_class3d_15it_long_tier`: relax source `14a45d23f`, recovar (long-tier test repair branch, K4 test commit 76aad2327). Frozen mask `pdb_k4_50k256_c1` (`72b04bea8692`); masked FSC-AUC over the scorecard band RELION —, relax —. Cross-engine: long-tier test PASS: per-class FSC(1-16) vs RELION 0.99998-0.99999, class agreement 0.9965; RELION same-command repeat 0.99994-0.99999 / 0.9941. Chained replay: RELION state is injected at every iteration, so this is step-wise parity, not an autonomous trajectory or a speed comparison. The RELION repeat took 1762 s. `relax.resolution_A` is null: not reported by the long-tier test. `gt` is null: GT FSC-AUC recorded only as within 0.001 of RELION; exact values not in the fixture report. `time_ratio_relax_over_relion` is null: chained replay with test-harness overhead; not a speed comparison. `relion.masked_resolution_A` is null: Class3D has no gold-standard half maps; masked half-map resolution does not apply. `relax.masked_resolution_A` is null: Class3D has no gold-standard half maps; masked half-map resolution does not apply. Pending: long-tier K4 case on Q 427a08bd8 pending in the queue (job 14320192). Jobs: relax 14287533; RELION 14284884, 14298976.
 14. `noise1_k1_50k256_initialmodel_vdam`: relax source `f078ac1be`, recovar (pre-split EM lineage, candidate cand4). GT mean GT FSC over shells 1-16 at iteration 8: RELION 0.137797, relax 0.137794. Cross-engine: long-tier test PASS: direct VDAM vs RELION iteration-8 FSC(1-16) 1.000000; GT FSC 0.143 crossing at shell 6 for both. The RELION run's per-iteration STAR files span 33 s (it000 to it008, start-up excluded); relax's 198 s includes compilation. `relion.resolution_A` is null: InitialModel resolution not tracked by the test. `relion.wall_s` is null: RELION InitialModel wall not recorded. `relax.resolution_A` is null: InitialModel resolution not tracked by the test. `time_ratio_relax_over_relion` is null: no RELION wall. `mask` is null: no frozen mask: two-iteration speed workload or InitialModel run without final half maps. `relion.masked_resolution_A` is null: not applicable: no final half maps for this workload. `relax.masked_resolution_A` is null: not applicable: no final half maps for this workload. Pending: long-tier InitialModel case on Q 427a08bd8 pending in the queue (job 14320191). Jobs: relax 14284405; RELION —.
+
+\* EMPIAR-10097: RELION's own three same-command runs split into two pose basins: the reference and r1 agree (merged/halves band FSC-AUC 0.9756/0.9564/0.9601), r2 differs from both (reference vs r2 0.9294/0.8805/0.8851, r1 vs r2 0.9294/0.8802/0.8848). relax lands in r2's basin: it meets the thresholds (merged >= 0.95, each half >= 0.90) against r2 (0.9740/0.9514/0.9562) but not against the reference (0.9313/0.8793/0.8840) or r1 (0.9312/0.8789/0.8837). It passes under the user's 2026-09-23 rule (thresholds met against at least one same-command RELION run; band condition dropped). Masked cross-engine FSC-AUC with the frozen mask is 0.9826 vs reference, 0.9825 vs r1, 0.9935 vs r2 (merged). All comparisons: see the per-reference table.
+
+## Comparisons against every RELION run
+
+### EMPIAR-10097
+
+relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
+
+| RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| reference | 13124450 | 0.9313 | 0.8793 | 0.8840 | 0.9826 | 0.9603 | 0.9623 | not met |
+| r1 | 14281010 | 0.9312 | 0.8789 | 0.8837 | 0.9825 | 0.9601 | 0.9623 | not met |
+| r2 | 14281011 | 0.9740 | 0.9514 | 0.9562 | 0.9935 | 0.9841 | 0.9856 | met |
+
+RELION against RELION (same band FSC-AUCs):
+
+| Pair | Merged | Half 1 | Half 2 |
+| --- | ---: | ---: | ---: |
+| reference vs r1 | 0.9756 | 0.9564 | 0.9601 |
+| reference vs r2 | 0.9294 | 0.8805 | 0.8851 |
+| r1 vs r2 | 0.9294 | 0.8802 | 0.8848 |
 
 ## Related scorecards
 
