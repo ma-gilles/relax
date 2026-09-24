@@ -192,6 +192,22 @@ must supply `--relion_half_sets`; relax has no other K1 half split.
 on the 5k and 50k K1 fixtures; `test_run_full_refinement_input_pose_seed.py`
 checks the norm column.
 
+Qualification of the standalone default (K1 50k/256, relax fc670f0, Slurm
+14339756/14339757 with RELION's seed and 14339758 with a second seed; the code
+of the default flip, before the final gridding correction). It passes the
+functional rule: same resolution, GT not worse, standalone with its own draws.
+All three arms converge in 14 iterations (RELION 14, 14, 15). The unmasked
+half-map resolution at 0.143 equals RELION's with the same seed (11.83 A, and
+11.57 A for the second seed); the masked postprocess resolution is 10.88 A for
+every relax and RELION run. Unmasked GT FSC-AUC is 0.2393/0.2393/0.2411 against
+RELION's 0.2384/0.2384/0.2342. Masked GT band FSC-AUC (frozen mask
+`noise1_k1_50k256_c1`, shells 1-45) is 0.679021 against RELION's same-seed
+0.679357/0.679359; after RELION's griddingCorrect applied post hoc it is
+0.679394, so the 3.4e-4 shortfall is the missing final gridding correction
+(fixed separately on branch `fix/final-gridding-always-on`). Same-seed map
+agreement with RELION is FSC-AUC 0.998 (RELION's repeat 0.99977; a different
+seed 0.899). Evidence: `em_work/relax_defaults_20260924/qual50k_accept/`.
+
 ## 2. Sampling grids and units
 
 [`sampling.py`](../../recovar/em/sampling.py) owns rotation and translation grids,
