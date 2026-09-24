@@ -1425,86 +1425,91 @@
     "resolution_definition": null,
     "relion_reported_resolution_A": null,
     "masked_resolution_A": null,
-    "wall_s": 1587.1,
+    "wall_s": 1031.1,
     "wall_definition": "wall of the engine subprocess (end to end, start-up and compilation included)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 200,
     "jobs": [
-     "14148540"
+     "14373889"
     ],
     "masked_band_auc": null
    },
    "relax": {
-    "version": "relax InitialModel (recovar.commands.initial_model)",
+    "version": "relax InitialModel (relax.commands.initial_model)",
     "resolution_A": null,
     "resolution_definition": null,
     "relion_reported_resolution_A": null,
     "masked_resolution_A": null,
-    "wall_s": 3283.8,
-    "wall_definition": "wall of the engine subprocess (end to end, start-up and compilation included)",
+    "wall_s": 4034.2,
+    "wall_definition": "relax wrapper process wall (end to end)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 200,
     "jobs": [
-     "14148539"
+     "14373889"
     ],
     "masked_band_auc": null,
-    "source_sha": "25cc4475be0119a083b3fd4dece99daa38186c79",
-    "source_repo": "recovar (pre-split EM lineage; bucket size-class candidate of 2026-09-18)"
+    "source_sha": "02b4cb37b8cd162e68fba10b6929bd4cebafbead",
+    "source_repo": "relax main (frozen candidate cand_02b4cb3, own pixi env and sealed CUDA libraries)"
    },
    "initial_model": {
     "reference": "ground truth (simulator maps; mean of the class maps for alignment when K>1), RELION file frame",
     "aggregate": null,
     "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
     "alignment": "rigid (HEALPix-2 seed + x-mirror, continuous rotation+translation fit, sign +1); cubic apply. Arm vs reference: arm consensus fitted to the reference mean. Pair: b consensus fitted directly onto a's reference-frame consensus.",
-    "score_json": "docs/benchmarks/initialmodel_scores/noise1_50k_k1.json",
+    "score_json": "docs/benchmarks/initialmodel_scores/noise1_50k_k1_main.json",
     "relion": {
-     "run": "relion_s29",
-     "fsc_auc": 0.3413,
-     "masked_fsc_auc": 0.756,
-     "res_05_A": 11.83,
-     "masked_res_05_A": 11.57
-    },
-    "relax": {
-     "run": "relax_s29",
+     "run": "relion_main_pair",
      "fsc_auc": 0.3413,
      "masked_fsc_auc": 0.7552,
      "res_05_A": 11.83,
      "masked_res_05_A": 11.57
     },
-    "cross": {
-     "fsc_auc": 0.9798,
-     "masked_fsc_auc": 0.995
+    "relax": {
+     "run": "relax_main_pair",
+     "fsc_auc": 0.3413,
+     "masked_fsc_auc": 0.7554,
+     "res_05_A": 11.83,
+     "masked_res_05_A": 11.57
     },
-    "relion_repeat": null
+    "cross": {
+     "fsc_auc": 0.9718,
+     "masked_fsc_auc": 0.9928
+    },
+    "relion_repeat": {
+     "pair": "RELION seed 29 in this pair vs the identical 2026-09-19 matrix command (job 14148540): same-seed repeat",
+     "fsc_auc": 0.9809,
+     "masked_fsc_auc": 0.9943
+    }
    },
    "gt": null,
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 2.07,
-   "matched": "workload",
+   "time_ratio_relax_over_relion": 3.91,
+   "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
     "box": true,
     "particles": true,
     "schedule": true,
-    "flags": false,
-    "timing_controlled": false
+    "flags": true,
+    "timing_controlled": true
    },
    "notes": [
-    "Both arms ran the 2026-09-19 cross-dataset matrix command (RELION default InitialModel schedule, 200 iterations, same seed, sampling and diameter) as separate whole-node jobs on H100 nodes; matched stays at workload (single run per arm, separate jobs and nodes, relax profiling options on).",
-    "All scored runs (FSC-AUC unmasked / masked): relion_s29 vs reference 0.3413 unmasked / 0.7560 masked; relax_s29 vs reference 0.3413 unmasked / 0.7552 masked; relion_s29 vs relax_s29 0.9798 / 0.9950.",
-    "relax minus RELION reference FSC-AUC: +0.0000 unmasked, -0.0008 masked; no RELION repeat exists, so a relax deficit here is open, not attributed to RELION variation."
+    "Paired run on relax main: both arms at the same time in one two-GPU job, same seed, schedule, sampling and diameter; both pre-read the particle stack.",
+    "Earlier pre-split run (recovar 25cc4475b, 2026-09-19, separate jobs, profiling on): relax 3284 s vs RELION 1587 s (2.07x); reference FSC-AUC 0.3413 both, X-AUC 0.9798/0.9950.",
+    "Magnitudes: unmasked reference FSC-AUC relax 0.3413152 vs RELION 0.3413154 (pair) / 0.3413158 (2026-09-19), 2e-7 below the lower RELION run; masked relax 0.7554 lies between the RELION runs (0.7552/0.7560). X-AUC of relax against the 2026-09-19 RELION run is 0.9844/0.9952, above the RELION pair 0.9809/0.9943; against the paired RELION run it is 0.9718/0.9928, below it. Open by the repeat rule; one more RELION repeat would settle it.",
+    "All scored runs (FSC-AUC unmasked / masked): relion_main_pair vs reference 0.3413 unmasked / 0.7552 masked; relax_main_pair vs reference 0.3413 unmasked / 0.7554 masked; relion_s29_20260919 vs reference 0.3413 unmasked / 0.7560 masked; relion_main_pair vs relax_main_pair 0.9718 / 0.9928; relion_main_pair vs relion_s29_20260919 0.9809 / 0.9943; relax_main_pair vs relion_s29_20260919 0.9844 / 0.9952.",
+    "relax minus RELION reference FSC-AUC: +0.0000 unmasked, +0.0002 masked; relax-vs-RELION X-AUC 0.9718/0.9928 is below the RELION repeat pair 0.9809/0.9943; open; the 2 RELION runs span reference FSC-AUC 0.3413-0.3413 (masked 0.7552-0.7560), relax 0.3413 is below (masked 0.7554, inside); the deficit is outside the RELION runs' spread, so it is open."
    ],
-   "null_reasons": {
-    "initial_model.relion_repeat": "no second RELION run of this command exists"
-   },
+   "null_reasons": {},
    "evidence": {
     "run_roots": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p2_noise1_50k_k1_s29",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919"
     ],
-    "score_json": "docs/benchmarks/initialmodel_scores/noise1_50k_k1.json"
+    "score_json": "docs/benchmarks/initialmodel_scores/noise1_50k_k1_main.json"
    },
    "mask": {
     "dataset": "noise1_k1_50k256_c1",
@@ -1512,10 +1517,10 @@
    },
    "date": "2026-09-24",
    "time_check": {
-    "a": "RELION 1 GPU, one non-MPI relion_refine process, --j 8; relax 1 GPU, --j 8",
-    "b": "relax ran with JAX_LOG_COMPILES=1 and RECOVAR_INITIAL_MODEL_PROFILE=1 (profiling), RECOVAR_PREREAD_IMAGES=1 and the flat-local-rows opt-in; RELION --preread_images; no replay, capture or per-iteration dumps (both --grad_write_iter 50)",
-    "c": "both walls end to end including start-up and compilation (relax compile 727 s)",
-    "d": "H100 80GB HBM3 on both (nvidia-smi records gpu_*.txt); separate whole-node jobs, nodes della-h21g1 (both)"
+    "a": "RELION 1 GPU, one non-MPI relion_refine process, --j 8; relax 1 GPU, --j 8; both arms in one --gres=gpu:h100:2 job, one GPU each, simultaneous",
+    "b": "relax production defaults (native projector setup and M-step, float64 M-step compute), no JAX_LOG_COMPILES, profiling, capture or replay variables, cold per-run JAX cache; image I/O matched: RELION --preread_images, relax RECOVAR_PREREAD_IMAGES=1; both --grad_write_iter 50",
+    "c": "RELION: wall of the relion_refine process; relax: whole wrapper process (import, provenance checks, compilation and run); both end to end",
+    "d": "H100 80GB HBM3 on both GPUs of the job (GPU.csv, nvidia-smi UUIDs per arm); node della-h20g4; the P1 pair job (14373888) shared the node throughout"
    }
   },
   {
@@ -1765,87 +1770,90 @@
     "resolution_definition": null,
     "relion_reported_resolution_A": null,
     "masked_resolution_A": null,
-    "wall_s": 969.8,
+    "wall_s": 794.8,
     "wall_definition": "wall of the engine subprocess (end to end, start-up and compilation included)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 200,
     "jobs": [
-     "14148542"
+     "14373890"
     ],
     "masked_band_auc": null
    },
    "relax": {
-    "version": "relax InitialModel (recovar.commands.initial_model)",
+    "version": "relax InitialModel (relax.commands.initial_model)",
     "resolution_A": null,
     "resolution_definition": null,
     "relion_reported_resolution_A": null,
     "masked_resolution_A": null,
-    "wall_s": 4188.1,
-    "wall_definition": "wall of the engine subprocess (end to end, start-up and compilation included)",
+    "wall_s": 3554.2,
+    "wall_definition": "relax wrapper process wall (end to end)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 200,
     "jobs": [
-     "14148541"
+     "14373890"
     ],
     "masked_band_auc": null,
-    "source_sha": "25cc4475be0119a083b3fd4dece99daa38186c79",
-    "source_repo": "recovar (pre-split EM lineage; bucket size-class candidate of 2026-09-18)"
+    "source_sha": "02b4cb37b8cd162e68fba10b6929bd4cebafbead",
+    "source_repo": "relax main (frozen candidate cand_02b4cb3, own pixi env and sealed CUDA libraries)"
    },
    "initial_model": {
     "reference": "ground truth (simulator maps; mean of the class maps for alignment when K>1), RELION file frame",
     "aggregate": "K>1: reference and cross-engine FSC-AUCs are population-weighted means over Hungarian-matched classes (weights rlnClassDistribution); the FSC 0.5 value is that of the most populated class",
     "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
     "alignment": "rigid (HEALPix-2 seed + x-mirror, continuous rotation+translation fit, sign +1); cubic apply. Arm vs reference: arm consensus fitted to the reference mean. Pair: b consensus fitted directly onto a's reference-frame consensus.",
-    "score_json": "docs/benchmarks/initialmodel_scores/pdb128_k4.json",
+    "score_json": "docs/benchmarks/initialmodel_scores/pdb128_k4_main.json",
     "relion": {
-     "run": "relion_s29",
-     "fsc_auc": 0.1435,
-     "masked_fsc_auc": 0.1427,
+     "run": "relion_main_pair",
+     "fsc_auc": 0.1227,
+     "masked_fsc_auc": 0.1232,
      "res_05_A": 60.44,
      "masked_res_05_A": 60.44
     },
     "relax": {
-     "run": "relax_s29",
-     "fsc_auc": 0.1369,
-     "masked_fsc_auc": 0.1363,
+     "run": "relax_main_pair",
+     "fsc_auc": 0.1457,
+     "masked_fsc_auc": 0.1444,
      "res_05_A": 60.44,
      "masked_res_05_A": 60.44
     },
     "cross": {
-     "fsc_auc": 0.8821,
-     "masked_fsc_auc": 0.8815
+     "fsc_auc": 0.8417,
+     "masked_fsc_auc": 0.8515
     },
-    "relion_repeat": null
+    "relion_repeat": {
+     "pair": "RELION seed 29 in this pair vs the identical 2026-09-19 matrix command (job 14148542): same-seed repeat",
+     "fsc_auc": 0.856,
+     "masked_fsc_auc": 0.8582
+    }
    },
    "gt": null,
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 4.32,
-   "matched": "workload",
+   "time_ratio_relax_over_relion": 4.47,
+   "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
     "box": true,
     "particles": true,
     "schedule": true,
-    "flags": false,
-    "timing_controlled": false
+    "flags": true,
+    "timing_controlled": true
    },
    "notes": [
-    "Both arms ran the 2026-09-19 cross-dataset matrix command (RELION default InitialModel schedule, 200 iterations, same seed, sampling and diameter) as separate whole-node jobs on H100 nodes; matched stays at workload (single run per arm, separate jobs and nodes, relax profiling options on).",
-    "OPEN bug candidate (recorded 2026-09-24): relax's population-weighted reference FSC-AUC is below RELION's by 0.0066 with no RELION repeat; the relax-main pair with a RELION same-seed repeat (job 14373890) will give this fixture its band.",
-    "All scored runs (FSC-AUC unmasked / masked): relion_s29 vs reference 0.1435 unmasked / 0.1427 masked; relax_s29 vs reference 0.1369 unmasked / 0.1363 masked; relion_s29 vs relax_s29 0.8821 / 0.8815.",
-    "relax minus RELION reference FSC-AUC: -0.0066 unmasked, -0.0064 masked; no RELION repeat exists, so a relax deficit here is open, not attributed to RELION variation."
+    "Paired run on relax main: both arms at the same time in one two-GPU job, same seed, schedule, sampling and diameter; both pre-read the particle stack.",
+    "Earlier pre-split run (recovar 25cc4475b, 2026-09-19): relax 4188 s vs RELION 970 s; population-weighted reference FSC-AUC relax 0.1369 vs RELION 0.1435 (-0.0066), recorded as an open bug candidate. The two same-command RELION runs now span 0.1227-0.1435 and relax main reads 0.1457, above both, so on relax main the candidate is not reproduced; the earlier -0.0066 is inside RELION's same-seed spread (0.0208).",
+    "All scored runs (FSC-AUC unmasked / masked): relion_main_pair vs reference 0.1227 unmasked / 0.1232 masked; relax_main_pair vs reference 0.1457 unmasked / 0.1444 masked; relion_s29_20260919 vs reference 0.1435 unmasked / 0.1427 masked; relion_main_pair vs relax_main_pair 0.8417 / 0.8515; relion_main_pair vs relion_s29_20260919 0.8560 / 0.8582; relax_main_pair vs relion_s29_20260919 0.8802 / 0.8822.",
+    "relax minus RELION reference FSC-AUC: +0.0230 unmasked, +0.0212 masked; relax-vs-RELION X-AUC 0.8417/0.8515 is below the RELION repeat pair 0.8560/0.8582; open; the 2 RELION runs span reference FSC-AUC 0.1227-0.1435 (masked 0.1232-0.1427), relax 0.1457 is above (masked 0.1444, above)."
    ],
-   "null_reasons": {
-    "initial_model.relion_repeat": "no second RELION run of this command exists"
-   },
+   "null_reasons": {},
    "evidence": {
     "run_roots": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p3_pdb128_k4_s29",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919"
     ],
-    "score_json": "docs/benchmarks/initialmodel_scores/pdb128_k4.json"
+    "score_json": "docs/benchmarks/initialmodel_scores/pdb128_k4_main.json"
    },
    "mask": {
     "dataset": "pdb_k4_5k128_c1",
@@ -1853,10 +1861,10 @@
    },
    "date": "2026-09-24",
    "time_check": {
-    "a": "RELION 1 GPU, one non-MPI relion_refine process, --j 8; relax 1 GPU, --j 8",
-    "b": "relax ran with JAX_LOG_COMPILES=1 and RECOVAR_INITIAL_MODEL_PROFILE=1 (profiling), RECOVAR_PREREAD_IMAGES=1 and the flat-local-rows opt-in; RELION --preread_images; no replay, capture or per-iteration dumps (both --grad_write_iter 50)",
-    "c": "both walls end to end including start-up and compilation (relax compile 2258 s)",
-    "d": "H100 80GB HBM3 on both (nvidia-smi records gpu_*.txt); separate whole-node jobs, nodes RELION della-h20g5, relax della-h21g1"
+    "a": "RELION 1 GPU, one non-MPI relion_refine process, --j 8; relax 1 GPU, --j 8; both arms in one --gres=gpu:h100:2 job, one GPU each, simultaneous",
+    "b": "relax production defaults (native projector setup and M-step, float64 M-step compute), no JAX_LOG_COMPILES, profiling, capture or replay variables, cold per-run JAX cache; image I/O matched: RELION --preread_images, relax RECOVAR_PREREAD_IMAGES=1; both --grad_write_iter 50",
+    "c": "RELION: wall of the relion_refine process; relax: whole wrapper process (import, provenance checks, compilation and run); both end to end",
+    "d": "H100 80GB HBM3 on both GPUs of the job (GPU.csv, nvidia-smi UUIDs per arm); node della-h20g3; the P4 pair job (14373950) shared the node for the last 18 minutes"
    }
   },
   {
@@ -2231,89 +2239,92 @@
     "resolution_definition": null,
     "relion_reported_resolution_A": null,
     "masked_resolution_A": null,
-    "wall_s": 3080.4,
+    "wall_s": 3000.6,
     "wall_definition": "wall of the engine subprocess (end to end, start-up and compilation included)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 200,
     "jobs": [
-     "14238044"
+     "14373888"
     ],
     "masked_band_auc": null
    },
    "relax": {
-    "version": "relax InitialModel (recovar.commands.initial_model)",
+    "version": "relax InitialModel (relax.commands.initial_model)",
     "resolution_A": null,
     "resolution_definition": null,
     "relion_reported_resolution_A": null,
     "masked_resolution_A": null,
-    "wall_s": 6767.0,
-    "wall_definition": "wall of the engine subprocess (end to end, start-up and compilation included)",
+    "wall_s": 9656.5,
+    "wall_definition": "relax wrapper process wall (end to end)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 200,
     "jobs": [
-     "14238299"
+     "14373888"
     ],
     "masked_band_auc": null,
-    "source_sha": "dfc6ee873d334425b193feb065221621bc30ec9a",
-    "source_repo": "recovar (pre-split integration tip codex/integrate-pr180 with the VDAM host optimisations)"
+    "source_sha": "02b4cb37b8cd162e68fba10b6929bd4cebafbead",
+    "source_repo": "relax main (frozen candidate cand_02b4cb3, own pixi env and sealed CUDA libraries)"
    },
    "initial_model": {
     "reference": "RELION's auto-refine final merged map of the same particles (job 13124450, the frozen mask's source); agreement with the refined structure, not a gold-standard resolution",
     "aggregate": null,
     "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
     "alignment": "rigid (HEALPix-2 seed + x-mirror, continuous rotation+translation fit, sign +1); cubic apply. Arm vs reference: arm consensus fitted to the reference mean. Pair: b consensus fitted directly onto a's reference-frame consensus.",
-    "score_json": "docs/benchmarks/initialmodel_scores/empiar10097.json",
+    "score_json": "docs/benchmarks/initialmodel_scores/empiar10097_main.json",
     "relion": {
-     "run": "relion_s41",
-     "fsc_auc": 0.2225,
-     "masked_fsc_auc": 0.3553,
-     "res_05_A": 10.48,
+     "run": "relion_main_pair",
+     "fsc_auc": 0.2237,
+     "masked_fsc_auc": 0.355,
+     "res_05_A": 10.16,
      "masked_res_05_A": 8.38
     },
     "relax": {
-     "run": "relax_s41",
-     "fsc_auc": 0.2249,
-     "masked_fsc_auc": 0.3569,
+     "run": "relax_main_pair",
+     "fsc_auc": 0.2251,
+     "masked_fsc_auc": 0.3567,
      "res_05_A": 10.16,
      "masked_res_05_A": 8.38
     },
     "cross": {
-     "fsc_auc": 0.7501,
-     "masked_fsc_auc": 0.8813
+     "fsc_auc": 0.7728,
+     "masked_fsc_auc": 0.8858
     },
     "relion_repeat": {
-     "pair": "RELION seed 41 (job 14238044) vs the 2026-08-28 real-data-track RELION InitialModel (seed 42, --j 4, no preread; otherwise the same command): different-seed repeat",
-     "fsc_auc": 0.2243,
-     "masked_fsc_auc": 0.6143
+     "pair": "RELION seed 41 in this pair vs the identical 2026-09-21 command (job 14238044, 3080 s): same-seed repeat",
+     "fsc_auc": 0.7513,
+     "masked_fsc_auc": 0.8821
     }
    },
    "gt": null,
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 2.2,
-   "matched": "workload",
+   "time_ratio_relax_over_relion": 3.22,
+   "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
     "box": true,
     "particles": true,
     "schedule": true,
-    "flags": false,
-    "timing_controlled": false
+    "flags": true,
+    "timing_controlled": true
    },
    "notes": [
-    "The auto-refine reference was itself started from the seed-42 RELION InitialModel (real-data track), so that run's higher agreement with the reference (0.2615 vs 0.2225) is not independent evidence; relax and RELION seed 41 are compared on equal terms.",
-    "All scored runs (FSC-AUC unmasked / masked): relion_s41 vs reference 0.2225 unmasked / 0.3553 masked; relion_s42_emtrack vs reference 0.2615 unmasked / 0.4167 masked; relax_s41 vs reference 0.2249 unmasked / 0.3569 masked; relion_s41 vs relion_s42_emtrack 0.2243 / 0.6143; relion_s41 vs relax_s41 0.7501 / 0.8813; relion_s42_emtrack vs relax_s41 0.2342 / 0.6168.",
-    "relax minus RELION reference FSC-AUC: +0.0024 unmasked, +0.0016 masked; relax-vs-RELION X-AUC 0.7501/0.8813 is at or above the RELION repeat pair 0.2243/0.6143; the 2 RELION runs span reference FSC-AUC 0.2225-0.2615 (masked 0.3553-0.4167), relax 0.2249 is inside (masked 0.3569, inside)."
+    "Paired run on relax main: both arms at the same time in one two-GPU job, same seed, schedule, sampling and diameter; both pre-read the particle stack.",
+    "relax reads particles.zeropose.star (the same particles with all-zero angle columns); RELION reads the file without angles, which it treats as zero.",
+    "The auto-refine reference was itself started from the seed-42 RELION InitialModel (real-data track), so that run's higher agreement with the reference is not independent evidence.",
+    "Earlier pre-split pair (recovar dfc6ee873, 2026-09-21, separate jobs): relax 6767 s vs RELION 3080 s (2.20x), reference FSC-AUC relax 0.2249 vs RELION 0.2225, X-AUC 0.7501. relax main is slower here (3.22x); its defaults differ from the pre-split run's options (native projector and float64 M-step vs JAX projector and float32 M-step) and the node was shared; not attributed.",
+    "All scored runs (FSC-AUC unmasked / masked): relion_main_pair vs reference 0.2237 unmasked / 0.3550 masked; relax_main_pair vs reference 0.2251 unmasked / 0.3567 masked; relion_s41_20260921 vs reference 0.2225 unmasked / 0.3553 masked; relion_s42_emtrack vs reference 0.2615 unmasked / 0.4167 masked; relion_main_pair vs relax_main_pair 0.7728 / 0.8858; relion_main_pair vs relion_s41_20260921 0.7513 / 0.8821; relion_main_pair vs relion_s42_emtrack 0.2244 / 0.6138; relax_main_pair vs relion_s41_20260921 0.7608 / 0.8831; relax_main_pair vs relion_s42_emtrack 0.2265 / 0.6118; relion_s41_20260921 vs relion_s42_emtrack 0.2243 / 0.6143.",
+    "relax minus RELION reference FSC-AUC: +0.0014 unmasked, +0.0017 masked; relax-vs-RELION X-AUC 0.7728/0.8858 is at or above the RELION repeat pair 0.7513/0.8821; the 3 RELION runs span reference FSC-AUC 0.2225-0.2615 (masked 0.3550-0.4167), relax 0.2251 is inside (masked 0.3567, inside)."
    ],
    "null_reasons": {},
    "evidence": {
     "run_roots": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_vdam_initialmodel_10097_20260921",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_em_10097_replacement_20260828T211155EDT/outputs/10097/relion/initialmodel"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p1_empiar10097_k1_s41",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_vdam_initialmodel_10097_20260921"
     ],
-    "score_json": "docs/benchmarks/initialmodel_scores/empiar10097.json"
+    "score_json": "docs/benchmarks/initialmodel_scores/empiar10097_main.json"
    },
    "mask": {
     "dataset": "empiar10097_c1",
@@ -2321,10 +2332,10 @@
    },
    "date": "2026-09-24",
    "time_check": {
-    "a": "RELION 1 GPU, one non-MPI relion_refine process, --j 8; relax 1 GPU, --j 8",
-    "b": "relax: RECOVAR_INITIAL_MODEL_PROFILE=1, preread and flat-local-rows opt-ins; RELION --preread_images; no replay, capture or dumps (--grad_write_iter 50)",
-    "c": "end to end including start-up and compilation",
-    "d": "H100 80GB HBM3; separate whole-node jobs, RELION della-h20g2, relax della-h20g1 (2026-09-21)"
+    "a": "RELION 1 GPU, one non-MPI relion_refine process, --j 8; relax 1 GPU, --j 8; both arms in one --gres=gpu:h100:2 job, one GPU each, simultaneous",
+    "b": "relax production defaults (native projector setup and M-step, float64 M-step compute), no JAX_LOG_COMPILES, profiling, capture or replay variables, cold per-run JAX cache; image I/O matched: RELION --preread_images, relax RECOVAR_PREREAD_IMAGES=1; both --grad_write_iter 50",
+    "c": "RELION: wall of the relion_refine process; relax: whole wrapper process (import, provenance checks, compilation and run); both end to end",
+    "d": "H100 80GB HBM3 on both GPUs of the job (GPU.csv, nvidia-smi UUIDs per arm); node della-h20g4; the P2 pair job (14373889) shared the node for its first 67 minutes"
    }
   },
   {
@@ -2671,6 +2682,122 @@
     "sha256": "afaa22523e9f2cc16b794adc9f50e7788ea03c52f561d8f3b553be5d150391cb"
    },
    "date": "2026-09-24"
+  },
+  {
+   "id": "empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align",
+   "table": "initialmodel",
+   "section": "real",
+   "dataset": "EMPIAR-10081 (HCN1)",
+   "empiar_id": "10081",
+   "particles": 55870,
+   "box": 256,
+   "pixel_size_A": 1.3,
+   "symmetry": "C4 (run in C1)",
+   "classes": 1,
+   "workflow": "InitialModel-VDAM K=1 (200 iterations, seed 42; relion_align_symmetry C4 on both)",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 build_patched relion_refine --grad --denovo_3dref (InitialModel, non-MPI)",
+    "resolution_A": null,
+    "resolution_definition": null,
+    "relion_reported_resolution_A": null,
+    "masked_resolution_A": null,
+    "wall_s": 1626.9,
+    "wall_definition": "wall of the engine subprocess (end to end, start-up and compilation included)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 200,
+    "jobs": [
+     "14373950"
+    ],
+    "masked_band_auc": null
+   },
+   "relax": {
+    "version": "relax InitialModel (relax.commands.initial_model)",
+    "resolution_A": null,
+    "resolution_definition": null,
+    "relion_reported_resolution_A": null,
+    "masked_resolution_A": null,
+    "wall_s": 3710.7,
+    "wall_definition": "relax wrapper process wall (end to end)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 200,
+    "jobs": [
+     "14373950"
+    ],
+    "masked_band_auc": null,
+    "source_sha": "02b4cb37b8cd162e68fba10b6929bd4cebafbead",
+    "source_repo": "relax main (frozen candidate cand_02b4cb3, own pixi env and sealed CUDA libraries)"
+   },
+   "initial_model": {
+    "reference": "RELION's C4 auto-refine final merged map of the same particles (job 14313014), the frozen mask's reference; agreement with the refined structure, not a gold-standard resolution",
+    "aggregate": null,
+    "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
+    "alignment": "rigid (HEALPix-2 seed + x-mirror, continuous rotation+translation fit, sign +1); cubic apply. Arm vs reference: arm consensus fitted to the reference mean. Pair: b consensus fitted directly onto a's reference-frame consensus.",
+    "score_json": "docs/benchmarks/initialmodel_scores/hcn1_c1run.json",
+    "relion": {
+     "run": "relion_c4_initial_model",
+     "fsc_auc": 0.3396,
+     "masked_fsc_auc": 0.3946,
+     "res_05_A": 6.53,
+     "masked_res_05_A": 6.4
+    },
+    "relax": {
+     "run": "relax_c4_initial_model",
+     "fsc_auc": 0.3632,
+     "masked_fsc_auc": 0.4124,
+     "res_05_A": 6.79,
+     "masked_res_05_A": 6.66
+    },
+    "cross": {
+     "fsc_auc": 0.5567,
+     "masked_fsc_auc": 0.7131
+    },
+    "relion_repeat": null
+   },
+   "gt": null,
+   "cross_engine": null,
+   "cross_engine_masked_band_auc": null,
+   "time_ratio_relax_over_relion": 2.28,
+   "matched": "yes",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": true
+   },
+   "notes": [
+    "Paired run on relax main: both arms at the same time in one two-GPU job, same seed, schedule, sampling and diameter; both pre-read the particle stack.",
+    "OPEN feature gap: relax InitialModel lacks RELION's symmetry-alignment step. RELION's GUI InitialModel (src/pipeline_jobs.cpp:3520-3523, 3575-3585) runs relion_refine --sym C1 when 'Run in C1' is set, then relion_align_symmetry --i run_it200_model.star --o initial_model.mrc --sym C4 --apply_sym --select_largest_class; relax records --sym but never applies it (only the run-in-C1 mode exists; a direct symmetric run raises NotImplementedError). Both arms therefore ran the identical C1 command, and relion_align_symmetry (build_patched) was applied offline to both final model.star files; the scored maps are those initial_model.mrc outputs.",
+    "Before symmetry alignment (raw C1 maps): reference FSC-AUC RELION 0.2810 / relax 0.3488, masked 0.3358 / 0.3962; X-AUC 0.4816 / 0.5448. The two C1 runs differ markedly and no RELION repeat exists, so the relax advantage is not attributed.",
+    "relax reads a copy of particles.star with all-zero angle columns (inputs/hcn1/particles.zeropose.star); RELION treats absent angles as zero.",
+    "All scored runs (FSC-AUC unmasked / masked): relion_main_pair vs reference 0.2810 unmasked / 0.3358 masked; relax_main_pair vs reference 0.3488 unmasked / 0.3962 masked; relion_c4_initial_model vs reference 0.3396 unmasked / 0.3946 masked; relax_c4_initial_model vs reference 0.3632 unmasked / 0.4124 masked; relion_main_pair vs relax_main_pair 0.4816 / 0.5448; relion_main_pair vs relion_c4_initial_model 0.4990 / 0.6402; relion_main_pair vs relax_c4_initial_model 0.4124 / 0.5243; relax_main_pair vs relion_c4_initial_model 0.5094 / 0.6494; relax_main_pair vs relax_c4_initial_model 0.7454 / 0.8912; relion_c4_initial_model vs relax_c4_initial_model 0.5567 / 0.7131.",
+    "relax minus RELION reference FSC-AUC: +0.0236 unmasked, +0.0178 masked; relax is at or above RELION on both."
+   ],
+   "null_reasons": {
+    "initial_model.relion_repeat": "no second RELION run of this command exists"
+   },
+   "evidence": {
+    "run_roots": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p4_hcn1_c4data_k1_s42"
+    ],
+    "score_json": "docs/benchmarks/initialmodel_scores/hcn1_c1run.json"
+   },
+   "mask": {
+    "dataset": "empiar10081_hcn1_c4",
+    "sha256": "4003c7dea2f37cb8db7f32f1903d5b82a9b2519af7d1ece0c149fca70c9fb0af"
+   },
+   "date": "2026-09-24",
+   "time_check": {
+    "a": "RELION 1 GPU, one non-MPI relion_refine process, --j 8; relax 1 GPU, --j 8; both arms in one --gres=gpu:h100:2 job, one GPU each, simultaneous",
+    "b": "relax production defaults (native projector setup and M-step, float64 M-step compute), no JAX_LOG_COMPILES, profiling, capture or replay variables, cold per-run JAX cache; image I/O matched: RELION --preread_images, relax RECOVAR_PREREAD_IMAGES=1; both --grad_write_iter 50",
+    "c": "RELION: wall of the relion_refine process; relax: whole wrapper process (import, provenance checks, compilation and run); both end to end",
+    "d": "H100 80GB HBM3 on both GPUs of the job (GPU.csv, nvidia-smi UUIDs per arm); node della-h20g3; the P3 pair job (14373890) shared the node for the first 18 minutes"
+   }
   }
  ],
  "initial_model_intro": [
