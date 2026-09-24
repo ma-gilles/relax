@@ -223,6 +223,14 @@ SETS: dict[str, tuple[str, list[str], list[str], str, list[str]]] = {
         ["MASK.json"],
     ),
 }
+SETS["empiar_10097_hp3_state"] = (
+    f"{FX}/empiar_10097/relion_refine_hp3_state", RUN, [],
+    "EMPIAR-10097 RELION auto-refine state at iteration 13 (hp3, os1, current size 136) with its target iteration 14 and the input particles.star", ["PROVENANCE.json"],
+)
+SETS["empiar_10097_particle_stack"] = (
+    "/projects/CRYOEM/singerlab/mg6942/10097/data/Particle-Stack", TOP, [],
+    "EMPIAR-10097 T40 HA 130k equalized particle stack (256 px) read by empiar_10097_hp3_state/input/particles.star", [],
+)
 for _ds in ("10073", "10097", "10345"):
     SETS[f"empiar_{_ds}_relion_startup"] = (
         f"{FX}/empiar_{_ds}/relion_startup_tables",

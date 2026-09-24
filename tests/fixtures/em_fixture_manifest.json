@@ -23,6 +23,109 @@
    },
    "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10073/relion_startup_tables"
   },
+  "empiar_10097_hp3_state": {
+   "description": "EMPIAR-10097 RELION auto-refine state at iteration 13 (hp3, os1, current size 136) with its target iteration 14 and the input particles.star",
+   "files": {
+    "PROVENANCE.json": [23170, "34fb910276d1685be209a07296199d4fe7db5abdcf50932509fed4169bdcca04"],
+    "input/particles.star": [54484936, "3dea665b990e37aec35bfae130a41bd00678096948011dba2e44bf134cda278c"],
+    "refine/run_it000_data.star": [54484936, "3dea665b990e37aec35bfae130a41bd00678096948011dba2e44bf134cda278c"],
+    "refine/run_it000_half1_class001.mrc": [67109888, "74c136500d9213679e4547a47ac3e16c3bc53ffb5211eb20faa24e3b16f8805b"],
+    "refine/run_it000_half1_model.star": [56804, "4ab9bdd8dcd670e38ad04cc14ebcd0106606cba5a62ddb011fd62d42bfdff727"],
+    "refine/run_it000_half2_class001.mrc": [67109888, "74c136500d9213679e4547a47ac3e16c3bc53ffb5211eb20faa24e3b16f8805b"],
+    "refine/run_it000_half2_model.star": [56804, "726f3ea87167e6da1e8bfa529d198b731276cfb1674193ae45b4f9b1599e1680"],
+    "refine/run_it000_optimiser.star": [8313, "b85aa29c4d47e086bdc670bed00f7ea311373f91f929c5f2b38f27dd1aba2545"],
+    "refine/run_it000_sampling.star": [6115, "b31f9eb6c0802677aad601520776b84e252d5170f5ecaaf321fbfb6f7793a331"],
+    "refine/run_it001_half1_model.star": [56804, "17d2125ca2bc71ce15f227bd818860b1bfd1224b420292cfa52e2754d51e97a9"],
+    "refine/run_it001_half2_model.star": [56804, "61706f23da12f3691d7dfead9d6ecfa272d5bb26dce2195bf64d0dc9b25eae39"],
+    "refine/run_it001_optimiser.star": [8313, "fd2b06ba51cd3ec067982a183a4050126bb37f8ea3f26d6805705eb7a25286ea"],
+    "refine/run_it001_sampling.star": [6115, "3f17dc047b1cb3f464879d371bb19f5ad02da23eb5504deff88cea123b818f7e"],
+    "refine/run_it002_half1_model.star": [58523, "73c4154f3a8298def6dd139325994dafd401b26e22896e40faa2d5d9f0235c62"],
+    "refine/run_it002_half2_model.star": [56804, "d61a61212e524641bc2bd702467f35c7a17c090af6bbe1344ce6eb4e0149da62"],
+    "refine/run_it002_optimiser.star": [8313, "d88309f439237ad04b8715284053d53254c8da8c47460fb57e1bd823f5c7083f"],
+    "refine/run_it002_sampling.star": [6115, "b5b1793a291cce0a66501e17618ca73bbfa90fa0ff759b2afb349fd1588ab952"],
+    "refine/run_it003_half1_model.star": [58523, "3ed9cf210f832eec4a6446f5f453f7fed37410214d46e8b96bab045f1754c9bc"],
+    "refine/run_it003_half2_model.star": [56804, "3e1914306ab6a7bd5f4cdbcb57ea36ce083a8d6bb0dfae9295bce4925d9a9262"],
+    "refine/run_it003_optimiser.star": [8313, "81957a6f289bbe57d713900d24a25b9d21eb5881c6bb57c4be2f0d1a5b1759e3"],
+    "refine/run_it003_sampling.star": [6115, "822d3d879fdd7807a2527bc9e3ca7ff83cf7a54b44020af0e63f68c346251c7b"],
+    "refine/run_it004_half1_model.star": [58523, "ece624b7f58519fae7e2c46bce4ccb56afc1bc56c334727d11d0e5506dccb806"],
+    "refine/run_it004_half2_model.star": [56804, "44eaa2ce59e82cc39869cf914b6c7ad4dbc03382f67b2e7655734d23b73288b1"],
+    "refine/run_it004_optimiser.star": [8313, "723c8c1bf26ea745659cfcfa8f18f477768d6157fbc2a96c7e34a5f10a9a8401"],
+    "refine/run_it004_sampling.star": [6115, "c3765a1b820ebb72251a751551c068800b2a0b3a37f60c744ac4d0b1a5e2389b"],
+    "refine/run_it005_half1_model.star": [58523, "f80d8125b7fca08e0b046b98cfb7e5a17f380c237502d08d22d440bb2179ca0f"],
+    "refine/run_it005_half2_model.star": [56804, "22690b2ee2607950b2ea6cfd120a1cd99b90d4fdc5030537679fe1ab798f6849"],
+    "refine/run_it005_optimiser.star": [8313, "87e7a3811284d91f911c64608f2814fefc1b4b5639cab30808aad715240b81d7"],
+    "refine/run_it005_sampling.star": [6115, "8994b0799d297f6578445440ca0dc2fc97b0704be3a45d539ff026918eb11d08"],
+    "refine/run_it006_half1_model.star": [58523, "52ecbc361fe1015de452d23271ddfeff766c7fc1fb55f61511d405b4fa735abf"],
+    "refine/run_it006_half2_model.star": [56804, "7a7ab740e592af1213967ce5de889d2df43eeddf9a18933a9c24928428faa9e9"],
+    "refine/run_it006_optimiser.star": [8313, "774fcc507db492111c312f31a8f4611011fc583598fe3b09ed94af34a917c440"],
+    "refine/run_it006_sampling.star": [6115, "1152a4afc09388094311261a06bbe5773f8a3f47bd57c011d3f9ad3ed273bf53"],
+    "refine/run_it007_half1_model.star": [58523, "2dd63f626260f4bdc9c5f7f0017a934359a226155e5369914998d1bb117e3fab"],
+    "refine/run_it007_half2_model.star": [56804, "84c40a18211e46a720dbaecdea0a9b16b26e3349cab7ee382076c0d94278f32c"],
+    "refine/run_it007_optimiser.star": [8313, "ba81747fd23f18635804853c16ef1228ffd0d107a9ac0080866b4276a7ca4cf7"],
+    "refine/run_it007_sampling.star": [6115, "9817868cd63170781f5548175c69ea06f69ac679ff7dc6bf99bc1f9298a54954"],
+    "refine/run_it008_half1_model.star": [58523, "8579c5162ea76552986409ba2d42edc178699d36f1db6ee9e674d567531d479b"],
+    "refine/run_it008_half2_model.star": [56804, "bbb174c1fcb97478d91b5efa6a719231c4afa4cf63fa4e9b07c783a4dff65e10"],
+    "refine/run_it008_optimiser.star": [8313, "acdf161f8da7d66c20ba5cdcf212b7f992ef245d816fd8a7fa29eb1473ddefbe"],
+    "refine/run_it008_sampling.star": [6115, "d5fffbbb1ba51363f5857d6cc9a41e14d326deadbb2982523b578c4be523187e"],
+    "refine/run_it009_half1_model.star": [58523, "297d1371b221e4d80243d3e0963b3df5fc0a147eeaec7efc480bce7891202d15"],
+    "refine/run_it009_half2_model.star": [56804, "64aa578343a3c7271d7a440bace9256072f1c70266eadeb0b4dc2618dfc58519"],
+    "refine/run_it009_optimiser.star": [8313, "2ab725159d5435283457ea1f849aff4feac4cbabcda36d511fc77a668a724559"],
+    "refine/run_it009_sampling.star": [6115, "43de42c31330519084e24c77037191f6d95a82c7cd8fa08ae7dd0e038da504ae"],
+    "refine/run_it010_half1_model.star": [58523, "1d550fdd976c6612df91df07f01df4fb35e64869f1fa9b9ec89055197291d1f6"],
+    "refine/run_it010_half2_model.star": [56804, "d7f08fa6f120b4874a863e2e3b88063c49ec43806d2d818fd4fb4ea796f5ab0b"],
+    "refine/run_it010_optimiser.star": [8313, "3e9c45e2c0d82f6d30aef76911c92c4e074f1fd21206002dcc6a914a5de3eb82"],
+    "refine/run_it010_sampling.star": [6115, "99a08af323835340ec376e7742d12c66d8041fc6bae424d33af6a4a666aaae14"],
+    "refine/run_it011_half1_model.star": [58523, "68dca36b0e6c449d53f5ca07c9ce4095e8ef60ccfebe829d3fcae5371e437b0d"],
+    "refine/run_it011_half2_model.star": [56804, "87678225953fccfc4816020f0fc9dddfbad51a810c8bb1057e93b75d423153c1"],
+    "refine/run_it011_optimiser.star": [8313, "059a62e364c625ba91a0bd613e4d088767bfb7c8345710e171c4c75b72fbbab1"],
+    "refine/run_it011_sampling.star": [6115, "6c343a7a2190495d0ca27b68dbb241a0edb1f2a06a56acd8661000a968da344a"],
+    "refine/run_it012_data.star": [54484936, "e271f0969d1288dbe7ecda36c3a103b4201b506f9860d4f7359d8ea62b8b3931"],
+    "refine/run_it012_half1_class001.mrc": [67109888, "ea0eaf6d12d9194043b2d721b47cffafd514382657f6cecca540f7288f65bcd6"],
+    "refine/run_it012_half1_model.star": [66587, "dac0f7dee10680038ae793db6bb7323938a3306d9126964c2ce00905632f222a"],
+    "refine/run_it012_half2_class001.mrc": [67109888, "ce2847353010950aa308ce50ad19b1901f14886476a17249cd4e641a44c36198"],
+    "refine/run_it012_half2_model.star": [64868, "1f82870ffd79f2c060c0ec5437cb5f22e4074e6d74c2935e39e8bf801bb22aa5"],
+    "refine/run_it012_optimiser.star": [8313, "9fd9f6d1eee754ce19abb2d0cd83a9eef00569c10a488a28917bae5af3393d13"],
+    "refine/run_it012_sampling.star": [21667, "c3521dcff358c1582f1a75c099b9e6e06f7fb563c409cb1907dc87d7c67f8cd8"],
+    "refine/run_it013_data.star": [54484936, "83d7c7f44c562581024f66acae33fa012227c769c7cbb388063f059c4b1844dd"],
+    "refine/run_it013_half1_class001.mrc": [67109888, "64911a32dee546e59f0134d99a4c3217310ed0d13de611a82a74bbebf46e9dfa"],
+    "refine/run_it013_half1_model.star": [66587, "b4290b4657440a305b3177eac6251d901036743e161469e77ad5d27e8a57f0e3"],
+    "refine/run_it013_half2_class001.mrc": [67109888, "10ef2c4fe98d8c91a86f1733e39c75aa2b257d6020a54b81f99794a2189b89b3"],
+    "refine/run_it013_half2_model.star": [64868, "7c69a2e30903a750a54df0762f90286f5fab5a24f7b1fbc10b8021c6370064d6"],
+    "refine/run_it013_optimiser.star": [8313, "0cf0995c27dd9b565a64ff0fa1276630ea8d4451cb3f6b5615a6859ad6e57b2d"],
+    "refine/run_it013_sampling.star": [21667, "b538a295f8eedc5e09579691132c6bc3d0d2eeb41988f65ef656e84e93c3d328"],
+    "refine/run_it014_data.star": [54484936, "7c712570a32fc4379753ba1678bd07e1d10808df7bbea7c9dc167b491ff00811"],
+    "refine/run_it014_half1_class001.mrc": [67109888, "8c33a91ecb24215cf09e31645087f8f53c9189e3e28e773fd4bac878aa389dde"],
+    "refine/run_it014_half1_model.star": [66587, "39b0ce6858ac2ed2fc02eed6de2d63c2a7316e0b427ac76db40d2add7d2eb41d"],
+    "refine/run_it014_half2_class001.mrc": [67109888, "b9b41a2a5bd42a871e3d073c1653e23f73167d923473ca85ee6e9366405db8f0"],
+    "refine/run_it014_half2_model.star": [64868, "69ed3e654bb3de62e058185800cba084e135957727e8b6c69cf334579a66eb90"],
+    "refine/run_it014_optimiser.star": [8313, "84bbd48f6e65c8a164633b726a96734a36ccb900df8e77cfbf36ef913222b488"],
+    "refine/run_it014_sampling.star": [21667, "471dda14e1cd48887a05cc4f40684051a15b30fad7f916d1a0c9f591a6737bc6"]
+   },
+   "provenance": {
+    "generation_records": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10097/relion_refine_hp3_state/PROVENANCE.json"
+    ],
+    "relion_optimiser_headers": {
+     "refine/run_it000_optimiser.star": {
+      "command": "--o /scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_em_10097_replacement_20260828T211155EDT/outputs/10097/relion/refine/run --auto_refine --split_random_halves --i /scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_em_10097_replacement_20260828T211155EDT/outputs/10097/relion/initialmodel/run_it200_data.star --ref /scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_em_10097_replacement_20260828T211155EDT/outputs/10097/relion/initialmodel/initial_model.mrc --firstiter_cc --trust_ref_size --ini_high 60 --dont_combine_weights_via_disc --pool 3 --pad 2 --ctf --particle_diameter 220 --flatten_solvent --zero_mask --oversampling 1 --healpix_order 2 --auto_local_healpix_order 4 --offset_range 5 --offset_step 2 --sym C1 --low_resol_join_halves 40 --norm --scale --random_seed 42 --j 4 --gpu 0:0",
+      "random_seed": 42,
+      "version": "RELION optimiser; version 5.0.1-commit-f2c1a3"
+     }
+    }
+   },
+   "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10097/relion_refine_hp3_state"
+  },
+  "empiar_10097_particle_stack": {
+   "description": "EMPIAR-10097 T40 HA 130k equalized particle stack (256 px) read by empiar_10097_hp3_state/input/particles.star",
+   "files": {
+    "T40_HA_130K-Equalized-Particle-Stack.mrcs": [34078721024, "f50104c9754f10f3b896b52bcea3df86684603e6bdf564ead6ec755dbf5c56b8"],
+    "T40_HA_130K-Equalized_run-data.star": [53555918, "0ad452f47cbbead57147ff0a2679b3e397739d47e089af84ec9eba79b0e890ff"]
+   },
+   "provenance": {
+    "generation_records": []
+   },
+   "root": "/projects/CRYOEM/singerlab/mg6942/10097/data/Particle-Stack"
+  },
   "empiar_10097_relion_startup": {
    "description": "EMPIAR-10097 RELION InitialModel it200 data.star and auto-refine run_it000 stars",
    "files": {

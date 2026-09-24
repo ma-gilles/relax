@@ -970,3 +970,95 @@ def test_em_parity_long_kclass_full(tmp_path, start):
     assert class_acc >= 0.95, (
         f"K-class long Hungarian-aligned class assignment accuracy {class_acc:.4f} below threshold 0.95"
     )
+
+
+# One iteration from a real-data RELION state at production size: EMPIAR-10097 (130k particles,
+# box 256) auto-refine iteration 13 -> 14, healpix 3, oversampling 1, current size 136, 294,912
+# fine rotations. No fast case reaches healpix 3 at a large current size; the resident engine's
+# per-iteration projection cache did not fit there (40 GiB against a 20 GiB budget) and crashed.
+# ``resident`` adds the resident flag set that is becoming the default (speed's 10097 it13 run,
+# relax_speed_20260923/runs/pair1it_d8f4ce1_it13); drop the arm once those are the defaults.
+REALDATA_HP3_RESIDENT_ENV = {
+    "RELAX_SPARSE_PASS2_RESIDENT": "1",
+    "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS": "1",
+    "RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT": "1",
+    "RELAX_LOCAL_SEARCH_RESIDENT": "1",
+    "RELAX_COARSE_SIGNIFICANCE_DEVICE": "1",
+    "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH": "1",
+    "RELAX_EM_JIT_STAGE_GLUE": "1",
+    "RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF": "1",
+    "RELAX_K1_RELION_WAVG_SEQUENTIAL_CUDA": "1",
+    "RELAX_EM_BPREF_FINITE_GUARD": "1",
+    "RELAX_LOCAL_IMAGE_CAPACITY_LADDER": "16,32,64,128,256",
+    # The resident statistics stage needs the fresh-K1 arithmetic (it does not consume the
+    # atomic Wavg triplet of the older replay arithmetic).
+    "RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM": "1",
+    "RELAX_K1_RELION_EXACT_BPREF_OPERANDS": "1",
+}
+REALDATA_HP3_ARMS = {"default": {}, "resident": REALDATA_HP3_RESIDENT_ENV}
+
+
+@pytest.mark.em_parity_long
+@pytest.mark.gpu
+@pytest.mark.integration
+@pytest.mark.parametrize("arm", sorted(REALDATA_HP3_ARMS))
+def test_em_parity_long_realdata_hp3_replay(tmp_path, arm):
+    """EMPIAR-10097 iteration 13 -> 14 at healpix 3 and current size 136 must complete and match RELION.
+
+    The replay starts from RELION's stored iteration-13 state and is compared with RELION's
+    iteration-14 half maps by FSC (FSC-AUC and the minimum shell FSC over shells 1..current
+    size/2). The FSC floor applies once ``tests/tiers/fsc_thresholds.json`` records the user's
+    approval (case ``realdata_10097_hp3_replay``); until then the test asserts completion and
+    reports the FSC values.
+    """
+    from recovar.utils import helpers
+
+    from scripts.fsc_metrics import normalized_fsc_auc, shell_fsc
+
+    _assert_parity_ancestors_or_skip()
+    require_fixture_sets("empiar_10097_hp3_state", "empiar_10097_particle_stack")
+    state = fixture_root("empiar_10097_hp3_state")
+    relion_dir = state / "refine"
+    output_dir = tmp_path / f"realdata_10097_hp3_{arm}"
+    cmd = [
+        sys.executable, str(PARITY_SCRIPT), "--relion_dir", str(relion_dir), "--data_star",
+        str(state / "input" / "particles.star"), "--iter", "13", "--max_iter", "1", "--skip_final_iteration",
+        "--force_max_iter_after_convergence", "--image_batch_size", "250", "--rotation_block_size", "8192",
+        "--image-fourier-backend", "relion_cuda", "--diagnostic-native-relion-particle-order-seed", "42",
+        "--output_dir", str(output_dir),
+    ]
+    env = gpu_subprocess_env() | {"RECOVAR_PREREAD_IMAGES": "1", "RECOVAR_PREREAD_MAX_GB": "64"} | REALDATA_HP3_ARMS[arm]
+    t0 = time.time()
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    elapsed = time.time() - t0
+    assert proc.returncode == 0, (
+        f"10097 hp3 one-iteration replay ({arm}) exited {proc.returncode}\n"
+        f"stdout:\n{proc.stdout[-4000:]}\nstderr:\n{proc.stderr[-4000:]}"
+    )
+
+    current_size = int(_read_relion_star_scalar(relion_dir / "run_it014_half1_model.star", "_rlnCurrentImageSize"))
+    band = current_size // 2
+    payload = {"arm": arm, "walltime_s": elapsed, "current_size": current_size}
+    for half in (1, 2):
+        relax_map = np.asarray(helpers.load_mrc(str(output_dir / f"recovar_final_half{half}.mrc")), dtype=np.float64)
+        relion_map = np.asarray(
+            helpers.load_relion_volume(str(relion_dir / f"run_it014_half{half}_class001.mrc")), dtype=np.float64
+        )
+        curve = np.asarray(shell_fsc(relax_map, relion_map), dtype=np.float64)
+        payload[f"half{half}_fsc_auc"] = float(normalized_fsc_auc(curve))
+        payload[f"half{half}_min_shell_fsc_in_band"] = float(np.nanmin(curve[1:band]))
+        payload[f"half{half}_fsc"] = [round(float(v), 6) for v in curve]
+    ledger = _write_quality_ledger(f"realdata_10097_hp3_{arm}", payload, output_dir=output_dir)
+    logger.info("10097 hp3 replay ledger: %s", ledger)
+    print(
+        f"\n10097 it13->14 hp3 cs{current_size} ({arm}): FSC-AUC {payload['half1_fsc_auc']:.6f} / "
+        f"{payload['half2_fsc_auc']:.6f}; min shell {payload['half1_min_shell_fsc_in_band']:.6f} / "
+        f"{payload['half2_min_shell_fsc_in_band']:.6f}; wall {elapsed:.0f} s",
+        file=sys.stderr, flush=True,
+    )
+    thresholds = json.loads((REPO_ROOT / "tests" / "tiers" / "fsc_thresholds.json").read_text())
+    gate = thresholds["cases"].get("realdata_10097_hp3_replay") if thresholds.get("approved") else None
+    if gate is not None:
+        for half in (1, 2):
+            assert payload[f"half{half}_fsc_auc"] >= gate["fsc_auc_floor"], payload
+            assert payload[f"half{half}_min_shell_fsc_in_band"] >= gate["min_shell_floor"], payload

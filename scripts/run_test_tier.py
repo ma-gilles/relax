@@ -117,6 +117,9 @@ LONG_ARM_SECONDS = {  # H100 walls: long tier (relax 14309851/14287533, Q 143201
     "long_kclass": 6700,
     "completion_k1": 9000,
     "completion_k4": 19300,
+    # EMPIAR-10097 it13 -> 14 (hp3, current size 136): RELION 556 s for the iteration on H100.
+    "long_realdata_hp3_default": 1200,
+    "long_realdata_hp3_resident": 1200,
 }
 FIXTURE_SETS = {
     "smoke": ["k1_5k128_data", "k1_5k128_relion_os0", "k1_5k128_relion_os1", "k2_5k128_data", "k2_5k128_relion_os0"],
@@ -148,6 +151,8 @@ FIXTURE_SETS = {
         "k4_100k256_data",
         "k4_100k256_dispatch_oracle",
         "k4_100k256_mask",
+        "empiar_10097_hp3_state",
+        "empiar_10097_particle_stack",
     ],
 }
 
@@ -356,6 +361,9 @@ def long_plan(src: Path, py: str, run_root: Path | None) -> list[Item]:
              LONG_ARM_SECONDS["long_k1_native_vdam"]),
         Item("long_kclass", _pytest(py, *long_flags, f"{LONG}::test_em_parity_long_kclass_full"), True,
              LONG_ARM_SECONDS["long_kclass"]),
+        *[Item(f"long_realdata_hp3_{arm}",
+               _pytest(py, *long_flags, f"{LONG}::test_em_parity_long_realdata_hp3_replay[{arm}]"), True,
+               LONG_ARM_SECONDS[f"long_realdata_hp3_{arm}"]) for arm in ("default", "resident")],
         Item("completion_k1", ["bash", str(jobs / "em_completion_k1_100k256.sh")], True,
              LONG_ARM_SECONDS["completion_k1"]),
         Item("completion_k4", ["bash", str(jobs / "em_completion_k4_100k256.sh")], True,
