@@ -7,7 +7,6 @@ AGENTS = EM_DIR / "AGENTS.md"
 LEDGER = ROOT / "docs" / "math" / "em_parity_best_metrics.md"
 RUNBOOK = ROOT / "docs" / "development" / "em_parity_runbook.md"
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
-PARALLEL_TEST_RUNNER = ROOT / "scripts" / "run_tests_parallel.sh"
 
 
 def test_em_agent_guides_stay_in_sync():
@@ -67,31 +66,3 @@ def test_em_best_metrics_ledger_has_quality_and_perf_contract():
         assert text in ledger
     assert "Correlation values in legacy" in ledger
     assert "cannot accept or reject" in ledger
-
-
-def test_parallel_test_runner_accepts_external_runtime_root():
-    runner = PARALLEL_TEST_RUNNER.read_text()
-    assert 'RUNTIME_ROOT="${RELAX_TEST_RUNTIME_ROOT:-${WORKDIR}/.tmp}"' in runner
-    assert runner.count("${RUNTIME_ROOT}/slurm_\\${SLURM_JOB_ID}") == 2
-    assert runner.count("${RUNTIME_ROOT}/pixi_home_\\${SLURM_JOB_ID}") == 2
-    assert runner.count("${RUNTIME_ROOT}/rattler_cache_\\${SLURM_JOB_ID}") == 2
-
-
-def test_parallel_test_runner_binds_workers_to_one_slurm_gpu():
-    runner = PARALLEL_TEST_RUNNER.read_text()
-    inherited = 'CUDA_FIRST_GPU="\\${CUDA_VISIBLE_DEVICES:-}"'
-    slurm_fallback = 'SLURM_VISIBLE_GPUS="\\${SLURM_STEP_GPUS:-\\${SLURM_JOB_GPUS:-}}"'
-    assert inherited in runner
-    assert slurm_fallback in runner
-    assert runner.index(inherited) < runner.index(slurm_fallback)
-    assert 'CUDA_FIRST_GPU="\\${SLURM_VISIBLE_GPUS%%,*}"' in runner
-    assert 'export CUDA_VISIBLE_DEVICES="\\${CUDA_FIRST_GPU}"' in runner
-    assert "len(devices) == 1 and devices[0].platform == 'gpu'" in runner
-
-
-def test_parallel_test_runner_supports_external_relion_binding():
-    runner = PARALLEL_TEST_RUNNER.read_text()
-    assert 'RELION_BIND_BUILD_DIR="${RELAX_TEST_RELION_BIND_BUILD_DIR:-}"' in runner
-    assert 'export RECOVAR_RELION_BIND_BUILD_DIR="${RELION_BIND_BUILD_DIR}"' in runner
-    assert "if os.environ.get('RECOVAR_RELION_BIND_BUILD_DIR')" in runner
-    assert "from relax.relion_bind import _relion_bind_core" in runner

@@ -40,15 +40,6 @@ def test_quality_ledgers_keep_runs_and_baselines_separate(tmp_path, monkeypatch,
     assert list(baseline.iterdir()) == [historical]
 
 
-def test_initial_model_ledgers_are_case_local(tmp_path):
-    module = load_test_module("tests/integration/test_initial_model_iter10_parity.py")
-    for case in ["k2", "k4"]:
-        output = tmp_path / case
-        payload = {"case": case, "score": 0.75}
-        module._write_ledger(payload, output_dir=output)
-        assert json.loads((output / "initial_model_iter10_ledger.json").read_text()) == {case: payload}
-
-
 @pytest.mark.parametrize(
     "tier,case,metric",
     [

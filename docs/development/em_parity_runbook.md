@@ -22,20 +22,11 @@ During normal iteration, run the whole fast parity tier at most once every 3-4 h
 unless fixing that tier, changing its path, or doing final validation.
 Prefer the directly affected test between tier runs.
 
-For EM-only work, do **not** run repo-wide full/long suites or SPA/ET table
-extraction. Forbidden by default:
-
-- `pixi run test-full`
-- `./scripts/run_tests_parallel.sh long-test`
-- `./scripts/run_tests_parallel.sh full`
-- unfiltered `pytest --long-test`
-- `scripts/extract_regression_tables.py`
-
-If the task includes shared `commands/`, `data_io/`, `output/`, reconstruction
-or heterogeneity behavior, use the applicable shared validation as well. Existing
-user authorization for that scope covers its necessary checks. Ask only if the
-proposed work introduces a new objective not already authorized. Keep shared
-scientific changes separate from EM-only fixes.
+relax has no SPA/ET pipeline suites; `recovar`'s own runners stay in the
+recovar repository. When relax work changes recovar (the root guide's "Changing
+recovar from relax work"), run recovar's applicable qualification in a recovar
+checkout: `pixi run test-full`, `./scripts/run_tests_parallel.sh long-test` and
+`scripts/extract_regression_tables.py`. Never run them for relax-only changes.
 
 The EM long tier is Slurm-only:
 
