@@ -18,7 +18,7 @@ Resolution cells read unmasked / masked. The unmasked value carries its definiti
 
 Matched column:
 
-- **yes**: Same GPU model, box, particles, schedule and flags, and a timing-controlled design (same exclusive node, ABBA or sequential repeats).
+- **yes**: Same GPU model, box, particles, schedule and flags, with both arms in one job on the same node (--gres=gpu:2, one arm per GPU, simultaneous or with swapped GPUs across rounds), or ABBA/sequential repeats on matched hardware. Earlier rows measured on exclusive nodes remain valid.
 - **workload**: Same GPU model, box, particles and schedule, but timing not controlled (separate jobs, nodes or dates).
 - **no**: Workload or schedule differs, or one side has no wall time, so the time ratio is not a speed comparison.
 - **check**: For every row with a ratio, time_check records (a) RELION GPU count and MPI ranks and relax GPU count, (b) relax diagnostic, capture, deterministic-reduction, RELION-state replay and per-iteration dump options, (c) whether each wall is end-to-end including start-up and compilation, (d) the GPU model per job from sacct node and nvidia-smi records.
