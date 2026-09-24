@@ -70,6 +70,40 @@
    "gt_masked_band_auc": null
   },
   {
+   "label": "speedbench_10073_r1",
+   "dataset": "empiar10073_c1",
+   "section": "real",
+   "mask_sha256": "030ad3a85199cfffbfaee1f78d291a365e73452b2f6fbf0e9edf5de5f77d809f",
+   "band": [
+    1,
+    80
+   ],
+   "evidence": {
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speedbench_20260923/scores/10073_r1_masked/masked_fsc.json",
+    "sha256": "8a769199241e6803096485db2611a40d27ae1a714a3c3c950301cf956e376561"
+   },
+   "null_reasons": {},
+   "relion": {
+    "masked_resolution_A": 4.124064,
+    "masked_sustained_resolution_A": 4.092340430769231,
+    "masked_corrected_band_auc": 0.9229716772151898,
+    "unmasked_band_auc": 0.7191539556962024
+   },
+   "relax": {
+    "masked_resolution_A": 4.124064,
+    "masked_sustained_resolution_A": 4.092340430769231,
+    "masked_corrected_band_auc": 0.9225074873417721,
+    "unmasked_band_auc": 0.7187132025316455
+   },
+   "cross_engine_masked_band_auc": {
+    "merged": 0.9972437076969092,
+    "half1": 0.9925834985387737,
+    "half2": 0.992626369875205
+   },
+   "frame_correlation_in_mask": 0.998944393374741,
+   "gt_masked_band_auc": null
+  },
+  {
    "label": "empiar10081_hcn1_relion_reference_14313014",
    "dataset": "empiar10081_hcn1_c4",
    "section": "real",
@@ -126,6 +160,40 @@
     "half2": 0.9226339845276973
    },
    "frame_correlation_in_mask": 0.985134332054397,
+   "gt_masked_band_auc": null
+  },
+  {
+   "label": "hcn1_relax_main_460a763_14364095",
+   "dataset": "empiar10081_hcn1_c4",
+   "section": "real",
+   "mask_sha256": "4003c7dea2f37cb8db7f32f1903d5b82a9b2519af7d1ece0c149fca70c9fb0af",
+   "band": [
+    1,
+    80
+   ],
+   "evidence": {
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/hcn1_seed_band_20260924/main_vs_ref/masked_fsc.json",
+    "sha256": "8879979d69521aef9cd0a60d0a8f1378d64f6db6e9ce39ffa10106579cab192f"
+   },
+   "null_reasons": {},
+   "relion": {
+    "masked_resolution_A": 3.697778,
+    "masked_sustained_resolution_A": 3.6571428571428575,
+    "masked_corrected_band_auc": 0.9118035759493671,
+    "unmasked_band_auc": 0.6953924556962024
+   },
+   "relax": {
+    "masked_resolution_A": 3.697778,
+    "masked_sustained_resolution_A": 3.6571428571428575,
+    "masked_corrected_band_auc": 0.9117193670886075,
+    "unmasked_band_auc": 0.695434341772152
+   },
+   "cross_engine_masked_band_auc": {
+    "merged": 0.9998774896219521,
+    "half1": 0.9998323489337629,
+    "half2": 0.9998346359881511
+   },
+   "frame_correlation_in_mask": 0.9999063291968905,
    "gt_masked_band_auc": null
   },
   {
