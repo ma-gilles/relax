@@ -2102,8 +2102,10 @@ def run_local_bucket_big_jit(
     runtime_logical_current_size,
     config,
     runtime_projector_r_max=None,
-    noise_optics_groups=None,
     *,
+    # Each image's optics group (a traced operand, not a static option); keyword-only
+    # so the mature positional signature ends at runtime_projector_r_max.
+    noise_optics_groups=None,
     mask_mode: str,
     score_with_masked_images: bool,
     apply_integer_pre_shift: bool,

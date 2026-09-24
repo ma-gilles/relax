@@ -35,7 +35,7 @@ def _routed_block(source, start, end):
 
 
 def test_k1_dense_scorer_uses_the_routing_rule_and_no_longer_rejects_scale_groups():
-    source = inspect.getsource(half_scoring._score_half_dense)
+    source = inspect.getsource(half_scoring._score_half_dense_one_shape)
     assert "if preserve_bpref_particle_order or _dense_uses_adaptive_engine(state.adaptive_oversampling, group_ids_k):" in source
     assert "does not accumulate group XA/AA statistics" not in source
     # Oversampling 0 with scale groups is RELION's single pass on the current grid.
@@ -45,7 +45,7 @@ def test_k1_dense_scorer_uses_the_routing_rule_and_no_longer_rejects_scale_group
 
 
 def test_k_class_dense_scorer_routes_scale_groups_at_oversampling_zero():
-    source = inspect.getsource(half_scoring._score_half_dense)
+    source = inspect.getsource(half_scoring._score_half_dense_one_shape)
     gate = "elif _dense_uses_adaptive_engine(state.adaptive_oversampling, group_ids_k):"
     assert source.count(gate) == 1
     routed = _routed_block(source, gate, "pass2_grids = _adaptive_pass2_grids(")
@@ -56,7 +56,7 @@ def test_k_class_dense_scorer_routes_scale_groups_at_oversampling_zero():
 
 def test_k_class_positive_oversampling_never_drops_to_the_direct_engine():
     """RELION keeps two passes under adaptive oversampling even when coarse_size == current_size."""
-    source = inspect.getsource(half_scoring._score_half_dense)
+    source = inspect.getsource(half_scoring._score_half_dense_one_shape)
     gate = "elif _dense_uses_adaptive_engine(state.adaptive_oversampling, group_ids_k):"
     assert "firstiter_coarse_current_size is not None" not in _routed_block(source, "if k_class_enabled:", gate)
     assert "or firstiter_coarse_current_size is not None" not in source

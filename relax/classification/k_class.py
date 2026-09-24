@@ -774,6 +774,11 @@ def _run_sparse_k_class_adaptive_pass2(
 
         fused_t0 = time.time()
         fused_common = dict(common)
+        if (
+            fused_common.pop("optics_group_ids", None) is not None
+            or fused_common.pop("reconstruction_volume_current_size", None) is not None
+        ):
+            raise NotImplementedError("the fused sparse pass 2 has one optics group and one image grid")
         fused_common.pop("relion_fine_mstep_prune", None)
         fused_common.pop("relion_exact_fine_normalized_cc", None)
         fused_common.pop("relion_fine_diff2_fused_ffi", None)

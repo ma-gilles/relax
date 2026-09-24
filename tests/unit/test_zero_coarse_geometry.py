@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from relax.refinement import half_scoring
+
 pytestmark = pytest.mark.unit
 OWNERS = Path(__file__).resolve().parents[2] / "relax"
 
@@ -92,6 +94,9 @@ def test_only_coarse_engine_operand_changes(os, sparse, xhalf, mode, double, ove
         k1_relion_x_half_mstep=xhalf,
         firstiter_score_mode_this_iter=mode,
         diagnostic_float64_pass2=double,
+        # Images on the reference grid: applyScaleDifference is the identity.
+        _projection_rotations=half_scoring._projection_rotations,
+        projection_scale=1.0,
     )
     assert evaluate(calls[0].args[4], **scope) is (native if expected else coarse)
     assert evaluate(calls[0].args[6], **scope) is fine

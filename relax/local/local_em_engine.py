@@ -2786,8 +2786,9 @@ def run_local_em_exact(
                 big_jit_config,
                 local_projection_runtime_radius,
             )
-            if optics_groups_np is not None:
-                big_jit_arguments += (bucket_optics_groups_arg,)
+            big_jit_optics_kwargs = (
+                {} if optics_groups_np is None else {"noise_optics_groups": bucket_optics_groups_arg}
+            )
             big_jit_static_options = dict(
                 n_classes=n_classes,
                 class_segment_rotation_count=(bucket.segment_rotation_count if n_classes > 1 else None),
@@ -2868,6 +2869,8 @@ def run_local_em_exact(
                 unweighted_high_shell_image_power=unweighted_high_shell_image_power,
             )
             if fixed_capacity_whole_boundary_enabled:
+                if big_jit_optics_kwargs:
+                    raise NotImplementedError("the fixed-capacity whole-local executor has one optics group")
                 fixed_capacity_whole_preparation_s += time.time() - big_jit_t0
                 if fixed_capacity_whole_initial_carry is None:
                     fixed_capacity_whole_initial_carry = (
@@ -2937,12 +2940,15 @@ def run_local_em_exact(
                 continue
             if bpref_transaction_queue is not None:
                 big_jit_result = bpref_transaction_queue.run_deferred_scorer(
-                    _invoke_local_bucket_big_jit, big_jit_arguments, big_jit_static_options
+                    _invoke_local_bucket_big_jit,
+                    big_jit_arguments,
+                    {**big_jit_static_options, **big_jit_optics_kwargs},
                 )
             else:
                 big_jit_result = _invoke_local_bucket_big_jit(
                     *big_jit_arguments,
                     **big_jit_static_options,
+                    **big_jit_optics_kwargs,
                 )
             (
                 debug_scores, debug_probs, debug_shifted_score_split,

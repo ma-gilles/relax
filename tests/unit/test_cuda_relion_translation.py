@@ -125,8 +125,8 @@ def test_non_unit_translation_angle_scale_is_forwarded_or_refused_by_every_score
         "relion_translation_angle_scale": 0.5
     }
     for function in (
-        half_scoring._score_half_dense,
-        half_scoring._score_half_local,
+        half_scoring._score_half_dense_one_shape,
+        half_scoring._score_half_local_one_shape,
         local_search_iteration._run_local_search_iteration,
         local_em_engine.run_local_em_exact,
         significance._compute_k_class_significance_batched,

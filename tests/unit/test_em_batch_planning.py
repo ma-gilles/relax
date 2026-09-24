@@ -446,7 +446,7 @@ def test_exact_local_xhalf_projection_cap_preserves_one_exact_neighborhood(monke
 
 
 def test_local_search_outer_batch_sizing_uses_current_size_window():
-    source = inspect.getsource(half_scoring._score_half_local)
+    source = inspect.getsource(half_scoring._score_half_local_one_shape)
 
     assert "current_size_for_batch=cs_for_engine" in source
 
