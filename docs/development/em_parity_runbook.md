@@ -81,7 +81,10 @@ in host memory. `--scratch_dir DIR` copies the referenced stack files to `DIR` a
 start-up, checks the free space first and keeps `--keep_free_scratch` GB free,
 reads from the copy and removes it at exit. On della, pass
 `--scratch_dir /tmp`: `/tmp` inside a job is a private node-local NVMe xfs mount that
-Slurm cleans up. The exported `TMPDIR` above is GPFS, so recovar's implicit
+Slurm cleans up (28 TB on the cryoem H100 nodes, 5.9 TB on the A100 nodes, about 6.5 GB/s
+direct reads and 6,400-6,800 random particle reads per second). The EMPIAR-10097 stack
+lives on `/projects`, which is NFS: about 60 random particle reads per second, and 0.5 GB/s
+for an uncached sequential copy. The exported `TMPDIR` above is GPFS, so recovar's implicit
 `TMPDIR` staging never applies, and relax turns it off anyway unless `--scratch_dir`
 is given. For speed comparisons, pass the same mode to both engines. RELION
 takes the same flags.
