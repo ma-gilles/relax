@@ -53,8 +53,8 @@ value in that audit.
 | `--low_resol_join_halves` | 40 A, fixed | 40 A | 4509 | -1 | no |
 | `--ctf`, `--flatten_solvent`, `--zero_mask`, `--norm --scale` | always on | on | 4450-4463, 4510; 3949-3968, 4028 | off | no |
 | `--trust_ref_size` | reference must match the box | on (resize) | 4171; 3657 | off | not implemented |
-| `--preread_images` ("Pre-read all particles into RAM?") | no option (recovar may pre-read or stage stacks) | No: images stream from the stacks | 4298; 3810 | off | pending: the streaming delegate's `relax/helpers/particle_io.py` (branch `claude/stream-scratch-20260924`) adds it with the GUI default |
-| `--scratch_dir` ("Copy particles to scratch directory") | no option (recovar's implicit `TMPDIR` staging) | empty (no copy) | 4299-4305 | empty | pending, same branch |
+| `--preread_images` ("Pre-read all particles into RAM?") | no option (implicit pre-read of stacks up to 16 GiB) | No: images stream from the stacks | 4298; 3810 | off | yes (1e21746, `relax/helpers/particle_io.py`; also InitialModel, replacing `--lazy`) |
+| `--scratch_dir` ("Copy particles to scratch directory"), `--keep_free_scratch` | no option (recovar's implicit `TMPDIR` staging) | empty (no copy); keep 10 GB free | 4299-4305 | empty; 10 | yes (1e21746) |
 | `--pool`, `--dont_combine_weights_via_disc` | (no option) | 3, on | 4294 | 1, off | no numerical effect |
 | final all-data gridding correction (`griddingCorrect`) | off unless `RELAX_FINAL_ALL_DATA_GRID_CORRECT=1` | always on (not an option) | `backprojector.cpp:2021`, `projector.cpp:595-627` | always on | pending: branch `fix/final-gridding-always-on` makes it always on after qualification (K1 job 14365794) |
 | `--solvent_mask`, `--solvent_correct_fsc`, `--blush`, `--auto_ignore_angles`, `--helix`, `--relax_sym`, `--sigma_ang`, `--fast_subsets`, `--strict_highres_exp`, `--skip_align` | (no option) | off / not passed | 4200-4221; 3695-3734 | off | not implemented |
@@ -88,9 +88,12 @@ without a commit. The fixture manifest carries an `oracle_build_note` on every
 oracle they wrote:
 
 - `em_fixtures/em_symmetry_matrix/k1_c4/relion_ref` was captured with the
-  legacy-order build. Its seeded K1 comparison is invalid until it is recaptured
-  with f2c1a3 (the recapture, Slurm 14367701, goes to a new `relion_ref_f2c1a3`
-  directory; the old copy stays, marked superseded).
+  legacy-order build, so its seeded K1 comparison is invalid. It is superseded
+  by `relion_ref_f2c1a3/` (Slurm 14367701, same command and inputs, f2c1a3
+  build; manifest set `symmetry_k1_c4_relion_f2c1a3`); the old copy stays,
+  marked by `relion_ref.SUPERSEDED.md`. The two captures have identical
+  `rlnCurrentResolution` trajectories (inf, 60.44, 30.22, 30.22, 30.22, 27.2 A
+  for iterations 0-5) and `rlnAveragePmax` within 1e-6.
 - The K4 oracles (`k4_fast_oracles/*`, the K4 100k dispatch oracle, the twelve
   K4 symmetry cases) draw Class3D's expected-accuracy trial particles from the
   libc shuffle; relax draws them from mt19937 (`relion_class3d_trial_layout`).

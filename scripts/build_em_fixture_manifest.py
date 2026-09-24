@@ -237,16 +237,22 @@ _SYMMETRY_CASES = (
 )
 for _case in _SYMMETRY_CASES:
     SETS[f"symmetry_{_case}"] = (
-        f"{FX}/em_symmetry_matrix/{_case}", RUN, [],
+        f"{FX}/em_symmetry_matrix/{_case}", RUN, ["relion_ref_f2c1a3/*"] if _case == "k1_c4" else [],
         f"Symmetry-matrix case {_case}: data + RELION reference as pinned by the frozen Q 427a08bd8 run", ["PROVENANCE.json"],
     )
+SETS["symmetry_k1_c4_relion_f2c1a3"] = (
+    f"{FX}/em_symmetry_matrix/k1_c4/relion_ref_f2c1a3", RUN, [],
+    "K1 C4 symmetry-matrix RELION auto-refine oracle recaptured with the f2c1a3 build (mt19937 order; Slurm 14367701, "
+    "same command/inputs as ../relion_ref); replaces the legacy-order relion_ref for the seeded K1 C4 comparison",
+    ["PROVENANCE.json"],
+)
 
 # Oracles written by a RELION build with the libc particle order (optimiser header
 # "version 5.0.1" without a commit: the MOLBIO module build or the d476e6f dispatch build).
 # relax implements only RELION 5.0.1 f2c1a3's mt19937 order (docs/development/relion_defaults.md).
 _LIBC_ORDER_K1 = (
-    "Captured with the legacy-order module build; its seeded K1 comparison is invalid until "
-    "recaptured with f2c1a3."
+    "relion_ref/ was captured with the legacy-order module build; its seeded K1 comparison is invalid. "
+    "Superseded by relion_ref_f2c1a3/ (set symmetry_k1_c4_relion_f2c1a3, Slurm 14367701)."
 )
 _LIBC_ORDER_KCLASS = (
     "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles "

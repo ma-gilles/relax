@@ -4338,6 +4338,7 @@
     "q427_run_spec_h100/RUN_SPEC.json": [2367, "de276576e0fb166a55006bd127ab5e882ff712e4c8c06add91917321f4794d9e"],
     "q427_run_spec_h100/audit.sbatch": [2793, "4e1121e5d72a9a765945207454599cce4cd2a1c365171dda4e11861316b92414"],
     "q427_run_spec_h100/gpu.sbatch": [2438, "1e1d905bdb54c9c666f5f3634420fb5f7135b41072cbb53dd121c28a92cbe7f0"],
+    "relion_ref.SUPERSEDED.md": [353, "ad29c955b81cb7f36671a022882b941ca1ebaa88504883a78b9641545937f191"],
     "relion_ref/run_it000_data.star": [415098, "45a94ec6e21376af2a7bd41104a642eb4bc1486585bb395796e018a50e30a6a0"],
     "relion_ref/run_it000_half1_class001.mrc": [8389632, "644961c103ad6a762fafcab515432139ae9b45e61b7ee03f5761b5f26c510a6e"],
     "relion_ref/run_it000_half1_class001_angdist.bild": [1083, "989e9a7554ef767b10ebf93ffca2b6db8d64d496b6d01fbf70738a7aa9ffa0b1"],
@@ -4393,7 +4394,7 @@
     "relion_ref/run_it005_optimiser.star": [8097, "2a42986fe1f739cd31999a261dc9671dc4de4ed9bce28232598f6640e4156ee5"],
     "relion_ref/run_it005_sampling.star": [2227, "a965fc35a76e2943f099c903d25debfe25bb7ac0ccbff767badd5e21a40f64ef"]
    },
-   "oracle_build_note": "Captured with the legacy-order module build; its seeded K1 comparison is invalid until recaptured with f2c1a3.",
+   "oracle_build_note": "relion_ref/ was captured with the legacy-order module build; its seeded K1 comparison is invalid. Superseded by relion_ref_f2c1a3/ (set symmetry_k1_c4_relion_f2c1a3, Slurm 14367701).",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/k1_c4/PROVENANCE.json"
@@ -4403,10 +4404,88 @@
       "command": "--i /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_p3_20260921_01/k1_c4_input_preparation_v1/data/particles.star --ref /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_p3_20260921_01/k1_c4_input_preparation_v1/data/reference_init_relion.mrc --o /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_p3_20260921_01/k1_c4_oracle_v1/outputs/run --auto_refine --split_random_halves --sym C4 --particle_diameter 380 --ini_high 60 --firstiter_cc --ctf --flatten_solvent --zero_mask --low_resol_join_halves 40 --norm --scale --healpix_order 1 --offset_range 6 --offset_step 2 --oversampling 1 --pad 2 --random_seed 41001 --auto_iter_max 5 --pool 1 --gpu 0:0 --j 4",
       "random_seed": 41001,
       "version": "RELION optimiser; version 5.0.1"
+     },
+     "relion_ref_f2c1a3/run_it000_optimiser.star": {
+      "command": "--i /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/k1_c4/data/particles.star --ref /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/k1_c4/data/reference_init_relion.mrc --o /scratch/gpfs/CRYOEM/gilleslab/em_work/relax_defaults_20260924/k1c4_recapture_f2c1a3/outputs/run --auto_refine --split_random_halves --sym C4 --particle_diameter 380 --ini_high 60 --firstiter_cc --ctf --flatten_solvent --zero_mask --low_resol_join_halves 40 --norm --scale --healpix_order 1 --offset_range 6 --offset_step 2 --oversampling 1 --pad 2 --random_seed 41001 --auto_iter_max 5 --pool 1 --gpu 0:0 --j 4",
+      "random_seed": 41001,
+      "version": "RELION optimiser; version 5.0.1-commit-f2c1a3"
      }
     }
    },
    "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/k1_c4"
+  },
+  "symmetry_k1_c4_relion_f2c1a3": {
+   "description": "K1 C4 symmetry-matrix RELION auto-refine oracle recaptured with the f2c1a3 build (mt19937 order; Slurm 14367701, same command/inputs as ../relion_ref); replaces the legacy-order relion_ref for the seeded K1 C4 comparison",
+   "files": {
+    "PROVENANCE.json": [17203, "caf77fcac8c1bf7fcbb9eabddca24de13fd970c24c49bc1b39d4ba34ef740ec5"],
+    "run_it000_data.star": [415098, "45a94ec6e21376af2a7bd41104a642eb4bc1486585bb395796e018a50e30a6a0"],
+    "run_it000_half1_class001.mrc": [8389632, "4e26650b0ff481ca88fe2216a45a4c9822c4796442953a97f8484dac897548ff"],
+    "run_it000_half1_class001_angdist.bild": [1083, "989e9a7554ef767b10ebf93ffca2b6db8d64d496b6d01fbf70738a7aa9ffa0b1"],
+    "run_it000_half1_model.star": [75275, "ce67a69c309775af90e893ce13db88e215d54cbf8a75dd23afda0576a0aaf28c"],
+    "run_it000_half2_class001.mrc": [8389632, "4e26650b0ff481ca88fe2216a45a4c9822c4796442953a97f8484dac897548ff"],
+    "run_it000_half2_class001_angdist.bild": [1083, "989e9a7554ef767b10ebf93ffca2b6db8d64d496b6d01fbf70738a7aa9ffa0b1"],
+    "run_it000_half2_model.star": [75275, "4206986f8c7c514e99e3776724d7626e9af0ddc1c168a33669173e29f843a868"],
+    "run_it000_optimiser.star": [8037, "978c6ba627c688dc11ee2c42da2ce719fdbf1bf52795d5f65ab96ae85b2e5d57"],
+    "run_it000_sampling.star": [1255, "9151a36248a49e3f5fd3f354cabadb9a36ecebe4afd63aef99af60a9c1b29fe0"],
+    "run_it001_data.star": [463711, "1f3dea2f360927113f135f7ae929a915ed3d04e6c94de7d2d0aea6afd43908bb"],
+    "run_it001_half1_class001.mrc": [8389632, "9a958e60501451248cd950e9108f2b4601012140a4a2ed5d2a17451217869a4c"],
+    "run_it001_half1_class001_angdist.bild": [1077, "34ba128983ad8ee36f8a301337f0d5c6bedcb761f8ca148d95ccfc92bb61c988"],
+    "run_it001_half1_model.star": [75275, "1ed0425badc45cb4458b643def3b21102c67e3b29f28a928ea21482b1679c805"],
+    "run_it001_half2_class001.mrc": [8389632, "8b5244ccfd9dd9fc3982cbbf3211a8272ede041e8b2e91b05ac09abf0404a479"],
+    "run_it001_half2_class001_angdist.bild": [1046, "844c913cff8cc2426aa24874e7b782c28fa0812c27945524b4b17d5e90fb997f"],
+    "run_it001_half2_model.star": [75275, "66091aa04e633b5b4af301081eb3eaed200b94436a98601ad309f3283113311d"],
+    "run_it001_optimiser.star": [8037, "6e89667e9ab5d84d00825fc5c22f8c71aebd23e97b69d4c38d9951123839b922"],
+    "run_it001_sampling.star": [1255, "55cfc0d3ac89eedd0ec96f2cc0b63b35863c444db2ddae64a44de2239fc501c8"],
+    "run_it002_data.star": [463711, "a9fb987db4b1b5ca89e8dfb144b88b9a38bdc3c6a153c75f51eed22990a7a9b3"],
+    "run_it002_half1_class001.mrc": [8389632, "4559c473c2c4450981b806ec91d3e8b16dfd89c4f157698618c9f1ed806d879a"],
+    "run_it002_half1_class001_angdist.bild": [1052, "12709823ab5771b6d1449be3b162b98dca8bf64bc35f67c4f317f2aa97fc23eb"],
+    "run_it002_half1_model.star": [76162, "7965a75e9bf2004e66df7fbc2e8d5a05e937975c018775f12b6725c38bc6fc6c"],
+    "run_it002_half2_class001.mrc": [8389632, "4913b49c588489135688002a260e7f59c208b0dd82240796a2f75e40ea40a12f"],
+    "run_it002_half2_class001_angdist.bild": [1053, "7a25b1a2adceeba3ad4dec74a4c1b5a192627a119eaf0e35cd3fe3702f64931c"],
+    "run_it002_half2_model.star": [75275, "f1343fc0f19ec8c05d837b55c090db09a6de49ba9ea922bccbd113520d0b018a"],
+    "run_it002_optimiser.star": [8037, "c337322017830a1d9b4463186544bad03f09af43c879a6e4388d727c3efb7c83"],
+    "run_it002_sampling.star": [1255, "a48d187f6a0b090881038f6bd2d52d90b5476fbe0cf28b3a2481f048d4e7a94c"],
+    "run_it003_data.star": [463711, "be44e55b4177d99401216b5d058ae5d5101345819f7f1129ba243d3485f695ff"],
+    "run_it003_half1_class001.mrc": [8389632, "1611af8bf7144d87cb4b81f871e04c21bf457ec95b375479814b5e5f42fbf20a"],
+    "run_it003_half1_class001_angdist.bild": [1051, "14967c958c479b66f3766d0b23445b09cc74d701ed153fbacecc9e27f5441e75"],
+    "run_it003_half1_model.star": [76162, "e08760c08692f3550eeb9bb8e31d0d4936c7026e298248ddf90fcc381b110955"],
+    "run_it003_half2_class001.mrc": [8389632, "a1474a255265da976694ff07918df407901aadba0669dac19db0a05f6f65f202"],
+    "run_it003_half2_class001_angdist.bild": [1043, "0c38af2b29e6aab5daa36119b5ee3e0aadc828c1f52f718a6df8f5ca35a0a6a6"],
+    "run_it003_half2_model.star": [75275, "6764c0521d04c1401013374901358a66f5e25cc6a8e4e8e9aa332c146b3564cc"],
+    "run_it003_optimiser.star": [8037, "34cc9451b36693a61d665be4c44f1d3f8d98503ca3a027c9655649395ce227cf"],
+    "run_it003_sampling.star": [1255, "7a8e91e503aa23e116b2aeacff99a7644b5ca301a7ba945f478ccad35ea7ee23"],
+    "run_it004_data.star": [463711, "68f2fd9150f1dae876fb1c18a283e2f7dae23c4319efa27f2c0a6a0e7292c635"],
+    "run_it004_half1_class001.mrc": [8389632, "df320177389232f400f4df39e9e5fb5788bb00cbf2eba90ba939d0d2320f3e6f"],
+    "run_it004_half1_class001_angdist.bild": [1049, "3ebc7e6795aa9ee07f585e00f6fde5c812fbf5c6086b2cc259f824dce9c84dab"],
+    "run_it004_half1_model.star": [76162, "9d606948fd0fa8a3dd8ed61de75b0db3b5d2e6ba3049249edb67978591d73183"],
+    "run_it004_half2_class001.mrc": [8389632, "fffed45641de122f1e0f9c2b4adc31fd03cf6b7a08025bb59ec603e48a19842c"],
+    "run_it004_half2_class001_angdist.bild": [1054, "085ba4732cc1be9f4b93a1b882a5c3041980e3eb63ab26181fba71497f8098e5"],
+    "run_it004_half2_model.star": [75275, "c8869788c526b25c36aedc004b7f9eb0d3cbbaa49f1ff89862ad7453716c6e86"],
+    "run_it004_optimiser.star": [8037, "14d7ef3eb525a533b879e53708ab13387884678d163473de836a92c3a9e4c047"],
+    "run_it004_sampling.star": [1255, "c2787921402ae73149a0e30ede68ef9fae93432f09829536e84fa9e81cfd01c8"],
+    "run_it005_data.star": [463711, "bd7f5c99c7f8fcd1cae9f37d221b566e0af8f9cd8ee86e888414e2dce3390c3b"],
+    "run_it005_half1_class001.mrc": [8389632, "3c9fe31af652143034dc7b01bdb7b51980796d582c8b629da96151c1490798aa"],
+    "run_it005_half1_class001_angdist.bild": [4278, "3c490842d08283eda6931f9540179d95ea80b30380cc277bb1e0755226d32358"],
+    "run_it005_half1_model.star": [76666, "9abb26e895e8f07de40a7e180b90b291e48dcc8054b87aab286a7a07f510314a"],
+    "run_it005_half2_class001.mrc": [8389632, "eb47c481d39526886f2033a8f9fdc5a435435698e8d37d86472e15d2d8d40e21"],
+    "run_it005_half2_class001_angdist.bild": [4245, "99334261ed28ea3e05e9e316e0b041569186ff78f013dd1c508417627b6b7522"],
+    "run_it005_half2_model.star": [75779, "ab280ccf7ae65229e79f288d60f98d47080f90449ff8ea60c87805bb170e733a"],
+    "run_it005_optimiser.star": [8037, "b5c233c9f04685c49a82ff17b7a55ffd03b46c81ef4f7b82895127379cebd8f1"],
+    "run_it005_sampling.star": [2227, "a965fc35a76e2943f099c903d25debfe25bb7ac0ccbff767badd5e21a40f64ef"]
+   },
+   "provenance": {
+    "generation_records": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/k1_c4/relion_ref_f2c1a3/PROVENANCE.json"
+    ],
+    "relion_optimiser_headers": {
+     "run_it000_optimiser.star": {
+      "command": "--i /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/k1_c4/data/particles.star --ref /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/k1_c4/data/reference_init_relion.mrc --o /scratch/gpfs/CRYOEM/gilleslab/em_work/relax_defaults_20260924/k1c4_recapture_f2c1a3/outputs/run --auto_refine --split_random_halves --sym C4 --particle_diameter 380 --ini_high 60 --firstiter_cc --ctf --flatten_solvent --zero_mask --low_resol_join_halves 40 --norm --scale --healpix_order 1 --offset_range 6 --offset_step 2 --oversampling 1 --pad 2 --random_seed 41001 --auto_iter_max 5 --pool 1 --gpu 0:0 --j 4",
+      "random_seed": 41001,
+      "version": "RELION optimiser; version 5.0.1-commit-f2c1a3"
+     }
+    }
+   },
+   "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/k1_c4/relion_ref_f2c1a3"
   }
  }
 }
