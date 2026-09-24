@@ -730,7 +730,7 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling):
     # stream for the fixture's --random_seed. Keep this autonomous cold-start
     # guard separate from replay because it still bootstraps model/noise/tau/
     # sigma state from raw inputs rather than injecting per-iter RELION state.
-    _assert_fsc_gate(f"k1_coldstart_{start}", output_dir)
+    _assert_fsc_gate(f"{case}_{start}", output_dir)
     # Pre-A.1 cold-start: iter-3 |ΔPmax| was ~22% (sigma_offset stuck at 10 Å).
     # Post-A.1: 5-12% depending on perturbation drift. Threshold 0.15 catches
     # full A.1 regression (would jump back to 22%).
