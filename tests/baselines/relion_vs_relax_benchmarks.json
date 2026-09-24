@@ -218,7 +218,7 @@
     "Standalone from relion_refine's inputs on both sides (relax --relion-half-sets-from-input, --relion-particle-shuffle mt19937); production settings (default BFC allocator, EM XLA defaults, no timing, capture or replay).",
     "Image I/O: preread on both arms (RELION --preread_images; relax full host read, lazy=False).",
     "Separate jobs on two exclusive H100 nodes run concurrently (della-h19g4, della-h20g4), so matched is workload, not timing-controlled.",
-    "The RELION arm took 42,282 s for 21 iterations, 3.5x the 2026-08-28 reference RELION run of the same dataset (12,012 s, job 13093155); not investigated, so the ratio is not a settled speed figure.",
+    "PROVISIONAL timing: the RELION arm ran with --preread_images and took 42,282 s for 21 iterations, 3.5x the 2026-08-28 reference RELION run of the same dataset, binary and flags without preread (12,012 s, job 13093155). The speed work found every RELION --preread_images arm 1.7-5.2x slower per iteration than its no-preread reference (10073: 1640 vs 315 s per iteration) and is confirming the cause (job 14384984, preread vs --scratch_dir). The 0.72x ratio is not a speed figure; the replacement pairs run both arms with --scratch_dir /tmp.",
     "Repeat r2 and the resident arm were cancelled for queue load; the paired 2-GPU replacement 14373879 was also cancelled."
    ],
    "null_reasons": {
