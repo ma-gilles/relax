@@ -212,8 +212,8 @@ def test_reference_matches_xla_semantics(shape, variant):
 
 
 def _gpu_library_has(symbol):
-    cb._ensure_ffi()
-    return hasattr(cb._get_lib(), symbol)
+    em_cuda_kernels._ensure_ffi()
+    return hasattr(em_cuda_kernels._get_lib(), symbol)
 
 
 @pytest.mark.gpu

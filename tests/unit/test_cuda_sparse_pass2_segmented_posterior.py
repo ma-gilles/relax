@@ -42,8 +42,8 @@ def make_scores(shape, seed, *, all_inf_row=False, nan=False):
 
 
 def _gpu_library_has(symbol):
-    cb._ensure_ffi()
-    return hasattr(cb._get_lib(), symbol)
+    em_cuda_kernels._ensure_ffi()
+    return hasattr(em_cuda_kernels._get_lib(), symbol)
 
 
 def _require_segmented_gpu():
