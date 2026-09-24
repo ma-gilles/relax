@@ -749,6 +749,56 @@
      "model_star": ""
     }
    ]
+  },
+  {
+   "K": 1,
+   "reference": {
+    "kind": "gt",
+    "frame": "relion",
+    "paths": [
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_noise1_50k_256_normalized/reference_gt_relion.mrc"
+    ]
+   },
+   "mask": {
+    "key": "noise1_k1_50k256_c1",
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_noise1_50k_256_normalized/masks/noise1_k1_50k256_c1/noise1_k1_50k256_c1_mask.mrc",
+    "sha256": "afaa22523e9f2cc16b794adc9f50e7788ea03c52f561d8f3b553be5d150391cb"
+   },
+   "id": "noise1_50k_k1_main_rep",
+   "arms": [
+    {
+     "label": "relion_main_pair",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p2_noise1_50k_k1_s29/relion/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p2_noise1_50k_k1_s29/relion/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_main_pair",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p2_noise1_50k_k1_s29/relax_out/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p2_noise1_50k_k1_s29/relax_out/run_it200_model.star"
+    },
+    {
+     "label": "relion_s29_20260919",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/noise1_50k_k1_relion/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/noise1_50k_k1_relion/output/run_it200_model.star"
+    },
+    {
+     "label": "relion_repeat_s29",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p2r_noise1_50k_relion_repeat_s29/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p2r_noise1_50k_relion_repeat_s29/output/run_it200_model.star"
+    }
+   ]
   }
  ]
 }

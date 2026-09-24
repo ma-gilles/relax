@@ -1769,7 +1769,7 @@
     "aggregate": null,
     "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
     "alignment": "rigid (HEALPix-2 seed + x-mirror, continuous rotation+translation fit, sign +1); cubic apply. Arm vs reference: arm consensus fitted to the reference mean. Pair: b consensus fitted directly onto a's reference-frame consensus.",
-    "score_json": "docs/benchmarks/initialmodel_scores/noise1_50k_k1_main.json",
+    "score_json": "docs/benchmarks/initialmodel_scores/noise1_50k_k1_main_rep.json",
     "relion": {
      "run": "relion_main_pair",
      "fsc_auc": 0.3413,
@@ -1789,9 +1789,9 @@
      "masked_fsc_auc": 0.9928
     },
     "relion_repeat": {
-     "pair": "RELION seed 29 in this pair vs the identical 2026-09-19 matrix command (job 14148540): same-seed repeat",
-     "fsc_auc": 0.9809,
-     "masked_fsc_auc": 0.9943
+     "pair": "RELION seed 29 in this pair vs its same-command repeat (job 14382148, 1358 s, same build and flags, 2026-09-24)",
+     "fsc_auc": 0.9768,
+     "masked_fsc_auc": 0.9933
     }
    },
    "gt": null,
@@ -1809,10 +1809,10 @@
    },
    "notes": [
     "Paired run on relax main: both arms at the same time in one two-GPU job, same seed, schedule, sampling and diameter; both pre-read the particle stack.",
+    "Three same-command RELION runs (this pair, repeat 14382148, 2026-09-19 matrix 14148540): reference FSC-AUC 0.3412508-0.3413158, relax 0.3413152 inside; masked 0.7552-0.7560, relax 0.7554 inside. RELION-vs-RELION X-AUC 0.9768-0.9820 (masked 0.9933-0.9954); relax vs the three RELION runs 0.9718 / 0.9893 / 0.9844 (masked 0.9928 / 0.9967 / 0.9952): above every RELION pair against two of the three runs, 0.005 below the lowest RELION pair against the paired run.",
     "Earlier pre-split run (recovar 25cc4475b, 2026-09-19, separate jobs, profiling on): relax 3284 s vs RELION 1587 s (2.07x); reference FSC-AUC 0.3413 both, X-AUC 0.9798/0.9950.",
-    "Magnitudes: unmasked reference FSC-AUC relax 0.3413152 vs RELION 0.3413154 (pair) / 0.3413158 (2026-09-19), 2e-7 below the lower RELION run; masked relax 0.7554 lies between the RELION runs (0.7552/0.7560). X-AUC of relax against the 2026-09-19 RELION run is 0.9844/0.9952, above the RELION pair 0.9809/0.9943; against the paired RELION run it is 0.9718/0.9928, below it. Open by the repeat rule; one more RELION repeat would settle it.",
-    "All scored runs (FSC-AUC unmasked / masked): relion_main_pair vs reference 0.3413 unmasked / 0.7552 masked; relax_main_pair vs reference 0.3413 unmasked / 0.7554 masked; relion_s29_20260919 vs reference 0.3413 unmasked / 0.7560 masked; relion_main_pair vs relax_main_pair 0.9718 / 0.9928; relion_main_pair vs relion_s29_20260919 0.9809 / 0.9943; relax_main_pair vs relion_s29_20260919 0.9844 / 0.9952.",
-    "relax minus RELION reference FSC-AUC: +0.0000 unmasked, +0.0002 masked; relax-vs-RELION X-AUC 0.9718/0.9928 is below the RELION repeat pair 0.9809/0.9943; open; the 2 RELION runs span reference FSC-AUC 0.3413-0.3413 (masked 0.7552-0.7560), relax 0.3413 is below (masked 0.7554, inside); the deficit is outside the RELION runs' spread, so it is open."
+    "All scored runs (FSC-AUC unmasked / masked): relion_main_pair vs reference 0.3413 unmasked / 0.7552 masked; relax_main_pair vs reference 0.3413 unmasked / 0.7554 masked; relion_s29_20260919 vs reference 0.3413 unmasked / 0.7560 masked; relion_repeat_s29 vs reference 0.3413 unmasked / 0.7555 masked; relion_main_pair vs relax_main_pair 0.9718 / 0.9928; relion_main_pair vs relion_s29_20260919 0.9809 / 0.9943; relion_main_pair vs relion_repeat_s29 0.9768 / 0.9933; relax_main_pair vs relion_s29_20260919 0.9844 / 0.9952; relax_main_pair vs relion_repeat_s29 0.9893 / 0.9967; relion_s29_20260919 vs relion_repeat_s29 0.9820 / 0.9954.",
+    "relax minus RELION reference FSC-AUC: +0.0000 unmasked, +0.0002 masked; relax-vs-RELION X-AUC 0.9718/0.9928 is below the RELION repeat pair 0.9768/0.9933; open; the 3 RELION runs span reference FSC-AUC 0.3413-0.3413 (masked 0.7552-0.7560), relax 0.3413 is inside (masked 0.7554, inside)."
    ],
    "null_reasons": {},
    "evidence": {
@@ -1820,7 +1820,7 @@
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p2_noise1_50k_k1_s29",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919"
     ],
-    "score_json": "docs/benchmarks/initialmodel_scores/noise1_50k_k1_main.json"
+    "score_json": "docs/benchmarks/initialmodel_scores/noise1_50k_k1_main_rep.json"
    },
    "mask": {
     "dataset": "noise1_k1_50k256_c1",
