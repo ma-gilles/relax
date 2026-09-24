@@ -35,7 +35,8 @@ class InitialModelDefaults:
     do_solvent: bool = True
     do_zero_mask: bool = True
     do_ctf_correction: bool = True
-    random_seed: int = 0
+    # relion_refine's --random_seed default: -1 takes the time (the GUI passes none).
+    random_seed: int = -1
     healpix_order: int = 1
     oversampling: int = 1
     offset_range_px: float = 6.0

@@ -14,7 +14,7 @@ pytestmark = pytest.mark.unit
 
 @pytest.mark.parametrize('option', ['--initial-noise-bootstrap', '--initial_noise_cache_dir'])
 def test_cli_has_no_other_noise_estimator(monkeypatch, capsys, option):
-    monkeypatch.setattr(sys, 'argv', ['run_full_refinement.py', option, 'pipeline'])
+    monkeypatch.setattr(sys, 'argv', ['run_full_refinement.py', '--data_dir', 'd', '--output', 'o', option, 'pipeline'])
     with pytest.raises(SystemExit):
         driver._parse_args()
     assert 'unrecognized arguments' in capsys.readouterr().err
@@ -33,7 +33,7 @@ def test_parsed_defaults_never_enable_full_state_replay(monkeypatch):
         raise Parsed
 
     monkeypatch.setattr(argparse.ArgumentParser, 'parse_args', stop_after_parse)
-    monkeypatch.setattr(sys, 'argv', ['run_full_refinement.py'])
+    monkeypatch.setattr(sys, 'argv', ['run_full_refinement.py', '--data_dir', 'd', '--output', 'o'])
     with pytest.raises(Parsed):
         driver.main()
 

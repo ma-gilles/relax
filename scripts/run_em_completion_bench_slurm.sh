@@ -1084,6 +1084,8 @@ set +e
   --perturb_replay_relion_dir "${K4_RELION_DIR}" \\
   --relion-dispatch-schedule "${K4_RELION_DISPATCH_SCHEDULE}" \\
   --particle_diameter_ang 380 \\
+  --no-firstiter_cc \\
+  --no-apply-initial-lowpass \\
   --tau2_fudge 4.0 \\
   --save_intermediates_dir "\${OUTPUT_DIR}/intermediates" \\
   --save_intermediates_skip_unregularized \\

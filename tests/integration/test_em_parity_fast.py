@@ -540,6 +540,7 @@ K1_COLDSTART_START_ARGS = {
     "relion_seeded_debug": [
         "--relion_half_sets",
         str(K1_FIXTURE_DIR / "particles_with_halfsets.star"),
+        "--no-apply-initial-lowpass",  # this debug start's pre-GUI-default setting
     ],
 }
 
@@ -587,6 +588,7 @@ def test_em_parity_fast_k1_coldstart(tmp_path, start):
         "0.5",  # match RELION's --perturb 0.5
         "--seed",
         str(K1_RELION_RANDOM_SEED),  # drives SamplingPerturbation like RELION's --random_seed
+        "--no-firstiter_cc",  # the 5k oracle ran without --firstiter_cc
         "--init_resolution",
         "30.0",
         "--image_batch_size",
@@ -732,6 +734,11 @@ def test_em_parity_fast_k1_perturbreplay(tmp_path):
         "0.5",
         "--perturb_replay_relion_dir",
         str(K1_RELION_DIR),
+        # Pinned to this case's pre-GUI-default settings.
+        "--no-firstiter_cc",
+        "--no-apply-initial-lowpass",
+        "--image-fourier-backend",
+        "host_numpy",
         "--init_resolution",
         "30.0",
         "--image_batch_size",
@@ -845,6 +852,8 @@ def test_em_parity_fast_kclass_coldstart(tmp_path):
         str(relion_dir),
         *dispatch_args,
         "--firstiter_cc",
+        # Pinned to this case's pre-GUI-default setting: no start-up low-pass.
+        "--no-apply-initial-lowpass",
         "--init_resolution",
         "30.0",
         "--image_batch_size",
@@ -960,6 +969,8 @@ def test_em_parity_fast_kclass_nonadaptive_replay(tmp_path):
         str(relion_dir),
         *dispatch_args,
         "--firstiter_cc",
+        # Pinned to this case's pre-GUI-default setting: no start-up low-pass.
+        "--no-apply-initial-lowpass",
         "--init_resolution",
         "30.0",
         "--image_batch_size",
@@ -1109,6 +1120,8 @@ def test_em_parity_fast_kclass_strict_oversample_coldstart(tmp_path):
         str(relion_dir),
         *dispatch_args,
         "--firstiter_cc",
+        # Pinned to this case's pre-GUI-default setting: no start-up low-pass.
+        "--no-apply-initial-lowpass",
         "--init_resolution",
         "30.0",
         "--image_batch_size",

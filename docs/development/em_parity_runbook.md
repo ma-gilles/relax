@@ -117,11 +117,13 @@ text about column names renamed in 3.1, from `motioncorr_runner.cpp` and
 half-set orders in `Experiment::randomiseParticlesOrder` (`src/exp_model.cpp`)
 with `std::mt19937` seeded by `random_seed + iter`, followed by a stable sort
 on numeric optics group. Commit `f2c1a38` is where that replaced the older
-libc `rand` / `std::random_shuffle` path. RECOVAR reproduces both, selected by
-`--relion-particle-shuffle {auto,legacy,mt19937}`. `auto` (the default) is
-`mt19937` for the standalone K1 start and `legacy` for starts given RELION
-output, whose oracle may predate the change. Any run compared against the 5.0.1
-oracle must use `mt19937`: with `legacy` the half-set split differs from the oracle's, so
+libc `rand` / `std::random_shuffle` path. relax uses `mt19937` by default
+(`--relion-particle-shuffle`). The MOLBIO module build
+(`relion/5.0.1/gcc-11.5.0-gpu`, whose STAR headers say `version 5.0.1`
+without a commit) still has the libc path, so oracles written by it
+(`em_fixtures/k4_fast_oracles/*`, the K4 100k dispatch oracle, the symmetry
+matrix) are in the older order. With the wrong order the processing order
+and the expected-accuracy trial particles differ from the oracle's, so
 per-particle and half-map comparisons against it do not mean what they appear
 to. This is measurable, not theoretical. On EMPIAR-10073 the legacy ordering
 gives an unmasked resolution of 6.650052 A while the modern ordering gives
@@ -171,17 +173,20 @@ map and the values on the RELION command line. For a real-data run the input
 STAR may be a RELION InitialModel/VDAM `run_itNNN_data.star`, since RELION's
 own auto-refine starts from it. The RELION auto-refine run is read only
 afterwards, for comparison. Map the RELION command to `run_full_refinement.py`
-as follows. A fresh K1 run given no RELION output is standalone by default:
-the first three rows are the defaults and need not be passed.
+as follows. A fresh K1 run given no RELION output is standalone by default.
+relax's defaults are RELION's start-up methods and the RELION GUI's job
+defaults ([audit](relion_defaults.md)), not relion_refine's command-line
+defaults, so pass every value of the RELION command being reproduced,
+including the `--no-...` forms where that command omits a GUI option.
 
 | RELION | relax |
 | --- | --- |
-| `--split_random_halves --random_seed S` | `--relion-half-sets-from-input --seed S` (input `rlnRandomSubset` if every row has one, else glibc `srand(S)`/`rand()%2+1` in micrograph order; groups from `rlnGroupName`/micrograph) |
-| 5.0.1 f2c1a3 particle order | `--relion-particle-shuffle mt19937` |
+| `--split_random_halves --random_seed S` | `--seed S`; the half sets from the input are the default (input `rlnRandomSubset` if every row has one, else glibc `srand(S)`/`rand()%2+1` in micrograph order; groups from `rlnGroupName`/micrograph). Without `--seed` the time is used, as RELION does |
+| 5.0.1 f2c1a3 particle order | default (mt19937) |
 | start-up noise from the images | default (the only estimator) |
-| `--particle_diameter D` | `--particle_diameter_ang D` |
-| `--ini_high H` | `--apply-initial-lowpass --init_resolution H` |
-| `--firstiter_cc` | `--firstiter_cc` |
+| `--particle_diameter D` | `--particle_diameter_ang D` (default 200, the GUI's) |
+| `--ini_high H` / no `--ini_high` | `--init_resolution H` (the low-pass is on by default) / `--no-apply-initial-lowpass` |
+| `--firstiter_cc` / none | default / `--no-firstiter_cc` |
 | `--healpix_order`, `--offset_range`, `--offset_step` | same names with underscores |
 | `--oversampling 1` / `0` | `--adaptive_oversampling 1` / `0` |
 | `--tau2_fudge` (auto-refine default 1) | `--tau2_fudge 1.0` |
@@ -192,7 +197,7 @@ the first three rows are the defaults and need not be passed.
 Start-up norm corrections come from the input `rlnNormCorrection` and tau2
 and `data_vs_prior` from `initialiseDataVersusPrior` on the low-passed
 reference (see [the start-up state](../math/relion_refinement_algorithm.md)).
-`--image-fourier-backend relion_cuda` is required by the fresh K1 defaults.
+`--image-fourier-backend relion_cuda`, which the fresh K1 start requires, is the K1 default.
 
 Harness entry points: `K1_TRAJECTORY_MODE=standalone` (the default) in
 `scripts/run_em_completion_bench_slurm.sh`, the `[standalone]` cases of

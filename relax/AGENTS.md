@@ -96,9 +96,10 @@ GUI excluded**, before new-engine development. Root instructions also apply.
 - Before RELION comparisons, captures or builds read the
   [oracle rules](../docs/development/em_parity_runbook.md#relion-oracle-rules).
   The oracle is RELION 5.0.1 throughout; that section pins the source commit,
-  the dump build and the reference binaries. Any comparison against it must use
-  `--relion-particle-shuffle mt19937`, because the CLI default reproduces the
-  older half-set ordering and silently breaks per-particle correspondence.
+  the dump build and the reference binaries. relax's defaults are RELION's
+  start-up methods and the RELION GUI's job defaults
+  ([audit table](../docs/development/relion_defaults.md)); a run reproducing a
+  particular RELION command passes that command's values explicitly.
   Coordinate the shared RELION source/build; never rebuild pinned binaries or
   create another clone. Pin source, patched build, command, metadata, seed,
   subset/MPI layout and hardware. Restarted per-half captures fail closed unless

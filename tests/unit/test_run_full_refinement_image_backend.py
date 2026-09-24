@@ -23,12 +23,13 @@ def _image_backend_argument() -> ast.Call:
     raise AssertionError("missing --image-fourier-backend parser option")
 
 
-def test_image_fourier_backend_cli_preserves_host_default_and_typed_choices():
+def test_image_fourier_backend_cli_defaults_by_job_type_with_typed_choices():
+    # auto resolves to relion_cuda for K=1 and host_numpy for Class3D (_resolve_relion_gui_defaults).
     argument = _image_backend_argument()
     keywords = {keyword.arg: keyword.value for keyword in argument.keywords}
 
-    assert ast.literal_eval(keywords["default"]) == "host_numpy"
-    assert ast.literal_eval(keywords["choices"]) == ("host_numpy", "jax_gpu", "relion_cuda")
+    assert ast.literal_eval(keywords["default"]) == "auto"
+    assert ast.literal_eval(keywords["choices"]) == ("auto", "host_numpy", "jax_gpu", "relion_cuda")
 
 
 def test_image_fourier_backend_cli_is_forwarded_to_refinement():

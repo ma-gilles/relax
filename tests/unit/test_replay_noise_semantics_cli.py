@@ -58,7 +58,7 @@ def _slot0_noise(tmp_path, *, semantics, init_relion_iteration):
 
 
 def test_replay_noise_semantics_default_is_continuation():
-    args = run_full_refinement._parse_args([])
+    args = run_full_refinement._parse_args(["--data_dir", "data", "--output", "out"])
     assert args.replay_noise_semantics == "continuation"
 
 

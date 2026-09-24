@@ -1607,8 +1607,8 @@ def _resolve_optimizer_random_seed(explicit_seed, relion_optimiser_star):
 
     An explicit CLI seed always wins.  For strict-parity runs whose RELION
     optimiser was explicitly supplied, inherit ``_rlnRandomSeed`` when the
-    CLI seed is omitted.  Ordinary standalone runs retain the historical
-    deterministic default of 42.
+    CLI seed is omitted.  Otherwise relion_refine's default ``-1`` takes the
+    time (``MlOptimiser::initialiseWorkLoad``, ml_optimiser.cpp:2827).
     """
     if explicit_seed is not None:
         return int(explicit_seed), "explicit CLI"
@@ -1621,7 +1621,7 @@ def _resolve_optimizer_random_seed(explicit_seed, relion_optimiser_star):
         if relion_seed is not None:
             return int(relion_seed), f"RELION optimiser {Path(relion_optimiser_star).resolve()}"
 
-    return 42, "standalone default"
+    return int(time.time()), "RELION default -1: the time"
 
 
 def _explicit_relion_optimiser_for_seed(args):
@@ -1651,6 +1651,19 @@ def _effective_perturb_seed(args):
         return None if int(explicit) < 0 else int(explicit)
     seed = getattr(args, "seed", None)
     return None if seed is None else int(seed)
+
+
+def _resolve_relion_gui_defaults(args) -> None:
+    """Resolve the defaults that depend on the job type (Refine3D K=1 or Class3D K>1)."""
+    k1 = int(args.n_classes) == 1
+    if args.max_iter is None:
+        # Auto-refine runs to convergence with nr_iter = --auto_iter_max (999);
+        # the Class3D GUI runs 25 iterations.
+        args.max_iter = 999 if k1 else 25
+    if args.image_fourier_backend == "auto":
+        args.image_fourier_backend = "relion_cuda" if k1 else "host_numpy"
+    if args.apply_initial_lowpass is None:
+        args.apply_initial_lowpass = args.frozen_boundary_dir is None
 
 
 def _resolve_standalone_k1_start(args) -> None:
@@ -1701,6 +1714,10 @@ def _write_relion_start_particle_table(our_star, input_star, *, seed, output_dir
     return path
 
 
+# pipeline_jobs.cpp:4191 (Refine3D), 3697 (Class3D): "Mask diameter (A)" 200.
+RELION_GUI_PARTICLE_DIAMETER_ANG = 200.0
+
+
 def _maybe_apply_relion_image_mask(ds, args, *, sealed_optimiser_star=None):
     """Override the dataset scoring mask with RELION's particle-diameter mask."""
     explicit_particle_diameter = getattr(args, "particle_diameter_ang", None)
@@ -1731,14 +1748,10 @@ def _maybe_apply_relion_image_mask(ds, args, *, sealed_optimiser_star=None):
         optimiser_star = "explicit CLI"
     else:
         optimiser_star = _find_relion_optimiser_star(args)
-        if optimiser_star is None:
-            logger.info("RELION optimiser STAR not found; keeping dataset image mask")
-            return None
-
-        params = relion_metadata._load_relion_mask_params(optimiser_star)
+        params = None if optimiser_star is None else relion_metadata._load_relion_mask_params(optimiser_star)
         if params is None:
-            logger.info("No RELION mask parameters found in %s; keeping dataset image mask", optimiser_star)
-            return None
+            params = (RELION_GUI_PARTICLE_DIAMETER_ANG, float(explicit_width_mask_edge))
+            optimiser_star = "RELION GUI default"
 
     particle_diameter_ang, width_mask_edge_px = params
 
@@ -1796,12 +1809,12 @@ def _parse_args(argv=None):
     )
     parser.add_argument(
         "--data_dir",
-        default="/scratch/gpfs/GILLES/mg6942/tmp/em_profile/data",
+        required=True,
         help="Directory containing particles.star, reference_init.mrc, etc.",
     )
     parser.add_argument(
         "--output",
-        default="/scratch/gpfs/GILLES/mg6942/tmp/em_profile/data/our_results",
+        required=True,
         help="Directory to save results",
     )
     parser.add_argument(
@@ -1813,13 +1826,21 @@ def _parse_args(argv=None):
         ),
     )
     add_particle_read_arguments(parser)
-    parser.add_argument("--max_iter", type=int, default=10, help="Maximum EM iterations")
+    parser.add_argument(
+        "--max_iter",
+        type=int,
+        default=None,
+        help="Maximum numbered iterations. Default: RELION's --auto_iter_max 999 for K=1 "
+        "auto-refine (it stops at convergence; ml_optimiser.cpp:1255, 2543) and the GUI's "
+        "25 for Class3D (pipeline_jobs.cpp:3689).",
+    )
     parser.add_argument(
         "--healpix_order",
         type=int,
-        default=3,
+        default=2,
         help="RELION coarse pass-1 HEALPix order. With adaptive oversampling, "
-        "pass 2 evaluates healpix_order + adaptive_oversampling.",
+        "pass 2 evaluates healpix_order + adaptive_oversampling. Default: the GUI's "
+        "7.5 degree sampling with oversampling 1 (pipeline_jobs.cpp:4205, 4489).",
     )
     parser.add_argument(
         "--max_healpix_order",
@@ -1842,8 +1863,15 @@ def _parse_args(argv=None):
         "set to 3 when comparing against runs launched with "
         "--auto_local_healpix_order 3.",
     )
-    parser.add_argument("--offset_range", type=float, default=3.0, help="Translation search range (pixels)")
-    parser.add_argument("--offset_step", type=float, default=1.0, help="Translation step (pixels)")
+    parser.add_argument(
+        "--offset_range", type=float, default=5.0,
+        help="Translation search range (pixels); GUI default 5 (pipeline_jobs.cpp:4209)",
+    )
+    parser.add_argument(
+        "--offset_step", type=float, default=2.0,
+        help="Translation step (pixels) before oversampling; the GUI's 1 pixel times 2^oversampling "
+        "(pipeline_jobs.cpp:4213, 4504)",
+    )
     parser.add_argument(
         "--offset_sigma_angstrom",
         type=float,
@@ -2123,15 +2151,19 @@ def _parse_args(argv=None):
         help="Disable RELION normCorrection / group-scale replay while still "
         "using other per-iteration replay overrides.",
     )
-    parser.add_argument("--init_resolution", type=float, default=30.0, help="Initial resolution (Angstrom)")
+    parser.add_argument(
+        "--init_resolution", type=float, default=60.0,
+        help="RELION --ini_high in Angstrom: the initial low-pass and the iteration-1 current size; "
+        "GUI default 60 (pipeline_jobs.cpp:4172)",
+    )
     parser.add_argument(
         "--image-fourier-backend",
-        choices=("host_numpy", "jax_gpu", "relion_cuda"),
-        default="host_numpy",
+        choices=("auto", "host_numpy", "jax_gpu", "relion_cuda"),
+        default="auto",
         help=(
-            "Fourier preprocessing backend for RELION-masked particle images. "
-            "The default preserves the established host NumPy path; relion_cuda "
-            "selects the source-faithful CUDA normalization, translation, and mask path."
+            "Fourier preprocessing backend for RELION-masked particle images. auto (default) "
+            "is relion_cuda, the source-faithful CUDA normalization, translation and mask path "
+            "that the fresh K=1 defaults require, and host_numpy for Class3D."
         ),
     )
     parser.add_argument(
@@ -2179,9 +2211,10 @@ def _parse_args(argv=None):
         type=int,
         default=None,
         help=(
-            "Random seed for half-set splitting, SamplingPerturbation, and optimiser sampling. "
-            "If omitted with explicit RELION optimiser/init state, inherit _rlnRandomSeed; "
-            "otherwise use 42."
+            "RELION --random_seed for half-set splitting, particle order, SamplingPerturbation "
+            "and optimiser sampling. If omitted with explicit RELION optimiser/init state, "
+            "inherit _rlnRandomSeed; otherwise use the time, as relion_refine does for its "
+            "default -1 (ml_optimiser.cpp:2827). The seed used is logged and saved."
         ),
     )
     parser.add_argument(
@@ -2216,8 +2249,9 @@ def _parse_args(argv=None):
         "--particle_diameter_ang",
         type=float,
         default=None,
-        help="Explicit RELION particle diameter in Angstrom for the scoring "
-        "mask. Overrides mask discovery from --relion_optimiser.",
+        help="RELION --particle_diameter in Angstrom for the scoring mask. If omitted, "
+        "a supplied RELION optimiser's value is used, else the GUI default 200 "
+        "(pipeline_jobs.cpp:4191).",
     )
     parser.add_argument(
         "--width_mask_edge_px",
@@ -2240,27 +2274,24 @@ def _parse_args(argv=None):
     )
     parser.add_argument(
         "--firstiter_cc",
-        action="store_true",
-        default=False,
-        help="Enable RELION --firstiter_cc emulation: iter-1 uses normalized "
-        "cross-correlation scoring + winner-take-all reconstruction + ini_high "
-        "low-pass on the iter-1 reference. Required for parity with RELION "
-        "fixtures that were built with --firstiter_cc (Class3D defaults to it; "
-        "auto_refine 3D-Auto-refine uses Gaussian scoring at iter 1 by default).",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="RELION --firstiter_cc: iter-1 uses normalized cross-correlation scoring + "
+        "winner-take-all reconstruction + ini_high low-pass on the iter-1 reference. "
+        "Default on, as the GUI passes it unless the reference is on the absolute greyscale "
+        "(pipeline_jobs.cpp:4161, 4407; Class3D 3647, 3917). Use --no-firstiter_cc to "
+        "reproduce a RELION run without it.",
     )
     parser.add_argument(
         "--apply-initial-lowpass",
         dest="apply_initial_lowpass",
-        action="store_true",
-        default=False,
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help="Apply RELION's ``initialLowPassFilterReferences`` to the init "
-        "reference at ``--init_resolution`` before iter-1 expectation. "
-        "RELION's ml_optimiser.cpp::initialLowPassFilterReferences runs "
-        "whenever ``--ini_high > 0`` regardless of --firstiter_cc. recovar "
-        "previously only mirrored that under --firstiter_cc, which left an "
-        "iter-1 reconstruction gap on K=1 auto-refine fixtures built with "
-        "``--ini_high 30`` and no ``--firstiter_cc``. Default off for backward "
-        "compatibility; turn on for RELION-parity runs against such fixtures.",
+        "reference at ``--init_resolution`` before iter-1 expectation, as "
+        "relion_refine does whenever ``--ini_high > 0`` (the GUI passes 60). "
+        "Default on, except for a frozen boundary, which owns its reference; "
+        "--no-apply-initial-lowpass reproduces a RELION run without --ini_high.",
     )
     parser.add_argument(
         "--n_classes",
@@ -2422,6 +2453,7 @@ def _parse_args(argv=None):
 
 def main():
     args = _parse_args()
+    _resolve_relion_gui_defaults(args)
     _resolve_standalone_k1_start(args)
     if (
         args.state_swap_target_relion_iteration is not None

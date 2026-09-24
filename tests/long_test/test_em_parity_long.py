@@ -369,9 +369,8 @@ def test_em_parity_long_k1_full(tmp_path, start):
         "30.0",
         # The fresh K=1 defaults (source-faithful powerClass normalization and
         # exact RELION BPref operands) only work with RELION's CUDA image
-        # preprocessing, and refine_single_volume fails closed without it. The
-        # CLI still defaults to host_numpy, so the test has to ask for it -- the
-        # same pairing the fixed diagnostic arm enforces in run_full_refinement.
+        # preprocessing, and refine_single_volume fails closed without it. It is
+        # the K=1 CLI default; the test states it, as the fixed diagnostic arm does.
         "--image-fourier-backend",
         "relion_cuda",
         "--image_batch_size",

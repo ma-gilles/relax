@@ -7,7 +7,9 @@ artifact writing are coordinated here through their implementation owners.
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 from dataclasses import dataclass, replace
 
 import numpy as np
@@ -53,6 +55,8 @@ from relax.vdam.schedules import (
 )
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
 from relax.vdam.subset_schedule import restore_subset_order_for_continuation
+
+logger = logging.getLogger(__name__)
 
 INITIAL_MODEL_SKIP_EXPECTED_ACCURACY_ENV = "RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY"
 
@@ -294,6 +298,10 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     from relax.vdam.mstep_single_class import _validate_mstep_precision_route
 
     _validate_mstep_precision_route(opts.mstep_compute_dtype, opts.mstep_backend)
+    if int(opts.random_seed) == -1:
+        # relion_refine's default --random_seed -1 takes the time (ml_optimiser.cpp:2827).
+        opts = replace(opts, random_seed=int(time.time()))
+        logger.info("InitialModel random seed %d (RELION default -1: the time)", opts.random_seed)
     if opts.mstep_compute_dtype == "float32" and os.environ.get(
         INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV, ""
     ).strip():
