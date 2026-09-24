@@ -2,6 +2,16 @@
 
 RELION in JAX.
 
+## What exists
+
+| RELION job | relax entry point |
+| --- | --- |
+| 3D initial model (VDAM), K=1 and K>1 | `relax initial_model` (`--K`) |
+| 3D auto-refine (Refine3D), K=1 | `python -m scripts.run_full_refinement` |
+| 3D classification (Class3D), K>1 | `python -m scripts.run_full_refinement --n_classes K` |
+
+Single GPU and a single optics group only. More to come.
+
 ## Install (development)
 
 relax depends on [RECOVAR](https://github.com/ma-gilles/recovar) and pins one
