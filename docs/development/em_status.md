@@ -75,6 +75,17 @@ that fixture. Remaining cost is concentrated in new-shape transitions and the
 final all-data iteration; the latter still uses the exact local path. The
 100k/256 K1 and exactly-K4 quality and performance gates remain open.
 
+OPEN (2026-09-24, test tiers): the medium K1 5k/128 standalone end-to-end run
+(medium 14375481, relax 319cd10) scored GT FSC-AUC 0.6084 on relax's `final_merged.mrc`
+against 0.5959-0.5960 for RELION's `run_class001.mrc` (reference and two repeats). CPU check:
+the two files are different kinds of map. RELION's is gridding-corrected; relax's follows the
+reviewed final-gridding-correction default (off). Applying RELION's pad-2 sinc^2 correction to
+relax's map gives 0.5959, inside the band, and removing it from RELION's gives 0.6085. The
+unfiltered half maps, the same kind in both engines, agree: average-of-halves GT FSC-AUC relax
+0.59519, RELION 0.59516-0.59519. The tier now gates on the unfiltered half maps and only reports
+the merged maps. What stays open is the final-gridding-correction policy itself: relax's merged
+map is not the map RELION writes.
+
 Follow the unchanged [quantitative gates](../math/em_parity_program.md) and
 [validation ladder](em_parity_runbook.md#validation-ladder): matched-state
 scores, support, posteriors, poses and accumulators; synthetic then real K1;

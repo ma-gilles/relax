@@ -5,9 +5,10 @@ and the command values of the RELION oversampling-1 reference) to convergence an
 final all-data iteration. The RELION band is that reference plus its same-command repeats
 (fixture sets ``k1_5k128_relion_os1`` and ``k1_5k128_relion_os1_repeats``).
 
-Measured and written to the case ledger: GT FSC-AUC of the final merged map for relax and every
-RELION run, cross-engine FSC-AUC of relax against every RELION run and of the RELION runs
-against each other, the minimum in-band shell FSC, and the iteration counts. The FSC band gate
+Measured and written to the case ledger, on the average of the unfiltered half maps (the same
+kind of map in both engines): GT FSC-AUC for relax and every RELION run, cross-engine FSC-AUC of
+relax against every RELION run and of the RELION runs against each other, the minimum in-band
+shell FSC, and the iteration counts. The FSC band gate
 applies once ``tests/tiers/fsc_thresholds.json`` records the user's approval; until then the
 test asserts only that the run converged and finished, and reports the FSC values.
 """
@@ -138,8 +139,21 @@ def test_k1_5k128_standalone_autorefine(tmp_path):
 
     gt = np.asarray(helpers.load_mrc(str(data / "reference_gt.mrc")), dtype=np.float64)
     band = gt.shape[0] // 2
-    relax_map = np.asarray(helpers.load_mrc(str(output_dir / "final_merged.mrc")), dtype=np.float64)
+    # The gated maps are the averages of the unfiltered half maps, the same kind of map in both
+    # engines. The merged maps differ in kind: RELION's run_class001.mrc is gridding-corrected,
+    # while relax's final_merged.mrc follows the reviewed final-gridding-correction default (off),
+    # which alone moves the GT FSC-AUC by about +0.012 (open item in docs/development/em_status.md).
+    # They are reported, not gated.
+    def unfil_average(load, paths):
+        return sum(np.asarray(load(str(path)), dtype=np.float64) for path in paths) / 2.0
+
+    relax_map = unfil_average(helpers.load_mrc, [output_dir / f"final_half{h}_unfil.mrc" for h in (1, 2)])
     relion = {
+        k: unfil_average(helpers.load_relion_volume, [p / f"run_half{h}_class001_unfil.mrc" for h in (1, 2)])
+        for k, p in _relion_runs().items()
+    }
+    relax_merged = np.asarray(helpers.load_mrc(str(output_dir / "final_merged.mrc")), dtype=np.float64)
+    relion_merged = {
         k: np.asarray(helpers.load_relion_volume(str(p / "run_class001.mrc")), dtype=np.float64)
         for k, p in _relion_runs().items()
     }
@@ -149,9 +163,15 @@ def test_k1_5k128_standalone_autorefine(tmp_path):
         "final_all_data_ran": final_all_data,
         "relax_iterations": n_iter,
         "relion_reference_iterations": relion_iters,
+        "map": "average of the unfiltered half maps",
         "relax_vs_gt": _fsc(relax_map, gt, band),
         "relion_vs_gt": {k: _fsc(v, gt, band) for k, v in relion.items()},
         "relax_vs_relion": {k: _fsc(relax_map, v, band) for k, v in relion.items()},
+        "merged_maps_reported_only": {
+            "relax_vs_gt": _fsc(relax_merged, gt, band),
+            "relion_vs_gt": {k: _fsc(v, gt, band) for k, v in relion_merged.items()},
+            "relax_vs_relion": {k: _fsc(relax_merged, v, band) for k, v in relion_merged.items()},
+        },
         "relion_vs_relion": {
             f"{a}|{b}": _fsc(relion[a], relion[b], band) for a, b in itertools.combinations(relion, 2)
         },
