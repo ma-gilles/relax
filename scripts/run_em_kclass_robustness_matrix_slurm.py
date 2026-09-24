@@ -1736,7 +1736,7 @@ echo "Using holdout outlier PDB: ${{OUTLIER_PDB}}"
 {exclusive_directive}
 #SBATCH --nodes=1
 #SBATCH --ntasks={relion_mpi_ranks}
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=4
 #SBATCH --mem={case.mem}
 #SBATCH --time={case.time_limit}
 

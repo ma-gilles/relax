@@ -33,7 +33,10 @@ SUMMARY_CONSTRAINT="${EM_K1_MATRIX_SUMMARY_CONSTRAINT:-}"
 SUMMARY_GRES="${EM_K1_MATRIX_SUMMARY_GRES:-}"
 CUDA_MODULE="${CUDA_MODULE:-cudatoolkit/12.8}"
 RELION_MODULE="${RELION_MODULE:-relion/5.0.1/gcc-11.5.0-gpu}"
-RELION_REFINE_MPI="${RELION_REFINE_MPI:-relion_refine_mpi}"
+# The RELION 5.0.1 f2c1a3 build (mt19937 particle order), never whatever is on PATH: the module
+# build keeps the older libc order that relax no longer implements.
+RELION_REFINE_MPI="${RELION_REFINE_MPI:-/scratch/gpfs/GILLES/mg6942/relion/build_patched/bin/relion_refine_mpi}"
+RELION_REFINE_MPI_SHA256="${RELION_REFINE_MPI_SHA256:-a9a961340af621d1cd581ccea2e96274f978b53213f9606c9f0e30d271903b8c}"
 RELION_EXTRA_LD_LIBRARY_PATH="${RELION_EXTRA_LD_LIBRARY_PATH:-}"
 RELION_SRC_DIR="${RELION_SRC_DIR:-}"
 if [[ -n "${EM_K1_MATRIX_EXCLUSIVE:-}" ]]; then
@@ -190,7 +193,9 @@ Environment overrides:
   EM_K1_MATRIX_SINGLE_VISIBLE_GPU   Restrict each case job to one visible GPU (default: ${SINGLE_VISIBLE_GPU})
   CUDA_MODULE                       CUDA module for nvcc (default: ${CUDA_MODULE})
   RELION_MODULE                     RELION module for optional baselines (default: ${RELION_MODULE})
-  RELION_REFINE_MPI                 RELION executable for optional baselines (default: ${RELION_REFINE_MPI})
+  RELION_REFINE_MPI                 absolute path of the RELION executable for optional baselines
+                                    (default: the f2c1a3 build ${RELION_REFINE_MPI})
+  RELION_REFINE_MPI_SHA256          its required sha256 (default: ${RELION_REFINE_MPI_SHA256})
   RELION_EXTRA_LD_LIBRARY_PATH      Extra LD_LIBRARY_PATH prefix for RELION_REFINE_MPI
                                     (default: ${RELION_EXTRA_LD_LIBRARY_PATH:-<unset>})
   RELION_SRC_DIR                    RELION src directory used to build the RECOVAR
@@ -1010,7 +1015,7 @@ ${SBATCH_CONSTRAINT_DIRECTIVE}
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=${RELION_MPI_RANKS}
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=${mem}
 #SBATCH --time=${time_limit}
 
@@ -1278,17 +1283,17 @@ if [[ "${RUN_RELION}" -eq 1 ]]; then
       export LD_LIBRARY_PATH="${RELION_EXTRA_LD_LIBRARY_PATH}:\${LD_LIBRARY_PATH:-}"
     fi
     RELION_REFINE_MPI_BIN="${RELION_REFINE_MPI}"
-    if [[ "\${RELION_REFINE_MPI_BIN}" == */* ]]; then
-      if [[ ! -x "\${RELION_REFINE_MPI_BIN}" ]]; then
-        echo "ERROR: RELION_REFINE_MPI is not executable: \${RELION_REFINE_MPI_BIN}" >&2
-        exit 2
-      fi
-      echo "RELION_REFINE_MPI=\${RELION_REFINE_MPI_BIN}"
-    else
-      RELION_REFINE_MPI_BIN="\$(command -v "\${RELION_REFINE_MPI_BIN}")"
+    if [[ "\${RELION_REFINE_MPI_BIN}" != /* || ! -x "\${RELION_REFINE_MPI_BIN}" ]]; then
+      echo "ERROR: RELION_REFINE_MPI must be an absolute executable path: \${RELION_REFINE_MPI_BIN}" >&2
+      exit 2
+    fi
+    RELION_REFINE_MPI_ACTUAL_SHA256="\$(sha256sum "\${RELION_REFINE_MPI_BIN}" | awk '{print \$1}')"
+    if [[ "\${RELION_REFINE_MPI_ACTUAL_SHA256}" != "${RELION_REFINE_MPI_SHA256}" ]]; then
+      echo "ERROR: RELION_REFINE_MPI sha256 \${RELION_REFINE_MPI_ACTUAL_SHA256} != required ${RELION_REFINE_MPI_SHA256}" >&2
+      exit 2
     fi
     echo "RELION_REFINE_MPI_RESOLVED=\${RELION_REFINE_MPI_BIN}"
-    echo "RELION_REFINE_MPI_SHA256=\$(sha256sum "\${RELION_REFINE_MPI_BIN}" | awk '{print \$1}')"
+    echo "RELION_REFINE_MPI_SHA256=\${RELION_REFINE_MPI_ACTUAL_SHA256}"
     command -v mpirun
     nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader
     export CUDA_VISIBLE_DEVICES=0
@@ -1868,6 +1873,7 @@ CUDA_LIB=${CUDA_LIB}
 CUDA_MODULE=${CUDA_MODULE}
 RELION_MODULE=${RELION_MODULE}
 RELION_REFINE_MPI=${RELION_REFINE_MPI}
+RELION_REFINE_MPI_SHA256=${RELION_REFINE_MPI_SHA256}
 RELION_EXTRA_LD_LIBRARY_PATH=${RELION_EXTRA_LD_LIBRARY_PATH}
 RELION_SRC_DIR=${RELION_SRC_DIR}
 TF_GPU_ALLOCATOR=${TF_GPU_ALLOCATOR:-}

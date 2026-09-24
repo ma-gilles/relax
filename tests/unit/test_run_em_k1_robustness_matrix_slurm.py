@@ -747,6 +747,10 @@ def test_relion_binary_identity_is_recorded_in_case_job(tmp_path):
     case_script = next((scratch / "jobs").glob("em_k1_matrix_32_*.sh")).read_text()
     assert "RELION_REFINE_MPI_RESOLVED=" in case_script
     assert "RELION_REFINE_MPI_SHA256=" in case_script
+    # The f2c1a3 build (mt19937 order) by full path and sha256, never a PATH lookup.
+    assert 'RELION_REFINE_MPI_BIN="/scratch/gpfs/GILLES/mg6942/relion/build_patched/bin/relion_refine_mpi"' in case_script
+    assert "a9a961340af621d1cd581ccea2e96274f978b53213f9606c9f0e30d271903b8c" in case_script
+    assert "command -v \"${RELION_REFINE_MPI_BIN}\"" not in case_script
     assert 'CASE_GPU_UUID="$(capture_physical_gpu_uuid)"' in case_script
     assert 'RELION_GPU_UUID="$(capture_physical_gpu_uuid)"' in case_script
     assert 'RELAX_GPU_UUID="$(capture_physical_gpu_uuid)"' in case_script
