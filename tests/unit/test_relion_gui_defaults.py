@@ -94,3 +94,9 @@ def test_initial_model_seed_default_is_relions():
 
     assert DEFAULTS.random_seed == -1
     assert make_parser().parse_args(["--i", "particles.star"]).random_seed == -1
+
+
+def test_seed_used_is_recorded_in_results_and_ledger():
+    source = driver.Path(driver.__file__).read_text()
+    assert '"random_seed": np.int64(args.seed),' in source
+    assert '"random_seed": int(args.seed),\n            "random_seed_source": str(optimizer_seed_source),' in source

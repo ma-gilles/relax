@@ -4661,6 +4661,9 @@ def main():
         "initial_pose_source_path": np.asarray(str(initial_pose_source_path or "")),
         "initial_pose_source_sha256": np.asarray(initial_pose_source_sha256 or ""),
         "relion_fresh_particle_order_applied": np.bool_(use_fresh_auto_refine_order),
+        # The seed actually used (RELION's default -1 takes the time) and where it came from.
+        "random_seed": np.int64(args.seed),
+        "random_seed_source": np.asarray(optimizer_seed_source),
         "current_sizes": np.array(result["current_sizes"]),
         "pixel_resolutions": np.array(result["pixel_resolutions"]),
         "wall_times": np.array(result["wall_times"]),
@@ -4958,6 +4961,8 @@ def main():
             "output_dir": str(Path(args.output).resolve()),
             "timing_dir": str(timing_dir_path.resolve()) if timing_dir_path is not None else None,
             "max_iter": int(args.max_iter),
+            "random_seed": int(args.seed),
+            "random_seed_source": str(optimizer_seed_source),
             "n_iterations_emitted": int(len(result.get("current_sizes", []))),
             "n_wall_times": int(len(result.get("wall_times", []))),
             "total_time_s": float(total_time),
