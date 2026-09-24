@@ -1812,7 +1812,7 @@
     "Three same-command RELION runs (this pair, repeat 14382148, 2026-09-19 matrix 14148540): reference FSC-AUC 0.3412508-0.3413158, relax 0.3413152 inside; masked 0.7552-0.7560, relax 0.7554 inside. RELION-vs-RELION X-AUC 0.9768-0.9820 (masked 0.9933-0.9954); relax vs the three RELION runs 0.9718 / 0.9893 / 0.9844 (masked 0.9928 / 0.9967 / 0.9952): above every RELION pair against two of the three runs, 0.005 below the lowest RELION pair against the paired run.",
     "Earlier pre-split run (recovar 25cc4475b, 2026-09-19, separate jobs, profiling on): relax 3284 s vs RELION 1587 s (2.07x); reference FSC-AUC 0.3413 both, X-AUC 0.9798/0.9950.",
     "All scored runs (FSC-AUC unmasked / masked): relion_main_pair vs reference 0.3413 unmasked / 0.7552 masked; relax_main_pair vs reference 0.3413 unmasked / 0.7554 masked; relion_s29_20260919 vs reference 0.3413 unmasked / 0.7560 masked; relion_repeat_s29 vs reference 0.3413 unmasked / 0.7555 masked; relion_main_pair vs relax_main_pair 0.9718 / 0.9928; relion_main_pair vs relion_s29_20260919 0.9809 / 0.9943; relion_main_pair vs relion_repeat_s29 0.9768 / 0.9933; relax_main_pair vs relion_s29_20260919 0.9844 / 0.9952; relax_main_pair vs relion_repeat_s29 0.9893 / 0.9967; relion_s29_20260919 vs relion_repeat_s29 0.9820 / 0.9954.",
-    "relax minus RELION reference FSC-AUC: +0.0000 unmasked, +0.0002 masked; relax-vs-RELION X-AUC 0.9718/0.9928 is below the RELION repeat pair 0.9768/0.9933; open; the 3 RELION runs span reference FSC-AUC 0.3413-0.3413 (masked 0.7552-0.7560), relax 0.3413 is inside (masked 0.7554, inside)."
+    "Closed as inside the RELION band (manager rule 2026-09-24): the paired RELION run is the outlier among the three same-command RELION runs, since both RELION pairs that include it are the lowest (X-AUC 0.9768 and 0.9809, masked 0.9933 and 0.9943) while the pair without it is highest (0.9820, masked 0.9954); relax is inside the RELION range on reference FSC-AUC (unmasked and masked) and its X-AUC against the other two runs (0.9893, 0.9844; masked 0.9967, 0.9952) is above every RELION pair."
    ],
    "null_reasons": {},
    "evidence": {
@@ -3118,6 +3118,8 @@
   "- **Ref FSC 0.5**: first shell where that FSC falls below 0.5, as box * pixel / shell.",
   "- **X-AUC**: FSC-AUC of relax's map fitted directly onto RELION's map, unmasked / masked. **RELION repeat X-AUC**: the same for two RELION runs of the same command (same or different seed, as noted); a relax-vs-RELION difference counts as RELION variation only when this band shows it.",
   "- K>1: population-weighted means over Hungarian-matched classes; FSC 0.5 of the most populated class.",
+  "",
+  "RELION `--preread_images` and VDAM walls: in auto-refine, pre-reading made RELION 1.7-5.2x slower per iteration. For relion_refine --grad no slowdown is seen. The same command on pdb K=4 5k/128, seed 29, took 927 s without pre-read (band job 14382132) vs 795 s (P3) and 970 s (2026-09-19) with it; on pdb K=2, 999 s without vs 989 s with. On EMPIAR-10097, pre-read runs took 3001/3080 s vs about 3800 s without (--j 4). Rows whose RELION arm pre-read are therefore not marked provisional; the evidence at 100k-130k particles is indirect.",
   "",
   "Scoring: `scripts/score_initialmodel_maps.py` with `docs/benchmarks/initialmodel_scores/config.json` (CPU); per-run curves and fits: the `score_json` of each row."
  ]
