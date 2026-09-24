@@ -99,9 +99,9 @@
     "masked_fsc_json": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10073_q427a08bd8_mt19937_masked/masked_fsc.json"
     ],
-    "post_hoc_score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/10073_corrected.json",
+    "post_hoc_score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/10073_corrected.json",
     "post_hoc_masked_fsc_json": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/10073_q427a08bd8_mt19937/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/10073_q427a08bd8_mt19937/masked_fsc.json"
     ]
    },
    "date": "2026-09-24",
@@ -137,15 +137,15 @@
     "date": "2026-09-24",
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/10073_q427a08bd8_mt19937/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/10073_q427a08bd8_mt19937/final_merged.mrc",
       "corrected_sha256": "fd8eab708948c907a51bcd739234ddac86366d2646e0b7916b23659423daa993",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/realdata_10073_mt19937_q427a08bd8/outputs/final_merged.mrc",
       "source_sha256": "7df204472c63104daba4203cbd271f3478093dd263abc752ae9e854ff065b2cb"
      }
     },
     "evidence": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/10073_corrected.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/10073_q427a08bd8_mt19937/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/10073_corrected.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/10073_q427a08bd8_mt19937/masked_fsc.json"
     ],
     "previous_values": {
      "cross_engine": "scorecard PASS: merged band FSC-AUC 0.9900, halves 0.9806/0.9816",
@@ -332,11 +332,11 @@
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10097_q427a08bd8_mt19937_masked_vs_relion_r1/masked_fsc.json",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10097_q427a08bd8_mt19937_masked_vs_relion_r2/masked_fsc.json"
     ],
-    "post_hoc_score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/10097_corrected.json",
+    "post_hoc_score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/10097_corrected.json",
     "post_hoc_masked_fsc_json": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/10097_q427a08bd8_mt19937/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/10097_masked_vs_relion_r1/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/10097_masked_vs_relion_r2/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/10097_q427a08bd8_mt19937/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/10097_masked_vs_relion_r1/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/10097_masked_vs_relion_r2/masked_fsc.json"
     ]
    },
    "date": "2026-09-24",
@@ -384,7 +384,7 @@
      "masked_half1": 0.9603,
      "masked_half2": 0.9623,
      "meets_thresholds": false,
-     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/10097_q427a08bd8_mt19937/masked_fsc.json"
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/10097_q427a08bd8_mt19937/masked_fsc.json"
     },
     {
      "run": "r1",
@@ -398,7 +398,7 @@
      "masked_half1": 0.9601,
      "masked_half2": 0.9623,
      "meets_thresholds": false,
-     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/10097_masked_vs_relion_r1/masked_fsc.json"
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/10097_masked_vs_relion_r1/masked_fsc.json"
     },
     {
      "run": "r2",
@@ -412,7 +412,7 @@
      "masked_half1": 0.9841,
      "masked_half2": 0.9856,
      "meets_thresholds": true,
-     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/10097_masked_vs_relion_r2/masked_fsc.json"
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/10097_masked_vs_relion_r2/masked_fsc.json"
     }
    ],
    "relion_vs_relion": [
@@ -440,17 +440,17 @@
     "date": "2026-09-24",
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/10097_q427a08bd8_mt19937/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/10097_q427a08bd8_mt19937/final_merged.mrc",
       "corrected_sha256": "474a0671be6dc6b027b27b5ffd627f1f5ecc3d2f70efe2772b9109d3473c7b74",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/realdata_10097_mt19937_q427a08bd8/outputs/final_merged.mrc",
       "source_sha256": "47898d12331017d7b1a8f0418b75e9e533d670fec4293cedb5a131b70916f4ff"
      }
     },
     "evidence": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/10097_corrected.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/10097_q427a08bd8_mt19937/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/10097_masked_vs_relion_r1/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/10097_masked_vs_relion_r2/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/10097_corrected.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/10097_q427a08bd8_mt19937/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/10097_masked_vs_relion_r1/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/10097_masked_vs_relion_r2/masked_fsc.json"
     ],
     "previous_values": {
      "cross_engine": "vs RELION reference merged/halves 0.9313/0.8793/0.8840 (below 0.95/0.90); vs same-command repeat r1 0.9312/0.8789/0.8837 (below); vs repeat r2 0.9740/0.9514/0.9562 (pass). RELION runs split the same way (ref vs r1 pass, ref/r1 vs r2 below). Passes the 2026-09-23 rule (thresholds met against at least one RELION run; band condition dropped; replay parity is the separate supporting check).",
@@ -586,9 +586,9 @@
     "masked_fsc_json": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10345_q427a08bd8_mt19937_masked/masked_fsc.json"
     ],
-    "post_hoc_score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/10345_corrected.json",
+    "post_hoc_score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/10345_corrected.json",
     "post_hoc_masked_fsc_json": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/10345_q427a08bd8_mt19937/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/10345_q427a08bd8_mt19937/masked_fsc.json"
     ]
    },
    "date": "2026-09-23",
@@ -624,15 +624,15 @@
     "date": "2026-09-24",
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/10345_q427a08bd8_mt19937/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/10345_q427a08bd8_mt19937/final_merged.mrc",
       "corrected_sha256": "03ac866a64ca79d1095b26363406365bd80014d4eb513ac57e5eb8590b7e4a4f",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/realdata_10345_mt19937_q427a08bd8/outputs/final_merged.mrc",
       "source_sha256": "a941dc9a4e1f09d6932a6c7dd0cdf5a20546a45e6f571145a480fa77950aec94"
      }
     },
     "evidence": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/10345_corrected.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/10345_q427a08bd8_mt19937/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/10345_corrected.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/10345_q427a08bd8_mt19937/masked_fsc.json"
     ],
     "previous_values": {
      "cross_engine": "scorecard PASS: merged band FSC-AUC 0.9829, halves 0.9753/0.9769",
@@ -943,9 +943,9 @@
     "masked_fsc_json": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_masks_20260923/runs/empiar10097_10k_B1_j1_abba_r2/masked_fsc.json"
     ],
-    "post_hoc_score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/speed10k_fsc.json",
+    "post_hoc_score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/speed10k_fsc.json",
     "post_hoc_masked_fsc_json": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/empiar10097_10k_B1_j1_abba_r2/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/empiar10097_10k_B1_j1_abba_r2/masked_fsc.json"
     ]
    },
    "date": "2026-09-23",
@@ -975,33 +975,33 @@
     "date": "2026-09-24",
     "maps": {
      "merged (empiar10097_10k_B1_j1_abba_r2)": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/empiar10097_10k_B1_j1_abba_r2/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/empiar10097_10k_B1_j1_abba_r2/final_merged.mrc",
       "corrected_sha256": "34a996fcd8cabb798c8096fcf1819a1c9f51f9a6e4c5c60fbf301c07bd5f657f",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/speed/partA/j1_abba_r2_20260923/B1/refinement/final_merged.mrc",
       "source_sha256": "8cd61be0a72918bf1934f09124856dae7e71e4f47821516a2941987e4442b8e2"
      },
      "merged (empiar10097_10k_B2_j1_abba_r2)": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/empiar10097_10k_B2_j1_abba_r2/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/empiar10097_10k_B2_j1_abba_r2/final_merged.mrc",
       "corrected_sha256": "310e50ab726e67b40b578b425a8da2907eb4a8d180e08642e959a6b3f1b10017",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/speed/partA/j1_abba_r2_20260923/B2/refinement/final_merged.mrc",
       "source_sha256": "ee97be724d34696bf49421f1c4a1e1c9c69c9855aef289a470e582552db88b50"
      },
      "merged (empiar10097_10k_B3_j2_baab_r2)": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/empiar10097_10k_B3_j2_baab_r2/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/empiar10097_10k_B3_j2_baab_r2/final_merged.mrc",
       "corrected_sha256": "385a0febb7c831b5642ffb2d9700d0d31808cbc7b32cb6e9694f9c0ccef9a9ac",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/speed/partA/j2_baab_r2_20260923/B3/refinement/final_merged.mrc",
       "source_sha256": "b0076932bd61f81915f729e8326b411a58854ef490ce38bf198cd45268b823c3"
      },
      "merged (empiar10097_10k_B4_j2_baab_r2)": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/empiar10097_10k_B4_j2_baab_r2/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/empiar10097_10k_B4_j2_baab_r2/final_merged.mrc",
       "corrected_sha256": "c16b1bb4ecdfcd8e29696876e2d2ef579468737d1a4e187e4faf50a0e31781d4",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/speed/partA/j2_baab_r2_20260923/B4/refinement/final_merged.mrc",
       "source_sha256": "42b131b0d5e47addd1eeddbfc1309912c18b54998756b2068fdf7cee3be74f6f"
      }
     },
     "evidence": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/speed10k_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/empiar10097_10k_B1_j1_abba_r2/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/speed10k_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/empiar10097_10k_B1_j1_abba_r2/masked_fsc.json"
     ],
     "previous_values": {
      "cross_engine": "final merged FSC-AUC vs RELION final 0.522-0.526 (historical same-commit spread 0.42-0.78; reported, not gated)",
@@ -1103,14 +1103,14 @@
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/k1_100k_masked_gt_20260924/vs_rep1/masked_fsc.json",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/k1_100k_masked_gt_20260924/vs_rep2/masked_fsc.json"
     ],
-    "post_hoc_score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/k1_100k_band_corrected.json",
+    "post_hoc_score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/k1_100k_band_corrected.json",
     "post_hoc_masked_fsc_json": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/pdb_k1_100k256_q427a08bd8_14320204/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/pdb_k1_100k256_q427a08bd8_14320204/masked_fsc.json"
     ],
     "post_hoc_masked_gt_fsc_json": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/k1_100k_masked_gt/vs_ref/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/k1_100k_masked_gt/vs_rep1/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/k1_100k_masked_gt/vs_rep2/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/k1_100k_masked_gt/vs_ref/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/k1_100k_masked_gt/vs_rep1/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/k1_100k_masked_gt/vs_rep2/masked_fsc.json"
     ],
     "gridding_candidate_scores": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/k1_100k_gridon_daec991_20260924"
    },
@@ -1147,18 +1147,18 @@
     "date": "2026-09-24",
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/pdb_k1_100k256_q427a08bd8_14320204/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/pdb_k1_100k256_q427a08bd8_14320204/final_merged.mrc",
       "corrected_sha256": "194fd8ade50b15b24a1a4b1d1f1d95f963e70e88ecdb3f13c30c523f54362925",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/completion_k1_q427a08bd8/k1_100k256_recovar/final_merged.mrc",
       "source_sha256": "51972001c954d7074fb220e7740d492c3c54101a60831f48087a69a587f6329e"
      }
     },
     "evidence": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/k1_100k_band_corrected.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/pdb_k1_100k256_q427a08bd8_14320204/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/k1_100k_masked_gt/vs_ref/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/k1_100k_masked_gt/vs_rep1/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/k1_100k_masked_gt/vs_rep2/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/k1_100k_band_corrected.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/pdb_k1_100k256_q427a08bd8_14320204/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/k1_100k_masked_gt/vs_ref/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/k1_100k_masked_gt/vs_rep1/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/k1_100k_masked_gt/vs_rep2/masked_fsc.json"
     ],
     "previous_values": {
      "gt": {
@@ -1494,10 +1494,10 @@
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_masks_20260923/runs/noise1_k1_50k256_standalone_seed1775735620/masked_fsc.json",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_masks_20260923/runs/noise1_k1_50k256_seeded_freerun/masked_fsc.json"
     ],
-    "post_hoc_score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/noise1_ACCEPT_corrected.json",
+    "post_hoc_score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/noise1_ACCEPT_corrected.json",
     "post_hoc_masked_fsc_json": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/noise1_k1_50k256_standalone_seed1775735620/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/noise1_k1_50k256_seeded_freerun/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/noise1_k1_50k256_standalone_seed1775735620/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/noise1_k1_50k256_seeded_freerun/masked_fsc.json"
     ]
    },
    "date": "2026-09-23",
@@ -1518,28 +1518,28 @@
     "date": "2026-09-24",
     "maps": {
      "merged (noise1_k1_50k256_standalone_seed1775735620)": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/noise1_k1_50k256_standalone_seed1775735620/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/noise1_k1_50k256_standalone_seed1775735620/final_merged.mrc",
       "corrected_sha256": "1b8502821c688135f38735abce08ce68945c3812e41ee36534db72bf4440a6c6",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/fixture/standalone_accept_20260923/recovar_standalone_seed1775735620/outputs/final_merged.mrc",
       "source_sha256": "b7e737baab9d611a059c273db3338bec96f161a1efd4c3a015c3ed28d65b34f9"
      },
      "merged (noise1_k1_50k256_standalone_seed20260923)": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/noise1_k1_50k256_standalone_seed20260923/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/noise1_k1_50k256_standalone_seed20260923/final_merged.mrc",
       "corrected_sha256": "909ccaaf17330d1db148cdb2db340eda1cf16060c4e373cd61820542475d3e97",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/fixture/standalone_accept_20260923/recovar_standalone_seed20260923/outputs/final_merged.mrc",
       "source_sha256": "01cf3fbb4280cc98347f5404d06ba3f4f7e9bd44f48dbee33465e120ceb88aea"
      },
      "merged (noise1_k1_50k256_seeded_freerun)": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/noise1_k1_50k256_seeded_freerun/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/noise1_k1_50k256_seeded_freerun/final_merged.mrc",
       "corrected_sha256": "347f8db04a391222a121b86784891cd342ee46055d5218f160db713767520d1a",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/fixture/k1diag/freerun_control_pipeline_noise/outputs/final_merged.mrc",
       "source_sha256": "9b4cea660472333e570d19e252422a21aa87e0984c336594d176ff8681e4a672"
      }
     },
     "evidence": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/rvr/noise1_ACCEPT_corrected.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/noise1_k1_50k256_standalone_seed1775735620/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/noise1_k1_50k256_seeded_freerun/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/rvr/noise1_ACCEPT_corrected.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/noise1_k1_50k256_standalone_seed1775735620/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/noise1_k1_50k256_seeded_freerun/masked_fsc.json"
     ],
     "previous_values": {
      "gt": {

@@ -11,8 +11,8 @@
     80
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/10073_q427a08bd8_mt19937/masked_fsc.json",
-    "sha256": "2ff1ed782a1d0ee591ca7d8deb604192d8a45734073426341890c55d24e76d86"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/10073_q427a08bd8_mt19937/masked_fsc.json",
+    "sha256": "e9b664eef9f64e2dad12e405086674f331e8114b6f0be224d07609d27a385695"
    },
    "null_reasons": {},
    "provenance": {
@@ -31,7 +31,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/10073_q427a08bd8_mt19937/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/10073_q427a08bd8_mt19937/final_merged.mrc",
       "corrected_sha256": "fd8eab708948c907a51bcd739234ddac86366d2646e0b7916b23659423daa993",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/realdata_10073_mt19937_q427a08bd8/outputs/final_merged.mrc",
       "source_sha256": "7df204472c63104daba4203cbd271f3478093dd263abc752ae9e854ff065b2cb"
@@ -68,8 +68,8 @@
     80
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/empiar10073_cand2_087287024/masked_fsc.json",
-    "sha256": "73c7177ab537ac3515f3935daba62883ed28a089f3ffde576c6a661f3f4e6a26"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/empiar10073_cand2_087287024/masked_fsc.json",
+    "sha256": "7d18533ff2d49075644bdf88806cb3618754b9a6ae3335bfc6f18f5c927f9eaf"
    },
    "null_reasons": {},
    "provenance": {
@@ -88,7 +88,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/empiar10073_cand2_087287024/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/empiar10073_cand2_087287024/final_merged.mrc",
       "corrected_sha256": "79b8a67768b68e979a3d89f68fb1ba74d2b7fdc5e4500da066579869271eeeb6",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/runs/realdata_10073_mt19937_cand2_087287024_prodxla/outputs/final_merged.mrc",
       "source_sha256": "e9aa2ece2b4cd4ea3dab4b6cc483e60b52b0ab105e238b01a9125056c1da663b"
@@ -184,8 +184,8 @@
     79
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/hcn1_relax_a32798c_14332336/masked_fsc.json",
-    "sha256": "31e010e50fd292d966e39d3e6d72a92f70a83a0635d23c9843a2b51ab661760e"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/hcn1_relax_a32798c_14332336/masked_fsc.json",
+    "sha256": "1c68a205d540b0477e43958f14b1a07e3d3807718df83781af9fcbecca873729"
    },
    "null_reasons": {},
    "provenance": {
@@ -204,7 +204,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/hcn1_relax_a32798c_14332336/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/hcn1_relax_a32798c_14332336/final_merged.mrc",
       "corrected_sha256": "fd5a20fbecab1963a0bca2529c37923cd0db51ecf4b7218c0270538631b26ce6",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/hcn1/relax_main_20260923/runs/hcn1_relax_standalone_a32798c_v1/outputs/final_merged.mrc",
       "source_sha256": "099f01905b764f08f92b5f484e66908dcf6899217a07db3e97ceb4d36cbdd39f"
@@ -275,8 +275,8 @@
     44
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/10097_q427a08bd8_mt19937/masked_fsc.json",
-    "sha256": "1ef2288fcf3fc59acfaeb2958968586dc52fba4c83ab1baf8c39ca765b80ba68"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/10097_q427a08bd8_mt19937/masked_fsc.json",
+    "sha256": "2ee4ffe47f18f64fb9f5a6eed286c43479f7d32b6373545f0f4c17c45a3eab0f"
    },
    "null_reasons": {},
    "provenance": {
@@ -295,7 +295,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/10097_q427a08bd8_mt19937/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/10097_q427a08bd8_mt19937/final_merged.mrc",
       "corrected_sha256": "474a0671be6dc6b027b27b5ffd627f1f5ecc3d2f70efe2772b9109d3473c7b74",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/realdata_10097_mt19937_q427a08bd8/outputs/final_merged.mrc",
       "source_sha256": "47898d12331017d7b1a8f0418b75e9e533d670fec4293cedb5a131b70916f4ff"
@@ -332,8 +332,8 @@
     20
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/empiar10097_10k_B1_j1_abba_r2/masked_fsc.json",
-    "sha256": "89467b5c7109059d2d0ed45698c1a9c8b5c7fa7804bb0a9af925bd5c7ea7d51c"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/empiar10097_10k_B1_j1_abba_r2/masked_fsc.json",
+    "sha256": "cbe1feb0077a1d40377910e4ff571310b49355a538b8c8a9ca1546a996f3df1b"
    },
    "null_reasons": {},
    "provenance": {
@@ -352,7 +352,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/empiar10097_10k_B1_j1_abba_r2/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/empiar10097_10k_B1_j1_abba_r2/final_merged.mrc",
       "corrected_sha256": "34a996fcd8cabb798c8096fcf1819a1c9f51f9a6e4c5c60fbf301c07bd5f657f",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/speed/partA/j1_abba_r2_20260923/B1/refinement/final_merged.mrc",
       "source_sha256": "8cd61be0a72918bf1934f09124856dae7e71e4f47821516a2941987e4442b8e2"
@@ -389,8 +389,8 @@
     20
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/empiar10097_10k_B2_j1_abba_r2/masked_fsc.json",
-    "sha256": "220b17dba622f3cc2b8842448d334da3677976f82ccace39a3bbea1ad73be8d6"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/empiar10097_10k_B2_j1_abba_r2/masked_fsc.json",
+    "sha256": "357ea2bed301e47b17a25276372f4610d96defd8e4f242ea852f2ca546d6fdc8"
    },
    "null_reasons": {},
    "provenance": {
@@ -409,7 +409,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/empiar10097_10k_B2_j1_abba_r2/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/empiar10097_10k_B2_j1_abba_r2/final_merged.mrc",
       "corrected_sha256": "310e50ab726e67b40b578b425a8da2907eb4a8d180e08642e959a6b3f1b10017",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/speed/partA/j1_abba_r2_20260923/B2/refinement/final_merged.mrc",
       "source_sha256": "ee97be724d34696bf49421f1c4a1e1c9c69c9855aef289a470e582552db88b50"
@@ -446,8 +446,8 @@
     20
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/empiar10097_10k_B3_j2_baab_r2/masked_fsc.json",
-    "sha256": "7ae04edba4fea9eb2c4a0121a5d919f3365eb597e0b3ef44aff15667a1832ef5"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/empiar10097_10k_B3_j2_baab_r2/masked_fsc.json",
+    "sha256": "32a801d00182389d3f3cfe04382b4e366e9a2625a841dfffc67b944700ce551e"
    },
    "null_reasons": {},
    "provenance": {
@@ -466,7 +466,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/empiar10097_10k_B3_j2_baab_r2/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/empiar10097_10k_B3_j2_baab_r2/final_merged.mrc",
       "corrected_sha256": "385a0febb7c831b5642ffb2d9700d0d31808cbc7b32cb6e9694f9c0ccef9a9ac",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/speed/partA/j2_baab_r2_20260923/B3/refinement/final_merged.mrc",
       "source_sha256": "b0076932bd61f81915f729e8326b411a58854ef490ce38bf198cd45268b823c3"
@@ -503,8 +503,8 @@
     20
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/empiar10097_10k_B4_j2_baab_r2/masked_fsc.json",
-    "sha256": "ef2ff51c88f67f2f20d08b66f404638154e0c8f23147d751d2302eb48f6cc132"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/empiar10097_10k_B4_j2_baab_r2/masked_fsc.json",
+    "sha256": "64e9e8665d4747d30862cece5c1d8748e6227063cfba7ba2ddde8f7a1733ce14"
    },
    "null_reasons": {},
    "provenance": {
@@ -523,7 +523,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/empiar10097_10k_B4_j2_baab_r2/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/empiar10097_10k_B4_j2_baab_r2/final_merged.mrc",
       "corrected_sha256": "c16b1bb4ecdfcd8e29696876e2d2ef579468737d1a4e187e4faf50a0e31781d4",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/speed/partA/j2_baab_r2_20260923/B4/refinement/final_merged.mrc",
       "source_sha256": "42b131b0d5e47addd1eeddbfc1309912c18b54998756b2068fdf7cee3be74f6f"
@@ -560,8 +560,8 @@
     44
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/empiar10097_cand2_087287024/masked_fsc.json",
-    "sha256": "6389d2e0692beb82b4bec9e69df6afaf8709cbfc2d9050186a1b265841b9746d"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/empiar10097_cand2_087287024/masked_fsc.json",
+    "sha256": "c893ad5bf363816a970709eecd5f36395f9833676b18803ffd7b71d216b15317"
    },
    "null_reasons": {},
    "provenance": {
@@ -580,7 +580,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/empiar10097_cand2_087287024/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/empiar10097_cand2_087287024/final_merged.mrc",
       "corrected_sha256": "ca441a5506b69b1ea05df2e9dc45a0575263fe66b58fdafea2e099c648978712",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/runs/realdata_10097_mt19937_cand2_087287024_prodxla/outputs/final_merged.mrc",
       "source_sha256": "572eab0d8f6d89aab6e60ff8131983cc455c1fd7ef8d73446274060095e2dd4c"
@@ -692,8 +692,8 @@
     48
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/10345_q427a08bd8_mt19937/masked_fsc.json",
-    "sha256": "f4234baec08c4af4733007ea6d6cc25bb21359b098b9a92184b427550a28ce37"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/10345_q427a08bd8_mt19937/masked_fsc.json",
+    "sha256": "9686f2cc55e54910766677bd7fe77c03d4d505bb1e01f1ad4e472e8380f90464"
    },
    "null_reasons": {},
    "provenance": {
@@ -712,7 +712,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/10345_q427a08bd8_mt19937/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/10345_q427a08bd8_mt19937/final_merged.mrc",
       "corrected_sha256": "03ac866a64ca79d1095b26363406365bd80014d4eb513ac57e5eb8590b7e4a4f",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/realdata_10345_mt19937_q427a08bd8/outputs/final_merged.mrc",
       "source_sha256": "a941dc9a4e1f09d6932a6c7dd0cdf5a20546a45e6f571145a480fa77950aec94"
@@ -749,8 +749,8 @@
     48
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/empiar10345_cand2_087287024/masked_fsc.json",
-    "sha256": "384dcb040cfdacd2cffa34ea9e4fef214cdeeb21649d07a20e16b605e995192a"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/empiar10345_cand2_087287024/masked_fsc.json",
+    "sha256": "b74be26d92f0a27cd6a52b1b5d18196b74ac6445ea15e4a8c01bc687c5d2f76b"
    },
    "null_reasons": {},
    "provenance": {
@@ -769,7 +769,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/empiar10345_cand2_087287024/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/empiar10345_cand2_087287024/final_merged.mrc",
       "corrected_sha256": "73d439d852410c56163c0113e8610acd2891080e93e2673cbe954b4f35658bd6",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/runs/realdata_10345_mt19937_cand2_087287024_prodxla/outputs/final_merged.mrc",
       "source_sha256": "6ef8dada4aeb5e4b573fedf951fc64bd0cb9b86ba10a0c192dad785c4f939e4f"
@@ -806,8 +806,8 @@
     89
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k101_ac5177d2_job11384176/masked_fsc.json",
-    "sha256": "d1ad2b344071dda81daef7c47dfd216158c0ee069cdc8e9870d72ea050a8f45d"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k101_ac5177d2_job11384176/masked_fsc.json",
+    "sha256": "b85bdaaefcc1b4cba99b517623f5b883a9ebf66eb05640c603fc30d83ad3932c"
    },
    "null_reasons": {},
    "provenance": {
@@ -826,7 +826,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k101_ac5177d2_job11384176/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k101_ac5177d2_job11384176/final_merged.mrc",
       "corrected_sha256": "0ba262d9f241ff7820ff82d7faf646041752a0699a216e9ee3bd1c9929c67074",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/1_baseline_100k_g256_white_noise1_bf80/recovar/final_merged.mrc",
       "source_sha256": "5af00db6eca991d9edcc483d31ea49efea806bec19926fe55716d696ca22e807"
@@ -866,8 +866,8 @@
     108
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k102_ac5177d2_job11385530/masked_fsc.json",
-    "sha256": "ec6dfa94815ff04f7f5332ab87e3fc41f0de08517a7de22f5778d608718c9156"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k102_ac5177d2_job11385530/masked_fsc.json",
+    "sha256": "a7b5c1a40fd1924887e865c7f7e265532474d758c3ba92682b0ff532807a0feb"
    },
    "null_reasons": {},
    "provenance": {
@@ -886,7 +886,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k102_ac5177d2_job11385530/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k102_ac5177d2_job11385530/final_merged.mrc",
       "corrected_sha256": "aea7cedce297fe7feedb457ca2d3621a234e83844755aa98cb1bf10fc75af239",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/2_more_images_200k_g256_white_noise1_bf80/recovar/final_merged.mrc",
       "source_sha256": "8e914e4b7ad3a21495e189b0eedefee7feffd511bdae713e582d5e27d8649431"
@@ -926,8 +926,8 @@
     115
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k103_ac5177d2_job11384178/masked_fsc.json",
-    "sha256": "8ee735d12a9d8874befe9e6b46fa4a824dbf9d208999925e78e44097efa82f19"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k103_ac5177d2_job11384178/masked_fsc.json",
+    "sha256": "3a3fa26a86a4eda3d3c272e907d8d6b729bc25b232eb73c019fc75928d2297ba"
    },
    "null_reasons": {},
    "provenance": {
@@ -946,7 +946,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k103_ac5177d2_job11384178/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k103_ac5177d2_job11384178/final_merged.mrc",
       "corrected_sha256": "963693c0be0dce2b1cf96955b32b477c0fd4b3b79ce99847d70dbad828b1a7c5",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/3_more_images_300k_g256_white_noise1_bf80/recovar/final_merged.mrc",
       "source_sha256": "bfd0b44a8d372e74ff13087cc61171493b78745eacdb9a42c337e697d92df1cc"
@@ -986,8 +986,8 @@
     60
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k104_ac5177d2_job11384179/masked_fsc.json",
-    "sha256": "19f3c197305ccdfe653fad716d02c52677d30c5f82e8405e0fe94c09c80d1541"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k104_ac5177d2_job11384179/masked_fsc.json",
+    "sha256": "93b8a9a825f2abe752e734085dfaf2b124433b1f4788f05ca30a89b953fa1247"
    },
    "null_reasons": {},
    "provenance": {
@@ -1006,7 +1006,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k104_ac5177d2_job11384179/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k104_ac5177d2_job11384179/final_merged.mrc",
       "corrected_sha256": "0bc46c5948543263e80fb74d98f2ec1bd2b2bb766552cc577900a481072b2ab3",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/4_high_noise_100k_g256_white_noise3_bf80/recovar/final_merged.mrc",
       "source_sha256": "586ecc3a51c175e9a0181e6d107793a4b5529aa510a55067c2e9442d76d45714"
@@ -1046,8 +1046,8 @@
     25
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k105_ac5177d2_job11384180/masked_fsc.json",
-    "sha256": "7bd79b2dad3d401d61be477c5852ea9d42752f857a2d3bce6f8548319975a115"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k105_ac5177d2_job11384180/masked_fsc.json",
+    "sha256": "294830721b4863de4fcca40012b5a54fb0d829c19f8e5da0fa88f16fc4d5e696"
    },
    "null_reasons": {},
    "provenance": {
@@ -1066,7 +1066,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k105_ac5177d2_job11384180/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k105_ac5177d2_job11384180/final_merged.mrc",
       "corrected_sha256": "430a08a74f48fad78b0284975bee259f1450fe47d807d347372aaa98af684abf",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/5_very_high_noise_100k_g256_white_noise10_bf80/recovar/final_merged.mrc",
       "source_sha256": "142cd96a16635653f2ebb7b642209cff0729cae6a7feadf51e8ec984cb6a71bc"
@@ -1106,8 +1106,8 @@
     77
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k106_ac5177d2_job11384181/masked_fsc.json",
-    "sha256": "f9efd71d5f5bcab89e4bb4ab014b9c6a5ddaee9f6c5f285b81e3c6c7adb686f7"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k106_ac5177d2_job11384181/masked_fsc.json",
+    "sha256": "58bc94095d5292e266700d3286b945a8f34b9e9e68b11c2d3b532b048bfa44af"
    },
    "null_reasons": {},
    "provenance": {
@@ -1126,7 +1126,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k106_ac5177d2_job11384181/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k106_ac5177d2_job11384181/final_merged.mrc",
       "corrected_sha256": "c5557a8301c573ca0b97f34ca4903e44a8c385ab9a0637370bbba9476d9ad8fe",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/6_noctf_control_100k_g256_white_noise3_bf80/recovar/final_merged.mrc",
       "source_sha256": "6ac35f6a7632506debef3e068afc3bec92812548709f90e8a9a45e75771fa05f"
@@ -1166,8 +1166,8 @@
     36
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k107_ac5177d2_job11384182/masked_fsc.json",
-    "sha256": "429fc5db17298af2215f093b80e4fce1f8f8717ac0a4d06976731ccd74b93a71"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k107_ac5177d2_job11384182/masked_fsc.json",
+    "sha256": "3aa35f4b1768c715dd369701408a497d22eaee17068e7c177bfdafa4aaf0a656"
    },
    "null_reasons": {},
    "provenance": {
@@ -1186,7 +1186,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k107_ac5177d2_job11384182/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k107_ac5177d2_job11384182/final_merged.mrc",
       "corrected_sha256": "f82c8401201a0e5632e1995ff32c17471a9560319d59b223bf71ed97bd5516f3",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/7_anisotropic_100k_g256_white_noise1_bf80/recovar/final_merged.mrc",
       "source_sha256": "e9553c0a0c6fe8ca2cf718ebd746237faaab496fd270d0c57e54fc60692d7417"
@@ -1226,8 +1226,8 @@
     47
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k108_ac5177d2_job11384183/masked_fsc.json",
-    "sha256": "346bdfcb066992ee4f760169cb25aff9c860883c8552c65565d66e8ff9856e74"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k108_ac5177d2_job11384183/masked_fsc.json",
+    "sha256": "b335b78a961ef019d1e0add78706edc3a4fc420184410b51bc009ab5255bb223"
    },
    "null_reasons": {},
    "provenance": {
@@ -1246,7 +1246,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k108_ac5177d2_job11384183/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k108_ac5177d2_job11384183/final_merged.mrc",
       "corrected_sha256": "f24afcf14fed0f756a5dcea2b819e53db8a30bbc10b0ddf84b9be1a3dc8749d6",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/8_anisotropic_high_noise_100k_g256_white_noise3_bf80/recovar/final_merged.mrc",
       "source_sha256": "c5bfb879bcaa6e4d2e5362a289eecedd4353728949190a517c9a096cc7bffe2c"
@@ -1346,8 +1346,8 @@
     43
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k111_ac5177d2_job11384186/masked_fsc.json",
-    "sha256": "d43c3178ab94ccc64701e6b50777b140116a496bf415d9715f3f87db8d782ad4"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k111_ac5177d2_job11384186/masked_fsc.json",
+    "sha256": "73c8923da0c3fd479cfd0ff91a401a81a33c04e33cc22b5b42bacb0373f57704"
    },
    "null_reasons": {},
    "provenance": {
@@ -1366,7 +1366,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k111_ac5177d2_job11384186/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k111_ac5177d2_job11384186/final_merged.mrc",
       "corrected_sha256": "c3a1f17bd5145916a6946f68ce757d17246f4e1b4ea49c100893bf64ed646673",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/11_small_baseline_3k_g128_white_noise1_bf80/recovar/final_merged.mrc",
       "source_sha256": "61e1e71d1a13abec8d68ab447f0a804e1b6263ee59d0aa57cc3005a087d46054"
@@ -1406,8 +1406,8 @@
     17
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k112_ac5177d2_job11384187/masked_fsc.json",
-    "sha256": "9dd18123f4461721f6fdf56a356b92d0d60389d178a5b879c8db6ebd4da156fe"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k112_ac5177d2_job11384187/masked_fsc.json",
+    "sha256": "7e1cd9b3a8563d8acb9afcdf46f85db617c3bf3e3c582cab5c260ac224d1979a"
    },
    "null_reasons": {},
    "provenance": {
@@ -1426,7 +1426,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k112_ac5177d2_job11384187/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k112_ac5177d2_job11384187/final_merged.mrc",
       "corrected_sha256": "90ae7aa324fdbd4cf1d1dee197c462d1be37a7ffa785b7edf3e4d854b4ff4fc1",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/12_small_very_high_noise_3k_g128_white_noise10_bf80/recovar/final_merged.mrc",
       "source_sha256": "f296439c3bccf693784e1aa187192c7c92658390f2fbf81ca0c3f266ff8b73dc"
@@ -1466,8 +1466,8 @@
     18
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k113_ac5177d2_job11385531/masked_fsc.json",
-    "sha256": "3efc902a044c30175605fe3d77ca888693f5ffd060e670f3fe6a23d2fa244867"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k113_ac5177d2_job11385531/masked_fsc.json",
+    "sha256": "048ee6132295313ad8766b600619e85053d0c4e2a68dd13cb684202bd728d30c"
    },
    "null_reasons": {},
    "provenance": {
@@ -1486,7 +1486,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k113_ac5177d2_job11385531/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k113_ac5177d2_job11385531/final_merged.mrc",
       "corrected_sha256": "2d0f509d8b93d5ed2d054e95ad9d3ccab0011f2eca08856078dd3df6dbcdef29",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/13_small_anisotropic_3k_g128_white_noise3_bf80/recovar/final_merged.mrc",
       "source_sha256": "88a4eb87ec7604894a5342a78df8c746d964d5880d2b23c4c2fc281ffe4e9bcf"
@@ -1526,8 +1526,8 @@
     35
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k114_ac5177d2_job11385532/masked_fsc.json",
-    "sha256": "34bced5444be9b8adc303cb63a2024428854d063c32470c602f3d4233ecf786b"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k114_ac5177d2_job11385532/masked_fsc.json",
+    "sha256": "0cf48fbeff6a5641f96ca9b1a7d2bf1f77c5b039af16c01c129502d341ae572b"
    },
    "null_reasons": {},
    "provenance": {
@@ -1546,7 +1546,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k114_ac5177d2_job11385532/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k114_ac5177d2_job11385532/final_merged.mrc",
       "corrected_sha256": "dea92d201a365cbb83115ecaa6a0d9a2c470bf77af8d01fbd7feaeab4bac2ae5",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/14_small_noctf_3k_g128_white_noise3_bf80/recovar/final_merged.mrc",
       "source_sha256": "732b50c420e201060437d08279a3beed014891116abf0952edf901461cfb6dda"
@@ -1586,8 +1586,8 @@
     36
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k115_ac5177d2_job11385533/masked_fsc.json",
-    "sha256": "63e99adcccf4551fd9aa4db4cdab4447160ffee3a7dbc0e107e8c03c8f33fee8"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k115_ac5177d2_job11385533/masked_fsc.json",
+    "sha256": "d05144b880564070a15fdcde9e7b28c8f136c15be17c6549be8b05d132e514e9"
    },
    "null_reasons": {},
    "provenance": {
@@ -1606,7 +1606,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k115_ac5177d2_job11385533/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k115_ac5177d2_job11385533/final_merged.mrc",
       "corrected_sha256": "3cb57b9f2e0fa0b2e7ed156dc21616e1d171f699e804f34ada733a08feb9f4cd",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/15_small_outliers_3k_g128_pct20_noise1_bf80/recovar/final_merged.mrc",
       "source_sha256": "a638cb69a851b338b0235a266d93326b31f2d410f63e96058be9384cc1ba462a"
@@ -1646,8 +1646,8 @@
     19
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k116_ac5177d2_job11385534/masked_fsc.json",
-    "sha256": "0cf93e6a4279142549783dc5f3eaf1f9327cad3e1d990fe38041568e27f0b764"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k116_ac5177d2_job11385534/masked_fsc.json",
+    "sha256": "797a803ed271d8387556956fb0e7fd7a0eee7ed9e86b24779e3b903a48a8038d"
    },
    "null_reasons": {},
    "provenance": {
@@ -1666,7 +1666,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k116_ac5177d2_job11385534/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k116_ac5177d2_job11385534/final_merged.mrc",
       "corrected_sha256": "4936b0b62e037edad9ed7da8388c8b65bc35b8b367c55a7ed2b5c370cd7d33c2",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/16_small_anisotropic_outliers_3k_g128_pct25_noise3_bf80/recovar/final_merged.mrc",
       "source_sha256": "1cab1ae9944227b02c2c960c2184d614062416c398ea0f6b8810025cc9445bc5"
@@ -1706,8 +1706,8 @@
     59
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k117_ac5177d2_job11385535/masked_fsc.json",
-    "sha256": "8b84e934249612f5a0bb21ef35a29bec51271d707d598c4faaf790cb58423756"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k117_ac5177d2_job11385535/masked_fsc.json",
+    "sha256": "993f0372b51644e6b7d07529e3cf341d45a82112c5cd1a29e7ef8f5f8f30d07d"
    },
    "null_reasons": {},
    "provenance": {
@@ -1726,7 +1726,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k117_ac5177d2_job11385535/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k117_ac5177d2_job11385535/final_merged.mrc",
       "corrected_sha256": "b11b07eeba8e2767929617efb0b7152cb15049e471795ef60f5bfb8dd26376da",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/17_small_extra_particles_3k_g128_noise1_bf80/recovar/final_merged.mrc",
       "source_sha256": "fc450b9cc09f9b25b889b8f84d7867bc1a0d69f8cfc904045bbadcaeea096915"
@@ -1766,8 +1766,8 @@
     52
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k118_ac5177d2_job11385536/masked_fsc.json",
-    "sha256": "0c5f1850d493a6bd9a25825cde569654527a2f7c93a3d3cd2563943823d831d9"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k118_ac5177d2_job11385536/masked_fsc.json",
+    "sha256": "baecd6cb450ffb053536b3c52d7a6ce4780f045af4ea407bc8f895e4f406d5f4"
    },
    "null_reasons": {},
    "provenance": {
@@ -1786,7 +1786,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k118_ac5177d2_job11385536/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k118_ac5177d2_job11385536/final_merged.mrc",
       "corrected_sha256": "e78cd3547b1af710a8032d4e5f0eadf1d74b5b5528f64116a839fd7c7226d2d2",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/18_small_contrast_noise_scale_3k_g128_noise1_bf80/recovar/final_merged.mrc",
       "source_sha256": "81d2bfcdaa4a5a5496af60bc65ffbe415bbbd122b0a71ab8960ddb10a2bccdf0"
@@ -1826,8 +1826,8 @@
     44
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k119_ac5177d2_job11385537/masked_fsc.json",
-    "sha256": "405dfe4fafd7a200cc53f0f47ab2a5866ca485874f2bb9c2e499938a58d391b6"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k119_ac5177d2_job11385537/masked_fsc.json",
+    "sha256": "10c03b1f6144b864d10ec9a019ca32e54b840db9da870a69eb66a9ff2f27f4d4"
    },
    "null_reasons": {},
    "provenance": {
@@ -1846,7 +1846,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k119_ac5177d2_job11385537/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k119_ac5177d2_job11385537/final_merged.mrc",
       "corrected_sha256": "98ce50d2aec7d33fdf1dd16d88f218544c73b7a33a6de2088f2cb6d8b5f9ffd0",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/19_small_image_offset_3k_g128_noise1_bf80/recovar/final_merged.mrc",
       "source_sha256": "f43288f55874864ed5e52bf539566104128f8222474fab61cfae62aa3d1fecf5"
@@ -1886,8 +1886,8 @@
     17
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k120_ac5177d2_job11385538/masked_fsc.json",
-    "sha256": "b047cd21baccb1845fbc32d445e8b873c547f858d1bcf61ea8df634f3c789572"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k120_ac5177d2_job11385538/masked_fsc.json",
+    "sha256": "ff113e4917b1a860056601a408a97bb7ced2ec28ca43964435e3b91fbedacfad"
    },
    "null_reasons": {
     "gt.relion": "map-GT correlation 0.402 < 0.5 inside the mask: common frame not established",
@@ -1909,7 +1909,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k120_ac5177d2_job11385538/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k120_ac5177d2_job11385538/final_merged.mrc",
       "corrected_sha256": "f4de3f883bc1cac077de65131f0e91a41812e8d992d318c6e2c3f7273cc4fa4f",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/20_small_high_res_radial_3k_g256_noise3_bf0/recovar/final_merged.mrc",
       "source_sha256": "41add769d1a6e9aed4d6e5940010dd3b71015034060d08cf14242c52b806fac5"
@@ -1949,8 +1949,8 @@
     24
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k121_ac5177d2_job11385539/masked_fsc.json",
-    "sha256": "81af43698e2dabd4afff09c67d8f2f5a8b090de88a1b235ce67ec18c913bb68f"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k121_ac5177d2_job11385539/masked_fsc.json",
+    "sha256": "01654e97502955ac2ca9566b692c671fb79909a2e29cfd206be3427cbbe74ddb"
    },
    "null_reasons": {},
    "provenance": {
@@ -1969,7 +1969,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k121_ac5177d2_job11385539/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k121_ac5177d2_job11385539/final_merged.mrc",
       "corrected_sha256": "d98986bb2b2c223b1cfd0c46433d48e5384bf180798cf8e7e938cdfebc06dd4e",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/21_small_kent_angles_3k_g128_white_noise3_bf80/recovar/final_merged.mrc",
       "source_sha256": "7ce184f92d7f9f70e21291fb7688776c7b016f5cac3adac7aa0340b9f6dbd109"
@@ -2009,8 +2009,8 @@
     24
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k122_ac5177d2_job11385540/masked_fsc.json",
-    "sha256": "d546056dc39658da22acac1090e607bc526c3ee5d0bb3ae16da35818a6b12748"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k122_ac5177d2_job11385540/masked_fsc.json",
+    "sha256": "7e1b2810ee94c1eb3b0bb735096e023b1f0ea770798a5a2d5b9cf8f16650027d"
    },
    "null_reasons": {},
    "provenance": {
@@ -2029,7 +2029,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k122_ac5177d2_job11385540/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k122_ac5177d2_job11385540/final_merged.mrc",
       "corrected_sha256": "e4c27c3d0b49a2674a398f5b712e4e865be526bf5130f2e375c0f45cbd03566b",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/22_small_severe_outliers_3k_g128_radial_noise5_bf80/recovar/final_merged.mrc",
       "source_sha256": "67413f0dd61137e2aba118245c787bd70dad397bae76ba0e2dd369bdd8f54995"
@@ -2069,8 +2069,8 @@
     30
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k123_ac5177d2_job11385541/masked_fsc.json",
-    "sha256": "622d100c6aca990fc0f4181bbd8ef30da6cfae2a29c0805b3bfdfcd923c2c0d4"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k123_ac5177d2_job11385541/masked_fsc.json",
+    "sha256": "5c392699bc909c57e5347575638331b6be9245cd66380b5a8c7a5aaff6446954"
    },
    "null_reasons": {},
    "provenance": {
@@ -2089,7 +2089,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k123_ac5177d2_job11385541/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k123_ac5177d2_job11385541/final_merged.mrc",
       "corrected_sha256": "795e68c5d00002f07c237325c72072c30f8463f226539c7e56ddeea486965802",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/23_small_noctf_radial_3k_g128_noise3_bf80/recovar/final_merged.mrc",
       "source_sha256": "a5f5bde2fcc0c7230d83f1d3291f19f3050aac1e49156928547cbf498be4902a"
@@ -2129,8 +2129,8 @@
     23
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k124_ac5177d2_job11385542/masked_fsc.json",
-    "sha256": "08b685da83ab96059611c0aabba80bc8109a16d054cbb625db1946514d13af7a"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k124_ac5177d2_job11385542/masked_fsc.json",
+    "sha256": "405919a25cfee2d17cc9e5e6f41d471e98970ae18005f884beda1dd6be676bb9"
    },
    "null_reasons": {},
    "provenance": {
@@ -2149,7 +2149,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k124_ac5177d2_job11385542/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k124_ac5177d2_job11385542/final_merged.mrc",
       "corrected_sha256": "7c2447671812ed21bd4459ab67d7a0b3b10430244ab5db4646052fc0ed13337b",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/24_small_kent_outliers_3k_g128_pct20_noise3_bf80/recovar/final_merged.mrc",
       "source_sha256": "42f3631c7643b852ce3f6b556f25939a42d7559694844e1a386a7e064520e96b"
@@ -2189,8 +2189,8 @@
     20
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k125_ac5177d2_job11385543/masked_fsc.json",
-    "sha256": "ae55ff997b7dca989fd93778176b907a1d33856033125e1d1715ea257fdef704"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k125_ac5177d2_job11385543/masked_fsc.json",
+    "sha256": "24dd46fd7196ce37a7b6245a1a36a4fc26ee7907e42a53886cb9ed1bec32a7f9"
    },
    "null_reasons": {},
    "provenance": {
@@ -2209,7 +2209,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k125_ac5177d2_job11385543/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k125_ac5177d2_job11385543/final_merged.mrc",
       "corrected_sha256": "c2f48471ef0b47dd8c4623f65a43b138046c0cd937cca55f4bb5420eb56dfd58",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/25_tiny_baseline_1k_g128_white_noise3_bf80/recovar/final_merged.mrc",
       "source_sha256": "a486d5814b06bcb8e201080325f29f910ea97c05edefafab7e1c3f64a23bb201"
@@ -2249,8 +2249,8 @@
     16
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k126_ac5177d2_job11385544/masked_fsc.json",
-    "sha256": "568118d86523a1163f4df40624b1a6ab22ecd9f692a7a869808085ec764287f9"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k126_ac5177d2_job11385544/masked_fsc.json",
+    "sha256": "587a7d96d355b1dad81c2dc978159a8665d7e1129e42e6ef88143d2dc36d38ff"
    },
    "null_reasons": {},
    "provenance": {
@@ -2269,7 +2269,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k126_ac5177d2_job11385544/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k126_ac5177d2_job11385544/final_merged.mrc",
       "corrected_sha256": "121b50e9e6d56f85808d889eac1f14963b8f992cbc97f895db8b66d851c369bc",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/26_tiny_severe_1k_g128_radial_noise5_nonuniform_pct30_bf80/recovar/final_merged.mrc",
       "source_sha256": "ecd7127b0e8d61fd00640f43f5625f1647ec81647a600f34f54809ebf84e3078"
@@ -2309,8 +2309,8 @@
     26
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k127_ac5177d2_job11385545/masked_fsc.json",
-    "sha256": "ea7ee4190733ab6cf110d5808e9a454c545301e829015cace314e39f5a6fdef1"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k127_ac5177d2_job11385545/masked_fsc.json",
+    "sha256": "e526959de0a5df4ab09c45e4cf42a012b903bd8d9246b13ecd2467655ba8d358"
    },
    "null_reasons": {},
    "provenance": {
@@ -2329,7 +2329,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k127_ac5177d2_job11385545/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k127_ac5177d2_job11385545/final_merged.mrc",
       "corrected_sha256": "e64f3e267665b9a52857128b648e469fafc5cc0fb7a9b4522e3924a268c86dd5",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/27_small_extreme_outliers_3k_g128_pct70_noise1_bf80/recovar/final_merged.mrc",
       "source_sha256": "01832cb5065bdfcb7cba1e31d945347a8f0dfeb6686d4917e8d2b11ff0f59e9e"
@@ -2369,8 +2369,8 @@
     45
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k128_ac5177d2_job11384203/masked_fsc.json",
-    "sha256": "266e380bdc8484d2aae62040ffa60e4a08686437e074d9346103ef792d8d9e01"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k128_ac5177d2_job11384203/masked_fsc.json",
+    "sha256": "0904ad93089ddbba14b9324ba504bfc66aba991726a882c11ce256122acbb8d4"
    },
    "null_reasons": {},
    "provenance": {
@@ -2389,7 +2389,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k128_ac5177d2_job11384203/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k128_ac5177d2_job11384203/final_merged.mrc",
       "corrected_sha256": "9d74bb5bc56cb2c3a0ab3066773c6a992e15ebc2e942d05b19b7c2dd069bc040",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/28_small_kent_extra_offset_3k_g128_noise3_bf80/recovar/final_merged.mrc",
       "source_sha256": "47af591b120c73c179a0e2c1668f95bed5abe616d0a17738872cf6048f080ce3"
@@ -2429,8 +2429,8 @@
     62
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k129_ac5177d2_job11384204/masked_fsc.json",
-    "sha256": "5056c4ae3f06a491b647774fcb26f8d42fc3dafc340799d03ee0e5bcf12faa88"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k129_ac5177d2_job11384204/masked_fsc.json",
+    "sha256": "ca9cd5c415d8149bf8275f82cb8473dec31ebc25d8fd7aa995739e5f1ea42ddb"
    },
    "null_reasons": {},
    "provenance": {
@@ -2449,7 +2449,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k129_ac5177d2_job11384204/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k129_ac5177d2_job11384204/final_merged.mrc",
       "corrected_sha256": "744a2ef5b0c10294df87bde5ef048e51d8cd843aac9601671fb28e8adf2182bb",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/29_small_low_noise_3k_g128_white_noise0p2_bf80/recovar/final_merged.mrc",
       "source_sha256": "8f687ffbc233cac60f25a0f0b7063a7bd220af5c54c6cd2787376b023c471f97"
@@ -2489,8 +2489,8 @@
     62
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k130_ac5177d2_job11384205/masked_fsc.json",
-    "sha256": "30ce3be408f13ce637f17d10e7436cf0adc67f1c0f537730b594fe72ab0e3c9c"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k130_ac5177d2_job11384205/masked_fsc.json",
+    "sha256": "17dec31f6e90a0d81f4f9cc587ff817ea0dc670e553995245e89a32a5f32e521"
    },
    "null_reasons": {},
    "provenance": {
@@ -2509,7 +2509,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k130_ac5177d2_job11384205/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k130_ac5177d2_job11384205/final_merged.mrc",
       "corrected_sha256": "0e45c6d0132aea8e71fa22d4ac3db9acb63d2c20d88e6ded0833bf9353c6383d",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/30_small_low_noise_kent_3k_g128_white_noise0p2_bf80/recovar/final_merged.mrc",
       "source_sha256": "a1b896672046a02bc899792e8abaf63b58311002fe248ae4501c5be72538ed92"
@@ -2549,8 +2549,8 @@
     56
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k131_ac5177d2_job11384206/masked_fsc.json",
-    "sha256": "97c1a543aadcff4c8ed028b28ed5b5cfc0513c364a55f9adf1bf320146d647a3"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k131_ac5177d2_job11384206/masked_fsc.json",
+    "sha256": "4b6bb44e773a6becb307beee54b8249d5b7c5f2fdb73d3005f90162a9ae0b91f"
    },
    "null_reasons": {},
    "provenance": {
@@ -2569,7 +2569,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k131_ac5177d2_job11384206/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k131_ac5177d2_job11384206/final_merged.mrc",
       "corrected_sha256": "80faeaf1af986bb0fb80a095645512482ac9a6811400cb88f6527ba311bf03bc",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/31_mid_10k_g128_white_noise1_bf80/recovar/final_merged.mrc",
       "source_sha256": "e90864bcc7d53b841798d65e301989ec6c9f112b55da5148e34c2b946fecb3ba"
@@ -2609,8 +2609,8 @@
     20
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k132_ac5177d2_job11384207/masked_fsc.json",
-    "sha256": "92bab36cb87fa9889138266cb321982c6000325a9c175ac2b1c1dc6fc0df82c9"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k132_ac5177d2_job11384207/masked_fsc.json",
+    "sha256": "a58234b4e64fbf799b2869407df9cd068ee895ad19b3bf0ce3831030dfff2550"
    },
    "null_reasons": {},
    "provenance": {
@@ -2629,7 +2629,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k132_ac5177d2_job11384207/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k132_ac5177d2_job11384207/final_merged.mrc",
       "corrected_sha256": "0f1cc3f58f4a9e717fe3f35120bd282463562127f0a6b0a69f180080b1ce7004",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/32_mid_10k_kent_g128_radial_noise3_bf80/recovar/final_merged.mrc",
       "source_sha256": "9bbba93204fe4ba1045cdb22a32eb9a356ea1d831cbdc16f3ea7d2fd8c410a99"
@@ -2669,8 +2669,8 @@
     62
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k133_ac5177d2_job11384208/masked_fsc.json",
-    "sha256": "7678df18447e99aed407553dba9ceb8df5fdaf4eefd0893815db865d1ec89a07"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k133_ac5177d2_job11384208/masked_fsc.json",
+    "sha256": "a17bb285bb71a2ebc8e02d8d50115636cb6e900fcaaa8e9cc1272f409712c2e1"
    },
    "null_reasons": {},
    "provenance": {
@@ -2689,7 +2689,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k133_ac5177d2_job11384208/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k133_ac5177d2_job11384208/final_merged.mrc",
       "corrected_sha256": "30de35412e435a84d3fc0a205dd9cb26d55b97e404f811d884ffeb0b577ed97d",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/33_max_images_400k_g128_white_noise1_bf80/recovar/final_merged.mrc",
       "source_sha256": "3239e2e5d60c3095b5f6d21d5dbc33c1ab801a83cd33495c5db6362fc18a0cf3"
@@ -2729,8 +2729,8 @@
     53
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/fixed34_k134_ac5177d2_job11384210/masked_fsc.json",
-    "sha256": "50b0a43a3376fb08b76cf9c72ec028db8967534f51f3deab3eb5fa48ce9ecbc6"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/fixed34_k134_ac5177d2_job11384210/masked_fsc.json",
+    "sha256": "4fc72b10b31f582d81c220372c61f5d066b58a2fe0831a400caf6c938608d8f5"
    },
    "null_reasons": {},
    "provenance": {
@@ -2749,7 +2749,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/fixed34_k134_ac5177d2_job11384210/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/fixed34_k134_ac5177d2_job11384210/final_merged.mrc",
       "corrected_sha256": "6cfded4b3632d92ec98238490adc5d998f8f6c1b8f0b624d6feaacf0fb4ef471",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/34_max_images_400k_g128_radial_noise3_nonuniform_bf80/recovar/final_merged.mrc",
       "source_sha256": "87e96cb8005d5ef491f5c767fa117d4245ede388cb2966bd1e05b602f581828e"
@@ -2789,8 +2789,8 @@
     45
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/noise1_k1_50k256_seeded_freerun/masked_fsc.json",
-    "sha256": "8bdbdb82120204da0211b2ef7084e30aafdbd935880ba1384d9eb31aa4272a63"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/noise1_k1_50k256_seeded_freerun/masked_fsc.json",
+    "sha256": "ff69a0a4944d5ab379d2076fa969d448825859ce35ca56c880aab9952e5c4252"
    },
    "null_reasons": {},
    "provenance": {
@@ -2809,7 +2809,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/noise1_k1_50k256_seeded_freerun/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/noise1_k1_50k256_seeded_freerun/final_merged.mrc",
       "corrected_sha256": "347f8db04a391222a121b86784891cd342ee46055d5218f160db713767520d1a",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/fixture/k1diag/freerun_control_pipeline_noise/outputs/final_merged.mrc",
       "source_sha256": "9b4cea660472333e570d19e252422a21aa87e0984c336594d176ff8681e4a672"
@@ -2849,8 +2849,8 @@
     45
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/noise1_k1_50k256_standalone_seed1775735620/masked_fsc.json",
-    "sha256": "85515bbf4641358fc9add09de1e9bf93bdfa2d23f91dcc17ba1b8a1f44357795"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/noise1_k1_50k256_standalone_seed1775735620/masked_fsc.json",
+    "sha256": "673a036f6fe9a780dca4f74cff8908ed86c3ac846e6519bc6f1d6eb4f4e4c04c"
    },
    "null_reasons": {},
    "provenance": {
@@ -2869,7 +2869,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/noise1_k1_50k256_standalone_seed1775735620/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/noise1_k1_50k256_standalone_seed1775735620/final_merged.mrc",
       "corrected_sha256": "1b8502821c688135f38735abce08ce68945c3812e41ee36534db72bf4440a6c6",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/fixture/standalone_accept_20260923/recovar_standalone_seed1775735620/outputs/final_merged.mrc",
       "source_sha256": "b7e737baab9d611a059c273db3338bec96f161a1efd4c3a015c3ed28d65b34f9"
@@ -2909,8 +2909,8 @@
     45
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/noise1_k1_50k256_standalone_seed20260923/masked_fsc.json",
-    "sha256": "f55cfcde16218987a95fbcdd4797ba96ce1b627d33af1798db33fd1e60095756"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/noise1_k1_50k256_standalone_seed20260923/masked_fsc.json",
+    "sha256": "13e3218280ec7e85e336c1bc2138bc17fedc0a8140f16370f5224d6865be4c55"
    },
    "null_reasons": {},
    "provenance": {
@@ -2929,7 +2929,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/noise1_k1_50k256_standalone_seed20260923/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/noise1_k1_50k256_standalone_seed20260923/final_merged.mrc",
       "corrected_sha256": "909ccaaf17330d1db148cdb2db340eda1cf16060c4e373cd61820542475d3e97",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/fixture/standalone_accept_20260923/recovar_standalone_seed20260923/outputs/final_merged.mrc",
       "source_sha256": "01cf3fbb4280cc98347f5404d06ba3f4f7e9bd44f48dbee33465e120ceb88aea"
@@ -2969,8 +2969,8 @@
     90
    ],
    "evidence": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/masked_scores/pdb_k1_100k256_q427a08bd8_14320204/masked_fsc.json",
-    "sha256": "d4ecd768a866dfa5e4e4fa2a31d636c6bcc0f35e701a57a376887ea41dc307e7"
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/masked_scores/pdb_k1_100k256_q427a08bd8_14320204/masked_fsc.json",
+    "sha256": "8127c54d263590b54e7d744f18d232b20c4d6a560e5f114ab73d653f35b35eb7"
    },
    "null_reasons": {},
    "provenance": {
@@ -2989,7 +2989,7 @@
     },
     "maps": {
      "merged": {
-      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/agent_masked/maps/pdb_k1_100k256_q427a08bd8_14320204/final_merged.mrc",
+      "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/pdb_k1_100k256_q427a08bd8_14320204/final_merged.mrc",
       "corrected_sha256": "194fd8ade50b15b24a1a4b1d1f1d95f963e70e88ecdb3f13c30c523f54362925",
       "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/completion_k1_q427a08bd8/k1_100k256_recovar/final_merged.mrc",
       "source_sha256": "51972001c954d7074fb220e7740d492c3c54101a60831f48087a69a587f6329e"
