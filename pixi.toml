@@ -88,11 +88,12 @@ scipy = ">=1.15.0"
 pytorch = { version = ">=2.3.1", channel = "pytorch" }
 
 # Immutable RECOVAR pin: recovar.__file__ then identifies the exact commit (direct_url.json).
-# PIN: recovar dev2 a6e6b64dd (R 162dc9477, which removes the EM code from recovar, plus absent_angles_zero,
-# the atomic-volume solvent/B-factor transform, a loader that never rebuilds a pinned library, and strict
-# stack staging).
+# PIN: recovar dev2 8f25f7a72 (R 162dc9477, which removes the EM code from recovar, plus absent_angles_zero,
+# the atomic-volume solvent/B-factor transform, a loader that never rebuilds a pinned library, strict
+# stack staging, the RELION 5 tomo simulator and converter that keep each particle's optics group, and
+# the RELION SPA simulator with several optics groups).
 [feature.pinned.pypi-dependencies]
-recovar = { git = "https://github.com/ma-gilles/recovar", rev = "a6e6b64dd864aefa78b6953ffe2185ffb3be0578" }
+recovar = { git = "https://github.com/ma-gilles/recovar", rev = "8f25f7a7279ce5a220b6e0fdabf10adfbc9b2473" }
 
 # The pinned environment's pypi packages are held at the builds in recovar's pixi.lock at the pinned commit, so
 # the relax default environment holds the same shared packages as recovar's (scripts/check_lock_parity.py, P3).
