@@ -24,6 +24,15 @@ least 256x256 images, compared against RELION for accuracy and speed.
   GT and RELION are the only map-quality gates. Correlation values in legacy
   rows are retained as weak historical diagnostics and cannot accept or reject
   a run under the current contract.
+- K=1 GT FSC-AUC gate, RELION band rule (user decision 2026-09-24, the rule
+  already used for EMPIAR-10097): when same-command RELION repeats of the
+  reference exist, RECOVAR passes if its merged-vs-GT FSC-AUC is no lower than
+  the lowest RELION run (reference or repeat) minus the tolerance (`1e-4`).
+  RELION's own run-to-run spread sets the comparison; without repeats the gate
+  is the single-reference comparison. Implemented in
+  `scripts/summarize_em_completion_bench.py` (`--k1-relion-repeat-dirs`,
+  launcher `K1_RELION_REPEAT_DIRS`). Being above the RELION band is reported,
+  not failed.
 
 ## Accepted Best Runs
 
@@ -371,6 +380,40 @@ Conclusion:
 - Worse metrics: 6.2x RELION wall (2.18x on 2026-06-29); sparse K-class pass-2 dominates (85 %) and its group noise statistics grew to 47 % of group wall. This matches the VDAM finding that K4 runtime is compile-bound per bucket shape (design item: shape-stable K-class bucketing).
 - Same metrics: populations, Pmax means, resolution shells, peak memory.
 - Accepted as new best: no. Handed to the numerical workstream (first-divergence search for the per-class GT-AUC deficit) and the VDAM performance workstream; this record is milestone evidence, not an edit-loop test.
+
+### 2026-09-24 `q427a08bd8-k1-completion-100k256-band-rule`
+
+Run metadata:
+
+- Commit: `427a08bd8550116f6fdc3f66ad202760372a813e` (frozen Q, last tree with EM in recovar)
+- Worktree: `/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/cand_q_427a08bd8/source` (clean, empty-diff SHA-256 `e3b0c442…b855`)
+- Fixture: `/scratch/gpfs/GILLES/mg6942/em_relion_proj/pdb_k1_g256_n100000_noise1_bf80_20260516` (100000 particles, box 256, K=1)
+- RELION: reference `relion_autorefine_k1_it015_os1` (fixture, 12695 s) plus two same-command repeats (`--random_seed 1775735620`, jobs `14305945`/`14305946`, 14871 s for rep1) under `/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/d10345/oom2/relion_repeat_k1_100k256/rep{1,2}`
+- RECOVAR: `scripts/run_em_completion_bench_slurm.sh`, `K1_MAX_ITER=25`, `--relion-particle-shuffle mt19937`; job `14320204` (8545 s, 18 iterations + final all-data pass, 8.77 A), summary `14320205`
+- Hardware: H100 80GB (`della-h20g4`); RECOVAR peak GPU memory 34.4 GiB
+- Artifacts: `/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/completion_k1_q427a08bd8/summary.md`; band-rule rerun of the summarizer `.../qual/scores/k1_completion_summary_band_rule/{summary.md,summary_metrics.json}` (rc 0, `--require-k1`); pairwise table `.../qual/scores/k1_completion_q427a08bd8_band.json`
+
+Quality comparison:
+
+| Metric | RELION | RECOVAR | Status |
+|--------|--------|---------|--------|
+| merged FSC-AUC vs GT | reference 0.490627; repeats 0.469929, 0.469911 (band [0.469911, 0.490627]) | 0.475108 | **pass** under the band rule; fails the single-reference comparison (-0.0155) |
+| merged FSC-AUC between maps | ref vs rep1/rep2 0.9848/0.9848; rep1 vs rep2 0.9998 | vs ref 0.9840; vs rep1/rep2 0.9984/0.9984 | RECOVAR sits with the repeats; the reference is the outlier |
+| FSC 0.5 / 0.143 shell vs GT | reference 63 / 92; repeats 61 / 88 | 62 / 89 | inside the RELION range |
+| pose error vs RELION reference | | mean 0.214 deg, within 1 deg 0.99688 | same |
+| translation error vs RELION reference | | mean 0.140 px, within 1 px 1.0 | same |
+| Pmax mean | 0.118882 | 0.120607 (corr 0.690) | same |
+
+Performance: RECOVAR 8545 s vs RELION reference 12695 s (0.67x). Not a matched timing pair (different dates and nodes).
+
+Conclusion: accepted under the 2026-09-24 K=1 band rule. The first summary job exited 2 because this submission had no K=4 cell and the single-reference gate failed; the same summarizer with the two repeats passes.
+
+### 2026-09-24 `q427a08bd8-k4-completion-100k256`
+
+- Commit `427a08bd8`, same worktree; fixture `ribosembly_k4_g256_n100000_completion_20260512_171123`, RELION `relion_class3d_k4_it015_clean9d9` (4525 s)
+- RECOVAR job `14320218` (18851 s, 15 fixed iterations), summary `14320219` (rc 0); artifacts `/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/completion_k4_q427a08bd8/summary.md`
+- Class-mean FSC-AUC vs GT 0.266248 vs RELION 0.266272 (delta -2.4e-5, tolerance 1e-4): **pass** (the 2026-09-11 run failed at -0.000519). Mean FSC shells 1-8 / 1-16 vs GT 0.997227/0.989897 vs 0.997219/0.989890. Identity class permutation.
+- Wall 4.17x RELION (6.20x on 2026-09-11), not a matched timing pair.
 
 ## Required Metric Template
 

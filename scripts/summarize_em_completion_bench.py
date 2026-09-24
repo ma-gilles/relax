@@ -50,6 +50,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--k1-recovar-dir", type=Path, help="K=1 RECOVAR output directory.")
     parser.add_argument("--k1-relion-dir", type=Path, help="K=1 RELION output directory.")
     parser.add_argument("--k1-fixture-dir", type=Path, help="K=1 fixture directory with GT/metadata.")
+    parser.add_argument(
+        "--k1-relion-repeat-dirs",
+        type=Path,
+        nargs="*",
+        default=[],
+        help=(
+            "Same-command RELION repeat output directories of --k1-relion-dir. When given, the K=1 GT "
+            "FSC-AUC gate compares RECOVAR with the lowest value over the reference and its repeats."
+        ),
+    )
     parser.add_argument("--k4-recovar-dir", type=Path, help="K=4 RECOVAR output directory.")
     parser.add_argument("--k4-relion-dir", type=Path, help="K=4 RELION output directory.")
     parser.add_argument("--k4-fixture-dir", type=Path, help="K=4 fixture directory with GT/metadata.")
@@ -76,7 +86,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_FSC_AUC_PARITY_TOL,
         help=(
             "For required cases, exit nonzero if RECOVAR GT FSC-AUC is below "
-            "RELION GT FSC-AUC by more than this tolerance."
+            "RELION GT FSC-AUC (for K=1 with repeats, the lowest RELION run) by more than this tolerance."
         ),
     )
     return parser.parse_args(argv)
@@ -3292,6 +3302,20 @@ def _correctness_gate_rows(
     return rows
 
 
+def _k1_relion_gt_band(metrics: dict[str, Any], *, sign_invariant_gt: bool = False) -> list[float]:
+    """GT FSC-AUC of the RELION reference and each same-command repeat (empty without repeats).
+
+    K=1 band rule (user decision 2026-09-24, the rule used for EMPIAR-10097): RELION's own run-to-run
+    spread sets the comparison, so the gate uses the lowest RELION value rather than the reference alone.
+    """
+    repeats = metrics.get("relion_repeats_merged_vs_gt") or {}
+    if not repeats:
+        return []
+    auc_fn = _metric_sign_invariant_fsc_auc if sign_invariant_gt else _metric_fsc_auc
+    rows = [metrics.get("relion_merged_vs_gt"), *repeats.values()]
+    return [auc_fn(row) if isinstance(row, dict) else float("nan") for row in rows]
+
+
 def _append_correctness_gate(
     lines: list[str],
     label: str,
@@ -3320,6 +3344,13 @@ def _append_correctness_gate(
                 ]
             )
             + " |"
+        )
+    band = _k1_relion_gt_band(metrics, sign_invariant_gt=sign_invariant_gt) if label == "k1" else []
+    if band:
+        lines.append("")
+        lines.append(
+            f"RELION reference + {len(band) - 1} same-command repeat(s) GT FSC AUC band: "
+            f"[{_format_value(min(band))}, {_format_value(max(band))}]; the gate compares RECOVAR with the band minimum."
         )
 
 
@@ -3499,10 +3530,29 @@ def _format_shift(value: Any) -> str:
     return ",".join(str(v) for v in values)
 
 
+def _add_k1_relion_repeats(section: dict[str, Any], repeat_dirs: Sequence[Path], fixture_dir: Path | None) -> None:
+    """Score each same-command RELION repeat's final map against GT for the K=1 band gate."""
+    if not repeat_dirs or section.get("status") == "skipped":
+        return
+    notes = section.setdefault("notes", [])
+    gt_path = _existing_path(fixture_dir, ["reference_gt.mrc", "reference_gt_class001.mrc", "gt.mrc"])
+    gt = _load_optional(gt_path, _load_recovar_volume, "K=1 GT reference", notes)
+    rows: dict[str, Any] = {}
+    for repeat_dir in repeat_dirs:
+        volume = _load_optional(
+            _k1_relion_final_map_path(repeat_dir), _load_relion_volume, f"K=1 RELION repeat final map in {repeat_dir}", notes
+        )
+        if volume is not None and gt is not None:
+            rows[str(repeat_dir)] = map_metrics(volume, gt)
+    section.setdefault("metrics", {})["relion_repeats_merged_vs_gt"] = rows
+
+
 def summarize(args: argparse.Namespace) -> dict[str, Any]:
+    k1 = summarize_k1(args.k1_recovar_dir, args.k1_relion_dir, args.k1_fixture_dir)
+    _add_k1_relion_repeats(k1, getattr(args, "k1_relion_repeat_dirs", None) or [], args.k1_fixture_dir)
     summary = {
         "schema": "em_completion_bench_summary_v1",
-        "k1": summarize_k1(args.k1_recovar_dir, args.k1_relion_dir, args.k1_fixture_dir),
+        "k1": k1,
         "k4": summarize_k4(args.k4_recovar_dir, args.k4_relion_dir, args.k4_fixture_dir),
     }
     _annotate_timing_probe_status(summary)
@@ -3551,6 +3601,26 @@ def _fsc_auc_gate_failure_notes(case: str, section: dict[str, Any], parity_tol: 
     )
     if not rows:
         return [f"{label} was selected as required, but GT FSC-AUC correctness gate metrics are missing"]
+
+    band = (
+        _k1_relion_gt_band(section.get("metrics", {}), sign_invariant_gt=_section_allows_global_sign(section))
+        if case == "k1"
+        else []
+    )
+    if band:
+        name, rec_auc = rows[0][0], rows[0][1]
+        if not (np.isfinite(rec_auc) and all(np.isfinite(band))):
+            return [
+                f"{label} GT FSC-AUC band gate {name} is non-finite "
+                f"(RECOVAR={_format_value(rec_auc)}, RELION band values={[_format_value(v) for v in band]})"
+            ]
+        if rec_auc + parity_tol < min(band):
+            return [
+                f"{label} GT FSC-AUC band gate failed for {name}: RECOVAR={_format_value(rec_auc)}, "
+                f"RELION reference+repeats band=[{_format_value(min(band))}, {_format_value(max(band))}], "
+                f"tolerance={_format_value(parity_tol)}"
+            ]
+        return []
 
     failures: list[str] = []
     for name, rec_auc, rel_auc, delta in rows:

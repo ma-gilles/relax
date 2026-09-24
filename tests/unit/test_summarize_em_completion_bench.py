@@ -1213,3 +1213,64 @@ def test_markdown_includes_global_profile_timing_table():
     assert "global_profile_row_count" in markdown
     assert "| Global Profile Key | Total s |" in markdown
     assert "sparse_kclass_fused_s" in markdown
+
+
+def _k1_band_summary(rec_auc, ref_auc, repeat_aucs):
+    metrics = {
+        "recovar_merged_vs_gt": {"fsc_auc": rec_auc},
+        "relion_merged_vs_gt": {"fsc_auc": ref_auc},
+    }
+    if repeat_aucs is not None:
+        metrics["relion_repeats_merged_vs_gt"] = {f"rep{i}": {"fsc_auc": v} for i, v in enumerate(repeat_aucs)}
+    return {
+        "k1": {"status": "ok", "timing": {}, "metrics": metrics, "notes": []},
+        "k4": {"status": "skipped", "timing": {}, "metrics": {}, "notes": []},
+    }
+
+
+def test_required_k1_band_gate_passes_inside_relion_repeat_band():
+    # K1 completion 14320204: RECOVAR 0.4751 vs reference 0.4906 fails alone but lies inside ref+repeats.
+    summary = _k1_band_summary(0.4751, 0.4906, [0.4699, 0.4700])
+    summarizer._mark_required_failures(summary, ("k1",), fsc_auc_parity_tol=1e-4)
+    assert summary["k1"]["status"] == "ok"
+    assert summary["k1"]["notes"] == []
+
+    single = _k1_band_summary(0.4751, 0.4906, None)
+    summarizer._mark_required_failures(single, ("k1",), fsc_auc_parity_tol=1e-4)
+    assert single["k1"]["status"] == "failed"
+
+
+def test_required_k1_band_gate_fails_below_lowest_relion_run():
+    summary = _k1_band_summary(0.4690, 0.4906, [0.4699, 0.4700])
+    summarizer._mark_required_failures(summary, ("k1",), fsc_auc_parity_tol=1e-4)
+    assert summary["k1"]["status"] == "failed"
+    assert "band gate failed" in summary["k1"]["notes"][-1]
+    assert "0.4699" in summary["k1"]["notes"][-1]
+
+
+def test_markdown_reports_k1_relion_repeat_band():
+    lines: list[str] = []
+    summarizer._append_correctness_gate(lines, "k1", _k1_band_summary(0.4751, 0.4906, [0.4699])["k1"]["metrics"])
+    assert any("1 same-command repeat(s)" in line and "0.4699" in line for line in lines)
+
+
+def test_k1_relion_repeats_are_scored_against_gt(tmp_path, monkeypatch):
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    (fixture / "reference_gt.mrc").write_bytes(b"")
+    repeat = tmp_path / "rep1"
+    repeat.mkdir()
+    (repeat / "run_class001.mrc").write_bytes(b"")
+    gt = np.random.default_rng(0).standard_normal((8, 8, 8))
+    monkeypatch.setattr(summarizer, "_load_recovar_volume", lambda path: gt)
+    monkeypatch.setattr(summarizer, "_load_relion_volume", lambda path: gt.copy())
+    section = {"status": "ok", "metrics": {}, "notes": []}
+    summarizer._add_k1_relion_repeats(section, [repeat], fixture)
+    row = section["metrics"]["relion_repeats_merged_vs_gt"][str(repeat)]
+    assert abs(row["corr"] - 1.0) < 1e-12
+    assert section["notes"] == []
+
+    missing = {"status": "ok", "metrics": {}, "notes": []}
+    summarizer._add_k1_relion_repeats(missing, [tmp_path / "absent"], fixture)
+    assert missing["metrics"]["relion_repeats_merged_vs_gt"] == {}
+    assert any("missing K=1 RELION repeat" in note for note in missing["notes"])

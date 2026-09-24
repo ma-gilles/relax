@@ -62,6 +62,7 @@ fi
 
 K1_DATA_DIR="${K1_DATA_DIR:-/scratch/gpfs/GILLES/mg6942/em_relion_proj/pdb_k1_g256_n100000_noise1_bf80_20260516}"
 K1_RELION_DIR="${K1_RELION_DIR:-${K1_DATA_DIR}/relion_autorefine_k1_it015_os1}"
+K1_RELION_REPEAT_DIRS="${K1_RELION_REPEAT_DIRS:-}"
 K4_DATA_DIR="${K4_DATA_DIR:-/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k4_g256_n100000_completion_20260512_171123}"
 K4_RELION_DIR="${K4_RELION_DIR:-${K4_DATA_DIR}/relion_class3d_k4_it015_clean9d9}"
 K4_RELION_DISPATCH_SCHEDULE="${K4_RELION_DISPATCH_SCHEDULE:-}"
@@ -134,6 +135,8 @@ Environment overrides:
   RELION_SRC_DIR             RELION src directory used to build the parity binding
   K1_DATA_DIR                K=1 fixture directory
   K1_RELION_DIR              K=1 RELION output directory
+  K1_RELION_REPEAT_DIRS      Space-separated same-command RELION repeats of K1_RELION_DIR; the K=1 GT
+                             FSC-AUC gate then uses the lowest RELION run (band rule, default: none)
   K4_DATA_DIR                K=4 fixture directory
   K4_RELION_DIR              K=4 RELION output directory
   K4_RELION_DISPATCH_SCHEDULE
@@ -1177,6 +1180,7 @@ if [[ -f scripts/summarize_em_completion_bench.py ]]; then
     --k1-recovar-dir "${SCRATCH_DIR}/k1_100k256_recovar" \\
     --k1-relion-dir "${K1_RELION_DIR}" \\
     --k1-fixture-dir "${K1_DATA_DIR}" \\
+    ${K1_RELION_REPEAT_DIRS:+--k1-relion-repeat-dirs ${K1_RELION_REPEAT_DIRS}} \\
     --k4-recovar-dir "${SCRATCH_DIR}/k4_100k256_recovar" \\
     --k4-relion-dir "${K4_RELION_DIR}" \\
     --k4-fixture-dir "${K4_DATA_DIR}" \\
@@ -1331,6 +1335,7 @@ K4_JOB_ID=${K4_JOB_ID:-}
 SUMMARY_JOB_ID=${SUMMARY_JOB_ID}
 K1_DATA_DIR=${K1_DATA_DIR}
 K1_RELION_DIR=${K1_RELION_DIR}
+K1_RELION_REPEAT_DIRS=${K1_RELION_REPEAT_DIRS}
 K1_IMAGE_BATCH_SIZE=${K1_IMAGE_BATCH_SIZE}
 K1_ROTATION_BLOCK_SIZE=${K1_ROTATION_BLOCK_SIZE}
 K1_MAX_ITER=${K1_MAX_ITER}
