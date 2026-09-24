@@ -483,19 +483,23 @@ if [[ -z "${RELION_SRC_DIR}" || ! -f "${RELION_SRC_DIR}/projector.h" ]]; then
   exit 2
 fi
 
+# Slurm memory per case is sized from the measured peak RSS of the case jobs (sacct MaxRSS,
+# 2026-07/08 runs): 100k/256 cases and 400k/128 75-84 GB -> 128G; 200k/256 148 GB and 100k/384
+# (case 9) 132 GB -> 180G; case 10 (100k/384 anisotropic) 187 GB -> 240G; case 3 (300k/256)
+# 222 GB -> 280G (estimate: measured peak plus ~25%); small cases 9-30 GB -> 96-128G.
 # Fields:
 # index|name|n_images|grid|noise_level|noise_model|dataset_params_option|seed|pdb_bfactor|noise_scale_std|contrast_std|volume_radius|relion_bg_radius_px|time_limit|mem|streaming_chunk|streaming_mmap|percent_outliers|put_extra_particles|image_offset_n_std
 CASES=(
-  "1|baseline_100k_g256_white_noise1_bf80|100000|256|1.0|white|uniform|1701|80.0|0.0|0.0|0.7|-|15:00:00|500G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
-  "2|more_images_200k_g256_white_noise1_bf80|200000|256|1.0|white|uniform|1702|80.0|0.0|0.0|0.7|-|24:00:00|500G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
-  "3|more_images_300k_g256_white_noise1_bf80|300000|256|1.0|white|uniform|1703|80.0|0.0|0.0|0.7|-|24:00:00|500G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
-  "4|high_noise_100k_g256_white_noise3_bf80|100000|256|3.0|white|uniform|1704|80.0|0.0|0.0|0.7|-|18:00:00|500G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
-  "5|very_high_noise_100k_g256_white_noise10_bf80|100000|256|10.0|white|uniform|1705|80.0|0.0|0.0|0.7|-|18:00:00|500G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
-  "6|noctf_control_100k_g256_white_noise3_bf80|100000|256|3.0|white|noctf|1706|80.0|0.0|0.0|0.7|-|18:00:00|500G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
-  "7|anisotropic_100k_g256_white_noise1_bf80|100000|256|1.0|white|nonuniform|1707|80.0|0.0|0.0|0.7|-|18:00:00|500G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
-  "8|anisotropic_high_noise_100k_g256_white_noise3_bf80|100000|256|3.0|white|nonuniform|1708|80.0|0.0|0.0|0.7|-|18:00:00|500G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
-  "9|high_res_near_nyquist_100k_g384_white_noise1_bf0|100000|384|1.0|white|uniform|1709|0.0|0.0|0.0|0.7|-|24:00:00|500G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
-  "10|high_res_anisotropic_100k_g384_radial_noise3_bf0|100000|384|3.0|radial1|nonuniform|1710|0.0|0.0|0.0|0.7|-|24:00:00|500G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
+  "1|baseline_100k_g256_white_noise1_bf80|100000|256|1.0|white|uniform|1701|80.0|0.0|0.0|0.7|-|15:00:00|128G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
+  "2|more_images_200k_g256_white_noise1_bf80|200000|256|1.0|white|uniform|1702|80.0|0.0|0.0|0.7|-|24:00:00|180G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
+  "3|more_images_300k_g256_white_noise1_bf80|300000|256|1.0|white|uniform|1703|80.0|0.0|0.0|0.7|-|24:00:00|280G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
+  "4|high_noise_100k_g256_white_noise3_bf80|100000|256|3.0|white|uniform|1704|80.0|0.0|0.0|0.7|-|18:00:00|128G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
+  "5|very_high_noise_100k_g256_white_noise10_bf80|100000|256|10.0|white|uniform|1705|80.0|0.0|0.0|0.7|-|18:00:00|128G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
+  "6|noctf_control_100k_g256_white_noise3_bf80|100000|256|3.0|white|noctf|1706|80.0|0.0|0.0|0.7|-|18:00:00|128G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
+  "7|anisotropic_100k_g256_white_noise1_bf80|100000|256|1.0|white|nonuniform|1707|80.0|0.0|0.0|0.7|-|18:00:00|128G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
+  "8|anisotropic_high_noise_100k_g256_white_noise3_bf80|100000|256|3.0|white|nonuniform|1708|80.0|0.0|0.0|0.7|-|18:00:00|128G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
+  "9|high_res_near_nyquist_100k_g384_white_noise1_bf0|100000|384|1.0|white|uniform|1709|0.0|0.0|0.0|0.7|-|24:00:00|180G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
+  "10|high_res_anisotropic_100k_g384_radial_noise3_bf0|100000|384|3.0|radial1|nonuniform|1710|0.0|0.0|0.0|0.7|-|24:00:00|240G|${STREAMING_CHUNK_SIZE}|1|0.0|0|0.0"
   "11|small_baseline_3k_g128_white_noise1_bf80|3000|128|1.0|white|uniform|1711|80.0|0.0|0.0|0.7|-|03:00:00|128G|500|0|0.0|0|0.0"
   "12|small_very_high_noise_3k_g128_white_noise10_bf80|3000|128|10.0|white|uniform|1712|80.0|0.0|0.0|0.7|-|03:00:00|128G|500|0|0.0|0|0.0"
   "13|small_anisotropic_3k_g128_white_noise3_bf80|3000|128|3.0|white|nonuniform|1713|80.0|0.0|0.0|0.7|-|03:00:00|128G|500|0|0.0|0|0.0"
@@ -505,7 +509,7 @@ CASES=(
   "17|small_extra_particles_3k_g128_noise1_bf80|3000|128|1.0|white|uniform|1717|80.0|0.0|0.0|0.7|-|03:00:00|128G|500|0|0.0|1|0.0"
   "18|small_contrast_noise_scale_3k_g128_noise1_bf80|3000|128|1.0|white|uniform|1718|80.0|0.5|0.5|0.7|-|03:00:00|128G|500|0|0.0|0|0.0"
   "19|small_image_offset_3k_g128_noise1_bf80|3000|128|1.0|white|uniform|1719|80.0|0.0|0.0|0.7|-|03:00:00|128G|500|0|0.0|0|1.0"
-  "20|small_high_res_radial_3k_g256_noise3_bf0|3000|256|3.0|radial1|uniform|1720|0.0|0.0|0.0|0.7|-|04:00:00|256G|500|0|0.0|0|0.0"
+  "20|small_high_res_radial_3k_g256_noise3_bf0|3000|256|3.0|radial1|uniform|1720|0.0|0.0|0.0|0.7|-|04:00:00|128G|500|0|0.0|0|0.0"
   "21|small_kent_angles_3k_g128_white_noise3_bf80|3000|128|3.0|white|kent|1721|80.0|0.0|0.0|0.7|-|03:00:00|128G|500|0|0.0|0|0.0"
   "22|small_severe_outliers_3k_g128_radial_noise5_bf80|3000|128|5.0|radial1|nonuniform|1722|80.0|0.7|0.7|0.7|-|03:00:00|128G|500|0|0.50|0|1.5"
   "23|small_noctf_radial_3k_g128_noise3_bf80|3000|128|3.0|radial1|noctf|1723|80.0|0.0|0.0|0.7|-|03:00:00|128G|500|0|0.0|0|0.0"
@@ -516,10 +520,10 @@ CASES=(
   "28|small_kent_extra_offset_3k_g128_noise3_bf80|3000|128|3.0|white|kent|1728|80.0|0.3|0.3|0.7|-|03:00:00|128G|500|0|0.0|1|0.5"
   "29|small_low_noise_3k_g128_white_noise0p2_bf80|3000|128|0.2|white|uniform|1729|80.0|0.0|0.0|0.7|-|03:00:00|128G|500|0|0.0|0|0.0"
   "30|small_low_noise_kent_3k_g128_white_noise0p2_bf80|3000|128|0.2|white|kent|1730|80.0|0.0|0.0|0.7|-|03:00:00|128G|500|0|0.0|0|0.0"
-  "31|mid_10k_g128_white_noise1_bf80|10000|128|1.0|white|uniform|1731|80.0|0.0|0.0|0.7|-|04:00:00|160G|500|0|0.0|0|0.0"
-  "32|mid_10k_kent_g128_radial_noise3_bf80|10000|128|3.0|radial1|kent|1732|80.0|0.0|0.0|0.7|-|04:00:00|160G|500|0|0.0|0|0.0"
-  "33|max_images_400k_g128_white_noise1_bf80|400000|128|1.0|white|uniform|1733|80.0|0.0|0.0|0.7|-|36:00:00|500G|2000|1|0.0|0|0.0"
-  "34|max_images_400k_g128_radial_noise3_nonuniform_bf80|400000|128|3.0|radial1|nonuniform|1734|80.0|0.0|0.0|0.7|-|36:00:00|500G|2000|1|0.0|0|0.0"
+  "31|mid_10k_g128_white_noise1_bf80|10000|128|1.0|white|uniform|1731|80.0|0.0|0.0|0.7|-|04:00:00|128G|500|0|0.0|0|0.0"
+  "32|mid_10k_kent_g128_radial_noise3_bf80|10000|128|3.0|radial1|kent|1732|80.0|0.0|0.0|0.7|-|04:00:00|128G|500|0|0.0|0|0.0"
+  "33|max_images_400k_g128_white_noise1_bf80|400000|128|1.0|white|uniform|1733|80.0|0.0|0.0|0.7|-|36:00:00|128G|2000|1|0.0|0|0.0"
+  "34|max_images_400k_g128_radial_noise3_nonuniform_bf80|400000|128|3.0|radial1|nonuniform|1734|80.0|0.0|0.0|0.7|-|36:00:00|128G|2000|1|0.0|0|0.0"
 )
 
 mkdir -p "${SCRATCH_DIR}/jobs" "${SCRATCH_DIR}/summaries" "${RUNTIME_ROOT}"

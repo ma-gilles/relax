@@ -33,7 +33,10 @@ SETUP_CONSTRAINT="${EM_COMPLETION_SETUP_CONSTRAINT:-}"
 SETUP_GRES="${EM_COMPLETION_SETUP_GRES:-}"
 SUMMARY_PARTITION="${EM_COMPLETION_SUMMARY_PARTITION:-cpu}"
 SUMMARY_CONSTRAINT="${EM_COMPLETION_SUMMARY_CONSTRAINT:-}"
-EXCLUSIVE="${EM_COMPLETION_EXCLUSIVE:-1}"
+# Shared nodes by default. Set EM_COMPLETION_EXCLUSIVE=1 only for a timing-controlled speed
+# measurement (a published wall-time row), where another user's job on the node would change
+# the measured time; quality runs never need the whole node.
+EXCLUSIVE="${EM_COMPLETION_EXCLUSIVE:-0}"
 SINGLE_VISIBLE_GPU="${EM_COMPLETION_SINGLE_VISIBLE_GPU:-1}"
 CUDA_MODULE="${CUDA_MODULE:-cudatoolkit/12.8}"
 RELION_MODULE="${RELION_MODULE:-relion/5.0.1/gcc-11.5.0-gpu}"
@@ -76,8 +79,10 @@ K4_MAX_ITER="${K4_MAX_ITER:-15}"
 K1_TRAJECTORY_MODE="${K1_TRAJECTORY_MODE:-autonomous}"
 K1_RELION_PARTICLE_SHUFFLE="${K1_RELION_PARTICLE_SHUFFLE:-auto}"
 K1_SAVE_INTERMEDIATES="${K1_SAVE_INTERMEDIATES:-1}"
-K1_MEM="${K1_MEM:-500G}"
-K4_MEM="${K4_MEM:-500G}"
+# Sized from measured peak RSS (sacct MaxRSS): K1 100k/256 135 GB (Q 14320204), K4 100k/256
+# 98 GB (Q 14320218, 14299479).
+K1_MEM="${K1_MEM:-180G}"
+K4_MEM="${K4_MEM:-160G}"
 K1_TIME_LIMIT="${K1_TIME_LIMIT:-15:00:00}"
 K4_TIME_LIMIT="${K4_TIME_LIMIT:-15:00:00}"
 
@@ -126,7 +131,8 @@ Environment overrides:
                              Optional CPU summary job partition (default: ${SUMMARY_PARTITION})
   EM_COMPLETION_SUMMARY_CONSTRAINT
                              Optional summary job constraint (default: none)
-  EM_COMPLETION_EXCLUSIVE    Use exclusive GPU nodes for benchmark jobs (default: 1)
+  EM_COMPLETION_EXCLUSIVE    Exclusive GPU nodes for benchmark jobs (default: 0; set 1 only for
+                             timing-controlled speed measurements)
   EM_COMPLETION_SINGLE_VISIBLE_GPU
                              Expose only the first allocated GPU to CUDA/JAX for single-GPU timing (default: 1)
   CUDA_MODULE                Module loaded for nvcc (default: ${CUDA_MODULE})
@@ -839,7 +845,7 @@ ${SBATCH_CONSTRAINT_DIRECTIVE}
 #SBATCH --gres=gpu:1
 ${SBATCH_EXCLUSIVE_DIRECTIVE}
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=250G
+#SBATCH --mem=128G
 #SBATCH --time=01:00:00
 
 $(write_job_preamble "em_completion_fast_tier")

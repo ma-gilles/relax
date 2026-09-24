@@ -6,6 +6,8 @@
 #SBATCH --constraint=h100
 #SBATCH --gres=gpu:h100:1
 #SBATCH --nodes=1
+# Exclusive on purpose: this is a timing-controlled A/B pair (same GPU, warm, balanced order);
+# another job on the node would change the measured speedup.
 #SBATCH --exclusive
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8

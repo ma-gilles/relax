@@ -4,10 +4,12 @@
 #SBATCH --partition=cryoem
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=500G
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=250G
 #SBATCH --time=24:00:00
-#SBATCH --exclusive
+# Memory estimate: the largest input stack (EMPIAR-10180, 85.8 GB float32 at 256 px) held in host
+# memory once, plus up to ~2x that for pipeline intermediates, fits in 250G; the other datasets
+# (22-36 GB stacks) need well under 128G. Shared node: this is not a timing measurement.
 #SBATCH --output=/scratch/gpfs/GILLES/mg6942/slurmo/%x-%j.out
 
 set -euo pipefail
