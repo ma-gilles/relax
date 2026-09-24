@@ -151,3 +151,15 @@ def test_sigma_offset_update_uses_the_total_weight_over_optics_groups():
     a = noise_updates.update_c1_sigma_offset_from_posterior(noise_stats_per_half=[groups, groups], **kwargs)
     b = noise_updates.update_c1_sigma_offset_from_posterior(noise_stats_per_half=[single, single], **kwargs)
     assert a.current_sigma_offset_angstrom_per_half == b.current_sigma_offset_angstrom_per_half
+
+
+@pytest.mark.unit
+def test_empty_high_shells_take_the_previous_shell():
+    # A group on a coarser grid leaves the outer reference shells empty; RELION fills an
+    # empty shell from the previous one (ml_optimiser.cpp:5281-5284).
+    from relax.reconstruction import noise_relion
+
+    shape = (8, 8)
+    wsum = np.array([0.0, 4.0, 3.0, 2.0, 0.0])
+    sigma2 = np.asarray(noise_relion.normalize_wsum_to_sigma2_noise(wsum, np.zeros(5), 1.0, shape))
+    assert sigma2[4] == sigma2[3] > 1e-14

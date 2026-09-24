@@ -81,7 +81,8 @@ def normalize_wsum_to_sigma2_noise(wsum_sigma2_noise, wsum_img_power, sumw, imag
     sigma2 = jnp.maximum(sigma2, 1e-15)
 
     # Fill zeros from previous shell (RELION ml_optimiser.cpp:5281-5284)
-    sigma2_np = np.asarray(sigma2)
+    # A writable host copy: np.asarray of a device array is read-only.
+    sigma2_np = np.array(sigma2)
     for i in range(1, len(sigma2_np)):
         if sigma2_np[i] < 1e-14 and sigma2_np[i - 1] > 1e-14:
             sigma2_np[i] = sigma2_np[i - 1]
