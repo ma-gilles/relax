@@ -114,6 +114,22 @@ def _select_stacked_rows_by_class(stacked, class_assignments):
 
 
 
+def _summed_sumw(noise_stats):
+    """Sum ``sumw`` over the classes: Python floats for one noise spectrum (unchanged), or
+    per optics group ``[G]`` arrays when each class carries one weight sum per group."""
+
+    values = [stats.sumw for stats in noise_stats]
+    if all(np.ndim(value) == 0 for value in values):
+        return sum(float(value) for value in values)
+    return np.sum([np.asarray(value, dtype=np.float64) for value in values], axis=0)
+
+
+def _total_sumw(sumw) -> float:
+    """One noise statistic's total weight, over its optics groups when it has several."""
+
+    return float(sumw) if np.ndim(sumw) == 0 else float(np.sum(np.asarray(sumw, dtype=np.float64)))
+
+
 def _sum_noise_stats(noise_stats: tuple[NoiseStats, ...] | None, *, host_arrays=False) -> NoiseStats | None:
     if not noise_stats:
         return None
@@ -125,7 +141,7 @@ def _sum_noise_stats(noise_stats: tuple[NoiseStats, ...] | None, *, host_arrays=
         fields = noise_stats[0]._asdict()
         # Preserve Python sum's initial-zero semantics, including signed zero.
         fields["wsum_sigma2_offset"] = sum(float(stats.wsum_sigma2_offset) for stats in noise_stats)
-        fields["sumw"] = sum(float(stats.sumw) for stats in noise_stats)
+        fields["sumw"] = _summed_sumw(noise_stats)
         return make_noise_stats(**fields, host_arrays=True)
 
     def _sum_field(name: str):
@@ -141,7 +157,7 @@ def _sum_noise_stats(noise_stats: tuple[NoiseStats, ...] | None, *, host_arrays=
         wsum_sigma2_noise=summed_sigma2_noise,
         wsum_img_power=_sum_field("wsum_img_power"),
         wsum_sigma2_offset=sum(float(stats.wsum_sigma2_offset) for stats in noise_stats),
-        sumw=sum(float(stats.sumw) for stats in noise_stats),
+        sumw=_summed_sumw(noise_stats),
         wsum_noise_a2=_sum_field("wsum_noise_a2"),
         wsum_noise_xa=_sum_field("wsum_noise_xa"),
         wsum_norm_correction=_sum_field("wsum_norm_correction"),
@@ -192,7 +208,7 @@ def _sum_k_class_noise_stats(
         return None
     responsibilities = np.asarray(class_posterior_sums, dtype=np.float64).reshape(-1)
     relion_sumw = float(np.sum(responsibilities))
-    raw_sumw = np.asarray([float(stats.sumw) for stats in noise_stats], dtype=np.float64)
+    raw_sumw = np.asarray([_total_sumw(stats.sumw) for stats in noise_stats], dtype=np.float64)
     if responsibilities.shape != raw_sumw.shape:
         raise ValueError(
             "class_posterior_sums and noise_stats disagree on class count: "
@@ -231,7 +247,7 @@ def _resolve_class_mstep_posterior_sums(
     if class_posterior_sums_override is not None:
         resolved = np.asarray(class_posterior_sums_override, dtype=np.float64)
     elif noise_stats is not None and len(noise_stats) == 1:
-        resolved = np.asarray([float(noise_stats[0].sumw)], dtype=np.float64)
+        resolved = np.asarray([_total_sumw(noise_stats[0].sumw)], dtype=np.float64)
     else:
         resolved = np.asarray(class_posterior_sums_full, dtype=np.float64)
     if resolved.shape != np.asarray(class_posterior_sums_full).shape:

@@ -438,7 +438,8 @@ def _maybe_dump_noise_update_debug(
         payload[f"{prefix}_wsum_sigma2_noise"] = wsum_sigma2
         payload[f"{prefix}_wsum_img_power"] = img_power
         payload[f"{prefix}_wsum_total"] = wsum_sigma2 + img_power
-        payload[f"{prefix}_sumw"] = np.array([float(stats_k.sumw)], dtype=np.float64)
+        # One weight sum, or one per optics group.
+        payload[f"{prefix}_sumw"] = np.atleast_1d(np.asarray(stats_k.sumw, dtype=np.float64))
         if getattr(stats_k, "wsum_norm_correction", None) is not None:
             payload[f"{prefix}_wsum_norm_correction"] = np.asarray(
                 stats_k.wsum_norm_correction,

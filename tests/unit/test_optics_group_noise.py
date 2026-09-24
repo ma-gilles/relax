@@ -100,3 +100,26 @@ def test_noise_state_layout_per_group():
     np.testing.assert_array_equal(np.asarray(noise_updates._mean_noise_variance(rows)), 1.5 * np.ones((2, 256)))
     per_half, mean = noise_updates._noise_radial_history(rows, SHAPE, dtype=np.float64)
     assert per_half[0].shape == (2, N_SHELLS) and np.asarray(mean).shape == (2, N_SHELLS)
+
+
+@pytest.mark.unit
+def test_k1_class_mass_and_sums_take_per_group_weight_sums():
+    # A K=1 result with one weight sum per optics group: the class M-step mass is their total,
+    # and summing noise statistics keeps the per-group layout (one scalar stays one float).
+    from relax.classification import k_class_results as results
+
+    groups = make_noise_stats(
+        wsum_sigma2_noise=np.ones((2, 5)), wsum_img_power=np.zeros((2, 5)),
+        wsum_sigma2_offset=1.0, sumw=np.array([3.0, 4.5]),
+    )
+    single = make_noise_stats(
+        wsum_sigma2_noise=np.ones(5), wsum_img_power=np.zeros(5), wsum_sigma2_offset=1.0, sumw=7.5,
+    )
+    for stats in (groups, single):
+        mass = results._resolve_class_mstep_posterior_sums(
+            noise_stats=(stats,), class_posterior_sums_full=np.array([9.0]), class_posterior_sums_override=None,
+        )
+        np.testing.assert_array_equal(mass, [7.5])
+    np.testing.assert_array_equal(results._summed_sumw((groups, groups)), [6.0, 9.0])
+    assert results._summed_sumw((single, single)) == 15.0 and type(results._summed_sumw((single,))) is float
+    np.testing.assert_array_equal(results._sum_noise_stats((groups,), host_arrays=True).sumw, [3.0, 4.5])

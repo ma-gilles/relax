@@ -131,7 +131,11 @@ def collect_e_step(
         else None,
         "wsum_img_power": np.asarray(noise_stats.wsum_img_power, dtype=np.float64) if noise_stats is not None else None,
         "wsum_sigma2_offset": float(noise_stats.wsum_sigma2_offset) if noise_stats is not None else 0.0,
-        "sumw": float(noise_stats.sumw) if noise_stats is not None else 0.0,
+        "sumw": (
+            0.0 if noise_stats is None
+            else float(noise_stats.sumw) if np.ndim(noise_stats.sumw) == 0
+            else np.asarray(noise_stats.sumw, dtype=np.float64).tolist()
+        ),
         "wsum_norm_correction": (
             np.asarray(noise_stats.wsum_norm_correction, dtype=np.float64)
             if noise_stats is not None and noise_stats.wsum_norm_correction is not None
