@@ -74,8 +74,9 @@ same-command RELION repeats over shells 1-60. Pinned merged-map records were
 regenerated post hoc from the saved maps (scorecard v2). OPEN (small): with the
 correction, relax's GT FSC-AUC sits just below both same-command RELION repeats
 on two synthetic fixtures, by about as much as the repeats differ from each
-other. K1 100k/256: masked 1.6-3.5e-5 below (merged map and each unfiltered
-half; repeats differ by 1.3-2.7e-5). K1 50k/256 noise 1 (aligned GT): relax
+other. K1 100k/256: masked 3.3e-5 / 5.2e-5 below rep2 / rep1 in the end-to-end
+qualification run 14365794 (1.6-3.5e-5 post hoc on job 14320204, merged map and
+each unfiltered half; repeats differ by 1.9e-5). K1 50k/256 noise 1 (aligned GT): relax
 0.35122 vs RELION 0.35129 and its repeat 0.35127. More RELION repeats are needed
 to tell a defect from run-to-run variation.
 
