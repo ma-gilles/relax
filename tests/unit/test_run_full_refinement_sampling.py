@@ -203,8 +203,11 @@ def test_optimizer_seed_inherits_explicit_relion_star_when_omitted(tmp_path):
     assert str(optimiser.resolve()) in source
 
 
-def test_optimizer_seed_omitted_without_relion_state_keeps_default():
-    assert _resolve_optimizer_random_seed(None, None) == (42, "standalone default")
+def test_optimizer_seed_omitted_without_relion_state_is_the_time(monkeypatch):
+    import scripts.run_full_refinement as driver
+
+    monkeypatch.setattr(driver.time, "time", lambda: 1700000000.2)
+    assert _resolve_optimizer_random_seed(None, None) == (1700000000, "RELION default -1: the time")
 
 
 def test_optimizer_seed_zero_is_preserved():
@@ -231,7 +234,7 @@ def test_optimizer_seed_is_resolved_before_halfset_splitting():
 
     assert "default=None" in source[source.index('parser.add_argument(\n        "--seed"') :]
     assert source.index("args.seed, optimizer_seed_source = _resolve_optimizer_random_seed") < source.index(
-        "_default_refinement_subsets(n_images, args.seed"
+        "args.relion_half_sets = str(\n            _write_relion_start_particle_table("
     )
 
 

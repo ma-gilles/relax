@@ -15,9 +15,53 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
+def _render(scorecard):
+    fixture_manifest = MODULE.load_and_validate_fixture_manifest(MODULE.DEFAULT_FIXTURE_MANIFEST, scorecard)
+    return MODULE.render_markdown(
+        scorecard,
+        fixture_manifest,
+        MODULE.sha256_file(MODULE.DEFAULT_FIXTURE_MANIFEST),
+        MODULE.load_and_validate_k4_snapshot(MODULE.DEFAULT_K4_SNAPSHOT),
+        MODULE.sha256_file(MODULE.DEFAULT_K4_SNAPSHOT),
+    )
+
+
+@pytest.mark.unit
+def test_current_scorecard_is_suite_v2_with_final_gridding_correction():
+    assert MODULE.DEFAULT_SCORECARD == MODULE.V2_SCORECARD
+    scorecard = MODULE.load_and_validate(MODULE.DEFAULT_SCORECARD)
+    rendered = _render(scorecard)
+
+    assert scorecard["suite_version"] == 2
+    assert scorecard["acceptance_contract"]["grid_correction"] == "always-on (RELION griddingCorrect)"
+    assert scorecard["acceptance_contract"]["merged_cross_engine_fsc_auc_min"] == 0.995
+    assert scorecard["acceptance_contract"]["recovar_minus_relion_merged_gt_fsc_auc_min"] == -0.002
+    assert MODULE.requires_final_grid_correction(scorecard)
+    assert scorecard["frozen_case_definitions_sha256"] == MODULE.frozen_case_definitions_sha256(scorecard["cases"])
+    assert scorecard["current_snapshot"]["counts"] == {"pass": 31, "fail": 3, "not_run": 0}
+    assert [case["id"] for case in scorecard["cases"] if case["result"] != "pass"] == ["k1-04", "k1-05", "k1-10"]
+    for case in scorecard["cases"]:
+        provenance = case["final_metric_provenance"]
+        assert provenance["method"] == "regenerated post hoc with RELION griddingCorrect on the saved final maps"
+        assert provenance["reproduction_max_abs_discrepancy"] == 0.0
+        assert provenance["recorded_final_all_data_grid_correct"] is False
+    assert "K=1 fixed-suite score: 31 / 34 passing" in rendered
+    assert "(version 2; denominator frozen at 34)" in rendered
+    assert "final all-data gridding correction always on (RELION `griddingCorrect`)" in rendered
+    assert "## Suite version 2 regeneration" in rendered
+    assert "No case changed pass/fail under the unchanged thresholds." in rendered
+    assert "| `strict-k1-v12-20260821` | 1 |" in rendered
+    assert "| `strict-k1-suite2-gridding-20260924` | 2 |" in rendered
+    assert (
+        "--proposal-ledger-schema "
+        "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v14"
+    ) in rendered
+    assert "grid correction off" not in rendered
+
+
 @pytest.mark.unit
 def test_frozen_v1_scorecard_is_valid_and_renders_fixed_denominator():
-    scorecard = MODULE.load_and_validate(MODULE.DEFAULT_SCORECARD)
+    scorecard = MODULE.load_and_validate(MODULE.V1_SCORECARD)
     fixture_manifest = MODULE.load_and_validate_fixture_manifest(MODULE.DEFAULT_FIXTURE_MANIFEST, scorecard)
     rendered = MODULE.render_markdown(
         scorecard,
@@ -37,7 +81,8 @@ def test_frozen_v1_scorecard_is_valid_and_renders_fixed_denominator():
     assert rendered.count("| [ ] |") == 3 + 6
     assert "Progress: +11 passing cases since the first frozen snapshot; +1 since the previous snapshot." in rendered
     assert "34 cases (470,170,958,467 bytes)" in rendered
-    assert "| `strict-k1-v1-old-head-20260721`" in rendered
+    assert "grid correction unset/off" in rendered
+    assert "| `strict-k1-v1-old-head-20260721` | 1 |" in rendered
     assert "| 20 | — | 12 | 2 |" in rendered
     assert "| `strict-k1-v3-20260721`" in rendered
     assert "| 21 | +1 | 13 | 0 |" in rendered
@@ -63,6 +108,7 @@ def test_frozen_v1_scorecard_is_valid_and_renders_fixed_denominator():
         "--proposal-ledger-schema "
         "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v13"
     ) in rendered
+    assert "## Suite version 2 regeneration" not in rendered
     assert "Non-scoring regenerated-data diagnostics" in rendered
     assert "| `k1-23` | pass | pass | 0.997483478 |" in rendered
 
@@ -120,7 +166,7 @@ def test_validation_rejects_changed_definition_even_with_recomputed_digest(tmp_p
     path = tmp_path / "scorecard.json"
     path.write_text(json.dumps(scorecard))
 
-    with pytest.raises(ValueError, match="v1 frozen case-definition digest changed"):
+    with pytest.raises(ValueError, match="frozen case-definition digest changed"):
         MODULE.load_and_validate(path)
 
 
@@ -271,7 +317,7 @@ def test_proposal_runtime_contract_accepts_unset_or_explicitly_off_grid_correcti
         "unset RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER\n"
     )
 
-    MODULE._validate_runtime_contract(run_root, case_root, "k1-26")
+    MODULE._validate_runtime_contract(run_root, case_root, "k1-26", grid_correction_required=False)
 
 
 @pytest.mark.unit
@@ -295,7 +341,94 @@ def test_proposal_runtime_contract_rejects_enabled_grid_correction(
     )
 
     with pytest.raises(ValueError, match="grid correction was enabled"):
-        MODULE._validate_runtime_contract(run_root, case_root, "k1-26")
+        MODULE._validate_runtime_contract(run_root, case_root, "k1-26", grid_correction_required=False)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("grid_value", ["", "0", "1", "off"])
+def test_v2_runtime_contract_rejects_any_value_of_the_retired_selector(tmp_path, grid_value):
+    run_root = tmp_path / "run"
+    case_root = run_root / "cases" / "26_tiny_severe"
+    jobs = run_root / "jobs"
+    case_root.mkdir(parents=True)
+    jobs.mkdir()
+    (run_root / "submission.env").write_text(
+        "EM_K1_MATRIX_TRAJECTORY_MODE=autonomous\n"
+        "EM_K1_MATRIX_RUN_RELION=1\n"
+        f"RELAX_FINAL_ALL_DATA_GRID_CORRECT={grid_value}\n"
+    )
+    (jobs / "em_k1_matrix_26_tiny_severe.sh").write_text("unset RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER\n")
+
+    if grid_value == "":
+        MODULE._validate_runtime_contract(run_root, case_root, "k1-26", grid_correction_required=True)
+    else:
+        with pytest.raises(ValueError, match="retired RELAX_FINAL_ALL_DATA_GRID_CORRECT"):
+            MODULE._validate_runtime_contract(run_root, case_root, "k1-26", grid_correction_required=True)
+
+
+@pytest.mark.unit
+def test_recorded_final_grid_correction_must_match_the_suite_version():
+    MODULE._validate_recorded_final_grid_correction(True, "k1-04", required=True)
+    MODULE._validate_recorded_final_grid_correction(False, "k1-04", required=False)
+    with pytest.raises(ValueError, match="suite version 2 requires it"):
+        MODULE._validate_recorded_final_grid_correction(False, "k1-04", required=True)
+    with pytest.raises(ValueError, match="grid correction was enabled"):
+        MODULE._validate_recorded_final_grid_correction(True, "k1-04", required=False)
+
+
+@pytest.mark.unit
+def test_v2_validation_rejects_a_v1_grid_contract(tmp_path):
+    scorecard = json.loads(MODULE.V2_SCORECARD.read_text())
+    scorecard["acceptance_contract"]["grid_correction"] = "unset/default-off"
+    path = tmp_path / "scorecard.json"
+    path.write_text(json.dumps(scorecard))
+
+    with pytest.raises(ValueError, match="suite version 2 grid_correction"):
+        MODULE.load_and_validate(path)
+
+
+@pytest.mark.unit
+def test_validation_rejects_changed_thresholds(tmp_path):
+    scorecard = json.loads(MODULE.V2_SCORECARD.read_text())
+    scorecard["acceptance_contract"]["merged_cross_engine_fsc_auc_min"] = 0.99
+    path = tmp_path / "scorecard.json"
+    path.write_text(json.dumps(scorecard))
+
+    with pytest.raises(ValueError, match="acceptance threshold"):
+        MODULE.load_and_validate(path)
+
+
+@pytest.mark.unit
+def test_v2_validation_pins_the_v1_history_bytes(tmp_path):
+    scorecard = json.loads(MODULE.V2_SCORECARD.read_text())
+    scorecard["previous_version"]["sha256"] = "0" * 64
+    path = tmp_path / "scorecard.json"
+    path.write_text(json.dumps(scorecard))
+
+    with pytest.raises(ValueError, match="v1 history scorecard"):
+        MODULE.load_and_validate(path)
+
+
+@pytest.mark.unit
+def test_v2_validation_requires_regeneration_provenance(tmp_path):
+    scorecard = json.loads(MODULE.V2_SCORECARD.read_text())
+    del scorecard["cases"][0]["final_metric_provenance"]["inputs_sha256"]["recovar_final_merged"]
+    path = tmp_path / "scorecard.json"
+    path.write_text(json.dumps(scorecard))
+
+    with pytest.raises(ValueError, match="lacks input digests"):
+        MODULE.load_and_validate(path)
+
+
+@pytest.mark.unit
+def test_v2_validation_rejects_a_pass_below_the_frozen_thresholds(tmp_path):
+    scorecard = json.loads(MODULE.V2_SCORECARD.read_text())
+    scorecard["cases"][0]["final_cross_engine_fsc_auc"] = 0.9949
+    path = tmp_path / "scorecard.json"
+    path.write_text(json.dumps(scorecard))
+
+    with pytest.raises(ValueError, match="does not satisfy the frozen final-map thresholds"):
+        MODULE.load_and_validate(path)
 
 
 @pytest.mark.unit
@@ -405,7 +538,7 @@ def test_superseding_ledger_rejects_unpinned_previous_evidence(tmp_path):
             manifest,
             MODULE.sha256_file(MODULE.DEFAULT_FIXTURE_MANIFEST),
             previous,
-            "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v13",
+            "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v14",
             "2026-07-27T08:00:00+00:00",
             [
                 MODULE.ProposalEvidence(

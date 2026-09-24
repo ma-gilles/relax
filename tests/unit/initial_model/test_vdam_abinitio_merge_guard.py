@@ -893,7 +893,7 @@ def test_native_vdam_postmerge_parity_fixes_are_merge_guarded():
     guard_scripts = "\n".join(
         [
             (REPO_ROOT / "scripts/run_vdam_abinitio_merge_guard.py").read_text(),
-            (REPO_ROOT / "scripts/run_em_merge_guard_slurm.sh").read_text(),
+            (REPO_ROOT / "scripts/run_test_tier.py").read_text(),
         ]
     )
 

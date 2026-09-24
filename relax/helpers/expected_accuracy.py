@@ -7,7 +7,7 @@ import logging
 import multiprocessing
 import traceback
 from dataclasses import dataclass
-from typing import Any, Literal, NamedTuple
+from typing import Any, NamedTuple
 
 import numpy as np
 from recovar.core.ctf import CTFParamIndex
@@ -252,16 +252,15 @@ def relion_auto_refine_half_orders(
     first_iteration: int = 1,
     *,
     optics_group_ids=None,
-    shuffle_algorithm: Literal["legacy", "mt19937"] = "legacy",
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return RELION's fresh AutoRefine particle-row order for both halves.
 
-    Legacy RELION uses libc ``rand``/``random_shuffle``; f2c1a384 instead
-    uses ``mt19937``/``shuffle``. Both shuffle half 1 and then half 2 without
-    reseeding, and stable-sort each half by numeric optics group. The legacy
-    default preserves existing pinned fixtures during modern-oracle validation.
-    Returned values index the supplied full particle table, including the
-    first 100 trials consumed by the expected-accuracy estimator.
+    RELION 5.0.1 (f2c1a384) shuffles half 1 and then half 2 with one
+    ``mt19937(seed + iter)`` generator (``std::shuffle``) and stable-sorts each
+    half by numeric optics group (``Experiment::randomiseParticlesOrder``,
+    exp_model.cpp:406-456). Returned values index the supplied full particle
+    table, including the first 100 trials consumed by the expected-accuracy
+    estimator.
     """
     from relax.relion_bind import _relion_bind_core as bind
 
@@ -272,16 +271,10 @@ def relion_auto_refine_half_orders(
         np.flatnonzero(subsets == 1).astype(np.int64),
         np.flatnonzero(subsets == 2).astype(np.int64),
     )
-    binding_names = {
-        "legacy": "auto_refine_randomise_half_orders",
-        "mt19937": "auto_refine_randomise_half_orders_mt19937",
-    }
-    if shuffle_algorithm not in binding_names:
-        raise ValueError(f"unknown shuffle_algorithm: {shuffle_algorithm!r}")
-    shuffle = getattr(bind, binding_names[shuffle_algorithm], None)
+    shuffle = getattr(bind, "auto_refine_randomise_half_orders_mt19937", None)
     if shuffle is None:
         raise RuntimeError(
-            f"RELION binding lacks {binding_names[shuffle_algorithm]}; rebuild recovar/relion_bind"
+            "RELION binding lacks auto_refine_randomise_half_orders_mt19937; rebuild relax/relion_bind"
         )
     positions = shuffle(
         int(base_orders[0].size),
@@ -316,17 +309,21 @@ def relion_half1_trial_order(
 ) -> np.ndarray:
     """Return RELION's one-time randomized half-1 local particle order.
 
-    ``Experiment::randomiseParticlesOrder`` uses ``srand(random_seed + iter)``
-    followed by ``std::random_shuffle``.  Full-data AutoRefine performs that
-    shuffle only once per process; a fresh refinement therefore uses
-    ``first_iteration=1``.
+    ``Experiment::randomiseParticlesOrder`` shuffles half 1 first with a fresh
+    ``mt19937(random_seed + iter)``, so its order does not depend on half 2.
+    Full-data AutoRefine performs that shuffle only once per process; a fresh
+    refinement therefore uses ``first_iteration=1``.
     """
     from relax.relion_bind import _relion_bind_core as bind
 
-    if not hasattr(bind, "auto_refine_randomise_half_order"):
-        raise RuntimeError("RELION binding lacks auto_refine_randomise_half_order; rebuild recovar/relion_bind")
+    if not hasattr(bind, "auto_refine_randomise_half_orders_mt19937"):
+        raise RuntimeError(
+            "RELION binding lacks auto_refine_randomise_half_orders_mt19937; rebuild relax/relion_bind"
+        )
     shuffled_positions = np.asarray(
-        bind.auto_refine_randomise_half_order(int(n_particles), int(random_seed) + int(first_iteration)),
+        bind.auto_refine_randomise_half_orders_mt19937(
+            int(n_particles), 0, int(random_seed) + int(first_iteration)
+        )[0],
         dtype=np.int64,
     )
     if base_order_local is None:

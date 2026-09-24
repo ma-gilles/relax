@@ -131,7 +131,7 @@ Replay and finalization have separate selection and mutation boundaries:
 
 | Responsibility | Owner | Inputs and preserved behavior |
 | --- | --- | --- |
-| Final-pass admission and gridding selector | [`finalization_policy.py`](../../relax/refinement/finalization_policy.py) | Receives convergence/cap state and the controller logger. Reads diagnostic flags when called; does not mutate refinement state. |
+| Final-pass admission | [`finalization_policy.py`](../../relax/refinement/finalization_policy.py) | Receives convergence/cap state and the controller logger. Reads diagnostic flags when called; does not mutate refinement state. |
 | Replay numbering and cutoff | [`relion_replay.py`](../../relax/diagnostics/relion_replay.py) | `_numbered_relion_iteration` maps restart-local indices; `_native_sampling_boundary_for_iteration` checks cutoff and sealed state. The controller retains scheduling. |
 | Numbered optimiser accuracy override | `relion_replay.read_optimiser_accuracy_replay` | Selects this iteration's numbered optimiser STAR when replay is active and unsealed; finite RELION rotation/translation accuracies replace the reported and convergence accuracies. Read or parse failures warn and keep values assigned before the failure. Returns `OptimiserAccuracyReplay`; the controller passes its metadata to `apply_optimiser_convergence_replay` after the state update. |
 | Class3D captured tau2 selection | `relion_replay._class_tau2_replay` | Selects same-iteration captured spectra when the diagnostic is enabled, preserves fallback logging and validates captured shapes even when disabled. Returns spectra, enable flag and source label; M-step arithmetic stays in refinement. |
@@ -142,9 +142,8 @@ Replay and finalization have separate selection and mutation boundaries:
 Read `_should_run_final_all_data_iteration` in decision order: forced-cap mode
 rejects the extra pass first; otherwise convergence admits it. Without
 convergence, the optional after-cap diagnostic can admit K1 only when the cap
-has been reached. K-class still requires convergence. Gridding correction
-currently defaults **off**; the strict-parity target specifies on. Resolving
-that discrepancy is a separate scientific change, not part of extraction.
+has been reached. K-class still requires convergence. Every final map is
+gridding-corrected, as in RELION.
 
 Replay admission is also explicit. An initial-only override does not activate
 numbered final replay. An explicit final diagnostic override wins, even an

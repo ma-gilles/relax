@@ -1980,8 +1980,6 @@ def main(argv: list[str] | None = None) -> int:
             }
             if cache_events is not None:
                 reports[label]["raw_image_cache_audit"] = {
-                    "mode": os.environ.get("RECOVAR_EM_RAW_IMAGE_CACHE", "auto"),
-                    "max_gb": float(os.environ.get("RELAX_EM_RAW_IMAGE_CACHE_MAX_GB", "16")),
                     "load_all_events": [dict(event) for event in cache_events[event_start:]],
                 }
             if compile_records is not None:

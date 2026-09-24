@@ -59,12 +59,43 @@ change or a rounding-noise dismissal. A BPref accumulator guard now stops a
 known non-finite compact-engine failure at its source; the mechanism remains an
 open defect.
 
+Class3D (K>1) starts standalone by default: it reads only relion_refine's inputs
+([launch recipe](em_parity_runbook.md#standalone-class3d-launch)). On the K4
+50k/256 fixture two standalone runs match the non-MPI RELION reference's final
+resolution, ground-truth FSC-AUC and class agreement. OPEN (small): their
+per-class FSC-AUC against the RELION reference is 0.0002-0.0007 below the band
+of three same-seed RELION repeats, comparable to the 8e-4 difference between the
+two relax runs (A100 and H100); the cause is unexplained. Evidence:
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclassstandalone_20260923/band50k/GATE.json`.
+
+Final all-data maps are now always gridding-corrected, as in RELION; the former
+default-off selector made the K1 100k/256 masked GT FSC 0.0008 lower than both
+same-command RELION repeats over shells 1-60. Pinned merged-map records were
+regenerated post hoc from the saved maps (scorecard v2). OPEN (small): with the
+correction, relax's GT FSC-AUC sits just below both same-command RELION repeats
+on two synthetic fixtures, by about as much as the repeats differ from each
+other. K1 100k/256: masked 3.3e-5 / 5.2e-5 below rep2 / rep1 in the end-to-end
+qualification run 14365794 (1.6-3.5e-5 post hoc on job 14320204, merged map and
+each unfiltered half; repeats differ by 1.9e-5). K1 50k/256 noise 1 (aligned GT): relax
+0.35122 vs RELION 0.35129 and its repeat 0.35127. More RELION repeats are needed
+to tell a defect from run-to-run variation.
+
 On the 10k EMPIAR-10097 fixture at 256 px on one H100, the resident K1 path
 reduced the cold auto-refine gap from 3.26x to about 1.7-1.8x RELION, with a
 further small gain from building the projector on device. This qualifies only
 that fixture. Remaining cost is concentrated in new-shape transitions and the
 final all-data iteration; the latter still uses the exact local path. The
 100k/256 K1 and exactly-K4 quality and performance gates remain open.
+
+Explained (2026-09-24, test tiers): the medium K1 5k/128 standalone end-to-end run (medium
+14375481, relax 319cd10) scored GT FSC-AUC 0.6084 on relax's `final_merged.mrc` against
+0.5959-0.5960 for RELION's `run_class001.mrc`. The cause is the map kind. RELION's map is
+gridding-corrected, and relax at 319cd10 did not apply a final gridding correction. Applying
+RELION's pad-2 sinc^2 correction to relax's map gives 0.5959, inside the band. The unfiltered half
+maps agree: average GT FSC-AUC relax 0.59519, RELION 0.59516-0.59519. This is resolved by the
+always-on final gridding correction (user decision; k1gap's change retires the option). Until
+that is on main, the tier gates on the unfiltered half maps; the merged map is gated again once
+it is.
 
 Follow the unchanged [quantitative gates](../math/em_parity_program.md) and
 [validation ladder](em_parity_runbook.md#validation-ladder): matched-state

@@ -30,5 +30,6 @@
   "regression_tolerance_corr": 0.001,
   "regression_tolerance_wall_pct": 20,
   "timestamp_recorded": "2026-05-16T10:24:00",
-  "notes": "Bit-for-bit parity with RELION on K=1 100k/256 os=0 strict (FSC=1.0 in first 30 shells, merged corr=0.999802). Noise=0.001 fixture saturates vs GT for both RELION and recovar — the ~0.79 corr vs GT is noise floor of the saturating FSC, not a quality differentiator. Future runs that drop merged corr below 0.998 indicate a regression."
+  "notes": "Bit-for-bit parity with RELION on K=1 100k/256 os=0 strict (FSC=1.0 in first 30 shells, merged corr=0.999802). Noise=0.001 fixture saturates vs GT for both RELION and recovar — the ~0.79 corr vs GT is noise floor of the saturating FSC, not a quality differentiator. Future runs that drop merged corr below 0.998 indicate a regression.",
+  "final_gridding_correction_note": "Measured before final all-data gridding correction was always on (2026-09-24): k1_strict_merged_corr_vs_relion and the *_vs_gt_corr values used an uncorrected relax merged map. They could not be regenerated post hoc with RELION griddingCorrect on the saved final maps because job 8280489's outputs (/scratch/gpfs/GILLES/mg6942/_agent_scratch/em_completion_174b4c_20260514_214500) no longer exist. Remeasure on the next run of this fixture."
 }

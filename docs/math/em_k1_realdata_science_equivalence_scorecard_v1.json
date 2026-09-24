@@ -554,12 +554,12 @@
       },
       "artifacts": {
         "metrics_json": {
-          "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution/per_dataset/10073/metrics/metrics.json",
-          "sha256": "d6e433705e61bddd1dfac27d50d0c3be902151d1f255da76d14ec22ac6a14143"
+          "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/10073/metrics/metrics.json",
+          "sha256": "fa3b63e74df8cd064a35b62fa01a2140705d0a7e86196b5884bd3eae6b5ebf0e"
         },
         "fsc_curves_npz": {
-          "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution/per_dataset/10073/metrics/fsc_curves.npz",
-          "sha256": "fe778f507acdd53801cf5f3b930a73ebbaa57ac882a6667e4ad99f0e52f6bd75"
+          "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/10073/metrics/fsc_curves.npz",
+          "sha256": "81df7313962fe35c2951ff58aa994fddbd80ecf86d1c53cd6c371bbda32d9685"
         },
         "benchmark_manifest": {
           "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution/benchmark_manifest.json",
@@ -570,11 +570,68 @@
         "half_resolution_ratio": 1.0,
         "half_curve_rmse": 0.0026455725424715543,
         "half_band_auc_abs_delta": 0.001260334145823827,
-        "merged_cross_engine_band_auc": 0.9691362193064661,
+        "merged_cross_engine_band_auc": 0.9677712108905888,
         "half1_cross_engine_band_auc": 0.9408020515354473,
         "half2_cross_engine_band_auc": 0.9415304729655856
       },
-      "expected_cross_engine_route": "raw_canonical"
+      "expected_cross_engine_route": "raw_canonical",
+      "post_hoc_regeneration": {
+        "note": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "date": "2026-09-24",
+        "transform": "RECOVAR merged map divided by sinc^2(r/(N*2)), r from voxel index N/2 (relax.reconstruction.relion_functions_relion._gridding_correct_trilinear_np); equivalence pinned by tests/unit/test_relion_functions.py::test_final_gridding_correction_equals_post_hoc_division_of_uncorrected_map",
+        "producing_run": {
+          "final_all_data_grid_correct": false,
+          "refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_em_full_native_20260828T082038EDT/outputs/10073/recovar/refinement_results.npz",
+          "slurm_job_id": 13093155,
+          "source_commit": "8502fc50c7f68b8c6f696874f60b6041e9d5d308",
+          "source_repo": "recovar"
+        },
+        "maps": {
+          "merged": {
+            "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/calib_10073_8502fc50c_13093155/final_merged.mrc",
+            "corrected_sha256": "d4bf0e29a7ed8e248d410f1b1191f73f96cdceadf232d8cd320853016a006ac7",
+            "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_em_full_native_20260828T082038EDT/outputs/10073/recovar/final_merged.mrc",
+            "source_sha256": "95a384483c60c2fbafd9f222caa7c13e86695e160ded7d09dec607e2a8c1781d"
+          }
+        },
+        "tool": {
+          "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/regen_calibration.py",
+          "sha256": "e3f7a261b86381feda6fe631fd9efa33fc20bba0671f569c6dfa2718cb258b86"
+        },
+        "collector": {
+          "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/scripts/collect_metrics.py",
+          "sha256": "63d1a8f9f0a772ef0db45d7417902f36cbde884b309fa6e94d69bdfe2edf2d88"
+        },
+        "replaced": [
+          "final_cross_engine (canonical_frame, raw_canonical_frame, aligned_diagnostic, raw_mrc_array_diagnostic.centered_correlation, recovar_map)",
+          "artifacts.recovar_final_sha256",
+          "curves final_cross_engine_raw, final_cross_engine_aligned"
+        ],
+        "reproduction_of_previous_max_abs_diff": {
+          "aligned_auc": 0.0,
+          "canonical_auc": 0.0,
+          "final_cross_engine_aligned": 0.0,
+          "final_cross_engine_raw": 0.0
+        },
+        "previous_artifacts": {
+          "metrics_json": {
+            "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution/per_dataset/10073/metrics/metrics.json",
+            "sha256": "d6e433705e61bddd1dfac27d50d0c3be902151d1f255da76d14ec22ac6a14143"
+          },
+          "fsc_curves_npz": {
+            "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution/per_dataset/10073/metrics/fsc_curves.npz",
+            "sha256": "fe778f507acdd53801cf5f3b930a73ebbaa57ac882a6667e4ad99f0e52f6bd75"
+          }
+        },
+        "previous_expected_metrics": {
+          "half_resolution_ratio": 1.0,
+          "half_curve_rmse": 0.0026455725424715543,
+          "half_band_auc_abs_delta": 0.001260334145823827,
+          "merged_cross_engine_band_auc": 0.9691362193064661,
+          "half1_cross_engine_band_auc": 0.9408020515354473,
+          "half2_cross_engine_band_auc": 0.9415304729655856
+        }
+      }
     },
     {
       "id": "empiar-10345-native-c1",
@@ -590,12 +647,12 @@
       },
       "artifacts": {
         "metrics_json": {
-          "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution/per_dataset/10345/metrics/metrics.json",
-          "sha256": "bcdb907be4c7b63045dffa4209451c693c0f8d0359ab1427a12463347d192177"
+          "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/10345/metrics/metrics.json",
+          "sha256": "b3f05c31301cda106faf5e596ddf4ec3dc4ab3aff481699f92d1f06812007acc"
         },
         "fsc_curves_npz": {
-          "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution/per_dataset/10345/metrics/fsc_curves.npz",
-          "sha256": "a06566e1dc22503267387428cd33621d207feedcf70441f09be5bca8ed5b9bf5"
+          "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/10345/metrics/fsc_curves.npz",
+          "sha256": "2f0edf59fbb82c000a9fb1b8bfd07246fbaa0f2574317ff249bb3e1a07054a41"
         },
         "benchmark_manifest": {
           "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution/benchmark_manifest.json",
@@ -606,11 +663,68 @@
         "half_resolution_ratio": 1.0,
         "half_curve_rmse": 0.0032422560066216687,
         "half_band_auc_abs_delta": 0.00016541951190840454,
-        "merged_cross_engine_band_auc": 0.9756097026599992,
+        "merged_cross_engine_band_auc": 0.9750447958142479,
         "half1_cross_engine_band_auc": 0.9658667061929587,
         "half2_cross_engine_band_auc": 0.9650894354317021
       },
-      "expected_cross_engine_route": "raw_canonical"
+      "expected_cross_engine_route": "raw_canonical",
+      "post_hoc_regeneration": {
+        "note": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "date": "2026-09-24",
+        "transform": "RECOVAR merged map divided by sinc^2(r/(N*2)), r from voxel index N/2 (relax.reconstruction.relion_functions_relion._gridding_correct_trilinear_np); equivalence pinned by tests/unit/test_relion_functions.py::test_final_gridding_correction_equals_post_hoc_division_of_uncorrected_map",
+        "producing_run": {
+          "final_all_data_grid_correct": false,
+          "refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_em_full_native_20260828T082038EDT/outputs/10345/recovar/refinement_results.npz",
+          "slurm_job_id": 13093157,
+          "source_commit": "8502fc50c7f68b8c6f696874f60b6041e9d5d308",
+          "source_repo": "recovar"
+        },
+        "maps": {
+          "merged": {
+            "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/calib_10345_8502fc50c_13093157/final_merged.mrc",
+            "corrected_sha256": "b85c1353b86d6f2b2afb3e4d1b8f1f1df328ea7b22c786107080ed91b3dbbb8f",
+            "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_em_full_native_20260828T082038EDT/outputs/10345/recovar/final_merged.mrc",
+            "source_sha256": "371241db9e1ed9e19fd2d38145faab99ea88ddcc6bce1a033d7d39de067f70b1"
+          }
+        },
+        "tool": {
+          "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/regen_calibration.py",
+          "sha256": "e3f7a261b86381feda6fe631fd9efa33fc20bba0671f569c6dfa2718cb258b86"
+        },
+        "collector": {
+          "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/scripts/collect_metrics.py",
+          "sha256": "63d1a8f9f0a772ef0db45d7417902f36cbde884b309fa6e94d69bdfe2edf2d88"
+        },
+        "replaced": [
+          "final_cross_engine (canonical_frame, raw_canonical_frame, aligned_diagnostic, raw_mrc_array_diagnostic.centered_correlation, recovar_map)",
+          "artifacts.recovar_final_sha256",
+          "curves final_cross_engine_raw, final_cross_engine_aligned"
+        ],
+        "reproduction_of_previous_max_abs_diff": {
+          "aligned_auc": 0.0,
+          "canonical_auc": 0.0,
+          "final_cross_engine_aligned": 0.0,
+          "final_cross_engine_raw": 0.0
+        },
+        "previous_artifacts": {
+          "metrics_json": {
+            "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution/per_dataset/10345/metrics/metrics.json",
+            "sha256": "bcdb907be4c7b63045dffa4209451c693c0f8d0359ab1427a12463347d192177"
+          },
+          "fsc_curves_npz": {
+            "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution/per_dataset/10345/metrics/fsc_curves.npz",
+            "sha256": "a06566e1dc22503267387428cd33621d207feedcf70441f09be5bca8ed5b9bf5"
+          }
+        },
+        "previous_expected_metrics": {
+          "half_resolution_ratio": 1.0,
+          "half_curve_rmse": 0.0032422560066216687,
+          "half_band_auc_abs_delta": 0.00016541951190840454,
+          "merged_cross_engine_band_auc": 0.9756097026599992,
+          "half1_cross_engine_band_auc": 0.9658667061929587,
+          "half2_cross_engine_band_auc": 0.9650894354317021
+        }
+      }
     },
     {
       "id": "empiar-10097-native-c1",
@@ -636,12 +750,12 @@
       },
       "artifacts": {
         "metrics_json": {
-          "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution_replacement_10097_20260828T211155EDT/per_dataset/10097/metrics/metrics.json",
-          "sha256": "209487bef7bc09e1e647c90761db316053690fa0da7940a4bdd50145877176f6"
+          "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/10097/metrics/metrics.json",
+          "sha256": "f455f49c9e82f618e012816585fa60b3019a75249220113c2880013c6402a324"
         },
         "fsc_curves_npz": {
-          "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution_replacement_10097_20260828T211155EDT/per_dataset/10097/metrics/fsc_curves.npz",
-          "sha256": "ade7183112425335138cad19e6d2ac7b8c1790a9f6f0b4b930c36fa0624dbdc3"
+          "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/10097/metrics/fsc_curves.npz",
+          "sha256": "b49b8ce6ec56f0085afcba35606a5f33803d7b2df6e51585b7696107a6a6dac4"
         },
         "input_manifest": {
           "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution_replacement_10097_20260828T211155EDT/per_dataset/10097/inputs/input_manifest.json",
@@ -656,7 +770,7 @@
         "half_resolution_ratio": 1.0227272727272727,
         "half_curve_rmse": 0.00492607016375037,
         "half_band_auc_abs_delta": 0.0015007730672029762,
-        "merged_cross_engine_band_auc": 0.9357355621429695,
+        "merged_cross_engine_band_auc": 0.9329919307037351,
         "half1_cross_engine_band_auc": 0.8858029562913453,
         "half2_cross_engine_band_auc": 0.8889382693911168
       },
@@ -687,13 +801,13 @@
         },
         "artifacts": {
           "science_diagnostics": {
-            "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/realdata_10097_proper_so3_identity_915470fb5_20260831/output/science_diagnostics.json",
-            "sha256": "833e7393a31b9982cdae9025b00f2fcf91dad4eaf79250884194e1666008b98d",
+            "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/10097/proper_so3/output/science_diagnostics.json",
+            "sha256": "d5bc97752f72888e87e6c94293e052f4cd5cce4eda9516df181d43ca1afbd3ca",
             "schema": "recovar.em_k1_science_diagnostics.v1"
           },
           "curve_archive": {
-            "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/realdata_10097_proper_so3_identity_915470fb5_20260831/output/science_diagnostic_curves.npz",
-            "sha256": "3cf93d3f37c3b92be3bb586ed644f1f619d583db271ed66cf888705bafb2a8ed",
+            "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/10097/proper_so3/output/science_diagnostic_curves.npz",
+            "sha256": "8e1fb6acc681c3075a8195335e57d9b1d5d40f6ee3ef26cc57ab0631a8ea5429",
             "fields": [
               "final_cross_engine_half1_proper_aligned",
               "final_cross_engine_half1_proper_aligned_common_masked",
@@ -706,14 +820,14 @@
             ]
           },
           "common_mask": {
-            "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/realdata_10097_proper_so3_identity_915470fb5_20260831/output/common_soft_mask.mrc",
-            "sha256": "9e361194f432851043d52f10b55b33bd381e7e787b4e08e198f4bddc36f874da"
+            "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/10097/proper_so3/output/common_soft_mask.mrc",
+            "sha256": "fcc3e48ddc72ff7b791472945de2205edf7977fcc23cae29633e1cc816e99ff4"
           }
         },
         "expected_metrics": {
-          "merged_cross_engine_band_auc": 0.9354267534361663,
-          "half1_cross_engine_band_auc": 0.8855173152657688,
-          "half2_cross_engine_band_auc": 0.888483075371504
+          "merged_cross_engine_band_auc": 0.9322895244190671,
+          "half1_cross_engine_band_auc": 0.8848198641415421,
+          "half2_cross_engine_band_auc": 0.8878127986076805
         },
         "expected_can_rescue_cross_engine": false,
         "superseded_diagnostic": {
@@ -721,9 +835,132 @@
           "science_diagnostics_sha256": "f8bf64d6be3587389f5ae65a12b59b579f21d4c8675f243fd21aa3c13f9944a5",
           "curve_archive_sha256": "4e1be40dd8af2c04673e0e18033cb1fa16b600b40575f3b1632188265316ea2a",
           "reason": "invalid alignment seed search omitted canonical identity; retained for audit and excluded from all scorecard metrics"
+        },
+        "post_hoc_regeneration": {
+          "note": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+          "date": "2026-09-24",
+          "execution": "local CPU rerun of the same producer (recovar 915470fb5 worktree, identical arguments) with the corrected merged map; the Slurm fields above record the original job 13276576",
+          "maps": {
+            "merged": {
+              "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/calib_10097_8502fc50c_13124450/final_merged.mrc",
+              "corrected_sha256": "bd2f52d8e6ad316f6b782ea510f0a7f1ee9978584359fd002a98e7fc213f1faa",
+              "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_em_10097_replacement_20260828T211155EDT/outputs/10097/recovar/final_merged.mrc",
+              "source_sha256": "1fdaba83862d8a04b0b0199dde2989ca760e5460da826530965fdaaa25428131"
+            }
+          },
+          "launch_script": {
+            "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/10097/proper_so3/run.sh",
+            "sha256": "ebe72faa0d3b0c3a478128a43b009b6a11d058e05d795b4d8fba819b6d36c353"
+          },
+          "log": {
+            "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/10097/proper_so3/run.log",
+            "sha256": "9430f3f155a15d7a91c7e7ee13be911b1bf6ebd70704c4e7345fce12e2eec3e4"
+          },
+          "reproduction": {
+            "launch_script": {
+              "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/10097/proper_so3/run_reproduce_uncorrected.sh",
+              "sha256": "bc632d6da84b4a13ec10dcff042bddadbb7c4f9e761bb904aad0e28d4fc448eb"
+            },
+            "log": {
+              "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/10097/proper_so3/run_reproduce_uncorrected.log",
+              "sha256": "f3a29c77c94c019b21609a831acd1e9580db2bd7783c34743623a8be6fef66cd"
+            },
+            "max_abs_curve_diff_vs_original": 0.0
+          },
+          "previous_artifacts": {
+            "science_diagnostics": {
+              "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/realdata_10097_proper_so3_identity_915470fb5_20260831/output/science_diagnostics.json",
+              "sha256": "833e7393a31b9982cdae9025b00f2fcf91dad4eaf79250884194e1666008b98d",
+              "schema": "recovar.em_k1_science_diagnostics.v1"
+            },
+            "curve_archive": {
+              "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/realdata_10097_proper_so3_identity_915470fb5_20260831/output/science_diagnostic_curves.npz",
+              "sha256": "3cf93d3f37c3b92be3bb586ed644f1f619d583db271ed66cf888705bafb2a8ed",
+              "fields": [
+                "final_cross_engine_half1_proper_aligned",
+                "final_cross_engine_half1_proper_aligned_common_masked",
+                "final_cross_engine_half2_proper_aligned",
+                "final_cross_engine_half2_proper_aligned_common_masked",
+                "final_cross_engine_proper_aligned",
+                "final_cross_engine_proper_aligned_common_masked",
+                "recovar_final_half_fsc_common_masked",
+                "relion_final_half_fsc_common_masked"
+              ]
+            },
+            "common_mask": {
+              "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/realdata_10097_proper_so3_identity_915470fb5_20260831/output/common_soft_mask.mrc",
+              "sha256": "9e361194f432851043d52f10b55b33bd381e7e787b4e08e198f4bddc36f874da"
+            }
+          },
+          "previous_expected_metrics": {
+            "merged_cross_engine_band_auc": 0.9354267534361663,
+            "half1_cross_engine_band_auc": 0.8855173152657688,
+            "half2_cross_engine_band_auc": 0.888483075371504
+          }
+        },
+        "fitted_transform_summary": {
+          "rotation_degrees": 0.315,
+          "translation_voxels": 0.044
         }
       },
-      "expected_cross_engine_route": "none_unqualified"
+      "expected_cross_engine_route": "none_unqualified",
+      "post_hoc_regeneration": {
+        "note": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "date": "2026-09-24",
+        "transform": "RECOVAR merged map divided by sinc^2(r/(N*2)), r from voxel index N/2 (relax.reconstruction.relion_functions_relion._gridding_correct_trilinear_np); equivalence pinned by tests/unit/test_relion_functions.py::test_final_gridding_correction_equals_post_hoc_division_of_uncorrected_map",
+        "producing_run": {
+          "final_all_data_grid_correct": false,
+          "refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_em_10097_replacement_20260828T211155EDT/outputs/10097/recovar/refinement_results.npz",
+          "slurm_job_id": 13124450,
+          "source_commit": "8502fc50c7f68b8c6f696874f60b6041e9d5d308",
+          "source_repo": "recovar"
+        },
+        "maps": {
+          "merged": {
+            "corrected": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/maps/calib_10097_8502fc50c_13124450/final_merged.mrc",
+            "corrected_sha256": "bd2f52d8e6ad316f6b782ea510f0a7f1ee9978584359fd002a98e7fc213f1faa",
+            "source": "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_em_10097_replacement_20260828T211155EDT/outputs/10097/recovar/final_merged.mrc",
+            "source_sha256": "1fdaba83862d8a04b0b0199dde2989ca760e5460da826530965fdaaa25428131"
+          }
+        },
+        "tool": {
+          "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/gridding_posthoc_20260924/agent_masked/scorecard_calibration/regen_calibration.py",
+          "sha256": "e3f7a261b86381feda6fe631fd9efa33fc20bba0671f569c6dfa2718cb258b86"
+        },
+        "collector": {
+          "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/scripts/collect_metrics.py",
+          "sha256": "63d1a8f9f0a772ef0db45d7417902f36cbde884b309fa6e94d69bdfe2edf2d88"
+        },
+        "replaced": [
+          "final_cross_engine (canonical_frame, raw_canonical_frame, aligned_diagnostic, raw_mrc_array_diagnostic.centered_correlation, recovar_map)",
+          "artifacts.recovar_final_sha256",
+          "curves final_cross_engine_raw, final_cross_engine_aligned"
+        ],
+        "reproduction_of_previous_max_abs_diff": {
+          "aligned_auc": 0.0,
+          "canonical_auc": 0.0,
+          "final_cross_engine_aligned": 0.0,
+          "final_cross_engine_raw": 0.0
+        },
+        "previous_artifacts": {
+          "metrics_json": {
+            "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution_replacement_10097_20260828T211155EDT/per_dataset/10097/metrics/metrics.json",
+            "sha256": "209487bef7bc09e1e647c90761db316053690fa0da7940a4bdd50145877176f6"
+          },
+          "fsc_curves_npz": {
+            "path": "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution_replacement_10097_20260828T211155EDT/per_dataset/10097/metrics/fsc_curves.npz",
+            "sha256": "ade7183112425335138cad19e6d2ac7b8c1790a9f6f0b4b930c36fa0624dbdc3"
+          }
+        },
+        "previous_expected_metrics": {
+          "half_resolution_ratio": 1.0227272727272727,
+          "half_curve_rmse": 0.00492607016375037,
+          "half_band_auc_abs_delta": 0.0015007730672029762,
+          "merged_cross_engine_band_auc": 0.9357355621429695,
+          "half1_cross_engine_band_auc": 0.8858029562913453,
+          "half2_cross_engine_band_auc": 0.8889382693911168
+        }
+      }
     }
   ]
 }

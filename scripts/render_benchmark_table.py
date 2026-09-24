@@ -415,6 +415,13 @@ def _note(row):
         for field, reason in row.get("null_reasons", {}).items()
         if field.split(".")[-1] in SHOWN_NULLS
     ]
+    if row.get("provenance"):
+        record = row["provenance"]
+        maps = "; ".join(
+            f"relax {name} `{entry['corrected']}` (sha256 `{entry['corrected_sha256'][:16]}`)"
+            for name, entry in record.get("maps", {}).items()
+        )
+        text.append(f"Provenance: {record['note']}" + (f"; {maps}" if maps else "") + ".")
     if "pending" in row:
         pending = row["pending"]
         text.append(f"Pending: {pending['note']} (job {', '.join(pending['jobs'])}).")

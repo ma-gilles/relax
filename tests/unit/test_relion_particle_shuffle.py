@@ -1,4 +1,4 @@
-"""Pin the distinct legacy and f2c1a384 AutoRefine particle orders."""
+"""Pin RELION 5.0.1 (f2c1a384) AutoRefine and Class3D particle orders."""
 from types import SimpleNamespace
 
 import numpy as np
@@ -19,16 +19,7 @@ def test_mt19937_paired_reference():
     np.testing.assert_array_equal(second, [5, 0, 2, 3, 4, 1, 6])
 
 
-def test_legacy_paired_reference_is_unchanged():
-    from relax.relion_bind import _relion_bind_core as bind
-
-    first, second = bind.auto_refine_randomise_half_orders(10, 7, 1712)
-    np.testing.assert_array_equal(first, [0, 4, 3, 9, 1, 8, 2, 5, 6, 7])
-    np.testing.assert_array_equal(second, [2, 3, 6, 0, 1, 5, 4])
-
-
-@pytest.mark.parametrize('algorithm', ['legacy', 'mt19937'])
-def test_python_dispatch_and_stable_optics_sort(monkeypatch, algorithm):
+def test_python_dispatch_and_stable_optics_sort(monkeypatch):
     from relax import relion_bind
 
     calls = []
@@ -37,27 +28,30 @@ def test_python_dispatch_and_stable_optics_sort(monkeypatch, algorithm):
         calls.append((n1, n2, seed))
         return [2, 0, 1], [1, 0]
 
-    name = 'auto_refine_randomise_half_orders' + ('_mt19937' if algorithm == 'mt19937' else '')
-    monkeypatch.setattr(relion_bind, '_relion_bind_core', SimpleNamespace(**{name: shuffled}))
-    first, second = relion_auto_refine_half_orders(
-        [1, 2, 1, 2, 1], 42, optics_group_ids=[2, 1, 1, 1, 2], shuffle_algorithm=algorithm,
+    monkeypatch.setattr(
+        relion_bind, '_relion_bind_core', SimpleNamespace(auto_refine_randomise_half_orders_mt19937=shuffled)
     )
+    first, second = relion_auto_refine_half_orders([1, 2, 1, 2, 1], 42, optics_group_ids=[2, 1, 1, 1, 2])
     assert calls == [(3, 2, 43)]
     np.testing.assert_array_equal(first, [2, 4, 0])
     np.testing.assert_array_equal(second, [3, 1])
 
 
-def test_modern_choice_never_falls_back_to_old_binary(monkeypatch):
+def test_missing_binding_fails_closed(monkeypatch):
     from relax import relion_bind
 
     monkeypatch.setattr(relion_bind, '_relion_bind_core', SimpleNamespace())
     with pytest.raises(RuntimeError, match='mt19937'):
-        relion_auto_refine_half_orders([1, 2], 42, shuffle_algorithm='mt19937')
+        relion_auto_refine_half_orders([1, 2], 42)
 
 
-def test_invalid_shuffle_is_rejected():
-    with pytest.raises(ValueError, match='shuffle_algorithm'):
-        relion_auto_refine_half_orders([1, 2], 42, shuffle_algorithm='auto')
+def test_half1_trial_order_is_the_paired_first_half():
+    from relax.helpers.expected_accuracy import relion_half1_trial_order
+    from relax.relion_bind import _relion_bind_core as bind
+
+    # Half 1 is shuffled first from a fresh generator, so it does not depend on half 2.
+    first, _second = bind.auto_refine_randomise_half_orders_mt19937(10, 7, 1712)
+    np.testing.assert_array_equal(relion_half1_trial_order(10, 1711), first)
 
 
 def test_class3d_whole_vector_shuffle_is_the_first_half_generator():

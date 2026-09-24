@@ -205,7 +205,7 @@ def run_smoke(
         str(rotation_block_size),
         "--padding_factor",
         "1",
-        "--no-lazy",
+        "--preread_images",
     ]
     t0 = time.perf_counter()
     returncode, output = _run_text(cmd, env=env)

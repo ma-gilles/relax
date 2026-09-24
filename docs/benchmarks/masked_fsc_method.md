@@ -96,7 +96,14 @@ python scripts/masked_fsc.py verify-mask DIR/MASK.json --record
 python scripts/masked_fsc.py register DIR/MASK.json
 python scripts/masked_fsc.py score --dataset KEY --label NAME \
   --relion-maps MERGED HALF1 HALF2 --relax-maps final_merged.mrc final_half1_unfil.mrc final_half2_unfil.mrc \
-  [--gt-map GT_RELION_FRAME.mrc] --out-dir RUN
+  [--gt-map GT_RELION_FRAME.mrc] [--provenance PROVENANCE.json] --out-dir RUN
 python scripts/masked_fsc.py collect RUN/masked_fsc.json
 python scripts/masked_fsc.py render            # --check in CI
 ```
+
+`--provenance` records a JSON object as the row's provenance and the rendered page lists it. Rows whose relax
+maps were transformed before scoring use it: the 2026-09-24 rows scored runs whose final all-data pass skipped
+RELION's gridding correction (`final_all_data_grid_correct` false in `refinement_results.npz`) on a copy of
+`final_merged.mrc` divided by RELION's radial sinc^2 (the unfiltered halves were always corrected), which equals
+the corrected reconstruction to float32 rounding
+(`tests/unit/test_relion_functions.py::test_final_gridding_correction_equals_post_hoc_division_of_uncorrected_map`).

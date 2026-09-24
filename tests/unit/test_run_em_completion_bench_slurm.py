@@ -104,7 +104,7 @@ def test_completion_jobs_reuse_setup_relion_binding_build_dir(tmp_path):
     assert '--rotation_block_size "8192"' in k1_text
     assert "K1_IMAGE_BATCH_SIZE=187" in submission_env_text
     assert "K1_ROTATION_BLOCK_SIZE=8192" in submission_env_text
-    assert "K1_TRAJECTORY_MODE=autonomous" in submission_env_text
+    assert "K1_TRAJECTORY_MODE=standalone" in submission_env_text
     assert "K1_SAVE_INTERMEDIATES=1" in submission_env_text
     assert 'mkdir -p "${OUTPUT_DIR}/intermediates"' in k1_text
     assert '--save_intermediates_dir "${OUTPUT_DIR}/intermediates"' in k1_text
@@ -112,8 +112,8 @@ def test_completion_jobs_reuse_setup_relion_binding_build_dir(tmp_path):
     assert "--local_search_profile off" in k1_text
     assert "--local-search-profile" not in k1_text
     assert "RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE=0" in submission_env_text
-    assert f'--relion_init_dir "{DEFAULT_K1_RELION_DIR}"' in k1_text
-    assert 'if [[ "autonomous" == "relion-replay" ]]' in k1_text
+    assert "TRAJECTORY_ARGS=(--relion-half-sets-from-input)" in k1_text
+    assert 'if [[ "standalone" == "relion-replay" ]]' in k1_text
     assert "export RELAX_RELION_EM_BATCH_PROJECTION_FRACTION=0.40" in k1_text
     assert "RELAX_RELION_EM_BATCH_PROJECTION_FRACTION=0.40" in submission_env_text
     assert "#SBATCH --mem=128G" in k1_text
@@ -272,6 +272,7 @@ def test_completion_k4_resource_overrides_are_written(tmp_path):
             "EM_COMPLETION_SUMMARY_GRES": "",
             "K4_MEM": "128G",
             "K4_TIME_LIMIT": "04:00:00",
+            "K4_TRAJECTORY_MODE": "relion-replay",
             "K4_RELION_DISPATCH_SCHEDULE": str(dispatch_schedule),
             "RELAX_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES": "3221225472",
             "RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES": "1610612736",
@@ -296,6 +297,9 @@ def test_completion_k4_resource_overrides_are_written(tmp_path):
     assert "K4_MEM=128G" in submission_env_text
     assert "K4_TIME_LIMIT=04:00:00" in submission_env_text
     assert f'--relion-dispatch-schedule "{dispatch_schedule}"' in k4_text
+    # The K4 100k oracle ran without --firstiter_cc and --ini_high; the GUI defaults turn both on.
+    assert "--no-firstiter_cc" in k4_text
+    assert "--no-apply-initial-lowpass" in k4_text
     assert f"K4_RELION_DISPATCH_SCHEDULE={dispatch_schedule}" in submission_env_text
     assert 'mkdir -p "${OUTPUT_DIR}" "${OUTPUT_DIR}/intermediates"' in k4_text
     assert '--save_intermediates_dir "${OUTPUT_DIR}/intermediates"' in k4_text
@@ -309,6 +313,22 @@ def test_completion_k4_resource_overrides_are_written(tmp_path):
         "RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_PREMATMUL_MAX_GROUPED_DENSE_RATIO=0.5"
         in submission_env_text
     )
+
+
+def test_completion_k4_defaults_to_standalone_and_reads_no_relion_output(tmp_path):
+    """Standalone K=4 starts from relion_refine's inputs and needs no dispatch schedule."""
+    scratch = tmp_path / "scratch"
+    env = _launcher_env(tmp_path, scratch)
+    env.pop("K4_TRAJECTORY_MODE", None)
+    env.pop("K4_RELION_DISPATCH_SCHEDULE", None)
+    _run_launcher(env, "--k4-only")
+    k4_text = (scratch / "jobs" / "em_completion_k4_100k256.sh").read_text()
+    submission_env_text = (scratch / "submission.env").read_text()
+    assert 'if [[ "standalone" == "standalone" ]]' in k4_text
+    assert "--ref_star" in k4_text and "reference_init_classes_relion.star" in k4_text
+    assert "--no-firstiter_cc" in k4_text and "--no-apply-initial-lowpass" in k4_text
+    assert '"${TRAJECTORY_ARGS[@]}"' in k4_text
+    assert "K4_TRAJECTORY_MODE=standalone" in submission_env_text
 
 
 def test_completion_setup_defaults_to_cpu_partition(tmp_path):
@@ -383,64 +403,50 @@ def _fake_k1_fixture(tmp_path, version_line):
     return data, relion
 
 
-def test_completion_k1_particle_order_follows_the_oracle_build(tmp_path):
-    """Autonomous K=1 runs own RELION's fresh order, whose first 100 rows are the accuracy trials.
+def test_completion_k1_requires_an_mt19937_oracle_build(tmp_path):
+    """Autonomous and standalone K=1 runs own RELION 5.0.1's mt19937 fresh order (accuracy trials).
 
-    The default fixture's oracle was written by RELION 5.0.1 f2c1a3 (mt19937/std::shuffle);
-    running it with the legacy libc order picks different accuracy trial particles, biases the
-    expected-accuracy estimate low and flips knife-edge angular-sampling decisions.
+    An oracle written by a build with the older libc order would pick other accuracy trial
+    particles, so the launcher fails closed on any build but f2c1a3.
     """
     scratch = tmp_path / "scratch"
     env = _launcher_env(tmp_path, scratch)
     _run_launcher(env, "--k1-only")
     k1_text = (scratch / "jobs" / "em_completion_k1_100k256.sh").read_text()
-    assert "TRAJECTORY_ARGS+=(--relion-particle-shuffle mt19937)\n" in k1_text
+    assert "--relion-particle-shuffle" not in k1_text
 
-    for version, expected in (("5.0.1-commit-d476e6", "legacy"), ("5.0.1-commit-f2c1a3", "mt19937")):
-        case = tmp_path / expected
+    for version in ("5.0.1-commit-d476e6", "5.0.1"):
+        case = tmp_path / version.replace(".", "_")
         data, relion = _fake_k1_fixture(case, version)
         env = _launcher_env(case, case / "scratch")
         env.update({"K1_DATA_DIR": str(data), "K1_RELION_DIR": str(relion)})
-        _run_launcher(env, "--k1-only")
-        text = (case / "scratch" / "jobs" / "em_completion_k1_100k256.sh").read_text()
-        assert f"TRAJECTORY_ARGS+=(--relion-particle-shuffle {expected})\n" in text
+        proc = subprocess.run(
+            ["bash", str(LAUNCHER), "--dry-run", "--k1-only"],
+            cwd=REPO_ROOT, env=env, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
+        )
+        assert proc.returncode == 2, proc.stdout
+        assert "must come from RELION 5.0.1-commit-f2c1a3" in proc.stdout
 
 
-def test_completion_k1_particle_order_fails_closed_on_an_unknown_build(tmp_path):
-    data, relion = _fake_k1_fixture(tmp_path, "5.0.1-commit-000000")
+def test_completion_k1_replay_accepts_any_oracle_build(tmp_path):
+    data, relion = _fake_k1_fixture(tmp_path, "5.0.1")
     env = _launcher_env(tmp_path, tmp_path / "scratch")
-    env.update({"K1_DATA_DIR": str(data), "K1_RELION_DIR": str(relion)})
-    proc = subprocess.run(
-        ["bash", str(LAUNCHER), "--dry-run", "--k1-only"],
-        cwd=REPO_ROOT, env=env, text=True,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
-    )
-    assert proc.returncode == 2, proc.stdout
-    assert "cannot infer the K=1 RELION particle order" in proc.stdout
-
-
-def test_completion_k1_replay_does_not_request_a_fresh_order(tmp_path):
-    scratch = tmp_path / "scratch"
-    env = _launcher_env(tmp_path, scratch)
-    env["K1_TRAJECTORY_MODE"] = "relion-replay"
+    env.update({"K1_DATA_DIR": str(data), "K1_RELION_DIR": str(relion), "K1_TRAJECTORY_MODE": "relion-replay"})
     _run_launcher(env, "--k1-only")
-    k1_text = (scratch / "jobs" / "em_completion_k1_100k256.sh").read_text()
-    assert "--relion-particle-shuffle" not in k1_text
 
 
-def test_completion_k1_standalone_mode_reads_no_relion_output(tmp_path):
-    """Standalone K=1 starts from relion_refine's inputs; the RELION run is only the comparison."""
+def test_completion_k1_autonomous_debug_mode_is_relion_seeded(tmp_path):
+    """The autonomous debug mode seeds the start from RELION's run_it000 outputs."""
     scratch = tmp_path / "scratch"
     env = _launcher_env(tmp_path, scratch)
-    env["K1_TRAJECTORY_MODE"] = "standalone"
+    env["K1_TRAJECTORY_MODE"] = "autonomous"
     _run_launcher(env, "--k1-only")
     k1_text = (scratch / "jobs" / "em_completion_k1_100k256.sh").read_text()
     submission_env_text = (scratch / "submission.env").read_text()
-    assert "TRAJECTORY_ARGS=(--relion-half-sets-from-input --initial-noise-bootstrap relion)" in k1_text
-    assert "TRAJECTORY_ARGS+=(--relion-particle-shuffle mt19937)\n" in k1_text
-    assert 'if [[ "standalone" == "standalone" ]]' in k1_text
-    assert "K1_TRAJECTORY_MODE=standalone" in submission_env_text
-    assert "RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE=0" in submission_env_text
+    assert f'--relion_half_sets "{DEFAULT_K1_RELION_DIR}/run_it000_data.star"' in k1_text
+    assert f'--relion_init_dir "{DEFAULT_K1_RELION_DIR}"' in k1_text
+    assert "K1_TRAJECTORY_MODE=autonomous" in submission_env_text
 
 
 def test_completion_jobs_share_nodes_and_reject_the_retired_exclusive_mode(tmp_path):

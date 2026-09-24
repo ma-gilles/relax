@@ -408,6 +408,29 @@ Performance: RECOVAR 8545 s vs RELION reference 12695 s (0.67x). Not a matched t
 
 Conclusion: accepted under the 2026-09-24 K=1 band rule. The first summary job exited 2 because this submission had no K=4 cell and the single-reference gate failed; the same summarizer with the two repeats passes.
 
+### 2026-09-24 `gridon-k1-completion-100k256`
+
+Final all-data gridding correction always on (qualification of the change; the `q427a08bd8` record above scored an
+uncorrected merged map, so its 0.475108 GT FSC-AUC is superseded; post hoc on its saved map it is 0.469904).
+
+- Commit: `daec99193bf2e7ac4512dabcd9b6fdc07828ddaf` (relax main `c292eb0` + the always-on change + the EM venv fix), clean detached worktree
+- Fixture, RELION reference and repeats: as in the `q427a08bd8` record above; same launcher and settings (`K1_MAX_ITER=25`, autonomous, mt19937), 180G, shared node
+- RECOVAR job `14365794` (9469 s, 18 iterations + final all-data pass, 8.77 A, `final_all_data_grid_correct` True), summary `14365795` (status ok); H100 `della-h19g3`, peak GPU memory 35.0 GiB
+- Artifacts: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/completion_k1_gridon_daec99193/summary.md`; masked scores `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k1gap_20260924/scores_daec991/{vs_rep1,vs_rep2,full_auc.json}`
+
+| Metric | RELION rep1 / rep2 | RECOVAR | Status |
+|--------|--------|---------|--------|
+| unmasked merged FSC-AUC vs GT (full) | 0.469929 / 0.469911 (reference 0.490627) | 0.469892 (was 0.475108) | **pass** under the band rule; 1.9e-5 below the lowest repeat |
+| masked merged FSC-AUC vs GT (full, frozen mask `pdb_k1_100k256_c1`) | 0.512852 / 0.512833 | 0.512800 (was 0.512708) | 3.3e-5 / 5.2e-5 below the repeats (was 1.3e-4 / 1.4e-4); OPEN residual |
+| masked GT FSC shells 1-60 / 61-75 / 76-90 (mean) | 0.843248 / 0.479234 / 0.295432 (rep1) | 0.843211 / 0.479155 / 0.295343 | the 0.0008 shells 1-60 deficit is gone |
+| masked merged cross-engine FSC-AUC, shells 1-90 | | vs rep1 0.999994, vs rep2 0.999995 (was 0.999829) | |
+| unmasked FSC shells 1-8 vs GT | repeats 0.99552 | 0.99552 (was 0.99509) | same |
+| masked corrected half-map FSC-AUC (relion_postprocess, shells 1-90) / resolution | 0.918768 / 0.918750; 4.352 A | 0.918746; 4.352 A | same |
+| pose / translation vs RELION reference | | 0.99694 within 1 deg; 1.0 within 1 px | same |
+
+Conclusion: the systematic masked GT deficit came from the missing final gridding correction and is gone end to end.
+A residual of a few 1e-5 below both repeats remains (OPEN in `docs/development/em_status.md`, pending more RELION repeats).
+
 ### 2026-09-24 `q427a08bd8-k4-completion-100k256`
 
 - Commit `427a08bd8`, same worktree; fixture `ribosembly_k4_g256_n100000_completion_20260512_171123`, RELION `relion_class3d_k4_it015_clean9d9` (4525 s)

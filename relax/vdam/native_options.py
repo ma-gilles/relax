@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from relax.helpers.particle_io import DEFAULT_KEEP_FREE_SCRATCH_GB
 from relax.vdam.schedules import (
     DEFAULT_GRAD_EM_ITERS,
     DEFAULT_GRAD_FIN_FRAC,
@@ -34,7 +35,8 @@ class InitialModelDefaults:
     do_solvent: bool = True
     do_zero_mask: bool = True
     do_ctf_correction: bool = True
-    random_seed: int = 0
+    # relion_refine's --random_seed default: -1 takes the time (the GUI passes none).
+    random_seed: int = -1
     healpix_order: int = 1
     oversampling: int = 1
     offset_range_px: float = 6.0
@@ -50,7 +52,10 @@ class InitialModelDefaults:
     bootstrap_min_particles: int = 1000
     sigma2_min_particles: int = 1000
     padding_factor: int = 1
-    lazy: bool = True
+    # RELION GUI defaults: no pre-read, no scratch copy (relax.helpers.particle_io).
+    preread_images: bool = False
+    scratch_dir: str = ""
+    keep_free_scratch_gb: float = DEFAULT_KEEP_FREE_SCRATCH_GB
     write_iter_artifacts: bool = True
     random_perturbation: float | None = None
     translation_sigma_angstrom: float | None = None

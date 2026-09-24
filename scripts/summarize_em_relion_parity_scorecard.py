@@ -26,10 +26,31 @@ except ModuleNotFoundError:
     from file_hash import sha256_file  # type: ignore[no-redef]
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SCORECARD = REPO_ROOT / "docs" / "math" / "em_relion_parity_scorecard_v1.json"
+V1_SCORECARD = REPO_ROOT / "docs" / "math" / "em_relion_parity_scorecard_v1.json"
+V2_SCORECARD = REPO_ROOT / "docs" / "math" / "em_relion_parity_scorecard_v2.json"
+DEFAULT_SCORECARD = V2_SCORECARD
 DEFAULT_FIXTURE_MANIFEST = REPO_ROOT / "docs" / "math" / "em_relion_parity_fixture_manifest_v2.json"
 DEFAULT_K4_SNAPSHOT = REPO_ROOT / "docs" / "math" / "em_k4_backend_trajectory_snapshot_v2.json"
 V1_SUITE_ID = "k1-gui-grid0-local-highshell-full34"
+SCHEMA_V1 = "recovar.em_relion_parity_scorecard.v1"
+SCHEMA_V2 = "recovar.em_relion_parity_scorecard.v2"
+SUITE_VERSION_BY_SCHEMA = {SCHEMA_V1: 1, SCHEMA_V2: 2}
+# Suite version 1 was scored with the final all-data gridding correction off;
+# version 2 scores RELION-equivalent maps, which always apply griddingCorrect.
+GRID_CORRECTION_BY_SUITE_VERSION = {1: "unset/default-off", 2: "always-on (RELION griddingCorrect)"}
+FROZEN_THRESHOLDS = {
+    "merged_cross_engine_fsc_auc_min": 0.995,
+    "recovar_minus_relion_merged_gt_fsc_auc_min": -0.002,
+}
+V2_REGENERATION_METHOD = "regenerated post hoc with RELION griddingCorrect on the saved final maps"
+V2_REGENERATION_SCRIPT = "scripts/regenerate_em_k1_scorecard_final_gridding.py"
+V2_PROVENANCE_INPUTS = {
+    "fsc_report",
+    "recovar_final_merged",
+    "recovar_refinement_results",
+    "relion_final_merged",
+    "gt_volume",
+}
 V2_FIXTURE_SUITE_ID = f"{V1_SUITE_ID}-artifact-pinned-v2"
 V1_FROZEN_DENOMINATOR = 34
 V1_FROZEN_CASE_DEFINITIONS_SHA256 = "9e3f2cb7192eb2cbf8a50181cf47de8562adfb98734bab05a736fb7d4d404fc1"
@@ -88,14 +109,33 @@ def frozen_case_definitions_sha256(cases: list[dict]) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
+def requires_final_grid_correction(scorecard: dict) -> bool:
+    """Return whether new fixed-suite evidence must record final gridding correction on."""
+
+    return scorecard["suite_version"] >= 2
+
+
 def load_and_validate(path: Path) -> dict:
     scorecard = json.loads(path.read_text())
-    if scorecard.get("schema") != "recovar.em_relion_parity_scorecard.v1":
+    schema = scorecard.get("schema")
+    if schema not in SUITE_VERSION_BY_SCHEMA:
         raise ValueError("unsupported scorecard schema")
-    if scorecard.get("suite_version") != 1:
-        raise ValueError("v1 scorecard must have suite_version=1")
+    suite_version = SUITE_VERSION_BY_SCHEMA[schema]
+    if scorecard.get("suite_version") != suite_version:
+        raise ValueError(f"{schema} scorecard must have suite_version={suite_version}")
     if scorecard.get("suite_id") != V1_SUITE_ID:
-        raise ValueError(f"v1 suite_id must remain {V1_SUITE_ID!r}")
+        raise ValueError(f"suite_id must remain {V1_SUITE_ID!r}")
+    contract = scorecard.get("acceptance_contract")
+    if not isinstance(contract, dict):
+        raise ValueError("acceptance_contract must be an object")
+    for name, value in FROZEN_THRESHOLDS.items():
+        if contract.get(name) != value:
+            raise ValueError(f"acceptance threshold {name} changed without an explicit decision")
+    if contract.get("grid_correction") != GRID_CORRECTION_BY_SUITE_VERSION[suite_version]:
+        raise ValueError(
+            f"suite version {suite_version} grid_correction must be "
+            f"{GRID_CORRECTION_BY_SUITE_VERSION[suite_version]!r}"
+        )
 
     cases = scorecard.get("cases")
     if not isinstance(cases, list):
@@ -118,7 +158,7 @@ def load_and_validate(path: Path) -> dict:
     recorded_definition_sha256 = scorecard.get("frozen_case_definitions_sha256")
     if recorded_definition_sha256 != V1_FROZEN_CASE_DEFINITIONS_SHA256:
         raise ValueError(
-            "v1 frozen case-definition digest changed without a suite-version change: "
+            "frozen case-definition digest changed without a new case set: "
             f"expected={V1_FROZEN_CASE_DEFINITIONS_SHA256} recorded={recorded_definition_sha256!r}"
         )
     if calculated_definition_sha256 != V1_FROZEN_CASE_DEFINITIONS_SHA256:
@@ -165,6 +205,8 @@ def load_and_validate(path: Path) -> dict:
         raise ValueError("last history row must be the current snapshot")
     if history[-1]["counts"] != recorded:
         raise ValueError("last history counts must match current snapshot")
+    if suite_version >= 2:
+        _validate_v2_regeneration(scorecard, path)
 
     case_ids = set(actual_ids)
     replicates = scorecard.get("replicate_diagnostics", [])
@@ -190,6 +232,64 @@ def load_and_validate(path: Path) -> dict:
         if not isinstance(jobs, dict) or set(jobs) != {"science", "audit"}:
             raise ValueError(f"{case_id}: replicate jobs must identify science and audit")
     return scorecard
+
+
+def _validate_v2_regeneration(scorecard: dict, path: Path) -> None:
+    """Pin v2 to the untouched v1 history file and require per-case regeneration provenance."""
+
+    previous = scorecard.get("previous_version")
+    if not isinstance(previous, dict) or previous.get("schema") != SCHEMA_V1:
+        raise ValueError("v2 scorecard must identify its v1 predecessor")
+    previous_path = REPO_ROOT / str(previous.get("path"))
+    if not previous_path.is_file() or sha256_file(previous_path) != previous.get("sha256"):
+        raise ValueError("v1 history scorecard is missing or its bytes changed")
+    v1 = json.loads(previous_path.read_text())
+    if v1.get("current_snapshot", {}).get("id") != previous.get("current_snapshot_id"):
+        raise ValueError("v2 predecessor snapshot differs from the v1 current snapshot")
+    history_versions = [snapshot.get("suite_version") for snapshot in scorecard["history"]]
+    if history_versions[-1] != 2 or any(version not in {1, 2} for version in history_versions):
+        raise ValueError("v2 history rows must record suite_version 1 or 2, ending with 2")
+    source = scorecard["current_snapshot"].get("source_ledger", {})
+    ledger_path = source.get("path")
+    if not isinstance(ledger_path, str) or not ledger_path:
+        raise ValueError("v2 current snapshot must name its checked-in regeneration ledger")
+    ledger_file = REPO_ROOT / ledger_path
+    if not ledger_file.is_file() or sha256_file(ledger_file) != source.get("sha256"):
+        raise ValueError("v2 regeneration ledger is missing or its bytes changed")
+    v1_cases = {case["id"]: case for case in v1["cases"]}
+    for case in scorecard["cases"]:
+        v1_case = v1_cases[case["id"]]
+        for field in ("name", "definition", "source_head", "jobs", "intermediate_result"):
+            if case.get(field) != v1_case.get(field):
+                raise ValueError(f"{case['id']}: v2 changed immutable v1 field {field}")
+        suite_v1 = case.get("suite_v1")
+        expected_v1 = {
+            "result": v1_case["result"],
+            "final_cross_engine_fsc_auc": v1_case["final_cross_engine_fsc_auc"],
+            "final_gt_fsc_auc_delta": v1_case["final_gt_fsc_auc_delta"],
+        }
+        if suite_v1 != expected_v1:
+            raise ValueError(f"{case['id']}: suite_v1 values differ from the v1 scorecard")
+        provenance = case.get("final_metric_provenance")
+        if not isinstance(provenance, dict):
+            raise ValueError(f"{case['id']}: missing final-metric provenance")
+        if provenance.get("method") != V2_REGENERATION_METHOD or provenance.get("script") != V2_REGENERATION_SCRIPT:
+            raise ValueError(f"{case['id']}: final-metric provenance does not name the regeneration method")
+        digests = provenance.get("inputs_sha256")
+        if not isinstance(digests, dict) or set(digests) != V2_PROVENANCE_INPUTS:
+            raise ValueError(f"{case['id']}: final-metric provenance lacks input digests")
+        if any(not isinstance(value, str) or SHA256_RE.fullmatch(value) is None for value in digests.values()):
+            raise ValueError(f"{case['id']}: invalid final-metric input digest")
+        cross = case.get("final_cross_engine_fsc_auc")
+        delta = case.get("final_gt_fsc_auc_delta")
+        final_pass = (
+            cross is not None
+            and delta is not None
+            and cross >= FROZEN_THRESHOLDS["merged_cross_engine_fsc_auc_min"]
+            and delta >= FROZEN_THRESHOLDS["recovar_minus_relion_merged_gt_fsc_auc_min"]
+        )
+        if case["result"] == "pass" and not final_pass:
+            raise ValueError(f"{case['id']}: v2 pass does not satisfy the frozen final-map thresholds")
 
 
 def load_and_validate_fixture_manifest(path: Path, scorecard: dict) -> dict:
@@ -313,6 +413,7 @@ def _frozen_mask_section(cases: list[dict]) -> list[str]:
         "method `docs/benchmarks/masked_fsc_method.md`). Maps are those of the autonomous run",
         "`em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z`; a case whose scorecard science job",
         "differs was superseded by a later run and its masked values describe the ac5177d2 maps. No gate reads these values.",
+        "These values predate suite version 2 and were not regenerated with the final gridding correction.",
         "",
         "| Case | Maps job | Scorecard job? | RELION masked (Å) | relax masked (Å) | Masked AUC RELION / relax "
         "| Cross-engine masked AUC | GT masked AUC RELION / relax |",
@@ -335,6 +436,56 @@ def _frozen_mask_section(cases: list[dict]) -> list[str]:
             f"{fmt(engines['relion'].get('masked_resolution_A'), 2)} | {fmt(engines['relax'].get('masked_resolution_A'), 2)} | "
             f"{fmt(engines['relion'].get('masked_corrected_band_auc'), 4)} / {fmt(engines['relax'].get('masked_corrected_band_auc'), 4)} | "
             f"{fmt(None if cross is None else cross['merged'], 4)} | {fmt(gt['relion'], 4)} / {fmt(gt['relax'], 4)} |"
+        )
+    return lines
+
+
+def _grid_correction_phrase(scorecard: dict) -> str:
+    if requires_final_grid_correction(scorecard):
+        return "final all-data gridding correction always on (RELION `griddingCorrect`)"
+    return "grid correction unset/off"
+
+
+def _suite_v2_regeneration_section(scorecard: dict) -> list[str]:
+    """Show how suite version 2 re-scored version 1's final merged maps."""
+
+    if not requires_final_grid_correction(scorecard):
+        return []
+    previous = scorecard["previous_version"]
+    regeneration = scorecard["regeneration"]
+    changed = [case for case in scorecard["cases"] if case["result"] != case["suite_v1"]["result"]]
+    changed_text = (
+        "Pass/fail changed for: "
+        + ", ".join(f"`{case['id']}` ({case['suite_v1']['result']} -> {case['result']})" for case in changed)
+        + "."
+        if changed
+        else "No case changed pass/fail under the unchanged thresholds."
+    )
+    lines = [
+        "",
+        "## Suite version 2 regeneration",
+        "",
+        "Version 1 scored final merged maps written without RELION's final gridding correction "
+        "(`backprojector.cpp` `griddingCorrect`); relax now always applies it. The correction is the last "
+        "real-space step of the reconstruction, so each case's final merged-map metrics were "
+        f"{regeneration['method']} (`{regeneration['script']}`): the saved uncorrected "
+        "`final_merged.mrc` is divided by the radial sinc^2 (padding factor "
+        f"{regeneration['gridding']['padding_factor']}) and re-scored with the audit's FSC shells and sign policy. "
+        "Each case first reproduced its recorded version 1 values from the same files. Numbered-iteration "
+        "metrics, split halves and RELION maps are unchanged. Version 1 remains as history in "
+        f"`{previous['path']}` (SHA-256 `{previous['sha256']}`).",
+        "",
+        changed_text,
+        "",
+        "| Case | v1 result | v1 cross-engine FSC-AUC | v1 GT delta | v2 result | v2 cross-engine FSC-AUC | v2 GT delta |",
+        "|---|---|---:|---:|---|---:|---:|",
+    ]
+    for case in scorecard["cases"]:
+        v1 = case["suite_v1"]
+        lines.append(
+            f"| `{case['id']}` | {v1['result']} | {v1['final_cross_engine_fsc_auc']:.9f} | "
+            f"{v1['final_gt_fsc_auc_delta']:+.9f} | {case['result']} | "
+            f"{case['final_cross_engine_fsc_auc']:.9f} | {case['final_gt_fsc_auc_delta']:+.9f} |"
         )
     return lines
 
@@ -392,11 +543,12 @@ def render_markdown(
         "replicates.",
         "",
         "Acceptance uses shellwise FSC and normalized FSC-AUC, exact schedule/topology, convergence/finalization "
-        "semantics, same-physical-GPU RELION/RECOVAR pairs, grid correction unset/off, and no forced K-class-like "
+        "semantics, same-physical-GPU RELION/RECOVAR pairs, "
+        f"{_grid_correction_phrase(scorecard)}, and no forced K-class-like "
         "finalization. Correlation is not computed or gated.",
         "",
         f"Evidence snapshot: `{source['schema']}`, generated `{source['generated_utc']}`, JSON SHA-256 "
-        f"`{source['sha256']}`.",
+        f"`{source['sha256']}`" + (f" (`{source['path']}`)." if source.get("path") else "."),
         f"K=4 evidence snapshot: `{k4_snapshot['snapshot_id']}`, JSON SHA-256 "
         f"`{k4_snapshot_sha256}`.",
         f"Progress: {passed - first_passed:+d} passing cases since the first frozen snapshot; "
@@ -444,8 +596,8 @@ def render_markdown(
         "",
         "## Progress history",
         "",
-        "| Snapshot | Date (UTC) | Commit boundary | Passed | Δ passed | Failed | Not evaluated/error |",
-        "|---|---|---|---:|---:|---:|---:|",
+        "| Snapshot | Suite | Date (UTC) | Commit boundary | Passed | Δ passed | Failed | Not evaluated/error |",
+        "|---|---:|---|---|---:|---:|---:|---:|",
     ]
     prior_passed = None
     for snapshot in history:
@@ -453,11 +605,13 @@ def render_markdown(
         heads = ", ".join(f"`{head[:12]}`" for head in snapshot["source_heads"])
         delta_text = "—" if prior_passed is None else f"{snapshot_counts['pass'] - prior_passed:+d}"
         lines.append(
-            f"| `{snapshot['id']}` | {snapshot['recorded_utc']} | {heads} | "
+            f"| `{snapshot['id']}` | {snapshot.get('suite_version', scorecard['suite_version'])} | "
+            f"{snapshot['recorded_utc']} | {heads} | "
             f"{snapshot_counts['pass']} | {delta_text} | {snapshot_counts['fail']} | "
             f"{snapshot_counts['not_run']} |"
         )
         prior_passed = snapshot_counts["pass"]
+    lines += _suite_v2_regeneration_section(scorecard)
     lines += _frozen_mask_section(cases)
     lines += [
         "",
@@ -523,8 +677,9 @@ def render_markdown(
         "",
         "Launch a scoring rerun with `--scorecard`. This fail-closed mode requires the",
         "checked-in fixture manifest/root pair and forces autonomous RELION pairing,",
-        "per-iteration RECOVAR maps, grid correction off, and valid convergence-only",
-        "finalization. For example:",
+        "per-iteration RECOVAR maps and valid convergence-only finalization. Final",
+        "all-data maps are always gridding-corrected; the launcher refuses the retired",
+        "`RELAX_FINAL_ALL_DATA_GRID_CORRECT` selector. For example:",
         "",
         "```bash",
         'EM_K1_MATRIX_FIXTURE_MANIFEST="$PWD/docs/math/em_relion_parity_fixture_manifest_v2.json" \\',
@@ -721,7 +876,22 @@ def _validate_job_identity(
     _require(row.get("case_job_id") == science_job, f"{case_id}: selected-cases science job differs")
 
 
-def _validate_runtime_contract(run_root: Path, case_root: Path, case_id: str) -> None:
+def _validate_runtime_contract(
+    run_root: Path,
+    case_root: Path,
+    case_id: str,
+    *,
+    grid_correction_required: bool,
+) -> None:
+    """Check the submitted runtime contract.
+
+    Suite version 1 required the retired ``RELAX_FINAL_ALL_DATA_GRID_CORRECT``
+    selector unset or off. From suite version 2 the final all-data pass always
+    gridding-corrects and the selector is retired, so any recorded value marks a
+    stale launcher; the run's ``refinement_results.npz`` must record the
+    correction on (checked in ``build_proposal_update``).
+    """
+
     submission = _read_submission_env(run_root)
     _require(
         submission.get("EM_K1_MATRIX_TRAJECTORY_MODE") == "autonomous",
@@ -732,16 +902,31 @@ def _validate_runtime_contract(run_root: Path, case_root: Path, case_id: str) ->
         "RELAX_FINAL_ALL_DATA_GRID_CORRECT",
         "",
     ).strip().lower()
-    _require(
-        grid_correction in {"", "0", "false", "no", "off"},
-        f"{case_id}: final all-data grid correction was enabled",
-    )
+    if grid_correction_required:
+        _require(
+            grid_correction == "",
+            f"{case_id}: submission records the retired RELAX_FINAL_ALL_DATA_GRID_CORRECT selector",
+        )
+    else:
+        _require(
+            grid_correction in {"", "0", "false", "no", "off"},
+            f"{case_id}: final all-data grid correction was enabled",
+        )
     job_scripts = sorted((run_root / "jobs").glob(f"em_k1_matrix_*{case_root.name}*.sh"))
     _require(len(job_scripts) == 1, f"{case_id}: could not identify the science job script")
     _require(
         "unset RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER" in job_scripts[0].read_text(),
         f"{case_id}: science job did not fail closed on forced after-max finalization",
     )
+
+
+def _validate_recorded_final_grid_correction(recorded: bool, case_id: str, *, required: bool) -> None:
+    """Check ``final_all_data_grid_correct`` from the run's ``refinement_results.npz``."""
+
+    if required:
+        _require(recorded, f"{case_id}: final all-data maps were not gridding-corrected (suite version 2 requires it)")
+    else:
+        _require(not recorded, f"{case_id}: final all-data grid correction was enabled")
 
 
 def _validate_autonomous_fsc_audit_schema(fsc: dict, case_id: str) -> None:
@@ -784,7 +969,13 @@ def build_proposal_update(
     source_head = _read_clean_source_head(run_root, evidence.science_job, evidence.case_id)
     _validate_job_identity(run_root, case_root, case, evidence.science_job, source_head)
     paired_gpu_uuid = _validate_gpu_pair(case_root, evidence.case_id)
-    _validate_runtime_contract(run_root, case_root, evidence.case_id)
+    grid_correction_required = requires_final_grid_correction(scorecard)
+    _validate_runtime_contract(
+        run_root,
+        case_root,
+        evidence.case_id,
+        grid_correction_required=grid_correction_required,
+    )
 
     audit_logs = sorted((run_root / "audits").glob(f"*{evidence.case_id}*_{evidence.audit_job}.out"))
     _require(len(audit_logs) == 1, f"{evidence.case_id}: expected one audit log for job {evidence.audit_job}")
@@ -885,7 +1076,7 @@ def build_proposal_update(
         f"{evidence.case_id}: convergence iteration differs from the audited trajectory",
     )
     _require(final_all_data, f"{evidence.case_id}: converged run lacks final all-data")
-    _require(not grid_correction, f"{evidence.case_id}: final all-data grid correction was enabled")
+    _validate_recorded_final_grid_correction(grid_correction, evidence.case_id, required=grid_correction_required)
     _require(saved_current_sizes == current_sizes, f"{evidence.case_id}: saved/audited current-size schedules differ")
     _require(shellwise_path.is_file(), f"{evidence.case_id}: missing shellwise FSC evidence")
 

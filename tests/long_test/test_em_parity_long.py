@@ -262,8 +262,6 @@ def _assert_relion_initialmodel_reference(relion_dir: Path, *, expected_iter: in
 K1_LONG_START_ARGS = {
     "standalone": [
         "--relion-half-sets-from-input",
-        "--initial-noise-bootstrap",
-        "relion",
     ],
     "relion_seeded_debug": [
         "--relion_optimiser",
@@ -302,7 +300,7 @@ def test_em_parity_long_k1_full(tmp_path, start):
     # (checked in the iteration-0 model). --ctf, --flatten_solvent, --zero_mask,
     # --low_resol_join_halves 40, --norm, --scale and --pad 2 are fixed RELION
     # defaults in the refinement. RELION 5.0.1-commit-f2c1a3 orders particles with
-    # mt19937, hence --relion-particle-shuffle mt19937.
+    # mt19937, relax's only order.
     _assert_relion_command_tokens(
         relion_optimiser,
         (
@@ -360,8 +358,6 @@ def test_em_parity_long_k1_full(tmp_path, start):
         "1775735620",
         "--perturb_seed",
         "1775735620",
-        "--relion-particle-shuffle",
-        "mt19937",
         *K1_LONG_START_ARGS[start],
         "--particle_diameter_ang",
         "200",
@@ -371,9 +367,8 @@ def test_em_parity_long_k1_full(tmp_path, start):
         "30.0",
         # The fresh K=1 defaults (source-faithful powerClass normalization and
         # exact RELION BPref operands) only work with RELION's CUDA image
-        # preprocessing, and refine_single_volume fails closed without it. The
-        # CLI still defaults to host_numpy, so the test has to ask for it -- the
-        # same pairing the fixed diagnostic arm enforces in run_full_refinement.
+        # preprocessing, and refine_single_volume fails closed without it. It is
+        # the K=1 CLI default; the test states it, as the fixed diagnostic arm does.
         "--image-fourier-backend",
         "relion_cuda",
         "--image_batch_size",
@@ -592,7 +587,7 @@ def test_em_parity_long_k1_native_initialmodel_quality(tmp_path):
         "256",
         "--padding_factor",
         "1",
-        "--no-lazy",
+        "--preread_images",
     ]
     logger.info("K=1 native InitialModel cmd: %s", " ".join(cmd))
 
@@ -718,23 +713,47 @@ def test_em_parity_long_k1_native_initialmodel_quality(tmp_path):
     )
 
 
+# Start-up state for the long K4 run. ``standalone`` reads only relion_refine's
+# inputs (particles.star with its origins, the stack, the --ref STAR and the
+# command values): RELION start-up noise, 1/K class distribution, the whole-vector
+# mt19937 accuracy trials and one single-process group-scale state; the RELION run
+# is read afterwards for comparison. ``relion_replay_debug`` substitutes the state
+# each RELION iteration wrote; it is a debugging aid, not standalone evidence.
+KCLASS_LONG_START_ARGS = {
+    "standalone": [
+        "--ref_star",
+        str(K4_LONG_FIXTURE_DIR / "reference_init_classes_relion.star"),
+    ],
+    "relion_replay_debug": [
+        "--perturb_replay_relion_dir",
+        str(K4_LONG_RELION_DIR),
+        "--relion-scale-followers",
+        "0",
+        "--relion_optimiser",
+        str(K4_LONG_RELION_DIR / "run_it000_optimiser.star"),
+    ],
+}
+
+
 @pytest.mark.em_parity_long
 @pytest.mark.gpu
 @pytest.mark.integration
-def test_em_parity_long_kclass_full(tmp_path):
+@pytest.mark.parametrize("start", sorted(KCLASS_LONG_START_ARGS))
+def test_em_parity_long_kclass_full(tmp_path, start):
     """K=4 256² 50k 15-iteration Class3D trajectory against RELION (~2-4 hr on H100).
 
-    Runs ``run_full_refinement.py --n_classes 4 --max_iter 15`` from the fixture's
-    initial class references with the RELION reference's Class3D command. Like
-    ``test_em_parity_fast_kclass_coldstart`` this is a controlled replay, not an
-    autonomous trajectory: iteration 1 derives its noise, tau2 and sigma locally,
-    and every later iteration takes the state RELION's previous iteration wrote
-    (``--perturb_replay_relion_dir``: sampling perturbation, noise spectrum, per-class
-    tau2, sigma_offset, direction prior, per-particle norm/scale corrections and
-    previous best poses). The class maps and class assignments are RECOVAR's own and
-    are carried through all 15 iterations. The reference is a single non-MPI
-    ``relion_refine`` process, so it has no MPI followers or dispatch schedule and the
-    replay runs with ``--relion-scale-followers 0``.
+    Runs ``run_full_refinement.py --n_classes 4 --max_iter 15`` with the RELION
+    reference's Class3D command. The ``standalone`` start reads no RELION output
+    and runs its own trajectory; its maps are judged functionally, since its
+    random draws need not follow RELION's. ``relion_replay_debug`` is a controlled
+    replay: iteration 1 derives its noise, tau2 and sigma locally, and every later
+    iteration takes the state RELION's previous iteration wrote
+    (``--perturb_replay_relion_dir``: sampling perturbation, noise spectrum,
+    per-class tau2, sigma_offset, direction prior, per-particle norm/scale
+    corrections and previous best poses). In both, the class maps and class
+    assignments are RECOVAR's own and are carried through all 15 iterations. The
+    reference is a single non-MPI ``relion_refine`` process, so it has no MPI
+    followers or dispatch schedule; the standalone run is single-process too.
 
     The four final class maps are Hungarian-matched to RELION's
     ``run_it015_class00N.mrc`` on mean FSC over shells 1-16, and each matched pair
@@ -795,7 +814,7 @@ def test_em_parity_long_kclass_full(tmp_path):
         f"records: {mpi_layout}"
     )
 
-    output_dir = tmp_path / "kclass_long"
+    output_dir = tmp_path / f"kclass_long_{start}"
     output_dir.mkdir()
     cmd = [
         sys.executable,
@@ -820,12 +839,7 @@ def test_em_parity_long_kclass_full(tmp_path):
         "4.0",
         "--perturb_factor",
         "0.5",
-        "--perturb_replay_relion_dir",
-        str(K4_LONG_RELION_DIR),
-        "--relion-scale-followers",
-        "0",
-        "--relion_optimiser",
-        str(relion_optimiser),
+        *KCLASS_LONG_START_ARGS[start],
         "--particle_diameter_ang",
         "200",
         "--seed",
@@ -921,8 +935,10 @@ def test_em_parity_long_kclass_full(tmp_path):
         "kclass_long_target_iter": final_iter,
         "kclass_long_command": cmd,
     }
-    ledger = _write_quality_ledger("kclass_long", payload, output_dir=output_dir)
-    logger.info("K-class long ledger: %s", ledger)
+    # Only the standalone case is reported; the debug case is not tier evidence.
+    if start == "standalone":
+        ledger = _write_quality_ledger("kclass_long", payload, output_dir=output_dir)
+        logger.info("K-class long ledger: %s", ledger)
 
     print(file=sys.stderr, flush=True)
     print("=== K=4 long parity (256² 50k, 15-iteration trajectory vs RELION it015) ===", file=sys.stderr, flush=True)
@@ -954,3 +970,95 @@ def test_em_parity_long_kclass_full(tmp_path):
     assert class_acc >= 0.95, (
         f"K-class long Hungarian-aligned class assignment accuracy {class_acc:.4f} below threshold 0.95"
     )
+
+
+# One iteration from a real-data RELION state at production size: EMPIAR-10097 (130k particles,
+# box 256) auto-refine iteration 13 -> 14, healpix 3, oversampling 1, current size 136, 294,912
+# fine rotations. No fast case reaches healpix 3 at a large current size; the resident engine's
+# per-iteration projection cache did not fit there (40 GiB against a 20 GiB budget) and crashed.
+# ``resident`` adds the resident flag set that is becoming the default (speed's 10097 it13 run,
+# relax_speed_20260923/runs/pair1it_d8f4ce1_it13); drop the arm once those are the defaults.
+REALDATA_HP3_RESIDENT_ENV = {
+    "RELAX_SPARSE_PASS2_RESIDENT": "1",
+    "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS": "1",
+    "RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT": "1",
+    "RELAX_LOCAL_SEARCH_RESIDENT": "1",
+    "RELAX_COARSE_SIGNIFICANCE_DEVICE": "1",
+    "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH": "1",
+    "RELAX_EM_JIT_STAGE_GLUE": "1",
+    "RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF": "1",
+    "RELAX_K1_RELION_WAVG_SEQUENTIAL_CUDA": "1",
+    "RELAX_EM_BPREF_FINITE_GUARD": "1",
+    "RELAX_LOCAL_IMAGE_CAPACITY_LADDER": "16,32,64,128,256",
+    # The resident statistics stage needs the fresh-K1 arithmetic (it does not consume the
+    # atomic Wavg triplet of the older replay arithmetic).
+    "RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM": "1",
+    "RELAX_K1_RELION_EXACT_BPREF_OPERANDS": "1",
+}
+REALDATA_HP3_ARMS = {"default": {}, "resident": REALDATA_HP3_RESIDENT_ENV}
+
+
+@pytest.mark.em_parity_long
+@pytest.mark.gpu
+@pytest.mark.integration
+@pytest.mark.parametrize("arm", sorted(REALDATA_HP3_ARMS))
+def test_em_parity_long_realdata_hp3_replay(tmp_path, arm):
+    """EMPIAR-10097 iteration 13 -> 14 at healpix 3 and current size 136 must complete and match RELION.
+
+    The replay starts from RELION's stored iteration-13 state and is compared with RELION's
+    iteration-14 half maps by FSC (FSC-AUC and the minimum shell FSC over shells 1..current
+    size/2). The FSC floor applies once ``tests/tiers/fsc_thresholds.json`` records the user's
+    approval (case ``realdata_10097_hp3_replay``); until then the test asserts completion and
+    reports the FSC values.
+    """
+    from recovar.utils import helpers
+
+    from scripts.fsc_metrics import normalized_fsc_auc, shell_fsc
+
+    _assert_parity_ancestors_or_skip()
+    require_fixture_sets("empiar_10097_hp3_state", "empiar_10097_particle_stack")
+    state = fixture_root("empiar_10097_hp3_state")
+    relion_dir = state / "refine"
+    output_dir = tmp_path / f"realdata_10097_hp3_{arm}"
+    cmd = [
+        sys.executable, str(PARITY_SCRIPT), "--relion_dir", str(relion_dir), "--data_star",
+        str(state / "input" / "particles.star"), "--iter", "13", "--max_iter", "1", "--skip_final_iteration",
+        "--force_max_iter_after_convergence", "--image_batch_size", "250", "--rotation_block_size", "8192",
+        "--image-fourier-backend", "relion_cuda", "--diagnostic-native-relion-particle-order-seed", "42",
+        "--output_dir", str(output_dir),
+    ]
+    env = gpu_subprocess_env() | {"RECOVAR_PREREAD_IMAGES": "1", "RECOVAR_PREREAD_MAX_GB": "64"} | REALDATA_HP3_ARMS[arm]
+    t0 = time.time()
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    elapsed = time.time() - t0
+    assert proc.returncode == 0, (
+        f"10097 hp3 one-iteration replay ({arm}) exited {proc.returncode}\n"
+        f"stdout:\n{proc.stdout[-4000:]}\nstderr:\n{proc.stderr[-4000:]}"
+    )
+
+    current_size = int(_read_relion_star_scalar(relion_dir / "run_it014_half1_model.star", "_rlnCurrentImageSize"))
+    band = current_size // 2
+    payload = {"arm": arm, "walltime_s": elapsed, "current_size": current_size}
+    for half in (1, 2):
+        relax_map = np.asarray(helpers.load_mrc(str(output_dir / f"recovar_final_half{half}.mrc")), dtype=np.float64)
+        relion_map = np.asarray(
+            helpers.load_relion_volume(str(relion_dir / f"run_it014_half{half}_class001.mrc")), dtype=np.float64
+        )
+        curve = np.asarray(shell_fsc(relax_map, relion_map), dtype=np.float64)
+        payload[f"half{half}_fsc_auc"] = float(normalized_fsc_auc(curve))
+        payload[f"half{half}_min_shell_fsc_in_band"] = float(np.nanmin(curve[1:band]))
+        payload[f"half{half}_fsc"] = [round(float(v), 6) for v in curve]
+    ledger = _write_quality_ledger(f"realdata_10097_hp3_{arm}", payload, output_dir=output_dir)
+    logger.info("10097 hp3 replay ledger: %s", ledger)
+    print(
+        f"\n10097 it13->14 hp3 cs{current_size} ({arm}): FSC-AUC {payload['half1_fsc_auc']:.6f} / "
+        f"{payload['half2_fsc_auc']:.6f}; min shell {payload['half1_min_shell_fsc_in_band']:.6f} / "
+        f"{payload['half2_min_shell_fsc_in_band']:.6f}; wall {elapsed:.0f} s",
+        file=sys.stderr, flush=True,
+    )
+    thresholds = json.loads((REPO_ROOT / "tests" / "tiers" / "fsc_thresholds.json").read_text())
+    gate = thresholds["cases"].get("realdata_10097_hp3_replay") if thresholds.get("approved") else None
+    if gate is not None:
+        for half in (1, 2):
+            assert payload[f"half{half}_fsc_auc"] >= gate["fsc_auc_floor"], payload
+            assert payload[f"half{half}_min_shell_fsc_in_band"] >= gate["min_shell_floor"], payload

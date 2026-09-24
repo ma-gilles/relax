@@ -3201,3 +3201,50 @@ def test_join_halves_at_low_resolution_host_fallback_can_reuse_numpy_storage(mon
     np.testing.assert_array_equal(ft_ctf_1[idx_inside], np.float32(2.0))
     np.testing.assert_array_equal(ft_y_0[idx_outside], np.complex64(20.0))
     np.testing.assert_array_equal(ft_y_1[idx_outside], np.complex64(4.0))
+
+
+@pytest.mark.usefixtures("_jax_cpu_default_device")
+@pytest.mark.parametrize("tau_is_1d", [False, True])
+def test_final_gridding_correction_equals_post_hoc_division_of_uncorrected_map(tau_is_1d):
+    """Gridding correction is the last real-space step of a reconstruction.
+
+    Dividing a saved uncorrected map (the ``final_merged.mrc`` writer's
+    ``real(idft3(.))`` of a ``grid_correct=False`` reconstruction) by RELION's
+    radial sinc^2 reproduces the ``grid_correct=True`` reconstruction to
+    float32 rounding. Pinned records regenerated before the final all-data
+    pass always applied the correction rely on this equivalence.
+    """
+    from recovar.core import fourier_transform_utils as ftu
+    from relax.dense.scoring_policy import PADDING_FACTOR, PROJECTION_PADDING_FACTOR
+    from relax.refinement import mean_helpers
+
+    volume_shape = (16, 16, 16)
+    accumulator_shape = (33, 33, 33)
+    half_shape = ftu.volume_shape_to_half_volume_shape(accumulator_shape)
+    rng = np.random.default_rng(20260924)
+    ft_ctf = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
+    f_ty = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
+    tau = rng.uniform(0.5, 1.5, 8 if tau_is_1d else np.prod(volume_shape)).astype(np.float64)
+    common = dict(
+        tau=tau,
+        tau2_fudge=1.0,
+        projection_padding_factor=PROJECTION_PADDING_FACTOR,
+        minres_map=5,
+        current_size=16,
+        accumulator_volume_shape=accumulator_shape,
+        tau_is_1d=tau_is_1d,
+    )
+
+    def saved_map(grid_correct):
+        ft = mean_helpers._reconstruct_volume_eager(
+            ft_ctf, f_ty, volume_shape, PADDING_FACTOR, grid_correct=grid_correct, **common
+        )
+        return np.real(np.asarray(ftu.get_idft3(jnp.asarray(ft).reshape(volume_shape)))).astype(np.float32)
+
+    corrected = saved_map(True)
+    post_hoc = relion_functions_relion._gridding_correct_trilinear_np(
+        saved_map(False).astype(np.float64), volume_shape[0], PROJECTION_PADDING_FACTOR
+    )
+
+    assert not np.allclose(corrected, saved_map(False), rtol=1e-3, atol=0)
+    np.testing.assert_allclose(post_hoc, corrected, rtol=2e-5, atol=2e-6 * np.abs(corrected).max())

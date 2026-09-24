@@ -7,7 +7,9 @@ artifact writing are coordinated here through their implementation owners.
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 from dataclasses import dataclass, replace
 
 import numpy as np
@@ -18,7 +20,11 @@ from relax.diagnostics.vdam_mstep_replay import (
     INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV,
     _maybe_replay_iteration_references,
 )
-from relax.helpers.batch_planning import maybe_cache_raw_image_loaders
+from relax.helpers.particle_io import (
+    ParticleReadPolicy,
+    assert_reads_from_scratch,
+    prepare_particle_reads,
+)
 from relax.relion import initial_model_io, vdam_checkpoint
 from relax.relion.initial_model_io import _experiment_read_order, _particle_state_from_star, _write_model_star
 from relax.relion.relion_metadata import refuse_unsupported_optics
@@ -50,6 +56,8 @@ from relax.vdam.schedules import (
 )
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
 from relax.vdam.subset_schedule import restore_subset_order_for_continuation
+
+logger = logging.getLogger(__name__)
 
 INITIAL_MODEL_SKIP_EXPECTED_ACCURACY_ENV = "RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY"
 
@@ -291,6 +299,10 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     from relax.vdam.mstep_single_class import _validate_mstep_precision_route
 
     _validate_mstep_precision_route(opts.mstep_compute_dtype, opts.mstep_backend)
+    if int(opts.random_seed) == -1:
+        # relion_refine's default --random_seed -1 takes the time (ml_optimiser.cpp:2827).
+        opts = replace(opts, random_seed=int(time.time()))
+        logger.info("InitialModel random seed %d (RELION default -1: the time)", opts.random_seed)
     if opts.mstep_compute_dtype == "float32" and os.environ.get(
         INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV, ""
     ).strip():
@@ -302,17 +314,28 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     refuse_unsupported_optics(optics_star, source=str(opts.fn_img))
     particle_order = _experiment_read_order(main_star)
     profile.record("input_star")
-    dataset = load_dataset(
+    particle_read_policy = ParticleReadPolicy(
+        preread_images=bool(opts.preread_images),
+        scratch_dir=str(opts.scratch_dir or ""),
+        keep_free_scratch_gb=float(opts.keep_free_scratch_gb),
+    )
+    particle_scratch = prepare_particle_reads(
         opts.fn_img,
-        lazy=bool(opts.lazy),
+        particle_read_policy,
         datadir=opts.datadir,
         strip_prefix=opts.strip_prefix,
     )
+    profile.record("particle_scratch")
+    dataset = load_dataset(
+        opts.fn_img,
+        lazy=not particle_read_policy.preread_images,
+        datadir=opts.datadir,
+        strip_prefix=opts.strip_prefix,
+    )
+    assert_reads_from_scratch(dataset, particle_scratch)
     if getattr(dataset, "tilt_series_flag", False):
         raise NotImplementedError("native InitialModel currently supports SPA particle STAR files, not tilt-series")
     profile.record("dataset_load")
-    maybe_cache_raw_image_loaders((dataset,))
-    profile.record("raw_cache_setup")
 
     dense_adapter._configure_relion_image_mask(dataset, opts)
     optics_state = initial_model_io._native_optics_state(main_star, optics_star, dataset)

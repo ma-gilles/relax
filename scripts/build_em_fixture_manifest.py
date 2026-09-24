@@ -56,6 +56,8 @@ SETS: dict[str, tuple[str, list[str], list[str], str, list[str]]] = {
         "RELION auto-refine of k1_5k128_data with --oversampling 1",
         ["../GENERATION.json"],
     ),
+    "k1_5k128_relion_os0_repeats": (f"{FX}/data_noise1_5k_normalized_os0_repeats", RUN, [], "Two same-command RELION repeats of k1_5k128_relion_os0 (all iterations; Slurm 14363910)", ["PROVENANCE.json"]),
+    "k1_5k128_relion_os1_repeats": (f"{FX}/data_noise1_5k_normalized_os1/relion_repeats", RUN, [], "Two same-command RELION repeats of k1_5k128_relion_os1 (all iterations; Slurm 14363910)", ["PROVENANCE.json"]),
     "k2_5k128_data": (
         f"{PROJ}/data_pdb_k2_5k_128",
         TOP,
@@ -70,6 +72,7 @@ SETS: dict[str, tuple[str, list[str], list[str], str, list[str]]] = {
         "RELION K2 Class3D of k2_5k128_data",
         [],
     ),
+    "k2_5k128_relion_repeats": (f"{FX}/data_pdb_k2_5k_128_relion_repeats", RUN, [], "Two same-command RELION repeats of k2_5k128_relion_os0 (Slurm 14363910)", ["PROVENANCE.json"]),
     "k4_5k128_data": (
         f"{PROJ}/data_pdb_k4_5k_128",
         TOP,
@@ -220,6 +223,14 @@ SETS: dict[str, tuple[str, list[str], list[str], str, list[str]]] = {
         ["MASK.json"],
     ),
 }
+SETS["empiar_10097_hp3_state"] = (
+    f"{FX}/empiar_10097/relion_refine_hp3_state", RUN, [],
+    "EMPIAR-10097 RELION auto-refine state at iteration 13 (hp3, os1, current size 136) with its target iteration 14 and the input particles.star", ["PROVENANCE.json"],
+)
+SETS["empiar_10097_particle_stack"] = (
+    "/projects/CRYOEM/singerlab/mg6942/10097/data/Particle-Stack", TOP, [],
+    "EMPIAR-10097 T40 HA 130k equalized particle stack (256 px) read by empiar_10097_hp3_state/input/particles.star", [],
+)
 for _ds in ("10073", "10097", "10345"):
     SETS[f"empiar_{_ds}_relion_startup"] = (
         f"{FX}/empiar_{_ds}/relion_startup_tables",
@@ -234,9 +245,36 @@ _SYMMETRY_CASES = (
 )
 for _case in _SYMMETRY_CASES:
     SETS[f"symmetry_{_case}"] = (
-        f"{FX}/em_symmetry_matrix/{_case}", RUN, [],
+        f"{FX}/em_symmetry_matrix/{_case}", RUN, ["relion_ref_f2c1a3/*"] if _case == "k1_c4" else [],
         f"Symmetry-matrix case {_case}: data + RELION reference as pinned by the frozen Q 427a08bd8 run", ["PROVENANCE.json"],
     )
+SETS["symmetry_k1_c4_relion_f2c1a3"] = (
+    f"{FX}/em_symmetry_matrix/k1_c4/relion_ref_f2c1a3", RUN, [],
+    "K1 C4 symmetry-matrix RELION auto-refine oracle recaptured with the f2c1a3 build (mt19937 order; Slurm 14367701, "
+    "same command/inputs as ../relion_ref); replaces the legacy-order relion_ref for the seeded K1 C4 comparison",
+    ["PROVENANCE.json"],
+)
+
+# Oracles written by a RELION build with the libc particle order (optimiser header
+# "version 5.0.1" without a commit: the MOLBIO module build or the d476e6f dispatch build).
+# relax implements only RELION 5.0.1 f2c1a3's mt19937 order (docs/development/relion_defaults.md).
+_LIBC_ORDER_K1 = (
+    "relion_ref/ was captured with the legacy-order module build; its seeded K1 comparison is invalid. "
+    "Superseded by relion_ref_f2c1a3/ (set symmetry_k1_c4_relion_f2c1a3, Slurm 14367701)."
+)
+_LIBC_ORDER_KCLASS = (
+    "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles "
+    "differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug."
+)
+ORACLE_BUILD_NOTES = {
+    "symmetry_k1_c4": _LIBC_ORDER_K1,
+    "k4_5k128_oracle_h1_os1": _LIBC_ORDER_KCLASS,
+    "k4_5k128_oracle_h2_os1": _LIBC_ORDER_KCLASS,
+    "k4_5k128_oracle_h1_os1_repeat": _LIBC_ORDER_KCLASS,
+    "k4_5k128_oracle_h2_os1_repeat": _LIBC_ORDER_KCLASS,
+    "k4_100k256_dispatch_oracle": _LIBC_ORDER_KCLASS,
+    **{f"symmetry_{case}": _LIBC_ORDER_KCLASS for case in _SYMMETRY_CASES if case != "k1_c4"},
+}
 
 
 def _select(root: Path, include: list[str], exclude: list[str]) -> list[str]:
@@ -289,7 +327,10 @@ def build_set(name: str, jobs: int) -> dict:
     relion = _relion_provenance(root)
     if relion:
         provenance["relion_optimiser_headers"] = relion
-    return {"root": str(root), "description": description, "provenance": provenance, "files": files}
+    entry = {"root": str(root), "description": description, "provenance": provenance, "files": files}
+    if name in ORACLE_BUILD_NOTES:
+        entry["oracle_build_note"] = ORACLE_BUILD_NOTES[name]
+    return entry
 
 
 def main(argv: list[str] | None = None) -> int:

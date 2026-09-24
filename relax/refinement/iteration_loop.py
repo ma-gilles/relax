@@ -89,7 +89,6 @@ from relax.helpers.batch_planning import (
     _plan_adaptive_dense_batch_sizes,
     _safe_dense_k_class_rotation_block_size,
     _safe_firstiter_cc_image_batch_size,
-    maybe_cache_raw_image_loaders,
 )
 from relax.helpers.convergence import (
     RefinementState,
@@ -837,7 +836,6 @@ def refine_single_volume(
                 RELION_WIDTH_MASK_EDGE,
             )
 
-    maybe_cache_raw_image_loaders(experiment_datasets)
     _mark_setup_phase("mask_and_image_cache")
 
     # --- Initialize RefinementState ---
@@ -5269,18 +5267,12 @@ def refine_single_volume(
         state.previous_resolution,
     )
 
-    final_grid_correct = finalization_policy._final_all_data_grid_correct_enabled(logger=logger)
-    if final_grid_correct:
-        logger.info("RELION final all-data reconstruction gridding correction enabled")
-    else:
-        logger.info(
-            "RELION final all-data reconstruction gridding correction disabled by explicit %s override",
-            finalization_policy._FINAL_ALL_DATA_GRID_CORRECT_ENV,
-        )
-
     # Reconstruct the final volume from the COMBINED Ft_y/Ft_ctf accumulators
     # at the full Nyquist resolution. Skip the join_halves step (we're already
     # combining the two halves into one dataset for this final iter).
+    # Every final map is gridding-corrected, as RELION's
+    # BackProjector::reconstruct always calls griddingCorrect
+    # (backprojector.cpp, projector.cpp Projector::griddingCorrect).
     final_reconstruct_t0 = time.time()
     logger.info(
         "RELION final all-data reconstruction start: current_size=%d n_classes=%d",
@@ -5305,7 +5297,6 @@ def refine_single_volume(
                     PADDING_FACTOR,
                     tau=final_mean_variance_shells[class_idx],
                     **final_reconstruction_kwargs,
-                    grid_correct=final_grid_correct,
                     tau_is_1d=True,
                 ).reshape(-1)
                 for class_idx in range(n_classes)
@@ -5326,7 +5317,6 @@ def refine_single_volume(
             PADDING_FACTOR,
             tau=final_mean_variance,
             **final_reconstruction_kwargs,
-            grid_correct=final_grid_correct,
         ).reshape(-1)
         final_means_for_output = [
             _reconstruct_volume_eager(
@@ -5336,7 +5326,6 @@ def refine_single_volume(
                 PADDING_FACTOR,
                 tau=final_mean_variance,
                 **final_reconstruction_kwargs,
-                grid_correct=final_grid_correct,
             ).reshape(-1)
             for half_ctf, half_y in (
                 (final_Ft_ctf_0, final_Ft_y_0),
@@ -5453,7 +5442,7 @@ def refine_single_volume(
         "final_all_data_sampling_star_source": final_sampling_star_source,
         "final_all_data_sampling_offset_range": final_translation_range,
         "final_all_data_sampling_offset_step": final_translation_step,
-        "final_all_data_grid_correct": final_grid_correct,
+        "final_all_data_grid_correct": True,
         "final_all_data_gridding_correct": "radial",
         "setup_phase_seconds": setup_phase_seconds,
     }

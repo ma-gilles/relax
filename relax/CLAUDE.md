@@ -71,8 +71,8 @@ GUI excluded**, before new-engine development. Root instructions also apply.
   later opt-in quality differences must be named, tested and GT-qualified.
   Major policies belong in typed configuration/CLI options, not env-only forks.
   Never label intentional differences strict parity or tune until outputs agree.
-- Preserve the reviewed final-grid-correction default (off); the strict target
-  specifies on. Resolve this discrepancy separately with explicit qualification.
+- Every final all-data map is gridding-corrected, as RELION's reconstruct always
+  is; there is no option to skip it.
   Preserve `run_halfset_em_iteration` reading state.Ft_y/Ft_CTF after finish_up_M_step.
 
 ## Validation and hardware
@@ -96,9 +96,10 @@ GUI excluded**, before new-engine development. Root instructions also apply.
 - Before RELION comparisons, captures or builds read the
   [oracle rules](../docs/development/em_parity_runbook.md#relion-oracle-rules).
   The oracle is RELION 5.0.1 throughout; that section pins the source commit,
-  the dump build and the reference binaries. Any comparison against it must use
-  `--relion-particle-shuffle mt19937`, because the CLI default reproduces the
-  older half-set ordering and silently breaks per-particle correspondence.
+  the dump build and the reference binaries. relax's defaults are RELION's
+  start-up methods and the RELION GUI's job defaults
+  ([audit table](../docs/development/relion_defaults.md)); a run reproducing a
+  particular RELION command passes that command's values explicitly.
   Coordinate the shared RELION source/build; never rebuild pinned binaries or
   create another clone. Pin source, patched build, command, metadata, seed,
   subset/MPI layout and hardware. Restarted per-half captures fail closed unless
@@ -123,7 +124,7 @@ touches, read its current value first, and write the new value back.
 | --- | --- | --- |
 | `docs/math/em_k1_realdata_science_equivalence_scorecard_v1.json` + `.md` | The EMPIAR real-data gate: per-dataset RECOVAR vs RELION resolution, curve RMSE, half and cross-engine FSC-AUC, with thresholds and pass/fail | `python scripts/summarize_em_k1_realdata_science_equivalence.py --check-markdown` (read-only, CPU, seconds) |
 | [archived real-data evidence inventory](https://github.com/ma-gilles/recovar-experiments/blob/8b62d4e1389cb7c106de2436ac38df6e0b7ca172/snapshots/em_development_records_20260921/source/docs/benchmarks/em/diagnostics/k1-realdata-evidence-inventory-20260903.json) | The read-only audit behind it: per dataset the particle count, box, commit, Slurm jobs, sha256-pinned maps and the exact reproduction commands | read it; do not edit |
-| `docs/math/em_relion_parity_scorecard_v1.json`, `em_k4_class_fsc_auc_scorecard_v1.json`, `vdam_relion_parity_scorecard_v1.json` | The synthetic fixed suites: K=1 34-case, K=4 per-iteration per-class, VDAM 12-case | `python scripts/summarize_*_scorecard.py --check docs/math/<file>.md` |
+| `docs/math/em_relion_parity_scorecard_v2.json` (v1 kept as history), `em_k4_class_fsc_auc_scorecard_v1.json`, `vdam_relion_parity_scorecard_v1.json` | The synthetic fixed suites: K=1 34-case (v2 scores final maps with RELION's always-on gridding correction), K=4 per-iteration per-class, VDAM 12-case | `python scripts/summarize_*_scorecard.py --check docs/math/<file>.md` |
 | `docs/benchmarks/frozen_masks.json`, `masked_fsc_scores.json` + `masked_fsc.md` | One frozen mask per dataset (real and synthetic) and the masked FSC of every scored run with it: relion_postprocess corrected masked resolution, masked FSC-AUC over the scorecard band, masked cross-engine and GT FSC-AUC; reporting only ([method](../docs/benchmarks/masked_fsc_method.md)) | `python scripts/masked_fsc.py score ...` then `collect` and `render --check`; new datasets need `make-mask`, `verify-mask --record`, `register` first |
 | all of the above at once | The consolidated panel a PR body carries | `python scripts/report_em_parity_progress.py --format markdown` |
 | `tests/baselines/em_parity_completion_*.json` | The pinned completion references for K=1 100k/256, K=1 5k/128 and K=4 100k/256 | compared by the completion tests; never edit without an explicit user decision |

@@ -165,3 +165,42 @@ def test_registry_entries_are_verified_and_hashed():
         assert len(entry["mask_sha256"]) == 64, dataset
         assert entry["mask_json"].endswith("/MASK.json"), dataset
         assert entry["sanity"].startswith("PASS"), dataset
+
+
+@pytest.mark.unit
+def test_score_provenance_reaches_row_and_markdown(tmp_path):
+    """A post hoc transform of the relax maps is carried from the score JSON to the row and the rendered page."""
+    provenance = {
+        "note": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "producing_run": {"source_commit": "0123456789abcdef", "final_all_data_grid_correct": False},
+        "maps": {
+            "merged": {
+                "corrected": "/c/final_merged.mrc",
+                "corrected_sha256": "a" * 64,
+                "source": "/s/final_merged.mrc",
+                "source_sha256": "b" * 64,
+            }
+        },
+    }
+    score = {
+        "label": "toy_run",
+        "dataset": "toy_c1",
+        "mask": {"sha256": "c" * 64},
+        "band": None,
+        "null_reasons": {},
+        "relion": None,
+        "relax": None,
+        "cross_engine": None,
+        "provenance": provenance,
+    }
+    path = tmp_path / "masked_fsc.json"
+    path.write_text(json.dumps(score))
+    row = masked_fsc.summarize_score(path)
+    assert row["provenance"] == provenance
+    rendered = masked_fsc.render_scores_markdown({"rows": [row]}, {"masks": {}})
+    assert "## Provenance" in rendered
+    assert "`toy_run`: regenerated post hoc with RELION griddingCorrect on the saved final maps" in rendered
+    assert "final_all_data_grid_correct false" in rendered
+    assert "`/c/final_merged.mrc` (sha256 `aaaaaaaaaaaaaaaa`)" in rendered
+    row_without = masked_fsc.summarize_score(path) | {"provenance": None}
+    assert "## Provenance" not in masked_fsc.render_scores_markdown({"rows": [row_without]}, {"masks": {}})

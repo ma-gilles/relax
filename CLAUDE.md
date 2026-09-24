@@ -128,6 +128,27 @@ repository-wide cleanup requires the applicable SPA/ET and downstream checks
 as well. Existing authorization for that scope covers its necessary validation;
 a genuinely new scientific objective requires a separate decision.
 
+## Test tiers
+
+Pick the tier from the change, run it with one command, and record its receipt
+(SHA, tier, pass/fail, job id, GPU model; the tier commands write it, and append it to
+`$RELAX_TEST_RECEIPTS` when set) in your handoff. Budgets, pass criteria and
+fixtures are in [CONTRIBUTING.md](CONTRIBUTING.md#test-tiers). This is a written
+rule, not a hook.
+
+| Change | Tier |
+| --- | --- |
+| docs, tests, scripts | CPU checks (`pixi run test-em-fast-guard`, the affected unit tests, `python scripts/check_agent_guides.py`) |
+| engine or numerical code | `pixi run test-smoke` |
+| a numerical change | `pixi run test-medium` |
+| a default flip, an engine replacement, a milestone | `pixi run test-long` |
+
+Smoke runs on Slurm when the queue is free, otherwise on one idle local GPU
+(never GPU 0). Medium and long always run on Slurm, each as one multi-GPU job
+(della-cryoem or the general gpu-short partition). The medium tier also runs
+periodically on `main`. Baseline regeneration (`pixi run regen-*`) runs only on
+the user's explicit request.
+
 ## Branches and delivery
 
 relax `main` is the integration branch. Feature branches are fine for isolation, but

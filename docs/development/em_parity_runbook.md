@@ -18,6 +18,10 @@ Use the cheapest sufficient rung and advance only after it passes:
 7. 100k/256 K=1 and K=4 completion pair, with RECOVAR and RELION for each pair
    run on the same GPU model.
 
+Rungs 3-4 are the smoke and medium [test tiers](../../CONTRIBUTING.md#test-tiers)
+(`pixi run test-smoke`, `pixi run test-medium`), and rung 7 is part of the long tier
+(`pixi run test-long`); the change decides the tier.
+
 During normal iteration, run the whole fast parity tier at most once every 3-4 hours
 unless fixing that tier, changing its path, or doing final validation.
 Prefer the directly affected test between tier runs.
@@ -28,7 +32,8 @@ recovar from relax work"), run recovar's applicable qualification in a recovar
 checkout: `pixi run test-full`, `./scripts/run_tests_parallel.sh long-test` and
 `scripts/extract_regression_tables.py`. Never run them for relax-only changes.
 
-The EM long tier is Slurm-only:
+The EM long tier is Slurm-only. `pixi run test-long` runs it together with the
+100k/256 completions; on its own:
 
 ```bash
 ./scripts/run_em_parity_long_slurm.sh
@@ -73,6 +78,22 @@ the shared `_agent_scratch` roots. Keep long-lived EM source checkouts under
 `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/`, not the quota-constrained
 GILLES project filesystem. Preserve curated fixtures in place.
 
+Particle images are read the way RELION reads them
+([`relax/helpers/particle_io.py`](../../relax/helpers/particle_io.py)). Auto-refine,
+Class3D and InitialModel stream batches from the original stacks by default, as the
+RELION GUI does (no pre-read, no scratch). `--preread_images` holds every particle
+in host memory. `--scratch_dir DIR` copies the referenced stack files to `DIR` at
+start-up, checks the free space first and keeps `--keep_free_scratch` GB free,
+reads from the copy and removes it at exit. On della, pass
+`--scratch_dir /tmp`: `/tmp` inside a job is a private node-local NVMe xfs mount that
+Slurm cleans up (28 TB on the cryoem H100 nodes, 5.9 TB on the A100 nodes, about 6.5 GB/s
+direct reads and 6,400-6,800 random particle reads per second). The EMPIAR-10097 stack
+lives on `/projects`, which is NFS: about 60 random particle reads per second, and 0.5 GB/s
+for an uncached sequential copy. The exported `TMPDIR` above is GPFS, so recovar's implicit
+`TMPDIR` staging never applies, and relax turns it off anyway unless `--scratch_dir`
+is given. For speed comparisons, pass the same mode to both engines. RELION
+takes the same flags.
+
 ## RELION Oracle Rules
 
 ### The pinned oracle: RELION 5.0.1
@@ -96,10 +117,14 @@ text about column names renamed in 3.1, from `motioncorr_runner.cpp` and
 half-set orders in `Experiment::randomiseParticlesOrder` (`src/exp_model.cpp`)
 with `std::mt19937` seeded by `random_seed + iter`, followed by a stable sort
 on numeric optics group. Commit `f2c1a38` is where that replaced the older
-libc `rand` / `std::random_shuffle` path. RECOVAR reproduces both, selected by
-`--relion-particle-shuffle {legacy,mt19937}`, and `legacy` is still the CLI
-default for compatibility. Any run compared against the 5.0.1 oracle must pass
-`mt19937`: with `legacy` the half-set split differs from the oracle's, so
+libc `rand` / `std::random_shuffle` path. relax implements only the `mt19937`
+order (the libc order and `--relion-particle-shuffle` were removed on
+2026-09-24). The MOLBIO module build
+(`relion/5.0.1/gcc-11.5.0-gpu`, whose STAR headers say `version 5.0.1`
+without a commit) still has the libc path, so oracles written by it
+(`em_fixtures/k4_fast_oracles/*`, the K4 100k dispatch oracle, the symmetry
+matrix) are in the older order. With the wrong order the processing order
+and the expected-accuracy trial particles differ from the oracle's, so
 per-particle and half-map comparisons against it do not mean what they appear
 to. This is measurable, not theoretical. On EMPIAR-10073 the legacy ordering
 gives an unmasked resolution of 6.650052 A while the modern ordering gives
@@ -129,12 +154,10 @@ gives an unmasked resolution of 6.650052 A while the modern ordering gives
 - Current-size BPref half joins use the explicit RELION padding factor.
 - K-class quality claims use the RELION x-half/current-size BPref path. Native
   half-volume K-class accumulation is diagnostic unless explicitly selected.
-- Do not force K-class final-all-data after non-convergence. The strict-parity
-  target specifies final gridding correction on. The reviewed PR158 source
-  actually defaults it off; preserve that implementation during cleanup and
-  record the effective setting. Resolving this scientific-policy discrepancy
-  requires a separate, explicitly qualified change. Do not label the off path
-  as satisfying the on-policy contract.
+- Do not force K-class final-all-data after non-convergence. Every final
+  all-data map is gridding-corrected, as in RELION. The former default-off
+  selector cost K1 100k/256 about 0.0008 masked GT FSC over shells 1-60 against
+  same-command RELION repeats and was retired.
 - Preserve shared contracts: `run_halfset_em_iteration` reads `state.Ft_y` and
   `state.Ft_CTF` after `finish_up_M_step`.
 
@@ -149,16 +172,20 @@ map and the values on the RELION command line. For a real-data run the input
 STAR may be a RELION InitialModel/VDAM `run_itNNN_data.star`, since RELION's
 own auto-refine starts from it. The RELION auto-refine run is read only
 afterwards, for comparison. Map the RELION command to `run_full_refinement.py`
-as follows:
+as follows. A fresh K1 run given no RELION output is standalone by default.
+relax's defaults are RELION's start-up methods and the RELION GUI's job
+defaults ([audit](relion_defaults.md)), not relion_refine's command-line
+defaults, so pass every value of the RELION command being reproduced,
+including the `--no-...` forms where that command omits a GUI option.
 
 | RELION | relax |
 | --- | --- |
-| `--split_random_halves --random_seed S` | `--relion-half-sets-from-input --seed S` (input `rlnRandomSubset` if every row has one, else glibc `srand(S)`/`rand()%2+1` in micrograph order; groups from `rlnGroupName`/micrograph) |
-| 5.0.1 f2c1a3 particle order | `--relion-particle-shuffle mt19937` |
-| start-up noise from the images | `--initial-noise-bootstrap relion` |
-| `--particle_diameter D` | `--particle_diameter_ang D` |
-| `--ini_high H` | `--apply-initial-lowpass --init_resolution H` |
-| `--firstiter_cc` | `--firstiter_cc` |
+| `--split_random_halves --random_seed S` | `--seed S`; the half sets from the input are the default (input `rlnRandomSubset` if every row has one, else glibc `srand(S)`/`rand()%2+1` in micrograph order; groups from `rlnGroupName`/micrograph). Without `--seed` the time is used, as RELION does |
+| 5.0.1 f2c1a3 particle order | default (mt19937) |
+| start-up noise from the images | default (the only estimator) |
+| `--particle_diameter D` | `--particle_diameter_ang D` (default 200, the GUI's) |
+| `--ini_high H` / no `--ini_high` | `--init_resolution H` (the low-pass is on by default) / `--no-apply-initial-lowpass` |
+| `--firstiter_cc` / none | default / `--no-firstiter_cc` |
 | `--healpix_order`, `--offset_range`, `--offset_step` | same names with underscores |
 | `--oversampling 1` / `0` | `--adaptive_oversampling 1` / `0` |
 | `--tau2_fudge` (auto-refine default 1) | `--tau2_fudge 1.0` |
@@ -169,9 +196,9 @@ as follows:
 Start-up norm corrections come from the input `rlnNormCorrection` and tau2
 and `data_vs_prior` from `initialiseDataVersusPrior` on the low-passed
 reference (see [the start-up state](../math/relion_refinement_algorithm.md)).
-`--image-fourier-backend relion_cuda` is required by the fresh K1 defaults.
+`--image-fourier-backend relion_cuda`, which the fresh K1 start requires, is the K1 default.
 
-Harness entry points: `K1_TRAJECTORY_MODE=standalone` in
+Harness entry points: `K1_TRAJECTORY_MODE=standalone` (the default) in
 `scripts/run_em_completion_bench_slurm.sh`, the `[standalone]` cases of
 `test_em_parity_fast_k1_coldstart` and `test_em_parity_long_k1_full`.
 
@@ -181,6 +208,57 @@ Debug-only starts, labelled as such wherever they appear: `--relion_init_dir`,
 `autonomous` (RELION-seeded run_it000) and `relion-replay`, and the
 `[relion_seeded_debug]` test cases. They pin RELION state for first-divergence
 hunts and fixed-state replays; they are not standalone evidence.
+
+### Standalone Class3D launch
+
+Standalone is the default Class3D (K>1) start. A run reads only what a
+non-MPI `relion_refine` Class3D reads: `<data_dir>/particles.star` with its
+origins, its stacks, the `--ref` STAR and its maps, and the values on the
+RELION command line. The RELION run is read only afterwards, for comparison.
+Map the RELION command to `run_full_refinement.py` as follows:
+
+| RELION | relax |
+| --- | --- |
+| `--K K --ref refs.star` | `--n_classes K --ref_star refs.star` (class distribution starts at 1/K, as in RELION) |
+| `--random_seed S` | `--seed S` (whole-vector mt19937 order and accuracy trials; without `--seed` the time is used, as RELION does) |
+| input `rlnOriginX/YAngst` | default `--initial-pose-source auto` (origins only; absent origins are 0) |
+| start-up noise from the images | default (the only estimator) |
+| `--particle_diameter D` | `--particle_diameter_ang D` (default 200, the GUI's) |
+| `--ini_high H` / no `--ini_high` | `--init_resolution H` (the low-pass is on by default) / `--no-apply-initial-lowpass` |
+| `--firstiter_cc` / none | default / `--no-firstiter_cc` |
+| `--healpix_order`, `--offset_range`, `--offset_step` | same names with underscores |
+| `--oversampling 1` / `0` | `--adaptive_oversampling 1` / `0` |
+| `--tau2_fudge T` | `--tau2_fudge T` |
+| `--perturb 0.5` (default) | `--perturb_factor 0.5` |
+| `--iter N` | `--max_iter N` (Class3D runs every iteration; no auto-refine sampling or convergence) |
+
+The run is single-process, like a non-MPI `relion_refine`; it keeps one
+group-scale state and needs no dispatch schedule. See
+[the Class3D start-up state](../math/relion_refinement_algorithm.md#class3d-standalone-start-up).
+
+Harness entry points: `K4_TRAJECTORY_MODE=standalone` (default) in
+`scripts/run_em_completion_bench_slurm.sh` and the `[standalone]` case of
+`test_em_parity_long_kclass_full`, which is the case the long-tier launcher
+runs. Debug-only starts: `--relion_init_dir`, `--relion_optimiser`,
+`--perturb_replay_relion_dir`, `--relion-dispatch-schedule` with
+`--relion-scale-followers`, `K4_TRAJECTORY_MODE=relion-replay` and the
+`[relion_replay_debug]` case. They are not standalone evidence.
+
+Qualification (2026-09-24, K4 50k/256 fixture against its non-MPI RELION
+reference): two standalone runs at `05d9e00` (Slurm 14336207 on an H100 and one
+local A100 run) reach the same final resolution as RELION (14.70 A). Their
+ground-truth FSC-AUC is not worse (mean 0.24118 and 0.24117 against RELION's
+0.24116 and 0.24115-0.24122 for three same-seed repeats), class agreement is
+0.9928-0.9934 (repeats 0.9939-0.9941) and per-class mean FSC over shells 1-16
+against RELION is at least 0.99992. The 5k/128 fixture matches RELION to an
+FSC-AUC of 0.99999998 per class. OPEN: per-class FSC-AUC against the RELION
+reference lies 0.0002-0.0007 below the band of three same-seed non-MPI RELION
+repeats (14298976 and two relax_coverage repeats), in all four classes for the
+H100 run and three of four for the A100 run. The miss is comparable to the
+difference between the two relax runs (up to 8e-4), and a different-seed RELION
+run is 0.05-0.3 lower. The user accepted the flip on this functional evidence;
+the gap is unexplained. Evidence:
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclassstandalone_20260923/band50k/GATE.json`.
 
 ## Benchmark Design And Reporting
 

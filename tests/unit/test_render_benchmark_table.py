@@ -135,3 +135,20 @@ def test_initialmodel_masked_value_needs_the_registered_frozen_mask(tmp_path):
     path.write_text(json.dumps(table))
     with pytest.raises(ValueError, match="not the registered frozen mask"):
         load_and_validate(path)
+
+
+@pytest.mark.unit
+def test_row_provenance_renders_in_the_note():
+    """A row regenerated from transformed relax maps names the note and the corrected map it was scored on."""
+    table = load_and_validate(DEFAULT_JSON)
+    row = json.loads(json.dumps(table["rows"][0]))
+    row["provenance"] = {
+        "note": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "maps": {"merged": {"corrected": "/c/final_merged.mrc", "corrected_sha256": "a" * 64}},
+    }
+    table["rows"] = [row]
+    rendered = render_markdown(table)
+    assert (
+        "Provenance: regenerated post hoc with RELION griddingCorrect on the saved final maps; "
+        "relax merged `/c/final_merged.mrc` (sha256 `aaaaaaaaaaaaaaaa`)." in rendered
+    )

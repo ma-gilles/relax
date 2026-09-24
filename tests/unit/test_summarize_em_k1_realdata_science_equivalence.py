@@ -1028,3 +1028,38 @@ def test_scorecard_rejects_old_star_that_rerandomized_halves(tmp_path: Path) -> 
 
     with pytest.raises(ValueError, match="explicitly rejected"):
         MODULE.load_and_validate_scorecard(path)
+
+
+def test_post_hoc_gridding_regeneration_records_are_pinned_and_fail_closed(tmp_path: Path) -> None:
+    """Calibrations rescored on a gridding-corrected merged map keep the superseded values and pin every file."""
+    scorecard = MODULE.load_and_validate_scorecard()
+    for case in scorecard["cases"]:
+        if case["role"] != "calibration":
+            continue
+        record = case["post_hoc_regeneration"]
+        assert record["note"] == MODULE.POST_HOC_REGENERATION_NOTE
+        assert record["producing_run"]["final_all_data_grid_correct"] is False
+        previous = record["previous_expected_metrics"]
+        # Only the merged-map metric may move; half-map metrics come from the always-corrected unfiltered halves.
+        for key, value in case["expected_metrics"].items():
+            if key != "merged_cross_engine_band_auc":
+                assert value == previous[key]
+        assert case["expected_metrics"]["merged_cross_engine_band_auc"] != previous["merged_cross_engine_band_auc"]
+    diagnostics = _by_id(scorecard, "empiar-10097-native-c1")["proper_so3_diagnostics"]
+    assert diagnostics["post_hoc_regeneration"]["reproduction"]["max_abs_curve_diff_vs_original"] == 0.0
+
+    for mutate, message in (
+        (lambda record: record.update(note="edited"), "note changed"),
+        (lambda record: record["maps"]["merged"].update(corrected="relative/path.mrc"), "path is not absolute"),
+        (lambda record: record.pop("previous_expected_metrics"), "previous metrics missing"),
+    ):
+        broken = copy.deepcopy(scorecard)
+        mutate(_by_id(broken, "empiar-10073-native-c1")["post_hoc_regeneration"])
+        path = tmp_path / "scorecard.json"
+        path.write_text(json.dumps(broken))
+        with pytest.raises(ValueError, match=message):
+            MODULE.load_and_validate_scorecard(path)
+
+
+def _by_id(scorecard: dict, case_id: str) -> dict:
+    return next(case for case in scorecard["cases"] if case["id"] == case_id)

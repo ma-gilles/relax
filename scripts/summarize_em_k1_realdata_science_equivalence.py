@@ -137,6 +137,9 @@ EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 CALIBRATION_REPLAY_ATOL = 5.0e-13
+# A calibration whose RECOVAR merged map skipped RELION's final gridding
+# correction is rescored on a corrected copy; the block records how.
+POST_HOC_REGENERATION_NOTE = "regenerated post hoc with RELION griddingCorrect on the saved final maps"
 TARGET_SOURCE_STAR = Path(
     "/home/mg6942/mytigress/10202/06_Final_Stack/2017-12-27_MagCorrect_Frames05-19_Numbered_adjusted.star"
 )
@@ -459,6 +462,48 @@ def _validate_masked_fsc_support_contract(support: Mapping[str, Any]) -> None:
         ):
             _finite_float(metrics.get(key), f"{dataset} {key}")
         _require(_is_sha256(metrics.get("mask_sha256")), f"{dataset} mask SHA-256 is invalid")
+
+
+def _fitted_transform_summary(rotation: np.ndarray, translation: np.ndarray) -> dict[str, float]:
+    """Rotation angle (degrees) and translation length (voxels) of a fitted proper rigid transform."""
+
+    cosine = float(np.clip((np.trace(rotation) - 1.0) / 2.0, -1.0, 1.0))
+    return {
+        "rotation_degrees": round(math.degrees(math.acos(cosine)), 3),
+        "translation_voxels": round(float(np.linalg.norm(translation)), 3),
+    }
+
+
+def _post_hoc_regeneration_artifacts(block: Mapping[str, Any]) -> list[tuple[str, Mapping[str, Any]]]:
+    """(label, {path, sha256}) pairs a post hoc regeneration block pins."""
+
+    pairs: list[tuple[str, Mapping[str, Any]]] = []
+    for name in ("tool", "collector", "launch_script", "log"):
+        if name in block:
+            pairs.append((name, block[name]))
+    reproduction = block.get("reproduction", {})
+    for name in ("launch_script", "log"):
+        if name in reproduction:
+            pairs.append((f"reproduction {name}", reproduction[name]))
+    for name, entry in block.get("maps", {}).items():
+        pairs.append((f"{name} corrected map", {"path": entry.get("corrected"), "sha256": entry.get("corrected_sha256")}))
+        pairs.append((f"{name} source map", {"path": entry.get("source"), "sha256": entry.get("source_sha256")}))
+    return pairs
+
+
+def _validate_post_hoc_regeneration(block: Any, label: str, *, verify_files: bool) -> None:
+    """Validate a post hoc regeneration record; optionally hash every pinned file."""
+
+    _require(isinstance(block, Mapping), f"{label} post hoc regeneration is not a mapping")
+    _require(block.get("note") == POST_HOC_REGENERATION_NOTE, f"{label} post hoc regeneration note changed")
+    _require(isinstance(block.get("previous_expected_metrics"), Mapping), f"{label} previous metrics missing")
+    _require(block.get("maps"), f"{label} post hoc regeneration names no map")
+    for name, artifact in _post_hoc_regeneration_artifacts(block):
+        _validate_frozen_artifact(artifact, f"{label} post hoc {name}")
+        if verify_files:
+            path = Path(artifact["path"])
+            _require(path.is_file(), f"missing {label} post hoc {name}: {path}")
+            _require(sha256_file(path) == artifact["sha256"], f"{label} post hoc {name} SHA-256 changed")
 
 
 def _validate_frozen_artifact(artifact: Mapping[str, Any], label: str) -> None:
@@ -1158,6 +1203,13 @@ def load_and_validate_scorecard(path: Path = DEFAULT_SCORECARD) -> dict[str, Any
         _require(case.get("role") == "calibration", f"{case_id} is not calibration-only")
         _require(_is_git_sha(case.get("subject_commit")), f"{case_id} subject commit is invalid")
         _validate_calibration_route_contract(case, scorecard["thresholds"])
+        if "post_hoc_regeneration" in case:
+            _validate_post_hoc_regeneration(case["post_hoc_regeneration"], case_id, verify_files=False)
+        diagnostics = case.get("proper_so3_diagnostics") or {}
+        if "post_hoc_regeneration" in diagnostics:
+            _validate_post_hoc_regeneration(
+                diagnostics["post_hoc_regeneration"], f"{case_id} diagnostic", verify_files=False
+            )
         for artifact in case.get("artifacts", {}).values():
             _require(Path(artifact["path"]).is_absolute(), f"{case_id} artifact path is not absolute")
             _require(_is_sha256(artifact.get("sha256")), f"{case_id} artifact digest is invalid")
@@ -1217,6 +1269,8 @@ def replay_calibration_case(
     _require(curves_path.is_file(), f"missing calibration curves: {curves_path}")
     _require(sha256_file(metrics_path) == metrics_artifact["sha256"], "calibration metrics SHA-256 changed")
     _require(sha256_file(curves_path) == curves_artifact["sha256"], "calibration curves SHA-256 changed")
+    if "post_hoc_regeneration" in case:
+        _validate_post_hoc_regeneration(case["post_hoc_regeneration"], case["id"], verify_files=True)
     metrics = json.loads(metrics_path.read_text())
     provenance_failures = _validate_collector_metrics(case, metrics)
     _require(not provenance_failures, f"calibration validity failed: {', '.join(provenance_failures)}")
@@ -1239,6 +1293,10 @@ def replay_calibration_case(
             path = Path(artifact["path"])
             _require(path.is_file(), f"missing calibration {name}: {path}")
             _require(sha256_file(path) == artifact["sha256"], f"calibration {name} SHA-256 changed")
+        if "post_hoc_regeneration" in diagnostic_spec:
+            _validate_post_hoc_regeneration(
+                diagnostic_spec["post_hoc_regeneration"], f"{case['id']} diagnostic", verify_files=True
+            )
         science_diagnostics, science_failures = _validate_science_diagnostics(
             scorecard,
             case,
@@ -1250,6 +1308,15 @@ def replay_calibration_case(
             expected_curve_length=int(curves[CURVE_KEYS[0]].size),
         )
         _require(not science_failures, f"calibration diagnostics invalid: {', '.join(science_failures)}")
+        alignment = science_diagnostics["proper_so3_alignment"]
+        _require(
+            _fitted_transform_summary(
+                np.asarray(alignment["rotation_matrix_recovar_to_relion"], dtype=np.float64),
+                np.asarray(alignment["translation_recovar_to_relion_zyx"], dtype=np.float64),
+            )
+            == diagnostic_spec.get("fitted_transform_summary"),
+            f"{case['id']} fitted transform summary changed",
+        )
         aligned_metrics = science_diagnostics["proper_so3_alignment"]["metrics"]
         for key, expected_value in diagnostic_spec["expected_metrics"].items():
             actual = _finite_float(aligned_metrics[key], key)
@@ -1280,6 +1347,8 @@ def replay_calibration_case(
         "cross_engine_route": observed_route,
         "science_equivalence_pass": science_equivalence_pass,
         "science_diagnostics": science_diagnostics,
+        "proper_so3_transform_summary": (diagnostic_spec or {}).get("fitted_transform_summary"),
+        "post_hoc_regeneration": "post_hoc_regeneration" in case,
         "artifacts": case["artifacts"],
     }
 
@@ -2120,6 +2189,8 @@ def _frozen_case_rows(scorecard: Mapping[str, Any]) -> list[dict[str, Any]]:
                     "cross_engine_route": route,
                     "science_equivalence_pass": route != "none_unqualified",
                     "science_diagnostics": science_diagnostics,
+                    "proper_so3_transform_summary": (diagnostic_spec or {}).get("fitted_transform_summary"),
+                    "post_hoc_regeneration": "post_hoc_regeneration" in case,
                 }
             )
         else:
@@ -2366,6 +2437,25 @@ def render_markdown(report: Mapping[str, Any]) -> str:
             f"{_fmt(min(metrics['half1_cross_engine_band_auc'], metrics['half2_cross_engine_band_auc']))} | "
             f"{proper_text} | `{row['cross_engine_route']}` |"
         )
+    raw_10097 = cases["empiar-10097-native-c1"]["primary_metrics"]
+    proper_10097 = (
+        cases["empiar-10097-native-c1"]["science_diagnostics"].get("proper_so3_alignment", {}).get("metrics") or {}
+    )
+    transform_10097 = cases["empiar-10097-native-c1"].get("proper_so3_transform_summary") or {}
+    regenerated = [case_id for case_id in CALIBRATION_CASE_IDS if cases[case_id].get("post_hoc_regeneration")]
+    if regenerated:
+        lines.extend(
+            [
+                "",
+                "The RECOVAR merged maps of "
+                + ", ".join(f"`{case_id}`" for case_id in regenerated),
+                "came from a final all-data pass that skipped RELION's gridding",
+                "correction (the unfiltered half maps were corrected). Their merged cross-engine",
+                "values were regenerated post hoc with RELION griddingCorrect on the saved final",
+                "maps (division by the radial sinc^2); each case's `post_hoc_regeneration` record",
+                "pins the corrected map, the tool and the superseded artifacts and values.",
+            ]
+        )
     lines.extend(
         [
             "",
@@ -2395,11 +2485,17 @@ def render_markdown(report: Mapping[str, Any]) -> str:
             "The 10073 and 10345 cases establish that RECOVAR and RELION reach essentially",
             "the same reconstruction under the matched protocol. The 10097 within-engine",
             "half-map comparison also passes strongly, but its raw cross-engine AUCs",
-            "(0.935736 merged; 0.885803/0.888938 halves) miss the frozen cross-engine",
+            f"({_fmt(raw_10097['merged_cross_engine_band_auc'])} merged; "
+            f"{_fmt(raw_10097['half1_cross_engine_band_auc'])}/{_fmt(raw_10097['half2_cross_engine_band_auc'])} halves)"
+            " miss the frozen cross-engine",
             "gates. Corrected job 13276576 tested the allowed proper-SO(3)+translation",
             "route after explicitly adding canonical identity to the HEALPix seed set.",
-            "It fitted only a 0.244-degree rotation and 0.084-voxel translation, but its",
-            "0.935427/0.885517/0.888483 aligned AUCs still miss the same gates. The route",
+            f"It fitted only a {transform_10097.get('rotation_degrees', float('nan')):.3f}-degree rotation and "
+            f"{transform_10097.get('translation_voxels', float('nan')):.3f}-voxel translation, but its",
+            f"{_fmt(proper_10097.get('merged_cross_engine_band_auc'))}/"
+            f"{_fmt(proper_10097.get('half1_cross_engine_band_auc'))}/"
+            f"{_fmt(proper_10097.get('half2_cross_engine_band_auc'))}"
+            " aligned AUCs still miss the same gates. The route",
             "is therefore recorded as unqualified and does not rescue 10097; a small",
             "global rigid drift does not explain the residual cross-engine difference.",
             "Job 13275901 is retained only as a superseded audit artifact because its",

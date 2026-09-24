@@ -236,7 +236,6 @@ def test_relion_class_population_audit_records_then_fails_on_collapse(tmp_path):
 def test_noise_rng_batch_size_generates_clean_prepare_command(tmp_path, monkeypatch):
     jobs_dir = tmp_path / "jobs"
     jobs_dir.mkdir()
-    monkeypatch.setenv("RELAX_FINAL_ALL_DATA_GRID_CORRECT", "1")
     monkeypatch.setenv("RELAX_K_CLASS_DENSE_PASS2", "1")
     monkeypatch.setenv("RELAX_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", "0")
     monkeypatch.setenv("RELAX_K_CLASS_RELION_X_HALF_MSTEP", "1")
@@ -280,7 +279,6 @@ def test_noise_rng_batch_size_generates_clean_prepare_command(tmp_path, monkeypa
     assert 'RECOVAR_*|RELAX_*|RELION_*|JAX_*|XLA_*) unset "${ENV_NAME}"' in text
     assert "unset TF_GPU_ALLOCATOR" in text
     assert "export XLA_PYTHON_CLIENT_PREALLOCATE=false" in text
-    assert "export RELAX_FINAL_ALL_DATA_GRID_CORRECT" not in text
     assert "export RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER" not in text
     assert "export RELAX_K_CLASS_DENSE_PASS2" not in text
     assert "export RELAX_K_CLASS_RELION_X_HALF_MSTEP" not in text

@@ -486,24 +486,6 @@ def test_significance_offset_free_capture_preserves_margin_lost_after_large_comm
     np.testing.assert_array_equal(best_absolute, second_absolute)
 
 
-def test_final_all_data_grid_correct_env_defaults_to_gui_quality(monkeypatch):
-    env_name = "RELAX_FINAL_ALL_DATA_GRID_CORRECT"
-    monkeypatch.delenv(env_name, raising=False)
-    assert finalization_policy._final_all_data_grid_correct_enabled(logger=iteration_loop_module.logger) is False
-
-    monkeypatch.setenv(env_name, "0")
-    assert finalization_policy._final_all_data_grid_correct_enabled(logger=iteration_loop_module.logger) is False
-
-    monkeypatch.setenv(env_name, "false")
-    assert finalization_policy._final_all_data_grid_correct_enabled(logger=iteration_loop_module.logger) is False
-
-    monkeypatch.setenv(env_name, "1")
-    assert finalization_policy._final_all_data_grid_correct_enabled(logger=iteration_loop_module.logger) is True
-
-    monkeypatch.setenv(env_name, "unexpected")
-    assert finalization_policy._final_all_data_grid_correct_enabled(logger=iteration_loop_module.logger) is False
-
-
 def test_final_all_data_after_max_iter_env_defaults_to_disabled(monkeypatch):
     env_name = "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER"
     monkeypatch.delenv(env_name, raising=False)
@@ -1346,69 +1328,6 @@ def _mock_reconstruction_accumulator_size(experiment_dataset, kwargs, *, current
     else:
         shape = tuple(int(size) * padding_factor for size in experiment_dataset.volume_shape)
     return int(np.prod(shape))
-
-
-class _RawCacheFakeLoader:
-    def __init__(self, *, n=8, D=16, dtype=np.float32):
-        self.num_images = n
-        self.image_size = D
-        self._dtype = np.dtype(dtype)
-        self._cached = None
-        self.load_count = 0
-
-    def load_all(self):
-        self.load_count += 1
-        self._cached = np.zeros(
-            (self.num_images, self.image_size, self.image_size),
-            dtype=self._dtype,
-        )
-
-
-class _RawCacheFakeBackend:
-    def __init__(self, loader):
-        self.source = loader
-
-
-class _RawCacheFakeImageSource:
-    def __init__(self, loader):
-        self.backend = _RawCacheFakeBackend(loader)
-
-
-class _RawCacheFakeDataset:
-    def __init__(self, loader):
-        self.image_source = _RawCacheFakeImageSource(loader)
-
-
-def test_relion_raw_image_cache_loads_unique_loaders(monkeypatch):
-    loader = _RawCacheFakeLoader()
-    monkeypatch.setenv("RECOVAR_EM_RAW_IMAGE_CACHE", "auto")
-    monkeypatch.setenv("RELAX_EM_RAW_IMAGE_CACHE_MAX_GB", "1")
-
-    iteration_loop_module.maybe_cache_raw_image_loaders([_RawCacheFakeDataset(loader), _RawCacheFakeDataset(loader)])
-
-    assert loader.load_count == 1
-    assert loader._cached is not None
-
-
-def test_relion_raw_image_cache_respects_memory_guard(monkeypatch):
-    loader = _RawCacheFakeLoader(n=1024, D=1024)
-    monkeypatch.setenv("RECOVAR_EM_RAW_IMAGE_CACHE", "auto")
-    monkeypatch.setenv("RELAX_EM_RAW_IMAGE_CACHE_MAX_GB", "0.001")
-
-    iteration_loop_module.maybe_cache_raw_image_loaders([_RawCacheFakeDataset(loader)])
-
-    assert loader.load_count == 0
-    assert loader._cached is None
-
-
-def test_relion_raw_image_cache_can_be_disabled(monkeypatch):
-    loader = _RawCacheFakeLoader()
-    monkeypatch.setenv("RECOVAR_EM_RAW_IMAGE_CACHE", "off")
-
-    iteration_loop_module.maybe_cache_raw_image_loaders([_RawCacheFakeDataset(loader)])
-
-    assert loader.load_count == 0
-    assert loader._cached is None
 
 
 def test_exact_local_raw_cache_default_covers_50k_256_float32(monkeypatch):

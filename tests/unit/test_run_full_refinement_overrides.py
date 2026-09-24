@@ -37,10 +37,8 @@ from scripts.run_full_refinement import (
     _attach_relion_projector_capture,
     _build_frozen_replay_slots,
     _compute_relion_fresh_k1_initial_sigma2,
-    _default_refinement_subsets,
     _fixed_diagnostic_source_paths,
     _k1_relion_live_initial_noise_enabled,
-    _load_initial_noise_cache,
     _load_replay_group_particles,
     _make_frozen_boundary_noise_variance,
     _maybe_apply_relion_image_mask,
@@ -52,7 +50,6 @@ from scripts.run_full_refinement import (
     _resolve_native_group_layout,
     _resolve_replay_normcorr,
     _resolve_tau2_fudge,
-    _save_initial_noise_cache,
     _select_authoritative_group_particles,
     _use_fresh_auto_refine_particle_order,
     _validate_fixed_diagnostic_arm_cli,
@@ -561,7 +558,6 @@ def _fixed_diagnostic_args():
         init_volume=None,
         init_previous_best_poses_npz=None,
         init_noise_from_npz=None,
-        initial_noise_cache_dir=None,
         relion_init_dir=None,
         relion_optimiser=None,
         relion_current_sizes=None,
@@ -1252,32 +1248,9 @@ def test_init_noise_from_npz_is_diagnostic_cli_path():
     assert "--init_noise_from_npz" in source
     assert "--init_noise_iter" in source
     assert "iteration_history._load_init_noise_radial_npz(args.init_noise_from_npz, args.init_noise_iter)" in source
-    assert "estimate_initial_noise_spectrum_from_unaligned_images" in source
-
-
-def test_initial_noise_cache_round_trips_and_marks_safe_to_delete(tmp_path):
-    cache_path = _save_initial_noise_cache(
-        tmp_path,
-        "abc123",
-        (8, 8),
-        np.asarray([1.0, 2.0, 3.0], dtype=np.float64),
-    )
-
-    loaded, loaded_path = _load_initial_noise_cache(tmp_path, "abc123", (8, 8))
-
-    assert loaded_path == cache_path
-    assert (tmp_path / "SAFE_TO_DELETE").exists()
-    np.testing.assert_allclose(loaded, np.asarray([1.0, 2.0, 3.0], dtype=np.float64))
-
-
-def test_initial_noise_cache_is_exact_bootstrap_cli_path():
-    source = RUN_FULL_REFINEMENT.read_text()
-    assert "--initial_noise_cache_dir" in source
-    assert "_initial_noise_cache_key(" in source
-    assert "_load_initial_noise_cache(" in source
-    assert "_save_initial_noise_cache(" in source
-    assert "estimate_initial_noise_spectrum_from_unaligned_images" in source
-    assert "--init_noise_from_npz" in source
+    # RELION's start-up estimate is the only estimator from the images.
+    assert "estimate_initial_noise_spectrum_from_unaligned_images" not in source
+    assert "_compute_relion_startup_noise(" in source
 
 
 def test_relion_tau2_fudge_parser_accepts_class3d_arg_label():
@@ -1561,8 +1534,7 @@ def test_relion_expected_accuracy_layout_supports_repeated_indices_across_stacks
     np.testing.assert_array_equal(particle_ids, [2, 0, 3])
 
 
-@pytest.mark.parametrize("shuffle_algorithm", ["legacy", "mt19937"])
-def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials(shuffle_algorithm):
+def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials():
     pd = pytest.importorskip("pandas")
     from relax.helpers.expected_accuracy import relion_auto_refine_half_orders
 
@@ -1589,7 +1561,6 @@ def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials(shu
         relion_particles["rlnRandomSubset"],
         1711,
         optics_group_ids=relion_particles["rlnOpticsGroup"],
-        shuffle_algorithm=shuffle_algorithm,
     )
     our_row_by_name = {
         name: row
@@ -1603,7 +1574,6 @@ def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials(shu
             our_particles,
             relion_particles,
             random_seed=1711,
-            shuffle_algorithm=shuffle_algorithm,
         )
     )
 
@@ -1870,19 +1840,12 @@ def test_replay_normcorr_defaults_to_strict_replay_only():
     assert _resolve_replay_normcorr(None, True) is True
 
 
-def test_default_refinement_subsets_keep_gold_standard_for_k1():
-    half1, half2 = _default_refinement_subsets(9, seed=3, n_classes=1)
-
-    assert half1.shape == (4,)
-    assert half2.shape == (5,)
-    np.testing.assert_array_equal(np.sort(np.concatenate([half1, half2])), np.arange(9))
-
-
-def test_default_refinement_subsets_use_all_data_once_for_class3d():
-    half1, half2 = _default_refinement_subsets(9, seed=3, n_classes=4)
-
-    np.testing.assert_array_equal(half1, np.arange(9))
-    assert half2.size == 0
+def test_k1_half_sets_are_relions_and_class3d_uses_all_data_once():
+    source = RUN_FULL_REFINEMENT.read_text()
+    # No seeded NumPy split: K=1 takes RELION's table (from the input or a RELION STAR).
+    assert "np.random.RandomState(seed)" not in source
+    assert "K=1 auto-refine uses RELION's half sets" in source
+    assert "half1_idx = np.arange(n_images, dtype=np.int64)" in source
 
 
 @pytest.mark.usefixtures("verified_k1_relion_os0")
