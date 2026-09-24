@@ -941,3 +941,29 @@ def test_final_only_replay_reports_empty_numbered_assignments():
     init = source.index("hard_assignments = [None, None]")
     loop = source.index("while (schedule.force_max_iter_after_convergence")
     assert init < loop
+
+
+def test_normalization_overrides_are_a_no_op_for_multi_stack_datasets():
+    """Repeated stack rows (several stack files) replay when no override is given."""
+
+    from scripts.run_multi_iter_parity import apply_iteration_normalization_factor_overrides
+
+    corrections = [np.array([1.0, 2.0]), np.array([3.0, 4.0])]
+    corrected, applied = apply_iteration_normalization_factor_overrides(
+        corrections,
+        corrections,
+        half_stack_indices=[np.array([9, 10]), np.array([9, 11])],
+        scoring_iteration=6,
+        overrides={},
+    )
+    assert applied == []
+    for got, want in zip(corrected, corrections):
+        np.testing.assert_allclose(got, want, rtol=0, atol=0)
+    with pytest.raises(ValueError, match="both particle halves"):
+        apply_iteration_normalization_factor_overrides(
+            corrections,
+            corrections,
+            half_stack_indices=[np.array([9, 10]), np.array([9, 11])],
+            scoring_iteration=6,
+            overrides={(6, 9): 2.0},
+        )

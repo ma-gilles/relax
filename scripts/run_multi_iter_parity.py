@@ -910,8 +910,16 @@ def apply_iteration_normalization_factor_overrides(
     scoring_iteration,
     overrides,
 ):
-    """Apply explicit diagnostic factors to copies of half-ordered corrections."""
+    """Apply explicit diagnostic factors to copies of half-ordered corrections.
+
+    Overrides are keyed by stack row, which identifies a particle only in a
+    single-stack dataset; the uniqueness check therefore runs only when an
+    override is given, so multi-stack datasets (EMPIAR-10345: 1642 stacks)
+    replay without one.
+    """
     corrected = [np.array(values, copy=True) for values in corrections]
+    if not overrides:
+        return corrected, []
     stack_locations = {}
     for half_index, stack_indices in enumerate(half_stack_indices):
         for half_position, stack_index in enumerate(stack_indices):
