@@ -4,11 +4,16 @@ from pathlib import Path
 
 import starfile
 
+# Curated same-oracle captures for the fast-tier K4 grids (tests/fixtures/em_fixture_manifest.json).
+MANIFEST_K4_ORACLES = {(2, 1): "k4_5k128_oracle_h2_os1", (1, 1): "k4_5k128_oracle_h1_os1"}
+
 
 def k4_oracle(healpix_order, oversampling, *, environ=None):
     """Return an oracle and replay arguments after checking grid and capture identity.
 
-    Set EM_PARITY_FAST_K4_H{order}_OS{oversampling}_{RELION_DIR,DISPATCH_SCHEDULE}.
+    The manifest capture for the grid is used unless
+    EM_PARITY_FAST_K4_H{order}_OS{oversampling}_{RELION_DIR,DISPATCH_SCHEDULE} (or the legacy
+    global pair) names another one, e.g. while a new capture is developed.
     Legacy global variables are accepted only if their capture matches this case.
     Native binary/source admission remains part of the run's external manifest.
     """
@@ -17,6 +22,11 @@ def k4_oracle(healpix_order, oversampling, *, environ=None):
     values = [env.get(prefix + suffix) for suffix in ("_RELION_DIR", "_DISPATCH_SCHEDULE")]
     if not any(values):
         values = [env.get("EM_PARITY_FAST_K4" + suffix) for suffix in ("_RELION_DIR", "_DISPATCH_SCHEDULE")]
+    if not any(values) and (healpix_order, oversampling) in MANIFEST_K4_ORACLES:
+        from helpers.em_fixtures import fixture_dir
+
+        oracle_dir = fixture_dir(MANIFEST_K4_ORACLES[healpix_order, oversampling])
+        values = [str(oracle_dir), str(oracle_dir / "dispatch_schedule.npz")]
     if not all(values):
         raise ValueError(f"Missing matched K4 capture: set both {prefix}_RELION_DIR and {prefix}_DISPATCH_SCHEDULE")
     oracle, schedule_path = map(Path, values)

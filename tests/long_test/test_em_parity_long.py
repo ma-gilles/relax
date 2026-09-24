@@ -34,6 +34,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from conftest import gpu_subprocess_env
+from helpers.em_fixtures import fixture_root, require_fixture_sets
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +43,11 @@ PARITY_SCRIPT = REPO_ROOT / "scripts" / "run_multi_iter_parity.py"
 REFINE_SCRIPT = REPO_ROOT / "scripts" / "run_full_refinement.py"
 ABINITIO_SCRIPT = REPO_ROOT / "relax" / "commands" / "initial_model.py"
 
-FIXTURE_BASE = Path("/scratch/gpfs/GILLES/mg6942/em_relion_proj")
-
+# External fixtures come from tests/fixtures/em_fixture_manifest.json; each test verifies the
+# sets it reads and fails, not skips, when one is missing or changed.
 # 256² 50k K=1 auto-refine fixture — built via prepare_relion_parity_benchmark.py.
-K1_LONG_FIXTURE_DIR = FIXTURE_BASE / "data_noise1_50k_256_normalized"
-K1_LONG_RELION_DIR = K1_LONG_FIXTURE_DIR / "relion_ref_os0"
+K1_LONG_FIXTURE_DIR = fixture_root("k1_50k256_data")
+K1_LONG_RELION_DIR = fixture_root("k1_50k256_relion_os0")
 K1_LONG_RELION_DATA_STAR = K1_LONG_RELION_DIR / "run_data.star"
 K1_LONG_DATA_STAR = K1_LONG_FIXTURE_DIR / "particles.star"
 K1_LONG_GT_VOLUME = K1_LONG_FIXTURE_DIR / "reference_gt.mrc"
@@ -59,21 +60,18 @@ K1_LONG_GT_VOLUME = K1_LONG_FIXTURE_DIR / "reference_gt.mrc"
 # The Slurm wrapper creates/reuses this fixture before running the native VDAM
 # quality test. Keeping it separate from K1_LONG_RELION_DIR prevents the guard
 # from accidentally comparing native VDAM against an auto-refine trajectory.
-K1_NATIVE_RELION_DIR = K1_LONG_FIXTURE_DIR / "relion_initialmodel_k1_it008"
+K1_NATIVE_RELION_DIR = fixture_root("k1_50k256_relion_initialmodel_it008")
 
-# 256² 50k K=4. The curated copy lives outside FIXTURE_BASE (quota); select it with
-# EM_PARITY_LONG_K4_FIXTURE_DIR=/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_pdb_k4_50k_256.
-K4_LONG_FIXTURE_DIR = Path(
-    os.environ.get("EM_PARITY_LONG_K4_FIXTURE_DIR", str(FIXTURE_BASE / "data_pdb_k4_50k_256"))
-)
-K4_LONG_RELION_DIR = K4_LONG_FIXTURE_DIR / "relion_pdb_k4_os0_ref"
+# 256² 50k K=4.
+K4_LONG_FIXTURE_DIR = fixture_root("k4_50k256_data")
+K4_LONG_RELION_DIR = fixture_root("k4_50k256_relion_os0")
 K4_LONG_DATA_STAR = K4_LONG_FIXTURE_DIR / "particles.star"
 
 
 def _require_fixture(*paths: Path) -> None:
     missing = [str(p) for p in paths if not p.exists()]
     if missing:
-        pytest.skip("Missing parity fixture(s):\n  " + "\n  ".join(missing))
+        pytest.fail("Missing parity fixture file(s):\n  " + "\n  ".join(missing))
 
 
 def _assert_parity_ancestors_or_skip() -> None:
@@ -300,6 +298,7 @@ def test_em_parity_long_k1_full(tmp_path, start):
     """
     _assert_parity_ancestors_or_skip()
     relion_optimiser = K1_LONG_RELION_DIR / "run_it000_optimiser.star"
+    require_fixture_sets("k1_50k256_data", "k1_50k256_relion_os0")
     _require_fixture(REFINE_SCRIPT, K1_LONG_FIXTURE_DIR, K1_LONG_RELION_DIR, K1_LONG_DATA_STAR, K1_LONG_RELION_DATA_STAR)
     # Every value in the command below mirrors this RELION auto-refine header.
     # --tau2_fudge is absent there, so RELION used its auto-refine default 1
@@ -535,6 +534,7 @@ def test_em_parity_long_k1_native_initialmodel_quality(tmp_path):
     absolute score, so fixture or preprocessing changes keep this guard useful.
     """
     _assert_parity_ancestors_or_skip()
+    require_fixture_sets("k1_50k256_data", "k1_50k256_relion_initialmodel_it008")
     _require_fixture(
         ABINITIO_SCRIPT,
         K1_LONG_FIXTURE_DIR,
@@ -755,6 +755,7 @@ def test_em_parity_long_kclass_full(tmp_path):
     relion_final_data = K4_LONG_RELION_DIR / f"run_it{final_iter:03d}_data.star"
     relion_final_maps = [K4_LONG_RELION_DIR / f"run_it{final_iter:03d}_class{k + 1:03d}.mrc" for k in range(n_classes)]
     generation_record = K4_LONG_FIXTURE_DIR / "GENERATION.json"
+    require_fixture_sets("k4_50k256_data", "k4_50k256_relion_os0")
     _require_fixture(
         REFINE_SCRIPT,
         K4_LONG_FIXTURE_DIR,

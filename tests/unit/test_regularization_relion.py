@@ -537,15 +537,11 @@ def test_compute_relion_tau2_from_weights_large_grid_cpu_path_matches_device_pat
 
 
 def test_compute_relion_tau2_from_iref_power_spectrum_matches_relion_binding_scaling():
-    from pathlib import Path
-
+    from helpers.em_fixtures import fixture_file
     from recovar.utils.helpers import load_relion_volume
 
-    relion_dir = Path(
-        "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/relion_pdb_k4_os0_ref"
-    )
-    volume_path = relion_dir / "run_it000_class001.mrc"
-    model_path = relion_dir / "run_it001_model.star"
+    volume_path = fixture_file("k4_5k128_relion_os0", "run_it000_class001.mrc")
+    model_path = fixture_file("k4_5k128_relion_os0", "run_it001_model.star")
 
     vol_recovar = np.asarray(load_relion_volume(str(volume_path)), dtype=np.float64)
     ft_recovar = np.asarray(fourier_transform_utils.get_dft3(jnp.asarray(vol_recovar)).reshape(-1))

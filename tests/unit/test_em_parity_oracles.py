@@ -60,3 +60,22 @@ def test_cross_capture_error_propagates(monkeypatch):
     monkeypatch.setattr(worker, "verify_relion_dispatch_schedule_oracle", reject)
     with pytest.raises(ValueError, match="oracle manifest mismatch"):
         fixtures.k4_oracle(1, 0, environ=_environment())
+
+
+def test_manifest_capture_is_the_default(monkeypatch):
+    from helpers import em_fixtures
+
+    from relax.relion import relion_worker_scale as worker
+
+    _metadata(monkeypatch, 2, 1)
+    monkeypatch.setattr(em_fixtures, "fixture_dir", lambda name: Path("/manifest") / name)
+    monkeypatch.setattr(worker, "load_relion_dispatch_schedule", lambda p: object())
+    monkeypatch.setattr(worker, "verify_relion_dispatch_schedule_oracle", lambda s, p: None)
+    oracle, args = fixtures.k4_oracle(2, 1, environ={})
+    assert oracle == Path("/manifest/k4_5k128_oracle_h2_os1")
+    assert args == ["--relion-dispatch-schedule", "/manifest/k4_5k128_oracle_h2_os1/dispatch_schedule.npz"]
+
+
+def test_grid_without_manifest_capture_needs_explicit_pair():
+    with pytest.raises(ValueError, match="Missing matched"):
+        fixtures.k4_oracle(1, 0, environ={})

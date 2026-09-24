@@ -17,6 +17,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.em_fixtures import fixture_dir, fixture_root
 
 from relax.diagnostics.frozen_boundary import (
     FROZEN_BOUNDARY_NUMERICAL_CLASSIFICATION_SCOPE,
@@ -73,7 +74,13 @@ from relax.relion.relion_metadata import (
     _parse_relion_tau2_fudge,
 )
 
-FIXTURE = Path("/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_noise1_5k_normalized/relion_ref_os0")
+FIXTURE = fixture_root("k1_5k128_relion_os0")
+
+
+@pytest.fixture
+def verified_k1_relion_os0():
+    """Fail, not skip, when the RELION 5k run is missing or differs from the manifest."""
+    return fixture_dir("k1_5k128_relion_os0")
 RUN_FULL_REFINEMENT = Path(__file__).resolve().parents[2] / "scripts" / "run_full_refinement.py"
 
 
@@ -1878,7 +1885,7 @@ def test_default_refinement_subsets_use_all_data_once_for_class3d():
     assert half2.size == 0
 
 
-@pytest.mark.skipif(not FIXTURE.exists(), reason=f"fixture missing: {FIXTURE}")
+@pytest.mark.usefixtures("verified_k1_relion_os0")
 def test_replay_overrides_inject_per_iter_sigma_offset():
     half1_idx = np.arange(2515, dtype=np.int64)
     half2_idx = np.arange(2515, 5000, dtype=np.int64)
@@ -1918,7 +1925,7 @@ def test_replay_overrides_inject_per_iter_sigma_offset():
         )
 
 
-@pytest.mark.skipif(not FIXTURE.exists(), reason=f"fixture missing: {FIXTURE}")
+@pytest.mark.usefixtures("verified_k1_relion_os0")
 def test_replay_overrides_can_load_complete_iter0_cold_start():
     half1_idx = np.arange(2515, dtype=np.int64)
     half2_idx = np.arange(2515, 5000, dtype=np.int64)
@@ -1953,7 +1960,7 @@ def test_replay_overrides_can_load_complete_iter0_cold_start():
     )
 
 
-@pytest.mark.skipif(not FIXTURE.exists(), reason=f"fixture missing: {FIXTURE}")
+@pytest.mark.usefixtures("verified_k1_relion_os0")
 def test_replay_overrides_iter2_sigma_matches_relion_iter1():
     """Specifically lock down the iter-2 cliff fix.
 
@@ -1993,7 +2000,7 @@ def test_replay_overrides_iter2_sigma_matches_relion_iter1():
     )
 
 
-@pytest.mark.skipif(not FIXTURE.exists(), reason=f"fixture missing: {FIXTURE}")
+@pytest.mark.usefixtures("verified_k1_relion_os0")
 def test_replay_overrides_include_normcorr_adds_image_corrections():
     half1_idx = np.arange(2515, dtype=np.int64)
     half2_idx = np.arange(2515, 5000, dtype=np.int64)
@@ -2017,7 +2024,7 @@ def test_replay_overrides_include_normcorr_adds_image_corrections():
     assert h2.shape == (2485,)
 
 
-@pytest.mark.skipif(not FIXTURE.exists(), reason=f"fixture missing: {FIXTURE}")
+@pytest.mark.usefixtures("verified_k1_relion_os0")
 def test_replay_overrides_k1_state_swap_adds_exact_half_scoring_scale():
     half1_idx = np.arange(2515, dtype=np.int64)
     half2_idx = np.arange(2515, 5000, dtype=np.int64)

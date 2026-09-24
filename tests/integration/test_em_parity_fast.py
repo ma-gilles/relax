@@ -6,8 +6,9 @@ combinations. Only the K1 local and adaptive replays build RELION's
 Projector::data, so only they reach the default texture projector; the
 adaptive replay alone reaches the compact texture score rows of pass 1. K4 replay requires a
 same-oracle dispatch schedule; choose the oracle for each case's grid.
-Set EM_PARITY_FAST_K4_H{order}_OS{oversampling}_RELION_DIR and the matching
-_DISPATCH_SCHEDULE for (2, 1), (1, 0), and (1, 1). Admission verifies grid and
+The (2, 1) and (1, 1) captures come from the fixture manifest; an
+EM_PARITY_FAST_K4_H{order}_OS{oversampling}_{RELION_DIR,DISPATCH_SCHEDULE} pair
+overrides one while a new capture is developed. Admission verifies grid and
 same-capture manifest before launching refinement.
 The historical strict K4 case disables oversampling, unlike the available
 oversampling-1 captures. Its name does not establish matched-state parity.
@@ -32,6 +33,7 @@ import numpy as np
 import pytest
 import starfile
 from conftest import gpu_subprocess_env
+from helpers.em_fixtures import fixture_root, require_fixture_sets
 from helpers.em_parity_oracles import k4_oracle
 
 logger = logging.getLogger(__name__)
@@ -42,27 +44,22 @@ KCLASS_SCRIPT = REPO_ROOT / "scripts" / "run_k_class_parity.py"
 REFINE_SCRIPT = REPO_ROOT / "scripts" / "run_full_refinement.py"
 BASELINES_DIR = REPO_ROOT / "tests" / "baselines"
 
-# Pre-existing fixtures generated under /scratch/gpfs/GILLES/mg6942/em_relion_proj/.
-# Tests skip if a fixture is absent (so the file works on dev machines without
-# the cluster fixtures), but in CI / Slurm the fixtures must be present.
-FIXTURE_BASE = Path("/scratch/gpfs/GILLES/mg6942/em_relion_proj")
-
-K1_FIXTURE_DIR = FIXTURE_BASE / "data_noise1_5k_normalized"
-K1_RELION_DIR = K1_FIXTURE_DIR / "relion_ref_os0"
+# External fixtures come from tests/fixtures/em_fixture_manifest.json. Each test verifies the
+# sets it reads (files and sha256) and fails, not skips, when one is missing or changed.
+K1_FIXTURE_DIR = fixture_root("k1_5k128_data")
+K1_RELION_DIR = fixture_root("k1_5k128_relion_os0")
 K1_DATA_STAR = K1_FIXTURE_DIR / "particles.star"
 K1_GT_VOLUME = K1_FIXTURE_DIR / "reference_gt.mrc"
 K1_RELION_RANDOM_SEED = 1775735620
 # Same data and command as K1_RELION_DIR except --oversampling 1 (record in the
 # fixture's GENERATION.json).
-K1_OS1_RELION_DIR = Path(
-    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_noise1_5k_normalized_os1/relion_ref_os1"
-)
+K1_OS1_RELION_DIR = fixture_root("k1_5k128_relion_os1")
 
-K2_FIXTURE_DIR = FIXTURE_BASE / "data_pdb_k2_5k_128"
-K2_RELION_DIR = K2_FIXTURE_DIR / "relion_pdb_k2_os0_ref"
+K2_FIXTURE_DIR = fixture_root("k2_5k128_data")
+K2_RELION_DIR = fixture_root("k2_5k128_relion_os0")
 K2_DATA_STAR = K2_FIXTURE_DIR / "particles.star"
 
-K4_FIXTURE_DIR = FIXTURE_BASE / "data_pdb_k4_5k_128"
+K4_FIXTURE_DIR = fixture_root("k4_5k128_data")
 # Each K4 case admits its own same-capture schedule and sampling grid.
 K4_DATA_STAR = K4_FIXTURE_DIR / "particles.star"
 
@@ -70,7 +67,7 @@ K4_DATA_STAR = K4_FIXTURE_DIR / "particles.star"
 def _require_fixture(*paths: Path) -> None:
     missing = [str(p) for p in paths if not p.exists()]
     if missing:
-        pytest.skip("Missing parity fixture(s):\n  " + "\n  ".join(missing))
+        pytest.fail("Missing parity fixture file(s):\n  " + "\n  ".join(missing))
 
 
 def _assert_parity_ancestors_or_skip() -> None:
@@ -143,6 +140,7 @@ def test_em_parity_fast_k1_replay(tmp_path):
     """
     _assert_parity_ancestors_or_skip()
     model_path = K1_RELION_DIR / "run_it004_half1_model.star"
+    require_fixture_sets("k1_5k128_data", "k1_5k128_relion_os0")
     _require_fixture(PARITY_SCRIPT, K1_RELION_DIR, K1_DATA_STAR, K1_GT_VOLUME, model_path)
 
     output_dir = tmp_path / "k1_replay"
@@ -241,6 +239,7 @@ def test_em_parity_fast_k1_local_replay(tmp_path):
     """
     _assert_parity_ancestors_or_skip()
     model_path = K1_RELION_DIR / "run_it007_half1_model.star"
+    require_fixture_sets("k1_5k128_data", "k1_5k128_relion_os0")
     _require_fixture(PARITY_SCRIPT, K1_RELION_DIR, K1_DATA_STAR, K1_GT_VOLUME, model_path)
 
     output_dir = tmp_path / "k1_local_replay"
@@ -338,6 +337,7 @@ def test_em_parity_fast_k1_adaptive_replay(tmp_path):
     """
     _assert_parity_ancestors_or_skip()
     model_path = K1_OS1_RELION_DIR / "run_it004_half1_model.star"
+    require_fixture_sets("k1_5k128_data", "k1_5k128_relion_os1")
     _require_fixture(PARITY_SCRIPT, K1_OS1_RELION_DIR, K1_DATA_STAR, K1_GT_VOLUME, model_path)
 
     output_dir = tmp_path / "k1_adaptive_replay"
@@ -437,6 +437,7 @@ def test_em_parity_fast_kclass_replay(tmp_path):
     the EM-long tier.
     """
     _assert_parity_ancestors_or_skip()
+    require_fixture_sets("k2_5k128_data", "k2_5k128_relion_os0")
     _require_fixture(KCLASS_SCRIPT, K2_RELION_DIR, K2_DATA_STAR)
 
     output_dir = tmp_path / "kclass_replay"
@@ -559,6 +560,7 @@ def test_em_parity_fast_k1_coldstart(tmp_path, start):
     start modes: half maps, Pmax and the sigma-offset update.
     """
     _assert_parity_ancestors_or_skip()
+    require_fixture_sets("k1_5k128_data", "k1_5k128_relion_os0")
     _require_fixture(REFINE_SCRIPT, K1_FIXTURE_DIR, K1_RELION_DIR, K1_DATA_STAR)
 
     output_dir = tmp_path / f"k1_coldstart_{start}"
@@ -703,6 +705,7 @@ def test_em_parity_fast_k1_perturbreplay(tmp_path):
     half maps and optimizer Pmax. This is distinct from autonomous cold start.
     """
     _assert_parity_ancestors_or_skip()
+    require_fixture_sets("k1_5k128_data", "k1_5k128_relion_os0")
     _require_fixture(REFINE_SCRIPT, K1_FIXTURE_DIR, K1_RELION_DIR, K1_DATA_STAR)
 
     output_dir = tmp_path / "k1_perturbreplay"
@@ -811,6 +814,7 @@ def test_em_parity_fast_kclass_coldstart(tmp_path):
     """
     _assert_parity_ancestors_or_skip()
     relion_dir, dispatch_args = k4_oracle(2, 1)
+    require_fixture_sets("k4_5k128_data")
     _require_fixture(REFINE_SCRIPT, K4_FIXTURE_DIR, relion_dir, K4_DATA_STAR)
 
     output_dir = tmp_path / "kclass_coldstart"
@@ -925,6 +929,7 @@ def test_em_parity_fast_kclass_nonadaptive_replay(tmp_path):
     # Canonical RELION GPU rejects firstiter_cc at OS0. This existing case
     # remains cross-grid regression coverage against its OS1 reference.
     relion_dir, dispatch_args = k4_oracle(1, 1)
+    require_fixture_sets("k4_5k128_data")
     _require_fixture(REFINE_SCRIPT, K4_FIXTURE_DIR, relion_dir, K4_DATA_STAR)
 
     output_dir = tmp_path / "kclass_strict"
@@ -1073,6 +1078,7 @@ def test_em_parity_fast_kclass_strict_oversample_coldstart(tmp_path):
     """
     _assert_parity_ancestors_or_skip()
     relion_dir, dispatch_args = k4_oracle(1, 1)
+    require_fixture_sets("k4_5k128_data")
     _require_fixture(REFINE_SCRIPT, K4_FIXTURE_DIR, relion_dir, K4_DATA_STAR)
 
     output_dir = tmp_path / "kclass_strict_os1"

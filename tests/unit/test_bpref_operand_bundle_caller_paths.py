@@ -160,7 +160,7 @@ def test_big_jit_site_forwards_the_kernels_own_operands():
     assert _evaluate(site["relion_cuda_preprocess_cosine_width"], env) == WIDTH
 
 
-FIXTURE = "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/particles.star"
+FIXTURE_SET, FIXTURE_STAR = "k4_5k128_data", "particles.star"
 
 
 def _production_ctf_evaluator():
@@ -169,16 +169,12 @@ def _production_ctf_evaluator():
     Built from the production ForwardModelConfig rather than a stand-in, so the captured
     mode is checked against the evaluator this workload actually uses.
     """
+    from helpers.em_fixtures import fixture_dir
     from recovar.core.configs import ForwardModelConfig
     from recovar.data_io.cryoem_dataset import load_dataset
 
-    ds = load_dataset(FIXTURE, lazy=True, datadir=None, strip_prefix=None)
+    ds = load_dataset(str(fixture_dir(FIXTURE_SET) / FIXTURE_STAR), lazy=True, datadir=None, strip_prefix=None)
     return ForwardModelConfig.from_dataset(ds).ctf
-
-
-requires_fixture = pytest.mark.skipif(
-    not Path(FIXTURE).is_file(), reason="K=4 parity fixture not present"
-)
 
 
 def _production_exact_flag(*, n_classes, exact_projector=True, relion_cuda=True):
@@ -213,7 +209,6 @@ def test_the_k4_workload_cannot_reach_the_exact_operand_branch():
     assert _production_exact_flag(n_classes=4) is False
 
 
-@requires_fixture
 def test_k4_production_configuration_gets_a_masked_non_exact_big_jit_capture(tmp_path):
     """The configuration capture 14036320 actually ran, end to end through the writer.
 

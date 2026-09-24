@@ -2,12 +2,12 @@
 
 import ctypes
 import ctypes.util
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 import starfile
+from helpers.em_fixtures import fixture_file
 
 from relax.relion.input_particle_table import (
     build_relion_start_particle_table,
@@ -19,35 +19,33 @@ from relax.relion.input_particle_table import (
 
 pytestmark = pytest.mark.unit
 
-# (relion_refine --i STAR, RELION output dir whose run_it000_data.star is the target)
-_EM = Path("/scratch/gpfs/GILLES/mg6942/em_relion_proj")
-_REAL = Path("/scratch/gpfs/CRYOEM/gilleslab/em_work")
+# case: (fixture set, relion_refine --i STAR), (fixture set, directory of the RELION run_it000 stars)
 RELION_START_CASES = {
-    "k1_5k_128": (_EM / "data_noise1_5k_normalized/particles.star", _EM / "data_noise1_5k_normalized/relion_ref_os0"),
-    "k1_50k_256": (
-        _EM / "data_noise1_50k_256_normalized/particles.star",
-        _EM / "data_noise1_50k_256_normalized/relion_ref_os0",
-    ),
-    "k1_100k_256": (
-        _EM / "pdb_k1_g256_n100000_noise1_bf80_20260516/particles.star",
-        _EM / "pdb_k1_g256_n100000_noise1_bf80_20260516/relion_autorefine_k1_it015_os1",
-    ),
+    "k1_5k_128": (("k1_5k128_data", "particles.star"), ("k1_5k128_relion_os0", "")),
+    "k1_50k_256": (("k1_50k256_data", "particles.star"), ("k1_50k256_relion_os0", "")),
+    "k1_100k_256": (("k1_100k256_data", "particles.star"), ("k1_100k256_relion", "")),
     **{
-        f"real_{ds}": (root / "initialmodel/run_it200_data.star", root / "refine")
-        for ds, root in (
-            ("10097", _REAL / "realdata_em_10097_replacement_20260828T211155EDT/outputs/10097/relion"),
-            ("10073", _REAL / "realdata_em_full_native_20260828T082038EDT/outputs/10073/relion"),
-            ("10345", _REAL / "realdata_em_full_native_20260828T082038EDT/outputs/10345/relion"),
-        )
+        f"real_{ds}": ((f"empiar_{ds}_relion_startup", "initialmodel/run_it200_data.star"), (f"empiar_{ds}_relion_startup", "refine/"))
+        for ds in ("10097", "10073", "10345")
     },
 }
 
 
-def _relion_random_seed(relion_dir):
-    for line in (relion_dir / "run_it000_optimiser.star").read_text().splitlines():
+def _case_paths(case):
+    """Verified (input STAR, RELION run_it000_data.star, RELION run_it000_optimiser.star) of a case."""
+    (input_set, input_rel), (relion_set, prefix) = RELION_START_CASES[case]
+    return (
+        fixture_file(input_set, input_rel),
+        fixture_file(relion_set, prefix + "run_it000_data.star"),
+        fixture_file(relion_set, prefix + "run_it000_optimiser.star"),
+    )
+
+
+def _relion_random_seed(optimiser_star):
+    for line in optimiser_star.read_text().splitlines():
         if line.strip().startswith("_rlnRandomSeed "):
             return int(line.split()[1])
-    raise AssertionError(f"no _rlnRandomSeed in {relion_dir}")
+    raise AssertionError(f"no _rlnRandomSeed in {optimiser_star}")
 
 
 @pytest.mark.parametrize("seed", [0, 1, 42, 1775735620, 2**31 - 1, 2**31, 2**32 - 1])
@@ -96,13 +94,10 @@ def test_input_random_subsets_are_kept_and_validated():
 def test_rebuilt_table_reproduces_relion_run_it000(case):
     from scripts.run_full_refinement import _default_refinement_subsets, _relion_fresh_initial_noise_layout
 
-    input_star, relion_dir = RELION_START_CASES[case]
-    target_star = relion_dir / "run_it000_data.star"
-    if not input_star.exists() or not target_star.exists():
-        pytest.skip(f"missing fixture for {case}")
+    input_star, target_star, optimiser_star = _case_paths(case)
     particles = starfile.read(input_star, always_dict=True)["particles"]
     target = starfile.read(target_star, always_dict=True)["particles"]
-    seed = _relion_random_seed(relion_dir)
+    seed = _relion_random_seed(optimiser_star)
 
     table = build_relion_start_particle_table(particles, seed=seed)
 
@@ -161,12 +156,10 @@ def test_from_input_flag_does_not_discover_relion_optimiser_outputs(tmp_path):
 def test_written_table_round_trips_input_values(tmp_path):
     from scripts.run_full_refinement import _write_relion_start_particle_table
 
-    input_star, relion_dir = RELION_START_CASES["k1_5k_128"]
-    if not input_star.exists():
-        pytest.skip("missing 5k fixture")
+    input_star, _target_star, optimiser_star = _case_paths("k1_5k_128")
     our_star = starfile.read(input_star, always_dict=True)
     path = _write_relion_start_particle_table(
-        our_star, input_star, seed=_relion_random_seed(relion_dir), output_dir=tmp_path
+        our_star, input_star, seed=_relion_random_seed(optimiser_star), output_dir=tmp_path
     )
     written = starfile.read(path, always_dict=True)
     order = relion_particle_order(our_star["particles"])

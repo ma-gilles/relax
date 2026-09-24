@@ -1,17 +1,14 @@
 """RELION start-up tau2 and data_vs_prior (MlModel::initialiseDataVersusPrior) for the K=1 start."""
 
-from pathlib import Path
-
 import numpy as np
 import pytest
 import starfile
+from helpers.em_fixtures import fixture_file
 
 from relax.vdam.init import relion_initial_tau2_and_data_vs_prior
 from scripts import run_full_refinement
 
 pytestmark = pytest.mark.unit
-
-_EM = Path("/scratch/gpfs/GILLES/mg6942/em_relion_proj")
 
 
 def _reference_spectrum(volume):
@@ -55,21 +52,19 @@ def test_initial_tau2_rejects_nonpositive_noise():
         )
 
 
-@pytest.mark.parametrize("fixture", ["data_noise1_5k_normalized", "data_noise1_50k_256_normalized"])
+@pytest.mark.parametrize("fixture", ["k1_5k128", "k1_50k256"])
 def test_k1_start_matches_relion_run_it000_model(fixture):
     """Dry check against RELION's own start-up model on the K=1 fixtures (half 1)."""
-    root = _EM / fixture
-    model_path = root / "relion_ref_os0" / "run_it000_half1_model.star"
-    if not model_path.exists():
-        pytest.skip(f"missing fixture {fixture}")
+    model_path = fixture_file(f"{fixture}_relion_os0", "run_it000_half1_model.star")
+    reference_path = fixture_file(f"{fixture}_data", "reference_init_relion.mrc")
     import mrcfile
     from recovar.utils import helpers
 
     from relax.refinement.mean_helpers import initial_low_pass_filter_references
 
-    with mrcfile.open(root / "reference_init_relion.mrc", permissive=True) as mrc:
+    with mrcfile.open(reference_path, permissive=True) as mrc:
         pixel_size = float(mrc.voxel_size.x)
-    reference = np.asarray(helpers.load_mrc(str(root / "reference_init_relion.mrc")), dtype=np.float64)
+    reference = np.asarray(helpers.load_mrc(str(reference_path)), dtype=np.float64)
     n = reference.shape[0]
     reference = initial_low_pass_filter_references(
         reference[None], ori_size=n, pixel_size=pixel_size, ini_high_ang=30.0, filter_edgewidth=2.0
