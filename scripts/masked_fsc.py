@@ -629,6 +629,8 @@ def score(args: argparse.Namespace) -> dict[str, Any]:
         },
         "null_reasons": {},
     }
+    if args.provenance:
+        result["provenance"] = json.loads(Path(args.provenance).read_text())
     halves_present = {e: arms[e]["half1"] is not None and arms[e]["half2"] is not None for e in arms}
     band = None
     if all(halves_present.values()):
@@ -724,6 +726,8 @@ def summarize_score(path: Path) -> dict[str, Any]:
         "evidence": {"path": str(Path(path).resolve()), "sha256": sha256_file(Path(path))},
         "null_reasons": dict(result["null_reasons"]),
     }
+    if result.get("provenance"):
+        row["provenance"] = result["provenance"]
     for engine in ("relion", "relax"):
         entry = result[engine]
         row[engine] = None if entry is None else {
@@ -831,7 +835,29 @@ def render_scores_markdown(table: Mapping[str, Any], registry: Mapping[str, Any]
     if nulls:
         lines += ["", "## Null values", ""]
         lines += [f"- `{label}` {field}: {reason}." for label, field, reason in nulls]
+    provenance = [row for row in table["rows"] if row.get("provenance")]
+    if provenance:
+        lines += ["", "## Provenance", ""]
+        lines += [_provenance_line(row) for row in provenance]
     return "\n".join(lines) + "\n"
+
+
+def _provenance_line(row: Mapping[str, Any]) -> str:
+    """One Markdown line for a row whose relax maps were transformed before scoring."""
+    record = row["provenance"]
+    run = record.get("producing_run", {})
+    parts = [f"- `{row['label']}`: {record['note']}"]
+    if run:
+        parts.append(
+            f" (source `{str(run.get('source_commit', '?'))[:12]}`, "
+            f"final_all_data_grid_correct {str(run.get('final_all_data_grid_correct')).lower()})"
+        )
+    for name, entry in record.get("maps", {}).items():
+        parts.append(
+            f"; relax {name} `{entry['corrected']}` (sha256 `{entry['corrected_sha256'][:16]}`)"
+            f" from `{entry['source']}` (sha256 `{entry['source_sha256'][:16]}`)"
+        )
+    return "".join(parts) + "."
 
 
 def cmd_render(args: argparse.Namespace) -> int:
@@ -908,6 +934,12 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
         help="relax final_*.mrc maps; pass '' for a missing one",
     )
     p.add_argument("--gt-map", default=None, help="RELION-frame ground-truth map (synthetic data)")
+    p.add_argument(
+        "--provenance",
+        type=Path,
+        default=None,
+        help="JSON file recorded as the row's provenance, e.g. a post hoc transform of the relax maps",
+    )
     p.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     p.add_argument("--scorecard", type=Path, default=DEFAULT_SCORECARD)
     p.add_argument("--out-dir", required=True)
