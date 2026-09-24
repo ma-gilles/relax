@@ -144,6 +144,8 @@ from relax.sparse_pass2.sparse_pass2_bucket_io import (
     _relion_cuda_score_translation_angles_if_available,
 )
 from relax.sparse_pass2.sparse_pass2_budget import (
+    _device_free_memory_bytes,
+    _jax_allocator_free_memory_bytes,
     _max_adjoint_block_bytes_for_pass,
     _max_translation_tile_bytes_for_pass,
     _projection_cache_build_max_rotations_per_call,
@@ -1800,12 +1802,24 @@ def compute_pass2_stats_resident(
     )
     if stream_projections:
         score_cache = recon_cache = recon_abs2_cache = None
+        physical_free_bytes = _device_free_memory_bytes()
+        allocator_free_bytes = _jax_allocator_free_memory_bytes()
+        stream_projection_budget_bytes = _stream_projection_budget_bytes(
+            max_projection_cache_bytes,
+            physical_free_bytes=physical_free_bytes,
+            allocator_free_bytes=allocator_free_bytes,
+        )
         logger.info(
             "Resident pass-2 projections are streamed per chunk: the %d-rotation cache "
-            "would take %.2f GiB against a %.2f GiB budget",
+            "would take %.2f GiB against a %.2f GiB budget; chunk-local budget %.2f GiB "
+            "at %.1f KiB per rotation (physical free %s, allocator free %s)",
             n_fine_rot,
             transient_projection_bytes / float(1024**3),
             max_projection_cache_bytes / float(1024**3),
+            stream_projection_budget_bytes / float(1024**3),
+            projection_bytes_per_rotation / 1024.0,
+            "unknown" if physical_free_bytes is None else f"{physical_free_bytes / float(1024**3):.2f} GiB",
+            "unknown" if allocator_free_bytes is None else f"{allocator_free_bytes / float(1024**3):.2f} GiB",
         )
     else:
         cache_t0 = time.time()
@@ -1826,7 +1840,7 @@ def compute_pass2_stats_resident(
         row_ladder = _stream_row_capacity_ladder(
             row_ladder,
             bytes_per_rotation=projection_bytes_per_rotation,
-            max_projection_bytes=max_projection_cache_bytes,
+            max_projection_bytes=stream_projection_budget_bytes,
         )
     image_ladder = _cap_image_capacity_ladder(
         parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER),
@@ -2389,6 +2403,29 @@ _PLACE_AS_AVAL = _Placement(
 
 
 _STREAM_SLOT_QUANTUM = 8192
+# Share of the measured free device memory a chunk-local projection cache may
+# take; the rest stays for the chunk's scoring and M-step working set, which
+# have their own device-fraction budgets.
+_STREAM_FREE_MEMORY_FRACTION = 0.5
+
+
+def _stream_projection_budget_bytes(
+    max_projection_cache_bytes, *, physical_free_bytes, allocator_free_bytes
+):
+    """Chunk-local projection budget: the cache share, capped by measured free memory.
+
+    Both free-memory readings are taken when the pass plans its chunks, so
+    they see whatever earlier passes and iterations left resident; an unknown
+    reading does not cap. The per-iteration cache share alone would ignore
+    that. Half of the free memory stays for the half's accumulators and
+    operands and the chunk working set, which have their own budgets.
+    """
+
+    budget = int(max_projection_cache_bytes)
+    for free in (physical_free_bytes, allocator_free_bytes):
+        if free is not None:
+            budget = min(budget, int(float(free) * _STREAM_FREE_MEMORY_FRACTION))
+    return max(0, budget)
 
 
 def _stream_row_capacity_ladder(row_ladder, *, bytes_per_rotation, max_projection_bytes):

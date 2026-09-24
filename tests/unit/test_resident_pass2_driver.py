@@ -1226,3 +1226,57 @@ def test_streamed_projections_match_the_cached_pass(_resident_production_env, mo
     assert rel_l2(cached.Ft_y, streamed.Ft_y) < 1e-7
     assert rel_l2(cached.Ft_ctf, streamed.Ft_ctf) < 1e-7
     assert rel_l2(cached.noise_stats.wsum_img_power, streamed.noise_stats.wsum_img_power) < 1e-7
+
+
+def test_stream_projection_budget_is_capped_by_measured_free_memory():
+    gib = 1024**3
+    assert rp._stream_projection_budget_bytes(
+        20 * gib, physical_free_bytes=None, allocator_free_bytes=None
+    ) == 20 * gib
+    assert rp._stream_projection_budget_bytes(
+        20 * gib, physical_free_bytes=30 * gib, allocator_free_bytes=60 * gib
+    ) == 15 * gib
+    assert rp._stream_projection_budget_bytes(
+        20 * gib, physical_free_bytes=70 * gib, allocator_free_bytes=8 * gib
+    ) == 4 * gib
+
+
+@requires_resident_gpu
+def test_streamed_projection_rows_equal_the_cached_rows_exactly(
+    _resident_production_env, monkeypatch
+):
+    """Every on-the-fly projection row equals the fine-grid cache row, bit for bit.
+
+    Records each call of the projection block: the cached pass makes one call
+    over the whole fine grid, the streamed pass one per chunk over its distinct
+    rotations. Each streamed row is matched to its fine-grid row by the exact
+    rotation matrix and compared for equality in all three outputs.
+    """
+
+    calls = []
+    original = rp._compute_sparse_pass2_windowed_projections_block
+
+    def recording(volume, rotations, *args, **kwargs):
+        out = original(volume, rotations, *args, **kwargs)
+        calls.append((np.asarray(rotations), tuple(np.asarray(v) for v in out)))
+        return out
+
+    monkeypatch.setattr(rp, "_compute_sparse_pass2_windowed_projections_block", recording)
+    args = _driver_fixture_args()
+    rp.compute_pass2_stats_resident(**args)
+    assert len(calls) == 1
+    grid, cached = calls.pop()
+    index = {row.tobytes(): i for i, row in enumerate(grid.reshape(grid.shape[0], -1))}
+
+    monkeypatch.setattr(rp, "_projection_cache_fits_budget", lambda *a, **k: False)
+    rp.compute_pass2_stats_resident(**args)
+    assert calls, "the streamed pass made no projection call"
+    compared = 0
+    for rotations, streamed in calls:
+        ids = np.asarray(
+            [index[row.tobytes()] for row in rotations.reshape(rotations.shape[0], -1)]
+        )
+        for name, full, part in zip(("score", "recon", "recon_abs2"), cached, streamed):
+            np.testing.assert_array_equal(part, full[ids], err_msg=name)
+        compared += ids.size
+    assert compared > 0
