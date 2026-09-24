@@ -143,9 +143,8 @@ rule, not a hook.
 | a numerical change | `pixi run test-medium` |
 | a default flip, an engine replacement, a milestone | `pixi run test-long` |
 
-Smoke runs on Slurm when the queue is free, otherwise on one idle local GPU
-(never GPU 0). Medium and long always run on Slurm, each as one multi-GPU job
-(della-cryoem or the general gpu-short partition). The medium tier also runs
+Every tier runs on Slurm in the cryoem partition, each as one job (smoke 1 GPU,
+medium and long one multi-GPU job). The medium tier also runs
 periodically on `main`. Baseline regeneration (`pixi run regen-*`) runs only on
 the user's explicit request.
 

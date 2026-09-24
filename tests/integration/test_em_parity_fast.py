@@ -129,6 +129,46 @@ def _read_baseline(filename: str, key: str) -> float | None:
         return None
 
 
+THRESHOLDS = REPO_ROOT / "tests" / "tiers" / "fsc_thresholds.json"
+
+
+def _assert_fsc_gate(case: str, output_dir: Path) -> None:
+    """Hold the case to its approved FSC and Pmax floors against the RELION oracle.
+
+    Every half (K1) or Hungarian-matched class (K>1) must reach the case's FSC-AUC floor and its
+    minimum in-band shell FSC floor, and the mean per-particle |dPmax| against RELION must stay
+    under its bound (tests/tiers/fsc_thresholds.json, approved by the user 2026-09-24; scoring by
+    scripts/em_tier_fsc.py). Correlation is recorded as a diagnostic only.
+    """
+    from scripts.em_tier_fsc import score_relax_case
+
+    thresholds = json.loads(THRESHOLDS.read_text())
+    assert thresholds["approved"], "the fast-tier FSC thresholds are not approved"
+    gate = thresholds["cases"][case]
+    result = score_relax_case(case, output_dir)
+    (output_dir / f"em_parity_fsc_{case}.json").write_text(json.dumps(result, indent=1) + "\n")
+    for pair, metrics in result["pairs"].items():
+        print(
+            f"  {case} {pair}: FSC-AUC {metrics['fsc_auc']:.6f} (floor {gate['fsc_auc_floor']}), "
+            f"min shell FSC {metrics['min_shell_fsc_in_band']:.6f} (floor {gate['min_shell_floor']})",
+            file=sys.stderr,
+            flush=True,
+        )
+        assert metrics["fsc_auc"] >= gate["fsc_auc_floor"], (
+            f"{case} {pair} FSC-AUC {metrics['fsc_auc']:.6f} below the approved floor {gate['fsc_auc_floor']}"
+        )
+        assert metrics["min_shell_fsc_in_band"] >= gate["min_shell_floor"], (
+            f"{case} {pair} minimum shell FSC {metrics['min_shell_fsc_in_band']:.6f} below the approved floor "
+            f"{gate['min_shell_floor']}"
+        )
+    pmax = result["pmax"].get("relax_minus_relion", {}).get("mean_abs")
+    assert pmax is not None, f"{case}: no per-particle Pmax comparison with RELION"
+    print(f"  {case} mean |dPmax| {pmax:.3g} (bound {gate['pmax_mean_abs_max']})", file=sys.stderr, flush=True)
+    assert pmax <= gate["pmax_mean_abs_max"], (
+        f"{case} mean per-particle |dPmax| {pmax:.3g} above the approved bound {gate['pmax_mean_abs_max']}"
+    )
+
+
 @pytest.mark.gpu
 @pytest.mark.integration
 @pytest.mark.slow
@@ -213,14 +253,7 @@ def test_em_parity_fast_k1_replay(tmp_path):
     logger.info("K=1 replay ledger: %s", ledger)
 
     # NEVER widen tolerance to make a test pass. Fix the code instead.
-    assert half1_corr >= 0.999, (
-        f"K=1 replay half1 corr {half1_corr:.6f} below threshold 0.999. "
-        f"Replay parity has regressed — verify the load-bearing parity commits."
-    )
-    assert half2_corr >= 0.999, (
-        f"K=1 replay half2 corr {half2_corr:.6f} below threshold 0.999. "
-        f"Replay parity has regressed — verify the load-bearing parity commits."
-    )
+    _assert_fsc_gate("k1_replay", output_dir)
     assert pmax_abs_diff < 1e-3, (
         f"K=1 replay |ΔPmax| {pmax_abs_diff:.6f} exceeds threshold 1e-3 vs RELION it004={relion_pmax_reference}."
     )
@@ -315,8 +348,7 @@ def test_em_parity_fast_k1_local_replay(tmp_path):
     logger.info("K=1 local replay ledger: %s", ledger)
 
     # NEVER widen tolerance to make a test pass. Fix the code instead.
-    assert half1_corr >= 0.999, f"K=1 local replay half1 corr {half1_corr:.6f} below threshold 0.999."
-    assert half2_corr >= 0.999, f"K=1 local replay half2 corr {half2_corr:.6f} below threshold 0.999."
+    _assert_fsc_gate("k1_local_replay", output_dir)
     assert pmax_abs_diff < 1e-3, (
         f"K=1 local replay |ΔPmax| {pmax_abs_diff:.6f} exceeds threshold 1e-3 vs RELION it007={relion_pmax_reference}."
     )
@@ -414,8 +446,7 @@ def test_em_parity_fast_k1_adaptive_replay(tmp_path):
     logger.info("K=1 adaptive replay ledger: %s", ledger)
 
     # NEVER widen tolerance to make a test pass. Fix the code instead.
-    assert half1_corr >= 0.999, f"K=1 adaptive replay half1 corr {half1_corr:.6f} below threshold 0.999."
-    assert half2_corr >= 0.999, f"K=1 adaptive replay half2 corr {half2_corr:.6f} below threshold 0.999."
+    _assert_fsc_gate("k1_adaptive_replay", output_dir)
     assert pmax_abs_diff < 1e-3, (
         f"K=1 adaptive replay |ΔPmax| {pmax_abs_diff:.6f} exceeds threshold 1e-3 vs RELION it004={relion_pmax_reference}."
     )
@@ -509,13 +540,8 @@ def test_em_parity_fast_kclass_replay(tmp_path):
     logger.info("K-class replay ledger: %s", ledger)
 
     # K=2 iter 0→1 is the first K-class iteration after class seeds are loaded;
-    # it exercises the joint class × pose posterior. With adaptive 2-pass
-    # (--adaptive-2pass) recovar matches RELION's fine-grid pose refinement
-    # for the per-class winner_take_all M-step, lifting mean_corr from
-    # 0.984 (coarse-only) to ~0.99.
-    assert mean_corr >= 0.99, (
-        f"K-class replay mean_corr {mean_corr:.6f} below threshold 0.99. K-class kernel parity has regressed."
-    )
+    # it exercises the joint class × pose posterior (adaptive 2-pass).
+    _assert_fsc_gate("kclass_replay", output_dir)
     assert pmax_abs_mean < 1e-2, f"K-class replay |ΔPmax|.mean {pmax_abs_mean:.6g} exceeds threshold 1e-2."
     assert class_acc >= 0.95, (
         f"K-class replay class assignment accuracy {class_acc:.4f} below threshold 0.95 after Hungarian permutation."
@@ -678,8 +704,7 @@ def test_em_parity_fast_k1_coldstart(tmp_path, start):
     # stream for the fixture's --random_seed. Keep this autonomous cold-start
     # guard separate from replay because it still bootstraps model/noise/tau/
     # sigma state from raw inputs rather than injecting per-iter RELION state.
-    assert h1_corr >= 0.999, f"K=1 cold-start half1 corr {h1_corr:.6f} below 0.999 vs RELION it003."
-    assert h2_corr >= 0.999, f"K=1 cold-start half2 corr {h2_corr:.6f} below 0.999 vs RELION it003."
+    _assert_fsc_gate(f"k1_coldstart_{start}", output_dir)
     # Pre-A.1 cold-start: iter-3 |ΔPmax| was ~22% (sigma_offset stuck at 10 Å).
     # Post-A.1: 5-12% depending on perturbation drift. Threshold 0.15 catches
     # full A.1 regression (would jump back to 22%).
@@ -797,11 +822,7 @@ def test_em_parity_fast_k1_perturbreplay(tmp_path):
     )
     print(f"  walltime_s={elapsed:.1f}", file=sys.stderr, flush=True)
 
-    # Tighter than coldstart since perturbation drift is eliminated. Observed
-    # at HEAD: corrs ~0.992. The 0.99 floor catches any iter-1 / iter-2 path
-    # regression that the looser cold-start bar would miss.
-    assert h1_corr >= 0.99, f"K=1 perturb-replay half1 corr {h1_corr:.6f} below 0.99 vs RELION it003."
-    assert h2_corr >= 0.99, f"K=1 perturb-replay half2 corr {h2_corr:.6f} below 0.99 vs RELION it003."
+    _assert_fsc_gate("k1_perturbreplay", output_dir)
     assert pmax_diff < 0.05, f"K=1 perturb-replay |ΔPmax| {pmax_diff:.4g} exceeds 0.05 vs RELION it003."
 
 
@@ -910,12 +931,7 @@ def test_em_parity_fast_kclass_coldstart(tmp_path):
     print(f"  walltime_s={elapsed:.1f}", file=sys.stderr, flush=True)
 
     # NEVER widen tolerance to make a test pass. Fix the code instead.
-    # Observed at 68c00297 with RELION-like sampling but no --relion_init_dir:
-    # per-class [0.99757, 0.99885, 0.99924, 0.99939], mean 0.99876.
-    # These floors lock in near-RELION cold-start parity without relying on
-    # RELION's it000 model/noise/tau/sigma state.
-    assert worst_corr >= 0.997, f"K-class cold-start worst per-class corr {worst_corr:.4f} below 0.997: {matched}"
-    assert mean_corr >= 0.9985, f"K-class cold-start mean_corr {mean_corr:.4f} below 0.9985: {matched}"
+    _assert_fsc_gate("kclass_coldstart", output_dir)
 
 
 @pytest.mark.gpu
@@ -1060,6 +1076,9 @@ def test_em_parity_fast_kclass_nonadaptive_replay(tmp_path):
     print(f"  iter-3 class match: {iter3_match:.4f}", file=sys.stderr, flush=True)
     print(f"  walltime_s={elapsed:.1f}", file=sys.stderr, flush=True)
 
+    # This case runs at os0 against the os1 oracle (cross-grid), so the approved rule gates it by
+    # the pinned relax outputs, not by a RELION FSC floor. Until those pins exist the
+    # correlation floors below stay as its regression check.
     # Strict bars — after the RELION Class3D M-step and post-reconstruction
     # mask/ini_high low-pass parity fixes, the os=0 K=4 fixture reached
     # per-class [0.9777, 0.9817, 0.9882, 0.9839], mean 0.9829. The
@@ -1187,7 +1206,4 @@ def test_em_parity_fast_kclass_strict_oversample_coldstart(tmp_path):
     #   * post-reconstruction solvent mask and firstiter ini_high low-pass
     #   * K-class adaptive oversampling and class rotation prior plumbing
     # Even when the os=0 strict_coldstart still passes.
-    assert worst_corr >= 0.985, (
-        f"K-class strict-os1 cold-start worst per-class corr {worst_corr:.4f} below 0.985: {matched}"
-    )
-    assert mean_corr >= 0.994, f"K-class strict-os1 cold-start mean_corr {mean_corr:.4f} below 0.994: {matched}"
+    _assert_fsc_gate("kclass_strict_oversample_coldstart", output_dir)

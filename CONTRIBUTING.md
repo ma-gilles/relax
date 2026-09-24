@@ -157,7 +157,7 @@ Four tiers, each one command. Pick the tier from the change; the root
 
 | Tier | Command | Budget | Runs | Contents |
 | --- | --- | --- | --- | --- |
-| smoke | `pixi run test-smoke` | 5 min GPU | one 1-GPU Slurm job if it starts within 15 min, else one idle local GPU 1-3 | CPU fast guard and the merge-guard unit contracts; fixed-state replays `k1_local_replay` (local search), `k1_adaptive_replay` (global K1), `kclass_replay`; the GPU unit files for the changed paths |
+| smoke | `pixi run test-smoke` | 5 min GPU | one 1-GPU Slurm job (cryoem) | CPU fast guard and the merge-guard unit contracts; fixed-state replays `k1_local_replay` (local search), `k1_adaptive_replay` (global K1), `kclass_replay`; the GPU unit files for the changed paths |
 | medium | `pixi run test-medium` | 1-2 h wall | one Slurm job, 3 GPUs | smoke's CPU items; the whole fast parity tier (10 cases); the GPU unit sweep (`tests/unit`, `tests/integration`, `tests/ppca_abinitio`) sharded longest-first; native VDAM K1 50k/256; a K1 5k/128 standalone auto-refine to convergence scored with FSC against a RELION band |
 | long | `pixi run test-long` | about 6 h wall, 4 GPUs | one Slurm job, 4 GPUs | the EM long tier (K1 50k/256 standalone and seeded, native VDAM, K4 50k/256) and the K1 (standalone) and K4 100k/256 completions, masked and unmasked, against RELION repeat bands |
 | baseline regeneration | `pixi run regen-fixture-manifest`, `pixi run regen-pinned-fast` | - | - | the fixture manifest and the pinned relax outputs. The initial pinned outputs came from the first passing medium run; every later regeneration of them needs the user's explicit request. Each pinned entry records its source commit, job, GPU model and date |
@@ -172,9 +172,8 @@ there. The medium tier also runs periodically on `main`.
 
 **Slurm sizing.** Related GPU work runs as one job with `--gres=gpu:N` and one
 worker process per GPU (della-cryoem allows 16 running jobs but 32 GPUs per
-user). `--queue auto` (the default) submits to della-cryoem or to the general
-GPU partition, whichever starts first; Slurm routes the latter to gpu-test or
-gpu-short (1 day) by the tier's time limit, on A100 80GB only. The long tier's
+user). Every tier job goes to the cryoem partition; `--queue general` is only
+for when the user explicitly allows another partition. The long tier's
 arms share a node, so its walls are not timing-controlled measurements. Tier and
 benchmark jobs share nodes and take 8 CPUs and 128G per GPU, on any GPU model
 unless the H100 matters. Memory above that is
@@ -184,16 +183,20 @@ both arms in one `--gres=gpu:2` job on the same node, swapping GPUs between roun
 
 **Pass criteria.** A tier passes when every item exits 0 and no parity or
 end-to-end case skipped. The oracles are RELION fixed-state runs and pinned
-relax outputs. Quality is judged by FSC: each run writes the FSC-AUC and the
-minimum in-band shell FSC of every parity case against its RELION oracle
-(`fsc.json`, `scripts/em_tier_fsc.py`) and compares them with the pinned relax
-outputs (`tests/tiers/pinned_fast_cases.json`, `scripts/em_tier_pinned.py`).
+relax outputs. Quality is judged by FSC. Every fast parity case must reach its
+FSC-AUC floor and its minimum in-band shell FSC floor against its RELION oracle
+for every half or matched class, and keep the mean per-particle |ΔPmax| under
+its bound. The K1 5k end-to-end run must converge at RELION's iteration, stay
+within 0.002 of the RELION repeat band's GT FSC-AUC, and reach cross FSC-AUC
+0.990 against every RELION run. The values are in
+`tests/tiers/fsc_thresholds.json` (approved by the user 2026-09-24; floor =
+1 − 2 × max(relax deficit, RELION repeat deficit)); scoring is
+`scripts/em_tier_fsc.py`. Each run also compares its `fsc.json` with the pinned
+relax outputs (`tests/tiers/pinned_fast_cases.json`, `scripts/em_tier_pinned.py`).
 Pinned outputs are kept per GPU model, and a run is compared only with the
 entry of its own model: anything that compares a control with a candidate
-numerically pins the same GPU model on both (`--gpu-model a100|h100`).
-The FSC thresholds in `tests/tiers/fsc_thresholds.json` are enforced once the
-user approves them; until then they are reported and the existing correlation
-checks in the tests stay.
+numerically pins the same GPU model on both (`--gpu-model a100|h100`). Map
+correlation is a diagnostic only.
 
 **Fixtures.** The repository keeps only small metrics, thresholds, pinned
 summaries and `tests/fixtures/em_fixture_manifest.json` (per fixture set: root,

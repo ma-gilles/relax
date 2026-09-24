@@ -8,9 +8,9 @@ final all-data iteration. The RELION band is that reference plus its same-comman
 Measured and written to the case ledger, on the average of the unfiltered half maps (the same
 kind of map in both engines): GT FSC-AUC for relax and every RELION run, cross-engine FSC-AUC of
 relax against every RELION run and of the RELION runs against each other, the minimum in-band
-shell FSC, and the iteration counts. The FSC band gate
-applies once ``tests/tiers/fsc_thresholds.json`` records the user's approval; until then the
-test asserts only that the run converged and finished, and reports the FSC values.
+shell FSC, and the iteration counts. The approved gate (user, 2026-09-24;
+``tests/tiers/fsc_thresholds.json``) also requires convergence at RELION's iteration, and the test
+always requires that the run converged and finished.
 """
 
 from __future__ import annotations
@@ -190,6 +190,8 @@ def test_k1_5k128_standalone_autorefine(tmp_path):
     )
     gate = _approved_gate("e2e_k1_5k128_standalone")
     if gate is not None:
+        if gate.get("converge_at_relion_iteration"):
+            assert n_iter == relion_iters, f"relax converged at iteration {n_iter}, RELION at {relion_iters}"
         assert payload["relax_vs_gt"]["fsc_auc"] >= min(band_gt) - gate["gt_fsc_auc_below_band"], payload
         worst = min(v["fsc_auc"] for v in payload["relax_vs_relion"].values())
         assert worst >= gate["min_cross_fsc_auc"], payload

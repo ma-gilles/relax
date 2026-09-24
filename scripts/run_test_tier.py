@@ -9,16 +9,16 @@
 ``<run-root>/src``, verifies the tier's fixture sets against the manifest, builds the
 native libraries once (``scripts/build_test_natives.sh``) and starts the tier:
 
-* smoke runs as a one-GPU Slurm job when one would start within ``--queue-wait-minutes``,
-  otherwise on one idle local GPU (physical GPUs 1-3 only, selected by UUID);
+* smoke runs as a one-GPU Slurm job (``--where local`` runs it on one idle local GPU 1-3,
+  selected by UUID, only when the user allows local GPU use);
 * medium runs as ONE Slurm job on three GPUs (fast parity cases, GPU unit shards, VDAM and
   the end-to-end run share it);
 * long runs as ONE Slurm job on four GPUs: the four EM long-tier arms (K1 50k standalone and
   seeded, native VDAM, K4 50k) and the K1/K4 100k/256 completion arms, then the band scoring.
 
 Related GPU work is packed into one job (della-cryoem allows 16 running jobs but 32 GPUs per
-user). ``--queue`` picks della-cryoem or the general GPU partition (Slurm routes the job to
-gpu-test / gpu-short by its time limit; A100 80GB only); ``auto`` takes the earlier start.
+user). Every GPU job goes to the cryoem partition; ``--queue general`` (the general GPU
+partition, A100 80GB) is only for when the user explicitly allows another partition.
 
 Inside the allocation ``run`` executes the tier's items: CPU items alongside the GPU
 items, GPU items on one worker process per visible GPU (longest first, after any items
@@ -825,20 +825,15 @@ def cmd_submit(args: argparse.Namespace) -> int:
         print(f"dry run: plan at {run_root}/PLAN.json")
         return 0
     natives = build_natives(run_root, src)
-    queues = ["cryoem", "general"] if args.queue == "auto" else [args.queue]
-    if args.gpu_model == "h100":
-        queues = ["cryoem"]
-    starts = {q: expected_start(write_sbatch(run_root, tier, natives, q, args.gpu_model)) for q in queues}
-    queue = min(queues, key=lambda q: starts[q] or dt.datetime.max)
-    start = starts[queue]
-    print(f"expected starts: { {q: str(t) for q, t in starts.items()} }; using {queue}", flush=True)
-    busy = start is None or (start - dt.datetime.now()).total_seconds() > args.queue_wait_minutes * 60
-    if tier == "smoke" and args.where != "slurm" and (args.where == "local" or busy):
+    if args.gpu_model == "h100" and args.queue != "cryoem":
+        raise SystemExit("H100 nodes are in the cryoem partition only")
+    queue = args.queue
+    start = expected_start(write_sbatch(run_root, tier, natives, queue, args.gpu_model))
+    print(f"expected start on {queue}: {start}", flush=True)
+    if tier == "smoke" and args.where == "local":
         uuid = idle_local_gpu(args.gpu_model)
         if uuid is None:
-            if args.where == "local":
-                raise SystemExit("no idle local GPU among 1-3")
-            print("Slurm queue is busy and no local GPU 1-3 is idle; submitting to Slurm anyway")
+            raise SystemExit("no idle local GPU among 1-3")
         else:
             spec["where"] = f"local:{uuid}"
             (run_root / "PLAN.json").write_text(json.dumps(spec, indent=1) + "\n")
@@ -862,16 +857,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("tier", choices=["smoke", "medium", "long"])
     p.add_argument("--run-root", type=Path)
     p.add_argument("--base", default="origin/main", help="changes against this ref select smoke's GPU unit files")
-    p.add_argument("--where", choices=["auto", "slurm", "local"], default="auto", help="smoke only")
+    p.add_argument("--where", choices=["slurm", "local"], default="slurm",
+                   help="smoke only; local needs the user's permission for local GPU use")
     p.add_argument(
         "--gpu-model",
         choices=["any", "a100", "h100"],
         default="any",
         help="pin the GPU model (Slurm constraint); required when the run is compared numerically with a control",
     )
-    p.add_argument("--queue-wait-minutes", type=int, default=15)
-    p.add_argument("--queue", choices=["auto", "cryoem", "general"], default="auto",
-                   help="della-cryoem, the general GPU partition (gpu-test/gpu-short by time limit), or the earlier start")
+    p.add_argument("--queue", choices=["cryoem", "general"], default="cryoem",
+                   help="cryoem (all GPU jobs); general only when the user explicitly allows another partition")
     p.add_argument("--dry-run", action="store_true", help="write the plan, build and submit nothing")
     p = sub.add_parser("run", help="execute a planned tier inside its allocation")
     p.add_argument("tier", choices=["smoke", "medium", "long"])
