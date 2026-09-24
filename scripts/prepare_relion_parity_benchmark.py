@@ -139,6 +139,10 @@ def prepare_benchmark(
         # plus B_atomic); pass {'atomic_solvent_correction': False} for experimental maps.
         if atomic_volume_kwargs is None:
             atomic_volume_kwargs = {"atomic_solvent_correction": True}
+        if atomic_volume_kwargs.get("atomic_solvent_correction") and atomic_volume_kwargs.get("atomic_bfactor") is None:
+            # recovar's bundled assets/vol*.mrc are 5nrl maps already blurred with B = 100 A^2
+            # (make_trajectories.ipynb; shell-amplitude fit ~113 A^2), so add only the solvent term.
+            atomic_volume_kwargs = {**atomic_volume_kwargs, "atomic_bfactor": 0.0}
         simulator.generate_synthetic_dataset(
             output_dir,
             voxel_size,

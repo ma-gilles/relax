@@ -207,3 +207,33 @@ def test_synthetic_recovery_check_refuses_raw_maps_for_corrected_dataset(tmp_pat
             gt_volume_source="mrc-glob",
             translation_source="grid",
         )
+
+
+@pytest.mark.parametrize(
+    "module_name, writer, extra",
+    [
+        ("prepare_relion_parity_benchmark", "_write_reference_volumes", {}),
+        ("prepare_relion_multiclass_parity_benchmark", "_write_class_references", {"n_classes": 2, "init_radius": 3}),
+    ],
+)
+def test_asset_volume_scripts_add_only_the_solvent_term(monkeypatch, tmp_path, module_name, writer, extra):
+    """recovar's bundled asset maps already carry B = 100 A^2, so B_atomic defaults to 0 here."""
+    import importlib
+
+    prep = importlib.import_module(f"scripts.{module_name}")
+    captured = []
+    monkeypatch.setattr(prep.simulator, "generate_synthetic_dataset", lambda *args, **kwargs: captured.append(kwargs))
+    monkeypatch.setattr(prep, writer, lambda *args, **kwargs: None)
+    common = dict(n_images=4, grid_size=16, noise_level=1.0, relion_normalize=False, disc_type="cubic", **extra)
+
+    prep.prepare_benchmark(str(tmp_path / "default"), **common)
+    prep.prepare_benchmark(
+        str(tmp_path / "explicit"),
+        atomic_volume_kwargs={"atomic_solvent_correction": True, "atomic_bfactor": 100.0},
+        **common,
+    )
+    prep.prepare_benchmark(str(tmp_path / "off"), atomic_volume_kwargs={"atomic_solvent_correction": False}, **common)
+
+    assert captured[0]["atomic_solvent_correction"] is True and captured[0]["atomic_bfactor"] == 0.0
+    assert captured[1]["atomic_bfactor"] == 100.0
+    assert captured[2]["atomic_solvent_correction"] is False and "atomic_bfactor" not in captured[2]
