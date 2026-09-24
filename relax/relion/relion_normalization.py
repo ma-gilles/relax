@@ -12,6 +12,8 @@ from dataclasses import dataclass
 import jax.numpy as jnp
 import numpy as np
 
+from relax.helpers.types import total_sumw
+
 
 @dataclass
 class NormScaleCorrectionUpdateResult:
@@ -224,7 +226,8 @@ def update_relion_norm_scale_corrections(
             valid_norm = norm_residual > eps
             zero_norm_count = int(n_images - np.count_nonzero(valid_norm))
             normcorr_from_stats = old_norm_over_avg * np.sqrt(np.maximum(2.0 * norm_residual, 0.0))
-            retained_sum_weight = float(getattr(stats, "sumw", 0.0))
+            # RELION's sum_weight, the total class mass over all optics groups.
+            retained_sum_weight = total_sumw(getattr(stats, "sumw", 0.0))
             if retained_sum_weight > 0.0:
                 target_avg_norm = float(np.sum(normcorr_from_stats[valid_norm]) / retained_sum_weight)
             elif np.any(valid_norm):
