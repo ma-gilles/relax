@@ -285,6 +285,49 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_em_parity_long)
 
 
+def _memory_map_count():
+    try:
+        with open("/proc/self/maps", "rb") as maps:
+            return sum(1 for _ in maps)
+    except OSError:
+        return None
+
+
+def _max_memory_map_count():
+    try:
+        return int(Path("/proc/sys/vm/max_map_count").read_text())
+    except (OSError, ValueError):
+        return 65530  # the Linux default
+
+
+_maps_after_last_clear = [0]
+
+
+@pytest.fixture(autouse=True)
+def _bound_compiled_executable_maps():
+    """Release cached XLA executables between tests before the process runs out of memory maps.
+
+    Every compiled executable holds several memory mappings for its code. A single pytest process
+    over the unit tier accumulates enough of them to reach ``vm.max_map_count`` (65530 by default);
+    the next XLA CPU compile then aborts the whole process with SIGABRT, wherever it happens
+    (tests/unit/test_local_class_segmented_equivalence.py, whose big-JIT compiles are the largest, was
+    where it surfaced; that module alone adds about 27000 maps, so the check runs after every test,
+    not every module). Clearing jax's caches frees executables no live object holds.
+    """
+    yield
+    jax = sys.modules.get("jax")
+    count = _memory_map_count()
+    # Clear again only after 8192 new maps, so maps held by live objects do not make every test clear.
+    threshold = max(_max_memory_map_count() // 2, _maps_after_last_clear[0] + 8192)
+    if jax is None or count is None or count < threshold:
+        return
+    import gc
+
+    jax.clear_caches()
+    gc.collect()
+    _maps_after_last_clear[0] = _memory_map_count() or 0
+
+
 @pytest.fixture(autouse=True)
 def _set_deterministic_seed():
     # Keep stochastic tests deterministic by default.
