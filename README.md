@@ -10,7 +10,10 @@ RELION in JAX.
 | 3D auto-refine (Refine3D), K=1 | `python -m scripts.run_full_refinement` |
 | 3D classification (Class3D), K>1 | `python -m scripts.run_full_refinement --n_classes K` |
 
-Single GPU and a single optics group only. More to come.
+Single GPU. Refine3D (K=1) accepts several optics groups, including groups on other pixel sizes
+and boxes (unit-tested on CPU; end-to-end GPU qualification against RELION pending);
+InitialModel and Class3D take one optics group. Not yet: cryo-ET subtomograms,
+CTF-premultiplied particles, beam tilt, higher-order aberrations and magnification. More to come.
 
 ## Install (development)
 
