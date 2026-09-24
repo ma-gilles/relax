@@ -1,0 +1,556 @@
+{
+ "cells": [
+  {
+   "id": "noise1_50k_k1",
+   "K": 1,
+   "reference": {
+    "kind": "gt",
+    "frame": "relion",
+    "paths": [
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_noise1_50k_256_normalized/reference_gt_relion.mrc"
+    ]
+   },
+   "mask": {
+    "key": "noise1_k1_50k256_c1",
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_noise1_50k_256_normalized/masks/noise1_k1_50k256_c1/noise1_k1_50k256_c1_mask.mrc",
+    "sha256": "afaa22523e9f2cc16b794adc9f50e7788ea03c52f561d8f3b553be5d150391cb"
+   },
+   "arms": [
+    {
+     "label": "relion_s29",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/noise1_50k_k1_relion/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/noise1_50k_k1_relion/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s29",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/noise1_50k_k1_recovar/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/noise1_50k_k1_recovar/output/run_it200_model.star"
+    }
+   ]
+  },
+  {
+   "id": "noise1_5k_k1",
+   "K": 1,
+   "reference": {
+    "kind": "gt",
+    "frame": "relion",
+    "paths": [
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_noise1_5k_normalized/reference_gt_relion.mrc"
+    ]
+   },
+   "mask": {
+    "key": "noise1_k1_5k128_c1",
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_noise1_5k_normalized/masks/noise1_k1_5k128_c1/noise1_k1_5k128_c1_mask.mrc",
+    "sha256": "3ca550e9ee8470aff405a8162d1225414dae6cdb07c835ebe7f9b5876e74a5d3"
+   },
+   "arms": [
+    {
+     "label": "relion_s29",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/noise1_5k_k1_relion/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/noise1_5k_k1_relion/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s29",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/noise1_5k_k1_recovar/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/noise1_5k_k1_recovar/output/run_it200_model.star"
+    }
+   ]
+  },
+  {
+   "id": "pdb128_k2",
+   "K": 2,
+   "reference": {
+    "kind": "gt",
+    "frame": "relax",
+    "paths": [
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k2_5k_128/reference_gt_class001.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k2_5k_128/reference_gt_class002.mrc"
+    ]
+   },
+   "mask": {
+    "key": "pdb_k2_5k128_c1",
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_pdb_k2_5k_128/masks/pdb_k2_5k128_c1/pdb_k2_5k128_c1_mask.mrc",
+    "sha256": "aca84f352343539e736efb667d15b7a7716627c039480f45270faa10ef9cce7f"
+   },
+   "arms": [
+    {
+     "label": "relion_s29",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k2_relion/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k2_relion/output/run_it200_class002.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k2_relion/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s29",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k2_recovar/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k2_recovar/output/run_it200_class002.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k2_recovar/output/run_it200_model.star"
+    }
+   ]
+  },
+  {
+   "id": "pdb128_k4",
+   "K": 4,
+   "reference": {
+    "kind": "gt",
+    "frame": "relax",
+    "paths": [
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/reference_gt_class001.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/reference_gt_class002.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/reference_gt_class003.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/reference_gt_class004.mrc"
+    ]
+   },
+   "mask": {
+    "key": "pdb_k4_5k128_c1",
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_pdb_k4_5k_128/masks/pdb_k4_5k128_c1/pdb_k4_5k128_c1_mask.mrc",
+    "sha256": "41916d7c348cc82afc7e25c03fad1322f6692e5ba7283c2a428e56214a4078e9"
+   },
+   "arms": [
+    {
+     "label": "relion_s29",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_relion/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_relion/output/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_relion/output/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_relion/output/run_it200_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_relion/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s29",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_recovar/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_recovar/output/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_recovar/output/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_recovar/output/run_it200_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_recovar/output/run_it200_model.star"
+    }
+   ]
+  },
+  {
+   "id": "ribo_k15",
+   "K": 15,
+   "reference": {
+    "kind": "gt",
+    "frame": "relax",
+    "paths": [
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k15_g256_n50000_snr1_codex_20260509/reference_gt_class001.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k15_g256_n50000_snr1_codex_20260509/reference_gt_class002.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k15_g256_n50000_snr1_codex_20260509/reference_gt_class003.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k15_g256_n50000_snr1_codex_20260509/reference_gt_class004.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k15_g256_n50000_snr1_codex_20260509/reference_gt_class005.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k15_g256_n50000_snr1_codex_20260509/reference_gt_class006.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k15_g256_n50000_snr1_codex_20260509/reference_gt_class007.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k15_g256_n50000_snr1_codex_20260509/reference_gt_class008.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k15_g256_n50000_snr1_codex_20260509/reference_gt_class009.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k15_g256_n50000_snr1_codex_20260509/reference_gt_class010.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k15_g256_n50000_snr1_codex_20260509/reference_gt_class011.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k15_g256_n50000_snr1_codex_20260509/reference_gt_class012.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k15_g256_n50000_snr1_codex_20260509/reference_gt_class013.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k15_g256_n50000_snr1_codex_20260509/reference_gt_class014.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k15_g256_n50000_snr1_codex_20260509/reference_gt_class015.mrc"
+    ]
+   },
+   "mask": {
+    "key": "ribosembly_k15_50k256_c1",
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/ribosembly_k15_g256_n50000/masks/ribosembly_k15_50k256_c1/ribosembly_k15_50k256_c1_mask.mrc",
+    "sha256": "8fe2c4cd8b74d59043836b02d0720839a18ed98870c6ee3307d0c2b4d277bd72"
+   },
+   "arms": [
+    {
+     "label": "relion_s29",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_class004.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_class005.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_class006.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_class007.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_class008.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_class009.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_class010.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_class011.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_class012.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_class013.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_class014.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_class015.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_relion/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s29",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_class004.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_class005.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_class006.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_class007.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_class008.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_class009.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_class010.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_class011.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_class012.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_class013.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_class014.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_class015.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_model.star"
+    }
+   ]
+  },
+  {
+   "id": "ribo_k1",
+   "K": 1,
+   "reference": {
+    "kind": "gt_consensus",
+    "frame": "relax",
+    "paths": [
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k4_g256_n100000_completion_20260512_171123/reference_gt.mrc"
+    ],
+    "note": "K=1 run on the four-class fixture: scored against the consensus GT (reference_gt.mrc, the population mean of the four class maps)"
+   },
+   "mask": {
+    "key": "ribosembly_k4_100k256_c1",
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/ribosembly_k4_g256_n100000/masks/ribosembly_k4_100k256_c1/ribosembly_k4_100k256_c1_mask.mrc",
+    "sha256": "df91001bda61b529c9602ab630906cbb11db881f23aaa4f8e762d4fddd0526bf"
+   },
+   "arms": [
+    {
+     "label": "relion_s29",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix_20260919/runs/ribo_k1_relion/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix_20260919/runs/ribo_k1_relion/output/run_it200_model.star"
+    },
+    {
+     "label": "relion_s41",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k1_s41_relion/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k1_s41_relion/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s29_25cc447",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix_20260919/runs/ribo_k1_recovar/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix_20260919/runs/ribo_k1_recovar/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s41_25cc447",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k1_s41_recovar/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k1_s41_recovar/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s41_deb59cf_14208541",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_branchfinal_20260920/runs/derived_seed41_job14208541/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_branchfinal_20260920/runs/derived_seed41_job14208541/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s41_deb59cf_14208542",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_branchfinal_20260920/runs/derived_seed41_job14208542/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_branchfinal_20260920/runs/derived_seed41_job14208542/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s41_deb59cf_14208543",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_branchfinal_20260920/runs/derived_seed41_job14208543/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_branchfinal_20260920/runs/derived_seed41_job14208543/output/run_it200_model.star"
+    }
+   ]
+  },
+  {
+   "id": "ribo_k4",
+   "K": 4,
+   "reference": {
+    "kind": "gt",
+    "frame": "relax",
+    "paths": [
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k4_g256_n100000_completion_20260512_171123/reference_gt_class001.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k4_g256_n100000_completion_20260512_171123/reference_gt_class002.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k4_g256_n100000_completion_20260512_171123/reference_gt_class003.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k4_g256_n100000_completion_20260512_171123/reference_gt_class004.mrc"
+    ]
+   },
+   "mask": {
+    "key": "ribosembly_k4_100k256_c1",
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/ribosembly_k4_g256_n100000/masks/ribosembly_k4_100k256_c1/ribosembly_k4_100k256_c1_mask.mrc",
+    "sha256": "df91001bda61b529c9602ab630906cbb11db881f23aaa4f8e762d4fddd0526bf"
+   },
+   "arms": [
+    {
+     "label": "relion_s29",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix_20260919/runs/ribo_k4_relion/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix_20260919/runs/ribo_k4_relion/output/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix_20260919/runs/ribo_k4_relion/output/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix_20260919/runs/ribo_k4_relion/output/run_it200_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix_20260919/runs/ribo_k4_relion/output/run_it200_model.star"
+    },
+    {
+     "label": "relion_s41",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k4_s41_relion/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k4_s41_relion/output/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k4_s41_relion/output/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k4_s41_relion/output/run_it200_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k4_s41_relion/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s41",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k4_s41_recovar/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k4_s41_recovar/output/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k4_s41_recovar/output/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k4_s41_recovar/output/run_it200_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k4_s41_recovar/output/run_it200_model.star"
+    }
+   ]
+  },
+  {
+   "id": "empiar10097",
+   "K": 1,
+   "reference": {
+    "kind": "relion_autorefine",
+    "frame": "relion",
+    "paths": [
+     "/projects/CRYOEM/singerlab/mg6942/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution_replacement_10097_20260828T211155EDT/per_dataset/10097/maps/relion_final_merged.native_relion_file_frame.mrc"
+    ],
+    "note": "RELION auto-refine final merged map (job 13124450), the frozen mask's source"
+   },
+   "mask": {
+    "key": "empiar10097_c1",
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10097/masks/empiar10097_c1/empiar10097_c1_mask.mrc",
+    "sha256": "3c184a29e87c7e7c6b7bc2691226209a6e621241eafcd4dd6212a5ed555481d3"
+   },
+   "arms": [
+    {
+     "label": "relion_s41",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_vdam_initialmodel_10097_20260921/runs/relion_job14238044/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_vdam_initialmodel_10097_20260921/runs/relion_job14238044/output/run_it200_model.star"
+    },
+    {
+     "label": "relion_s42_emtrack",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_em_10097_replacement_20260828T211155EDT/outputs/10097/relion/initialmodel/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_em_10097_replacement_20260828T211155EDT/outputs/10097/relion/initialmodel/run_it200_model.star"
+    },
+    {
+     "label": "relax_s41",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_vdam_initialmodel_10097_20260921/runs/recovar_job14238299/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_vdam_initialmodel_10097_20260921/runs/recovar_job14238299/output/run_it200_model.star"
+    }
+   ]
+  },
+  {
+   "id": "empiar10076",
+   "K": 1,
+   "reference": {
+    "kind": "relion_autorefine",
+    "frame": "relion",
+    "paths": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10076_vdam256/reference/relion_refine_run_class001_fcrop256.mrc"
+    ],
+    "note": "RELION auto-refine map of EMPIAR-10076 (realdata_em_full_native_20260828), Fourier-cropped 320->256"
+   },
+   "mask": {
+    "key": "empiar10076_im256_c1",
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10076_vdam256/masks/empiar10076_im256_c1/empiar10076_im256_c1_mask.mrc",
+    "sha256": "b8a611900131c718d5b3e12a129b751de84c8458ee2438659347213ac2e3ea1b"
+   },
+   "arms": [
+    {
+     "label": "relion_s29_r1",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_real10076_100k_full200_5ca9c8fff_20260910/runs/native/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_real10076_100k_full200_5ca9c8fff_20260910/runs/native/output/run_it200_model.star"
+    },
+    {
+     "label": "relion_s29_r2",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_real10076_100k_repeat_5ca9c8fff_20260910/runs/native_2/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_real10076_100k_repeat_5ca9c8fff_20260910/runs/native_2/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s29_r1",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_real10076_100k_full200_5ca9c8fff_20260910/runs/candidate/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_real10076_100k_full200_5ca9c8fff_20260910/runs/candidate/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s29_r2",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_real10076_100k_repeat_5ca9c8fff_20260910/runs/candidate_2/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_real10076_100k_repeat_5ca9c8fff_20260910/runs/candidate_2/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s29_preread",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k1_100k_preread_20260910/runs/candidate/output/run_it200_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k1_100k_preread_20260910/runs/candidate/output/run_it200_model.star"
+    }
+   ]
+  },
+  {
+   "id": "noise1_50k_k1_it8",
+   "K": 1,
+   "reference": {
+    "kind": "gt",
+    "frame": "relion",
+    "paths": [
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_noise1_50k_256_normalized/reference_gt_relion.mrc"
+    ]
+   },
+   "mask": {
+    "key": "noise1_k1_50k256_c1",
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_noise1_50k_256_normalized/masks/noise1_k1_50k256_c1/noise1_k1_50k256_c1_mask.mrc",
+    "sha256": "afaa22523e9f2cc16b794adc9f50e7788ea03c52f561d8f3b553be5d150391cb"
+   },
+   "arms": [
+    {
+     "label": "relion_it8",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_noise1_50k_256_normalized/relion_initialmodel_k1_it008/run_it008_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_noise1_50k_256_normalized/relion_initialmodel_k1_it008/run_it008_model.star"
+    },
+    {
+     "label": "relax_it8_q427a08bd8",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/long_k1_native_initialmodel_quality_q427a08bd8/bt/test_em_parity_long_k1_native_0/k1_native_initialmodel/run_it008_class001.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/long_k1_native_initialmodel_quality_q427a08bd8/bt/test_em_parity_long_k1_native_0/k1_native_initialmodel/run_it008_model.star"
+    }
+   ]
+  },
+  {
+   "id": "empiar10076_k4_it20",
+   "K": 4,
+   "reference": {
+    "kind": "relion_autorefine_consensus",
+    "frame": "relion",
+    "paths": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10076_vdam256/reference/relion_refine_run_class001_fcrop256.mrc"
+    ],
+    "note": "RELION auto-refine map of EMPIAR-10076 (realdata_em_full_native_20260828), Fourier-cropped 320->256; K=4 run: every class is scored against this one consensus map"
+   },
+   "mask": {
+    "key": "empiar10076_im256_c1",
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10076_vdam256/masks/empiar10076_im256_c1/empiar10076_im256_c1_mask.mrc",
+    "sha256": "b8a611900131c718d5b3e12a129b751de84c8458ee2438659347213ac2e3ea1b"
+   },
+   "arms": [
+    {
+     "label": "relion_s29_pair",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real10076_nriter20_5ca9c8fff_20260909/runs/native/output/run_it020_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real10076_nriter20_5ca9c8fff_20260909/runs/native/output/run_it020_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real10076_nriter20_5ca9c8fff_20260909/runs/native/output/run_it020_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real10076_nriter20_5ca9c8fff_20260909/runs/native/output/run_it020_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real10076_nriter20_5ca9c8fff_20260909/runs/native/output/run_it020_model.star"
+    },
+    {
+     "label": "relion_s29_a",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real_native_repeat_5ca9c8fff_20260909/runs/native_a/output/run_it020_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real_native_repeat_5ca9c8fff_20260909/runs/native_a/output/run_it020_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real_native_repeat_5ca9c8fff_20260909/runs/native_a/output/run_it020_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real_native_repeat_5ca9c8fff_20260909/runs/native_a/output/run_it020_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real_native_repeat_5ca9c8fff_20260909/runs/native_a/output/run_it020_model.star"
+    },
+    {
+     "label": "relion_s29_b",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real_native_repeat_5ca9c8fff_20260909/runs/native_b/output/run_it020_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real_native_repeat_5ca9c8fff_20260909/runs/native_b/output/run_it020_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real_native_repeat_5ca9c8fff_20260909/runs/native_b/output/run_it020_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real_native_repeat_5ca9c8fff_20260909/runs/native_b/output/run_it020_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real_native_repeat_5ca9c8fff_20260909/runs/native_b/output/run_it020_model.star"
+    },
+    {
+     "label": "relax_s29",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real10076_nriter20_5ca9c8fff_20260909/runs/candidate/output/run_it020_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real10076_nriter20_5ca9c8fff_20260909/runs/candidate/output/run_it020_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real10076_nriter20_5ca9c8fff_20260909/runs/candidate/output/run_it020_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real10076_nriter20_5ca9c8fff_20260909/runs/candidate/output/run_it020_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real10076_nriter20_5ca9c8fff_20260909/runs/candidate/output/run_it020_model.star"
+    }
+   ]
+  }
+ ]
+}
