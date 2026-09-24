@@ -2,6 +2,40 @@
  "schema": "relax-masked-fsc-scores-v1",
  "rows": [
   {
+   "label": "10073_q427a08bd8_mt19937",
+   "dataset": "empiar10073_c1",
+   "section": "real",
+   "mask_sha256": "030ad3a85199cfffbfaee1f78d291a365e73452b2f6fbf0e9edf5de5f77d809f",
+   "band": [
+    1,
+    80
+   ],
+   "evidence": {
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10073_q427a08bd8_mt19937_masked/masked_fsc.json",
+    "sha256": "acaa1bf65ce23a445e10f365933a7f458210193738282f96b20e17e0d980d233"
+   },
+   "null_reasons": {},
+   "relion": {
+    "masked_resolution_A": 4.124064,
+    "masked_sustained_resolution_A": 4.092340430769231,
+    "masked_corrected_band_auc": 0.923006424050633,
+    "unmasked_band_auc": 0.7193494303797469
+   },
+   "relax": {
+    "masked_resolution_A": 4.124064,
+    "masked_sustained_resolution_A": 4.092340430769231,
+    "masked_corrected_band_auc": 0.9233118924050632,
+    "unmasked_band_auc": 0.7194256075949367
+   },
+   "cross_engine_masked_band_auc": {
+    "merged": 0.9986210912402932,
+    "half1": 0.9961680140234714,
+    "half2": 0.9963706785497841
+   },
+   "frame_correlation_in_mask": 0.9994380729836596,
+   "gt_masked_band_auc": null
+  },
+  {
    "label": "empiar10073_cand2_087287024",
    "dataset": "empiar10073_c1",
    "section": "real",
@@ -58,6 +92,40 @@
    "relax": null,
    "cross_engine_masked_band_auc": null,
    "frame_correlation_in_mask": null,
+   "gt_masked_band_auc": null
+  },
+  {
+   "label": "10097_q427a08bd8_mt19937",
+   "dataset": "empiar10097_c1",
+   "section": "real",
+   "mask_sha256": "3c184a29e87c7e7c6b7bc2691226209a6e621241eafcd4dd6212a5ed555481d3",
+   "band": [
+    1,
+    44
+   ],
+   "evidence": {
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10097_q427a08bd8_mt19937_masked/masked_fsc.json",
+    "sha256": "2bc110dc5a4b44e3711d48ac2ce906c831cf09897b2f5e1ce8229b3df7518edb"
+   },
+   "null_reasons": {},
+   "relion": {
+    "masked_resolution_A": 5.78206,
+    "masked_sustained_resolution_A": 5.684058684745763,
+    "masked_corrected_band_auc": 0.8724653139534884,
+    "unmasked_band_auc": 0.6825502674418604
+   },
+   "relax": {
+    "masked_resolution_A": 5.988562,
+    "masked_sustained_resolution_A": 5.883499340350877,
+    "masked_corrected_band_auc": 0.8723956860465117,
+    "unmasked_band_auc": 0.6823769302325583
+   },
+   "cross_engine_masked_band_auc": {
+    "merged": 0.9825732141163546,
+    "half1": 0.9603284441213078,
+    "half2": 0.9622956316804202
+   },
+   "frame_correlation_in_mask": 0.9980942800080277,
    "gt_masked_band_auc": null
   },
   {

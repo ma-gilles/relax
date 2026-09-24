@@ -53,25 +53,25 @@
     "masked_resolution_definition": "relion_postprocess_masked_frozen"
    },
    "relax": {
-    "source_sha": "087287024a61111b8714d34d0a72076bcca26211",
-    "source_repo": "recovar (pre-split EM lineage, candidate cand2)",
+    "source_sha": "427a08bd8550116f6fdc3f66ad202760372a813e",
+    "source_repo": "recovar (frozen Q, last tree with EM in recovar)",
     "resolution_A": 6.568,
     "resolution_definition": "scorecard_band",
     "masked_resolution_A": 4.124,
-    "wall_s": 35475,
+    "wall_s": 38602,
     "wall_definition": "run_full_refinement process wall (EXECUTED.json seconds)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 21,
     "jobs": [
-     "14283134"
+     "14318015"
     ],
-    "masked_band_auc": 0.923,
+    "masked_band_auc": 0.9233,
     "masked_resolution_definition": "relion_postprocess_masked_frozen"
    },
    "gt": null,
-   "cross_engine": "scorecard PASS: merged band FSC-AUC 0.9911, halves 0.9836/0.9829",
-   "time_ratio_relax_over_relion": 2.95,
+   "cross_engine": "scorecard PASS: merged band FSC-AUC 0.9900, halves 0.9806/0.9816",
+   "time_ratio_relax_over_relion": 3.21,
    "matched": "no",
    "matched_detail": {
     "gpu_model": true,
@@ -82,39 +82,48 @@
     "timing_controlled": false
    },
    "notes": [
-    "Not like-for-like for time: relax ran with the platform allocator and the native projector setup on 4 CPUs, RELION with 3 MPI ranks on 12 CPUs, on different dates and nodes; the ratio overstates the production gap (the 10k-subset row, run with production allocator and projector settings in an ABBA design, is 1.40-1.55x).",
+    "Not like-for-like for time: relax ran with the platform allocator and the native projector setup on 4 CPUs with timing records, RELION with 3 MPI ranks on 12 CPUs, on different dates and nodes; the matched production-setting pairs are in the relax speed benchmark rows.",
     "relax starts from RELION's run_it000 state (half sets, optimiser, start-up noise); RELION runs 3 MPI ranks on the same GPU.",
-    "RELION ran 2026-08-28, relax 2026-09-22 on a different node; not a timing-controlled pair.",
+    "RELION ran 2026-08-28, relax 2026-09-23 on a different node; not a timing-controlled pair.",
     "Masked resolution recomputed with the frozen mask and relion_postprocess rlnFinalResolution; previously recorded value(s): relion 4.092 A (earlier tables used the sustained three-shell crossing or another postprocess protocol)."
    ],
    "null_reasons": {
     "gt": "real data: no ground truth"
    },
-   "pending": {
-    "jobs": [
-     "14318015"
-    ],
-    "note": "rerun on frozen Q 427a08bd8 running"
-   },
    "evidence": {
     "run_roots": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/runs/realdata_10073_mt19937_cand2_087287024_prodxla",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/realdata_10073_mt19937_q427a08bd8",
      "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution/per_dataset/10073"
     ],
-    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/scores_realdata/10073_cand2_prodxla_mt19937.json",
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10073_q427a08bd8_mt19937.json",
     "masked_fsc_json": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_masks_20260923/runs/empiar10073_cand2_087287024/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10073_q427a08bd8_mt19937_masked/masked_fsc.json"
     ]
    },
-   "date": "2026-09-23",
-   "history": [],
+   "date": "2026-09-24",
+   "history": [
+    {
+     "source_sha": "087287024a61111b8714d34d0a72076bcca26211",
+     "source_repo": "recovar (pre-split EM lineage, candidate cand2)",
+     "jobs": [
+      "14283134"
+     ],
+     "resolution_A": 6.568,
+     "masked_resolution_A": 4.124,
+     "wall_s": 35475,
+     "time_ratio_relax_over_relion": 2.95,
+     "cross_engine": "scorecard PASS: merged band FSC-AUC 0.9911, halves 0.9836/0.9829",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/scores_realdata/10073_cand2_prodxla_mt19937.json",
+     "date": "2026-09-23"
+    }
+   ],
    "time_check": {
     "a": "RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs), no --preread_images. relax: 1 H100, one process, 4 CPUs, non-exclusive node.",
-    "b": "relax: XLA_PYTHON_CLIENT_ALLOCATOR=platform (the diagnostic allocator used for the 10345 illegal-address investigation, not the production BFC allocator); --projector_setup_backend native instead of the device default; --timing_dir and --benchmark_ledger_json records; seeded from RELION run_it000 state (half sets, optimiser, start-up noise), no per-iteration RELION replay; no deterministic-reduction options; no intermediates dump; preread off (default).",
+    "b": "relax: XLA_PYTHON_CLIENT_ALLOCATOR=platform (diagnostic allocator, not the production BFC allocator); --projector_setup_backend native; --timing_dir and --benchmark_ledger_json records; production EM XLA defaults; seeded from RELION run_it000 state (half sets, optimiser, start-up noise), --relion-particle-shuffle mt19937, no per-iteration RELION replay; no deterministic-reduction options; no intermediates dump; preread off (default).",
     "c": "relax: run_full_refinement process wall, cold JAX cache, includes compilation and data loading, excludes pixi/CUDA library setup. RELION: relion_refine stage wall including MPI start-up, excludes the preceding InitialModel.",
-    "d": "RELION 13093155 della-h19g4 H100 (2026-08-28); relax 14283134 della-h19g1 H100 (2026-09-22)"
+    "d": "RELION 13093155 della-h19g4 H100 (2026-08-28); relax 14318015 della-h19g1 H100 (2026-09-23)"
    },
-   "cross_engine_masked_band_auc": 0.9988,
+   "cross_engine_masked_band_auc": 0.9986,
    "mask": {
     "dataset": "empiar10073_c1",
     "sha256": "030ad3a85199cfffbfaee1f78d291a365e73452b2f6fbf0e9edf5de5f77d809f"
@@ -153,25 +162,25 @@
     "masked_resolution_definition": "relion_postprocess_masked_frozen"
    },
    "relax": {
-    "source_sha": "087287024a61111b8714d34d0a72076bcca26211",
-    "source_repo": "recovar (pre-split EM lineage, candidate cand2)",
+    "source_sha": "427a08bd8550116f6fdc3f66ad202760372a813e",
+    "source_repo": "recovar (frozen Q, last tree with EM in recovar)",
     "resolution_A": 7.452,
     "resolution_definition": "scorecard_band",
     "masked_resolution_A": 5.989,
-    "wall_s": 40741,
+    "wall_s": 40236,
     "wall_definition": "run_full_refinement process wall (EXECUTED.json seconds)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 22,
     "jobs": [
-     "14283135"
+     "14318016"
     ],
-    "masked_band_auc": 0.874,
+    "masked_band_auc": 0.8724,
     "masked_resolution_definition": "relion_postprocess_masked_frozen"
    },
    "gt": null,
-   "cross_engine": "vs RELION reference merged/halves 0.9316/0.8801/0.8845 (below 0.95/0.90); vs same-command RELION repeat r2 0.9726/0.9503/0.9527 (pass). Passes the 2026-09-23 rule (thresholds met against at least one RELION repeat plus replay parity).",
-   "time_ratio_relax_over_relion": 4.84,
+   "cross_engine": "vs RELION reference merged/halves 0.9313/0.8793/0.8840 (below 0.95/0.90); vs same-command repeat r1 0.9312/0.8789/0.8837 (below); vs repeat r2 0.9740/0.9514/0.9562 (pass). RELION runs split the same way (ref vs r1 pass, ref/r1 vs r2 below). Passes the 2026-09-23 rule (thresholds met against at least one RELION run; band condition dropped; replay parity is the separate supporting check).",
+   "time_ratio_relax_over_relion": 4.78,
    "matched": "no",
    "matched_detail": {
     "gpu_model": true,
@@ -182,7 +191,7 @@
     "timing_controlled": false
    },
    "notes": [
-    "Not like-for-like for time: relax ran with the platform allocator and the native projector setup on 4 CPUs, RELION with 3 MPI ranks on 12 CPUs, on different dates and nodes; the ratio overstates the production gap (the 10k-subset row, run with production allocator and projector settings in an ABBA design, is 1.40-1.55x).",
+    "Not like-for-like for time: relax ran with the platform allocator and the native projector setup on 4 CPUs with timing records, RELION with 3 MPI ranks on 12 CPUs, on different dates and nodes; the matched production-setting pairs are in the relax speed benchmark rows.",
     "RELION wall is the 2026-08-29 reference run; the same-command repeats r1/r2 took 8603/8419 s (Slurm elapsed, H100).",
     "relax starts from RELION's run_it000 state; not a timing-controlled pair.",
     "Masked resolution recomputed with the frozen mask and relion_postprocess rlnFinalResolution; previously recorded value(s): relion 5.684 A (earlier tables used the sustained three-shell crossing or another postprocess protocol)."
@@ -191,32 +200,41 @@
     "gt": "real data: no ground truth",
     "relion.relion_reported_resolution_A": "reference run log not read into this table; the scorecard value is used"
    },
-   "pending": {
-    "jobs": [
-     "14318016"
-    ],
-    "note": "rerun on frozen Q 427a08bd8 running"
-   },
    "evidence": {
     "run_roots": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/runs/realdata_10097_mt19937_cand2_087287024_prodxla",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/realdata_10097_mt19937_q427a08bd8",
      "/home/mg6942/mytigress/RECOVAR_RELION_EM_COMPARISON/full_dataset_native_resolution_replacement_10097_20260828T211155EDT",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/d10097/relion_repeat"
     ],
-    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/d10097/scores_band_rule/10097_cand2_prodxla_mt19937.json",
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10097_q427a08bd8_mt19937.json",
     "masked_fsc_json": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_masks_20260923/runs/empiar10097_cand2_087287024/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/10097_q427a08bd8_mt19937_masked/masked_fsc.json"
     ]
    },
-   "date": "2026-09-23",
-   "history": [],
+   "date": "2026-09-24",
+   "history": [
+    {
+     "source_sha": "087287024a61111b8714d34d0a72076bcca26211",
+     "source_repo": "recovar (pre-split EM lineage, candidate cand2)",
+     "jobs": [
+      "14283135"
+     ],
+     "resolution_A": 7.452,
+     "masked_resolution_A": 5.989,
+     "wall_s": 40741,
+     "time_ratio_relax_over_relion": 4.84,
+     "cross_engine": "vs RELION reference merged/halves 0.9316/0.8801/0.8845 (below 0.95/0.90); vs same-command RELION repeat r2 0.9726/0.9503/0.9527 (pass). Passes the 2026-09-23 rule (thresholds met against at least one RELION repeat plus replay parity).",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/d10097/scores_band_rule/10097_cand2_prodxla_mt19937.json",
+     "date": "2026-09-23"
+    }
+   ],
    "time_check": {
     "a": "RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs), no --preread_images. relax: 1 H100, one process, 4 CPUs, non-exclusive node.",
-    "b": "relax: XLA_PYTHON_CLIENT_ALLOCATOR=platform (the diagnostic allocator used for the 10345 illegal-address investigation, not the production BFC allocator); --projector_setup_backend native instead of the device default; --timing_dir and --benchmark_ledger_json records; seeded from RELION run_it000 state (half sets, optimiser, start-up noise), no per-iteration RELION replay; no deterministic-reduction options; no intermediates dump; preread off (default).",
+    "b": "relax: XLA_PYTHON_CLIENT_ALLOCATOR=platform (diagnostic allocator, not the production BFC allocator); --projector_setup_backend native; --timing_dir and --benchmark_ledger_json records; production EM XLA defaults; seeded from RELION run_it000 state (half sets, optimiser, start-up noise), --relion-particle-shuffle mt19937, no per-iteration RELION replay; no deterministic-reduction options; no intermediates dump; preread off (default).",
     "c": "relax: run_full_refinement process wall, cold JAX cache, includes compilation and data loading, excludes pixi/CUDA library setup. RELION: relion_refine stage wall including MPI start-up, excludes the preceding InitialModel.",
-    "d": "RELION 13124450 della-h19g3 H100 (2026-08-29); relax 14283135 della-h19g3 H100 (2026-09-22)"
+    "d": "RELION 13124450 della-h19g3 H100 (2026-08-29); relax 14318016 della-h20g3 H100 (2026-09-23)"
    },
-   "cross_engine_masked_band_auc": 0.9827,
+   "cross_engine_masked_band_auc": 0.9826,
    "mask": {
     "dataset": "empiar10097_c1",
     "sha256": "3c184a29e87c7e7c6b7bc2691226209a6e621241eafcd4dd6212a5ed555481d3"
