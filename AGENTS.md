@@ -159,7 +159,21 @@ Branches are fine for isolation, but they are temporary: once a branch is merged
 leave finished or dead branches behind. Keep only `main`/`dev`/`dev2`, active work and
 branches the user explicitly asked to keep.
 Preserve an explicitly pinned control.
-Rebasing an implementation creates a new candidate that needs fresh validation.
+
+Merge criterion: judge a candidate against its control by the approved gates in
+`tests/tiers/fsc_thresholds.json`, never by bitwise equality. GPU runs of the same code are
+not bit-reproducible; racing reductions move printed metrics by about 1e-13 to 1e-6.
+`tests/tiers/gpu_noise_envelope.json` records that same-code spread per fast-tier case and
+metric: check a control-candidate difference with `python scripts/em_tier_noise_envelope.py
+check --control <basetemp> --candidate <basetemp>` instead of rerunning. A difference outside
+the envelope is a real change of the numbers, which the gates then judge.
+
+Merge as you go: land each qualified piece on `main` as soon as its checks pass, not at the
+end of the task. Keep a list of your unmerged commits (SHA, subject, what blocks each) in
+your handoff. Rebasing an implementation creates a new candidate that needs fresh
+validation, except when every commit it moves over changes only docs, tests or scripts (no
+code under `relax/`, no native sources, no pixi manifest or lock): then the CPU checks of the
+rebased head suffice.
 Never force-push unless explicitly asked. Before pushing or opening a PR, follow
 all applicable checks and table requirements in CONTRIBUTING.md and scoped guides.
 

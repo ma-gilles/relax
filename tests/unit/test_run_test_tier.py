@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts import em_tier_pinned, run_test_tier
+from scripts import em_tier_noise_envelope, em_tier_pinned, run_test_tier
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.unit
@@ -178,3 +178,22 @@ def test_tier_jobs_follow_the_slurm_sizing_rule(tmp_path):
             assert f"--cpus-per-task={8 * job['gpus']}" in text
     text = run_test_tier.write_sbatch(tmp_path, "medium", tmp_path, "general", "a100").read_text()
     assert "--constraint=a100,gpu80" in text and "--partition" not in text
+
+
+def test_noise_envelope_takes_the_largest_same_code_difference(tmp_path, monkeypatch, capsys):
+    runs = {
+        "a": {"k1_replay": {"gate.min_fsc_auc": 0.9, "gate.pmax_mean_abs": 0.1}},
+        "b": {"k1_replay": {"gate.min_fsc_auc": 0.9 + 2e-9, "gate.pmax_mean_abs": 0.1}},
+        "c": {"k1_replay": {"gate.min_fsc_auc": 0.9 - 5e-9, "gate.pmax_mean_abs": 0.1}},
+        "cand": {"k1_replay": {"gate.min_fsc_auc": 0.9 - 1e-6, "gate.pmax_mean_abs": 0.1}},
+    }
+    monkeypatch.setattr(em_tier_noise_envelope, "run_metrics", lambda root: runs[root.name])
+    out = tmp_path / "envelope.json"
+    em_tier_noise_envelope.main(["build", "--pair", "p1:h100:a:b", "--pair", "p2:h100:a:c", "--output", str(out)])
+    row = json.loads(out.read_text())["cases"]["k1_replay"]["gate.min_fsc_auc"]
+    assert row["n_pairs"] == 2 and row["max_abs_diff"] == pytest.approx(5e-9)
+    assert row["noise_limit"] == pytest.approx(5e-8)
+    pmax = json.loads(out.read_text())["cases"]["k1_replay"]["gate.pmax_mean_abs"]
+    assert pmax["max_abs_diff"] == 0.0 and pmax["noise_limit"] == em_tier_noise_envelope.NOISE_FLOOR
+    em_tier_noise_envelope.main(["check", "--control", "a", "--candidate", "cand", "--envelope", str(out)])
+    assert "1 metric(s) outside" in capsys.readouterr().out
