@@ -93,9 +93,9 @@ Explained (2026-09-24, test tiers): the medium K1 5k/128 standalone end-to-end r
 gridding-corrected, and relax at 319cd10 did not apply a final gridding correction. Applying
 RELION's pad-2 sinc^2 correction to relax's map gives 0.5959, inside the band. The unfiltered half
 maps agree: average GT FSC-AUC relax 0.59519, RELION 0.59516-0.59519. This is resolved by the
-always-on final gridding correction (user decision; k1gap's change retires the option). Until
-that is on main, the tier gates on the unfiltered half maps; the merged map is gated again once
-it is.
+always-on final gridding correction (user decision; relax df88eab retires the option). The
+tier gates both the unfiltered half-map average and the merged map, and requires
+`final_all_data_grid_correct` to be recorded True in `refinement_results.npz`.
 
 Follow the unchanged [quantitative gates](../math/em_parity_program.md) and
 [validation ladder](em_parity_runbook.md#validation-ladder): matched-state

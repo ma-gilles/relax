@@ -139,51 +139,59 @@ def test_k1_5k128_standalone_autorefine(tmp_path):
 
     gt = np.asarray(helpers.load_mrc(str(data / "reference_gt.mrc")), dtype=np.float64)
     band = gt.shape[0] // 2
-    # The gated maps are the averages of the unfiltered half maps, the same kind of map in both
-    # engines. Until the always-on final gridding correction is on main, relax's final_merged.mrc
-    # is not gridding-corrected while RELION's run_class001.mrc is (about +0.012 GT FSC-AUC; see
-    # docs/development/em_status.md), so the merged maps are reported, not gated, for now.
+    # Both map kinds are gated: the average of the unfiltered half maps, and the merged map, which
+    # in both engines carries the final gridding correction (relax records it in
+    # final_all_data_grid_correct; see docs/development/em_status.md).
+    grid_corrected = bool(npz["final_all_data_grid_correct"]) if "final_all_data_grid_correct" in npz else False
+
     def unfil_average(load, paths):
         return sum(np.asarray(load(str(path)), dtype=np.float64) for path in paths) / 2.0
 
-    relax_map = unfil_average(helpers.load_mrc, [output_dir / f"final_half{h}_unfil.mrc" for h in (1, 2)])
-    relion = {
-        k: unfil_average(helpers.load_relion_volume, [p / f"run_half{h}_class001_unfil.mrc" for h in (1, 2)])
-        for k, p in _relion_runs().items()
-    }
-    relax_merged = np.asarray(helpers.load_mrc(str(output_dir / "final_merged.mrc")), dtype=np.float64)
-    relion_merged = {
-        k: np.asarray(helpers.load_relion_volume(str(p / "run_class001.mrc")), dtype=np.float64)
-        for k, p in _relion_runs().items()
+    maps = {
+        "unfil_half_average": (
+            unfil_average(helpers.load_mrc, [output_dir / f"final_half{h}_unfil.mrc" for h in (1, 2)]),
+            {
+                k: unfil_average(helpers.load_relion_volume, [p / f"run_half{h}_class001_unfil.mrc" for h in (1, 2)])
+                for k, p in _relion_runs().items()
+            },
+        ),
+        "merged": (
+            np.asarray(helpers.load_mrc(str(output_dir / "final_merged.mrc")), dtype=np.float64),
+            {
+                k: np.asarray(helpers.load_relion_volume(str(p / "run_class001.mrc")), dtype=np.float64)
+                for k, p in _relion_runs().items()
+            },
+        ),
     }
     payload = {
         "walltime_s": elapsed,
         "converged": converged,
         "final_all_data_ran": final_all_data,
+        "final_all_data_grid_correct": grid_corrected,
         "relax_iterations": n_iter,
         "relion_reference_iterations": relion_iters,
-        "map": "average of the unfiltered half maps",
-        "relax_vs_gt": _fsc(relax_map, gt, band),
-        "relion_vs_gt": {k: _fsc(v, gt, band) for k, v in relion.items()},
-        "relax_vs_relion": {k: _fsc(relax_map, v, band) for k, v in relion.items()},
-        "merged_maps_reported_only": {
-            "relax_vs_gt": _fsc(relax_merged, gt, band),
-            "relion_vs_gt": {k: _fsc(v, gt, band) for k, v in relion_merged.items()},
-            "relax_vs_relion": {k: _fsc(relax_merged, v, band) for k, v in relion_merged.items()},
-        },
-        "relion_vs_relion": {
-            f"{a}|{b}": _fsc(relion[a], relion[b], band) for a, b in itertools.combinations(relion, 2)
+        "maps": {
+            kind: {
+                "relax_vs_gt": _fsc(relax_map, gt, band),
+                "relion_vs_gt": {k: _fsc(v, gt, band) for k, v in relion.items()},
+                "relax_vs_relion": {k: _fsc(relax_map, v, band) for k, v in relion.items()},
+                "relion_vs_relion": {
+                    f"{a}|{b}": _fsc(relion[a], relion[b], band) for a, b in itertools.combinations(relion, 2)
+                },
+            }
+            for kind, (relax_map, relion) in maps.items()
         },
     }
     (output_dir / "em_tier_e2e_ledger_k1_5k128.json").write_text(json.dumps(payload, indent=1) + "\n")
-    band_gt = [v["fsc_auc"] for v in payload["relion_vs_gt"].values()]
-    print(
-        f"\nK1 5k e2e: relax GT FSC-AUC {payload['relax_vs_gt']['fsc_auc']:.6f}; RELION band "
-        f"[{min(band_gt):.6f}, {max(band_gt):.6f}]; relax vs RELION reference FSC-AUC "
-        f"{payload['relax_vs_relion']['reference']['fsc_auc']:.6f}; iterations relax {n_iter} / RELION {relion_iters}",
-        file=sys.stderr,
-        flush=True,
-    )
+    for kind, scores in payload["maps"].items():
+        band_gt = [v["fsc_auc"] for v in scores["relion_vs_gt"].values()]
+        print(
+            f"\nK1 5k e2e {kind}: relax GT FSC-AUC {scores['relax_vs_gt']['fsc_auc']:.6f}; RELION band "
+            f"[{min(band_gt):.6f}, {max(band_gt):.6f}]; relax vs RELION reference FSC-AUC "
+            f"{scores['relax_vs_relion']['reference']['fsc_auc']:.6f}; iterations relax {n_iter} / RELION {relion_iters}",
+            file=sys.stderr,
+            flush=True,
+        )
 
     assert converged and final_all_data, (
         f"relax did not converge and finish (converged={converged}, final={final_all_data})"
@@ -192,6 +200,11 @@ def test_k1_5k128_standalone_autorefine(tmp_path):
     if gate is not None:
         if gate.get("converge_at_relion_iteration"):
             assert n_iter == relion_iters, f"relax converged at iteration {n_iter}, RELION at {relion_iters}"
-        assert payload["relax_vs_gt"]["fsc_auc"] >= min(band_gt) - gate["gt_fsc_auc_below_band"], payload
-        worst = min(v["fsc_auc"] for v in payload["relax_vs_relion"].values())
-        assert worst >= gate["min_cross_fsc_auc"], payload
+        if gate.get("require_grid_correct_recorded"):
+            assert grid_corrected, "refinement_results.npz does not record final_all_data_grid_correct=True"
+        for kind in gate["maps"]:
+            scores = payload["maps"][kind]
+            band_gt = [v["fsc_auc"] for v in scores["relion_vs_gt"].values()]
+            assert scores["relax_vs_gt"]["fsc_auc"] >= min(band_gt) - gate["gt_fsc_auc_below_band"], (kind, scores)
+            worst = min(v["fsc_auc"] for v in scores["relax_vs_relion"].values())
+            assert worst >= gate["min_cross_fsc_auc"], (kind, scores)
