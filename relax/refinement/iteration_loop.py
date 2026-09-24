@@ -1004,6 +1004,7 @@ def refine_single_volume(
         sigma2_fudge=RELION_DEFAULT_SIGMA2_FUDGE,
         optimizer_random_seed=effective_optimizer_random_seed,
         expected_accuracy=expected_accuracy,
+        optics_group_ids=optics_group_ids_per_half[0],
     )
 
     follower_setup = setup_relion_follower_scale_state(

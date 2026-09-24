@@ -41,6 +41,8 @@ class Half1AccuracyInputs(NamedTuple):
     sigma2_fudge: float
     optimizer_random_seed: object
     expected_accuracy: object
+    # Each half-1 image's row of a per-optics-group noise table; None for one group.
+    optics_group_ids: object = None
 
     def estimate(
         self,
@@ -77,6 +79,7 @@ class Half1AccuracyInputs(NamedTuple):
             random_seed_particle_ids=self.expected_accuracy.half1_particle_ids,
             ctf_params_override=self.expected_accuracy.half1_ctf_params,
             do_ctf_correction=self.expected_accuracy.do_ctf_correction,
+            optics_group_ids=self.optics_group_ids,
         )
 
 
@@ -428,14 +431,6 @@ def prepare_relion_half1_trial_order(
                 base_order_local=expected_accuracy.half1_base_order_local,
                 optics_group_ids=expected_accuracy.half1_optics_group_ids,
             )
-            if (
-                expected_accuracy.half1_optics_group_ids is not None
-                and np.unique(np.asarray(expected_accuracy.half1_optics_group_ids)).size > 1
-            ):
-                raise NotImplementedError(
-                    "exact expected accuracy currently supports one RELION optics group; "
-                    "per-optics image size/noise/CTF scaling is not yet implemented",
-                )
         except Exception as exc:
             expected_accuracy_trial_order = None
             log.warning("RELION exact expected-accuracy particle order unavailable: %s", exc)
@@ -450,6 +445,27 @@ def _constant_selected(values: np.ndarray, indices: np.ndarray, name: str) -> fl
     if not np.allclose(selected, selected[0], rtol=0.0, atol=1e-6):
         raise NotImplementedError(f"RELION expected-accuracy binding currently requires one optics-group {name}")
     return float(selected[0])
+
+
+def _combine_group_expected_accuracies(per_group, trial_local, trial_particle_ids) -> ExpectedAccuracy:
+    """Recombine per-optics-group accuracies: count-weighted class means, then the best class."""
+
+    counts = np.stack([result.class_counts for result in per_group]).astype(np.float64)
+    total = counts.sum(axis=0)
+    rot = np.full(total.shape, 999.0)
+    trans = np.full(total.shape, 999.0)
+    has = total > 0
+    rot[has] = sum(c * r.acc_rot_per_class for c, r in zip(counts, per_group))[has] / total[has]
+    trans[has] = sum(c * r.acc_trans_per_class_angstrom for c, r in zip(counts, per_group))[has] / total[has]
+    return ExpectedAccuracy(
+        acc_rot=float(np.min(rot)),
+        acc_trans_angstrom=float(np.min(trans)),
+        acc_rot_per_class=rot,
+        acc_trans_per_class_angstrom=trans,
+        class_counts=total.astype(np.int64),
+        trial_local_indices=np.asarray(trial_local).copy(),
+        trial_particle_ids=np.asarray(trial_particle_ids).copy(),
+    )
 
 
 def estimate_relion_expected_accuracy(
@@ -470,12 +486,21 @@ def estimate_relion_expected_accuracy(
     ctf_params_override=None,
     do_ctf_correction: bool | None = None,
     max_trials: int = 100,
+    optics_group_ids=None,
 ) -> ExpectedAccuracy:
     """Evaluate RELION ``calculateExpectedAngularErrors`` on half 1.
 
     The binding consumes RELION map/noise conventions.  RECOVAR's real-space
     maps already have the same physical scale, while its native FFT noise
     variance is larger by ``ori_size**4``.
+
+    With one noise spectrum per optics group (``sigma2_noise_native`` ``[G, n]``
+    and each half-1 image's row in ``optics_group_ids``), every trial particle is
+    scored with its own group's CTF constants and noise, as RELION does per
+    particle (``ml_optimiser.cpp:9291``). The binding takes one group's constants,
+    so it runs once per group on that group's trials; a particle's error depends
+    only on its own seed and inputs, and the per-class means are recombined with
+    the trial counts.
     """
     from recovar.core import fourier_transform_utils
     from recovar.utils.helpers import recovar_volume_to_relion
@@ -525,6 +550,41 @@ def estimate_relion_expected_accuracy(
     ctf = np.asarray(ctf_source, dtype=np.float64)
     if ctf.shape[0] != n_particles:
         raise ValueError(f"CTF parameter rows {ctf.shape[0]} do not match particles {n_particles}")
+    sigma2_native = np.asarray(sigma2_noise_native, dtype=np.float64)
+    if sigma2_native.ndim == 2:
+        if optics_group_ids is None:
+            raise ValueError("per-optics-group noise needs each half-1 image's optics group")
+        groups = np.asarray(optics_group_ids, dtype=np.int64).reshape(-1)
+        if groups.shape != (n_particles,):
+            raise ValueError(f"optics_group_ids must have shape ({n_particles},), got {groups.shape}")
+        per_group = []
+        for group in np.unique(groups[trial_local]):
+            in_group = groups == group
+            per_group.append(
+                estimate_relion_expected_accuracy(
+                    reference_fourier=reference_fourier,
+                    volume_shape=volume_shape,
+                    best_eulers_deg=eulers,
+                    class_ids=class_ids,
+                    class_weights=class_weights,
+                    sigma2_noise_native=sigma2_native[int(group)],
+                    dataset=dataset,
+                    # Keep the trial order; the group's trials are the first
+                    # ``max_trials`` particles that belong to it.
+                    trial_order_local=np.concatenate(
+                        [trial_local[in_group[trial_local]], order[~np.isin(order, trial_local[in_group[trial_local]])]]
+                    ),
+                    current_image_size=current_image_size,
+                    padding_factor=padding_factor,
+                    sigma2_fudge=sigma2_fudge,
+                    random_seed=random_seed,
+                    random_seed_particle_ids=particle_ids,
+                    ctf_params_override=ctf_params_override,
+                    do_ctf_correction=do_ctf_correction,
+                    max_trials=int(np.count_nonzero(in_group[trial_local])),
+                )
+            )
+        return _combine_group_expected_accuracies(per_group, trial_local, trial_particle_ids)
     voltage = _constant_selected(ctf[:, CTFParamIndex.VOLT], trial_local, "voltage")
     cs = _constant_selected(ctf[:, CTFParamIndex.CS], trial_local, "spherical aberration")
     amplitude_contrast = _constant_selected(ctf[:, CTFParamIndex.W], trial_local, "amplitude contrast")
