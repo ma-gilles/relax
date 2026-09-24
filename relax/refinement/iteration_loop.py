@@ -89,7 +89,6 @@ from relax.helpers.batch_planning import (
     _plan_adaptive_dense_batch_sizes,
     _safe_dense_k_class_rotation_block_size,
     _safe_firstiter_cc_image_batch_size,
-    maybe_cache_raw_image_loaders,
 )
 from relax.helpers.convergence import (
     RefinementState,
@@ -749,7 +748,6 @@ def refine_single_volume(
                 RELION_WIDTH_MASK_EDGE,
             )
 
-    maybe_cache_raw_image_loaders(experiment_datasets)
     _mark_setup_phase("mask_and_image_cache")
 
     # --- Initialize RefinementState ---

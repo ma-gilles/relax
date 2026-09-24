@@ -18,7 +18,11 @@ from relax.diagnostics.vdam_mstep_replay import (
     INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV,
     _maybe_replay_iteration_references,
 )
-from relax.helpers.batch_planning import maybe_cache_raw_image_loaders
+from relax.helpers.particle_io import (
+    ParticleReadPolicy,
+    assert_reads_from_scratch,
+    prepare_particle_reads,
+)
 from relax.relion import initial_model_io, vdam_checkpoint
 from relax.relion.initial_model_io import _experiment_read_order, _particle_state_from_star, _write_model_star
 from relax.vdam import dense_adapter, estep_meta_updates, native_sampling, output, schedules
@@ -300,17 +304,28 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     main_star, optics_star = read_star(opts.fn_img)
     particle_order = _experiment_read_order(main_star)
     profile.record("input_star")
-    dataset = load_dataset(
+    particle_read_policy = ParticleReadPolicy(
+        preread_images=bool(opts.preread_images),
+        scratch_dir=str(opts.scratch_dir or ""),
+        keep_free_scratch_gb=float(opts.keep_free_scratch_gb),
+    )
+    particle_scratch = prepare_particle_reads(
         opts.fn_img,
-        lazy=bool(opts.lazy),
+        particle_read_policy,
         datadir=opts.datadir,
         strip_prefix=opts.strip_prefix,
     )
+    profile.record("particle_scratch")
+    dataset = load_dataset(
+        opts.fn_img,
+        lazy=not particle_read_policy.preread_images,
+        datadir=opts.datadir,
+        strip_prefix=opts.strip_prefix,
+    )
+    assert_reads_from_scratch(dataset, particle_scratch)
     if getattr(dataset, "tilt_series_flag", False):
         raise NotImplementedError("native InitialModel currently supports SPA particle STAR files, not tilt-series")
     profile.record("dataset_load")
-    maybe_cache_raw_image_loaders((dataset,))
-    profile.record("raw_cache_setup")
 
     dense_adapter._configure_relion_image_mask(dataset, opts)
     optics_state = initial_model_io._native_optics_state(main_star, optics_star, dataset)

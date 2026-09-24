@@ -592,7 +592,7 @@ def test_em_parity_long_k1_native_initialmodel_quality(tmp_path):
         "256",
         "--padding_factor",
         "1",
-        "--no-lazy",
+        "--preread_images",
     ]
     logger.info("K=1 native InitialModel cmd: %s", " ".join(cmd))
 

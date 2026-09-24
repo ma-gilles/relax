@@ -47,6 +47,12 @@ import numpy as np
 from relax.relion import input_poses, relion_metadata
 from relax.diagnostics import parity_dump, relion_replay
 from relax.helpers import iteration_history
+from relax.helpers.particle_io import (
+    ParticleReadPolicy,
+    add_particle_read_arguments,
+    assert_reads_from_scratch,
+    prepare_particle_reads,
+)
 from recovar import utils
 from recovar.core import fourier_transform_utils as ftu
 from relax.diagnostics.frozen_boundary import (
@@ -1887,6 +1893,7 @@ def _parse_args(argv=None):
             "short timing probes where run logs and benchmark ledgers are sufficient."
         ),
     )
+    add_particle_read_arguments(parser)
     parser.add_argument("--max_iter", type=int, default=10, help="Maximum EM iterations")
     parser.add_argument(
         "--healpix_order",
@@ -2706,13 +2713,18 @@ def main():
         os.environ.get("RELAX_USE_FLOAT64_SCORING", "0").strip().lower()
         in {"1", "true", "yes", "on"}
     )
+    particle_read_policy = ParticleReadPolicy.from_args(args)
+    particle_scratch = prepare_particle_reads(
+        os.path.join(args.data_dir, "particles.star"), particle_read_policy
+    )
     ds = load_dataset(
         os.path.join(args.data_dir, "particles.star"),
-        lazy=False,
+        lazy=not particle_read_policy.preread_images,
         dtype=np.complex128 if _double_image_preprocessing else np.complex64,
         # relion_refine reads a particle STAR without angles as zero angles.
         absent_angles_zero=True,
     )
+    assert_reads_from_scratch(ds, particle_scratch)
     if _double_image_preprocessing:
         logger.info(
             "Double scoring: loading metadata in float64 and preserving "

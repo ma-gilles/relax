@@ -55,7 +55,9 @@ def test_public_defaults_match_native_option_defaults():
         "bootstrap_min_particles",
         "sigma2_min_particles",
         "padding_factor",
-        "lazy",
+        "preread_images",
+        "scratch_dir",
+        "keep_free_scratch_gb",
         "translation_sigma_angstrom",
         "write_iter_artifacts",
         "grad_write_iter",
@@ -75,7 +77,10 @@ def test_parser_resolves_gui_defaults_and_auto_gpu_backend():
     assert args.gpu_ids == "0"
     assert args.jax_compilation_cache is True
     assert args.jax_compilation_cache_dir == ""
-    assert options["lazy"] is True
+    # RELION GUI defaults: no pre-read, no scratch copy.
+    assert options["preread_images"] is False
+    assert options["scratch_dir"] == ""
+    assert options["keep_free_scratch_gb"] == 10.0
     assert options["relion_wavg_sequential_cuda"] is True
     assert options["exact_local_bucket_radix"] == 4
     assert options["exact_local_physical_order_chunk_size"] == 0

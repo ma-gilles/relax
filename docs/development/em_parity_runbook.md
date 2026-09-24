@@ -73,6 +73,19 @@ the shared `_agent_scratch` roots. Keep long-lived EM source checkouts under
 `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/`, not the quota-constrained
 GILLES project filesystem. Preserve curated fixtures in place.
 
+Particle images are read the way RELION reads them
+([`relax/helpers/particle_io.py`](../../relax/helpers/particle_io.py)). Auto-refine,
+Class3D and InitialModel stream batches from the original stacks by default, as the
+RELION GUI does (no pre-read, no scratch). `--preread_images` holds every particle
+in host memory. `--scratch_dir DIR` copies the referenced stack files to `DIR` at
+start-up, checks the free space first and keeps `--keep_free_scratch` GB free,
+reads from the copy and removes it at exit. On della, pass
+`--scratch_dir /tmp`: `/tmp` inside a job is a private node-local NVMe xfs mount that
+Slurm cleans up. The exported `TMPDIR` above is GPFS, so recovar's implicit
+`TMPDIR` staging never applies, and relax turns it off anyway unless `--scratch_dir`
+is given. For speed comparisons, pass the same mode to both engines. RELION
+takes the same flags.
+
 ## RELION Oracle Rules
 
 ### The pinned oracle: RELION 5.0.1

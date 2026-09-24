@@ -1,10 +1,10 @@
-"""GPU-aware batch sizing + raw-image host cache for the EM iteration loop.
+"""GPU-aware batch sizing for the EM iteration loop.
 
 ``_estimate_relion_em_batch_sizes`` chooses microbatch sizes from pose-grid,
 image, class, and GPU size so the dense RELION loop's transient memory
 drivers (score tensor + projection tile + translation-expanded half-images)
-stay within available memory. ``maybe_cache_raw_image_loaders`` keeps
-file-backed raw particles in host memory across passes.
+stay within available memory. Whether raw particles are held in host memory
+is decided when the dataset is loaded (``relax.helpers.particle_io``).
 
 Extracted from ``iteration_loop.py`` so the master loop stays focused on
 EM dispatch.
@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from hashlib import sha256
@@ -49,10 +48,6 @@ _RELION_EM_BATCH_PROJECTION_FRACTION_ENV = "RELAX_RELION_EM_BATCH_PROJECTION_FRA
 
 # Compact estimates require explicit single-texture lifetime qualification.
 _RELION_EM_COMPACT_K1_FIXED_BASE_GB = 4.0
-
-_EM_RAW_IMAGE_CACHE_ENV = "RECOVAR_EM_RAW_IMAGE_CACHE"
-_EM_RAW_IMAGE_CACHE_MAX_GB_ENV = "RELAX_EM_RAW_IMAGE_CACHE_MAX_GB"
-_EM_RAW_IMAGE_CACHE_DEFAULT_MAX_GB = 16.0
 
 
 # Dense reconstruction-tile and class-hypothesis limits.
@@ -1334,79 +1329,3 @@ def _estimate_relion_em_batch_sizes(
 
 def _image_backend(ds):
     return getattr(getattr(ds, "image_source", None), "backend", None)
-
-
-def _dataset_raw_image_loader(ds):
-    backend = _image_backend(ds)
-    loader = getattr(backend, "source", None)
-    if loader is None or not hasattr(loader, "load_all"):
-        return None
-    return loader
-
-
-def _estimate_raw_image_cache_bytes(loader) -> int:
-    n_images = int(getattr(loader, "num_images", getattr(loader, "n", 0)))
-    image_size = int(getattr(loader, "image_size", getattr(loader, "D", 0)))
-    dtype = np.dtype(getattr(loader, "_dtype", np.float32))
-    return int(n_images * image_size * image_size * dtype.itemsize)
-
-
-def maybe_cache_raw_image_loaders(experiment_datasets) -> None:
-    """Keep file-backed raw particles in host memory across RELION EM passes."""
-    mode = os.environ.get(_EM_RAW_IMAGE_CACHE_ENV, "auto").strip().lower()
-    if mode in {"0", "false", "no", "off", "disable", "disabled"}:
-        logger.info("RELION mode raw image cache disabled by %s=%s", _EM_RAW_IMAGE_CACHE_ENV, mode)
-        return
-    force = mode in {"1", "true", "yes", "on", "force", "always"}
-
-    planned = []
-    seen = set()
-    total_bytes = 0
-    for ds in experiment_datasets:
-        loader = _dataset_raw_image_loader(ds)
-        if loader is None:
-            continue
-        loader_id = id(loader)
-        if loader_id in seen:
-            continue
-        seen.add(loader_id)
-        if getattr(loader, "_cached", None) is not None:
-            continue
-        estimated_bytes = _estimate_raw_image_cache_bytes(loader)
-        if estimated_bytes <= 0:
-            continue
-        planned.append((loader, estimated_bytes))
-        total_bytes += estimated_bytes
-
-    if not planned:
-        return
-
-    max_gb = float(os.environ.get(_EM_RAW_IMAGE_CACHE_MAX_GB_ENV, _EM_RAW_IMAGE_CACHE_DEFAULT_MAX_GB))
-    max_bytes = int(max_gb * (1024**3))
-    if not force and total_bytes > max_bytes:
-        logger.info(
-            "RELION mode raw image cache skipped: estimated %.2f GiB exceeds %.2f GiB; "
-            "set %s=force or increase %s to override",
-            total_bytes / (1024**3),
-            max_gb,
-            _EM_RAW_IMAGE_CACHE_ENV,
-            _EM_RAW_IMAGE_CACHE_MAX_GB_ENV,
-        )
-        return
-
-    cache_t0 = time.time()
-    for loader, estimated_bytes in planned:
-        loader_t0 = time.time()
-        loader.load_all()
-        logger.info(
-            "RELION mode raw image cache loaded %.2f GiB for %s in %.1fs",
-            estimated_bytes / (1024**3),
-            type(loader).__name__,
-            time.time() - loader_t0,
-        )
-    logger.info(
-        "RELION mode raw image cache ready: %.2f GiB across %d loader(s) in %.1fs",
-        total_bytes / (1024**3),
-        len(planned),
-        time.time() - cache_t0,
-    )

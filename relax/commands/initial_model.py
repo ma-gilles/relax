@@ -17,6 +17,7 @@ from typing import Sequence
 # RECOVAR_EM_XLA_DEFAULTS=0 in the environment still wins.
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 
+from relax.helpers.particle_io import add_particle_read_arguments
 from relax.vdam.native_options import InitialModelDefaults
 
 
@@ -342,15 +343,9 @@ def make_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--j", dest="nr_threads", type=_positive_int, default=1, help="Compatibility thread count")
     parser.add_argument("--nr-mpi", "--nr_mpi", dest="nr_mpi", type=_positive_int, default=1)
-    parser.add_argument("--scratch-dir", "--scratch_dir", dest="scratch_dir", default="")
+    add_particle_read_arguments(parser)
     parser.add_argument("--datadir", help="Directory used to resolve relative STAR image paths")
     parser.add_argument("--strip-prefix", "--strip_prefix", dest="strip_prefix")
-    parser.add_argument(
-        "--lazy",
-        action=argparse.BooleanOptionalAction,
-        default=DEFAULTS.lazy,
-        help="Load particle images lazily",
-    )
     parser.add_argument(
         "--write-iter-artifacts",
         action=argparse.BooleanOptionalAction,
@@ -525,7 +520,9 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
         "sigma2_min_particles": args.sigma2_min_particles,
         "padding_factor": args.padding_factor,
         "image_fourier_backend": backend,
-        "lazy": args.lazy,
+        "preread_images": args.preread_images,
+        "scratch_dir": args.scratch_dir,
+        "keep_free_scratch_gb": args.keep_free_scratch_gb,
         "datadir": args.datadir,
         "strip_prefix": args.strip_prefix,
         "translation_sigma_angstrom": args.translation_sigma_angstrom,
