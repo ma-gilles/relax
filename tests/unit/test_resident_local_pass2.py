@@ -264,6 +264,8 @@ def test_dispatch_routes_only_the_fine_pass():
     source = inspect.getsource(local_search_iteration._run_local_search_iteration)
     assert "resident_local_search_requested()" in source
     assert "and not score_only" in source
+    # the zero-oversampling route reconstructs from every scored sample
+    assert "and reconstruct_significant_only" in source
     # and only below the full image box (RELION's final all-data shape)
     assert "int(current_size) < int(experiment_dataset.image_shape[0])" in source
     assert "compute_local_search_resident" in source

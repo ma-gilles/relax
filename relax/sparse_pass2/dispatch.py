@@ -190,16 +190,25 @@ def compute_pass2_stats_sparse(
         # Inside the path it covers it raises a named NotImplementedError on
         # any configuration mismatch rather than falling back, so a measured
         # comparison always knows which engine produced a result. The scoring
-        # modes it was never scoped to cover are different: RELION's
-        # --firstiter_cc iteration scores with normalized cross-correlation and
-        # takes the winner outright, a separate pass-2 route, so that iteration
-        # goes to the compact engine and says which iteration and why.
+        # routes it was never scoped to cover are different (RELION's
+        # --firstiter_cc scoring, zero-oversampling coarse-normalization reuse
+        # and the replayed-particle-order Wavg arithmetic; see
+        # resident_pass2_out_of_scope_reason), so those passes go to the
+        # compact engine and the log says which and why.
         sparse_pass2_impl = compute_pass2_stats_sparse_bucketed
         if resident_pass2_requested():
             out_of_scope = resident_pass2_out_of_scope_reason(
                 relion_firstiter_score_mode=relion_firstiter_score_mode,
                 relion_firstiter_winner_take_all=relion_firstiter_winner_take_all,
                 symmetry_label=symmetry_label,
+                zero_oversampling_coarse_normalization=(
+                    relion_f32_normalization_sum_weight is not None
+                    or relion_coarse_hard_assignment is not None
+                ),
+                accumulate_noise=accumulate_noise,
+                scale_groups_available=group_ids is not None,
+                preserve_bpref_particle_order=preserve_bpref_particle_order,
+                source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             )
             if out_of_scope is None:
                 sparse_pass2_impl = compute_pass2_stats_resident

@@ -319,16 +319,69 @@ def _require(condition: bool, message: str) -> None:
         )
 
 
+def _resident_wavg_arithmetic(
+    *,
+    accumulate_noise,
+    scale_groups_available,
+    preserve_bpref_particle_order,
+    source_faithful_spectrum_norm,
+):
+    """Resolve the fresh-K=1 Wavg arithmetic exactly as the compact engine does.
+
+    Returns ``(spectrum_norm, exact_bpref_operands, direct_noise_default,
+    atomic_scale_aa)``. The resident statistics stage implements only the
+    atomic Wavg triplet, which the compact engine selects inside the fresh
+    K=1 guard (``source_faithful_spectrum_norm``, i.e. a run that does not
+    replay RELION's BPref particle order).
+    """
+
+    fresh_k1_guard = bool(source_faithful_spectrum_norm)
+    spectrum_norm = _relion_powerclass_spectrum_norm_enabled(fresh_k1_guard=fresh_k1_guard)
+    exact_bpref_operands = _relion_exact_bpref_operands_enabled(
+        fresh_k1_guard=fresh_k1_guard,
+        source_faithful_spectrum_norm=spectrum_norm,
+    )
+    direct_noise_default = _fresh_k1_direct_noise_default(
+        preserve_bpref_particle_order=preserve_bpref_particle_order,
+        relion_exact_bpref_operands=exact_bpref_operands,
+    )
+    atomic_scale_aa = bool(
+        accumulate_noise
+        and scale_groups_available
+        and parse_env_flag(_RELION_WAVG_ATOMIC_SCALE_AA_ENV, default=direct_noise_default)
+    )
+    return spectrum_norm, exact_bpref_operands, direct_noise_default, atomic_scale_aa
+
+
 def resident_pass2_out_of_scope_reason(
-    *, relion_firstiter_score_mode, relion_firstiter_winner_take_all, symmetry_label="C1"
+    *,
+    relion_firstiter_score_mode,
+    relion_firstiter_winner_take_all,
+    symmetry_label="C1",
+    zero_oversampling_coarse_normalization=False,
+    accumulate_noise=False,
+    scale_groups_available=False,
+    preserve_bpref_particle_order=False,
+    source_faithful_spectrum_norm=False,
 ) -> str | None:
-    """Name the scoring modes the resident driver was never scoped to cover.
+    """Name the pass-2 routes the resident driver was never scoped to cover.
 
     These are not configuration drift inside the covered path, so they are not
-    a reason to stop a run: RELION's ``--firstiter_cc`` iteration scores with
-    normalized cross-correlation and takes the winner outright, which is a
-    different pass-2 route with its own kernels. The caller sends those to the
-    compact engine and says so. Everything else still raises through
+    a reason to stop a run. The caller sends them to the compact engine and
+    says so:
+
+    - RELION's ``--firstiter_cc`` iteration scores with normalized
+      cross-correlation and takes the winner outright, a different pass-2
+      route with its own kernels;
+    - zero oversampling (``--adaptive_oversampling 0``) reuses the coarse
+      float32 normalization and hard assignment, whose winner/Pmax
+      substitution the resident driver does not implement;
+    - a production-shaped pass (noise and group-scale statistics) outside the
+      fresh K=1 guard, i.e. a replay of RELION's BPref particle order, uses
+      the non-atomic Wavg arithmetic; the resident statistics stage implements
+      only the atomic triplet.
+
+    Everything else still raises through
     :func:`require_resident_production_configuration`, because a silent
     fallback there would hide a real mismatch.
     """
@@ -342,6 +395,20 @@ def resident_pass2_out_of_scope_reason(
         )
     if relion_firstiter_winner_take_all:
         return "RELION --firstiter_cc winner-take-all posteriors"
+    if zero_oversampling_coarse_normalization:
+        return "zero-oversampling coarse-normalization reuse (--adaptive_oversampling 0)"
+    if accumulate_noise and scale_groups_available:
+        atomic_scale_aa = _resident_wavg_arithmetic(
+            accumulate_noise=accumulate_noise,
+            scale_groups_available=scale_groups_available,
+            preserve_bpref_particle_order=preserve_bpref_particle_order,
+            source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+        )[3]
+        if not atomic_scale_aa:
+            return (
+                "the non-atomic Wavg arithmetic outside the fresh K=1 guard "
+                "(replayed BPref particle order)"
+            )
     return None
 
 
@@ -1351,23 +1418,17 @@ def compute_pass2_stats_resident(
         use_float64_scoring=use_float64_scoring,
     )
 
-    fresh_k1_guard = bool(source_faithful_spectrum_norm)
-    resolved_spectrum_norm = _relion_powerclass_spectrum_norm_enabled(
-        fresh_k1_guard=fresh_k1_guard,
-    )
-    relion_exact_bpref_operands = _relion_exact_bpref_operands_enabled(
-        fresh_k1_guard=fresh_k1_guard,
-        source_faithful_spectrum_norm=resolved_spectrum_norm,
-    )
-    direct_noise_default = _fresh_k1_direct_noise_default(
-        preserve_bpref_particle_order=preserve_bpref_particle_order,
-        relion_exact_bpref_operands=relion_exact_bpref_operands,
-    )
     scale_groups_available = group_ids is not None
-    relion_wavg_atomic_scale_aa = bool(
-        accumulate_noise
-        and scale_groups_available
-        and parse_env_flag(_RELION_WAVG_ATOMIC_SCALE_AA_ENV, default=direct_noise_default)
+    (
+        resolved_spectrum_norm,
+        relion_exact_bpref_operands,
+        direct_noise_default,
+        relion_wavg_atomic_scale_aa,
+    ) = _resident_wavg_arithmetic(
+        accumulate_noise=accumulate_noise,
+        scale_groups_available=scale_groups_available,
+        preserve_bpref_particle_order=preserve_bpref_particle_order,
+        source_faithful_spectrum_norm=source_faithful_spectrum_norm,
     )
     relion_wavg_atomic_direct_noise, relion_wavg_atomic_direct_norm = _relion_wavg_direct_modes(
         accumulate_noise=bool(accumulate_noise),

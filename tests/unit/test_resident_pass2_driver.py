@@ -1039,6 +1039,57 @@ def test_the_production_gaussian_pass_is_in_scope():
     )
 
 
+def test_zero_oversampling_coarse_reuse_is_out_of_scope():
+    """--adaptive_oversampling 0 reuses the coarse float32 normalization.
+
+    The cand_ceeb8e7 resident fast tier (14363460) stopped five K=1 cases on
+    the gate's refusal of this pass; the approved plan keeps os0 on the
+    compact engine, so the dispatcher routes it there instead of raising.
+    """
+
+    reason = rp.resident_pass2_out_of_scope_reason(
+        relion_firstiter_score_mode="gaussian",
+        relion_firstiter_winner_take_all=False,
+        zero_oversampling_coarse_normalization=True,
+    )
+    assert reason is not None and "zero-oversampling" in reason
+
+
+def test_replayed_particle_order_wavg_arithmetic_is_out_of_scope(monkeypatch):
+    """Outside the fresh K=1 guard the compact engine uses non-atomic Wavg.
+
+    k1_adaptive_replay (os1, replayed BPref particle order) hit the gate's
+    atomic-Wavg refusal in 14363460. The fresh guard, or the explicit RELION
+    operand flags a replay can set, keeps the pass in scope.
+    """
+
+    for name in (
+        "RELAX_RELION_WAVG_ATOMIC_SCALE_AA",
+        "RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM",
+        "RELAX_K1_RELION_EXACT_BPREF_OPERANDS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    production = dict(
+        relion_firstiter_score_mode="gaussian",
+        relion_firstiter_winner_take_all=False,
+        accumulate_noise=True,
+        scale_groups_available=True,
+        preserve_bpref_particle_order=True,
+    )
+    replay = rp.resident_pass2_out_of_scope_reason(
+        **production, source_faithful_spectrum_norm=False
+    )
+    assert replay is not None and "non-atomic Wavg" in replay
+    assert rp.resident_pass2_out_of_scope_reason(
+        **production, source_faithful_spectrum_norm=True
+    ) is None
+    monkeypatch.setenv("RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM", "1")
+    monkeypatch.setenv("RELAX_K1_RELION_EXACT_BPREF_OPERANDS", "1")
+    assert rp.resident_pass2_out_of_scope_reason(
+        **production, source_faithful_spectrum_norm=False
+    ) is None
+
+
 def test_dispatcher_routes_out_of_scope_passes_to_the_compact_engine():
     """Selection, not the gate, decides which engine an out-of-scope pass uses."""
 
