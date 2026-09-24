@@ -330,7 +330,10 @@ LOC_BUDGETS = {
         "dense_adapter.py", "estep_common.py", "estep_meta_updates.py", "sparse_pass2_estep.py",
     )),
     "reconstruction_state": (790, ("m_step.py", "mstep_single_class.py", "state.py")),
-    "input_output": (1270, (
+    # relion/initial_noise.py gained 53 lines bringing an optics group on another pixel
+    # size or box onto the model grid for the start-up noise (RELION resizeMap and
+    # window, ml_optimiser.cpp:2934-2955; S3b multi-optics, 2026-09-24): a real raise.
+    "input_output": (1330, (
         "output.py", "../relion/initial_model_io.py",
         "../relion/vdam_checkpoint.py", "../relion/initial_noise.py",
     )),

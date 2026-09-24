@@ -94,7 +94,9 @@ def test_native_failure_retains_warning_and_none(monkeypatch, caplog, error_type
     assert "RELION exact expected-accuracy particle order unavailable: unavailable sentinel" in caplog.text
 
 
-def test_multiple_optics_groups_fail_closed_after_existing_native_call(monkeypatch, caplog):
+def test_multiple_optics_groups_keep_the_native_order(monkeypatch, caplog):
+    # Expected accuracy scores each trial with its own optics group's constants and
+    # noise (estimate_relion_expected_accuracy), so several groups keep the order.
     calls = []
 
     def native(*args, **kwargs):
@@ -103,6 +105,6 @@ def test_multiple_optics_groups_fail_closed_after_existing_native_call(monkeypat
 
     monkeypatch.setattr(owner, "relion_half1_trial_order", native)
     with caplog.at_level(logging.WARNING, logger=LOG.name):
-        assert prepare(options(optics=np.array([1, 2, 1]))) is None
+        np.testing.assert_array_equal(prepare(options(optics=np.array([1, 2, 1]))), np.arange(3))
     assert len(calls) == 1
-    assert "exact expected accuracy currently supports one RELION optics group" in caplog.text
+    assert "optics group" not in caplog.text
