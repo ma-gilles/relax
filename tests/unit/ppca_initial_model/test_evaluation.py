@@ -29,12 +29,18 @@ def test_fixture_correction_is_exact_projector_target_and_legacy_is_unchanged():
 
     corrected, record = effective_volumes(raw, 6.0, n, atomic_solvent_correction=True)
     assert record["ground_truth_representation"] == solvent_contrast.CORRECTED_EFFECTIVE
+    assert record["B_atomic"] == 0.0
+    assert record["a"] == 0.8 and record["B"] == 2000.0
     assert corrected.dtype == np.complex64
     np.testing.assert_array_equal(corrected, solvent_contrast.apply_record(raw, record))
     assert not np.array_equal(corrected, raw)
     assert not np.array_equal(solvent_contrast.apply_record(corrected, record), corrected)
     dc = np.ravel_multi_index((n // 2,) * 3, (n,) * 3)
     np.testing.assert_allclose(corrected[:, dc], 0.2 * raw[:, dc], rtol=2e-7)
+    adjacent = np.ravel_multi_index((n // 2 + 1, n // 2, n // 2), (n,) * 3)
+    q2 = (1 / (n * 6.0)) ** 2
+    expected_factor = 1 - 0.8 * np.exp(-2000.0 * q2 / 4)
+    np.testing.assert_allclose(corrected[:, adjacent], expected_factor * raw[:, adjacent], rtol=2e-7)
     with pytest.raises(ValueError, match="atomic_bfactor"):
         effective_volumes(raw, 6.0, n, atomic_solvent_correction=True, atomic_bfactor=-1)
 

@@ -22,7 +22,7 @@ def sha256(path):
 
 
 def effective_volumes(raw_volumes, voxel_size, box, *, atomic_solvent_correction=False,
-                      solvent_contrast_a=0.8, solvent_contrast_B=2000.0, atomic_bfactor=100.0):
+                      solvent_contrast_a=0.8, solvent_contrast_B=2000.0, atomic_bfactor=0.0):
     """Return the exact Fourier volumes passed to the projector and their transform record."""
     from recovar.simulation import solvent_contrast
 
@@ -38,7 +38,7 @@ def effective_volumes(raw_volumes, voxel_size, box, *, atomic_solvent_correction
 
 def prepare(output, source, counts, seed=1729, box=64, noise_level=0.01, *,
             atomic_solvent_correction=False, solvent_contrast_a=0.8,
-            solvent_contrast_B=2000.0, atomic_bfactor=100.0):
+            solvent_contrast_B=2000.0, atomic_bfactor=0.0):
     import os
 
     import jax.numpy as jnp
@@ -203,7 +203,7 @@ def main():
                         help="Apply the simulator's Fourier solvent-contrast and B-factor transform once to clean volumes")
     parser.add_argument("--solvent-contrast-a", type=float, default=0.8)
     parser.add_argument("--solvent-contrast-b", type=float, default=2000.0, help="Solvent-contrast B in angstrom^2")
-    parser.add_argument("--atomic-bfactor", type=float, default=100.0, help="Additional atomic B in angstrom^2")
+    parser.add_argument("--atomic-bfactor", type=float, default=0.0, help="Additional atomic B in angstrom^2 (zero for pre-smoothed Ribosembly maps)")
     args = parser.parse_args()
     prepare(args.output, args.source, args.counts, args.seed, args.box, args.noise_level,
             atomic_solvent_correction=args.atomic_solvent_correction,
