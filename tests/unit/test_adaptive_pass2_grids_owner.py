@@ -8,6 +8,7 @@ import pytest
 from relax.refinement import half_scoring
 from relax.helpers.oversampling import build_adaptive_pass2_grids
 from relax.sampling import apply_relion_translation_perturbation, rotation_grid_size
+from helpers.float_compare import matches
 
 pytestmark = pytest.mark.unit
 
@@ -19,7 +20,7 @@ BASE = np.asarray([[-1.0, 0.0], [0.0, 0.0], [1.0, 1.0]], dtype=np.float64)
 def _same(x, y):
     x = np.asarray(x)
     y = np.asarray(y)
-    return x.dtype == y.dtype and x.shape == y.shape and x.tobytes() == y.tobytes()
+    return x.dtype == y.dtype and x.shape == y.shape and matches(x, y)
 
 
 @pytest.mark.parametrize("oversampling", [0, 1])
@@ -42,4 +43,4 @@ def test_zero_oversampling_keeps_the_coarse_rotation_grid():
         rot, BASE.astype(np.float32), BASE, healpix_order=ORDER, adaptive_oversampling=0,
         translation_step=1.0, random_perturbation=0.0, coarse_rotation_ids=None,
     )
-    assert _same(grids.fine_rotations, rot) and np.array_equal(grids.rotation_parent_map, np.arange(N_ROT))
+    assert _same(grids.fine_rotations, rot) and matches(grids.rotation_parent_map, np.arange(N_ROT))

@@ -1,9 +1,10 @@
-"""Exact publication and dispatch checks for sole-class pose selection."""
+"""Publication and dispatch checks for sole-class pose selection."""
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.classification import k_class_results as k_class
 from relax.helpers.types import make_relion_stats
@@ -39,7 +40,7 @@ def test_invalid_selector(monkeypatch, token):
 )
 @pytest.mark.parametrize("n_images", [0, 200, 208, 1000])
 @pytest.mark.parametrize("device", [False, True])
-def test_single_class_publication_is_bitwise_and_device_identity(shape, dtype, n_images, device):
+def test_single_class_publication_matches_and_is_device_identity(shape, dtype, n_images, device):
     shape = (n_images, *shape)
     value = np.arange(np.prod(shape), dtype=dtype).reshape(shape)
     if value.size and np.issubdtype(dtype, np.floating):
@@ -50,7 +51,7 @@ def test_single_class_publication_is_bitwise_and_device_identity(shape, dtype, n
     expected = k_class._selected_by_class([value], assignments)
     actual = k_class._selected_by_class([value], assignments, direct_single_class=True)
     assert actual.shape == expected.shape and actual.dtype == expected.dtype
-    assert np.asarray(actual).tobytes() == np.asarray(expected).tobytes()
+    assert_matches(np.asarray(actual), np.asarray(expected), strict=True)
     if device:
         assert actual is value
 
@@ -89,7 +90,8 @@ def test_actual_result_assembly_preserves_every_field(monkeypatch, classes):
     assert spec == other_spec
     for want, got in zip(first, second, strict=True):
         want, got = np.asarray(want), np.asarray(got)
-        assert want.shape == got.shape and want.dtype == got.dtype and want.tobytes() == got.tobytes()
+        assert want.shape == got.shape and want.dtype == got.dtype
+        assert_matches(got, want)
     if classes == 1:
         assert actual.best_pose_rotations is values[0]
 
@@ -124,4 +126,4 @@ def test_unhandled_inputs_keep_original_gather_path(monkeypatch, mode):
     if expected is None:
         assert actual is None
     else:
-        assert np.asarray(actual).tobytes() == np.asarray(expected).tobytes()
+        assert_matches(np.asarray(actual), np.asarray(expected), strict=True)

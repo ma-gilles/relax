@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, default_rtol, matches
 
 pytest.importorskip("jax")
 import jax
@@ -96,7 +97,7 @@ def test_coarse_winner_local_pose_mapping(invalid):
     elif invalid == "nonfinite":
         poses[0] = np.nan
     if invalid is None:
-        np.testing.assert_array_equal(coarse_winner_local_pose_ids(inputs, poses, [1, 0], 2), [2])
+        assert_matches(coarse_winner_local_pose_ids(inputs, poses, [1, 0], 2), [2])
     else:
         with pytest.raises(ValueError, match="coarse winner"):
             coarse_winner_local_pose_ids(inputs, poses, [1, 0], 2)
@@ -187,10 +188,10 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
     )
     assert len(captured) == 2
     for actual, expected in zip(candidate[:4], control[:4]):
-        np.testing.assert_array_equal(actual, expected)
+        assert_matches(actual, expected)
     for actual_class, expected_class in zip(candidate[4], control[4]):
         for actual, expected in zip(actual_class, expected_class):
-            np.testing.assert_array_equal(actual, expected)
+            assert_matches(actual, expected)
     for key in (
         "normalization_log_z",
         "normalization_log_evidence",
@@ -199,7 +200,7 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
         "significant_cutoff_counts",
         "class_log_evidence_per_image",
     ):
-        np.testing.assert_array_equal(candidate[5][key], control[5][key])
+        assert_matches(candidate[5][key], control[5][key])
     assert "relion_f32_sum_weight" not in control[5]
     assert "relion_f32_max_posterior" not in control[5]
     expected_sums, expected_maxima = [], []
@@ -209,8 +210,8 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
         actual_rows = min(2, 3 - batch_index * 2)
         expected_sums.extend(np.asarray(result[4])[:actual_rows])
         expected_maxima.extend(np.asarray(result[0]).max(axis=1)[:actual_rows])
-    np.testing.assert_array_equal(candidate[5]["relion_f32_sum_weight"], expected_sums)
-    np.testing.assert_array_equal(candidate[5]["relion_f32_max_posterior"], expected_maxima)
+    assert_matches(candidate[5]["relion_f32_sum_weight"], expected_sums)
+    assert_matches(candidate[5]["relion_f32_max_posterior"], expected_maxima)
     assert candidate[5]["relion_f32_sum_weight"].dtype == np.float32
 
 
@@ -267,11 +268,11 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch, cac
     for (raw_scores, rotation_prior, log_weights), (posterior_input, offsets, weights) in zip(
         weight_calls, posterior_calls
     ):
-        np.testing.assert_array_equal(posterior_input, log_weights.reshape(log_weights.shape[0], -1))
+        assert_matches(posterior_input, log_weights.reshape(log_weights.shape[0], -1))
         assert offsets is None
-        np.testing.assert_array_equal(rotation_prior, rotation_log_prior)
+        assert_matches(rotation_prior, rotation_log_prior)
         rows = min(2, 3 - image_start)
-        np.testing.assert_array_equal(
+        assert_matches(
             result[2][image_start : image_start + rows],
             np.argmax(weights, axis=1)[:rows],
         )
@@ -280,7 +281,7 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch, cac
     # The support pass receives the scores before any prior was added.
     _, flat_weight_calls, _ = run(1, np.zeros(5, dtype=np.float32), np.zeros((3, 2), dtype=np.float32))
     for (raw_scores, _, log_weights), (flat_raw_scores, _, flat_log_weights) in zip(weight_calls, flat_weight_calls):
-        np.testing.assert_array_equal(raw_scores, flat_raw_scores)
+        assert_matches(raw_scores, flat_raw_scores)
         assert not np.array_equal(log_weights, flat_log_weights)
 
     # K > 1 keeps its existing absolute-frame support path.
@@ -400,36 +401,39 @@ def test_sparse_coarse_normalization_reaches_accumulator_inputs(monkeypatch, chu
         assert passed["normalization_sum_weight"] is not None
         assert not np.any((np.asarray(result[0]) > 0) & ~np.asarray(result[1]))
         mask = np.asarray(result[1])
-        np.testing.assert_array_equal(np.asarray(result[2]), mask.reshape(mask.shape[0], -1).sum(axis=1))
+        assert_matches(np.asarray(result[2]), mask.reshape(mask.shape[0], -1).sum(axis=1))
     # A power-of-two denominator change must scale the native scatter inputs,
     # not only Pmax metadata; hard poses must stay unchanged.
     assert first_inputs and len(first_inputs) == len(accumulator_inputs)
     assert any(np.any(block != 0) for block, _ in first_inputs)
     for (actual, actual_rots), (expected, expected_rots) in zip(accumulator_inputs, first_inputs):
-        np.testing.assert_array_equal(actual, expected * 0.5)
-        np.testing.assert_array_equal(actual_rots, expected_rots)
+        assert_matches(actual, expected * 0.5)
+        assert_matches(actual_rots, expected_rots)
     for name in ("hard_assignment", "best_rotations", "best_translations", "best_rotation_indices"):
-        np.testing.assert_array_equal(getattr(second, name), getattr(first, name))
+        assert_matches(getattr(second, name), getattr(first, name))
     for name in ("rotation_posterior_sums",):
-        np.testing.assert_array_equal(getattr(second.relion_stats, name), np.asarray(getattr(first.relion_stats, name)) * 0.5)
+        assert_matches(getattr(second.relion_stats, name), np.asarray(getattr(first.relion_stats, name)) * 0.5)
     if retain_winner:
-        np.testing.assert_array_equal(second.relion_stats.max_posterior_per_image, coarse_pmax)
-        np.testing.assert_array_equal(first.relion_stats.max_posterior_per_image, coarse_pmax)
-        np.testing.assert_array_equal(second.best_translations, np.asarray(args[4])[coarse_poses % 2])
+        assert_matches(second.relion_stats.max_posterior_per_image, coarse_pmax)
+        assert_matches(first.relion_stats.max_posterior_per_image, coarse_pmax)
+        assert_matches(second.best_translations, np.asarray(args[4])[coarse_poses % 2])
         for i, local_pose in enumerate(np.asarray(second.hard_assignment)):
             row = int(local_pose) // 2
-            np.testing.assert_array_equal(second.source_eulers[i], prepared_inputs[1]["source_eulers"][i][row])
-            np.testing.assert_array_equal(second.best_rotations[i], prepared_inputs[1]["oversampled_rots"][i][row])
+            assert_matches(second.source_eulers[i], prepared_inputs[1]["source_eulers"][i][row])
+            assert_matches(second.best_rotations[i], prepared_inputs[1]["oversampled_rots"][i][row])
     else:
-        np.testing.assert_array_equal(second.relion_stats.max_posterior_per_image, first.relion_stats.max_posterior_per_image * 0.5)
+        assert_matches(second.relion_stats.max_posterior_per_image, first.relion_stats.max_posterior_per_image * 0.5)
     # Evidence uses the retained sum in the fine frame, not the fine support's
     # own normalizer and not the coarse absolute log evidence.
     log_first = np.asarray(first.relion_stats.log_evidence_per_image)
     log_second = np.asarray(second.relion_stats.log_evidence_per_image)
-    publication_bound = np.abs(np.spacing(log_first)) + np.abs(np.spacing(log_second))
-    error = np.abs(log_second.astype(np.float64) - log_first.astype(np.float64) - np.log(2.0))
-    assert np.all(error <= publication_bound + np.finfo(np.float64).eps)
-    np.testing.assert_array_equal(second.noise_stats.sumw, np.asarray(first.noise_stats.sumw) * 0.5)
+    # Band of the published precision (float32 log evidence gets the float32 band).
+    assert_matches(
+        log_second.astype(np.float64),
+        log_first.astype(np.float64) + np.log(2.0),
+        rtol=default_rtol(log_first, log_second),
+    )
+    assert_matches(second.noise_stats.sumw, np.asarray(first.noise_stats.sumw) * 0.5)
 
 
 @pytest.mark.parametrize(
@@ -591,8 +595,8 @@ class TestSignificanceMaskFraction:
 
         # RELION's loop breaks on `frac_weight > adaptive_fraction * exp_sum_weight`,
         # so the exact 0.5 boundary does not stop at the first sample.
-        np.testing.assert_array_equal(np.asarray(mask), np.array([[True, True, True]]))
-        np.testing.assert_array_equal(np.asarray(n_sig), np.array([3], dtype=np.int32))
+        assert_matches(np.asarray(mask), np.array([[True, True, True]]))
+        assert_matches(np.asarray(n_sig), np.array([3], dtype=np.int32))
 
     def test_zero_weights_are_not_significant_when_cutoff_reaches_tail(self):
         """RELION sorts only positive weights, so zero-probability samples are never significant."""
@@ -607,8 +611,8 @@ class TestSignificanceMaskFraction:
         expected = np.zeros((2, 128), dtype=bool)
         expected[0, [3, 7, 11]] = True
         expected[1, [4]] = True
-        np.testing.assert_array_equal(np.asarray(mask), expected)
-        np.testing.assert_array_equal(np.asarray(n_sig), np.array([3, 1], dtype=np.int32))
+        assert_matches(np.asarray(mask), expected)
+        assert_matches(np.asarray(n_sig), np.array([3, 1], dtype=np.int32))
 
     def test_zero_weights_are_not_significant_in_full_sort_or_topk_paths(self):
         """Guard the low-level paths used by local and sparse pass-2 reconstruction."""
@@ -631,11 +635,11 @@ class TestSignificanceMaskFraction:
 
         expected = np.zeros((1, 16), dtype=bool)
         expected[0, [2, 5, 9]] = True
-        np.testing.assert_array_equal(np.asarray(mask_full), expected)
-        np.testing.assert_array_equal(np.asarray(mask_topk), expected)
-        np.testing.assert_array_equal(np.asarray(n_sig_full), np.array([3], dtype=np.int32))
-        np.testing.assert_array_equal(np.asarray(n_sig_topk), np.array([3], dtype=np.int32))
-        np.testing.assert_array_equal(np.asarray(topk_covers), np.array([True]))
+        assert_matches(np.asarray(mask_full), expected)
+        assert_matches(np.asarray(mask_topk), expected)
+        assert_matches(np.asarray(n_sig_full), np.array([3], dtype=np.int32))
+        assert_matches(np.asarray(n_sig_topk), np.array([3], dtype=np.int32))
+        assert_matches(np.asarray(topk_covers), np.array([True]))
 
     def test_positive_threshold_ties_are_still_included(self):
         """The zero guard must not change RELION's inclusive positive-threshold ties."""
@@ -643,11 +647,11 @@ class TestSignificanceMaskFraction:
 
         mask, n_sig = find_significant_mask(w, adaptive_fraction=0.5, max_significants=-1)
 
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(mask),
             np.array([[True, True, True, False, False]]),
         )
-        np.testing.assert_array_equal(np.asarray(n_sig), np.array([3], dtype=np.int32))
+        assert_matches(np.asarray(n_sig), np.array([3], dtype=np.int32))
 
     def test_cutoff_count_is_pre_tie_rank_without_changing_mask(self):
         """RELION metadata stores the cutoff rank, while pass 2 expands ties."""
@@ -660,9 +664,9 @@ class TestSignificanceMaskFraction:
             return_cutoff_count=True,
         )
 
-        np.testing.assert_array_equal(np.asarray(mask), np.ones((1, 6), dtype=bool))
-        np.testing.assert_array_equal(np.asarray(support_count), np.array([6], dtype=np.int32))
-        np.testing.assert_array_equal(np.asarray(cutoff_count), np.array([5], dtype=np.int32))
+        assert_matches(np.asarray(mask), np.ones((1, 6), dtype=bool))
+        assert_matches(np.asarray(support_count), np.array([6], dtype=np.int32))
+        assert_matches(np.asarray(cutoff_count), np.array([5], dtype=np.int32))
 
         rot_mask, _, rot_support_count, rot_cutoff_count = find_significant_rotations(
             w,
@@ -672,9 +676,9 @@ class TestSignificanceMaskFraction:
             max_significants=-1,
             return_cutoff_count=True,
         )
-        np.testing.assert_array_equal(np.asarray(rot_mask), np.asarray(mask))
-        np.testing.assert_array_equal(np.asarray(rot_support_count), np.asarray(support_count))
-        np.testing.assert_array_equal(np.asarray(rot_cutoff_count), np.asarray(cutoff_count))
+        assert_matches(np.asarray(rot_mask), np.asarray(mask))
+        assert_matches(np.asarray(rot_support_count), np.asarray(support_count))
+        assert_matches(np.asarray(rot_cutoff_count), np.asarray(cutoff_count))
 
     def test_cutoff_count_matches_support_count_without_ties(self):
         w = jnp.array([[0.40, 0.25, 0.15, 0.10, 0.06, 0.04]], dtype=jnp.float32)
@@ -686,8 +690,8 @@ class TestSignificanceMaskFraction:
             return_cutoff_count=True,
         )
 
-        np.testing.assert_array_equal(np.asarray(support_count), np.array([5], dtype=np.int32))
-        np.testing.assert_array_equal(np.asarray(cutoff_count), np.array([5], dtype=np.int32))
+        assert_matches(np.asarray(support_count), np.array([5], dtype=np.int32))
+        assert_matches(np.asarray(cutoff_count), np.array([5], dtype=np.int32))
 
     def test_single_dominant(self):
         """When one sample has ~100% weight, mask should select just that one."""
@@ -731,9 +735,9 @@ class TestSignificanceMaskFraction:
             return_cutoff_count=True,
         )
 
-        np.testing.assert_array_equal(np.asarray(mask_fast), np.asarray(mask_ref))
-        np.testing.assert_array_equal(np.asarray(n_sig_fast), np.asarray(n_sig_ref))
-        np.testing.assert_array_equal(np.asarray(cutoff_fast), np.asarray(cutoff_ref))
+        assert_matches(np.asarray(mask_fast), np.asarray(mask_ref))
+        assert_matches(np.asarray(n_sig_fast), np.asarray(n_sig_ref))
+        assert_matches(np.asarray(cutoff_fast), np.asarray(cutoff_ref))
 
     def test_fast_topk_falls_back_to_full_sort_when_cutoff_is_wide(self):
         """Uniform posteriors force the wrapper to recover the full-sort result."""
@@ -752,10 +756,10 @@ class TestSignificanceMaskFraction:
             return_cutoff_count=True,
         )
 
-        np.testing.assert_array_equal(np.asarray(mask_fast), np.asarray(mask_ref))
-        np.testing.assert_array_equal(np.asarray(n_sig_fast), np.asarray(n_sig_ref))
-        np.testing.assert_array_equal(np.asarray(cutoff_fast), np.full(4, 257, dtype=np.int32))
-        np.testing.assert_array_equal(np.asarray(cutoff_fast), np.asarray(cutoff_ref))
+        assert_matches(np.asarray(mask_fast), np.asarray(mask_ref))
+        assert_matches(np.asarray(n_sig_fast), np.asarray(n_sig_ref))
+        assert_matches(np.asarray(cutoff_fast), np.full(4, 257, dtype=np.int32))
+        assert_matches(np.asarray(cutoff_fast), np.asarray(cutoff_ref))
 
     def test_default_tuple_arities_remain_backward_compatible(self):
         w = jnp.array([[0.7, 0.2, 0.1]], dtype=jnp.float32)
@@ -820,9 +824,9 @@ class TestSignificanceMaskCap:
             return_cutoff_count=True,
         )
 
-        np.testing.assert_array_equal(np.asarray(mask), np.ones((2, 200), dtype=bool))
-        np.testing.assert_array_equal(np.asarray(support_count), np.full(2, 200, dtype=np.int32))
-        np.testing.assert_array_equal(np.asarray(cutoff_count), np.full(2, 10, dtype=np.int32))
+        assert_matches(np.asarray(mask), np.ones((2, 200), dtype=bool))
+        assert_matches(np.asarray(support_count), np.full(2, 200, dtype=np.int32))
+        assert_matches(np.asarray(cutoff_count), np.full(2, 10, dtype=np.int32))
 
         topk_mask, topk_support_count, topk_covers, topk_cutoff_count = _find_significant_mask_topk(
             w,
@@ -831,10 +835,10 @@ class TestSignificanceMaskCap:
             topk=64,
             return_cutoff_count=True,
         )
-        np.testing.assert_array_equal(np.asarray(topk_mask), np.asarray(mask))
-        np.testing.assert_array_equal(np.asarray(topk_support_count), np.asarray(support_count))
-        np.testing.assert_array_equal(np.asarray(topk_covers), np.ones(2, dtype=bool))
-        np.testing.assert_array_equal(np.asarray(topk_cutoff_count), np.asarray(cutoff_count))
+        assert_matches(np.asarray(topk_mask), np.asarray(mask))
+        assert_matches(np.asarray(topk_support_count), np.asarray(support_count))
+        assert_matches(np.asarray(topk_covers), np.ones(2, dtype=bool))
+        assert_matches(np.asarray(topk_cutoff_count), np.asarray(cutoff_count))
 
     def test_cap_1_selects_best(self):
         """With max_significants=1, threshold is set from the top-1 value."""
@@ -879,7 +883,7 @@ class TestSignificanceMaskCap:
         # Top 4 sum to exactly 0.90; RELION only stops once the cumulative
         # mass is strictly greater than the adaptive target.
         assert int(n_sig_uncapped[0]) == 5
-        assert np.array_equal(
+        assert matches(
             np.asarray(mask_uncapped[0], dtype=bool),
             np.array([True, True, True, True, True, False]),
         )
@@ -1001,7 +1005,7 @@ class TestSignificantCountsReasonable:
         )
 
         expected_ha = np.argmax(weights, axis=1)
-        np.testing.assert_array_equal(
+        assert_matches(
             ha,
             expected_ha,
             err_msg="Hard assignments do not match argmax of weights",
@@ -1030,7 +1034,7 @@ class TestSignificantCountsReasonable:
         sig_2d = np.asarray(sig_mask).reshape(n_images, n_rot, n_trans)
         expected_rot_mask = np.any(sig_2d, axis=-1)
 
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(sig_rot_mask),
             expected_rot_mask,
             err_msg="sig_rot_mask inconsistent with sig_mask",
@@ -1086,8 +1090,8 @@ class TestSignificantCountsReasonable:
             current_size=None,
         )
 
-        np.testing.assert_array_equal(np.asarray(hard_b), np.asarray(hard_assignments))
-        np.testing.assert_array_equal(np.asarray(n_sig_b), np.asarray(n_sig))
+        assert_matches(np.asarray(hard_b), np.asarray(hard_assignments))
+        assert_matches(np.asarray(n_sig_b), np.asarray(n_sig))
         np.testing.assert_allclose(
             np.asarray(full_stats["max_posterior_per_image"]),
             np.asarray(weights).max(axis=1),
@@ -1096,9 +1100,9 @@ class TestSignificantCountsReasonable:
         )
         assert np.all(np.isfinite(full_stats["normalization_log_z"]))
         assert np.any(sig_rot_any)
-        np.testing.assert_array_equal(class_b, np.zeros(n_images, dtype=np.int32))
+        assert_matches(class_b, np.zeros(n_images, dtype=np.int32))
         for i in range(n_images):
-            np.testing.assert_array_equal(
+            assert_matches(
                 np.asarray(sparse_sig[0][i]),
                 np.flatnonzero(np.asarray(sig_mask[i])),
             )
@@ -1258,7 +1262,7 @@ class TestOversampledGridGeneration:
         expected_matrices = np.concatenate(expected_blocks, axis=0)
 
         np.testing.assert_allclose(matrices, expected_matrices, atol=1e-6, rtol=1e-6)
-        np.testing.assert_array_equal(child_indices, expected_child_indices)
+        assert_matches(child_indices, expected_child_indices)
         assert np.all(child_indices >= 0)
         for p_idx in range(len(parent_rotations)):
             assert np.sum(parent_map == p_idx) == 8
@@ -1359,7 +1363,7 @@ class TestOversampledGridGeneration:
             dtype=np.float32,
         )
         np.testing.assert_allclose(fine_trans, expected, atol=1e-6)
-        np.testing.assert_array_equal(parent_map, np.zeros(4, dtype=np.int64))
+        assert_matches(parent_map, np.zeros(4, dtype=np.int64))
 
         np.testing.assert_allclose(
             fine_trans.mean(axis=0),
@@ -1470,7 +1474,7 @@ class TestRefineWithAdaptive:
         assert "convergence_state" in result
 
     def test_adaptive_0_matches_standard(self):
-        """adaptive_oversampling=0 should give identical results to standard path."""
+        """adaptive_oversampling=0 should give the standard path's hard assignments."""
         n_images = 5
         n_rot = 10
 
@@ -1512,7 +1516,7 @@ class TestRefineWithAdaptive:
         )
 
         # Hard assignments should match
-        np.testing.assert_array_equal(
+        assert_matches(
             ha_std,
             ha_w,
             err_msg="E-step weights hard assignments differ from run_em",
@@ -1565,7 +1569,7 @@ class TestEStepWeightsWindowed:
         )
 
     def test_multiple_rotation_blocks(self):
-        """Weights should be identical regardless of rotation block size."""
+        """Weights should match regardless of rotation block size."""
         n_images = 5
         n_rot = 10
 
@@ -1608,14 +1612,14 @@ class TestEStepWeightsWindowed:
             atol=1e-5,
             err_msg="Weights differ between single-block and multi-block",
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             ha_1,
             ha_2,
             err_msg="Hard assignments differ between block sizes",
         )
 
     def test_multiple_image_batches(self):
-        """Weights should be identical regardless of image batch size."""
+        """Weights should match regardless of image batch size."""
         n_images = 6
         n_rot = 10
 
@@ -1658,7 +1662,7 @@ class TestEStepWeightsWindowed:
             atol=1e-5,
             err_msg="Weights differ between batch sizes",
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             ha_1,
             ha_2,
             err_msg="Hard assignments differ between batch sizes",

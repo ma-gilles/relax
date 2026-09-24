@@ -13,6 +13,7 @@ import inspect
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 from relax.sparse_pass2 import sparse_pass2_scoring
 from relax.sparse_pass2 import sparse_pass2_scoring as sp
@@ -34,7 +35,7 @@ def test_packed_image_follows_relion_layout_and_amplitude(dtype, expected_real):
     image, real_dtype, height, width, half = sparse_pass2_scoring._relion_powerclass_packed_image(x, image_shape=(SIZE, SIZE))
     assert (height, width, half) == (SIZE, SIZE, HALF) and real_dtype == expected_real
     expected = np.roll(x.reshape(-1, SIZE, HALF), -(SIZE // 2), axis=1).reshape(x.shape[0], -1) / (SIZE * SIZE)
-    np.testing.assert_allclose(np.asarray(image), expected.astype(dtype), rtol=0, atol=0)
+    assert_matches(np.asarray(image), expected.astype(dtype))
     assert image.dtype == jnp.dtype(dtype)
 
 
@@ -66,9 +67,9 @@ def test_operands_shell_and_validity_follow_the_cuda_kernel():
     cols = np.arange(HALF)[None, :]
     signed = np.where(rows < HALF, rows, rows - SIZE)
     shell = np.rint(np.sqrt((cols * cols + signed * signed).astype(np.float32))).astype(np.int32)
-    assert ops.shell.dtype == np.int32 and np.array_equal(ops.shell, shell)
+    assert ops.shell.dtype == np.int32 and matches(ops.shell, shell)
     valid = ((shell > 0) & (shell < HALF) & ~((cols == 0) & (signed < 0))).reshape(-1)
-    assert np.array_equal(ops.valid, valid) and ops.resolution_limit == HALF
+    assert matches(ops.valid, valid) and ops.resolution_limit == HALF
     assert ops.relion_image.shape == (2, SIZE * HALF)
 
 

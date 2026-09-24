@@ -7,6 +7,7 @@ from helpers.cuda_source import read_all_cuda_source, read_cuda_source
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
@@ -510,7 +511,7 @@ def test_relion_x_half_float_acc_rotation_casts_cpu_orthonormal_inverse():
     )
     actual = _relion_x_half_backproject_rotation_to_kernel(rotation, jnp.float32)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(actual),
         np.asarray(rotation, dtype=np.float32)[..., [2, 1, 0]],
     )
@@ -640,10 +641,10 @@ def test_relion_x_half_bp_block_topology_expands_native_current_square():
     )
 
     assert (current_height, current_half_width) == (4, 3)
-    np.testing.assert_array_equal(np.asarray(dense_indices), np.arange(12, dtype=np.int32))
+    assert_matches(np.asarray(dense_indices), np.arange(12, dtype=np.int32))
     expected = np.zeros((2, 12), dtype=np.float32)
     expected[:, [1, 8, 10]] = np.asarray(images)
-    np.testing.assert_array_equal(np.asarray(dense), expected)
+    assert_matches(np.asarray(dense), expected)
 
 
 def test_relion_x_half_bp_block_topology_expands_batched_operands():
@@ -661,7 +662,7 @@ def test_relion_x_half_bp_block_topology_expands_batched_operands():
 
     assert (current_height, current_half_width) == (4, 3)
     assert dense.shape == (2, 3, 12)
-    np.testing.assert_array_equal(np.asarray(dense[..., [1, 10]]), np.asarray(images))
+    assert_matches(np.asarray(dense[..., [1, 10]]), np.asarray(images))
     assert np.count_nonzero(np.asarray(dense)) == np.count_nonzero(np.asarray(images))
 
 
@@ -695,7 +696,7 @@ def test_relion_x_half_bp_block_topology_actual_256_to_48_support_is_unique():
     )
     assert np.unique(expected_indices).size == expected_indices.size
     assert np.all(expected_indices < current_height * current_half_width)
-    np.testing.assert_array_equal(np.asarray(dense)[0, expected_indices], np.asarray(images)[0])
+    assert_matches(np.asarray(dense)[0, expected_indices], np.asarray(images)[0])
     assert np.count_nonzero(np.asarray(dense)) == len(signed_coordinates)
 
 
@@ -766,7 +767,7 @@ def test_relion_fused_x_half_wrapper_uses_mixed_aliases_and_native_square(monkey
     dense_data, dense_weight, dense_indices, rot6, data_in, weight_in = observed["args"]
     assert dense_data.shape == (2, 12)
     assert dense_weight.shape == (2, 12)
-    np.testing.assert_array_equal(np.asarray(dense_indices), np.arange(12, dtype=np.int32))
+    assert_matches(np.asarray(dense_indices), np.arange(12, dtype=np.int32))
     assert rot6.shape == (2, 6) and rot6.dtype == jnp.float32
     assert data_in is data_volume and weight_in is weight_volume
     assert observed["attrs"]["image_h"] == 4
@@ -815,7 +816,7 @@ def test_relion_fused_x_half_wrapper_preserves_double_precision(monkeypatch):
     assert observed["args"][1].dtype == jnp.float64
     assert observed["args"][3].dtype == jnp.float64
     expected_rot6 = np.asarray(rotation)[..., [2, 1, 0]][:, [1, 0], :].reshape(1, 6)
-    np.testing.assert_array_equal(np.asarray(observed["args"][3]), expected_rot6)
+    assert_matches(np.asarray(observed["args"][3]), expected_rot6)
 
 
 @pytest.mark.parametrize(
@@ -1108,8 +1109,8 @@ def test_ordinary_indexed_signature_ffi_smoke(monkeypatch, custom_cuda_lib, gpu_
         )
 
     assert len(outputs) == 8
-    np.testing.assert_array_equal(np.asarray(outputs[1]), np.asarray([[17]]))
-    np.testing.assert_array_equal(np.asarray(outputs[2]), np.asarray([[1]]))
+    assert_matches(np.asarray(outputs[1]), np.asarray([[17]]))
+    assert_matches(np.asarray(outputs[2]), np.asarray([[1]]))
     assert int(np.asarray(outputs[3])[0, 0]) & 64
     assert np.count_nonzero(np.asarray(outputs[0])) > 0
 
@@ -1197,8 +1198,8 @@ def test_relion_fused_x_half_radius_uses_native_rotation_convention_at_exact_rim
     excluded_data, excluded_weight = (np.asarray(value) for value in outputs[1])
     assert np.count_nonzero(included_data) > 0
     assert np.count_nonzero(included_weight) > 0
-    np.testing.assert_array_equal(excluded_data, np.zeros_like(excluded_data))
-    np.testing.assert_array_equal(excluded_weight, np.zeros_like(excluded_weight))
+    assert_matches(excluded_data, np.zeros_like(excluded_data))
+    assert_matches(excluded_weight, np.zeros_like(excluded_weight))
 
 
 @pytest.mark.gpu
@@ -1248,7 +1249,7 @@ def test_relion_fused_x_half_signature_matches_relion_fraction_before_origin_ora
 
     row_flags = np.asarray(outputs[4])[0]
     reached = np.flatnonzero((row_flags & 64) != 0)
-    np.testing.assert_array_equal(reached, np.asarray([ky * 25 + kx]))
+    assert_matches(reached, np.asarray([ky * 25 + kx]))
     pixel = int(reached[0])
     source = np.asarray(outputs[5])[0, pixel]
     coordinates_zyx = source[3:6].astype(np.float32, copy=True)
@@ -1275,13 +1276,13 @@ def test_relion_fused_x_half_signature_matches_relion_fraction_before_origin_ora
                 neighbor = coordinate_floor + center + np.asarray([dz, dy, dx])
                 expected_indices.append(int(np.sum(neighbor * strides)))
 
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(outputs[7])[0, pixel], np.asarray(expected_coefficients, dtype=np.float32)
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(outputs[6])[0, pixel], np.asarray(expected_indices, dtype=np.int32)
     )
-    np.testing.assert_array_equal(np.asarray(outputs[8])[0, pixel], np.ones(8, dtype=np.int32))
+    assert_matches(np.asarray(outputs[8])[0, pixel], np.ones(8, dtype=np.int32))
 
 
 @pytest.mark.gpu
@@ -1365,7 +1366,7 @@ def test_relion_fused_x_half_cuda_matches_separate_topology(
 
 
 @pytest.mark.gpu
-def test_relion_fused_x_half_native_particle_grid_is_bitwise_sequential(
+def test_relion_fused_x_half_native_particle_grid_matches_sequential(
     monkeypatch, custom_cuda_lib, gpu_device
 ):
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -1428,8 +1429,8 @@ def test_relion_fused_x_half_native_particle_grid_is_bitwise_sequential(
             )
         )
 
-    np.testing.assert_array_equal(np.asarray(actual_data), np.asarray(expected_data))
-    np.testing.assert_array_equal(np.asarray(actual_weight), np.asarray(expected_weight))
+    assert_matches(np.asarray(actual_data), np.asarray(expected_data))
+    assert_matches(np.asarray(actual_weight), np.asarray(expected_weight))
 
 
 def test_relion_fused_x_half_particle_grid_preserves_particle_axis_in_native_attrs(

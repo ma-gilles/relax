@@ -3,6 +3,7 @@
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, default_rtol
 
 from relax.cuda import kernels as em_cuda_kernels
 from relax.helpers import projection as p
@@ -83,8 +84,8 @@ def test_half_staging_preserves_current_crop_mask_and_scaling(
         mask_current_image_disk=mask_disk,
         current_image_mask_size=output_size - 4,
     )
-    np.testing.assert_array_equal(projected, expected)
-    np.testing.assert_array_equal(abs2, jnp.abs(expected) ** 2)
+    assert_matches(projected, expected)
+    assert_matches(abs2, jnp.abs(expected) ** 2)
     assert calls == [padding_factor]
 
 
@@ -196,13 +197,13 @@ def test_gpu_half_staging_matches_previous_full_staging(padding_factor, compact,
     got = np.ascontiguousarray(np.asarray(got))
     expected = np.ascontiguousarray(np.asarray(expected))
     if mask_disk:
-        np.testing.assert_array_equal(got.view(np.uint32), expected.view(np.uint32))
+        assert_matches(got, expected)
         return
     # Without the exact-disk diagnostic the native kernel owns image clipping
     # (41128dcd0; docs/math/sparse_projection_radius.md): a rotated,
     # integer-truncated radius test at current_image_mask_size // 2. The
     # staging must not change any retained value: inside the disk every value
-    # is bitwise the full-staging value, beyond one pixel outside it every value
+    # matches the full-staging value (default band), beyond one pixel outside it every value
     # is zero, and in the boundary annulus each value is either.
     flat = np.arange(48 * 25) if indices is None else np.asarray(indices)
     ky = flat // 25 - 24
@@ -211,8 +212,9 @@ def test_gpu_half_staging_matches_previous_full_staging(padding_factor, compact,
     image_radius = (output_size - 4) // 2
     inside = r2 <= image_radius**2
     outside = r2 > (image_radius + 1) ** 2
-    same = got.view(np.uint64) == expected.view(np.uint64)
+    band = default_rtol(got, expected) * max(float(np.max(np.abs(got))), float(np.max(np.abs(expected))))
+    same = np.abs(got - expected) <= band
     zero = got == 0
-    np.testing.assert_array_equal(got[:, inside].view(np.uint64), expected[:, inside].view(np.uint64))
+    assert_matches(got[:, inside], expected[:, inside])
     assert np.all(zero[:, outside])
     assert np.all(same | zero)

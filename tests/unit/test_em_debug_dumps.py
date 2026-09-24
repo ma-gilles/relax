@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics.iteration import _save_iteration_particle_states, _source_image_indices
 
@@ -40,15 +41,15 @@ def test_save_iteration_particle_states_preserves_source_aligned_values(tmp_path
     )
 
     half2 = np.load(tmp_path / "it002_particle_state_half2.npz")
-    np.testing.assert_array_equal(half2["half_local_indices"], [0, 1])
-    np.testing.assert_array_equal(half2["original_image_indices"], [205, 207])
+    assert_matches(half2["half_local_indices"], [0, 1])
+    assert_matches(half2["original_image_indices"], [205, 207])
     np.testing.assert_allclose(half2["rotation_eulers_deg"], eulers[1])
     np.testing.assert_allclose(half2["relative_translations_pixels"], relative[1])
     np.testing.assert_allclose(half2["absolute_translations_pixels"], absolute[1])
     np.testing.assert_allclose(half2["max_posterior"], pmax[1])
-    np.testing.assert_array_equal(half2["significant_counts"], counts[1])
-    np.testing.assert_array_equal(half2["one_based_iteration"], [3])
-    np.testing.assert_array_equal(half2["half"], [2])
+    assert_matches(half2["significant_counts"], counts[1])
+    assert_matches(half2["one_based_iteration"], [3])
+    assert_matches(half2["half"], [2])
 
 
 def test_save_iteration_particle_states_rejects_misaligned_fields(tmp_path):
@@ -78,5 +79,5 @@ def test_source_image_indices_map_local_rows_to_the_original_stack():
 
     mapped = _source_image_indices(SimpleNamespace(n_images=3, _index_layout=_Layout()))
     assert mapped.dtype == np.int64
-    np.testing.assert_array_equal(mapped, [7, 3, 9])
-    np.testing.assert_array_equal(_source_image_indices(SimpleNamespace(n_images=2)), [0, 1])
+    assert_matches(mapped, [7, 3, 9])
+    assert_matches(_source_image_indices(SimpleNamespace(n_images=2)), [0, 1])

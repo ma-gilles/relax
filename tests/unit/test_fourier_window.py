@@ -13,6 +13,7 @@ import math
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
 import jax
@@ -371,7 +372,7 @@ class TestWindowIndicesSubset:
 
         # RECOVAR's centered crop keeps ky=+28. The opposite boundary row is
         # outside RELION's 56x29 rectangle even where rounded radius is 28.
-        assert np.all(shell_indices[36, 1:6] == sentinel)
+        assert matches(shell_indices[36, 1:6], sentinel)
         assert np.all(shell_indices[92, 1:6] == 28)
         assert int(np.count_nonzero(shell_indices <= current_size // 2)) == 1276
 
@@ -527,11 +528,11 @@ class TestFourierWindowSpec:
         spec = make_fourier_window_spec(IMAGE_SHAPE, 6, N_HALF, include_recon_window=True)
         values = jnp.arange(3 * N_HALF, dtype=jnp.float32).reshape(3, N_HALF)
 
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(spec.score_values(values)),
             np.asarray(values)[:, np.asarray(spec.score_indices_np)],
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(spec.recon_values(values)),
             np.asarray(values)[:, np.asarray(spec.recon_indices_np)],
         )
@@ -541,11 +542,11 @@ class TestFourierWindowSpec:
         values = jnp.arange(3 * N_HALF, dtype=jnp.float32).reshape(3, N_HALF)
         compact = values[:, spec.projection_indices]
 
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(compact[:, spec.score_projection_take]),
             np.asarray(spec.score_values(values)),
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(compact[:, spec.recon_projection_take]),
             np.asarray(spec.recon_values(values)),
         )
@@ -586,12 +587,12 @@ class TestFourierWindowSpec:
 
         assert spec.recon_indices_np is None
         assert spec.recon_indices is None
-        np.testing.assert_array_equal(np.asarray(spec.recon_values(values)), np.asarray(values))
-        np.testing.assert_array_equal(
+        assert_matches(np.asarray(spec.recon_values(values)), np.asarray(values))
+        assert_matches(
             np.asarray(compact[:, spec.score_projection_take]),
             np.asarray(spec.score_values(values)),
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(compact[:, spec.recon_projection_take]),
             np.asarray(spec.score_values(values)),
         )
@@ -638,7 +639,7 @@ class TestFourierWindowSpec:
             n_half=shape[0] * (shape[1] // 2 + 1),
             include_recon_window=True,
         )
-        np.testing.assert_array_equal(spec.recon_indices_np, model_spec.recon_indices_np)
+        assert_matches(spec.recon_indices_np, model_spec.recon_indices_np)
 
     def test_firstiter_cc_rectangular_score_keeps_both_x0_axis_sides(self):
         """CC keeps the full FFTW rectangle; Gaussian drops its redundant x0 side."""
@@ -661,7 +662,7 @@ class TestFourierWindowSpec:
 
         assert spec.n_score == 56 * (56 // 2 + 1)
         assert np.count_nonzero(np.asarray(spec.score_values(gaussian_weights)) == 0.0) == 27
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(spec.score_values(cc_weights)),
             np.ones(spec.n_score, dtype=np.float32),
         )
@@ -705,11 +706,11 @@ class TestFourierWindowSpec:
             )
         expected_kx = np.arange(current_size // 2 + 1)
 
-        np.testing.assert_array_equal(
+        assert_matches(
             ky.reshape(current_size, current_size // 2 + 1)[:, 0],
             expected_ky,
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             np.where(kx < 0, current_size // 2, kx).reshape(
                 current_size,
                 current_size // 2 + 1,
@@ -1071,7 +1072,7 @@ class TestIterationAtEachCurrentSize:
             atol=1e-5,
             err_msg="current_size=8 should match no windowing for 8x8 images",
         )
-        np.testing.assert_array_equal(ha_none, ha_8)
+        assert_matches(ha_none, ha_8)
 
 
 # ===========================================================================
@@ -1177,4 +1178,4 @@ class TestWindowedMultipleBlocks:
             atol=1e-4,
             err_msg="Mean differs between single-block and multi-block with windowing",
         )
-        np.testing.assert_array_equal(ha_1, ha_2)
+        assert_matches(ha_1, ha_2)

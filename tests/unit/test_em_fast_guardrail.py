@@ -7,6 +7,7 @@ existing dense and local exact EM equivalence tests.
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -193,11 +194,11 @@ def test_fourier_window_spec_gathers_last_axis_for_batched_values():
     )
     values = jnp.arange(2 * 3 * n_half, dtype=jnp.float32).reshape(2, 3, n_half)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(spec.score_values(values)),
         np.asarray(values)[..., np.asarray(spec.score_indices_np)],
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(spec.recon_values(values)),
         np.asarray(values)[..., np.asarray(spec.recon_indices_np)],
     )
@@ -210,12 +211,7 @@ def test_half_image_pre_shift_phase_helpers_match_explicit_tiling():
     tiled = tiled_half_image_phase_factors(image_shape, shifts, n_trans=3)
 
     assert phase.shape == (2, image_shape[0] * (image_shape[1] // 2 + 1))
-    np.testing.assert_allclose(
-        np.asarray(tiled),
-        np.asarray(jnp.repeat(phase, 3, axis=0)),
-        atol=0,
-        rtol=0,
-    )
+    assert_matches(np.asarray(tiled), np.asarray(jnp.repeat(phase, 3, axis=0)))
 
 
 def test_half_image_pre_shift_phase_requests_highest_precision():

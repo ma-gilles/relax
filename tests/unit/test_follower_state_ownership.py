@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.relion import relion_worker_scale as scale
 
@@ -60,12 +61,12 @@ def test_updates_are_visible_through_owner(correction_inputs, firstiter, dtype):
         assert diagnostic[1] is None
         state = setup.follower_scale_state
         assert (state is initial) == firstiter
-        np.testing.assert_array_equal(diagnostic[0], state.scales[0])
+        assert_matches(diagnostic[0], state.scales[0])
         halves = kwargs["relion_half_inputs"]
         for half, factor in enumerate(([2.0, 1.0], [0.5, 1.0])):
             expected = state.scales[setup.follower_owners_per_half[half], halves.group_ids[half]].astype(dtype)
-            np.testing.assert_array_equal(halves.scale_corrections[half], expected)
-            np.testing.assert_array_equal(halves.image_corrections[half], (expected * factor).astype(dtype))
+            assert_matches(halves.scale_corrections[half], expected)
+            assert_matches(halves.image_corrections[half], (expected * factor).astype(dtype))
             assert halves.scale_corrections[half].dtype == dtype
             assert halves.image_corrections[half].dtype == dtype
 

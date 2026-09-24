@@ -5,6 +5,7 @@ import logging
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.refinement.mean_helpers import prepare_initial_mean_variance
 from relax.refinement.projector_preparation import (
@@ -36,7 +37,7 @@ def test_real_reference_half_class_layout_and_aliases(classes, dtype, layout):
     )
     for actual, wanted in zip(result, expected):
         assert actual.dtype == np.float64
-        np.testing.assert_array_equal(actual, wanted)
+        assert_matches(actual, wanted)
     if layout == "shared":
         assert result[0] is result[1]
     if dtype == np.float64:
@@ -55,8 +56,8 @@ def test_single_class_half_stack_without_class_axis():
     value = np.arange(54, dtype=np.float64).reshape((2,) + SHAPE)
     result = prepare_initial_real_references(value, volume_shape=SHAPE, n_classes=1, init_relion_iteration=0, log=LOG)
     assert all(v.shape == (1,) + SHAPE for v in result)
-    np.testing.assert_array_equal(result[0][0], value[0])
-    np.testing.assert_array_equal(result[1][0], value[1])
+    assert_matches(result[0][0], value[0])
+    assert_matches(result[1][0], value[1])
 
 
 def test_real_reference_handoff_rejects_resumed_run():
@@ -100,10 +101,10 @@ def test_half_tau2_values_and_existing_promoted_average(dtype, monkeypatch):
     )
     expected = ((source[0].astype(np.float64) + source[1].astype(np.float64)) * 0.5).astype(np.float32)
     assert shared.dtype == np.float32
-    np.testing.assert_array_equal(shared, expected)
+    assert_matches(shared, expected)
     for index, half in enumerate(halves):
         assert half.dtype == dtype
-        np.testing.assert_array_equal(half, source[index])
+        assert_matches(half, source[index])
 
 
 @pytest.mark.parametrize(

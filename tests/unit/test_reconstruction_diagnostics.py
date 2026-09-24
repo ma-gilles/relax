@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics import reconstruction as dumps
 
@@ -93,7 +94,7 @@ def test_current_size_schema_and_casts(capture_inputs):
         assert saved["iteration"].dtype == np.int32
         assert saved["ave_Pmax"].dtype == np.float64
         assert saved["data_vs_prior_prev"].dtype == np.float32
-        np.testing.assert_array_equal(saved["per_class_resolution_shells"], [2, 3])
+        assert_matches(saved["per_class_resolution_shells"], [2, 3])
 
 
 @pytest.mark.parametrize("token,preserve", [("", False), (" OFF ", False), ("1", True), ("unrecognized", True)])
@@ -106,9 +107,9 @@ def test_mstep_class_selection_and_dtype(capture_inputs, monkeypatch, token, pre
     with np.load(capture_inputs["output_dir"] / "recovar_kclass_mstep_it003_c02.npz") as saved:
         expected_dtype = np.complex128 if preserve else np.complex64
         assert saved["Ft_y_combined"].dtype == expected_dtype
-        np.testing.assert_array_equal(saved["Ft_y_combined"], capture_inputs["Ft_y_combined"][1])
+        assert_matches(saved["Ft_y_combined"], capture_inputs["Ft_y_combined"][1])
         assert saved["previous_mean_half1"].dtype == np.complex64
-        np.testing.assert_array_equal(saved["previous_mean_half1"], capture_inputs["previous_means"][1][1])
+        assert_matches(saved["previous_mean_half1"], capture_inputs["previous_means"][1][1])
         if missing_half:
             assert saved["Ft_ctf_1"].size == 0
             assert saved["Ft_ctf_1"].dtype == np.complex64

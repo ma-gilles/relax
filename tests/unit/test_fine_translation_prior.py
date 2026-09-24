@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 from relax.helpers.translation_prior import expand_fine_translation_prior
 
@@ -21,8 +22,8 @@ def test_fine_prior_preserves_parent_order_duplicates_and_input(dtype, shared):
     expected = np.array([[-3.5, 0.0, -3.5, -1.25], [-6.0, -2.0, -6.0, -4.5]], dtype=dtype)
     if shared:
         expected[1] = expected[0]
-    np.testing.assert_array_equal(fine, expected)
-    np.testing.assert_array_equal(prior, before)
+    assert_matches(fine, expected)
+    assert_matches(prior, before)
     assert fine.dtype == dtype
     assert not np.shares_memory(fine, prior)
     assert fine.flags.writeable is not shared
@@ -33,7 +34,7 @@ def test_fine_prior_keeps_host_double_values():
     fine = expand_fine_translation_prior(
         prior, np.array([0, 0]), n_images=3, n_fine_trans=2, dtype=np.float64
     )
-    assert np.all(fine == -1.0 - 2**-40)
+    assert matches(fine, -1.0 - 2**-40)
     assert np.all(fine != np.float64(np.float32(prior[0])))
 
 

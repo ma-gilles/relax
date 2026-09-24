@@ -4,6 +4,7 @@ from dataclasses import fields
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.iteration_history import RefinementHistory
 
@@ -23,16 +24,16 @@ def test_noise_history_formats_host_arrays_without_changing_alias_contract(dtype
 
     for stored in [history.noise_radial_trajectory[0], history.tau2_radial_trajectory[0]]:
         assert stored.dtype == np.float64
-        np.testing.assert_array_equal(stored, shells)
+        assert_matches(stored, shells)
         assert np.shares_memory(stored, shells) == (dtype == np.float64)
     per_half = history.noise_radial_per_half_trajectory[0]
     assert per_half.shape == (2, 3) and per_half.dtype == np.float64
-    np.testing.assert_array_equal(per_half, [shells, shells])
+    assert_matches(per_half, [shells, shells])
     assert not np.shares_memory(per_half, shells)
     if k_class_enabled:
         assert history.tau2_fsc_used_trajectory == [None]
     else:
-        np.testing.assert_array_equal(history.tau2_fsc_used_trajectory[0], shells)
+        assert_matches(history.tau2_fsc_used_trajectory[0], shells)
     assert all(value is shells for value in details.values())
 
 

@@ -1,8 +1,8 @@
-import numpy as np
 import pytest
 from test_compact_capacity_integration import _fused_kclass_capacity_fixture, _fused_kclass_result_arrays
 from relax.sparse_pass2 import sparse_pass2_bucketed as engine
 from relax.classification.k_class_results import SparseKClassHostStatistics
+from helpers.float_compare import assert_matches
 
 @pytest.mark.parametrize("noise", [False, True])
 @pytest.mark.parametrize("device_scalars", [False, True])
@@ -28,4 +28,4 @@ def test_vectorized_replay_matches_ordered_multibucket_results(monkeypatch, nois
         outputs.append(_fused_kclass_result_arrays(engine.compute_k_class_pass2_stats_sparse_fused(**kwargs)))
     assert calls.count(True)>1 and calls.count(False)==calls.count(True)
     assert outputs[0].keys()==outputs[1].keys()
-    for name in outputs[0]:np.testing.assert_array_equal(outputs[0][name],outputs[1][name],err_msg=name)
+    for name in outputs[0]:assert_matches(outputs[0][name],outputs[1][name],err_msg=name)

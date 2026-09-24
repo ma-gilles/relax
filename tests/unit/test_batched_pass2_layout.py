@@ -4,6 +4,7 @@ import weakref
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax import sampling
 from relax.local import local_layout
@@ -26,14 +27,14 @@ def test_pass2_buckets_reuse_scoring_rotations_without_mstep_override():
     del first
     assert released() is None  # The sequence must not cache materialized buckets.
     assert len(planned) == len(buckets)
-    np.testing.assert_array_equal(planned[-1].local_rotations, buckets[-1].local_rotations)
-    np.testing.assert_array_equal(planned[1:][0].local_rotations, buckets[1].local_rotations)
+    assert_matches(planned[-1].local_rotations, buckets[-1].local_rotations)
+    assert_matches(planned[1:][0].local_rotations, buckets[1].local_rotations)
     for bucket in buckets:
         assert bucket.local_mstep_rotations is None
         assert local_layout._local_mstep_rotations(bucket) is bucket.local_rotations
         for row, image in enumerate(bucket.image_indices):
             start, stop = layout.rotation_offsets[image:image + 2]
-            np.testing.assert_array_equal(
+            assert_matches(
                 local_layout._local_mstep_rotations(bucket)[row, :stop - start],
                 layout.rotations_flat[start:stop],
             )
@@ -72,8 +73,8 @@ def test_batched_pass2_matches_independent_image_layouts(order, index_order, per
             "rotations_flat", "rotation_ids_flat", "rotation_posterior_ids_flat",
             "rotation_log_priors_flat", "sample_mask_bits",
         ):
-            np.testing.assert_array_equal(getattr(batched, field)[start:stop], getattr(single, field))
-        np.testing.assert_array_equal(batched.translation_grid, single.translation_grid)
+            assert_matches(getattr(batched, field)[start:stop], getattr(single, field))
+        assert_matches(batched.translation_grid, single.translation_grid)
         # Compare matrices directly to the mature per-image sampler as well.
         parents = (np.arange(n_rotations) if sample is None else
                    np.unique(sample // 3) if sample.size else np.array([0]))
@@ -81,8 +82,8 @@ def test_batched_pass2_matches_independent_image_layouts(order, index_order, per
             parents, 0, order, random_perturbation=perturbation,
             return_rotation_indices=True, rotation_index_order=index_order,
         )
-        np.testing.assert_array_equal(batched.rotations_flat[start:stop], rotations)
-        np.testing.assert_array_equal(batched.rotation_ids_flat[start:stop], ids)
+        assert_matches(batched.rotations_flat[start:stop], rotations)
+        assert_matches(batched.rotation_ids_flat[start:stop], ids)
 
 
 def test_pass2_generates_only_requested_parent_union_once(monkeypatch):
@@ -101,7 +102,7 @@ def test_pass2_generates_only_requested_parent_union_once(monkeypatch):
         translation_step=1.0, oversampling_order=1,
     )
     assert len(calls) == 1
-    np.testing.assert_array_equal(calls[0], [1, 3, 5])
+    assert_matches(calls[0], [1, 3, 5])
 
 
 @pytest.mark.parametrize("n_translations", [0, 1, 7, 8, 9, 29, 116])
@@ -118,14 +119,14 @@ def test_packed_mask_preserves_boolean_rows_and_bucket_padding(n_translations):
         sample_mask_bits=np.packbits(mask, axis=1, bitorder="little"),
     )
     assert layout.sample_mask_bits.nbytes == 10 * ((n_translations + 7) // 8)
-    np.testing.assert_array_equal(layout.sample_mask_rows(), mask)
-    np.testing.assert_array_equal(layout.sample_mask_rows(3, 8), mask[3:8])
+    assert_matches(layout.sample_mask_rows(), mask)
+    assert_matches(layout.sample_mask_rows(3, 8), mask[3:8])
     for bucket in local_layout.bucket_local_hypothesis_layout(layout, 2, 16):
         assert bucket.local_sample_mask.dtype == np.bool_
         for row, image in enumerate(bucket.image_indices):
             start, stop = layout.rotation_offsets[image:image + 2]
             count = stop - start
-            np.testing.assert_array_equal(bucket.local_sample_mask[row, :count], mask[start:stop])
+            assert_matches(bucket.local_sample_mask[row, :count], mask[start:stop])
             assert not bucket.local_sample_mask[row, count:].any()
 
 
@@ -225,4 +226,4 @@ def test_bucket_size_class_cap_is_off_by_default(monkeypatch):
     monkeypatch.delenv(local_layout.EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES_ENV, raising=False)
     sizes = np.asarray([16, 32, 64, 128], dtype=np.int32)
 
-    np.testing.assert_array_equal(local_layout._cap_bucket_size_classes(sizes), sizes)
+    assert_matches(local_layout._cap_bucket_size_classes(sizes), sizes)

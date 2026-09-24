@@ -4,6 +4,7 @@ import hashlib
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 from relax.diagnostics.frozen_boundary import (
     FROZEN_BOUNDARY_FILENAME,
@@ -220,13 +221,13 @@ def test_frozen_boundary_loader_round_trips_primitive_state(tmp_path):
     assert boundary.volume_shape == (2, 2, 2)
     assert boundary.current_size == 92
     assert boundary.means[0].dtype == np.complex64
-    np.testing.assert_array_equal(
+    assert_matches(
         boundary.image_corrections[0],
         np.asarray([0.9, 1.1], dtype=np.float32),
     )
     assert boundary.direction_prior_per_half[0].shape == (768,)
     assert boundary.translation_sigma_angstrom_per_half == pytest.approx((16.8, 17.0))
-    np.testing.assert_array_equal(boundary.source_rows_per_half[0], [0, 2])
+    assert_matches(boundary.source_rows_per_half[0], [0, 2])
     assert set(boundary.refinement_state_fields) == {
         "current_resolution",
         "previous_resolution",
@@ -268,7 +269,7 @@ def test_v3_round_trips_fixed_arm_sources_sampling_config_and_per_half_tau2(tmp_
     assert boundary.map_lineage["map_transform_id"] == "relion_iref_to_recovar_complex64.v1"
     assert boundary.sampling_state["directions_ipix"].dtype == np.int64
     assert boundary.runtime_config["image_fourier_backend"] == "relion_cuda"
-    assert not np.array_equal(
+    assert not matches(
         boundary.mean_variance_per_half[0],
         boundary.mean_variance_per_half[1],
     )
@@ -295,7 +296,7 @@ def test_v3_accepts_equal_current_and_coarse_sizes_and_restricted_direction_ids(
     boundary = load_frozen_refinement_boundary(tmp_path)
 
     assert boundary.current_size == 56
-    np.testing.assert_array_equal(boundary.sampling_state["directions_ipix"], direction_ids)
+    assert_matches(boundary.sampling_state["directions_ipix"], direction_ids)
 
 
 def test_v3_rejects_captured_active_healpix_order_drift(tmp_path):

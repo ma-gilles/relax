@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import pytest
 from test_sparse_pass2_bucketed_perf import MockDataset, IMAGE_SHAPE, ForwardModelConfig
 from relax.sparse_pass2.sparse_pass2_bucket_io import prepare_unshifted_bucket_operands
+from helpers.float_compare import assert_matches
 
 @pytest.mark.parametrize("diagnostic", [False, True])
 def test_generic_noise_operands_follow_selected_precision(monkeypatch, diagnostic):
@@ -19,6 +20,6 @@ def test_generic_noise_operands_follow_selected_precision(monkeypatch, diagnosti
     assert out.ctf2_over_nv_half.dtype == (jnp.float64 if diagnostic else jnp.float32)
     if not diagnostic:
         expected_inverse=np.reciprocal(np.asarray(noise)).astype(np.float32)
-        np.testing.assert_array_equal(out.inverse_noise_half,expected_inverse)
+        assert_matches(out.inverse_noise_half,expected_inverse)
         weighted=np.asarray(out.ctf_half)*expected_inverse[None,:]
-        np.testing.assert_array_equal(out.ctf2_over_nv_half,weighted*np.asarray(out.ctf_half))
+        assert_matches(out.ctf2_over_nv_half,weighted*np.asarray(out.ctf_half))

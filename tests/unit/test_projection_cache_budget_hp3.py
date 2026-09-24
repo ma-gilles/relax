@@ -15,6 +15,7 @@ from relax.sparse_pass2.sparse_pass2_budget import (
     _projection_cache_transient_bytes,
     _projection_call_max_bytes_for_pass,
 )
+from helpers.float_compare import assert_matches
 
 _HP3_FINE_ROTATIONS = 294912
 _CS92_HALF_PIXELS = 3386  # windowed half-spectrum score pixels at current_size 92, 256^2
@@ -80,12 +81,12 @@ def test_flatten_bucket_rotations_is_host_side_for_numpy_and_not_jitted():
     rots = np.arange(2 * 3 * 9, dtype=np.float32).reshape(2, 3, 3, 3)
     out = lb.flatten_bucket_rotations(rots)
     assert isinstance(out, np.ndarray) and out.shape == (6, 3, 3)
-    np.testing.assert_array_equal(out, rots.reshape(6, 3, 3))
+    assert_matches(out, rots.reshape(6, 3, 3))
     assert not hasattr(lb.flatten_bucket_rotations, "lower")  # plain function, not a jit wrapper
     import jax.numpy as jnp
     dev = lb.flatten_bucket_rotations(jnp.asarray(rots))
     assert dev.shape == (6, 3, 3)
-    np.testing.assert_array_equal(np.asarray(dev), rots.reshape(6, 3, 3))
+    assert_matches(np.asarray(dev), rots.reshape(6, 3, 3))
 
 
 def test_per_particle_launch_rung_is_power_of_two_at_or_above_count():
@@ -120,10 +121,10 @@ def test_per_particle_launches_pad_to_rungs_with_zeroed_spare_rows(monkeypatch):
     )
     assert [c[0].shape[0] for c in calls] == [4, 4, 6, 6]
     # particle 0: rows 0-2 live, row 3 zeroed; particle 1: rows 0-4 live, row 5 zeroed
-    np.testing.assert_array_equal(calls[0][0][:3], np.asarray(values[0, :3])); assert np.all(calls[0][0][3:] == 0)
-    np.testing.assert_array_equal(calls[1][0][:3], np.asarray(ctf_values[0, :3])); assert np.all(calls[1][0][3:] == 0)
-    np.testing.assert_array_equal(calls[2][0][:5], np.asarray(values[1, :5])); assert np.all(calls[2][0][5:] == 0)
-    np.testing.assert_array_equal(calls[0][1], np.asarray(rotations[0, :4]))
+    assert_matches(calls[0][0][:3], np.asarray(values[0, :3])); assert np.all(calls[0][0][3:] == 0)
+    assert_matches(calls[1][0][:3], np.asarray(ctf_values[0, :3])); assert np.all(calls[1][0][3:] == 0)
+    assert_matches(calls[2][0][:5], np.asarray(values[1, :5])); assert np.all(calls[2][0][5:] == 0)
+    assert_matches(calls[0][1], np.asarray(rotations[0, :4]))
 
 
 def test_large_bucket_pow2_rung_is_opt_in(monkeypatch):

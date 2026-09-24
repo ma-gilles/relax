@@ -20,6 +20,7 @@ from scripts.analyze_k1_fine_score_boundary import (
     _sum_direction_posterior,
     _winner_counterfactuals,
 )
+from helpers.float_compare import assert_matches
 
 
 @pytest.mark.unit
@@ -36,15 +37,15 @@ def test_relion_f32_scan_scalars_preserve_float32_scan_and_ties():
     weights = np.exp(shifted, dtype=np.float32)
     expected_sum = np.cumsum(np.sort(weights), dtype=np.float32)[-1]
 
-    assert report["sum_weight"] == float(expected_sum)
-    assert report["max_weight"] == float(weights[0])
+    assert_matches(report["sum_weight"], expected_sum)
+    assert_matches(report["max_weight"], weights[0])
     assert report["significant_count"] == 1
 
 
 @pytest.mark.unit
 def test_stable_top_n_mask_preserves_tie_order():
     weights = np.asarray([0.5, 0.5, 0.25, 0.5], dtype=np.float32)
-    np.testing.assert_array_equal(
+    assert_matches(
         _stable_top_n_mask(weights, 2),
         np.asarray([True, True, False, False]),
     )
@@ -65,7 +66,7 @@ def test_rotation_map_uses_exact_transposed_matrix_permutation():
 
     mapping, error = _rotation_map(factor, recovar)
 
-    np.testing.assert_array_equal(mapping, permutation)
+    assert_matches(mapping, permutation)
     assert error == 0.0
 
 
@@ -83,7 +84,7 @@ def test_rotation_map_accepts_native_subset_of_recovar_candidates():
 
     mapping, error = _rotation_map(factor, recovar)
 
-    np.testing.assert_array_equal(mapping, np.asarray([2, 0]))
+    assert_matches(mapping, np.asarray([2, 0]))
     assert error == 0.0
 
 
@@ -195,7 +196,7 @@ def test_raw_diff2_terms_preserve_relion_float32_operation_order():
     )
     result = _raw_diff2_terms(reference, shifted, weight)
     assert result.dtype == np.float32
-    assert result[0].view(np.uint32) == expected.view(np.uint32)
+    assert_matches(result[0], expected)
 
 
 @pytest.mark.unit
@@ -218,7 +219,7 @@ def test_raw_diff2_terms_replay_relion_cuda_contracted_square_sum():
 
     result = _raw_diff2_terms(reference, shifted, weight)
 
-    assert result[0].view(np.uint32) == expected[0].view(np.uint32)
+    assert_matches(result[0], expected[0])
 
 
 @pytest.mark.unit
@@ -226,7 +227,7 @@ def test_reduce_relion_fine_lanes_matches_fixed_tree():
     lanes = np.arange(256, dtype=np.float32)
     reduced, levels = _reduce_relion_fine_lanes(lanes)
     assert [level.size for level in levels] == [128, 64, 32, 16, 8, 4, 2, 1]
-    assert reduced.view(np.uint32) == np.sum(lanes, dtype=np.float32).view(np.uint32)
+    assert_matches(reduced, np.sum(lanes, dtype=np.float32))
 
 
 @pytest.mark.unit

@@ -4,6 +4,7 @@ import pickle
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.scoring.significant_samples import (
     ComplementSignificantSampleIndices,
@@ -31,7 +32,7 @@ def test_coarse_support_encoding_preserves_ids_and_count(mask, expected_ids, enc
     assert significant_sample_count(samples, len(mask)) == len(expected_ids)
     ids = significant_sample_ids(samples, len(mask))
     assert ids.dtype == np.int64
-    np.testing.assert_array_equal(ids, expected_ids)
+    assert_matches(ids, expected_ids)
 
 
 @pytest.mark.parametrize("protocol", [4, 5])
@@ -44,4 +45,4 @@ def test_complement_support_roundtrip(protocol):
     assert type(restored) is ComplementSignificantSampleIndices
     assert restored.size == 4
     assert restored.excluded_indices.dtype == np.int32
-    np.testing.assert_array_equal(significant_sample_ids(restored, 6), [0, 2, 3, 5])
+    assert_matches(significant_sample_ids(restored, 6), [0, 2, 3, 5])

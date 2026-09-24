@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp  # noqa: E402
@@ -119,7 +120,7 @@ def test_compute_relion_fsc_from_backprojector_accepts_packed_half_accumulators(
     )
 
     np.testing.assert_allclose(fsc_from_half, fsc_from_full, atol=1e-6, rtol=1e-6)
-    np.testing.assert_array_equal(fsc_from_half, fsc_from_full)
+    assert_matches(fsc_from_half, fsc_from_full)
 
 
 def test_compute_relion_fsc_from_backprojector_accepts_odd_packed_half_accumulators(
@@ -186,7 +187,7 @@ def test_compute_relion_fsc_from_backprojector_accepts_odd_packed_half_accumulat
     )
 
     np.testing.assert_allclose(fsc_from_half, fsc_from_full, atol=1e-6, rtol=1e-6)
-    np.testing.assert_array_equal(fsc_from_half, fsc_from_full)
+    assert_matches(fsc_from_half, fsc_from_full)
 
 
 def test_compute_relion_fsc_from_backprojector_applies_exact_rmax_before_shell_binning():
@@ -438,7 +439,7 @@ def test_relion_weight_shell_stats_floor_bins_reconstruct_support():
     shell = np.floor(radius / padding_factor).astype(int)
     expected = np.bincount(shell[mask].ravel(), minlength=shape[0] // 2 + 1)
 
-    np.testing.assert_array_equal(np.asarray(stats_floor["shell_count"])[: expected.shape[0]], expected)
+    assert_matches(np.asarray(stats_floor["shell_count"])[: expected.shape[0]], expected)
     assert not np.array_equal(
         np.asarray(stats_floor["shell_count"])[: expected.shape[0]],
         np.asarray(stats_round["shell_count"])[: expected.shape[0]],
@@ -648,4 +649,4 @@ def test_streamed_fsc_preserves_requested_output_precision(monkeypatch, output_d
     monkeypatch.setenv("RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS", "0")
     actual = regularization_relion.compute_relion_fsc_from_backprojector(*data, *weights, shape, **kwargs)
     assert actual.dtype == expected.dtype == output_dtype
-    np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
+    assert_matches(np.asarray(actual), np.asarray(expected))

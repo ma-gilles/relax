@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers import resolution as resolution_helpers
 from relax.reconstruction import regularization_relion
@@ -30,7 +31,7 @@ class TestResolutionScheduling:
         assert taper[17] == 1.0
         np.testing.assert_allclose(taper[18], expected18, rtol=0, atol=1e-15)
         np.testing.assert_allclose(taper[19], expected19, rtol=0, atol=1e-15)
-        np.testing.assert_array_equal(taper[20:], 0.0)
+        assert_matches(taper[20:], 0.0)
 
     def test_k1_current_size_scheduling_raw_fsc_matches_gui_default(self):
         """GUI-default K=1 scheduling uses raw FSC-derived DVP."""
@@ -118,7 +119,7 @@ class TestResolutionScheduling:
             grid_size=128,
         )
 
-        np.testing.assert_array_equal(
+        assert_matches(
             truncated[:, : boundary_shell + 1],
             data_vs_prior[:, : boundary_shell + 1],
         )
@@ -308,7 +309,7 @@ def test_initial_fsc_seeding_preserves_input_and_sets_both_resolution_fields(dty
     )
     # Initial FSC seeding truncates at shell16; the last supported shell is15.
     assert state.current_resolution == state.previous_resolution == 128 * 3.28 / 15
-    np.testing.assert_array_equal(fsc, original)
+    assert_matches(fsc, original)
     assert options.schedule.init_fsc is fsc
 
 

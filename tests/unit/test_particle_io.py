@@ -12,6 +12,7 @@ import mrcfile
 import numpy as np
 import pandas as pd
 import pytest
+from helpers.float_compare import assert_matches, matches
 from recovar.data_io import staging
 from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.data_io.starfile import write_star
@@ -136,12 +137,12 @@ def test_default_scratch_and_preread_read_identical_bytes(tmp_path):
             scratch.cleanup()
             assert not os.path.exists(scratch.directory)
 
-    np.testing.assert_array_equal(results["default"]["all"], expected)
+    assert_matches(results["default"]["all"], expected)
     for mode in ("scratch", "preread"):
         for key, value in results["default"].items():
             other = results[mode][key]
             assert other.dtype == value.dtype, (mode, key)
-            assert np.array_equal(other, value), (mode, key)
+            assert matches(other, value), (mode, key)
     assert os.listdir(scratch_root) == []
 
 
@@ -150,7 +151,7 @@ def test_scratch_copy_serves_every_read_after_the_sources_move(tmp_path):
     ds, scratch = _load(star, ParticleReadPolicy(scratch_dir=str(tmp_path)))
     os.rename(tmp_path / "Extract", tmp_path / "Extract_moved")
     try:
-        np.testing.assert_array_equal(ds.image_source.host_images(np.arange(ds.n_units)), expected)
+        assert_matches(ds.image_source.host_images(np.arange(ds.n_units)), expected)
     finally:
         scratch.cleanup()
 

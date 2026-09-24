@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import starfile
+from helpers.float_compare import assert_matches
 
 from relax.refinement.optics_shapes import MultiShapeDataset, MultiShapeHalf
 from relax.relion import initial_noise
@@ -166,12 +167,12 @@ def test_multi_shape_dataset_subsets_and_iterates_by_row():
     half = ds.subset(np.array([5, 0, 6, 1]))
     assert isinstance(half, MultiShapeHalf) and half.n_units == 4
     # Diagnostics map a half's images back to particle-STAR rows through the index layout.
-    np.testing.assert_array_equal(half._index_layout.original_image_indices_for_local(np.arange(4)), [5, 0, 6, 1])
+    assert_matches(half._index_layout.original_image_indices_for_local(np.arange(4)), [5, 0, 6, 1])
     first, second = half.classes
-    np.testing.assert_array_equal(first.image_indices, [1, 2])  # rows 0, 6
-    np.testing.assert_array_equal(first.dataset.rows, [0, 3])
-    np.testing.assert_array_equal(second.image_indices, [0, 3])  # rows 5, 1
-    np.testing.assert_array_equal(second.dataset.rows, [2, 0])
+    assert_matches(first.image_indices, [1, 2])  # rows 0, 6
+    assert_matches(first.dataset.rows, [0, 3])
+    assert_matches(second.image_indices, [0, 3])  # rows 5, 1
+    assert_matches(second.dataset.rows, [2, 0])
     assert second.scale == pytest.approx(12 * 2.5 / (16 * 2.0))
     got = list(ds.iter_images([5, 0, 6, 1, 3], batch_size=2))
     assert [row for row, _ in got] == [5, 0, 6, 1, 3]

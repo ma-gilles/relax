@@ -9,6 +9,7 @@ No E-step or M-step is invoked – only attribute inspection.
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 
@@ -42,9 +43,9 @@ def test_EMState_stores_mean_and_variance():
     mean_var = _mean_variance()
     noise_var = _noise_variance()
     state = EMState(mean, mean_var, noise_var)
-    np.testing.assert_array_equal(state.mean, mean)
-    np.testing.assert_array_equal(state.mean_variance, mean_var)
-    np.testing.assert_array_equal(state.noise_variance, noise_var)
+    assert_matches(state.mean, mean)
+    assert_matches(state.mean_variance, mean_var)
+    assert_matches(state.noise_variance, noise_var)
 
 
 def test_EMState_initial_accumulators_are_zero():
@@ -68,9 +69,9 @@ def test_HeterogeneousEMState_stores_attributes():
     mean_var = _mean_variance()
     noise_var = _noise_variance()
     state = HeterogeneousEMState(mean, mean_var, noise_var)
-    np.testing.assert_array_equal(state.mean, mean)
-    np.testing.assert_array_equal(state.mean_variance, mean_var)
-    np.testing.assert_array_equal(state.noise_variance, noise_var)
+    assert_matches(state.mean, mean)
+    assert_matches(state.mean_variance, mean_var)
+    assert_matches(state.noise_variance, noise_var)
 
 
 def test_HeterogeneousEMState_name():

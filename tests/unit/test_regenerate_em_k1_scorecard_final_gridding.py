@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts import regenerate_em_k1_scorecard_final_gridding as regen
 
@@ -26,10 +27,10 @@ def test_gridding_correction_divides_by_relion_radial_sinc_squared():
     corrected = regen.gridding_corrected_saved_map(volume)
 
     expected = (volume / _sinc2(8)).astype(np.float32).astype(np.float64)
-    np.testing.assert_array_equal(corrected, expected)
+    assert_matches(corrected, expected)
     assert corrected[4, 4, 4] == np.float32(volume[4, 4, 4])
     # Radial about voxel N/2, so the saved-file axis transpose commutes with the correction.
-    np.testing.assert_array_equal(
+    assert_matches(
         regen.gridding_corrected_saved_map(volume.transpose(2, 1, 0)), corrected.transpose(2, 1, 0)
     )
 

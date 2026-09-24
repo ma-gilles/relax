@@ -9,6 +9,7 @@ latter; before this option the CLI could only request the former.
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts import run_full_refinement
 
@@ -66,12 +67,12 @@ def test_uninterrupted_replay_keeps_half_specific_slot0_noise(tmp_path):
     _write_iteration(tmp_path, 10, [1.0, 2.0, 3.0, 4.0, 5.0], [6.0, 7.0, 8.0, 9.0, 10.0])
 
     continuation_h1, continuation_h2 = _slot0_noise(tmp_path, semantics="continuation", init_relion_iteration=10)
-    np.testing.assert_array_equal(continuation_h2, continuation_h1)
+    assert_matches(continuation_h2, continuation_h1)
 
     uninterrupted_h1, uninterrupted_h2 = _slot0_noise(tmp_path, semantics="uninterrupted", init_relion_iteration=10)
     assert float(np.min(uninterrupted_h1)) == pytest.approx(1.0 * 8**4)
     assert float(np.min(uninterrupted_h2)) == pytest.approx(6.0 * 8**4)
-    np.testing.assert_array_equal(uninterrupted_h1, continuation_h1)
+    assert_matches(uninterrupted_h1, continuation_h1)
 
 
 @pytest.mark.parametrize(

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.refinement import iteration_loop, mean_helpers
 
@@ -31,7 +32,7 @@ def test_snapshot_and_release_previous_k1_means_owns_host_copies(monkeypatch, co
         assert type(snapshot) is np.ndarray
         assert snapshot.flags.owndata
         assert not np.shares_memory(snapshot, original)
-        np.testing.assert_array_equal(snapshot, original)
+        assert_matches(snapshot, original)
 
     first[...] = complex_dtype(-9.0 + 4.0j)
     assert not np.array_equal(snapshots[0], first)
@@ -73,7 +74,7 @@ def test_normalize_initial_means_reuses_immutable_shared_reference():
     got = mean_helpers._normalize_initial_means(shared, n_classes=1)
 
     assert got[0] is got[1]
-    np.testing.assert_array_equal(np.asarray(got[0]), np.asarray(shared))
+    assert_matches(np.asarray(got[0]), np.asarray(shared))
     got[0] = got[0].at[0].set(jnp.complex64(-1.0))
     assert got[0] is not got[1]
-    np.testing.assert_array_equal(np.asarray(got[1]), np.asarray(shared))
+    assert_matches(np.asarray(got[1]), np.asarray(shared))

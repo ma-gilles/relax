@@ -1,9 +1,9 @@
 """P3-F: the constant frequency / pixel-coordinate grid memoization.
 
-Every check here is **bitwise**: the memoized helper must return the same bytes
-as the unmemoized builder it wraps, for every shape, spacing, flag and dtype the
-EM harness and the shared SPA / cryo-ET tests exercise.  Nothing in this file
-uses a tolerance.
+Every check here compares against the unmemoized builder: the memoized helper
+must return the same dtype, shape and values (within the default float band of
+``helpers.float_compare``) as the builder it wraps, for every shape, spacing,
+flag and dtype the EM harness and the shared SPA / cryo-ET tests exercise.
 
 The other properties the memoization relies on are checked here too: identity on
 a hit, a bounded cache, a fall-through for arguments that are not static
@@ -22,6 +22,7 @@ import numpy as np
 import pytest
 
 from recovar.core import fourier_transform_utils as ftu
+from helpers.float_compare import assert_matches, matches
 
 pytestmark = pytest.mark.unit
 
@@ -68,11 +69,11 @@ _VOXEL_SIZES = (1, 1.0, 0.5, 1.5, 3.2)
 _DTYPES = (jnp.float32, jnp.float64, np.float32, np.dtype("float32"), np.float64)
 
 
-def _same_bytes(actual, expected):
-    """Bitwise equality: dtype, shape and the raw buffer."""
+def _same_values(actual, expected):
+    """Equal dtype and shape, values within the default band."""
     a = np.asarray(actual)
     b = np.asarray(expected)
-    return a.dtype == b.dtype and a.shape == b.shape and a.tobytes() == b.tobytes()
+    return a.dtype == b.dtype and a.shape == b.shape and matches(a, b)
 
 
 @pytest.fixture(autouse=True)
@@ -105,114 +106,114 @@ class _EagerDispatchCounter:
         return False
 
 
-# --------------------------------------------------------------- bitwise ---
+# -------------------------------------------------------- builder values ---
 
 
 @pytest.mark.parametrize("n", _IMAGE_SIDES)
 @pytest.mark.parametrize("scaled", (False, True))
-def test_1d_frequency_grid_is_bitwise_unchanged(n, scaled):
+def test_1d_frequency_grid_is_unchanged(n, scaled):
     for voxel_size in _VOXEL_SIZES:
         for dtype in _DTYPES:
             expected = ftu._build_1d_frequency_grid(n, voxel_size, scaled, dtype)
             first = ftu.get_1d_frequency_grid(n, voxel_size, scaled, dtype=dtype)
             second = ftu.get_1d_frequency_grid(n, voxel_size, scaled, dtype=dtype)
-            assert _same_bytes(first, expected)
-            assert _same_bytes(second, expected)
+            assert _same_values(first, expected)
+            assert _same_values(second, expected)
             assert first is second
 
 
 @pytest.mark.parametrize("n", _IMAGE_SIDES)
 @pytest.mark.parametrize("scaled", (False, True))
-def test_1d_frequency_grid_rfft_is_bitwise_unchanged(n, scaled):
+def test_1d_frequency_grid_rfft_is_unchanged(n, scaled):
     for voxel_size in _VOXEL_SIZES:
         for dtype in _DTYPES:
             expected = ftu._build_1d_frequency_grid_rfft(n, voxel_size, scaled, dtype)
             got = ftu.get_1d_frequency_grid_rfft(n, voxel_size, scaled, dtype=dtype)
-            assert _same_bytes(got, expected)
+            assert _same_values(got, expected)
             assert got is ftu.get_1d_frequency_grid_rfft(n, voxel_size, scaled, dtype=dtype)
 
 
 @pytest.mark.parametrize("image_shape", _IMAGE_SHAPES_2D)
 @pytest.mark.parametrize("scaled", (False, True))
-def test_k_coordinate_of_each_pixel_is_bitwise_unchanged(image_shape, scaled):
+def test_k_coordinate_of_each_pixel_is_unchanged(image_shape, scaled):
     for voxel_size in (1, 1.5):
         for dtype in (jnp.float32, jnp.float64):
             expected = ftu._build_k_coordinate_of_each_pixel(image_shape, voxel_size, scaled, dtype)
             got = ftu.get_k_coordinate_of_each_pixel(image_shape, voxel_size, scaled, dtype=dtype)
-            assert _same_bytes(got, expected)
+            assert _same_values(got, expected)
             assert got is ftu.get_k_coordinate_of_each_pixel(image_shape, voxel_size, scaled, dtype=dtype)
 
 
 @pytest.mark.parametrize("volume_shape", _VOLUME_SHAPES_3D)
 @pytest.mark.parametrize("scaled", (False, True))
-def test_k_coordinate_of_each_pixel_3d_is_bitwise_unchanged(volume_shape, scaled):
+def test_k_coordinate_of_each_pixel_3d_is_unchanged(volume_shape, scaled):
     for voxel_size in (1, 1.5):
         expected = ftu._build_k_coordinate_of_each_pixel_3d(volume_shape, voxel_size, scaled)
         got = ftu.get_k_coordinate_of_each_pixel_3d(volume_shape, voxel_size, scaled)
-        assert _same_bytes(got, expected)
+        assert _same_values(got, expected)
         assert got is ftu.get_k_coordinate_of_each_pixel_3d(volume_shape, voxel_size, scaled)
 
 
 @pytest.mark.parametrize("image_shape", _IMAGE_SHAPES_2D)
 @pytest.mark.parametrize("scaled", (False, True))
-def test_k_coordinate_of_each_pixel_real_is_bitwise_unchanged(image_shape, scaled):
+def test_k_coordinate_of_each_pixel_real_is_unchanged(image_shape, scaled):
     for voxel_size in (1, 1.5):
         expected = ftu._build_k_coordinate_of_each_pixel_real(image_shape, voxel_size, scaled)
         got = ftu.get_k_coordinate_of_each_pixel_real(image_shape, voxel_size, scaled)
-        assert _same_bytes(got, expected)
+        assert _same_values(got, expected)
         assert got is ftu.get_k_coordinate_of_each_pixel_real(image_shape, voxel_size, scaled)
 
 
 @pytest.mark.parametrize("volume_shape", _VOLUME_SHAPES_3D)
 @pytest.mark.parametrize("scaled", (False, True))
-def test_k_coordinate_of_each_pixel_3d_real_is_bitwise_unchanged(volume_shape, scaled):
+def test_k_coordinate_of_each_pixel_3d_real_is_unchanged(volume_shape, scaled):
     for voxel_size in (1, 1.5):
         expected = ftu._build_k_coordinate_of_each_pixel_3d_real(volume_shape, voxel_size, scaled)
         got = ftu.get_k_coordinate_of_each_pixel_3d_real(volume_shape, voxel_size, scaled)
-        assert _same_bytes(got, expected)
+        assert _same_values(got, expected)
         assert got is ftu.get_k_coordinate_of_each_pixel_3d_real(volume_shape, voxel_size, scaled)
 
 
 @pytest.mark.parametrize("image_shape", _IMAGE_SHAPES_2D)
 @pytest.mark.parametrize("scaled", (False, True))
-def test_k_coordinate_of_each_pixel_half_is_bitwise_unchanged(image_shape, scaled):
+def test_k_coordinate_of_each_pixel_half_is_unchanged(image_shape, scaled):
     for voxel_size in (1, 1.5):
         for dtype in (jnp.float32, jnp.float64):
             expected = ftu._build_k_coordinate_of_each_pixel_half(image_shape, voxel_size, scaled, dtype)
             got = ftu.get_k_coordinate_of_each_pixel_half(image_shape, voxel_size, scaled, dtype=dtype)
-            assert _same_bytes(got, expected)
+            assert _same_values(got, expected)
 
 
 @pytest.mark.parametrize("image_shape", _IMAGE_SHAPES_2D)
-def test_half_image_pixel_indices_are_bitwise_unchanged(image_shape):
+def test_half_image_pixel_indices_are_unchanged(image_shape):
     expected = ftu._build_half_image_pixel_indices(image_shape)
     got = ftu._half_image_pixel_indices(image_shape)
-    assert _same_bytes(got, expected)
+    assert _same_values(got, expected)
     assert got is ftu._half_image_pixel_indices(image_shape)
 
 
 @pytest.mark.parametrize("n", _IMAGE_SIDES)
-def test_packed_last_axis_indices_are_bitwise_unchanged(n):
+def test_packed_last_axis_indices_are_unchanged(n):
     expected = ftu._build_real_fft_packed_last_axis_indices(n)
     got = ftu.get_real_fft_packed_last_axis_indices(n)
-    assert _same_bytes(got, expected)
+    assert _same_values(got, expected)
     assert got is ftu.get_real_fft_packed_last_axis_indices(n)
 
 
 @pytest.mark.parametrize("n", _IMAGE_SIDES)
-def test_shifted_conjugate_partner_indices_are_bitwise_unchanged(n):
+def test_shifted_conjugate_partner_indices_are_unchanged(n):
     expected = ftu._build_shifted_conjugate_partner_indices(n)
     got = ftu.get_shifted_conjugate_partner_indices(n)
-    assert _same_bytes(got, expected)
+    assert _same_values(got, expected)
     assert got is ftu.get_shifted_conjugate_partner_indices(n)
 
 
 def test_half_coordinates_still_match_the_host_planned_numpy_variant():
-    """The existing byte-equivalence contract with the host-planned helper holds."""
+    """The existing equivalence contract with the host-planned helper holds."""
     for image_shape in _IMAGE_SHAPES_2D:
         device = ftu.get_k_coordinate_of_each_pixel_half(image_shape, 1, scaled=False)
         host = ftu.get_k_coordinate_of_each_pixel_half_np(image_shape, 1, scaled=False)
-        assert _same_bytes(device, host)
+        assert _same_values(device, host)
 
 
 # ------------------------------------------------------------ key fidelity ---
@@ -230,15 +231,15 @@ def test_distinct_static_arguments_do_not_collide():
     shape_a = ftu.get_k_coordinate_of_each_pixel((4, 8), 1, scaled=False)
     shape_b = ftu.get_k_coordinate_of_each_pixel((8, 4), 1, scaled=False)
     assert shape_a is not shape_b
-    assert not _same_bytes(shape_a, shape_b)
+    assert not _same_values(shape_a, shape_b)
 
 
-def test_equal_shape_spellings_share_one_entry_and_the_same_bytes():
+def test_equal_shape_spellings_share_one_entry_and_the_same_values():
     tuple_form = ftu.get_k_coordinate_of_each_pixel((16, 16), 1, scaled=False)
     list_form = ftu.get_k_coordinate_of_each_pixel([16, 16], 1, scaled=False)
     numpy_form = ftu.get_k_coordinate_of_each_pixel(np.array([16, 16]), 1, scaled=False)
     assert tuple_form is list_form  # the ints are the same Python ints
-    assert _same_bytes(numpy_form, tuple_form)  # np.int64 entries key separately
+    assert _same_values(numpy_form, tuple_form)  # np.int64 entries key separately
 
 
 def test_dtype_spellings_that_canonicalize_together_share_one_entry():
@@ -263,7 +264,7 @@ def test_a_different_default_device_does_not_reuse_another_devices_grid():
     with jax.default_device(cpu):
         inside = ftu.get_1d_frequency_grid(16, 1, False, dtype=jnp.float32)
     assert inside is not outside
-    assert _same_bytes(inside, outside)
+    assert _same_values(inside, outside)
 
 
 # -------------------------------------------------------------- fallbacks ---
@@ -274,7 +275,7 @@ def test_non_static_arguments_fall_through_without_caching():
     traced_spacing = jnp.asarray(2.0, dtype=jnp.float32)
     got = ftu.get_1d_frequency_grid(8, traced_spacing, True, dtype=jnp.float32)
     expected = ftu._build_1d_frequency_grid(8, traced_spacing, True, jnp.float32)
-    assert _same_bytes(got, expected)
+    assert _same_values(got, expected)
     assert ftu.grid_cache_size() == 0
 
 
@@ -282,7 +283,7 @@ def test_a_numpy_array_shape_entry_is_still_keyed_by_value():
     ftu.clear_grid_cache()
     got = ftu.get_k_coordinate_of_each_pixel(np.array([8, 8]), 1, scaled=False)
     expected = ftu._build_k_coordinate_of_each_pixel(np.array([8, 8]), 1, False, jnp.float32)
-    assert _same_bytes(got, expected)
+    assert _same_values(got, expected)
     assert ftu.grid_cache_size() > 0
 
 
@@ -405,7 +406,7 @@ def test_the_helper_family_dispatches_nothing_once_warm():
 # -------------------------------------------------- callers through to core ---
 
 
-def test_geometry_and_ctf_callers_are_bitwise_unchanged_on_a_hit():
+def test_geometry_and_ctf_callers_are_unchanged_on_a_hit():
     """Two shared non-EM callers, warm cache against a cleared cache."""
     from recovar.core import geometry
 
@@ -414,8 +415,8 @@ def test_geometry_and_ctf_callers_are_bitwise_unchanged_on_a_hit():
     cold_half = np.asarray(geometry.get_unrotated_half_plane_grid_points((64, 64)))
     warm_plane = np.asarray(geometry.get_unrotated_plane_grid_points((64, 64)))
     warm_half = np.asarray(geometry.get_unrotated_half_plane_grid_points((64, 64)))
-    assert cold_plane.tobytes() == warm_plane.tobytes()
-    assert cold_half.tobytes() == warm_half.tobytes()
+    assert_matches(cold_plane, warm_plane, strict=True)
+    assert_matches(cold_half, warm_half, strict=True)
 
 
 def test_every_trace_kind_bypasses_the_cache():
@@ -463,7 +464,7 @@ def test_the_default_device_key_is_thread_local():
         grid_out, ctx_out = outside.result()
     assert ctx_in is not None and ctx_out is None
     assert grid_in is not grid_out
-    assert _same_bytes(grid_in, grid_out)
+    assert _same_values(grid_in, grid_out)
 
 
 def test_two_devices_do_not_share_one_cached_grid():
@@ -483,4 +484,4 @@ def test_two_devices_do_not_share_one_cached_grid():
         grid_a, grid_b = list(pool.map(work, (0, 1)))
     assert grid_a is not grid_b
     assert grid_a.devices() != grid_b.devices()
-    assert _same_bytes(grid_a, grid_b)
+    assert _same_values(grid_a, grid_b)

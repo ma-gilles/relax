@@ -47,6 +47,7 @@ from scripts.run_multi_iter_parity import (
     validate_fresh_particle_order_args,
     validate_native_relion_particle_order_args,
 )
+from helpers.float_compare import assert_matches
 
 
 def test_read_relion_model_pixel_size_uses_mrc_header(tmp_path):
@@ -81,7 +82,7 @@ def test_read_relion_optics_image_geometry_uses_particle_star(tmp_path):
 
     image_sizes, pixel_sizes = read_relion_optics_image_geometry(particle_star)
 
-    np.testing.assert_array_equal(image_sizes, np.asarray([384, 256], dtype=np.int64))
+    assert_matches(image_sizes, np.asarray([384, 256], dtype=np.int64))
     np.testing.assert_allclose(pixel_sizes, np.asarray([1.416667, 2.125]))
 
 
@@ -113,10 +114,10 @@ def test_iteration_normalization_override_applies_only_at_requested_boundary():
         overrides=overrides,
     )
 
-    np.testing.assert_array_equal(unchanged[0], corrections[0])
-    np.testing.assert_array_equal(unchanged[1], corrections[1])
+    assert_matches(unchanged[0], corrections[0])
+    assert_matches(unchanged[1], corrections[1])
     assert applied_before == []
-    np.testing.assert_array_equal(corrected[0], corrections[0])
+    assert_matches(corrected[0], corrections[0])
     assert corrected[1][0] == np.float32(0.9788520932197571 * 0.5)
     assert corrected[1][1] == corrections[1][1]
     assert applied == [
@@ -162,8 +163,8 @@ def test_multi_iter_parity_supports_stop_after_coarse_significance_dump():
 def test_particle_half_indices_preserve_source_order_and_int64_dtype():
     half1, half2 = particle_half_indices(np.asarray([2, 1, 2, 1, 1, 2]))
 
-    np.testing.assert_array_equal(half1, np.asarray([1, 3, 4], dtype=np.int64))
-    np.testing.assert_array_equal(half2, np.asarray([0, 2, 5], dtype=np.int64))
+    assert_matches(half1, np.asarray([1, 3, 4], dtype=np.int64))
+    assert_matches(half2, np.asarray([0, 2, 5], dtype=np.int64))
     assert half1.dtype == np.int64
     assert half2.dtype == np.int64
 
@@ -195,10 +196,10 @@ def test_particle_half_indices_can_reconstruct_fresh_relion_order(monkeypatch):
         optics_group_ids=optics,
     )
 
-    np.testing.assert_array_equal(half1, np.asarray([4, 1, 3]))
-    np.testing.assert_array_equal(half2, np.asarray([5, 2, 0]))
-    np.testing.assert_array_equal(observed["subsets"], subsets)
-    np.testing.assert_array_equal(observed["optics"], optics)
+    assert_matches(half1, np.asarray([4, 1, 3]))
+    assert_matches(half2, np.asarray([5, 2, 0]))
+    assert_matches(observed["subsets"], subsets)
+    assert_matches(observed["optics"], optics)
     assert observed["seed"] == 1707
     assert observed["first_iteration"] == 1
 
@@ -213,8 +214,8 @@ def test_map_relion_half_orders_to_dataset_rows_uses_image_identity():
         (np.asarray([2, 0]), np.asarray([3, 1])),
     )
 
-    np.testing.assert_array_equal(half1, np.asarray([0, 1]))
-    np.testing.assert_array_equal(half2, np.asarray([2, 3]))
+    assert_matches(half1, np.asarray([0, 1]))
+    assert_matches(half2, np.asarray([2, 3]))
 
 
 def test_significant_count_artifacts_expose_source_image_order():
@@ -230,10 +231,10 @@ def test_significant_count_artifacts_expose_source_image_order():
         n_images=5,
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         save_dict["sig_counts_half_order_iter_000"], counts_half_order
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         save_dict["sig_counts_by_image_iter_000"],
         np.asarray([10, 20, 40, 30, 50], dtype=np.int32),
     )
@@ -311,8 +312,8 @@ def test_initial_scoring_noise_pair_defaults_to_relion_mpi_restart_broadcast():
 
     got = initial_scoring_noise_pair(half1, half2, continuous_relion_noise_state=False)
 
-    np.testing.assert_array_equal(got[0], half1)
-    np.testing.assert_array_equal(got[1], half1)
+    assert_matches(got[0], half1)
+    assert_matches(got[1], half1)
 
 
 def test_initial_scoring_noise_pair_can_preserve_uninterrupted_half_state():
@@ -321,8 +322,8 @@ def test_initial_scoring_noise_pair_can_preserve_uninterrupted_half_state():
 
     got = initial_scoring_noise_pair(half1, half2, continuous_relion_noise_state=True)
 
-    np.testing.assert_array_equal(got[0], half1)
-    np.testing.assert_array_equal(got[1], half2)
+    assert_matches(got[0], half1)
+    assert_matches(got[1], half2)
 
 
 def test_initial_scoring_noise_pair_preserves_binary64_state():
@@ -337,8 +338,8 @@ def test_initial_scoring_noise_pair_preserves_binary64_state():
 
     assert got[0].dtype == np.float64
     assert got[1].dtype == np.float64
-    np.testing.assert_array_equal(got[0], half1)
-    np.testing.assert_array_equal(got[1], half2)
+    assert_matches(got[0], half1)
+    assert_matches(got[1], half2)
 
 
 def test_final_output_uses_joined_reconstruction_not_average_of_regularized_halves():
@@ -352,9 +353,9 @@ def test_final_output_uses_joined_reconstruction_not_average_of_regularized_halv
 
     half1, half2, merged = final_output_fourier_volumes(result)
 
-    np.testing.assert_array_equal(half1, result["means"][0])
-    np.testing.assert_array_equal(half2, result["means"][1])
-    np.testing.assert_array_equal(merged, result["mean"])
+    assert_matches(half1, result["means"][0])
+    assert_matches(half2, result["means"][1])
+    assert_matches(merged, result["mean"])
     assert not np.array_equal(merged, (half1 + half2) / 2.0)
 
 
@@ -612,7 +613,7 @@ def test_load_initial_fourier_volume_preserves_complex_dtype_and_values(tmp_path
     actual = load_initial_fourier_volume(source, (2, 2, 2))
 
     assert actual.dtype == np.complex128
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
 
 def test_load_initial_fourier_volume_rejects_wrong_size(tmp_path):
@@ -631,7 +632,7 @@ def test_load_initial_noise_variance_preserves_values(tmp_path):
     actual = load_initial_noise_variance(source, (4, 4))
 
     assert actual.dtype == expected.dtype
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
 
 def test_load_initial_noise_variance_rejects_nonpositive_values(tmp_path):
@@ -650,7 +651,7 @@ def test_load_initial_direction_prior_preserves_zeros_and_values(tmp_path):
     actual = load_initial_direction_prior(source, expected.size)
 
     assert actual.dtype == expected.dtype
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
 
 @pytest.mark.parametrize("bad", [[0.0, 0.0], [0.5, -0.5], [0.5, np.nan]])
@@ -684,14 +685,14 @@ def test_map_pose_arrays_to_particle_order_uses_exact_stack_row():
         gt_trans_all,
     )
 
-    np.testing.assert_array_equal(mapped_rot[0], gt_rot_all[2])
-    np.testing.assert_array_equal(mapped_rot[1], gt_rot_all[0])
-    np.testing.assert_array_equal(mapped_rot[2], gt_rot_all[1])
+    assert_matches(mapped_rot[0], gt_rot_all[2])
+    assert_matches(mapped_rot[1], gt_rot_all[0])
+    assert_matches(mapped_rot[2], gt_rot_all[1])
     assert np.isnan(mapped_rot[3]).all()
 
-    np.testing.assert_array_equal(mapped_trans[0], gt_trans_all[2])
-    np.testing.assert_array_equal(mapped_trans[1], gt_trans_all[0])
-    np.testing.assert_array_equal(mapped_trans[2], gt_trans_all[1])
+    assert_matches(mapped_trans[0], gt_trans_all[2])
+    assert_matches(mapped_trans[1], gt_trans_all[0])
+    assert_matches(mapped_trans[2], gt_trans_all[1])
     assert np.isnan(mapped_trans[3]).all()
 
 
@@ -702,7 +703,7 @@ def test_map_relion_scale_groups_to_half_order_preserves_full_group_axis():
         [20, 30, 10],
     )
 
-    np.testing.assert_array_equal(group_ids, [1, 3, 0])
+    assert_matches(group_ids, [1, 3, 0])
     assert group_count == 7
 
 
@@ -914,7 +915,7 @@ def test_relion_final_gt_series_accepts_unnumbered_all_data_without_half_maps():
     series = relion_final_gt_series({"merged": merged}, merged)
 
     assert set(series) == {"relion_merged"}
-    np.testing.assert_array_equal(series["relion_merged"], merged)
+    assert_matches(series["relion_merged"], merged)
 
 
 def test_iteration_overrides_use_the_replay_scale_keys():
@@ -958,7 +959,7 @@ def test_normalization_overrides_are_a_no_op_for_multi_stack_datasets():
     )
     assert applied == []
     for got, want in zip(corrected, corrections):
-        np.testing.assert_allclose(got, want, rtol=0, atol=0)
+        assert_matches(got, want)
     with pytest.raises(ValueError, match="both particle halves"):
         apply_iteration_normalization_factor_overrides(
             corrections,

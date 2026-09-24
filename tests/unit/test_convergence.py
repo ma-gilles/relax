@@ -16,6 +16,7 @@ import logging
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.convergence import (
     MAX_NR_ITER_WO_LARGE_HIDDEN_VARIABLE_CHANGES,
@@ -1213,7 +1214,7 @@ class TestGetRotationGridAtOrder:
         for order in [1, 2, 3]:
             expected = get_rotation_grid(order, matrices=True)
             actual = get_rotation_grid_at_order(order, matrices=True)
-            np.testing.assert_array_equal(actual, expected)
+            assert_matches(actual, expected)
 
     def test_count_increases_with_order(self):
         n2 = get_rotation_grid_at_order(2, matrices=True).shape[0]
@@ -1451,7 +1452,7 @@ def test_pose_stacks_preserve_empty_half_and_requested_precision(dtype, trailing
         label="current pose", dtype=dtype, logger=logging.getLogger(__name__),
     )
     assert result.dtype == dtype
-    np.testing.assert_array_equal(result, populated.astype(dtype))
+    assert_matches(result, populated.astype(dtype))
     assert not np.shares_memory(result, populated)
 
 

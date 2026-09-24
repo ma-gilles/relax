@@ -41,6 +41,7 @@ from relax.sparse_pass2.sparse_pass2_bucketed import (
     compute_pass2_stats_sparse_bucketed,
 )
 from scripts.analyze_k1_scale_aa_pixels import analyze
+from helpers.float_compare import assert_matches
 
 
 def test_wavg_direct_noise_only_is_independent_from_direct_norm(monkeypatch):
@@ -392,7 +393,7 @@ def test_wavg_sequential_triplet_matches_relion_translation_loop():
                     diff2,
                 )
 
-    np.testing.assert_array_equal(result, expected)
+    assert_matches(result, expected)
 
 
 def test_direct_wavg_residual_replaces_only_complete_low_shells():
@@ -418,12 +419,12 @@ def test_direct_wavg_residual_replaces_only_complete_low_shells():
     )
 
     # Shells 0 and 1 use fused residuals in image-major, pixel-major order.
-    np.testing.assert_array_equal(replaced_residual, [5.0, 16.0, 300.0, 400.0])
-    np.testing.assert_array_equal(replaced_image_power, [0.0, 0.0, 30.0, 40.0])
+    assert_matches(replaced_residual, [5.0, 16.0, 300.0, 400.0])
+    assert_matches(replaced_image_power, [0.0, 0.0, 30.0, 40.0])
     # The partially represented cutoff shell (2) and all higher shells remain
     # on the original algebraic path despite large direct diagnostic values.
-    np.testing.assert_array_equal(residual, [100.0, 200.0, 300.0, 400.0])
-    np.testing.assert_array_equal(image_power, [10.0, 20.0, 30.0, 40.0])
+    assert_matches(residual, [100.0, 200.0, 300.0, 400.0])
+    assert_matches(image_power, [10.0, 20.0, 30.0, 40.0])
 
 
 def test_relion_wavg_rectangle_matches_native_size60_topology_and_order():
@@ -453,8 +454,8 @@ def test_relion_wavg_rectangle_matches_native_size60_topology_and_order():
     # Native FFTW row-major order starts at ky=0 and walks kx=0..N/2.
     half_width = image_shape[1] // 2 + 1
     expected_first_row = image_shape[0] // 2 * half_width + np.arange(31)
-    np.testing.assert_array_equal(layout.centered_indices[:31], expected_first_row)
-    np.testing.assert_array_equal(
+    assert_matches(layout.centered_indices[:31], expected_first_row)
+    assert_matches(
         layout.centered_indices[layout.exact_positions],
         exact_indices,
     )
@@ -480,7 +481,7 @@ def test_relion_wavg_rectangle_separates_optics_image_and_model_sizes():
 
     assert layout.centered_indices.size == 58 * 30 == 1740
     assert layout.exact_positions.size == 1227
-    np.testing.assert_array_equal(
+    assert_matches(
         layout.centered_indices[layout.exact_positions],
         model_indices,
     )
@@ -524,9 +525,9 @@ def test_relion_wavg_rectangle_terms_keep_image_only_pixels_in_issue_stream():
         )
     )
 
-    np.testing.assert_array_equal(result[:, :, exact_positions, :], np.asarray(exact_terms))
+    assert_matches(result[:, :, exact_positions, :], np.asarray(exact_terms))
     image_only = np.asarray([0, 2, 4])
-    np.testing.assert_array_equal(result[:, :, image_only, :2], 0.0)
+    assert_matches(result[:, :, image_only, :2], 0.0)
     shifted_power = np.abs(np.asarray(shifted)) ** 2
     expected_power = np.einsum("brt,btp->brp", np.asarray(posterior), shifted_power)
     np.testing.assert_allclose(result[:, :, image_only, 2], expected_power[:, :, image_only])
@@ -546,7 +547,7 @@ def test_relion_wavg_direct_norm_uses_valid_pixels_then_high_shell_power():
         high_shell,
     )
 
-    np.testing.assert_array_equal(result, [16.0, 35.0])
+    assert_matches(result, [16.0, 35.0])
 
 
 def test_optional_wavg_exact_pixel_selection_is_inert_without_atomic_capture():
@@ -559,7 +560,7 @@ def test_optional_wavg_exact_pixel_selection_is_inert_without_atomic_capture():
 
     assert _select_optional_wavg_exact_pixels(None, rectangle) is None
     assert _select_optional_wavg_exact_pixels(values, None) is None
-    np.testing.assert_array_equal(
+    assert_matches(
         _select_optional_wavg_exact_pixels(values, rectangle),
         [[3.0, 1.0]],
     )

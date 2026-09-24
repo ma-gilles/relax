@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 
 def test_k_class_replay_batch_plan_applies_estimator_and_kclass_caps(monkeypatch):
@@ -146,8 +147,8 @@ def test_k_class_replay_adaptive_coarse_rotations_use_relion_device_builder(monk
         adaptive_2pass=True,
     )
 
-    np.testing.assert_array_equal(actual, expected)
-    np.testing.assert_array_equal(calls[0][0], source_eulers)
+    assert_matches(actual, expected)
+    assert_matches(calls[0][0], source_eulers)
     assert calls[0][1:] == (-0.125, 7.5)
     assert source == "relion_cuda_make_eulers_3d"
 
@@ -170,7 +171,7 @@ def test_k_class_replay_nonadaptive_coarse_rotations_keep_host_panel(monkeypatch
         adaptive_2pass=False,
     )
 
-    np.testing.assert_array_equal(actual, host)
+    assert_matches(actual, host)
     assert source == "host_inverse"
 
 
@@ -446,7 +447,7 @@ def test_relion_adaptive_fine_translation_perturbation_uses_coarse_step():
         random_perturbation=-0.35825,
     )
 
-    np.testing.assert_array_equal(parent_map, np.zeros(4, dtype=np.int64))
+    assert_matches(parent_map, np.zeros(4, dtype=np.int64))
     np.testing.assert_allclose(
         fine_translations,
         [
@@ -545,7 +546,7 @@ def test_cropped_x_half_accumulator_reconstructs_when_shape_is_explicit():
 
     assert reconstructed.shape == volume_shape
     assert reconstructed.dtype == np.dtype(np.complex64)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(reconstructed),
         np.zeros(volume_shape, dtype=np.complex64),
     )

@@ -62,7 +62,7 @@ def test_fused_pass2_prefetch_preserves_all_outputs(monkeypatch, device_scalars)
     from test_compact_real_rows_integration import (
         _fused_kclass_multibucket_fixture,
         _fused_kclass_result_arrays,
-        _assert_fused_arrays_identical,
+        _assert_fused_arrays_match,
     )
     from relax.sparse_pass2 import sparse_pass2_bucketed as engine
 
@@ -88,11 +88,11 @@ def test_fused_pass2_prefetch_preserves_all_outputs(monkeypatch, device_scalars)
     monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "2")
     actual = _fused_kclass_result_arrays(engine.compute_k_class_pass2_stats_sparse_fused(**kwargs))
     assert threads and threading.get_ident() not in threads
-    _assert_fused_arrays_identical(expected, actual, "prefetch")
+    _assert_fused_arrays_match(expected, actual, "prefetch")
 
 
 def test_coarse_prefetch_preserves_all_outputs(monkeypatch):
-    from test_em_stage_glue_programs import _significance_call, _assert_significance_results_identical
+    from test_em_stage_glue_programs import _significance_call, _assert_significance_results_match
     from relax.scoring import significance
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
@@ -113,4 +113,4 @@ def test_coarse_prefetch_preserves_all_outputs(monkeypatch):
     monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "2")
     actual = significance._compute_k_class_significance_batched(*args, **kwargs)
     assert threads and threading.get_ident() not in threads
-    _assert_significance_results_identical(actual, expected)
+    _assert_significance_results_match(actual, expected)

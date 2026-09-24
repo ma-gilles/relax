@@ -6,6 +6,7 @@ import logging
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 from relax.helpers import orientation_priors as op
 
@@ -34,7 +35,7 @@ def test_k1_vector_is_shared_by_both_halves_with_inferred_order(dtype, caplog):
     assert global_order == [3, 3]
     for half in global_prior:
         assert half.dtype == dtype and half.shape == (N_PIX,)
-        assert half.tolist() == prior.astype(dtype).tolist()
+        assert_matches(half, prior.astype(dtype))
     assert global_prior[0] is not global_prior[1]
     assert "loaded init direction prior half-1: 768 directions" in caplog.text
     assert "1 zero-probability" in caplog.text
@@ -64,8 +65,9 @@ def test_kclass_per_half_snapshot_keeps_halves_distinct():
     assert class_order == [3, 3]
     expected = op.normalize_class_direction_prior_per_half(per_half, 2, dtype=np.float32)
     for half, want in zip(class_prior, expected):
-        assert half.dtype == np.float32 and half.tobytes() == np.asarray(want, dtype=np.float32).tobytes()
-    assert class_prior[0].tobytes() != class_prior[1].tobytes()
+        assert half.dtype == np.float32
+        assert_matches(half, np.asarray(want, dtype=np.float32))
+    assert not matches(class_prior[0], class_prior[1])
 
 
 def test_unrecognized_prior_length_is_rejected():

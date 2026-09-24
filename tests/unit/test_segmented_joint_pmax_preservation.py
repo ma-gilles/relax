@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from relax.classification import k_class_results
 from relax.classification.k_class_results import _assemble_result
@@ -73,10 +74,10 @@ def test_best_and_log_evidence_are_not_touched_by_the_repair():
     with_engine = _assemble(
         joint_max_posterior_per_image=np.array([ENGINE_JOINT_PMAX], dtype=np.float32),
     ).stats
-    assert np.array_equal(
+    assert matches(
         np.asarray(without.best_log_score_per_image), np.asarray(with_engine.best_log_score_per_image)
     )
-    assert np.array_equal(
+    assert matches(
         np.asarray(without.log_evidence_per_image), np.asarray(with_engine.log_evidence_per_image)
     )
 
@@ -86,7 +87,7 @@ def test_responsibilities_are_not_touched_by_the_repair():
     with_engine = _assemble(
         joint_max_posterior_per_image=np.array([ENGINE_JOINT_PMAX], dtype=np.float32),
     )
-    assert np.array_equal(
+    assert matches(
         np.asarray(without.class_responsibilities), np.asarray(with_engine.class_responsibilities)
     )
 

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.expected_accuracy import estimate_relion_expected_accuracy
 
@@ -103,15 +104,15 @@ def test_one_shape_class_reproduces_the_single_grid_estimate():
     half = _multi_shape_half(kwargs, np.zeros(8, dtype=int), [(N, 4.0)])
     got = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **dict(kwargs, dataset=half))
     assert got.acc_rot == today.acc_rot and got.acc_trans_angstrom == today.acc_trans_angstrom
-    np.testing.assert_array_equal(got.class_counts, today.class_counts)
-    np.testing.assert_array_equal(got.trial_local_indices, today.trial_local_indices)
-    np.testing.assert_array_equal(got.trial_particle_ids, today.trial_particle_ids)
+    assert_matches(got.class_counts, today.class_counts)
+    assert_matches(got.trial_local_indices, today.trial_local_indices)
+    assert_matches(got.trial_particle_ids, today.trial_particle_ids)
     # Two classes both on the model grid: the same estimate up to the count-weighted mean.
     half = _multi_shape_half(kwargs, np.array([0, 1, 1, 0, 1, 0, 0, 1]), [(N, 4.0), (N, 4.0)])
     got = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **dict(kwargs, dataset=half))
     np.testing.assert_allclose(got.acc_rot, today.acc_rot, rtol=1e-12)
     np.testing.assert_allclose(got.acc_trans_angstrom, today.acc_trans_angstrom, rtol=1e-12)
-    np.testing.assert_array_equal(got.trial_particle_ids, today.trial_particle_ids)
+    assert_matches(got.trial_particle_ids, today.trial_particle_ids)
 
 
 @pytest.mark.unit

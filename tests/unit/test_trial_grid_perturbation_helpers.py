@@ -9,6 +9,7 @@ from __future__ import annotations
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 import relax.sampling as sampling_module
 from relax.sampling import (
@@ -39,7 +40,8 @@ def test_mstep_source_uses_the_canonical_grid_at_matching_size():
     eulers = np.zeros((N_ROT, 3), dtype=np.float32)
     source = sampling_module._relion_mstep_source_eulers(eulers, ORDER)
     expected = _canonical_eulers(ORDER)
-    assert source.dtype == np.float64 and source.tobytes() == expected.tobytes()
+    assert source.dtype == np.float64
+    assert_matches(source, expected)
 
 
 def test_mstep_source_falls_back_to_the_grid_angles_when_sizes_differ():
@@ -78,9 +80,9 @@ def test_perturbed_trial_grid_matches_the_separate_relion_calls(dtype):
     translations = jnp.asarray(apply_relion_translation_perturbation(base_translations, 0.25, 2.0), dtype=dtype)
     for got, want in ((grid.rotations, rotations), (grid.rotation_eulers, public_eulers), (grid.mstep_rotations, mstep)):
         assert got.dtype == want.dtype and got.shape == want.shape
-        assert np.asarray(got).tobytes() == np.asarray(want).tobytes()
+        assert_matches(np.asarray(got), np.asarray(want), strict=True)
     assert grid.translations.dtype == translations.dtype
-    assert np.asarray(grid.translations).tobytes() == np.asarray(translations).tobytes()
+    assert_matches(np.asarray(grid.translations), np.asarray(translations), strict=True)
 
 
 def test_perturbed_trial_grid_records_call_order(monkeypatch):
@@ -134,8 +136,9 @@ def test_point_group_mstep_source_uses_the_reduced_grid_rfloat_angles(monkeypatc
     scoring_eulers = expected.astype(np.float32)
     source = sampling_module._relion_mstep_source_eulers(scoring_eulers, ORDER, symmetry="C4")
     assert calls == [(ORDER, "C4")]
-    assert source.dtype == np.float64 and source.tobytes() == expected.tobytes()
-    assert source.tobytes() != scoring_eulers.astype(np.float64).tobytes()
+    assert source.dtype == np.float64
+    assert_matches(source, expected)
+    assert not matches(source, scoring_eulers.astype(np.float64))
 
 
 def test_point_group_label_is_canonicalized_and_c1_keeps_the_one_argument_lookup(monkeypatch):

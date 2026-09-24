@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from scipy.spatial.transform import Rotation
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -69,7 +70,7 @@ def test_global_fit_always_considers_canonical_identity(monkeypatch: pytest.Monk
     )
 
     assert fit["seed_source"] == "identity_augmented_RELION_HEALPix_grid"
-    np.testing.assert_array_equal(fit["seed_rotation_matrix"], np.eye(3))
+    assert_matches(fit["seed_rotation_matrix"], np.eye(3))
     assert fit["fit_correlation"] > 0.999
 
 
@@ -87,7 +88,7 @@ def test_common_mask_is_engine_symmetric_and_nontrivial() -> None:
     mask_forward, metadata = MODULE.construct_common_soft_mask(first, second)
     mask_reverse, _ = MODULE.construct_common_soft_mask(second, first)
 
-    np.testing.assert_array_equal(mask_forward, mask_reverse)
+    assert_matches(mask_forward, mask_reverse)
     assert metadata["engine_symmetric"] is True
     assert np.any(mask_forward > 0.5)
     assert np.any(mask_forward < 0.5)
@@ -145,7 +146,7 @@ def test_load_volume_accepts_structured_mrc_voxel_size(tmp_path: Path, monkeypat
 
     observed_volume, observed_voxel = MODULE._load_volume(path, "recovar")
 
-    np.testing.assert_array_equal(observed_volume, volume)
+    assert_matches(observed_volume, volume)
     assert observed_voxel == pytest.approx(1.31)
 
 

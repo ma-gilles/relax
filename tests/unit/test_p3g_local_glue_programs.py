@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -154,7 +155,7 @@ def test_chunk_row_arrays_and_a_block_offset_read_the_rows_the_callback_sliced(
         for expected, actual in zip(callback_block, program_block):
             assert expected.dtype == actual.dtype
             assert expected.shape == actual.shape
-            np.testing.assert_array_equal(expected, actual)
+            assert_matches(expected, actual)
 
 
 def _adapter_kwargs(row_capacity, block_rows, posterior):
@@ -238,7 +239,7 @@ def test_the_adapter_walks_the_same_blocks_in_both_forms(monkeypatch):
         for expected, actual in zip(expected_block, actual_block):
             assert expected.dtype == actual.dtype
             assert expected.shape == actual.shape
-            np.testing.assert_array_equal(expected, actual)
+            assert_matches(expected, actual)
 
 
 def test_the_adapter_refuses_both_and_neither_projection_form():
@@ -330,7 +331,7 @@ def test_the_row_trim_program_writes_the_bytes_the_per_value_slices_wrote():
         actual = trimmed[name]
         assert expected.dtype == actual.dtype, name
         assert expected.shape == actual.shape, name
-        np.testing.assert_array_equal(np.asarray(expected), np.asarray(actual), err_msg=name)
+        assert_matches(np.asarray(expected), np.asarray(actual), err_msg=name)
 
 
 def test_the_row_trim_keeps_host_arrays_on_the_host_and_none_as_none():
@@ -350,9 +351,9 @@ def test_the_row_trim_keeps_host_arrays_on_the_host_and_none_as_none():
     trimmed = lbs.trim_local_postprocess_rows(values, unpadded_batch_size=4)
     assert isinstance(trimmed["host"], np.ndarray)
     assert not isinstance(trimmed["host"], jax.Array)
-    np.testing.assert_array_equal(trimmed["host"], host[:4])
+    assert_matches(trimmed["host"], host[:4])
     assert isinstance(trimmed["device"], jax.Array)
-    np.testing.assert_array_equal(np.asarray(trimmed["device"]), np.arange(4, dtype=np.float32))
+    assert_matches(np.asarray(trimmed["device"]), np.arange(4, dtype=np.float32))
     assert trimmed["absent"] is None
 
 
@@ -543,7 +544,7 @@ def test_the_bucket_constant_program_writes_the_engine_statements(case_index):
         expected = expressions[name]()
         assert expected.dtype == value.dtype, name
         assert expected.shape == value.shape, name
-        np.testing.assert_array_equal(np.asarray(expected), np.asarray(value), err_msg=name)
+        assert_matches(np.asarray(expected), np.asarray(value), err_msg=name)
 
 
 def test_the_bucket_constant_specs_cover_every_name_the_engine_asks_for():
@@ -585,7 +586,7 @@ def test_the_bucket_constants_are_one_program_and_fresh_buffers():
     second = lbs.local_bucket_constant_operands(specs)
     for name, value in first.items():
         assert value is not second[name], name
-        np.testing.assert_array_equal(np.asarray(value), np.asarray(second[name]))
+        assert_matches(np.asarray(value), np.asarray(second[name]))
 
     key = tuple(
         (

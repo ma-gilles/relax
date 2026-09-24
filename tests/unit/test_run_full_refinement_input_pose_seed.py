@@ -5,6 +5,7 @@ import argparse
 import numpy as np
 import pandas as pd
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.relion.input_poses import (
     _add_initial_pose_source_argument,
@@ -59,19 +60,19 @@ def test_input_star_pose_seed_follows_half_local_order_and_converts_origins(
 
     assert seed["iteration"] == "input_star"
     assert seed["translation_units"] == ("angstrom" if angstrom_origins else "pixel")
-    np.testing.assert_array_equal(
+    assert_matches(
         seed["previous_best_rotation_eulers"][0],
         np.asarray([[30.0, 31.0, 32.0], [10.0, 11.0, 12.0]], dtype=np.float32),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         seed["previous_best_rotation_eulers"][1],
         np.asarray([[40.0, 41.0, 42.0], [20.0, 21.0, 22.0]], dtype=np.float32),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         seed["previous_best_translations"][0],
         np.asarray([[2.5, -2.5], [0.5, -0.5]], dtype=np.float32),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         seed["previous_best_translations"][1],
         np.asarray([[3.5, -3.5], [1.5, -1.5]], dtype=np.float32),
     )
@@ -124,7 +125,7 @@ def test_input_star_pose_seed_sets_absent_angles_to_zero_like_relion():
         voxel_size=1.0,
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         seed["previous_best_rotation_eulers"][0],
         np.asarray([[0.0, 31.0, 0.0], [0.0, 11.0, 0.0]], dtype=np.float32),
     )
@@ -142,13 +143,13 @@ def test_input_star_norm_corrections_follow_half_local_order():
         voxel_size=1.0,
     )
 
-    np.testing.assert_array_equal(seed["norm_corrections"][0], np.asarray([1.25, 0.5]))
-    np.testing.assert_array_equal(seed["norm_corrections"][1], np.asarray([2.0, 0.8]))
+    assert_matches(seed["norm_corrections"][0], np.asarray([1.25, 0.5]))
+    assert_matches(seed["norm_corrections"][1], np.asarray([2.0, 0.8]))
     image_corrections, scale_corrections = _initial_corrections_from_norm(seed["norm_corrections"])
-    np.testing.assert_array_equal(image_corrections[0], np.asarray([0.8, 2.0], dtype=np.float32))
-    np.testing.assert_array_equal(image_corrections[1], np.asarray([0.5, 1.25], dtype=np.float32))
+    assert_matches(image_corrections[0], np.asarray([0.8, 2.0], dtype=np.float32))
+    assert_matches(image_corrections[1], np.asarray([0.5, 1.25], dtype=np.float32))
     for half in scale_corrections:
-        np.testing.assert_array_equal(half, np.ones(2, dtype=np.float32))
+        assert_matches(half, np.ones(2, dtype=np.float32))
 
 
 def test_input_star_without_norm_corrections_starts_at_unit_like_relion():
@@ -163,7 +164,7 @@ def test_input_star_without_norm_corrections_starts_at_unit_like_relion():
     )
 
     for half in seed["norm_corrections"]:
-        np.testing.assert_array_equal(half, np.ones(2))
+        assert_matches(half, np.ones(2))
     assert _initial_corrections_from_norm(seed["norm_corrections"]) == (None, None)
 
 
@@ -229,7 +230,7 @@ def test_class3d_input_origins_follow_all_data_order_without_orientations(angstr
     assert seed["previous_best_rotation_eulers"] == [None, None]
     assert seed["translation_units"] == ("angstrom" if angstrom_origins else "pixel")
     first, second = seed["previous_best_translations"]
-    np.testing.assert_array_equal(
+    assert_matches(
         first,
         np.asarray([[2.5, -2.5], [0.5, -0.5], [3.5, -3.5], [1.5, -1.5]], dtype=np.float32),
     )
@@ -242,7 +243,7 @@ def test_class3d_input_origins_absent_are_zero_and_rows_must_cover_the_input():
     input_particles = input_particles.drop(columns=["rlnOriginX", "rlnOriginY"])
     seed = _load_input_star_class3d_translations(input_particles, np.arange(4), voxel_size=1.0)
     assert seed["translation_units"] == "implicit_zero"
-    np.testing.assert_array_equal(seed["previous_best_translations"][0], np.zeros((4, 2), np.float32))
+    assert_matches(seed["previous_best_translations"][0], np.zeros((4, 2), np.float32))
     with pytest.raises(ValueError, match="permutation"):
         _load_input_star_class3d_translations(input_particles, np.arange(3), voxel_size=1.0)
 

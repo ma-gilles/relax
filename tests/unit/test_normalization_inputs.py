@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.normalization_inputs import optional_normalization_vector, prepare_local_normalization_inputs
 
@@ -19,14 +20,14 @@ def test_existing_f64_views_are_retained():
     result = prepare_local_normalization_inputs(n_images=2, normalization_log_z=original[::2])
     assert np.shares_memory(result.log_z, original)
     assert result.log_z.strides == original[::2].strides
-    assert result.log_z.tobytes() == original[::2].tobytes()
+    assert_matches(result.log_z, original[::2], strict=True)
 
 
 @pytest.mark.parametrize("name", ["normalization_log_z", "normalization_log_evidence"])
 def test_log_domain_is_not_silently_tightened(name):
     result = prepare_local_normalization_inputs(n_images=2, **{name: [np.nan, -np.inf]})
     value = result.log_z if name.endswith("log_z") else result.log_evidence
-    np.testing.assert_array_equal(value, [np.nan, -np.inf])
+    assert_matches(value, [np.nan, -np.inf])
 
 
 @pytest.mark.parametrize("shape", [(), (1,), (2, 1), (1, 2)])
@@ -40,7 +41,7 @@ def test_f32_inputs_are_converted_without_mutation():
     before = source.tobytes()
     result = prepare_local_normalization_inputs(n_images=2, normalization_max_posterior=source)
     assert result.max_posterior.dtype == np.float64
-    np.testing.assert_array_equal(result.max_posterior, source.astype(np.float64))
+    assert_matches(result.max_posterior, source.astype(np.float64))
     assert source.tobytes() == before
 
 
@@ -64,8 +65,8 @@ def test_empty_arrays_and_zero_reconstruction_threshold_are_valid():
         normalization_max_posterior=[1.0],
         reconstruction_probability_threshold=[0.0],
     )
-    np.testing.assert_array_equal(result.max_posterior, [1.0])
-    np.testing.assert_array_equal(result.reconstruction_threshold, [0.0])
+    assert_matches(result.max_posterior, [1.0])
+    assert_matches(result.reconstruction_threshold, [0.0])
 
 
 def test_conflicting_logs_fail_before_pmax_conversion():

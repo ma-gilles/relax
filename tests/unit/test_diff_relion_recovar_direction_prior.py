@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+from helpers.float_compare import assert_matches
 
 from scripts.diff_relion_recovar_per_iter import (
     _load_current_npz_artifact,
@@ -29,7 +30,7 @@ def test_cached_diagnostic_newer_than_refinement_is_loaded(tmp_path):
 
     loaded = _load_current_npz_artifact(artifact, refinement, label="pose")
     assert loaded is not None
-    np.testing.assert_array_equal(loaded["value"], [1.0])
+    assert_matches(loaded["value"], [1.0])
     loaded.close()
 
 

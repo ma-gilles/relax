@@ -14,6 +14,7 @@ from relax.diagnostics import local_debug
 from relax.helpers.convergence import _native_final_perturbation_healpix_order
 from relax.refinement.local_search_iteration import _LocalSearchIterationResult
 from relax.relion import relion_worker_scale
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -46,8 +47,8 @@ def test_per_half_update_from_half_score_result_updates_only_score_payload():
     assert outs.Ft_y == [None, "ft_y"]
     assert outs.Ft_ctf == [None, "ft_ctf"]
     assert outs.noise_stats == [None, "noise"]
-    np.testing.assert_array_equal(outs.max_posterior[1], np.array([0.25, 0.75], dtype=np.float32))
-    np.testing.assert_array_equal(outs.rotation_posterior[1], np.array([1.0, 2.0, 3.0], dtype=np.float32))
+    assert_matches(outs.max_posterior[1], np.array([0.25, 0.75], dtype=np.float32))
+    assert_matches(outs.rotation_posterior[1], np.array([1.0, 2.0, 3.0], dtype=np.float32))
     assert outs.class_assignments == [None, None]
     assert outs.class_posterior == [None, None]
     assert outs.class_rotation_posterior == [None, None]
@@ -181,7 +182,7 @@ def test_k1_local_records_coarse_parent_support_not_fine_reconstruction_count():
     counts = half_scoring._relion_coarse_significant_counts(
         [np.array([2, 8], dtype=np.int64), np.array([1, 3, 5, 7], dtype=np.int64)]
     )
-    np.testing.assert_array_equal(counts, np.array([2, 4], dtype=np.int32))
+    assert_matches(counts, np.array([2, 4], dtype=np.int32))
     assert half_scoring._relion_coarse_significant_counts([np.array([2]), None]) is None
 
 
@@ -399,7 +400,7 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         assert denominator_call["disable_adjoint_y"] is True
         assert denominator_call["disable_adjoint_ctf"] is True
         assert denominator_call["return_best_pose_details"] is False
-        np.testing.assert_array_equal(fine_call["normalization_log_evidence"], _Stats.log_evidence_per_image)
+        assert_matches(fine_call["normalization_log_evidence"], _Stats.log_evidence_per_image)
     assert parent_call["score_only"] is True
     assert "return_significant_counts" not in parent_call
     assert parent_call["apply_max_significants_to_support"] is True
@@ -411,7 +412,7 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
     assert result.Ft_y == "fine_ft_y"
     assert result.Ft_ctf == "fine_ft_ctf"
     assert result.noise_stats == "fine_noise"
-    np.testing.assert_array_equal(result.significant_counts, parent_counts)
+    assert_matches(result.significant_counts, parent_counts)
 
 
 def test_kclass_local_search_passes_relion_x_half_mstep(monkeypatch):

@@ -9,6 +9,7 @@ import pytest
 from relax.diagnostics import vdam_replay
 from relax.local import local_bucket_stages
 from scripts.build_vdam_block_chronology import RECORD_DTYPE
+from helpers.float_compare import assert_matches
 
 
 def _write_inputs(tmp_path: Path) -> tuple[Path, Path]:
@@ -79,7 +80,7 @@ def test_block_start_replay_joins_native_particle_ids_to_stack_indices(
         valid_rotation_counts=np.asarray([3, 3]),
         debug_iteration=1,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         orders,
         np.asarray([[0, 2, 1], [1, 2, 0]], dtype=np.int32),
     )
@@ -88,7 +89,7 @@ def test_block_start_replay_joins_native_particle_ids_to_stack_indices(
         np.asarray([1, 0], dtype=np.int64),
         debug_iteration=1,
     )
-    np.testing.assert_array_equal(lanes, np.asarray([1, 6], dtype=np.int32))
+    assert_matches(lanes, np.asarray([1, 6], dtype=np.int32))
 
 
 def test_block_start_replay_is_confined_to_the_traced_iteration(tmp_path, monkeypatch):
@@ -122,7 +123,7 @@ def test_captured_block_grid_keeps_concurrent_launches(tmp_path, monkeypatch):
         valid_rotation_counts=np.asarray([3, 3]),
         debug_iteration=1,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         orders,
         np.asarray([[0, 2, 1], [1, 2, 0]], dtype=np.int32),
     )
@@ -159,7 +160,7 @@ def test_captured_native_grid_returns_exact_per_particle_counts(tmp_path, monkey
         valid_rotation_counts=np.asarray([3, 3]),
         debug_iteration=1,
     )
-    np.testing.assert_array_equal(counts, np.asarray([3, 3], dtype=np.int32))
+    assert_matches(counts, np.asarray([3, 3], dtype=np.int32))
     assert vdam_replay._relion_vdam_block_start_replay_active(debug_iteration=1)
     assert not vdam_replay._relion_vdam_captured_block_serial_replay()
 
@@ -177,7 +178,7 @@ def test_captured_native_count_uses_exact_counts_and_identity_rows(
         valid_rotation_counts=np.asarray([3, 3]),
         debug_iteration=1,
     )
-    np.testing.assert_array_equal(counts, np.asarray([3, 3], dtype=np.int32))
+    assert_matches(counts, np.asarray([3, 3], dtype=np.int32))
     assert vdam_replay._relion_vdam_block_start_replay_active(debug_iteration=1)
     assert vdam_replay._relion_vdam_identity_native_grid_replay()
     assert not vdam_replay._relion_vdam_captured_block_serial_replay()
@@ -207,7 +208,7 @@ def test_captured_native_trace_shape_keeps_identity_rows_and_trace_instructions(
         valid_rotation_counts=np.asarray([3, 3]),
         debug_iteration=1,
     )
-    np.testing.assert_array_equal(counts, np.asarray([3, 3], dtype=np.int32))
+    assert_matches(counts, np.asarray([3, 3], dtype=np.int32))
     assert vdam_replay._relion_vdam_identity_native_grid_replay()
     assert vdam_replay._relion_vdam_native_trace_shape_replay(debug_iteration=1)
     assert not vdam_replay._relion_vdam_native_trace_shape_replay(
@@ -233,7 +234,7 @@ def test_captured_native_grid_trace_shape_keeps_captured_rows(
         valid_rotation_counts=np.asarray([3, 3]),
         debug_iteration=1,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         orders,
         np.asarray([[0, 2, 1], [1, 2, 0]], dtype=np.int32),
     )
@@ -271,7 +272,7 @@ def test_materialized_native_grid_replay_gathers_rows_before_identity_launch(
         values,
         orders,
     )
-    np.testing.assert_array_equal(np.asarray(actual), expected)
+    assert_matches(np.asarray(actual), expected)
     assert vdam_replay._relion_vdam_materialized_native_grid_replay(
         debug_iteration=1
     )
@@ -373,10 +374,10 @@ def test_captured_replay_preserves_zero_posterior_native_grid_rows():
         )
     )
     assert full_indices.shape == sparse_indices.shape == (1, 16)
-    np.testing.assert_array_equal(full_indices[0, :4], np.asarray([0, 1, 2, 3]))
-    np.testing.assert_array_equal(full_mask[0, :4], np.ones(4, dtype=bool))
-    np.testing.assert_array_equal(sparse_indices[0, :4], np.asarray([0, 2, 0, 0]))
-    np.testing.assert_array_equal(
+    assert_matches(full_indices[0, :4], np.asarray([0, 1, 2, 3]))
+    assert_matches(full_mask[0, :4], np.ones(4, dtype=bool))
+    assert_matches(sparse_indices[0, :4], np.asarray([0, 2, 0, 0]))
+    assert_matches(
         sparse_mask[0, :4],
         np.asarray([True, True, False, False]),
     )
@@ -395,7 +396,7 @@ def test_block_start_replay_appends_static_bucket_padding(tmp_path, monkeypatch)
         valid_rotation_counts=np.asarray([3]),
         debug_iteration=1,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         orders,
         np.asarray([[1, 2, 0, 3, 4]], dtype=np.int32),
     )
@@ -451,7 +452,7 @@ def test_candidate_block_trace_uses_stable_stack_indices(monkeypatch):
         np.asarray([2, 0], dtype=np.int64),
         debug_iteration=58,
     )
-    np.testing.assert_array_equal(trace_ids, np.asarray([402, 901], dtype=np.int32))
+    assert_matches(trace_ids, np.asarray([402, 901], dtype=np.int32))
 
 
 def test_external_host_replay_capture_uses_stable_stack_indices(
@@ -473,7 +474,7 @@ def test_external_host_replay_capture_uses_stable_stack_indices(
         np.asarray([1, 2], dtype=np.int64),
         debug_iteration=4,
     )
-    np.testing.assert_array_equal(trace_ids, np.asarray([17, 402], dtype=np.int32))
+    assert_matches(trace_ids, np.asarray([17, 402], dtype=np.int32))
 
 
 def test_quiesced_prelaunch_capture_uses_stable_stack_indices(
@@ -495,7 +496,7 @@ def test_quiesced_prelaunch_capture_uses_stable_stack_indices(
         np.asarray([2, 0], dtype=np.int64),
         debug_iteration=1,
     )
-    np.testing.assert_array_equal(trace_ids, np.asarray([402, 901], dtype=np.int32))
+    assert_matches(trace_ids, np.asarray([402, 901], dtype=np.int32))
 
 
 @pytest.mark.parametrize("iteration", ["", "0", "-1", "bad"])

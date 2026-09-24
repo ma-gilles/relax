@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -28,7 +29,7 @@ def test_batched_symmetry_rows_match_scalar_source(symmetry, oversampling):
     actual = get_oversampled_orientations_batch(3, oversampling, directions, psi, perturbation, symmetry)
     assert actual.dtype == np.float64  # Preserve RFLOAT metadata before GPU casts.
     assert actual.shape == (3 * 8**oversampling, 3)
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
 
 @pytest.mark.parametrize("symmetry", ["D5", "O", "I1"])
@@ -53,7 +54,7 @@ def test_batched_symmetry_rows_match_scalar_source_for_random_rows(symmetry, ord
         ]
     )
     actual = get_oversampled_orientations_batch(order, oversampling, directions, psi, perturbation, symmetry)
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
 
 def test_symmetric_sampling_is_built_once_per_order_and_symmetry():
@@ -119,4 +120,4 @@ def test_cached_symmetric_sampling_rows_equal_a_fresh_build(symmetry, oversampli
     assert symmetric_sampling_cache_info()["builds"] == 1
     for cached, value in ((cached_other, perturbation), (cached_again, -0.5)):
         assert cached.dtype == fresh[value].dtype == np.float64
-        np.testing.assert_array_equal(cached, fresh[value])
+        assert_matches(cached, fresh[value])

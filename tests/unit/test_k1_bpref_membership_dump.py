@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from relax.diagnostics import bpref_diagnostics
 
@@ -56,22 +57,22 @@ def test_k1_bpref_membership_dump_preserves_identity_padding_and_weights(
         assert int(payload["iteration"]) == 2
         assert int(payload["half"]) == 1
         assert int(payload["current_size"]) == 60
-        assert np.array_equal(payload["original_indices"], [41, 73])
-        assert np.array_equal(payload["stack_indices_1based"], [42, 74])
-        assert np.array_equal(payload["actual_counts"], [2, 2])
-        assert np.array_equal(
+        assert matches(payload["original_indices"], [41, 73])
+        assert matches(payload["stack_indices_1based"], [42, 74])
+        assert matches(payload["actual_counts"], [2, 2])
+        assert matches(
             payload["candidate_translation_count"],
             np.sum(posterior > 0, axis=-1),
         )
-        assert np.array_equal(
+        assert matches(
             payload["posterior_rotation_mass"],
             np.sum(posterior, axis=-1),
         )
-        assert np.array_equal(
+        assert matches(
             payload["reconstruction_rotation_mass"],
             np.sum(reconstruction, axis=-1),
         )
-        assert np.array_equal(
+        assert matches(
             payload["significant_translation_count"],
             np.sum(reconstruction > 0, axis=-1),
         )

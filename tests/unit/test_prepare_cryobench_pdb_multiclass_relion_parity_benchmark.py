@@ -2,6 +2,7 @@ import sys
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 
 def test_class_distribution_parser_supports_matrix_options():
@@ -36,8 +37,8 @@ def test_real_volume_symmetry_preserves_c1_and_averages_ordered_c4():
     c1_result = prep._symmetrize_real_volume(volume, "C1")
     c4_result = prep._symmetrize_real_volume(volume, "C4", operators=c4)
 
-    np.testing.assert_array_equal(c1_result, volume)
-    np.testing.assert_array_equal(c4_result, np.rot90(c4_result, axes=(0, 1)))
+    assert_matches(c1_result, volume)
+    assert_matches(c4_result, np.rot90(c4_result, axes=(0, 1)))
     assert c4_result.dtype == np.float32
     assert float(c4_result.sum()) == pytest.approx(float(volume.sum()))
 
@@ -173,13 +174,13 @@ def test_k4_reference_files_use_each_consumers_coordinate_frame(tmp_path, monkey
     assert list(classes["rlnReferenceImage"]) == [
         f"reference_init_class{k:03d}_relion.mrc" for k in range(1, 5)
     ]
-    np.testing.assert_array_equal(classes["rlnClassDistribution"], np.full(4, 0.25))
+    assert_matches(classes["rlnClassDistribution"], np.full(4, 0.25))
     for k, expected in enumerate(volumes, start=1):
         native, voxel = helpers.load_mrc(tmp_path / f"reference_init_class{k:03d}.mrc", return_voxel_size=True)
         relion_path = tmp_path / classes["rlnReferenceImage"].iloc[k - 1]
         relion, relion_voxel = helpers.load_relion_volume(relion_path, return_voxel_size=True)
-        np.testing.assert_array_equal(native, expected)
-        np.testing.assert_array_equal(relion, expected)
-        np.testing.assert_array_equal(helpers.load_mrc(relion_path), -expected)
+        assert_matches(native, expected)
+        assert_matches(relion, expected)
+        assert_matches(helpers.load_mrc(relion_path), -expected)
         assert float(voxel.x) == 2.0
         assert float(relion_voxel.x) == 2.0

@@ -3,6 +3,7 @@ from pathlib import Path
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import norm_scale as norm_scale_diagnostics
@@ -78,47 +79,47 @@ def test_norm_residual_input_capture_preserves_exact_target_arrays(
     path = Path(tmp_path) / "norm_residual_orig000066_half2_cs056.npz"
     with np.load(path, allow_pickle=False) as capture:
         assert capture["schema"].item() == "recovar-k1-norm-residual-inputs-v3"
-        np.testing.assert_array_equal(capture["proj_for_noise"], np.asarray(proj[0]))
-        np.testing.assert_array_equal(capture["proj_abs2_for_noise"], np.asarray(proj_abs2[0]))
-        np.testing.assert_array_equal(capture["summed_masked_noise"], np.asarray(summed[0]))
-        np.testing.assert_array_equal(capture["ctf_probs"], np.asarray(ctf_probs[0]))
-        np.testing.assert_array_equal(capture["noise_variance_for_noise"], np.asarray(noise))
-        np.testing.assert_array_equal(
+        assert_matches(capture["proj_for_noise"], np.asarray(proj[0]))
+        assert_matches(capture["proj_abs2_for_noise"], np.asarray(proj_abs2[0]))
+        assert_matches(capture["summed_masked_noise"], np.asarray(summed[0]))
+        assert_matches(capture["ctf_probs"], np.asarray(ctf_probs[0]))
+        assert_matches(capture["noise_variance_for_noise"], np.asarray(noise))
+        assert_matches(
             capture["rotations_for_noise"],
             np.eye(3, dtype=np.float32)[None],
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             capture["relion_score_translation_angles"],
             np.empty((0, 2), dtype=np.float32),
         )
         expected_a2 = np.asarray(proj_abs2[0]) * np.asarray(ctf_probs[0]) * np.asarray(noise)[None]
         expected_cross = np.asarray(proj[0]) * np.conj(np.asarray(summed[0]))
         expected_xa = expected_cross.real * np.asarray(noise)[None]
-        np.testing.assert_array_equal(capture["norm_a2_terms"], expected_a2)
-        np.testing.assert_array_equal(capture["norm_cross_terms"], expected_cross)
-        np.testing.assert_array_equal(capture["norm_xa_terms"], expected_xa)
+        assert_matches(capture["norm_a2_terms"], expected_a2)
+        assert_matches(capture["norm_cross_terms"], expected_cross)
+        assert_matches(capture["norm_xa_terms"], expected_xa)
         assert float(capture["norm_a2_per_image"]) == float(np.sum(expected_a2, dtype=np.float32))
         assert float(capture["norm_xa_per_image"]) == float(np.sum(expected_xa, dtype=np.float32))
         assert float(capture["block_norm_residual"]) == 17.0
-        np.testing.assert_array_equal(capture["processed_score_half_for_noise"], np.asarray(processed[0]))
-        np.testing.assert_array_equal(capture["shell_indices_half"], np.asarray(shells))
+        assert_matches(capture["processed_score_half_for_noise"], np.asarray(processed[0]))
+        assert_matches(capture["shell_indices_half"], np.asarray(shells))
         assert float(capture["support_mass"]) == 1.0
         assert float(capture["relion_norm_high_shell"]) == 19.0
         assert float(capture["weighted_img_per_image"]) == 23.0
-        np.testing.assert_array_equal(
+        assert_matches(
             capture["wavg_diff2_atomic_rectangle_per_pixel"],
             np.asarray([37.0, 41.0, 43.0], dtype=np.float32),
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             capture["wavg_diff2_atomic_rectangle_shell_indices"],
             np.asarray([0, -1, 1], dtype=np.int32),
         )
         assert float(capture["wavg_diff2_atomic_rectangle_per_image"]) == 80.0
         assert int(capture["group_id"]) == expected_group_id
         assert float(capture["scale_for_stats"]) == 2.0
-        np.testing.assert_array_equal(capture["scale_correction_pixel_mask"], [True, False])
+        assert_matches(capture["scale_correction_pixel_mask"], [True, False])
         expected_aa = np.float32(proj_abs2[0, 0, 0]) * np.float32(22.0) / np.float32(4.0)
-        np.testing.assert_array_equal(capture["scale_aa_per_shell"], [expected_aa, 0.0])
+        assert_matches(capture["scale_aa_per_shell"], [expected_aa, 0.0])
         assert float(capture["scale_aa_per_image"]) == float(expected_aa)
         assert capture["raw_translated_recon"].shape == (0, 0)
         assert capture["raw_translated_wavg"].shape == (0, 0)
@@ -165,8 +166,8 @@ def test_default_norm_reduction_preserves_input_precision(monkeypatch, input_dty
 
     assert np.asarray(shells).dtype == output_dtype
     assert np.asarray(per_image).dtype == output_dtype
-    np.testing.assert_array_equal(shells, np.asarray([9.0, 16.0], dtype=output_dtype))
-    np.testing.assert_array_equal(per_image, np.asarray([25.0], dtype=output_dtype))
+    assert_matches(shells, np.asarray([9.0, 16.0], dtype=output_dtype))
+    assert_matches(per_image, np.asarray([25.0], dtype=output_dtype))
 
 
 def test_powerclass_spectrum_norm_preserves_float64_per_image(monkeypatch):
@@ -183,7 +184,7 @@ def test_powerclass_spectrum_norm_preserves_float64_per_image(monkeypatch):
     )
 
     assert np.asarray(per_image).dtype == np.float64
-    np.testing.assert_array_equal(np.asarray(per_image), np.asarray([194.25]))
+    assert_matches(np.asarray(per_image), np.asarray([194.25]))
 
 
 def test_norm_capture_slices_and_reshapes_raw_translation_rows(tmp_path, monkeypatch):
@@ -236,23 +237,23 @@ def test_norm_capture_slices_and_reshapes_raw_translation_rows(tmp_path, monkeyp
         tmp_path / "norm_residual_orig000066_half2_cs056.npz",
         allow_pickle=False,
     ) as capture:
-        np.testing.assert_array_equal(
+        assert_matches(
             capture["raw_translated_recon"],
             np.arange(4, dtype=np.float32).astype(np.complex64).reshape(2, 2),
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             capture["raw_translated_wavg"],
             np.arange(8, dtype=np.float32).astype(np.complex64).reshape(2, 4),
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             capture["wavg_window_indices"],
             np.asarray([0, 1, 2, 3], dtype=np.int32),
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             capture["recon_window_indices"],
             np.asarray([0, 2], dtype=np.int32),
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             capture["relion_score_translation_angles"],
             np.zeros((2, 2), dtype=np.float32),
         )

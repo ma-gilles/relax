@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 
@@ -14,7 +15,7 @@ def test_radial_noise_model_get_and_average():
     model = noise.RadialNoiseModel(radial, image_shape=(8, 8))
     out = np.asarray(model.get())
     assert out.shape == (1, 64)
-    np.testing.assert_array_equal(np.asarray(model.get_average_radial_noise()), radial)
+    assert_matches(np.asarray(model.get_average_radial_noise()), radial)
 
 
 def test_variable_radial_noise_model_get_and_average():
@@ -127,7 +128,7 @@ def test_variable_radial_noise_model_via_dataset_1d_broadcast():
 
     # All dose levels should have the same radial profile (broadcast from 1D)
     for i in range(n_tilts):
-        np.testing.assert_array_equal(ds.noise.noise_variance_radials[i], radial_1d)
+        assert_matches(ds.noise.noise_variance_radials[i], radial_1d)
 
 
 def test_upper_bound_noise_dispatched_1d_noise():
@@ -154,7 +155,7 @@ def test_upper_bound_noise_dispatched_1d_noise():
     for tilt_idx in range(5):  # more tilts than radial bins — should still work
         noise_for_tilt = noise_1d[tilt_idx] if np.ndim(noise_1d) >= 2 else noise_1d
         assert noise_for_tilt.ndim == 1
-        np.testing.assert_array_equal(noise_for_tilt, noise_1d)
+        assert_matches(noise_for_tilt, noise_1d)
 
 
 def test_batch_make_radial_noise_matches_vmap():
@@ -372,7 +373,7 @@ def test_to_batched_half_pixel_noise_passthrough():
     half_input = np.arange(half_pixel_count, dtype=np.float32).reshape(1, -1)
     out = np.asarray(noise.to_batched_half_pixel_noise(half_input, image_shape, batch_size=2))
     assert out.shape == (1, half_pixel_count)  # (1, N) — XLA broadcasts to (B, N)
-    np.testing.assert_array_equal(out[0], half_input.ravel())
+    assert_matches(out[0], half_input.ravel())
 
 
 def test_to_batched_half_pixel_noise_full_converts():
@@ -713,12 +714,7 @@ def test_normalize_wsum_to_sigma2_noise_drops_relion_shell_sentinels(monkeypatch
 
     # Valid shell counts are [2, 0, 1, 0, 0]; invalid negative and high labels
     # are dropped, and empty shells use denominator count 1.
-    np.testing.assert_allclose(
-        np.asarray(got),
-        np.asarray([1.0, 5.0, 1.5, 2.0, 2.5], dtype=np.float32),
-        rtol=0.0,
-        atol=0.0,
-    )
+    assert_matches(np.asarray(got), np.asarray([1.0, 5.0, 1.5, 2.0, 2.5], dtype=np.float32))
 
 
 def test_normalize_wsum_to_sigma2_noise_preserves_float64_inputs(monkeypatch):
@@ -759,7 +755,7 @@ def test_normalize_wsum_to_sigma2_noise_preserves_float64_inputs(monkeypatch):
     )
     assert np.asarray(got_f32).dtype == np.float32
     assert np.asarray(got_f64).dtype == np.float64
-    np.testing.assert_allclose(np.asarray(got_f32), np.asarray(got_f64), rtol=0.0, atol=0.0)
+    assert_matches(np.asarray(got_f32), np.asarray(got_f64))
 
 
 def test_compute_noise_block_preserves_float64_inputs():
@@ -813,7 +809,7 @@ def test_relion_noise_shell_indices_include_vertical_nyquist(box_size):
     counts = np.bincount(shell_indices[shell_indices < n_shells], minlength=n_shells)
 
     assert shell_indices.reshape(box_size, n_shells)[0, 0] == box_size // 2
-    np.testing.assert_array_equal(counts, _relion_half_plane_shell_counts(image_shape))
+    assert_matches(counts, _relion_half_plane_shell_counts(image_shape))
 
 
 def test_estimate_initial_noise_spectrum_matches_image_power_scale():

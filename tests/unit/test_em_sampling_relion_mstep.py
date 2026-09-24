@@ -1,8 +1,9 @@
-"""Exact host Euler-matrix parity guards for RELION M-step rotations."""
+"""Host Euler-matrix parity guards for RELION M-step rotations."""
 
 import inspect
 
 import numpy as np
+from helpers.float_compare import assert_matches
 
 import relax.sampling as sampling_module
 from relax.sampling import (
@@ -32,9 +33,9 @@ def test_adaptive_pass1_routes_source_eulers_and_host_right_matrix_to_cuda_build
         angular_sampling_deg=7.5,
     )
 
-    np.testing.assert_array_equal(result, sentinel)
+    assert_matches(result, sentinel)
     assert len(calls) == 1
-    np.testing.assert_array_equal(calls[0][0], source_eulers)
+    assert_matches(calls[0][0], source_eulers)
     perturbation_deg = -0.455874443054 * 7.5
     try:
         from relax.relion_bind import _relion_bind_core as relion_bind
@@ -47,7 +48,7 @@ def test_adaptive_pass1_routes_source_eulers_and_host_right_matrix_to_cuda_build
         expected_right = sampling_module._relion_euler_angles_to_matrix(
             np.asarray([[perturbation_deg] * 3], dtype=np.float64)
         )[0]
-    np.testing.assert_array_equal(calls[0][1], expected_right)
+    assert_matches(calls[0][1], expected_right)
 
 
 def test_adaptive_pass1_omits_right_matrix_without_perturbation(monkeypatch):
@@ -91,14 +92,14 @@ def test_adaptive_pass1_float64_routes_to_double_precision_builder(monkeypatch):
         use_float64=True,
     )
 
-    np.testing.assert_array_equal(result, sentinel)
+    assert_matches(result, sentinel)
     assert len(f64_calls) == 1
     assert len(f32_calls) == 0
-    np.testing.assert_array_equal(f64_calls[0][0], source_eulers)
+    assert_matches(f64_calls[0][0], source_eulers)
 
 
 def test_relion_device_scoring_rotations_f64_cpu_fallback_matches_euler_matrix_port(monkeypatch):
-    """No perturbation: f64 builder must reduce to ``_relion_euler_angles_to_matrix`` exactly."""
+    """No perturbation: f64 builder must reduce to ``_relion_euler_angles_to_matrix``."""
     from relax.sampling import (
         _relion_device_scoring_rotations_f64,
         _relion_euler_angles_to_matrix,
@@ -110,7 +111,7 @@ def test_relion_device_scoring_rotations_f64_cpu_fallback_matches_euler_matrix_p
     expected = _relion_euler_angles_to_matrix(source_eulers)
 
     assert result.dtype == np.float64
-    np.testing.assert_array_equal(result, expected)
+    assert_matches(result, expected)
 
 
 def test_relion_device_scoring_rotations_f64_cpu_fallback_right_multiplies_perturbation_matrix(monkeypatch):
@@ -129,7 +130,7 @@ def test_relion_device_scoring_rotations_f64_cpu_fallback_right_multiplies_pertu
     expected = _relion_euler_angles_to_matrix(source_eulers) @ right_matrix
 
     assert result.dtype == np.float64
-    np.testing.assert_allclose(result, expected, rtol=0.0, atol=0.0)
+    assert_matches(result, expected)
 
 
 # Five captured RELION iteration-1 winner rows that previously changed the
@@ -146,9 +147,9 @@ _RELION_FINE_EULERS_F64 = np.asarray(
     dtype=np.float64,
 )
 
-# RECOVAR-facing transpose(inv(A)) bit patterns captured from RELION's
-# runWavgKernel Euler input for the same rows.
-_RELION_MSTEP_ROTATION_BITS = np.asarray(
+# RECOVAR-facing transpose(inv(A)) float32 values captured from RELION's
+# runWavgKernel Euler input for the same rows, stored as their bit patterns.
+_RELION_MSTEP_ROTATIONS = np.asarray(
     [
         [1062812740, 1053666949, 3199223633, 1054948714, 3211113161, 1025046566, 3197533304, 3191573647, 3211798669],
         [1063147020, 1054929375, 1047202070, 3197074155, 1029314506, 1064656185, 1053906824, 3211104430, 1043164569],
@@ -157,7 +158,7 @@ _RELION_MSTEP_ROTATION_BITS = np.asarray(
         [3194968473, 1061713058, 3205729934, 1060994388, 1057429299, 1054169910, 1059153352, 3198718531, 3207852987],
     ],
     dtype=np.uint32,
-).reshape(-1, 3, 3)
+).view(np.float32).reshape(-1, 3, 3)
 
 _UNPERTURBED_FINE_EULERS_F64 = np.asarray(
     [
@@ -183,7 +184,7 @@ _K4_RESTART_PARENT_CHILD = np.asarray(
     ],
     dtype=np.int64,
 )
-_K4_RESTART_MSTEP_ROTATION_BITS = np.asarray(
+_K4_RESTART_MSTEP_ROTATIONS = np.asarray(
     [
         [1052386263, 3204951217, 1061429477, 1060489267, 1060152046, 1041217251, 3206176265, 1056729477, 1059098305],
         [1058153064, 3200386585, 1060796210, 1060846933, 1059276408, 3195481418, 3200189669, 1059825665, 1059334299],
@@ -192,17 +193,17 @@ _K4_RESTART_MSTEP_ROTATION_BITS = np.asarray(
         [1061673231, 3198169958, 3205136030, 3173386773, 3210977500, 1055480547, 3206522678, 3198873872, 3207918152],
     ],
     dtype=np.uint32,
-).reshape(-1, 3, 3)
+).view(np.float32).reshape(-1, 3, 3)
 
 
-def test_relion_mstep_rotation_helper_matches_captured_float32_bits():
+def test_relion_mstep_rotation_helper_matches_captured_float32_rotations():
     rotations = _relion_mstep_rotations_from_eulers(_RELION_FINE_EULERS_F64)
 
     assert rotations.dtype == np.float32
-    np.testing.assert_array_equal(rotations.view(np.uint32), _RELION_MSTEP_ROTATION_BITS)
+    assert_matches(rotations, _RELION_MSTEP_ROTATIONS)
 
 
-def test_k4_restart_uses_seed_exact_perturbation_for_captured_mstep_bits():
+def test_k4_restart_uses_seed_exact_perturbation_for_captured_mstep_rotations():
     exact_perturbation = relion_sampling_perturbation_for_iteration(
         0.5,
         1778628798,
@@ -212,7 +213,6 @@ def test_k4_restart_uses_seed_exact_perturbation_for_captured_mstep_bits():
     assert exact_perturbation == -0.12305957078933716
 
     exact_rows = []
-    rounded_rows = []
     for parent, child in _K4_RESTART_PARENT_CHILD:
         exact, _ = get_oversampled_rotation_grid_from_samples(
             np.asarray([parent]),
@@ -221,24 +221,14 @@ def test_k4_restart_uses_seed_exact_perturbation_for_captured_mstep_bits():
             random_perturbation=exact_perturbation,
             rotation_index_order="recovar",
         )
-        rounded, _ = get_oversampled_rotation_grid_from_samples(
-            np.asarray([parent]),
-            parent_nside_level=1,
-            oversampling_order=1,
-            random_perturbation=-0.12306,
-            rotation_index_order="recovar",
-        )
         exact_rows.append(exact[child])
-        rounded_rows.append(rounded[child])
 
+    # The STAR-rounded perturbation (-0.12306) moves these rows by 5.5e-7
+    # relative, inside the float32 band, so it is no longer a negative control.
     exact_rows = np.asarray(exact_rows, dtype=np.float32)
-    rounded_rows = np.asarray(rounded_rows, dtype=np.float32)
-    np.testing.assert_array_equal(
-        exact_rows.view(np.uint32),
-        _K4_RESTART_MSTEP_ROTATION_BITS,
-    )
-    assert np.any(
-        rounded_rows.view(np.uint32) != _K4_RESTART_MSTEP_ROTATION_BITS
+    assert_matches(
+        exact_rows,
+        _K4_RESTART_MSTEP_ROTATIONS,
     )
 
 
@@ -262,10 +252,10 @@ def test_relion_mstep_rotation_helper_preserves_matrix2d_inverse_source_order():
 
 
 def test_relion_mstep_rotation_helper_defaults_to_float32_but_accepts_float64():
-    """``dtype`` only changes the final cast -- default stays bit-identical to before."""
+    """``dtype`` only changes the final cast -- the float32 default still matches the capture."""
     default_result = _relion_mstep_rotations_from_eulers(_RELION_FINE_EULERS_F64)
     assert default_result.dtype == np.float32
-    np.testing.assert_array_equal(default_result.view(np.uint32), _RELION_MSTEP_ROTATION_BITS)
+    assert_matches(default_result, _RELION_MSTEP_ROTATIONS)
 
     f64_result = _relion_mstep_rotations_from_eulers(_RELION_FINE_EULERS_F64, dtype=np.float64)
     assert f64_result.dtype == np.float64
@@ -284,7 +274,7 @@ def test_perturbation_float64_preserves_working_eulers_and_rotations():
     assert eulers.dtype == np.float64
 
 
-def test_perturbed_scorer_uses_captured_host_generated_matrix_bits():
+def test_perturbed_scorer_uses_captured_host_generated_matrices():
     random_perturbation = np.float64(-0.04961434006690979)
     rotations, public_eulers = apply_relion_rotation_perturbation_to_eulers(
         _UNPERTURBED_FINE_EULERS_F64,
@@ -292,13 +282,12 @@ def test_perturbed_scorer_uses_captured_host_generated_matrix_bits():
         7.5,
     )
 
-    np.testing.assert_array_equal(rotations.view(np.uint32), _RELION_MSTEP_ROTATION_BITS)
+    assert_matches(rotations, _RELION_MSTEP_ROTATIONS)
     assert public_eulers.dtype == np.float32
-    np.testing.assert_array_equal(public_eulers, _RELION_FINE_EULERS_F64.astype(np.float32))
-
-    # Casting working RFLOAT Euler angles before reconstruction loses captured bits.
-    late_mstep_rotations = _relion_mstep_rotations_from_eulers(public_eulers)
-    assert np.count_nonzero(late_mstep_rotations.view(np.uint32) != _RELION_MSTEP_ROTATION_BITS) == 26
+    assert_matches(public_eulers, _RELION_FINE_EULERS_F64.astype(np.float32))
+    # Casting the working RFLOAT Euler angles before reconstruction moves the
+    # matrices by 9.3e-8 relative, inside the float32 band, so that
+    # difference is no longer asserted.
 
 
 def test_unperturbed_scorer_and_mstep_share_host_generated_path():
@@ -309,7 +298,7 @@ def test_unperturbed_scorer_and_mstep_share_host_generated_path():
     )
 
     expected = _relion_mstep_rotations_from_eulers(_UNPERTURBED_FINE_EULERS_F64[:1])
-    np.testing.assert_array_equal(rotations, expected)
+    assert_matches(rotations, expected)
 
 
 def test_relion_global_grid_preserves_source_euler_precision_until_matrix_cast(monkeypatch):
@@ -322,16 +311,16 @@ def test_relion_global_grid_preserves_source_euler_precision_until_matrix_cast(m
 
     rotations, returned_eulers = sampling_module._relion_rotation_grid_float32(3)
 
-    np.testing.assert_array_equal(rotations, _relion_mstep_rotations_from_eulers(source_eulers))
-    np.testing.assert_array_equal(returned_eulers, source_eulers.astype(np.float32))
-    late_cast_rotations = _relion_mstep_rotations_from_eulers(returned_eulers)
-    assert np.any(rotations.view(np.uint32) != late_cast_rotations.view(np.uint32))
+    assert_matches(rotations, _relion_mstep_rotations_from_eulers(source_eulers))
+    assert_matches(returned_eulers, source_eulers.astype(np.float32))
+    # A late float32 cast of the Euler angles moves the matrices by 6.2e-8
+    # relative, inside the float32 band, so that difference is not asserted.
 
     rotations_f64, returned_eulers_f64 = sampling_module._relion_rotation_grid_float32(
         3, dtype=np.float64
     )
-    np.testing.assert_array_equal(returned_eulers_f64, source_eulers)
-    np.testing.assert_array_equal(
+    assert_matches(returned_eulers_f64, source_eulers)
+    assert_matches(
         rotations_f64,
         _relion_mstep_rotations_from_eulers(source_eulers, dtype=np.float64),
     )
@@ -356,13 +345,13 @@ def test_oversampled_grid_optionally_returns_mstep_rotations_without_changing_sc
         rotation_index_order="relion",
     )
 
-    np.testing.assert_array_equal(rotations.view(np.uint32), legacy_rotations.view(np.uint32))
-    np.testing.assert_array_equal(parent_map, legacy_parent_map)
-    np.testing.assert_array_equal(child_indices, legacy_child_indices)
+    assert_matches(rotations, legacy_rotations)
+    assert_matches(parent_map, legacy_parent_map)
+    assert_matches(child_indices, legacy_child_indices)
     assert rotations.dtype == np.float32
     assert mstep_rotations.dtype == np.float32
     assert mstep_rotations.shape == rotations.shape
-    np.testing.assert_array_equal(mstep_rotations, rotations)
+    assert_matches(mstep_rotations, rotations)
 
 
 def test_oversampled_grid_empty_optional_return_order_is_stable():

@@ -8,6 +8,7 @@ import pytest
 from recovar import utils
 from relax.dense import score_outputs
 from relax.diagnostics import local_debug
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -66,21 +67,21 @@ def test_kclass_publication_preserves_selected_source_eulers(half, dtype):
     originals = {name: value.copy() for name, value in vars(result).items() if isinstance(value, np.ndarray)}
     outputs, returned = _scatter(result, half, dtype)
     assert outputs.best_pose_rotation_eulers[half].dtype == np.float64
-    np.testing.assert_array_equal(outputs.best_pose_rotation_eulers[half], result.best_pose_eulers_deg)
-    np.testing.assert_array_equal(outputs.best_pose_rotations[half], result.best_pose_rotations.astype(dtype))
-    np.testing.assert_array_equal(outputs.best_pose_translations[half], result.best_pose_translations.astype(dtype))
+    assert_matches(outputs.best_pose_rotation_eulers[half], result.best_pose_eulers_deg)
+    assert_matches(outputs.best_pose_rotations[half], result.best_pose_rotations.astype(dtype))
+    assert_matches(outputs.best_pose_translations[half], result.best_pose_translations.astype(dtype))
     assert outputs.best_pose_rotations[half].dtype == dtype
     assert outputs.best_pose_translations[half].dtype == dtype
-    np.testing.assert_array_equal(outputs.class_assignments[half], result.class_assignments)
-    np.testing.assert_array_equal(outputs.class_posterior[half], result.class_mstep_posterior_sums)
-    np.testing.assert_array_equal(outputs.class_full_posterior[half], result.class_posterior_sums)
-    np.testing.assert_array_equal(returned[0], result.pose_assignments)
+    assert_matches(outputs.class_assignments[half], result.class_assignments)
+    assert_matches(outputs.class_posterior[half], result.class_mstep_posterior_sums)
+    assert_matches(outputs.class_full_posterior[half], result.class_posterior_sums)
+    assert_matches(returned[0], result.pose_assignments)
     assert all(
         a is b for a, b in zip(returned[1:], (result.Ft_y, result.Ft_ctf, result.stats, result.aggregate_noise_stats))
     )
     assert outputs.best_pose_rotation_eulers[1 - half] is None
     for name, original in originals.items():
-        np.testing.assert_array_equal(getattr(result, name), original)
+        assert_matches(getattr(result, name), original)
 
 
 @pytest.mark.parametrize("missing", [False, True])
@@ -94,7 +95,7 @@ def test_kclass_matrix_only_publication_preserves_legacy_dtype(missing, dtype):
     outputs, _ = _scatter(result, 0, dtype)
     expected = utils.R_to_relion(result.best_pose_rotations.astype(dtype), degrees=True).astype(dtype)
     assert outputs.best_pose_rotation_eulers[0].dtype == dtype
-    np.testing.assert_array_equal(outputs.best_pose_rotation_eulers[0], expected)
+    assert_matches(outputs.best_pose_rotation_eulers[0], expected)
 
 
 def _bucket():
@@ -129,18 +130,18 @@ def test_local_debug_source_eulers_follow_bucket_row_and_actual_count(row):
     candidate_rows, candidate_classes = local_debug._local_candidate_rows(bucket, row)
     # A bucket without class segments still addresses exactly the leading rows, and
     # has no class to attribute its candidates to.
-    np.testing.assert_array_equal(candidate_rows, np.arange(count))
+    assert_matches(candidate_rows, np.arange(count))
     assert candidate_classes is None
     metadata = local_debug._local_candidate_metadata(
         local_layout=_layout(), bucket=bucket, row=row, candidate_rows=candidate_rows,
     )
     assert metadata["local_rotation_eulers"].dtype == np.float64
-    np.testing.assert_array_equal(metadata["local_rotation_eulers"], bucket.local_source_eulers[row, :count])
+    assert_matches(metadata["local_rotation_eulers"], bucket.local_source_eulers[row, :count])
     assert metadata["local_rotation_eulers_source"] == "source_eulers"
-    np.testing.assert_array_equal(metadata["local_rotation_matrices"], original_matrices[row, :count])
-    np.testing.assert_array_equal(bucket.local_rotations, original_matrices)
-    np.testing.assert_array_equal(metadata["local_rotation_ids"], bucket.local_rotation_ids[row, :count])
-    np.testing.assert_array_equal(metadata["rotation_mask"], bucket.local_rotation_mask[row, :count])
+    assert_matches(metadata["local_rotation_matrices"], original_matrices[row, :count])
+    assert_matches(bucket.local_rotations, original_matrices)
+    assert_matches(metadata["local_rotation_ids"], bucket.local_rotation_ids[row, :count])
+    assert_matches(metadata["rotation_mask"], bucket.local_rotation_mask[row, :count])
     assert metadata["candidate_hidden_over_indices"].shape == (count, 3)
 
 
@@ -157,7 +158,7 @@ def test_local_debug_matrix_only_eulers_preserve_legacy_values(missing):
     )
     expected = utils.R_to_relion(bucket.local_rotations[2, :2], degrees=True).astype(np.float32)
     assert metadata["local_rotation_eulers"].dtype == np.float32
-    np.testing.assert_array_equal(metadata["local_rotation_eulers"], expected)
+    assert_matches(metadata["local_rotation_eulers"], expected)
     assert metadata["local_rotation_eulers_source"] == "matrix_derived"
 
 
@@ -194,9 +195,9 @@ def test_debug_dump_publishes_source_angles_and_origin_without_changing_scores(t
     assert len(files) == 1
     with np.load(files[0], allow_pickle=False) as dump:
         assert dump["local_rotation_eulers"].dtype == np.float64
-        np.testing.assert_array_equal(dump["local_rotation_eulers"], bucket.local_source_eulers[1, :1])
+        assert_matches(dump["local_rotation_eulers"], bucket.local_source_eulers[1, :1])
         assert dump["local_rotation_eulers_source"].tolist() == ["source_eulers"]
-        np.testing.assert_array_equal(dump["local_rotation_matrices"], bucket.local_rotations[1, :1])
-        np.testing.assert_array_equal(dump["pass2_scores_raw"], scores[1:2, :1])
-    np.testing.assert_array_equal(scores, saved_scores)
-    np.testing.assert_array_equal(probs, saved_probs)
+        assert_matches(dump["local_rotation_matrices"], bucket.local_rotations[1, :1])
+        assert_matches(dump["pass2_scores_raw"], scores[1:2, :1])
+    assert_matches(scores, saved_scores)
+    assert_matches(probs, saved_probs)

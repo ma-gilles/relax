@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers import optics_scale
 
@@ -26,4 +27,4 @@ def test_noise_shell_remap_both_ways():
     for i, j in enumerate(expected_index):
         assert group[i] == (reference[j] if j < 10 else 0.0)
     sums = optics_scale.add_group_shells_to_reference(np.zeros(10), np.ones(14), s)
-    np.testing.assert_array_equal(sums, np.bincount(expected_index[expected_index < 10], minlength=10))
+    assert_matches(sums, np.bincount(expected_index[expected_index < 10], minlength=10))

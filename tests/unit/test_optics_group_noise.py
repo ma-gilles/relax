@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.types import make_noise_stats
 from relax.refinement import noise_updates
@@ -69,8 +70,8 @@ def test_per_group_update_equals_one_group_updates():
                 [np.ones(SHAPE[0] * SHAPE[1])] * 2,
                 [np.ones(N_SHELLS)] * 2,
             )
-            np.testing.assert_array_equal(result.noise_from_res_per_half[k][g], single.noise_from_res_per_half[k])
-            np.testing.assert_array_equal(
+            assert_matches(result.noise_from_res_per_half[k][g], single.noise_from_res_per_half[k])
+            assert_matches(
                 np.asarray(result.noise_variance_per_half[k][g]), np.asarray(single.noise_variance_per_half[k])
             )
 
@@ -86,8 +87,8 @@ def test_group_without_noise_sums_keeps_its_spectrum():
     previous_radial = np.stack([np.ones(N_SHELLS), np.full(N_SHELLS, 7.0)])
     previous_rows = np.stack([np.ones(SHAPE[0] * SHAPE[1]), np.full(SHAPE[0] * SHAPE[1], 7.0)])
     result = _update([stats, stats], [previous_rows, previous_rows], [previous_radial, previous_radial])
-    np.testing.assert_array_equal(result.noise_from_res_per_half[0][1], np.full(N_SHELLS, 7.0))
-    np.testing.assert_array_equal(np.asarray(result.noise_variance_per_half[0][1]), previous_rows[1])
+    assert_matches(result.noise_from_res_per_half[0][1], np.full(N_SHELLS, 7.0))
+    assert_matches(np.asarray(result.noise_variance_per_half[0][1]), previous_rows[1])
     assert not np.allclose(result.noise_from_res_per_half[0][0], 1.0)
 
 
@@ -97,7 +98,7 @@ def test_noise_state_layout_per_group():
     assert [a.shape for a in one] == [(256,), (256,)]
     rows = noise_updates._normalize_noise_variance_per_half([np.ones((2, 256)), 2 * np.ones((2, 256))])
     assert [a.shape for a in rows] == [(2, 256), (2, 256)]
-    np.testing.assert_array_equal(np.asarray(noise_updates._mean_noise_variance(rows)), 1.5 * np.ones((2, 256)))
+    assert_matches(np.asarray(noise_updates._mean_noise_variance(rows)), 1.5 * np.ones((2, 256)))
     per_half, mean = noise_updates._noise_radial_history(rows, SHAPE, dtype=np.float64)
     assert per_half[0].shape == (2, N_SHELLS) and np.asarray(mean).shape == (2, N_SHELLS)
 

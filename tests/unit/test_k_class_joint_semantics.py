@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from relax.refinement.half_inputs import HalfInputState
+from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
@@ -158,11 +159,11 @@ def test_adaptive_coarse_state_activation_is_zero_soft_k1_only(
                        ("relion_coarse_hard_assignment", coarse_pose),
                        ("relion_coarse_max_posterior", coarse_pmax)):
         if enabled:
-            np.testing.assert_array_equal(fine_kwargs[key], value)
+            assert_matches(fine_kwargs[key], value)
         else:
             assert key not in fine_kwargs
-    np.testing.assert_array_equal(actual.Ft_y, result.Ft_y)
-    np.testing.assert_array_equal(actual.Ft_ctf, result.Ft_ctf)
+    assert_matches(actual.Ft_y, result.Ft_y)
+    assert_matches(actual.Ft_ctf, result.Ft_ctf)
 
 
 def test_large_k_class_prefers_compact_sparse_pass2_over_dense_fallback(monkeypatch):
@@ -322,9 +323,9 @@ def test_adaptive_exact_fine_gaussian_retains_sparse_on_broad_support(monkeypatc
     assert significance_calls[0]["use_float64_scoring"] is False
     assert sparse_calls[0][1]["engine_kwargs"]["use_float64_scoring"] is True
     assert sparse_calls[0][1]["engine_kwargs"]["use_float64_projections"] is True
-    np.testing.assert_array_equal(np.asarray(result.significant_counts), np.array([5], dtype=np.int32))
-    np.testing.assert_array_equal(np.asarray(result.Ft_y), np.array([[1, 2, 3, 4]], dtype=np.complex64))
-    np.testing.assert_array_equal(np.asarray(result.Ft_ctf), np.array([[5, 6, 7, 8]], dtype=np.float32))
+    assert_matches(np.asarray(result.significant_counts), np.array([5], dtype=np.int32))
+    assert_matches(np.asarray(result.Ft_y), np.array([[1, 2, 3, 4]], dtype=np.complex64))
+    assert_matches(np.asarray(result.Ft_ctf), np.array([[5, 6, 7, 8]], dtype=np.float32))
 
 
 def test_k_class_hard_assignment_uses_joint_best_pose_not_marginal_class():
@@ -342,8 +343,8 @@ def test_k_class_hard_assignment_uses_joint_best_pose_not_marginal_class():
     )
 
     assert np.asarray(result.class_responsibilities)[0, 0] > np.asarray(result.class_responsibilities)[1, 0]
-    np.testing.assert_array_equal(np.asarray(result.class_assignments), np.asarray([1], dtype=np.int32))
-    np.testing.assert_array_equal(np.asarray(result.pose_assignments), np.asarray([7], dtype=np.int32))
+    assert_matches(np.asarray(result.class_assignments), np.asarray([1], dtype=np.int32))
+    assert_matches(np.asarray(result.pose_assignments), np.asarray([7], dtype=np.int32))
     expected_pmax = np.exp(-1.0 - np.logaddexp(0.0, -0.2))
     np.testing.assert_allclose(
         np.asarray(result.stats.max_posterior_per_image),
@@ -390,7 +391,7 @@ def test_single_class_assemble_result_preserves_authoritative_kernel_pmax():
 
     recomputed = np.exp(-100000.03125 - (-100000.0))
     assert abs(float(kernel_pmax) - recomputed) > 5e-3
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(result.stats.max_posterior_per_image),
         np.asarray([kernel_pmax], dtype=np.float32),
     )
@@ -446,7 +447,7 @@ def test_k_class_singleton_host_accumulator_adds_class_axis_without_copy(dtype):
     assert stacked.shape == (1, 3, 4)
     assert stacked.dtype == np.dtype(dtype)
     assert np.shares_memory(stacked, source)
-    np.testing.assert_array_equal(stacked[0], source)
+    assert_matches(stacked[0], source)
 
 
 def test_k_class_multiple_host_accumulators_remain_independent_stack():
@@ -459,7 +460,7 @@ def test_k_class_multiple_host_accumulators_remain_independent_stack():
     assert stacked.dtype == np.dtype(np.float32)
     assert not np.shares_memory(stacked, first)
     assert not np.shares_memory(stacked, second)
-    np.testing.assert_array_equal(stacked, np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32))
+    assert_matches(stacked, np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32))
 
 
 def test_k_class_singleton_noncontiguous_host_accumulator_keeps_stack_contract():
@@ -470,7 +471,7 @@ def test_k_class_singleton_noncontiguous_host_accumulator_keeps_stack_contract()
     assert stacked.shape == (1, 4, 3)
     assert stacked.flags.owndata
     assert not np.shares_memory(stacked, source)
-    np.testing.assert_array_equal(stacked[0], source)
+    assert_matches(stacked[0], source)
 
 
 def test_k_class_singleton_read_only_host_accumulator_is_stacked_into_writable_copy():
@@ -483,7 +484,7 @@ def test_k_class_singleton_read_only_host_accumulator_is_stacked_into_writable_c
     assert stacked.flags.owndata
     assert stacked.flags.writeable
     assert not np.shares_memory(stacked, source)
-    np.testing.assert_array_equal(stacked[0], source)
+    assert_matches(stacked[0], source)
 
 
 def test_k_class_assemble_result_publishes_singleton_host_accumulators_without_copy():
@@ -510,8 +511,8 @@ def test_k_class_assemble_result_publishes_singleton_host_accumulators_without_c
     selected_ctf = _select_single_class_accumulator(result.Ft_ctf, label="Ft_ctf")
     assert np.shares_memory(selected_y, Ft_y)
     assert np.shares_memory(selected_ctf, Ft_ctf)
-    np.testing.assert_array_equal(selected_y, Ft_y)
-    np.testing.assert_array_equal(selected_ctf, Ft_ctf)
+    assert_matches(selected_y, Ft_y)
+    assert_matches(selected_ctf, Ft_ctf)
 
 
 def test_k_class_combined_accumulator_skips_empty_half_allocation():
@@ -848,9 +849,9 @@ def test_dense_k_class_decodes_best_pose_details(monkeypatch):
         return_best_pose_details=True,
     )
 
-    np.testing.assert_array_equal(np.asarray(result.class_assignments), np.asarray([1, 0], dtype=np.int32))
-    np.testing.assert_array_equal(np.asarray(result.pose_assignments), np.asarray([5, 3], dtype=np.int32))
-    np.testing.assert_array_equal(np.asarray(result.best_pose_rotation_ids), np.asarray([2, 1], dtype=np.int32))
+    assert_matches(np.asarray(result.class_assignments), np.asarray([1, 0], dtype=np.int32))
+    assert_matches(np.asarray(result.pose_assignments), np.asarray([5, 3], dtype=np.int32))
+    assert_matches(np.asarray(result.best_pose_rotation_ids), np.asarray([2, 1], dtype=np.int32))
     np.testing.assert_allclose(np.asarray(result.best_pose_rotations), rotations[[2, 1]])
     np.testing.assert_allclose(np.asarray(result.best_pose_translations), translations[[1, 1]])
 
@@ -903,11 +904,11 @@ def test_dense_k_class_single_class_skips_score_probe(monkeypatch):
     assert calls[0]["return_stats"] is True
     assert calls[0]["accumulate_noise"] is False
     assert "normalization_log_evidence" not in calls[0]
-    np.testing.assert_array_equal(np.asarray(result.class_assignments), np.asarray([0, 0], dtype=np.int32))
-    np.testing.assert_array_equal(np.asarray(result.pose_assignments), np.asarray([1, 2], dtype=np.int32))
+    assert_matches(np.asarray(result.class_assignments), np.asarray([0, 0], dtype=np.int32))
+    assert_matches(np.asarray(result.pose_assignments), np.asarray([1, 2], dtype=np.int32))
     np.testing.assert_allclose(np.asarray(result.class_responsibilities), np.ones((1, 2), dtype=np.float32))
     np.testing.assert_allclose(np.asarray(result.class_posterior_sums), np.asarray([2.0], dtype=np.float32))
-    np.testing.assert_array_equal(np.asarray(result.best_pose_rotation_ids), np.asarray([0, 1], dtype=np.int32))
+    assert_matches(np.asarray(result.best_pose_rotation_ids), np.asarray([0, 1], dtype=np.int32))
     np.testing.assert_allclose(np.asarray(result.best_pose_translations), translations[[1, 0]])
 
 
@@ -1036,9 +1037,9 @@ def test_adaptive_k_class_firstiter_override_redecodes_best_pose_details(monkeyp
     assert len(dense_calls) == 1
     assert dense_calls[0]["return_best_pose_details"]
     assert dense_calls[0]["sparse_pass2"] is False
-    np.testing.assert_array_equal(np.asarray(result.class_assignments), np.asarray([1, 0], dtype=np.int32))
-    np.testing.assert_array_equal(np.asarray(result.pose_assignments), np.asarray([2, 1], dtype=np.int32))
-    np.testing.assert_array_equal(np.asarray(result.best_pose_rotation_ids), np.asarray([1, 0], dtype=np.int32))
+    assert_matches(np.asarray(result.class_assignments), np.asarray([1, 0], dtype=np.int32))
+    assert_matches(np.asarray(result.pose_assignments), np.asarray([2, 1], dtype=np.int32))
+    assert_matches(np.asarray(result.best_pose_rotation_ids), np.asarray([1, 0], dtype=np.int32))
     np.testing.assert_allclose(np.asarray(result.best_pose_translations), fine_translations[[0, 1]])
 
 
@@ -1119,8 +1120,8 @@ def test_firstiter_score_probe_uses_joint_significance(monkeypatch, projection_d
     assert calls[0]["rotation_log_prior"] is None
     assert calls[0]["translation_log_prior"] is None
     assert calls[0]["translation_phase_source"] is phase_source
-    np.testing.assert_array_equal(result.class_assignments, np.asarray([1, 0, 1], dtype=np.int32))
-    np.testing.assert_array_equal(result.per_class_hard_assignments, np.asarray([[4, 5, 6], [7, 8, 9]], dtype=np.int32))
+    assert_matches(result.class_assignments, np.asarray([1, 0, 1], dtype=np.int32))
+    assert_matches(result.per_class_hard_assignments, np.asarray([[4, 5, 6], [7, 8, 9]], dtype=np.int32))
 
 
 def test_adaptive_k_class_firstiter_uses_coarse_current_size_for_probe(monkeypatch):
@@ -1269,7 +1270,7 @@ def test_adaptive_k_class_firstiter_fine_pass_uses_global_winner_subsets(monkeyp
         n_images = int(dataset.n_units)
         if is_fine:
             expected_corr = np.arange(4, dtype=np.float32)[np.asarray(dataset.indices, dtype=np.int64)]
-            np.testing.assert_array_equal(np.asarray(kwargs["image_corrections"]), expected_corr)
+            assert_matches(np.asarray(kwargs["image_corrections"]), expected_corr)
             hard = np.arange(n_images, dtype=np.int32) % 2
             best = np.full(n_images, 10.0 + class_index, dtype=np.float32)
         elif class_index == 0:
@@ -1323,9 +1324,9 @@ def test_adaptive_k_class_firstiter_fine_pass_uses_global_winner_subsets(monkeyp
     fine_calls = [call for call in calls if call[0]]
     assert len(probe_calls) == 1
     assert [call[1] for call in fine_calls] == [(0, 3), (1, 2)]
-    np.testing.assert_array_equal(np.asarray(result.class_assignments), np.asarray([0, 1, 1, 0], dtype=np.int32))
+    assert_matches(np.asarray(result.class_assignments), np.asarray([0, 1, 1, 0], dtype=np.int32))
     np.testing.assert_allclose(np.asarray(result.class_posterior_sums), np.asarray([2.0, 2.0], dtype=np.float32))
-    np.testing.assert_array_equal(np.asarray(result.significant_counts), np.ones(4, dtype=np.int32))
+    assert_matches(np.asarray(result.significant_counts), np.ones(4, dtype=np.int32))
 
 
 def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(monkeypatch):
@@ -1391,7 +1392,7 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
     ):
         class_index = int(np.real(np.asarray(volume)[0]))
         sparse_calls.append((class_index, tuple(dataset.indices.tolist()), significant_sample_indices, kwargs))
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(kwargs["image_corrections"]),
             np.arange(4, dtype=np.float32)[np.asarray(dataset.indices, dtype=np.int64)],
         )
@@ -1450,17 +1451,17 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
     assert [call[1] for call in sparse_calls] == [(0, 3), (1, 2)]
     assert len(probe_calls) == 1
     assert len(score_calls) == 0
-    np.testing.assert_array_equal(np.asarray(result.class_assignments), np.asarray([0, 1, 1, 0], dtype=np.int32))
+    assert_matches(np.asarray(result.class_assignments), np.asarray([0, 1, 1, 0], dtype=np.int32))
     np.testing.assert_allclose(np.asarray(result.class_posterior_sums), np.asarray([2.0, 2.0], dtype=np.float32))
-    np.testing.assert_array_equal(np.asarray(result.pose_assignments), np.asarray([0, 2, 3, 1], dtype=np.int32))
-    np.testing.assert_array_equal(np.asarray(result.significant_counts), np.ones(4, dtype=np.int32))
+    assert_matches(np.asarray(result.pose_assignments), np.asarray([0, 2, 3, 1], dtype=np.int32))
+    assert_matches(np.asarray(result.significant_counts), np.ones(4, dtype=np.int32))
     # Significant-count serialization is result metadata only; the per-class
     # M-step accumulators returned by the sparse global-winner route survive.
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(result.Ft_y),
         np.asarray([[1, 1, 1, 1], [2, 2, 2, 2]], dtype=np.complex64),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(result.Ft_ctf),
         np.asarray([[2, 2, 2, 2], [3, 3, 3, 3]], dtype=np.float32),
     )
@@ -1628,7 +1629,7 @@ def test_lazy_k_class_adaptive_mask_matches_dense_blocks_without_materializing()
                 batch_count=batch_count,
                 rotation_block_size=rotation_block_size,
             )
-            np.testing.assert_array_equal(np.asarray(actual), expected)
+            assert_matches(np.asarray(actual), expected)
 
 
 def test_sparse_k_class_adaptive_mstep_uses_score_space_log_z(monkeypatch):
@@ -1972,7 +1973,7 @@ def test_firstiter_adaptive_translation_perturbation_uses_coarse_step():
         dtype=np.float32,
     ) + np.float32(expected_shift)
     np.testing.assert_allclose(fine_trans, expected, atol=1e-6)
-    np.testing.assert_array_equal(trans_parent_map, np.zeros(4, dtype=np.int64))
+    assert_matches(trans_parent_map, np.zeros(4, dtype=np.int64))
 
 
 def test_firstiter_adaptive_translation_angle_preserves_relion_host_precision():
@@ -1997,18 +1998,18 @@ def test_firstiter_adaptive_translation_angle_preserves_relion_host_precision():
     )[3]
 
     assert fine_trans.dtype == np.float64
-    source_angle_bits = _relion_translation_angles_f32(
+    # The translations keep host double precision: a float32 round trip moves
+    # them far outside the float64 band.
+    assert not matches(fine_trans, fine_trans.astype(np.float32).astype(np.float64))
+    source_angles = _relion_translation_angles_f32(
         fine_trans,
         (128, 128),
-    ).view(np.uint32)
-    rounded_angle_bits = _relion_translation_angles_f32(
-        fine_trans.astype(np.float32),
-        (128, 128),
-    ).view(np.uint32)
-    # The x=1.25 child is the exact case-22 stack-2124 boundary: RELION's
-    # host-double translation produces one lower float32 angle bit pattern.
-    assert source_angle_bits[2, 0] == np.uint32(3178343903)
-    assert rounded_angle_bits[2, 0] == np.uint32(3178343904)
+    )
+    # The x=1.25 child is the case-22 stack-2124 boundary, captured from RELION
+    # as a float32 bit pattern. Rounding the translation first moves this angle
+    # by one float32 ulp, inside the band, so only the precision check above
+    # separates the two.
+    assert_matches(source_angles[2, 0], np.asarray(3178343903, dtype=np.uint32).view(np.float32))
 
 
 def test_firstiter_adaptive_grid_can_return_relion_host_mstep_rotations():
@@ -2037,7 +2038,7 @@ def test_firstiter_adaptive_grid_can_return_relion_host_mstep_rotations():
     assert len(legacy) == 6
     assert len(extended) == 7
     for legacy_array, extended_array in zip(legacy, extended[:6], strict=True):
-        np.testing.assert_array_equal(extended_array, legacy_array)
+        assert_matches(extended_array, legacy_array)
     fine_mstep_rotations = extended[6]
     assert fine_mstep_rotations.dtype == np.float32
     assert fine_mstep_rotations.shape == extended[2].shape
@@ -2105,11 +2106,11 @@ def test_local_k_class_single_class_skips_score_probe(monkeypatch):
     assert calls[0]["return_best_pose_details"] is True
     assert calls[0]["accumulate_noise"] is False
     assert "normalization_log_evidence" not in calls[0]
-    np.testing.assert_array_equal(np.asarray(result.class_assignments), np.asarray([0, 0], dtype=np.int32))
-    np.testing.assert_array_equal(np.asarray(result.pose_assignments), np.asarray([1, 0], dtype=np.int32))
+    assert_matches(np.asarray(result.class_assignments), np.asarray([0, 0], dtype=np.int32))
+    assert_matches(np.asarray(result.pose_assignments), np.asarray([1, 0], dtype=np.int32))
     np.testing.assert_allclose(np.asarray(result.class_responsibilities), np.ones((1, 2), dtype=np.float32))
     np.testing.assert_allclose(np.asarray(result.class_posterior_sums), np.asarray([2.0], dtype=np.float32))
-    np.testing.assert_array_equal(np.asarray(result.best_pose_rotation_ids), np.asarray([1, 0], dtype=np.int32))
+    assert_matches(np.asarray(result.best_pose_rotation_ids), np.asarray([1, 0], dtype=np.int32))
 
     calls.clear()
     coarse_pmax = np.asarray([0.25, 0.5], dtype=np.float64)
@@ -2124,7 +2125,7 @@ def test_local_k_class_single_class_skips_score_probe(monkeypatch):
         normalization_max_posterior=coarse_pmax,
     )
     assert len(calls) == 1
-    np.testing.assert_array_equal(calls[0]["normalization_max_posterior"], coarse_pmax)
+    assert_matches(calls[0]["normalization_max_posterior"], coarse_pmax)
     assert "normalization_log_evidence" not in calls[0]
 
 
@@ -2336,12 +2337,7 @@ def test_read_relion_direction_priors_reads_all_classes(tmp_path):
     )
     assert priors.dtype == np.float32
     assert priors_float64.dtype == np.float64
-    np.testing.assert_allclose(
-        priors_float64,
-        np.asarray([[0.2, 0.3], [0.1, 0.4]], dtype=np.float64),
-        rtol=0.0,
-        atol=0.0,
-    )
+    assert_matches(priors_float64, np.asarray([[0.2, 0.3], [0.1, 0.4]], dtype=np.float64))
 
 
 def _k4_assembly_inputs():
@@ -2417,10 +2413,10 @@ def test_k4_assembly_matches_float64_joint_posterior_and_all_class_pose_winners(
         rtol=0.0,
         atol=5e-8,
     )
-    np.testing.assert_array_equal(np.asarray(result.class_assignments), np.arange(4, dtype=np.int32))
-    np.testing.assert_array_equal(np.asarray(result.pose_assignments), [0, 101, 202, 303])
-    np.testing.assert_array_equal(np.asarray(result.best_pose_rotation_ids), [0, 11, 22, 33])
-    np.testing.assert_array_equal(
+    assert_matches(np.asarray(result.class_assignments), np.arange(4, dtype=np.int32))
+    assert_matches(np.asarray(result.pose_assignments), [0, 101, 202, 303])
+    assert_matches(np.asarray(result.best_pose_rotation_ids), [0, 11, 22, 33])
+    assert_matches(
         np.asarray(result.best_pose_translations),
         np.asarray([[0, 0], [1, 1], [2, 2], [3, 3]], dtype=np.float32),
     )
@@ -2431,7 +2427,7 @@ def test_k4_assembly_matches_float64_joint_posterior_and_all_class_pose_winners(
         rtol=2e-7,
         atol=5e-8,
     )
-    np.testing.assert_array_equal(np.asarray(result.stats.rotation_posterior_sums), np.full(3, 10.0))
+    assert_matches(np.asarray(result.stats.rotation_posterior_sums), np.full(3, 10.0))
 
 
 def test_k4_assembly_rejects_missing_or_duplicated_class_rows():
@@ -2520,8 +2516,8 @@ def test_local_k4_probe_is_score_only_and_preserves_all_class_pose_winners(monke
         rtol=0.0,
         atol=5e-8,
     )
-    np.testing.assert_array_equal(np.asarray(result.class_assignments), np.arange(n_classes, dtype=np.int32))
-    np.testing.assert_array_equal(np.asarray(result.pose_assignments), [0, 101, 202, 303])
+    assert_matches(np.asarray(result.class_assignments), np.arange(n_classes, dtype=np.int32))
+    assert_matches(np.asarray(result.pose_assignments), [0, 101, 202, 303])
 
 
 @pytest.mark.parametrize("texture_interp", [True, False])
@@ -2606,7 +2602,7 @@ def test_firstiter_score_probe_compacts_relion_projector_on_host(
     # radius-squared is 18.  The strict enclosing integer radius is 5.
     assert calls[0]["relion_projector_r_max"] == 5
     assert compact.shape == (23, 23, 12)
-    np.testing.assert_array_equal(compact, projector[0, 2:25, 2:25, :12])
+    assert_matches(compact, projector[0, 2:25, 2:25, :12])
     assert projector.shape == (1, 27, 27, 14)
     assert (
         "RELION firstiter-CC coarse PPref host compaction: "

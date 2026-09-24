@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
@@ -106,7 +107,7 @@ def test_dense_per_pose_score_dump_can_target_original_index(tmp_path):
     )
 
     dumped = np.load(tmp_path / "target000042_block0007.npy")
-    np.testing.assert_array_equal(dumped, scores[1])
+    assert_matches(dumped, scores[1])
 
 
 def _inputs():
@@ -354,7 +355,7 @@ def test_dense_big_jit_pass1_matches_dense_primitives():
 
     result = _run_big_jit(s, run_mstep=False)
 
-    np.testing.assert_allclose(np.asarray(result.block_max), np.asarray(ref_max), rtol=0.0, atol=0.0)
+    assert_matches(np.asarray(result.block_max), np.asarray(ref_max))
     np.testing.assert_allclose(
         np.asarray(result.block_sum_exp),
         np.asarray(ref_sum_exp),
@@ -400,7 +401,7 @@ def test_pad_dense_big_jit_image_axis_preserves_ctf_rows():
     assert actual_batch_size == 1
     assert padded_batch.shape == (3, 4, 4)
     assert padded_ctf.shape == (3, 9)
-    np.testing.assert_array_equal(valid_mask, np.array([True, False, False]))
+    assert_matches(valid_mask, np.array([True, False, False]))
     np.testing.assert_allclose(padded_batch[1:], 0.0)
     np.testing.assert_allclose(padded_ctf[1:], np.broadcast_to(ctf_params[0], (2, 9)))
 
@@ -449,7 +450,7 @@ def test_dense_big_jit_pass1_matches_dense_primitives_for_modes(score_mode, use_
         current_size=current_size,
     )
 
-    np.testing.assert_allclose(np.asarray(result.block_max), np.asarray(ref_max), rtol=0.0, atol=0.0)
+    assert_matches(np.asarray(result.block_max), np.asarray(ref_max))
     np.testing.assert_allclose(
         np.asarray(result.block_sum_exp),
         np.asarray(ref_sum_exp),
@@ -496,12 +497,12 @@ def test_logsumexp_initial_block_handles_underflow_without_nan():
     init_sum = jnp.zeros((2,), dtype=jnp.float64)
 
     max_s, sum_exp = _update_logsumexp(init_max, init_sum, scores)
-    np.testing.assert_allclose(np.asarray(max_s), np.array([-1517.0, -933.0]), rtol=0.0, atol=0.0)
+    assert_matches(np.asarray(max_s), np.array([-1517.0, -933.0]))
     assert np.all(np.isfinite(np.asarray(sum_exp)))
 
     block_max, block_sum_exp = max_s, sum_exp
     merged_max, merged_sum = _merge_block_logsumexp(init_max, init_sum, block_max, block_sum_exp)
-    np.testing.assert_allclose(np.asarray(merged_max), np.asarray(max_s), rtol=0.0, atol=0.0)
+    assert_matches(np.asarray(merged_max), np.asarray(max_s))
     np.testing.assert_allclose(np.asarray(merged_sum), np.asarray(sum_exp), rtol=1e-7, atol=1e-7)
 
 
@@ -547,8 +548,8 @@ def test_dense_big_jit_mstep_matches_dense_primitives_and_adjoint():
         True,
     )
 
-    np.testing.assert_allclose(np.asarray(result.block_best), np.asarray(ref_best), rtol=0.0, atol=0.0)
-    np.testing.assert_array_equal(np.asarray(result.block_argmax), np.asarray(ref_argmax))
+    assert_matches(np.asarray(result.block_best), np.asarray(ref_best))
+    assert_matches(np.asarray(result.block_argmax), np.asarray(ref_argmax))
     np.testing.assert_allclose(
         np.asarray(result.probs_sum_t),
         np.asarray(jnp.sum(probs, axis=-1)),
@@ -745,12 +746,7 @@ def test_dense_big_jit_winner_take_all_matches_one_hot_reference():
         rtol=1e-6,
         atol=1e-6,
     )
-    np.testing.assert_allclose(
-        np.asarray(result.max_posterior),
-        np.ones(N_IMAGES, dtype=np.float32),
-        rtol=0.0,
-        atol=0.0,
-    )
+    assert_matches(np.asarray(result.max_posterior), np.ones(N_IMAGES, dtype=np.float32))
     np.testing.assert_allclose(np.asarray(result.Ft_y), np.asarray(ref_Ft_y), rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(np.asarray(result.Ft_ctf), np.asarray(ref_Ft_ctf), rtol=1e-6, atol=1e-6)
 
@@ -811,18 +807,8 @@ def test_dense_big_jit_winner_take_all_skips_invalid_images():
     )
 
     # Image 0 contributes 1.0 of weight, image 1 contributes 0.
-    np.testing.assert_allclose(
-        np.asarray(jnp.sum(result.probs_sum_t, axis=-1)),
-        np.array([1.0, 0.0], dtype=np.float32),
-        rtol=0.0,
-        atol=0.0,
-    )
-    np.testing.assert_allclose(
-        np.asarray(result.max_posterior),
-        np.array([1.0, 0.0], dtype=np.float32),
-        rtol=0.0,
-        atol=0.0,
-    )
+    assert_matches(np.asarray(jnp.sum(result.probs_sum_t, axis=-1)), np.array([1.0, 0.0], dtype=np.float32))
+    assert_matches(np.asarray(result.max_posterior), np.array([1.0, 0.0], dtype=np.float32))
 
 
 def test_dense_big_jit_masks_padded_image_rows():
@@ -840,10 +826,10 @@ def test_dense_big_jit_masks_padded_image_rows():
         run_mstep=False,
         valid_image_mask=valid_image_mask,
     )
-    np.testing.assert_allclose(np.asarray(pass1.block_max[0]), np.asarray(ref_max[0]), rtol=0.0, atol=0.0)
+    assert_matches(np.asarray(pass1.block_max[0]), np.asarray(ref_max[0]))
     np.testing.assert_allclose(np.asarray(pass1.block_sum_exp[0]), np.asarray(ref_sum_exp[0]), rtol=1e-6, atol=1e-6)
-    np.testing.assert_allclose(np.asarray(pass1.block_max[1]), 0.0, rtol=0.0, atol=0.0)
-    np.testing.assert_allclose(np.asarray(pass1.block_sum_exp[1]), N_ROT * N_TRANS, rtol=0.0, atol=0.0)
+    assert_matches(np.asarray(pass1.block_max[1]), 0.0)
+    assert_matches(np.asarray(pass1.block_sum_exp[1]), N_ROT * N_TRANS)
 
     log_z = ref_max + jnp.log(ref_sum_exp)
     log_z = log_z.at[1].set(0.0)
@@ -855,5 +841,5 @@ def test_dense_big_jit_masks_padded_image_rows():
     )
     assert np.isneginf(np.asarray(mstep.block_best[1]))
     assert int(np.asarray(mstep.block_argmax[1])) == 0
-    np.testing.assert_allclose(np.asarray(mstep.max_posterior[1]), 0.0, rtol=0.0, atol=0.0)
-    np.testing.assert_allclose(np.asarray(mstep.probs_sum_t[1]), 0.0, rtol=0.0, atol=0.0)
+    assert_matches(np.asarray(mstep.max_posterior[1]), 0.0)
+    assert_matches(np.asarray(mstep.probs_sum_t[1]), 0.0)

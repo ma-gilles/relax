@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from relax.classification.k1_local_pass2 import (
     K1_PASS2_ENGINE_ENV,
@@ -68,8 +69,8 @@ def test_coarse_prior_recovered_from_parent_major_fine_prior():
     coarse = np.linspace(-3.0, 2.0, N_ROT, dtype=np.float32)
     parent_map = np.repeat(np.arange(N_ROT), CHILDREN)
     fine = coarse[parent_map]
-    assert np.array_equal(coarse_prior_from_pass2_prior(fine, n_rot_coarse=N_ROT, children_per_parent=CHILDREN), coarse)
-    assert np.array_equal(coarse_prior_from_pass2_prior(coarse, n_rot_coarse=N_ROT, children_per_parent=CHILDREN), coarse)
+    assert matches(coarse_prior_from_pass2_prior(fine, n_rot_coarse=N_ROT, children_per_parent=CHILDREN), coarse)
+    assert matches(coarse_prior_from_pass2_prior(coarse, n_rot_coarse=N_ROT, children_per_parent=CHILDREN), coarse)
     assert coarse_prior_from_pass2_prior(None, n_rot_coarse=N_ROT, children_per_parent=CHILDREN) is None
     with pytest.raises(ValueError):
         coarse_prior_from_pass2_prior(coarse[:-1], n_rot_coarse=N_ROT, children_per_parent=CHILDREN)
@@ -107,19 +108,19 @@ def test_layout_matches_compact_engine_candidates(perturbation, layout_perturbat
         fine_rotations_override=fine_rot, fine_mstep_rotations_override=fine_mstep_rot,
         fine_rotation_parent_override=rot_parent, dtype=np.float32,
     )
-    assert np.array_equal(layout.translation_grid, fine_trans.astype(np.float32))
+    assert matches(layout.translation_grid, fine_trans.astype(np.float32))
     for image, (start, stop) in enumerate(zip(layout.rotation_offsets[:-1], layout.rotation_offsets[1:])):
         ids = layout.rotation_ids_flat[start:stop]
-        assert np.array_equal(ids, compact["oversampled_rot_indices"][image])
-        assert np.array_equal(layout.rotations_flat[start:stop], compact["oversampled_rots"][image])
-        assert np.array_equal(layout.mstep_rotations_flat[start:stop], compact["oversampled_mstep_rots"][image])
-        assert np.array_equal(layout.rotation_posterior_ids_flat[start:stop], ids // CHILDREN)
+        assert matches(ids, compact["oversampled_rot_indices"][image])
+        assert matches(layout.rotations_flat[start:stop], compact["oversampled_rots"][image])
+        assert matches(layout.mstep_rotations_flat[start:stop], compact["oversampled_mstep_rots"][image])
+        assert matches(layout.rotation_posterior_ids_flat[start:stop], ids // CHILDREN)
         # Every child inherits its coarse parent's prior (RELION pushback semantics).
         # The compact engine indexes its fine-length prior with coarse ids, so its
         # rows only agree for a uniform prior; the route keeps the parent's value.
-        assert np.array_equal(layout.rotation_log_priors_flat[start:stop], coarse_prior[ids // CHILDREN])
-        assert np.array_equal(compact["log_prior"][image], fine_prior[ids // CHILDREN])
-        assert np.array_equal(
+        assert matches(layout.rotation_log_priors_flat[start:stop], coarse_prior[ids // CHILDREN])
+        assert matches(compact["log_prior"][image], fine_prior[ids // CHILDREN])
+        assert matches(
             layout.sample_mask_rows(start, stop), _candidate_mask_to_dense(compact["candidate_mask"][image])
         )
 

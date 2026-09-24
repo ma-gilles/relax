@@ -13,6 +13,7 @@ import logging
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers import orientation_priors as op
 from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
@@ -70,7 +71,7 @@ def test_k1_prior_at_the_scoring_order_expands_onto_the_canonical_grid(caplog):
     expected = op.make_relion_direction_log_prior(prior, ORDER, dtype=np.float32)
     assert result.class_rotation_log_prior is None
     assert result.rotation_log_prior.dtype == np.float32
-    assert result.rotation_log_prior.tobytes() == expected.tobytes()
+    assert_matches(result.rotation_log_prior, expected, strict=True)
     assert "Using learned global direction prior half-1" in caplog.text
 
 
@@ -86,7 +87,7 @@ def test_sealed_sampling_expands_onto_the_captured_direction_rows():
     result = _priors(global_direction_prior=prior, global_direction_prior_order=ORDER, sealed_sampling_state=sealed)
     expected = op._sealed_direction_log_prior(prior, sealed, dtype=np.float32)
     assert result.rotation_log_prior.shape == (6,)
-    assert result.rotation_log_prior.tobytes() == expected.tobytes()
+    assert_matches(result.rotation_log_prior, expected, strict=True)
 
 
 def test_kclass_uses_per_class_priors_at_the_scoring_order(caplog):
@@ -96,7 +97,7 @@ def test_kclass_uses_per_class_priors_at_the_scoring_order(caplog):
     assert result.rotation_log_prior is None
     expected = np.stack([op.make_relion_direction_log_prior(class_prior[c], ORDER, dtype=np.float32) for c in range(2)])
     assert result.class_rotation_log_prior.shape == (2, N_ROT)
-    assert result.class_rotation_log_prior.tobytes() == expected.tobytes()
+    assert_matches(result.class_rotation_log_prior, expected, strict=True)
     assert "Using learned per-class global direction prior half-1: 2 classes" in caplog.text
 
 
@@ -118,7 +119,7 @@ def test_kclass_shared_prior_is_copied_to_every_class(class_prior_order, caplog)
     assert result.rotation_log_prior is None
     assert result.class_rotation_log_prior.shape == (2, N_ROT)
     for row in result.class_rotation_log_prior:
-        assert row.tobytes() == expected_row.tobytes()
+        assert_matches(row, expected_row, strict=True)
     assert "Using shared global direction prior half-1: 2 classes" in caplog.text
 
 

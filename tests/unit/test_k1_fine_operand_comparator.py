@@ -1,6 +1,7 @@
 import json
 
 import numpy as np
+from helpers.float_compare import matches
 
 from scripts.compare_k1_relion_recovar_fine_operands import (
     _expanded_score_components,
@@ -32,14 +33,14 @@ def test_score_terms_replay_cuda_contribution_and_lane_tree():
     )
     lanes = _replay_lanes(contribution)
 
-    assert np.array_equal(result["contribution"], contribution)
+    assert matches(result["contribution"], contribution)
     production_lanes = _cuda_fine_production_lanes(
         np.subtract(reference.real, shifted.real, dtype=np.float32),
         np.subtract(reference.imag, shifted.imag, dtype=np.float32),
         corr,
     )
-    assert np.array_equal(result["replay_lanes"], lanes)
-    assert np.array_equal(result["production_lanes"], production_lanes)
+    assert matches(result["replay_lanes"], lanes)
+    assert matches(result["production_lanes"], production_lanes)
     assert result["replay_raw"] == np.add(
         _reduce_lanes(lanes), sum_init, dtype=np.float32
     )
@@ -101,7 +102,7 @@ def test_gather_fftw_half_by_xy_wraps_negative_y_rows():
         image_size,
     )
 
-    assert np.array_equal(
+    assert matches(
         gathered,
         np.asarray([fftw_half[0, 0], fftw_half[7, 3], fftw_half[4, 4]]),
     )

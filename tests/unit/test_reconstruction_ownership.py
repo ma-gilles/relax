@@ -7,6 +7,7 @@ import pytest
 from recovar.core import fourier_transform_utils as ftu
 from relax.reconstruction import regularization_relion
 from recovar.reconstruction import relion_functions as rf
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -76,8 +77,8 @@ class TestReconstructionOwnership:
         assert calls[1]["retained_device_numerator"] is None
         assert all((call["tau_is_1d"] is True for call in calls))
         assert all((call["tau"].dtype == jnp.float64 for call in calls))
-        np.testing.assert_array_equal(np.asarray(calls[0]["tau"]), np.asarray(tau_shells[0]))
-        np.testing.assert_array_equal(np.asarray(calls[1]["tau"]), np.asarray(tau_shells[1]))
+        assert_matches(np.asarray(calls[0]["tau"]), np.asarray(tau_shells[0]))
+        assert_matches(np.asarray(calls[1]["tau"]), np.asarray(tau_shells[1]))
         assert means[0].shape == (VOLUME_SIZE,)
         assert means[1].shape == (VOLUME_SIZE,)
 
@@ -145,7 +146,7 @@ class TestReconstructionOwnership:
             events.append("finish")
             assert events == ["regularize", "divide", "block", "device_get", "release", "collect", "collect", "finish"]
             assert value.shape == (4, 4, 3)
-            np.testing.assert_array_equal(value, np.ones((4, 4, 3), dtype=np.complex64))
+            assert_matches(value, np.ones((4, 4, 3), dtype=np.complex64))
             assert kwargs["gridding_correct"] == "radial"
             return host_boundary
 
@@ -304,7 +305,7 @@ def test_relion_reconstruction_tau_shells_match_full_prior_bitwise():
         tau_is_1d=True,
         **common,
     )
-    np.testing.assert_array_equal(np.asarray(from_shells), np.asarray(from_full))
+    assert_matches(np.asarray(from_shells), np.asarray(from_full))
 
 
 def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
@@ -336,7 +337,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
     )
     retained_half0 = joined[4]
     assert retained_half0 is not None
-    np.testing.assert_array_equal(np.asarray(retained_half0), joined[0])
+    assert_matches(np.asarray(retained_half0), joined[0])
     calls = []
 
     def fake_reconstruct(*args, retained_device_numerator=None, **kwargs):

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 import relax.classification.k_class as k_class_mod
 import relax.diagnostics.pass2 as pass2_diagnostics
@@ -141,8 +142,8 @@ def test_class_weight_history_snapshots_mstep_and_full_posterior():
     posterior = np.asarray([0.5, 0.5], dtype=np.float64)
     history.record_class_weights(mstep, posterior)
     mstep[:] = posterior[:] = 0.0
-    np.testing.assert_array_equal(history.class_mstep_weight_trajectory, [[0.25, 0.75]])
-    np.testing.assert_array_equal(history.class_full_posterior_weight_trajectory, [[0.5, 0.5]])
+    assert_matches(history.class_mstep_weight_trajectory, [[0.25, 0.75]])
+    assert_matches(history.class_full_posterior_weight_trajectory, [[0.5, 0.5]])
 
 def test_kclass_weight_trajectories_record_mstep_and_full_posterior_provenance():
     """Full-chain NPZ output must expose the class-mass split used in parity debugging."""
@@ -341,17 +342,17 @@ def test_kclass_dump_writes_operand_arrays_to_npz(monkeypatch, tmp_path):
         2,
         n_trans,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         payload["projected_reference_rotation_ids"], projected_reference_rotation_ids,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         payload["projected_reference_per_class"], projected_reference_per_class,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         payload["projected_reference_norm_score_per_class"],
         projected_reference_norm_score_per_class[:, 0],
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         payload["projected_cross_score_per_class"],
         projected_cross_score_per_class[:, 0],
     )
@@ -676,7 +677,7 @@ def test_kclass_significance_dump_uses_original_index_mapper(monkeypatch, tmp_pa
     local_index = 7
 
     def original_image_indices_from_local(local_indices):
-        assert np.array_equal(np.asarray(local_indices), np.asarray([local_index]))
+        assert matches(np.asarray(local_indices), np.asarray([local_index]))
         return np.asarray([42], dtype=np.int64)
 
     experiment_dataset = SimpleNamespace(
@@ -807,17 +808,17 @@ def test_sparse_pass2_dump_writes_score_and_recon_operand_arrays(monkeypatch, tm
     ):
         assert name in payload.files, f"Sparse pass-2 dump npz is missing schema field {name!r}"
     assert payload["shifted_corrected"].shape == (n_trans, n_score_pix)
-    np.testing.assert_array_equal(payload["direct_score_input"], direct_score_input[0])
-    np.testing.assert_array_equal(
+    assert_matches(payload["direct_score_input"], direct_score_input[0])
+    assert_matches(
         payload["direct_preprocessed_score_input"], direct_preprocessed[0]
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         payload["direct_pixel_correction"], direct_pixel_correction[0]
     )
-    np.testing.assert_array_equal(payload["direct_inverse_noise_score"], direct_inverse_noise)
-    np.testing.assert_array_equal(payload["direct_ctf_rfloat_score"], direct_ctf_rfloat[0])
+    assert_matches(payload["direct_inverse_noise_score"], direct_inverse_noise)
+    assert_matches(payload["direct_ctf_rfloat_score"], direct_ctf_rfloat[0])
     assert float(payload["relion_preprocess_normalization_factor"]) == 0.75
-    np.testing.assert_array_equal(payload["relion_integer_pre_shift"], [2, -1])
+    assert_matches(payload["relion_integer_pre_shift"], [2, -1])
     assert float(payload["batch_image_correction"]) == 1.5
     assert float(payload["batch_scale_correction"]) == 2.0
     assert payload["ctf2_over_nv_score"].shape == (n_score_pix,)
@@ -888,9 +889,9 @@ def test_sparse_pass2_dump_can_retain_only_selected_rotation_rows(monkeypatch, t
 
     with np.load(dump_dir / "pass2_orig000042_cs014.npz", allow_pickle=False) as payload:
         assert str(payload["schema"]) == "recovar.em.k1_pass2_selected_rotations.v1"
-        np.testing.assert_array_equal(payload["rotation_rows_global"], np.asarray([1, 3]))
-        np.testing.assert_array_equal(payload["scores_with_prior"], scores[0, [1, 3]])
-        np.testing.assert_array_equal(payload["rotations"], rotations[[1, 3]])
+        assert_matches(payload["rotation_rows_global"], np.asarray([1, 3]))
+        assert_matches(payload["scores_with_prior"], scores[0, [1, 3]])
+        assert_matches(payload["rotations"], rotations[[1, 3]])
         assert payload["rotations"].dtype == np.float64
         assert payload["fine_translations"].dtype == np.float64
         assert int(payload["candidate_rotation_count"]) == n_rot
@@ -904,47 +905,47 @@ def test_sparse_pass2_dump_can_retain_only_selected_rotation_rows(monkeypatch, t
         assert int(payload["posterior_argmax_translation"]) == 0
         assert payload["proj_half"].shape == (2, n_pix)
         assert payload["shifted_corrected"].shape == (n_trans, n_pix)
-        np.testing.assert_array_equal(
+        assert_matches(
             payload["direct_score_input"],
             np.arange(n_pix, dtype=np.float32).astype(np.complex64),
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             payload["direct_preprocessed_score_input"],
             np.arange(n_pix, dtype=np.float32).astype(np.complex64) + 2j,
         )
-        np.testing.assert_array_equal(payload["direct_pixel_correction"], 3)
+        assert_matches(payload["direct_pixel_correction"], 3)
         assert float(payload["relion_preprocess_normalization_factor"]) == 0.25
-        np.testing.assert_array_equal(payload["relion_integer_pre_shift"], [1, 2])
+        assert_matches(payload["relion_integer_pre_shift"], [1, 2])
         assert (
             str(payload["raw_operand_schema"])
             == "recovar-k1-pass2-selected-raw-operands-v1"
         )
         assert int(payload["raw_operand_actual_rotation_count"]) == 2
-        np.testing.assert_array_equal(
+        assert_matches(
             payload["relion_raw_diff2"], raw_diff2[0, [1, 3]]
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             payload["raw_operand_raw_diff2"], raw_diff2[0, [1, 3]]
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             payload["raw_operand_shifted_corrected"],
             np.ones((n_trans, n_pix), dtype=np.complex64),
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             payload["raw_operand_corr_img_score"],
             np.ones(n_pix, dtype=np.float32),
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             payload["raw_operand_proj_half"],
             np.arange(n_rot * n_pix, dtype=np.float32)
             .reshape(n_rot, n_pix)[[1, 3]]
             .astype(np.complex64),
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             payload["raw_operand_half_weights"],
             np.ones(n_pix, dtype=np.float32),
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             payload["raw_operand_relion_full_to_compact"], full_to_compact
         )
         assert float(payload["raw_operand_highres_xi2_half"]) == 17.5
@@ -1029,7 +1030,7 @@ def test_sparse_pass2_raw_operand_dump_uses_normalized_cc_score_without_diff2(
     )
 
     with np.load(tmp_path / "pass2_orig000042_cs014.npz", allow_pickle=False) as payload:
-        np.testing.assert_array_equal(
+        assert_matches(
             payload["raw_operand_raw_diff2"],
             score[0] - rotation_prior[0, :, None] - translation_prior[0, None, :],
         )
@@ -1043,7 +1044,7 @@ def test_sparse_pass2_dump_uses_original_index_mapper(monkeypatch, tmp_path):
     local_index = 7
 
     def original_image_indices_from_local(local_indices):
-        assert np.array_equal(np.asarray(local_indices), np.asarray([local_index]))
+        assert matches(np.asarray(local_indices), np.asarray([local_index]))
         return np.asarray([42], dtype=np.int64)
 
     experiment_dataset = SimpleNamespace(
@@ -1091,7 +1092,7 @@ def test_kclass_compact_pass2_dump_uses_original_index_mapper(monkeypatch, tmp_p
     local_index = 7
 
     def original_image_indices_from_local(local_indices):
-        assert np.array_equal(np.asarray(local_indices), np.asarray([local_index]))
+        assert matches(np.asarray(local_indices), np.asarray([local_index]))
         return np.asarray([42], dtype=np.int64)
 
     experiment_dataset = SimpleNamespace(
@@ -1159,7 +1160,7 @@ def test_kclass_compact_pass2_dump_uses_original_index_mapper(monkeypatch, tmp_p
     assert int(payload["original_index"]) == 42
     assert int(payload["local_index"]) == local_index
     assert int(payload["class_index"]) == 1
-    np.testing.assert_array_equal(payload["oversampled_rot_indices"], np.asarray([10, 11]))
+    assert_matches(payload["oversampled_rot_indices"], np.asarray([10, 11]))
     assert payload["candidate_mask"].tolist() == [[False, True, False], [False, False, True]]
     assert payload["probs"][0, 1] == pytest.approx(0.2)
     assert payload["probs"][1, 2] == pytest.approx(0.8)
@@ -1222,7 +1223,7 @@ def test_kclass_dense_pass2_dump_preserves_selected_raw_diff2(monkeypatch, tmp_p
     )
 
     payload = np.load(dump_dir / "pass2_orig000042_class001_cs014.npz")
-    np.testing.assert_array_equal(payload["relion_raw_diff2"], raw_diff2)
+    assert_matches(payload["relion_raw_diff2"], raw_diff2)
     assert payload["relion_min_diff2"] == np.float32(499.0)
 
 def test_kclass_pass2_dump_preserves_effective_raw_operands(monkeypatch, tmp_path):
@@ -1294,34 +1295,34 @@ def test_kclass_pass2_dump_preserves_effective_raw_operands(monkeypatch, tmp_pat
         "recovar-kclass-pass2-effective-raw-operands-v2"
     )
     assert int(payload["raw_operand_actual_rotation_count"]) == n_rot
-    np.testing.assert_array_equal(
+    assert_matches(
         payload["raw_operand_raw_diff2"],
         np.zeros(pair_mask.shape[1], dtype=np.float32),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         payload["raw_operand_shifted_corrected"],
         shifted_corrected,
     )
-    np.testing.assert_array_equal(payload["raw_operand_proj_half"], proj_half)
-    np.testing.assert_array_equal(
+    assert_matches(payload["raw_operand_proj_half"], proj_half)
+    assert_matches(
         payload["raw_operand_corr_img_score"],
         corr_img_score,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         payload["raw_operand_half_weights"],
         half_weights,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         payload["raw_operand_relion_full_to_compact"],
         full_to_compact,
     )
     assert payload["raw_operand_highres_xi2_half"] == np.float32(7.25)
-    np.testing.assert_array_equal(payload["raw_operand_pair_mask"], pair_mask[0])
-    np.testing.assert_array_equal(
+    assert_matches(payload["raw_operand_pair_mask"], pair_mask[0])
+    assert_matches(
         payload["raw_operand_pair_rotation_row"],
         pair_rotation_row[0],
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         payload["raw_operand_pair_translation_idx"],
         pair_translation_idx[0],
     )
@@ -1369,7 +1370,7 @@ def test_pass2_dump_target_rows_use_original_index_mapping(monkeypatch, tmp_path
         current_size=14,
     )
 
-    np.testing.assert_array_equal(rows, np.asarray([1, 2], dtype=np.int64))
+    assert_matches(rows, np.asarray([1, 2], dtype=np.int64))
 
 def test_pass2_dump_target_rows_require_requested_iteration(monkeypatch, tmp_path):
     experiment_dataset = SimpleNamespace(
@@ -1399,8 +1400,8 @@ def test_pass2_dump_target_rows_require_requested_iteration(monkeypatch, tmp_pat
     finally:
         bpref_diagnostics.clear_bpref_contribution_dump_context()
 
-    np.testing.assert_array_equal(before_target, np.empty((0,), dtype=np.int64))
-    np.testing.assert_array_equal(at_target, np.asarray([1, 2], dtype=np.int64))
+    assert_matches(before_target, np.empty((0,), dtype=np.int64))
+    assert_matches(at_target, np.asarray([1, 2], dtype=np.int64))
 
 # ----------------------------------------------------------------------
 # Pass1 fused gate (env-var contract)

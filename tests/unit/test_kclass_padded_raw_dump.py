@@ -2,6 +2,7 @@
 from types import SimpleNamespace
 import numpy as np
 from relax.diagnostics import pass2 as sparse_pass2_mod
+from helpers.float_compare import assert_matches
 
 def test_kclass_dense_pass2_dump_trims_padded_raw_diff2(monkeypatch, tmp_path):
     n_rot = 2
@@ -60,5 +61,5 @@ def test_kclass_dense_pass2_dump_trims_padded_raw_diff2(monkeypatch, tmp_path):
     )
 
     payload = np.load(dump_dir / "pass2_orig000042_class001_cs014.npz")
-    np.testing.assert_array_equal(payload["relion_raw_diff2"], raw_diff2[:n_rot])
+    assert_matches(payload["relion_raw_diff2"], raw_diff2[:n_rot])
     assert payload["relion_min_diff2"] == np.float32(499.0)

@@ -7,6 +7,7 @@ import inspect
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from relax.classification import k_class
 from relax.classification.k_class_results import make_relion_stats
@@ -81,10 +82,10 @@ def test_empty_class_fills_zero_results_in_class_order():
     )
     assert isinstance(results.Ft_y[0], np.ndarray) and np.all(results.Ft_y[0] == 0)
     assert results.Ft_ctf[0].dtype == np.float32 and results.Ft_ctf[0].shape == (4,)
-    assert np.array_equal(results.hard_assignments[0], np.zeros(3, dtype=np.int32))
+    assert matches(results.hard_assignments[0], np.zeros(3, dtype=np.int32))
     stats = results.per_class_stats[0]
     assert np.all(np.isneginf(stats.best_log_score_per_image)) and stats.rotation_posterior_sums.shape == (5,)
-    assert np.array_equal(stats.log_evidence_per_image, np.asarray([1.0, 2.0, 3.0], dtype=np.float32))
+    assert matches(stats.log_evidence_per_image, np.asarray([1.0, 2.0, 3.0], dtype=np.float32))
     assert results.best_pose_rotations[0].shape == (3, 3, 3) and results.best_pose_rotation_ids[0].dtype == np.int32
     assert results.per_class_noise is None
 
@@ -127,9 +128,9 @@ def test_class_results_expand_the_subset_to_the_full_image_axis():
         host_accumulators=True,
     )
     assert isinstance(results.Ft_y[0], np.ndarray) and isinstance(results.Ft_ctf[0], np.ndarray)
-    assert np.array_equal(results.hard_assignments[0], [7, 0, 9])
+    assert matches(results.hard_assignments[0], [7, 0, 9])
     assert results.per_class_stats[0].best_log_score_per_image.shape == (3,)
-    assert np.array_equal(results.best_pose_rotation_ids[0][image_indices], [4, 5])
+    assert matches(results.best_pose_rotation_ids[0][image_indices], [4, 5])
     assert results.best_pose_rotations[0].shape == (3, 3, 3) and results.best_pose_translations[0].shape == (3, 2)
 
 

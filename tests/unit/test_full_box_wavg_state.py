@@ -7,6 +7,7 @@ from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_cuda_powerclass_highres_xi2_half, _relion_powerclass_noise_terms,
 )
 from relax.helpers.fourier_window import make_fourier_window_indices_np
+from helpers.float_compare import assert_matches
 
 def test_full_box_wavg_rectangle_resolves_unwindowed_current_size_sentinel():
     image_shape = (8, 8)
@@ -19,15 +20,15 @@ def test_full_box_wavg_rectangle_resolves_unwindowed_current_size_sentinel():
     n_half = image_shape[0] * (image_shape[1] // 2 + 1)
     assert rectangle.centered_indices.shape == (n_half,)
     assert rectangle.exact_positions.shape == (n_half,)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.sort(rectangle.centered_indices),
         np.arange(n_half, dtype=np.int32),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.sort(rectangle.exact_positions),
         np.arange(n_half, dtype=np.int32),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         rectangle.centered_indices[rectangle.exact_positions],
         np.arange(n_half, dtype=np.int32),
     )
@@ -45,7 +46,7 @@ def test_full_box_wavg_rectangle_resolves_unwindowed_current_size_sentinel():
         image_shape=image_shape,
         current_size=image_shape[0],
     )
-    np.testing.assert_array_equal(np.asarray(high_shell), np.zeros(2, dtype=np.float32))
+    assert_matches(np.asarray(high_shell), np.zeros(2, dtype=np.float32))
 
 
 def test_full_box_powerclass_noise_terms_has_zero_high_shell():
@@ -55,7 +56,7 @@ def test_full_box_powerclass_noise_terms_has_zero_high_shell():
         use_exact_relion_gaussian=True, accumulate_noise=True,
         source_faithful_spectrum_norm=False,
     )
-    np.testing.assert_array_equal(np.asarray(highres), np.zeros(2, dtype=np.float32))
+    assert_matches(np.asarray(highres), np.zeros(2, dtype=np.float32))
     # Keep the existing caller-level absence contract; direct Wavg norm fills
     # a zero vector at its own boundary when the full box has no high shell.
     assert norm is None

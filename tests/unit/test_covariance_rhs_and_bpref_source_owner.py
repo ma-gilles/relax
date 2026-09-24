@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 import relax.reference.heterogeneity as hetero
 from relax.vdam import layout
@@ -46,5 +47,5 @@ def test_bpref_slab_outputs_cast_and_clamp():
     weight = np.asarray([1e-16 + 5j, 2.0, -1e-16], dtype=np.complex64)
     out_data, out_weight = layout._bpref_slab_outputs(data, weight)
     assert out_data.dtype == np.complex128 and out_weight.dtype == np.float64
-    assert np.array_equal(out_weight, [0.0, 2.0, 0.0])
+    assert matches(out_weight, [0.0, 2.0, 0.0])
     assert out_data[0] == 1 + 2j and out_data is not data

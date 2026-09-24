@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from scripts.analyze_k1_bpref_factor_boundary import (
     _capture_stack_indices,
@@ -42,7 +43,7 @@ def test_translation_map_matches_relion_phase_units():
     relion["x"] = (-2.0 * np.pi * recovar[:, 0] / physical_size).astype(np.float32)
     relion["y"] = (-2.0 * np.pi * recovar[:, 1] / physical_size).astype(np.float32)
     mapping, error = _translation_map(relion, recovar[[2, 0, 1]], physical_image_size=physical_size)
-    assert np.array_equal(mapping, np.asarray([1, 2, 0]))
+    assert matches(mapping, np.asarray([1, 2, 0]))
     assert error <= 1.0e-7
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 from relax.classification.k_class import _apply_bpref_particle_order_policy
 from relax.diagnostics.relion_replay import _validate_bpref_particle_order_scope
@@ -369,14 +370,14 @@ def test_mixed_support_padding_keeps_float_outputs_within_four_ulps():
             # effect tightly while keeping discrete winners exactly equal.
             np.testing.assert_array_max_ulp(unpadded_array, padded_array, maxulp=4)
         else:
-            np.testing.assert_array_equal(unpadded_array, padded_array)
+            assert_matches(unpadded_array, padded_array)
 
 
 def test_execution_order_file_is_fail_closed(monkeypatch, tmp_path):
     order_path = tmp_path / "order.txt"
     order_path.write_text("2\n0\n1\n")
     monkeypatch.setenv(_BPREF_EXECUTION_ORDER_LOCAL_FILE_ENV, str(order_path))
-    assert np.array_equal(
+    assert matches(
         _load_bpref_execution_order_local_override(3),
         np.asarray([2, 0, 1]),
     )
@@ -390,7 +391,7 @@ def test_production_execution_order_is_identity_and_rejects_diagnostic_override(
     monkeypatch,
     tmp_path,
 ):
-    assert np.array_equal(
+    assert matches(
         _resolve_bpref_processing_order(
             4,
             preserve_bpref_particle_order=True,
@@ -410,7 +411,7 @@ def test_production_execution_order_is_identity_and_rejects_diagnostic_override(
 
 def test_reverse_physical_execution_order_is_narrow_and_exact(monkeypatch):
     monkeypatch.setenv(_BPREF_REVERSE_PHYSICAL_ORDER_ENV, "1")
-    assert np.array_equal(
+    assert matches(
         _resolve_bpref_processing_order(
             5,
             preserve_bpref_particle_order=True,

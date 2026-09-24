@@ -4,6 +4,7 @@ import pytest
 from relax.sparse_pass2 import sparse_pass2_budget as budget
 from relax.helpers.shape_buckets import pad_batch_data_ctf_and_valid_mask
 from relax.scoring.significance import _pad_significance_preprocess_inputs
+from helpers.float_compare import assert_matches
 
 
 def test_fused_kclass_score_gather_fraction_env(monkeypatch):
@@ -33,7 +34,7 @@ def test_unpadded_batch_shape_does_not_copy_to_host():
     ctf = np.ones((3, 9))
     out = pad_batch_data_ctf_and_valid_mask(batch, ctf, 3)
     assert out[0] is batch and out[1] is ctf
-    np.testing.assert_array_equal(out[2], [True, True, True])
+    assert_matches(out[2], [True, True, True])
     assert out[3:] == (3, 3)
     out = _pad_significance_preprocess_inputs(batch, ctf, None, None, None, None, target_size=3)
     assert out[0] is batch and out[1] is ctf

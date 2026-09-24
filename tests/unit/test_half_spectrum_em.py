@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -65,7 +66,7 @@ def test_relion_scoring_half_weights_drop_redundant_negative_kx0_rows():
 
     expected = np.ones_like(weights)
     expected[1 : IMAGE_SHAPE[0] // 2, 0] = 0.0
-    np.testing.assert_array_equal(weights, expected)
+    assert_matches(weights, expected)
 
     # RELION treats the Nyquist boundary row as +N/2 and keeps it.
     assert weights[0, 0] == 1.0
@@ -81,12 +82,12 @@ def test_relion_normalized_cc_half_weights_keep_rectangular_x0_rows():
         )
     ).reshape(8, 5)
 
-    np.testing.assert_array_equal(weights, np.ones((8, 5), dtype=np.float32))
+    assert_matches(weights, np.ones((8, 5), dtype=np.float32))
 
 
 def test_non_relion_scoring_half_weights_keep_hermitian_multiplicity():
     actual = make_scoring_half_image_weights(IMAGE_SHAPE, relion_half_sum=False)
-    np.testing.assert_array_equal(np.asarray(actual), np.asarray(make_half_image_weights(IMAGE_SHAPE)))
+    assert_matches(np.asarray(actual), np.asarray(make_half_image_weights(IMAGE_SHAPE)))
 
 
 @pytest.mark.parametrize(
@@ -106,7 +107,7 @@ def test_host_planned_shell_geometry_is_byte_exact_to_jax_reference(image_shape)
     ).reshape(-1)
     actual = np.asarray(make_shell_indices_half(image_shape), dtype=np.int32)
 
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
     height, width = image_shape
     half_width = width // 2 + 1
@@ -129,7 +130,7 @@ def test_host_planned_shell_geometry_is_byte_exact_to_jax_reference(image_shape)
         n_shells,
     ).reshape(-1)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(make_relion_noise_shell_indices_half(image_shape)),
         expected_noise_shells,
     )
@@ -146,7 +147,7 @@ def test_relion_shell_binning_drops_sentinel_indices_under_jit():
     bin_jit = jax.jit(lambda vals, inds: bin_shell_values_jax(vals, inds, shell_count))
     actual = np.asarray(bin_jit(jnp.asarray(values), jnp.asarray(shell_indices)))
 
-    np.testing.assert_allclose(actual, expected, rtol=0.0, atol=0.0)
+    assert_matches(actual, expected)
 
 
 def test_shell_binning_maps_arbitrary_out_of_range_indices_to_drop_bin():
@@ -159,18 +160,8 @@ def test_shell_binning_maps_arbitrary_out_of_range_indices_to_drop_bin():
     )
     actual_np = bin_shell_values_np(values, shell_indices, shell_count)
 
-    np.testing.assert_allclose(
-        actual_jax,
-        np.asarray([2, 0, 3, 0, 4], dtype=np.float32),
-        rtol=0.0,
-        atol=0.0,
-    )
-    np.testing.assert_allclose(
-        actual_np,
-        np.asarray([2, 0, 3, 0, 4], dtype=np.float32),
-        rtol=0.0,
-        atol=0.0,
-    )
+    assert_matches(actual_jax, np.asarray([2, 0, 3, 0, 4], dtype=np.float32))
+    assert_matches(actual_np, np.asarray([2, 0, 3, 0, 4], dtype=np.float32))
 
 
 def test_noise_shell_accumulation_uses_sentinel_safe_binning_helper():
@@ -461,12 +452,12 @@ class TestHalfInnerProductCorrectness:
         w_2d = w.reshape(H, W // 2 + 1)
 
         # DC column (0) should be 1
-        np.testing.assert_array_equal(np.array(w_2d[:, 0]), np.ones(H))
+        assert_matches(np.array(w_2d[:, 0]), np.ones(H))
         # Nyquist column (-1) should be 1
-        np.testing.assert_array_equal(np.array(w_2d[:, -1]), np.ones(H))
+        assert_matches(np.array(w_2d[:, -1]), np.ones(H))
         # Interior columns should be 2
         if W // 2 + 1 > 2:
-            np.testing.assert_array_equal(
+            assert_matches(
                 np.array(w_2d[:, 1:-1]),
                 2.0 * np.ones((H, W // 2 - 1)),
             )
@@ -817,7 +808,7 @@ class TestFullIterationHalfMatches:
         del em_result
 
         np.testing.assert_allclose(np.array(new_mean1), np.array(new_mean2), atol=1e-6)
-        np.testing.assert_array_equal(ha1, ha2)
+        assert_matches(ha1, ha2)
         np.testing.assert_allclose(np.array(Ft_y1), np.array(Ft_y2), atol=1e-6)
         np.testing.assert_allclose(np.array(Ft_ctf1), np.array(Ft_ctf2), atol=1e-6)
 
@@ -979,7 +970,7 @@ class TestFullIterationHalfMatches:
             float(N_IMAGES),
             atol=1e-5,
         )
-        np.testing.assert_array_equal(hard_assignments, np.argmax(scores_flat, axis=1))
+        assert_matches(hard_assignments, np.argmax(scores_flat, axis=1))
         assert np.all(np.asarray(stats.max_posterior_per_image) >= 0.0)
         assert np.all(np.asarray(stats.max_posterior_per_image) <= 1.0)
 
@@ -1036,7 +1027,7 @@ class TestFullIterationHalfMatches:
         stats_prior = em_result.stats
         del em_result
 
-        np.testing.assert_array_equal(ha_prior, ha_base)
+        assert_matches(ha_prior, ha_base)
         np.testing.assert_allclose(np.asarray(Ft_y_prior), np.asarray(Ft_y_base), rtol=1e-5, atol=1e-5)
         np.testing.assert_allclose(np.asarray(Ft_ctf_prior), np.asarray(Ft_ctf_base), rtol=1e-5, atol=1e-5)
         np.testing.assert_allclose(
@@ -1151,7 +1142,7 @@ class TestFullIterationHalfMatches:
         _ = em_result.noise_stats
         del em_result
 
-        np.testing.assert_array_equal(ha_scaled, ha_base)
+        assert_matches(ha_scaled, ha_base)
         np.testing.assert_allclose(np.asarray(Ft_y_scaled), 0.5 * np.asarray(Ft_y_base), rtol=1e-5, atol=1e-5)
         np.testing.assert_allclose(np.asarray(Ft_ctf_scaled), 0.5 * np.asarray(Ft_ctf_base), rtol=1e-5, atol=1e-5)
         np.testing.assert_allclose(
@@ -1381,7 +1372,7 @@ class TestFullIterationHalfMatches:
         del em_result
 
         np.testing.assert_allclose(np.array(mean_subset), np.array(mean_restricted), atol=1e-5)
-        np.testing.assert_array_equal(ha_subset, ha_restricted)
+        assert_matches(ha_subset, ha_restricted)
         np.testing.assert_allclose(np.array(Ft_y_subset), np.array(Ft_y_restricted), atol=1e-5)
         np.testing.assert_allclose(np.array(Ft_ctf_subset), np.array(Ft_ctf_restricted), atol=1e-5)
 
@@ -1418,7 +1409,7 @@ class TestFullIterationHalfMatches:
         stats = em_result.stats
         del em_result
 
-        np.testing.assert_array_equal(
+        assert_matches(
             hard_assignments,
             np.array([0, 1, 0, 1], dtype=np.int32),
         )
@@ -1476,7 +1467,7 @@ class TestFullIterationHalfMatches:
             atol=1e-4,
             err_msg="Mean differs between single-block and multi-block rotation processing",
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             ha_1,
             ha_2,
             err_msg="Hard assignments differ between single-block and multi-block rotation processing",
@@ -1543,7 +1534,7 @@ class TestFullIterationHalfMatches:
             err_msg="Mean differs between single-batch and multi-batch image processing",
         )
         # Hard assignments should match (same probabilities -> same argmax)
-        np.testing.assert_array_equal(
+        assert_matches(
             ha_1,
             ha_2,
             err_msg="Hard assignments differ between single-batch and multi-batch image processing",
@@ -1595,7 +1586,7 @@ class TestFullIterationHalfMatches:
             del em_result
 
         np.testing.assert_allclose(np.asarray(sparse_mean), np.asarray(dense_mean), atol=1e-6, rtol=1e-6)
-        np.testing.assert_array_equal(sparse_hard, dense_hard)
+        assert_matches(sparse_hard, dense_hard)
         np.testing.assert_allclose(np.asarray(sparse_ft_y), np.asarray(dense_ft_y), atol=1e-6, rtol=1e-6)
         np.testing.assert_allclose(np.asarray(sparse_ft_ctf), np.asarray(dense_ft_ctf), atol=1e-6, rtol=1e-6)
         assert any(
@@ -1771,7 +1762,7 @@ class TestFullIterationHalfMatches:
         )
 
         assert probe.mean is None
-        np.testing.assert_array_equal(np.asarray(probe.hard_assignments), np.asarray(full.hard_assignments))
+        assert_matches(np.asarray(probe.hard_assignments), np.asarray(full.hard_assignments))
         np.testing.assert_allclose(np.asarray(probe.Ft_y), 0.0, atol=1e-7, rtol=1e-7)
         np.testing.assert_allclose(np.asarray(probe.Ft_ctf), 0.0, atol=1e-7, rtol=1e-7)
         np.testing.assert_allclose(probe.stats.log_evidence_per_image, full.stats.log_evidence_per_image)

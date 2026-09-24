@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers import expected_accuracy as owner
 
@@ -34,7 +35,7 @@ def test_explicit_order_preserves_particle_identity_and_bypasses_native(monkeypa
     monkeypatch.setattr(owner, "relion_half1_trial_order", forbidden)
     with caplog.at_level(logging.INFO, logger=LOG.name):
         result = prepare(options(explicit=order))
-    np.testing.assert_array_equal(result, [2, 0, 1])
+    assert_matches(result, [2, 0, 1])
     assert result.dtype == np.int64
     assert "explicit physical trial order (3 particles)" in caplog.text
 
@@ -105,6 +106,6 @@ def test_multiple_optics_groups_keep_the_native_order(monkeypatch, caplog):
 
     monkeypatch.setattr(owner, "relion_half1_trial_order", native)
     with caplog.at_level(logging.WARNING, logger=LOG.name):
-        np.testing.assert_array_equal(prepare(options(optics=np.array([1, 2, 1]))), np.arange(3))
+        assert_matches(prepare(options(optics=np.array([1, 2, 1]))), np.arange(3))
     assert len(calls) == 1
     assert "optics group" not in caplog.text

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers import orientation_priors as op
 
@@ -26,7 +27,7 @@ def _build(previous, *, current=BASE, base=BASE, dtype=np.float32):
 
 def _same(a, b):
     assert type(a) is type(b) and a.dtype == b.dtype and a.shape == b.shape
-    assert a.tobytes() == b.tobytes()
+    assert_matches(a, b, strict=True)
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])

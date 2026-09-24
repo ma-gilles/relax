@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.dense.score_outputs import HalfScoreResult, PerHalfOutputs
 from relax.helpers.types import RelionStats, make_noise_stats
@@ -72,10 +73,10 @@ def test_class_kwargs_units_and_sizes():
         optics_group_ids_k=np.array([0, 1, 1, 0, 0]),
     )
     out = optics_shapes.class_kwargs(kwargs, b, 5)
-    np.testing.assert_array_equal(out["image_corrections_k"], [1.0, 2.0])
+    assert_matches(out["image_corrections_k"], [1.0, 2.0])
     np.testing.assert_allclose(out["translation_search_base"], np.arange(10.0).reshape(5, 2)[[1, 2]] * 0.75)
     np.testing.assert_allclose(out["current_translations"], kwargs["current_translations"] * 0.75)
-    np.testing.assert_array_equal(out["translation_log_prior"], np.zeros(2))  # not per image
+    assert_matches(out["translation_log_prior"], np.zeros(2))  # not per image
     assert out["cs_for_engine"] == out["model_current_size_for_engine"] == 2 * int(np.ceil(0.5 * b.scale * 20))
     assert out["reference_current_size"] == 20 and out["projection_scale"] == b.scale
     # The engines see the class's images on the reference volume grid.
@@ -140,10 +141,10 @@ def test_score_half_by_shape_places_images_and_adds_sums():
         c.dataset for c in half.classes
     ]
     assert seen[1]["noise_variance_k"].shape == (2, 28 * 28)
-    np.testing.assert_array_equal(merged.ha, np.arange(5))
-    np.testing.assert_array_equal(merged.em_stats.log_evidence_per_image, np.arange(5.0))
-    np.testing.assert_array_equal(merged.noise_stats.wsum_norm_correction, np.arange(5.0) * 10)
-    np.testing.assert_array_equal(merged.Ft_y, np.full(4, 2.0))
+    assert_matches(merged.ha, np.arange(5))
+    assert_matches(merged.em_stats.log_evidence_per_image, np.arange(5.0))
+    assert_matches(merged.noise_stats.wsum_norm_correction, np.arange(5.0) * 10)
+    assert_matches(merged.Ft_y, np.full(4, 2.0))
     np.testing.assert_allclose(merged.noise_stats.sumw, [2.0, 2.0])
     np.testing.assert_allclose(merged.em_stats.rotation_posterior_sums, np.full(3, 2.0))
     # Class translations come back in reference pixels.

@@ -19,6 +19,7 @@ from relax.diagnostics.global_winner_summary import (
     MAX_SUPPORTED_BYTES,
     maybe_dump_global_winner_summary,
 )
+from helpers.float_compare import assert_matches
 
 
 def _sha256(path: Path) -> str:
@@ -100,8 +101,8 @@ def test_recovar_summary_round_trip_and_semantics(monkeypatch, tmp_path):
     assert summary.metadata["raw_score_semantics"].startswith("per-class best native float32 normalized-CC")
     assert summary.class_log_evidence is not None
     assert summary.global_log_z is not None
-    np.testing.assert_array_equal(summary.winner, [0, 1, 2, 3])
-    np.testing.assert_array_equal(summary.class_posterior_mass.sum(axis=1), 1.0)
+    assert_matches(summary.winner, [0, 1, 2, 3])
+    assert_matches(summary.class_posterior_mass.sum(axis=1), 1.0)
 
 
 def test_recovar_summary_uses_original_image_mapping_not_dataset_indices(monkeypatch, tmp_path):
@@ -117,7 +118,7 @@ def test_recovar_summary_uses_original_image_mapping_not_dataset_indices(monkeyp
         iteration=1,
     )
     summary = load_recovar_summary(path, label="recovar_a")
-    np.testing.assert_array_equal(summary.identity, original_indices)
+    assert_matches(summary.identity, original_indices)
 
 
 def test_recovar_summary_uses_offset_free_scores_when_absolute_float32_scores_tie(monkeypatch, tmp_path):
@@ -143,7 +144,7 @@ def test_recovar_summary_uses_offset_free_scores_when_absolute_float32_scores_ti
     assert summary.margin[0] == 0.125
     with np.load(path, allow_pickle=False) as payload:
         assert np.unique(payload["class_best_absolute_log_score_with_image_offset"][0]).size == 1
-        np.testing.assert_array_equal(payload["class_best_raw_score_pre_prior"][0], [1.0, 1.125, 0.75, 0.5])
+        assert_matches(payload["class_best_raw_score_pre_prior"][0], [1.0, 1.125, 0.75, 0.5])
 
 
 @pytest.mark.parametrize("indices", [np.asarray([0, 1, 1, 3]), np.asarray([0, 1, 2])])
@@ -352,8 +353,8 @@ def test_relion_summary_round_trip_and_evidence_limitation(tmp_path):
     )
     assert summary.class_log_evidence is None
     assert summary.global_log_z is None
-    np.testing.assert_array_equal(summary.identity, np.arange(4))
-    np.testing.assert_array_equal(summary.class_posterior_mass.sum(axis=1), 1.0)
+    assert_matches(summary.identity, np.arange(4))
+    assert_matches(summary.class_posterior_mass.sum(axis=1), 1.0)
 
 
 def test_relion_summary_binds_pending_capture_to_verified_schedule(monkeypatch, tmp_path):

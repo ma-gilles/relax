@@ -8,6 +8,7 @@ import pytest
 
 from recovar.data_io import cryoem_dataset, load_utils, metadata_readers
 from recovar.data_io.starfile import StarFile, write_star
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 PIXEL = 1.6375
@@ -58,9 +59,9 @@ def _star(tmp_path, *, old=False, size_field=True, pixels=(PIXEL,), origins="ang
 @pytest.mark.parametrize("old", [False, True])
 def test_canonical_star_pixels_preserve_legacy_apix(tmp_path, old):
     sf = StarFile.load(_star(tmp_path, old=old))
-    np.testing.assert_array_equal(sf.source_pixel_sizes_angstrom, np.full(4, PIXEL))
+    assert_matches(sf.source_pixel_sizes_angstrom, np.full(4, PIXEL))
     assert sf.source_pixel_sizes_angstrom.dtype == np.float64
-    np.testing.assert_array_equal(sf.apix, np.full(4, PIXEL, dtype=np.float32))
+    assert_matches(sf.apix, np.full(4, PIXEL, dtype=np.float32))
     assert sf.apix.dtype == np.float32
 
 
@@ -79,13 +80,13 @@ def test_loaded_host_pixel_and_computation_dtypes(tmp_path, old, size_field, tar
     assert ds.rotation_matrices.dtype == real_dtype
     assert ds.translations.dtype == real_dtype
     assert ds.dtype == dtype
-    np.testing.assert_array_equal(ds.translations, np.tile([2 * target / 8, -target / 8], (4, 1)))
+    assert_matches(ds.translations, np.tile([2 * target / 8, -target / 8], (4, 1)))
     # Shared SPA CTF evaluation still takes its computation dtype from arrays.
     ctf = ds.compute_CTF(ds.CTF_params[:1])
     assert ctf.dtype == real_dtype
     if dtype == np.complex64:
         expected_ctf = ds.ctf_evaluator(ds.CTF_params[:1], ds.image_shape, np.float32(expected))
-        np.testing.assert_array_equal(ctf, expected_ctf)
+        assert_matches(ctf, expected_ctf)
     images = ds.image_source.process_images(np.zeros((1, target, target), dtype=real_dtype))
     assert images.dtype == dtype
 
@@ -95,13 +96,13 @@ def test_loaded_host_pixel_and_computation_dtypes(tmp_path, old, size_field, tar
 def test_origin_conversion_uses_source_geometry(tmp_path, origins, target):
     path = _star(tmp_path, origins=origins)
     _, fractions = metadata_readers.parse_poses_from_star(path, target)
-    np.testing.assert_array_equal(fractions, np.tile([2 / 8, -1 / 8], (4, 1)))
+    assert_matches(fractions, np.tile([2 / 8, -1 / 8], (4, 1)))
 
 
 def test_optics_mapping_selection_and_uniformity(tmp_path):
     path = _star(tmp_path, pixels=(PIXEL, 2.1))
     sf = StarFile.load(path)
-    np.testing.assert_array_equal(sf.source_pixel_sizes_angstrom, [PIXEL, 2.1, PIXEL, 2.1])
+    assert_matches(sf.source_pixel_sizes_angstrom, [PIXEL, 2.1, PIXEL, 2.1])
     ds = cryoem_dataset.load_dataset(path, ind=np.array([2, 0]))
     assert ds.voxel_size == PIXEL
     with pytest.raises(ValueError, match="All voxel sizes"):
@@ -140,7 +141,7 @@ def test_explicit_pickle_geometry_is_authoritative_and_not_mutated(tmp_path, sou
     ds = cryoem_dataset.load_dataset(path, ctf_file="ctf.pkl", ind=np.array([3, 1]), downsample_D=4)
     assert ds.voxel_size == float(source_dtype(PIXEL)) * 2
     assert ds.CTF_params.dtype == np.float32
-    np.testing.assert_array_equal(rows, original)
+    assert_matches(rows, original)
 
 
 def test_pickle_selection_precedes_common_geometry_check(tmp_path):
@@ -171,7 +172,7 @@ def test_cs_scaling_preserves_serialized_pixel_value(tmp_path):
     with path.open("wb") as stream:
         np.save(stream, data)
     ctf = metadata_readers.parse_ctf_from_cs(str(path), 4)
-    np.testing.assert_array_equal(ctf[:, 0], np.full(3, float(np.float32(PIXEL)) * 2))
+    assert_matches(ctf[:, 0], np.full(3, float(np.float32(PIXEL)) * 2))
 
 
 def test_initial_model_consumers_receive_one_loaded_scalar(tmp_path, monkeypatch):

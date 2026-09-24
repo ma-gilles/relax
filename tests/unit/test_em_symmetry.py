@@ -15,6 +15,7 @@ from relax.symmetry import (
     rotational_operators,
     symmetry_operator_sha256,
 )
+from helpers.float_compare import assert_matches, matches
 
 pytestmark = pytest.mark.unit
 
@@ -93,8 +94,8 @@ def test_nonrotational_or_unimplemented_groups_fail_closed(label):
 )
 def test_relion_operator_counts_and_properness(label, count):
     left, right = relion_symmetry_operators(label)
-    np.testing.assert_array_equal(left[0], np.eye(3))
-    np.testing.assert_array_equal(right[0], np.eye(3))
+    assert_matches(left[0], np.eye(3))
+    assert_matches(right[0], np.eye(3))
     assert left.shape == right.shape == (count, 3, 3)
     identity_stack = np.broadcast_to(np.eye(3), left.shape)
     np.testing.assert_allclose(left, identity_stack, rtol=0.0, atol=1e-12)
@@ -102,7 +103,7 @@ def test_relion_operator_counts_and_properness(label, count):
     np.testing.assert_allclose(
         right @ np.swapaxes(right, -1, -2), identity_stack, rtol=0.0, atol=2e-7
     )
-    np.testing.assert_allclose(rotational_operators(label), right, rtol=0.0, atol=0.0)
+    assert_matches(rotational_operators(label), right)
 
 
 def test_c1_operator_lookup_does_not_require_relion_symmetry_files(tmp_path, monkeypatch):
@@ -111,8 +112,8 @@ def test_c1_operator_lookup_does_not_require_relion_symmetry_files(tmp_path, mon
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("RELION_HOME", raising=False)
     left, right = relion_symmetry_operators("C1")
-    np.testing.assert_array_equal(left, np.eye(3)[None, :, :])
-    np.testing.assert_array_equal(right, np.eye(3)[None, :, :])
+    assert_matches(left, np.eye(3)[None, :, :])
+    assert_matches(right, np.eye(3)[None, :, :])
 
 
 @pytest.mark.parametrize("label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"])
@@ -126,11 +127,11 @@ def test_relion_operator_sets_are_closed(label):
     np.testing.assert_allclose(best_cosine, 1.0, rtol=0.0, atol=2e-7)
 
 
-def test_i_alias_is_exact_and_digest_is_stable():
+def test_i_alias_matches_and_digest_is_stable():
     left_i, right_i = relion_symmetry_operators("I")
     left_i2, right_i2 = relion_symmetry_operators("I2")
-    np.testing.assert_array_equal(left_i, left_i2)
-    np.testing.assert_array_equal(right_i, right_i2)
+    assert_matches(left_i, left_i2)
+    assert_matches(right_i, right_i2)
     assert symmetry_operator_sha256("I") == symmetry_operator_sha256("I2")
 
 
@@ -183,22 +184,17 @@ def test_symmetry_reduced_coarse_grid_matches_relion_binding(label):
     assert sampling.rotation_grid_size(order, label) == n_directions * n_psi
     # The public Euler table is intentionally float32; pin that conversion
     # exactly while testing the matrix path against source-precision rows.
-    np.testing.assert_array_equal(native_eulers, source_eulers.astype(np.float32))
+    assert_matches(native_eulers, source_eulers.astype(np.float32))
     np.testing.assert_allclose(
         native_rotations,
         utils.R_from_relion(source_eulers, degrees=True),
         rtol=0.0,
         atol=4e-8,
     )
-    np.testing.assert_allclose(
-        recovar_rotations,
-        native_rotations.reshape(n_directions, n_psi, 3, 3)
+    assert_matches(recovar_rotations, native_rotations.reshape(n_directions, n_psi, 3, 3)
         .transpose(1, 0, 2, 3)
-        .reshape(-1, 3, 3),
-        rtol=0.0,
-        atol=0.0,
-    )
-    np.testing.assert_array_equal(
+        .reshape(-1, 3, 3))
+    assert_matches(
         metadata["directions_ipix"], source["directions_ipix"]
     )
     assert np.all(metadata["directions_ipix"] >= 0)
@@ -243,7 +239,7 @@ def test_symmetry_oversampling_matches_relion_binding(label):
     expected = utils.R_from_relion(expected_eulers, degrees=True)
 
     np.testing.assert_allclose(actual, expected, rtol=1e-6, atol=1e-6)
-    np.testing.assert_array_equal(parent_map, np.zeros(8, dtype=np.int64))
+    assert_matches(parent_map, np.zeros(8, dtype=np.int64))
 
 
 @pytest.mark.parametrize(
@@ -321,12 +317,12 @@ def test_parent_expanded_local_layout_maps_non_c1_children_to_reduced_parent_ids
         local_parent_oversampling_order=1,
     )
 
-    np.testing.assert_array_equal(layout.rotation_ids_flat, child_ids)
+    assert_matches(layout.rotation_ids_flat, child_ids)
     assert layout.n_global_rotations == expected_n_global
     if expected_posterior_ids is None:
         assert layout.rotation_posterior_ids_flat is None
     else:
-        np.testing.assert_array_equal(
+        assert_matches(
             layout.rotation_posterior_ids_flat,
             expected_posterior_ids,
         )
@@ -365,7 +361,7 @@ def test_convergence_distance_minimizes_over_relion_symmetry_mates(label):
     np.testing.assert_allclose(symmetry_distance, 0.0, rtol=0.0, atol=2e-6)
 
 
-def test_explicit_c1_convergence_distance_preserves_default_path_exactly():
+def test_explicit_c1_convergence_distance_preserves_default_path():
     from recovar import utils
     from relax.helpers.convergence import (
         _relion_angular_distance_per_particle as relion_angular_distance_per_particle,
@@ -381,7 +377,7 @@ def test_explicit_c1_convergence_distance_preserves_default_path_exactly():
     explicit = relion_angular_distance_per_particle(
         first, second, symmetry_label="C1"
     )
-    np.testing.assert_array_equal(default, explicit)
+    assert_matches(default, explicit)
 
 
 @pytest.mark.parametrize(
@@ -452,7 +448,7 @@ def test_symmetry_direction_prior_geometry_expansion_matches_canonical_ids(label
         rotations=rotations,
         symmetry=label,
     )
-    np.testing.assert_array_equal(by_geometry, by_id)
+    assert_matches(by_geometry, by_id)
 
 
 @pytest.mark.parametrize(
@@ -550,8 +546,8 @@ def test_firstiter_cc_fine_grid_uses_reduced_asymmetric_unit_ids(label):
         symmetry=label,
     )
 
-    np.testing.assert_array_equal(actual[2], expected_rotations)
-    np.testing.assert_array_equal(actual[4], expected_parent)
+    assert_matches(actual[2], expected_rotations)
+    assert_matches(actual[4], expected_parent)
 
 
 @pytest.mark.parametrize("label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"])
@@ -585,8 +581,8 @@ def test_sparse_pass2_fallback_uses_symmetry_reduced_parent_ids(label):
         symmetry_label=label,
     )
 
-    np.testing.assert_array_equal(prepared["oversampled_rots"][0], expected_rotations)
-    np.testing.assert_array_equal(prepared["parent_map"][0], expected_parent)
+    assert_matches(prepared["oversampled_rots"][0], expected_rotations)
+    assert_matches(prepared["parent_map"][0], expected_parent)
 
 
 def test_sparse_pass2_rejects_c1_sized_parent_grid_for_i1():
@@ -631,7 +627,7 @@ def test_symmetry_reduced_coarse_tie_break_uses_relion_direction_major_order(lab
         healpix_order=order,
         symmetry_label=label,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         keys,
         np.asarray([[rotation_grid_n_in_planes(order), 1]], dtype=np.int64),
     )
@@ -642,7 +638,7 @@ def test_symmetry_reduced_coarse_tie_break_uses_relion_direction_major_order(lab
         healpix_order=order,
         symmetry_label=label,
     )
-    np.testing.assert_array_equal(slots, np.asarray([1], dtype=np.int32))
+    assert_matches(slots, np.asarray([1], dtype=np.int32))
     assert tie_count == 1
 
 
@@ -1012,5 +1008,5 @@ def test_point_group_mstep_source_angles_are_the_relion_binary64_rows(label):
     exact = sampling._get_relion_rotation_grid_eulers_float64(order, symmetry=label)
     source = sampling._relion_mstep_source_eulers(scoring_eulers, order, symmetry=label)
     assert source.dtype == np.float64 and source.shape == exact.shape
-    assert source.tobytes() == exact.tobytes()
-    assert source.tobytes() != scoring_eulers.astype(np.float64).tobytes()
+    assert_matches(source, exact, strict=True)
+    assert not matches(source, scoring_eulers.astype(np.float64))

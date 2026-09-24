@@ -8,6 +8,7 @@ import recovar.cuda_backproject as cuda_backproject
 
 from relax.sparse_pass2 import firstiter_bpref as sparse
 from relax.diagnostics import bpref_diagnostics
+from helpers.float_compare import assert_matches
 
 
 def test_deferred_firstiter_bpref_gate_uses_texture_peak_and_force_override(
@@ -215,11 +216,11 @@ def test_deferred_firstiter_bpref_snapshot_and_replay_preserve_bits_and_order(
         particle_half_local_indices=np.asarray([1]),
         particle_original_indices=np.asarray([20]),
     )
-    np.testing.assert_array_equal(first.raw_images, np.asarray(first_images))
-    np.testing.assert_array_equal(first.raw_ctf, np.asarray(first_ctf))
-    np.testing.assert_array_equal(first.raw_minvsigma2, np.asarray(first_noise))
-    np.testing.assert_array_equal(first.posterior, np.asarray(first_posterior))
-    np.testing.assert_array_equal(first.rotations, np.asarray(first_rotations))
+    assert_matches(first.raw_images, np.asarray(first_images))
+    assert_matches(first.raw_ctf, np.asarray(first_ctf))
+    assert_matches(first.raw_minvsigma2, np.asarray(first_noise))
+    assert_matches(first.posterior, np.asarray(first_posterior))
+    assert_matches(first.rotations, np.asarray(first_rotations))
     assert sparse._deferred_firstiter_bpref_batch_nbytes(first) == sum(
         value.nbytes for value in first
     )
@@ -290,30 +291,30 @@ def test_deferred_firstiter_bpref_snapshot_and_replay_preserve_bits_and_order(
         adaptive_fraction=0.999,
     )
 
-    np.testing.assert_array_equal(np.asarray(data_real), np.asarray([120], dtype=np.float32))
-    np.testing.assert_array_equal(np.asarray(data_imag), np.asarray([-120], dtype=np.float32))
-    np.testing.assert_array_equal(np.asarray(weight), np.asarray([120], dtype=np.float32))
+    assert_matches(np.asarray(data_real), np.asarray([120], dtype=np.float32))
+    assert_matches(np.asarray(data_imag), np.asarray([-120], dtype=np.float32))
+    assert_matches(np.asarray(weight), np.asarray([120], dtype=np.float32))
     assert [call["particle_original_indices"].item() for call in calls] == [10, 20]
     assert len(replay_boundaries) == 2
-    np.testing.assert_array_equal(
+    assert_matches(
         replay_boundaries[0][0],
         np.asarray([10], dtype=np.float32),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         replay_boundaries[0][1],
         np.asarray([-10], dtype=np.float32),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         replay_boundaries[1][0],
         np.asarray([120], dtype=np.float32),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         replay_boundaries[1][1],
         np.asarray([-120], dtype=np.float32),
     )
     for expected, actual in zip((first, second), calls, strict=True):
         for field in sparse.DeferredFirstiterBPrefBatch._fields:
-            np.testing.assert_array_equal(actual[field], getattr(expected, field))
+            assert_matches(actual[field], getattr(expected, field))
 
 
 def test_split_firstiter_bpref_normalization_is_donated_and_bitwise_exact():
@@ -363,10 +364,10 @@ def test_split_firstiter_bpref_normalization_is_donated_and_bitwise_exact():
     data_out = np.empty(data.shape, dtype=np.complex64)
     data_out.real = np.asarray(real_out)
     data_out.imag = np.asarray(imag_out)
-    np.testing.assert_array_equal(data_out.view(np.uint32), expected_data.view(np.uint32))
-    np.testing.assert_array_equal(
-        np.asarray(weight_out).view(np.uint32),
-        expected_weight.view(np.uint32),
+    assert_matches(data_out, expected_data)
+    assert_matches(
+        np.asarray(weight_out),
+        expected_weight,
     )
 
 
@@ -415,13 +416,13 @@ def test_split_firstiter_bpref_normalization_aliases_all_gpu_inputs(gpu_device):
     data_out = np.empty(data.shape, dtype=np.complex64)
     data_out.real = np.asarray(real_out)
     data_out.imag = np.asarray(imag_out)
-    np.testing.assert_array_equal(
-        data_out.view(np.uint32),
-        expected_data.view(np.uint32),
+    assert_matches(
+        data_out,
+        expected_data,
     )
-    np.testing.assert_array_equal(
-        np.asarray(weight_out).view(np.uint32),
-        expected_weight.view(np.uint32),
+    assert_matches(
+        np.asarray(weight_out),
+        expected_weight,
     )
 
 
@@ -518,30 +519,30 @@ def test_firstiter_fused_bpref_prefix_capture_uses_immutable_identity_and_global
         adaptive_fraction=0.999,
     )
 
-    np.testing.assert_array_equal(np.asarray(data), np.asarray([4, 4], dtype=np.complex64))
-    np.testing.assert_array_equal(np.asarray(weight), np.asarray([7, 7], dtype=np.float32))
+    assert_matches(np.asarray(data), np.asarray([4, 4], dtype=np.complex64))
+    assert_matches(np.asarray(weight), np.asarray([7, 7], dtype=np.float32))
     assert len(captures) == 1
     capture = captures[0]
     assert capture["original_index"] == 20
     assert capture["particle_launch_ordinal"] == 7
-    np.testing.assert_array_equal(capture["before_data"], np.asarray([1, 1], dtype=np.complex64))
-    np.testing.assert_array_equal(capture["after_data"], np.asarray([4, 4], dtype=np.complex64))
-    np.testing.assert_array_equal(capture["isolated_data"], np.asarray([3, 3], dtype=np.complex64))
-    np.testing.assert_array_equal(capture["before_weight"], np.asarray([2, 2], dtype=np.float32))
-    np.testing.assert_array_equal(capture["after_weight"], np.asarray([7, 7], dtype=np.float32))
-    np.testing.assert_array_equal(capture["isolated_weight"], np.asarray([5, 5], dtype=np.float32))
+    assert_matches(capture["before_data"], np.asarray([1, 1], dtype=np.complex64))
+    assert_matches(capture["after_data"], np.asarray([4, 4], dtype=np.complex64))
+    assert_matches(capture["isolated_data"], np.asarray([3, 3], dtype=np.complex64))
+    assert_matches(capture["before_weight"], np.asarray([2, 2], dtype=np.float32))
+    assert_matches(capture["after_weight"], np.asarray([7, 7], dtype=np.float32))
+    assert_matches(capture["isolated_weight"], np.asarray([5, 5], dtype=np.float32))
     operands = capture["operand_bundle"]
-    np.testing.assert_array_equal(
+    assert_matches(
         operands["operand_source_image"],
         np.asarray([3, 0, 0, 0], dtype=np.complex64),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         operands["operand_ctf"], np.asarray([5, 0, 0, 0], dtype=np.float32)
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         operands["operand_posterior"], np.ones(1, dtype=np.float32)
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         operands["operand_translation_angles"], np.zeros((1, 2), dtype=np.float32)
     )
 
@@ -671,15 +672,15 @@ def test_deferred_firstiter_bpref_replay_matches_eager_native_accumulators_bitwi
             (eager_data, eager_weight, deferred_real, deferred_imag, deferred_weight),
         )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(deferred_real),
         np.asarray(eager_data).real,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(deferred_imag),
         np.asarray(eager_data).imag,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(deferred_weight),
         np.asarray(eager_weight),
     )

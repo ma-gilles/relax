@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers import orientation_priors as priors
 
@@ -35,13 +36,13 @@ def test_remapping_keeps_class_order_and_explicit_dtype(monkeypatch, n_classes, 
     )
     assert len(calls) == (n_classes or 1)
     for index, (row, src, dst, symmetry, actual_dtype) in enumerate(calls):
-        np.testing.assert_array_equal(row, original if n_classes is None else original[index])
+        assert_matches(row, original if n_classes is None else original[index])
         # Every row, global or per class, is remapped under the caller's point group.
         assert (src, dst, symmetry, actual_dtype) == (2, 3, "D2", dtype)
     if n_classes is None:
         assert result is outputs[0]
     else:
-        np.testing.assert_array_equal(result, [[i + 1, -i - 1] for i in range(n_classes)])
+        assert_matches(result, [[i + 1, -i - 1] for i in range(n_classes)])
         assert result.shape == (n_classes, 2)
     assert result.dtype == dtype
 
@@ -63,7 +64,7 @@ def test_uniform_class_conditionals_remain_uniform(n_classes, dtype, src_order, 
     )
     size = 12 * 4**dst_order
     shape = (size,) if n_classes is None else (n_classes, size)
-    np.testing.assert_array_equal(result, np.full(shape, 1 / size, dtype=dtype))
+    assert_matches(result, np.full(shape, 1 / size, dtype=dtype))
     assert result.dtype == dtype
 
 

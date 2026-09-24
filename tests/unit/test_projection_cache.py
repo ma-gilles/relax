@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers import projection_cache
 
@@ -181,7 +182,7 @@ def test_projection_cache_builder_fills_exact_physical_rows_in_bounded_blocks():
         (1, 0, 4),
         (1, 4, 7),
     ]
-    np.testing.assert_array_equal(np.asarray(actual), expected)
+    assert_matches(np.asarray(actual), expected)
 
 
 def test_projection_cache_builder_rejects_unadmitted_plan_before_allocation(monkeypatch):

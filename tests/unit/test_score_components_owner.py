@@ -3,6 +3,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+from helpers.float_compare import matches
 
 from relax.scoring import scoring
 
@@ -18,10 +19,10 @@ def test_components_match_the_documented_gemms():
     assert cross.shape == (n_images, n_rot, n_trans) and norms.shape == (n_images, n_rot)
     expected_cross = (-2.0 * jnp.matmul(jnp.conj(shifted), proj_w.T, precision=jax.lax.Precision.HIGHEST).real).reshape(n_images, n_trans, n_rot).swapaxes(1, 2)
     expected_norms = jnp.matmul(ctf2, proj_abs2.T, precision=jax.lax.Precision.HIGHEST)
-    assert np.array_equal(np.asarray(cross), np.asarray(expected_cross))
-    assert np.array_equal(np.asarray(norms), np.asarray(expected_norms))
+    assert matches(np.asarray(cross), np.asarray(expected_cross))
+    assert matches(np.asarray(norms), np.asarray(expected_norms))
     residual = scoring._e_step_block_scores(shifted, ctf2, proj_w, proj_abs2, n_images, n_trans)
-    assert np.array_equal(np.asarray(residual), np.asarray(-0.5 * (cross + norms[..., None])))
+    assert matches(np.asarray(residual), np.asarray(-0.5 * (cross + norms[..., None])))
     cc = scoring._e_step_block_scores_normalized_cc(shifted, jnp.zeros(n_images), ctf2, proj_w, proj_abs2, n_images, n_trans, (4, 4), (4, 4, 4))
     denom = jnp.sqrt(jnp.maximum(norms, jnp.asarray(1e-30, dtype=norms.dtype)))
-    assert np.array_equal(np.asarray(cc), np.asarray((-0.5 * cross) / denom[..., None]))
+    assert matches(np.asarray(cc), np.asarray((-0.5 * cross) / denom[..., None]))

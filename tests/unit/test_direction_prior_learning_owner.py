@@ -11,6 +11,7 @@ import logging
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.iteration_history import RefinementHistory
 from relax.helpers.orientation_priors import collapse_rotation_posterior_to_direction_prior
@@ -61,7 +62,7 @@ def test_k1_learns_one_prior_per_half_at_the_scoring_order():
             np.asarray(posteriors[k], dtype=np.float64), ORDER, dtype=np.float32
         )
         assert global_prior[k].dtype == np.float32
-        assert global_prior[k].tobytes() == expected.tobytes()
+        assert_matches(global_prior[k], expected, strict=True)
         assert global_order[k] == ORDER
     assert class_prior == [None, None] and class_order == [None, None]
 
@@ -111,7 +112,7 @@ def test_kclass_combines_halves_on_the_exhaustive_grid_with_independent_copies()
     assert global_prior == [None, None] and global_order == [None, None]
     for k in range(2):
         assert class_prior[k].shape == expected.shape and class_prior[k].dtype == np.float32
-        assert class_prior[k].tobytes() == expected.tobytes()
+        assert_matches(class_prior[k], expected, strict=True)
         assert class_order[k] == ORDER
     assert class_prior[0] is not class_prior[1]
     assert not np.shares_memory(class_prior[0], class_prior[1])

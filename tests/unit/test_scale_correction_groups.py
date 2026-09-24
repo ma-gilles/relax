@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.classification.k_class import _full_group_count_from_kwargs
 from relax.helpers.scale_groups import prepare_scale_correction_groups
@@ -25,7 +26,7 @@ def test_full_group_axis_is_preserved(ids, explicit, expected_count):
         assert normalized is None
     else:
         assert normalized.dtype == np.int64
-        np.testing.assert_array_equal(normalized, original.reshape(-1))
+        assert_matches(normalized, original.reshape(-1))
     assert _full_group_count_from_kwargs(
         dict(group_ids=ids, scale_correction_group_count=explicit),
     ) == (expected_count or None)
@@ -52,16 +53,16 @@ def test_existing_int64_conversion_and_input_storage_are_preserved():
     ids = np.asarray([0, 2, 0, 4], dtype=np.int64)
     normalized, count = prepare_scale_correction_groups(ids, n_images=4)
     assert np.shares_memory(ids, normalized)
-    np.testing.assert_array_equal(ids, [0, 2, 0, 4])
+    assert_matches(ids, [0, 2, 0, 4])
     assert count == 5
     # The existing boundary casts IDs; this cleanup must not tighten it silently.
     normalized, count = prepare_scale_correction_groups([0.9, 2.9], n_images=2)
-    np.testing.assert_array_equal(normalized, [0, 2])
+    assert_matches(normalized, [0, 2])
     assert count == 3
 
 
 def test_class_subset_keeps_absent_scale_groups():
     full_count = _full_group_count_from_kwargs(dict(group_ids=[0, 4, 2, 4]))
     subset, count = prepare_scale_correction_groups([0, 2], full_count, n_images=2)
-    np.testing.assert_array_equal(subset, [0, 2])
+    assert_matches(subset, [0, 2])
     assert count == full_count == 5

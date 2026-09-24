@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics import compact_candidate_capture as capture
 from scripts.analyze_k1_partial_fine_topology import (
@@ -33,9 +34,9 @@ def test_partial_rotation_map_reports_exact_overlap_and_unmatched_rows():
 
     mapping, native_only, recovar_only = partial_rotation_map(factor, recovar)
 
-    np.testing.assert_array_equal(mapping, np.asarray([2, -1, 0]))
-    np.testing.assert_array_equal(native_only, np.asarray([1]))
-    np.testing.assert_array_equal(recovar_only, np.asarray([1]))
+    assert_matches(mapping, np.asarray([2, -1, 0]))
+    assert_matches(native_only, np.asarray([1]))
+    assert_matches(recovar_only, np.asarray([1]))
 
 
 @pytest.mark.unit
@@ -108,14 +109,14 @@ def test_production_shard_normalizes_to_dense_partial_topology(tmp_path, monkeyp
 
     normalized = load_recovar_candidate_table(next(tmp_path.glob("raw_k1_*.npz")))
     assert int(normalized["original_index"]) == 231
-    np.testing.assert_array_equal(normalized["rotations"], rotations)
-    np.testing.assert_array_equal(normalized["rotation_global_index"], [20, 21])
-    np.testing.assert_array_equal(normalized["rotation_parent_global"], [100, 101])
-    np.testing.assert_array_equal(normalized["candidate_mask"], np.ones((2, 2), dtype=bool))
-    np.testing.assert_array_equal(
+    assert_matches(normalized["rotations"], rotations)
+    assert_matches(normalized["rotation_global_index"], [20, 21])
+    assert_matches(normalized["rotation_parent_global"], [100, 101])
+    assert_matches(normalized["candidate_mask"], np.ones((2, 2), dtype=bool))
+    assert_matches(
         normalized["candidate_sequence"],
         [[0, 0], [0, 1], [1, 0], [1, 1]],
     )
-    np.testing.assert_array_equal(normalized["probs"], probs[0])
-    np.testing.assert_array_equal(normalized["production_combined_score"], scores[0])
-    np.testing.assert_array_equal(normalized["production_significant"], significant[0])
+    assert_matches(normalized["probs"], probs[0])
+    assert_matches(normalized["production_combined_score"], scores[0])
+    assert_matches(normalized["production_significant"], significant[0])

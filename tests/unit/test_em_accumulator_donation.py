@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 from relax.local import local_bucket_stages as local_em_engine_module
 from relax.local.local_bucket_stages import _adjoint_slice_volume_maybe_windowed_row_chunks
+from helpers.float_compare import assert_matches
 
 
 def test_relion_x_half_per_particle_adjoint_donates_only_its_accumulator():
@@ -117,10 +118,10 @@ def test_relion_x_half_per_particle_donating_adjoint_aliases_and_matches(
     assert not rows.is_deleted()
     assert not pixel_indices.is_deleted()
     assert not rotations.is_deleted()
-    np.testing.assert_array_equal(np.asarray(rows), rows_host)
-    np.testing.assert_array_equal(np.asarray(pixel_indices), pixel_indices_host)
-    np.testing.assert_array_equal(np.asarray(rotations), rotations_host)
-    np.testing.assert_array_equal(
+    assert_matches(np.asarray(rows), rows_host)
+    assert_matches(np.asarray(pixel_indices), pixel_indices_host)
+    assert_matches(np.asarray(rotations), rotations_host)
+    assert_matches(
         np.asarray(donating_output),
         np.asarray(ordinary_output),
     )
@@ -189,9 +190,9 @@ def test_relion_x_half_sparse_adjoint_row_chunks_consume_accumulator(monkeypatch
 
     assert n_chunks == 3
     assert [call[0].shape[0] for call in calls] == [2, 2, 1]
-    np.testing.assert_array_equal(calls[0][1], np.arange(4, dtype=np.int32))
-    np.testing.assert_array_equal(calls[0][2], np.asarray(rotations[:2]))
-    np.testing.assert_array_equal(calls[1][2], np.asarray(rotations[2:4]))
-    np.testing.assert_array_equal(calls[2][2], np.asarray(rotations[4:]))
+    assert_matches(calls[0][1], np.arange(4, dtype=np.int32))
+    assert_matches(calls[0][2], np.asarray(rotations[:2]))
+    assert_matches(calls[1][2], np.asarray(rotations[2:4]))
+    assert_matches(calls[2][2], np.asarray(rotations[4:]))
     np.testing.assert_allclose([call[3] for call in calls], [7.0, 13.0, 35.0])
     np.testing.assert_allclose(np.asarray(updated), 52.0)

@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.shape_buckets import (
     coarse_bucket,
@@ -38,8 +39,8 @@ def test_coarse_bucket():
 def test_pad_axis_preserves_values_and_fills_constant():
     arr = np.arange(6).reshape(2, 3)
     padded = pad_axis(arr, 1, 5, value=-1)
-    np.testing.assert_array_equal(padded[:, :3], arr)
-    np.testing.assert_array_equal(padded[:, 3:], -np.ones((2, 2), dtype=arr.dtype))
+    assert_matches(padded[:, :3], arr)
+    assert_matches(padded[:, 3:], -np.ones((2, 2), dtype=arr.dtype))
 
 
 def test_pad_axis_rejects_truncation():

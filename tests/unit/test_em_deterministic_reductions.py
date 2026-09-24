@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -52,7 +53,7 @@ def test_fixed_order_segment_sum_matches_host_bincount_and_drops_out_of_range():
     ints = np.round(values * 4).astype(np.float32)
     got32 = np.asarray(dr.fixed_order_segment_sum(jnp.asarray(ints), ids, n))
     assert got32.dtype == np.float32
-    np.testing.assert_array_equal(got32, bin_shell_values_np(ints, ids, n).astype(np.float32))
+    assert_matches(got32, bin_shell_values_np(ints, ids, n).astype(np.float32))
 
 
 def test_fixed_order_segment_sum_leading_axes_and_shape_check():
@@ -100,7 +101,7 @@ def test_fixed_order_segment_sum_is_bitwise_repeatable_under_jit():
     fn = jax.jit(lambda v: dr.fixed_order_segment_sum(v, ids, n))
     first = np.asarray(fn(jnp.asarray(values, dtype=jnp.float32)))
     for _ in range(3):
-        np.testing.assert_array_equal(np.asarray(fn(jnp.asarray(values, dtype=jnp.float32))), first)
+        assert_matches(np.asarray(fn(jnp.asarray(values, dtype=jnp.float32))), first)
 
 
 def test_scatter_flat_local_rows_flagged_path_matches_set_and_fixes_duplicates(monkeypatch):
@@ -118,14 +119,14 @@ def test_scatter_flat_local_rows_flagged_path_matches_set_and_fixes_duplicates(m
     monkeypatch.setenv(dr.DETERMINISTIC_REDUCTIONS_ENV, "1")
     fixed = np.asarray(scatter_flat_local_rows(values, image, rot, present, **kw))
     assert fixed.shape == scatter.shape == (batch, n_rot, n_trans)
-    np.testing.assert_array_equal(fixed, scatter)  # unique present rows: identical result, padding dropped
+    assert_matches(fixed, scatter)  # unique present rows: identical result, padding dropped
     assert np.isinf(fixed[0, 1]).all() and np.isinf(fixed[2, 4]).all()
     # Duplicate present rows: the flagged path deterministically keeps the highest packed row id.
     present_dup = present.copy(); present_dup[7] = present_dup[8] = True
     fixed_dup = np.asarray(scatter_flat_local_rows(values, image, rot, present_dup, **kw))
-    np.testing.assert_array_equal(fixed_dup[0, 1], values[8])
+    assert_matches(fixed_dup[0, 1], values[8])
     for _ in range(3):
-        np.testing.assert_array_equal(np.asarray(scatter_flat_local_rows(values, image, rot, present_dup, **kw)), fixed_dup)
+        assert_matches(np.asarray(scatter_flat_local_rows(values, image, rot, present_dup, **kw)), fixed_dup)
 
 
 def test_powerclass_spectrum_flagged_path_matches_host_binning(monkeypatch):

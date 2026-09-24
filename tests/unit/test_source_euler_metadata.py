@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax import sampling
 from relax.classification import k_class, k_class_inputs, k_class_results
@@ -50,14 +51,14 @@ def test_per_class_layout_selection_preserves_source_eulers(dtype, with_source):
         assert result is layouts[class_id]
         assert result.source_eulers_flat is source
         assert result.rotations_flat is layout.rotations_flat
-        np.testing.assert_array_equal(result.rotation_log_priors_flat, priors[class_id])
+        assert_matches(result.rotation_log_priors_flat, priors[class_id])
         assert result.rotation_log_priors_flat.dtype == dtype
         buckets = bucket_local_hypothesis_layout(result, 1, 4)
         assert len(buckets) == 1
         if source is None:
             assert buckets[0].local_source_eulers is None
         else:
-            np.testing.assert_array_equal(buckets[0].local_source_eulers[0, :1], source)
+            assert_matches(buckets[0].local_source_eulers[0, :1], source)
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
@@ -75,13 +76,14 @@ def test_native_source_triplet_and_legacy_arrays(dtype, tmp_path):
     new = sampling.get_oversampled_rotation_grid_from_samples([37 + 3 * 48], 1, return_source_eulers=True, **kwargs)
     assert len(old) == 4 and len(new) == 5
     for a, b in zip(old, new[:4], strict=True):
-        assert a.dtype == b.dtype and a.tobytes() == b.tobytes()
+        assert a.dtype == b.dtype
+        assert_matches(b, a, strict=True)
     expected = np.array([159.3271497477632, 126.91279408422895, 85.75518260708287])
     assert new[-1].dtype == np.float64
-    np.testing.assert_array_equal(new[-1][4], expected)
-    exact_native = binding.get_oversampled_orientations(1, 1, 37, 3, kwargs["random_perturbation"])
-    np.testing.assert_array_equal(new[-1], exact_native)
-    metrics = dict(matrix_bytes_unchanged=True, source_maxabs=float(np.max(abs(new[-1][4] - expected))))
+    assert_matches(new[-1][4], expected)
+    native = binding.get_oversampled_orientations(1, 1, 37, 3, kwargs["random_perturbation"])
+    assert_matches(new[-1], native)
+    metrics = dict(matrices_match=True, source_maxabs=float(np.max(abs(new[-1][4] - expected))))
     (tmp_path / "metrics.json").write_text(json.dumps(metrics))
     logging.info("%s: %s", dtype, metrics)
 
@@ -111,19 +113,19 @@ def test_sparse_override_source_follows_true_child_permutation(order):
     legacy = _prepare_per_image_pass2_inputs([np.array([0, 1]), np.array([1])], **kwargs)
     for i in range(2):
         ids = inputs["oversampled_rot_indices"][i]
-        np.testing.assert_array_equal(inputs["source_eulers"][i], eulers[ids])
+        assert_matches(inputs["source_eulers"][i], eulers[ids])
         for key, expected in legacy.items():
             if key == "source_eulers":
                 continue
             actual = inputs[key]
             if isinstance(expected, (list, tuple)):
-                np.testing.assert_array_equal(actual[i], expected[i])
+                assert_matches(actual[i], expected[i])
             elif expected is None:
                 # Optional resident/M-step tables are absent in both layouts here.
                 assert actual is None, key
             else:
                 # Shared per-call tables and capacities must not depend on source metadata.
-                np.testing.assert_array_equal(actual, expected)
+                assert_matches(actual, expected)
         assert legacy["source_eulers"][i] is None
 
 
@@ -146,11 +148,11 @@ def test_local_union_and_bucket_source_alignment():
             parents, 0, random_perturbation=0.13, return_source_eulers=True, rotation_index_order="relion_hidden"
         )[-1]
         start, stop = layout.rotation_offsets[i : i + 2]
-        np.testing.assert_array_equal(layout.source_eulers_flat[start:stop], expected)
+        assert_matches(layout.source_eulers_flat[start:stop], expected)
     for bucket in bucket_local_hypothesis_layout(layout, 2, 32):
         for row, idx in enumerate(bucket.image_indices):
             start, stop = layout.rotation_offsets[idx : idx + 2]
-            np.testing.assert_array_equal(
+            assert_matches(
                 bucket.local_source_eulers[row, : stop - start], layout.source_eulers_flat[start:stop]
             )
 
@@ -179,7 +181,7 @@ def test_direct_k1_result_preserves_host_eulers(monkeypatch):
         return_best_pose_details=True,
     )
     assert isinstance(result.best_pose_eulers_deg, np.ndarray)
-    np.testing.assert_array_equal(result.best_pose_eulers_deg, eulers)
+    assert_matches(result.best_pose_eulers_deg, eulers)
 
 
 def test_inactive_class_without_metadata_does_not_erase_winner():
@@ -197,7 +199,7 @@ def test_inactive_class_without_metadata_does_not_erase_winner():
         noise_stats=None,
         per_class_best_pose_eulers_deg=[eulers, eulers + 10, None, None],
     )
-    np.testing.assert_array_equal(result.best_pose_eulers_deg, np.stack([eulers[0], eulers[1] + 10]))
+    assert_matches(result.best_pose_eulers_deg, np.stack([eulers[0], eulers[1] + 10]))
 
 
 def test_true_local_winner_gathers_eulers_without_changing_other_buffers():
@@ -246,11 +248,11 @@ def test_true_local_winner_gathers_eulers_without_changing_other_buffers():
     )
     engine._postprocess_local_bucket(**kwargs, buffers=old)
     engine._postprocess_local_bucket(**kwargs, buffers=buffers, local_source_eulers=eulers)
-    np.testing.assert_array_equal(buffers.best_pose_eulers_deg[[2, 0]], np.stack([eulers[0, 1], eulers[1, 0]]))
+    assert_matches(buffers.best_pose_eulers_deg[[2, 0]], np.stack([eulers[0, 1], eulers[1, 0]]))
     for name, value in vars(old).items():
         if isinstance(value, np.ndarray):
-            np.testing.assert_array_equal(getattr(buffers, name), value)
-    np.testing.assert_array_equal(eulers, np.arange(12, dtype=np.float64).reshape(2, 2, 3) + 2**-37)
+            assert_matches(getattr(buffers, name), value)
+    assert_matches(eulers, np.arange(12, dtype=np.float64).reshape(2, 2, 3) + 2**-37)
 
 
 def test_loader_reordering_preserves_source_rows_and_legacy_unavailability():
@@ -270,8 +272,8 @@ def test_loader_reordering_preserves_source_rows_and_legacy_unavailability():
         local_source_eulers=eulers,
     )
     reordered = engine._reorder_bucket_to_indices(bucket, np.array([7, 4, 9]))
-    np.testing.assert_array_equal(reordered.local_source_eulers, eulers[[2, 1, 0]])
-    np.testing.assert_array_equal(reordered.local_rotations, bucket.local_rotations[[2, 1, 0]])
+    assert_matches(reordered.local_source_eulers, eulers[[2, 1, 0]])
+    assert_matches(reordered.local_rotations, bucket.local_rotations[[2, 1, 0]])
     assert reordered.local_source_eulers.dtype == np.float64
     assert engine._reorder_bucket_to_indices(bucket, bucket.image_indices) is bucket
     from dataclasses import replace

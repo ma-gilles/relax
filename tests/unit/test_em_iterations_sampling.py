@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import healpy as hp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 pytest.importorskip("healpy")
@@ -178,7 +179,7 @@ def test_translations_to_indices_maps_centered_integer_offsets():
 
     out = np.asarray(em_sampling.translations_to_indices(translations, image_shape))
     expected = np.array([36, 29, 58], dtype=np.int32)
-    np.testing.assert_array_equal(out, expected)
+    assert_matches(out, expected)
 
 
 def test_get_translation_grid_respects_radius_and_stride():
@@ -460,7 +461,7 @@ def test_local_rotation_grid_fast_full_mode_matches_reference_loop():
     )
     ref_indices, ref_log_prior = _reference_full_mode(priors, sigma_rot, sigma_psi, metadata)
 
-    np.testing.assert_array_equal(selected_indices, ref_indices)
+    assert_matches(selected_indices, ref_indices)
     np.testing.assert_allclose(log_prior, ref_log_prior, rtol=1e-6, atol=1e-6)
 
 
@@ -589,7 +590,7 @@ def test_local_rotation_grid_fast_per_image_priors_prefer_each_image_peak():
         )
         reference_best.append(ref_indices[np.argmax(ref_log_prior)])
 
-    np.testing.assert_array_equal(
+    assert_matches(
         per_image_best,
         np.array(reference_best, dtype=np.int64),
     )
@@ -638,9 +639,9 @@ def test_run_batched_em_iteration_small_memory_forces_single_image_batches():
     )
 
     assert out_state is state
-    np.testing.assert_array_equal(hard, np.full((5,), 5, dtype=np.int64))
+    assert_matches(hard, np.full((5,), 5, dtype=np.int64))
     seen = np.concatenate([idx for idx, _shape in state.calls])
-    np.testing.assert_array_equal(np.sort(seen), np.arange(5, dtype=np.int32))
+    assert_matches(np.sort(seen), np.arange(5, dtype=np.int32))
     assert all(shape[0] == 1 for _idx, shape in state.calls)
 
 
@@ -677,7 +678,7 @@ def test_run_batched_em_iteration_sgd_uses_explicit_sgd_batchsize():
     )
 
     assert len(state.calls) == 3
-    np.testing.assert_array_equal(hard, np.zeros((5,), dtype=np.int64))
+    assert_matches(hard, np.zeros((5,), dtype=np.int64))
 
 
 def test_run_batched_em_iteration_sgd_float_batchsize_is_safely_cast_to_int():
@@ -715,7 +716,7 @@ def test_run_batched_em_iteration_sgd_float_batchsize_is_safely_cast_to_int():
 
     # 5 units with int(2.7)=2 => chunks [0,1], [2,3], [4]
     assert len(state.calls) == 3
-    np.testing.assert_array_equal(hard, np.zeros((5,), dtype=np.int64))
+    assert_matches(hard, np.zeros((5,), dtype=np.int64))
 
 
 def test_run_batched_em_iteration_rejects_invalid_hidden_or_sgd_batchsize():
@@ -832,8 +833,8 @@ def test_run_halfset_em_iteration_updates_state_means_noise_and_pose_assignments
 
     assert pix_res == 4.0
     assert len(hard) == 2
-    np.testing.assert_array_equal(hard[0], h0)
-    np.testing.assert_array_equal(hard[1], h1)
+    assert_matches(hard[0], h0)
+    assert_matches(hard[1], h1)
     assert s0.finish_calls == 1
     assert s1.finish_calls == 1
     np.testing.assert_allclose(out_states[0].noise_variance, np.ones((4,), dtype=np.float32) * 0.5)
@@ -956,8 +957,8 @@ def test_run_halfset_em_iteration_heterogeneous_branch_updates_covariance_prior_
     )
 
     assert pix_res == 3.0
-    np.testing.assert_array_equal(hard[0], h0)
-    np.testing.assert_array_equal(hard[1], h1)
+    assert_matches(hard[0], h0)
+    assert_matches(hard[1], h1)
     assert s0.finish_calls == 1
     assert s1.finish_calls == 1
     np.testing.assert_allclose(out_states[0].noise_variance, np.ones((4,), dtype=np.float32) * 0.4)

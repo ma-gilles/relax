@@ -15,6 +15,7 @@ import pytest
 from relax.helpers.resolution import shell_index_to_resolution_angstrom
 from relax.refinement import mean_helpers
 from relax.reconstruction import regularization_relion
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -141,7 +142,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
         assert len(result) == 4
         for got, want in zip(result, expected):
             assert got.dtype == want.dtype and got.shape == want.shape
-            assert np.asarray(got).tobytes() == np.asarray(want).tobytes()
+            assert_matches(np.asarray(got), np.asarray(want), strict=True)
 
 
 class TestClassTau2FromIrefPowerSpectrum:
@@ -174,7 +175,7 @@ class TestClassTau2FromIrefPowerSpectrum:
         expected_shells_recovar = expected_shells_relion * jnp.asarray(frame_scale, dtype=jnp.float32)
         for got, want in ((tau2, expected_tau2), (shells_relion, expected_shells_relion), (shells_recovar, expected_shells_recovar)):
             assert got.dtype == jnp.float32 and got.shape == want.shape
-            assert np.asarray(got).tobytes() == np.asarray(want).tobytes()
+            assert_matches(np.asarray(got), np.asarray(want), strict=True)
 
 
 class TestClassTau2UpdateDetails:
@@ -218,7 +219,7 @@ class TestClassTau2UpdateDetails:
             accumulator_volume_shape=ACCUMULATOR_SHAPE,
         )
         assert data_vs_prior.dtype == expected_dvp.dtype
-        assert np.asarray(data_vs_prior).tobytes() == np.asarray(expected_dvp).tobytes()
+        assert_matches(np.asarray(data_vs_prior), np.asarray(expected_dvp), strict=True)
 
         expected = {
             "prior_shells": np.asarray(tau2_shells, dtype=np.float64),
@@ -243,7 +244,7 @@ class TestClassTau2UpdateDetails:
                 continue
             got = details[key]
             assert isinstance(got, np.ndarray) and got.dtype == np.float64 and got.shape == want.shape
-            assert got.tobytes() == want.tobytes()
+            assert_matches(got, want, strict=True)
 
     def test_zero_weight_shells_have_zero_sigma2(self):
         ft_ctf, tau2_shells, shell_stats = self._inputs()
@@ -281,4 +282,4 @@ def test_stack_class_tau2_update_details_keeps_key_layout():
             continue
         want = np.stack([record[key] for record in records], axis=0)
         assert stacked[key].shape == (3, N_SHELLS)
-        assert stacked[key].tobytes() == want.tobytes()
+        assert_matches(stacked[key], want, strict=True)

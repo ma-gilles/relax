@@ -17,6 +17,7 @@ import jax.numpy as jnp
 from recovar.core import fourier_transform_utils
 from relax.helpers.preprocessing import relion_half_translation_lattice
 from relax.sparse_pass2 import sparse_pass2_bucket_io as bio
+from helpers.float_compare import assert_matches
 
 
 def _core_lattice(shape):
@@ -30,7 +31,7 @@ def _core_lattice(shape):
 def test_cached_lattice_matches_the_relion_labelled_lattice_and_is_reused():
     shape = (16, 16)
     cached = bio._scaled_half_lattice_cached(shape)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(cached), np.asarray(relion_half_translation_lattice(shape))
     )
     assert bio._scaled_half_lattice_cached(shape) is cached  # memoised
@@ -53,7 +54,7 @@ def test_phase_table_unchanged_by_memoisation():
             precision=jax.lax.Precision.HIGHEST,
         )
     )
-    np.testing.assert_array_equal(np.asarray(got), np.asarray(want))
+    assert_matches(np.asarray(got), np.asarray(want))
 
 
 def test_only_the_packed_nyquist_row_differs_from_the_core_lattice():
@@ -66,9 +67,9 @@ def test_only_the_packed_nyquist_row_differs_from_the_core_lattice():
         ky = np.rint(core[:, 1] * size).astype(int)
         nyquist = ky == -(size // 2)
         assert nyquist.any(), size
-        np.testing.assert_array_equal(relion[~nyquist], core[~nyquist])
-        np.testing.assert_array_equal(relion[nyquist, 1], -core[nyquist, 1])
-        np.testing.assert_array_equal(relion[nyquist, 0], core[nyquist, 0])
+        assert_matches(relion[~nyquist], core[~nyquist])
+        assert_matches(relion[nyquist, 1], -core[nyquist, 1])
+        assert_matches(relion[nyquist, 0], core[nyquist, 0])
         # RELION's labels for an uncropped half image run -N/2+1 .. +N/2.
         labels = np.rint(relion[:, 1] * size).astype(int)
         assert labels.min() == -(size // 2) + 1 and labels.max() == size // 2

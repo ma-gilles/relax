@@ -70,6 +70,7 @@ from relax.relion.relion_metadata import (
     _parse_relion_cli_ini_high,
     _parse_relion_tau2_fudge,
 )
+from helpers.float_compare import assert_matches, matches
 
 FIXTURE = fixture_root("k1_5k128_relion_os0")
 
@@ -236,7 +237,7 @@ def test_compute_relion_fresh_k1_initial_sigma2_preserves_source_order():
         nr_optics_groups=1,
         minimum_nr_particles=2,
     )
-    np.testing.assert_array_equal(got, expected)
+    assert_matches(got, expected)
 
 
 def test_compute_relion_fresh_k1_initial_sigma2_rejects_duplicate_rows():
@@ -287,7 +288,7 @@ def test_compute_relion_fresh_k1_initial_sigma2_uses_optics_pixel_size():
         nr_optics_groups=1,
         minimum_nr_particles=3,
     )
-    np.testing.assert_array_equal(got, expected)
+    assert_matches(got, expected)
     _average, model_pixel_result = compute_avg_unaligned_and_sigma2(
         iter((0, image) for image in images),
         ori_size=16,
@@ -298,7 +299,7 @@ def test_compute_relion_fresh_k1_initial_sigma2_uses_optics_pixel_size():
         nr_optics_groups=1,
         minimum_nr_particles=3,
     )
-    assert not np.array_equal(got, model_pixel_result)
+    assert not matches(got, model_pixel_result)
 
 
 def test_relion_sigma2_to_native_noise_variance_keeps_float32_scoring_dtype():
@@ -421,7 +422,7 @@ def test_unequal_half_tau2_is_dispatched_without_collapsing():
 
     assert selected1 is half1
     assert selected2 is half2
-    assert not np.array_equal(selected1, selected2)
+    assert not matches(selected1, selected2)
 
 
 def test_ordinary_k1_keeps_shared_tau2_across_multiple_updates():
@@ -456,10 +457,10 @@ def test_fixed_arm_can_keep_per_half_tau2_across_updates():
         use_per_half_mean_variance=True,
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         _mean_variance_for_scoring_half(scoring_tau2, 0), candidate_per_half[0]
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         _mean_variance_for_scoring_half(scoring_tau2, 1), candidate_per_half[1]
     )
 
@@ -919,8 +920,8 @@ def test_relion_mpi_autorefine_scoring_noise_uses_rank1_broadcast():
 
     got = relion_mpi_process_start_scoring_noise_pair(half1, half2, split_random_halves=True)
 
-    np.testing.assert_array_equal(got[0], half1)
-    np.testing.assert_array_equal(got[1], half1)
+    assert_matches(got[0], half1)
+    assert_matches(got[1], half1)
     assert got[0] is not got[1]
 
 
@@ -930,8 +931,8 @@ def test_relion_mpi_shared_model_scoring_noise_preserves_second_input():
 
     got = relion_mpi_process_start_scoring_noise_pair(half1, half2, split_random_halves=False)
 
-    np.testing.assert_array_equal(got[0], half1)
-    np.testing.assert_array_equal(got[1], half2)
+    assert_matches(got[0], half1)
+    assert_matches(got[1], half2)
 
 
 def test_relion_mpi_scoring_noise_preserves_rfloat_reciprocal_boundary():
@@ -946,8 +947,8 @@ def test_relion_mpi_scoring_noise_preserves_rfloat_reciprocal_boundary():
 
     assert got[0].dtype == np.float64
     assert got[1].dtype == np.float64
-    np.testing.assert_array_equal(got[0], half1)
-    np.testing.assert_array_equal(got[1], half2)
+    assert_matches(got[0], half1)
+    assert_matches(got[1], half2)
     assert np.any(got[0] != got[0].astype(np.float32).astype(np.float64))
 
 
@@ -1122,12 +1123,12 @@ def test_refinement_results_persist_class_assignment_history():
     }
     saved = {}
     add_class_history_artifacts(saved, result, [2, 0], [3, 1], 5)
-    np.testing.assert_array_equal(saved["class_assignments_iter_000"], [3, 0, 2, 1])
-    np.testing.assert_array_equal(saved["class_assignments_half_order_iter_000"], [3, 0, 2, 1])
-    np.testing.assert_array_equal(saved["class_assignments_by_image_iter_000"], [0, 1, 3, 2, -1])
+    assert_matches(saved["class_assignments_iter_000"], [3, 0, 2, 1])
+    assert_matches(saved["class_assignments_half_order_iter_000"], [3, 0, 2, 1])
+    assert_matches(saved["class_assignments_by_image_iter_000"], [0, 1, 3, 2, -1])
     assert saved["class_assignments_by_image_iter_000"].dtype == np.int32
     assert saved["class_weights"].dtype == np.float64
-    np.testing.assert_array_equal(saved["class_weights"], result["class_weights"])
+    assert_matches(saved["class_weights"], result["class_weights"])
     assert "iteration_history.add_class_history_artifacts(" in RUN_FULL_REFINEMENT.read_text()
 
 
@@ -1303,14 +1304,14 @@ def test_native_group_layout_prefers_supplied_relion_groups_and_maps_exact_ident
     assert layout.source == "supplied RELION data STAR"
     assert layout.n_groups == 7
     assert layout.n_optics_groups == 3
-    np.testing.assert_array_equal(layout.group_ids_per_half[0], [0, 1])
-    np.testing.assert_array_equal(layout.group_ids_per_half[1], [6, 3])
+    assert_matches(layout.group_ids_per_half[0], [0, 1])
+    assert_matches(layout.group_ids_per_half[1], [6, 3])
     # Internal IDs are authoritative RELION data-STAR row numbers, mapped by
     # full rlnImageName identity rather than RECOVAR row position.
-    np.testing.assert_array_equal(layout.particle_ids_per_half[0], [2, 0])
-    np.testing.assert_array_equal(layout.particle_ids_per_half[1], [3, 1])
-    np.testing.assert_array_equal(layout.optics_group_ids_per_half[0], [0, 0])
-    np.testing.assert_array_equal(layout.optics_group_ids_per_half[1], [2, 1])
+    assert_matches(layout.particle_ids_per_half[0], [2, 0])
+    assert_matches(layout.particle_ids_per_half[1], [3, 1])
+    assert_matches(layout.optics_group_ids_per_half[0], [0, 0])
+    assert_matches(layout.optics_group_ids_per_half[1], [2, 1])
 
 
 def test_replay_group_loader_uses_iter0_without_relion_half_sets(tmp_path):
@@ -1327,7 +1328,7 @@ def test_replay_group_loader_uses_iter0_without_relion_half_sets(tmp_path):
     loaded, source = _load_replay_group_particles(tmp_path)
 
     assert source == tmp_path / "run_it000_data.star"
-    np.testing.assert_array_equal(loaded["rlnGroupNumber"], [7, 3])
+    assert_matches(loaded["rlnGroupNumber"], [7, 3])
 
 
 def test_subset_only_halfset_does_not_block_permuted_replay_group_layout(tmp_path):
@@ -1365,8 +1366,8 @@ def test_subset_only_halfset_does_not_block_permuted_replay_group_layout(tmp_pat
     assert source == tmp_path / "run_it000_data.star"
     assert layout is not None
     assert layout.n_groups == 7
-    np.testing.assert_array_equal(layout.group_ids_per_half[0], [3, 1])
-    np.testing.assert_array_equal(layout.group_ids_per_half[1], [6])
+    assert_matches(layout.group_ids_per_half[0], [3, 1])
+    assert_matches(layout.group_ids_per_half[1], [6])
 
 
 def test_native_group_layout_preserves_full_group_axis_when_half_max_is_absent():
@@ -1388,7 +1389,7 @@ def test_native_group_layout_preserves_full_group_axis_when_half_max_is_absent()
     assert layout is not None
     assert layout.n_groups == 7
     assert int(np.max(layout.group_ids_per_half[0])) == 1
-    np.testing.assert_array_equal(layout.group_ids_per_half[1], [6, 3])
+    assert_matches(layout.group_ids_per_half[1], [6, 3])
 
 
 def test_native_group_layout_numbers_relion_groups_when_the_star_has_none():
@@ -1415,10 +1416,10 @@ def test_native_group_layout_numbers_relion_groups_when_the_star_has_none():
     assert layout is not None
     assert layout.n_groups == 3
     # Sorted order: mic_a (row 1), mic_b (rows 0, 2), mic_c (row 3).
-    np.testing.assert_array_equal(layout.group_ids_per_half[0], [1, 0])
-    np.testing.assert_array_equal(layout.group_ids_per_half[1], [1, 2])
-    np.testing.assert_array_equal(layout.particle_ids_per_half[0], [1, 0])
-    np.testing.assert_array_equal(layout.particle_ids_per_half[1], [2, 3])
+    assert_matches(layout.group_ids_per_half[0], [1, 0])
+    assert_matches(layout.group_ids_per_half[1], [1, 2])
+    assert_matches(layout.particle_ids_per_half[0], [1, 0])
+    assert_matches(layout.particle_ids_per_half[1], [2, 3])
 
     # An input rlnGroupNumber that disagrees with RELION's numbering is ignored,
     # as relion_refine ignores it (exp_model.cpp:963-965).
@@ -1429,8 +1430,8 @@ def test_native_group_layout_numbers_relion_groups_when_the_star_has_none():
         half2_idx=np.asarray([2, 3], dtype=np.int64),
     )
     assert renumbered.n_groups == 3
-    np.testing.assert_array_equal(renumbered.group_ids_per_half[0], [1, 0])
-    np.testing.assert_array_equal(renumbered.group_ids_per_half[1], [1, 2])
+    assert_matches(renumbered.group_ids_per_half[0], [1, 0])
+    assert_matches(renumbered.group_ids_per_half[1], [1, 2])
 
     # No group or micrograph name: RELION reads an empty micrograph name for
     # every particle (exp_model.cpp:154-167), so all share one group.
@@ -1440,7 +1441,7 @@ def test_native_group_layout_numbers_relion_groups_when_the_star_has_none():
         half2_idx=np.asarray([2, 3], dtype=np.int64),
     )
     assert single.n_groups == 1
-    np.testing.assert_array_equal(np.concatenate(single.group_ids_per_half), [0, 0, 0, 0])
+    assert_matches(np.concatenate(single.group_ids_per_half), [0, 0, 0, 0])
 
 
 @pytest.mark.parametrize(
@@ -1484,11 +1485,11 @@ def test_relion_expected_accuracy_layout_preserves_relion_particle_rows():
         relion_particles,
     )
 
-    np.testing.assert_array_equal(half1, [0, 1, 2])
-    np.testing.assert_array_equal(half2, [3])
-    np.testing.assert_array_equal(base_order, [1, 0, 2])
-    np.testing.assert_array_equal(optics, [1, 2, 2])
-    np.testing.assert_array_equal(particle_ids, [2, 0, 3])
+    assert_matches(half1, [0, 1, 2])
+    assert_matches(half2, [3])
+    assert_matches(base_order, [1, 0, 2])
+    assert_matches(optics, [1, 2, 2])
+    assert_matches(particle_ids, [2, 0, 3])
 
 
 def test_relion_fresh_initial_noise_layout_continues_from_half1_into_half2():
@@ -1509,8 +1510,8 @@ def test_relion_fresh_initial_noise_layout_continues_from_half1_into_half2():
         relion_particles,
     )
 
-    np.testing.assert_array_equal(source_rows, [1, 0, 2, 3])
-    np.testing.assert_array_equal(optics, [2, 1, 2, 1])
+    assert_matches(source_rows, [1, 0, 2, 3])
+    assert_matches(optics, [2, 1, 2, 1])
 
 
 def test_relion_expected_accuracy_layout_supports_repeated_indices_across_stacks():
@@ -1531,11 +1532,11 @@ def test_relion_expected_accuracy_layout_supports_repeated_indices_across_stacks
         relion_particles,
     )
 
-    np.testing.assert_array_equal(half1, [0, 1, 2])
-    np.testing.assert_array_equal(half2, [3])
-    np.testing.assert_array_equal(base_order, [1, 0, 2])
-    np.testing.assert_array_equal(optics, [1, 2, 2])
-    np.testing.assert_array_equal(particle_ids, [2, 0, 3])
+    assert_matches(half1, [0, 1, 2])
+    assert_matches(half2, [3])
+    assert_matches(base_order, [1, 0, 2])
+    assert_matches(optics, [1, 2, 2])
+    assert_matches(particle_ids, [2, 0, 3])
 
 
 def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials():
@@ -1581,14 +1582,14 @@ def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials():
         )
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         half1,
         [
             our_row_by_name[relion_particles.iloc[row]["rlnImageName"]]
             for row in expected_relion_half1
         ],
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         half2,
         [
             our_row_by_name[relion_particles.iloc[row]["rlnImageName"]]
@@ -1596,8 +1597,8 @@ def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials():
         ],
     )
     assert base_order is None
-    np.testing.assert_array_equal(particle_ids, expected_relion_half1)
-    np.testing.assert_array_equal(optics, relion_particles.iloc[particle_ids]["rlnOpticsGroup"])
+    assert_matches(particle_ids, expected_relion_half1)
+    assert_matches(optics, relion_particles.iloc[particle_ids]["rlnOpticsGroup"])
 
 
 def test_runner_keeps_input_particle_names_for_replay_mapping():
@@ -2009,8 +2010,8 @@ def test_replay_overrides_k1_state_swap_adds_exact_half_scoring_scale():
 
     serialized_h1, serialized_h2 = overrides[1]["serialized_scale_corrections"]
     scoring_h1, scoring_h2 = overrides[1]["scoring_scale_corrections"]
-    np.testing.assert_array_equal(scoring_h1, serialized_h1)
-    np.testing.assert_array_equal(scoring_h2, serialized_h2)
+    assert_matches(scoring_h1, serialized_h1)
+    assert_matches(scoring_h2, serialized_h2)
     assert scoring_h1 is serialized_h1
     assert scoring_h2 is serialized_h2
 
@@ -2169,7 +2170,7 @@ def test_replay_overrides_k1_mean_variance_is_explicit_and_n4_scaled(tmp_path):
     observed = diagnostic_overrides[1]["mean_variance"]
     assert observed.shape == (4**3,)
     assert observed.dtype == np.float64
-    np.testing.assert_allclose(observed, expected, rtol=0.0, atol=0.0)
+    assert_matches(observed, expected)
 
 
 def test_replay_overrides_map_noncontiguous_subset_stack_indices(tmp_path):
@@ -2357,7 +2358,7 @@ def test_autorefine_continuation_noise_emulates_relion_rank1_broadcast(tmp_path)
     )
 
     noise_h1, noise_h2 = overrides[0]["noise_variance"]
-    np.testing.assert_array_equal(noise_h2, noise_h1)
+    assert_matches(noise_h2, noise_h1)
     assert noise_h1 is not noise_h2
     assert noise_h1.dtype == np.float32
     assert float(np.min(noise_h2)) == pytest.approx(1.0 * 8**4)
@@ -2390,7 +2391,7 @@ def test_autorefine_continuation_noise_emulates_relion_rank1_broadcast(tmp_path)
         process_start_noise_broadcast=False,
     )
     uninterrupted_h1, uninterrupted_h2 = uninterrupted_overrides[0]["noise_variance"]
-    assert not np.array_equal(uninterrupted_h2, uninterrupted_h1)
+    assert not matches(uninterrupted_h2, uninterrupted_h1)
     assert float(np.min(uninterrupted_h1)) == pytest.approx(1.0 * 8**4)
     assert float(np.min(uninterrupted_h2)) == pytest.approx(6.0 * 8**4)
 
@@ -2433,7 +2434,7 @@ def test_autorefine_later_replay_noise_remains_half_specific(tmp_path):
     )
 
     noise_h1, noise_h2 = overrides[1]["noise_variance"]
-    assert not np.array_equal(noise_h2, noise_h1)
+    assert not matches(noise_h2, noise_h1)
     assert float(np.min(noise_h1)) == pytest.approx(1.0 * 8**4)
     assert float(np.min(noise_h2)) == pytest.approx(6.0 * 8**4)
 
@@ -2541,6 +2542,6 @@ def test_fresh_kclass_selects_only_run_it000_translations():
     assert len(selected) == 2
     assert selected[0].dtype == np.float32
     assert selected[0].flags.c_contiguous
-    np.testing.assert_array_equal(selected[0], half1.astype(np.float32))
+    assert_matches(selected[0], half1.astype(np.float32))
     assert selected[1].shape == (0, 2)
     assert selected[0] is not half1

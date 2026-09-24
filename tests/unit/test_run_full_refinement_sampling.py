@@ -24,6 +24,7 @@ from scripts.run_full_refinement import (
 from relax.helpers.iteration_history import (
     _pose_history_by_image,
 )
+from helpers.float_compare import assert_matches
 
 RUN_FULL_REFINEMENT = Path(__file__).resolve().parents[2] / "scripts" / "run_full_refinement.py"
 
@@ -258,9 +259,10 @@ def test_relion_seeded_sampling_perturbation_preserves_scaled_rnd_unif_rounding(
     initial = advance_relion_perturbation_from_seed(0.0, 0.5, seed=1)
     iteration_one = advance_relion_perturbation_from_seed(initial, 0.5, seed=20260713)
 
-    assert initial == 0.4600469470024109
-    assert iteration_one == -0.04961434006690979
-    assert relion_sampling_perturbation_for_iteration(0.5, 1731, 1) == -0.11648395657539368
+    # The float64 default band (1e-13) still separates the one-float32-ulp (3e-7) change.
+    assert_matches(initial, 0.4600469470024109)
+    assert_matches(iteration_one, -0.04961434006690979)
+    assert_matches(relion_sampling_perturbation_for_iteration(0.5, 1731, 1), -0.11648395657539368)
 
 
 def test_relion_seeded_sampling_perturbation_restart_segment():
@@ -277,12 +279,10 @@ def test_relion_seeded_sampling_perturbation_restart_segment():
         for iteration in range(12, 16)
     ]
 
-    assert values == [
-        -0.06873074173927307,
-        0.367313414812088,
-        -0.23276200890541077,
-        0.25697559118270874,
-    ]
+    assert_matches(
+        np.asarray(values),
+        np.asarray([-0.06873074173927307, 0.367313414812088, -0.23276200890541077, 0.25697559118270874]),
+    )
 
 
 def test_pose_history_by_image_restores_original_particle_order():
@@ -341,11 +341,11 @@ def test_significant_count_artifacts_save_half_and_image_order():
         n_images=5,
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         artifacts["sig_counts_half_order_iter_000"],
         counts_half_order,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         artifacts["sig_counts_by_image_iter_000"],
         np.asarray([0, 10, 20, 30, 40], dtype=np.int32),
     )

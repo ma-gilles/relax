@@ -1,5 +1,6 @@
 import jax.numpy as jnp
 import numpy as np
+from helpers.float_compare import assert_matches
 
 from relax.dense.em_engine import normalized_cc_score_inverse_power
 from relax.helpers.preprocessing import preprocess_batch, preprocess_batch_firstiter_cc
@@ -90,7 +91,7 @@ def test_dense_preprocessing_can_return_unshifted_weighted_score_operand():
 
     assert unshifted_weighted.shape == (2, 40)
     assert unshifted_weighted.dtype == jnp.complex64
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(shifted).reshape(2, 3, 40),
         np.repeat(np.asarray(unshifted_weighted)[:, None, :], 3, axis=1),
     )
@@ -142,7 +143,7 @@ def test_firstiter_cc_preprocessing_can_return_unshifted_weighted_operand():
 
     assert unshifted_weighted.shape == (2, 40)
     assert unshifted_weighted.dtype == jnp.complex64
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(shifted).reshape(2, 3, 40),
         np.repeat(np.asarray(unshifted_weighted)[:, None, :], 3, axis=1),
     )
@@ -184,5 +185,5 @@ def test_dense_preprocessing_forwards_relion_cuda_operands():
     )
 
     assert captured["apply_image_mask"] is True
-    np.testing.assert_array_equal(np.asarray(captured["relion_normalization_factors"]), np.asarray(factors))
-    np.testing.assert_array_equal(np.asarray(captured["relion_integer_shifts"]), np.asarray(shifts))
+    assert_matches(np.asarray(captured["relion_normalization_factors"]), np.asarray(factors))
+    assert_matches(np.asarray(captured["relion_integer_shifts"]), np.asarray(shifts))

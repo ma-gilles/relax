@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers import convergence
 from relax.helpers.convergence import concatenate_assignments, concatenate_assignments_or_none
@@ -39,7 +40,7 @@ def test_concatenate_assignments_or_none_returns_none_for_missing_half(missing):
 def test_concatenate_assignments_or_none_matches_the_strict_join():
     halves = [np.asarray([1, 2], dtype=np.int32), np.asarray([4], dtype=np.int32)]
     result = concatenate_assignments_or_none(halves)
-    assert result.tobytes() == concatenate_assignments(halves).tobytes()
+    assert_matches(result, concatenate_assignments(halves), strict=True)
     assert result.dtype == np.int32 and result.tolist() == [1, 2, 4]
 
 
