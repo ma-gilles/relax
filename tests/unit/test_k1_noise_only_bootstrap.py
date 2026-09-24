@@ -83,8 +83,7 @@ def test_noise_only_bootstrap_rejects_conflicting_modes(overrides):
 
 @pytest.mark.parametrize('overrides', [
     dict(frozen_boundary=object()), dict(source_rows=None),
-    dict(optics_group_ids=None), dict(mask_params=None),
-    dict(optics_group_ids=np.array([1, 2, 1])), dict(optics_pixel_sizes=None),
+    dict(optics_group_ids=None), dict(mask_params=None), dict(optics_pixel_sizes=None),
     dict(optics_pixel_sizes=np.array([1.25, 1.3])),
 ])
 def test_noise_only_bootstrap_rejects_missing_or_unsupported_inputs(overrides):
@@ -94,6 +93,14 @@ def test_noise_only_bootstrap_rejects_missing_or_unsupported_inputs(overrides):
     with pytest.raises(ValueError, match='noise-only bootstrap'):
         driver._compute_relion_noise_only_bootstrap(SimpleNamespace(grid_size=8),
             args=_args(), **params)
+
+
+def test_per_optics_group_noise_only_bootstrap_is_k1_only():
+    with pytest.raises(ValueError, match='K=1 only'):
+        driver._compute_relion_noise_only_bootstrap(SimpleNamespace(grid_size=8),
+            args=_args(n_classes=4, relion_half_sets=None), frozen_boundary=None,
+            source_rows=np.arange(3), optics_group_ids=np.array([1, 2, 1]), mask_params=(12., 3),
+            optics_pixel_sizes=np.array([1.25, 1.25]))
 
 
 def test_class3d_noise_only_bootstrap_takes_unsplit_order(monkeypatch):

@@ -147,3 +147,25 @@ def test_score_half_by_shape_places_images_and_adds_sums():
     assert outputs.best_pose_translations[0] is merged.best_pose_translations
     # Both classes' noise shells land on the 17 reference shells.
     assert merged.noise_stats.wsum_sigma2_noise.shape == (2, 17)
+
+
+@pytest.mark.unit
+def test_class_coarse_size_is_relions_formula_at_the_class_grid():
+    # image_coarse_size[g] = min(2 CEIL(remap * pixel_ref * ori / coarse_res), image_current_size[g])
+    # (ml_optimiser.cpp:5761-5777); remap * pixel_ref * ori is the class's own pixel * box.
+    half = _half()
+    step, diameter = 34.5, 100.0
+    coarse_res = (step / 360.0) * np.pi * diameter / 1.2
+    kwargs = dict(experiment_dataset=half, cs_for_engine=20, firstiter_coarse_current_size=12,
+                  coarse_sizing=(step, diameter))
+    got = []
+    for shape_class in half.classes:
+        out = optics_shapes.class_kwargs(kwargs, shape_class, 5)
+        assert "coarse_sizing" not in out
+        expected = 2 * int(np.ceil(shape_class.pixel_size * shape_class.box_size / coarse_res))
+        assert out["firstiter_coarse_current_size"] == min(expected, out["cs_for_engine"])
+        got.append(out["firstiter_coarse_current_size"])
+    # The reference class keeps its size; the other class's differs from a current-size remap (14).
+    assert got == [12, 12]
+    out = optics_shapes.class_kwargs(dict(kwargs, coarse_sizing=None), half.classes[1], 5)
+    assert out["firstiter_coarse_current_size"] == 2 * int(np.ceil(0.5 * half.classes[1].scale * 12)) == 14

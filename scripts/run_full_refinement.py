@@ -70,6 +70,7 @@ from relax.relion.initial_noise import (
     compute_avg_unaligned_and_sigma2,
     read_relion_single_optics_sigma2_noise,
 )
+from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.relion.relion_worker_scale import (
     load_relion_dispatch_schedule,
     load_relion_follower_scale_replay,
@@ -1064,6 +1065,7 @@ def _compute_relion_fresh_k1_initial_sigma2(
     particle_diameter_ang: float,
     width_mask_edge_px: int,
     minimum_nr_particles: int = 1000,
+    group_pixel_sizes=None,
 ) -> np.ndarray:
     """Reproduce RELION's process-resident fresh AutoRefine noise spectrum.
 
@@ -1071,7 +1073,9 @@ def _compute_relion_fresh_k1_initial_sigma2(
     particles per optics group in the stable subset-1-then-subset-2 source
     order, then broadcasts it to the other follower.  RELION writes a rounded
     copy to model STAR, but its first expectation step consumes these unrounded
-    values.
+    values. A ``MultiShapeDataset`` needs ``group_pixel_sizes`` (one per sorted
+    optics label): each image is masked with its group's pixel size and brought
+    onto the model grid (``image_pixel_size``, the reference box) first.
     """
 
     source_rows = np.asarray(source_rows, dtype=np.int64).reshape(-1)
@@ -1099,6 +1103,10 @@ def _compute_relion_fresh_k1_initial_sigma2(
     }
 
     def image_iter():
+        if isinstance(dataset, MultiShapeDataset):
+            for row, image in dataset.iter_images(source_rows, batch_size=min(256, source_rows.size)):
+                yield optics_by_source_row[row], image
+            return
         for batch_images, _particle_indices, local_indices in dataset.image_source.iter_batches(
             batch_size=min(256, source_rows.size),
             batch_mode="images",
@@ -1127,6 +1135,11 @@ def _compute_relion_fresh_k1_initial_sigma2(
         do_zero_mask=True,
         nr_optics_groups=len(unique_optics),
         minimum_nr_particles=int(minimum_nr_particles),
+        **(
+            {}
+            if group_pixel_sizes is None
+            else {"group_pixel_sizes": group_pixel_sizes, "model_pixel_size": float(image_pixel_size)}
+        ),
     )
     sigma2_per_group = np.asarray(sigma2_per_group, dtype=np.float64)
     expected_shape = (len(unique_optics), int(dataset.grid_size) // 2 + 1)
@@ -1148,8 +1161,8 @@ def _compute_relion_noise_only_bootstrap(
 
     Qualification-only path; preserve the existing host F64 bootstrap and
     explicitly supply F32 noise to production scoring. With several optics
-    groups (K=1, one pixel size) it returns one spectrum per group, ``[G, n]``
-    radial and ``[G, P]`` pixel noise. K=1 takes
+    groups (K=1) it returns one spectrum per group, ``[G, n]`` radial and
+    ``[G, P]`` pixel noise, on the reference grid for a ``MultiShapeDataset``. K=1 takes
     the source order of its supplied half sets; Class3D (K>1) has no halves and
     takes the micrograph-sorted order (``_relion_class3d_initial_noise_layout``).
     See docs/math/relion_refinement_algorithm.md#noise-only-bootstrap-qualification.
@@ -1168,15 +1181,24 @@ def _compute_relion_noise_only_bootstrap(
             "sets, Class3D without) with order/mask metadata and no state replay, noise "
             "replay or noise cache"
         )
-    if np.unique(np.asarray(optics_pixel_sizes)).size != 1:
-        raise ValueError("RELION noise-only bootstrap currently requires one optics pixel size")
+    multi_shape = isinstance(dataset, MultiShapeDataset)
+    if not multi_shape and np.unique(np.asarray(optics_pixel_sizes)).size != 1:
+        raise ValueError("RELION noise-only bootstrap with several pixel sizes needs a multi-shape dataset")
     n_optics_groups = int(np.unique(optics_group_ids).size)
     if n_optics_groups != 1 and not k1:
         raise ValueError("per-optics-group noise is implemented for K=1 only")
+    group_pixel_sizes = None
+    if multi_shape:
+        # Optics labels are 1-based rows of the optics table; spectra follow the sorted labels.
+        labels = np.unique(np.asarray(optics_group_ids, dtype=np.int64))
+        group_pixel_sizes = np.asarray(optics_pixel_sizes, dtype=np.float64).reshape(-1)[labels - 1]
     sigma2 = _compute_relion_fresh_k1_initial_sigma2(
         dataset, source_rows=source_rows, optics_group_ids=optics_group_ids,
-        image_pixel_size=float(np.asarray(optics_pixel_sizes).reshape(-1)[0]),
+        image_pixel_size=(
+            float(dataset.voxel_size) if multi_shape else float(np.asarray(optics_pixel_sizes).reshape(-1)[0])
+        ),
         particle_diameter_ang=float(mask_params[0]), width_mask_edge_px=int(mask_params[1]),
+        group_pixel_sizes=group_pixel_sizes,
     )
     # One spectrum per optics group (MlModel::sigma2_noise[optics_group]); one group
     # keeps the flat layout of the single-optics path.
@@ -1782,6 +1804,54 @@ def _write_relion_start_particle_table(our_star, input_star, *, seed, output_dir
     path.parent.mkdir(parents=True, exist_ok=True)
     write_relion_start_particle_star(input_star, path, seed=int(seed))
     return path
+
+
+def _optics_shape_class_rows(particles_star):
+    """Particle rows per image shape when optics groups differ in box or pixel size.
+
+    ``None`` when every optics group has one box and pixel size (the single-dataset
+    path). Otherwise one row array per (box, pixel size), in optics-table order, so
+    the first class holds optics group 1, whose grid is RELION's model grid.
+    """
+    import starfile as _starfile
+
+    star = _starfile.read(particles_star)
+    optics = star.get("optics") if isinstance(star, dict) else None
+    if optics is None or not {"rlnImageSize", "rlnImagePixelSize"}.issubset(optics.columns):
+        return None
+    shapes = list(zip(np.asarray(optics["rlnImageSize"], dtype=np.int64).tolist(),
+                      np.asarray(optics["rlnImagePixelSize"], dtype=np.float64).tolist()))
+    unique_shapes = list(dict.fromkeys(shapes))
+    if len(unique_shapes) == 1:
+        return None
+    labels = np.asarray(optics["rlnOpticsGroup"], dtype=np.int64)
+    if not np.array_equal(labels, np.arange(1, labels.size + 1)):
+        raise ValueError(f"optics groups must be numbered 1..{labels.size} in table order, got {labels.tolist()}")
+    shape_of_label = np.asarray([unique_shapes.index(shape) for shape in shapes], dtype=np.int64)
+    particle_shapes = shape_of_label[np.asarray(star["particles"]["rlnOpticsGroup"], dtype=np.int64) - 1]
+    return [np.flatnonzero(particle_shapes == c) for c in range(len(unique_shapes))]
+
+
+def _validate_multi_shape_run(args, frozen_boundary, double_image_preprocessing):
+    """Optics groups on several image shapes run a fresh K=1 refinement only.
+
+    Their start-up noise is RELION's noise-only bootstrap on the reference grid;
+    replay, frozen boundaries, noise caches and float64 image preprocessing assume
+    one image grid and stay refused.
+    """
+    reasons = []
+    if int(args.n_classes) != 1:
+        reasons.append("n_classes must be 1")
+    if args.initial_noise_bootstrap != "relion":
+        reasons.append("--initial_noise_bootstrap relion is required")
+    if frozen_boundary is not None or args.perturb_replay_relion_dir is not None or args.relion_init_dir is not None:
+        reasons.append("replayed or frozen RELION state is single-shape")
+    if double_image_preprocessing:
+        reasons.append("float64 image preprocessing is single-shape")
+    if args.relion_softmask_reduction != "control":
+        reasons.append("soft-mask reduction probes are single-shape")
+    if reasons:
+        raise SystemExit("optics groups on several image shapes: " + "; ".join(reasons))
 
 
 def _maybe_apply_relion_image_mask(ds, args, *, sealed_optimiser_star=None):
@@ -2712,27 +2782,52 @@ def main():
         os.environ.get("RELAX_USE_FLOAT64_SCORING", "0").strip().lower()
         in {"1", "true", "yes", "on"}
     )
-    ds = load_dataset(
-        os.path.join(args.data_dir, "particles.star"),
-        lazy=False,
-        dtype=np.complex128 if _double_image_preprocessing else np.complex64,
-        # relion_refine reads a particle STAR without angles as zero angles.
-        absent_angles_zero=True,
-    )
+    shape_class_rows = _optics_shape_class_rows(os.path.join(args.data_dir, "particles.star"))
+    if shape_class_rows is None:
+        ds = load_dataset(
+            os.path.join(args.data_dir, "particles.star"),
+            lazy=False,
+            dtype=np.complex128 if _double_image_preprocessing else np.complex64,
+            # relion_refine reads a particle STAR without angles as zero angles.
+            absent_angles_zero=True,
+        )
+    else:
+        _validate_multi_shape_run(args, frozen_boundary, _double_image_preprocessing)
+        # One dataset per image shape (optics groups sharing box and pixel size).
+        ds = MultiShapeDataset(
+            [
+                load_dataset(
+                    os.path.join(args.data_dir, "particles.star"),
+                    lazy=False,
+                    dtype=np.complex64,
+                    absent_angles_zero=True,
+                    ind=rows,
+                )
+                for rows in shape_class_rows
+            ],
+            shape_class_rows,
+        )
+        logger.info(
+            "Optics groups on %d image shapes: %s",
+            len(ds.datasets),
+            [(d.image_shape[0], float(d.voxel_size), int(d.n_units)) for d in ds.datasets],
+        )
     if _double_image_preprocessing:
         logger.info(
             "Double scoring: loading metadata in float64 and preserving "
             "float64/complex128 through particle masking and FFT"
         )
-    relion_mask_params = _maybe_apply_relion_image_mask(
-        ds,
-        args,
-        sealed_optimiser_star=(
-            None
-            if frozen_boundary is None or not frozen_boundary.fixed_diagnostic_arm
-            else fixed_diagnostic_source_paths["completed_optimiser"]
-        ),
-    )
+    # RELION masks every image with its own optics group's pixel size.
+    for class_dataset in (ds.datasets if shape_class_rows is not None else (ds,)):
+        relion_mask_params = _maybe_apply_relion_image_mask(
+            class_dataset,
+            args,
+            sealed_optimiser_star=(
+                None
+                if frozen_boundary is None or not frozen_boundary.fixed_diagnostic_arm
+                else fixed_diagnostic_source_paths["completed_optimiser"]
+            ),
+        )
     if args.relion_softmask_reduction != "control":
         if args.image_fourier_backend != "relion_cuda":
             raise ValueError(

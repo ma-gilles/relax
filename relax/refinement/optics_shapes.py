@@ -24,6 +24,7 @@ import dataclasses
 import numpy as np
 
 from relax.helpers import optics_scale
+from relax.helpers.resolution import clamp_relion_coarse_image_size, compute_coarse_image_size
 
 
 @dataclasses.dataclass(frozen=True)
@@ -38,6 +39,14 @@ class ShapeClass:
     translation_factor: float  # reference pixels -> class pixels: angpix_ref / angpix_g
 
 
+@dataclasses.dataclass(frozen=True)
+class _RowLayout:
+    rows: np.ndarray
+
+    def original_image_indices_for_local(self, local):
+        return self.rows[np.asarray(local)]
+
+
 class MultiShapeHalf:
     """One half as several shape classes, presenting the reference geometry.
 
@@ -46,7 +55,7 @@ class MultiShapeHalf:
     that needs the images themselves must go through ``classes``.
     """
 
-    def __init__(self, classes, *, image_shape, volume_shape, voxel_size):
+    def __init__(self, classes, *, image_shape, volume_shape, voxel_size, rows=None):
         self.classes = tuple(classes)
         self.image_shape = tuple(int(size) for size in image_shape)
         self.volume_shape = tuple(int(size) for size in volume_shape)
@@ -56,6 +65,8 @@ class MultiShapeHalf:
         order = np.concatenate([c.image_indices for c in self.classes])
         if not np.array_equal(np.sort(order), np.arange(self.n_units)):
             raise ValueError("shape classes must partition the half's images")
+        # Particle-STAR row of each image, as a loaded dataset's index layout reports it.
+        self._index_layout = None if rows is None else _RowLayout(np.asarray(rows, dtype=np.int64))
 
     def __getattr__(self, name):
         raise AttributeError(f"a half with several image shapes has no single {name!r}; use its shape classes")
@@ -79,6 +90,75 @@ def make_shape_classes(datasets_and_indices, *, ref_box, ref_pixel):
             )
         )
     return classes
+
+
+class MultiShapeDataset:
+    """All particles as one loaded dataset per shape class.
+
+    ``rows[c]`` are the particle-STAR rows held, in order, by ``datasets[c]``; together
+    they cover every row once. The reference geometry (``image_shape``,
+    ``volume_shape``, ``voxel_size``) is that of ``datasets[0]``, the class of the first
+    optics group (RELION's model ``ori_size`` and pixel size, ml_model.cpp:1090-1091).
+    """
+
+    def __init__(self, datasets, rows):
+        self.datasets = tuple(datasets)
+        self.rows = tuple(np.asarray(r, dtype=np.int64) for r in rows)
+        if len(self.datasets) != len(self.rows) or len(self.datasets) < 2:
+            raise ValueError("a multi-shape dataset needs one row list per class and at least two classes")
+        self.n_units = self.n_images = int(sum(r.size for r in self.rows))
+        self._class_of_row = np.full(self.n_units, -1, dtype=np.int64)
+        self._local_of_row = np.full(self.n_units, -1, dtype=np.int64)
+        for c, (dataset, rows_c) in enumerate(zip(self.datasets, self.rows)):
+            if int(dataset.n_units) != rows_c.size:
+                raise ValueError(f"class {c} holds {dataset.n_units} images for {rows_c.size} rows")
+            self._class_of_row[rows_c] = c
+            self._local_of_row[rows_c] = np.arange(rows_c.size)
+        if np.any(self._class_of_row < 0):
+            raise ValueError("shape classes must cover every particle row once")
+        ref = self.datasets[0]
+        self.image_shape = tuple(int(size) for size in ref.image_shape)
+        self.volume_shape = tuple(int(size) for size in ref.volume_shape)
+        self.voxel_size = float(ref.voxel_size)
+        self.grid_size = self.image_shape[0]
+
+    def __getattr__(self, name):
+        raise AttributeError(f"a dataset with several image shapes has no single {name!r}; use its classes")
+
+    def subset(self, rows):
+        """The ``MultiShapeHalf`` of these particle rows, in this order."""
+
+        rows = np.asarray(rows, dtype=np.int64)
+        pairs = []
+        for c, dataset in enumerate(self.datasets):
+            positions = np.flatnonzero(self._class_of_row[rows] == c)
+            if positions.size:
+                pairs.append((dataset.subset(self._local_of_row[rows[positions]]), positions))
+        classes = make_shape_classes(pairs, ref_box=self.grid_size, ref_pixel=self.voxel_size)
+        return MultiShapeHalf(
+            classes,
+            image_shape=self.image_shape,
+            volume_shape=self.volume_shape,
+            voxel_size=self.voxel_size,
+            rows=rows,
+        )
+
+    def iter_images(self, rows, *, batch_size):
+        """``(row, real-space image)`` in the given row order, each on its own class's grid."""
+
+        rows = np.asarray(rows, dtype=np.int64).reshape(-1)
+        for start in range(0, rows.size, batch_size):
+            chunk = rows[start : start + batch_size]
+            images = {}
+            for c in np.unique(self._class_of_row[chunk]):
+                local = self._local_of_row[chunk[self._class_of_row[chunk] == c]]
+                for batch_images, _particles, local_indices in self.datasets[c].image_source.iter_batches(
+                    batch_size=local.size, batch_mode="images", subset_indices=local
+                ):
+                    for image, local_row in zip(np.asarray(batch_images), np.asarray(local_indices).reshape(-1)):
+                        images[int(self.rows[c][int(local_row)])] = image
+            for row in chunk:
+                yield int(row), images.pop(int(row))
 
 
 # Keywords of the half scoring functions whose leading axis is the half's images.
@@ -111,12 +191,15 @@ IMAGE_SIZE_KWARGS = (
     "firstiter_coarse_current_size",
     "firstiter_fine_current_size",
 )
+# Pass-1 sizes; with ``coarse_sizing`` they come from RELION's adaptive formula.
+COARSE_SIZE_KWARGS = ("local_pass1_current_size", "firstiter_coarse_current_size")
 
 
 def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
     """One shape class's keywords: its images, class pixels and class Fourier sizes."""
 
     out = dict(kwargs)
+    coarse_sizing = out.pop("coarse_sizing", None)
     index = shape_class.image_indices
     for name in PER_IMAGE_KWARGS + PER_IMAGE_IF_2D_KWARGS:
         value = out.get(name)
@@ -134,6 +217,10 @@ def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
     for name in IMAGE_SIZE_KWARGS:
         if out.get(name) is not None:
             out[name] = optics_scale.group_current_size(out[name], shape_class.box_size, shape_class.scale)
+    if coarse_sizing is not None:
+        for name in COARSE_SIZE_KWARGS:
+            if kwargs.get(name) is not None:
+                out[name] = _class_coarse_size(coarse_sizing, shape_class, out.get("cs_for_engine"))
     # The backprojector stays on the reference model grid; the class's image window
     # for the M-step is the remapped size.
     reference_size = out.get("model_current_size_for_engine")
@@ -147,6 +234,23 @@ def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
     out["projection_scale"] = shape_class.scale
     out["experiment_dataset"] = shape_class.dataset
     return out
+
+
+def _class_coarse_size(coarse_sizing, shape_class: ShapeClass, class_current_size):
+    """A class's adaptive pass-1 size, None for its full box (ml_optimiser.cpp:5761-5777).
+
+    ``2 CEIL(remap * pixel_ref * ori / coarse_resolution)`` is the reference formula at
+    the class's own pixel size and box, clamped to the class's current size.
+    """
+    angular_step_deg, particle_diameter_ang = coarse_sizing
+    size = clamp_relion_coarse_image_size(
+        compute_coarse_image_size(
+            angular_step_deg, shape_class.pixel_size, shape_class.box_size, particle_diameter=particle_diameter_ang
+        ),
+        class_current_size,
+        shape_class.box_size,
+    )
+    return size if size < shape_class.box_size else None
 
 
 def class_noise_table(noise_radial_ref, shape_class: ShapeClass, ref_box: int):

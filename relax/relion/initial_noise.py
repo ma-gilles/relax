@@ -79,6 +79,50 @@ def _fix_negative_sigma2(sigma2: np.ndarray) -> np.ndarray:
     return out
 
 
+def _relion_resize_map(image: np.ndarray, new_size: int) -> np.ndarray:
+    """RELION ``resizeMap`` (fftw.cpp:1206): Fourier window of a square image to ``new_size``.
+
+    Forward transform scaled by ``1/N**2``, ``windowFourierTransform`` (fftw.h:809; on
+    enlarging only coefficients with ``k**2 <= (N/2)**2`` are kept), unscaled inverse.
+    """
+    old_size = image.shape[-1]
+    old_half, new_half = old_size // 2 + 1, new_size // 2 + 1
+    F = np.fft.rfft2(image) / (old_size * old_size)
+    out = np.zeros((new_size, new_half), dtype=np.complex128)
+    if new_half > old_half:
+        ip = np.where(np.arange(old_size) < old_half, np.arange(old_size), np.arange(old_size) - old_size)
+        keep = ip[:, None] ** 2 + np.arange(old_half)[None, :] ** 2 <= (old_half - 1) ** 2
+        rows, cols = np.nonzero(keep)
+        out[ip[rows] % new_size, cols] = F[rows, cols]
+    else:
+        ip = np.where(np.arange(new_size) < new_half, np.arange(new_size), np.arange(new_size) - new_size)
+        out[:, :] = F[ip % old_size, :new_half]
+    return np.fft.irfft2(out, s=(new_size, new_size)) * (new_size * new_size)
+
+
+def _rescale_to_model_grid(image: np.ndarray, pixel_size: float, model_pixel_size: float, ori_size: int) -> np.ndarray:
+    """Bring one optics group's image onto the model grid (ml_optimiser.cpp:2934-2955).
+
+    Resize to the model pixel size when the pixel sizes differ by more than 1e-4 A
+    (new box ``ROUND(box * pixel / model_pixel)``, made even), then window the
+    centred box to ``ori_size`` (Xmipp origin; zero padding when enlarging).
+    """
+    if abs(float(pixel_size) - float(model_pixel_size)) > 0.0001:
+        new_size = int(image.shape[-1] * (float(pixel_size) / float(model_pixel_size)) + 0.5)
+        new_size += new_size % 2
+        image = _relion_resize_map(image, new_size)
+    size = image.shape[-1]
+    if size == ori_size:
+        return image
+    out = np.zeros((ori_size, ori_size), dtype=image.dtype)
+    # Physical index p of the new box is logical p - ori_size//2, i.e. p - ori_size//2 + size//2 here.
+    lo = max(0, ori_size // 2 - size // 2)
+    hi = min(ori_size, ori_size // 2 - size // 2 + size)
+    src = slice(lo - ori_size // 2 + size // 2, hi - ori_size // 2 + size // 2)
+    out[lo:hi, lo:hi] = image[src, src]
+    return out
+
+
 def compute_avg_unaligned_and_sigma2(
     image_iter: Iterator[Tuple[int, np.ndarray]],
     *,
@@ -89,8 +133,15 @@ def compute_avg_unaligned_and_sigma2(
     do_zero_mask: bool,
     nr_optics_groups: int,
     minimum_nr_particles: int = 1000,
+    group_pixel_sizes=None,
+    model_pixel_size: float | None = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """``calculateSumOfPowerSpectra`` + ``setSigmaNoiseEstimates`` (per-group cap defaults to RELION's 1000)."""
+    """``calculateSumOfPowerSpectra`` + ``setSigmaNoiseEstimates`` (per-group cap defaults to RELION's 1000).
+
+    With ``group_pixel_sizes`` (one per optics group, groups on other pixel sizes or
+    boxes) each image is masked with its own group's pixel size and brought onto the
+    model grid (``_rescale_to_model_grid``) before it enters the sums, as RELION does.
+    """
     n_shells = ori_size // 2 + 1
 
     Mavg = np.zeros((ori_size, ori_size), dtype=np.float64)
@@ -107,10 +158,14 @@ def compute_avg_unaligned_and_sigma2(
         if per_group_done[opt_grp] >= minimum_nr_particles:
             continue
         img = img.astype(np.float64, copy=False)
-        if img.shape != (ori_size, ori_size):
+        if group_pixel_sizes is not None:
+            my_pixel_size = float(group_pixel_sizes[opt_grp])
+            if do_zero_mask:
+                img = _softmask_outside_map(img, particle_diameter_ang / (2.0 * my_pixel_size), float(width_mask_edge_px))
+            img = _rescale_to_model_grid(img, my_pixel_size, model_pixel_size, ori_size)
+        elif img.shape != (ori_size, ori_size):
             raise ValueError(f"image shape {img.shape} != expected {(ori_size, ori_size)}")
-
-        if do_zero_mask:
+        elif do_zero_mask:
             img = _softmask_outside_map(img, radius_px, float(width_mask_edge_px))
 
         Mavg += img

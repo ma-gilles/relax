@@ -571,16 +571,22 @@ def _optics_group_ids_per_half(optics_group_ids_per_half, noise_variance_per_hal
     return ids
 
 
-def _optics_group_kwargs(optics_group_ids_k, dataset=None, noise_radial_k=None) -> dict:
+def _optics_group_kwargs(
+    optics_group_ids_k, dataset=None, noise_radial_k=None, coarse_step_deg=None, particle_diameter_ang=None
+) -> dict:
     """The engine keywords for one half's optics groups; none with one group.
 
     A half of several image shapes also gets its reference-shell noise spectra, from
-    which each shape class reads its own noise (relax.refinement.optics_shapes).
+    which each shape class reads its own noise, and, when this call's pass-1 size
+    came from the angular step, that step and the particle diameter, from which each
+    shape class computes its own coarse size (relax.refinement.optics_shapes).
     """
 
     kwargs = {} if optics_group_ids_k is None else {"optics_group_ids_k": optics_group_ids_k}
     if isinstance(dataset, MultiShapeHalf):
         kwargs["noise_radial_k"] = np.asarray(noise_radial_k, dtype=np.float64)
+        if coarse_step_deg is not None:
+            kwargs["coarse_sizing"] = (float(coarse_step_deg), particle_diameter_ang)
     return kwargs
 
 
@@ -752,10 +758,18 @@ def refine_single_volume(
     RELION_WIDTH_FMASK_EDGE = 2
 
 
-    for ds in experiment_datasets:
+    # A half of several image shapes sets up each shape class's images, masked with
+    # the class's own pixel size as RELION does.
+    image_datasets = [
+        dataset
+        for half in experiment_datasets
+        for dataset in ([c.dataset for c in half.classes] if isinstance(half, MultiShapeHalf) else [half])
+    ]
+    for ds in image_datasets:
         backend = _image_backend(ds)
         if backend is None:
             continue
+        mask_pixel_size = ds.voxel_size if multi_shape_halves else cryo.voxel_size
         if hasattr(backend, "set_relion_fourier_backend"):
             from relax.cuda import (
                 kernels as _em_cuda_kernels,  # noqa: F401  (registers the relion_cuda preprocessor, relax split seam S2)
@@ -772,13 +786,13 @@ def refine_single_volume(
             )
         if particle_diameter_ang is not None and particle_diameter_ang > 0:
             backend.set_relion_image_mask(
-                pixel_size=cryo.voxel_size,
+                pixel_size=mask_pixel_size,
                 particle_diameter_ang=particle_diameter_ang,
                 width_mask_edge_px=RELION_WIDTH_MASK_EDGE,
             )
             logger.info(
                 "RELION mode: image mask radius=%.1f px (particle_diameter=%.1f A, edge=%d px)",
-                particle_diameter_ang / (2.0 * cryo.voxel_size),
+                particle_diameter_ang / (2.0 * mask_pixel_size),
                 particle_diameter_ang,
                 RELION_WIDTH_MASK_EDGE,
             )
@@ -1885,7 +1899,8 @@ def refine_single_volume(
             scoring_current_size if scoring_current_size < cryo.image_shape[0] else None
         )
         image_current_size = int(scoring_current_size)
-        if optics_image_sizes is not None:
+        # Shape classes remap the reference sizes themselves (optics_shapes.class_kwargs).
+        if optics_image_sizes is not None and not multi_shape_halves:
             remapped_image_sizes = relion_optics_image_current_sizes(
                 scoring_current_size,
                 model_ori_size=grid_size,
@@ -1923,6 +1938,9 @@ def refine_single_volume(
             adaptive_oversampling=state.adaptive_oversampling,
         )
 
+        # Angular step behind this iteration's pass-1 coarse size, when RELION's
+        # adaptive formula sets it (shape classes recompute their own from it).
+        coarse_size_step_deg = None
         if use_local:
             local_search_order = state.healpix_order + state.adaptive_oversampling
             local_pass1_current_size = cs_for_engine
@@ -1962,6 +1980,7 @@ def refine_single_volume(
                             int(state.adaptive_oversampling),
                         )
                         parent_order = local_search_order - int(state.adaptive_oversampling)
+                        coarse_size_step_deg = healpix_angular_step(coarse_size_healpix_order)
                         local_pass1_current_size = relion_local_pass1_current_size(
                             pre_update_healpix_order=coarse_size_healpix_order,
                             pixel_size=(
@@ -2083,6 +2102,7 @@ def refine_single_volume(
             # incoming order for Fourier sizing; the updated order still
             # controls effective_rotations and the oversampled candidate grid.
             effective_step_deg = healpix_angular_step(coarse_size_healpix_order)
+            coarse_size_step_deg = effective_step_deg
             pixel_size = cryo.voxel_size if cryo.voxel_size > 0 else 1.0
             coarse_size = compute_coarse_image_size(
                 effective_step_deg,
@@ -2534,7 +2554,11 @@ def refine_single_volume(
                 local_parent_oversampling_order = int(state.adaptive_oversampling) if state.adaptive_oversampling > 0 else 0
                 local_result = _score_half_local_in_bpref_scope(
                     **_optics_group_kwargs(
-                        optics_group_ids_per_half[k], experiment_datasets[k], previous_noise_radial_per_half[k]
+                        optics_group_ids_per_half[k],
+                        experiment_datasets[k],
+                        previous_noise_radial_per_half[k],
+                        coarse_size_step_deg,
+                        particle_diameter_ang,
                     ),
                     bpref_device_signature_active=bpref_device_signature_active,
                     k=k,
@@ -2602,7 +2626,11 @@ def refine_single_volume(
                 dense_half_kwargs = dict(
                     **({"symmetry": symmetry} if symmetry != "C1" else {}),
                     **_optics_group_kwargs(
-                        optics_group_ids_per_half[k], experiment_datasets[k], previous_noise_radial_per_half[k]
+                        optics_group_ids_per_half[k],
+                        experiment_datasets[k],
+                        previous_noise_radial_per_half[k],
+                        coarse_size_step_deg,
+                        particle_diameter_ang,
                     ),
                     bpref_device_signature_active=bpref_device_signature_active,
                     k=k,
@@ -4608,6 +4636,7 @@ def refine_single_volume(
     final_local_search_angular_sampling_deg = None
     final_local_parent_oversampling_order = int(state.adaptive_oversampling)
     final_local_pass1_current_size = final_current_size
+    final_local_pass1_step_deg = None
     final_adaptive_pass1_current_size = None
     final_adaptive_pass2_current_size = None
     final_sigma_rot, final_sigma_psi = relion_local_search_sigmas(
@@ -4660,6 +4689,7 @@ def refine_single_volume(
                     # RELION sizes the parent pass from the parent order only
                     # under adaptive oversampling; without it coarse_size is
                     # current_size (ml_optimiser.cpp, updateImageSizeAndResolutionPointers).
+                    final_local_pass1_step_deg = healpix_angular_step(final_local_parent_order)
                     final_local_pass1_current_size = relion_local_pass1_current_size(
                         pre_update_healpix_order=final_local_parent_order,
                         pixel_size=cryo.voxel_size if cryo.voxel_size > 0 else 1.0,
@@ -4820,7 +4850,11 @@ def refine_single_volume(
         if final_use_local:
             final_result = _score_half_local_in_bpref_scope(
                 **_optics_group_kwargs(
-                    optics_group_ids_per_half[k], experiment_datasets[k], previous_noise_radial_per_half[k]
+                    optics_group_ids_per_half[k],
+                    experiment_datasets[k],
+                    previous_noise_radial_per_half[k],
+                    final_local_pass1_step_deg,
+                    particle_diameter_ang,
                 ),
                 bpref_device_signature_active=False,
                 k=k,
