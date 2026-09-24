@@ -486,11 +486,7 @@ def run_local_em_exact(
     EM's posterior-weighted spectrum. Norm correction has its own unchanged
     high-shell ownership policy.
     """
-    if optics_group_ids is not None:
-        raise NotImplementedError(
-            "the exact local engine keeps one optics group's noise spectrum; per-optics-group "
-            "noise runs on the device-resident local pass (RELAX_LOCAL_SEARCH_RESIDENT)"
-        )
+
 
     resolved_exact_local_bucket_radix = _resolve_exact_local_bucket_radix(exact_local_bucket_radix)
     score_only = bool(score_only)
@@ -1015,6 +1011,47 @@ def run_local_em_exact(
     norm_half_weights = make_half_image_weights(image_shape)
     half_weights_windowed = window_spec.score_values(half_weights)
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(noise_variance, image_shape).squeeze()
+    # Per-optics-group noise ([G, P] rows plus each image's group) is carried by the
+    # plain big-JIT bucket route that local search's pass-1 probe and full-box final
+    # pass use; every other mode of this engine keeps one spectrum.
+    n_optics_groups = 1 if noise_variance_half.ndim == 1 else int(noise_variance_half.shape[0])
+    optics_groups_np = None
+    if n_optics_groups > 1:
+        if optics_group_ids is None:
+            raise ValueError("a per-optics-group noise table needs optics_group_ids")
+        optics_groups_np = np.asarray(optics_group_ids, dtype=np.int32).reshape(-1)
+        if optics_groups_np.shape != (n_images,) or np.any(optics_groups_np < 0) or np.any(
+            optics_groups_np >= n_optics_groups
+        ):
+            raise ValueError(
+                f"optics_group_ids must give each of {n_images} images a row of the "
+                f"{n_optics_groups}-group noise table"
+            )
+        unsupported = [
+            name
+            for name, active in (
+                ("K-class local search", class_log_priors is not None),
+                ("exact RELION BPref operands", relion_exact_bpref_operands),
+                ("exact RELION fine diff2", relion_exact_fine_diff2),
+                ("fixed-capacity execution", fixed_capacity_enabled),
+                ("flat local rows", flat_local_rows_enabled),
+                ("packed local projection", packed_local_projection_enabled),
+                ("fused pair fine score", bool(fused_pair_fine_score)),
+                ("deferred packed VDAM", defer_packed_vdam_enabled or packed_final_noise_enabled),
+                ("stable noise core", noise_stable_core_enabled),
+                ("native noise residual", noise_native_residual_enabled),
+                ("noise pixel capacity", noise_pixel_capacity_enabled),
+                ("split noise diagnostics", noise_split_diagnostics_requested()),
+                ("RELAX_DISABLE_LOCAL_BIG_JIT", os.environ.get("RELAX_DISABLE_LOCAL_BIG_JIT", "").lower()
+                 in {"1", "true", "yes", "on"}),
+            )
+            if active
+        ]
+        if unsupported:
+            raise NotImplementedError(
+                "per-optics-group noise in the exact local engine covers its plain big-JIT "
+                f"bucket route only; unsupported here: {', '.join(unsupported)}"
+            )
 
     recon_y_accum_dtype, recon_ctf_accum_dtype = relion_x_half_mstep_accumulator_dtypes(
         experiment_dataset.dtype,
@@ -1205,14 +1242,17 @@ def run_local_em_exact(
         # reduction, so the first bucket otherwise promotes this carry and
         # creates a one-off float32 big-JIT ABI.  Starting from float64 zero is
         # numerically identical and matches every subsequent bucket.
+        noise_shell_shape = (n_shells,) if n_optics_groups == 1 else (n_optics_groups, n_shells)
         noise_wsum = jnp.zeros(
-            n_shells,
+            noise_shell_shape,
             dtype=_noise_wsum_initial_dtype(
                 relion_exact_fine_diff2=relion_exact_fine_diff2,
                 use_window=use_window,
             ) if not use_float64_scoring else precision_policy.score_real_dtype,
         )
-        noise_img_power = jnp.zeros(n_shells, dtype=precision_policy.score_real_dtype)
+        noise_img_power = jnp.zeros(noise_shell_shape, dtype=precision_policy.score_real_dtype)
+        if n_optics_groups > 1:
+            noise_sumw = jnp.zeros(n_optics_groups, dtype=precision_policy.score_real_dtype)
         noise_norm_correction = jnp.zeros(
             _noise_norm_capacity(n_images, enabled=noise_norm_capacity_enabled),
             dtype=jnp.float64 if source_faithful_spectrum_norm else precision_policy.score_real_dtype,
@@ -2159,6 +2199,11 @@ def run_local_em_exact(
                 or score_only
             )
         )
+        if optics_groups_np is not None and not execute_big_jit_bucket:
+            raise NotImplementedError(
+                "per-optics-group noise needs the exact-local big-JIT bucket route; this bucket "
+                "would take the split route"
+            )
         if fixed_capacity_call_view is not None and not execute_big_jit_bucket:
             raise ValueError(
                 f"fixed-capacity call {fixed_capacity_call_view.call_index} did not reach "
@@ -2464,6 +2509,14 @@ def run_local_em_exact(
                     class_log_prior,
                     dtype=local_rotation_log_prior_arg.dtype,
                 )
+            bucket_optics_groups_arg = (
+                None
+                if optics_groups_np is None
+                else jnp.asarray(
+                    pad_axis(optics_groups_np[bucket_image_indices], 0, batch_size, value=0),
+                    dtype=jnp.int32,
+                )
+            )
             if accumulate_noise:
                 noise_wsum_arg = noise_wsum
                 noise_img_power_arg = noise_img_power
@@ -2712,6 +2765,8 @@ def run_local_em_exact(
                 big_jit_config,
                 local_projection_runtime_radius,
             )
+            if optics_groups_np is not None:
+                big_jit_arguments += (bucket_optics_groups_arg,)
             big_jit_static_options = dict(
                 n_classes=n_classes,
                 class_segment_rotation_count=(bucket.segment_rotation_count if n_classes > 1 else None),
@@ -4290,6 +4345,7 @@ def run_local_em_exact(
                     big_jit_recon_window_indices_arg,
                     noise_image_indices,
                     jnp.asarray(logical_current_size, dtype=jnp.int32),
+                    **({} if optics_groups_np is None else {"noise_optics_groups": bucket_optics_groups_arg}),
                     **deferred_noise_shared_kwargs,
                     accumulate_scale_correction=group_ids_np is not None,
                     return_noise_split=return_noise_split,
@@ -6117,7 +6173,11 @@ def run_local_em_exact(
     if accumulate_noise:
         transfer_t0 = time.time()
         noise_sigma2_offset_value = float(np.asarray(noise_sigma2_offset, dtype=np.float64))
-        noise_sumw_value = float(np.asarray(noise_sumw, dtype=np.float64))
+        noise_sumw_value = (
+            float(np.asarray(noise_sumw, dtype=np.float64))
+            if n_optics_groups == 1
+            else np.asarray(noise_sumw, dtype=np.float64)
+        )
         transfer_profile["final_noise_to_host_s"] += time.time() - transfer_t0
         if host_stats_publication:
             # Publish the physical carry before taking the logical host prefix;

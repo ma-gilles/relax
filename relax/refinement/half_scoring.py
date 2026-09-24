@@ -983,8 +983,6 @@ def _score_half_local(
     Caller handles ``noise_stats_per_half[k]``, ``pose_rotations[k] = None``,
     and ``coarse_ha[k] = ha_k`` from the returned ``HalfScoreResult``.
     """
-    if optics_group_ids_k is not None:
-        raise NotImplementedError("local search keeps one optics group's noise spectrum")
 
     # RELION's convertAllSquaredDifferencesToWeights uses mymodel.pdf_direction
     # only when orientational_prior_mode == NOPRIOR. Local searches run through
@@ -1123,6 +1121,7 @@ def _score_half_local(
         "translation_prior_reference_translations": translation_prior_reference_translations,
         "translation_prior_centers": trans_prior_center_for_engine,
         "source_faithful_spectrum_norm": source_faithful_spectrum_norm,
+        **({} if optics_group_ids_k is None else {"optics_group_ids": optics_group_ids_k}),
     }
     if float(relion_translation_angle_scale) != 1.0:
         if k_class_enabled:

@@ -29,6 +29,7 @@ from relax.helpers.image_shifts import half_image_phase_factors, tiled_half_imag
 from relax.helpers.oversampling import _find_significant_mask_full_sort
 from relax.helpers.projection import (
     DEFAULT_PROJECTION_MAX_R,
+    compute_noise_block_per_optics_group,
     compute_relion_projector_projections_block,
     project_half_spectrum,
 )
@@ -709,6 +710,7 @@ def compute_local_exact_noise(
     prepared_core: _LocalExactNoiseCore | None = None,
     native_residual_statistics: bool = False,
     unweighted_high_shell_image_power: bool = True,
+    noise_optics_groups=None,
 ):
     """Compose the exact-local noise reduction without a JIT boundary.
 
@@ -718,6 +720,10 @@ def compute_local_exact_noise(
     its existing big JIT; VDAM puts one outer JIT around the deferred call.
     The experimental native residual path requires float64 variance and an
     explicit compatible CUDA build; it never silently casts unsupported inputs.
+
+    With ``noise_optics_groups`` (each image's optics group), ``noise_variance_for_noise``
+    is a ``[G, P]`` table and the shell sums and ``sumw`` accumulate per group
+    (``[G, shell_count]``, ``[G]``); images use their own group's row throughout.
     """
 
     if type(native_residual_statistics) is not bool:
@@ -757,7 +763,38 @@ def compute_local_exact_noise(
         batch_img_power_shells,
         batch_img_power_per_image,
     ) = prepared_core
-    noise_sumw = noise_sumw + jnp.sum(support_mass)
+    per_group = noise_optics_groups is not None
+    noise_table = noise_variance_for_noise
+    if per_group:
+        if native_residual_statistics or return_noise_split or use_relion_wavg_cutoff:
+            raise NotImplementedError(
+                "per-optics-group exact-local noise has no native-residual, split or Wavg-cutoff mode"
+            )
+        image_groups = jnp.asarray(noise_optics_groups, dtype=jnp.int32)
+        n_groups = int(noise_table.shape[0])
+        noise_sumw = noise_sumw + jax.ops.segment_sum(support_mass, image_groups, num_segments=n_groups)
+        # The image-power shells of each group, from that group's images only.
+        processed_noise_power_half = processed_score_half * image_only_corr[:, None]
+        batch_img_power_shells = jnp.stack([
+            _noise_image_power_shells_and_per_image(
+                processed_noise_power_half,
+                jnp.where(image_groups == group, support_mass, 0.0),
+                shell_indices_half,
+                valid_image_mask & (image_groups == group),
+                noise_projection_max_r,
+                shell_count=shell_count,
+                image_shape=image_shape,
+                current_size=norm_current_size,
+                runtime_current_size=runtime_current_size,
+                include_unweighted_high_shell=include_unweighted_norm_high_shell,
+                use_relion_cuda_powerclass_spectrum=use_relion_cuda_powerclass_spectrum,
+                source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+                unweighted_high_shell_image_power=unweighted_high_shell_image_power,
+            )[0]
+            for group in range(n_groups)
+        ])
+    else:
+        noise_sumw = noise_sumw + jnp.sum(support_mass)
 
     pixel_batch_size = pixel_reconstruction_probs.shape[0]
     pixel_valid_image_mask = valid_image_mask[:pixel_batch_size]
@@ -782,6 +819,20 @@ def compute_local_exact_noise(
             shell_count, batch_scale[:pixel_batch_size], scale_correction_pixel_mask,
             return_split=return_noise_split, compute_scale=accumulate_scale_correction,
         )
+    elif per_group:
+        pixel_groups = image_groups[:pixel_batch_size]
+        block_noise_shells = compute_noise_block_per_optics_group(
+            flat_proj_for_noise,
+            (jnp.abs(flat_proj_for_noise) ** 2),
+            summed_masked_noise.reshape(-1, summed_masked_noise.shape[-1]),
+            pixel_ctf_probs.reshape(-1, pixel_ctf_probs.shape[-1]),
+            noise_table,
+            jnp.repeat(pixel_groups, pixel_proj_for_noise.shape[1]),
+            shell_indices_noise,
+            shell_count,
+        )
+        # Per-image norm and scale terms use each image's own row.
+        noise_variance_for_noise = noise_table[pixel_groups]
     else:
         block_noise_shells, block_a2_shells, block_xa_shells = _compute_noise_block(
             flat_proj_for_noise,
@@ -953,8 +1004,13 @@ def run_deferred_local_exact_noise_jit(
     prepared_core: _LocalExactNoiseCore | None = None,
     native_residual_statistics: bool = False,
     unweighted_high_shell_image_power: bool = True,
+    noise_optics_groups=None,
 ):
-    """Run one deferred VDAM exact-noise bucket through one outer JIT."""
+    """Run one deferred VDAM exact-noise bucket through one outer JIT.
+
+    Also the exact-local K=1 deferred packed M-step's noise; ``noise_optics_groups``
+    as in :func:`compute_local_exact_noise`.
+    """
 
     runtime_logical_current_size = jnp.asarray(
         runtime_logical_current_size, dtype=jnp.int32
@@ -1024,6 +1080,7 @@ def run_deferred_local_exact_noise_jit(
         prepared_core=prepared_core,
         native_residual_statistics=native_residual_statistics,
         unweighted_high_shell_image_power=unweighted_high_shell_image_power,
+        noise_optics_groups=noise_optics_groups,
     )
     noise_norm_correction = noise_norm_correction.at[
         jnp.asarray(bucket_image_indices, dtype=jnp.int32)
@@ -2045,6 +2102,7 @@ def run_local_bucket_big_jit(
     runtime_logical_current_size,
     config,
     runtime_projector_r_max=None,
+    noise_optics_groups=None,
     *,
     mask_mode: str,
     score_with_masked_images: bool,
@@ -2146,6 +2204,16 @@ def run_local_bucket_big_jit(
         raise ValueError(
             "stable Fourier-window scoring requires exact RELION fine diff2"
         )
+    if noise_optics_groups is not None:
+        # Per-optics-group noise (relax.helpers.optics_noise): ``noise_variance_half``
+        # and ``noise_variance_for_noise`` are [G, P] tables and every image scores,
+        # backprojects and adds its noise sums with its own group's row. Only the
+        # plain CTF^2/sigma2 operand route carries it.
+        if relion_exact_bpref_operands or relion_exact_fine_diff2:
+            raise NotImplementedError(
+                "per-optics-group noise uses the plain CTF^2/sigma2 exact-local operands only"
+            )
+        noise_variance_half = noise_variance_half[noise_optics_groups]
 
     if has_normalization_max_posterior and (
         has_normalization_log_z or has_normalization_log_evidence
@@ -2411,7 +2479,7 @@ def run_local_bucket_big_jit(
             weighted_half = (
                 processed_half[:, pixel_indices]
                 * ctf_half[:, pixel_indices]
-                / noise_variance_half[pixel_indices]
+                / noise_variance_half[..., pixel_indices]
             )
         if relion_score_translation_angles is not None and use_float64_scoring:
             return _translate_score_weighted_half(weighted_half, pixel_indices)
@@ -2431,7 +2499,7 @@ def run_local_bucket_big_jit(
             score_weighted_half = (
                 processed_score_half[:, window_indices]
                 * ctf_half[:, window_indices]
-                / noise_variance_half[window_indices]
+                / noise_variance_half[..., window_indices]
             )
         shifted_score = _translate_score_weighted_half(score_weighted_half, window_indices)
         ctf2_over_nv_score = ctf2_over_nv_score_half[:, window_indices]
@@ -3521,6 +3589,7 @@ def run_local_bucket_big_jit(
             relion_wavg_sequential_cuda=relion_wavg_sequential_cuda,
             return_debug_wavg_cutoff_triplet=return_debug_operands,
             unweighted_high_shell_image_power=unweighted_high_shell_image_power,
+            noise_optics_groups=noise_optics_groups,
         )
         noise_wsum = noise_result.noise_wsum
         noise_img_power = noise_result.noise_img_power

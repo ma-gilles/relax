@@ -17,6 +17,7 @@ from recovar.cuda_backproject import cuda_available as _cuda_projection_availabl
 from relax.cuda.kernels import project_indexed
 from relax.helpers.env_flags import parse_env_strict_flag
 from relax.helpers.half_spectrum import bin_shell_values_jax
+from relax.helpers.optics_noise import image_rotation_rows
 
 logger = logging.getLogger(__name__)
 
@@ -999,12 +1000,12 @@ def compute_norm_residual_per_image(
     """
 
     ctf_has_mass = ctf_probs != 0.0
-    ctf_probs_raw = jnp.where(ctf_has_mass, ctf_probs * noise_variance_half[None, None, :], 0.0)
+    ctf_probs_raw = jnp.where(ctf_has_mass, ctf_probs * image_rotation_rows(noise_variance_half), 0.0)
     a2_terms = jnp.where(ctf_has_mass, proj_abs2_half * ctf_probs_raw, 0.0)
     a2_per_image = jnp.sum(a2_terms, axis=(1, 2))
 
     cross_terms = jnp.where(summed_masked != 0.0, proj_half * jnp.conj(summed_masked), 0.0)
-    xa_terms = noise_variance_half[None, None, :] * cross_terms.real
+    xa_terms = image_rotation_rows(noise_variance_half) * cross_terms.real
     xa_per_image = jnp.sum(xa_terms, axis=(1, 2))
     return a2_per_image - 2.0 * xa_per_image
 
@@ -1036,7 +1037,7 @@ def compute_scale_correction_terms_per_image(
     if scale_correction_pixel_mask is not None:
         scale_pixel_mask = jnp.asarray(scale_correction_pixel_mask, dtype=bool).reshape(-1)
         ctf_has_mass = ctf_has_mass & scale_pixel_mask[None, None, :]
-    ctf_probs_raw = jnp.where(ctf_has_mass, ctf_probs * noise_variance_half[None, None, :], 0.0)
+    ctf_probs_raw = jnp.where(ctf_has_mass, ctf_probs * image_rotation_rows(noise_variance_half), 0.0)
     aa_terms = jnp.where(ctf_has_mass, proj_abs2_half * ctf_probs_raw, 0.0)
     aa_per_image = jnp.sum(aa_terms, axis=(1, 2)) / (safe_scale**2)
 
@@ -1044,7 +1045,7 @@ def compute_scale_correction_terms_per_image(
     if scale_pixel_mask is not None:
         cross_has_mass = cross_has_mass & scale_pixel_mask[None, None, :]
     cross_terms = jnp.where(cross_has_mass, proj_half * jnp.conj(summed_masked), 0.0)
-    xa_terms = noise_variance_half[None, None, :] * cross_terms.real
+    xa_terms = image_rotation_rows(noise_variance_half) * cross_terms.real
     xa_per_image = jnp.sum(xa_terms, axis=(1, 2)) / safe_scale
     return xa_per_image, aa_per_image
 
