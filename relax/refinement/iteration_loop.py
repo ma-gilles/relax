@@ -200,6 +200,7 @@ from relax.refinement.noise_updates import (
     update_c1_sigma_offset_from_posterior,
     update_posterior_noise_variance,
 )
+from relax.refinement.optics_shapes import MultiShapeHalf
 from relax.refinement.projector_preparation import (
     _relion_projector_half_maps_for_scoring,
     _validate_captured_relion_projector_for_iteration,
@@ -570,10 +571,17 @@ def _optics_group_ids_per_half(optics_group_ids_per_half, noise_variance_per_hal
     return ids
 
 
-def _optics_group_kwargs(optics_group_ids_k) -> dict:
-    """The engine keyword for one half's optics groups; none with one group."""
+def _optics_group_kwargs(optics_group_ids_k, dataset=None, noise_radial_k=None) -> dict:
+    """The engine keywords for one half's optics groups; none with one group.
 
-    return {} if optics_group_ids_k is None else {"optics_group_ids_k": optics_group_ids_k}
+    A half of several image shapes also gets its reference-shell noise spectra, from
+    which each shape class reads its own noise (relax.refinement.optics_shapes).
+    """
+
+    kwargs = {} if optics_group_ids_k is None else {"optics_group_ids_k": optics_group_ids_k}
+    if isinstance(dataset, MultiShapeHalf):
+        kwargs["noise_radial_k"] = np.asarray(noise_radial_k, dtype=np.float64)
+    return kwargs
 
 
 def refine_single_volume(
@@ -690,10 +698,16 @@ def refine_single_volume(
     )
     if not np.isfinite(model_pixel_size) or model_pixel_size <= 0.0:
         raise ValueError(f"RELION model pixel size must be positive, got {model_pixel_size}")
-    relion_translation_angle_scale = _relion_k1_translation_angle_scale(
-        n_classes=n_classes,
-        model_pixel_size=model_pixel_size,
-        optics_pixel_sizes=optics_pixel_sizes,
+    multi_shape_halves = isinstance(experiment_datasets[0], MultiShapeHalf)
+    relion_translation_angle_scale = (
+        # Shape classes carry their translations in class pixels already.
+        1.0
+        if multi_shape_halves
+        else _relion_k1_translation_angle_scale(
+            n_classes=n_classes,
+            model_pixel_size=model_pixel_size,
+            optics_pixel_sizes=optics_pixel_sizes,
+        )
     )
     if relion_translation_angle_scale != 1.0:
         logger.info(
@@ -2519,7 +2533,9 @@ def refine_single_volume(
             if use_local:
                 local_parent_oversampling_order = int(state.adaptive_oversampling) if state.adaptive_oversampling > 0 else 0
                 local_result = _score_half_local_in_bpref_scope(
-                    **_optics_group_kwargs(optics_group_ids_per_half[k]),
+                    **_optics_group_kwargs(
+                        optics_group_ids_per_half[k], experiment_datasets[k], previous_noise_radial_per_half[k]
+                    ),
                     bpref_device_signature_active=bpref_device_signature_active,
                     k=k,
                     experiment_dataset=experiment_datasets[k],
@@ -2585,7 +2601,9 @@ def refine_single_volume(
                 # pass-1 grid and batch/size overrides.
                 dense_half_kwargs = dict(
                     **({"symmetry": symmetry} if symmetry != "C1" else {}),
-                    **_optics_group_kwargs(optics_group_ids_per_half[k]),
+                    **_optics_group_kwargs(
+                        optics_group_ids_per_half[k], experiment_datasets[k], previous_noise_radial_per_half[k]
+                    ),
                     bpref_device_signature_active=bpref_device_signature_active,
                     k=k,
                     experiment_dataset=experiment_datasets[k],
@@ -4801,7 +4819,9 @@ def refine_single_volume(
         final_class_rotation_log_prior_k = final_half_direction_priors.class_rotation_log_prior
         if final_use_local:
             final_result = _score_half_local_in_bpref_scope(
-                **_optics_group_kwargs(optics_group_ids_per_half[k]),
+                **_optics_group_kwargs(
+                    optics_group_ids_per_half[k], experiment_datasets[k], previous_noise_radial_per_half[k]
+                ),
                 bpref_device_signature_active=False,
                 k=k,
                 experiment_dataset=experiment_datasets[k],
@@ -4852,7 +4872,9 @@ def refine_single_volume(
             )
         else:
             final_result = _score_half_dense_in_bpref_scope(
-                **_optics_group_kwargs(optics_group_ids_per_half[k]),
+                **_optics_group_kwargs(
+                    optics_group_ids_per_half[k], experiment_datasets[k], previous_noise_radial_per_half[k]
+                ),
                 bpref_device_signature_active=False,
                 k=k,
             experiment_dataset=experiment_datasets[k],

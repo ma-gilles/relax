@@ -505,6 +505,15 @@ def estimate_relion_expected_accuracy(
     from recovar.core import fourier_transform_utils
     from recovar.utils.helpers import recovar_volume_to_relion
 
+    from relax.refinement.optics_shapes import MultiShapeHalf
+
+    if isinstance(dataset, MultiShapeHalf):
+        # RELION projects each trial particle with its group's scaled matrix and
+        # remapped sizes (ml_optimiser.cpp:9291-9380); the binding takes one grid.
+        raise NotImplementedError(
+            "expected accuracy for optics groups on another pixel size or box needs "
+            "applyScaleDifference in the RELION expected-accuracy binding"
+        )
     eulers = np.asarray(best_eulers_deg, dtype=np.float64)
     if eulers.ndim != 2 or eulers.shape[1] != 3:
         raise ValueError(f"best_eulers_deg must have shape (N, 3), got {eulers.shape}")
