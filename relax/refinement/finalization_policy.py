@@ -1,21 +1,8 @@
-"""Final-pass admission and the preserved historical gridding selector."""
+"""Final all-data pass admission."""
 
 from relax.helpers.env_flags import parse_env_flag_or_false
 
-_FINAL_ALL_DATA_GRID_CORRECT_ENV = "RELAX_FINAL_ALL_DATA_GRID_CORRECT"
 _FINAL_ALL_DATA_AFTER_MAX_ITER_ENV = "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER"
-
-
-def _final_all_data_grid_correct_enabled(*, logger) -> bool:
-    """Return whether final all-data output applies RELION gridding correction.
-
-    The reviewed implementation defaults this off; the strict-parity target
-    specifies on and requires a separately qualified policy change. Explicit
-    replay can enable it with
-    ``RELAX_FINAL_ALL_DATA_GRID_CORRECT=1``.
-    """
-
-    return parse_env_flag_or_false(_FINAL_ALL_DATA_GRID_CORRECT_ENV, logger=logger)
 
 
 def _should_run_final_all_data_iteration(
