@@ -1230,6 +1230,10 @@ def refine_single_volume(
                 "Frozen scoring-state immutability assertion currently supports K=1 only"
             )
         frozen_initial_scoring_state = _frozen_scoring_state_now()
+    # Per-half numbered-iteration assignments; a final-only replay
+    # (--max_iter 0 --force-final-after-zero-iterations) runs no numbered
+    # iteration and reports none.
+    hard_assignments = [None, None]
     while (schedule.force_max_iter_after_convergence or not state.has_converged) and iteration < schedule.max_iter:
         if perturb_replay_relion_dir is not None and replay_policy._past_perturb_replay_max_iter(
             iteration, perturb_replay_max_iter

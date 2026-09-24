@@ -927,3 +927,17 @@ def test_iteration_overrides_use_the_replay_scale_keys():
     source = inspect.getsource(run_multi_iter_parity.main)
     assert '"serialized_scale_corrections": [scale_corr_h1_iter, scale_corr_h2_iter]' in source
     assert '"scale_corrections": [scale_corr_h1_iter' not in source
+
+
+def test_final_only_replay_reports_empty_numbered_assignments():
+    """A final-only replay runs no numbered iteration; the result still carries
+    per-half assignments (None), which run_full_refinement indexes. 14381025
+    finished the forced final at 10097 it22 and then stopped on an unbound
+    hard_assignments."""
+
+    from relax.refinement import iteration_loop
+
+    source = inspect.getsource(iteration_loop.refine_single_volume)
+    init = source.index("hard_assignments = [None, None]")
+    loop = source.index("while (schedule.force_max_iter_after_convergence")
+    assert init < loop
