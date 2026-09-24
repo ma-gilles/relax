@@ -140,10 +140,9 @@ def test_k1_5k128_standalone_autorefine(tmp_path):
     gt = np.asarray(helpers.load_mrc(str(data / "reference_gt.mrc")), dtype=np.float64)
     band = gt.shape[0] // 2
     # The gated maps are the averages of the unfiltered half maps, the same kind of map in both
-    # engines. The merged maps differ in kind: RELION's run_class001.mrc is gridding-corrected,
-    # while relax's final_merged.mrc follows the reviewed final-gridding-correction default (off),
-    # which alone moves the GT FSC-AUC by about +0.012 (open item in docs/development/em_status.md).
-    # They are reported, not gated.
+    # engines. Until the always-on final gridding correction is on main, relax's final_merged.mrc
+    # is not gridding-corrected while RELION's run_class001.mrc is (about +0.012 GT FSC-AUC; see
+    # docs/development/em_status.md), so the merged maps are reported, not gated, for now.
     def unfil_average(load, paths):
         return sum(np.asarray(load(str(path)), dtype=np.float64) for path in paths) / 2.0
 
