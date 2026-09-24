@@ -76,6 +76,7 @@ from relax.helpers.env_flags import (
 from relax.helpers.fourier_window import make_stable_fourier_window_shape_plan
 from relax.helpers.half_spectrum import (
     make_relion_noise_shell_indices_half,
+    make_shell_indices_half,
     mask_relion_noise_shell_indices_to_current_window,
 )
 from relax.helpers.half_volume_mstep import (
@@ -294,6 +295,8 @@ from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_cuda_fine_global_diff2_min,
     _relion_cuda_fine_log_evidence_offset,
     _relion_cuda_fine_partition_diff2_min_or_inf,
+    _relion_cuda_native_corr_img_from_noise_variance,
+    _relion_native_fine_units,
     _relion_powerclass_noise_terms,
     _score_pass2_bucket_gaussian_algebraic,
     _score_pass2_bucket_gaussian_algebraic_components,
@@ -2249,6 +2252,38 @@ def compute_pass2_stats_sparse_bucketed(
             direct_inverse_noise_score = direct_inverse_noise_half
             direct_ctf_rfloat_score = direct_ctf_rfloat_half
             direct_ctf_rfloat_recon = direct_ctf_rfloat_half
+        # Fresh K=1 exact-Gaussian fine diff2 runs in RELION's native FFT units
+        # (final Q aa0eccbfd4); the score corr_img is taken before its N**-4
+        # scaling and keeps the zero origin of RELION's Minvsigma2.
+        relion_native_fine_units = bool(
+            fresh_k1_guard
+            and use_exact_relion_gaussian
+            and not use_float64_scoring
+            and direct_ctf_rfloat_half is not None
+        )
+        direct_native_corr_img_score = None
+        native_fft_size = int(np.prod(image_shape))
+        if relion_native_fine_units:
+            direct_native_corr_img_half = _relion_cuda_native_corr_img_from_noise_variance(
+                jnp.asarray(noise_variance_half)[None, :],
+                direct_ctf_rfloat_half,
+                image_shape,
+                (
+                    jnp.asarray(direct_batch_scale_corrections, dtype=jnp.float32)[:, None]
+                    if scale_corrections is not None
+                    else None
+                ),
+            )
+            if half_spectrum_scoring:
+                native_dc_mask = make_shell_indices_half(image_shape) == 0
+                direct_native_corr_img_half = jnp.where(
+                    native_dc_mask[None, :], 0.0, direct_native_corr_img_half
+                ).astype(jnp.float32)
+            direct_native_corr_img_score = (
+                direct_native_corr_img_half[:, jnp.asarray(window_indices, dtype=jnp.int32)]
+                if use_window
+                else direct_native_corr_img_half
+            )
         relion_highres_xi2_half, relion_norm_high_shell = _relion_powerclass_noise_terms(
             processed_score_half_for_noise,
             image_shape=image_shape,
@@ -2455,6 +2490,11 @@ def compute_pass2_stats_sparse_bucketed(
             ]
             shifted_corrected_score_split = shifted_corrected_score.reshape(batch, n_fine_trans, -1)
             direct_half_weights = half_weights_windowed
+            chunk_fine_shifted = shifted_corrected_score_split
+            chunk_fine_corr_img = ctf2_over_nv_score
+            if relion_native_fine_units:
+                chunk_fine_shifted = _relion_native_fine_units(shifted_corrected_score_split, native_fft_size)
+                chunk_fine_corr_img = direct_native_corr_img_score
 
             def _score_rotation_chunk(start, stop, *, need_recon, raw_diff2=False, min_diff2=None):
                 rot_count = int(stop - start)
@@ -2514,11 +2554,16 @@ def compute_pass2_stats_sparse_bucketed(
                     else:
                         score_chunk = _score_pass2_bucket_normalized_cc(*score_args)
                 elif use_exact_relion_gaussian:
+                    fine_proj_chunk = (
+                        _relion_native_fine_units(proj_chunk, native_fft_size)
+                        if relion_native_fine_units
+                        else proj_chunk
+                    )
                     if raw_diff2:
                         score_chunk = _score_pass2_bucket_relion_gpu_diff2_raw(
-                            shifted_corrected_score_split,
-                            ctf2_over_nv_score,
-                            proj_chunk,
+                            chunk_fine_shifted,
+                            chunk_fine_corr_img,
+                            fine_proj_chunk,
                             direct_half_weights,
                             relion_score_full_to_compact,
                             relion_highres_xi2_half,
@@ -2531,9 +2576,9 @@ def compute_pass2_stats_sparse_bucketed(
                         )
                     else:
                         score_chunk = _score_pass2_bucket_relion_gpu_diff2(
-                            shifted_corrected_score_split,
-                            ctf2_over_nv_score,
-                            proj_chunk,
+                            chunk_fine_shifted,
+                            chunk_fine_corr_img,
+                            fine_proj_chunk,
                             direct_half_weights,
                             jnp.asarray(log_prior[:, start:stop]),
                             bucket_translation_prior,
@@ -2974,9 +3019,13 @@ def compute_pass2_stats_sparse_bucketed(
                         contribution_preprior_score_chunks.append(scores_chunk)
                     elif use_exact_relion_gaussian:
                         contribution_raw_diff2 = _score_pass2_bucket_relion_gpu_diff2_raw(
-                            shifted_corrected_score_split,
-                            ctf2_over_nv_score,
-                            proj_half_chunk,
+                            chunk_fine_shifted,
+                            chunk_fine_corr_img,
+                            (
+                                _relion_native_fine_units(proj_half_chunk, native_fft_size)
+                                if relion_native_fine_units
+                                else proj_half_chunk
+                            ),
                             direct_half_weights,
                             relion_score_full_to_compact,
                             relion_highres_xi2_half,
@@ -4003,6 +4052,13 @@ def compute_pass2_stats_sparse_bucketed(
         # Score: (B, R, T)
         shifted_corrected_score_split = shifted_corrected_score.reshape(batch, n_fine_trans, -1)
         direct_half_weights = half_weights_windowed if use_window else half_weights
+        fine_score_shifted = shifted_corrected_score_split
+        fine_score_corr_img = ctf2_over_nv_score
+        fine_score_proj = proj_half
+        if relion_native_fine_units:
+            fine_score_shifted = _relion_native_fine_units(shifted_corrected_score_split, native_fft_size)
+            fine_score_proj = _relion_native_fine_units(proj_half, native_fft_size)
+            fine_score_corr_img = direct_native_corr_img_score
         shadow_score_bitwise_equal = False
         raw_diff2 = None
         if relion_firstiter_score_mode == "normalized_cc":
@@ -4034,9 +4090,9 @@ def compute_pass2_stats_sparse_bucketed(
                 shadow_score_bitwise_equal = True
         elif use_exact_relion_gaussian:
             raw_diff2 = _score_pass2_bucket_relion_gpu_diff2_raw(
-                shifted_corrected_score_split,
-                ctf2_over_nv_score,
-                proj_half,
+                fine_score_shifted,
+                fine_score_corr_img,
+                fine_score_proj,
                 direct_half_weights,
                 relion_score_full_to_compact,
                 relion_highres_xi2_half,
@@ -4068,9 +4124,9 @@ def compute_pass2_stats_sparse_bucketed(
                     min_diff2=min_diff2,
                 )
                 shadow_scores = _score_pass2_bucket_relion_gpu_diff2(
-                    shifted_corrected_score_split,
-                    ctf2_over_nv_score,
-                    proj_half,
+                    fine_score_shifted,
+                    fine_score_corr_img,
+                    fine_score_proj,
                     direct_half_weights,
                     jnp.asarray(log_prior),
                     bucket_translation_prior,
@@ -4372,11 +4428,11 @@ def compute_pass2_stats_sparse_bucketed(
                 reconstruction_mask=reconstruction_mask,
                 reconstruction_probs=reconstruction_probs,
                 reconstruction_n_significant=reconstruction_n_significant,
-                ctf2_over_nv_score=ctf2_over_nv_score,
-                proj_half=proj_half,
+                ctf2_over_nv_score=fine_score_corr_img,
+                proj_half=fine_score_proj,
                 half_weights_used=half_weights_windowed if use_window else half_weights,
                 window_indices=window_indices_np,
-                shifted_corrected_score_split=shifted_corrected_score_split,
+                shifted_corrected_score_split=fine_score_shifted,
                 direct_score_input=direct_score_input,
                 direct_preprocessed_score_input=direct_preprocessed_score_input,
                 direct_pixel_correction=direct_pixel_correction,

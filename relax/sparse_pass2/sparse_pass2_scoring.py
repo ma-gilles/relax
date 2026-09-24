@@ -551,17 +551,11 @@ def _relion_cuda_corr_img_from_native_noise_variance(
     if output_dtype not in (jnp.dtype(jnp.float32), jnp.dtype(jnp.float64)):
         raise TypeError(f"output_dtype must be float32 or float64, got {output_dtype}")
     image_size = int(image_shape[0])
-    if tuple(image_shape) != (image_size, image_size):
-        raise ValueError(f"RELION corr_img requires a square image, got {image_shape}")
     native_fourier_scale_rfloat = jnp.asarray(image_size**4, dtype=jnp.float64)
-    native_variance = (
-        jnp.asarray(noise_variance, dtype=jnp.float64)
-        / native_fourier_scale_rfloat
-    )
-    native_inverse_noise = jnp.reciprocal(native_variance).astype(jnp.float32)
-    native_corr_img = _relion_cuda_corr_img_from_rfloat_ctf(
-        native_inverse_noise,
+    native_corr_img = _relion_cuda_native_corr_img_from_noise_variance(
+        noise_variance,
         ctf_rfloat,
+        image_shape,
         scale,
     )
     # XLA's float32 division may lower to a reciprocal multiply and differs
@@ -571,6 +565,54 @@ def _relion_cuda_corr_img_from_native_noise_variance(
     return (
         native_corr_img.astype(jnp.float64) / native_fourier_scale_rfloat
     ).astype(output_dtype)
+
+
+def _relion_cuda_native_corr_img_from_noise_variance(
+    noise_variance,
+    ctf_rfloat,
+    image_shape,
+    scale=None,
+):
+    """Return RELION's native-unit XFLOAT ``corr_img`` before FFT rescaling."""
+
+    image_size = int(image_shape[0])
+    if tuple(image_shape) != (image_size, image_size):
+        raise ValueError(f"RELION corr_img requires a square image, got {image_shape}")
+    native_fourier_scale_rfloat = jnp.asarray(image_size**4, dtype=jnp.float64)
+    native_variance = (
+        jnp.asarray(noise_variance, dtype=jnp.float64)
+        / native_fourier_scale_rfloat
+    )
+    native_inverse_noise = jnp.reciprocal(native_variance).astype(jnp.float32)
+    return _relion_cuda_corr_img_from_rfloat_ctf(
+        native_inverse_noise,
+        ctf_rfloat,
+        scale,
+    )
+
+
+@partial(jax.jit, static_argnames=("fft_size",))
+def _relion_native_fine_units(values, fft_size):
+    """Convert a complex fine-score operand to RELION's unnormalised FFT units.
+
+    RELION evaluates the fine diff2 in native units.  RECOVAR's shifted image
+    and projected reference carry a factor ``fft_size = N**2`` and its score
+    ``corr_img`` a factor ``N**-4``; the factors cancel over the reals but not
+    in float32 pixel products when ``N**2`` is not a power of two.  Score with
+    the complex operands divided by ``fft_size`` and with the native
+    ``corr_img`` of :func:`_relion_cuda_native_corr_img_from_noise_variance`.
+
+    XLA's complex64 division by a real scalar is not correctly rounded, and
+    its bits change with the device and the fusion context.  Divide each real
+    and imaginary part in binary64 and round once to float32 instead.  See
+    ``docs/math/relion_refinement_algorithm.md`` section 3.
+    """
+
+    values = jnp.asarray(values, dtype=jnp.complex64)
+    native_fft_scale = jnp.asarray(fft_size, dtype=jnp.float64)
+    real = (jnp.real(values).astype(jnp.float64) / native_fft_scale).astype(jnp.float32)
+    imag = (jnp.imag(values).astype(jnp.float64) / native_fft_scale).astype(jnp.float32)
+    return jax.lax.complex(real, imag)
 
 
 def _relion_cuda_pixel_correction_from_rfloat_ctf(

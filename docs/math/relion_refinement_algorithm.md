@@ -319,6 +319,23 @@ RELION scoring masks redundant centered `kx=0` rows; normalized-CC callers can
 retain them. Changing these weights is a numerical change, not a missing
 optimization to enable during cleanup.
 
+RELION evaluates the float32 fine-pass `diff2` on unnormalised FFT
+coefficients. RECOVAR's shifted image and projected reference carry an extra
+`N²` and its score `corr_img` an extra `N⁻⁴`. The factors cancel over the reals,
+and bit for bit when `N²` is a power of two, but not in float32 pixel products
+otherwise. The fresh K=1 exact-Gaussian pass of the compact engine therefore
+scores native-unit operands: each complex operand divided by `N²` in binary64
+and rounded once
+([`sparse_pass2_scoring.py`](../../relax/sparse_pass2/sparse_pass2_scoring.py),
+`_relion_native_fine_units`), and RELION's own `corr_img` before its `N⁻⁴`
+conversion, with the zero origin of `Minvsigma2`
+(`_relion_cuda_native_corr_img_from_noise_variance`). The device-resident
+driver scores in RECOVAR units and leaves fresh passes at other box sizes to
+the compact engine
+([`resident_pass2.py`](../../relax/sparse_pass2/resident_pass2.py),
+`resident_pass2_out_of_scope_reason`). The regressions are in
+[`test_relion_native_fine_score_units.py`](../../tests/unit/test_relion_native_fine_score_units.py).
+
 For bounded normalized-CC rescoring, the stored projector radius and the
 current image radius are distinct. The native rescorer in
 [`relion_scoring.cuh`](../../relax/cuda/relion_scoring.cuh),

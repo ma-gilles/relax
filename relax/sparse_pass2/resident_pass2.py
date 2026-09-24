@@ -365,6 +365,7 @@ def resident_pass2_out_of_scope_reason(
     scale_groups_available=False,
     preserve_bpref_particle_order=False,
     source_faithful_spectrum_norm=False,
+    image_size=None,
 ) -> str | None:
     """Name the pass-2 routes the resident driver was never scoped to cover.
 
@@ -381,7 +382,11 @@ def resident_pass2_out_of_scope_reason(
     - a production-shaped pass (noise and group-scale statistics) that does not
       preserve RELION's particle order (a subset or focused debugging replay)
       uses the compact engine's unordered, non-atomic Wavg arithmetic; the
-      resident statistics stage implements only the atomic triplet.
+      resident statistics stage implements only the atomic triplet;
+    - a fresh K=1 pass scores its fine diff2 in RELION's native FFT units in
+      the compact engine. The conversion is exact, so the resident driver's
+      RECOVAR-unit scores are identical, only when ``image_size**2`` is a
+      power of two; other boxes are out of scope.
 
     Everything else still raises through
     :func:`require_resident_production_configuration`, because a silent
@@ -410,6 +415,13 @@ def resident_pass2_out_of_scope_reason(
             return (
                 "the non-atomic Wavg arithmetic of a pass without RELION's "
                 "preserved particle order (subset or focused replay)"
+            )
+    if source_faithful_spectrum_norm and image_size is not None:
+        fft_size = int(image_size) ** 2
+        if fft_size & (fft_size - 1):
+            return (
+                "RELION native-unit fine scores of a fresh K=1 pass at a "
+                f"non-power-of-two box (image_size={int(image_size)})"
             )
     return None
 
