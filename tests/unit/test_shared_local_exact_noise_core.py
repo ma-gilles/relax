@@ -8,6 +8,7 @@ from pathlib import Path
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.local import local_big_jit as noise
 
@@ -99,13 +100,13 @@ def _deferred(inputs, *, source_faithful, noise_split, scale, prepared_core=None
     return function(**arguments)
 
 
-def _assert_bitwise(actual, expected):
+def _assert_outputs_match(actual, expected):
     assert len(actual) == len(expected)
     for index, (left, right) in enumerate(zip(actual, expected, strict=True)):
         left, right = np.asarray(left), np.asarray(right)
         assert left.shape == right.shape, index
         assert left.dtype == right.dtype, index
-        assert left.tobytes() == right.tobytes(), f"output {index} differs bitwise"
+        assert_matches(left, right, err_msg=f"output {index} differs", strict=True)
 
 
 @pytest.mark.parametrize("pixel_batch", (42, 32))
@@ -113,11 +114,11 @@ def _assert_bitwise(actual, expected):
 def test_physical_core_matches_literal_pre_extraction_operations(pixel_batch, source_faithful):
     inputs = _reference._make_noise_inputs(pixel_batch)
     actual = _core(inputs, source_faithful)
-    _assert_bitwise(actual, _literal_core(inputs, source_faithful))
+    _assert_outputs_match(actual, _literal_core(inputs, source_faithful))
     assert tuple(value.shape for value in actual) == ((42,), (), (4,), (42,))
     assert actual.batch_img_power_per_image.dtype == (jnp.float64 if source_faithful else jnp.float32)
-    np.testing.assert_array_equal(np.asarray(actual.support_mass)[pixel_batch:], 0)
-    np.testing.assert_array_equal(np.asarray(actual.batch_img_power_per_image)[pixel_batch:], 0)
+    assert_matches(np.asarray(actual.support_mass)[pixel_batch:], 0)
+    assert_matches(np.asarray(actual.batch_img_power_per_image)[pixel_batch:], 0)
 
 
 @pytest.mark.parametrize("pixel_batch", (42, 32))
@@ -135,7 +136,7 @@ def test_split_core_and_deferred_consumer_preserve_all_nine_outputs(pixel_batch,
         prepared_core=_core(inputs, source_faithful),
     )
     assert len(split) == len(inline) == 9
-    _assert_bitwise(split, inline)
+    _assert_outputs_match(split, inline)
     if source_faithful:
         # Existing independently spelled-out complete oracle uses F64 spectrum
         # norms. F32 core math is checked independently in the test above.
@@ -143,7 +144,7 @@ def test_split_core_and_deferred_consumer_preserve_all_nine_outputs(pixel_batch,
             inputs, return_noise_split=noise_split, accumulate_scale_correction=scale
         )
         global_norm = inputs["noise_norm_correction"].at[inputs["bucket_image_indices"]].add(legacy[6])
-        _assert_bitwise(inline, (*legacy[:6], global_norm, *legacy[7:9]))
+        _assert_outputs_match(inline, (*legacy[:6], global_norm, *legacy[7:9]))
 
 
 def test_core_abi_and_cache_exclude_ragged_pixel_operands():

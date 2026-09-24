@@ -9,6 +9,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 from relax.helpers.batch_planning import _plan_fixed_capacity_whole_local, _seal_fixed_capacity_physical_order
 from relax.local import fixed_capacity_local, local_big_jit, local_bucket_stages, local_em_engine
@@ -238,8 +239,8 @@ def test_fixed_capacity_active_row_materialization_structurally_excludes_all_tai
     assert np.all(np.isfinite(active.local_mstep_rotations))
     assert np.all(np.isfinite(active.local_rotation_log_prior))
     assert np.all(np.isfinite(active.translation_log_prior))
-    np.testing.assert_array_equal(active.local_rotation_ids, hypotheses.local_rotation_ids[: plan.valid_row_count])
-    np.testing.assert_array_equal(active.metadata_by_name["scale"], [2.0, 1.0, 1.5])
+    assert_matches(active.local_rotation_ids, hypotheses.local_rotation_ids[: plan.valid_row_count])
+    assert_matches(active.metadata_by_name["scale"], [2.0, 1.0, 1.5])
 
     active_arrays = (
         active.image_indices,
@@ -357,17 +358,17 @@ def test_fixed_capacity_call0_view_is_read_only_call_scoped_and_canonical():
     assert view.raw_images.shape == (2, 2, 2)
     assert view.ctf_params.shape == (2, 3)
     assert view.metadata_by_name["image_pre_shifts"].shape == (2, 2)
-    np.testing.assert_array_equal(view.bucket.actual_rotation_counts, [2, 3])
+    assert_matches(view.bucket.actual_rotation_counts, [2, 3])
     inactive = ~view.bucket.local_rotation_mask
     assert np.all(view.bucket.local_rotation_ids[inactive] == -1)
-    assert np.all(view.bucket.local_rotation_log_prior[inactive] == np.float32(-1e30))
+    assert matches(view.bucket.local_rotation_log_prior[inactive], np.float32(-1e30))
     assert np.all(view.bucket.local_rotation_posterior_ids[inactive] == -1)
     assert not np.any(view.bucket.local_sample_mask[inactive])
-    np.testing.assert_array_equal(
+    assert_matches(
         view.bucket.local_rotations[inactive],
         np.broadcast_to(np.eye(3, dtype=np.float32), view.bucket.local_rotations[inactive].shape),
     )
-    np.testing.assert_array_equal(view.metadata_by_name["image_pre_shifts"], [[2.25, -2.5], [0.25, -0.5]])
+    assert_matches(view.metadata_by_name["image_pre_shifts"], [[2.25, -2.5], [0.25, -0.5]])
     call_arrays = (
         view.raw_images,
         view.ctf_params,
@@ -398,11 +399,11 @@ def test_fixed_capacity_materializes_every_active_call_in_sealed_chronology():
     )
 
     assert [view.call_index for view in views] == [0, 1]
-    np.testing.assert_array_equal(
+    assert_matches(
         np.concatenate([view.bucket.image_indices for view in views]),
         plan.image_indices[: plan.valid_image_count],
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.concatenate(
             [
                 view.bucket.local_rotation_ids[view.bucket.local_rotation_mask]
@@ -415,12 +416,12 @@ def test_fixed_capacity_materializes_every_active_call_in_sealed_chronology():
     second = views[1]
     assert second.valid_image_count == second.physical_image_capacity == 1
     assert second.physical_rotation_capacity == 2
-    np.testing.assert_array_equal(second.bucket.actual_rotation_counts, [1])
-    np.testing.assert_array_equal(second.bucket.image_indices, [1])
-    np.testing.assert_array_equal(second.raw_images, _IndexedDataset().images[[1]])
-    np.testing.assert_array_equal(second.ctf_params, _IndexedDataset().ctf_params[[1]])
-    np.testing.assert_array_equal(second.metadata_by_name["scale"], [1.5])
-    np.testing.assert_array_equal(second.metadata_by_name["image_pre_shifts"], [[1.25, -1.5]])
+    assert_matches(second.bucket.actual_rotation_counts, [1])
+    assert_matches(second.bucket.image_indices, [1])
+    assert_matches(second.raw_images, _IndexedDataset().images[[1]])
+    assert_matches(second.ctf_params, _IndexedDataset().ctf_params[[1]])
+    assert_matches(second.metadata_by_name["scale"], [1.5])
+    assert_matches(second.metadata_by_name["image_pre_shifts"], [[1.25, -1.5]])
     assert all(
         value.flags.writeable is False
         for value in (
@@ -468,11 +469,11 @@ def test_fixed_capacity_nonzero_call_uses_shared_selection_fetch_and_padding_pat
     fixed_capacity_local._validate_fixed_capacity_padded_call(view, *padded)
 
     assert view.call_index == 1
-    np.testing.assert_array_equal(fetched_indices, [1])
+    assert_matches(fetched_indices, [1])
     _assert_bucket_arrays_equal(padded[0], mature_bucket)
-    np.testing.assert_array_equal(padded[1], _IndexedDataset().images[[1]])
-    np.testing.assert_array_equal(padded[2], _IndexedDataset().ctf_params[[1]])
-    np.testing.assert_array_equal(padded[3], [True])
+    assert_matches(padded[1], _IndexedDataset().images[[1]])
+    assert_matches(padded[2], _IndexedDataset().ctf_params[[1]])
+    assert_matches(padded[3], [True])
 
 
 @pytest.mark.parametrize("call_index", (-1, 2, 3, 100))
@@ -512,7 +513,7 @@ def _assert_bucket_arrays_equal(actual, expected):
         "local_rotation_posterior_ids",
         "local_sample_mask",
     ):
-        np.testing.assert_array_equal(getattr(actual, field_name), getattr(expected, field_name))
+        assert_matches(getattr(actual, field_name), getattr(expected, field_name))
     assert actual.bucket_image_count == expected.bucket_image_count
     assert actual.bucket_rotation_count == expected.bucket_rotation_count
 
@@ -545,7 +546,7 @@ def test_fixed_and_mature_call0_use_identical_common_padding_inputs(id_dtype, im
             mature_bucket,
         )
     )
-    np.testing.assert_array_equal(fetched_indices, mature_bucket.image_indices)
+    assert_matches(fetched_indices, mature_bucket.image_indices)
 
     mature_padded = local_em_engine._pad_local_big_jit_image_axis(
         mature_bucket,
@@ -560,14 +561,14 @@ def test_fixed_and_mature_call0_use_identical_common_padding_inputs(id_dtype, im
 
     _assert_bucket_arrays_equal(fixed_padded[0], mature_padded[0])
     for fixed_value, mature_value in zip(fixed_padded[1:4], mature_padded[1:4], strict=True):
-        np.testing.assert_array_equal(fixed_value, mature_value)
+        assert_matches(fixed_value, mature_value)
     assert fixed_padded[4] == mature_padded[4] == image_capacity
     fixed_capacity_local._validate_fixed_capacity_padded_call(view, *fixed_padded)
     padded_bucket, padded_raw, padded_ctf, valid_image_mask, _ = fixed_padded
-    np.testing.assert_array_equal(valid_image_mask, np.arange(image_capacity) < 2)
+    assert_matches(valid_image_mask, np.arange(image_capacity) < 2)
     assert np.all(padded_bucket.translation_log_prior[2:] == 0)
     assert np.all(padded_raw[2:] == 0)
-    np.testing.assert_array_equal(padded_ctf[2:], np.broadcast_to(padded_ctf[0], padded_ctf[2:].shape))
+    assert_matches(padded_ctf[2:], np.broadcast_to(padded_ctf[0], padded_ctf[2:].shape))
 
 
 def test_fixed_capacity_call0_common_padding_accepts_full_physical_image_capacity():
@@ -586,8 +587,8 @@ def test_fixed_capacity_call0_common_padding_accepts_full_physical_image_capacit
     assert padded[0] is view.bucket
     assert padded[1] is raw
     assert padded[2] is ctf
-    np.testing.assert_array_equal(fetched_indices, view.bucket.image_indices)
-    np.testing.assert_array_equal(padded[3], [True, True])
+    assert_matches(fetched_indices, view.bucket.image_indices)
+    assert_matches(padded[3], [True, True])
     fixed_capacity_local._validate_fixed_capacity_padded_call(view, *padded)
 
 

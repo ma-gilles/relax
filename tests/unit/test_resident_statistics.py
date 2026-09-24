@@ -18,6 +18,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 from relax.helpers.projection import (
     compute_norm_residual_per_image,
@@ -490,7 +491,7 @@ def test_direct_residual_twin_is_bitwise_when_order_cannot_matter():
         shell_count=N_SHELLS,
     )
     for expected_part, got_part in zip(expected, got):
-        assert np.array_equal(expected_part, np.asarray(got_part))
+        assert matches(expected_part, np.asarray(got_part))
 
 
 @pytest.mark.parametrize("shell_stop", [0, 3, 5, N_SHELLS, N_SHELLS + 4])
@@ -518,7 +519,7 @@ def test_direct_residual_twin_matches_numpy_original(shell_stop):
     )
     np.testing.assert_allclose(np.asarray(got_residual), expected_residual, rtol=1e-14, atol=0.0)
     # The replaced image-power entries are exact zeros, so this half is bitwise.
-    assert np.array_equal(np.asarray(got_power), expected_power)
+    assert matches(np.asarray(got_power), expected_power)
 
 
 def test_segment_sum_by_image_matches_numpy_add_at():
@@ -672,12 +673,12 @@ def _assert_finalized_matches_host(got, expected, *, rtol, label=""):
             err_msg=f"{label}accumulator {name} outside {rtol} relative",
         )
     for name in _BITWISE_FLOAT_FIELDS:
-        assert np.array_equal(
+        assert matches(
             np.asarray(getattr(got, name)), np.asarray(expected[name])
         ), f"{label}{name} is not bitwise equal to the host tail"
         observed[name] = 0.0
     for name in _BITWISE_INT_FIELDS:
-        assert np.array_equal(
+        assert matches(
             np.asarray(getattr(got, name)), np.asarray(expected[name])
         ), f"{label}{name} is not bitwise equal to the host tail"
     logging.info("T9a %stolerances: %s", label, observed)
@@ -791,7 +792,7 @@ def test_padded_rows_and_images_contribute_nothing():
             err_msg=f"padding moved {name} beyond its reassociation band",
         )
     for name in _BITWISE_FLOAT_FIELDS + _BITWISE_INT_FIELDS + ("best_translation_indices",):
-        assert np.array_equal(
+        assert matches(
             np.asarray(getattr(padded, name)), np.asarray(getattr(tight, name))
         ), f"padding changed {name}"
 
@@ -824,13 +825,7 @@ def test_all_padding_chunk_is_a_no_op():
         "wsum_scale_correction_aa",
         "rotation_posterior_sums",
     ):
-        np.testing.assert_allclose(
-            np.asarray(getattr(after, name), dtype=np.float64),
-            np.asarray(getattr(reference, name), dtype=np.float64),
-            rtol=0.0,
-            atol=0.0,
-            err_msg=f"an empty chunk changed {name}",
-        )
+        assert_matches(np.asarray(getattr(after, name), dtype=np.float64), np.asarray(getattr(reference, name), dtype=np.float64), err_msg=f"an empty chunk changed {name}")
     assert float(after.sumw) == float(reference.sumw)
     assert float(after.wsum_sigma2_offset) == float(reference.wsum_sigma2_offset)
 

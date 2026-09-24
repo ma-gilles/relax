@@ -3,6 +3,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+from helpers.float_compare import matches
 
 from relax.local import local_em_engine
 
@@ -24,4 +25,4 @@ def test_owner_gathers_rows_and_zeroes_padding():
     assert str(jax.make_jaxpr(local_em_engine._packed_reconstruction_rows)(values, take, mask)) == str(
         jax.make_jaxpr(inline)(values, take, mask)
     )
-    assert np.array_equal(np.asarray(out), np.asarray(expected))
+    assert matches(np.asarray(out), np.asarray(expected))

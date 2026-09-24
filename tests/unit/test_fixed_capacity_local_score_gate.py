@@ -9,6 +9,7 @@ from pathlib import Path
 import jax
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.local import local_big_jit
 from scripts import run_fixed_capacity_local_score_gate as score_gate
@@ -96,7 +97,7 @@ def test_fixture_has_two_authoritative_calls_with_a_default_off_selector():
     fixture = score_gate.build_gate_fixture()
     signature = inspect.signature(score_gate.local_em_engine.run_local_em_exact)
 
-    np.testing.assert_array_equal(fixture.bucket_image_order, [1, 0, 2])
+    assert_matches(fixture.bucket_image_order, [1, 0, 2])
     assert fixture.bucket_image_capacity == 2
     assert fixture.bucket_radix == 16
     assert fixture.fixed_bundle.plan.valid_call_count == 2

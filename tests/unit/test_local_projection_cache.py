@@ -3,6 +3,7 @@
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.local import local_projection_cache as cache
 from relax.local.local_layout import LocalBucketSpec
@@ -106,12 +107,12 @@ def test_builder_preserves_first_rotation_for_id_and_chunk_arguments(monkeypatch
     # no longer grows with the largest global id (int64 ids at high sampling orders).
     assert result.enabled and result.row_count == 3
     assert result.projections.shape == (4, 3) and result.projections.dtype == np.complex64
-    np.testing.assert_array_equal(np.asarray(result.id_map), [0, 1, 2])
-    np.testing.assert_array_equal(cache.rows_for_bucket(result, [[2, 5, 8], [8, -1, 2]]), [[0, 1, 2], [2, 0, 0]])
+    assert_matches(np.asarray(result.id_map), [0, 1, 2])
+    assert_matches(cache.rows_for_bucket(result, [[2, 5, 8], [8, -1, 2]]), [[0, 1, 2], [2, 0, 0]])
     with pytest.raises(RuntimeError, match="missing from the RELION projection cache"):
         cache.rows_for_bucket(result, [[2, 6]])
     # Only defined rows are read; padding remains uninitialized by contract.
-    np.testing.assert_array_equal(np.asarray(result.projections)[:3], np.repeat([[11], [10], [21]], 3, axis=1))
+    assert_matches(np.asarray(result.projections)[:3], np.repeat([[11], [10], [21]], 3, axis=1))
     assert barriers == [1, 1, 1, 2]
     for rotations, kwargs in calls:
         assert rotations.dtype == np.float32 and rotations.shape == (1, 3, 3)
@@ -120,7 +121,7 @@ def test_builder_preserves_first_rotation_for_id_and_chunk_arguments(monkeypatch
         assert kwargs["return_abs2"] is False and kwargs["centered_rows"] and kwargs["dense_scale"]
         assert kwargs["projector_output_size"] == 4
         assert kwargs.get("mask_current_image_disk", False) is mask_disk
-        np.testing.assert_array_equal(kwargs["pixel_indices"], [7, 0, 7])
+        assert_matches(kwargs["pixel_indices"], [7, 0, 7])
 
 
 def test_builder_disabled_and_oversized_groups_do_not_project(monkeypatch):
@@ -142,7 +143,7 @@ def test_builder_disabled_and_oversized_groups_do_not_project(monkeypatch):
     for buckets, capacity in [([], 1), ([bucket([0])], 0), ([bucket([-1])], 1)]:
         result = cache.build_cache(buckets, object(), cache_row_capacity=capacity, **kwargs)
         assert not result.enabled and result.projections.shape == (1, 1)
-        np.testing.assert_array_equal(result.id_map, [0])
+        assert_matches(result.id_map, [0])
     with pytest.raises(RuntimeError, match="group has 2 rows but capacity is 1"):
         cache.build_cache([bucket([0, 1])], object(), cache_row_capacity=1, **kwargs)
 

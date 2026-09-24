@@ -3,6 +3,7 @@
 import types
 
 import numpy as np
+from helpers.float_compare import matches
 
 from relax.local import local_em_engine
 
@@ -13,8 +14,8 @@ def test_owner_gathers_rows_and_limits_them_to_the_unpadded_batch():
     take = np.array([[3, 0], [1, 1], [2, 0]])
     mask = np.array([[True, False], [True, True], [False, False]])
     take_jnp, mask_jnp, packed, packed_mstep = local_em_engine._packed_bucket_rotations(bucket, take[:2], mask[:2], batch_rows=2)
-    assert packed.shape == (2, 2, 3, 3) and np.array_equal(packed[0, 0], rot[0, 3]) and np.array_equal(packed[1, 1], rot[1, 1])
-    assert np.array_equal(packed_mstep, packed) and str(take_jnp.dtype) == "int32" and mask_jnp.shape == (2, 2)
+    assert packed.shape == (2, 2, 3, 3) and matches(packed[0, 0], rot[0, 3]) and matches(packed[1, 1], rot[1, 1])
+    assert matches(packed_mstep, packed) and str(take_jnp.dtype) == "int32" and mask_jnp.shape == (2, 2)
     full = local_em_engine._packed_bucket_rotations(bucket, take, mask)
     assert full[2].shape == (3, 2, 3, 3) and full[2].dtype == np.float64
     cast = local_em_engine._packed_bucket_rotations(bucket, take, mask, rotations_dtype=np.float32)

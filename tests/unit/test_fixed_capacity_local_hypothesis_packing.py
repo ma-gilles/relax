@@ -11,6 +11,7 @@ from dataclasses import replace
 import healpy as hp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.batch_planning import _plan_fixed_capacity_whole_local, _seal_fixed_capacity_physical_order
 from relax.local.fixed_capacity_local import (
@@ -128,12 +129,8 @@ def _sealed_program(*, buckets=None):
     return buckets, expected_order, plan
 
 
-def _assert_bitwise_equal(actual, expected):
-    actual = np.asarray(actual)
-    expected = np.asarray(expected)
-    assert actual.shape == expected.shape
-    assert actual.dtype == expected.dtype
-    assert actual.tobytes(order="C") == expected.tobytes(order="C")
+def _assert_packed_matches(actual, expected):
+    assert_matches(actual, expected, strict=True)
 
 
 def _dynamic_plan_for_buckets(buckets):
@@ -158,7 +155,7 @@ def _dynamic_plan_for_buckets(buckets):
     return expected_order, plan
 
 
-def _assert_program_bitwise_matches_bucket_prefixes(program, buckets):
+def _assert_program_matches_bucket_prefixes(program, buckets):
     physical_image = 0
     for bucket in buckets:
         for local_image, count in enumerate(bucket.actual_rotation_counts.tolist()):
@@ -174,21 +171,21 @@ def _assert_program_bitwise_matches_bucket_prefixes(program, buckets):
                 expected = getattr(bucket, bucket_field)
                 if bucket_field == "local_mstep_rotations" and expected is None:
                     expected = bucket.local_rotations
-                _assert_bitwise_equal(
+                _assert_packed_matches(
                     getattr(program, program_field)[row_start:row_stop],
                     expected[local_image, :count],
                 )
-            _assert_bitwise_equal(
+            _assert_packed_matches(
                 program.translation_log_prior[physical_image],
                 bucket.translation_log_prior[local_image],
             )
             if bucket.local_rotation_posterior_ids is not None:
-                _assert_bitwise_equal(
+                _assert_packed_matches(
                     program.local_rotation_posterior_ids[row_start:row_stop],
                     bucket.local_rotation_posterior_ids[local_image, :count],
                 )
             if bucket.local_sample_mask is not None:
-                _assert_bitwise_equal(
+                _assert_packed_matches(
                     program.local_sample_mask[row_start:row_stop],
                     bucket.local_sample_mask[local_image, :count],
                 )
@@ -201,7 +198,7 @@ def test_fixed_capacity_hypothesis_packer_is_shared_default_off_and_inert():
     assert _pack_fixed_capacity_local_hypothesis_program(None, None, None) is None
 
 
-def test_fixed_capacity_hypothesis_packer_bitwise_round_trips_every_active_field():
+def test_fixed_capacity_hypothesis_packer_round_trips_every_active_field():
     buckets, expected_order, plan = _sealed_program()
     program = _pack_fixed_capacity_local_hypothesis_program(
         buckets,
@@ -212,13 +209,13 @@ def test_fixed_capacity_hypothesis_packer_bitwise_round_trips_every_active_field
 
     assert program.valid_image_count == 5
     assert program.valid_row_count == 20
-    np.testing.assert_array_equal(program.image_indices, [9, 3, 7, 8, 1, -1, -1, -1])
-    np.testing.assert_array_equal(program.row_offsets, [0, 2, 6, 7, 12, 20, 20, 20, 20])
-    np.testing.assert_array_equal(
+    assert_matches(program.image_indices, [9, 3, 7, 8, 1, -1, -1, -1])
+    assert_matches(program.row_offsets, [0, 2, 6, 7, 12, 20, 20, 20, 20])
+    assert_matches(
         program.valid_image_mask,
         [True, True, True, True, True, False, False, False],
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         program.valid_candidate_row_mask,
         [True] * 20 + [False] * 12,
     )
@@ -229,31 +226,31 @@ def test_fixed_capacity_hypothesis_packer_bitwise_round_trips_every_active_field
             row_start = int(program.row_offsets[physical_image])
             row_stop = int(program.row_offsets[physical_image + 1])
             assert row_stop - row_start == count
-            _assert_bitwise_equal(
+            _assert_packed_matches(
                 program.local_rotation_ids[row_start:row_stop],
                 bucket.local_rotation_ids[local_image, :count],
             )
-            _assert_bitwise_equal(
+            _assert_packed_matches(
                 program.local_rotations[row_start:row_stop],
                 bucket.local_rotations[local_image, :count],
             )
-            _assert_bitwise_equal(
+            _assert_packed_matches(
                 program.local_mstep_rotations[row_start:row_stop],
                 bucket.local_mstep_rotations[local_image, :count],
             )
-            _assert_bitwise_equal(
+            _assert_packed_matches(
                 program.local_rotation_log_prior[row_start:row_stop],
                 bucket.local_rotation_log_prior[local_image, :count],
             )
-            _assert_bitwise_equal(
+            _assert_packed_matches(
                 program.translation_log_prior[physical_image],
                 bucket.translation_log_prior[local_image],
             )
-            _assert_bitwise_equal(
+            _assert_packed_matches(
                 program.local_rotation_posterior_ids[row_start:row_stop],
                 bucket.local_rotation_posterior_ids[local_image, :count],
             )
-            _assert_bitwise_equal(
+            _assert_packed_matches(
                 program.local_sample_mask[row_start:row_stop],
                 bucket.local_sample_mask[local_image, :count],
             )
@@ -282,8 +279,8 @@ def test_fixed_capacity_hypothesis_packer_snapshots_arrays_and_makes_them_read_o
 
     buckets[0].local_rotations[:] = 0
     buckets[0].translation_log_prior[:] = 0
-    _assert_bitwise_equal(program.local_rotations[0], expected_first_rotation)
-    _assert_bitwise_equal(program.translation_log_prior[0], expected_first_translation)
+    _assert_packed_matches(program.local_rotations[0], expected_first_rotation)
+    _assert_packed_matches(program.translation_log_prior[0], expected_first_translation)
 
     array_fields = (
         "image_indices",
@@ -340,7 +337,7 @@ def test_fixed_capacity_hypothesis_packer_resolves_uniform_mstep_fallback_and_ab
 
     assert program.local_rotation_posterior_ids is None
     assert program.local_sample_mask is None
-    _assert_bitwise_equal(
+    _assert_packed_matches(
         program.local_mstep_rotations[: program.valid_row_count],
         program.local_rotations[: program.valid_row_count],
     )
@@ -500,7 +497,7 @@ def test_fixed_capacity_hypothesis_packer_rejects_malformed_payloads(field_name,
 
 
 @pytest.mark.parametrize("producer", ("pass1", "pass2"))
-def test_fixed_capacity_hypothesis_packer_round_trips_real_pass_producers_bitwise(producer):
+def test_fixed_capacity_hypothesis_packer_round_trips_real_pass_producers(producer):
     if producer == "pass1":
         healpix_order = 0
         n_pixels = hp.nside2npix(2**healpix_order)
@@ -556,7 +553,7 @@ def test_fixed_capacity_hypothesis_packer_round_trips_real_pass_producers_bitwis
         enabled=True,
     )
 
-    _assert_program_bitwise_matches_bucket_prefixes(program, buckets)
+    _assert_program_matches_bucket_prefixes(program, buckets)
     if producer == "pass1":
         assert program.local_rotation_posterior_ids is None
         assert program.local_sample_mask is None

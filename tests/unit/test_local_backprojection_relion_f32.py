@@ -11,6 +11,7 @@ from relax.local.local_backprojection import (
     compute_local_weighted_sums,
     compute_relion_sequential_mstep_sums,
 )
+from helpers.float_compare import assert_matches
 
 
 def test_relion_f32_sequential_mstep_sums_match_numpy_translation_loop_exactly():
@@ -28,8 +29,8 @@ def test_relion_f32_sequential_mstep_sums_match_numpy_translation_loop_exactly()
 
     assert actual_y.dtype == np.dtype(np.complex64)
     assert actual_ctf.dtype == np.dtype(np.float32)
-    np.testing.assert_array_equal(np.asarray(actual_y), expected_y)
-    np.testing.assert_array_equal(np.asarray(actual_ctf), expected_ctf)
+    assert_matches(np.asarray(actual_y), expected_y)
+    assert_matches(np.asarray(actual_ctf), expected_ctf)
     # This cancellation pattern distinguishes left-to-right float32 carrying
     # from a higher-precision or reassociated reduction.
     assert np.asarray(actual_y)[0, 0, 0] == np.complex64(0.0 + 4.0j)
@@ -68,7 +69,7 @@ def test_local_weighted_sums_match_explicit_highest_precision_matmul():
     actual = compute_local_weighted_sums(probs, shifted)
     expected = jnp.matmul(probs, shifted, precision=jax.lax.Precision.HIGHEST)
 
-    np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
+    assert_matches(np.asarray(actual), np.asarray(expected))
 
 
 @pytest.mark.parametrize(
@@ -94,7 +95,7 @@ def test_local_mstep_sums_env_gate_preserves_xfloat_precision(
     assert normal_ctf.dtype == np.dtype(real_dtype)
     expected_value = 0.0 if real_dtype == np.float32 else 1.0
     assert np.asarray(xhalf_y)[0, 0, 0] == expected_value
-    np.testing.assert_array_equal(np.asarray(normal_ctf), np.array([[[6.0]]], dtype=real_dtype))
+    assert_matches(np.asarray(normal_ctf), np.array([[[6.0]]], dtype=real_dtype))
 
 
 def test_local_noise_scalar_terms_match_dense_relion_order_exactly():
@@ -148,7 +149,7 @@ def test_local_noise_scalar_terms_match_dense_relion_order_exactly():
         (support_mass, translation_posterior, noise_sumw_offset),
         strict=True,
     ):
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(actual_value),
             np.asarray(expected_value),
         )
@@ -212,5 +213,5 @@ def test_local_mstep_sums_preserve_promoted_precision_for_mixed_operands(monkeyp
     assert normal_ctf.dtype == np.dtype(np.float64)
     assert np.asarray(xhalf_y)[0, 0, 0] == 1.0
     assert np.asarray(normal_y)[0, 0, 0] == 1.0
-    np.testing.assert_array_equal(np.asarray(normal_ctf), np.array([[[6.0]]], dtype=np.float64))
-    np.testing.assert_array_equal(xhalf_ctf, normal_ctf)
+    assert_matches(np.asarray(normal_ctf), np.array([[[6.0]]], dtype=np.float64))
+    assert_matches(xhalf_ctf, normal_ctf)

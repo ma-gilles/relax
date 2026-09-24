@@ -28,6 +28,7 @@ from relax.classification.k_class import run_local_k_class_em
 from relax.local import local_big_jit
 from relax.local.local_layout import LocalHypothesisLayout
 from test_refine_relion_mode import IMAGE_SIZE, VOLUME_SHAPE, MockDataset
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -254,13 +255,13 @@ def test_segmented_pass_matches_per_class_calls(float64, rtol, atol_scale, use_f
     close([segmented.aggregate_noise_stats.sumw], [baseline.aggregate_noise_stats.sumw], "aggregate noise sumw")
 
     # Discrete decisions and published metadata must agree exactly.
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(segmented.per_class_hard_assignments), np.asarray(baseline.per_class_hard_assignments),
     )
-    np.testing.assert_array_equal(np.asarray(segmented.class_assignments), np.asarray(baseline.class_assignments))
-    np.testing.assert_array_equal(np.asarray(segmented.pose_assignments), np.asarray(baseline.pose_assignments))
+    assert_matches(np.asarray(segmented.class_assignments), np.asarray(baseline.class_assignments))
+    assert_matches(np.asarray(segmented.pose_assignments), np.asarray(baseline.pose_assignments))
     for class_index in range(n_classes):
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(segmented.per_class_best_pose_rotation_ids[class_index]),
             np.asarray(baseline.per_class_best_pose_rotation_ids[class_index]),
         )
@@ -277,10 +278,10 @@ def test_segmented_pass_publishes_the_canonical_source_eulers():
     for class_index in range(2):
         got = np.asarray(segmented.per_class_best_pose_eulers_deg[class_index], dtype=np.float64)
         want = np.asarray(baseline.per_class_best_pose_eulers_deg[class_index], dtype=np.float64)
-        np.testing.assert_array_equal(got, want)
+        assert_matches(got, want)
         # The published values are the layout's canonical angles, not matrix-derived ones.
-        np.testing.assert_array_equal(got[:, :2], np.tile(CANONICAL_EULERS[:2], (N_IMAGES, 1)))
-    np.testing.assert_array_equal(
+        assert_matches(got[:, :2], np.tile(CANONICAL_EULERS[:2], (N_IMAGES, 1)))
+    assert_matches(
         np.asarray(segmented.best_pose_eulers_deg, dtype=np.float64),
         np.asarray(baseline.best_pose_eulers_deg, dtype=np.float64),
     )
@@ -337,7 +338,7 @@ def test_class_packs_contain_only_their_own_rows():
                 significant[image, start_row:stop_row] & local_mask[image, start_row:stop_row]
                 & (probs_sum_t[image, start_row:stop_row] > 0.0)
             ) + start_row
-            np.testing.assert_array_equal(np.sort(take[image][mask[image]]), expected)
+            assert_matches(np.sort(take[image][mask[image]]), expected)
         selected_by_class.append(set(chosen.tolist()))
 
     # Disjoint, and together exactly the joint selection.
@@ -396,8 +397,8 @@ def test_a_class_without_rows_receives_an_exactly_zero_volume(float64, empty_cla
     _assert_sparse_reconstruction_route_was_used(result)
     empty_y = np.asarray(result.Ft_y[empty_class])
     empty_ctf = np.asarray(result.Ft_ctf[empty_class])
-    np.testing.assert_array_equal(empty_y, np.zeros_like(empty_y))
-    np.testing.assert_array_equal(empty_ctf, np.zeros_like(empty_ctf))
+    assert_matches(empty_y, np.zeros_like(empty_y))
+    assert_matches(empty_ctf, np.zeros_like(empty_ctf))
     populated = np.asarray(result.Ft_ctf[1 - empty_class])
     assert np.abs(populated).max() > 0.0
 

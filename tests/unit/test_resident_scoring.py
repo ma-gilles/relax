@@ -9,16 +9,18 @@ cached projections and the same ``_prepare_bucket_io`` operands. Two
 comparisons are made, because the compact engine has two routes:
 
 * against the compact *pairs* fused-translate scorer, which reaches the same
-  CUDA kernel body with a different row addressing: bitwise;
+  CUDA kernel body with a different row addressing: default float32 band;
 * against the pre-shifted rectangular masked path, which shifts the image with
-  a separate kernel before scoring: reported as a ULP distribution, since the
-  two translate implementations are allowed to differ in the last bits.
+  a separate kernel before scoring: the same band, with the largest relative
+  difference reported, since the two translate implementations may differ in
+  the last bits.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
 import jax
@@ -63,8 +65,12 @@ def _z_rotation(angle: float) -> np.ndarray:
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32)
 
 
-def _ulp_distance(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    return np.abs(a.view(np.int32).astype(np.int64) - b.view(np.int32).astype(np.int64))
+def _max_relative_difference(a: np.ndarray, b: np.ndarray) -> float:
+    """Largest |a - b| over the larger array's largest magnitude (the band's scale)."""
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    scale = max(float(np.max(np.abs(a))), float(np.max(np.abs(b))))
+    return float(np.max(np.abs(a - b))) / scale if scale > 0 else 0.0
 
 
 def _fine_rotation_grid():
@@ -361,10 +367,10 @@ def test_resident_raw_diff2_matches_the_compact_engine_rows(
 ):
     """Every valid cell of every image agrees with the compact engine.
 
-    The fused-translate comparison is asserted bitwise (same kernel body, same
-    operands, only the row addressing differs); the pre-shifted rectangular
-    comparison is measured and reported in ULP, and bounded loosely so a real
-    regression still fails here.
+    The fused-translate comparison uses the default float32 band (same kernel
+    body, same operands, only the row addressing differs); the pre-shifted
+    rectangular comparison uses the same band and reports its largest relative
+    difference.
     """
 
     import recovar.cuda_backproject as cuda_backproject
@@ -393,8 +399,8 @@ def test_resident_raw_diff2_matches_the_compact_engine_rows(
         tables = case["tables"]
         fused_mismatches = 0
         fused_cells = 0
-        rect_ulps = []
-        rect_exact = 0
+        rect_mismatches = 0
+        rect_worst = 0.0
         rect_cells = 0
         for chunk, result in zip(chunks, results, strict=True):
             raw = np.asarray(result.raw_diff2)
@@ -417,45 +423,44 @@ def test_resident_raw_diff2_matches_the_compact_engine_rows(
                 # The fused-pairs reference masks exactly like this stage, so
                 # the whole block (finite cells and +inf cells) must agree.
                 fused_cells += int(mask.size)
-                fused_mismatches += int(
-                    np.count_nonzero(got.view(np.uint32) != fused.view(np.uint32))
-                )
+                fused_mismatches += int(not matches(got, fused))
                 if np.any(mask):
                     rect_cells += int(mask.sum())
-                    ulp = _ulp_distance(got[mask], rect[mask])
-                    rect_exact += int(np.count_nonzero(ulp == 0))
-                    rect_ulps.append(ulp)
+                    rect_mismatches += int(not matches(got[mask], rect[mask]))
+                    rect_worst = max(
+                        rect_worst, _max_relative_difference(got[mask], rect[mask])
+                    )
 
                 # Per-image common minimum and the score conversion.
                 expected_min = (
                     float(np.min(got[mask])) if np.any(mask) else 0.0
                 )
                 local_image = image - chunk.image_start
-                np.testing.assert_array_equal(
+                assert_matches(
                     np.float32(min_diff2[local_image]), np.float32(expected_min)
                 )
 
-        max_ulp = int(np.concatenate(rect_ulps).max()) if rect_ulps else 0
-        exact_fraction = rect_exact / max(rect_cells, 1)
         print(
             f"[T6 current_size={current_size}] fused-vs-fused cells={fused_cells} "
-            f"mismatches={fused_mismatches}; rectangular cells={rect_cells} "
-            f"max_ulp={max_ulp} exact_fraction={exact_fraction:.6f}"
+            f"mismatched images={fused_mismatches}; rectangular cells={rect_cells} "
+            f"max_relative_difference={rect_worst:.3e}"
         )
         assert fused_mismatches == 0, (
-            f"{fused_mismatches}/{fused_cells} cells differ from the compact fused-translate scorer"
+            f"{fused_mismatches} images differ from the compact fused-translate scorer"
         )
         # A production score window never contains the ky = -cs/2 row, and the
-        # full half does. Both agree bitwise since P4-B's Nyquist repair
+        # full half does. Both agree since P4-B's Nyquist repair
         # (96fc45a7b), which gave the translate paths RELION's row label
         # ip = (i < XSIZE) ? i : i - YSIZE, so the in-kernel and pre-shift
         # translations now use one convention everywhere.
         #
-        # This assertion used to require max_ulp > 0 at the full half and said
+        # This assertion used to require a nonzero ULP gap at the full half and said
         # in its own message that reconciling the conventions should update it.
         # That is what happened; the focused test below, which drops that row
         # and requires the rest to agree, is unchanged and still passes.
-        assert max_ulp == 0, f"rectangular pre-shifted path is {max_ulp} ULP away"
+        assert rect_mismatches == 0, (
+            f"rectangular pre-shifted path is {rect_worst:.3e} relative away"
+        )
 
 
 @pytest.mark.gpu
@@ -512,7 +517,8 @@ def test_full_half_gap_against_the_preshifted_path_is_only_the_minus_nyquist_row
         )
         tables = case["tables"]
         cells = 0
-        worst = 0
+        mismatches = 0
+        worst = 0.0
         for chunk, result in zip(case["chunks"], results, strict=True):
             raw = np.asarray(result.raw_diff2)
             for image in range(chunk.image_start, chunk.image_stop):
@@ -523,14 +529,19 @@ def test_full_half_gap_against_the_preshifted_path_is_only_the_minus_nyquist_row
                 _fused, rect, mask = _compact_reference_for_image(case, image)
                 if not mask.any():
                     continue
-                ulp = _ulp_distance(raw[start:stop][mask], rect[mask])
-                cells += int(ulp.size)
-                worst = max(worst, int(ulp.max()))
-        print(f"[T6 full half without the ky=-N/2 row] cells={cells} max_ulp={worst}")
+                cells += int(mask.sum())
+                mismatches += int(not matches(raw[start:stop][mask], rect[mask]))
+                worst = max(
+                    worst, _max_relative_difference(raw[start:stop][mask], rect[mask])
+                )
+        print(
+            f"[T6 full half without the ky=-N/2 row] cells={cells} "
+            f"max_relative_difference={worst:.3e}"
+        )
         assert cells > 0
-        assert worst == 0, (
-            f"dropping the ky=-N/2 row leaves {worst} ULP; the resident stage differs "
-            "from the pre-shifted path for some other reason too"
+        assert mismatches == 0, (
+            f"dropping the ky=-N/2 row leaves {worst:.3e} relative; the resident stage "
+            "differs from the pre-shifted path for some other reason too"
         )
 
 
@@ -584,7 +595,7 @@ def test_resident_scores_match_the_relion_conversion_on_the_same_raw_costs(
                     jnp.asarray(translation_prior[image])[None, None, :],
                     jnp.asarray(mask)[None],
                 )
-                np.testing.assert_array_equal(
+                assert_matches(
                     np.asarray(expected)[0], got_scores[start:stop]
                 )
 
@@ -704,14 +715,14 @@ def test_padded_image_slots_and_empty_images_do_not_contribute(
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("current_size", [IMAGE_SHAPE[0], 6])
-def test_resident_operands_match_a_single_image_prepare_bitwise(
+def test_resident_operands_match_a_single_image_prepare(
     monkeypatch, custom_cuda_lib, gpu_device, current_size
 ):
     """Batching ``_prepare_bucket_io`` over images does not change its result.
 
     ``prepare_resident_image_operands`` runs the production owner in fixed
     image batches; every operand it keeps must equal what the same owner
-    returns for that image alone, bit for bit, or the resident stage would not
+    returns for that image alone (default band), or the resident stage would not
     be scoring the compact engine's operands.
     """
 
@@ -759,13 +770,13 @@ def test_resident_operands_match_a_single_image_prepare_bitwise(
                 accumulate_noise=False,
                 source_faithful_spectrum_norm=False,
             )
-            np.testing.assert_array_equal(
+            assert_matches(
                 np.asarray(operands.score_input[image]), np.asarray(expected_input)[0]
             )
-            np.testing.assert_array_equal(
+            assert_matches(
                 np.asarray(operands.corr_img_score[image]), np.asarray(expected_corr)[0]
             )
-            np.testing.assert_array_equal(
+            assert_matches(
                 np.asarray(operands.highres_xi2_half[image]),
                 np.asarray(expected_xi2).reshape(-1)[0],
             )

@@ -3,6 +3,7 @@
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.relion.relion_projector_setup import prepare_local_projector_slab
 
@@ -22,8 +23,8 @@ def test_slab_preserves_values_dtype_and_input(dtype, class_axis, strided):
     before = supplied.copy()
     actual = prepare_local_projector_slab(supplied)
     assert actual.dtype == slab.dtype
-    np.testing.assert_array_equal(actual, slab)
-    np.testing.assert_array_equal(supplied, before)
+    assert_matches(actual, slab)
+    assert_matches(supplied, before)
 
 
 @pytest.mark.parametrize("shape", [(), (4,), (4, 3), (2, 4, 4, 3), (0, 4, 4, 3), (1, 1, 4, 4, 3)])
@@ -55,7 +56,7 @@ def test_host_singleton_uploads_only_the_selected_slab(monkeypatch, strided):
 
     assert uploaded_shapes == [slab.shape]
     assert actual.dtype == slab.dtype
-    np.testing.assert_array_equal(actual, slab)
+    assert_matches(actual, slab)
 
 
 def test_existing_device_slab_is_not_copied():

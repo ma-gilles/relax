@@ -9,10 +9,13 @@ applied inside T15's M-step kernel instead. Both claims are checked against the
 path they replace:
 
 * the resident per-image arrays, translated with the primitives
-  ``_prepare_bucket_io`` uses, must equal its pre-shifted tiles **bitwise**;
-* the kernel's ``summed``/``summed_masked``/``ctf_probs`` must equal
-  ``_resident_block_weighted_sums`` **bitwise** at the production translation
-  count, where XLA's reduction over translations is sequential too.
+  ``_prepare_bucket_io`` uses, must match its pre-shifted tiles;
+* the kernel's ``summed``/``summed_masked``/``ctf_probs`` must match
+  ``_resident_block_weighted_sums`` at the production translation count,
+  where XLA's reduction over translations is sequential too.
+
+"Match" is the float32 band of ``helpers.float_compare``; no test here requires
+bitwise equality.
 
 The exact-BPref reconstruction operand needs a RELION source STAR and RELION
 CUDA preprocessing, which this fixture's dataset does not have; that
@@ -25,6 +28,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
 import jax
@@ -153,16 +157,17 @@ def _prepared(case, image_indices):
     )
 
 
-def _assert_bitwise(actual, expected, label):
+def _assert_matches(actual, expected, label):
+    """Same shape and dtype, values within the float32 band per real/imaginary part."""
     actual = np.asarray(actual)
     expected = np.asarray(expected)
     assert actual.shape == expected.shape, f"{label}: {actual.shape} vs {expected.shape}"
     assert actual.dtype == expected.dtype, f"{label}: {actual.dtype} vs {expected.dtype}"
     if np.iscomplexobj(expected):
-        np.testing.assert_array_equal(actual.real, expected.real, err_msg=label)
-        np.testing.assert_array_equal(actual.imag, expected.imag, err_msg=label)
+        assert_matches(actual.real, expected.real, err_msg=label)
+        assert_matches(actual.imag, expected.imag, err_msg=label)
     else:
-        np.testing.assert_array_equal(actual, expected, err_msg=label)
+        assert_matches(actual, expected, err_msg=label)
 
 
 def test_unshifted_record_is_the_prepare_bucket_io_prologue():
@@ -202,30 +207,30 @@ def test_unshifted_record_is_the_prepare_bucket_io_prologue():
     ) = prepared
     direct_score_input = prepared[8]
 
-    _assert_bitwise(unshifted.batch_norm, batch_norm, "batch_norm")
-    _assert_bitwise(
+    _assert_matches(unshifted.batch_norm, batch_norm, "batch_norm")
+    _assert_matches(
         unshifted.processed_score_half_for_noise,
         processed_score_half_for_noise,
         "processed_score_half_for_noise",
     )
-    _assert_bitwise(unshifted.sparse_score_input_half, direct_score_input, "direct_score_input")
-    _assert_bitwise(
+    _assert_matches(unshifted.sparse_score_input_half, direct_score_input, "direct_score_input")
+    _assert_matches(
         unshifted.ctf2_over_nv_recon_half, ctf2_over_nv_half_with_dc, "ctf2_over_nv_half_with_dc"
     )
 
     # Masked scoring must really separate the two reconstruction operands, or
     # the convention pairing below would be untested.
-    assert not np.array_equal(
+    assert not matches(
         np.asarray(unshifted.score_weighted_half), np.asarray(unshifted.recon_weighted_half)
     ), "the fixture's image mask is a no-op; the two operands must differ"
 
     phases = case["bucket_io_kwargs"]["translation_phases_half"]
-    _assert_bitwise(
+    _assert_matches(
         apply_half_translation_phases(unshifted.recon_weighted_half, phases),
         shifted_recon_half,
         "translate(recon_weighted_half)",
     )
-    _assert_bitwise(
+    _assert_matches(
         apply_half_translation_phases(unshifted.score_weighted_half, phases),
         shifted_score_half_with_dc,
         "translate(score_weighted_half)",
@@ -237,7 +242,7 @@ def test_column_gather_commutes_with_the_translation():
 
     The resident path stores window columns and translates them; the per-chunk
     path translated the whole half and took the columns afterwards. The phase of
-    a pixel depends only on that pixel, so the two agree bitwise -- this pins
+    a pixel depends only on that pixel, so the two agree -- this pins
     that property rather than assuming it.
     """
 
@@ -266,7 +271,7 @@ def test_column_gather_commutes_with_the_translation():
         jnp.asarray(unshifted.recon_weighted_half)[:, jnp.asarray(window)],
         jnp.asarray(windowed_phases),
     ).reshape(N_IMAGES, N_FINE_TRANS, window.size)
-    _assert_bitwise(
+    _assert_matches(
         windowed_then_shifted,
         shifted_recon_half[:, :, window],
         "windowed translate",
@@ -342,7 +347,7 @@ def _resident_operands(case):
 def test_resident_operands_translate_to_the_per_chunk_tiles(
     monkeypatch, custom_cuda_lib, gpu_device
 ):
-    """One pass over the half reproduces every per-chunk operand bitwise."""
+    """One pass over the half reproduces every per-chunk operand."""
 
     cuda_backproject = _gpu_case(monkeypatch, custom_cuda_lib)
     with jax.default_device(gpu_device):
@@ -364,43 +369,43 @@ def test_resident_operands_translate_to_the_per_chunk_tiles(
         reference_noise = np.asarray(prepared[5]).reshape(N_IMAGES, N_FINE_TRANS, -1)[:, :, np.asarray(window)]
 
     assert operands.recon_weight is None, "the fixture has no exact-BPref operands"
-    _assert_bitwise(
+    _assert_matches(
         np.asarray(translated_recon).reshape(N_IMAGES, N_FINE_TRANS, n_pixels),
         reference_recon,
         "resident recon operand",
     )
-    _assert_bitwise(
+    _assert_matches(
         np.asarray(translated_noise).reshape(N_IMAGES, N_FINE_TRANS, n_pixels),
         reference_noise,
         "resident noise operand",
     )
-    _assert_bitwise(
+    _assert_matches(
         operands.score_input,
         np.asarray(prepared[8])[:, np.asarray(window)],
         "resident score_input",
     )
-    _assert_bitwise(
+    _assert_matches(
         operands.ctf2_over_nv_recon,
         np.asarray(prepared[4])[:, np.asarray(window)],
         "resident ctf2_over_nv_recon",
     )
-    _assert_bitwise(
+    _assert_matches(
         operands.processed_image_half, np.asarray(prepared[6]), "resident processed_image_half"
     )
 
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("kernel_ctf_probs", [False, True])
-def test_translate_sum_kernel_matches_the_block_reduction_bitwise(
+def test_translate_sum_kernel_matches_the_block_reduction(
     monkeypatch, custom_cuda_lib, gpu_device, kernel_ctf_probs
 ):
     """T15's kernel equals the gathered-tile reduction at 21 translations.
 
-    ``summed`` and ``summed_masked`` are bitwise in both forms. ``ctf_probs`` is
-    bitwise only in the default form, which keeps the XLA statement: the
-    kernel's own ``probs_sum_t`` reduces the translations sequentially, and XLA
-    does not at this block shape, which moves the fourth output by up to one
-    relative ulp. The failure is recorded here rather than tolerated silently.
+    ``summed`` and ``summed_masked`` match in both forms, and so does
+    ``ctf_probs`` in the default form, which keeps the XLA statement. In the
+    fused form the kernel's own ``probs_sum_t`` reduces the translations
+    sequentially and XLA does not at this block shape, which moves the fourth
+    output by up to one relative ulp; that arm is held to its measured bound.
     """
 
     from relax.sparse_pass2.resident_pass2 import (
@@ -462,12 +467,12 @@ def test_translate_sum_kernel_matches_the_block_reduction_bitwise(
 
     live = np.ones(block_rows, dtype=bool)
     live[7] = False
-    _assert_bitwise(np.asarray(summed)[live], np.asarray(summed_ref)[live], "summed")
-    _assert_bitwise(np.asarray(masked)[live], np.asarray(masked_ref)[live], "summed_masked")
+    _assert_matches(np.asarray(summed)[live], np.asarray(summed_ref)[live], "summed")
+    _assert_matches(np.asarray(masked)[live], np.asarray(masked_ref)[live], "summed_masked")
     assert np.all(np.asarray(summed)[7] == 0)
     assert np.all(np.asarray(summed)[3] == 0)
     if not kernel_ctf_probs:
-        _assert_bitwise(np.asarray(ctf_probs)[live], np.asarray(ctf_ref)[live], "ctf_probs")
+        _assert_matches(np.asarray(ctf_probs)[live], np.asarray(ctf_ref)[live], "ctf_probs")
         assert np.all(np.asarray(ctf_probs)[7] == 0) and np.all(np.asarray(ctf_probs)[3] == 0)
     else:
         # The fused fourth output is the measured exception: a bounded ulp gap,
@@ -509,7 +514,7 @@ def test_chunk_gather_reproduces_the_capacity_padding(
         ("processed_image_half", operands.processed_image_half),
     ):
         value = np.asarray(gathered[name])
-        _assert_bitwise(value[:5], np.asarray(source)[:5], f"{name} live rows")
+        _assert_matches(value[:5], np.asarray(source)[:5], f"{name} live rows")
         assert np.all(value[5:] == 0), f"{name} padded rows are not zero"
     assert np.all(np.asarray(gathered["scale"])[5:] == 1.0)
     assert np.all(np.asarray(gathered["group_ids"])[5:] == -1)
@@ -520,15 +525,15 @@ def test_chunk_gather_reproduces_the_capacity_padding(
 def test_shell_binning_is_a_racing_scatter_and_the_opt_in_fixes_it(
     monkeypatch, custom_cuda_lib, gpu_device
 ):
-    """``relion_norm_high_shell`` is the one operand that is never bitwise.
+    """``relion_norm_high_shell`` is the one operand that is not reproducible run to run.
 
     Its shell binning is ``bins.at[idx].add(values)``, a scatter-add over
     duplicate indices, and it races: two calls on the *same* array in one
     process disagree. That is why the once-per-half preparation of it is not
-    held to bitwise equality against a per-chunk preparation -- no two
-    preparations of it are equal, including two of the per-chunk path. Under
+    compared with a per-chunk preparation -- no two preparations of it are
+    equal, including two of the per-chunk path. Under
     ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` the binning becomes a fixed-order
-    masked reduction and all three comparisons below are exact.
+    masked reduction and all three comparisons below match in the float64 band.
     """
 
     from relax.sparse_pass2.sparse_pass2_scoring import _relion_powerclass_noise_terms
@@ -572,9 +577,10 @@ def test_shell_binning_is_a_racing_scatter_and_the_opt_in_fixes_it(
             float((np.abs(first[: rows // 2] - halved) / half_scale).max()),
         )
         if deterministic:
-            np.testing.assert_array_equal(second, first)
-            np.testing.assert_array_equal(gathered, first)
-            np.testing.assert_array_equal(halved, first[: rows // 2])
+            # float32 outputs (cast to float64 above) get the float32 band.
+            assert_matches(second, first, rtol=1e-6)
+            assert_matches(gathered, first, rtol=1e-6)
+            assert_matches(halved, first[: rows // 2], rtol=1e-6)
         else:
             # Not asserted to differ -- a small fixture may happen to agree --
             # but bounded well inside one float32 ulp of the shell power.

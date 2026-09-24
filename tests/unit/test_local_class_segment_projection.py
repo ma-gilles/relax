@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.local.local_big_jit import (
     _class_volume,
@@ -79,7 +80,7 @@ def test_class_segments_match_projecting_each_class_separately(n_classes):
             image_shape,
             volume_shape,
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             per_row[:, k * seg : (k + 1) * seg].reshape(batch_size * seg, -1),
             np.asarray(expected),
         )
@@ -101,7 +102,7 @@ def test_one_class_reproduces_the_unsegmented_projection_exactly():
         segment_rotation_count=rows,
     )
     flat = _project(volume[0], local_rotations.reshape(batch_size * rows, 3, 3), image_shape, volume_shape)
-    np.testing.assert_array_equal(np.asarray(segmented), np.asarray(flat))
+    assert_matches(np.asarray(segmented), np.asarray(flat))
 
 
 def test_segment_placement_is_class_major_and_row_preserving():
@@ -124,8 +125,8 @@ def test_segment_placement_is_class_major_and_row_preserving():
     ).reshape(batch_size, rows, 2)
     expected_traces = np.asarray(jnp.trace(local_rotations, axis1=2, axis2=3))
     for k in range(n_classes):
-        np.testing.assert_array_equal(out[:, k * seg : (k + 1) * seg, 0], np.full((batch_size, seg), 100.0 + k))
-    np.testing.assert_allclose(out[:, :, 1], expected_traces, rtol=0, atol=0)
+        assert_matches(out[:, k * seg : (k + 1) * seg, 0], np.full((batch_size, seg), 100.0 + k))
+    assert_matches(out[:, :, 1], expected_traces)
 
 
 def test_class_volume_rejects_a_mismatched_stack():
@@ -134,7 +135,7 @@ def test_class_volume_rejects_a_mismatched_stack():
     # The unused placeholder operand passes through untouched.
     placeholder = jnp.zeros((1, 1, 1))
     assert _class_volume(placeholder, 0, 2, per_class=False) is placeholder
-    np.testing.assert_array_equal(np.asarray(_class_volume(volumes, 1, 2)), np.zeros(5))
+    assert_matches(np.asarray(_class_volume(volumes, 1, 2)), np.zeros(5))
     with pytest.raises(ValueError, match="leading class axis"):
         _class_volume(volumes, 0, 3)
 
@@ -202,8 +203,8 @@ def test_class_segment_adjoint_accumulates_each_class_into_its_own_volume(n_clas
             use_window=False, max_r=None, disable_adjoint_y=False, disable_adjoint_ctf=False,
             relion_x_half_mstep=False,
         )
-        np.testing.assert_array_equal(np.asarray(got_y[k]), np.asarray(want_y))
-        np.testing.assert_array_equal(np.asarray(got_ctf[k]), np.asarray(want_ctf))
+        assert_matches(np.asarray(got_y[k]), np.asarray(want_y))
+        assert_matches(np.asarray(got_ctf[k]), np.asarray(want_ctf))
 
 
 def test_class_segment_adjoint_keeps_classes_apart():
@@ -235,8 +236,8 @@ def test_class_segment_adjoint_keeps_classes_apart():
         relion_x_half_mstep=False,
     )
     assert np.abs(np.asarray(got_y[0])).max() > 0.0
-    np.testing.assert_array_equal(np.asarray(got_y[1]), np.zeros(volume_size, dtype=np.complex64))
-    np.testing.assert_array_equal(np.asarray(got_ctf[1]), np.zeros(volume_size, dtype=np.float32))
+    assert_matches(np.asarray(got_y[1]), np.zeros(volume_size, dtype=np.complex64))
+    assert_matches(np.asarray(got_ctf[1]), np.zeros(volume_size, dtype=np.float32))
 
 
 @pytest.mark.parametrize("n_classes", [2, 4])
@@ -257,9 +258,9 @@ def test_class_segment_statistics_match_per_class_reductions(n_classes):
     )
     for k in range(n_classes):
         sl = slice(k * seg, (k + 1) * seg)
-        np.testing.assert_allclose(np.asarray(mass[:, k]), np.asarray(jnp.sum(probs[:, sl], axis=(1, 2))), rtol=0, atol=0)
-        np.testing.assert_allclose(np.asarray(best[:, k]), np.asarray(jnp.max(scores[:, sl], axis=(1, 2))), rtol=0, atol=0)
-        np.testing.assert_allclose(np.asarray(recon_mass[:, k]), np.asarray(jnp.sum(recon[:, sl], axis=(1, 2))), rtol=0, atol=0)
+        assert_matches(np.asarray(mass[:, k]), np.asarray(jnp.sum(probs[:, sl], axis=(1, 2))))
+        assert_matches(np.asarray(best[:, k]), np.asarray(jnp.max(scores[:, sl], axis=(1, 2))))
+        assert_matches(np.asarray(recon_mass[:, k]), np.asarray(jnp.sum(recon[:, sl], axis=(1, 2))))
 
     # The per-class log evidence is the direct per-class logsumexp.
     direct = np.stack([np.asarray(jax.scipy.special.logsumexp(
@@ -297,10 +298,10 @@ def test_class_evidence_survives_posterior_underflow(use_float64):
         use_float64_normalization=use_float64,
     )
     # The masses do underflow; that is correct for a normalized responsibility.
-    np.testing.assert_allclose(np.asarray(mass)[0], [1.0, 0.0, 0.0, 0.0], rtol=0, atol=0)
+    assert_matches(np.asarray(mass)[0], [1.0, 0.0, 0.0, 0.0])
     # The evidence must still be the direct per-class logsumexp.
     np.testing.assert_allclose(np.asarray(evidence)[0], [0.0, -1000.0, -2000.0, -3000.0], rtol=1e-6, atol=1e-4)
-    np.testing.assert_allclose(np.asarray(best)[0], [0.0, -1000.0, -2000.0, -3000.0], rtol=0, atol=0)
+    assert_matches(np.asarray(best)[0], [0.0, -1000.0, -2000.0, -3000.0])
     assert np.isfinite(np.asarray(evidence)).all()
 
 
@@ -360,9 +361,9 @@ def test_class_winner_indexes_within_its_own_segment(n_classes):
     assert winner.shape == (batch_size, n_classes)
     for k in range(n_classes):
         segment = np.asarray(scores[:, k * seg:(k + 1) * seg]).reshape(batch_size, -1)
-        np.testing.assert_array_equal(winner[:, k], segment.argmax(axis=1))
+        assert_matches(winner[:, k], segment.argmax(axis=1))
         # The winner's score is the reported per-class best.
-        np.testing.assert_allclose(segment[np.arange(batch_size), winner[:, k]], np.asarray(best[:, k]), rtol=0, atol=0)
+        assert_matches(segment[np.arange(batch_size), winner[:, k]], np.asarray(best[:, k]))
         # It decodes to a row inside class k and a valid translation.
         assert ((winner[:, k] // n_trans) < seg).all() and ((winner[:, k] % n_trans) < n_trans).all()
 
@@ -380,7 +381,7 @@ def test_joint_winner_is_the_best_class_winner():
     )
     joint_argmax = np.asarray(jnp.argmax(scores.reshape(batch_size, -1), axis=1))
     joint_class = (joint_argmax // n_trans) // seg
-    np.testing.assert_array_equal(joint_class, np.asarray(best).argmax(axis=1))
+    assert_matches(joint_class, np.asarray(best).argmax(axis=1))
     for image in range(batch_size):
         k = int(joint_class[image])
         row_in_segment = (int(joint_argmax[image]) // n_trans) - k * seg

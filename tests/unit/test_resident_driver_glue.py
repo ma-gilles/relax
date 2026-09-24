@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -205,7 +206,7 @@ def test_block_dynamic_slice_picks_the_python_slice_rows(row_capacity):
             values, rp._device_int32(start), block_rows, axis=0
         )
         expected = values[start : start + block_rows]
-        np.testing.assert_array_equal(np.asarray(taken), np.asarray(expected))
+        assert_matches(np.asarray(taken), np.asarray(expected))
 
 
 def test_device_row_offsets_are_made_once_per_value():
@@ -251,10 +252,10 @@ def test_the_block_program_is_keyed_on_the_capacity_class_not_the_offset():
     assert len(traces) == 1
     second = slice_block(rp._device_int32(spec.mstep_block_rows), values)
     assert len(traces) == 1, "a second block offset must not retrace the program"
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(first), np.asarray(values[: spec.mstep_block_rows])
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(second),
         np.asarray(values[spec.mstep_block_rows : 2 * spec.mstep_block_rows]),
     )

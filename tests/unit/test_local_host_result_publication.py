@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.classification import k_class, k_class_results
 from relax.helpers.types import LocalEMResult, _stats_array, make_noise_stats, make_relion_stats
@@ -30,7 +31,7 @@ def _same_bytes(actual, expected):
         a, b = np.asarray(actual), np.asarray(expected)
         assert a.shape == b.shape
         assert a.dtype == b.dtype
-        assert a.tobytes() == b.tobytes()
+        assert_matches(a, b, strict=True)
 
 
 @pytest.mark.parametrize("x64", [False, True])

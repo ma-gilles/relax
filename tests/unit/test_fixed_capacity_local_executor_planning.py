@@ -7,6 +7,7 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.batch_planning import (
     _fixed_capacity_plan_descriptor_fingerprint,
@@ -106,15 +107,15 @@ def test_fixed_capacity_plan_preserves_call_particle_and_radix_chronology():
     assert plan.valid_call_count == 3
     assert plan.valid_image_count == 5
     assert plan.valid_row_count == 20
-    np.testing.assert_array_equal(plan.image_indices, [9, 3, 7, 8, 1, -1, -1, -1])
-    np.testing.assert_array_equal(plan.row_offsets, [0, 2, 6, 7, 12, 20, 20, 20, 20])
-    np.testing.assert_array_equal(plan.call_valid_mask, [True, True, True, False, False, False])
-    np.testing.assert_array_equal(plan.call_image_offsets, [0, 2, 3, 5, 5, 5])
-    np.testing.assert_array_equal(plan.call_row_offsets, [0, 6, 7, 20, 20, 20])
-    np.testing.assert_array_equal(plan.call_valid_images, [2, 1, 2, 0, 0, 0])
-    np.testing.assert_array_equal(plan.call_valid_rows, [6, 1, 13, 0, 0, 0])
-    np.testing.assert_array_equal(plan.call_image_capacities, [2, 2, 2, 0, 0, 0])
-    np.testing.assert_array_equal(plan.call_radix_buckets, [4, 4, 8, 0, 0, 0])
+    assert_matches(plan.image_indices, [9, 3, 7, 8, 1, -1, -1, -1])
+    assert_matches(plan.row_offsets, [0, 2, 6, 7, 12, 20, 20, 20, 20])
+    assert_matches(plan.call_valid_mask, [True, True, True, False, False, False])
+    assert_matches(plan.call_image_offsets, [0, 2, 3, 5, 5, 5])
+    assert_matches(plan.call_row_offsets, [0, 6, 7, 20, 20, 20])
+    assert_matches(plan.call_valid_images, [2, 1, 2, 0, 0, 0])
+    assert_matches(plan.call_valid_rows, [6, 1, 13, 0, 0, 0])
+    assert_matches(plan.call_image_capacities, [2, 2, 2, 0, 0, 0])
+    assert_matches(plan.call_radix_buckets, [4, 4, 8, 0, 0, 0])
     assert plan.logical_cutoff.shape == ()
     assert int(plan.logical_cutoff) == 70
 
@@ -145,7 +146,7 @@ def test_fixed_capacity_plan_descriptors_are_snapshotted_read_only_and_fingerpri
     source = plan.image_indices.copy()
     snapshotted = replace(plan, image_indices=source)
     source[:] = -1
-    np.testing.assert_array_equal(snapshotted.image_indices, plan.image_indices)
+    assert_matches(snapshotted.image_indices, plan.image_indices)
 
 
 @pytest.mark.parametrize(
@@ -256,12 +257,12 @@ def test_fixed_capacity_packers_keep_real_rows_and_poison_only_inert_tails():
         fill_value=-999,
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         packed_images[: plan.valid_image_count],
         np.concatenate(image_values),
     )
     assert np.all(packed_images[plan.valid_image_count :] == -999)
-    np.testing.assert_array_equal(
+    assert_matches(
         packed_candidates[: plan.valid_row_count],
         np.concatenate(expected_candidate_rows),
     )
@@ -304,10 +305,10 @@ def test_full_and_tail_programs_share_physical_shapes_with_runtime_counts_and_cu
     assert {name: getattr(full, name).shape for name in fixed_array_names} == {
         name: getattr(tail, name).shape for name in fixed_array_names
     }
-    np.testing.assert_array_equal(full.call_image_capacities[:3], [2, 2, 2])
-    np.testing.assert_array_equal(tail.call_image_capacities[:3], [2, 2, 2])
-    np.testing.assert_array_equal(full.call_valid_images[:3], [2, 1, 2])
-    np.testing.assert_array_equal(tail.call_valid_images[:3], [1, 2, 1])
+    assert_matches(full.call_image_capacities[:3], [2, 2, 2])
+    assert_matches(tail.call_image_capacities[:3], [2, 2, 2])
+    assert_matches(full.call_valid_images[:3], [2, 1, 2])
+    assert_matches(tail.call_valid_images[:3], [1, 2, 1])
     assert int(full.logical_cutoff) == 70
     assert int(tail.logical_cutoff) == 72
 

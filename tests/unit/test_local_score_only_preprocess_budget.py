@@ -4,6 +4,7 @@ import jax.numpy as jnp
 from relax.local import local_batch_planning as planning
 from relax.sparse_pass2 import sparse_pass2_budget as budget
 from relax.local.local_layout import LocalHypothesisLayout, bucket_local_hypothesis_layout
+from helpers.float_compare import assert_matches
 
 def test_exact_local_score_only_preprocess_cap_covers_real_k4_box256_oom():
     """Job 13300875 requested 14.27 GiB before applying its current-size window."""
@@ -71,7 +72,7 @@ def test_exact_local_score_only_preprocess_cap_covers_real_k4_box256_oom():
         max_hypotheses_per_microbatch=10_000,
     )
     assert max(bucket.image_indices.size for bucket in capped) == capped_images
-    np.testing.assert_array_equal(
+    assert_matches(
         np.concatenate([bucket.image_indices for bucket in capped]),
         np.concatenate([bucket.image_indices for bucket in uncapped]),
     )

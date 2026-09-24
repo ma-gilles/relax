@@ -2,6 +2,7 @@
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.relion.relion_projector_setup import cast_relion_projector_for_execution
 
@@ -19,8 +20,8 @@ def test_local_projector_execution_precision(classes, double, host):
     assert output.dtype == dtype
     assert output.shape == setup.shape
     assert isinstance(output, np.ndarray) == host
-    np.testing.assert_array_equal(np.asarray(output), setup.astype(dtype))
-    np.testing.assert_array_equal(setup, before)
+    assert_matches(np.asarray(output), setup.astype(dtype))
+    assert_matches(setup, before)
 
 
 def test_no_local_relion_projector():

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.local.local_batch_planning import (
     EXACT_LOCAL_XHALF_PROJECTION_TARGET_ROW_PIXELS_ENV,
@@ -132,7 +133,7 @@ def test_explicit_bucket_radix_is_consistent_across_exact_local_topology(monkeyp
     assert projection_cap == 256
     assert take_indices.shape == (2, 256)
     assert pack_mask.shape == (2, 256)
-    np.testing.assert_array_equal(actual_counts, np.asarray([32, 129], dtype=np.int32))
+    assert_matches(actual_counts, np.asarray([32, 129], dtype=np.int32))
     assert row_count == 161
 
     for bucket in buckets:
@@ -141,15 +142,15 @@ def test_explicit_bucket_radix_is_consistent_across_exact_local_topology(monkeyp
             count = int(layout.rotation_counts[image_index])
             start = int(layout.rotation_offsets[image_index])
             stop = start + count
-            np.testing.assert_array_equal(
+            assert_matches(
                 bucket.local_rotation_ids[row, :count],
                 layout.rotation_ids_flat[start:stop],
             )
             assert bucket.local_rotation_mask[row, :count].all()
             assert not bucket.local_rotation_mask[row, count:].any()
 
-    np.testing.assert_array_equal(take_indices[0, :32], np.arange(32, dtype=np.int32))
-    np.testing.assert_array_equal(take_indices[1, :129], np.arange(129, dtype=np.int32))
+    assert_matches(take_indices[0, :32], np.arange(32, dtype=np.int32))
+    assert_matches(take_indices[1, :129], np.arange(129, dtype=np.int32))
     assert pack_mask[0, :32].all()
     assert not pack_mask[0, 32:].any()
     assert pack_mask[1, :129].all()
@@ -209,7 +210,7 @@ def test_physical_order_chunks_reduce_padding_without_changing_candidates():
             start = int(layout.rotation_offsets[image_index])
             stop = int(layout.rotation_offsets[image_index + 1])
             count = stop - start
-            np.testing.assert_array_equal(
+            assert_matches(
                 bucket.local_rotation_ids[row, :count],
                 layout.rotation_ids_flat[start:stop],
             )

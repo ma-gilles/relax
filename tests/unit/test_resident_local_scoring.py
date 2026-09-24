@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -143,7 +144,7 @@ def test_projected_scoring_equals_the_cached_gather_bitwise(
                 n_score_pixels=int(operands.n_score_pixels),
             )
             for field in ("raw_diff2", "scores", "min_diff2"):
-                np.testing.assert_array_equal(
+                assert_matches(
                     np.asarray(getattr(cached, field)),
                     np.asarray(getattr(projected, field)),
                     err_msg=f"{field} on chunk {chunk}",
@@ -204,7 +205,7 @@ def test_full_support_mask_equals_an_all_ones_packed_mask(
         none_mask = run(None)
         ones_mask = run(jnp.asarray(ones))
         for field in ("raw_diff2", "scores", "min_diff2"):
-            np.testing.assert_array_equal(
+            assert_matches(
                 np.asarray(getattr(none_mask, field)),
                 np.asarray(getattr(ones_mask, field)),
                 err_msg=field,
@@ -268,6 +269,6 @@ def test_row_projection_blocking_is_bitwise(monkeypatch, custom_cuda_lib, gpu_de
             relion_texture_interp=False,
         )
     for name, a, b in zip(("score", "recon", "recon_abs2"), whole, blocked, strict=True):
-        np.testing.assert_array_equal(np.asarray(a), np.asarray(b), err_msg=name)
+        assert_matches(np.asarray(a), np.asarray(b), err_msg=name)
     assert np.asarray(whole[0]).shape == (n_rows, score_indices.size)
     assert np.asarray(whole[1]).shape == (n_rows, recon_indices.size)

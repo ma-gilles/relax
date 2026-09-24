@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.scoring.significant_samples import (
     ComplementSignificantSampleIndices,
@@ -159,7 +160,7 @@ def test_compaction_matches_flatnonzero_per_image_bitwise():
         n_coarse_trans=N_COARSE_TRANS,
         batch_n_sig=counts_host,
     )
-    np.testing.assert_array_equal(n_significant, counts_host)
+    assert_matches(n_significant, counts_host)
     csr = build_coarse_significance_csr(
         n_images=mask.shape[0],
         n_coarse_rot=N_COARSE_ROT,
@@ -173,10 +174,10 @@ def test_compaction_matches_flatnonzero_per_image_bitwise():
         expected = (
             np.flatnonzero(~mask[image]) if store_excluded[image] else np.flatnonzero(mask[image])
         )
-        np.testing.assert_array_equal(csr.image_ids(image), expected.astype(np.int32))
+        assert_matches(csr.image_ids(image), expected.astype(np.int32))
         # The stored set is always the smaller one, exactly as the host rule picks it.
         assert bool(store_excluded[image]) == (int(counts_host[image]) * 2 > n_samples)
-    np.testing.assert_array_equal(
+    assert_matches(
         rot_any,
         mask.reshape(mask.shape[0], N_COARSE_ROT, N_COARSE_TRANS).any(axis=(0, 2)),
     )
@@ -196,7 +197,7 @@ def test_compaction_ignores_padded_image_rows():
         n_coarse_trans=N_COARSE_TRANS,
         batch_n_sig=mask.sum(axis=1).astype(np.int32),
     )
-    np.testing.assert_array_equal(n_significant, counts_host)
+    assert_matches(n_significant, counts_host)
     csr = build_coarse_significance_csr(
         n_images=actual,
         n_coarse_rot=N_COARSE_ROT,
@@ -209,7 +210,7 @@ def test_compaction_ignores_padded_image_rows():
         expected = (
             np.flatnonzero(~mask[image]) if store_excluded[image] else np.flatnonzero(mask[image])
         )
-        np.testing.assert_array_equal(csr.image_ids(image), expected.astype(np.int32))
+        assert_matches(csr.image_ids(image), expected.astype(np.int32))
 
 
 def test_host_support_rows_match_the_host_encoder():
@@ -229,11 +230,11 @@ def test_host_support_rows_match_the_host_encoder():
         if expected is None:
             continue
         if isinstance(expected, ComplementSignificantSampleIndices):
-            np.testing.assert_array_equal(got.excluded_indices, expected.excluded_indices)
+            assert_matches(got.excluded_indices, expected.excluded_indices)
             assert int(got.total_size) == int(expected.total_size)
             assert np.asarray(got.excluded_indices).dtype == np.int32
             continue
-        np.testing.assert_array_equal(np.asarray(got), np.asarray(expected))
+        assert_matches(np.asarray(got), np.asarray(expected))
         assert np.asarray(got).dtype == np.int32
 
 
@@ -252,10 +253,10 @@ def test_compaction_stores_the_complement_of_a_dense_support():
         batch_n_sig=mask.sum(axis=1).astype(np.int32),
     )
     assert list(store_excluded) == [True, False]
-    np.testing.assert_array_equal(n_significant, mask.sum(axis=1).astype(np.int32))
+    assert_matches(n_significant, mask.sum(axis=1).astype(np.int32))
     split = n_samples - int(n_significant[0])
-    np.testing.assert_array_equal(ids[:split], np.flatnonzero(~mask[0]).astype(np.int32))
-    np.testing.assert_array_equal(ids[split:], np.flatnonzero(mask[1]).astype(np.int32))
+    assert_matches(ids[:split], np.flatnonzero(~mask[0]).astype(np.int32))
+    assert_matches(ids[split:], np.flatnonzero(mask[1]).astype(np.int32))
 
 
 def test_capacity_ladder_is_power_of_two_and_covers_the_total():
@@ -282,9 +283,9 @@ def test_support_list_carries_its_csr_and_stays_a_list():
         if want is None:
             assert got is None
         elif isinstance(want, ComplementSignificantSampleIndices):
-            np.testing.assert_array_equal(got.excluded_indices, want.excluded_indices)
+            assert_matches(got.excluded_indices, want.excluded_indices)
         else:
-            np.testing.assert_array_equal(np.asarray(got), np.asarray(want))
+            assert_matches(np.asarray(got), np.asarray(want))
     assert rows.csr is csr
     with pytest.raises(ValueError, match="CSR covers"):
         DeviceCompactedSignificantSamples(rows[:-1], csr=csr)
@@ -310,8 +311,8 @@ def _assert_tables_equal(got, expected):
         got_value = getattr(got, name)
         expected_value = getattr(expected, name)
         assert got_value.dtype == expected_value.dtype, name
-        np.testing.assert_array_equal(got_value, expected_value, err_msg=name)
-    np.testing.assert_array_equal(got.row_log_prior, expected.row_log_prior)
+        assert_matches(got_value, expected_value, err_msg=name)
+    assert_matches(got.row_log_prior, expected.row_log_prior)
 
 
 @pytest.mark.parametrize("execution_order", [False, True])
@@ -477,7 +478,7 @@ def test_compaction_fills_an_exactly_full_capacity():
         batch_n_sig=mask.sum(axis=1).astype(np.int32),
     )
     assert compacted.size == capacity
-    np.testing.assert_array_equal(compacted, ids)
+    assert_matches(compacted, ids)
 
 
 def test_relion_parent_execution_key_uses_the_grid_direction_count():
@@ -489,13 +490,13 @@ def test_relion_parent_execution_key_uses_the_grid_direction_count():
     """
 
     full_ids = np.arange(72, dtype=np.int64)  # level 0: 12 directions x 6 psi
-    np.testing.assert_array_equal(
+    assert_matches(
         relion_parent_execution_key(full_ids, n_coarse_rot=72, nside_level=0),
         (full_ids % 12) * 6 + full_ids // 12,
     )
     reduced_ids = np.arange(18, dtype=np.int64)  # 3 directions x 6 psi
     reduced = relion_parent_execution_key(reduced_ids, n_coarse_rot=18, nside_level=0)
-    np.testing.assert_array_equal(reduced, (reduced_ids % 3) * 6 + reduced_ids // 3)
+    assert_matches(reduced, (reduced_ids % 3) * 6 + reduced_ids // 3)
     assert sorted(reduced.tolist()) == list(range(18))
     with pytest.raises(ValueError, match="whole psi rows"):
         relion_parent_execution_key(np.arange(16), n_coarse_rot=16, nside_level=0)

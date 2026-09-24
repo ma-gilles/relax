@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.cuda import kernels as em_cuda_kernels
 from relax.helpers import deferred_vdam_host_pack as helper
@@ -300,10 +301,10 @@ def _execute(
     assert events.count("compiled_helper") == int(enabled)
     assert env["reconstruction_take_indices"] is take and env["reconstruction_pack_mask_np"] is mask
     assert env["packed_rotations_np"].dtype == rotations.dtype
-    np.testing.assert_array_equal(
+    assert_matches(
         env["packed_rotations_np"], np.take_along_axis(rotations[:batch], take[:, :, None, None], axis=1)
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         env["packed_mstep_rotations_np"], np.take_along_axis((rotations + 1)[:batch], take[:, :, None, None], axis=1)
     )
     names = (
@@ -323,7 +324,7 @@ def _execute(
         assert args[6] is env["reconstruction_take_indices_jnp"]
         assert args[7] is env["reconstruction_pack_mask_jnp"]
         assert args[8].dtype == jnp.int32
-        np.testing.assert_array_equal(args[8], env["packed_flat_take_indices"])
+        assert_matches(args[8], env["packed_flat_take_indices"])
         assert all(env[n] is out for n, out in zip(names, returned[0], strict=True))
     return tuple(np.asarray(env[n]) for n in names)
 
@@ -343,7 +344,7 @@ def test_actual_pack_route_preserves_host_plan_and_forwards_every_operand(monkey
         new = _execute(m, True, batch, use_window, cuda_enabled=cuda_enabled)
     for a, b in zip(old, new, strict=True):
         assert a.shape == b.shape and a.dtype == b.dtype
-        np.testing.assert_array_equal(a.view(np.uint8), b.view(np.uint8))
+        assert_matches(a, b)
 
 
 @pytest.mark.parametrize("enabled", [False, True])

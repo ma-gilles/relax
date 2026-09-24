@@ -6,6 +6,7 @@ from pathlib import Path
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.local import local_big_jit, local_em_engine
 
@@ -48,11 +49,11 @@ def test_image_power_policy_matches_frozen_pr179_expression(dtype, owns_high_she
     )
     # Literal frozen producer expression, independently of the new helper.
     old_pixels = jnp.sum((jnp.abs(processed) ** 2) * support[:, None], axis=0).astype(dtype)
-    np.testing.assert_array_equal(weighted, old_pixels)
-    np.testing.assert_array_equal(weighted, np.asarray([0.25, 1.0, 2.25], dtype=dtype))
-    np.testing.assert_array_equal(unweighted, np.asarray([0.25, 1.0, 45.0 if owns_high_shell else 0.0], dtype=dtype))
+    assert_matches(weighted, old_pixels)
+    assert_matches(weighted, np.asarray([0.25, 1.0, 2.25], dtype=dtype))
+    assert_matches(unweighted, np.asarray([0.25, 1.0, 45.0 if owns_high_shell else 0.0], dtype=dtype))
     assert weighted.dtype == unweighted.dtype == jnp.dtype(dtype)
-    np.testing.assert_array_equal(weighted_norm, unweighted_norm)
+    assert_matches(weighted_norm, unweighted_norm)
 
 
 @pytest.mark.parametrize("split", [False, True], ids=["bigjit", "split"])
@@ -86,16 +87,16 @@ def test_local_engine_defaults_to_pr179_spectrum_and_forwards_opt_in(monkeypatch
         *args, "linear_interp", unweighted_high_shell_image_power=True, **options
     )
     assert (int(default.profile["big_jit_bucket_count"]) > 0) is not split
-    np.testing.assert_array_equal(default.noise_stats.wsum_img_power, weighted.noise_stats.wsum_img_power)
+    assert_matches(default.noise_stats.wsum_img_power, weighted.noise_stats.wsum_img_power)
     assert np.any(
         np.asarray(unweighted.noise_stats.wsum_img_power)[3:] != np.asarray(weighted.noise_stats.wsum_img_power)[3:]
     )
     # This policy changes only the high-shell image-power numerator; normcorr,
     # posterior/scoring and reconstruction remain independently controlled.
-    np.testing.assert_array_equal(weighted.noise_stats.wsum_img_power[:3], unweighted.noise_stats.wsum_img_power[:3])
-    np.testing.assert_array_equal(
+    assert_matches(weighted.noise_stats.wsum_img_power[:3], unweighted.noise_stats.wsum_img_power[:3])
+    assert_matches(
         weighted.noise_stats.wsum_norm_correction, unweighted.noise_stats.wsum_norm_correction
     )
-    np.testing.assert_array_equal(weighted.hard_assignments, unweighted.hard_assignments)
-    np.testing.assert_array_equal(weighted.Ft_y, unweighted.Ft_y)
-    np.testing.assert_array_equal(weighted.Ft_ctf, unweighted.Ft_ctf)
+    assert_matches(weighted.hard_assignments, unweighted.hard_assignments)
+    assert_matches(weighted.Ft_y, unweighted.Ft_y)
+    assert_matches(weighted.Ft_ctf, unweighted.Ft_ctf)

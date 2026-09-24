@@ -10,6 +10,7 @@ the int64 contract at every host-side boundary of the id flow.
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 from relax.local import local_bucket_stages, local_layout, local_projection_cache
 
@@ -45,7 +46,7 @@ def test_projection_cache_rows_map_large_ids_and_padding():
     ids = np.array([[2**33, 5, -1], [2**31 + 7, -1, -1]], dtype=np.int64)
     rows = local_projection_cache.rows_for_bucket(cache, ids)
     assert rows.dtype == np.int32
-    np.testing.assert_array_equal(rows, np.array([[2, 0, 0], [1, 0, 0]], dtype=np.int32))
+    assert_matches(rows, np.array([[2, 0, 0], [1, 0, 0]], dtype=np.int32))
     with pytest.raises(RuntimeError, match="missing from the RELION projection cache"):
         local_projection_cache.rows_for_bucket(cache, np.array([[6]], dtype=np.int64))
 
@@ -56,4 +57,4 @@ def test_hard_assignment_encoding_is_int64():
     encoded = local_bucket_stages.encode_hard_assignment(rotation_ids, trans, 84)
     assert encoded.dtype == np.int64
     assert encoded.tolist() == [2**33 * 84 + 83, 3 * 84]
-    assert np.all(encoded // 84 == rotation_ids)
+    assert matches(encoded // 84, rotation_ids)

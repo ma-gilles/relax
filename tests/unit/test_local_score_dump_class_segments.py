@@ -9,6 +9,7 @@ the layout actually filled.
 """
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics.local_debug import maybe_write_debug_score_dump
 from relax.local.local_layout import (
@@ -137,7 +138,7 @@ def test_dump_lists_every_class_segment_and_no_padding(tmp_path):
         f"dump lists {got.size} candidates for a bucket whose classes hold "
         f"{expected_ids.size}"
     )
-    np.testing.assert_array_equal(got, expected_ids)
+    assert_matches(got, expected_ids)
     assert not np.any(got < 0), "a negative rotation id means padding was reported as a candidate"
 
 
@@ -163,7 +164,7 @@ def test_dump_attributes_each_candidate_to_its_class(tmp_path):
     )
     counts = np.asarray(bucket.class_actual_rotation_counts)[0]
     expected = np.concatenate([np.full(int(c), k, dtype=np.int32) for k, c in enumerate(counts)])
-    np.testing.assert_array_equal(np.asarray(payload["candidate_class_indices"]), expected)
+    assert_matches(np.asarray(payload["candidate_class_indices"]), expected)
 
 
 def test_dump_handles_a_class_with_no_candidates_for_this_image(tmp_path):
@@ -179,7 +180,7 @@ def test_dump_handles_a_class_with_no_candidates_for_this_image(tmp_path):
     expected_classes = np.concatenate(
         [np.full(int(c), k, dtype=np.int32) for k, c in enumerate(counts)]
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(payload["candidate_class_indices"]), expected_classes,
     )
     assert 1 not in set(np.asarray(payload["candidate_class_indices"]).tolist())
@@ -200,12 +201,12 @@ def test_child_ordinals_restart_in_each_class(tmp_path):
     # Two classes, each with two children of the same parent 7.
     parents = np.array([7, 7, 7, 7], dtype=np.int32)
     classes = np.array([0, 0, 1, 1], dtype=np.int32)
-    np.testing.assert_array_equal(
+    assert_matches(
         local_debug._child_ordinals_from_parent_ids(parents, groups=classes),
         np.array([0, 1, 0, 1], dtype=np.int32),
     )
     # Ungrouped behaviour, which single-class buckets rely on, is unchanged.
-    np.testing.assert_array_equal(
+    assert_matches(
         local_debug._child_ordinals_from_parent_ids(parents),
         np.array([0, 1, 2, 3], dtype=np.int32),
     )

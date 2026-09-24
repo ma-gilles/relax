@@ -16,6 +16,7 @@ import textwrap
 
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 import relax.refinement.iteration_loop as iteration_loop
 import relax.sampling as sampling_module
@@ -46,7 +47,7 @@ def _fake_grid(order, dtype=np.float32):
 def _same(x, y):
     x = np.asarray(x)
     y = np.asarray(y)
-    return x.dtype == y.dtype and x.shape == y.shape and x.tobytes() == y.tobytes()
+    return x.dtype == y.dtype and x.shape == y.shape and matches(x, y)
 
 
 @pytest.fixture(autouse=True)

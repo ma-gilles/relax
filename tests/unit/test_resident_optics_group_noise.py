@@ -9,6 +9,7 @@ images and noise spectrum alone.
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.half_spectrum import make_relion_noise_shell_indices_half
 from relax.helpers.optics_noise import dense_optics_groups, noise_rows, pixel_rows
@@ -30,7 +31,7 @@ def test_noise_rows_and_dense_groups():
     table = jnp.arange(12.0).reshape(3, 4)
     groups, n_groups = dense_optics_groups([7, 3, 7, 9])
     assert n_groups == 3 and groups.tolist() == [1, 0, 1, 2]
-    np.testing.assert_array_equal(np.asarray(noise_rows(table, groups, [3, 0])), np.asarray(table)[[2, 1]])
+    assert_matches(np.asarray(noise_rows(table, groups, [3, 0])), np.asarray(table)[[2, 1]])
     shared = jnp.ones(4)
     assert noise_rows(shared, None, [0, 1]) is shared
     assert pixel_rows(shared).shape == (1, 4) and pixel_rows(table).shape == (3, 4)

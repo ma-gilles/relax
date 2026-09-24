@@ -16,6 +16,7 @@ that a source without a host path still works.
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 
@@ -107,9 +108,9 @@ def test_host_path_matches_the_batch_pipeline(indices):
     lookup = {int(i): pos for pos, i in enumerate(np.asarray(reference_indices))}
     for row, index in enumerate(np.asarray(fetched)):
         ref_row = lookup[int(index)]
-        np.testing.assert_array_equal(images[row], np.asarray(reference_images)[ref_row])
-        np.testing.assert_array_equal(ctf[row], np.asarray(reference_ctf)[ref_row])
-    np.testing.assert_array_equal(np.asarray(fetched), indices)
+        assert_matches(images[row], np.asarray(reference_images)[ref_row])
+        assert_matches(ctf[row], np.asarray(reference_ctf)[ref_row])
+    assert_matches(np.asarray(fetched), indices)
 
 
 def test_source_without_a_host_path_still_works(monkeypatch):
@@ -122,4 +123,4 @@ def test_source_without_a_host_path_still_works(monkeypatch):
     images, ctf, fetched = _fetch_local_raw_rows_once(cryo, indices)
     assert images.shape[0] == indices.size
     assert ctf.shape[0] == indices.size
-    np.testing.assert_array_equal(np.sort(np.asarray(fetched)), np.sort(indices))
+    assert_matches(np.sort(np.asarray(fetched)), np.sort(indices))

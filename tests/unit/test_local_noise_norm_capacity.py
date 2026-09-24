@@ -7,6 +7,7 @@ import itertools
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.env_flags import parse_env_binary_flag
 from relax.local import local_em_engine as engine
@@ -67,6 +68,6 @@ def test_actual_allocation_and_publication_expressions(enabled, n_images):
     env["noise_norm_correction"] = carry
     published = eval(compile(ast.Expression(publications[0]), "<actual publication>", "eval"), env)
     assert published.shape == (n_images,)
-    np.testing.assert_array_equal(published, np.arange(n_images))
+    assert_matches(published, np.arange(n_images))
     if not enabled:
         assert published is carry

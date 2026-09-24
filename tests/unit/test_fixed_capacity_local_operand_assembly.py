@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.batch_planning import (
     _FixedCapacityLocalCall,
@@ -98,9 +99,9 @@ def test_existing_shared_raw_cache_still_indexes_rows_by_returned_image_id():
     raw_cache, ctf_cache = _build_local_raw_cache(dataset, 4)
 
     assert dataset.calls == 1
-    np.testing.assert_array_equal(dataset.requested_indices[0], [0, 1, 2, 3])
-    np.testing.assert_array_equal(raw_cache, expected_raw)
-    np.testing.assert_array_equal(ctf_cache, expected_ctf)
+    assert_matches(dataset.requested_indices[0], [0, 1, 2, 3])
+    assert_matches(raw_cache, expected_raw)
+    assert_matches(ctf_cache, expected_ctf)
 
 
 def test_fixed_capacity_operand_assembly_fetches_once_snapshots_and_poisons_tails():
@@ -121,15 +122,15 @@ def test_fixed_capacity_operand_assembly_fetches_once_snapshots_and_poisons_tail
     )
 
     assert dataset.calls == 1
-    np.testing.assert_array_equal(dataset.requested_indices[0], [2, 0, 3, 1])
-    np.testing.assert_array_equal(operands.image_indices, [2, 0, 3, 1, -1, -1])
-    np.testing.assert_array_equal(operands.valid_image_mask, [True, True, True, True, False, False])
-    np.testing.assert_array_equal(operands.raw_images[:4], expected_raw)
-    np.testing.assert_array_equal(operands.ctf_params[:4], expected_ctf)
+    assert_matches(dataset.requested_indices[0], [2, 0, 3, 1])
+    assert_matches(operands.image_indices, [2, 0, 3, 1, -1, -1])
+    assert_matches(operands.valid_image_mask, [True, True, True, True, False, False])
+    assert_matches(operands.raw_images[:4], expected_raw)
+    assert_matches(operands.ctf_params[:4], expected_ctf)
     assert np.all(operands.raw_images[4:] == -777)
     assert np.all(operands.ctf_params[4:] == -777)
-    np.testing.assert_array_equal(operands.metadata_by_name["scale"][:4], scale[[2, 0, 3, 1]])
-    np.testing.assert_array_equal(operands.metadata_by_name["group"][:4], group[[2, 0, 3, 1]])
+    assert_matches(operands.metadata_by_name["scale"][:4], scale[[2, 0, 3, 1]])
+    assert_matches(operands.metadata_by_name["group"][:4], group[[2, 0, 3, 1]])
     assert np.all(operands.metadata_by_name["scale"][4:] == -777)
     assert np.all(operands.metadata_by_name["group"][4:] == -777)
     assert dict(operands.physical_position_by_image_id) == {2: 0, 0: 1, 3: 2, 1: 3}
@@ -138,8 +139,8 @@ def test_fixed_capacity_operand_assembly_fetches_once_snapshots_and_poisons_tail
     dataset.ctf_params[:] = 0
     scale[:] = 0
     group[:] = 0
-    np.testing.assert_array_equal(operands.raw_images[:4], expected_raw)
-    np.testing.assert_array_equal(operands.ctf_params[:4], expected_ctf)
+    assert_matches(operands.raw_images[:4], expected_raw)
+    assert_matches(operands.ctf_params[:4], expected_ctf)
     assert operands.raw_images.flags.writeable is False
     assert operands.ctf_params.flags.writeable is False
     assert operands.metadata_by_name["scale"].flags.writeable is False

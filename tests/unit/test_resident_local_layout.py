@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
@@ -104,14 +105,14 @@ def test_tables_mirror_the_layout_row_for_row():
     assert tables.n_images == layout.n_images
     assert tables.n_rows == layout.total_local_rotations
     assert tables.n_trans == int(layout.translation_grid.shape[0])
-    np.testing.assert_array_equal(tables.row_offsets, layout.rotation_offsets)
-    np.testing.assert_array_equal(tables.rotations, layout.rotations_flat)
-    np.testing.assert_array_equal(tables.mstep_rotations, layout.mstep_rotations_flat)
-    np.testing.assert_array_equal(tables.row_log_prior, layout.rotation_log_priors_flat)
-    np.testing.assert_array_equal(tables.row_rotation_id, layout.rotation_ids_flat)
-    np.testing.assert_array_equal(tables.row_posterior_id, layout.rotation_posterior_ids_flat)
-    np.testing.assert_array_equal(tables.source_eulers, layout.source_eulers_flat)
-    np.testing.assert_array_equal(tables.translation_log_prior, layout.translation_log_priors)
+    assert_matches(tables.row_offsets, layout.rotation_offsets)
+    assert_matches(tables.rotations, layout.rotations_flat)
+    assert_matches(tables.mstep_rotations, layout.mstep_rotations_flat)
+    assert_matches(tables.row_log_prior, layout.rotation_log_priors_flat)
+    assert_matches(tables.row_rotation_id, layout.rotation_ids_flat)
+    assert_matches(tables.row_posterior_id, layout.rotation_posterior_ids_flat)
+    assert_matches(tables.source_eulers, layout.source_eulers_flat)
+    assert_matches(tables.translation_log_prior, layout.translation_log_priors)
     assert tables.n_posterior_bins == int(layout.n_global_rotations)
 
     # row_image is the CSR expansion of the offsets, in image order.
@@ -136,7 +137,7 @@ def test_mstep_rotations_fall_back_to_the_scoring_rotations():
         }
     )
     tables = rll.tables_from_local_layout(stripped)
-    np.testing.assert_array_equal(tables.mstep_rotations, tables.rotations)
+    assert_matches(tables.mstep_rotations, tables.rotations)
 
 
 def test_mask_expansion_matches_the_layouts_own_unpacking():
@@ -146,12 +147,12 @@ def test_mask_expansion_matches_the_layouts_own_unpacking():
 
     reference = layout.sample_mask_rows()
     expanded = rll.expand_local_mask_rows(tables, 0, tables.n_rows)
-    np.testing.assert_array_equal(expanded, reference)
+    assert_matches(expanded, reference)
 
     device = rll.expand_local_chunk_mask_jnp(
         jnp.asarray(tables.row_mask_bits), n_trans=tables.n_trans
     )
-    np.testing.assert_array_equal(np.asarray(device), reference)
+    assert_matches(np.asarray(device), reference)
 
 
 def test_full_support_layout_keeps_the_compact_none_spelling():
@@ -160,7 +161,7 @@ def test_full_support_layout_keeps_the_compact_none_spelling():
     assert layout.sample_mask_bits is None
     assert tables.row_mask_bits is None
     # ``None`` means full support on both sides.
-    np.testing.assert_array_equal(
+    assert_matches(
         rll.expand_local_mask_rows(tables, 0, tables.n_rows),
         np.ones((tables.n_rows, tables.n_trans), dtype=bool),
     )
@@ -176,7 +177,7 @@ def test_device_mask_expansion_is_bit_exact_for_any_translation_count(n_trans):
     dense = rng.random((rows, n_trans)) < 0.5
     bits = np.packbits(dense, axis=1, bitorder="little")
     device = rll.expand_local_chunk_mask_jnp(jnp.asarray(bits), n_trans=n_trans)
-    np.testing.assert_array_equal(np.asarray(device), dense)
+    assert_matches(np.asarray(device), dense)
 
 
 def test_chunks_cover_every_row_once_and_respect_capacities():
@@ -214,18 +215,18 @@ def test_materialized_chunk_is_the_slice_plus_inert_padding():
         rs, re = chunk.row_start, chunk.row_stop
         assert n_valid == re - rs
 
-        np.testing.assert_array_equal(host["rotations"][:n_valid], tables.rotations[rs:re])
-        np.testing.assert_array_equal(
+        assert_matches(host["rotations"][:n_valid], tables.rotations[rs:re])
+        assert_matches(
             host["mstep_rotations"][:n_valid], tables.mstep_rotations[rs:re]
         )
-        np.testing.assert_array_equal(host["row_log_prior"][:n_valid], tables.row_log_prior[rs:re])
-        np.testing.assert_array_equal(
+        assert_matches(host["row_log_prior"][:n_valid], tables.row_log_prior[rs:re])
+        assert_matches(
             host["row_posterior_id"][:n_valid], tables.row_posterior_id[rs:re]
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             host["row_image_local"][:n_valid], tables.row_image[rs:re] - chunk.image_start
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             host["image_ids"][: chunk.n_valid_images],
             np.arange(chunk.image_start, chunk.image_stop),
         )
@@ -238,13 +239,13 @@ def test_materialized_chunk_is_the_slice_plus_inert_padding():
         )
         if mask is not None:
             assert not bool(np.asarray(mask)[n_valid:].any())
-        assert np.all(host["row_posterior_id"][n_valid:] == tables.n_posterior_bins)
+        assert matches(host["row_posterior_id"][n_valid:], tables.n_posterior_bins)
         assert np.all(np.isfinite(host["rotations"][n_valid:]))
-        assert np.all(host["row_log_prior"][n_valid:] == np.float32(-1e30))
+        assert matches(host["row_log_prior"][n_valid:], np.float32(-1e30))
 
         # The chunk's device mask agrees with the reference expansion row by row.
         if mask is not None:
-            np.testing.assert_array_equal(
+            assert_matches(
                 np.asarray(mask)[:n_valid], rll.expand_local_mask_rows(tables, rs, re)
             )
 

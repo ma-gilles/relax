@@ -15,6 +15,7 @@ from relax.helpers import projection as proj
 from relax.helpers.env_flags import parse_env_binary_flag
 from relax.local import local_big_jit as big
 from relax.local import local_em_engine as engine
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -52,8 +53,8 @@ def test_padding_preserves_logical_ghosts_and_inputs(monkeypatch, q, radius, pf)
     offset = (n - logical.shape[0]) // 2
     expected = np.zeros((n, n, n // 2 + 1), np.complex64)
     expected[offset : offset + logical.shape[0], offset : offset + logical.shape[1], : logical.shape[2]] = logical
-    np.testing.assert_array_equal(np.asarray(padded).view(np.uint32), expected.view(np.uint32))
-    np.testing.assert_array_equal(logical.view(np.uint32), original.view(np.uint32))
+    assert_matches(np.asarray(padded), expected)
+    assert_matches(logical, original)
     assert runtime.shape == () and runtime.dtype == jnp.int32 and int(runtime) == radius
 
 
@@ -125,7 +126,7 @@ def test_compact_mapping_scaling_and_runtime_trace(monkeypatch):
     physical = jnp.zeros((35, 35, 18), jnp.complex64)
     for radius in [15, 16]:
         result = projected(physical, jnp.asarray(radius, jnp.int32))
-        np.testing.assert_array_equal(np.asarray(result).view(np.uint32), np.asarray(old).view(np.uint32))
+        assert_matches(np.asarray(result), np.asarray(old))
     assert len(records) == 1 and records[0][1].shape == () and records[0][1].dtype == jnp.int32
     radius = records[0][2].pop("image_r_max")
     assert radius.aval.shape == ()
@@ -133,7 +134,7 @@ def test_compact_mapping_scaling_and_runtime_trace(monkeypatch):
     assert records[0][2] == {"image_shape": (32, 32), "padding_factor": 1}
     assert projected._cache_size() == 1
     expected = np.asarray(crop)[0, [0, 18, 272, 288, 16]] * -(128**2)
-    np.testing.assert_array_equal(np.asarray(old)[0].view(np.uint32), expected.view(np.uint32))
+    assert_matches(np.asarray(old)[0], expected)
 
 
 def test_positional_radius_preserves_fixed_capacity_carry():
@@ -195,7 +196,7 @@ def test_gpu_compact_local_projection_matches_logical_words(q, radius, pf):
         rotations,
         **dict(kwargs, relion_projector_r_max=0, projector_capacity=True, runtime_projector_r_max=runtime),
     )
-    np.testing.assert_array_equal(np.asarray(new).view(np.uint32), np.asarray(old).view(np.uint32))
+    assert_matches(np.asarray(new), np.asarray(old))
 
 
 def test_engine_rejects_optin_before_nonstable_dataset_access(monkeypatch):

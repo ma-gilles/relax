@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from test_shared_local_exact_noise import _call_deferred_wrapper, _make_noise_inputs
 
 from relax.dense.deferred_noise_pack import _pad_noise_pixels, pack_noise_pixel_capacity
@@ -54,10 +55,10 @@ def test_padding_preserves_every_original_byte(batch, dtype):
     result = pack_noise_pixel_capacity(*values, target_batch=42, n_images=64, norm_capacity=1024)
     for before, after in zip(values[:3], result[:3], strict=True):
         assert before.dtype == after.dtype and after.shape[0] == 42
-        assert np.asarray(before).tobytes() == np.asarray(after[:batch]).tobytes()
+        assert_matches(np.asarray(before), np.asarray(after[:batch]), strict=True)
         assert not np.any(np.asarray(after[batch:]) != 0)
-    np.testing.assert_array_equal(result[3][:batch], values[3])
-    np.testing.assert_array_equal(result[3][batch:], np.full(42 - batch, 64, dtype=np.int32))
+    assert_matches(result[3][:batch], values[3])
+    assert_matches(result[3][batch:], np.full(42 - batch, 64, dtype=np.int32))
 
 
 @pytest.mark.parametrize("batch,n_images,capacity", [(32, 1024, 1024), (42, 200, 1024)])
@@ -100,7 +101,7 @@ def test_actual_noise_outputs_and_norm_prefix_with_nonzero_carry(batch, dtype):
     actual = _call_deferred_wrapper(padded, source_faithful_spectrum_norm=dtype == jnp.float64)
     for a, b in zip(actual, expected, strict=True):
         assert a.shape == b.shape and a.dtype == b.dtype
-        np.testing.assert_array_equal(a, b)
+        assert_matches(a, b)
     assert not np.any(np.asarray(actual[6][64:]) != 0)
 
 

@@ -3,6 +3,7 @@
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.cuda import kernels as em_cuda_kernels
 from relax.relion import relion_coarse_operands, relion_ctf
@@ -45,7 +46,7 @@ def test_exact_coarse_assembly_precision_and_padding(
         assert images.dtype == complex_dtype
         assert angles.dtype == real_dtype
         assert image_shape == (4, 4)
-        np.testing.assert_array_equal(indices, score_indices)
+        assert_matches(indices, score_indices)
         seen.append(images)
         return jnp.broadcast_to(images[:, None, :], (batch_size, 2, len(score_indices)))
 
@@ -86,12 +87,12 @@ def test_exact_coarse_assembly_precision_and_padding(
         jnp.asarray(expected_ctf),
         output_dtype=real_dtype,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         result.unshifted_corrected,
         jnp.where(active_mask[None, :], (source_images * correction)[:, score_indices], 0.0),
     )
-    np.testing.assert_array_equal(result.shifted_corrected[:, 0], result.unshifted_corrected)
-    np.testing.assert_array_equal(result.shifted_corrected[:, 1], result.unshifted_corrected)
+    assert_matches(result.shifted_corrected[:, 0], result.unshifted_corrected)
+    assert_matches(result.shifted_corrected[:, 1], result.unshifted_corrected)
     assert len(seen) == 1
     assert result.pixel_weight.dtype == real_dtype
     assert result.unshifted_corrected.dtype == complex_dtype
@@ -109,7 +110,7 @@ def test_exact_coarse_assembly_precision_and_padding(
             (4, 4),
             scale_operand if scale_enabled else None,
         )
-    np.testing.assert_array_equal(
+    assert_matches(
         result.pixel_weight,
         jnp.where(active_mask[None, :], full_corr[:, score_indices], 0.0),
     )
@@ -140,9 +141,9 @@ def test_native_noise_variance_corr_img_accepts_the_score_dtype_used_by_bucket_i
     )
     assert default.dtype == jnp.float32 and typed.dtype == output_dtype
     if output_dtype == jnp.float32:
-        assert np.asarray(typed).tobytes() == np.asarray(default).tobytes()
+        assert_matches(np.asarray(typed), np.asarray(default), strict=True)
     else:
-        np.testing.assert_array_equal(np.asarray(typed, dtype=np.float32), np.asarray(default))
+        assert_matches(np.asarray(typed, dtype=np.float32), np.asarray(default))
     with pytest.raises(TypeError, match="output_dtype must be float32 or float64"):
         sparse_pass2_bucket_io._relion_cuda_corr_img_from_native_noise_variance(
             noise_variance, ctf, (2, 2), output_dtype=jnp.int32

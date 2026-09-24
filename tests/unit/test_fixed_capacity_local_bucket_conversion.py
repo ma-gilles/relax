@@ -6,6 +6,7 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.batch_planning import (
     _pack_fixed_capacity_local_candidate_rows,
@@ -89,24 +90,24 @@ def test_local_bucket_conversion_preserves_full_tail_chronology_radix_and_rows()
     )
 
     assert len(calls) == 3
-    np.testing.assert_array_equal(calls[0].image_indices, [9, 3, 7])
-    np.testing.assert_array_equal(calls[1].image_indices, [8])
-    np.testing.assert_array_equal(calls[2].image_indices, [1, 5])
-    np.testing.assert_array_equal(calls[0].row_counts, [2, 4, 3])
-    np.testing.assert_array_equal(calls[1].row_counts, [1])
-    np.testing.assert_array_equal(calls[2].row_counts, [8, 5])
+    assert_matches(calls[0].image_indices, [9, 3, 7])
+    assert_matches(calls[1].image_indices, [8])
+    assert_matches(calls[2].image_indices, [1, 5])
+    assert_matches(calls[0].row_counts, [2, 4, 3])
+    assert_matches(calls[1].row_counts, [1])
+    assert_matches(calls[2].row_counts, [8, 5])
     assert [call.radix_bucket for call in calls] == [4, 4, 8]
     assert [call.image_capacity for call in calls] == [3, 3, 2]
 
     plan = _plan_converted(calls, expected_order=expected_order)
-    np.testing.assert_array_equal(plan.image_indices, [9, 3, 7, 8, 1, 5, -1, -1])
-    np.testing.assert_array_equal(plan.row_offsets, [0, 2, 6, 9, 10, 18, 23, 23, 23])
-    np.testing.assert_array_equal(plan.call_image_offsets, [0, 3, 4, 6, 6])
-    np.testing.assert_array_equal(plan.call_row_offsets, [0, 9, 10, 23, 23])
-    np.testing.assert_array_equal(plan.call_valid_images, [3, 1, 2, 0, 0])
-    np.testing.assert_array_equal(plan.call_valid_rows, [9, 1, 13, 0, 0])
-    np.testing.assert_array_equal(plan.call_image_capacities, [3, 3, 2, 0, 0])
-    np.testing.assert_array_equal(plan.call_radix_buckets, [4, 4, 8, 0, 0])
+    assert_matches(plan.image_indices, [9, 3, 7, 8, 1, 5, -1, -1])
+    assert_matches(plan.row_offsets, [0, 2, 6, 9, 10, 18, 23, 23, 23])
+    assert_matches(plan.call_image_offsets, [0, 3, 4, 6, 6])
+    assert_matches(plan.call_row_offsets, [0, 9, 10, 23, 23])
+    assert_matches(plan.call_valid_images, [3, 1, 2, 0, 0])
+    assert_matches(plan.call_valid_rows, [9, 1, 13, 0, 0])
+    assert_matches(plan.call_image_capacities, [3, 3, 2, 0, 0])
+    assert_matches(plan.call_radix_buckets, [4, 4, 8, 0, 0])
     packed_candidate_ids = _pack_fixed_capacity_local_candidate_rows(
         plan,
         [bucket.local_rotation_ids for bucket in buckets],
@@ -119,8 +120,8 @@ def test_local_bucket_conversion_preserves_full_tail_chronology_radix_and_rows()
             for row, row_count in enumerate(bucket.actual_rotation_counts)
         ]
     )
-    np.testing.assert_array_equal(packed_candidate_ids[:23], expected_candidate_ids)
-    np.testing.assert_array_equal(packed_candidate_ids[23:], np.full(9, -999, dtype=np.int32))
+    assert_matches(packed_candidate_ids[:23], expected_candidate_ids)
+    assert_matches(packed_candidate_ids[23:], np.full(9, -999, dtype=np.int32))
 
 
 def test_local_bucket_conversion_snapshots_mutable_bucket_arrays():
@@ -133,8 +134,8 @@ def test_local_bucket_conversion_snapshots_mutable_bucket_arrays():
     bucket.image_indices[:] = -1
     bucket.actual_rotation_counts[:] = 1
 
-    np.testing.assert_array_equal(calls[0].image_indices, [9, 3])
-    np.testing.assert_array_equal(calls[0].row_counts, [2, 3])
+    assert_matches(calls[0].image_indices, [9, 3])
+    assert_matches(calls[0].row_counts, [2, 3])
 
 
 def test_converted_tail_keeps_authoritative_capacity_instead_of_smallest_palette_entry():
@@ -156,7 +157,7 @@ def test_converted_tail_keeps_authoritative_capacity_instead_of_smallest_palette
         enabled=True,
     )
 
-    np.testing.assert_array_equal(plan.call_image_capacities, [3])
+    assert_matches(plan.call_image_capacities, [3])
 
 
 def test_converted_plan_rejects_chronology_or_capacity_palette_changes():
@@ -193,7 +194,7 @@ def test_physical_order_seal_is_an_independent_immutable_snapshot():
 
     source[:] = -1
 
-    np.testing.assert_array_equal(expected_order.image_indices, [9, 3, 7])
+    assert_matches(expected_order.image_indices, [9, 3, 7])
     assert expected_order.image_indices.flags.writeable is False
 
 

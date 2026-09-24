@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 from relax.scoring.compact_candidates import _candidate_mask_to_dense
 from relax.scoring.significant_samples import ComplementSignificantSampleIndices
@@ -127,10 +128,10 @@ def test_row_ids_parents_and_priors_match_per_image_inputs(fixture_inputs, fixtu
         expected_prior = np.asarray(fixture_inputs["log_prior"][image], dtype=np.float32)
 
         assert stop - start == expected_ids.shape[0]
-        np.testing.assert_array_equal(tables.row_fine_rot[start:stop], expected_ids.astype(np.int32))
-        np.testing.assert_array_equal(tables.row_parent_local[start:stop], expected_parents)
+        assert_matches(tables.row_fine_rot[start:stop], expected_ids.astype(np.int32))
+        assert_matches(tables.row_parent_local[start:stop], expected_parents)
         np.testing.assert_allclose(tables.row_log_prior[start:stop], expected_prior)
-        assert np.all(tables.row_image[start:stop] == image)
+        assert matches(tables.row_image[start:stop], image)
 
 
 def test_expand_mask_rows_matches_candidate_mask_to_dense_for_every_mode(fixture_inputs, fixture_tables):
@@ -139,7 +140,7 @@ def test_expand_mask_rows_matches_candidate_mask_to_dense_for_every_mode(fixture
     for image in range(n_images):
         expected_dense = _candidate_mask_to_dense(fixture_inputs["candidate_mask"][image])
         got_dense = expand_mask_rows(tables, image, FINE_TRANS_PARENT)
-        np.testing.assert_array_equal(got_dense, expected_dense)
+        assert_matches(got_dense, expected_dense)
 
 
 def test_expand_mask_jnp_matches_expand_mask_rows(fixture_tables):
@@ -147,7 +148,7 @@ def test_expand_mask_jnp_matches_expand_mask_rows(fixture_tables):
     for image in range(tables.n_images):
         rows = expand_mask_rows(tables, image, FINE_TRANS_PARENT)
         jnp_rows = np.asarray(expand_mask_jnp(tables, image, FINE_TRANS_PARENT))
-        np.testing.assert_array_equal(jnp_rows, rows)
+        assert_matches(jnp_rows, rows)
 
 
 def test_n_coarse_trans_over_32_is_rejected(fixture_inputs):
@@ -250,7 +251,7 @@ def test_materialize_chunk_padded_rows_never_validate_any_cell():
         assert np.all(valid_image_local < n_valid_images)
 
         # Padded image ids are -1; valid ones are exactly this chunk's images.
-        np.testing.assert_array_equal(
+        assert_matches(
             materialized["image_ids"][:n_valid_images],
             np.arange(chunk.image_start, chunk.image_stop, dtype=np.int32),
         )
@@ -288,7 +289,7 @@ def test_materialize_chunk_matches_expand_mask_rows_for_a_bitset_image(fixture_i
         FINE_TRANS_PARENT,
     )
     expected = expand_mask_rows(tables, image, FINE_TRANS_PARENT)
-    np.testing.assert_array_equal(chunk_valid, expected)
+    assert_matches(chunk_valid, expected)
 
 
 def test_heavy_tailed_image_yields_a_one_image_chunk_padded_to_largest_class():
@@ -351,4 +352,4 @@ def test_expand_chunk_mask_jnp_matches_materialize_chunk_row_by_row(fixture_tabl
             start = int(tables.row_offsets[image]) - chunk.row_start
             stop = int(tables.row_offsets[image + 1]) - chunk.row_start
             expected = expand_mask_rows(tables, image, FINE_TRANS_PARENT)
-            np.testing.assert_array_equal(chunk_mask[start:stop], expected)
+            assert_matches(chunk_mask[start:stop], expected)

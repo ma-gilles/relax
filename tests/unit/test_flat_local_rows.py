@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 from relax.helpers.projection import (
     compute_noise_block,
@@ -38,9 +39,9 @@ def test_pool_flat_rows_preserve_source_chronology_and_static_tail():
     for image_index, bucket_size in ((0, 64), (1, 64), (2, 64), (3, 256), (4, 256)):
         expected.extend((image_index, rotation) for rotation in range(bucket_size))
     present = np.arange(plan.packed_row_count) < len(expected)
-    assert np.array_equal(plan.present_mask, present)
+    assert matches(plan.present_mask, present)
     assert list(zip(plan.image_indices[present], plan.rotation_rows[present], strict=True)) == expected
-    assert np.array_equal(
+    assert matches(
         plan.valid_mask[present],
         np.asarray([rotation < counts[image] for image, rotation in expected]),
     )
@@ -48,9 +49,9 @@ def test_pool_flat_rows_preserve_source_chronology_and_static_tail():
     encoded = encode_flat_local_row_plan(plan)
     assert encoded.dtype == np.int32
     assert encoded.shape == (plan.packed_row_count, 3)
-    assert np.array_equal(encoded[:, 0], plan.image_indices)
-    assert np.array_equal(encoded[:, 1], plan.rotation_rows)
-    assert np.array_equal(encoded[:, 2] != 0, plan.valid_mask)
+    assert matches(encoded[:, 0], plan.image_indices)
+    assert matches(encoded[:, 1], plan.rotation_rows)
+    assert matches(encoded[:, 2] != 0, plan.valid_mask)
     assert np.count_nonzero(encoded[:, 2]) == int(np.sum(counts))
 
 
@@ -88,7 +89,7 @@ def test_flat_row_gather_and_scatter_restore_present_dense_rows_exactly():
         plan.image_indices[present],
         plan.rotation_rows[present],
     ] = True
-    assert np.array_equal(restored[expected_present], dense[expected_present])
+    assert matches(restored[expected_present], dense[expected_present])
     assert np.all(restored[~expected_present] == -1.0)
     assert not np.any(np.isnan(restored))
 
@@ -112,7 +113,7 @@ def test_dense_to_flat_lookup_gathers_final_rows_in_requested_source_order():
     )
 
     valid_flat_rows = np.flatnonzero(plan.valid_mask)
-    np.testing.assert_array_equal(
+    assert_matches(
         lookup[
             plan.image_indices[valid_flat_rows],
             plan.rotation_rows[valid_flat_rows],
@@ -140,7 +141,7 @@ def test_dense_to_flat_lookup_gathers_final_rows_in_requested_source_order():
         axis=1,
     )
     expected = np.where(final_mask[..., None], expected, 0.0)
-    np.testing.assert_array_equal(gathered, expected)
+    assert_matches(gathered, expected)
 
 
 @pytest.mark.unit
@@ -199,7 +200,7 @@ def test_local_fused_pairs_reuse_compact_source_order_and_map_flat_projection_ro
         "translation_idx",
         "pair_mask",
     ):
-        np.testing.assert_array_equal(actual[field], shared[field])
+        assert_matches(actual[field], shared[field])
     assert actual["valid_pair_count"] == 7
     assert actual["dense_candidate_capacity"] == 144
     assert actual["valid_job_count"] == 7
@@ -215,15 +216,15 @@ def test_local_fused_pairs_reuse_compact_source_order_and_map_flat_projection_ro
         expected_rotation, expected_translation = np.nonzero(
             sample_mask[image_row] & rotation_mask[image_row, :, None]
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             actual["local_rotation_row"][image_row, :count],
             expected_rotation,
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             actual["translation_idx"][image_row, :count],
             expected_translation,
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             actual["reference_row"][image_row, :count],
             dense_to_flat[image_row, expected_rotation],
         )
@@ -241,7 +242,7 @@ def test_local_fused_pairs_reuse_compact_source_order_and_map_flat_projection_ro
         ],
         dtype=np.int32,
     )
-    np.testing.assert_array_equal(actual["job_plan"][:7], expected_jobs)
+    assert_matches(actual["job_plan"][:7], expected_jobs)
     assert np.all(actual["job_plan"][7:] == -1)
 
     monkeypatch.setenv("RELAX_EXACT_FINE_JOB_BUCKET_QUANTUM", "8192")
@@ -254,7 +255,7 @@ def test_local_fused_pairs_reuse_compact_source_order_and_map_flat_projection_ro
         fine_job_bucket_size=capacities[(3, dense_rotation_count)],
     )
     assert stable["job_plan"].shape == (144, 4)
-    np.testing.assert_array_equal(stable["job_plan"][:7], expected_jobs)
+    assert_matches(stable["job_plan"][:7], expected_jobs)
     assert np.all(stable["job_plan"][7:] == -1)
 
 
@@ -320,7 +321,7 @@ def test_final_row_noise_helpers_equal_dense_zero_row_contract_exactly():
         jnp.asarray(packed_probs),
         jnp.asarray(ctf2_over_nv),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(packed_summed),
         np.where(
             mask[..., None],
@@ -328,7 +329,7 @@ def test_final_row_noise_helpers_equal_dense_zero_row_contract_exactly():
             0.0,
         ),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(packed_ctf),
         np.where(
             mask[..., None],
@@ -358,7 +359,7 @@ def test_final_row_noise_helpers_equal_dense_zero_row_contract_exactly():
         2,
     )
     for dense_value, packed_value in zip(dense_noise, packed_noise, strict=True):
-        np.testing.assert_array_equal(np.asarray(packed_value), np.asarray(dense_value))
+        assert_matches(np.asarray(packed_value), np.asarray(dense_value))
 
     dense_norm = compute_norm_residual_per_image(
         jnp.asarray(projection),
@@ -374,7 +375,7 @@ def test_final_row_noise_helpers_equal_dense_zero_row_contract_exactly():
         packed_ctf,
         noise_variance,
     )
-    np.testing.assert_array_equal(np.asarray(packed_norm), np.asarray(dense_norm))
+    assert_matches(np.asarray(packed_norm), np.asarray(dense_norm))
 
     dense_scale = compute_scale_correction_terms_per_image(
         jnp.asarray(projection),
@@ -393,7 +394,7 @@ def test_final_row_noise_helpers_equal_dense_zero_row_contract_exactly():
         jnp.asarray([1.0, 2.0], dtype=jnp.float32),
     )
     for dense_value, packed_value in zip(dense_scale, packed_scale, strict=True):
-        np.testing.assert_array_equal(np.asarray(packed_value), np.asarray(dense_value))
+        assert_matches(np.asarray(packed_value), np.asarray(dense_value))
 
 
 @pytest.mark.unit
@@ -492,13 +493,13 @@ def test_stable_flat_row_capacity_reuses_mature_rectangular_bucket_abi():
 
     assert capacities.capacities == {(4, 256): 4 * 256}
     assert first_encoded.shape == second_encoded.shape == (4 * 256, 3)
-    np.testing.assert_array_equal(
+    assert_matches(
         first_encoded[: ordinary_first.shape[0]],
         ordinary_first,
     )
     assert np.count_nonzero(first_encoded[:, 2]) == 25
     assert np.count_nonzero(second_encoded[:, 2]) == 74
-    np.testing.assert_array_equal(
+    assert_matches(
         first_encoded[first_required_rows:],
         np.zeros_like(first_encoded[first_required_rows:]),
     )
@@ -727,7 +728,7 @@ def test_class_flat_rows_are_class_major_with_block_sizes():
     start = 0
     for class_index, block in enumerate(plan.class_row_counts):
         block_rows = plan.rotation_rows[start:start + block]
-        assert np.all(block_rows // segment == class_index)
+        assert matches(block_rows // segment, class_index)
         start += block
 
     # and every real candidate still appears exactly once
@@ -801,7 +802,7 @@ def test_relion_ctf_row_shift_matches_negated_fftshift(rows):
     np.negative(native[split:], out=shifted[:shift])
     np.negative(native[:split], out=shifted[shift:])
 
-    np.testing.assert_array_equal(shifted.reshape(-1), expected)
+    assert_matches(shifted.reshape(-1), expected)
 
 
 @pytest.mark.unit

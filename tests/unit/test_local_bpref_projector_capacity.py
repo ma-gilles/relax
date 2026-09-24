@@ -6,6 +6,7 @@ import inspect
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.cuda import kernels as em_cuda_kernels
 from relax.helpers import projection
@@ -143,7 +144,7 @@ def test_actual_selection_and_cuda_forwarding_preserve_all_other_operands(monkey
     assert old_args[0] is new_args[0] is fy and old_args[1] is new_args[1] is fc
     for index, (old, new) in enumerate(zip(old_args, new_args, strict=True)):
         if index not in (8, 13):
-            np.testing.assert_array_equal(np.asarray(old), np.asarray(new))
+            assert_matches(np.asarray(old), np.asarray(new))
     assert old_args[8] is prepared[0]["source_vdam_projector_full"]
     assert new_args[8] is prepared[1]["local_projection_half_arg"]
     assert (old_args[13], new_args[13]) == (2, 0)
@@ -154,12 +155,12 @@ def test_actual_selection_and_cuda_forwarding_preserve_all_other_operands(monkey
         if old_kw[key] is None:
             assert new_kw[key] is None
         else:
-            np.testing.assert_array_equal(np.asarray(old_kw[key]), np.asarray(new_kw[key]))
+            assert_matches(np.asarray(old_kw[key]), np.asarray(new_kw[key]))
     expected = np.asarray(probabilities).copy()
     expected[0, 1] = 0
-    np.testing.assert_array_equal(np.asarray(new_args[5]), expected)
+    assert_matches(np.asarray(new_args[5]), expected)
     assert new_kw["stable_dense_positions"] is stable_positions and new_kw["logical_current_size"] is logical_size
-    np.testing.assert_array_equal(np.asarray(new_kw["worker_lane_ids"]), [0, 0] if serial_particles else [2, 3])
+    assert_matches(np.asarray(new_kw["worker_lane_ids"]), [0, 0] if serial_particles else [2, 3])
 
 
 def test_runtime_radius_cannot_escape_to_preprojected_helper(monkeypatch):

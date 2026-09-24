@@ -1,6 +1,7 @@
 """Class-segmented local buckets: K=1 reproduces the single-class bucketer; K>1 lays classes out class-major."""
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.local.local_layout import (
     LocalHypothesisLayout,
@@ -53,7 +54,7 @@ def _assert_buckets_equal(a, b):
             if xa is None or ya is None:
                 assert xa is None and ya is None, name
             else:
-                np.testing.assert_array_equal(np.asarray(xa), np.asarray(ya), err_msg=name)
+                assert_matches(np.asarray(xa), np.asarray(ya), err_msg=name)
                 assert np.asarray(xa).dtype == np.asarray(ya).dtype, name
         assert x.bucket_image_count == y.bucket_image_count
         assert x.bucket_rotation_count == y.bucket_rotation_count
@@ -92,22 +93,18 @@ def test_class_segments_are_class_major_with_one_segment_width_per_bucket():
             seen.add(image)
             widest = int(counts[image].max())
             assert seg >= widest and seg == _exact_bucket_rotation_size(widest, 256) or b.bucket_rotation_count >= K * widest
-            np.testing.assert_array_equal(b.class_actual_rotation_counts[row], counts[image])
+            assert_matches(b.class_actual_rotation_counts[row], counts[image])
             assert b.actual_rotation_counts[row] == counts[image].sum()
-            np.testing.assert_array_equal(b.translation_log_prior[row], tlp[image])
+            assert_matches(b.translation_log_prior[row], tlp[image])
             for k, layout in enumerate(layouts):
                 lo, hi = k * seg, k * seg + int(counts[image, k])
                 s0, s1 = int(layout.rotation_offsets[image]), int(layout.rotation_offsets[image + 1])
-                np.testing.assert_array_equal(b.local_rotations[row, lo:hi], layout.rotations_flat[s0:s1])
-                np.testing.assert_array_equal(b.local_mstep_rotations[row, lo:hi], layout.mstep_rotations_flat[s0:s1])
-                np.testing.assert_array_equal(b.local_rotation_ids[row, lo:hi], layout.rotation_ids_flat[s0:s1])
-                np.testing.assert_array_equal(b.local_rotation_posterior_ids[row, lo:hi], layout.rotation_posterior_ids_flat[s0:s1])
-                np.testing.assert_array_equal(b.local_sample_mask[row, lo:hi], layout.sample_mask_rows(s0, s1))
-                np.testing.assert_allclose(
-                    b.local_rotation_log_prior[row, lo:hi],
-                    (layout.rotation_log_priors_flat[s0:s1].astype(np.float64) + priors[k]).astype(np.float32),
-                    rtol=0, atol=0,
-                )
+                assert_matches(b.local_rotations[row, lo:hi], layout.rotations_flat[s0:s1])
+                assert_matches(b.local_mstep_rotations[row, lo:hi], layout.mstep_rotations_flat[s0:s1])
+                assert_matches(b.local_rotation_ids[row, lo:hi], layout.rotation_ids_flat[s0:s1])
+                assert_matches(b.local_rotation_posterior_ids[row, lo:hi], layout.rotation_posterior_ids_flat[s0:s1])
+                assert_matches(b.local_sample_mask[row, lo:hi], layout.sample_mask_rows(s0, s1))
+                assert_matches(b.local_rotation_log_prior[row, lo:hi], (layout.rotation_log_priors_flat[s0:s1].astype(np.float64) + priors[k]).astype(np.float32))
                 assert b.local_rotation_mask[row, lo:hi].all()
                 assert not b.local_rotation_mask[row, hi:(k + 1) * seg].any()
                 assert (b.local_rotation_ids[row, hi:(k + 1) * seg] == -1).all()
@@ -186,9 +183,9 @@ def test_bucket_rebuilds_preserve_the_class_segmentation():
     assert padded.segment_rotation_count == partial.segment_rotation_count
     assert padded.bucket_rotation_count == K * padded.segment_rotation_count
     assert padded.class_actual_rotation_counts.shape == (padded_batch_size, K)
-    np.testing.assert_array_equal(padded.class_actual_rotation_counts[:actual_count], partial.class_actual_rotation_counts)
+    assert_matches(padded.class_actual_rotation_counts[:actual_count], partial.class_actual_rotation_counts)
     # The added tail holds no class rows and is not valid.
-    np.testing.assert_array_equal(
+    assert_matches(
         padded.class_actual_rotation_counts[actual_count:], np.zeros((padded_batch_size - actual_count, K), dtype=np.int32),
     )
     assert not padded.local_rotation_mask[actual_count:].any()
@@ -203,7 +200,7 @@ def test_bucket_rebuilds_preserve_the_class_segmentation():
     assert reordered is not multi
     assert reordered.n_classes == K
     assert reordered.segment_rotation_count == multi.segment_rotation_count
-    np.testing.assert_array_equal(
+    assert_matches(
         reordered.class_actual_rotation_counts, np.asarray(multi.class_actual_rotation_counts)[::-1],
     )
-    np.testing.assert_array_equal(reordered.local_rotation_ids, np.asarray(multi.local_rotation_ids)[::-1])
+    assert_matches(reordered.local_rotation_ids, np.asarray(multi.local_rotation_ids)[::-1])

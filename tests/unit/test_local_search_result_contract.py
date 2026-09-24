@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.types import LocalEMResult
 from relax.refinement import local_search_iteration
@@ -66,13 +67,13 @@ def test_kclass_optional_outputs_preserve_statistics(
     assert result.noise_stats is (noise if accumulate_noise else None)
     assert result.Ft_y is engine_result.Ft_y
     assert result.Ft_ctf is engine_result.Ft_ctf
-    np.testing.assert_array_equal(result.hard_assignment, assignments)
+    assert_matches(result.hard_assignment, assignments)
     assert result.best_pose_rotations is engine_result.best_pose_rotations
     assert result.best_pose_translations is engine_result.best_pose_translations
     assert result.profile_summary is None
-    np.testing.assert_array_equal(result.class_assignments, assignments)
-    np.testing.assert_array_equal(result.class_posterior_sums, class_sums)
-    np.testing.assert_array_equal(result.class_full_posterior_sums, class_sums)
+    assert_matches(result.class_assignments, assignments)
+    assert_matches(result.class_posterior_sums, class_sums)
+    assert_matches(result.class_full_posterior_sums, class_sums)
 
 
 @pytest.mark.parametrize("return_profile", [False, True])

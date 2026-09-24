@@ -20,6 +20,7 @@ from unittest import mock
 
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from relax.diagnostics import bpref_diagnostics, local_bpref_capture
 
@@ -145,29 +146,29 @@ def test_requested_bundle_slices_padding_away_and_keeps_row_order():
     with mock.patch.dict(os.environ, {BUNDLE_ENV: "1"}, clear=False):
         out = _bundle()
     assert out["high_precision_operand_bundle"] is True
-    assert np.array_equal(out["raw_batch_data"], RAW[:UNPADDED])
-    assert np.array_equal(out["ctf_params"], CTF[:UNPADDED])
-    assert np.array_equal(out["integer_pre_shifts"], PRE_SHIFTS[:UNPADDED])
+    assert matches(out["raw_batch_data"], RAW[:UNPADDED])
+    assert matches(out["ctf_params"], CTF[:UNPADDED])
+    assert matches(out["integer_pre_shifts"], PRE_SHIFTS[:UNPADDED])
     # The padded tail must not leak in under any of the three.
-    assert not np.array_equal(out["raw_batch_data"], RAW)
+    assert not matches(out["raw_batch_data"], RAW)
     assert 9 not in np.asarray(out["integer_pre_shifts"]).ravel().tolist()
-    assert np.array_equal(out["noise_variance_half"], NOISE_HALF)
+    assert matches(out["noise_variance_half"], NOISE_HALF)
 
 
 def test_absent_corrections_record_unit_operands_not_zeros():
     with mock.patch.dict(os.environ, {BUNDLE_ENV: "1"}, clear=False):
         out = _bundle()
-    assert np.array_equal(out["batch_image_corrections"], np.ones(UNPADDED, dtype=np.float32))
-    assert np.array_equal(out["batch_scale_corrections"], np.ones(UNPADDED, dtype=np.float32))
+    assert matches(out["batch_image_corrections"], np.ones(UNPADDED, dtype=np.float32))
+    assert matches(out["batch_scale_corrections"], np.ones(UNPADDED, dtype=np.float32))
 
 
 def test_present_corrections_are_indexed_by_image_id_not_by_row():
     with mock.patch.dict(os.environ, {BUNDLE_ENV: "1"}, clear=False):
         out = _bundle(image_corrections=ALL_CORR, scale_corrections=ALL_SCALE)
-    assert np.array_equal(out["batch_image_corrections"], ALL_CORR[IMAGE_INDICES])
-    assert np.array_equal(out["batch_scale_corrections"], ALL_SCALE[IMAGE_INDICES])
+    assert matches(out["batch_image_corrections"], ALL_CORR[IMAGE_INDICES])
+    assert matches(out["batch_scale_corrections"], ALL_SCALE[IMAGE_INDICES])
     # A row-order read would take entries 0 and 1; the image ids are 11 and 4.
-    assert not np.array_equal(out["batch_image_corrections"], ALL_CORR[:UNPADDED])
+    assert not matches(out["batch_image_corrections"], ALL_CORR[:UNPADDED])
 
 
 def test_absent_pre_shifts_record_explicit_zero_shifts():
@@ -175,7 +176,7 @@ def test_absent_pre_shifts_record_explicit_zero_shifts():
     with mock.patch.dict(os.environ, {BUNDLE_ENV: "1"}, clear=False):
         out = _bundle(image_pre_shifts=None, integer_pre_shifts=None,
                       real_space_pre_shift_applied=False)
-    assert np.array_equal(out["integer_pre_shifts"], np.zeros((UNPADDED, 2), dtype=np.int32))
+    assert matches(out["integer_pre_shifts"], np.zeros((UNPADDED, 2), dtype=np.int32))
 
 
 def test_fourier_phase_shift_path_is_refused_not_recorded_as_zero():
@@ -199,8 +200,8 @@ def test_recorded_integer_shifts_match_the_helper_the_kernel_path_uses():
     assert expected is not None
     with mock.patch.dict(os.environ, {BUNDLE_ENV: "1"}, clear=False):
         out = _bundle(integer_pre_shifts=expected)
-    assert np.array_equal(out["integer_pre_shifts"], expected)
-    assert np.array_equal(out["integer_pre_shifts"], np.array([[1, -2], [-3, 4]], dtype=np.int32))
+    assert matches(out["integer_pre_shifts"], expected)
+    assert matches(out["integer_pre_shifts"], np.array([[1, -2], [-3, 4]], dtype=np.int32))
 
 
 def test_recorded_preprocessing_policy_fields_are_not_inherited_claims():
@@ -208,7 +209,7 @@ def test_recorded_preprocessing_policy_fields_are_not_inherited_claims():
         out = _bundle()
     # Derived from the dataset, not inherited from the static defaults.
     assert out["relion_cuda_preprocess"] is False
-    assert np.array_equal(
+    assert matches(
         out["relion_preprocess_normalization_factors"], np.ones(UNPADDED, dtype=np.float32)
     )
     # On the exact branch the CTF comes from the source STAR, which the metadata says.
@@ -229,7 +230,7 @@ def test_float32_corrections_round_trip_and_are_accepted():
     exact = ALL_CORR.astype(np.float32)
     with mock.patch.dict(os.environ, {BUNDLE_ENV: "1"}, clear=False):
         out = _bundle(image_corrections=exact)
-    assert np.array_equal(out["batch_image_corrections"], exact[IMAGE_INDICES])
+    assert matches(out["batch_image_corrections"], exact[IMAGE_INDICES])
 
 
 def test_float64_raw_images_that_do_not_round_trip_are_rejected():
@@ -251,7 +252,7 @@ def test_masked_scoring_without_a_supplied_mask_fails_closed():
 def test_supplied_mask_is_recorded_verbatim():
     with mock.patch.dict(os.environ, {BUNDLE_ENV: "1"}, clear=False):
         out = _bundle(static_kwargs=_static_kwargs(score_with_masked_images=True))
-    assert np.array_equal(out["image_mask"], MASK)
+    assert matches(out["image_mask"], MASK)
     assert out["image_mask_mode"] == "relion_background_fill"
 
 
@@ -269,7 +270,7 @@ def test_exact_branch_on_relion_cuda_dataset_is_accepted():
     assert out["high_precision_operand_bundle"] is True
     # The metadata describes what was APPLIED, not how the dataset is configured.
     assert out["relion_cuda_preprocess"] is False
-    assert np.array_equal(
+    assert matches(
         out["relion_preprocess_normalization_factors"], np.ones(UNPADDED, dtype=np.float32)
     )
     assert out["ctf_mode"] == "relion_exact_source_star"
@@ -293,7 +294,7 @@ def test_big_jit_cuda_path_records_the_real_normalization_when_unmasked():
                       relion_cuda_preprocess_cosine_width=3.25,
                       static_kwargs=_static_kwargs(score_with_masked_images=False))
     assert out["relion_cuda_preprocess"] is True
-    assert np.array_equal(out["relion_preprocess_normalization_factors"], norm)
+    assert matches(out["relion_preprocess_normalization_factors"], norm)
     assert out["relion_cuda_preprocess_radius"] == 37.5
     assert out["relion_cuda_preprocess_cosine_width"] == 3.25
 
@@ -311,7 +312,7 @@ def test_k_gt_1_capture_path_records_a_non_exact_ctf_and_keeps_its_mask():
     # The evaluator's own mode, not the sentinel and not the exact-path label.
     assert out["ctf_mode"] == "SPA"
     assert out["ctf_dose_per_tilt"] == 0.0 and out["ctf_angle_per_tilt"] == 0.0
-    assert np.array_equal(out["image_mask"], MASK)
+    assert matches(out["image_mask"], MASK)
     assert out["image_mask_mode"] == "relion_background_fill"
 
 
@@ -450,9 +451,9 @@ def test_requested_capture_serializes_every_operand_round_trip(tmp_path):
     assert bool(payload["high_precision_operand_bundle"]) is True
     for key in BUNDLE_KEYS:
         assert np.asarray(payload[key]).size > 0, key
-    assert np.array_equal(payload["raw_real_images"], RAW[:UNPADDED])
-    assert np.array_equal(payload["ctf_params"], CTF[:UNPADDED])
-    assert np.array_equal(payload["integer_pre_shifts"], PRE_SHIFTS[:UNPADDED])
-    assert np.array_equal(payload["noise_variance_half"], NOISE_HALF)
+    assert matches(payload["raw_real_images"], RAW[:UNPADDED])
+    assert matches(payload["ctf_params"], CTF[:UNPADDED])
+    assert matches(payload["integer_pre_shifts"], PRE_SHIFTS[:UNPADDED])
+    assert matches(payload["noise_variance_half"], NOISE_HALF)
     assert str(payload["image_mask_mode"]) != "not-captured"
     assert np.asarray(payload["raw_real_images"]).dtype == np.float32

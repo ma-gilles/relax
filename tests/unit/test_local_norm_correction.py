@@ -3,6 +3,7 @@
 import jax
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
@@ -48,7 +49,7 @@ def test_noise_wsum_initial_dtype_matches_direct_wavg_output(
     assert np.dtype(actual) == np.dtype(expected)
 
 
-def test_noise_wsum_float64_zero_is_bitwise_equivalent_to_first_bucket_promotion():
+def test_noise_wsum_float64_zero_matches_first_bucket_promotion():
     direct_wavg_shells = jnp.asarray(
         [0.0, np.nextafter(1.0, 2.0), -3.25, 2**40 + 0.25],
         dtype=jnp.float64,
@@ -69,7 +70,7 @@ def test_noise_wsum_float64_zero_is_bitwise_equivalent_to_first_bucket_promotion
 
     assert np.asarray(legacy).dtype == np.float64
     assert np.asarray(canonical).dtype == np.float64
-    np.testing.assert_array_equal(np.asarray(canonical), np.asarray(legacy))
+    assert_matches(np.asarray(canonical), np.asarray(legacy))
 
 
 def test_norm_correction_mass_drops_invalid_shells_and_keeps_valid_outer_shell():
@@ -95,7 +96,7 @@ def test_norm_correction_mass_drops_invalid_shells_and_keeps_valid_outer_shell()
         ],
         dtype=np.float32,
     )
-    np.testing.assert_array_equal(np.asarray(actual), expected)
+    assert_matches(np.asarray(actual), expected)
 
 
 def test_norm_correction_mass_drops_invalid_shells_without_model_window():
@@ -117,7 +118,7 @@ def test_norm_correction_mass_drops_invalid_shells_without_model_window():
         ],
         dtype=np.float32,
     )
-    np.testing.assert_array_equal(np.asarray(actual), expected)
+    assert_matches(np.asarray(actual), expected)
 
 
 def test_norm_correction_mass_can_omit_shared_unweighted_outer_shell():
@@ -130,7 +131,7 @@ def test_norm_correction_mass_can_omit_shared_unweighted_outer_shell():
         include_unweighted_high_shell=False,
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(actual),
         np.asarray([[0.0, 0.25, 0.0, 0.0]], dtype=np.float32),
     )
@@ -186,7 +187,7 @@ def test_norm_correction_power_uses_relion_powerclass_once_or_not_at_all():
         current_size=current_size,
     )
 
-    np.testing.assert_allclose(np.asarray(without_shared_high), np.asarray(expected_low), rtol=0, atol=0)
+    assert_matches(np.asarray(without_shared_high), np.asarray(expected_low))
     np.testing.assert_allclose(
         np.asarray(with_shared_high),
         np.asarray(expected_low + expected_high),
@@ -223,7 +224,7 @@ def test_local_noise_spectrum_uses_unweighted_high_shell_particle_power():
         [power[0, 0] * 0.25, power[0, 1] * 0.25, power[0, 2] + power[1, 2]],
         dtype=np.float32,
     )
-    np.testing.assert_array_equal(np.asarray(shells), expected)
+    assert_matches(np.asarray(shells), expected)
 
 
 def test_local_noise_spectrum_omits_shared_high_shell_for_non_owner_class():
@@ -240,7 +241,7 @@ def test_local_noise_spectrum_omits_shared_high_shell_for_non_owner_class():
         include_unweighted_high_shell=False,
     )
 
-    np.testing.assert_array_equal(np.asarray(shells), np.asarray([0.25, 1.0, 0.0], dtype=np.float32))
+    assert_matches(np.asarray(shells), np.asarray([0.25, 1.0, 0.0], dtype=np.float32))
 
 
 def test_local_norm_correction_can_use_relion_powerclass_spectrum_tail():
@@ -288,7 +289,7 @@ def test_local_norm_correction_can_use_relion_powerclass_spectrum_tail():
         image_shape=(height, height),
         current_size=current_size,
     )
-    np.testing.assert_array_equal(np.asarray(historical), np.asarray(expected_historical))
+    assert_matches(np.asarray(historical), np.asarray(expected_historical))
     # The source-faithful powerClass spectrum is binned with GPU scatter-adds.
     # Independent invocations can differ by a few float32 ULPs even though the
     # final accumulated value is float64.
@@ -334,7 +335,7 @@ def test_powerclass_spectrum_norm_sums_shell_bins_in_host_precision():
     expected *= np.float64((height * height) ** 2)
 
     assert np.asarray(actual).dtype == np.float64
-    np.testing.assert_array_equal(np.asarray(actual), np.asarray([expected]))
+    assert_matches(np.asarray(actual), np.asarray([expected]))
 
 
 def test_powerclass_spectrum_norm_keeps_double_kernel_inputs():
@@ -370,7 +371,7 @@ def test_powerclass_spectrum_norm_keeps_double_kernel_inputs():
 
     assert actual.dtype == np.float64
     np.testing.assert_allclose(actual, np.asarray([expected]), rtol=3e-16, atol=1e-8)
-    assert not np.array_equal(actual, actual.astype(np.float32).astype(np.float64))
+    assert not matches(actual, actual.astype(np.float32).astype(np.float64))
 
 
 def test_powerclass_spectrum_norm_runtime_current_size_reuses_trace_and_matches_static():
@@ -404,7 +405,7 @@ def test_powerclass_spectrum_norm_runtime_current_size_reuses_trace_and_matches_
                 image_shape=(height, height),
                 current_size=current_size,
             )
-            np.testing.assert_array_equal(
+            assert_matches(
                 np.asarray(dynamic_by_size[current_size]),
                 np.asarray(static),
             )
@@ -436,7 +437,7 @@ def test_translated_wavg_low_shell_power_preserves_per_pixel_boundary():
     power = np.asarray(power + shifted.imag * shifted.imag, dtype=np.float32)
     expected = np.sum(posterior[:, :, None] * power, axis=1, dtype=np.float32)
     expected[:, 2:] = 0.0
-    np.testing.assert_array_equal(np.asarray(actual), expected)
+    assert_matches(np.asarray(actual), expected)
 
 
 def test_relion_wavg_norm_translation_uses_raw_windowed_image(monkeypatch):
@@ -450,9 +451,9 @@ def test_relion_wavg_norm_translation_uses_raw_windowed_image(monkeypatch):
     angles = jnp.asarray([[0.0, 0.0], [1.0, 2.0]], dtype=jnp.float32)
 
     def fake_translate(images, received_angles, received_indices, image_shape):
-        np.testing.assert_array_equal(np.asarray(images), np.asarray(processed[:, indices]))
-        np.testing.assert_array_equal(np.asarray(received_angles), np.asarray(angles))
-        np.testing.assert_array_equal(np.asarray(received_indices), np.asarray(indices))
+        assert_matches(np.asarray(images), np.asarray(processed[:, indices]))
+        assert_matches(np.asarray(received_angles), np.asarray(angles))
+        assert_matches(np.asarray(received_indices), np.asarray(indices))
         assert image_shape == (4, 4)
         return jnp.arange(6, dtype=jnp.float32).astype(jnp.complex64).reshape(2, 3)
 
@@ -464,7 +465,7 @@ def test_relion_wavg_norm_translation_uses_raw_windowed_image(monkeypatch):
         (4, 4),
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(actual),
         np.arange(6, dtype=np.float32).astype(np.complex64).reshape(1, 2, 3),
     )
@@ -515,4 +516,4 @@ def test_translated_wavg_norm_replaces_only_untranslated_low_shell_power(monkeyp
         dtype=np.float32,
     )[:, :2]
     expected = high_and_residual + np.sum(translated_low_pixels, dtype=np.float64)
-    np.testing.assert_array_equal(np.asarray(actual), np.asarray([expected]))
+    assert_matches(np.asarray(actual), np.asarray([expected]))

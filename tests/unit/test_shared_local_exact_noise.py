@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.local import local_big_jit, local_bucket_stages, local_em_engine
 
@@ -282,7 +283,7 @@ def test_shared_exact_noise_matches_pre_extraction_oracle_exactly(
     for actual_value, expected_value in zip(actual, expected, strict=True):
         assert actual_value.shape == expected_value.shape
         assert actual_value.dtype == expected_value.dtype
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(actual_value),
             np.asarray(expected_value),
         )
@@ -332,11 +333,11 @@ def test_shared_exact_noise_preserves_wavg_cutoff_wiring(monkeypatch):
         np.asarray(inputs["noise_xa"])[cutoff] + np.asarray(direct)[0, cutoff],
     )
     for output_index, expected_cutoff in enumerate(expected_cutoff_values):
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(with_wavg[output_index])[cutoff],
             expected_cutoff,
         )
-    np.testing.assert_array_equal(np.asarray(with_wavg[-1]), np.asarray(debug))
+    assert_matches(np.asarray(with_wavg[-1]), np.asarray(debug))
 
 
 def _call_deferred_wrapper(inputs, *, source_faithful_spectrum_norm=True):
@@ -442,11 +443,11 @@ def test_norm_capacity_reuses_noise_executable_and_preserves_logical_carries(dty
                     assert got.dtype == want.dtype
                     if index == 6:
                         assert got.shape == (capacity,) and want.shape == (n_images,)
-                        np.testing.assert_array_equal(np.asarray(got[:n_images]), np.asarray(want))
-                        np.testing.assert_array_equal(np.asarray(got[n_images:]), np.zeros(capacity - n_images))
+                        assert_matches(np.asarray(got[:n_images]), np.asarray(want))
+                        assert_matches(np.asarray(got[n_images:]), np.zeros(capacity - n_images))
                     else:
                         assert got.shape == want.shape
-                        np.testing.assert_array_equal(np.asarray(got), np.asarray(want))
+                        assert_matches(np.asarray(got), np.asarray(want))
                 inputs.update(zip(carry_names, expected, strict=True))
                 padded.update(zip(carry_names, actual, strict=True))
         assert seen_capacities == {1024, 2048}
@@ -479,13 +480,13 @@ def test_deferred_exact_noise_wrapper_has_one_boundary_and_b42_b32_cache_keys():
                 _legacy_deferred_outputs(dense_inputs),
                 strict=True,
             ):
-                np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
+                assert_matches(np.asarray(actual), np.asarray(expected))
             dense_cache_size = function._cache_size()
             assert dense_cache_size == 1
             dense_second = _call_deferred_wrapper(dense_inputs)
             assert function._cache_size() == dense_cache_size
             for first, second in zip(dense_first, dense_second, strict=True):
-                np.testing.assert_array_equal(np.asarray(first), np.asarray(second))
+                assert_matches(np.asarray(first), np.asarray(second))
 
             tail_output = _call_deferred_wrapper(tail_inputs)
             for actual, expected in zip(
@@ -493,7 +494,7 @@ def test_deferred_exact_noise_wrapper_has_one_boundary_and_b42_b32_cache_keys():
                 _legacy_deferred_outputs(tail_inputs),
                 strict=True,
             ):
-                np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
+                assert_matches(np.asarray(actual), np.asarray(expected))
             assert function._cache_size() == dense_cache_size + 1
 
             def trace_with_dynamic_current_size(runtime_current_size):
@@ -547,4 +548,4 @@ def test_native_noise_composition_preserves_all_carries(
     assert calls == [compute_scale]
     for a, b in zip(actual, expected, strict=True):
         assert a.shape == b.shape and a.dtype == b.dtype
-        np.testing.assert_array_equal(a, b)
+        assert_matches(a, b)

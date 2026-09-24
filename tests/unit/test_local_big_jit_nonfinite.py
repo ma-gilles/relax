@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
@@ -83,17 +84,17 @@ def test_score_normalize_mstep_zeroes_all_nonfinite_score_rows():
     assert outputs["max_posterior"][1] == 0.0
     assert outputs["n_significant_samples"][1] == 0
     assert not outputs["reconstruction_rotation_mask"][1, 0]
-    np.testing.assert_array_equal(
+    assert_matches(
         outputs["reconstruction_probs"][1],
         np.zeros_like(outputs["reconstruction_probs"][1]),
     )
-    np.testing.assert_array_equal(outputs["probs_sum_t"][1], np.zeros_like(outputs["probs_sum_t"][1]))
-    np.testing.assert_array_equal(
+    assert_matches(outputs["probs_sum_t"][1], np.zeros_like(outputs["probs_sum_t"][1]))
+    assert_matches(
         outputs["reconstruction_probs_sum_t"][1],
         np.zeros_like(outputs["reconstruction_probs_sum_t"][1]),
     )
-    np.testing.assert_array_equal(outputs["summed"][1], np.zeros_like(outputs["summed"][1]))
-    np.testing.assert_array_equal(outputs["ctf_probs"][1], np.zeros_like(outputs["ctf_probs"][1]))
+    assert_matches(outputs["summed"][1], np.zeros_like(outputs["summed"][1]))
+    assert_matches(outputs["ctf_probs"][1], np.zeros_like(outputs["ctf_probs"][1]))
 
 
 def test_score_normalize_mstep_zeroes_nonfinite_external_logz_rows():
@@ -118,13 +119,13 @@ def test_score_normalize_mstep_zeroes_nonfinite_external_logz_rows():
     assert np.all(np.isfinite(outputs["log_z"]))
     assert np.isneginf(outputs["best_log_score"][1])
     assert outputs["max_posterior"][1] == 0.0
-    np.testing.assert_array_equal(
+    assert_matches(
         outputs["reconstruction_probs"][1],
         np.zeros_like(outputs["reconstruction_probs"][1]),
     )
-    np.testing.assert_array_equal(outputs["probs_sum_t"][1], np.zeros_like(outputs["probs_sum_t"][1]))
-    np.testing.assert_array_equal(outputs["summed"][1], np.zeros_like(outputs["summed"][1]))
-    np.testing.assert_array_equal(outputs["ctf_probs"][1], np.zeros_like(outputs["ctf_probs"][1]))
+    assert_matches(outputs["probs_sum_t"][1], np.zeros_like(outputs["probs_sum_t"][1]))
+    assert_matches(outputs["summed"][1], np.zeros_like(outputs["summed"][1]))
+    assert_matches(outputs["ctf_probs"][1], np.zeros_like(outputs["ctf_probs"][1]))
 
 
 def test_score_normalize_support_deferred_mstep_matches_full_mstep():
@@ -166,8 +167,8 @@ def test_score_normalize_support_deferred_mstep_matches_full_mstep():
 
     np.testing.assert_allclose(support_arrays[0], full["log_z"], rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(support_arrays[5], full["max_posterior"], rtol=1e-6, atol=1e-6)
-    np.testing.assert_array_equal(support_arrays[6], full["reconstruction_sample_mask"])
-    np.testing.assert_array_equal(support_arrays[7], full["reconstruction_rotation_mask"])
+    assert_matches(support_arrays[6], full["reconstruction_sample_mask"])
+    assert_matches(support_arrays[7], full["reconstruction_rotation_mask"])
     np.testing.assert_allclose(support_arrays[10], full["probs_sum_t"], rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(support_arrays[11], full["reconstruction_probs_sum_t"], rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(deferred_summed, full["summed"], rtol=1e-6, atol=1e-6)
@@ -207,10 +208,10 @@ def test_score_normalize_support_reuses_relion_f32_fine_posterior():
     )
 
     assert arrays[9].dtype == np.float32
-    np.testing.assert_array_equal(arrays[9], expected[0])
-    np.testing.assert_array_equal(arrays[6], expected[1])
-    np.testing.assert_array_equal(arrays[8], expected[2])
-    np.testing.assert_array_equal(arrays[5], np.max(expected[0], axis=(1, 2)))
+    assert_matches(arrays[9], expected[0])
+    assert_matches(arrays[6], expected[1])
+    assert_matches(arrays[8], expected[2])
+    assert_matches(arrays[5], np.max(expected[0], axis=(1, 2)))
 
 
 def test_bpref_capture_rebuilds_relion_f32_mstep_probs_not_generic_debug_probs():
@@ -236,7 +237,7 @@ def test_bpref_capture_rebuilds_relion_f32_mstep_probs_not_generic_debug_probs()
     )
 
     assert np.asarray(captured).dtype == np.float32
-    np.testing.assert_array_equal(np.asarray(captured), np.asarray(expected_probs))
+    assert_matches(np.asarray(captured), np.asarray(expected_probs))
     assert not np.array_equal(np.asarray(captured), np.asarray(generic_probs))
 
 
@@ -267,9 +268,9 @@ def test_compute_noise_block_zero_weight_nonfinite_projection_is_zero():
         True,
     )
 
-    np.testing.assert_array_equal(np.asarray(noise_shells), np.zeros(3, dtype=np.float32))
-    np.testing.assert_array_equal(np.asarray(a2_shells), np.zeros(3, dtype=np.float32))
-    np.testing.assert_array_equal(np.asarray(xa_shells), np.zeros(3, dtype=np.float32))
+    assert_matches(np.asarray(noise_shells), np.zeros(3, dtype=np.float32))
+    assert_matches(np.asarray(a2_shells), np.zeros(3, dtype=np.float32))
+    assert_matches(np.asarray(xa_shells), np.zeros(3, dtype=np.float32))
 
 
 def test_compute_local_ctf_sums_zero_mass_nonfinite_ctf_is_zero():
@@ -287,7 +288,7 @@ def test_compute_local_ctf_sums_zero_mass_nonfinite_ctf_is_zero():
     ctf_sums = np.asarray(compute_local_ctf_sums(probs, ctf2_over_nv))
 
     assert np.all(np.isfinite(ctf_sums))
-    np.testing.assert_array_equal(ctf_sums[1], np.zeros_like(ctf_sums[1]))
+    assert_matches(ctf_sums[1], np.zeros_like(ctf_sums[1]))
 
 
 def test_fused_local_score_zero_mass_nonfinite_ctf_is_zero():
@@ -318,4 +319,4 @@ def test_fused_local_score_zero_mass_nonfinite_ctf_is_zero():
 
     assert np.all(np.isfinite(ctf_probs))
     assert np.any(ctf_probs[0] != 0.0)
-    np.testing.assert_array_equal(ctf_probs[1], np.zeros_like(ctf_probs[1]))
+    assert_matches(ctf_probs[1], np.zeros_like(ctf_probs[1]))

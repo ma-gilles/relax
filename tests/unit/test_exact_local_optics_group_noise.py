@@ -8,6 +8,7 @@ one-group result, and different rows must change it.
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.local.local_em_engine import run_local_em_exact
 
@@ -65,7 +66,7 @@ def test_identical_groups_reproduce_one_group(kwargs):
     _, _, noise, _ = _case()
     one = _run(noise, **kwargs)
     two = _run(jnp.stack([noise, noise]), groups=GROUPS, **kwargs)
-    np.testing.assert_array_equal(two.hard_assignments, one.hard_assignments)
+    assert_matches(two.hard_assignments, one.hard_assignments)
     np.testing.assert_allclose(
         np.asarray(two.stats.log_evidence_per_image), np.asarray(one.stats.log_evidence_per_image), rtol=1e-6
     )

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.fourier_window import make_fourier_window_spec
@@ -86,13 +87,13 @@ def test_local_projection_views(monkeypatch, backend, current_size, reconstruct,
     expected_score = (full[:, score_indices] * weights[score_indices]).reshape(2, 3, -1)
     expected_score = expected_score.astype(np.complex128 if double_score else np.complex64)
     assert result.proj_weighted.dtype == expected_score.dtype
-    np.testing.assert_array_equal(result.proj_weighted, expected_score)
+    assert_matches(result.proj_weighted, expected_score)
     if reconstruct:
         expected_noise = full[:, recon_indices].reshape(2, 3, -1)
         if double_score:
             expected_noise = expected_noise.astype(np.complex128)
         assert result.proj_for_noise.dtype == expected_noise.dtype
-        np.testing.assert_array_equal(result.proj_for_noise, expected_noise)
+        assert_matches(result.proj_for_noise, expected_noise)
     else:
         assert result.proj_for_noise is None
     expected_backend = (

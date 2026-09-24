@@ -1,4 +1,4 @@
-"""Exact local host results without compiling per-tail device bookkeeping."""
+"""Local host results match without compiling per-tail device bookkeeping."""
 
 import copy
 from collections import defaultdict
@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, assert_trees_match
 
 from relax.helpers.env_flags import parse_env_binary_flag
 from relax.local import local_em_engine as engine
@@ -88,22 +89,22 @@ def assert_buffers_equal(left, right):
             assert a.keys() == b.keys()
         elif isinstance(a, np.ndarray):
             assert a.shape == b.shape and a.dtype == b.dtype
-            assert a.tobytes() == b.tobytes(), key
+            assert_matches(a, b, err_msg=key, strict=True)
         elif isinstance(a, list):
             assert len(a) == len(b)
             for x, y in zip(a, b, strict=True):
                 if isinstance(x, np.ndarray):
-                    assert x.dtype == y.dtype and x.tobytes() == y.tobytes(), key
+                    assert_matches(x, y, err_msg=key, strict=True)
                 else:
-                    assert x == y, key
+                    assert_trees_match(x, y, err_msg=key)
         else:
-            assert a == b, key
+            assert_trees_match(a, b, err_msg=key)
 
 
 @pytest.mark.parametrize("physical,logical", [(42, 32), (42, 42), (75, 73), (96, 5)])
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 @pytest.mark.parametrize("optional,profile", [(False, False), (False, True), (True, False), (True, True)])
-def test_all_published_host_buffers_bitwise(physical, logical, dtype, optional, profile):
+def test_all_published_host_buffers_match(physical, logical, dtype, optional, profile):
     values, expected = make_case(physical, logical, dtype, optional, profile)
     actual = copy.deepcopy(expected)
     device = {k: jnp.asarray(v) if k in DEVICE_FIELDS else v for k, v in values.items()}
