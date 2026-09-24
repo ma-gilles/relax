@@ -1,0 +1,321 @@
+"""Halves whose optics groups differ in pixel size or box (RELION S3b).
+
+Images of different shapes cannot share one dataset or one compiled program, so a
+half is split into *shape classes* (optics groups with the same box and pixel size).
+Half scoring runs the unchanged single-shape route once per class on that class's
+dataset, with RELION's rules for a group on another grid (:mod:`relax.helpers.optics_scale`):
+
+- projection/backprojection matrices divided by the class scale ``s_g``
+  (``applyScaleDifference``); poses stay unscaled everywhere else;
+- translations converted from reference pixels to class pixels;
+- image sizes remapped (``updateImageSizeAndResolutionPointers``), while the
+  backprojector keeps the reference model size;
+- noise read from the reference-shell spectrum (E-step remap) and the class's noise
+  sums added back onto the reference shells (M-step remap).
+
+Per-image outputs return to the half's image order by index, and additive sums add.
+A half with one shape class is a plain dataset and never reaches this module.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+
+import numpy as np
+
+from relax.helpers import optics_scale
+
+
+@dataclasses.dataclass(frozen=True)
+class ShapeClass:
+    """The images of one half that share a box and a pixel size."""
+
+    dataset: object
+    image_indices: np.ndarray  # positions in the half's image order
+    box_size: int
+    pixel_size: float
+    scale: float  # s_g = box_g angpix_g / (ori angpix_ref)
+    translation_factor: float  # reference pixels -> class pixels: angpix_ref / angpix_g
+
+
+class MultiShapeHalf:
+    """One half as several shape classes, presenting the reference geometry.
+
+    ``image_shape``, ``volume_shape`` and ``voxel_size`` are the reference model's
+    (optics group 0's grid); ``n_units`` counts every image of the half. Anything
+    that needs the images themselves must go through ``classes``.
+    """
+
+    def __init__(self, classes, *, image_shape, volume_shape, voxel_size):
+        self.classes = tuple(classes)
+        self.image_shape = tuple(int(size) for size in image_shape)
+        self.volume_shape = tuple(int(size) for size in volume_shape)
+        self.voxel_size = float(voxel_size)
+        self.grid_size = self.image_shape[0]
+        self.n_units = self.n_images = int(sum(c.image_indices.size for c in self.classes))
+        order = np.concatenate([c.image_indices for c in self.classes])
+        if not np.array_equal(np.sort(order), np.arange(self.n_units)):
+            raise ValueError("shape classes must partition the half's images")
+
+    def __getattr__(self, name):
+        raise AttributeError(f"a half with several image shapes has no single {name!r}; use its shape classes")
+
+
+def make_shape_classes(datasets_and_indices, *, ref_box, ref_pixel):
+    """``ShapeClass`` records from ``(dataset, half positions)`` pairs."""
+
+    classes = []
+    for dataset, indices in datasets_and_indices:
+        box = int(dataset.image_shape[0])
+        pixel = float(dataset.voxel_size)
+        classes.append(
+            ShapeClass(
+                dataset=dataset,
+                image_indices=np.asarray(indices, dtype=np.int64),
+                box_size=box,
+                pixel_size=pixel,
+                scale=optics_scale.scale_difference(box, pixel, ref_box, ref_pixel),
+                translation_factor=float(ref_pixel) / pixel,
+            )
+        )
+    return classes
+
+
+# Keywords of the half scoring functions whose leading axis is the half's images.
+PER_IMAGE_KWARGS = (
+    "previous_best_rotation_eulers_k",
+    "trans_prior_center",
+    "trans_prior_center_for_engine",
+    "image_corrections_k",
+    "scale_corrections_k",
+    "translation_search_base",
+    "group_ids_k",
+    "optics_group_ids_k",
+    "replay_prior_translations",
+)
+# Keywords that may be per image when two-dimensional (image x hypothesis).
+PER_IMAGE_IF_2D_KWARGS = ("translation_log_prior", "rotation_log_prior_k", "class_rotation_log_prior_k")
+# Keywords in reference pixels.
+TRANSLATION_KWARGS = (
+    "current_translations",
+    "base_translations",
+    "trans_prior_center",
+    "trans_prior_center_for_engine",
+    "translation_search_base",
+    "replay_prior_translations",
+)
+# Image-side Fourier sizes in reference pixels (None means the full box).
+IMAGE_SIZE_KWARGS = (
+    "cs_for_engine",
+    "local_pass1_current_size",
+    "firstiter_coarse_current_size",
+    "firstiter_fine_current_size",
+)
+
+
+def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
+    """One shape class's keywords: its images, class pixels and class Fourier sizes."""
+
+    out = dict(kwargs)
+    index = shape_class.image_indices
+    for name in PER_IMAGE_KWARGS + PER_IMAGE_IF_2D_KWARGS:
+        value = out.get(name)
+        if value is None:
+            continue
+        array = np.asarray(value)
+        if name in PER_IMAGE_IF_2D_KWARGS and array.ndim != 2:
+            continue
+        if array.ndim == 0 or array.shape[0] != n_half:
+            raise ValueError(f"{name} must have the half's {n_half} images on its leading axis")
+        out[name] = array[index]
+    for name in TRANSLATION_KWARGS:
+        if out.get(name) is not None:
+            out[name] = np.asarray(out[name]) * shape_class.translation_factor
+    for name in IMAGE_SIZE_KWARGS:
+        if out.get(name) is not None:
+            out[name] = optics_scale.group_current_size(out[name], shape_class.box_size, shape_class.scale)
+    # The backprojector stays on the reference model grid; the class's image window
+    # for the M-step is the remapped size.
+    reference_size = out.get("model_current_size_for_engine")
+    if reference_size is None:
+        reference_size = kwargs.get("cs_for_engine")
+    if reference_size is not None:
+        out["model_current_size_for_engine"] = optics_scale.group_current_size(
+            reference_size, shape_class.box_size, shape_class.scale
+        )
+    out["reference_current_size"] = reference_size
+    out["projection_scale"] = shape_class.scale
+    out["experiment_dataset"] = shape_class.dataset
+    return out
+
+
+def class_noise_table(noise_radial_ref, shape_class: ShapeClass, ref_box: int):
+    """The class's per-pixel noise rows, read from the reference-shell spectra.
+
+    ``noise_radial_ref`` is ``[G, n_ref]`` in RECOVAR's native units on the reference
+    grid (RELION sigma2 times ``ref_box**4``); the class grid's native unit is RELION
+    sigma2 times ``box_g**4``.
+    """
+
+    from recovar.reconstruction import noise
+
+    radial = np.atleast_2d(np.asarray(noise_radial_ref, dtype=np.float64))
+    to_class = (float(shape_class.box_size) / float(ref_box)) ** 4
+    n_shells = shape_class.box_size // 2 + 1
+    shape = (shape_class.box_size, shape_class.box_size)
+    beyond = optics_scale.reference_shell_of_group_shell(n_shells, shape_class.scale) >= radial.shape[-1]
+    rows = []
+    for row in radial:
+        group_row = optics_scale.group_noise_from_reference(row, n_shells, shape_class.scale)
+        # RELION gives these shells (beyond the reference Nyquist) zero weight; they lie
+        # outside every scored window, so hold the last reference shell there instead of
+        # a zero variance that would turn the unused pixels into inf/nan.
+        group_row[beyond] = row[-1]
+        rows.append(np.asarray(noise.make_radial_noise(group_row * to_class, shape)).reshape(-1))
+    return np.stack(rows)
+
+
+def noise_sums_to_reference(values, shape_class: ShapeClass, ref_box: int):
+    """Class per-shell sums ``[G, n_g]`` in class native units onto ``[G, n_ref]`` reference shells."""
+
+    values = np.atleast_2d(np.asarray(values, dtype=np.float64))
+    to_reference = (float(ref_box) / float(shape_class.box_size)) ** 4
+    n_ref = ref_box // 2 + 1
+    return np.stack(
+        [
+            optics_scale.add_group_shells_to_reference(np.zeros(n_ref), row * to_reference, shape_class.scale)
+            for row in values
+        ]
+    )
+
+
+def place_by_index(parts, classes, n_half):
+    """Per-image arrays of each class back into the half's image order."""
+
+    parts = [None if part is None else np.asarray(part) for part in parts]
+    present = [part for part in parts if part is not None]
+    if not present:
+        return None
+    if len(present) != len(parts):
+        raise ValueError("a per-image output is missing for some shape classes")
+    out = np.empty((n_half,) + present[0].shape[1:], dtype=np.result_type(*present))
+    for part, shape_class in zip(parts, classes):
+        if part.shape[0] != shape_class.image_indices.size:
+            raise ValueError("a shape class returned the wrong number of images")
+        out[shape_class.image_indices] = part
+    return out
+
+
+def _sum(values):
+    values = [value for value in values if value is not None]
+    if not values:
+        return None
+    total = values[0]
+    for value in values[1:]:
+        total = total + value
+    return total
+
+
+def _merge_noise_stats(stats, classes, n_half, ref_box):
+    from relax.helpers.types import make_noise_stats
+
+    if all(stat is None for stat in stats):
+        return None
+    if any(stat is None for stat in stats):
+        raise ValueError("noise statistics are missing for some shape classes")
+    if any(stat.wsum_noise_a2 is not None for stat in stats):
+        raise NotImplementedError("split noise diagnostics are not merged across shape classes")
+    return make_noise_stats(
+        wsum_sigma2_noise=_sum(
+            [noise_sums_to_reference(s.wsum_sigma2_noise, c, ref_box) for s, c in zip(stats, classes)]
+        ),
+        wsum_img_power=_sum(
+            [noise_sums_to_reference(s.wsum_img_power, c, ref_box) for s, c in zip(stats, classes)]
+        ),
+        wsum_sigma2_offset=float(sum(float(s.wsum_sigma2_offset) for s in stats)),
+        sumw=_sum([np.asarray(s.sumw, dtype=np.float64) for s in stats]),
+        wsum_norm_correction=place_by_index([s.wsum_norm_correction for s in stats], classes, n_half),
+        wsum_scale_correction_xa=_sum([s.wsum_scale_correction_xa for s in stats]),
+        wsum_scale_correction_aa=_sum([s.wsum_scale_correction_aa for s in stats]),
+    )
+
+
+def merge_class_results(results, classes, n_half, ref_box):
+    """One ``HalfScoreResult`` for the half from its shape classes' results."""
+
+    from relax.dense.score_outputs import HalfScoreResult
+    from relax.helpers.types import RelionStats
+
+    first = results[0]
+    for result in results[1:]:
+        if (
+            result.mstep_full_half_axis != first.mstep_full_half_axis
+            or result.mstep_accumulator_shape != first.mstep_accumulator_shape
+        ):
+            raise ValueError("shape classes returned different backprojector layouts")
+
+    def per_image(name):
+        return place_by_index([getattr(result, name) for result in results], classes, n_half)
+
+    stats = [result.em_stats for result in results]
+    em_stats = RelionStats(
+        log_evidence_per_image=place_by_index([s.log_evidence_per_image for s in stats], classes, n_half),
+        best_log_score_per_image=place_by_index([s.best_log_score_per_image for s in stats], classes, n_half),
+        max_posterior_per_image=place_by_index([s.max_posterior_per_image for s in stats], classes, n_half),
+        rotation_posterior_sums=_sum([np.asarray(s.rotation_posterior_sums, dtype=np.float64) for s in stats]),
+    )
+    translations = [
+        None if result.best_pose_translations is None
+        else np.asarray(result.best_pose_translations) / shape_class.translation_factor
+        for result, shape_class in zip(results, classes)
+    ]
+    return HalfScoreResult(
+        ha=per_image("ha"),
+        Ft_y=_sum([result.Ft_y for result in results]),
+        Ft_ctf=_sum([result.Ft_ctf for result in results]),
+        em_stats=em_stats,
+        noise_stats=_merge_noise_stats([result.noise_stats for result in results], classes, n_half, ref_box),
+        best_pose_rotations=per_image("best_pose_rotations"),
+        best_pose_rotation_eulers=per_image("best_pose_rotation_eulers"),
+        best_pose_translations=(
+            None if translations[0] is None else place_by_index(translations, classes, n_half).astype(
+                translations[0].dtype
+            )
+        ),
+        coarse_ha=per_image("coarse_ha"),
+        pose_rotations=first.pose_rotations,
+        pose_rotation_eulers=first.pose_rotation_eulers,
+        significant_counts=per_image("significant_counts"),
+        profile_summary=first.profile_summary,
+        mstep_full_half_axis=first.mstep_full_half_axis,
+        mstep_accumulator_shape=first.mstep_accumulator_shape,
+    )
+
+
+def score_half_by_shape(score_fn, kwargs):
+    """Run ``score_fn`` (a half scoring function) once per shape class and merge.
+
+    ``kwargs`` are ``score_fn``'s keywords for the whole half plus ``noise_radial_k``,
+    the half's ``[G, n_ref]`` reference-shell noise spectra.
+    """
+
+    from relax.dense.score_outputs import PerHalfOutputs
+
+    kwargs = dict(kwargs)
+    half = kwargs["experiment_dataset"]
+    noise_radial = kwargs.pop("noise_radial_k")
+    if kwargs.get("optics_group_ids_k") is None:
+        raise ValueError("a half with several image shapes needs each image's optics group")
+    outputs, k = kwargs["outputs"], kwargs["k"]
+    ref_box = int(half.image_shape[0])
+    results = []
+    for shape_class in half.classes:
+        class_kw = class_kwargs(kwargs, shape_class, half.n_units)
+        class_kw["noise_variance_k"] = class_noise_table(noise_radial, shape_class, ref_box)
+        class_kw["outputs"] = PerHalfOutputs()
+        results.append(score_fn(**class_kw))
+    merged = merge_class_results(results, half.classes, half.n_units, ref_box)
+    outputs.best_pose_rotations[k] = merged.best_pose_rotations
+    outputs.best_pose_rotation_eulers[k] = merged.best_pose_rotation_eulers
+    outputs.best_pose_translations[k] = merged.best_pose_translations
+    return merged
