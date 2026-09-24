@@ -17,6 +17,7 @@ import numpy as np
 from recovar.data_io.starfile import star_column
 
 from relax.helpers.batch_fetch import original_image_indices
+from relax.relion.tomo_input import fftw_half_freq_sq, relion_tomo_damping
 
 _RELION_EXACT_CTF_SOURCE_CACHE: dict[tuple[str, tuple[int, int]], dict] = {}
 
@@ -189,6 +190,8 @@ def _relion_exact_ctf_half_from_source_star_host(
                 for row, group in enumerate(optics_ids)
             },
             "relion_bind": relion_bind,
+            # Per-tilt rows of RELION tomo particles (tomo_input.flatten_relion5_tomo).
+            "tomo": star_column(particles, "rlnMicrographPreExposure") is not None,
             "slots": np.full(len(particles), -1, dtype=np.int64),
             "rows": None,
             "n_cached": 0,
@@ -263,6 +266,17 @@ def _relion_exact_ctf_half_from_source_star_host(
             ),
             dtype=np.float64,
         )
+        if cache.get("tomo", False):
+            # A RELION tomo image (one row per particle-tilt): relion_refine damps its
+            # CTF by the tilt's cumulative dose (tomo_input.relion_tomo_damping). RELION
+            # multiplies before the scale factor and before the |CTF| >= 1e-8 floor
+            # (src/ctf.h:219-253); applying it here reorders one product and moves the
+            # floor, both below 1e-8 absolute.
+            native = native * relion_tomo_damping(
+                fftw_half_freq_sq(image_h, image_w, optics_value("rlnImagePixelSize")),
+                particle_value("rlnMicrographPreExposure"),
+                ctf_value("rlnCtfBfactorPerElectronDose", 0.0),
+            )
         # RELION/FFTW stores y in standard order and uses the opposite CTF
         # sign from RECOVAR's forward-model convention. `-fftshift(native)`
         # allocates twice, once to roll and once to negate; this writes the two
