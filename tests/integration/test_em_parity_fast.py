@@ -788,11 +788,14 @@ def test_em_parity_fast_k1_perturbreplay(tmp_path):
         "0.5",
         "--perturb_replay_relion_dir",
         str(K1_RELION_DIR),
-        # Pinned to this case's pre-GUI-default settings.
+        # Pinned to this case's pre-GUI-default settings, except the image
+        # backend: a perturbation replay from iteration 0 keeps RELION's fresh
+        # order and so runs the production K=1 arithmetic, which scores from
+        # RELION's CUDA preprocessing.
         "--no-firstiter_cc",
         "--no-apply-initial-lowpass",
         "--image-fourier-backend",
-        "host_numpy",
+        "relion_cuda",
         "--init_resolution",
         "30.0",
         "--image_batch_size",
