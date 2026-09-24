@@ -582,11 +582,32 @@ def test_em_parity_fast_k1_coldstart(tmp_path, start):
     fixture), so iteration 3 is compared with RELION's iteration 3 in both
     start modes: half maps, Pmax and the sigma-offset update.
     """
-    _assert_parity_ancestors_or_skip()
-    require_fixture_sets("k1_5k128_data", "k1_5k128_relion_os0")
-    _require_fixture(REFINE_SCRIPT, K1_FIXTURE_DIR, K1_RELION_DIR, K1_DATA_STAR)
+    _run_k1_coldstart(tmp_path, start=start, oversampling=0)
 
-    output_dir = tmp_path / f"k1_coldstart_{start}"
+
+@pytest.mark.gpu
+@pytest.mark.integration
+@pytest.mark.slow
+def test_em_parity_fast_k1_coldstart_os1(tmp_path):
+    """The standalone K1 cold start at --oversampling 1 against RELION's os1 run.
+
+    Every other K=1 case here is oversampling 0 or a replay, so this is the
+    fast-tier case that reaches the production adaptive pass 2 (and, under
+    RELAX_SPARSE_PASS2_RESIDENT=1, the device-resident driver). The RELION
+    oracle differs from the os0 one only in --oversampling 1.
+    """
+    _run_k1_coldstart(tmp_path, start="standalone", oversampling=1)
+
+
+def _run_k1_coldstart(tmp_path, *, start, oversampling):
+    _assert_parity_ancestors_or_skip()
+    relion_set = "k1_5k128_relion_os1" if oversampling else "k1_5k128_relion_os0"
+    relion_dir = K1_OS1_RELION_DIR if oversampling else K1_RELION_DIR
+    case = "k1_coldstart_os1" if oversampling else "k1_coldstart"
+    require_fixture_sets("k1_5k128_data", relion_set)
+    _require_fixture(REFINE_SCRIPT, K1_FIXTURE_DIR, relion_dir, K1_DATA_STAR)
+
+    output_dir = tmp_path / f"{case}_{start}"
     output_dir.mkdir(parents=True)
 
     cmd = [
@@ -605,7 +626,7 @@ def test_em_parity_fast_k1_coldstart(tmp_path, start):
         "--offset_step",
         "1.0",
         "--adaptive_oversampling",
-        "0",
+        str(oversampling),
         "--tau2_fudge",
         "1.0",
         "--perturb_factor",
@@ -660,8 +681,8 @@ def test_em_parity_fast_k1_coldstart(tmp_path, start):
 
     recovar_h1 = _load_recovar_real(output_dir / "final_half1.mrc")
     recovar_h2 = _load_recovar_real(output_dir / "final_half2.mrc")
-    relion_h1 = _load_relion_real(K1_RELION_DIR / "run_it003_half1_class001.mrc")
-    relion_h2 = _load_relion_real(K1_RELION_DIR / "run_it003_half2_class001.mrc")
+    relion_h1 = _load_relion_real(relion_dir / "run_it003_half1_class001.mrc")
+    relion_h2 = _load_relion_real(relion_dir / "run_it003_half2_class001.mrc")
     h1_corr = _map_correlation(recovar_h1, relion_h1)
     h2_corr = _map_correlation(recovar_h2, relion_h2)
 
@@ -669,27 +690,32 @@ def test_em_parity_fast_k1_coldstart(tmp_path, start):
     # mean of the per-particle data column.
     import starfile
 
-    relion_model = starfile.read(str(K1_RELION_DIR / "run_it003_half1_model.star"))
+    relion_model = starfile.read(str(relion_dir / "run_it003_half1_model.star"))
     relion_pmax = float(relion_model["model_general"]["rlnAveragePmax"])
     pmax_diff = abs(float(pmax_traj[2]) - relion_pmax)
 
     payload = {
-        "k1_coldstart_half1_corr_vs_relion_it003": h1_corr,
-        "k1_coldstart_half2_corr_vs_relion_it003": h2_corr,
-        "k1_coldstart_pmax_iter3_recovar": float(pmax_traj[2]),
-        "k1_coldstart_pmax_iter3_relion": relion_pmax,
-        "k1_coldstart_pmax_iter3_abs_diff": pmax_diff,
-        "k1_coldstart_sigma_offset_trajectory": sigma_traj.tolist(),
-        "k1_coldstart_sigma_offset_used_trajectory": sigma_used_traj.tolist(),
-        "k1_coldstart_walltime_s": elapsed,
+        f"{case}_half1_corr_vs_relion_it003": h1_corr,
+        f"{case}_half2_corr_vs_relion_it003": h2_corr,
+        f"{case}_pmax_iter3_recovar": float(pmax_traj[2]),
+        f"{case}_pmax_iter3_relion": relion_pmax,
+        f"{case}_pmax_iter3_abs_diff": pmax_diff,
+        f"{case}_sigma_offset_trajectory": sigma_traj.tolist(),
+        f"{case}_sigma_offset_used_trajectory": sigma_used_traj.tolist(),
+        f"{case}_walltime_s": elapsed,
     }
     # Only the standalone case is reported; the debug case is not tier evidence.
     if start == "standalone":
-        ledger = _write_quality_ledger("k1_coldstart", payload, output_dir=output_dir)
+        ledger = _write_quality_ledger(case, payload, output_dir=output_dir)
         logger.info("K=1 cold-start ledger: %s", ledger)
 
     print(file=sys.stderr, flush=True)
-    print("=== K=1 cold-start parity (3-iter ab-initio vs RELION it003) ===", file=sys.stderr, flush=True)
+    print(
+        f"=== K=1 cold-start parity, oversampling {oversampling} "
+        "(3-iter ab-initio vs RELION it003) ===",
+        file=sys.stderr,
+        flush=True,
+    )
     print(f"  half1_corr={h1_corr:.6f} half2_corr={h2_corr:.6f}", file=sys.stderr, flush=True)
     print(
         f"  pmax_iter3 recovar={pmax_traj[2]:.4f} relion={relion_pmax:.4f} diff={pmax_diff:.4g}",
@@ -715,6 +741,11 @@ def test_em_parity_fast_k1_coldstart(tmp_path, start):
     assert len(sigma_traj) >= 2 and sigma_traj[1] <= 5.0, (
         f"K=1 cold-start iter-2 sigma_offset {sigma_traj[1]:.3f} Å too large; A.1 fix may have regressed."
     )
+    # The os1 case exists to reach the adaptive production pass 2; under the
+    # resident flag it must have run the resident driver, not a routed engine.
+    if oversampling and os.environ.get("RELAX_SPARSE_PASS2_RESIDENT", "").strip() in {"1", "true", "on", "yes"}:
+        log = proc.stdout + proc.stderr
+        assert "Resident pass-2 plan:" in log, "K=1 os1 cold start did not run the resident pass 2"
 
 
 @pytest.mark.gpu
