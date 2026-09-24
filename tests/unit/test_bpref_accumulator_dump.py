@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics.iteration import _save_bpref_accumulators
 from scripts.analyze_k1_half1_raw_accumulator import _load_recovar
@@ -60,7 +61,7 @@ def test_dump_round_trip(tmp_path, monkeypatch, stage, loaded_stage, dtype, run_
         assert loaded["stage"] == loaded_stage
         assert loaded["numerator"].dtype == numerators[half - 1].dtype
         assert loaded["weight"].dtype == weights[half - 1].real.dtype
-        np.testing.assert_array_equal(loaded["numerator"], numerators[half - 1])
-        np.testing.assert_array_equal(loaded["weight"], weights[half - 1].real)
+        assert_matches(loaded["numerator"], numerators[half - 1])
+        assert_matches(loaded["weight"], weights[half - 1].real)
     for value, before in zip(numerators + weights, original, strict=True):
-        np.testing.assert_array_equal(value, before)
+        assert_matches(value, before)

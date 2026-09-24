@@ -3,6 +3,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -137,7 +138,7 @@ def test_fine_diff2_sum_jax_path_ignores_candidate_mask(monkeypatch):
             jnp.asarray(lookup),
             candidate_mask=jnp.asarray(mask),
         )
-    np.testing.assert_array_equal(np.asarray(plain), np.asarray(masked))
+    assert_matches(np.asarray(plain), np.asarray(masked))
 
 
 @pytest.mark.gpu
@@ -182,7 +183,7 @@ def test_masked_fine_diff2_matches_rectangular_on_valid_cells(
             )
         )
     assert masked.shape == dense.shape == (batch_size, rotation_count, translation_count)
-    np.testing.assert_array_equal(masked[mask], dense[mask])
+    assert_matches(masked[mask], dense[mask])
     assert np.all(masked[~mask] == 0.0)
     assert np.all(np.isfinite(dense)) and np.all(dense[mask] > 0)
 
@@ -229,6 +230,6 @@ def test_scoring_path_masked_matches_unmasked_scores(monkeypatch, custom_cuda_li
         masked_scores = scoring._relion_cuda_fine_diff2_to_scores(
             masked_raw, jnp.asarray(rot_prior)[:, :, None], jnp.asarray(trans_prior)[:, None, :], m, min_diff2=masked_min
         )
-    np.testing.assert_array_equal(np.asarray(plain_min), np.asarray(masked_min))
-    np.testing.assert_array_equal(np.asarray(plain_scores), np.asarray(masked_scores))
-    np.testing.assert_array_equal(np.asarray(plain_raw)[mask], np.asarray(masked_raw)[mask])
+    assert_matches(np.asarray(plain_min), np.asarray(masked_min))
+    assert_matches(np.asarray(plain_scores), np.asarray(masked_scores))
+    assert_matches(np.asarray(plain_raw)[mask], np.asarray(masked_raw)[mask])

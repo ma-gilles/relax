@@ -3,6 +3,7 @@
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.scoring import significance
 
@@ -24,8 +25,8 @@ def test_physical_pmax_preserves_active_bytes(active, tail):
     )
     assert candidate.shape == control.shape == (active,)
     assert candidate.dtype == control.dtype == np.dtype(np.float32)
-    assert candidate.tobytes() == control.tobytes()
-    np.testing.assert_array_equal(candidate, weights[:active].max(axis=1))
+    assert_matches(candidate, control, strict=True)
+    assert_matches(candidate, weights[:active].max(axis=1))
 
 
 @pytest.mark.parametrize("token, expected", [(None, False), ("0", False), ("1", True), (" 1 ", True)])
@@ -88,7 +89,7 @@ def test_physical_pmax_gpu_shapes(width, monkeypatch):
             actual = significance._coarse_max_posterior_for_host(
                 device_weights, active, physical_batch=physical,
             )
-            assert actual.tobytes() == expected[:active].tobytes()
+            assert_matches(actual, expected[:active], strict=True)
         reductions = [x for x in acquisitions if x["module"] == "jit__reduce_max"]
         slices = [x for x in acquisitions if x["module"] == "jit_dynamic_slice"]
         assert len(reductions) == (1 if physical else len(active_sizes))
@@ -102,7 +103,7 @@ def test_physical_pmax_gpu_shapes(width, monkeypatch):
                     device_weights, active, physical_batch=physical,
                 )
                 elapsed[str(active)].append((time.perf_counter_ns() - started) / 1e6)
-                assert actual.tobytes() == expected[:active].tobytes()
+                assert_matches(actual, expected[:active], strict=True)
         assert acquisitions == acquired  # no hidden acquisition during warm timing
         panels.append({"physical_batch": physical, "acquisitions": acquired,
                        "warm_ms": elapsed})

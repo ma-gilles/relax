@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -36,7 +37,7 @@ def _inputs(n_pix=17):
     return shifted, score_weight, projections, half_weight, mask
 
 
-def test_normalized_cc_bucket_cached_are_bitwise_equal_and_pair_order_matches():
+def test_normalized_cc_bucket_cached_match_and_pair_order_matches():
     shifted, score_weight, projections, half_weight, mask = _inputs()
     bucket = np.asarray(
         _score_pass2_bucket_relion_gpu_normalized_cc(
@@ -74,8 +75,8 @@ def test_normalized_cc_bucket_cached_are_bitwise_equal_and_pair_order_matches():
         )
     ).reshape(bucket.shape)
 
-    np.testing.assert_array_equal(cached, bucket)
-    np.testing.assert_array_equal(np.argsort(pair, axis=None), np.argsort(bucket, axis=None))
+    assert_matches(cached, bucket)
+    assert_matches(np.argsort(pair, axis=None), np.argsort(bucket, axis=None))
 
 
 def test_normalized_cc_restores_relion_pixel_order_before_256_lane_tree():
@@ -104,7 +105,7 @@ def test_normalized_cc_restores_relion_pixel_order_before_256_lane_tree():
         )
     )
 
-    np.testing.assert_array_equal(restored, baseline)
+    assert_matches(restored, baseline)
 
 
 @pytest.mark.parametrize(

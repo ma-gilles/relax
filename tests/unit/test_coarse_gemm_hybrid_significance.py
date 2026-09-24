@@ -7,6 +7,7 @@ from pathlib import Path
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.cuda import kernels as em_cuda_kernels
 from relax.diagnostics import coarse_score_diagnostics
@@ -422,16 +423,16 @@ def test_hybrid_publishes_only_selected_exact_source16_scores(monkeypatch, share
     assert full_callback_calls == 0
     assert result.scores_include_priors
     assert result.fallback_reason is None
-    np.testing.assert_array_equal(result.selection.block_ids[0], [0, 1])
-    np.testing.assert_array_equal(result.selection.block_ids[1], [-1, -1])
+    assert_matches(result.selection.block_ids[0], [0, 1])
+    assert_matches(result.selection.block_ids[1], [-1, -1])
     expected_row = -jnp.float32(1.0) + jnp.float32(0.25) + jnp.asarray(translation_prior)[None, :]
     expected_row = np.broadcast_to(
         np.asarray(expected_row),
         (cache.shape[1], shifted.shape[1]),
     )
-    np.testing.assert_array_equal(np.asarray(result.scores[0]), expected_row)
+    assert_matches(np.asarray(result.scores[0]), expected_row)
     assert np.all(np.isneginf(np.asarray(result.scores[1])))
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(result.raw_score_max),
         np.asarray([-1.0, 0.0], dtype=np.float32),
     )
@@ -527,7 +528,7 @@ def test_every_hybrid_full_dense_exit_uses_lazy_callback(
     expected_diff2 = np.arange(result.scores.size, dtype=np.float32).reshape(
         result.scores.shape,
     )
-    np.testing.assert_array_equal(np.asarray(result.scores), -expected_diff2)
+    assert_matches(np.asarray(result.scores), -expected_diff2)
 
 
 @pytest.mark.parametrize(
@@ -645,7 +646,7 @@ def test_hybrid_compact_posterior_retains_ordered_ids_without_dense_scatter(
         compact,
         candidate_mask,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         pose_ids[0],
         np.arange(cache.shape[1] * shifted.shape[1], dtype=np.int32),
     )
@@ -675,8 +676,8 @@ def test_compact_hybrid_chooses_dense_before_certificate_when_not_smaller(
         assert reference.shape == cache.shape[1:]
         assert shifted_image.shape == shifted.shape
         assert score_weight.shape == weight.shape
-        np.testing.assert_array_equal(np.asarray(initial_diff2), initial)
-        np.testing.assert_array_equal(np.asarray(mapping), topology.full_to_compact)
+        assert_matches(np.asarray(initial_diff2), initial)
+        assert_matches(np.asarray(mapping), topology.full_to_compact)
         return jnp.ones(
             (shifted.shape[0], cache.shape[1], shifted.shape[1]),
             dtype=jnp.float32,
@@ -714,7 +715,7 @@ def test_compact_hybrid_chooses_dense_before_certificate_when_not_smaller(
         == "compact_physical_capacity_not_smaller_than_dense"
     )
     assert result.compact_scores is None
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(result.scores),
         -np.ones(result.scores.shape, dtype=np.float32),
     )
@@ -786,8 +787,8 @@ def test_hybrid_capacity_overflow_uses_one_full_direct_batch(monkeypatch):
         assert reference.shape == cache.shape[1:]
         assert shifted_image.shape == shifted.shape
         assert score_weight.shape == weight.shape
-        np.testing.assert_array_equal(np.asarray(initial_diff2), initial)
-        np.testing.assert_array_equal(
+        assert_matches(np.asarray(initial_diff2), initial)
+        assert_matches(
             np.asarray(mapping),
             topology.full_to_compact,
         )
@@ -824,7 +825,7 @@ def test_hybrid_capacity_overflow_uses_one_full_direct_batch(monkeypatch):
     assert result.fallback_reason == "block_capacity_overflow"
     assert selected_calls == 0
     assert full_calls == 1
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(result.raw_score_max),
         np.asarray([-1.0, -97.0], dtype=np.float32),
     )
@@ -898,7 +899,7 @@ def test_hybrid_invalid_selected_output_falls_back_for_whole_batch(
     assert result.compact_scores is None
     assert result.fallback_reason == "invalid_selected_exact_output"
     assert full_calls == 1
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(result.scores),
         np.full(result.scores.shape, -3.0, dtype=np.float32),
     )
@@ -944,8 +945,8 @@ def test_omitting_certified_zero_weight_blocks_preserves_f64_logsumexp_bits(
 
     full_maximum, full_total = reduce_blocks(full)
     selected_maximum, selected_total = reduce_blocks(selected)
-    np.testing.assert_array_equal(selected_maximum.view(np.uint32), full_maximum.view(np.uint32))
-    np.testing.assert_array_equal(selected_total.view(np.uint64), full_total.view(np.uint64))
+    assert_matches(selected_maximum, full_maximum)
+    assert_matches(selected_total, full_total)
 
 
 def test_shared_pretranslated_dispatch_flag_is_strict_and_default_off(monkeypatch):
@@ -978,7 +979,7 @@ def test_full_scoring_dispatch_preserves_operands_and_reports_kernel(
         def call(*operands):
             assert kernel == expected_kernel
             for actual, wanted in zip(operands[:5], (cache[0], shifted, weight, initial, topology.full_to_compact)):
-                np.testing.assert_array_equal(np.asarray(actual), wanted)
+                assert_matches(np.asarray(actual), wanted)
             assert len(operands) == (6 if runtime else 5)
             if runtime:
                 assert np.asarray(operands[5]).dtype == np.int32
@@ -1005,4 +1006,4 @@ def test_full_scoring_dispatch_preserves_operands_and_reports_kernel(
     assert result.full_dense_backend == "rectangular"
     assert result.full_dense_kernel == expected_kernel
     assert not result.used_selected_rescore and not result.scores_include_priors
-    np.testing.assert_array_equal(result.scores, -expected)
+    assert_matches(result.scores, -expected)

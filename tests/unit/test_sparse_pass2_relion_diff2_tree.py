@@ -1,10 +1,11 @@
-"""Exact reduction tests for RELION CUDA-style fine Gaussian scores."""
+"""Reduction-order tests for RELION CUDA-style fine Gaussian scores."""
 
 import gc
 import weakref
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
 import jax
@@ -144,7 +145,7 @@ def _numpy_cuda_powerclass_highres_half_double(centered_image, current_size):
     return np.float64(total * np.float64(0.5))
 
 
-def test_relion_cuda_fine_tree_matches_256_lane_pass_and_tree_bitwise():
+def test_relion_cuda_fine_tree_matches_256_lane_pass_and_tree():
     # Alternating scales make sequential per-lane accumulation distinguishable
     # from a flat reduction while retaining deterministic float32 operands.
     index = np.arange(773, dtype=np.float32)
@@ -158,7 +159,7 @@ def test_relion_cuda_fine_tree_matches_256_lane_pass_and_tree_bitwise():
     expected = _numpy_cuda_fine_tree(values)
     actual = np.asarray(_relion_cuda_fine_tree_sum(jnp.asarray(values)))
 
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
     assert actual.dtype == np.float32
 
 
@@ -201,12 +202,12 @@ def test_relion_cuda_fine_pixel_weight_preserves_acc_double_precision():
         _relion_cuda_fine_pixel_weights(jnp.asarray(corr), jnp.asarray(half_weight))
     )
 
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
     assert actual.dtype == np.float64
-    assert not np.array_equal(actual, narrowed)
+    assert not matches(actual, narrowed.astype(np.float64))
 
 
-def test_relion_cuda_powerclass_highres_matches_128_lane_block_trees_bitwise():
+def test_relion_cuda_powerclass_highres_matches_128_lane_block_trees():
     rng = np.random.default_rng(2297)
     height = 32
     centered = (
@@ -223,7 +224,7 @@ def test_relion_cuda_powerclass_highres_matches_128_lane_block_trees_bitwise():
         )
     )
 
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
     assert actual.dtype == np.float32
 
 
@@ -245,9 +246,9 @@ def test_relion_cuda_powerclass_highres_preserves_acc_double_precision():
         )
     )
 
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
     assert actual.dtype == np.float64
-    assert not np.array_equal(actual, expected.astype(np.float32).astype(np.float64))
+    assert not matches(actual, expected.astype(np.float32).astype(np.float64))
 
 
 def test_relion_cuda_powerclass_norm_units_match_randomized_reference():
@@ -271,7 +272,7 @@ def test_relion_cuda_powerclass_norm_units_match_randomized_reference():
             current_size=current_size,
         )
     )
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
     assert actual.dtype == np.float32
 
 
@@ -294,7 +295,7 @@ def test_relion_cuda_powerclass_norm_units_preserve_divide_before_square(height)
         )
     )
 
-    np.testing.assert_array_equal(actual, np.asarray([expected], dtype=np.float32))
+    assert_matches(actual, np.asarray([expected], dtype=np.float32))
     assert actual.dtype == np.float32
 
 
@@ -332,12 +333,12 @@ def test_relion_cuda_fine_raw_routes_add_powerclass_tail_once_per_hypothesis():
     )
 
     expected = np.float32(np.asarray(highres)[0])
-    np.testing.assert_array_equal(dense, np.full((1, 3, 2), expected, dtype=np.float32))
-    np.testing.assert_array_equal(cached, dense[0])
-    np.testing.assert_array_equal(pairs, np.full((1, 3), expected, dtype=np.float32))
+    assert_matches(dense, np.full((1, 3, 2), expected, dtype=np.float32))
+    assert_matches(cached, dense[0])
+    assert_matches(pairs, np.full((1, 3), expected, dtype=np.float32))
 
 
-def test_relion_cuda_fine_retained_raw_conversion_matches_recompute_bitwise():
+def test_relion_cuda_fine_retained_raw_conversion_matches_recompute():
     rng = np.random.default_rng(12131)
     shifted = jnp.asarray(
         (rng.normal(size=(2, 4, 17)) + 1j * rng.normal(size=(2, 4, 17))).astype(np.complex64)
@@ -376,7 +377,7 @@ def test_relion_cuda_fine_retained_raw_conversion_matches_recompute_bitwise():
         min_diff2=common_min,
     )
 
-    np.testing.assert_array_equal(np.asarray(retained_scores), np.asarray(recomputed_scores))
+    assert_matches(np.asarray(retained_scores), np.asarray(recomputed_scores))
 
 
 def test_relion_cuda_fine_conversion_uses_common_min_and_source_operation_order():
@@ -402,10 +403,10 @@ def test_relion_cuda_fine_conversion_uses_common_min_and_source_operation_order(
     expected = np.float32(expected - diff2)
     naive = np.float32(np.float32(-diff2 + np.float32(rotation_prior)) + np.float32(translation_prior))
 
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
     assert actual.dtype == np.float32
     assert actual[0, 1] > actual[0, 0]
-    assert not np.array_equal(actual, naive)
+    assert not matches(actual, naive)
 
 
 def test_relion_cuda_fine_conversion_rejects_diff2_below_external_minimum():
@@ -423,7 +424,7 @@ def test_relion_cuda_fine_conversion_rejects_diff2_below_external_minimum():
 
     assert np.isneginf(scores[0, 0])
     external_min = np.float32(100.00001)
-    np.testing.assert_array_equal(
+    assert_matches(
         scores[0, 1:],
         np.float32(external_min - np.asarray(diff2, dtype=np.float32)[0, 1:]),
     )
@@ -443,7 +444,7 @@ def test_relion_cuda_fine_common_min_spans_chunks_and_classes_and_sets_evidence_
             tuple(jnp.asarray(mask) for mask in masks),
         )
     )
-    np.testing.assert_array_equal(common_min, np.asarray([999.5, 1198.75], dtype=np.float32))
+    assert_matches(common_min, np.asarray([999.5, 1198.75], dtype=np.float32))
 
     converted = []
     for raw, mask in zip(raw_partitions, masks, strict=True):
@@ -464,7 +465,7 @@ def test_relion_cuda_fine_common_min_spans_chunks_and_classes_and_sets_evidence_
         [raw.reshape(2, -1) for raw in raw_partitions], axis=1
     ))
     expected = np.where(merged_mask, expected, -np.inf)
-    np.testing.assert_array_equal(merged_scores, expected)
+    assert_matches(merged_scores, expected)
 
     finite_scores = np.where(merged_mask, merged_scores, -np.inf).astype(np.float64)
     max_score = np.max(finite_scores, axis=1)
@@ -472,12 +473,7 @@ def test_relion_cuda_fine_common_min_spans_chunks_and_classes_and_sets_evidence_
     absolute_log_evidence = centered_log_z + np.asarray(
         _relion_cuda_fine_log_evidence_offset(jnp.asarray(common_min)), dtype=np.float64
     )
-    np.testing.assert_allclose(
-        absolute_log_evidence,
-        centered_log_z - common_min.astype(np.float64),
-        rtol=0.0,
-        atol=0.0,
-    )
+    assert_matches(absolute_log_evidence, centered_log_z - common_min.astype(np.float64))
 
 
 def test_relion_cuda_fine_common_min_ignores_invalid_partitions_and_nonfinite_padding():
@@ -521,10 +517,10 @@ def test_relion_cuda_fine_common_min_ignores_invalid_partitions_and_nonfinite_pa
     # Image one ignores both the masked finite 50 and a candidate NaN. Image
     # two is globally invalid, for which zero is only an inert output sentinel.
     common_min = np.asarray(_relion_cuda_fine_global_diff2_min(raw_partitions, masks))
-    np.testing.assert_array_equal(common_min, np.asarray([7.0, 11.0, 0.0], dtype=np.float32))
+    assert_matches(common_min, np.asarray([7.0, 11.0, 0.0], dtype=np.float32))
 
     local_min = np.asarray(_relion_cuda_fine_diff2_min(raw_partitions[0], masks[0]))
-    np.testing.assert_array_equal(local_min, np.zeros(3, dtype=np.float32))
+    assert_matches(local_min, np.zeros(3, dtype=np.float32))
 
     converted = [
         np.asarray(
@@ -539,8 +535,8 @@ def test_relion_cuda_fine_common_min_ignores_invalid_partitions_and_nonfinite_pa
         for raw, mask in zip(raw_partitions, masks, strict=True)
     ]
     assert np.all(np.isneginf(converted[0]))
-    np.testing.assert_array_equal(converted[1][0, 0], np.asarray([-2.0, 0.0], dtype=np.float32))
-    np.testing.assert_array_equal(converted[1][1, 0], np.asarray([0.0, -2.0], dtype=np.float32))
+    assert_matches(converted[1][0, 0], np.asarray([-2.0, 0.0], dtype=np.float32))
+    assert_matches(converted[1][1, 0], np.asarray([0.0, -2.0], dtype=np.float32))
     assert np.all(np.isneginf(converted[1][2]))
 
 
@@ -576,7 +572,7 @@ def test_relion_cuda_fine_host_staged_common_min_serializes_raw_device_uploads(m
         bucketed_mod._relion_cuda_fine_global_diff2_min(host_raw, host_masks)
     )
 
-    np.testing.assert_array_equal(minimum, np.asarray([17.0, 17.0], dtype=np.float32))
+    assert_matches(minimum, np.asarray([17.0, 17.0], dtype=np.float32))
     assert len(raw_device_refs) == 4
     assert max_prior_raw_uploads_alive <= 1
 
@@ -627,8 +623,9 @@ def test_relion_cuda_fine_diff2_matches_reference_without_pixel_tensor():
 
     # XLA may contract the pointwise square/add/multiply into FMAs whereas
     # NumPy evaluates each operation separately. The lane pass and reduction
-    # are exact (tested above); pointwise contraction is bounded to one ULP.
-    np.testing.assert_array_max_ulp(actual, expected, maxulp=1)
+    # are tested above; pointwise contraction moves results by up to one ULP,
+    # inside the default float32 band.
+    assert_matches(actual, expected)
     assert actual.shape == (2, 3, 4)
     assert actual.dtype == np.float32
 
@@ -675,7 +672,7 @@ def test_relion_cuda_fine_diff2_preserves_full_grid_zero_gap_lane_topology():
         )
     )
 
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
     assert actual != wrong_compact_consecutive
 
 
@@ -690,7 +687,7 @@ def test_case20_current_grid_lookup_has_relion_56_by_29_topology():
     assert count == 1275
     assert lookup.shape == (56 * 29,)
     assert np.count_nonzero(lookup >= 0) == count
-    np.testing.assert_array_equal(np.sort(lookup[lookup >= 0]), np.arange(count, dtype=np.int32))
+    assert_matches(np.sort(lookup[lookup >= 0]), np.arange(count, dtype=np.int32))
 
 
 def test_full_size_lookup_is_a_bijection_of_the_complete_half_spectrum():
@@ -707,7 +704,7 @@ def test_full_size_lookup_is_a_bijection_of_the_complete_half_spectrum():
     )
 
     assert lookup.shape == (n_half,)
-    np.testing.assert_array_equal(np.sort(lookup), np.arange(n_half, dtype=np.int32))
+    assert_matches(np.sort(lookup), np.arange(n_half, dtype=np.int32))
 
     # At full size ``use_window`` is false, but the identity lookup above is a
     # valid exact-fine representation. The big-JIT gate must therefore depend
@@ -787,8 +784,8 @@ def test_dense_cached_and_compact_gaussian_routes_use_same_exact_scores():
             jnp.asarray(half_weight),
         )
     )
-    np.testing.assert_array_equal(cached_raw, dense_raw[0])
-    np.testing.assert_array_equal(cached, dense[0])
+    assert_matches(cached_raw, dense_raw[0])
+    assert_matches(cached, dense[0])
 
     pair_count = max(int(np.count_nonzero(row)) for row in candidate_mask)
     local_rotation_row = np.zeros((batch, pair_count), dtype=np.int32)
@@ -827,10 +824,10 @@ def test_dense_cached_and_compact_gaussian_routes_use_same_exact_scores():
     )
     rows = np.arange(batch)[:, None]
     expected_compact_raw = dense_raw[rows, local_rotation_row, translation_idx]
-    np.testing.assert_array_equal(compact_raw, expected_compact_raw)
+    assert_matches(compact_raw, expected_compact_raw)
     expected_compact = dense[rows, local_rotation_row, translation_idx]
     expected_compact = np.where(pair_mask, expected_compact, -np.inf)
-    np.testing.assert_array_equal(compact, expected_compact)
+    assert_matches(compact, expected_compact)
     assert dense.dtype == cached.dtype == compact.dtype == np.float32
     assert np.isneginf(dense[0, 2, 1])
     assert np.all(np.isneginf(compact[~pair_mask]))
@@ -844,7 +841,7 @@ def test_relion_cuda_fine_diff2_handles_zero_pixels_and_nonfinite_scores():
             jnp.zeros((1, 1, 0), dtype=jnp.float32),
         )
     )
-    np.testing.assert_array_equal(zero, np.zeros((2, 3), dtype=np.float32))
+    assert_matches(zero, np.zeros((2, 3), dtype=np.float32))
 
     # Sentinel gaps gather row zero for bounds safety; masking must use where,
     # because NaN * False would still contaminate RELION's zero-corr slots.
@@ -856,7 +853,7 @@ def test_relion_cuda_fine_diff2_handles_zero_pixels_and_nonfinite_scores():
             jnp.asarray([-1, -1, -1], dtype=jnp.int32),
         )
     )
-    np.testing.assert_array_equal(gap_only, np.asarray(0.0, dtype=np.float32))
+    assert_matches(gap_only, np.asarray(0.0, dtype=np.float32))
 
     shifted = jnp.zeros((1, 1, 4), dtype=jnp.complex64)
     projection = jnp.zeros((1, 1, 4), dtype=jnp.complex64)

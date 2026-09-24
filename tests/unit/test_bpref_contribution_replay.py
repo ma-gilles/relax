@@ -16,6 +16,7 @@ from scripts.replay_bpref_contribution_bundle import (
     _classify_replay_difference,
     _map_fsc_metrics,
 )
+from helpers.float_compare import assert_matches
 
 
 def _write_shard(
@@ -291,7 +292,7 @@ def test_replay_classification_identifies_precision_dominated_difference():
 def test_native_current_fft_rows_map_native_order_into_centered_full_rows():
     rows = native_current_fft_rows(full_size=8, current_size=4)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         rows.reshape(4, 3),
         np.asarray([[20, 21, 22], [25, 26, 27], [30, 31, 32], [15, 16, 17]]),
     )

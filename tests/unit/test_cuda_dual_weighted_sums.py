@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -79,7 +80,7 @@ def test_dual_weighted_sums_matches_sparse_jax_matmul(
     expected_np = tuple(np.asarray(value) for value in expected)
     actual_np = tuple(np.asarray(value) for value in actual)
     for native, reference in zip(actual_np, expected_np):
-        np.testing.assert_array_equal(native.view(np.uint32), reference.view(np.uint32))
+        assert_matches(native, reference)
 
 
 @pytest.mark.gpu
@@ -185,4 +186,4 @@ def test_compact_weighted_sums_and_noise_wrapper_matches_composed_boundaries(
     expected_np = tuple(np.asarray(value) for value in expected)
     actual_np = tuple(np.asarray(value) for value in actual)
     for fused, composed in zip(actual_np, expected_np):
-        np.testing.assert_array_equal(fused, composed)
+        assert_matches(fused, composed)

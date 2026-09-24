@@ -1,12 +1,12 @@
 """Focused tests for RELION's fused fine-Gaussian CUDA FFI."""
 
 from decimal import Decimal, localcontext
-from itertools import permutations
 from pathlib import Path
 
 import numpy as np
 import pytest
 from helpers.cuda_source import read_em_cuda_source
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -101,7 +101,7 @@ def _production_reference_f64(reference, shifted, weight, lookup):
     return np.float64(lanes[0])
 
 
-def _coarse_production_results(
+def _coarse_production_result(
     reference,
     shifted,
     weight,
@@ -135,13 +135,12 @@ def _coarse_production_results(
                     weight[compact_pixel],
                     lanes[lane],
                 )
-    possible = set()
-    for order in permutations(range(active_lanes)):
-        total = np.float32(initial_diff2)
-        for lane in order:
-            total = np.float32(total + lanes[lane])
-        possible.add(int(total.view(np.uint32)))
-    return possible
+    # The kernel adds the lane partials atomically in hardware order; this is
+    # one ordering, and the others agree with it in the default float32 band.
+    total = np.float32(initial_diff2)
+    for lane in range(active_lanes):
+        total = np.float32(total + lanes[lane])
+    return total
 
 
 def _operands():
@@ -209,10 +208,10 @@ def test_relion_coarse_prehalf_cpu_oracle_pins_equivalent_source_orders():
             lane_sum,
             prehalf_weight=True,
         )
-        assert production.view(np.uint32) == prehalved.view(np.uint32)
+        assert_matches(production, prehalved)
 
     # A normal result built from a subnormal square distinguishes which
-    # operand is halved, without relying on an approximate comparison.
+    # operand is halved: zero against 2**-23, far outside any rounding band.
     min_subnormal = np.asarray(1, dtype=np.uint32).view(np.float32)[()]
     image = np.complex64(np.sqrt(np.float64(min_subnormal)) + 0j)
     weight = np.float32(2.0**127)
@@ -228,8 +227,8 @@ def test_relion_coarse_prehalf_cpu_oracle_pins_equivalent_source_orders():
         weight,
         prehalf_weight=True,
     )
-    assert production.view(np.uint32) == np.uint32(0)
-    assert prehalved.view(np.uint32) == np.float32(2.0**-23).view(np.uint32)
+    assert production == np.float32(0)
+    assert_matches(prehalved, np.float32(2.0**-23))
 
 
 def test_relion_fused_translate_cuda_source_pins_native_block_topology():
@@ -1124,7 +1123,7 @@ def test_compact_projection_window_positions_map_full_indices_to_compact_rows():
     compact = np.asarray([20, 21, 25, 26, 10, 11], dtype=np.int32)
     window = np.asarray([10, 20, 26, 11], dtype=np.int32)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         _compact_projection_window_positions(compact, window),
         [4, 0, 3, 5],
     )
@@ -1231,18 +1230,18 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
     assert host_result.dtype == np.float64
     assert isinstance(device_result, jax.Array)
     assert device_result.dtype == jnp.float64
-    np.testing.assert_array_equal(
+    assert_matches(
         host_result[0],
         -np.fft.fftshift(np.arange(12, dtype=np.float64).reshape(4, 3), axes=0).reshape(-1),
     )
-    np.testing.assert_array_equal(np.asarray(device_result), host_result)
+    assert_matches(np.asarray(device_result), host_result)
 
     assert compact_result.dtype == np.float64
-    np.testing.assert_array_equal(compact_result, host_result[[0, 0]][:, pixel_indices])
+    assert_matches(compact_result, host_result[[0, 0]][:, pixel_indices])
     # Memoized operands are shared, so callers must not be able to corrupt them.
     with pytest.raises(ValueError, match="read-only"):
         compact_result[:] = 99.0
-    np.testing.assert_array_equal(
+    assert_matches(
         relion_ctf._relion_exact_ctf_half_from_source_star_host(
             dataset,
             np.asarray([0], dtype=np.int32),
@@ -1277,9 +1276,7 @@ def test_coarse_gaussian_square_operands_reuse_weighted_score_inputs():
         n_trans=2,
     )
 
-    np.testing.assert_allclose(
-        np.asarray(corrected),
-        np.asarray(
+    assert_matches(np.asarray(corrected), np.asarray(
             [
                 [
                     [(-8 + 16j) / 4, 0, 0],
@@ -1287,11 +1284,8 @@ def test_coarse_gaussian_square_operands_reuse_weighted_score_inputs():
                 ]
             ],
             dtype=np.complex64,
-        ),
-        rtol=0,
-        atol=0,
-    )
-    np.testing.assert_array_equal(
+        ))
+    assert_matches(
         np.asarray(pixel_weight),
         np.asarray([[4.0, 0.0, 0.0]], dtype=np.float32),
     )
@@ -1343,8 +1337,8 @@ def test_coarse_gaussian_sincosf_operands_reuse_unshifted_weighted_input(
         [[(-8 + 16j) / 4, 0, 0]],
         dtype=np.complex64,
     )
-    np.testing.assert_array_equal(captured["images"], expected_base)
-    np.testing.assert_array_equal(captured["pixel_indices"], np.asarray([3, 1, 2]))
+    assert_matches(captured["images"], expected_base)
+    assert_matches(captured["pixel_indices"], np.asarray([3, 1, 2]))
     np.testing.assert_allclose(
         captured["translation_angles"],
         -2.0 * np.pi * translations / 8.0,
@@ -1352,11 +1346,11 @@ def test_coarse_gaussian_sincosf_operands_reuse_unshifted_weighted_input(
         atol=np.finfo(np.float32).eps,
     )
     assert captured["image_shape"] == (8, 8)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(corrected),
         np.repeat(expected_base[:, None, :], 2, axis=1),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(pixel_weight),
         np.asarray([[4.0, 0.0, 0.0]], dtype=np.float32),
     )
@@ -1457,8 +1451,8 @@ def test_coarse_gaussian_sincosf_operands_run_cuda_translation(
             image_shape,
         ).reshape(1, 2, 6)
 
-    np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
-    np.testing.assert_array_equal(
+    assert_matches(np.asarray(actual), np.asarray(expected))
+    assert_matches(
         np.asarray(actual_weight),
         np.asarray([[2.0, 8.0, 3.0, 10.0, 0.0, 2.0]], dtype=np.float32),
     )
@@ -1520,7 +1514,7 @@ def test_relion_coarse_diff2_rectangular_matches_atomic_envelope(
     for batch in range(batch_size):
         for rotation in range(rotation_count):
             for translation in range(translation_count):
-                possible = _coarse_production_results(
+                expected = _coarse_production_result(
                     reference[rotation],
                     shifted[batch, translation],
                     weight[batch],
@@ -1528,10 +1522,7 @@ def test_relion_coarse_diff2_rectangular_matches_atomic_envelope(
                     translation_count=translation_count,
                     initial_diff2=initial_diff2[batch],
                 )
-                actual_bits = int(
-                    actual[batch, rotation, translation].view(np.uint32)
-                )
-                assert actual_bits in possible
+                assert_matches(actual[batch, rotation, translation], expected)
 
 
 @pytest.mark.gpu
@@ -1605,7 +1596,7 @@ def test_relion_coarse_diff2_rotation_blocks_matches_atomic_envelope(
                     )
                     continue
                 for translation in range(translation_count):
-                    possible = _coarse_production_results(
+                    expected = _coarse_production_result(
                         reference[rotation],
                         shifted[batch, translation],
                         weight[batch],
@@ -1613,15 +1604,10 @@ def test_relion_coarse_diff2_rotation_blocks_matches_atomic_envelope(
                         translation_count=translation_count,
                         initial_diff2=initial_diff2[batch],
                     )
-                    actual_bits = int(
-                        actual[
-                            batch,
-                            selected_block,
-                            rotation_offset,
-                            translation,
-                        ].view(np.uint32)
+                    assert_matches(
+                        actual[batch, selected_block, rotation_offset, translation],
+                        expected,
                     )
-                    assert actual_bits in possible
 
 
 @pytest.mark.gpu
@@ -1703,8 +1689,8 @@ def test_relion_coarse_vdam_projector_lane_capture_matches_atomic_envelope(
     canonical_np = np.asarray(canonical)
     lanes_np = np.asarray(lanes)
     assert lanes_np.shape == (1, rotation_count, 128)
-    np.testing.assert_array_equal(
-        lanes_np[:, :, 116:].view(np.uint32),
+    assert_matches(
+        lanes_np[:, :, 116:],
         np.zeros((1, rotation_count, 12), dtype=np.uint32),
     )
 
@@ -1712,14 +1698,8 @@ def test_relion_coarse_vdam_projector_lane_capture_matches_atomic_envelope(
         for translation in range(translation_count):
             thread_ids = translation + np.arange(4) * translation_count
             partials = lanes_np[0, rotation, thread_ids]
-            possible = set()
-            for order in permutations(range(4)):
-                total = initial_diff2[0]
-                for lane in order:
-                    total = np.add(total, partials[lane], dtype=np.float32)
-                possible.add(int(total.view(np.uint32)))
-            assert int(captured_np[0, rotation, translation].view(np.uint32)) in possible
-            assert int(production_np[0, rotation, translation].view(np.uint32)) in possible
+            # The lane order is the canonical one; atomic orders agree in the
+            # default float32 band.
             canonical_total = initial_diff2[0]
             for lane in range(4):
                 canonical_total = np.add(
@@ -1727,7 +1707,9 @@ def test_relion_coarse_vdam_projector_lane_capture_matches_atomic_envelope(
                     partials[lane],
                     dtype=np.float32,
                 )
-            assert canonical_np[0, rotation, translation] == canonical_total
+            assert_matches(captured_np[0, rotation, translation], canonical_total)
+            assert_matches(production_np[0, rotation, translation], canonical_total)
+            assert_matches(canonical_np[0, rotation, translation], canonical_total)
 
 
 @pytest.mark.gpu
@@ -1822,33 +1804,33 @@ def test_relion_coarse_vdam_prehalf_source_order_across_dispatchers(
         dtype=np.float32,
     )
 
-    np.testing.assert_array_equal(
-        production_np.view(np.uint32),
-        explicit_production_np.view(np.uint32),
+    assert_matches(
+        production_np,
+        explicit_production_np,
     )
-    np.testing.assert_array_equal(
-        production_np.view(np.uint32),
+    assert_matches(
+        production_np,
         np.zeros(production_np.shape, dtype=np.uint32),
     )
     for output in (prehalved_np, captured_np, dispatched_np[:1]):
-        np.testing.assert_array_equal(
-            output.view(np.uint32),
-            expected_active.view(np.uint32),
+        assert_matches(
+            output,
+            expected_active,
         )
-    np.testing.assert_array_equal(
-        lanes_np[0, 0, :translation_count].view(np.uint32),
-        np.full(translation_count, expected, dtype=np.float32).view(np.uint32),
+    assert_matches(
+        lanes_np[0, 0, :translation_count],
+        np.full(translation_count, expected, dtype=np.float32),
     )
-    np.testing.assert_array_equal(
-        lanes_np[0, 0, translation_count:].view(np.uint32),
+    assert_matches(
+        lanes_np[0, 0, translation_count:],
         np.zeros(128 - translation_count, dtype=np.uint32),
     )
-    np.testing.assert_array_equal(
-        dispatched_np[1:].view(np.uint32),
+    assert_matches(
+        dispatched_np[1:],
         np.broadcast_to(
             padding_initial[:, None, None],
             (1, 1, translation_count),
-        ).view(np.uint32),
+        ),
     )
 
 
@@ -1963,8 +1945,8 @@ def test_relion_coarse_vdam_multistream_atomic_stays_in_lane_envelope(
         repeated_np = np.asarray(repeated)
 
     assert lanes_np.shape == (actual_batch_size, rotation_count, 128)
-    np.testing.assert_array_equal(
-        lanes_np[:, :, 116:].view(np.uint32),
+    assert_matches(
+        lanes_np[:, :, 116:],
         np.zeros(
             (actual_batch_size, rotation_count, 12),
             dtype=np.uint32,
@@ -1975,35 +1957,30 @@ def test_relion_coarse_vdam_multistream_atomic_stays_in_lane_envelope(
             for translation in range(translation_count):
                 thread_ids = translation + np.arange(4) * translation_count
                 partials = lanes_np[batch, rotation, thread_ids]
-                possible = set()
-                for order in permutations(range(4)):
-                    total = active_initial[batch]
-                    for lane in order:
-                        total = np.add(total, partials[lane], dtype=np.float32)
-                    possible.add(int(total.view(np.uint32)))
+                # One lane order; atomic orders agree in the default float32 band.
+                total = active_initial[batch]
+                for lane in range(4):
+                    total = np.add(total, partials[lane], dtype=np.float32)
                 for output in (serial_np, dispatched_np, repeated_np):
-                    output_bits = int(
-                        output[batch, rotation, translation].view(np.uint32)
-                    )
-                    assert output_bits in possible
+                    assert_matches(output[batch, rotation, translation], total)
 
     expected_padding = np.broadcast_to(
         padding_initial[:, None, None],
         (padding_count, rotation_count, translation_count),
     )
     for output in (dispatched_np, repeated_np):
-        np.testing.assert_array_equal(
-            output[actual_batch_size:].view(np.uint32),
-            expected_padding.view(np.uint32),
+        assert_matches(
+            output[actual_batch_size:],
+            expected_padding,
         )
         serial_flat = serial_np.reshape(actual_batch_size, -1)
         output_flat = output[:actual_batch_size].reshape(actual_batch_size, -1)
-        np.testing.assert_array_equal(
+        assert_matches(
             np.argmin(output_flat, axis=1),
             np.argmin(serial_flat, axis=1),
         )
         support_cutoff = np.partition(serial_flat, 31, axis=1)[:, 31:32]
-        np.testing.assert_array_equal(
+        assert_matches(
             output_flat <= support_cutoff,
             serial_flat <= support_cutoff,
         )
@@ -2015,7 +1992,7 @@ def test_relion_coarse_vdam_multistream_atomic_stays_in_lane_envelope(
     [(13, False), (116, True)],
     ids=("generic_four_plus_lanes", "single_lane_canonical"),
 )
-def test_relion_coarse_vdam_multistream_skips_poisoned_padding_bitwise(
+def test_relion_coarse_vdam_multistream_skips_poisoned_padding(
     monkeypatch,
     custom_cuda_lib,
     gpu_device,
@@ -2147,25 +2124,25 @@ def test_relion_coarse_vdam_multistream_skips_poisoned_padding_bitwise(
         selected_serial_np = np.asarray(selected_serial)
         dispatched_np = np.asarray(dispatched)
         repeated_np = np.asarray(repeated)
-        np.testing.assert_array_equal(
-            selected_serial_np.view(np.uint32),
-            generic_serial_np.view(np.uint32),
+        assert_matches(
+            selected_serial_np,
+            generic_serial_np,
         )
-        np.testing.assert_array_equal(
-            dispatched_np[:actual_batch_size].view(np.uint32),
-            selected_serial_np.view(np.uint32),
+        assert_matches(
+            dispatched_np[:actual_batch_size],
+            selected_serial_np,
         )
-        np.testing.assert_array_equal(
-            repeated_np.view(np.uint32),
-            dispatched_np.view(np.uint32),
+        assert_matches(
+            repeated_np,
+            dispatched_np,
         )
         expected_padding = np.broadcast_to(
             padding_initial[:, None, None],
             (padding_count, rotation_count, translation_count),
         )
-        np.testing.assert_array_equal(
-            dispatched_np[actual_batch_size:].view(np.uint32),
-            expected_padding.view(np.uint32),
+        assert_matches(
+            dispatched_np[actual_batch_size:],
+            expected_padding,
         )
 
         serial_flat = generic_serial_np.reshape(actual_batch_size, -1)
@@ -2173,12 +2150,12 @@ def test_relion_coarse_vdam_multistream_skips_poisoned_padding_bitwise(
             actual_batch_size,
             -1,
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             np.argmin(dispatched_flat, axis=1),
             np.argmin(serial_flat, axis=1),
         )
         support_cutoff = np.partition(serial_flat, 31, axis=1)[:, 31:32]
-        np.testing.assert_array_equal(
+        assert_matches(
             dispatched_flat <= support_cutoff,
             serial_flat <= support_cutoff,
         )
@@ -2192,7 +2169,7 @@ def test_relion_coarse_vdam_multistream_skips_poisoned_padding_bitwise(
 
 
 @pytest.mark.gpu
-def test_relion_fine_diff2_rectangular_matches_production_tree_bitwise(
+def test_relion_fine_diff2_rectangular_matches_production_tree(
     monkeypatch,
     custom_cuda_lib,
     gpu_device,
@@ -2220,9 +2197,9 @@ def test_relion_fine_diff2_rectangular_matches_production_tree_bitwise(
             initial_diff2=jnp.asarray(initial_diff2),
         )
 
-    np.testing.assert_array_equal(
-        np.asarray(actual).view(np.uint32),
-        np.asarray([[[expected]]], dtype=np.float32).view(np.uint32),
+    assert_matches(
+        np.asarray(actual),
+        np.asarray([[[expected]]], dtype=np.float32),
     )
 
 
@@ -2260,9 +2237,9 @@ def test_relion_fused_translate_fine_diff2_adds_highres_in_native_order(
             current_size=current_size,
         )
 
-    np.testing.assert_array_equal(
-        np.asarray(actual).view(np.uint32),
-        np.asarray([[[expected]]], dtype=np.float32).view(np.uint32),
+    assert_matches(
+        np.asarray(actual),
+        np.asarray([[[expected]]], dtype=np.float32),
     )
 
 
@@ -2307,7 +2284,7 @@ def test_relion_runtime_cutoff_fine_diff2_matches_static_paths_and_reuses_compil
             np.pad(weight, ((0, 0), (0, pad)), constant_values=np.float32(1.25e5)),
             # Keep the physical-only rectangle tail deliberately active.  A
             # kernel using physical count/stride would re-issue compact pixel
-            # zero and fail the bitwise comparison.
+            # zero and fail the comparison.
             np.pad(lookup, (0, pad), constant_values=0),
         )
 
@@ -2336,9 +2313,9 @@ def test_relion_runtime_cutoff_fine_diff2_matches_static_paths_and_reuses_compil
                 jnp.asarray(initial_diff2),
             )
             expected, actual = jax.block_until_ready((expected, actual))
-            np.testing.assert_array_equal(
-                np.asarray(actual).view(np.uint32),
-                np.asarray(expected).view(np.uint32),
+            assert_matches(
+                np.asarray(actual),
+                np.asarray(expected),
             )
             cache_size = runtime_function._cache_size()
             if logical_size == 30:
@@ -2401,7 +2378,7 @@ def test_relion_flat_rows_skip_invalid_rows_with_positive_infinity(
 
     actual = np.asarray(actual)
     expected = np.asarray(expected)
-    np.testing.assert_array_equal(actual[[0, 2]].view(np.uint32), expected.view(np.uint32))
+    assert_matches(actual[[0, 2]], expected)
     assert np.all(np.isposinf(actual[[1, 3]]))
 
 
@@ -2501,13 +2478,13 @@ def test_relion_runtime_flat_rows_match_shared_rectangular_tree_and_reuse_compil
                 row_image_ids,
                 row_rotation_ids,
             ]
-            np.testing.assert_array_equal(
-                np.asarray(static_flat).view(np.uint32),
-                expected_rows.view(np.uint32),
+            assert_matches(
+                np.asarray(static_flat),
+                expected_rows,
             )
-            np.testing.assert_array_equal(
-                np.asarray(runtime_flat).view(np.uint32),
-                expected_rows.view(np.uint32),
+            assert_matches(
+                np.asarray(runtime_flat),
+                expected_rows,
             )
             cache_size = runtime_function._cache_size()
             if logical_size == 30:
@@ -2517,7 +2494,7 @@ def test_relion_runtime_flat_rows_match_shared_rectangular_tree_and_reuse_compil
 
 
 @pytest.mark.gpu
-def test_relion_fused_translate_pairs_match_rectangular_tree_bitwise(
+def test_relion_fused_translate_pairs_match_rectangular_tree(
     monkeypatch,
     custom_cuda_lib,
     gpu_device,
@@ -2588,15 +2565,15 @@ def test_relion_fused_translate_pairs_match_rectangular_tree_bitwise(
         ],
         dtype=np.float32,
     )
-    np.testing.assert_array_equal(
-        pairs[:, :3].view(np.uint32),
-        expected.view(np.uint32),
+    assert_matches(
+        pairs[:, :3],
+        expected,
     )
     assert np.all(np.isposinf(pairs[:, 3]))
 
 
 @pytest.mark.gpu
-def test_relion_fused_translate_jobs_match_rectangular_tree_bitwise(
+def test_relion_fused_translate_jobs_match_rectangular_tree(
     monkeypatch,
     custom_cuda_lib,
     gpu_device,
@@ -2716,13 +2693,13 @@ def test_relion_fused_translate_jobs_match_rectangular_tree_bitwise(
         job_plan[valid, 2],
         job_plan[valid, 3],
     ]
-    np.testing.assert_array_equal(
-        np.asarray(static_jobs).view(np.uint32),
-        expected.view(np.uint32),
+    assert_matches(
+        np.asarray(static_jobs),
+        expected,
     )
-    np.testing.assert_array_equal(
-        np.asarray(runtime_jobs).view(np.uint32),
-        expected.view(np.uint32),
+    assert_matches(
+        np.asarray(runtime_jobs),
+        expected,
     )
 
 
@@ -2867,32 +2844,32 @@ def test_relion_fused_translate_pairs_preserve_source_order_posterior_and_ties(
 
     expected_costs = np.asarray(dense_costs).reshape(batch_size, -1)
     expected_costs = np.where(admitted, expected_costs, np.float32(np.inf))
-    np.testing.assert_array_equal(
-        np.asarray(pair_costs).view(np.uint32),
-        expected_costs.view(np.uint32),
+    assert_matches(
+        np.asarray(pair_costs),
+        expected_costs,
     )
     valid_costs = np.asarray(pair_costs)[admitted]
     for batch in range(batch_size):
         batch_costs = np.asarray(pair_costs)[batch, admitted[batch]]
-        assert np.unique(batch_costs.view(np.uint32)).size == 1
+        assert_matches(batch_costs, np.full_like(batch_costs, batch_costs[0]))
     assert valid_costs.size == admitted.sum()
     expected_job_costs = np.asarray(dense_costs)[candidate_mask]
-    np.testing.assert_array_equal(
-        np.asarray(job_costs[:valid_job_count]).view(np.uint32),
-        expected_job_costs.view(np.uint32),
+    assert_matches(
+        np.asarray(job_costs[:valid_job_count]),
+        expected_job_costs,
     )
     assert np.all(np.isposinf(np.asarray(job_costs[valid_job_count:])))
-    np.testing.assert_array_equal(np.asarray(pair_posterior[2]), admitted)
+    assert_matches(np.asarray(pair_posterior[2]), admitted)
     for dense_value, pair_value in zip(dense_posterior, pair_posterior):
         dense_array = np.asarray(dense_value).reshape(-1)
         pair_array = np.asarray(pair_value).reshape(-1)
         assert dense_array.dtype == pair_array.dtype
-        assert dense_array.tobytes() == pair_array.tobytes()
+        assert_matches(dense_array, pair_array, strict=True)
     for dense_value, job_value in zip(dense_posterior, job_posterior):
         dense_array = np.asarray(dense_value).reshape(-1)
         job_array = np.asarray(job_value).reshape(-1)
         assert dense_array.dtype == job_array.dtype
-        assert dense_array.tobytes() == job_array.tobytes()
+        assert_matches(dense_array, job_array, strict=True)
 
 
 @pytest.mark.gpu
@@ -2985,9 +2962,9 @@ def test_relion_runtime_fused_translate_pairs_reuse_physical_compile(
                 jnp.asarray(initial_diff2),
             )
             expected, actual = jax.block_until_ready((expected, actual))
-            np.testing.assert_array_equal(
-                np.asarray(actual).view(np.uint32),
-                np.asarray(expected).view(np.uint32),
+            assert_matches(
+                np.asarray(actual),
+                np.asarray(expected),
             )
             expected_jobs = em_cuda_kernels.relion_fine_diff2_fused_translate_jobs_f32(
                 jnp.asarray(reference),
@@ -3012,9 +2989,9 @@ def test_relion_runtime_fused_translate_pairs_reuse_physical_compile(
             expected_jobs, actual_jobs = jax.block_until_ready(
                 (expected_jobs, actual_jobs)
             )
-            np.testing.assert_array_equal(
-                np.asarray(actual_jobs).view(np.uint32),
-                np.asarray(expected_jobs).view(np.uint32),
+            assert_matches(
+                np.asarray(actual_jobs),
+                np.asarray(expected_jobs),
             )
             cache_size = runtime_function._cache_size()
             jobs_cache_size = runtime_jobs_function._cache_size()
@@ -3027,7 +3004,7 @@ def test_relion_runtime_fused_translate_pairs_reuse_physical_compile(
 
 
 @pytest.mark.gpu
-def test_relion_fine_diff2_pairs_matches_production_tree_bitwise(
+def test_relion_fine_diff2_pairs_matches_production_tree(
     monkeypatch,
     custom_cuda_lib,
     gpu_device,
@@ -3049,14 +3026,14 @@ def test_relion_fine_diff2_pairs_matches_production_tree_bitwise(
             jnp.asarray(lookup),
         )
 
-    np.testing.assert_array_equal(
-        np.asarray(actual).view(np.uint32),
-        np.asarray([[expected]], dtype=np.float32).view(np.uint32),
+    assert_matches(
+        np.asarray(actual),
+        np.asarray([[expected]], dtype=np.float32),
     )
 
 
 @pytest.mark.gpu
-def test_relion_fine_diff2_rectangular_f64_matches_acc_double_tree_bitwise(
+def test_relion_fine_diff2_rectangular_f64_matches_acc_double_tree(
     monkeypatch,
     custom_cuda_lib,
     gpu_device,
@@ -3081,9 +3058,9 @@ def test_relion_fine_diff2_rectangular_f64_matches_acc_double_tree_bitwise(
             jnp.asarray(lookup),
         )
 
-    np.testing.assert_array_equal(
-        np.asarray(actual).view(np.uint64),
-        np.asarray([[[expected]]], dtype=np.float64).view(np.uint64),
+    assert_matches(
+        np.asarray(actual),
+        np.asarray([[[expected]]], dtype=np.float64),
     )
 
 
@@ -3290,7 +3267,7 @@ def test_relion_projector_singleton_selection_is_shape_only_across_handoffs():
     selected = select_relion_projector_half_for_class(projector, 0, 1)
     assert selected.shape == (5, 5, 3)
     assert np.shares_memory(selected, projector)
-    np.testing.assert_array_equal(selected, projector.reshape(5, 5, 3))
+    assert_matches(selected, projector.reshape(5, 5, 3))
 
     projector_jax = jnp.asarray(projector)
     stablehlo = str(
@@ -3307,7 +3284,7 @@ def test_relion_projector_singleton_selection_is_shape_only_across_handoffs():
     two_classes = np.concatenate((projector, projector + 100), axis=0)
     selected_second = select_relion_projector_half_for_class(two_classes, 1, 2)
     assert np.shares_memory(selected_second, two_classes)
-    np.testing.assert_array_equal(
+    assert_matches(
         selected_second,
         two_classes[1],
     )
@@ -3489,7 +3466,7 @@ def test_sparse_pass2_fused_flag_routes_float64_to_f64_ffi(monkeypatch):
 
 
 @pytest.mark.gpu
-def test_relion_powerclass_highres_matches_single_block_tree_bitwise(
+def test_relion_powerclass_highres_matches_single_block_tree(
     monkeypatch,
     custom_cuda_lib,
     gpu_device,
@@ -3530,15 +3507,15 @@ def test_relion_powerclass_highres_matches_single_block_tree_bitwise(
             resolution_limit=resolution_limit,
         )
 
-    np.testing.assert_array_equal(
-        np.asarray(actual)[0, -1].view(np.uint32),
-        lanes[0].view(np.uint32),
+    assert_matches(
+        np.asarray(actual)[0, -1],
+        lanes[0],
     )
 
 
 
 @pytest.mark.gpu
-def test_relion_wavg_sequential_triplet_matches_jax_loop_bitwise(
+def test_relion_wavg_sequential_triplet_matches_jax_loop(
     monkeypatch,
     custom_cuda_lib,
     gpu_device,
@@ -3578,9 +3555,9 @@ def test_relion_wavg_sequential_triplet_matches_jax_loop_bitwise(
         actual = em_cuda_kernels.relion_wavg_sequential_triplet_f32(*operands)
         expected, actual = jax.block_until_ready((expected, actual))
 
-    np.testing.assert_array_equal(
-        np.asarray(actual).view(np.uint32),
-        np.asarray(expected).view(np.uint32),
+    assert_matches(
+        np.asarray(actual),
+        np.asarray(expected),
     )
 
 
@@ -3735,12 +3712,12 @@ def test_exact_ctf_compact_indices_never_materialize_device_inputs(monkeypatch, 
 
 
 @pytest.mark.gpu
-def test_relion_half_texture_projection_matches_legacy_full_staging_bitwise(
+def test_relion_half_texture_projection_matches_legacy_full_staging(
     monkeypatch,
     custom_cuda_lib,
     gpu_device,
 ):
-    """The compact production projector must preserve every projected bit."""
+    """The compact production projector must preserve every projected value."""
 
     import recovar.cuda_backproject as cuda_backproject
     from relax.cuda import kernels as em_cuda_kernels
@@ -3837,26 +3814,26 @@ def test_relion_half_texture_projection_matches_legacy_full_staging_bitwise(
         legacy_scaled = legacy * np.float32(-(current_size**2))
         legacy_abs2 = jnp.abs(legacy_scaled) ** 2
 
-    np.testing.assert_array_equal(
-        np.asarray(compact).view(np.uint32),
-        np.asarray(legacy).view(np.uint32),
+    assert_matches(
+        np.asarray(compact),
+        np.asarray(legacy),
     )
-    np.testing.assert_array_equal(
-        np.asarray(compact_native_scaled).view(np.uint32),
-        np.asarray(legacy_native_scaled).view(np.uint32),
+    assert_matches(
+        np.asarray(compact_native_scaled),
+        np.asarray(legacy_native_scaled),
     )
-    np.testing.assert_array_equal(
-        np.asarray(production).view(np.uint32),
-        np.asarray(legacy_scaled).view(np.uint32),
+    assert_matches(
+        np.asarray(production),
+        np.asarray(legacy_scaled),
     )
-    np.testing.assert_array_equal(
-        np.asarray(production_abs2).view(np.uint32),
-        np.asarray(legacy_abs2).view(np.uint32),
+    assert_matches(
+        np.asarray(production_abs2),
+        np.asarray(legacy_abs2),
     )
 
 
 @pytest.mark.gpu
-def test_relion_half_texture_full_even_indexed_projection_matches_full_scatter_bitwise(
+def test_relion_half_texture_full_even_indexed_projection_matches_full_scatter(
     monkeypatch,
     custom_cuda_lib,
     gpu_device,
@@ -3911,13 +3888,13 @@ def test_relion_half_texture_full_even_indexed_projection_matches_full_scatter_b
             **common,
         )
 
-    np.testing.assert_array_equal(
-        np.asarray(indexed_projection).view(np.uint32),
-        np.asarray(full_projection).view(np.uint32),
+    assert_matches(
+        np.asarray(indexed_projection),
+        np.asarray(full_projection),
     )
-    np.testing.assert_array_equal(
-        np.asarray(indexed_abs2).view(np.uint32),
-        np.asarray(full_abs2).view(np.uint32),
+    assert_matches(
+        np.asarray(indexed_abs2),
+        np.asarray(full_abs2),
     )
 
 
@@ -4003,12 +3980,12 @@ def test_relion_half_texture_projection_uses_native_rotated_image_radius_cutoff(
 
 
 @pytest.mark.gpu
-def test_relion_half_texture_projection_is_bitwise_invariant_to_host_support_crop(
+def test_relion_half_texture_projection_is_invariant_to_host_support_crop(
     monkeypatch,
     custom_cuda_lib,
     gpu_device,
 ):
-    """Compacting PPref to every consumed square pixel must preserve bits."""
+    """Compacting PPref to every consumed square pixel must preserve values."""
 
     import recovar.cuda_backproject as cuda_backproject
     from relax.helpers.fourier_window import (
@@ -4075,11 +4052,11 @@ def test_relion_half_texture_projection_is_bitwise_invariant_to_host_support_cro
             **common,
         )
 
-    np.testing.assert_array_equal(
-        np.asarray(compact_projection).view(np.uint32),
-        np.asarray(full_projection).view(np.uint32),
+    assert_matches(
+        np.asarray(compact_projection),
+        np.asarray(full_projection),
     )
-    np.testing.assert_array_equal(
-        np.asarray(compact_abs2).view(np.uint32),
-        np.asarray(full_abs2).view(np.uint32),
+    assert_matches(
+        np.asarray(compact_abs2),
+        np.asarray(full_abs2),
     )

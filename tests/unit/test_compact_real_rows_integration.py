@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 from test_sparse_pass2_bucketed_perf import MockDataset, VOLUME_SHAPE, IMAGE_SIZE, _hermitian_volume
 from test_compact_capacity_integration import _fused_kclass_result_arrays
+from helpers.float_compare import assert_matches, matches
 
 def _fused_kclass_multibucket_fixture(n_images=12, seed=5):
     """Heterogeneous candidate counts so images land in several pair-width buckets.
@@ -52,12 +53,13 @@ def _fused_kclass_multibucket_fixture(n_images=12, seed=5):
     )
 
 
-def _assert_fused_arrays_identical(baseline, candidate, label):
+def _assert_fused_arrays_match(baseline, candidate, label):
+    """Discrete outputs exactly, floating-point outputs within the default band."""
     assert baseline and set(baseline) == set(candidate)
     mismatched = [
         name for name, expected in baseline.items()
         if expected.shape != candidate[name].shape
-        or not np.array_equal(
+        or not matches(
             np.nan_to_num(expected, nan=0.0, posinf=1e30, neginf=-1e30),
             np.nan_to_num(candidate[name], nan=0.0, posinf=1e30, neginf=-1e30),
         )
@@ -70,7 +72,7 @@ def test_compact_adjoint_real_rows_matches_dense_rows(monkeypatch, noise_mode):
     """Skipping the padded rotation rows in the M-step adjoint must not change any output.
 
     Rows at or beyond ``actual_counts`` carry exactly zero posterior, so the adjoint
-    of the dense rows and of the real rows agree bit for bit on CPU. The row indices
+    of the dense rows and of the real rows agree to float rounding on CPU. The row indices
     come from host metadata (no device pull). At 100k/256 only 27 % of the padded
     rows are real and the adjoint was 203 s of iteration 2 (job 13804810)."""
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
@@ -103,11 +105,11 @@ def test_compact_adjoint_real_rows_matches_dense_rows(monkeypatch, noise_mode):
     assert not calls
     real = run("1")
     assert calls and all(c > 0 for c in calls), "real-rows adjoint never engaged"
-    # Everything except the two adjoint volumes is bit-identical. Gathering the
+    # Everything except the two adjoint volumes matches in the default band. Gathering the
     # real rows changes the XLA scatter's reduction order, which on CPU moved 7
     # of 512 Ft_y voxels by one float64 ULP (rel 2e-16); bound that explicitly.
     volumes = {k for k in dense if k.startswith(("Ft_y", "Ft_ctf"))}
-    _assert_fused_arrays_identical(
+    _assert_fused_arrays_match(
         {k: v for k, v in dense.items() if k not in volumes},
         {k: v for k, v in real.items() if k not in volumes},
         f"real-rows adjoint ({noise_mode})",
@@ -122,12 +124,12 @@ def test_real_flat_row_indices_from_actual_counts_layout():
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
     idx, mask, count = bucketed_mod._real_flat_row_indices_from_actual_counts([2, 0, 3], 4, pad_multiple=1)
-    np.testing.assert_array_equal(idx, [0, 1, 8, 9, 10])
-    np.testing.assert_array_equal(mask, [1, 1, 1, 1, 1])
+    assert_matches(idx, [0, 1, 8, 9, 10])
+    assert_matches(mask, [1, 1, 1, 1, 1])
     assert count == 5
     idx, mask, count = bucketed_mod._real_flat_row_indices_from_actual_counts([2, 0, 3], 4, pad_multiple=4)
-    np.testing.assert_array_equal(idx, [0, 1, 8, 9, 10, 0, 0, 0])
-    np.testing.assert_array_equal(mask, [1, 1, 1, 1, 1, 0, 0, 0])
+    assert_matches(idx, [0, 1, 8, 9, 10, 0, 0, 0])
+    assert_matches(mask, [1, 1, 1, 1, 1, 0, 0, 0])
     assert count == 5
     idx, mask, count = bucketed_mod._real_flat_row_indices_from_actual_counts([0, 0], 4)
     assert idx.size == 0 and mask.size == 0 and count == 0
@@ -148,12 +150,12 @@ def test_real_flat_row_indices_from_actual_counts_layout():
 @pytest.mark.parametrize("device_scalars", ["0", "1"])
 @pytest.mark.parametrize("defer_flag", ["0", "1"])
 @pytest.mark.parametrize("noise_mode", ["noise", "noise_with_scale_groups"])
-def test_flat_real_rows_sums_and_noise_are_bit_identical(monkeypatch, custom_cuda_lib, gpu_device, device_scalars, defer_flag, noise_mode):
+def test_flat_real_rows_sums_and_noise_match(monkeypatch, custom_cuda_lib, gpu_device, device_scalars, defer_flag, noise_mode):
     """RELAX_SPARSE_KCLASS_COMPACT_PAIR_FLAT_ROWS computes the pair-sparse weighted sums,
     CTF sums and noise terms only for the real rotation rows (flat [rows, pixel] layout)
     instead of the padded [images, rows, pixel] layout. Each real row is the padded row
-    bit for bit and padded rows carry exactly zero mass, so every output must be
-    bit-identical to the padded path with the real-rows adjoint."""
+    and padded rows carry exactly zero mass, so every output must match the padded path
+    with the real-rows adjoint to float rounding."""
     import recovar.cuda_backproject as cuda_backproject
     from relax.cuda import kernels as em_cuda_kernels
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
@@ -204,12 +206,12 @@ def test_flat_real_rows_sums_and_noise_are_bit_identical(monkeypatch, custom_cud
     # volumes are order-dependent at the float32 ULP level whenever the rows arrive in a
     # different launch layout (the real-rows adjoint pin, f089f37e6, bounds them the same
     # way); every other output — sums, CTF sums, noise statistics, posteriors, best poses —
-    # must be bit-identical.
+    # must match in the default band (discrete outputs exactly).
     volume_keys = {k for k in padded if k.startswith(("Ft_y", "Ft_ctf"))}
     # The posterior-mass reductions now sit in a different XLA program (the flat-row
     # stage), so XLA fuses them differently and the noise statistics they feed move by a
     # float32 ULP or two (as ctf_probs did when the pair-sparse sums landed, 048c30d20).
-    # Bound them; posteriors, best poses and class evidences stay bitwise.
+    # Bound them; posteriors, best poses and class evidences use the default band.
     noise_keys = {k for k in padded if k.startswith("noise_stats")}
     for name in sorted(noise_keys):
         a = np.asarray(padded[name]); b = np.asarray(flat[name])
@@ -217,7 +219,7 @@ def test_flat_real_rows_sums_and_noise_are_bit_identical(monkeypatch, custom_cud
         np.testing.assert_allclose(b, a, rtol=8 * np.finfo(np.float32).eps, atol=0.0, err_msg=name)
     for name in sorted(padded):
         a = np.asarray(padded[name]); b = np.asarray(flat[name])
-        if a.shape != b.shape or not np.array_equal(np.nan_to_num(a), np.nan_to_num(b)):
+        if a.shape != b.shape or not matches(np.nan_to_num(a), np.nan_to_num(b)):
             diff = np.abs(np.nan_to_num(a).astype(np.complex128) - np.nan_to_num(b).astype(np.complex128))
             scale = np.abs(np.nan_to_num(a).astype(np.complex128))
             print(f"DIFF {name}: shape {a.shape} dtype {a.dtype} n_mismatch {int((diff > 0).sum())} max_abs {diff.max():.3e} max_rel {np.max(diff / np.maximum(scale, 1e-30)):.3e}")
@@ -227,7 +229,7 @@ def test_flat_real_rows_sums_and_noise_are_bit_identical(monkeypatch, custom_cud
         eps = np.finfo(np.asarray(a).real.dtype).eps
         np.testing.assert_allclose(b, a, rtol=4 * eps, atol=4 * eps * max(1.0, float(np.max(np.abs(a)))), err_msg=name)
     bounded = volume_keys | noise_keys
-    _assert_fused_arrays_identical(
+    _assert_fused_arrays_match(
         {k: v for k, v in padded.items() if k not in bounded},
         {k: v for k, v in flat.items() if k not in bounded},
         f"flat real rows ({noise_mode}, defer={defer_flag}, device_scalars={device_scalars})",

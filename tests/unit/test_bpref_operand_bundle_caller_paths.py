@@ -23,6 +23,7 @@ from unittest import mock
 
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from relax.diagnostics import bpref_diagnostics, local_bpref_capture
 from relax.local import local_em_engine
@@ -155,7 +156,7 @@ def test_big_jit_site_forwards_the_kernels_own_operands():
                 "relion_cuda_preprocess_cosine_width"):
         assert arg in site, f"big-JIT site does not forward {arg}"
     env = _big_jit_env(True, RADIUS)
-    assert np.array_equal(_evaluate(site["relion_preprocess_normalization"], env), NORM)
+    assert matches(_evaluate(site["relion_preprocess_normalization"], env), NORM)
     assert _evaluate(site["relion_cuda_preprocess_radius"], env) == RADIUS
     assert _evaluate(site["relion_cuda_preprocess_cosine_width"], env) == WIDTH
 
@@ -251,7 +252,7 @@ def test_k4_production_configuration_gets_a_masked_non_exact_big_jit_capture(tmp
     assert float(payload["ctf_angle_per_tilt"]) == float(getattr(ctf, "angle_per_tilt", 0.0))
     assert bool(payload["relion_cuda_preprocess"]) is False
     assert np.isnan(float(payload["relion_cuda_preprocess_radius"]))
-    assert np.array_equal(payload["relion_preprocess_normalization_factors"],
+    assert matches(payload["relion_preprocess_normalization_factors"],
                           np.ones(ROWS, dtype=np.float32))
 
 
@@ -346,7 +347,7 @@ def test_writer_round_trips_the_cuda_mask_scalars_and_normalization(tmp_path):
     payload = _dump(tmp_path, _cuda_bundle())
     assert float(payload["relion_cuda_preprocess_radius"]) == RADIUS
     assert float(payload["relion_cuda_preprocess_cosine_width"]) == WIDTH
-    assert np.array_equal(payload["relion_preprocess_normalization_factors"], NORM)
+    assert matches(payload["relion_preprocess_normalization_factors"], NORM)
     assert bool(payload["relion_cuda_preprocess"]) is True
     assert bool(payload["high_precision_operand_bundle"]) is True
     # The mode stays a plain mask mode; the engine path is its own field.

@@ -2,6 +2,7 @@
 import numpy as np
 import pytest
 from relax.scoring.significance import _prepare_coarse_relion_projector
+from helpers.float_compare import assert_matches
 pytestmark = pytest.mark.unit
 
 
@@ -18,8 +19,8 @@ def test_coarse_projector_precision_preserves_source(classes, projection_double,
     )
     expected_dtype = np.complex128 if projection_double is None or projection_double or score_double else np.complex64
     assert result.dtype == expected_dtype
-    np.testing.assert_array_equal(np.asarray(result), source.astype(expected_dtype))
-    np.testing.assert_array_equal(source, saved)
+    assert_matches(np.asarray(result), source.astype(expected_dtype))
+    assert_matches(source, saved)
 
 
 def test_unspecified_projection_precision_preserves_legacy_float32_input():

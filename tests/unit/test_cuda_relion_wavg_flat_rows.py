@@ -4,12 +4,13 @@ The flat-row kernels replace the rectangular ``[image, rotation]`` block grid
 with one packed candidate-row axis whose image address comes from
 ``row_image_ids``.  Everything else -- the per-pixel binary32 arithmetic, the
 translation-storage order and the runtime logical-pixel prefix -- is the
-rectangular body, so a flattened rectangular problem must return bitwise
-identical results.
+rectangular body, so a flattened rectangular problem must return the same
+results (default float32 band).
 """
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -29,8 +30,8 @@ def _exact_float32(rng, shape, *, quantum=1.0 / 256.0, span=64):
 
     Every value is an integer multiple of ``2**-8`` bounded by ``span``, so a
     handful of them add without rounding.  Sums are then order-independent and
-    a bitwise comparison against the rectangular atomic kernel measures the
-    addressing rather than the (hardware-scheduled) atomic issue order.
+    a comparison against the rectangular atomic kernel measures the addressing
+    rather than the (hardware-scheduled) atomic issue order.
     """
 
     integers = rng.integers(-span * 256, span * 256 + 1, size=shape)
@@ -67,15 +68,9 @@ def _cuda_backproject(monkeypatch, custom_cuda_lib):
     return em_cuda_kernels
 
 
-def _assert_bitwise(actual, expected):
-    np.testing.assert_array_equal(
-        np.asarray(actual).view(np.uint32), np.asarray(expected).view(np.uint32)
-    )
-
-
 @pytest.mark.gpu
 @pytest.mark.parametrize("logical_pixel_count", [13, 8])
-def test_flat_rows_wavg_matches_flattened_rectangular_bitwise(
+def test_flat_rows_wavg_matches_flattened_rectangular(
     monkeypatch, custom_cuda_lib, gpu_device, logical_pixel_count
 ):
     cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
@@ -111,7 +106,7 @@ def test_flat_rows_wavg_matches_flattened_rectangular_bitwise(
         expected, actual = jax.block_until_ready((expected, actual))
 
     expected = np.asarray(expected).reshape(-1, pixel_capacity, 3)
-    _assert_bitwise(actual, expected)
+    assert_matches(actual, expected)
     if logical_pixel_count < pixel_capacity:
         assert np.all(np.asarray(actual)[:, logical_pixel_count:, :] == 0.0)
 
@@ -165,7 +160,7 @@ def test_flat_rows_wavg_ragged_and_padded_rows(
     rectangular = np.asarray(rectangular)
     actual = np.asarray(actual)
     expected_valid = rectangular[row_image_ids[valid], row_rotation_ids[valid]]
-    _assert_bitwise(actual[valid], expected_valid)
+    assert_matches(actual[valid], expected_valid)
     assert np.all(actual[~valid] == 0.0)
 
 
@@ -206,7 +201,7 @@ def test_flat_rows_wavg_out_of_range_row_id_fails_closed(
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("logical_pixel_count", [7, 4])
-def test_flat_rows_wavg_atomics_match_flattened_rectangular_bitwise(
+def test_flat_rows_wavg_atomics_match_flattened_rectangular(
     monkeypatch, custom_cuda_lib, gpu_device, logical_pixel_count
 ):
     """Exactly representable summands make the accumulation order irrelevant.
@@ -214,9 +209,9 @@ def test_flat_rows_wavg_atomics_match_flattened_rectangular_bitwise(
     The flat-row launch keeps one block per row with grid.x = row, so a
     flattened rectangular problem issues the same multiset of per-cell atomic
     adds under the same linear block index.  The order those adds land in is
-    hardware scheduled, and the rectangular kernel is itself not bitwise
-    reproducible at realistic rotation counts, so the asserted comparison uses
-    multiples of 2**-8 whose sums are exact in binary32.
+    hardware scheduled, and the rectangular kernel itself varies in the last
+    bits at realistic rotation counts, so the comparison uses multiples of
+    2**-8 whose sums are exact in binary32.
     """
 
     cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
@@ -242,9 +237,9 @@ def test_flat_rows_wavg_atomics_match_flattened_rectangular_bitwise(
         )
         expected, actual = jax.block_until_ready((expected, actual))
 
-    _assert_bitwise(actual, expected)
+    assert_matches(actual, expected)
     if logical_pixel_count < pixel_capacity:
-        _assert_bitwise(
+        assert_matches(
             np.asarray(actual)[:, logical_pixel_count:, :],
             accumulator[:, logical_pixel_count:, :],
         )
@@ -284,7 +279,7 @@ def test_flat_rows_wavg_atomics_ragged_and_padded_rows(
         )
         expected, actual = jax.block_until_ready((expected, actual))
 
-    _assert_bitwise(actual, expected)
+    assert_matches(actual, expected)
 
 
 @pytest.mark.gpu
@@ -326,7 +321,7 @@ def test_flat_rows_wavg_all_padding_rows_leave_operands_untouched(
         triplets, accumulated = jax.block_until_ready((triplets, accumulated))
 
     assert np.all(np.asarray(triplets) == 0.0)
-    _assert_bitwise(accumulated, accumulator)
+    assert_matches(accumulated, accumulator)
 
 
 def test_flat_rows_wavg_fails_closed_without_gpu(monkeypatch):

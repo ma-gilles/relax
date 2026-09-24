@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
@@ -48,12 +49,12 @@ def test_reconstruction_wrapper_preserves_coarse_normalization_controls(
         return_diagnostics=diagnostics,
     )
     for got, wanted in zip(actual, expected if diagnostics else expected[:3], strict=True):
-        np.testing.assert_array_equal(got, wanted)
+        assert_matches(got, wanted)
     if keep_all:
-        np.testing.assert_array_equal(actual[1], np.isfinite(scores))
-        np.testing.assert_array_equal(actual[2], [3, 3])
+        assert_matches(actual[1], np.isfinite(scores))
+        assert_matches(actual[2], [3, 3])
     if diagnostics and external_sum:
-        np.testing.assert_array_equal(actual[3], denominator)
+        assert_matches(actual[3], denominator)
 
 
 @pytest.mark.parametrize("mode", ["no_xhalf", "legacy", "winner"])
@@ -143,8 +144,8 @@ def test_relion_f32_fine_posterior_matches_numpy_reference_with_cutoff_ties():
     expected = _numpy_relion_f32_reference(scores, adaptive_fraction)
 
     np.testing.assert_allclose(actual[0], expected[0], rtol=2e-6, atol=0.0)
-    np.testing.assert_array_equal(actual[1], expected[1])
-    np.testing.assert_array_equal(actual[2], expected[2])
+    assert_matches(actual[1], expected[1])
+    assert_matches(actual[2], expected[2])
     np.testing.assert_allclose(actual[3], expected[3], rtol=2e-6, atol=0.0)
     np.testing.assert_allclose(actual[4], expected[4], rtol=2e-6, atol=0.0)
     # Equal raw weights at the significance boundary must be retained together.
@@ -174,9 +175,9 @@ def test_relion_f32_fine_posterior_exposes_full_joint_normalization():
     )
 
     np.testing.assert_allclose(np.sum(full[0], axis=1), np.ones(1), rtol=2e-6)
-    np.testing.assert_array_equal(full[1], np.where(full[2], full[0], 0.0))
+    assert_matches(full[1], np.where(full[2], full[0], 0.0))
     for actual, expected in zip(full[1:], legacy, strict=True):
-        np.testing.assert_array_equal(actual, expected)
+        assert_matches(actual, expected)
 
 
 def test_relion_f32_fine_posterior_reuses_external_coarse_sum_and_keeps_support():
@@ -203,11 +204,11 @@ def test_relion_f32_fine_posterior_reuses_external_coarse_sum_and_keeps_support(
     )
 
     np.testing.assert_allclose(reused[0], ordinary[0] * np.float32(0.5), rtol=2e-6)
-    np.testing.assert_array_equal(reused[1], reused[0])
-    np.testing.assert_array_equal(reused[2], [[True, True, True, True, False]])
-    np.testing.assert_array_equal(reused[3], [4])
-    np.testing.assert_array_equal(reused[4], coarse_sum_weight)
-    np.testing.assert_array_equal(reused[5], np.zeros(1, dtype=np.float32))
+    assert_matches(reused[1], reused[0])
+    assert_matches(reused[2], [[True, True, True, True, False]])
+    assert_matches(reused[3], [4])
+    assert_matches(reused[4], coarse_sum_weight)
+    assert_matches(reused[5], np.zeros(1, dtype=np.float32))
 
 
 @pytest.mark.parametrize("setting", [None, "0", "1"])
@@ -232,7 +233,7 @@ def test_relion_f32_fine_posterior_environment_policy(monkeypatch, setting):
     )
 
     for actual_value, expected_value in zip(actual, expected, strict=True):
-        np.testing.assert_array_equal(np.asarray(actual_value), np.asarray(expected_value))
+        assert_matches(np.asarray(actual_value), np.asarray(expected_value))
 
 
 def test_relion_f32_fine_posterior_explicit_k1_route(monkeypatch):
@@ -250,7 +251,7 @@ def test_relion_f32_fine_posterior_explicit_k1_route(monkeypatch):
     )
 
     for actual_value, expected_value in zip(actual, expected, strict=True):
-        np.testing.assert_array_equal(np.asarray(actual_value), np.asarray(expected_value))
+        assert_matches(np.asarray(actual_value), np.asarray(expected_value))
 
 
 def test_relion_f32_fine_posterior_gate_is_xhalf_only(monkeypatch):
@@ -267,7 +268,7 @@ def test_relion_f32_fine_posterior_gate_is_xhalf_only(monkeypatch):
     )
 
     for actual_value, expected_value in zip(actual, expected, strict=True):
-        np.testing.assert_array_equal(np.asarray(actual_value), np.asarray(expected_value))
+        assert_matches(np.asarray(actual_value), np.asarray(expected_value))
 
 
 def test_sparse_pass2_winner_take_all_excludes_f32_posterior_override(monkeypatch):
@@ -285,4 +286,4 @@ def test_sparse_pass2_winner_take_all_excludes_f32_posterior_override(monkeypatc
     )
 
     for actual_value, expected_value in zip(actual, expected, strict=True):
-        np.testing.assert_array_equal(np.asarray(actual_value), np.asarray(expected_value))
+        assert_matches(np.asarray(actual_value), np.asarray(expected_value))

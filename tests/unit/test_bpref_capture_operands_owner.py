@@ -2,6 +2,7 @@
 
 import jax.numpy as jnp
 import numpy as np
+from helpers.float_compare import matches
 
 from relax.local import local_em_engine
 
@@ -55,11 +56,11 @@ def test_capture_priors_mask_and_remove_pose_priors():
     rotation_log_prior = jnp.asarray([[0.5, -0.5]], dtype=jnp.float32)
     bucket = _Bucket(np.asarray([[True, False]]), None, np.asarray([[0.25, 0.75]], dtype=np.float32))
     priors = local_em_engine._bpref_capture_priors(scores, scores.shape, bucket=bucket, rotation_log_prior=rotation_log_prior)
-    assert np.array_equal(np.asarray(priors.candidate_mask), [[[True, True], [False, False]]])
+    assert matches(np.asarray(priors.candidate_mask), [[[True, True], [False, False]]])
     assert priors.rotation_log_prior is rotation_log_prior
-    assert np.array_equal(np.asarray(priors.translation_log_prior), [[0.25, 0.75]])
-    assert np.array_equal(np.asarray(priors.preprior_scores), [[[-0.75, -np.inf], [-np.inf, -np.inf]]])
+    assert matches(np.asarray(priors.translation_log_prior), [[0.25, 0.75]])
+    assert matches(np.asarray(priors.preprior_scores), [[[-0.75, -np.inf], [-np.inf, -np.inf]]])
     masked = _Bucket(np.asarray([[True, True]]), np.asarray([[[True, False], [False, True]]]), np.zeros((1, 2), dtype=np.float32))
     priors = local_em_engine._bpref_capture_priors(scores, scores.shape, bucket=masked, rotation_log_prior=jnp.zeros((1, 2), dtype=jnp.float32))
-    assert np.array_equal(np.asarray(priors.candidate_mask), [[[True, False], [False, True]]])
-    assert np.array_equal(np.asarray(priors.preprior_scores), [[[0.0, -np.inf], [-np.inf, 2.0]]])
+    assert matches(np.asarray(priors.candidate_mask), [[[True, False], [False, True]]])
+    assert matches(np.asarray(priors.preprior_scores), [[[0.0, -np.inf], [-np.inf, 2.0]]])

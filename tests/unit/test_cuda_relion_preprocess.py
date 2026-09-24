@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -58,8 +59,8 @@ def test_relion_cuda_normalize_shift_is_bit_exact(gpu_device):
             apply_mask=False,
         )
 
-    np.testing.assert_array_equal(np.asarray(normalized_shifted), expected)
-    np.testing.assert_array_equal(np.asarray(unmasked), expected)
+    assert_matches(np.asarray(normalized_shifted), expected)
+    assert_matches(np.asarray(unmasked), expected)
 
 
 def test_relion_cuda_softmask_has_constant_exterior_and_finite_output(gpu_device):
@@ -82,12 +83,12 @@ def test_relion_cuda_softmask_has_constant_exterior_and_finite_output(gpu_device
 
     normalized_shifted = np.asarray(normalized_shifted)
     masked = np.asarray(masked)
-    np.testing.assert_array_equal(normalized_shifted, _zero_fill_shift(images, factors, shifts))
+    assert_matches(normalized_shifted, _zero_fill_shift(images, factors, shifts))
     assert np.all(np.isfinite(masked))
     yy, xx = np.meshgrid(np.arange(64) - 32, np.arange(64) - 32, indexing="ij")
     exterior = np.sqrt(xx * xx + yy * yy) > 25.0
     for row in range(masked.shape[0]):
-        np.testing.assert_array_equal(masked[row][exterior], np.full(np.count_nonzero(exterior), masked[row, 0, 0]))
+        assert_matches(masked[row][exterior], np.full(np.count_nonzero(exterior), masked[row, 0, 0]))
 
 
 @pytest.mark.parametrize("native_lane_reduction", [False, True])
@@ -114,7 +115,7 @@ def test_relion_cuda_softmask_repeats_bit_exactly(gpu_device, native_lane_reduct
             masked_repeats.append(np.asarray(masked))
 
     for repeat in masked_repeats[1:]:
-        np.testing.assert_array_equal(repeat, masked_repeats[0])
+        assert_matches(repeat, masked_repeats[0])
 
 
 @pytest.mark.parametrize("radius,cosine_width", [(1.0e-6, 1.0), (15.999, 1.0e-4)])
@@ -241,7 +242,7 @@ def test_relion_cuda_softmask_batch_matches_single_image_bitwise(gpu_device, nat
                 native_lane_reduction=native_lane_reduction,
             )
             for batched_value, single_value in zip(batched, single):
-                np.testing.assert_array_equal(batched_value[row], np.asarray(single_value)[0])
+                assert_matches(batched_value[row], np.asarray(single_value)[0])
 
 
 def test_relion_cuda_softmask_non_finite_image_fails_closed(gpu_device):
@@ -304,7 +305,7 @@ def test_relion_cuda_softmask_deferred_check_queues_and_fails_closed_on_drain(gp
                 apply_mask=True,
                 deferred_finite_check=False,
             )
-            np.testing.assert_array_equal(masked[row], np.asarray(single)[0])
+            assert_matches(masked[row], np.asarray(single)[0])
 
     yy, xx = np.meshgrid(np.arange(32) - 16, np.arange(32) - 16, indexing="ij")
     exterior = np.sqrt(xx * xx + yy * yy) > 13.0

@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.cuda import kernels as em_cuda_kernels
 from relax.scoring import coarse_device_rescore as module
@@ -82,9 +83,9 @@ def assert_failed(result, reason):
     compact = result.compact_scores
     assert np.isneginf(np.asarray(compact.posterior_scores_flat)).all()
     assert np.isneginf(np.asarray(compact.best_score)).all()
-    np.testing.assert_array_equal(compact.source_block_ids, -1)
-    np.testing.assert_array_equal(compact.block_count, 0)
-    np.testing.assert_array_equal(compact.best_pose, 0)
+    assert_matches(compact.source_block_ids, -1)
+    assert_matches(compact.block_count, 0)
+    assert_matches(compact.best_pose, 0)
     assert not np.asarray(compact.selected_output_valid).any()
 
 
@@ -105,7 +106,7 @@ def test_cpu_composed_control_flow_and_shared_assembly(monkeypatch, priors):
     assert int(result.status[module.STATUS_BLOCK_SUM]) == host_selection.block_count.sum()
     assert int(result.status[module.STATUS_BLOCK_MAX]) == host_selection.block_count.max()
     for left, right in zip(result.compact_scores, expected):
-        np.testing.assert_array_equal(left, right)
+        assert_matches(left, right)
 
 
 @pytest.mark.parametrize(
@@ -281,9 +282,9 @@ def test_gpu_existing_host_chain_exact(priors, runtime, custom_cuda_lib, gpu_dev
         assert bool(actual.status[module.STATUS_VALID]) and expected_selection.eligible
         decoded = decode_device_coarse_selection(actual.selection)
         for a, b in zip(decoded, expected_selection):
-            np.testing.assert_array_equal(a, b)
+            assert_matches(a, b)
         for a, b in zip(actual.compact_scores, expected):
-            np.testing.assert_array_equal(a, b)
+            assert_matches(a, b)
 
 
 @pytest.mark.gpu
@@ -302,7 +303,7 @@ def test_gpu_dynamic_prefix_and_failure_reuses_executable(custom_cuda_lib, gpu_d
                 _, expected = host_oracle(operands, kwargs, count, jnp.int32(logical))
                 assert bool(result.status[module.STATUS_VALID])
                 for a, b in zip(result.compact_scores, expected):
-                    np.testing.assert_array_equal(a, b)
+                    assert_matches(a, b)
             else:
                 assert_failed(result, 1 if count == 0 else 12)
         assert module._rescore_coarse_rotation_blocks_jit._cache_size() == 1
@@ -340,11 +341,11 @@ def test_gpu_runtime_lookup_holes_and_diagnostic_capture(custom_cuda_lib, gpu_de
         )
         assert bool(result.status[module.STATUS_VALID])
         for a, b in zip(result.compact_scores, expected):
-            np.testing.assert_array_equal(a, b)
+            assert_matches(a, b)
         old = scoring._relion_coarse_diff2_rotation_blocks_from_topology_f32(
             *operands,
             jnp.asarray(selection.block_ids),
             topology=kwargs["topology"],
             logical_full_pixel_count=jnp.int32(5),
         )
-        np.testing.assert_array_equal(result.selected_diff2, old)
+        assert_matches(result.selected_diff2, old)

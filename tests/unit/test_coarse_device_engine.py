@@ -6,6 +6,7 @@ from types import ModuleType, SimpleNamespace
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.scoring import significance
 from relax.scoring.coarse_device_selection import SELECTION_REASONS
@@ -139,7 +140,7 @@ def test_selected_transaction_keeps_device_arrays_and_forwards_operands(monkeypa
     assert actual.scores is None and actual.scores_include_priors
     assert actual.used_selected_rescore and actual.fallback_reason is None
     assert actual.selected_block_count == actual.max_selected_blocks == 1
-    np.testing.assert_array_equal(actual.raw_score_max, [-1.75, 0])
+    assert_matches(actual.raw_score_max, [-1.75, 0])
 
 
 @pytest.mark.parametrize("reason", [6, 10, 11, 12])

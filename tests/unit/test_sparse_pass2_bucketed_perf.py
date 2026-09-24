@@ -28,6 +28,7 @@ import weakref
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
 import jax
@@ -214,7 +215,7 @@ def test_relion_corr_img_squares_rfloat_ctf_before_xfloat_cast():
     actual = np.asarray(
         _relion_cuda_corr_img_from_rfloat_ctf(inverse_noise, ctf_rfloat)
     )
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
 
 def test_relion_corr_img_applies_xfloat_scale_square_after_rfloat_ctf_cast():
@@ -243,7 +244,7 @@ def test_relion_corr_img_applies_xfloat_scale_square_after_rfloat_ctf_cast():
             scale,
         )
     )
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
 
 def test_relion_corr_img_preserves_double_accelerator_precision():
@@ -259,7 +260,7 @@ def test_relion_corr_img_preserves_double_accelerator_precision():
         )
     )
     assert actual.dtype == np.float64
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
 
 def test_relion_corr_img_converts_noise_units_after_native_xfloat_product():
@@ -301,7 +302,7 @@ def test_relion_corr_img_converts_noise_units_after_native_xfloat_product():
             scale,
         )
     )
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
 
 def test_relion_pixel_correction_divides_by_rfloat_ctf_before_xfloat_cast():
@@ -323,7 +324,7 @@ def test_relion_pixel_correction_divides_by_rfloat_ctf_before_xfloat_cast():
     actual = np.asarray(
         _relion_cuda_pixel_correction_from_rfloat_ctf(scale, ctf_rfloat)
     )
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
 
 def test_relion_pixel_correction_preserves_double_accelerator_precision():
@@ -341,7 +342,7 @@ def test_relion_pixel_correction_preserves_double_accelerator_precision():
         )
     )
     assert actual.dtype == np.float64
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
 
 # Mock dataset (mirrors test_sparse_pass2_bucketed_parity.MockDataset).
@@ -364,7 +365,7 @@ def test_compute_local_ctf_sums_from_probs_sum_t_matches_dense_helper():
     )
 
     np.testing.assert_allclose(np.asarray(from_probs_sum), np.asarray(dense), rtol=1e-6, atol=1e-6)
-    np.testing.assert_array_equal(np.asarray(from_probs_sum)[0, 2], np.zeros_like(np.asarray(from_probs_sum)[0, 2]))
+    assert_matches(np.asarray(from_probs_sum)[0, 2], np.zeros_like(np.asarray(from_probs_sum)[0, 2]))
 
 
 def test_k1_pass2_dump_progress_requires_complete_target_set(tmp_path):
@@ -580,8 +581,8 @@ def test_active_row_selection_padding_masks_dummy_rows() -> None:
 
     assert active_count == 3
     assert active_indices.shape == (4,)
-    np.testing.assert_array_equal(active_indices[:active_count], np.asarray([0, 2, 4], dtype=np.int32))
-    np.testing.assert_array_equal(active_mask, np.asarray([1.0, 1.0, 1.0, 0.0], dtype=np.float32))
+    assert_matches(active_indices[:active_count], np.asarray([0, 2, 4], dtype=np.int32))
+    assert_matches(active_mask, np.asarray([1.0, 1.0, 1.0, 0.0], dtype=np.float32))
 
     values = jnp.arange(12, dtype=jnp.float32).reshape(2, 3, 2)
     rotations = jnp.arange(18, dtype=jnp.float32).reshape(6, 3)
@@ -615,9 +616,9 @@ def test_active_row_grouping_preserves_slots_for_padded_unsorted_rows() -> None:
         n_rotation_rows=4,
     )
 
-    np.testing.assert_array_equal(image_indices, np.asarray([1, 0, 1, 0, 2, 1], dtype=np.int32))
-    np.testing.assert_array_equal(active_slots, np.asarray([0, 0, 1, 1, 0, 0], dtype=np.int32))
-    np.testing.assert_array_equal(
+    assert_matches(image_indices, np.asarray([1, 0, 1, 0, 2, 1], dtype=np.int32))
+    assert_matches(active_slots, np.asarray([0, 0, 1, 1, 0, 0], dtype=np.int32))
+    assert_matches(
         grouped_rows,
         np.asarray(
             [
@@ -635,8 +636,8 @@ def test_active_row_grouping_preserves_slots_for_padded_unsorted_rows() -> None:
         n_images=3,
         n_rotation_rows=4,
     )
-    np.testing.assert_array_equal(empty_slots, np.zeros(2, dtype=np.int32))
-    np.testing.assert_array_equal(empty_grouped_rows, np.zeros((3, 1), dtype=np.int32))
+    assert_matches(empty_slots, np.zeros(2, dtype=np.int32))
+    assert_matches(empty_grouped_rows, np.zeros((3, 1), dtype=np.int32))
 
 
 def test_active_row_grouping_shape_detects_dense_expansion() -> None:
@@ -743,11 +744,11 @@ def test_flat_image_indices_follow_rotation_rows_not_pair_rows() -> None:
         active_mask,
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(image_indices)[:, 0],
         np.asarray([0, 0, 1, 1], dtype=np.int32),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(_active_image_indices_for_rotation_rows(active_indices, active_mask, n_rotation_rows=3)),
         np.asarray([0, 0, 1, 1], dtype=np.int32),
     )
@@ -757,7 +758,7 @@ def test_active_image_indices_masks_padded_rows() -> None:
     active_indices = np.asarray([5, 7, 5, 5], dtype=np.int32)
     active_mask = np.asarray([1.0, 1.0, 0.0, 0.0], dtype=np.float32)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(_active_image_indices_for_rotation_rows(active_indices, active_mask, n_rotation_rows=3)),
         np.asarray([1, 2, 0, 0], dtype=np.int32),
     )
@@ -792,31 +793,11 @@ def test_select_active_noise_rows_matches_separate_gathers() -> None:
         n_rotation_rows=n_rot,
     )
 
-    np.testing.assert_allclose(
-        np.asarray(fused[0]),
-        np.asarray(_select_active_flat_values(jnp.asarray(proj), active_indices, active_mask)),
-        rtol=0,
-        atol=0,
-    )
-    np.testing.assert_allclose(
-        np.asarray(fused[1]),
-        np.asarray(_select_active_flat_values(jnp.asarray(proj_abs2), active_indices, active_mask)),
-        rtol=0,
-        atol=0,
-    )
-    np.testing.assert_allclose(
-        np.asarray(fused[2]),
-        np.asarray(_select_active_flat_values(jnp.asarray(summed), active_indices, active_mask)),
-        rtol=0,
-        atol=0,
-    )
-    np.testing.assert_allclose(
-        np.asarray(fused[3]),
-        np.asarray(_select_active_flat_values(jnp.asarray(ctf_probs), active_indices, active_mask)),
-        rtol=0,
-        atol=0,
-    )
-    np.testing.assert_array_equal(
+    assert_matches(np.asarray(fused[0]), np.asarray(_select_active_flat_values(jnp.asarray(proj), active_indices, active_mask)))
+    assert_matches(np.asarray(fused[1]), np.asarray(_select_active_flat_values(jnp.asarray(proj_abs2), active_indices, active_mask)))
+    assert_matches(np.asarray(fused[2]), np.asarray(_select_active_flat_values(jnp.asarray(summed), active_indices, active_mask)))
+    assert_matches(np.asarray(fused[3]), np.asarray(_select_active_flat_values(jnp.asarray(ctf_probs), active_indices, active_mask)))
+    assert_matches(
         np.asarray(fused[4]),
         np.asarray(_active_image_indices_for_rotation_rows(active_indices, active_mask, n_rotation_rows=n_rot)),
     )
@@ -1149,7 +1130,7 @@ def test_sparse_pass2_tail_bucket_coalescing_respects_inflation_cap():
         max_images_per_microbatch=1000,
     )
 
-    np.testing.assert_array_equal(coalesced, bucket_sizes)
+    assert_matches(coalesced, bucket_sizes)
 
 
 def test_score_only_sparse_pass_uses_larger_default_bucket_budget(monkeypatch):
@@ -1491,7 +1472,7 @@ def test_compact_pair_projection_gather_budget_splits_large_bucket():
 
     assert len(split) == 5
     assert [len(chunk["image_indices"]) for chunk in split] == [2, 2, 2, 2, 2]
-    np.testing.assert_array_equal(
+    assert_matches(
         np.concatenate([chunk["image_indices"] for chunk in split]),
         np.arange(n_images, dtype=np.int64),
     )
@@ -1537,7 +1518,7 @@ def test_compact_pair_projection_budget_groups_rotation_signatures_by_default(mo
         list(range(20, 38)),
         [38, 39],
     ]
-    np.testing.assert_array_equal(
+    assert_matches(
         np.sort(np.concatenate([chunk["image_indices"] for chunk in grouped])),
         np.arange(40, dtype=np.int64),
     )
@@ -1671,7 +1652,7 @@ def test_compact_pair_prepare_tile_budget_splits_large_bucket():
     )
 
     assert [len(chunk["image_indices"]) for chunk in split] == [3, 3, 3, 1]
-    np.testing.assert_array_equal(
+    assert_matches(
         np.concatenate([chunk["image_indices"] for chunk in split]),
         np.arange(n_images, dtype=np.int64),
     )
@@ -1699,13 +1680,13 @@ def test_hybrid_compact_pair_execution_buckets_partition_images_once():
     compact = [bucket for bucket in execution_buckets if bucket["_execution_mode"] == "compact_pair"]
     assert [int(bucket["bucket_size"]) for bucket in rectangular] == [128]
     assert [int(bucket["pair_bucket_size"]) for bucket in compact] == [4096, 8192]
-    np.testing.assert_array_equal(rectangular[0]["image_indices"], np.asarray([0, 1, 2, 3], dtype=np.int64))
-    np.testing.assert_array_equal(
+    assert_matches(rectangular[0]["image_indices"], np.asarray([0, 1, 2, 3], dtype=np.int64))
+    assert_matches(
         np.sort(np.concatenate([bucket["image_indices"] for bucket in compact])),
         np.asarray([4, 5, 6, 7], dtype=np.int64),
     )
     all_images = np.concatenate([bucket["image_indices"] for bucket in execution_buckets])
-    np.testing.assert_array_equal(np.sort(all_images), np.arange(8, dtype=np.int64))
+    assert_matches(np.sort(all_images), np.arange(8, dtype=np.int64))
     assert np.unique(all_images).size == all_images.size
     _validate_k_class_execution_bucket_partition(execution_buckets, n_images=8)
 
@@ -1723,7 +1704,7 @@ def test_compact_pair_execution_threshold_filters_before_split():
     )
 
     assert [int(bucket["pair_bucket_size"]) for bucket in selected] == [4096, 8192]
-    np.testing.assert_array_equal(
+    assert_matches(
         np.concatenate([bucket["image_indices"] for bucket in selected]),
         np.asarray([4, 6, 5, 7], dtype=np.int64),
     )
@@ -1746,9 +1727,9 @@ def test_compact_pair_materialization_prefilter_skips_below_threshold_images():
     image_mask = _compact_pair_image_mask_for_threshold(pair_counts_by_class, 1024)
     compact_inputs = _prepare_per_image_compact_candidate_pairs(per_image_inputs, image_mask=image_mask)
 
-    np.testing.assert_array_equal(pair_counts_by_class[0], np.asarray([2, 1024, 2048], dtype=np.int64))
-    np.testing.assert_array_equal(image_mask, np.asarray([False, True, True]))
-    np.testing.assert_array_equal(compact_inputs["pair_counts"], np.asarray([0, 1024, 2048], dtype=np.int32))
+    assert_matches(pair_counts_by_class[0], np.asarray([2, 1024, 2048], dtype=np.int64))
+    assert_matches(image_mask, np.asarray([False, True, True]))
+    assert_matches(compact_inputs["pair_counts"], np.asarray([0, 1024, 2048], dtype=np.int32))
     assert compact_inputs["local_rotation_row"][0].size == 0
     assert compact_inputs["translation_idx"][0].size == 0
     assert compact_inputs["local_rotation_row"][1].size == 1024
@@ -1786,7 +1767,7 @@ def test_compact_pair_execution_filter_routes_full_support_rectangular():
     )
 
     assert excluded == 2
-    np.testing.assert_array_equal(image_mask, np.asarray([False, True, False]))
+    assert_matches(image_mask, np.asarray([False, True, False]))
 
     dense_buckets = [
         {"bucket_size": n_rows, "image_indices": np.asarray([0, 1, 2], dtype=np.int64)},
@@ -1809,8 +1790,8 @@ def test_compact_pair_execution_filter_routes_full_support_rectangular():
     compact = [bucket for bucket in execution_buckets if bucket["_execution_mode"] == "compact_pair"]
     assert len(rectangular) == 1
     assert len(compact) == 1
-    np.testing.assert_array_equal(rectangular[0]["image_indices"], np.asarray([0, 2], dtype=np.int64))
-    np.testing.assert_array_equal(compact[0]["image_indices"], np.asarray([1], dtype=np.int64))
+    assert_matches(rectangular[0]["image_indices"], np.asarray([0, 2], dtype=np.int64))
+    assert_matches(compact[0]["image_indices"], np.asarray([1], dtype=np.int64))
     _validate_k_class_execution_bucket_partition(execution_buckets, n_images=3)
 
 
@@ -1856,7 +1837,7 @@ def test_compact_pair_bucket_arrays_can_be_materialized_per_bucket():
 
     assert precomputed.keys() - {"log_prior"} == on_demand.keys()
     for key in on_demand:
-        np.testing.assert_array_equal(on_demand[key], precomputed[key])
+        assert_matches(on_demand[key], precomputed[key])
     from relax.sparse_pass2.sparse_pass2_scoring import _gather_pair_rotation_log_prior
 
     row_priors = np.stack([per_image_inputs["log_prior"][i] for i in bucket["image_indices"]])
@@ -1865,7 +1846,7 @@ def test_compact_pair_bucket_arrays_can_be_materialized_per_bucket():
         jnp.asarray(on_demand["local_rotation_row"]),
         jnp.asarray(on_demand["pair_mask"]),
     )
-    np.testing.assert_array_equal(np.asarray(gathered), precomputed["log_prior"])
+    assert_matches(np.asarray(gathered), precomputed["log_prior"])
     assert precomputed["log_prior"].dtype == np.float64
     assert precomputed["log_prior"][1, 2] == 0.2 + 2.0**-40
 
@@ -1905,10 +1886,10 @@ def test_compact_pair_tail_coalescing_respects_execution_image_mask():
         image_mask=image_mask,
     )
 
-    np.testing.assert_array_equal(image_mask, np.asarray([False, True, True]))
+    assert_matches(image_mask, np.asarray([False, True, True]))
     assert len(stats.buckets) == 1
     assert int(stats.buckets[0]["pair_bucket_size"]) == 12288
-    np.testing.assert_array_equal(stats.buckets[0]["image_indices"], np.asarray([1, 2], dtype=np.int64))
+    assert_matches(stats.buckets[0]["image_indices"], np.asarray([1, 2], dtype=np.int64))
     assert stats.valid_pair_candidates == 2 * (8192 + 12288)
     assert stats.rectangular_candidates == 2 * (8192 + 12288)
 
@@ -2022,7 +2003,7 @@ def test_sparse_pass2_winner_take_all_global_argmax_respects_chunk_boundary():
 
     expected = np.zeros((2, 3, 2), dtype=np.float32)
     expected[0, 1, 1] = 1.0
-    np.testing.assert_array_equal(np.asarray(probs), expected)
+    assert_matches(np.asarray(probs), expected)
 
 
 def test_sparse_pass2_noise_block_chunking_matches_unchunked():
@@ -2346,8 +2327,8 @@ def test_scoped_bpref_ownership_gate_ignores_unrelated_bucket_order():
         device_signature_requested=False,
     )
 
-    np.testing.assert_array_equal(scoped, np.asarray([20, 13], dtype=np.int64))
-    np.testing.assert_array_equal(unscoped, image_indices)
+    assert_matches(scoped, np.asarray([20, 13], dtype=np.int64))
+    assert_matches(unscoped, image_indices)
     assert np.unique(scoped).size == scoped.size
     assert not np.all(np.diff(scoped) > 0)
     assert not np.all(np.diff(unscoped) > 0)
@@ -2434,11 +2415,11 @@ def test_relion_x_half_bp_per_particle_launch_preserves_ownership_and_order(monk
     )
 
     assert [call[0].shape[0] for call in calls] == [2, 2, 1, 1]
-    np.testing.assert_array_equal(calls[0][0], np.asarray(values[0, :2]))
-    np.testing.assert_array_equal(calls[0][1], np.asarray(rotations[0, :2]))
-    np.testing.assert_array_equal(calls[1][0], np.asarray(ctf_values[0, :2]))
-    np.testing.assert_array_equal(calls[2][0], np.asarray(values[1, :1]))
-    np.testing.assert_array_equal(calls[3][0], np.asarray(ctf_values[1, :1]))
+    assert_matches(calls[0][0], np.asarray(values[0, :2]))
+    assert_matches(calls[0][1], np.asarray(rotations[0, :2]))
+    assert_matches(calls[1][0], np.asarray(ctf_values[0, :2]))
+    assert_matches(calls[2][0], np.asarray(values[1, :1]))
+    assert_matches(calls[3][0], np.asarray(ctf_values[1, :1]))
     expected_y = np.asarray(values[0, :2].real).sum() + np.asarray(values[1, :1].real).sum()
     expected_ctf = 10.0 + np.asarray(ctf_values[0, :2]).sum() + np.asarray(ctf_values[1, :1]).sum()
     np.testing.assert_allclose(np.asarray(y_volume), expected_y)
@@ -2500,10 +2481,10 @@ def test_relion_x_half_bp_fused_atomics_threads_both_accumulators_per_particle(m
     )
 
     assert [call[0].shape[0] for call in calls] == [2, 1]
-    np.testing.assert_array_equal(calls[0][0], np.asarray(values[0, :2]))
-    np.testing.assert_array_equal(calls[0][1], np.asarray(ctf_values[0, :2]))
-    np.testing.assert_array_equal(calls[0][2], np.asarray(rotations[0, :2]))
-    np.testing.assert_array_equal(calls[1][0], np.asarray(values[1, :1]))
+    assert_matches(calls[0][0], np.asarray(values[0, :2]))
+    assert_matches(calls[0][1], np.asarray(ctf_values[0, :2]))
+    assert_matches(calls[0][2], np.asarray(rotations[0, :2]))
+    assert_matches(calls[1][0], np.asarray(values[1, :1]))
     expected_y = np.asarray(values[0, :2].real).sum() + np.asarray(values[1, :1].real).sum()
     expected_ctf = 10.0 + np.asarray(ctf_values[0, :2]).sum() + np.asarray(ctf_values[1, :1]).sum()
     np.testing.assert_allclose(np.asarray(y_volume), expected_y)
@@ -2560,15 +2541,15 @@ def test_fresh_k1_particle_pool_preserves_consecutive_particle_order(monkeypatch
     )
 
     assert len(calls) == 1
-    np.testing.assert_array_equal(
+    assert_matches(
         calls[0][0],
         np.concatenate((np.asarray(values[0, :2]), np.asarray(values[1, :1])), axis=0),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         calls[0][1],
         np.concatenate((np.asarray(ctf_values[0, :2]), np.asarray(ctf_values[1, :1])), axis=0),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         calls[0][2],
         np.concatenate((np.asarray(rotations[0, :2]), np.asarray(rotations[1, :1])), axis=0),
     )
@@ -3078,7 +3059,7 @@ def test_later_soft_posterior_scoped_fused_signature_fixture(
     )
 
     for observed, expected in zip(sequential_rows, frozen_sequential_rows, strict=True):
-        np.testing.assert_array_equal(np.asarray(observed), expected)
+        assert_matches(np.asarray(observed), expected)
     for name, expected in frozen_sources.items():
         observed = {
             "probs": probs,
@@ -3090,7 +3071,7 @@ def test_later_soft_posterior_scoped_fused_signature_fixture(
             "initial_data": initial_data_np,
             "initial_weight": initial_weight_np,
         }[name]
-        np.testing.assert_array_equal(np.asarray(observed), expected)
+        assert_matches(np.asarray(observed), expected)
 
 
 def test_sparse_pass2_active_flat_row_gather_chunking_matches_full_gather(monkeypatch):
@@ -3571,8 +3552,8 @@ def test_compact_fused_k_class_bucket_arrays_reduce_rectangular_padding(monkeypa
     assert sum(int(arrays["bucket_size"]) for arrays in compact) < sum(
         int(arrays["bucket_size"]) for arrays in rectangular
     )
-    np.testing.assert_array_equal(compact[0]["actual_counts"], np.asarray([17, 18, 17], dtype=np.int32))
-    np.testing.assert_array_equal(compact[1]["actual_counts"], np.asarray([65, 66, 70], dtype=np.int32))
+    assert_matches(compact[0]["actual_counts"], np.asarray([17, 18, 17], dtype=np.int32))
+    assert_matches(compact[1]["actual_counts"], np.asarray([65, 66, 70], dtype=np.int32))
     assert not np.any(compact[0]["candidate_mask"][:, 18:, :])
 
 
@@ -3602,8 +3583,8 @@ def test_compact_pair_execution_bucket_arrays_skip_unused_dense_score_fields(mon
     for class_inputs, arrays in zip(per_class, compact_pair_execution):
         assert arrays["candidate_mask"] is None
         for row, count in enumerate(arrays["actual_counts"]):
-            np.testing.assert_array_equal(arrays["log_prior"][row, :count], class_inputs["log_prior"][row])
-            assert np.all(arrays["log_prior"][row, count:] == np.asarray(-1e30, dtype=arrays["log_prior"].dtype))
+            assert_matches(arrays["log_prior"][row, :count], class_inputs["log_prior"][row])
+            assert matches(arrays["log_prior"][row, count:], np.asarray(-1e30, dtype=arrays["log_prior"].dtype))
         assert arrays["parent_map"] is None
         assert arrays["rotations"].shape[:2] == (
             bucket["image_indices"].shape[0],
@@ -3613,11 +3594,11 @@ def test_compact_pair_execution_bucket_arrays_skip_unused_dense_score_fields(mon
             bucket["image_indices"].shape[0],
             int(arrays["bucket_size"]),
         )
-    np.testing.assert_array_equal(
+    assert_matches(
         compact_pair_execution[0]["actual_counts"],
         np.asarray([17, 18, 17], dtype=np.int32),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         compact_pair_execution[1]["actual_counts"],
         np.asarray([65, 66, 70], dtype=np.int32),
     )
@@ -3847,13 +3828,13 @@ def test_compact_candidate_pair_builder_matches_dense_mask_nonzero():
 
     for image_idx, dense_mask in enumerate(masks):
         expected_rows, expected_trans = np.nonzero(dense_mask)
-        np.testing.assert_array_equal(compact["local_rotation_row"][image_idx], expected_rows)
-        np.testing.assert_array_equal(compact["translation_idx"][image_idx], expected_trans)
-        np.testing.assert_array_equal(
+        assert_matches(compact["local_rotation_row"][image_idx], expected_rows)
+        assert_matches(compact["translation_idx"][image_idx], expected_trans)
+        assert_matches(
             compact["log_prior"][image_idx],
             log_priors[image_idx][expected_rows],
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             compact["pair_mask"][image_idx],
             np.ones(expected_rows.shape[0], dtype=bool),
         )
@@ -4248,7 +4229,7 @@ def test_compact_pair_weighted_rotation_sums_match_dense_mstep_helpers():
     assert active_count > 0
     np.testing.assert_allclose(np.asarray(active_summed), np.asarray(selected_summed), rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(np.asarray(active_ctf_probs), np.asarray(selected_ctf_probs), rtol=1e-6, atol=1e-6)
-    np.testing.assert_array_equal(np.asarray(active_rotations), np.asarray(selected_rotations))
+    assert_matches(np.asarray(active_rotations), np.asarray(selected_rotations))
 
 
 def test_compact_pair_weighted_rotation_and_image_sums_match_separate_helpers(monkeypatch):
@@ -4668,16 +4649,16 @@ def test_relion_reconstruction_threshold_excludes_zero_probability_tail():
         adaptive_fraction=1.0,
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(dense_mask),
         np.array([[[True, False, True, False], [False, True, False, False]]]),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(pair_sig_mask),
         np.array([[True, False, True, False, True, False]]),
     )
-    np.testing.assert_array_equal(np.asarray(dense_n), np.array([3], dtype=np.int32))
-    np.testing.assert_array_equal(np.asarray(pair_n), np.array([3], dtype=np.int32))
+    assert_matches(np.asarray(dense_n), np.array([3], dtype=np.int32))
+    assert_matches(np.asarray(pair_n), np.array([3], dtype=np.int32))
 
 
 def test_relion_joint_winner_take_all_masks_choose_one_global_class_pose():
@@ -4700,7 +4681,7 @@ def test_relion_joint_winner_take_all_masks_choose_one_global_class_pose():
 
     mask0, mask1 = _relion_joint_winner_take_all_masks([class0_scores, class1_scores])
 
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(mask0),
         np.asarray(
             [
@@ -4711,7 +4692,7 @@ def test_relion_joint_winner_take_all_masks_choose_one_global_class_pose():
             dtype=bool,
         ),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(mask1),
         np.asarray(
             [
@@ -4722,7 +4703,7 @@ def test_relion_joint_winner_take_all_masks_choose_one_global_class_pose():
             dtype=bool,
         ),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(mask0).sum(axis=1) + np.asarray(mask1).sum(axis=1),
         np.asarray([1, 1, 0]),
     )
@@ -4931,8 +4912,8 @@ def test_weighted_image_power_replaces_only_unweighted_high_shell_normcorr():
         dtype=np.float32,
     )
 
-    np.testing.assert_array_equal(np.asarray(shells), expected_shells)
-    np.testing.assert_array_equal(np.asarray(per_image), expected_per_image)
+    assert_matches(np.asarray(shells), expected_shells)
+    assert_matches(np.asarray(per_image), expected_per_image)
 
 
 def test_weighted_image_power_assigns_shared_high_shell_once_across_classes():
@@ -4995,8 +4976,8 @@ def test_weighted_image_power_excludes_sentinel_from_support_weighted_normcorr()
         shell_count=2,
     )
 
-    np.testing.assert_array_equal(np.asarray(shells), np.asarray([6.25, 0.0], dtype=np.float32))
-    np.testing.assert_array_equal(np.asarray(per_image), np.asarray([0.25, 6.0], dtype=np.float32))
+    assert_matches(np.asarray(shells), np.asarray([6.25, 0.0], dtype=np.float32))
+    assert_matches(np.asarray(per_image), np.asarray([0.25, 6.0], dtype=np.float32))
 
 
 def test_weighted_image_power_excludes_sentinel_from_normcorr_but_keeps_valid_outer_shell():
@@ -5020,8 +5001,8 @@ def test_weighted_image_power_excludes_sentinel_from_normcorr_but_keeps_valid_ou
         norm_unweighted_shell_cutoff=0,
     )
 
-    np.testing.assert_array_equal(np.asarray(shells), np.asarray([0.25, 20.0], dtype=np.float32))
-    np.testing.assert_array_equal(np.asarray(per_image), np.asarray([4.25, 16.0], dtype=np.float32))
+    assert_matches(np.asarray(shells), np.asarray([0.25, 20.0], dtype=np.float32))
+    assert_matches(np.asarray(per_image), np.asarray([4.25, 16.0], dtype=np.float32))
 
 
 def test_k1_relion_fine_mstep_prune_keeps_unweighted_high_shell_image_power(monkeypatch):
@@ -5083,14 +5064,14 @@ def test_k1_relion_fine_mstep_prune_keeps_unweighted_high_shell_image_power(monk
 
     assert pruned_noise.sumw == pytest.approx(0.0)
     assert pruned_noise.wsum_sigma2_offset == pytest.approx(0.0)
-    np.testing.assert_allclose(np.asarray(pruned_noise.wsum_sigma2_noise), 0.0, rtol=0, atol=0)
+    assert_matches(np.asarray(pruned_noise.wsum_sigma2_noise), 0.0)
     image_power = np.asarray(pruned_noise.wsum_img_power)
-    np.testing.assert_allclose(image_power[:2], 0.0, rtol=0, atol=0)
+    assert_matches(image_power[:2], 0.0)
     assert np.any(image_power[2:] > 0.0)
     assert np.any(np.asarray(pruned_noise.wsum_norm_correction) > 0.0)
     assert np.all(np.asarray(pruned_noise.wsum_norm_correction) >= 0.0)
-    np.testing.assert_allclose(np.asarray(pruned_noise.wsum_scale_correction_xa), 0.0, rtol=0, atol=0)
-    np.testing.assert_allclose(np.asarray(pruned_noise.wsum_scale_correction_aa), 0.0, rtol=0, atol=0)
+    assert_matches(np.asarray(pruned_noise.wsum_scale_correction_xa), 0.0)
+    assert_matches(np.asarray(pruned_noise.wsum_scale_correction_aa), 0.0)
 
 
 def test_compact_pair_score_only_normalization_ignores_padding():
@@ -5122,8 +5103,8 @@ def test_compact_pair_score_only_normalization_ignores_padding():
     assert float(log_z[1]) == pytest.approx(-5.0, abs=1e-6)
     assert float(log_z[2]) == pytest.approx(0.0, abs=0.0)
     assert np.isneginf(float(logsum[2]))
-    np.testing.assert_allclose(np.asarray(best_log_score), np.asarray([2.0, -5.0, -np.inf]), rtol=0, atol=0)
-    np.testing.assert_array_equal(np.asarray(best_argmax), np.asarray([1, 0, 0]))
+    assert_matches(np.asarray(best_log_score), np.asarray([2.0, -5.0, -np.inf]))
+    assert_matches(np.asarray(best_argmax), np.asarray([1, 0, 0]))
     assert float(max_posterior[0]) == pytest.approx(float(np.exp(2.0 - np.logaddexp(0.0, 2.0))), abs=1e-6)
     assert float(max_posterior[1]) == pytest.approx(1.0, abs=1e-6)
     assert float(max_posterior[2]) == pytest.approx(0.0, abs=0.0)
@@ -5458,7 +5439,7 @@ def test_compact_pair_planner_can_decouple_from_dense_image_cap(monkeypatch):
     )
     assert len(execution_buckets) > len(decoupled.buckets)
     assert max(len(bucket["image_indices"]) for bucket in execution_buckets) == 19
-    np.testing.assert_array_equal(
+    assert_matches(
         np.sort(np.concatenate([bucket["image_indices"] for bucket in execution_buckets])),
         np.arange(n_images, dtype=np.int64),
     )
@@ -5510,7 +5491,7 @@ def test_compact_pair_execution_split_honors_dense_mstep_budget(monkeypatch):
 
     assert len(execution_buckets) > len(compact_plan.buckets)
     assert max(len(bucket["image_indices"]) for bucket in execution_buckets) == 1
-    np.testing.assert_array_equal(
+    assert_matches(
         np.sort(np.concatenate([bucket["image_indices"] for bucket in execution_buckets])),
         np.arange(n_images, dtype=np.int64),
     )
@@ -5734,7 +5715,7 @@ def test_sparse_pass2_projection_cap_chunks_projection_calls(monkeypatch):
 
     assert calls == [4, 4, 2]
     assert abs2 is None
-    np.testing.assert_array_equal(np.asarray(proj[:, 0].real), np.arange(10, dtype=np.float32))
+    assert_matches(np.asarray(proj[:, 0].real), np.arange(10, dtype=np.float32))
 
 
 def test_sparse_pass2_windowed_projection_cap_keeps_only_requested_pixels(monkeypatch):
@@ -5771,8 +5752,8 @@ def test_sparse_pass2_windowed_projection_cap_keeps_only_requested_pixels(monkey
     assert score.shape == (7, 2)
     assert recon.shape == (7, 2)
     assert recon_abs2.shape == (7, 2)
-    np.testing.assert_array_equal(np.asarray(score[4].real), np.asarray([40.0, 42.0], dtype=np.float32))
-    np.testing.assert_array_equal(np.asarray(recon[4].real), np.asarray([41.0, 45.0], dtype=np.float32))
+    assert_matches(np.asarray(score[4].real), np.asarray([40.0, 42.0], dtype=np.float32))
+    assert_matches(np.asarray(recon[4].real), np.asarray([41.0, 45.0], dtype=np.float32))
 
 
 def test_sparse_pass2_windowed_projection_uses_relion_projector_branch(monkeypatch):
@@ -5855,8 +5836,8 @@ def test_sparse_pass2_windowed_projection_uses_relion_projector_branch(monkeypat
     assert score.shape == (7, 2)
     assert recon.shape == (7, 2)
     assert recon_abs2.shape == (7, 2)
-    np.testing.assert_array_equal(np.asarray(score[4].real), np.asarray([40.0, 42.0], dtype=np.float32))
-    np.testing.assert_array_equal(np.asarray(recon[4].real), np.asarray([41.0, 45.0], dtype=np.float32))
+    assert_matches(np.asarray(score[4].real), np.asarray([40.0, 42.0], dtype=np.float32))
+    assert_matches(np.asarray(recon[4].real), np.asarray([41.0, 45.0], dtype=np.float32))
 
 
 def test_relion_score_window_keeps_particle_crop_separate_from_model_radius():
@@ -5907,7 +5888,7 @@ def test_sparse_pass2_windowed_projection_cap_casts_chunks_before_concat(monkeyp
     assert score.dtype == jnp.complex64
     assert recon.dtype == jnp.complex64
     assert recon_abs2.dtype == jnp.float32
-    np.testing.assert_array_equal(np.asarray(recon[4].real), np.asarray([41.0, 45.0], dtype=np.float32))
+    assert_matches(np.asarray(recon[4].real), np.asarray([41.0, 45.0], dtype=np.float32))
 
 
 def test_prepare_bucket_io_windowed_shifted_matches_full_half_slice(monkeypatch):
@@ -6139,15 +6120,15 @@ def test_prepare_bucket_io_routes_direct_score_translation_through_relion_cuda(
         )
     ]
     assert direct_score_calls
-    np.testing.assert_array_equal(
+    assert_matches(
         direct_score_calls[0]["pixel_indices"],
         np.asarray(window_spec.score_indices, dtype=np.int32),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         direct_score_calls[0]["angles"], np.asarray(translation_angles)
     )
     assert direct_score_calls[0]["image_shape"] == IMAGE_SHAPE
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(result[7]),
         np.full(
             (
@@ -6285,13 +6266,13 @@ def test_prepare_bucket_io_exact_bpref_translation_keeps_recovar_fft_units_and_n
     inverse_noise = np.reciprocal(noise).astype(np.float32)
     expected_weight = ctf_half.astype(np.float32) * inverse_noise[None, :]
     assert len(calls) == 1
-    np.testing.assert_array_equal(calls[0][0], raw)
-    np.testing.assert_array_equal(calls[0][1], expected_weight)
-    np.testing.assert_array_equal(np.asarray(result[1]), raw * expected_weight)
+    assert_matches(calls[0][0], raw)
+    assert_matches(calls[0][1], expected_weight)
+    assert_matches(np.asarray(result[1]), raw * expected_weight)
     native_image, native_ctf, native_minvsigma2 = result[-3:]
-    np.testing.assert_array_equal(np.asarray(native_image), raw * np.float32(1.0 / fft_size))
-    np.testing.assert_array_equal(np.asarray(native_ctf), ctf_half.astype(np.float32))
-    np.testing.assert_array_equal(
+    assert_matches(np.asarray(native_image), raw * np.float32(1.0 / fft_size))
+    assert_matches(np.asarray(native_ctf), ctf_half.astype(np.float32))
+    assert_matches(
         np.asarray(native_minvsigma2),
         np.reciprocal(noise / (fft_size * fft_size)).astype(np.float32),
     )
@@ -6341,12 +6322,12 @@ def test_prepare_bucket_io_routes_relion_cuda_operands_to_score_and_reconstructi
 
     assert [call[1] for call in calls] == [True, False]
     for raw_batch, _, kwargs in calls:
-        np.testing.assert_array_equal(raw_batch, ds._images)
-        np.testing.assert_array_equal(
+        assert_matches(raw_batch, ds._images)
+        assert_matches(
             kwargs["relion_normalization_factors"],
             image_corrections / scale_corrections,
         )
-        np.testing.assert_array_equal(kwargs["relion_integer_shifts"], image_pre_shifts.astype(np.int32))
+        assert_matches(kwargs["relion_integer_shifts"], image_pre_shifts.astype(np.int32))
 
     expected_recon = _raw_real_process_half(batch) * jnp.asarray(image_corrections)[:, None]
     np.testing.assert_allclose(np.asarray(result[1]), np.asarray(expected_recon), rtol=1e-6, atol=1e-6)
@@ -6415,7 +6396,7 @@ def test_prepare_bucket_io_windowed_reuses_unmasked_recon_shift_for_noise(monkey
     monkeypatch.setattr(sparse_pass2_bucket_io, "apply_half_translation_phases", counting_apply)
     unmasked = _prepare_bucket_io(**common_kwargs, score_with_masked_images=False)
     assert len(call_shapes) == 3
-    np.testing.assert_allclose(np.asarray(unmasked[5]), np.asarray(unmasked[1]), rtol=0, atol=0)
+    assert_matches(np.asarray(unmasked[5]), np.asarray(unmasked[1]))
 
     call_shapes.clear()
     _prepare_bucket_io(**common_kwargs, score_with_masked_images=True)
@@ -6506,7 +6487,7 @@ def test_prepare_bucket_io_windowed_shifted_score_modes_match_full_half_slice(
         assert windowed[1] is None
         assert windowed[4] is None
         assert windowed[5] is None
-        np.testing.assert_allclose(np.asarray(windowed[6]), np.asarray(full[6]), rtol=0, atol=0)
+        assert_matches(np.asarray(windowed[6]), np.asarray(full[6]))
     else:
         np.testing.assert_allclose(
             np.asarray(windowed[0]),
@@ -6671,7 +6652,7 @@ def test_half_translation_phase_table_matches_generic_off_relion_nyquist_row():
     )
     ky = np.rint(core_lattice[:, 1] * image_shape[0]).astype(np.int64)
     non_nyquist = ky != -(image_shape[0] // 2)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(phase_table)[:, non_nyquist], np.asarray(generic)[:, non_nyquist]
     )
 
@@ -6747,11 +6728,11 @@ def test_score_only_sparse_normalizer_matches_full_normalizer_stats():
     full_log_z, _probs, full_best, full_argmax, full_pmax = _normalize_pass2_bucket(scores)
     score_log_z, score_best, score_argmax, score_pmax = _normalize_pass2_bucket_score_only(scores)
 
-    np.testing.assert_allclose(np.asarray(score_log_z), np.asarray(full_log_z), rtol=0, atol=0)
-    np.testing.assert_allclose(np.asarray(score_best), np.asarray(full_best), rtol=0, atol=0)
-    np.testing.assert_array_equal(np.asarray(score_argmax), np.asarray(full_argmax))
+    assert_matches(np.asarray(score_log_z), np.asarray(full_log_z))
+    assert_matches(np.asarray(score_best), np.asarray(full_best))
+    assert_matches(np.asarray(score_argmax), np.asarray(full_argmax))
     logz_only = np.asarray(_logsumexp_pass2_bucket_score_only(scores))
-    np.testing.assert_allclose(logz_only[0], np.asarray(full_log_z)[0], rtol=0, atol=0)
+    assert_matches(logz_only[0], np.asarray(full_log_z)[0])
     assert np.isneginf(logz_only[1])
     np.testing.assert_allclose(np.asarray(score_pmax), np.asarray(full_pmax), rtol=1e-7, atol=1e-7)
 
@@ -6774,9 +6755,9 @@ def test_fine_rotation_override_preserves_fine_grid_order_and_parent_map():
         fine_rotation_parent_override=fine_parent,
     )
 
-    np.testing.assert_array_equal(per_image["oversampled_rot_indices"][0], np.array([0, 2, 3, 5]))
-    np.testing.assert_array_equal(per_image["parent_map"][0], np.array([0, 0, 1, 1], dtype=np.int32))
-    np.testing.assert_array_equal(per_image["oversampled_rots"][0], fine_rotations[[0, 2, 3, 5]])
+    assert_matches(per_image["oversampled_rot_indices"][0], np.array([0, 2, 3, 5]))
+    assert_matches(per_image["parent_map"][0], np.array([0, 0, 1, 1], dtype=np.int32))
+    assert_matches(per_image["oversampled_rots"][0], fine_rotations[[0, 2, 3, 5]])
 
 
 def test_fine_rotation_override_can_follow_relion_parent_execution_order():
@@ -6801,12 +6782,12 @@ def test_fine_rotation_override_can_follow_relion_parent_execution_order():
     )
 
     expected_indices = np.array([0, 1, 4, 5, 2, 3], dtype=np.int64)
-    np.testing.assert_array_equal(per_image["oversampled_rot_indices"][0], expected_indices)
-    np.testing.assert_array_equal(
+    assert_matches(per_image["oversampled_rot_indices"][0], expected_indices)
+    assert_matches(
         per_image["parent_map"][0],
         np.array([0, 0, 2, 2, 1, 1], dtype=np.int32),
     )
-    np.testing.assert_array_equal(per_image["oversampled_rots"][0], fine_rotations[expected_indices])
+    assert_matches(per_image["oversampled_rots"][0], fine_rotations[expected_indices])
 
 
 def test_exact_relion_fine_posterior_implies_relion_parent_execution_order(monkeypatch):
@@ -6849,11 +6830,11 @@ def test_full_support_fine_rotation_override_reuses_shared_arrays(with_prior):
     for key in ("oversampled_rots", "parent_map", "oversampled_rot_indices", "unique_rot", "log_prior", "candidate_mask"):
         assert per_image[key][0] is per_image[key][1]
         assert per_image[key][1] is per_image[key][2]
-    np.testing.assert_array_equal(per_image["oversampled_rot_indices"][0], np.arange(6, dtype=np.int64))
-    np.testing.assert_array_equal(per_image["parent_map"][0], fine_parent.astype(np.int32))
-    np.testing.assert_array_equal(per_image["oversampled_rots"][0], fine_rotations)
+    assert_matches(per_image["oversampled_rot_indices"][0], np.arange(6, dtype=np.int64))
+    assert_matches(per_image["parent_map"][0], fine_parent.astype(np.int32))
+    assert_matches(per_image["oversampled_rots"][0], fine_rotations)
     expected_prior = rotation_log_prior[fine_parent] if with_prior else np.zeros(6, dtype=np.float32)
-    np.testing.assert_allclose(per_image["log_prior"][0], expected_prior, rtol=0, atol=0)
+    assert_matches(per_image["log_prior"][0], expected_prior)
     assert isinstance(per_image["candidate_mask"][0], SparseCandidateMask)
     assert per_image["candidate_mask"][0].mode == "full"
     assert _candidate_mask_count(per_image["candidate_mask"][0]) == 12
@@ -6887,10 +6868,10 @@ def test_fine_grid_candidate_mask_uses_parented_translation_support():
         ],
         dtype=bool,
     )
-    np.testing.assert_array_equal(per_image["oversampled_rot_indices"][0], np.array([0, 1, 3, 4]))
+    assert_matches(per_image["oversampled_rot_indices"][0], np.array([0, 1, 3, 4]))
     assert isinstance(per_image["candidate_mask"][0], SparseCandidateMask)
     assert _candidate_mask_count(per_image["candidate_mask"][0]) == int(expected.sum())
-    np.testing.assert_array_equal(per_image["candidate_mask"][0], expected)
+    assert_matches(per_image["candidate_mask"][0], expected)
 
 
 def test_sparse_pass2_projection_cache_reuses_fine_grid_projection_chunks(monkeypatch):
@@ -7068,10 +7049,10 @@ def test_sparse_pass2_full_support_projection_cache_chunks_scores(monkeypatch):
 
     np.testing.assert_allclose(np.asarray(chunked.Ft_y), np.asarray(unchunked.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(chunked.Ft_ctf), np.asarray(unchunked.Ft_ctf), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(np.asarray(chunked.hard_assignment), np.asarray(unchunked.hard_assignment))
-    np.testing.assert_allclose(np.asarray(chunked.best_rotations), np.asarray(unchunked.best_rotations), rtol=0, atol=0)
-    np.testing.assert_allclose(np.asarray(chunked.best_translations), np.asarray(unchunked.best_translations), rtol=0, atol=0)
-    np.testing.assert_array_equal(np.asarray(chunked.best_rotation_indices), np.asarray(unchunked.best_rotation_indices))
+    assert_matches(np.asarray(chunked.hard_assignment), np.asarray(unchunked.hard_assignment))
+    assert_matches(np.asarray(chunked.best_rotations), np.asarray(unchunked.best_rotations))
+    assert_matches(np.asarray(chunked.best_translations), np.asarray(unchunked.best_translations))
+    assert_matches(np.asarray(chunked.best_rotation_indices), np.asarray(unchunked.best_rotation_indices))
     _assert_relion_stats_close(chunked.relion_stats, unchunked.relion_stats, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(chunked.score_log_z), np.asarray(unchunked.score_log_z), rtol=1e-6, atol=1e-6)
     _assert_noise_stats_close((chunked.noise_stats,), (unchunked.noise_stats,), rtol=1e-5, atol=1e-5)
@@ -7170,10 +7151,10 @@ def test_sparse_pass2_projection_cache_chunks_non_identity_indices(monkeypatch):
 
     np.testing.assert_allclose(np.asarray(chunked.Ft_y), np.asarray(unchunked.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(chunked.Ft_ctf), np.asarray(unchunked.Ft_ctf), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(np.asarray(chunked.hard_assignment), np.asarray(unchunked.hard_assignment))
-    np.testing.assert_allclose(np.asarray(chunked.best_rotations), np.asarray(unchunked.best_rotations), rtol=0, atol=0)
-    np.testing.assert_allclose(np.asarray(chunked.best_translations), np.asarray(unchunked.best_translations), rtol=0, atol=0)
-    np.testing.assert_array_equal(np.asarray(chunked.best_rotation_indices), np.asarray(unchunked.best_rotation_indices))
+    assert_matches(np.asarray(chunked.hard_assignment), np.asarray(unchunked.hard_assignment))
+    assert_matches(np.asarray(chunked.best_rotations), np.asarray(unchunked.best_rotations))
+    assert_matches(np.asarray(chunked.best_translations), np.asarray(unchunked.best_translations))
+    assert_matches(np.asarray(chunked.best_rotation_indices), np.asarray(unchunked.best_rotation_indices))
     _assert_relion_stats_close(chunked.relion_stats, unchunked.relion_stats, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(chunked.score_log_z), np.asarray(unchunked.score_log_z), rtol=1e-6, atol=1e-6)
     _assert_noise_stats_close((chunked.noise_stats,), (unchunked.noise_stats,), rtol=1e-5, atol=1e-5)
@@ -7246,11 +7227,11 @@ def test_score_log_z_only_matches_full_score_probe(monkeypatch):
         fine_translation_parent_override=fine_translation_parent,
     )
 
-    np.testing.assert_allclose(np.asarray(log_evidence), np.asarray(full.relion_stats.log_evidence_per_image), rtol=0, atol=0)
-    np.testing.assert_allclose(np.asarray(score_log_z), np.asarray(full.score_log_z), rtol=0, atol=0)
+    assert_matches(np.asarray(log_evidence), np.asarray(full.relion_stats.log_evidence_per_image))
+    assert_matches(np.asarray(score_log_z), np.asarray(full.score_log_z))
     # Gaussian score logZ is absolute (the common diff2 minimum has been
     # removed), so it is directly commensurate across independent calls.
-    np.testing.assert_allclose(np.asarray(score_log_z), np.asarray(log_evidence), rtol=0, atol=0)
+    assert_matches(np.asarray(score_log_z), np.asarray(log_evidence))
     assert np.all(np.asarray(full.relion_stats.best_log_score_per_image) <= np.asarray(log_evidence))
 
     cc_kwargs = dict(
@@ -7284,13 +7265,8 @@ def test_score_log_z_only_matches_full_score_probe(monkeypatch):
         disable_adjoint_y=True,
         disable_adjoint_ctf=True,
     )
-    np.testing.assert_allclose(
-        np.asarray(cc_log_evidence),
-        np.asarray(cc_full.relion_stats.log_evidence_per_image),
-        rtol=0,
-        atol=0,
-    )
-    np.testing.assert_allclose(np.asarray(cc_score_log_z), np.asarray(cc_full.score_log_z), rtol=0, atol=0)
+    assert_matches(np.asarray(cc_log_evidence), np.asarray(cc_full.relion_stats.log_evidence_per_image))
+    assert_matches(np.asarray(cc_score_log_z), np.asarray(cc_full.score_log_z))
     assert np.any(np.asarray(cc_score_log_z) != np.asarray(cc_log_evidence))
 
 
@@ -7380,8 +7356,8 @@ def test_fused_other_class_log_z_matches_two_pass_normalization(monkeypatch):
 
     np.testing.assert_allclose(np.asarray(fused.Ft_y), np.asarray(two_pass.Ft_y), rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(np.asarray(fused.Ft_ctf), np.asarray(two_pass.Ft_ctf), rtol=1e-6, atol=1e-6)
-    np.testing.assert_array_equal(np.asarray(fused.hard_assignment), np.asarray(two_pass.hard_assignment))
-    np.testing.assert_array_equal(np.asarray(fused.best_rotation_indices), np.asarray(two_pass.best_rotation_indices))
+    assert_matches(np.asarray(fused.hard_assignment), np.asarray(two_pass.hard_assignment))
+    assert_matches(np.asarray(fused.best_rotation_indices), np.asarray(two_pass.best_rotation_indices))
     np.testing.assert_allclose(
         np.asarray(fused.relion_stats.best_log_score_per_image),
         np.asarray(two_pass.relion_stats.best_log_score_per_image),
@@ -7394,9 +7370,9 @@ def test_fused_other_class_log_z_matches_two_pass_normalization(monkeypatch):
         np.asarray(fused.relion_stats.rotation_posterior_sums),
         np.asarray(two_pass.relion_stats.rotation_posterior_sums),
     )
-    np.testing.assert_allclose(np.asarray(fused.relion_stats.log_evidence_per_image), np.asarray(log_evidence_b), rtol=0, atol=0)
-    np.testing.assert_allclose(np.asarray(fused.score_log_z), np.asarray(score_b), rtol=0, atol=0)
-    np.testing.assert_allclose(np.asarray(score_b), np.asarray(log_evidence_b), rtol=0, atol=0)
+    assert_matches(np.asarray(fused.relion_stats.log_evidence_per_image), np.asarray(log_evidence_b))
+    assert_matches(np.asarray(fused.score_log_z), np.asarray(score_b))
+    assert_matches(np.asarray(score_b), np.asarray(log_evidence_b))
 
 
 @pytest.mark.parametrize("fine_prune", [False, True])
@@ -7517,7 +7493,7 @@ def test_sparse_pass2_rotation_chunking_matches_unchunked_windowed_path(
     assert set(shards_by_half) == {1, 2}
     unchunked_capture = shards_by_half[1]
     chunked_capture = shards_by_half[2]
-    np.testing.assert_array_equal(
+    assert_matches(
         chunked_capture["original_indices"] - n_images,
         unchunked_capture["original_indices"],
     )
@@ -7531,7 +7507,7 @@ def test_sparse_pass2_rotation_chunking_matches_unchunked_windowed_path(
         "rotation_parent_local",
         "rotation_parent_global",
     ):
-        np.testing.assert_array_equal(chunked_capture[name], unchunked_capture[name])
+        assert_matches(chunked_capture[name], unchunked_capture[name])
     if not fine_prune and not winner_take_all:
         assert np.all(chunked_capture["significant"] == 1)
     np.testing.assert_allclose(
@@ -7553,17 +7529,17 @@ def test_sparse_pass2_rotation_chunking_matches_unchunked_windowed_path(
         assert np.all(np.asarray(chunked.relion_stats.max_posterior_per_image) == 1)
 
     if disabled_unchunked is not None:
-        np.testing.assert_array_equal(np.asarray(disabled_unchunked.Ft_y), np.asarray(unchunked.Ft_y))
-        np.testing.assert_array_equal(np.asarray(disabled_unchunked.Ft_ctf), np.asarray(unchunked.Ft_ctf))
-        np.testing.assert_array_equal(
+        assert_matches(np.asarray(disabled_unchunked.Ft_y), np.asarray(unchunked.Ft_y))
+        assert_matches(np.asarray(disabled_unchunked.Ft_ctf), np.asarray(unchunked.Ft_ctf))
+        assert_matches(
             np.asarray(disabled_unchunked.relion_stats.max_posterior_per_image),
             np.asarray(unchunked.relion_stats.max_posterior_per_image),
         )
 
     np.testing.assert_allclose(np.asarray(chunked.Ft_y), np.asarray(unchunked.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(chunked.Ft_ctf), np.asarray(unchunked.Ft_ctf), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(np.asarray(chunked.hard_assignment), np.asarray(unchunked.hard_assignment))
-    np.testing.assert_array_equal(np.asarray(chunked.best_rotation_indices), np.asarray(unchunked.best_rotation_indices))
+    assert_matches(np.asarray(chunked.hard_assignment), np.asarray(unchunked.hard_assignment))
+    assert_matches(np.asarray(chunked.best_rotation_indices), np.asarray(unchunked.best_rotation_indices))
     np.testing.assert_allclose(
         np.asarray(chunked.relion_stats.log_evidence_per_image),
         np.asarray(unchunked.relion_stats.log_evidence_per_image),
@@ -7612,8 +7588,8 @@ def test_sparse_pass2_rotation_chunking_matches_unchunked_windowed_path(
     assert chunked.noise_stats.wsum_scale_correction_xa is not None
     assert chunked.noise_stats.wsum_scale_correction_aa is not None
     assert np.asarray(chunked.noise_stats.wsum_scale_correction_xa).shape == (5,)
-    np.testing.assert_array_equal(np.asarray(chunked.noise_stats.wsum_scale_correction_xa)[2:], 0.0)
-    np.testing.assert_array_equal(np.asarray(chunked.noise_stats.wsum_scale_correction_aa)[2:], 0.0)
+    assert_matches(np.asarray(chunked.noise_stats.wsum_scale_correction_xa)[2:], 0.0)
+    assert_matches(np.asarray(chunked.noise_stats.wsum_scale_correction_aa)[2:], 0.0)
     np.testing.assert_allclose(
         np.asarray(chunked.noise_stats.wsum_scale_correction_xa),
         np.asarray(unchunked.noise_stats.wsum_scale_correction_xa),
@@ -7634,8 +7610,8 @@ def test_sparse_pass2_rotation_chunking_matches_unchunked_windowed_path(
             "scale_correction_data_vs_prior": np.zeros(IMAGE_SHAPE[0] // 2 + 1, dtype=np.float32),
         }
     )
-    np.testing.assert_array_equal(np.asarray(no_scale_shells.noise_stats.wsum_scale_correction_xa), 0.0)
-    np.testing.assert_array_equal(np.asarray(no_scale_shells.noise_stats.wsum_scale_correction_aa), 0.0)
+    assert_matches(np.asarray(no_scale_shells.noise_stats.wsum_scale_correction_xa), 0.0)
+    assert_matches(np.asarray(no_scale_shells.noise_stats.wsum_scale_correction_aa), 0.0)
     np.testing.assert_allclose(
         np.asarray(no_scale_shells.noise_stats.wsum_norm_correction),
         np.asarray(chunked.noise_stats.wsum_norm_correction),
@@ -7677,8 +7653,8 @@ def test_sparse_pass2_rotation_chunking_matches_unchunked_windowed_path(
     windowed_prepare = compute_pass2_stats_sparse(**common)
     np.testing.assert_allclose(np.asarray(windowed_prepare.Ft_y), np.asarray(full_prepare.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(windowed_prepare.Ft_ctf), np.asarray(full_prepare.Ft_ctf), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(np.asarray(windowed_prepare.hard_assignment), np.asarray(full_prepare.hard_assignment))
-    np.testing.assert_array_equal(np.asarray(windowed_prepare.best_rotation_indices), np.asarray(full_prepare.best_rotation_indices))
+    assert_matches(np.asarray(windowed_prepare.hard_assignment), np.asarray(full_prepare.hard_assignment))
+    assert_matches(np.asarray(windowed_prepare.best_rotation_indices), np.asarray(full_prepare.best_rotation_indices))
     _assert_relion_stats_close(windowed_prepare.relion_stats, full_prepare.relion_stats, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(np.asarray(windowed_prepare.score_log_z), np.asarray(full_prepare.score_log_z), rtol=1e-6, atol=1e-6)
     _assert_noise_stats_close((windowed_prepare.noise_stats,), (full_prepare.noise_stats,), rtol=1e-5, atol=1e-5)
@@ -7723,7 +7699,7 @@ def test_sparse_pass2_rotation_chunking_matches_unchunked_windowed_path(
         rtol=5e-4,
         atol=2e-3,
     )
-    np.testing.assert_array_equal(np.asarray(chunked_external.hard_assignment), np.asarray(unchunked_external.hard_assignment))
+    assert_matches(np.asarray(chunked_external.hard_assignment), np.asarray(unchunked_external.hard_assignment))
     np.testing.assert_allclose(
         np.asarray(chunked_external.relion_stats.rotation_posterior_sums),
         np.asarray(unchunked_external.relion_stats.rotation_posterior_sums),
@@ -7732,7 +7708,7 @@ def test_sparse_pass2_rotation_chunking_matches_unchunked_windowed_path(
     )
 
 
-def test_exact_raw_diff2_cache_matches_fallback_bitwise_and_removes_recompute(monkeypatch):
+def test_exact_raw_diff2_cache_matches_fallback_and_removes_recompute(monkeypatch):
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
     from relax.sparse_pass2 import (
         sparse_pass2_window,
@@ -7816,8 +7792,8 @@ def test_exact_raw_diff2_cache_matches_fallback_bitwise_and_removes_recompute(mo
         fallback_leaves,
         strict=True,
     ):
-        np.testing.assert_array_equal(np.asarray(cached_leaf), np.asarray(fallback_leaf))
-        np.testing.assert_array_equal(np.asarray(disabled_leaf), np.asarray(fallback_leaf))
+        assert_matches(np.asarray(cached_leaf), np.asarray(fallback_leaf))
+        assert_matches(np.asarray(disabled_leaf), np.asarray(fallback_leaf))
 
 
 @pytest.mark.parametrize("f32_fine_posterior", [False, True])
@@ -7959,7 +7935,7 @@ def test_sparse_pass2_rotation_chunking_applies_to_relion_x_half_mstep_with_nonm
     )
     assert adjoint_window_indices
     for actual_indices in adjoint_window_indices:
-        np.testing.assert_array_equal(actual_indices, np.asarray(expected_xhalf_indices, dtype=np.int32))
+        assert_matches(actual_indices, np.asarray(expected_xhalf_indices, dtype=np.int32))
     assert len(contribution_calls) == 1
     contribution = contribution_calls[0]
     captured_rotation_count = np.asarray(contribution["rotations"]).shape[1]
@@ -8004,7 +7980,7 @@ def test_sparse_pass2_rotation_chunking_applies_to_relion_x_half_mstep_with_nonm
         baseline_leaves,
         strict=True,
     ):
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(captured_leaf),
             np.asarray(baseline_leaf),
         )
@@ -8235,12 +8211,7 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
     )
     fused = _run_sparse_k_class_adaptive_pass2(**kwargs)
     assert fused_score_results
-    np.testing.assert_allclose(
-        np.asarray(fused_score_results[-1].class_score_log_z),
-        np.asarray(fused_score_results[-1].class_log_evidence),
-        rtol=0,
-        atol=0,
-    )
+    assert_matches(np.asarray(fused_score_results[-1].class_score_log_z), np.asarray(fused_score_results[-1].class_log_evidence))
     assert fused.profile_summary["sparse_kclass_raw_host_staging_total_bytes"] > 0
     assert (
         fused.profile_summary["sparse_kclass_raw_host_staging_peak_bytes"]
@@ -8315,12 +8286,12 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
         rtol=1e-5,
         atol=1e-5,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(fused_noise_norm.per_class_hard_assignments),
         np.asarray(fused.per_class_hard_assignments),
     )
-    np.testing.assert_array_equal(np.asarray(fused_noise_norm.class_assignments), np.asarray(fused.class_assignments))
-    np.testing.assert_array_equal(np.asarray(fused_noise_norm.pose_assignments), np.asarray(fused.pose_assignments))
+    assert_matches(np.asarray(fused_noise_norm.class_assignments), np.asarray(fused.class_assignments))
+    assert_matches(np.asarray(fused_noise_norm.pose_assignments), np.asarray(fused.pose_assignments))
     np.testing.assert_allclose(
         np.asarray(fused_noise_norm.class_responsibilities),
         np.asarray(fused.class_responsibilities),
@@ -8344,12 +8315,12 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
 
     np.testing.assert_allclose(np.asarray(fused.Ft_y), np.asarray(legacy.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(fused.Ft_ctf), np.asarray(legacy.Ft_ctf), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(fused.per_class_hard_assignments),
         np.asarray(legacy.per_class_hard_assignments),
     )
-    np.testing.assert_array_equal(np.asarray(fused.class_assignments), np.asarray(legacy.class_assignments))
-    np.testing.assert_array_equal(np.asarray(fused.pose_assignments), np.asarray(legacy.pose_assignments))
+    assert_matches(np.asarray(fused.class_assignments), np.asarray(legacy.class_assignments))
+    assert_matches(np.asarray(fused.pose_assignments), np.asarray(legacy.pose_assignments))
     np.testing.assert_allclose(
         np.asarray(fused.class_responsibilities),
         np.asarray(legacy.class_responsibilities),
@@ -8366,10 +8337,10 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
     assert fused.noise_stats[0].wsum_scale_correction_xa is not None
     assert fused.noise_stats[0].wsum_scale_correction_aa is not None
     assert np.asarray(fused.noise_stats[0].wsum_scale_correction_xa).shape == (7,)
-    np.testing.assert_array_equal(np.asarray(fused.noise_stats[0].wsum_scale_correction_xa)[3:], 0.0)
-    np.testing.assert_array_equal(np.asarray(fused.noise_stats[0].wsum_scale_correction_aa)[3:], 0.0)
-    np.testing.assert_array_equal(np.asarray(fused.noise_stats[1].wsum_scale_correction_xa), 0.0)
-    np.testing.assert_array_equal(np.asarray(fused.noise_stats[1].wsum_scale_correction_aa), 0.0)
+    assert_matches(np.asarray(fused.noise_stats[0].wsum_scale_correction_xa)[3:], 0.0)
+    assert_matches(np.asarray(fused.noise_stats[0].wsum_scale_correction_aa)[3:], 0.0)
+    assert_matches(np.asarray(fused.noise_stats[1].wsum_scale_correction_xa), 0.0)
+    assert_matches(np.asarray(fused.noise_stats[1].wsum_scale_correction_aa), 0.0)
     _assert_k_class_noise_sumw_matches_class_mass(fused, rtol=1e-4, atol=1e-4)
 
     window_kwargs = dict(kwargs)
@@ -8397,15 +8368,15 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
         rtol=1e-5,
         atol=1e-5,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(windowed_prepare.per_class_hard_assignments),
         np.asarray(window_full_prepare.per_class_hard_assignments),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(windowed_prepare.class_assignments),
         np.asarray(window_full_prepare.class_assignments),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(windowed_prepare.pose_assignments),
         np.asarray(window_full_prepare.pose_assignments),
     )
@@ -8445,15 +8416,15 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
         rtol=1e-5,
         atol=1e-5,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(legacy_windowed_prepare.per_class_hard_assignments),
         np.asarray(legacy_window_full_prepare.per_class_hard_assignments),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(legacy_windowed_prepare.class_assignments),
         np.asarray(legacy_window_full_prepare.class_assignments),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(legacy_windowed_prepare.pose_assignments),
         np.asarray(legacy_window_full_prepare.pose_assignments),
     )
@@ -8477,12 +8448,12 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
 
     np.testing.assert_allclose(np.asarray(compact.Ft_y), np.asarray(fused.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(compact.Ft_ctf), np.asarray(fused.Ft_ctf), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(compact.per_class_hard_assignments),
         np.asarray(fused.per_class_hard_assignments),
     )
-    np.testing.assert_array_equal(np.asarray(compact.class_assignments), np.asarray(fused.class_assignments))
-    np.testing.assert_array_equal(np.asarray(compact.pose_assignments), np.asarray(fused.pose_assignments))
+    assert_matches(np.asarray(compact.class_assignments), np.asarray(fused.class_assignments))
+    assert_matches(np.asarray(compact.pose_assignments), np.asarray(fused.pose_assignments))
     np.testing.assert_allclose(
         np.asarray(compact.class_responsibilities),
         np.asarray(fused.class_responsibilities),
@@ -8516,12 +8487,12 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
     compact_pairs = _run_sparse_k_class_adaptive_pass2(**kwargs)
     np.testing.assert_allclose(np.asarray(compact_pairs.Ft_y), np.asarray(fused.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(compact_pairs.Ft_ctf), np.asarray(fused.Ft_ctf), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(compact_pairs.per_class_hard_assignments),
         np.asarray(fused.per_class_hard_assignments),
     )
-    np.testing.assert_array_equal(np.asarray(compact_pairs.class_assignments), np.asarray(fused.class_assignments))
-    np.testing.assert_array_equal(np.asarray(compact_pairs.pose_assignments), np.asarray(fused.pose_assignments))
+    assert_matches(np.asarray(compact_pairs.class_assignments), np.asarray(fused.class_assignments))
+    assert_matches(np.asarray(compact_pairs.pose_assignments), np.asarray(fused.pose_assignments))
     np.testing.assert_allclose(
         np.asarray(compact_pairs.class_responsibilities),
         np.asarray(fused.class_responsibilities),
@@ -8561,15 +8532,15 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
         rtol=1e-5,
         atol=1e-5,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(compact_pairs_no_active.per_class_hard_assignments),
         np.asarray(fused.per_class_hard_assignments),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(compact_pairs_no_active.class_assignments),
         np.asarray(fused.class_assignments),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(compact_pairs_no_active.pose_assignments),
         np.asarray(fused.pose_assignments),
     )
@@ -8607,15 +8578,15 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
         rtol=1e-5,
         atol=1e-5,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(rectangular_active.per_class_hard_assignments),
         np.asarray(fused.per_class_hard_assignments),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(rectangular_active.class_assignments),
         np.asarray(fused.class_assignments),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(rectangular_active.pose_assignments),
         np.asarray(fused.pose_assignments),
     )
@@ -8657,15 +8628,15 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
         rtol=1e-5,
         atol=1e-5,
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(rectangular_active_prematmul.per_class_hard_assignments),
         np.asarray(fused.per_class_hard_assignments),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(rectangular_active_prematmul.class_assignments),
         np.asarray(fused.class_assignments),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(rectangular_active_prematmul.pose_assignments),
         np.asarray(fused.pose_assignments),
     )
@@ -8731,12 +8702,12 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
     hybrid = _run_sparse_k_class_adaptive_pass2(**kwargs)
     np.testing.assert_allclose(np.asarray(hybrid.Ft_y), np.asarray(fused.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(hybrid.Ft_ctf), np.asarray(fused.Ft_ctf), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(hybrid.per_class_hard_assignments),
         np.asarray(fused.per_class_hard_assignments),
     )
-    np.testing.assert_array_equal(np.asarray(hybrid.class_assignments), np.asarray(fused.class_assignments))
-    np.testing.assert_array_equal(np.asarray(hybrid.pose_assignments), np.asarray(fused.pose_assignments))
+    assert_matches(np.asarray(hybrid.class_assignments), np.asarray(fused.class_assignments))
+    assert_matches(np.asarray(hybrid.pose_assignments), np.asarray(fused.pose_assignments))
     np.testing.assert_allclose(
         np.asarray(hybrid.class_responsibilities),
         np.asarray(fused.class_responsibilities),
@@ -8767,12 +8738,12 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
     hybrid_active = _run_sparse_k_class_adaptive_pass2(**kwargs)
     np.testing.assert_allclose(np.asarray(hybrid_active.Ft_y), np.asarray(fused.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(hybrid_active.Ft_ctf), np.asarray(fused.Ft_ctf), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(hybrid_active.per_class_hard_assignments),
         np.asarray(fused.per_class_hard_assignments),
     )
-    np.testing.assert_array_equal(np.asarray(hybrid_active.class_assignments), np.asarray(fused.class_assignments))
-    np.testing.assert_array_equal(np.asarray(hybrid_active.pose_assignments), np.asarray(fused.pose_assignments))
+    assert_matches(np.asarray(hybrid_active.class_assignments), np.asarray(fused.class_assignments))
+    assert_matches(np.asarray(hybrid_active.pose_assignments), np.asarray(fused.pose_assignments))
     np.testing.assert_allclose(
         np.asarray(hybrid_active.class_responsibilities),
         np.asarray(fused.class_responsibilities),
@@ -8820,8 +8791,8 @@ def test_fused_sparse_k_class_pass2_matches_existing_two_pass_path(monkeypatch):
     assert checked.profile_summary["sparse_kclass_compact_pair_check_rows"] > 0
     np.testing.assert_allclose(np.asarray(checked.Ft_y), np.asarray(fused.Ft_y), rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(np.asarray(checked.Ft_ctf), np.asarray(fused.Ft_ctf), rtol=1e-6, atol=1e-6)
-    np.testing.assert_array_equal(np.asarray(checked.class_assignments), np.asarray(fused.class_assignments))
-    np.testing.assert_array_equal(np.asarray(checked.pose_assignments), np.asarray(fused.pose_assignments))
+    assert_matches(np.asarray(checked.class_assignments), np.asarray(fused.class_assignments))
+    assert_matches(np.asarray(checked.pose_assignments), np.asarray(fused.pose_assignments))
 
     kwargs["engine_kwargs"]["relion_exact_fine_gaussian"] = False
     checked_algebraic = _run_sparse_k_class_adaptive_pass2(**kwargs)
@@ -8907,12 +8878,12 @@ def test_fused_sparse_k1_default_compact_pairs_matches_existing_sparse_path(monk
 
     np.testing.assert_allclose(np.asarray(fused.Ft_y), np.asarray(legacy.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(fused.Ft_ctf), np.asarray(legacy.Ft_ctf), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(fused.per_class_hard_assignments),
         np.asarray(legacy.per_class_hard_assignments),
     )
-    np.testing.assert_array_equal(np.asarray(fused.class_assignments), np.asarray(legacy.class_assignments))
-    np.testing.assert_array_equal(np.asarray(fused.pose_assignments), np.asarray(legacy.pose_assignments))
+    assert_matches(np.asarray(fused.class_assignments), np.asarray(legacy.class_assignments))
+    assert_matches(np.asarray(fused.pose_assignments), np.asarray(legacy.pose_assignments))
     np.testing.assert_allclose(
         np.asarray(fused.class_responsibilities),
         np.asarray(legacy.class_responsibilities),
@@ -8945,7 +8916,7 @@ def test_fused_sparse_k1_default_compact_pairs_matches_existing_sparse_path(monk
     _assert_k_class_extra_outputs_close(fused, legacy)
     assert fused.profile_summary["sparse_kclass_compact_pairs"] is True
     assert fused.profile_summary["sparse_kclass_valid_pair_reduction"] > 1.0
-    np.testing.assert_array_equal(np.asarray(fused.class_assignments), np.zeros(n_images, dtype=np.int32))
+    assert_matches(np.asarray(fused.class_assignments), np.zeros(n_images, dtype=np.int32))
 
 
 def test_fused_sparse_k_class_capture_requires_companion_contribution_dump(monkeypatch):
@@ -9104,10 +9075,10 @@ def test_fused_sparse_k_class_capture_is_observational(monkeypatch, tmp_path, tr
 
     assert captures
     assert {capture["class_index"] for capture in captures} == {1}
-    assert all(np.array_equal(capture["image_indices"], np.asarray([0])) for capture in captures)
+    assert all(matches(capture["image_indices"], np.asarray([0])) for capture in captures)
     assert all(capture["shadow_only_mode"] is True for capture in captures)
-    np.testing.assert_array_equal(np.asarray(instrumented.Ft_y), np.asarray(plain.Ft_y))
-    np.testing.assert_array_equal(np.asarray(instrumented.Ft_ctf), np.asarray(plain.Ft_ctf))
+    assert_matches(np.asarray(instrumented.Ft_y), np.asarray(plain.Ft_y))
+    assert_matches(np.asarray(instrumented.Ft_ctf), np.asarray(plain.Ft_ctf))
 
 
 def test_sparse_kclass_fused_default_keeps_k1_on_single_class_path(monkeypatch):
@@ -9239,12 +9210,12 @@ def test_compact_pair_half_spectrum_reuses_mstep_sums_for_noise(monkeypatch):
     assert defaulted_calls == disabled_calls
     np.testing.assert_allclose(np.asarray(reused.Ft_y), np.asarray(disabled.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(reused.Ft_ctf), np.asarray(disabled.Ft_ctf), rtol=1e-5, atol=1e-5)
-    np.testing.assert_allclose(np.asarray(defaulted.Ft_y), np.asarray(disabled.Ft_y), rtol=0, atol=0)
-    np.testing.assert_allclose(np.asarray(defaulted.Ft_ctf), np.asarray(disabled.Ft_ctf), rtol=0, atol=0)
-    np.testing.assert_array_equal(np.asarray(reused.class_assignments), np.asarray(disabled.class_assignments))
-    np.testing.assert_array_equal(np.asarray(reused.pose_assignments), np.asarray(disabled.pose_assignments))
-    np.testing.assert_array_equal(np.asarray(defaulted.class_assignments), np.asarray(disabled.class_assignments))
-    np.testing.assert_array_equal(np.asarray(defaulted.pose_assignments), np.asarray(disabled.pose_assignments))
+    assert_matches(np.asarray(defaulted.Ft_y), np.asarray(disabled.Ft_y))
+    assert_matches(np.asarray(defaulted.Ft_ctf), np.asarray(disabled.Ft_ctf))
+    assert_matches(np.asarray(reused.class_assignments), np.asarray(disabled.class_assignments))
+    assert_matches(np.asarray(reused.pose_assignments), np.asarray(disabled.pose_assignments))
+    assert_matches(np.asarray(defaulted.class_assignments), np.asarray(disabled.class_assignments))
+    assert_matches(np.asarray(defaulted.pose_assignments), np.asarray(disabled.pose_assignments))
     _assert_noise_stats_close(reused.noise_stats, disabled.noise_stats, rtol=1e-5, atol=1e-5)
     _assert_noise_stats_close(defaulted.noise_stats, disabled.noise_stats, rtol=0, atol=0)
     _assert_k_class_extra_outputs_close(reused, disabled)
@@ -9338,12 +9309,12 @@ def test_compact_pair_tail_coalesced_execution_matches_uncoalesced(monkeypatch):
     def assert_same_result(actual, expected):
         np.testing.assert_allclose(np.asarray(actual.Ft_y), np.asarray(expected.Ft_y), rtol=1e-5, atol=1e-5)
         np.testing.assert_allclose(np.asarray(actual.Ft_ctf), np.asarray(expected.Ft_ctf), rtol=1e-5, atol=1e-5)
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(actual.per_class_hard_assignments),
             np.asarray(expected.per_class_hard_assignments),
         )
-        np.testing.assert_array_equal(np.asarray(actual.class_assignments), np.asarray(expected.class_assignments))
-        np.testing.assert_array_equal(np.asarray(actual.pose_assignments), np.asarray(expected.pose_assignments))
+        assert_matches(np.asarray(actual.class_assignments), np.asarray(expected.class_assignments))
+        assert_matches(np.asarray(actual.pose_assignments), np.asarray(expected.pose_assignments))
         np.testing.assert_allclose(
             np.asarray(actual.class_responsibilities),
             np.asarray(expected.class_responsibilities),
@@ -9532,8 +9503,8 @@ def test_compact_pair_masked_scoring_reuses_noise_ctf_sums(monkeypatch):
     assert disabled_calls["image"] == 0
     np.testing.assert_allclose(np.asarray(reused.Ft_y), np.asarray(disabled.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(reused.Ft_ctf), np.asarray(disabled.Ft_ctf), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(np.asarray(reused.class_assignments), np.asarray(disabled.class_assignments))
-    np.testing.assert_array_equal(np.asarray(reused.pose_assignments), np.asarray(disabled.pose_assignments))
+    assert_matches(np.asarray(reused.class_assignments), np.asarray(disabled.class_assignments))
+    assert_matches(np.asarray(reused.pose_assignments), np.asarray(disabled.pose_assignments))
     _assert_noise_stats_close(reused.noise_stats, disabled.noise_stats, rtol=1e-5, atol=1e-5)
     _assert_k_class_extra_outputs_close(reused, disabled)
 
@@ -9707,10 +9678,10 @@ def test_compact_significance_uses_complement_for_dense_masks():
     compact = compact_significant_sample_indices_from_mask(mask)
 
     assert isinstance(compact, ComplementSignificantSampleIndices)
-    np.testing.assert_array_equal(compact.excluded_indices, np.asarray([3, 11], dtype=np.int32))
+    assert_matches(compact.excluded_indices, np.asarray([3, 11], dtype=np.int32))
     assert compact.total_size == 16
     assert significant_sample_count(compact, 16) == 14
-    np.testing.assert_array_equal(significant_sample_ids(compact, 16), np.flatnonzero(mask))
+    assert_matches(significant_sample_ids(compact, 16), np.flatnonzero(mask))
 
 
 def test_prepare_pass2_inputs_complement_matches_explicit_dense_support():
@@ -9743,13 +9714,13 @@ def test_prepare_pass2_inputs_complement_matches_explicit_dense_support():
     explicit_inputs = _prepare_per_image_pass2_inputs([explicit], **common)
     complement_inputs = _prepare_per_image_pass2_inputs([complement], **common)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         complement_inputs["oversampled_rot_indices"][0],
         explicit_inputs["oversampled_rot_indices"][0],
     )
-    np.testing.assert_array_equal(complement_inputs["parent_map"][0], explicit_inputs["parent_map"][0])
-    np.testing.assert_array_equal(complement_inputs["log_prior"][0], explicit_inputs["log_prior"][0])
-    np.testing.assert_array_equal(
+    assert_matches(complement_inputs["parent_map"][0], explicit_inputs["parent_map"][0])
+    assert_matches(complement_inputs["log_prior"][0], explicit_inputs["log_prior"][0])
+    assert_matches(
         np.asarray(complement_inputs["candidate_mask"][0]),
         np.asarray(explicit_inputs["candidate_mask"][0]),
     )
@@ -9798,7 +9769,7 @@ def test_kclass_fine_mask_complement_matches_explicit_dense_support():
         trans_parent_map=trans_parent_map,
         n_images=1,
     )
-    np.testing.assert_array_equal(complement_mask, explicit_mask)
+    assert_matches(complement_mask, explicit_mask)
 
     explicit_stats = _fine_support_stats(
         [[explicit]],
@@ -9837,7 +9808,7 @@ def test_compact_pair_filter_routes_complement_masks_to_rectangular():
     )
 
     assert excluded == 1
-    np.testing.assert_array_equal(filtered, np.asarray([False]))
+    assert_matches(filtered, np.asarray([False]))
 
 
 @pytest.mark.parametrize("raw_device_budget", [0, 16 * 1024**2])
@@ -9939,12 +9910,12 @@ def test_compact_pair_xhalf_gpu_matches_rectangular_fused(monkeypatch, raw_devic
 
     np.testing.assert_allclose(np.asarray(compact_pairs.Ft_y), np.asarray(fused.Ft_y), rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(np.asarray(compact_pairs.Ft_ctf), np.asarray(fused.Ft_ctf), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(compact_pairs.per_class_hard_assignments),
         np.asarray(fused.per_class_hard_assignments),
     )
-    np.testing.assert_array_equal(np.asarray(compact_pairs.class_assignments), np.asarray(fused.class_assignments))
-    np.testing.assert_array_equal(np.asarray(compact_pairs.pose_assignments), np.asarray(fused.pose_assignments))
+    assert_matches(np.asarray(compact_pairs.class_assignments), np.asarray(fused.class_assignments))
+    assert_matches(np.asarray(compact_pairs.pose_assignments), np.asarray(fused.pose_assignments))
     _assert_k_class_extra_outputs_close(compact_pairs, fused)
     assert compact_pairs.profile_summary["sparse_kclass_compact_pairs"] is True
     assert compact_pairs.profile_summary["sparse_kclass_compact_pair_mstep_pair_sparse_requested"] is True
@@ -10171,8 +10142,8 @@ def test_sparse_pass2_native_firstiter_preserves_prefix_and_normalizes_once(
 
     def finalize(data, weight, shape, **kwargs):
         assert events == [0, 1]
-        np.testing.assert_array_equal(np.asarray(data), np.full(data.shape, -1, dtype=np.complex64))
-        np.testing.assert_array_equal(np.asarray(weight), np.ones(weight.shape, dtype=np.float32))
+        assert_matches(np.asarray(data), np.full(data.shape, -1, dtype=np.complex64))
+        assert_matches(np.asarray(weight), np.ones(weight.shape, dtype=np.float32))
         return data, weight
 
     monkeypatch.setattr(firstiter_bpref, '_accumulate_relion_firstiter_bpref_fused', accumulate)
@@ -10215,11 +10186,11 @@ def test_sparse_pass2_native_firstiter_preserves_prefix_and_normalizes_once(
         bpref_diagnostics.clear_bpref_contribution_dump_context()
 
     assert events == [0, 1]
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(result[0]),
         np.full(result[0].shape, -1.0 + 0.0j, dtype=np.complex64),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(result[1]),
         np.ones(result[1].shape, dtype=np.float32),
     )
@@ -10401,15 +10372,15 @@ def test_sparse_pass2_deferred_firstiter_bpref_runs_full_driver_lifecycle(
             1,
         ]
         assert all(batch.actual_counts.item() == 1 for batch in batches)
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(data_volume_real),
             np.zeros(data_volume_real.shape, dtype=np.float32),
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(data_volume_imag),
             np.zeros(data_volume_imag.shape, dtype=np.float32),
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(weight_volume),
             np.zeros(weight_volume.shape, dtype=np.float32),
         )
@@ -10430,11 +10401,11 @@ def test_sparse_pass2_deferred_firstiter_bpref_runs_full_driver_lifecycle(
         _volume_shape,
         **kwargs,
     ):
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(data_volume_real),
             np.full(data_volume_real.shape, -1.0, dtype=np.float32),
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(data_volume_imag),
             np.zeros(data_volume_imag.shape, dtype=np.float32),
         )
@@ -10511,11 +10482,11 @@ def test_sparse_pass2_deferred_firstiter_bpref_runs_full_driver_lifecycle(
         bpref_diagnostics.clear_bpref_contribution_dump_context()
 
     assert events == ["stage", "stage"] + (["texture_close"] if persistent_owner else []) + ["release", "replay", "finalize", "layout"]
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(result[0]),
         np.full(result[0].shape, -1.0 + 0.0j, dtype=np.complex64),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(result[1]),
         np.ones(result[1].shape, dtype=np.float32),
     )

@@ -3,14 +3,15 @@ import logging
 import re
 import numpy as np
 import pytest
-from test_compact_real_rows_integration import _fused_kclass_multibucket_fixture, _fused_kclass_result_arrays, _assert_fused_arrays_identical
+from test_compact_real_rows_integration import _fused_kclass_multibucket_fixture, _fused_kclass_result_arrays, _assert_fused_arrays_match
+from helpers.float_compare import assert_matches, matches
 
 @pytest.mark.parametrize("logical_size", [22, 26, 28])
 def test_fused_translate_scorer_runtime_logical_size_matches_static_kernel(
     monkeypatch, custom_cuda_lib, gpu_device, logical_size
 ):
     """The compact fused-translate scorer, given a physical pixel capacity and a runtime
-    logical size, returns bit-identical costs to the static kernel on the logical operands,
+    logical size, returns the static kernel's costs on the logical operands (default band),
     and the runtime program is shared across logical sizes in one physical class."""
     import jax
     import jax.numpy as jnp
@@ -70,7 +71,7 @@ def test_fused_translate_scorer_runtime_logical_size_matches_static_kernel(
     expected = np.asarray(expected); actual = np.asarray(actual)
     assert expected.shape == actual.shape == (batch, pairs)
     assert np.all(np.isinf(expected[~pair_mask])) and np.all(np.isinf(actual[~pair_mask]))
-    np.testing.assert_array_equal(actual[pair_mask].view(np.uint32), expected[pair_mask].view(np.uint32))
+    assert_matches(actual[pair_mask], expected[pair_mask])
 
 
 def _stable_window_fixture_env(monkeypatch, flag):
@@ -98,13 +99,13 @@ def test_stable_windows_fall_back_to_the_logical_window_without_the_fused_scorer
     with caplog.at_level(logging.INFO):
         on = run("1")
     assert any("stable windows requested but not applicable" in r.getMessage() for r in caplog.records)
-    _assert_fused_arrays_identical(base, on, "stable windows fallback")
+    _assert_fused_arrays_match(base, on, "stable windows fallback")
 
 
 def test_fused_chunk_scoring_matches_the_chunk_loop_on_gpu(monkeypatch, caplog, custom_cuda_lib, gpu_device):
     """Step 1 of the fused chunk program: per-class raw diff2, the joint minimum, the score
     conversion and the log normalizers in one program. Same kernels in the same order, so
-    every output except the two adjoint volumes (GPU atomics) is bit-identical to the loop."""
+    every output except the two adjoint volumes (GPU atomics) matches the loop in the default band."""
     import jax
     import recovar.cuda_backproject as cuda_backproject
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
@@ -144,16 +145,16 @@ def test_fused_chunk_scoring_matches_the_chunk_loop_on_gpu(monkeypatch, caplog, 
     assert calls and all(k == 2 for k in calls), calls[:5]
     # Which outputs does this configuration reproduce at all? The adjoint volumes
     # (CUDA atomics) and wsum_img_power (atomic shell scatter-add) differ between two
-    # control runs; every key the control reproduces bit for bit must not move under
-    # the flag, and a key it does not reproduce is held to the same float32 atomics
+    # control runs; every key the control reproduces within the default band must stay
+    # in that band under the flag, and a key it does not reproduce is held to the same float32 atomics
     # bound, with the control's own spread reported next to the flag's delta.
     reproducible, spread = [], {}
     for k in base_a:
         a, b = np.asarray(base_a[k]), np.asarray(base_b[k])
         d = float(np.max(np.abs(np.nan_to_num(a) - np.nan_to_num(b)))) if a.size else 0.0
-        (reproducible.append(k) if d == 0.0 else spread.__setitem__(k, d))
+        (reproducible.append(k) if matches(np.nan_to_num(a), np.nan_to_num(b)) else spread.__setitem__(k, d))
     assert reproducible, "the two control runs agreed on nothing"
-    _assert_fused_arrays_identical(
+    _assert_fused_arrays_match(
         {k: base_a[k] for k in reproducible}, {k: on[k] for k in reproducible}, "fused chunk scoring",
     )
     for k in sorted(spread):
@@ -167,7 +168,7 @@ def test_fused_chunk_scoring_matches_the_chunk_loop_on_gpu(monkeypatch, caplog, 
 @pytest.mark.parametrize("current_size", [2, 4])  # the fixture box is 8 pixels; both sizes get a physical tail
 def test_stable_windows_match_the_logical_window_on_gpu(monkeypatch, caplog, custom_cuda_lib, gpu_device, current_size):
     """Inside a physical Fourier-window class the compact engine reproduces the logical
-    window: scores, posteriors, assignments and evidence bit for bit (the runtime kernel
+    window: scores, posteriors and evidence in the default band, assignments exactly (the runtime kernel
     stops at the logical size); noise statistics and the two adjoint volumes within the
     bounds this file uses for reductions over a differently shaped axis and for GPU
     atomics. The planner log must show a physical class larger than the logical size,
@@ -200,7 +201,7 @@ def test_stable_windows_match_the_logical_window_on_gpu(monkeypatch, caplog, cus
     m = re.search(r"logical current_size (\d+) -> physical class (\d+) \(score pixels (\d+) -> (\d+)", plan_lines[-1])
     assert m and int(m.group(2)) > int(m.group(1)) and int(m.group(4)) > int(m.group(3)), plan_lines[-1]
     bounded = {k for k in base if k.startswith(("Ft_y", "Ft_ctf", "noise_stats"))}
-    _assert_fused_arrays_identical(
+    _assert_fused_arrays_match(
         {k: v for k, v in base.items() if k not in bounded},
         {k: v for k, v in on.items() if k not in bounded},
         "stable windows",

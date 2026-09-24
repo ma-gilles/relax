@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics import compact_candidate_capture as capture
 from relax.diagnostics.sparse_pass2_dump import _pass2_dump_requested_for_bucket
@@ -131,9 +132,9 @@ def test_enabled_capture_preserves_native_arrays_and_reopens_atomically(tmp_path
     assert len(paths) == 1
     assert not list(tmp_path.glob("*.partial"))
     with np.load(paths[0], allow_pickle=False) as shard:
-        np.testing.assert_array_equal(shard["candidate_offset"], [0, 4, 8])
-        np.testing.assert_array_equal(shard["original_indices"], [1000, 1001])
-        np.testing.assert_array_equal(shard["significant_count"], [2, 2])
+        assert_matches(shard["candidate_offset"], [0, 4, 8])
+        assert_matches(shard["original_indices"], [1000, 1001])
+        assert_matches(shard["significant_count"], [2, 2])
         assert shard["raw_combined_score"].dtype == np.float32
         assert shard["posterior"].dtype == np.float32
         assert np.all(
@@ -141,7 +142,7 @@ def test_enabled_capture_preserves_native_arrays_and_reopens_atomically(tmp_path
             <= shard["posterior_sum_float32_bound"]
         )
     for name, expected in before.items():
-        np.testing.assert_array_equal(kwargs[name], expected)
+        assert_matches(kwargs[name], expected)
 
 
 @pytest.mark.unit
@@ -159,10 +160,10 @@ def test_original_identity_filter_captures_only_requested_particle(tmp_path, mon
     paths = list(tmp_path.glob("*.npz"))
     assert len(paths) == 1
     with np.load(paths[0], allow_pickle=False) as shard:
-        np.testing.assert_array_equal(shard["local_indices"], [1])
-        np.testing.assert_array_equal(shard["original_indices"], [1001])
-        np.testing.assert_array_equal(shard["candidate_offset"], [0, 4])
-        np.testing.assert_array_equal(shard["raw_combined_score"], kwargs["scores"][1].reshape(-1))
+        assert_matches(shard["local_indices"], [1])
+        assert_matches(shard["original_indices"], [1001])
+        assert_matches(shard["candidate_offset"], [0, 4])
+        assert_matches(shard["raw_combined_score"], kwargs["scores"][1].reshape(-1))
 
 
 @pytest.mark.unit
@@ -229,9 +230,9 @@ def test_chunked_identity_filter_preserves_requested_production_table(tmp_path, 
 
     path = next(tmp_path.glob("*.npz"))
     with np.load(path, allow_pickle=False) as shard:
-        np.testing.assert_array_equal(shard["original_indices"], [1001])
-        np.testing.assert_array_equal(shard["raw_combined_score"], kwargs["scores"][1].reshape(-1))
-        np.testing.assert_array_equal(shard["posterior"], kwargs["probs"][1].reshape(-1))
+        assert_matches(shard["original_indices"], [1001])
+        assert_matches(shard["raw_combined_score"], kwargs["scores"][1].reshape(-1))
+        assert_matches(shard["posterior"], kwargs["probs"][1].reshape(-1))
 
 
 @pytest.mark.unit
@@ -293,7 +294,7 @@ def test_capture_splits_and_seals_one_particle_across_candidate_fragments(tmp_pa
                     )
                 )
     half1_fragments.sort()
-    np.testing.assert_array_equal(
+    assert_matches(
         np.concatenate([values for _, values in half1_fragments]),
         half1["scores"].reshape(-1),
     )

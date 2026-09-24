@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.sparse_pass2 import sparse_pass2_projection_blocks as blocks
 
@@ -83,5 +84,5 @@ def test_windowed_generic_sparse_projection_preserves_radius(monkeypatch):
         max_r=3.0,
     )
     assert calls == [dict(return_abs2=False, max_r=3.0)] * 2
-    np.testing.assert_array_equal(score, np.broadcast_to([1, 4, 6], (3, 3)))
+    assert_matches(score, np.broadcast_to([1, 4, 6], (3, 3)))
     assert recon is None and abs2 is None

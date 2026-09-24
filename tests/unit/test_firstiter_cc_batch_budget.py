@@ -16,6 +16,7 @@ from relax.helpers.batch_planning import (
 )
 from relax.helpers.types import NoiseStats, make_relion_stats
 from relax.refinement import iteration_loop
+from helpers.float_compare import assert_matches
 
 
 def test_firstiter_winner_take_all_assembly_reports_unit_pmax_across_score_normalizations():
@@ -40,7 +41,7 @@ def test_firstiter_winner_take_all_assembly_reports_unit_pmax_across_score_norma
         firstiter_winner_take_all=True,
     )
 
-    np.testing.assert_array_equal(np.asarray(result.stats.max_posterior_per_image), np.ones(1))
+    assert_matches(np.asarray(result.stats.max_posterior_per_image), np.ones(1))
 
 
 def test_firstiter_cc_budget_preserves_256_k4_completion_batch_size():

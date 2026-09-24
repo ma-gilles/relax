@@ -19,6 +19,7 @@ from unittest import mock
 
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from relax.diagnostics import bpref_diagnostics
 from relax.local import local_em_engine
@@ -106,7 +107,7 @@ def test_candidate_rotations_round_trip_row_aligned_with_the_ids(tmp_path):
     stored = np.asarray(payload["candidate_rotations"])
     assert stored.shape == (B, R, 3, 3)
     assert stored.dtype == np.float32
-    assert np.array_equal(stored, rots)
+    assert matches(stored, rots)
     # Alignment is what makes the ids usable: same rotation axis length.
     assert stored.shape[1] == np.asarray(payload["oversampled_rotation_indices"]).shape[-1]
 

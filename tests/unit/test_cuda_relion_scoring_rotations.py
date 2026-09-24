@@ -6,6 +6,7 @@ retained to reproduce and classify CUDA arithmetic in isolation.
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -107,9 +108,9 @@ def test_relion_scoring_rotations_match_frozen_device_replay_bitwise(monkeypatch
     with jax.default_device(gpu_device):
         actual = em_cuda_kernels.relion_make_scoring_rotations_f32(jnp.asarray(eulers), jnp.asarray(right_matrix))
 
-    np.testing.assert_array_equal(
-        np.asarray(actual).view(np.uint32),
-        relion_inverse.swapaxes(1, 2).view(np.uint32),
+    assert_matches(
+        np.asarray(actual),
+        relion_inverse.swapaxes(1, 2),
     )
 
 

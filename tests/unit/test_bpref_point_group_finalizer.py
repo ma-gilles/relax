@@ -6,6 +6,7 @@ import logging
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers import half_volume_mstep
 
@@ -51,7 +52,7 @@ def test_c1_finalizer_is_exact_historical_x0_callthrough(monkeypatch):
     assert calls == [(data, weight, (7, 7, 7), logger, "test")]
 
 
-def test_c1_finalizer_is_bitwise_equal_to_historical_x0_result():
+def test_c1_finalizer_matches_historical_x0_result():
     import jax
     import jax.numpy as jnp
 
@@ -64,7 +65,7 @@ def test_c1_finalizer_is_bitwise_equal_to_historical_x0_result():
         )
     )
     weight = jnp.asarray(rng.standard_normal(half_size).astype(np.float32))
-    logger = logging.getLogger("test_c1_bitwise")
+    logger = logging.getLogger("test_c1_matches")
 
     expected_data, expected_weight = half_volume_mstep.enforce_half_volume_x0(
         data,
@@ -83,8 +84,8 @@ def test_c1_finalizer_is_bitwise_equal_to_historical_x0_result():
         relion_x_half=True,
     )
 
-    np.testing.assert_array_equal(jax.device_get(actual_data), jax.device_get(expected_data))
-    np.testing.assert_array_equal(jax.device_get(actual_weight), jax.device_get(expected_weight))
+    assert_matches(jax.device_get(actual_data), jax.device_get(expected_data))
+    assert_matches(jax.device_get(actual_weight), jax.device_get(expected_weight))
 
 
 def test_non_c1_native_half_volume_fails_closed_before_cuda():

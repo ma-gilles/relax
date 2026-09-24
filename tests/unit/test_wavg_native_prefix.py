@@ -12,6 +12,7 @@ from recovar import cuda_backproject as cb
 from relax.cuda import kernels as em_cuda_kernels
 from relax.local import local_big_jit as local
 from relax.sparse_pass2 import sparse_pass2_wavg as sparse
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -69,7 +70,7 @@ def test_factored_power_keeps_original_contraction_bitwise():
         power = (power + raw.imag * raw.imag).astype(jnp.float32)
         return jnp.einsum("brt,btp->brp", posterior, power, preferred_element_type=jnp.float32).astype(jnp.float32)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         original(raw, posterior), jax.jit(sparse._relion_wavg_rectangle_image_power)(raw, posterior)
     )
 
@@ -148,7 +149,7 @@ def test_shell_boundary_native_receives_one_original_translation(monkeypatch):
     def native(*received, **kwargs):
         calls.append("native")
         assert received[0] is raw and received[2] is proj
-        np.testing.assert_array_equal(received[1], power)
+        assert_matches(received[1], power)
         return jnp.ones((2, 6, 3), dtype=jnp.float32)
 
     monkeypatch.setattr(em_cuda_kernels, "relion_wavg_native_prefix_f32", native)
@@ -174,8 +175,8 @@ def test_shell_boundary_native_receives_one_original_translation(monkeypatch):
         native_prefix=True,
     )
     assert calls == ["translate", "native"]
-    np.testing.assert_array_equal(shells, [[1, 2, 2]] * 3)
-    np.testing.assert_array_equal(cutoff, [[2, 2, 2], [0, 0, 0]])
+    assert_matches(shells, [[1, 2, 2]] * 3)
+    assert_matches(cutoff, [[2, 2, 2], [0, 0, 0]])
 
 
 @pytest.mark.gpu
@@ -185,14 +186,14 @@ def test_real_cuda_preatomic_bitwise_and_dyadic_atomic(random):
     args = _inputs(random=random)
     actual, terms = em_cuda_kernels.relion_wavg_native_prefix_f32(*args, debug=True)
     expected, expected_terms = _legacy(args)
-    np.testing.assert_array_equal(np.asarray(terms).view(np.uint32), np.asarray(expected_terms).view(np.uint32))
+    assert_matches(np.asarray(terms), np.asarray(expected_terms))
     if not random:
-        np.testing.assert_array_equal(np.asarray(actual).view(np.uint32), np.asarray(expected).view(np.uint32))
-    np.testing.assert_array_equal(np.asarray(terms)[:, :, 5], 0.0)
+        assert_matches(np.asarray(actual), np.asarray(expected))
+    assert_matches(np.asarray(terms)[:, :, 5], 0.0)
     # A second executable explicitly exercises the production scratch path.
     production = em_cuda_kernels.relion_wavg_native_prefix_f32(*args)
     if not random:
-        np.testing.assert_array_equal(production, expected)
+        assert_matches(production, expected)
 
 
 @pytest.mark.gpu
@@ -246,7 +247,7 @@ def test_real_cuda_runtime_counts_reuse_one_executable():
     zero[8] = jnp.asarray(0, dtype=jnp.int32)
     zero[9] = jnp.asarray(0, dtype=jnp.int32)
     empty = compiled(*zero)
-    np.testing.assert_array_equal(np.asarray(empty), 0.0)
+    assert_matches(np.asarray(empty), 0.0)
     assert compiled._cache_size() == 1
     assert np.isfinite(np.asarray(first)).all() and np.isfinite(np.asarray(second)).all()
 
@@ -303,6 +304,6 @@ def test_nine_shared_noise_outputs_with_single_rotation(monkeypatch):
         assert len(actual) == len(expected) == 9
         for a, b in zip(actual, expected, strict=True):
             assert a.dtype == b.dtype and a.shape == b.shape
-            np.testing.assert_array_equal(a, b)
+            assert_matches(a, b)
     finally:
         local.run_deferred_local_exact_noise_jit.clear_cache()

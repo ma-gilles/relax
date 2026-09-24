@@ -5,6 +5,7 @@ import inspect
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.cuda import kernels as em_cuda_kernels
 from relax.helpers.bpref_transaction import BprefTransactionQueue
@@ -99,7 +100,7 @@ def test_helper_masks_rows_before_projector_dispatch(monkeypatch, queued):
         assert not calls
         data, weight, _ = queue.flush(data, weight)
         assert len(calls) == 1
-        np.testing.assert_array_equal(np.asarray(calls[0]["worker_lane_ids"]), [0, 1, 0, 1])
+        assert_matches(np.asarray(calls[0]["worker_lane_ids"]), [0, 1, 0, 1])
         assert calls[0]["parallel_worker_replay"] is False
     else:
         assert len(calls) == 2
@@ -108,14 +109,14 @@ def test_helper_masks_rows_before_projector_dispatch(monkeypatch, queued):
             assert call["parallel_worker_replay"] is None
     expected = np.tile(np.asarray([[[1, 1], [0, 0]], [[1, 1], [1, 1]]], np.float32), (2, 1, 1))
     actual = np.concatenate([np.asarray(call["posterior_over_weight_norm"]) for call in calls])
-    assert actual.tobytes() == expected.tobytes()
+    assert_matches(actual, expected, strict=True)
     for call in calls:
         assert call["image_shape"] == shared["image_shape"]
         assert call["volume_shape"] == shared["volume_shape"]
         assert call["max_r"] == shared["max_r"]
         assert call["logical_current_size"] == shared["logical_current_size"]
         assert call["projector_max_r"] == shared["projector_r_max"]
-        np.testing.assert_array_equal(call["projector_full"], shared["projector_full"])
-        np.testing.assert_array_equal(call["pixel_indices"], shared["pixel_indices"])
-        np.testing.assert_array_equal(call["stable_dense_positions"], shared["stable_dense_positions"])
+        assert_matches(call["projector_full"], shared["projector_full"])
+        assert_matches(call["pixel_indices"], shared["pixel_indices"])
+        assert_matches(call["stable_dense_positions"], shared["stable_dense_positions"])
     assert data[0] == 12 and weight[0] == 4

@@ -7,6 +7,7 @@ from itertools import permutations
 
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from relax.reference.gaussian_reduction_replay import (
     CAPTURE_SCHEMA,
@@ -169,7 +170,7 @@ def test_exact_four_lane_schedule_all_orders_and_observed_compatibility():
     lanes = relion_coarse_lane_partials_float32(capture)
     expected, counts = _independent_lanes(values, dtype=np.float32)
 
-    assert np.array_equal(np.asarray(lanes.values, dtype=np.float32), expected)
+    assert matches(np.asarray(lanes.values, dtype=np.float32), expected)
     assert lanes.pixel_counts == tuple(int(value) for value in counts)
     assert lanes.values[-1] == 0.0
     assert lanes.pixel_counts == (406, 406, 406, 406, 0)
@@ -286,7 +287,7 @@ def test_genuine_float64_is_recomputed_from_operands_and_is_centered_only():
     reference, shifted, weight = _high_precision_arrays()
     expected_contributions = ((reference.real - shifted.real) ** 2 + (reference.imag - shifted.imag) ** 2) * weight
     actual_contributions = recompute_high_precision_gaussian_contributions(operands)
-    assert np.array_equal(actual_contributions, expected_contributions)
+    assert matches(actual_contributions, expected_contributions)
 
     assert report.has_genuine_centered_float64
     assert len(report.genuine_float64_centered_relion_lane_orders) == 24

@@ -12,6 +12,7 @@ from relax.cuda import kernels as em_cuda_kernels
 from relax.helpers import deferred_vdam_host_pack as helper
 from relax.helpers.env_flags import parse_env_binary_flag
 from relax.local import local_em_engine as engine
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -151,9 +152,9 @@ def test_cuda_preserves_all_seven_outputs_and_input_bytes(batch, case):
     for a, b in zip(actual, original, strict=True):
         a, b = np.asarray(a), np.asarray(b)
         assert a.shape == b.shape and a.dtype == b.dtype
-        assert a.tobytes() == b.tobytes()
+        assert_matches(a, b, strict=True)
     for before, after in zip(arrays, inputs, strict=True):
-        assert before.tobytes() == np.asarray(after).tobytes()
+        assert_matches(before, np.asarray(after), strict=True)
 
 
 @pytest.mark.gpu

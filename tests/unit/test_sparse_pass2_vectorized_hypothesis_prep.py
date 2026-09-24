@@ -7,6 +7,7 @@ import pytest
 
 from relax.scoring import sparse_bucket_arrays as sba
 from relax.scoring.significant_samples import ComplementSignificantSampleIndices
+from helpers.float_compare import assert_matches
 
 pytestmark = [pytest.mark.unit]
 
@@ -70,17 +71,17 @@ def _assert_same(loop, fast):
         if loop[key] is None:
             assert fast[key] is None
         else:
-            np.testing.assert_array_equal(loop[key], fast[key])
+            assert_matches(loop[key], fast[key])
             assert loop[key].dtype == fast[key].dtype
     for i in range(n):
         for key in ("oversampled_rots", "oversampled_mstep_rots", "parent_map", "oversampled_rot_indices", "unique_rot", "log_prior"):
             a, b = loop[key][i], fast[key][i]
             assert a.dtype == b.dtype, (key, i, a.dtype, b.dtype)
-            np.testing.assert_array_equal(a, b, err_msg=f"{key}[{i}]")
+            assert_matches(a, b, err_msg=f"{key}[{i}]")
         if loop["source_eulers"][i] is None:
             assert fast["source_eulers"][i] is None
         else:
-            np.testing.assert_array_equal(loop["source_eulers"][i], fast["source_eulers"][i])
+            assert_matches(loop["source_eulers"][i], fast["source_eulers"][i])
         # A shared M-step grid is signalled by object identity downstream.
         assert (loop["oversampled_mstep_rots"][i] is loop["oversampled_rots"][i]) == (
             fast["oversampled_mstep_rots"][i] is fast["oversampled_rots"][i]
@@ -93,8 +94,8 @@ def _assert_same(loop, fast):
                 assert vb is None, field
             else:
                 assert va.dtype == vb.dtype, field
-                np.testing.assert_array_equal(va, vb, err_msg=f"mask.{field}[{i}]")
-        np.testing.assert_array_equal(np.asarray(ma), np.asarray(mb))
+                assert_matches(va, vb, err_msg=f"mask.{field}[{i}]")
+        assert_matches(np.asarray(ma), np.asarray(mb))
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
@@ -190,7 +191,7 @@ def test_resident_hypothesis_tables_match_host_device_index_build(monkeypatch):
             for key in ("pair_counts", "local_rotation_row", "translation_idx", "pair_mask", "image_indices"):
                 a, b = np.asarray(host[key]), np.asarray(resident[key])
                 assert a.dtype == b.dtype, key
-                np.testing.assert_array_equal(a, b, err_msg=key)
+                assert_matches(a, b, err_msg=key)
             assert np.asarray(resident["local_rotation_row"]).shape == (8, pair_bucket_size)
     assert calls == [False, True, False, False]
 
@@ -231,10 +232,10 @@ def test_resident_row_indices_gather_matches_index_array_build(monkeypatch):
             for key in ("rotations", "mstep_rotations"):
                 a, b = np.asarray(by_index[key]), np.asarray(resident_build[key])
                 assert a.dtype == b.dtype, key
-                np.testing.assert_array_equal(b, a, err_msg=f"{key} (resident expected={expect_resident})")
+                assert_matches(b, a, err_msg=f"{key} (resident expected={expect_resident})")
             assert (resident_build["mstep_rotations"] is resident_build["rotations"]) == (
                 by_index["mstep_rotations"] is by_index["rotations"])
-            np.testing.assert_array_equal(np.asarray(resident_build["rotations"])[len(image_indices):],
+            assert_matches(np.asarray(resident_build["rotations"])[len(image_indices):],
                                           np.broadcast_to(np.eye(3, dtype=np.float32), (8 - len(image_indices), bucket_size, 3, 3)))
 
 
@@ -266,4 +267,4 @@ def test_preparation_and_resident_tables_preserve_fused_results(monkeypatch, noi
     assert calls, "engine must consume resident rotation tables"
     assert actual.keys() == expected.keys()
     for name in expected:
-        np.testing.assert_array_equal(actual[name], expected[name], err_msg=name)
+        assert_matches(actual[name], expected[name], err_msg=name)

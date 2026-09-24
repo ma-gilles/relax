@@ -9,6 +9,7 @@ import pytest
 from recovar import cuda_backproject as cb
 from relax.cuda import kernels as em_cuda_kernels
 from relax.sparse_pass2 import sparse_pass2_posterior as posterior
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -187,9 +188,9 @@ def test_reference_matches_xla_semantics(shape, variant):
     keep_all = variant == "keep_all"
     ref = reference_fused_posterior(scores, log_z, adaptive_fraction=0.999, keep_all=keep_all, external_sum_weight=external)
     x_log_z, x_probs, x_best, x_argmax, _ = posterior._normalize_pass2_bucket_with_log_z(jnp.asarray(scores), jnp.asarray(log_z))
-    np.testing.assert_array_equal(np.asarray(x_log_z), ref["log_z"])
-    np.testing.assert_array_equal(np.asarray(x_best), ref["best_log_score"])
-    np.testing.assert_array_equal(np.asarray(x_argmax), ref["best_argmax"])
+    assert_matches(np.asarray(x_log_z), ref["log_z"])
+    assert_matches(np.asarray(x_best), ref["best_log_score"])
+    assert_matches(np.asarray(x_argmax), ref["best_argmax"])
     np.testing.assert_allclose(np.asarray(x_probs), ref["probs"], rtol=1e-14, atol=0)
     full = posterior._relion_f32_fine_posterior(
         jnp.asarray(scores),
@@ -206,7 +207,7 @@ def test_reference_matches_xla_semantics(shape, variant):
     disagreements = int((mask != ref["mask"]).sum())
     assert disagreements <= shape[0]
     xla_log_z = np.asarray(posterior._logsumexp_pass2_bucket_score_only(jnp.asarray(scores)))
-    np.testing.assert_array_equal(np.isfinite(reference_log_z(scores)), np.isfinite(xla_log_z))
+    assert_matches(np.isfinite(reference_log_z(scores)), np.isfinite(xla_log_z))
     finite = np.isfinite(xla_log_z)
     np.testing.assert_allclose(reference_log_z(scores)[finite], xla_log_z[finite], rtol=1e-14, atol=0)
 
@@ -267,14 +268,14 @@ def test_kernel_matches_xla_gpu_path(shape, variant):
         value = np.asarray(value)
         assert fused[key].dtype == value.dtype, key
         assert fused[key].shape == value.shape, key
-        np.testing.assert_array_equal(fused[key], value, err_msg=key)
+        assert_matches(fused[key], value, err_msg=key)
     ref = reference_fused_posterior(scores, log_z, adaptive_fraction=0.999, keep_all=keep_all, external_sum_weight=external)
     for key in ("best_log_score", "best_argmax", "log_z"):
-        np.testing.assert_array_equal(fused[key], ref[key], err_msg=key)
+        assert_matches(fused[key], ref[key], err_msg=key)
 
     kernel_log_z = np.asarray(posterior.cuda_logsumexp_pass2_bucket_score_only(jnp.asarray(scores)))
     xla_log_z = np.asarray(posterior._logsumexp_pass2_bucket_score_only(jnp.asarray(scores)))
     assert kernel_log_z.dtype == np.float64 and kernel_log_z.shape == xla_log_z.shape
-    np.testing.assert_array_equal(np.isfinite(kernel_log_z), np.isfinite(xla_log_z))
+    assert_matches(np.isfinite(kernel_log_z), np.isfinite(xla_log_z))
     finite = np.isfinite(xla_log_z)
     np.testing.assert_allclose(kernel_log_z[finite], xla_log_z[finite], rtol=1e-14, atol=0)

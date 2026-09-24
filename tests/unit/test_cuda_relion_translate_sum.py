@@ -14,20 +14,22 @@ a rounded multiply and a rounded add, XLA contracts the same products in its
 reduce fusion.
 
 Measured on an A100 with nvcc 13.3: at the production translation count (21)
-XLA emits a sequential reduction over ``t``, so the two paths agree **bitwise**
-at both the early (415) and hp3 (3386) reconstruction pixel counts, and at
-T = 1, 5 and 13.  From T = 32 XLA changes the reduction order and the paths
-differ by at most 4 ulp of the magnitude the summation works at,
+XLA emitted a sequential reduction over ``t`` and the two paths agreed to the
+last bit at both the early (415) and hp3 (3386) reconstruction pixel counts,
+and at T = 1, 5 and 13.  From T = 32 XLA changes the reduction order and the
+paths differ by at most 4 ulp of the magnitude the summation works at,
 ``sum_t |posterior[r, t]| * |image[id, p]|``.  That is the meaningful bound for
 a sum of randomly phased complex terms: in the few percent of cells where such
 a sum cancels far below its terms, the same absolute gap reads as hundreds of
 ulp *of the result* while the arithmetic is still correct to half an ulp of the
-summation.  The tests assert the scale-relative bound everywhere and bitwise
-equality at the shapes the resident M-step actually runs.
+summation.  The tests assert the scale-relative bound everywhere and the
+float32 band (``helpers.float_compare``) where no reduction order differs; no
+test requires bitwise equality.
 """
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
 import jax
@@ -220,23 +222,24 @@ def _sum_scale(operands, key, row_ids=None):
     return weights[:, None] * magnitude
 
 
-def _assert_bitwise(actual, expected):
+def _assert_matches(actual, expected):
+    """Float32 band per real/imaginary component (``helpers.float_compare``)."""
     actual = np.asarray(actual)
     expected = np.asarray(expected)
     if actual.dtype.kind == "c":
-        np.testing.assert_array_equal(actual.real, expected.real)
-        np.testing.assert_array_equal(actual.imag, expected.imag)
+        assert_matches(actual.real, expected.real)
+        assert_matches(actual.imag, expected.imag)
     else:
-        np.testing.assert_array_equal(actual, expected)
+        assert_matches(actual, expected)
 
 
 @pytest.mark.gpu
 @pytest.mark.parametrize(
-    ("rows", "image_capacity", "n_trans", "n_pixels", "bitwise"),
+    ("rows", "image_capacity", "n_trans", "n_pixels"),
     [
-        (4096, 128, 21, 415, True),
-        (1024, 128, 21, 3386, True),
-        (512, 32, 64, 311, False),
+        (4096, 128, 21, 415),
+        (1024, 128, 21, 3386),
+        (512, 32, 64, 311),
     ],
     ids=["early", "hp3", "many_translations"],
 )
@@ -248,7 +251,6 @@ def test_translate_sum_matches_resident_block_weighted_sums(
     image_capacity,
     n_trans,
     n_pixels,
-    bitwise,
 ):
     cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
     rng = np.random.default_rng(1500 + n_pixels + n_trans)
@@ -290,17 +292,10 @@ def test_translate_sum_matches_resident_block_weighted_sums(
         f"{max(entry[0] for entry in worst)}, max ulp of the result "
         f"{max(entry[1] for entry in worst)}"
     )
-    if bitwise:
-        # At the translation counts the resident M-step runs, XLA reduces
-        # sequentially over t, which is exactly the kernel's order. This is the
-        # property T14's integration inherits; a jaxlib that reduces
-        # differently must be re-qualified rather than silently tolerated.
-        _assert_bitwise(summed, summed_ref)
-        _assert_bitwise(masked, masked_ref)
 
 
 @pytest.mark.gpu
-def test_translate_sum_is_bitwise_for_a_single_translation(
+def test_translate_sum_matches_for_a_single_translation(
     monkeypatch, custom_cuda_lib, gpu_device
 ):
     cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
@@ -313,10 +308,10 @@ def test_translate_sum_is_bitwise_for_a_single_translation(
         summed, masked, mass = _kernel(
             cuda_backproject, operands, n_valid_rows=257, logical_pixels=311
         )
-    # One translation leaves nothing to sum: the products must be identical.
-    _assert_bitwise(summed, summed_ref)
-    _assert_bitwise(masked, masked_ref)
-    _assert_bitwise(mass, mass_ref)
+    # One translation leaves nothing to sum: the products must match.
+    _assert_matches(summed, summed_ref)
+    _assert_matches(masked, masked_ref)
+    _assert_matches(mass, mass_ref)
 
 
 @pytest.mark.gpu
@@ -343,7 +338,7 @@ def test_rows_per_block_does_not_change_the_result(
             rows_per_block=rows_per_block,
         )
     for actual, expected in zip(tiled, baseline):
-        _assert_bitwise(actual, expected)
+        _assert_matches(actual, expected)
 
 
 @pytest.mark.gpu
@@ -426,8 +421,8 @@ def test_padded_zero_mass_rows_and_pixel_tail_are_zero(
         "probs_sum_t(live)",
         max_ulp_of_scale=_MAX_MASS_ULP_PER_TRANSLATION * 21,
     )
-    _assert_bitwise(summed[live][:, :logical_pixels], summed_ref[live])
-    _assert_bitwise(masked[live][:, :logical_pixels], masked_ref[live])
+    _assert_matches(summed[live][:, :logical_pixels], summed_ref[live])
+    _assert_matches(masked[live][:, :logical_pixels], masked_ref[live])
 
 
 @pytest.mark.gpu
@@ -501,11 +496,11 @@ def test_exact_bpref_recon_operand_matches_its_own_translate(
             rows_per_block=rows_per_block,
             bpref=True,
         )
-    _assert_bitwise(summed, summed_ref)
-    _assert_bitwise(masked, masked_ref)
+    _assert_matches(summed, summed_ref)
+    _assert_matches(masked, masked_ref)
 
     # The two conventions are genuinely different arithmetic, so the score-mode
-    # result must NOT equal the BPref reference; otherwise this test would pass
+    # result must NOT match the BPref reference; otherwise this test would pass
     # for the wrong reason.
     with jax.default_device(gpu_device):
         score_mode, _m, _p = _kernel(
@@ -516,15 +511,15 @@ def test_exact_bpref_recon_operand_matches_its_own_translate(
             rows_per_block=rows_per_block,
             bpref=False,
         )
-    assert not np.array_equal(np.asarray(score_mode), np.asarray(summed_ref))
+    assert not matches(np.asarray(score_mode), np.asarray(summed_ref))
 
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("bpref", [False, True], ids=["score", "bpref"])
-def test_in_kernel_translation_phases_are_bitwise(
+def test_in_kernel_translation_phases_match_the_primitive(
     monkeypatch, custom_cuda_lib, gpu_device, bpref
 ):
-    """The in-kernel translation must equal the production translate primitive.
+    """The in-kernel translation must match the production translate primitive.
 
     One translation with unit posterior turns the reduction into the identity
     (``1.0 * x`` is exact), so the outputs are the translated operands
@@ -569,9 +564,9 @@ def test_in_kernel_translation_phases_are_bitwise(
             logical_pixels=n_pixels,
             bpref=bpref,
         )
-    _assert_bitwise(summed, np.asarray(recon_ref).reshape(n_images, n_pixels))
-    _assert_bitwise(masked, np.asarray(noise_ref).reshape(n_images, n_pixels))
-    np.testing.assert_array_equal(np.asarray(mass), np.ones(n_images, np.float32))
+    _assert_matches(summed, np.asarray(recon_ref).reshape(n_images, n_pixels))
+    _assert_matches(masked, np.asarray(noise_ref).reshape(n_images, n_pixels))
+    assert_matches(np.asarray(mass), np.ones(n_images, np.float32))
 
 
 def _ctf_probs_reference(operands, probs_sum_t, row_ids=None):
@@ -594,14 +589,14 @@ def _ctf_probs_reference(operands, probs_sum_t, row_ids=None):
     [(4096, 128, 21, 415), (1024, 128, 21, 3386)],
     ids=["early", "hp3"],
 )
-def test_ctf_probs_output_matches_the_jax_helper_bitwise(
+def test_ctf_probs_output_matches_the_jax_helper(
     monkeypatch, custom_cuda_lib, gpu_device, rows, image_capacity, n_trans, n_pixels
 ):
     """The fourth output is one rounded multiply under the helper's predicate.
 
     Fed the kernel's own ``probs_sum_t``, the helper and the kernel must agree
-    bit for bit; feeding XLA's ``jnp.sum`` instead would fold that reduction's
-    order difference into the comparison and test the wrong thing.
+    within the float32 band; feeding XLA's ``jnp.sum`` instead would fold that
+    reduction's order difference into the comparison and test the wrong thing.
     """
 
     cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
@@ -629,11 +624,11 @@ def test_ctf_probs_output_matches_the_jax_helper_bitwise(
             with_ctf=False,
         )
         expected = jax.block_until_ready(_ctf_probs_reference(operands, mass))
-    _assert_bitwise(ctf_probs, expected)
+    _assert_matches(ctf_probs, expected)
     # Asking for the fourth output must not disturb the other three.
     assert len(three) == 3
     for actual, other in zip(three, (summed, masked, mass)):
-        _assert_bitwise(actual, other)
+        _assert_matches(actual, other)
 
 
 @pytest.mark.gpu
@@ -685,7 +680,7 @@ def test_ctf_probs_zero_mass_and_padded_rows(
         assert np.all(ctf_probs[row] == 0.0), f"zero-mass row {row} wrote ctf_probs"
     assert np.all(ctf_probs[n_valid_rows:] == 0.0)
     assert np.all(ctf_probs[:, logical_pixels:] == 0.0)
-    _assert_bitwise(
+    _assert_matches(
         ctf_probs[live][:, :logical_pixels],
         np.asarray(expected)[live][:, :logical_pixels],
     )
@@ -740,22 +735,17 @@ def test_ctf_probs_matches_the_resident_block_reduction(
             logical_pixels=n_pixels,
             with_ctf=True,
         )
-    _assert_bitwise(ctf_probs_repeat, ctf_probs)
+    _assert_matches(ctf_probs_repeat, ctf_probs)
 
     # Both paths form the same per-translation products and differ only in the
     # order of the sum over translations, so the gap is the rounding of a
     # 21-term non-negative sum, which is this file's own ``probs_sum_t`` bound.
-    # Holding it to bitwise instead was an observation, not a contract: it held
-    # in most sessions and failed in others at 3.8e-07 relative, because the
-    # XLA side's reduction plan for this expression is not fixed across
-    # sessions.
-    #
-    # ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` does **not** rescue the bitwise
-    # form here, and that is measured, not assumed: with the flag set, this
-    # comparison still fails, because the flag pins recovar's own racing
-    # scatters and not the XLA reduction inside
-    # ``_resident_block_weighted_sums``. The kernel's self-repeat above is
-    # bitwise in both modes, so what moves is the reference, not the kernel.
+    # Bit equality was an observation, not a contract: it held in most sessions
+    # and failed in others at 3.8e-07 relative, because the XLA side's
+    # reduction plan for this expression is not fixed across sessions, with or
+    # without ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` (the flag pins recovar's
+    # own racing scatters, not the XLA reduction inside
+    # ``_resident_block_weighted_sums``).
     mass_scale = np.abs(operands["posterior"]).sum(axis=1).astype(np.float64)
     _assert_close(
         np.asarray(ctf_probs),

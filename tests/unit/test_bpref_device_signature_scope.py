@@ -17,6 +17,7 @@ from relax.local import local_em_engine
 from relax.local.local_backprojection import compute_local_mstep_sums
 from relax.refinement import iteration_loop
 from relax.sparse_pass2 import sparse_pass2_bucketed, sparse_pass2_policy
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -934,7 +935,7 @@ def test_fused_kclass_compact_capture_materializes_only_target_rows():
         n_fine_trans=2,
     )
 
-    np.testing.assert_array_equal(capture["image_indices"], np.asarray([11]))
+    assert_matches(capture["image_indices"], np.asarray([11]))
     assert capture["scores"].shape == (1, 4, 2)
     assert capture["scores"][0, 2, 0] == 3.0
     assert capture["scores"][0, 0, 1] == 4.0
@@ -987,10 +988,10 @@ def test_preprocess_capture_preserves_selected_metadata(native, provided, masked
         "image_mask",
         "image_mask_mode",
     ]
-    np.testing.assert_array_equal(result["integer_pre_shifts"], shifts[indices] if provided else np.zeros((2, 2)))
-    np.testing.assert_array_equal(result["batch_image_corrections"], [16.0, 4.0] if provided else [1.0, 1.0])
-    np.testing.assert_array_equal(result["batch_scale_corrections"], [8.0, 2.0] if provided else [1.0, 1.0])
-    np.testing.assert_array_equal(
+    assert_matches(result["integer_pre_shifts"], shifts[indices] if provided else np.zeros((2, 2)))
+    assert_matches(result["batch_image_corrections"], [16.0, 4.0] if provided else [1.0, 1.0])
+    assert_matches(result["batch_scale_corrections"], [8.0, 2.0] if provided else [1.0, 1.0])
+    assert_matches(
         result["relion_preprocess_normalization_factors"], [2.0, 2.0] if native and provided else [1.0, 1.0]
     )
     assert result["relion_cuda_preprocess"] == native
@@ -1001,7 +1002,7 @@ def test_preprocess_capture_preserves_selected_metadata(native, provided, masked
         assert result["image_mask"] is mask
         assert result["image_mask_mode"] == "multiply"
     else:
-        np.testing.assert_array_equal(result["image_mask"], np.ones((4, 4)))
+        assert_matches(result["image_mask"], np.ones((4, 4)))
         assert result["image_mask_mode"] == "none"
 
 

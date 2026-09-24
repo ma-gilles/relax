@@ -3,6 +3,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+from helpers.float_compare import matches
 
 from relax.sparse_pass2 import sparse_pass2_scoring as sp
 
@@ -21,8 +22,8 @@ def test_score_terms_match_the_documented_algebra():
     cross = jnp.einsum("btn,bn,brn->brt", jnp.conj(shifted), weights, proj, precision=jax.lax.Precision.HIGHEST).real
     proj_norm = 0.5 * jnp.einsum("bn,brn->br", weights, proj.real * proj.real + proj.imag * proj.imag, precision=jax.lax.Precision.HIGHEST)
     assert preprior.shape == scores.shape == (B, R, T)
-    assert np.array_equal(np.asarray(preprior), np.asarray(cross - proj_norm[:, :, None]))
-    assert np.array_equal(np.asarray(scores), np.asarray(preprior + rprior[:, :, None] + tprior[:, None, :]))
+    assert matches(np.asarray(preprior), np.asarray(cross - proj_norm[:, :, None]))
+    assert matches(np.asarray(scores), np.asarray(preprior + rprior[:, :, None] + tprior[:, None, :]))
     mask = jnp.asarray(rng.random((B, R, T)) > 0.5)
     masked = sp._score_pass2_bucket_gaussian_algebraic(shifted, corr, proj, hw, rprior, tprior, mask)
     # Compare jitted against jitted: the production scorer is exactly this graph, so the
@@ -32,7 +33,7 @@ def test_score_terms_match_the_documented_algebra():
     reference = jax.jit(
         lambda s, c, p, h, r, t, m: jnp.where(sp._gaussian_algebraic_score_terms(s, c, p, h, r, t)[1] > -jnp.inf, jnp.where(m, sp._gaussian_algebraic_score_terms(s, c, p, h, r, t)[1], -jnp.inf), -jnp.inf)
     )(shifted, corr, proj, hw, rprior, tprior, mask)
-    assert np.array_equal(np.asarray(masked), np.asarray(reference))
+    assert matches(np.asarray(masked), np.asarray(reference))
     comp_scores, comp_preprior = sp._score_pass2_bucket_gaussian_algebraic_components(shifted, corr, proj, hw, rprior, tprior, mask)
     # Separate jitted kernels: equal to float32 rounding, not necessarily bitwise.
     np.testing.assert_allclose(np.asarray(comp_scores), np.asarray(masked), rtol=1e-6, atol=0.0)

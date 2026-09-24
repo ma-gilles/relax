@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.scoring.coarse_device_selection import (
     SELECTION_REASONS,
@@ -62,7 +63,7 @@ def check_oracle(state, *, compiled=True, **overrides):
     for name in ("block_ids", "block_count", "posterior_block_count", "raw_max_block_count"):
         left, right = getattr(actual, name), getattr(expected, name)
         assert left.dtype == right.dtype == np.int32
-        np.testing.assert_array_equal(left, right)
+        assert_matches(left, right)
     return actual
 
 
@@ -97,7 +98,7 @@ def test_inactive_image_rows_are_ignored_and_cleared():
     state.invalid_candidate_count[-1] = 2
     result = check_oracle(state)
     assert result.eligible
-    np.testing.assert_array_equal(result.block_ids[-1], -1)
+    assert_matches(result.block_ids[-1], -1)
     assert result.block_count[-1] == result.posterior_block_count[-1] == result.raw_max_block_count[-1] == 0
 
 
@@ -205,7 +206,7 @@ def test_empty_selection_is_unreachable_for_finite_ordered_nonempty_intervals():
     state = fixture_state(blocks=1)
     result = check_oracle(state, block_capacity=1)
     assert result.eligible
-    np.testing.assert_array_equal(result.block_count, [1, 1, 0])
+    assert_matches(result.block_count, [1, 1, 0])
 
 
 def test_runtime_image_prefix_composes_and_reuses_one_trace():
@@ -225,7 +226,7 @@ def test_runtime_image_prefix_composes_and_reuses_one_trace():
         assert actual.eligible == expected.eligible
         assert actual.fallback_reason == expected.fallback_reason
         for name in ("block_ids", "block_count", "posterior_block_count", "raw_max_block_count"):
-            np.testing.assert_array_equal(getattr(actual, name), getattr(expected, name))
+            assert_matches(getattr(actual, name), getattr(expected, name))
     assert len(traces) == 1
 
 

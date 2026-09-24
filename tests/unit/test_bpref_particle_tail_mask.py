@@ -10,6 +10,7 @@ import pytest
 from recovar import cuda_backproject as cb
 from relax.cuda import kernels as em_cuda_kernels
 from test_bpref_optional_denominator import arguments, device
+from helpers.float_compare import assert_matches, matches
 
 pytestmark = pytest.mark.unit
 
@@ -120,13 +121,13 @@ def test_mask_is_default_off_and_changes_only_ffi_attribute(monkeypatch, stable)
     }
     for a, b in zip(left[3], right[3], strict=True):
         assert a.shape == b.shape and a.dtype == b.dtype
-        assert np.asarray(a).tobytes() == np.asarray(b).tobytes()
+        assert_matches(np.asarray(a), np.asarray(b), strict=True)
 
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("stable", [False, True])
 @pytest.mark.parametrize("active,capacity", [(1, 4), (2, 4), (2, 2)])
-def test_gpu_nonzero_tail_is_excluded_bitwise(stable, active, capacity):
+def test_gpu_nonzero_tail_is_excluded(stable, active, capacity):
     assert jax.default_backend() == "gpu"
     fn = em_cuda_kernels.relion_vdam_mstep_fused_projector_x_half
     prefix, padded = padded_arguments(stable, active, capacity)
@@ -134,10 +135,10 @@ def test_gpu_nonzero_tail_is_excluded_bitwise(stable, active, capacity):
     actual = jax.block_until_ready(fn(**device(padded)))
     assert actual[2] is None
     # Ensure this fixture actually scatters, rather than accepting a no-op.
-    assert np.asarray(original[0]).tobytes() != prefix["data_volume"].tobytes()
+    assert not matches(np.asarray(original[0]), prefix["data_volume"])
     for a, b in zip(original[:2], actual[:2], strict=True):
         assert np.isfinite(np.asarray(b)).all()
-        assert np.asarray(a).tobytes() == np.asarray(b).tobytes()
+        assert_matches(np.asarray(a), np.asarray(b), strict=True)
 
 
 @pytest.mark.gpu

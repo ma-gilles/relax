@@ -6,6 +6,7 @@ import pytest
 from recovar import cuda_backproject as cb
 from relax.cuda import kernels as em_cuda_kernels
 from test_bpref_optional_denominator import arguments, device
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -61,7 +62,7 @@ def test_logical_half_matches_full_cube_bitwise(padding, grouped, stable, denomi
             assert new is None
         else:
             assert np.isfinite(np.asarray(new)).all()
-            assert np.asarray(old).tobytes() == np.asarray(new).tobytes()
+            assert_matches(np.asarray(old), np.asarray(new), strict=True)
 
 
 @pytest.mark.gpu
@@ -93,7 +94,7 @@ def test_local_physical_carry_consumes_inputs_and_preserves_results(grouped, sta
     ))
     assert data.is_deleted() and weight.is_deleted()
     for old, new in zip(expected[:2], actual, strict=True):
-        assert np.asarray(old).tobytes() == np.asarray(new).tobytes()
+        assert_matches(np.asarray(old), np.asarray(new), strict=True)
 
 
 @pytest.mark.gpu
@@ -192,5 +193,5 @@ _rlnPhaseShift #5
             expected = actual
         else:
             for name, value in actual.items():
-                np.testing.assert_array_equal(value, expected[name])
+                assert_matches(value, expected[name])
     assert calls == [True, True, False, False]

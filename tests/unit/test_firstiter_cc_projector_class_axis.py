@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -23,7 +24,7 @@ def test_k1_single_slab_gains_class_axis_before_upload():
     result = _class_stacked_coarse_relion_projector(slab, 1, use_float64_scoring=False, use_float64_projections=False)
     assert result.shape == (1, 23, 23, 12)
     assert result.dtype == np.complex64
-    np.testing.assert_array_equal(np.asarray(result)[0], slab)
+    assert_matches(np.asarray(result)[0], slab)
 
 
 def test_class_stacked_projector_passes_through_and_rejects_mismatches():
@@ -33,7 +34,7 @@ def test_class_stacked_projector_passes_through_and_rejects_mismatches():
     result = _class_stacked_coarse_relion_projector(
         stacked, 2, use_float64_scoring=False, use_float64_projections=False
     )
-    np.testing.assert_array_equal(np.asarray(result), stacked)
+    assert_matches(np.asarray(result), stacked)
     with pytest.raises(ValueError, match="relion_projector_half must have shape"):
         _class_stacked_coarse_relion_projector(stacked[0], 2, use_float64_scoring=False, use_float64_projections=False)
     with pytest.raises(ValueError, match="relion_projector_half must have shape"):

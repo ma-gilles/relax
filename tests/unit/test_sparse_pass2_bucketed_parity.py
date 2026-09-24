@@ -17,6 +17,7 @@ import inspect
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
@@ -200,8 +201,8 @@ def _compare_outputs(
             )
 
     # Hard assignments must match exactly (decoded from probs argmax).
-    np.testing.assert_array_equal(np.asarray(ha_ref), np.asarray(ha_b))
-    np.testing.assert_array_equal(np.asarray(best_idx_ref), np.asarray(best_idx_b))
+    assert_matches(np.asarray(ha_ref), np.asarray(ha_b))
+    assert_matches(np.asarray(best_idx_ref), np.asarray(best_idx_b))
     np.testing.assert_allclose(np.asarray(best_rot_ref), np.asarray(best_rot_b), atol=1e-6)
     np.testing.assert_allclose(np.asarray(best_tr_ref), np.asarray(best_tr_b), atol=1e-6)
 
@@ -353,8 +354,8 @@ def test_sparse_pass2_winner_take_all_bucket_probs_are_one_hot():
 
     probs = _winner_take_all_bucket_probs(scores, best_argmax, best_log_score)
 
-    np.testing.assert_array_equal(np.asarray(probs[0]), np.asarray([[0.0, 1.0], [0.0, 0.0]], dtype=np.float32))
-    np.testing.assert_array_equal(np.asarray(probs[1]), np.zeros((2, 2), dtype=np.float32))
+    assert_matches(np.asarray(probs[0]), np.asarray([[0.0, 1.0], [0.0, 0.0]], dtype=np.float32))
+    assert_matches(np.asarray(probs[1]), np.zeros((2, 2), dtype=np.float32))
 
 
 def test_sparse_pass2_score_masks_nonfinite_direct_diff2_candidates():
@@ -440,10 +441,10 @@ def test_sparse_pass2_mstep_rotations_follow_score_selection_padding_and_reorder
         fine_rotation_parent_override=parent_map,
     )
 
-    np.testing.assert_array_equal(per_image["oversampled_rots"][0], score_rotations)
-    np.testing.assert_array_equal(per_image["oversampled_mstep_rots"][0], mstep_rotations)
-    np.testing.assert_array_equal(per_image["oversampled_rots"][1], score_rotations[2:])
-    np.testing.assert_array_equal(per_image["oversampled_mstep_rots"][1], mstep_rotations[2:])
+    assert_matches(per_image["oversampled_rots"][0], score_rotations)
+    assert_matches(per_image["oversampled_mstep_rots"][0], mstep_rotations)
+    assert_matches(per_image["oversampled_rots"][1], score_rotations[2:])
+    assert_matches(per_image["oversampled_mstep_rots"][1], mstep_rotations[2:])
 
     arrays = _build_bucket_arrays(
         {"bucket_size": 6, "image_indices": np.asarray([0, 1], dtype=np.int64)},
@@ -470,8 +471,8 @@ def test_sparse_pass2_mstep_rotations_follow_score_selection_padding_and_reorder
             np.concatenate([mstep_rotations, np.broadcast_to(identity, (2, 3, 3))]),
         ]
     )
-    np.testing.assert_array_equal(reordered_score, expected_score)
-    np.testing.assert_array_equal(reordered_mstep, expected_mstep)
+    assert_matches(reordered_score, expected_score)
+    assert_matches(reordered_mstep, expected_mstep)
 
     aliased = _prepare_per_image_pass2_inputs(
         significant_samples,
@@ -539,8 +540,8 @@ def test_sparse_pass2_prepare_per_image_inputs_honors_explicit_float64_dtype():
     assert bucket["rotations"].dtype == np.float64
     assert bucket["mstep_rotations"].dtype == np.float64
     assert bucket["log_prior"].dtype == np.float64
-    np.testing.assert_array_equal(bucket["rotations"][0, :4], score_rotations)
-    np.testing.assert_array_equal(bucket["mstep_rotations"][0, :4], mstep_rotations)
+    assert_matches(bucket["rotations"][0, :4], score_rotations)
+    assert_matches(bucket["mstep_rotations"][0, :4], mstep_rotations)
     assert bucket["log_prior"][0, 0] == 1.0 + 2.0**-40
     np.testing.assert_allclose(
         f64_out["oversampled_rots"][0], default_out["oversampled_rots"][0], atol=1e-6
@@ -610,14 +611,14 @@ def test_sparse_pass2_distinct_mstep_rotations_do_not_change_score_path(monkeypa
         **common,
     )
 
-    np.testing.assert_array_equal(overridden.hard_assignment, baseline.hard_assignment)
-    np.testing.assert_array_equal(overridden.best_rotations, baseline.best_rotations)
-    np.testing.assert_array_equal(overridden.best_rotation_indices, baseline.best_rotation_indices)
-    np.testing.assert_array_equal(
+    assert_matches(overridden.hard_assignment, baseline.hard_assignment)
+    assert_matches(overridden.best_rotations, baseline.best_rotations)
+    assert_matches(overridden.best_rotation_indices, baseline.best_rotation_indices)
+    assert_matches(
         np.asarray(overridden.relion_stats.best_log_score_per_image),
         np.asarray(baseline.relion_stats.best_log_score_per_image),
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(overridden.relion_stats.max_posterior_per_image),
         np.asarray(baseline.relion_stats.max_posterior_per_image),
     )
@@ -633,7 +634,7 @@ def test_sparse_pass2_distinct_mstep_rotations_do_not_change_score_path(monkeypa
     expected_adjoint_rotations = np.asarray(expected_rows, dtype=np.float32)
     assert len(captured_adjoint_rotations) == 2
     for actual in captured_adjoint_rotations:
-        np.testing.assert_array_equal(actual, expected_adjoint_rotations)
+        assert_matches(actual, expected_adjoint_rotations)
 
 
 def test_sparse_pass2_per_particle_xhalf_uses_mstep_rotation_tensor():

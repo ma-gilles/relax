@@ -4,6 +4,7 @@ import pickle
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.scoring import compact_candidates
 from relax.scoring.compact_candidates import (
@@ -38,7 +39,7 @@ def test_coarse_row_expansion_matches_independent_dense_mask(monkeypatch, mode, 
     actual = compact_candidate_indices_in_source_order(mask)
     for old, new in zip(expected, actual, strict=True):
         assert new.dtype == old.dtype
-        np.testing.assert_array_equal(new, old)
+        assert_matches(new, old)
 
 
 @pytest.mark.parametrize("protocol", [4, 5])
@@ -59,26 +60,26 @@ def test_sparse_mask_roundtrip_and_source_order(mode, protocol):
         "coarse": [[False, True, False], [True, False, True]],
         "coarse_exclude": [[True, True, True], [True, False, True]],
     }[mode]
-    np.testing.assert_array_equal(np.asarray(mask), expected)
+    assert_matches(np.asarray(mask), expected)
     assert mask.count == np.count_nonzero(expected)
     packed = pickle.dumps(mask, protocol=protocol)
     restored = pickle.loads(packed)
     assert type(restored) is SparseCandidateMask
-    np.testing.assert_array_equal(np.asarray(restored), expected)
+    assert_matches(np.asarray(restored), expected)
     rows, translations = compact_candidate_indices_in_source_order(restored)
-    np.testing.assert_array_equal(rows * 3 + translations, np.flatnonzero(expected))
+    assert_matches(rows * 3 + translations, np.flatnonzero(expected))
 
 
 def test_pair_and_job_prefix_preserve_image_rotation_translation_order():
     masks = np.array([[[False, True], [True, True]], [[True, False], [False, False]]])
     pair = build_compact_pair_index_arrays(masks, pair_bucket_size=4)
-    np.testing.assert_array_equal(pair["pair_counts"], [3, 1])
-    np.testing.assert_array_equal(pair["local_rotation_row"], [[0, 1, 1, -1], [0, -1, -1, -1]])
-    np.testing.assert_array_equal(pair["translation_idx"], [[1, 0, 1, -1], [0, -1, -1, -1]])
+    assert_matches(pair["pair_counts"], [3, 1])
+    assert_matches(pair["local_rotation_row"], [[0, 1, 1, -1], [0, -1, -1, -1]])
+    assert_matches(pair["translation_idx"], [[1, 0, 1, -1], [0, -1, -1, -1]])
     jobs = build_compact_fine_job_plan_from_pair_arrays(
         pair, np.array([[7, 3], [5, 2]], dtype=np.int32), job_bucket_size=6
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         jobs["job_plan"],
         [[0, 7, 0, 1], [0, 3, 1, 0], [0, 3, 1, 1], [1, 5, 0, 0], [-1, -1, -1, -1], [-1, -1, -1, -1]],
     )

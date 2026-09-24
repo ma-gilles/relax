@@ -9,6 +9,7 @@ from recovar import cuda_backproject as cb
 from relax.cuda import kernels as em_cuda_kernels
 from relax.helpers import projection
 from relax.scoring import significance
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -89,7 +90,7 @@ def test_compact_boundary_survives_runtime_image_radius(monkeypatch):
         )
 
     for radius in (12, 13):
-        np.testing.assert_array_equal(run(jnp.int32(radius)), [[1 + 0j]])
+        assert_matches(run(jnp.int32(radius)), [[1 + 0j]])
     assert run._cache_size() == 1 and len(calls) == 1
     assert calls[0][0] == (33, 33, 17)
     assert calls[0][1].shape == calls[0][2].shape == ()
@@ -116,10 +117,10 @@ def test_gpu_rotated_boundary_and_original_texture():
         image_shape=(32, 32),
         image_r_max=jnp.int32(15),
     )
-    np.testing.assert_array_equal(np.asarray(equal_radius).view(np.uint32), np.asarray(old).view(np.uint32))
+    assert_matches(np.asarray(equal_radius), np.asarray(old))
     old, clipped = np.asarray(old).reshape(32, 17), np.asarray(clipped).reshape(32, 17)
     kept = clipped != 0
-    np.testing.assert_array_equal(clipped[kept].view(np.uint32), old[kept].view(np.uint32))
+    assert_matches(clipped[kept], old[kept])
     assert clipped[16 - 11, 7] != 0  # Exact image-disk masking loses this sample.
     assert clipped[16 + 12, 12] == 0
     assert clipped[16, 0] == old[16, 0]
@@ -161,4 +162,4 @@ def test_default_texture_passes_active_image_radius_to_kernel(monkeypatch, activ
         projector_output_size=32, current_image_mask_size=active_size,
     )
     assert calls == [16 if active_size is None else 13]
-    np.testing.assert_array_equal(np.asarray(result), np.ones((1, 32 * 17), np.complex64))
+    assert_matches(np.asarray(result), np.ones((1, 32 * 17), np.complex64))

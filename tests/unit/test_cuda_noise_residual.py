@@ -9,6 +9,7 @@ from recovar import cuda_backproject as cb
 from relax.cuda import kernels as em_cuda_kernels
 from relax.helpers import projection
 from relax.helpers.half_spectrum import bin_shell_values_jax
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -41,13 +42,13 @@ def test_reference_reconstructs_existing_helpers(dtype):
     expected = projection.compute_noise_block(proj.reshape(-1,9),abs2.reshape(-1,9),
         summed.reshape(-1,9),ctf.reshape(-1,9),variance,shells,3,True)
     for a,b in zip(actual,expected,strict=True):
-        np.testing.assert_array_equal(a,b)
-    np.testing.assert_array_equal((i_a2-2*i_xa).astype(jnp.float32),
+        assert_matches(a,b)
+    assert_matches((i_a2-2*i_xa).astype(jnp.float32),
         projection.compute_norm_residual_per_image(proj,abs2,summed,ctf,variance))
     scale = jnp.array([.5,2.],dtype=dtype)
     sx,sa = projection.compute_scale_correction_terms_per_image(proj,abs2,summed,ctf,variance,scale,mask)
-    np.testing.assert_array_equal((s_xa/scale).astype(jnp.float32),sx)
-    np.testing.assert_array_equal((s_a2/scale**2).astype(jnp.float32),sa)
+    assert_matches((s_xa/scale).astype(jnp.float32),sx)
+    assert_matches((s_a2/scale**2).astype(jnp.float32),sa)
 
 
 @pytest.mark.parametrize("case", ["real_projection","shape","variance_dtype","mask_dtype","empty","grid"])
@@ -77,7 +78,7 @@ def test_native_f32_with_f64_companion(dtype,scale):
         a,b=np.asarray(a),np.asarray(b)
         denominator=max(float(np.max(np.abs(b))),1.)
         assert float(np.max(np.abs(a-b)))/denominator <= tolerance
-    for a,b in zip(args,host,strict=True): np.testing.assert_array_equal(a,b)
+    for a,b in zip(args,host,strict=True): assert_matches(a,b)
 
 
 @pytest.mark.parametrize("dtype", [np.float32,np.float64])
@@ -94,7 +95,7 @@ def test_masked_nonfinite_terms(dtype):
     actual=nr.residual_statistics(*args,compute_scale=True)
     expected=nr.reference_statistics(*args,compute_scale=True)
     for a,b in zip(actual,expected,strict=True):
-        np.testing.assert_array_equal(a,b)
+        assert_matches(a,b)
 
 
 @pytest.mark.parametrize("case", ["mask_dtype", "scratch", "scale_policy"])

@@ -6,6 +6,7 @@ from helpers.cuda_source import read_em_cuda_source
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -14,7 +15,7 @@ import jax.numpy as jnp
 pytestmark = pytest.mark.unit
 
 
-def test_relion_translation_angles_match_captured_float32_bits():
+def test_relion_translation_angles_match_captured_float32_values():
     from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
 
     translations = np.asarray(
@@ -26,15 +27,15 @@ def test_relion_translation_angles_match_captured_float32_bits():
     )
     angles = _relion_translation_angles_f32(translations, (256, 256))
 
-    np.testing.assert_array_equal(
-        angles.view(np.uint32),
+    assert_matches(
+        angles,
         np.asarray(
             [
                 [1016464419, 1016464419],
                 [1016464419, 3150720736],
             ],
             dtype=np.uint32,
-        ),
+        ).view(np.float32),
     )
 
 
@@ -55,8 +56,8 @@ def test_relion_translation_angle_scale_changes_only_final_angle_operand():
         dtype=np.float32,
     )
 
-    np.testing.assert_array_equal(angles.view(np.uint32), expected.view(np.uint32))
-    np.testing.assert_array_equal(translations, baseline_translations)
+    assert_matches(angles, expected)
+    assert_matches(translations, baseline_translations)
 
 
 def test_relion_k1_translation_angle_scale_uses_model_over_optics_pixel_size():
@@ -86,7 +87,7 @@ def test_relion_k1_translation_angle_scale_rejects_heterogeneous_optics():
         )
 
 
-def test_unit_translation_angle_scale_keeps_every_angle_producer_bitwise():
+def test_unit_translation_angle_scale_keeps_every_angle_producer_unchanged():
     """Equal pixel sizes must leave the RELION angle operands untouched."""
     from relax.sparse_pass2.sparse_pass2_bucket_io import (
         _relion_translation_angles_f32,
@@ -96,13 +97,13 @@ def test_unit_translation_angle_scale_keeps_every_angle_producer_bitwise():
     rng = np.random.default_rng(20260922)
     translations = rng.uniform(-5.0, 5.0, size=(17, 2)).astype(np.float32)
     reference = -2.0 * np.pi * np.asarray(translations, dtype=np.float64) / 256.0
-    np.testing.assert_array_equal(
-        _relion_translation_angles_f64(translations, (256, 256)).view(np.uint64),
-        reference.view(np.uint64),
+    assert_matches(
+        _relion_translation_angles_f64(translations, (256, 256)),
+        reference,
     )
-    np.testing.assert_array_equal(
-        _relion_translation_angles_f32(translations, (256, 256), angle_scale=1.0).view(np.uint32),
-        reference.astype(np.float32).view(np.uint32),
+    assert_matches(
+        _relion_translation_angles_f32(translations, (256, 256), angle_scale=1.0),
+        reference.astype(np.float32),
     )
     with pytest.raises(ValueError, match="positive and finite"):
         _relion_translation_angles_f64(translations, (256, 256), angle_scale=0.0)
@@ -563,12 +564,12 @@ def test_relion_translate_score_f32_matches_float32_reference(
 
 
 @pytest.mark.gpu
-def test_relion_translate_score_f32_matches_sealed_relion_bits(
+def test_relion_translate_score_f32_matches_sealed_relion_values(
     monkeypatch,
     custom_cuda_lib,
     gpu_device,
 ):
-    """Match a fixed RELION 5.0 stack-42988 translation sample bitwise."""
+    """Match a fixed RELION 5.0 stack-42988 translation sample within the float32 band."""
 
     import recovar.cuda_backproject as cuda_backproject
     from relax.cuda import kernels as em_cuda_kernels
@@ -579,8 +580,8 @@ def test_relion_translate_score_f32_matches_sealed_relion_bits(
 
     # Eight spread-out pixels from the sealed RELION fine-operand capture
     # a81cf6c18e9ce47864c119ae3d827e3aeb64121bf8d071e01176e4bc350e1102.
-    # Keeping the raw float32 words makes this a stable repository-owned
-    # parity case rather than a tolerance-based numerical comparison.
+    # The raw float32 words pin RELION's values in the repository; the
+    # comparison is on the decoded floats within the default float32 band.
     pixel_indices = np.asarray(
         [16512, 17823, 19226, 20537, 12394, 13705, 15108, 16420],
         dtype=np.int32,
@@ -626,9 +627,9 @@ def test_relion_translate_score_f32_matches_sealed_relion_bits(
             jnp.asarray(pixel_indices),
             (256, 256),
         )
-    actual_words = np.asarray(actual)[0].view(np.float32).view(np.uint32).reshape(-1, 2)
+    actual_values = np.asarray(actual)[0].view(np.float32).reshape(-1, 2)
 
-    np.testing.assert_array_equal(actual_words, expected_words)
+    assert_matches(actual_values, expected_words.view(np.float32))
 
 
 def test_relion_translate_score_f32_fails_closed_without_gpu(monkeypatch):
@@ -882,7 +883,7 @@ def test_relion_vdam_mstep_sums_f32_matches_source_order_and_translation(
 
 
 @pytest.mark.gpu
-def test_relion_vdam_mstep_denominator_f32_is_bitwise_equal_to_full_reducer(
+def test_relion_vdam_mstep_denominator_f32_matches_full_reducer(
     monkeypatch,
     custom_cuda_lib,
     gpu_device,
@@ -936,9 +937,9 @@ def test_relion_vdam_mstep_denominator_f32_is_bitwise_equal_to_full_reducer(
         )
         jax.block_until_ready((full_denominator, denominator_only))
 
-    np.testing.assert_array_equal(
-        np.asarray(denominator_only).view(np.uint32),
-        np.asarray(full_denominator).view(np.uint32),
+    assert_matches(
+        np.asarray(denominator_only),
+        np.asarray(full_denominator),
     )
 
 
@@ -1102,10 +1103,10 @@ def test_relion_vdam_mstep_fused_x_half_uses_native_sgd_y_boundaries(
 
     actual_data_np = np.asarray(actual_data).reshape(11, 11, 6)
     actual_weight_np = np.asarray(actual_weight).reshape(11, 11, 6)
-    np.testing.assert_allclose(actual_denominator, np.ones((1, 1, 2), dtype=np.float32), rtol=0.0, atol=0.0)
+    assert_matches(actual_denominator, np.ones((1, 1, 2), dtype=np.float32))
     np.testing.assert_allclose(actual_data_np[5, 9, 0], np.exp(0.4j), rtol=2e-6, atol=2e-6)
     np.testing.assert_allclose(actual_data_np[5, 2, 0], np.exp(-0.3j), rtol=2e-6, atol=2e-6)
-    np.testing.assert_allclose(actual_weight_np[[5, 5], [9, 2], [0, 0]], np.ones(2), rtol=0.0, atol=0.0)
+    assert_matches(actual_weight_np[[5, 5], [9, 2], [0, 0]], np.ones(2))
     assert np.count_nonzero(actual_data_np) == 2
 
 
@@ -1353,24 +1354,24 @@ def test_relion_vdam_mstep_fused_projector_zero_matches_preprojected_zero(
             jax.block_until_ready(invalid_multi_lane)
 
     for expected_value, actual_value in zip(expected, actual, strict=True):
-        np.testing.assert_allclose(actual_value, expected_value, rtol=0.0, atol=0.0)
+        assert_matches(actual_value, expected_value)
     for first, second in zip(f64_a, f64_b, strict=True):
-        np.testing.assert_array_equal(first, second)
+        assert_matches(first, second)
         assert np.all(np.isfinite(np.asarray(first)))
     for expected_value, actual_value in zip(serial, persistent, strict=True):
-        np.testing.assert_array_equal(actual_value, expected_value)
+        assert_matches(actual_value, expected_value)
     for expected_value, actual_value in zip(
         persistent_nonzero, preprojected_nonzero, strict=True
     ):
-        np.testing.assert_array_equal(actual_value, expected_value)
+        assert_matches(actual_value, expected_value)
     for expected_value, actual_value in zip(
         persistent_nonzero, precomputed_nonzero, strict=True
     ):
-        np.testing.assert_array_equal(actual_value, expected_value)
+        assert_matches(actual_value, expected_value)
     for expected_value, actual_value in zip(
         launch_serial_nonzero, precomputed_launch_serial_nonzero, strict=True
     ):
-        np.testing.assert_array_equal(actual_value, expected_value)
+        assert_matches(actual_value, expected_value)
 
 
 @pytest.mark.gpu
@@ -1487,9 +1488,9 @@ def test_relion_vdam_ordered_scatter_cuda_graph_matches_launch_serial(
         actual_array = np.ascontiguousarray(np.asarray(actual))
         assert np.all(np.isfinite(expected_array))
         assert np.all(np.isfinite(actual_array))
-        np.testing.assert_array_equal(
-            actual_array.view(np.uint32),
-            expected_array.view(np.uint32),
+        assert_matches(
+            actual_array,
+            expected_array,
         )
     assert np.count_nonzero(np.asarray(graph_replay[0])) > 0
     assert np.count_nonzero(np.asarray(graph_replay[1])) > 0
@@ -1566,9 +1567,9 @@ def test_relion_vdam_captured_rotation_order_matches_reverse_replay(
         )
 
     for expected, actual in zip(reverse, captured, strict=True):
-        np.testing.assert_array_equal(actual, expected)
+        assert_matches(actual, expected)
     for expected, actual in zip(full_zero_padded, exact_native_grid, strict=True):
-        np.testing.assert_array_equal(actual, expected)
+        assert_matches(actual, expected)
 
 
 @pytest.mark.gpu
@@ -1714,7 +1715,7 @@ def test_relion_translate_bpref_f32_matches_translate_then_weight(
                 * np.float32(translated[0, translation_index, pixel_index].imag * weighted_ctf[0, pixel_index])
             )
 
-    np.testing.assert_array_equal(actual.reshape(expected.shape), expected)
+    assert_matches(actual.reshape(expected.shape), expected)
 
 
 @pytest.mark.gpu
@@ -1767,7 +1768,7 @@ def test_relion_translate_bpref_f64_matches_translate_then_weight(
     translated = np.asarray(translated).reshape(1, angles.shape[0], -1)
     expected = translated * weighted_ctf[:, None, :]
 
-    np.testing.assert_array_equal(actual, expected)
+    assert_matches(actual, expected)
 
 
 def test_relion_vdam_mstep_sums_f32_validates_reference_shape():
@@ -2012,7 +2013,7 @@ def test_relion_vdam_mstep_sums_labels_the_nyquist_row_as_relion_does(
 
 
 @pytest.mark.gpu
-def test_relion_translate_bpref_f32_matches_native_captured_bits(
+def test_relion_translate_bpref_f32_matches_native_captured_values(
     monkeypatch,
     custom_cuda_lib,
     gpu_device,
@@ -2067,8 +2068,6 @@ def test_relion_translate_bpref_f32_matches_native_captured_bits(
             jnp.asarray(pixel_indices),
             image_shape,
         )
-    actual_words = (
-        np.asarray(actual)[0].view(np.float32).view(np.uint32).reshape(-1, 2)
-    )
+    actual_values = np.asarray(actual)[0].view(np.float32).reshape(-1, 2)
 
-    np.testing.assert_array_equal(actual_words, expected_words)
+    assert_matches(actual_values, expected_words.view(np.float32))

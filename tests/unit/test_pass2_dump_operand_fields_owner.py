@@ -3,6 +3,7 @@
 import inspect
 
 import numpy as np
+from helpers.float_compare import matches
 
 from relax.diagnostics import pass2 as pass2_diagnostics
 
@@ -34,10 +35,10 @@ def test_present_operands_take_the_row_with_their_capture_dtypes():
         direct_preprocess_normalization_factors=np.asarray([0.9, 1.1], dtype=np.float32), direct_integer_pre_shifts=np.asarray([[1, -1], [2, 0]]),
         direct_batch_image_corrections=np.asarray([1.5, 2.5], dtype=np.float32), direct_batch_scale_corrections=np.asarray([0.5, 0.75], dtype=np.float32),
     )
-    assert np.array_equal(fields["shifted_corrected"], shifted[1]) and np.array_equal(fields["direct_score_input"], shifted[1] * 2)
-    assert np.array_equal(fields["direct_pixel_correction"], ctf[1])
-    assert np.array_equal(fields["direct_inverse_noise_score"], [1.0, 2.0, 3.0])
-    assert fields["direct_ctf_rfloat_score"].dtype == np.float64 and np.array_equal(fields["direct_ctf_rfloat_score"], ctf[1] * 2)
+    assert matches(fields["shifted_corrected"], shifted[1]) and matches(fields["direct_score_input"], shifted[1] * 2)
+    assert matches(fields["direct_pixel_correction"], ctf[1])
+    assert matches(fields["direct_inverse_noise_score"], [1.0, 2.0, 3.0])
+    assert fields["direct_ctf_rfloat_score"].dtype == np.float64 and matches(fields["direct_ctf_rfloat_score"], ctf[1] * 2)
     assert fields["relion_preprocess_normalization_factor"] == np.float32(1.1)
     assert fields["relion_integer_pre_shift"].dtype == np.int32 and fields["relion_integer_pre_shift"].tolist() == [2, 0]
     assert fields["batch_image_correction"] == np.float32(2.5) and fields["batch_scale_correction"] == np.float32(0.75)

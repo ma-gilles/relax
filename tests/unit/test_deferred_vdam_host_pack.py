@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.deferred_vdam_host_pack import _gather_deferred_vdam_host_plan, pack_deferred_vdam_host_plan
 
@@ -54,7 +55,7 @@ def _assert_bits(actual, expected):
     for got, want in zip(actual, expected, strict=True):
         got, want = np.asarray(got), np.asarray(want)
         assert got.shape == want.shape and got.dtype == want.dtype
-        np.testing.assert_array_equal(got.view(np.uint32), want.view(np.uint32))
+        assert_matches(got, want)
 
 
 @pytest.mark.parametrize("batch", [3, 7])

@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.bpref_transaction import BprefTransactionQueue
 
@@ -35,7 +36,7 @@ def test_cuda_packing_queue_dispatch_preserves_bucket_boundaries(monkeypatch):
     assert capacity == 256 and len(columns) == 6
     assert all(tuple(a.shape[0] for a in column) == (42, 42, 42, 42, 32) for column in columns)
     assert calls[0]["particle_tail_mask"] is True
-    np.testing.assert_array_equal(np.asarray(calls[0]["reconstruction_group_ids"])[200:], -1)
+    assert_matches(np.asarray(calls[0]["reconstruction_group_ids"])[200:], -1)
     assert calls[0]["projector_full"] is common["projector"]
 
 
@@ -165,14 +166,14 @@ def test_consecutive_batches_preserve_all_rows_and_local_worker_ids():
     ]:
         expected = np.concatenate([a[index] for a in original], axis=0)
         assert np.asarray(merged[name]).dtype == expected.dtype
-        assert np.asarray(merged[name]).tobytes() == expected.tobytes()
-    np.testing.assert_array_equal(
+        assert_matches(np.asarray(merged[name]), expected, strict=True)
+    assert_matches(
         np.asarray(merged["worker_lane_ids"]), np.concatenate([np.arange(n) % 8 for n in (42, 42, 42, 42, 32)])
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(merged["particle_trace_ids"]), np.concatenate([np.arange(n) for n in (42, 42, 42, 42, 32)])
     )
-    np.testing.assert_array_equal(np.asarray(merged["reconstruction_group_ids"]), np.arange(200) % 2)
+    assert_matches(np.asarray(merged["reconstruction_group_ids"]), np.arange(200) % 2)
     assert merged["parallel_worker_replay"] is False and merged["return_denominator"] is False
     assert merged["projector_full"] is common["projector"]
     assert merged["translation_angles"] is common["translations"]

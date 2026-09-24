@@ -1,4 +1,4 @@
-"""Noise padding remains an exact byte copy with a device-resident tail index."""
+"""Noise padding copies the prefix and fills the tail with a device-resident index."""
 
 from types import SimpleNamespace
 
@@ -12,6 +12,7 @@ from relax.cuda import kernels as em_cuda_kernels
 from relax.dense.deferred_noise_pack import _pad_noise_pixels, pack_noise_pixel_capacity
 from relax.helpers.env_flags import parse_env_binary_flag
 from relax.local import local_em_engine as engine
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -170,12 +171,13 @@ def test_gpu_all_prefix_tail_and_input_bytes(batch, target, wide):
     jax.block_until_ready((reference, actual))
     for a, b in zip(actual, reference, strict=True):
         assert a.shape == b.shape and a.dtype == b.dtype
-        assert np.asarray(a).tobytes() == np.asarray(b).tobytes()
+        assert_matches(np.asarray(a), np.asarray(b), strict=True)
+    # Input buffers not modified: byte snapshot of the same data, no float computation.
     for a, b in zip(arrays, inputs, strict=True):
         assert a.tobytes() == np.asarray(b).tobytes()
     for a in actual[:3]:
-        assert np.asarray(a)[batch:].tobytes() == np.zeros(a.shape[0:1] + a.shape[1:], a.dtype)[batch:].tobytes()
-    assert np.asarray(actual[3])[batch:].tobytes() == np.full(target - batch, arrays[4], arrays[3].dtype).tobytes()
+        assert_matches(np.asarray(a)[batch:], np.zeros(a.shape[0:1] + a.shape[1:], a.dtype)[batch:], strict=True)
+    assert_matches(np.asarray(actual[3])[batch:], np.full(target - batch, arrays[4], arrays[3].dtype), strict=True)
 
 
 @pytest.mark.gpu

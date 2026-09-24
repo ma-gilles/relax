@@ -10,6 +10,7 @@ from relax.cuda import kernels as em_cuda_kernels
 from relax.helpers.bpref_transaction import BprefTransactionQueue
 from relax.helpers.env_flags import parse_env_binary_flag
 from relax.local import local_em_engine
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -145,7 +146,7 @@ def test_cuda_packing_selector(monkeypatch, value, expected):
     "counts,capacity",
     [((1,), 1), ((1,), 256), ((42, 42, 42, 42, 32), 256), ((63, 11), 128), ((1,) * 256, 256), ((32,), 32)],
 )
-def test_cuda_pack_preserves_every_bit_and_bucket_worker_ids(counts, capacity):
+def test_cuda_pack_preserves_values_and_bucket_worker_ids(counts, capacity):
     from relax.helpers.bpref_transaction import _pad_particle_fields
 
     assert jax.default_backend() == "gpu"
@@ -160,11 +161,11 @@ def test_cuda_pack_preserves_every_bit_and_bucket_worker_ids(counts, capacity):
         actual.block_until_ready()
         actual = np.asarray(actual)
         assert actual.shape == wanted.shape and actual.dtype == wanted.dtype
-        assert actual.tobytes() == wanted.tobytes()
+        assert_matches(actual, wanted, strict=True)
     for column, before in zip(device, originals, strict=True):
         assert tuple(np.asarray(x).tobytes() for x in column) == before
     for old, new in zip(control, result, strict=True):
-        assert np.asarray(old).tobytes() == np.asarray(new).tobytes()
+        assert_matches(np.asarray(old), np.asarray(new), strict=True)
 
 
 @pytest.mark.gpu

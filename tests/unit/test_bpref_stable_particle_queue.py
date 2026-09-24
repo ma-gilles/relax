@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from test_bpref_transaction import operands, setup
 
 from relax.helpers.bpref_transaction import _PARTICLE, BprefTransactionQueue
@@ -45,17 +46,17 @@ def test_capacity_packs_single_and_multiple_batches_without_rebasing(sizes):
         prefix = np.concatenate([args[index] for args, _ in expected])
         values = np.asarray(actual[name])
         assert values.shape[0] == 8 and values.dtype == prefix.dtype
-        assert values[:offset].tobytes() == prefix.tobytes()
+        assert_matches(values[:offset], prefix, strict=True)
         assert not np.any(values[offset:])
     for name, prefix, fill in (
         ("reconstruction_group_ids", np.arange(offset) % 2, -1),
         ("worker_lane_ids", np.concatenate([np.arange(n) % 8 for n in sizes]), 0),
         ("particle_trace_ids", np.concatenate([np.arange(n) for n in sizes]), 0),
     ):
-        np.testing.assert_array_equal(np.asarray(actual[name]), np.concatenate([prefix, np.full(8 - offset, fill)]))
+        assert_matches(np.asarray(actual[name]), np.concatenate([prefix, np.full(8 - offset, fill)]))
     assert actual["projector_full"] is common["projector"]
-    np.testing.assert_array_equal(data, sum(np.sum(args[2]).real for args, _ in expected))
-    np.testing.assert_array_equal(weight, 4 * offset)
+    assert_matches(data, sum(np.sum(args[2]).real for args, _ in expected))
+    assert_matches(weight, 4 * offset)
 
 
 def test_byte_bound_includes_generated_metadata_and_limits_capacity():
@@ -74,8 +75,8 @@ def test_byte_bound_includes_generated_metadata_and_limits_capacity():
         assert values["images"].shape[0] == 4
         assert sum(values[n].size * values[n].dtype.itemsize for n in _PARTICLE) == 592
         assert np.sum(np.asarray(values["reconstruction_group_ids"]) >= 0) == active
-    np.testing.assert_array_equal(data, 495)
-    np.testing.assert_array_equal(weight, 20)
+    assert_matches(data, 495)
+    assert_matches(weight, 20)
 
 
 @pytest.mark.parametrize("limit", [1, 147])

@@ -12,6 +12,7 @@ contract (default argument).
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 jax = pytest.importorskip("jax")
 jnp = jax.numpy
@@ -77,7 +78,7 @@ def test_padding_factor_two_matches_scaled_rotations_at_padding_one(monkeypatch,
     assert np.isfinite(padded).all()
     # The padded run must not be a trivial copy of the initial diff2 (projection reached the texture).
     assert np.any(np.abs(padded - initial[:, None, None]) > 1e-6)
-    np.testing.assert_array_equal(padded, scaled)
+    assert_matches(padded, scaled)
 
 
 @pytest.mark.gpu
@@ -97,7 +98,7 @@ def test_padding_factor_default_is_one(monkeypatch, custom_cuda_lib, gpu_device)
         args = [jnp.asarray(x) for x in (projector, rotations, images, angles, weight, initial, lookup)]
         default = np.asarray(em_cuda_kernels.relion_coarse_diff2_projector_f32(*args, **common))
         explicit = np.asarray(em_cuda_kernels.relion_coarse_diff2_projector_f32(*args, padding_factor=1, **common))
-    np.testing.assert_array_equal(default, explicit)
+    assert_matches(default, explicit)
 
 
 def test_padding_factor_must_be_positive():

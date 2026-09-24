@@ -6,6 +6,7 @@ import inspect
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from relax.scoring import scoring
 from relax.scoring.coarse_gemm_hybrid import (
@@ -143,11 +144,11 @@ def test_selected_source16_wrapper_forwards_only_the_owned_lookup(monkeypatch) -
     )
     # IDs stay on device; CUDA owns -1 padding and invalid-ID fail-close.
     assert captured["args"][4] is operands[4]
-    assert np.array_equal(
+    assert matches(
         np.asarray(captured["args"][4]),
         np.asarray([[1, -1], [-2, 99]], dtype=np.int32),
     )
-    assert np.array_equal(
+    assert matches(
         np.asarray(captured["args"][5]),
         topology.full_to_compact,
     )

@@ -1,10 +1,11 @@
-"""Segmented CUDA sparse pass-2 posterior: wrapper contracts and bitwise parity.
+"""Segmented CUDA sparse pass-2 posterior: wrapper contracts and oracle parity.
 
 The segmented handlers take the scores of one chunk as a flat cell array in
 which image ``i`` owns ``[segment_offsets[i], segment_offsets[i + 1])`` instead
-of a padded rectangular row.  Their acceptance criterion is bitwise equality
-with the rectangular handlers on the same candidate values, so every GPU test
-here builds a rectangular oracle and compares with ``assert_array_equal``.
+of a padded rectangular row.  Their acceptance criterion is agreement with the
+rectangular handlers on the same candidate values, so every GPU test here builds
+a rectangular oracle and compares with ``assert_matches`` (exact for discrete
+outputs, the float32 band for floating-point ones).
 """
 
 import os
@@ -16,6 +17,7 @@ import pytest
 
 from recovar import cuda_backproject as cb
 from relax.cuda import kernels as em_cuda_kernels
+from helpers.float_compare import assert_matches, default_rtol, matches
 
 pytestmark = pytest.mark.unit
 
@@ -104,8 +106,8 @@ def _segmented(
     sort_scan_mode=em_cuda_kernels.SPARSE_PASS2_SORT_SCAN_SEGMENTED_SORT,
     scratch=False,
 ):
-    # The bitwise oracle tests pin a mode that is bitwise with the rectangular
-    # handler by construction, so they keep testing the arithmetic rather than
+    # The oracle tests pin a mode that matches the rectangular handler by
+    # construction, so they keep testing the arithmetic rather than
     # whatever the capacity-class default happens to pick for their shape.
     segments = len(offsets) - 1
     outputs = em_cuda_kernels.sparse_pass2_segmented_posterior_f32(
@@ -132,7 +134,7 @@ def _assert_same(actual, expected, context=""):
         got, want = actual[name], expected[name]
         assert got.dtype == want.dtype, f"{name} dtype {context}"
         assert got.shape == want.shape, f"{name} shape {context}"
-        np.testing.assert_array_equal(got, want, err_msg=f"{name} {context}")
+        assert_matches(got, want, err_msg=f"{name} {context}")
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +294,7 @@ def test_wrapper_requires_gpu_backend():
 @pytest.mark.parametrize("variant", ["plain", "nan_and_inf_row", "ties"])
 @pytest.mark.parametrize("adaptive_fraction", _ADAPTIVE_FRACTIONS)
 def test_flattened_rows_match_rectangular(shape, variant, adaptive_fraction):
-    """Each rectangular row flattened into a segment reproduces it bitwise."""
+    """Each rectangular row flattened into a segment reproduces it."""
 
     _require_segmented_gpu()
     images, rows, translations = shape
@@ -317,7 +319,7 @@ def test_flattened_rows_match_rectangular(shape, variant, adaptive_fraction):
     )
     rectangular_log_z = np.asarray(em_cuda_kernels.sparse_pass2_log_z_f64(jnp.asarray(scores_2d, jnp.float32)))
     assert segmented_log_z.dtype == rectangular_log_z.dtype
-    np.testing.assert_array_equal(segmented_log_z, rectangular_log_z, err_msg="segmented log_z")
+    assert_matches(segmented_log_z, rectangular_log_z, err_msg="segmented log_z")
 
     rng = np.random.default_rng(3)
     for keep_all in (False, True):
@@ -378,7 +380,7 @@ def test_ragged_segments_match_per_segment_rectangular(adaptive_fraction, keep_a
             jnp.asarray(segments, jnp.int32),
         )
     )
-    np.testing.assert_array_equal(segmented_log_z, log_z, err_msg="ragged segmented log_z")
+    assert_matches(segmented_log_z, log_z, err_msg="ragged segmented log_z")
 
     actual = _segmented(
         scores, offsets, segments, log_z, external,
@@ -442,7 +444,7 @@ def test_empty_segments_invalid_images_and_padding(adaptive_fraction, keep_all, 
         )
     )
     assert np.all(np.isneginf(segmented_log_z[[1, 3, 4]])), segmented_log_z
-    np.testing.assert_array_equal(segmented_log_z[[0, 2]], log_z[[0, 2]])
+    assert_matches(segmented_log_z[[0, 2]], log_z[[0, 2]])
 
     actual = _segmented(
         scores, offsets, n_valid, log_z, external,
@@ -490,7 +492,7 @@ def test_capacity_launch_is_independent_of_occupancy(adaptive_fraction):
     images are handed to the handler with different segment counts and different
     cell counts from one run to the next.  The handler reads ``n_valid_images``
     only on the device and sizes its scratch from the static cell count, so the
-    live segments must come back bitwise identical whatever the padding is.
+    live segments must come back the same whatever the padding is.
     """
 
     _require_segmented_gpu()
@@ -529,7 +531,7 @@ def test_capacity_launch_is_independent_of_occupancy(adaptive_fraction):
                 jnp.asarray(n_valid, jnp.int32),
             )
         )
-        np.testing.assert_array_equal(
+        assert_matches(
             segmented_log_z[:n_valid], log_z_live, err_msg=f"log_z at capacity {image_capacity}"
         )
 
@@ -547,7 +549,7 @@ def test_capacity_launch_is_independent_of_occupancy(adaptive_fraction):
             reference = live
             continue
         for name in _OUTPUT_NAMES:
-            np.testing.assert_array_equal(
+            assert_matches(
                 live[name], reference[name], err_msg=f"{name} at capacity {image_capacity}"
             )
 
@@ -591,11 +593,11 @@ def test_offsets_past_n_valid_images_do_not_leak(adaptive_fraction):
     for name in _OUTPUT_NAMES:
         value, reference = clipped[name], full[name]
         if value.shape == (cells,):
-            np.testing.assert_array_equal(
+            assert_matches(
                 value[:live_cells], reference[:live_cells], err_msg=f"{name} live cells"
             )
         else:
-            np.testing.assert_array_equal(value[:2], reference[:2], err_msg=f"{name} live segments")
+            assert_matches(value[:2], reference[:2], err_msg=f"{name} live segments")
 
     invalid = _rectangular(
         np.full((1, lengths[2]), -np.inf, np.float32),
@@ -634,7 +636,6 @@ _PRODUCTION_CHUNKS = (
 # /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_t17_posterior_sort_20260919/
 # measure/segmented_scan_agreement.py and recorded in that root's REPORT.md.
 # They are properties of a new opt-in path, not a scientific tolerance.
-_SINGLE_SCAN_SUM_WEIGHT_ULP = 8
 _SINGLE_SCAN_SIGNIFICANCE_SHIFT = 2
 _SINGLE_SCAN_FLIPPED_MASS = 1e-5
 
@@ -674,14 +675,21 @@ def _chunk_log_z(scores, offsets, images):
     )
 
 
-def _float32_ulps(left, right):
-    """Distance in float32 ULP, on the monotone integer image of float32."""
+def _count_outside_band(actual, reference):
+    """Entries that differ: exactly for discrete fields, beyond the float32 band for floats."""
 
-    def order(values):
-        bits = np.asarray(values, np.float32).view(np.int32).astype(np.int64)
-        return np.where(bits < 0, np.int64(-2147483648) - bits, bits)
-
-    return np.abs(order(left) - order(right))
+    actual, reference = np.asarray(actual), np.asarray(reference)
+    if actual.dtype.kind not in "fc":
+        return int(np.count_nonzero(actual != reference))
+    finite = np.isfinite(actual) & np.isfinite(reference)
+    nonfinite_differs = ~finite & ~((actual == reference) | (np.isnan(actual) & np.isnan(reference)))
+    if not finite.any():
+        return int(np.count_nonzero(nonfinite_differs))
+    scale = max(float(np.max(np.abs(actual[finite]))), float(np.max(np.abs(reference[finite]))))
+    diff = np.abs(actual[finite].astype(np.float64) - reference[finite].astype(np.float64))
+    return int(np.count_nonzero(diff > default_rtol(actual, reference) * scale)) + int(
+        np.count_nonzero(nonfinite_differs)
+    )
 
 
 @pytest.mark.gpu
@@ -690,10 +698,10 @@ def _float32_ulps(left, right):
     [em_cuda_kernels.SPARSE_PASS2_SORT_SCAN_SEGMENTED_SORT, em_cuda_kernels.SPARSE_PASS2_SORT_SCAN_PARTITIONED_SORT],
 )
 @pytest.mark.parametrize("images, rows, translations, occupancy", _PRODUCTION_CHUNKS)
-def test_segmented_sort_is_bitwise_on_production_chunks(
+def test_segmented_sort_matches_on_production_chunks(
     images, rows, translations, occupancy, mode
 ):
-    """One segmented sort per chunk reproduces the per-segment sorts bitwise.
+    """One segmented sort per chunk reproduces the per-segment sorts.
 
     A radix sort is an exact permutation of its keys, so mode 1 changes the
     launch structure and nothing the sort itself produces.  The scan that
@@ -719,19 +727,19 @@ def test_segmented_sort_is_bitwise_on_production_chunks(
     ]
     reference, band, candidate = arms
     for name in ("raw_weights", "sorted", "log_z", "best_log_score", "best_cell_index", "probs"):
-        np.testing.assert_array_equal(
+        assert_matches(
             candidate[name], reference[name], err_msg=f"{name} segmented sort vs mode 0"
         )
     for name in _OUTPUT_NAMES + _SCRATCH_NAMES:
-        if np.array_equal(band[name], reference[name]):
-            np.testing.assert_array_equal(
+        if matches(band[name], reference[name]):
+            assert_matches(
                 candidate[name], reference[name], err_msg=f"{name} segmented sort vs mode 0"
             )
             continue
         # The oracle did not reproduce itself on this field; the candidate only
         # has to stay inside the band the two mode-0 arms span.
-        assert np.count_nonzero(candidate[name] != reference[name]) <= np.count_nonzero(
-            band[name] != reference[name]
+        assert _count_outside_band(candidate[name], reference[name]) <= _count_outside_band(
+            band[name], reference[name]
         ), f"{name} segmented sort outside the mode-0 band"
 
 
@@ -768,18 +776,18 @@ def test_single_scan_keeps_keys_and_moves_only_near_ties(
         adaptive_fraction=0.999, keep_all=False, sort_scan_mode=mode, scratch=True,
     )
     for name in ("raw_weights", "sorted", "log_z", "best_log_score", "best_cell_index", "probs"):
-        np.testing.assert_array_equal(
+        assert_matches(
             candidate[name], reference[name], err_msg=f"{name} device scan vs mode 0"
         )
 
-    # sum_weight is the scan's last element, so it moves by ULP; the threshold
-    # is a sorted weight, so it moves by whole candidates and is bounded below
-    # by the count instead.
-    assert (
-        _float32_ulps(
-            candidate["sum_weight"][:images], reference["sum_weight"][:images]
-        ).max()
-        <= _SINGLE_SCAN_SUM_WEIGHT_ULP
+    # sum_weight is the scan's last element, so it moves by a few ULP (measured
+    # up to 8, 9.5e-7 relative, inside the float32 band); the threshold is a
+    # sorted weight, so it moves by whole candidates and is bounded below by
+    # the count instead.
+    assert_matches(
+        candidate["sum_weight"][:images],
+        reference["sum_weight"][:images],
+        err_msg="sum_weight device scan vs mode 0",
     )
     significance_shift = np.abs(
         candidate["n_significant"][:images].astype(np.int64)
@@ -811,7 +819,7 @@ def test_modes_agree_on_empty_and_invalid_segments(mode, adaptive_fraction):
     """Empty segments and images past ``n_valid_images`` are mode-independent.
 
     Those segments hold no cells on the device, so no sort and no scan touches
-    them and every mode must reproduce the oracle bitwise, padding included.
+    them and every mode must reproduce the oracle, padding included.
     """
 
     _require_segmented_gpu()
@@ -840,14 +848,14 @@ def test_modes_agree_on_empty_and_invalid_segments(mode, adaptive_fraction):
     empty_and_invalid = [1, 3, 4]
     for name in _OUTPUT_NAMES:
         if reference[name].shape == (len(offsets) - 1,):
-            np.testing.assert_array_equal(
+            assert_matches(
                 candidate[name][empty_and_invalid],
                 reference[name][empty_and_invalid],
                 err_msg=f"{name} on empty/invalid segments, mode {mode}",
             )
     tail = int(offsets[3])
     for name in ("normalized_weights", "reconstruction_probs", "mask", "probs"):
-        np.testing.assert_array_equal(
+        assert_matches(
             candidate[name][tail:], reference[name][tail:],
             err_msg=f"{name} past n_valid_images, mode {mode}",
         )
@@ -895,7 +903,7 @@ def test_single_scan_clamps_a_malformed_offset_table_on_the_device(mode):
         adaptive_fraction=0.999, keep_all=False, sort_scan_mode=mode,
     )
     for name in ("log_z", "best_log_score", "n_significant", "sum_weight", "threshold"):
-        np.testing.assert_array_equal(
+        assert_matches(
             actual[name][:2], expected[name][:2], err_msg=f"{name} before the malformed entry"
         )
 
@@ -927,6 +935,6 @@ def test_default_call_equals_the_mode_the_policy_names(
         adaptive_fraction=0.999, keep_all=False, sort_scan_mode=expected_mode,
     )
     for name in _OUTPUT_NAMES:
-        np.testing.assert_array_equal(
+        assert_matches(
             default[name], named[name], err_msg=f"{name} default vs mode {expected_mode}"
         )

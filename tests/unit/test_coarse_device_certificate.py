@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 from relax.scoring import scoring
 from relax.scoring.coarse_device_certificate import (
@@ -72,9 +73,9 @@ def test_composed_state_matches_host_chunks_exactly(rotations, chunk, prior_kind
         expected = _host_loop(operands, kwargs, 2, chunk)
         actual = prepare_coarse_certificate_state(*operands, 2, chunk_rows=chunk, **kwargs)
         for field in expected._fields:
-            np.testing.assert_array_equal(getattr(actual, field), getattr(expected, field), err_msg=field)
-        assert np.array_equal(actual.rotation_visit_count, np.ones(rotations, np.int32))
-        assert np.array_equal(actual.candidate_count, [rotations * 3, rotations * 3, 0])
+            assert_matches(getattr(actual, field), getattr(expected, field), err_msg=field)
+        assert matches(actual.rotation_visit_count, np.ones(rotations, np.int32))
+        assert matches(actual.candidate_count, [rotations * 3, rotations * 3, 0])
         config = dict(
             actual_image_count=2,
             n_rotations=rotations,
@@ -86,7 +87,7 @@ def test_composed_state_matches_host_chunks_exactly(rotations, chunk, prior_kind
             select_coarse_gemm_hybrid_rotation_blocks(expected, **config),
             select_coarse_gemm_hybrid_rotation_blocks(actual, **config),
         ):
-            np.testing.assert_array_equal(left, right)
+            assert_matches(left, right)
 
 
 def test_invalid_tail_is_retained_for_selector_fallback():
@@ -95,7 +96,7 @@ def test_invalid_tail_is_retained_for_selector_fallback():
         expected = _host_loop(operands, kwargs, 2, 32)
         actual = prepare_coarse_certificate_state(*operands, 2, chunk_rows=32, **kwargs)
         for left, right in zip(expected, actual):
-            np.testing.assert_array_equal(left, right)
+            assert_matches(left, right)
         selection = select_coarse_gemm_hybrid_rotation_blocks(
             actual,
             actual_image_count=2,
@@ -116,12 +117,12 @@ def test_device_active_count_reuses_executable_and_composes():
             actual = prepare_coarse_certificate_state(*device_operands, jnp.int32(count), chunk_rows=32, **kwargs)
             expected = _host_loop(operands, kwargs, count, 32)
             for left, right in zip(actual, expected):
-                np.testing.assert_array_equal(left, right)
+                assert_matches(left, right)
         assert _coarse_certificate_state_jit._cache_size() == 1
         # The public admission reads topology and abstract array metadata only.
         composed = jax.jit(lambda *args: prepare_coarse_certificate_state(*args, chunk_rows=32, **kwargs))
         state = composed(*device_operands, jnp.int32(2))
-        np.testing.assert_array_equal(state.candidate_count, [240, 240, 0])
+        assert_matches(state.candidate_count, [240, 240, 0])
 
 
 @pytest.mark.parametrize("chunk", [0, -16, 17, 1.5])
@@ -172,7 +173,7 @@ def test_complete_device_certificate_selection_matches_host(capacity, poison):
             certify_coarse_rotation_blocks(*operands, jnp.int32(2), chunk_rows=32, block_capacity=capacity, **kwargs)
         )
     for left, right in zip(actual, expected):
-        np.testing.assert_array_equal(left, right)
+        assert_matches(left, right)
 
 
 def test_combined_selection_validates_dynamic_count_without_new_executables():
@@ -195,10 +196,10 @@ def test_combined_selection_validates_dynamic_count_without_new_executables():
                     block_capacity=5,
                 )
                 for left, right in zip(actual, expected):
-                    np.testing.assert_array_equal(left, right)
+                    assert_matches(left, right)
             else:
                 assert actual.fallback_reason == "invalid_selection_configuration"
                 assert not actual.eligible
-                np.testing.assert_array_equal(actual.block_ids, np.full((3, 5), -1, np.int32))
-                np.testing.assert_array_equal(actual.block_count, np.zeros(3, np.int32))
+                assert_matches(actual.block_ids, np.full((3, 5), -1, np.int32))
+                assert_matches(actual.block_count, np.zeros(3, np.int32))
         assert _certify_coarse_rotation_blocks_jit._cache_size() == 1

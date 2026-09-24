@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 from relax.classification.k_class_results import DeferredHostUpdates
 from relax.sparse_pass2.sparse_pass2_policy import deferred_host_statistics_mode
+from helpers.float_compare import assert_matches
 
 class Stats(NamedTuple):
     totals: np.ndarray
@@ -19,7 +20,7 @@ def test_shadow_replay_is_bounded_and_duplicate_safe():
         queue.append(target.add, host=dict(image_indices=np.array([1, 1])), device=dict(values=np.array([2., 3.])))
         assert len(queue.check.records) < 2
     queue.flush()
-    np.testing.assert_array_equal(target.totals, [0., 25., 0.])
+    assert_matches(target.totals, [0., 25., 0.])
     assert not queue.check.owners and not queue.check.records
 
 

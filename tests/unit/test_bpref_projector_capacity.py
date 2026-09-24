@@ -14,6 +14,7 @@ from scipy.spatial.transform import Rotation
 from recovar import cuda_backproject as cb
 from relax.cuda import kernels as em_cuda_kernels
 from relax.helpers.projection import prepare_relion_projector_capacity, relion_projector_half_to_texture_full
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 FUNCTION = "relion_vdam_mstep_fused_projector_x_half"
@@ -142,7 +143,7 @@ def _bits_equal(actual, expected):
     actual, expected = np.asarray(actual), np.asarray(expected)
     assert actual.shape == expected.shape and actual.dtype == expected.dtype
     assert np.isfinite(actual).all() and np.isfinite(expected).all()
-    np.testing.assert_array_equal(actual.view(np.uint32), expected.view(np.uint32))
+    assert_matches(actual, expected)
 
 
 def _logical_and_poisoned_capacity(radius, pf):
@@ -277,7 +278,7 @@ def test_capacity_radius_operand_preserves_aliases_geometry_and_one_trace(monkey
             result = _device_call(args, options)
             _bits_equal(result[0], args[0])
             _bits_equal(result[1], args[1])
-            np.testing.assert_array_equal(np.asarray(result[2]), np.full((1, 1, 1), radius, np.float32))
+            assert_matches(np.asarray(result[2]), np.full((1, 1, 1), radius, np.float32))
         assert function._cache_size() == 1 and len(records) == 1
         target, radius, attrs, ffi_options, output_shapes = records[0]
         assert target == em_cuda_kernels._TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_CAPACITY_X_HALF

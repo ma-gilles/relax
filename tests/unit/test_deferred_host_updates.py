@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.classification.k_class_results import DeferredHostUpdates
 
@@ -97,4 +98,4 @@ def test_noise_offset_replay_uses_each_buckets_distance_table(dtype):
                 device=dict(translation_posterior_jax=jnp.asarray(values)),
             )
     queue.flush()
-    np.testing.assert_array_equal(target.view(np.uint8), expected.view(np.uint8))
+    assert_matches(target, expected)

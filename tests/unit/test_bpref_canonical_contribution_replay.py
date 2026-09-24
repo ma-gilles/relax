@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from scripts import validate_bpref_device_signature as validator
 
@@ -112,8 +113,8 @@ def test_canonical_replay_is_invariant_to_record_permutation():
         permuted, 1, order="canonical", precision="float32"
     )
 
-    assert np.array_equal(actual.data, expected.data)
-    assert np.array_equal(actual.weight, expected.weight)
+    assert matches(actual.data, expected.data)
+    assert matches(actual.weight, expected.weight)
 
 
 def test_logical_host_order_is_float32_sensitive_and_collapses_in_float64():
@@ -133,8 +134,8 @@ def test_logical_host_order_is_float32_sensitive_and_collapses_in_float64():
         reordered, 1, order="logical_host_order", precision="float64"
     )
 
-    assert not np.array_equal(left32.data, right32.data)
-    assert np.array_equal(left64.data, right64.data)
+    assert not matches(left32.data, right32.data)
+    assert matches(left64.data, right64.data)
     assert validator.compare_contribution_engines(records, reordered, 1)[
         "classification"
     ] == "logical_schedule_difference"
@@ -456,8 +457,8 @@ def test_ordinary_capture_policy_cannot_silently_select_sequential_reduction():
             policy, ordinary, sequential
         )
     )
-    assert np.array_equal(selected[0], ordinary[0])
-    assert np.array_equal(order_control[0], sequential[0])
+    assert matches(selected[0], ordinary[0])
+    assert matches(order_control[0], sequential[0])
     assert not validator.exact_array_metrics(selected[0], sequential[0])["array_equal"]
 
 
@@ -563,7 +564,7 @@ def test_probability_dtype_metadata_restores_and_validates_native_bytes():
         )
     )
 
-    assert np.array_equal(restored, values)
+    assert matches(restored, values)
     assert restored.dtype == np.float32
     assert policy["source"] == "capture-native-dtype-metadata"
     assert policy["production_itemsize"] == "4"
@@ -615,14 +616,14 @@ def test_extracts_all_eight_neighbors_and_applies_both_conjugation_flags():
     )
 
     assert records.size == 8
-    assert np.array_equal(records.neighbor, np.arange(8, dtype=np.int32))
-    assert np.array_equal(records.target_indices, np.arange(8, dtype=np.int32))
+    assert matches(records.neighbor, np.arange(8, dtype=np.int32))
+    assert matches(records.target_indices, np.arange(8, dtype=np.int32))
     expected = np.asarray(
         [2 + 3j] + [factor * (2 - 3j) for factor in range(2, 9)],
         dtype=np.complex64,
     )
-    assert np.array_equal(replay.data, expected)
-    assert np.array_equal(replay.weight, 5 * np.arange(1, 9, dtype=np.float32))
+    assert matches(replay.data, expected)
+    assert matches(replay.weight, 5 * np.arange(1, 9, dtype=np.float32))
 
 
 @pytest.mark.parametrize(

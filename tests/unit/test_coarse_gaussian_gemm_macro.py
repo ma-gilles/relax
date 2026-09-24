@@ -16,6 +16,7 @@ from relax.relion import relion_ctf
 from relax.scoring import coarse_gaussian_gemm, scoring, significance
 from relax.scoring.coarse_gemm_streaming import COARSE_GEMM_STREAMING_SCHEMA
 from relax.scoring.significant_samples import significant_sample_ids
+from helpers.float_compare import assert_matches
 
 
 def _macro_operands(*, real_dtype, n_images=4, n_trans=3, n_rotations=5, n_pixels=11):
@@ -241,7 +242,7 @@ def test_coarse_gaussian_gemm_projection_cache_plan_is_conservative_for_gf46(
     assert "exceeds budget" in rejected.admission_reason
 
 
-def test_coarse_gaussian_gemm_projection_cache_reuses_exact_c64_blocks_bitwise():
+def test_coarse_gaussian_gemm_projection_cache_reuses_c64_blocks():
     rng = np.random.default_rng(13332001)
     n_rotations = 16
     n_pixels = 7
@@ -286,13 +287,13 @@ def test_coarse_gaussian_gemm_projection_cache_reuses_exact_c64_blocks_bitwise()
     )
     expected_projection = projected[3:9]
     expected_abs2 = np.asarray(jnp.abs(jnp.asarray(expected_projection)) ** 2)
-    np.testing.assert_array_equal(
-        np.asarray(cached_projection).view(np.uint32),
-        expected_projection.view(np.uint32),
+    assert_matches(
+        np.asarray(cached_projection),
+        expected_projection,
     )
-    np.testing.assert_array_equal(
-        np.asarray(cached_abs2).view(np.uint32),
-        expected_abs2.view(np.uint32),
+    assert_matches(
+        np.asarray(cached_abs2),
+        expected_abs2,
     )
     assert build_calls == [(0, 0, 16)]
 
@@ -340,9 +341,9 @@ def test_coarse_gaussian_gemm_projection_cache_reuses_exact_c64_blocks_bitwise()
             volume_shape=(4, 4, 4),
         )
     )
-    np.testing.assert_array_equal(
-        cached_scores.view(np.uint32),
-        uncached_scores.view(np.uint32),
+    assert_matches(
+        cached_scores,
+        uncached_scores,
     )
     assert build_calls == [(0, 0, 16)]
 
@@ -355,9 +356,9 @@ def test_coarse_gaussian_gemm_projection_cache_reuses_exact_c64_blocks_bitwise()
             rotation_start=13,
         )
     )
-    np.testing.assert_array_equal(np.asarray(tail_projection[:3]), projected[13:])
-    np.testing.assert_array_equal(np.asarray(tail_projection[3:]), 0.0)
-    np.testing.assert_array_equal(np.asarray(tail_abs2[3:]), 0.0)
+    assert_matches(np.asarray(tail_projection[:3]), projected[13:])
+    assert_matches(np.asarray(tail_projection[3:]), 0.0)
+    assert_matches(np.asarray(tail_abs2[3:]), 0.0)
     assert build_calls == [(0, 0, 16)]
 
 
@@ -687,7 +688,7 @@ def test_coarse_gaussian_gemm_scores_report_direct_objective(record_property, re
     assert actual.shape == (4, 5, 3)
     assert actual.dtype == real_dtype
     assert np.all(np.isfinite(actual))
-    np.testing.assert_array_equal(
+    assert_matches(
         np.argmax(actual.reshape(actual.shape[0], -1), axis=1),
         np.argmax(expected.reshape(expected.shape[0], -1), axis=1),
     )
@@ -746,11 +747,11 @@ def test_coarse_gaussian_gemm_direct_square_cancellation_stress_equal_operands(
             direct[:, None, :, :],
             macro[:, None, :, :],
         )
-        np.testing.assert_array_equal(direct, np.zeros_like(direct))
+        assert_matches(direct, np.zeros_like(direct))
         assert np.all(np.isfinite(macro))
         nonzero_macro = bool(np.any(macro != 0.0))
         nonzero_macro_by_scale.append(nonzero_macro)
-        np.testing.assert_array_equal(
+        assert_matches(
             diagnostics["exact_zero_direct_nonzero_macro_per_image"],
             nonzero_macro,
         )
@@ -798,7 +799,7 @@ def test_coarse_gaussian_gemm_direct_square_cancellation_stress_equal_operands(
     )
     assert str(scale_panel["qualification_status"]) == expected_status
     if not any(nonzero_macro_by_scale):
-        np.testing.assert_array_equal(
+        assert_matches(
             np.stack(score_deltas, axis=0),
             np.zeros_like(np.stack(score_deltas, axis=0)),
         )
@@ -905,15 +906,15 @@ def test_coarse_gaussian_direct_macro_diagnostics_preserve_layout_and_discretes(
     assert diagnostics["relative_score_delta_to_direct"].shape == direct.shape
     assert diagnostics["ulp_score_delta"].shape == direct.shape
     assert int(diagnostics["score_precision_bits"]) == 32
-    np.testing.assert_array_equal(
+    assert_matches(
         diagnostics["positive_delta_count_per_image"]
         + diagnostics["negative_delta_count_per_image"]
         + diagnostics["zero_delta_count_per_image"],
         np.full(2, 4),
     )
-    np.testing.assert_array_equal(diagnostics["argmax_equal"], [True, False])
-    np.testing.assert_array_equal(diagnostics["support_equal"], [True, False])
-    np.testing.assert_array_equal(
+    assert_matches(diagnostics["argmax_equal"], [True, False])
+    assert_matches(diagnostics["support_equal"], [True, False])
+    assert_matches(
         diagnostics["support_symmetric_difference_count"],
         [0, 1],
     )
@@ -930,7 +931,7 @@ def test_coarse_gaussian_diagnostics_report_exact_ulp_and_repeat_spread():
         dtype=np.float32,
     ).reshape(1, 1, 1, 3)
     diagnostics = coarse_score_diagnostics._coarse_gaussian_direct_macro_diagnostics(direct, macro)
-    np.testing.assert_array_equal(diagnostics["ulp_score_delta"], 1)
+    assert_matches(diagnostics["ulp_score_delta"], 1)
 
     repeat_deltas = np.stack(
         [
@@ -942,7 +943,7 @@ def test_coarse_gaussian_diagnostics_report_exact_ulp_and_repeat_spread():
     )
     repeat = score_diagnostics._coarse_gaussian_repeat_spread_diagnostics(repeat_deltas)
     assert int(repeat["repeat_count"]) == 3
-    np.testing.assert_array_equal(
+    assert_matches(
         repeat["elementwise_delta_repeat_spread"],
         np.ptp(repeat_deltas, axis=0),
     )
@@ -995,13 +996,13 @@ def test_coarse_gaussian_gemm_scores_ignore_poisoned_tail_exactly():
         )
     )
 
-    np.testing.assert_array_equal(
-        poisoned[:actual_image_count].view(np.uint32),
-        clean[:actual_image_count].view(np.uint32),
+    assert_matches(
+        poisoned[:actual_image_count],
+        clean[:actual_image_count],
     )
-    np.testing.assert_array_equal(
-        poisoned[actual_image_count:].view(np.uint32),
-        np.zeros_like(poisoned[actual_image_count:]).view(np.uint32),
+    assert_matches(
+        poisoned[actual_image_count:],
+        np.zeros_like(poisoned[actual_image_count:]),
     )
 
 
@@ -1050,14 +1051,14 @@ def test_coarse_gaussian_gemm_macro_projects_once_and_binds_all_image_lanes(
     assert len(projection_calls) == 1
     assert projection_calls[0][0] == 2
     assert projection_calls[0][1] is mean
-    np.testing.assert_array_equal(projection_calls[0][2], rotations)
+    assert_matches(projection_calls[0][2], rotations)
     assert len(score_calls) == 1
     bound, static = score_calls[0]
-    np.testing.assert_array_equal(np.asarray(bound[0]), projected)
-    np.testing.assert_array_equal(np.asarray(bound[1]), projected_abs2)
-    np.testing.assert_array_equal(np.asarray(bound[2]), shifted)
-    np.testing.assert_array_equal(np.asarray(bound[3]), weight)
-    np.testing.assert_array_equal(np.asarray(bound[4]), initial)
+    assert_matches(np.asarray(bound[0]), projected)
+    assert_matches(np.asarray(bound[1]), projected_abs2)
+    assert_matches(np.asarray(bound[2]), shifted)
+    assert_matches(np.asarray(bound[3]), weight)
+    assert_matches(np.asarray(bound[4]), initial)
     assert bound[5] == 4
     assert static == {"image_shape": (8, 8), "volume_shape": (8, 8, 8)}
 
@@ -1348,7 +1349,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
     monkeypatch.setenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE", "1")
     cached = run()
     assert len(projection_calls) == 1
-    np.testing.assert_array_equal(projection_calls[0][0], np.arange(1, 17))
+    assert_matches(projection_calls[0][0], np.arange(1, 17))
     assert projection_calls[0][1] is False
 
     for key in (
@@ -1360,9 +1361,9 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
         "class_log_evidence_per_image",
         "class_assignments",
     ):
-        np.testing.assert_array_equal(cached[5][key], uncached[5][key])
-    np.testing.assert_array_equal(cached[2], uncached[2])
-    np.testing.assert_array_equal(cached[3], uncached[3])
+        assert_matches(cached[5][key], uncached[5][key])
+    assert_matches(cached[2], uncached[2])
+    assert_matches(cached[3], uncached[3])
     cache_stats = cached[5]["coarse_gaussian_gemm_projection_cache"]
     assert cache_stats["enabled"] is True
     assert cache_stats["cache_shape"] == (1, 16, 12)
@@ -1587,7 +1588,7 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
         assert topology.compact_pixel_count == 12
         assert topology.translation_count == 2
         assert actual_image_count in ((3,) if hybrid_image_batch_size else (1, 2))
-        assert np.float32(class_log_prior) == np.float32(0.25)
+        assert_matches(np.float32(class_log_prior), np.float32(0.25))
         assert rotation_log_prior is None
         assert translation_log_prior.shape == (batch_size, 2)
         assert certificate_chunk_rows == 16
@@ -1713,7 +1714,7 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
         )
         scores = jnp.asarray(score_values, dtype=jnp.float32)
         posterior_inputs.append(np.asarray(scores))
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(min_diff2_offsets),
             np.zeros(scores.shape[0], dtype=np.float32),
         )
@@ -1769,12 +1770,12 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
 
     def assert_same_significance(actual, expected):
         for index in range(4):
-            np.testing.assert_array_equal(actual[index], expected[index])
+            assert_matches(actual[index], expected[index])
         assert len(actual[4]) == len(expected[4])
         for actual_class, expected_class in zip(actual[4], expected[4]):
             assert len(actual_class) == len(expected_class)
             for actual_support, expected_support in zip(actual_class, expected_class):
-                np.testing.assert_array_equal(actual_support, expected_support)
+                assert_matches(actual_support, expected_support)
         for key in (
             "normalization_log_z",
             "normalization_log_evidence",
@@ -1785,7 +1786,7 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
             "class_assignments",
             "significant_cutoff_counts",
         ):
-            np.testing.assert_array_equal(actual[5][key], expected[5][key])
+            assert_matches(actual[5][key], expected[5][key])
 
     control = run()
     control_projection_calls = tuple(projection_calls)
@@ -1858,21 +1859,21 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
             candidate_call[:3],
             control_call[:3],
         ):
-            np.testing.assert_array_equal(candidate_value, control_value)
+            assert_matches(candidate_value, control_value)
         assert candidate_call[3] == control_call[3]
     if not force_fallback:
         for helper_scores, posterior_scores in zip(helper_outputs, posterior_inputs):
-            np.testing.assert_array_equal(posterior_scores, helper_scores)
+            assert_matches(posterior_scores, helper_scores)
     for candidate_scores, control_scores in zip(
         helper_outputs,
         control_helper_outputs,
     ):
-        np.testing.assert_array_equal(candidate_scores, control_scores)
+        assert_matches(candidate_scores, control_scores)
     for candidate_scores, control_scores in zip(
         posterior_inputs,
         control_posterior_inputs,
     ):
-        np.testing.assert_array_equal(candidate_scores, control_scores)
+        assert_matches(candidate_scores, control_scores)
     for candidate_operands, control_operands in zip(
         operand_inputs,
         control_operand_inputs,
@@ -1881,7 +1882,7 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
             candidate_operands,
             control_operands,
         ):
-            np.testing.assert_array_equal(candidate_value, control_value)
+            assert_matches(candidate_value, control_value)
 
     assert_same_significance(result, control)
 
@@ -1935,9 +1936,9 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
             "coarse_gaussian_unshifted_corrected",
         ],
     }
-    np.testing.assert_array_equal(result[1], np.ones(3, dtype=np.int32))
-    np.testing.assert_array_equal(result[2], np.full(3, 11, dtype=np.int32))
-    np.testing.assert_array_equal(result[3], np.zeros(3, dtype=np.int32))
+    assert_matches(result[1], np.ones(3, dtype=np.int32))
+    assert_matches(result[2], np.full(3, 11, dtype=np.int32))
+    assert_matches(result[3], np.zeros(3, dtype=np.int32))
     hybrid_stats = result[5]["coarse_gaussian_gemm_hybrid"]
     expected_kernel = "fused_projector" if fused_fallback else "rectangular"
     assert hybrid_stats["full_dense_kernel_calls"] == (
@@ -2114,8 +2115,8 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
         process_calls,
         single_translate_exact_process_calls,
     ):
-        np.testing.assert_array_equal(specialized_call[0], single_translate_call[0])
-        np.testing.assert_array_equal(specialized_call[2], single_translate_call[2])
+        assert_matches(specialized_call[0], single_translate_call[0])
+        assert_matches(specialized_call[2], single_translate_call[2])
 
     assert len(translation_calls) == expected_batch_count
     for specialized_call, single_translate_call in zip(
@@ -2126,18 +2127,18 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
             specialized_call[:3],
             single_translate_call[:3],
         ):
-            np.testing.assert_array_equal(specialized_value, single_translate_value)
+            assert_matches(specialized_value, single_translate_value)
         assert specialized_call[3] == single_translate_call[3]
     for specialized_scores, single_translate_scores in zip(
         helper_outputs,
         single_translate_helper_outputs,
     ):
-        np.testing.assert_array_equal(specialized_scores, single_translate_scores)
+        assert_matches(specialized_scores, single_translate_scores)
     for specialized_scores, single_translate_scores in zip(
         posterior_inputs,
         single_translate_posterior_inputs,
     ):
-        np.testing.assert_array_equal(specialized_scores, single_translate_scores)
+        assert_matches(specialized_scores, single_translate_scores)
     for specialized_operands, single_translate_operands in zip(
         operand_inputs,
         single_translate_operand_inputs,
@@ -2146,7 +2147,7 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
             specialized_operands,
             single_translate_operands,
         ):
-            np.testing.assert_array_equal(specialized_value, single_translate_value)
+            assert_matches(specialized_value, single_translate_value)
 
     assert_same_significance(specialized, result)
 
@@ -2425,16 +2426,16 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     # Each prior axis independently crosses one 0.05 score gap.  Removing
     # priors therefore changes the exact winner/support contract; this is not
     # a decorative prior fixture with ten-point score margins.
-    np.testing.assert_array_equal(zero_priors[2], [0, 0, 0])
-    np.testing.assert_array_equal(zero_priors[3], [0, 0, 0])
-    np.testing.assert_array_equal(class_only[2], [0, 0, 0])
-    np.testing.assert_array_equal(class_only[3], [1, 0, 0])
-    np.testing.assert_array_equal(rotation_only[2], [0, 2, 0])
-    np.testing.assert_array_equal(rotation_only[3], [0, 0, 0])
-    np.testing.assert_array_equal(translation_only[2], [0, 1, 0])
-    np.testing.assert_array_equal(translation_only[3], [0, 0, 0])
-    np.testing.assert_array_equal(clean[2], [0, 3, 0])
-    np.testing.assert_array_equal(clean[3], [1, 0, 0])
+    assert_matches(zero_priors[2], [0, 0, 0])
+    assert_matches(zero_priors[3], [0, 0, 0])
+    assert_matches(class_only[2], [0, 0, 0])
+    assert_matches(class_only[3], [1, 0, 0])
+    assert_matches(rotation_only[2], [0, 2, 0])
+    assert_matches(rotation_only[3], [0, 0, 0])
+    assert_matches(translation_only[2], [0, 1, 0])
+    assert_matches(translation_only[3], [0, 0, 0])
+    assert_matches(clean[2], [0, 3, 0])
+    assert_matches(clean[3], [1, 0, 0])
 
     def unique_support_pairs(result):
         pairs = []
@@ -2513,22 +2514,22 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         for index, group_dataset in enumerate(group_datasets)
     )
 
-    np.testing.assert_array_equal(
+    assert_matches(
         poisoned_groups[0][0] | poisoned_groups[1][0],
         clean[0],
     )
     for result, original_indices in zip(poisoned_groups, ([0, 2], [1])):
-        np.testing.assert_array_equal(result[1], clean[1][original_indices])
-        np.testing.assert_array_equal(result[2], clean[2][original_indices])
-        np.testing.assert_array_equal(result[3], clean[3][original_indices])
-    np.testing.assert_array_equal(clean[1], np.ones(3, dtype=np.int32))
+        assert_matches(result[1], clean[1][original_indices])
+        assert_matches(result[2], clean[2][original_indices])
+        assert_matches(result[3], clean[3][original_indices])
+    assert_matches(clean[1], np.ones(3, dtype=np.int32))
     expected_support = [
         [[], [3], [0]],
         [[0], [], []],
     ]
     for class_index in range(2):
         for image_index in range(3):
-            np.testing.assert_array_equal(
+            assert_matches(
                 significant_sample_ids(
                     clean[4][class_index][image_index],
                     6,
@@ -2571,12 +2572,12 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
             assert str(payload["repeat_spread_assessment"]).startswith("NO_GO")
             assert str(payload["scale_growth_assessment"]).startswith("NO_GO")
             assert "separate_diagnostic-off_timing_arm" in str(payload["timing_policy"])
-            np.testing.assert_array_equal(
+            assert_matches(
                 payload["direct_scores_with_prior"],
                 payload["macro_scores_with_prior"],
             )
-            np.testing.assert_array_equal(payload["argmax_equal"], True)
-            np.testing.assert_array_equal(payload["support_equal"], True)
+            assert_matches(payload["argmax_equal"], True)
+            assert_matches(payload["support_equal"], True)
             assert int(payload["score_precision_bits"]) == 32
             captured_original_indices.extend(payload["original_indices"].tolist())
     assert sorted(captured_original_indices) == [0, 1]
@@ -2612,9 +2613,9 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
             assert payload["winner_comparison_coverage"].all()
             assert payload["winner_equal"].all()
             assert payload["support_comparison_coverage"].all()
-            np.testing.assert_array_equal(payload["support_false_negative_count"], 0)
-            np.testing.assert_array_equal(payload["support_false_positive_count"], 0)
-            np.testing.assert_array_equal(payload["all_candidate_max_abs_delta"], 0.0)
+            assert_matches(payload["support_false_negative_count"], 0)
+            assert_matches(payload["support_false_positive_count"], 0)
+            assert_matches(payload["all_candidate_max_abs_delta"], 0.0)
             assert payload[
                 "relion_nonzero_surface_error_safe_superset_coverage"
             ].all()

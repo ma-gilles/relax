@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_trees_match, matches
 
 from relax.scoring import scoring
 from relax.scoring.coarse_gemm_hybrid import (
@@ -33,10 +34,10 @@ def _upward_gamma(operation_count: int, unit_roundoff: float) -> float:
 def test_promoted_expanded_score_gammas_use_reviewed_gf46_counts() -> None:
     bounds = certified_f64_expanded_score_gammas(5100)
 
-    assert bounds.cross == _upward_gamma(10_204, 2.0**-53)
-    assert bounds.energy == _upward_gamma(5_105, 2.0**-53)
-    assert bounds.initial_diff2 == _upward_gamma(3, 2.0**-53)
-    assert bounds.energy_envelope == _upward_gamma(5_102, 2.0**-53)
+    assert matches(bounds.cross, _upward_gamma(10_204, 2.0**-53))
+    assert matches(bounds.energy, _upward_gamma(5_105, 2.0**-53))
+    assert matches(bounds.initial_diff2, _upward_gamma(3, 2.0**-53))
+    assert matches(bounds.energy_envelope, _upward_gamma(5_102, 2.0**-53))
 
 
 @pytest.mark.parametrize("value", [0, -1, 1.5])
@@ -57,7 +58,7 @@ def test_certificate_topology_is_bound_to_the_actual_direct_lookup() -> None:
     assert topology.compact_pixel_count == 4
     assert topology.translation_count == 3
     assert len(topology.full_to_compact_sha256) == 64
-    assert topology.expanded_f64_gammas == certified_f64_expanded_score_gammas(6)
+    assert_trees_match(topology.expanded_f64_gammas, certified_f64_expanded_score_gammas(6))
 
 
 @pytest.mark.parametrize(
@@ -118,7 +119,7 @@ def test_promoted_eta_matches_each_directed_envelope_operation() -> None:
         positive_inf,
     )
 
-    assert np.array_equal(actual, expected)
+    assert matches(actual, expected)
 
 
 def test_direct_f32_ftz_envelope_is_compact_and_negligible_at_ordinary_scale() -> None:
@@ -182,11 +183,11 @@ def test_direct_interval_rejects_false_range_gate_and_adds_ftz_separately() -> N
     )
     expected_error = np.nextafter(rho, np.float64(np.inf))
     expected_error = np.nextafter(expected_error, np.float64(np.inf))
-    assert np.array_equal(
+    assert matches(
         np.asarray(lower),
         np.nextafter(score - expected_error, np.float64(-np.inf)),
     )
-    assert np.array_equal(
+    assert matches(
         np.asarray(upper),
         np.nextafter(score + expected_error, np.float64(np.inf)),
     )
@@ -365,9 +366,9 @@ def test_certificate_masks_padded_garbage_before_promoted_arithmetic(real_cross)
     )
 
     assert np.all(np.isfinite(np.asarray(result.raw_lower[0])))
-    assert np.array_equal(np.asarray(result.macro_scores[1]), np.zeros((2, 3), dtype=np.float32))
-    assert np.array_equal(np.asarray(result.raw_lower[1]), np.zeros((2, 3), dtype=np.float64))
-    assert np.array_equal(np.asarray(result.raw_upper[1]), np.zeros((2, 3), dtype=np.float64))
+    assert matches(np.asarray(result.macro_scores[1]), np.zeros((2, 3), dtype=np.float32))
+    assert matches(np.asarray(result.raw_lower[1]), np.zeros((2, 3), dtype=np.float64))
+    assert matches(np.asarray(result.raw_upper[1]), np.zeros((2, 3), dtype=np.float64))
 
 
 @pytest.mark.parametrize("invalid", ["weight", "initial", "reference", "image"])
@@ -488,7 +489,7 @@ def test_fused_certificate_state_update_matches_explicit_interval_pipeline(real_
     )
 
     assert all(
-        np.array_equal(np.asarray(fused_value), np.asarray(explicit_value))
+        matches(np.asarray(fused_value), np.asarray(explicit_value))
         for fused_value, explicit_value in zip(fused, explicit)
     )
     assert [tuple(value.shape) for value in jax.tree.leaves(fused)] == [
@@ -606,4 +607,4 @@ def test_existing_windowed_score_uses_the_factored_mature_gemm_components() -> N
     )
     expected = np.asarray(-0.5 * (cross + norms[..., None]))
 
-    assert np.array_equal(actual, expected)
+    assert matches(actual, expected)

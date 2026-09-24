@@ -2,6 +2,7 @@
 import numpy as np
 import pytest
 from relax.sparse_pass2.sparse_pass2_adjoint import _split_compact_pair_buckets_by_projection_gather_budget
+from helpers.float_compare import assert_matches
 
 @pytest.mark.parametrize('skip,expected_max', [(False, 2), (True, 10)])
 def test_real_images_obey_diff2_budget(monkeypatch, skip, expected_max):
@@ -14,4 +15,4 @@ def test_real_images_obey_diff2_budget(monkeypatch, skip, expected_max):
         rotation_block_size_for_quantization=1, skip_diff2_gather_budget=skip,
     )
     assert max(len(b['image_indices']) for b in result) == expected_max
-    np.testing.assert_array_equal(np.concatenate([b['image_indices'] for b in result]), np.arange(10))
+    assert_matches(np.concatenate([b['image_indices'] for b in result]), np.arange(10))

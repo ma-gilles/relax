@@ -1,8 +1,8 @@
 """Bounded dispatch waits preserve all fused outputs."""
-import numpy as np
 import pytest
 from relax.sparse_pass2.sparse_pass2_policy import sparse_kclass_pipeline_depth
 from test_compact_capacity_integration import _fused_kclass_capacity_fixture, _fused_kclass_result_arrays, bucketed_mod
+from helpers.float_compare import assert_matches
 
 @pytest.mark.parametrize('value,expected', [(None,4),('0',0),('1',1),('7',7)])
 def test_depth_policy(monkeypatch, value, expected):
@@ -40,4 +40,4 @@ def test_throttle_executes_and_preserves_outputs(monkeypatch, noise):
     assert len(waits) > baseline_waits
     assert actual.keys() == expected.keys()
     for name in actual:
-        np.testing.assert_array_equal(actual[name], expected[name], err_msg=name)
+        assert_matches(actual[name], expected[name], err_msg=name)

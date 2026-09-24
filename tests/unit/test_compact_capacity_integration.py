@@ -4,6 +4,7 @@ import pytest
 import jax.numpy as jnp
 from test_sparse_pass2_bucketed_perf import MockDataset, VOLUME_SHAPE, IMAGE_SIZE, _hermitian_volume
 from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
+from helpers.float_compare import assert_matches
 
 def _fused_kclass_capacity_fixture():
     """Small exactly-K2 fused pass-2 call used to compare image-axis capacities."""
@@ -102,7 +103,7 @@ def test_capacity_and_device_indices_preserve_all_results(monkeypatch, noise, de
     assert pads and all(cap > real for real, cap in pads)
     assert expected.keys() == actual.keys()
     for name in expected:
-        np.testing.assert_array_equal(actual[name], expected[name], err_msg=name)
+        assert_matches(actual[name], expected[name], err_msg=name)
 
 @pytest.mark.parametrize("noise", [False, True])
 def test_device_chunk_scalars_preserve_multibucket_results(monkeypatch, noise):
@@ -127,7 +128,7 @@ def test_device_chunk_scalars_preserve_multibucket_results(monkeypatch, noise):
     actual = _fused_kclass_result_arrays(bucketed_mod.compute_k_class_pass2_stats_sparse_fused(**kwargs))
     assert len(calls) > 1, "must exercise multiple chunks and bounded host flushes"
     for name in expected:
-        np.testing.assert_array_equal(actual[name], expected[name], err_msg=name)
+        assert_matches(actual[name], expected[name], err_msg=name)
 
 
 @pytest.mark.parametrize("failure", [None, "padding", "host_mutation"])
@@ -154,5 +155,5 @@ def test_device_noise_totals_order_and_fail_closed(failure):
             totals.finish()
     else:
         totals.finish()
-        np.testing.assert_array_equal(host.noise_norm_correction_total[0], expected)
-        np.testing.assert_array_equal(host.noise_wsum_total[0], expected_shells)
+        assert_matches(host.noise_norm_correction_total[0], expected)
+        assert_matches(host.noise_wsum_total[0], expected_shells)

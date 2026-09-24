@@ -6,6 +6,7 @@ import pytest
 
 from recovar import cuda_backproject as cb
 from relax.cuda import kernels as em_cuda_kernels
+from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -75,8 +76,8 @@ def test_optional_result_preserves_all_ffi_operands_attributes_and_aliases(monke
     full = fn(**values)
     compact = fn(**values, return_denominator=False)
     assert compact[2] is None
-    np.testing.assert_array_equal(np.asarray(full[0]), np.asarray(compact[0]))
-    np.testing.assert_array_equal(np.asarray(full[1]), np.asarray(compact[1]))
+    assert_matches(np.asarray(full[0]), np.asarray(compact[0]))
+    assert_matches(np.asarray(full[1]), np.asarray(compact[1]))
     left, right = records
     assert left[0] == right[0] and left[2] == right[2] and left[4] == right[4]
     assert left[2]['input_output_aliases'] == {14: 0, 15: 1, 16: 2}
@@ -85,7 +86,7 @@ def test_optional_result_preserves_all_ffi_operands_attributes_and_aliases(monke
     assert right[1][3].shape == (0,) and right[1][3].dtype == np.float32
     for old, new in zip(left[3], right[3], strict=True):
         assert old.shape == new.shape and old.dtype == new.dtype
-        assert np.asarray(old).tobytes() == np.asarray(new).tobytes()
+        assert_matches(np.asarray(old), np.asarray(new), strict=True)
 
 
 @pytest.mark.gpu
@@ -101,7 +102,7 @@ def test_gpu_single_active_row_accumulators_are_bitwise_exact(grouped, stable):
     assert full[2].shape == (2 if grouped else 1, 1, 1)
     for old, new in zip(full[:2], compact[:2], strict=True):
         assert np.isfinite(np.asarray(new)).all()
-        assert np.asarray(old).tobytes() == np.asarray(new).tobytes()
+        assert_matches(np.asarray(old), np.asarray(new), strict=True)
 
 
 @pytest.mark.gpu

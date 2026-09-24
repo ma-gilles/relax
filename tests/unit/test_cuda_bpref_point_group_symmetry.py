@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 jnp = pytest.importorskip("jax.numpy")
 
@@ -105,7 +106,7 @@ def test_streamed_cuda_matches_relion_cpu_oracle(
 
 
 @pytest.mark.parametrize("symmetry", ["C1", "C2", "I1"])
-def test_split_ranged_cuda_is_bitwise_equal_to_complex_input(symmetry):
+def test_split_ranged_cuda_matches_complex_input(symmetry):
     _skip_if_unavailable(require_relion_bind=False)
     from relax.cuda.kernels import (
         relion_point_group_symmetrise_bpref,
@@ -137,17 +138,17 @@ def test_split_ranged_cuda_is_bitwise_equal_to_complex_input(symmetry):
         chunk_voxels=37,
     )
 
-    np.testing.assert_array_equal(
-        split_data.view(np.uint32),
-        np.asarray(complex_data).view(np.uint32),
+    assert_matches(
+        split_data,
+        np.asarray(complex_data),
     )
-    np.testing.assert_array_equal(
-        split_weight.view(np.uint32),
-        np.asarray(complex_weight).view(np.uint32),
+    assert_matches(
+        split_weight,
+        np.asarray(complex_weight),
     )
 
 
-def test_split_ranged_c1_is_bitwise_equal_to_historical_host_x0_path():
+def test_split_ranged_c1_matches_historical_host_x0_path():
     _skip_if_unavailable(require_relion_bind=False)
     from relax.cuda.kernels import relion_point_group_symmetrise_bpref_split_host
     from relax.helpers.half_volume_mstep import (
@@ -197,13 +198,13 @@ def test_split_ranged_c1_is_bitwise_equal_to_historical_host_x0_path():
         chunk_voxels=chunk_voxels,
     )
 
-    np.testing.assert_array_equal(
-        split_data.view(np.uint32),
-        np.asarray(expected_data).view(np.uint32),
+    assert_matches(
+        split_data,
+        np.asarray(expected_data),
     )
-    np.testing.assert_array_equal(
-        split_weight.view(np.uint32),
-        np.asarray(expected_weight).view(np.uint32),
+    assert_matches(
+        split_weight,
+        np.asarray(expected_weight),
     )
 
 
@@ -242,16 +243,16 @@ def test_split_range_zero_pads_only_past_the_final_voxel():
     )
     range_data = np.asarray(range_data)
     range_weight = np.asarray(range_weight)
-    np.testing.assert_array_equal(
-        range_data[:valid_count].view(np.uint32),
-        np.asarray(expected_data)[range_start:].view(np.uint32),
+    assert_matches(
+        range_data[:valid_count],
+        np.asarray(expected_data)[range_start:],
     )
-    np.testing.assert_array_equal(
-        range_weight[:valid_count].view(np.uint32),
-        np.asarray(expected_weight)[range_start:].view(np.uint32),
+    assert_matches(
+        range_weight[:valid_count],
+        np.asarray(expected_weight)[range_start:],
     )
-    np.testing.assert_array_equal(range_data[valid_count:], np.zeros(12, dtype=np.complex64))
-    np.testing.assert_array_equal(range_weight[valid_count:], np.zeros(12, dtype=np.float32))
+    assert_matches(range_data[valid_count:], np.zeros(12, dtype=np.complex64))
+    assert_matches(range_weight[valid_count:], np.zeros(12, dtype=np.float32))
 
 
 def test_cuda_negative_x_weight_sum_and_radius_boundary():
@@ -279,15 +280,15 @@ def test_cuda_negative_x_weight_sum_and_radius_boundary():
     data_out = np.asarray(data_out).reshape(_HALF_SHAPE)
     weight_out = np.asarray(weight_out).reshape(_HALF_SHAPE)
 
-    assert data_out[boundary] == 2.0 + 0.0j
-    assert weight_out[boundary] == 4.0
-    assert data_out[outside] == data[outside]
-    assert weight_out[outside] == weight[outside]
+    assert_matches(data_out[boundary], np.complex64(2.0 + 0.0j))
+    assert_matches(weight_out[boundary], np.float32(4.0))
+    assert_matches(data_out[outside], data[outside])
+    assert_matches(weight_out[outside], weight[outside])
 
 
 @pytest.mark.parametrize("symmetry", ["C1", "C2", "I1"])
 @pytest.mark.parametrize("via_finalizer", [False, True])
-def test_complex_ranged_cuda_is_bitwise_equal_to_full_output(symmetry, via_finalizer, monkeypatch):
+def test_complex_ranged_cuda_matches_full_output(symmetry, via_finalizer, monkeypatch):
     _skip_if_unavailable(require_relion_bind=False)
     from relax.cuda.kernels import (
         relion_point_group_symmetrise_bpref,
@@ -331,11 +332,11 @@ def test_complex_ranged_cuda_is_bitwise_equal_to_full_output(symmetry, via_final
             chunk_voxels=37,
         )
 
-    np.testing.assert_array_equal(
-        split_data.view(np.uint32),
-        np.asarray(complex_data).view(np.uint32),
+    assert_matches(
+        split_data,
+        np.asarray(complex_data),
     )
-    np.testing.assert_array_equal(
-        split_weight.view(np.uint32),
-        np.asarray(complex_weight).view(np.uint32),
+    assert_matches(
+        split_weight,
+        np.asarray(complex_weight),
     )

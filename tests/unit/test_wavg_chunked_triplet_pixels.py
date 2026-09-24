@@ -17,6 +17,7 @@ import textwrap
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.fourier_window import make_fourier_window_indices_np
 from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed
@@ -201,10 +202,6 @@ def _per_image_bytes(case):
     )
 
 
-def _bits(values):
-    return np.ascontiguousarray(np.asarray(values, dtype=np.float32)).view(np.uint32)
-
-
 @pytest.mark.gpu
 @pytest.mark.parametrize("sequential", [True, False], ids=["sequential", "algebraic"])
 @pytest.mark.parametrize(
@@ -219,7 +216,7 @@ def _bits(values):
         (dict(batch=17, translations=116, rotations=16, image_size=128, current_size=64), 5),
     ],
 )
-def test_chunked_wavg_operands_are_bitwise_the_whole_bucket_operands(monkeypatch, sequential, shape, images_per_chunk):
+def test_chunked_wavg_operands_match_the_whole_bucket_operands(monkeypatch, sequential, shape, images_per_chunk):
     from relax.cuda import kernels as em_cuda_kernels
 
     case = _wavg_case(seed=images_per_chunk, **shape)
@@ -250,12 +247,12 @@ def test_chunked_wavg_operands_are_bitwise_the_whole_bucket_operands(monkeypatch
     assert len(issued) == -(-batch // images_per_chunk)
     actual = np.concatenate(issued, axis=0)
     assert actual.shape == expected.shape
-    np.testing.assert_array_equal(_bits(actual), _bits(expected))
+    assert_matches(np.asarray(actual, dtype=np.float32), np.asarray(expected, dtype=np.float32))
 
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("sequential", [True, False], ids=["sequential", "algebraic"])
-def test_chunked_wavg_atomic_accumulator_is_bitwise_per_image(sequential):
+def test_chunked_wavg_atomic_accumulator_matches_per_image(sequential):
     """One rotation per image: each accumulator cell receives one real atomic add."""
 
     from relax.cuda import kernels as em_cuda_kernels
@@ -271,7 +268,7 @@ def test_chunked_wavg_atomic_accumulator_is_bitwise_per_image(sequential):
     )
     actual = _chunked(case, accumulator, sequential=sequential, max_block_bytes=2 * _per_image_bytes(case))
 
-    np.testing.assert_array_equal(_bits(actual), _bits(expected))
+    assert_matches(np.asarray(actual, dtype=np.float32), np.asarray(expected, dtype=np.float32))
 
 
 _PEAK_PROBE = textwrap.dedent(

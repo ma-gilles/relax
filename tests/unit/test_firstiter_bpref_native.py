@@ -6,6 +6,7 @@ import pytest
 import jax.numpy as jnp
 import recovar.cuda_backproject as cuda_backproject
 from relax.cuda import kernels as em_cuda_kernels
+from helpers.float_compare import assert_matches
 pytestmark = pytest.mark.unit
 
 def test_relion_firstiter_bpref_cuda_source_preserves_native_interface_and_pass_loop():
@@ -99,10 +100,10 @@ def test_relion_firstiter_bpref_wrapper_uses_split_native_operands_and_static_sc
         jnp.float32,
     ]
     args = observed["args"]
-    np.testing.assert_array_equal(np.asarray(args[0]), np.asarray(jnp.real(image)))
-    np.testing.assert_array_equal(np.asarray(args[1]), np.asarray(jnp.imag(image)))
-    np.testing.assert_array_equal(np.asarray(args[5]), np.asarray(translation_angles[:, 0]))
-    np.testing.assert_array_equal(np.asarray(args[6]), np.asarray(translation_angles[:, 1]))
+    assert_matches(np.asarray(args[0]), np.asarray(jnp.real(image)))
+    assert_matches(np.asarray(args[1]), np.asarray(jnp.imag(image)))
+    assert_matches(np.asarray(args[5]), np.asarray(translation_angles[:, 0]))
+    assert_matches(np.asarray(args[6]), np.asarray(translation_angles[:, 1]))
     assert args[8].dtype == jnp.float32 and args[9].dtype == jnp.float32
     assert observed["attrs"]["significant_weight"] == np.float32(0.125)
     assert observed["attrs"]["weight_norm"] == np.float32(1.0)
@@ -233,8 +234,8 @@ def test_relion_firstiter_bpref_exact_native_ffi_smoke(
     expected_weight = np.zeros(volume_size, dtype=np.float32)
     expected_data[expected_offset] = np.complex64(2.0 + 3.0j)
     expected_weight[expected_offset] = np.float32(2.0)
-    np.testing.assert_array_equal(data_out, expected_data)
-    np.testing.assert_array_equal(weight_out, expected_weight)
+    assert_matches(data_out, expected_data)
+    assert_matches(weight_out, expected_weight)
 
 
 @pytest.mark.gpu
@@ -270,7 +271,7 @@ def test_split_firstiter_repeated_launches_consume_owned_accumulators(
     for actual, value in zip(accumulators, [6.0, 2.0, 4.0]):
         expected = np.zeros(size, dtype=np.float32)
         expected[offset] = value * expected_scale
-        np.testing.assert_array_equal(np.asarray(actual), expected)
+        assert_matches(np.asarray(actual), expected)
 
 
 def test_relion_split_symmetry_range_has_bounded_outputs_and_no_aliases(monkeypatch):

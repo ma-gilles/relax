@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import pass2 as pass2_diagnostics
@@ -86,7 +87,7 @@ def test_raw_operand_capture_preserves_rows_dtypes_and_padding(
             array = np.asarray(value)
             assert payload[key].dtype == array.dtype, key
             assert payload[key].shape == array.shape, key
-            assert payload[key].tobytes() == array.tobytes(), key
+            assert_matches(payload[key], array, err_msg=key, strict=True)
         assert int(payload["original_index"]) == 42
         assert int(payload["local_index"]) == 1
         assert int(payload["iteration"]) == 3

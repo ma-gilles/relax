@@ -10,6 +10,7 @@ handle must fall back to the per-image path rather than approximate it.
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.scoring import compact_candidates as cc
 from relax.scoring.compact_candidates import (
@@ -47,7 +48,7 @@ def _assert_same(masks, pair_bucket_size):
     want = _per_image_reference(masks, pair_bucket_size)
     got = build_compact_pair_index_arrays(masks, pair_bucket_size=pair_bucket_size)
     for k in ("local_rotation_row", "translation_idx", "pair_mask", "pair_counts"):
-        np.testing.assert_array_equal(got[k], want[k], err_msg=k)
+        assert_matches(got[k], want[k], err_msg=k)
         assert got[k].dtype == want[k].dtype, k
 
 
@@ -209,7 +210,7 @@ def _assert_device_matches_host(masks, pair_bucket_size, n_alloc=None, rows_capa
     assert got is not None, "device path must engage for this bucket"
     want = _host_reference_at_capacity(masks, pair_bucket_size, len(masks) if n_alloc is None else n_alloc)
     for k in ("pair_counts", "local_rotation_row", "translation_idx", "pair_mask"):
-        np.testing.assert_array_equal(np.asarray(got[k]), want[k], err_msg=k)
+        assert_matches(np.asarray(got[k]), want[k], err_msg=k)
         assert np.asarray(got[k]).dtype == want[k].dtype, k
     for k in ("local_rotation_row", "translation_idx", "pair_mask"):
         assert isinstance(got[k], jax.Array), k

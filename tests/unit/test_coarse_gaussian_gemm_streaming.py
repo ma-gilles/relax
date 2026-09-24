@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import matches
 
 from relax.diagnostics.coarse_gaussian_diagnostics import (
     CoarseGaussianGemmDiagnosticScope,
@@ -74,14 +75,14 @@ def test_streaming_dual_topk_matches_full_block_order_and_error_extrema() -> Non
     expected_direct = np.argsort(-direct, axis=1, kind="stable")[:, :5]
     expected_macro = np.argsort(-macro, axis=1, kind="stable")[:, :5]
 
-    assert np.array_equal(direct_ids, expected_direct)
-    assert np.array_equal(macro_ids, expected_macro)
-    assert np.array_equal(
+    assert matches(direct_ids, expected_direct)
+    assert matches(macro_ids, expected_macro)
+    assert matches(
         np.asarray(state.max_abs_delta),
         np.asarray([0.125, 0.125]),
     )
-    assert np.array_equal(np.asarray(state.finite_pair_count), np.asarray([12, 12]))
-    assert np.array_equal(np.asarray(state.nonfinite_pair_count), np.asarray([0, 0]))
+    assert matches(np.asarray(state.finite_pair_count), np.asarray([12, 12]))
+    assert matches(np.asarray(state.nonfinite_pair_count), np.asarray([0, 0]))
 
 
 def test_streamed_summary_reports_support_errors_and_conservative_supersets() -> None:

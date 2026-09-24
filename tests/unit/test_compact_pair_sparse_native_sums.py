@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from relax.sparse_pass2 import sparse_pass2_compact_pair_sums as spb
+from helpers.float_compare import assert_matches
 
 
 def _random_unique_pairs(rng, batch, n_rows, n_trans, n_pairs, *, fill=0.6):
@@ -67,8 +68,8 @@ def test_sorted_csr_matches_dense_probabilities_in_ascending_translation_order()
             w = sorted_probs[b, seg]
             assert np.all(np.diff(t) > 0), "translations must be strictly ascending within a row"
             # a zero-weight slot (the non-finite pair) stays in its row; the kernel skips it
-            np.testing.assert_array_equal(t[w != 0], np.flatnonzero(dense[b, r]))
-            np.testing.assert_array_equal(w[w != 0], dense[b, r, t[w != 0]])
+            assert_matches(t[w != 0], np.flatnonzero(dense[b, r]))
+            assert_matches(w[w != 0], dense[b, r, t[w != 0]])
         # padding sits after the last row; the non-finite pair keeps its slot with zero weight
         assert np.all(sorted_probs[b, int(offsets[b, -1]) :] == 0.0)
     assert sorted_probs[1, 0] == 0.0 and offsets[1, rows[1, 0]] <= 0 < offsets[1, rows[1, 0] + 1]
@@ -164,7 +165,7 @@ def test_pair_sparse_native_sums_match_dense_native_bitwise(
         assert a.shape == b.shape and a.dtype == b.dtype, name
         if name in ("summed", "summed_image"):
             # The claim: the pair-sparse kernel reproduces the dense kernel exactly.
-            np.testing.assert_array_equal(a.view(np.uint8), b.view(np.uint8), err_msg=name)
+            assert_matches(a, b, err_msg=name)
         else:
             # These come from the same dense-table reductions in both variants, but
             # XLA fuses them differently once the consumer graph changes, which on
@@ -220,5 +221,5 @@ def test_pair_sparse_flat_rows_kernel_matches_padded_rows_bitwise(monkeypatch, c
         assert flat_out.shape == (row_batch.size, n_pix) and flat_out.dtype == padded_out.dtype
         valid = row_rotation < n_rows
         expect = padded_out[row_batch[valid], row_rotation[valid]]
-        np.testing.assert_array_equal(flat_out[valid].view(np.uint8), expect.view(np.uint8))
+        assert_matches(flat_out[valid], expect)
         assert np.all(flat_out[~valid] == 0)

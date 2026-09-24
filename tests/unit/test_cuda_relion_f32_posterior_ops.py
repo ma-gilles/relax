@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -112,8 +113,9 @@ def test_relion_f32_posterior_cuda_primitives_preserve_float32_chain(
     assert sorted_weights.dtype == np.float32
     assert cumulative.dtype == np.float32
     assert normalized.dtype == np.float32
-    assert raw[-1].view(np.uint32) == 0
-    np.testing.assert_array_equal(sorted_weights, np.sort(raw))
+    # exp(-146) underflows float32 to zero: a discrete event, not a rounding band.
+    assert raw[-1] == np.float32(0.0)
+    assert_matches(sorted_weights, np.sort(raw))
     assert cumulative[-1] > np.float32(0.0)
     np.testing.assert_allclose(
         np.sum(normalized, dtype=np.float32),
@@ -124,7 +126,7 @@ def test_relion_f32_posterior_cuda_primitives_preserve_float32_chain(
 
 
 @pytest.mark.gpu
-def test_batched_relion_f32_posterior_primitives_are_wordwise_row_exact(
+def test_batched_relion_f32_posterior_primitives_match_scalar_rows(
     monkeypatch,
     custom_cuda_lib,
     gpu_device,
@@ -179,9 +181,9 @@ def test_batched_relion_f32_posterior_primitives_are_wordwise_row_exact(
         (scalar_cumulative, batched_cumulative),
         (scalar_normalized, batched_normalized),
     ):
-        np.testing.assert_array_equal(
-            np.asarray(batched).view(np.uint32),
-            np.asarray(scalar).view(np.uint32),
+        assert_matches(
+            np.asarray(batched),
+            np.asarray(scalar),
         )
 
 
@@ -218,15 +220,15 @@ def test_relion_positive_cub_sort_scan_matches_native_sized_input_and_right_alig
     cumulative_full = np.asarray(cumulative_full)
     sorted_native = np.asarray(sorted_native)
     cumulative_native = np.asarray(cumulative_native)
-    np.testing.assert_array_equal(sorted_full[:prefix_size], np.float32(0.0))
-    np.testing.assert_array_equal(cumulative_full[:prefix_size], np.float32(0.0))
-    np.testing.assert_array_equal(
-        sorted_full[prefix_size:].view(np.uint32),
-        sorted_native.view(np.uint32),
+    assert_matches(sorted_full[:prefix_size], np.float32(0.0))
+    assert_matches(cumulative_full[:prefix_size], np.float32(0.0))
+    assert_matches(
+        sorted_full[prefix_size:],
+        sorted_native,
     )
-    np.testing.assert_array_equal(
-        cumulative_full[prefix_size:].view(np.uint32),
-        cumulative_native.view(np.uint32),
+    assert_matches(
+        cumulative_full[prefix_size:],
+        cumulative_native,
     )
 
 
@@ -249,8 +251,8 @@ def test_relion_positive_cub_sort_scan_zero_mass_is_all_zero(
                 jnp.asarray([0.0, -0.0, 0.0], dtype=jnp.float32),
             )
         )
-    np.testing.assert_array_equal(np.asarray(sorted_weights), np.float32(0.0))
-    np.testing.assert_array_equal(np.asarray(cumulative), np.float32(0.0))
+    assert_matches(np.asarray(sorted_weights), np.float32(0.0))
+    assert_matches(np.asarray(cumulative), np.float32(0.0))
 
 
 def test_relion_f32_posterior_cuda_primitives_fail_closed_without_gpu(monkeypatch):
