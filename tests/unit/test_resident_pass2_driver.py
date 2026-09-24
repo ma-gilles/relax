@@ -1118,3 +1118,111 @@ def test_gate_still_raises_for_in_scope_mismatches():
         rp.require_resident_production_configuration(
             **_production_gate_kwargs(use_float64_scoring=True)
         )
+
+
+def test_streamed_chunk_projections_gather_the_cached_arrays():
+    """Chunk-local slots gather exactly what the fine-grid cache gathers by id.
+
+    The per-iteration cache does not fit at healpix order 3 on real data
+    (10097 it13: 40 GiB > 19.9 GiB); streaming projects each chunk's distinct
+    rotations and re-indexes its rows, and must not change a gathered value.
+    """
+
+    n_fine, n_pix, row_capacity = 50, 6, 16
+    rng = np.random.default_rng(0)
+    fine_grid = jnp.asarray(rng.normal(size=(n_fine, 3, 3)), dtype=jnp.float32)
+    mstep_grid = fine_grid * 2.0
+    coarse_parent = jnp.asarray(np.arange(n_fine) // 8, dtype=jnp.int32)
+
+    def project(rotations):
+        flat = jnp.asarray(rotations).reshape(rotations.shape[0], -1)[:, :n_pix]
+        return (flat.astype(jnp.complex64), (flat + 1.0).astype(jnp.complex64), flat * flat)
+
+    cache = project(fine_grid)
+    host_ids = np.asarray([7, 3, 7, 41, 3, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int32)
+    n_valid = 6
+    rows = rp._ChunkRowArrays(
+        row_image_local=jnp.zeros(row_capacity, jnp.int32),
+        row_fine_rot=jnp.asarray(host_ids),
+        row_log_prior=jnp.zeros(row_capacity, jnp.float32),
+        row_mask_bits=jnp.zeros(row_capacity, jnp.uint32),
+        row_mask_mode=jnp.zeros(row_capacity, jnp.int8),
+        image_ids=jnp.zeros(2, jnp.int32),
+        n_valid_rows=jnp.int32(n_valid),
+        n_valid_images=jnp.int32(1),
+        segment_offsets=jnp.zeros(3, jnp.int32),
+        image_row_start=jnp.zeros(2, jnp.int64),
+        image_row_count=jnp.zeros(2, jnp.int64),
+    )
+    new_rows, slot_ids, caches, mstep_local, parent_local = rp._stream_chunk_projections(
+        rows,
+        host_ids,
+        n_valid_rows=n_valid,
+        row_capacity=row_capacity,
+        project=project,
+        fine_grid=fine_grid,
+        mstep_grid=mstep_grid,
+        coarse_parent_grid=coarse_parent,
+    )
+    slots = np.asarray(new_rows.row_fine_rot)[:n_valid]
+    np.testing.assert_array_equal(np.asarray(slot_ids)[slots], host_ids[:n_valid])
+    for local, full in zip(caches, cache):
+        assert local.shape[0] == row_capacity
+        np.testing.assert_array_equal(np.asarray(local)[slots], np.asarray(full)[host_ids[:n_valid]])
+    np.testing.assert_array_equal(np.asarray(mstep_local)[slots], np.asarray(mstep_grid)[host_ids[:n_valid]])
+    np.testing.assert_array_equal(np.asarray(parent_local)[slots], np.asarray(coarse_parent)[host_ids[:n_valid]])
+    # padded rows read slot 0, a real rotation
+    assert np.all(np.asarray(new_rows.row_fine_rot)[n_valid:] == 0)
+
+
+def test_streamed_row_ladder_keeps_capacities_whose_cache_fits():
+    assert rp._stream_row_capacity_ladder(
+        (8192, 32768, 131072), bytes_per_rotation=300e3, max_projection_bytes=20 * 1024**3
+    ) == (8192, 32768)
+    with pytest.raises(NotImplementedError, match="smallest row capacity"):
+        rp._stream_row_capacity_ladder(
+            (8192,), bytes_per_rotation=10e6, max_projection_bytes=20 * 1024**3
+        )
+
+
+def test_stream_slot_count_quantises_and_caps():
+    assert rp._stream_slot_count(1, 131072) == rp._STREAM_SLOT_QUANTUM
+    assert rp._stream_slot_count(8193, 131072) == 2 * rp._STREAM_SLOT_QUANTUM
+    assert rp._stream_slot_count(200000, 32768) == 32768
+
+
+@requires_resident_gpu
+def test_streamed_projections_match_the_cached_pass(_resident_production_env, monkeypatch):
+    """Per-chunk streamed projections change no discrete state and stay in the repeat band.
+
+    The streamed pass gathers the same projection arrays through chunk-local
+    slots, so the winners are bitwise; the float32 BPref atomics and the CUDA
+    shell binning are held to the band :func:`test_resident_driver_repeats_itself`
+    measures.
+    """
+
+    args = _driver_fixture_args()
+    cached = rp.compute_pass2_stats_resident(**args)
+    monkeypatch.setattr(rp, "_projection_cache_fits_budget", lambda *a, **k: False)
+    streamed = rp.compute_pass2_stats_resident(**args)
+
+    np.testing.assert_array_equal(cached.hard_assignment, streamed.hard_assignment)
+    np.testing.assert_array_equal(cached.best_rotation_indices, streamed.best_rotation_indices)
+    np.testing.assert_array_equal(cached.best_rotations, streamed.best_rotations)
+    np.testing.assert_array_equal(cached.best_translations, streamed.best_translations)
+    for field in ("wsum_sigma2_noise", "wsum_norm_correction"):
+        np.testing.assert_array_equal(
+            np.asarray(getattr(cached.noise_stats, field)),
+            np.asarray(getattr(streamed.noise_stats, field)),
+            err_msg=field,
+        )
+
+    def rel_l2(a, b):
+        a = np.asarray(a)
+        b = np.asarray(b)
+        den = float(np.linalg.norm(a))
+        return float(np.linalg.norm(a - b) / den) if den else 0.0
+
+    assert rel_l2(cached.Ft_y, streamed.Ft_y) < 1e-7
+    assert rel_l2(cached.Ft_ctf, streamed.Ft_ctf) < 1e-7
+    assert rel_l2(cached.noise_stats.wsum_img_power, streamed.noise_stats.wsum_img_power) < 1e-7

@@ -1757,51 +1757,77 @@ def compute_pass2_stats_resident(
         include_abs2=True,
     )
     max_projection_cache_bytes = _projection_cache_max_bytes_for_pass(device_memory_bytes)
-    _require(
-        _projection_cache_fits_budget(transient_projection_bytes, max_projection_cache_bytes),
-        "the per-iteration projection cache did not fit its budget "
-        f"({transient_projection_bytes / float(1024 ** 3):.2f} GiB > "
-        f"{max_projection_cache_bytes / float(1024 ** 3):.2f} GiB)",
-    )
-    cache_t0 = time.time()
     projection_kwargs = _projection_kwargs_for_relion_score_window(
         window_spec.projection_kwargs(return_abs2=False),
         use_relion_projector=use_relion_projector,
         current_size=current_size,
     )
     projection_kwargs["mask_current_image_disk"] = bool(projection_mask_current_image_disk)
-    score_cache, recon_cache, recon_abs2_cache = _compute_sparse_pass2_windowed_projections_block(
-        mean_for_proj,
-        jnp.asarray(fine_rotations_override, dtype=precision_policy.score_real_dtype),
-        image_shape,
-        proj_volume_shape,
-        disc_type,
-        score_indices=window_indices,
-        recon_indices=recon_window_indices,
-        max_projected_rotations=_projection_cache_build_max_rotations_per_call(
-            max_projected_rotations_per_projection_call,
+
+    def project_fine_rotations(rotations):
+        """(score, recon, |recon|^2) projections of ``rotations``, as the cache holds them."""
+
+        score, recon, recon_abs2 = _compute_sparse_pass2_windowed_projections_block(
+            mean_for_proj,
+            jnp.asarray(rotations, dtype=precision_policy.score_real_dtype),
+            image_shape,
+            proj_volume_shape,
+            disc_type,
+            score_indices=window_indices,
+            recon_indices=recon_window_indices,
+            max_projected_rotations=_projection_cache_build_max_rotations_per_call(
+                max_projected_rotations_per_projection_call,
+                int(np.asarray(rotations).shape[0]),
+            ),
+            output_complex_dtype=precision_policy.score_complex_dtype,
+            output_abs2_dtype=precision_policy.score_real_dtype,
+            relion_projector_half=relion_projector_half,
+            relion_projector_r_max=relion_projector_r_max,
+            projection_padding_factor=projection_padding_factor,
+            **projection_kwargs,
+        )
+        recon, recon_abs2 = precision_policy.cast_local_noise_projection_scores(recon, recon_abs2)
+        return score, recon, recon_abs2
+
+    # The whole fine grid is cached when it fits. At healpix order 3 and a real
+    # current size it does not (294912 rotations at 136 px is ~40 GiB), so each
+    # chunk projects its own distinct fine rotations instead, as RELION projects
+    # each particle's significant orientations. The projections are the same
+    # arrays gathered through a chunk-local slot; see _stream_chunk_projections.
+    projection_bytes_per_rotation = transient_projection_bytes / float(max(n_fine_rot, 1))
+    stream_projections = not _projection_cache_fits_budget(
+        transient_projection_bytes, max_projection_cache_bytes
+    )
+    if stream_projections:
+        score_cache = recon_cache = recon_abs2_cache = None
+        logger.info(
+            "Resident pass-2 projections are streamed per chunk: the %d-rotation cache "
+            "would take %.2f GiB against a %.2f GiB budget",
             n_fine_rot,
-        ),
-        output_complex_dtype=precision_policy.score_complex_dtype,
-        output_abs2_dtype=precision_policy.score_real_dtype,
-        relion_projector_half=relion_projector_half,
-        relion_projector_r_max=relion_projector_r_max,
-        projection_padding_factor=projection_padding_factor,
-        **projection_kwargs,
-    )
-    recon_cache, recon_abs2_cache = precision_policy.cast_local_noise_projection_scores(
-        recon_cache, recon_abs2_cache
-    )
-    logger.info(
-        "Resident pass-2 projection cache: cached %d fine rotations in %.2fs "
-        "(estimated transient %.2f GiB)",
-        n_fine_rot,
-        time.time() - cache_t0,
-        transient_projection_bytes / float(1024**3),
-    )
+            transient_projection_bytes / float(1024**3),
+            max_projection_cache_bytes / float(1024**3),
+        )
+    else:
+        cache_t0 = time.time()
+        score_cache, recon_cache, recon_abs2_cache = project_fine_rotations(
+            fine_rotations_override
+        )
+        logger.info(
+            "Resident pass-2 projection cache: cached %d fine rotations in %.2fs "
+            "(estimated transient %.2f GiB)",
+            n_fine_rot,
+            time.time() - cache_t0,
+            transient_projection_bytes / float(1024**3),
+        )
 
     # ---- capacity plan ----------------------------------------------------
     row_ladder = parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER)
+    if stream_projections:
+        row_ladder = _stream_row_capacity_ladder(
+            row_ladder,
+            bytes_per_rotation=projection_bytes_per_rotation,
+            max_projection_bytes=max_projection_cache_bytes,
+        )
     image_ladder = _cap_image_capacity_ladder(
         parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER),
         n_fine_trans=n_fine_trans,
@@ -1887,9 +1913,9 @@ def compute_pass2_stats_resident(
     coarse_parent_grid = jnp.asarray(
         np.asarray(fine_rotation_parent_override, dtype=np.int32), dtype=jnp.int32
     )
-    projection_score_cache = jnp.asarray(score_cache)
-    projection_recon_cache = jnp.asarray(recon_cache)
-    projection_recon_abs2_cache = jnp.asarray(recon_abs2_cache)
+    projection_score_cache = None if score_cache is None else jnp.asarray(score_cache)
+    projection_recon_cache = None if recon_cache is None else jnp.asarray(recon_cache)
+    projection_recon_abs2_cache = None if recon_abs2_cache is None else jnp.asarray(recon_abs2_cache)
     fine_translation_parent_device = jnp.asarray(fine_translation_parent, dtype=jnp.int32)
 
     scale_corrections_np = (
@@ -1975,7 +2001,9 @@ def compute_pass2_stats_resident(
             warm_pool = CompileAheadPool(warm_config)
             warm_predicted = None
             with warm_pool:
-                if warm_config.enabled:
+                # The warm-up describes the cached tables; a streamed pass keys
+                # its programs on chunk-local tables, so it compiles in the loop.
+                if warm_config.enabled and not stream_projections:
                     # A warm-up must never fail a run. The pool swallows a
                     # failure on its helper thread; this covers the submission
                     # itself, which runs here on the main thread and reaches
@@ -2182,6 +2210,8 @@ def compute_pass2_stats_resident(
             projection_score_cache=projection_score_cache,
             projection_recon_cache=projection_recon_cache,
             projection_recon_abs2_cache=projection_recon_abs2_cache,
+            stream_projection_fn=project_fine_rotations if stream_projections else None,
+            fine_grid=fine_grid,
             fine_translation_parent_device=fine_translation_parent_device,
             mstep_grid=mstep_grid,
             coarse_parent_grid=coarse_parent_grid,
@@ -2356,6 +2386,98 @@ _PLACE_AS_AVAL = _Placement(
     array=lambda value, dtype: jax.ShapeDtypeStruct(np.shape(value), jnp.dtype(dtype)),
     scalar=lambda value, dtype: jax.ShapeDtypeStruct((), jnp.dtype(dtype)),
 )
+
+
+_STREAM_SLOT_QUANTUM = 8192
+
+
+def _stream_row_capacity_ladder(row_ladder, *, bytes_per_rotation, max_projection_bytes):
+    """Row capacities whose chunk-local projection cache fits the cache budget.
+
+    A streamed chunk projects at most one rotation per row, so capacity times
+    the per-rotation bytes bounds its cache; the budget is the one the
+    per-iteration cache failed, which keeps the pass's peak where it would
+    have been had that cache fitted.
+    """
+
+    kept = tuple(
+        int(c) for c in row_ladder if float(c) * float(bytes_per_rotation) <= float(max_projection_bytes)
+    )
+    if not kept:
+        raise NotImplementedError(
+            f"The device-resident K=1 sparse pass 2 ({RESIDENT_PASS2_ENV}=1) does not implement "
+            "this configuration: even the smallest row capacity "
+            f"{min(int(c) for c in row_ladder)} needs "
+            f"{min(int(c) for c in row_ladder) * bytes_per_rotation / float(1024 ** 3):.2f} GiB of "
+            f"streamed projections against a {max_projection_bytes / float(1024 ** 3):.2f} GiB "
+            "budget. Clear the flag to use the compact engine; this path never falls back silently."
+        )
+    return kept
+
+
+def _stream_slot_count(n_unique: int, row_capacity: int) -> int:
+    """Projection-call length for ``n_unique`` rotations: a quantum multiple, capped."""
+
+    quantum = _STREAM_SLOT_QUANTUM
+    return int(min(int(row_capacity), max(quantum, -(-int(n_unique) // quantum) * quantum)))
+
+
+def _stream_chunk_projections(
+    rows,
+    host_row_fine_rot,
+    *,
+    n_valid_rows,
+    row_capacity,
+    project,
+    fine_grid,
+    mstep_grid,
+    coarse_parent_grid,
+):
+    """Project one chunk's distinct fine rotations and re-index its rows to them.
+
+    Returns ``(rows, slot_fine_rot, caches, mstep_grid, coarse_parent_grid)``
+    where ``rows.row_fine_rot`` now holds each row's chunk-local cache slot,
+    ``slot_fine_rot`` [row_capacity] maps a slot back to its global fine
+    rotation id, and the caches and the two grids are indexed by slot. Every
+    consumer gathers by slot exactly as it gathered by id from the
+    per-iteration caches, so the gathered projections are the same arrays; the
+    winning rotation is mapped back through ``slot_fine_rot``.
+
+    The cache arrays are always ``row_capacity`` long, so the chunk programs
+    stay keyed on the capacity class alone; only the projection call is
+    quantised to the chunk's distinct-rotation count. Valid rows read only the
+    first ``n_unique`` slots; padded rows read slot 0, a real rotation, and
+    carry a zero posterior. Slots past the projection call are zero and unread.
+    """
+
+    valid = np.asarray(host_row_fine_rot[: int(n_valid_rows)], dtype=np.int64)
+    unique, inverse = np.unique(valid, return_inverse=True)
+    if unique.size == 0:
+        unique = np.zeros(1, dtype=np.int64)
+    n_project = _stream_slot_count(unique.size, row_capacity)
+    slot_fine_rot = np.full(int(row_capacity), unique[0], dtype=np.int64)
+    slot_fine_rot[: unique.size] = unique
+    row_slot = np.zeros(int(row_capacity), dtype=np.int32)
+    row_slot[: valid.size] = inverse.astype(np.int32, copy=False)
+
+    slot_ids_device = jnp.asarray(slot_fine_rot, dtype=jnp.int32)
+    projected = project(fine_grid[slot_ids_device[:n_project]])
+    pad = int(row_capacity) - n_project
+
+    def full_length(values):
+        if pad == 0:
+            return values
+        widths = [(0, pad)] + [(0, 0)] * (values.ndim - 1)
+        return jnp.pad(values, widths)
+
+    caches = tuple(full_length(values) for values in projected)
+    return (
+        rows._replace(row_fine_rot=jnp.asarray(row_slot, dtype=jnp.int32)),
+        slot_ids_device,
+        caches,
+        mstep_grid[slot_ids_device],
+        coarse_parent_grid[slot_ids_device],
+    )
 
 
 def _make_chunk_row_arrays(tables, chunk, n_fine_trans, *, place) -> _ChunkRowArrays:
@@ -2838,6 +2960,7 @@ def _make_chunk_stage_tables(
     recon_pixel_indices,
     relion_x_half_recon_indices,
     image_tables,
+    cache_slot_fine_rot=None,
 ) -> _ChunkStageTables:
     """Assemble the iteration-global tables every chunk of a half reads.
 
@@ -2866,6 +2989,7 @@ def _make_chunk_stage_tables(
         shell_indices_half=image_tables.shell_indices_half,
         wavg_shell_indices=image_tables.wavg_shell_indices,
         wavg_scale_pixel_mask=image_tables.wavg_scale_pixel_mask,
+        cache_slot_fine_rot=cache_slot_fine_rot,
     )
 
 
@@ -3493,6 +3617,10 @@ class _ChunkStageTables(NamedTuple):
     shell_indices_half: jax.Array
     wavg_shell_indices: jax.Array
     wavg_scale_pixel_mask: jax.Array
+    # Streamed projections: the global fine rotation id of each chunk-local
+    # cache slot (rows then carry slots, not ids). None when the caches are the
+    # per-iteration fine-grid caches, where the slot is the id.
+    cache_slot_fine_rot: jax.Array | None = None
 
 
 class _ChunkPosterior(NamedTuple):
@@ -4171,6 +4299,8 @@ def _resident_chunk_statistics(
         jnp.int64(max(int(spec.row_capacity) - 1, 0)),
     ).astype(jnp.int32)
     best_fine_rot = jnp.asarray(rows.row_fine_rot, dtype=jnp.int64)[best_chunk_row]
+    if tables.cache_slot_fine_rot is not None:
+        best_fine_rot = jnp.asarray(tables.cache_slot_fine_rot, dtype=jnp.int64)[best_fine_rot]
 
     chunk_operands = _ChunkImageOperands(
         row_posterior=posterior.row_posterior,
@@ -4378,6 +4508,8 @@ def _run_resident_chunk(
     mstep_block_rows,
     adaptive_fraction,
     windowed_prepare,
+    stream_projection_fn=None,
+    fine_grid=None,
     window_indices,
     recon_window_indices,
     relion_x_half_recon_indices,
@@ -4435,6 +4567,27 @@ def _run_resident_chunk(
         chunk_t0 = time.time()
 
     rows = _make_chunk_row_arrays(tables, chunk, n_fine_trans, place=_PLACE_ON_DEVICE)
+    cache_slot_fine_rot = None
+    if stream_projection_fn is not None:
+        (
+            rows,
+            cache_slot_fine_rot,
+            (projection_score_cache, projection_recon_cache, projection_recon_abs2_cache),
+            mstep_grid,
+            coarse_parent_grid,
+        ) = _stream_chunk_projections(
+            rows,
+            materialize_chunk(tables, chunk)["row_fine_rot"],
+            n_valid_rows=n_valid_rows,
+            row_capacity=row_capacity,
+            project=stream_projection_fn,
+            fine_grid=fine_grid,
+            mstep_grid=mstep_grid,
+            coarse_parent_grid=coarse_parent_grid,
+        )
+        if timing:
+            jax.block_until_ready(projection_score_cache)
+            stage_t["projections"] = time.time() - chunk_t0
 
     if resident_operands is None:
         recon = _prepare_chunk_reconstruction_operands(
@@ -4547,6 +4700,7 @@ def _run_resident_chunk(
         recon_pixel_indices=recon_pixel_indices,
         relion_x_half_recon_indices=relion_x_half_recon_indices,
         image_tables=image_tables,
+        cache_slot_fine_rot=cache_slot_fine_rot,
     )
     spec = _make_chunk_program_spec(
         row_capacity=row_capacity,
@@ -4610,11 +4764,12 @@ def _run_resident_chunk(
         blocks = sum(1 for s in range(0, row_capacity, int(mstep_block_rows)) if s < n_valid_rows)
         logger.info(
             "Resident pass-2 chunk timing: jit=%d images=%d/%d rows=%d/%d occupancy=%.3f "
-            "mstep_blocks=%d/%d operands=%.3fs %s total=%.3fs",
+            "mstep_blocks=%d/%d projections=%.3fs operands=%.3fs %s total=%.3fs",
             int(use_jit),
             n_valid_images, image_capacity, n_valid_rows, row_capacity,
             n_valid_rows / max(row_capacity, 1),
             blocks, row_capacity // int(mstep_block_rows),
+            stage_t.get("projections", 0.0),
             operands_s,
             split,
             total,
