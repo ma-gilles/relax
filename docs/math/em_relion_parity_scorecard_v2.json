@@ -253,8 +253,8 @@
       "id": "strict-k1-suite2-gridding-20260924",
       "recorded_utc": "2026-09-24T13:19:31+00:00",
       "source_heads": [
-        "4e945a13dd68d570e7dd3748c30d406cf31bb544",
-        "5da9e54cdb0b6c16fddcb90e5366dc54211ade88"
+        "a185bb7da6457c12b34951ad1abc14562afc8f2a",
+        "6c5add3db63bc4dc31d4726201d5222337bb137f"
       ],
       "counts": {
         "pass": 31,

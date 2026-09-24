@@ -56,7 +56,7 @@ value in that audit.
 | `--preread_images` ("Pre-read all particles into RAM?") | no option (implicit pre-read of stacks up to 16 GiB) | No: images stream from the stacks | 4298; 3810 | off | yes (1e21746, `relax/helpers/particle_io.py`; also InitialModel, replacing `--lazy`) |
 | `--scratch_dir` ("Copy particles to scratch directory"), `--keep_free_scratch` | no option (recovar's implicit `TMPDIR` staging) | empty (no copy); keep 10 GB free | 4299-4305 | empty; 10 | yes (1e21746) |
 | `--pool`, `--dont_combine_weights_via_disc` | (no option) | 3, on | 4294 | 1, off | no numerical effect |
-| final all-data gridding correction (`griddingCorrect`) | off unless `RELAX_FINAL_ALL_DATA_GRID_CORRECT=1` | always on (not an option) | `backprojector.cpp:2021`, `projector.cpp:595-627` | always on | yes (556d342): always on; the selector and its env var are retired. Qualified end to end by K1 100k/256 job 14365794 |
+| final all-data gridding correction (`griddingCorrect`) | off unless `RELAX_FINAL_ALL_DATA_GRID_CORRECT=1` | always on (not an option) | `backprojector.cpp:2021`, `projector.cpp:595-627` | always on | yes (a185bb7): always on; the selector and its env var are retired. Qualified end to end by K1 100k/256 job 14365794 |
 | `--solvent_mask`, `--solvent_correct_fsc`, `--blush`, `--auto_ignore_angles`, `--helix`, `--relax_sym`, `--sigma_ang`, `--fast_subsets`, `--strict_highres_exp`, `--skip_align` | (no option) | off / not passed | 4200-4221; 3695-3734 | off | not implemented |
 
 ## 3D initial model (InitialModel / VDAM)

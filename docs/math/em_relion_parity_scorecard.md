@@ -93,7 +93,7 @@ Each row contains four class-level FSC-AUC checks at the frozen `0.995` gate. A 
 | `strict-k1-v10-20260814` | 1 | 2026-08-14T10:59:00+00:00 | `36dac0171859`, `7f0e2348dbee` | 29 | +1 | 5 | 0 |
 | `strict-k1-v11-20260814` | 1 | 2026-08-14T14:46:03+00:00 | `e791e87502b5` | 30 | +1 | 4 | 0 |
 | `strict-k1-v12-20260821` | 1 | 2026-08-21T05:30:00+00:00 | `fdec6f931d22` | 31 | +1 | 3 | 0 |
-| `strict-k1-suite2-gridding-20260924` | 2 | 2026-09-24T13:19:31+00:00 | `4e945a13dd68`, `5da9e54cdb0b` | 31 | +0 | 3 | 0 |
+| `strict-k1-suite2-gridding-20260924` | 2 | 2026-09-24T13:19:31+00:00 | `a185bb7da645`, `6c5add3db63b` | 31 | +0 | 3 | 0 |
 
 ## Suite version 2 regeneration
 
