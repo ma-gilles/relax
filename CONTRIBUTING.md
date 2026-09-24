@@ -186,8 +186,9 @@ end-to-end case skipped. The oracles are RELION fixed-state runs and pinned
 relax outputs. Quality is judged by FSC. Every fast parity case must reach its
 FSC-AUC floor and its minimum in-band shell FSC floor against its RELION oracle
 for every half or matched class, and keep the mean per-particle |ΔPmax| under
-its bound. The K1 5k end-to-end run must converge at RELION's iteration, stay
-within 0.002 of the RELION repeat band's GT FSC-AUC, and reach cross FSC-AUC
+its bound. The K1 5k end-to-end run must converge at RELION's iteration, record
+`final_all_data_grid_correct`, and, for both the unfiltered half-map average and the merged
+map, stay within 0.002 of the RELION repeat band's GT FSC-AUC and reach cross FSC-AUC
 0.990 against every RELION run. The values are in
 `tests/tiers/fsc_thresholds.json` (approved by the user 2026-09-24; floor =
 1 − 2 × max(relax deficit, RELION repeat deficit)); scoring is
@@ -197,6 +198,21 @@ Pinned outputs are kept per GPU model, and a run is compared only with the
 entry of its own model: anything that compares a control with a candidate
 numerically pins the same GPU model on both (`--gpu-model a100|h100`). Map
 correlation is a diagnostic only.
+
+**GPU noise envelope.** Two runs of the same code on the same GPU model differ: racing
+reductions move the printed metrics by about 1e-13 to 1e-6, so control and candidate are
+judged by the gates above, never by bitwise equality. `tests/tiers/gpu_noise_envelope.json`
+records, per fast-tier case and metric (the gate metrics and the ledger values), the largest
+same-code difference observed (`max_abs_diff`) with its sources, and a check limit
+`noise_limit` = max(10 × `max_abs_diff`, 1e-9), since each case has only a few same-code
+pairs. Measured on H100 from seven pairs (three runs of 02b4cb3, speed's b1c40f9 repeats, the curres
+v3/v4 control and candidate): replays move FSC-AUC by at most 1.4e-9 with Pmax identical; cold
+starts, perturbreplay and K-class runs by at most 2.2e-7 (minimum shell FSC 3.4e-7, mean
+|ΔPmax| 1.6e-6). Unit-level repeats agree (resident wsum_norm_correction 3.5e-8 over 40 runs).
+`python scripts/em_tier_noise_envelope.py check --control <basetemp> --candidate <basetemp>`
+reports each difference against it; a difference inside needs no rerun, and one outside is
+a real change that the gates judge. The envelope is per GPU model (H100 so far); across
+models the spread is larger (A100 vs H100 kclass_replay FSC-AUC 3.6e-6).
 
 **Fixtures.** The repository keeps only small metrics, thresholds, pinned
 summaries and `tests/fixtures/em_fixture_manifest.json` (per fixture set: root,
