@@ -295,15 +295,15 @@ repeats. These are the current relax runs, not the frozen calibration runs above
 
 ### EMPIAR-10097\* (relax `427a08bd8`)
 
-\* RELION's own three same-command runs split into two pose basins: the reference and r1 agree (merged/halves band FSC-AUC 0.9756/0.9564/0.9601), r2 differs from both (reference vs r2 0.9294/0.8805/0.8851, r1 vs r2 0.9294/0.8802/0.8848). relax lands in r2's basin: it meets the thresholds (merged >= 0.95, each half >= 0.90) against r2 (0.9740/0.9514/0.9562) but not against the reference (0.9313/0.8793/0.8840) or r1 (0.9312/0.8789/0.8837). It passes under the user's 2026-09-23 rule (thresholds met against at least one same-command RELION run; band condition dropped). Masked cross-engine FSC-AUC with the frozen mask is 0.9826 vs reference, 0.9825 vs r1, 0.9935 vs r2 (merged). All comparisons: see the per-reference table.
+\* RELION's own three same-command runs split into two pose basins: the reference and r1 agree (merged/halves band FSC-AUC 0.9756/0.9564/0.9601), r2 differs from both (reference vs r2 0.9294/0.8805/0.8851, r1 vs r2 0.9294/0.8802/0.8848). relax lands in r2's basin: it meets the thresholds (merged >= 0.95, each half >= 0.90) against r2 (0.9731/0.9514/0.9562) but not against the reference (0.9284/0.8793/0.8840) or r1 (0.9283/0.8789/0.8837). It passes under the user's 2026-09-23 rule (thresholds met against at least one same-command RELION run; band condition dropped). Masked cross-engine FSC-AUC with the frozen mask is 0.9821 vs reference, 0.9821 vs r1, 0.9934 vs r2 (merged). All comparisons: see the per-reference table.
 
 relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
 
 | RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| reference | 13124450 | 0.9313 | 0.8793 | 0.8840 | 0.9826 | 0.9603 | 0.9623 | not met |
-| r1 | 14281010 | 0.9312 | 0.8789 | 0.8837 | 0.9825 | 0.9601 | 0.9623 | not met |
-| r2 | 14281011 | 0.9740 | 0.9514 | 0.9562 | 0.9935 | 0.9841 | 0.9856 | met |
+| reference | 13124450 | 0.9284 | 0.8793 | 0.8840 | 0.9821 | 0.9603 | 0.9623 | not met |
+| r1 | 14281010 | 0.9283 | 0.8789 | 0.8837 | 0.9821 | 0.9601 | 0.9623 | not met |
+| r2 | 14281011 | 0.9731 | 0.9514 | 0.9562 | 0.9934 | 0.9841 | 0.9856 | met |
 
 RELION against RELION (same band FSC-AUCs):
 
