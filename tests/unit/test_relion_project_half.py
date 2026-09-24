@@ -1,4 +1,6 @@
 import numpy as np
+import pytest
+from scipy.spatial.transform import Rotation
 
 
 def test_relion_project_half_uses_projector_matrix_directly():
@@ -336,3 +338,118 @@ def test_relion_acc_double_floorf_quirk_flips_bucket_at_integer_boundary():
     # values differ by ~8e-7 here -- far above float64 rounding noise (~1e-15)
     # and proof the flag actually changes which bucket is used.
     assert abs(quirked[0, 1] - default[0, 1]) > 1e-8
+
+
+def _acc_kernel_keeps(x, y, matrix, r_max, image_size, padding_factor):
+    """RELION's accelerated radius decision for one half-image pixel.
+
+    ``AccProjectorKernel::makeKernel`` clamps the model radius to the image
+    radius ``imgMaxR = imgX - 1`` (relion/src/acc/acc_projectorkernel_impl.h:301-310,
+    acc/acc_ml_optimiser_impl.h:1902-1907); ``project3Dmodel`` truncates the rotated
+    squared radius to ``int`` and compares it with ``maxR**2 * pf**2``
+    (acc_projectorkernel_impl.h:161-179). The diff2 kernels wrap rows at ``maxR``
+    (acc/cuda/cuda_kernels/diff2.cuh:86-90) and apply no unrotated output disc.
+    """
+    max_r = min(r_max, image_size // 2)
+    if y > max_r:
+        y -= image_size
+    xp = (matrix[0, 0] * x + matrix[0, 1] * y) * padding_factor
+    yp = (matrix[1, 0] * x + matrix[1, 1] * y) * padding_factor
+    zp = (matrix[2, 0] * x + matrix[2, 1] * y) * padding_factor
+    return int(xp * xp + yp * yp + zp * zp) <= max_r * max_r * padding_factor * padding_factor
+
+
+def _scaled_rotation(scale):
+    matrix = np.eye(3, dtype=np.float64)
+    matrix[0, 0] = matrix[1, 1] = scale
+    return matrix
+
+
+@pytest.mark.parametrize("r_max", [3, 4, 6])
+@pytest.mark.parametrize(
+    "matrix",
+    [
+        # Pixel (x=4, y=1): r**2 = 17 * 16.99 / 17 truncates to 16. Kept at
+        # r_max 4 by the GPU rule, although 4**2 + 1**2 lies outside the disc.
+        _scaled_rotation(np.sqrt(16.99 / 17.0)),
+        # Pixel (x=4, y=0): r**2 = 17.6 lies inside r_max 6 but outside the
+        # image radius 4, so makeKernel's clamp removes it.
+        _scaled_rotation(np.sqrt(1.1)),
+        *Rotation.random(4, random_state=31).as_matrix().astype(np.float32).astype(np.float64),
+    ],
+)
+def test_relion_project_half_radius_matches_relion_accelerated_kernel(r_max, matrix):
+    """The kept pixels are exactly those RELION's GPU kernel keeps."""
+    import jax.numpy as jnp
+
+    from relax.relion.relion_project import relion_project_half
+
+    image_size = 8
+    volume_size = 24  # large enough that no kept pixel reads outside the box
+    volume = np.ones((volume_size, volume_size, volume_size // 2 + 1), dtype=np.complex128)
+    projected = np.asarray(
+        relion_project_half(jnp.asarray(volume), jnp.asarray(matrix), image_size, r_max=r_max, padding_factor=1)
+    )
+
+    expected = np.asarray(
+        [
+            [_acc_kernel_keeps(x, row, matrix, r_max, image_size, 1) for x in range(image_size // 2 + 1)]
+            for row in range(image_size)
+        ]
+    )
+    # A constant volume interpolates to exactly one wherever a pixel is kept.
+    np.testing.assert_array_equal(projected != 0, expected)
+    np.testing.assert_allclose(projected[expected], 1.0, rtol=0.0, atol=1e-12)
+
+
+@pytest.mark.parametrize("padding_factor", [1, 2])
+@pytest.mark.parametrize("logical_size,physical_size", [(30, 32), (60, 64), (46, 56)])
+def test_relion_project_half_center_padded_capacity_matches_logical(logical_size, physical_size, padding_factor):
+    """Center-padding PPref into a larger capacity and cropping is neutral.
+
+    The projector is complex128 and rotations are float32 matrices widened to
+    float64, as in VDAM. Padded and logical projections evaluate the same
+    arithmetic on the same texels, so the measured difference is zero; the
+    1e-12 relative tolerance only allows for compiler reassociation.
+    """
+    import jax.numpy as jnp
+
+    from relax.relion.relion_project import relion_project_half
+
+    r_max = logical_size // 2
+    pf = padding_factor
+    size = 2 * (pf * r_max + 1) + 1
+    rng = np.random.default_rng(logical_size * 10 + pf)
+    logical = rng.standard_normal((size, size, size // 2 + 1)) + 1j * rng.standard_normal(
+        (size, size, size // 2 + 1)
+    )
+    coord = np.arange(size) - size // 2
+    radius2 = coord[:, None, None] ** 2 + coord[None, :, None] ** 2 + np.arange(size // 2 + 1)[None, None, :] ** 2
+    logical[radius2 > (pf * r_max) ** 2] = 0.0  # RELION's PPref support, ghost planes included
+
+    capacity = 2 * (pf * (physical_size // 2) + 1) + 1
+    offset = (capacity - size) // 2
+    padded = np.zeros((capacity, capacity, capacity // 2 + 1), dtype=logical.dtype)
+    padded[offset : offset + size, offset : offset + size, : logical.shape[2]] = logical
+
+    rows = np.arange(logical_size)
+    signed_y = np.where(rows <= logical_size // 2, rows, rows - logical_size)
+    physical_rows = np.where(signed_y >= 0, signed_y, signed_y + physical_size)
+    x_half = np.arange(logical_size // 2 + 1)
+    shell = (signed_y[:, None] ** 2 + x_half[None, :] ** 2) == r_max**2 + 1
+
+    rotations = Rotation.random(12, random_state=logical_size).as_matrix().astype(np.float32).astype(np.float64)
+    shell_pixels_kept = 0
+    for matrix in rotations:
+        reference = np.asarray(
+            relion_project_half(jnp.asarray(logical), jnp.asarray(matrix), logical_size, r_max=r_max, padding_factor=pf)
+        )
+        candidate = np.asarray(
+            relion_project_half(jnp.asarray(padded), jnp.asarray(matrix), physical_size, r_max=r_max, padding_factor=pf)
+        )[physical_rows][:, : logical_size // 2 + 1]
+        np.testing.assert_allclose(candidate, reference, rtol=0.0, atol=1e-12 * np.max(np.abs(reference)))
+        shell_pixels_kept += int(np.count_nonzero(reference[shell]))
+    # At pf 1 the comparison must include the r_max**2 + 1 shell the int rule
+    # admits. At pf 2 that shell scales to 4 * r_max**2 + 4 and cannot truncate
+    # to 4 * r_max**2, so no shell pixel is kept.
+    assert (shell_pixels_kept > 0) == (pf == 1)

@@ -1,4 +1,4 @@
-"""Bit-exact JAX port of RELION's `Projector::project` (relion/src/projector.cpp:630-790).
+"""JAX port of RELION's `Projector::project` (relion/src/projector.cpp:630-790) with the GPU radius rule.
 
 Replaces `recovar.core.slicing._jax_slice_half_image` for the RELION-parity
 path so the projection of a Fourier volume matches RELION's `Projector::project`
@@ -7,7 +7,8 @@ output bit-for-bit.
 Algorithm (per output pixel (i, x) of the half-image (Y, X//2+1)):
   1. y = i if i <= r_max_out else i - YSIZE     (FFTW-natural y indexing)
   2. (xp, yp, zp) = Ainv @ (x, y, 0)
-  3. Skip if x*x + y*y > r_max_out² OR int(r²) > r_max_ref² → zero
+  3. Skip if int(r²) > (min(r_max, r_max_out) * padding_factor)² → zero
+     (RELION's GPU radius rule; see "Radius test" below)
   4. If xp < 0: negate (xp, yp, zp), record is_neg_x
   5. x0 = floor(xp); fx = xp - x0; y0 = floor(yp); fy = yp - y0; z0 = floor(zp); fz = zp - z0
   6. y0 -= STARTINGY; z0 -= STARTINGZ                     (Xmipp-origin shift)
@@ -33,6 +34,27 @@ quirk here: it narrows ``xp``/``yp``/``zp`` to float32 before flooring (deriving
 original double ``xp``, exactly as RELION's kernel does. This is off by default;
 it exists only to bit-match RELION's GPU-double build, not because it is
 numerically preferable -- it is a narrowing bug being reproduced, not fixed.
+
+Radius test. RELION's oracles run on the GPU, so the radius test follows the
+accelerated kernel, not ``Projector::project``. ``AccProjectorKernel::makeKernel``
+clamps the model radius to the image radius, ``maxR = min(PPref.r_max, imgMaxR)``
+(``relion/src/acc/acc_projectorkernel_impl.h:301-310``), where every E-step call
+passes ``imgMaxR = Minvsigma2.xdim - 1`` (``acc/acc_ml_optimiser_impl.h:1902-1907``).
+``project3Dmodel`` then stores the rotated squared radius in an ``int`` and keeps
+the pixel when ``r2 <= maxR * maxR * padding_factor * padding_factor``
+(``acc_projectorkernel_impl.h:161-179``). The diff2 kernels visit every pixel
+of the ``imgX * imgY`` half image (``acc/cuda/cuda_kernels/diff2.cuh:86-90``);
+there is no second test on the unrotated ``x*x + y*y``. The CPU
+``Projector::project`` instead limits ``x`` to the exact output disc
+(``relion/src/projector.cpp:642-670``) and compares the rotated radius as a float
+(``projector.cpp:679-681``). Mixing that exact output disc with the ``int``
+model test is not RELION's rule on either path, and it made the result depend
+on the output buffer size: pixels on the ``x*x + y*y = r_max**2 + 1`` shell whose
+rotated ``r2`` truncates to ``r_max**2`` were dropped at the logical output size
+and kept in a larger, center-padded capacity buffer. With the GPU rule the test
+depends only on ``min(r_max, r_max_out)``, so projecting a center-padded
+projector into a larger output and cropping to the logical box gives the
+logical projection (``scripts/prove_vdam_projector_capacity.py``).
 """
 
 from __future__ import annotations
@@ -81,8 +103,8 @@ def relion_project_half(
     out_h = image_size
     out_w = image_size // 2 + 1
     r_max_out = out_w - 1
-    r_max_out_2 = r_max_out * r_max_out
-    r_max_ref = r_max * padding_factor
+    # AccProjectorKernel::makeKernel: maxR = min(model r_max, image xdim - 1).
+    r_max_ref = min(r_max, r_max_out) * padding_factor
     r_max_ref_2 = r_max_ref * r_max_ref
 
     A = jnp.asarray(R_relion, dtype=jnp.float64) * float(padding_factor)
@@ -113,9 +135,9 @@ def relion_project_half(
     # truncates toward zero. The distinction matters on the outer shell:
     # roundoff can make an orthogonal rotation produce r2 just above the
     # integer radius squared, but RELION still retains the pixel while a
-    # direct floating-point comparison incorrectly drops it.
+    # direct floating-point comparison incorrectly drops it. This is the only
+    # radius test (module docstring, "Radius test").
     r2_ref = (xp * xp + yp * yp + zp * zp).astype(jnp.int32)
-    r2_out = (X * X + Y * Y).astype(jnp.float64)
 
     # Floor + fractional. RELION's GPU kernel floors the (double) coordinate
     # with CUDA's single-precision floorf(); the fractional part still
@@ -144,7 +166,7 @@ def relion_project_half(
 
     # Bounds: matches RELION's "if (x0 < 0 || x0+1 >= data.xdim || ...) continue"
     in_bounds = (x0r >= 0) & (x1r < half_x) & (y0r >= 0) & (y1r < pad_y) & (z0r >= 0) & (z1r < pad_z)
-    valid = in_bounds & (r2_ref <= r_max_ref_2) & (r2_out <= r_max_out_2)
+    valid = in_bounds & (r2_ref <= r_max_ref_2)
 
     # Clip indices for safe gather (masked-out anyway)
     x0c = jnp.clip(x0r, 0, half_x - 1)
