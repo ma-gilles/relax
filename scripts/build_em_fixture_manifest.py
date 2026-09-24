@@ -241,6 +241,27 @@ for _case in _SYMMETRY_CASES:
         f"Symmetry-matrix case {_case}: data + RELION reference as pinned by the frozen Q 427a08bd8 run", ["PROVENANCE.json"],
     )
 
+# Oracles written by a RELION build with the libc particle order (optimiser header
+# "version 5.0.1" without a commit: the MOLBIO module build or the d476e6f dispatch build).
+# relax implements only RELION 5.0.1 f2c1a3's mt19937 order (docs/development/relion_defaults.md).
+_LIBC_ORDER_K1 = (
+    "Captured with the legacy-order module build; its seeded K1 comparison is invalid until "
+    "recaptured with f2c1a3."
+)
+_LIBC_ORDER_KCLASS = (
+    "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles "
+    "differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug."
+)
+ORACLE_BUILD_NOTES = {
+    "symmetry_k1_c4": _LIBC_ORDER_K1,
+    "k4_5k128_oracle_h1_os1": _LIBC_ORDER_KCLASS,
+    "k4_5k128_oracle_h2_os1": _LIBC_ORDER_KCLASS,
+    "k4_5k128_oracle_h1_os1_repeat": _LIBC_ORDER_KCLASS,
+    "k4_5k128_oracle_h2_os1_repeat": _LIBC_ORDER_KCLASS,
+    "k4_100k256_dispatch_oracle": _LIBC_ORDER_KCLASS,
+    **{f"symmetry_{case}": _LIBC_ORDER_KCLASS for case in _SYMMETRY_CASES if case != "k1_c4"},
+}
+
 
 def _select(root: Path, include: list[str], exclude: list[str]) -> list[str]:
     """TOP selects the directory's own files; RUN selects every file below it."""
@@ -292,7 +313,10 @@ def build_set(name: str, jobs: int) -> dict:
     relion = _relion_provenance(root)
     if relion:
         provenance["relion_optimiser_headers"] = relion
-    return {"root": str(root), "description": description, "provenance": provenance, "files": files}
+    entry = {"root": str(root), "description": description, "provenance": provenance, "files": files}
+    if name in ORACLE_BUILD_NOTES:
+        entry["oracle_build_note"] = ORACLE_BUILD_NOTES[name]
+    return entry
 
 
 def main(argv: list[str] | None = None) -> int:

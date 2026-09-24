@@ -53,7 +53,10 @@ value in that audit.
 | `--low_resol_join_halves` | 40 A, fixed | 40 A | 4509 | -1 | no |
 | `--ctf`, `--flatten_solvent`, `--zero_mask`, `--norm --scale` | always on | on | 4450-4463, 4510; 3949-3968, 4028 | off | no |
 | `--trust_ref_size` | reference must match the box | on (resize) | 4171; 3657 | off | not implemented |
-| `--pool`, `--scratch_dir`, `--dont_combine_weights_via_disc`, `--preread_images` | (no option) | 3, empty, on, off | 4294 | - | no numerical effect |
+| `--preread_images` ("Pre-read all particles into RAM?") | no option (recovar may pre-read or stage stacks) | No: images stream from the stacks | 4298; 3810 | off | pending: the streaming delegate's `relax/helpers/particle_io.py` (branch `claude/stream-scratch-20260924`) adds it with the GUI default |
+| `--scratch_dir` ("Copy particles to scratch directory") | no option (recovar's implicit `TMPDIR` staging) | empty (no copy) | 4299-4305 | empty | pending, same branch |
+| `--pool`, `--dont_combine_weights_via_disc` | (no option) | 3, on | 4294 | 1, off | no numerical effect |
+| final all-data gridding correction (`griddingCorrect`) | off unless `RELAX_FINAL_ALL_DATA_GRID_CORRECT=1` | always on (not an option) | `backprojector.cpp:2021`, `projector.cpp:595-627` | always on | pending: branch `fix/final-gridding-always-on` makes it always on after qualification (K1 job 14365794) |
 | `--solvent_mask`, `--solvent_correct_fsc`, `--blush`, `--auto_ignore_angles`, `--helix`, `--relax_sym`, `--sigma_ang`, `--fast_subsets`, `--strict_highres_exp`, `--skip_align` | (no option) | off / not passed | 4200-4221; 3695-3734 | off | not implemented |
 
 ## 3D initial model (InitialModel / VDAM)
@@ -74,3 +77,27 @@ command, which fixes the sampling line (`pipeline_jobs.cpp:3544-3549`).
 | `--padding-factor` | 1 | 1 | 3544 | 2 | no |
 | `--grad-write-iter` | 10 | not passed | - | 10 | no |
 | `--random-seed` | 0 (RELION's "skip randomisation") | not passed: -1, the time | - | -1 (`ml_optimiser.cpp:1232, 2827, 3726`) | yes |
+
+## Oracle builds and particle order
+
+relax implements only RELION 5.0.1 f2c1a3's particle order (`std::shuffle` with
+one `mt19937`, `exp_model.cpp:406-456`). The MOLBIO module build
+(`relion/5.0.1/gcc-11.5.0-gpu`) and the d476e6f dispatch-capture build still
+use libc `srand`/`random_shuffle`; their STAR headers say `version 5.0.1`
+without a commit. The fixture manifest carries an `oracle_build_note` on every
+oracle they wrote:
+
+- `em_fixtures/em_symmetry_matrix/k1_c4/relion_ref` was captured with the
+  legacy-order build. Its seeded K1 comparison is invalid until it is recaptured
+  with f2c1a3 (the recapture, Slurm 14367701, goes to a new `relion_ref_f2c1a3`
+  directory; the old copy stays, marked superseded).
+- The K4 oracles (`k4_fast_oracles/*`, the K4 100k dispatch oracle, the twelve
+  K4 symmetry cases) draw Class3D's expected-accuracy trial particles from the
+  libc shuffle; relax draws them from mt19937 (`relion_class3d_trial_layout`).
+  This is a known oracle-build difference, not a relax bug. The dispatch
+  schedule fixes the processing order of those replays.
+
+K1 oracles for the fast, long and completion tiers and the real-data rows are
+f2c1a3. The K1 robustness matrix runs the f2c1a3 `relion_refine_mpi` by path
+and sha256, and the completion bench refuses a standalone K1 oracle from any
+other build.

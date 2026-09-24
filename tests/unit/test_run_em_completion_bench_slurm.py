@@ -296,6 +296,9 @@ def test_completion_k4_resource_overrides_are_written(tmp_path):
     assert "K4_MEM=128G" in submission_env_text
     assert "K4_TIME_LIMIT=04:00:00" in submission_env_text
     assert f'--relion-dispatch-schedule "{dispatch_schedule}"' in k4_text
+    # The K4 100k oracle ran without --firstiter_cc and --ini_high; the GUI defaults turn both on.
+    assert "--no-firstiter_cc" in k4_text
+    assert "--no-apply-initial-lowpass" in k4_text
     assert f"K4_RELION_DISPATCH_SCHEDULE={dispatch_schedule}" in submission_env_text
     assert 'mkdir -p "${OUTPUT_DIR}" "${OUTPUT_DIR}/intermediates"' in k4_text
     assert '--save_intermediates_dir "${OUTPUT_DIR}/intermediates"' in k4_text

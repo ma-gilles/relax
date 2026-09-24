@@ -1664,6 +1664,7 @@
     "schedule/dispatch_schedule.npz": [4472333, "695e8bb47cfb431161b019bfab6cbdd5c5da26fe957183c4b65bf5da1c65ed22"],
     "schedule/oracle_dispatch.tsv": [27266732, "0cfaedce798e9b372d6935f58621151725b5bfd0d9d086a417ea1041d8187ac5"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/ribosembly_k4_g256_n100000/relion_dispatch_oracle_h100_13708102/PROVENANCE.json"
@@ -2240,6 +2241,7 @@
     "run_it008_optimiser.star": [7706, "b7b63b4350ac2d35c0656f7ac52bb94f2fd715d29aa69c3c9eb71585222d6a83"],
     "run_it008_sampling.star": [2227, "e97815515de3b14e0fab965644db662b3d6425aef1f926e4996d9f7f431423bd"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/k4_fast_oracles/h1_os1_13605775/PROVENANCE.json",
@@ -2322,6 +2324,7 @@
     "records/capture_v3.sbatch": [1808, "beec06d4d77ef2632fb155b850c7109270b64f36e734dc81d5f544386dae272a"],
     "records/source_manifest.json": [359242, "3f43c7d66520c24be2f7b12e27a0b12a475570464813d11a66d9df3afd8c1da1"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/k4_fast_oracles/h1_os1_14248154/PROVENANCE.json"
@@ -2451,6 +2454,7 @@
     "run_it008_optimiser.star": [7681, "e8ee170972d9731c9aeb1278ac63587f483e01e615a13d74359a79f95b7c36bc"],
     "run_it008_sampling.star": [6115, "cb344bdb20e4297cdd7f24bbb48932385de3ac02e5e5d64eb3da4e2915ed63b5"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/k4_fast_oracles/h2_os1_13630212/PROVENANCE.json",
@@ -2533,6 +2537,7 @@
     "records/capture_v3.sbatch": [1808, "beec06d4d77ef2632fb155b850c7109270b64f36e734dc81d5f544386dae272a"],
     "records/source_manifest.json": [359242, "3f43c7d66520c24be2f7b12e27a0b12a475570464813d11a66d9df3afd8c1da1"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/k4_fast_oracles/h2_os1_14248155/PROVENANCE.json"
@@ -2749,6 +2754,7 @@
     "relion_ref/runtime_physical_gpu_uuid.txt": [41, "314d72faabb88430ea1d2131ec426e3f1e8e9b861c32bdf13882213a2c05d153"],
     "relion_ref/slurm_walltime.json": [113, "03b97c5e37522786d37693e1b4f770732e201865348197c3309359aa1863234c"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/25_ribo_k4_3k_g128_white_noise1_batch50_seed41001/PROVENANCE.json"
@@ -2877,6 +2883,7 @@
     "relion_ref/runtime_physical_gpu_uuid.txt": [41, "a380073dba4312020068539df016448b71a3f7913b9c2d43fbb8c3b451b6b7ad"],
     "relion_ref/slurm_walltime.json": [113, "be55ed8356578f1963121d58a4f5385d6ceb314f9465ed959a8991725937c91b"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/31_ribo_k4_5k_g128_white_noise1_c4_uniform_seed41001/PROVENANCE.json"
@@ -3005,6 +3012,7 @@
     "relion_ref/runtime_physical_gpu_uuid.txt": [41, "b555480441406f093a07216c45402e05fcb6ef9eed2abf54b9fb69edf90aee06"],
     "relion_ref/slurm_walltime.json": [113, "cc751eb7cff91141a5d7426f11ff220bdc8d01fa5b6329b69e7a012cdd959c49"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/31_ribo_k4_5k_g128_white_noise1_c4_uniform_seed41002/PROVENANCE.json"
@@ -3133,6 +3141,7 @@
     "relion_ref/runtime_physical_gpu_uuid.txt": [41, "dbbd4d99914d7990710b3fd9eef6a98014a3b53b744933448f765b211ab165a3"],
     "relion_ref/slurm_walltime.json": [113, "504de7c2e679ca43fa99a122ef34eaa65673d31ff43ee7a204ce53899c57b8bc"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/31_ribo_k4_5k_g128_white_noise1_c4_uniform_seed41003/PROVENANCE.json"
@@ -3261,6 +3270,7 @@
     "relion_ref/runtime_physical_gpu_uuid.txt": [41, "f063fe27f04b0018f9aa7a959bb6cdfb24c9a0ce192b7b65a180a32c2bc4ce6b"],
     "relion_ref/slurm_walltime.json": [113, "81c07b676b8fb05d81766a5109ea8baaefcc15155f8885a1acd8b21264786197"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/32_ribo_k4_5k_g128_white_noise1_d4_uniform_seed41001/PROVENANCE.json"
@@ -3389,6 +3399,7 @@
     "relion_ref/runtime_physical_gpu_uuid.txt": [41, "1ff596b814e0a63d4622305fff071eba31b37b563680e351ddaeb3542088be5a"],
     "relion_ref/slurm_walltime.json": [113, "514a81ffaa159647af71518249a31f14a0a115bfb72a7018ae9b0ec99d476f71"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/32_ribo_k4_5k_g128_white_noise1_d4_uniform_seed41002/PROVENANCE.json"
@@ -3517,6 +3528,7 @@
     "relion_ref/runtime_physical_gpu_uuid.txt": [41, "d348997bcee00886fedd9435200c3498843762f6ec4cbd61f80f53b61905b21d"],
     "relion_ref/slurm_walltime.json": [113, "18f7479bd4571c4c59cfe09625b242f743fa40912a2eec546e24ed8b90395c0d"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/32_ribo_k4_5k_g128_white_noise1_d4_uniform_seed41003/PROVENANCE.json"
@@ -3645,6 +3657,7 @@
     "relion_ref/runtime_physical_gpu_uuid.txt": [41, "660f2ce821cf8ede27f4b88e23e3a44592dc5c65cd14bca520f480b9a3ad853c"],
     "relion_ref/slurm_walltime.json": [113, "9c225ba6a462dd438666a5cf7395f08e8849177bc06f1dc87f26eaec6aa41d7f"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/33_ribo_k4_5k_g128_white_noise1_o_uniform_seed41001/PROVENANCE.json"
@@ -3773,6 +3786,7 @@
     "relion_ref/runtime_physical_gpu_uuid.txt": [41, "aa788262f6eb3e3dbbe2d84168ac4fcabdf3cec77b55cf9e5eecc47f53d3e69d"],
     "relion_ref/slurm_walltime.json": [113, "638cabe75b7c4fdd421317d1c4afd1ace6894af8ba9ee620e14e351318c21238"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/33_ribo_k4_5k_g128_white_noise1_o_uniform_seed41002/PROVENANCE.json"
@@ -3901,6 +3915,7 @@
     "relion_ref/runtime_physical_gpu_uuid.txt": [41, "113a1743c5d5151b8ee9dfc3d51e62c837881937402df4ecf53ec94814c10369"],
     "relion_ref/slurm_walltime.json": [113, "dcde926a8fd13bbc486ec0eb891d5ca8e9d569746c659fd8cb7fab9bdcef9e2e"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/33_ribo_k4_5k_g128_white_noise1_o_uniform_seed41003/PROVENANCE.json"
@@ -4029,6 +4044,7 @@
     "relion_ref/runtime_physical_gpu_uuid.txt": [41, "64634e46d48224b0352d7588f8737d784c4b2b3a431d7b8113d7204e12ec712f"],
     "relion_ref/slurm_walltime.json": [113, "cea89afb7287d53d1ada35f83d274a517ffeca13890ff920827abdba8d41bade"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/34_ribo_k4_5k_g128_white_noise1_i1_uniform_seed41001/PROVENANCE.json"
@@ -4157,6 +4173,7 @@
     "relion_ref/runtime_physical_gpu_uuid.txt": [41, "d9c2dffc28bb0b1e53efe2d68818c2b11acf32c7d9a57ea6d1f4841a29c701f6"],
     "relion_ref/slurm_walltime.json": [113, "1e7f073e174c621b7eb4f3c6e22b090d7ff617eb3bc89809e92423f884512198"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/34_ribo_k4_5k_g128_white_noise1_i1_uniform_seed41002/PROVENANCE.json"
@@ -4285,6 +4302,7 @@
     "relion_ref/runtime_physical_gpu_uuid.txt": [41, "70be32530dd206270f765d7008e550af223361f8b492a41aa507c33540f7ed32"],
     "relion_ref/slurm_walltime.json": [113, "3e14742bad8f92831e55d8d9a63eba45d2920e4caa499adb15e8befb69661a7e"]
    },
+   "oracle_build_note": "Captured with a legacy-order (libc) RELION build: its Class3D expected-accuracy trial particles differ from relax's mt19937 draw. Known oracle-build difference, not a relax bug.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/34_ribo_k4_5k_g128_white_noise1_i1_uniform_seed41003/PROVENANCE.json"
@@ -4375,6 +4393,7 @@
     "relion_ref/run_it005_optimiser.star": [8097, "2a42986fe1f739cd31999a261dc9671dc4de4ed9bce28232598f6640e4156ee5"],
     "relion_ref/run_it005_sampling.star": [2227, "a965fc35a76e2943f099c903d25debfe25bb7ac0ccbff767badd5e21a40f64ef"]
    },
+   "oracle_build_note": "Captured with the legacy-order module build; its seeded K1 comparison is invalid until recaptured with f2c1a3.",
    "provenance": {
     "generation_records": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_symmetry_matrix/k1_c4/PROVENANCE.json"
