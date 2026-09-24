@@ -68,6 +68,15 @@ of three same-seed RELION repeats, comparable to the 8e-4 difference between the
 two relax runs (A100 and H100); the cause is unexplained. Evidence:
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclassstandalone_20260923/band50k/GATE.json`.
 
+Final all-data maps are now always gridding-corrected, as in RELION; the former
+default-off selector made the K1 100k/256 masked GT FSC 0.0008 lower than both
+same-command RELION repeats over shells 1-60. Pinned merged-map records were
+regenerated post hoc from the saved maps (scorecard v2). OPEN (small): with the
+correction, relax's masked GT FSC-AUC on that fixture is still 1.6-3.5e-5 below
+both repeats (merged map and each unfiltered half), while the two repeats differ
+by 1.3-2.7e-5; more RELION repeats are needed to tell a defect from run-to-run
+variation.
+
 On the 10k EMPIAR-10097 fixture at 256 px on one H100, the resident K1 path
 reduced the cold auto-refine gap from 3.26x to about 1.7-1.8x RELION, with a
 further small gain from building the projector on device. This qualifies only
