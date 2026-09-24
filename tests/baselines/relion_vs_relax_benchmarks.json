@@ -802,7 +802,8 @@
    "notes": [
     "RELION's same-command repeats (14305945/46) converge at iteration 18 like relax; the reference converged at 16 and scores highest against GT.",
     "Unmasked resolution for both arms: relion_postprocess unmasked FSC 0.143 (RELION convention); RELION's recomputed value equals its rlnCurrentResolution 6.044 A.",
-    "relax is seeded from the reference's run_it000 state (--relion_init_dir, half sets, optimiser) and then runs an autonomous trajectory (no per-iteration RELION replay, --relion-particle-shuffle mt19937)."
+    "relax is seeded from the reference's run_it000 state (--relion_init_dir, half sets, optimiser) and then runs an autonomous trajectory (no per-iteration RELION replay, --relion-particle-shuffle mt19937).",
+    "OPEN: masked GT FSC-AUC (frozen mask pdb_k1_100k256_c1) is below the RELION band. Full spectrum: relax 0.51271 vs RELION reference 0.54353 and repeats 0.51285/0.51283 (1.2e-4 below the lowest); over the scorecard band (shells 1-90): relax 0.69177 vs 0.71857/0.69228/0.69225 (4.8e-4 below). The unmasked GT FSC-AUC is inside the band. Per shell, relax's masked GT FSC is 0.0007-0.0012 below both repeats over shells 1-60 and about 0.0006 above them over shells 76-90; unexplained."
    ],
    "null_reasons": {
     "time_ratio_relax_over_relion": "not a timing-controlled pair: the RELION reference ran 2026-05-16 on another node and layout; its repeats took 14871 s (rep1)"
@@ -816,6 +817,11 @@
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/k1_completion_summary_band_rule/summary_metrics.json",
     "masked_fsc_json": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/scores/k1_completion_q427a08bd8_masked/masked_fsc.json"
+    ],
+    "masked_gt_fsc_json": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/k1_100k_masked_gt_20260924/vs_ref/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/k1_100k_masked_gt_20260924/vs_rep1/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/k1_100k_masked_gt_20260924/vs_rep2/masked_fsc.json"
     ]
    },
    "date": "2026-09-24",
@@ -911,7 +917,8 @@
    "notes": [
     "Not like-for-like for time: relax ran with per-iteration dumps, per-group timing instrumentation and preread, replaying RELION's dispatch schedule; RELION ran an instrumented dispatch-logging build.",
     "relax replays RELION's per-iteration sampling perturbation from the oracle; M-step noise statistics are 58% of relax's group wall.",
-    "Class3D resolution is each engine's current-resolution estimate, not a gold-standard FSC."
+    "Class3D resolution is each engine's current-resolution estimate, not a gold-standard FSC.",
+    "OPEN: per-class results against the fixture's second RELION run. The fixture holds two RELION 15-iteration runs of this command with the same seed 1778628798 (clean9d9, --pool 3, build_patched; the dispatch-logging oracle, --pool 12, which relax replays), and no different-seed repeat. Per-class cross-engine FSC-AUC: relax vs the oracle 0.9985/0.9976/0.9979/0.9984; relax vs clean9d9 0.9433/0.9385/0.9277/0.9297; oracle vs clean9d9 0.9432/0.9380/0.9279/0.9294 (mean FSC shells 1-16 >= 0.9998 in all pairs). Per-class GT FSC-AUC relax / oracle / clean9d9: 0.267825/0.267857/0.267908, 0.263671/0.263656/0.263563, 0.263163/0.263219/0.262984, 0.270335/0.270357/0.271023; relax is below both RELION runs in classes 1 and 4 (by 3.2e-5 and 2.2e-5). Class sizes relax / oracle / clean9d9: 24768/24772/24863, 24914/24915/24967, 23866/23859/23924, 26452/26454/26246. Not attributed to RELION variation without a different-seed repeat."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
@@ -925,7 +932,8 @@
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/completion_k4_q427a08bd8",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k4_oracle_dispatchv2_100k256_h100_400ad81e4_20260910/run"
     ],
-    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/completion_k4_q427a08bd8/summary_metrics.json"
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/completion_k4_q427a08bd8/summary_metrics.json",
+    "per_class_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/k4_100k_per_class_20260924/k4_per_class.json"
    },
    "date": "2026-09-24",
    "history": [
