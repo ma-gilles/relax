@@ -20,6 +20,7 @@ maps by the frozen mask; they are null when the maps do not share a frame (maske
 | `empiar10073_c1` | C1 | 380 | 1.40001 | RELION reference final merged map (job 13093155) | recipe | `030ad3a85199cfff` | PASS: box fraction 0.040, 1 component(s), captures 0.731 of positive density, strong density outside hard mask 0.0000, edge-clear True |
 | `empiar10081_hcn1_c4` | C4 | 256 | 1.3 | RELION C4 reference final merged map (job 14313014) | adopted | `4003c7dea2f37cb8` | PASS: box fraction 0.034, 1 component(s), captures 0.806 of positive density, strong density outside hard mask 0.0000, edge-clear True |
 | `empiar10097_c1` | C1 | 256 | 1.31 | RELION reference final merged map (job 13124450) | recipe | `3c184a29e87c7e7c` | PASS: box fraction 0.058, 6 component(s), captures 0.740 of positive density, strong density outside hard mask 0.0000, edge-clear True |
+| `empiar10202_set6_i1` | I1 | 800 | 0.788 | RELION I1 reference final merged map (job 13217551); the mask itself is de novo and independent of it | adopted | `dcc3fd17e7f728b3` | PASS: box fraction 0.054, 1 component(s), captures 0.523 of positive density, strong density outside hard mask 0.0000, edge-clear True |
 | `empiar10345_c1` | C1 | 300 | 1.345 | RELION reference final merged map (job 13093157) | recipe | `f8c6764657f89422` | PASS: box fraction 0.030, 2 component(s), captures 0.732 of positive density, strong density outside hard mask 0.0000, edge-clear True |
 | `fixed34_k101_c1` | C1 | 256 | 2.125 | ground truth map (relax file frame) of fixed-suite case k1-01 (1_baseline_100k_g256_white_noise1_bf80) | recipe | `74253532c379621c` | PASS: box fraction 0.047, 1 component(s), captures 0.938 of positive density, strong density outside hard mask 0.0000, edge-clear True |
 | `fixed34_k102_c1` | C1 | 256 | 2.125 | ground truth map (relax file frame) of fixed-suite case k1-02 (2_more_images_200k_g256_white_noise1_bf80) | recipe | `93be0774b34061cf` | PASS: box fraction 0.047, 1 component(s), captures 0.938 of positive density, strong density outside hard mask 0.0000, edge-clear True |
@@ -73,6 +74,7 @@ maps by the frozen mask; they are null when the maps do not share a frame (maske
 | `empiar10097_cand2_087287024` | `empiar10097_c1` `3c184a29e87c` | 1-44 | 5.78 (5.68) | 5.99 (5.50) | 0.8725 | 0.8740 | 0.6826 / 0.6827 | 0.9827 / 0.9610 / 0.9619 | — |
 | `empiar10097_relion_repeat_r1` | `empiar10097_c1` `3c184a29e87c` | — | 6.10 (5.99) | — | — | — | — / — | — | — |
 | `empiar10097_relion_repeat_r2` | `empiar10097_c1` `3c184a29e87c` | — | 5.99 (5.88) | — | — | — | — / — | — | — |
+| `empiar10202_relion_reference_13217551` | `empiar10202_set6_i1` `dcc3fd17e7f7` | — | 2.12 (2.12) | — | — | — | — / — | — | — |
 | `10345_q427a08bd8_mt19937` | `empiar10345_c1` `f8c6764657f8` | 1-48 | 5.31 (5.24) | 5.31 (5.24) | 0.9274 | 0.9274 | 0.6726 / 0.6725 | 0.9980 / 0.9964 / 0.9967 | — |
 | `empiar10345_cand2_087287024` | `empiar10345_c1` `f8c6764657f8` | 1-48 | 5.31 (5.24) | 5.24 (5.17) | 0.9274 | 0.9273 | 0.6726 / 0.6722 | 0.9979 / 0.9963 / 0.9965 | — |
 
@@ -127,6 +129,8 @@ maps by the frozen mask; they are null when the maps do not share a frame (maske
 - `empiar10097_relion_repeat_r1` cross_engine: a merged map is missing.
 - `empiar10097_relion_repeat_r2` relax: half maps not available.
 - `empiar10097_relion_repeat_r2` cross_engine: a merged map is missing.
+- `empiar10202_relion_reference_13217551` relax: half maps not available.
+- `empiar10202_relion_reference_13217551` cross_engine: a merged map is missing.
 - `fixed34_k109_ac5177d2_job11384224` relax: half maps not available.
 - `fixed34_k109_ac5177d2_job11384224` cross_engine: a merged map is missing.
 - `fixed34_k109_ac5177d2_job11384224` gt.relion: merged map or band missing.

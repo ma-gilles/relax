@@ -352,7 +352,7 @@
     "resolution_A": 2.5116,
     "resolution_definition": "relion_postprocess_unmasked",
     "relion_reported_resolution_A": null,
-    "masked_resolution_A": null,
+    "masked_resolution_A": 2.123,
     "wall_s": 51007,
     "wall_definition": "Slurm elapsed of the refinement job",
     "gpu_model": "H100 80GB",
@@ -362,7 +362,8 @@
      "13217551",
      "13254149"
     ],
-    "masked_band_auc": null
+    "masked_band_auc": null,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen"
    },
    "relax": {
     "source_sha": "427a08bd8550116f6fdc3f66ad202760372a813e",
@@ -405,9 +406,7 @@
     "relax.resolution_A": "pending: job 14318018 running",
     "relax.wall_s": "pending: job 14318018 running",
     "relax.iterations": "pending: job 14318018 running",
-    "mask": "pending: frozen mask empiar10202_set6_i1 is being adopted and verified (job 14339761)",
-    "relion.masked_resolution_A": "pending: frozen-mask postprocess of the RELION half maps (job 14338699)",
-    "relion.masked_band_auc": "pending: frozen-mask postprocess of the RELION half maps (job 14338699)",
+    "relion.masked_band_auc": "needs both arms' half maps for the scorecard band",
     "relax.masked_resolution_A": "pending: relax job 14318018 running",
     "relax.masked_band_auc": "pending: relax job 14318018 running",
     "cross_engine_masked_band_auc": "pending: relax job 14318018 running"
@@ -422,12 +421,18 @@
     "run_roots": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/realdata_10202_mt19937_q427a08bd8"
     ],
-    "score_json": "docs/math/em_k1_realdata_science_equivalence_scorecard_v1.json"
+    "score_json": "docs/math/em_k1_realdata_science_equivalence_scorecard_v1.json",
+    "masked_fsc_json": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_masks_20260923/runs/empiar10202_relion_reference_13217551/masked_fsc.json"
+    ]
    },
    "date": "2026-09-23",
    "history": [],
    "cross_engine_masked_band_auc": null,
-   "mask": null
+   "mask": {
+    "dataset": "empiar10202_set6_i1",
+    "sha256": "dcc3fd17e7f728b3164416f695b257fef5fceeca7c2a4ba04ea6d82c9a933b17"
+   }
   },
   {
    "id": "empiar10081_hcn1_k1_autorefine_c4_standalone",

@@ -281,6 +281,31 @@
    "gt_masked_band_auc": null
   },
   {
+   "label": "empiar10202_relion_reference_13217551",
+   "dataset": "empiar10202_set6_i1",
+   "section": "real",
+   "mask_sha256": "dcc3fd17e7f728b3164416f695b257fef5fceeca7c2a4ba04ea6d82c9a933b17",
+   "band": null,
+   "evidence": {
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_masks_20260923/runs/empiar10202_relion_ref/masked_fsc.json",
+    "sha256": "67dc4b5f1668ee25dd79983d53ac3982e0c033b63bdd879af46a7df8a40bd2d3"
+   },
+   "null_reasons": {
+    "relax": "half maps not available",
+    "cross_engine": "a merged map is missing"
+   },
+   "relion": {
+    "masked_resolution_A": 2.122559,
+    "masked_sustained_resolution_A": 2.1154362416107384,
+    "masked_corrected_band_auc": null,
+    "unmasked_band_auc": null
+   },
+   "relax": null,
+   "cross_engine_masked_band_auc": null,
+   "frame_correlation_in_mask": null,
+   "gt_masked_band_auc": null
+  },
+  {
    "label": "10345_q427a08bd8_mt19937",
    "dataset": "empiar10345_c1",
    "section": "real",

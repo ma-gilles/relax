@@ -31,6 +31,16 @@
    "generation": "recipe",
    "sanity": "PASS: box fraction 0.058, 6 component(s), captures 0.740 of positive density, strong density outside hard mask 0.0000, edge-clear True"
   },
+  "empiar10202_set6_i1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10202_set6/masks/empiar10202_set6_i1/MASK.json",
+   "mask_sha256": "dcc3fd17e7f728b3164416f695b257fef5fceeca7c2a4ba04ea6d82c9a933b17",
+   "symmetry": "I1",
+   "box": 800,
+   "pixel_size_A": 0.788,
+   "source_role": "RELION I1 reference final merged map (job 13217551); the mask itself is de novo and independent of it",
+   "generation": "adopted",
+   "sanity": "PASS: box fraction 0.054, 1 component(s), captures 0.523 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
   "empiar10345_c1": {
    "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10345/masks/empiar10345_c1/MASK.json",
    "mask_sha256": "f8c6764657f894224b4196ec7f3eee06b9e8f87cdecd6ebc5cbb84b2493e3fd5",
