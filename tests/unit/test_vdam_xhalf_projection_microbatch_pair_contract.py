@@ -320,7 +320,7 @@ def test_causal_speedup_requires_full_schedule_and_cross_arm_state_equality():
         assert not _causal_speedup_magnitude_valid(**evidence)
 
 
-def test_vdam_xhalf_projection_pair_is_same_gpu_warm_balanced_and_pinned():
+def test_vdam_xhalf_projection_pair_is_two_gpu_crossover_warm_balanced_and_pinned():
     runner = (
         ROOT / "scripts/run_vdam_xhalf_projection_microbatch_pair.sbatch"
     ).read_text()
@@ -329,22 +329,18 @@ def test_vdam_xhalf_projection_pair_is_same_gpu_warm_balanced_and_pinned():
         'ACTUAL_REPO_HEAD=$(git -C "${REPO_ROOT}" rev-parse HEAD)',
         ': "${RELAX_CUDA_LIB_OVERRIDE:?',
         ': "${LAYOUT_EVIDENCE_META:?',
-        "#SBATCH --exclusive",
-        'vdam_select_target_gpu "${TARGET_GPU_UUID}" 0',
-        "exclusive_gpu_local_index=",
-        "mapfile -t exclusive_gpu_rows",
-        "--query-gpu=index,uuid",
-        "export CUDA_VISIBLE_DEVICES=${exclusive_gpu_local_index}",
-        "selected_gpu_local_index.txt",
-        "selected_gpu_uuid=${VDAM_SELECTED_GPU_UUID}",
+        "#SBATCH --gres=gpu:h100:2",
+        'vdam_select_target_gpu "${pair_gpu}" 0',
+        "pair_gpu_uuids.txt",
+        "run_round scored-control-1 control scored-candidate-1 candidate",
+        "run_round scored-candidate-2 candidate scored-control-2 control",
         "cache_control=${OUTPUT_ROOT}_jax_cache_control",
         "cache_candidate=${OUTPUT_ROOT}_jax_cache_candidate",
-        "warmup-control warmup-candidate",
-        "scored-control-1 scored-candidate-1 scored-candidate-2 scored-control-2",
+        "run_round warmup-control control warmup-candidate candidate",
         'VDAM_JAX_COMPILATION_CACHE_DIR="${cache_dir}"',
         "export RELAX_EXACT_LOCAL_XHALF_PROJECTION_TARGET_ROW_PIXELS=${row_pixels}",
         "unset RECOVAR_INITIAL_MODEL_PROFILE",
-        'vdam_verify_selected_gpu "${selected_gpu_uuid}"',
+        'vdam_verify_selected_gpu "${run_gpu}"',
         "CAPTURE_NATIVE_REPLAY=0",
         'start_ns=$(date +%s%N)',
         'end_ns=$(date +%s%N)',
@@ -354,6 +350,7 @@ def test_vdam_xhalf_projection_pair_is_same_gpu_warm_balanced_and_pinned():
     ]
     for text in required:
         assert text in runner
+    assert "#SBATCH --exclusive" not in runner
 
     assert "RELAX_CUDA_LIB_OVERRIDE) ;;" in runner
     assert "RECOVAR_*|RELAX_*) unset" in runner
@@ -393,3 +390,34 @@ def test_gf46_it80_layout_derives_2x_3x_and_5x_bucket_counts(monkeypatch):
         assert topology["predicted_chunk_sizes"] == chunk_sizes
         assert topology["predicted_big_jit_bucket_count"] == len(chunk_sizes)
         assert sum(topology["predicted_chunk_padded_rotations"]) == 23_040
+
+
+def _write_execution_order(root, gpus):
+    order = [
+        ("scored-control-1", "control"), ("scored-candidate-1", "candidate"), ("warmup-candidate", "candidate"),
+        ("warmup-control", "control"), ("scored-control-2", "control"), ("scored-candidate-2", "candidate"),
+    ]
+    (root / "provenance").mkdir(parents=True)
+    lines = []
+    for label, arm in order:  # completion order of concurrent arms, not schedule order
+        cache = f"/cache_{arm}"
+        lines.append(f"{label}\t{arm}\t{1 if arm == 'control' else 2}\t1000000000\t{gpus[label]}\t{cache}\t0")
+        run = root / label / "provenance"
+        run.mkdir(parents=True)
+        (run / "run.json").write_text('{"recovar_wall_s": 1.0}')
+        (run / "xhalf_target_row_pixels.txt").write_text("1\n" if arm == "control" else "2\n")
+    (root / "provenance" / "execution_order.tsv").write_text("\n".join(lines) + "\n")
+
+
+def test_execution_rows_require_the_two_gpu_crossover(tmp_path):
+    from scripts import summarize_vdam_xhalf_projection_microbatch_pair as summary
+
+    crossover = {"warmup-control": "GPU-a", "warmup-candidate": "GPU-b", "scored-control-1": "GPU-a",
+                 "scored-candidate-1": "GPU-b", "scored-candidate-2": "GPU-a", "scored-control-2": "GPU-b"}
+    _write_execution_order(tmp_path / "ok", crossover)
+    rows = summary._execution_rows(tmp_path / "ok")
+    assert [row["label"] for row in rows][:2] == ["warmup-control", "warmup-candidate"]
+    no_swap = dict(crossover, **{"scored-candidate-2": "GPU-b", "scored-control-2": "GPU-a"})
+    _write_execution_order(tmp_path / "bad", no_swap)
+    with pytest.raises(summary.XHalfPairError, match="crossover"):
+        summary._execution_rows(tmp_path / "bad")

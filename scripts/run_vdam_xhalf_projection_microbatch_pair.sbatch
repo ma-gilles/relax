@@ -4,14 +4,14 @@
 #SBATCH --partition=cryoem
 #SBATCH --qos=della-cryoem
 #SBATCH --constraint=h100
-#SBATCH --gres=gpu:h100:1
+# Timing A/B pair in ONE job on two GPUs of one node (no --exclusive): the arms run side by
+# side, one per GPU, and swap GPUs between the two scored rounds (crossover), so node load and
+# GPU-to-GPU variation hit both arms equally. 180G per arm, as the former single-arm job.
+#SBATCH --gres=gpu:h100:2
 #SBATCH --nodes=1
-# Exclusive on purpose: this is a timing-controlled A/B pair (same GPU, warm, balanced order);
-# another job on the node would change the measured speedup.
-#SBATCH --exclusive
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=180G
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=360G
 #SBATCH --time=02:00:00
 #SBATCH --output=/scratch/gpfs/GILLES/mg6942/slurmo/vdam-xhalf-pair-%j.out
 
@@ -77,26 +77,22 @@ for ((iteration = 1; iteration <= TARGET_ITERATION; ++iteration)); do
 done
 
 source "${REPO_ROOT}/scripts/vdam_gpu_selection.sh"
-exclusive_gpu_local_index=
-if [[ -z "${TARGET_GPU_UUID}" ]]; then
-  exclusive_gpu_rows=()
-  mapfile -t exclusive_gpu_rows < <(
-    nvidia-smi --query-gpu=index,uuid --format=csv,noheader,nounits
-  )
-  test "${#exclusive_gpu_rows[@]}" -ge 1
-  first_gpu=${exclusive_gpu_rows[0]}
-  exclusive_gpu_local_index=${first_gpu%%,*}
-  exclusive_gpu_local_index=${exclusive_gpu_local_index//[[:space:]]/}
-  TARGET_GPU_UUID=${first_gpu#*,}
-  TARGET_GPU_UUID=${TARGET_GPU_UUID//[[:space:]]/}
-  case "${exclusive_gpu_local_index}:${TARGET_GPU_UUID}" in
-    [0-9]*:GPU-*) ;;
-    *) echo "cannot select one H100 from the exclusive allocation: ${first_gpu}" >&2; exit 2 ;;
-  esac
-  export CUDA_VISIBLE_DEVICES=${exclusive_gpu_local_index}
+# The two allocated GPUs (or TARGET_GPU_UUIDS=uuid_a,uuid_b); both must be visible.
+pair_gpus=()
+if [[ -n "${TARGET_GPU_UUIDS:-}" ]]; then
+  IFS=',' read -r -a pair_gpus <<< "${TARGET_GPU_UUIDS//[[:space:]]/}"
+else
+  mapfile -t pair_gpus < <(vdam_visible_gpu_uuids)
 fi
-vdam_select_target_gpu "${TARGET_GPU_UUID}" 0
-selected_gpu_uuid=${VDAM_SELECTED_GPU_UUID}
+if [[ "${#pair_gpus[@]}" -ne 2 || "${pair_gpus[0]}" == "${pair_gpus[1]}" ]]; then
+  echo "the pair needs exactly two distinct allocated GPUs; observed: ${pair_gpus[*]:-none}" >&2
+  exit 2
+fi
+for pair_gpu in "${pair_gpus[@]}"; do
+  vdam_select_target_gpu "${pair_gpu}" 0
+done
+gpu_a=${pair_gpus[0]}
+gpu_b=${pair_gpus[1]}
 
 cache_control=${OUTPUT_ROOT}_jax_cache_control
 cache_candidate=${OUTPUT_ROOT}_jax_cache_candidate
@@ -105,9 +101,7 @@ mkdir -p "${OUTPUT_ROOT}/provenance" "${OUTPUT_ROOT}/audits" \
 touch "${OUTPUT_ROOT}/SAFE_TO_DELETE" "${cache_control}/SAFE_TO_DELETE" \
   "${cache_candidate}/SAFE_TO_DELETE"
 printf '%s\n' "${ACTUAL_REPO_HEAD}" > "${OUTPUT_ROOT}/provenance/repo_head.txt"
-printf '%s\n' "${selected_gpu_uuid}" > "${OUTPUT_ROOT}/provenance/selected_gpu_uuid.txt"
-printf '%s\n' "${exclusive_gpu_local_index:-explicit-uuid}" \
-  > "${OUTPUT_ROOT}/provenance/selected_gpu_local_index.txt"
+printf '%s\n%s\n' "${gpu_a}" "${gpu_b}" > "${OUTPUT_ROOT}/provenance/pair_gpu_uuids.txt"
 printf '%s\n' "${VDAM_VISIBLE_GPU_UUIDS_CSV}" > "${OUTPUT_ROOT}/provenance/allocated_gpu_uuids.csv"
 printf 'control\t%s\ncandidate\t%s\n' "${CONTROL_ROW_PIXELS}" "${CANDIDATE_ROW_PIXELS}" \
   > "${OUTPUT_ROOT}/provenance/arms.tsv"
@@ -137,15 +131,13 @@ unset RECOVAR_RELION_COARSE_CANONICAL_REDUCTION
 unset RELAX_EXACT_LOCAL_XHALF_PROJECTION_TARGET_ROW_PIXELS
 env | LC_ALL=C sort > "${OUTPUT_ROOT}/provenance/production_default_environment.txt"
 
-labels=(
-  warmup-control warmup-candidate
-  scored-control-1 scored-candidate-1 scored-candidate-2 scored-control-2
-)
-arms=(control candidate control candidate candidate control)
+# Crossover schedule: round 0 warms each arm's compilation cache, rounds 1 and 2 are scored.
+# Within a round the two arms run concurrently, one per GPU; between the scored rounds they
+# swap GPUs. execution_order.tsv records the GPU of every run.
 : > "${OUTPUT_ROOT}/provenance/execution_order.tsv"
-for index in "${!labels[@]}"; do
-  label=${labels[index]}
-  arm=${arms[index]}
+run_label() {
+  local label=$1 arm=$2 run_gpu=$3
+  local row_pixels cache_dir run_root memory_log start_ns run_pid monitor_pid run_status end_ns elapsed_ns
   if [[ "${arm}" == control ]]; then
     row_pixels=${CONTROL_ROW_PIXELS}
     cache_dir=${cache_control}
@@ -170,7 +162,7 @@ for index in "${!labels[@]}"; do
   EXPECTED_REPO_HEAD="${ACTUAL_REPO_HEAD}" \
   EXPECTED_CUDA_SHA256="${EXPECTED_CUDA_SHA256}" \
   EXPECTED_RELION_BIND_SHA256="${EXPECTED_RELION_BIND_SHA256}" \
-  TARGET_GPU_UUID="${selected_gpu_uuid}" \
+  TARGET_GPU_UUID="${run_gpu}" \
   TARGET_ITERATION="${TARGET_ITERATION}" \
   NR_ITER_SCHEDULE="${NR_ITER_SCHEDULE}" \
   VDAM_SCORECARD="${VDAM_SCORECARD}" \
@@ -190,7 +182,7 @@ for index in "${!labels[@]}"; do
   (
     while kill -0 "${run_pid}" 2>/dev/null; do
       sample_ns=$(date +%s%N)
-      memory_values=$(nvidia-smi --id="${selected_gpu_uuid}" \
+      memory_values=$(nvidia-smi --id="${run_gpu}" \
         --query-gpu=memory.used,memory.total --format=csv,noheader,nounits)
       printf '%s\t%s\n' "${sample_ns}" "${memory_values//, /$'\t'}"
       sleep "${MEMORY_POLL_SECONDS}"
@@ -206,11 +198,11 @@ for index in "${!labels[@]}"; do
   elapsed_ns=$((end_ns - start_ns))
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "${label}" "${arm}" "${row_pixels}" "${elapsed_ns}" \
-    "${selected_gpu_uuid}" "${cache_dir}" "${run_status}" \
+    "${run_gpu}" "${cache_dir}" "${run_status}" \
     >> "${OUTPUT_ROOT}/provenance/execution_order.tsv"
   if [[ "${run_status}" -ne 0 ]]; then
     echo "${label} failed with status ${run_status}; stop the cap escalation" >&2
-    exit "${run_status}"
+    return "${run_status}"
   fi
   printf '%s\n' "${row_pixels}" > "${run_root}/provenance/xhalf_target_row_pixels.txt"
 
@@ -219,15 +211,31 @@ for index in "${!labels[@]}"; do
   if grep -q "native texture coarse scoring enabled" \
       "${run_root}/recovar_prefix/runner.stderr"; then
     echo "native-texture diagnostic unexpectedly replaced the production route" >&2
-    exit 2
+    return 2
   fi
   if grep -Eq "(coarse Gaussian FFI|coarse CUDA sincosf|exact coarse operands|fused coarse projector/diff2) enabled \(environment override\)" \
       "${run_root}/recovar_prefix/runner.stderr"; then
     echo "production coarse route was forced by an environment override" >&2
-    exit 2
+    return 2
   fi
-  vdam_verify_selected_gpu "${selected_gpu_uuid}"
-done
+  vdam_verify_selected_gpu "${run_gpu}"
+}
+run_round() {
+  local status_a status_b
+  run_label "$1" "$2" "${gpu_a}" & local pid_a=$!
+  run_label "$3" "$4" "${gpu_b}" & local pid_b=$!
+  set +e
+  wait "${pid_a}"; status_a=$?
+  wait "${pid_b}"; status_b=$?
+  set -e
+  if [[ "${status_a}" -ne 0 || "${status_b}" -ne 0 ]]; then
+    echo "round $1/$3 failed (${status_a}/${status_b}); stop the cap escalation" >&2
+    exit 1
+  fi
+}
+run_round warmup-control control warmup-candidate candidate
+run_round scored-control-1 control scored-candidate-1 candidate
+run_round scored-candidate-2 candidate scored-control-2 control
 unset RELAX_EXACT_LOCAL_XHALF_PROJECTION_TARGET_ROW_PIXELS
 
 iterations=()

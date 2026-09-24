@@ -149,13 +149,27 @@ def _execution_rows(root: Path) -> list[dict[str, Any]]:
         ("scored-candidate-2", "candidate"),
         ("scored-control-2", "control"),
     ]
+    # The two arms of a round run concurrently, so rows arrive in completion order; order them by
+    # the schedule before checking it.
+    rank = {label: i for i, (label, _) in enumerate(expected)}
+    if sorted(row["label"] for row in rows) != sorted(rank):
+        raise XHalfPairError(f"execution labels differ: {[row['label'] for row in rows]!r}")
+    rows.sort(key=lambda row: rank[row["label"]])
     observed = [(row["label"], row["arm"]) for row in rows]
     if observed != expected:
         raise XHalfPairError(f"execution order differs: {observed!r}")
     if any(row["run_status"] != 0 for row in rows):
         raise XHalfPairError("one or more arms failed")
-    if len({row["gpu_uuid"] for row in rows}) != 1:
-        raise XHalfPairError("pair spans multiple physical GPUs")
+    gpu = {row["label"]: row["gpu_uuid"] for row in rows}
+    crossover = (
+        len(set(gpu.values())) == 2
+        and gpu["warmup-control"] != gpu["warmup-candidate"]
+        and gpu["scored-control-1"] != gpu["scored-candidate-1"]
+        and gpu["scored-candidate-2"] == gpu["scored-control-1"]
+        and gpu["scored-control-2"] == gpu["scored-candidate-1"]
+    )
+    if not crossover:
+        raise XHalfPairError(f"runs do not follow the two-GPU crossover (each arm scored once per GPU): {gpu}")
     caches = {
         arm: {row["jax_cache_dir"] for row in rows if row["arm"] == arm}
         for arm in ("control", "candidate")

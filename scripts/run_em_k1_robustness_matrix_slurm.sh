@@ -36,7 +36,11 @@ RELION_MODULE="${RELION_MODULE:-relion/5.0.1/gcc-11.5.0-gpu}"
 RELION_REFINE_MPI="${RELION_REFINE_MPI:-relion_refine_mpi}"
 RELION_EXTRA_LD_LIBRARY_PATH="${RELION_EXTRA_LD_LIBRARY_PATH:-}"
 RELION_SRC_DIR="${RELION_SRC_DIR:-}"
-EXCLUSIVE="${EM_K1_MATRIX_EXCLUSIVE:-0}"
+if [[ -n "${EM_K1_MATRIX_EXCLUSIVE:-}" ]]; then
+  echo "EM_K1_MATRIX_EXCLUSIVE is no longer supported: case jobs share nodes; run a timing A/B as" >&2
+  echo "both arms in one --gres=gpu:2 job on the same node" >&2
+  exit 2
+fi
 SINGLE_VISIBLE_GPU="${EM_K1_MATRIX_SINGLE_VISIBLE_GPU:-1}"
 RUN_RELION="${EM_K1_MATRIX_RUN_RELION:-0}"
 TRAJECTORY_MODE="${EM_K1_MATRIX_TRAJECTORY_MODE:-controlled}"
@@ -132,10 +136,6 @@ SBATCH_SETUP_CONSTRAINT_DIRECTIVE=""
 if [[ -n "${SETUP_CONSTRAINT}" ]]; then
   SBATCH_SETUP_CONSTRAINT_DIRECTIVE="#SBATCH --constraint=${SETUP_CONSTRAINT}"
 fi
-SBATCH_EXCLUSIVE_DIRECTIVE=""
-if [[ "${EXCLUSIVE}" != "0" ]]; then
-  SBATCH_EXCLUSIVE_DIRECTIVE="#SBATCH --exclusive"
-fi
 SBATCH_SUMMARY_CONSTRAINT_DIRECTIVE=""
 if [[ -n "${SUMMARY_CONSTRAINT}" ]]; then
   SBATCH_SUMMARY_CONSTRAINT_DIRECTIVE="#SBATCH --constraint=${SUMMARY_CONSTRAINT}"
@@ -187,7 +187,6 @@ Environment overrides:
   EM_K1_MATRIX_SETUP_CONSTRAINT     Optional Slurm constraint for setup/build job (default: ${SETUP_CONSTRAINT:-<none>})
   EM_K1_MATRIX_SETUP_GRES           Optional Slurm gres for setup/build job (default: ${SETUP_GRES:-<none>})
   SBATCH_CONSTRAINT                 Optional Slurm constraint, e.g. h100
-  EM_K1_MATRIX_EXCLUSIVE            Exclusive GPU nodes for case jobs (default: ${EXCLUSIVE}; set 1 for strict speed runs)
   EM_K1_MATRIX_SINGLE_VISIBLE_GPU   Restrict each case job to one visible GPU (default: ${SINGLE_VISIBLE_GPU})
   CUDA_MODULE                       CUDA module for nvcc (default: ${CUDA_MODULE})
   RELION_MODULE                     RELION module for optional baselines (default: ${RELION_MODULE})
@@ -1009,7 +1008,6 @@ write_case_script() {
 #SBATCH --account=${ACCOUNT}
 ${SBATCH_CONSTRAINT_DIRECTIVE}
 #SBATCH --gres=gpu:1
-${SBATCH_EXCLUSIVE_DIRECTIVE}
 #SBATCH --nodes=1
 #SBATCH --ntasks=${RELION_MPI_RANKS}
 #SBATCH --cpus-per-task=8
@@ -1775,7 +1773,6 @@ echo "Summary constraint: ${SUMMARY_CONSTRAINT:-<none>}"
 echo "Summary gres: ${SUMMARY_GRES:-<none>}"
 echo "Constraint: ${CONSTRAINT:-<none>}"
 echo "Setup gres: ${SETUP_GRES:-<none>}"
-echo "Exclusive GPU jobs: ${EXCLUSIVE}"
 echo "CUDA module: ${CUDA_MODULE}"
 echo "Run RELION baselines: ${RUN_RELION}"
 echo "Frozen scorecard evidence mode: ${SCORECARD_MODE}"
@@ -1850,7 +1847,6 @@ EM_K1_MATRIX_SUMMARY_GRES=${SUMMARY_GRES}
 EM_K1_MATRIX_SETUP_GRES=${SETUP_GRES}
 SBATCH_ACCOUNT=${ACCOUNT}
 SBATCH_CONSTRAINT=${CONSTRAINT}
-EM_K1_MATRIX_EXCLUSIVE=${EXCLUSIVE}
 EM_K1_MATRIX_SINGLE_VISIBLE_GPU=${SINGLE_VISIBLE_GPU}
 EM_K1_MATRIX_RUN_RELION=${RUN_RELION}
 EM_K1_MATRIX_TRAJECTORY_MODE=${TRAJECTORY_MODE}

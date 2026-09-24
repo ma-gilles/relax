@@ -33,10 +33,13 @@ SETUP_CONSTRAINT="${EM_COMPLETION_SETUP_CONSTRAINT:-}"
 SETUP_GRES="${EM_COMPLETION_SETUP_GRES:-}"
 SUMMARY_PARTITION="${EM_COMPLETION_SUMMARY_PARTITION:-cpu}"
 SUMMARY_CONSTRAINT="${EM_COMPLETION_SUMMARY_CONSTRAINT:-}"
-# Shared nodes by default. Set EM_COMPLETION_EXCLUSIVE=1 only for a timing-controlled speed
-# measurement (a published wall-time row), where another user's job on the node would change
-# the measured time; quality runs never need the whole node.
-EXCLUSIVE="${EM_COMPLETION_EXCLUSIVE:-0}"
+# Jobs never take a whole node. A timing A/B runs both arms in one job with --gres=gpu:2 on the
+# same node; exclusive nodes are no longer offered.
+if [[ -n "${EM_COMPLETION_EXCLUSIVE:-}" ]]; then
+  echo "EM_COMPLETION_EXCLUSIVE is no longer supported: completion jobs share nodes; run a timing A/B" >&2
+  echo "as both arms in one --gres=gpu:2 job on the same node" >&2
+  exit 2
+fi
 SINGLE_VISIBLE_GPU="${EM_COMPLETION_SINGLE_VISIBLE_GPU:-1}"
 CUDA_MODULE="${CUDA_MODULE:-cudatoolkit/12.8}"
 RELION_MODULE="${RELION_MODULE:-relion/5.0.1/gcc-11.5.0-gpu}"
@@ -58,10 +61,6 @@ fi
 SBATCH_SETUP_GRES_DIRECTIVE=""
 if [[ -n "${SETUP_GRES}" ]]; then
   SBATCH_SETUP_GRES_DIRECTIVE="#SBATCH --gres=${SETUP_GRES}"
-fi
-SBATCH_EXCLUSIVE_DIRECTIVE=""
-if [[ "${EXCLUSIVE}" != "0" ]]; then
-  SBATCH_EXCLUSIVE_DIRECTIVE="#SBATCH --exclusive"
 fi
 
 K1_DATA_DIR="${K1_DATA_DIR:-/scratch/gpfs/GILLES/mg6942/em_relion_proj/pdb_k1_g256_n100000_noise1_bf80_20260516}"
@@ -132,8 +131,6 @@ Environment overrides:
                              Optional CPU summary job partition (default: ${SUMMARY_PARTITION})
   EM_COMPLETION_SUMMARY_CONSTRAINT
                              Optional summary job constraint (default: none)
-  EM_COMPLETION_EXCLUSIVE    Exclusive GPU nodes for benchmark jobs (default: 0; set 1 only for
-                             timing-controlled speed measurements)
   EM_COMPLETION_SINGLE_VISIBLE_GPU
                              Expose only the first allocated GPU to CUDA/JAX for single-GPU timing (default: 1)
   CUDA_MODULE                Module loaded for nvcc (default: ${CUDA_MODULE})
@@ -844,7 +841,6 @@ write_fast_tier_script() {
 #SBATCH --account=${ACCOUNT}
 ${SBATCH_CONSTRAINT_DIRECTIVE}
 #SBATCH --gres=gpu:1
-${SBATCH_EXCLUSIVE_DIRECTIVE}
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=128G
 #SBATCH --time=01:00:00
@@ -908,7 +904,6 @@ SETUP
 #SBATCH --account=${ACCOUNT}
 ${SBATCH_CONSTRAINT_DIRECTIVE}
 #SBATCH --gres=gpu:1
-${SBATCH_EXCLUSIVE_DIRECTIVE}
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=${K1_MEM}
 #SBATCH --time=${K1_TIME_LIMIT}
@@ -1020,7 +1015,6 @@ write_k4_script() {
 #SBATCH --account=${ACCOUNT}
 ${SBATCH_CONSTRAINT_DIRECTIVE}
 #SBATCH --gres=gpu:1
-${SBATCH_EXCLUSIVE_DIRECTIVE}
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=${K4_MEM}
 #SBATCH --time=${K4_TIME_LIMIT}
@@ -1256,7 +1250,6 @@ echo "Setup constraint: ${SETUP_CONSTRAINT:-<none>}"
 echo "Setup gres: ${SETUP_GRES:-<none>}"
 echo "Summary partition: ${SUMMARY_PARTITION}"
 echo "Summary constraint: ${SUMMARY_CONSTRAINT:-<none>}"
-echo "Exclusive GPU jobs: ${EXCLUSIVE}"
 echo "CUDA module: ${CUDA_MODULE}"
 echo "RELION module/executable: ${RELION_MODULE}/${RELION_REFINE_MPI}"
 echo "K=1 fixture: ${K1_DATA_DIR}"
@@ -1333,7 +1326,6 @@ EM_COMPLETION_SETUP_CONSTRAINT=${SETUP_CONSTRAINT}
 EM_COMPLETION_SETUP_GRES=${SETUP_GRES}
 EM_COMPLETION_SUMMARY_PARTITION=${SUMMARY_PARTITION}
 EM_COMPLETION_SUMMARY_CONSTRAINT=${SUMMARY_CONSTRAINT}
-EM_COMPLETION_EXCLUSIVE=${EXCLUSIVE}
 EM_COMPLETION_SINGLE_VISIBLE_GPU=${SINGLE_VISIBLE_GPU}
 SETUP_JOB_ID=${SETUP_JOB_ID}
 FAST_TIER_JOB_ID=${FAST_TIER_JOB_ID:-}
