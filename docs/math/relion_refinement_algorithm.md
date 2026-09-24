@@ -102,10 +102,10 @@ in code comments refer to the source used for those comparisons.
 
 ## 1. Controller and state
 
-[`refine_single_volume`](../../recovar/em/refinement/iteration_loop.py)
+[`refine_single_volume`](../../relax/refinement/iteration_loop.py)
 accepts two half-set datasets, initial Fourier volumes, noise and signal priors,
 and refinement settings. Despite its historical name, it supports `n_classes > 1`.
-[`RefinementOptions`](../../recovar/em/refinement/refinement_options.py)
+[`RefinementOptions`](../../relax/refinement/refinement_options.py)
 groups the settings; supplied option fields override the corresponding individual
 arguments.
 
@@ -122,9 +122,9 @@ The order of individual updates within these stages matters for trajectory
 comparisons. Replay/oracle inputs can replace selected state boundaries;
 results from those modes must remain distinguishable from autonomous refinement.
 Their implementation belongs to
-[`relion_replay.py`](../../recovar/em/diagnostics/relion_replay.py).
+[`relion_replay.py`](../../relax/diagnostics/relion_replay.py).
 
-[`score_outputs.py`](../../recovar/em/dense/score_outputs.py)
+[`score_outputs.py`](../../relax/dense/score_outputs.py)
 defines the controller's scoring payloads:
 
 - `HalfScoreResult` holds one half's accumulators, assignments and statistics.
@@ -148,7 +148,7 @@ sampling stores Angstrom translations and its accelerated code applies another
 pixel-size-squared factor. This documents source parity, not a proposed unit
 convention. Perturbation affects scoring translations, not this base-grid prior.
 
-[`make_relion_translation_log_prior`](../../recovar/em/helpers/orientation_priors.py)
+[`make_relion_translation_log_prior`](../../relax/helpers/orientation_priors.py)
 implements the formula; its explicit `None` center still requests a flat prior.
 The K1 correction is at the regular global controller call site, not a blanket
 change to shared helper, local, K-class or VDAM semantics. The controller wiring
@@ -212,7 +212,7 @@ seed 0.899). Evidence: `em_work/relax_defaults_20260924/qual50k_accept/`.
 
 ## 2. Sampling grids and units
 
-[`sampling.py`](../../recovar/em/sampling.py) owns rotation and translation grids,
+[`sampling.py`](../../relax/sampling.py) owns rotation and translation grids,
 Euler conversions, oversampled children and perturbations. For the full C1 grid,
 `rotation_grid_n_in_planes` and `rotation_grid_size` give
 
@@ -241,9 +241,9 @@ option retain their legacy input precision. A float32 score array alone does
 not establish float32 projection arithmetic.
 
 Numbered replay retains the source sampling order of a learned direction prior
-in [`apply_iter_replay_overrides`](../../recovar/em/diagnostics/relion_replay.py).
+in [`apply_iter_replay_overrides`](../../relax/diagnostics/relion_replay.py).
 When that order differs from the scoring grid,
-[`relion_direction_log_priors_for_half`](../../recovar/em/helpers/orientation_priors.py)
+[`relion_direction_log_priors_for_half`](../../relax/helpers/orientation_priors.py)
 uses a uniform prior, matching RELION's `updateAngularSampling` reset. Remapping
 the old distribution and labeling it with the new order would incorrectly
 preserve learned directional preferences after a grid change. The file and
@@ -307,11 +307,11 @@ The implementation owners are:
 
 | Work | Owner |
 | --- | --- |
-| Image/CTF/noise preparation and translation phases | [`preprocessing.py`](../../recovar/em/helpers/preprocessing.py), `preprocess_batch` and `preprocess_batch_firstiter_cc` |
-| Projection and projection-dependent residual statistics | [`projection.py`](../../recovar/em/helpers/projection.py), `compute_projections_block` and `compute_relion_projector_projections_block` |
-| Gaussian and normalized-CC block scores | [`scoring.py`](../../recovar/em/scoring/scoring.py), `_score_rotation_block` and `_e_step_block_scores_windowed` |
-| Priors, candidate masks and class/external-normalizer constraints | [`score_constraints.py`](../../recovar/em/scoring/score_constraints.py), `DenseScoreConstraints` |
-| Scoring weights for the selected Fourier convention | [`half_spectrum.py`](../../recovar/em/helpers/half_spectrum.py), `make_scoring_half_image_weights` |
+| Image/CTF/noise preparation and translation phases | [`preprocessing.py`](../../relax/helpers/preprocessing.py), `preprocess_batch` and `preprocess_batch_firstiter_cc` |
+| Projection and projection-dependent residual statistics | [`projection.py`](../../relax/helpers/projection.py), `compute_projections_block` and `compute_relion_projector_projections_block` |
+| Gaussian and normalized-CC block scores | [`scoring.py`](../../relax/scoring/scoring.py), `_score_rotation_block` and `_e_step_block_scores_windowed` |
+| Priors, candidate masks and class/external-normalizer constraints | [`score_constraints.py`](../../relax/scoring/score_constraints.py), `DenseScoreConstraints` |
+| Scoring weights for the selected Fourier convention | [`half_spectrum.py`](../../relax/helpers/half_spectrum.py), `make_scoring_half_image_weights` |
 
 The half-image layout has `H * (W//2 + 1)` entries. RELION half-sum scoring and
 Hermitian full-image inner-product weights are separate conventions. Gaussian
@@ -321,7 +321,7 @@ optimization to enable during cleanup.
 
 For bounded normalized-CC rescoring, the stored projector radius and the
 current image radius are distinct. The native rescorer in
-[`relion_scoring.cuh`](../../recovar/em/cuda/relion_scoring.cuh),
+[`relion_scoring.cuh`](../../relax/cuda/relion_scoring.cuh),
 `launch_relion_coarse_normalized_cc_native_texture_pairs_f32`, preserves the
 model-sized texture but limits rotated frequency support to
 `min(projector_max_r, current_size // 2)`. This follows RELION 5.0.1's
@@ -336,7 +336,7 @@ There are two different uses of “two pass.” Keep them separate when profilin
 or comparing intermediate results.
 
 **Blockwise normalization within one grid.**
-[`em_engine.run_em`](../../recovar/em/dense/em_engine.py) processes
+[`em_engine.run_em`](../../relax/dense/em_engine.py) processes
 image batches and rotation blocks. Its first sweep collects normalization and
 best-pose statistics; its second sweep recomputes scores for accumulation.
 `_update_logsumexp` and `_merge_block_logsumexp` in `helpers/scoring.py` combine
@@ -346,7 +346,7 @@ other options can skip negligible second-sweep blocks or use fused execution.
 The complete image × rotation × translation score tensor is not required.
 
 `run_em` returns `DenseEMResult`, defined in
-[`helpers/types.py`](../../recovar/em/helpers/types.py).
+[`helpers/types.py`](../../relax/helpers/types.py).
 Read `mean`, `hard_assignments`, `Ft_y` and `Ft_ctf` by name. Optional `stats`,
 `noise_stats` and `profile` fields are `None` when disabled; the corresponding
 flags still control the same computations. The result container stores existing
@@ -354,18 +354,18 @@ array references. Callers no longer decode a different tuple layout for each
 flag combination.
 
 **Adaptive coarse-to-fine search.**
-[`k_class.py`](../../recovar/em/classification/k_class.py) owns
+[`k_class.py`](../../relax/classification/k_class.py) owns
 `run_dense_k_class_em` and `run_dense_k_class_em_adaptive`.
-[`significance.py`](../../recovar/em/scoring/significance.py)
+[`significance.py`](../../relax/scoring/significance.py)
 computes joint coarse class/pose evidence and significant support, including
 K=1 routed through the class-aware implementation.
-[`oversampling.py`](../../recovar/em/helpers/oversampling.py)
+[`oversampling.py`](../../relax/helpers/oversampling.py)
 owns cumulative-mass selection and coarse/fine mappings. Significance selects
 rotation/translation pairs; it is not simply an independent probability cutoff
 on every orientation.
 
 Fine execution can use dense or sparse routes.
-[`sparse_pass2_bucketed.py`](../../recovar/em/sparse_pass2/sparse_pass2_bucketed.py)
+[`sparse_pass2_bucketed.py`](../../relax/sparse_pass2/sparse_pass2_bucketed.py)
 owns bucketed and compact-pair scoring, posterior reconstruction policies and
 accumulation, including `compute_k_class_pass2_stats_sparse_fused`.
 The support representation, execution buckets and float32 posterior policy
@@ -373,10 +373,10 @@ are part of the comparison contract. Preserving only final MAP assignments
 does not establish equivalent soft M-step contributions.
 
 **Exact local search.**
-[`local_search_iteration.py`](../../recovar/em/refinement/local_search_iteration.py)
+[`local_search_iteration.py`](../../relax/refinement/local_search_iteration.py)
 constructs per-image neighborhoods, applies the batch budget and dispatches
 `local_em_engine.run_local_em_exact` or `k_class.run_local_k_class_em`.
-[`local_layout.py`](../../recovar/em/local/local_layout.py)
+[`local_layout.py`](../../relax/local/local_layout.py)
 builds the per-image hypothesis layout. This route does not use the retired
 sort-and-split union helper formerly described on this page.
 
@@ -389,7 +389,7 @@ is active. This limits exploration of separated modes; it does not prove that
 a particle can never leave its initial neighborhood over later iterations.
 
 **Fourier windows and performance.**
-[`fourier_window.py`](../../recovar/em/helpers/fourier_window.py)
+[`fourier_window.py`](../../relax/helpers/fourier_window.py)
 defines `FourierWindowSpec` and the score/projection window mappings.
 `current_size` is an image diameter in pixels. Window shape, pixel order and
 redundant-axis treatment depend on the scoring route. Smaller windows reduce
@@ -414,12 +414,12 @@ These equations omit layout, interpolation, normalization and padding details.
 routes have their own implementations. `Ft_y` is complex. `Ft_ctf` represents
 real weights, although some return layouts store it in a complex array.
 
-[`half_volume_mstep.py`](../../recovar/em/helpers/half_volume_mstep.py)
+[`half_volume_mstep.py`](../../relax/helpers/half_volume_mstep.py)
 owns packed-half conventions, the Hermitian `x=0` plane and conversions to
 public layouts. Do not assume all accumulators have the full native volume
 shape: padding and current-size backprojector grids change their dimensions.
 
-[`mean_helpers.py`](../../recovar/em/refinement/mean_helpers.py) owns
+[`mean_helpers.py`](../../relax/refinement/mean_helpers.py) owns
 `compute_unregularized_halfmaps_and_align_signs` and
 `_reconstruct_and_postprocess_means`.
 For K-class refinement, regularized and diagnostic unregularized maps retain
@@ -435,7 +435,7 @@ and gridding calculations retain their existing arithmetic. The shared helper's
 unspecified option preserves legacy behavior for non-EM callers. Returned dtype
 alone is not evidence of transform precision; regression checks inspect both
 FFT operations as well as analytic DC normalization in full and packed layouts.
-[`noise_updates.py`](../../recovar/em/refinement/noise_updates.py) owns
+[`noise_updates.py`](../../relax/refinement/noise_updates.py) owns
 `update_posterior_noise_variance`, `update_c1_sigma_offset_from_posterior`
 and the half-set noise helpers.
 These updates consume posterior-weighted residual and moment statistics as
@@ -443,7 +443,7 @@ well as accumulators. The input noise representation can be a per-pixel array
 or separate half-set inputs; radial statistics and group corrections have
 explicit conversion/update paths.
 
-[`relion_normalization.py`](../../recovar/em/relion/relion_normalization.py)
+[`relion_normalization.py`](../../relax/relion/relion_normalization.py)
 owns `update_relion_norm_scale_corrections` and its result type. It computes
 per-image normalization and per-group scales from M-step statistics, using
 retained posterior mass for the average normalization. The controller installs
@@ -451,13 +451,13 @@ the returned corrections; follower-specific installation remains in
 `relion_worker_scale.py`. Host arithmetic stays float64 and returned arrays
 use the caller's selected dtype, float32 by default.
 
-[`regularization.py`](../../recovar/reconstruction/regularization.py) owns FSC,
+[`regularization.py`](https://github.com/ma-gilles/recovar/blob/a6e6b64dd864aefa78b6953ffe2185ffb3be0578/recovar/reconstruction/regularization.py) owns FSC,
 tau2 and data/prior helpers. `compute_data_vs_prior` uses shell-average weight
 **multiplied by** tau2, tau2 fudge and the padding-volume correction; it is not
 `Ft_ctf / tau2`. The controller's K1 scheduling path also uses
 `_k1_data_vs_prior_for_scheduling`; the generic weight-based helper is not an
 exhaustive description of its resolution policy.
-[`relion_reconstruct`](../../recovar/reconstruction/relion_functions.py) applies
+[`relion_reconstruct`](https://github.com/ma-gilles/recovar/blob/a6e6b64dd864aefa78b6953ffe2185ffb3be0578/recovar/reconstruction/relion_functions.py) applies
 the actual regularized reconstruction and postprocessing conventions.
 
 During numbered split-half iterations, `join_halves_at_low_resolution` averages
@@ -469,7 +469,7 @@ low Fourier frequency, not spatial wavelengths smaller than 40 Å.
 
 ## 6. Sampling transitions and convergence
 
-[`convergence.py`](../../recovar/em/helpers/convergence.py)
+[`convergence.py`](../../relax/helpers/convergence.py)
 owns `RefinementState`, `update_refinement_state`, `update_angular_sampling`,
 `refine_angular_sampling` and `check_convergence`.
 
@@ -487,7 +487,7 @@ translation range/step, resets the change counters and activates local search
 at `auto_local_healpix_order`. Its local sigma is
 `2 * radians(new_angular_step / 2**adaptive_oversampling)`.
 
-[`expected_accuracy.py`](../../recovar/em/helpers/expected_accuracy.py)
+[`expected_accuracy.py`](../../relax/helpers/expected_accuracy.py)
 owns the RELION-style accuracy trial calculation. The approximate posterior
 helper `calculate_expected_angular_errors` is a different route. Likewise,
 `convergence._relion_optimizer_average_pmax` uses the split-half optimizer's
@@ -534,8 +534,8 @@ memory requirements and need their own scientific validation after this cleanup.
 
 The float32 BPref translation computes the imaginary component as
 `fma(sine, real, round(cosine * imag))`, matching captured RELION output bits.
-[`relion_translate_bpref_f32_kernel`](../../recovar/cuda/cuda_backproject.cu)
-and the fused [`translate_rotate_bpref_f32`](../../recovar/em/cuda/relion_translate_sum.cuh)
+[`relion_translate_bpref_f32_kernel`](https://github.com/ma-gilles/recovar/blob/a6e6b64dd864aefa78b6953ffe2185ffb3be0578/recovar/cuda/cuda_backproject.cu)
+and the fused [`translate_rotate_bpref_f32`](../../relax/cuda/relion_translate_sum.cuh)
 use that same explicit operand order; weighted CTF multiplication follows the
 complex rotation. The positive-Nyquist coordinate mapping is unchanged.
 [`test_relion_translate_bpref_f32_matches_native_captured_bits`](../../tests/unit/test_cuda_relion_translation.py)
