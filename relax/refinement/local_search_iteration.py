@@ -124,6 +124,7 @@ def _run_local_search_iteration(
     generate_relion_mstep_rotations=False,
     symmetry: str = "C1",
     batch_size_planner=None,
+    optics_group_ids=None,
 ) -> _LocalSearchIterationResult:
     """Run exact local search and return named halfset statistics and pose fields.
 
@@ -139,6 +140,8 @@ def _run_local_search_iteration(
     Arrays retain the engine's layouts and identities; profile metadata is copied
     and augmented with this wrapper's timings.
     """
+    if optics_group_ids is not None and class_log_priors is not None:
+        raise NotImplementedError("K-class local search keeps one optics group's noise spectrum")
     requested_image_batch_size = int(image_batch_size)
     requested_rotation_block_size = int(rotation_block_size)
     rotation_block_size = _local_search_engine_rotation_block_size(rotation_block_size)
@@ -462,6 +465,7 @@ def _run_local_search_iteration(
             relion_translation_angle_scale=relion_translation_angle_scale,
             class_log_priors=None,
             score_only=score_only,
+            **({"optics_group_ids": optics_group_ids} if optics_group_ids is not None else {}),
         )
     else:
         class_details = None
@@ -538,6 +542,7 @@ def _run_local_search_iteration(
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             relion_translation_angle_scale=relion_translation_angle_scale,
             **({"symmetry_label": symmetry} if symmetry != "C1" else {}),
+            **({"optics_group_ids": optics_group_ids} if optics_group_ids is not None else {}),
         )
 
     if class_details is None:

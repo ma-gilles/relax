@@ -464,6 +464,7 @@ def run_local_em_exact(
     fused_pair_fine_score: bool = False,
     _defer_packed_vdam_enabled: bool = False,
     _packed_final_noise_enabled: bool = False,
+    optics_group_ids=None,
 ) -> LocalEMResult:
     """Run exact local EM over per-image local hypothesis sets.
 
@@ -485,6 +486,11 @@ def run_local_em_exact(
     EM's posterior-weighted spectrum. Norm correction has its own unchanged
     high-shell ownership policy.
     """
+    if optics_group_ids is not None:
+        raise NotImplementedError(
+            "the exact local engine keeps one optics group's noise spectrum; per-optics-group "
+            "noise runs on the device-resident local pass (RELAX_LOCAL_SEARCH_RESIDENT)"
+        )
 
     resolved_exact_local_bucket_radix = _resolve_exact_local_bucket_radix(exact_local_bucket_radix)
     score_only = bool(score_only)
