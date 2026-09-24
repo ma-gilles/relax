@@ -763,6 +763,33 @@ def test_resident_driver_repeats_itself(_resident_production_env):
 
 
 @requires_resident_gpu
+def test_resident_driver_repeats_bitwise_under_deterministic_reductions(
+    _resident_production_env, monkeypatch
+):
+    """The strict repeat arm of the driver's determinism contract.
+
+    ``wsum_norm_correction`` adds the per-image ``relion_norm_high_shell``
+    term, whose shell binning is a racing scatter-add unless
+    ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` makes it a fixed-order reduction
+    (resident_operands.py). Under that flag two identical calls must agree bit
+    for bit; H100 repeats without it missed by 1 ulp on one image (3.5e-8
+    relative), in both the streaming and the pre-streaming candidates.
+    """
+
+    monkeypatch.setenv("RELAX_EM_DETERMINISTIC_REDUCTIONS", "1")
+    args = _driver_fixture_args()
+    first = rp.compute_pass2_stats_resident(**args)
+    second = rp.compute_pass2_stats_resident(**args)
+    np.testing.assert_array_equal(first.hard_assignment, second.hard_assignment)
+    for field in ("wsum_sigma2_noise", "wsum_norm_correction"):
+        np.testing.assert_array_equal(
+            np.asarray(getattr(first.noise_stats, field)),
+            np.asarray(getattr(second.noise_stats, field)),
+            err_msg=field,
+        )
+
+
+@requires_resident_gpu
 def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkeypatch):
     """P3-A: where the chunk loop's JIT boundary sits changes no output.
 
