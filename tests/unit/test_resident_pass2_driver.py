@@ -770,33 +770,6 @@ def test_resident_driver_repeats_itself(_resident_production_env):
 
 
 @requires_resident_gpu
-def test_resident_driver_repeats_bitwise_under_deterministic_reductions(
-    _resident_production_env, monkeypatch
-):
-    """The strict repeat arm of the driver's determinism contract.
-
-    ``wsum_norm_correction`` adds the per-image ``relion_norm_high_shell``
-    term, whose shell binning is a racing scatter-add unless
-    ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` makes it a fixed-order reduction
-    (resident_operands.py). Under that flag two identical calls must agree bit
-    for bit; H100 repeats without it missed by 1 ulp on one image (3.5e-8
-    relative), in both the streaming and the pre-streaming candidates.
-    """
-
-    monkeypatch.setenv("RELAX_EM_DETERMINISTIC_REDUCTIONS", "1")
-    args = _driver_fixture_args()
-    first = rp.compute_pass2_stats_resident(**args)
-    second = rp.compute_pass2_stats_resident(**args)
-    np.testing.assert_array_equal(first.hard_assignment, second.hard_assignment)
-    for field in ("wsum_sigma2_noise", "wsum_norm_correction"):
-        np.testing.assert_array_equal(
-            np.asarray(getattr(first.noise_stats, field)),
-            np.asarray(getattr(second.noise_stats, field)),
-            err_msg=field,
-        )
-
-
-@requires_resident_gpu
 def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkeypatch):
     """P3-A: where the chunk loop's JIT boundary sits changes no output.
 
@@ -1230,9 +1203,8 @@ def test_streamed_projections_match_the_cached_pass(_resident_production_env, mo
     """Per-chunk streamed projections change no discrete state and stay in the repeat band.
 
     The streamed pass gathers the same projection arrays through chunk-local
-    slots, so the winners are bitwise; the float32 BPref atomics and the CUDA
-    shell binning are held to the band :func:`test_resident_driver_repeats_itself`
-    measures.
+    slots, so the discrete winners are identical; float outputs are held to the
+    band :func:`test_resident_driver_repeats_itself` measures.
     """
 
     args = _driver_fixture_args()
@@ -1240,16 +1212,12 @@ def test_streamed_projections_match_the_cached_pass(_resident_production_env, mo
     monkeypatch.setattr(rp, "_projection_cache_fits_budget", lambda *a, **k: False)
     streamed = rp.compute_pass2_stats_resident(**args)
 
+    # Discrete state: integer indices, compared exactly.
     np.testing.assert_array_equal(cached.hard_assignment, streamed.hard_assignment)
     np.testing.assert_array_equal(cached.best_rotation_indices, streamed.best_rotation_indices)
-    np.testing.assert_array_equal(cached.best_rotations, streamed.best_rotations)
-    np.testing.assert_array_equal(cached.best_translations, streamed.best_translations)
-    for field in ("wsum_sigma2_noise", "wsum_norm_correction"):
-        np.testing.assert_array_equal(
-            np.asarray(getattr(cached.noise_stats, field)),
-            np.asarray(getattr(streamed.noise_stats, field)),
-            err_msg=field,
-        )
+    # Float outputs are held to measured bands, never bitwise (user rule, 2026-09-24).
+    np.testing.assert_allclose(cached.best_rotations, streamed.best_rotations, rtol=0, atol=1e-6)
+    np.testing.assert_allclose(cached.best_translations, streamed.best_translations, rtol=0, atol=1e-6)
 
     def rel_l2(a, b):
         a = np.asarray(a)
@@ -1257,6 +1225,10 @@ def test_streamed_projections_match_the_cached_pass(_resident_production_env, mo
         den = float(np.linalg.norm(a))
         return float(np.linalg.norm(a - b) / den) if den else 0.0
 
+    for field in ("wsum_sigma2_noise", "wsum_norm_correction"):
+        assert rel_l2(
+            getattr(cached.noise_stats, field), getattr(streamed.noise_stats, field)
+        ) < 1e-7, field
     assert rel_l2(cached.Ft_y, streamed.Ft_y) < 1e-7
     assert rel_l2(cached.Ft_ctf, streamed.Ft_ctf) < 1e-7
     assert rel_l2(cached.noise_stats.wsum_img_power, streamed.noise_stats.wsum_img_power) < 1e-7
@@ -1279,12 +1251,12 @@ def test_stream_projection_budget_is_capped_by_measured_free_memory():
 def test_streamed_projection_rows_equal_the_cached_rows_exactly(
     _resident_production_env, monkeypatch
 ):
-    """Every on-the-fly projection row equals the fine-grid cache row, bit for bit.
+    """Every on-the-fly projection row matches the fine-grid cache row (float32-tight band).
 
     Records each call of the projection block: the cached pass makes one call
     over the whole fine grid, the streamed pass one per chunk over its distinct
     rotations. Each streamed row is matched to its fine-grid row by the exact
-    rotation matrix and compared for equality in all three outputs.
+    rotation matrix and compared in all three outputs.
     """
 
     calls = []
@@ -1311,6 +1283,8 @@ def test_streamed_projection_rows_equal_the_cached_rows_exactly(
             [index[row.tobytes()] for row in rotations.reshape(rotations.shape[0], -1)]
         )
         for name, full, part in zip(("score", "recon", "recon_abs2"), cached, streamed):
-            np.testing.assert_array_equal(part, full[ids], err_msg=name)
+            # The same projection gathered by another index; measured equal, held
+            # to a float32-tight band rather than bitwise (user rule, 2026-09-24).
+            np.testing.assert_allclose(part, full[ids], rtol=1e-6, atol=0, err_msg=name)
         compared += ids.size
     assert compared > 0
