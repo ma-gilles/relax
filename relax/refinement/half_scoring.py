@@ -307,8 +307,13 @@ def _score_half_dense(
     relion_translation_angle_scale: float = 1.0,
     coarse_scoring_rotations=None,
     symmetry: str = "C1",
+    optics_group_ids_k=None,
 ) -> HalfScoreResult:
     """Dense (non-local-search) E+M scoring for one half-set.
+
+    ``optics_group_ids_k`` gives each image's row of a per-optics-group
+    ``noise_variance_k`` table (:mod:`relax.helpers.optics_noise`); only the K=1
+    adaptive route carries it, every other engine refuses it.
 
     Used by both the single-pass (``else``) and adaptive-2-pass
     (``elif use_adaptive``) branches of the half-set loop. The two modes
@@ -366,6 +371,8 @@ def _score_half_dense(
     }
     if symmetry != "C1":
         em_kwargs["symmetry_label"] = symmetry
+    if optics_group_ids_k is not None:
+        em_kwargs["optics_group_ids"] = optics_group_ids_k
     if model_current_size_for_engine is not None:
         em_kwargs["reconstruction_current_size"] = model_current_size_for_engine
     if preserve_bpref_particle_order and k_class_enabled:
@@ -828,6 +835,8 @@ def _score_half_dense(
             mstep_accumulator_shape=getattr(k1_adaptive_result, "mstep_accumulator_shape", None),
         )
 
+    if optics_group_ids_k is not None:
+        raise NotImplementedError("the single-pass dense engine keeps one optics group's noise spectrum")
     # Scale groups never reach the direct dense engine: see _dense_uses_adaptive_engine.
     direct_em_kwargs = dict(em_kwargs)
     direct_em_kwargs.pop("group_ids", None)
@@ -962,6 +971,7 @@ def _score_half_local(
     source_faithful_spectrum_norm: bool = False,
     relion_translation_angle_scale: float = 1.0,
     symmetry: str = "C1",
+    optics_group_ids_k=None,
 ) -> HalfScoreResult:
     """Local-search E+M scoring for one half-set.
 
@@ -973,6 +983,8 @@ def _score_half_local(
     Caller handles ``noise_stats_per_half[k]``, ``pose_rotations[k] = None``,
     and ``coarse_ha[k] = ha_k`` from the returned ``HalfScoreResult``.
     """
+    if optics_group_ids_k is not None:
+        raise NotImplementedError("local search keeps one optics group's noise spectrum")
 
     # RELION's convertAllSquaredDifferencesToWeights uses mymodel.pdf_direction
     # only when orientational_prior_mode == NOPRIOR. Local searches run through

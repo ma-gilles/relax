@@ -1146,8 +1146,10 @@ def _compute_relion_noise_only_bootstrap(
 ):
     """Compute startup noise without replaying any model/particle state.
 
-    Qualification-only single-optics path; preserve the existing host F64
-    bootstrap and explicitly supply F32 noise to production scoring. K=1 takes
+    Qualification-only path; preserve the existing host F64 bootstrap and
+    explicitly supply F32 noise to production scoring. With several optics
+    groups (K=1, one pixel size) it returns one spectrum per group, ``[G, n]``
+    radial and ``[G, P]`` pixel noise. K=1 takes
     the source order of its supplied half sets; Class3D (K>1) has no halves and
     takes the micrograph-sorted order (``_relion_class3d_initial_noise_layout``).
     See docs/math/relion_refinement_algorithm.md#noise-only-bootstrap-qualification.
@@ -1166,17 +1168,27 @@ def _compute_relion_noise_only_bootstrap(
             "sets, Class3D without) with order/mask metadata and no state replay, noise "
             "replay or noise cache"
         )
-    if np.unique(optics_group_ids).size != 1 or np.asarray(optics_pixel_sizes).size != 1:
-        raise ValueError("RELION noise-only bootstrap currently requires one optics group")
+    if np.unique(np.asarray(optics_pixel_sizes)).size != 1:
+        raise ValueError("RELION noise-only bootstrap currently requires one optics pixel size")
+    n_optics_groups = int(np.unique(optics_group_ids).size)
+    if n_optics_groups != 1 and not k1:
+        raise ValueError("per-optics-group noise is implemented for K=1 only")
     sigma2 = _compute_relion_fresh_k1_initial_sigma2(
         dataset, source_rows=source_rows, optics_group_ids=optics_group_ids,
         image_pixel_size=float(np.asarray(optics_pixel_sizes).reshape(-1)[0]),
         particle_diameter_ang=float(mask_params[0]), width_mask_edge_px=int(mask_params[1]),
-    )[0]
-    radial = sigma2 * float(dataset.grid_size) ** 4
-    noise = _relion_sigma2_to_native_noise_variance(
-        sigma2, grid_size=int(dataset.grid_size), output_dtype=np.float32,
     )
+    # One spectrum per optics group (MlModel::sigma2_noise[optics_group]); one group
+    # keeps the flat layout of the single-optics path.
+    radial = sigma2 * float(dataset.grid_size) ** 4
+    noise = np.stack([
+        _relion_sigma2_to_native_noise_variance(
+            sigma2_group, grid_size=int(dataset.grid_size), output_dtype=np.float32,
+        )
+        for sigma2_group in sigma2
+    ])
+    if n_optics_groups == 1:
+        return radial[0], noise[0]
     return radial, noise
 
 
@@ -1192,8 +1204,8 @@ def _relion_k1_start_tau2_and_data_vs_prior(
     """RELION's K=1 start-up tau2 (RECOVAR units) and data_vs_prior (RELION units).
 
     ``MlModel::initialiseDataVersusPrior`` (ml_model.cpp:1557) on the start-up
-    reference after ``initialLowPassFilterReferences``, with one optics group's
-    initial noise and the half set's particle count, as each auto-refine half
+    reference after ``initialLowPassFilterReferences``, with the initial noise
+    (averaged over optics groups when it has one row per group) and the half set's particle count, as each auto-refine half
     model counts its own particles. ``reference_real`` is in RECOVAR's frame and
     ``initial_noise_radial`` is RELION sigma2 times ``grid_size**4``.
     """
@@ -1202,7 +1214,11 @@ def _relion_k1_start_tau2_and_data_vs_prior(
     from relax.vdam.init import relion_initial_tau2_and_data_vs_prior
 
     n4 = float(grid_size) ** 4
-    sigma2 = np.asarray(initial_noise_radial, dtype=np.float64).reshape(-1) / n4
+    sigma2 = np.asarray(initial_noise_radial, dtype=np.float64)
+    if sigma2.ndim == 2:
+        # The unweighted mean over optics groups that have noise (ml_model.cpp:1560-1573).
+        sigma2 = np.mean(sigma2[np.sum(sigma2, axis=1) > 0.0], axis=0)
+    sigma2 = sigma2.reshape(-1) / n4
     n_shells = int(grid_size) // 2 + 1
     if sigma2.size < n_shells:
         raise ValueError(f"initial noise spectrum has {sigma2.size} shells, need {n_shells}")
@@ -3613,6 +3629,7 @@ def main():
 
     from recovar.reconstruction import noise as recon_noise
 
+    optics_group_ids_per_half = None
     if args.initial_noise_bootstrap == "relion":
         if _double_image_preprocessing or use_relion_live_initial_noise:
             raise ValueError("RELION noise-only bootstrap requires production image precision and no live-noise replay")
@@ -3627,6 +3644,17 @@ def main():
         )
         logger.info("Noise-only RELION bootstrap: %d shells, scoring dtype=%s; no state replay",
                     initial_noise_radial.size, noise_variance.dtype)
+        if noise_variance.ndim == 2:
+            # One spectrum per optics group; every image scores with its own group's.
+            from relax.helpers.optics_noise import dense_optics_groups
+
+            image_optics_groups, _ = dense_optics_groups(our_particles["rlnOpticsGroup"])
+            optics_group_ids_per_half = [image_optics_groups[half1_idx], image_optics_groups[half2_idx]]
+            logger.info(
+                "Per-optics-group noise: %d groups, images per group %s",
+                noise_variance.shape[0],
+                np.bincount(image_optics_groups).tolist(),
+            )
     elif frozen_boundary is not None:
         noise_variance = _make_frozen_boundary_noise_variance(
             frozen_boundary.noise_radial_per_half,
@@ -4492,7 +4520,9 @@ def main():
     result = refine_single_volume(
         experiment_datasets=experiment_datasets,
         init_volume=init_vol_ft,
-        init_noise_variance=noise_variance,
+        init_noise_variance=(
+            noise_variance if optics_group_ids_per_half is None else [noise_variance, noise_variance]
+        ),
         init_mean_variance=mean_variance,
         translations=translations_jnp,
         options=RefinementOptions(
@@ -4548,6 +4578,7 @@ def main():
                 optimizer_random_seed=args.seed,
                 relion_optics_image_sizes=relion_optics_image_sizes,
                 relion_optics_pixel_sizes=relion_optics_pixel_sizes,
+                optics_group_ids_per_half=optics_group_ids_per_half,
                 relion_model_pixel_size=relion_model_pixel_size,
                 perturb_replay_relion_dir=args.perturb_replay_relion_dir,
                 perturb_replay_restart_state_iterations=perturb_replay_restart_state_iterations,

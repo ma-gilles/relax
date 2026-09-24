@@ -625,6 +625,7 @@ def _run_sparse_k_class_adaptive_pass2(
         image_corrections=base_engine_kwargs.get("image_corrections"),
         scale_corrections=base_engine_kwargs.get("scale_corrections"),
         group_ids=base_engine_kwargs.get("group_ids"),
+        optics_group_ids=base_engine_kwargs.get("optics_group_ids"),
         scale_correction_group_count=base_engine_kwargs.get("scale_correction_group_count"),
         scale_correction_data_vs_prior=base_engine_kwargs.get("scale_correction_data_vs_prior"),
         image_pre_shifts=base_engine_kwargs.get("image_pre_shifts"),
@@ -1284,6 +1285,7 @@ _IMAGE_AXIS_ENGINE_KWARGS = (
     "image_corrections",
     "scale_corrections",
     "group_ids",
+    "optics_group_ids",
     "image_pre_shifts",
     "translation_prior_centers",
     "translation_log_prior",
@@ -2665,6 +2667,13 @@ def run_dense_k_class_em_adaptive(
     means_array = _as_class_means(means)
     n_classes = int(means_array.shape[0])
     log_priors = _class_log_priors(n_classes, class_log_priors)
+    if engine_kwargs.get("optics_group_ids") is not None and (
+        n_classes != 1 or firstiter_cc_pass2_only_best_coarse
+    ):
+        raise NotImplementedError(
+            "per-optics-group noise is implemented for the K=1 Gaussian adaptive route "
+            "(coarse significance + device-resident pass 2)"
+        )
 
     coarse_rotations_np = np.asarray(coarse_rotations)
     coarse_translations_np = np.asarray(coarse_translations)
@@ -2867,6 +2876,7 @@ def run_dense_k_class_em_adaptive(
             relion_coarse_gaussian_default=bool(
                 engine_kwargs.get("preserve_bpref_particle_order", False)
             ),
+            optics_group_ids=engine_kwargs.get("optics_group_ids"),
         )
         if reuse_zero_oversampling_coarse_state:
             sig_kwargs["return_relion_f32_normalization"] = True
@@ -3215,6 +3225,11 @@ def run_dense_k_class_em_adaptive(
             "fine_mstep_rotations_override requires a sparse adaptive pass-2 route",
         )
 
+    if pass2_kwargs.get("optics_group_ids") is not None:
+        raise NotImplementedError(
+            "per-optics-group noise requires the sparse (device-resident) pass 2; "
+            "the dense adaptive fallback keeps one noise spectrum"
+        )
     if pass2_kwargs.get("group_ids") is not None:
         raise RuntimeError(
             "RELION native group-scale correction requires sparse K-class pass 2; "

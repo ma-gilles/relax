@@ -13,6 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.helpers.env_flags import parse_env_strict_flag
+from relax.helpers.optics_noise import pixel_rows
 from relax.scoring.coarse_gaussian_gemm import (
     _COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR_ENV,
     _COARSE_GAUSSIAN_GEMM_HYBRID_ENV,
@@ -266,17 +267,18 @@ def _relion_exact_coarse_operands(
         exact_unshifted_corrected,
         jnp.zeros((), dtype=exact_unshifted_corrected.dtype),
     ).astype(complex_dtype)
-    score_noise_variance = noise_variance_half[score_indices]
+    # One shared spectrum [P], or each image's optics-group spectrum [B, P].
+    score_noise_variance = noise_variance_half[..., score_indices]
     if use_float64_scoring:
         inverse_noise_half = jnp.reciprocal(jnp.asarray(score_noise_variance, dtype=jnp.float64))
         exact_corr_img = _relion_cuda_corr_img_from_rfloat_ctf(
-            inverse_noise_half[None, :], ctf_half_rfloat,
+            pixel_rows(inverse_noise_half), ctf_half_rfloat,
             batch_scale_exact[:, None] if scale_corrections_enabled else None,
             output_dtype=real_dtype,
         )
     else:
         exact_corr_img = _relion_cuda_corr_img_from_native_noise_variance(
-            score_noise_variance[None, :],
+            pixel_rows(score_noise_variance),
             ctf_half_rfloat,
             image_shape,
             batch_scale_exact[:, None] if scale_corrections_enabled else None,

@@ -44,6 +44,7 @@ from relax.helpers.env_flags import (
     parse_env_strict_flag,
     parse_env_true_flag,
 )
+from relax.helpers.optics_noise import noise_rows
 from relax.helpers.projection import compute_projections_block
 from relax.helpers.projection_cache import build_projection_cache
 from relax.relion.relion_coarse_operands import (
@@ -980,8 +981,14 @@ def _compute_k_class_significance_batched(
     stable_fourier_window_shapes: bool = False,
     coarse_gemm_diagnostic_scope: CoarseGaussianGemmDiagnosticScope | None = None,
     relion_translation_angle_scale: float = 1.0,
+    optics_group_ids=None,
 ):
-    """Find significant samples from one posterior over ``class x rotation x translation``."""
+    """Find significant samples from one posterior over ``class x rotation x translation``.
+
+    ``noise_variance`` is one shared spectrum or ``[G, P]`` rows of G optics groups;
+    with rows, ``optics_group_ids`` gives each image's group and every image scores
+    with its own group's spectrum (:mod:`relax.helpers.optics_noise`).
+    """
 
     if return_class_second and not return_class_best:
         raise ValueError("return_class_second requires return_class_best")
@@ -2111,6 +2118,8 @@ def _compute_k_class_significance_batched(
         process_fn=experiment_dataset.process_images,
     )
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(noise_variance, image_shape).squeeze()
+    if noise_variance_half.ndim == 2 and optics_group_ids is None:
+        raise ValueError("a per-optics-group noise table needs optics_group_ids")
     norm_half_weights = make_half_image_weights(image_shape)
     use_relion_numpy_preprocess = _uses_relion_background_fill(experiment_dataset)
 
@@ -2127,8 +2136,8 @@ def _compute_k_class_significance_batched(
         )
         processed_half = jnp.asarray(processed_half)
         ctf_half = config.compute_ctf_half(jnp.asarray(ctf_params, dtype=score_real_dtype))
-        ctf2_over_nv_half = ctf_half**2 / noise_variance_half
-        ctf_weighted = processed_half * ctf_half / noise_variance_half
+        ctf2_over_nv_half = ctf_half**2 / batch_noise_half
+        ctf_weighted = processed_half * ctf_half / batch_noise_half
         translations_tiled = jnp.repeat(jnp.asarray(translations)[None], batch_size, axis=0).reshape(
             batch_size * n_trans,
             -1,
@@ -2144,7 +2153,7 @@ def _compute_k_class_significance_batched(
             half_image=True,
         )
         batch_norm = jnp.sum(
-            (jnp.abs(processed_half) ** 2 / noise_variance_half) * norm_half_weights[None, :],
+            (jnp.abs(processed_half) ** 2 / batch_noise_half) * norm_half_weights[None, :],
             axis=-1,
             keepdims=True,
         ).real
@@ -2797,6 +2806,15 @@ def _compute_k_class_significance_batched(
                     target_size=int(image_batch_size),
                 )
             batch_size = int(batch_data.shape[0])
+            # Each image's own optics-group spectrum; the one shared spectrum otherwise.
+            batch_noise_half = noise_variance_half
+            if noise_variance_half.ndim == 2:
+                batch_noise_half = jnp.asarray(
+                    _repeat_pad_batch_axis(
+                        np.asarray(noise_rows(noise_variance_half, optics_group_ids, indices)),
+                        batch_size,
+                    )
+                )
             if coarse_gaussian_gemm_hybrid_requested:
                 coarse_gaussian_gemm_hybrid_actual_image_batch_sizes.append(
                     int(actual_batch_size),
@@ -2896,7 +2914,7 @@ def _compute_k_class_significance_batched(
                     experiment_dataset,
                     batch_data,
                     ctf_params,
-                    noise_variance_half,
+                    batch_noise_half,
                     translations,
                     config,
                     score_with_masked_images,
@@ -2934,7 +2952,7 @@ def _compute_k_class_significance_batched(
                         experiment_dataset,
                         batch_data,
                         ctf_params,
-                        noise_variance_half,
+                        batch_noise_half,
                         translations,
                         config,
                         score_with_masked_images,
@@ -3218,7 +3236,7 @@ def _compute_k_class_significance_batched(
                         translations_source=translations_source,
                         relion_translation_angle_scale=relion_translation_angle_scale,
                         image_shape=image_shape,
-                        noise_variance_half=noise_variance_half,
+                        noise_variance_half=batch_noise_half,
                         scale_corrections_enabled=scale_corrections is not None,
                         half_weights=half_weights,
                         powerclass=coarse_gaussian_powerclass,

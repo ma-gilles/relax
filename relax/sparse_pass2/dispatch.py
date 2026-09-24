@@ -82,6 +82,7 @@ def compute_pass2_stats_sparse(
     source_faithful_spectrum_norm: bool = False,
     symmetry_label: str = "C1",
     relion_translation_angle_scale: float = 1.0,
+    optics_group_ids=None,
 ):
     """Exact sparse pass 2 over per-image significant coarse samples.
 
@@ -289,8 +290,13 @@ def compute_pass2_stats_sparse(
                 if float(relion_translation_angle_scale) != 1.0
                 else {}
             ),
+            **({"optics_group_ids": optics_group_ids} if optics_group_ids is not None else {}),
         )
 
+    if optics_group_ids is not None:
+        raise NotImplementedError(
+            "per-optics-group noise runs on the device-resident sparse pass 2 only"
+        )
     if any(value is not None for value in (
         relion_f32_normalization_sum_weight, relion_coarse_hard_assignment, relion_coarse_max_posterior,
     )):

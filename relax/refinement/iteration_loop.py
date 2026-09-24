@@ -544,6 +544,38 @@ def _sigma_offset_for_half(current_sigma_offset_angstrom, current_sigma_offset_a
     return float(current_sigma_offset_angstrom_per_half[int(half_index)])
 
 
+def _optics_group_ids_per_half(optics_group_ids_per_half, noise_variance_per_half, experiment_datasets):
+    """Each half's per-image optics-group rows, or ``[None, None]`` for one group.
+
+    A half's noise is a flat vector (one optics group) or ``[G, P]`` rows
+    (:mod:`relax.helpers.optics_noise`); with rows every image needs its group.
+    """
+
+    n_groups = 1 if noise_variance_per_half[0].ndim == 1 else int(noise_variance_per_half[0].shape[0])
+    if n_groups == 1:
+        return [None, None]
+    if optics_group_ids_per_half is None or len(optics_group_ids_per_half) != 2:
+        raise ValueError(
+            f"a {n_groups}-optics-group noise table needs parity.optics_group_ids_per_half for both halves"
+        )
+    ids = []
+    for half, (values, dataset) in enumerate(zip(optics_group_ids_per_half, experiment_datasets)):
+        values = np.asarray(values, dtype=np.int32).reshape(-1)
+        if values.shape != (int(dataset.n_units),) or np.any(values < 0) or np.any(values >= n_groups):
+            raise ValueError(
+                f"half {half + 1} optics-group ids must give each of {int(dataset.n_units)} images "
+                f"a row 0..{n_groups - 1}"
+            )
+        ids.append(values)
+    return ids
+
+
+def _optics_group_kwargs(optics_group_ids_k) -> dict:
+    """The engine keyword for one half's optics groups; none with one group."""
+
+    return {} if optics_group_ids_k is None else {"optics_group_ids_k": optics_group_ids_k}
+
+
 def refine_single_volume(
     experiment_datasets: list[cryoem_dataset.CryoEMDataset],
     init_volume: list[jnp.ndarray] | jnp.ndarray,
@@ -876,6 +908,9 @@ def refine_single_volume(
         n_halves=2,
     )
     noise_variance = _mean_noise_variance(noise_variance_per_half)
+    optics_group_ids_per_half = _optics_group_ids_per_half(
+        parity.optics_group_ids_per_half, noise_variance_per_half, experiment_datasets
+    )
     initial_mean_variance = jnp.asarray(init_mean_variance)
     mean_variance, mean_variance_per_half = prepare_initial_mean_variance(
         initial_mean_variance,
@@ -2483,6 +2518,7 @@ def refine_single_volume(
             if use_local:
                 local_parent_oversampling_order = int(state.adaptive_oversampling) if state.adaptive_oversampling > 0 else 0
                 local_result = _score_half_local_in_bpref_scope(
+                    **_optics_group_kwargs(optics_group_ids_per_half[k]),
                     bpref_device_signature_active=bpref_device_signature_active,
                     k=k,
                     experiment_dataset=experiment_datasets[k],
@@ -2548,6 +2584,7 @@ def refine_single_volume(
                 # pass-1 grid and batch/size overrides.
                 dense_half_kwargs = dict(
                     **({"symmetry": symmetry} if symmetry != "C1" else {}),
+                    **_optics_group_kwargs(optics_group_ids_per_half[k]),
                     bpref_device_signature_active=bpref_device_signature_active,
                     k=k,
                     experiment_dataset=experiment_datasets[k],
@@ -4763,6 +4800,7 @@ def refine_single_volume(
         final_class_rotation_log_prior_k = final_half_direction_priors.class_rotation_log_prior
         if final_use_local:
             final_result = _score_half_local_in_bpref_scope(
+                **_optics_group_kwargs(optics_group_ids_per_half[k]),
                 bpref_device_signature_active=False,
                 k=k,
                 experiment_dataset=experiment_datasets[k],
@@ -4813,6 +4851,7 @@ def refine_single_volume(
             )
         else:
             final_result = _score_half_dense_in_bpref_scope(
+                **_optics_group_kwargs(optics_group_ids_per_half[k]),
                 bpref_device_signature_active=False,
                 k=k,
             experiment_dataset=experiment_datasets[k],
