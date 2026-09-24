@@ -153,7 +153,7 @@ def _normalize_noise_variance_per_half(init_noise_variance, n_halves=2):
             raise ValueError(
                 f"Expected {n_halves} per-half noise arrays, got {len(init_noise_variance)}",
             )
-        per_half = [jnp.asarray(noise_k).reshape(-1) for noise_k in init_noise_variance]
+        per_half = [_flat_noise_rows(noise_k) for noise_k in init_noise_variance]
     else:
         noise_arr = jnp.asarray(init_noise_variance)
         if noise_arr.ndim == 1:
@@ -167,17 +167,30 @@ def _normalize_noise_variance_per_half(init_noise_variance, n_halves=2):
                 f"({n_halves}, image_size) per-half array; got shape {tuple(noise_arr.shape)}",
             )
 
-    sizes = [int(noise_k.size) for noise_k in per_half]
+    sizes = [tuple(noise_k.shape) for noise_k in per_half]
     if len(set(sizes)) != 1:
-        raise ValueError(f"Per-half noise arrays must have the same size; got {sizes}")
+        raise ValueError(f"Per-half noise arrays must have the same shape; got {sizes}")
     return per_half
+
+
+def _flat_noise_rows(noise_k):
+    """One half's noise: a flat image vector, or ``[G, P]`` rows for G > 1 optics groups.
+
+    RELION keeps one ``sigma2_noise`` spectrum per optics group
+    (``MlModel::sigma2_noise[optics_group]``). One group keeps the flat vector,
+    so single-group runs see exactly the array they saw before.
+    """
+    noise_k = jnp.asarray(noise_k)
+    if noise_k.ndim == 2 and noise_k.shape[0] > 1:
+        return noise_k.reshape(noise_k.shape[0], -1)
+    return noise_k.reshape(-1)
 
 
 
 def _mean_noise_variance(noise_variance_per_half):
     """Average per-half image noise for diagnostics and compatibility outputs."""
     return jnp.mean(
-        jnp.stack([jnp.asarray(noise_k).reshape(-1) for noise_k in noise_variance_per_half], axis=0),
+        jnp.stack([_flat_noise_rows(noise_k) for noise_k in noise_variance_per_half], axis=0),
         axis=0,
     )
 
@@ -191,7 +204,13 @@ def _noise_radial_history(noise_variance_per_half, image_shape, *, dtype):
     """
     from relax.relion.relion_metadata import _radial_profile_from_noise_variance
 
-    per_half = [_radial_profile_from_noise_variance(noise_k, image_shape) for noise_k in noise_variance_per_half]
+    def radial(noise_k):
+        noise_k = _flat_noise_rows(noise_k)
+        if noise_k.ndim == 1:
+            return _radial_profile_from_noise_variance(noise_k, image_shape)
+        return np.stack([_radial_profile_from_noise_variance(row, image_shape) for row in noise_k])
+
+    per_half = [radial(noise_k) for noise_k in noise_variance_per_half]
     mean = jnp.asarray(np.mean(np.stack(per_half, axis=0), axis=0), dtype=dtype)
     return per_half, mean
 
@@ -238,6 +257,42 @@ def _combined_noise_stats(noise_stats_per_half):
         array_dtype=jnp.float64,
     )
 
+
+
+def _per_optics_group_sigma2_noise(stats, previous_radial, previous_rows, image_shape):
+    """One half's M-step noise update with one spectrum per optics group.
+
+    ``stats`` carries ``[G, n_shells]`` sums and ``[G]`` ``sumw`` (RELION's
+    ``wsum_model.sigma2_noise[igroup]`` and ``sumw_group[igroup]``). Each group is
+    normalised on its own, as ``maximizationOtherParameters`` does
+    (``ml_optimiser.cpp:5246-5285``); a group without noise sums keeps its previous
+    spectrum. Returns the ``[G, n_shells]`` shell profiles and ``[G, P]`` pixel rows.
+    """
+
+    from recovar.reconstruction import noise
+
+    from relax.reconstruction import noise_relion
+
+    wsum = np.asarray(stats.wsum_sigma2_noise, dtype=np.float64)
+    power = np.asarray(stats.wsum_img_power, dtype=np.float64)
+    sumw = np.asarray(stats.sumw, dtype=np.float64).reshape(-1)
+    n_groups = wsum.shape[0]
+    if power.shape != wsum.shape or sumw.shape != (n_groups,) or previous_radial.shape != wsum.shape:
+        raise ValueError(
+            f"per-group noise sums disagree: wsum {wsum.shape}, img power {power.shape}, "
+            f"sumw {sumw.shape}, previous {previous_radial.shape}"
+        )
+    radial = previous_radial.copy()
+    rows = [jnp.asarray(row) for row in jnp.asarray(previous_rows).reshape(n_groups, -1)]
+    for g in range(n_groups):
+        if np.sum(wsum[g] + power[g]) == 0.0:
+            continue
+        radial[g] = np.asarray(
+            noise_relion.normalize_wsum_to_sigma2_noise(wsum[g], power[g], sumw[g], image_shape),
+            dtype=np.float64,
+        )
+        rows[g] = jnp.asarray(noise.make_radial_noise(radial[g], image_shape)).reshape(-1)
+    return radial, jnp.stack(rows)
 
 
 @_dataclass
@@ -338,6 +393,18 @@ def update_posterior_noise_variance(
             noise.make_radial_noise(noise_shared, cryo.image_shape),
         ).reshape(-1)
         noise_variance_per_half = [noise_variance_shared, noise_variance_shared]
+    elif np.ndim(noise_stats_per_half[0].wsum_sigma2_noise) == 2:
+        noise_from_res_per_half = []
+        for k_noise, stats_k in enumerate(noise_stats_per_half):
+            noise_k, noise_rows_k = _per_optics_group_sigma2_noise(
+                stats_k,
+                np.asarray(previous_noise_radial_per_half[k_noise], dtype=np.float64),
+                noise_variance_per_half[k_noise],
+                cryo.image_shape,
+            )
+            noise_from_res_per_half.append(noise_k)
+            noise_variance_per_half[k_noise] = noise_rows_k
+        noise_from_res = np.mean(np.stack(noise_from_res_per_half, axis=0), axis=0)
     else:
         noise_from_res_per_half = []
         for k_noise, stats_k in enumerate(noise_stats_per_half):
@@ -354,13 +421,14 @@ def update_posterior_noise_variance(
         noise_from_res = np.mean(np.stack(noise_from_res_per_half, axis=0), axis=0)
 
     # Log per-shell noise comparison (first 10 shells) for convergence diagnostics.
-    old_noise_radial = previous_noise_radial
-    n_log = min(10, len(noise_from_res), len(old_noise_radial))
+    old_noise_radial = np.asarray(previous_noise_radial).reshape(-1, np.shape(noise_from_res)[-1])[0]
+    new_noise_radial = np.asarray(noise_from_res).reshape(-1, np.shape(noise_from_res)[-1])[0]
+    n_log = min(10, len(new_noise_radial), len(old_noise_radial))
     logger.info(
-        "Noise update per shell (first %d): old=[%s] new=[%s]",
+        "Noise update per shell (first %d, optics group 1): old=[%s] new=[%s]",
         n_log,
         ", ".join(f"{float(x):.3e}" for x in old_noise_radial[:n_log]),
-        ", ".join(f"{float(x):.3e}" for x in noise_from_res[:n_log]),
+        ", ".join(f"{float(x):.3e}" for x in new_noise_radial[:n_log]),
     )
     if maybe_dump_noise_update_debug is not None:
         maybe_dump_noise_update_debug(

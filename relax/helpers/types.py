@@ -73,6 +73,10 @@ class NoiseStats(NamedTuple):
         sumw: float -- total posterior/support weight processed (equals the
             number of images when posteriors are normalised to sum to 1 per
             image and no significant-support pruning is active).
+
+        With G > 1 optics groups ``wsum_sigma2_noise`` and ``wsum_img_power``
+        are ``(G, n_shells)`` and ``sumw`` is ``(G,)``: RELION's per-group
+        ``wsum_model.sigma2_noise[igroup]`` and ``sumw_group[igroup]``.
         wsum_noise_a2: optional diagnostic split of ``wsum_sigma2_noise``.
         wsum_noise_xa: optional diagnostic split of ``wsum_sigma2_noise``.
         wsum_norm_correction: optional per-image residual sums for RELION's
@@ -86,7 +90,7 @@ class NoiseStats(NamedTuple):
     wsum_sigma2_noise: jax.Array | np.ndarray
     wsum_img_power: jax.Array | np.ndarray
     wsum_sigma2_offset: float
-    sumw: float
+    sumw: float | np.ndarray
     wsum_noise_a2: jax.Array | np.ndarray | None = None
     wsum_noise_xa: jax.Array | np.ndarray | None = None
     wsum_norm_correction: jax.Array | np.ndarray | None = None
@@ -153,7 +157,7 @@ def make_noise_stats(
         wsum_sigma2_noise=_stats_array(wsum_sigma2_noise, array_dtype, host_arrays),
         wsum_img_power=_stats_array(wsum_img_power, array_dtype, host_arrays),
         wsum_sigma2_offset=float(wsum_sigma2_offset),
-        sumw=float(sumw),
+        sumw=float(sumw) if np.ndim(sumw) == 0 else np.asarray(sumw, dtype=np.float64),
         wsum_noise_a2=None if wsum_noise_a2 is None else _stats_array(wsum_noise_a2, array_dtype, host_arrays),
         wsum_noise_xa=None if wsum_noise_xa is None else _stats_array(wsum_noise_xa, array_dtype, host_arrays),
         wsum_norm_correction=None
