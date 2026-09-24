@@ -394,6 +394,8 @@ def run_item(item: Item, run_root: Path, src: Path, gpu: str | None) -> dict:
         argv += ["--basetemp", str(out / "bt"), f"--junitxml={out / 'junit.xml'}"]
     env = dict(os.environ, **item.env)
     env["TMPDIR"] = str(out / "tmp")
+    if env.get("RELAX_TIER_DIAGNOSE_TIMING") == "1":  # per-iteration phase timings of the refinement
+        env["RELAX_PARITY_TIMING_DIR"] = str(out / "timing")
     (out / "tmp").mkdir(exist_ok=True)
     if gpu is None:
         env.update(CUDA_VISIBLE_DEVICES="", JAX_PLATFORMS="cpu")
@@ -663,8 +665,9 @@ def _env_lines(run_root: Path, natives: Path) -> str:
         "RELION_SRC_DIR": "/scratch/gpfs/GILLES/mg6942/relion/src",
         "PYTHONPATH": str(src),
     }
-    if os.environ.get("RELAX_TEST_RECEIPTS"):  # sbatch --export=NONE drops it otherwise
-        exports["RELAX_TEST_RECEIPTS"] = os.environ["RELAX_TEST_RECEIPTS"]
+    for name in ("RELAX_TEST_RECEIPTS", "RELAX_TIER_DIAGNOSE_TIMING"):  # sbatch --export=NONE drops them otherwise
+        if os.environ.get(name):
+            exports[name] = os.environ[name]
     lines = ["unset PYTHONHOME CONDA_PREFIX VIRTUAL_ENV LD_PRELOAD LD_LIBRARY_PATH"]
     lines += [f"export {k}={shlex.quote(v)}" for k, v in exports.items()]
     lines.append(f"mkdir -p {run_root}/jax {run_root}/cuda_cache")
@@ -708,6 +711,10 @@ def write_sbatch(run_root: Path, tier: str, natives: Path, queue: str, gpu_model
 #SBATCH --output={run_root}/job-%j.log
 set -uo pipefail
 {_env_lines(run_root, natives)}
+# One worker process per GPU shares the job's CPUs: 8 host threads each.
+export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8
+# Node load and GPU use every 30 s, to tell a slow tier from a busy node.
+( while true; do date -Is; uptime; nvidia-smi --query-gpu=index,utilization.gpu,memory.used --format=csv,noheader; sleep 30; done ) > {run_root}/node_monitor.log 2>&1 &
 cd {src}
 {py} {src}/scripts/run_test_tier.py run {tier} --run-root {run_root}
 """)
