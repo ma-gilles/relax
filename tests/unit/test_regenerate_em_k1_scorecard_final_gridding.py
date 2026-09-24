@@ -197,7 +197,7 @@ def test_v2_build_supersedes_v1_and_records_provenance():
         "docs/math/ledger.json",
         "b" * 64,
         snapshot_id="strict-k1-v2-test",
-        source_head="c" * 40,
+        source_heads=["c" * 40],
     )
 
     assert ledger["counts"]["strict"] == {"pass": 33, "fail": 1, "not_run": 0}

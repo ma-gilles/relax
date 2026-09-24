@@ -338,7 +338,7 @@ def build_v2_scorecard(
     ledger_sha256: str,
     *,
     snapshot_id: str,
-    source_head: str,
+    source_heads: list[str],
 ) -> dict[str, Any]:
     """Build scorecard v2 from frozen v1 and the regeneration ledger."""
 
@@ -382,7 +382,7 @@ def build_v2_scorecard(
         {
             "id": snapshot_id,
             "recorded_utc": ledger["generated_utc"],
-            "source_heads": [source_head],
+            "source_heads": list(source_heads),
             "counts": counts,
             "evidence_schema": ledger["schema"],
             "evidence_sha256": ledger_sha256,
@@ -459,7 +459,7 @@ def build_main(args: argparse.Namespace) -> int:
         str(args.ledger_output),
         sha256_file(ledger_path),
         snapshot_id=args.snapshot_id,
-        source_head=args.source_head,
+        source_heads=args.source_head,
     )
     _write_json(repo / args.scorecard_output, scorecard)
     print(f"strict counts {ledger['counts']['strict']}")
@@ -526,15 +526,13 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--ledger-schema", required=True)
     build.add_argument("--generated-utc", required=True)
     build.add_argument("--snapshot-id", required=True)
-    build.add_argument("--source-head", required=True)
+    build.add_argument("--source-head", nargs="+", required=True, help="commit boundary of the snapshot")
     build.add_argument("--v1-scorecard", type=Path, default=Path("docs/math/em_relion_parity_scorecard_v1.json"))
     build.add_argument(
         "--fixture-manifest", type=Path, default=Path("docs/math/em_relion_parity_fixture_manifest_v2.json")
     )
     build.add_argument("--ledger-output", type=Path, required=True, help="repository-relative path")
-    build.add_argument(
-        "--scorecard-output", type=Path, default=Path("docs/math/em_relion_parity_scorecard_v2.json")
-    )
+    build.add_argument("--scorecard-output", type=Path, default=Path("docs/math/em_relion_parity_scorecard_v2.json"))
     build.set_defaults(func=build_main)
 
     args = parser.parse_args(argv)

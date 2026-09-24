@@ -223,6 +223,46 @@ def test_scorecard_mode_forces_complete_frozen_suite_evidence_contract(tmp_path)
     assert "RELAX_LOCAL_ADAPTIVE_PASS2_FULL_PARENT=0" in submission
     assert 'RELAX_INTERMEDIATES_DIR="${RELAX_DIR}/intermediates"' in script
     assert 'RELAX_EXTRA_ARGS+=(--save_intermediates_dir "${RELAX_INTERMEDIATES_DIR}")' in script
+    # Scorecard v2 evidence: final maps are always gridding-corrected, so the
+    # retired selector must not reach the submission record the summarizer reads.
+    assert "RELAX_FINAL_ALL_DATA_GRID_CORRECT" not in submission
+    assert "RELAX_FINAL_ALL_DATA_GRID_CORRECT" not in script
+
+
+def test_scorecard_mode_refuses_the_retired_final_grid_selector(tmp_path):
+    fixture_root = tmp_path / "fixtures"
+    fixture_root.mkdir()
+    fixture_manifest = tmp_path / "fixtures.json"
+    fixture_manifest.write_text('{"schema":"recovar.em_k1_fixture_manifest.v1","cases":[]}\n')
+
+    proc, _ = _dry_run_launcher(
+        tmp_path,
+        case="2",
+        extra_env={
+            "EM_K1_MATRIX_FIXTURE_MANIFEST": str(fixture_manifest),
+            "EM_K1_MATRIX_FIXTURE_ROOT": str(fixture_root),
+            "RELAX_FINAL_ALL_DATA_GRID_CORRECT": "",
+        },
+        extra_args=["--scorecard"],
+    )
+
+    assert proc.returncode == 2
+    assert "RELAX_FINAL_ALL_DATA_GRID_CORRECT is retired" in proc.stdout
+
+
+def test_scorecard_mode_usage_describes_the_v2_gridding_contract(tmp_path):
+    proc = subprocess.run(
+        ["bash", str(LAUNCHER), "--help"],
+        cwd=REPO_ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stdout
+    assert "grid correction off" not in proc.stdout
+    assert "always gridding-corrected" in proc.stdout
 
 
 def test_scorecard_mode_requires_exact_fixture_pair(tmp_path):

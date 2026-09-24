@@ -169,8 +169,9 @@ Environment overrides:
                                     (default: ${BASE_PIXI_PY})
   EM_K1_MATRIX_CASES                Comma-separated case names or 1-based indices
   EM_K1_MATRIX_SCORECARD_MODE       Set 1 (or pass --scorecard) to force the frozen-suite
-                                    evidence contract: exact fixtures, autonomous RELION pair,
-                                    per-iteration maps, grid correction off, and no forced final.
+                                    (scorecard v2) evidence contract: exact fixtures, autonomous
+                                    RELION pair, per-iteration maps, and no forced final. Final
+                                    all-data maps are always gridding-corrected, as in RELION.
   EM_K1_MATRIX_RUN_RELION           Run RELION AutoRefine too (default: ${RUN_RELION})
   EM_K1_MATRIX_TRAJECTORY_MODE      RECOVAR state policy when RELION is enabled:
                                     controlled (default; existing per-iteration RELION replay)

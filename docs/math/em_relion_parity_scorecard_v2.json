@@ -1,0 +1,2142 @@
+{
+  "schema": "recovar.em_relion_parity_scorecard.v2",
+  "suite_id": "k1-gui-grid0-local-highshell-full34",
+  "suite_version": 2,
+  "frozen_denominator": 34,
+  "frozen_case_definitions_sha256": "9e3f2cb7192eb2cbf8a50181cf47de8562adfb98734bab05a736fb7d4d404fc1",
+  "metric_policy": "Shellwise FSC and normalized FSC-AUC only; correlation is not computed or gated.",
+  "fixture_policy": "Version 2 keeps the version 1 case parameters and artifact-pinned fixtures and changes only the final-map contract: final all-data maps are gridding-corrected as in RELION. Newly generated datasets remain non-scoring replicate diagnostics.",
+  "acceptance_contract": {
+    "merged_cross_engine_fsc_auc_min": 0.995,
+    "recovar_minus_relion_merged_gt_fsc_auc_min": -0.002,
+    "intermediate_topology": "exact",
+    "trajectory_mode": "autonomous",
+    "same_physical_gpu_per_pair": true,
+    "grid_correction": "always-on (RELION griddingCorrect)",
+    "forced_final_all_data_after_nonconvergence": false
+  },
+  "previous_version": {
+    "schema": "recovar.em_relion_parity_scorecard.v1",
+    "path": "docs/math/em_relion_parity_scorecard_v1.json",
+    "sha256": "da7b8b502abd0f549d8ac2b691dd415d372819dcaf48926550e98b7b546afcef",
+    "current_snapshot_id": "strict-k1-v12-20260821"
+  },
+  "regeneration": {
+    "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+    "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+    "gridding": {
+      "reference": "RELION backprojector.cpp BackProjector::reconstruct -> griddingCorrect",
+      "formula": "map / sinc^2(r / (N * padding_factor)), r from voxel index N/2",
+      "padding_factor": 2,
+      "implementation": "relax.reconstruction.relion_functions_relion._gridding_correct_trilinear_np",
+      "applies_to": "final merged map only; numbered iterations and final_half*_unfil.mrc were already corrected"
+    }
+  },
+  "current_snapshot": {
+    "id": "strict-k1-suite2-gridding-20260924",
+    "counts": {
+      "pass": 31,
+      "fail": 3,
+      "not_run": 0
+    },
+    "source_ledger": {
+      "schema": "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v13",
+      "generated_utc": "2026-09-24T13:19:31+00:00",
+      "sha256": "2b5f516bbd0d85d0a7eee92baf078287397bd4575d26e15e64c2907a4e17ed6f",
+      "path": "docs/math/em_k1_full34_superseding_ledger_v13.json"
+    }
+  },
+  "history": [
+    {
+      "id": "strict-k1-v1-old-head-20260721",
+      "recorded_utc": "2026-07-21T04:33:00.281935+00:00",
+      "source_heads": [
+        "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d"
+      ],
+      "counts": {
+        "pass": 20,
+        "fail": 12,
+        "not_run": 2
+      },
+      "evidence_schema": "em_k1_gui_grid0_local_highshell_full34_durable_ledger_v1",
+      "evidence_sha256": "b79c18e5feb368782ef3a9fd439413bc3d1f890bcf19d1f97dc23037d09d97f1",
+      "status_note": "Two trajectory rows ended in infrastructure error and remain non-passes in the fixed denominator.",
+      "suite_version": 1
+    },
+    {
+      "id": "strict-k1-v3-20260721",
+      "recorded_utc": "2026-07-21T10:35:40.626248+00:00",
+      "source_heads": [
+        "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+        "9d1722781e1d6c5fc5b2ad0e15ebba3a2becbab0"
+      ],
+      "counts": {
+        "pass": 21,
+        "fail": 13,
+        "not_run": 0
+      },
+      "evidence_schema": "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v3",
+      "evidence_sha256": "5393ee8f1549ccce6dbf7befec7c14f66d58d16b6196ccb52eef8a70e8ddf26f",
+      "suite_version": 1
+    },
+    {
+      "id": "strict-k1-v4-20260722",
+      "recorded_utc": "2026-07-22T15:57:09.593124+00:00",
+      "source_heads": [
+        "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+        "9d1722781e1d6c5fc5b2ad0e15ebba3a2becbab0",
+        "6ddd094011dbf38f4c29f6c14bb8d2bab7b5f603"
+      ],
+      "counts": {
+        "pass": 22,
+        "fail": 12,
+        "not_run": 0
+      },
+      "evidence_schema": "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v4",
+      "evidence_sha256": "096109c1dad06b9ba779715bd7c18d8705f9fb3678e80285428983df3555e639",
+      "suite_version": 1
+    },
+    {
+      "id": "strict-k1-v5-20260722",
+      "recorded_utc": "2026-07-22T19:00:51.329249+00:00",
+      "source_heads": [
+        "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+        "9d1722781e1d6c5fc5b2ad0e15ebba3a2becbab0",
+        "6ddd094011dbf38f4c29f6c14bb8d2bab7b5f603",
+        "ab52b1ff40385b6eb91c25d5e991ca7b17f24c68"
+      ],
+      "counts": {
+        "pass": 23,
+        "fail": 11,
+        "not_run": 0
+      },
+      "evidence_schema": "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v5",
+      "evidence_sha256": "11a82951cadd2ccd2123904345090bec45352dd5f1884e0ae25fdf35d0695311",
+      "suite_version": 1
+    },
+    {
+      "id": "strict-k1-v6-20260724",
+      "recorded_utc": "2026-07-24T01:04:11.826284+00:00",
+      "source_heads": [
+        "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+        "9d1722781e1d6c5fc5b2ad0e15ebba3a2becbab0",
+        "6ddd094011dbf38f4c29f6c14bb8d2bab7b5f603",
+        "ab52b1ff40385b6eb91c25d5e991ca7b17f24c68",
+        "84143872a5179b5567dc8e43fb81b985d7beb37d",
+        "a2be302cdc08a59f0937e61e3ad92b72e939ccd7"
+      ],
+      "counts": {
+        "pass": 25,
+        "fail": 9,
+        "not_run": 0
+      },
+      "evidence_schema": "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v6",
+      "evidence_sha256": "32c6512a8507f7b17a59d0be527fa5c9609067e0d8f598a2d108bed9a3fc8a56",
+      "suite_version": 1
+    },
+    {
+      "id": "strict-k1-v7-20260726",
+      "recorded_utc": "2026-07-26T15:48:00+00:00",
+      "source_heads": [
+        "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+        "9d1722781e1d6c5fc5b2ad0e15ebba3a2becbab0",
+        "6ddd094011dbf38f4c29f6c14bb8d2bab7b5f603",
+        "ab52b1ff40385b6eb91c25d5e991ca7b17f24c68",
+        "84143872a5179b5567dc8e43fb81b985d7beb37d",
+        "a2be302cdc08a59f0937e61e3ad92b72e939ccd7",
+        "4c8b043a9b80ff12441e36f5a77c6e9f1896197b"
+      ],
+      "counts": {
+        "pass": 26,
+        "fail": 8,
+        "not_run": 0
+      },
+      "evidence_schema": "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v7",
+      "evidence_sha256": "55fb5042a3768c5d44b89aef72412682c6ebad2d832ba3c2a1b02a6a491c7d8e",
+      "suite_version": 1
+    },
+    {
+      "id": "strict-k1-v8-20260726",
+      "recorded_utc": "2026-07-26T20:50:08+00:00",
+      "source_heads": [
+        "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+        "9d1722781e1d6c5fc5b2ad0e15ebba3a2becbab0",
+        "6ddd094011dbf38f4c29f6c14bb8d2bab7b5f603",
+        "ab52b1ff40385b6eb91c25d5e991ca7b17f24c68",
+        "84143872a5179b5567dc8e43fb81b985d7beb37d",
+        "a2be302cdc08a59f0937e61e3ad92b72e939ccd7",
+        "4c8b043a9b80ff12441e36f5a77c6e9f1896197b",
+        "916ab17a4c8040786bea6517b12c8746ae399d65"
+      ],
+      "counts": {
+        "pass": 27,
+        "fail": 7,
+        "not_run": 0
+      },
+      "evidence_schema": "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v8",
+      "evidence_sha256": "13c7cf50de11d6819dda2cf0320915973183f09865e4b96cc8fcb04e6f005412",
+      "suite_version": 1
+    },
+    {
+      "id": "strict-k1-v9-20260727",
+      "recorded_utc": "2026-07-27T07:29:46+00:00",
+      "source_heads": [
+        "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+        "9d1722781e1d6c5fc5b2ad0e15ebba3a2becbab0",
+        "6ddd094011dbf38f4c29f6c14bb8d2bab7b5f603",
+        "ab52b1ff40385b6eb91c25d5e991ca7b17f24c68",
+        "84143872a5179b5567dc8e43fb81b985d7beb37d",
+        "a2be302cdc08a59f0937e61e3ad92b72e939ccd7",
+        "4c8b043a9b80ff12441e36f5a77c6e9f1896197b",
+        "916ab17a4c8040786bea6517b12c8746ae399d65",
+        "31c4a0ca203b70211f4d8586d044c94fca9fc037"
+      ],
+      "counts": {
+        "pass": 28,
+        "fail": 6,
+        "not_run": 0
+      },
+      "evidence_schema": "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v9",
+      "evidence_sha256": "9cedb043dded9e5a2020cf53c413c4e1da366f4a6a2c54127347f8572a9ed7b3",
+      "suite_version": 1
+    },
+    {
+      "id": "strict-k1-v10-20260814",
+      "recorded_utc": "2026-08-14T10:59:00+00:00",
+      "source_heads": [
+        "36dac0171859b09bb57358ff0a86ed8a03615975",
+        "7f0e2348dbee31396254f020a8845741f93dbbdf"
+      ],
+      "counts": {
+        "pass": 29,
+        "fail": 5,
+        "not_run": 0
+      },
+      "evidence_schema": "recovar.em_k1_direct_noise_promotion.v1",
+      "evidence_sha256": "587913505160261847b7fcc7db01fc03f50ddafc9ccc3de23d4fbf3f5448416c",
+      "status_note": "Case 26 passes the fixed FSC, GT, and exact-topology gates; fixed case 25 preserves its pass at repeat-level movement.",
+      "suite_version": 1
+    },
+    {
+      "id": "strict-k1-v11-20260814",
+      "recorded_utc": "2026-08-14T14:46:03+00:00",
+      "source_heads": [
+        "e791e87502b51fee8b8c2ba9c7de80ee922421ec"
+      ],
+      "counts": {
+        "pass": 30,
+        "fail": 4,
+        "not_run": 0
+      },
+      "evidence_schema": "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v11",
+      "evidence_sha256": "ea466f54e32a7d29043bda06e56ebff7a781b193e76dedbf6c36dc93813260e7",
+      "status_note": "Case 22 passes all numbered and final FSC/GT gates with exact convergence topology under the guarded default K=1 path.",
+      "suite_version": 1
+    },
+    {
+      "id": "strict-k1-v12-20260821",
+      "recorded_utc": "2026-08-21T05:30:00+00:00",
+      "source_heads": [
+        "fdec6f931d22669cca5958861e3e248ff270fa26"
+      ],
+      "counts": {
+        "pass": 31,
+        "fail": 3,
+        "not_run": 0
+      },
+      "evidence_schema": "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v12",
+      "evidence_sha256": "49113a0d7da5fe729a31a8069b9e702144338ea38fa334392a03294e9422ad71",
+      "status_note": "Case 7 passes all 15 numbered and final FSC/GT gates with exact autonomous topology under the guarded K=1 path.",
+      "suite_version": 1
+    },
+    {
+      "id": "strict-k1-suite2-gridding-20260924",
+      "recorded_utc": "2026-09-24T13:19:31+00:00",
+      "source_heads": [
+        "4e945a13dd68d570e7dd3748c30d406cf31bb544",
+        "5da9e54cdb0b6c16fddcb90e5366dc54211ade88"
+      ],
+      "counts": {
+        "pass": 31,
+        "fail": 3,
+        "not_run": 0
+      },
+      "evidence_schema": "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v13",
+      "evidence_sha256": "2b5f516bbd0d85d0a7eee92baf078287397bd4575d26e15e64c2907a4e17ed6f",
+      "status_note": "Suite version 2: final merged maps gridding-corrected as RELION does; final metrics regenerated post hoc from the saved maps.",
+      "suite_version": 2
+    }
+  ],
+  "cases": [
+    {
+      "id": "k1-01",
+      "name": "baseline_100k_g256_white_noise1_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "256",
+        "image_offset_n_std": "0.0",
+        "n_images": "100000",
+        "noise_level": "1.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1701",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9996407597065664,
+      "final_gt_fsc_auc_delta": 4.888754250687022e-05,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11384363",
+        "science": "11384176",
+        "trajectory": "11384362"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9983792940737061,
+        "final_gt_fsc_auc_delta": 0.008163340373875005
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/1_baseline_100k_g256_white_noise1_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/1_baseline_100k_g256_white_noise1_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/1_baseline_100k_g256_white_noise1_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/1_baseline_100k_g256_white_noise1_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/1_baseline_100k_g256_white_noise1_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "bf968713fa91df209c4d88f0db084444456233c6063ae4dffa6dacf406f6307b",
+          "gt_volume": "0f30618180676e1a9358bf314743b5102f30d9856e3395233e81f5fc5ca71494",
+          "recovar_final_merged": "5af00db6eca991d9edcc483d31ea49efea806bec19926fe55716d696ca22e807",
+          "recovar_refinement_results": "bfca6971c7f387a402f9e05c6d482ab8ee48ab017e2216dd48424fdf142acd8f",
+          "relion_final_merged": "07ed62834bf6db2d775e8412a2f2030d6666fd6a2e847ce6bec21025d31bbf5e"
+        }
+      }
+    },
+    {
+      "id": "k1-02",
+      "name": "more_images_200k_g256_white_noise1_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "256",
+        "image_offset_n_std": "0.0",
+        "n_images": "200000",
+        "noise_level": "1.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1702",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9997194013625404,
+      "final_gt_fsc_auc_delta": 0.00012082321764816939,
+      "source_head": "84143872a5179b5567dc8e43fb81b985d7beb37d",
+      "jobs": {
+        "intermediate": "11501907",
+        "science": "11501888",
+        "trajectory": "11501907"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9985746063865033,
+        "final_gt_fsc_auc_delta": 0.005625197355017653
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_cases02_03_strict_84143872_20260722T180000Z/cases/2_more_images_200k_g256_white_noise1_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/2_more_images_200k_g256_white_noise1_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_cases02_03_strict_84143872_20260722T180000Z/cases/2_more_images_200k_g256_white_noise1_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_cases02_03_strict_84143872_20260722T180000Z/cases/2_more_images_200k_g256_white_noise1_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_cases02_03_strict_84143872_20260722T180000Z/cases/2_more_images_200k_g256_white_noise1_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "0484f6412e02799af0356bf7a02d313171e1f47112649eb811591875a25a397a",
+          "gt_volume": "94d07db8d3bfca4d8ad42a24177942edcd00401eff2b057354cb4034d000d4b3",
+          "recovar_final_merged": "e32f1a4cf09fe0334404392642605ccf10d18d558e6fe99397f1ecf0df90e158",
+          "recovar_refinement_results": "246cf7356ea4490b6499452475f20fbd5448c173ff7e2ae40d45c4f3a43f5d02",
+          "relion_final_merged": "bae1b1dcdeabbf8724d4cc1782cb448945d825a3cca0c0d22a0c6af518df6a93"
+        }
+      }
+    },
+    {
+      "id": "k1-03",
+      "name": "more_images_300k_g256_white_noise1_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "256",
+        "image_offset_n_std": "0.0",
+        "n_images": "300000",
+        "noise_level": "1.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1703",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9998385495026585,
+      "final_gt_fsc_auc_delta": 3.0996500389735004e-06,
+      "source_head": "4c8b043a9b80ff12441e36f5a77c6e9f1896197b",
+      "jobs": {
+        "intermediate": "11632847",
+        "science": "11587631",
+        "trajectory": "11632847"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9987827326111832,
+        "final_gt_fsc_auc_delta": 0.0054263318347904654
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case03_canonical_4c8b043a_20260724T223000ET/cases/3_more_images_300k_g256_white_noise1_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/3_more_images_300k_g256_white_noise1_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case03_canonical_4c8b043a_20260724T223000ET/cases/3_more_images_300k_g256_white_noise1_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case03_canonical_4c8b043a_20260724T223000ET/cases/3_more_images_300k_g256_white_noise1_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case03_canonical_4c8b043a_20260724T223000ET/cases/3_more_images_300k_g256_white_noise1_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "0c5b3eccf9324b8c6aece1dcba3f920e49ef0da05eafa074fcc9124bf72fa2de",
+          "gt_volume": "0f06a134705c886bde1ec72e7edd873ae08d57aa1c510cf40b8354cb5e8735e8",
+          "recovar_final_merged": "50520f607b8e9e911c885575c3b4d383365817d91147c354b1def60494791ac0",
+          "recovar_refinement_results": "776b13ff9697819a15a8c169b55391a90266258e74788e232c635ccf5fc887be",
+          "relion_final_merged": "6ccbdd40fc9fe7d5806b51cb37f08309153fb08694ad7ee7d788fc785dbe99a5"
+        }
+      }
+    },
+    {
+      "id": "k1-04",
+      "name": "high_noise_100k_g256_white_noise3_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "256",
+        "image_offset_n_std": "0.0",
+        "n_images": "100000",
+        "noise_level": "3.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1704",
+        "volume_radius": "0.7"
+      },
+      "result": "fail",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9928688058885559,
+      "final_gt_fsc_auc_delta": -2.7520344001996655e-06,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11384369",
+        "science": "11384179",
+        "trajectory": "11384368"
+      },
+      "suite_v1": {
+        "result": "fail",
+        "final_cross_engine_fsc_auc": 0.9915563085225809,
+        "final_gt_fsc_auc_delta": 0.0038692824298070527
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/4_high_noise_100k_g256_white_noise3_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/4_high_noise_100k_g256_white_noise3_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/4_high_noise_100k_g256_white_noise3_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/4_high_noise_100k_g256_white_noise3_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/4_high_noise_100k_g256_white_noise3_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "cbab416727a9bc663ee00c10699b35d688d2ff113c3a5c1ffaae369709938dd0",
+          "gt_volume": "f9d9addbe7ec8d735d25ca99eb7f4ca7fd51d1b1610183bf1ee81979fbecb785",
+          "recovar_final_merged": "586ecc3a51c175e9a0181e6d107793a4b5529aa510a55067c2e9442d76d45714",
+          "recovar_refinement_results": "2f70acc3f318671fd68c4a472cfec2c5e6c8dd341827cc6f50093c3dd3c8df36",
+          "relion_final_merged": "f762777d71be12cc2a3efb5932432481847d9cd61ae3930dc34511320ca5778c"
+        }
+      }
+    },
+    {
+      "id": "k1-05",
+      "name": "very_high_noise_100k_g256_white_noise10_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "256",
+        "image_offset_n_std": "0.0",
+        "n_images": "100000",
+        "noise_level": "10.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1705",
+        "volume_radius": "0.7"
+      },
+      "result": "fail",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9873595399645752,
+      "final_gt_fsc_auc_delta": 4.292163626663792e-05,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11384371",
+        "science": "11384180",
+        "trajectory": "11384370"
+      },
+      "suite_v1": {
+        "result": "fail",
+        "final_cross_engine_fsc_auc": 0.9857434790367474,
+        "final_gt_fsc_auc_delta": 0.0005449501618362135
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/5_very_high_noise_100k_g256_white_noise10_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/5_very_high_noise_100k_g256_white_noise10_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/5_very_high_noise_100k_g256_white_noise10_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/5_very_high_noise_100k_g256_white_noise10_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/5_very_high_noise_100k_g256_white_noise10_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "b08b72a8e37b82ce0b7fd8ca85b58b0965ecaa0a65b18238a0d629c8b2db6fee",
+          "gt_volume": "e7a0158e7de088ff3f74dcef5746fa8fef0cf8ea96bbe50ef2434c60013f4754",
+          "recovar_final_merged": "142cd96a16635653f2ebb7b642209cff0729cae6a7feadf51e8ec984cb6a71bc",
+          "recovar_refinement_results": "68a92f07917c7c91d1a835ac5dd3e31a34e1ba998061256dfb9736092d7cc54d",
+          "relion_final_merged": "0ece8838920e244c0d68fbe99694d9bccf898296b7c6a5098fedcc947d3e7b18"
+        }
+      }
+    },
+    {
+      "id": "k1-06",
+      "name": "noctf_control_100k_g256_white_noise3_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "noctf",
+        "grid": "256",
+        "image_offset_n_std": "0.0",
+        "n_images": "100000",
+        "noise_level": "3.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1706",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9987812942895726,
+      "final_gt_fsc_auc_delta": -3.0798131855525046e-05,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11384373",
+        "science": "11384181",
+        "trajectory": "11384372"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9975229452018111,
+        "final_gt_fsc_auc_delta": 0.005563841874383135
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/6_noctf_control_100k_g256_white_noise3_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/6_noctf_control_100k_g256_white_noise3_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/6_noctf_control_100k_g256_white_noise3_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/6_noctf_control_100k_g256_white_noise3_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/6_noctf_control_100k_g256_white_noise3_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "031ac52c692863cd3d472385545587987de5fa9eac5f59e4cb296efeda35474d",
+          "gt_volume": "c5c727de531912858c0efa53ac6d4db6bfbc15f811493b0c082cd5e88028035f",
+          "recovar_final_merged": "6ac35f6a7632506debef3e068afc3bec92812548709f90e8a9a45e75771fa05f",
+          "recovar_refinement_results": "da29459cab140eb45d749f8997516617d323edfe5befc3c921e680243d663835",
+          "relion_final_merged": "dcdf85fcdb4cac7353e559b552484c4771a566d5bd1946a63bb15c94a471f359"
+        }
+      }
+    },
+    {
+      "id": "k1-07",
+      "name": "anisotropic_100k_g256_white_noise1_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "nonuniform",
+        "grid": "256",
+        "image_offset_n_std": "0.0",
+        "n_images": "100000",
+        "noise_level": "1.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1707",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9999915235414527,
+      "final_gt_fsc_auc_delta": 3.2434479760312662e-06,
+      "source_head": "fdec6f931d22669cca5958861e3e248ff270fa26",
+      "jobs": {
+        "intermediate": "12695233",
+        "science": "12694866",
+        "trajectory": "12695233"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9983453567371177,
+        "final_gt_fsc_auc_delta": -0.00038278738603737816
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case7_clean_fdec6f931_20260820T1810ET/cases/7_anisotropic_100k_g256_white_noise1_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/7_anisotropic_100k_g256_white_noise1_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case7_clean_fdec6f931_20260820T1810ET/cases/7_anisotropic_100k_g256_white_noise1_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case7_clean_fdec6f931_20260820T1810ET/cases/7_anisotropic_100k_g256_white_noise1_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case7_clean_fdec6f931_20260820T1810ET/cases/7_anisotropic_100k_g256_white_noise1_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "016f3f8ef6ae49c5f2873cc0c0b1c58644c3572188d795171ec6d0620107662a",
+          "gt_volume": "dbfee63217b860f92d1a01e13cab0e2ffd05f667e1815f1ebd42c39d6cc537b4",
+          "recovar_final_merged": "11c86b853d2cf5fd201a1d3c116bedd4f3f83d0b10b4431dd951007ab60ec901",
+          "recovar_refinement_results": "0478b326fba7469a663ab1002274e5e4687af6bc507a563719c3a3eba58fb9b3",
+          "relion_final_merged": "5bfcb6433b357d57ebfecd907152e6a68e0298b4e9adf59dec32b28c5509e484"
+        }
+      }
+    },
+    {
+      "id": "k1-08",
+      "name": "anisotropic_high_noise_100k_g256_white_noise3_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "nonuniform",
+        "grid": "256",
+        "image_offset_n_std": "0.0",
+        "n_images": "100000",
+        "noise_level": "3.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1708",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9978477904829475,
+      "final_gt_fsc_auc_delta": 3.1915661450054866e-06,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11384377",
+        "science": "11384183",
+        "trajectory": "11384376"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9962607885093946,
+        "final_gt_fsc_auc_delta": 0.001007928169583061
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/8_anisotropic_high_noise_100k_g256_white_noise3_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/8_anisotropic_high_noise_100k_g256_white_noise3_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/8_anisotropic_high_noise_100k_g256_white_noise3_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/8_anisotropic_high_noise_100k_g256_white_noise3_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/8_anisotropic_high_noise_100k_g256_white_noise3_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "d9f9349e248171fbaf69159f1b9a0ae72f6ea856e741777109b146fb54231c18",
+          "gt_volume": "c78ad813dbc162de6fbbe6bfa9174f06d9e2ee3991c5da7aa68df68afc0aa2b7",
+          "recovar_final_merged": "c5bfb879bcaa6e4d2e5362a289eecedd4353728949190a517c9a096cc7bffe2c",
+          "recovar_refinement_results": "e15d49c4979874629b698af83cff0c30028b1d16060d3d7d493f6f6c521ebe88",
+          "relion_final_merged": "5e39318f71a1c6f4eb9d58a17dafbd8be2c9038e7027ddc5354c237cd1544139"
+        }
+      }
+    },
+    {
+      "id": "k1-09",
+      "name": "high_res_near_nyquist_100k_g384_white_noise1_bf0",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "384",
+        "image_offset_n_std": "0.0",
+        "n_images": "100000",
+        "noise_level": "1.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "0.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1709",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9969409302867958,
+      "final_gt_fsc_auc_delta": -5.133518193556341e-05,
+      "source_head": "9d1722781e1d6c5fc5b2ad0e15ebba3a2becbab0",
+      "jobs": {
+        "intermediate": "11432810",
+        "science": "11432807",
+        "trajectory": "11454201"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9955108928134183,
+        "final_gt_fsc_auc_delta": 0.003664545350020476
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case9_bucketcap_accept_9d172278_20260720T095000Z/cases/9_high_res_near_nyquist_100k_g384_white_noise1_bf0/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case9_bucketcap_accept_9d172278_20260720T095000Z/cases/9_high_res_near_nyquist_100k_g384_white_noise1_bf0/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case9_bucketcap_accept_9d172278_20260720T095000Z/cases/9_high_res_near_nyquist_100k_g384_white_noise1_bf0/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case9_bucketcap_accept_9d172278_20260720T095000Z/cases/9_high_res_near_nyquist_100k_g384_white_noise1_bf0/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case9_bucketcap_accept_9d172278_20260720T095000Z/cases/9_high_res_near_nyquist_100k_g384_white_noise1_bf0/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "34774cf696aeee2b8f1b7900309af673bd7d324b81cf481e0eaf3416758cf477",
+          "gt_volume": "6062a8d04358d3fac41a9a96b5640778564b37b4ce2d9c039d0c0435912c0eb6",
+          "recovar_final_merged": "a36166c0ae7ffcafa73a31ecc57d9384b5949919e5cedbcf9ddcacc3868131ed",
+          "recovar_refinement_results": "95f3852a6710046eff068eb2ebfb02090a6fc036939598b25f08e735322925a7",
+          "relion_final_merged": "588e6d9d327f74f5767c073ad325a859884dd5e6208cd61b9e522df4f3371f34"
+        }
+      }
+    },
+    {
+      "id": "k1-10",
+      "name": "high_res_anisotropic_100k_g384_radial_noise3_bf0",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "nonuniform",
+        "grid": "384",
+        "image_offset_n_std": "0.0",
+        "n_images": "100000",
+        "noise_level": "3.0",
+        "noise_model": "radial1",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "0.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1710",
+        "volume_radius": "0.7"
+      },
+      "result": "fail",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9847143792363469,
+      "final_gt_fsc_auc_delta": -3.607329991817121e-05,
+      "source_head": "9d1722781e1d6c5fc5b2ad0e15ebba3a2becbab0",
+      "jobs": {
+        "intermediate": "11421267",
+        "science": "11421265",
+        "trajectory": "11454202"
+      },
+      "suite_v1": {
+        "result": "fail",
+        "final_cross_engine_fsc_auc": 0.9830065035340728,
+        "final_gt_fsc_auc_delta": 0.00012834695727731438
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case10_xhalf_tail_lowcap_accept_9d172278_20260720T164557Z/cases/10_high_res_anisotropic_100k_g384_radial_noise3_bf0/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case10_xhalf_tail_lowcap_accept_9d172278_20260720T164557Z/cases/10_high_res_anisotropic_100k_g384_radial_noise3_bf0/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case10_xhalf_tail_lowcap_accept_9d172278_20260720T164557Z/cases/10_high_res_anisotropic_100k_g384_radial_noise3_bf0/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case10_xhalf_tail_lowcap_accept_9d172278_20260720T164557Z/cases/10_high_res_anisotropic_100k_g384_radial_noise3_bf0/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case10_xhalf_tail_lowcap_accept_9d172278_20260720T164557Z/cases/10_high_res_anisotropic_100k_g384_radial_noise3_bf0/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "ec099ad1e4b0079e8d57f4374527e25e1a81cc89777dbb90b33ce61002821f9f",
+          "gt_volume": "1053bc53d60f7f796c5e327c322009561ef3a1dc99a4402bc6ee6e0128b9cda8",
+          "recovar_final_merged": "1a62e3b2e600097a72946ffa4428feb21adb97adf5ade5b85f75efee1c30911a",
+          "recovar_refinement_results": "ddf15c039f626f79c7f75e8a4a42056ddc90ebe7b34210bd6d660645388554b4",
+          "relion_final_merged": "a216ee3534022fee3af010d5cbce4c1f851aad76406f8b4c8383689db181b403"
+        }
+      }
+    },
+    {
+      "id": "k1-11",
+      "name": "small_baseline_3k_g128_white_noise1_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "3000",
+        "noise_level": "1.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1711",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9999929475937971,
+      "final_gt_fsc_auc_delta": -8.92117468842546e-06,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11384383",
+        "science": "11384186",
+        "trajectory": "11384382"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9985158761495007,
+        "final_gt_fsc_auc_delta": 0.01998160690930728
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/11_small_baseline_3k_g128_white_noise1_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/11_small_baseline_3k_g128_white_noise1_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/11_small_baseline_3k_g128_white_noise1_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/11_small_baseline_3k_g128_white_noise1_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/11_small_baseline_3k_g128_white_noise1_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "d80ad7f9f43f45504c479add4b23d758b6c62d5c4d533c8607f9788e28c9efb8",
+          "gt_volume": "8103fc478d333c89b37f3e35c717480f90ba2eddbb5248dfd69ca585325ad102",
+          "recovar_final_merged": "61e1e71d1a13abec8d68ab447f0a804e1b6263ee59d0aa57cc3005a087d46054",
+          "recovar_refinement_results": "35f6b1808c6b6408d3e4d34bf88b2ebec480afb8272f2f54b6ae52b582021c4a",
+          "relion_final_merged": "402dc5e2d69b2b02978c4937682d43ade3a27c6b164c7ce480bb717e267ab949"
+        }
+      }
+    },
+    {
+      "id": "k1-12",
+      "name": "small_very_high_noise_3k_g128_white_noise10_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "3000",
+        "noise_level": "10.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1712",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9999879303369407,
+      "final_gt_fsc_auc_delta": -5.83220047742361e-06,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11384385",
+        "science": "11384187",
+        "trajectory": "11384384"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9981355781557611,
+        "final_gt_fsc_auc_delta": 0.0024221203720739826
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/12_small_very_high_noise_3k_g128_white_noise10_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/12_small_very_high_noise_3k_g128_white_noise10_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/12_small_very_high_noise_3k_g128_white_noise10_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/12_small_very_high_noise_3k_g128_white_noise10_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/12_small_very_high_noise_3k_g128_white_noise10_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "8e9704d5e0cfbea2a2fd307a39ad2c485647516096c1f5786dc39ba35857001c",
+          "gt_volume": "740475a3af7f376e24695af762306dfe14b3b5ed0371cdea6acedf45020039f0",
+          "recovar_final_merged": "f296439c3bccf693784e1aa187192c7c92658390f2fbf81ca0c3f266ff8b73dc",
+          "recovar_refinement_results": "3fb3971984eb8ccaa887da26eb6b32be5784ea7cf61ec8f9424d8a6302b2583b",
+          "relion_final_merged": "4fdb7db2c6ee84652d54318e1698b4df47597efebf2d3b8a6d4f4b6ef6d21017"
+        }
+      }
+    },
+    {
+      "id": "k1-13",
+      "name": "small_anisotropic_3k_g128_white_noise3_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "nonuniform",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "3000",
+        "noise_level": "3.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1713",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9997850958314287,
+      "final_gt_fsc_auc_delta": 9.25528261352948e-06,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11385558",
+        "science": "11385531",
+        "trajectory": "11385557"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9975699946892007,
+        "final_gt_fsc_auc_delta": 0.011223851710875754
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/13_small_anisotropic_3k_g128_white_noise3_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/13_small_anisotropic_3k_g128_white_noise3_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/13_small_anisotropic_3k_g128_white_noise3_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/13_small_anisotropic_3k_g128_white_noise3_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/13_small_anisotropic_3k_g128_white_noise3_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "9eb2a0efc80c48176b3de5396e36ae455b0579e4b7acf04e309019b32b0a00fd",
+          "gt_volume": "770c8b65924ed384ab7be2935ac9701a006b267dc43b46a97ba2f1d8e72e8d78",
+          "recovar_final_merged": "88a4eb87ec7604894a5342a78df8c746d964d5880d2b23c4c2fc281ffe4e9bcf",
+          "recovar_refinement_results": "cdabf98c6b5b3fde756de03549517f8c6438d3b5562de52a4c8b95b7d6bb0b76",
+          "relion_final_merged": "d2e92f448a4de42d512a3cbf20acc41a8e2ff444563f54f8b05357fba6c6c5a3"
+        }
+      }
+    },
+    {
+      "id": "k1-14",
+      "name": "small_noctf_3k_g128_white_noise3_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "noctf",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "3000",
+        "noise_level": "3.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1714",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9992751891338932,
+      "final_gt_fsc_auc_delta": -6.921322035369215e-05,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11385560",
+        "science": "11385532",
+        "trajectory": "11385559"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9977759426080113,
+        "final_gt_fsc_auc_delta": 0.01757971267222147
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/14_small_noctf_3k_g128_white_noise3_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/14_small_noctf_3k_g128_white_noise3_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/14_small_noctf_3k_g128_white_noise3_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/14_small_noctf_3k_g128_white_noise3_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/14_small_noctf_3k_g128_white_noise3_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "a81bccb8f7eb2e2a5a2b5385cdaf113896cfd9b308b79e883be99fdbcb4e3357",
+          "gt_volume": "6b8e3e8f0909f375c80d518ed743c2f91ab6710479c9402bfdeba459fef8757d",
+          "recovar_final_merged": "732b50c420e201060437d08279a3beed014891116abf0952edf901461cfb6dda",
+          "recovar_refinement_results": "b44cb399735fd243b84dfa73be6aaab7d2f6116d44b73f34e840891efa109ed3",
+          "relion_final_merged": "5447f1def203c1cd5baeb79e2083f3fd84f8fd5664a5e8d2067d46ebbe89c81f"
+        }
+      }
+    },
+    {
+      "id": "k1-15",
+      "name": "small_outliers_3k_g128_pct20_noise1_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "3000",
+        "noise_level": "1.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.20",
+        "put_extra_particles": "0",
+        "seed": "1715",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9999090248354058,
+      "final_gt_fsc_auc_delta": 2.9589898798310088e-05,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11385562",
+        "science": "11385533",
+        "trajectory": "11385561"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9984310139929069,
+        "final_gt_fsc_auc_delta": 0.019058453895068217
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/15_small_outliers_3k_g128_pct20_noise1_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/15_small_outliers_3k_g128_pct20_noise1_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/15_small_outliers_3k_g128_pct20_noise1_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/15_small_outliers_3k_g128_pct20_noise1_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/15_small_outliers_3k_g128_pct20_noise1_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "a448ab81b3136dba0a85b940a2f4b4b219b7fd6a89d437bcb1f1f537d4cd129f",
+          "gt_volume": "f2fbfc301b49ed890de54a7a14e096724467475937005fb13c6ce5388b7683ad",
+          "recovar_final_merged": "a638cb69a851b338b0235a266d93326b31f2d410f63e96058be9384cc1ba462a",
+          "recovar_refinement_results": "1ef1f16b3a755edad0d0feb872261cba136bfc3d8f2dd4e0356ed1a8ec2c1eba",
+          "relion_final_merged": "b8550e15c00cb250bdc540de058fee144fa10e6bb47218a1e9e47c49c293fc7a"
+        }
+      }
+    },
+    {
+      "id": "k1-16",
+      "name": "small_anisotropic_outliers_3k_g128_pct25_noise3_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "nonuniform",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "3000",
+        "noise_level": "3.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.25",
+        "put_extra_particles": "0",
+        "seed": "1716",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9984916562443545,
+      "final_gt_fsc_auc_delta": -0.00014434424764731002,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11385564",
+        "science": "11385534",
+        "trajectory": "11385563"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.996556470521931,
+        "final_gt_fsc_auc_delta": 0.008243245277822553
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/16_small_anisotropic_outliers_3k_g128_pct25_noise3_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/16_small_anisotropic_outliers_3k_g128_pct25_noise3_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/16_small_anisotropic_outliers_3k_g128_pct25_noise3_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/16_small_anisotropic_outliers_3k_g128_pct25_noise3_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/16_small_anisotropic_outliers_3k_g128_pct25_noise3_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "0d8339ecbe1ebcd8e9f55d2039d69c102344ce4beabd730d8d4127300484c04c",
+          "gt_volume": "6632956a0862bc70e4af024f914c7938513d05a7be7edc396340e9d3500cdcf2",
+          "recovar_final_merged": "1cab1ae9944227b02c2c960c2184d614062416c398ea0f6b8810025cc9445bc5",
+          "recovar_refinement_results": "fda0c69bc22e0dd3cfd29b160527814488ce67284dd5865e5bbacfd81e8b3eac",
+          "relion_final_merged": "c06396e69f5f58a6ef424c50aabcc2086b792a22076223819303cb0ea2a68979"
+        }
+      }
+    },
+    {
+      "id": "k1-17",
+      "name": "small_extra_particles_3k_g128_noise1_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "3000",
+        "noise_level": "1.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "1",
+        "seed": "1717",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.99999912812485,
+      "final_gt_fsc_auc_delta": 2.410106095473985e-06,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11385566",
+        "science": "11385535",
+        "trajectory": "11385565"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9987940394167913,
+        "final_gt_fsc_auc_delta": 0.016078005976808418
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/17_small_extra_particles_3k_g128_noise1_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/17_small_extra_particles_3k_g128_noise1_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/17_small_extra_particles_3k_g128_noise1_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/17_small_extra_particles_3k_g128_noise1_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/17_small_extra_particles_3k_g128_noise1_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "82a33e7487f12ae9176251a624260bb35ca0144a4e94a642594c2fefd55db735",
+          "gt_volume": "abdc6afdbdb5cdee97b46d49d5720e42801c8b4923832394e2fbe97d5492512d",
+          "recovar_final_merged": "fc450b9cc09f9b25b889b8f84d7867bc1a0d69f8cfc904045bbadcaeea096915",
+          "recovar_refinement_results": "a858a8b7f09e2d30394659a87cc58d0908900525f6cd61c00c22ff5a76ca9ef3",
+          "relion_final_merged": "e3b7ef4e40f240b559556435d7867076f2ead6064f38d78d36731f964fe0db06"
+        }
+      }
+    },
+    {
+      "id": "k1-18",
+      "name": "small_contrast_noise_scale_3k_g128_noise1_bf80",
+      "definition": {
+        "contrast_std": "0.5",
+        "dataset_params_option": "uniform",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "3000",
+        "noise_level": "1.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.5",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1718",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9999558863296252,
+      "final_gt_fsc_auc_delta": 0.0001097448635460907,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11385568",
+        "science": "11385536",
+        "trajectory": "11385567"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9987122216895413,
+        "final_gt_fsc_auc_delta": 0.014739591102224114
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/18_small_contrast_noise_scale_3k_g128_noise1_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/18_small_contrast_noise_scale_3k_g128_noise1_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/18_small_contrast_noise_scale_3k_g128_noise1_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/18_small_contrast_noise_scale_3k_g128_noise1_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/18_small_contrast_noise_scale_3k_g128_noise1_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "0330d17fafa55449c52a44c746e6769dc12d604b30ef6bd805da86493290951d",
+          "gt_volume": "4b44aaf3c96adc64d6316b20d9e36145aa392d8bcc3b0517fded5999cc1529f0",
+          "recovar_final_merged": "81d2bfcdaa4a5a5496af60bc65ffbe415bbbd122b0a71ab8960ddb10a2bccdf0",
+          "recovar_refinement_results": "d23c1778c50dea6e877e05de7c4c337616e52a0bad5d721d74f71cc91c07887c",
+          "relion_final_merged": "6d373a3ee767e6dcfad852e992f71fc715ab880e84ecf9b5d2dbe9a0c62a8d29"
+        }
+      }
+    },
+    {
+      "id": "k1-19",
+      "name": "small_image_offset_3k_g128_noise1_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "128",
+        "image_offset_n_std": "1.0",
+        "n_images": "3000",
+        "noise_level": "1.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1719",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9997248484049381,
+      "final_gt_fsc_auc_delta": 1.0612286483357991e-05,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11385570",
+        "science": "11385537",
+        "trajectory": "11385569"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9982593582015424,
+        "final_gt_fsc_auc_delta": 0.020106905249176354
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/19_small_image_offset_3k_g128_noise1_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/19_small_image_offset_3k_g128_noise1_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/19_small_image_offset_3k_g128_noise1_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/19_small_image_offset_3k_g128_noise1_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/19_small_image_offset_3k_g128_noise1_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "01ed30ddb71badbd8f609e690b590827680f94171e8d9557810bb6c08a4656ef",
+          "gt_volume": "fe81eb101f6210b90dc00a7b349ed14823e60bd7b2fd804b3f643df0f602c2bf",
+          "recovar_final_merged": "f43288f55874864ed5e52bf539566104128f8222474fab61cfae62aa3d1fecf5",
+          "recovar_refinement_results": "469bccad999ed688055fa65c964b5871e2cbea28bf9ada936e0fba368d1e2065",
+          "relion_final_merged": "dc11fc16d6b51ea46344f1a8ff1394dfeba2ffd382c9daf719f40cc7c9f92468"
+        }
+      }
+    },
+    {
+      "id": "k1-20",
+      "name": "small_high_res_radial_3k_g256_noise3_bf0",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "256",
+        "image_offset_n_std": "0.0",
+        "n_images": "3000",
+        "noise_level": "3.0",
+        "noise_model": "radial1",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "0.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1720",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9999892067744858,
+      "final_gt_fsc_auc_delta": -3.304923666111459e-06,
+      "source_head": "6ddd094011dbf38f4c29f6c14bb8d2bab7b5f603",
+      "jobs": {
+        "intermediate": "11498738",
+        "science": "11498687",
+        "trajectory": "11498738"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9981293676887365,
+        "final_gt_fsc_auc_delta": 0.0011494269374181243
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case20_exactfixture_6ddd0940_20260722T154500Z/cases/20_small_high_res_radial_3k_g256_noise3_bf0/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/20_small_high_res_radial_3k_g256_noise3_bf0/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case20_exactfixture_6ddd0940_20260722T154500Z/cases/20_small_high_res_radial_3k_g256_noise3_bf0/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case20_exactfixture_6ddd0940_20260722T154500Z/cases/20_small_high_res_radial_3k_g256_noise3_bf0/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case20_exactfixture_6ddd0940_20260722T154500Z/cases/20_small_high_res_radial_3k_g256_noise3_bf0/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "09e60b77fab5cd8980ee055592ab144f8227a3bb4b41e4b3abedb8c69e660aa8",
+          "gt_volume": "9578227ad656d853d7e44c8e01d7253c5be1b467d1caf5c63ed0537c76d7eb40",
+          "recovar_final_merged": "76763b07f18884d150d79c1dacd3aacfc4483120860bd24bdfd2e703860dbf96",
+          "recovar_refinement_results": "82fb05c1dd574357eda81b562faa2e7974eb58b7591ae314fbea978dbff99a1b",
+          "relion_final_merged": "097e6695da00d1e04831215e711e74ff6faecf7cba26485dba8f1383582d9362"
+        }
+      }
+    },
+    {
+      "id": "k1-21",
+      "name": "small_kent_angles_3k_g128_white_noise3_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "kent",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "3000",
+        "noise_level": "3.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1721",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9999905475029907,
+      "final_gt_fsc_auc_delta": -1.8745804966635582e-06,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11385574",
+        "science": "11385539",
+        "trajectory": "11385573"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.998345536821456,
+        "final_gt_fsc_auc_delta": 0.0101101731870199
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/21_small_kent_angles_3k_g128_white_noise3_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/21_small_kent_angles_3k_g128_white_noise3_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/21_small_kent_angles_3k_g128_white_noise3_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/21_small_kent_angles_3k_g128_white_noise3_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/21_small_kent_angles_3k_g128_white_noise3_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "99bd930d4e15ad8cd4effc5617e76cdc5a733fefbaee063b1615fdf0c66c35c8",
+          "gt_volume": "f201d4ff29227794da203c83beb13c113c8d6f1e968f59e81b42470ac485b764",
+          "recovar_final_merged": "7ce184f92d7f9f70e21291fb7688776c7b016f5cac3adac7aa0340b9f6dbd109",
+          "recovar_refinement_results": "53a082840a4b9cf49bd8d540a639d6339ee10467eb8ab65dd7b20a7fec3d21c0",
+          "relion_final_merged": "7b4bf1689b501430bf80d541344e2765504564c9990881e916a688e137b3bb3c"
+        }
+      }
+    },
+    {
+      "id": "k1-22",
+      "name": "small_severe_outliers_3k_g128_radial_noise5_bf80",
+      "definition": {
+        "contrast_std": "0.7",
+        "dataset_params_option": "nonuniform",
+        "grid": "128",
+        "image_offset_n_std": "1.5",
+        "n_images": "3000",
+        "noise_level": "5.0",
+        "noise_model": "radial1",
+        "noise_scale_std": "0.7",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.50",
+        "put_extra_particles": "0",
+        "seed": "1722",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9995336734365303,
+      "final_gt_fsc_auc_delta": 4.226038260835008e-05,
+      "source_head": "e791e87502b51fee8b8c2ba9c7de80ee922421ec",
+      "jobs": {
+        "intermediate": "12377829",
+        "science": "12377247",
+        "trajectory": "12377829"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9977673455104741,
+        "final_gt_fsc_auc_delta": 0.009642596478529442
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case22_default_full_e791e875_20260814T0922ET/analysis/case22_default_full_strict_fsc.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/22_small_severe_outliers_3k_g128_radial_noise5_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case22_default_full_e791e875_20260814T0922ET/output/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case22_default_full_e791e875_20260814T0922ET/output/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case22_currenthead_25ab6e68_20260728T011020ET/cases/22_small_severe_outliers_3k_g128_radial_noise5_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "f9e7ae42c4ef1dfd3778392bbd0ba6f808fe6bb7930f0b2e26c06605a4f71a60",
+          "gt_volume": "c6461b67b995ab204cd4086fd7806bed3a5d42bad4facd05d0cddacbd7f6a19c",
+          "recovar_final_merged": "ee531659c3fc1a83f902dfb07c469d4d9d90221b2ac6bf23b8215fdd5f748180",
+          "recovar_refinement_results": "f299eb85596b63c39b314d9420511d116f08190b0b5678090c2932ac1ed1daea",
+          "relion_final_merged": "08f942100dc86d87ef3678520aab9adcddf6ac42ca1dcb97ad289f44965dc98b"
+        }
+      }
+    },
+    {
+      "id": "k1-23",
+      "name": "small_noctf_radial_3k_g128_noise3_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "noctf",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "3000",
+        "noise_level": "3.0",
+        "noise_model": "radial1",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1723",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.999968103545925,
+      "final_gt_fsc_auc_delta": -9.884750854782798e-06,
+      "source_head": "ab52b1ff40385b6eb91c25d5e991ca7b17f24c68",
+      "jobs": {
+        "intermediate": "11501622",
+        "science": "11501524",
+        "trajectory": "11501622"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9983424084041502,
+        "final_gt_fsc_auc_delta": 0.012298496344289589
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case23_exacttrajectory_ab52b1ff_20260722T175000Z/cases/23_small_noctf_radial_3k_g128_noise3_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/23_small_noctf_radial_3k_g128_noise3_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case23_exacttrajectory_ab52b1ff_20260722T175000Z/cases/23_small_noctf_radial_3k_g128_noise3_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case23_exacttrajectory_ab52b1ff_20260722T175000Z/cases/23_small_noctf_radial_3k_g128_noise3_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case23_exacttrajectory_ab52b1ff_20260722T175000Z/cases/23_small_noctf_radial_3k_g128_noise3_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "158c05f9d0cddb85d6527666caaec29075b49f78a1b3bbfd93d72bf3a574b31b",
+          "gt_volume": "c70d00baac623709d0696ed876482f70a8bb4c4119d4f45b9f8b4240fdf6c345",
+          "recovar_final_merged": "3e9fa7efa1c8256811bffbc72b2e0c8918d3954437785161e0da3c9ba6ac33ef",
+          "recovar_refinement_results": "6376e0100999c9613335727752d969f3a2c48e61b986f5ed963119d93cc9e1d4",
+          "relion_final_merged": "a3be787beaa0ed2221565c058229cef10ad435915fd818829537ae4e1e8af4d8"
+        }
+      }
+    },
+    {
+      "id": "k1-24",
+      "name": "small_kent_outliers_3k_g128_pct20_noise3_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "kent",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "3000",
+        "noise_level": "3.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.20",
+        "put_extra_particles": "0",
+        "seed": "1724",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9997418663591234,
+      "final_gt_fsc_auc_delta": 6.934409458869695e-07,
+      "source_head": "31c4a0ca203b70211f4d8586d044c94fca9fc037",
+      "jobs": {
+        "intermediate": "11655936",
+        "science": "11655858",
+        "trajectory": "11655936"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.998090087202717,
+        "final_gt_fsc_auc_delta": 0.00828011468926404
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case24_phaseffi_31c4a0ca_20260727T025000ET/cases/24_small_kent_outliers_3k_g128_pct20_noise3_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/24_small_kent_outliers_3k_g128_pct20_noise3_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case24_phaseffi_31c4a0ca_20260727T025000ET/cases/24_small_kent_outliers_3k_g128_pct20_noise3_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case24_phaseffi_31c4a0ca_20260727T025000ET/cases/24_small_kent_outliers_3k_g128_pct20_noise3_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case24_phaseffi_31c4a0ca_20260727T025000ET/cases/24_small_kent_outliers_3k_g128_pct20_noise3_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "7bb79fe91ffbbf84e8cea20595ad85139ad46de88b259710060dfd4d7c872e55",
+          "gt_volume": "92ca05c7d0832f4f31cec8e742fab5532e096b9b55b3a336f91ade1771cb396f",
+          "recovar_final_merged": "3b8707632dc2cd3d4bd5cd945d819de5d278d57669815cf00fe5d57a42ee0681",
+          "recovar_refinement_results": "887f3885fd44abc9f417adbfab4d20ddcf9abfc61172f16997bd597c94022be1",
+          "relion_final_merged": "1678774a6980ebe59f6284e4df88ef545f0ff7d898cab1cfe1ad7e26107e503b"
+        }
+      }
+    },
+    {
+      "id": "k1-25",
+      "name": "tiny_baseline_1k_g128_white_noise3_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "1000",
+        "noise_level": "3.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1725",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9999959052495939,
+      "final_gt_fsc_auc_delta": -4.887913337414673e-07,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11385582",
+        "science": "11385543",
+        "trajectory": "11385581"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9981925756170029,
+        "final_gt_fsc_auc_delta": 0.009181804068880584
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/25_tiny_baseline_1k_g128_white_noise3_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/25_tiny_baseline_1k_g128_white_noise3_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/25_tiny_baseline_1k_g128_white_noise3_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/25_tiny_baseline_1k_g128_white_noise3_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/25_tiny_baseline_1k_g128_white_noise3_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "d0302dbd21bafa6464e925d4102c1d6c85f5f0aeb785ee00697bd127100b6ccc",
+          "gt_volume": "f7ac4f362b4355336e94b0b719fd9c6a04fdce7eac5384cf884831cae6b377b5",
+          "recovar_final_merged": "a486d5814b06bcb8e201080325f29f910ea97c05edefafab7e1c3f64a23bb201",
+          "recovar_refinement_results": "592807b917d60b07c60e7003307f5a410670ff92f50cd11533ec18aac2a9d035",
+          "relion_final_merged": "eea1b3343a45f5a98a4a5261dc65116e30677aebdbaab3fe18caa1796abf3fa0"
+        }
+      }
+    },
+    {
+      "id": "k1-26",
+      "name": "tiny_severe_1k_g128_radial_noise5_nonuniform_pct30_bf80",
+      "definition": {
+        "contrast_std": "0.5",
+        "dataset_params_option": "nonuniform",
+        "grid": "128",
+        "image_offset_n_std": "1.0",
+        "n_images": "1000",
+        "noise_level": "5.0",
+        "noise_model": "radial1",
+        "noise_scale_std": "0.5",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.30",
+        "put_extra_particles": "0",
+        "seed": "1726",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9999921918248766,
+      "final_gt_fsc_auc_delta": 9.700719712235628e-07,
+      "source_head": "36dac0171859b09bb57358ff0a86ed8a03615975",
+      "jobs": {
+        "intermediate": "12371765",
+        "science": "12371765",
+        "trajectory": "12371765"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.997747377,
+        "final_gt_fsc_auc_delta": 0.008697039
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case26_direct_noise_full_36dac017_20260814T0610ET/analysis/case26_ordered_exact_full_fsc.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/26_tiny_severe_1k_g128_radial_noise5_nonuniform_pct30_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case26_direct_noise_full_36dac017_20260814T0610ET/output/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_case26_direct_noise_full_36dac017_20260814T0610ET/output/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_current_pr_failure_gate_fd8e27b9_20260808T1515ET/scorecard_remaining5/cases/26_tiny_severe_1k_g128_radial_noise5_nonuniform_pct30_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "587913505160261847b7fcc7db01fc03f50ddafc9ccc3de23d4fbf3f5448416c",
+          "gt_volume": "b8b0fbda6987d226ff5c2b5fb721d993861fb4e5c755578a4f4aad7651ee3a1f",
+          "recovar_final_merged": "d52af779799ca438815a076b87d27e7e33ce990e4868bd69185ad80d113221f2",
+          "recovar_refinement_results": "0c0eaeed80ae8c73ff20df32647f0daefd3fae949a564cfc38e3ef122d1f27d5",
+          "relion_final_merged": "bda24cdafbeda45305f2eec8d21264b60e855f2b686d74820a584b5a116180cc"
+        }
+      }
+    },
+    {
+      "id": "k1-27",
+      "name": "small_extreme_outliers_3k_g128_pct70_noise1_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "3000",
+        "noise_level": "1.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.70",
+        "put_extra_particles": "0",
+        "seed": "1727",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9998183799266914,
+      "final_gt_fsc_auc_delta": 2.988860831804052e-05,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11385588",
+        "science": "11385545",
+        "trajectory": "11385587"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9983322709808861,
+        "final_gt_fsc_auc_delta": 0.010086416534660969
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/27_small_extreme_outliers_3k_g128_pct70_noise1_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/27_small_extreme_outliers_3k_g128_pct70_noise1_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/27_small_extreme_outliers_3k_g128_pct70_noise1_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/27_small_extreme_outliers_3k_g128_pct70_noise1_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/27_small_extreme_outliers_3k_g128_pct70_noise1_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "9090932f388b0e605246f806fdeaa42fbc00f362eb98a57d44f698e4b5b7f2a6",
+          "gt_volume": "12d26a6b28e8a448b2f86e42b951aee43d645d3688ca2026627e395e0eb0ec48",
+          "recovar_final_merged": "01832cb5065bdfcb7cba1e31d945347a8f0dfeb6686d4917e8d2b11ff0f59e9e",
+          "recovar_refinement_results": "6d1df0001addc3c84afc595245ce0efb896158eb1dc0c42dc3fa5e3718be541a",
+          "relion_final_merged": "e831b4ba6ce2c4f00c14d037cc3c87902043838be25c4a10e807eb72f3df4a31"
+        }
+      }
+    },
+    {
+      "id": "k1-28",
+      "name": "small_kent_extra_offset_3k_g128_noise3_bf80",
+      "definition": {
+        "contrast_std": "0.3",
+        "dataset_params_option": "kent",
+        "grid": "128",
+        "image_offset_n_std": "0.5",
+        "n_images": "3000",
+        "noise_level": "3.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.3",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "1",
+        "seed": "1728",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.999999280820395,
+      "final_gt_fsc_auc_delta": -3.338687084575298e-06,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11384428",
+        "science": "11384203",
+        "trajectory": "11384427"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9985349627332802,
+        "final_gt_fsc_auc_delta": 0.01660303892366166
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/28_small_kent_extra_offset_3k_g128_noise3_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/28_small_kent_extra_offset_3k_g128_noise3_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/28_small_kent_extra_offset_3k_g128_noise3_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/28_small_kent_extra_offset_3k_g128_noise3_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/28_small_kent_extra_offset_3k_g128_noise3_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "404fa19d6c46c5a5b42d53af5264d0b431b02ee0c8de7231ebe044da3c915de5",
+          "gt_volume": "02eab256d275bf8bf31551c321e10f327c85472e4e592406f362fc0ad6475f16",
+          "recovar_final_merged": "47af591b120c73c179a0e2c1668f95bed5abe616d0a17738872cf6048f080ce3",
+          "recovar_refinement_results": "396d91baa039d7c46e2252628e16cb6200847c3cac2938043139f252599d4805",
+          "relion_final_merged": "2a3cc898f395f40bb7d54020859ceb7cc7442db2432bc6f4c0d683b0009c6813"
+        }
+      }
+    },
+    {
+      "id": "k1-29",
+      "name": "small_low_noise_3k_g128_white_noise0p2_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "3000",
+        "noise_level": "0.2",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1729",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9999973672097072,
+      "final_gt_fsc_auc_delta": -6.1318826914957825e-06,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11384430",
+        "science": "11384204",
+        "trajectory": "11384429"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.998867524770445,
+        "final_gt_fsc_auc_delta": 0.014987020374835902
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/29_small_low_noise_3k_g128_white_noise0p2_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/29_small_low_noise_3k_g128_white_noise0p2_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/29_small_low_noise_3k_g128_white_noise0p2_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/29_small_low_noise_3k_g128_white_noise0p2_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/29_small_low_noise_3k_g128_white_noise0p2_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "de1fad9bd74022f10be51c73a2c11d7dcc8ab5c0c9fd3543cf08c165da4c3d39",
+          "gt_volume": "12b27e3752a91ab545b02b5680ec76ff7385d3fb7ee0878e886d0008e95e9699",
+          "recovar_final_merged": "8f687ffbc233cac60f25a0f0b7063a7bd220af5c54c6cd2787376b023c471f97",
+          "recovar_refinement_results": "0a74e643a1632c0281dc48b58de82a426cbdcd85dec78589def24867caa706a8",
+          "relion_final_merged": "da82616b7727ddff20d2e100f2db69af42164842adf0f10ee5e2ff88fcdd6b14"
+        }
+      }
+    },
+    {
+      "id": "k1-30",
+      "name": "small_low_noise_kent_3k_g128_white_noise0p2_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "kent",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "3000",
+        "noise_level": "0.2",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1730",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9999997805768169,
+      "final_gt_fsc_auc_delta": 8.940303013460493e-07,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11384434",
+        "science": "11384205",
+        "trajectory": "11384433"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9988233662595244,
+        "final_gt_fsc_auc_delta": 0.013967656354486602
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/30_small_low_noise_kent_3k_g128_white_noise0p2_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/30_small_low_noise_kent_3k_g128_white_noise0p2_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/30_small_low_noise_kent_3k_g128_white_noise0p2_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/30_small_low_noise_kent_3k_g128_white_noise0p2_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/30_small_low_noise_kent_3k_g128_white_noise0p2_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "8a2767d2fe2459b5e2538fdfb74d34bafb3b35b378bedce96b90e38a2da00aab",
+          "gt_volume": "6301b7e33078c0971580eb108f3b644567aa12993e8d1ea1f1a58b4190a03d9d",
+          "recovar_final_merged": "a1b896672046a02bc899792e8abaf63b58311002fe248ae4501c5be72538ed92",
+          "recovar_refinement_results": "c23805be732ca505ee3b5fd545dacda8f7e911b12bdbbe8ecb9db729197e3900",
+          "relion_final_merged": "c3f508e5337663f7eb7f56bdcff0ae319202ad69118a71c5f10f183e7deb77b5"
+        }
+      }
+    },
+    {
+      "id": "k1-31",
+      "name": "mid_10k_g128_white_noise1_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "10000",
+        "noise_level": "1.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1731",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9999816637093731,
+      "final_gt_fsc_auc_delta": -1.932289608663762e-05,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11384437",
+        "science": "11384206",
+        "trajectory": "11384436"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9987259405895186,
+        "final_gt_fsc_auc_delta": 0.016924535712415034
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/31_mid_10k_g128_white_noise1_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/31_mid_10k_g128_white_noise1_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/31_mid_10k_g128_white_noise1_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/31_mid_10k_g128_white_noise1_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/31_mid_10k_g128_white_noise1_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "c75abcdd8ce8096807e96a6d400f82b0678bdebb306f482dd07b0c1661051e21",
+          "gt_volume": "5ef9cd9721d03153b8731285f42eebbb411d3169d1699cfe308020421e9a42fb",
+          "recovar_final_merged": "e90864bcc7d53b841798d65e301989ec6c9f112b55da5148e34c2b946fecb3ba",
+          "recovar_refinement_results": "fe27ad964dd7733ab46a6b5d178df137004e89091bbb82ee4b98f2cc92dedc5d",
+          "relion_final_merged": "43a0b0f5aef29bedbf101abc69ab3aa2a2d383a17ac73436712c2a419db0ba61"
+        }
+      }
+    },
+    {
+      "id": "k1-32",
+      "name": "mid_10k_kent_g128_radial_noise3_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "kent",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "10000",
+        "noise_level": "3.0",
+        "noise_model": "radial1",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1732",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9999638682054712,
+      "final_gt_fsc_auc_delta": -1.117944694256634e-05,
+      "source_head": "916ab17a4c8040786bea6517b12c8746ae399d65",
+      "jobs": {
+        "intermediate": "11638090",
+        "science": "11635967",
+        "trajectory": "11638090"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9982743466036096,
+        "final_gt_fsc_auc_delta": 0.0038494331947377947
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case32_projector_tree_916ab17a_20260726T150318ET/cases/32_mid_10k_kent_g128_radial_noise3_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/32_mid_10k_kent_g128_radial_noise3_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case32_projector_tree_916ab17a_20260726T150318ET/cases/32_mid_10k_kent_g128_radial_noise3_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case32_projector_tree_916ab17a_20260726T150318ET/cases/32_mid_10k_kent_g128_radial_noise3_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_case32_projector_tree_916ab17a_20260726T150318ET/cases/32_mid_10k_kent_g128_radial_noise3_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "4a23da9f4ea335f27be1f24b518bf7a909480f867bc115542cbf67bf81964966",
+          "gt_volume": "c5a6227bcdc40d94458fce45690e0424306fcccd7aa34b62caaa3db08baddc76",
+          "recovar_final_merged": "27c23a94cb93c8bd77ba1cd48a5efbe6fe12fc59e7899ca2bc1041f6245c421a",
+          "recovar_refinement_results": "bc439291ea6a9cf83ac6842277b39dd94e4b63ab1ba7416181369c29868dc914",
+          "relion_final_merged": "99d2aa47dd66ca6b889a2e8c86a023286e3dd3b38e30efed32035c86dc37af40"
+        }
+      }
+    },
+    {
+      "id": "k1-33",
+      "name": "max_images_400k_g128_white_noise1_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "uniform",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "400000",
+        "noise_level": "1.0",
+        "noise_model": "white",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1733",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9999979765781004,
+      "final_gt_fsc_auc_delta": -8.540961570546735e-06,
+      "source_head": "a2be302cdc08a59f0937e61e3ad92b72e939ccd7",
+      "jobs": {
+        "intermediate": "11508286",
+        "science": "11508260",
+        "trajectory": "11508286"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9997342544399784,
+        "final_gt_fsc_auc_delta": 0.00024429352449606423
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_unresolved_a2be302c_20260722T205500Z/cases/33_max_images_400k_g128_white_noise1_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/33_max_images_400k_g128_white_noise1_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_unresolved_a2be302c_20260722T205500Z/cases/33_max_images_400k_g128_white_noise1_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_unresolved_a2be302c_20260722T205500Z/cases/33_max_images_400k_g128_white_noise1_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_fixedsuite_unresolved_a2be302c_20260722T205500Z/cases/33_max_images_400k_g128_white_noise1_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "c67e2a23099f85ac3d2ceb2a6d4a777d29ea88a91f8a90d1e56ad954a6f091ae",
+          "gt_volume": "36066a456e0d3afb5e689ea8ed786a9849a1100cbf5fd93f0f8bcb20ffb1b283",
+          "recovar_final_merged": "0fe0825738f0bc70d22693126fb178ca49d92814fac1b8e76f383c2b17f3ad9a",
+          "recovar_refinement_results": "cc0dd5a44f29a29d0544c71bbdcf8c882dfc33a781225eaa6ddf71e4221cf1aa",
+          "relion_final_merged": "c6c209ed1bcfbfcaedaacf6020d58bbd8be0564c5cd1c7296ae2584df44b0436"
+        }
+      }
+    },
+    {
+      "id": "k1-34",
+      "name": "max_images_400k_g128_radial_noise3_nonuniform_bf80",
+      "definition": {
+        "contrast_std": "0.0",
+        "dataset_params_option": "nonuniform",
+        "grid": "128",
+        "image_offset_n_std": "0.0",
+        "n_images": "400000",
+        "noise_level": "3.0",
+        "noise_model": "radial1",
+        "noise_scale_std": "0.0",
+        "pdb_bfactor": "80.0",
+        "percent_outliers": "0.0",
+        "put_extra_particles": "0",
+        "seed": "1734",
+        "volume_radius": "0.7"
+      },
+      "result": "pass",
+      "intermediate_result": "pass",
+      "final_cross_engine_fsc_auc": 0.9963764456911852,
+      "final_gt_fsc_auc_delta": -2.2917952440970613e-05,
+      "source_head": "ac5177d2b0cd639db7ed6f14225d80fe9cff7d4d",
+      "jobs": {
+        "intermediate": "11384444",
+        "science": "11384210",
+        "trajectory": "11384443"
+      },
+      "suite_v1": {
+        "result": "pass",
+        "final_cross_engine_fsc_auc": 0.9957574121481196,
+        "final_gt_fsc_auc_delta": 0.0028692403080708972
+      },
+      "final_metric_provenance": {
+        "method": "regenerated post hoc with RELION griddingCorrect on the saved final maps",
+        "script": "scripts/regenerate_em_k1_scorecard_final_gridding.py",
+        "route": "post-hoc RELION griddingCorrect of the saved uncorrected final_merged.mrc",
+        "recorded_final_all_data_grid_correct": false,
+        "reproduction_max_abs_discrepancy": 0.0,
+        "inputs": {
+          "fsc_report": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/34_max_images_400k_g128_radial_noise3_nonuniform_bf80/trajectory_analysis/k1_fsc_trajectory.json",
+          "gt_volume": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/34_max_images_400k_g128_radial_noise3_nonuniform_bf80/data/reference_gt.mrc",
+          "recovar_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/34_max_images_400k_g128_radial_noise3_nonuniform_bf80/recovar/final_merged.mrc",
+          "recovar_refinement_results": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/34_max_images_400k_g128_radial_noise3_nonuniform_bf80/recovar/refinement_results.npz",
+          "relion_final_merged": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_k1_guigrid_localhighshell_full34_autonomous_ac5177d2_20260719T174000Z/cases/34_max_images_400k_g128_radial_noise3_nonuniform_bf80/relion_ref/run_class001.mrc"
+        },
+        "inputs_sha256": {
+          "fsc_report": "cae845536ea0cb25d1496187aba607b210e0ab4951c860c8a51a78df0ee86dab",
+          "gt_volume": "e085d828cee3e11466d4676e9385b04c1f1d48b74e0fd64f408ddb1ab198f73f",
+          "recovar_final_merged": "87e96cb8005d5ef491f5c767fa117d4245ede388cb2966bd1e05b602f581828e",
+          "recovar_refinement_results": "9a58c14b9d7d769dcef628848fe7b3ab3dfc99ff2c2b751ec148fb62a164c9bd",
+          "relion_final_merged": "ca29ec9087852e32f2cbe80262a3658625b17169816c5c134047b3d2e3168f9f"
+        }
+      }
+    }
+  ]
+}
