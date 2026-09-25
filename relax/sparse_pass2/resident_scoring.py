@@ -519,15 +519,110 @@ def _score_flat_rows(
     every statement below is common, so the two routes cannot drift apart.
     """
 
+    # Padded rows are handed to the kernel as image -1: it writes +inf for the
+    # whole row and skips the pixel traversal.
+    kernel_row_image_ids = jnp.where(row_is_valid, row_image_local, jnp.int32(-1))
+    raw_from_kernel = _flat_rows_kernel_diff2(
+        reference,
+        kernel_row_image_ids,
+        chunk_image,
+        chunk_corr,
+        chunk_initial_diff2,
+        half_weights=half_weights,
+        translation_angles=translation_angles,
+        full_to_compact=full_to_compact,
+        logical_current_size=logical_current_size,
+    )
+    return _flat_rows_scores(
+        raw_from_kernel,
+        row_image_local,
+        row_log_prior,
+        chunk_translation_prior,
+        candidate_mask,
+        row_is_valid,
+        segment_capacity=image_capacity,
+    )
+
+
+def score_tilt_image_rows(
+    project_slot,  # callable: int32 [C_R] image of each row -> complex64 [C_R, N] its projections
+    slot_image_ids,  # int32 [S, C_R] chunk-local image of each row per image slot, -1 past its particle's images
+    row_unit_local,  # int32 [C_R] chunk-local particle of each row, sorted
+    row_log_prior,  # real [C_R]
+    chunk_image,  # complex64 [C_B, N] per tilt image
+    chunk_corr,  # real [C_B, N]
+    chunk_initial_diff2,  # float32 [C_B]
+    unit_translation_prior,  # real [C_U, T] per particle
+    candidate_mask,  # bool [C_R, T] or None
+    row_is_valid,  # bool [C_R]
+    *,
+    half_weights,
+    image_translation_angles,  # float32 [C_B, T, 2] each tilt image's phases (tomo_particles.tilt_translation_angles)
+    full_to_compact,
+    logical_current_size,
+    unit_capacity: int,
+):
+    """Flat-row scores of subtomogram particles: each row's diff2 summed over its particle's tilt images.
+
+    The posterior segment is the particle (docs/development/resident_segments.md). Every
+    hypothesis row is scored against each of its particle's images, visited in slot order,
+    with that image's projection ``Aproj_i R`` (``project_slot``) and its own phases, and the
+    image's diff2 is added to the row's float32 running sum: RELION initialises the weights
+    to zero and every image's kernel adds its ``diff2 + initial`` (acc_ml_optimiser_impl.h:2229-2230
+    and the ``img_id`` loop from :2282; diff2.cuh:549-554). The minimum, weights and
+    significance then see only the per-particle sums.
+    """
+
+    slot_image_ids = jnp.asarray(slot_image_ids, dtype=jnp.int32)
+
+    def add_slot(running, image_ids):
+        kernel_ids = jnp.where(row_is_valid & (image_ids >= 0), image_ids, jnp.int32(-1))
+        raw = _flat_rows_kernel_diff2(
+            project_slot(jnp.where(image_ids >= 0, image_ids, jnp.int32(0))),
+            kernel_ids,
+            chunk_image,
+            chunk_corr,
+            chunk_initial_diff2,
+            half_weights=half_weights,
+            translation_angles=image_translation_angles,
+            full_to_compact=full_to_compact,
+            logical_current_size=logical_current_size,
+        )
+        return jnp.where((kernel_ids >= 0)[:, None], running + raw, running), None
+
+    zeros = jnp.zeros((slot_image_ids.shape[1], int(image_translation_angles.shape[1])), dtype=jnp.float32)
+    raw_sum, _ = jax.lax.scan(add_slot, zeros, slot_image_ids)
+    return _flat_rows_scores(
+        raw_sum,
+        jnp.asarray(row_unit_local, dtype=jnp.int32),
+        row_log_prior,
+        unit_translation_prior,
+        candidate_mask,
+        row_is_valid,
+        segment_capacity=unit_capacity,
+    )
+
+
+def _flat_rows_kernel_diff2(
+    reference,  # complex64 [C_R, N]
+    kernel_row_image_ids,  # int32 [C_R], -1 for a row the kernel skips (+inf)
+    chunk_image,  # complex64 [C_B, N]
+    chunk_corr,  # real [C_B, N]
+    chunk_initial_diff2,  # float32 [C_B]
+    *,
+    half_weights,
+    translation_angles,  # float32 [T, 2], or [C_B, T, 2] per image (tilt images)
+    full_to_compact,
+    logical_current_size,
+):
+    """RELION's fine diff2 of every flat row against its image: the flat-row CUDA kernel."""
+
     from relax.cuda import kernels as em_cuda_kernels
 
     weights = _relion_cuda_fine_pixel_weights(
         chunk_corr, jnp.asarray(half_weights)[None, :]
     ).astype(jnp.float32)
-    # Padded rows are handed to the kernel as image -1: it writes +inf for the
-    # whole row and skips the pixel traversal.
-    kernel_row_image_ids = jnp.where(row_is_valid, row_image_local, jnp.int32(-1))
-    raw_from_kernel = em_cuda_kernels.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
+    return em_cuda_kernels.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
         reference,
         kernel_row_image_ids,
         chunk_image,
@@ -537,6 +632,19 @@ def _score_flat_rows(
         jnp.asarray(logical_current_size, dtype=jnp.int32),
         chunk_initial_diff2,
     )
+
+
+def _flat_rows_scores(
+    raw_from_kernel,  # float32 [C_R, T]
+    row_image_local,  # int32 [C_R] the row's posterior segment (image; particle for tilt images)
+    row_log_prior,  # real [C_R]
+    chunk_translation_prior,  # real [C_S, T] per segment
+    candidate_mask,  # bool [C_R, T] or None
+    row_is_valid,  # bool [C_R]
+    *,
+    segment_capacity: int,
+):
+    """RELION's per-segment common minimum and diff2-to-log-weight conversion of flat rows."""
 
     if candidate_mask is None:
         candidate_mask = jnp.broadcast_to(row_is_valid[:, None], raw_from_kernel.shape)
@@ -548,7 +656,7 @@ def _score_flat_rows(
         jnp.asarray(jnp.inf, dtype=raw_from_kernel.dtype),
     )
 
-    # --- per-image common minimum over the chunk's rows --------------------
+    # --- per-segment common minimum over the chunk's rows ------------------
     valid = candidate_mask & jnp.isfinite(raw_diff2)
     per_row_min = jnp.min(
         jnp.where(valid, raw_diff2, jnp.asarray(jnp.inf, dtype=raw_diff2.dtype)), axis=1
@@ -556,7 +664,7 @@ def _score_flat_rows(
     segment_min = jax.ops.segment_min(
         per_row_min,
         row_image_local,
-        num_segments=image_capacity,
+        num_segments=segment_capacity,
         indices_are_sorted=True,
     )
     min_diff2 = jnp.where(

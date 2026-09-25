@@ -6019,24 +6019,32 @@ ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Common(
     const int64_t expected_full_pixels = runtime_current_size == nullptr
         ? current_size * (current_size / 2 + 1)
         : (lookup_shape_valid ? lookup_dims[0] : 0);
+    // Angles are one shared [T, 2] table, or one [T, 2] table per image, [B, T, 2] (tilt images).
+    const bool per_image_angles = translation_dims.size() == 3;
+    const int64_t translation_count = per_image_angles
+        ? translation_dims[1]
+        : (translation_dims.size() == 2 ? translation_dims[0] : 0);
+    const bool angles_shape_valid = per_image_angles
+        ? translation_dims[0] == image_dims[0] && translation_dims[2] == 2
+        : translation_dims.size() == 2 && translation_dims[1] == 2;
     if (reference_dims.size() != 2 || row_image_dims.size() != 1 ||
-        image_dims.size() != 2 || translation_dims.size() != 2 ||
-        translation_dims[1] != 2 || weight_dims.size() != 2 ||
+        image_dims.size() != 2 || !angles_shape_valid ||
+        weight_dims.size() != 2 ||
         initial_dims.size() != 1 || !lookup_shape_valid ||
         output_dims.size() != 2 || reference_dims[0] <= 0 ||
         reference_dims[1] <= 0 || row_image_dims[0] != reference_dims[0] ||
         image_dims[0] <= 0 || image_dims[1] != reference_dims[1] ||
-        translation_dims[0] <= 0 || weight_dims[0] != image_dims[0] ||
+        translation_count <= 0 || weight_dims[0] != image_dims[0] ||
         weight_dims[1] != reference_dims[1] ||
         initial_dims[0] != image_dims[0] ||
         lookup_dims[0] != expected_full_pixels ||
         output_dims[0] != reference_dims[0] ||
-        output_dims[1] != translation_dims[0])
+        output_dims[1] != translation_count)
         return ffi::Error::InvalidArgument(
             "RelionFineDiff2FusedTranslateFlatRowsF32: inconsistent operand shapes");
 
     const int64_t translation_chunks =
-        (translation_dims[0] + kRelionFineDiff2Ref3dJobChunk - 1) /
+        (translation_count + kRelionFineDiff2Ref3dJobChunk - 1) /
         kRelionFineDiff2Ref3dJobChunk;
     const int64_t total_blocks = reference_dims[0] * translation_chunks;
     if (total_blocks > static_cast<int64_t>(std::numeric_limits<int>::max()))
@@ -6054,13 +6062,14 @@ ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Common(
         static_cast<float*>(output->untyped_data()),
         image_dims[0],
         reference_dims[0],
-        translation_dims[0],
+        translation_count,
         reference_dims[1],
         lookup_dims[0],
         static_cast<int>(current_size),
         runtime_current_size == nullptr
             ? nullptr
-            : static_cast<const int32_t*>(runtime_current_size->untyped_data()));
+            : static_cast<const int32_t*>(runtime_current_size->untyped_data()),
+        per_image_angles ? 2 * translation_count : 0);
     if (err != cudaSuccess)
         return ffi::Error::Internal(
             std::string("CUDA: ") + cudaGetErrorString(err));

@@ -6,6 +6,7 @@ RELION-pinned one-E-step test on the S1 dataset checks the conventions end to en
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from scipy.spatial.transform import Rotation
 
 from relax.refinement import tomo_particles
@@ -82,14 +83,15 @@ def test_translation_angles_follow_relions_per_image_phase_operand():
     size = np.array([128, 128, 128, 100, 100, 128, 128, 128, 128])
     out = tomo_particles.tilt_translation_angles(shifts, old, projections, image_particle, size)
     assert out.shape == (image_particle.size, 6, 2) and out.dtype == np.float32
+    expected = np.zeros(out.shape, dtype=np.float32)
     for i, p in enumerate(image_particle):
         a = projections[i]
         for t in range(6):
             x, y, z = shifts[t][0] + old[p][0], shifts[t][1] + old[p][1], shifts[t][2] + old[p][2]
             sx = a[0, 0] * x + a[0, 1] * y + a[0, 2] * z
             sy = a[1, 0] * x + a[1, 1] * y + a[1, 2] * z
-            assert out[i, t, 0] == np.float32(-2 * np.pi * sx / float(size[i]))
-            assert out[i, t, 1] == np.float32(-2 * np.pi * sy / float(size[i]))
+            expected[i, t] = (-2 * np.pi * sx / float(size[i]), -2 * np.pi * sy / float(size[i]))
+    assert_matches(out, expected)
 
 
 def test_image_slots_visit_each_particles_images_in_order():
