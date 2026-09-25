@@ -68,7 +68,6 @@ from relax.diagnostics.relion_replay import (
     _perturbation_restart_state_iteration,
     _resolve_replay_random_perturbation,
     _restore_convergence_state_from_replay_restart,
-    _sealed_sampling_base_grids,
     _sealed_sampling_rotation_ids,
     _validate_bpref_particle_order_scope,
     apply_iter_replay_overrides,
@@ -176,6 +175,7 @@ from relax.refinement.half_inputs import (
     _normalize_sigma_offset_per_half,
 )
 from relax.refinement.half_scoring import _score_half_dense_in_bpref_scope, _score_half_local_in_bpref_scope
+from relax.refinement.iteration_planning import InitialCoarseGridRequest, build_initial_coarse_grids
 from relax.refinement.iteration_snapshot import (
     capture_iteration_snapshot,
     noise_pixel_rows,
@@ -295,71 +295,6 @@ def _relion_k1_translation_angle_scale(
     return model_pixel_size / float(unique_optics[0])
 
 
-
-
-class _CoarseGrids(NamedTuple):
-    """Exhaustive coarse trial grid of one RELION iteration."""
-
-    rotations: np.ndarray
-    rotation_eulers: np.ndarray
-    base_translations: np.ndarray
-    translations: jnp.ndarray
-    healpix_order: int
-
-
-def _initial_coarse_grids(
-    *,
-    healpix_order: int,
-    sealed_sampling_state,
-    translations,
-    init_healpix_order: int,
-    init_translation_range: float,
-    init_translation_step: float,
-    n_classes: int,
-    voxel_size: float,
-    log,
-    symmetry: str = "C1",
-) -> _CoarseGrids:
-    """Materialize the first exhaustive coarse grid of a RELION refinement.
-
-    A schema-v3 sealed sampling state supplies its own restricted Euler rows
-    and translations and must sit at the initialized HEALPix order.  Otherwise
-    RELION's canonical grid at ``healpix_order`` is paired with the caller's
-    translation table or, when none is given, with the RELION translation grid
-    of the initial offset range and step.
-    """
-
-    dtype = _dense_global_scoring_dtype()
-    if sealed_sampling_state is not None:
-        rotations, rotation_eulers, current_translations = _sealed_sampling_base_grids(
-            sealed_sampling_state,
-            voxel_size_angstrom=voxel_size,
-            dtype=dtype,
-        )
-        base_translations = np.asarray(current_translations, dtype=np.float64)
-        healpix_order = int(sealed_sampling_state["healpix_order_original"])
-        if healpix_order != int(init_healpix_order):
-            raise ValueError(
-                "sealed sampling HEALPix order does not match initialized boundary: "
-                f"sealed={healpix_order} init={init_healpix_order}"
-            )
-        log.info(
-            "Frozen-boundary v3 directly materialized %d Euler rows and %d translations",
-            int(rotation_eulers.shape[0]),
-            int(current_translations.shape[0]),
-        )
-    else:
-        rotations, rotation_eulers = sampling._relion_rotation_grid_float32(healpix_order, dtype=dtype, **({"symmetry": symmetry} if symmetry != "C1" else {}))
-        if translations is None:
-            translations = sampling._relion_base_translation_grid(
-                init_translation_range,
-                init_translation_step,
-                n_classes=n_classes,
-                voxel_size=voxel_size,
-            )
-        base_translations = np.asarray(translations, dtype=np.float64)
-        current_translations = jnp.asarray(translations, dtype=dtype)
-    return _CoarseGrids(rotations, rotation_eulers, base_translations, current_translations, int(healpix_order))
 
 
 _BPREF_DUMP_ENV_VARS = (
@@ -1006,17 +941,19 @@ def refine_single_volume(
     current_healpix_order = (
         int(schedule.init_healpix_order) if resume is None else _exhaustive_grid_order_for_state(state)
     )
-    initial_grids = _initial_coarse_grids(
-        healpix_order=current_healpix_order,
-        sealed_sampling_state=sealed_sampling_state,
-        translations=translations if resume is None else None,
-        init_healpix_order=schedule.init_healpix_order if resume is None else state.healpix_order,
-        init_translation_range=schedule.init_translation_range if resume is None else state.translation_range,
-        init_translation_step=schedule.init_translation_step if resume is None else state.translation_step,
-        n_classes=n_classes,
-        voxel_size=cryo.voxel_size,
-        log=logger,
-        **({"symmetry": symmetry} if symmetry != "C1" else {}),
+    initial_grids = build_initial_coarse_grids(
+        InitialCoarseGridRequest(
+            healpix_order=current_healpix_order,
+            sealed_sampling_state=sealed_sampling_state,
+            translations=translations if resume is None else None,
+            init_healpix_order=schedule.init_healpix_order if resume is None else state.healpix_order,
+            init_translation_range=schedule.init_translation_range if resume is None else state.translation_range,
+            init_translation_step=schedule.init_translation_step if resume is None else state.translation_step,
+            n_classes=n_classes,
+            voxel_size=cryo.voxel_size,
+            log=logger,
+            symmetry=symmetry,
+        )
     )
     current_rotations = initial_grids.rotations
     current_rotation_eulers = initial_grids.rotation_eulers

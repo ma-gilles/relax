@@ -1,6 +1,6 @@
-"""The refinement controller materializes its coarse trial grids through one owner.
+"""Initial coarse-grid planning has one typed owner outside the controller.
 
-``_initial_coarse_grids`` builds the first exhaustive grid (sealed capture,
+``build_initial_coarse_grids`` builds the first exhaustive grid (sealed capture,
 caller translation table, or RELION translation grid) and
 ``_relion_base_translation_grid`` is the only unperturbed RELION translation
 grid construction in ``iteration_loop``.
@@ -17,6 +17,7 @@ import pytest
 from helpers.float_compare import matches
 
 import relax.refinement.iteration_loop as iteration_loop
+import relax.refinement.iteration_planning as iteration_planning
 import relax.sampling as sampling_module
 from relax.diagnostics.relion_replay import _sealed_sampling_base_grids
 from relax.sampling import _translation_grid_for_class_count
@@ -59,7 +60,7 @@ def _initial_grids(**overrides):
         log=logging.getLogger("test_initial_coarse_grid_owner"),
     )
     kwargs.update(overrides)
-    return iteration_loop._initial_coarse_grids(**kwargs)
+    return iteration_planning.build_initial_coarse_grids(iteration_planning.InitialCoarseGridRequest(**kwargs))
 
 
 @pytest.mark.parametrize("n_classes", [1, 4])
@@ -96,12 +97,12 @@ def test_sealed_state_must_sit_at_the_initialized_order():
 def test_relion_translation_grid_pairs_with_the_canonical_rotation_grid(monkeypatch):
     monkeypatch.setattr(sampling_module, "_relion_rotation_grid_float32", _fake_rotation_grid)
     grids = _initial_grids(n_classes=4)
-    rotations, eulers = _fake_rotation_grid(3, dtype=iteration_loop._dense_global_scoring_dtype())
+    rotations, eulers = _fake_rotation_grid(3, dtype=iteration_planning._dense_global_scoring_dtype())
     assert _same(grids.rotations, rotations) and _same(grids.rotation_eulers, eulers)
     expected = sampling_module._relion_base_translation_grid(4.25, 1.416667, n_classes=4, voxel_size=2.0)
     assert _same(grids.base_translations, expected)
     assert isinstance(grids.translations, jnp.ndarray)
-    assert _same(grids.translations, jnp.asarray(expected, dtype=iteration_loop._dense_global_scoring_dtype()))
+    assert _same(grids.translations, jnp.asarray(expected, dtype=iteration_planning._dense_global_scoring_dtype()))
     assert grids.healpix_order == 3
 
 
@@ -110,12 +111,13 @@ def test_caller_translation_table_is_kept_as_the_base_grid(monkeypatch):
     table = np.asarray([[0.5, -1.0], [0.0, 0.0]], dtype=np.float32)
     grids = _initial_grids(translations=table)
     assert grids.base_translations.dtype == np.float64 and _same(grids.base_translations, table.astype(np.float64))
-    assert _same(grids.translations, jnp.asarray(table, dtype=iteration_loop._dense_global_scoring_dtype()))
+    assert _same(grids.translations, jnp.asarray(table, dtype=iteration_planning._dense_global_scoring_dtype()))
 
 
 def test_controller_materializes_coarse_grids_through_the_owners():
     source = inspect.getsource(iteration_loop.refine_single_volume)
-    assert source.count("_initial_coarse_grids(") == 1
+    assert source.count("build_initial_coarse_grids(") == 1
+    assert source.count("InitialCoarseGridRequest(") == 1
     assert "_sealed_sampling_base_grids(" not in source
     assert "_translation_grid_for_class_count(" not in source
     assert source.count("_relion_base_translation_grid(") == 6

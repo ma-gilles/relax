@@ -76,8 +76,10 @@ both passes share: the exact M-step rotations are seeded from the sealed grid's 
 angles or RELION's canonical grid at the perturbation order (the scoring grid's
 angles when the row counts differ), and one RELION `SamplingPerturbation` rotates
 the trial orientations, rebuilds the M-step rotations and shifts the translation
-grid. `_initial_coarse_grids` materializes the first exhaustive grid from a
-sealed capture, a caller translation table or the RELION translation grid, and
+grid. [`iteration_planning.build_initial_coarse_grids`](../../relax/refinement/iteration_planning.py)
+materializes the first exhaustive grid from an `InitialCoarseGridRequest` that
+retains its array payloads by reference. It selects a sealed capture, a caller
+translation table or the RELION translation grid, and
 `_relion_base_translation_grid` is the only unperturbed translation-grid
 construction used by the controller; [`test_initial_coarse_grid_owner.py`](../../tests/unit/test_initial_coarse_grid_owner.py)
 pins both. `expected_accuracy.Half1AccuracyInputs` bundles the run-constant inputs of RELION's
