@@ -1308,6 +1308,7 @@ def run_local_em_exact(
             dtype=_noise_wsum_initial_dtype(
                 relion_exact_fine_diff2=relion_exact_fine_diff2,
                 use_window=use_window,
+                noise_variance_dtype=noise_variance_for_noise.dtype,
             ) if not use_float64_scoring else precision_policy.score_real_dtype,
         )
         noise_img_power = jnp.zeros(noise_shell_shape, dtype=precision_policy.score_real_dtype)

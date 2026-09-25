@@ -63,10 +63,18 @@ from relax.sparse_pass2 import sparse_pass2_bucketed
 logger = logging.getLogger(__name__)
 
 
-def _noise_wsum_initial_dtype(*, relion_exact_fine_diff2: bool, use_window: bool):
-    """Match the initial carry to the direct-Wavg post-bucket dtype."""
+def _noise_wsum_initial_dtype(*, relion_exact_fine_diff2: bool, use_window: bool, noise_variance_dtype=jnp.float32):
+    """Match the initial carry to the dtype every bucket's noise block has.
 
-    return jnp.float64 if relion_exact_fine_diff2 and use_window else jnp.float32
+    Each noise block multiplies by the noise variance, so it is at least that
+    dtype; direct Wavg adds a float64 cutoff shell. A float32 zero carry would
+    promote after the first bucket and give the big-JIT a second ABI, and the
+    promoted zero is numerically identical.
+    """
+
+    if relion_exact_fine_diff2 and use_window:
+        return jnp.float64
+    return jnp.result_type(jnp.float32, noise_variance_dtype)
 
 
 def _relion_exact_fine_full_to_compact_lookup(

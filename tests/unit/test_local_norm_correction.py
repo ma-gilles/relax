@@ -28,22 +28,27 @@ from relax.sparse_pass2.sparse_pass2_wavg import (
 
 
 @pytest.mark.parametrize(
-    ("relion_exact_fine_diff2", "use_window", "expected"),
+    ("relion_exact_fine_diff2", "use_window", "noise_variance_dtype", "expected"),
     (
-        (True, True, np.float64),
-        (True, False, np.float32),
-        (False, True, np.float32),
-        (False, False, np.float32),
+        (True, True, np.float32, np.float64),
+        (True, False, np.float32, np.float32),
+        (False, True, np.float32, np.float32),
+        (False, False, np.float32, np.float32),
+        (True, False, np.float64, np.float64),
+        (False, True, np.float64, np.float64),
+        (False, False, np.float64, np.float64),
     ),
 )
 def test_noise_wsum_initial_dtype_matches_direct_wavg_output(
     relion_exact_fine_diff2,
     use_window,
+    noise_variance_dtype,
     expected,
 ):
     actual = _noise_wsum_initial_dtype(
         relion_exact_fine_diff2=relion_exact_fine_diff2,
         use_window=use_window,
+        noise_variance_dtype=noise_variance_dtype,
     )
 
     assert np.dtype(actual) == np.dtype(expected)
