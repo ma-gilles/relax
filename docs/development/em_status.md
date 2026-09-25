@@ -131,6 +131,12 @@ relax-RELION pair FSC-AUC 0.971-0.984 against RELION-RELION 0.977-0.983. Speed g
 not met): wall 4549 s against RELION 1451 s on the same node, slower than the exact-local default; the
 E-step is 90% of it and grows from 9 s to 31 s per iteration. The resident route stays opt-in and the
 exact-local route stays until resident is no slower at equal quality on 10097 and noise1 50k.
+EMPIAR-10097 seed 41 (200 iterations, job 14425100 at the cache fix cbd7b0b, scored 14434198 against the
+RELION auto-refine map in the frozen mask): relax resident FSC-AUC 0.2248 unmasked / 0.3578 masked, at the top
+of four seed-41 RELION runs 0.2225-0.2243 / 0.3550-0.3573; relax-RELION pair FSC-AUC 0.701-0.732 against
+RELION-RELION 0.688-0.773. Wall 6954 s against RELION 3025 s on the same node (2.3x); the exact-local default
+measured 6835 s in a separate job (vdamspeed j14, not a matched pair), so the 10097 speed gate is not shown
+met. The run predates the image-capacity change (834b3b3), which removes the per-subset re-trace.
 
 OPEN (compact, not fixed: the compact engine is to be deleted): without scale-correction groups the
 compact sparse pass 2 takes its non-atomic noise arithmetic, 19% apart in `wsum_sigma2_noise` from
