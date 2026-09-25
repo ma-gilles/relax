@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 
 
-def normalize_wsum_to_sigma2_noise(wsum_sigma2_noise, wsum_img_power, sumw, image_shape):
+def normalize_wsum_to_sigma2_noise(wsum_sigma2_noise, wsum_img_power, sumw, image_shape, *, ctf_premultiplied=False):
     """Convert posterior-weighted noise accumulators to per-shell noise variance.
 
     Implements RELION's M-step noise update from ``maximizationOtherParameters``
@@ -35,6 +35,8 @@ def normalize_wsum_to_sigma2_noise(wsum_sigma2_noise, wsum_img_power, sumw, imag
         Total posterior weight (= number of images when posteriors sum to 1).
     image_shape : tuple of int
         2-D image dimensions, e.g. ``(128, 128)``.
+    ctf_premultiplied : bool
+        RELION floors sigma2 at 1e-15 (its units) only for CTF-premultiplied data.
 
     Returns
     -------
@@ -77,13 +79,17 @@ def normalize_wsum_to_sigma2_noise(wsum_sigma2_noise, wsum_img_power, sumw, imag
     # (``Pmax → 1.0``). See ``estimate_initial_noise_spectrum_from_unaligned_images``
     # docstring and ``tmp/diagnose_pmax_gap.py``.
 
-    # Floor at 1e-15 (RELION ml_optimiser.cpp:5279)
-    sigma2 = jnp.maximum(sigma2, 1e-15)
-
-    # Fill zeros from previous shell (RELION ml_optimiser.cpp:5281-5284)
-    # A writable host copy: np.asarray of a device array is read-only.
-    sigma2_np = np.array(sigma2)
+    # RELION's two absolute thresholds (ml_optimiser.cpp maximizationOtherParameters) act on
+    # its own FFT units; relax's native sigma2 carries box**4 on top of them (the image FT
+    # carries box**2), so the thresholds are scaled by box**4 rather than the values rescaled.
+    # - Floor at 1e-15, only for CTF-premultiplied data ("Watch out for all-zero sigma2").
+    # - For n > 0, a value below 1e-14 takes the previous shell's (already updated) value
+    #   ("With unequal box sizes ... set sigma2_noise to the value in the previous pixel").
+    box4 = float(image_shape[0]) ** 4
+    sigma2_np = np.array(sigma2)  # a writable host copy: np.asarray of a device array is read-only
+    if ctf_premultiplied:
+        sigma2_np = np.maximum(sigma2_np, 1e-15 * box4)
     for i in range(1, len(sigma2_np)):
-        if sigma2_np[i] < 1e-14 and sigma2_np[i - 1] > 1e-14:
+        if sigma2_np[i] < 1e-14 * box4:
             sigma2_np[i] = sigma2_np[i - 1]
     return jnp.asarray(sigma2_np)

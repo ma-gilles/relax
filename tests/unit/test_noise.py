@@ -845,3 +845,27 @@ def test_estimate_initial_noise_spectrum_matches_image_power_scale():
         f"a stray (H*W)² rescale has likely been reintroduced into "
         f"estimate_initial_noise_spectrum_from_unaligned_images."
     )
+
+
+def test_normalize_wsum_fills_shells_below_relions_absolute_threshold_in_relion_units():
+    """RELION replaces sigma2 < 1e-14 (its FFT units, n > 0) with the previous shell's value.
+
+    relax's native sigma2 carries box**4, so a tiny-greyscale dataset (S1 tomo before its
+    stacks were normalised: ~5.5e-15 per shell in RELION units) must be filled exactly as
+    RELION fills it, and a normal one must be left alone.
+    """
+    image_shape = (8, 8)
+    box4 = 8.0**4
+    from relax.helpers.half_spectrum import bin_shell_values_jax, make_relion_noise_shell_indices_half
+
+    npix = np.maximum(
+        np.asarray(bin_shell_values_jax(jnp.ones(image_shape[0] * (image_shape[1] // 2 + 1)), make_relion_noise_shell_indices_half(image_shape), 5)),
+        1.0,
+    )
+    relion_units = np.array([1.2e-14, 5.5e-15, 6.0e-15, 2.0e-14, 5.0e-15])
+    wsum = relion_units * box4 * 2.0 * npix  # sumw = 1
+    got = np.asarray(noise_relion.normalize_wsum_to_sigma2_noise(wsum, np.zeros(5), 1.0, image_shape)) / box4
+    assert_matches(got, np.array([1.2e-14, 1.2e-14, 1.2e-14, 2.0e-14, 2.0e-14]))
+    normal = relion_units * 1e9
+    got = np.asarray(noise_relion.normalize_wsum_to_sigma2_noise(normal * box4 * 2.0 * npix, np.zeros(5), 1.0, image_shape)) / box4
+    assert_matches(got, normal)
