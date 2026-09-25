@@ -25,14 +25,15 @@ def test_latent_rotation_equivariance(dtype, tol):
     dirs_q = jnp.stack(
         [coupled_direction(pack_upper_tri(a), r, floor=0.4)[0] for a, r in zip(transformed, residual @ Q)]
     )
-    np.testing.assert_allclose(dirs_q, dirs @ Q, atol=tol, rtol=tol)
+    # Rotate the references on the host: a default-precision GPU matmul would be TF32.
+    np.testing.assert_allclose(dirs_q, np.asarray(dirs) @ Q, atol=tol, rtol=tol)
     shells = np.arange(9) // 3
     args = dict(coverage=np.ones((2, 9), bool), shells=shells, step=0.8, fudge=2, image_size=8)
     out, moments, info = stochastic_update(jnp.asarray(theta), empty_moments(jnp.asarray(theta)), dirs, **args)
     out_q, moments_q, info_q = stochastic_update(
         jnp.asarray(theta @ Q), empty_moments(jnp.asarray(theta @ Q)), dirs_q, **args
     )
-    np.testing.assert_allclose(out_q, out @ Q, atol=tol, rtol=tol)
+    np.testing.assert_allclose(out_q, np.asarray(out) @ Q, atol=tol, rtol=tol)
     np.testing.assert_allclose(moments_q.second, moments.second, atol=tol, rtol=tol)
     np.testing.assert_allclose(info_q["gates"], info["gates"], atol=tol, rtol=tol)
 

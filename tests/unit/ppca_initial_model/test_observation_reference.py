@@ -9,6 +9,7 @@ from recovar.ppca.triangular import unpack_tri_to_full
 from relax.helpers.half_spectrum import make_half_image_weights
 from relax.ppca_initial_model.noise import expected_residual_power, relion_to_coefficient_variance
 from relax.ppca_refinement.engine import dense_pose_ppca_score_with_moments_blocked
+from relax.ppca_refinement.residual_statistics import full_float32
 
 pytestmark = pytest.mark.unit
 
@@ -29,7 +30,8 @@ def test_real_covariance_reference(dtype, tol, q, zero_loading):
     projections = ftu.get_dft2_real(np.concatenate([mu[None], W])).reshape(1, q + 1, -1)
     weights = make_half_image_weights((n, n)).astype(dtype)
     nv = n * n * variance
-    result = dense_pose_ppca_score_with_moments_blocked(
+    # The production E-step runs this engine under full float32 (no TF32 on GPU).
+    result = full_float32(dense_pose_ppca_score_with_moments_blocked)(
         (yft * weights / nv)[None, None],
         projections,
         (weights / nv)[None],
