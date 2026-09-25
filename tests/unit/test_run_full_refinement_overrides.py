@@ -2558,3 +2558,29 @@ def test_initial_current_size_is_relions_ini_high_pixel_without_a_floor():
     assert _bootstrap_current_size_relion(_initial_current_size(4.25, 128, 60.0), 128) == 38
     assert _initial_current_size(4.25, 128, 30.0) == 36  # unchanged where the floor never applied
     assert _bootstrap_current_size_relion(36, 128) == 56
+
+
+@pytest.mark.unit
+def test_every_reference_loader_refuses_a_map_of_unknown_convention(tmp_path):
+    """K=1 --init_volume and the Class3D --ref_star / --init_class_volumes / data-dir class maps go
+    through one check (relax.helpers.map_io.require_relion_convention_reference) before they are read."""
+    import mrcfile
+
+    legacy = tmp_path / "reference_init_class001.mrc"  # RECOVAR-convention name, mrcfile's default label
+    with mrcfile.new(str(legacy)) as handle:
+        handle.set_data(np.zeros((8, 8, 8), dtype=np.float32))
+    for option in ("--init_volume", "--ref_star", "--init_class_volumes"):
+        with pytest.raises(SystemExit, match=option):
+            run_full_refinement._require_relion_convention_reference(legacy, option)
+    relion_named = tmp_path / "reference_init_class001_relion.mrc"
+    with mrcfile.new(str(relion_named)) as handle:
+        handle.set_data(np.zeros((8, 8, 8), dtype=np.float32))
+    run_full_refinement._require_relion_convention_reference(relion_named, "--ref_star")
+
+    source = inspect.getsource(run_full_refinement.main)
+    assert '_require_relion_convention_reference(init_mrc_path, "--init_volume")' in source
+    loop = source.partition("for p in class_paths:\n")[2].splitlines()[0]
+    assert "_require_relion_convention_reference(p, class_option)" in loop
+    assert source.index("_require_relion_convention_reference(p, class_option)") < source.index(
+        "vol_real = np.asarray(load_relion_volume(p))"
+    )

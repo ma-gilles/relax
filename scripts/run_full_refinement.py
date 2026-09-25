@@ -1874,6 +1874,16 @@ def _maybe_apply_relion_image_mask(ds, args, *, sealed_optimiser_star=None):
     return params
 
 
+def _require_relion_convention_reference(path, option: str) -> None:
+    """Stop the run when a reference map's RELION convention is not established (relax.helpers.map_io)."""
+    from relax.helpers.map_io import require_relion_convention_reference
+
+    try:
+        require_relion_convention_reference(path, option=option)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
+
+
 def _parse_args(argv=None):
     _assert_expected_repo_imports()
     from relax.symmetry import canonicalize_rotational_symmetry
@@ -2386,7 +2396,8 @@ def _parse_args(argv=None):
         default=None,
         help="Comma-separated paths to K initial reference maps in RELION's map "
         "convention, as relion_refine reads them (K must equal --n_classes). Defaults to "
-        "<data_dir>/reference_init_class00{1..K}_relion.mrc when omitted.",
+        "<data_dir>/reference_init_class00{1..K}_relion.mrc when omitted. Each map needs a "
+        "RELION or relax header label or '_relion' in its file name.",
     )
     parser.add_argument(
         "--ref_star",
@@ -2395,7 +2406,9 @@ def _parse_args(argv=None):
         "(RELION-frame MRCs, relative paths resolved against the STAR's directory) "
         "are the K initial references, K must equal --n_classes, and the class "
         "distribution starts at 1/K as in relion_refine (a _rlnClassDistribution "
-        "column is not read). Exclusive with --init_class_volumes.",
+        "column is not read). Exclusive with --init_class_volumes. Each map needs a RELION "
+        "or relax header label or '_relion' in its file name "
+        "(relax.helpers.map_io.require_relion_convention_reference).",
     )
     parser.add_argument(
         "--init_volume",
@@ -3499,12 +3512,7 @@ def main():
         )
     elif args.n_classes == 1:
         init_mrc_path = args.init_volume or os.path.join(args.data_dir, "reference_init_relion.mrc")
-        from relax.helpers.map_io import require_relion_convention_reference
-
-        try:
-            require_relion_convention_reference(init_mrc_path)
-        except ValueError as exc:
-            raise SystemExit(str(exc)) from None
+        _require_relion_convention_reference(init_mrc_path, "--init_volume")
         init_vol_real = load_relion_volume(init_mrc_path).astype(_init_volume_dtype)
         relion_model_pixel_size = relion_metadata._read_relion_mrc_model_pixel_size(init_mrc_path)
         if not np.isfinite(relion_model_pixel_size) or relion_model_pixel_size <= 0.0:
@@ -3573,6 +3581,11 @@ def main():
             ]
         if len(class_paths) != args.n_classes:
             raise SystemExit(f"--init_class_volumes count {len(class_paths)} != --n_classes {args.n_classes}")
+        class_option = (
+            "--ref_star" if args.ref_star is not None else "--init_class_volumes" if args.init_class_volumes else "data_dir"
+        )
+        for p in class_paths:
+            _require_relion_convention_reference(p, class_option)
         per_class_ft = []
         per_class_real_for_projector = []
         for k, p in enumerate(class_paths):
