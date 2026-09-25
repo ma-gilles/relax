@@ -1092,7 +1092,7 @@ def apply_iter_replay_overrides(
                 f"sealed={_relion_hp} max={state.max_healpix_order}"
             )
         state.healpix_order = _relion_hp
-        state.do_local_search = bool(state.healpix_order >= state.auto_local_healpix_order)
+        state.do_local_search = bool(state.auto_sampling and state.healpix_order >= state.auto_local_healpix_order)
         state.sigma_rot = np.deg2rad(float(sealed_sampling_state["sigma_rot_deg"]))
         state.sigma_psi = np.deg2rad(float(sealed_sampling_state["sigma_psi_deg"]))
         state.translation_range = float(sealed_sampling_state["offset_range_angstrom"]) / _px
@@ -1192,7 +1192,7 @@ def apply_iter_replay_overrides(
                     _star,
                 )
             state.healpix_order = _capped_hp
-        _replay_do_local = bool(state.healpix_order >= state.auto_local_healpix_order)
+        _replay_do_local = bool(state.auto_sampling and state.healpix_order >= state.auto_local_healpix_order)
         if state.do_local_search != _replay_do_local:
             logger.info(
                 "Replay override: local_search %s -> %s (healpix_order=%d, auto_local_healpix_order=%d)",

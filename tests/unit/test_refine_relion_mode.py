@@ -700,6 +700,7 @@ def test_replay_translation_grid_preserves_state_grid_for_subtolerance_star_roun
         healpix_order = 3
         max_healpix_order = 3
         auto_local_healpix_order = 4
+        auto_sampling = True
         do_local_search = False
         sigma_rot = 0.0
         sigma_psi = 0.0
@@ -1015,6 +1016,7 @@ def test_replay_cold_start_falls_back_to_serialized_scale():
         healpix_order=1,
         max_healpix_order=1,
         auto_local_healpix_order=4,
+        auto_sampling=True,
         do_local_search=False,
         sigma_rot=0.0,
         sigma_psi=0.0,

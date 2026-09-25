@@ -2269,6 +2269,7 @@ def test_class3d_replay_loads_shared_model_direction_prior(tmp_path, monkeypatch
         healpix_order=0,
         max_healpix_order=4,
         auto_local_healpix_order=99,
+        auto_sampling=False,
         do_local_search=False,
         sigma_rot=0.0,
         sigma_psi=0.0,
