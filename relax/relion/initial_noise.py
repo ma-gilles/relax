@@ -214,42 +214,11 @@ def _image_sigma2_iter(
             yield int(optics_group_by_particle[int(local_idx)]), image
 
 
-def read_relion_single_optics_sigma2_noise(model, *, context):
-    """Read the sole supported RELION optics-group noise spectrum.
-
-    RELION carries one ``sigma2_noise`` spectrum per optics group. RECOVAR's
-    current EM scorer carries only one spectrum per random half, so silently
-    selecting optics group 1 would produce incorrect strict-parity results for
-    multi-optics data. Fail closed until scoring is optics-group indexed.
-    """
-
-    if not isinstance(model, dict):
-        return None
-    noise_keys = sorted(
-        key
-        for key, table in model.items()
-        if re.fullmatch(r"model_optics_group_\d+", str(key))
-        and hasattr(table, "columns")
-        and "rlnSigma2Noise" in table.columns
-    )
-    if len(noise_keys) > 1:
-        raise NotImplementedError(
-            f"Strict RELION replay does not yet support {len(noise_keys)} optics-group "
-            f"sigma2_noise tables in {context}: {noise_keys}"
-        )
-    if not noise_keys:
-        return None
-    return np.asarray(model[noise_keys[0]]["rlnSigma2Noise"], dtype=np.float64)
-
-
 def read_relion_sigma2_noise_by_group(model, *, context):
-    """Every optics group's RELION ``sigma2_noise`` spectrum, ``[G, n]`` in group order.
+    """Every optics group's RELION ``sigma2_noise`` (``MlModel::sigma2_noise[optics_group]``), ``[G, n]``.
 
-    RELION writes one ``model_optics_group_<g>`` table per optics group, each on the
-    model's shells (``MlModel::sigma2_noise[optics_group]``). Returns ``None`` when the
-    model has no noise table.
+    One ``model_optics_group_<g>`` table per group, in group order; ``None`` when the model has none.
     """
-
     if not isinstance(model, dict):
         return None
     groups = sorted(
@@ -263,9 +232,21 @@ def read_relion_sigma2_noise_by_group(model, *, context):
         return None
     if groups != list(range(1, len(groups) + 1)):
         raise ValueError(f"{context}: optics-group noise tables must be numbered 1..G, got {groups}")
-    return np.stack(
-        [np.asarray(model[f"model_optics_group_{g}"]["rlnSigma2Noise"], dtype=np.float64) for g in groups]
-    )
+    return np.stack([np.asarray(model[f"model_optics_group_{g}"]["rlnSigma2Noise"], dtype=np.float64) for g in groups])
+
+
+def read_relion_single_optics_sigma2_noise(model, *, context):
+    """The sole optics group's RELION ``sigma2_noise`` spectrum, or ``None``.
+
+    For callers that carry one spectrum per random half: they fail closed on
+    multi-optics models instead of silently using group 1.
+    """
+    sigma2 = read_relion_sigma2_noise_by_group(model, context=context)
+    if sigma2 is not None and sigma2.shape[0] > 1:
+        raise NotImplementedError(
+            f"Strict RELION replay does not yet support {sigma2.shape[0]} optics-group sigma2_noise tables in {context}"
+        )
+    return None if sigma2 is None else sigma2[0]
 
 
 def relion_mpi_process_start_scoring_noise_pair(noise_half1, noise_half2, *, split_random_halves):
