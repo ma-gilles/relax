@@ -207,3 +207,11 @@ def test_smoke_defers_touched_gpu_files_over_its_budget(monkeypatch):
     )
     assert kept == ["tests/unit/a.py", "tests/unit/b.py", "tests/unit/new.py"]  # 10 + 30 + 50 <= 100
     assert deferred == ["tests/unit/big.py"]
+
+
+def test_gpu_files_include_skipif_gated_resident_tests():
+    files = set(run_test_tier.gpu_test_files(REPO_ROOT))
+    assert {"tests/unit/test_resident_pass2_driver.py", "tests/unit/test_resident_local_pass2.py"} <= files
+    selected = run_test_tier.touched_gpu_tests(REPO_ROOT, ["relax/sparse_pass2/resident_pass2.py"])
+    assert "tests/unit/test_resident_pass2_driver.py" in selected
+    assert "tests/unit/initial_model/test_audit_vdam_repeat_panel.py" not in files

@@ -183,15 +183,23 @@ def changed_paths(src: Path, base: str) -> list[str]:
     return sorted(set(out.split()))
 
 
+# A GPU test is marked ``gpu``, or gated some other way: a skipif on GPU availability (for
+# example the resident tests' ``requires_resident_gpu``), a runtime backend check, or the
+# ``gpu_device`` / ``custom_cuda_lib`` fixtures. Those skip silently on CPU, so smoke must
+# select them by these signs as well.
+GPU_TEST_SIGNS = re.compile(
+    r"pytest\.mark\.gpu|mark\.gpu\b|_gpu_available\(|@requires_\w*gpu\b"
+    r"|default_backend\(\)\s*[!=]=\s*[\"']gpu[\"']|\bgpu_device\b|\bcustom_cuda_lib\b"
+)
+
+
 def gpu_test_files(src: Path) -> list[str]:
-    """Test files of the GPU sweep selection that carry a gpu marker."""
+    """Test files of the GPU sweep selection that run on a GPU (GPU_TEST_SIGNS)."""
     files = []
     for d in SWEEP_DIRS:
         for path in sorted((src / d).rglob("test_*.py")):
             rel = path.relative_to(src).as_posix()
-            if rel not in SWEEP_EXCLUDE and re.search(
-                r"pytest\.mark\.gpu|mark\.gpu\b", path.read_text(errors="ignore")
-            ):
+            if rel not in SWEEP_EXCLUDE and GPU_TEST_SIGNS.search(path.read_text(errors="ignore")):
                 files.append(rel)
     return files
 
