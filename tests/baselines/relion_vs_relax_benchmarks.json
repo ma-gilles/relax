@@ -13,7 +13,8 @@
   "half_fsc_0143": "Unmasked half-map FSC 0.143 of the final unfiltered half maps.",
   "relion_postprocess_unmasked": "relion_postprocess unmasked FSC 0.143 of the final half maps.",
   "engine_current_resolution": "The engine's own current-resolution estimate at the last iteration (RELION rlnCurrentResolution; RECOVAR log 'Res A'). For Class3D this is not a gold-standard FSC.",
-  "relion_postprocess_masked_frozen": "relion_postprocess rlnFinalResolution of the phase-randomisation-corrected masked half-map FSC, computed with the dataset's frozen mask and one fixed protocol (docs/benchmarks/masked_fsc_method.md); RELION's convention, the last shell before the first corrected value below 0.143."
+  "relion_postprocess_masked_frozen": "relion_postprocess rlnFinalResolution of the phase-randomisation-corrected masked half-map FSC, computed with the dataset's frozen mask and one fixed protocol (docs/benchmarks/masked_fsc_method.md); RELION's convention, the last shell before the first corrected value below 0.143.",
+  "vdam_fsc05_vs_reference": "InitialModel (VDAM): FSC 0.5 of the rigidly registered final map against the reference (ground truth for synthetic data, RELION's auto-refine map of the same data for real data); first shell below 0.5, as box * pixel / shell; K>1: the most populated class. No half maps, so not a gold-standard resolution."
  },
  "matched_definition": {
   "yes": "Same GPU model, box, particles, schedule and flags, with both arms in one job on the same node (--gres=gpu:2, one arm per GPU, simultaneous or with swapped GPUs across rounds), or ABBA/sequential repeats on matched hardware. Earlier rows measured on exclusive nodes remain valid.",

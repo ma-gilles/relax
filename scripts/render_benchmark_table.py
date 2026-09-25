@@ -19,9 +19,12 @@ result and adds a footnote; ``cross_engine_by_relion_run`` and
 RELION run and of the RELION runs against each other (``render_per_reference``).
 
 Rows with ``"table": "initialmodel"`` are InitialModel (VDAM) runs, rendered in
-their own sections: they have no half maps, so their quality block
-``initial_model`` holds FSC-AUCs of rigidly aligned final maps against a
-reference and against each other instead of half-map resolutions.
+their own sections with the EM column set: they have no half maps, so their
+quality block ``initial_model`` holds FSC-AUCs of rigidly aligned final maps
+against a reference and against each other. The resolution cells are the FSC 0.5
+against that reference (definition ``IM_RESOLUTION``), Masked X-AUC is the masked
+relax-vs-RELION FSC-AUC, and the other FSC-AUCs go to the row note and the
+per-run comparison section (``render_initialmodel_comparisons``).
 """
 
 import argparse
@@ -51,7 +54,18 @@ IM_ENGINE_FIELDS = ("wall_s", "gpu_model", "gpu_count", "iterations")
 IM_ROW_FIELDS = ("time_ratio_relax_over_relion", "mask")
 IM_METRICS = ("fsc_auc", "masked_fsc_auc", "res_05_A", "masked_res_05_A")
 IM_CROSS = ("fsc_auc", "masked_fsc_auc")
+IM_RESOLUTION = "vdam_fsc05_vs_reference"
+IM_RESOLUTION_LINE = (
+    "Resolution columns of the InitialModel tables: FSC 0.5 of the registered final map against the reference"
+    " (ground truth for synthetic data, RELION's auto-refine map of the same data for real data), unmasked / masked;"
+    " there are no half maps."
+)
 MATCHED = ("yes", "workload", "no")
+TABLE_HEADER = (
+    "| Dataset | Workflow | N / box | RELION res (Å) unmasked / masked | relax res (Å) unmasked / masked"
+    " | Masked X-AUC | RELION time | relax time | Ratio | GPU | Matched? | Date |",
+    "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
+)
 RATIO_TOLERANCE = 0.006
 PER_REFERENCE_AUCS = ("merged", "half1", "half2")
 MASKED_PER_REFERENCE_AUCS = ("masked_merged", "masked_half1", "masked_half2")
@@ -77,6 +91,8 @@ def load_and_validate(path, registry=DEFAULT_REGISTRY):
         raise ValueError("duplicate row id")
     for row in table["rows"]:
         if _is_initialmodel(row):
+            if IM_RESOLUTION not in definitions:
+                raise ValueError(f"resolution_definitions needs {IM_RESOLUTION} for the InitialModel rows")
             _validate_initialmodel(row, masks)
             continue
         _validate_row(row, definitions)
@@ -218,12 +234,7 @@ def render_markdown(table):
     footnotes = []
     for section, title in SECTIONS:
         rows = [row for row in table["rows"] if row["section"] == section and not _is_initialmodel(row)]
-        lines += ["", f"## {title}", ""]
-        lines += [
-            "| Dataset | Workflow | N / box | RELION res (Å) unmasked / masked | relax res (Å) unmasked / masked"
-            " | Masked X-AUC | RELION time | relax time | Ratio | GPU | Matched? | Date |",
-            "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
-        ]
+        lines += ["", f"## {title}", "", *TABLE_HEADER]
         for row in rows:
             footnotes.append(row)
             mark = f"[{len(footnotes)}]"
@@ -249,22 +260,16 @@ def render_markdown(table):
             )
     im_rows = [row for row in table["rows"] if _is_initialmodel(row)]
     if im_rows:
-        lines += ["", "## InitialModel (VDAM) method", "", *table["initial_model_intro"]]
+        intro = list(table["initial_model_intro"])
+        lines += ["", "## InitialModel (VDAM) method", "", *intro[:1], "", IM_RESOLUTION_LINE, *intro[1:]]
     for section, title in IM_SECTIONS:
         rows = [row for row in im_rows if row["section"] == section]
         if not rows:
             continue
-        lines += ["", f"## {title}", ""]
-        lines += [
-            "| Dataset | Workflow | N / box | Ref FSC-AUC RELION / relax | Masked ref FSC-AUC RELION / relax"
-            " | Ref FSC 0.5 (Å) RELION / relax | X-AUC unmasked / masked | RELION repeat X-AUC unmasked / masked"
-            " | RELION time | relax time | Ratio | GPU | Matched? | Date |",
-            "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
-        ]
+        lines += ["", f"## {title}", "", *TABLE_HEADER]
         for row in rows:
             footnotes.append(row)
             im = row["initial_model"]
-            repeat = im.get("relion_repeat") or {}
             lines.append(
                 "| "
                 + " | ".join(
@@ -272,11 +277,9 @@ def render_markdown(table):
                         f"{row['dataset']} [{len(footnotes)}]",
                         _workflow(row),
                         f"{row['particles']:,} / {row['box']}",
-                        f"{_auc(im['relion']['fsc_auc'])} / {_auc(im['relax']['fsc_auc'])}",
-                        f"{_auc(im['relion']['masked_fsc_auc'])} / {_auc(im['relax']['masked_fsc_auc'])}",
-                        f"{_angstrom(im['relion']['res_05_A'])} / {_angstrom(im['relax']['res_05_A'])}",
-                        f"{_auc(im['cross']['fsc_auc'])} / {_auc(im['cross']['masked_fsc_auc'])}",
-                        f"{_auc(repeat.get('fsc_auc'))} / {_auc(repeat.get('masked_fsc_auc'))}",
+                        _im_resolution(im["relion"], letters),
+                        _im_resolution(im["relax"], letters),
+                        _auc(im["cross"]["masked_fsc_auc"]),
                         _time(row, "relion"),
                         _time(row, "relax"),
                         _ratio(row),
@@ -294,11 +297,12 @@ def render_markdown(table):
         if row.get("result_marker"):
             marker = row["result_marker"]
             lines += ["", f"{_escape(marker['symbol'])} {row['dataset']}: {marker['note']}"]
-    per_reference = [row for row in footnotes if row.get("cross_engine_by_relion_run")]
+    per_reference = [row for row in footnotes if row.get("cross_engine_by_relion_run") or _is_initialmodel(row)]
     if per_reference:
         lines += ["", "## Comparisons against every RELION run", ""]
         for row in per_reference:
-            lines += [f"### {row['dataset']}", "", *render_per_reference(row), ""]
+            body = render_initialmodel_comparisons(row) if _is_initialmodel(row) else render_per_reference(row)
+            lines += [f"### {row['dataset']}", "", *body, ""]
         lines.pop()
     lines += ["", "## Related scorecards", ""]
     lines += [
@@ -338,12 +342,51 @@ def render_per_reference(row):
     return lines
 
 
+def render_initialmodel_comparisons(row):
+    """InitialModel FSC-AUCs (aligned final maps): each engine against the reference, relax against RELION, and
+    RELION against its repeat when one exists."""
+    im = row["initial_model"]
+    repeat = im.get("relion_repeat")
+    lines = [
+        f"`{row['id']}`: FSC-AUC of rigidly registered final maps (no half maps; masked columns use the frozen mask):",
+        "",
+        "| Comparison | FSC-AUC | Masked FSC-AUC | FSC 0.5 (Å) | Masked FSC 0.5 (Å) |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ]
+    for engine, label in (("relion", "RELION"), ("relax", "relax")):
+        arm = im[engine]
+        lines.append(
+            f"| {label} ({arm['run']}) vs reference | {_auc(arm['fsc_auc'])} | {_auc(arm['masked_fsc_auc'])}"
+            f" | {_im_angstrom(arm['res_05_A'])} | {_im_angstrom(arm['masked_res_05_A'])} |"
+        )
+    lines.append(
+        f"| relax vs RELION (X-AUC) | {_auc(im['cross']['fsc_auc'])} | {_auc(im['cross']['masked_fsc_auc'])} | — | — |"
+    )
+    if repeat:
+        lines.append(
+            f"| RELION vs RELION repeat ({repeat['pair'].rstrip('.')}) | {_auc(repeat['fsc_auc'])}"
+            f" | {_auc(repeat['masked_fsc_auc'])} | — | — |"
+        )
+    else:
+        reason = row.get("null_reasons", {}).get("initial_model.relion_repeat", "none")
+        lines.append("| RELION vs RELION repeat | — | — | — | — |")
+        lines += ["", f"No RELION repeat: {reason.rstrip('.')}."]
+    return lines
+
+
+def _im_resolution(arm, letters):
+    if arm["res_05_A"] is None and arm["masked_res_05_A"] is None:
+        return "— / —"
+    unmasked = "—" if arm["res_05_A"] is None else f"{arm['res_05_A']:.2f} {letters[IM_RESOLUTION]}"
+    return f"{unmasked} / {_im_angstrom(arm['masked_res_05_A'])}"
+
+
+def _im_angstrom(value):
+    return "—" if value is None else f"{value:.2f}"
+
+
 def _auc(value):
     return "—" if value is None else f"{value:.4f}"
-
-
-def _angstrom(value):
-    return "—" if value is None else f"{value:.1f}"
 
 
 def _escape(symbol):
@@ -436,6 +479,17 @@ def _initialmodel_note(row):
     text = [f"Reference: {im['reference']}. Runs scored: RELION {im['relion']['run']}, relax {im['relax']['run']}."]
     if row["mask"] is not None:
         text.append(f"Frozen mask `{row['mask']['dataset']}` (`{row['mask']['sha256'][:12]}`).")
+    text.append(
+        f"Ref FSC-AUC RELION {_auc(im['relion']['fsc_auc'])} / relax {_auc(im['relax']['fsc_auc'])},"
+        f" masked {_auc(im['relion']['masked_fsc_auc'])} / {_auc(im['relax']['masked_fsc_auc'])};"
+        f" X-AUC unmasked {_auc(im['cross']['fsc_auc'])}, masked {_auc(im['cross']['masked_fsc_auc'])}"
+        + (
+            f"; RELION repeat X-AUC unmasked {_auc(im['relion_repeat']['fsc_auc'])},"
+            f" masked {_auc(im['relion_repeat']['masked_fsc_auc'])}."
+            if im.get("relion_repeat")
+            else "; no RELION repeat."
+        )
+    )
     if im.get("aggregate"):
         text.append(f"{im['aggregate'].rstrip('.')}.")
     if im.get("relion_repeat"):

@@ -4,7 +4,13 @@ import json
 
 import pytest
 
-from scripts.render_benchmark_table import DEFAULT_JSON, DEFAULT_MARKDOWN, load_and_validate, render_markdown
+from scripts.render_benchmark_table import (
+    DEFAULT_JSON,
+    DEFAULT_MARKDOWN,
+    TABLE_HEADER,
+    load_and_validate,
+    render_markdown,
+)
 
 
 @pytest.mark.unit
@@ -108,10 +114,43 @@ def test_initialmodel_rows_render_in_their_own_sections():
     assert "## InitialModel (VDAM): synthetic data" in rendered
     head, _, rest = rendered.partition("## InitialModel (VDAM)")
     for row in im_rows:
-        im = row["initial_model"]
-        cells = f"{im['relion']['fsc_auc']:.4f} / {im['relax']['fsc_auc']:.4f}"
-        assert cells in rest
         assert f"`{row['id']}`" not in head
+
+
+@pytest.mark.unit
+def test_initialmodel_tables_use_the_em_columns_and_keep_every_auc():
+    """VDAM tables share the EM header; FSC 0.5 against the reference fills the resolution cells, masked X-AUC its
+    column, and the reference FSC-AUCs, unmasked X-AUC and RELION-repeat X-AUC move to the note and comparisons."""
+    table = load_and_validate(DEFAULT_JSON)
+    rendered = render_markdown(table)
+    letters = {name: chr(ord("a") + i) for i, name in enumerate(table["resolution_definitions"])}
+    letter = letters["vdam_fsc05_vs_reference"]
+    header = TABLE_HEADER[0]
+    for title in ("## InitialModel (VDAM): synthetic data", "## InitialModel (VDAM): real data"):
+        section = rendered.partition(title)[2]
+        assert section.lstrip("\n").startswith(header)
+    assert "Ref FSC-AUC RELION / relax" not in rendered
+    tables, _, after = rendered.partition("## Notes")
+    for row in (r for r in table["rows"] if r.get("table") == "initialmodel"):
+        im = row["initial_model"]
+        line = next(x for x in tables.splitlines() if x.startswith(f"| {row['dataset']} [") and row["workflow"] in x)
+        if im["relion"]["res_05_A"] is not None:
+            assert f"| {im['relion']['res_05_A']:.2f} {letter} / " in line
+        if im["cross"]["masked_fsc_auc"] is not None:
+            assert f"| {im['cross']['masked_fsc_auc']:.4f} |" in line
+        comparisons = after.partition(f"`{row['id']}`: FSC-AUC of rigidly registered")[2].partition("###")[0]
+        for value in (
+            im["relion"]["fsc_auc"],
+            im["relax"]["fsc_auc"],
+            im["cross"]["fsc_auc"],
+            im["relion"]["masked_fsc_auc"],
+            im["relax"]["masked_fsc_auc"],
+        ):
+            if value is not None:
+                assert f"| {value:.4f} |" in comparisons
+        if im.get("relion_repeat"):
+            assert f"| {im['relion_repeat']['fsc_auc']:.4f} |" in comparisons
+            assert f"RELION repeat X-AUC unmasked {im['relion_repeat']['fsc_auc']:.4f}" in after
 
 
 @pytest.mark.unit
