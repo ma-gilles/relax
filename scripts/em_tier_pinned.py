@@ -36,6 +36,7 @@ TIER_CASES = {
         "k1_coldstart_relion_seeded_debug",
         "k1_os1_coldstart_standalone",
         "k1_gui60_coldstart_standalone",
+        "k1_multioptics_coldstart",
         "k1_perturbreplay",
         "kclass_coldstart",
         "kclass_nonadaptive_replay",

@@ -2,7 +2,7 @@
  "note": "FSC pass criteria of the fast parity cases (relax vs RELION oracle at the same iteration, scripts/em_tier_fsc.py) and of the medium K1 5k end-to-end run; the pinned relax outputs (scripts/em_tier_pinned.py) use pinned_tolerance. Floors: 1 - 2 x max(worst relax deficit, RELION same-command repeat deficit, 5e-5 for FSC-AUC / 1e-4 for min shell); Pmax bound (mean |dPmax| per particle) = 2 x max(relax, RELION repeat, 1e-4). Relax values: main 319cd10 (A100, medium 14375481) and the compact/default arms of speed b1c40f9 (H100, 14375698); RELION: two same-command repeats per fixture (14363910) and the second K4 captures. Evidence: pr179_coordination/test_policy_20260924/threshold_proposal_fast_v3.json.",
  "approved": true,
  "approved_by": "approved by the user 2026-09-24 (v3, including the e2e rule)",
- "resident_rows": "The resident arm is excluded: on k1_os1_coldstart_standalone it measures 0.999258 / dPmax 1.8e-3, outside the RELION repeat band (open bug, speed). Resident rows get their own values once that bug is fixed. k1_multioptics_coldstart is the one resident row admitted early: several optics groups run only on the resident pass 2, so without it multi-optics would have no regression gate; its floors carry a multi-shape gap that speed's texture batch did not close (14406352) and are re-derived after cryoet's multi-shape fix.",
+ "resident_rows": "The resident arm is excluded: on k1_os1_coldstart_standalone it measures 0.999258 / dPmax 1.8e-3, outside the RELION repeat band (open bug, speed). Resident rows get their own values once that bug is fixed. k1_multioptics_coldstart runs only on the resident pass 2 (several optics groups); after cryoet's other-grid fix (00b5277) it meets single-optics floors, so its row is a regular v3 row.",
  "kclass_nonadaptive_replay": "Cross-grid case (os0 run against the os1 oracle): no RELION floor; gated by the pinned relax outputs.",
  "cases": {
   "e2e_k1_5k128_standalone": {
@@ -102,19 +102,18 @@
    }
   },
   "k1_multioptics_coldstart": {
-   "fsc_auc_floor": 0.98613,
-   "min_shell_floor": 0.97529,
-   "pmax_mean_abs_max": 0.00967,
-   "provisional": "provisional: the texture batch did not close the gap (14406352); re-derive after cryoet's multi-shape (other-grid optics group) fix",
+   "fsc_auc_floor": 0.9999,
+   "min_shell_floor": 0.9998,
+   "pmax_mean_abs_max": 0.0002,
    "measured": {
-    "worst_relax_fsc_auc": 0.993064,
-    "worst_relax_min_shell": 0.987647,
-    "relax_pmax_mean_abs": 0.004837,
+    "worst_relax_fsc_auc": 0.9999999946,
+    "worst_relax_min_shell": 0.99999999918,
+    "relax_pmax_mean_abs": 5.35e-06,
     "relion_repeat_fsc_auc": 0.9999999998637347,
     "relion_repeat_min_shell": 0.9999999999302424,
     "relion_repeat_pmax_mean_abs": 1.703333333333834e-06,
-    "source": "job 14406352, two same-code H100 arms (agree to 2e-7), cryoet branch + speed's texture batch a7977c8/0c16b70 and resident native units 3285142, recovar d235417e0; RELION f2c1a3 ini_high 30 oracle and its same-command repeat",
-    "previous": "job 14400789 (pre-texture): 0.993055 / 0.987627 / 0.004894"
+    "source": "landed 00b5277 (cryoet's other-grid fix): Slurm 14419909, one H100 arm from an immutable snapshot (FSC-AUC 0.9999999946, min shell 0.99999999918, mean |dPmax| 5e-6); pre-landing two-arm 14413897 (0a46aeb) mean |dPmax| 5.35e-6 taken as the relax value; RELION f2c1a3 ini_high 30 oracle and its same-command repeat",
+    "previous": "provisional rows from 14400789 (0.98611 / 0.97525 / 0.00979) and 14406352 (0.98613 / 0.97529 / 0.00967) before the other-grid fix"
    }
   },
   "k1_os1_coldstart_standalone": {
