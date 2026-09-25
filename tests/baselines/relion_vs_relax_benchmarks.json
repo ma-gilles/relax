@@ -890,7 +890,8 @@
     "Candidate cand_64499e8 (speed's flip qualification); not relax main. The 10097 flip pair runs on cand_d3d62ca (separate row).",
     "Image I/O: --scratch_dir /tmp on every arm (RELION's default reading from a node-local copy; no pre-read).",
     "Both engines start from relion_refine's inputs only (standalone).",
-    "RELION band (three same-flag RELION runs: this job's RELION arm, repeat 14397251 and speedbench r1 14331583, which read with --preread_images): RELION-RELION merged/halves band FSC-AUC 0.9864-0.9879 / 0.9810-0.9829 / 0.9812-0.9836; relax against the three runs 0.9818-0.9822 / 0.9743-0.9751 / 0.9754-0.9761, below the RELION-RELION band on every metric (by 0.0042 merged, 0.0059/0.0051 halves at the closest run); reported, not gated. relax meets the thresholds against all three. Masked cross-engine 0.9980-0.9981 merged. RELION wall 5140 s (this job) and 5116 s (repeat 14397251, 2-GPU job on another node): relax/RELION 1.06."
+    "RELION band (three same-flag RELION runs: this job's RELION arm, repeat 14397251 and speedbench r1 14331583, which read with --preread_images): RELION-RELION merged/halves band FSC-AUC 0.9864-0.9879 / 0.9810-0.9829 / 0.9812-0.9836; relax against the three runs 0.9818-0.9822 / 0.9743-0.9751 / 0.9754-0.9761, below the RELION-RELION band on every metric (by 0.0042 merged, 0.0059/0.0051 halves at the closest run); reported, not gated. relax meets the thresholds against all three. Masked cross-engine 0.9980-0.9981 merged. RELION wall 5140 s (this job) and 5116 s (repeat 14397251, 2-GPU job on another node): relax/RELION 1.06.",
+    "Masked RELION-RELION band (frozen mask; 4 same-flag RELION runs, 6 pairs incl. the cd26a5e job's arm, masked_relion_pairs_10345_20260925): merged 0.9985-0.9987, halves 0.9972-0.9976 / 0.9973-0.9977; relax masked cross-engine 0.9980-0.9981 / 0.9962-0.9964 / 0.9964-0.9965, below it by 0.0004 merged and 0.0008/0.0008 halves at the closest run (reported, not gated)."
    ],
    "null_reasons": {
     "gt": "real data: no ground truth",
@@ -976,6 +977,210 @@
     },
     {
      "pair": "flip-job RELION arm vs speedbench r1 (--preread_images)",
+     "merged": 0.9864,
+     "half1": 0.9811,
+     "half2": 0.9812
+    },
+    {
+     "pair": "repeat 14397251 vs speedbench r1 (--preread_images)",
+     "merged": 0.9866,
+     "half1": 0.981,
+     "half2": 0.982
+    }
+   ]
+  },
+  {
+   "id": "empiar10345_k1_autorefine_flipqual_cd26a5e",
+   "section": "real",
+   "dataset": "EMPIAR-10345 (flip pair, cd26a5e)",
+   "empiar_id": "10345",
+   "particles": 84266,
+   "box": 300,
+   "pixel_size_A": 1.3450001,
+   "symmetry": "C1",
+   "classes": 1,
+   "workflow": "auto-refine K=1",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 build_patched (commit f2c1a38), relion_refine_mpi 3 ranks x 4 threads, one GPU, --scratch_dir",
+    "resolution_A": 8.235,
+    "resolution_definition": "scorecard_band",
+    "relion_reported_resolution_A": null,
+    "masked_resolution_A": 5.309,
+    "wall_s": 5102,
+    "wall_definition": "job-script wall of srun relion_refine_mpi (TERMINAL.json)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 21,
+    "jobs": [
+     "14407833"
+    ],
+    "masked_band_auc": 0.9272,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen"
+   },
+   "relax": {
+    "source_sha": "cd26a5e41eac60800bc52817f19fe26ff0379504",
+    "source_repo": "relax main",
+    "resolution_A": 8.235,
+    "resolution_definition": "scorecard_band",
+    "masked_resolution_A": 5.309,
+    "wall_s": 5138,
+    "wall_definition": "job-script wall of srun python relax_run.py end to end (TERMINAL.json)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 21,
+    "jobs": [
+     "14407833"
+    ],
+    "masked_band_auc": 0.9273,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen"
+   },
+   "gt": null,
+   "cross_engine": "scorecard PASS: merged band FSC-AUC 0.9825, halves 0.9750/0.9764 vs this job's RELION arm",
+   "cross_engine_masked_band_auc": 0.998,
+   "time_ratio_relax_over_relion": 1.01,
+   "matched": "yes",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": true
+   },
+   "notes": [
+    "relax main cd26a5e (RELION native FFT units in both engines, float32 projector texture, resident symmetry and bitsets, pool-aware stream budget) with speed's resident_env_v2; follows the 64499e8 flip row on the same RELION runs.",
+    "Image I/O: --scratch_dir /tmp on every arm (RELION's default reading from a node-local copy; no pre-read).",
+    "Both engines start from relion_refine's inputs only (standalone).",
+    "Gap to the RELION band not closed: relax against the four RELION runs merged 0.9819-0.9825, halves 0.9738-0.9750 / 0.9759-0.9765; RELION-RELION (6 pairs) merged 0.9864-0.9882, halves 0.9810-0.9832 / 0.9812-0.9840; the 64499e8 row had merged 0.9818-0.9822 against three of these runs. relax meets the thresholds against all four.",
+    "Masked RELION-RELION band (frozen mask; 4 same-flag RELION runs, 6 pairs incl. the cd26a5e job's arm, masked_relion_pairs_10345_20260925): merged 0.9985-0.9987, halves 0.9972-0.9976 / 0.9973-0.9977; relax masked cross-engine 0.9980-0.9981 / 0.9962-0.9964 / 0.9965-0.9966, below it by 0.0004 merged and 0.0008/0.0007 halves at the closest run (reported, not gated).",
+    "Own quality equals RELION's: 8.235 A scorecard band both; masked 5.309 A both, masked band FSC-AUC relax 0.9273, RELION 0.9272."
+   ],
+   "null_reasons": {
+    "gt": "real data: no ground truth",
+    "relion.relion_reported_resolution_A": "not read for this pair"
+   },
+   "evidence": {
+    "run_roots": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/flipqual_cd26a5e_10345_20260925/relion",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/flipqual_cd26a5e_10345_20260925/relax_res",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/flipqual_64499e8_20260924/10345/relion",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relion_repeats_realdata_20260924/10345_r_rep_14397251",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speedbench_20260923/runs/10345_relion_r1"
+    ],
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_cd26a5e_10345_20260925/flipqual_cd26a5e_10345.json",
+    "relion_band_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_cd26a5e_10345_20260925/flipqual_cd26a5e_10345.json",
+    "masked_fsc_json": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_cd26a5e_10345_20260925/flipqual_cd26a5e_10345_masked/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_cd26a5e_10345_20260925/masked_vs_64499e8/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_cd26a5e_10345_20260925/masked_vs_rep/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_cd26a5e_10345_20260925/masked_vs_sb/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/masked_relion_pairs_10345_20260925/64499e8_vs_rep/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/masked_relion_pairs_10345_20260925/64499e8_vs_sb/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/masked_relion_pairs_10345_20260925/cd26a5e_vs_64499e8/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/masked_relion_pairs_10345_20260925/cd26a5e_vs_rep/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/masked_relion_pairs_10345_20260925/cd26a5e_vs_sb/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/masked_relion_pairs_10345_20260925/rep_vs_sb/masked_fsc.json"
+    ]
+   },
+   "date": "2026-09-25",
+   "history": [],
+   "time_check": {
+    "a": "RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs). relax: 1 H100, one process, 12 CPUs. Both arms in one --gres=gpu:h100:N job on the same node, run simultaneously; no --exclusive.",
+    "b": "relax: main cd26a5e with env RELAX_USE_FLOAT64_SCORING=0, RELAX_USE_FLOAT64_PROJECTIONS=0, RELAX_RELION_X_HALF_MSTEP_DOUBLE=0, RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=1, RELAX_K1_RELION_WAVG_SEQUENTIAL_CUDA=1, RELAX_EM_BPREF_FINITE_GUARD=1, RELAX_SPARSE_PASS2_RESIDENT=1, RELAX_COARSE_SIGNIFICANCE_DEVICE=1, RELAX_LOCAL_SEARCH_RESIDENT=1, RELAX_SPARSE_PASS2_RESIDENT_OPERANDS=1, RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT=1, RELAX_COARSE_PAD_FINAL_IMAGE_BATCH=1, RELAX_EM_JIT_STAGE_GLUE=1, RELAX_LOCAL_IMAGE_CAPACITY_LADDER=16,32,64,128,256; standalone start-up (relax defaults); no timing, capture, replay or dump options.",
+    "c": "Both: job-script wall around the whole process (TERMINAL.json wall_s), including start-up, particle copy to --scratch_dir, compilation and final writes.",
+    "d": "RELION and relax 14407833 della-h19g2 2x H100 80GB HBM3 (2026-09-25)"
+   },
+   "mask": {
+    "dataset": "empiar10345_c1",
+    "sha256": "f8c6764657f894224b4196ec7f3eee06b9e8f87cdecd6ebc5cbb84b2493e3fd5"
+   },
+   "cross_engine_by_relion_run": [
+    {
+     "run": "this job's RELION arm",
+     "jobs": [
+      "14407833"
+     ],
+     "merged": 0.9825,
+     "half1": 0.975,
+     "half2": 0.9764,
+     "masked_merged": 0.998,
+     "masked_half1": 0.9964,
+     "masked_half2": 0.9965,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_cd26a5e_10345_20260925/flipqual_cd26a5e_10345_masked/masked_fsc.json"
+    },
+    {
+     "run": "64499e8 flip job's RELION arm",
+     "jobs": [
+      "14397074"
+     ],
+     "merged": 0.9824,
+     "half1": 0.9747,
+     "half2": 0.9765,
+     "masked_merged": 0.9981,
+     "masked_half1": 0.9964,
+     "masked_half2": 0.9966,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_cd26a5e_10345_20260925/masked_vs_64499e8/masked_fsc.json"
+    },
+    {
+     "run": "repeat 14397251",
+     "jobs": [
+      "14397251"
+     ],
+     "merged": 0.9823,
+     "half1": 0.9748,
+     "half2": 0.9761,
+     "masked_merged": 0.9981,
+     "masked_half1": 0.9964,
+     "masked_half2": 0.9966,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_cd26a5e_10345_20260925/masked_vs_rep/masked_fsc.json"
+    },
+    {
+     "run": "speedbench r1 (--preread_images)",
+     "jobs": [
+      "14331583"
+     ],
+     "merged": 0.9819,
+     "half1": 0.9738,
+     "half2": 0.9759,
+     "masked_merged": 0.998,
+     "masked_half1": 0.9962,
+     "masked_half2": 0.9965,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_cd26a5e_10345_20260925/masked_vs_sb/masked_fsc.json"
+    }
+   ],
+   "relion_vs_relion": [
+    {
+     "pair": "this job's RELION arm vs 64499e8 flip job's RELION arm",
+     "merged": 0.9871,
+     "half1": 0.9824,
+     "half2": 0.982
+    },
+    {
+     "pair": "this job's RELION arm vs repeat 14397251",
+     "merged": 0.987,
+     "half1": 0.9823,
+     "half2": 0.9817
+    },
+    {
+     "pair": "this job's RELION arm vs speedbench r1 (--preread_images)",
+     "merged": 0.9882,
+     "half1": 0.9832,
+     "half2": 0.984
+    },
+    {
+     "pair": "64499e8 flip job's RELION arm vs repeat 14397251",
+     "merged": 0.9879,
+     "half1": 0.9829,
+     "half2": 0.9836
+    },
+    {
+     "pair": "64499e8 flip job's RELION arm vs speedbench r1 (--preread_images)",
      "merged": 0.9864,
      "half1": 0.9811,
      "half2": 0.9812
