@@ -1,4 +1,4 @@
-"""The RELION-vs-relax benchmark Markdown stays in sync with its JSON baseline."""
+"""The RELION-vs-relax benchmark pages (results and provenance) stay in sync with their JSON baseline."""
 
 import json
 
@@ -7,16 +7,32 @@ import pytest
 from scripts.render_benchmark_table import (
     DEFAULT_JSON,
     DEFAULT_MARKDOWN,
+    DEFAULT_PROVENANCE,
     TABLE_HEADER,
     load_and_validate,
     render_markdown,
+    render_provenance,
 )
 
 
 @pytest.mark.unit
 def test_markdown_matches_json_baseline():
-    rendered = render_markdown(load_and_validate(DEFAULT_JSON))
-    assert DEFAULT_MARKDOWN.read_text() == rendered, "run python scripts/render_benchmark_table.py"
+    table = load_and_validate(DEFAULT_JSON)
+    assert DEFAULT_MARKDOWN.read_text() == render_markdown(table), "run python scripts/render_benchmark_table.py"
+    assert DEFAULT_PROVENANCE.read_text() == render_provenance(table), "run python scripts/render_benchmark_table.py"
+
+
+@pytest.mark.unit
+def test_results_page_holds_tables_and_links_every_row_to_its_provenance():
+    """The results page carries no per-row notes; each row links to its anchor on the provenance page."""
+    table = load_and_validate(DEFAULT_JSON)
+    results = render_markdown(table)
+    provenance = render_provenance(table)
+    assert "## Notes" not in results and "Jobs:" not in results
+    for row in table["rows"]:
+        assert f"[notes](relion_vs_relax_provenance.md#{row['id']})" in results
+        assert '<a id="' + row["id"] + '"></a>' in provenance
+        assert f"`{row['id']}`" in provenance
 
 
 @pytest.mark.unit
@@ -64,10 +80,9 @@ def test_masked_value_needs_the_registered_frozen_mask(tmp_path):
 def test_result_marker_and_per_reference_tables_render(tmp_path):
     table = json.loads(DEFAULT_JSON.read_text())
     row = next(row for row in table["rows"] if row.get("cross_engine_by_relion_run") and row.get("result_marker"))
-    rendered = render_markdown(load_and_validate(DEFAULT_JSON))
+    rendered = render_provenance(load_and_validate(DEFAULT_JSON))
     symbol = row["result_marker"]["symbol"].replace("*", "\\*")
     assert f"{symbol} {row['dataset']}: {row['result_marker']['note']}" in rendered
-    assert "## Comparisons against every RELION run" in rendered
     for entry in row["cross_engine_by_relion_run"]:
         assert f"| {entry['run']} | {', '.join(entry['jobs'])} | {entry['merged']:.4f} |" in rendered
     for entry in row["relion_vs_relion"]:
@@ -114,7 +129,7 @@ def test_initialmodel_rows_render_in_their_own_sections():
     assert "## InitialModel (VDAM): synthetic data" in rendered
     head, _, rest = rendered.partition("## InitialModel (VDAM)")
     for row in im_rows:
-        assert f"`{row['id']}`" not in head
+        assert f"#{row['id']})" not in head and f"#{row['id']})" in rest
 
 
 @pytest.mark.unit
@@ -122,18 +137,18 @@ def test_initialmodel_tables_use_the_em_columns_and_keep_every_auc():
     """VDAM tables share the EM header; FSC 0.5 against the reference fills the resolution cells, masked X-AUC its
     column, and the reference FSC-AUCs, unmasked X-AUC and RELION-repeat X-AUC move to the note and comparisons."""
     table = load_and_validate(DEFAULT_JSON)
-    rendered = render_markdown(table)
+    tables = render_markdown(table)
+    after = render_provenance(table)
     letters = {name: chr(ord("a") + i) for i, name in enumerate(table["resolution_definitions"])}
     letter = letters["vdam_fsc05_vs_reference"]
     header = TABLE_HEADER[0]
     for title in ("## InitialModel (VDAM): synthetic data", "## InitialModel (VDAM): real data"):
-        section = rendered.partition(title)[2]
+        section = tables.partition(title)[2]
         assert section.lstrip("\n").startswith(header)
-    assert "Ref FSC-AUC RELION / relax" not in rendered
-    tables, _, after = rendered.partition("## Notes")
+    assert "Ref FSC-AUC RELION / relax" not in tables
     for row in (r for r in table["rows"] if r.get("table") == "initialmodel"):
         im = row["initial_model"]
-        line = next(x for x in tables.splitlines() if x.startswith(f"| {row['dataset']} [") and row["workflow"] in x)
+        line = next(x for x in tables.splitlines() if f"#{row['id']})" in x)
         if im["relion"]["res_05_A"] is not None:
             assert f"| {im['relion']['res_05_A']:.2f} {letter} / " in line
         if im["cross"]["masked_fsc_auc"] is not None:
@@ -186,7 +201,7 @@ def test_row_provenance_renders_in_the_note():
         "maps": {"merged": {"corrected": "/c/final_merged.mrc", "corrected_sha256": "a" * 64}},
     }
     table["rows"] = [row]
-    rendered = render_markdown(table)
+    rendered = render_provenance(table)
     assert (
         "Provenance: regenerated post hoc with RELION griddingCorrect on the saved final maps; "
         "relax merged `/c/final_merged.mrc` (sha256 `aaaaaaaaaaaaaaaa`)." in rendered

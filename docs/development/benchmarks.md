@@ -7,8 +7,10 @@ workload is reproduced at the intended source.
 
 The standing RELION-vs-relax resolution and wall-time table is
 [docs/benchmarks/relion_vs_relax.md](../benchmarks/relion_vs_relax.md), generated from
-`tests/baselines/relion_vs_relax_benchmarks.json` by `scripts/render_benchmark_table.py`.
-Update the JSON and regenerate it when a baseline changes.
+`tests/baselines/relion_vs_relax_benchmarks.json` by `scripts/render_benchmark_table.py`,
+together with its per-row provenance page
+[docs/benchmarks/relion_vs_relax_provenance.md](../benchmarks/relion_vs_relax_provenance.md).
+Update the JSON and regenerate both pages when a baseline changes.
 
 ## Keep definitions, runs and reports separate
 
