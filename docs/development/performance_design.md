@@ -42,11 +42,63 @@ temporaries, other live buffers and allocator headroom.
 3. Profile comparable stages in both codes, separating first-use compilation
    from repeated work. Mismatched probes explain mechanisms, not RELION ratios.
 4. Change one bottleneck; run a focused numerical check and the same short replay
-   against an immutable control. Use available local GPUs for bounded probes
-   under current device rules; matched Slurm pairs for long comparisons.
+   against an immutable control. Run probes on Slurm under the current device
+   rules (local GPUs only for the short smoke tier when the queue is busy), and
+   matched Slurm pairs for long comparisons.
 5. Check representative affected regimes. Reserve full dataset qualification
    for promising candidates, using uninstrumented matched timing runs. Short
    tests accelerate this loop; they do not replace scientific gates.
+
+## Measure against RELION fairly
+
+A speed ratio is only meaningful when both arms do the same work under the same
+conditions. Mismatched setups have produced ratios that were wrong by 3-5x.
+
+- **One job, same hardware, own CPUs.** Run RELION and relax in one Slurm job
+  with one GPU each (`--gres=gpu:2`), same GPU model, and give each arm its own
+  step and CPUs (`srun --exact -c N`). Arms sharing one task's CPUs inflated
+  relax's VDAM wall about 3.5x; arms on different nodes or dates are not paired.
+- **Same image I/O on both arms.** Use RELION's default reading, or stage both to
+  node-local disk (`--scratch_dir`). `--preread_images` made RELION 4-6x slower
+  per iteration on EMPIAR-10073, because every MPI follower holds the whole stack.
+- **Same command and defaults.** Match RELION GUI defaults ([relion_defaults](relion_defaults.md)),
+  including `--ini_high`, sampling and `--firstiter_cc`; a speed or quality gap
+  under different settings says nothing about the engines.
+- **Report the per-iteration split**, not only the wall: global iterations, local
+  iterations and the final all-data pass behave differently, and the whole-run
+  ratio hides where the time goes.
+
+## Lessons from the device-resident K=1 engine
+
+The resident engine took K=1 auto-refine from about 3-5x RELION's wall to
+0.65-1.09x at equal quality (evidence: the timing-controlled rows in
+[the benchmark tables](../benchmarks/relion_vs_relax.md) and
+[em_status](em_status.md)). What mattered:
+
+- **Keep candidates, accumulators and statistics on the device across a pass.**
+  The previous engine's cost was host round trips, per-bucket eager dispatch and
+  per-particle launches, not GPU arithmetic.
+- **Use RELION's own GPU arithmetic path.** RELION's float32 texture projection
+  was both faster and closer to RELION than a complex128 JAX fallback. Check which
+  path actually ran (log it); a silent fallback cost a 2x slowdown and a 1e-4
+  accuracy gap before anyone noticed.
+- **Stream large per-iteration caches.** Stream what does not fit (chunk-local
+  projections at high angular sampling) instead of caching it, as RELION does.
+- **Budget memory from what is actually live.** Count padded copies and operands
+  allocated after the free-memory reading, and read headroom from the JAX
+  allocator pool, not only the driver's free memory: a grown pool looks "used" to
+  `nvidia-smi`. A one-iteration replay starts with an empty pool, so validate
+  memory budgets on a full run.
+- **Keep shapes stable.** Recompilation for every new image count or current size
+  dominated K>1 VDAM (about 21k compiles, 40% of the wall); a persistent compile
+  cache does not help when shapes keep changing. Fixed capacity ladders, host-side
+  slicing and fused gather programs remove it.
+- **Remove per-call synchronization.** Rebuilding a texture and synchronizing the
+  stream on every call left the GPU idle half the time; reuse stream-owned
+  resources.
+- **Default-mode fallbacks must be visible.** When a fast path falls back to an
+  older engine, log the reason, record the engine used per iteration in the
+  results, and make tests assert the intended engine ran.
 
 ## Choose the implementation layer
 
