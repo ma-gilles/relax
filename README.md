@@ -49,3 +49,9 @@ relax build_relion_bind
 RELION vs relax resolution and wall time for every synthetic and real dataset run: [docs/benchmarks/relion_vs_relax.md](docs/benchmarks/relion_vs_relax.md).
 
 License: GPL-2.0-or-later
+
+## Contribute?
+
+Want to contribute? Send me an email `gilles@princeton.edu` 
+
+Want a feature imported from RELION? Open an issue.
