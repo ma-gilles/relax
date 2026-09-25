@@ -711,6 +711,17 @@ def compute_relion_projector_projections_block(
     zero_rows = relion_kernel_zero_rows(
         image_size, resolved_output_size, runtime_r_max if projector_capacity else int(r_max), relion_kernel
     )
+    if relion_kernel == "coarse" and zero_rows is not None and not isinstance(rotations_block, jax.core.Tracer):
+        from relax.helpers.optics_scale import coarse_rows_wrap_inside
+
+        # Other-grid rotations carry 1 / s (applyScaleDifference).
+        scale = 1.0 / float(np.linalg.norm(np.asarray(rotations_block[0, 0], dtype=np.float64)))
+        if coarse_rows_wrap_inside(resolved_output_size, int(r_max), scale):
+            raise NotImplementedError(
+                f"a {resolved_output_size} px coarse window at scale {scale:.3f} lies between 2 r_max and 2 s r_max "
+                f"(r_max {int(r_max)}): RELION's coarse kernel projects its wrapped outer rows there "
+                "(diff2.cuh:86-90), which only the fused coarse scorer reproduces so far"
+            )
     if persistent_texture is not None:
         if projector_capacity or runtime_r_max is not None or image_r_max is not None:
             raise ValueError("persistent texture cannot use the runtime capacity/radius route")

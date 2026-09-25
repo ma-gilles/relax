@@ -90,8 +90,11 @@ def make_shape_classes(datasets_and_indices, *, ref_box, ref_pixel):
         if scale >= math.sqrt(2.0):
             raise NotImplementedError(
                 f"an optics group of {box} px at {pixel} A spans {scale:.3f} times the reference field of view "
-                f"({ref_box} px at {ref_pixel} A); from sqrt(2) on RELION's accelerated kernels project moved "
-                "pixels there. List the optics group with the largest box x pixel size first."
+                f"({ref_box} px at {ref_pixel} A). From sqrt(2) on, RELION's fine and weighted-sum kernels project "
+                "the pixel (maxR, i) for every image row i beyond the model radius, and shift the image at that "
+                "pixel too (acc/cuda/cuda_kernels/diff2.cuh:494-530, wavg.cuh:81-86), a RELION defect relax will "
+                "reproduce with the S4.2 scorer changes. Until then, list the optics group with the largest "
+                "box x pixel size first."
             )
         classes.append(
             ShapeClass(
@@ -478,6 +481,28 @@ def merge_class_results(results, classes, n_half, ref_box):
         mstep_full_half_axis=first.mstep_full_half_axis,
         mstep_accumulator_shape=first.mstep_accumulator_shape,
     )
+
+
+def require_exact_local_parent_windows(kwargs) -> None:
+    """Refuse a local search whose parent pass would need RELION's wrapped coarse rows.
+
+    The local parent pass (RELION's pass 1) projects in Python and zeroes the rows beyond
+    ``maxR``. That is RELION's coarse kernel unless the class's pass-1 window lies strictly
+    between ``2 r_max`` and about ``2 s r_max`` (:func:`relax.helpers.optics_scale.coarse_rows_wrap_inside`).
+    """
+
+    half = kwargs["experiment_dataset"]
+    ref_box = int(half.image_shape[0])
+    reference_size = kwargs.get("cs_for_engine") or ref_box
+    for shape_class in half.classes:
+        window = class_kwargs(kwargs, shape_class, half.n_units).get("local_pass1_current_size") or shape_class.box_size
+        if optics_scale.coarse_rows_wrap_inside(window, int(reference_size) // 2, shape_class.scale):
+            raise NotImplementedError(
+                f"optics group class of {shape_class.box_size} px at scale {shape_class.scale:.3f}: its local pass-1 "
+                f"window {window} lies between 2 r_max and 2 s r_max (r_max {int(reference_size) // 2}), where "
+                "RELION's coarse kernel projects its wrapped outer rows (diff2.cuh:86-90). Only the fused coarse "
+                "scorer reproduces that so far."
+            )
 
 
 def score_half_by_shape(score_fn, kwargs):

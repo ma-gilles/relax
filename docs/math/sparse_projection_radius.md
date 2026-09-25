@@ -63,7 +63,13 @@ is zero. This holds even where the pixel's own rotated radius is inside the sphe
 at \(|k|/s<r_{\max}\). Relax zeros those rows after projection. The coarse kernel zeros
 rows \(\mathrm{maxR}<\text{label}\le\mathrm{imgY}/2\); the fine kernels zero rows
 \(|\text{label}|>\mathrm{maxR}\). The fused coarse CUDA scorer wraps its rows at maxR
-as RELION does. Before this rule, the relabelled rows held nonzero reference values
+as RELION does, for both the projection and the image shift. The coarse zeros are
+RELION's only when the window is at least about \(2s\,\mathrm{maxR}\). A coarse
+window strictly between \(2\,\mathrm{maxR}\) and that bound makes RELION score the
+wrapped rows with nonzero references
+([`coarse_rows_wrap_inside`](../../relax/helpers/optics_scale.py)). The non-fused
+coarse projection and the local parent pass refuse that band; only the fused scorer
+reproduces it. Before this rule, the relabelled rows held nonzero reference values
 and the other-grid group's Pmax moved by about 0.01 per particle. Groups at
 \(s\ge\sqrt2\), where the moved fine pixel can fall inside the sphere, are refused.
 The local search passes `projection_relion_kernel="coarse"` for its parent pass (RELION's

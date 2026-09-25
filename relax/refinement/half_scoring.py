@@ -928,9 +928,10 @@ def _score_half_dense(**kwargs) -> HalfScoreResult:
 def _score_half_local(**kwargs) -> HalfScoreResult:
     """Local-search E+M scoring for one half; several image shapes run per shape class."""
 
-    from relax.refinement.optics_shapes import MultiShapeHalf, score_half_by_shape
+    from relax.refinement.optics_shapes import MultiShapeHalf, require_exact_local_parent_windows, score_half_by_shape
 
     if isinstance(kwargs["experiment_dataset"], MultiShapeHalf):
+        require_exact_local_parent_windows(kwargs)
         return score_half_by_shape(_score_half_local_one_shape, kwargs)
     kwargs.pop("noise_radial_k", None)
     return _score_half_local_one_shape(**kwargs)

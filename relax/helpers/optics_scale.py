@@ -36,6 +36,22 @@ def group_current_size(current_size, box_size, scale) -> int:
     return int(min(int(box_size), 2 * math.ceil(0.5 * float(scale) * int(current_size))))
 
 
+def coarse_rows_wrap_inside(window: int, r_max: int, scale: float) -> bool:
+    """Whether RELION's coarse kernel projects rows beyond ``maxR`` inside the model sphere.
+
+    The coarse diff2 kernel relabels FFTW row ``i > maxR`` as ``i - imgY`` for the projection and
+    the image shift alike (acc/cuda/cuda_kernels/diff2.cuh:86-90, 163-164). The relabelled pixel
+    lies outside the sphere of radius ``r_max`` exactly when ``window / 2`` exceeds
+    ``s * r_max``, allowing for the integer-truncated radius test. A coarse window strictly
+    between ``2 r_max`` and about ``2 s r_max`` makes RELION score those rows with nonzero
+    references and relabelled phases. The fused coarse CUDA scorer reproduces that; the other
+    coarse paths zero the rows (:func:`relax.helpers.projection.relion_kernel_zero_rows`).
+    """
+
+    half = int(window) // 2
+    return half > int(r_max) and half < float(scale) * math.sqrt(int(r_max) ** 2 + 1)
+
+
 def group_coarse_size(coarse_resolution_pixels, current_size_g, box_size, scale, max_coarse_size=None) -> int:
     """``image_coarse_size[g]`` for adaptive oversampling (``ml_optimiser.cpp:5761-5777``).
 

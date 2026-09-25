@@ -68,6 +68,23 @@ of three same-seed RELION repeats, comparable to the 8e-4 difference between the
 two relax runs (A100 and H100); the cause is unexplained. Evidence:
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclassstandalone_20260923/band50k/GATE.json`.
 
+Multi-optics on another grid (2026-09-25): an optics group whose box x pixel size
+exceeds the reference's (scale s > 1) gets a Fourier window wider than the model
+sphere. RELION's accelerated kernels relabel the image rows beyond
+maxR = min(PPref.r_max, imgX - 1): the coarse diff2 kernel wraps them negative
+(acc/cuda/cuda_kernels/diff2.cuh:86-90, 163-164), and the fine diff2 and wavg kernels
+move them to the pixel (maxR, i) for both the projection and the image shift
+(diff2.cuh:494-530, wavg.cuh:81-86). relax reproduces this
+([sparse_projection_radius.md](../math/sparse_projection_radius.md)). With it, the
+S3b fast case matches RELION to 1e-8. OPEN, a RELION defect not yet reproduced:
+for s >= sqrt(2) the moved fine pixel falls inside the sphere and RELION scores a
+wrong pixel at a wrong phase. relax refuses such groups (list the widest optics
+group first); the reproduction is planned inside the S4.2 scorer changes
+(MANAGER_DECISIONS items 11 and 13). Also OPEN: a coarse window strictly between
+2 maxR and about 2 s maxR, where RELION's wrapped coarse rows land inside the
+sphere. Only the fused coarse scorer, the global default, reproduces it. The
+non-fused coarse projection and the local parent pass refuse it.
+
 VDAM K>1 (2026-09-25): relax main 237e76b normalizes sigma2_noise, pdf_class,
 sigma2_offset and ave_Pmax by RELION's retained (significant-pruned) class mass;
 it used the full mass before, which moved every K>1 trajectory from iteration 1.

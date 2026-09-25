@@ -87,3 +87,38 @@ def test_projection_block_applies_the_named_kernels_rule():
     # The coarse kernel still projects the negative rows beyond maxR; both keep the rest unchanged.
     assert coarse[:, label < -8].any()
     assert_matches(fine[:, np.abs(label) <= 8], coarse[:, np.abs(label) <= 8])
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("scale", [1.12, 1.3])
+def test_coarse_band_is_where_relion_projects_wrapped_rows(scale):
+    from relax.helpers.optics_scale import coarse_rows_wrap_inside
+
+    r_max = 20
+    matrix = Rotation.random(1, random_state=2).as_matrix()[0] / scale
+    for window in range(2 * r_max - 4, 2 * int(np.ceil(scale * r_max)) + 6, 2):
+        max_r = min(r_max, window // 2)
+        wrapped_inside = any(
+            _acc_kernel_keeps(*_acc_kernel_coordinate(i, x, window, max_r, "coarse"), matrix, max_r, 2)
+            for i in range(max_r + 1, window // 2 + 1)
+            for x in range(window // 2 + 1)
+        )
+        # The band is conservative about the rotation: it holds for the x = 0 pixel of any rotation.
+        if wrapped_inside:
+            assert coarse_rows_wrap_inside(window, r_max, scale), window
+        if not coarse_rows_wrap_inside(window, r_max, scale):
+            assert not wrapped_inside, window
+
+
+@pytest.mark.unit
+def test_non_fused_coarse_projection_refuses_the_band():
+    rng = np.random.default_rng(0)
+    projector = jnp.asarray(rng.standard_normal((2 * 8 + 3, 2 * 8 + 3, 10)) + 0j, dtype=jnp.complex128)
+    kwargs = dict(r_max=8, padding_factor=1, centered_rows=True, relion_texture_interp=False, relion_kernel="coarse")
+    rotations = Rotation.random(2, random_state=5).as_matrix()
+    # 18 px at s = 1.3: 9 > 8 and 9 < 1.3 * sqrt(65).
+    with pytest.raises(NotImplementedError, match="fused coarse scorer"):
+        compute_relion_projector_projections_block(projector, jnp.asarray(rotations / 1.3), (18, 18), projector_output_size=18, **kwargs)
+    # The same window unscaled, and a window past the band, are exact.
+    compute_relion_projector_projections_block(projector, jnp.asarray(rotations), (18, 18), projector_output_size=18, **kwargs)
+    compute_relion_projector_projections_block(projector, jnp.asarray(rotations / 1.1), (20, 20), projector_output_size=20, **kwargs)
