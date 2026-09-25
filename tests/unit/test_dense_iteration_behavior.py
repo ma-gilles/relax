@@ -255,8 +255,6 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
         local_parent_oversampling_order=0,
         local_search_translation_prior_mode="coarse",
         replay_prior_translations=None,
-        class_log_priors=None,
-        k_class_enabled=False,
         collect_local_search_profile=False,
         diagnostic_score_only=False,
         safe_batch_sizes=lambda *_args, **_kwargs: (2, 3),
@@ -378,8 +376,6 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         local_parent_oversampling_order=1,
         local_search_translation_prior_mode="coarse",
         replay_prior_translations=None,
-        class_log_priors=None,
-        k_class_enabled=False,
         collect_local_search_profile=False,
         diagnostic_score_only=False,
         safe_batch_sizes=lambda *_args, **_kwargs: (2, 3),
@@ -413,90 +409,6 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
     assert result.Ft_ctf == "fine_ft_ctf"
     assert result.noise_stats == "fine_noise"
     assert_matches(result.significant_counts, parent_counts)
-
-
-def test_kclass_local_search_passes_relion_x_half_mstep(monkeypatch):
-    captured = {}
-
-    class _Stats:
-        max_posterior_per_image = np.array([1.0], dtype=np.float32)
-        rotation_posterior_sums = np.array([1.0], dtype=np.float32)
-
-    def fake_run_local_search_iteration(*_args, **kwargs):
-        best_rotation = np.array(
-            [
-                [0.93629336, -0.27509585, 0.21835066],
-                [0.28962948, 0.95642509, -0.03695701],
-                [-0.19866933, 0.09784340, 0.97517033],
-            ],
-            dtype=np.float32,
-        )
-        captured.update(kwargs)
-        current_size_shape = (19, 19, 19)
-        return _LocalSearchIterationResult(
-            Ft_y=np.zeros((2, int(np.prod(current_size_shape))), dtype=np.complex64),
-            Ft_ctf=np.zeros((2, int(np.prod(current_size_shape))), dtype=np.float32),
-            hard_assignment=np.array([0], dtype=np.int32),
-            best_pose_rotations=best_rotation[None, :, :],
-            best_pose_translations=np.zeros((1, 2), dtype=np.float32),
-            relion_stats=_Stats(),
-            noise_stats="noise",
-            class_assignments=np.array([1], dtype=np.int32),
-            class_posterior_sums=np.array([0.25, 0.75], dtype=np.float64),
-            class_full_posterior_sums=np.array([0.2, 0.8], dtype=np.float64),
-        )
-
-    monkeypatch.setattr(half_scoring, "_k_class_relion_x_half_mstep_enabled", lambda: True)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
-
-    result = half_scoring._score_half_local(
-        k=0,
-        experiment_dataset=SimpleNamespace(
-            voxel_size=1.0,
-            image_shape=(16, 16),
-            volume_shape=(16, 16, 16),
-        ),
-        means_k="mean",
-        noise_variance_k="noise_variance",
-        previous_best_rotation_eulers_k=np.zeros((1, 3), dtype=np.float32),
-        local_search_rotations=np.eye(3, dtype=np.float32)[None, :, :],
-        local_search_order=0,
-        sigma_rot=0.1,
-        sigma_psi=0.1,
-        current_translations=np.zeros((1, 2), dtype=np.float32),
-        base_translations=np.zeros((1, 2), dtype=np.float32),
-        trans_prior_center=np.zeros((1, 2), dtype=np.float32),
-        trans_prior_center_for_engine=np.zeros((1, 2), dtype=np.float32),
-        current_sigma_offset_angstrom=1.0,
-        disc_type="linear_interp",
-        cs_for_engine=8,
-        model_current_size_for_engine=8,
-        local_pass1_current_size=8,
-        image_corrections_k=None,
-        scale_corrections_k=None,
-        translation_search_base=None,
-        disable_adjoint_y=False,
-        disable_adjoint_ctf=False,
-        max_significants=-1,
-        iteration=0,
-        save_intermediates_dir=None,
-        local_search_random_perturbation=0.0,
-        local_search_angular_sampling_deg=None,
-        local_parent_oversampling_order=0,
-        local_search_translation_prior_mode="coarse",
-        replay_prior_translations=None,
-        class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
-        k_class_enabled=True,
-        collect_local_search_profile=False,
-        diagnostic_score_only=False,
-        safe_batch_sizes=lambda *_args, **_kwargs: (2, 3),
-        outputs=score_outputs.PerHalfOutputs(),
-        local_profile_history=[],
-    )
-
-    assert captured["mstep_relion_x_half"] is True
-    assert result.mstep_full_half_axis == 0
-    assert result.mstep_accumulator_shape == (19, 19, 19)
 
 
 def test_native_final_perturbation_uses_active_local_order_but_preserves_global_order():

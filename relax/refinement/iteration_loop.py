@@ -1869,6 +1869,10 @@ def refine_single_volume(
         use_local = state.do_local_search and all(
             eulers is not None for eulers in relion_half_inputs.previous_best_rotation_eulers
         )
+        if use_local and k_class_enabled:
+            # Class3D keeps global searches: RELION switches to local searches from the
+            # HEALPix order only under auto-refine (ml_optimiser.cpp:2541-2565, 3936-3938).
+            raise RuntimeError("K>1 (Class3D) reached local angular searches; RELION never does")
         adaptive_pass1_source_eulers = np.asarray(effective_rotation_eulers, dtype=np.float64)
         # --- Apply RELION SamplingPerturbation to the trial grid for this iter ---
         # healpix_sampling.cpp:1909-1934 (rotations) + 1810-1820 (translations)
@@ -2743,8 +2747,6 @@ def refine_single_volume(
                     local_parent_oversampling_order=local_parent_oversampling_order,
                     local_search_translation_prior_mode=local_search.local_search_translation_prior_mode,
                     replay_prior_translations=_replay_prior_translations,
-                    class_log_priors=class_log_priors,
-                    k_class_enabled=k_class_enabled,
                     collect_local_search_profile=collect_local_search_profile,
                     diagnostic_score_only=bool(debug.stop_after_local_search_score_only),
                     safe_batch_sizes=safe_batch_sizes_for_half,
@@ -5061,8 +5063,6 @@ def refine_single_volume(
                 local_parent_oversampling_order=final_local_parent_oversampling_order,
                 local_search_translation_prior_mode=local_search.local_search_translation_prior_mode,
                 replay_prior_translations=None,
-                class_log_priors=class_log_priors,
-                k_class_enabled=False,
                 collect_local_search_profile=collect_local_search_profile,
                 diagnostic_score_only=False,
                 safe_batch_sizes=_safe_batch_sizes,

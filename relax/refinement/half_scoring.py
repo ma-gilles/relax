@@ -33,7 +33,6 @@ from relax.dense.score_outputs import (
 from relax.dense.scoring_policy import (
     _DENSE_EM_STATIC_KWARGS,
     _K1_RELION_X_HALF_MSTEP_ENV,
-    _K_CLASS_RELION_X_HALF_MSTEP_ENV,
     _LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV,
     _LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV,
     _LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV,
@@ -1021,8 +1020,6 @@ def _score_half_local_one_shape(
     local_parent_oversampling_order: int,
     local_search_translation_prior_mode: str,
     replay_prior_translations,
-    class_log_priors,
-    k_class_enabled: bool,
     collect_local_search_profile: bool,
     diagnostic_score_only: bool,
     safe_batch_sizes,
@@ -1047,7 +1044,9 @@ def _score_half_local_one_shape(
     Sizes the per-chunk M-step batches against the cone-restricted
     rotation count (not the full HEALPix grid) so chunk_size doesn't
     collapse at high HEALPix orders. Routes through
-    ``_run_local_search_iteration`` which handles K-class and K=1 internally.
+    ``_run_local_search_iteration``. Local searches are K=1 only: Class3D keeps
+    global searches, as RELION switches to local searches from the HEALPix order
+    only under auto-refine (ml_optimiser.cpp:2541-2565, 3936-3938).
 
     Caller handles ``noise_stats_per_half[k]``, ``pose_rotations[k] = None``,
     and ``coarse_ha[k] = ha_k`` from the returned ``HalfScoreResult``.
@@ -1058,10 +1057,6 @@ def _score_half_local_one_shape(
     # PRIOR_ROTTILT_PSI and score the local direction/psi priors in the
     # hypothesis layout, so adding the learned global direction prior here
     # biases both support selection and final weights.
-    if diagnostic_score_only and k_class_enabled:
-        raise NotImplementedError("score-only local-search diagnostics are currently K=1-only")
-    if source_faithful_spectrum_norm and k_class_enabled:
-        raise ValueError("RELION source-faithful spectrum normalization is fresh K=1-only")
 
     reconstruction_current_size_for_engine = (
         cs_for_engine
@@ -1202,15 +1197,13 @@ def _score_half_local_one_shape(
         ),
     }
     if float(relion_translation_angle_scale) != 1.0:
-        if k_class_enabled:
-            raise ValueError("the RELION model/optics translation-angle scale is K=1-only")
         common_local_kwargs["relion_translation_angle_scale"] = float(relion_translation_angle_scale)
     pass2_layout = None
     relion_significant_counts_k = None
     local_adaptive_pass2_parent_mode = "none"
     local_adaptive_pass2_denominator_layout = None
     local_normalization_log_evidence = None
-    if int(local_parent_oversampling_order) > 0 and not k_class_enabled:
+    if int(local_parent_oversampling_order) > 0:
         local_adaptive_pass2_full_parent = _local_adaptive_pass2_full_parent_enabled()
         local_adaptive_pass2_rotation_only = _local_adaptive_pass2_rotation_only_enabled()
         local_adaptive_pass2_denominator_mode = _local_adaptive_pass2_denominator_support_mode()
@@ -1373,29 +1366,18 @@ def _score_half_local_one_shape(
         log_local_adaptive_support(
             logger, parent_layout, significant_sample_indices, current_translations, pass2_layout
         )
-    elif int(local_parent_oversampling_order) > 0:
-        local_adaptive_pass2_parent_mode = "k_class_parent_expanded"
-        logger.info(
-            "Adaptive local coarse-pair masking is currently K=1-only; K-class local search keeps the existing parent-expanded support"
-        )
-    local_relion_x_half_mstep = (
-        _k_class_relion_x_half_mstep_enabled()
-        if k_class_enabled
-        else _k1_relion_x_half_mstep_enabled()
-    )
+    local_relion_x_half_mstep = _k1_relion_x_half_mstep_enabled()
     if diagnostic_score_only:
         local_relion_x_half_mstep = False
     if symmetry != "C1" and not diagnostic_score_only and not local_relion_x_half_mstep:
-        env_name = _K_CLASS_RELION_X_HALF_MSTEP_ENV if k_class_enabled else _K1_RELION_X_HALF_MSTEP_ENV
         raise RuntimeError(
             f"{symmetry} exact-local reconstruction requires RELION x-half BPref "
-            f"accumulation; {env_name}=0, CPU-only execution, or disabled custom CUDA "
+            f"accumulation; {_K1_RELION_X_HALF_MSTEP_ENV}=0, CPU-only execution, or disabled custom CUDA "
             "is unsupported for non-C1 symmetry"
         )
     if local_relion_x_half_mstep:
         logger.info(
-            "RELION local %s M-step: using x-half BPref-layout backprojection",
-            "K-class" if k_class_enabled else "K=1",
+            "RELION local K=1 M-step: using x-half BPref-layout backprojection",
         )
     if local_adaptive_pass2_denominator_layout is not None:
         logger.info(
@@ -1521,7 +1503,6 @@ def _score_half_local_one_shape(
         rotation_grid_random_perturbation=local_search_random_perturbation,
         rotation_grid_angular_sampling_deg=local_search_angular_sampling_deg,
         local_parent_oversampling_order=local_parent_oversampling_order,
-        class_log_priors=class_log_priors if k_class_enabled else None,
         score_only=diagnostic_score_only,
         rotation_grid_mstep_rotations=local_search_mstep_rotations,
         generate_relion_mstep_rotations=True,
@@ -1553,10 +1534,6 @@ def _score_half_local_one_shape(
                 ),
                 **local_profile_k,
             )
-    if k_class_enabled:
-        outputs.class_assignments[k] = np.asarray(local_outputs.class_assignments, dtype=np.int32)
-        outputs.class_posterior[k] = np.asarray(local_outputs.class_posterior_sums, dtype=np.float64)
-        outputs.class_full_posterior[k] = np.asarray(local_outputs.class_full_posterior_sums, dtype=np.float64)
     pose_dtype = _dense_global_scoring_dtype()
     outputs.best_pose_rotations[k] = np.asarray(best_rots_k, dtype=pose_dtype)
     outputs.best_pose_rotation_eulers[k] = (

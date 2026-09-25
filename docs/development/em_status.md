@@ -83,6 +83,18 @@ HEALPix 1-2, below auto_local_healpix_order 4). Later engine task: give the
 class-segmented pass padding factor 2 and a per-class scale-correction mask
 (RELION's `data_vs_prior_class[iclass] > 3`), route Class3D local K>1 through
 it, then delete the per-class K>1 loop (one implementation; K=1 keeps its path).
+Update 2026-09-25: Class3D no longer reaches local searches at all. RELION switches
+to local searches from the HEALPix order only under auto-refine: the iteration-0
+switch is inside `if (do_auto_refine)` (ml_optimiser.cpp:2541-2565) and later
+switches come from `updateAngularSampling`, which Class3D never calls
+(ml_optimiser.cpp:3936-3938); relax has no `--sigma_ang`. relax switched Class3D
+to local searches at HEALPix >= 4 (fixed 7381f84, replays 016e261), and the
+Class3D local K>1 route (the K>1 branch of `_run_local_search_iteration` and the
+class arms of the local half scorer) is deleted as unreachable. The per-class
+passes in `run_local_k_class_em` stay: they serve K=1 with an external
+normalizer (VDAM zero oversampling) and are the reference for the segmented
+pass's tests. The segmented-routing task above is therefore moot unless a
+`--sigma_ang` Class3D workflow is added.
 
 Final all-data maps are now always gridding-corrected, as in RELION; the former
 default-off selector made the K1 100k/256 masked GT FSC 0.0008 lower than both

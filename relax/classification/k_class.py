@@ -2175,8 +2175,12 @@ def run_local_k_class_em(
     """Run exact-local K-class EM using ``run_local_em_exact`` for all kernels.
 
     ``segmented_class_rows`` runs every class in one pass over class-segmented rows
-    instead of a probe pass and an M-step pass per class. It is opt-in until its
-    numerical and performance validation is complete.
+    instead of a probe pass and an M-step pass per class. Production K>1 (VDAM)
+    uses the segmented pass; Class3D never reaches local searches (RELION switches
+    to them from the HEALPix order only under auto-refine, ml_optimiser.cpp:2541-2565,
+    3936-3938). The per-class passes serve K=1 with an external normalizer (VDAM
+    zero oversampling) and, for K>1, remain the reference the segmented pass is
+    tested against.
     """
 
     _reject_kwargs(

@@ -938,25 +938,22 @@ def test_non_c1_k1_adaptive_refinement_without_x_half_fails_before_scoring(monke
         half_scoring._score_half_dense(**kwargs)
 
 
-@pytest.mark.parametrize("k_class_enabled", [False, True])
-def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monkeypatch, k_class_enabled):
+def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monkeypatch):
     """Final Q a087087cc: exact-local reconstruction of a point group requires x-half accumulation."""
 
     from relax.dense.score_outputs import PerHalfOutputs
     from relax.refinement import half_scoring
 
     monkeypatch.setattr(half_scoring, "_k1_relion_x_half_mstep_enabled", lambda: False)
-    monkeypatch.setattr(half_scoring, "_k_class_relion_x_half_mstep_enabled", lambda: False)
     monkeypatch.setattr(
         half_scoring,
         "_run_local_search_iteration",
         lambda *_args, **_kwargs: pytest.fail("unsupported non-C1 exact-local route was scored"),
     )
-    n_classes = 2 if k_class_enabled else 1
     kwargs = dict(
         k=0,
         experiment_dataset=SimpleNamespace(image_shape=(8, 8)),
-        means_k=np.zeros((n_classes, 8), dtype=np.complex64) if k_class_enabled else np.zeros(8, dtype=np.complex64),
+        means_k=np.zeros(8, dtype=np.complex64),
         noise_variance_k=np.ones(8, dtype=np.float32),
         previous_best_rotation_eulers_k=np.zeros((1, 3), dtype=np.float32),
         local_search_rotations=None,
@@ -984,8 +981,6 @@ def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monke
         local_parent_oversampling_order=0,
         local_search_translation_prior_mode="current",
         replay_prior_translations=None,
-        class_log_priors=np.full(n_classes, -np.log(n_classes)) if k_class_enabled else None,
-        k_class_enabled=k_class_enabled,
         collect_local_search_profile=False,
         diagnostic_score_only=False,
         safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),

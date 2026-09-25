@@ -15,9 +15,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from relax.classification.k_class import run_local_k_class_em
 from relax.helpers.batch_planning import _estimate_relion_em_batch_sizes
-from relax.helpers.types import LocalEMResult, NoiseStats, RelionStats
+from relax.helpers.types import NoiseStats, RelionStats
 from relax.local.local_em_engine import run_local_em_exact
 from relax.local.local_layout import _local_search_engine_rotation_block_size, build_local_hypothesis_layout
 from relax.sampling import build_local_search_grid_metadata
@@ -54,9 +53,6 @@ class _LocalSearchIterationResult:
     profile_summary: dict | None = None
     best_pose_rotations: object | None = None
     best_pose_translations: object | None = None
-    class_assignments: np.ndarray | None = None
-    class_posterior_sums: np.ndarray | None = None
-    class_full_posterior_sums: np.ndarray | None = None
     best_pose_eulers_deg: np.ndarray | None = None
 
 
@@ -114,7 +110,6 @@ def _run_local_search_iteration(
     rotation_grid_random_perturbation=0.0,
     rotation_grid_angular_sampling_deg=None,
     local_parent_oversampling_order: int = 0,
-    class_log_priors=None,
     return_reconstruction_sample_indices=False,
     apply_max_significants_to_support=False,
     stats_use_reconstruction_probs=False,
@@ -144,8 +139,6 @@ def _run_local_search_iteration(
     Arrays retain the engine's layouts and identities; profile metadata is copied
     and augmented with this wrapper's timings.
     """
-    if optics_group_ids is not None and class_log_priors is not None:
-        raise NotImplementedError("K-class local search keeps one optics group's noise spectrum")
     requested_image_batch_size = int(image_batch_size)
     requested_rotation_block_size = int(rotation_block_size)
     rotation_block_size = _local_search_engine_rotation_block_size(rotation_block_size)
@@ -213,15 +206,10 @@ def _run_local_search_iteration(
         metadata_build_time = 0.0
         selector_time = 0.0
 
-    if class_log_priors is not None:
-        if source_faithful_spectrum_norm:
-            raise ValueError("RELION source-faithful spectrum normalization is fresh K=1-only")
-        local_n_classes = int(np.asarray(class_log_priors).size)
-    else:
-        local_n_classes = 1
-    # Exact local K-class invokes the per-class local kernels sequentially
-    # (probe pass per class, then M-step per class), so K is not a simultaneous
-    # tensor dimension for the shifted-image/projection tiles here.
+    # Local searches are K=1 only: Class3D keeps global searches, as RELION switches
+    # to local searches from the HEALPix order only under auto-refine
+    # (ml_optimiser.cpp:2541-2565, 3936-3938).
+    local_n_classes = 1
     local_kernel_classes = 1
     local_rotation_count = (
         int(np.max(np.asarray(local_layout.rotation_counts, dtype=np.int64)))
@@ -340,86 +328,7 @@ def _run_local_search_iteration(
             ),
         )
 
-    if class_log_priors is not None:
-        if resident_local_search_requested():
-            raise NotImplementedError(
-                f"{RESIDENT_LOCAL_SEARCH_ENV}=1 selects the device-resident local pass 2, "
-                "which is K=1 only; K-class local search keeps the exact local engine"
-            )
-        if return_reconstruction_sample_indices:
-            raise NotImplementedError("K-class local search does not return reconstruction sample indices")
-        if score_only:
-            raise NotImplementedError("K-class local search does not support score_only")
-        if return_profile:
-            raise NotImplementedError("K-class local search does not yet emit local profile summaries")
-        if disable_adjoint_y or disable_adjoint_ctf:
-            raise NotImplementedError("K-class local search does not support adjoint ablation flags")
-        if normalization_log_evidence is not None:
-            raise NotImplementedError("K-class local search does not support external evidence normalization")
-        k_class_result = run_local_k_class_em(
-            experiment_dataset,
-            mean,
-            noise_variance,
-            local_layout,
-            disc_type,
-            class_log_priors=class_log_priors,
-            accumulate_noise=accumulate_noise,
-            return_best_pose_details=return_best_pose_details,
-            image_batch_size=image_batch_size,
-            rotation_block_size=rotation_block_size,
-            current_size=current_size,
-            reconstruction_current_size=reconstruction_current_size,
-            projection_padding_factor=projection_padding_factor,
-            reconstruction_padding_factor=reconstruction_padding_factor,
-            half_spectrum_scoring=half_spectrum_scoring,
-            relion_exact_score_translation=relion_exact_score_translation,
-            relion_projector_half=relion_projector_half,
-            relion_projector_r_max=relion_projector_r_max,
-            use_float64_scoring=use_float64_scoring,
-            use_float64_normalization=True,
-            use_float64_projections=use_float64_projections,
-            do_gridding_correction=do_gridding_correction,
-            square_window=square_window,
-            image_corrections=image_corrections,
-            scale_corrections=scale_corrections,
-            group_ids=group_ids,
-            scale_correction_group_count=scale_correction_group_count,
-            scale_correction_data_vs_prior=scale_correction_data_vs_prior,
-            image_pre_shifts=image_pre_shifts,
-            mstep_relion_x_half=mstep_relion_x_half,
-            reconstruct_significant_only=reconstruct_significant_only,
-            adaptive_fraction=adaptive_fraction,
-            max_significants=-1,
-            stats_use_reconstruction_probs=stats_use_reconstruction_probs,
-            class_posterior_sums_from_noise=bool(reconstruct_significant_only and accumulate_noise),
-            debug_iteration=debug_iteration,
-            translation_prior_centers=translation_prior_centers,
-            **({"symmetry_label": symmetry} if symmetry != "C1" else {}),
-        )
-        use_noise_class_sums = bool(reconstruct_significant_only and accumulate_noise)
-        class_mstep_posterior_sums = (
-            getattr(k_class_result, "class_mstep_posterior_sums", None) if use_noise_class_sums else None
-        )
-        if class_mstep_posterior_sums is None:
-            class_mstep_posterior_sums = k_class_result.class_posterior_sums
-        class_details = (
-            np.asarray(k_class_result.class_assignments, dtype=np.int32),
-            np.asarray(class_mstep_posterior_sums, dtype=np.float64),
-            np.asarray(k_class_result.class_posterior_sums, dtype=np.float64),
-        )
-        engine_outputs = LocalEMResult(
-            Ft_y=k_class_result.Ft_y,
-            Ft_ctf=k_class_result.Ft_ctf,
-            hard_assignments=np.asarray(k_class_result.pose_assignments, dtype=np.int32),
-            stats=k_class_result.stats,
-            best_pose_rotations=k_class_result.best_pose_rotations if return_best_pose_details else None,
-            best_pose_translations=k_class_result.best_pose_translations if return_best_pose_details else None,
-            best_pose_eulers_deg=getattr(k_class_result, "best_pose_eulers_deg", None)
-            if return_best_pose_details
-            else None,
-            noise_stats=k_class_result.aggregate_noise_stats if accumulate_noise else None,
-        )
-    elif (
+    if (
         resident_local_search_requested()
         and not score_only
         and reconstruct_significant_only
@@ -431,7 +340,6 @@ def _run_local_search_iteration(
         # RELION's ``maximum_significants`` cap, which the segmented float32
         # posterior does not implement, so routing it would change the support
         # rather than only its layout. The boundary is logged, not silent.
-        class_details = None
         logger.info(
             "%s=1: running the device-resident local fine pass 2 "
             "(image_batch_size=%d and rotation_block_size=%d are unused by this path; "
@@ -480,7 +388,6 @@ def _run_local_search_iteration(
             normalization_log_evidence=normalization_log_evidence,
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             relion_translation_angle_scale=relion_translation_angle_scale,
-            class_log_priors=None,
             score_only=score_only,
             optics_group_ids=optics_group_ids,
             reconstruction_volume_current_size=reconstruction_volume_current_size,
@@ -488,7 +395,6 @@ def _run_local_search_iteration(
             reconstruction_image_radius=reconstruction_image_radius,
         )
     else:
-        class_details = None
         if resident_local_search_requested():
             if score_only:
                 logger.info(
@@ -575,10 +481,6 @@ def _run_local_search_iteration(
             reconstruction_image_radius=reconstruction_image_radius,
         )
 
-    if class_details is None:
-        class_assignments = class_posterior_sums = class_full_posterior_sums = None
-    else:
-        class_assignments, class_posterior_sums, class_full_posterior_sums = class_details
     result = _LocalSearchIterationResult(
         Ft_y=engine_outputs.Ft_y,
         Ft_ctf=engine_outputs.Ft_ctf,
@@ -593,9 +495,6 @@ def _run_local_search_iteration(
         ),
         best_pose_translations=engine_outputs.best_pose_translations,
         best_pose_eulers_deg=engine_outputs.best_pose_eulers_deg,
-        class_assignments=class_assignments,
-        class_posterior_sums=class_posterior_sums,
-        class_full_posterior_sums=class_full_posterior_sums,
     )
 
     if return_profile and result.profile_summary is not None:

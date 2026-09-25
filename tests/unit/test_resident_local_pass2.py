@@ -258,7 +258,7 @@ def test_flag_is_off_by_default(monkeypatch):
 
 
 def test_dispatch_routes_only_the_fine_pass():
-    """The wiring: the fine pass routes, the parent probe and K-class do not."""
+    """The wiring: the fine pass routes and the parent probe does not (local searches are K=1 only)."""
 
     import inspect
 
@@ -270,8 +270,7 @@ def test_dispatch_routes_only_the_fine_pass():
     # and only below the full image box (RELION's final all-data shape)
     assert "int(current_size) < int(experiment_dataset.image_shape[0])" in source
     assert "compute_local_search_resident" in source
-    # K-class with the flag on refuses rather than running a K=1 driver.
-    assert "K=1 only; K-class local search keeps the exact local engine" in source
+    assert "class_log_priors" not in source
 
 
 def test_dispatch_call_keywords_are_resident_parameters():

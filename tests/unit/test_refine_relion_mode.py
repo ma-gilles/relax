@@ -809,23 +809,6 @@ def test_k1_translation_grid_rejects_invalid_diagnostic_switch(monkeypatch):
         sampling_module._translation_grid_for_class_count(3.0, 1.0, n_classes=1)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def test_local_translation_prior_ignores_stale_replay_grid_shape():
     current_grid = get_translation_grid(3.0, 1.0).astype(np.float32)
     stale_replay_grid = get_translation_grid(3.0, 1.0000002352941175).astype(np.float32)
@@ -1259,7 +1242,6 @@ def _mock_local_search_result(
             if kwargs.get("return_profile", False) else None
         ),
     )
-
 
 
 def _mock_dense_em_result(
@@ -2220,8 +2202,6 @@ def test_score_half_local_parent_layout_ignores_global_rotation_prior_for_adapti
             diagnostic_score_only=False,
             local_search_translation_prior_mode="coarse",
             replay_prior_translations=None,
-            class_log_priors=None,
-            k_class_enabled=False,
             collect_local_search_profile=False,
             safe_batch_sizes=lambda *args, **kwargs: (1, 1),
             outputs=score_outputs.PerHalfOutputs(),
@@ -2231,10 +2211,8 @@ def test_score_half_local_parent_layout_ignores_global_rotation_prior_for_adapti
     assert captured["rotation_log_prior"] is None
 
 
-@pytest.mark.parametrize("n_classes", [1, 2, 4], ids=["K1", "K2", "K4"])
-def test_score_half_local_forwards_mstep_grid_for_each_class_count(monkeypatch, rng, n_classes):
-    """Forward the mean/prior class axes and M-step grids to local scoring."""
-    k_class_enabled = n_classes > 1
+def test_score_half_local_forwards_mstep_grid(monkeypatch, rng):
+    """Forward the mean and M-step grids to local scoring (local searches are K=1 only)."""
     dataset = MockDataset(1, rng)
     score_grid = np.repeat(np.eye(3, dtype=np.float32)[None], 2, axis=0)
     mstep_grid = np.repeat((5.0 * np.eye(3, dtype=np.float32))[None], 2, axis=0)
@@ -2256,11 +2234,7 @@ def test_score_half_local_forwards_mstep_grid_for_each_class_count(monkeypatch, 
         half_scoring._score_half_local(
             k=0,
             experiment_dataset=dataset,
-            means_k=(
-                jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64)
-                if not k_class_enabled
-                else jnp.zeros((n_classes, VOLUME_SIZE), dtype=jnp.complex64)
-            ),
+            means_k=jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
             noise_variance_k=jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             previous_best_rotation_eulers_k=np.zeros((dataset.n_units, 3), dtype=np.float32),
             local_search_rotations=score_grid,
@@ -2290,21 +2264,16 @@ def test_score_half_local_forwards_mstep_grid_for_each_class_count(monkeypatch, 
             diagnostic_score_only=False,
             local_search_translation_prior_mode="current",
             replay_prior_translations=None,
-            class_log_priors=np.zeros(n_classes, dtype=np.float32) if k_class_enabled else None,
-            k_class_enabled=k_class_enabled,
             collect_local_search_profile=False,
             safe_batch_sizes=lambda *args, **kwargs: (1, 16),
             outputs=score_outputs.PerHalfOutputs(),
             local_profile_history=[],
         )
 
-    expected_mean_shape = (VOLUME_SIZE,) if n_classes == 1 else (n_classes, VOLUME_SIZE)
-    assert captured["mean_shape"] == expected_mean_shape
-    if k_class_enabled:
-        assert captured["class_log_priors"].shape == (n_classes,)
+    assert captured["mean_shape"] == (VOLUME_SIZE,)
     assert_matches(captured["rotation_grid_mstep_rotations"], mstep_grid)
     assert captured["generate_relion_mstep_rotations"] is True
-    assert (captured["class_log_priors"] is not None) is k_class_enabled
+    assert "class_log_priors" not in captured
     assert "return_significant_counts" not in captured
     assert captured["use_float64_scoring"] is True
     assert captured["use_float64_projections"] is True
@@ -4184,13 +4153,9 @@ def test_run_local_search_iteration_exact_engine_uses_model_sigma_for_translatio
     assert outputs.profile_summary is None
     assert outputs.best_pose_rotations is None
     assert outputs.best_pose_translations is None
-    assert outputs.class_assignments is None
-    assert outputs.class_posterior_sums is None
-    assert outputs.class_full_posterior_sums is None
 
 
-@pytest.mark.parametrize("k_class_enabled", [False, True])
-def test_run_local_search_iteration_dispatches_aligned_mstep_grid(monkeypatch, rng, k_class_enabled):
+def test_run_local_search_iteration_dispatches_aligned_mstep_grid(monkeypatch, rng):
     from relax.refinement import local_search_iteration as local_iteration_module
 
     dataset = MockDataset(1, rng)
@@ -4208,10 +4173,7 @@ def test_run_local_search_iteration_dispatches_aligned_mstep_grid(monkeypatch, r
         )
         raise DispatchCaptured
 
-    if k_class_enabled:
-        monkeypatch.setattr(local_iteration_module, "run_local_k_class_em", capture_dispatch)
-    else:
-        monkeypatch.setattr(local_iteration_module, "run_local_em_exact", capture_dispatch)
+    monkeypatch.setattr(local_iteration_module, "run_local_em_exact", capture_dispatch)
 
     with pytest.raises(DispatchCaptured):
         local_search_iteration._run_local_search_iteration(
@@ -4233,7 +4195,6 @@ def test_run_local_search_iteration_dispatches_aligned_mstep_grid(monkeypatch, r
             relion_exact_score_translation=True,
             rotation_grid_mstep_rotations=mstep_grid,
             generate_relion_mstep_rotations=True,
-            class_log_priors=np.zeros(2, dtype=np.float32) if k_class_enabled else None,
         )
 
     layout = captured["layout"]
@@ -4385,9 +4346,6 @@ def test_run_local_search_iteration_clamps_highres_local_batches(monkeypatch):
     assert outputs.profile_summary is None
     assert outputs.best_pose_rotations is None
     assert outputs.best_pose_translations is None
-    assert outputs.class_assignments is None
-    assert outputs.class_posterior_sums is None
-    assert outputs.class_full_posterior_sums is None
 
 
 def test_run_local_search_iteration_relion_xhalf_uses_windowed_batch_guard_by_default(monkeypatch):
@@ -4643,9 +4601,6 @@ def test_run_local_search_iteration_plumbs_normalization_log_evidence(monkeypatc
     assert outputs.profile_summary is None
     assert outputs.best_pose_rotations is None
     assert outputs.best_pose_translations is None
-    assert outputs.class_assignments is None
-    assert outputs.class_posterior_sums is None
-    assert outputs.class_full_posterior_sums is None
 
 
 def test_run_local_search_iteration_plumbs_stats_use_reconstruction_probs(monkeypatch, rng):
@@ -4711,47 +4666,6 @@ def test_run_local_search_iteration_plumbs_stats_use_reconstruction_probs(monkey
     assert outputs.profile_summary is None
     assert outputs.best_pose_rotations is None
     assert outputs.best_pose_translations is None
-    assert outputs.class_assignments is None
-    assert outputs.class_posterior_sums is None
-    assert outputs.class_full_posterior_sums is None
-
-
-def test_run_local_search_iteration_rejects_k_class_score_only(rng):
-    mock_dataset = MockDataset(2, rng)
-    layout = LocalHypothesisLayout(
-        n_global_rotations=3,
-        n_pixels=1,
-        n_psi=1,
-        rotation_offsets=np.array([0, 2, 4], dtype=np.int64),
-        rotation_ids_flat=np.array([0, 1, 1, 2], dtype=np.int32),
-        rotations_flat=np.broadcast_to(np.eye(3, dtype=np.float32), (4, 3, 3)).copy(),
-        rotation_log_priors_flat=np.zeros(4, dtype=np.float32),
-        rotation_counts=np.array([2, 2], dtype=np.int32),
-        translation_grid=np.zeros((2, 2), dtype=np.float32),
-        translation_log_priors=np.zeros((2, 2), dtype=np.float32),
-    )
-
-    with pytest.raises(NotImplementedError, match="K-class local search does not support score_only"):
-        local_search_iteration._run_local_search_iteration(
-            mock_dataset,
-            jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-            np.zeros((2, 3), dtype=np.float32),
-            np.broadcast_to(np.eye(3, dtype=np.float32), (3, 3, 3)).copy(),
-            healpix_order=0,
-            sigma_rot=0.1,
-            sigma_psi=0.1,
-            translations=layout.translation_grid,
-            prior_translations=np.zeros((2, 2), dtype=np.float32),
-            sigma_offset_angstrom=1.0,
-            disc_type="linear_interp",
-            image_batch_size=2,
-            rotation_block_size=8,
-            current_size=4,
-            pass2_layout=layout,
-            class_log_priors=np.zeros(2, dtype=np.float32),
-            score_only=True,
-        )
 
 
 def test_run_local_search_iteration_exact_engine_uses_factorized_prior_metadata_for_perturbed_grid(
@@ -4883,9 +4797,6 @@ def test_run_local_search_iteration_exact_engine_uses_factorized_prior_metadata_
     assert outputs.profile_summary is None
     assert outputs.best_pose_rotations is None
     assert outputs.best_pose_translations is None
-    assert outputs.class_assignments is None
-    assert outputs.class_posterior_sums is None
-    assert outputs.class_full_posterior_sums is None
 
 
 def test_run_local_em_exact_matches_dense_engine_on_single_image_local_grid(rng):
@@ -6184,165 +6095,6 @@ def test_local_k_class_uses_global_reconstruction_threshold(monkeypatch):
     # the smallest kept weight; the threshold sits midway between 0.0002 and 0.0097.
     for threshold in mstep_thresholds:
         np.testing.assert_allclose(threshold, np.asarray([0.5 * (0.0002 + 0.0097)]), rtol=1e-3, atol=1e-6)
-
-
-def test_local_search_iteration_k_class_returns_class_details(rng):
-    dataset = MockDataset(2, rng)
-    mean = _hermitian_volume(VOLUME_SHAPE, seed=161)
-    means = jnp.stack([mean, mean], axis=0)
-    noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
-    local_rotations = _make_rotations(2, seed=169)
-    translations = np.zeros((1, 2), dtype=np.float32)
-    local_layout = LocalHypothesisLayout(
-        n_global_rotations=2,
-        n_pixels=2,
-        n_psi=1,
-        rotation_offsets=np.array([0, 2, 4], dtype=np.int64),
-        rotation_ids_flat=np.array([0, 1, 0, 1], dtype=np.int32),
-        rotations_flat=np.tile(np.asarray(local_rotations, dtype=np.float32), (2, 1, 1)),
-        rotation_log_priors_flat=np.zeros(4, dtype=np.float32),
-        rotation_counts=np.array([2, 2], dtype=np.int32),
-        translation_grid=np.asarray(translations, dtype=np.float32),
-        translation_log_priors=np.zeros((2, 1), dtype=np.float32),
-    )
-
-    outputs = local_search_iteration._run_local_search_iteration(
-        dataset,
-        means,
-        noise_variance,
-        np.zeros((2, 3), dtype=np.float32),
-        local_rotations,
-        1,
-        0.0,
-        0.0,
-        translations,
-        np.zeros((2, 2), dtype=np.float32),
-        1.0,
-        "linear_interp",
-        2,
-        4,
-        None,
-        accumulate_noise=True,
-        projection_padding_factor=1,
-        reconstruction_padding_factor=1,
-        half_spectrum_scoring=False,
-        scale_corrections=np.ones(2, dtype=np.float32),
-        group_ids=np.asarray([0, 2], dtype=np.int64),
-        scale_correction_group_count=5,
-        pass2_layout=local_layout,
-        return_best_pose_details=True,
-        class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
-    )
-
-    Ft_y = outputs.Ft_y
-    Ft_ctf = outputs.Ft_ctf
-    hard_assignment = outputs.hard_assignment
-    best_rotations = outputs.best_pose_rotations
-    best_translations = outputs.best_pose_translations
-    stats = outputs.relion_stats
-    noise_stats = outputs.noise_stats
-    class_assignments_out = outputs.class_assignments
-    class_posterior_sums = outputs.class_posterior_sums
-    class_full_posterior_sums = outputs.class_full_posterior_sums
-    assert np.asarray(Ft_y).shape == (2, VOLUME_SIZE)
-    assert np.asarray(Ft_ctf).shape == (2, VOLUME_SIZE)
-    assert np.asarray(hard_assignment).shape == (2,)
-    assert np.asarray(best_rotations).shape == (2, 3, 3)
-    assert np.asarray(best_translations).shape == (2, 2)
-    assert np.asarray(stats.log_evidence_per_image).shape == (2,)
-    assert noise_stats is not None
-    assert np.asarray(noise_stats.wsum_scale_correction_xa).shape == (5,)
-    assert np.asarray(noise_stats.wsum_scale_correction_aa).shape == (5,)
-    assert_matches(np.asarray(noise_stats.wsum_scale_correction_xa)[3:], 0.0)
-    assert_matches(np.asarray(noise_stats.wsum_scale_correction_aa)[3:], 0.0)
-    assert np.asarray(class_assignments_out).shape == (2,)
-    assert np.asarray(class_posterior_sums).shape == (2,)
-    np.testing.assert_allclose(np.sum(class_full_posterior_sums), dataset.n_images, rtol=5e-3, atol=1e-5)
-
-
-def test_local_search_iteration_k_class_keeps_mstep_and_full_class_mass_separate(monkeypatch, rng):
-    from types import SimpleNamespace
-
-    import relax.refinement.local_search_iteration as local_search_iteration
-
-    dataset = MockDataset(2, rng)
-    mean = _hermitian_volume(VOLUME_SHAPE, seed=171)
-    means = jnp.stack([mean, mean], axis=0)
-    noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
-    local_rotations = _make_rotations(2, seed=173)
-    translations = np.zeros((1, 2), dtype=np.float32)
-    local_layout = LocalHypothesisLayout(
-        n_global_rotations=2,
-        n_pixels=2,
-        n_psi=1,
-        rotation_offsets=np.array([0, 2, 4], dtype=np.int64),
-        rotation_ids_flat=np.array([0, 1, 0, 1], dtype=np.int32),
-        rotations_flat=np.tile(np.asarray(local_rotations, dtype=np.float32), (2, 1, 1)),
-        rotation_log_priors_flat=np.zeros(4, dtype=np.float32),
-        rotation_counts=np.array([2, 2], dtype=np.int32),
-        translation_grid=np.asarray(translations, dtype=np.float32),
-        translation_log_priors=np.zeros((2, 1), dtype=np.float32),
-    )
-    captured = {}
-
-    def fake_run_local_k_class_em(*_args, **kwargs):
-        captured.update(kwargs)
-        return SimpleNamespace(
-            Ft_y=jnp.zeros((2, VOLUME_SIZE), dtype=jnp.complex64),
-            Ft_ctf=jnp.zeros((2, VOLUME_SIZE), dtype=jnp.float32),
-            pose_assignments=np.zeros(2, dtype=np.int32),
-            best_pose_rotations=np.broadcast_to(np.eye(3, dtype=np.float32), (2, 3, 3)).copy(),
-            best_pose_translations=np.zeros((2, 2), dtype=np.float32),
-            best_pose_rotation_ids=np.zeros(2, dtype=np.int32),
-            stats=RelionStats(
-                log_evidence_per_image=jnp.zeros(2, dtype=jnp.float32),
-                best_log_score_per_image=jnp.zeros(2, dtype=jnp.float32),
-                max_posterior_per_image=jnp.ones(2, dtype=jnp.float32),
-                rotation_posterior_sums=jnp.ones(2, dtype=jnp.float32),
-            ),
-            aggregate_noise_stats=NoiseStats(
-                wsum_sigma2_noise=jnp.ones(1, dtype=jnp.float32),
-                wsum_img_power=jnp.ones(1, dtype=jnp.float32),
-                wsum_sigma2_offset=0.0,
-                sumw=2.0,
-            ),
-            class_assignments=np.array([0, 1], dtype=np.int32),
-            class_posterior_sums=np.array([1.7, 0.3], dtype=np.float32),
-            class_mstep_posterior_sums=np.array([1.2, 0.8], dtype=np.float32),
-        )
-
-    monkeypatch.setattr(local_search_iteration, "run_local_k_class_em", fake_run_local_k_class_em)
-
-    outputs = local_search_iteration._run_local_search_iteration(
-        dataset,
-        means,
-        noise_variance,
-        np.zeros((2, 3), dtype=np.float32),
-        local_rotations,
-        1,
-        0.0,
-        0.0,
-        translations,
-        np.zeros((2, 2), dtype=np.float32),
-        1.0,
-        "linear_interp",
-        2,
-        4,
-        None,
-        accumulate_noise=True,
-        projection_padding_factor=1,
-        reconstruction_padding_factor=1,
-        half_spectrum_scoring=False,
-        pass2_layout=local_layout,
-        return_best_pose_details=True,
-        reconstruct_significant_only=True,
-        stats_use_reconstruction_probs=True,
-        class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
-    )
-
-    assert captured["class_posterior_sums_from_noise"] is True
-    np.testing.assert_allclose(np.asarray(outputs.class_posterior_sums), [1.2, 0.8], rtol=1e-6, atol=1e-6)
-    np.testing.assert_allclose(np.asarray(outputs.class_full_posterior_sums), [1.7, 0.3], rtol=1e-6, atol=1e-6)
 
 
 def test_native_half_preprocess_requires_mask_for_masked_score(rng):
@@ -15970,90 +15722,6 @@ def test_production_k4_firstiter_has_one_joint_winner_and_exact_mstep_mass(rng, 
     assert result.aggregate_noise_stats.sumw == pytest.approx(float(n_images))
 
 
-def test_local_search_iteration_k4_forwards_relion_projectors_to_each_class_engine(monkeypatch, rng):
-    import relax.classification.k_class as k_class_module
-
-    n_classes = 4
-    n_images = 2
-    dataset = MockDataset(n_images, rng)
-    means = jnp.stack(
-        [jnp.full(VOLUME_SIZE, class_index, dtype=jnp.complex64) for class_index in range(n_classes)],
-    )
-    noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
-    local_rotations = _make_rotations(2, seed=181)
-    translations = np.zeros((1, 2), dtype=np.float32)
-    local_layout = LocalHypothesisLayout(
-        n_global_rotations=2,
-        n_pixels=2,
-        n_psi=1,
-        rotation_offsets=np.array([0, 2, 4], dtype=np.int64),
-        rotation_ids_flat=np.array([0, 1, 0, 1], dtype=np.int32),
-        rotations_flat=np.tile(np.asarray(local_rotations, dtype=np.float32), (n_images, 1, 1)),
-        rotation_log_priors_flat=np.zeros(4, dtype=np.float32),
-        rotation_counts=np.full(n_images, 2, dtype=np.int32),
-        translation_grid=translations,
-        translation_log_priors=np.zeros((n_images, 1), dtype=np.float32),
-    )
-    projector_half = np.stack(
-        [
-            np.full((3, 3, 2), class_index + 1j * (class_index + 1), dtype=np.complex64)
-            for class_index in range(n_classes)
-        ],
-    )
-    projector_r_max = 7
-    engine_calls = []
-
-    def fake_run_local_em_exact(*args, **kwargs):
-        class_index = int(np.real(np.asarray(args[1]).reshape(-1)[0]))
-        engine_calls.append(
-            (
-                class_index,
-                kwargs.get("relion_projector_half"),
-                kwargs.get("relion_projector_r_max"),
-                bool(kwargs.get("score_only", False)),
-            ),
-        )
-        stats = RelionStats(
-            log_evidence_per_image=jnp.full(n_images, -class_index, dtype=jnp.float32),
-            best_log_score_per_image=jnp.full(n_images, -class_index - 0.25, dtype=jnp.float32),
-            max_posterior_per_image=jnp.ones(n_images, dtype=jnp.float32),
-            rotation_posterior_sums=jnp.ones(2, dtype=jnp.float32),
-        )
-        return LocalEMResult(
-            jnp.full(VOLUME_SIZE, class_index, dtype=jnp.complex64),
-            jnp.full(VOLUME_SIZE, class_index + 1, dtype=jnp.float32),
-            np.full(n_images, class_index, dtype=np.int32),
-            stats,
-        )
-
-    monkeypatch.setattr(k_class_module, "run_local_em_exact", fake_run_local_em_exact)
-
-    local_search_iteration._run_local_search_iteration(
-        dataset, means, noise_variance,
-        np.zeros((n_images, 3), dtype=np.float32), local_rotations,
-        healpix_order=1, sigma_rot=0.0, sigma_psi=0.0,
-        translations=translations,
-        prior_translations=np.zeros((n_images, 2), dtype=np.float32),
-        sigma_offset_angstrom=1.0, disc_type="linear_interp",
-        image_batch_size=n_images, rotation_block_size=2, current_size=4,
-        pass2_layout=local_layout, reconstruct_significant_only=False,
-        projection_relion_texture_interp=True,
-        relion_projector_half=projector_half, relion_projector_r_max=projector_r_max,
-        mstep_relion_x_half=True,
-        class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes, dtype=np.float64)),
-    )
-
-    assert [call[0] for call in engine_calls] == list(range(n_classes)) * 2
-    assert [call[3] for call in engine_calls] == [True] * n_classes + [False] * n_classes
-    for call_index, (class_index, actual_projector, actual_r_max, _) in enumerate(engine_calls):
-        assert_matches(
-            actual_projector,
-            projector_half[class_index],
-            err_msg=f"wrong projector in exact-local engine call {call_index}",
-        )
-        assert actual_r_max == projector_r_max
-
-
 def test_run_local_search_iteration_plumbs_score_only_and_reuses_batch_planner(
     monkeypatch,
     rng,
@@ -16145,265 +15813,6 @@ def test_run_local_search_iteration_plumbs_score_only_and_reuses_batch_planner(
     assert captured["disable_adjoint_ctf"] is True
     assert captured["accumulate_noise"] is False
     assert outputs.profile_summary["score_only"] is True
-
-
-def test_k4_numbered_global_to_exact_local_preserves_per_half_pose_state(
-    half_datasets,
-    init_volume,
-    monkeypatch,
-):
-    """A numbered K=4 trajectory carries each half's global pose into local search."""
-    import relax.refinement.local_search_iteration as local_search_iteration
-
-    n_classes = 4
-    one_translation = np.zeros((1, 2), dtype=np.float32)
-    original_update = iteration_loop_module.update_refinement_state
-    original_dense_score = iteration_loop_module._score_half_dense_in_bpref_scope
-    original_dense_k_class = half_scoring.run_dense_k_class_em
-    original_local_k_class = local_search_iteration.run_local_k_class_em
-    half_index_by_dataset = {id(dataset): half_index for half_index, dataset in enumerate(half_datasets)}
-    update_calls = 0
-    dense_route_calls = []
-    dense_calls = []
-    local_calls = []
-    layout_records = {}
-
-    def force_local_after_first_numbered_iteration(*args, **kwargs):
-        nonlocal update_calls
-        updated = original_update(*args, **kwargs)
-        update_calls += 1
-        updated.has_converged = False
-        if update_calls == 1:
-            # Keep iteration 1 global, then emulate the controller transition
-            # consumed at the start of numbered iteration 2.
-            updated.healpix_order = 0
-            updated.angular_step = healpix_angular_step(0)
-            updated.max_healpix_order = 1
-            updated.auto_local_healpix_order = 1
-            updated.do_local_search = True
-            updated.sigma_rot = np.deg2rad(15.0)
-            updated.sigma_psi = np.deg2rad(15.0)
-        return updated
-
-    def record_dense_score(**kwargs):
-        dense_route_calls.append((kwargs["debug_iteration"], kwargs["k"]))
-        return original_dense_score(**kwargs)
-
-    def record_dense_k_class(experiment_dataset, means, *args, **kwargs):
-        result = original_dense_k_class(experiment_dataset, means, *args, **kwargs)
-        dense_calls.append(
-            {
-                "half_index": half_index_by_dataset[id(experiment_dataset)],
-                "means_shape": np.asarray(means).shape,
-                "best_pose_rotations": np.asarray(result.best_pose_rotations, dtype=np.float32).copy(),
-                "best_pose_translations": np.asarray(result.best_pose_translations, dtype=np.float32).copy(),
-            }
-        )
-        return result
-
-    def build_one_pose_per_image_layout(
-        prior_rotations,
-        rotation_grid_rotations,
-        sigma_rot,
-        sigma_psi,
-        healpix_order,
-        translations,
-        prior_translations,
-        sigma_offset_angstrom,
-        offset_range_pixels,
-        voxel_size,
-        **kwargs,
-    ):
-        del (
-            rotation_grid_rotations,
-            sigma_rot,
-            sigma_psi,
-            healpix_order,
-            sigma_offset_angstrom,
-            offset_range_pixels,
-            voxel_size,
-        )
-        prior_eulers = np.asarray(prior_rotations, dtype=np.float32).copy()
-        prior_translation_array = np.asarray(prior_translations, dtype=np.float32).copy()
-        translation_grid = np.asarray(translations, dtype=np.float32).copy()
-        n_images = int(prior_eulers.shape[0])
-        local_rotations = np.asarray(
-            iteration_loop_module.utils.R_from_relion(prior_eulers, degrees=True),
-            dtype=np.float32,
-        )
-        layout = LocalHypothesisLayout(
-            n_global_rotations=1,
-            n_pixels=1,
-            n_psi=1,
-            rotation_offsets=np.arange(n_images + 1, dtype=np.int64),
-            rotation_ids_flat=np.zeros(n_images, dtype=np.int32),
-            rotations_flat=local_rotations,
-            rotation_log_priors_flat=np.zeros(n_images, dtype=np.float32),
-            rotation_counts=np.ones(n_images, dtype=np.int32),
-            translation_grid=translation_grid,
-            translation_log_priors=np.zeros((n_images, translation_grid.shape[0]), dtype=np.float32),
-            mstep_rotations_flat=local_rotations.copy(),
-        )
-        layout_records[id(layout)] = {
-            "prior_rotations": prior_eulers,
-            "prior_translations": prior_translation_array,
-            "translation_prior_reference_translations": np.asarray(
-                kwargs["translation_prior_reference_translations"],
-                dtype=np.float32,
-            ).copy(),
-        }
-        return layout
-
-    def record_local_k_class(experiment_dataset, means, noise_variance, local_layout, *args, **kwargs):
-        result = original_local_k_class(
-            experiment_dataset,
-            means,
-            noise_variance,
-            local_layout,
-            *args,
-            **kwargs,
-        )
-        local_calls.append(
-            {
-                "half_index": half_index_by_dataset[id(experiment_dataset)],
-                "debug_iteration": kwargs.get("debug_iteration"),
-                "return_best_pose_details": kwargs.get("return_best_pose_details"),
-                "means_shape": np.asarray(means).shape,
-                "layout": layout_records[id(local_layout)],
-                "translation_prior_centers": np.asarray(
-                    kwargs["translation_prior_centers"],
-                    dtype=np.float32,
-                ).copy(),
-                "image_pre_shifts": np.asarray(kwargs["image_pre_shifts"], dtype=np.float32).copy(),
-                "best_pose_rotations": np.asarray(result.best_pose_rotations, dtype=np.float32).copy(),
-                "best_pose_translations": np.asarray(result.best_pose_translations, dtype=np.float32).copy(),
-            }
-        )
-        return result
-
-    monkeypatch.setenv("RELAX_K_CLASS_RELION_X_HALF_MSTEP", "0")
-    monkeypatch.setattr(
-        iteration_loop_module,
-        "update_refinement_state",
-        force_local_after_first_numbered_iteration,
-    )
-    monkeypatch.setattr(
-        iteration_loop_module,
-        "_score_half_dense_in_bpref_scope",
-        record_dense_score,
-    )
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em", record_dense_k_class)
-    monkeypatch.setattr(
-        iteration_loop_module,
-        "_precompute_exact_local_fine_grid_enabled",
-        lambda *_args, **_kwargs: False,
-    )
-    monkeypatch.setattr(
-        sampling_module,
-        "_relion_base_translation_grid",
-        lambda *_args, **_kwargs: one_translation.astype(np.float64),
-    )
-    monkeypatch.setattr(
-        local_search_iteration,
-        "build_local_search_grid_metadata",
-        lambda *_args, **_kwargs: {"mode": "explicit", "n_pixels": 1, "n_psi": 1, "symmetry": "C1"},
-    )
-    monkeypatch.setattr(
-        local_search_iteration,
-        "build_local_hypothesis_layout",
-        build_one_pose_per_image_layout,
-    )
-    monkeypatch.setattr(local_search_iteration, "run_local_k_class_em", record_local_k_class)
-
-    result = refine_single_volume(
-        half_datasets,
-        init_volume,
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-        jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
-        one_translation,
-        options=RefinementOptions(
-            disc_type="linear_interp",
-            schedule=RefinementSchedule(
-                max_iter=2,
-                init_current_size=4,
-                init_healpix_order=0,
-                max_healpix_order=1,
-                skip_final_iteration=True,
-            ),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=1),
-            adaptive=AdaptiveOptions(adaptive_oversampling=0),
-            parity=RelionParityOptions(perturb_factor=0.0, low_resol_join_halves_angstrom=0.0),
-            k_class=KClassOptions(
-                n_classes=n_classes,
-                init_class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes, dtype=np.float64)),
-            ),
-        ),
-    )
-
-    assert update_calls == 2
-    assert dense_route_calls == [(1, 0), (1, 1)]
-    assert [call["half_index"] for call in dense_calls] == [0, 1]
-    assert [(call["debug_iteration"], call["half_index"]) for call in local_calls] == [(2, 0), (2, 1)]
-    assert all(call["means_shape"] == (n_classes, VOLUME_SIZE) for call in dense_calls)
-    assert all(call["means_shape"] == (n_classes, VOLUME_SIZE) for call in local_calls)
-    assert all(call["return_best_pose_details"] is True for call in local_calls)
-
-    assert len(result["best_rotation_eulers_history"]) == 2
-    assert len(result["best_translations_history"]) == 2
-    for call in dense_calls:
-        half_index = call["half_index"]
-        expected_iter1_eulers = iteration_loop_module.utils.R_to_relion(
-            call["best_pose_rotations"],
-            degrees=True,
-        ).astype(np.float32)
-        expected_iter1_translations = iteration_loop_module._relion_metadata_translations(
-            None,
-            call["best_pose_translations"],
-        )
-        assert_matches(
-            result["best_rotation_eulers_history"][0][half_index],
-            expected_iter1_eulers,
-        )
-        assert_matches(
-            result["best_translations_history"][0][half_index],
-            expected_iter1_translations,
-        )
-    for call in local_calls:
-        half_index = call["half_index"]
-        iter1_eulers = np.asarray(result["best_rotation_eulers_history"][0][half_index], dtype=np.float32)
-        iter1_translations = np.asarray(result["best_translations_history"][0][half_index], dtype=np.float32)
-        assert_matches(call["layout"]["prior_rotations"], iter1_eulers)
-        assert_matches(
-            call["layout"]["prior_translations"],
-            relion_translation_prior_center(iter1_translations, half_datasets[half_index].voxel_size),
-        )
-        assert_matches(call["layout"]["translation_prior_reference_translations"], one_translation)
-        assert_matches(
-            call["translation_prior_centers"],
-            relion_sigma_offset_prior_center(iter1_translations),
-        )
-        assert_matches(call["image_pre_shifts"], relion_translation_search_base(iter1_translations))
-        expected_iter2_eulers = iteration_loop_module.utils.R_to_relion(
-            call["best_pose_rotations"],
-            degrees=True,
-        ).astype(np.float32)
-        expected_iter2_translations = iteration_loop_module._relion_metadata_translations(
-            iter1_translations,
-            call["best_pose_translations"],
-        )
-        assert_matches(
-            result["best_rotation_eulers_history"][1][half_index],
-            expected_iter2_eulers,
-        )
-        assert_matches(
-            result["best_translations_history"][1][half_index],
-            expected_iter2_translations,
-        )
-
-    assert np.asarray(result["class_means"]).shape == (n_classes, VOLUME_SIZE)
-    assert all(np.asarray(half_means).shape == (n_classes, VOLUME_SIZE) for half_means in result["means"])
-    assert len(result["class_assignment_history"]) == 2
-    assert result["final_all_data_ran"] is False
 
 
 def test_large_host_reconstruction_padding_retains_device_window(monkeypatch):
