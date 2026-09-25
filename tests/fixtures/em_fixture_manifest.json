@@ -3890,6 +3890,82 @@
    },
    "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_pdb_k4_50k_256/relion_repeats"
   },
+  "k4_5k128_class3d_hp4_relion": {
+   "description": "RELION Class3D K4 of k4_5k128_data at healpix 4 (global search), 2 iterations, seed 29: two same-command runs relion_a/relion_b (Slurm 14410096)",
+   "files": {
+    "PROVENANCE.json": [1413, "c78e122874cded984f5435ccf749be21c9dc11434fc8ade09911af0272b10f54"],
+    "relion_a/EXECUTED.json": [62, "6c98f779f76fc6a67b5ada99ab4b76032386720b5df0850e4b87aa091447e4bd"],
+    "relion_a/GPU.txt": [64, "a9e1c9aa00e18431109db86ea64c8ffcfce0708d0b9d8630ee491b297c6ebccf"],
+    "relion_a/arm.sh": [1164, "8a65a6b2a8670bd179ce0225d7b171f38d887c2566f922d204949f5a039bad5f"],
+    "relion_a/run_it000_class001.mrc": [8389632, "21aa6fac1d98ee98b4c7b430a43655b581cffa0d3e910a91d864dc29577f578e"],
+    "relion_a/run_it000_class002.mrc": [8389632, "69492e5596fea34336da5e637ea4d5dc839bff6f8092926e12f8b08fcc66b078"],
+    "relion_a/run_it000_class003.mrc": [8389632, "15bae551cb4a138835fb8203415fc374d175307b0ea840f9cf2177ab3666f58c"],
+    "relion_a/run_it000_class004.mrc": [8389632, "65eae5c72507091dfae80b32c220504606fff462d4bf40f0d8ded623503ecbd6"],
+    "relion_a/run_it000_data.star": [1079580, "af8da2cf70c995cad4d38b8da19939b0ae310af0dc0722cae95bf8bc2235734a"],
+    "relion_a/run_it000_model.star": [460679, "44ef4d4a0f830740b684e2abf3a9355d370ea5e1012198f1cc8b809479243ab8"],
+    "relion_a/run_it000_optimiser.star": [7665, "43f08fefba876a6defd178ba3cf8cfdcd1c9c5a5a3b76f43070cb10cc3f0278d"],
+    "relion_a/run_it001_class001.mrc": [8389632, "1f594a5c9f2da68d1587c78e539c413416d97ca7be59eccb399837f940441e09"],
+    "relion_a/run_it001_class002.mrc": [8389632, "48c00d7bdc2a78ebd911fefeac4d01726b8d28306ae052db75258455784da1bf"],
+    "relion_a/run_it001_class003.mrc": [8389632, "aababeaf04987ddebbffd637a4613d3486f8d2e9916232e1764a1ea6f090d53f"],
+    "relion_a/run_it001_class004.mrc": [8389632, "2322836e2a30532833976bf6fcc277d77d4f77f70daf0a677ef8eb6b36555181"],
+    "relion_a/run_it001_data.star": [1274677, "6ce58d90e9077c2498b0547e0f20d897ffcdb0e8d51cb308b1cbb20d1de68d87"],
+    "relion_a/run_it001_model.star": [460679, "5fc4b83f9dcd08e1ba24010707cf899fb84839ee0138c2bfc0372c5abbc6f04e"],
+    "relion_a/run_it001_optimiser.star": [7665, "cdff0d20b770d7bce3a46f248edd21e57c3bc4c638a2378bc8adbcd34fe0600e"],
+    "relion_a/run_it001_sampling.star": [83875, "262dda98d1e9e0bc14471c9bc43f73a2385c56ba535f3213a0fdebfb3318dd91"],
+    "relion_a/run_it002_class001.mrc": [8389632, "4a3c97acb4657633eb48c2e75b5a212584af6b26c4f6f2c2b66fa2217e131516"],
+    "relion_a/run_it002_class002.mrc": [8389632, "fe6d51e98991009af88798329146155cfd75418568aac3ca7b0d11f35423cfc4"],
+    "relion_a/run_it002_class003.mrc": [8389632, "2ae4f7ae10777adddc629773311807df47c833ec7bde37f63d50fbc48252b2af"],
+    "relion_a/run_it002_class004.mrc": [8389632, "f08693ad3ba59442d954bca15333f31bc7282b7e6a626c44ab6af4ac5be2e0f3"],
+    "relion_a/run_it002_data.star": [1274677, "75c4781e1137dd3a9eeb6b390ae1c407c208d1b5bbfd011277b2047ca1892620"],
+    "relion_a/run_it002_model.star": [464227, "9150690ca2c6db1590092a2a796c310ad4ceb265bc0f9d5bbe81661555a36188"],
+    "relion_a/run_it002_optimiser.star": [7665, "ab435b5a8c71cbd7b5d39a854a38916de5432a299190dad71283e5f3c1ede312"],
+    "relion_a/run_it002_sampling.star": [83875, "75381149d2b4adf928a81b0b7f258a55a34e42c658335bfb1c64b858575c962f"],
+    "relion_b/EXECUTED.json": [62, "0e295289d09fb71f243cd211b56ee966fb54f0e73207c025a2dcd61c055a01e8"],
+    "relion_b/GPU.txt": [64, "be41ed782e3a9a78f892d683d95a146a9ba8f94bfe82b111d8b00770bd7cc401"],
+    "relion_b/arm.sh": [1164, "88c736ac73802f35002ca5920cd8d578a386cee2dfd3c9829141e8dc0b4424ec"],
+    "relion_b/run_it000_class001.mrc": [8389632, "21aa6fac1d98ee98b4c7b430a43655b581cffa0d3e910a91d864dc29577f578e"],
+    "relion_b/run_it000_class002.mrc": [8389632, "69492e5596fea34336da5e637ea4d5dc839bff6f8092926e12f8b08fcc66b078"],
+    "relion_b/run_it000_class003.mrc": [8389632, "15bae551cb4a138835fb8203415fc374d175307b0ea840f9cf2177ab3666f58c"],
+    "relion_b/run_it000_class004.mrc": [8389632, "65eae5c72507091dfae80b32c220504606fff462d4bf40f0d8ded623503ecbd6"],
+    "relion_b/run_it000_data.star": [1079580, "af8da2cf70c995cad4d38b8da19939b0ae310af0dc0722cae95bf8bc2235734a"],
+    "relion_b/run_it000_model.star": [460679, "0ad762e13de881dc428c7506c54f9b45684f3d1a896fa70f37e8c39c0b27f8bc"],
+    "relion_b/run_it000_optimiser.star": [7665, "7677c7ed429db83322ff82d1bf6c6197c9ebdf39a10532604c7c38d755ecc753"],
+    "relion_b/run_it001_class001.mrc": [8389632, "78e365ad3025df4e09d74134b9a9473eeffcc1c0eea58dcf7f44c4bcd17aab6b"],
+    "relion_b/run_it001_class002.mrc": [8389632, "2c7f5e1d2ef2275a6b04bc66c9a381fef6ba945bfafd45e276d0a5352199c83a"],
+    "relion_b/run_it001_class003.mrc": [8389632, "020b944296271f6912daa703df03f6e03dd2795fe06d5065ba9aa210ee938d66"],
+    "relion_b/run_it001_class004.mrc": [8389632, "28812ebc14309ff1fc25470b8caabdc371bba4994e921ac032fc22884577bad0"],
+    "relion_b/run_it001_data.star": [1274677, "d949f2e863be06ebd61907fc1e467c257c285bc0baa4e2a22ff6aa86d84145a7"],
+    "relion_b/run_it001_model.star": [460679, "1e53c650550a88f9f77fdba3ec28ae07720ce722dbbc3a391d6019590799e724"],
+    "relion_b/run_it001_optimiser.star": [7665, "7ffdc7a2d51817b3004e46fbc493584e1addf2715ac0e72b65e05260fa918006"],
+    "relion_b/run_it001_sampling.star": [83875, "262dda98d1e9e0bc14471c9bc43f73a2385c56ba535f3213a0fdebfb3318dd91"],
+    "relion_b/run_it002_class001.mrc": [8389632, "149b2e64d64eecd0bf796ddd2b2c1a9e81fcb839bea587a8a1f069dd9ecd65c7"],
+    "relion_b/run_it002_class002.mrc": [8389632, "5d15e00ebf7803d1975c9aa4739edacd1b02e1821da4b40ba3a9dc0453e839d0"],
+    "relion_b/run_it002_class003.mrc": [8389632, "ef509f9f1ce72f195d165dff889fe0963272e113f49fa26137bd63f8ef0b9fef"],
+    "relion_b/run_it002_class004.mrc": [8389632, "aa060e365d85eb68b10b9881c8812ee6c6fbffdd88ff6551c73d41f27b2a1c87"],
+    "relion_b/run_it002_data.star": [1274677, "bbb38d962736ecb3dafef7cb7ab47eaf2717328b90cbb1bf1b5bad29adab0137"],
+    "relion_b/run_it002_model.star": [464227, "a6139cc12fc45c6339f2fb62d86c389903932dba359e015ed4c50adb58413516"],
+    "relion_b/run_it002_optimiser.star": [7665, "a5fb788baa79add6059177d40efccf7ed84ad3bbc548ff9343567a28d034c1d8"],
+    "relion_b/run_it002_sampling.star": [83875, "75381149d2b4adf928a81b0b7f258a55a34e42c658335bfb1c64b858575c962f"]
+   },
+   "provenance": {
+    "generation_records": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/k4_class3d_hp4/PROVENANCE.json"
+    ],
+    "relion_optimiser_headers": {
+     "relion_a/run_it000_optimiser.star": {
+      "command": "--o /scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/class3d_hp4_oracle/relion_a/output/run --i particles.star --ref reference_init_classes_relion.star --K 4 --tau2_fudge 4 --iter 2 --healpix_order 4 --offset_range 6 --offset_step 2 --sym C1 --particle_diameter 200 --ini_high 30 --firstiter_cc --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --oversampling 1 --random_seed 29 --pool 3 --j 8 --gpu 0",
+      "random_seed": 29,
+      "version": "RELION optimiser; version 5.0.1-commit-f2c1a3"
+     },
+     "relion_b/run_it000_optimiser.star": {
+      "command": "--o /scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/class3d_hp4_oracle/relion_b/output/run --i particles.star --ref reference_init_classes_relion.star --K 4 --tau2_fudge 4 --iter 2 --healpix_order 4 --offset_range 6 --offset_step 2 --sym C1 --particle_diameter 200 --ini_high 30 --firstiter_cc --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --oversampling 1 --random_seed 29 --pool 3 --j 8 --gpu 0",
+      "random_seed": 29,
+      "version": "RELION optimiser; version 5.0.1-commit-f2c1a3"
+     }
+    }
+   },
+   "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/k4_class3d_hp4"
+  },
   "k4_5k128_data": {
    "description": "K4 5k/128 Ribosembly particles and initial maps",
    "files": {

@@ -1067,3 +1067,107 @@ def test_em_parity_long_realdata_hp3_replay(tmp_path, arm):
         for half in (1, 2):
             assert payload[f"half{half}_fsc_auc"] >= gate["fsc_auc_floor"], payload
             assert payload[f"half{half}_min_shell_fsc_in_band"] >= gate["min_shell_floor"], payload
+
+
+# Class3D at HEALPix order 4 (default --auto_local_healpix_order 4) stays on global searches in
+# RELION: the switch to local searches from the HEALPix order is auto-refine only (iteration 0
+# inside ``if (do_auto_refine)``, ml_optimiser.cpp:2541-2565; later switches in
+# updateAngularSampling, which Class3D never calls, ml_optimiser.cpp:3936-3938). relax before
+# 7381f84 searched locally here and read per-class FSC-AUC 0.957-0.996 against RELION.
+CLASS3D_HP4_DATA = fixture_root("k4_5k128_data")
+CLASS3D_HP4_RELION = fixture_root("k4_5k128_class3d_hp4_relion")
+
+
+@pytest.mark.em_parity_long
+@pytest.mark.gpu
+@pytest.mark.integration
+def test_em_parity_long_class3d_hp4_global(tmp_path):
+    """Class3D K=4 at HEALPix 4 must search globally and match RELION per class.
+
+    Runs the standalone Class3D command of the fixture's RELION runs (2 iterations, seed 29) and
+    compares each final class map, Hungarian-matched on FSC-AUC, with RELION's run_it002 maps by
+    shellwise FSC (FSC-AUC and the minimum shell FSC over shells 1..current size/2). The RELION
+    same-command repeat (relion_b) is reported alongside. The floors apply once
+    ``tests/tiers/fsc_thresholds.json`` records the user's approval (case ``class3d_hp4_global``);
+    until then the test asserts completion and reports the values.
+    """
+    from recovar.utils import helpers
+    from scipy.optimize import linear_sum_assignment
+
+    from scripts.fsc_metrics import normalized_fsc_auc, shell_fsc
+
+    _assert_parity_ancestors_or_skip()
+    require_fixture_sets("k4_5k128_data", "k4_5k128_class3d_hp4_relion")
+    n_classes, final_iter = 4, 2
+    relion_a, relion_b = CLASS3D_HP4_RELION / "relion_a", CLASS3D_HP4_RELION / "relion_b"
+    _assert_relion_command_tokens(
+        relion_a / "run_it000_optimiser.star",
+        (
+            "--K 4", "--tau2_fudge 4", f"--iter {final_iter}", "--healpix_order 4", "--offset_range 6",
+            "--offset_step 2", "--sym C1", "--particle_diameter 200", "--ini_high 30", "--firstiter_cc", "--ctf",
+            "--flatten_solvent", "--zero_mask", "--norm", "--scale", "--pad 2", "--oversampling 1",
+            "--random_seed 29",
+        ),
+    )
+    assert int(_read_relion_star_scalar(relion_a / f"run_it{final_iter:03d}_model.star", "_rlnOrientationalPriorMode")) == 0
+
+    output_dir = tmp_path / "class3d_hp4"
+    output_dir.mkdir()
+    cmd = [
+        sys.executable, str(REFINE_SCRIPT), "--data_dir", str(CLASS3D_HP4_DATA), "--output", str(output_dir),
+        "--n_classes", str(n_classes), "--ref_star", str(CLASS3D_HP4_DATA / "reference_init_classes_relion.star"),
+        "--healpix_order", "4", "--offset_range", "6", "--offset_step", "2", "--adaptive_oversampling", "1",
+        "--tau2_fudge", "4.0", "--perturb_factor", "0.5", "--particle_diameter_ang", "200", "--seed", "29",
+        "--firstiter_cc", "--apply-initial-lowpass", "--init_resolution", "30.0", "--max_iter", str(final_iter),
+    ]
+    t0 = time.time()
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    elapsed = time.time() - t0
+    assert proc.returncode == 0, (
+        f"Class3D hp4 run exited {proc.returncode}\nstdout:\n{proc.stdout[-4000:]}\nstderr:\n{proc.stderr[-4000:]}"
+    )
+    assert "Local search" not in proc.stderr, "relax Class3D switched to local searches at HEALPix 4"
+
+    current_size = int(_read_relion_star_scalar(relion_a / f"run_it{final_iter:03d}_model.star", "_rlnCurrentImageSize"))
+    band = current_size // 2
+    relax_maps = [np.asarray(helpers.load_mrc(str(output_dir / f"final_class{k + 1:03d}.mrc")), dtype=np.float64)
+                  for k in range(n_classes)]
+
+    def relion_maps(run):
+        return [np.asarray(helpers.load_relion_volume(str(run / f"run_it{final_iter:03d}_class{k + 1:03d}.mrc")),
+                           dtype=np.float64) for k in range(n_classes)]
+
+    def matched(maps_x, maps_y):
+        curves = [[np.asarray(shell_fsc(x, y), dtype=np.float64) for y in maps_y] for x in maps_x]
+        auc = np.asarray([[normalized_fsc_auc(c) for c in row] for row in curves])
+        rows, cols = linear_sum_assignment(-auc)
+        return {
+            "permutation": [int(c) for c in cols],
+            "fsc_auc": [float(auc[r, c]) for r, c in zip(rows, cols)],
+            "min_shell_fsc_in_band": [float(np.nanmin(curves[r][c][1:band])) for r, c in zip(rows, cols)],
+        }
+
+    ref_a, ref_b = relion_maps(relion_a), relion_maps(relion_b)
+    payload = {
+        "walltime_s": elapsed,
+        "current_size": current_size,
+        "relax_vs_relion_a": matched(relax_maps, ref_a),
+        "relax_vs_relion_b": matched(relax_maps, ref_b),
+        "relion_a_vs_relion_b": matched(ref_a, ref_b),
+        "command": cmd,
+    }
+    ledger = output_dir / "em_class3d_hp4_ledger.json"
+    ledger.write_text(json.dumps(payload | {"timestamp": time.strftime("%Y-%m-%dT%H:%M:%S")}, indent=2, sort_keys=True))
+    logger.info("Class3D hp4 ledger: %s", ledger)
+    print(
+        f"\nClass3D K4 hp4 (2 it): relax vs RELION FSC-AUC {payload['relax_vs_relion_a']['fsc_auc']}, min shell "
+        f"{payload['relax_vs_relion_a']['min_shell_fsc_in_band']}; RELION repeat {payload['relion_a_vs_relion_b']['fsc_auc']}; "
+        f"wall {elapsed:.0f} s",
+        file=sys.stderr, flush=True,
+    )
+    thresholds = json.loads((REPO_ROOT / "tests" / "tiers" / "fsc_thresholds.json").read_text())
+    gate = thresholds["cases"].get("class3d_hp4_global") if thresholds.get("approved") else None
+    if gate is not None:
+        for ref in ("relax_vs_relion_a", "relax_vs_relion_b"):
+            assert min(payload[ref]["fsc_auc"]) >= gate["fsc_auc_floor"], payload
+            assert min(payload[ref]["min_shell_fsc_in_band"]) >= gate["min_shell_floor"], payload

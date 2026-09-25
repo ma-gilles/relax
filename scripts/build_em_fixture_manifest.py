@@ -240,6 +240,11 @@ SETS["empiar_10097_hp3_state"] = (
     f"{FX}/empiar_10097/relion_refine_hp3_state", RUN, [],
     "EMPIAR-10097 RELION auto-refine state at iteration 13 (hp3, os1, current size 136) with its target iteration 14 and the input particles.star", ["PROVENANCE.json"],
 )
+SETS["k4_5k128_class3d_hp4_relion"] = (
+    f"{FX}/k4_class3d_hp4", RUN, [],
+    "RELION Class3D K4 of k4_5k128_data at healpix 4 (global search), 2 iterations, seed 29: two same-command runs relion_a/relion_b (Slurm 14410096)",
+    ["PROVENANCE.json"],
+)
 SETS["empiar_10097_particle_stack"] = (
     "/projects/CRYOEM/singerlab/mg6942/10097/data/Particle-Stack", TOP, [],
     "EMPIAR-10097 T40 HA 130k equalized particle stack (256 px) read by empiar_10097_hp3_state/input/particles.star", [],

@@ -125,6 +125,8 @@ LONG_ARM_SECONDS = {  # H100 walls: long tier (relax 14309851/14287533, Q 143201
     # EMPIAR-10097 it13 -> 14 (hp3, current size 136): RELION 556 s for the iteration on H100.
     "long_realdata_hp3_default": 1200,
     "long_realdata_hp3_resident": 1200,
+    # Class3D K4 5k/128 at HEALPix 4, 2 iterations (relax 7381f84, Slurm 14410096): 1860 s on H100.
+    "long_class3d_hp4": 2000,
 }
 FIXTURE_SETS = {
     "smoke": ["k1_5k128_data", "k1_5k128_relion_os0", "k1_5k128_relion_os1", "k2_5k128_data", "k2_5k128_relion_os0"],
@@ -159,6 +161,8 @@ FIXTURE_SETS = {
         "k4_100k256_mask",
         "empiar_10097_hp3_state",
         "empiar_10097_particle_stack",
+        "k4_5k128_data",
+        "k4_5k128_class3d_hp4_relion",
     ],
 }
 
@@ -417,6 +421,8 @@ def long_plan(src: Path, py: str, run_root: Path | None) -> list[Item]:
         *[Item(f"long_realdata_hp3_{arm}",
                _pytest(py, *long_flags, f"{LONG}::test_em_parity_long_realdata_hp3_replay[{arm}]"), True,
                LONG_ARM_SECONDS[f"long_realdata_hp3_{arm}"]) for arm in ("default", "resident")],
+        Item("long_class3d_hp4", _pytest(py, *long_flags, f"{LONG}::test_em_parity_long_class3d_hp4_global"), True,
+             LONG_ARM_SECONDS["long_class3d_hp4"]),
         Item("completion_k1", ["bash", str(jobs / "em_completion_k1_100k256.sh")], True,
              LONG_ARM_SECONDS["completion_k1"]),
         Item("completion_k4", ["bash", str(jobs / "em_completion_k4_100k256.sh")], True,
