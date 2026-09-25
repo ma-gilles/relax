@@ -39,6 +39,7 @@ from relax.ppca_refinement.engine import (
     DensePPCAFusedEMResult,
     PosteriorDiagnostics,
     _enforce_augmented_x0,
+    add_compensated_blocks,
 )
 from relax.ppca_refinement.mean_regularization import (
     MeanRegularizationConfig,
@@ -1097,6 +1098,8 @@ def _accumulate_local_ppca_fused_stats(
     tri = _tri_size(P)
     rhs_volume = jnp.zeros((P, mean_prior.shape[0]), dtype=jnp.complex64)
     lhs_tri_volume = jnp.zeros((tri, mean_prior.shape[0]), dtype=jnp.float32)
+    # Blocks are backprojected into zero volumes and Kahan-added (compensated_add).
+    volume_compensation = (jnp.zeros_like(rhs_volume), jnp.zeros_like(lhs_tri_volume))
     log_likelihood = 0.0
     n_images = 0
     pmax_values = []
@@ -1157,7 +1160,7 @@ def _accumulate_local_ppca_fused_stats(
             pmax_np = np.asarray(jax.block_until_ready(posterior.pmax), dtype=np.float32)
             use_topk_mstep = bool(pmax_np.size) and float(np.min(pmax_np)) >= local_topk_min_pmax
             if use_topk_mstep:
-                rhs_volume, lhs_tri_volume, retained_mass = _accumulate_local_pose_ppca_bucket_topk_cached(
+                rhs_block, lhs_block, retained_mass = _accumulate_local_pose_ppca_bucket_topk_cached(
                     score_result.score,
                     score_result.alpha,
                     score_result.G_tri,
@@ -1165,8 +1168,8 @@ def _accumulate_local_ppca_fused_stats(
                     block.rotations,
                     tuple(int(x) for x in experiment_dataset.image_shape),
                     tuple(int(x) for x in experiment_dataset.volume_shape),
-                    rhs_volume,
-                    lhs_tri_volume,
+                    jnp.zeros_like(rhs_volume),
+                    jnp.zeros_like(lhs_tri_volume),
                     block.Y1_recon,
                     block.ctf2_over_noise_recon,
                     disc_type_backproject=disc_type,
@@ -1177,7 +1180,7 @@ def _accumulate_local_ppca_fused_stats(
                 )
                 local_mstep_topk_buckets += 1
             else:
-                rhs_volume, lhs_tri_volume, retained_mass = _accumulate_local_pose_ppca_bucket_cached(
+                rhs_block, lhs_block, retained_mass = _accumulate_local_pose_ppca_bucket_cached(
                     score_result.score,
                     score_result.alpha,
                     score_result.G_tri,
@@ -1185,8 +1188,8 @@ def _accumulate_local_ppca_fused_stats(
                     block.rotations,
                     tuple(int(x) for x in experiment_dataset.image_shape),
                     tuple(int(x) for x in experiment_dataset.volume_shape),
-                    rhs_volume,
-                    lhs_tri_volume,
+                    jnp.zeros_like(rhs_volume),
+                    jnp.zeros_like(lhs_tri_volume),
                     block.Y1_recon,
                     block.ctf2_over_noise_recon,
                     disc_type_backproject=disc_type,
@@ -1197,7 +1200,7 @@ def _accumulate_local_ppca_fused_stats(
                 local_mstep_exact_buckets += 1
             local_mstep_retained_mass_values.append(jnp.asarray(retained_mass, dtype=jnp.float32))
         else:
-            rhs_volume, lhs_tri_volume, posterior = _fused_local_pose_ppca_bucket(
+            rhs_block, lhs_block, posterior = _fused_local_pose_ppca_bucket(
                 block.Y1,
                 block.proj_aug,
                 block.ctf2_over_noise,
@@ -1205,8 +1208,8 @@ def _accumulate_local_ppca_fused_stats(
                 block.rotations,
                 tuple(int(x) for x in experiment_dataset.image_shape),
                 tuple(int(x) for x in experiment_dataset.volume_shape),
-                rhs_volume,
-                lhs_tri_volume,
+                jnp.zeros_like(rhs_volume),
+                jnp.zeros_like(lhs_tri_volume),
                 block.pose_log_prior,
                 block.Y1_recon,
                 block.ctf2_over_noise_recon,
@@ -1217,6 +1220,9 @@ def _accumulate_local_ppca_fused_stats(
                 top_pose_count=raw_top_pose_count,
             )
             local_mstep_exact_buckets += 1
+        (rhs_volume, lhs_tri_volume), volume_compensation = add_compensated_blocks(
+            (rhs_volume, lhs_tri_volume), volume_compensation, (rhs_block, lhs_block)
+        )
         log_likelihood += float(jnp.sum(posterior.logZ))
         n_images += int(posterior.logZ.shape[0])
         pmax_values.append(jnp.asarray(posterior.pmax))

@@ -41,6 +41,8 @@ from relax.ppca_refinement.engine import (
     DenseScoreStats,
     _enforce_augmented_x0,
     accumulate_pose_ppca_block_cached,
+    add_compensated_blocks,
+    compensated_add,
     dense_pose_ppca_score_stats_blocked,
     dense_pose_ppca_score_tensor_stats_blocked,
     dense_pose_ppca_score_with_moments_blocked,
@@ -941,6 +943,9 @@ def accumulate_dense_ppca_statistics(
     rhs_volume = jnp.zeros((P, half_size), dtype=jnp.complex64)
     lhs_tri_volume = jnp.zeros((tri, half_size), dtype=jnp.float32)
     residual_volume = jnp.zeros_like(rhs_volume) if collect_residuals else None
+    # Blocks are backprojected into zero volumes and Kahan-added (compensated_add).
+    volume_compensation = (jnp.zeros_like(rhs_volume), jnp.zeros_like(lhs_tri_volume))
+    residual_compensation = jnp.zeros_like(rhs_volume) if collect_residuals else None
     residual_power = jnp.zeros(int(np.prod(image_shape[:-1])) * (image_shape[-1] // 2 + 1), jnp.float32)
     embedding_batches = []
     offset_second_sum = jnp.float32(0)
@@ -1171,11 +1176,11 @@ def accumulate_dense_ppca_statistics(
                 weights = make_half_image_weights(image_shape)
                 weights = weights if indices is None else weights[indices]
                 # The half-image adjoint supplies conjugate scatters itself.
-                residual_volume = batch_adjoint_slice_volume_maybe_windowed(
+                residual_block = batch_adjoint_slice_volume_maybe_windowed(
                     residual_images / weights[None, None, :],
                     indices,
                     block.rotations,
-                    residual_volume,
+                    jnp.zeros_like(residual_volume),
                     image_shape,
                     volume_shape,
                     disc_type,
@@ -1183,6 +1188,9 @@ def accumulate_dense_ppca_statistics(
                     True,
                     use_window=indices is not None,
                     max_r=block.backprojection_max_r,
+                )
+                residual_volume, residual_compensation = compensated_add(
+                    residual_volume, residual_compensation, residual_block
                 )
                 nv = jnp.broadcast_to(block.coefficient_noise, (residual_power.size,))
                 if indices is None:
@@ -1205,7 +1213,7 @@ def accumulate_dense_ppca_statistics(
                 # Fast path: pass-1 already computed score + (α, G_tri). Skip
                 # the duplicate `_per_pose_stats_block` einsum that
                 # `fused_dense_pose_ppca_block` would otherwise redo.
-                rhs_volume, lhs_tri_volume, n_sig_block, _pmax_block = accumulate_pose_ppca_block_cached(
+                rhs_block, lhs_block, n_sig_block, _pmax_block = accumulate_pose_ppca_block_cached(
                     block_scores[block_idx] - score_center[:, None, None],
                     block_alphas[block_idx],
                     block_G_tris[block_idx],
@@ -1215,8 +1223,8 @@ def accumulate_dense_ppca_statistics(
                     block.rotations,
                     image_shape,
                     volume_shape,
-                    rhs_volume,
-                    lhs_tri_volume,
+                    jnp.zeros_like(rhs_volume),
+                    jnp.zeros_like(lhs_tri_volume),
                     disc_type_backproject=disc_type,
                     recon_window_indices=block.recon_window_indices,
                     use_recon_window=block.use_recon_window,
@@ -1224,7 +1232,7 @@ def accumulate_dense_ppca_statistics(
                 )
                 batch_nsig = batch_nsig + n_sig_block
             else:
-                rhs_volume, lhs_tri_volume, posterior = fused_dense_pose_ppca_block(
+                rhs_block, lhs_block, posterior = fused_dense_pose_ppca_block(
                     block.Y1,
                     block.proj_aug,
                     block.ctf2_over_noise,
@@ -1232,8 +1240,8 @@ def accumulate_dense_ppca_statistics(
                     block.rotations,
                     image_shape,
                     volume_shape,
-                    rhs_volume,
-                    lhs_tri_volume,
+                    jnp.zeros_like(rhs_volume),
+                    jnp.zeros_like(lhs_tri_volume),
                     block.pose_log_prior,
                     Y1_recon=block.Y1_recon,
                     ctf2_over_noise_recon=block.ctf2_over_noise_recon,
@@ -1244,6 +1252,9 @@ def accumulate_dense_ppca_statistics(
                     backprojection_max_r=block.backprojection_max_r,
                 )
                 batch_nsig = batch_nsig + posterior.n_significant_per_image
+            (rhs_volume, lhs_tri_volume), volume_compensation = add_compensated_blocks(
+                (rhs_volume, lhs_tri_volume), volume_compensation, (rhs_block, lhs_block)
+            )
         if collect_residuals:
             embedding_batches.append(batch_embedding)
         pmax_values.append(batch_pmax)

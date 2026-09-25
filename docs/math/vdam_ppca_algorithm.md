@@ -993,14 +993,28 @@ scientific contract; runnable code alone does not establish recovery.
   into weight differences. It is carried as `score_offset`
   ([pose_invariant_score_offset](../../relax/ppca_refinement/engine.py)) and
   added back only to absolute values (log-likelihood, reported top scores).
-- The streamed pass-2 volumes (RHS, LHS, residual) are accumulated per
-  rotation block into zero volumes and summed across blocks with Kahan
-  compensation ([compensated_add](../../relax/ppca_refinement/full_row_stream.py)).
-  A single float32 atomic accumulator per tile rounds away posterior-tail
-  contributions once voxels grow: against a float64 accumulation of the same
-  block images, one CP110 full-row tile had RHS relL2 4.7e-4 uncompensated and
-  1.2e-7 compensated, and one sharp o1_r16 tile had LHS 1.3e-4 and 1.4e-6.
-  The host-mask dense accumulation is still uncompensated.
+- Every PPCA M-step volume sum (RHS, LHS, residual gradient) backprojects each
+  rotation block into zero volumes and adds it to the running sum with Kahan
+  compensation ([compensated_add](../../relax/ppca_refinement/engine.py)): the
+  streamed engine, the host-mask dense accumulation and exact-local PPCA. A
+  single float32 atomic accumulator rounds away posterior-tail contributions
+  once voxels grow: against a float64 accumulation of the same block images,
+  one CP110 full-row tile had RHS relL2 4.7e-4 uncompensated and 1.2e-7
+  compensated, and one sharp o1_r16 tile had LHS 1.3e-4 and 1.4e-6. The
+  RECOVAR adjoint kernel is unchanged; it accumulates one block into the
+  volume it is given, and the block sum is the caller's. Tile merges and the
+  bootstrap initialization add a few volumes of comparable magnitude and stay
+  plain float32 sums. After this change lands, its head replaces the frozen
+  contiguous-mask source as the control for PPCA scoped-gate pairs; pairs
+  against the older uncompensated control measure that control's own float32
+  accumulation error.
+- Decision record (September 25, 2026), stable shapes: the last image tile of
+  each half is not padded to 16 images. A new tile image count compiles the
+  block programs once per process, measured at 1.7 s (O2x CP60, r16/HP2) and
+  3.6 s (o1_r16 CP111, r16/HP3) per half; at most 16 counts occur per process
+  (about 50 s per process, below 0.5% of a T200 run) and the persistent
+  compilation cache carries across restarts. Revisit if tiles grow or
+  compilation per count grows.
 - After the final all-particle update,
   [compute_dense_ppca_embeddings](../../relax/ppca_refinement/dense_dataset.py)
   uses the same fine pose scores, latent means, candidate support and sequential

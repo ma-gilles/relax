@@ -55,6 +55,7 @@ from relax.ppca_refinement.dense_dataset import (
 from relax.ppca_refinement.engine import (
     _enforce_augmented_x0,
     backproject_moment_images,
+    compensated_add,
     dense_pose_ppca_score_with_moments_blocked,
     dense_pose_ppca_score_with_moments_factor_once,
     pose_invariant_score_offset,
@@ -195,13 +196,6 @@ def full_row_pose_log_prior(
     mask = jnp.take(jnp.take(coarse_mask, rotation_parent, axis=1), translation_parent, axis=2)
     prior = rotation_log_prior[:, None] + translation_log_prior[None, :]
     return jnp.where(mask, prior[None], -jnp.inf).astype(jnp.float32)
-
-
-def compensated_add(total, compensation, term):
-    """One Kahan summation step; returns the new total and compensation."""
-    corrected = term - compensation
-    updated = total + corrected
-    return updated, (updated - total) - corrected
 
 
 def _block_rows(tile, start, size: int):

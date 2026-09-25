@@ -356,6 +356,28 @@ class DenseScoreAndMomentsStats(NamedTuple):
     score_offset: jax.Array  # (B,) pose-invariant log-score removed from the frame
 
 
+@jax.jit
+def compensated_add(total, compensation, term):
+    """One Kahan summation step; returns the new total and compensation.
+
+    PPCA M-step volumes are sums over rotation blocks. Accumulating every block
+    into one float32 volume through the adjoint's atomic adds rounds away the
+    many small posterior-tail contributions once voxels grow; every PPCA path
+    therefore backprojects a block into zero volumes and adds it here. Against
+    a float64 accumulation of the same block images, one CP110 full-row tile
+    had RHS relL2 4.7e-4 uncompensated and 1.2e-7 compensated.
+    """
+    corrected = term - compensation
+    updated = total + corrected
+    return updated, (updated - total) - corrected
+
+
+def add_compensated_blocks(totals, compensations, blocks):
+    """Kahan-add block volumes to running totals; returns (totals, compensations) tuples."""
+    steps = [compensated_add(t, c, b) for t, c, b in zip(totals, compensations, blocks, strict=True)]
+    return tuple(step[0] for step in steps), tuple(step[1] for step in steps)
+
+
 def pose_invariant_score_offset(y_norm):
     """The part ``-y_norm / 2`` of every pose log-score of an image.
 
