@@ -980,7 +980,6 @@ def test_dense_initial_model_estep_sparse_pass2_uses_coarse_parent_prior(monkeyp
         unused_dense_conversion,
     )
     monkeypatch.delenv("RELAX_INITIAL_MODEL_EXACT_FINE_DIFF2", raising=False)
-    monkeypatch.delenv("RECOVAR_INITIAL_MODEL_FLAT_LOCAL_ROWS", raising=False)
     monkeypatch.delenv("RELAX_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY", raising=False)
     monkeypatch.delenv("RECOVAR_INITIAL_MODEL_PACKED_LOCAL_PROJECTION", raising=False)
     monkeypatch.delenv("RECOVAR_INITIAL_MODEL_DEFER_PACKED_VDAM", raising=False)
@@ -1234,7 +1233,7 @@ def test_dense_initial_model_estep_sparse_pass2_uses_coarse_parent_prior(monkeyp
     assert calls["local_relion_exact_bpref_operands"] is True
     assert calls["local_preserve_bpref_particle_order"] is False
     assert calls["local_relion_exact_fine_diff2"] is True
-    assert calls["local_flat_local_rows"] is False
+    assert calls["local_flat_local_rows"] is True
     assert calls["local_stable_flat_row_capacity"] is False
     assert calls["local_packed_local_projection"] is False
     assert calls["local_fused_pair_fine_score"] is False
@@ -2017,7 +2016,7 @@ def test_initial_model_pass2_layout_uses_relion_direction_ids_for_posterior_bins
 def test_vdam_probe_flag_parsing(monkeypatch, default, value, expected):
     from relax.vdam.sparse_pass2_estep import _env_enabled
 
-    variable = "RECOVAR_INITIAL_MODEL_FLAT_LOCAL_ROWS"
+    variable = "RELAX_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY"
     if value is None:
         monkeypatch.delenv(variable, raising=False)
     else:
@@ -2028,7 +2027,7 @@ def test_vdam_probe_flag_parsing(monkeypatch, default, value, expected):
 def test_vdam_probe_reads_follow_scoped_environment(monkeypatch):
     from relax.vdam.sparse_pass2_estep import _env_enabled
 
-    variable = "RECOVAR_INITIAL_MODEL_FLAT_LOCAL_ROWS"
+    variable = "RELAX_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY"
     monkeypatch.setenv(variable, "off")
     assert not _env_enabled(variable)
     with monkeypatch.context() as scope:

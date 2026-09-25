@@ -59,7 +59,6 @@ logger = logging.getLogger(__name__)
 _EXACT_RELION_FINE_DIFF2_ENV = "RELAX_INITIAL_MODEL_EXACT_FINE_DIFF2"
 
 
-_FLAT_LOCAL_ROWS_ENV = "RECOVAR_INITIAL_MODEL_FLAT_LOCAL_ROWS"
 # Opt-in, default off: allow the exact RELION CUDA operand/fine-diff2 path at K>1.
 # That path computes only the candidates a particle actually needs, where the JAX
 # fallback pads to rectangles; at K=4 100k/256 the fallback computes 28.8x the rows
@@ -795,10 +794,9 @@ def _run_sparse_pass2_initial_model_estep(
             and use_exact_local_relion_operands
             and _env_enabled(_EXACT_RELION_FINE_DIFF2_ENV, default=True)
         )
-        use_flat_local_rows = bool(
-            (use_exact_fine_diff2 and _env_enabled(_FLAT_LOCAL_ROWS_ENV))
-            or kclass_flat_rows
-        )
+        # The exact K=1 fine scorer packs each image's candidates into flat rows
+        # instead of padding them to rectangles (10097 late pass 2: -24% wall).
+        use_flat_local_rows = bool(use_exact_fine_diff2 or kclass_flat_rows)
         if requested_fused_pair_fine_score and not use_flat_local_rows:
             raise ValueError(
                 "shared fused-pair fine scoring requires exact fine diff2 and flat local rows"
@@ -927,7 +925,6 @@ def _run_sparse_pass2_initial_model_estep(
                 ),
                 _packed_final_noise_enabled=bool(
                     use_exact_fine_diff2
-                    and _env_enabled(_FLAT_LOCAL_ROWS_ENV)
                     and _env_enabled(_PACKED_LOCAL_PROJECTION_ENV)
                     and _env_enabled(_DEFER_PACKED_VDAM_ENV)
                     and _env_enabled(_PACKED_FINAL_NOISE_ENV)
