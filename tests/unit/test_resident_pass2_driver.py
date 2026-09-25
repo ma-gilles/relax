@@ -38,6 +38,7 @@ from relax.sparse_pass2.resident_candidates import (
     CapacityChunk,
     ResidentCandidateTables,
 )
+from relax.sparse_pass2.sparse_pass2_policy import ResidentConfigurationUnsupported
 from relax.sparse_pass2.sparse_pass2_wavg import (
     _relion_wavg_atomic_triplet_terms,
     _relion_wavg_rectangle_triplet_terms,
@@ -1166,7 +1167,8 @@ def test_streamed_row_ladder_keeps_capacities_whose_cache_fits():
     assert rp._stream_row_capacity_ladder(
         (8192, 32768, 131072), bytes_per_rotation=300e3, max_projection_bytes=20 * 1024**3
     ) == (8192, 32768)
-    with pytest.raises(NotImplementedError, match="smallest row capacity"):
+    # A configuration refusal, so the default route falls back to compact.
+    with pytest.raises(ResidentConfigurationUnsupported, match="smallest row capacity"):
         rp._stream_row_capacity_ladder(
             (8192,), bytes_per_rotation=10e6, max_projection_bytes=20 * 1024**3
         )

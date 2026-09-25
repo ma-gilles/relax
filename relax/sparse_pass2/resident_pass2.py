@@ -3153,13 +3153,14 @@ def _stream_row_capacity_ladder(row_ladder, *, bytes_per_rotation, max_projectio
         if _STREAM_PEAK_COPIES * float(c) * float(bytes_per_rotation) <= float(max_projection_bytes)
     )
     if not kept:
-        raise NotImplementedError(
-            f"The device-resident K=1 sparse pass 2 ({RESIDENT_PASS2_ENV}=1) does not implement "
-            "this configuration: even the smallest row capacity "
+        # A configuration refusal, so the resident default falls back to the
+        # compact engine with a logged reason and an explicit =1 stops the run
+        # (dispatch._resident_with_compact_default catches only this type).
+        raise ResidentConfigurationUnsupported(
+            "the device-resident sparse pass 2 does not fit this pass: even the smallest row capacity "
             f"{min(int(c) for c in row_ladder)} needs "
             f"{_STREAM_PEAK_COPIES * min(int(c) for c in row_ladder) * bytes_per_rotation / float(1024 ** 3):.2f} GiB of "
-            f"streamed projections against a {max_projection_bytes / float(1024 ** 3):.2f} GiB "
-            "budget. Clear the flag to use the compact engine; this path never falls back silently."
+            f"streamed projections against a {max_projection_bytes / float(1024 ** 3):.2f} GiB budget"
         )
     return kept
 
