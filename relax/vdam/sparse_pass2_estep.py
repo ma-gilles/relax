@@ -892,7 +892,11 @@ def _run_sparse_pass2_initial_model_estep(
                     else _env_enabled(_UNIFY_LOCAL_BUCKET_SIZES_ENV, default=True)
                 ),
                 stats_use_reconstruction_probs=True,
-                class_posterior_sums_from_noise=False,
+                # RELION normalizes pdf_class, sigma2_noise, sigma2_offset and
+                # ave_Pmax by the retained (significant-pruned) mass
+                # (ml_optimiser.cpp:6170-6171, 6387; acc_ml_optimiser_impl.h:4138-4142).
+                # K=1 already takes it from its single noise sum.
+                class_posterior_sums_from_noise=state.K > 1,
                 return_profile=return_profile,
                 return_best_pose_details=True,
                 translation_prior_centers=group_kwargs.get("translation_prior_centers"),

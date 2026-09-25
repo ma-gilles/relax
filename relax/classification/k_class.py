@@ -2019,6 +2019,7 @@ def _run_local_k_class_em_segmented(
     accumulate_noise: bool,
     return_best_pose_details: bool,
     stats_use_reconstruction_probs: bool,
+    class_posterior_sums_from_noise: bool,
     return_profile: bool,
     engine_kwargs,
 ) -> KClassEMResult:
@@ -2029,7 +2030,15 @@ def _run_local_k_class_em_segmented(
     out as segments of one bucket's row axis the engine scores the joint
     class-by-pose posterior once and returns the same per-class quantities, so this
     adapter only reshapes them into the K-class result.
+
+    ``class_posterior_sums_from_noise`` publishes each class's retained
+    (significant-pruned) mass as its M-step mass, as the per-class route does from
+    its per-class noise sums; the joint noise normalizer is then their total,
+    RELION's ``sumw_group`` (acc_ml_optimiser_impl.h:4138-4142).
     """
+
+    if class_posterior_sums_from_noise and not accumulate_noise:
+        raise ValueError("class_posterior_sums_from_noise requires accumulate_noise=True")
 
     n_classes = int(means_array.shape[0])
     output = run_local_em_exact(
@@ -2098,6 +2107,11 @@ def _run_local_k_class_em_segmented(
         per_class_stats=per_class_stats,
         noise_stats=None,
         aggregate_noise_stats_override=output.noise_stats,
+        class_posterior_sums_override=(
+            np.asarray(output.class_reconstruction_posterior_sums, dtype=np.float64)
+            if class_posterior_sums_from_noise
+            else None
+        ),
         per_class_best_pose_rotations=(
             None if output.per_class_best_pose_rotations is None else list(output.per_class_best_pose_rotations)
         ),
@@ -2219,10 +2233,6 @@ def run_local_k_class_em(
         ):
             if value is not None:
                 raise NotImplementedError(f"class-segmented rows do not take an external {name}")
-        if class_posterior_sums_from_noise:
-            raise NotImplementedError(
-                "class-segmented rows produce one joint noise statistic, not per-class masses"
-            )
         return _run_local_k_class_em_segmented(
             experiment_dataset,
             means_array,
@@ -2233,6 +2243,7 @@ def run_local_k_class_em(
             accumulate_noise=accumulate_noise,
             return_best_pose_details=return_best_pose_details,
             stats_use_reconstruction_probs=stats_use_reconstruction_probs,
+            class_posterior_sums_from_noise=class_posterior_sums_from_noise,
             return_profile=return_profile,
             engine_kwargs=base_engine_kwargs,
         )

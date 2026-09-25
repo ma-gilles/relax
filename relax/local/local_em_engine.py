@@ -278,6 +278,7 @@ def _accumulate_class_segment_statistics(
     batch_norm,
     best_argmax,
     class_probs_sum,
+    class_reconstruction_probs_sum,
     class_best_log_score,
     class_log_evidence,
     class_best_argmax,
@@ -292,6 +293,7 @@ def _accumulate_class_segment_statistics(
     class_log_evidence_per_image,
     class_best_log_score_per_image,
     class_posterior_sums,
+    class_reconstruction_posterior_sums,
     class_rotation_posterior_sums,
     class_assignments,
 ) -> None:
@@ -315,6 +317,12 @@ def _accumulate_class_segment_statistics(
     )
     class_best_log_score_per_image[:, image_indices] = best.T + offset[None, :]
     class_posterior_sums += mass.sum(axis=0)
+    # RELION's retained class mass: storeWeightedSums adds only the fine-pass weights
+    # at or above significant_weight to wsum_pdf_class and sumw_group
+    # (acc_ml_optimiser_impl.h:4065-4142). Without a pruned posterior every weight is
+    # retained.
+    retained = mass if class_reconstruction_probs_sum is None else class_reconstruction_probs_sum
+    class_reconstruction_posterior_sums += np.asarray(retained, dtype=np.float64)[:rows].sum(axis=0)
 
     winning_row = np.asarray(best_argmax, dtype=np.int64)[:rows] // int(n_trans)
     class_assignments[image_indices] = (winning_row // int(segment_rotation_count)).astype(np.int32)
@@ -1106,6 +1114,7 @@ def run_local_em_exact(
     class_log_evidence_per_image = None
     class_best_log_score_per_image = None
     class_posterior_sums = None
+    class_reconstruction_posterior_sums = None
     class_rotation_posterior_sums = None
     class_assignments = None
     if n_classes > 1:
@@ -1118,6 +1127,7 @@ def run_local_em_exact(
             (n_classes, n_images), dtype=precision_policy.score_real_dtype,
         )
         class_posterior_sums = np.zeros(n_classes, dtype=np.float64)
+        class_reconstruction_posterior_sums = np.zeros(n_classes, dtype=np.float64)
         class_rotation_posterior_sums = np.zeros(
             (n_classes, int(local_layout.n_global_rotations)), dtype=np.float64,
         )
@@ -4840,6 +4850,10 @@ def run_local_em_exact(
                         bucket_class_log_evidence=bucket_class_log_evidence,
                         bucket_class_best_argmax=bucket_class_best_argmax,
                     )
+                    if bucket_class_reconstruction_probs_sum is not None:
+                        postprocess_row_inputs["bucket_class_reconstruction_probs_sum"] = (
+                            bucket_class_reconstruction_probs_sum
+                        )
                 if (
                     bucket_uncast_log_Z is not None
                     and uncast_log_evidence_per_image is not None
@@ -4870,6 +4884,14 @@ def run_local_em_exact(
                     batch_norm=postprocess_rows(batch_norm, name="batch_norm"),
                     best_argmax=postprocess_rows(best_argmax, name="best_argmax"),
                     class_probs_sum=postprocess_rows(bucket_class_probs_sum, name="bucket_class_probs_sum"),
+                    class_reconstruction_probs_sum=(
+                        None
+                        if bucket_class_reconstruction_probs_sum is None
+                        else postprocess_rows(
+                            bucket_class_reconstruction_probs_sum,
+                            name="bucket_class_reconstruction_probs_sum",
+                        )
+                    ),
                     class_best_log_score=postprocess_rows(bucket_class_best_log_score, name="bucket_class_best_log_score"),
                     class_log_evidence=postprocess_rows(bucket_class_log_evidence, name="bucket_class_log_evidence"),
                     class_best_argmax=postprocess_rows(bucket_class_best_argmax, name="bucket_class_best_argmax"),
@@ -4888,6 +4910,7 @@ def run_local_em_exact(
                     class_log_evidence_per_image=class_log_evidence_per_image,
                     class_best_log_score_per_image=class_best_log_score_per_image,
                     class_posterior_sums=class_posterior_sums,
+                    class_reconstruction_posterior_sums=class_reconstruction_posterior_sums,
                     class_rotation_posterior_sums=class_rotation_posterior_sums,
                     class_assignments=class_assignments,
                 )
@@ -6462,6 +6485,7 @@ def run_local_em_exact(
         class_log_evidence_per_image=class_log_evidence_per_image,
         class_best_log_score_per_image=class_best_log_score_per_image,
         class_posterior_sums=class_posterior_sums,
+        class_reconstruction_posterior_sums=class_reconstruction_posterior_sums,
         class_rotation_posterior_sums=class_rotation_posterior_sums,
         class_assignments=class_assignments,
         per_class_hard_assignments=per_class_hard_assignments,

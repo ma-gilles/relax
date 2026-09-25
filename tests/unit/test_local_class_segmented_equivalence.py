@@ -84,7 +84,8 @@ def _fixture(float64: bool, n_classes=2):
 
 
 def _run(*, segmented, float64, accumulate_noise=True, reconstruct_significant_only=False,
-         use_float64_normalization=True, n_classes=2):
+         use_float64_normalization=True, n_classes=2, class_posterior_sums_from_noise=False,
+         adaptive_fraction=0.999):
     means, noise, layouts = _fixture(float64, n_classes)
     dataset = MockDataset(N_IMAGES, np.random.default_rng(11))
     kwargs = dict(
@@ -97,11 +98,12 @@ def _run(*, segmented, float64, accumulate_noise=True, reconstruct_significant_o
         # across images and, before it was made class-aware, accumulated every class
         # into one volume on the real path while these tests passed.
         reconstruct_significant_only=reconstruct_significant_only,
-        adaptive_fraction=0.999,
+        adaptive_fraction=adaptive_fraction,
         stats_use_reconstruction_probs=True,
         unweighted_high_shell_image_power=True,
         accumulate_noise=accumulate_noise,
         return_best_pose_details=True,
+        class_posterior_sums_from_noise=class_posterior_sums_from_noise,
     )
     kwargs["use_float64_normalization"] = bool(use_float64_normalization)
     if float64:
@@ -284,6 +286,60 @@ def test_segmented_pass_publishes_the_canonical_source_eulers():
     assert_matches(
         np.asarray(segmented.best_pose_eulers_deg, dtype=np.float64),
         np.asarray(baseline.best_pose_eulers_deg, dtype=np.float64),
+    )
+
+
+@pytest.mark.parametrize(
+    "float64, rtol",
+    [(False, 1e-6), (True, 1e-12)],
+    ids=["float32", "float64"],
+)
+def test_segmented_pass_publishes_retained_class_mass(float64, rtol, monkeypatch):
+    """The M-step class mass is RELION's retained mass.
+
+    RELION adds only fine-pass weights at or above significant_weight to
+    wsum_pdf_class and sumw_group (acc_ml_optimiser_impl.h:4065-4142), then
+    normalizes pdf_class, sigma2_noise, sigma2_offset and ave_Pmax by that sum. The
+    fixture's posterior is deliberately broad (see the module docstring), so a 0.999
+    fraction retains every sample; 0.9 prunes while both classes stay populated.
+
+    The reference is the engine's own joint support mass, reduced per image from the
+    pruned posterior by the noise path, not the per-class segment reduction under
+    test. The per-class route is not a reference here: each of its M-step calls
+    prunes one class's posterior on its own, while RELION prunes the joint
+    class-by-pose posterior of a particle, as the segmented pass does.
+    """
+    from relax.classification import k_class
+
+    captured = []
+    original = k_class.run_local_em_exact
+
+    def capture(*args, **kwargs):
+        output = original(*args, **kwargs)
+        captured.append(output)
+        return output
+
+    monkeypatch.setattr(k_class, "run_local_em_exact", capture)
+    result = _run(
+        segmented=True, float64=float64, reconstruct_significant_only=True,
+        adaptive_fraction=0.9, class_posterior_sums_from_noise=True,
+    )
+    (output,) = captured
+    _assert_every_class_is_populated(result)
+    retained = np.asarray(result.class_mstep_posterior_sums, dtype=np.float64)
+    full = np.asarray(result.class_posterior_sums, dtype=np.float64)
+    engine_support_mass = float(np.sum(np.asarray(output.noise_stats.sumw, dtype=np.float64)))
+    assert np.all(retained <= full * (1.0 + rtol)), (retained, full)
+    assert retained.sum() < full.sum() * 0.99, (retained, full)
+    np.testing.assert_allclose(retained.sum(), engine_support_mass, rtol=rtol)
+    np.testing.assert_allclose(result.aggregate_noise_stats.sumw, engine_support_mass, rtol=rtol)
+    # Without the option the class mass stays the full responsibility.
+    captured.clear()
+    unpruned = _run(
+        segmented=True, float64=float64, reconstruct_significant_only=True, adaptive_fraction=0.9,
+    )
+    np.testing.assert_array_equal(
+        np.asarray(unpruned.class_mstep_posterior_sums), np.asarray(unpruned.class_posterior_sums),
     )
 
 

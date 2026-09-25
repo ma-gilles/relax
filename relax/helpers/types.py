@@ -248,6 +248,8 @@ class LocalEMResult:
     class_log_evidence_per_image: np.ndarray | None = None
     class_best_log_score_per_image: np.ndarray | None = None
     class_posterior_sums: np.ndarray | None = None
+    # Retained (significant-pruned) posterior mass per class, RELION's wsum_pdf_class.
+    class_reconstruction_posterior_sums: np.ndarray | None = None
     class_rotation_posterior_sums: np.ndarray | None = None
     class_assignments: np.ndarray | None = None
     per_class_hard_assignments: np.ndarray | None = None
