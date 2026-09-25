@@ -1805,6 +1805,16 @@ def _validate_multi_shape_run(args, frozen_boundary, double_image_preprocessing)
 RELION_GUI_PARTICLE_DIAMETER_ANG = 200.0
 
 
+def _initial_current_size(voxel_size: float, grid_size: int, init_resolution: float) -> int:
+    """Twice RELION's --ini_high pixel, ``getPixelFromResolution(1 / ini_high)`` (ml_model.h:441,
+    ml_optimiser.cpp:2801): ``2 ROUND(ori_size pixel_size / ini_high)``. The first E-step then adds
+    ``incr_size`` shells (``_bootstrap_current_size_relion``). No floor: RELION has none, and the GUI
+    default ini_high of 60 A lands below the former 32-pixel floor on small boxes.
+    """
+
+    return 2 * int(np.floor(float(grid_size) * float(voxel_size) / float(init_resolution) + 0.5))
+
+
 def _maybe_apply_relion_image_mask(ds, args, *, sealed_optimiser_star=None):
     """Override the dataset scoring mask with RELION's particle-diameter mask."""
     explicit_particle_diameter = getattr(args, "particle_diameter_ang", None)
@@ -3973,7 +3983,7 @@ def main():
     init_current_size = (
         int(frozen_boundary.current_size)
         if frozen_boundary is not None
-        else max(32, int(2 * ds.voxel_size * ds.grid_size / args.init_resolution))
+        else _initial_current_size(ds.voxel_size, ds.grid_size, args.init_resolution)
     )
     logger.info("Initial current_size from resolution %.1f A: %d pixels", args.init_resolution, init_current_size)
 

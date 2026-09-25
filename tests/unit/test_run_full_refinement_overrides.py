@@ -2545,3 +2545,16 @@ def test_fresh_kclass_selects_only_run_it000_translations():
     assert_matches(selected[0], half1.astype(np.float32))
     assert selected[1].shape == (0, 2)
     assert selected[0] is not half1
+
+
+def test_initial_current_size_is_relions_ini_high_pixel_without_a_floor():
+    # RELION's first iteration at ini_high 60 A on 128 px / 4.25 A runs at current size 38
+    # (2 * (ROUND(9.07) + incr_size 10)); the old 32-pixel floor gave 52.
+    from relax.helpers.resolution import _bootstrap_current_size_relion
+
+    from scripts.run_full_refinement import _initial_current_size
+
+    assert _initial_current_size(4.25, 128, 60.0) == 18
+    assert _bootstrap_current_size_relion(_initial_current_size(4.25, 128, 60.0), 128) == 38
+    assert _initial_current_size(4.25, 128, 30.0) == 36  # unchanged where the floor never applied
+    assert _bootstrap_current_size_relion(36, 128) == 56
