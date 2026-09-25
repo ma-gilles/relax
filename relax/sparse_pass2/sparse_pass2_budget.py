@@ -814,3 +814,25 @@ def _split_sparse_pass2_buckets_by_mstep_output_budget(
             split_bucket["image_indices"] = image_indices[start : start + max_images]
             split_buckets.append(split_bucket)
     return split_buckets
+
+
+def device_available_bytes(physical_free_bytes, allocator_free_bytes, pool_free_bytes=None) -> float | None:
+    """Bytes the JAX allocator can still hand out on this device, from the three readings.
+
+    The allocator's own headroom (limit minus in use), bounded by the device:
+    the physically free memory plus what the allocator's pool already holds
+    unused, which ``nvidia-smi`` counts as used. The physical reading alone is
+    not a bound once the pool has grown (10097 it13 in 14400302: 13.37 GiB
+    physically free against 70.04 GiB of headroom). Without a pool reading the
+    physical reading bounds only when the allocator reports nothing; ``None``
+    when nothing is known.
+    """
+
+    available = None if allocator_free_bytes is None else float(allocator_free_bytes)
+    if physical_free_bytes is not None:
+        if pool_free_bytes is not None:
+            device_bound = float(physical_free_bytes) + float(pool_free_bytes)
+            available = device_bound if available is None else min(available, device_bound)
+        elif available is None:
+            available = float(physical_free_bytes)
+    return available

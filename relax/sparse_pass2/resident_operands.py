@@ -73,12 +73,15 @@ from relax.sparse_pass2.sparse_pass2_wavg import image_power_shells, relion_cuda
 logger = logging.getLogger(__name__)
 
 RESIDENT_OPERANDS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS"
-# Host cap on the resident per-image operands of one half, as a fraction of the
-# device's memory. The operands scale with the half's image count, so a large
-# particle count at a large box can outgrow the budget; the driver then keeps
-# the per-chunk preparation and says so, instead of failing part way through.
+# Cap on the resident per-image operands of one half. The operands scale with the
+# half's image count, so a large particle count at a large box can outgrow the
+# budget; the driver then keeps the per-chunk preparation and says so, instead
+# of failing part way through. The cap is a share of what the JAX allocator can
+# still hand out when the pass plans (sparse_pass2_budget.device_available_bytes,
+# the reading the streamed projection budget uses); the other half stays for the
+# class accumulators and the chunk working set.
 _RESIDENT_OPERAND_BYTES_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES"
-_RESIDENT_OPERAND_DEVICE_FRACTION = 0.10
+_RESIDENT_OPERAND_AVAILABLE_FRACTION = 0.5
 _DEFAULT_RESIDENT_OPERAND_MAX_BYTES = 6 * 1024**3
 _PREPARE_IMAGE_BATCH_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH"
 _DEFAULT_PREPARE_IMAGE_BATCH = 256
@@ -444,8 +447,13 @@ def resident_half_operand_avals(
     )
 
 
-def resident_operands_max_bytes(device_memory_bytes: int | None = None) -> int:
-    """Budget for one half's resident per-image operands."""
+def resident_operands_max_bytes(available_bytes: float | None = None) -> int:
+    """Budget for one half's resident per-image operands and their preparation peak.
+
+    ``available_bytes`` is what the allocator can still hand out
+    (``sparse_pass2_budget.device_available_bytes``); unknown falls back to a
+    fixed 6 GiB. ``RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES`` overrides.
+    """
 
     override = os.environ.get(_RESIDENT_OPERAND_BYTES_ENV, "").strip()
     if override:
@@ -453,9 +461,9 @@ def resident_operands_max_bytes(device_memory_bytes: int | None = None) -> int:
         if value <= 0:
             raise ValueError(f"{_RESIDENT_OPERAND_BYTES_ENV} must be positive, got {value}")
         return value
-    if device_memory_bytes is None:
+    if available_bytes is None:
         return _DEFAULT_RESIDENT_OPERAND_MAX_BYTES
-    return max(1, int(float(device_memory_bytes) * _RESIDENT_OPERAND_DEVICE_FRACTION))
+    return max(1, int(float(available_bytes) * _RESIDENT_OPERAND_AVAILABLE_FRACTION))
 
 
 def _prepare_image_batch_size() -> int:
@@ -837,7 +845,9 @@ def prepare_resident_half_operands(
             raise ValueError(f"the per-image preparation did not produce {name}")
         if not present or not optional_available.get(name, True):
             return None
-        return _reorder_rows(buffers[name], reorder)
+        # Popped so each capacity buffer is freed once its reordered copy
+        # exists: the preparation peaks at the operands plus one array.
+        return _reorder_rows(buffers.pop(name), reorder)
 
     translation_prior_np = np.zeros((image_capacity, int(n_fine_trans)), dtype=score_real_dtype)
     if fine_translation_prior_2d is not None:

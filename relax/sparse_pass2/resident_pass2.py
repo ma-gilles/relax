@@ -159,6 +159,7 @@ from relax.sparse_pass2.sparse_pass2_budget import (
     _projection_cache_fits_budget,
     _projection_cache_max_bytes_for_pass,
     _projection_cache_transient_bytes,
+    device_available_bytes,
 )
 from relax.sparse_pass2.sparse_pass2_policy import (
     _RELION_WAVG_ATOMIC_SCALE_AA_ENV,
@@ -2393,12 +2394,26 @@ def _resident_pass2(
             real_bytes=np.dtype(precision_policy.score_real_dtype).itemsize,
             norm_high_shell_bytes=np.dtype(_norm_high_shell_dtype).itemsize,
         )
-        budget_bytes = resident_operands_max_bytes(device_memory_bytes)
-        if operand_bytes > budget_bytes:
+        # Measured as the streamed projection budget is, after this pass's
+        # projection cache exists: what the allocator can still hand out.
+        budget_bytes = resident_operands_max_bytes(
+            device_available_bytes(
+                _device_free_memory_bytes(),
+                _jax_allocator_free_memory_bytes(),
+                _jax_allocator_pool_free_bytes(),
+            )
+        )
+        # The preparation holds the operands plus one reordered copy of its
+        # largest array (resident_operands.stack).
+        operand_peak_bytes = operand_bytes + resident_image_capacity(int(n_images)) * max(
+            int(n_windowed), int(n_recon_windowed), int(n_rect)
+        ) * np.dtype(precision_policy.score_complex_dtype).itemsize
+        if operand_peak_bytes > budget_bytes:
             logger.info(
                 "Resident pass-2 keeps the per-chunk operand preparation: one half's resident "
-                "operands would take %.2f GiB against a %.2f GiB budget",
+                "operands would take %.2f GiB (%.2f GiB while preparing) against a %.2f GiB budget",
                 operand_bytes / float(1024**3),
+                operand_peak_bytes / float(1024**3),
                 budget_bytes / float(1024**3),
             )
         else:
@@ -3104,26 +3119,15 @@ def _stream_projection_budget_bytes(
 
     The readings are taken when the pass plans its chunks, so they see whatever
     earlier passes and iterations left resident; the per-iteration cache share
-    alone would ignore that. What the allocator can still hand out is its own
-    headroom (``allocator_free_bytes``, limit minus in use), bounded by the
-    device: the physically free memory plus what the allocator's pool already
-    holds unused (``pool_free_bytes``), which ``nvidia-smi`` counts as used.
-    The physical reading alone is not a bound once the pool has grown: 10097
-    it13 in a full run (14400302) read 13.37 GiB physically free against 70.04
-    GiB of allocator headroom. Without a pool reading the physical reading
-    bounds only when the allocator reports nothing; an unknown reading does not
-    cap. ``reserved_bytes`` (the half's resident operands, allocated after the
-    reading) comes off first; half of the rest stays for the half's
-    accumulators and the chunk working set, which have their own budgets.
+    alone would ignore that. What the allocator can still hand out is
+    :func:`~relax.sparse_pass2.sparse_pass2_budget.device_available_bytes`; an
+    unknown reading does not cap. ``reserved_bytes`` (the half's resident
+    operands, allocated after the reading) comes off first; half of the rest
+    stays for the half's accumulators and the chunk working set, which have
+    their own budgets.
     """
 
-    available = None if allocator_free_bytes is None else float(allocator_free_bytes)
-    if physical_free_bytes is not None:
-        if pool_free_bytes is not None:
-            device_bound = float(physical_free_bytes) + float(pool_free_bytes)
-            available = device_bound if available is None else min(available, device_bound)
-        elif available is None:
-            available = float(physical_free_bytes)
+    available = device_available_bytes(physical_free_bytes, allocator_free_bytes, pool_free_bytes)
     budget = int(max_projection_cache_bytes)
     if available is not None:
         usable = max(0.0, available - float(reserved_bytes))

@@ -607,3 +607,21 @@ def test_shell_binning_is_a_racing_scatter_and_the_opt_in_fixes_it(
             # Not asserted to differ -- a small fixture may happen to agree --
             # but bounded well inside one float32 ulp of the shell power.
             assert worst <= 7e-7, worst
+
+
+def test_operand_budget_is_half_of_what_the_allocator_can_hand_out(monkeypatch):
+    from relax.sparse_pass2.resident_operands import resident_operands_max_bytes
+    from relax.sparse_pass2.sparse_pass2_budget import device_available_bytes
+
+    gib = 1024**3
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", raising=False)
+    # A grown pool: nvidia-smi sees 10 GiB free, the pool holds 50 GiB unused,
+    # the allocator could hand out 70 GiB; the device bound is 60 GiB.
+    available = device_available_bytes(10 * gib, 70 * gib, 50 * gib)
+    assert available == 60 * gib
+    assert resident_operands_max_bytes(available) == 30 * gib
+    assert device_available_bytes(None, None, None) is None
+    assert device_available_bytes(12 * gib, None, None) == 12 * gib
+    assert resident_operands_max_bytes(None) == 6 * gib
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", str(3 * gib))
+    assert resident_operands_max_bytes(available) == 3 * gib
