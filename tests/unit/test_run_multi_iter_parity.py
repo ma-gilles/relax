@@ -21,6 +21,7 @@ from scripts.run_multi_iter_parity import (
     final_only_replay_override,
     final_output_fourier_volumes,
     initial_scoring_noise_pair,
+    relion_noise_state_label,
     keep_stack_rows_mask,
     load_initial_direction_prior,
     load_initial_fourier_volume,
@@ -307,24 +308,26 @@ def test_diff_reports_optimizer_and_particle_pmax_as_distinct_metrics():
     assert scalars["ave_Pmax_particles"] == pytest.approx(0.92286475478)
 
 
-def test_initial_scoring_noise_pair_defaults_to_relion_mpi_restart_broadcast():
+def test_initial_scoring_noise_pair_keeps_each_half_by_default():
     half1 = np.asarray([1.0, 2.0], dtype=np.float32)
     half2 = np.asarray([3.0, 4.0], dtype=np.float32)
 
-    got = initial_scoring_noise_pair(half1, half2, continuous_relion_noise_state=False)
-
-    assert_matches(got[0], half1)
-    assert_matches(got[1], half1)
-
-
-def test_initial_scoring_noise_pair_can_preserve_uninterrupted_half_state():
-    half1 = np.asarray([1.0, 2.0], dtype=np.float32)
-    half2 = np.asarray([3.0, 4.0], dtype=np.float32)
-
-    got = initial_scoring_noise_pair(half1, half2, continuous_relion_noise_state=True)
+    got = initial_scoring_noise_pair(half1, half2, restart_broadcast=False)
 
     assert_matches(got[0], half1)
     assert_matches(got[1], half2)
+    assert relion_noise_state_label(False) == "uninterrupted_per_half"
+
+
+def test_initial_scoring_noise_pair_can_emulate_the_relion_mpi_restart_broadcast():
+    half1 = np.asarray([1.0, 2.0], dtype=np.float32)
+    half2 = np.asarray([3.0, 4.0], dtype=np.float32)
+
+    got = initial_scoring_noise_pair(half1, half2, restart_broadcast=True)
+
+    assert_matches(got[0], half1)
+    assert_matches(got[1], half1)
+    assert relion_noise_state_label(True) == "restart_half1_broadcast"
 
 
 def test_initial_scoring_noise_pair_preserves_binary64_state():
@@ -334,7 +337,7 @@ def test_initial_scoring_noise_pair_preserves_binary64_state():
     got = initial_scoring_noise_pair(
         half1,
         half2,
-        continuous_relion_noise_state=True,
+        restart_broadcast=False,
     )
 
     assert got[0].dtype == np.float64

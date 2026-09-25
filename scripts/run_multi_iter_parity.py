@@ -841,19 +841,29 @@ def noise_pair_for_loop(pair):
     return jnp.stack([jnp.asarray(x) for x in pair], axis=0) if first.ndim == 1 else [jnp.asarray(x) for x in pair]
 
 
-def initial_scoring_noise_pair(noise_half1, noise_half2, *, continuous_relion_noise_state: bool):
-    """Resolve restart-faithful versus uninterrupted RELION scoring noise.
+def initial_scoring_noise_pair(noise_half1, noise_half2, *, restart_broadcast: bool):
+    """Resolve uninterrupted versus restart-faithful RELION scoring noise.
 
-    A new RELION MPI process broadcasts half 1's spectrum to both followers.
-    A controlled N-to-N+1 substitution against an uninterrupted trajectory
-    instead needs the independently updated spectrum from each numbered half.
+    A replay compares against an uninterrupted RELION trajectory, which scores
+    each half with its own independently updated spectrum, so that is the
+    default. A new RELION MPI process (``relion_refine --continue``) instead
+    broadcasts half 1's spectrum to both followers; ``restart_broadcast``
+    reproduces it for continue-style oracles only. Scoring half 2 with half 1's
+    spectrum against an uninterrupted oracle inflated the 50k one-step gap
+    about 10x (speed stage localisation, 2026-09-25).
     """
 
     return relion_mpi_process_start_scoring_noise_pair(
         noise_half1,
         noise_half2,
-        split_random_halves=not bool(continuous_relion_noise_state),
+        split_random_halves=bool(restart_broadcast),
     )
+
+
+def relion_noise_state_label(restart_broadcast: bool) -> str:
+    """The recorded name of the scoring-noise state a replay used."""
+
+    return "restart_half1_broadcast" if restart_broadcast else "uninterrupted_per_half"
 
 
 def final_only_replay_override(replay_iteration_overrides, *, enabled: bool):
@@ -1062,12 +1072,13 @@ def main():
         ),
     )
     parser.add_argument(
-        "--continuous-relion-noise-state",
+        "--restart-broadcast-noise-state",
         action="store_true",
         help=(
-            "Diagnostic N-to-N+1 substitution only: preserve each numbered half's "
-            "sigma2_noise as used by an uninterrupted RELION trajectory. The default "
-            "emulates a true RELION MPI restart, which broadcasts half-1 noise to both halves."
+            "Continue-style oracles only: emulate a RELION MPI process start "
+            "(relion_refine --continue), which broadcasts half 1's sigma2_noise to both "
+            "halves. The default keeps each half's own sigma2_noise, as the uninterrupted "
+            "RELION trajectory a replay is compared against does."
         ),
     )
     parser.add_argument(
@@ -1714,15 +1725,15 @@ def main():
     process_start_noise = initial_scoring_noise_pair(
         noise_variance_h1.reshape(noise_shape),
         noise_variance_h2.reshape(noise_shape),
-        continuous_relion_noise_state=args.continuous_relion_noise_state,
+        restart_broadcast=args.restart_broadcast_noise_state,
     )
     noise_variance = noise_pair_for_loop(process_start_noise)
     print(
         "  initial scoring noise: "
         + (
-            "uninterrupted numbered half-specific state"
-            if args.continuous_relion_noise_state
-            else "RELION MPI process-start half-1 broadcast"
+            "RELION MPI process-start half-1 broadcast (--restart-broadcast-noise-state)"
+            if args.restart_broadcast_noise_state
+            else "uninterrupted numbered half-specific state"
         )
     )
     mean_variance = jnp.asarray(utils.make_radial_image(tau2 * n4, (N, N, N), extend_last_frequency=True))
@@ -2537,6 +2548,7 @@ def main():
             "relion_dir": str(relion_dir),
             "data_star": str(args.data_star),
             "iter_start": int(args.iter),
+            "relion_noise_state": relion_noise_state_label(args.restart_broadcast_noise_state),
             "max_iter": int(args.max_iter),
             "completed_iterations": int(completed_iters),
             "force_max_iter_after_convergence": bool(args.force_max_iter_after_convergence),
@@ -2577,7 +2589,7 @@ def main():
         "firstiter_cc_oracle_enabled": np.bool_(oracle_firstiter_cc),
         "firstiter_cc_effective": np.bool_(do_firstiter_cc),
         "relion_ini_high_angstrom": np.float64(relion_ini_high),
-        "continuous_relion_noise_state": np.bool_(args.continuous_relion_noise_state),
+        "relion_noise_state": np.array(relion_noise_state_label(args.restart_broadcast_noise_state)),
         "disable_adjoint_y": np.bool_(args.disable_adjoint_y),
         "disable_adjoint_ctf": np.bool_(args.disable_adjoint_ctf),
         "final_all_data_ran": np.bool_(result.get("final_all_data_ran", False)),
@@ -2953,6 +2965,7 @@ def main():
         "relion_dir": str(relion_dir),
         "data_star": str(args.data_star),
         "iter_start": int(args.iter),
+        "relion_noise_state": relion_noise_state_label(args.restart_broadcast_noise_state),
         "max_iter": int(args.max_iter),
         "completed_iterations": int(completed_iters),
         "gt_volume": str(gt_path) if gt_path is not None else None,
