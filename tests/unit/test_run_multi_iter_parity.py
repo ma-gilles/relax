@@ -997,3 +997,27 @@ def test_keep_stack_indices_refuses_a_multi_stack_dataset():
     names = ["1@Particles/mic_001.mrcs", "2@Particles/mic_001.mrcs", "1@Particles/mic_002.mrcs"]
     with pytest.raises(ValueError, match="2 particle stacks"):
         keep_stack_rows_mask(names, {0})
+
+
+def test_replay_reads_every_optics_groups_noise():
+    from recovar.reconstruction import noise as recon_noise
+
+    from scripts.run_multi_iter_parity import model_noise_variance, noise_pair_for_loop, read_model_sigma2_noise
+
+    n = 8
+    one = pd.DataFrame({"rlnSigma2Noise": np.linspace(1.0, 2.0, n // 2 + 1)})
+    two = pd.DataFrame({"rlnSigma2Noise": np.linspace(3.0, 5.0, n // 2 + 1)})
+    single = read_model_sigma2_noise({"model_optics_group_1": one}, context="test")
+    assert single.shape == (n // 2 + 1,)
+    # One group keeps the flat array the replay always built.
+    assert_matches(model_noise_variance(single, n), np.asarray(recon_noise.make_radial_noise(single * n**4, (n, n))).reshape(-1))
+    both = read_model_sigma2_noise({"model_optics_group_2": two, "model_optics_group_1": one}, context="test")
+    assert_matches(both, np.stack([one["rlnSigma2Noise"], two["rlnSigma2Noise"]]))
+    rows = model_noise_variance(both, n)
+    assert rows.shape == (2, n * n)
+    assert_matches(rows[1], np.asarray(recon_noise.make_radial_noise(both[1] * n**4, (n, n))).reshape(-1))
+    assert noise_pair_for_loop([rows[0], rows[0]]).shape == (2, n * n)
+    pair = noise_pair_for_loop([rows, rows])
+    assert isinstance(pair, list) and pair[0].shape == (2, n * n)
+    with pytest.raises(ValueError, match="numbered 1..G"):
+        read_model_sigma2_noise({"model_optics_group_2": two}, context="test")

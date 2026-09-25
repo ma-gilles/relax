@@ -109,6 +109,32 @@ def make_shape_classes(datasets_and_indices, *, ref_box, ref_pixel):
     return classes
 
 
+def optics_shape_class_rows(particles_star):
+    """Particle rows per image shape when optics groups differ in box or pixel size.
+
+    ``None`` when every optics group has one box and pixel size (the single-dataset
+    path). Otherwise one row array per (box, pixel size), in optics-table order, so
+    the first class holds optics group 1, whose grid is RELION's model grid.
+    """
+    import starfile
+
+    star = starfile.read(particles_star)
+    optics = star.get("optics") if isinstance(star, dict) else None
+    if optics is None or not {"rlnImageSize", "rlnImagePixelSize"}.issubset(optics.columns):
+        return None
+    shapes = list(zip(np.asarray(optics["rlnImageSize"], dtype=np.int64).tolist(),
+                      np.asarray(optics["rlnImagePixelSize"], dtype=np.float64).tolist()))
+    unique_shapes = list(dict.fromkeys(shapes))
+    if len(unique_shapes) == 1:
+        return None
+    labels = np.asarray(optics["rlnOpticsGroup"], dtype=np.int64)
+    if not np.array_equal(labels, np.arange(1, labels.size + 1)):
+        raise ValueError(f"optics groups must be numbered 1..{labels.size} in table order, got {labels.tolist()}")
+    shape_of_label = np.asarray([unique_shapes.index(shape) for shape in shapes], dtype=np.int64)
+    particle_shapes = shape_of_label[np.asarray(star["particles"]["rlnOpticsGroup"], dtype=np.int64) - 1]
+    return [np.flatnonzero(particle_shapes == c) for c in range(len(unique_shapes))]
+
+
 class MultiShapeDataset:
     """All particles as one loaded dataset per shape class.
 

@@ -75,7 +75,7 @@ from relax.relion.initial_noise import (
     compute_avg_unaligned_and_sigma2,
     read_relion_single_optics_sigma2_noise,
 )
-from relax.refinement.optics_shapes import MultiShapeDataset
+from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
 from relax.relion.relion_worker_scale import (
     load_relion_dispatch_schedule,
     load_relion_follower_scale_replay,
@@ -1753,32 +1753,6 @@ def _write_relion_start_particle_table(our_star, input_star, *, seed, output_dir
     return path
 
 
-def _optics_shape_class_rows(particles_star):
-    """Particle rows per image shape when optics groups differ in box or pixel size.
-
-    ``None`` when every optics group has one box and pixel size (the single-dataset
-    path). Otherwise one row array per (box, pixel size), in optics-table order, so
-    the first class holds optics group 1, whose grid is RELION's model grid.
-    """
-    import starfile as _starfile
-
-    star = _starfile.read(particles_star)
-    optics = star.get("optics") if isinstance(star, dict) else None
-    if optics is None or not {"rlnImageSize", "rlnImagePixelSize"}.issubset(optics.columns):
-        return None
-    shapes = list(zip(np.asarray(optics["rlnImageSize"], dtype=np.int64).tolist(),
-                      np.asarray(optics["rlnImagePixelSize"], dtype=np.float64).tolist()))
-    unique_shapes = list(dict.fromkeys(shapes))
-    if len(unique_shapes) == 1:
-        return None
-    labels = np.asarray(optics["rlnOpticsGroup"], dtype=np.int64)
-    if not np.array_equal(labels, np.arange(1, labels.size + 1)):
-        raise ValueError(f"optics groups must be numbered 1..{labels.size} in table order, got {labels.tolist()}")
-    shape_of_label = np.asarray([unique_shapes.index(shape) for shape in shapes], dtype=np.int64)
-    particle_shapes = shape_of_label[np.asarray(star["particles"]["rlnOpticsGroup"], dtype=np.int64) - 1]
-    return [np.flatnonzero(particle_shapes == c) for c in range(len(unique_shapes))]
-
-
 def _validate_multi_shape_run(args, frozen_boundary, double_image_preprocessing):
     """Optics groups on several image shapes run a fresh K=1 refinement only.
 
@@ -2740,7 +2714,7 @@ def main():
     particle_scratch = prepare_particle_reads(
         os.path.join(args.data_dir, "particles.star"), particle_read_policy
     )
-    shape_class_rows = _optics_shape_class_rows(os.path.join(args.data_dir, "particles.star"))
+    shape_class_rows = optics_shape_class_rows(os.path.join(args.data_dir, "particles.star"))
     if shape_class_rows is None:
         ds = load_dataset(
             os.path.join(args.data_dir, "particles.star"),

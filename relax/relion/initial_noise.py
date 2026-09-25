@@ -242,6 +242,32 @@ def read_relion_single_optics_sigma2_noise(model, *, context):
     return np.asarray(model[noise_keys[0]]["rlnSigma2Noise"], dtype=np.float64)
 
 
+def read_relion_sigma2_noise_by_group(model, *, context):
+    """Every optics group's RELION ``sigma2_noise`` spectrum, ``[G, n]`` in group order.
+
+    RELION writes one ``model_optics_group_<g>`` table per optics group, each on the
+    model's shells (``MlModel::sigma2_noise[optics_group]``). Returns ``None`` when the
+    model has no noise table.
+    """
+
+    if not isinstance(model, dict):
+        return None
+    groups = sorted(
+        int(match.group(1))
+        for key, table in model.items()
+        if (match := re.fullmatch(r"model_optics_group_(\d+)", str(key)))
+        and hasattr(table, "columns")
+        and "rlnSigma2Noise" in table.columns
+    )
+    if not groups:
+        return None
+    if groups != list(range(1, len(groups) + 1)):
+        raise ValueError(f"{context}: optics-group noise tables must be numbered 1..G, got {groups}")
+    return np.stack(
+        [np.asarray(model[f"model_optics_group_{g}"]["rlnSigma2Noise"], dtype=np.float64) for g in groups]
+    )
+
+
 def relion_mpi_process_start_scoring_noise_pair(noise_half1, noise_half2, *, split_random_halves):
     """Return the noise arrays that RELION MPI uses at process-start scoring.
 

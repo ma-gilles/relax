@@ -14,9 +14,9 @@ import pytest
 import starfile
 from helpers.float_compare import assert_matches
 
+from relax.refinement import optics_shapes
 from relax.refinement.optics_shapes import MultiShapeDataset, MultiShapeHalf
 from relax.relion import initial_noise
-from scripts import run_full_refinement as driver
 
 pytestmark = pytest.mark.unit
 
@@ -193,7 +193,7 @@ def test_optics_shape_class_rows(tmp_path):
     )
     path = tmp_path / "particles.star"
     starfile.write({"optics": optics, "particles": particles}, path)
-    rows = driver._optics_shape_class_rows(path)
+    rows = optics_shapes.optics_shape_class_rows(path)
     assert [r.tolist() for r in rows] == [[1, 2, 4, 5], [0, 3]]
     starfile.write({"optics": optics.assign(rlnImagePixelSize=4.25, rlnImageSize=128), "particles": particles}, path)
-    assert driver._optics_shape_class_rows(path) is None
+    assert optics_shapes.optics_shape_class_rows(path) is None

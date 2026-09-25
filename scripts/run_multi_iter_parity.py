@@ -37,7 +37,7 @@ from relax.diagnostics.parity_provenance import (
 )
 from relax.helpers.iteration_history import add_significant_count_artifacts
 from relax.relion.initial_noise import (
-    read_relion_single_optics_sigma2_noise,
+    read_relion_sigma2_noise_by_group,
     relion_mpi_process_start_scoring_noise_pair,
 )
 
@@ -807,6 +807,39 @@ def validate_final_only_replay_args(
         )
 
 
+def read_model_sigma2_noise(model, *, context):
+    """A RELION half model's sigma2 noise: ``[n]`` for one optics group, ``[G, n]`` for several."""
+
+    sigma2 = read_relion_sigma2_noise_by_group(model, context=context)
+    if sigma2 is None:
+        raise ValueError(f"{context} model is missing rlnSigma2Noise")
+    return sigma2[0] if sigma2.shape[0] == 1 else sigma2
+
+
+def model_noise_variance(sigma2, grid_size: int):
+    """RECOVAR-unit pixel noise on the model grid: flat for one optics group, ``[G, P]`` rows for several.
+
+    RELION's sigma2 is in its FFT units; RECOVAR's unnormalized FFT scales power by ``N**4``.
+    """
+
+    from recovar.reconstruction import noise as recon_noise
+
+    rows = [
+        np.asarray(recon_noise.make_radial_noise(np.asarray(s) * float(grid_size) ** 4, (grid_size, grid_size))).reshape(-1)
+        for s in np.atleast_2d(sigma2)
+    ]
+    return rows[0] if len(rows) == 1 else np.stack(rows)
+
+
+def noise_pair_for_loop(pair):
+    """The two halves' noise as the EM loop takes it: stacked flat vectors, or a list of ``[G, P]`` rows."""
+
+    import jax.numpy as jnp
+
+    first = np.asarray(pair[0])
+    return jnp.stack([jnp.asarray(x) for x in pair], axis=0) if first.ndim == 1 else [jnp.asarray(x) for x in pair]
+
+
 def initial_scoring_noise_pair(noise_half1, noise_half2, *, continuous_relion_noise_state: bool):
     """Resolve restart-faithful versus uninterrupted RELION scoring noise.
 
@@ -1406,6 +1439,7 @@ def main():
     from recovar.data_io.cryoem_dataset import load_dataset
     from relax.helpers.map_io import write_map_from_ft
     from relax.refinement.iteration_loop import refine_single_volume
+    from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
     from relax.refinement.refinement_options import (
         AdaptiveOptions,
         EngineDebugOptions,
@@ -1422,7 +1456,6 @@ def main():
         read_relion_sampling_metadata,
         read_relion_sampling_symmetry,
     )
-    from recovar.reconstruction import noise as recon_noise
     from recovar.reconstruction import regularization
     from recovar.utils import helpers
 
@@ -1546,16 +1579,10 @@ def main():
     current_size = int(control_model_h1["model_general"]["rlnCurrentImageSize"])
     pixel_size = float(model_h1["model_general"]["rlnPixelSize"])
 
-    sigma2_h1 = read_relion_single_optics_sigma2_noise(
-        model_h1,
-        context=f"RELION iteration {iteration} half 1",
-    )
-    sigma2_h2 = read_relion_single_optics_sigma2_noise(
-        model_h2,
-        context=f"RELION iteration {iteration} half 2",
-    )
-    if sigma2_h1 is None or sigma2_h2 is None:
-        raise ValueError(f"RELION iteration {iteration} model is missing rlnSigma2Noise")
+    # One spectrum per optics group (MlModel::sigma2_noise[optics_group]); several groups give [G, n].
+    sigma2_h1 = read_model_sigma2_noise(model_h1, context=f"RELION iteration {iteration} half 1")
+    sigma2_h2 = read_model_sigma2_noise(model_h2, context=f"RELION iteration {iteration} half 2")
+    n_optics_groups = 1 if sigma2_h1.ndim == 1 else int(sigma2_h1.shape[0])
     class1 = model_h1["model_class_1"]
     # Prefer rlnReferenceTau2 (signal power, EMDL_MLMODEL_TAU2_REF) which is
     # what RELION's BackProjector::reconstruct uses for the Wiener prior.
@@ -1666,9 +1693,11 @@ def main():
     # model.star are in RELION's convention.  recovar uses unnormalized FFT,
     # so power spectra scale by N^4.
     n4 = N**4
-    noise_variance_h1 = jnp.asarray(recon_noise.make_radial_noise(sigma2_h1 * n4, (N, N)))
-    noise_variance_h2 = jnp.asarray(recon_noise.make_radial_noise(sigma2_h2 * n4, (N, N)))
+    noise_variance_h1 = jnp.asarray(model_noise_variance(sigma2_h1, N))
+    noise_variance_h2 = jnp.asarray(model_noise_variance(sigma2_h2, N))
     if args.initial_noise_half1_npy is not None:
+        if n_optics_groups != 1:
+            raise ValueError("diagnostic initial noise arrays are single-optics-group")
         noise_variance_h1 = jnp.asarray(
             load_initial_noise_variance(args.initial_noise_half1_npy, (N, N))
         )
@@ -1679,12 +1708,13 @@ def main():
             "  Diagnostic initial internal noise variance: "
             f"half1={args.initial_noise_half1_npy}, half2={args.initial_noise_half2_npy}"
         )
+    noise_shape = (-1,) if n_optics_groups == 1 else (n_optics_groups, -1)
     process_start_noise = initial_scoring_noise_pair(
-        noise_variance_h1.reshape(-1),
-        noise_variance_h2.reshape(-1),
+        noise_variance_h1.reshape(noise_shape),
+        noise_variance_h2.reshape(noise_shape),
         continuous_relion_noise_state=args.continuous_relion_noise_state,
     )
-    noise_variance = jnp.stack(process_start_noise, axis=0)
+    noise_variance = noise_pair_for_loop(process_start_noise)
     print(
         "  initial scoring noise: "
         + (
@@ -1806,10 +1836,24 @@ def main():
             )
             else "host_numpy"
         )
-    ds = load_dataset(
-        args.data_star,
-        dtype=np.complex128 if double_image_preprocessing else np.complex64,
-    )
+    # Optics groups on several image shapes load one dataset per shape (run_full_refinement's rule).
+    shape_class_rows = optics_shape_class_rows(args.data_star)
+    if shape_class_rows is None:
+        ds = load_dataset(
+            args.data_star,
+            dtype=np.complex128 if double_image_preprocessing else np.complex64,
+        )
+    else:
+        if double_image_preprocessing:
+            raise ValueError("float64 image preprocessing is single-shape")
+        ds = MultiShapeDataset(
+            [load_dataset(args.data_star, dtype=np.complex64, ind=rows) for rows in shape_class_rows],
+            shape_class_rows,
+        )
+        print(
+            "  Optics groups on several image shapes: "
+            + ", ".join(f"{d.image_shape[0]} px at {float(d.voxel_size):.4g} A ({d.n_units})" for d in ds.datasets)
+        )
     if double_image_preprocessing:
         print(
             "  Double scoring: loading metadata in float64 and preserving "
@@ -1910,6 +1954,11 @@ def main():
 
     ds_half1 = ds.subset(half1_indices)
     ds_half2 = ds.subset(half2_indices)
+    # With several optics groups each image scores with its own group's noise row.
+    optics_group_ids_per_half = None
+    if n_optics_groups > 1:
+        our_optics = np.asarray(our_particles["rlnOpticsGroup"], dtype=np.int64) - 1
+        optics_group_ids_per_half = (our_optics[np.asarray(half1_indices)], our_optics[np.asarray(half2_indices)])
     print(f"  Half-sets: {len(half1_indices)} + {len(half2_indices)}")
 
     # ---- Image corrections (RELION parity: normcorr + scale) ----
@@ -2124,24 +2173,18 @@ def main():
             _model_general_scalar(general_h2_iter, "rlnSigmaOffsetsAngst"),
         ]
         sigma_offset_iter = float(np.mean(sigma_offset_iter_per_half))
-        sigma2_h1_iter = read_relion_single_optics_sigma2_noise(
-            model_h1_iter,
-            context=f"RELION iteration {previous_relion_iteration} half 1",
+        sigma2_h1_iter = read_model_sigma2_noise(
+            model_h1_iter, context=f"RELION iteration {previous_relion_iteration} half 1"
         )
-        sigma2_h2_iter = read_relion_single_optics_sigma2_noise(
-            model_h2_iter,
-            context=f"RELION iteration {previous_relion_iteration} half 2",
+        sigma2_h2_iter = read_model_sigma2_noise(
+            model_h2_iter, context=f"RELION iteration {previous_relion_iteration} half 2"
         )
-        if sigma2_h1_iter is None or sigma2_h2_iter is None:
-            raise ValueError(
-                f"RELION iteration {previous_relion_iteration} model is missing rlnSigma2Noise"
-            )
         noise_pair_iter = relion_mpi_process_start_scoring_noise_pair(
-            jnp.asarray(recon_noise.make_radial_noise(sigma2_h1_iter * n4, (N, N))).reshape(-1),
-            jnp.asarray(recon_noise.make_radial_noise(sigma2_h2_iter * n4, (N, N))).reshape(-1),
+            model_noise_variance(sigma2_h1_iter, N),
+            model_noise_variance(sigma2_h2_iter, N),
             split_random_halves=process_start,
         )
-        noise_variance_iter = jnp.stack(noise_pair_iter, axis=0)
+        noise_variance_iter = noise_pair_for_loop(noise_pair_iter)
 
         normcorr_iter = np.array(relion_iter_df["rlnNormCorrection"], dtype=np.float64)
         groups_h1_iter = model_h1_iter.get("model_groups", None)
@@ -2419,6 +2462,7 @@ def main():
             parity=RelionParityOptions(
                 tau2_fudge=1.0,
                 perturb_factor=0.5,
+                optics_group_ids_per_half=optics_group_ids_per_half,
                 relion_optics_image_sizes=relion_optics_image_sizes,
                 relion_optics_pixel_sizes=relion_optics_pixel_sizes,
                 relion_model_pixel_size=relion_model_pixel_size,
