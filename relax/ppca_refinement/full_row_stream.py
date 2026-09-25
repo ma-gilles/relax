@@ -579,7 +579,8 @@ def _accumulate_full_row_tile(stream, image_indices, significant_rows, *, factor
             "rotation": top.rotation,
             "translation": top.translation,
             "n_significant": carry.n_significant,
-            "rotation_mass": jnp.concatenate(rotation_mass),
+            # A list, not a device concatenate: pruned tiles vary in block count.
+            "rotation_mass": rotation_mass,
             "latent": carry.latent_covariance_trace_sum,
             "entropy": carry.pose_entropy_sum,
             "offset": carry.offset_second_sum,
@@ -588,7 +589,7 @@ def _accumulate_full_row_tile(stream, image_indices, significant_rows, *, factor
     pmax = _top_pose_posterior(host["top_centered_score"][:, None], host["centered_logZ"])[:, 0]
     # Every fine row appears at most once in the table; sentinel padding is dropped.
     rotation_mass = np.zeros(stream.rotation_parent.size, np.float32)
-    rotation_mass[layout["rows"]] = host["rotation_mass"][: layout["rows"].size]
+    rotation_mass[layout["rows"]] = np.concatenate(host["rotation_mass"])[: layout["rows"].size]
     finite = np.isfinite(host["top_centered_score"])
     original_ids = stream.dataset.original_image_indices_from_local(np.asarray(image_indices))
     diagnostics = {
