@@ -393,15 +393,24 @@ def test_padding_the_image_axis_does_not_change_any_engine_output():
             )
             continue
         # The float per-image scores ride the same reductions the two
-        # accumulators below do and moved by one float32 ulp in an isolated
-        # run (at this commit and at 4edb611eb before the P3-E merge). The
-        # band is the engine's own repeat, measured here, with the default
-        # float32 band as its floor because a single repeat of a racing sum
-        # can read exactly zero.
+        # accumulators below do and move by up to one float32 ulp. The band is
+        # the engine's own repeat, measured here, with a floor of two float32
+        # ulps of the field's magnitude because a single repeat of a racing sum
+        # can read exactly zero. Float results are never required to be
+        # bitwise (user rule). The floor is in float32 ulps even for fields
+        # stored as float64: log_evidence_per_image carries float32 precision
+        # in a float64 array, so default_rtol picked the float64 tolerance
+        # (4.0e-10 at |x| = 4006) and the test demanded bitwise results. Medium
+        # tiers 14444439 and 14447931 (H100, inside the 7095-test unit_08
+        # shard) measured moves of 6.1e-5, 1.2e-4 and 2.4e-4 with a repeat band
+        # of 0: each at most one float32 ulp of its value (2.44e-4 at 4006).
+        # Run alone the test passed 32/32 (14446478 A100, 14450980 H100).
         same = np.asarray(repeat[name])
         band = np.abs(right.astype(np.float64) - same.astype(np.float64))
-        floor = default_rtol(left, right) * float(
-            max(np.max(np.abs(left)), np.max(np.abs(right)))
+        magnitude = max(float(np.max(np.abs(left))), float(np.max(np.abs(right))))
+        floor = max(
+            default_rtol(left, right) * magnitude,
+            2.0 * float(np.spacing(np.float32(magnitude))),
         )
         moved = np.abs(left.astype(np.float64) - right.astype(np.float64))
         assert np.all(moved <= np.maximum(band, floor)), (
