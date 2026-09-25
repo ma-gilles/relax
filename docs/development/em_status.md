@@ -90,6 +90,19 @@ through iteration 6. Also OPEN: a coarse window strictly between
 sphere. Only the fused coarse scorer, the global default, reproduces it. The
 non-fused coarse projection and the local parent pass refuse it.
 
+RELION float32 BPref accumulation band (2026-09-25, not reproduced; lead decision). RELION's GPU backprojector adds every
+particle of a half into one float32 volume with `atomicAdd` (acc/acc_backprojector.h:41; acc/cuda/cuda_kernels/BP.cuh:157-169)
+and reads it back once per iteration (ml_optimiser_mpi.cpp:1857). At iteration 1, when posteriors are broad, the rounding drops
+tiny terms. On S3b the DC BPref weight is 0.32 % below `0.999 sum Q^2/sigma2[0]` for RELION and 0.083 % below it for relax,
+decaying with radius. RELION's retained mass is 0.999 (14428592), and a float32 sequential-sum simulation reproduces RELION's DC
+to 1e-4. By it3 the formula holds to 1e-5. relax loses less because each optics shape class starts from its own zero
+accumulator. Single-optics runs are unaffected. This is not an algorithmic choice and depends on accumulation order, so relax
+does not reproduce it. It also does not explain the S3b final gap: a free run from RELION's it001 (14431963) ends at GT FSC-AUC
+0.8929, where RELION reaches 0.9055 and relax standalone 0.8923. OPEN: that run follows RELION to 1e-3 through it012, and relax's
+ave_Pmax sits 0.003-0.009 below RELION's in the HEALPix 5-7 local-search iterations (one-step replays 14434388). Evidence:
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/multioptics_spa_s3_20260924/s3b_relion_bpref_it1_20260925`,
+`s3b_relion_it1_mass_20260925`, `s3b_freerun_from_it001_20260925`.
+
 VDAM K>1 (2026-09-25): relax main 237e76b normalizes sigma2_noise, pdf_class,
 sigma2_offset and ave_Pmax by RELION's retained (significant-pruned) class mass;
 it used the full mass before, which moved every K>1 trajectory from iteration 1.
