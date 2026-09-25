@@ -6,8 +6,50 @@ import numpy as np
 import pytest
 from recovar.core import fourier_transform_utils as ftu
 
-from scripts.evaluate_vdam_ppca_pilot import _active_band, _class_mean_coordinates, _fsc_report, _states_from_model
+from scripts.evaluate_vdam_ppca_pilot import (
+    _active_band,
+    _check_effective_gt_maps,
+    _class_mean_coordinates,
+    _fsc_report,
+    _states_from_model,
+)
 from scripts.plot_vdam_ppca_comparison import final_class_masses, match_classes
+from scripts.prepare_vdam_ppca_fixture import effective_volumes
+
+
+def test_fixture_correction_is_exact_projector_target_and_legacy_is_unchanged():
+    from recovar.simulation import solvent_contrast
+
+    n = 8
+    rng = np.random.default_rng(4)
+    raw = (rng.normal(size=(3, n**3)) + 1j * rng.normal(size=(3, n**3))).astype(np.complex64)
+    unchanged, disabled = effective_volumes(raw, 6.0, n)
+    assert unchanged is raw
+    assert disabled == {"enabled": False}
+
+    corrected, record = effective_volumes(raw, 6.0, n, atomic_solvent_correction=True)
+    assert record["ground_truth_representation"] == solvent_contrast.CORRECTED_EFFECTIVE
+    assert corrected.dtype == np.complex64
+    np.testing.assert_array_equal(corrected, solvent_contrast.apply_record(raw, record))
+    assert not np.array_equal(corrected, raw)
+    assert not np.array_equal(solvent_contrast.apply_record(corrected, record), corrected)
+    dc = np.ravel_multi_index((n // 2,) * 3, (n,) * 3)
+    np.testing.assert_allclose(corrected[:, dc], 0.2 * raw[:, dc], rtol=2e-7)
+    with pytest.raises(ValueError, match="atomic_bfactor"):
+        effective_volumes(raw, 6.0, n, atomic_solvent_correction=True, atomic_bfactor=-1)
+
+
+def test_evaluation_rejects_a_map_not_derived_from_projected_truth():
+    n = 8
+    rng = np.random.default_rng(18)
+    maps = rng.normal(size=(3, n, n, n)).astype(np.float32)
+    ft = np.asarray(ftu.get_dft3(maps).reshape(3, -1), np.complex64)
+    exact = np.asarray(ftu.get_idft3(ft.reshape(3, n, n, n))).real.astype(np.float32)
+    _check_effective_gt_maps(ft, exact)
+    altered = exact.copy()
+    altered[0, 1, 2, 3] += 0.01
+    with pytest.raises(ValueError, match="simulated Fourier target"):
+        _check_effective_gt_maps(ft, altered)
 
 
 def test_k3_occupancy_comes_from_matching_final_map_metadata(tmp_path):

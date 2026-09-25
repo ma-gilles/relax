@@ -21,7 +21,24 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def prepare(output, source, counts, seed=1729, box=64, noise_level=0.01):
+def effective_volumes(raw_volumes, voxel_size, box, *, atomic_solvent_correction=False,
+                      solvent_contrast_a=0.8, solvent_contrast_B=2000.0, atomic_bfactor=100.0):
+    """Return the exact Fourier volumes passed to the projector and their transform record."""
+    from recovar.simulation import solvent_contrast
+
+    record = solvent_contrast.make_record(
+        atomic_solvent_correction, voxel_size=voxel_size, grid_size=box,
+        a=solvent_contrast_a, B=solvent_contrast_B, atomic_bfactor=atomic_bfactor,
+    )
+    if not atomic_solvent_correction:
+        return raw_volumes, record
+    record["ground_truth_representation"] = solvent_contrast.CORRECTED_EFFECTIVE
+    return solvent_contrast.apply_record(raw_volumes, record), record
+
+
+def prepare(output, source, counts, seed=1729, box=64, noise_level=0.01, *,
+            atomic_solvent_correction=False, solvent_contrast_a=0.8,
+            solvent_contrast_B=2000.0, atomic_bfactor=100.0):
     import os
 
     import jax.numpy as jnp
@@ -47,6 +64,11 @@ def prepare(output, source, counts, seed=1729, box=64, noise_level=0.01):
     # Same common normalization as generate_synthetic_dataset, not per-state.
     scale = np.float32(1 / np.mean(np.linalg.norm(volumes, axis=-1)))
     volumes = np.asarray(volumes * scale, np.complex64)
+    volumes, correction = effective_volumes(
+        volumes, voxel_size, box, atomic_solvent_correction=atomic_solvent_correction,
+        solvent_contrast_a=solvent_contrast_a, solvent_contrast_B=solvent_contrast_B,
+        atomic_bfactor=atomic_bfactor,
+    )
     rng = np.random.default_rng(seed)
     labels = rng.permutation(np.repeat(np.arange(3), counts))
     n = len(labels)
@@ -131,6 +153,9 @@ def prepare(output, source, counts, seed=1729, box=64, noise_level=0.01):
         "normalized_map_inner_products": (normalized @ normalized.T).tolist(),
         "source_maps": {str(path): sha256(path) for path in maps},
         "downsampled_maps": {path.name: sha256(path) for path in sorted(evaluation.glob("state*.mrc"))},
+        "ground_truth_fourier_sha256": hashlib.sha256(np.ascontiguousarray(volumes).tobytes()).hexdigest(),
+        "ground_truth_fourier_dtype": str(volumes.dtype),
+        "atomic_solvent_correction": correction,
         "common_volume_scale": float(scale),
         "counts": list(map(int, counts)),
         "measured_snr_probe": float(np.mean(signal**2) / np.mean(measured_noise**2)),
@@ -174,8 +199,17 @@ def main():
     parser.add_argument("--box", type=int, default=64)
     parser.add_argument("--seed", type=int, default=1729)
     parser.add_argument("--noise-level", type=float, default=0.01, help="Simulator noise_level parameter")
+    parser.add_argument("--atomic-solvent-correction", action="store_true",
+                        help="Apply the simulator's Fourier solvent-contrast and B-factor transform once to clean volumes")
+    parser.add_argument("--solvent-contrast-a", type=float, default=0.8)
+    parser.add_argument("--solvent-contrast-b", type=float, default=2000.0, help="Solvent-contrast B in angstrom^2")
+    parser.add_argument("--atomic-bfactor", type=float, default=100.0, help="Additional atomic B in angstrom^2")
     args = parser.parse_args()
-    prepare(args.output, args.source, args.counts, args.seed, args.box, args.noise_level)
+    prepare(args.output, args.source, args.counts, args.seed, args.box, args.noise_level,
+            atomic_solvent_correction=args.atomic_solvent_correction,
+            solvent_contrast_a=args.solvent_contrast_a,
+            solvent_contrast_B=args.solvent_contrast_b,
+            atomic_bfactor=args.atomic_bfactor)
 
 
 if __name__ == "__main__":

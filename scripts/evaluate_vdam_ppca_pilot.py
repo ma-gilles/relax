@@ -102,6 +102,14 @@ def _states_from_model(theta, means, n):
     return states
 
 
+def _check_effective_gt_maps(gt_fourier, gt):
+    """Fail if saved real-space GT is not the exact inverse DFT of projected GT."""
+    n = gt.shape[1]
+    expected = np.asarray(ftu.get_idft3(gt_fourier.reshape(3, n, n, n))).real.astype(np.float32)
+    if not np.array_equal(gt, expected):
+        raise ValueError("Corrected GT maps differ from the simulated Fourier target")
+
+
 def evaluate(checkpoint, embeddings, training_manifest, evaluation_dir, fixture_verification, vdam_maps, output, *, active_radius=None):
     checkpoint = Path(checkpoint).resolve()
     embeddings = Path(embeddings).resolve()
@@ -130,10 +138,28 @@ def evaluate(checkpoint, embeddings, training_manifest, evaluation_dir, fixture_
             raise ValueError(f"Evaluation input identity mismatch: {name}")
     with np.load(evaluation_dir / "truth.npz", allow_pickle=False) as truth:
         labels = truth["labels"].copy()
+        gt_fourier = truth["volumes_fourier"].copy()
+    evaluation_manifest = json.loads((evaluation_dir / "manifest.json").read_text())
+    correction = evaluation_manifest.get("atomic_solvent_correction", {"enabled": False})
+    if correction.get("enabled"):
+        if correction.get("ground_truth_representation") != "corrected_effective":
+            raise ValueError("Corrected fixture must store already transformed ground truth")
+        if gt_fourier.dtype != np.complex64 or gt_fourier.shape != (3, n**3):
+            raise ValueError("Corrected fixture Fourier target has wrong dtype or shape")
+        if hashlib.sha256(np.ascontiguousarray(gt_fourier).tobytes()).hexdigest() != evaluation_manifest.get(
+            "ground_truth_fourier_sha256"
+        ):
+            raise ValueError("Corrected fixture Fourier target hash mismatch")
+        for state in range(3):
+            name = f"state{state}.mrc"
+            if file_hash(evaluation_dir / name) != evaluation_manifest.get("downsampled_maps", {}).get(name):
+                raise ValueError(f"Corrected fixture effective map hash mismatch: {name}")
     means = _class_mean_coordinates(ids, z, labels)
     ppca = _states_from_model(theta, means, n)
     gt_paths = [evaluation_dir / f"state{k}.mrc" for k in range(3)]
     gt = np.stack([load_mrc(str(path)) for path in gt_paths]).astype(np.float32)
+    if correction.get("enabled"):
+        _check_effective_gt_maps(gt_fourier, gt)
     vdam_paths = [Path(path).resolve() for path in vdam_maps]
     if len(vdam_paths) != 3:
         raise ValueError("Exactly three VDAM class maps are required")
