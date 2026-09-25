@@ -85,3 +85,10 @@ def test_tilt_slot_rotations_are_each_images_inverse_of_l_a():
             image = layout.slot_image_ids[slot, row]
             expected = np.eye(3) if image < 0 else np.linalg.inv(left[layout.image_ids[image]] @ a[row]).T
             assert_matches(got[slot * 4 + row], expected)
+
+
+@pytest.mark.unit
+def test_tilt_capacity_ladders_divide_by_the_slot_count():
+    rows, units = resident_tilts.tilt_capacity_ladders((8192, 32768, 131072), (32, 128, 512), slot_capacity=41)
+    assert rows == (256, 512, 2048)
+    assert units == (1, 3, 12)
