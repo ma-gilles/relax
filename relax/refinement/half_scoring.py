@@ -1275,6 +1275,8 @@ def _score_half_local_one_shape(
             accumulate_noise=False,
             projection_relion_texture_interp=False,
             projection_relion_acc_double_floorf_quirk=RELION_ACC_DOUBLE_FLOORF_QUIRK,
+            # The parent pass is RELION's pass 1: the coarse diff2 kernel's row rule.
+            projection_relion_kernel="coarse",
             use_float64_scoring=parent_use_float64_scoring,
             use_float64_projections=parent_use_float64_projections,
             relion_exact_score_translation=bool(

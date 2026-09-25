@@ -430,6 +430,7 @@ def run_local_em_exact(
     use_float64_projections: bool = False,
     projection_relion_texture_interp: bool | None = None,
     projection_relion_acc_double_floorf_quirk: bool = False,
+    projection_relion_kernel: str = "fine",
     projection_force_jax: bool = False,
     projection_mask_current_image_disk: bool = False,
     relion_exact_bpref_operands: bool = False,
@@ -1048,6 +1049,8 @@ def run_local_em_exact(
     # local_projection_cache and half_scoring already carry None for this meaning.
     projection_kwargs["relion_texture_interp"] = projection_relion_texture_interp
     projection_kwargs["relion_acc_double_floorf_quirk"] = projection_relion_acc_double_floorf_quirk
+    # RELION kernel whose row rule applies to a window wider than the model sphere (other-grid images).
+    projection_kwargs["relion_kernel"] = projection_relion_kernel
     projection_kwargs["force_jax"] = bool(projection_force_jax)
     projection_kwargs["mask_current_image_disk"] = bool(projection_mask_current_image_disk)
     projection_mode = _local_projection_mode(
@@ -2046,6 +2049,7 @@ def run_local_em_exact(
                 projection_padding_factor=int(projection_padding_factor),
                 projection_relion_texture_interp=projection_relion_texture_interp,
                 projection_relion_acc_double_floorf_quirk=projection_relion_acc_double_floorf_quirk,
+                projection_relion_kernel=projection_relion_kernel,
                 projection_mask_current_image_disk=bool(projection_mask_current_image_disk),
                 projection_pixel_indices=big_jit_projection_pixel_indices_arg,
                 projector_output_size=int(big_jit_relion_projector_output_size),
@@ -2856,6 +2860,7 @@ def run_local_em_exact(
                 projection_relion_texture_interp=projection_relion_texture_interp,
                 projection_force_jax=bool(projection_force_jax),
                 projection_mask_current_image_disk=bool(projection_mask_current_image_disk),
+                projection_relion_kernel=projection_relion_kernel,
                 relion_exact_bpref_operands=relion_exact_bpref_operands,
                 relion_exact_fine_diff2=relion_exact_fine_diff2,
                 use_flat_local_rows=flat_local_rows_enabled,

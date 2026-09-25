@@ -350,6 +350,7 @@ def _relion_local_projector_flat(
         relion_projector_half = prepare_local_projector_slab(relion_projector_half)
     relion_texture_interp = projection_kwargs.get("relion_texture_interp")
     relion_acc_double_floorf_quirk = bool(projection_kwargs.get("relion_acc_double_floorf_quirk", False))
+    relion_kernel = projection_kwargs.get("relion_kernel", "fine")
     mask_current_image_disk = bool(projection_kwargs.get("mask_current_image_disk", False))
     projector_kwargs = {}
     if window_spec.use_window and window_spec.max_r is not None:
@@ -369,6 +370,7 @@ def _relion_local_projector_flat(
         dense_scale=True,
         relion_texture_interp=relion_texture_interp,
         relion_acc_double_floorf_quirk=relion_acc_double_floorf_quirk,
+        relion_kernel=relion_kernel,
         **projector_kwargs,
     )
     return proj_relion_flat
@@ -484,6 +486,7 @@ def _project_local_bucket(
         ordinary_projection_kwargs = dict(projection_kwargs)
         ordinary_projection_kwargs.pop("mask_current_image_disk", None)
         ordinary_projection_kwargs.pop("relion_acc_double_floorf_quirk", None)
+        ordinary_projection_kwargs.pop("relion_kernel", None)
         proj_half_flat, _ = _compute_projections_block(
             mean_for_proj,
             flat_rotations,
@@ -596,6 +599,7 @@ def _project_packed_noise_rows(
         ordinary_projection_kwargs = dict(projection_kwargs)
         ordinary_projection_kwargs.pop("mask_current_image_disk", None)
         ordinary_projection_kwargs.pop("relion_acc_double_floorf_quirk", None)
+        ordinary_projection_kwargs.pop("relion_kernel", None)
         proj_half_flat, _ = _compute_projections_block(
             mean_for_proj,
             packed_flat_rotations,

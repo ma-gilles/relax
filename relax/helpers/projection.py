@@ -256,7 +256,7 @@ def _validate_centered_relion_projector_pixel_indices(
 RELION_KERNELS = ("coarse", "fine")
 
 
-def relion_kernel_zero_rows(image_size: int, projector_output_size: int, r_max: int, relion_kernel: str | None):
+def relion_kernel_zero_rows(image_size: int, projector_output_size: int, r_max, relion_kernel: str = "fine"):
     """Centred half-image pixels whose reference RELION's accelerated kernels set to zero, or ``None``.
 
     ``AccProjectorKernel::makeKernel`` clamps ``maxR = min(PPref.r_max, imgX - 1)``
@@ -279,28 +279,32 @@ def relion_kernel_zero_rows(image_size: int, projector_output_size: int, r_max: 
     ``imgY/2`` equals ``s * maxR`` to within the integer radius test, which
     this mask does not reproduce. For ``s >= sqrt(2)`` the moved fine pixel can
     fall inside the sphere; :func:`relax.refinement.optics_shapes.make_shape_classes`
-    refuses those grids.
+    refuses those grids. For unscaled rotations every one of these rows is already
+    outside the sphere, so either rule changes nothing there.
 
+    ``r_max`` is the model radius, or a traced runtime radius (projector-capacity route).
     Returns a boolean mask over the ``image_size x (image_size // 2 + 1)`` centred grid
-    (true where RELION's reference is zero), or ``None`` when no row is affected.
+    (true where RELION's reference is zero), or ``None`` when a static radius leaves no
+    row affected.
     """
 
-    size = int(projector_output_size)
-    max_r = min(int(r_max), size // 2)
-    if int(r_max) <= 0 or size // 2 <= max_r:
-        return None
     if relion_kernel not in RELION_KERNELS:
-        raise ValueError(
-            f"an image window of {size} px exceeds the model radius {int(r_max)}: pass relion_kernel, "
-            f"one of {RELION_KERNELS}, to select RELION's row rule for it"
-        )
+        raise ValueError(f"relion_kernel must be one of {RELION_KERNELS}, got {relion_kernel!r}")
+    size = int(projector_output_size)
+    if isinstance(r_max, (int, np.integer)):
+        if int(r_max) <= 0 or size // 2 <= int(r_max):
+            return None
+        max_r = int(r_max)
+    else:
+        max_r = jnp.minimum(jnp.asarray(r_max, jnp.int32), size // 2)
     n = int(image_size)
     label = np.arange(n) - n // 2
     if size == n:
         # The full even box keeps the positive Nyquist row at centred row zero.
         label[0] = n // 2
-    zero = label > max_r if relion_kernel == "coarse" else np.abs(label) > max_r
-    return np.broadcast_to(zero[:, None], (n, n // 2 + 1)).reshape(-1)
+    label = jnp.asarray(label, jnp.int32)
+    zero = label > max_r if relion_kernel == "coarse" else jnp.abs(label) > max_r
+    return jnp.broadcast_to(zero[:, None], (n, n // 2 + 1)).reshape(-1)
 
 
 def relion_projector_half_to_texture_full(volume_relion_half: jax.Array) -> jax.Array:
@@ -681,7 +685,7 @@ def compute_relion_projector_projections_block(
     runtime_r_max=None,
     image_r_max=None,
     persistent_texture=None,
-    relion_kernel: str | None = None,
+    relion_kernel: str = "fine",
 ):
     """Project precomputed RELION ``PPref`` data for one rotation block.
 
@@ -694,17 +698,19 @@ def compute_relion_projector_projections_block(
     fallback (the texture path is float32-only hardware interpolation, unrelated
     to this quirk); see ``recovar.core.relion_project`` module docstring.
 
-    ``relion_kernel`` ("coarse" or "fine") names the RELION kernel whose row rule
+    ``relion_kernel`` ("fine" or "coarse") names the RELION kernel whose row rule
     applies when the image window is wider than the model sphere, as for an
     image on a coarser grid than the reference (:func:`relion_kernel_zero_rows`).
-    Such a window without it is an error.
+    Callers emulating RELION's coarse diff2 kernel pass "coarse".
     """
 
     image_size = int(image_shape[0])
     resolved_output_size = int(r_max) * 2 if projector_output_size is None else int(projector_output_size)
     if resolved_output_size <= 0 or resolved_output_size > image_size:
         resolved_output_size = image_size
-    zero_rows = relion_kernel_zero_rows(image_size, resolved_output_size, int(r_max), relion_kernel)
+    zero_rows = relion_kernel_zero_rows(
+        image_size, resolved_output_size, runtime_r_max if projector_capacity else int(r_max), relion_kernel
+    )
     if persistent_texture is not None:
         if projector_capacity or runtime_r_max is not None or image_r_max is not None:
             raise ValueError("persistent texture cannot use the runtime capacity/radius route")
@@ -822,8 +828,7 @@ def compute_relion_projector_projections_block(
     if zero_rows is not None:
         if not centered_rows:
             n = int(image_shape[0])
-            zero_rows = np.fft.ifftshift(zero_rows.reshape(n, n // 2 + 1), axes=0).reshape(-1)
-        zero_rows = jnp.asarray(zero_rows)
+            zero_rows = jnp.fft.ifftshift(zero_rows.reshape(n, n // 2 + 1), axes=0).reshape(-1)
         if centered_rows and pixel_indices is not None:
             zero_rows = zero_rows[jnp.asarray(pixel_indices)]
         proj_half = jnp.where(zero_rows, jnp.zeros((), proj_half.dtype), proj_half)

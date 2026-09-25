@@ -66,6 +66,9 @@ rows \(\mathrm{maxR}<\text{label}\le\mathrm{imgY}/2\); the fine kernels zero row
 as RELION does. Before this rule, the relabelled rows held nonzero reference values
 and the other-grid group's Pmax moved by about 0.01 per particle. Groups at
 \(s\ge\sqrt2\), where the moved fine pixel can fall inside the sphere, are refused.
+The local search passes `projection_relion_kernel="coarse"` for its parent pass (RELION's
+pass 1). Projections that name no kernel get the fine rule. For unscaled rotations that rule
+changes nothing, because those rows already lie outside the sphere.
 
 Implementation: [`relion_kernel_zero_rows`](../../relax/helpers/projection.py), passed
 through `compute_relion_projector_projections_block(relion_kernel=...)`, and the fused

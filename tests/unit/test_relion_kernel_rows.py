@@ -46,7 +46,7 @@ def _acc_kernel_keeps(x, y, matrix, max_r, padding_factor):
 def test_zero_rows_are_the_rows_relion_relabels_outside_the_sphere(kernel, scale, r_max):
     img_y = 2 * int(np.ceil(0.5 * scale * 2 * r_max))  # group_current_size of a 2 r_max reference window
     max_r = min(r_max, img_y // 2)
-    zero = relion_kernel_zero_rows(img_y, img_y, r_max, kernel).reshape(img_y, img_y // 2 + 1)
+    zero = np.asarray(relion_kernel_zero_rows(img_y, img_y, r_max, kernel)).reshape(img_y, img_y // 2 + 1)
     centred_label = np.arange(img_y) - img_y // 2
     centred_label[0] = img_y // 2  # full window: the positive Nyquist row sits at centred row zero
     for matrix in Rotation.random(4, random_state=3).as_matrix() / scale:
@@ -62,23 +62,27 @@ def test_zero_rows_are_the_rows_relion_relabels_outside_the_sphere(kernel, scale
 
 @pytest.mark.unit
 def test_window_within_the_model_sphere_has_no_rule():
-    assert relion_kernel_zero_rows(64, 56, 28, None) is None
-    assert relion_kernel_zero_rows(64, 64, 32, None) is None
+    assert relion_kernel_zero_rows(64, 56, 28, "fine") is None
+    assert relion_kernel_zero_rows(64, 64, 32, "coarse") is None
+    with pytest.raises(ValueError, match="relion_kernel"):
+        relion_kernel_zero_rows(64, 64, 28, "wavg")
 
 
 @pytest.mark.unit
-def test_wider_window_needs_the_kernel_named():
+def test_projection_block_applies_the_named_kernels_rule():
     rng = np.random.default_rng(0)
     projector = jnp.asarray(rng.standard_normal((2 * 8 + 3, 2 * 8 + 3, 10)) + 0j, dtype=jnp.complex128)
-    rotations = jnp.asarray(Rotation.random(2, random_state=5).as_matrix() / 1.12)
     kwargs = dict(r_max=8, padding_factor=1, centered_rows=True, projector_output_size=20, relion_texture_interp=False)
-    with pytest.raises(ValueError, match="relion_kernel"):
-        compute_relion_projector_projections_block(projector, rotations, (20, 20), **kwargs)
-    fine, _ = compute_relion_projector_projections_block(projector, rotations, (20, 20), relion_kernel="fine", **kwargs)
-    coarse, _ = compute_relion_projector_projections_block(projector, rotations, (20, 20), relion_kernel="coarse", **kwargs)
-    fine, coarse = np.asarray(fine).reshape(2, 20, 11), np.asarray(coarse).reshape(2, 20, 11)
     label = np.arange(20) - 10
     label[0] = 10
+    matrices = Rotation.random(2, random_state=5).as_matrix()
+    # Unscaled rotations: the rows beyond maxR are outside the sphere anyway, so the rule is inert.
+    plain, _ = compute_relion_projector_projections_block(projector, jnp.asarray(matrices), (20, 20), **kwargs)
+    assert not np.asarray(plain).reshape(2, 20, 11)[:, np.abs(label) > 8].any()
+    scaled = jnp.asarray(matrices / 1.12)
+    fine, _ = compute_relion_projector_projections_block(projector, scaled, (20, 20), **kwargs)
+    coarse, _ = compute_relion_projector_projections_block(projector, scaled, (20, 20), relion_kernel="coarse", **kwargs)
+    fine, coarse = np.asarray(fine).reshape(2, 20, 11), np.asarray(coarse).reshape(2, 20, 11)
     assert not fine[:, np.abs(label) > 8].any() and not coarse[:, label > 8].any()
     # The coarse kernel still projects the negative rows beyond maxR; both keep the rest unchanged.
     assert coarse[:, label < -8].any()

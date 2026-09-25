@@ -124,9 +124,13 @@ def test_compact_mapping_scaling_and_runtime_trace(monkeypatch):
         return big._project_local_half_spectrum(None, half, rotations, runtime_projector_r_max=radius, **new_kwargs)
 
     physical = jnp.zeros((35, 35, 18), jnp.complex64)
-    for radius in [15, 16]:
+    # RELION's fine-kernel row rule clamps at the runtime radius: the 32 px window drops row +16
+    # (entries 0 and 4 of this mapping) at radius 15, as the static route does, and keeps it at 16.
+    at_16 = np.asarray(old).copy()
+    at_16[0, [0, 4]] = np.asarray(crop)[0, [0, 16]] * -(128**2)
+    for radius, reference in [(15, np.asarray(old)), (16, at_16)]:
         result = projected(physical, jnp.asarray(radius, jnp.int32))
-        assert_matches(np.asarray(result), np.asarray(old))
+        assert_matches(np.asarray(result), reference)
     assert len(records) == 1 and records[0][1].shape == () and records[0][1].dtype == jnp.int32
     radius = records[0][2].pop("image_r_max")
     assert radius.aval.shape == ()
@@ -134,6 +138,7 @@ def test_compact_mapping_scaling_and_runtime_trace(monkeypatch):
     assert records[0][2] == {"image_shape": (32, 32), "padding_factor": 1}
     assert projected._cache_size() == 1
     expected = np.asarray(crop)[0, [0, 18, 272, 288, 16]] * -(128**2)
+    expected[[0, 4]] = 0  # row +16, beyond the model radius 15
     assert_matches(np.asarray(old)[0], expected)
 
 

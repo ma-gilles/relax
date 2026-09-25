@@ -66,6 +66,10 @@ def test_half_staging_preserves_current_crop_mask_and_scaling(
         expected = p._texture_centered_crop_at_indices(raw, indices, **output_kwargs)
     else:
         expected = p._texture_centered_crop_to_full(raw, **output_kwargs)
+    # A window wider than the model sphere (34 > 2 * 16) takes RELION's fine-kernel row rule.
+    zero_rows = p.relion_kernel_zero_rows(48, output_size, 16)
+    if zero_rows is not None:
+        expected = jnp.where(zero_rows if indices is None else zero_rows[indices], 0, expected)
     monkeypatch.delenv("RELAX_DENSE_MEANS_SCALE", raising=False)
     if dense_scale:
         expected = expected * -(48**2)

@@ -1550,6 +1550,7 @@ def _project_local_half_spectrum(
     projection_relion_texture_interp: bool | None,
     projection_force_jax: bool,
     projection_mask_current_image_disk: bool = False,
+    projection_relion_kernel: str = "fine",
     use_relion_projector: bool,
     relion_projector_r_max: int,
     projection_padding_factor: int,
@@ -1586,6 +1587,7 @@ def _project_local_half_spectrum(
             # quirk is not threaded here: it only applies to that fallback and
             # carrying it would add another compile-time argument.
             relion_texture_interp=projection_relion_texture_interp,
+            relion_kernel=projection_relion_kernel,
             **projector_kwargs,
         )
         return proj_half
@@ -2000,6 +2002,7 @@ def _split_local_big_jit_carry(result):
         "projection_relion_texture_interp",
         "projection_force_jax",
         "projection_mask_current_image_disk",
+        "projection_relion_kernel",
         "relion_exact_bpref_operands",
         "relion_exact_fine_diff2",
         "use_flat_local_rows",
@@ -2131,6 +2134,7 @@ def run_local_bucket_big_jit(
     projection_relion_texture_interp: bool | None,
     projection_force_jax: bool,
     projection_mask_current_image_disk: bool = False,
+    projection_relion_kernel: str = "fine",
     relion_exact_bpref_operands: bool = False,
     relion_exact_fine_diff2: bool = False,
     use_flat_local_rows: bool = False,
@@ -2719,6 +2723,7 @@ def run_local_bucket_big_jit(
                 projection_relion_texture_interp=projection_relion_texture_interp,
                 projection_force_jax=projection_force_jax,
                 projection_mask_current_image_disk=projection_mask_current_image_disk,
+                projection_relion_kernel=projection_relion_kernel,
                 use_relion_projector=use_relion_projector,
                 relion_projector_r_max=relion_projector_r_max,
                 projection_padding_factor=projection_padding_factor,

@@ -79,6 +79,7 @@ def make_shape_classes(datasets_and_indices, *, ref_box, ref_pixel):
     A class at scale ``s >= sqrt(2)`` is refused. There, RELION's fine kernels project
     a moved pixel inside the model sphere for the image rows beyond it
     (:func:`relax.helpers.projection.relion_kernel_zero_rows`), which relax does not reproduce.
+    Listing the optics group with the largest box x pixel size first avoids it.
     """
 
     classes = []

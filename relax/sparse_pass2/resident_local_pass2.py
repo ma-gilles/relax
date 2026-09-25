@@ -348,6 +348,7 @@ def compute_local_search_resident(
     relion_exact_score_translation=False,
     projection_relion_texture_interp=None,
     projection_relion_acc_double_floorf_quirk=False,
+    projection_relion_kernel="fine",
     projection_force_jax=False,
     projection_mask_current_image_disk=False,
     relion_projector_half=None,
@@ -663,6 +664,7 @@ def compute_local_search_resident(
     )
     projection_kwargs["force_jax"] = bool(projection_force_jax)
     projection_kwargs["mask_current_image_disk"] = bool(projection_mask_current_image_disk)
+    projection_kwargs["relion_kernel"] = projection_relion_kernel
 
     # ---- capacity plan ----------------------------------------------------
     row_ladder = _cap_row_capacity_ladder(
