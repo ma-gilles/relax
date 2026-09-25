@@ -617,6 +617,7 @@ def compute_pass2_stats_sparse_bucketed(
     relion_translation_angle_scale: float = 1.0,
     optics_group_ids=None,
     reconstruction_volume_current_size=None,
+    reconstruction_image_radius=None,
 ):
     """Bucketed batched implementation of sparse pass-2 oversampling.
 
@@ -627,7 +628,7 @@ def compute_pass2_stats_sparse_bucketed(
     It keeps one optics group's noise spectrum; per-optics-group noise runs on the
     device-resident driver only.
     """
-    if reconstruction_volume_current_size is not None:
+    if reconstruction_volume_current_size is not None or reconstruction_image_radius is not None:
         raise NotImplementedError("images on another grid than the reference need the device-resident pass 2")
     if optics_group_ids is not None:
         raise NotImplementedError(
