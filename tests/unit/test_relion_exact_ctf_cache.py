@@ -11,6 +11,7 @@ The cache is pre-populated so the tests never reach the RELION binding, which is
 built per run root rather than into the checkout.
 """
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -80,7 +81,9 @@ def test_cached_ctf_batch_fails_closed_on_an_unevaluated_row(populated_cache, mo
     """A slot that was never filled must raise, not return another particle's CTF."""
 
     dataset, _ = populated_cache
-    key = next(iter(relion_ctf._RELION_EXACT_CTF_SOURCE_CACHE))
+    # The fixture's own entry: the cache is process-wide, and an earlier test in the same
+    # process (the P4-J resident check reads a real STAR) may have added entries before it.
+    key = (str(Path(dataset.particles_file).resolve()), (4, 4))
     cache = relion_ctf._RELION_EXACT_CTF_SOURCE_CACHE[key]
     # Leave the slot unset and make evaluating it a no-op, which is what a
     # silently-skipped particle would look like.
