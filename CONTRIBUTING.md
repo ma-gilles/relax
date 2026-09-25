@@ -159,7 +159,7 @@ Four tiers, each one command. Pick the tier from the change; the root
 | --- | --- | --- | --- | --- |
 | smoke | `pixi run test-smoke` | 5 min GPU | one 1-GPU cryoem job if it starts within 15 min, else one idle local GPU 1-3 (never GPU 0, chosen by UUID after nvidia-smi) | CPU fast guard and the merge-guard unit contracts; fixed-state replays `k1_local_replay` (local search), `k1_adaptive_replay` (global K1), `kclass_replay`; the GPU unit files for the changed paths |
 | medium | `pixi run test-medium` | 1-2 h wall | one Slurm job, 3 GPUs | smoke's CPU items; the whole fast parity tier (10 cases); the GPU unit sweep (`tests/unit`, `tests/integration`, `tests/ppca_abinitio`) sharded longest-first; native VDAM K1 50k/256; a K1 5k/128 standalone auto-refine to convergence scored with FSC against a RELION band |
-| long | `pixi run test-long` | about 6 h wall, 4 GPUs | one Slurm job, 4 GPUs | the EM long tier (K1 50k/256 standalone and seeded, native VDAM, K4 50k/256) and the K1 (standalone) and K4 100k/256 completions, masked and unmasked, against RELION repeat bands |
+| long | `pixi run test-long` | about 7 h wall, 4 GPUs | one Slurm job, 4 GPUs | the EM long tier (K1 50k/256 standalone and seeded, native VDAM, K4 50k/256) and the K1 (standalone) and K4 100k/256 completions, masked and unmasked, against RELION repeat bands |
 | baseline regeneration | `pixi run regen-fixture-manifest`, `pixi run regen-pinned-fast` | - | - | the fixture manifest and the pinned relax outputs. The initial pinned outputs came from the first passing medium run; every later regeneration of them needs the user's explicit request. Each pinned entry records its source commit, job, GPU model and date |
 
 Every tier command freezes the checkout (HEAD and any uncommitted diff) into
@@ -174,7 +174,11 @@ there. The medium tier also runs periodically on `main`.
 worker process per GPU (della-cryoem allows 16 running jobs but 32 GPUs per
 user). Every tier job goes to the cryoem partition; `--queue general` is only
 for when the user explicitly allows another partition. The long tier's
-arms share a node, so its walls are not timing-controlled measurements. Tier and
+arms share a node, so its walls are not timing-controlled measurements. Measured
+long tier (job 14375361, relax 319cd10, 4 A100s, one node): 425 min, bound by the K4
+100k/256 completion (413 min); K1 completion 197 min, K1 50k standalone 172 min and
+seeded 201 min, K4 50k 91 min, native VDAM 4 min. The planner's estimates are H100
+walls, so on A100 the K1 arms take about twice as long. Tier and
 benchmark jobs share nodes and take 8 CPUs and 128G per GPU, on any GPU model
 unless the H100 matters. Memory above that is
 sized from the job's measured peak RSS, and the script says so; nothing asks
