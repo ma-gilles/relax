@@ -145,6 +145,13 @@ def _k_class_args(n_classes, seed=20260925):
     volumes = jnp.stack([_hermitian_volume(VOLUME_SHAPE, seed=17 + 13 * k) for k in range(n_classes)])
     for name in ("normalization_other_score_log_z", "normalization_score_mode"):
         args.pop(name)
+    # Each class masks its scale sums with its own data_vs_prior_class > 3
+    # (acc_ml_optimiser_impl.h:4908): class k keeps shells below n_shells - 1 - k.
+    dvp = np.asarray(args["scale_correction_data_vs_prior"], dtype=np.float64)
+    per_class = np.stack([dvp] * n_classes)
+    for k in range(n_classes):
+        per_class[k, dvp.size - 1 - k :] = 1.0
+    args["scale_correction_data_vs_prior"] = per_class
     return args, volumes, supports, priors
 
 
@@ -245,6 +252,13 @@ def test_k_class_resident_matches_the_compact_fused_engine(_resident_production_
     # The noise sums are not compared: the compact K-class engine has no RELION
     # direct low-shell Wavg residual (its historical K>1 arithmetic), so they
     # differ by construction; test_duplicated_class_is_the_k1_pass checks them.
+    # The group scale sums take each class's own mask; both engines run the
+    # atomic Wavg triplet here (_resident_production_env).
+    for field in ("wsum_scale_correction_xa", "wsum_scale_correction_aa"):
+        compact_sum = sum(np.asarray(getattr(stats, field), dtype=np.float64) for stats in compact.noise_stats)
+        measured = _rel_l2(compact_sum, getattr(resident.noise_stats, field))
+        print(f"K={n_classes} {field} rel L2 vs compact {measured:.3e}")
+        assert measured < 1e-6, field
     total_sumw = float(sum(float(stats.sumw) for stats in compact.noise_stats))
     assert abs(total_sumw - float(resident.noise_stats.sumw)) <= 1e-6 * abs(total_sumw)
 
@@ -387,3 +401,27 @@ def test_k_class_resident_off_records_the_compact_engine(monkeypatch):
     result, entries, calls = _selection_run(monkeypatch, "0", "run")
     assert result is None and not calls
     assert entries == [f"global:compact ({rp.RESIDENT_PASS2_ENV}=0)"]
+
+
+def test_fold_class_scale_sums_masks_each_class_and_clears_its_channels():
+    """RELION adds a class's XA/AA to the particle's scale sums under that class's mask only."""
+
+    rng = np.random.default_rng(3)
+    triplet = jnp.asarray(rng.normal(size=(3, 5, 3)), dtype=jnp.float32)
+    carry = rp._ChunkMstepCarry(
+        Ft_y=None,
+        Ft_ctf=None,
+        wavg_triplet_pixels=triplet,
+        noise_shells=jnp.zeros(4, dtype=jnp.float64),
+        a2_per_image=jnp.zeros(3),
+        xa_per_image=jnp.zeros(3),
+        scale_xa_per_image=jnp.ones(3, dtype=jnp.float64),
+        scale_aa_per_image=jnp.zeros(3, dtype=jnp.float64),
+    )
+    mask = np.asarray([True, False, True, True, False])
+    folded = rp._fold_class_scale_sums(carry, jnp.asarray(mask))
+    host = np.asarray(triplet, dtype=np.float64)
+    assert_matches(np.asarray(folded.scale_xa_per_image), 1.0 + host[:, mask, 0].sum(axis=1))
+    assert_matches(np.asarray(folded.scale_aa_per_image), host[:, mask, 1].sum(axis=1))
+    assert not np.asarray(folded.wavg_triplet_pixels[:, :, :2]).any()
+    assert_matches(np.asarray(folded.wavg_triplet_pixels[:, :, 2]), np.asarray(triplet[:, :, 2]))

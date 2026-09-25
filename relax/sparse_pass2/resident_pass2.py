@@ -959,6 +959,9 @@ class _ChunkImageOperands(NamedTuple):
     per_class_log_z: jax.Array | None = None  # float64 [C_B * K]
     per_class_best_log_score: jax.Array | None = None  # float32 [C_B * K]
     per_class_best_cell: jax.Array | None = None  # int64 [C_B * K], fine rotation * T + t, -1 if none
+    # K>1: each image's scale sums under its classes' own masks (_fold_class_scale_sums).
+    scale_xa_per_image: jax.Array | None = None  # float64 [C_B]
+    scale_aa_per_image: jax.Array | None = None  # float64 [C_B]
 
 
 class _ChunkImageTables(NamedTuple):
@@ -966,7 +969,7 @@ class _ChunkImageTables(NamedTuple):
 
     shell_indices_half: jax.Array  # int32 [P_half]
     wavg_shell_indices: jax.Array  # int32 [P_rect]
-    wavg_scale_pixel_mask: jax.Array  # bool [P_rect]
+    wavg_scale_pixel_mask: jax.Array  # bool [P_rect]; [K, P_rect] with K>1 classes
     translation_sqdist_ang: jax.Array | None  # real [T] or [C_B, T] or None
 
 
@@ -1092,20 +1095,25 @@ def _accumulate_chunk_image_terms(
     scale_xa = stats.scale_xa
     scale_aa = stats.scale_aa
     if config.accumulate_scale:
-        mask_rect = jnp.asarray(tables.wavg_scale_pixel_mask, dtype=bool).reshape(1, -1)
-        zero_f32 = jnp.float32(0.0)
-        scale_xa_per_image = jnp.sum(
-            jnp.where(mask_rect, operands.wavg_triplet_pixels[:, :, 0], zero_f32).astype(
-                jnp.float64
-            ),
-            axis=1,
-        )
-        scale_aa_per_image = jnp.sum(
-            jnp.where(mask_rect, operands.wavg_triplet_pixels[:, :, 1], zero_f32).astype(
-                jnp.float64
-            ),
-            axis=1,
-        )
+        if operands.scale_xa_per_image is not None:
+            # K>1: already summed class by class under each class's own mask.
+            scale_xa_per_image = operands.scale_xa_per_image
+            scale_aa_per_image = operands.scale_aa_per_image
+        else:
+            mask_rect = jnp.asarray(tables.wavg_scale_pixel_mask, dtype=bool).reshape(1, -1)
+            zero_f32 = jnp.float32(0.0)
+            scale_xa_per_image = jnp.sum(
+                jnp.where(mask_rect, operands.wavg_triplet_pixels[:, :, 0], zero_f32).astype(
+                    jnp.float64
+                ),
+                axis=1,
+            )
+            scale_aa_per_image = jnp.sum(
+                jnp.where(mask_rect, operands.wavg_triplet_pixels[:, :, 1], zero_f32).astype(
+                    jnp.float64
+                ),
+                axis=1,
+            )
         group_slot = _drop_index(operands.group_ids, int(config.n_scale_groups))
         keep_group = valid_image & (jnp.asarray(operands.group_ids, dtype=jnp.int32) >= 0)
         scale_xa = scale_xa.at[group_slot].add(
@@ -1980,11 +1988,6 @@ def _resident_pass2(
     )
     shell_indices_noise = window_spec.recon_values(shell_indices_half)
     noise_variance_for_noise = window_spec.recon_values(noise_variance_half)
-    scale_correction_pixel_mask = _relion_scale_correction_pixel_mask(
-        scale_correction_data_vs_prior,
-        shell_indices_noise,
-        n_shells=n_shells,
-    )
     relion_wavg_rectangle = _make_relion_wavg_rectangle(
         image_shape,
         current_size,
@@ -1992,10 +1995,26 @@ def _resident_pass2(
         reconstruction_current_size=mstep_current_size,
     )
     n_rect = int(relion_wavg_rectangle.centered_indices.size)
-    scale_pixel_mask_rect_np = np.zeros(n_rect, dtype=bool)
-    scale_pixel_mask_rect_np[relion_wavg_rectangle.exact_positions] = np.asarray(
-        scale_correction_pixel_mask, dtype=bool
-    )
+    # RELION masks each class's scale sums with its own data_vs_prior_class[iclass] > 3
+    # (acc_ml_optimiser_impl.h:4908); one shell vector serves every class.
+    scale_dvp_by_class = [scale_correction_data_vs_prior] * n_classes
+    if scale_correction_data_vs_prior is not None and n_classes > 1:
+        scale_dvp_array = np.asarray(scale_correction_data_vs_prior)
+        if scale_dvp_array.ndim == 2:
+            if scale_dvp_array.shape[0] != n_classes:
+                raise ValueError(
+                    "scale_correction_data_vs_prior must be one shell vector or have "
+                    f"shape ({n_classes}, n_shells), got {scale_dvp_array.shape}"
+                )
+            scale_dvp_by_class = [scale_dvp_array[k] for k in range(n_classes)]
+    scale_pixel_mask_rect_np = np.zeros((n_classes, n_rect), dtype=bool)
+    for class_index, class_dvp in enumerate(scale_dvp_by_class):
+        scale_pixel_mask_rect_np[class_index, relion_wavg_rectangle.exact_positions] = np.asarray(
+            _relion_scale_correction_pixel_mask(class_dvp, shell_indices_noise, n_shells=n_shells),
+            dtype=bool,
+        )
+    if n_classes == 1:
+        scale_pixel_mask_rect_np = scale_pixel_mask_rect_np[0]
     group_ids_np, n_scale_groups = prepare_scale_correction_groups(
         group_ids, scale_correction_group_count, n_images=n_images,
     )
@@ -4536,6 +4555,33 @@ class _ChunkMstepCarry(NamedTuple):
     noise_shells: jax.Array  # float64 [n_shells], [G, n_shells] with G optics groups
     a2_per_image: jax.Array  # real [C_B]
     xa_per_image: jax.Array  # real [C_B]
+    # K>1 only: each image's scale sums, every class masked by its own
+    # data_vs_prior_class > 3 (:func:`_fold_class_scale_sums`).
+    scale_xa_per_image: jax.Array | None = None  # float64 [C_B]
+    scale_aa_per_image: jax.Array | None = None  # float64 [C_B]
+
+
+@jax.jit
+def _fold_class_scale_sums(mstep: "_ChunkMstepCarry", class_mask_rect) -> "_ChunkMstepCarry":
+    """Move one class's Wavg XA/AA into the per-image scale sums under its own mask.
+
+    RELION keeps XA and AA per class and adds them to the particle's scale sums
+    only where that class's ``data_vs_prior_class > 3``
+    (acc_ml_optimiser_impl.h:4893-4912); the diff2 channel is summed over
+    classes. The class's blocks have just accumulated its XA/AA pixels, so they
+    are masked and summed here and the two channels cleared for the next class.
+    """
+
+    triplet = mstep.wavg_triplet_pixels
+    mask = jnp.asarray(class_mask_rect, dtype=bool).reshape(1, -1)
+    zero = jnp.float32(0.0)
+    xa = jnp.sum(jnp.where(mask, triplet[:, :, 0], zero).astype(jnp.float64), axis=1)
+    aa = jnp.sum(jnp.where(mask, triplet[:, :, 1], zero).astype(jnp.float64), axis=1)
+    return mstep._replace(
+        wavg_triplet_pixels=triplet.at[:, :, :2].set(zero),
+        scale_xa_per_image=mstep.scale_xa_per_image + xa,
+        scale_aa_per_image=mstep.scale_aa_per_image + aa,
+    )
 
 
 def _resident_chunk_posterior(
@@ -4966,7 +5012,7 @@ def _resident_mstep_block(
         max_block_bytes=int(spec.max_adjoint_block_bytes),
         log_label="resident-ctf-window",
     )
-    return _ChunkMstepCarry(
+    return carry._replace(
         Ft_y=Ft_y,
         Ft_ctf=Ft_ctf,
         wavg_triplet_pixels=wavg_triplet_pixels,
@@ -5194,6 +5240,12 @@ def _initial_mstep_carry(
             ((image_capacity,), jnp.dtype(dtypes["xa"])),
         )
     )()
+    class_scale = {}
+    if int(getattr(spec, "n_classes", 1)) > 1:
+        class_scale = dict(
+            scale_xa_per_image=jnp.zeros((image_capacity,), dtype=jnp.float64),
+            scale_aa_per_image=jnp.zeros((image_capacity,), dtype=jnp.float64),
+        )
     return _ChunkMstepCarry(
         Ft_y=Ft_y,
         Ft_ctf=Ft_ctf,
@@ -5201,6 +5253,7 @@ def _initial_mstep_carry(
         noise_shells=noise_shells,
         a2_per_image=a2_per_image,
         xa_per_image=xa_per_image,
+        **class_scale,
     )
 
 
@@ -5433,6 +5486,8 @@ def _resident_chunk_statistics(
         best_cell_index=posterior.best_cell_index,
         best_fine_rot=best_fine_rot,
         optics_groups=operands.optics_groups,
+        scale_xa_per_image=mstep.scale_xa_per_image,
+        scale_aa_per_image=mstep.scale_aa_per_image,
         **class_fields,
     )
     stats = _accumulate_chunk_image_terms(
@@ -5503,6 +5558,8 @@ def _run_resident_chunk_program(
             return carry_in
 
         mstep = jax.lax.fori_loop(0, n_outer, outer, mstep)
+        if mstep.scale_xa_per_image is not None:
+            mstep = _fold_class_scale_sums(mstep, tables.wavg_scale_pixel_mask[class_index])
         Ft_y_out.append(mstep.Ft_y)
         Ft_ctf_out.append(mstep.Ft_ctf)
     stats = _resident_chunk_statistics(
@@ -5578,6 +5635,8 @@ def _run_resident_chunk_stages(
                 spec=spec,
                 cuda_backproject=em_cuda_kernels,
             )
+        if mstep.scale_xa_per_image is not None:
+            mstep = _fold_class_scale_sums(mstep, tables.wavg_scale_pixel_mask[class_index])
         Ft_y_out.append(mstep.Ft_y)
         Ft_ctf_out.append(mstep.Ft_ctf)
     if timing_hook is not None:
