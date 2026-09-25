@@ -1,7 +1,6 @@
 import pytest
 
 from relax.ppca_initial_model.vdam_controls import VdamPilotControls
-from relax.vdam import dense_adapter
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.schedules import default_subset_sizes_for_3d_initial_model
 
@@ -47,8 +46,3 @@ def test_caps_and_stop_file(tmp_path):
     with pytest.raises(RuntimeError, match="saved iteration 3 before final output"):
         controls.check_completed(3, 10)
 
-
-def test_native_projector_setup_stays_float64():
-    assert dense_adapter._projector_setup_dtype("native", "float32") == "float64"
-    assert dense_adapter._projector_setup_dtype("jax", "float32") == "float32"
-    assert dense_adapter._projector_setup_dtype("jax", "float64") == "float64"

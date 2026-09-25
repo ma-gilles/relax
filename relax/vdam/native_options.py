@@ -75,7 +75,6 @@ class NativeInitialModelOptions(InitialModelDefaults):
     outputname: str = "ab_initio/run"
     width_mask_edge_px: float = 5.0
     image_fourier_backend: str = "host_numpy"
-    projector_setup_backend: Literal["native", "jax"] = "native"
     # Production EM is float32; float64 is the diagnostic reference (native replays and dumps).
     mstep_compute_dtype: Literal["float32", "float64"] = "float32"
     datadir: str | None = None

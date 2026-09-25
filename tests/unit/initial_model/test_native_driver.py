@@ -1808,8 +1808,7 @@ def test_native_expectation_step_uses_autosampling_state_at_iteration_ten(monkey
     assert meta["current_changes_optimal_offsets_angstrom"] == pytest.approx(2.125 / np.sqrt(2.0))
 
 
-@pytest.mark.parametrize("backend", ["native", "jax"])
-def test_native_expectation_step_estimates_sampling_accuracy_before_update(monkeypatch, backend):
+def test_native_expectation_step_estimates_sampling_accuracy_before_update(monkeypatch):
     build_calls = []
     estimate_calls = []
     event_order = []
@@ -1817,9 +1816,7 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
     prepared_variance = np.zeros((1, 8**3), dtype=np.float32)
     prepared_half = np.zeros((1, 3, 3, 2), dtype=np.complex64)
 
-    def fake_prepare_projector(state, *, padding_factor, projector_setup_backend, projector_compute_dtype):
-        assert projector_setup_backend == backend
-        assert projector_compute_dtype == "float64"
+    def fake_prepare_projector(state, *, padding_factor):
         event_order.append("prepare_projector")
         assert padding_factor == 2
         return prepared_means, prepared_variance, prepared_half, 2
@@ -1867,7 +1864,6 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
 
     def fake_run_dense(dataset, state, config, *, particle_ids, halfset_ids):
         event_order.append("run_estep")
-        assert config.projector_setup_backend == backend
         assert config.engine_kwargs["healpix_order"] == 2
         assert config.translations.shape == (2, 2)
         assert config.means is prepared_means
@@ -1889,7 +1885,7 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
     monkeypatch.setattr(driver, "_build_sampling_plan", fake_build_sampling_plan)
     monkeypatch.setattr(driver, "run_dense_initial_model_estep", fake_run_dense)
 
-    opts = native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=200, random_seed=17, padding_factor=2, projector_setup_backend=backend)
+    opts = native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=200, random_seed=17, padding_factor=2)
     sampling_state = native_sampling._initial_sampling_state(opts, pixel_size=2.125)
     sampling_state.current_changes_optimal_offsets_angstrom = 10.366644 / 5.0
     particle_state = NativeParticleState(

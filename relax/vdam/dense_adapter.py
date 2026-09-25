@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, replace
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 from recovar.reconstruction.noise import make_radial_noise
@@ -22,7 +22,6 @@ from relax.helpers.orientation_priors import (
     relion_sigma_offset_prior_center,
 )
 from relax.relion import relion_projector_setup
-from relax.relion.relion_projector_setup import ProjectorSetupBackend
 from relax.vdam import native_sampling
 from relax.vdam.adaptive_estep import run_adaptive_initial_model_estep
 from relax.vdam.estep_common import (
@@ -47,6 +46,11 @@ INITIAL_MODEL_LOCAL_BATCH_REFERENCE_COUNT_40GB = 32
 _INACTIVE_CLASS_LOG_PRIOR = -1.0e30
 _EXACT_RELION_PROJECTOR_ENV = "RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR"
 _RELION_PROJECTOR_DUMP_DIR_ENV = "RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR"
+# VDAM prepares its projector one way: the device FFT in double, narrowed to
+# the complex64 slab that RELION's GPU projector holds as a float texture
+# (the single float32 texture path of a7977c8). The corrected power spectrum
+# that seeds tau2 stays double.
+VDAM_PROJECTOR_SETUP_BACKEND = "jax"
 
 
 logger = logging.getLogger(__name__)
@@ -56,8 +60,6 @@ logger = logging.getLogger(__name__)
 class _IterationProjectorContext:
     """One refresh-to-E-step handoff; never a cache across iterations."""
 
-    projector_setup_backend: Literal["native", "jax"] = "native"
-    projector_compute_dtype: str = "float64"
     prepared: tuple | None = None
     reference: np.ndarray | None = None
     geometry: tuple | None = None
@@ -67,8 +69,6 @@ class _IterationProjectorContext:
         self.prepared = self.reference = self.geometry = None
         inputs, power = prepare_relion_projector_class_inputs_and_power(
             state, padding_factor=padding_factor, interpolator=interpolator,
-            projector_setup_backend=self.projector_setup_backend,
-            projector_compute_dtype=self.projector_compute_dtype,
         )
         self.prepared = inputs
         self.reference = state.Iref
@@ -289,8 +289,6 @@ def _dense_estep_config(
         ),
         stable_fourier_window_shapes=bool(opts.stable_fourier_window_shapes),
         padding_factor=int(opts.padding_factor),
-        projector_setup_backend=opts.projector_setup_backend,
-        projector_compute_dtype=opts.mstep_compute_dtype,
         relion_bpref_frame=True,
         relion_projector_frame=True,
         class_log_priors=class_log_priors,
@@ -464,25 +462,17 @@ def reference_to_dense_means(references: np.ndarray) -> np.ndarray:
     return np.asarray(means, dtype=np.complex64)
 
 
-def _projector_setup_dtype(projector_setup_backend, projector_compute_dtype):
-    """The native (RELION C++) setup stays float64; only the JAX setup follows the M-step dtype."""
-    return projector_compute_dtype if projector_setup_backend == "jax" else "float64"
-
-
 def prepare_relion_projector_class_inputs(
     state: InitialModelState,
     *,
     padding_factor: int,
-    projector_setup_backend: ProjectorSetupBackend = "native",
-    projector_compute_dtype: str = "float64",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     """Build InitialModel's production RELION projector once per iteration."""
     projector_half_by_class, projector_r_max = relion_projector_setup.reference_to_relion_projector_half_maps(
         state.Iref,
         current_size=state.current_size if state.current_size > 0 else state.ori_size,
         padding_factor=padding_factor,
-        projector_setup_backend=projector_setup_backend,
-        compute_dtype=_projector_setup_dtype(projector_setup_backend, projector_compute_dtype),
+        projector_setup_backend=VDAM_PROJECTOR_SETUP_BACKEND,
     )
     return _finish_relion_projector_class_inputs(
         state, padding_factor, projector_half_by_class, projector_r_max
@@ -493,8 +483,6 @@ def prepare_relion_projector_class_inputs_and_power(
     state: InitialModelState,
     *,
     padding_factor: int,
-    projector_setup_backend: ProjectorSetupBackend = "native",
-    projector_compute_dtype: str = "float64",
     interpolator: int = 1,
 ) -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray, int], np.ndarray]:
     """Produce scoring operands and tau2 from the identical corrected FFT."""
@@ -502,8 +490,7 @@ def prepare_relion_projector_class_inputs_and_power(
         state.Iref,
         current_size=state.current_size if state.current_size > 0 else state.ori_size,
         padding_factor=padding_factor,
-        projector_setup_backend=projector_setup_backend,
-        compute_dtype=_projector_setup_dtype(projector_setup_backend, projector_compute_dtype),
+        projector_setup_backend=VDAM_PROJECTOR_SETUP_BACKEND,
         interpolator=interpolator,
     )
     inputs = _finish_relion_projector_class_inputs(state, padding_factor, half_maps, r_max)
@@ -566,8 +553,6 @@ def _resolve_class_inputs(
             prepare_relion_projector_class_inputs(
                 state,
                 padding_factor=config.padding_factor,
-                projector_setup_backend=config.projector_setup_backend,
-                projector_compute_dtype=config.projector_compute_dtype,
             )
         )
         if mean_variance is None:

@@ -9,12 +9,13 @@ from relax.vdam import iteration_loop as loop
 from relax.vdam.init import initialise_denovo_state
 from recovar.utils.helpers import recovar_volume_to_relion
 from helpers.float_compare import assert_matches
+from helpers.vdam import relative_metrics
 
 pytestmark = pytest.mark.unit
 
 
 @pytest.mark.parametrize("classes,current_size,padding", [(1, 8, 1), (2, 12, 1), (1, 16, 2)])
-def test_shared_projector_matches_both_original_native_calls(
+def test_shared_device_projector_matches_both_native_calls(
     classes, current_size, padding, monkeypatch, tmp_path
 ):
     from relax.relion_bind import _relion_bind_core as bind
@@ -38,7 +39,7 @@ def test_shared_projector_matches_both_original_native_calls(
     inputs, power = adapter.prepare_relion_projector_class_inputs_and_power(
         state, padding_factor=padding
     )
-    assert len(builds) == classes
+    assert not builds  # VDAM prepares the projector on the device only.
     with np.load(tmp_path / "iter000_relion_projector_half.npz") as dumped:
         assert_matches(dumped["projector_half"], inputs[2])
         assert int(dumped["current_size"]) == current_size
@@ -50,37 +51,36 @@ def test_shared_projector_matches_both_original_native_calls(
         half, _, _, _, radius, _, _ = bind.compute_fourier_transform_map(
             native, 16, padding, 1, current_size, True, 2
         )
-        # Preserve the native oracle's precision; narrowing here changes its values.
         expected_half.append(np.asarray(half))
         expected_power.append(bind.vdam_projector_power_spectrum(
             native, 16, padding, 1, current_size, True, 2
         ))
         assert inputs[3] == radius
-    assert inputs[2].dtype == np.asarray(expected_half).dtype
-    assert_matches(inputs[2], np.asarray(expected_half))
-    assert power.dtype == np.asarray(expected_power).dtype
-    assert_matches(power, np.asarray(expected_power))
+    # The slab is RELION's float texture: the double native slab rounded once
+    # to complex64. The spectrum keeps the native FP64 projector contract.
+    assert inputs[2].dtype == np.complex64
+    assert np.all(relative_metrics(np.asarray(expected_half), inputs[2]) <= 4 * np.finfo(np.float32).eps)
+    assert power.dtype == np.float64
+    assert np.all(relative_metrics(np.asarray(expected_power), power) < 1e-12)
     old_inputs = adapter.prepare_relion_projector_class_inputs(state, padding_factor=padding)
     for actual, expected in zip(inputs, old_inputs):
         assert_matches(actual, expected)
     assert_matches(state.Iref, references_before)
 
 
-@pytest.mark.parametrize("backend", ["native", "jax"])
-def test_context_builds_once_and_consumes_once(monkeypatch, backend):
+def test_context_builds_once_and_consumes_once(monkeypatch):
     state = initialise_denovo_state(
         ori_size=8, pixel_size=1.0, K=1, nr_iter=2,
         n_directions=3, pseudo_halfsets=True,
     )
     calls = []
 
-    def prepare(current, *, padding_factor, interpolator, projector_setup_backend, projector_compute_dtype):
-        assert projector_setup_backend == backend
+    def prepare(current, *, padding_factor, interpolator):
         calls.append((current.iter, current.Iref.copy()))
         return (None, None, current.Iref.copy(), 4), np.full((1, 5), current.iter)
 
     monkeypatch.setattr(adapter, "prepare_relion_projector_class_inputs_and_power", prepare)
-    ctx = adapter._IterationProjectorContext(projector_setup_backend=backend)
+    ctx = adapter._IterationProjectorContext()
     for iteration in (1, 2):
         state = replace(state, iter=iteration, Iref=state.Iref + 1)
         before = state.tau2_class.copy()

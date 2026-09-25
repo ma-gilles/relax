@@ -1,4 +1,4 @@
-"""Native-oracle coverage of the opt-in device projector adapter boundary."""
+"""Native-oracle coverage of the VDAM device projector adapter boundary."""
 
 from dataclasses import replace
 
@@ -107,7 +107,7 @@ def test_unsupported_projector_geometry_uses_native(size, padding, interpolator,
         assert_matches(left, right)
 
 
-def test_config_opt_in_state_default_size_and_dump(monkeypatch, tmp_path):
+def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monkeypatch, tmp_path):
     state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=2, n_directions=3, pseudo_halfsets=True)
     state.Iref = np.random.default_rng(33).normal(size=state.Iref.shape)
     state.current_size = 0
@@ -117,20 +117,27 @@ def test_config_opt_in_state_default_size_and_dump(monkeypatch, tmp_path):
         translations=np.zeros((1, 2)),
         relion_projector_frame=True,
     )
-    assert config.projector_setup_backend == "native"
+    assert not hasattr(config, "projector_setup_backend")
     monkeypatch.setenv(adapter._EXACT_RELION_PROJECTOR_ENV, "1")
-    native = adapter._resolve_class_inputs(state, config)
+
+    def native_inputs():
+        half, r_max = relion_projector_setup.reference_to_relion_projector_half_maps(
+            state.Iref, current_size=8, padding_factor=1, projector_setup_backend="native"
+        )
+        return adapter._finish_relion_projector_class_inputs(state, 1, half, r_max)
+
+    natives = [native_inputs() for _ in range(2)]
+    candidate2 = adapter._resolve_class_inputs(state, config)
     monkeypatch.setenv(adapter._RELION_PROJECTOR_DUMP_DIR_ENV, str(tmp_path))
-    candidate = adapter._resolve_class_inputs(state, replace(config, projector_setup_backend="jax"))
-    assert candidate[3] == native[3] == 4
+    candidate = adapter._resolve_class_inputs(state, config)
+    assert candidate[3] == natives[0][3] == 4
+    assert candidate[2].dtype == np.complex64
     for field in (0, 1, 2):
-        _assert_existing_consumer_policy(native[field], candidate[field], candidate[field], native[field])
+        _assert_existing_consumer_policy(natives[0][field], candidate[field], candidate2[field], natives[1][field])
     with np.load(tmp_path / "iter000_relion_projector_half.npz") as dumped:
         assert_matches(dumped["projector_half"], candidate[2])
         assert int(dumped["current_size"]) == 8
-    inputs, power = adapter.prepare_relion_projector_class_inputs_and_power(
-        state, padding_factor=1, projector_setup_backend="jax"
-    )
+    inputs, power = adapter.prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
     assert_matches(inputs[2], candidate[2])
     assert power.shape == (1, 5)
 

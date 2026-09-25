@@ -1040,13 +1040,13 @@ inverts the q2 initial mean/loading basis at checkpoint zero and records the
 three float32 RELION-frame maps. The VDAM override skips its native double
 bootstrap when these maps are supplied; later projection and M-step backends
 must still be selected explicitly for production float32 execution.
-The corrected JAX projector now accepts an explicit float32 compute dtype for
-gridding correction, FFT and shell power. The VDAM driver passes its selected
-M-step compute dtype through the per-iteration projector and E-step fallback.
-Only the JAX projector setup follows it (`--projector-setup-backend jax`); the
-native setup stays float64, so a float32 run with the native setup is a
-mixed-precision diagnostic
-([`_projector_setup_dtype`](../../relax/vdam/dense_adapter.py)).
+VDAM has one projector setup
+([`VDAM_PROJECTOR_SETUP_BACKEND`](../../relax/vdam/dense_adapter.py)): the device
+FFT in double, narrowed to the complex64 slab RELION's GPU projector holds as a
+float texture, with the tau2 shell power kept in double. It does not follow the
+M-step dtype, and `--projector-setup-backend` is gone from InitialModel; a
+float32 run therefore scores float32 textures built from a double setup, as
+RELION does.
 The earlier tiny K3 job 14293103 used float64 corrected projector preparation
 despite float32 scoring, accumulation and M-step flags, so it is a mixed-precision
 diagnostic and must not be counted as final float32 evidence.

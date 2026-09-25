@@ -127,8 +127,6 @@ def _native_expectation_step(
                 prepared_projector_inputs = prepare_relion_projector_class_inputs(
                     state,
                     padding_factor=int(opts.padding_factor),
-                    projector_setup_backend=opts.projector_setup_backend,
-                    projector_compute_dtype=opts.mstep_compute_dtype,
                 )
             accuracy_meta = _estimate_native_sampling_accuracy(
                 sampling_state,
@@ -415,7 +413,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     ).strip().lower()
     projector_context = (
         None if exact_projector_setting in {"0", "false", "no", "off"}
-        else dense_adapter._IterationProjectorContext(opts.projector_setup_backend, opts.mstep_compute_dtype)
+        else dense_adapter._IterationProjectorContext()
     )
     expectation_step = _native_expectation_step(
         dataset,

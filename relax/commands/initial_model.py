@@ -389,10 +389,6 @@ def make_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--dry-run", action="store_true", help="Print the resolved native options without running")
     parser.add_argument(
-        "--projector-setup-backend", choices=("native", "jax"), default="native",
-        help="Reference projector preparation backend.",
-    )
-    parser.add_argument(
         "--mstep-compute-dtype", choices=("float32", "float64"), default="float32",
         help="M-owned state precision; float32 requires the JAX M-step.",
     )
@@ -482,7 +478,6 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
     if backend == "auto":
         backend = "relion_cuda" if args.gpu_ids else "host_numpy"
     return {
-        "projector_setup_backend": args.projector_setup_backend,
         "mstep_compute_dtype": args.mstep_compute_dtype,
         "diagnostic_continue_optimiser": args.diagnostic_continue_optimiser,
         "diagnostic_stop_after_iteration": args.diagnostic_stop_after_iteration,
