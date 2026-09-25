@@ -756,3 +756,29 @@ def test_ctf_probs_matches_the_resident_block_reduction(
         "ctf_probs",
         max_ulp_of_scale=_MAX_MASS_ULP_PER_TRANSLATION * 21,
     )
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("bpref", [False, True])
+def test_per_image_angle_tables_equal_one_call_per_image(monkeypatch, custom_cuda_lib, gpu_device, bpref):
+    """[B, T, 2] angles (tilt images, S4.2): every row uses its own image's table."""
+
+    cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
+    rng = np.random.default_rng(29)
+    image_capacity, n_trans = 5, 13
+    operands = _operands(rng, rows=23, image_capacity=image_capacity, n_trans=n_trans, n_pixels=300, padded_rows=(4,))
+    per_image = (
+        -2.0 * np.pi * rng.uniform(-4.0, 4.0, size=(image_capacity, n_trans, 2)) / float(IMAGE_SHAPE[0])
+    ).astype(np.float32)
+    got = _kernel(
+        cuda_backproject, dict(operands, translation_angles=per_image), n_valid_rows=21, logical_pixels=280,
+        bpref=bpref, with_ctf=True,
+    )
+    for image in range(image_capacity):
+        rows = operands["row_image_ids"] == image
+        one = _kernel(
+            cuda_backproject, dict(operands, translation_angles=per_image[image]), n_valid_rows=21,
+            logical_pixels=280, bpref=bpref, with_ctf=True,
+        )
+        for a, b in zip(got, one):
+            assert_matches(np.asarray(a)[rows], np.asarray(b)[rows])
