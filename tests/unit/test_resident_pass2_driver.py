@@ -933,32 +933,28 @@ def test_resident_driver_refuses_an_unsupported_pass(_resident_production_env):
         rp.compute_pass2_stats_resident(**args)
 
 
-def test_driver_reads_the_compact_engine_behaviour_gates():
-    """The driver must not turn on behaviour-changing knobs the engine gates.
+def test_driver_projects_like_the_compact_engine():
+    """Both engines narrow Projector::data to complex64 unless scoring in float64.
 
-    The 10k/256 matched pair diverged on 9987 of 10000 images because the
-    driver narrowed ``Projector::data`` to complex64 unconditionally while the
-    compact engine keeps that behind an opt-in flag, whose own docstring says
-    narrowing changes float32 projection arithmetic. The fixture datasets have
-    no RELION projector, so only a source check catches this class of bug.
+    The compact engine projects through RELION's float32 texture (the
+    dispatcher's persistent texture, or the same narrowing in its block path).
+    The driver kept the complex128 slab and fell back to the vmapped JAX
+    projector, which is why the os1 cold start differed from compact at
+    iteration 1 (14384091); with the narrowing the two agree to their repeat
+    band (14394736). The fixture datasets have no RELION projector, so only a
+    source check catches this class of bug.
     """
 
     import inspect
 
     from relax.sparse_pass2 import sparse_pass2_bucketed
 
+    condition = "if not use_float64_scoring and relion_projector_half.dtype == jnp.complex128:"
     driver = inspect.getsource(rp.compute_pass2_stats_resident)
-    assert "_pass2_projector_complex64_enabled()" in driver
-    narrowing = driver[driver.index("complex64 slab") if "complex64 slab" in driver else 0:]
-    del narrowing
-    # The cast must be guarded by the gate, not by dtype alone.
+    assert condition in driver
     cast = driver.index("astype(jnp.complex64)")
-    guard = driver.rindex("_pass2_projector_complex64_enabled()", 0, cast)
-    assert cast - guard < 400, "the projector cast is not inside the gated branch"
-    # The gate itself still defaults off in the engine that owns it.
-    assert "default=False" in inspect.getsource(
-        sparse_pass2_bucketed._pass2_projector_complex64_enabled
-    )
+    assert cast - driver.index(condition) < 200, "the projector cast is not the narrowing branch"
+    assert condition in inspect.getsource(sparse_pass2_bucketed)
 
 
 def test_chunk_operands_are_padded_on_the_host():

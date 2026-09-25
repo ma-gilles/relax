@@ -179,18 +179,26 @@ def test_texture_projector_fallback_is_reported_once_per_reason(monkeypatch, cap
     assert "complex128" in messages[0] and "want complex64" in messages[0]
 
 
-def test_pass2_projector_complex64_knob_is_default_off(monkeypatch):
-    """Narrowing the pass-2 projector changes projection arithmetic: opt-in."""
+def test_pass2_projector_narrows_without_a_gate():
+    """Pass 2 always projects through the float32 texture unless scoring in float64.
+
+    The former opt-in RELAX_SPARSE_PASS2_PROJECTOR_COMPLEX64 is retired: the
+    standalone entry already narrowed through the dispatcher's persistent
+    texture, so the gate only made the saved-state entry path differ.
+    """
+    import inspect
+    import json
+    from pathlib import Path
+
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed
 
-    monkeypatch.delenv(bucketed._PASS2_PROJECTOR_COMPLEX64_ENV, raising=False)
-    assert bucketed._pass2_projector_complex64_enabled() is False
-    monkeypatch.setenv(bucketed._PASS2_PROJECTOR_COMPLEX64_ENV, "1")
-    assert bucketed._pass2_projector_complex64_enabled() is True
-    assert (
-        bucketed._PASS2_PROJECTOR_COMPLEX64_ENV
-        == "RELAX_SPARSE_PASS2_PROJECTOR_COMPLEX64"
-    )
+    assert not hasattr(bucketed, "_pass2_projector_complex64_enabled")
+    source = inspect.getsource(bucketed)
+    assert "if not use_float64_scoring and relion_projector_half.dtype == jnp.complex128:" in source
+    retired = json.loads(
+        (Path(bucketed.__file__).parents[1] / "renamed_environment.json").read_text()
+    )["retired"]
+    assert "RELAX_SPARSE_PASS2_PROJECTOR_COMPLEX64" in retired
 
 
 def test_pass2_projector_cast_unblocks_the_texture_projector(monkeypatch):

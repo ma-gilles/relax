@@ -621,9 +621,7 @@ def compute_local_search_resident(
     # decides float32 projection arithmetic and whether the texture projector
     # or the vmapped fallback runs, so an arm with any other precision is both
     # a different computation and a differently timed one than its control.
-    # The compact engine's RELAX_SPARSE_PASS2_PROJECTOR_COMPLEX64 gate is not
-    # read here, because the exact local engine does not read it. Do exactly
-    # what the exact local engine does.
+    # Do exactly what the exact local engine does.
     relion_projector_half = cast_relion_projector_for_execution(
         relion_projector_half, use_float64_projections=use_float64_projections
     )

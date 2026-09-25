@@ -437,21 +437,6 @@ def _candidate_density_logging_enabled() -> bool:
     return parse_env_flag(_CANDIDATE_DENSITY_LOG_ENV, default=False)
 
 
-_PASS2_PROJECTOR_COMPLEX64_ENV = "RELAX_SPARSE_PASS2_PROJECTOR_COMPLEX64"
-
-
-def _pass2_projector_complex64_enabled() -> bool:
-    """Narrow the pass-2 Projector::data slab so the texture projector engages.
-
-    RELION uploads ``Projector::data`` to a float32 texture, and our coarse
-    scorer already casts the same slab. Pass 2 did not, so
-    ``_relion_projector_texture_enabled`` rejected it on dtype and the
-    projection fell back to ``jax.vmap`` over per-rotation projections.
-    Opt-in until the matched hp3 pair qualifies it, because narrowing the
-    projector changes float32 projection arithmetic.
-    """
-
-    return parse_env_flag(_PASS2_PROJECTOR_COMPLEX64_ENV, default=False)
 
 
 _PIPELINE_TAIL_ENV = "RELAX_SPARSE_PASS2_PIPELINE_TAIL"
@@ -784,17 +769,14 @@ def compute_pass2_stats_sparse_bucketed(
             projector_device_owned = True
         else:
             relion_projector_half = jnp.asarray(relion_projector_half)
-            if (
-                _pass2_projector_complex64_enabled()
-                and not use_float64_scoring
-                and relion_projector_half.dtype == jnp.complex128
-            ):
+            if not use_float64_scoring and relion_projector_half.dtype == jnp.complex128:
                 # RELION's own Projector runs its texture path in float32
-                # (AccProjector::setMdlData), and the coarse scorer already
-                # narrows this slab the same way. Left as complex128 the pass-2
-                # projection silently drops off the texture projector onto the
-                # vmapped JAX fallback, whose per-row dispatch cost 15% of a warm
-                # hp3 iteration with no projection kernel on the device at all.
+                # (AccProjector::setMdlData); the dispatcher's persistent texture
+                # and the coarse scorer narrow this slab the same way. Left as
+                # complex128, this path (reached when the slab arrives as a
+                # device array, e.g. a start from RELION's saved state) dropped
+                # onto the vmapped JAX fallback: other values than the
+                # standalone path, and 15% of a warm hp3 iteration.
                 relion_projector_half = relion_projector_half.astype(jnp.complex64)
             if relion_projector_half.ndim != 3:
                 raise ValueError(

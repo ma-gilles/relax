@@ -1387,9 +1387,6 @@ def compute_pass2_stats_resident(
         infer_translation_step,
         rotation_grid_size,
     )
-    from relax.sparse_pass2.sparse_pass2_bucketed import (
-        _pass2_projector_complex64_enabled,
-    )
     from relax.sparse_pass2.sparse_pass2_window import (
         _fine_translation_prior_2d,
         _pass2_projection_budget,
@@ -1535,16 +1532,13 @@ def compute_pass2_stats_resident(
         if relion_projector_r_max is None:
             raise ValueError("relion_projector_r_max is required when relion_projector_half is provided")
         relion_projector_half = jnp.asarray(relion_projector_half)
-        # Narrowing the Projector::data slab engages the texture projector and
-        # changes float32 projection arithmetic, so the compact engine keeps it
-        # behind its own opt-in flag. Read the same gate: narrowing here on our
-        # own would change every projection, every score and every posterior
-        # relative to the engine this driver is measured against.
-        if (
-            _pass2_projector_complex64_enabled()
-            and not use_float64_scoring
-            and relion_projector_half.dtype == jnp.complex128
-        ):
+        # RELION projects through a float32 texture (AccProjector::setMdlData),
+        # and so does the compact engine (dispatch's persistent texture, or the
+        # same narrowing in its own block path). Left complex128, this driver's
+        # projections fell back to the vmapped JAX projector: different values
+        # (os1 iteration 1: hard assignments 97.7% equal, 14384091) and twice
+        # the iteration time. One projection path in both engines.
+        if not use_float64_scoring and relion_projector_half.dtype == jnp.complex128:
             relion_projector_half = relion_projector_half.astype(jnp.complex64)
     if projection_padding_factor > 1 and not use_relion_projector:
         from relax.reconstruction.relion_functions_relion import pad_volume_for_projection
