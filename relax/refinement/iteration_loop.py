@@ -149,6 +149,7 @@ from relax.helpers.resolution import (
     clamp_relion_coarse_image_size,
     compute_coarse_image_size,
     initialize_resolution_from_firstiter_ini_high,
+    initialize_resolution_from_ini_high,
     initialize_resolution_from_fsc,
     relion_current_resolution_shell,
     relion_expectation_coarse_size_order,
@@ -928,6 +929,10 @@ def refine_single_volume(
         )
     elif init_relion_iteration == 0 and parity.relion_firstiter_ini_high_angstrom is not None:
         initialize_resolution_from_firstiter_ini_high(state, options, grid_size=grid_size, voxel_size=cryo.voxel_size)
+    elif init_relion_iteration == 0 and schedule.ini_high_angstrom is not None:
+        initialize_resolution_from_ini_high(
+            state, schedule.ini_high_angstrom, grid_size=grid_size, voxel_size=cryo.voxel_size
+        )
     if replay.init_refinement_state_fields is not None:
         _restore_diagnostic_frozen_boundary_state(state, options)
     _mark_setup_phase("state_init")

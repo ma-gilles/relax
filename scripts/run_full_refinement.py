@@ -4538,6 +4538,7 @@ def main():
                 max_iter=args.max_iter,
                 init_current_size=init_current_size,
                 init_fsc=None if frozen_boundary is None else frozen_boundary.fsc,
+                ini_high_angstrom=_ini_high_for_lowpass,
                 init_data_vs_prior=relion_start_data_vs_prior,
                 init_ave_Pmax=None if frozen_boundary is None else frozen_boundary.ave_pmax,
                 init_has_high_fsc_at_limit=(

@@ -319,7 +319,26 @@ def initialize_resolution_from_firstiter_ini_high(
     state: RefinementState, options: RefinementOptions, *, grid_size: int, voxel_size: float
 ) -> None:
     """Seed current/previous resolution from the first-iteration ini_high lowpass."""
-    ini_high_angstrom = options.parity.relion_firstiter_ini_high_angstrom
+    initialize_resolution_from_ini_high(
+        state,
+        options.parity.relion_firstiter_ini_high_angstrom,
+        grid_size=grid_size,
+        voxel_size=voxel_size,
+    )
+
+
+def initialize_resolution_from_ini_high(
+    state: RefinementState, ini_high_angstrom: float, *, grid_size: int, voxel_size: float
+) -> None:
+    """Seed current/previous resolution with RELION's start-up ``--ini_high`` shell.
+
+    ``MlOptimiserMpi::iterate`` calls ``updateCurrentResolution`` before iteration 1
+    (ml_optimiser_mpi.cpp:4028); with ``ini_high > 0`` at ``iter == 0`` it sets
+    ``current_resolution`` to the shell ``ROUND(ori_size pixel_size / ini_high)``
+    (ml_optimiser.cpp:6768-6770). Iteration 1 then joins the half accumulators up to
+    ``max(low_resol_join_halves, 1 / current_resolution)`` (ml_optimiser_mpi.cpp:3280)
+    and compares its own resolution with it for the stall counter (ml_optimiser.cpp:6835).
+    """
     pixel_size = float(voxel_size if voxel_size > 0 else 1.0)
     shell = _firstiter_cc_ini_high_resolution_shell(grid_size, pixel_size, ini_high_angstrom)
     resolution_angstrom = shell_index_to_resolution_angstrom(shell, grid_size, pixel_size)

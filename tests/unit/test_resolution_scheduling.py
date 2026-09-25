@@ -415,3 +415,55 @@ def test_initial_lowpass_seeding_preserves_pixel_fallback_and_shell_clamps(pixel
         assert resolution_helpers.relion_current_resolution_shell(
             np.stack([early, early]), k_class_enabled=True, current_size=64, grid_size=64
         ) == 5
+
+
+@pytest.mark.parametrize(
+    "ini_high,last_joined_shell",
+    # 32 px at 17 A/px has RELION's 128 px / 4.25 A box extent (544 A). ini_high 60 seeds shell 9
+    # (60.4 A), above the 40 A join; ini_high 30 seeds past Nyquist, so the 40 A join (shell 14) wins.
+    [(60.0, 9), (30.0, 14)],
+)
+def test_iteration1_half_join_is_capped_by_the_ini_high_resolution(ini_high, last_joined_shell):
+    """Iteration 1 joins the halves up to ``max(low_resol_join_halves, ini_high)``.
+
+    RELION's iteration-0 ``updateCurrentResolution`` sets the ``--ini_high`` shell
+    (ml_optimiser.cpp:6768-6770), and ``joinTwoHalvesAtLowResolution`` joins up to
+    ``max(low_resol_join_halves, 1 / current_resolution)`` (ml_optimiser_mpi.cpp:3280).
+    At the GUI default of 60 A an unseeded start joined up to 40 A instead.
+    """
+    from relax.refinement.mean_helpers import join_half_accumulators_at_low_resolution
+
+    grid_size, voxel_size = 32, 17.0
+    state = SimpleNamespace(current_resolution=float("inf"), previous_resolution=float("inf"))
+    resolution_helpers.initialize_resolution_from_ini_high(
+        state, ini_high, grid_size=grid_size, voxel_size=voxel_size,
+    )
+
+    volume_shape = (grid_size,) * 3
+    center = grid_size // 2
+    ft_y_0 = np.zeros(volume_shape, dtype=np.complex64)
+    ft_y_1 = np.zeros(volume_shape, dtype=np.complex64)
+    inside = (center + last_joined_shell, center, center)
+    outside = (center + last_joined_shell + 1, center, center)
+    for idx in (inside, outside):
+        ft_y_0[idx] = 10.0
+        ft_y_1[idx] = 2.0
+    ft_ctf = np.ones(volume_shape, dtype=np.float32).reshape(-1)
+
+    joined0, joined1, _, _ = join_half_accumulators_at_low_resolution(
+        ft_y_0.reshape(-1),
+        ft_y_1.reshape(-1),
+        ft_ctf.copy(),
+        ft_ctf.copy(),
+        accumulator_volume_shape=volume_shape,
+        grid_size=grid_size,
+        voxel_size=voxel_size,
+        low_resol_join_halves_angstrom=40.0,
+        pixel_resolutions=[],
+        current_resolution=state.current_resolution,
+        padding_factor=1,
+    )
+    joined0 = np.asarray(joined0).reshape(volume_shape)
+    joined1 = np.asarray(joined1).reshape(volume_shape)
+    np.testing.assert_allclose([joined0[inside], joined1[inside]], [6.0, 6.0], atol=1e-6)
+    np.testing.assert_allclose([joined0[outside], joined1[outside]], [10.0, 2.0], atol=1e-6)

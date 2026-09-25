@@ -30,6 +30,9 @@ class RefinementSchedule:
     particle_diameter_ang: float | None = None
     init_relion_iteration: int = 0
     init_fsc: Any | None = None
+    # RELION's --ini_high of a fresh run, which seeds the iteration-0 current resolution
+    # (ml_optimiser.cpp:6768); None leaves it unset, as RELION without --ini_high.
+    ini_high_angstrom: float | None = None
     # RELION-unit data_vs_prior spectrum of the start-up model (initialiseDataVersusPrior);
     # it selects the iteration-1 scale-correction shells (ml_optimiser.cpp:10473).
     init_data_vs_prior: Any | None = None
