@@ -35,6 +35,7 @@ TIER_CASES = {
         "k1_coldstart_standalone",
         "k1_coldstart_relion_seeded_debug",
         "k1_os1_coldstart_standalone",
+        "k1_gui60_coldstart_standalone",
         "k1_perturbreplay",
         "kclass_coldstart",
         "kclass_nonadaptive_replay",
@@ -65,9 +66,13 @@ def compare(tier: str, fsc: dict, pinned: dict, thresholds: dict) -> dict:
     for name in TIER_CASES[tier]:
         now = fsc["cases"].get(name)
         ref = pinned["cases"].get(name)
-        if now is None or ref is None:
-            failures.append(f"{name}: {'no current result' if now is None else 'no pinned result'}")
+        if now is None:
+            failures.append(f"{name}: no current result")
             rows[name] = {"status": "missing"}
+            continue
+        if ref is None:
+            # A newly added case until its first passing run is pinned (regenerate --cases).
+            rows[name] = {"status": "not_pinned", "min_fsc_auc": now["summary"]["min_fsc_auc"]}
             continue
         d_auc = now["summary"]["min_fsc_auc"] - ref["summary"]["min_fsc_auc"]
         d_shell = now["summary"]["min_shell_fsc_in_band"] - ref["summary"]["min_shell_fsc_in_band"]
@@ -105,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--fsc", type=Path, required=True)
     r.add_argument("--receipt", type=Path, required=True, help="RECEIPT.json of the run that produced --fsc")
     r.add_argument("--tier", choices=sorted(TIER_CASES), default="medium", help="the cases to pin (a smoke run pins its four)")
+    r.add_argument("--cases", nargs="+", help="pin only these cases of the tier (a newly added case); others keep their pins")
     args = parser.parse_args(argv)
     fsc = json.loads(args.fsc.read_text())
     stored = json.loads(PINNED.read_text()) if PINNED.exists() else {}
@@ -128,11 +134,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     receipt = json.loads(args.receipt.read_text())
     model = receipt.get("gpu_model") or ""
-    missing = sorted(set(TIER_CASES[args.tier]) - set(fsc["cases"]))
+    names = list(args.cases or TIER_CASES[args.tier])
+    unknown = sorted(set(names) - set(TIER_CASES[args.tier]))
+    if unknown:
+        raise SystemExit(f"refusing to pin: {unknown} are not {args.tier} cases")
+    missing = sorted(set(names) - set(fsc["cases"]))
     # The pinned cases' own tier items must pass; a failure elsewhere in the tier (a unit file,
     # say) does not change these outputs, so it is recorded with the pin rather than blocking it.
     items = {i["name"]: i["status"] for i in json.loads(Path(receipt["summary"]).read_text())["items"]}
-    not_passed = sorted(n for n in TIER_CASES[args.tier] if items.get(n) != "pass")
+    not_passed = sorted(n for n in names if items.get(n) != "pass")
     if missing or not_passed or receipt.get("dirty") or not model or "," in model:
         raise SystemExit(
             f"refusing to pin: missing {missing}, case items not passed {not_passed}, dirty {receipt.get('dirty')}, "
@@ -147,10 +157,10 @@ def main(argv: list[str] | None = None) -> int:
     source["tier_status"] = receipt["status"]
     source["other_failed_items"] = other_failures
     entry = stored.setdefault("models", {}).setdefault(model, {"cases": {}})
-    for name in TIER_CASES[args.tier]:
+    for name in names:
         entry["cases"][name] = _pin(fsc["cases"][name]) | {"source": source}
     PINNED.write_text(json.dumps(stored, indent=1, sort_keys=True) + "\n")
-    print(f"pinned {len(TIER_CASES[args.tier])} cases on {model} from {receipt.get('sha')} (job {receipt.get('job')})")
+    print(f"pinned {len(names)} cases on {model} from {receipt.get('sha')} (job {receipt.get('job')})")
     return 0
 
 if __name__ == "__main__":

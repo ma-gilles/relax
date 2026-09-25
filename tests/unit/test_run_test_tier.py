@@ -251,3 +251,31 @@ def test_every_cuda_test_file_runs_in_the_gpu_tiers():
         assert "--run-gpu" in item.argv
         assert item.env["RELAX_RUN_CUDA_XHALF_TEST"] == "1"
         assert Path(item.env["RELAX_P4J_STAR_FIXTURE"]).is_file()
+
+
+def test_a_new_case_is_pinned_alone_and_reported_until_then(tmp_path, monkeypatch):
+    monkeypatch.setattr(em_tier_pinned, "PINNED", tmp_path / "pinned.json")
+    thresholds = tmp_path / "thresholds.json"
+    thresholds.write_text(json.dumps({"approved": True, "pinned_tolerance": {"min_fsc_auc_drop": 1e-5, "min_shell_fsc_drop": 1e-4}}))
+    monkeypatch.setattr(em_tier_pinned, "THRESHOLDS", thresholds)
+    medium = em_tier_pinned.TIER_CASES["medium"]
+    new = "k1_gui60_coldstart_standalone"
+    cases = {c: _case(0.9999, 0.999) | {"pairs": {}} for c in medium}
+    fsc = tmp_path / "fsc.json"
+    fsc.write_text(json.dumps({"cases": cases}))
+    summary = tmp_path / "SUMMARY.json"
+    summary.write_text(json.dumps({"items": [{"name": c, "status": "pass"} for c in medium]}))
+    receipt = tmp_path / "RECEIPT.json"
+    receipt.write_text(json.dumps({"status": "pass", "dirty": False, "gpu_model": "H100", "sha": "a", "job": "1",
+                                   "summary": str(summary)}))
+    old = [c for c in medium if c != new]
+    em_tier_pinned.main(["regenerate", "--fsc", str(fsc), "--receipt", str(receipt), "--cases", *old])
+    out = tmp_path / "cmp.json"
+    em_tier_pinned.main(["compare", "--tier", "medium", "--fsc", str(fsc), "--gpu-model", "H100", "--output", str(out)])
+    result = json.loads(out.read_text())
+    assert result["cases"][new]["status"] == "not_pinned" and result["verdict"]["status"] == "pass"
+    receipt.write_text(json.dumps({"status": "pass", "dirty": False, "gpu_model": "H100", "sha": "b", "job": "2",
+                                   "summary": str(summary)}))
+    em_tier_pinned.main(["regenerate", "--fsc", str(fsc), "--receipt", str(receipt), "--cases", new])
+    stored = json.loads((tmp_path / "pinned.json").read_text())["models"]["H100"]["cases"]
+    assert stored[new]["source"]["sha"] == "b" and stored["k1_replay"]["source"]["sha"] == "a"
