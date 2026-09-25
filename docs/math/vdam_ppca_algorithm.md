@@ -993,6 +993,14 @@ scientific contract; runnable code alone does not establish recovery.
   into weight differences. It is carried as `score_offset`
   ([pose_invariant_score_offset](../../relax/ppca_refinement/engine.py)) and
   added back only to absolute values (log-likelihood, reported top scores).
+- The streamed pass-2 volumes (RHS, LHS, residual) are accumulated per
+  rotation block into zero volumes and summed across blocks with Kahan
+  compensation ([compensated_add](../../relax/ppca_refinement/full_row_stream.py)).
+  A single float32 atomic accumulator per tile rounds away posterior-tail
+  contributions once voxels grow: against a float64 accumulation of the same
+  block images, one CP110 full-row tile had RHS relL2 4.7e-4 uncompensated and
+  1.2e-7 compensated, and one sharp o1_r16 tile had LHS 1.3e-4 and 1.4e-6.
+  The host-mask dense accumulation is still uncompensated.
 - After the final all-particle update,
   [compute_dense_ppca_embeddings](../../relax/ppca_refinement/dense_dataset.py)
   uses the same fine pose scores, latent means, candidate support and sequential
