@@ -412,6 +412,10 @@ def compute_local_search_resident(
     volume_shape = experiment_dataset.volume_shape
     n_images = int(experiment_dataset.n_units)
 
+    if current_size is None:
+        # The resident drivers score RELION's window at every size, the box included
+        # (window_at_box below), so the full box is an explicit current size here.
+        current_size = int(experiment_dataset.image_shape[0])
     (
         mstep_current_size,
         n_half,
