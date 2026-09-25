@@ -113,6 +113,13 @@ always-on final gridding correction (user decision; relax df88eab retires the op
 tier gates both the unfiltered half-map average and the merged map, and requires
 `final_all_data_grid_correct` to be recorded True in `refinement_results.npz`.
 
+Map sign convention: every relax MRC map is the negative of the matching RELION map on the
+same axes. This covers `final_*.mrc` from `run_full_refinement.py` and `recovar_final_*.mrc`
+from the parity harness `run_multi_iter_parity.py` (fitted scale -0.99998 against RELION on
+the K1 50k/256 fixture). `scripts/masked_fsc.py` and the harness's own "vs RELION" lines apply
+the sign. Any other direct voxel comparison with RELION maps must multiply the relax map by
+-1 first; without it a matching pair reads FSC -1 and relative L2 2.
+
 Follow the unchanged [quantitative gates](../math/em_parity_program.md) and
 [validation ladder](em_parity_runbook.md#validation-ladder): matched-state
 scores, support, posteriors, poses and accumulators; synthetic then real K1;
