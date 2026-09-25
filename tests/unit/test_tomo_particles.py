@@ -123,3 +123,16 @@ def test_tilt_row_matrices_are_relions_host_inverse_of_aproj_times_euler():
         eulers, dtype=np.float64, left_matrices=np.broadcast_to(np.eye(3), (6, 3, 3))
     )
     assert_matches(identity, sampling._relion_mstep_rotations_from_eulers(eulers, dtype=np.float64))
+
+
+def test_identity_tilt_keeps_the_spa_matrices():
+    """Matrix2D::isIdentity to 1e-6 (matrix2d.h:1191-1206): only non-identity images take the left matrix."""
+    left = np.stack([np.eye(3), np.eye(3) + 5e-7, Rotation.from_euler("x", 3, degrees=True).as_matrix()])
+    _, applies = tomo_particles.relion_left_matrices(left)
+    assert applies.tolist() == [False, False, True]
+
+
+def test_gpu_old_offsets_round_half_away_from_zero():
+    """ROUND (macros.h:197) as selfROUND applies it to a tomo particle's old offset (acc_ml_optimiser_impl.h:659)."""
+    got = tomo_particles.relion_gpu_old_offsets([[0.5, -0.5, 1.49], [-1.5, 2.5000001, -0.2]])
+    np.testing.assert_array_equal(got, [[1, -1, 1], [-2, 3, 0]])

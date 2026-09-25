@@ -81,14 +81,27 @@ def tilt_image_shifts(shifts_3d, old_offsets_3d, image_projections, image_partic
     )
 
 
+def relion_gpu_old_offsets(offsets_px):
+    """The old offsets RELION's GPU path adds to a subtomogram's trial shifts: rounded to whole pixels.
+
+    ``my_old_offset.selfROUND()`` (acc_ml_optimiser_impl.h:659, stored as ``op.old_offset`` at :675)
+    applies to tomo particles too, although their images are not pre-shifted (:873), so the
+    fractional part of the offset is dropped from the E-step (the CPU path keeps it,
+    ml_optimiser.cpp:7259). ``ROUND`` rounds half away from zero (macros.h:197).
+    """
+
+    offsets_px = np.asarray(offsets_px, dtype=np.float64)
+    return np.where(offsets_px > 0, np.trunc(offsets_px + 0.5), np.trunc(offsets_px - 0.5))
+
+
 def tilt_translation_angles(shifts_3d, old_offsets_3d, image_projections, image_particle, image_size):
     """Each image's scoring phase operand for every 3D trial shift: float32 ``[I, T, 2]`` radians.
 
-    RELION's GPU path adds the particle's old offset to the trial shift, projects it with
-    the image's ``Aproj`` and stores ``-2 pi shift / image_full_size`` as float
-    (acc_ml_optimiser_impl.h:1761-1787; :func:`tilt_image_shifts`). Shifts and offsets
-    are in pixels of the image's optics group; ``image_size`` is its full image size
-    (a scalar, or one value per image).
+    RELION's GPU path adds the particle's old offset (:func:`relion_gpu_old_offsets`, rounded)
+    to the trial shift, projects it with the image's ``Aproj`` and stores
+    ``-2 pi shift / image_full_size`` as float (acc_ml_optimiser_impl.h:1761-1787;
+    :func:`tilt_image_shifts`). Shifts and offsets are in pixels of the image's optics group;
+    ``image_size`` is its full image size (a scalar, or one value per image).
     """
 
     shifts = tilt_image_shifts(shifts_3d, old_offsets_3d, image_projections, image_particle)
@@ -143,3 +156,18 @@ def image_noise_scale(image_particle, n_particles: int) -> np.ndarray:
     image_particle = np.asarray(image_particle, dtype=np.int64)
     counts = image_particle_counts(image_particle, n_particles)
     return 1.0 / counts[image_particle].astype(np.float64)
+
+
+def relion_left_matrices(image_left, *, accuracy: float = 1e-6):
+    """Each image's generateEulerMatrices ``L``, and whether RELION applies it.
+
+    RELION passes ``L`` (the image's ``Aproj`` times the optics scale) only when it is not the
+    identity to within ``XMIPP_EQUAL_ACCURACY`` (``Matrix2D::isIdentity``, matrix2d.h:1191-1206;
+    acc_ml_optimiser_impl.h:1614-1618); an identity image keeps the SPA matrices, whose inverse
+    is the transpose. Returns ``(left [I, 3, 3] float64, applies [I] bool)``.
+    """
+
+    image_left = np.asarray(image_left, dtype=np.float64)
+    applies = np.any(np.abs(image_left - np.eye(3)) > accuracy, axis=(1, 2))
+    return image_left, applies
+
