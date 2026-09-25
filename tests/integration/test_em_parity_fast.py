@@ -178,23 +178,24 @@ def _assert_fsc_gate(case: str, output_dir: Path) -> None:
     )
 
 
-def _flag_on(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "on", "yes"}
+def _resident_on(name: str) -> bool:
+    """A resident driver is the K=1 default; only an explicit off disables it."""
+    return os.environ.get(name, "").strip().lower() not in {"0", "false", "off", "no"}
 
 
 def _assert_resident_engines_ran(log: str, *, global_pass: bool, local_pass: bool, case: str) -> None:
-    """Under the resident flag set, the passes a case exists for must run resident.
+    """Unless the resident drivers are switched off, the passes a case exists for must run resident.
 
     The routing logs its choice (dispatch.py, local_search_iteration.py); a case
     that silently fell back to the compact or exact local engine would pass its
     RELION gates while testing the other engine.
     """
 
-    if global_pass and _flag_on("RELAX_SPARSE_PASS2_RESIDENT"):
+    if global_pass and _resident_on("RELAX_SPARSE_PASS2_RESIDENT"):
         assert "Resident pass-2 plan:" in log, f"{case} did not run the resident global pass 2"
         # No global pass may leave for the compact engine (dispatch.py logs each one).
         assert "does not cover" not in log, f"{case} routed a global pass to the compact engine"
-    if local_pass and _flag_on("RELAX_LOCAL_SEARCH_RESIDENT"):
+    if local_pass and _resident_on("RELAX_LOCAL_SEARCH_RESIDENT"):
         assert "running the device-resident local fine pass 2" in log, (
             f"{case} did not run the resident local pass 2"
         )
@@ -640,8 +641,8 @@ def test_em_parity_fast_k1_os1_coldstart_standalone(tmp_path):
     """The standalone K1 cold start at --oversampling 1 against RELION's os1 run.
 
     Every other K=1 case here is oversampling 0 or a replay, so this is the
-    fast-tier case that reaches the production adaptive pass 2 (and, under
-    RELAX_SPARSE_PASS2_RESIDENT=1, the device-resident driver). The RELION
+    fast-tier case that reaches the production adaptive pass 2 (the device-resident
+    driver unless RELAX_SPARSE_PASS2_RESIDENT=0). The RELION
     oracle differs from the os0 one only in --oversampling 1.
     """
     m, check = _run_k1_coldstart(tmp_path, start="standalone", oversampling=1)

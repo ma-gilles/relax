@@ -912,6 +912,8 @@ class TestSparsePass2Bucketed:
 
     def test_exact_full_candidate_lists_route_to_bucketed_scorer(self, monkeypatch):
         """Full support must not silently bypass the exact RELION scorer."""
+        # The compact engine's routing (the resident driver is the K=1 default).
+        monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT", "0")
         sentinel = object()
 
         def capture_bucketed(*args, **kwargs):

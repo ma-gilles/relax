@@ -113,6 +113,7 @@ from relax.scoring.coarse_publication import coarse_square_layout_metadata
 from relax.scoring.scoring import _e_step_block_scores, _e_step_block_scores_windowed, _update_logsumexp
 from relax.scoring.significant_samples import compact_significant_sample_indices_from_mask
 from relax.sparse_pass2.resident_significance import (
+    coarse_significance_device_explicit,
     coarse_significance_device_requested,
 )
 
@@ -567,7 +568,7 @@ def _coarse_significance_support_audit_enabled(
     return parse_env_strict_flag(_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV, default=default)
 
 
-def _coarse_pad_final_image_batch_enabled(*, default: bool = False) -> bool:
+def _coarse_pad_final_image_batch_enabled(*, default: bool = True) -> bool:
     """Whether every coarse image batch is padded to the requested batch size.
 
     A half set is rarely an exact multiple of ``image_batch_size``, so its last
@@ -579,7 +580,8 @@ def _coarse_pad_final_image_batch_enabled(*, default: bool = False) -> bool:
     computations are independent, and the batch-level reductions are maxima
     over rows that row zero already contributes).
 
-    The knob is opt-in while the equality is being qualified; VDAM already
+    On by default since the K=1 resident flip (qualified with the resident flag
+    set on the fast tier and the four flip datasets); ``=0`` turns it off. VDAM
     requests the same padding explicitly through ``pad_final_image_batch``.
     """
 
@@ -1534,6 +1536,14 @@ def _compute_k_class_significance_batched(
         coarse_significance_device_requested()
         and int(n_classes) == 1
         and bool(collect_significance)
+        # The default-off coarse GEMM macro/hybrid keep some batches on the host
+        # path, and one pass cannot mix the two supports. With the device default
+        # such a pass stays on the host path; an explicit =1 still requires full
+        # device coverage and fails below otherwise.
+        and (
+            coarse_significance_device_explicit()
+            or not (coarse_gaussian_gemm_macro_requested or coarse_gaussian_gemm_hybrid_requested)
+        )
     )
     device_significance_counts = []
     device_significance_polarity = []

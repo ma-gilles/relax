@@ -76,6 +76,7 @@ from relax.relion.initial_noise import (
     read_relion_single_optics_sigma2_noise,
 )
 from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
+from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.relion.relion_worker_scale import (
     load_relion_dispatch_schedule,
     load_relion_follower_scale_replay,
@@ -2517,6 +2518,8 @@ def _parse_args(argv=None):
 
 def main():
     args = _parse_args()
+    if int(args.n_classes) == 1:
+        apply_k1_refine3d_env_defaults()
     _resolve_relion_gui_defaults(args)
     _resolve_standalone_k1_start(args)
     if (
@@ -4922,6 +4925,11 @@ def main():
             result["healpix_order_trajectory"],
             dtype=np.int32,
         )
+    # Which E-step engine each pass ran on, per iteration and for the final all-data
+    # pass (relax.sparse_pass2.engine_record), as JSON: resident vs fallback per run.
+    for key in ("pass2_engine_trajectory", "final_all_data_pass2_engines"):
+        if result.get(key) is not None:
+            save_dict[key] = np.asarray(json.dumps(result[key]))
     for key, dtype in (
         ("relion_follower_scale_replay_requested_iterations", np.int64),
         ("relion_follower_scale_replay_applied_iterations", np.int64),

@@ -886,8 +886,10 @@ def _relion_wavg_sequential_triplet_terms(
     environment gate; ``None`` preserves its existing behavior.
     """
 
+    # On by default with a GPU backend (since the K=1 resident flip); the JAX
+    # reference serves CPU backends.
     use_cuda = (
-        parse_env_flag(_RELION_WAVG_SEQUENTIAL_CUDA_ENV, default=False)
+        parse_env_flag(_RELION_WAVG_SEQUENTIAL_CUDA_ENV, default=jax.default_backend() == "gpu")
         if relion_wavg_sequential_cuda is None
         else bool(relion_wavg_sequential_cuda)
     )

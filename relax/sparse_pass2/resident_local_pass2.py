@@ -124,7 +124,9 @@ from relax.sparse_pass2.sparse_pass2_budget import (
 )
 from relax.sparse_pass2.sparse_pass2_policy import (
     _RELION_WAVG_ATOMIC_SCALE_AA_ENV,
+    ResidentConfigurationUnsupported,
     _relion_wavg_direct_modes,
+    resident_engine_selection,
 )
 from relax.sparse_pass2.sparse_pass2_projection_blocks import (
     _projection_kwargs_for_relion_score_window,
@@ -192,14 +194,17 @@ __all__ = [
 
 
 def resident_local_search_requested() -> bool:
-    """Return whether ``RELAX_LOCAL_SEARCH_RESIDENT`` selects this driver."""
+    """Return whether the device-resident K=1 local search is selected (the default).
 
-    return parse_env_flag(RESIDENT_LOCAL_SEARCH_ENV, default=False)
+    ``RELAX_LOCAL_SEARCH_RESIDENT=0`` selects the exact local engine for A/B checks.
+    """
+
+    return resident_engine_selection(RESIDENT_LOCAL_SEARCH_ENV) != "off"
 
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
-        raise NotImplementedError(
+        raise ResidentConfigurationUnsupported(
             "The device-resident local-search pass 2 "
             f"({RESIDENT_LOCAL_SEARCH_ENV}=1) does not implement this configuration: "
             f"{message}. Clear the flag to use the exact local engine; this path "
@@ -417,27 +422,31 @@ def compute_local_search_resident(
         # The resident drivers score RELION's window at every size, the box included
         # (window_at_box below), so the full box is an explicit current size here.
         current_size = int(experiment_dataset.image_shape[0])
-    (
-        mstep_current_size,
-        n_half,
-        window_spec_kwargs,
-        budget_window_spec,
-        device_memory_bytes,
-        precision_policy,
-    ) = _pass2_window_setup(
-        image_shape,
-        current_size=current_size,
-        reconstruction_current_size=reconstruction_current_size,
-        half_spectrum_scoring=half_spectrum_scoring,
-        square_window=square_window,
-        relion_firstiter_score_mode="gaussian",
-        use_exact_relion_gaussian=True,
-        use_float64_scoring=use_float64_scoring,
-        # RELION's window at every size, including the box (a shape class reaches its
-        # box before the reference does): the resident driver never scores a full half.
-        window_at_box=True,
-        reference_sphere_clip=reconstruction_image_radius is not None,
-    )
+    try:
+        (
+            mstep_current_size,
+            n_half,
+            window_spec_kwargs,
+            budget_window_spec,
+            device_memory_bytes,
+            precision_policy,
+        ) = _pass2_window_setup(
+            image_shape,
+            current_size=current_size,
+            reconstruction_current_size=reconstruction_current_size,
+            half_spectrum_scoring=half_spectrum_scoring,
+            square_window=square_window,
+            relion_firstiter_score_mode="gaussian",
+            use_exact_relion_gaussian=True,
+            use_float64_scoring=use_float64_scoring,
+            # RELION's window at every size, including the box (a shape class reaches its
+            # box before the reference does): the resident driver never scores a full half.
+            window_at_box=True,
+            reference_sphere_clip=reconstruction_image_radius is not None,
+        )
+    except NotImplementedError as exc:
+        # Reported before any device work, like require_resident_local_configuration.
+        raise ResidentConfigurationUnsupported(str(exc)) from exc
 
     # ``run_local_em_exact`` uses this flag as passed rather than resolving it
     # against the environment, so do the same: it selects RELION's powerClass

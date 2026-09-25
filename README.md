@@ -12,10 +12,16 @@ RELION in JAX.
 
 Single GPU. Refine3D (K=1) accepts several optics groups, including groups on other pixel sizes
 and boxes, but the default command refuses them for now: they run only on the device-resident
-pass 2 and without the first-iteration cross-correlation, i.e. with `--no-firstiter_cc` and
-`RELAX_SPARSE_PASS2_RESIDENT=1 RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=1
-RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM=1 RELAX_K1_RELION_EXACT_BPREF_OPERANDS=1`
+pass 2 (the K=1 default) and without the first-iteration cross-correlation, i.e. with
+`--no-firstiter_cc` and `RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM=1 RELAX_K1_RELION_EXACT_BPREF_OPERANDS=1`
 (end-to-end GPU qualification against RELION in progress).
+
+Refine3D (K=1) runs its E-step and M-step on the device-resident engine by default (global pass 2,
+local search and device significance). `RELAX_SPARSE_PASS2_RESIDENT=0` and
+`RELAX_LOCAL_SEARCH_RESIDENT=0` select the earlier compact and exact-local engines for A/B
+checks. Class3D and the passes the resident drivers do not implement (subset replays, and any
+configuration their checks refuse) use the earlier engines automatically; each run's
+`refinement_results.npz` records the engine of every pass (`pass2_engine_trajectory`).
 InitialModel and Class3D take one optics group. Not yet: cryo-ET subtomograms,
 CTF-premultiplied particles, beam tilt, higher-order aberrations and magnification. More to come.
 

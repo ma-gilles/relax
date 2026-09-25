@@ -46,6 +46,7 @@ trans``, and coarse-translation bitsets pack bit ``k`` for coarse translation
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from functools import partial
 
@@ -92,9 +93,16 @@ _compact_jitted = None
 
 
 def coarse_significance_device_requested() -> bool:
-    """Return whether the device significance compaction is selected."""
+    """Return whether the device significance compaction is selected (the default)."""
 
-    return parse_env_strict_flag(COARSE_SIGNIFICANCE_DEVICE_ENV, default=False)
+    return parse_env_strict_flag(COARSE_SIGNIFICANCE_DEVICE_ENV, default=True)
+
+
+def coarse_significance_device_explicit() -> bool:
+    """Whether ``RELAX_COARSE_SIGNIFICANCE_DEVICE`` is set on explicitly rather than by default."""
+
+    raw = os.environ.get(COARSE_SIGNIFICANCE_DEVICE_ENV)
+    return raw is not None and raw.strip() != "" and coarse_significance_device_requested()
 
 
 def csr_capacity_for_total(total: int) -> int:

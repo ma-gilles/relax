@@ -495,6 +495,8 @@ def test_sparse_pass2_routes_host_projector_and_always_closes(
     from relax.sparse_pass2 import dispatch as oversampling
     from relax.sparse_pass2 import sparse_pass2_bucketed
 
+    # The persistent texture belongs to the compact engine (the resident driver is the default).
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT", "0")
     projector = _projector()
 
     class FakeTexture:

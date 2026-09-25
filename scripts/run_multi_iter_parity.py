@@ -36,6 +36,7 @@ from relax.diagnostics.parity_provenance import (
     git_head_or_none,
 )
 from relax.helpers.iteration_history import add_significant_count_artifacts
+from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.relion.initial_noise import (
     read_relion_sigma2_noise_by_group,
     relion_mpi_process_start_scoring_noise_pair,
@@ -1384,6 +1385,7 @@ def main():
         help="Optional persistent JAX compilation cache directory for cross-process warm starts.",
     )
     args = parser.parse_args()
+    apply_k1_refine3d_env_defaults()
     iteration_normalization_overrides = parse_iteration_normalization_factor_overrides(
         args.normalization_factor_override_at_iteration
     )
@@ -2587,6 +2589,11 @@ def main():
             save_dict[f"pmax_per_image_iter_{i:03d}"] = np.asarray(pmax_arr)
     if result.get("healpix_order_trajectory"):
         save_dict["healpix_order_trajectory"] = np.array(result["healpix_order_trajectory"])
+    # Which E-step engine each pass ran on, per iteration and for the final all-data
+    # pass (relax.sparse_pass2.engine_record), as JSON: resident vs fallback per run.
+    for key in ("pass2_engine_trajectory", "final_all_data_pass2_engines"):
+        if result.get(key) is not None:
+            save_dict[key] = np.asarray(json.dumps(result[key]))
     if result.get("wall_times"):
         save_dict["wall_times_trajectory"] = np.array(result["wall_times"], dtype=np.float64)
     if result.get("sigma_offset_trajectory"):

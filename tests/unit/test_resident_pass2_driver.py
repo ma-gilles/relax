@@ -474,13 +474,15 @@ def test_image_capacity_ladder_is_capped_by_the_translation_tile_budget():
     ) == (32,)
 
 
-def test_driver_is_registered_behind_the_flag_only(monkeypatch):
+def test_driver_is_the_default_and_the_flag_switches_it_off(monkeypatch):
     from relax.sparse_pass2 import dispatch as sparse_dispatch
 
     monkeypatch.delenv(rp.RESIDENT_PASS2_ENV, raising=False)
-    assert not rp.resident_pass2_requested()
+    assert rp.resident_pass2_requested()
     monkeypatch.setenv(rp.RESIDENT_PASS2_ENV, "1")
     assert rp.resident_pass2_requested()
+    monkeypatch.setenv(rp.RESIDENT_PASS2_ENV, "0")
+    assert not rp.resident_pass2_requested()
     source = sparse_dispatch.compute_pass2_stats_sparse.__doc__ or ""
     del source
     import inspect

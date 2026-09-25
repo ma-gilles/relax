@@ -6,6 +6,8 @@ import logging
 import numpy as np
 
 from relax.reference.sparse_pass2 import _compute_pass2_stats_sparse_perimage_reference
+from relax.sparse_pass2.engine_record import record_pass_engine
+from relax.sparse_pass2.sparse_pass2_policy import resident_refusal_reason
 
 # Preserve the category consumed by existing run-log collectors.
 logger = logging.getLogger("relax.helpers.oversampling")
@@ -182,21 +184,26 @@ def compute_pass2_stats_sparse(
     )
     if not use_perimage_reference and not full_grid_reference:
         from relax.sparse_pass2.resident_pass2 import (
+            RESIDENT_PASS2_ENV,
             compute_pass2_stats_resident,
             resident_pass2_out_of_scope_reason,
             resident_pass2_requested,
         )
         from relax.sparse_pass2.sparse_pass2_bucketed import compute_pass2_stats_sparse_bucketed
+        from relax.sparse_pass2.sparse_pass2_policy import resident_engine_selection
 
-        # RELAX_SPARSE_PASS2_RESIDENT selects the device-resident K=1 driver.
-        # Inside the path it covers it raises a named NotImplementedError on
+        # The device-resident K=1 driver is the default (RELAX_SPARSE_PASS2_RESIDENT
+        # unset). Under an explicit =1 it raises a named NotImplementedError on
         # any configuration mismatch rather than falling back, so a measured
-        # comparison always knows which engine produced a result. The scoring
-        # route it was never scoped to cover is different (the unordered Wavg
-        # arithmetic of subset replays; see
+        # comparison always knows which engine produced a result; with the
+        # default a mismatch runs the compact engine and logs why
+        # (_resident_with_compact_default). The scoring route it was never
+        # scoped to cover is different (the unordered Wavg arithmetic of subset
+        # replays; see
         # resident_pass2_out_of_scope_reason), so those passes go to the
         # compact engine and the log says which and why.
         sparse_pass2_impl = compute_pass2_stats_sparse_bucketed
+        compact_reason = f"{RESIDENT_PASS2_ENV}=0"
         if resident_pass2_requested():
             out_of_scope = resident_pass2_out_of_scope_reason(
                 accumulate_noise=accumulate_noise,
@@ -207,6 +214,7 @@ def compute_pass2_stats_sparse(
             if out_of_scope is None:
                 sparse_pass2_impl = compute_pass2_stats_resident
             else:
+                compact_reason = f"out of resident scope: {out_of_scope}"
                 logger.info(
                     "Device-resident sparse pass 2 is enabled but does not cover %s; "
                     "this pass runs on the compact engine",
@@ -221,17 +229,38 @@ def compute_pass2_stats_sparse(
             )
         from relax.diagnostics import resident_shadow
 
+        def open_compact_texture():
+            return _open_persistent_relion_projector_texture(
+                relion_projector_half,
+                relion_projector_r_max=relion_projector_r_max,
+                projection_padding_factor=projection_padding_factor,
+            )
+
+        if (
+            sparse_pass2_impl is compute_pass2_stats_resident
+            and resident_shadow.shadow_dir() is None
+            and resident_engine_selection(RESIDENT_PASS2_ENV) == "default"
+        ):
+            sparse_pass2_impl = functools.partial(
+                _resident_with_compact_default,
+                compute_pass2_stats_resident,
+                compute_pass2_stats_sparse_bucketed,
+                open_compact_texture,
+            )
         if sparse_pass2_impl is compute_pass2_stats_resident and resident_shadow.shadow_dir() is not None:
             sparse_pass2_impl = functools.partial(
                 resident_shadow.run_resident_with_compact_shadow,
                 compute_pass2_stats_resident,
                 compute_pass2_stats_sparse_bucketed,
-                lambda: _open_persistent_relion_projector_texture(
-                    relion_projector_half,
-                    relion_projector_r_max=relion_projector_r_max,
-                    projection_padding_factor=projection_padding_factor,
-                ),
+                open_compact_texture,
             )
+        # The default wrapper records its own outcome; the other routes are fixed here.
+        if sparse_pass2_impl is compute_pass2_stats_sparse_bucketed:
+            record_pass_engine("global", "compact", compact_reason)
+        elif not isinstance(sparse_pass2_impl, functools.partial) or (
+            sparse_pass2_impl.func is not _resident_with_compact_default
+        ):
+            record_pass_engine("global", "resident")
         return _call_with_persistent_texture_cleanup(
             texture, sparse_pass2_impl,
             experiment_dataset,
@@ -423,6 +452,37 @@ def _open_persistent_relion_projector_texture(
         projector_scale=1.0,
     )
 
+
+
+def _resident_with_compact_default(resident_impl, compact_impl, open_texture, *args, **kwargs):
+    """The resident default: the resident driver where it covers the pass, compact elsewhere.
+
+    The resident configuration checks run before any device work, so a pass they
+    refuse (:class:`ResidentConfigurationUnsupported`) runs on the compact engine,
+    with its own persistent texture, and the log names the reason. Any other error
+    propagates.
+    """
+
+    from relax.sparse_pass2.sparse_pass2_policy import ResidentConfigurationUnsupported
+
+    try:
+        result = resident_impl(*args, **kwargs)
+    except ResidentConfigurationUnsupported as exc:
+        logger.info(
+            "Device-resident sparse pass 2 (the K=1 default) does not cover this pass; "
+            "it runs on the compact engine: %s",
+            exc,
+        )
+        record_pass_engine("global", "compact", resident_refusal_reason(exc))
+    else:
+        record_pass_engine("global", "resident")
+        return result
+    compact_kwargs = dict(kwargs)
+    texture = open_texture()
+    if texture is not None:
+        compact_kwargs["relion_projector_half"] = None
+        compact_kwargs["relion_projector_texture"] = texture
+    return _call_with_persistent_texture_cleanup(texture, compact_impl, *args, **compact_kwargs)
 
 
 def _call_with_persistent_texture_cleanup(texture, callback, *args, **kwargs):

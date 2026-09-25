@@ -44,6 +44,7 @@ class RefinementHistory:
     data_vs_prior_trajectory: list = field(default_factory=list)
     healpix_order_trajectory: list = field(default_factory=list)
     ave_Pmax_trajectory: list = field(default_factory=list)
+    pass2_engine_trajectory: list = field(default_factory=list)
     ave_Pmax_denominator_trajectory: list = field(default_factory=list)
     pmax_per_image_history: list = field(default_factory=list)
     noise_radial_trajectory: list = field(default_factory=list)
@@ -136,6 +137,10 @@ class RefinementHistory:
         self.ave_Pmax_denominator_trajectory.append(ave_pmax_denominator)
         self.pmax_per_image_history.append(per_image_pmax)
 
+    def record_pass2_engines(self, entries) -> None:
+        """Record the engines this iteration's E-step passes ran on (``engine_record``)."""
+        self.pass2_engine_trajectory.append(list(entries))
+
     def record_class_weights(self, mstep_weights, posterior_weights) -> None:
         """Snapshot the M-step and full-posterior class-weight definitions."""
         self.class_mstep_weight_trajectory.append(mstep_weights.copy())
@@ -217,6 +222,7 @@ class RefinementHistory:
             "data_vs_prior_trajectory": self.data_vs_prior_trajectory,
             "healpix_order_trajectory": self.healpix_order_trajectory,
             "ave_Pmax_trajectory": self.ave_Pmax_trajectory,
+            "pass2_engine_trajectory": self.pass2_engine_trajectory,
             "ave_Pmax_denominator_trajectory": self.ave_Pmax_denominator_trajectory,
             "pmax_per_image_history": self.pmax_per_image_history,
             "noise_radial_trajectory": self.noise_radial_trajectory,

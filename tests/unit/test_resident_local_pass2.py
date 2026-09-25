@@ -253,11 +253,18 @@ def _resident_local_env(monkeypatch):
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
 
 
-def test_flag_is_off_by_default(monkeypatch):
+def test_resident_local_is_the_default_and_the_flag_selects_strictness(monkeypatch):
+    from relax.sparse_pass2.sparse_pass2_policy import resident_engine_selection
+
     monkeypatch.delenv(rlp.RESIDENT_LOCAL_SEARCH_ENV, raising=False)
-    assert not rlp.resident_local_search_requested()
+    assert rlp.resident_local_search_requested()
+    assert resident_engine_selection(rlp.RESIDENT_LOCAL_SEARCH_ENV) == "default"
     monkeypatch.setenv(rlp.RESIDENT_LOCAL_SEARCH_ENV, "1")
     assert rlp.resident_local_search_requested()
+    assert resident_engine_selection(rlp.RESIDENT_LOCAL_SEARCH_ENV) == "explicit"
+    monkeypatch.setenv(rlp.RESIDENT_LOCAL_SEARCH_ENV, "0")
+    assert not rlp.resident_local_search_requested()
+    assert resident_engine_selection(rlp.RESIDENT_LOCAL_SEARCH_ENV) == "off"
 
 
 def test_dispatch_routes_only_the_fine_pass():

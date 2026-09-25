@@ -158,11 +158,13 @@ from relax.sparse_pass2.sparse_pass2_budget import (
 )
 from relax.sparse_pass2.sparse_pass2_policy import (
     _RELION_WAVG_ATOMIC_SCALE_AA_ENV,
+    ResidentConfigurationUnsupported,
     _fresh_k1_direct_noise_default,
     _projection_cache_enabled_for_pass,
     _relion_exact_bpref_operands_enabled,
     _relion_powerclass_spectrum_norm_enabled,
     _relion_wavg_direct_modes,
+    resident_engine_selection,
 )
 from relax.sparse_pass2.sparse_pass2_posterior import (
     _relion_fine_parent_execution_order_enabled,
@@ -290,9 +292,14 @@ __all__ = [
 
 
 def resident_pass2_requested() -> bool:
-    """Return whether ``RELAX_SPARSE_PASS2_RESIDENT`` selects this driver."""
+    """Return whether the device-resident K=1 pass 2 is selected (the default).
 
-    return parse_env_flag(RESIDENT_PASS2_ENV, default=False)
+    ``RELAX_SPARSE_PASS2_RESIDENT=0`` selects the compact engine for A/B checks;
+    configurations outside the resident scope route to compact either way
+    (:func:`resident_pass2_out_of_scope_reason`).
+    """
+
+    return resident_engine_selection(RESIDENT_PASS2_ENV) != "off"
 
 
 # ---------------------------------------------------------------------------
@@ -320,7 +327,7 @@ _DIAGNOSTIC_FLAG_ENVS = (
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
-        raise NotImplementedError(
+        raise ResidentConfigurationUnsupported(
             "The device-resident K=1 sparse pass 2 "
             f"({RESIDENT_PASS2_ENV}=1) does not implement this configuration: {message}. "
             "Clear the flag to use the compact engine; this path never falls back silently."
@@ -1468,27 +1475,32 @@ def compute_pass2_stats_resident(
         # The resident drivers score RELION's window at every size, the box included
         # (window_at_box below), so the full box is an explicit current size here.
         current_size = int(experiment_dataset.image_shape[0])
-    (
-        mstep_current_size,
-        n_half,
-        window_spec_kwargs,
-        budget_window_spec,
-        device_memory_bytes,
-        precision_policy,
-    ) = _pass2_window_setup(
-        image_shape,
-        current_size=current_size,
-        reconstruction_current_size=reconstruction_current_size,
-        half_spectrum_scoring=half_spectrum_scoring,
-        square_window=square_window,
-        relion_firstiter_score_mode=relion_firstiter_score_mode,
-        use_exact_relion_gaussian=use_exact_relion_gaussian,
-        use_float64_scoring=use_float64_scoring,
-        # RELION's window at every size, including the box (a shape class reaches its
-        # box before the reference does): the resident driver never scores a full half.
-        window_at_box=True,
-        reference_sphere_clip=reconstruction_image_radius is not None,
-    )
+    try:
+        (
+            mstep_current_size,
+            n_half,
+            window_spec_kwargs,
+            budget_window_spec,
+            device_memory_bytes,
+            precision_policy,
+        ) = _pass2_window_setup(
+            image_shape,
+            current_size=current_size,
+            reconstruction_current_size=reconstruction_current_size,
+            half_spectrum_scoring=half_spectrum_scoring,
+            square_window=square_window,
+            relion_firstiter_score_mode=relion_firstiter_score_mode,
+            use_exact_relion_gaussian=use_exact_relion_gaussian,
+            use_float64_scoring=use_float64_scoring,
+            # RELION's window at every size, including the box (a shape class reaches its
+            # box before the reference does): the resident driver never scores a full half.
+            window_at_box=True,
+            reference_sphere_clip=reconstruction_image_radius is not None,
+        )
+    except NotImplementedError as exc:
+        # A window the resident scorer does not implement is a configuration gap,
+        # reported before any device work like the checks below.
+        raise ResidentConfigurationUnsupported(str(exc)) from exc
 
     scale_groups_available = group_ids is not None
     # RELION runs the Wavg triplet whether or not it corrects scales: without
@@ -1529,7 +1541,7 @@ def compute_pass2_stats_resident(
     )
 
     soft_posterior_block_bpref = parse_env_flag(
-        _SOFT_POSTERIOR_BLOCK_BPREF_PROTOTYPE_ENV, default=False
+        _SOFT_POSTERIOR_BLOCK_BPREF_PROTOTYPE_ENV, default=True
     )
     projection_cache_enabled = _projection_cache_enabled_for_pass(
         fine_rotations_override=fine_rotations_override,

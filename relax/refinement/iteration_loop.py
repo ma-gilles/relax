@@ -228,6 +228,7 @@ from relax.sampling import (
     rotation_grid_size,
 )
 from relax.sparse_pass2 import firstiter_bpref, sparse_pass2_budget
+from relax.sparse_pass2.engine_record import take_pass_engines
 
 logger = logging.getLogger(__name__)
 
@@ -1054,6 +1055,7 @@ def refine_single_volume(
     # History tracking: one RefinementHistory instance accumulates every
     # per-iteration trajectory (see helpers/iteration_history.py).
     history = RefinementHistory()
+    take_pass_engines()  # entries from before this run's first iteration belong to no iteration
     previous_assignments = [None, None]
     class_assignments = [None, None]
     previous_class_assignments = [None, None]
@@ -3719,6 +3721,7 @@ def refine_single_volume(
                 int(np.asarray(max_posterior_per_half[0]).size),
             )
         history.record_pmax(ave_pmax, ave_pmax_denominator, combined_max_posterior.copy())
+        history.record_pass2_engines(take_pass_engines())
 
         # --- Track per-image best assignments for convergence detection ---
         # Combine both half-sets' assignments into a single array for
@@ -5502,6 +5505,7 @@ def refine_single_volume(
         "expected_accuracy_trial_particle_ids": expected_accuracy_trial_particle_ids,
         **history.to_dict(),
         "final_all_data_ran": True,
+        "final_all_data_pass2_engines": take_pass_engines(),
         "final_all_data_expected_accuracy_status": final_expected_accuracy_status,
         "final_all_data_acc_rot": (
             None if final_expected_accuracy is None else float(final_expected_accuracy.acc_rot)

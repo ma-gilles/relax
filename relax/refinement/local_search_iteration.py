@@ -20,10 +20,16 @@ from relax.helpers.types import NoiseStats, RelionStats
 from relax.local.local_em_engine import run_local_em_exact
 from relax.local.local_layout import _local_search_engine_rotation_block_size, build_local_hypothesis_layout
 from relax.sampling import build_local_search_grid_metadata
+from relax.sparse_pass2.engine_record import record_pass_engine
 from relax.sparse_pass2.resident_local_pass2 import (
     RESIDENT_LOCAL_SEARCH_ENV,
     compute_local_search_resident,
     resident_local_search_requested,
+)
+from relax.sparse_pass2.sparse_pass2_policy import (
+    ResidentConfigurationUnsupported,
+    resident_engine_selection,
+    resident_refusal_reason,
 )
 
 logger = logging.getLogger("relax.local.local_search_iteration")
@@ -348,54 +354,75 @@ def _run_local_search_iteration(
             image_batch_size,
             rotation_block_size,
         )
-        engine_outputs = compute_local_search_resident(
-            experiment_dataset,
-            mean,
-            noise_variance,
-            local_layout,
-            disc_type,
-            current_size=current_size,
-            reconstruction_current_size=reconstruction_current_size,
-            accumulate_noise=accumulate_noise,
-            projection_padding_factor=projection_padding_factor,
-            reconstruction_padding_factor=reconstruction_padding_factor,
-            half_spectrum_scoring=half_spectrum_scoring,
-            relion_exact_score_translation=relion_exact_score_translation,
-            projection_relion_texture_interp=projection_relion_texture_interp,
-            projection_relion_acc_double_floorf_quirk=projection_relion_acc_double_floorf_quirk,
-            projection_relion_kernel=projection_relion_kernel,
-            relion_projector_half=relion_projector_half,
-            relion_projector_r_max=relion_projector_r_max,
-            use_float64_scoring=use_float64_scoring,
-            use_float64_projections=use_float64_projections,
-            square_window=square_window,
-            image_corrections=image_corrections,
-            scale_corrections=scale_corrections,
-            group_ids=group_ids,
-            scale_correction_group_count=scale_correction_group_count,
-            scale_correction_data_vs_prior=scale_correction_data_vs_prior,
-            image_pre_shifts=image_pre_shifts,
-            mstep_relion_x_half=mstep_relion_x_half,
-            disable_adjoint_y=disable_adjoint_y,
-            disable_adjoint_ctf=disable_adjoint_ctf,
-            reconstruct_significant_only=reconstruct_significant_only,
-            adaptive_fraction=adaptive_fraction,
-            max_significants=max_significants if apply_max_significants_to_support else -1,
-            return_best_pose_details=return_best_pose_details,
-            return_reconstruction_sample_indices=return_reconstruction_sample_indices,
-            return_profile=return_profile,
-            stats_use_reconstruction_probs=stats_use_reconstruction_probs,
-            translation_prior_centers=translation_prior_centers,
-            normalization_log_evidence=normalization_log_evidence,
-            source_faithful_spectrum_norm=source_faithful_spectrum_norm,
-            relion_translation_angle_scale=relion_translation_angle_scale,
-            score_only=score_only,
-            optics_group_ids=optics_group_ids,
-            reconstruction_volume_current_size=reconstruction_volume_current_size,
-            symmetry_label=symmetry,
-            reconstruction_image_radius=reconstruction_image_radius,
-        )
+        try:
+            engine_outputs = compute_local_search_resident(
+                experiment_dataset,
+                mean,
+                noise_variance,
+                local_layout,
+                disc_type,
+                current_size=current_size,
+                reconstruction_current_size=reconstruction_current_size,
+                accumulate_noise=accumulate_noise,
+                projection_padding_factor=projection_padding_factor,
+                reconstruction_padding_factor=reconstruction_padding_factor,
+                half_spectrum_scoring=half_spectrum_scoring,
+                relion_exact_score_translation=relion_exact_score_translation,
+                projection_relion_texture_interp=projection_relion_texture_interp,
+                projection_relion_acc_double_floorf_quirk=projection_relion_acc_double_floorf_quirk,
+                projection_relion_kernel=projection_relion_kernel,
+                relion_projector_half=relion_projector_half,
+                relion_projector_r_max=relion_projector_r_max,
+                use_float64_scoring=use_float64_scoring,
+                use_float64_projections=use_float64_projections,
+                square_window=square_window,
+                image_corrections=image_corrections,
+                scale_corrections=scale_corrections,
+                group_ids=group_ids,
+                scale_correction_group_count=scale_correction_group_count,
+                scale_correction_data_vs_prior=scale_correction_data_vs_prior,
+                image_pre_shifts=image_pre_shifts,
+                mstep_relion_x_half=mstep_relion_x_half,
+                disable_adjoint_y=disable_adjoint_y,
+                disable_adjoint_ctf=disable_adjoint_ctf,
+                reconstruct_significant_only=reconstruct_significant_only,
+                adaptive_fraction=adaptive_fraction,
+                max_significants=max_significants if apply_max_significants_to_support else -1,
+                return_best_pose_details=return_best_pose_details,
+                return_reconstruction_sample_indices=return_reconstruction_sample_indices,
+                return_profile=return_profile,
+                stats_use_reconstruction_probs=stats_use_reconstruction_probs,
+                translation_prior_centers=translation_prior_centers,
+                normalization_log_evidence=normalization_log_evidence,
+                source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+                relion_translation_angle_scale=relion_translation_angle_scale,
+                score_only=score_only,
+                optics_group_ids=optics_group_ids,
+                reconstruction_volume_current_size=reconstruction_volume_current_size,
+                symmetry_label=symmetry,
+                reconstruction_image_radius=reconstruction_image_radius,
+            )
+        except ResidentConfigurationUnsupported as exc:
+            if resident_engine_selection(RESIDENT_LOCAL_SEARCH_ENV) == "explicit":
+                raise
+            # The resident default: a pass the resident driver refuses before any
+            # device work runs on the exact local engine below.
+            logger.info(
+                "Device-resident local pass 2 (the K=1 default) does not cover this pass; "
+                "it runs on the exact local engine: %s",
+                exc,
+            )
+            engine_outputs = None
+            exact_local_reason = resident_refusal_reason(exc)
+        else:
+            record_pass_engine("local", "resident")
     else:
+        engine_outputs = None
+        exact_local_reason = (
+            "parent probe" if score_only
+            else "full-box final pass" if resident_local_search_requested()
+            else f"{RESIDENT_LOCAL_SEARCH_ENV}=0"
+        )
         if resident_local_search_requested():
             if score_only:
                 logger.info(
@@ -414,6 +441,8 @@ def _run_local_search_iteration(
                     RESIDENT_LOCAL_SEARCH_ENV,
                     current_size,
                 )
+    if engine_outputs is None:
+        record_pass_engine("local", "exact_local", exact_local_reason)
         engine_outputs = run_local_em_exact(
             experiment_dataset,
             mean,

@@ -111,6 +111,42 @@ _SPARSE_KCLASS_COMPACT_PAIR_MSTEP_ENV = "RELAX_SPARSE_KCLASS_COMPACT_PAIR_MSTEP"
 _RELION_POWERCLASS_SPECTRUM_NORM_ENV = "RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM"
 
 
+class ResidentConfigurationUnsupported(NotImplementedError):
+    """A device-resident K=1 driver does not implement this pass's configuration.
+
+    Raised by the resident drivers' configuration checks, which run before any
+    device work. Under an explicit ``=1`` it stops the run, so a measured
+    comparison always knows which engine produced a result; with the resident
+    default the caller runs the previous engine and logs the reason
+    (:func:`resident_engine_selection`).
+    """
+
+
+def resident_refusal_reason(exc: BaseException) -> str:
+    """The specific missing piece a resident refusal names, without its boilerplate."""
+
+    text = str(exc)
+    marker = "does not implement this configuration: "
+    if marker in text:
+        text = text.split(marker, 1)[1].split(". Clear the flag", 1)[0]
+    return text
+
+
+def resident_engine_selection(env_name: str) -> str:
+    """``"explicit"`` (set on), ``"default"`` (unset) or ``"off"`` for a resident driver.
+
+    The resident drivers are the K=1 default. Unset runs them where they cover
+    the pass and the previous engine elsewhere; an explicit on makes a
+    configuration they do not implement an error; an explicit off selects the
+    previous engine (transitional A/B switch, removed with the compact engine).
+    """
+
+    raw = os.environ.get(env_name)
+    if raw is None or raw.strip() == "":
+        return "default"
+    return "explicit" if parse_env_flag(env_name, default=True) else "off"
+
+
 _RELION_EXACT_BPREF_OPERANDS_ENV = "RELAX_K1_RELION_EXACT_BPREF_OPERANDS"
 
 

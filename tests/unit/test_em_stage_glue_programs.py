@@ -207,7 +207,7 @@ def _run_padding_pair(monkeypatch, *, jit_glue=False):
     from relax.scoring import significance
 
     args, kwargs = _significance_call()
-    monkeypatch.delenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", raising=False)
+    monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
     monkeypatch.delenv("RELAX_EM_JIT_STAGE_GLUE", raising=False)
     control = significance._compute_k_class_significance_batched(*args, **kwargs)
     monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "1")
@@ -256,7 +256,7 @@ def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
 
     monkeypatch.setattr(preprocessing, "preprocess_batch", record)
 
-    monkeypatch.delenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", raising=False)
+    monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
     significance._compute_k_class_significance_batched(*args, **kwargs)
     unpadded = list(seen)
 
@@ -276,7 +276,7 @@ def test_jit_stage_glue_preserves_every_significance_output(monkeypatch):
     from relax.scoring import significance
 
     args, kwargs = _significance_call()
-    monkeypatch.delenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", raising=False)
+    monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
     monkeypatch.delenv("RELAX_EM_JIT_STAGE_GLUE", raising=False)
     control = significance._compute_k_class_significance_batched(*args, **kwargs)
     monkeypatch.setenv("RELAX_EM_JIT_STAGE_GLUE", "1")
@@ -389,26 +389,28 @@ def test_collate_keeps_device_arrays_on_device():
 
 
 @pytest.mark.parametrize(
-    "name, reader",
+    "name, reader, unset",
     [
         (
             "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH",
             "relax.scoring.significance:_coarse_pad_final_image_batch_enabled",
+            True,  # on by default since the K=1 resident flip
         ),
         (
             "RELAX_EM_JIT_STAGE_GLUE",
             "relax.helpers.preprocessing:jit_stage_glue_enabled",
+            False,  # the K=1 entry points set it; the shared default stays off
         ),
     ],
 )
-def test_stage_glue_flags_fail_closed_on_bad_tokens(monkeypatch, name, reader):
+def test_stage_glue_flags_fail_closed_on_bad_tokens(monkeypatch, name, reader, unset):
     import importlib
 
     module_name, attribute = reader.split(":")
     read = getattr(importlib.import_module(module_name), attribute)
 
     monkeypatch.delenv(name, raising=False)
-    assert read() is False
+    assert read() is unset
     monkeypatch.setenv(name, "1")
     assert read() is True
     monkeypatch.setenv(name, "0")

@@ -194,6 +194,29 @@ always-on final gridding correction (user decision; relax df88eab retires the op
 tier gates both the unfiltered half-map average and the merged map, and requires
 `final_all_data_grid_correct` to be recorded True in `refinement_results.npz`.
 
+K=1 engine (2026-09-25): the device-resident pass 2, local search and device significance are the
+Refine3D default, with the qualified flag set, including the first-iteration CC pass and
+`--adaptive_oversampling 0`. Unset, a pass the resident checks refuse runs on the earlier engine
+with a logged reason, recorded per iteration in `pass2_engine_trajectory`; an explicit `=1` makes
+that refusal an error. The jitted stage glue and the local image-capacity
+ladder are set at the K=1 entry points (`apply_k1_refine3d_env_defaults`), since VDAM shares that
+code and qualifies its own defaults. Transitional A/B off switches, to be removed with the compact
+engine (not permanent variants): `RELAX_SPARSE_PASS2_RESIDENT=0`, `RELAX_LOCAL_SEARCH_RESIDENT=0`,
+`RELAX_COARSE_SIGNIFICANCE_DEVICE=0`, `RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=0`,
+`RELAX_K1_RELION_WAVG_SEQUENTIAL_CUDA=0`, `RELAX_COARSE_PAD_FINAL_IMAGE_BATCH=0`,
+`RELAX_EM_JIT_STAGE_GLUE=0`, `RELAX_LOCAL_IMAGE_CAPACITY_LADDER=0`. Flip pairs (relax vs
+RELION wall, same node): EMPIAR-10073 1.05x and 10345 1.01x pass the scorecard thresholds; K1
+50k/256 runs at 0.65x, with the resident masked GT FSC 9e-5 below the three-run RELION band
+(compact inside it). OPEN (small, both engines): on 10345 and K1 50k/256 relax's map agreement with RELION
+sits just below RELION's run-to-run band with equal own quality (10345 merged band FSC-AUC
+0.982 vs 0.986-0.988, masked 0.9980 vs 0.9985-0.9987; 50k 0.9994 vs 0.9997). Compact shows the
+same gap, and RELION native FFT units did not change it. The earlier one-step attribution of that gap (1.3-4.2e-4 per step, about 2.5x RELION's drift) is
+superseded: `run_multi_iter_parity` scored half 2 with half 1's sigma2_noise by default (the RELION
+MPI restart broadcast), while the reference was the uninterrupted run. Half-1 particles, which the
+default does not affect, deviate 6.6e-5-1.6e-4 per step in map rel L2 and match RELION's coarse diff2
+to 5e-4 at the same state. The replay default is changing to keep each half's spectrum (pending
+its fast tier); the per-step attribution is being redone that way (`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/replay_50k_iters_cns_20260925`).
+
 Tested, no effect (2026-09-25, not landed): RELION's CUDA path normalizes each real image by
 `(XFLOAT)(avg_norm_correction / normcorr)` (`acc/acc_ml_optimiser_impl.h:875`, f2c1a38). relax
 recovers that factor as `float32(combined) / float32(group_scale)`. On the K1 50k/256 fixture this
@@ -210,8 +233,10 @@ session's fix carried the once-rounded host ratio separately. It moved relax its
 | it13, compact | 1.34754e-4 -> 1.34758e-4 | 1.1648e-3 -> 1.1648e-3 |
 
 The table's metrics are the half-map rel L2 inside the frozen mask and per-particle Pmax, both
-against RELION's next iteration. RELION's one-step repeat noise (continue A vs B) is 6e-7 (it2)
-and 4e-6 (it13) in map rel L2, so the per-step gap has another cause. Observation: the it13 compact
+against RELION's next iteration. The no-effect conclusion holds (both arms share the setup), but the
+absolute gaps are superseded: these replays scored half 2 with half 1's sigma2_noise (the harness's
+former restart-broadcast default), which inflates half 2 against the uninterrupted run; see the K=1
+engine paragraph above for the per-half numbers. Observation: the it13 compact
 arm's per-particle Pmax was identical between control and fix, so that route may not consume the
 carried factor. Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_normfix_20260925/ab50k_it2_it13/`
 (`PERSTEP_DEVIATION.json`, `PMAX_AB.json`).
