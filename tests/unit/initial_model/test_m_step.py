@@ -16,11 +16,13 @@ Phase-4 M-step pipeline:
 
 from __future__ import annotations
 
-from relax.diagnostics import vdam_mstep_replay
+from functools import partial
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
+from relax.diagnostics import vdam_mstep_replay
 from relax.vdam import mstep_single_class
 from relax.vdam.init import initialise_data_vs_prior_from_references, initialise_denovo_state, seed_noise_from_mavg
 from relax.vdam.m_step import vdam_m_step
@@ -30,8 +32,11 @@ from relax.vdam.mstep_single_class import (
     vdam_m_step_single_class,
 )
 from relax.vdam.state import VdamAccumulator
-from helpers.float_compare import assert_matches
 
+# These tests pin the M-step against RELION's float64 C++ primitives, so they run
+# the float64 diagnostic precision; production runs in float32.
+vdam_m_step = partial(vdam_m_step, mstep_compute_dtype="float64")
+vdam_m_step_single_class = partial(vdam_m_step_single_class, mstep_compute_dtype="float64")
 pytestmark = pytest.mark.unit
 
 

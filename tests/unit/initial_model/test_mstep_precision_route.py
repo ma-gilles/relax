@@ -46,8 +46,8 @@ def _state(K=1):
     return state
 
 
-@pytest.mark.parametrize("dtype", ["float64", "float32"])
-def test_cli_forwards_explicit_precision_and_keeps_legacy_default(monkeypatch, dtype):
+@pytest.mark.parametrize("dtype", [None, "float64", "float32"])
+def test_cli_forwards_explicit_precision_and_defaults_to_float32(monkeypatch, dtype):
     calls = []
     monkeypatch.setattr(
         driver,
@@ -55,17 +55,16 @@ def test_cli_forwards_explicit_precision_and_keeps_legacy_default(monkeypatch, d
         lambda opts: calls.append(opts) or SimpleNamespace(final_mrc="a.mrc", final_model_star="a.star"),
     )
     argv = ["--no-require-custom-cuda", "--no-jax-compilation-cache", "--gpu", "", "--i", "missing.star"]
-    if dtype == "float32":
-        argv += ["--mstep-compute-dtype", dtype, "--mstep-backend", "jax"]
+    if dtype is not None:
+        argv += ["--mstep-compute-dtype", dtype]
     assert initial_model_command.main(argv) == 0
-    assert calls[0].mstep_compute_dtype == dtype
-    assert calls[0].mstep_backend == ("jax" if dtype == "float32" else "native")
+    assert calls[0].mstep_compute_dtype == (dtype or "float32")
 
 
-def test_cli_rejects_native_float32_before_driver(monkeypatch):
+def test_cli_has_no_mstep_backend_choice(monkeypatch):
     monkeypatch.setattr(driver, "run_native_initial_model", lambda *_: pytest.fail("driver called"))
     with pytest.raises(SystemExit):
-        initial_model_command.main(["--i", "missing.star", "--mstep-compute-dtype", "float32"])
+        initial_model_command.main(["--i", "missing.star", "--mstep-backend", "native"])
 
 
 @pytest.mark.parametrize("K", [1, 4])
@@ -134,17 +133,15 @@ def test_driver_converts_before_initial_artifact_and_forwards_loop(monkeypatch, 
                 fn_img="missing.star",
                 outputname=str(tmp_path / "run"),
                 nr_iter=2,
-                mstep_backend="jax",
                 mstep_compute_dtype=dtype,
             )
         )
 
 
-@pytest.mark.parametrize("dtype,backend", [("float32", "native"), ("float16", "jax")])
-def test_driver_invalid_precision_rejected_before_io(dtype, backend):
+def test_driver_invalid_precision_rejected_before_io():
     with pytest.raises(ValueError, match="M-step|mstep_compute_dtype"):
         driver.run_native_initial_model(
-            native_options.NativeInitialModelOptions(fn_img="missing.star", mstep_backend=backend, mstep_compute_dtype=dtype)
+            native_options.NativeInitialModelOptions(fn_img="missing.star", mstep_compute_dtype="float16")
         )
 
 
@@ -152,7 +149,7 @@ def test_driver_reference_replay_rejected_before_io(monkeypatch):
     monkeypatch.setenv(driver.INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV, "missing_{iteration}.mrc")
     with pytest.raises(ValueError, match="reference replay"):
         driver.run_native_initial_model(
-            native_options.NativeInitialModelOptions(fn_img="missing.star", mstep_backend="jax", mstep_compute_dtype="float32")
+            native_options.NativeInitialModelOptions(fn_img="missing.star", mstep_compute_dtype="float32")
         )
 
 
@@ -168,7 +165,6 @@ def _call(state, **kwargs):
         accum_h1=_accum(state),
         grad_current_stepsize=0.0,
         tau2_fudge_factor=4.0,
-        mstep_backend="jax",
         mstep_compute_dtype="float32",
         **kwargs,
     )
@@ -285,7 +281,6 @@ def test_actual_loop_forwards_f32_to_m_without_changing_authoritative_state(monk
             {"max_posterior_per_image": np.ones(len(ids))},
         ),
         refresh_tau2_from_projector=False,
-        mstep_backend="jax",
         mstep_compute_dtype="float32",
     )
     assert calls == [1, 2]

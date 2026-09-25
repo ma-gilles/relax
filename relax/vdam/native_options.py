@@ -76,8 +76,8 @@ class NativeInitialModelOptions(InitialModelDefaults):
     width_mask_edge_px: float = 5.0
     image_fourier_backend: str = "host_numpy"
     projector_setup_backend: Literal["native", "jax"] = "native"
-    mstep_backend: Literal["native", "jax"] = "native"
-    mstep_compute_dtype: Literal["float32", "float64"] = "float64"
+    # Production EM is float32; float64 is the diagnostic reference (native replays and dumps).
+    mstep_compute_dtype: Literal["float32", "float64"] = "float32"
     datadir: str | None = None
     strip_prefix: str | None = None
     # Diagnostic-only, one-next-iteration restart from a native RELION VDAM

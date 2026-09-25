@@ -120,8 +120,8 @@ def test_context_rejects_stale_handoff_and_clears(monkeypatch, change):
 
 
 @pytest.mark.parametrize("refresh_enabled", [False, True])
-@pytest.mark.parametrize("mstep_backend", ["native", "jax"])
-def test_loop_callback_is_once_before_estep_and_respects_disabled(monkeypatch, refresh_enabled, mstep_backend):
+@pytest.mark.parametrize("mstep_compute_dtype", ["float32", "float64"])
+def test_loop_callback_is_once_before_estep_and_respects_disabled(monkeypatch, refresh_enabled, mstep_compute_dtype):
     state = initialise_denovo_state(
         ori_size=8, pixel_size=1.0, K=1, nr_iter=2,
         n_directions=3, pseudo_halfsets=True,
@@ -138,7 +138,7 @@ def test_loop_callback_is_once_before_estep_and_respects_disabled(monkeypatch, r
         return [], {"max_posterior_per_image": np.ones(len(ids))}
 
     def mstep(current, **kwargs):
-        assert kwargs["mstep_backend"] == mstep_backend
+        assert kwargs["mstep_compute_dtype"] == mstep_compute_dtype
         return current
 
     monkeypatch.setattr(loop, "vdam_m_step", mstep)
@@ -147,7 +147,7 @@ def test_loop_callback_is_once_before_estep_and_respects_disabled(monkeypatch, r
         grad_ini_subset_size=10, grad_fin_subset_size=10, tau2_fudge_arg=4.0,
         grad_em_iters=0, random_seed=29,
         expectation_step=estep, refresh_tau2_from_projector=refresh_enabled,
-        projector_refresh_fn=refresh, mstep_backend=mstep_backend,
+        projector_refresh_fn=refresh, mstep_compute_dtype=mstep_compute_dtype,
     )
     expected = ["refresh", "estep"] * 2 if refresh_enabled else ["estep"] * 2
     assert [event[1] for event in events] == expected

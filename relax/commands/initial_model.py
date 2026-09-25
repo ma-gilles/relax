@@ -393,11 +393,7 @@ def make_parser() -> argparse.ArgumentParser:
         help="Reference projector preparation backend.",
     )
     parser.add_argument(
-        "--mstep-backend", choices=("native", "jax"), default="native",
-        help="VDAM M-step transaction backend.",
-    )
-    parser.add_argument(
-        "--mstep-compute-dtype", choices=("float32", "float64"), default="float64",
+        "--mstep-compute-dtype", choices=("float32", "float64"), default="float32",
         help="M-owned state precision; float32 requires the JAX M-step.",
     )
     parser.add_argument(
@@ -487,7 +483,6 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
         backend = "relion_cuda" if args.gpu_ids else "host_numpy"
     return {
         "projector_setup_backend": args.projector_setup_backend,
-        "mstep_backend": args.mstep_backend,
         "mstep_compute_dtype": args.mstep_compute_dtype,
         "diagnostic_continue_optimiser": args.diagnostic_continue_optimiser,
         "diagnostic_stop_after_iteration": args.diagnostic_stop_after_iteration,
@@ -545,8 +540,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     _assert_expected_repo_imports()
     parser = make_parser()
     args = parser.parse_args(argv)
-    if args.mstep_compute_dtype == "float32" and args.mstep_backend != "jax":
-        parser.error("--mstep-compute-dtype float32 requires --mstep-backend jax")
     if args.nr_mpi > 1:
         raise SystemExit("ERROR: Gradient refinement is not supported together with MPI.")
     if args.gpu_ids:

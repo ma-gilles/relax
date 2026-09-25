@@ -8,6 +8,8 @@ connects the E-step to the dense-path kernels + particle data loader.
 
 from __future__ import annotations
 
+from functools import partial
+
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
@@ -25,6 +27,9 @@ from relax.vdam.iteration_loop import (
 from relax.vdam.m_step import relion_solvent_flatten_state, relion_solvent_mask
 from relax.vdam.state import VdamAccumulator
 from relax.vdam.subset_schedule import restore_subset_order_for_continuation, select_subset_for_iter
+
+# The loop tests run real M-steps on float64 states: the float64 diagnostic precision.
+run_vdam_iterations = partial(run_vdam_iterations, mstep_compute_dtype="float64")
 
 pytestmark = pytest.mark.unit
 

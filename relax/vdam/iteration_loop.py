@@ -222,8 +222,7 @@ def run_vdam_iterations(
     refresh_tau2_from_projector: bool = True,
     projector_refresh_fn: Callable[..., InitialModelState] | None = None,
     projector_padding_factor: int = 1,
-    mstep_backend: str = "native",
-    mstep_compute_dtype: Literal["float32", "float64"] = "float64",
+    mstep_compute_dtype: Literal["float32", "float64"] = "float32",
     projector_interpolator: int = 1,
     start_iteration: int = 0,
     diagnostic_stop_after_iteration: int | None = None,
@@ -319,7 +318,6 @@ def run_vdam_iterations(
             grad_current_stepsize=current.grad_current_stepsize,
             tau2_fudge_factor=current.tau2_fudge_factor,
             padding_factor=projector_padding_factor,
-            mstep_backend=mstep_backend,
             mstep_compute_dtype=mstep_compute_dtype,
         )
         if profile_iterations:

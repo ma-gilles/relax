@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from dataclasses import fields
+from functools import partial
 
 import numpy as np
 import pytest
@@ -10,6 +11,10 @@ from helpers.float_compare import assert_matches
 from relax.vdam.init import initialise_denovo_state
 from relax.vdam.mstep_single_class import vdam_m_step_single_class
 from relax.vdam.state import VdamAccumulator
+
+# These tests pin the M-step against RELION's float64 C++ primitives, so they run
+# the float64 diagnostic precision; production runs in float32.
+vdam_m_step_single_class = partial(vdam_m_step_single_class, mstep_compute_dtype="float64")
 
 pytestmark = pytest.mark.unit
 
@@ -138,7 +143,7 @@ def test_device_backend_preserves_complete_state_and_inputs(transaction_bind, K,
         return actual_host(*a, **kw)
 
     monkeypatch.setattr(relion_vdam_mstep, "relion_vdam_m_step_host", counted)
-    actual = vdam_m_step_single_class(state, **args, mstep_backend="jax")
+    actual = vdam_m_step_single_class(state, **args)
     assert calls == [1]
     changed_arrays = {"Iref", "Igrad1", "Igrad2", "tau2_class", "sigma2_class",
                       "data_vs_prior_class", "fourier_coverage_class"}
@@ -174,5 +179,5 @@ def test_device_request_keeps_native_dump_boundaries(transaction_bind, monkeypat
     monkeypatch.setattr(relion_vdam_mstep, "relion_vdam_m_step_host", forbidden)
     monkeypatch.setattr(transaction_bind, "vdam_m_step_transaction", forbidden)
     vdam_m_step_single_class(state, k=0, accum_h0=accumulators[0], accum_h1=accumulators[1],
-                            grad_current_stepsize=0.3, tau2_fudge_factor=4.0, mstep_backend="jax")
+                            grad_current_stepsize=0.3, tau2_fudge_factor=4.0)
     assert (tmp_path / "data_h0_post_reweight.npy").is_file()

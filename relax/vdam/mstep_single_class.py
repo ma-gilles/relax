@@ -55,7 +55,6 @@ def _prepare_mstep_state_precision(state, mstep_compute_dtype):
 
 def _validate_mstep_precision_route(
     mstep_compute_dtype: Literal["float32", "float64"],
-    mstep_backend: Literal["native", "jax"],
     *,
     use_native_transaction: bool = True,
 ) -> None:
@@ -64,8 +63,8 @@ def _validate_mstep_precision_route(
         raise ValueError(f"Unknown mstep_compute_dtype: {mstep_compute_dtype!r}")
     if mstep_compute_dtype == "float64":
         return
-    if mstep_backend != "jax" or not use_native_transaction:
-        raise ValueError("float32 M-step requires the JAX transaction backend")
+    if not use_native_transaction:
+        raise ValueError("float32 M-step requires the transaction route")
     for name in (
         "RELAX_MSTEP_DUMP_DIR",
         replay.VDAM_NATIVE_SECOND_MOMENT_REPLAY_ENV,
@@ -154,7 +153,7 @@ def _run_m_step_transaction(
     padding_factor: int,
     r_max: int,
     min_resol_shell: float,
-    mstep_compute_dtype: Literal["float32", "float64"] = "float64",
+    mstep_compute_dtype: Literal["float32", "float64"],
 ) -> InitialModelState:
     """Apply one shared-layout transaction and preserve state ownership."""
     from recovar.utils.helpers import recovar_volume_to_relion, relion_volume_to_recovar
@@ -248,8 +247,7 @@ def vdam_m_step_single_class(
     grad_min_resol_shell: float | None = None,
     padding_factor: int = 1,
     use_native_transaction: bool = True,
-    mstep_backend: Literal["native", "jax"] = "native",
-    mstep_compute_dtype: Literal["float32", "float64"] = "float64",
+    mstep_compute_dtype: Literal["float32", "float64"] = "float32",
 ) -> InitialModelState:
     """VDAM M-step for one class (per-class loop matches RELION's binding shape).
 
@@ -257,12 +255,10 @@ def vdam_m_step_single_class(
     in ``applyMomenta``; ``reconstructGrad`` then uses ``mom1_noise_power``.
     """
     _validate_mstep_precision_route(
-        mstep_compute_dtype, mstep_backend, use_native_transaction=use_native_transaction
+        mstep_compute_dtype, use_native_transaction=use_native_transaction
     )
     if mstep_compute_dtype == "float32":
         _validate_mstep_state_precision(state)
-    if mstep_backend not in {"native", "jax"}:
-        raise ValueError(f"Unknown mstep_backend: {mstep_backend!r}")
     if not (0 <= k < state.K):
         raise ValueError(f"class index {k} out of range")
     if state.pseudo_halfsets and accum_h1 is None:
@@ -312,15 +308,13 @@ def vdam_m_step_single_class(
         and not replay_requested
         and hasattr(bind, "vdam_m_step_transaction")
     ):
-        transaction = bind.vdam_m_step_transaction
-        if mstep_backend == "jax":
-            if not hasattr(bind, "vdam_first_moment_initializes"):
-                raise RuntimeError("JAX M-step requires the native moment initialization binding")
-            from relax.relion.relion_vdam_mstep import relion_vdam_m_step_host
+        if not hasattr(bind, "vdam_first_moment_initializes"):
+            raise RuntimeError("JAX M-step requires the native moment initialization binding")
+        from relax.relion.relion_vdam_mstep import relion_vdam_m_step_host
 
-            transaction = relion_vdam_m_step_host
-            if mstep_compute_dtype == "float32":
-                transaction = partial(transaction, compute_dtype=np.float32)
+        transaction = relion_vdam_m_step_host
+        if mstep_compute_dtype == "float32":
+            transaction = partial(transaction, compute_dtype=np.float32)
         return _run_m_step_transaction(
             transaction,
             state,

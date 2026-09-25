@@ -299,7 +299,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
 
     from relax.vdam.mstep_single_class import _validate_mstep_precision_route
 
-    _validate_mstep_precision_route(opts.mstep_compute_dtype, opts.mstep_backend)
+    _validate_mstep_precision_route(opts.mstep_compute_dtype)
     if int(opts.random_seed) == -1:
         # relion_refine's default --random_seed -1 takes the time (ml_optimiser.cpp:2827).
         opts = replace(opts, random_seed=int(time.time()))
@@ -512,7 +512,6 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         grad_stepsize=float(opts.stepsize),
         mu=float(opts.mu),
         projector_padding_factor=int(opts.padding_factor),
-        mstep_backend=opts.mstep_backend,
         mstep_compute_dtype=opts.mstep_compute_dtype,
         projector_refresh_fn=None if projector_context is None else projector_context.refresh,
         start_iteration=int(state.iter),

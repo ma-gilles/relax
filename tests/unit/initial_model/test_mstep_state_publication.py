@@ -59,6 +59,7 @@ def _call(state, k, transaction):
         padding_factor=1,
         r_max=2,
         min_resol_shell=1.0,
+        mstep_compute_dtype="float64",
     )
 
 

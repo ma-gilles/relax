@@ -16,6 +16,8 @@ cannot be intercepted at the Python binding attribute.
 
 from __future__ import annotations
 
+from functools import partial
+
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
@@ -23,6 +25,10 @@ from helpers.float_compare import assert_matches
 from relax.vdam.init import initialise_denovo_state
 from relax.vdam.mstep_single_class import vdam_m_step_single_class
 from relax.vdam.state import VdamAccumulator
+
+# These tests pin the M-step against RELION's float64 C++ primitives, so they run
+# the float64 diagnostic precision; production runs in float32.
+vdam_m_step_single_class = partial(vdam_m_step_single_class, mstep_compute_dtype="float64")
 
 pytestmark = pytest.mark.unit
 

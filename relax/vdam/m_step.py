@@ -1,7 +1,8 @@
 """VDAM M-step: gradient moment update + reference reconstruction.
 
-Defaults to the RELION C++ moment/reconstruction transaction. The opt-in JAX
-backend retains the same state layout and native diagnostic boundaries.
+Runs RELION's moment/reconstruction transaction in JAX, in float32 by default
+(float64 is the diagnostic reference); the native per-primitive route remains
+for dumps and replays.
 """
 
 from __future__ import annotations
@@ -89,8 +90,7 @@ def vdam_m_step(
     grad_min_resol_shell: float | None = None,
     padding_factor: int = 1,
     use_native_transaction: bool = True,
-    mstep_backend: Literal["native", "jax"] = "native",
-    mstep_compute_dtype: Literal["float32", "float64"] = "float64",
+    mstep_compute_dtype: Literal["float32", "float64"] = "float32",
 ) -> InitialModelState:
     """Full VDAM M-step over K classes.
 
@@ -114,7 +114,6 @@ def vdam_m_step(
             grad_min_resol_shell=grad_min_resol_shell,
             padding_factor=padding_factor,
             use_native_transaction=use_native_transaction,
-            mstep_backend=mstep_backend,
             mstep_compute_dtype=mstep_compute_dtype,
         )
     return out
