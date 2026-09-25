@@ -18,6 +18,7 @@ from typing import Sequence
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 
 from relax.helpers.particle_io import add_particle_read_arguments
+from relax.ppca_initial_model.vdam_controls import VdamPilotControls
 from relax.vdam.native_options import InitialModelDefaults
 
 
@@ -515,10 +516,9 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
         "random_perturbation": args.random_perturbation,
         "image_batch_size": args.image_batch_size,
         "rotation_block_size": args.rotation_block_size,
-        "stochastic_batch_size": args.stochastic_batch_size,
-        "max_fourier_radius": args.max_fourier_radius,
-        "max_healpix_order": args.max_healpix_order,
-        "stop_file": args.stop_file,
+        "pilot_controls": VdamPilotControls.from_values(
+            args.stochastic_batch_size, args.max_fourier_radius, args.max_healpix_order, args.stop_file
+        ),
         "pass2_engine": args.pass2_engine,
         "relion_wavg_sequential_cuda": args.relion_wavg_sequential_cuda,
         "exact_local_bucket_radix": args.exact_local_bucket_radix,

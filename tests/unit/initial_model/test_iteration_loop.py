@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.ppca_initial_model.vdam_controls import VdamPilotControls
 from relax.vdam.estep_meta_updates import update_noise_from_estep_meta, update_probabilities_from_estep_meta
 from relax.vdam.init import initialise_denovo_state
 from relax.vdam.iteration_loop import (
@@ -263,7 +264,7 @@ class TestRunVdamIterations:
         assert out.current_size == 60
         assert out.current_resolution_shell == 20
 
-        capped = update_image_size_and_resolution_pointers(state, max_fourier_radius=8)
+        capped = update_image_size_and_resolution_pointers(state, VdamPilotControls(max_fourier_radius=8))
         assert capped.current_size == 16
         assert capped.current_resolution_shell == 20
 

@@ -74,7 +74,7 @@ def test_context_builds_once_and_consumes_once(monkeypatch, backend):
     )
     calls = []
 
-    def prepare(current, *, padding_factor, interpolator, projector_setup_backend):
+    def prepare(current, *, padding_factor, interpolator, projector_setup_backend, projector_compute_dtype):
         assert projector_setup_backend == backend
         calls.append((current.iter, current.Iref.copy()))
         return (None, None, current.Iref.copy(), 4), np.full((1, 5), current.iter)

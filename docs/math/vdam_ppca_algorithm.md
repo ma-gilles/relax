@@ -982,8 +982,11 @@ bootstrap when these maps are supplied; later projection and M-step backends
 must still be selected explicitly for production float32 execution.
 The corrected JAX projector now accepts an explicit float32 compute dtype for
 gridding correction, FFT and shell power. The VDAM driver passes its selected
-M-step compute dtype through the per-iteration projector and E-step fallback;
-the legacy float64 default remains for existing native-oracle comparisons.
+M-step compute dtype through the per-iteration projector and E-step fallback.
+Only the JAX projector setup follows it (`--projector-setup-backend jax`); the
+native setup stays float64, so a float32 run with the native setup is a
+mixed-precision diagnostic
+([`_projector_setup_dtype`](../../relax/vdam/dense_adapter.py)).
 The earlier tiny K3 job 14293103 used float64 corrected projector preparation
 despite float32 scoring, accumulation and M-step flags, so it is a mixed-precision
 diagnostic and must not be counted as final float32 evidence.
@@ -1005,7 +1008,9 @@ subset of the existing simulator fixture before training. An opt-in
 [PPCA Config](../../relax/ppca_initial_model/config.py) replaces only the
 non-final subset count; iteration 60 still uses every particle. The VDAM
 comparison has opt-in fixed non-final subset and low-resolution Fourier and
-angular caps in [native_options.py](../../relax/vdam/native_options.py).
+angular caps in the PPCA-owned
+[VdamPilotControls](../../relax/ppca_initial_model/vdam_controls.py), which the
+VDAM controller holds as `pilot_controls` (`None` is native VDAM).
 Native frequency and angular adaptation remains active within those caps, so
 its effective per-iteration support must be reported rather than assumed equal
 to the PPCA milestones. Defaults for either method are unchanged.

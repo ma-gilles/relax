@@ -44,10 +44,7 @@ class InitialModelDefaults:
     perturbation_factor: float = 0.5
     image_batch_size: int = 500
     rotation_block_size: int = 5000
-    stochastic_batch_size: int | None = None
-    max_fourier_radius: int | None = None
-    max_healpix_order: int | None = None
-    stop_file: str | None = None
+    pilot_controls: object | None = None  # relax.ppca_initial_model.vdam_controls.VdamPilotControls
     pass2_engine: str = "auto"
     relion_wavg_sequential_cuda: bool = True
     exact_local_bucket_radix: int = 4
@@ -97,12 +94,8 @@ class NativeInitialModelOptions(InitialModelDefaults):
             raise ValueError("nr_iter must be >= 1")
         if self.grad_write_iter < 1:
             raise ValueError("grad_write_iter must be >= 1")
-        if self.stochastic_batch_size is not None and self.stochastic_batch_size < 1:
-            raise ValueError("stochastic_batch_size must be positive")
-        if self.max_fourier_radius is not None and self.max_fourier_radius < 1:
-            raise ValueError("max_fourier_radius must be positive")
-        if self.max_healpix_order is not None and self.max_healpix_order < self.healpix_order:
-            raise ValueError("max_healpix_order must not be below the initial order")
+        if self.pilot_controls is not None:
+            self.pilot_controls.validate(initial_healpix_order=self.healpix_order)
         if int(self.exact_local_bucket_radix) not in (2, 4):
             raise ValueError("exact_local_bucket_radix must be 2 or 4")
         if int(self.exact_local_physical_order_chunk_size) not in (0,) and int(

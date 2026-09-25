@@ -142,7 +142,7 @@ def _initial_sampling_state(opts: NativeInitialModelOptions, *, pixel_size: floa
         offset_range_ori_angstrom=float(opts.offset_range_px) * pixel_size,
         offset_step_ori_angstrom=float(opts.offset_step_px) * pixel_size,
         pixel_size=pixel_size,
-        max_healpix_order=opts.max_healpix_order,
+        max_healpix_order=None if opts.pilot_controls is None else opts.pilot_controls.max_healpix_order,
     )
 
 

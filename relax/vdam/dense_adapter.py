@@ -464,6 +464,11 @@ def reference_to_dense_means(references: np.ndarray) -> np.ndarray:
     return np.asarray(means, dtype=np.complex64)
 
 
+def _projector_setup_dtype(projector_setup_backend, projector_compute_dtype):
+    """The native (RELION C++) setup stays float64; only the JAX setup follows the M-step dtype."""
+    return projector_compute_dtype if projector_setup_backend == "jax" else "float64"
+
+
 def prepare_relion_projector_class_inputs(
     state: InitialModelState,
     *,
@@ -477,7 +482,7 @@ def prepare_relion_projector_class_inputs(
         current_size=state.current_size if state.current_size > 0 else state.ori_size,
         padding_factor=padding_factor,
         projector_setup_backend=projector_setup_backend,
-        compute_dtype=projector_compute_dtype,
+        compute_dtype=_projector_setup_dtype(projector_setup_backend, projector_compute_dtype),
     )
     return _finish_relion_projector_class_inputs(
         state, padding_factor, projector_half_by_class, projector_r_max
@@ -498,7 +503,7 @@ def prepare_relion_projector_class_inputs_and_power(
         current_size=state.current_size if state.current_size > 0 else state.ori_size,
         padding_factor=padding_factor,
         projector_setup_backend=projector_setup_backend,
-        compute_dtype=projector_compute_dtype,
+        compute_dtype=_projector_setup_dtype(projector_setup_backend, projector_compute_dtype),
         interpolator=interpolator,
     )
     inputs = _finish_relion_projector_class_inputs(state, padding_factor, half_maps, r_max)
