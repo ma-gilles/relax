@@ -16,6 +16,7 @@ from relax.helpers.optics_noise import dense_optics_groups, noise_rows, pixel_ro
 from relax.helpers.projection import compute_noise_block, compute_noise_block_per_optics_group
 from relax.sparse_pass2 import resident_pass2 as rp
 from relax.sparse_pass2.resident_statistics import make_resident_statistics, resolve_statistics_config
+from relax.sparse_pass2.sparse_pass2_wavg import image_power_shells
 
 IMAGE_SHAPE = (16, 16)
 N_SHELLS = 9
@@ -116,7 +117,11 @@ def _chunk(rng, *, image_ids, optics_groups, block_noise_shells, wavg_diff2, cap
         row_coarse_rot=jnp.zeros(rows, dtype=jnp.int32),
         image_ids=jnp.asarray(image_ids, dtype=jnp.int32),
         group_ids=jnp.full(capacity, -1, dtype=jnp.int32),
-        processed_image_half=jnp.asarray(_complex(rng, (capacity, P_HALF)), dtype=jnp.complex64),
+        image_power_shells=image_power_shells(
+            jnp.asarray(_complex(rng, (capacity, P_HALF)), dtype=jnp.complex64),
+            jnp.asarray(make_relion_noise_shell_indices_half(IMAGE_SHAPE), dtype=jnp.int32),
+            shell_count=N_SHELLS,
+        ),
         relion_norm_high_shell=None,
         wavg_triplet_pixels=jnp.asarray(wavg),
         block_noise_shells=jnp.asarray(block_noise_shells),

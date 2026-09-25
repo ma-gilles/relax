@@ -21,6 +21,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
+from relax.helpers.half_spectrum import make_relion_noise_shell_indices_half
 from relax.sparse_pass2.resident_operands import (
     ResidentHalfOperands,
     resident_half_operand_avals,
@@ -34,7 +35,8 @@ SHAPE_ARGS = dict(
     n_images=17,
     n_score_pixels=11,
     n_recon_pixels=7,
-    n_half_pixels=29,
+    n_rect_pixels=29,
+    n_noise_shells=9,
     n_fine_trans=5,
 )
 DTYPES = dict(
@@ -50,7 +52,7 @@ DTYPES = dict(
 ARRAY_FIELDS = (
     "score_input", "corr_img_score", "highres_xi2_half", "translation_prior",
     "recon_image", "recon_weight", "noise_image", "ctf2_over_nv_recon",
-    "direct_ctf_rfloat_recon", "processed_image_half", "relion_norm_high_shell",
+    "direct_ctf_rfloat_recon", "wavg_image_rect", "image_power_shells", "relion_norm_high_shell",
     "scale", "group_ids", "optics_groups",
 )
 
@@ -88,7 +90,9 @@ def test_the_shapes_are_the_ones_the_dataclass_declares():
     assert operands.recon_image.shape == (n, SHAPE_ARGS["n_recon_pixels"])
     assert operands.noise_image.shape == (n, SHAPE_ARGS["n_recon_pixels"])
     assert operands.ctf2_over_nv_recon.shape == (n, SHAPE_ARGS["n_recon_pixels"])
-    assert operands.processed_image_half.shape == (n, SHAPE_ARGS["n_half_pixels"])
+    assert operands.wavg_image_rect.shape == (n, SHAPE_ARGS["n_rect_pixels"])
+    assert operands.image_power_shells.shape == (n, SHAPE_ARGS["n_noise_shells"])
+    assert jnp.dtype(operands.image_power_shells.dtype) == jnp.float64
     assert operands.translation_prior.shape == (n, SHAPE_ARGS["n_fine_trans"])
     for name in ("scale", "group_ids", "highres_xi2_half", "relion_norm_high_shell"):
         assert getattr(operands, name).shape == (n,), name
@@ -190,7 +194,8 @@ def test_the_avals_match_the_real_preparation(monkeypatch, custom_cuda_lib, gpu_
         n_images=real.n_images,
         n_score_pixels=real.n_score_pixels,
         n_recon_pixels=real.n_recon_pixels,
-        n_half_pixels=real.n_half_pixels,
+        n_rect_pixels=real.n_rect_pixels,
+        n_noise_shells=real.n_noise_shells,
         n_fine_trans=real.n_fine_trans,
         # The dtypes a real caller has: the float32 precision policy this case
         # runs under, plus the float64 the admission check assumes for the
@@ -284,6 +289,9 @@ def test_the_optional_operands_dtypes_against_the_real_preparation(
             bucket_io_kwargs=kwargs,
             window_indices=case["window_indices"],
             recon_window_indices=case["window_indices"],
+            wavg_rect_indices=case["window_indices"],
+            noise_shell_indices_half=make_relion_noise_shell_indices_half(case["image_shape"]),
+            n_noise_shells=(case["image_shape"])[0] // 2 + 1,
             image_shape=case["image_shape"],
             current_size=case["current_size"],
             n_fine_trans=N_FINE_TRANS,
@@ -312,7 +320,8 @@ def test_the_optional_operands_dtypes_against_the_real_preparation(
         n_images=real.n_images,
         n_score_pixels=real.n_score_pixels,
         n_recon_pixels=real.n_recon_pixels,
-        n_half_pixels=real.n_half_pixels,
+        n_rect_pixels=real.n_rect_pixels,
+        n_noise_shells=real.n_noise_shells,
         n_fine_trans=real.n_fine_trans,
         score_complex_dtype=jnp.complex64,
         score_real_dtype=jnp.float32,
@@ -394,7 +403,8 @@ def test_eval_shape_through_the_real_gather_predicts_the_chunk_operands(
             n_images=real.n_images,
             n_score_pixels=real.n_score_pixels,
             n_recon_pixels=real.n_recon_pixels,
-            n_half_pixels=real.n_half_pixels,
+            n_rect_pixels=real.n_rect_pixels,
+            n_noise_shells=real.n_noise_shells,
             n_fine_trans=real.n_fine_trans,
             score_complex_dtype=jnp.complex64,
             score_real_dtype=jnp.float32,
@@ -545,6 +555,9 @@ def test_the_optional_operands_against_a_star_backed_preparation(
             bucket_io_kwargs=kwargs,
             window_indices=window,
             recon_window_indices=window,
+            wavg_rect_indices=window,
+            noise_shell_indices_half=make_relion_noise_shell_indices_half(image_shape),
+            n_noise_shells=(image_shape)[0] // 2 + 1,
             image_shape=image_shape,
             current_size=current_size,
             n_fine_trans=n_fine_trans,
@@ -575,7 +588,8 @@ def test_the_optional_operands_against_a_star_backed_preparation(
             n_images=real.n_images,
             n_score_pixels=real.n_score_pixels,
             n_recon_pixels=real.n_recon_pixels,
-            n_half_pixels=real.n_half_pixels,
+            n_rect_pixels=real.n_rect_pixels,
+            n_noise_shells=real.n_noise_shells,
             n_fine_trans=real.n_fine_trans,
             score_complex_dtype=jnp.complex64,
             score_real_dtype=jnp.float32,

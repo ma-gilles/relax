@@ -172,6 +172,83 @@ def _weighted_image_power_shells_and_per_image_core(
     return weighted_shells, weighted_per_image.astype(norm_reduction_dtype)
 
 
+@partial(jax.jit, static_argnames=("shell_count",))
+def image_power_shells(processed_half, shell_indices_half, *, shell_count: int):
+    """Each image's power in each noise shell, float64 ``[B, shell_count]``.
+
+    ``sum |x|^2`` over the shell's pixels, as RELION bins one image's power
+    spectrum before adding it into the noise sums (``power_img``); pixels whose
+    shell index is the binning sentinel (outside ``[0, shell_count)``) are left
+    out. The float32 pixel powers are reduced in float64 by a one-hot matrix
+    product, which is deterministic.
+    """
+
+    pixel_power = (jnp.abs(processed_half) ** 2).astype(jnp.float64)
+    shells = jnp.arange(int(shell_count), dtype=jnp.int32)
+    one_hot = (jnp.asarray(shell_indices_half, dtype=jnp.int32)[:, None] == shells[None, :]).astype(jnp.float64)
+    return jnp.matmul(pixel_power, one_hot, precision=jax.lax.Precision.HIGHEST)
+
+
+@partial(
+    jax.jit,
+    static_argnames=(
+        "norm_unweighted_shell_cutoff",
+        "include_unweighted_high_shell",
+        "deterministic_norm_reduction",
+    ),
+)
+def weighted_image_power_from_shells(
+    power_shells,
+    support_mass,
+    norm_unweighted_high_shell,
+    valid_image_mask,
+    *,
+    norm_unweighted_shell_cutoff: int | None,
+    include_unweighted_high_shell: bool,
+    deterministic_norm_reduction: bool,
+):
+    """:func:`_weighted_image_power_shells_and_per_image_core` from per-image shell powers.
+
+    ``power_shells`` is :func:`image_power_shells` of the processed images. The
+    shell masses depend only on the shell, so weighting each image's shell sums
+    gives the same noise-shell and per-image norm terms as weighting its pixels;
+    the sums are grouped by shell first, per image, and accumulated in float64.
+    Returns float64 shells and the per-image norm power in the norm reduction
+    dtype (float64 when deterministic, float32 otherwise), as the pixel form does.
+    """
+
+    power_shells = jnp.asarray(power_shells, dtype=jnp.float64)
+    n_shells = int(power_shells.shape[1])
+    mass = jnp.asarray(support_mass).astype(jnp.float64)
+    shell_mass = jnp.broadcast_to(mass[:, None], power_shells.shape)
+    full_mass = (
+        jnp.ones_like(mass)
+        if valid_image_mask is None
+        else jnp.asarray(valid_image_mask).astype(jnp.float64)
+    )
+    unweighted_shell = None
+    if norm_unweighted_shell_cutoff is not None:
+        unweighted_shell = jnp.arange(n_shells) > int(norm_unweighted_shell_cutoff)
+        high_shell_mass = full_mass if include_unweighted_high_shell else jnp.zeros_like(full_mass)
+        shell_mass = jnp.where(unweighted_shell[None, :], high_shell_mass[:, None], shell_mass)
+    weighted_shells = jnp.sum(power_shells * shell_mass, axis=0)
+    weighted_per_image = jnp.sum(power_shells * shell_mass, axis=1)
+    if norm_unweighted_high_shell is not None and include_unweighted_high_shell:
+        if unweighted_shell is None:
+            raise ValueError("a replacement high-shell norm term requires a shell cutoff")
+        replacement_high = jnp.asarray(norm_unweighted_high_shell).astype(jnp.float64)
+        if replacement_high.shape != mass.shape:
+            raise ValueError(
+                "replacement high-shell norm term must match the particle axis, got "
+                f"{replacement_high.shape} for {mass.shape}"
+            )
+        generic_high = jnp.sum(jnp.where(unweighted_shell[None, :], power_shells, 0.0), axis=1)
+        weighted_per_image = jax.lax.optimization_barrier(weighted_per_image)
+        weighted_per_image = weighted_per_image + full_mass * (replacement_high - generic_high)
+    norm_reduction_dtype = jnp.float64 if deterministic_norm_reduction else jnp.float32
+    return weighted_shells, weighted_per_image.astype(norm_reduction_dtype)
+
+
 def _make_relion_wavg_rectangle(
     image_shape,
     current_size,
@@ -1090,21 +1167,43 @@ def _relion_cuda_translate_wavg_norm_images(
 ):
     """Translate the raw masked image at RELION's Wavg input boundary."""
 
-    from relax.cuda import kernels as em_cuda_kernels
-
     processed_score_half = jnp.asarray(processed_score_half, dtype=jnp.complex64)
     score_window_indices = jnp.asarray(score_window_indices, dtype=jnp.int32)
-    translation_angles = jnp.asarray(translation_angles, dtype=jnp.float32)
-    translated = em_cuda_kernels.relion_translate_score_f32(
+    return relion_cuda_translate_wavg_norm_window(
         processed_score_half[:, score_window_indices],
         translation_angles,
         score_window_indices,
         image_shape,
     )
+
+
+def relion_cuda_translate_wavg_norm_window(
+    window_pixels,
+    translation_angles,
+    window_indices,
+    image_shape,
+):
+    """:func:`_relion_cuda_translate_wavg_norm_images` on already gathered window pixels.
+
+    ``window_pixels`` is ``processed_score_half[:, window_indices]``; callers
+    that keep only the Wavg window of each image resident translate it here.
+    """
+
+    from relax.cuda import kernels as em_cuda_kernels
+
+    window_pixels = jnp.asarray(window_pixels, dtype=jnp.complex64)
+    window_indices = jnp.asarray(window_indices, dtype=jnp.int32)
+    translation_angles = jnp.asarray(translation_angles, dtype=jnp.float32)
+    translated = em_cuda_kernels.relion_translate_score_f32(
+        window_pixels,
+        translation_angles,
+        window_indices,
+        image_shape,
+    )
     return translated.reshape(
-        processed_score_half.shape[0],
+        window_pixels.shape[0],
         translation_angles.shape[0],
-        score_window_indices.shape[0],
+        window_indices.shape[0],
     )
 
 

@@ -83,7 +83,7 @@ def _operands(spec, *, tile_dtype=jnp.complex64, ctf_dtype=jnp.float32):
             (spec.image_capacity, spec.n_recon_pixels), dtype=ctf_dtype
         ),
         direct_ctf_rfloat_recon=None,
-        processed_image_half=None,
+        image_power_shells=None,
         relion_norm_high_shell=None,
         raw_translated_wavg_rectangle=None,
         raw_translated_wavg_for_atomic=None,

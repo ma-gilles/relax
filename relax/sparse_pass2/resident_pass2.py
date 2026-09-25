@@ -192,7 +192,8 @@ from relax.sparse_pass2.sparse_pass2_wavg import (
     _relion_wavg_rectangle_power_contraction,
     _relion_wavg_shifted_power,
     _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
-    _weighted_image_power_shells_and_per_image_core,
+    image_power_shells,
+    weighted_image_power_from_shells,
 )
 from relax.sparse_pass2.sparse_pass2_window import (
     _pass2_half_weights,
@@ -958,7 +959,7 @@ class _ChunkImageOperands(NamedTuple):
     row_coarse_rot: jax.Array  # int32 [C_R], padded -> >= n_coarse_rot
     image_ids: jax.Array  # int32 [C_B], padded -> -1
     group_ids: jax.Array  # int32 [C_B], padded -> -1
-    processed_image_half: jax.Array  # complex [C_B, P_half]
+    image_power_shells: jax.Array  # float64 [C_B, n_shells], each image's power per noise shell
     relion_norm_high_shell: jax.Array  # real [C_B]
     wavg_triplet_pixels: jax.Array  # float32 [C_B, P_rect, 3]
     block_noise_shells: jax.Array  # float64 [n_shells]
@@ -1036,16 +1037,13 @@ def _accumulate_chunk_image_terms(
         )
 
     # --- 3. weighted image power shells and per-image norm power -----------
-    weighted_img_shells, weighted_img_per_image = _weighted_image_power_shells_and_per_image_core(
-        operands.processed_image_half,
-        tables.shell_indices_half,
+    weighted_img_shells, weighted_img_per_image = weighted_image_power_from_shells(
+        operands.image_power_shells,
         support_mass,
         operands.relion_norm_high_shell,
         valid_image,
-        shell_count=n_shells,
         norm_unweighted_shell_cutoff=config.norm_unweighted_shell_cutoff,
         include_unweighted_high_shell=config.include_unweighted_high_shell,
-        disable_cuda_binning=config.disable_cuda_binning,
         deterministic_norm_reduction=config.deterministic_norm_reduction,
     )
 
@@ -1059,7 +1057,7 @@ def _accumulate_chunk_image_terms(
 
     # --- 5/6. noise shells with RELION's direct low-shell replacement ------
     if n_optics_groups == 1:
-        residual_shells, image_power_shells = (
+        residual_shells, img_power_shells = (
             _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
                 jnp.asarray(operands.block_noise_shells, dtype=jnp.float64),
                 weighted_img_shells.astype(jnp.float64),
@@ -1074,16 +1072,13 @@ def _accumulate_chunk_image_terms(
         residual_per_group, power_per_group = [], []
         for group in range(n_optics_groups):
             in_group = valid_image & (image_optics == group)
-            group_img_shells, _ = _weighted_image_power_shells_and_per_image_core(
-                operands.processed_image_half,
-                tables.shell_indices_half,
+            group_img_shells, _ = weighted_image_power_from_shells(
+                operands.image_power_shells,
                 jnp.where(in_group, support_mass, jnp.zeros((), support_mass.dtype)),
                 operands.relion_norm_high_shell,
                 in_group,
-                shell_count=n_shells,
                 norm_unweighted_shell_cutoff=config.norm_unweighted_shell_cutoff,
                 include_unweighted_high_shell=config.include_unweighted_high_shell,
-                disable_cuda_binning=config.disable_cuda_binning,
                 deterministic_norm_reduction=config.deterministic_norm_reduction,
             )
             group_residual, group_power = _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
@@ -1097,9 +1092,9 @@ def _accumulate_chunk_image_terms(
             residual_per_group.append(group_residual)
             power_per_group.append(group_power)
         residual_shells = jnp.stack(residual_per_group)
-        image_power_shells = jnp.stack(power_per_group)
+        img_power_shells = jnp.stack(power_per_group)
     wsum_sigma2_noise = stats.wsum_sigma2_noise + residual_shells
-    wsum_img_power = stats.wsum_img_power + image_power_shells
+    wsum_img_power = stats.wsum_img_power + img_power_shells
 
     # --- 7. per-image norm residual ---------------------------------------
     block_norm_residual = operands.a2_per_image - 2.0 * operands.xa_per_image
@@ -2169,7 +2164,8 @@ def _resident_pass2(
                 n_images=int(n_images),
                 n_score_pixels=int(n_windowed),
                 n_recon_pixels=int(n_recon_windowed),
-                n_half_pixels=int(np.shape(noise_variance_half)[-1]),
+                n_rect_pixels=int(n_rect),
+                n_noise_shells=int(n_shells),
                 n_fine_trans=int(n_fine_trans),
                 score_complex_bytes=np.dtype(precision_policy.score_complex_dtype).itemsize,
                 real_bytes=np.dtype(precision_policy.score_real_dtype).itemsize,
@@ -2390,7 +2386,8 @@ def _resident_pass2(
             n_images=int(n_images),
             n_score_pixels=int(n_windowed),
             n_recon_pixels=int(n_recon_windowed),
-            n_half_pixels=int(np.shape(noise_variance_half)[-1]),
+            n_rect_pixels=int(n_rect),
+            n_noise_shells=int(n_shells),
             n_fine_trans=int(n_fine_trans),
             score_complex_bytes=np.dtype(precision_policy.score_complex_dtype).itemsize,
             real_bytes=np.dtype(precision_policy.score_real_dtype).itemsize,
@@ -2437,7 +2434,8 @@ def _resident_pass2(
                             n_images=int(n_images),
                             n_score_pixels=int(n_windowed),
                             n_recon_pixels=int(n_recon_windowed),
-                            n_half_pixels=int(np.shape(noise_variance_half)[-1]),
+                            n_rect_pixels=int(n_rect),
+                            n_noise_shells=int(n_shells),
                             n_fine_trans=int(n_fine_trans),
                             score_complex_dtype=precision_policy.score_complex_dtype,
                             score_real_dtype=precision_policy.score_real_dtype,
@@ -2532,6 +2530,9 @@ def _resident_pass2(
                         bucket_io_kwargs=bucket_io_kwargs,
                         window_indices=window_indices,
                         recon_window_indices=recon_window_indices,
+                        wavg_rect_indices=relion_wavg_rectangle.centered_indices,
+                        noise_shell_indices_half=shell_indices_half,
+                        n_noise_shells=int(n_shells),
                         image_shape=image_shape,
                         current_size=current_size,
                         n_fine_trans=int(n_fine_trans),
@@ -3385,7 +3386,7 @@ def _make_chunk_stage_operands(recon, translation_sqdist_ang) -> _ChunkStageOper
         noise_image=recon.get("noise_image"),
         ctf2_over_nv_recon=recon["ctf2_over_nv_recon"],
         direct_ctf_rfloat_recon=recon["direct_ctf_rfloat_recon"],
-        processed_image_half=recon["processed_image_half"],
+        image_power_shells=recon["image_power_shells"],
         relion_norm_high_shell=recon["relion_norm_high_shell"],
         raw_translated_wavg_rectangle=recon["raw_translated_wavg_rectangle"],
         raw_translated_wavg_for_atomic=recon["raw_translated_wavg_for_atomic"],
@@ -3907,6 +3908,8 @@ def _prepare_chunk_reconstruction_operands(
     optics_groups_np=None,
     relion_native_fine_units=False,
     normalized_cc=False,
+    noise_shell_indices_half=None,
+    n_noise_shells=None,
 ):
     """Build one chunk's translated reconstruction, noise and Wavg tiles.
 
@@ -4130,6 +4133,8 @@ def _prepare_chunk_reconstruction_operands(
         dtype=score_real_dtype,
     )
 
+    if noise_shell_indices_half is None or n_noise_shells is None:
+        raise ValueError("the chunk operands need the noise-shell binning of the packed half")
     return {
         "score_input": score_input,
         "corr_img_score": corr_img_score,
@@ -4139,7 +4144,11 @@ def _prepare_chunk_reconstruction_operands(
         "shifted_noise": shifted_noise,
         "ctf2_over_nv_recon": ctf2_over_nv_recon,
         "direct_ctf_rfloat_recon": direct_ctf_rfloat_recon,
-        "processed_image_half": processed_image_half,
+        "image_power_shells": image_power_shells(
+            processed_image_half,
+            jnp.asarray(noise_shell_indices_half, dtype=jnp.int32),
+            shell_count=int(n_noise_shells),
+        ),
         "relion_norm_high_shell": relion_norm_high_shell,
         "raw_translated_wavg_rectangle": raw_translated_wavg_rectangle,
         "raw_translated_wavg_for_atomic": raw_translated_wavg_for_atomic,
@@ -4289,7 +4298,7 @@ def _verify_resident_chunk_operands(
         "translation_prior",
         "ctf2_over_nv_recon",
         "direct_ctf_rfloat_recon",
-        "processed_image_half",
+        "image_power_shells",
         "relion_norm_high_shell",
         "raw_translated_wavg_rectangle",
         "raw_translated_wavg_for_atomic",
@@ -4578,7 +4587,7 @@ class _ChunkStageOperands(NamedTuple):
     noise_image: jax.Array | None
     ctf2_over_nv_recon: jax.Array
     direct_ctf_rfloat_recon: jax.Array | None
-    processed_image_half: jax.Array
+    image_power_shells: jax.Array | None  # float64 [C_B, n_shells]
     relion_norm_high_shell: jax.Array
     raw_translated_wavg_rectangle: jax.Array
     raw_translated_wavg_for_atomic: jax.Array
@@ -5588,7 +5597,7 @@ def _resident_chunk_statistics(
         ),
         image_ids=rows.image_ids,
         group_ids=operands.group_ids,
-        processed_image_half=operands.processed_image_half,
+        image_power_shells=operands.image_power_shells,
         relion_norm_high_shell=operands.relion_norm_high_shell,
         wavg_triplet_pixels=mstep.wavg_triplet_pixels,
         block_noise_shells=mstep.noise_shells,
@@ -5930,6 +5939,8 @@ def _run_resident_chunk(
             optics_groups_np=optics_groups_np,
             relion_native_fine_units=relion_native_fine_units,
             normalized_cc=firstiter_cc,
+            noise_shell_indices_half=image_tables.shell_indices_half,
+            n_noise_shells=int(stats_config.n_shells),
         )
     else:
         # The chunk's image slots are the half's images ``image_start`` to
@@ -5972,6 +5983,8 @@ def _run_resident_chunk(
                     group_ids_np=group_ids_np,
                     optics_groups_np=optics_groups_np,
                     relion_native_fine_units=relion_native_fine_units,
+                    noise_shell_indices_half=image_tables.shell_indices_half,
+                    n_noise_shells=int(stats_config.n_shells),
                 ),
                 translation_angles=translation_angles,
                 recon_pixel_indices=recon_pixel_indices,
@@ -6235,7 +6248,7 @@ def run_resident_mstep_blocks(
         noise_image=None,
         ctf2_over_nv_recon=recon["ctf2_over_nv_recon"],
         direct_ctf_rfloat_recon=recon["direct_ctf_rfloat_recon"],
-        processed_image_half=None,
+        image_power_shells=None,
         relion_norm_high_shell=None,
         raw_translated_wavg_rectangle=recon["raw_translated_wavg_rectangle"],
         raw_translated_wavg_for_atomic=recon["raw_translated_wavg_for_atomic"],

@@ -40,6 +40,7 @@ from relax.sparse_pass2.sparse_pass2_wavg import (
     _replace_low_shell_noise_with_relion_wavg_direct_residual,
     _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
     _weighted_image_power_shells_and_per_image,
+    image_power_shells,
 )
 
 pytestmark = pytest.mark.unit
@@ -141,6 +142,8 @@ def _make_bucket(rng, image_indices, n_rot, tables, *, zero_posterior=False, flo
             rng.standard_normal((batch, N_PIX_HALF)) + 1j * rng.standard_normal((batch, N_PIX_HALF))
         ).astype(complex_dtype),
         "relion_norm_high_shell": rng.random(batch).astype(np.float64),
+        # The resident chunk carries each image's shell power, binned with the tables' shells.
+        "shell_indices_half": tables["shell_indices_half"],
         "scale": (rng.random(batch).astype(float_dtype) + 0.5),
         "group_ids": np.asarray([i % N_GROUPS for i in image_indices], dtype=np.int32),
         "min_diff2": rng.random(batch).astype(float_dtype) * 100.0,
@@ -418,7 +421,11 @@ def _chunk_from_buckets(buckets, *, row_capacity, image_capacity, with_triplet=T
         image_row_start=jnp.asarray(pad_images(row_starts, np.int32)),
         image_row_count=jnp.asarray(pad_images(row_counts, np.int32)),
         group_ids=jnp.asarray(pad_images(group_ids, np.int32, pad_value=-1)),
-        processed_image_half=jnp.asarray(pad_images(processed, complex_dtype)),
+        image_power_shells=image_power_shells(
+            jnp.asarray(pad_images(processed, complex_dtype)),
+            jnp.asarray(buckets[0]["shell_indices_half"]),
+            shell_count=N_SHELLS,
+        ),
         relion_norm_high_shell=jnp.asarray(pad_images(high_shell, np.float64)),
         scale=jnp.asarray(pad_images(scale, float_dtype)),
         wavg_triplet_pixels=(
@@ -941,3 +948,48 @@ def test_finalize_reports_images_no_chunk_covered():
     stats = accumulate_chunk_statistics(stats, operands, _resident_tables(tables), config=config)
     with pytest.raises(RuntimeError, match="never written by a chunk"):
         finalize_statistics(stats, config=config, n_images=N_IMAGES)
+
+
+@pytest.mark.parametrize("cutoff", [None, 2])
+@pytest.mark.parametrize("include_high", [True, False])
+@pytest.mark.parametrize("with_replacement", [True, False])
+def test_image_power_from_shells_matches_the_pixel_form(cutoff, include_high, with_replacement):
+    """Weighting each image's shell sums equals weighting its pixels (float64 inputs)."""
+
+    from relax.sparse_pass2.sparse_pass2_wavg import (
+        _weighted_image_power_shells_and_per_image_core,
+        weighted_image_power_from_shells,
+    )
+
+    if with_replacement and cutoff is None:
+        pytest.skip("a replacement high-shell term needs a cutoff")
+    rng = _rng()
+    n_images, n_pixels = 7, 40
+    processed = rng.standard_normal((n_images, n_pixels)) + 1j * rng.standard_normal((n_images, n_pixels))
+    shells = rng.integers(-1, N_SHELLS + 1, size=n_pixels).astype(np.int32)
+    mass = rng.random(n_images)
+    valid = np.arange(n_images) < 6
+    replacement = rng.random(n_images) if with_replacement else None
+    expected_shells, expected_norm = _weighted_image_power_shells_and_per_image_core(
+        jnp.asarray(processed),
+        jnp.asarray(shells),
+        jnp.asarray(mass),
+        None if replacement is None else jnp.asarray(replacement),
+        jnp.asarray(valid),
+        shell_count=N_SHELLS,
+        norm_unweighted_shell_cutoff=cutoff,
+        include_unweighted_high_shell=include_high,
+        disable_cuda_binning=True,
+        deterministic_norm_reduction=True,
+    )
+    got_shells, got_norm = weighted_image_power_from_shells(
+        image_power_shells(jnp.asarray(processed), jnp.asarray(shells), shell_count=N_SHELLS),
+        jnp.asarray(mass),
+        None if replacement is None else jnp.asarray(replacement),
+        jnp.asarray(valid),
+        norm_unweighted_shell_cutoff=cutoff,
+        include_unweighted_high_shell=include_high,
+        deterministic_norm_reduction=True,
+    )
+    assert_matches(np.asarray(got_shells), np.asarray(expected_shells))
+    assert_matches(np.asarray(got_norm), np.asarray(expected_norm))

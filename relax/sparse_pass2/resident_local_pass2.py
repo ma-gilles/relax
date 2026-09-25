@@ -1129,6 +1129,8 @@ def _run_resident_local_chunk(
         scale_corrections_np=scale_corrections_np,
         group_ids_np=group_ids_np,
         optics_groups_np=optics_groups_np,
+        noise_shell_indices_half=image_tables.shell_indices_half,
+        n_noise_shells=int(stats_config.n_shells),
     )
 
     mark("operands", recon["shifted_recon"], recon["score_input"])
@@ -1332,7 +1334,7 @@ def _run_resident_local_chunk(
         ),
         image_ids=image_ids,
         group_ids=recon["group_ids"],
-        processed_image_half=recon["processed_image_half"],
+        image_power_shells=recon["image_power_shells"],
         relion_norm_high_shell=recon["relion_norm_high_shell"],
         wavg_triplet_pixels=wavg_triplet_pixels,
         block_noise_shells=block_noise_shells,

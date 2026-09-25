@@ -68,7 +68,7 @@ from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_powerclass_noise_terms,
     relion_powerclass_noise_presence,
 )
-from relax.sparse_pass2.sparse_pass2_wavg import _relion_cuda_translate_wavg_norm_images
+from relax.sparse_pass2.sparse_pass2_wavg import image_power_shells, relion_cuda_translate_wavg_norm_window
 
 logger = logging.getLogger(__name__)
 
@@ -125,10 +125,14 @@ class ResidentHalfOperands:
         reconstruction window), always in the score convention.
     ctf2_over_nv_recon, direct_ctf_rfloat_recon
         The M-step CTF operands on the reconstruction window.
-    processed_image_half
-        The raw processed half image RELION's Wavg and power-spectrum terms
-        read; the full packed half, because the image-power shells are binned
-        over it.
+    wavg_image_rect
+        The raw processed image on RELION's Wavg rectangle, the window the Wavg
+        terms translate (``processed_score_half_for_noise[:, rect_indices]``).
+    image_power_shells
+        The same image's power in each noise shell over the full packed half,
+        float64 (:func:`~relax.sparse_pass2.sparse_pass2_wavg.image_power_shells`):
+        all the image-power statistics read of it. Keeping the full half image
+        instead was about 83% of a half's operand bytes at 256 pixels.
     relion_norm_high_shell, scale, group_ids
         Per-image scalars of the statistics tail. ``relion_norm_high_shell`` is
         the one operand here whose value is not reproducible bit for bit: its
@@ -147,7 +151,8 @@ class ResidentHalfOperands:
     n_image_capacity: int
     n_score_pixels: int
     n_recon_pixels: int
-    n_half_pixels: int
+    n_rect_pixels: int
+    n_noise_shells: int
     n_fine_trans: int
     score_input: jax.Array
     corr_img_score: jax.Array
@@ -158,7 +163,8 @@ class ResidentHalfOperands:
     noise_image: jax.Array
     ctf2_over_nv_recon: jax.Array
     direct_ctf_rfloat_recon: jax.Array | None
-    processed_image_half: jax.Array
+    wavg_image_rect: jax.Array
+    image_power_shells: jax.Array
     relion_norm_high_shell: jax.Array | None
     scale: jax.Array
     group_ids: jax.Array
@@ -177,7 +183,8 @@ class ResidentHalfOperands:
             ("recon_image", recon_shape),
             ("noise_image", recon_shape),
             ("ctf2_over_nv_recon", recon_shape),
-            ("processed_image_half", (self.n_image_capacity, self.n_half_pixels)),
+            ("wavg_image_rect", (self.n_image_capacity, self.n_rect_pixels)),
+            ("image_power_shells", (self.n_image_capacity, self.n_noise_shells)),
             ("translation_prior", (self.n_image_capacity, self.n_fine_trans)),
         ):
             value = getattr(self, name)
@@ -202,7 +209,8 @@ class ResidentHalfOperands:
             "noise_image",
             "ctf2_over_nv_recon",
             "direct_ctf_rfloat_recon",
-            "processed_image_half",
+            "wavg_image_rect",
+            "image_power_shells",
             "relion_norm_high_shell",
             "scale",
             "group_ids",
@@ -219,7 +227,8 @@ def resident_half_operand_bytes(
     n_images: int,
     n_score_pixels: int,
     n_recon_pixels: int,
-    n_half_pixels: int,
+    n_rect_pixels: int,
+    n_noise_shells: int,
     n_fine_trans: int,
     score_complex_bytes: int = 8,
     real_bytes: int = 4,
@@ -245,7 +254,8 @@ def resident_half_operand_bytes(
             int(n_score_pixels) * (int(score_complex_bytes) + int(real_bytes))
             + int(n_recon_pixels)
             * (2 * int(score_complex_bytes) + 2 * int(real_bytes) + int(rfloat_ctf_bytes))
-            + int(n_half_pixels) * int(score_complex_bytes)
+            + int(n_rect_pixels) * int(score_complex_bytes)
+            + int(n_noise_shells) * 8
             + int(n_fine_trans) * int(real_bytes)
             + 3 * int(real_bytes)
             + int(norm_high_shell_bytes)
@@ -338,7 +348,8 @@ def resident_half_operand_avals(
     n_images: int,
     n_score_pixels: int,
     n_recon_pixels: int,
-    n_half_pixels: int,
+    n_rect_pixels: int,
+    n_noise_shells: int,
     n_fine_trans: int,
     score_complex_dtype,
     score_real_dtype,
@@ -391,7 +402,6 @@ def resident_half_operand_avals(
     capacity = resident_image_capacity(n_images)
     score_shape = (capacity, int(n_score_pixels))
     recon_shape = (capacity, int(n_recon_pixels))
-    half_shape = (capacity, int(n_half_pixels))
     per_image = (capacity,)
 
     def aval(shape, dtype):
@@ -402,7 +412,8 @@ def resident_half_operand_avals(
         n_image_capacity=capacity,
         n_score_pixels=int(n_score_pixels),
         n_recon_pixels=int(n_recon_pixels),
-        n_half_pixels=int(n_half_pixels),
+        n_rect_pixels=int(n_rect_pixels),
+        n_noise_shells=int(n_noise_shells),
         n_fine_trans=int(n_fine_trans),
         score_input=aval(score_shape, score_complex_dtype),
         corr_img_score=aval(score_shape, score_real_dtype),
@@ -417,7 +428,8 @@ def resident_half_operand_avals(
             if has_direct_ctf_rfloat
             else None
         ),
-        processed_image_half=aval(half_shape, score_complex_dtype),
+        wavg_image_rect=aval((capacity, int(n_rect_pixels)), score_complex_dtype),
+        image_power_shells=aval((capacity, int(n_noise_shells)), jnp.float64),
         relion_norm_high_shell=(
             aval(
                 per_image,
@@ -501,6 +513,7 @@ class _BatchWindowInputs(NamedTuple):
     dc_mask: jax.Array | None
     score_indices: jax.Array
     recon_indices: jax.Array
+    rect_indices: jax.Array
 
 
 @partial(
@@ -539,7 +552,7 @@ def _batch_window_operands(
     batch_arrays = {
         "score_input": arrays.sparse_score_input_half[:, score_indices],
         "corr_img_score": ctf2_score[:, score_indices].astype(score_real_dtype),
-        "processed_image_half": arrays.processed_score_half_for_noise,
+        "wavg_image_rect": arrays.processed_score_half_for_noise[:, arrays.rect_indices],
         "recon_image": jnp.asarray(
             arrays.recon_input_half[:, recon_indices], dtype=score_complex_dtype
         ),
@@ -564,6 +577,9 @@ def prepare_resident_half_operands(
     bucket_io_kwargs: dict,
     window_indices,
     recon_window_indices,
+    wavg_rect_indices,
+    noise_shell_indices_half,
+    n_noise_shells: int,
     image_shape,
     current_size,
     n_fine_trans: int,
@@ -595,6 +611,11 @@ def prepare_resident_half_operands(
     (:func:`~relax.sparse_pass2.sparse_pass2_scoring._relion_native_fine_units_enabled`):
     ``score_input`` divided by N**2 and ``corr_img_score`` RELION's native
     ``corr_img``. Every reconstruction and noise operand keeps RECOVAR units.
+
+    ``wavg_rect_indices`` is RELION's Wavg rectangle and
+    ``noise_shell_indices_half`` / ``n_noise_shells`` the noise-shell binning of
+    the packed half the statistics use; they decide ``wavg_image_rect`` and
+    ``image_power_shells``.
     """
 
     image_indices = np.asarray(image_indices)
@@ -656,6 +677,8 @@ def prepare_resident_half_operands(
 
     score_indices = jnp.asarray(window_indices, dtype=jnp.int32)
     recon_indices = jnp.asarray(recon_window_indices, dtype=jnp.int32)
+    rect_indices = jnp.asarray(wavg_rect_indices, dtype=jnp.int32)
+    noise_shell_indices_half = jnp.asarray(noise_shell_indices_half, dtype=jnp.int32)
     dc_mask = None
     if half_spectrum_scoring:
         dc_mask = jnp.asarray(make_shell_indices_half(image_shape)) == 0
@@ -740,6 +763,7 @@ def prepare_resident_half_operands(
                 dc_mask=dc_mask,
                 score_indices=score_indices,
                 recon_indices=recon_indices,
+                rect_indices=rect_indices,
             ),
             mask_dc=bool(half_spectrum_scoring and not unshifted.use_normalized_cc),
             score_real_dtype=jnp.dtype(score_real_dtype),
@@ -754,6 +778,12 @@ def prepare_resident_half_operands(
             batch_arrays["score_input"] = _relion_native_fine_units(
                 batch_arrays["score_input"], native_fft_size
             )
+
+        batch_arrays["image_power_shells"] = image_power_shells(
+            unshifted.processed_score_half_for_noise,
+            noise_shell_indices_half,
+            shell_count=int(n_noise_shells),
+        )
 
         highres_xi2_half, relion_norm_high_shell = _relion_powerclass_noise_terms(
             unshifted.processed_score_half_for_noise,
@@ -827,13 +857,15 @@ def prepare_resident_half_operands(
 
     score_input = stack("score_input", required=True)
     recon_image = stack("recon_image", required=True)
-    processed_image_half = stack("processed_image_half", required=True)
+    wavg_image_rect = stack("wavg_image_rect", required=True)
+    power_shells = stack("image_power_shells", required=True)
     operands = ResidentHalfOperands(
         n_images=n_images,
         n_image_capacity=image_capacity,
         n_score_pixels=int(score_input.shape[1]),
         n_recon_pixels=int(recon_image.shape[1]),
-        n_half_pixels=int(processed_image_half.shape[1]),
+        n_rect_pixels=int(wavg_image_rect.shape[1]),
+        n_noise_shells=int(power_shells.shape[1]),
         n_fine_trans=int(n_fine_trans),
         score_input=score_input,
         corr_img_score=stack("corr_img_score", required=True),
@@ -844,19 +876,20 @@ def prepare_resident_half_operands(
         noise_image=stack("noise_image", required=True),
         ctf2_over_nv_recon=stack("ctf2_over_nv_recon", required=True),
         direct_ctf_rfloat_recon=stack("direct_ctf_rfloat_recon"),
-        processed_image_half=processed_image_half,
+        wavg_image_rect=wavg_image_rect,
+        image_power_shells=power_shells,
         relion_norm_high_shell=stack("relion_norm_high_shell"),
         scale=jnp.asarray(scale),
         group_ids=jnp.asarray(group_ids),
         optics_groups=None if optics_groups is None else jnp.asarray(optics_groups),
     )
     logger.info(
-        "Resident pass-2 per-half operands: %d images, %d score / %d recon / %d half pixels, "
+        "Resident pass-2 per-half operands: %d images, %d score / %d recon / %d Wavg pixels, "
         "%.2f GiB resident (%d preparation calls)",
         operands.n_images,
         operands.n_score_pixels,
         operands.n_recon_pixels,
-        operands.n_half_pixels,
+        operands.n_rect_pixels,
         operands.nbytes()["total"] / float(1024**3),
         (n_images + batch_size - 1) // batch_size,
     )
@@ -897,7 +930,8 @@ def _gather_chunk_arrays(
     noise_image,
     ctf2_over_nv_recon,
     direct_ctf_rfloat_recon,
-    processed_image_half,
+    wavg_image_rect,
+    power_shells,
     relion_norm_high_shell,
     scale,
     group_ids,
@@ -927,9 +961,8 @@ def _gather_chunk_arrays(
     valid = image_slots >= 0
     safe_slots = jnp.where(valid, image_slots, image_slots[0])
 
-    processed_chunk = _gather_rows(processed_image_half, safe_slots, valid)
-    raw_translated_wavg_rectangle = _relion_cuda_translate_wavg_norm_images(
-        processed_chunk,
+    raw_translated_wavg_rectangle = relion_cuda_translate_wavg_norm_window(
+        _gather_rows(wavg_image_rect, safe_slots, valid),
         translation_angles,
         rect_indices,
         image_shape,
@@ -944,7 +977,7 @@ def _gather_chunk_arrays(
         _gather_rows(noise_image, safe_slots, valid),
         _gather_rows(ctf2_over_nv_recon, safe_slots, valid),
         _gather_rows(direct_ctf_rfloat_recon, safe_slots, valid),
-        processed_chunk,
+        _gather_rows(power_shells, safe_slots, valid),
         _gather_rows(relion_norm_high_shell, safe_slots, valid),
         _gather_rows(scale, safe_slots, valid, fill=1.0),
         _gather_rows(group_ids, safe_slots, valid, fill=-1),
@@ -981,7 +1014,7 @@ def gather_resident_chunk_operands(
         noise_image,
         ctf2_over_nv_recon,
         direct_ctf_rfloat_recon,
-        processed_image_half,
+        power_shells,
         relion_norm_high_shell,
         scale,
         group_ids,
@@ -999,7 +1032,8 @@ def gather_resident_chunk_operands(
         operands.noise_image,
         operands.ctf2_over_nv_recon,
         operands.direct_ctf_rfloat_recon,
-        operands.processed_image_half,
+        operands.wavg_image_rect,
+        operands.image_power_shells,
         operands.relion_norm_high_shell,
         operands.scale,
         operands.group_ids,
@@ -1019,7 +1053,7 @@ def gather_resident_chunk_operands(
         "noise_image": noise_image,
         "ctf2_over_nv_recon": ctf2_over_nv_recon,
         "direct_ctf_rfloat_recon": direct_ctf_rfloat_recon,
-        "processed_image_half": processed_image_half,
+        "image_power_shells": power_shells,
         "relion_norm_high_shell": relion_norm_high_shell,
         "raw_translated_wavg_rectangle": raw_translated_wavg_rectangle,
         "raw_translated_wavg_for_atomic": raw_translated_wavg_for_atomic,

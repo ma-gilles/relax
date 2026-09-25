@@ -68,7 +68,7 @@ from relax.helpers.projection import compute_noise_block
 from relax.sparse_pass2.sparse_pass2_policy import _RELION_POWERCLASS_SPECTRUM_NORM_ENV
 from relax.sparse_pass2.sparse_pass2_wavg import (
     _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
-    _weighted_image_power_shells_and_per_image_core,
+    weighted_image_power_from_shells,
 )
 
 __all__ = [
@@ -190,7 +190,7 @@ class ChunkStatisticsOperands(NamedTuple):
     image_row_start: jax.Array  # int32 [C_B], chunk-local first row of the image
     image_row_count: jax.Array  # int32 [C_B], rows owned by the image
     group_ids: jax.Array  # int32 [C_B], global scale group, padded -> -1
-    processed_image_half: jax.Array  # complex [C_B, P_half]
+    image_power_shells: jax.Array  # float64 [C_B, n_shells], each image's power per noise shell
     relion_norm_high_shell: jax.Array  # float [C_B]
     scale: jax.Array  # float [C_B], the old group scale per image
     wavg_triplet_pixels: jax.Array | None  # float32 [C_B, P_rect, 3] = (XA, AA, diff2)
@@ -494,16 +494,13 @@ def _accumulate_chunk_statistics_jit(
     # ``valid_image_mask`` is the padding-aware form of the host's implicit
     # ones vector: identical arithmetic on real images, zero on padded slots
     # (which is what keeps the unweighted high shells padding-free).
-    weighted_img_shells, weighted_img_per_image = _weighted_image_power_shells_and_per_image_core(
-        operands.processed_image_half,
-        tables.shell_indices_half,
+    weighted_img_shells, weighted_img_per_image = weighted_image_power_from_shells(
+        operands.image_power_shells,
         support_mass,
         operands.relion_norm_high_shell,
         valid_image,
-        shell_count=n_shells,
         norm_unweighted_shell_cutoff=config.norm_unweighted_shell_cutoff,
         include_unweighted_high_shell=config.include_unweighted_high_shell,
-        disable_cuda_binning=config.disable_cuda_binning,
         deterministic_norm_reduction=config.deterministic_norm_reduction,
     )
 

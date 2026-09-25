@@ -37,6 +37,7 @@ from test_sparse_pass2_bucketed_parity import IMAGE_SHAPE, MockDataset
 
 from recovar.core.configs import ForwardModelConfig
 from relax.helpers.batch_fetch import fetch_indexed_batch
+from relax.helpers.half_spectrum import make_relion_noise_shell_indices_half
 from relax.helpers.preprocessing import (
     apply_half_translation_phases,
     half_translation_phase_table,
@@ -52,7 +53,9 @@ from relax.sparse_pass2.sparse_pass2_bucket_io import (
     _relion_cuda_score_translation_angles_if_available,
     prepare_unshifted_bucket_operands,
 )
+from relax.sparse_pass2.sparse_pass2_wavg import image_power_shells
 from recovar.reconstruction import noise as noise_utils
+
 
 pytestmark = pytest.mark.unit
 
@@ -283,11 +286,12 @@ def test_operand_bytes_estimate_is_the_sum_of_the_stored_arrays():
         n_images=100,
         n_score_pixels=50,
         n_recon_pixels=40,
-        n_half_pixels=200,
+        n_rect_pixels=60,
+        n_noise_shells=9,
         n_fine_trans=21,
     )
     # The arrays are stored at the image capacity, 256 rows for 100 images.
-    expected = 256 * (50 * 12 + 40 * (16 + 8 + 8) + 200 * 8 + 21 * 4 + 16)
+    expected = 256 * (50 * 12 + 40 * (16 + 8 + 8) + 60 * 8 + 9 * 8 + 21 * 4 + 16)
     assert estimate == expected
 
 
@@ -304,6 +308,9 @@ def test_unmasked_scoring_is_refused():
             bucket_io_kwargs=kwargs,
             window_indices=case["window_indices"],
             recon_window_indices=case["window_indices"],
+            wavg_rect_indices=case["window_indices"],
+            noise_shell_indices_half=make_relion_noise_shell_indices_half(case["image_shape"]),
+            n_noise_shells=(case["image_shape"])[0] // 2 + 1,
             image_shape=case["image_shape"],
             current_size=case["current_size"],
             n_fine_trans=N_FINE_TRANS,
@@ -334,6 +341,9 @@ def _resident_operands(case):
         bucket_io_kwargs=case["bucket_io_kwargs"],
         window_indices=case["window_indices"],
         recon_window_indices=case["window_indices"],
+        wavg_rect_indices=case["window_indices"],
+        noise_shell_indices_half=make_relion_noise_shell_indices_half(case["image_shape"]),
+        n_noise_shells=(case["image_shape"])[0] // 2 + 1,
         image_shape=case["image_shape"],
         current_size=case["current_size"],
         n_fine_trans=N_FINE_TRANS,
@@ -391,7 +401,18 @@ def test_resident_operands_translate_to_the_per_chunk_tiles(
         "resident ctf2_over_nv_recon",
     )
     _assert_matches(
-        operands.processed_image_half[:N_IMAGES], np.asarray(prepared[6]), "resident processed_image_half"
+        operands.wavg_image_rect[:N_IMAGES],
+        np.asarray(prepared[6])[:, np.asarray(window)],
+        "resident wavg_image_rect",
+    )
+    _assert_matches(
+        operands.image_power_shells[:N_IMAGES],
+        image_power_shells(
+            np.asarray(prepared[6]),
+            make_relion_noise_shell_indices_half(IMAGE_SHAPE),
+            shell_count=IMAGE_SHAPE[0] // 2 + 1,
+        ),
+        "resident image_power_shells",
     )
 
 
@@ -512,7 +533,7 @@ def test_chunk_gather_reproduces_the_capacity_padding(
         ("recon_image", operands.recon_image),
         ("noise_image", operands.noise_image),
         ("ctf2_over_nv_recon", operands.ctf2_over_nv_recon),
-        ("processed_image_half", operands.processed_image_half),
+        ("image_power_shells", operands.image_power_shells),
     ):
         value = np.asarray(gathered[name])
         _assert_matches(value[:5], np.asarray(source)[:5], f"{name} live rows")

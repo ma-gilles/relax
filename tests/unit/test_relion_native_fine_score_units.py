@@ -24,7 +24,7 @@ import pytest
 import recovar.core.fourier_transform_utils as ftu
 from helpers.em_arrays import _hermitian_volume, _raw_real_image_2d
 
-from relax.helpers.half_spectrum import make_shell_indices_half
+from relax.helpers.half_spectrum import make_relion_noise_shell_indices_half, make_shell_indices_half
 from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_cuda_corr_img_from_native_noise_variance,
     _relion_cuda_native_corr_img_from_noise_variance,
@@ -470,6 +470,9 @@ def _prepare_resident(case, native):
         bucket_io_kwargs=case["bucket_io_kwargs"],
         window_indices=case["window"],
         recon_window_indices=case["window"],
+        wavg_rect_indices=case["window"],
+        noise_shell_indices_half=make_relion_noise_shell_indices_half(case["shape"]),
+        n_noise_shells=(case["shape"])[0] // 2 + 1,
         image_shape=case["shape"],
         current_size=case["current_size"],
         n_fine_trans=1,
@@ -530,7 +533,8 @@ def test_resident_half_operands_score_in_native_units(monkeypatch, current_size,
         "noise_image",
         "ctf2_over_nv_recon",
         "direct_ctf_rfloat_recon",
-        "processed_image_half",
+        "wavg_image_rect",
+        "image_power_shells",
         "highres_xi2_half",
     ):
         a, b = getattr(native, name), getattr(recovar_units, name)
@@ -579,6 +583,8 @@ def test_per_chunk_operands_match_the_resident_native_operands(monkeypatch, curr
             scale_corrections_np=case["scale"],
             group_ids_np=None,
             relion_native_fine_units=native,
+            noise_shell_indices_half=make_relion_noise_shell_indices_half(case["shape"]),
+            n_noise_shells=case["shape"][0] // 2 + 1,
         )
 
     chunk = per_chunk(True)

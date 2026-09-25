@@ -277,6 +277,8 @@ def _window_case(seed=0, n_images=4, half_pixels=11, score=5, recon=4, bpref=Tru
                                   dtype=jnp.int32),
         recon_indices=jnp.asarray(rng.choice(half_pixels, size=recon, replace=False),
                                   dtype=jnp.int32),
+        rect_indices=jnp.asarray(rng.choice(half_pixels, size=recon + 1, replace=False),
+                                 dtype=jnp.int32),
     )
     return arrays
 
@@ -290,7 +292,7 @@ def _window_loose(arrays, mask_dc, score_real_dtype, score_complex_dtype, acc_re
     batch = {
         "score_input": arrays.sparse_score_input_half[:, arrays.score_indices],
         "corr_img_score": ctf2_score[:, arrays.score_indices].astype(score_real_dtype),
-        "processed_image_half": arrays.processed_score_half_for_noise,
+        "wavg_image_rect": arrays.processed_score_half_for_noise[:, arrays.rect_indices],
     }
     batch["recon_image"] = jnp.asarray(
         arrays.recon_input_half[:, arrays.recon_indices], dtype=score_complex_dtype
