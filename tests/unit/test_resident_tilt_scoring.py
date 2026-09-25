@@ -47,7 +47,7 @@ def test_rows_sum_their_particles_images_in_order(monkeypatch):
     mask = rng.uniform(size=(n_rows, n_trans)) < 0.8
     slots = np.stack([tomo_particles.image_slot_ids(row_unit, unit_offsets, k) for k in range(4)])
 
-    def project_slot(image_ids):  # each image sees the row's reference through its own matrix
+    def project_slot(slot, image_ids):  # each image sees the row's reference through its own matrix
         return jnp.asarray(base) + image_ids.astype(jnp.complex64)[:, None]
 
     out = resident_scoring.score_tilt_image_rows(
@@ -76,7 +76,7 @@ def test_rows_sum_their_particles_images_in_order(monkeypatch):
         running = np.zeros(n_trans, dtype=np.float32)
         for i in range(unit_offsets[row_unit[r]], unit_offsets[row_unit[r] + 1]):
             ids = jnp.full(n_rows, i, jnp.int32)  # every row against image i; keep row r
-            one = np.asarray(_fake_kernel(project_slot(ids), ids, image, angles, weights, None, None, initial))[r]
+            one = np.asarray(_fake_kernel(project_slot(0, ids), ids, image, angles, weights, None, None, initial))[r]
             running = np.float32(running + one)
         expected[r] = np.where(mask[r], running, np.inf)
     assert_matches(np.asarray(out.raw_diff2), expected)

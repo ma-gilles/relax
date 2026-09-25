@@ -90,3 +90,31 @@ def chunk_tilt_layout(
         slot_image_ids=slot_image_ids,
         n_valid_images=n_valid_images,
     )
+
+
+def tilt_slot_rotations(layout: ChunkTiltLayout, row_source_eulers, image_left, *, dtype=np.float32) -> np.ndarray:
+    """``[S * C_R, 3, 3]`` fine and M-step matrices of every (image slot, row): ``inv(L_i A_r)``.
+
+    RELION builds a tilt image's fine and backprojection matrices on the host with its left matrix
+    ``L_i`` (the image's ``Aproj`` times the optics scale; generateEulerMatrices,
+    acc_helper_functions_impl.h:248-255; acc_ml_optimiser_impl.h:2522-2547, 4521-4543), so every
+    (image, rotation) pair has its own matrix. ``row_source_eulers`` ``[C_R, 3]`` are the rows' RELION
+    Euler angles and ``image_left`` ``[n_images, 3, 3]`` the images' ``L``; entries of rows without an
+    ``s``-th image are the identity and are never read. Slot ``s`` of row ``r`` is entry ``s * C_R + r``.
+    """
+
+    from relax.sampling import _relion_mstep_rotations_from_eulers
+
+    n_slots, n_rows = layout.slot_image_ids.shape
+    out = np.tile(np.eye(3, dtype=dtype), (n_slots * n_rows, 1, 1))
+    chunk_image = layout.slot_image_ids.reshape(-1).astype(np.int64)
+    valid = chunk_image >= 0
+    if np.any(valid):
+        rows = np.tile(np.arange(n_rows), n_slots)[valid]
+        images = layout.image_ids[chunk_image[valid]]
+        out[valid] = _relion_mstep_rotations_from_eulers(
+            np.asarray(row_source_eulers, dtype=np.float64)[rows],
+            dtype=dtype,
+            left_matrices=np.asarray(image_left, dtype=np.float64)[images],
+        )
+    return out
