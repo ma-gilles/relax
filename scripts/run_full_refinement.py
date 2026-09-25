@@ -1701,7 +1701,12 @@ def _resolve_relion_gui_defaults(args) -> None:
         # the Class3D GUI runs 25 iterations.
         args.max_iter = 999 if k1 else 25
     if args.image_fourier_backend == "auto":
-        args.image_fourier_backend = "relion_cuda" if k1 else "host_numpy"
+        # RELION's CUDA image preprocessing is the one the resident pass 2's exact
+        # BPref operands read, so a Class3D run on the resident engine takes it too;
+        # host_numpy stays with the compact K-class engine until that is deleted.
+        from relax.sparse_pass2.resident_pass2 import resident_pass2_requested
+
+        args.image_fourier_backend = "relion_cuda" if k1 or resident_pass2_requested() else "host_numpy"
     if args.apply_initial_lowpass is None:
         args.apply_initial_lowpass = args.frozen_boundary_dir is None
 
@@ -2227,7 +2232,8 @@ def _parse_args(argv=None):
         help=(
             "Fourier preprocessing backend for RELION-masked particle images. auto (default) "
             "is relion_cuda, the source-faithful CUDA normalization, translation and mask path "
-            "that the fresh K=1 defaults require, and host_numpy for Class3D."
+            "that the fresh K=1 defaults and the resident pass 2 require, and host_numpy for "
+            "Class3D on the compact engine."
         ),
     )
     parser.add_argument(

@@ -87,10 +87,13 @@ def test_the_aval_placement_matches_the_device_placement():
         predicted = rp._make_chunk_row_arrays(
             tables, chunk, N_FINE_TRANS, place=rp._PLACE_AS_AVAL
         )
-        for name in type(real)._fields:
-            got, want = getattr(predicted, name), getattr(real, name)
-            assert tuple(int(d) for d in got.shape) == tuple(int(d) for d in want.shape), name
-            assert jnp.dtype(got.dtype) == jnp.dtype(want.dtype), name
+        got_leaves, got_tree = jax.tree_util.tree_flatten(predicted)
+        want_leaves, want_tree = jax.tree_util.tree_flatten(real)
+        # The K=1 chunk has no class layout (``classes`` is None on both).
+        assert got_tree == want_tree
+        for got, want in zip(got_leaves, want_leaves):
+            assert tuple(int(d) for d in got.shape) == tuple(int(d) for d in want.shape)
+            assert jnp.dtype(got.dtype) == jnp.dtype(want.dtype)
 
 
 def test_the_aval_placement_does_no_device_work():
@@ -100,9 +103,8 @@ def test_the_aval_placement_does_no_device_work():
     predicted = rp._make_chunk_row_arrays(
         tables, chunks[0], N_FINE_TRANS, place=rp._PLACE_AS_AVAL
     )
-    for name in type(predicted)._fields:
-        value = getattr(predicted, name)
-        assert isinstance(value, jax.ShapeDtypeStruct), (name, type(value))
+    for value in jax.tree_util.tree_leaves(predicted):
+        assert isinstance(value, jax.ShapeDtypeStruct), type(value)
 
 
 # ------------------------------------------------------ the presence predicate ---
