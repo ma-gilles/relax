@@ -258,6 +258,26 @@ def _durations() -> dict[str, int]:
     return json.loads((TIERS_DIR / "gpu_file_seconds.json").read_text())["seconds"]
 
 
+def smoke_touched_split(touched: list[str], replay_seconds: float) -> tuple[list[str], list[str]]:
+    """Touched GPU files that fit smoke's budget beside the replays, and the rest (for medium).
+
+    Files are taken shortest first by their recorded wall (tests/tiers/gpu_file_seconds.json,
+    10 s when unrecorded) while the smoke GPU total stays within BUDGET_S["smoke"]; the medium
+    tier's unit sweep runs every GPU file, so a deferred file is still tested there.
+    """
+    seconds = _durations()
+    room = BUDGET_S["smoke"] - replay_seconds
+    kept, deferred = [], []
+    for f in sorted(touched, key=lambda f: (seconds.get(f, 10), f)):
+        cost = seconds.get(f, 10)
+        if cost <= room:
+            kept.append(f)
+            room -= cost
+        else:
+            deferred.append(f)
+    return sorted(kept), sorted(deferred)
+
+
 def sweep_shards(src: Path, py: str) -> list[Item]:
     """The GPU unit sweep, packed into pytest processes of about SHARD_TARGET_S each."""
     seconds = _durations()
@@ -307,7 +327,9 @@ def plan(tier: str, src: Path, base: str, run_root: Path | None = None) -> list[
             sum(FAST_CASE_SECONDS[c] for c in SMOKE_REPLAYS),
         )
         items = [guard, merge_units, replays]
-        touched = touched_gpu_tests(src, changed_paths(src, base))
+        touched, deferred = smoke_touched_split(touched_gpu_tests(src, changed_paths(src, base)), replays.seconds)
+        if deferred:
+            print(f"smoke budget: {len(deferred)} touched GPU file(s) deferred to the medium tier: {', '.join(deferred)}")
         if touched:
             seconds = _durations()
             items.append(

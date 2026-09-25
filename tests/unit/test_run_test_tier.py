@@ -197,3 +197,13 @@ def test_noise_envelope_takes_the_largest_same_code_difference(tmp_path, monkeyp
     assert pmax["max_abs_diff"] == 0.0 and pmax["noise_limit"] == em_tier_noise_envelope.NOISE_FLOOR
     em_tier_noise_envelope.main(["check", "--control", "a", "--candidate", "cand", "--envelope", str(out)])
     assert "1 metric(s) outside" in capsys.readouterr().out
+
+
+def test_smoke_defers_touched_gpu_files_over_its_budget(monkeypatch):
+    seconds = {"tests/unit/a.py": 30, "tests/unit/b.py": 50, "tests/unit/big.py": 1174}
+    monkeypatch.setattr(run_test_tier, "_durations", lambda: seconds)
+    kept, deferred = run_test_tier.smoke_touched_split(
+        ["tests/unit/big.py", "tests/unit/b.py", "tests/unit/a.py", "tests/unit/new.py"], replay_seconds=200
+    )
+    assert kept == ["tests/unit/a.py", "tests/unit/b.py", "tests/unit/new.py"]  # 10 + 30 + 50 <= 100
+    assert deferred == ["tests/unit/big.py"]
