@@ -380,11 +380,12 @@ class TestAutoRefineExpectedAccuracyBinding:
     def test_supplied_projector_data_matches_the_binding_transform(self, bind):
         """The scoring projector's slabs stand in for the binding's own transform."""
 
+        from recovar.utils.helpers import relion_volume_to_recovar
+
         from relax.helpers.expected_accuracy import (
             estimate_relion_expected_accuracy_from_prepared_inputs,
         )
         from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps_and_power
-        from recovar.utils.helpers import relion_volume_to_recovar
 
         rng = np.random.default_rng(11)
         references = rng.standard_normal((2, 16, 16, 16)).astype(np.float64)
