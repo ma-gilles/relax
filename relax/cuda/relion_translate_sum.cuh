@@ -104,7 +104,7 @@ translate_sum_flat_rows_f32_kernel(
     const float* __restrict__ ctf2_over_nv,          // [B, P] or null
     const int32_t* __restrict__ row_image_ids,       // [Q]
     const float* __restrict__ posterior,             // [Q, T]
-    const float* __restrict__ translation_angles,    // [T, 2]
+    const float* __restrict__ translation_angles,    // [T, 2], or [B, T, 2] with angle_image_stride
     const int32_t* __restrict__ pixel_indices,       // [P]
     const int32_t* __restrict__ runtime_valid_rows,  // scalar or null
     const int32_t* __restrict__ runtime_logical_pixels,  // scalar or null
@@ -117,7 +117,8 @@ translate_sum_flat_rows_f32_kernel(
     int64_t translation_count,
     int64_t pixel_capacity,
     int image_h,
-    int image_half_width)
+    int image_half_width,
+    int64_t angle_image_stride)
 {
     const int64_t row_base =
         static_cast<int64_t>(blockIdx.x) * ROWS_PER_BLOCK;
@@ -179,10 +180,15 @@ translate_sum_flat_rows_f32_kernel(
     extern __shared__ float translate_sum_shared[];
     float* shared_angles = translate_sum_shared;                     // [2T]
     float* shared_posterior = shared_angles + 2 * translation_count;  // [R, T]
+    // Tilt images carry one [T, 2] table each (angle_image_stride = 2T); the launcher then runs one
+    // row per block, so the block's table is its row's image's.
+    const float* block_angles = angle_image_stride == 0
+        ? translation_angles
+        : translation_angles + static_cast<int64_t>(image_ids[0]) * angle_image_stride;
     for (int64_t index = threadIdx.x;
          index < 2 * translation_count;
          index += kBlockThreads) {
-        shared_angles[index] = translation_angles[index];
+        shared_angles[index] = block_angles[index];
     }
     for (int64_t index = threadIdx.x;
          index < ROWS_PER_BLOCK * translation_count;
@@ -348,7 +354,8 @@ cudaError_t launch_templated(
     int64_t translation_count,
     int64_t pixel_capacity,
     int image_h,
-    int image_half_width)
+    int image_half_width,
+    int64_t angle_image_stride)
 {
     const int64_t blocks =
         (row_count + ROWS_PER_BLOCK - 1) / ROWS_PER_BLOCK;
@@ -375,7 +382,8 @@ cudaError_t launch_templated(
             translation_count,
             pixel_capacity,
             image_h,
-            image_half_width);
+            image_half_width,
+            angle_image_stride);
     return cudaGetLastError();
 }
 
@@ -401,7 +409,8 @@ inline cudaError_t launch(
     int64_t pixel_capacity,
     int image_h,
     int image_half_width,
-    int requested_rows_per_block)
+    int requested_rows_per_block,
+    int64_t angle_image_stride)
 {
     if (row_count == 0 || pixel_capacity == 0) return cudaSuccess;
     // The zero fill owns every padding row, every zero-mass row and the
@@ -434,8 +443,9 @@ inline cudaError_t launch(
     }
     if (translation_count == 0) return cudaSuccess;
 
-    const int rows = choose_rows_per_block(
-        requested_rows_per_block, row_count, translation_count);
+    const int rows = angle_image_stride == 0
+        ? choose_rows_per_block(requested_rows_per_block, row_count, translation_count)
+        : 1;
     if (shared_bytes_for(rows, translation_count) > kMaxSharedBytes)
         return cudaErrorInvalidValue;
 
@@ -448,7 +458,7 @@ inline cudaError_t launch(
             runtime_logical_pixels, summed, summed_masked,        \
             probs_sum_t, ctf_probs, batch_size, row_count,        \
             translation_count, pixel_capacity, image_h,           \
-            image_half_width)
+            image_half_width, angle_image_stride)
 
     if (recon_weight != nullptr) {
         switch (rows) {
@@ -528,7 +538,8 @@ ffi::Error impl(
         weight_dims.size() != 2 || ctf_dims.size() != 2 ||
         ctf_out_dims.size() != 2 ||
         row_dims.size() != 1 || posterior_dims.size() != 2 ||
-        angle_dims.size() != 2 || angle_dims[1] != 2 ||
+        (angle_dims.size() != 2 && angle_dims.size() != 3) ||
+        angle_dims[angle_dims.size() - 1] != 2 ||
         index_dims.size() != 1 || summed_dims.size() != 2 ||
         masked_dims.size() != 2 || mass_dims.size() != 1)
         return ffi::Error::InvalidArgument(
@@ -537,7 +548,9 @@ ffi::Error impl(
     const int64_t batch_size = recon_dims[0];
     const int64_t pixel_capacity = recon_dims[1];
     const int64_t row_count = row_dims[0];
-    const int64_t translation_count = angle_dims[0];
+    // [T, 2] shared by every image, or [B, T, 2]: one table per image (tilt images).
+    const bool per_image_angles = angle_dims.size() == 3;
+    const int64_t translation_count = per_image_angles ? angle_dims[1] : angle_dims[0];
     if (batch_size <= 0 || pixel_capacity <= 0 || row_count <= 0 ||
         translation_count <= 0 ||
         pixel_capacity > std::numeric_limits<int>::max() ||
@@ -547,7 +560,8 @@ ffi::Error impl(
         index_dims[0] != pixel_capacity ||
         summed_dims[0] != row_count || summed_dims[1] != pixel_capacity ||
         masked_dims[0] != row_count || masked_dims[1] != pixel_capacity ||
-        mass_dims[0] != row_count)
+        mass_dims[0] != row_count ||
+        (per_image_angles && angle_dims[0] != batch_size))
         return ffi::Error::InvalidArgument(
             "RelionTranslateSumFlatRowsF32: inconsistent topology");
     const bool bpref_recon = bpref_recon_attr != 0;
@@ -568,7 +582,7 @@ ffi::Error impl(
         return ffi::Error::InvalidArgument(
             "RelionTranslateSumFlatRowsF32: invalid image dimensions");
 
-    const int64_t rows_per_grid_block = rows_per_block > 0 ? rows_per_block : 1;
+    const int64_t rows_per_grid_block = per_image_angles ? 1 : (rows_per_block > 0 ? rows_per_block : 1);
     const int64_t blocks_needed =
         (row_count + rows_per_grid_block - 1) / rows_per_grid_block;
     if (blocks_needed > std::numeric_limits<int>::max())
@@ -601,7 +615,8 @@ ffi::Error impl(
         pixel_capacity,
         static_cast<int>(image_h),
         static_cast<int>(image_half_width),
-        static_cast<int>(rows_per_block));
+        static_cast<int>(rows_per_block),
+        per_image_angles ? 2 * translation_count : 0);
     if (err != cudaSuccess)
         return ffi::Error::Internal(std::string("CUDA: ") + cudaGetErrorString(err));
     return ffi::Error::Success();
