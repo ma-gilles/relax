@@ -108,16 +108,16 @@ class ResidentStatistics(NamedTuple):
     wsum_img_power: jax.Array  # float64 [n_shells], [G, n_shells] for G optics groups
     sigma2_offset: jax.Array  # float64 []
     sumw: jax.Array  # float64 [], [G] for G optics groups
-    norm_correction: jax.Array  # float64 [n_images]
+    norm_correction: jax.Array  # float64 [image_capacity]
     scale_xa: jax.Array  # float64 [n_scale_groups]
     scale_aa: jax.Array  # float64 [n_scale_groups]
     rotation_posterior_sums: jax.Array  # float64 [n_coarse_rot]
-    log_evidence: jax.Array  # float64 [n_images]
-    best_log_score: jax.Array  # float64 [n_images]
-    max_posterior: jax.Array  # score real dtype [n_images]
-    best_cell: jax.Array  # int64 [n_images], -1 until written
-    score_log_z: jax.Array  # float64 [n_images]
-    best_local_rot: jax.Array  # int32 [n_images], -1 until written
+    log_evidence: jax.Array  # float64 [image_capacity]
+    best_log_score: jax.Array  # float64 [image_capacity]
+    max_posterior: jax.Array  # score real dtype [image_capacity]
+    best_cell: jax.Array  # int64 [image_capacity], -1 until written
+    score_log_z: jax.Array  # float64 [image_capacity]
+    best_local_rot: jax.Array  # int32 [image_capacity], -1 until written
     invalid_best_rows: jax.Array  # int64 [], padding sanity counter
 
 
@@ -174,6 +174,32 @@ class ChunkStatisticsOperands(NamedTuple):
     batch_norm: jax.Array | None  # float [C_B, 1], non-exact-Gaussian branch only
 
 
+# The image axis of the per-image accumulators, and of every per-image operand
+# of a half (resident_operands), is a capacity, not the half's image count:
+# VDAM's subset size changes every iteration, and an image-count-shaped axis
+# re-traced every program that touches it. Capacities are multiples of 256 with
+# four classes per octave, so at most 25% of the axis is padding.
+_RESIDENT_IMAGE_QUANTUM = 256
+_RESIDENT_IMAGE_CLASSES_PER_OCTAVE = 4
+
+
+def resident_image_capacity(n_images: int) -> int:
+    """The image-axis capacity of a half with ``n_images`` images.
+
+    A multiple of 256 and of a quarter of the largest power of two not above
+    ``n_images``, so the classes are 256, 512, 768, 1024, 1280, ..., 2048,
+    2560, ... Rows past ``n_images`` are padding that no chunk addresses:
+    chunk image slots are real image ids or negative.
+    """
+
+    n_images = int(n_images)
+    if n_images <= 0:
+        raise ValueError(f"n_images must be positive, got {n_images}")
+    octave = 1 << (n_images.bit_length() - 1)
+    step = max(_RESIDENT_IMAGE_QUANTUM, octave // _RESIDENT_IMAGE_CLASSES_PER_OCTAVE)
+    return -(-n_images // step) * step
+
+
 @dataclass(frozen=True)
 class ResidentStatisticsConfig:
     """Compile-time configuration of the statistics program.
@@ -187,7 +213,9 @@ class ResidentStatisticsConfig:
 
     n_shells: int
     n_fine_trans: int
-    n_images: int
+    # Leading extent of the per-image accumulators, resident_image_capacity of
+    # the pass's image count; finalize_statistics crops it back.
+    image_capacity: int
     n_coarse_rot: int
     n_scale_groups: int
     # RELION powerClass split: shells strictly above the cutoff are unweighted.
@@ -212,7 +240,7 @@ class ResidentStatisticsConfig:
         for name in (
             "n_shells",
             "n_fine_trans",
-            "n_images",
+            "image_capacity",
             "n_coarse_rot",
             "n_scale_groups",
             "direct_noise_exclusive_shell_stop",
@@ -267,7 +295,7 @@ def resolve_statistics_config(
     return ResidentStatisticsConfig(
         n_shells=int(n_shells),
         n_fine_trans=int(n_fine_trans),
-        n_images=int(n_images),
+        image_capacity=resident_image_capacity(n_images),
         n_coarse_rot=int(n_coarse_rot),
         n_scale_groups=int(n_scale_groups),
         norm_unweighted_shell_cutoff=cutoff,
@@ -295,8 +323,8 @@ def make_resident_statistics(
     one whose winner is genuinely row 0, translation 0.
     """
 
-    n_images = int(config.n_images)
-    zeros_images = jnp.zeros(n_images, dtype=jnp.float64)
+    capacity = int(config.image_capacity)
+    zeros_images = jnp.zeros(capacity, dtype=jnp.float64)
     groups = () if int(config.n_optics_groups) == 1 else (int(config.n_optics_groups),)
     return ResidentStatistics(
         wsum_sigma2_noise=jnp.zeros(groups + (int(config.n_shells),), dtype=jnp.float64),
@@ -307,12 +335,12 @@ def make_resident_statistics(
         scale_xa=jnp.zeros(int(config.n_scale_groups), dtype=jnp.float64),
         scale_aa=jnp.zeros(int(config.n_scale_groups), dtype=jnp.float64),
         rotation_posterior_sums=jnp.zeros(int(config.n_coarse_rot), dtype=jnp.float64),
-        log_evidence=jnp.full(n_images, -jnp.inf, dtype=jnp.float64),
-        best_log_score=jnp.full(n_images, -jnp.inf, dtype=jnp.float64),
-        max_posterior=jnp.zeros(n_images, dtype=max_posterior_dtype),
-        best_cell=jnp.full(n_images, -1, dtype=jnp.int64),
-        score_log_z=jnp.full(n_images, -jnp.inf, dtype=jnp.float64),
-        best_local_rot=jnp.full(n_images, -1, dtype=jnp.int32),
+        log_evidence=jnp.full(capacity, -jnp.inf, dtype=jnp.float64),
+        best_log_score=jnp.full(capacity, -jnp.inf, dtype=jnp.float64),
+        max_posterior=jnp.zeros(capacity, dtype=max_posterior_dtype),
+        best_cell=jnp.full(capacity, -1, dtype=jnp.int64),
+        score_log_z=jnp.full(capacity, -jnp.inf, dtype=jnp.float64),
+        best_local_rot=jnp.full(capacity, -1, dtype=jnp.int32),
         invalid_best_rows=jnp.zeros((), dtype=jnp.int64),
     )
 
@@ -400,7 +428,7 @@ def _accumulate_chunk_statistics_jit(
     row_image = jnp.asarray(operands.row_image_local, dtype=jnp.int32)
     image_ids = jnp.asarray(operands.image_ids, dtype=jnp.int32)
     valid_image = image_ids >= 0
-    image_slot = _drop_index(image_ids, int(config.n_images))
+    image_slot = _drop_index(image_ids, int(config.image_capacity))
 
     # --- 1. sigma2 offset -------------------------------------------------
     # Host: translation_posterior = sum_R noise_probs (in the posterior dtype),
@@ -681,9 +709,13 @@ def finalize_statistics(
     stats: ResidentStatistics,
     *,
     config: ResidentStatisticsConfig,
+    n_images: int,
     require_all_images: bool = True,
 ) -> FinalizedStatistics:
     """Pull the accumulators once and decode the pose fields.
+
+    The per-image accumulators are ``config.image_capacity`` long; the rows
+    past ``n_images`` are padding no chunk wrote, and are cropped here.
 
     Raises the padding-sanity error the host tail raises inline (a winner that
     points outside its image's candidate rows), and, unless
@@ -715,6 +747,15 @@ def finalize_statistics(
         best_local_rot,
         _,
     ) = jax.device_get(tuple(stats))
+    n_images = int(n_images)
+    if not 0 < n_images <= int(config.image_capacity):
+        raise ValueError(f"n_images {n_images} outside the accumulators' capacity {config.image_capacity}")
+    norm_correction, log_evidence, best_log_score, max_posterior, best_cell, score_log_z, best_local_rot = (
+        np.asarray(values)[:n_images]
+        for values in (
+            norm_correction, log_evidence, best_log_score, max_posterior, best_cell, score_log_z, best_local_rot,
+        )
+    )
 
     best_cell = np.asarray(best_cell, dtype=np.int64)
     best_local_rot = np.asarray(best_local_rot, dtype=np.int64)

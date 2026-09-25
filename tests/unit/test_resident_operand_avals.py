@@ -26,6 +26,7 @@ from relax.sparse_pass2.resident_operands import (
     resident_half_operand_avals,
     resident_half_operand_bytes,
 )
+from relax.sparse_pass2.resident_statistics import resident_image_capacity
 
 pytestmark = pytest.mark.unit
 
@@ -71,7 +72,7 @@ def test_it_returns_avals_and_allocates_nothing():
 def test_optics_groups_is_one_int32_row_per_image_only_with_several_groups():
     assert _avals().optics_groups is None
     operands = _avals(has_optics_groups=True)
-    assert operands.optics_groups.shape == (SHAPE_ARGS["n_images"],)
+    assert operands.optics_groups.shape == (resident_image_capacity(SHAPE_ARGS["n_images"]),)
     assert jnp.dtype(operands.optics_groups.dtype) == jnp.int32
 
 
@@ -79,7 +80,9 @@ def test_the_shapes_are_the_ones_the_dataclass_declares():
     """``ResidentHalfOperands.__post_init__`` is the contract; it must accept these."""
 
     operands = _avals()  # __post_init__ runs on construction and validates
-    n = SHAPE_ARGS["n_images"]
+    # Every per-image array is stored at the image capacity (fix 1).
+    n = resident_image_capacity(SHAPE_ARGS["n_images"])
+    assert operands.n_images == SHAPE_ARGS["n_images"] and operands.n_image_capacity == n
     assert operands.score_input.shape == (n, SHAPE_ARGS["n_score_pixels"])
     assert operands.corr_img_score.shape == (n, SHAPE_ARGS["n_score_pixels"])
     assert operands.recon_image.shape == (n, SHAPE_ARGS["n_recon_pixels"])
@@ -465,10 +468,11 @@ def test_the_optional_operands_against_a_star_backed_preparation(
 
     import os
 
-    from test_resident_operands import _gpu_case
-
     from recovar.core.configs import ForwardModelConfig
     from recovar.data_io.cryoem_dataset import load_dataset
+    from recovar.reconstruction import noise as noise_utils
+    from test_resident_operands import _gpu_case
+
     from relax.helpers.preprocessing import image_preprocess_backend
     from relax.sparse_pass2.resident_operands import (
         describe_resident_operand_mismatch,
@@ -481,7 +485,6 @@ def test_the_optional_operands_against_a_star_backed_preparation(
     from relax.sparse_pass2.sparse_pass2_scoring import (
         relion_powerclass_noise_dtypes,
     )
-    from recovar.reconstruction import noise as noise_utils
 
     star = os.environ.get("RELAX_P4J_STAR_FIXTURE", "").strip()
     if not star:

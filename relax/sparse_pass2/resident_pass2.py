@@ -137,6 +137,7 @@ from relax.sparse_pass2.resident_statistics import (
     _flat_row_norm_and_scale_terms,
     finalize_statistics,
     make_resident_statistics,
+    resident_image_capacity,
     resolve_statistics_config,
     segment_sum_by_image,
 )
@@ -983,7 +984,7 @@ def _accumulate_chunk_image_terms(
     row_image = jnp.asarray(operands.row_image_local, dtype=jnp.int32)
     image_ids = jnp.asarray(operands.image_ids, dtype=jnp.int32)
     valid_image = image_ids >= 0
-    image_slot = _drop_index(image_ids, int(config.n_images))
+    image_slot = _drop_index(image_ids, int(config.image_capacity))
 
     # --- 1/2. sigma2 offset and support mass -------------------------------
     translation_posterior = segment_sum_by_image(probs, row_image, image_capacity)
@@ -1332,10 +1333,14 @@ def _coarse_normalization_reuse(
         fine_rotation_parent=fine_rotation_parent,
         fine_translation_parent=fine_translation_parent,
     )
+    # Stored at the image capacity like every per-image device array, so the
+    # chunk programs that read them are not keyed on the subset size. Chunks
+    # only read real image ids.
+    padding = resident_image_capacity(n_images) - n_images
     return _CoarseNormalizationReuse(
-        sum_weight=jnp.asarray(sum_weight, dtype=jnp.float64),
-        max_posterior=jnp.asarray(max_posterior, dtype=max_posterior_dtype),
-        winner_cell=jnp.asarray(winner_cell, dtype=jnp.int64),
+        sum_weight=jnp.asarray(np.pad(sum_weight, (0, padding)), dtype=jnp.float64),
+        max_posterior=jnp.asarray(np.pad(max_posterior, (0, padding)), dtype=max_posterior_dtype),
+        winner_cell=jnp.asarray(np.pad(np.asarray(winner_cell), (0, padding), constant_values=-1), dtype=jnp.int64),
     )
 
 
@@ -2455,7 +2460,7 @@ def compute_pass2_stats_resident(
         recon_volume_shape,
     )
 
-    finalized = finalize_statistics(stats, config=stats_config)
+    finalized = finalize_statistics(stats, config=stats_config, n_images=n_images)
     hard_assignment = np.asarray(finalized.hard_assignment, dtype=np.int32)
     best_fine_rotation_indices = np.asarray(finalized.best_fine_rotation_indices, dtype=np.int64)
     best_rotations = np.asarray(fine_rotations_override, dtype=precision_policy.score_real_dtype)[
@@ -3917,7 +3922,7 @@ class _CoarseNormalizationReuse(NamedTuple):
 
     sum_weight: jax.Array  # float64 [n_images]
     max_posterior: jax.Array  # [n_images]
-    winner_cell: jax.Array  # int64 [n_images], segment-relative r_local * T + t
+    winner_cell: jax.Array  # int64 [image capacity], segment-relative r_local * T + t
 
 
 class _ChunkStageTables(NamedTuple):

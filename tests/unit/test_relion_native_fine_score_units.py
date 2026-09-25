@@ -503,22 +503,24 @@ def test_resident_half_operands_score_in_native_units(monkeypatch, current_size,
     fft_size = image_size * image_size
     # The exact-BPref operands (and so RELION's RFLOAT CTF) are on.
     assert native.recon_weight is not None and native.direct_ctf_rfloat_recon is not None
+    # Rows past n_images are image-capacity padding no chunk addresses.
+    n = native.n_images
 
     # The unshifted score image, divided by N**2 once (the kernel translates it).
     np.testing.assert_allclose(
-        np.asarray(native.score_input),
-        _divide_correctly_rounded(np.asarray(recovar_units.score_input), fft_size),
+        np.asarray(native.score_input)[:n],
+        _divide_correctly_rounded(np.asarray(recovar_units.score_input)[:n], fft_size),
         rtol=_EXACT_BY_CONSTRUCTION_RTOL,
         atol=0.0,
     )
     expected_corr = _expected_native_corr_img(case)
-    corr = np.asarray(native.corr_img_score)
+    corr = np.asarray(native.corr_img_score)[:n]
     assert corr.dtype == np.float32
     assert_matches(corr == 0.0, expected_corr == 0.0)
     np.testing.assert_allclose(corr, expected_corr, rtol=_EXACT_BY_CONSTRUCTION_RTOL, atol=0.0)
     # The RECOVAR-unit corr_img is N**4 smaller; the native one never matches it.
     nonzero = expected_corr != 0.0
-    ratio = corr[nonzero].astype(np.float64) / np.asarray(recovar_units.corr_img_score)[nonzero]
+    ratio = corr[nonzero].astype(np.float64) / np.asarray(recovar_units.corr_img_score)[:n][nonzero]
     np.testing.assert_allclose(ratio, float(fft_size) ** 2, rtol=1.0e-6)
 
     # Reconstruction, noise and power-class operands keep RECOVAR units.
@@ -584,7 +586,7 @@ def test_per_chunk_operands_match_the_resident_native_operands(monkeypatch, curr
         values = np.asarray(chunk[name])
         np.testing.assert_allclose(
             values[:n_images],
-            np.asarray(getattr(resident, name)),
+            np.asarray(getattr(resident, name))[:n_images],
             rtol=_EXACT_BY_CONSTRUCTION_RTOL,
             atol=0.0,
             err_msg=name,

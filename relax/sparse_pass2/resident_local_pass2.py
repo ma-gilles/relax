@@ -907,7 +907,7 @@ def compute_local_search_resident(
         recon_volume_shape,
     )
 
-    finalized = finalize_statistics(stats, config=stats_config)
+    finalized = finalize_statistics(stats, config=stats_config, n_images=n_images)
     # ``best_fine_rotation_indices`` carries the winner's position in the
     # layout's flat row order, because that is what the chunk wrote into
     # ``best_fine_rot``. Every pose field is a lookup at that row.

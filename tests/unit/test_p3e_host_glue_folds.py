@@ -344,28 +344,39 @@ def test_batch_window_operands_issue_no_eager_dispatch():
     assert loose.count >= 25, loose.by_primitive
 
 
-# ------------------------------------------------ concatenate and reorder ----
+# ------------------------------------------- place batches and reorder ----
 
 
-def test_concatenate_and_reorder_matches_the_loose_dispatch_bitwise():
+def _place_all(parts, rows):
+    buffer = jnp.zeros((rows,) + parts[0].shape[1:], dtype=parts[0].dtype)
+    start = 0
+    for part in parts:
+        buffer = ro._place_batch(buffer, part, np.int32(start))
+        start += part.shape[0]
+    return buffer
+
+
+def test_placed_batches_reordered_match_the_concatenation():
+    """Capacity buffers hold the batches' rows where a concatenation puts them."""
+
     rng = np.random.default_rng(7)
-    parts = tuple(
-        jnp.asarray(rng.standard_normal((size, 3)), dtype=jnp.float32) for size in (4, 4, 2)
-    )
-    reorder = jnp.asarray(rng.permutation(10), dtype=jnp.int64)
-    folded = ro._concatenate_and_reorder(parts, reorder)
-    loose = jnp.concatenate(list(parts), axis=0)[reorder]
-    assert _same(folded, loose)
+    parts = tuple(jnp.asarray(rng.standard_normal((4, 3)), dtype=jnp.float32) for _ in range(3))
+    reorder = rng.permutation(10)
+    capacity = 12
+    placed = ro._reorder_rows(_place_all(parts, capacity), jnp.asarray(np.r_[reorder, 10, 11]))
+    reference = jnp.concatenate(list(parts), axis=0)[jnp.asarray(reorder)]
+    assert placed.shape == (capacity, 3)
+    assert _same(placed[:10], reference)
 
 
-def test_concatenate_and_reorder_issues_no_eager_dispatch():
+def test_batch_placement_and_reorder_issue_no_eager_dispatch():
     rng = np.random.default_rng(8)
     parts = tuple(jnp.asarray(rng.standard_normal((3, 2)), dtype=jnp.float32) for _ in range(4))
     reorder = jnp.asarray(rng.permutation(12), dtype=jnp.int64)
-    ro._concatenate_and_reorder(parts, reorder)
+    ro._reorder_rows(_place_all(parts, 12), reorder)
+    buffer = jnp.zeros((12, 2), dtype=jnp.float32)
     with _DispatchCounter() as folded:
-        ro._concatenate_and_reorder(parts, reorder)
-    with _DispatchCounter() as loose:
-        jnp.concatenate(list(parts), axis=0)[reorder]
+        for index, part in enumerate(parts):
+            buffer = ro._place_batch(buffer, part, np.int32(3 * index))
+        ro._reorder_rows(buffer, reorder)
     assert folded.count == 0, folded.by_primitive
-    assert loose.count >= 2, loose.by_primitive

@@ -31,6 +31,7 @@ from relax.sparse_pass2.resident_statistics import (
     accumulate_chunk_statistics,
     finalize_statistics,
     make_resident_statistics,
+    resident_image_capacity,
     resolve_statistics_config,
     segment_sum_by_image,
 )
@@ -619,7 +620,7 @@ def _run_device(buckets_per_chunk, tables, config, *, row_capacity, image_capaci
             chunk_buckets, row_capacity=row_capacity, image_capacity=image_capacity
         )
         stats = accumulate_chunk_statistics(stats, operands, resident_tables, config=config)
-    return finalize_statistics(stats, config=config)
+    return finalize_statistics(stats, config=config, n_images=N_IMAGES)
 
 
 # Per-accumulator tolerance table. A value is float32-reduction limited when
@@ -724,6 +725,47 @@ def test_device_stage_matches_host_tail_multiple_chunks():
     _assert_finalized_matches_host(got, expected, rtol=FLOAT32_STREAM_RTOL, label="f32 multi ")
 
 
+def test_image_capacity_holds_what_an_image_count_axis_holds():
+    """Fix 1: the accumulators' image axis is resident_image_capacity(n_images).
+
+    Padded rows are never addressed by a chunk, so the finalized statistics of
+    the capacity-shaped accumulators equal those of an axis of exactly
+    ``N_IMAGES`` rows.
+    """
+
+    import dataclasses
+
+    rng = _rng()
+    tables = _make_tables(rng)
+    groups = [[0, 1, 2], [3, 4], [5, 6]]
+    buckets = [
+        _make_bucket(rng, ids, n_rot=max(ROWS_PER_IMAGE[i] for i in ids), tables=tables)
+        for ids in groups
+    ]
+    padded = _config()
+    assert padded.image_capacity == resident_image_capacity(N_IMAGES) > N_IMAGES
+    unpadded = dataclasses.replace(padded, image_capacity=N_IMAGES)
+    chunks = [[b] for b in buckets]
+    got = _run_device(chunks, tables, padded, row_capacity=32, image_capacity=4)
+    reference = _run_device(chunks, tables, unpadded, row_capacity=32, image_capacity=4)
+    for name, value in reference._asdict().items():
+        if value is None:
+            assert getattr(got, name) is None, name
+            continue
+        assert np.shape(getattr(got, name)) == np.shape(value), name
+        assert_matches(getattr(got, name), value, err_msg=name)
+
+
+@pytest.mark.parametrize(
+    "n_images,capacity",
+    [(1, 256), (256, 256), (257, 512), (650, 768), (1024, 1024), (1025, 1280), (2049, 2560), (13000, 14336)],
+)
+def test_resident_image_capacity_classes(n_images, capacity):
+    assert resident_image_capacity(n_images) == capacity
+    assert resident_image_capacity(n_images) >= n_images
+    assert resident_image_capacity(n_images) - n_images <= max(255, n_images // 4)
+
+
 def test_device_stage_matches_host_tail_multiple_chunks_float64_companion():
     """Float64 companion for the multi-chunk accumulation order."""
 
@@ -812,13 +854,13 @@ def test_all_padding_chunk_is_a_no_op():
     stats = make_resident_statistics(config, max_posterior_dtype=jnp.float32)
     operands = _chunk_from_buckets([bucket], row_capacity=64, image_capacity=8)
     stats = accumulate_chunk_statistics(stats, operands, resident_tables, config=config)
-    reference = finalize_statistics(stats, config=config)
+    reference = finalize_statistics(stats, config=config, n_images=N_IMAGES)
 
     # An all-zero-posterior chunk still writes its per-image score fields, so
     # compare only the accumulated statistics.
     empty_operands = _chunk_from_buckets([empty], row_capacity=64, image_capacity=8)
     stats_after = accumulate_chunk_statistics(stats, empty_operands, resident_tables, config=config)
-    after = finalize_statistics(stats_after, config=config)
+    after = finalize_statistics(stats_after, config=config, n_images=N_IMAGES)
     for name in (
         "wsum_sigma2_noise",
         "wsum_scale_correction_xa",
@@ -841,7 +883,7 @@ def test_padded_image_slots_never_reach_the_last_real_image():
     stats = make_resident_statistics(config, max_posterior_dtype=jnp.float32)
     operands = _chunk_from_buckets([bucket], row_capacity=32, image_capacity=16)
     stats = accumulate_chunk_statistics(stats, operands, _resident_tables(tables), config=config)
-    finalized = finalize_statistics(stats, config=config, require_all_images=False)
+    finalized = finalize_statistics(stats, config=config, n_images=N_IMAGES, require_all_images=False)
     untouched = np.asarray(finalized.wsum_norm_correction)[2:]
     assert np.all(untouched == 0.0), untouched
 
@@ -883,7 +925,7 @@ def test_finalize_rejects_a_winner_in_row_padding():
     stats = make_resident_statistics(config, max_posterior_dtype=jnp.float32)
     stats = accumulate_chunk_statistics(stats, broken, _resident_tables(tables), config=config)
     with pytest.raises(RuntimeError, match="outside their own row range"):
-        finalize_statistics(stats, config=config)
+        finalize_statistics(stats, config=config, n_images=N_IMAGES)
 
 
 def test_finalize_reports_images_no_chunk_covered():
@@ -898,4 +940,4 @@ def test_finalize_reports_images_no_chunk_covered():
     operands = _chunk_from_buckets([bucket], row_capacity=32, image_capacity=4)
     stats = accumulate_chunk_statistics(stats, operands, _resident_tables(tables), config=config)
     with pytest.raises(RuntimeError, match="never written by a chunk"):
-        finalize_statistics(stats, config=config)
+        finalize_statistics(stats, config=config, n_images=N_IMAGES)

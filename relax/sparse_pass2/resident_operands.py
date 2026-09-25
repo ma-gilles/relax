@@ -60,6 +60,7 @@ from relax.helpers.batch_fetch import fetch_indexed_batch
 from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.half_spectrum import make_shell_indices_half
 from relax.helpers.optics_noise import pixel_rows
+from relax.sparse_pass2.resident_statistics import resident_image_capacity
 from relax.sparse_pass2.sparse_pass2_bucket_io import prepare_unshifted_bucket_operands
 from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_native_fine_units,
@@ -89,8 +90,10 @@ __all__ = [
     "gather_resident_chunk_operands",
     "prepare_resident_half_operands",
     "resident_half_operand_bytes",
+    "resident_image_capacity",
     "resident_operands_max_bytes",
 ]
+
 
 
 class ResidentOperandsUnsupported(NotImplementedError):
@@ -139,6 +142,9 @@ class ResidentHalfOperands:
     """
 
     n_images: int
+    # Leading extent of every array below (:func:`resident_image_capacity`);
+    # rows ``n_images..n_image_capacity-1`` are padding no chunk addresses.
+    n_image_capacity: int
     n_score_pixels: int
     n_recon_pixels: int
     n_half_pixels: int
@@ -161,16 +167,18 @@ class ResidentHalfOperands:
     optics_groups: jax.Array | None = None
 
     def __post_init__(self):
-        score_shape = (self.n_images, self.n_score_pixels)
-        recon_shape = (self.n_images, self.n_recon_pixels)
+        if self.n_image_capacity < self.n_images:
+            raise ValueError(f"image_capacity {self.n_image_capacity} is below n_images {self.n_images}")
+        score_shape = (self.n_image_capacity, self.n_score_pixels)
+        recon_shape = (self.n_image_capacity, self.n_recon_pixels)
         for name, expected in (
             ("score_input", score_shape),
             ("corr_img_score", score_shape),
             ("recon_image", recon_shape),
             ("noise_image", recon_shape),
             ("ctf2_over_nv_recon", recon_shape),
-            ("processed_image_half", (self.n_images, self.n_half_pixels)),
-            ("translation_prior", (self.n_images, self.n_fine_trans)),
+            ("processed_image_half", (self.n_image_capacity, self.n_half_pixels)),
+            ("translation_prior", (self.n_image_capacity, self.n_fine_trans)),
         ):
             value = getattr(self, name)
             if tuple(value.shape) != expected:
@@ -221,10 +229,11 @@ def resident_half_operand_bytes(
     """Host estimate of the resident operand bytes, before any device work.
 
     Used by the driver's admission check, so an over-budget half keeps the
-    per-chunk preparation rather than allocating and failing.
+    per-chunk preparation rather than allocating and failing. The arrays are
+    stored at :func:`resident_image_capacity` rows, so that is what is counted.
     """
 
-    n_images = int(n_images)
+    n_images = resident_image_capacity(n_images)
     # The four per-image scalars are highres_Xi2, the norm high shell, the scale
     # and the group id. Only the norm term can be wider than the policy's real
     # dtype: source-faithful normalization accumulates it in float64.
@@ -379,16 +388,18 @@ def resident_half_operand_avals(
     """
 
     n_images = int(n_images)
-    score_shape = (n_images, int(n_score_pixels))
-    recon_shape = (n_images, int(n_recon_pixels))
-    half_shape = (n_images, int(n_half_pixels))
-    per_image = (n_images,)
+    capacity = resident_image_capacity(n_images)
+    score_shape = (capacity, int(n_score_pixels))
+    recon_shape = (capacity, int(n_recon_pixels))
+    half_shape = (capacity, int(n_half_pixels))
+    per_image = (capacity,)
 
     def aval(shape, dtype):
         return jax.ShapeDtypeStruct(tuple(shape), jnp.dtype(dtype))
 
     return ResidentHalfOperands(
         n_images=n_images,
+        n_image_capacity=capacity,
         n_score_pixels=int(n_score_pixels),
         n_recon_pixels=int(n_recon_pixels),
         n_half_pixels=int(n_half_pixels),
@@ -396,7 +407,7 @@ def resident_half_operand_avals(
         score_input=aval(score_shape, score_complex_dtype),
         corr_img_score=aval(score_shape, score_real_dtype),
         highres_xi2_half=aval(per_image, score_real_dtype) if has_highres_xi2 else None,
-        translation_prior=aval((n_images, int(n_fine_trans)), score_real_dtype),
+        translation_prior=aval((capacity, int(n_fine_trans)), score_real_dtype),
         recon_image=aval(recon_shape, score_complex_dtype),
         recon_weight=aval(recon_shape, acc_real_dtype) if has_recon_weight else None,
         noise_image=aval(recon_shape, score_complex_dtype),
@@ -452,18 +463,23 @@ def _require_supported(condition: bool, message: str) -> None:
         )
 
 
-@jax.jit
-def _concatenate_and_reorder(parts: tuple, reorder: jax.Array) -> jax.Array:
-    """Concatenate one named per-batch operand and put it in dataset order.
+@partial(jax.jit, donate_argnums=(0,))
+def _place_batch(buffer: jax.Array, batch: jax.Array, start) -> jax.Array:
+    """Write one preparation batch into its capacity buffer at runtime row ``start``.
 
-    Pure data movement: a concatenation and a gather, no arithmetic, so the
-    bytes are the bytes the two eager dispatches produced. As two eager
-    programs this was two traces, two lowerings and two XLA compilations per
-    named operand per half -- 129 of them on the early state, because each name
-    has its own pixel extent and dtype -- where the fused pair is one.
+    Pure data movement. ``start`` is a traced scalar, so one program serves
+    every batch of a (capacity, batch size, operand) triple; a concatenation of
+    the batches was keyed on their count, which follows the subset size.
     """
 
-    return jnp.concatenate(parts, axis=0)[reorder]
+    return jax.lax.dynamic_update_slice_in_dim(buffer, batch, start, axis=0)
+
+
+@jax.jit
+def _reorder_rows(buffer: jax.Array, reorder: jax.Array) -> jax.Array:
+    """Put one operand's rows in dataset order: a gather, no arithmetic."""
+
+    return buffer[reorder]
 
 
 class _BatchWindowInputs(NamedTuple):
@@ -644,9 +660,10 @@ def prepare_resident_half_operands(
     if half_spectrum_scoring:
         dc_mask = jnp.asarray(make_shell_indices_half(image_shape)) == 0
 
-    # Batch outputs stay on the device and are concatenated once; only the
+    # Batch outputs stay on the device, written into capacity buffers; only the
     # dataset's returned order comes back to the host, as a permutation.
-    batches: list[dict] = []
+    image_capacity = resident_image_capacity(n_images)
+    buffers: dict[str, jax.Array] = {}
     fetched_order: list[np.ndarray] = []
     optional_available: dict[str, bool | None] = {
         "recon_weight": None,
@@ -655,6 +672,7 @@ def prepare_resident_half_operands(
         "relion_norm_high_shell": None,
     }
     batch_size = int(image_batch_size or _prepare_image_batch_size())
+    buffer_rows = -(-image_capacity // batch_size) * batch_size
     native_fft_size = int(np.prod(image_shape))
     if relion_native_fine_units:
         _require_supported(
@@ -668,11 +686,23 @@ def prepare_resident_half_operands(
             experiment_dataset, batch_image_indices
         )
         fetched_indices = np.asarray(fetched_indices)
+        n_fetched = int(fetched_indices.shape[0])
+        if n_fetched < batch_size:
+            # The last batch repeats its first image up to the batch size, as the
+            # per-chunk path pads a capacity class, so every batch of the half
+            # runs the same preparation programs. The preparation is per image;
+            # the repeated rows land in padding no chunk addresses.
+            pad = np.concatenate([np.arange(n_fetched), np.zeros(batch_size - n_fetched, dtype=np.int64)])
+            batch_data = np.asarray(batch_data)[pad]
+            ctf_params = np.asarray(ctf_params)[pad]
+            prepared_indices = fetched_indices[pad]
+        else:
+            prepared_indices = fetched_indices
         unshifted = prepare_unshifted_bucket_operands(
             experiment_dataset,
             jnp.asarray(batch_data),
             ctf_params,
-            fetched_indices,
+            prepared_indices,
             **unshifted_kwargs,
         )
         score_corr_img_half = unshifted.ctf2_over_nv_half
@@ -745,7 +775,10 @@ def prepare_resident_half_operands(
             elif flag != present:
                 raise ValueError(f"{name} availability changed between image batches")
 
-        batches.append(batch_arrays)
+        for name, value in batch_arrays.items():
+            if name not in buffers:
+                buffers[name] = jnp.zeros((buffer_rows,) + tuple(value.shape[1:]), dtype=value.dtype)
+            buffers[name] = _place_batch(buffers[name], value, np.int32(start))
         fetched_order.append(fetched_indices)
 
     fetched_all = np.concatenate(fetched_order)
@@ -765,35 +798,39 @@ def prepare_resident_half_operands(
     inverse[destination] = np.arange(n_images, dtype=np.int64)
     if np.unique(destination).size != n_images:
         raise ValueError("the dataset did not return every requested image exactly once")
-    reorder = jnp.asarray(inverse)
+    # Rows past n_images keep their buffer rows: padding no chunk addresses.
+    reorder = jnp.asarray(np.concatenate([inverse, np.arange(n_images, image_capacity, dtype=np.int64)]))
 
     def stack(name, required=False):
-        present = name in batches[0]
+        present = name in buffers
         if required and not present:
             raise ValueError(f"the per-image preparation did not produce {name}")
         if not present or not optional_available.get(name, True):
             return None
-        return _concatenate_and_reorder(tuple(batch[name] for batch in batches), reorder)
+        return _reorder_rows(buffers[name], reorder)
 
-    if fine_translation_prior_2d is None:
-        translation_prior = jnp.zeros((n_images, int(n_fine_trans)), dtype=score_real_dtype)
-    else:
-        translation_prior = jnp.asarray(
-            np.asarray(fine_translation_prior_2d)[image_indices], dtype=score_real_dtype
-        )
+    translation_prior_np = np.zeros((image_capacity, int(n_fine_trans)), dtype=score_real_dtype)
+    if fine_translation_prior_2d is not None:
+        translation_prior_np[:n_images] = np.asarray(fine_translation_prior_2d)[image_indices]
+    translation_prior = jnp.asarray(translation_prior_np)
 
-    scale = np.ones(n_images, dtype=np.float32)
+    scale = np.ones(image_capacity, dtype=np.float32)
     if scale_corrections_np is not None:
-        scale[:] = np.asarray(scale_corrections_np, dtype=np.float32)[image_indices]
-    group_ids = np.full(n_images, -1, dtype=np.int32)
+        scale[:n_images] = np.asarray(scale_corrections_np, dtype=np.float32)[image_indices]
+    group_ids = np.full(image_capacity, -1, dtype=np.int32)
     if group_ids_np is not None:
-        group_ids[:] = np.asarray(group_ids_np, dtype=np.int32)[image_indices]
+        group_ids[:n_images] = np.asarray(group_ids_np, dtype=np.int32)[image_indices]
+    optics_groups = None
+    if optics_groups_np is not None:
+        optics_groups = np.zeros(image_capacity, dtype=np.int32)
+        optics_groups[:n_images] = np.asarray(optics_groups_np, dtype=np.int32)[image_indices]
 
     score_input = stack("score_input", required=True)
     recon_image = stack("recon_image", required=True)
     processed_image_half = stack("processed_image_half", required=True)
     operands = ResidentHalfOperands(
         n_images=n_images,
+        n_image_capacity=image_capacity,
         n_score_pixels=int(score_input.shape[1]),
         n_recon_pixels=int(recon_image.shape[1]),
         n_half_pixels=int(processed_image_half.shape[1]),
@@ -811,11 +848,7 @@ def prepare_resident_half_operands(
         relion_norm_high_shell=stack("relion_norm_high_shell"),
         scale=jnp.asarray(scale),
         group_ids=jnp.asarray(group_ids),
-        optics_groups=(
-            None
-            if optics_groups_np is None
-            else jnp.asarray(np.asarray(optics_groups_np, dtype=np.int32)[image_indices])
-        ),
+        optics_groups=None if optics_groups is None else jnp.asarray(optics_groups),
     )
     logger.info(
         "Resident pass-2 per-half operands: %d images, %d score / %d recon / %d half pixels, "
@@ -833,9 +866,10 @@ def prepare_resident_half_operands(
     # P4-A's shape census could not classify those extents without them.
     logger.info(
         "Resident pass-2 per-half operand batching: image_batch_size=%d, "
-        "last_batch_images=%d",
+        "last_batch_images=%d, image_capacity=%d",
         batch_size,
         n_images - batch_size * ((n_images - 1) // batch_size) if n_images else 0,
+        image_capacity,
     )
     return operands
 

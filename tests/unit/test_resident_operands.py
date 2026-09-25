@@ -286,7 +286,8 @@ def test_operand_bytes_estimate_is_the_sum_of_the_stored_arrays():
         n_half_pixels=200,
         n_fine_trans=21,
     )
-    expected = 100 * (50 * 12 + 40 * (16 + 8 + 8) + 200 * 8 + 21 * 4 + 16)
+    # The arrays are stored at the image capacity, 256 rows for 100 images.
+    expected = 256 * (50 * 12 + 40 * (16 + 8 + 8) + 200 * 8 + 21 * 4 + 16)
     assert estimate == expected
 
 
@@ -359,10 +360,10 @@ def test_resident_operands_translate_to_the_per_chunk_tiles(
         angles = jnp.asarray(case["translation_angles"], dtype=jnp.float32)
 
         translated_recon = cuda_backproject.relion_translate_score_f32(
-            jnp.asarray(operands.recon_image, dtype=jnp.complex64), angles, window, IMAGE_SHAPE
+            jnp.asarray(operands.recon_image[:N_IMAGES], dtype=jnp.complex64), angles, window, IMAGE_SHAPE
         )
         translated_noise = cuda_backproject.relion_translate_score_f32(
-            jnp.asarray(operands.noise_image, dtype=jnp.complex64), angles, window, IMAGE_SHAPE
+            jnp.asarray(operands.noise_image[:N_IMAGES], dtype=jnp.complex64), angles, window, IMAGE_SHAPE
         )
         n_pixels = int(window.shape[0])
         reference_recon = np.asarray(prepared[1]).reshape(N_IMAGES, N_FINE_TRANS, -1)[:, :, np.asarray(window)]
@@ -380,17 +381,17 @@ def test_resident_operands_translate_to_the_per_chunk_tiles(
         "resident noise operand",
     )
     _assert_matches(
-        operands.score_input,
+        operands.score_input[:N_IMAGES],
         np.asarray(prepared[8])[:, np.asarray(window)],
         "resident score_input",
     )
     _assert_matches(
-        operands.ctf2_over_nv_recon,
+        operands.ctf2_over_nv_recon[:N_IMAGES],
         np.asarray(prepared[4])[:, np.asarray(window)],
         "resident ctf2_over_nv_recon",
     )
     _assert_matches(
-        operands.processed_image_half, np.asarray(prepared[6]), "resident processed_image_half"
+        operands.processed_image_half[:N_IMAGES], np.asarray(prepared[6]), "resident processed_image_half"
     )
 
 
@@ -424,10 +425,10 @@ def test_translate_sum_kernel_matches_the_block_reduction(
         n_pixels = int(window.shape[0])
 
         shifted_recon = cuda_backproject.relion_translate_score_f32(
-            jnp.asarray(operands.recon_image, dtype=jnp.complex64), angles, window, IMAGE_SHAPE
+            jnp.asarray(operands.recon_image[:N_IMAGES], dtype=jnp.complex64), angles, window, IMAGE_SHAPE
         ).reshape(N_IMAGES, N_FINE_TRANS, n_pixels)
         shifted_noise = cuda_backproject.relion_translate_score_f32(
-            jnp.asarray(operands.noise_image, dtype=jnp.complex64), angles, window, IMAGE_SHAPE
+            jnp.asarray(operands.noise_image[:N_IMAGES], dtype=jnp.complex64), angles, window, IMAGE_SHAPE
         ).reshape(N_IMAGES, N_FINE_TRANS, n_pixels)
 
         row_image = rng.integers(0, N_IMAGES, size=block_rows).astype(np.int32)
@@ -444,7 +445,7 @@ def test_translate_sum_kernel_matches_the_block_reduction(
                 jnp.asarray(row_image),
                 shifted_recon,
                 shifted_noise,
-                jnp.asarray(operands.ctf2_over_nv_recon),
+                jnp.asarray(operands.ctf2_over_nv_recon[:N_IMAGES]),
             )
         )
         summed, masked, ctf_probs, _mass = jax.block_until_ready(
