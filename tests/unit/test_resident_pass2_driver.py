@@ -64,7 +64,6 @@ def _production_gate_kwargs(**overrides):
         soft_posterior_block_bpref=False,
         fine_rotations_override=np.zeros((2, 3, 3), dtype=np.float32),
         fine_rotation_parent_override=np.zeros(2, dtype=np.int32),
-        n_coarse_trans=4,
         use_window=True,
         projection_cache_available=True,
         relion_wavg_atomic_scale_aa=True,
@@ -96,7 +95,6 @@ def test_production_configuration_is_accepted():
         ({"relion_f32_normalization_sum_weight": np.ones(3)}, "zero-oversampling"),
         ({"preserve_bpref_particle_order": True}, "per-particle BPref launches"),
         ({"fine_rotations_override": None}, "fine_rotations_override"),
-        ({"n_coarse_trans": 33}, "one uint32"),
         ({"use_window": False}, "Nyquist row"),
         ({"projection_cache_available": False}, "projection cache"),
         ({"relion_wavg_atomic_scale_aa": False}, "atomic Wavg triplet"),
@@ -145,7 +143,7 @@ def _tables(row_counts):
         row_log_prior=np.zeros(n_rows, dtype=np.float32),
         mask_mode=np.zeros(n_images, dtype=np.int8),
         parent_offsets=np.zeros(n_images + 1, dtype=np.int32),
-        parent_trans_bits=np.zeros(0, dtype=np.uint32),
+        parent_trans_bits=np.zeros((0, 1), dtype=np.uint32),
     )
 
 

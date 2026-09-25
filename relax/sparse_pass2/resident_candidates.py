@@ -35,8 +35,9 @@ Index conventions
 * Coarse translation bitsets pack bit ``k`` = "coarse translation ``k`` is a
   valid candidate for this (image, parent)". Bit order is the raw coarse
   translation id (0..n_coarse_trans-1), matching
-  ``SparseCandidateMask.coarse_valid``'s column order exactly.  This requires
-  ``n_coarse_trans <= 32``, checked at construction.
+  ``SparseCandidateMask.coarse_valid``'s column order exactly. A bitset is
+  ``n_mask_words(n_coarse_trans)`` little-endian uint32 words: translation
+  ``k`` is bit ``k % 32`` of word ``k // 32``, so any translation count fits.
 """
 
 from __future__ import annotations
@@ -49,6 +50,7 @@ from relax.scoring.compact_candidates import SparseCandidateMask
 
 __all__ = [
     "CapacityChunk",
+    "n_mask_words",
     "ResidentCandidateTables",
     "build_resident_candidate_tables",
     "expand_chunk_mask_jnp",
@@ -68,6 +70,33 @@ _ROW_FINE_ROT_PAD = np.int32(0)
 _ROW_PARENT_LOCAL_PAD = np.int32(0)
 _ROW_LOG_PRIOR_PAD = np.float32(-1e30)
 _ROW_MASK_BITS_PAD = np.uint32(0)
+_MASK_WORD_BITS = 32
+
+
+def n_mask_words(n_coarse_trans: int) -> int:
+    """uint32 words per coarse-translation bitset (at least one)."""
+
+    n_coarse_trans = int(n_coarse_trans)
+    if n_coarse_trans <= 0:
+        raise ValueError(f"n_coarse_trans must be positive, got {n_coarse_trans}")
+    return -(-n_coarse_trans // _MASK_WORD_BITS)
+
+
+def all_translations_words(n_coarse_trans: int) -> np.ndarray:
+    """The bitset with every coarse translation set, as uint32 words."""
+
+    words = np.zeros(n_mask_words(n_coarse_trans), dtype=np.uint32)
+    for word in range(words.size):
+        n_bits = min(_MASK_WORD_BITS, int(n_coarse_trans) - word * _MASK_WORD_BITS)
+        words[word] = np.uint32((1 << n_bits) - 1)
+    return words
+
+
+def translation_word_and_bit(trans) -> tuple[np.ndarray, np.ndarray]:
+    """(word index, single-bit uint32 mask) of each coarse translation id."""
+
+    trans = np.asarray(trans, dtype=np.int64)
+    return trans // _MASK_WORD_BITS, np.uint32(1) << (trans % _MASK_WORD_BITS).astype(np.uint32)
 
 
 @dataclass(frozen=True)
@@ -95,7 +124,7 @@ class ResidentCandidateTables:
     # per-parent coarse-translation bitsets.
     mask_mode: np.ndarray  # int8 [n_images]
     parent_offsets: np.ndarray  # int32 [n_images + 1]
-    parent_trans_bits: np.ndarray  # uint32 [parent_offsets[-1]]
+    parent_trans_bits: np.ndarray  # uint32 [parent_offsets[-1], n_mask_words(n_coarse_trans)]
 
     def __post_init__(self):
         if self.row_offsets.shape != (self.n_images + 1,):
@@ -110,6 +139,11 @@ class ResidentCandidateTables:
                 raise ValueError(f"{name} must have shape (n_rows,), got {arr.shape}")
         if self.mask_mode.shape != (self.n_images,):
             raise ValueError("mask_mode must have shape (n_images,)")
+        expected_bits = (int(self.parent_offsets[-1]), n_mask_words(self.n_coarse_trans))
+        if self.parent_trans_bits.shape != expected_bits:
+            raise ValueError(
+                f"parent_trans_bits must have shape {expected_bits}, got {self.parent_trans_bits.shape}"
+            )
 
 
 @dataclass(frozen=True)
@@ -141,15 +175,18 @@ class CapacityChunk:
 
 
 def _pack_bits_rows(bool_rows: np.ndarray) -> np.ndarray:
-    """Pack each row of a boolean matrix into one uint32, bit k = column k."""
+    """Pack each row of a boolean matrix into uint32 words, column k = bit k % 32 of word k // 32."""
 
-    n_bits = bool_rows.shape[1]
-    weights = (np.uint32(1) << np.arange(n_bits, dtype=np.uint32))
-    return (bool_rows.astype(np.uint32) * weights[None, :]).sum(axis=1, dtype=np.uint32)
+    n_rows, n_bits = bool_rows.shape
+    n_words = n_mask_words(n_bits)
+    padded = np.zeros((n_rows, n_words * _MASK_WORD_BITS), dtype=np.uint32)
+    padded[:, :n_bits] = bool_rows
+    weights = np.uint32(1) << np.arange(_MASK_WORD_BITS, dtype=np.uint32)
+    return (padded.reshape(n_rows, n_words, _MASK_WORD_BITS) * weights).sum(axis=2, dtype=np.uint32)
 
 
 def _bits_for_mask(mask: SparseCandidateMask, n_coarse_trans: int) -> np.ndarray:
-    """Return one uint32 bitset per image-local parent for a bitset-mode mask.
+    """Return one bitset (uint32 words) per image-local parent for a bitset-mode mask.
 
     Only valid for ``mask.mode in {"coarse", "coarse_exclude"}``. The number
     of parents returned is the number of distinct parent indices actually
@@ -171,20 +208,18 @@ def _bits_for_mask(mask: SparseCandidateMask, n_coarse_trans: int) -> np.ndarray
         if mask.coarse_excluded is None or mask.parent_map is None:
             raise ValueError("coarse_exclude candidate mask spec is missing excluded/parent arrays")
         n_parents = int(mask.parent_map.max(initial=-1)) + 1
-        full_bits = np.uint32((1 << n_coarse_trans) - 1)
-        bits = np.full(n_parents, full_bits, dtype=np.uint32)
+        bits = np.tile(all_translations_words(n_coarse_trans), (n_parents, 1))
         excluded = np.unique(np.asarray(mask.coarse_excluded, dtype=np.int64).reshape(-1))
         if excluded.size:
             excluded_rot = excluded // int(n_coarse_trans)
             excluded_trans = excluded % int(n_coarse_trans)
             if int(excluded_rot.max(initial=-1)) >= n_parents:
                 raise ValueError("coarse_exclude excluded rotation is outside this image's referenced parents")
-            clear_bits = np.uint32(1) << excluded_trans.astype(np.uint32)
+            words, clear_bits = translation_word_and_bit(excluded_trans)
             # A parent can appear more than once in excluded_rot (several
             # excluded translations for the same rotation); fold with a
             # scatter-AND so every exclusion is applied.
-            for parent, bit in zip(excluded_rot.tolist(), clear_bits.tolist()):
-                bits[parent] &= np.uint32(~np.uint32(bit))
+            np.bitwise_and.at(bits, (excluded_rot, words), ~clear_bits)
         return bits
     raise ValueError(f"_bits_for_mask does not support mode {mask.mode!r}")
 
@@ -211,8 +246,7 @@ def build_resident_candidate_tables(
     """
 
     n_coarse_trans = int(n_coarse_trans)
-    if n_coarse_trans <= 0 or n_coarse_trans > 32:
-        raise ValueError(f"n_coarse_trans must be in [1, 32] to pack into a uint32 bitset, got {n_coarse_trans}")
+    n_words = n_mask_words(n_coarse_trans)
     n_fine_trans = int(n_fine_trans)
     fine_translation_parent = np.asarray(fine_translation_parent)
     if fine_translation_parent.shape != (n_fine_trans,):
@@ -285,7 +319,9 @@ def build_resident_candidate_tables(
     )
     row_log_prior = np.concatenate(row_log_prior_parts) if row_log_prior_parts else np.zeros(0, dtype=np.float32)
     parent_trans_bits = (
-        np.concatenate(parent_trans_bits_parts) if parent_trans_bits_parts else np.zeros(0, dtype=np.uint32)
+        np.concatenate(parent_trans_bits_parts)
+        if parent_trans_bits_parts
+        else np.zeros((0, n_words), dtype=np.uint32)
     )
 
     return ResidentCandidateTables(
@@ -330,8 +366,8 @@ def expand_mask_rows(tables: ResidentCandidateTables, image: int, fine_translati
     bits = tables.parent_trans_bits[p0:p1]
     row_parent = tables.row_parent_local[start:stop]
     row_bits = bits[row_parent].astype(np.uint32)
-    shifts = fine_translation_parent.astype(np.uint32)
-    return (((row_bits[:, None] >> shifts[None, :]) & np.uint32(1)) != 0)
+    words, shifts = np.divmod(fine_translation_parent.astype(np.int64), _MASK_WORD_BITS)
+    return (((row_bits[:, words] >> shifts.astype(np.uint32)[None, :]) & np.uint32(1)) != 0)
 
 
 def expand_mask_jnp(tables: ResidentCandidateTables, image: int, fine_translation_parent):
@@ -363,8 +399,17 @@ def expand_mask_jnp(tables: ResidentCandidateTables, image: int, fine_translatio
     p0, p1 = int(tables.parent_offsets[image]), int(tables.parent_offsets[image + 1])
     bits = jnp.asarray(tables.parent_trans_bits[p0:p1], dtype=jnp.uint32)
     row_parent = jnp.asarray(tables.row_parent_local[start:stop], dtype=jnp.int32)
-    row_bits = bits[row_parent]
-    return (((row_bits[:, None] >> fine_translation_parent[None, :]) & jnp.uint32(1)) != 0)
+    return _test_translation_bits(bits[row_parent], fine_translation_parent)
+
+
+def _test_translation_bits(row_bits, fine_translation_parent):
+    """bool[rows, T]: bit ``fine_translation_parent[t]`` of each row's word bitset."""
+
+    import jax.numpy as jnp
+
+    words = (fine_translation_parent // jnp.uint32(_MASK_WORD_BITS)).astype(jnp.int32)
+    shifts = fine_translation_parent % jnp.uint32(_MASK_WORD_BITS)
+    return ((row_bits[:, words] >> shifts[None, :]) & jnp.uint32(1)) != 0
 
 
 def expand_chunk_mask_jnp(row_mask_bits, row_mask_mode, fine_translation_parent):
@@ -374,7 +419,7 @@ def expand_chunk_mask_jnp(row_mask_bits, row_mask_mode, fine_translation_parent)
     :func:`materialize_chunk` output at once, so a jitted device program can
     rebuild the ``bool[row_capacity, n_fine_trans]`` mask without any host
     array. Inputs are the chunk fields ``row_mask_bits`` (uint32
-    ``[row_capacity]``) and ``row_mask_mode`` (int8 ``[row_capacity]``), plus
+    ``[row_capacity, n_words]``) and ``row_mask_mode`` (int8 ``[row_capacity]``), plus
     the iteration-global ``fine_translation_parent`` (int32
     ``[n_fine_trans]``).
 
@@ -389,9 +434,9 @@ def expand_chunk_mask_jnp(row_mask_bits, row_mask_mode, fine_translation_parent)
     row_mask_bits = jnp.asarray(row_mask_bits, dtype=jnp.uint32)
     row_mask_mode = jnp.asarray(row_mask_mode, dtype=jnp.int8)
     fine_translation_parent = jnp.asarray(fine_translation_parent, dtype=jnp.uint32)
-    if row_mask_bits.ndim != 1 or row_mask_mode.shape != row_mask_bits.shape:
+    if row_mask_bits.ndim != 2 or row_mask_mode.shape != row_mask_bits.shape[:1]:
         raise ValueError(
-            "row_mask_bits and row_mask_mode must be 1-D arrays of equal length, got "
+            "row_mask_bits must be [rows, words] and row_mask_mode [rows], got "
             f"{row_mask_bits.shape} and {row_mask_mode.shape}",
         )
     if fine_translation_parent.ndim != 1:
@@ -399,9 +444,7 @@ def expand_chunk_mask_jnp(row_mask_bits, row_mask_mode, fine_translation_parent)
             f"fine_translation_parent must be 1-D, got {fine_translation_parent.shape}",
         )
 
-    bitset = (
-        (row_mask_bits[:, None] >> fine_translation_parent[None, :]) & jnp.uint32(1)
-    ) != 0
+    bitset = _test_translation_bits(row_mask_bits, fine_translation_parent)
     is_full = (row_mask_mode == _MASK_MODE_FULL)[:, None]
     is_empty = (row_mask_mode == _MASK_MODE_EMPTY)[:, None]
     return jnp.where(is_full, True, jnp.where(is_empty, False, bitset))
@@ -522,7 +565,8 @@ def materialize_chunk(tables: ResidentCandidateTables, chunk: CapacityChunk) -> 
     row_fine_rot = np.full(row_capacity, _ROW_FINE_ROT_PAD, dtype=np.int32)
     row_parent_local = np.full(row_capacity, _ROW_PARENT_LOCAL_PAD, dtype=np.int32)
     row_log_prior = np.full(row_capacity, _ROW_LOG_PRIOR_PAD, dtype=np.float32)
-    row_mask_bits = np.full(row_capacity, _ROW_MASK_BITS_PAD, dtype=np.uint32)
+    n_words = n_mask_words(tables.n_coarse_trans)
+    row_mask_bits = np.full((row_capacity, n_words), _ROW_MASK_BITS_PAD, dtype=np.uint32)
     row_mask_mode = np.full(row_capacity, _MASK_MODE_EMPTY, dtype=np.int8)
     image_ids = np.full(image_capacity, -1, dtype=np.int32)
 
@@ -537,7 +581,7 @@ def materialize_chunk(tables: ResidentCandidateTables, chunk: CapacityChunk) -> 
         row_mode_valid = tables.mask_mode[row_image_global]
         row_mask_mode[:n_valid_rows] = row_mode_valid
 
-        bits_out = np.zeros(n_valid_rows, dtype=np.uint32)
+        bits_out = np.zeros((n_valid_rows, n_words), dtype=np.uint32)
         bitset_rows = row_mode_valid == _MASK_MODE_BITSET
         if np.any(bitset_rows):
             flat_idx = tables.parent_offsets[row_image_global[bitset_rows]] + row_parent_local_valid[bitset_rows]

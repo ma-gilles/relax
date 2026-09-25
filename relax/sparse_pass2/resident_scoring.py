@@ -398,7 +398,7 @@ def score_resident_chunk(
     row_image_local,  # int32 [C_R] chunk-local image id of each row
     row_fine_rot,  # int32 [C_R] index into the iteration's fine rotation grid
     row_log_prior,  # float32 [C_R] rotation log prior of each row (nats)
-    row_mask_bits,  # uint32 [C_R] per-row coarse translation bitset
+    row_mask_bits,  # uint32 [C_R, n_mask_words] per-row coarse translation bitset
     row_mask_mode,  # int8 [C_R] 0 full, 1 bitset, 2 empty
     n_valid_rows,  # int32 scalar, runtime
     image_ids,  # int32 [C_B] resident image row of each chunk image slot, -1 when padded
@@ -613,8 +613,8 @@ def score_resident_projected_chunk(
     ``reference`` arrives already projected for this chunk's own rows, because
     the local fine grid at order 5 has 2.4M rotations and is never materialized;
     and the candidate mask is the layout's per-row little-endian packing over
-    the fine translation axis rather than a per-parent uint32 bitset, because
-    the local pass 2 runs more than 32 translations.
+    the fine translation axis rather than a per-parent coarse-translation
+    bitset, because local candidates are per row and per fine translation.
 
     ``row_mask_bits=None`` is the layout's compact spelling of full support and
     is not expanded; padded rows are excluded by ``n_valid_rows`` alone.

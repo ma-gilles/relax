@@ -21,9 +21,8 @@ differences this module resolves:
 2. **Masks are per row and wider than 32 translations.** ``sample_mask_bits`` is
    already ``np.packbits(..., bitorder="little")`` over the fine translation
    axis: uint8 ``[n_rows, ceil(T/8)]``. The resident candidate table packs a
-   per-*parent* uint32 bitset over at most 32 *coarse* translations, which
-   cannot hold the local per-row mask (the auto-refine local pass 2 runs 84 fine
-   translations). This module keeps the layout's packing and expands it on the
+   per-*parent* bitset over *coarse* translations, which cannot hold the local
+   per-row mask over fine translations (the auto-refine local pass 2 runs 84). This module keeps the layout's packing and expands it on the
    device with the same little-endian bit order
    (:func:`expand_local_chunk_mask_jnp`).
    ``sample_mask_bits is None`` is the layout's compact spelling of "every

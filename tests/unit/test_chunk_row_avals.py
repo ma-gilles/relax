@@ -90,27 +90,28 @@ def test_the_shapes_are_the_capacities_and_nothing_else():
         m = materialize_chunk(tables, chunk)
         rows, images = int(chunk.row_capacity), int(chunk.image_capacity)
         for name in ("row_image_local", "row_fine_rot", "row_parent_local",
-                     "row_log_prior", "row_mask_bits", "row_mask_mode"):
+                     "row_log_prior", "row_mask_mode"):
             assert np.shape(m[name]) == (rows,), (name, np.shape(m[name]), rows)
+        assert np.shape(m["row_mask_bits"]) == (rows, 1), np.shape(m["row_mask_bits"])
         assert np.shape(m["image_ids"]) == (images,)
         assert np.shape(m["n_valid_rows"]) == ()
         assert np.shape(m["n_valid_images"]) == ()
 
 
-def test_row_mask_bits_is_one_packed_word_per_row():
-    """The `_ChunkRowArrays` comment used to say `[C_R, W]`; it is `[C_R]`.
+@pytest.mark.parametrize(("n_coarse_trans", "n_words"), [(1, 1), (32, 1), (33, 2), (64, 2), (65, 3)])
+def test_row_mask_bits_has_one_word_per_32_coarse_translations(n_coarse_trans, n_words):
+    """`row_mask_bits` is uint32 `[C_R, ceil(n_coarse_trans / 32)]`.
 
-    `expand_chunk_mask_jnp` requires a 1-D array and expands it against the
-    fine-translation parents, so a consumer that believed the comment would
-    have built the wrong aval. The comment is corrected; this pins it.
+    The word count is part of the chunk programs' avals, so it depends only on
+    the iteration's coarse translation grid, never on a chunk.
     """
 
-    tables = _synthetic_tables([3, 5, 2])
+    tables = _synthetic_tables([3, 5, 2], n_coarse_trans=n_coarse_trans)
     chunks = plan_capacity_chunks(
         tables,
         row_capacity_ladder=ROW_CAPACITY_LADDER,
         image_capacity_ladder=IMAGE_CAPACITY_LADDER,
     )
     m = materialize_chunk(tables, chunks[0])
-    assert np.asarray(m["row_mask_bits"]).ndim == 1
+    assert np.asarray(m["row_mask_bits"]).shape == (chunks[0].row_capacity, n_words)
     assert np.asarray(m["row_mask_bits"]).dtype == np.uint32

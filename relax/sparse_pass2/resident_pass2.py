@@ -505,11 +505,6 @@ def require_resident_production_configuration(**kwargs) -> None:
         "so fine_rotations_override and fine_rotation_parent_override are required",
     )
     _require(
-        int(kwargs["n_coarse_trans"]) <= 32,
-        "the candidate bitset packs coarse translations into one uint32, so "
-        f"n_coarse_trans must be <= 32 (got {int(kwargs['n_coarse_trans'])})",
-    )
-    _require(
         bool(kwargs["use_window"]),
         "the resident driver scores through the RELION current-size window; "
         "a full-half pass would include the ky=-N/2 Nyquist row, where the "
@@ -1479,7 +1474,6 @@ def compute_pass2_stats_resident(
         soft_posterior_block_bpref=soft_posterior_block_bpref,
         fine_rotations_override=fine_rotations_override,
         fine_rotation_parent_override=fine_rotation_parent_override,
-        n_coarse_trans=n_coarse_trans,
         use_window=budget_window_spec.use_window,
         projection_cache_available=projection_cache_enabled,
         relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
@@ -3684,7 +3678,7 @@ class _ChunkRowArrays(NamedTuple):
     row_image_local: jax.Array  # int32 [C_R]
     row_fine_rot: jax.Array  # int32 [C_R]
     row_log_prior: jax.Array  # float32 [C_R]
-    row_mask_bits: jax.Array  # uint32 [C_R], one packed word per row
+    row_mask_bits: jax.Array  # uint32 [C_R, n_mask_words], coarse-translation bitset per row
     row_mask_mode: jax.Array  # int8 [C_R]
     image_ids: jax.Array  # int32 [C_B], global image id, -1 when padded
     n_valid_rows: jax.Array  # int32 []

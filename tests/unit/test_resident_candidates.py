@@ -20,6 +20,7 @@ from relax.sparse_pass2.resident_candidates import (
     expand_mask_jnp,
     expand_mask_rows,
     materialize_chunk,
+    n_mask_words,
     plan_capacity_chunks,
 )
 
@@ -151,8 +152,10 @@ def test_expand_mask_jnp_matches_expand_mask_rows(fixture_tables):
         assert_matches(jnp_rows, rows)
 
 
-def test_n_coarse_trans_over_32_is_rejected(fixture_inputs):
-    with pytest.raises(ValueError):
+def test_mask_width_mismatch_is_rejected(fixture_inputs):
+    """The bitset width follows n_coarse_trans; a mask of another width is refused."""
+
+    with pytest.raises(ValueError, match="coarse_valid width"):
         build_resident_candidate_tables(
             fixture_inputs,
             n_coarse_trans=33,
@@ -184,7 +187,7 @@ def _synthetic_tables(row_counts, *, n_fine_trans=1, n_coarse_trans=1):
         row_log_prior=np.zeros(n_rows, dtype=np.float32),
         mask_mode=np.zeros(n_images, dtype=np.int8),  # all "full"
         parent_offsets=np.zeros(n_images + 1, dtype=np.int32),
-        parent_trans_bits=np.zeros(0, dtype=np.uint32),
+        parent_trans_bits=np.zeros((0, n_mask_words(n_coarse_trans)), dtype=np.uint32),
     )
 
 
@@ -193,8 +196,8 @@ def _row_level_valid(row_mask_bits, row_mask_mode, fine_translation_parent):
     but taking already-materialized per-row (not per-image) arrays -- this is
     what a chunk program would evaluate per cell."""
 
-    shifts = np.asarray(fine_translation_parent, dtype=np.uint32)
-    bit_valid = ((row_mask_bits[:, None].astype(np.uint32) >> shifts[None, :]) & np.uint32(1)) != 0
+    words, shifts = np.divmod(np.asarray(fine_translation_parent, dtype=np.int64), 32)
+    bit_valid = ((row_mask_bits[:, words].astype(np.uint32) >> shifts.astype(np.uint32)[None, :]) & np.uint32(1)) != 0
     full = (row_mask_mode == 0)[:, None]
     bitset = (row_mask_mode == 1)[:, None]
     return full | (bitset & bit_valid)

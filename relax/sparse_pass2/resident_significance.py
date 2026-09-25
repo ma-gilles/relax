@@ -40,7 +40,7 @@ Index conventions match :mod:`recovar.em.sparse_pass2.resident_candidates`:
 "image" is a local position inside the half's dataset, "parent" is an
 image-local coarse rotation, coarse cell ids are ``rot * n_coarse_trans +
 trans``, and coarse-translation bitsets pack bit ``k`` for coarse translation
-``k`` (so ``n_coarse_trans <= 32``).
+``k`` (bit ``k % 32`` of uint32 word ``k // 32``).
 """
 
 from __future__ import annotations
@@ -55,7 +55,10 @@ from relax.helpers.env_flags import parse_env_strict_flag
 from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
 from relax.sparse_pass2.resident_candidates import (
     ResidentCandidateTables,
+    all_translations_words,
     build_resident_candidate_tables,
+    n_mask_words,
+    translation_word_and_bit,
 )
 
 logger = logging.getLogger(__name__)
@@ -531,11 +534,7 @@ def build_resident_candidate_tables_from_csr(
     n_images = int(csr.n_images)
     n_coarse_rot = int(csr.n_coarse_rot)
     n_coarse_trans = int(csr.n_coarse_trans)
-    if n_coarse_trans <= 0 or n_coarse_trans > 32:
-        raise ValueError(
-            "n_coarse_trans must be in [1, 32] to pack into a uint32 bitset, got "
-            f"{n_coarse_trans}",
-        )
+    n_words = n_mask_words(n_coarse_trans)
     n_fine_trans = int(n_fine_trans)
     fine_translation_parent = np.asarray(fine_translation_parent)
     if fine_translation_parent.shape != (n_fine_trans,):
@@ -593,15 +592,12 @@ def build_resident_candidate_tables_from_csr(
         first_cell = np.zeros(0, dtype=np.int64)
     sparse_parent_rot = cell_rot[first_cell]
     sparse_parent_image = cell_image[first_cell]
-    # One uint32 per parent: exactly ``SparseCandidateMask.coarse_valid``
-    # packed bit by bit, bit k = coarse translation k.
-    sparse_parent_bits = np.zeros(sparse_parent_rot.size, dtype=np.uint32)
+    # One bitset per parent: exactly ``SparseCandidateMask.coarse_valid``
+    # packed bit by bit, coarse translation k = bit k % 32 of word k // 32.
+    sparse_parent_bits = np.zeros((sparse_parent_rot.size, n_words), dtype=np.uint32)
     if cell_rot.size:
-        np.bitwise_or.at(
-            sparse_parent_bits,
-            cell_parent,
-            np.uint32(1) << cell_trans.astype(np.uint32),
-        )
+        cell_word, cell_bit = translation_word_and_bit(cell_trans)
+        np.bitwise_or.at(sparse_parent_bits, (cell_parent, cell_word), cell_bit)
 
     # Full-support and complement-encoded images take the whole coarse
     # rotation grid as their parents, ascending, exactly as the host path's
@@ -609,16 +605,16 @@ def build_resident_candidate_tables_from_csr(
     grid_images = np.sort(np.concatenate([full_images, complement_images]))
     grid_rot = np.tile(np.arange(n_coarse_rot, dtype=np.int64), grid_images.size)
     grid_image = np.repeat(grid_images, n_coarse_rot)
-    all_translations = np.uint32((1 << n_coarse_trans) - 1)
-    grid_bits = np.full(grid_rot.size, all_translations, dtype=np.uint32)
+    grid_bits = np.tile(all_translations_words(n_coarse_trans), (grid_rot.size, 1))
     if complement_images.size:
         complement_cell = np.isin(all_cell_image, complement_images)
         if bool(complement_cell.any()):
             slot = np.searchsorted(grid_images, all_cell_image[complement_cell])
+            clear_word, clear_bit = translation_word_and_bit(all_cell_trans[complement_cell])
             np.bitwise_and.at(
                 grid_bits,
-                slot * n_coarse_rot + all_cell_rot[complement_cell],
-                ~(np.uint32(1) << all_cell_trans[complement_cell].astype(np.uint32)),
+                (slot * n_coarse_rot + all_cell_rot[complement_cell], clear_word),
+                ~clear_bit,
             )
 
     # An image with no significant sample still carries one parent, coarse
@@ -633,7 +629,7 @@ def build_resident_candidate_tables_from_csr(
         [sparse_parent_rot, grid_rot, np.zeros(empty_images.size, dtype=np.int64)],
     )
     parent_bits = np.concatenate(
-        [sparse_parent_bits, grid_bits, np.zeros(empty_images.size, dtype=np.uint32)],
+        [sparse_parent_bits, grid_bits, np.zeros((empty_images.size, n_words), dtype=np.uint32)],
     )
     # A stable sort by image keeps each image's own parent order; an image
     # belongs to exactly one regime, so the blocks never interleave inside one.
