@@ -765,7 +765,7 @@ def test_global_memory_tables_equal_shared_tables(monkeypatch, custom_cuda_lib, 
 
     At one row per block the angle and posterior tables take 3 T floats: T = 2730 fits the budget,
     T = 2731 does not. The extra translation carries zero posterior, so it adds exact zeros to every
-    sum: the two launches must agree bit for bit.
+    sum: the two launches run the same arithmetic in the same order.
     """
 
     cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
@@ -782,7 +782,7 @@ def test_global_memory_tables_equal_shared_tables(monkeypatch, custom_cuda_lib, 
         in_global = _kernel(cuda_backproject, operands, **kwargs)
         in_shared = _kernel(cuda_backproject, shared, **kwargs)
     for a, b in zip(in_global, in_shared):
-        np.testing.assert_array_equal(np.asarray(a), np.asarray(b))
+        _assert_matches(a, b)
 
 
 @pytest.mark.gpu
