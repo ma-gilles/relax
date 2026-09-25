@@ -343,6 +343,75 @@ def test_segmented_pass_publishes_retained_class_mass(float64, rtol, monkeypatch
     )
 
 
+@pytest.mark.parametrize("adaptive_fraction", [0.999, 0.9], ids=["f999", "f90"])
+@pytest.mark.parametrize(
+    "float64, rtol",
+    [(False, 1e-6), (True, 1e-12)],
+    ids=["float32", "float64"],
+)
+def test_per_class_route_prunes_the_joint_posterior_like_the_segmented_pass(float64, rtol, adaptive_fraction):
+    """Both K-class routes keep RELION's joint per-particle support.
+
+    The per-class route derives one threshold per particle from its probe passes and
+    applies it in separate M-step calls. A threshold equal to the boundary weight let
+    the recomputed boundary sample round below it, so the route dropped 0.25% of the
+    mass at 0.999 where RELION drops none, and its accumulators differed by 0.7-1.8%.
+    Residuals measured after the fix: about 1e-7 relative in float32, 3e-16 in float64.
+    """
+    options = dict(
+        float64=float64, reconstruct_significant_only=True, adaptive_fraction=adaptive_fraction,
+        class_posterior_sums_from_noise=True,
+    )
+    per_class = _run(segmented=False, **options)
+    segmented = _run(segmented=True, **options)
+    for class_index in range(2):
+        for name in ("Ft_y", "Ft_ctf"):
+            got = np.asarray(getattr(per_class, name)[class_index])
+            want = np.asarray(getattr(segmented, name)[class_index])
+            np.testing.assert_allclose(
+                got, want, rtol=rtol, atol=rtol * float(np.abs(want).max()), err_msg=f"{name} class {class_index}",
+            )
+    np.testing.assert_allclose(
+        np.asarray(per_class.class_mstep_posterior_sums, dtype=np.float64),
+        np.asarray(segmented.class_mstep_posterior_sums, dtype=np.float64),
+        rtol=rtol,
+    )
+
+
+def test_global_threshold_selects_relion_ascending_cumulative_support():
+    """The per-class route's threshold keeps exactly RELION's weight set.
+
+    Independent reference: RELION's CPU findThresholdIdxInCumulativeSum over the
+    ascending weights (acc_helper_functions.h:231-237) and the >= comparison of
+    acc_ml_optimiser_impl.h:3612.
+    """
+    from relax.classification.k_class import _global_reconstruction_probability_thresholds
+
+    rng = np.random.default_rng(5)
+    n_images = 40
+    values = [tuple(rng.dirichlet(np.full(n, 0.3)) for n in rng.integers(1, 30, n_images)) for _ in range(3)]
+    class_log_evidence = rng.normal(size=(3, n_images))
+    global_log_evidence = np.log(
+        sum(np.exp(class_log_evidence[k]) * np.asarray([v.sum() for v in values[k]]) for k in range(3))
+    )
+    for fraction in (0.999, 0.9, 0.5):
+        thresholds = _global_reconstruction_probability_thresholds(
+            values, class_log_evidence, global_log_evidence, fraction,
+        )
+        for i in range(n_images):
+            weights = np.concatenate(
+                [values[k][i] * np.exp(class_log_evidence[k, i] - global_log_evidence[i]) for k in range(3)]
+            )
+            ascending = np.sort(weights)
+            cumulative = np.cumsum(ascending)
+            cut = (1.0 - fraction) * cumulative[-1]
+            index = 0
+            for j in range(ascending.size - 1):
+                if cumulative[j] <= cut < cumulative[j + 1]:
+                    index = j + 1
+            np.testing.assert_array_equal(weights >= thresholds[i], weights >= ascending[index])
+
+
 def test_segmented_rows_refuse_external_normalization():
     means, noise, layouts = _fixture(False)
     dataset = MockDataset(N_IMAGES, np.random.default_rng(17))

@@ -315,7 +315,19 @@ def _global_reconstruction_probability_thresholds(
     global_log_evidence: np.ndarray,
     adaptive_fraction: float,
 ) -> np.ndarray:
-    """RELION pass-2 support threshold over the global class x pose posterior."""
+    """RELION pass-2 support threshold over the global class x pose posterior.
+
+    RELION sorts a particle's fine-pass weights over every class and pose in
+    ascending order, finds the index where their cumulative sum first exceeds
+    ``(1 - adaptive_fraction)`` of the total and keeps the weights at or above the
+    weight at that index (acc_ml_optimiser_impl.h:3554-3581,
+    acc_helper_functions.h:231-237). The per-class M-step passes recompute these
+    probabilities in separate engine calls, so a threshold equal to the boundary
+    weight drops the boundary sample whenever the recomputation rounds it down.
+    The returned threshold is therefore the midpoint between the largest excluded
+    weight (zero when none is excluded) and the smallest kept one: it selects
+    RELION's set, and rounding at the boundary cannot flip it.
+    """
 
     n_classes, n_images = class_log_evidence.shape
     if len(support_values_by_class) != n_classes:
@@ -325,7 +337,7 @@ def _global_reconstruction_probability_thresholds(
     # posterior probability after either float32 or float64 device casting.
     no_support_threshold = float(np.finfo(np.float32).max)
     thresholds = np.full(n_images, no_support_threshold, dtype=np.float64)
-    target = float(adaptive_fraction)
+    excluded_fraction = 1.0 - float(adaptive_fraction)
     for image_index in range(n_images):
         values = []
         for class_index in range(n_classes):
@@ -342,12 +354,14 @@ def _global_reconstruction_probability_thresholds(
                 values.append(scaled)
         if not values:
             continue
-        sorted_values = np.sort(np.concatenate(values))[::-1]
-        cumulative = np.cumsum(sorted_values, dtype=np.float64)
-        threshold_index = int(np.searchsorted(cumulative, target, side="right"))
-        if threshold_index >= sorted_values.size:
-            threshold_index = sorted_values.size - 1
-        thresholds[image_index] = sorted_values[threshold_index]
+        ascending = np.sort(np.concatenate(values))
+        cumulative = np.cumsum(ascending, dtype=np.float64)
+        cut = excluded_fraction * cumulative[-1]
+        # RELION's index: i + 1 for the last i with cumulative[i] <= cut < cumulative[i + 1].
+        crossing = np.flatnonzero((cumulative[:-1] <= cut) & (cut < cumulative[1:]))
+        boundary_index = int(crossing[-1]) + 1 if crossing.size else 0
+        largest_excluded = ascending[boundary_index - 1] if boundary_index > 0 else 0.0
+        thresholds[image_index] = 0.5 * (largest_excluded + ascending[boundary_index])
     return thresholds
 
 

@@ -6178,8 +6178,10 @@ def test_local_k_class_uses_global_reconstruction_threshold(monkeypatch):
         if not call.get("disable_adjoint_y", False)
     ]
     assert len(mstep_thresholds) == 2
+    # Joint weights 0.0001, 0.0002 (class 2) fall under RELION's 0.001 cut and 0.0097 is
+    # the smallest kept weight; the threshold sits midway between 0.0002 and 0.0097.
     for threshold in mstep_thresholds:
-        np.testing.assert_allclose(threshold, np.asarray([0.0097]), rtol=1e-3, atol=1e-6)
+        np.testing.assert_allclose(threshold, np.asarray([0.5 * (0.0002 + 0.0097)]), rtol=1e-3, atol=1e-6)
 
 
 def test_local_search_iteration_k_class_returns_class_details(rng):
@@ -15296,7 +15298,9 @@ def test_global_reconstruction_threshold_uses_finite_no_support_sentinel():
         adaptive_fraction=0.9,
     )
 
-    np.testing.assert_allclose(thresholds[0], 0.4, rtol=1e-6, atol=1e-7)
+    # RELION keeps both weights at 0.9 (nothing below the 0.1 cut); the threshold is
+    # the midpoint between no excluded weight (0) and the smallest kept one.
+    np.testing.assert_allclose(thresholds[0], 0.5 * float(np.float32(0.4)), rtol=1e-12)
     assert np.isfinite(thresholds[1])
     assert thresholds[1] == float(np.finfo(np.float32).max)
 
