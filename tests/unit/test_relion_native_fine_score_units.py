@@ -31,6 +31,7 @@ from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_native_fine_units,
     _score_pass2_bucket_relion_gpu_diff2_raw,
 )
+from helpers.float_compare import assert_matches
 
 # Below one float32 ULP (2**-23 ~ 1.19e-7): tight enough to catch a different
 # rounding path at most values, without asserting bitwise equality.
@@ -298,7 +299,7 @@ def test_fresh_k1_fine_diff2_receives_native_unit_operands(monkeypatch, current_
         expected_corr = native_corr[:, np.asarray(window.score_indices_np)]
     # The zero origin is a discrete mask and stays exact; the values are a
     # measured-exact band.
-    np.testing.assert_array_equal(captured["corr_img"] == 0.0, expected_corr == 0.0)
+    assert_matches(captured["corr_img"] == 0.0, expected_corr == 0.0)
     np.testing.assert_allclose(captured["corr_img"], expected_corr, rtol=_EXACT_BY_CONSTRUCTION_RTOL, atol=0.0)
 
     # The fake translation repeats its input, so the shifted operand is the
