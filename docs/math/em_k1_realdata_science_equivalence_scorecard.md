@@ -350,6 +350,24 @@ RELION against RELION (same band FSC-AUCs):
 | flip-job RELION arm vs speedbench r1 (--preread_images) | 0.9864 | 0.9811 | 0.9812 |
 | repeat 14397251 vs speedbench r1 (--preread_images) | 0.9866 | 0.9810 | 0.9820 |
 
+### EMPIAR-10081 (HCN1, resident engine, timed pair) (relax `3c7e1c571`)
+
+relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
+
+| RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| this job's RELION arm | 14410266 | 0.9991 | 0.9988 | 0.9988 | 0.9999 | 0.9998 | 0.9998 | met |
+| reference 14313014 (seed 42) | 14313014 | 0.9709 | 0.9611 | 0.9621 | 0.9984 | 0.9972 | 0.9974 | met |
+| seed repeat 14363852 (seed 20260924) | 14363852 | 0.9317 | 0.8002 | 0.7980 | 0.9918 | 0.9506 | 0.9489 | not met |
+
+RELION against RELION (same band FSC-AUCs):
+
+| Pair | Merged | Half 1 | Half 2 |
+| --- | ---: | ---: | ---: |
+| this job's RELION arm vs reference 14313014 (seed 42) | 0.9709 | 0.9612 | 0.9620 |
+| this job's RELION arm vs seed repeat 14363852 (seed 20260924) | 0.9318 | 0.8003 | 0.7979 |
+| reference 14313014 (seed 42) vs seed repeat 14363852 (seed 20260924) | 0.9296 | 0.7986 | 0.7965 |
+
 ## Code references
 
 - `scripts/summarize_em_k1_realdata_science_equivalence.py`: scorecard validation, FSC band metrics, provenance gates, and rendering.
