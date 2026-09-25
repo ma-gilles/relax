@@ -288,9 +288,14 @@ def test_duplicated_class_is_the_k1_pass(_resident_production_env):
         np.float32(doubled.class_reconstruction_posterior_sums),
         np.float32(np.full(2, 0.5 * float(single.noise_stats.sumw))),
     )
+    # Pmax is RELION's float32 max weight over its float32 sum of every cell's
+    # weight (sparse_pass2_segmented_posterior_f32); the duplicated pass sums twice
+    # as many cells in another order, which moved 2 of 12 images by 5.2e-5
+    # relative (14424611). The bound is that measurement with a 2x margin.
     assert_matches(
         np.asarray(doubled.stats.max_posterior_per_image),
         0.5 * np.asarray(single.relion_stats.max_posterior_per_image),
+        rtol=1e-4,
     )
     # The K=1 engine-comparison bounds: the Wavg residual cancels most of its
     # magnitude, so its reduction order shows at 1e-4; the other sums at 1e-6.
