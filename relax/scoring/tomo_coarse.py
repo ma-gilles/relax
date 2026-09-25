@@ -223,3 +223,91 @@ def particle_coarse_significance(
         max_significants=None if max_significants is None or int(max_significants) <= 0 else int(max_significants),
         tie_score_ulps=0,
     )
+
+
+def particle_coarse_supports(
+    experiment_dataset,
+    *,
+    unit_image_offsets,
+    image_projections,
+    unit_old_offsets_px,
+    coarse_eulers_deg,
+    random_perturbation,
+    angular_sampling_deg,
+    coarse_translations_px,
+    projector_full,
+    layout: CoarseScoreLayout,
+    noise_variance_half,
+    rotation_log_prior,
+    unit_translation_log_prior,
+    adaptive_fraction,
+    max_significants,
+    model_max_r: int,
+    padding_factor: int,
+    image_size: int,
+    optics_group_ids=None,
+    scale_corrections=None,
+):
+    """Each particle's coarse significant samples, ``rot * T + t`` int32 ids per unit, and its coarse Pmax.
+
+    RELION's GPU coarse pass for a subtomogram (acc_ml_optimiser_impl.h:1737-2194): every tilt image is
+    scored with its own device matrices (``make_eulers_3D`` with the image's ``Aproj``,
+    :func:`relax.sampling._relion_adaptive_pass1_rotations`), its phases for the 3D trial shifts plus
+    the rounded old offset (:func:`relax.refinement.tomo_particles.tilt_translation_angles`) and its own
+    CTF and noise; the images' diff2 is summed in ``img_id`` order and the particle's weights are cut
+    once (:func:`particle_coarse_significance`). Dataset images ``unit_image_offsets[u]:[u+1]`` are
+    particle ``u``'s, in ``img_id`` order.
+    """
+
+    from relax.refinement import tomo_particles
+    from relax.sampling import _relion_adaptive_pass1_rotations
+
+    offsets = np.asarray(unit_image_offsets, dtype=np.int64)
+    image_projections = np.asarray(image_projections, dtype=np.float64)
+    old = tomo_particles.relion_gpu_old_offsets(np.asarray(unit_old_offsets_px, dtype=np.float64))
+    supports, pmax = [], np.zeros(offsets.size - 1, dtype=np.float64)
+    for unit in range(offsets.size - 1):
+        images = np.arange(offsets[unit], offsets[unit + 1])
+        left, _applies = tomo_particles.relion_left_matrices(image_projections[images])
+        rotations = _relion_adaptive_pass1_rotations(
+            coarse_eulers_deg, random_perturbation, angular_sampling_deg, left_matrices=left
+        )
+        angles = tomo_particles.tilt_translation_angles(
+            coarse_translations_px,
+            old[unit : unit + 1],
+            image_projections[images],
+            np.zeros(images.size, int),
+            image_size,
+        )
+        unshifted, weight, initial = tilt_image_coarse_operands(
+            experiment_dataset,
+            images,
+            layout,
+            noise_variance_half=noise_variance_half,
+            optics_group_ids=optics_group_ids,
+            scale_corrections=scale_corrections,
+        )
+        diff2 = particle_coarse_diff2(
+            tilt_image_coarse_diff2(
+                projector_full,
+                rotations[k],
+                unshifted[k],
+                weight[k],
+                initial[k],
+                angles[k],
+                layout,
+                model_max_r=model_max_r,
+                padding_factor=padding_factor,
+            )
+            for k in range(images.size)
+        )
+        stats = particle_coarse_significance(
+            diff2[None],
+            rotation_log_prior,
+            np.asarray(unit_translation_log_prior, dtype=np.float32)[unit : unit + 1],
+            adaptive_fraction=adaptive_fraction,
+            max_significants=max_significants,
+        )
+        supports.append(np.flatnonzero(np.asarray(stats["mask"][0])).astype(np.int32))
+        pmax[unit] = float(stats["pmax"][0])
+    return supports, pmax
