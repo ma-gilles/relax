@@ -34,6 +34,7 @@ TIER_CASES = {
         "kclass_replay",
         "k1_coldstart_standalone",
         "k1_coldstart_relion_seeded_debug",
+        "k1_os1_coldstart_standalone",
         "k1_perturbreplay",
         "kclass_coldstart",
         "kclass_nonadaptive_replay",
