@@ -2046,6 +2046,7 @@ def compute_pass2_stats_resident(
                             has_direct_ctf_rfloat=presence.has_direct_ctf_rfloat,
                             has_highres_xi2=presence.has_highres_xi2,
                             has_relion_norm_high_shell=presence.has_relion_norm_high_shell,
+                            has_optics_groups=optics_groups_np is not None,
                         )
                         warmup = _submit_resident_chunk_warmup(
                             warm_pool,

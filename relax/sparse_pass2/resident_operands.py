@@ -337,6 +337,7 @@ def resident_half_operand_avals(
     has_direct_ctf_rfloat: bool,
     has_highres_xi2: bool = True,
     has_relion_norm_high_shell: bool = True,
+    has_optics_groups: bool = False,
 ) -> "ResidentHalfOperands":
     """The half's operands as avals, without preparing them (P4-J).
 
@@ -413,6 +414,7 @@ def resident_half_operand_avals(
         ),
         scale=aval(per_image, jnp.float32),
         group_ids=aval(per_image, jnp.int32),
+        optics_groups=aval(per_image, jnp.int32) if has_optics_groups else None,
     )
 
 

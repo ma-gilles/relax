@@ -50,7 +50,7 @@ ARRAY_FIELDS = (
     "score_input", "corr_img_score", "highres_xi2_half", "translation_prior",
     "recon_image", "recon_weight", "noise_image", "ctf2_over_nv_recon",
     "direct_ctf_rfloat_recon", "processed_image_half", "relion_norm_high_shell",
-    "scale", "group_ids",
+    "scale", "group_ids", "optics_groups",
 )
 
 
@@ -66,6 +66,13 @@ def test_it_returns_avals_and_allocates_nothing():
     for name in ARRAY_FIELDS:
         value = getattr(operands, name)
         assert value is None or isinstance(value, jax.ShapeDtypeStruct), name
+
+
+def test_optics_groups_is_one_int32_row_per_image_only_with_several_groups():
+    assert _avals().optics_groups is None
+    operands = _avals(has_optics_groups=True)
+    assert operands.optics_groups.shape == (SHAPE_ARGS["n_images"],)
+    assert jnp.dtype(operands.optics_groups.dtype) == jnp.int32
 
 
 def test_the_shapes_are_the_ones_the_dataclass_declares():
@@ -194,6 +201,7 @@ def test_the_avals_match_the_real_preparation(monkeypatch, custom_cuda_lib, gpu_
         has_direct_ctf_rfloat=real.direct_ctf_rfloat_recon is not None,
         has_highres_xi2=real.highres_xi2_half is not None,
         has_relion_norm_high_shell=real.relion_norm_high_shell is not None,
+        has_optics_groups=real.optics_groups is not None,
     )
 
     mismatches = []
