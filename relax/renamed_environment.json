@@ -273,7 +273,6 @@
   "RECOVAR_LOCAL_NOISE_COMPONENT_DUMP": "RELAX_LOCAL_NOISE_COMPONENT_DUMP",
   "RECOVAR_LOCAL_NOISE_COMPONENT_DUMP_": "RELAX_LOCAL_NOISE_COMPONENT_DUMP_",
   "RECOVAR_LOCAL_NOISE_COMPONENT_DUMP_DIR": "RELAX_LOCAL_NOISE_COMPONENT_DUMP_DIR",
-  "RECOVAR_LOCAL_POSTPROCESS_ROW_PROGRAM": "RELAX_LOCAL_POSTPROCESS_ROW_PROGRAM",
   "RECOVAR_LOCAL_SCORE_DUMP": "RELAX_LOCAL_SCORE_DUMP",
   "RECOVAR_LOCAL_SCORE_DUMP_": "RELAX_LOCAL_SCORE_DUMP_",
   "RECOVAR_LOCAL_SCORE_DUMP_CURRENT_SIZE": "RELAX_LOCAL_SCORE_DUMP_CURRENT_SIZE",
@@ -630,6 +629,8 @@
   "RECOVAR_FINAL_ALL_DATA_GRID_CORRECT": "final all-data maps are always gridding-corrected, as in RELION",
   "RELAX_FINAL_ALL_DATA_GRID_CORRECT": "final all-data maps are always gridding-corrected, as in RELION",
   "RELAX_SPARSE_PASS2_PROJECTOR_COMPLEX64": "pass 2 always projects through RELION's float32 texture in both engines (single projection path, 2026-09-24)",
-  "RECOVAR_SPARSE_PASS2_PROJECTOR_COMPLEX64": "pass 2 always projects through RELION's float32 texture in both engines (single projection path, 2026-09-24)"
+  "RECOVAR_SPARSE_PASS2_PROJECTOR_COMPLEX64": "pass 2 always projects through RELION's float32 texture in both engines (single projection path, 2026-09-24)",
+  "RECOVAR_LOCAL_POSTPROCESS_ROW_PROGRAM": "a local bucket's per-image rows are always sliced on the host after transfer (2026-09-25)",
+  "RELAX_LOCAL_POSTPROCESS_ROW_PROGRAM": "a local bucket's per-image rows are always sliced on the host after transfer (2026-09-25)"
  }
 }

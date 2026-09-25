@@ -134,7 +134,6 @@ from relax.local.local_big_jit import (
 )
 from relax.local.local_bucket_stages import (
     LOCAL_BUCKET_CONSTANT_PROGRAM_ENV,
-    LOCAL_POSTPROCESS_ROW_PROGRAM_ENV,
     FlatLocalRowCapacities,
     _accumulate_packed_noise_chunk,
     _adjoint_slice_volume_maybe_windowed_row_chunks,
@@ -170,7 +169,6 @@ from relax.local.local_bucket_stages import (
     encode_hard_assignment,
     local_bucket_constant_operands,
     local_bucket_constant_specs,
-    trim_local_postprocess_rows,
     validate_local_relion_projector_window,
 )
 from relax.local.local_caches import (
@@ -312,7 +310,8 @@ def _accumulate_class_segment_statistics(
     """
 
     rows = int(unpadded_batch_size)
-    offset = -0.5 * np.asarray(batch_norm, dtype=np.float64).reshape(rows, -1)[:rows, 0]
+    # Trim before reshaping: the rows may still carry the bucket's padded tail.
+    offset = -0.5 * np.asarray(batch_norm, dtype=np.float64)[:rows].reshape(rows, -1)[:, 0]
     mass = np.asarray(class_probs_sum, dtype=np.float64)[:rows]
     best = np.asarray(class_best_log_score, dtype=np.float64)[:rows]
     class_log_evidence_per_image[:, image_indices] = (
@@ -562,11 +561,6 @@ def run_local_em_exact(
     if host_plan_cuda_enabled and not host_plan_pack_enabled:
         raise ValueError("CUDA host-plan packing requires host-plan packing")
     host_publication_enabled = parse_env_binary_flag(EXACT_LOCAL_HOST_PUBLICATION_ENV)
-    # P3-H: fold a bucket's per-image row trims into one program. Off by
-    # default; the per-value slice below stays the oracle.
-    postprocess_row_program_enabled = parse_env_binary_flag(
-        LOCAL_POSTPROCESS_ROW_PROGRAM_ENV
-    )
     # P3-J: build a bucket's constant big-JIT operands in one program. Off by
     # default; each site's own ``jnp.zeros``/``jnp.ones`` stays the oracle.
     bucket_constant_program_enabled = parse_env_binary_flag(
@@ -4847,56 +4841,14 @@ def run_local_em_exact(
 
             postprocess_t0 = time.time()
             stats_probs_sum_t = reconstruction_probs_sum_t if stats_use_reconstruction_probs else probs_sum_t
-            # The postprocessor already needs these small arrays on the host.
-            # Preserve their physical shapes until that consumer when enabled.
-            #
-            # P3-H: with the flag on, every row array this bucket trims goes
-            # through one program instead of one single-primitive
-            # ``dynamic_slice`` program per array; ``postprocess_rows`` then
-            # reads the result by name. With the flag off each call slices on
-            # its own, which is the path the folded form is measured against.
-            postprocess_trimmed_rows = None
-            if postprocess_row_program_enabled and not host_publication_enabled:
-                postprocess_row_inputs = {
-                    "batch_norm": batch_norm,
-                    "log_Z": log_Z,
-                    "best_argmax": best_argmax,
-                    "best_log_score": best_log_score,
-                    "max_posterior": max_posterior,
-                    "n_significant_samples": n_significant_samples,
-                    "stats_probs_sum_t": stats_probs_sum_t,
-                    "reconstruction_sample_mask": reconstruction_sample_mask,
-                }
-                if n_classes > 1:
-                    postprocess_row_inputs.update(
-                        bucket_class_probs_sum=bucket_class_probs_sum,
-                        bucket_class_best_log_score=bucket_class_best_log_score,
-                        bucket_class_log_evidence=bucket_class_log_evidence,
-                        bucket_class_best_argmax=bucket_class_best_argmax,
-                    )
-                    if bucket_class_reconstruction_probs_sum is not None:
-                        postprocess_row_inputs["bucket_class_reconstruction_probs_sum"] = (
-                            bucket_class_reconstruction_probs_sum
-                        )
-                if (
-                    bucket_uncast_log_Z is not None
-                    and uncast_log_evidence_per_image is not None
-                ):
-                    postprocess_row_inputs["bucket_uncast_log_Z"] = bucket_uncast_log_Z
-                postprocess_trimmed_rows = trim_local_postprocess_rows(
-                    postprocess_row_inputs,
-                    unpadded_batch_size=unpadded_batch_size,
-                )
-
-            def postprocess_rows(value, *, name):
-                if postprocess_trimmed_rows is not None:
-                    return postprocess_trimmed_rows[name]
-                return value if host_publication_enabled else value[:unpadded_batch_size]
-
+            # Every consumer below converts these per-image rows to NumPy, so
+            # they keep the bucket's physical rows and the unpadded prefix is
+            # sliced on the host (``host_prefix``): a changing bucket tail then
+            # compiles no device slice.
             stats_probs_sum_t_np = (
                 None
                 if probs_sum_t_np is None
-                else np.asarray(postprocess_rows(stats_probs_sum_t, name="stats_probs_sum_t"), dtype=np.float64)[:unpadded_batch_size]
+                else np.asarray(stats_probs_sum_t, dtype=np.float64)[:unpadded_batch_size]
             )
             if n_classes > 1:
                 _accumulate_class_segment_statistics(
@@ -4905,20 +4857,17 @@ def run_local_em_exact(
                     n_classes=n_classes,
                     segment_rotation_count=int(bucket.segment_rotation_count),
                     n_trans=n_trans,
-                    batch_norm=postprocess_rows(batch_norm, name="batch_norm"),
-                    best_argmax=postprocess_rows(best_argmax, name="best_argmax"),
-                    class_probs_sum=postprocess_rows(bucket_class_probs_sum, name="bucket_class_probs_sum"),
+                    batch_norm=batch_norm,
+                    best_argmax=best_argmax,
+                    class_probs_sum=bucket_class_probs_sum,
                     class_reconstruction_probs_sum=(
                         None
                         if bucket_class_reconstruction_probs_sum is None
-                        else postprocess_rows(
-                            bucket_class_reconstruction_probs_sum,
-                            name="bucket_class_reconstruction_probs_sum",
-                        )
+                        else bucket_class_reconstruction_probs_sum
                     ),
-                    class_best_log_score=postprocess_rows(bucket_class_best_log_score, name="bucket_class_best_log_score"),
-                    class_log_evidence=postprocess_rows(bucket_class_log_evidence, name="bucket_class_log_evidence"),
-                    class_best_argmax=postprocess_rows(bucket_class_best_argmax, name="bucket_class_best_argmax"),
+                    class_best_log_score=bucket_class_best_log_score,
+                    class_log_evidence=bucket_class_log_evidence,
+                    class_best_argmax=bucket_class_best_argmax,
                     translation_grid=local_layout.translation_grid,
                     per_class_hard_assignments=per_class_hard_assignments,
                     per_class_best_pose_rotations=per_class_best_pose_rotations,
@@ -4926,7 +4875,7 @@ def run_local_em_exact(
                     per_class_best_pose_rotation_ids=per_class_best_pose_rotation_ids,
                     per_class_best_pose_eulers_deg=per_class_best_pose_eulers_deg,
                     probs_sum_t=(
-                        postprocess_rows(stats_probs_sum_t, name="stats_probs_sum_t")
+                        stats_probs_sum_t
                         if stats_probs_sum_t_np is None
                         else stats_probs_sum_t_np
                     ),
@@ -4940,13 +4889,13 @@ def run_local_em_exact(
                 )
             if bucket_uncast_log_Z is not None and uncast_log_evidence_per_image is not None:
                 uncast_rows = np.asarray(
-                    postprocess_rows(bucket_uncast_log_Z, name="bucket_uncast_log_Z"), dtype=np.float64,
+                    bucket_uncast_log_Z, dtype=np.float64,
                 )[:unpadded_batch_size]
                 # Trim to the valid image rows before selecting the column: when host
                 # publication retains the padded rows, reshaping first selects the
                 # wrong rows (four physical rows with two valid would take rows 0 and 2).
                 offset_rows = -0.5 * np.asarray(
-                    postprocess_rows(batch_norm, name="batch_norm"), dtype=np.float64,
+                    batch_norm, dtype=np.float64,
                 )[:unpadded_batch_size].reshape(unpadded_batch_size, -1)[:, 0]
                 uncast_log_evidence_per_image[
                     np.asarray(unpadded_bucket.image_indices, dtype=np.int64)
@@ -4956,26 +4905,26 @@ def run_local_em_exact(
                 **_unpadded_bucket_rows(bucket, unpadded_batch_size),
                 translation_grid=local_layout.translation_grid,
                 n_trans=n_trans,
-                best_argmax=postprocess_rows(best_argmax, name="best_argmax"),
-                batch_norm=postprocess_rows(batch_norm, name="batch_norm"),
-                log_Z=postprocess_rows(log_Z, name="log_Z"),
-                best_log_score=postprocess_rows(best_log_score, name="best_log_score"),
-                max_posterior=postprocess_rows(max_posterior, name="max_posterior"),
+                best_argmax=best_argmax,
+                batch_norm=batch_norm,
+                log_Z=log_Z,
+                best_log_score=best_log_score,
+                max_posterior=max_posterior,
                 probs_sum_t=(
-                    postprocess_rows(stats_probs_sum_t, name="stats_probs_sum_t") if stats_probs_sum_t_np is None else stats_probs_sum_t_np
+                    stats_probs_sum_t if stats_probs_sum_t_np is None else stats_probs_sum_t_np
                 ),
-                n_significant_samples=postprocess_rows(n_significant_samples, name="n_significant_samples"),
+                n_significant_samples=n_significant_samples,
                 reconstruction_sample_mask=(
                     None
                     if host_publication_enabled and postprocess_buffers.reconstruction_sample_indices_by_image is None
-                    else postprocess_rows(reconstruction_sample_mask, name="reconstruction_sample_mask")
+                    else reconstruction_sample_mask
                 ),
                 collect_profile_stats=collect_profile_stats,
                 reconstruction_row_count=reconstruction_row_count,
                 reconstruction_take_indices=reconstruction_take_indices,
                 reconstruction_pack_mask=reconstruction_pack_mask_np,
                 buffers=postprocess_buffers,
-                host_prefix=host_publication_enabled,
+                host_prefix=True,
             )
             if collect_profile_stats:
                 total_significant_samples += significant_sample_count
