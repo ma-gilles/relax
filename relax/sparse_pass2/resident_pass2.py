@@ -363,8 +363,6 @@ def _resident_wavg_arithmetic(
 
 def resident_pass2_out_of_scope_reason(
     *,
-    relion_firstiter_score_mode,
-    relion_firstiter_winner_take_all,
     accumulate_noise=False,
     scale_groups_available=False,
     preserve_bpref_particle_order=False,
@@ -376,9 +374,6 @@ def resident_pass2_out_of_scope_reason(
     a reason to stop a run. The caller sends them to the compact engine and
     says so:
 
-    - RELION's ``--firstiter_cc`` iteration scores with normalized
-      cross-correlation and takes the winner outright, a different pass-2
-      route with its own kernels;
     - a production-shaped pass (noise and group-scale statistics) that does not
       preserve RELION's particle order (a subset or focused debugging replay)
       uses the compact engine's unordered, non-atomic Wavg arithmetic; the
@@ -392,13 +387,6 @@ def resident_pass2_out_of_scope_reason(
     fallback there would hide a real mismatch.
     """
 
-    if relion_firstiter_score_mode != "gaussian":
-        return (
-            "RELION normalized-CC scoring "
-            f"(relion_firstiter_score_mode={relion_firstiter_score_mode!r})"
-        )
-    if relion_firstiter_winner_take_all:
-        return "RELION --firstiter_cc winner-take-all posteriors"
     if accumulate_noise and scale_groups_available:
         atomic_scale_aa = _resident_wavg_arithmetic(
             accumulate_noise=accumulate_noise,
@@ -430,17 +418,24 @@ def require_resident_production_configuration(**kwargs) -> None:
         "a persistent RELION projector texture belongs to the compact engine; "
         "the resident driver projects from relion_projector_half",
     )
+    score_mode = kwargs["relion_firstiter_score_mode"]
     _require(
-        bool(kwargs["relion_exact_fine_gaussian"])
-        and kwargs["relion_firstiter_score_mode"] == "gaussian",
-        "exact RELION fine Gaussian scoring is required "
+        (score_mode == "gaussian" and bool(kwargs["relion_exact_fine_gaussian"]))
+        or (score_mode == "normalized_cc" and bool(kwargs.get("relion_exact_fine_normalized_cc"))),
+        "exact RELION fine Gaussian scoring, or RELION's literal fine normalized-CC "
+        "reduction for --firstiter_cc, is required "
         f"(got relion_exact_fine_gaussian={kwargs['relion_exact_fine_gaussian']!r}, "
-        f"score_mode={kwargs['relion_firstiter_score_mode']!r})",
+        f"relion_exact_fine_normalized_cc={kwargs.get('relion_exact_fine_normalized_cc')!r}, "
+        f"score_mode={score_mode!r})",
     )
     _require(not bool(kwargs["use_float64_scoring"]), "float64 scoring is a diagnostic mode")
+    # RELION's --firstiter_cc iteration scores with normalized CC and keeps only
+    # the best weight (ml_optimiser.cpp:9266-9293); a Gaussian pass never does.
     _require(
-        not bool(kwargs["relion_firstiter_winner_take_all"]),
-        "winner-take-all (--firstiter_cc) disables the float32 fine posterior",
+        bool(kwargs["relion_firstiter_winner_take_all"]) == (score_mode == "normalized_cc"),
+        "winner-take-all goes with the --firstiter_cc normalized-CC pass and only with it "
+        f"(winner_take_all={bool(kwargs['relion_firstiter_winner_take_all'])!r}, "
+        f"score_mode={score_mode!r})",
     )
     _require(
         not (bool(kwargs["disable_adjoint_y"]) or bool(kwargs["disable_adjoint_ctf"])),
@@ -1438,6 +1433,7 @@ def compute_pass2_stats_resident(
         relion_fine_diff2_fused_ffi=relion_fine_diff2_fused_ffi,
         relion_f32_fine_posterior=relion_f32_fine_posterior,
     )
+    firstiter_cc = relion_firstiter_score_mode == "normalized_cc"
 
     n_images = experiment_dataset.n_units
     n_coarse_trans = int(np.asarray(translations).shape[0])
@@ -1516,6 +1512,7 @@ def compute_pass2_stats_resident(
     require_resident_production_configuration(
         relion_x_half_mstep=relion_x_half_mstep,
         relion_exact_fine_gaussian=relion_exact_fine_gaussian,
+        relion_exact_fine_normalized_cc=relion_exact_fine_normalized_cc,
         relion_firstiter_score_mode=relion_firstiter_score_mode,
         use_float64_scoring=use_float64_scoring,
         relion_firstiter_winner_take_all=relion_firstiter_winner_take_all,
@@ -1542,8 +1539,9 @@ def compute_pass2_stats_resident(
         relion_projector_texture=relion_projector_texture,
     )
     _require(
-        bool(use_relion_f32_fine_posterior),
-        "the RELION float32 fine posterior is the segmented kernel's contract",
+        bool(use_relion_f32_fine_posterior) or firstiter_cc,
+        "the RELION float32 fine posterior is the segmented kernel's contract "
+        "(the --firstiter_cc pass takes the winner instead)",
     )
     _require(
         bool(relion_fine_mstep_prune) or bool(relion_x_half_mstep),
@@ -2084,7 +2082,10 @@ def compute_pass2_stats_resident(
     # over the half produces the same rows; the chunk loop then gathers them.
     resident_operands = None
     warmup = None
-    if _resident_operands_requested():
+    # The --firstiter_cc iteration scores the compact engine's translated
+    # normalized-CC tiles, which only the per-chunk preparation builds; it is
+    # one iteration at a small current size.
+    if _resident_operands_requested() and not firstiter_cc:
         _, _norm_high_shell_dtype = relion_powerclass_noise_dtypes(
             real_dtype=precision_policy.score_real_dtype,
             source_faithful_spectrum_norm=resolved_spectrum_norm,
@@ -2378,6 +2379,7 @@ def compute_pass2_stats_resident(
             optics_groups_np=optics_groups_np,
             relion_native_fine_units=relion_native_fine_units,
             coarse_reuse=coarse_reuse,
+            firstiter_cc=firstiter_cc,
         )
     loop_s = time.time() - loop_t0
     if warmup is not None:
@@ -2756,6 +2758,8 @@ def _make_chunk_stage_operands(recon, translation_sqdist_ang) -> _ChunkStageOper
         group_ids=recon["group_ids"],
         translation_sqdist_ang=translation_sqdist_ang,
         optics_groups=recon.get("optics_groups"),
+        score_shifted_cc=recon.get("score_shifted_cc"),
+        cc_half_batch_norm=recon.get("cc_half_batch_norm"),
     )
 
 
@@ -2891,6 +2895,7 @@ def _make_chunk_program_spec(
     bpref_recon_operand,
     mstep_max_r=None,
     reuse_coarse_normalization=False,
+    firstiter_cc=False,
 ) -> _ChunkProgramSpec:
     """The static key of one chunk program.
 
@@ -2924,6 +2929,7 @@ def _make_chunk_program_spec(
         block_unroll=_chunk_block_unroll(),
         static_block_trip=_chunk_static_block_trip_enabled(),
         reuse_coarse_normalization=bool(reuse_coarse_normalization),
+        firstiter_cc=bool(firstiter_cc),
     )
 
 
@@ -3204,6 +3210,7 @@ def _prepare_chunk_reconstruction_operands(
     group_ids_np,
     optics_groups_np=None,
     relion_native_fine_units=False,
+    normalized_cc=False,
 ):
     """Build one chunk's translated reconstruction, noise and Wavg tiles.
 
@@ -3222,6 +3229,12 @@ def _prepare_chunk_reconstruction_operands(
     FFT units exactly as :func:`prepare_resident_half_operands` does: the score
     image divided by N**2 and RELION's native ``corr_img``. Resident local
     search calls this without it and keeps RECOVAR units.
+
+    ``normalized_cc`` (RELION's ``--firstiter_cc`` iteration) also returns the
+    compact engine's normalized-CC operands: the translated corrected score
+    tile ``[C_B, T, P]`` and half the unweighted image power, the score offset
+    the compact engine reports evidence with. ``corr_img_score`` is then the
+    CC pixel weight the same call returns.
 
     Shape stability. The batch handed to ``_prepare_bucket_io`` is padded on
     the host to the chunk's image capacity before anything is traced, so every
@@ -3252,12 +3265,12 @@ def _prepare_chunk_reconstruction_operands(
     (
         _shifted_score_half,
         shifted_recon_half,
-        _batch_norm,
+        batch_norm,
         ctf2_over_nv_half,
         ctf2_over_nv_half_with_dc,
         shifted_score_half_with_dc,
         processed_score_half_for_noise,
-        _shifted_corrected_score_half,
+        shifted_corrected_score_half,
         direct_score_input,
         _direct_preprocessed_score_input,
         _direct_pixel_correction,
@@ -3343,6 +3356,18 @@ def _prepare_chunk_reconstruction_operands(
     valid_images = jnp.asarray(
         np.arange(image_capacity) < n_valid_images, dtype=bool
     )
+    score_shifted_cc = cc_half_batch_norm = None
+    if normalized_cc:
+        # The compact engine's operands (sparse_pass2_bucketed.py, the
+        # normalized_cc branch): the translated corrected score tile in the
+        # score window, and the -0.5 * |image|^2 evidence offset.
+        tile = shifted_corrected_score_half.reshape(image_capacity, int(n_fine_trans), -1)
+        if not windowed_prepare:
+            tile = tile[:, :, jnp.asarray(score_window_indices, dtype=jnp.int32)]
+        score_shifted_cc = _zero_padded_images(tile[permutation], valid_images)
+        cc_half_batch_norm = _zero_padded_images(
+            (0.5 * jnp.reshape(batch_norm, (image_capacity,)).real)[permutation], valid_images
+        )
 
     (
         score_input,
@@ -3425,6 +3450,8 @@ def _prepare_chunk_reconstruction_operands(
         "scale": jnp.asarray(scale_chunk),
         "group_ids": jnp.asarray(group_ids_chunk),
         "optics_groups": None if optics_groups_chunk is None else jnp.asarray(optics_groups_chunk),
+        "score_shifted_cc": score_shifted_cc,
+        "cc_half_batch_norm": cc_half_batch_norm,
     }
 
 
@@ -3767,6 +3794,9 @@ class _ChunkProgramSpec:
     # retained coarse sum and reports the coarse winner and Pmax
     # (_CoarseNormalizationReuse). The tables carry the arrays.
     reuse_coarse_normalization: bool = False
+    # RELION --firstiter_cc: normalized-CC scores and a winner-take-all
+    # posterior (ml_optimiser.cpp:8844-8858, :9266-9293).
+    firstiter_cc: bool = False
 
 
 class _MstepOnlyStatsConfig(NamedTuple):
@@ -3825,6 +3855,10 @@ class _ChunkStageOperands(NamedTuple):
     translation_sqdist_ang: jax.Array | None
     # int32 [C_B] optics-group row of each image, only with a [G, P] noise table.
     optics_groups: jax.Array | None = None
+    # RELION --firstiter_cc only: the translated corrected score tile
+    # [C_B, T, P_score] and 0.5 * |image|^2 per image (the evidence offset).
+    score_shifted_cc: jax.Array | None = None
+    cc_half_batch_norm: jax.Array | None = None
 
 
 class _CoarseNormalizationReuse(NamedTuple):
@@ -3917,6 +3951,16 @@ def _resident_chunk_posterior(
     image_index = jnp.arange(image_capacity, dtype=jnp.int32)
     chunk_image_ids = jnp.where(image_index < rows.n_valid_images, image_index, jnp.int32(-1))
 
+    if spec.firstiter_cc:
+        return _resident_chunk_posterior_firstiter_cc(
+            rows,
+            operands,
+            tables,
+            spec=spec,
+            cuda_backproject=cuda_backproject,
+            row_is_valid=row_is_valid,
+            kernel_row_image_ids=kernel_row_image_ids,
+        )
     scored = score_resident_chunk(
         rows.row_image_local,
         rows.row_fine_rot,
@@ -3997,6 +4041,107 @@ def _resident_chunk_posterior(
         best_log_score=best_log_score,
         best_cell_index=jnp.asarray(best_cell_index, dtype=jnp.int64),
         max_posterior=max_posterior,
+        kernel_row_image_ids=kernel_row_image_ids,
+        row_is_valid=row_is_valid,
+    )
+
+
+def _winner_take_all_cells(scores, row_image_local, row_is_valid, segment_offsets, *, image_capacity: int):
+    """Each image's first maximum over its segment, and the one-hot posterior on it.
+
+    ``scores`` is ``[C_R, T]`` with ``-inf`` on invalid cells; rows are
+    image-major, so a flat cell's segment-relative index is its offset from the
+    image's first cell. Ties go to the smallest flat cell, as ``jnp.argmax``
+    does over the compact engine's bucket rows in the same order. Returns
+    ``(best_log_score [C_B], best_cell_index int64 [C_B], posterior [C_R, T])``;
+    an image without a finite score has ``best_log_score = -inf``, cell 0 and
+    no posterior mass.
+    """
+
+    row_capacity, n_fine_trans = scores.shape
+    row_image = jnp.where(row_is_valid, row_image_local, jnp.int32(image_capacity))
+    best_log_score = jax.ops.segment_max(
+        jnp.max(scores, axis=1), row_image, num_segments=image_capacity + 1, indices_are_sorted=True
+    )[:image_capacity]
+    cell = jnp.arange(row_capacity * n_fine_trans, dtype=jnp.int64).reshape(row_capacity, n_fine_trans)
+    row_best = best_log_score[jnp.minimum(row_image, image_capacity - 1)]
+    is_best = row_is_valid[:, None] & jnp.isfinite(scores) & (scores == row_best[:, None])
+    first_cell = jnp.min(jnp.where(is_best, cell, jnp.iinfo(jnp.int64).max), axis=1)
+    best_flat = jax.ops.segment_min(
+        first_cell, row_image, num_segments=image_capacity + 1, indices_are_sorted=True
+    )[:image_capacity]
+    has_winner = jnp.isfinite(best_log_score)
+    segment_start = jnp.asarray(segment_offsets[:image_capacity], dtype=jnp.int64)
+    best_cell_index = jnp.where(has_winner, best_flat - segment_start, jnp.int64(0))
+    posterior = jnp.zeros((row_capacity * n_fine_trans,), dtype=jnp.float32).at[
+        jnp.where(has_winner, best_flat, row_capacity * n_fine_trans)
+    ].set(1.0, mode="drop")
+    return best_log_score, best_cell_index, posterior.reshape(row_capacity, n_fine_trans)
+
+
+def _resident_chunk_posterior_firstiter_cc(
+    rows: _ChunkRowArrays,
+    operands: _ChunkStageOperands,
+    tables: _ChunkStageTables,
+    *,
+    spec: _ChunkProgramSpec,
+    cuda_backproject,
+    row_is_valid,
+    kernel_row_image_ids,
+) -> _ChunkPosterior:
+    """RELION's ``--firstiter_cc`` iteration: normalized-CC scores, winner takes all.
+
+    RELION zeroes every weight but the best one (ml_optimiser.cpp:9266-9293;
+    acc_ml_optimiser_impl.h:2868-2960), so the posterior is one-hot at each
+    image's highest CC and Pmax is 1. The winner is the first maximum in the
+    image's segment order, which is the compact engine's ``jnp.argmax`` over its
+    bucket rows in the same order (``_winner_take_all_bucket_probs``). log-Z is
+    the log-sum-exp of the CC scores, the compact engine's reported evidence.
+    """
+
+    from relax.sparse_pass2.resident_scoring import score_resident_chunk_normalized_cc
+
+    row_capacity = int(spec.row_capacity)
+    image_capacity = int(spec.image_capacity)
+    n_fine_trans = int(spec.n_fine_trans)
+    scored = score_resident_chunk_normalized_cc(
+        rows.row_image_local,
+        rows.row_fine_rot,
+        rows.row_mask_bits,
+        rows.row_mask_mode,
+        rows.n_valid_rows,
+        tables.projection_score_cache,
+        operands.score_shifted_cc,
+        operands.corr_img_score,
+        operands.cc_half_batch_norm,
+        half_weights=tables.half_weights,
+        full_to_compact=tables.full_to_compact,
+        fine_translation_parent=tables.fine_translation_parent,
+        row_capacity=row_capacity,
+        n_fine_trans=n_fine_trans,
+        block_rows=int(spec.mstep_block_rows),
+    )
+    scores = jnp.asarray(scored.scores, dtype=jnp.float32)
+    scores_flat = scores.reshape(-1)
+    log_z = cuda_backproject.sparse_pass2_segmented_log_z_f64(
+        scores_flat, rows.segment_offsets, rows.n_valid_images
+    )
+
+    best_log_score, best_cell_index, winner = _winner_take_all_cells(
+        scores,
+        rows.row_image_local,
+        row_is_valid,
+        rows.segment_offsets,
+        image_capacity=image_capacity,
+    )
+    has_winner = jnp.isfinite(best_log_score)
+    return _ChunkPosterior(
+        row_posterior=winner,
+        min_diff2=scored.min_diff2,
+        class_log_z=jnp.asarray(log_z, dtype=jnp.float64),
+        best_log_score=best_log_score,
+        best_cell_index=best_cell_index,
+        max_posterior=has_winner.astype(jnp.float32),
         kernel_row_image_ids=kernel_row_image_ids,
         row_is_valid=row_is_valid,
     )
@@ -4810,6 +4955,7 @@ def _run_resident_chunk(
     optics_groups_np=None,
     relion_native_fine_units=False,
     coarse_reuse=None,
+    firstiter_cc=False,
 ):
     """Run every resident stage for one capacity chunk.
 
@@ -4883,6 +5029,7 @@ def _run_resident_chunk(
             group_ids_np=group_ids_np,
             optics_groups_np=optics_groups_np,
             relion_native_fine_units=relion_native_fine_units,
+            normalized_cc=firstiter_cc,
         )
     else:
         # The chunk's image slots are the half's images ``image_start`` to
@@ -4996,6 +5143,7 @@ def _run_resident_chunk(
             resident_operands is not None and resident_operands.recon_weight is not None
         ),
         reuse_coarse_normalization=coarse_reuse is not None,
+        firstiter_cc=firstiter_cc,
     )
 
     if submitted_keys is not None:

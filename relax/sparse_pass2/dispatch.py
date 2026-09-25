@@ -192,16 +192,13 @@ def compute_pass2_stats_sparse(
         # Inside the path it covers it raises a named NotImplementedError on
         # any configuration mismatch rather than falling back, so a measured
         # comparison always knows which engine produced a result. The scoring
-        # routes it was never scoped to cover are different (RELION's
-        # --firstiter_cc scoring and the unordered Wavg arithmetic of subset
-        # replays; see
+        # route it was never scoped to cover is different (the unordered Wavg
+        # arithmetic of subset replays; see
         # resident_pass2_out_of_scope_reason), so those passes go to the
         # compact engine and the log says which and why.
         sparse_pass2_impl = compute_pass2_stats_sparse_bucketed
         if resident_pass2_requested():
             out_of_scope = resident_pass2_out_of_scope_reason(
-                relion_firstiter_score_mode=relion_firstiter_score_mode,
-                relion_firstiter_winner_take_all=relion_firstiter_winner_take_all,
                 accumulate_noise=accumulate_noise,
                 scale_groups_available=group_ids is not None,
                 preserve_bpref_particle_order=preserve_bpref_particle_order,

@@ -986,37 +986,32 @@ def test_reorder_permutation_inverts_a_shuffled_fetch():
         rp._reorder_permutation(np.asarray([1, 9, 7, 7]), requested, capacity=6)
 
 
-@pytest.mark.parametrize(
-    ("mode", "winner", "expected"),
-    [
-        ("normalized_cc", False, "normalized-CC scoring"),
-        ("gaussian", True, "winner-take-all"),
-        ("normalized_cc", True, "normalized-CC scoring"),
-    ],
-)
-def test_out_of_scope_scoring_modes_are_named_not_raised(mode, winner, expected):
-    """The firstiter_cc route is out of scope, not a configuration mismatch.
+def test_the_firstiter_cc_pass_is_in_scope():
+    """RELION's --firstiter_cc iteration runs on the resident driver.
 
-    An end-to-end run at d6b3d3d57 stopped at iteration 1 because the driver
-    raised on RELION's --firstiter_cc pass, which scores with normalized
-    cross-correlation and takes the winner outright. That is a separate pass-2
-    route the driver never covered, so the caller sends it to the compact
-    engine; a mismatch inside the covered path still raises.
+    It scores with normalized cross-correlation and keeps the winner
+    (test_resident_firstiter_cc.py); the gate pairs the two and refuses either
+    alone.
     """
 
-    reason = rp.resident_pass2_out_of_scope_reason(
-        relion_firstiter_score_mode=mode, relion_firstiter_winner_take_all=winner
+    assert "relion_firstiter_score_mode" not in inspect.signature(
+        rp.resident_pass2_out_of_scope_reason
+    ).parameters
+    rp.require_resident_production_configuration(
+        **_production_gate_kwargs(
+            relion_firstiter_score_mode="normalized_cc",
+            relion_firstiter_winner_take_all=True,
+            relion_exact_fine_normalized_cc=True,
+        )
     )
-    assert reason is not None and expected in reason
+    with pytest.raises(NotImplementedError, match="winner-take-all goes with"):
+        rp.require_resident_production_configuration(
+            **_production_gate_kwargs(relion_firstiter_winner_take_all=True)
+        )
 
 
 def test_the_production_gaussian_pass_is_in_scope():
-    assert (
-        rp.resident_pass2_out_of_scope_reason(
-            relion_firstiter_score_mode="gaussian", relion_firstiter_winner_take_all=False
-        )
-        is None
-    )
+    assert rp.resident_pass2_out_of_scope_reason() is None
 
 
 def test_zero_oversampling_coarse_reuse_is_in_scope():
@@ -1064,8 +1059,6 @@ def test_replayed_particle_order_wavg_arithmetic_is_out_of_scope(monkeypatch):
     ):
         monkeypatch.delenv(name, raising=False)
     production = dict(
-        relion_firstiter_score_mode="gaussian",
-        relion_firstiter_winner_take_all=False,
         accumulate_noise=True,
         scale_groups_available=True,
         preserve_bpref_particle_order=True,

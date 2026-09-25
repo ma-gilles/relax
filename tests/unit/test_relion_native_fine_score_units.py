@@ -332,11 +332,7 @@ def test_resident_driver_covers_fresh_passes_at_every_box(fresh, image_size):
     from relax.sparse_pass2 import resident_pass2 as rp
 
     assert "image_size" not in inspect.signature(rp.resident_pass2_out_of_scope_reason).parameters
-    reason = rp.resident_pass2_out_of_scope_reason(
-        relion_firstiter_score_mode="gaussian",
-        relion_firstiter_winner_take_all=False,
-        source_faithful_spectrum_norm=fresh,
-    )
+    reason = rp.resident_pass2_out_of_scope_reason(source_faithful_spectrum_norm=fresh)
     assert reason is None
 
 

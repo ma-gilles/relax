@@ -64,6 +64,7 @@ from relax.sparse_pass2.sparse_pass2_projection_blocks import (
     _compute_sparse_pass2_windowed_projections_block,
 )
 from relax.sparse_pass2.sparse_pass2_scoring import (
+    _relion_cuda_fine_normalized_cc_score,
     _relion_cuda_fine_pixel_weights,
     _relion_powerclass_noise_terms,
 )
@@ -579,6 +580,71 @@ def _score_flat_rows(
     scores = jnp.where(valid & jnp.isfinite(scores), scores, -jnp.inf)
 
     return ResidentChunkScores(raw_diff2=raw_diff2, scores=scores, min_diff2=min_diff2)
+
+
+@partial(
+    jax.jit,
+    static_argnames=("row_capacity", "n_fine_trans", "block_rows"),
+)
+def score_resident_chunk_normalized_cc(
+    row_image_local,  # int32 [C_R] chunk-local image id of each row
+    row_fine_rot,  # int32 [C_R] index into the iteration's fine rotation grid
+    row_mask_bits,  # uint32 [C_R, n_mask_words] per-row coarse translation bitset
+    row_mask_mode,  # int8 [C_R] 0 full, 1 bitset, 2 empty
+    n_valid_rows,  # int32 scalar, runtime
+    projection_score_cache,  # complex [n_fine_rot, N] per-iteration cache
+    score_shifted_cc,  # complex [C_B, T, N] translated corrected score tile
+    cc_score_weight,  # real [C_B, N] the CC pixel weight (the compact engine's ctf2_over_nv_score)
+    cc_half_batch_norm,  # real [C_B] 0.5 * |image|^2
+    *,
+    half_weights,  # real [N]
+    full_to_compact,  # int32 [P]
+    fine_translation_parent,  # int32 [T]
+    row_capacity: int,
+    n_fine_trans: int,
+    block_rows: int,
+):
+    """RELION's ``--firstiter_cc`` fine normalized-CC scores of one chunk.
+
+    The compact engine's ``_score_pass2_bucket_relion_gpu_normalized_cc`` on
+    flat rows: RELION's 256-lane ``cuda_kernel_diff2_CC_fine`` numerator and
+    reference-norm reduction (ml_optimiser.cpp:8844-8858), shared through
+    :func:`_relion_cuda_fine_normalized_cc_score`, evaluated in row blocks so
+    the ``[rows, T, N]`` product never exists for a whole chunk. Like the
+    compact engine it adds no rotation or translation prior.
+
+    ``min_diff2`` carries ``0.5 * |image|^2``, so the evidence offset the
+    statistics stage applies (``-min_diff2``) is the compact engine's
+    normalized-CC offset ``-0.5 * batch_norm``.
+    """
+
+    if row_capacity % block_rows:
+        raise ValueError(f"block_rows {block_rows} must divide the row capacity {row_capacity}")
+    row_image_local = jnp.asarray(row_image_local, dtype=jnp.int32)
+    row_fine_rot = jnp.asarray(row_fine_rot, dtype=jnp.int32)
+    row_is_valid = jnp.arange(row_capacity, dtype=jnp.int32) < jnp.asarray(n_valid_rows, dtype=jnp.int32)
+    candidate_mask = expand_chunk_mask_jnp(row_mask_bits, row_mask_mode, fine_translation_parent)
+    candidate_mask = candidate_mask & row_is_valid[:, None]
+
+    def block_scores(start):
+        images = jax.lax.dynamic_slice_in_dim(row_image_local, start, block_rows)
+        rotations = jax.lax.dynamic_slice_in_dim(row_fine_rot, start, block_rows)
+        return _relion_cuda_fine_normalized_cc_score(
+            projection_score_cache[rotations][:, None, :],
+            score_shifted_cc[images],
+            cc_score_weight[images][:, None, :],
+            half_weights,
+            full_to_compact,
+        )
+
+    starts = jnp.arange(0, row_capacity, block_rows, dtype=jnp.int32)
+    scores = jax.lax.map(block_scores, starts).reshape(row_capacity, n_fine_trans)
+    scores = jnp.where(candidate_mask & jnp.isfinite(scores), scores, -jnp.inf)
+    return ResidentChunkScores(
+        raw_diff2=jnp.where(jnp.isfinite(scores), -scores, jnp.inf),
+        scores=scores,
+        min_diff2=jnp.asarray(cc_half_batch_norm),
+    )
 
 
 @partial(

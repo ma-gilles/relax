@@ -192,6 +192,8 @@ def _assert_resident_engines_ran(log: str, *, global_pass: bool, local_pass: boo
 
     if global_pass and _flag_on("RELAX_SPARSE_PASS2_RESIDENT"):
         assert "Resident pass-2 plan:" in log, f"{case} did not run the resident global pass 2"
+        # No global pass may leave for the compact engine (dispatch.py logs each one).
+        assert "does not cover" not in log, f"{case} routed a global pass to the compact engine"
     if local_pass and _flag_on("RELAX_LOCAL_SEARCH_RESIDENT"):
         assert "running the device-resident local fine pass 2" in log, (
             f"{case} did not run the resident local pass 2"
