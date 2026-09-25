@@ -6043,13 +6043,16 @@ def relion_translate_sum_flat_rows_f32(
             "flat-row translate-and-sum expects int32 row_image_ids[Q]"
         )
     row_count = int(row_image_ids.shape[0])
-    if translation_angles.dtype != jnp.float32 or (
-        translation_angles.ndim != 2 or translation_angles.shape[1] != 2
+    # [T, 2] shared by every image, or [B, T, 2], one table per image (tilt images; one row per block).
+    per_image_angles = translation_angles.ndim == 3
+    if translation_angles.dtype != jnp.float32 or translation_angles.ndim not in (2, 3) or (
+        translation_angles.shape[-1] != 2
+        or (per_image_angles and int(translation_angles.shape[0]) != batch_size)
     ):
         raise ValueError(
-            "flat-row translate-and-sum expects float32 translation_angles[T,2]"
+            "flat-row translate-and-sum expects float32 translation_angles[T,2] or [B,T,2]"
         )
-    n_trans = int(translation_angles.shape[0])
+    n_trans = int(translation_angles.shape[-2])
     if posterior.dtype != jnp.float32 or posterior.shape != (row_count, n_trans):
         raise ValueError(
             "flat-row translate-and-sum expects float32 posterior[Q,T], got "
