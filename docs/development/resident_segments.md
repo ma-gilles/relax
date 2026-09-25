@@ -48,14 +48,29 @@ see images.
 
 ## Projections, M-step and statistics
 
-- **Projections.** For SPA they are per (class, rotation), from a class-stacked projection cache, or from
-  streamed slots keyed by (class, rotation). For tomography they are per (image, class, rotation).
+- **Projections.** For SPA they are per (class, rotation). A chunk row carries the projection id
+  `class * n_fine_rot + rotation` into class-stacked caches and grids (M-step rotations tiled, coarse parents
+  offset to `class * n_coarse_rot + parent`), or into streamed slots projected class by class. For tomography
+  they are per (image, class, rotation).
 - **M-step.** Each scored (image, h, t) backprojects into class `row_class`'s accumulator with weight
-  `posterior(h, t)` (RELION's `BPref[iclass]`, ml_optimiser.cpp:10826). The rows of a chunk are visited
-  class-major, so each class's M-step blocks write one accumulator.
+  `posterior(h, t)` (RELION's `BPref[iclass]`, ml_optimiser.cpp:10826). The M-step visits a chunk's rows
+  class-major (`mstep_row_order`), so each class's blocks write one accumulator; a block that straddles two
+  classes is run once per class, and its rows of the other class get no weight. The per-image Wavg, noise and
+  norm partials run on across classes.
 - **Statistics.**
-  - `rotation_posterior_sums` is `[K, n_coarse_rot]`, and class posterior sums are `[K]` (`thr_wsum_pdf_class`,
-    ml_optimiser.cpp:10497).
-  - Per-class evidence, best score and best cell are per (unit, class) segment reductions.
+  - `rotation_posterior_sums` is `[K, n_coarse_rot]`, and class posterior sums are the pruned M-step mass per
+    class, `[K]` (`thr_wsum_pdf_class`, ml_optimiser.cpp:10497).
+  - Per-class evidence, best score and best cell are reductions over each (unit, class) sub-segment, which is
+    contiguous inside the unit's segment: the segmented log-Z kernel and the first maximum in row order.
   - Noise is one total over classes per optics group (ml_optimiser.cpp:10470, :11010). The per-particle
     divisions of tomography are cryoet's (acc_ml_optimiser_impl.h:4139-4145).
+
+## Implementation
+
+[`compute_k_class_pass2_stats_resident`](../../relax/sparse_pass2/resident_pass2.py) runs the class axis;
+`compute_pass2_stats_resident` is its one-class case and keeps the compact engine's signature. The K-class
+output has the field names of the exact-local engine's class-segmented output, so
+`k_class._class_segmented_em_result` builds the K-class result from either. Under `RELAX_SPARSE_PASS2_RESIDENT`
+the fused K-class pass runs on it with the K=1 production arithmetic, since RELION's does not depend on the class
+count. The first iteration's `--firstiter_cc` winner, the zero-oversampling reuse and several optics groups are
+still K=1 only.
