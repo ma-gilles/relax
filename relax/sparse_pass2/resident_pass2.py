@@ -2145,49 +2145,52 @@ def _resident_pass2(
     # each particle's significant orientations. The projections are the same
     # arrays gathered through a chunk-local slot; see _stream_chunk_projections.
     projection_bytes_per_rotation = transient_projection_bytes / float(max(n_projections, 1))
+    # Both the whole-grid cache and the chunk-local caches are sized from what
+    # the allocator can still hand out now, after reserving the half's resident
+    # operands (allocated later): a fraction of the device total alone let the
+    # whole-grid cache take memory that earlier iterations or a capped allocator
+    # did not have (bench 14445196, K=1 10097 10k at hp3).
+    physical_free_bytes = _device_free_memory_bytes()
+    allocator_free_bytes = _jax_allocator_free_memory_bytes()
+    pool_free_bytes = _jax_allocator_pool_free_bytes()
+    reserved_operand_bytes = 0
+    if _resident_operands_requested():
+        _, _reserve_norm_dtype = relion_powerclass_noise_dtypes(
+            real_dtype=precision_policy.score_real_dtype,
+            source_faithful_spectrum_norm=resolved_spectrum_norm,
+        )
+        reserved_operand_bytes = resident_half_operand_bytes(
+            n_images=int(n_images),
+            n_score_pixels=int(n_windowed),
+            n_recon_pixels=int(n_recon_windowed),
+            n_rect_pixels=int(n_rect),
+            n_noise_shells=int(n_shells),
+            n_fine_trans=int(n_fine_trans),
+            score_complex_bytes=np.dtype(precision_policy.score_complex_dtype).itemsize,
+            real_bytes=np.dtype(precision_policy.score_real_dtype).itemsize,
+            norm_high_shell_bytes=np.dtype(_reserve_norm_dtype).itemsize,
+        )
+    stream_projection_budget_bytes = _stream_projection_budget_bytes(
+        max_projection_cache_bytes,
+        physical_free_bytes=physical_free_bytes,
+        allocator_free_bytes=allocator_free_bytes,
+        pool_free_bytes=pool_free_bytes,
+        reserved_bytes=reserved_operand_bytes,
+    )
     stream_projections = not _projection_cache_fits_budget(
-        transient_projection_bytes, max_projection_cache_bytes
+        transient_projection_bytes, stream_projection_budget_bytes
     )
     if stream_projections:
         score_cache = recon_cache = recon_abs2_cache = None
-        physical_free_bytes = _device_free_memory_bytes()
-        allocator_free_bytes = _jax_allocator_free_memory_bytes()
-        pool_free_bytes = _jax_allocator_pool_free_bytes()
-        # The half's once-per-half operands are allocated after this reading;
-        # reserve them now so the chunk-local caches do not take their room.
-        reserved_operand_bytes = 0
-        if _resident_operands_requested():
-            _, _reserve_norm_dtype = relion_powerclass_noise_dtypes(
-                real_dtype=precision_policy.score_real_dtype,
-                source_faithful_spectrum_norm=resolved_spectrum_norm,
-            )
-            reserved_operand_bytes = resident_half_operand_bytes(
-                n_images=int(n_images),
-                n_score_pixels=int(n_windowed),
-                n_recon_pixels=int(n_recon_windowed),
-                n_rect_pixels=int(n_rect),
-                n_noise_shells=int(n_shells),
-                n_fine_trans=int(n_fine_trans),
-                score_complex_bytes=np.dtype(precision_policy.score_complex_dtype).itemsize,
-                real_bytes=np.dtype(precision_policy.score_real_dtype).itemsize,
-                norm_high_shell_bytes=np.dtype(_reserve_norm_dtype).itemsize,
-            )
-        stream_projection_budget_bytes = _stream_projection_budget_bytes(
-            max_projection_cache_bytes,
-            physical_free_bytes=physical_free_bytes,
-            allocator_free_bytes=allocator_free_bytes,
-            pool_free_bytes=pool_free_bytes,
-            reserved_bytes=reserved_operand_bytes,
-        )
         logger.info(
             "Resident pass-2 projections are streamed per chunk: the %d-rotation cache "
-            "would take %.2f GiB against a %.2f GiB budget; chunk-local budget %.2f GiB "
+            "would take %.2f GiB against a %.2f GiB budget (cache share %.2f GiB) "
             "at %.1f KiB per rotation (physical free %s, allocator free %s, "
             "pool free %s, reserved operands %.2f GiB)",
             n_projections,
             transient_projection_bytes / float(1024**3),
-            max_projection_cache_bytes / float(1024**3),
             stream_projection_budget_bytes / float(1024**3),
+            max_projection_cache_bytes / float(1024**3),
             projection_bytes_per_rotation / 1024.0,
             "unknown" if physical_free_bytes is None else f"{physical_free_bytes / float(1024**3):.2f} GiB",
             "unknown" if allocator_free_bytes is None else f"{allocator_free_bytes / float(1024**3):.2f} GiB",

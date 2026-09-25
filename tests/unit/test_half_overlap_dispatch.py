@@ -236,3 +236,30 @@ def test_dispatcher_restores_the_share_after_a_failure():
     with pytest.raises(RuntimeError):
         _run_halves_overlapped(run_half, (0, 1))
     assert concurrent_device_shares() == 1
+
+
+def test_device_memory_limit_is_capped_by_the_allocator_limit(monkeypatch):
+    """XLA_PYTHON_CLIENT_MEM_FRACTION caps what the process can allocate.
+
+    With the fraction at .50 an 80 GB H100 gives the process about 40 GB; a
+    budget taken from the 80 GB total ran K=1 10097 10k out of memory in the
+    whole-grid projection cache (bench 14445196).
+    """
+    import subprocess
+    from types import SimpleNamespace
+
+    from relax.sparse_pass2 import sparse_pass2_budget as budget
+
+    gib = 1024**3
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB", raising=False)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="0, GPU-aaaa, 81559\n"),
+    )
+    total = 81559 * 1024**2
+    monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: 40 * gib)
+    assert budget._device_memory_limit_bytes() == 40 * gib
+    monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: None)
+    assert budget._device_memory_limit_bytes() == total

@@ -261,12 +261,40 @@ def concurrent_device_shares() -> int:
     return _CONCURRENT_DEVICE_SHARES
 
 
-def _device_memory_limit_bytes() -> int | None:
-    """Return this worker's share of the selected accelerator's memory.
+def _jax_allocator_limit_bytes() -> int | None:
+    """The JAX GPU allocator's limit (``bytes_limit``), if reported.
 
-    The share is the whole device unless several workers have been declared
-    through :func:`set_concurrent_device_shares`, in which case every fraction
-    computed downstream is a fraction of one worker's share.
+    ``XLA_PYTHON_CLIENT_MEM_FRACTION`` sets it; it is the most this process can
+    allocate, whatever the device's total.
+    """
+
+    try:
+        devices = [device for device in jax.devices() if getattr(device, "platform", "") in {"gpu", "cuda"}]
+        if not devices:
+            return None
+        stats = devices[0].memory_stats()
+    except Exception:
+        return None
+    if not stats:
+        return None
+    for key in ("bytes_limit", "bytesLimit", "memory_limit"):
+        value = stats.get(key)
+        if value is not None and int(value) > 0:
+            return int(value)
+    return None
+
+
+def _device_memory_limit_bytes() -> int | None:
+    """Return this worker's share of the memory this process can allocate on its accelerator.
+
+    The device's total from nvidia-smi, capped by the JAX allocator's limit:
+    under ``XLA_PYTHON_CLIENT_MEM_FRACTION=.50`` an 80 GB H100 gives the process
+    about 40 GB, and every budget taken as a fraction of the device total then
+    overshot (K=1 10097 10k, bench 14445196, ran out of memory in the whole-grid
+    projection cache at 42 GB). The share is the whole of that unless several
+    workers have been declared through :func:`set_concurrent_device_shares`, in
+    which case every fraction computed downstream is a fraction of one worker's
+    share.
     """
 
     # ``RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB`` overrides the nvidia-smi probe.
@@ -299,6 +327,9 @@ def _device_memory_limit_bytes() -> int | None:
                 os.environ.get("CUDA_VISIBLE_DEVICES"),
             )
             if memory_bytes is not None:
+                allocator_limit = _jax_allocator_limit_bytes()
+                if allocator_limit is not None:
+                    memory_bytes = min(int(memory_bytes), int(allocator_limit))
                 return _share(memory_bytes)
     except Exception:
         pass
