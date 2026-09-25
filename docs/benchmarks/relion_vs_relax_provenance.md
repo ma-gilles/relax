@@ -179,6 +179,52 @@ RELION against RELION (same band FSC-AUCs):
 | this job's RELION arm vs seed repeat 14363852 (seed 20260924) | 0.9318 | 0.8003 | 0.7979 |
 | reference 14313014 (seed 42) vs seed repeat 14363852 (seed 20260924) | 0.9296 | 0.7986 | 0.7965 |
 
+<a id="empiar10097_10k_k1_autorefine_resident_589ce09"></a>
+
+### EMPIAR-10097 10k subset (resident engine): auto-refine K=1
+
+`empiar10097_10k_k1_autorefine_resident_589ce09`: relax source `589ce095c`, relax main (resident engine default since 90c3f63). Frozen mask `empiar10097_c1` (`3c184a29e87c`); masked FSC-AUC over the scorecard band RELION 0.6783, relax 0.6779. Cross-engine: scorecard rule PASS: thresholds (merged >= 0.95, each half >= 0.90) met against 7 of 7 same-command RELION runs; against this job's RELION arm 0.9953/0.9927/0.9929; RELION-vs-RELION band merged 0.9786-0.9990, halves 0.9655-0.9986 / 0.9666-0.9983. Replaces the old-engine row removed after the 90c3f63 default switch: relax main 589ce09 with production defaults (resident pass 2, resident local search, device significance; every RELAX_* unset, JAX memory at the production .90). Both engines start from relion_refine's inputs only (standalone); relax reads the same reference file as RELION's --ref (reference_init_relion.mrc). RELION command: --auto_refine --split_random_halves --i subset10k_input.star --ref initial_model.mrc --firstiter_cc --trust_ref_size --ini_high 60 --pool 3 --pad 2 --ctf --particle_diameter 220 --flatten_solvent --zero_mask --oversampling 1 --healpix_order 2 --auto_local_healpix_order 4 --offset_range 5 --offset_step 2 --sym C1 --low_resol_join_halves 40 --norm --scale --random_seed 42. Both arms in one job on one node, one H100 and 12 CPUs each, --scratch_dir on node-local /tmp on both, started together. Below the RELION-vs-RELION band (reported only; the 2026-09-23 rule gates on thresholds against >= 1 run): recovar__relion_a1:half2_cross_engine_band_auc, recovar__relion_a1:merged_cross_engine_band_auc, recovar__relion_e:half2_cross_engine_band_auc. `gt` is null: real data: no ground truth. Jobs: relax 14445853; RELION 14445853.
+
+Timing record: (a) RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs). relax: 1 H100, one process, 12 CPUs. Both arms in one --gres=gpu:h100:2 job on one node, started together; no --exclusive. (b) relax: main 589ce09 production defaults (every RELAX_* unset, XLA_PYTHON_CLIENT_MEM_FRACTION unset so recovar's .90 applies); standalone start-up; no timing, capture, replay, deterministic-reduction or dump options. (c) Both: arm-script wall (WALL.json) around the whole process, including start-up, particle copy to --scratch_dir, compilation (fresh JAX cache) and final writes. (d) RELION and relax 14445853 della-h21g3 H100 80GB HBM3 (2026-09-25).
+
+relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
+
+| RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| this job's RELION arm | 14445853 | 0.9953 | 0.9927 | 0.9929 | 0.9993 | 0.9979 | 0.9980 | met |
+| 2026-09-16 sampler run | — | 0.9950 | 0.9927 | 0.9918 | 0.9992 | 0.9979 | 0.9977 | met |
+| 2026-09-18 repeat c | — | 0.9948 | 0.9926 | 0.9913 | 0.9991 | 0.9979 | 0.9974 | met |
+| 2026-09-18 repeat d | — | 0.9952 | 0.9913 | 0.9936 | 0.9993 | 0.9974 | 0.9983 | met |
+| 2026-09-18 repeat e | — | 0.9787 | 0.9663 | 0.9662 | 0.9963 | 0.9903 | 0.9901 | met |
+| bench attempt 1 RELION arm | 14434594 | 0.9786 | 0.9669 | 0.9657 | 0.9962 | 0.9900 | 0.9899 | met |
+| bench attempt 2 RELION arm | 14445196 | 0.9950 | 0.9914 | 0.9926 | 0.9992 | 0.9974 | 0.9979 | met |
+
+RELION against RELION (same band FSC-AUCs):
+
+| Pair | Merged | Half 1 | Half 2 |
+| --- | ---: | ---: | ---: |
+| this job's RELION arm vs 2026-09-16 sampler run | 0.9990 | 0.9986 | 0.9983 |
+| this job's RELION arm vs 2026-09-18 repeat c | 0.9983 | 0.9980 | 0.9966 |
+| this job's RELION arm vs 2026-09-18 repeat d | 0.9961 | 0.9934 | 0.9941 |
+| this job's RELION arm vs 2026-09-18 repeat e | 0.9792 | 0.9658 | 0.9682 |
+| this job's RELION arm vs bench attempt 1 RELION arm | 0.9790 | 0.9661 | 0.9677 |
+| this job's RELION arm vs bench attempt 2 RELION arm | 0.9957 | 0.9920 | 0.9943 |
+| 2026-09-16 sampler run vs 2026-09-18 repeat c | 0.9987 | 0.9986 | 0.9974 |
+| 2026-09-16 sampler run vs 2026-09-18 repeat d | 0.9957 | 0.9930 | 0.9935 |
+| 2026-09-16 sampler run vs 2026-09-18 repeat e | 0.9789 | 0.9655 | 0.9677 |
+| 2026-09-16 sampler run vs bench attempt 1 RELION arm | 0.9787 | 0.9659 | 0.9670 |
+| 2026-09-16 sampler run vs bench attempt 2 RELION arm | 0.9957 | 0.9919 | 0.9944 |
+| 2026-09-18 repeat c vs 2026-09-18 repeat d | 0.9956 | 0.9931 | 0.9930 |
+| 2026-09-18 repeat c vs 2026-09-18 repeat e | 0.9790 | 0.9660 | 0.9677 |
+| 2026-09-18 repeat c vs bench attempt 1 RELION arm | 0.9787 | 0.9663 | 0.9668 |
+| 2026-09-18 repeat c vs bench attempt 2 RELION arm | 0.9955 | 0.9915 | 0.9942 |
+| 2026-09-18 repeat d vs 2026-09-18 repeat e | 0.9786 | 0.9658 | 0.9666 |
+| 2026-09-18 repeat d vs bench attempt 1 RELION arm | 0.9789 | 0.9660 | 0.9674 |
+| 2026-09-18 repeat d vs bench attempt 2 RELION arm | 0.9975 | 0.9951 | 0.9971 |
+| 2026-09-18 repeat e vs bench attempt 1 RELION arm | 0.9958 | 0.9946 | 0.9920 |
+| 2026-09-18 repeat e vs bench attempt 2 RELION arm | 0.9786 | 0.9657 | 0.9669 |
+| bench attempt 1 RELION arm vs bench attempt 2 RELION arm | 0.9790 | 0.9670 | 0.9674 |
+
 ## Synthetic data
 
 <a id="ribosembly_k4_100k256_class3d_15it"></a>

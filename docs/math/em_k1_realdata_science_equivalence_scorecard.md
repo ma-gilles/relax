@@ -394,6 +394,46 @@ RELION against RELION (same band FSC-AUCs):
 | this job's RELION arm vs seed repeat 14363852 (seed 20260924) | 0.9318 | 0.8003 | 0.7979 |
 | reference 14313014 (seed 42) vs seed repeat 14363852 (seed 20260924) | 0.9296 | 0.7986 | 0.7965 |
 
+### EMPIAR-10097 10k subset (resident engine) (relax `589ce095c`)
+
+relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
+
+| RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| this job's RELION arm | 14445853 | 0.9953 | 0.9927 | 0.9929 | 0.9993 | 0.9979 | 0.9980 | met |
+| 2026-09-16 sampler run | — | 0.9950 | 0.9927 | 0.9918 | 0.9992 | 0.9979 | 0.9977 | met |
+| 2026-09-18 repeat c | — | 0.9948 | 0.9926 | 0.9913 | 0.9991 | 0.9979 | 0.9974 | met |
+| 2026-09-18 repeat d | — | 0.9952 | 0.9913 | 0.9936 | 0.9993 | 0.9974 | 0.9983 | met |
+| 2026-09-18 repeat e | — | 0.9787 | 0.9663 | 0.9662 | 0.9963 | 0.9903 | 0.9901 | met |
+| bench attempt 1 RELION arm | 14434594 | 0.9786 | 0.9669 | 0.9657 | 0.9962 | 0.9900 | 0.9899 | met |
+| bench attempt 2 RELION arm | 14445196 | 0.9950 | 0.9914 | 0.9926 | 0.9992 | 0.9974 | 0.9979 | met |
+
+RELION against RELION (same band FSC-AUCs):
+
+| Pair | Merged | Half 1 | Half 2 |
+| --- | ---: | ---: | ---: |
+| this job's RELION arm vs 2026-09-16 sampler run | 0.9990 | 0.9986 | 0.9983 |
+| this job's RELION arm vs 2026-09-18 repeat c | 0.9983 | 0.9980 | 0.9966 |
+| this job's RELION arm vs 2026-09-18 repeat d | 0.9961 | 0.9934 | 0.9941 |
+| this job's RELION arm vs 2026-09-18 repeat e | 0.9792 | 0.9658 | 0.9682 |
+| this job's RELION arm vs bench attempt 1 RELION arm | 0.9790 | 0.9661 | 0.9677 |
+| this job's RELION arm vs bench attempt 2 RELION arm | 0.9957 | 0.9920 | 0.9943 |
+| 2026-09-16 sampler run vs 2026-09-18 repeat c | 0.9987 | 0.9986 | 0.9974 |
+| 2026-09-16 sampler run vs 2026-09-18 repeat d | 0.9957 | 0.9930 | 0.9935 |
+| 2026-09-16 sampler run vs 2026-09-18 repeat e | 0.9789 | 0.9655 | 0.9677 |
+| 2026-09-16 sampler run vs bench attempt 1 RELION arm | 0.9787 | 0.9659 | 0.9670 |
+| 2026-09-16 sampler run vs bench attempt 2 RELION arm | 0.9957 | 0.9919 | 0.9944 |
+| 2026-09-18 repeat c vs 2026-09-18 repeat d | 0.9956 | 0.9931 | 0.9930 |
+| 2026-09-18 repeat c vs 2026-09-18 repeat e | 0.9790 | 0.9660 | 0.9677 |
+| 2026-09-18 repeat c vs bench attempt 1 RELION arm | 0.9787 | 0.9663 | 0.9668 |
+| 2026-09-18 repeat c vs bench attempt 2 RELION arm | 0.9955 | 0.9915 | 0.9942 |
+| 2026-09-18 repeat d vs 2026-09-18 repeat e | 0.9786 | 0.9658 | 0.9666 |
+| 2026-09-18 repeat d vs bench attempt 1 RELION arm | 0.9789 | 0.9660 | 0.9674 |
+| 2026-09-18 repeat d vs bench attempt 2 RELION arm | 0.9975 | 0.9951 | 0.9971 |
+| 2026-09-18 repeat e vs bench attempt 1 RELION arm | 0.9958 | 0.9946 | 0.9920 |
+| 2026-09-18 repeat e vs bench attempt 2 RELION arm | 0.9786 | 0.9657 | 0.9669 |
+| bench attempt 1 RELION arm vs bench attempt 2 RELION arm | 0.9790 | 0.9670 | 0.9674 |
+
 ## Code references
 
 - `scripts/summarize_em_k1_realdata_science_equivalence.py`: scorecard validation, FSC band metrics, provenance gates, and rendering.

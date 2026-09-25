@@ -1012,6 +1012,321 @@
    ]
   },
   {
+   "id": "empiar10097_10k_k1_autorefine_resident_589ce09",
+   "section": "real",
+   "dataset": "EMPIAR-10097 10k subset (resident engine)",
+   "empiar_id": "10097",
+   "particles": 10000,
+   "box": 256,
+   "pixel_size_A": 1.3099979040033536,
+   "symmetry": "C1",
+   "classes": 1,
+   "workflow": "auto-refine K=1",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 build_patched (commit f2c1a38), relion_refine_mpi 3 ranks x 4 threads, one GPU, --scratch_dir",
+    "resolution_A": 15.969,
+    "resolution_definition": "scorecard_band",
+    "relion_reported_resolution_A": null,
+    "masked_resolution_A": 22.357,
+    "wall_s": 589,
+    "wall_definition": "arm-script wall of srun relion_refine_mpi (WALL.json)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 17,
+    "jobs": [
+     "14445853"
+    ],
+    "masked_band_auc": 0.6783,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen"
+   },
+   "relax": {
+    "source_sha": "589ce095c55fcc873089a4fb37887261d6911db9",
+    "source_repo": "relax main (resident engine default since 90c3f63)",
+    "resolution_A": 15.969,
+    "resolution_definition": "scorecard_band",
+    "masked_resolution_A": 22.357,
+    "wall_s": 859,
+    "wall_definition": "arm-script wall of python relax_run.py end to end, cold JAX cache (WALL.json)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 17,
+    "jobs": [
+     "14445853"
+    ],
+    "masked_band_auc": 0.6779,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen"
+   },
+   "gt": null,
+   "cross_engine": "scorecard rule PASS: thresholds (merged >= 0.95, each half >= 0.90) met against 7 of 7 same-command RELION runs; against this job's RELION arm 0.9953/0.9927/0.9929; RELION-vs-RELION band merged 0.9786-0.9990, halves 0.9655-0.9986 / 0.9666-0.9983",
+   "cross_engine_masked_band_auc": 0.9993,
+   "time_ratio_relax_over_relion": 1.46,
+   "matched": "yes",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": true
+   },
+   "notes": [
+    "Replaces the old-engine row removed after the 90c3f63 default switch: relax main 589ce09 with production defaults (resident pass 2, resident local search, device significance; every RELAX_* unset, JAX memory at the production .90).",
+    "Both engines start from relion_refine's inputs only (standalone); relax reads the same reference file as RELION's --ref (reference_init_relion.mrc).",
+    "RELION command: --auto_refine --split_random_halves --i subset10k_input.star --ref initial_model.mrc --firstiter_cc --trust_ref_size --ini_high 60 --pool 3 --pad 2 --ctf --particle_diameter 220 --flatten_solvent --zero_mask --oversampling 1 --healpix_order 2 --auto_local_healpix_order 4 --offset_range 5 --offset_step 2 --sym C1 --low_resol_join_halves 40 --norm --scale --random_seed 42.",
+    "Both arms in one job on one node, one H100 and 12 CPUs each, --scratch_dir on node-local /tmp on both, started together.",
+    "Below the RELION-vs-RELION band (reported only; the 2026-09-23 rule gates on thresholds against >= 1 run): recovar__relion_a1:half2_cross_engine_band_auc, recovar__relion_a1:merged_cross_engine_band_auc, recovar__relion_e:half2_cross_engine_band_auc."
+   ],
+   "null_reasons": {
+    "relion.relion_reported_resolution_A": "not read for this pair",
+    "gt": "real data: no ground truth"
+   },
+   "evidence": {
+    "run_roots": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/10097_10k/relax",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/10097_10k/relion"
+    ],
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/10097_10k/scores/bench_k1_10097_10k.json",
+    "masked_fsc_json": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/10097_10k/scores/bench_k1_10097_10k_masked/masked_fsc.json"
+    ],
+    "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_k1_10097_10k.sh"
+   },
+   "date": "2026-09-25",
+   "history": [],
+   "time_check": {
+    "a": "RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs). relax: 1 H100, one process, 12 CPUs. Both arms in one --gres=gpu:h100:2 job on one node, started together; no --exclusive.",
+    "b": "relax: main 589ce09 production defaults (every RELAX_* unset, XLA_PYTHON_CLIENT_MEM_FRACTION unset so recovar's .90 applies); standalone start-up; no timing, capture, replay, deterministic-reduction or dump options.",
+    "c": "Both: arm-script wall (WALL.json) around the whole process, including start-up, particle copy to --scratch_dir, compilation (fresh JAX cache) and final writes.",
+    "d": "RELION and relax 14445853 della-h21g3 H100 80GB HBM3 (2026-09-25)."
+   },
+   "mask": {
+    "dataset": "empiar10097_c1",
+    "sha256": "3c184a29e87c7e7c6b7bc2691226209a6e621241eafcd4dd6212a5ed555481d3"
+   },
+   "cross_engine_by_relion_run": [
+    {
+     "run": "this job's RELION arm",
+     "jobs": [
+      "14445853"
+     ],
+     "merged": 0.9953,
+     "half1": 0.9927,
+     "half2": 0.9929,
+     "masked_merged": 0.9993,
+     "masked_half1": 0.9979,
+     "masked_half2": 0.998,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/10097_10k/scores/masked_vs_relion_pair/masked_fsc.json"
+    },
+    {
+     "run": "2026-09-16 sampler run",
+     "jobs": [],
+     "merged": 0.995,
+     "half1": 0.9927,
+     "half2": 0.9918,
+     "masked_merged": 0.9992,
+     "masked_half1": 0.9979,
+     "masked_half2": 0.9977,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/10097_10k/scores/masked_vs_relion_s/masked_fsc.json"
+    },
+    {
+     "run": "2026-09-18 repeat c",
+     "jobs": [],
+     "merged": 0.9948,
+     "half1": 0.9926,
+     "half2": 0.9913,
+     "masked_merged": 0.9991,
+     "masked_half1": 0.9979,
+     "masked_half2": 0.9974,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/10097_10k/scores/masked_vs_relion_c/masked_fsc.json"
+    },
+    {
+     "run": "2026-09-18 repeat d",
+     "jobs": [],
+     "merged": 0.9952,
+     "half1": 0.9913,
+     "half2": 0.9936,
+     "masked_merged": 0.9993,
+     "masked_half1": 0.9974,
+     "masked_half2": 0.9983,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/10097_10k/scores/masked_vs_relion_d/masked_fsc.json"
+    },
+    {
+     "run": "2026-09-18 repeat e",
+     "jobs": [],
+     "merged": 0.9787,
+     "half1": 0.9663,
+     "half2": 0.9662,
+     "masked_merged": 0.9963,
+     "masked_half1": 0.9903,
+     "masked_half2": 0.9901,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/10097_10k/scores/masked_vs_relion_e/masked_fsc.json"
+    },
+    {
+     "run": "bench attempt 1 RELION arm",
+     "jobs": [
+      "14434594"
+     ],
+     "merged": 0.9786,
+     "half1": 0.9669,
+     "half2": 0.9657,
+     "masked_merged": 0.9962,
+     "masked_half1": 0.99,
+     "masked_half2": 0.9899,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/10097_10k/scores/masked_vs_relion_a1/masked_fsc.json"
+    },
+    {
+     "run": "bench attempt 2 RELION arm",
+     "jobs": [
+      "14445196"
+     ],
+     "merged": 0.995,
+     "half1": 0.9914,
+     "half2": 0.9926,
+     "masked_merged": 0.9992,
+     "masked_half1": 0.9974,
+     "masked_half2": 0.9979,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/10097_10k/scores/masked_vs_relion_a2/masked_fsc.json"
+    }
+   ],
+   "relion_vs_relion": [
+    {
+     "pair": "this job's RELION arm vs 2026-09-16 sampler run",
+     "merged": 0.999,
+     "half1": 0.9986,
+     "half2": 0.9983
+    },
+    {
+     "pair": "this job's RELION arm vs 2026-09-18 repeat c",
+     "merged": 0.9983,
+     "half1": 0.998,
+     "half2": 0.9966
+    },
+    {
+     "pair": "this job's RELION arm vs 2026-09-18 repeat d",
+     "merged": 0.9961,
+     "half1": 0.9934,
+     "half2": 0.9941
+    },
+    {
+     "pair": "this job's RELION arm vs 2026-09-18 repeat e",
+     "merged": 0.9792,
+     "half1": 0.9658,
+     "half2": 0.9682
+    },
+    {
+     "pair": "this job's RELION arm vs bench attempt 1 RELION arm",
+     "merged": 0.979,
+     "half1": 0.9661,
+     "half2": 0.9677
+    },
+    {
+     "pair": "this job's RELION arm vs bench attempt 2 RELION arm",
+     "merged": 0.9957,
+     "half1": 0.992,
+     "half2": 0.9943
+    },
+    {
+     "pair": "2026-09-16 sampler run vs 2026-09-18 repeat c",
+     "merged": 0.9987,
+     "half1": 0.9986,
+     "half2": 0.9974
+    },
+    {
+     "pair": "2026-09-16 sampler run vs 2026-09-18 repeat d",
+     "merged": 0.9957,
+     "half1": 0.993,
+     "half2": 0.9935
+    },
+    {
+     "pair": "2026-09-16 sampler run vs 2026-09-18 repeat e",
+     "merged": 0.9789,
+     "half1": 0.9655,
+     "half2": 0.9677
+    },
+    {
+     "pair": "2026-09-16 sampler run vs bench attempt 1 RELION arm",
+     "merged": 0.9787,
+     "half1": 0.9659,
+     "half2": 0.967
+    },
+    {
+     "pair": "2026-09-16 sampler run vs bench attempt 2 RELION arm",
+     "merged": 0.9957,
+     "half1": 0.9919,
+     "half2": 0.9944
+    },
+    {
+     "pair": "2026-09-18 repeat c vs 2026-09-18 repeat d",
+     "merged": 0.9956,
+     "half1": 0.9931,
+     "half2": 0.993
+    },
+    {
+     "pair": "2026-09-18 repeat c vs 2026-09-18 repeat e",
+     "merged": 0.979,
+     "half1": 0.966,
+     "half2": 0.9677
+    },
+    {
+     "pair": "2026-09-18 repeat c vs bench attempt 1 RELION arm",
+     "merged": 0.9787,
+     "half1": 0.9663,
+     "half2": 0.9668
+    },
+    {
+     "pair": "2026-09-18 repeat c vs bench attempt 2 RELION arm",
+     "merged": 0.9955,
+     "half1": 0.9915,
+     "half2": 0.9942
+    },
+    {
+     "pair": "2026-09-18 repeat d vs 2026-09-18 repeat e",
+     "merged": 0.9786,
+     "half1": 0.9658,
+     "half2": 0.9666
+    },
+    {
+     "pair": "2026-09-18 repeat d vs bench attempt 1 RELION arm",
+     "merged": 0.9789,
+     "half1": 0.966,
+     "half2": 0.9674
+    },
+    {
+     "pair": "2026-09-18 repeat d vs bench attempt 2 RELION arm",
+     "merged": 0.9975,
+     "half1": 0.9951,
+     "half2": 0.9971
+    },
+    {
+     "pair": "2026-09-18 repeat e vs bench attempt 1 RELION arm",
+     "merged": 0.9958,
+     "half1": 0.9946,
+     "half2": 0.992
+    },
+    {
+     "pair": "2026-09-18 repeat e vs bench attempt 2 RELION arm",
+     "merged": 0.9786,
+     "half1": 0.9657,
+     "half2": 0.9669
+    },
+    {
+     "pair": "bench attempt 1 RELION arm vs bench attempt 2 RELION arm",
+     "merged": 0.979,
+     "half1": 0.967,
+     "half2": 0.9674
+    }
+   ]
+  },
+  {
    "id": "ribosembly_k4_100k256_class3d_15it",
    "section": "synthetic",
    "dataset": "ribosembly_k4_g256_n100000_completion_20260512_171123",

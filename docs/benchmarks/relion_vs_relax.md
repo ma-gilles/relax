@@ -28,6 +28,7 @@ Matched:
 | EMPIAR-10345 (flip pair, cd26a5e) [notes](relion_vs_relax_provenance.md#empiar10345_k1_autorefine_flipqual_cd26a5e) | auto-refine K=1, C1, standalone | 84,266 / 300 | 8.23 a / 5.31 | 8.23 a / 5.31 | 0.9980 | 5,102 s | 5,138 s | 1.01x | 1x H100 | yes | 2026-09-25 |
 | EMPIAR-10081 (HCN1, resident engine) [notes](relion_vs_relax_provenance.md#empiar10081_hcn1_k1_autorefine_c4_resident) | auto-refine K=1, C4, standalone | 55,870 / 256 | 4.16 c / 3.70 | 4.16 c / 3.70 | 0.9984 | 2,732 s | 3,828 s | 1.40x | 1x H100 | workload | 2026-09-25 |
 | EMPIAR-10081 (HCN1, resident engine, timed pair) [notes](relion_vs_relax_provenance.md#empiar10081_hcn1_k1_autorefine_c4_resident_timed) | auto-refine K=1, C4, standalone | 55,870 / 256 | 4.16 c / 3.70 | 4.16 c / 3.70 | 0.9999 | 2,757 s | 2,509 s | 0.91x | 1x H100 | yes | 2026-09-25 |
+| EMPIAR-10097 10k subset (resident engine) [notes](relion_vs_relax_provenance.md#empiar10097_10k_k1_autorefine_resident_589ce09) | auto-refine K=1, C1, standalone | 10,000 / 256 | 15.97 a / 22.36 | 15.97 a / 22.36 | 0.9993 | 589 s | 859 s | 1.46x | 1x H100 | yes | 2026-09-25 |
 
 ## Synthetic data
 
