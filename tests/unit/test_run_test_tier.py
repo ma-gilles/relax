@@ -339,3 +339,11 @@ def test_relax_must_be_imported_from_the_snapshot(tmp_path):
     # A snapshot elsewhere whose processes still import this checkout's relax is refused.
     files, reason = native_sources.check_imports(tmp_path, env)
     assert not files["relax_from_snapshot"] and "not from the snapshot" in reason
+
+
+def test_every_fast_oracle_is_labelled_continue_or_uninterrupted():
+    from scripts import em_tier_fsc
+
+    sets = {case.relion_set for case in em_tier_fsc.CASES.values()}
+    assert sets <= set(em_tier_fsc.ORACLE_RUN), sorted(sets - set(em_tier_fsc.ORACLE_RUN))
+    assert set(em_tier_fsc.ORACLE_RUN.values()) <= {"uninterrupted", "continue"}

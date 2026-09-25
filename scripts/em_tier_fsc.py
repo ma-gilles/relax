@@ -81,6 +81,21 @@ CASES: dict[str, Case] = {
 }
 
 
+# How each oracle's RELION run was produced. A replay starts from a stored iteration of an
+# uninterrupted run and must carry each half's own noise state (as RELION does within one run);
+# a --continue oracle would instead broadcast half 1's noise to both halves (MPI restart).
+# Every fast-tier oracle is uninterrupted (fixture provenance: no --continue in any command).
+ORACLE_RUN = {
+    "k1_5k128_relion_os0": "uninterrupted",
+    "k1_5k128_relion_os1": "uninterrupted",
+    "k1_5k128_relion_gui60": "uninterrupted",
+    "k2_5k128_relion_os0": "uninterrupted",
+    "k4_5k128_oracle_h1_os1": "uninterrupted",
+    "k4_5k128_oracle_h2_os1": "uninterrupted",
+    "multioptics_s3b_600_relion": "uninterrupted",
+}
+
+
 def relion_map_names(case: Case) -> list[str]:
     it = f"run_it{case.iteration:03d}"
     if case.classes:
