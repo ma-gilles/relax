@@ -401,7 +401,14 @@ def _merge_noise_stats(stats, classes, n_half, ref_box):
         ),
         wsum_sigma2_offset=float(sum(float(s.wsum_sigma2_offset) for s in stats)),
         sumw=_sum([np.asarray(s.sumw, dtype=np.float64) for s in stats]),
-        wsum_norm_correction=place_by_index([s.wsum_norm_correction for s in stats], classes, n_half),
+        # Each image's norm residual is a power sum (box_g**4 in native units); the norm
+        # corrections and their average are compared across all particles, so every class's
+        # residuals go to the reference box's units.
+        wsum_norm_correction=place_by_index(
+            [_to_reference_units(s.wsum_norm_correction, c, ref_box, -4) for s, c in zip(stats, classes)],
+            classes,
+            n_half,
+        ),
         wsum_scale_correction_xa=_sum([s.wsum_scale_correction_xa for s in stats]),
         wsum_scale_correction_aa=_sum([s.wsum_scale_correction_aa for s in stats]),
     )

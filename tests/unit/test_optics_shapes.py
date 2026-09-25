@@ -143,7 +143,10 @@ def test_score_half_by_shape_places_images_and_adds_sums():
     assert seen[1]["noise_variance_k"].shape == (2, 28 * 28)
     assert_matches(merged.ha, np.arange(5))
     assert_matches(merged.em_stats.log_evidence_per_image, np.arange(5.0))
-    assert_matches(merged.noise_stats.wsum_norm_correction, np.arange(5.0) * 10)
+    # Norm residuals are power sums: the 28-px class's go to the reference box x (32/28)^4.
+    expected_norm = np.arange(5.0) * 10
+    expected_norm[[1, 2]] *= (32 / 28) ** 4
+    assert_matches(merged.noise_stats.wsum_norm_correction, expected_norm)
     # The 28-px class's sums join the 32-px reference's in its native units: data x (28/32)^2,
     # weight x (28/32)^4 (_to_reference_units).
     assert_matches(merged.Ft_y, np.full(4, 1.0 + (28 / 32) ** 2))
