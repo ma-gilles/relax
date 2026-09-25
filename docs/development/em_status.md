@@ -116,6 +116,22 @@ RELION's next iteration at its 6-decimal STAR rounding (class-2 weight within 4.
 alternating sign; class assignment 100%). Evidence and tools:
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/HANDOFF.json`.
 
+VDAM defaults (2026-09-25, landed from the vdamspeed stack): RELION's ternary max/min in the JAX
+M-step FSC estimate; the exact K=1 pass 2 always packs flat local rows; the float32 JAX M-step
+transaction is the only default route (float64 stays a diagnostic); one projector setup, the device
+FFT in double narrowed to the complex64 slab RELION's GPU projector holds as a float texture
+(`--projector-setup-backend` is gone from InitialModel); the noise carry starts at its block dtype.
+PPCA: the VDAM comparison arm of the PPCA pilots now builds its projector in double for float32 runs
+too (before, the JAX setup followed the M-step dtype through `_projector_setup_dtype`, removed with
+its test); PPCA's own code does not call the VDAM projector. Quality, scored on cand_04e38a9 (this
+stack plus the device coarse-significance commit bc30d20, which lands next): pdb K=2 5k/128
+population-weighted GT FSC-AUC 0.3204 / 0.3883 / 0.4485 at seeds 29 / 41 / 53, against RELION
+0.3229-0.3354 (7 runs) / 0.3797 / 0.4528-0.4575 and the same-job pre-stack control 0.3110 / 0.1360 /
+0.4410; that is 0.0025 / 0.0043 below RELION's seed-29 / seed-53 range, inside relax's seed-29 basin
+spread (0.3161-0.3381). EMPIAR-10097 0.2248 / 0.3565 (unmasked / masked) inside RELION seed-41 runs
+0.2225-0.2254 / 0.3550-0.3588. Evidence:
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamspeed_20260924/scoring` (jobs 14427596, 14427597).
+
 VDAM on the resident engine (2026-09-25, in progress): `--pass2_engine adaptive` runs the
 InitialModel E-step on auto-refine's adaptive route (`relax/vdam/adaptive_estep.py`), so its
 pass 2 is the compact or, with `RELAX_SPARSE_PASS2_RESIDENT=1`, the device-resident engine.
