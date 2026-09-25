@@ -906,6 +906,8 @@ def refine_single_volume(
         translation_step=schedule.init_translation_step,
         max_healpix_order=schedule.max_healpix_order,
         auto_local_healpix_order=local_search.auto_local_healpix_order,
+        # Class3D (K>1) never switches to local searches from the HEALPix order.
+        auto_sampling=not k_class_enabled,
         current_resolution=float("inf"),
         voxel_size_angstrom=float(cryo.voxel_size if cryo.voxel_size > 0 else 1.0),
         particle_diameter_angstrom=float(particle_diameter_ang or 0.0),

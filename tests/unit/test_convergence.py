@@ -1499,3 +1499,24 @@ def test_computed_assignment_fraction_survives_sampling_transition(update_sampli
         assert updated.healpix_order == 3
     else:
         assert updated.healpix_order == 2
+
+
+def test_class3d_keeps_global_searches_at_any_healpix_order():
+    """RELION switches to local searches from the HEALPix order only under auto-refine.
+
+    The iteration-0 switch is inside ``if (do_auto_refine)`` (ml_optimiser.cpp:2541-2565)
+    and later switches come from ``updateAngularSampling``, which Class3D never calls
+    (ml_optimiser.cpp:3936-3938).
+    """
+    from dataclasses import replace
+
+    from relax.helpers.convergence import RefinementState, refine_angular_sampling
+
+    auto = RefinementState(healpix_order=4, auto_local_healpix_order=4)
+    assert auto.do_local_search
+    class3d = RefinementState(healpix_order=4, auto_local_healpix_order=4, auto_sampling=False)
+    assert not class3d.do_local_search
+    # dataclasses.replace re-runs __post_init__; the Class3D state must stay global.
+    assert not replace(class3d, iteration=1).do_local_search
+    assert not refine_angular_sampling(replace(class3d, healpix_order=3)).do_local_search
+    assert refine_angular_sampling(RefinementState(healpix_order=3, auto_local_healpix_order=4)).do_local_search

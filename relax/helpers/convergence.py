@@ -374,7 +374,14 @@ class RefinementState:
         Maximum allowed HEALPix order (finest angular sampling).
     auto_local_healpix_order : int
         RELION ``--auto_local_healpix_order`` threshold. Local searches are
-        enabled when ``healpix_order >= auto_local_healpix_order``.
+        enabled when ``healpix_order >= auto_local_healpix_order`` and
+        ``auto_sampling`` is set.
+    auto_sampling : bool
+        True under auto-refine (relax's K=1 refinement). RELION enables local
+        searches from the HEALPix order only there: the iteration-0 switch sits
+        inside ``if (do_auto_refine)`` (ml_optimiser.cpp:2541-2565) and later
+        switches in ``updateAngularSampling``, which Class3D never calls
+        (ml_optimiser.cpp:3936-3938). Class3D keeps global searches at any order.
     auto_resolution_based_angles : bool
         RELION ``--auto_resol_angles`` flag. Standard auto-refine leaves this
         off; gradient-driven auto-refine enables it.
@@ -428,6 +435,7 @@ class RefinementState:
     # Limits
     max_healpix_order: int = 7
     auto_local_healpix_order: int = LOCAL_SEARCH_HEALPIX_ORDER
+    auto_sampling: bool = True
     auto_resolution_based_angles: bool = False
 
     # Change tracking
@@ -488,8 +496,8 @@ class RefinementState:
 
     @property
     def should_do_local_search(self) -> bool:
-        """True when HEALPix order is high enough for local search."""
-        return self.healpix_order >= self.auto_local_healpix_order
+        """True under auto-sampling when the HEALPix order is high enough for local search."""
+        return self.auto_sampling and self.healpix_order >= self.auto_local_healpix_order
 
 # ---------------------------------------------------------------------------
 # Assignment change tracking
@@ -1149,7 +1157,7 @@ def refine_angular_sampling(state: RefinementState) -> RefinementState:
     new_trans_range, new_trans_step = _relion_next_translation_sampling_pixels(state)
 
     # Determine local search activation
-    do_local = new_order >= state.auto_local_healpix_order
+    do_local = state.auto_sampling and new_order >= state.auto_local_healpix_order
 
     # Compute sigma for local search: sigma2 = 2 * 2 * angular_step^2
     # (RELION convention, angular_step in degrees, sigma in radians for storage)
