@@ -381,6 +381,26 @@ def _packed_reconstruction_rows(values, take_indices, pack_mask):
     return jnp.where(pack_mask[:, :, None], packed, 0.0)
 
 
+@jax.jit
+def _packed_prefix_rows(values, take_indices, pack_mask):
+    """``_packed_reconstruction_rows`` of the leading ``take_indices.shape[0]`` rows.
+
+    ``values`` keeps the bucket's physical rows; the unpadded prefix is sliced
+    inside the same program as the gather and mask, so a bucket tail compiles
+    one program instead of a slice, a gather and a select.
+    """
+
+    return _packed_reconstruction_rows(values[: take_indices.shape[0]], take_indices, pack_mask)
+
+
+@jax.jit
+def _flat_packed_prefix_rows(values, take_indices, pack_mask):
+    """``flatten_bucket_rows`` of :func:`_packed_prefix_rows`, in one program."""
+
+    packed = _packed_prefix_rows(values, take_indices, pack_mask)
+    return packed.reshape(packed.shape[0] * packed.shape[1], packed.shape[-1])
+
+
 def _packed_bucket_rotations(bucket, reconstruction_take_indices, reconstruction_pack_mask_np, batch_rows=None, rotations_dtype=None):
     """Device copies of the packed take indices and pack mask, and the host rotations gathered along them.
 

@@ -144,6 +144,7 @@ from relax.local.local_bucket_stages import (
     _build_reconstruction_pack_indices,
     _FixedCapacityWholeScoreCallContext,
     _flat_local_row_class_blocks,
+    _flat_packed_prefix_rows,
     _invoke_local_bucket_big_jit,
     _local_mstep_adjoint_window,
     _local_projection_mode,
@@ -152,6 +153,7 @@ from relax.local.local_bucket_stages import (
     _noise_wsum_initial_dtype,
     _packed_bucket_rotations,
     _packed_noise_projection_chunk_rows,
+    _packed_prefix_rows,
     _packed_reconstruction_rows,
     _pad_local_big_jit_image_axis,
     _plan_flat_local_row_capacities,
@@ -3447,7 +3449,7 @@ def run_local_em_exact(
                     packed_mstep_rotations_np,
                 ) = _packed_bucket_rotations(bucket, reconstruction_take_indices, reconstruction_pack_mask_np, batch_rows=unpadded_batch_size)
                 if not host_plan_pack_enabled:
-                    packed_reconstruction_probs = _packed_reconstruction_rows(_unpadded_rows(reconstruction_probs, unpadded_batch_size), reconstruction_take_indices_jnp, reconstruction_pack_mask_jnp)
+                    packed_reconstruction_probs = _packed_prefix_rows(reconstruction_probs, reconstruction_take_indices_jnp, reconstruction_pack_mask_jnp)
                     packed_reconstruction_probs_sum_t = jnp.take_along_axis(
                         _unpadded_rows(reconstruction_probs_sum_t, unpadded_batch_size),
                         reconstruction_take_indices_jnp,
@@ -3609,8 +3611,8 @@ def run_local_em_exact(
                 packed_source_vdam_images = _unpadded_rows(source_vdam_images, unpadded_batch_size)
                 packed_source_vdam_ctf = _unpadded_rows(source_vdam_ctf, unpadded_batch_size)
                 packed_source_vdam_minvsigma2 = _unpadded_rows(source_vdam_minvsigma2, unpadded_batch_size)
-                packed_source_vdam_posterior = _packed_reconstruction_rows(_unpadded_rows(source_vdam_posterior, unpadded_batch_size), reconstruction_take_indices_jnp, reconstruction_pack_mask_jnp)
-                packed_source_vdam_reference = _packed_reconstruction_rows(_unpadded_rows(source_vdam_reference, unpadded_batch_size), reconstruction_take_indices_jnp, reconstruction_pack_mask_jnp)
+                packed_source_vdam_posterior = _packed_prefix_rows(source_vdam_posterior, reconstruction_take_indices_jnp, reconstruction_pack_mask_jnp)
+                packed_source_vdam_reference = _packed_prefix_rows(source_vdam_reference, reconstruction_take_indices_jnp, reconstruction_pack_mask_jnp)
                 packed_summed = None
                 packed_ctf_probs = None
                 packed_flat_rotations = None
@@ -3634,8 +3636,8 @@ def run_local_em_exact(
                     packed_rotations_np,
                     packed_mstep_rotations_np,
                 ) = _packed_bucket_rotations(bucket, reconstruction_take_indices, reconstruction_pack_mask_np, batch_rows=unpadded_batch_size)
-                packed_summed = _packed_reconstruction_rows(_unpadded_rows(summed, unpadded_batch_size), reconstruction_take_indices_jnp, reconstruction_pack_mask_jnp)
-                packed_ctf_probs = _packed_reconstruction_rows(_unpadded_rows(ctf_probs, unpadded_batch_size), reconstruction_take_indices_jnp, reconstruction_pack_mask_jnp)
+                packed_summed = _packed_prefix_rows(summed, reconstruction_take_indices_jnp, reconstruction_pack_mask_jnp)
+                packed_ctf_probs = _packed_prefix_rows(ctf_probs, reconstruction_take_indices_jnp, reconstruction_pack_mask_jnp)
                 packed_flat_rotations = flatten_bucket_rotations(jnp.asarray(packed_mstep_rotations_np))
                 if n_classes > 1:
                     # One joint pack would scatter every class's rows into one volume.
@@ -3660,16 +3662,8 @@ def run_local_em_exact(
                             bucket, class_take, class_mask, batch_rows=unpadded_batch_size,
                         )
                         class_packed_adjoint_inputs.append((
-                            flatten_bucket_rows(
-                                _packed_reconstruction_rows(
-                                    _unpadded_rows(summed, unpadded_batch_size), class_take_jnp, class_mask_jnp,
-                                )
-                            ),
-                            flatten_bucket_rows(
-                                _packed_reconstruction_rows(
-                                    _unpadded_rows(ctf_probs, unpadded_batch_size), class_take_jnp, class_mask_jnp,
-                                )
-                            ),
+                            _flat_packed_prefix_rows(summed, class_take_jnp, class_mask_jnp),
+                            _flat_packed_prefix_rows(ctf_probs, class_take_jnp, class_mask_jnp),
                             flatten_bucket_rotations(jnp.asarray(class_mstep_rotations_np)),
                         ))
             else:
