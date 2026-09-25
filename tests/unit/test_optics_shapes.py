@@ -302,13 +302,36 @@ def test_class_mstep_clip_keeps_the_reference_padding():
     from relax.sparse_pass2 import resident_pass2
 
     # One grid: the reference r_max, from which recovar infers RELION's pad size.
-    assert adjoint.mstep_adjoint_max_r(56, None, 2) == 28.0
-    assert adjoint._recovar_clip_kwargs(28.0) == {"max_r": 28.0}
+    assert adjoint.mstep_adjoint_max_r(56, None, 2) == pytest.approx(28.0)
+    assert adjoint._recovar_clip_kwargs(28.0)["max_r"] == pytest.approx(28.0)
     # Another grid: the image radius r_max * s clips, and the padding is explicit (r_max * s
     # alone would make recovar infer padding 1 on a 115 grid for a 112 px image).
     clip = adjoint.mstep_adjoint_max_r(56, 28 * 1.12, 2)
-    assert clip == adjoint.ReferenceSphereClip(28 * 1.12, 2)
-    assert adjoint._recovar_clip_kwargs(clip) == {"max_r": 28 * 1.12, "upsampling": 2}
+    assert isinstance(clip, adjoint.ReferenceSphereClip)
+    assert clip.image_radius == pytest.approx(28 * 1.12) and clip.upsampling == 2
+    kwargs = adjoint._recovar_clip_kwargs(clip)
+    assert kwargs["max_r"] == pytest.approx(28 * 1.12) and kwargs["upsampling"] == 2
     # The resident chunk loop builds its own program spec; it must be handed the clip.
     parameter = inspect.signature(resident_pass2._run_resident_chunk).parameters["mstep_max_r"]
     assert parameter.default is inspect.Parameter.empty
+
+
+@pytest.mark.unit
+def test_image_clip_at_r_max_times_scale_is_relions_rotated_radius_rule():
+    """RELION drops a sample when |A k| > r_max for the rotated, scaled matrix A (BP.cuh:322).
+
+    With A = R / s for an orthogonal R, that is |k| > r_max * s on the image lattice, pixel for
+    pixel, which is what the class adjoint's image-side clip keeps.
+    """
+    from scipy.spatial.transform import Rotation
+
+    r_max, scale, box = 28, 112 * 5.44 / (128 * 4.25), 112
+    k = np.fft.fftfreq(box) * box
+    ky, kx = np.meshgrid(k, np.arange(box // 2 + 1), indexing="ij")
+    pixels = np.stack([kx.ravel(), ky.ravel(), np.zeros(kx.size)], axis=1)
+    image_keep = np.hypot(kx, ky).ravel() <= r_max * scale
+    for rotation in Rotation.random(5, random_state=3).as_matrix():
+        rotated = pixels @ (rotation / scale).T
+        relion_keep = np.linalg.norm(rotated, axis=1) <= r_max
+        boundary = np.abs(np.linalg.norm(rotated, axis=1) - r_max) < 1e-9
+        assert np.array_equal(image_keep[~boundary], relion_keep[~boundary])

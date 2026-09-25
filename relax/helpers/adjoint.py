@@ -17,8 +17,11 @@ class ReferenceSphereClip(NamedTuple):
     inside the model's r_max (acc/cuda/cuda_kernels/BP.cuh:322). recovar's kernel
     clips the image radius, which is the same test for unit rotations; an optics
     group on another pixel size or box backprojects with rotations scaled by 1/s,
-    so its image radius is r_max * s. The reference padding is then no longer
-    implied by the image shape and that radius, and is given explicitly.
+    so its image radius is r_max * s. The image-side clip is exact, not an
+    approximation: the per-group scale is isotropic (the scaled rotation is s^-1
+    times an orthogonal matrix), so |R k| / s <= r_max holds exactly when
+    |k| <= r_max * s. The reference padding is then no longer implied by the image
+    shape and that radius, and is given explicitly.
     """
 
     image_radius: float
