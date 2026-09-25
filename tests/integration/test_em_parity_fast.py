@@ -582,7 +582,22 @@ def test_em_parity_fast_k1_coldstart(tmp_path, start):
     fixture), so iteration 3 is compared with RELION's iteration 3 in both
     start modes: half maps, Pmax and the sigma-offset update.
     """
-    _run_k1_coldstart(tmp_path, start=start, oversampling=0)
+    m, check = _run_k1_coldstart(tmp_path, start=start, oversampling=0)
+    payload = {
+        "k1_coldstart_half1_corr_vs_relion_it003": m["h1_corr"],
+        "k1_coldstart_half2_corr_vs_relion_it003": m["h2_corr"],
+        "k1_coldstart_pmax_iter3_recovar": m["pmax_iter3"],
+        "k1_coldstart_pmax_iter3_relion": m["relion_pmax"],
+        "k1_coldstart_pmax_iter3_abs_diff": m["pmax_diff"],
+        "k1_coldstart_sigma_offset_trajectory": m["sigma_traj"],
+        "k1_coldstart_sigma_offset_used_trajectory": m["sigma_used_traj"],
+        "k1_coldstart_walltime_s": m["elapsed"],
+    }
+    # Only the standalone case is reported; the debug case is not tier evidence.
+    if start == "standalone":
+        ledger = _write_quality_ledger("k1_coldstart", payload, output_dir=m["output_dir"])
+        logger.info("K=1 cold-start ledger: %s", ledger)
+    check()
 
 
 @pytest.mark.gpu
@@ -596,10 +611,29 @@ def test_em_parity_fast_k1_os1_coldstart_standalone(tmp_path):
     RELAX_SPARSE_PASS2_RESIDENT=1, the device-resident driver). The RELION
     oracle differs from the os0 one only in --oversampling 1.
     """
-    _run_k1_coldstart(tmp_path, start="standalone", oversampling=1)
+    m, check = _run_k1_coldstart(tmp_path, start="standalone", oversampling=1)
+    payload = {
+        "k1_os1_coldstart_half1_corr_vs_relion_it003": m["h1_corr"],
+        "k1_os1_coldstart_half2_corr_vs_relion_it003": m["h2_corr"],
+        "k1_os1_coldstart_pmax_iter3_recovar": m["pmax_iter3"],
+        "k1_os1_coldstart_pmax_iter3_relion": m["relion_pmax"],
+        "k1_os1_coldstart_pmax_iter3_abs_diff": m["pmax_diff"],
+        "k1_os1_coldstart_sigma_offset_trajectory": m["sigma_traj"],
+        "k1_os1_coldstart_sigma_offset_used_trajectory": m["sigma_used_traj"],
+        "k1_os1_coldstart_walltime_s": m["elapsed"],
+    }
+    ledger = _write_quality_ledger("k1_os1_coldstart", payload, output_dir=m["output_dir"])
+    logger.info("K=1 os1 cold-start ledger: %s", ledger)
+    check()
 
 
 def _run_k1_coldstart(tmp_path, *, start, oversampling):
+    """Run the cold start and measure it; return the measurements and the gate check.
+
+    The caller writes its own ledger between the two, with a literal case name
+    and payload the report inventory can read, so a failing gate still leaves
+    the ledger behind.
+    """
     _assert_parity_ancestors_or_skip()
     relion_set = "k1_5k128_relion_os1" if oversampling else "k1_5k128_relion_os0"
     relion_dir = K1_OS1_RELION_DIR if oversampling else K1_RELION_DIR
@@ -694,21 +728,37 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling):
     relion_pmax = float(relion_model["model_general"]["rlnAveragePmax"])
     pmax_diff = abs(float(pmax_traj[2]) - relion_pmax)
 
-    payload = {
-        f"{case}_half1_corr_vs_relion_it003": h1_corr,
-        f"{case}_half2_corr_vs_relion_it003": h2_corr,
-        f"{case}_pmax_iter3_recovar": float(pmax_traj[2]),
-        f"{case}_pmax_iter3_relion": relion_pmax,
-        f"{case}_pmax_iter3_abs_diff": pmax_diff,
-        f"{case}_sigma_offset_trajectory": sigma_traj.tolist(),
-        f"{case}_sigma_offset_used_trajectory": sigma_used_traj.tolist(),
-        f"{case}_walltime_s": elapsed,
+    measurements = {
+        "h1_corr": h1_corr,
+        "h2_corr": h2_corr,
+        "pmax_iter3": float(pmax_traj[2]),
+        "relion_pmax": relion_pmax,
+        "pmax_diff": pmax_diff,
+        "sigma_traj": sigma_traj.tolist(),
+        "sigma_used_traj": sigma_used_traj.tolist(),
+        "elapsed": elapsed,
+        "output_dir": output_dir,
     }
-    # Only the standalone case is reported; the debug case is not tier evidence.
-    if start == "standalone":
-        ledger = _write_quality_ledger(case, payload, output_dir=output_dir)
-        logger.info("K=1 cold-start ledger: %s", ledger)
+    return measurements, lambda: _check_k1_coldstart(
+        case=case,
+        start=start,
+        oversampling=oversampling,
+        output_dir=output_dir,
+        h1_corr=h1_corr,
+        h2_corr=h2_corr,
+        pmax_traj=pmax_traj,
+        relion_pmax=relion_pmax,
+        pmax_diff=pmax_diff,
+        sigma_traj=sigma_traj,
+        elapsed=elapsed,
+        log=proc.stdout + proc.stderr,
+    )
 
+
+def _check_k1_coldstart(
+    *, case, start, oversampling, output_dir, h1_corr, h2_corr, pmax_traj, relion_pmax,
+    pmax_diff, sigma_traj, elapsed, log,
+):
     print(file=sys.stderr, flush=True)
     print(
         f"=== K=1 cold-start parity, oversampling {oversampling} "
@@ -744,7 +794,6 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling):
     # The os1 case exists to reach the adaptive production pass 2; under the
     # resident flag it must have run the resident driver, not a routed engine.
     if oversampling and os.environ.get("RELAX_SPARSE_PASS2_RESIDENT", "").strip() in {"1", "true", "on", "yes"}:
-        log = proc.stdout + proc.stderr
         assert "Resident pass-2 plan:" in log, "K=1 os1 cold start did not run the resident pass 2"
 
 
