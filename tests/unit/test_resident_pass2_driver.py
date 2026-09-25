@@ -103,7 +103,6 @@ def test_production_configuration_is_accepted():
         ({"relion_wavg_atomic_direct_noise": False}, "direct low-shell residual"),
         ({"relion_wavg_atomic_direct_norm": True}, "stopped diagnostic"),
         ({"relion_firstiter_score_mode": "normalized_cc"}, "fine Gaussian"),
-        ({"mstep_subtract_ctf_projection": True}, "projected reference"),
         ({"relion_projector_texture": object()}, "persistent RELION projector texture"),
     ],
 )

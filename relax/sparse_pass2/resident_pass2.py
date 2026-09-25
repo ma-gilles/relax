@@ -443,10 +443,6 @@ def require_resident_production_configuration(**kwargs) -> None:
     )
     _require(not bool(kwargs["return_score_log_z_only"]), "score-logZ-only passes are score-only")
     _require(bool(kwargs["accumulate_noise"]), "the production pass accumulates noise statistics")
-    _require(
-        not bool(kwargs["mstep_subtract_ctf_projection"]),
-        "subtracting the projected reference in the M-step is a diagnostic mode",
-    )
     # The K=1 adaptive route always hands the M-step call an
     # ``normalization_other_score_log_z`` built from the *other* classes'
     # log-Z (k_class.py::_run_sparse_k_class_adaptive_pass2). At K=1 there are
@@ -741,6 +737,29 @@ def _resident_block_ctf_probs(row_posterior, row_image_local, ctf2_over_nv_recon
         jnp.asarray(ctf2_over_nv_recon)[jnp.asarray(row_image_local, dtype=jnp.int32)],
     )[:, 0, :]
     return ctf_probs, probs_sum_t
+
+
+@jax.jit
+def _resident_block_residual(summed, probs_sum_t, proj, ctf2_over_nv_recon, row_image_local):
+    """VDAM's BPref numerator: the weighted image sum minus the weighted CTF'd projection.
+
+    RELION's ``--grad`` backprojection (``cuda_kernel_backproject3D_SGD``,
+    acc/cuda/cuda_kernels/BP.cuh:406-560) accumulates ``(shift(img) - ctf * proj) * w``
+    per translation. The projection does not depend on the translation, so the sum
+    is ``summed - (sum_t w) * ctf^2/sigma2 * proj``: the same statement as the exact
+    local engine's residual (``local_big_jit``), with its ``!= 0`` mass predicate.
+    """
+
+    frefctf_weighted = jnp.asarray(proj) * jnp.asarray(ctf2_over_nv_recon)[
+        jnp.asarray(row_image_local, dtype=jnp.int32)
+    ]
+    probs_sum_t = jnp.asarray(probs_sum_t)
+    frefctf_delta = jnp.where(
+        probs_sum_t[:, None] != 0.0,
+        probs_sum_t[:, None] * frefctf_weighted,
+        0.0,
+    )
+    return summed - frefctf_delta
 
 
 @partial(jax.jit, static_argnames=("n_shells", "image_capacity"))
@@ -1471,6 +1490,12 @@ def compute_pass2_stats_resident(
     )
 
     scale_groups_available = group_ids is not None
+    # RELION runs the Wavg triplet whether or not it corrects scales: without
+    # --scale every particle's scale is 1 and only the XA/AA sums are skipped
+    # (acc_ml_optimiser_impl.h:4367-4372, 4907, 4980). The triplet therefore runs
+    # without groups too (scale 1, group -1, so no scale sums accumulate); the
+    # scale statistics themselves stay tied to real groups (``accumulate_scale``).
+    wavg_triplet_available = bool(scale_groups_available or accumulate_noise)
     (
         resolved_spectrum_norm,
         relion_exact_bpref_operands,
@@ -1478,7 +1503,7 @@ def compute_pass2_stats_resident(
         relion_wavg_atomic_scale_aa,
     ) = _resident_wavg_arithmetic(
         accumulate_noise=accumulate_noise,
-        scale_groups_available=scale_groups_available,
+        scale_groups_available=wavg_triplet_available,
         preserve_bpref_particle_order=preserve_bpref_particle_order,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
     )
@@ -1497,7 +1522,7 @@ def compute_pass2_stats_resident(
     native_fft_size = int(np.prod(image_shape))
     relion_wavg_atomic_direct_noise, relion_wavg_atomic_direct_norm = _relion_wavg_direct_modes(
         accumulate_noise=bool(accumulate_noise),
-        scale_groups_available=scale_groups_available,
+        scale_groups_available=wavg_triplet_available,
         scale_aa_enabled=bool(relion_wavg_atomic_scale_aa),
         direct_noise_only_default=direct_noise_default,
     )
@@ -2204,6 +2229,7 @@ def compute_pass2_stats_resident(
                                 use_translate_sum_kernel=True,
                                 bpref_recon_operand=presence.has_recon_weight,
                                 reuse_coarse_normalization=coarse_reuse is not None,
+                                mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
                             ),
                             translation_prior_centers_np=translation_prior_centers_np,
                             fine_translations=fine_translations,
@@ -2380,6 +2406,7 @@ def compute_pass2_stats_resident(
             relion_native_fine_units=relion_native_fine_units,
             coarse_reuse=coarse_reuse,
             firstiter_cc=firstiter_cc,
+            mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
         )
     loop_s = time.time() - loop_t0
     if warmup is not None:
@@ -2896,6 +2923,7 @@ def _make_chunk_program_spec(
     mstep_max_r=None,
     reuse_coarse_normalization=False,
     firstiter_cc=False,
+    mstep_subtract_ctf_projection=False,
 ) -> _ChunkProgramSpec:
     """The static key of one chunk program.
 
@@ -2930,6 +2958,7 @@ def _make_chunk_program_spec(
         static_block_trip=_chunk_static_block_trip_enabled(),
         reuse_coarse_normalization=bool(reuse_coarse_normalization),
         firstiter_cc=bool(firstiter_cc),
+        mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
     )
 
 
@@ -3797,6 +3826,9 @@ class _ChunkProgramSpec:
     # RELION --firstiter_cc: normalized-CC scores and a winner-take-all
     # posterior (ml_optimiser.cpp:8844-8858, :9266-9293).
     firstiter_cc: bool = False
+    # VDAM (--grad): BPref takes the residual shift(img) - ctf * proj, RELION's
+    # cuda_kernel_backproject3D_SGD (BP.cuh:406-560); see _resident_block_residual.
+    mstep_subtract_ctf_projection: bool = False
 
 
 class _MstepOnlyStatsConfig(NamedTuple):
@@ -4216,6 +4248,11 @@ def _resident_mstep_block(
             operands.shifted_recon,
             operands.shifted_noise,
             operands.ctf2_over_nv_recon,
+        )
+
+    if spec.mstep_subtract_ctf_projection:
+        summed = _resident_block_residual(
+            summed, _probs_sum_t, proj, operands.ctf2_over_nv_recon, block_row_image
         )
 
     # RELION Wavg triplet in the flat-row layout, then its rotation atomics.
@@ -4956,6 +4993,7 @@ def _run_resident_chunk(
     relion_native_fine_units=False,
     coarse_reuse=None,
     firstiter_cc=False,
+    mstep_subtract_ctf_projection=False,
 ):
     """Run every resident stage for one capacity chunk.
 
@@ -5144,6 +5182,7 @@ def _run_resident_chunk(
         ),
         reuse_coarse_normalization=coarse_reuse is not None,
         firstiter_cc=firstiter_cc,
+        mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
     )
 
     if submitted_keys is not None:
