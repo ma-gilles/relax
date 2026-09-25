@@ -972,6 +972,15 @@ scientific contract; runnable code alone does not establish recovery.
   ([residual_statistics_from_moment_images](../../relax/ppca_refinement/residual_statistics.py)).
   The streamed engine uses this form instead of repeating the per-pose
   contractions; a float32 and float64 test checks it against the direct form.
+  Performance record (September 25, 2026): the host-mask route spent about
+  74% of each r16/HP3 16-image tile idle on host mask/prior construction and
+  about 54k eager launches. One paired A100 CP113-to-114 update (Slurm job
+  14423310, `/scratch/gpfs/CRYOEM/gilleslab/em_work/ppca_speed_20260925/devres/qual/`)
+  took 761 s with the frozen host-mask stream and 189 s with this engine at
+  R512, passing every scoped PPCA gate (LHS relL2 1.3e-7, gradient 5.3e-7,
+  direction 6.5e-7, exact selected IDs and noise). The tile is now mostly
+  GPU-bound (adjoints and contractions); larger rotation blocks are a further
+  measured config choice, not a default change.
 - After the final all-particle update,
   [compute_dense_ppca_embeddings](../../relax/ppca_refinement/dense_dataset.py)
   uses the same fine pose scores, latent means, candidate support and sequential
