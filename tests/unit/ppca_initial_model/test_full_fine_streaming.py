@@ -357,3 +357,15 @@ print("ok")
            "CUDA_VISIBLE_DEVICES": ""}
     result = subprocess.run([sys.executable, "-c", script], env=env, capture_output=True, text=True, timeout=600)
     assert result.returncode == 0 and result.stdout.strip().endswith("ok"), result.stderr[-3000:]
+
+
+def test_support_tile_order_groups_similar_support_and_keeps_full_rows():
+    from relax.ppca_initial_model.iteration_loop import _support_tile_order
+
+    assert _support_tile_order([None, None, None], 4, 3, 2).tolist() == [0, 1, 2]
+    # Packed ids are rotation * 3 + translation; supports {0}, {3}, {0, 1}, {3, 2}, {0}.
+    significant = [np.asarray([0, 1]), np.asarray([9]), np.asarray([2, 3]), np.asarray([10, 6]), np.asarray([1])]
+    order = _support_tile_order(significant, 4, 3, 2)
+    assert sorted(order.tolist()) == list(range(5))
+    tiles = [set(order[i:i + 2].tolist()) for i in range(0, 5, 2)]
+    assert {0, 4} in tiles  # the two single-rotation {0} images share one tile

@@ -121,6 +121,43 @@ def _coarse_significance(devices, batch_size, ids, significance):
     return [row for part in _on_devices(devices, run, chunks) for row in part]
 
 
+def _support_tile_order(significant, n_coarse_rotations, n_translations, tile):
+    """Image order whose consecutive tiles have small unions of supported coarse rotations.
+
+    Tiles score their images' union of rows, so grouping images with similar
+    support removes work without changing any image's exact support. Each tile
+    starts from the remaining image with the least support and adds, one at a
+    time, the image that grows the tile's union least (ties: lowest position).
+    Identical supports (for example full rows) keep the selection order.
+    """
+    support = np.zeros((len(significant), n_coarse_rotations), bool)
+    for image, samples in enumerate(significant):
+        if samples is None:
+            support[image] = True
+        else:
+            support[image, np.unique(np.asarray(samples, np.int64) // n_translations)] = True
+    if np.all(support == support[:1]):
+        return np.arange(len(significant))
+    bits = np.packbits(support, axis=1)
+    counts = np.bitwise_count(bits).sum(axis=1)
+    remaining = np.ones(len(significant), bool)
+    order = []
+    while remaining.any():
+        candidates = np.flatnonzero(remaining)
+        seed = candidates[np.argmin(counts[candidates])]
+        remaining[seed] = False
+        union, group = bits[seed].copy(), [seed]
+        while len(group) < tile and remaining.any():
+            candidates = np.flatnonzero(remaining)
+            growth = np.bitwise_count(bits[candidates] & ~union).sum(axis=1)
+            chosen = candidates[np.argmin(growth)]
+            remaining[chosen] = False
+            union |= bits[chosen]
+            group.append(chosen)
+        order.extend(group)
+    return np.asarray(order)
+
+
 def _to_device(part, device):
     """Move a tile's merged arrays to the device that merges tiles in order."""
     if isinstance(part, DensePPCAEmbeddings):
@@ -247,11 +284,14 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
             for device in devices
         }
 
+        tile_order = _support_tile_order(significant_samples, len(rotations), len(translations), tile_limit)
+
         def run_tile(device, tile):
             row, tile_end = tile
             stream = streams[device.id]
-            tile_ids = np.asarray(ids[row:tile_end])
-            significant = significant_samples[row:tile_end]
+            members = tile_order[row:tile_end]
+            tile_ids = np.asarray(ids)[members]
+            significant = [significant_samples[member] for member in members]
             # A multi-image tile factors the latent Gram once per image/rotation.
             part = (
                 full_row_tile_embeddings(stream, tile_ids, significant)
@@ -333,6 +373,15 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
                 stream_rows["scored"] += part.diagnostics["scored_image_rows"]
             stats = part if stats is None else _merge_statistics([stats, part])
         row = tile_end
+    if stream_full:
+        # Per-image outputs return to selection order; sums are order-free.
+        restore = np.argsort(tile_order)
+        if embeddings_only:
+            stats = stats._replace(embeddings=stats.embeddings[restore], original_image_ids=stats.original_image_ids[restore])
+        else:
+            stats = dataclasses.replace(
+                stats, embeddings=stats.embeddings[restore], original_image_ids=stats.original_image_ids[restore]
+            )
     if embeddings_only:
         return stats
     if config.fine_image_tile_size > 1 and len(ids) > 1:
