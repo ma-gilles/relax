@@ -214,7 +214,6 @@ PER_IMAGE_KWARGS = (
     "translation_search_base",
     "group_ids_k",
     "optics_group_ids_k",
-    "replay_prior_translations",
 )
 # Keywords that may be per image when two-dimensional (image x hypothesis).
 PER_IMAGE_IF_2D_KWARGS = ("translation_log_prior", "rotation_log_prior_k", "class_rotation_log_prior_k")

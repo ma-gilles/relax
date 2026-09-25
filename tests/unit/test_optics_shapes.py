@@ -71,8 +71,11 @@ def test_class_kwargs_units_and_sizes():
         cs_for_engine=20,
         model_current_size_for_engine=None,
         optics_group_ids_k=np.array([0, 1, 1, 0, 0]),
+        # A replay's translation grid (relion_replay), [T, 2], not per image.
+        replay_prior_translations=np.array([[0.0, 0.0], [2.0, -2.0], [4.0, 0.0]]),
     )
     out = optics_shapes.class_kwargs(kwargs, b, 5)
+    np.testing.assert_allclose(out["replay_prior_translations"], kwargs["replay_prior_translations"] * 0.75)
     assert_matches(out["image_corrections_k"], [1.0, 2.0])
     np.testing.assert_allclose(out["translation_search_base"], np.arange(10.0).reshape(5, 2)[[1, 2]] * 0.75)
     np.testing.assert_allclose(out["current_translations"], kwargs["current_translations"] * 0.75)
