@@ -6,6 +6,7 @@ groups (the InitialModel command has no ``--scale``). Both are checked on the
 production-shaped 8x8 fixture of ``test_resident_pass2_driver``.
 """
 
+import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
@@ -91,3 +92,15 @@ def test_resident_without_scale_groups_keeps_the_scale_one_wavg():
     assert _rel_l2(grouped.Ft_ctf, ungrouped.Ft_ctf) < 1e-6
     for field in ("wsum_sigma2_noise", "wsum_img_power", "wsum_sigma2_offset"):
         assert _rel_l2(getattr(grouped.noise_stats, field), getattr(ungrouped.noise_stats, field)) < 1e-6, field
+
+
+def test_native_fine_units_in_place_is_the_eager_conversion():
+    from relax.sparse_pass2.sparse_pass2_scoring import _relion_native_fine_units
+
+    rng = np.random.default_rng(3)
+    values = (rng.normal(size=(64, 37)) + 1j * rng.normal(size=(64, 37))).astype(np.complex64) * np.float32(1e3)
+    eager = np.asarray(_relion_native_fine_units(values, 136 * 136))
+    fused = np.asarray(rp._relion_native_fine_units_in_place(jnp.asarray(values), 136 * 136))
+    assert fused.dtype == np.complex64
+    # Division in binary64 and one rounding to float32 in both forms (measured: identical).
+    assert_matches(fused, eager)

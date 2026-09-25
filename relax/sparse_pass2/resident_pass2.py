@@ -747,6 +747,21 @@ def _resident_block_ctf_probs(row_posterior, row_image_local, ctf2_over_nv_recon
     return ctf_probs, probs_sum_t
 
 
+@partial(jax.jit, static_argnums=1, donate_argnums=0)
+def _relion_native_fine_units_in_place(values, fft_size):
+    """:func:`_relion_native_fine_units` as one program that reuses the input buffer.
+
+    The whole-grid projection cache is several GiB; the eager form holds the
+    complex64 input, two float64 part arrays and the output at once (EMPIAR-10097
+    VDAM at healpix 3, current size 56: a 7.77 GiB float64 temporary ran the
+    device out of memory, job 14422223). The fused program has no float64
+    temporaries and writes into the donated input. Same elementwise statements,
+    so the same values.
+    """
+
+    return _relion_native_fine_units(values, fft_size)
+
+
 @jax.jit
 def _resident_block_residual(summed, probs_sum_t, proj, ctf2_over_nv_recon, row_image_local):
     """VDAM's BPref numerator: the weighted image sum minus the weighted CTF'd projection.
@@ -1909,7 +1924,7 @@ def compute_pass2_stats_resident(
         if relion_native_fine_units:
             # Score rows only, for the cached and the streamed paths alike; the
             # recon rows feed the M-step and noise sums in RECOVAR units.
-            score = _relion_native_fine_units(score, native_fft_size)
+            score = _relion_native_fine_units_in_place(score, native_fft_size)
         return score, recon, recon_abs2
 
     # The whole fine grid is cached when it fits. At healpix order 3 and a real
