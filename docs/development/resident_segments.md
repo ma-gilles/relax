@@ -64,15 +64,16 @@ images.
   offset to `class * n_coarse_rot + parent`), or into streamed slots projected class by class. For tomography
   they are per (image, class, rotation).
 - **M-step.** Each scored (image, h, t) backprojects with weight `posterior(h, t)`, with the image's own
-  `L_i R`, CTF and dose, into class `row_class`'s accumulator (RELION's `BPref[iclass]`, ml_optimiser.cpp:8962). The M-step visits a chunk's rows
-  class-major (`mstep_row_order`), so each class's blocks write one accumulator; a block that straddles two
-  classes is run once per class, and its rows of the other class get no weight. The per-image Wavg, noise and
-  norm partials run on across classes.
+  `L_i R`, CTF and dose, into class `row_class`'s accumulator (RELION's `BPref[iclass]`, ml_optimiser.cpp:8962). The M-step visits only
+  the rows the pruned posterior keeps (a row with no positive cell adds exact zeros), slot-major
+  (`_make_mstep_block_inputs`, on the device), so each slot's blocks write one accumulator; a block that
+  straddles two slots is run once per slot, and its rows of the other slot get no weight. The per-image Wavg,
+  noise and norm partials run on across slots.
 - **Accumulator slots (VDAM).** The M-step accumulator axis is `[n_slots]`, slot
   `a = class + K * slot_offset[unit]`: `slot_offset` is 0 for Class3D and auto-refine and the pseudo-halfset
   `part_id % 2` for VDAM, whose BPref slot is `iclass + (part_id % 2) * K` (acc_ml_optimiser_impl.h:3391-3395).
   Projections and scoring stay per class; only the M-step order key and the number of accumulators change
-  (`_chunk_class_layout`, the per-class BPref tuples). vdamres adds the offset.
+  (`_chunk_mstep_layout`'s `row_slot`, the per-slot BPref tuples). vdamres adds the offset.
 - **Statistics.**
   - `rotation_posterior_sums` is `[K, n_coarse_rot]`, and class posterior sums are the pruned M-step mass per
     class, `[K]` (`thr_wsum_pdf_class`, ml_optimiser.cpp:8665).

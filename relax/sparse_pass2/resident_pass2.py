@@ -3266,31 +3266,17 @@ def _chunk_class_layout(host_chunk, chunk, *, n_classes: int, n_fine_trans: int,
     )
 
 
-def _chunk_slot_row_ranges(host_row_slot, n_valid_rows: int, n_slots: int) -> np.ndarray:
-    """``[n_slots + 1]`` offsets of each accumulator slot's rows in the slot-major M-step order."""
-
-    return np.concatenate(
-        [[0], np.cumsum(np.bincount(np.asarray(host_row_slot[:n_valid_rows], dtype=np.int64), minlength=int(n_slots)))]
-    )
-
-
-def _chunk_mstep_layout(host_chunk, chunk, *, n_slots: int, place) -> _ChunkMstepLayout:
-    """The chunk's slot-major M-step order (docs/development/resident_segments.md).
+def _chunk_mstep_layout(host_chunk, *, place) -> _ChunkMstepLayout:
+    """The chunk's accumulator slot per row (docs/development/resident_segments.md).
 
     Slot ``a = class + K * slot_offset[unit]``: a class's rows (Class3D, RELION's
     ``BPref[iclass]``, ml_optimiser.cpp:10826) and, for VDAM, a pseudo-halfset's
     (``iclass + (part_id % 2) * nr_classes``, acc_ml_optimiser_impl.h:4800-4804).
+    The slot-major order itself is taken on the device, over the live rows only
+    (:func:`_make_mstep_block_inputs`).
     """
 
-    row_capacity = int(chunk.row_capacity)
-    n_valid_rows = int(chunk.n_valid_rows)
-    row_slot = np.asarray(host_chunk["row_slot"], dtype=np.int64)
-    row_order = np.arange(row_capacity, dtype=np.int64)
-    row_order[:n_valid_rows] = np.argsort(row_slot[:n_valid_rows], kind="stable")
-    return _ChunkMstepLayout(
-        row_order=place.array(row_order, jnp.int32),
-        slot_offsets=place.array(_chunk_slot_row_ranges(row_slot, n_valid_rows, n_slots), jnp.int32),
-    )
+    return _ChunkMstepLayout(row_slot=place.array(host_chunk["row_slot"], jnp.int32))
 
 
 def _make_chunk_row_arrays(tables, chunk, n_fine_trans, *, place, n_fine_rot=None) -> _ChunkRowArrays:
@@ -3323,7 +3309,7 @@ def _make_chunk_row_arrays(tables, chunk, n_fine_trans, *, place, n_fine_rot=Non
         )
     mstep = None
     if int(tables.n_slots) > 1:
-        mstep = _chunk_mstep_layout(host_chunk, chunk, n_slots=int(tables.n_slots), place=place)
+        mstep = _chunk_mstep_layout(host_chunk, place=place)
     return _ChunkRowArrays(
         row_image_local=place.array(host_chunk["row_image_local"], jnp.int32),
         row_fine_rot=place.array(
@@ -3506,53 +3492,69 @@ def chunk_programs_for_path(path: str) -> tuple:
     raise ValueError(f"unknown chunk program path {path!r}")
 
 
-def _make_mstep_block_inputs(rows, posterior) -> "_MstepBlockInputs":
+@partial(jax.jit, static_argnames=("n_slots",))
+def _make_mstep_block_inputs(rows, posterior, *, n_slots: int) -> "_MstepBlockInputs":
     """The M-step block program's row inputs, from the chunk and its posterior.
+
+    Only rows the pruned posterior keeps enter the M-step. RELION backprojects
+    and sums only weights at or above the significant weight
+    (``significant_weight`` in collect2jobs and the backprojection kernel,
+    acc_ml_optimiser_impl.h:4819); the fine posterior here already zeroes the
+    rest, so a row with no positive cell adds exact zeros to every M-step
+    accumulator. At the K4 100k/256 early state 5-10% of the scored rows are
+    live, and the M-step was about 70% of the chunk time.
+
+    The rows are taken slot-major (a single slot for K=1 refinement; a class
+    for Class3D; a class and pseudo-halfset for VDAM, :class:`_ChunkMstepLayout`),
+    live rows of a slot first in their chunk order, then every row that is not
+    live; ``slot_offsets`` holds each slot's live run, so each slot is one run
+    of blocks (:func:`_slot_mstep_blocks`) and the rows of a boundary block
+    outside it get no weight. Grouping the live rows into fewer blocks changes
+    which rows share a block, so the per-block partial sums are added in a
+    different grouping; the contributions themselves are unchanged.
 
     Shared with the compile-ahead warm-up so the warmed signature is the one
     the per-stage loop submits. ``projections`` is None here: the block program
-    gathers them from the tables itself. With K>1 classes the rows are taken in
-    the chunk's class-major M-step order, so each class's rows are one run of
-    blocks (:func:`_slot_mstep_blocks`).
+    gathers them from the tables itself.
     """
 
-    if rows.mstep is None:
-        return _MstepBlockInputs(
-            row_image_local=rows.row_image_local,
-            kernel_row_image_ids=posterior.kernel_row_image_ids,
-            row_posterior=posterior.row_posterior,
-            row_fine_rot=rows.row_fine_rot,
-            projections=None,
-        )
-    order = rows.mstep.row_order
+    row_is_live = posterior.row_is_valid & jnp.any(posterior.row_posterior > 0, axis=1)
+    row_slot = jnp.zeros_like(rows.row_image_local) if rows.mstep is None else rows.mstep.row_slot
+    key = jnp.where(row_is_live, row_slot, jnp.int32(n_slots)).astype(jnp.int32)
+    order = jnp.argsort(key, stable=True)
+    live_per_slot = jnp.bincount(key, length=int(n_slots) + 1)[: int(n_slots)]
+    slot_offsets = jnp.concatenate(
+        [jnp.zeros((1,), dtype=jnp.int32), jnp.cumsum(live_per_slot).astype(jnp.int32)]
+    )
     return _MstepBlockInputs(
         row_image_local=rows.row_image_local[order],
         kernel_row_image_ids=posterior.kernel_row_image_ids[order],
         row_posterior=posterior.row_posterior[order],
         row_fine_rot=rows.row_fine_rot[order],
         projections=None,
+        slot_offsets=slot_offsets,
     )
 
 
-def _slot_mstep_blocks(blocks: "_MstepBlockInputs", rows, slot_index: int, *, spec):
+def _slot_mstep_blocks(blocks: "_MstepBlockInputs", slot_index: int, *, spec):
     """Accumulator slot ``slot_index``'s M-step rows: ``(blocks, first block, block count)``.
 
-    One slot has every valid row, ``ceil(n_valid_rows / B)`` blocks from 0 (or
-    the whole capacity under ``static_block_trip``). With several slots (K>1
-    classes, VDAM's pseudo-halfsets) a slot owns rows ``[lo, hi)`` of the
-    slot-major order; its blocks are the ones that overlap them, and
-    :func:`_resident_mstep_block_at` gives the other rows of a boundary block no
-    weight. Block counts are device scalars, so the program stays keyed on the
-    capacity class.
+    A slot owns the live rows ``[lo, hi)`` of the M-step order
+    (:func:`_make_mstep_block_inputs`); its blocks are the ones that overlap
+    them, and :func:`_resident_mstep_block_at` gives the other rows of a
+    boundary block no weight. Under ``static_block_trip`` a single slot runs
+    the whole capacity instead. Block counts are device scalars, so the program
+    stays keyed on the capacity class.
     """
 
     block_rows = int(spec.mstep_block_rows)
-    if rows.mstep is None:
-        if spec.static_block_trip:
-            return blocks, jnp.int32(0), jnp.int32(int(spec.row_capacity) // block_rows)
-        n_blocks = jax.lax.div(rows.n_valid_rows + jnp.int32(block_rows - 1), jnp.int32(block_rows))
-        return blocks, jnp.int32(0), n_blocks
-    offsets = rows.mstep.slot_offsets
+    offsets = blocks.slot_offsets
+    if int(spec.n_slots) == 1 and spec.static_block_trip:
+        return (
+            blocks._replace(class_row_range=offsets[0:2]),
+            jnp.int32(0),
+            jnp.int32(int(spec.row_capacity) // block_rows),
+        )
     lo, hi = offsets[slot_index], offsets[slot_index + 1]
     first = jax.lax.div(lo, jnp.int32(block_rows))
     stop = jax.lax.div(hi + jnp.int32(block_rows - 1), jnp.int32(block_rows))
@@ -3787,7 +3789,9 @@ def _submit_resident_chunk_warmup(
                 operand_avals,
                 table_avals,
             )
-            block_avals = _make_mstep_block_inputs(_row, posterior_avals)
+            block_avals = jax.eval_shape(
+                partial(_make_mstep_block_inputs, n_slots=int(_spec.n_slots)), _row, posterior_avals
+            )
             return _checked([
                 (
                     _resident_chunk_posterior_program,
@@ -4553,8 +4557,7 @@ class _ChunkMstepLayout(NamedTuple):
     Slot ``a = class + K * slot_offset[unit]`` (docs/development/resident_segments.md).
     """
 
-    row_order: jax.Array  # int32 [C_R], rows by slot (stable), padded rows last
-    slot_offsets: jax.Array  # int32 [n_slots + 1], each slot's rows in that order
+    row_slot: jax.Array  # int32 [C_R], 0 on padded rows
 
 
 class _ChunkStageOperands(NamedTuple):
@@ -5382,9 +5385,12 @@ class _MstepBlockInputs(NamedTuple):
     row_posterior: jax.Array  # float32 [C_R, T]
     row_fine_rot: jax.Array | None  # int32 [C_R]
     projections: tuple | None  # (proj, |proj|^2, M-step rotations) of one block
-    # Several accumulator slots: the rows [start, stop) of the slot these blocks
-    # accumulate; the rows of a boundary block outside it get no weight. None for one slot.
+    # The rows [start, stop) of the accumulator slot these blocks accumulate;
+    # the rows of a boundary block outside it get no weight. None where the
+    # caller hands the block its rows directly (local search).
     class_row_range: jax.Array | None = None  # int32 [2]
+    # Each slot's live rows in this order (:func:`_make_mstep_block_inputs`).
+    slot_offsets: jax.Array | None = None  # int32 [n_slots + 1]
 
 
 def _resident_mstep_block_at(
@@ -5639,14 +5645,14 @@ def _run_resident_chunk_program(
 
     block_rows = int(spec.mstep_block_rows)
     mstep = _initial_mstep_carry(Ft_y_total[0], Ft_ctf_total[0], operands, tables, spec=spec)
-    blocks = _make_mstep_block_inputs(rows, posterior)
+    blocks = _make_mstep_block_inputs(rows, posterior, n_slots=int(spec.n_slots))
     unroll = max(int(spec.block_unroll), 1)
     Ft_y_out, Ft_ctf_out = [], []
     for slot_index in range(int(spec.n_slots)):
         # Each slot's blocks accumulate into its own volumes; the per-image
         # Wavg, noise and norm partials carry on across slots.
         mstep = mstep._replace(Ft_y=Ft_y_total[slot_index], Ft_ctf=Ft_ctf_total[slot_index])
-        class_blocks, first_block, n_blocks = _slot_mstep_blocks(blocks, rows, slot_index, spec=spec)
+        class_blocks, first_block, n_blocks = _slot_mstep_blocks(blocks, slot_index, spec=spec)
         n_outer = jax.lax.div(n_blocks + jnp.int32(unroll - 1), jnp.int32(unroll))
 
         def outer(outer_index, carry_in, _blocks=class_blocks, _first=first_block):
@@ -5685,14 +5691,13 @@ def _run_resident_chunk_stages(
     carry: tuple,
     *,
     spec: _ChunkProgramSpec,
-    n_valid_rows: int,
-    class_row_ranges=None,
     timing_hook=None,
 ):
     """Per-stage oracle: the same stages, dispatched one at a time.
 
-    ``class_row_ranges`` holds each accumulator slot's host ``(lo, hi)`` rows in
-    the slot-major M-step order (several slots); one slot covers the valid rows.
+    The host block loop reads each accumulator slot's live row range back from
+    the device once per chunk (:func:`_make_mstep_block_inputs`), so it
+    launches only the blocks that carry weight.
 
     Kept selectable by ``RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT=0`` so the
     fused program can be compared against the path it replaces inside one
@@ -5716,21 +5721,17 @@ def _run_resident_chunk_stages(
 
     block_rows = int(spec.mstep_block_rows)
     mstep = _initial_mstep_carry(Ft_y_total[0], Ft_ctf_total[0], operands, tables, spec=spec)
-    blocks = _make_mstep_block_inputs(rows, posterior)
-    if class_row_ranges is None:
-        class_row_ranges = ((0, int(n_valid_rows)),)
+    blocks = _make_mstep_block_inputs(rows, posterior, n_slots=int(spec.n_slots))
+    slot_offsets = np.asarray(jax.device_get(blocks.slot_offsets), dtype=np.int64)
     Ft_y_out, Ft_ctf_out = [], []
-    for class_index, (row_lo, row_hi) in enumerate(class_row_ranges):
-        mstep = mstep._replace(Ft_y=Ft_y_total[class_index], Ft_ctf=Ft_ctf_total[class_index])
-        class_blocks = blocks
-        if rows.mstep is not None:
-            class_blocks = blocks._replace(
-                class_row_range=rows.mstep.slot_offsets[class_index : class_index + 2]
-            )
-        # Blocks past the class's rows hold only padding or another class's
-        # rows: no weight, so the weighted sums, the Wavg terms, the noise
+    for slot_index in range(int(spec.n_slots)):
+        row_lo, row_hi = int(slot_offsets[slot_index]), int(slot_offsets[slot_index + 1])
+        mstep = mstep._replace(Ft_y=Ft_y_total[slot_index], Ft_ctf=Ft_ctf_total[slot_index])
+        class_blocks = blocks._replace(class_row_range=blocks.slot_offsets[slot_index : slot_index + 2])
+        # Blocks past the slot's live rows hold only rows without weight, of
+        # this slot or another: the weighted sums, the Wavg terms, the noise
         # partials and both adjoint scatters would add exact zeros.
-        for start in range((int(row_lo) // block_rows) * block_rows, int(row_hi), block_rows):
+        for start in range((row_lo // block_rows) * block_rows, row_hi, block_rows):
             if glue_jit:
                 mstep = _resident_mstep_block_program(
                     _device_int32(start), class_blocks, operands, tables, mstep, spec=spec
@@ -5746,8 +5747,8 @@ def _run_resident_chunk_stages(
                 cuda_backproject=em_cuda_kernels,
             )
         if mstep.scale_xa_per_image is not None:
-            # Row range ``class_index`` is slot ``class + K * group``; its class masks the scale sums.
-            mstep = _fold_class_scale_sums(mstep, tables.wavg_scale_pixel_mask[class_index % int(spec.n_classes)])
+            # Slot ``class + K * group``: the scale sums are masked by the slot's class.
+            mstep = _fold_class_scale_sums(mstep, tables.wavg_scale_pixel_mask[slot_index % int(spec.n_classes)])
         Ft_y_out.append(mstep.Ft_y)
         Ft_ctf_out.append(mstep.Ft_ctf)
     if timing_hook is not None:
@@ -5856,12 +5857,6 @@ def _run_resident_chunk(
     rows = _make_chunk_row_arrays(
         tables, chunk, n_fine_trans, place=_PLACE_ON_DEVICE, n_fine_rot=n_fine_rot
     )
-    class_row_ranges = None
-    if int(tables.n_slots) > 1:
-        slot_rows = _chunk_slot_row_ranges(
-            materialize_chunk(tables, chunk)["row_slot"], int(chunk.n_valid_rows), int(tables.n_slots)
-        )
-        class_row_ranges = tuple(zip(slot_rows[:-1].tolist(), slot_rows[1:].tolist()))
     if stream_projection_fn is not None:
         (
             rows,
@@ -6047,8 +6042,6 @@ def _run_resident_chunk(
             stage_tables,
             (Ft_y_total, Ft_ctf_total, stats),
             spec=spec,
-            n_valid_rows=n_valid_rows,
-            class_row_ranges=class_row_ranges,
             timing_hook=timing_hook if timing else None,
         )
 
