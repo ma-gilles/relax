@@ -365,7 +365,6 @@ def resident_pass2_out_of_scope_reason(
     *,
     relion_firstiter_score_mode,
     relion_firstiter_winner_take_all,
-    zero_oversampling_coarse_normalization=False,
     accumulate_noise=False,
     scale_groups_available=False,
     preserve_bpref_particle_order=False,
@@ -380,9 +379,6 @@ def resident_pass2_out_of_scope_reason(
     - RELION's ``--firstiter_cc`` iteration scores with normalized
       cross-correlation and takes the winner outright, a different pass-2
       route with its own kernels;
-    - zero oversampling (``--adaptive_oversampling 0``) reuses the coarse
-      float32 normalization and hard assignment, whose winner/Pmax
-      substitution the resident driver does not implement;
     - a production-shaped pass (noise and group-scale statistics) that does not
       preserve RELION's particle order (a subset or focused debugging replay)
       uses the compact engine's unordered, non-atomic Wavg arithmetic; the
@@ -403,8 +399,6 @@ def resident_pass2_out_of_scope_reason(
         )
     if relion_firstiter_winner_take_all:
         return "RELION --firstiter_cc winner-take-all posteriors"
-    if zero_oversampling_coarse_normalization:
-        return "zero-oversampling coarse-normalization reuse (--adaptive_oversampling 0)"
     if accumulate_noise and scale_groups_available:
         atomic_scale_aa = _resident_wavg_arithmetic(
             accumulate_noise=accumulate_noise,
@@ -480,11 +474,18 @@ def require_resident_production_configuration(**kwargs) -> None:
         other_log_z is None or other_log_z_is_degenerate,
         "a finite cross-class score normalization belongs to the K-class engine",
     )
+    coarse_sum_weight = kwargs["relion_f32_normalization_sum_weight"]
+    coarse_winner = kwargs["relion_coarse_hard_assignment"]
+    coarse_max_posterior = kwargs.get("relion_coarse_max_posterior")
     _require(
-        kwargs["relion_f32_normalization_sum_weight"] is None
-        and kwargs["relion_coarse_hard_assignment"] is None,
-        "the zero-oversampling coarse-normalization reuse is not wired yet; "
-        "the segmented posterior supports it but its winner/Pmax substitution is untested here",
+        (coarse_sum_weight is None) == (coarse_winner is None) == (coarse_max_posterior is None),
+        "the zero-oversampling pass reuses the coarse normalization sum, winner and Pmax "
+        "together, as the K=1 adaptive route supplies them",
+    )
+    _require(
+        coarse_sum_weight is None or int(kwargs.get("oversampling_order", 0)) == 0,
+        "the coarse normalization sum is reused only at zero oversampling "
+        "(acc_ml_optimiser_impl.h:2868)",
     )
     # ``preserve_bpref_particle_order`` is the production setting, and on its
     # own it forces one BPref launch per particle. The production run pairs it
@@ -1270,6 +1271,53 @@ def _zero_padded_images(values, valid_images):
     return jnp.where(mask, values, jnp.zeros((), dtype=values.dtype))
 
 
+def _coarse_normalization_reuse(
+    tables,
+    *,
+    relion_f32_normalization_sum_weight,
+    relion_coarse_hard_assignment,
+    relion_coarse_max_posterior,
+    fine_rotation_parent,
+    fine_translation_parent,
+    max_posterior_dtype,
+) -> _CoarseNormalizationReuse | None:
+    """The retained coarse normalization of a zero-oversampling pass, on the device.
+
+    ``None`` unless the caller supplied the coarse float32 sum; the production
+    gate requires the winner and Pmax with it.
+    """
+
+    from relax.sparse_pass2.resident_candidates import coarse_winner_cells
+
+    if relion_f32_normalization_sum_weight is None:
+        return None
+    n_images = int(tables.n_images)
+    sum_weight = np.asarray(relion_f32_normalization_sum_weight, dtype=np.float64).reshape(-1)
+    if sum_weight.shape != (n_images,):
+        raise ValueError(
+            f"relion_f32_normalization_sum_weight must have shape ({n_images},), got {sum_weight.shape}"
+        )
+    max_posterior = np.asarray(relion_coarse_max_posterior, dtype=np.float64).reshape(-1)
+    if (
+        max_posterior.shape != (n_images,)
+        or not np.all(np.isfinite(max_posterior))
+        or np.any(max_posterior < 0)
+        or np.any(max_posterior > 1)
+    ):
+        raise ValueError("coarse Pmax must be one finite value in [0, 1] per image")
+    winner_cell = coarse_winner_cells(
+        tables,
+        relion_coarse_hard_assignment,
+        fine_rotation_parent=fine_rotation_parent,
+        fine_translation_parent=fine_translation_parent,
+    )
+    return _CoarseNormalizationReuse(
+        sum_weight=jnp.asarray(sum_weight, dtype=jnp.float64),
+        max_posterior=jnp.asarray(max_posterior, dtype=max_posterior_dtype),
+        winner_cell=jnp.asarray(winner_cell, dtype=jnp.int64),
+    )
+
+
 def compute_pass2_stats_resident(
     experiment_dataset,
     volume,
@@ -1473,6 +1521,8 @@ def compute_pass2_stats_resident(
         normalization_other_score_log_z=normalization_other_score_log_z,
         relion_f32_normalization_sum_weight=relion_f32_normalization_sum_weight,
         relion_coarse_hard_assignment=relion_coarse_hard_assignment,
+        relion_coarse_max_posterior=relion_coarse_max_posterior,
+        oversampling_order=oversampling_order,
         preserve_bpref_particle_order=preserve_bpref_particle_order,
         soft_posterior_block_bpref=soft_posterior_block_bpref,
         fine_rotations_override=fine_rotations_override,
@@ -1649,6 +1699,15 @@ def compute_pass2_stats_resident(
         raise ValueError(
             f"candidate table covers {tables.n_images} images but the dataset has {n_images}"
         )
+    coarse_reuse = _coarse_normalization_reuse(
+        tables,
+        relion_f32_normalization_sum_weight=relion_f32_normalization_sum_weight,
+        relion_coarse_hard_assignment=relion_coarse_hard_assignment,
+        relion_coarse_max_posterior=relion_coarse_max_posterior,
+        fine_rotation_parent=fine_rotation_parent_override,
+        fine_translation_parent=fine_translation_parent,
+        max_posterior_dtype=precision_policy.score_real_dtype,
+    )
 
     # ---- window / weights / lookups (unchanged) ---------------------------
     window_setup = _sparse_pass2_window_setup(
@@ -2110,6 +2169,7 @@ def compute_pass2_stats_resident(
                                 recon_pixel_indices=recon_pixel_indices_device,
                                 relion_x_half_recon_indices=relion_x_half_recon_indices,
                                 image_tables=image_tables,
+                                coarse_reuse=coarse_reuse,
                             ),
                             carry=(Ft_y_total, Ft_ctf_total, stats),
                             translation_angles=jnp.asarray(
@@ -2135,6 +2195,7 @@ def compute_pass2_stats_resident(
                                 use_rfloat_ctf_wavg=presence.has_direct_ctf_rfloat,
                                 use_translate_sum_kernel=True,
                                 bpref_recon_operand=presence.has_recon_weight,
+                                reuse_coarse_normalization=coarse_reuse is not None,
                             ),
                             translation_prior_centers_np=translation_prior_centers_np,
                             fine_translations=fine_translations,
@@ -2309,6 +2370,7 @@ def compute_pass2_stats_resident(
             submitted_keys=submitted_keys,
             optics_groups_np=optics_groups_np,
             relion_native_fine_units=relion_native_fine_units,
+            coarse_reuse=coarse_reuse,
         )
     loop_s = time.time() - loop_t0
     if warmup is not None:
@@ -2821,6 +2883,7 @@ def _make_chunk_program_spec(
     use_translate_sum_kernel,
     bpref_recon_operand,
     mstep_max_r=None,
+    reuse_coarse_normalization=False,
 ) -> _ChunkProgramSpec:
     """The static key of one chunk program.
 
@@ -2853,6 +2916,7 @@ def _make_chunk_program_spec(
         wavg_power_per_image=_wavg_power_per_image_enabled(),
         block_unroll=_chunk_block_unroll(),
         static_block_trip=_chunk_static_block_trip_enabled(),
+        reuse_coarse_normalization=bool(reuse_coarse_normalization),
     )
 
 
@@ -2928,7 +2992,7 @@ def _submit_resident_chunk_warmup(
             )
         return work
 
-    table_avals = _ChunkStageTables(*(as_aval(v) for v in stage_tables))
+    table_avals = jax.tree_util.tree_map(as_aval, stage_tables)
     carry_avals = jax.tree_util.tree_map(as_aval, carry)
     angle_aval = as_aval(translation_angles)
     rect_aval = as_aval(rect_indices)
@@ -3074,6 +3138,7 @@ def _make_chunk_stage_tables(
     relion_x_half_recon_indices,
     image_tables,
     cache_slot_fine_rot=None,
+    coarse_reuse=None,
 ) -> _ChunkStageTables:
     """Assemble the iteration-global tables every chunk of a half reads.
 
@@ -3103,6 +3168,7 @@ def _make_chunk_stage_tables(
         wavg_shell_indices=image_tables.wavg_shell_indices,
         wavg_scale_pixel_mask=image_tables.wavg_scale_pixel_mask,
         cache_slot_fine_rot=cache_slot_fine_rot,
+        coarse_reuse=coarse_reuse,
     )
 
 
@@ -3690,6 +3756,10 @@ class _ChunkProgramSpec:
     # per-stage loop breaks out of are skipped; True runs the full capacity as
     # the ticket's literal form does. Both trace one program per capacity class.
     static_block_trip: bool
+    # Zero oversampling: the posterior keeps every weight, divides by the
+    # retained coarse sum and reports the coarse winner and Pmax
+    # (_CoarseNormalizationReuse). The tables carry the arrays.
+    reuse_coarse_normalization: bool = False
 
 
 class _MstepOnlyStatsConfig(NamedTuple):
@@ -3750,6 +3820,20 @@ class _ChunkStageOperands(NamedTuple):
     optics_groups: jax.Array | None = None
 
 
+class _CoarseNormalizationReuse(NamedTuple):
+    """The coarse pass's float32 normalization, winner and Pmax, per image of the half.
+
+    With ``--adaptive_oversampling 0`` RELION's fine pass keeps the coarse
+    ``sum_weight`` and max (acc_ml_optimiser_impl.h:2868), keeps every weight
+    (``significant_weight = sorted[0]``, :3590) and reports Pmax as the coarse
+    ``max_weight / sum_weight`` (:3268-3269, :4223). See docs/math/zero_oversampling.md.
+    """
+
+    sum_weight: jax.Array  # float64 [n_images]
+    max_posterior: jax.Array  # [n_images]
+    winner_cell: jax.Array  # int64 [n_images], segment-relative r_local * T + t
+
+
 class _ChunkStageTables(NamedTuple):
     """Iteration-global device tables every chunk of a half reads."""
 
@@ -3774,6 +3858,8 @@ class _ChunkStageTables(NamedTuple):
     # cache slot (rows then carry slots, not ids). None when the caches are the
     # per-iteration fine-grid caches, where the slot is the id.
     cache_slot_fine_rot: jax.Array | None = None
+    # Zero oversampling only: the retained coarse normalization (None otherwise).
+    coarse_reuse: _CoarseNormalizationReuse | None = None
 
 
 class _ChunkPosterior(NamedTuple):
@@ -3849,6 +3935,15 @@ def _resident_chunk_posterior(
     )
     scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
 
+    reuse = bool(spec.reuse_coarse_normalization)
+    if reuse:
+        # rows.image_ids are the chunk's global image ids, -1 in padded slots,
+        # whose values the segmented kernels never read.
+        image_slot = jnp.maximum(rows.image_ids, jnp.int32(0))
+        coarse_sum_weight = tables.coarse_reuse.sum_weight[image_slot]
+        external_sum_weight = coarse_sum_weight.astype(jnp.float32)
+    else:
+        external_sum_weight = jnp.ones((image_capacity,), dtype=jnp.float32)
     log_z = cuda_backproject.sparse_pass2_segmented_log_z_f64(
         scores_flat, rows.segment_offsets, rows.n_valid_images
     )
@@ -3857,10 +3952,10 @@ def _resident_chunk_posterior(
         rows.segment_offsets,
         rows.n_valid_images,
         log_z,
-        jnp.ones((image_capacity,), dtype=jnp.float32),
+        external_sum_weight,
         adaptive_fraction=float(spec.adaptive_fraction),
-        keep_all=False,
-        use_external_sum_weight=False,
+        keep_all=reuse,
+        use_external_sum_weight=reuse,
     )
     (
         log_z_out,
@@ -3875,6 +3970,17 @@ def _resident_chunk_posterior(
         _sum_weight,
         _threshold,
     ) = posterior
+    if reuse:
+        # The compact engine's zero-oversampling arithmetic
+        # (sparse_pass2_bucketed.py, reuse_coarse_normalization): RELION keeps the
+        # coarse numeric sum but the fine pass's own exponent shift,
+        # dLL = log(sum_weight) - (50 - best), and the coarse winner and Pmax.
+        exponent_add = jnp.float32(50.0) - jnp.asarray(best_log_score, dtype=jnp.float32)
+        log_z_out = jnp.log(coarse_sum_weight.astype(jnp.float64)) - exponent_add.astype(jnp.float64)
+        best_cell_index = tables.coarse_reuse.winner_cell[image_slot]
+        max_posterior = tables.coarse_reuse.max_posterior[image_slot].astype(
+            jnp.asarray(max_posterior).dtype
+        )
     return _ChunkPosterior(
         row_posterior=jnp.asarray(reconstruction_probs, dtype=jnp.float32).reshape(
             row_capacity, n_fine_trans
@@ -4696,6 +4802,7 @@ def _run_resident_chunk(
     submitted_keys=None,
     optics_groups_np=None,
     relion_native_fine_units=False,
+    coarse_reuse=None,
 ):
     """Run every resident stage for one capacity chunk.
 
@@ -4858,6 +4965,7 @@ def _run_resident_chunk(
         relion_x_half_recon_indices=relion_x_half_recon_indices,
         image_tables=image_tables,
         cache_slot_fine_rot=cache_slot_fine_rot,
+        coarse_reuse=coarse_reuse,
     )
     spec = _make_chunk_program_spec(
         row_capacity=row_capacity,
@@ -4880,6 +4988,7 @@ def _run_resident_chunk(
         bpref_recon_operand=(
             resident_operands is not None and resident_operands.recon_weight is not None
         ),
+        reuse_coarse_normalization=coarse_reuse is not None,
     )
 
     if submitted_keys is not None:

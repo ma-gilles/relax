@@ -50,6 +50,7 @@ from relax.scoring.compact_candidates import SparseCandidateMask
 
 __all__ = [
     "CapacityChunk",
+    "coarse_winner_cells",
     "n_mask_words",
     "ResidentCandidateTables",
     "build_resident_candidate_tables",
@@ -338,6 +339,62 @@ def build_resident_candidate_tables(
         parent_offsets=parent_offsets,
         parent_trans_bits=parent_trans_bits,
     )
+
+
+def coarse_winner_cells(
+    tables: ResidentCandidateTables,
+    coarse_pose_ids,
+    *,
+    fine_rotation_parent,
+    fine_translation_parent,
+) -> np.ndarray:
+    """Segment-relative cell ``r_local * T + t`` of each image's retained coarse winner.
+
+    Zero oversampling (``--adaptive_oversampling 0``) gives every coarse
+    (rotation, translation) exactly one fine child, and RELION's fine pass keeps
+    the coarse pass's winner (acc_ml_optimiser_impl.h:3268-3269). This locates
+    that child among an image's candidate rows, the resident counterpart of
+    :func:`relax.scoring.sparse_bucket_arrays.coarse_winner_local_pose_ids`, and
+    refuses a winner that is not a unique, selected candidate.
+    """
+
+    n_coarse_trans = int(tables.n_coarse_trans)
+    poses = np.asarray(coarse_pose_ids)
+    if poses.shape != (tables.n_images,) or not np.all(np.isfinite(poses)):
+        raise ValueError("coarse winners must be one finite pose ID per image")
+    if np.any(poses < 0) or not np.array_equal(poses, poses.astype(np.int64)):
+        raise ValueError("coarse winners must be nonnegative integer pose IDs")
+    winner_rot, winner_trans = np.divmod(poses.astype(np.int64), n_coarse_trans)
+
+    fine_translation_parent = np.asarray(fine_translation_parent, dtype=np.int64)
+    trans_children = np.bincount(fine_translation_parent, minlength=n_coarse_trans)
+    if trans_children.size != n_coarse_trans or np.any(trans_children != 1):
+        raise ValueError("zero-oversampling coarse winners need exactly one fine child per coarse translation")
+    fine_of_coarse_trans = np.empty(n_coarse_trans, dtype=np.int64)
+    fine_of_coarse_trans[fine_translation_parent] = np.arange(fine_translation_parent.size, dtype=np.int64)
+
+    row_image = np.asarray(tables.row_image, dtype=np.int64)
+    row_parent_rot = np.asarray(fine_rotation_parent, dtype=np.int64)[np.asarray(tables.row_fine_rot, dtype=np.int64)]
+    winner_rows = np.flatnonzero(row_parent_rot == winner_rot[row_image])
+    counts = np.bincount(row_image[winner_rows], minlength=tables.n_images)
+    if np.any(counts != 1):
+        raise ValueError("zero-oversampling coarse winner must have exactly one selected fine child")
+    winner_row = np.empty(tables.n_images, dtype=np.int64)
+    winner_row[row_image[winner_rows]] = winner_rows
+
+    mode = np.asarray(tables.mask_mode)
+    selected = mode == _MASK_MODE_FULL
+    bitset = mode == _MASK_MODE_BITSET
+    if np.any(bitset):
+        images = np.flatnonzero(bitset)
+        parent = tables.parent_offsets[images].astype(np.int64) + tables.row_parent_local[winner_row[images]]
+        word, bit = translation_word_and_bit(winner_trans[images])
+        selected[images] = (tables.parent_trans_bits[parent, word] & bit) != 0
+    if not np.all(selected):
+        raise ValueError("coarse winner is missing from selected fine support")
+
+    row_local = winner_row - tables.row_offsets[:-1].astype(np.int64)
+    return row_local * int(fine_translation_parent.size) + fine_of_coarse_trans[winner_trans]
 
 
 def expand_mask_rows(tables: ResidentCandidateTables, image: int, fine_translation_parent) -> np.ndarray:

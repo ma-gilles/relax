@@ -331,7 +331,6 @@ def _run_local_search_iteration(
     if (
         resident_local_search_requested()
         and not score_only
-        and reconstruct_significant_only
         and current_size is not None
         and int(current_size) < int(experiment_dataset.image_shape[0])
     ):
@@ -401,14 +400,6 @@ def _run_local_search_iteration(
                     "%s=1: the pass-1 parent probe keeps the exact local engine "
                     "(its RELION maximum_significants cap is outside the segmented "
                     "posterior's contract, and changing it would change pass 2's support)",
-                    RESIDENT_LOCAL_SEARCH_ENV,
-                )
-            elif not reconstruct_significant_only:
-                logger.info(
-                    "%s=1: the zero-oversampling local route reconstructs from every "
-                    "scored sample rather than RELION's pruned fine weights, which the "
-                    "resident M-step does not implement; this pass keeps the exact "
-                    "local engine",
                     RESIDENT_LOCAL_SEARCH_ENV,
                 )
             else:

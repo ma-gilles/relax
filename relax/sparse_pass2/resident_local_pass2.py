@@ -223,18 +223,18 @@ def require_resident_local_configuration(**kwargs) -> None:
     _require(bool(kwargs["mstep_relion_x_half"]), "the RELION x-half M-step is required")
     _require(bool(kwargs["accumulate_noise"]), "the production pass accumulates noise statistics")
     _require(
-        bool(kwargs["reconstruct_significant_only"]),
-        "the resident M-step reconstructs from RELION's pruned fine weights, "
-        "which the zero-oversampling local route does not request",
-    )
-    _require(
         kwargs["max_significants"] is None or int(kwargs["max_significants"]) <= 0,
         "a maximum_significants cap on the fine support is not in the segmented "
         "posterior's contract",
     )
+    # Pass 2 of an oversampled search reconstructs from and accumulates the
+    # pruned posterior; the zero-oversampling route keeps every weight for both
+    # (RELION's symbolic second pass sets significant_weight to the minimum
+    # weight: acc_ml_optimiser_impl.h:3590). One posterior serves both.
     _require(
-        bool(kwargs["stats_use_reconstruction_probs"]),
-        "the resident statistics stage accumulates the pruned reconstruction posterior",
+        bool(kwargs["stats_use_reconstruction_probs"]) == bool(kwargs["reconstruct_significant_only"]),
+        "the resident statistics stage accumulates the reconstruction posterior, so the "
+        "statistics and the reconstruction must use the same (pruned or complete) weights",
     )
     _require(
         not bool(kwargs["use_float64_scoring"]) and not bool(kwargs["use_float64_projections"]),
@@ -835,6 +835,7 @@ def compute_local_search_resident(
             n_rect=n_rect,
             mstep_block_rows=mstep_block_rows,
             adaptive_fraction=float(adaptive_fraction),
+            keep_all_weights=not bool(reconstruct_significant_only),
             windowed_prepare=windowed_prepare,
             window_indices=window_indices,
             recon_window_indices=recon_window_indices,
@@ -1012,6 +1013,7 @@ def _run_resident_local_chunk(
     n_rect,
     mstep_block_rows,
     adaptive_fraction,
+    keep_all_weights,
     windowed_prepare,
     window_indices,
     recon_window_indices,
@@ -1176,7 +1178,7 @@ def _run_resident_local_chunk(
         log_z,
         jnp.ones((image_capacity,), dtype=jnp.float32),
         adaptive_fraction=float(adaptive_fraction),
-        keep_all=False,
+        keep_all=bool(keep_all_weights),
         use_external_sum_weight=False,
     )
     (

@@ -54,3 +54,20 @@ The controller and bucket tests cover this routing, canonical pose permutation,
 exact denominator scaling, and the evidence shift within its publication ULPs.
 Actual-source GPU replay and trajectory/FSC checks remain open. No all-float32
 completion or speed admission follows from these transport tests.
+
+## Device-resident pass 2
+
+The resident K=1 driver implements the same arithmetic
+([`_resident_chunk_posterior`](../../relax/sparse_pass2/resident_pass2.py),
+[`_coarse_normalization_reuse`](../../relax/sparse_pass2/resident_pass2.py)).
+The segmented float32 posterior keeps every positive selected weight and divides
+by the coarse float32 sum (`keep_all`, `use_external_sum_weight`). The chunk then
+publishes `log(coarse_sum) - float32(50 - fine_max_score)`, the coarse winner's
+segment cell ([`coarse_winner_cells`](../../relax/sparse_pass2/resident_candidates.py),
+the counterpart of `coarse_winner_local_pose_ids`) and the coarse Pmax. The
+resident gate requires the sum, winner and Pmax together, as the K=1 adaptive
+route supplies them. On the local route the resident pass keeps every weight for
+the reconstruction and the statistics (`reconstruct_significant_only=False`),
+following RELION's symbolic second pass (`significant_weight = sorted[0]`,
+acc_ml_optimiser_impl.h:3590). Engine tests:
+[`test_resident_zero_oversampling.py`](../../tests/unit/test_resident_zero_oversampling.py).

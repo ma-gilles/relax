@@ -22,6 +22,8 @@ needs a GPU and the custom CUDA library; it is the GPU test at the end.
 
 from __future__ import annotations
 
+import inspect
+
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
@@ -92,7 +94,7 @@ def test_production_configuration_is_accepted():
             {"normalization_other_score_log_z": np.zeros(3)},
             "finite cross-class score normalization",
         ),
-        ({"relion_f32_normalization_sum_weight": np.ones(3)}, "zero-oversampling"),
+        ({"relion_f32_normalization_sum_weight": np.ones(3)}, "sum, winner and Pmax"),
         ({"preserve_bpref_particle_order": True}, "per-particle BPref launches"),
         ({"fine_rotations_override": None}, "fine_rotations_override"),
         ({"use_window": False}, "Nyquist row"),
@@ -1017,20 +1019,33 @@ def test_the_production_gaussian_pass_is_in_scope():
     )
 
 
-def test_zero_oversampling_coarse_reuse_is_out_of_scope():
-    """--adaptive_oversampling 0 reuses the coarse float32 normalization.
+def test_zero_oversampling_coarse_reuse_is_in_scope():
+    """--adaptive_oversampling 0 runs on the resident driver.
 
-    The cand_ceeb8e7 resident fast tier (14363460) stopped five K=1 cases on
-    the gate's refusal of this pass; the approved plan keeps os0 on the
-    compact engine, so the dispatcher routes it there instead of raising.
+    It reuses the coarse float32 normalization, winner and Pmax
+    (test_resident_zero_oversampling.py); the dispatcher no longer routes it away.
     """
 
-    reason = rp.resident_pass2_out_of_scope_reason(
-        relion_firstiter_score_mode="gaussian",
-        relion_firstiter_winner_take_all=False,
-        zero_oversampling_coarse_normalization=True,
+    assert "zero_oversampling_coarse_normalization" not in inspect.signature(
+        rp.resident_pass2_out_of_scope_reason
+    ).parameters
+    rp.require_resident_production_configuration(
+        **_production_gate_kwargs(
+            relion_f32_normalization_sum_weight=np.ones(3),
+            relion_coarse_hard_assignment=np.zeros(3),
+            relion_coarse_max_posterior=np.full(3, 0.5),
+            oversampling_order=0,
+        )
     )
-    assert reason is not None and "zero-oversampling" in reason
+    with pytest.raises(NotImplementedError, match="only at zero oversampling"):
+        rp.require_resident_production_configuration(
+            **_production_gate_kwargs(
+                relion_f32_normalization_sum_weight=np.ones(3),
+                relion_coarse_hard_assignment=np.zeros(3),
+                relion_coarse_max_posterior=np.full(3, 0.5),
+                oversampling_order=1,
+            )
+        )
 
 
 def test_replayed_particle_order_wavg_arithmetic_is_out_of_scope(monkeypatch):

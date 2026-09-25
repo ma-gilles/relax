@@ -174,6 +174,7 @@ def _run(
     production_shapes=False,
     projector_dtype=None,
     resident_operands: bool | None = None,
+    zero_oversampling: bool = False,
 ):
     """``production_shapes`` mirrors what the refinement loop actually passes:
     a projector with a singleton class axis, per-image contrast and scale
@@ -234,8 +235,10 @@ def _run(
         scale_correction_group_count=1,
         scale_correction_data_vs_prior=np.full(case["n_shells"], 5.0, dtype=np.float64),
         mstep_relion_x_half=True,
-        reconstruct_significant_only=True,
-        stats_use_reconstruction_probs=True,
+        # The zero-oversampling route keeps every weight for the reconstruction
+        # and the statistics (half_scoring.py, local_reconstruct_significant_only).
+        reconstruct_significant_only=not zero_oversampling,
+        stats_use_reconstruction_probs=not zero_oversampling,
         adaptive_fraction=0.999,
         max_significants=-1,
         return_best_pose_details=True,
@@ -265,8 +268,8 @@ def test_dispatch_routes_only_the_fine_pass():
     source = inspect.getsource(local_search_iteration._run_local_search_iteration)
     assert "resident_local_search_requested()" in source
     assert "and not score_only" in source
-    # the zero-oversampling route reconstructs from every scored sample
-    assert "and reconstruct_significant_only" in source
+    # the zero-oversampling route (every scored sample) is routed too
+    assert "and reconstruct_significant_only" not in source
     # and only below the full image box (RELION's final all-data shape)
     assert "int(current_size) < int(experiment_dataset.image_shape[0])" in source
     assert "compute_local_search_resident" in source
@@ -309,7 +312,7 @@ def test_dispatch_call_keywords_are_resident_parameters():
         ({"mstep_relion_x_half": False}, "x-half M-step"),
         ({"accumulate_noise": False}, "noise statistics"),
         ({"use_float64_scoring": True}, "float64"),
-        ({"reconstruct_significant_only": False}, "pruned fine weights"),
+        ({"reconstruct_significant_only": False}, "same \\(pruned or complete\\) weights"),
         ({"relion_exact_score_translation": False}, "translation angles"),
         ({"relion_projector_half": None}, "PPref projector"),
         ({"group_ids": None}, "group scale terms"),
@@ -317,7 +320,7 @@ def test_dispatch_call_keywords_are_resident_parameters():
         ({"return_reconstruction_sample_indices": True}, "significant-sample capture"),
         ({"use_window": False}, "scientific decision"),
         ({"max_significants": 500}, "maximum_significants cap"),
-        ({"stats_use_reconstruction_probs": False}, "pruned reconstruction posterior"),
+        ({"stats_use_reconstruction_probs": False}, "same \\(pruned or complete\\) weights"),
     ],
 )
 def test_gate_names_the_missing_piece(override, expected):
