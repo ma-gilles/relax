@@ -1,9 +1,10 @@
 """Pose-free PPCA controller; algorithm sections 9–10 and plan package E.
 
-Global coarse PPCA scores are recomputed every iteration. Fine candidates use
-the maintained LocalHypothesisLayout, without any extra fine pruning. Per-image
-rows run through the shared host-mask dense statistics path; streamed full rows
-run through the device-resident full-row engine
+Global coarse PPCA scores are recomputed every iteration. Fine candidates are
+the exact oversampled 0.999 coarse support, without any extra fine pruning.
+Per-image LocalHypothesisLayout rows run through the shared host-mask dense
+statistics path; streamed rows of the shared fine grid, with the same per-image
+support, run through the device-resident engine
 (:mod:`relax.ppca_refinement.full_row_stream`), recorded as ``fine_engine``.
 """
 
@@ -124,13 +125,8 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
     )
     children_per_parent = 8 ** config.oversampling
     full_rotation_count = len(rotations) * children_per_parent
+    # Opt-in: stream the shared fine grid; each image's support is its device prior.
     stream_full = bool(config.stream_full_fine_rows)
-    if stream_full:
-        # This opt-in route is exact only when every image retained every
-        # coarse orientation. The per-image translation support can still vary.
-        for image, significant in enumerate(coarse.significant_sample_indices):
-            if significant is not None and np.unique(np.asarray(significant) // len(translations)).size != len(rotations):
-                raise ValueError(f"Image {image} lacks a full fine rotation row; streaming full rows cannot change support")
     layout = build_pass2_hypothesis_layout(
         [None] if stream_full else coarse.significant_sample_indices,
         len(rotations),
@@ -155,6 +151,7 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
             raise RuntimeError("Streamed fine rotation rows must keep contiguous children per coarse parent")
     stats = None
     coarse_mass = np.zeros(len(rotations), np.float32)
+    stream_rows = {"supported": 0, "scored": 0}
     fine_prior = -np.sum(layout.translation_grid**2, axis=-1) / (2 * state.offset_variance)
     fine_prior = fine_prior - np.log(np.sum(np.exp(fine_prior)))
     if stream_full:
@@ -249,6 +246,9 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
             )
         else:
             np.add.at(coarse_mass, layout.rotation_posterior_ids_flat[begin:end], part.diagnostics["rotation_mass"])
+            if stream_full:
+                stream_rows["supported"] += part.diagnostics["supported_image_rows"]
+                stream_rows["scored"] += part.diagnostics["scored_image_rows"]
             stats = part if stats is None else _merge_statistics([stats, part])
         row = tile_end
     if embeddings_only:
@@ -266,8 +266,10 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
             "coarse_omitted_mass_bound": 1 - config.target_mass,
             "fine_pruning": False,
             "rotation_mass": coarse_mass,
-            "fine_rotation_count": full_rotation_count * len(ids) if stream_full else layout.total_local_rotations,
+            "fine_rotation_count": stream_rows["supported"] if stream_full else layout.total_local_rotations,
             "fine_engine": FULL_ROW_ENGINE if stream_full else "dense_host_mask",
+            # Image-rows scored by tile unions (with block padding) versus exact support.
+            "fine_stream_rows": dict(stream_rows) if stream_full else None,
             "canonical_euler_count": len(canonical_eulers),
         }
     )
@@ -409,6 +411,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                             "fine_rotation_count",
                             "fine_pruning",
                             "fine_engine",
+                            "fine_stream_rows",
                         )
                     }
                     for s in stats

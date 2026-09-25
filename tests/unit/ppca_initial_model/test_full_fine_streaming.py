@@ -168,10 +168,11 @@ def test_device_resident_tile_matches_host_mask_statistics(tile_problem, factor_
     assert np.array_equal(actual.original_image_ids, expected.original_image_ids)
     for name in ("rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
         assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
-    assert_matches(actual.log_likelihood, expected.log_likelihood)
+    # Scalar summaries are float32 reductions returned as Python floats.
+    assert_matches(np.float32(actual.log_likelihood), np.float32(expected.log_likelihood))
     for key in ("rotation_mass", "offset_second_sum_px2", "latent_covariance_trace_mean",
                 "pose_entropy_mean", "pmax_mean", "max_posterior_per_image"):
-        assert_matches(np.asarray(actual.diagnostics[key]), np.asarray(expected.diagnostics[key]))
+        assert_matches(np.float32(actual.diagnostics[key]), np.float32(expected.diagnostics[key]))
     for key in ("best_rotation_idx", "best_translation_idx", "n_significant_per_image"):
         assert np.array_equal(np.asarray(actual.diagnostics[key]), np.asarray(expected.diagnostics[key]))
 
@@ -249,3 +250,46 @@ def test_moment_image_residuals_match_direct_residual_statistics_f64():
 
     with jax.enable_x64(True):
         _compare_moment_image_residuals(np.float64)
+
+
+# Coarse rotation 2 is unsupported by every image; images 0 and 1 keep disjoint rotations.
+PRUNED = [np.asarray([0, 1], np.int32), np.asarray([3, 5], np.int32), np.asarray([1, 4], np.int32)]
+
+
+def test_device_resident_union_rows_match_per_image_host_layout(tile_problem):
+    dataset, mu, W, stream, host = tile_problem
+    reference = build_pass2_hypothesis_layout(PRUNED, **LAYOUT_KWARGS)
+    actual = accumulate_full_row_tile(stream, np.arange(3), PRUNED, factor_once=False)
+    assert actual.diagnostics["supported_image_rows"] == reference.total_local_rotations == 32
+    assert actual.diagnostics["scored_image_rows"] == 3 * 20  # union of 16 rows in four 5-row blocks
+    parts = []
+    for image in range(3):
+        begin, end = map(int, reference.rotation_offsets[image:image + 2])
+        options = {key: host[key] for key in ("translations", "translation_log_prior", "noise_variance",
+                                              "geometry", "schedule", "scoring")}
+        parts.append(full_float32(accumulate_dense_ppca_statistics)(
+            dataset, mu, W, rotations=reference.rotations_flat[begin:end],
+            rotation_translation_mask=reference.sample_mask_rows(begin, end),
+            rotation_log_prior=reference.rotation_log_priors_flat[begin:end], image_indices=np.asarray([image]),
+            sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True, **options,
+        ))
+        # Fine rows of the shared grid: children stay contiguous per coarse parent.
+        rows = reference.rotation_posterior_ids_flat[begin:end] * 8 + np.arange(end - begin) % 8
+        parts[-1].diagnostics["global_rows"] = rows
+    for name in ("rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den"):
+        assert_matches(np.asarray(getattr(actual, name)), sum(np.asarray(getattr(p, name)) for p in parts))
+    assert_matches(np.asarray(actual.embeddings), np.concatenate([np.asarray(p.embeddings) for p in parts]))
+    assert_matches(np.float32(actual.log_likelihood), np.float32(sum(p.log_likelihood for p in parts)))
+    expected_mass = np.zeros(24, np.float32)
+    for p in parts:
+        np.add.at(expected_mass, p.diagnostics["global_rows"], np.asarray(p.diagnostics["rotation_mass"]))
+    assert_matches(actual.diagnostics["rotation_mass"], expected_mass)
+    assert np.all(actual.diagnostics["rotation_mass"][16:] == 0)
+    for key in ("offset_second_sum_px2",):
+        assert_matches(np.float32(actual.diagnostics[key]), np.float32(sum(p.diagnostics[key] for p in parts)))
+    best = [int(p.diagnostics["global_rows"][int(np.asarray(p.diagnostics["best_rotation_idx"])[0])]) for p in parts]
+    assert actual.diagnostics["best_rotation_idx"].tolist() == best
+    assert np.array_equal(
+        actual.diagnostics["n_significant_per_image"],
+        np.concatenate([np.asarray(p.diagnostics["n_significant_per_image"]) for p in parts]),
+    )

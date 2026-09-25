@@ -955,12 +955,17 @@ scientific contract; runnable code alone does not establish recovery.
   from the 0.999 coarse support and is deliberately unqualified for performance.
   The maximum requested radius 32 at box 64 is clipped to radius 31 under the
   existing unpaired-Nyquist convention, and the effective radius is recorded.
-- When every image retains every coarse orientation, opt-in streamed full rows
-  share one fine rotation grid per image tile.
-  [full_row_stream.py](../../relax/ppca_refinement/full_row_stream.py) uploads
+- Fine orientations are children of coarse orientations and do not depend on
+  the image, so opt-in streamed rows share one fine rotation grid.
+  [full_row_stream.py](../../relax/ppca_refinement/full_row_stream.py) scores,
+  per image tile, the sorted union of the images' supported rows. It uploads
   the tile's coarse support once and forms each fine pose prior on the device
-  as the coarse parent's support plus the rotation and translation log-priors.
-  Each rotation block is one jitted program per pass with no host round trip.
+  as the coarse parent's support plus the rotation and translation log-priors,
+  so a row outside an image's own support is `-inf` for that image and adds
+  exact zeros. A fixed-capacity row table padded with a masked sentinel row
+  keeps one block shape for every support pattern. Each rotation block is one
+  jitted program per pass with no host round trip. `fine_stream_rows` records
+  scored image-rows against exact support.
   Scores, moments, the float32 centered normalizer, the first-maximum top pose
   and block accumulation order are those of the host-mask dense routine.
   Unit tests compare both routines against the independent local layout.

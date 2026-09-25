@@ -1,10 +1,15 @@
-"""Device-resident PPCA statistics for streamed full fine rotation rows.
+"""Device-resident PPCA statistics for streamed rows of the shared fine grid.
 
-Every image of a tile scores the same full fine rotation grid; only its
-translation support differs, and that support is the coarse pass-1 significant
-set expanded to fine children. This module uploads the tile's coarse support
-once and expands the fine pose log-prior on the device inside each rotation
-block program, so no per-block host mask, prior or synchronization remains.
+Fine orientations are the children of coarse orientations and do not depend on
+the image, so every image of a tile can score rows of one shared fine grid.
+A tile scores the sorted union of its images' supported rows; each image's
+exact support (the coarse pass-1 significant set expanded to fine children) is
+a device-expanded pose log-prior that is ``-inf`` outside it, including on the
+union rows of other images. When every image keeps every coarse orientation the
+union is the full grid. The tile's coarse support and row table are uploaded
+once; the row table has a fixed capacity padded with a masked sentinel row, so
+blocks keep one shape and varying support never recompiles. No per-block host
+mask, prior or synchronization remains.
 
 Per image tile the work is three sequences of one jitted program per rotation
 block, all enqueued without host round trips:
@@ -82,10 +87,10 @@ class _StreamArrays(NamedTuple):
     """Device operands fixed for one expectation (model, grids, priors)."""
 
     augmented: jax.Array  # (P, half_volume) complex64 [mu, W_1..W_q]
-    rotations: jax.Array  # (R, 3, 3) float32 fine rotation grid
-    rotation_log_prior: jax.Array  # (R,) float32
+    rotations: jax.Array  # (R + 1, 3, 3) float32 fine rotation grid and a sentinel row
+    rotation_log_prior: jax.Array  # (R + 1,) float32
     translation_log_prior: jax.Array  # (T,) float32
-    rotation_parent: jax.Array  # (R,) int32 coarse rotation of each fine row
+    rotation_parent: jax.Array  # (R + 1,) int32 coarse rotation of each fine row; sentinel -> R_coarse
     translation_parent: jax.Array  # (T,) int32 coarse translation of each fine shift
     score_indices: jax.Array | None  # score window in the packed half image
     recon_indices: jax.Array | None  # reconstruction window
@@ -96,7 +101,8 @@ class _StreamArrays(NamedTuple):
 class _TileArrays(NamedTuple):
     """Device operands for one image tile, uploaded once per tile."""
 
-    coarse_mask: jax.Array  # (B, R_coarse, T_coarse) bool significant coarse poses
+    coarse_mask: jax.Array  # (B, R_coarse + 1, T_coarse) bool significant coarse poses; last row False
+    rows: jax.Array  # (capacity,) int32 sorted union of supported fine rows, padded with the sentinel R
     Y1: jax.Array
     ctf2: jax.Array
     Y1_recon: jax.Array
@@ -140,8 +146,9 @@ class FullRowStream(NamedTuple):
     n_coarse_rotations: int
     n_coarse_translations: int
     image_batch_size: int
-    blocks: tuple[tuple[jax.Array, int], ...]  # (device start, static size) per rotation block
+    block_starts: tuple[jax.Array, ...]  # device start of each row-table block
     rotation_block_size: int
+    rotation_parent: np.ndarray  # (R,) host copy for the per-tile row union
 
 
 def coarse_support_mask(significant_rows, n_coarse_rotations: int, n_coarse_translations: int) -> np.ndarray:
@@ -159,6 +166,11 @@ def coarse_support_mask(significant_rows, n_coarse_rotations: int, n_coarse_tran
     return coarse.reshape(len(significant_rows), int(n_coarse_rotations), int(n_coarse_translations))
 
 
+def tile_fine_rows(coarse_mask: np.ndarray, rotation_parent: np.ndarray) -> np.ndarray:
+    """Sorted fine rows whose coarse parent is significant for any tile image."""
+    return np.flatnonzero(np.any(coarse_mask, axis=(0, 2))[rotation_parent]).astype(np.int32)
+
+
 def full_row_pose_log_prior(
     coarse_mask, rotation_parent, translation_parent, rotation_log_prior, translation_log_prior
 ) -> jax.Array:
@@ -174,8 +186,8 @@ def full_row_pose_log_prior(
     return jnp.where(mask, prior[None], -jnp.inf).astype(jnp.float32)
 
 
-def _block_rows(array, start, size: int):
-    return jax.lax.dynamic_slice_in_dim(array, start, size, axis=0)
+def _block_rows(tile, start, size: int):
+    return jax.lax.dynamic_slice_in_dim(tile.rows, start, size, axis=0)
 
 
 def _score_window_projection(arrays: _StreamArrays, rotations_block, static: _StreamStatic):
@@ -194,26 +206,26 @@ def _score_window_projection(arrays: _StreamArrays, rotations_block, static: _St
 @partial(jax.jit, static_argnames=("static", "block_size", "score_kind", "keep_second_moment"))
 def _score_block(arrays, tile, start, top, *, static, block_size, score_kind, keep_second_moment):
     """Pass 1 for one rotation block: scores, moments and the running top pose."""
-    rotations_block = _block_rows(arrays.rotations, start, block_size)
-    proj = _score_window_projection(arrays, rotations_block, static)
+    rows = _block_rows(tile, start, block_size)
+    proj = _score_window_projection(arrays, arrays.rotations[rows], static)
     prior = full_row_pose_log_prior(
         tile.coarse_mask,
-        _block_rows(arrays.rotation_parent, start, block_size),
+        arrays.rotation_parent[rows],
         arrays.translation_parent,
-        _block_rows(arrays.rotation_log_prior, start, block_size),
+        arrays.rotation_log_prior[rows],
         arrays.translation_log_prior,
     )
     full = _SCORE_FUNCTIONS[score_kind](tile.Y1, proj, tile.ctf2, tile.y_norm, prior)
     block_score, block_rotation, block_translation = top_p_from_score_block(
-        full.score, rotation_offset=start, candidate_count=1
+        full.score, rotation_offset=0, candidate_count=1
     )
-    # Strict comparison keeps the earlier block on exact ties: its rotation ids
-    # are lower, which is the host merge's (score, rotation, translation) order.
+    # Rows ascend across and within blocks, so the strict comparison keeps the
+    # lowest fine row on exact ties, the host merge's (score, rotation) order.
     better = block_score[:, 0] > top.score
     top = _TopPose(
         center=jnp.maximum(top.center, jnp.max(full.score, axis=(1, 2))),
         score=jnp.where(better, block_score[:, 0], top.score),
-        rotation=jnp.where(better, block_rotation[:, 0], top.rotation),
+        rotation=jnp.where(better, rows[block_rotation[:, 0]], top.rotation),
         translation=jnp.where(better, block_translation[:, 0], top.translation),
     )
     return full.score, full.alpha, (full.G_tri if keep_second_moment else None), top
@@ -231,7 +243,7 @@ def _backproject_block(carry, arrays, tile, score, alpha, G_tri, center, centere
     ``proj`` is recomputed from the same deterministic projection as pass 1
     instead of retaining it across the tile.
     """
-    rotations_block = _block_rows(arrays.rotations, start, block_size)
+    rotations_block = arrays.rotations[_block_rows(tile, start, block_size)]
     proj = _score_window_projection(arrays, rotations_block, static)
     centered = score - center[:, None, None]
     gamma = jnp.exp(centered - centered_logZ[:, None, None])
@@ -359,15 +371,16 @@ def prepare_full_row_stream(
     )
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(noise_variance, resolved.image_shape).squeeze()
     block_size = int(schedule.rotation_block_size)
-    blocks = tuple(
-        (jnp.asarray(start, dtype=jnp.int32), min(block_size, n_rot - start)) for start in range(0, n_rot, block_size)
-    )
+    block_starts = tuple(jnp.asarray(start, dtype=jnp.int32) for start in range(0, n_rot, block_size))
+    # The sentinel row (identity rotation, zero prior) has the all-unsupported
+    # coarse parent R_coarse: it pads the last block of every tile.
+    sentinel_rotation = np.eye(3, dtype=np.float32)[None]
     arrays = _StreamArrays(
         augmented=resolved.augmented_half_volumes,
-        rotations=jnp.asarray(rotations),
-        rotation_log_prior=jnp.asarray(np.asarray(rotation_log_prior, dtype=np.float32)),
+        rotations=jnp.asarray(np.concatenate([rotations, sentinel_rotation])),
+        rotation_log_prior=jnp.asarray(np.append(np.asarray(rotation_log_prior, dtype=np.float32), np.float32(0))),
         translation_log_prior=jnp.asarray(np.asarray(translation_log_prior, dtype=np.float32)),
-        rotation_parent=jnp.asarray(rotation_parent),
+        rotation_parent=jnp.asarray(np.append(rotation_parent, np.int32(n_coarse_rotations))),
         translation_parent=jnp.asarray(translation_parent),
         score_indices=resolved.score_indices,
         recon_indices=resolved.recon_indices,
@@ -395,8 +408,9 @@ def prepare_full_row_stream(
         n_coarse_rotations=int(n_coarse_rotations),
         n_coarse_translations=int(n_coarse_translations),
         image_batch_size=int(schedule.image_batch_size),
-        blocks=blocks,
+        block_starts=block_starts,
         rotation_block_size=block_size,
+        rotation_parent=rotation_parent,
     )
 
 
@@ -422,18 +436,29 @@ def _load_tile(stream: FullRowStream, image_indices, significant_rows, *, collec
         collect_observation=collect_observation,
     )
     coarse = coarse_support_mask(significant_rows, stream.n_coarse_rotations, stream.n_coarse_translations)
+    rows = tile_fine_rows(coarse, stream.rotation_parent)
+    n_blocks = -(-rows.size // stream.rotation_block_size)
+    capacity = len(stream.block_starts) * stream.rotation_block_size
+    table = np.full(capacity, stream.rotation_parent.size, dtype=np.int32)
+    table[: rows.size] = rows
+    unsupported = np.zeros((coarse.shape[0], 1, coarse.shape[2]), dtype=bool)
     tile = _TileArrays(
-        coarse_mask=jnp.asarray(coarse),
+        coarse_mask=jnp.asarray(np.concatenate([coarse, unsupported], axis=1)),
+        rows=jnp.asarray(table),
         Y1=batch.Y1_score,
         ctf2=batch.ctf2_score,
         Y1_recon=batch.Y1_recon,
         ctf2_recon=batch.ctf2_recon,
         y_norm=batch.y_norm,
     )
-    return tile, batch.observation_power
+    # Exact per-image rows versus the scored union, for the wasted-work record.
+    supported = np.any(coarse, axis=2)[:, stream.rotation_parent].sum()
+    layout = {"rows": rows, "n_blocks": n_blocks, "scored_rows": int(n_blocks * stream.rotation_block_size),
+              "supported_image_rows": int(supported)}
+    return tile, batch.observation_power, layout
 
 
-def _score_tile(stream: FullRowStream, tile: _TileArrays, *, score_kind: str, keep_second_moment: bool):
+def _score_tile(stream: FullRowStream, tile: _TileArrays, n_blocks: int, *, score_kind: str, keep_second_moment: bool):
     """Pass 1 and the centered partition, retaining block scores and moments on the device."""
     n_images = int(tile.y_norm.shape[0])
     top = _TopPose(
@@ -443,14 +468,14 @@ def _score_tile(stream: FullRowStream, tile: _TileArrays, *, score_kind: str, ke
         translation=jnp.full((n_images,), -1, jnp.int32),
     )
     retained = []
-    for start, size in stream.blocks:
+    for start in stream.block_starts[:n_blocks]:
         score, alpha, G_tri, top = _score_block(
             stream.arrays,
             tile,
             start,
             top,
             static=stream.static,
-            block_size=size,
+            block_size=stream.rotation_block_size,
             score_kind=score_kind,
             keep_second_moment=keep_second_moment,
         )
@@ -479,9 +504,9 @@ def accumulate_full_row_tile(
     diagnostics as the host-mask ``accumulate_dense_ppca_statistics`` call
     with ``collect_residuals=True``.
     """
-    tile, observation_power = _load_tile(stream, image_indices, significant_rows, collect_observation=True)
+    tile, observation_power, layout = _load_tile(stream, image_indices, significant_rows, collect_observation=True)
     retained, top, centered_logZ = _score_tile(
-        stream, tile, score_kind="factor_once" if factor_once else "blocked", keep_second_moment=True
+        stream, tile, layout["n_blocks"], score_kind="factor_once" if factor_once else "blocked", keep_second_moment=True
     )
     arrays, static = stream.arrays, stream.static
     P = static.basis_size
@@ -499,11 +524,12 @@ def accumulate_full_row_tile(
         n_significant=jnp.zeros((n_images,), jnp.int32),
     )
     rotation_mass = []
-    for index, (start, size) in enumerate(stream.blocks):
+    for index, start in enumerate(stream.block_starts[: layout["n_blocks"]]):
         score, alpha, G_tri = retained[index]
         retained[index] = None  # release the block's moments once consumed
         carry, block_mass = _backproject_block(
-            carry, arrays, tile, score, alpha, G_tri, top.center, centered_logZ, start, static=static, block_size=size
+            carry, arrays, tile, score, alpha, G_tri, top.center, centered_logZ, start,
+            static=static, block_size=stream.rotation_block_size,
         )
         rotation_mass.append(block_mass)
     rhs, lhs_tri = carry.rhs, carry.lhs_tri
@@ -531,6 +557,9 @@ def accumulate_full_row_tile(
         }
     )
     pmax = _top_pose_posterior(host["top_centered_score"][:, None], host["centered_logZ"])[:, 0]
+    # Every fine row appears at most once in the table; sentinel padding is dropped.
+    rotation_mass = np.zeros(stream.rotation_parent.size, np.float32)
+    rotation_mass[layout["rows"]] = host["rotation_mass"][: layout["rows"].size]
     finite = np.isfinite(host["top_centered_score"])
     original_ids = stream.dataset.original_image_indices_from_local(np.asarray(image_indices))
     diagnostics = {
@@ -545,7 +574,9 @@ def accumulate_full_row_tile(
         "best_rotation_idx": np.where(finite, host["rotation"], -1).astype(np.int32),
         "best_translation_idx": np.where(finite, host["translation"], -1).astype(np.int32),
         "offset_second_sum_px2": float(host["offset"]),
-        "rotation_mass": host["rotation_mass"],
+        "rotation_mass": rotation_mass,
+        "scored_image_rows": n_images * layout["scored_rows"],
+        "supported_image_rows": layout["supported_image_rows"],
         "latent_covariance_trace_mean": float(host["latent"] / np.float32(n_images)),
         "pose_entropy_mean": float(host["entropy"] / np.float32(n_images)),
     }
@@ -566,8 +597,10 @@ def accumulate_full_row_tile(
 @full_float32
 def full_row_tile_embeddings(stream: FullRowStream, image_indices, significant_rows) -> DensePPCAEmbeddings:
     """Pose-marginal embeddings of one full-row tile, as ``compute_dense_ppca_embeddings``."""
-    tile, _ = _load_tile(stream, image_indices, significant_rows, collect_observation=False)
-    retained, top, centered_logZ = _score_tile(stream, tile, score_kind="blocked", keep_second_moment=False)
+    tile, _, layout = _load_tile(stream, image_indices, significant_rows, collect_observation=False)
+    retained, top, centered_logZ = _score_tile(
+        stream, tile, layout["n_blocks"], score_kind="blocked", keep_second_moment=False
+    )
     embedding = jnp.zeros((int(tile.y_norm.shape[0]), stream.static.basis_size - 1), jnp.float32)
     for index in range(len(retained)):
         score, alpha, _G_tri = retained[index]
