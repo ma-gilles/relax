@@ -68,6 +68,22 @@ of three same-seed RELION repeats, comparable to the 8e-4 difference between the
 two relax runs (A100 and H100); the cause is unexplained. Evidence:
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclassstandalone_20260923/band50k/GATE.json`.
 
+VDAM K>1 (2026-09-25): relax main 237e76b normalizes sigma2_noise, pdf_class,
+sigma2_offset and ave_Pmax by RELION's retained (significant-pruned) class mass;
+it used the full mass before, which moved every K>1 trajectory from iteration 1.
+On pdb K=2 5k/128 the class splits now match RELION at seeds 29/41/53. OPEN
+(small): seed 29 relax is 0.001-0.008 below three same-seed RELION runs (more
+repeats running); seed 53 is inside the band. Evidence and tools:
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/HANDOFF.json`.
+
+Class3D local searches, K>1 (2026-09-25): the per-class local route now keeps
+RELION's joint per-particle pass-2 support (3601775); it matches the
+class-segmented pass to 1e-7. No benchmark reaches this route (Class3D keeps
+HEALPix 1-2, below auto_local_healpix_order 4). Later engine task: give the
+class-segmented pass padding factor 2 and a per-class scale-correction mask
+(RELION's `data_vs_prior_class[iclass] > 3`), route Class3D local K>1 through
+it, then delete the per-class K>1 loop (one implementation; K=1 keeps its path).
+
 Final all-data maps are now always gridding-corrected, as in RELION; the former
 default-off selector made the K1 100k/256 masked GT FSC 0.0008 lower than both
 same-command RELION repeats over shells 1-60. Pinned merged-map records were
