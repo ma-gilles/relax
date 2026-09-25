@@ -3328,29 +3328,29 @@
     "masked_band_auc": null
    },
    "relax": {
-    "version": "relax InitialModel (recovar.commands.initial_model)",
+    "version": "relax InitialModel (relax.commands.initial_model)",
     "resolution_A": null,
     "resolution_definition": null,
     "relion_reported_resolution_A": null,
     "masked_resolution_A": null,
-    "wall_s": 38463.4,
-    "wall_definition": "wall of the engine subprocess (end to end, start-up and compilation included)",
+    "wall_s": 33154.7,
+    "wall_definition": "relax wrapper process wall (end to end)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 200,
     "jobs": [
-     "14148537"
+     "14401805"
     ],
     "masked_band_auc": null,
-    "source_sha": "25cc4475be0119a083b3fd4dece99daa38186c79",
-    "source_repo": "recovar (pre-split EM lineage; bucket size-class candidate of 2026-09-18)"
+    "source_sha": "cb18995a6d56a328d3df186c98060ced3b2e7ff1",
+    "source_repo": "relax main at the retained-mass fix (cb18995, landed as 237e76b after rebases over docs and unrelated code; frozen candidate cand_cb18995)"
    },
    "initial_model": {
     "reference": "ground truth (simulator maps; mean of the class maps for alignment when K>1), RELION file frame",
     "aggregate": "K>1: reference and cross-engine FSC-AUCs are population-weighted means over Hungarian-matched classes (weights rlnClassDistribution); the FSC 0.5 value is that of the most populated class",
     "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
     "alignment": "rigid (HEALPix-2 seed + x-mirror, continuous rotation+translation fit, sign +1); cubic apply. Arm vs reference: arm consensus fitted to the reference mean. Pair: b consensus fitted directly onto a's reference-frame consensus.",
-    "score_json": "docs/benchmarks/initialmodel_scores/ribo_k15.json",
+    "score_json": "docs/benchmarks/initialmodel_scores/ribo_k15_fix.json",
     "relion": {
      "run": "relion_s29",
      "fsc_auc": 0.1435,
@@ -3359,47 +3359,48 @@
      "masked_res_05_A": 15.11
     },
     "relax": {
-     "run": "relax_s29",
-     "fsc_auc": 0.0974,
-     "masked_fsc_auc": 0.0985,
-     "res_05_A": 68.0,
-     "masked_res_05_A": 68.0
+     "run": "relaxfix_s29",
+     "fsc_auc": 0.1321,
+     "masked_fsc_auc": 0.1374,
+     "res_05_A": 77.71,
+     "masked_res_05_A": 77.71
     },
     "cross": {
-     "fsc_auc": 0.2267,
-     "masked_fsc_auc": 0.269
+     "fsc_auc": 0.3582,
+     "masked_fsc_auc": 0.4402
     },
     "relion_repeat": null
    },
    "gt": null,
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 3.35,
-   "matched": "workload",
+   "time_ratio_relax_over_relion": 2.89,
+   "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
     "box": true,
     "particles": true,
     "schedule": true,
-    "flags": false,
+    "flags": true,
     "timing_controlled": false
    },
    "notes": [
     "Walls provisional (manager decision 2026-09-25): VDAM walls are to be re-measured with one srun --exact -c8 step per arm. This row's arms ran as separate jobs (or, for the 10076 K=4 20-iteration row, in one job with an unrecorded CPU layout), not as paired --exact steps.",
-    "Both arms ran the 2026-09-19 cross-dataset matrix command (RELION default InitialModel schedule, 200 iterations, same seed, sampling and diameter) as separate whole-node jobs on H100 nodes; matched stays at workload (single run per arm, separate jobs and nodes, relax profiling options on).",
-    "OPEN bug candidate (recorded 2026-09-24): relax's population-weighted reference FSC-AUC is below RELION's by 0.046 with no RELION repeat.",
-    "The 2026-09-20 quality gate (vdam_matrix_quality_20260920, evaluate_kclass_gt, every class aligned to every GT class independently, plain mean) read 0.039139 relax vs 0.039154 RELION; with one rigid frame per run and population weights (this table) relax is below RELION. The population-weighted value follows the class occupancies each engine converged to (RELION's most populated class reaches 15.1 A against its GT class, relax's 68.0 A). One rigid frame per run is the right registration: a run's classes share one set of pose assignments, so they share one frame, and aligning each class separately lets every class find its own best rotation against every GT class, which inflates agreement for poorly resolved classes.",
-    "All scored runs (FSC-AUC unmasked / masked): relion_s29 vs reference 0.1435 unmasked / 0.1514 masked; relax_s29 vs reference 0.0974 unmasked / 0.0985 masked; relion_s29 vs relax_s29 0.2267 / 0.2690.",
-    "relax minus RELION reference FSC-AUC: -0.0461 unmasked, -0.0529 masked; no RELION repeat exists, so a relax deficit here is open, not attributed to RELION variation."
+    "Rerun on the retained-mass fix (relax 237e76b): VDAM K>1 had divided sigma2_noise, pdf_class, sigma2_offset and ave_Pmax by the full responsibility mass instead of RELION's retained fine-pass mass (acc_ml_optimiser_impl.h:4065-4142, ml_optimiser.cpp:6170-6171, 6387).",
+    "relax K=15 seed 29 on the fix: 33155 s (pre-split 25cc4475b: 38463 s). Population-weighted reference FSC-AUC relax fix 0.1321 (masked 0.1374), before the fix 0.0974; RELION 0.1435 (masked 0.1514).",
+    "Occupied classes after the fix: relax 0.363/0.391/0.214/0.030 vs RELION 0.366/0.355/0.233/0.031 (+0.015 in a fifth class); before the fix relax 0.332/0.358/0.269/0.039.",
+    "All scored runs (FSC-AUC unmasked / masked): relion_s29 vs reference 0.1435 unmasked / 0.1514 masked; relax_s29 vs reference 0.0974 unmasked / 0.0985 masked; relaxfix_s29 vs reference 0.1321 unmasked / 0.1374 masked; relion_s29 vs relax_s29 0.2267 / 0.2690; relion_s29 vs relaxfix_s29 0.3582 / 0.4402; relax_s29 vs relaxfix_s29 0.2170 / 0.2884.",
+    "Improved by the fix (0.0974 to 0.1321) but still below the single RELION run (0.1435); no RELION repeat or second seed exists at K=15, so the remaining gap is not attributed (pdb K=2 seed-29 RELION repeats alone span 0.323-0.335)."
    ],
    "null_reasons": {
     "initial_model.relion_repeat": "no second RELION run of this command exists"
    },
    "evidence": {
     "run_roots": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/ribo_rerun"
     ],
-    "score_json": "docs/benchmarks/initialmodel_scores/ribo_k15.json"
+    "score_json": "docs/benchmarks/initialmodel_scores/ribo_k15_fix.json"
    },
    "mask": {
     "dataset": "ribosembly_k15_50k256_c1",
@@ -3407,10 +3408,10 @@
    },
    "date": "2026-09-24",
    "time_check": {
-    "a": "RELION 1 GPU, one non-MPI relion_refine process, --j 8; relax 1 GPU, --j 8",
-    "b": "relax ran with JAX_LOG_COMPILES=1 and RECOVAR_INITIAL_MODEL_PROFILE=1 (profiling), RECOVAR_PREREAD_IMAGES=1 and the flat-local-rows opt-in; RELION --preread_images; no replay, capture or per-iteration dumps (both --grad_write_iter 50)",
-    "c": "both walls end to end including start-up and compilation (relax compile 6651 s)",
-    "d": "H100 80GB HBM3 on both (nvidia-smi records gpu_*.txt); separate whole-node jobs, nodes RELION della-h20g4, relax della-h19g2"
+    "a": "RELION 1 GPU, one non-MPI relion_refine process, --j 8 (2026-09-19 matrix jobs); relax 1 GPU, --j 8, one srun --exact -c8 step per arm (K=15 alone in 14401805; K=4 s41, K=1 s41 and K=1 s29 as three steps of 14401806)",
+    "b": "both pre-read the particle stack (RELION --preread_images, relax --preread_images); relax production defaults, no profiling or capture variables; RELION --grad_write_iter 50, relax --grad-write-iter 50",
+    "c": "RELION: wall of the relion_refine process; relax: whole wrapper process (import, provenance checks, compilation and run); both end to end",
+    "d": "H100 80GB HBM3 on every arm; RELION and relax in different jobs and nodes (RELION in 2026-09-19 whole-node jobs), so the ratio is not timing-controlled"
    }
   },
   {
