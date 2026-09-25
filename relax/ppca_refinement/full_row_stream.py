@@ -121,11 +121,20 @@ class _TopPose(NamedTuple):
 
 
 class _MomentCarry(NamedTuple):
-    """Pass-2 accumulators, updated in block order as the host-mask reference."""
+    """Pass-2 accumulators, updated in block order.
+
+    Each rotation block backprojects into zero volumes that are then added to
+    the tile sums with Kahan compensation. A single float32 atomic accumulator
+    over a whole tile rounds away the many small posterior-tail contributions
+    once voxels grow large, a downward bias that grows with images per tile.
+    """
 
     rhs: jax.Array
     lhs_tri: jax.Array
     residual: jax.Array
+    rhs_compensation: jax.Array
+    lhs_compensation: jax.Array
+    residual_compensation: jax.Array
     residual_power: jax.Array
     embedding: jax.Array
     latent_covariance_trace_sum: jax.Array
@@ -186,6 +195,13 @@ def full_row_pose_log_prior(
     mask = jnp.take(jnp.take(coarse_mask, rotation_parent, axis=1), translation_parent, axis=2)
     prior = rotation_log_prior[:, None] + translation_log_prior[None, :]
     return jnp.where(mask, prior[None], -jnp.inf).astype(jnp.float32)
+
+
+def compensated_add(total, compensation, term):
+    """One Kahan summation step; returns the new total and compensation."""
+    corrected = term - compensation
+    updated = total + corrected
+    return updated, (updated - total) - corrected
 
 
 def _block_rows(tile, start, size: int):
@@ -259,11 +275,11 @@ def _backproject_block(carry, arrays, tile, score, alpha, G_tri, center, centere
     embedding = jnp.einsum("btr,btrq->bq", gamma, alpha[..., 1:])
     indices = arrays.score_indices
     # The half-image adjoint supplies conjugate scatters itself.
-    residual = batch_adjoint_slice_volume_maybe_windowed(
+    residual_block = batch_adjoint_slice_volume_maybe_windowed(
         residual_images,
         indices,
         rotations_block,
-        carry.residual,
+        jnp.zeros_like(carry.residual),
         static.image_shape,
         static.volume_shape,
         static.disc_type,
@@ -279,24 +295,30 @@ def _backproject_block(carry, arrays, tile, score, alpha, G_tri, center, centere
         residual_power = carry.residual_power.at[indices].add(correction * nv[indices])
     latent_covariance_trace = _latent_covariance_trace_from_packed_moments(G_tri, alpha, static.basis_size)
     centered_score = centered - centered_logZ[:, None, None]
-    rhs, lhs_tri = backproject_moment_images(
+    rhs_block, lhs_block = backproject_moment_images(
         rhs_images,
         lhs_images,
         rotations_block,
         static.image_shape,
         static.volume_shape,
-        carry.rhs,
-        carry.lhs_tri,
+        jnp.zeros_like(carry.rhs),
+        jnp.zeros_like(carry.lhs_tri),
         disc_type_backproject=static.disc_type,
         recon_window_indices=arrays.recon_indices,
         use_recon_window=static.use_recon_window,
         backprojection_max_r=static.backprojection_max_r,
     )
     n_significant = jnp.sum(gamma > 1e-3, axis=(1, 2)).astype(jnp.int32)
+    rhs, rhs_compensation = compensated_add(carry.rhs, carry.rhs_compensation, rhs_block)
+    lhs_tri, lhs_compensation = compensated_add(carry.lhs_tri, carry.lhs_compensation, lhs_block)
+    residual, residual_compensation = compensated_add(carry.residual, carry.residual_compensation, residual_block)
     carry = _MomentCarry(
         rhs=rhs,
         lhs_tri=lhs_tri,
         residual=residual,
+        rhs_compensation=rhs_compensation,
+        lhs_compensation=lhs_compensation,
+        residual_compensation=residual_compensation,
         residual_power=residual_power,
         embedding=carry.embedding + embedding,
         latent_covariance_trace_sum=carry.latent_covariance_trace_sum + jnp.sum(gamma * latent_covariance_trace),
@@ -544,6 +566,9 @@ def _accumulate_full_row_tile(stream, image_indices, significant_rows, *, factor
         rhs=jnp.zeros((P, half_size), dtype=jnp.complex64),
         lhs_tri=jnp.zeros((tri_size(P), half_size), dtype=jnp.float32),
         residual=jnp.zeros((P, half_size), dtype=jnp.complex64),
+        rhs_compensation=jnp.zeros((P, half_size), dtype=jnp.complex64),
+        lhs_compensation=jnp.zeros((tri_size(P), half_size), dtype=jnp.float32),
+        residual_compensation=jnp.zeros((P, half_size), dtype=jnp.complex64),
         residual_power=jnp.zeros(arrays.coefficient_noise.shape, jnp.float32) + observation_power,
         embedding=jnp.zeros((n_images, P - 1), jnp.float32),
         latent_covariance_trace_sum=jnp.float32(0),

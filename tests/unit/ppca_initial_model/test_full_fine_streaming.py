@@ -398,3 +398,20 @@ def test_fine_score_functions_share_the_shifted_frame():
         assert_matches(np.asarray(blocked.score + blocked.score_offset[:, None, None]), np.asarray(absolute))
         assert_matches(np.asarray(factor.score), np.asarray(blocked.score))
         assert_matches(np.asarray(factor.logZ), np.asarray(blocked.logZ))
+
+
+def test_compensated_block_sums_keep_small_contributions_under_jit():
+    """Increments below half a float32 ULP of the total are kept, as in pass-2 volume sums."""
+    import jax
+
+    from relax.ppca_refinement.full_row_stream import compensated_add
+
+    step = jax.jit(compensated_add)
+    total = jnp.full((4,), 1.0e6, jnp.float32)
+    compensation = jnp.zeros_like(total)
+    plain = total
+    for _ in range(1000):
+        total, compensation = step(total, compensation, jnp.full((4,), 0.01, jnp.float32))
+        plain = plain + jnp.float32(0.01)
+    assert np.all(np.asarray(plain) == np.float32(1.0e6))  # the naive float32 sum loses every term
+    assert_matches(np.asarray(total, np.float64), np.full(4, 1.0e6 + 10.0))
