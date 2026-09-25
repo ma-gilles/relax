@@ -370,7 +370,7 @@ def test_both_engines_key_native_units_on_the_shared_condition():
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 
     compact = inspect.getsource(bucketed_mod.compute_pass2_stats_sparse_bucketed)
-    resident = inspect.getsource(rp.compute_pass2_stats_resident)
+    resident = inspect.getsource(rp._resident_pass2)
     for source in (compact, resident):
         assert "_relion_native_fine_units_enabled(" in source
     assert "fresh_k1_guard=bool(source_faithful_spectrum_norm)" in resident

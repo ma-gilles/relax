@@ -928,7 +928,7 @@ def test_driver_projects_like_the_compact_engine():
     from relax.sparse_pass2 import sparse_pass2_bucketed
 
     condition = "if not use_float64_scoring and relion_projector_half.dtype == jnp.complex128:"
-    driver = inspect.getsource(rp.compute_pass2_stats_resident)
+    driver = inspect.getsource(rp._resident_pass2)
     assert condition in driver
     cast = driver.index("astype(jnp.complex64)")
     assert cast - driver.index(condition) < 200, "the projector cast is not the narrowing branch"
@@ -1146,8 +1146,8 @@ def test_streamed_chunk_projections_gather_the_cached_arrays():
         host_ids,
         n_valid_rows=n_valid,
         row_capacity=row_capacity,
-        project=project,
-        fine_grid=fine_grid,
+        project=lambda ids: project(fine_grid[ids]),
+        n_fine_rot=n_fine,
         mstep_grid=mstep_grid,
         coarse_parent_grid=coarse_parent,
     )
