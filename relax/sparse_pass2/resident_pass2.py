@@ -2841,7 +2841,7 @@ def _resident_pass2(
         Ft_y_out.append(class_Ft_y)
         Ft_ctf_out.append(class_Ft_ctf)
 
-    finalized = finalize_statistics(stats, config=stats_config, n_images=n_images)
+    finalized = finalize_statistics(stats, config=stats_config, n_images=n_units)
     noise_stats = make_noise_stats(
         wsum_sigma2_noise=finalized.wsum_sigma2_noise,
         wsum_img_power=finalized.wsum_img_power,

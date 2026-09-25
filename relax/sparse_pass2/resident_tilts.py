@@ -441,7 +441,7 @@ def accumulate_tilt_chunk_terms(
     n_fine_trans = int(config.n_fine_trans)
     unit_capacity = int(unit_ids.shape[0])
     valid_unit = unit_ids >= 0
-    unit_slot = _drop_index(unit_ids, int(config.n_images))
+    unit_slot = _drop_index(unit_ids, int(config.image_capacity))
     valid_image = image_ids >= 0
     scale = jnp.where(valid_image, jnp.asarray(operands.image_noise_scale, dtype=jnp.float32), jnp.float32(0.0))
 
