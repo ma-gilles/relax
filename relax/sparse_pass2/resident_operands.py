@@ -59,8 +59,11 @@ import numpy as np
 from relax.helpers.batch_fetch import fetch_indexed_batch
 from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.half_spectrum import make_shell_indices_half
+from relax.helpers.optics_noise import pixel_rows
 from relax.sparse_pass2.sparse_pass2_bucket_io import prepare_unshifted_bucket_operands
 from relax.sparse_pass2.sparse_pass2_scoring import (
+    _relion_native_fine_units,
+    _relion_native_score_corr_img,
     _relion_powerclass_noise_terms,
     relion_powerclass_noise_presence,
 )
@@ -557,6 +560,7 @@ def prepare_resident_half_operands(
     precision_policy: DensePrecisionPolicy | None = None,
     image_batch_size: int | None = None,
     optics_groups_np=None,
+    relion_native_fine_units: bool = False,
 ) -> ResidentHalfOperands:
     """Run the per-image preparation once for ``image_indices`` and keep it resident.
 
@@ -569,6 +573,12 @@ def prepare_resident_half_operands(
     covers. The preparation is per image, so it does not change any value; the
     last batch is short rather than padded, unlike the per-chunk path, which had
     to pad to a capacity class to keep one program per class.
+
+    ``relion_native_fine_units`` stores the two score operands in RELION's
+    native FFT units, as the compact engine scores a fresh K=1 pass
+    (:func:`~relax.sparse_pass2.sparse_pass2_scoring._relion_native_fine_units_enabled`):
+    ``score_input`` divided by N**2 and ``corr_img_score`` RELION's native
+    ``corr_img``. Every reconstruction and noise operand keeps RECOVAR units.
     """
 
     image_indices = np.asarray(image_indices)
@@ -645,6 +655,12 @@ def prepare_resident_half_operands(
         "relion_norm_high_shell": None,
     }
     batch_size = int(image_batch_size or _prepare_image_batch_size())
+    native_fft_size = int(np.prod(image_shape))
+    if relion_native_fine_units:
+        _require_supported(
+            relion_exact_bpref_operands,
+            "native-unit fine scores without RELION's RFLOAT CTF operand",
+        )
 
     for start in range(0, n_images, batch_size):
         batch_image_indices = image_indices[start : start + batch_size]
@@ -659,10 +675,25 @@ def prepare_resident_half_operands(
             fetched_indices,
             **unshifted_kwargs,
         )
+        score_corr_img_half = unshifted.ctf2_over_nv_half
+        if relion_native_fine_units:
+            # The native corr_img the compact engine scores with; the DC mask
+            # and window gather below apply to it exactly as to the RECOVAR one.
+            score_corr_img_half = _relion_native_score_corr_img(
+                pixel_rows(unshifted.noise_variance_half),
+                unshifted.ctf_half_rfloat,
+                image_shape,
+                (
+                    jnp.asarray(unshifted.batch_scale_np, dtype=jnp.float32)[:, None]
+                    if kwargs["scale_corrections"] is not None
+                    else None
+                ),
+                zero_dc=half_spectrum_scoring,
+            )
 
         batch_arrays = _batch_window_operands(
             _BatchWindowInputs(
-                ctf2_over_nv_half=unshifted.ctf2_over_nv_half,
+                ctf2_over_nv_half=score_corr_img_half,
                 sparse_score_input_half=unshifted.sparse_score_input_half,
                 processed_score_half_for_noise=unshifted.processed_score_half_for_noise,
                 recon_input_half=(
@@ -685,6 +716,14 @@ def prepare_resident_half_operands(
             score_complex_dtype=jnp.dtype(score_complex_dtype),
             acc_real_dtype=jnp.dtype(unshifted.acc_real_dtype),
         )
+        if relion_native_fine_units:
+            # The kernel translates this unshifted image in-kernel, so the pass
+            # scores translate(image / N**2); the compact engine divides the
+            # already translated image. Each is one correctly rounded division,
+            # so the two agree to rounding, not bit for bit.
+            batch_arrays["score_input"] = _relion_native_fine_units(
+                batch_arrays["score_input"], native_fft_size
+            )
 
         highres_xi2_half, relion_norm_high_shell = _relion_powerclass_noise_terms(
             unshifted.processed_score_half_for_noise,

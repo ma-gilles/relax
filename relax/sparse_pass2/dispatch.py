@@ -192,9 +192,8 @@ def compute_pass2_stats_sparse(
         # any configuration mismatch rather than falling back, so a measured
         # comparison always knows which engine produced a result. The scoring
         # routes it was never scoped to cover are different (RELION's
-        # --firstiter_cc scoring, zero-oversampling coarse-normalization reuse,
-        # the unordered Wavg arithmetic of subset replays and native-unit fine
-        # scores of a fresh pass at a non-power-of-two box; see
+        # --firstiter_cc scoring, zero-oversampling coarse-normalization reuse
+        # and the unordered Wavg arithmetic of subset replays; see
         # resident_pass2_out_of_scope_reason), so those passes go to the
         # compact engine and the log says which and why.
         sparse_pass2_impl = compute_pass2_stats_sparse_bucketed
@@ -211,7 +210,6 @@ def compute_pass2_stats_sparse(
                 scale_groups_available=group_ids is not None,
                 preserve_bpref_particle_order=preserve_bpref_particle_order,
                 source_faithful_spectrum_norm=source_faithful_spectrum_norm,
-                image_size=int(experiment_dataset.image_shape[0]),
             )
             if out_of_scope is None:
                 sparse_pass2_impl = compute_pass2_stats_resident

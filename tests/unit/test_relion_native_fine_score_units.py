@@ -322,20 +322,290 @@ def test_fresh_k1_fine_diff2_receives_native_unit_operands(monkeypatch, current_
     assert _nearest_relative_distance(captured["proj"], recovar_unit_values).min() > 0.5
 
 
-@pytest.mark.parametrize(
-    ("fresh", "image_size", "in_scope"),
-    [(True, 300, False), (True, 384, False), (True, 256, True), (False, 300, True), (True, None, True)],
-)
-def test_resident_driver_leaves_non_power_of_two_fresh_passes_to_the_compact_engine(fresh, image_size, in_scope):
+@pytest.mark.parametrize("image_size", [300, 384, 256, None])
+@pytest.mark.parametrize("fresh", [True, False])
+def test_resident_driver_covers_fresh_passes_at_every_box(fresh, image_size):
+    """Resident scores native units itself, so no box size is sent to compact."""
+
+    import inspect
+
     from relax.sparse_pass2 import resident_pass2 as rp
 
+    assert "image_size" not in inspect.signature(rp.resident_pass2_out_of_scope_reason).parameters
     reason = rp.resident_pass2_out_of_scope_reason(
         relion_firstiter_score_mode="gaussian",
         relion_firstiter_winner_take_all=False,
         source_faithful_spectrum_norm=fresh,
-        image_size=image_size,
     )
-    if in_scope:
-        assert reason is None
-    else:
-        assert reason is not None and "native-unit" in reason and str(image_size) in reason
+    assert reason is None
+
+
+@pytest.mark.parametrize(
+    ("fresh", "exact", "float64", "rfloat", "expected"),
+    [
+        (True, True, False, True, True),
+        (False, True, False, True, False),
+        (True, False, False, True, False),
+        (True, True, True, True, False),
+        (True, True, False, False, False),
+    ],
+)
+def test_native_unit_condition_is_the_compact_condition(fresh, exact, float64, rfloat, expected):
+    from relax.sparse_pass2.sparse_pass2_scoring import _relion_native_fine_units_enabled
+
+    assert (
+        _relion_native_fine_units_enabled(
+            fresh_k1_guard=fresh,
+            use_exact_relion_gaussian=exact,
+            use_float64_scoring=float64,
+            has_ctf_rfloat=rfloat,
+        )
+        is expected
+    )
+
+
+def test_both_engines_key_native_units_on_the_shared_condition():
+    """Compact and resident resolve native units from one helper, and resident
+    divides only its score projections, never the M-step/noise recon rows."""
+
+    import inspect
+
+    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
+
+    compact = inspect.getsource(bucketed_mod.compute_pass2_stats_sparse_bucketed)
+    resident = inspect.getsource(rp.compute_pass2_stats_resident)
+    for source in (compact, resident):
+        assert "_relion_native_fine_units_enabled(" in source
+    assert "fresh_k1_guard=bool(source_faithful_spectrum_norm)" in resident
+    assert "has_ctf_rfloat=relion_exact_bpref_operands" in resident
+    assert "score = _relion_native_fine_units(score, native_fft_size)" in resident
+    assert "recon = _relion_native_fine_units" not in resident
+    assert resident.count("relion_native_fine_units=relion_native_fine_units") >= 2
+    chunk = inspect.getsource(rp._run_resident_chunk)
+    assert chunk.count("relion_native_fine_units=relion_native_fine_units") == 2
+
+
+def _resident_native_case(monkeypatch, image_size, current_size, with_scale):
+    from recovar.core.configs import ForwardModelConfig
+    from recovar.reconstruction import noise as noise_utils
+
+    from relax.cuda import kernels as em_cuda_kernels
+    from relax.helpers.fourier_window import make_fourier_window_spec
+    from relax.relion import relion_ctf
+
+    n_images = 3
+    dataset = _NativeUnitsDataset(image_size, n_images=n_images)
+    shape = dataset.image_shape
+    n_half = image_size * (image_size // 2 + 1)
+    ctf_rfloat = np.linspace(0.2, 1.1, n_images * n_half, dtype=np.float64).reshape(n_images, n_half)
+    monkeypatch.setattr(
+        relion_ctf,
+        "_relion_exact_ctf_half_from_source_star",
+        lambda _dataset, indices, _shape: jnp.asarray(ctf_rfloat[np.asarray(indices)]),
+    )
+    # Repeat instead of translate: the CUDA translations are not on CPU, and
+    # the operands under test are the unshifted ones the kernel translates.
+    monkeypatch.setattr(
+        em_cuda_kernels,
+        "relion_translate_score_f32",
+        lambda images, angles, _pixel_indices, _shape: jnp.repeat(
+            jnp.asarray(images), int(angles.shape[0]), axis=0
+        ),
+    )
+    monkeypatch.setattr(
+        em_cuda_kernels,
+        "relion_translate_bpref_f32",
+        lambda images, weights, angles, _pixel_indices, _shape: jnp.repeat(
+            jnp.asarray(images) * jnp.asarray(weights), int(angles.shape[0]), axis=0
+        ),
+    )
+    window = (
+        np.arange(n_half, dtype=np.int32)
+        if current_size is None
+        else np.asarray(make_fourier_window_spec(shape, current_size, n_half, square=False).score_indices_np)
+    )
+    noise_variance = np.linspace(0.5, 1.5, image_size * image_size, dtype=np.float32)
+    noise_variance_half = noise_utils.to_batched_half_pixel_noise(jnp.asarray(noise_variance), shape).squeeze()
+    scale = np.asarray([0.9, 1.1, 1.05], dtype=np.float32) if with_scale else None
+    config = ForwardModelConfig.from_dataset(dataset, disc_type="linear_interp", process_fn=dataset.process_images)
+    fine_translations = np.zeros((1, 2), dtype=np.float32)
+    bucket_io_kwargs = dict(
+        noise_variance_half=noise_variance_half,
+        fine_translations=fine_translations,
+        config=config,
+        n_trans=1,
+        score_with_masked_images=True,
+        half_spectrum_scoring=True,
+        image_corrections=None,
+        scale_corrections=scale,
+        image_pre_shifts=None,
+        use_float64_scoring=False,
+        score_only=False,
+        score_mode="gaussian",
+        window_indices=window,
+        recon_window_indices=window,
+        translation_phases_half=None,
+        relion_score_translation_angles=jnp.zeros((1, 2), dtype=jnp.float32),
+        return_windowed_shifted=True,
+        relion_exact_normalized_cc_operands=False,
+        relion_exact_bpref_operands=True,
+        noise_optics_groups=None,
+    )
+    return dict(
+        dataset=dataset,
+        shape=shape,
+        window=window,
+        ctf_rfloat=ctf_rfloat,
+        noise_variance_half=np.asarray(noise_variance_half),
+        scale=scale,
+        bucket_io_kwargs=bucket_io_kwargs,
+        n_images=n_images,
+        current_size=current_size,
+    )
+
+
+def _prepare_resident(case, native):
+    from relax.sparse_pass2.resident_operands import prepare_resident_half_operands
+
+    return prepare_resident_half_operands(
+        case["dataset"],
+        np.arange(case["n_images"]),
+        bucket_io_kwargs=case["bucket_io_kwargs"],
+        window_indices=case["window"],
+        recon_window_indices=case["window"],
+        image_shape=case["shape"],
+        current_size=case["current_size"],
+        n_fine_trans=1,
+        use_exact_relion_gaussian=True,
+        accumulate_noise=False,
+        source_faithful_spectrum_norm=True,
+        image_batch_size=2,
+        relion_native_fine_units=native,
+    )
+
+
+def _expected_native_corr_img(case):
+    shape = case["shape"]
+    scale = None if case["scale"] is None else jnp.asarray(case["scale"])[:, None]
+    native = np.array(
+        _relion_cuda_native_corr_img_from_noise_variance(
+            case["noise_variance_half"][None, :], case["ctf_rfloat"], shape, scale
+        )
+    )
+    native[:, np.asarray(make_shell_indices_half(shape)) == 0] = 0.0
+    return native[:, case["window"]]
+
+
+@pytest.mark.parametrize("with_scale", [False, True], ids=["no-scale", "scale"])
+@pytest.mark.parametrize("current_size", [None, 4], ids=["full-box", "windowed"])
+def test_resident_half_operands_score_in_native_units(monkeypatch, current_size, with_scale):
+    image_size = 6
+    case = _resident_native_case(monkeypatch, image_size, current_size, with_scale)
+    recovar_units = _prepare_resident(case, native=False)
+    native = _prepare_resident(case, native=True)
+    fft_size = image_size * image_size
+    # The exact-BPref operands (and so RELION's RFLOAT CTF) are on.
+    assert native.recon_weight is not None and native.direct_ctf_rfloat_recon is not None
+
+    # The unshifted score image, divided by N**2 once (the kernel translates it).
+    np.testing.assert_allclose(
+        np.asarray(native.score_input),
+        _divide_correctly_rounded(np.asarray(recovar_units.score_input), fft_size),
+        rtol=_EXACT_BY_CONSTRUCTION_RTOL,
+        atol=0.0,
+    )
+    expected_corr = _expected_native_corr_img(case)
+    corr = np.asarray(native.corr_img_score)
+    assert corr.dtype == np.float32
+    np.testing.assert_array_equal(corr == 0.0, expected_corr == 0.0)
+    np.testing.assert_allclose(corr, expected_corr, rtol=_EXACT_BY_CONSTRUCTION_RTOL, atol=0.0)
+    # The RECOVAR-unit corr_img is N**4 smaller; the native one never matches it.
+    nonzero = expected_corr != 0.0
+    ratio = corr[nonzero].astype(np.float64) / np.asarray(recovar_units.corr_img_score)[nonzero]
+    np.testing.assert_allclose(ratio, float(fft_size) ** 2, rtol=1.0e-6)
+
+    # Reconstruction, noise and power-class operands keep RECOVAR units.
+    for name in (
+        "recon_image",
+        "recon_weight",
+        "noise_image",
+        "ctf2_over_nv_recon",
+        "direct_ctf_rfloat_recon",
+        "processed_image_half",
+        "highres_xi2_half",
+    ):
+        a, b = getattr(native, name), getattr(recovar_units, name)
+        assert (a is None) == (b is None), name
+        if a is not None:
+            np.testing.assert_allclose(np.asarray(a), np.asarray(b), rtol=_EXACT_BY_CONSTRUCTION_RTOL, atol=0.0)
+
+
+@pytest.mark.parametrize("with_scale", [False, True], ids=["no-scale", "scale"])
+@pytest.mark.parametrize("current_size", [None, 4], ids=["full-box", "windowed"])
+def test_per_chunk_operands_match_the_resident_native_operands(monkeypatch, current_size, with_scale):
+    """The per-chunk oracle (RESIDENT_OPERANDS=0) scores the same native operands."""
+
+    from types import SimpleNamespace
+
+    from relax.sparse_pass2 import resident_pass2 as rp
+
+    image_size = 6
+    case = _resident_native_case(monkeypatch, image_size, current_size, with_scale)
+    resident = _prepare_resident(case, native=True)
+    n_images = case["n_images"]
+    capacity = n_images + 1
+    window = jnp.asarray(case["window"], dtype=jnp.int32)
+
+    def per_chunk(native):
+        return rp._prepare_chunk_reconstruction_operands(
+            chunk=SimpleNamespace(image_capacity=capacity, n_valid_images=n_images),
+            image_indices=np.arange(n_images),
+            experiment_dataset=case["dataset"],
+            bucket_io_kwargs=case["bucket_io_kwargs"],
+            windowed_prepare=True,
+            recon_window_indices=case["window"],
+            score_window_indices=case["window"],
+            fine_translation_prior_2d=None,
+            score_real_dtype=jnp.float32,
+            n_fine_trans=1,
+            n_recon_windowed=int(window.shape[0]),
+            image_shape=case["shape"],
+            current_size=case["current_size"],
+            use_exact_relion_gaussian=True,
+            accumulate_noise=False,
+            source_faithful_spectrum_norm=True,
+            relion_score_translation_angles=jnp.zeros((1, 2), dtype=jnp.float32),
+            rect_indices_device=window,
+            exact_positions_device=jnp.arange(int(window.shape[0]), dtype=jnp.int32),
+            scale_corrections_np=case["scale"],
+            group_ids_np=None,
+            relion_native_fine_units=native,
+        )
+
+    chunk = per_chunk(True)
+    for name in ("score_input", "corr_img_score"):
+        values = np.asarray(chunk[name])
+        np.testing.assert_allclose(
+            values[:n_images],
+            np.asarray(getattr(resident, name)),
+            rtol=_EXACT_BY_CONSTRUCTION_RTOL,
+            atol=0.0,
+            err_msg=name,
+        )
+        np.testing.assert_array_equal(values[n_images:] == 0, True)
+    # Resident local search calls the per-chunk preparation without the flag
+    # and keeps RECOVAR units.
+    default = per_chunk(False)
+    np.testing.assert_allclose(
+        np.asarray(chunk["score_input"])[:n_images],
+        _divide_correctly_rounded(np.asarray(default["score_input"])[:n_images], image_size * image_size),
+        rtol=_EXACT_BY_CONSTRUCTION_RTOL,
+        atol=0.0,
+    )
+    np.testing.assert_allclose(
+        np.asarray(chunk["shifted_recon"]),
+        np.asarray(default["shifted_recon"]),
+        rtol=_EXACT_BY_CONSTRUCTION_RTOL,
+        atol=0.0,
+    )

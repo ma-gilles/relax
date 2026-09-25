@@ -76,7 +76,6 @@ from relax.helpers.env_flags import (
 from relax.helpers.fourier_window import make_stable_fourier_window_shape_plan
 from relax.helpers.half_spectrum import (
     make_relion_noise_shell_indices_half,
-    make_shell_indices_half,
     mask_relion_noise_shell_indices_to_current_window,
 )
 from relax.helpers.half_volume_mstep import (
@@ -295,8 +294,9 @@ from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_cuda_fine_global_diff2_min,
     _relion_cuda_fine_log_evidence_offset,
     _relion_cuda_fine_partition_diff2_min_or_inf,
-    _relion_cuda_native_corr_img_from_noise_variance,
     _relion_native_fine_units,
+    _relion_native_fine_units_enabled,
+    _relion_native_score_corr_img,
     _relion_powerclass_noise_terms,
     _score_pass2_bucket_gaussian_algebraic,
     _score_pass2_bucket_gaussian_algebraic_components,
@@ -2237,16 +2237,16 @@ def compute_pass2_stats_sparse_bucketed(
         # Fresh K=1 exact-Gaussian fine diff2 runs in RELION's native FFT units
         # (final Q aa0eccbfd4); the score corr_img is taken before its N**-4
         # scaling and keeps the zero origin of RELION's Minvsigma2.
-        relion_native_fine_units = bool(
-            fresh_k1_guard
-            and use_exact_relion_gaussian
-            and not use_float64_scoring
-            and direct_ctf_rfloat_half is not None
+        relion_native_fine_units = _relion_native_fine_units_enabled(
+            fresh_k1_guard=fresh_k1_guard,
+            use_exact_relion_gaussian=use_exact_relion_gaussian,
+            use_float64_scoring=use_float64_scoring,
+            has_ctf_rfloat=direct_ctf_rfloat_half is not None,
         )
         direct_native_corr_img_score = None
         native_fft_size = int(np.prod(image_shape))
         if relion_native_fine_units:
-            direct_native_corr_img_half = _relion_cuda_native_corr_img_from_noise_variance(
+            direct_native_corr_img_half = _relion_native_score_corr_img(
                 jnp.asarray(noise_variance_half)[None, :],
                 direct_ctf_rfloat_half,
                 image_shape,
@@ -2255,12 +2255,8 @@ def compute_pass2_stats_sparse_bucketed(
                     if scale_corrections is not None
                     else None
                 ),
+                zero_dc=half_spectrum_scoring,
             )
-            if half_spectrum_scoring:
-                native_dc_mask = make_shell_indices_half(image_shape) == 0
-                direct_native_corr_img_half = jnp.where(
-                    native_dc_mask[None, :], 0.0, direct_native_corr_img_half
-                ).astype(jnp.float32)
             direct_native_corr_img_score = (
                 direct_native_corr_img_half[:, jnp.asarray(window_indices, dtype=jnp.int32)]
                 if use_window

@@ -89,6 +89,7 @@ from relax.helpers.half_volume_mstep import (
     relion_x_half_accumulators_to_public_layout,
     relion_x_half_mstep_accumulator_dtypes,
 )
+from relax.helpers.optics_noise import noise_rows, pixel_rows
 from relax.helpers.preprocessing import half_translation_phase_table
 from relax.helpers.projection import compute_noise_block, compute_noise_block_per_optics_group
 from relax.helpers.projection import (
@@ -170,6 +171,9 @@ from relax.sparse_pass2.sparse_pass2_projection_blocks import (
 )
 from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_cuda_fine_full_to_compact_lookup,
+    _relion_native_fine_units,
+    _relion_native_fine_units_enabled,
+    _relion_native_score_corr_img,
     _relion_powerclass_noise_terms,
     relion_powerclass_noise_dtypes,
 )
@@ -365,7 +369,6 @@ def resident_pass2_out_of_scope_reason(
     scale_groups_available=False,
     preserve_bpref_particle_order=False,
     source_faithful_spectrum_norm=False,
-    image_size=None,
 ) -> str | None:
     """Name the pass-2 routes the resident driver was never scoped to cover.
 
@@ -382,11 +385,10 @@ def resident_pass2_out_of_scope_reason(
     - a production-shaped pass (noise and group-scale statistics) that does not
       preserve RELION's particle order (a subset or focused debugging replay)
       uses the compact engine's unordered, non-atomic Wavg arithmetic; the
-      resident statistics stage implements only the atomic triplet;
-    - a fresh K=1 pass scores its fine diff2 in RELION's native FFT units in
-      the compact engine. The conversion is exact, so the resident driver's
-      RECOVAR-unit scores are identical, only when ``image_size**2`` is a
-      power of two; other boxes are out of scope.
+      resident statistics stage implements only the atomic triplet.
+
+    A fresh K=1 pass at any box is in scope: the resident driver scores its
+    fine diff2 in RELION's native FFT units, as the compact engine does.
 
     Everything else still raises through
     :func:`require_resident_production_configuration`, because a silent
@@ -415,13 +417,6 @@ def resident_pass2_out_of_scope_reason(
             return (
                 "the non-atomic Wavg arithmetic of a pass without RELION's "
                 "preserved particle order (subset or focused replay)"
-            )
-    if source_faithful_spectrum_norm and image_size is not None:
-        fft_size = int(image_size) ** 2
-        if fft_size & (fft_size - 1):
-            return (
-                "RELION native-unit fine scores of a fresh K=1 pass at a "
-                f"non-power-of-two box (image_size={int(image_size)})"
             )
     return None
 
@@ -1441,6 +1436,19 @@ def compute_pass2_stats_resident(
         preserve_bpref_particle_order=preserve_bpref_particle_order,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
     )
+    # A fresh K=1 pass scores its fine diff2 in RELION's native FFT units, on
+    # the compact engine's condition (cf218a8): its fresh guard is the
+    # unresolved ``source_faithful_spectrum_norm`` argument, and RELION's
+    # RFLOAT CTF operand exists exactly when the exact BPref operands are on.
+    # Only the score operands change (the score-cache rows, the score image
+    # and corr_img); the reconstruction and noise operands keep RECOVAR units.
+    relion_native_fine_units = _relion_native_fine_units_enabled(
+        fresh_k1_guard=bool(source_faithful_spectrum_norm),
+        use_exact_relion_gaussian=use_exact_relion_gaussian,
+        use_float64_scoring=use_float64_scoring,
+        has_ctf_rfloat=relion_exact_bpref_operands,
+    )
+    native_fft_size = int(np.prod(image_shape))
     relion_wavg_atomic_direct_noise, relion_wavg_atomic_direct_norm = _relion_wavg_direct_modes(
         accumulate_noise=bool(accumulate_noise),
         scale_groups_available=scale_groups_available,
@@ -1795,6 +1803,10 @@ def compute_pass2_stats_resident(
             **projection_kwargs,
         )
         recon, recon_abs2 = precision_policy.cast_local_noise_projection_scores(recon, recon_abs2)
+        if relion_native_fine_units:
+            # Score rows only, for the cached and the streamed paths alike; the
+            # recon rows feed the M-step and noise sums in RECOVAR units.
+            score = _relion_native_fine_units(score, native_fft_size)
         return score, recon, recon_abs2
 
     # The whole fine grid is cached when it fits. At healpix order 3 and a real
@@ -2143,6 +2155,7 @@ def compute_pass2_stats_resident(
                         group_ids_np=group_ids_np,
                         precision_policy=precision_policy,
                         optics_groups_np=optics_groups_np,
+                        relion_native_fine_units=relion_native_fine_units,
                     )
                 except ResidentOperandsUnsupported as reason:
                     logger.info(
@@ -2273,6 +2286,7 @@ def compute_pass2_stats_resident(
             cuda_backproject=em_cuda_kernels,
             submitted_keys=submitted_keys,
             optics_groups_np=optics_groups_np,
+            relion_native_fine_units=relion_native_fine_units,
         )
     loop_s = time.time() - loop_t0
     if warmup is not None:
@@ -3061,6 +3075,7 @@ def _prepare_chunk_reconstruction_operands(
     scale_corrections_np,
     group_ids_np,
     optics_groups_np=None,
+    relion_native_fine_units=False,
 ):
     """Build one chunk's translated reconstruction, noise and Wavg tiles.
 
@@ -3074,6 +3089,11 @@ def _prepare_chunk_reconstruction_operands(
     (:mod:`recovar.em.sparse_pass2.resident_operands`) and lets T15's kernel
     apply the translations inside the M-step reduction, so no tile is built at
     all.
+
+    ``relion_native_fine_units`` gives the score operands in RELION's native
+    FFT units exactly as :func:`prepare_resident_half_operands` does: the score
+    image divided by N**2 and RELION's native ``corr_img``. Resident local
+    search calls this without it and keeps RECOVAR units.
 
     Shape stability. The batch handed to ``_prepare_bucket_io`` is padded on
     the host to the chunk's image capacity before anything is traced, so every
@@ -3092,11 +3112,12 @@ def _prepare_chunk_reconstruction_operands(
         experiment_dataset, image_indices
     )
     order = _reorder_permutation(fetched_indices, image_indices, image_capacity)
+    padded_fetched_indices = _pad_batch_to_capacity(np.asarray(fetched_indices), image_capacity)
     prepared = _prepare_bucket_io(
         experiment_dataset,
         jnp.asarray(_pad_batch_to_capacity(batch_data, image_capacity)),
         _pad_batch_to_capacity(ctf_params, image_capacity),
-        _pad_batch_to_capacity(np.asarray(fetched_indices), image_capacity),
+        padded_fetched_indices,
         return_direct_scoring_io=True,
         **bucket_io_kwargs,
     )
@@ -3115,7 +3136,7 @@ def _prepare_chunk_reconstruction_operands(
         _direct_preprocess_normalization_factors,
         _direct_integer_pre_shifts,
         _direct_batch_image_corrections,
-        _direct_batch_scale_corrections,
+        direct_batch_scale_corrections,
         _direct_inverse_noise_half,
         direct_ctf_rfloat_half,
     ) = prepared
@@ -3144,6 +3165,36 @@ def _prepare_chunk_reconstruction_operands(
         gather_score = jnp.asarray(score_window_indices, dtype=jnp.int32)
         score_input = direct_score_input[:, gather_score]
         corr_img_score = ctf2_over_nv_half[:, gather_score]
+    if relion_native_fine_units:
+        if direct_ctf_rfloat_half is None:
+            raise ValueError("native-unit fine scores require RELION's RFLOAT CTF operand")
+        # Same operands as the once-per-half preparation and the compact
+        # engine: RELION's native corr_img (DC zeroed for half-spectrum
+        # scoring) in the score window, and the unshifted score image divided
+        # by N**2, which the kernel translates in-kernel.
+        native_corr_img_half = _relion_native_score_corr_img(
+            pixel_rows(
+                noise_rows(
+                    bucket_io_kwargs["noise_variance_half"],
+                    bucket_io_kwargs.get("noise_optics_groups"),
+                    padded_fetched_indices,
+                )
+            ),
+            direct_ctf_rfloat_half,
+            image_shape,
+            (
+                jnp.asarray(direct_batch_scale_corrections, dtype=jnp.float32)[:, None]
+                if bucket_io_kwargs["scale_corrections"] is not None
+                else None
+            ),
+            zero_dc=bool(bucket_io_kwargs["half_spectrum_scoring"]),
+        )
+        if score_window_indices is not None:
+            native_corr_img_half = native_corr_img_half[
+                :, jnp.asarray(score_window_indices, dtype=jnp.int32)
+            ]
+        corr_img_score = native_corr_img_half.astype(corr_img_score.dtype)
+        score_input = _relion_native_fine_units(score_input, int(np.prod(image_shape)))
 
     highres_xi2_half, relion_norm_high_shell = _relion_powerclass_noise_terms(
         processed_score_half_for_noise,
@@ -4585,6 +4636,7 @@ def _run_resident_chunk(
     cuda_backproject,
     submitted_keys=None,
     optics_groups_np=None,
+    relion_native_fine_units=False,
 ):
     """Run every resident stage for one capacity chunk.
 
@@ -4657,6 +4709,7 @@ def _run_resident_chunk(
             scale_corrections_np=scale_corrections_np,
             group_ids_np=group_ids_np,
             optics_groups_np=optics_groups_np,
+            relion_native_fine_units=relion_native_fine_units,
         )
     else:
         # The chunk's image slots are the half's images ``image_start`` to
@@ -4698,6 +4751,7 @@ def _run_resident_chunk(
                     scale_corrections_np=scale_corrections_np,
                     group_ids_np=group_ids_np,
                     optics_groups_np=optics_groups_np,
+                    relion_native_fine_units=relion_native_fine_units,
                 ),
                 translation_angles=translation_angles,
                 recon_pixel_indices=recon_pixel_indices,

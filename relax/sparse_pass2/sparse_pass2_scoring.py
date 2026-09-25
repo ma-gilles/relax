@@ -17,7 +17,7 @@ import numpy as np
 
 from relax.helpers.deterministic_reduce import deterministic_reductions_enabled
 from relax.helpers.env_flags import parse_env_flag
-from relax.helpers.half_spectrum import bin_shell_values_jax
+from relax.helpers.half_spectrum import bin_shell_values_jax, make_shell_indices_half
 from relax.sparse_pass2.sparse_pass2_posterior import _logsumexp_pass2_pairs_score_only
 
 _RELION_FINE_DIFF2_FUSED_FFI_ENV = "RELAX_RELION_FINE_DIFF2_FUSED_FFI"
@@ -589,6 +589,60 @@ def _relion_cuda_native_corr_img_from_noise_variance(
         ctf_rfloat,
         scale,
     )
+
+
+def _relion_native_fine_units_enabled(
+    *,
+    fresh_k1_guard,
+    use_exact_relion_gaussian,
+    use_float64_scoring,
+    has_ctf_rfloat,
+) -> bool:
+    """Whether pass 2 scores its fine diff2 in RELION's native FFT units.
+
+    A fresh K=1 exact-Gaussian float32 pass with RELION's RFLOAT CTF operand
+    (final Q aa0eccbfd4). The compact engine and the device-resident driver
+    both key on this one condition; ``fresh_k1_guard`` is the pass's
+    ``source_faithful_spectrum_norm`` argument before any environment
+    resolution.
+    """
+
+    return bool(
+        fresh_k1_guard
+        and use_exact_relion_gaussian
+        and not use_float64_scoring
+        and has_ctf_rfloat
+    )
+
+
+def _relion_native_score_corr_img(
+    noise_variance_rows,
+    ctf_rfloat,
+    image_shape,
+    scale=None,
+    *,
+    zero_dc: bool,
+):
+    """RELION's native-unit fine-score ``corr_img`` over the whole half spectrum.
+
+    ``noise_variance_rows`` is ``[1, P]`` (one shared spectrum) or ``[B, P]``
+    per-image rows, in RECOVAR units. The value is RELION's XFLOAT operand
+    before any N**-4 conversion
+    (:func:`_relion_cuda_native_corr_img_from_noise_variance`); with
+    ``zero_dc`` (half-spectrum scoring) the origin is zero, as in RELION's
+    ``Minvsigma2`` at the full box. The caller windows it to the score window.
+    """
+
+    corr_img = _relion_cuda_native_corr_img_from_noise_variance(
+        noise_variance_rows,
+        ctf_rfloat,
+        image_shape,
+        scale,
+    )
+    if zero_dc:
+        dc_mask = make_shell_indices_half(image_shape) == 0
+        corr_img = jnp.where(dc_mask[None, :], 0.0, corr_img).astype(jnp.float32)
+    return corr_img
 
 
 @partial(jax.jit, static_argnames=("fft_size",))
