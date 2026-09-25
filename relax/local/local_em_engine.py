@@ -926,8 +926,9 @@ def run_local_em_exact(
     )
 
     # Images on another grid than the reference keep the backprojector on the
-    # reference model size (relax.refinement.optics_shapes).
-    if reconstruction_volume_current_size is not None and (
+    # reference model size (relax.refinement.optics_shapes). A score-only pass (the
+    # local pass-1 parent probe) has no M-step, so only its scoring applies.
+    if reconstruction_volume_current_size is not None and not score_only and (
         stable_fourier_window_shapes or not mstep_relion_x_half
     ):
         raise NotImplementedError(
