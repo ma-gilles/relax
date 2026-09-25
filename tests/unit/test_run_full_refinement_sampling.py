@@ -20,6 +20,7 @@ from scripts.run_full_refinement import (
     _resolve_effective_max_healpix_order,
     _resolve_optimizer_random_seed,
     _resolve_relion_sampling_orders,
+    _rotation_posterior_arrays,
 )
 from relax.helpers.iteration_history import (
     _pose_history_by_image,
@@ -384,3 +385,16 @@ def test_profile_rows_are_jsonable_for_nested_numpy_values():
             ],
         }
     ]
+
+
+def test_rotation_posterior_arrays_stack_even_halves_and_split_uneven_ones():
+    even = _rotation_posterior_arrays("post", [np.ones(4), np.zeros(4)])
+    assert list(even) == ["post"]
+    assert even["post"].shape == (2, 4) and even["post"].dtype == np.float64
+
+    # A local-search pass scores each half on its own rotation subset (1476 vs 1488 rows).
+    uneven = _rotation_posterior_arrays("post", [np.ones(3), np.ones(5)])
+    assert sorted(uneven) == ["post_half1", "post_half2"]
+    assert uneven["post_half1"].shape == (3,) and uneven["post_half2"].shape == (5,)
+
+    assert list(_rotation_posterior_arrays("post", [None, np.ones(2)])) == ["post_half2"]

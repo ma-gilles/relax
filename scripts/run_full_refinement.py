@@ -1884,6 +1884,22 @@ def _require_relion_convention_reference(path, option: str) -> None:
         raise SystemExit(str(exc)) from None
 
 
+def _rotation_posterior_arrays(key, posterior_per_half):
+    """One iteration's per-half orientation posterior as npz arrays.
+
+    The halves share one ``key`` array when their posteriors have the same shape.
+    A local-search pass scores each half on its own rotation subset, so the
+    halves can differ in length; each half is then saved as ``key_half1`` and
+    ``key_half2``, as run_multi_iter_parity.py saves uneven half sequences.
+    """
+
+    halves = [None if value is None else np.asarray(value, dtype=np.float64) for value in posterior_per_half]
+    shapes = {value.shape for value in halves if value is not None}
+    if all(value is not None for value in halves) and len(shapes) == 1:
+        return {key: np.stack(halves)}
+    return {f"{key}_half{half + 1}": value for half, value in enumerate(halves) if value is not None}
+
+
 def _parse_args(argv=None):
     _assert_expected_repo_imports()
     from relax.symmetry import canonicalize_rotational_symmetry
@@ -5023,9 +5039,8 @@ def main():
             result["rotation_posterior_trajectory_per_half"]
         ):
             if posterior_per_half is not None:
-                save_dict[f"rotation_posterior_per_half_iter_{i:03d}"] = np.asarray(
-                    posterior_per_half,
-                    dtype=np.float64,
+                save_dict.update(
+                    _rotation_posterior_arrays(f"rotation_posterior_per_half_iter_{i:03d}", posterior_per_half)
                 )
     if "convergence_state" in result:
         state = result["convergence_state"]
