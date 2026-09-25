@@ -21,6 +21,7 @@ from scripts.run_multi_iter_parity import (
     final_only_replay_override,
     final_output_fourier_volumes,
     initial_scoring_noise_pair,
+    keep_stack_rows_mask,
     load_initial_direction_prior,
     load_initial_fourier_volume,
     load_initial_noise_variance,
@@ -981,3 +982,18 @@ def test_particle_key_distinguishes_rows_of_different_stacks():
     assert a == (8, "mic_001.mrcs")
     assert a != b
     assert a == c
+
+
+def test_keep_stack_indices_selects_rows_of_a_single_stack():
+    names = ["1@Particles/stack.mrcs", "2@Particles/stack.mrcs", "3@/abs/Particles/stack.mrcs"]
+    mask, observed = keep_stack_rows_mask(names, {1, 2, 7})
+    np.testing.assert_array_equal(mask, [False, True, True])
+    assert observed == {1, 2}
+
+
+def test_keep_stack_indices_refuses_a_multi_stack_dataset():
+    """Row 1 exists in every stack; keeping it everywhere would be a silent trap."""
+
+    names = ["1@Particles/mic_001.mrcs", "2@Particles/mic_001.mrcs", "1@Particles/mic_002.mrcs"]
+    with pytest.raises(ValueError, match="2 particle stacks"):
+        keep_stack_rows_mask(names, {0})

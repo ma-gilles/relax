@@ -107,6 +107,30 @@ def stack_index_from_image_name(name: str) -> int:
     return int(m.group(1)) - 1 if m else -1
 
 
+def keep_stack_rows_mask(image_names, keep_indices) -> tuple[np.ndarray, set]:
+    """Mask of the particles ``--keep_stack_indices`` selects, and the rows it found.
+
+    A stack row names one particle only in a single-stack dataset. In a
+    multi-stack dataset the same row exists in every stack, so the selection is
+    ambiguous and is refused rather than silently keeping that row everywhere.
+    """
+
+    stacks = {particle_key_from_image_name(name)[1] for name in image_names}
+    if len(stacks) > 1:
+        raise ValueError(
+            f"--keep_stack_indices selects by stack row, but this dataset has {len(stacks)} "
+            "particle stacks, so a row does not identify one particle"
+        )
+    keep_mask = np.zeros(len(image_names), dtype=bool)
+    observed = set()
+    for i, name in enumerate(image_names):
+        stack_idx = stack_index_from_image_name(name)
+        if stack_idx in keep_indices:
+            keep_mask[i] = True
+            observed.add(stack_idx)
+    return keep_mask, observed
+
+
 def particle_key_from_image_name(name: str) -> tuple[int, str]:
     """Identify a particle by (zero-based stack row, stack file name).
 
@@ -1858,13 +1882,7 @@ def main():
             token = token.strip()
             if token:
                 keep_indices.add(int(token))
-        keep_mask = np.zeros_like(our_subsets, dtype=bool)
-        observed = set()
-        for i, name in enumerate(our_names):
-            stack_idx = stack_index_from_image_name(name)
-            if stack_idx in keep_indices:
-                keep_mask[i] = True
-                observed.add(stack_idx)
+        keep_mask, observed = keep_stack_rows_mask(our_names, keep_indices)
         our_subsets[~keep_mask] = 0
         print(
             "  Focused particle selection: "
