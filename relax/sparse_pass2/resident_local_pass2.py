@@ -75,6 +75,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
+from relax.helpers.adjoint import mstep_adjoint_max_r
 from relax.helpers.env_flags import parse_env_capacity_ladder, parse_env_flag
 from relax.helpers.half_spectrum import (
     make_relion_noise_shell_indices_half,
@@ -383,6 +384,7 @@ def compute_local_search_resident(
     optics_group_ids=None,
     reconstruction_volume_current_size=None,
     symmetry_label="C1",
+    reconstruction_image_radius=None,
 ) -> LocalEMResult:
     """Run one K=1 local-search fine pass 2 on the device-resident stages.
 
@@ -842,6 +844,9 @@ def compute_local_search_resident(
             image_shape=image_shape,
             current_size=current_size,
             mstep_current_size=volume_current_size,
+            mstep_max_r=mstep_adjoint_max_r(
+                volume_current_size, reconstruction_image_radius, reconstruction_padding_factor
+            ),
             recon_volume_shape=recon_volume_shape,
             max_adjoint_block_bytes=max_adjoint_block_bytes,
             noise_variance_for_noise=noise_variance_for_noise_device,
@@ -1017,6 +1022,7 @@ def _run_resident_local_chunk(
     current_size,
     mstep_current_size,
     recon_volume_shape,
+    mstep_max_r=None,
     max_adjoint_block_bytes,
     noise_variance_for_noise,
     shell_indices_noise,
@@ -1245,6 +1251,7 @@ def _run_resident_local_chunk(
         image_shape=image_shape,
         recon_volume_shape=recon_volume_shape,
         mstep_current_size=mstep_current_size,
+        mstep_max_r=mstep_max_r,
         relion_x_half_recon_indices=relion_x_half_recon_indices,
         max_adjoint_block_bytes=max_adjoint_block_bytes,
         cuda_backproject=cuda_backproject,

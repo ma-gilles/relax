@@ -641,6 +641,7 @@ def _run_sparse_k_class_adaptive_pass2(
         group_ids=base_engine_kwargs.get("group_ids"),
         optics_group_ids=base_engine_kwargs.get("optics_group_ids"),
         reconstruction_volume_current_size=base_engine_kwargs.get("reconstruction_volume_current_size"),
+        reconstruction_image_radius=base_engine_kwargs.get("reconstruction_image_radius"),
         scale_correction_group_count=base_engine_kwargs.get("scale_correction_group_count"),
         scale_correction_data_vs_prior=base_engine_kwargs.get("scale_correction_data_vs_prior"),
         image_pre_shifts=base_engine_kwargs.get("image_pre_shifts"),
@@ -795,6 +796,7 @@ def _run_sparse_k_class_adaptive_pass2(
         if (
             fused_common.pop("optics_group_ids", None) is not None
             or fused_common.pop("reconstruction_volume_current_size", None) is not None
+            or fused_common.pop("reconstruction_image_radius", None) is not None
         ):
             raise NotImplementedError("the fused sparse pass 2 has one optics group and one image grid")
         fused_common.pop("relion_fine_mstep_prune", None)

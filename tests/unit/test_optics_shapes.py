@@ -276,3 +276,36 @@ def test_class_translation_step_is_in_class_pixels():
     kwargs = dict(experiment_dataset=half, state=State(2.0, 1))
     assert optics_shapes.class_kwargs(kwargs, half.classes[1], 5)["state"].translation_step == pytest.approx(2.0 * 0.75)
     assert optics_shapes.class_kwargs(kwargs, half.classes[0], 5)["state"] is kwargs["state"]
+
+
+@pytest.mark.unit
+def test_class_mstep_image_radius_is_reference_r_max_times_scale():
+    from relax.refinement.half_scoring import _reconstruction_image_radius
+
+    # RELION's backprojector bounds the reference-grid radius by r_max = cs // 2; a class
+    # image pixel |k| lands at |k| / s, so the class keeps pixels out to r_max * s.
+    shape_class = _half().classes[1]
+    radius = _reconstruction_image_radius(56, shape_class.scale)
+    assert radius == pytest.approx(28 * shape_class.scale)
+    assert radius != 28.0
+    assert _reconstruction_image_radius(None, shape_class.scale) is None
+
+
+@pytest.mark.unit
+def test_class_mstep_clip_keeps_the_reference_padding():
+    import inspect
+
+    from relax.helpers import adjoint
+    from relax.sparse_pass2 import resident_pass2
+
+    # One grid: the reference r_max, from which recovar infers RELION's pad size.
+    assert adjoint.mstep_adjoint_max_r(56, None, 2) == 28.0
+    assert adjoint._recovar_clip_kwargs(28.0) == {"max_r": 28.0}
+    # Another grid: the image radius r_max * s clips, and the padding is explicit (r_max * s
+    # alone would make recovar infer padding 1 on a 115 grid for a 112 px image).
+    clip = adjoint.mstep_adjoint_max_r(56, 28 * 1.12, 2)
+    assert clip == adjoint.ReferenceSphereClip(28 * 1.12, 2)
+    assert adjoint._recovar_clip_kwargs(clip) == {"max_r": 28 * 1.12, "upsampling": 2}
+    # The resident chunk loop builds its own program spec; it must be handed the clip.
+    parameter = inspect.signature(resident_pass2._run_resident_chunk).parameters["mstep_max_r"]
+    assert parameter.default is inspect.Parameter.empty

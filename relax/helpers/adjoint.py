@@ -3,10 +3,40 @@
 from __future__ import annotations
 
 from functools import partial
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
 from recovar import core
+
+
+class ReferenceSphereClip(NamedTuple):
+    """The M-step clip for images on another grid than the reference.
+
+    RELION keeps a backprojected sample when its rotated, reference-grid radius is
+    inside the model's r_max (acc/cuda/cuda_kernels/BP.cuh:322). recovar's kernel
+    clips the image radius, which is the same test for unit rotations; an optics
+    group on another pixel size or box backprojects with rotations scaled by 1/s,
+    so its image radius is r_max * s. The reference padding is then no longer
+    implied by the image shape and that radius, and is given explicitly.
+    """
+
+    image_radius: float
+    upsampling: int
+
+
+def mstep_adjoint_max_r(volume_current_size, image_radius, padding_factor):
+    """The adjoint ``max_r``: r_max on one grid, a :class:`ReferenceSphereClip` on another."""
+
+    if image_radius is None:
+        return float(int(volume_current_size) // 2)
+    return ReferenceSphereClip(float(image_radius), int(padding_factor))
+
+
+def _recovar_clip_kwargs(max_r):
+    if isinstance(max_r, ReferenceSphereClip):
+        return {"max_r": max_r.image_radius, "upsampling": max_r.upsampling}
+    return {"max_r": max_r}
 
 
 @partial(jax.jit, static_argnums=(4, 5, 6, 7, 8, 9, 10))
@@ -35,8 +65,8 @@ def adjoint_slice_volume_windowed(
         volume=volume,
         half_image=half_image,
         half_volume=half_volume,
-        max_r=max_r,
         relion_x_half=relion_x_half,
+        **_recovar_clip_kwargs(max_r),
     )
 
 
@@ -74,8 +104,8 @@ def _batch_adjoint_slice_volume_windowed(
         volumes=volumes,
         half_image=half_image,
         half_volume=half_volume,
-        max_r=max_r,
         relion_x_half=relion_x_half,
+        **_recovar_clip_kwargs(max_r),
     )
 
 

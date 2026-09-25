@@ -128,6 +128,7 @@ def _run_local_search_iteration(
     optics_group_ids=None,
     projection_scale: float = 1.0,
     reconstruction_volume_current_size=None,
+    reconstruction_image_radius=None,
 ) -> _LocalSearchIterationResult:
     """Run exact local search and return named halfset statistics and pose fields.
 
@@ -484,6 +485,7 @@ def _run_local_search_iteration(
             optics_group_ids=optics_group_ids,
             reconstruction_volume_current_size=reconstruction_volume_current_size,
             symmetry_label=symmetry,
+            reconstruction_image_radius=reconstruction_image_radius,
         )
     else:
         class_details = None
@@ -570,6 +572,7 @@ def _run_local_search_iteration(
             **({"symmetry_label": symmetry} if symmetry != "C1" else {}),
             optics_group_ids=optics_group_ids,
             reconstruction_volume_current_size=reconstruction_volume_current_size,
+            reconstruction_image_radius=reconstruction_image_radius,
         )
 
     if class_details is None:

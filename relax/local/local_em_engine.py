@@ -39,6 +39,7 @@ from relax.diagnostics.local_debug import (
     parse_debug_score_dump_request,
 )
 from relax.helpers.adjoint import adjoint_slice_volume_maybe_windowed as _adjoint_slice_volume_maybe_windowed
+from relax.helpers.adjoint import mstep_adjoint_max_r as _mstep_adjoint_max_r
 from relax.helpers.batch_fetch import fetch_indexed_batch
 from relax.helpers.deterministic_reduce import add_segment_sum
 from relax.helpers.dtype_policy import DensePrecisionPolicy
@@ -474,6 +475,7 @@ def run_local_em_exact(
     _packed_final_noise_enabled: bool = False,
     optics_group_ids=None,
     reconstruction_volume_current_size: int | None = None,
+    reconstruction_image_radius: float | None = None,
 ) -> LocalEMResult:
     """Run exact local EM over per-image local hypothesis sets.
 
@@ -995,8 +997,11 @@ def run_local_em_exact(
         mstep_relion_x_half=bool(mstep_relion_x_half),
     )
     if reconstruction_volume_current_size is not None:
-        # RELION's backprojector bounds the rotated (reference-grid) radius by its r_max.
-        mstep_adjoint_max_r = float(int(reconstruction_volume_current_size) // 2)
+        # RELION's backprojector bounds the rotated (reference-grid) radius by its r_max;
+        # images on another grid reach it at r_max * s in their own pixels.
+        mstep_adjoint_max_r = _mstep_adjoint_max_r(
+            reconstruction_volume_current_size, reconstruction_image_radius, reconstruction_padding_factor
+        )
     capture_static_kwargs = (
         _exact_local_bpref_capture_static_kwargs(
             experiment_dataset=experiment_dataset,

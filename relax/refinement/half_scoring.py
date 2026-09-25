@@ -712,6 +712,9 @@ def _score_half_dense_one_shape(
                 adaptive_em_kwargs["mstep_relion_x_half"] = True
             if reference_current_size is not None:
                 adaptive_em_kwargs["reconstruction_volume_current_size"] = int(reference_current_size)
+                adaptive_em_kwargs["reconstruction_image_radius"] = _reconstruction_image_radius(
+                    reference_current_size, projection_scale
+                )
             logger.info(
                 "RELION adaptive K=1 routing through run_dense_k_class_em_adaptive "
                 "(oversampling=%d, pass2_backend=%s, skip_significance_pruning=%s, "
@@ -885,6 +888,19 @@ def _score_half_dense_one_shape(
         noise_stats=em_result.noise_stats,
         mstep_accumulator_shape=None,
     )
+
+
+def _reconstruction_image_radius(reference_current_size, scale: float):
+    """The M-step's image-space radius for images on another grid.
+
+    RELION's backprojector keeps rotated samples inside the reference model's
+    ``r_max = current_size / 2`` (BackProjector::backproject, ``max_r2``); an image pixel
+    at radius ``|k|`` lands at reference radius ``|k| / s``, so the image-side bound is
+    ``r_max * s``. None keeps the engines' own bound (one grid).
+    """
+    if reference_current_size is None:
+        return None
+    return float(int(reference_current_size) // 2) * float(scale)
 
 
 def _projection_rotations(rotations, scale: float):
@@ -1181,6 +1197,7 @@ def _score_half_local_one_shape(
             else {
                 "projection_scale": float(projection_scale),
                 "reconstruction_volume_current_size": reference_current_size,
+                "reconstruction_image_radius": _reconstruction_image_radius(reference_current_size, projection_scale),
             }
         ),
     }

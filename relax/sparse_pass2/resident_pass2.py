@@ -75,6 +75,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
+from relax.helpers.adjoint import mstep_adjoint_max_r
 from relax.helpers.batch_fetch import fetch_indexed_batch
 from relax.helpers.deterministic_reduce import deterministic_reductions_enabled
 from relax.helpers.env_flags import parse_env_capacity_ladder, parse_env_flag
@@ -1343,6 +1344,7 @@ def compute_pass2_stats_resident(
     relion_translation_angle_scale: float = 1.0,
     optics_group_ids=None,
     reconstruction_volume_current_size=None,
+    reconstruction_image_radius=None,
 ):
     """Device-resident K=1 sparse pass 2; same signature and return as the compact engine.
 
@@ -1508,6 +1510,7 @@ def compute_pass2_stats_resident(
     )
     recon_accum_shape = half_volume_accumulator_shape(recon_volume_shape)
     recon_volume_size = int(np.prod(recon_accum_shape))
+    mstep_max_r = mstep_adjoint_max_r(volume_current_size, reconstruction_image_radius, reconstruction_padding_factor)
     recon_y_accum_dtype, recon_ctf_accum_dtype = relion_x_half_mstep_accumulator_dtypes(
         experiment_dataset.dtype,
         use_relion_x_half_mstep=True,
@@ -2124,6 +2127,7 @@ def compute_pass2_stats_resident(
                                 adaptive_fraction=adaptive_fraction,
                                 current_size=current_size,
                                 mstep_current_size=volume_current_size,
+                                mstep_max_r=mstep_max_r,
                                 image_shape=image_shape,
                                 recon_volume_shape=recon_volume_shape,
                                 max_adjoint_block_bytes=max_adjoint_block_bytes,
@@ -2283,6 +2287,7 @@ def compute_pass2_stats_resident(
             image_shape=image_shape,
             current_size=current_size,
             mstep_current_size=volume_current_size,
+            mstep_max_r=mstep_max_r,
             recon_volume_shape=recon_volume_shape,
             max_adjoint_block_bytes=max_adjoint_block_bytes,
             noise_variance_for_noise=noise_variance_for_noise_device,
@@ -2815,6 +2820,7 @@ def _make_chunk_program_spec(
     use_rfloat_ctf_wavg,
     use_translate_sum_kernel,
     bpref_recon_operand,
+    mstep_max_r=None,
 ) -> _ChunkProgramSpec:
     """The static key of one chunk program.
 
@@ -2842,6 +2848,7 @@ def _make_chunk_program_spec(
         use_rfloat_ctf_wavg=bool(use_rfloat_ctf_wavg),
         use_translate_sum_kernel=bool(use_translate_sum_kernel),
         bpref_recon_operand=bool(bpref_recon_operand),
+        mstep_max_r=float(int(mstep_current_size) // 2) if mstep_max_r is None else mstep_max_r,
         kernel_ctf_probs=_kernel_ctf_probs_enabled(),
         wavg_power_per_image=_wavg_power_per_image_enabled(),
         block_unroll=_chunk_block_unroll(),
@@ -3656,6 +3663,9 @@ class _ChunkProgramSpec:
     current_size: int
     mstep_current_size: int
     image_shape: tuple
+    # The M-step adjoint's max_r: mstep_current_size // 2 on one grid, a ReferenceSphereClip
+    # for images on another grid (relax.helpers.adjoint).
+    mstep_max_r: object
     recon_volume_shape: tuple
     max_adjoint_block_bytes: int
     stats_config: object
@@ -4018,7 +4028,7 @@ def _resident_mstep_block(
         disc_type="linear_interp",
         half_image=True,
         half_volume=True,
-        max_r=float(spec.mstep_current_size // 2),
+        max_r=spec.mstep_max_r,
         relion_x_half=True,
         max_block_bytes=int(spec.max_adjoint_block_bytes),
         log_label="resident-y-window",
@@ -4034,7 +4044,7 @@ def _resident_mstep_block(
         disc_type="linear_interp",
         half_image=True,
         half_volume=True,
-        max_r=float(spec.mstep_current_size // 2),
+        max_r=spec.mstep_max_r,
         relion_x_half=True,
         max_block_bytes=int(spec.max_adjoint_block_bytes),
         log_label="resident-ctf-window",
@@ -4664,6 +4674,7 @@ def _run_resident_chunk(
     image_shape,
     current_size,
     mstep_current_size,
+    mstep_max_r,
     recon_volume_shape,
     max_adjoint_block_bytes,
     noise_variance_for_noise,
@@ -4859,6 +4870,7 @@ def _run_resident_chunk(
         adaptive_fraction=adaptive_fraction,
         current_size=current_size,
         mstep_current_size=mstep_current_size,
+        mstep_max_r=mstep_max_r,
         image_shape=image_shape,
         recon_volume_shape=recon_volume_shape,
         max_adjoint_block_bytes=max_adjoint_block_bytes,
@@ -4946,6 +4958,7 @@ def run_resident_mstep_blocks(
     image_shape,
     recon_volume_shape,
     mstep_current_size,
+    mstep_max_r=None,
     relion_x_half_recon_indices,
     max_adjoint_block_bytes,
     cuda_backproject,
@@ -5025,6 +5038,7 @@ def run_resident_mstep_blocks(
         adaptive_fraction=0.0,
         current_size=0,
         mstep_current_size=int(mstep_current_size),
+        mstep_max_r=float(int(mstep_current_size) // 2) if mstep_max_r is None else mstep_max_r,
         image_shape=tuple(int(v) for v in image_shape),
         recon_volume_shape=tuple(int(v) for v in recon_volume_shape),
         max_adjoint_block_bytes=int(max_adjoint_block_bytes),
