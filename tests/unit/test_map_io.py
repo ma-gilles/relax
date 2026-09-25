@@ -43,6 +43,7 @@ def test_write_map_writes_relion_convention_with_relion_header(tmp_path):
         header = handle.header
         assert int(header.mode) == 2
         assert (int(header.mapc), int(header.mapr), int(header.maps)) == (1, 2, 3)
+        assert int(header.ispg) == 0
         assert (int(header.nxstart), int(header.nystart), int(header.nzstart)) == (0, 0, 0)
         assert (float(header.origin.x), float(header.origin.y), float(header.origin.z)) == (0.0, 0.0, 0.0)
         assert float(handle.voxel_size.x) == pytest.approx(1.5)

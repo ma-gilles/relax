@@ -14,8 +14,7 @@ run agree voxel for voxel and in sign, and a RELION map can be read back as a re
 * :func:`load_relax_map` reads a map relax wrote and checks the label.
 
 The header matches RELION's writer (``rwMRC.h``: float32 mode 2, origin 0, start 0, axis
-order 1 2 3, voxel size, one label) except the space group, which stays mrcfile's MRC2014
-volume value 1 where RELION writes 0.
+order 1 2 3, voxel size, space group 0, one label).
 
 relax maps written before this convention hold the negated array (RECOVAR ``write_mrc``) and
 have no label. ``load_relax_map(path, legacy_recovar_sign=True)`` reads such a map; without
@@ -43,6 +42,7 @@ def write_map(path, volume, voxel_size=None) -> None:
         handle.set_data(np.asarray(recovar_volume_to_relion(volume.real), dtype=np.float32))
         if voxel_size is not None:
             handle.voxel_size = voxel_size
+        handle.header.ispg = 0  # rwMRC.h leaves the space group at 0
         handle.header.label[0] = RELAX_MAP_LABEL.encode("ascii")
         handle.header.nlabl = 1
 
