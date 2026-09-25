@@ -955,6 +955,15 @@ scientific contract; runnable code alone does not establish recovery.
   from the 0.999 coarse support and is deliberately unqualified for performance.
   The maximum requested radius 32 at box 64 is clipped to radius 31 under the
   existing unpaired-Nyquist convention, and the effective radius is recorded.
+- When every image retains every coarse orientation, opt-in streamed full rows
+  share one fine rotation grid per image tile.
+  [full_row_stream.py](../../relax/ppca_refinement/full_row_stream.py) uploads
+  the tile's coarse support once and forms each fine pose prior on the device
+  as the coarse parent's support plus the rotation and translation log-priors.
+  Each rotation block is one jitted program per pass with no host round trip.
+  Scores, moments, the float32 centered normalizer, the first-maximum top pose
+  and block accumulation order are those of the host-mask dense routine.
+  Unit tests compare both routines against the independent local layout.
 - After the final all-particle update,
   [compute_dense_ppca_embeddings](../../relax/ppca_refinement/dense_dataset.py)
   uses the same fine pose scores, latent means, candidate support and sequential

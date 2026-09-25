@@ -33,7 +33,7 @@ def top_pose_candidate_count(config: PoseSelectionConfig, n_candidates: int) -> 
     return int(min(n_candidates, max(top_p, top_p * int(config.candidate_pool_factor), int(config.min_candidate_pool))))
 
 
-def top_p_from_score_block(score, *, rotation_offset: int = 0, candidate_count: int = 1):
+def top_p_from_score_block(score, *, rotation_offset=0, candidate_count: int = 1):
     """Return raw top candidates from one dense score block.
 
     ``score`` is ``(B, T, R)`` and the flattened axis is ``T * R`` with
@@ -44,7 +44,8 @@ def top_p_from_score_block(score, *, rotation_offset: int = 0, candidate_count: 
     B, T, R = score.shape
     k = max(1, min(int(candidate_count), int(T * R)))
     top_scores, top_flat = jax.lax.top_k(score.reshape(B, T * R), k)
-    top_rot = (top_flat % int(R)).astype(jnp.int32) + jnp.asarray(int(rotation_offset), dtype=jnp.int32)
+    # The offset may be traced inside a device-resident block program.
+    top_rot = (top_flat % int(R)).astype(jnp.int32) + jnp.asarray(rotation_offset, dtype=jnp.int32)
     top_trans = (top_flat // int(R)).astype(jnp.int32)
     return top_scores.astype(jnp.float32), top_rot, top_trans
 

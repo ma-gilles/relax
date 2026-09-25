@@ -359,6 +359,100 @@ def _top_pose_from_score_stats(score_stats: DenseScoreStats, *, rotation_offset:
     )
 
 
+class DensePPCAImageBatch(NamedTuple):
+    """Weighted, shifted image-batch operands shared by every rotation block."""
+
+    Y1_score: jax.Array
+    ctf2_score: jax.Array
+    Y1_recon: jax.Array
+    ctf2_recon: jax.Array
+    y_norm: jax.Array
+    observation_power: jax.Array | None
+
+
+def prepare_dense_ppca_image_batch(
+    experiment_dataset,
+    resolved: DensePPCADatasetBlockInputs,
+    config: ForwardModelConfig,
+    noise_variance_half,
+    translations: np.ndarray,
+    batch_data,
+    ctf_params,
+    indices,
+    *,
+    image_scale_corrections: np.ndarray | None = None,
+    score_with_masked_images: bool = False,
+    relion_unit_half_weights: bool = False,
+    collect_observation: bool = False,
+) -> DensePPCAImageBatch:
+    """Preprocess one image batch into windowed PPCA score and M-step operands."""
+
+    n_trans = int(translations.shape[0])
+    batch_count = int(len(indices))
+    shifted_score_half, batch_norm, ctf2_over_nv_half = preprocess_batch(
+        experiment_dataset,
+        batch_data,
+        ctf_params,
+        noise_variance_half,
+        translations,
+        config,
+        score_with_masked_images=score_with_masked_images,
+    )
+    if score_with_masked_images:
+        shifted_recon_half = prepare_reconstruction_batch(
+            experiment_dataset,
+            batch_data,
+            ctf_params,
+            noise_variance_half,
+            translations,
+            config,
+        )
+    else:
+        shifted_recon_half = shifted_score_half
+
+    observation_power = None
+    if collect_observation:
+        if score_with_masked_images or relion_unit_half_weights or image_scale_corrections is not None:
+            raise ValueError("Residual statistics require unmasked, unit-contrast full-Hermitian observations")
+        processed = experiment_dataset.process_images_half(batch_data, apply_image_mask=False)
+        observation_power = jnp.sum(jnp.abs(processed.reshape(batch_count, -1)) ** 2, axis=0)
+    F = int(shifted_score_half.shape[-1])
+    if image_scale_corrections is None:
+        batch_scale = jnp.ones((batch_count,), dtype=shifted_score_half.real.dtype)
+    else:
+        scale_arr = np.asarray(image_scale_corrections, dtype=np.float32)
+        batch_scale = jnp.asarray(
+            scale_arr[np.asarray(indices, dtype=np.int64)], dtype=shifted_score_half.real.dtype
+        )
+    batch_scale_sq = batch_scale**2
+    Y1_score_full = (
+        shifted_score_half.reshape(batch_count, n_trans, F)
+        * batch_scale[:, None, None]
+        * resolved.score_mask[None, None, :]
+    )
+    ctf2_score_full = ctf2_over_nv_half * batch_scale_sq[:, None] * resolved.score_mask[None, :]
+    Y1_recon_full = (
+        shifted_recon_half.reshape(batch_count, n_trans, F)
+        * batch_scale[:, None, None]
+        * resolved.recon_mask[None, None, :]
+    )
+    ctf2_recon_full = ctf2_over_nv_half * batch_scale_sq[:, None] * resolved.recon_mask[None, :]
+    if resolved.score_indices is None:
+        Y1_score = Y1_score_full
+        ctf2_score = ctf2_score_full
+    else:
+        Y1_score = Y1_score_full[:, :, resolved.score_indices]
+        ctf2_score = ctf2_score_full[:, resolved.score_indices]
+    if resolved.recon_indices is None:
+        Y1_recon = Y1_recon_full
+        ctf2_recon = ctf2_recon_full
+    else:
+        Y1_recon = Y1_recon_full[:, :, resolved.recon_indices]
+        ctf2_recon = ctf2_recon_full[:, resolved.recon_indices]
+    y_norm = jnp.asarray(batch_norm).reshape(batch_count)
+    return DensePPCAImageBatch(Y1_score, ctf2_score, Y1_recon, ctf2_recon, y_norm, observation_power)
+
+
 def iter_dense_ppca_dataset_blocks(
     experiment_dataset,
     mu,
@@ -431,67 +525,21 @@ def iter_dense_ppca_dataset_blocks(
     batch_start = 0
     for batch_data, _rots, _trans, ctf_params, _noise, _particle_indices, indices in batch_iter:
         batch_count = int(len(indices))
-        shifted_score_half, batch_norm, ctf2_over_nv_half = preprocess_batch(
+        batch = prepare_dense_ppca_image_batch(
             experiment_dataset,
-            batch_data,
-            ctf_params,
+            resolved,
+            config,
             noise_variance_half,
             translations,
-            config,
+            batch_data,
+            ctf_params,
+            indices,
+            image_scale_corrections=image_scale_corrections,
             score_with_masked_images=score_with_masked_images,
+            relion_unit_half_weights=relion_unit_half_weights,
+            collect_observation=collect_observation,
         )
-        if score_with_masked_images:
-            shifted_recon_half = prepare_reconstruction_batch(
-                experiment_dataset,
-                batch_data,
-                ctf_params,
-                noise_variance_half,
-                translations,
-                config,
-            )
-        else:
-            shifted_recon_half = shifted_score_half
-
-        observation_power = None
-        if collect_observation:
-            if score_with_masked_images or relion_unit_half_weights or image_scale_corrections is not None:
-                raise ValueError("Residual statistics require unmasked, unit-contrast full-Hermitian observations")
-            processed = experiment_dataset.process_images_half(batch_data, apply_image_mask=False)
-            observation_power = jnp.sum(jnp.abs(processed.reshape(batch_count, -1)) ** 2, axis=0)
-        F = int(shifted_score_half.shape[-1])
-        if image_scale_corrections is None:
-            batch_scale = jnp.ones((batch_count,), dtype=shifted_score_half.real.dtype)
-        else:
-            scale_arr = np.asarray(image_scale_corrections, dtype=np.float32)
-            batch_scale = jnp.asarray(
-                scale_arr[np.asarray(indices, dtype=np.int64)], dtype=shifted_score_half.real.dtype
-            )
-        batch_scale_sq = batch_scale**2
-        Y1_score_full = (
-            shifted_score_half.reshape(batch_count, n_trans, F)
-            * batch_scale[:, None, None]
-            * resolved.score_mask[None, None, :]
-        )
-        ctf2_score_full = ctf2_over_nv_half * batch_scale_sq[:, None] * resolved.score_mask[None, :]
-        Y1_recon_full = (
-            shifted_recon_half.reshape(batch_count, n_trans, F)
-            * batch_scale[:, None, None]
-            * resolved.recon_mask[None, None, :]
-        )
-        ctf2_recon_full = ctf2_over_nv_half * batch_scale_sq[:, None] * resolved.recon_mask[None, :]
-        if resolved.score_indices is None:
-            Y1_score = Y1_score_full
-            ctf2_score = ctf2_score_full
-        else:
-            Y1_score = Y1_score_full[:, :, resolved.score_indices]
-            ctf2_score = ctf2_score_full[:, resolved.score_indices]
-        if resolved.recon_indices is None:
-            Y1_recon = Y1_recon_full
-            ctf2_recon = ctf2_recon_full
-        else:
-            Y1_recon = Y1_recon_full[:, :, resolved.recon_indices]
-            ctf2_recon = ctf2_recon_full[:, resolved.recon_indices]
-        y_norm = jnp.asarray(batch_norm).reshape(batch_count)
+        Y1_score, ctf2_score, Y1_recon, ctf2_recon, y_norm, observation_power = batch
 
         for r0 in range(0, n_rot, int(rotation_block_size)):
             r1 = min(r0 + int(rotation_block_size), n_rot)

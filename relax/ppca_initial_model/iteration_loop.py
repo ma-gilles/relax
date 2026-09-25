@@ -1,8 +1,10 @@
 """Pose-free PPCA controller; algorithm sections 9–10 and plan package E.
 
 Global coarse PPCA scores are recomputed every iteration. Fine candidates use
-the maintained LocalHypothesisLayout. This initial implementation evaluates its
-rows through the shared dense statistics path, without any extra fine pruning.
+the maintained LocalHypothesisLayout, without any extra fine pruning. Per-image
+rows run through the shared host-mask dense statistics path; streamed full rows
+run through the device-resident full-row engine
+(:mod:`relax.ppca_refinement.full_row_stream`), recorded as ``fine_engine``.
 """
 
 import json
@@ -28,6 +30,12 @@ from relax.ppca_refinement.dense_dataset import (
     accumulate_dense_ppca_statistics,
     compute_dense_ppca_adaptive_significance,
     compute_dense_ppca_embeddings,
+)
+from relax.ppca_refinement.full_row_stream import (
+    FULL_ROW_ENGINE,
+    accumulate_full_row_tile,
+    full_row_tile_embeddings,
+    prepare_full_row_stream,
 )
 from relax.ppca_refinement.residual_statistics import full_float32
 
@@ -59,24 +67,6 @@ def _merge_statistics(parts):
             },
         },
     )
-
-
-def _full_fine_mask_tile(significant_rows, n_coarse_rotations, n_coarse_translations,
-                         children_per_parent, fine_translation_parent):
-    """Expand only one image tile of the existing RELION pass-2 pose mask."""
-    coarse = np.zeros((len(significant_rows), n_coarse_rotations * n_coarse_translations), dtype=bool)
-    for image, significant in enumerate(significant_rows):
-        if significant is None:
-            coarse[image] = True
-        else:
-            coarse[image, np.asarray(significant, dtype=np.int64)] = True
-    coarse = coarse.reshape(len(significant_rows), n_coarse_rotations, n_coarse_translations)
-    # Advanced indexing places the fine-translation axis first in memory even
-    # though the returned shape is (image, rotation, translation). The dense
-    # engine slices rotation blocks hundreds of times; materialize its actual
-    # C-order input once per image tile instead of gathering strided data for
-    # every block.
-    return np.ascontiguousarray(np.repeat(coarse, children_per_parent, axis=1)[:, :, fine_translation_parent])
 
 
 @full_float32
@@ -159,20 +149,40 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
         )
         if not np.array_equal(np.asarray(fine_grid, np.float32), layout.translation_grid):
             raise RuntimeError("Streamed fine translation grid differs from the exact local layout")
+        if not np.array_equal(
+            layout.rotation_posterior_ids_flat, np.repeat(np.arange(len(rotations)), children_per_parent)
+        ):
+            raise RuntimeError("Streamed fine rotation rows must keep contiguous children per coarse parent")
     stats = None
     coarse_mass = np.zeros(len(rotations), np.float32)
     fine_prior = -np.sum(layout.translation_grid**2, axis=-1) / (2 * state.offset_variance)
     fine_prior = fine_prior - np.log(np.sum(np.exp(fine_prior)))
+    if stream_full:
+        # One upload of the model, fine grids and priors; each tile then
+        # expands its coarse support to fine poses on the device.
+        stream = prepare_full_row_stream(
+            dataset,
+            mu,
+            W,
+            noise_variance=nv,
+            rotations=layout.rotations_flat,
+            translations=layout.translation_grid,
+            rotation_log_prior=layout.rotation_log_priors_flat,
+            translation_log_prior=fine_prior.astype(np.float32),
+            rotation_parent=layout.rotation_posterior_ids_flat,
+            translation_parent=fine_translation_parent,
+            n_coarse_rotations=len(rotations),
+            n_coarse_translations=len(translations),
+            geometry=geometry,
+            schedule=schedule,
+            scoring=scoring,
+        )
     tile_limit = min(config.fine_image_tile_size, config.image_batch_size)
     row = 0
     while row < len(ids):
         if stream_full:
             begin, end = 0, full_rotation_count
             tile_end = min(row + tile_limit, len(ids))
-            mask = _full_fine_mask_tile(
-                coarse.significant_sample_indices[row:tile_end], len(rotations), len(translations),
-                children_per_parent, fine_translation_parent,
-            )
         else:
             begin = int(layout.rotation_offsets[row])
             end = begin + int(layout.rotation_counts[row])
@@ -192,7 +202,16 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
                 ):
                     break
                 tile_end += 1
-        if not stream_full:
+        if stream_full:
+            tile_ids = np.asarray(ids[row:tile_end])
+            significant = coarse.significant_sample_indices[row:tile_end]
+            # A multi-image tile factors the latent Gram once per image/rotation.
+            part = (
+                full_row_tile_embeddings(stream, tile_ids, significant)
+                if embeddings_only
+                else accumulate_full_row_tile(stream, tile_ids, significant, factor_once=tile_end - row > 1)
+            )
+        else:
             if tile_end == row + 1:
                 mask = layout.sample_mask_rows(begin, end)
             else:
@@ -200,28 +219,28 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
                     layout.sample_mask_rows(int(layout.rotation_offsets[index]), int(layout.rotation_offsets[index + 1]))
                     for index in range(row, tile_end)
                 ])
-        function = compute_dense_ppca_embeddings if embeddings_only else accumulate_dense_ppca_statistics
-        options = {} if embeddings_only else {"sparse_pass2": SparsePass2Config(enabled=False), "collect_residuals": True}
-        if not embeddings_only and tile_end - row > 1:
-            # Score the real multi-image tile with one latent factorization
-            # per image/rotation and aggregate its posterior before adjoint.
-            options["factor_once_score"] = True
-        part = function(
-            dataset,
-            mu,
-            W,
-            rotations=layout.rotations_flat[begin:end],
-            translations=layout.translation_grid,
-            rotation_translation_mask=mask,
-            rotation_log_prior=layout.rotation_log_priors_flat[begin:end],
-            translation_log_prior=fine_prior.astype(np.float32),
-            noise_variance=nv,
-            geometry=geometry,
-            schedule=schedule,
-            scoring=scoring,
-            image_indices=np.asarray(ids[row:tile_end]),
-            **options,
-        )
+            function = compute_dense_ppca_embeddings if embeddings_only else accumulate_dense_ppca_statistics
+            options = {} if embeddings_only else {"sparse_pass2": SparsePass2Config(enabled=False), "collect_residuals": True}
+            if not embeddings_only and tile_end - row > 1:
+                # Score the real multi-image tile with one latent factorization
+                # per image/rotation and aggregate its posterior before adjoint.
+                options["factor_once_score"] = True
+            part = function(
+                dataset,
+                mu,
+                W,
+                rotations=layout.rotations_flat[begin:end],
+                translations=layout.translation_grid,
+                rotation_translation_mask=mask,
+                rotation_log_prior=layout.rotation_log_priors_flat[begin:end],
+                translation_log_prior=fine_prior.astype(np.float32),
+                noise_variance=nv,
+                geometry=geometry,
+                schedule=schedule,
+                scoring=scoring,
+                image_indices=np.asarray(ids[row:tile_end]),
+                **options,
+            )
         if embeddings_only:
             stats = part if stats is None else type(part)(
                 jnp.concatenate([stats.embeddings, part.embeddings]),
@@ -248,6 +267,7 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
             "fine_pruning": False,
             "rotation_mass": coarse_mass,
             "fine_rotation_count": full_rotation_count * len(ids) if stream_full else layout.total_local_rotations,
+            "fine_engine": FULL_ROW_ENGINE if stream_full else "dense_host_mask",
             "canonical_euler_count": len(canonical_eulers),
         }
     )
@@ -388,6 +408,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                             "coarse_omitted_mass_bound",
                             "fine_rotation_count",
                             "fine_pruning",
+                            "fine_engine",
                         )
                     }
                     for s in stats
