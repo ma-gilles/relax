@@ -525,8 +525,18 @@ def _score_flat_rows(
         chunk_corr, jnp.asarray(half_weights)[None, :]
     ).astype(jnp.float32)
     # Padded rows are handed to the kernel as image -1: it writes +inf for the
-    # whole row and skips the pixel traversal.
+    # whole row and skips the pixel traversal. With a candidate mask, chunks of
+    # translations without a candidate are skipped the same way: RELION scores
+    # only the significant (rotation, translation) pairs, and the cells skipped
+    # here are masked to +inf below whatever their value.
     kernel_row_image_ids = jnp.where(row_is_valid, row_image_local, jnp.int32(-1))
+    n_translations = int(jnp.shape(translation_angles)[0])
+    if candidate_mask is None:
+        candidate_mask = jnp.broadcast_to(row_is_valid[:, None], (reference.shape[0], n_translations))
+        translation_chunk_live = None
+    else:
+        candidate_mask = candidate_mask & row_is_valid[:, None]
+        translation_chunk_live = em_cuda_kernels.relion_fine_diff2_translation_chunk_live(candidate_mask)
     raw_from_kernel = em_cuda_kernels.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
         reference,
         kernel_row_image_ids,
@@ -536,12 +546,8 @@ def _score_flat_rows(
         jnp.asarray(full_to_compact, dtype=jnp.int32),
         jnp.asarray(logical_current_size, dtype=jnp.int32),
         chunk_initial_diff2,
+        translation_chunk_live=translation_chunk_live,
     )
-
-    if candidate_mask is None:
-        candidate_mask = jnp.broadcast_to(row_is_valid[:, None], raw_from_kernel.shape)
-    else:
-        candidate_mask = candidate_mask & row_is_valid[:, None]
     raw_diff2 = jnp.where(
         candidate_mask,
         raw_from_kernel,

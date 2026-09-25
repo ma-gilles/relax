@@ -4060,3 +4060,67 @@ def test_relion_half_texture_projection_is_invariant_to_host_support_crop(
         np.asarray(compact_abs2),
         np.asarray(full_abs2),
     )
+
+
+def test_translation_chunk_live_marks_chunks_of_four_with_a_candidate():
+    from relax.cuda import kernels as em_cuda_kernels
+
+    mask = np.zeros((3, 10), dtype=bool)
+    mask[0, 1] = True
+    mask[1, 9] = True
+    mask[2, [4, 7]] = True
+    live = np.asarray(em_cuda_kernels.relion_fine_diff2_translation_chunk_live(jnp.asarray(mask)))
+    assert live.shape == (3, 3)
+    assert live.tolist() == [[True, False, False], [False, False, True], [False, True, False]]
+
+
+@pytest.mark.gpu
+def test_relion_runtime_masked_flat_rows_skip_chunks_without_candidates(
+    monkeypatch,
+    custom_cuda_lib,
+    gpu_device,
+):
+    """Live translation chunks score as the unmasked kernel does; skipped ones are +inf."""
+
+    import recovar.cuda_backproject as cuda_backproject
+    from relax.cuda import kernels as em_cuda_kernels
+
+    monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
+    monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
+    monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
+    rng = np.random.default_rng(1933)
+    size = 32
+    pixels = size * (size // 2 + 1)
+    n_rows, n_translations = 6, 10
+    row_image_ids = np.asarray([0, 0, 1, 1, -1, 0], dtype=np.int32)
+    reference = (rng.normal(0, 0.02, (n_rows, pixels)) + 1j * rng.normal(0, 0.02, (n_rows, pixels))).astype(np.complex64)
+    image = (rng.normal(0, 0.02, (2, pixels)) + 1j * rng.normal(0, 0.02, (2, pixels))).astype(np.complex64)
+    weight = rng.uniform(0, 150_000, (2, pixels)).astype(np.float32)
+    translation_angles = rng.normal(0, 0.2, (n_translations, 2)).astype(np.float32)
+    lookup = np.arange(pixels, dtype=np.int32)
+    initial_diff2 = np.asarray([0.022644043, 0.03125], dtype=np.float32)
+    candidate = rng.random((n_rows, n_translations)) < 0.2
+    candidate[1] = False
+    live = em_cuda_kernels.relion_fine_diff2_translation_chunk_live(jnp.asarray(candidate))
+
+    with jax.default_device(gpu_device):
+        args = (
+            jnp.asarray(reference),
+            jnp.asarray(row_image_ids),
+            jnp.asarray(image),
+            jnp.asarray(translation_angles),
+            jnp.asarray(weight),
+            jnp.asarray(lookup),
+            jnp.asarray(size, dtype=jnp.int32),
+            jnp.asarray(initial_diff2),
+        )
+        full = em_cuda_kernels.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(*args)
+        masked = em_cuda_kernels.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
+            *args, translation_chunk_live=live
+        )
+        full, masked = (np.asarray(v) for v in jax.block_until_ready((full, masked)))
+
+    live_cells = np.repeat(np.asarray(live), 4, axis=1)[:, :n_translations]
+    assert live_cells.any() and not live_cells.all()
+    assert_matches(masked[live_cells], full[live_cells])
+    assert np.all(np.isposinf(masked[~live_cells]))

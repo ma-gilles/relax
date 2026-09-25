@@ -4387,6 +4387,7 @@ def relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
     full_to_compact: jax.Array,
     logical_current_size: jax.Array,
     initial_diff2: jax.Array | None = None,
+    translation_chunk_live: jax.Array | None = None,
 ) -> jax.Array:
     """Evaluate packed rotation rows inside a fixed physical pixel capacity.
 
@@ -4394,6 +4395,12 @@ def relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
     physical-only score rows remain inert. This is the packed-row counterpart
     of :func:`relion_fine_diff2_fused_translate_runtime_rectangular_f32` and
     reaches the same templated CUDA scoring kernel.
+
+    ``translation_chunk_live`` (bool ``[rows, ceil(T / 4)]``, see
+    :func:`relion_fine_diff2_translation_chunk_live`) names the chunks of four
+    translations that hold a candidate cell; the kernel skips the others and
+    writes their cells as ``+inf``. A traversed chunk computes each of its
+    translations as without it, so the cells of live chunks are unchanged.
     """
 
     (
@@ -4434,11 +4441,7 @@ def relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
         (reference.shape[0], translation_angles.shape[0]),
         jnp.float32,
     )
-    return jax.ffi.ffi_call(
-        _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_FLAT_ROWS_F32,
-        out_type,
-        vmap_method="sequential",
-    )(
+    operands = (
         reference,
         row_image_ids,
         image,
@@ -4448,6 +4451,46 @@ def relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
         full_to_compact,
         logical_current_size,
     )
+    if translation_chunk_live is None:
+        return jax.ffi.ffi_call(
+            _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_FLAT_ROWS_F32,
+            out_type,
+            vmap_method="sequential",
+        )(*operands)
+    expected_live_shape = (
+        reference.shape[0],
+        -(-int(translation_angles.shape[0]) // RELION_FINE_DIFF2_TRANSLATION_CHUNK),
+    )
+    if tuple(translation_chunk_live.shape) != expected_live_shape:
+        raise ValueError(
+            f"translation_chunk_live must have shape {expected_live_shape}, "
+            f"got {tuple(translation_chunk_live.shape)}"
+        )
+    _ensure_optional_ffi(_TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32)
+    return jax.ffi.ffi_call(
+        _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32,
+        out_type,
+        vmap_method="sequential",
+    )(*operands, jnp.asarray(translation_chunk_live, dtype=jnp.uint8))
+
+
+# Translations per block of the fused fine-diff2 kernels (kRelionFineDiff2Ref3dJobChunk).
+RELION_FINE_DIFF2_TRANSLATION_CHUNK = 4
+
+
+def relion_fine_diff2_translation_chunk_live(candidate_mask: jax.Array) -> jax.Array:
+    """Which chunks of four translations of each row hold a candidate cell.
+
+    ``candidate_mask`` is bool ``[rows, T]``; the result is bool
+    ``[rows, ceil(T / 4)]``, the kernels' translation blocking.
+    """
+
+    candidate_mask = jnp.asarray(candidate_mask, dtype=bool)
+    n_rows, n_translations = candidate_mask.shape
+    chunk = RELION_FINE_DIFF2_TRANSLATION_CHUNK
+    n_chunks = -(-int(n_translations) // chunk)
+    padded = jnp.pad(candidate_mask, ((0, 0), (0, n_chunks * chunk - int(n_translations))))
+    return jnp.any(padded.reshape(n_rows, n_chunks, chunk), axis=-1)
 
 
 def _prepare_relion_fine_diff2_fused_translate_pairs_operands(
@@ -7407,6 +7450,11 @@ _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_FLAT_ROWS_F32 = (
 )
 
 
+_TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32 = (
+    "cuda_relion_fine_diff2_fused_translate_runtime_masked_flat_rows_f32"
+)
+
+
 _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_RECTANGULAR_F32 = (
     "cuda_relion_fine_diff2_fused_translate_runtime_rectangular_f32"
 )
@@ -7903,6 +7951,11 @@ _OPTIONAL_FFI_REGISTRATIONS = {
     _TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32: (
         "RelionTranslateSumFlatRowsF32",
         "Flat-row translate-and-sum requires an explicit CUDA build with RelionTranslateSumFlatRowsF32",
+    ),
+    _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32: (
+        "RelionFineDiff2FusedTranslateRuntimeMaskedFlatRowsF32",
+        "Candidate-chunk flat-row scoring requires an explicit CUDA build with "
+        "RelionFineDiff2FusedTranslateRuntimeMaskedFlatRowsF32",
     ),
 }
 

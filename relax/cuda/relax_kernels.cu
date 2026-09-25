@@ -6007,7 +6007,8 @@ ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Common(
     ffi::AnyBuffer weight,
     ffi::AnyBuffer initial_diff2,
     ffi::AnyBuffer full_to_compact,
-    ffi::Result<ffi::AnyBuffer> output)
+    ffi::Result<ffi::AnyBuffer> output,
+    const ffi::AnyBuffer* translation_chunk_live = nullptr)
 {
     if (reference.element_type() != ffi::DataType::C64 ||
         image.element_type() != ffi::DataType::C64)
@@ -6069,6 +6070,15 @@ ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Common(
     if (total_blocks > static_cast<int64_t>(std::numeric_limits<int>::max()))
         return ffi::Error::InvalidArgument(
             "RelionFineDiff2FusedTranslateFlatRowsF32: block count exceeds CUDA grid");
+    if (translation_chunk_live != nullptr) {
+        const auto live_dims = translation_chunk_live->dimensions();
+        if (translation_chunk_live->element_type() != ffi::DataType::U8 ||
+            live_dims.size() != 2 || live_dims[0] != reference_dims[0] ||
+            live_dims[1] != translation_chunks)
+            return ffi::Error::InvalidArgument(
+                "RelionFineDiff2FusedTranslateRuntimeMaskedFlatRowsF32: translation_chunk_live "
+                "must be U8 [rows, ceil(translations / 4)]");
+    }
     cudaError_t err = launch_relion_fine_diff2_fused_translate_flat_rows_f32(
         stream,
         reinterpret_cast<const float2*>(reference.untyped_data()),
@@ -6087,7 +6097,10 @@ ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Common(
         static_cast<int>(current_size),
         runtime_current_size == nullptr
             ? nullptr
-            : static_cast<const int32_t*>(runtime_current_size->untyped_data()));
+            : static_cast<const int32_t*>(runtime_current_size->untyped_data()),
+        translation_chunk_live == nullptr
+            ? nullptr
+            : static_cast<const uint8_t*>(translation_chunk_live->untyped_data()));
     if (err != cudaSuccess)
         return ffi::Error::Internal(
             std::string("CUDA: ") + cudaGetErrorString(err));
@@ -6149,6 +6162,44 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
     RelionFineDiff2FusedTranslateRuntimeFlatRowsF32Impl,
     ffi::Ffi::Bind()
         .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+);
+
+// The runtime flat-row scorer that traverses only translation chunks holding a
+// candidate cell (translation_chunk_live, U8 [rows, ceil(translations / 4)]).
+ffi::Error RelionFineDiff2FusedTranslateRuntimeMaskedFlatRowsF32Impl(
+    cudaStream_t stream,
+    ffi::AnyBuffer reference,
+    ffi::AnyBuffer row_image_ids,
+    ffi::AnyBuffer image,
+    ffi::AnyBuffer translation_angles,
+    ffi::AnyBuffer weight,
+    ffi::AnyBuffer initial_diff2,
+    ffi::AnyBuffer full_to_compact,
+    ffi::AnyBuffer logical_current_size,
+    ffi::AnyBuffer translation_chunk_live,
+    ffi::Result<ffi::AnyBuffer> output)
+{
+    return RelionFineDiff2FusedTranslateFlatRowsF32Common(
+        stream, 0, &logical_current_size, reference, row_image_ids, image,
+        translation_angles, weight, initial_diff2, full_to_compact, output,
+        &translation_chunk_live);
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    RelionFineDiff2FusedTranslateRuntimeMaskedFlatRowsF32,
+    RelionFineDiff2FusedTranslateRuntimeMaskedFlatRowsF32Impl,
+    ffi::Ffi::Bind()
+        .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()

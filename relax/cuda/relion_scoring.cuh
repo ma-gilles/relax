@@ -2404,7 +2404,8 @@ void relion_fine_diff2_fused_translate_rows_f32_kernel(
     int64_t compact_pixel_count,
     int64_t full_pixel_capacity,
     int current_size,
-    const int32_t* runtime_current_size)
+    const int32_t* runtime_current_size,
+    const uint8_t* translation_chunk_live)
 {
     const int64_t translation_chunks =
         (translation_count + kRelionFineDiff2Ref3dJobChunk - 1) /
@@ -2421,7 +2422,13 @@ void relion_fine_diff2_fused_translate_rows_f32_kernel(
     const int64_t batch = FlatRows
         ? static_cast<int64_t>(row_image_ids[row])
         : row / rotation_count;
-    if (batch < 0 || batch >= batch_size) {
+    // A translation chunk without a candidate cell is written as +inf, the
+    // value an invalid row gets: the caller masks non-candidate cells to +inf
+    // anyway, and a block that is traversed computes every one of its
+    // translations exactly as before, so candidate scores are unchanged.
+    const bool chunk_skipped = translation_chunk_live != nullptr &&
+        translation_chunk_live[row * translation_chunks + translation_chunk] == 0;
+    if (batch < 0 || batch >= batch_size || chunk_skipped) {
         if (threadIdx.x < translation_in_chunk) {
             const int64_t translation = translation_start + threadIdx.x;
             output[row * translation_count + translation] =
@@ -3267,7 +3274,8 @@ cudaError_t launch_relion_fine_diff2_fused_translate_rectangular_f32(
             compact_pixel_count,
             full_pixel_count,
             current_size,
-            runtime_current_size);
+            runtime_current_size,
+            nullptr);
     return cudaGetLastError();
 }
 
@@ -3287,7 +3295,8 @@ cudaError_t launch_relion_fine_diff2_fused_translate_flat_rows_f32(
     int64_t compact_pixel_count,
     int64_t full_pixel_count,
     int current_size,
-    const int32_t* runtime_current_size)
+    const int32_t* runtime_current_size,
+    const uint8_t* translation_chunk_live)
 {
     const int64_t translation_chunks =
         (translation_count + kRelionFineDiff2Ref3dJobChunk - 1) /
@@ -3314,7 +3323,8 @@ cudaError_t launch_relion_fine_diff2_fused_translate_flat_rows_f32(
             compact_pixel_count,
             full_pixel_count,
             current_size,
-            runtime_current_size);
+            runtime_current_size,
+            translation_chunk_live);
     return cudaGetLastError();
 }
 
