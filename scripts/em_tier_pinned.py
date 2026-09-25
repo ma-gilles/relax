@@ -112,6 +112,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--receipt", type=Path, required=True, help="RECEIPT.json of the run that produced --fsc")
     r.add_argument("--tier", choices=sorted(TIER_CASES), default="medium", help="the cases to pin (a smoke run pins its four)")
     r.add_argument("--cases", nargs="+", help="pin only these cases of the tier (a newly added case); others keep their pins")
+    r.add_argument("--item", help="the tier item that produced the single --cases case (default: the case name)")
+    r.add_argument("--note", help="JSON object added to each pinned case's source (e.g. pin_mode and observed modes)")
     args = parser.parse_args(argv)
     fsc = json.loads(args.fsc.read_text())
     stored = json.loads(PINNED.read_text()) if PINNED.exists() else {}
@@ -143,7 +145,10 @@ def main(argv: list[str] | None = None) -> int:
     # The pinned cases' own tier items must pass; a failure elsewhere in the tier (a unit file,
     # say) does not change these outputs, so it is recorded with the pin rather than blocking it.
     items = {i["name"]: i["status"] for i in json.loads(Path(receipt["summary"]).read_text())["items"]}
-    not_passed = sorted(n for n in names if items.get(n) != "pass")
+    if args.item and len(names) != 1:
+        raise SystemExit("refusing to pin: --item names the item of exactly one --cases case")
+    item_of = {names[0]: args.item} if args.item else {}
+    not_passed = sorted(n for n in names if items.get(item_of.get(n, n)) != "pass")
     if missing or not_passed or receipt.get("dirty") or not model or "," in model:
         raise SystemExit(
             f"refusing to pin: missing {missing}, case items not passed {not_passed}, dirty {receipt.get('dirty')}, "
@@ -157,6 +162,10 @@ def main(argv: list[str] | None = None) -> int:
     source = {k: receipt.get(k) for k in ("sha", "job", "gpu_model", "run_root", "written_utc")}
     source["tier_status"] = receipt["status"]
     source["other_failed_items"] = other_failures
+    if args.item:
+        source["item"] = args.item
+    if args.note:
+        source.update(json.loads(args.note))
     entry = stored.setdefault("models", {}).setdefault(model, {"cases": {}})
     for name in names:
         entry["cases"][name] = _pin(fsc["cases"][name]) | {"source": source}

@@ -279,3 +279,23 @@ def test_a_new_case_is_pinned_alone_and_reported_until_then(tmp_path, monkeypatc
     em_tier_pinned.main(["regenerate", "--fsc", str(fsc), "--receipt", str(receipt), "--cases", new])
     stored = json.loads((tmp_path / "pinned.json").read_text())["models"]["H100"]["cases"]
     assert stored[new]["source"]["sha"] == "b" and stored["k1_replay"]["source"]["sha"] == "a"
+
+
+def test_a_case_is_pinned_from_a_named_repeat_item_with_a_note(tmp_path, monkeypatch):
+    monkeypatch.setattr(em_tier_pinned, "PINNED", tmp_path / "pinned.json")
+    case = "k1_os1_coldstart_standalone"
+    fsc = tmp_path / "fsc.json"
+    fsc.write_text(json.dumps({"cases": {case: _case(0.9998, 0.999) | {"pairs": {}}}}))
+    summary = tmp_path / "SUMMARY.json"
+    summary.write_text(json.dumps({"items": [{"name": "os1_rep3", "status": "pass"}, {"name": "os1_rep1", "status": "fail"}]}))
+    receipt = tmp_path / "RECEIPT.json"
+    receipt.write_text(json.dumps({"status": "fail", "dirty": False, "gpu_model": "H100", "sha": "c", "job": "3",
+                                   "summary": str(summary)}))
+    note = json.dumps({"pin_mode": "lowest of 6 same-code repeats"})
+    em_tier_pinned.main(["regenerate", "--fsc", str(fsc), "--receipt", str(receipt), "--cases", case,
+                         "--item", "os1_rep3", "--note", note])
+    source = json.loads((tmp_path / "pinned.json").read_text())["models"]["H100"]["cases"][case]["source"]
+    assert source["item"] == "os1_rep3" and source["pin_mode"] == "lowest of 6 same-code repeats"
+    with pytest.raises(SystemExit, match="not passed"):
+        em_tier_pinned.main(["regenerate", "--fsc", str(fsc), "--receipt", str(receipt), "--cases", case,
+                             "--item", "os1_rep1"])
