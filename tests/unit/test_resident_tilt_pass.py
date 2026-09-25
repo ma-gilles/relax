@@ -65,7 +65,8 @@ def test_one_image_particles_reproduce_the_spa_pass(_resident_production_env):  
     # The once-per-half resident operands, which the tilt runner needs, cover masked scoring only.
     args = dict(_driver_fixture_args(), score_with_masked_images=True)
     spa = rp._resident_pass2(**args)
-    tomo = rp._resident_pass2(**args, tilt=_one_image_tilt_inputs(args))
+    # The tilt pass takes the offset prior per particle, from the tilt inputs.
+    tomo = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=_one_image_tilt_inputs(args))
 
     for field in ("hard_assignment", "best_fine_rotation_indices"):
         assert_matches(getattr(spa.finalized, field), getattr(tomo.finalized, field), err_msg=field)
