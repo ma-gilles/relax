@@ -132,7 +132,7 @@ def test_row_ids_parents_and_priors_match_per_image_inputs(fixture_inputs, fixtu
         assert_matches(tables.row_fine_rot[start:stop], expected_ids.astype(np.int32))
         assert_matches(tables.row_parent_local[start:stop], expected_parents)
         np.testing.assert_allclose(tables.row_log_prior[start:stop], expected_prior)
-        assert matches(tables.row_image[start:stop], image)
+        assert matches(tables.row_unit[start:stop], image)
 
 
 def test_expand_mask_rows_matches_candidate_mask_to_dense_for_every_mode(fixture_inputs, fixture_tables):
@@ -181,7 +181,7 @@ def _synthetic_tables(row_counts, *, n_fine_trans=1, n_coarse_trans=1):
         n_fine_trans=n_fine_trans,
         n_coarse_trans=n_coarse_trans,
         row_offsets=row_offsets,
-        row_image=np.repeat(np.arange(n_images, dtype=np.int32), row_counts),
+        row_unit=np.repeat(np.arange(n_images, dtype=np.int32), row_counts),
         row_fine_rot=np.arange(n_rows, dtype=np.int32),
         row_parent_local=np.zeros(n_rows, dtype=np.int32),
         row_log_prior=np.zeros(n_rows, dtype=np.float32),

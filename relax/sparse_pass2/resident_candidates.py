@@ -118,7 +118,9 @@ class ResidentCandidateTables:
     n_coarse_trans: int
     # CSR row ranges: image i owns rows [row_offsets[i], row_offsets[i + 1]).
     row_offsets: np.ndarray  # int32 [n_images + 1]
-    row_image: np.ndarray  # int32 [n_rows], non-decreasing, values in [0, n_images)
+    # int32 [n_rows], non-decreasing, values in [0, n_images): the row's posterior unit
+    # (one particle; one image in SPA, a tilt series in cryo-ET).
+    row_unit: np.ndarray
     row_fine_rot: np.ndarray  # int32 [n_rows]
     row_parent_local: np.ndarray  # int32 [n_rows]
     row_log_prior: np.ndarray  # float32 [n_rows]
@@ -141,7 +143,7 @@ class ResidentCandidateTables:
             raise ValueError("parent_offsets must have shape (n_images + 1,)")
         if int(self.row_offsets[-1]) != int(self.n_rows):
             raise ValueError("row_offsets[-1] must equal n_rows")
-        for name in ("row_image", "row_fine_rot", "row_parent_local", "row_log_prior"):
+        for name in ("row_unit", "row_fine_rot", "row_parent_local", "row_log_prior"):
             arr = getattr(self, name)
             if arr.shape != (self.n_rows,):
                 raise ValueError(f"{name} must have shape (n_rows,), got {arr.shape}")
@@ -347,7 +349,7 @@ def build_resident_candidate_tables(
         n_fine_trans=n_fine_trans,
         n_coarse_trans=n_coarse_trans,
         row_offsets=row_offsets,
-        row_image=row_image,
+        row_unit=row_image,
         row_fine_rot=row_fine_rot,
         row_parent_local=row_parent_local,
         row_log_prior=row_log_prior,
@@ -390,7 +392,7 @@ def merge_class_tables(tables_by_class) -> ResidentCandidateTables:
 
     row_parts, parent_parts = [], []
     for class_index, tables in enumerate(tables_by_class):
-        row_image = np.asarray(tables.row_image, dtype=np.int64)
+        row_image = np.asarray(tables.row_unit, dtype=np.int64)
         parent_local = np.asarray(tables.row_parent_local, dtype=np.int64)
         # Parents an image's rows reference in this class (bitset images store
         # exactly these; full and empty images store none).
@@ -447,7 +449,7 @@ def merge_class_tables(tables_by_class) -> ResidentCandidateTables:
         n_fine_trans=int(first.n_fine_trans),
         n_coarse_trans=int(first.n_coarse_trans),
         row_offsets=row_offsets,
-        row_image=rows["image"][row_order].astype(np.int32),
+        row_unit=rows["image"][row_order].astype(np.int32),
         row_fine_rot=rows["fine_rot"][row_order],
         row_parent_local=rows["parent_local"][row_order].astype(np.int32),
         row_log_prior=rows["log_prior"][row_order],
@@ -491,7 +493,7 @@ def coarse_winner_cells(
     fine_of_coarse_trans = np.empty(n_coarse_trans, dtype=np.int64)
     fine_of_coarse_trans[fine_translation_parent] = np.arange(fine_translation_parent.size, dtype=np.int64)
 
-    row_image = np.asarray(tables.row_image, dtype=np.int64)
+    row_image = np.asarray(tables.row_unit, dtype=np.int64)
     row_parent_rot = np.asarray(fine_rotation_parent, dtype=np.int64)[np.asarray(tables.row_fine_rot, dtype=np.int64)]
     winner_rows = np.flatnonzero(row_parent_rot == winner_rot[row_image])
     counts = np.bincount(row_image[winner_rows], minlength=tables.n_images)
@@ -747,7 +749,7 @@ def materialize_chunk(tables: ResidentCandidateTables, chunk: CapacityChunk) -> 
     image_ids = np.full(image_capacity, -1, dtype=np.int32)
 
     if n_valid_rows:
-        row_image_global = tables.row_image[rs:re]
+        row_image_global = tables.row_unit[rs:re]
         row_image_local[:n_valid_rows] = row_image_global - chunk.image_start
         row_fine_rot[:n_valid_rows] = tables.row_fine_rot[rs:re]
         row_parent_local_valid = tables.row_parent_local[rs:re]

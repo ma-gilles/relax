@@ -301,7 +301,7 @@ def _assert_tables_equal(got, expected):
     assert got.n_coarse_trans == expected.n_coarse_trans
     for name in (
         "row_offsets",
-        "row_image",
+        "row_unit",
         "row_fine_rot",
         "row_parent_local",
         "mask_mode",

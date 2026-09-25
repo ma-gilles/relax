@@ -138,7 +138,7 @@ def _tables(row_counts):
         n_fine_trans=4,
         n_coarse_trans=2,
         row_offsets=offsets,
-        row_image=np.repeat(np.arange(n_images, dtype=np.int32), row_counts),
+        row_unit=np.repeat(np.arange(n_images, dtype=np.int32), row_counts),
         row_fine_rot=np.zeros(n_rows, dtype=np.int32),
         row_parent_local=np.zeros(n_rows, dtype=np.int32),
         row_log_prior=np.zeros(n_rows, dtype=np.float32),

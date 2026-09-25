@@ -716,7 +716,7 @@ def build_resident_candidate_tables_from_csr(
         n_fine_trans=n_fine_trans,
         n_coarse_trans=n_coarse_trans,
         row_offsets=row_offsets,
-        row_image=row_image.astype(np.int32, copy=False),
+        row_unit=row_image.astype(np.int32, copy=False),
         row_fine_rot=row_fine_rot.astype(np.int32, copy=False),
         row_parent_local=row_parent_local.astype(np.int32, copy=False),
         row_log_prior=np.asarray(row_log_prior, dtype=np.float32),
