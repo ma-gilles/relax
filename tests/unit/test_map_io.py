@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from helpers.em_fixtures import fixture_file
 from helpers.float_compare import assert_matches
-from helpers.map_sign import FILE_CORRELATION_MIN, file_correlation
+from helpers.map_sign import SIGN_CORRELATION_MIN, file_correlation
 from recovar.utils import helpers
 
 from relax.helpers import map_io
@@ -101,6 +101,6 @@ def test_written_map_correlates_positively_with_relion(tmp_path, name):
     legacy = tmp_path / "legacy.mrc"
     helpers.write_mrc(str(legacy), internal, voxel_size=4.25)
 
-    assert file_correlation(written, relion_map) >= FILE_CORRELATION_MIN
-    assert file_correlation(legacy, relion_map) <= -FILE_CORRELATION_MIN  # the pre-change writer
+    assert file_correlation(written, relion_map) >= SIGN_CORRELATION_MIN
+    assert file_correlation(legacy, relion_map) <= -SIGN_CORRELATION_MIN  # the pre-change writer
     assert_matches(_raw(written), _raw(relion_map))

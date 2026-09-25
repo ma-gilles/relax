@@ -26,7 +26,7 @@ import numpy as np
 import pytest
 from conftest import gpu_subprocess_env
 from helpers.em_fixtures import fixture_root, require_fixture_sets
-from helpers.map_sign import assert_relion_file_sign
+from helpers.map_sign import assert_same_sign_convention
 
 from relax.helpers.map_io import load_relax_map
 
@@ -212,6 +212,6 @@ def test_k1_5k128_standalone_autorefine(tmp_path):
             worst = min(v["fsc_auc"] for v in scores["relax_vs_relion"].values())
             assert worst >= gate["min_cross_fsc_auc"], (kind, scores)
     # The written files carry RELION's sign and convention (relax.helpers.map_io).
-    assert_relion_file_sign(output_dir / "final_merged.mrc", relion_ref / "run_class001.mrc")
+    assert_same_sign_convention(output_dir / "final_merged.mrc", relion_ref / "run_class001.mrc")
     for h in (1, 2):
-        assert_relion_file_sign(output_dir / f"final_half{h}_unfil.mrc", relion_ref / f"run_half{h}_class001_unfil.mrc")
+        assert_same_sign_convention(output_dir / f"final_half{h}_unfil.mrc", relion_ref / f"run_half{h}_class001_unfil.mrc")

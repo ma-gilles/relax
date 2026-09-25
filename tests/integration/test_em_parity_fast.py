@@ -36,7 +36,7 @@ from conftest import gpu_subprocess_env
 from helpers.em_fixtures import fixture_root, require_fixture_sets
 from helpers.em_parity_oracles import k4_oracle
 
-from helpers.map_sign import FILE_CORRELATION_MIN, assert_relion_file_sign, file_correlation
+from helpers.map_sign import SIGN_CORRELATION_MIN, assert_same_sign_convention, file_correlation
 
 from relax.helpers.map_io import load_relax_map
 
@@ -846,9 +846,11 @@ def _check_k1_coldstart(
     # guard separate from replay because it still bootstraps model/noise/tau/
     # sigma state from raw inputs rather than injecting per-iter RELION state.
     _assert_fsc_gate(f"{case}_{start}", output_dir)
-    # relax writes RELION-convention maps: the files carry RELION's sign (helpers/map_sign.py).
-    assert min(file_corrs) >= FILE_CORRELATION_MIN, (
-        f"relax final half maps correlate {file_corrs} with RELION's files; expected >= {FILE_CORRELATION_MIN}"
+    # relax writes RELION-convention maps: a sign/convention check only (helpers/map_sign.py);
+    # quality is gated by FSC.
+    assert min(file_corrs) >= SIGN_CORRELATION_MIN, (
+        f"relax final half maps correlate {file_corrs} with RELION's files; a flip reads about -1 "
+        f"(sign check >= {SIGN_CORRELATION_MIN})"
     )
     # Pre-A.1 cold-start: iter-3 |ΔPmax| was ~22% (sigma_offset stuck at 10 Å).
     # Post-A.1: 5-12% depending on perturbation drift. Threshold 0.15 catches
@@ -1452,4 +1454,4 @@ def test_em_parity_fast_k1_multioptics_coldstart(tmp_path):
     logger.info("K=1 multi-optics cold-start ledger: %s", ledger)
     _assert_fsc_gate("k1_multioptics_coldstart", output_dir)
     for h in (1, 2):
-        assert_relion_file_sign(output_dir / f"final_half{h}.mrc", MULTIOPTICS_RELION_DIR / f"run_it003_half{h}_class001.mrc")
+        assert_same_sign_convention(output_dir / f"final_half{h}.mrc", MULTIOPTICS_RELION_DIR / f"run_it003_half{h}_class001.mrc")
