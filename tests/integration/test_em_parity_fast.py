@@ -1311,8 +1311,8 @@ def test_em_parity_fast_k1_multioptics_coldstart(tmp_path):
     """Three standalone K=1 iterations on two optics groups with different pixel sizes and boxes.
 
     600 particles (300 per group: 4.25 A / 128 px and 5.44 A / 112 px), the RELION 5 GUI Refine3D
-    command with the reference on the images' greyscale (no --firstiter_cc), compared with RELION
-    f2c1a3's iteration 3: half maps by FSC and per-particle Pmax. Exercises the per-group noise,
+    command at --ini_high 30 with the reference on the images' greyscale (no --firstiter_cc),
+    compared with RELION f2c1a3's iteration 3: half maps by FSC and per-particle Pmax. Exercises the per-group noise,
     the shape classes (scaled projection, remapped sizes and noise shells, per-class pre-shifts)
     and their merge end to end.
     """
@@ -1332,6 +1332,8 @@ def test_em_parity_fast_k1_multioptics_coldstart(tmp_path):
         str(MULTIOPTICS_FIXTURE_DIR / "reference_init_greyscale.mrc"),
         "--max_iter",
         "3",
+        "--init_resolution",
+        "30",  # RELION --ini_high 30
         "--seed",
         "20260924",  # RELION --random_seed
         "--no-firstiter_cc",  # the reference is on the images' greyscale (greyscale_rescale.json)
