@@ -16,6 +16,7 @@ import jax
 import jax.numpy as jnp
 from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.ppca.pose_marginal import compute_ppca_pose_scores_and_moments_no_contrast
+from recovar.ppca.triangular import pack_upper_tri
 from recovar.ppca.triangular import tri_size as _tri_size
 
 
@@ -381,6 +382,68 @@ def dense_pose_ppca_score_with_moments_blocked(
         jnp.asarray(y_norm),
     )
     score_pre, alpha, G_tri = compute_ppca_pose_scores_and_moments_no_contrast(*y_stats, return_moments=True)
+    score = _add_pose_log_prior(score_pre, pose_log_prior)
+    score_flat = score.reshape(B, T * R)
+    best_flat = jnp.argmax(score_flat, axis=-1)
+    return DenseScoreAndMomentsStats(
+        score=score,
+        alpha=alpha,
+        G_tri=G_tri,
+        logZ=jax.scipy.special.logsumexp(score_flat, axis=-1),
+        best_log_score_per_image=jnp.max(score_flat, axis=-1).astype(jnp.float32),
+        best_rotation_idx=(best_flat % R).astype(jnp.int32),
+        best_translation_idx=(best_flat // R).astype(jnp.int32),
+    )
+
+
+@jax.jit
+def dense_pose_ppca_score_with_moments_factor_once(
+    Y1,
+    proj_aug,
+    ctf2_over_noise,
+    y_norm,
+    pose_log_prior=None,
+):
+    """Score a pose tile with one latent factorization per image and rotation.
+
+    The weighted Gram is translation invariant. This opt-in variant follows
+    the public RECOVAR EM precomputation pattern: factor ``I + Hzz`` for each
+    image/rotation, then apply the inverse to all translation RHS vectors.
+    Per-image CTF/noise and the exact pose prior remain in the score.
+    """
+    Y1 = jnp.asarray(Y1)
+    proj_aug = jnp.asarray(proj_aug)
+    B, T, _F = Y1.shape
+    R, P, _ = proj_aug.shape
+    if pose_log_prior is not None and jnp.asarray(pose_log_prior).shape != (B, R, T):
+        raise ValueError(f"pose_log_prior shape {jnp.asarray(pose_log_prior).shape} != ({B}, {R}, {T})")
+    y_norm, t_mx, nu_mm, g_zx, h_zm, Hzz = _per_pose_stats_block(
+        Y1, proj_aug, jnp.asarray(ctf2_over_noise), jnp.asarray(y_norm)
+    )
+    q = P - 1
+    if q == 0:
+        score_pre, alpha, G_tri = compute_ppca_pose_scores_and_moments_no_contrast(
+            y_norm, t_mx, nu_mm, g_zx, h_zm, Hzz, return_moments=True
+        )
+    else:
+        # Hzz was broadcast over translations by the preparation helper. The
+        # factor and covariance depend only on (image, rotation).
+        H = Hzz[:, 0]
+        H_sym = 0.5 * (H + jnp.swapaxes(jnp.conj(H), -1, -2))
+        eye = jnp.eye(q, dtype=H_sym.dtype)
+        L = jnp.linalg.cholesky(H_sym + eye)
+        covariance = jax.scipy.linalg.cho_solve((L, True), jnp.broadcast_to(eye, H_sym.shape))
+        logdet = 2.0 * jnp.sum(jnp.log(jnp.real(jnp.diagonal(L, axis1=-2, axis2=-1))), axis=-1)
+        b = g_zx - h_zm
+        z = jnp.einsum("brqp,btrp->btrq", covariance, b)
+        rho = y_norm - 2.0 * t_mx + nu_mm
+        score_pre = -0.5 * (rho - jnp.sum(jnp.conj(b) * z, axis=-1).real + logdet[:, None, :])
+        one = jnp.ones((B, T, R, 1), dtype=z.dtype)
+        alpha = jnp.concatenate((one, z), axis=-1)
+        bottom_right = covariance[:, None] + z[..., :, None] * z[..., None, :]
+        top = jnp.concatenate((jnp.ones((B, T, R, 1, 1), dtype=z.dtype), z[..., None, :]), axis=-1)
+        bottom = jnp.concatenate((z[..., :, None], bottom_right), axis=-1)
+        G_tri = pack_upper_tri(jnp.concatenate((top, bottom), axis=-2))
     score = _add_pose_log_prior(score_pre, pose_log_prior)
     score_flat = score.reshape(B, T * R)
     best_flat = jnp.argmax(score_flat, axis=-1)

@@ -23,6 +23,8 @@ class Config:
     shift_step: float = 2
     image_batch_size: int = 16
     rotation_block_size: int = 128
+    fine_image_tile_size: int = 1
+    stream_full_fine_rows: bool = False
     stochastic_batch_size: int | None = None
     checkpoint_interval: int = 1
 
@@ -35,7 +37,7 @@ class Config:
             raise ValueError("Invalid radius/HEALPix schedule")
         if not 0 < self.target_mass <= 1 or self.oversampling < 0:
             raise ValueError("Invalid pose support")
-        if min(self.image_batch_size, self.rotation_block_size, self.checkpoint_interval) <= 0:
+        if min(self.image_batch_size, self.rotation_block_size, self.fine_image_tile_size, self.checkpoint_interval) <= 0:
             raise ValueError("Batch/checkpoint sizes must be positive")
         if self.stochastic_batch_size is not None and self.stochastic_batch_size <= 0:
             raise ValueError("Stochastic batch size must be positive")

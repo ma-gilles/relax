@@ -44,6 +44,7 @@ from relax.ppca_refinement.engine import (
     dense_pose_ppca_score_stats_blocked,
     dense_pose_ppca_score_tensor_stats_blocked,
     dense_pose_ppca_score_with_moments_blocked,
+    dense_pose_ppca_score_with_moments_factor_once,
     fused_dense_pose_ppca_block,
 )
 from relax.ppca_refinement.initialization import real_volume_to_centered_fourier_half
@@ -821,6 +822,7 @@ def accumulate_dense_ppca_statistics(
     rotation_translation_mask: np.ndarray | None = None,
     enforce_x0: bool = True,
     collect_residuals: bool = False,
+    factor_once_score: bool = False,
     skip_empty_pose_blocks: bool = False,
     top_pose_count: int = 1,
     pose_selection: PoseSelectionConfig | None = None,
@@ -946,7 +948,11 @@ def accumulate_dense_ppca_statistics(
         block_scores: list = []
         for block in group:
             if cache_moments:
-                full = dense_pose_ppca_score_with_moments_blocked(
+                score_function = (
+                    dense_pose_ppca_score_with_moments_factor_once
+                    if factor_once_score else dense_pose_ppca_score_with_moments_blocked
+                )
+                full = score_function(
                     block.Y1,
                     block.proj_aug,
                     block.ctf2_over_noise,

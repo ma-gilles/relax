@@ -61,6 +61,24 @@ def _merge_statistics(parts):
     )
 
 
+def _full_fine_mask_tile(significant_rows, n_coarse_rotations, n_coarse_translations,
+                         children_per_parent, fine_translation_parent):
+    """Expand only one image tile of the existing RELION pass-2 pose mask."""
+    coarse = np.zeros((len(significant_rows), n_coarse_rotations * n_coarse_translations), dtype=bool)
+    for image, significant in enumerate(significant_rows):
+        if significant is None:
+            coarse[image] = True
+        else:
+            coarse[image, np.asarray(significant, dtype=np.int64)] = True
+    coarse = coarse.reshape(len(significant_rows), n_coarse_rotations, n_coarse_translations)
+    # Advanced indexing places the fine-translation axis first in memory even
+    # though the returned shape is (image, rotation, translation). The dense
+    # engine slices rotation blocks hundreds of times; materialize its actual
+    # C-order input once per image tile instead of gathering strided data for
+    # every block.
+    return np.ascontiguousarray(np.repeat(coarse, children_per_parent, axis=1)[:, :, fine_translation_parent])
+
+
 @full_float32
 def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False):
     radius, hp = config.stage(iteration)
@@ -114,8 +132,17 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
         max_significants=-1,
         **common,
     )
+    children_per_parent = 8 ** config.oversampling
+    full_rotation_count = len(rotations) * children_per_parent
+    stream_full = bool(config.stream_full_fine_rows)
+    if stream_full:
+        # This opt-in route is exact only when every image retained every
+        # coarse orientation. The per-image translation support can still vary.
+        for image, significant in enumerate(coarse.significant_sample_indices):
+            if significant is not None and np.unique(np.asarray(significant) // len(translations)).size != len(rotations):
+                raise ValueError(f"Image {image} lacks a full fine rotation row; streaming full rows cannot change support")
     layout = build_pass2_hypothesis_layout(
-        coarse.significant_sample_indices,
+        [None] if stream_full else coarse.significant_sample_indices,
         len(rotations),
         len(translations),
         hp,
@@ -126,16 +153,59 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
         rotation_index_order="relion",
         allow_empty=False,
     )
+    if stream_full:
+        fine_grid, fine_translation_parent = sampling.get_oversampled_translation_grid(
+            translations, config.shift_step, oversampling_order=config.oversampling,
+        )
+        if not np.array_equal(np.asarray(fine_grid, np.float32), layout.translation_grid):
+            raise RuntimeError("Streamed fine translation grid differs from the exact local layout")
     stats = None
     coarse_mass = np.zeros(len(rotations), np.float32)
-    for row, particle_id in enumerate(ids):
-        begin = int(layout.rotation_offsets[row])
-        end = begin + int(layout.rotation_counts[row])
-        mask = layout.sample_mask_rows(begin, end)
-        fine_prior = -np.sum(layout.translation_grid**2, axis=-1) / (2 * state.offset_variance)
-        fine_prior = fine_prior - np.log(np.sum(np.exp(fine_prior)))
+    fine_prior = -np.sum(layout.translation_grid**2, axis=-1) / (2 * state.offset_variance)
+    fine_prior = fine_prior - np.log(np.sum(np.exp(fine_prior)))
+    tile_limit = min(config.fine_image_tile_size, config.image_batch_size)
+    row = 0
+    while row < len(ids):
+        if stream_full:
+            begin, end = 0, full_rotation_count
+            tile_end = min(row + tile_limit, len(ids))
+            mask = _full_fine_mask_tile(
+                coarse.significant_sample_indices[row:tile_end], len(rotations), len(translations),
+                children_per_parent, fine_translation_parent,
+            )
+        else:
+            begin = int(layout.rotation_offsets[row])
+            end = begin + int(layout.rotation_counts[row])
+            tile_end = row + 1
+        if not stream_full and tile_limit > 1 and end - begin == full_rotation_count:
+            # The dense engine shares projections within an image batch. Group
+            # only identical full-grid rotation rows; the per-image translation
+            # masks still exclude every coarse-rejected pose exactly.
+            while tile_end < min(row + tile_limit, len(ids)):
+                other_begin = int(layout.rotation_offsets[tile_end])
+                other_end = other_begin + int(layout.rotation_counts[tile_end])
+                if other_end - other_begin != full_rotation_count or not (
+                    np.array_equal(layout.rotation_ids_flat[begin:end], layout.rotation_ids_flat[other_begin:other_end])
+                    and np.array_equal(layout.rotations_flat[begin:end], layout.rotations_flat[other_begin:other_end])
+                    and np.array_equal(layout.rotation_log_priors_flat[begin:end], layout.rotation_log_priors_flat[other_begin:other_end])
+                    and np.array_equal(layout.rotation_posterior_ids_flat[begin:end], layout.rotation_posterior_ids_flat[other_begin:other_end])
+                ):
+                    break
+                tile_end += 1
+        if not stream_full:
+            if tile_end == row + 1:
+                mask = layout.sample_mask_rows(begin, end)
+            else:
+                mask = np.stack([
+                    layout.sample_mask_rows(int(layout.rotation_offsets[index]), int(layout.rotation_offsets[index + 1]))
+                    for index in range(row, tile_end)
+                ])
         function = compute_dense_ppca_embeddings if embeddings_only else accumulate_dense_ppca_statistics
         options = {} if embeddings_only else {"sparse_pass2": SparsePass2Config(enabled=False), "collect_residuals": True}
+        if not embeddings_only and tile_end - row > 1:
+            # Score the real multi-image tile with one latent factorization
+            # per image/rotation and aggregate its posterior before adjoint.
+            options["factor_once_score"] = True
         part = function(
             dataset,
             mu,
@@ -149,7 +219,7 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
             geometry=geometry,
             schedule=schedule,
             scoring=scoring,
-            image_indices=np.array([particle_id]),
+            image_indices=np.asarray(ids[row:tile_end]),
             **options,
         )
         if embeddings_only:
@@ -158,17 +228,26 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
                 np.concatenate([stats.original_image_ids, part.original_image_ids]),
                 stats.n_images + part.n_images,
             )
-            continue
-        np.add.at(coarse_mass, layout.rotation_posterior_ids_flat[begin:end], part.diagnostics["rotation_mass"])
-        stats = part if stats is None else _merge_statistics([stats, part])
+        else:
+            np.add.at(coarse_mass, layout.rotation_posterior_ids_flat[begin:end], part.diagnostics["rotation_mass"])
+            stats = part if stats is None else _merge_statistics([stats, part])
+        row = tile_end
     if embeddings_only:
         return stats
+    if config.fine_image_tile_size > 1 and len(ids) > 1:
+        # The reference path merges per-particle results, retaining only these
+        # four aggregate diagnostics. A single tiled call must expose the same
+        # controller-facing result rather than its dense-engine internals.
+        summary_keys = ("offset_second_sum_px2", "latent_covariance_trace_mean", "pose_entropy_mean", "pmax_mean")
+        summary = {key: stats.diagnostics[key] for key in summary_keys}
+        stats.diagnostics.clear()
+        stats.diagnostics.update(summary)
     stats.diagnostics.update(
         {
             "coarse_omitted_mass_bound": 1 - config.target_mass,
             "fine_pruning": False,
             "rotation_mass": coarse_mass,
-            "fine_rotation_count": layout.total_local_rotations,
+            "fine_rotation_count": full_rotation_count * len(ids) if stream_full else layout.total_local_rotations,
             "canonical_euler_count": len(canonical_eulers),
         }
     )
