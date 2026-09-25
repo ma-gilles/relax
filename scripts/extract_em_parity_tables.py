@@ -177,6 +177,11 @@ CASE_METRICS = {
         ("k1_multioptics_coldstart_half2_corr_vs_relion_it003", False, ".6f"),
         ("k1_multioptics_coldstart_pmax_iter3_abs_diff", True, ".6f"),
     ),
+    "k1_gui60_coldstart": (
+        ("k1_gui60_coldstart_half1_corr_vs_relion_it003", False, ".6f"),
+        ("k1_gui60_coldstart_half2_corr_vs_relion_it003", False, ".6f"),
+        ("k1_gui60_coldstart_pmax_iter3_abs_diff", True, ".6f"),
+    ),
     "k1_perturbreplay": (
         ("k1_perturbreplay_half1_corr_vs_relion_it003", False, ".6f"),
         ("k1_perturbreplay_half2_corr_vs_relion_it003", False, ".6f"),
@@ -231,6 +236,7 @@ TIER_CASES = {
         "k1_coldstart",
         "k1_os1_coldstart",
         "k1_multioptics_coldstart",
+        "k1_gui60_coldstart",
         "k1_perturbreplay",
         "kclass_coldstart",
         "kclass_strict",

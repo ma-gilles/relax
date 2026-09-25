@@ -54,6 +54,9 @@ K1_RELION_RANDOM_SEED = 1775735620
 # Same data and command as K1_RELION_DIR except --oversampling 1 (record in the
 # fixture's GENERATION.json).
 K1_OS1_RELION_DIR = fixture_root("k1_5k128_relion_os1")
+# Same data with RELION's GUI-default auto-refine command: --ini_high 60 --healpix_order 2
+# --offset_range 5 --offset_step 2 --oversampling 1 (record in the fixture's GENERATION.json).
+K1_GUI60_RELION_DIR = fixture_root("k1_5k128_relion_gui60")
 
 MULTIOPTICS_FIXTURE_DIR = fixture_root("multioptics_s3b_600_data")
 MULTIOPTICS_RELION_DIR = fixture_root("multioptics_s3b_600_relion")
@@ -561,7 +564,7 @@ K1_COLDSTART_START_ARGS = {
         "--relion-half-sets-from-input",
         "--particle_diameter_ang",
         "544",  # RELION --particle_diameter
-        "--apply-initial-lowpass",  # RELION --ini_high 30 (with --init_resolution)
+        "--apply-initial-lowpass",  # RELION --ini_high (with --init_resolution)
     ],
     "relion_seeded_debug": [
         "--relion_half_sets",
@@ -629,7 +632,39 @@ def test_em_parity_fast_k1_os1_coldstart_standalone(tmp_path):
     check()
 
 
-def _run_k1_coldstart(tmp_path, *, start, oversampling):
+# Sampling and start resolution of the K1 cold starts: the 5k oracles' command, and RELION's GUI default.
+K1_COLDSTART_SAMPLING_ARGS = ["--healpix_order", "3", "--offset_range", "3.0", "--offset_step", "1.0", "--init_resolution", "30.0"]
+K1_GUI60_SAMPLING_ARGS = ["--healpix_order", "2", "--offset_range", "5.0", "--offset_step", "2.0", "--init_resolution", "60.0"]
+
+
+@pytest.mark.gpu
+@pytest.mark.integration
+@pytest.mark.slow
+def test_em_parity_fast_k1_gui60_coldstart_standalone(tmp_path):
+    """The standalone K1 cold start with RELION's GUI-default command against its RELION run.
+
+    --ini_high 60 (above the 40 A --low_resol_join_halves), --healpix_order 2, --offset_range 5,
+    --offset_step 2, --oversampling 1. At 60 A RELION's iteration 1 joins the halves only up to
+    the ini_high shell (ml_optimiser_mpi.cpp:3280); every other case starts at 30 A, where the
+    40 A join wins, so only this case checks that start.
+    """
+    m, check = _run_k1_coldstart(tmp_path, start="standalone", oversampling=1, gui_default=True)
+    payload = {
+        "k1_gui60_coldstart_half1_corr_vs_relion_it003": m["h1_corr"],
+        "k1_gui60_coldstart_half2_corr_vs_relion_it003": m["h2_corr"],
+        "k1_gui60_coldstart_pmax_iter3_recovar": m["pmax_iter3"],
+        "k1_gui60_coldstart_pmax_iter3_relion": m["relion_pmax"],
+        "k1_gui60_coldstart_pmax_iter3_abs_diff": m["pmax_diff"],
+        "k1_gui60_coldstart_sigma_offset_trajectory": m["sigma_traj"],
+        "k1_gui60_coldstart_sigma_offset_used_trajectory": m["sigma_used_traj"],
+        "k1_gui60_coldstart_walltime_s": m["elapsed"],
+    }
+    ledger = _write_quality_ledger("k1_gui60_coldstart", payload, output_dir=m["output_dir"])
+    logger.info("K=1 GUI-default cold-start ledger: %s", ledger)
+    check()
+
+
+def _run_k1_coldstart(tmp_path, *, start, oversampling, gui_default=False):
     """Run the cold start and measure it; return the measurements and the gate check.
 
     The caller writes its own ledger between the two, with a literal case name
@@ -637,9 +672,15 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling):
     the ledger behind.
     """
     _assert_parity_ancestors_or_skip()
-    relion_set = "k1_5k128_relion_os1" if oversampling else "k1_5k128_relion_os0"
-    relion_dir = K1_OS1_RELION_DIR if oversampling else K1_RELION_DIR
-    case = "k1_os1_coldstart" if oversampling else "k1_coldstart"
+    if gui_default:
+        assert oversampling == 1, "the GUI-default oracle ran at --oversampling 1"
+        relion_set, relion_dir, case = "k1_5k128_relion_gui60", K1_GUI60_RELION_DIR, "k1_gui60_coldstart"
+        sampling_args = K1_GUI60_SAMPLING_ARGS
+    else:
+        relion_set = "k1_5k128_relion_os1" if oversampling else "k1_5k128_relion_os0"
+        relion_dir = K1_OS1_RELION_DIR if oversampling else K1_RELION_DIR
+        case = "k1_os1_coldstart" if oversampling else "k1_coldstart"
+        sampling_args = K1_COLDSTART_SAMPLING_ARGS
     require_fixture_sets("k1_5k128_data", relion_set)
     _require_fixture(REFINE_SCRIPT, K1_FIXTURE_DIR, relion_dir, K1_DATA_STAR)
 
@@ -655,12 +696,7 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling):
         str(output_dir),
         "--max_iter",
         "3",
-        "--healpix_order",
-        "3",
-        "--offset_range",
-        "3.0",
-        "--offset_step",
-        "1.0",
+        *sampling_args,
         "--adaptive_oversampling",
         str(oversampling),
         "--tau2_fudge",
@@ -670,8 +706,6 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling):
         "--seed",
         str(K1_RELION_RANDOM_SEED),  # drives SamplingPerturbation like RELION's --random_seed
         "--no-firstiter_cc",  # the 5k oracle ran without --firstiter_cc
-        "--init_resolution",
-        "30.0",
         "--image_batch_size",
         "200",
         "--rotation_block_size",

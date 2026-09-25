@@ -66,6 +66,7 @@ FAST_CASES = {  # item name: pytest node id
     "k1_coldstart_relion_seeded_debug": "test_em_parity_fast_k1_coldstart[relion_seeded_debug]",
     "k1_perturbreplay": "test_em_parity_fast_k1_perturbreplay",
     "k1_os1_coldstart_standalone": "test_em_parity_fast_k1_os1_coldstart_standalone",
+    "k1_gui60_coldstart_standalone": "test_em_parity_fast_k1_gui60_coldstart_standalone",
     "kclass_coldstart": "test_em_parity_fast_kclass_coldstart",
     "kclass_nonadaptive_replay": "test_em_parity_fast_kclass_nonadaptive_replay",
     "kclass_strict_oversample_coldstart": "test_em_parity_fast_kclass_strict_oversample_coldstart",
@@ -84,6 +85,7 @@ FAST_CASE_SECONDS = {  # H100 walls of the last full fast tier (Q 14320189) and 
     "k1_coldstart_relion_seeded_debug": 600,
     "k1_perturbreplay": 210,
     "k1_os1_coldstart_standalone": 600,
+    "k1_gui60_coldstart_standalone": 850,  # H100 relax wall 848 s (Slurm 14402553)
     "kclass_coldstart": 180,
     "kclass_nonadaptive_replay": 90,
     "kclass_strict_oversample_coldstart": 110,
@@ -129,6 +131,7 @@ FIXTURE_SETS = {
         "k1_5k128_relion_os0",
         "k1_5k128_relion_os1",
         "k1_5k128_relion_os1_repeats",
+        "k1_5k128_relion_gui60",
         "k2_5k128_data",
         "k2_5k128_relion_os0",
         "k4_5k128_data",

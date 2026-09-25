@@ -67,6 +67,8 @@ SETS: dict[str, tuple[str, list[str], list[str], str, list[str]]] = {
     ),
     "multioptics_s3b_600_relion": (f"{FX}/multioptics_s3b_600/relion_ref", RUN, NO_BILD, "RELION f2c1a3 Refine3D of multioptics_s3b_600_data, 3 iterations (command in COMMAND.txt)", ["COMMAND.txt"]),
     "multioptics_s3b_600_relion_repeat": (f"{FX}/multioptics_s3b_600/relion_repeat", RUN, NO_BILD, "Same-command RELION repeat of multioptics_s3b_600_relion", ["COMMAND.txt"]),
+    "k1_5k128_relion_gui60": (f"{FX}/data_noise1_5k_normalized_gui60/relion_ref", RUN, NO_BILD, "RELION f2c1a3 auto-refine of k1_5k128_data with the GUI-default --ini_high 60 --healpix_order 2 --offset_range 5 --offset_step 2 --oversampling 1 (Slurm 14406407)", ["../GENERATION.json"]),
+    "k1_5k128_relion_gui60_repeat": (f"{FX}/data_noise1_5k_normalized_gui60/relion_repeat", RUN, NO_BILD, "Same-command RELION repeat of k1_5k128_relion_gui60 (Slurm 14406407)", ["../GENERATION.json"]),
     "k2_5k128_data": (
         f"{PROJ}/data_pdb_k2_5k_128",
         TOP,
