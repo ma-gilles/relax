@@ -93,9 +93,14 @@ non-fused coarse projection and the local parent pass refuse it.
 VDAM K>1 (2026-09-25): relax main 237e76b normalizes sigma2_noise, pdf_class,
 sigma2_offset and ave_Pmax by RELION's retained (significant-pruned) class mass;
 it used the full mass before, which moved every K>1 trajectory from iteration 1.
-On pdb K=2 5k/128 the class splits now match RELION at seeds 29/41/53. OPEN
-(small): seed 29 relax is 0.001-0.008 below three same-seed RELION runs (more
-repeats running); seed 53 is inside the band. Evidence and tools:
+On pdb K=2 5k/128 the class splits now match RELION at seeds 29/41/53. The seed-29
+spread is closed as basin sampling (2026-09-25): 8 relax vs 7 RELION runs have equal
+means (0.3275 vs 0.3312, Welch p = 0.29) and relax's sd is 2.1x RELION's (0.0081 vs
+0.0039, F p = 0.049, Levene p = 0.023). There is no per-step mechanism: repeats of both
+engines first differ at iterations 48-61 and diverge at the same rate through iteration
+70, and one-step relax replays from RELION's checkpoints at iterations 60-199 match
+RELION's next iteration at its 6-decimal STAR rounding (class-2 weight within 4.5e-7,
+alternating sign; class assignment 100%). Evidence and tools:
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/HANDOFF.json`.
 
 VDAM on the resident engine (2026-09-25, in progress): `--pass2_engine adaptive` runs the
