@@ -330,6 +330,10 @@ LOC_BUDGETS = {
     "estep": (2525, (
         "dense_adapter.py", "estep_common.py", "estep_meta_updates.py", "sparse_pass2_estep.py",
     )),
+    # The transitional adaptive-route E-step (2026-09-25): VDAM on auto-refine's
+    # adaptive route and the resident engine. It replaces sparse_pass2_estep.py,
+    # whose lines leave the estep budget when the exact-local VDAM route is removed.
+    "adaptive_estep": (350, ("adaptive_estep.py",)),
     "reconstruction_state": (790, ("m_step.py", "mstep_single_class.py", "state.py")),
     # relion/initial_noise.py gained 53 lines bringing an optics group on another pixel
     # size or box onto the model grid for the start-up noise (RELION resizeMap and
