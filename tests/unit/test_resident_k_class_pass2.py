@@ -189,6 +189,22 @@ def test_slot_mstep_blocks_cover_each_slot_once():
     assert covered[0] == list(range(0, 9)) and covered[1] == list(range(9, 20))
 
 
+def test_live_block_spec_picks_the_smallest_block_holding_the_live_rows():
+    from dataclasses import dataclass
+
+    @dataclass(frozen=True)
+    class Spec:
+        mstep_block_rows: int
+
+    spec = Spec(2048)
+    assert rp._live_block_spec(spec, 0).mstep_block_rows == 32
+    assert rp._live_block_spec(spec, 32).mstep_block_rows == 32
+    assert rp._live_block_spec(spec, 33).mstep_block_rows == 256
+    assert rp._live_block_spec(spec, 257).mstep_block_rows == 2048
+    assert rp._live_block_spec(spec, 5000) is spec
+    assert rp._live_block_spec(Spec(128), 3).mstep_block_rows == 16
+
+
 # ---------------------------------------------------------------------------
 # GPU: the whole K-class pass against the compact fused engine
 # ---------------------------------------------------------------------------

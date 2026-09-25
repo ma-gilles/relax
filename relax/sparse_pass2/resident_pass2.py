@@ -5684,6 +5684,31 @@ def _run_resident_chunk_program(
     return tuple(Ft_y_out), tuple(Ft_ctf_out), stats
 
 
+# Divisors of the M-step block for classes with few live rows. The pixel-axis
+# block costs in proportion to its rows whether or not they carry weight, and
+# at 50k/256 one class of a chunk has about 40 live rows against a 2048-row
+# block. Three sizes bound the programs a capacity class compiles.
+_LIVE_BLOCK_DIVISORS = (64, 8, 1)
+_MIN_LIVE_BLOCK_ROWS = 16
+
+
+def _live_block_spec(spec: "_ChunkProgramSpec", n_live_rows: int) -> "_ChunkProgramSpec":
+    """The chunk spec whose M-step block is the smallest ladder size holding ``n_live_rows``.
+
+    The ladder is the configured block divided by 64, by 8 and by 1 (no smaller
+    than 16 rows); a slot with more live rows than the configured block walks
+    it in configured blocks as before. Every ladder size is a power of two that
+    divides the row capacity, so a block never runs past the capacity.
+    """
+
+    full = int(spec.mstep_block_rows)
+    for divisor in _LIVE_BLOCK_DIVISORS:
+        rows = max(full // divisor, min(_MIN_LIVE_BLOCK_ROWS, full))
+        if int(n_live_rows) <= rows:
+            break
+    return spec if rows == full else dataclass_replace(spec, mstep_block_rows=rows)
+
+
 def _run_resident_chunk_stages(
     rows: _ChunkRowArrays,
     operands: _ChunkStageOperands,
@@ -5719,7 +5744,6 @@ def _run_resident_chunk_stages(
     if timing_hook is not None:
         timing_hook("posterior", posterior.row_posterior)
 
-    block_rows = int(spec.mstep_block_rows)
     mstep = _initial_mstep_carry(Ft_y_total[0], Ft_ctf_total[0], operands, tables, spec=spec)
     blocks = _make_mstep_block_inputs(rows, posterior, n_slots=int(spec.n_slots))
     slot_offsets = np.asarray(jax.device_get(blocks.slot_offsets), dtype=np.int64)
@@ -5728,13 +5752,15 @@ def _run_resident_chunk_stages(
         row_lo, row_hi = int(slot_offsets[slot_index]), int(slot_offsets[slot_index + 1])
         mstep = mstep._replace(Ft_y=Ft_y_total[slot_index], Ft_ctf=Ft_ctf_total[slot_index])
         class_blocks = blocks._replace(class_row_range=blocks.slot_offsets[slot_index : slot_index + 2])
+        block_spec = _live_block_spec(spec, row_hi - row_lo)
+        block_rows = int(block_spec.mstep_block_rows)
         # Blocks past the slot's live rows hold only rows without weight, of
         # this slot or another: the weighted sums, the Wavg terms, the noise
         # partials and both adjoint scatters would add exact zeros.
         for start in range((row_lo // block_rows) * block_rows, row_hi, block_rows):
             if glue_jit:
                 mstep = _resident_mstep_block_program(
-                    _device_int32(start), class_blocks, operands, tables, mstep, spec=spec
+                    _device_int32(start), class_blocks, operands, tables, mstep, spec=block_spec
                 )
                 continue
             mstep = _resident_mstep_block_at(
@@ -5743,7 +5769,7 @@ def _run_resident_chunk_stages(
                 operands,
                 tables,
                 mstep,
-                spec=spec,
+                spec=block_spec,
                 cuda_backproject=em_cuda_kernels,
             )
         if mstep.scale_xa_per_image is not None:
