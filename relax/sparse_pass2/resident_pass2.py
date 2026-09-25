@@ -1671,6 +1671,11 @@ def _resident_pass2(
             int(np.asarray(tilt.unit_image_offsets)[-1]) == n_images,
             "the tilt layout must cover every image of the half",
         )
+        # The offset prior is the particle's (tilt.unit_translation_prior), not an image's.
+        _require(
+            translation_log_prior is None and translation_prior_centers is None,
+            "a tilt pass takes its offset prior from tilt.unit_translation_prior",
+        )
     n_coarse_trans = int(np.asarray(translations).shape[0])
     symmetry_label = canonicalize_rotational_symmetry(symmetry_label)
     # The coarse grid is RELION's asymmetric-unit HEALPix sampling
