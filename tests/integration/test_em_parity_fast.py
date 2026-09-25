@@ -1354,15 +1354,30 @@ def test_em_parity_fast_k1_multioptics_coldstart(tmp_path):
         float(starfile.read(str(MULTIOPTICS_RELION_DIR / f"run_it{i:03d}_half1_model.star"))["model_general"]["rlnAveragePmax"])
         for i in (1, 2, 3)
     ]
-    _write_quality_ledger(
-        "k1_multioptics_coldstart",
-        {
-            "k1_multioptics_pmax_trajectory_relax": pmax_traj.tolist(),
-            "k1_multioptics_pmax_trajectory_relion": relion_pmax,
-            "k1_multioptics_walltime_s": elapsed,
-        },
-        output_dir=output_dir,
+    from recovar.utils import helpers as _recovar_helpers
+
+    # relax writes its maps with write_mrc and RELION's go through load_relion_volume (see
+    # _run_k1_coldstart for the frame conventions).
+    h1_corr, h2_corr = (
+        _map_correlation(
+            np.asarray(_recovar_helpers.load_mrc(str(output_dir / f"final_half{h}.mrc")), dtype=np.float64),
+            np.asarray(
+                _recovar_helpers.load_relion_volume(str(MULTIOPTICS_RELION_DIR / f"run_it003_half{h}_class001.mrc")),
+                dtype=np.float64,
+            ),
+        )
+        for h in (1, 2)
     )
-    print(f"  multioptics ave_Pmax relax={pmax_traj.tolist()} relion={relion_pmax} walltime_s={elapsed:.1f}",
-          file=sys.stderr, flush=True)
+    payload = {
+        "k1_multioptics_coldstart_half1_corr_vs_relion_it003": h1_corr,
+        "k1_multioptics_coldstart_half2_corr_vs_relion_it003": h2_corr,
+        "k1_multioptics_coldstart_pmax_iter3_recovar": float(pmax_traj[2]),
+        "k1_multioptics_coldstart_pmax_iter3_relion": relion_pmax[2],
+        "k1_multioptics_coldstart_pmax_iter3_abs_diff": abs(float(pmax_traj[2]) - relion_pmax[2]),
+        "k1_multioptics_coldstart_pmax_trajectory_recovar": pmax_traj.tolist(),
+        "k1_multioptics_coldstart_pmax_trajectory_relion": relion_pmax,
+        "k1_multioptics_coldstart_walltime_s": elapsed,
+    }
+    ledger = _write_quality_ledger("k1_multioptics_coldstart", payload, output_dir=output_dir)
+    logger.info("K=1 multi-optics cold-start ledger: %s", ledger)
     _assert_fsc_gate("k1_multioptics_coldstart", output_dir)
