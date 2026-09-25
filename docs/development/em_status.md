@@ -136,8 +136,11 @@ VDAM on the resident engine (2026-09-25, in progress): `--pass2_engine adaptive`
 InitialModel E-step on auto-refine's adaptive route (`relax/vdam/adaptive_estep.py`), so its
 pass 2 is the compact or, with `RELAX_SPARSE_PASS2_RESIDENT=1`, the device-resident engine.
 RELION's three `--grad` E-step differences map onto it: the residual backprojection
-(`mstep_subtract_ctf_projection`, now on resident), two pseudo-halfset BPref slots (one call per
-pseudo-halfset for now) and the coarse-only `maximum_significants = 100 K`. K=1 only. The switch
+(`mstep_subtract_ctf_projection`, now on resident), the pseudo-halfset BPref slots (one resident pass
+whose accumulator slot is `class + K * pseudo-halfset`, `docs/development/resident_segments.md`) and the
+coarse-only `maximum_significants = 100 K`. K>1 runs through the same pass (2026-09-25; pdb K2 seed 29
+iterations 1-12 match the exact-local route to 7.9e-6 in the maps with identical classes and angles,
+job 14444404). The switch
 is transitional: remove with the old path (the exact-local VDAM route in
 `relax/vdam/sparse_pass2_estep.py`) once the resident route is qualified and made the default.
 Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamres_20260925/HANDOFF.json`.
