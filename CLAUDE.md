@@ -183,6 +183,13 @@ your handoff. Rebasing an implementation creates a new candidate that needs fres
 validation, except when every commit it moves over changes only docs, tests or scripts (no
 code under `relax/`, no native sources, no pixi manifest or lock): then the CPU checks of the
 rebased head suffice.
+
+Validate forward: when a candidate passed its GPU validation at the previous head, the rebase
+is conflict-free, and main's new code commits touch neither the candidate's files nor its
+engine path, push after the CPU checks at the rebased head and run the GPU validation
+afterwards, fixing forward if it fails. A fresh GPU run before pushing is required only when
+main's new code overlaps the candidate's files or engine path. This keeps a candidate from
+chasing a main that moves every hour.
 Never force-push unless explicitly asked. Before pushing or opening a PR, follow
 all applicable checks and table requirements in CONTRIBUTING.md and scoped guides.
 
