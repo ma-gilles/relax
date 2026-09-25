@@ -256,9 +256,7 @@ def _particle_state_from_star(
 
 
 def _write_model_star(path: str, state: InitialModelState, class_mrcs: tuple[str, ...]) -> None:
-    current_resolution_angstrom = (
-        1.0 / float(state.current_resolution) if float(state.current_resolution) > 0.0 else float("inf")
-    )
+    current_resolution_angstrom = 1.0 / float(state.current_resolution) if state.current_resolution > 0 else np.inf
     pixel_x_ori = float(state.pixel_size) * float(state.ori_size)
     n_shells = int(state.ori_size) // 2 + 1
     pdf_direction = np.asarray(state.pdf_direction, dtype=np.float64)
@@ -275,8 +273,10 @@ def _write_model_star(path: str, state: InitialModelState, class_mrcs: tuple[str
         f"_rlnSigmaOffsetsAngst {float(np.sqrt(max(float(state.sigma2_offset), 0.0))):.12g}\n\n",
         "data_model_classes\n\nloop_\n_rlnReferenceImage #1\n_rlnClassDistribution #2\n_rlnEstimatedResolution #3\n",
     ]
-    for class_mrc, probability in zip(class_mrcs, np.asarray(state.pdf_class)):
-        lines.append(f"{class_mrc} {float(probability):.12g} {current_resolution_angstrom:.12g}\n")
+    for k, (class_mrc, probability) in enumerate(zip(class_mrcs, np.asarray(state.pdf_class))):
+        # RELION's per-class resolution: last shell before the SSNR first drops below one (ml_model.cpp:1644-1657).
+        maxres = int(np.argmin(np.append(state.data_vs_prior_class[k], 0.0) >= 1.0)) - 1
+        lines.append(f"{class_mrc} {float(probability):.12g} {pixel_x_ori / maxres if maxres > 0 else np.inf:.12g}\n")
 
     for k in range(int(state.K)):
         lines.append(

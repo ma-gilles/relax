@@ -2324,7 +2324,7 @@ def test_model_star_uses_relion_model_blocks(tmp_path):
     state.ave_Pmax = 0.625
     state.sigma2_offset = 49.0
     state.tau2_class[:] = np.asarray([[1.0, 2.0, 3.0, 4.0, 5.0], [5.0, 4.0, 3.0, 2.0, 1.0]])
-    state.data_vs_prior_class[:] = np.asarray([[10.0, 9.0, 8.0, 7.0, 6.0], [1.0, 2.0, 3.0, 4.0, 5.0]])
+    state.data_vs_prior_class[:] = np.asarray([[10.0, 9.0, 8.0, 7.0, 6.0], [1.0, 2.0, 0.5, 4.0, 5.0]])
     state.sigma2_class[:] = np.asarray([[0.1, 0.2, 0.3, 0.4, 0.5], [0.5, 0.4, 0.3, 0.2, 0.1]])
     state.fourier_coverage_class[:] = np.asarray(
         [[0.9, 0.8, 0.7, 0.6, 0.5], [0.1, 0.2, 0.3, 0.4, 0.5]]
@@ -2352,8 +2352,10 @@ def test_model_star_uses_relion_model_blocks(tmp_path):
     assert "_rlnReferenceSigma2" in text
     assert "_rlnFourierCompleteness" in text
     assert "_rlnReferenceImage" in text
-    assert "run_it001_class001.mrc 0.25 2.66666666667" in text
-    assert "run_it001_class002.mrc 0.75 2.66666666667" in text
+    # Per-class resolution from each class's SSNR, not the shared current resolution:
+    # class 1 keeps SSNR >= 1 to shell 4 (8 / 4 A), class 2 drops below one at shell 2 (8 / 1 A).
+    assert "run_it001_class001.mrc 0.25 2\n" in text
+    assert "run_it001_class002.mrc 0.75 8\n" in text
     assert "1 0.125 8 9 0 0.8 0.2 2" in text
     assert "1 0.125 8 2 0 0.2 0.4 4" in text
     assert "_rlnOrientationDistribution" in text
