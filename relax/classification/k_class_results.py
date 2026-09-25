@@ -70,9 +70,11 @@ def _logsumexp_np(values: np.ndarray, axis: int) -> np.ndarray:
 
 
 def _stack_or_none(values):
+    # Host stack: every consumer of the selected poses reads them with
+    # np.asarray, and a device stack compiled one program per subset size.
     if not values:
         return None
-    return jnp.stack([jnp.asarray(value) for value in values], axis=0)
+    return np.stack([np.asarray(value) for value in values], axis=0)
 
 
 
@@ -101,16 +103,8 @@ def _selected_by_class(per_class_values, class_assignments: np.ndarray, *, direc
     stacked = _stack_or_none(per_class_values)
     if stacked is None:
         return None
-    return _select_stacked_rows_by_class(stacked, np.asarray(class_assignments, dtype=np.int32))
-
-
-
-@jax.jit
-def _select_stacked_rows_by_class(stacked, class_assignments):
-    """Pick each image's row from its assigned class in one compiled program."""
-
-    image_indices = jnp.arange(class_assignments.shape[0])
-    return stacked[class_assignments, image_indices]
+    class_assignments = np.asarray(class_assignments, dtype=np.int32)
+    return stacked[class_assignments, np.arange(class_assignments.shape[0])]
 
 
 

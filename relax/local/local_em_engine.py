@@ -370,6 +370,28 @@ def _accumulate_class_segment_statistics(
             )[:rows][np.arange(rows), winner_row]
 
 
+@jax.jit
+def _add_rows_at(table, indices, rows):
+    """``table.at[indices].add(rows)``; out-of-range indices (padding) are dropped."""
+
+    return table.at[indices].add(rows.astype(table.dtype), mode="drop")
+
+
+def _add_bucket_rows(table, image_indices, rows, n_rows: int):
+    """Add a bucket's first ``n_rows`` rows into ``table[image_indices]``.
+
+    The padded tail stays in the operand with an out-of-range index, so the
+    program depends on the bucket's physical row count, not on how many of its
+    rows are real (a changing tail used to compile one slice and one scatter
+    per count). Image indices are unique, so every table entry receives at
+    most one addition, exactly as with the trimmed rows.
+    """
+
+    indices = np.full(int(rows.shape[0]), int(table.shape[0]), dtype=np.int32)
+    indices[: int(n_rows)] = np.asarray(image_indices, dtype=np.int32)[: int(n_rows)]
+    return _add_rows_at(table, jnp.asarray(indices), rows)
+
+
 def _unpadded_rows(array, n_rows: int):
     """Return the first ``n_rows`` rows, without emitting a slice when it is a no-op.
 
@@ -3096,8 +3118,11 @@ def run_local_em_exact(
             if accumulate_noise and not (
                 skip_deferred_zero_norm and return_big_jit_deferred_mstep_inputs
             ):
-                noise_norm_correction = noise_norm_correction.at[jnp.asarray(bucket_image_indices, dtype=jnp.int32)].add(
-                    _unpadded_rows(bucket_norm_correction, unpadded_batch_size).astype(noise_norm_correction.dtype),
+                noise_norm_correction = _add_bucket_rows(
+                    noise_norm_correction,
+                    bucket_image_indices,
+                    bucket_norm_correction,
+                    unpadded_batch_size,
                 )
             timing.big_jit_bucket_s += time.time() - big_jit_t0
             big_jit_bucket_count += 1
