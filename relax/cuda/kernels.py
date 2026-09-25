@@ -4265,14 +4265,16 @@ def _prepare_relion_fine_diff2_fused_translate_flat_rows_operands(
         reference.ndim != 2
         or row_image_ids.shape != (reference.shape[0],)
         or image.ndim != 2
-        or translation_angles.ndim != 2
-        or translation_angles.shape[1] != 2
+        or translation_angles.ndim not in (2, 3)
+        or translation_angles.shape[-1] != 2
+        # [T, 2] shared, or [B, T, 2] one table per image (tilt images).
+        or (translation_angles.ndim == 3 and translation_angles.shape[0] != image.shape[0])
         or weight.shape != image.shape
         or reference.shape[1] != image.shape[1]
         or reference.shape[0] <= 0
         or reference.shape[1] <= 0
         or image.shape[0] <= 0
-        or translation_angles.shape[0] <= 0
+        or translation_angles.shape[-2] <= 0
     ):
         raise ValueError(
             "flat-row RELION fine diff2 operands have inconsistent shapes: "
@@ -4358,7 +4360,7 @@ def relion_fine_diff2_fused_translate_flat_rows_f32(
     _ensure_ffi()
 
     out_type = jax.ShapeDtypeStruct(
-        (reference.shape[0], translation_angles.shape[0]),
+        (reference.shape[0], translation_angles.shape[-2]),
         jnp.float32,
     )
     return jax.ffi.ffi_call(
@@ -4438,7 +4440,7 @@ def relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
     _ensure_ffi()
 
     out_type = jax.ShapeDtypeStruct(
-        (reference.shape[0], translation_angles.shape[0]),
+        (reference.shape[0], translation_angles.shape[-2]),
         jnp.float32,
     )
     operands = (

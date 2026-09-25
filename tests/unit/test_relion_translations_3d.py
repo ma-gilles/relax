@@ -4,6 +4,7 @@ import math
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax import sampling
 
@@ -49,7 +50,7 @@ def _relion_translations_in_pixel_3d(t, offset_step, order, pixel_size, perturba
 @pytest.mark.parametrize("offset_range, offset_step", [(6.0, 3.0), (8.5, 4.25), (5.0, 2.0), (0.0, 2.0)])
 def test_3d_grid_is_relions_enumeration_and_keeps_the_boundary(offset_range, offset_step):
     got = sampling.get_relion_translation_grid_3d(offset_range, offset_step)
-    np.testing.assert_array_equal(got, _relion_set_translations_3d(offset_range, offset_step))
+    assert_matches(got, _relion_set_translations_3d(offset_range, offset_step), strict=True)
 
 
 @pytest.mark.parametrize("order, perturbation", [(0, 0.0), (1, 0.0), (1, 0.37), (2, -0.21)])
@@ -60,5 +61,5 @@ def test_3d_oversampling_is_relions_in_value_and_order(order, perturbation):
         coarse, step, oversampling_order=order, pixel_size=pixel, random_perturbation=perturbation
     )
     expected = [row for t in coarse for row in _relion_translations_in_pixel_3d(t, step, order, pixel, perturbation)]
-    np.testing.assert_array_equal(fine, np.array(expected))
-    np.testing.assert_array_equal(parent, np.repeat(np.arange(len(coarse)), 8**order))
+    assert_matches(fine, np.array(expected), strict=True)
+    assert_matches(parent, np.repeat(np.arange(len(coarse)), 8**order))
