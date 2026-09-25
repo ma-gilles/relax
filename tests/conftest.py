@@ -13,6 +13,16 @@ TESTS_DIR = Path(__file__).resolve().parent
 if str(TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(TESTS_DIR))
 
+# GPU 0 of the shared development node belongs to other users. Outside Slurm, a session whose
+# CUDA_VISIBLE_DEVICES is unset or includes GPU 0 runs on the CPU, set before JAX is imported
+# (helpers/gpu_guard.py); GPU tests then skip with the reason.
+from helpers.gpu_guard import cpu_only_reason, gpu_uuids_by_index  # noqa: E402
+
+GPU_GUARD_REASON = cpu_only_reason(os.environ, gpu_uuids_by_index())
+if GPU_GUARD_REASON:
+    os.environ["JAX_PLATFORMS"] = "cpu"
+    print(f"relax tests: running on the CPU: {GPU_GUARD_REASON}", file=sys.stderr, flush=True)
+
 _REQUIRE_CUSTOM_CUDA_FOR_TESTS_ENV = "RELAX_REQUIRE_CUSTOM_CUDA_FOR_TESTS"
 _CUSTOM_CUDA_LIB_UNSET = object()
 _custom_cuda_test_lib = _CUSTOM_CUDA_LIB_UNSET
@@ -75,6 +85,10 @@ def gpu_subprocess_env():
     env["JAX_PLATFORMS"] = "cuda,cpu"
     env["JAX_PLATFORM_NAME"] = "gpu"
     env["PYTHONNOUSERSITE"] = "1"
+    if GPU_GUARD_REASON:
+        env["JAX_PLATFORMS"] = "cpu"
+        env.pop("JAX_PLATFORM_NAME", None)
+        return env
     assigned_visible_devices = env.get("CUDA_VISIBLE_DEVICES")
     if not assigned_visible_devices:
         gpu_idx = _pick_most_free_gpu_index()
@@ -241,6 +255,12 @@ def pytest_configure(config):
     )
 
 
+def pytest_report_header(config):
+    if GPU_GUARD_REASON:
+        return f"relax tests: running on the CPU: {GPU_GUARD_REASON}"
+    return None
+
+
 def pytest_collection_modifyitems(config, items):
     run_long_test = config.getoption("--long-test")
     run_em_parity_long = config.getoption("--em-parity-long")
@@ -256,11 +276,13 @@ def pytest_collection_modifyitems(config, items):
     except Exception:
         pass
     run_gpu = config.getoption("--run-gpu") or run_long_test or run_em_parity_long or gpu_available
+    if GPU_GUARD_REASON:
+        run_gpu = False
     run_integration = config.getoption("--run-integration") or run_long_test or run_em_parity_long
     run_tiny_metrics = config.getoption("--run-tiny-metrics")
 
     skip_slow = pytest.mark.skip(reason="need --run-slow to run")
-    skip_gpu = pytest.mark.skip(reason="need --run-gpu to run")
+    skip_gpu = pytest.mark.skip(reason=f"CPU only: {GPU_GUARD_REASON}" if GPU_GUARD_REASON else "need --run-gpu to run")
     skip_integration = pytest.mark.skip(reason="need --run-integration to run")
     skip_tiny_metrics = pytest.mark.skip(reason="need --run-tiny-metrics to run")
     skip_long_test = pytest.mark.skip(reason="need --long-test to run")

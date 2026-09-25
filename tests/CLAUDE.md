@@ -5,6 +5,12 @@
 ### NEVER widen tolerance to make tests pass
 Do not change `_TOL`, `tol_frac`, `HIGH_VARIANCE_TOKENS`, or add skip/ignore logic for specific metrics. If a test fails, **fix the code**, not the test. You may **suggest** a tolerance change and wait for explicit approval, but never implement it unilaterally.
 
+### Local runs stay off GPU 0
+Outside a Slurm allocation, a test session whose `CUDA_VISIBLE_DEVICES` is unset or includes
+GPU 0 of the shared node (by index or UUID) runs on the CPU, and GPU tests skip with that reason
+(`tests/helpers/gpu_guard.py`, applied in `conftest.py` before JAX is imported). To run GPU tests
+locally, set `CUDA_VISIBLE_DEVICES` to the UUID of an idle GPU 1-3 after checking `nvidia-smi`.
+
 ### No bitwise or ULP-exact float asserts
 No test requires bitwise or ULP-exact equality of floating-point values, not even under
 `RELAX_EM_DETERMINISTIC_REDUCTIONS=1` (user rule, 2026-09-24): GPU reductions race, and CPU
