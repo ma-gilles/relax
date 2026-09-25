@@ -990,8 +990,8 @@
         1.0,
         1.0
        ],
-       "fsc_auc": 0.9999988,
-       "min_shell_fsc_in_band": 0.9999887
+       "fsc_auc": 0.9999982,
+       "min_shell_fsc_in_band": 0.9999781
       },
       "half2": {
        "fsc": [
@@ -1017,37 +1017,37 @@
         1.0,
         1.0,
         1.0,
-        1.0,
         0.9999,
-        0.9999,
-        0.9998,
-        0.9997,
-        0.9996,
-        0.9996,
-        0.9997,
-        0.9997,
-        0.9998,
-        0.9999,
-        0.9999,
-        1.0,
-        1.0,
         0.9999,
         0.9999,
         0.9998,
         0.9997,
-        0.9996,
         0.9996,
         0.9995,
         0.9996,
+        0.9997,
+        0.9998,
+        0.9999,
+        0.9999,
+        1.0,
+        1.0,
+        0.9999,
+        0.9999,
+        0.9997,
         0.9996,
+        0.9995,
+        0.9994,
+        0.9994,
+        0.9994,
+        0.9995,
         0.9998,
-        0.9998,
         0.9997,
         0.9997,
         0.9997,
-        0.9997,
-        0.9997,
-        0.9997,
+        0.9996,
+        0.9996,
+        0.9996,
+        0.9996,
         0.9997,
         0.9997,
         0.9997,
@@ -1059,25 +1059,25 @@
         0.9997,
         0.9997
        ],
-       "fsc_auc": 0.9998327,
-       "min_shell_fsc_in_band": 0.9995376
+       "fsc_auc": 0.999798,
+       "min_shell_fsc_in_band": 0.9993637
       }
      },
      "pmax": {
       "relax": {
-       "mean": 0.8406941202402115,
+       "mean": 0.8406810904383659,
        "n": 5000,
-       "p10": 0.5503004014492034,
-       "p50": 0.9175241589546204,
-       "p90": 0.9992468059062958
+       "p10": 0.5501562535762787,
+       "p50": 0.9175248742103577,
+       "p90": 0.9992471039295197
       },
       "relax_minus_relion": {
-       "mean": 3.251384021148771e-05,
-       "mean_abs": 5.5262152709197786e-05,
+       "mean": 1.9484038365937172e-05,
+       "mean_abs": 6.816065106506335e-05,
        "n": 5000,
-       "p10": -4.39097434998037e-05,
-       "p50": -1.8455505401693273e-08,
-       "p90": 4.616499710088374e-05
+       "p10": -4.57827003478739e-05,
+       "p50": -5.01537322783463e-08,
+       "p90": 4.491460342402888e-05
       },
       "relion": {
        "mean": 0.8406616064,
@@ -1089,26 +1089,28 @@
      },
      "source": {
       "gpu_model": "NVIDIA H100 80GB HBM3",
-      "item": "os1_rep1",
-      "job": "14421197",
+      "item": "os1_rep4",
+      "job": "14441863",
       "observed_half2_fsc_auc_modes": {
-       "0.9998327": 3,
+       "0.999798": 2,
+       "0.9998327": 2,
        "0.9999659": 2,
-       "1.0": 1
+       "1.0": 2
       },
       "other_failed_items": [],
-      "pin_mode": "lowest of 6 same-code repeats (user-approved 2026-09-25)",
-      "repeats_job": "14421197",
-      "run_root": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_test_tiers/os1reps_8e5ec5e_20260925_071237",
-      "sha": "8e5ec5e2116760c4bc7db4d09932c29629f1d733",
-      "tie_mechanism": "near tie at iteration 2 in half 2: 3 of 2485 particles take a best rotation one HEALPix step away (~2.7 deg) and one translation moves half a pixel; RELION shares it (its same-command repeat gives half-2 FSC-AUC 0.9998327). The pinned comparison is one-sided, so every observed mode passes at the approved 1e-5 tolerance.",
+      "pin_mode": "lowest of 8 same-code repeats (user-approved 2026-09-25)",
+      "repeats_job": "14434337 (r1-r3), 14441863 (r4-r8)",
+      "repeats_sha": "8b82249",
+      "run_root": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_test_tiers/os1reps_8b82249_20260925",
+      "sha": "8b822491a89d1ca7b14f1ee656c41132df4f9b0b",
+      "tie_mechanism": "same near tie at iteration 2 in half 2 as the 8e5ec5e pin (fdabac1), now with a fourth mode 0.999798 seen on main and on the K>1 candidate alike; the one-sided comparison passes every observed mode at the approved 1e-5 tolerance.",
       "tier_status": "pass",
-      "written_utc": "2026-09-25T12:24:08Z"
+      "written_utc": "2026-09-25T20:28:29Z"
      },
      "summary": {
-      "mean_fsc_auc": 0.9999158,
-      "min_fsc_auc": 0.9998327,
-      "min_shell_fsc_in_band": 0.9995376
+      "mean_fsc_auc": 0.9998981,
+      "min_fsc_auc": 0.999798,
+      "min_shell_fsc_in_band": 0.9993637
      }
     },
     "k1_perturbreplay": {
