@@ -28,6 +28,25 @@ import jax.numpy as jnp
 import numpy as np
 
 _FAST_SIGNIFICANCE_TOPK = 64
+# XLA's GPU TopKSplitter rewrites top-k over more than 2**20 samples per row. With a
+# single row it fails the HLO verifier ("compare-greater-than ... called from sort ...
+# to have 4 parameters") or does not terminate (jax/jaxlib 0.9.0.1; coarse HP3 rows have
+# 36,864 x 29 = 1,069,056 samples, and the last batch of a half can hold one image).
+# Two or more rows compile normally.
+_TOPK_SPLITTER_MIN_SAMPLES = 1 << 20
+
+
+def top_k_rows(x, k):
+    """``jax.lax.top_k`` over the last axis of ``(rows, samples)``, exact for every shape.
+
+    A single row longer than the splitter threshold is scored as two identical rows,
+    which avoids the XLA failure above; the result is the first row's.
+    """
+    x = jnp.asarray(x)
+    if x.ndim == 2 and x.shape[0] == 1 and x.shape[-1] > _TOPK_SPLITTER_MIN_SAMPLES:
+        values, indices = jax.lax.top_k(jnp.concatenate([x, x]), k)
+        return values[:1], indices[:1]
+    return jax.lax.top_k(x, k)
 
 
 def build_adaptive_pass2_grids(
@@ -490,7 +509,7 @@ def _find_significant_mask_topk(
     """
 
     n_images, _ = weights_flat.shape
-    top_weights, _ = jax.lax.top_k(weights_flat, topk)
+    top_weights, _ = top_k_rows(weights_flat, topk)
     cumsum = jnp.cumsum(top_weights, axis=-1)
     total = weights_flat.sum(axis=-1, keepdims=True)
     positive_counts = jnp.sum(weights_flat > 0.0, axis=-1)

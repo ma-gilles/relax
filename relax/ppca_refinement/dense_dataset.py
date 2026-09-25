@@ -25,7 +25,7 @@ from recovar.reconstruction import noise as noise_utils
 
 from relax.helpers.fourier_window import make_fourier_window_spec
 from relax.helpers.half_spectrum import make_scoring_half_image_weights
-from relax.helpers.oversampling import find_significant_mask
+from relax.helpers.oversampling import find_significant_mask, top_k_rows
 from relax.helpers.preprocessing import prepare_reconstruction_batch, preprocess_batch
 from relax.ppca_refinement.config import (
     GeometryConfig,
@@ -753,7 +753,7 @@ def compute_dense_ppca_adaptive_significance(
         best_flat = jnp.argmax(score_flat, axis=-1).astype(jnp.int32)
         pmax = jnp.max(weights, axis=-1).astype(jnp.float32)
         raw_top_count = top_pose_candidate_count(pose_selection, int(score_flat.shape[1]))
-        top_scores_raw, top_flat_raw = jax.lax.top_k(score_flat, raw_top_count)
+        top_scores_raw, top_flat_raw = top_k_rows(score_flat, raw_top_count)
         top_rotation_raw = (top_flat_raw // int(n_trans)).astype(jnp.int32)
         top_translation_raw = (top_flat_raw % int(n_trans)).astype(jnp.int32)
         top_selection = select_distinct_top_poses(

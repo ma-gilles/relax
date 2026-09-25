@@ -1729,3 +1729,20 @@ class TestMaskedCartesianGrid:
             atol=1e-5,
             rtol=1e-5,
         )
+
+
+def test_top_k_rows_matches_lax_top_k_for_single_rows_above_the_splitter_threshold():
+    """A lone row above 2**20 samples is scored as two rows; values and indices are unchanged."""
+    import jax
+    import jax.numpy as jnp
+
+    from relax.helpers.oversampling import _TOPK_SPLITTER_MIN_SAMPLES, top_k_rows
+
+    rng = np.random.default_rng(4)
+    for rows in (1, 3):
+        x = jnp.asarray(rng.random((rows, _TOPK_SPLITTER_MIN_SAMPLES + 17), dtype=np.float32))
+        x = x.at[:, 5].set(x[:, 9])  # a tie keeps the lower index first
+        expected = jax.lax.top_k(x, 64)
+        actual = top_k_rows(x, 64)
+        assert np.array_equal(np.asarray(actual[0]), np.asarray(expected[0]))
+        assert np.array_equal(np.asarray(actual[1]), np.asarray(expected[1]))
