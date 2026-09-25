@@ -799,6 +799,228 @@
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p2r_noise1_50k_relion_repeat_s29/output/run_it200_model.star"
     }
    ]
+  },
+  {
+   "id": "pdb128_k2_band",
+   "K": 2,
+   "reference": {
+    "kind": "gt",
+    "frame": "relax",
+    "paths": [
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k2_5k_128/reference_gt_class001.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k2_5k_128/reference_gt_class002.mrc"
+    ]
+   },
+   "mask": {
+    "key": "pdb_k2_5k128_c1",
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_pdb_k2_5k_128/masks/pdb_k2_5k128_c1/pdb_k2_5k128_c1_mask.mrc",
+    "sha256": "aca84f352343539e736efb667d15b7a7716627c039480f45270faa10ef9cce7f"
+   },
+   "arms": [
+    {
+     "label": "relion_s29",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relion_k2/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relion_k2/output/run_it200_class002.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relion_k2/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s29",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relax_k2_out/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relax_k2_out/run_it200_class002.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relax_k2_out/run_it200_model.star"
+    },
+    {
+     "label": "relion_s41",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relion_k2/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relion_k2/output/run_it200_class002.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relion_k2/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s41",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relax_k2_out/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relax_k2_out/run_it200_class002.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relax_k2_out/run_it200_model.star"
+    },
+    {
+     "label": "relion_s53",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relion_k2/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relion_k2/output/run_it200_class002.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relion_k2/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s53",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relax_k2_out/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relax_k2_out/run_it200_class002.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relax_k2_out/run_it200_model.star"
+    },
+    {
+     "label": "x_relion_s29_20260919",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k2_relion/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k2_relion/output/run_it200_class002.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k2_relion/output/run_it200_model.star"
+    },
+    {
+     "label": "x_relax_s29_20260919",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k2_recovar/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k2_recovar/output/run_it200_class002.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k2_recovar/output/run_it200_model.star"
+    }
+   ]
+  },
+  {
+   "id": "pdb128_k4_band",
+   "K": 4,
+   "reference": {
+    "kind": "gt",
+    "frame": "relax",
+    "paths": [
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/reference_gt_class001.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/reference_gt_class002.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/reference_gt_class003.mrc",
+     "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/reference_gt_class004.mrc"
+    ]
+   },
+   "mask": {
+    "key": "pdb_k4_5k128_c1",
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_pdb_k4_5k_128/masks/pdb_k4_5k128_c1/pdb_k4_5k128_c1_mask.mrc",
+    "sha256": "41916d7c348cc82afc7e25c03fad1322f6692e5ba7283c2a428e56214a4078e9"
+   },
+   "arms": [
+    {
+     "label": "relion_s29",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relion_k4/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relion_k4/output/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relion_k4/output/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relion_k4/output/run_it200_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relion_k4/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s29",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relax_k4_out/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relax_k4_out/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relax_k4_out/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relax_k4_out/run_it200_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29/relax_k4_out/run_it200_model.star"
+    },
+    {
+     "label": "relion_s41",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relion_k4/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relion_k4/output/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relion_k4/output/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relion_k4/output/run_it200_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relion_k4/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s41",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relax_k4_out/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relax_k4_out/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relax_k4_out/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relax_k4_out/run_it200_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s41/relax_k4_out/run_it200_model.star"
+    },
+    {
+     "label": "relion_s53",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relion_k4/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relion_k4/output/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relion_k4/output/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relion_k4/output/run_it200_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relion_k4/output/run_it200_model.star"
+    },
+    {
+     "label": "relax_s53",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relax_k4_out/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relax_k4_out/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relax_k4_out/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relax_k4_out/run_it200_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s53/relax_k4_out/run_it200_model.star"
+    },
+    {
+     "label": "x_relion_s29_20260919",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_relion/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_relion/output/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_relion/output/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_relion/output/run_it200_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_relion/output/run_it200_model.star"
+    },
+    {
+     "label": "x_relax_s29_20260919",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_recovar/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_recovar/output/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_recovar/output/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_recovar/output/run_it200_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_recovar/output/run_it200_model.star"
+    },
+    {
+     "label": "x_relion_main_pair_02b4cb3",
+     "engine": "relion",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p3_pdb128_k4_s29/relion/output/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p3_pdb128_k4_s29/relion/output/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p3_pdb128_k4_s29/relion/output/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p3_pdb128_k4_s29/relion/output/run_it200_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p3_pdb128_k4_s29/relion/output/run_it200_model.star"
+    },
+    {
+     "label": "x_relax_main_pair_02b4cb3",
+     "engine": "relax",
+     "maps": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p3_pdb128_k4_s29/relax_out/run_it200_class001.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p3_pdb128_k4_s29/relax_out/run_it200_class002.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p3_pdb128_k4_s29/relax_out/run_it200_class003.mrc",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p3_pdb128_k4_s29/relax_out/run_it200_class004.mrc"
+     ],
+     "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p3_pdb128_k4_s29/relax_out/run_it200_model.star"
+    }
+   ]
   }
  ]
 }
