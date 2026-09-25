@@ -39,7 +39,6 @@ from relax.diagnostics.coarse_score_diagnostics import (
 )
 from relax.helpers.batch_fetch import original_image_indices
 from relax.helpers.env_flags import (
-    parse_env_binary_flag,
     parse_env_int_set,
     parse_env_strict_flag,
     parse_env_true_flag,
@@ -538,26 +537,25 @@ def _k1_coarse_multistream_worker_count(*, default: int = 0) -> int:
     return count
 
 
-def _coarse_max_posterior_physical_batch_enabled() -> bool:
-    """Keep the physical row count through coarse Pmax publication."""
-    return parse_env_binary_flag("RELAX_COARSE_MAX_POSTERIOR_PHYSICAL_BATCH")
-
-
-def _coarse_max_posterior_for_host(
-    batch_weights, actual_batch_size, *, physical_batch=False,
-):
+def _coarse_max_posterior_for_host(batch_weights, actual_batch_size):
     """Publish active row maxima without specializing on fringe batch sizes.
 
     Rows are independent. Reducing the physical table before slicing the
     compact host vector keeps padded rows out of the published statistics.
     """
-    if physical_batch:
-        return np.asarray(jnp.max(batch_weights, axis=1), dtype=np.float32)[
-            :actual_batch_size
-        ]
-    return np.asarray(
-        jnp.max(batch_weights[:actual_batch_size], axis=1), dtype=np.float32,
-    )
+    return np.asarray(jnp.max(batch_weights, axis=1), dtype=np.float32)[
+        :actual_batch_size
+    ]
+
+
+@jax.jit
+def _any_over_leading_rows(mask, n_rows):
+    """``jnp.any(mask[:n_rows], axis=0)`` with a runtime row count.
+
+    The count is an operand, so one program serves every batch tail.
+    """
+    active = jnp.arange(mask.shape[0]) < n_rows
+    return jnp.any(mask & active.reshape((-1,) + (1,) * (mask.ndim - 1)), axis=0)
 
 
 def _coarse_significance_support_audit_enabled(
@@ -1356,7 +1354,6 @@ def _compute_k_class_significance_batched(
         _coarse_gaussian_gemm_device_transaction_enabled()
     )
     coarse_gaussian_gemm_real_cross_requested = _coarse_gaussian_gemm_real_cross_enabled()
-    coarse_max_posterior_physical_batch = _coarse_max_posterior_physical_batch_enabled()
     partition_token = os.environ.get("RELAX_COARSE_ROW_PARTITION", "0")
     if partition_token not in {"0", "1"}:
         raise ValueError("RELAX_COARSE_ROW_PARTITION must be 0 or 1")
@@ -4221,12 +4218,12 @@ def _compute_k_class_significance_batched(
                         best_argmax_batch = jnp.argmax(batch_weights, axis=1).astype(jnp.int32)
                         best_class_batch = jnp.zeros(batch_size, dtype=jnp.int32)
                     relion_f32_sum_weight[start_idx:end_idx] = np.asarray(
-                        _batch_sum_weight[:actual_batch_size],
+                        _batch_sum_weight,
                         dtype=np.float32,
-                    )
+                    )[:actual_batch_size]
                     if return_relion_f32_normalization:
-                        relion_f32_max_posterior[start_idx:end_idx] = np.asarray(
-                            jnp.max(batch_weights[:actual_batch_size], axis=1), dtype=np.float32,
+                        relion_f32_max_posterior[start_idx:end_idx] = (
+                            _coarse_max_posterior_for_host(batch_weights, actual_batch_size)
                         )
                     if compact_hybrid_scores is None:
                         batch_sig_rot_mask = jnp.any(
@@ -4252,10 +4249,10 @@ def _compute_k_class_significance_batched(
                             keep_all=True,
                         )
                         relion_f32_sum_weight[start_idx:end_idx] = np.asarray(
-                            normalization_sum[:actual_batch_size], dtype=np.float32,
-                        )
-                        relion_f32_max_posterior[start_idx:end_idx] = np.asarray(
-                            jnp.max(normalization_probs[:actual_batch_size], axis=1), dtype=np.float32,
+                            normalization_sum, dtype=np.float32,
+                        )[:actual_batch_size]
+                        relion_f32_max_posterior[start_idx:end_idx] = (
+                            _coarse_max_posterior_for_host(normalization_probs, actual_batch_size)
                         )
                     (
                         batch_sig_mask,
@@ -4309,7 +4306,7 @@ def _compute_k_class_significance_batched(
                     batch_sig_mask_np = np.array(batch_sig_mask, dtype=bool, copy=True)
                 if compact_hybrid_scores is None:
                     sig_rot_any |= np.asarray(
-                        jnp.any(batch_sig_rot_mask[:actual_batch_size], axis=0),
+                        _any_over_leading_rows(batch_sig_rot_mask, actual_batch_size),
                         dtype=bool,
                     ).reshape(n_classes, n_rot)
                 else:
@@ -4359,11 +4356,11 @@ def _compute_k_class_significance_batched(
                         ),
                         debug_iteration=debug_iteration,
                     )
-                n_sig_all[start_idx:end_idx] = np.asarray(batch_n_sig[:actual_batch_size], dtype=np.int32)
+                n_sig_all[start_idx:end_idx] = np.asarray(batch_n_sig, dtype=np.int32)[:actual_batch_size]
                 cutoff_count_all[start_idx:end_idx] = np.asarray(
-                    batch_cutoff_count[:actual_batch_size],
+                    batch_cutoff_count,
                     dtype=np.int32,
-                )
+                )[:actual_batch_size]
             else:
                 batch_sig_mask_np = None
                 n_sig_all[start_idx:end_idx] = 0
@@ -4521,13 +4518,13 @@ def _compute_k_class_significance_batched(
                 )
 
             hard_assignment[start_idx:end_idx] = np.asarray(
-                best_argmax_batch[:actual_batch_size],
+                best_argmax_batch,
                 dtype=np.int32,
-            )
+            )[:actual_batch_size]
             class_assignment[start_idx:end_idx] = np.asarray(
-                best_class_batch[:actual_batch_size],
+                best_class_batch,
                 dtype=np.int32,
-            )
+            )[:actual_batch_size]
 
             log_score_offset = (
                 np.zeros(batch_size, dtype=np.float64)
@@ -4549,7 +4546,6 @@ def _compute_k_class_significance_batched(
             if relion_f32_coarse_support_enabled and collect_significance:
                 max_posterior[start_idx:end_idx] = _coarse_max_posterior_for_host(
                     batch_weights, actual_batch_size,
-                    physical_batch=coarse_max_posterior_physical_batch,
                 )
             else:
                 max_posterior[start_idx:end_idx] = np.exp(

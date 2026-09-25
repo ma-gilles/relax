@@ -19,41 +19,31 @@ def test_physical_pmax_preserves_active_bytes(active, tail):
     weights[1] = -np.arange(129, dtype=np.float32)
     weights[active:] = tail
     device_weights = jnp.asarray(weights)
-    control = significance._coarse_max_posterior_for_host(device_weights, active)
-    candidate = significance._coarse_max_posterior_for_host(
-        device_weights, active, physical_batch=True,
-    )
+    # The trimmed-table reduction this publication replaced.
+    control = np.asarray(jnp.max(device_weights[:active], axis=1), dtype=np.float32)
+    candidate = significance._coarse_max_posterior_for_host(device_weights, active)
     assert candidate.shape == control.shape == (active,)
     assert candidate.dtype == control.dtype == np.dtype(np.float32)
     assert_matches(candidate, control, strict=True)
     assert_matches(candidate, weights[:active].max(axis=1))
 
 
-@pytest.mark.parametrize("token, expected", [(None, False), ("0", False), ("1", True), (" 1 ", True)])
-def test_physical_pmax_selector(monkeypatch, token, expected):
-    name = "RELAX_COARSE_MAX_POSTERIOR_PHYSICAL_BATCH"
-    if token is None:
-        monkeypatch.delenv(name, raising=False)
-    else:
-        monkeypatch.setenv(name, token)
-    assert significance._coarse_max_posterior_physical_batch_enabled() is expected
-
-
-@pytest.mark.parametrize("token", ["", "2", "true", "false", "-1"])
-def test_physical_pmax_selector_rejects_invalid(monkeypatch, token):
-    monkeypatch.setenv("RELAX_COARSE_MAX_POSTERIOR_PHYSICAL_BATCH", token)
-    with pytest.raises(ValueError, match="RELAX_COARSE_MAX_POSTERIOR_PHYSICAL_BATCH"):
-        significance._coarse_max_posterior_physical_batch_enabled()
+@pytest.mark.parametrize("active", [0, 1, 5, 8])
+def test_any_over_leading_rows_matches_the_trimmed_reduction(active):
+    mask = np.random.default_rng(31).uniform(size=(8, 6, 3)) < 0.2
+    expected = np.any(mask[:active], axis=0)
+    actual = np.asarray(significance._any_over_leading_rows(jnp.asarray(mask), active))
+    assert actual.dtype == np.bool_ and actual.shape == expected.shape
+    assert_matches(actual, expected, strict=True)
 
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("width", [37888, 50176, 29696, 21504])
 def test_physical_pmax_gpu_shapes(width, monkeypatch):
-    """Measure real fringe widths and prove one reduction acquisition per arm."""
+    """Real fringe widths: every active count uses one reduction program and no slice."""
     import inspect
     import json
     import os
-    import time
     from pathlib import Path
 
     import jax
@@ -81,32 +71,15 @@ def test_physical_pmax_gpu_shapes(width, monkeypatch):
         return original(*args, **kwargs)
 
     monkeypatch.setattr(compiler, "compile_or_get_cached", observe)
-    panels = []
-    for physical in (False, True, True, False):
-        jax.clear_caches()
-        acquisitions.clear()
-        for active in active_sizes:
-            actual = significance._coarse_max_posterior_for_host(
-                device_weights, active, physical_batch=physical,
-            )
-            assert_matches(actual, expected[:active], strict=True)
-        reductions = [x for x in acquisitions if x["module"] == "jit__reduce_max"]
-        slices = [x for x in acquisitions if x["module"] == "jit_dynamic_slice"]
-        assert len(reductions) == (1 if physical else len(active_sizes))
-        assert len(slices) == (0 if physical else len(active_sizes) - 1)
-        acquired = list(acquisitions)
-        elapsed = {str(active): [] for active in active_sizes}
-        for repeat in range(21):
-            for active in active_sizes[::1 if repeat % 2 == 0 else -1]:
-                started = time.perf_counter_ns()
-                actual = significance._coarse_max_posterior_for_host(
-                    device_weights, active, physical_batch=physical,
-                )
-                elapsed[str(active)].append((time.perf_counter_ns() - started) / 1e6)
-                assert_matches(actual, expected[:active], strict=True)
-        assert acquisitions == acquired  # no hidden acquisition during warm timing
-        panels.append({"physical_batch": physical, "acquisitions": acquired,
-                       "warm_ms": elapsed})
+    jax.clear_caches()
+    for active in active_sizes:
+        actual = significance._coarse_max_posterior_for_host(device_weights, active)
+        assert_matches(actual, expected[:active], strict=True)
+    reductions = [x for x in acquisitions if x["module"] == "jit__reduce_max"]
+    slices = [x for x in acquisitions if x["module"] == "jit_dynamic_slice"]
+    assert len(reductions) == 1
+    assert not slices
+    panels = [{"acquisitions": list(acquisitions)}]
     if "COARSE_GPU_ROOT" in os.environ:
         output = Path(os.environ["COARSE_GPU_ROOT"]) / f"pmax_width_{width}.json"
         with output.open("x") as stream:
