@@ -141,9 +141,7 @@ def adaptive_route_grids(
 def _direction_posterior_stats(result, *, n_coarse_rot: int, rot_parent_map: np.ndarray, n_psi: int):
     """Bin each class's rotation posterior mass by HEALPix direction (``pdf_direction``).
 
-    RECOVAR order is ``psi * n_directions + direction``, so a coarse id's
-    direction is ``id % n_directions``. Fine sums are first collapsed onto
-    their coarse parents.
+    RECOVAR order is ``psi * n_directions + direction``; fine sums collapse onto coarse parents first.
     """
 
     n_directions = int(n_coarse_rot) // int(n_psi)
@@ -334,6 +332,9 @@ def run_adaptive_initial_model_estep(
         relion_projector_frame=config.relion_projector_frame,
         padding_factor=config.padding_factor,
     )
+    # vdam_m_step reads the list by position, halfset-major (m_step.py: accumulators[k]
+    # and accumulators[K + k]); the grouped adapter emits it class-major.
+    accumulators = sorted(accumulators, key=lambda accum: (accum.halfset_idx, accum.class_idx))
     halfset_results = {0: result}
     selected = {0: image_indices}
 

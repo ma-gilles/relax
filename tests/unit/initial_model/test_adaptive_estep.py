@@ -125,9 +125,12 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch):
     accumulator_calls = []
     monkeypatch.setattr(adaptive_estep, "run_dense_k_class_em_adaptive", fake_route)
     monkeypatch.setattr(adaptive_estep, "uses_relion_cuda_image_preprocessing", lambda dataset: True)
-    monkeypatch.setattr(
-        adaptive_estep, "_arrays_to_accumulators", lambda *a, **kw: accumulator_calls.append(kw) or []
-    )
+    def fake_accumulators(*args, **kwargs):
+        accumulator_calls.append(kwargs)
+        # The grouped adapter's own order: class-major.
+        return [SimpleNamespace(class_idx=k, halfset_idx=h) for k in range(2) for h in range(2)]
+
+    monkeypatch.setattr(adaptive_estep, "_arrays_to_accumulators", fake_accumulators)
     monkeypatch.setattr(adaptive_estep, "_sparse_pass2_estep_meta", lambda results, selected: {})
     monkeypatch.setattr(adaptive_estep, "_add_accumulator_weight_meta", lambda meta, acc, K: None)
     state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=2, nr_iter=4, n_directions=4, pseudo_halfsets=True)
@@ -176,3 +179,5 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch):
     assert_matches(calls[0]["class_rotation_log_prior"], prior_relion[:, key])
     assert accumulator_calls[0]["halfset_idx"] is None and accumulator_calls[0]["reconstruction_group_count"] == 2
     assert result.meta["halfset_ids"] == (0, 1)
+    # vdam_m_step's positional contract: halfset 0 of each class, then halfset 1.
+    assert [(a.halfset_idx, a.class_idx) for a in result.accumulators] == [(0, 0), (0, 1), (1, 0), (1, 1)]
