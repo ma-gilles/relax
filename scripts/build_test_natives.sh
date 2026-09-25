@@ -59,3 +59,5 @@ record = {
 (out / "NATIVE.json").write_text(json.dumps(record, indent=1) + "\n")
 print(json.dumps(record["sha256"], indent=1))
 PY
+# Record the native source tree these libraries come from; runs check it (scripts/native_sources.py).
+"${PY}" "${ROOT}/scripts/native_sources.py" record "${OUT}" --root "${ROOT}"

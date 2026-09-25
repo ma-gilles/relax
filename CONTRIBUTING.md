@@ -170,6 +170,14 @@ verifies the fixtures, builds the native libraries once
 receipt in your handoff; set `RELAX_TEST_RECEIPTS=<file>` to have it appended
 there. The medium tier also runs periodically on `main`.
 
+**Native libraries match their sources.** `scripts/build_test_natives.sh` records in
+`NATIVE.json` a digest of the native sources it built from (`relax/cuda`,
+`relax/relion_bind`, the build script and the installed recovar commit). The tier runner
+refuses to start when the run's natives were built from other sources, and every other tool
+that freezes a candidate and reuses prebuilt natives runs
+`python scripts/native_sources.py check <natives_dir> --root <candidate checkout>` first:
+results on stale natives are not native-exact for their commit.
+
 **Slurm sizing.** Related GPU work runs as one job with `--gres=gpu:N` and one
 worker process per GPU (della-cryoem allows 16 running jobs but 32 GPUs per
 user). Every tier job goes to the cryoem partition; `--queue general` is only

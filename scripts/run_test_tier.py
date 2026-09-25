@@ -49,6 +49,10 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.native_sources import check as check_native_sources  # noqa: E402
 TIERS_DIR = REPO_ROOT / "tests" / "tiers"
 RUN_BASE = Path("/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_test_tiers")
 BUDGET_S = {"smoke": 5 * 60, "medium": 2 * 3600, "long": 8 * 3600}
@@ -608,6 +612,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     src = run_root / "src"
     spec = json.loads((run_root / "PLAN.json").read_text())
     items = [Item(**i) for i in spec["items"]]
+    # The run must load natives built from this candidate's own native sources.
+    stale = check_native_sources(run_root / "natives", src)
+    if stale:
+        raise SystemExit(f"refusing to run the {spec['tier']} tier: {stale}")
     gpus = [g for g in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",") if g]
     if not gpus:
         raise SystemExit("no visible GPU: the tier must run inside a GPU allocation")

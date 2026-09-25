@@ -299,3 +299,29 @@ def test_a_case_is_pinned_from_a_named_repeat_item_with_a_note(tmp_path, monkeyp
     with pytest.raises(SystemExit, match="not passed"):
         em_tier_pinned.main(["regenerate", "--fsc", str(fsc), "--receipt", str(receipt), "--cases", case,
                              "--item", "os1_rep1"])
+
+
+def test_stale_natives_are_refused(tmp_path, monkeypatch):
+    from scripts import native_sources
+
+    src = tmp_path / "src"
+    for rel in ("relax/cuda/relax_kernels.cu", "relax/relion_bind/module.cpp", "scripts/build_test_natives.sh"):
+        (src / rel).parent.mkdir(parents=True, exist_ok=True)
+        (src / rel).write_text(rel)
+    natives = tmp_path / "natives"
+    natives.mkdir()
+    assert "missing" in native_sources.check(natives, src)
+    (natives / "NATIVE.json").write_text(json.dumps({"sha256": {}}))
+    assert "no native_sources record" in native_sources.check(natives, src)
+    assert native_sources.main(["record", str(natives), "--root", str(src)]) == 0
+    assert native_sources.check(natives, src) is None
+    (src / "relax/cuda/relax_kernels.cu").write_text("changed kernel")
+    assert "stale natives" in native_sources.check(natives, src)
+    # The tier runner refuses to start on such natives.
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    (run_root / "src").symlink_to(src)
+    (run_root / "natives").symlink_to(natives)
+    (run_root / "PLAN.json").write_text(json.dumps({"tier": "smoke", "items": []}))
+    with pytest.raises(SystemExit, match="stale natives"):
+        run_test_tier.main(["run", "smoke", "--run-root", str(run_root)])
