@@ -67,6 +67,8 @@ CASES: dict[str, Case] = {
     "k1_perturbreplay": _k1("k1_perturbreplay", "k1_5k128_relion_os0", 3),
     # Fresh standalone cold start at oversampling 1 (reaches the adaptive / resident pass 2).
     "k1_os1_coldstart_standalone": _k1("k1_os1_coldstart_standalone", "k1_5k128_relion_os1", 3),
+    # Two optics groups on different pixel sizes and boxes (resident pass 2).
+    "k1_multioptics_coldstart": _k1("k1_multioptics_coldstart", "multioptics_s3b_600_relion", 3),
     "kclass_coldstart": _k4("kclass_coldstart", "k4_5k128_oracle_h2_os1"),
     "kclass_nonadaptive_replay": _k4("kclass_strict", "k4_5k128_oracle_h1_os1"),
     "kclass_strict_oversample_coldstart": _k4("kclass_strict_os1", "k4_5k128_oracle_h1_os1"),

@@ -55,6 +55,8 @@ K1_RELION_RANDOM_SEED = 1775735620
 # fixture's GENERATION.json).
 K1_OS1_RELION_DIR = fixture_root("k1_5k128_relion_os1")
 
+MULTIOPTICS_FIXTURE_DIR = fixture_root("multioptics_s3b_600_data")
+MULTIOPTICS_RELION_DIR = fixture_root("multioptics_s3b_600_relion")
 K2_FIXTURE_DIR = fixture_root("k2_5k128_data")
 K2_RELION_DIR = fixture_root("k2_5k128_relion_os0")
 K2_DATA_STAR = K2_FIXTURE_DIR / "particles.star"
@@ -1290,3 +1292,75 @@ def test_em_parity_fast_kclass_strict_oversample_coldstart(tmp_path):
     #   * K-class adaptive oversampling and class rotation prior plumbing
     # Even when the os=0 strict_coldstart still passes.
     _assert_fsc_gate("kclass_strict_oversample_coldstart", output_dir)
+
+
+# Several optics groups need the device-resident pass 2 on main (README); the flags are explicit here
+# until auto-routing lands.
+MULTIOPTICS_RESIDENT_ENV = {
+    "RELAX_SPARSE_PASS2_RESIDENT": "1",
+    "RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF": "1",
+    "RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM": "1",
+    "RELAX_K1_RELION_EXACT_BPREF_OPERANDS": "1",
+}
+
+
+@pytest.mark.gpu
+@pytest.mark.integration
+@pytest.mark.slow
+def test_em_parity_fast_k1_multioptics_coldstart(tmp_path):
+    """Three standalone K=1 iterations on two optics groups with different pixel sizes and boxes.
+
+    600 particles (300 per group: 4.25 A / 128 px and 5.44 A / 112 px), the RELION 5 GUI Refine3D
+    command with the reference on the images' greyscale (no --firstiter_cc), compared with RELION
+    f2c1a3's iteration 3: half maps by FSC and per-particle Pmax. Exercises the per-group noise,
+    the shape classes (scaled projection, remapped sizes and noise shells, per-class pre-shifts)
+    and their merge end to end.
+    """
+    _assert_parity_ancestors_or_skip()
+    require_fixture_sets("multioptics_s3b_600_data", "multioptics_s3b_600_relion")
+
+    output_dir = tmp_path / "k1_multioptics_coldstart"
+    output_dir.mkdir(parents=True)
+    cmd = [
+        sys.executable,
+        str(REFINE_SCRIPT),
+        "--data_dir",
+        str(MULTIOPTICS_FIXTURE_DIR),
+        "--output",
+        str(output_dir),
+        "--init_volume",
+        str(MULTIOPTICS_FIXTURE_DIR / "reference_init_greyscale.mrc"),
+        "--max_iter",
+        "3",
+        "--seed",
+        "20260924",  # RELION --random_seed
+        "--no-firstiter_cc",  # the reference is on the images' greyscale (greyscale_rescale.json)
+        "--image-fourier-backend",
+        "relion_cuda",
+    ]
+    env = {**gpu_subprocess_env(), **MULTIOPTICS_RESIDENT_ENV}
+    t0 = time.time()
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    elapsed = time.time() - t0
+    assert proc.returncode == 0, (
+        f"run_full_refinement.py exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    npz = np.load(output_dir / "refinement_results.npz")
+    pmax_traj = np.asarray(npz["ave_Pmax_trajectory"], dtype=np.float64)
+    assert pmax_traj.size >= 3, f"Expected 3 iterations, got {pmax_traj.size}"
+    relion_pmax = [
+        float(starfile.read(str(MULTIOPTICS_RELION_DIR / f"run_it{i:03d}_half1_model.star"))["model_general"]["rlnAveragePmax"])
+        for i in (1, 2, 3)
+    ]
+    _write_quality_ledger(
+        "k1_multioptics_coldstart",
+        {
+            "k1_multioptics_pmax_trajectory_relax": pmax_traj.tolist(),
+            "k1_multioptics_pmax_trajectory_relion": relion_pmax,
+            "k1_multioptics_walltime_s": elapsed,
+        },
+        output_dir=output_dir,
+    )
+    print(f"  multioptics ave_Pmax relax={pmax_traj.tolist()} relion={relion_pmax} walltime_s={elapsed:.1f}",
+          file=sys.stderr, flush=True)
+    _assert_fsc_gate("k1_multioptics_coldstart", output_dir)

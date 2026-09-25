@@ -58,6 +58,15 @@ SETS: dict[str, tuple[str, list[str], list[str], str, list[str]]] = {
     ),
     "k1_5k128_relion_os0_repeats": (f"{FX}/data_noise1_5k_normalized_os0_repeats", RUN, [], "Two same-command RELION repeats of k1_5k128_relion_os0 (all iterations; Slurm 14363910)", ["PROVENANCE.json"]),
     "k1_5k128_relion_os1_repeats": (f"{FX}/data_noise1_5k_normalized_os1/relion_repeats", RUN, [], "Two same-command RELION repeats of k1_5k128_relion_os1 (all iterations; Slurm 14363910)", ["PROVENANCE.json"]),
+    "multioptics_s3b_600_data": (
+        f"{FX}/multioptics_s3b_600/data",
+        RUN,
+        [],
+        "600 particles of the S3b two-optics simulation (4.25 A/128 px and 5.44 A/112 px), greyscale-matched reference and GT",
+        ["greyscale_rescale.json"],
+    ),
+    "multioptics_s3b_600_relion": (f"{FX}/multioptics_s3b_600/relion_ref", RUN, NO_BILD, "RELION f2c1a3 Refine3D of multioptics_s3b_600_data, 3 iterations (command in COMMAND.txt)", ["COMMAND.txt"]),
+    "multioptics_s3b_600_relion_repeat": (f"{FX}/multioptics_s3b_600/relion_repeat", RUN, NO_BILD, "Same-command RELION repeat of multioptics_s3b_600_relion", ["COMMAND.txt"]),
     "k2_5k128_data": (
         f"{PROJ}/data_pdb_k2_5k_128",
         TOP,

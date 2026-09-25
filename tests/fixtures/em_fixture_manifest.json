@@ -2743,6 +2743,122 @@
    },
    "root": "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/relion_pdb_k4_os0_ref"
   },
+  "multioptics_s3b_600_data": {
+   "description": "600 particles of the S3b two-optics simulation (4.25 A/128 px and 5.44 A/112 px), greyscale-matched reference and GT",
+   "files": {
+    "Particles/opticsGroup1.mrcs": [19661824, "7ceaff0285760f25e69e7d0d7a960ff4dcc260543ac30407838ab4d64d3ebb98"],
+    "Particles/opticsGroup2.mrcs": [15053824, "8f527d47c5f3d466b5605bca0203090a435f0d4363398fccc489c141eb3cc999"],
+    "greyscale_rescale.json": [499, "b510b225097dba49dc2545b426f2146bd88d60ac681f3e27ce8336d07941a96b"],
+    "particles.star": [92544, "b9e5a9d2f2199422b018f87e37bfb59c7d6b4c01a2b312e77662495e261b6afc"],
+    "reference_gt.mrc": [8389632, "a89272c3f1d9456b5ee5eb69007696baa628b54d57bf4f106fefec953e8a35af"],
+    "reference_gt_relion.mrc": [8389632, "939e0f22724b6dbae1d1b835d986d4979b580a01821306411ff95cdd4a22b1f6"],
+    "reference_init.mrc": [8389632, "166d248e3bca905349ee302b4bae95acfa4c552a99af02886b24e100d468bf1c"],
+    "reference_init_greyscale.mrc": [8389632, "166d248e3bca905349ee302b4bae95acfa4c552a99af02886b24e100d468bf1c"],
+    "reference_init_relion_greyscale.mrc": [8389632, "2c0972fa9d19512a1734d96246eadf308d5ce862a0c5414722a2c144065c43a8"]
+   },
+   "provenance": {
+    "generation_records": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_s3b_600/data/greyscale_rescale.json"
+    ]
+   },
+   "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_s3b_600/data"
+  },
+  "multioptics_s3b_600_relion": {
+   "description": "RELION f2c1a3 Refine3D of multioptics_s3b_600_data, 3 iterations (command in COMMAND.txt)",
+   "files": {
+    "COMMAND.txt": [746, "0a793d920138841cd81c6a34fb7c974868f4b3b4356c2d3df60f7c1c94b574b2"],
+    "refine.log": [52570, "cb1da6a14c91724c61ae1c506240681ce8b10bc2a8e4153077ef2c3cea3627fe"],
+    "run_it000_data.star": [141621, "00083e34a585d59204bfe87dce2cb0f724cd022af82501da4ec6613d03236c59"],
+    "run_it000_half1_class001.mrc": [8389632, "ae140b1cb568c625984ccfc8384ef413e4a62242d71d42fdcc0c7e8070d10f49"],
+    "run_it000_half1_model.star": [19974, "42f0bda0845c652b42a6fa374fca1a10ce855ad79cf79347095c109d8202a0d6"],
+    "run_it000_half2_class001.mrc": [8389632, "ae140b1cb568c625984ccfc8384ef413e4a62242d71d42fdcc0c7e8070d10f49"],
+    "run_it000_half2_model.star": [19974, "72a543df3f7945affc5c880c9fef082bd22245995066bbffcf12b0b407d2ebfb"],
+    "run_it000_optimiser.star": [7861, "c433a21d4e04b6fa78abc2e84aa3d730e1ce03dec930b672a83dcc0394745454"],
+    "run_it000_sampling.star": [6115, "dd992be605a35d70b2d9b25860ab32d916ecc114978b1ca8e7a0547b60f72f72"],
+    "run_it001_data.star": [165118, "64499923b48789b7bc1c05a282a724ffdb01007c64d675b5848d2788a3db5d92"],
+    "run_it001_half1_class001.mrc": [8389632, "ea55430413d2e187b4f78a84625ebf2839912f103c3e081c24051055d6a12aec"],
+    "run_it001_half1_model.star": [20861, "50d282872d896505b1d28841d4b35e5e8a92c88c1dfae4bf9c2cecd7cf4312fb"],
+    "run_it001_half2_class001.mrc": [8389632, "4dc2155732e9cbe52c8781c661c32cac3d7b7981a57c5c22454276859863b930"],
+    "run_it001_half2_model.star": [19974, "7552a4dcde473e4f53842b447cbec9db3ed507586be2d1825c56e2855806b30e"],
+    "run_it001_optimiser.star": [7861, "bb35d3061bccc0326f110a1355c9ad853f4144bce197871a4ddc909930cc0681"],
+    "run_it001_sampling.star": [6115, "d1b117057991c2db53eb423bf7afdfc2c880fdfab9a70363e1f05c846a3874d8"],
+    "run_it002_data.star": [165118, "6e12cbbcec29e979bc4ae821129dc62a2815666c21296cb98d11b94885c51de0"],
+    "run_it002_half1_class001.mrc": [8389632, "b4a41868a2f57ab496019ed42e90331cace74eabf52e84996f23721234093923"],
+    "run_it002_half1_model.star": [20861, "52449cc1ff002139bc4b5d28703b8e08bb0229c76cfbe8abdbb2e2f8554603ff"],
+    "run_it002_half2_class001.mrc": [8389632, "fcd0112d4ecf6cc705e8460656fb18a52724af979ff37b48d75ef257bbc6344f"],
+    "run_it002_half2_model.star": [19974, "e9f97bca6c915c7b1b7423c3ca58d87b794bbe222cba1d0f153d6e32eba6d4c5"],
+    "run_it002_optimiser.star": [7861, "92e20f93f4721629239b2f5ac98e9eedcebfcd5ecbc7794cfea3b54fe1e5c63d"],
+    "run_it002_sampling.star": [6115, "5760974fd067227c12146c8243787af600ecf2a8f2694dc532b4192cb38cd652"],
+    "run_it003_data.star": [165118, "55de32d7d9a7d46a8c07359030a4ce12cbd91209a535b5168136424108e699bc"],
+    "run_it003_half1_class001.mrc": [8389632, "82015660d701eac95387b8404886b815f57e55199f896cc37fd81c6376e9f650"],
+    "run_it003_half1_model.star": [20861, "42637956897bffaf269fada61c2d940e5d7b303438efafc4d566c8636f71bb02"],
+    "run_it003_half2_class001.mrc": [8389632, "7ecd4f00b6f9be9e6859537d0c9f19de0b4879b6c9d3b296af9906c662773045"],
+    "run_it003_half2_model.star": [19974, "bafd241d16dd7c13c58eb33fa6541c0b8c18f3a14b1a0c2d0addbcb9f6839448"],
+    "run_it003_optimiser.star": [7861, "99048ce62e673c74336dd8b84dfa7adcff3549e368bce2251de5d8316e3190c8"],
+    "run_it003_sampling.star": [6115, "b3d77827a4528fd5455e996ea606960da97e41cd5343c400903ab6ed3de85789"]
+   },
+   "provenance": {
+    "generation_records": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_s3b_600/relion_ref/COMMAND.txt"
+    ],
+    "relion_optimiser_headers": {
+     "run_it000_optimiser.star": {
+      "command": "--o /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_s3b_600/relion_ref/run --auto_refine --split_random_halves --i particles.star --ref reference_init_relion_greyscale.mrc --ini_high 60 --dont_combine_weights_via_disc --pool 3 --pad 2 --ctf --particle_diameter 200 --flatten_solvent --zero_mask --oversampling 1 --healpix_order 2 --auto_local_healpix_order 4 --offset_range 5 --offset_step 2 --sym C1 --low_resol_join_halves 40 --norm --scale --j 4 --gpu  --random_seed 20260924 --auto_iter_max 3",
+      "random_seed": 20260924,
+      "version": "RELION optimiser; version 5.0.1-commit-f2c1a3"
+     }
+    }
+   },
+   "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_s3b_600/relion_ref"
+  },
+  "multioptics_s3b_600_relion_repeat": {
+   "description": "Same-command RELION repeat of multioptics_s3b_600_relion",
+   "files": {
+    "COMMAND.txt": [749, "699cdb7ad120111f6e0132a68d79e853a48ee72a7179dddb777f9be819b631bf"],
+    "refine.log": [52576, "f71ae67ec0337eb8de6f1fbad56c81f2629cd59034ad8e0ea12959aced520d19"],
+    "run_it000_data.star": [141621, "00083e34a585d59204bfe87dce2cb0f724cd022af82501da4ec6613d03236c59"],
+    "run_it000_half1_class001.mrc": [8389632, "ae140b1cb568c625984ccfc8384ef413e4a62242d71d42fdcc0c7e8070d10f49"],
+    "run_it000_half1_model.star": [19977, "956afefc68ed99f2993a882b118404584be2f3b61175bb32e8ba462a366ff268"],
+    "run_it000_half2_class001.mrc": [8389632, "ae140b1cb568c625984ccfc8384ef413e4a62242d71d42fdcc0c7e8070d10f49"],
+    "run_it000_half2_model.star": [19977, "f23418fb6487e281b8ab58b06b51eb1fb41571b24d58c38e54d41619d77f61d8"],
+    "run_it000_optimiser.star": [7879, "102c8e1087386d063be0971664e41c87f7a3949ff2e53c06080bbe2f1c7717c9"],
+    "run_it000_sampling.star": [6115, "dd992be605a35d70b2d9b25860ab32d916ecc114978b1ca8e7a0547b60f72f72"],
+    "run_it001_data.star": [165118, "27c65db79d6a25971065fa9c4a802531e74de475edea18438bd7fd494ec37a77"],
+    "run_it001_half1_class001.mrc": [8389632, "aea69fe7784bacc88e2db9afbf9d8a17b51dc3154495f4493cce47e8361f31f6"],
+    "run_it001_half1_model.star": [20864, "f1291589bac01e7214a23963a816f7d80b97cb12867e67b00ad605604513848d"],
+    "run_it001_half2_class001.mrc": [8389632, "9852c1b258a59c226b6d9548dd7fd4facdd1680b13cf89da003820b3f8a817e1"],
+    "run_it001_half2_model.star": [19977, "ec5b92651b5522c2342577ba22432dd6e44092cf0a41e84f0188eaa6fad4a0b1"],
+    "run_it001_optimiser.star": [7879, "caab8a5cc91f3ae60de80de2918e722ae8eaa9cc74d866e2cf13c8c9fd16022e"],
+    "run_it001_sampling.star": [6115, "d1b117057991c2db53eb423bf7afdfc2c880fdfab9a70363e1f05c846a3874d8"],
+    "run_it002_data.star": [165118, "4dda26ef33b6fcd83de39007598113a7c57111e30db97c4901155066834bb8ca"],
+    "run_it002_half1_class001.mrc": [8389632, "9585065cb613a0162911224018888df5d152fdc784b344e21d4e46bb25ad1190"],
+    "run_it002_half1_model.star": [20864, "de4c32dbb7ba408cb87c65f2600ffaa867bb556de012e4b1df74f171cca066e9"],
+    "run_it002_half2_class001.mrc": [8389632, "275c3997d91474e45a48fefe898645fc31d27a79b378ab4655f241d134773d30"],
+    "run_it002_half2_model.star": [19977, "dd7ee1f93e99eef966cd87e540b2191707733b2341c369ed62ee9102b9fc6ca2"],
+    "run_it002_optimiser.star": [7879, "847de9bb2b7c52f4c04faa373db2a18ae1deca9d506b60326c6c1d302ce57199"],
+    "run_it002_sampling.star": [6115, "5760974fd067227c12146c8243787af600ecf2a8f2694dc532b4192cb38cd652"],
+    "run_it003_data.star": [165118, "5fd15b68b446071b3b90f40ff92437502891174735a4d67f8ae1c362ff93556c"],
+    "run_it003_half1_class001.mrc": [8389632, "5aeb668187db5974e88538360abd664ec0c17ebe0d1d51021028011b10a5c6e3"],
+    "run_it003_half1_model.star": [20864, "a7e7d0bb2fb9b74a1f23d3783d1800e7b1e314937b6869825140cb63099cd302"],
+    "run_it003_half2_class001.mrc": [8389632, "ec55bbb5ef03f622d3e0349963d00b2da96d7cfeab83d5f67596b1df28f28d75"],
+    "run_it003_half2_model.star": [19977, "eaa88d6c1d56a63fc3bb2d49bfdee45ed9d75a5ece2287fc9062fa4a13d8f833"],
+    "run_it003_optimiser.star": [7879, "de141a581c52f6f9900a2944a9a3348987db1964d21188d353ba60ccf467c84b"],
+    "run_it003_sampling.star": [6115, "b3d77827a4528fd5455e996ea606960da97e41cd5343c400903ab6ed3de85789"]
+   },
+   "provenance": {
+    "generation_records": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_s3b_600/relion_repeat/COMMAND.txt"
+    ],
+    "relion_optimiser_headers": {
+     "run_it000_optimiser.star": {
+      "command": "--o /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_s3b_600/relion_repeat/run --auto_refine --split_random_halves --i particles.star --ref reference_init_relion_greyscale.mrc --ini_high 60 --dont_combine_weights_via_disc --pool 3 --pad 2 --ctf --particle_diameter 200 --flatten_solvent --zero_mask --oversampling 1 --healpix_order 2 --auto_local_healpix_order 4 --offset_range 5 --offset_step 2 --sym C1 --low_resol_join_halves 40 --norm --scale --j 4 --gpu  --random_seed 20260924 --auto_iter_max 3",
+      "random_seed": 20260924,
+      "version": "RELION optimiser; version 5.0.1-commit-f2c1a3"
+     }
+    }
+   },
+   "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_s3b_600/relion_repeat"
+  },
   "symmetry_25_ribo_k4_3k_g128_white_noise1_batch50_seed41001": {
    "description": "Symmetry-matrix case 25_ribo_k4_3k_g128_white_noise1_batch50_seed41001: data + RELION reference as pinned by the frozen Q 427a08bd8 run",
    "files": {
