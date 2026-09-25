@@ -42,14 +42,17 @@ def test_input_and_output_are_required(missing, capsys):
 
 
 @pytest.mark.parametrize(
-    "n_classes, frozen, expected",
+    "n_classes, frozen, resident, expected",
     [
-        (1, None, (999, "relion_cuda", True)),
-        (4, None, (25, "host_numpy", True)),
-        (1, "boundary", (999, "relion_cuda", False)),
+        (1, None, "0", (999, "relion_cuda", True)),
+        (4, None, "0", (25, "host_numpy", True)),
+        # Class3D on the resident pass 2 reads RELION's CUDA preprocessing (exact BPref operands).
+        (4, None, "1", (25, "relion_cuda", True)),
+        (1, "boundary", "0", (999, "relion_cuda", False)),
     ],
 )
-def test_job_type_defaults(n_classes, frozen, expected):
+def test_job_type_defaults(monkeypatch, n_classes, frozen, resident, expected):
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT", resident)
     args = SimpleNamespace(
         n_classes=n_classes,
         max_iter=None,

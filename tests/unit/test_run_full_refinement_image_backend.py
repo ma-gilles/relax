@@ -24,7 +24,8 @@ def _image_backend_argument() -> ast.Call:
 
 
 def test_image_fourier_backend_cli_defaults_by_job_type_with_typed_choices():
-    # auto resolves to relion_cuda for K=1 and host_numpy for Class3D (_resolve_relion_gui_defaults).
+    # auto resolves to relion_cuda for K=1 and for Class3D on the resident pass 2, host_numpy for
+    # Class3D on the compact engine (_resolve_relion_gui_defaults).
     argument = _image_backend_argument()
     keywords = {keyword.arg: keyword.value for keyword in argument.keywords}
 
