@@ -1746,3 +1746,50 @@ def test_top_k_rows_matches_lax_top_k_for_single_rows_above_the_splitter_thresho
         actual = top_k_rows(x, 64)
         assert np.array_equal(np.asarray(actual[0]), np.asarray(expected[0]))
         assert np.array_equal(np.asarray(actual[1]), np.asarray(expected[1]))
+
+
+@pytest.mark.parametrize("n_classes", [1, 3])
+def test_coarse_projections_are_computed_once_per_block_across_image_batches(monkeypatch, n_classes):
+    """Pass 1 keeps each (class, rotation block) projection for every image batch.
+
+    The references and rotation blocks are fixed for the pass, so the scores
+    must equal a pass that recomputes every block (the byte cap set to zero).
+    """
+    from relax.helpers import projection
+    from relax.scoring import significance
+
+    calls = []
+    original = projection.compute_projections_block
+
+    def counting(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(projection, "compute_projections_block", counting)
+    volume = _hermitian_volume(VOLUME_SHAPE, seed=913)
+    args = (
+        MockDataset(n_images=5, seed=911),
+        jnp.stack([volume * (1.0 + 0.01 * k) for k in range(n_classes)]),
+        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        _make_rotations(5, seed=917),
+        jnp.array([[0.0, 0.0], [1.0, -1.0]], dtype=jnp.float32),
+        "linear_interp",
+    )
+    kwargs = dict(
+        class_log_priors=np.log(np.arange(1, n_classes + 1) / sum(range(1, n_classes + 1))),
+        rotation_log_prior=np.linspace(0, -0.4, 5, dtype=np.float32),
+        adaptive_fraction=0.9,
+        max_significants=4,
+        image_batch_size=2,
+        rotation_block_size=2,
+        current_size=None,
+    )
+    memoized = significance._compute_k_class_significance_batched(*args, **kwargs)
+    n_blocks = 3  # 5 rotations in blocks of 2
+    assert len(calls) == n_classes * n_blocks
+    monkeypatch.setattr(significance, "_PASS1_PROJECTION_MEMO_MAX_BYTES", 0)
+    calls.clear()
+    recomputed = significance._compute_k_class_significance_batched(*args, **kwargs)
+    assert len(calls) > n_classes * n_blocks
+    for actual, expected in zip(memoized[:4], recomputed[:4]):
+        assert_matches(actual, expected)

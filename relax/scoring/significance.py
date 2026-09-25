@@ -150,6 +150,10 @@ _COARSE_PAD_FINAL_IMAGE_BATCH_ENV = (
 NVTX_DOMAIN_EM = "recovar_em"
 logger = logging.getLogger(__name__)
 
+# Byte cap on the coarse projections one pass-1 call keeps for reuse across image
+# batches (see ``_project_block_once``).
+_PASS1_PROJECTION_MEMO_MAX_BYTES = 2 * 1024**3
+
 
 def _pad_significance_preprocess_inputs(
     batch_data,
@@ -2297,6 +2301,25 @@ def _compute_k_class_significance_batched(
             )
         return proj_half_b, proj_abs2_half_b
 
+    # The references and rotation blocks are fixed for the whole pass, so a
+    # block's projections are the same for every image batch; they are kept
+    # (up to a byte cap) instead of being recomputed per batch and per scoring
+    # sweep, which at K4 100k/256 was 11 s of the pass per iteration.
+    projection_memo: dict = {}
+    projection_memo_bytes = [0]
+
+    def _project_block_once(class_index, mean_for_proj, rots_b, *, rotation_start):
+        key = (int(class_index), int(rotation_start), int(rots_b.shape[0]))
+        cached = projection_memo.get(key)
+        if cached is not None:
+            return cached
+        projected = _project_block(class_index, mean_for_proj, rots_b)
+        block_bytes = sum(int(value.size) * int(value.dtype.itemsize) for value in projected)
+        if projection_memo_bytes[0] + block_bytes <= _PASS1_PROJECTION_MEMO_MAX_BYTES:
+            projection_memo[key] = projected
+            projection_memo_bytes[0] += block_bytes
+        return projected
+
     coarse_selector_execution = {
         "wrapper": None,
         "target": None,
@@ -2572,7 +2595,9 @@ def _compute_k_class_significance_batched(
                 int(relion_projector_r_max),
             )
             return -diff2
-        proj_half_b, proj_abs2_half_b = _project_block(class_index, mean_for_proj, rots_b)
+        proj_half_b, proj_abs2_half_b = _project_block_once(
+            class_index, mean_for_proj, rots_b, rotation_start=rotation_start
+        )
         if coarse_gaussian_ffi_enabled:
             from relax.cuda import kernels as em_cuda_kernels
 
