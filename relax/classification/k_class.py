@@ -1121,19 +1121,30 @@ def _run_resident_k_class_pass2(
 ) -> KClassEMResult | None:
     """RELION's Class3D fine pass on the device-resident engine, or None for the compact one.
 
-    Runs under ``RELAX_SPARSE_PASS2_RESIDENT`` like the K=1 pass, with the K=1
-    production arithmetic (:func:`_resident_production_arithmetic`). Passes the
-    resident driver was never scoped for go to the compact route, and the log
-    says so.
+    Selected like the K=1 pass (``resident_engine_selection``): the resident
+    engine by default, with the K=1 production arithmetic
+    (:func:`_resident_production_arithmetic`). A pass it was never scoped for, or
+    one its configuration checks refuse before any device work
+    (``ResidentConfigurationUnsupported``), runs on the compact engine with a
+    logged reason; under an explicit ``RELAX_SPARSE_PASS2_RESIDENT=1`` the refusal
+    is an error. Every pass records its engine (``engine_record``).
     """
 
+    from relax.sparse_pass2.engine_record import record_pass_engine
     from relax.sparse_pass2.resident_pass2 import (
+        RESIDENT_PASS2_ENV,
         compute_k_class_pass2_stats_resident,
         resident_pass2_out_of_scope_reason,
-        resident_pass2_requested,
+    )
+    from relax.sparse_pass2.sparse_pass2_policy import (
+        ResidentConfigurationUnsupported,
+        resident_engine_selection,
+        resident_refusal_reason,
     )
 
-    if not resident_pass2_requested():
+    selection = resident_engine_selection(RESIDENT_PASS2_ENV)
+    if selection == "off":
+        record_pass_engine("global", "compact", f"{RESIDENT_PASS2_ENV}=0")
         return None
     n_classes = int(means_array.shape[0])
     options = _resident_production_arithmetic(common)
@@ -1157,19 +1168,32 @@ def _run_resident_k_class_pass2(
             "this K-class pass runs on the compact engine",
             out_of_scope,
         )
+        record_pass_engine("global", "compact", f"out of resident scope: {out_of_scope}")
         return None
     t0 = time.time()
-    output = compute_k_class_pass2_stats_resident(
-        experiment_dataset,
-        means_array,
-        noise_variance,
-        coarse_translations_np,
-        sig_sample_indices_by_class,
-        options.pop("nside_level"),
-        options.pop("disc_type"),
-        rotation_log_priors_by_class=class_rotation_priors,
-        **options,
-    )
+    try:
+        output = compute_k_class_pass2_stats_resident(
+            experiment_dataset,
+            means_array,
+            noise_variance,
+            coarse_translations_np,
+            sig_sample_indices_by_class,
+            options.pop("nside_level"),
+            options.pop("disc_type"),
+            rotation_log_priors_by_class=class_rotation_priors,
+            **options,
+        )
+    except ResidentConfigurationUnsupported as exc:
+        if selection == "explicit":
+            raise
+        logger.info(
+            "Device-resident sparse pass 2 (the default) does not cover this K-class pass; "
+            "it runs on the compact engine: %s",
+            exc,
+        )
+        record_pass_engine("global", "compact", resident_refusal_reason(exc))
+        return None
+    record_pass_engine("global", "resident")
     logger.info(
         "Resident K-class pass2: classes=%d images=%d total=%.1fs",
         n_classes,

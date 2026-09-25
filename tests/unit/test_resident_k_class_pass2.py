@@ -11,6 +11,8 @@ default band, while maps and noise sums change reduction order.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -298,3 +300,78 @@ def test_duplicated_class_is_the_k1_pass(_resident_production_env):
     assert abs(float(single.noise_stats.sumw) - float(doubled.noise_stats.sumw)) <= 1e-6 * float(
         single.noise_stats.sumw
     )
+
+
+# ---------------------------------------------------------------------------
+# Engine selection: the K=1 flip's rules for the K-class pass
+# ---------------------------------------------------------------------------
+
+
+def _selection_run(monkeypatch, env_value, outcome):
+    """Run the K-class route with a stub resident driver; return (result, engine entries)."""
+
+    from relax.classification import k_class
+    from relax.sparse_pass2 import engine_record
+    from relax.sparse_pass2.sparse_pass2_policy import ResidentConfigurationUnsupported
+
+    if env_value is None:
+        monkeypatch.delenv(rp.RESIDENT_PASS2_ENV, raising=False)
+    else:
+        monkeypatch.setenv(rp.RESIDENT_PASS2_ENV, env_value)
+    calls = []
+
+    def stub(*args, **kwargs):
+        calls.append(kwargs)
+        if outcome == "refuse":
+            raise ResidentConfigurationUnsupported(
+                f"The device-resident K=1 sparse pass 2 ({rp.RESIDENT_PASS2_ENV}=1) does not implement "
+                "this configuration: a stub refusal. Clear the flag to use the compact engine; this path "
+                "never falls back silently."
+            )
+        return "resident-output"
+
+    monkeypatch.setattr(rp, "compute_k_class_pass2_stats_resident", stub)
+    monkeypatch.setattr(k_class, "_class_segmented_em_result", lambda output, **_: output)
+    engine_record.take_pass_engines()
+    result = k_class._run_resident_k_class_pass2(
+        SimpleNamespace(n_units=3),
+        np.zeros((2, 4, 4, 4), dtype=np.float32),
+        None,
+        None,
+        [None, None],
+        common={"nside_level": 1, "disc_type": "linear_interp", "relion_x_half_mstep": True},
+        engine_kwargs={},
+        class_rotation_priors=[None, None],
+        relion_projector_half_by_class=None,
+        relion_projector_r_max=None,
+        accumulate_noise=True,
+        mstep_accumulator_shape=None,
+    )
+    return result, engine_record.take_pass_engines(), calls
+
+
+def test_k_class_default_falls_back_on_a_refusal_and_records_it(monkeypatch):
+    result, entries, calls = _selection_run(monkeypatch, None, "refuse")
+    assert result is None and len(calls) == 1
+    assert entries == ["global:compact (a stub refusal)"]
+
+
+def test_k_class_explicit_resident_makes_a_refusal_an_error(monkeypatch):
+    from relax.sparse_pass2.sparse_pass2_policy import ResidentConfigurationUnsupported
+
+    with pytest.raises(ResidentConfigurationUnsupported, match="a stub refusal"):
+        _selection_run(monkeypatch, "1", "refuse")
+
+
+def test_k_class_default_runs_resident_with_the_production_arithmetic(monkeypatch):
+    result, entries, calls = _selection_run(monkeypatch, None, "run")
+    assert result == "resident-output" and entries == ["global:resident"]
+    (kwargs,) = calls
+    for name in ("source_faithful_spectrum_norm", "preserve_bpref_particle_order", "relion_f32_fine_posterior"):
+        assert kwargs[name] is True, name
+
+
+def test_k_class_resident_off_records_the_compact_engine(monkeypatch):
+    result, entries, calls = _selection_run(monkeypatch, "0", "run")
+    assert result is None and not calls
+    assert entries == [f"global:compact ({rp.RESIDENT_PASS2_ENV}=0)"]
