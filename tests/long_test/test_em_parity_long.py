@@ -1048,7 +1048,9 @@ def test_em_parity_long_realdata_hp3_replay(tmp_path, arm):
         payload[f"half{half}_fsc_auc"] = float(normalized_fsc_auc(curve))
         payload[f"half{half}_min_shell_fsc_in_band"] = float(np.nanmin(curve[1:band]))
         payload[f"half{half}_fsc"] = [round(float(v), 6) for v in curve]
-    ledger = _write_quality_ledger(f"realdata_10097_hp3_{arm}", payload, output_dir=output_dir)
+    # Not a parity-table case (scripts/extract_em_parity_tables.py), so not a quality ledger.
+    ledger = output_dir / f"em_realdata_hp3_ledger_{arm}.json"
+    ledger.write_text(json.dumps(payload | {"timestamp": time.strftime("%Y-%m-%dT%H:%M:%S")}, indent=2, sort_keys=True))
     logger.info("10097 hp3 replay ledger: %s", ledger)
     print(
         f"\n10097 it13->14 hp3 cs{current_size} ({arm}): FSC-AUC {payload['half1_fsc_auc']:.6f} / "

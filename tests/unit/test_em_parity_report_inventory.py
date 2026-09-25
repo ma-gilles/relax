@@ -122,6 +122,8 @@ def test_report_inventory_matches_actual_producers():
                 for n in ast.walk(fn)
                 if isinstance(n, ast.Assign) and any(isinstance(x, ast.Name) and x.id == "payload" for x in n.targets)
             ]
+            if not calls:
+                continue  # the test writes no parity-table ledger
             assert len(calls) == len(assignments) == 1
             producers[ast.literal_eval(calls[0].args[0])] = {ast.literal_eval(key) for key in assignments[0].value.keys}
         assert set(producers) == set(tables.TIER_CASES[tier])
