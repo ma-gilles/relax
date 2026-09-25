@@ -405,6 +405,23 @@ Timing record: (a) RELION 1 GPU, one non-MPI relion_refine process, --j 8 (vdamb
 | relax vs RELION (X-AUC) | 0.8419 | 0.8513 | — | — |
 | RELION vs RELION repeat (RELION seed 29 vs seed 41 (different-seed repeat; seed 53 in the notes)) | 0.2125 | 0.2336 | — | — |
 
+<a id="pdb_k4_5k128_initialmodel_vdam_200it_bench83b9ae9"></a>
+
+### data_pdb_k4_5k_128 (VDAM stack 83b9ae9, 3 seeds): InitialModel-VDAM K=4 (200 iterations, seeds 29/41/53)
+
+`pdb_k4_5k128_initialmodel_vdam_200it_bench83b9ae9`: relax source `83b9ae98e`, relax VDAM stack (landing, bd2af74..83b9ae9 on main 924e7ba; frozen as cand_vdam_83b9ae9). Reference: ground truth (simulator maps; mean of the class maps for alignment when K>1), RELION file frame. Runs scored: RELION relion_s29, relax relax_s29. Frozen mask `pdb_k4_5k128_c1` (`41916d7c348c`). Ref FSC-AUC RELION 0.1406 / relax 0.1469, masked 0.1393 / 0.1458; X-AUC unmasked 0.8795, masked 0.8955; RELION repeat X-AUC unmasked 0.8459, masked 0.8527. K>1: reference and cross-engine FSC-AUCs are population-weighted means over Hungarian-matched classes (weights rlnClassDistribution); the FSC 0.5 value is that of the most populated class. RELION repeat pair: this job's RELION seed 29 vs the same command's 2026-09-24 run (vdambench band, no --scratch_dir). Three seeds, each one Slurm job with both arms started together on one node: relax (8 CPUs, one H100) and RELION --j 8 (8 CPUs, one H100), --scratch_dir on node-local /tmp on both; relax production defaults (all RELAX_*/RECOVAR_* unset, XLA memory fraction at the production .90). The row's arms and walls are seed 29. Per seed: seed 29: reference FSC-AUC (population-weighted, masked) relax 0.1458 / RELION 0.1393 (unmasked 0.1469 / 0.1406); relax-vs-RELION X-AUC 0.8795 (masked 0.8955); RELION vs its earlier same-command run 0.8459 (masked 0.8527); populations relax [1.0, 0.0, 0.0, 0.0] / RELION [1.0, 0.0, 0.0, 0.0]; walls relax 2138 s / RELION 773 s; seed 41: reference FSC-AUC (population-weighted, masked) relax 0.1886 / RELION 0.1843 (unmasked 0.1871 / 0.1829); relax-vs-RELION X-AUC 0.7949 (masked 0.8507); RELION vs its earlier same-command run 0.8412 (masked 0.8817); populations relax [0.48, 0.235, 0.285, 0.0] / RELION [0.474, 0.243, 0.283, 0.0]; walls relax 2364 s / RELION 1087 s; seed 53: reference FSC-AUC (population-weighted, masked) relax 0.1085 / RELION 0.1110 (unmasked 0.1068 / 0.1091); relax-vs-RELION X-AUC 0.8603 (masked 0.8536); RELION vs its earlier same-command run 0.8751 (masked 0.8799); populations relax [1.0, 0.0, 0.0, 0.0] / RELION [1.0, 0.0, 0.0, 0.0]; walls relax 1832 s / RELION 794 s. RELION band (masked population-weighted reference FSC-AUC over all 6 RELION runs of this command: relion_s29, relion_s41, relion_s53, x_relion_band_s29, x_relion_band_s41, x_relion_band_s53): 0.0935-0.1856; relax seeds 0.1458, 0.1886, 0.1085, inside the band at every seed. relax / RELION wall 2.17-2.77x over the three seeds (CPU-matched, 8 CPUs per arm). Seeds 29 and 53 collapse to one populated class in both engines (as in the 2026-09-24 band); seed 41 keeps three. Jobs: relax 14445855, 14445856, 14445857; RELION 14445855, 14445856, 14445857. Scores: `docs/benchmarks/initialmodel_scores/pdb128_k4_bench83b9ae9.json`.
+
+Timing record: (a) RELION: 1 H100, relion_refine --j 8 (8 CPUs). relax: 1 H100, one process, 8 CPUs. Both arms in one --gres=gpu:h100:2 job on one node, started together; no --exclusive. (b) relax: production defaults (RELAX_*, RECOVAR_* unset; XLA_PYTHON_CLIENT_MEM_FRACTION unset so recovar's .90 applies), standalone, no timing, capture, replay or dump options. (c) Both: arm-script wall (WALL.json) around the whole process, including start-up, particle copy to --scratch_dir, compilation (fresh JAX cache) and final writes. (d) Per seed one job: 14445855 della-h19g2, 14445856 della-h19g4, 14445857 della-h21g3 (H100 80GB HBM3).
+
+`pdb_k4_5k128_initialmodel_vdam_200it_bench83b9ae9`: FSC-AUC of rigidly registered final maps (no half maps; masked columns use the frozen mask):
+
+| Comparison | FSC-AUC | Masked FSC-AUC | FSC 0.5 (Å) | Masked FSC 0.5 (Å) |
+| --- | ---: | ---: | ---: | ---: |
+| RELION (relion_s29) vs reference | 0.1406 | 0.1393 | 60.44 | 60.44 |
+| relax (relax_s29) vs reference | 0.1469 | 0.1458 | 60.44 | 60.44 |
+| relax vs RELION (X-AUC) | 0.8795 | 0.8955 | — | — |
+| RELION vs RELION repeat (this job's RELION seed 29 vs the same command's 2026-09-24 run (vdambench band, no --scratch_dir)) | 0.8459 | 0.8527 | — | — |
+
 <a id="ribosembly_k15_50k256_initialmodel_vdam_200it"></a>
 
 ### ribosembly_k15_g256_n50000_snr1_codex_20260509: InitialModel-VDAM K=15 (200 iterations)

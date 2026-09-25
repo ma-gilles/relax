@@ -2768,6 +2768,132 @@
    }
   },
   {
+   "id": "pdb_k4_5k128_initialmodel_vdam_200it_bench83b9ae9",
+   "table": "initialmodel",
+   "section": "synthetic",
+   "dataset": "data_pdb_k4_5k_128 (VDAM stack 83b9ae9, 3 seeds)",
+   "empiar_id": null,
+   "particles": 5000,
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "symmetry": "C1",
+   "classes": 4,
+   "workflow": "InitialModel-VDAM K=4 (200 iterations, seeds 29/41/53)",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 build_patched relion_refine --grad --denovo_3dref (InitialModel, non-MPI, --j 8, --scratch_dir)",
+    "resolution_A": null,
+    "resolution_definition": null,
+    "relion_reported_resolution_A": null,
+    "masked_resolution_A": null,
+    "wall_s": 773,
+    "wall_definition": "arm-script wall of relion_refine (WALL.json), end to end",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 200,
+    "jobs": [
+     "14445855",
+     "14445856",
+     "14445857"
+    ],
+    "masked_band_auc": null
+   },
+   "relax": {
+    "version": "relax InitialModel (relax.commands.initial_model), production defaults (--pass2_engine auto: exact-local over class-segmented rows)",
+    "resolution_A": null,
+    "resolution_definition": null,
+    "relion_reported_resolution_A": null,
+    "masked_resolution_A": null,
+    "wall_s": 2138,
+    "wall_definition": "arm-script wall of python im_run.py end to end, cold JAX cache (WALL.json)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 200,
+    "jobs": [
+     "14445855",
+     "14445856",
+     "14445857"
+    ],
+    "masked_band_auc": null,
+    "source_sha": "83b9ae98e5d9298fc7140c2d7ccc9586affff902",
+    "source_repo": "relax VDAM stack (landing, bd2af74..83b9ae9 on main 924e7ba; frozen as cand_vdam_83b9ae9)"
+   },
+   "initial_model": {
+    "reference": "ground truth (simulator maps; mean of the class maps for alignment when K>1), RELION file frame",
+    "aggregate": "K>1: reference and cross-engine FSC-AUCs are population-weighted means over Hungarian-matched classes (weights rlnClassDistribution); the FSC 0.5 value is that of the most populated class",
+    "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
+    "alignment": "rigid (HEALPix-2 seed + x-mirror, continuous rotation+translation fit, sign +1); cubic apply. Arm vs reference: arm consensus fitted to the reference mean. Pair: b consensus fitted directly onto a's reference-frame consensus.",
+    "score_json": "docs/benchmarks/initialmodel_scores/pdb128_k4_bench83b9ae9.json",
+    "relion": {
+     "run": "relion_s29",
+     "fsc_auc": 0.1406,
+     "masked_fsc_auc": 0.1393,
+     "res_05_A": 60.44,
+     "masked_res_05_A": 60.44
+    },
+    "relax": {
+     "run": "relax_s29",
+     "fsc_auc": 0.1469,
+     "masked_fsc_auc": 0.1458,
+     "res_05_A": 60.44,
+     "masked_res_05_A": 60.44
+    },
+    "cross": {
+     "fsc_auc": 0.8795,
+     "masked_fsc_auc": 0.8955
+    },
+    "relion_repeat": {
+     "pair": "this job's RELION seed 29 vs the same command's 2026-09-24 run (vdambench band, no --scratch_dir)",
+     "fsc_auc": 0.8459,
+     "masked_fsc_auc": 0.8527
+    }
+   },
+   "gt": null,
+   "cross_engine": null,
+   "cross_engine_masked_band_auc": null,
+   "time_ratio_relax_over_relion": 2.77,
+   "matched": "yes",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": true
+   },
+   "notes": [
+    "Three seeds, each one Slurm job with both arms started together on one node: relax (8 CPUs, one H100) and RELION --j 8 (8 CPUs, one H100), --scratch_dir on node-local /tmp on both; relax production defaults (all RELAX_*/RECOVAR_* unset, XLA memory fraction at the production .90). The row's arms and walls are seed 29.",
+    "Per seed: seed 29: reference FSC-AUC (population-weighted, masked) relax 0.1458 / RELION 0.1393 (unmasked 0.1469 / 0.1406); relax-vs-RELION X-AUC 0.8795 (masked 0.8955); RELION vs its earlier same-command run 0.8459 (masked 0.8527); populations relax [1.0, 0.0, 0.0, 0.0] / RELION [1.0, 0.0, 0.0, 0.0]; walls relax 2138 s / RELION 773 s; seed 41: reference FSC-AUC (population-weighted, masked) relax 0.1886 / RELION 0.1843 (unmasked 0.1871 / 0.1829); relax-vs-RELION X-AUC 0.7949 (masked 0.8507); RELION vs its earlier same-command run 0.8412 (masked 0.8817); populations relax [0.48, 0.235, 0.285, 0.0] / RELION [0.474, 0.243, 0.283, 0.0]; walls relax 2364 s / RELION 1087 s; seed 53: reference FSC-AUC (population-weighted, masked) relax 0.1085 / RELION 0.1110 (unmasked 0.1068 / 0.1091); relax-vs-RELION X-AUC 0.8603 (masked 0.8536); RELION vs its earlier same-command run 0.8751 (masked 0.8799); populations relax [1.0, 0.0, 0.0, 0.0] / RELION [1.0, 0.0, 0.0, 0.0]; walls relax 1832 s / RELION 794 s.",
+    "RELION band (masked population-weighted reference FSC-AUC over all 6 RELION runs of this command: relion_s29, relion_s41, relion_s53, x_relion_band_s29, x_relion_band_s41, x_relion_band_s53): 0.0935-0.1856; relax seeds 0.1458, 0.1886, 0.1085, inside the band at every seed.",
+    "relax / RELION wall 2.17-2.77x over the three seeds (CPU-matched, 8 CPUs per arm).",
+    "Seeds 29 and 53 collapse to one populated class in both engines (as in the 2026-09-24 band); seed 41 keeps three."
+   ],
+   "null_reasons": {},
+   "evidence": {
+    "run_roots": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/vdam/pdb_k4_5k/s29",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/vdam/pdb_k4_5k/s41",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/vdam/pdb_k4_5k/s53",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/band_pdb128_s29"
+    ],
+    "score_json_full": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/vdam/pdb_k4_5k/scores/pdb128_k4_bench83b9ae9.json",
+    "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_vdam.py (copy of relax_vdambench_20260924/score_vdam.py)"
+   },
+   "date": "2026-09-25",
+   "history": [],
+   "time_check": {
+    "a": "RELION: 1 H100, relion_refine --j 8 (8 CPUs). relax: 1 H100, one process, 8 CPUs. Both arms in one --gres=gpu:h100:2 job on one node, started together; no --exclusive.",
+    "b": "relax: production defaults (RELAX_*, RECOVAR_* unset; XLA_PYTHON_CLIENT_MEM_FRACTION unset so recovar's .90 applies), standalone, no timing, capture, replay or dump options.",
+    "c": "Both: arm-script wall (WALL.json) around the whole process, including start-up, particle copy to --scratch_dir, compilation (fresh JAX cache) and final writes.",
+    "d": "Per seed one job: 14445855 della-h19g2, 14445856 della-h19g4, 14445857 della-h21g3 (H100 80GB HBM3)."
+   },
+   "mask": {
+    "dataset": "pdb_k4_5k128_c1",
+    "sha256": "41916d7c348cc82afc7e25c03fad1322f6692e5ba7283c2a428e56214a4078e9"
+   }
+  },
+  {
    "id": "ribosembly_k15_50k256_initialmodel_vdam_200it",
    "table": "initialmodel",
    "section": "synthetic",
