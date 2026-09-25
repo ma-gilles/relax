@@ -240,10 +240,8 @@ def _assert_matches(actual, expected):
         (4096, 128, 21, 415),
         (1024, 128, 21, 3386),
         (512, 32, 64, 311),
-        # A subtomogram 3D grid (515 coarse x 8): the tables exceed kMaxSharedBytes and are read from global memory.
-        (64, 8, 4120, 311),
     ],
-    ids=["early", "hp3", "many_translations", "tilt_3d_grid"],
+    ids=["early", "hp3", "many_translations"],
 )
 def test_translate_sum_matches_resident_block_weighted_sums(
     monkeypatch,
@@ -758,6 +756,33 @@ def test_ctf_probs_matches_the_resident_block_reduction(
         "ctf_probs",
         max_ulp_of_scale=_MAX_MASS_ULP_PER_TRANSLATION * 21,
     )
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("bpref", [False, True])
+def test_global_memory_tables_equal_shared_tables(monkeypatch, custom_cuda_lib, gpu_device, bpref):
+    """Tables beyond the 32 KB shared budget (subtomogram 3D grids) are read from global memory, bitwise alike.
+
+    At one row per block the angle and posterior tables take 3 T floats: T = 2730 fits the budget,
+    T = 2731 does not. The extra translation carries zero posterior, so it adds exact zeros to every
+    sum: the two launches must agree bit for bit.
+    """
+
+    cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
+    rng = np.random.default_rng(2731)
+    operands = _operands(rng, rows=19, image_capacity=4, n_trans=2731, n_pixels=257)
+    operands["posterior"][:, -1] = 0.0
+    shared = dict(
+        operands,
+        posterior=np.ascontiguousarray(operands["posterior"][:, :-1]),
+        translation_angles=np.ascontiguousarray(operands["translation_angles"][:-1]),
+    )
+    with jax.default_device(gpu_device):
+        kwargs = dict(n_valid_rows=19, logical_pixels=257, rows_per_block=1, bpref=bpref, with_ctf=True)
+        in_global = _kernel(cuda_backproject, operands, **kwargs)
+        in_shared = _kernel(cuda_backproject, shared, **kwargs)
+    for a, b in zip(in_global, in_shared):
+        np.testing.assert_array_equal(np.asarray(a), np.asarray(b))
 
 
 @pytest.mark.gpu
