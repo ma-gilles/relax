@@ -94,6 +94,30 @@ def relion_gpu_old_offsets(offsets_px):
     return np.where(offsets_px > 0, np.trunc(offsets_px + 0.5), np.trunc(offsets_px - 0.5))
 
 
+def relion_offset_log_prior_3d(translations_angst, old_offsets_px, *, pixel_size, sigma_offset_angst):
+    """Each particle's log offset prior over the coarse 3D grid, ``[P, T]`` float32 (RELION's ``pdf_offset``).
+
+    The GPU coarse pass adds the rounded old offset in pixels (:func:`relion_gpu_old_offsets`) to
+    the sampling translation in Angstrom, subtracts the prior (zero in auto-refine), and scales the
+    squared distance by ``pixel_size**2 / (-2 sigma2_offset)`` (acc_ml_optimiser_impl.h:3059-3094).
+    The SPA prior has the same unit mix, which :func:`make_relion_translation_log_prior` encodes
+    with pixel-unit translations and the centre ``-rounded_old / pixel_size``. Checked against a
+    RELION f2c1a3 dump of a tilt-series particle to 2e-6 (em_work/cryoet_s42_20260925).
+    """
+
+    from relax.helpers.orientation_priors import make_relion_translation_log_prior
+
+    pixel_size = float(pixel_size)
+    centers = -relion_gpu_old_offsets(np.asarray(old_offsets_px, dtype=np.float64).reshape(-1, 3)) / pixel_size
+    return make_relion_translation_log_prior(
+        np.asarray(translations_angst, dtype=np.float64) / pixel_size,
+        pixel_size,
+        float(sigma_offset_angst),
+        centers,
+        dtype=np.float32,
+    ).reshape(centers.shape[0], -1)
+
+
 def tilt_translation_angles(shifts_3d, old_offsets_3d, image_projections, image_particle, image_size):
     """Each image's scoring phase operand for every 3D trial shift: float32 ``[I, T, 2]`` radians.
 
@@ -170,4 +194,3 @@ def relion_left_matrices(image_left, *, accuracy: float = 1e-6):
     image_left = np.asarray(image_left, dtype=np.float64)
     applies = np.any(np.abs(image_left - np.eye(3)) > accuracy, axis=(1, 2))
     return image_left, applies
-
