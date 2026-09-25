@@ -1487,6 +1487,7 @@ def compute_pass2_stats_resident(
         # RELION's window at every size, including the box (a shape class reaches its
         # box before the reference does): the resident driver never scores a full half.
         window_at_box=True,
+        reference_sphere_clip=reconstruction_image_radius is not None,
     )
 
     scale_groups_available = group_ids is not None

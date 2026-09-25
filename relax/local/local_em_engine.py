@@ -749,7 +749,9 @@ def run_local_em_exact(
         enabled=stable_fourier_window_shapes,
         quantum=resolved_window_quantum,
         square=square_window,
-        recon_exact_radius=bool(recon_exact_radius),
+        # Images on another grid keep RELION's rounded support; their reference-sphere clip
+        # is the exact cut (sparse_pass2_window._pass2_window_setup).
+        recon_exact_radius=bool(recon_exact_radius) and reconstruction_image_radius is None,
     )
     physical_current_size = stable_window_plan.physical_current_size
     physical_mstep_current_size = (

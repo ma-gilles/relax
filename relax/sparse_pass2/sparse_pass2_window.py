@@ -264,8 +264,17 @@ def _pass2_window_setup(
     use_exact_relion_gaussian: bool,
     use_float64_scoring: bool,
     window_at_box: bool = False,
+    reference_sphere_clip: bool = False,
 ) -> _Pass2WindowSetup:
-    """Resolve the M-step current size, the score/recon window and the precision policy of a pass 2."""
+    """Resolve the M-step current size, the score/recon window and the precision policy of a pass 2.
+
+    ``reference_sphere_clip`` marks images on another grid than the reference, whose M-step
+    adjoint clips at the reference sphere (``relax.helpers.adjoint.ReferenceSphereClip``). Their
+    reconstruction window then keeps RELION's rounded support (``ires < image_current_size / 2 + 1``)
+    without the exact image-radius cut: RELION's backprojector bounds only the rotated reference
+    radius (BP.cuh:322), which the clip reproduces. At the class's box the exact cut would drop
+    its outer ring (radius N/2 to N/2 + 1/2) that RELION backprojects.
+    """
 
     H, W = image_shape
     mstep_current_size = (
@@ -294,6 +303,8 @@ def _pass2_window_setup(
         }
     if window_at_box:
         window_spec_kwargs = {**window_spec_kwargs, "window_at_box": True}
+    if reference_sphere_clip:
+        window_spec_kwargs = {**window_spec_kwargs, "recon_exact_radius": False}
     budget_window_spec = make_fourier_window_spec(
         image_shape,
         current_size,

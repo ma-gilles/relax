@@ -1222,3 +1222,36 @@ def test_window_at_box_is_relions_support_with_its_nyquist_row():
     shift_y = 0.4
     relion_phase = np.exp(-2j * np.pi * lattice[:, 1] * shift_y / n)
     assert np.allclose(relion_phase, np.conj(np.exp(-2j * np.pi * ky[nyquist] * shift_y / n)))
+
+
+def test_class_reconstruction_window_at_box_keeps_relions_outer_ring():
+    """Images on another grid backproject RELION's rounded support; the reference-sphere clip is the exact cut.
+
+    RELION's backprojector bounds only the rotated reference radius (BP.cuh:322), so a class at
+    its box (S3b group 2: 112 px, s = 1.12, reference r_max 51, clip at image radius 57.1)
+    backprojects every pixel with ``ires < N/2 + 1``, including the ring N/2 < r < N/2 + 1/2 that
+    the single-grid exact cut drops. Single-grid pixels keep the exact cut (sphere = window there).
+    """
+    from relax.helpers.fourier_window import make_frequency_coords_half_np
+    from relax.sparse_pass2.sparse_pass2_window import _pass2_window_setup
+
+    n = 112
+    common = dict(
+        current_size=None,
+        reconstruction_current_size=None,
+        half_spectrum_scoring=True,
+        square_window=False,
+        relion_firstiter_score_mode="gaussian",
+        use_exact_relion_gaussian=True,
+        use_float64_scoring=False,
+        window_at_box=True,
+    )
+    single = _pass2_window_setup((n, n), **common).budget_window_spec
+    clipped = _pass2_window_setup((n, n), reference_sphere_clip=True, **common).budget_window_spec
+    coords = np.asarray(make_frequency_coords_half_np((n, n)))
+    radius = np.hypot(coords[:, 0], coords[:, 1])
+    ring = set(np.flatnonzero((radius > n // 2) & (np.rint(radius) <= n // 2)).tolist())
+    single_recon, clipped_recon = set(np.asarray(single.recon_indices_np).tolist()), set(np.asarray(clipped.recon_indices_np).tolist())
+    assert ring and not ring & single_recon
+    assert ring <= clipped_recon and clipped_recon - single_recon == ring
+    np.testing.assert_array_equal(clipped.score_indices_np, single.score_indices_np)
