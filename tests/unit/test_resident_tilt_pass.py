@@ -62,7 +62,8 @@ def _one_image_tilt_inputs(args):
 def test_one_image_particles_reproduce_the_spa_pass(_resident_production_env):  # noqa: F811
     from relax.sparse_pass2 import resident_pass2 as rp
 
-    args = _driver_fixture_args()
+    # The once-per-half resident operands, which the tilt runner needs, cover masked scoring only.
+    args = dict(_driver_fixture_args(), score_with_masked_images=True)
     spa = rp._resident_pass2(**args)
     tomo = rp._resident_pass2(**args, tilt=_one_image_tilt_inputs(args))
 
