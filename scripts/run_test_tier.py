@@ -311,10 +311,26 @@ def sweep_shards(src: Path, py: str) -> list[Item]:
             shards.append([f])
             loads.append(cost)
     flags = ["--run-slow", "--run-integration", "--run-gpu"]
+    env = sweep_opt_in_env(src)
     return [
-        Item(f"unit_{i:02d}", _pytest(py, *s, flags=flags), True, loads[i] + 30, required=False)
+        Item(f"unit_{i:02d}", _pytest(py, *s, flags=flags), True, loads[i] + 30, required=False, env=dict(env))
         for i, s in enumerate(shards)
     ]
+
+
+def sweep_opt_in_env(src: Path) -> dict[str, str]:
+    """Environment that turns on the GPU tests which otherwise skip on an opt-in variable.
+
+    Every test that needs CUDA must run in the GPU sweep, so the opt-ins are set here:
+    the CUDA x-half compact-pair guard, and the P4-J resident operand check, which reads a
+    RELION particles STAR (the K1 5k fixture, resolved through the manifest).
+    """
+    manifest = json.loads((src / "tests" / "fixtures" / "em_fixture_manifest.json").read_text())
+    sets = manifest.get("sets", manifest)
+    star = Path(sets["k1_5k128_data"]["root"]) / "particles.star"
+    if not star.is_file():
+        raise SystemExit(f"GPU sweep fixture missing: {star}")
+    return {"RELAX_RUN_CUDA_XHALF_TEST": "1", "RELAX_P4J_STAR_FIXTURE": str(star)}
 
 
 def plan(tier: str, src: Path, base: str, run_root: Path | None = None) -> list[Item]:
@@ -347,6 +363,7 @@ def plan(tier: str, src: Path, base: str, run_root: Path | None = None) -> list[
                     True,
                     sum(seconds.get(f, 10) for f in touched),
                     required=False,
+                    env=sweep_opt_in_env(src),
                 )
             )
         return items

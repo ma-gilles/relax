@@ -215,3 +215,29 @@ def test_gpu_files_include_skipif_gated_resident_tests():
     selected = run_test_tier.touched_gpu_tests(REPO_ROOT, ["relax/sparse_pass2/resident_pass2.py"])
     assert "tests/unit/test_resident_pass2_driver.py" in selected
     assert "tests/unit/initial_model/test_audit_vdam_repeat_panel.py" not in files
+
+
+# Test files whose CUDA tests are gated by a skipif, a runtime backend check or a GPU fixture
+# rather than the gpu marker. They must still run in the GPU tiers.
+SKIPIF_GATED_GPU_FILES = (
+    "tests/unit/test_em_stage_glue_programs.py",
+    "tests/unit/test_local_backprojection_relion_f32.py",
+    "tests/unit/test_normalized_cc_replay.py",
+    "tests/unit/test_resident_local_pass2.py",
+    "tests/unit/test_resident_pass2_driver.py",
+    "tests/unit/test_stable_window_fused_chunk_integration.py",
+)
+
+
+def test_every_cuda_test_file_runs_in_the_gpu_tiers():
+    gpu_files = set(run_test_tier.gpu_test_files(REPO_ROOT))
+    assert set(SKIPIF_GATED_GPU_FILES) <= gpu_files
+    # The medium sweep runs every test file, whatever its marker, with the GPU flags and the
+    # opt-ins that would otherwise skip a CUDA test.
+    items = [i for i in run_test_tier.plan("medium", REPO_ROOT, "HEAD") if i.name.startswith("unit_")]
+    swept = {a for i in items for a in i.argv if a.endswith(".py")}
+    assert gpu_files <= swept
+    for item in items:
+        assert "--run-gpu" in item.argv
+        assert item.env["RELAX_RUN_CUDA_XHALF_TEST"] == "1"
+        assert Path(item.env["RELAX_P4J_STAR_FIXTURE"]).is_file()
