@@ -106,7 +106,10 @@ def _assert_outputs_match(actual, expected):
         left, right = np.asarray(left), np.asarray(right)
         assert left.shape == right.shape, index
         assert left.dtype == right.dtype, index
-        assert_matches(left, right, err_msg=f"output {index} differs", strict=True)
+        # Output 6 (the norm correction) is a float64 scatter of float32-computed terms, so split
+        # and inline fusion move it at float32 precision: 8.2e-8 relative on H100 (14389571).
+        rtol = 1e-6 if index == 6 else None
+        assert_matches(left, right, err_msg=f"output {index} differs", strict=True, rtol=rtol)
 
 
 @pytest.mark.parametrize("pixel_batch", (42, 32))

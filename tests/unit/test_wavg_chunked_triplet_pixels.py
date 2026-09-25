@@ -273,10 +273,11 @@ def test_chunked_wavg_atomic_accumulator_matches_per_image(sequential):
 
 _PEAK_PROBE = textwrap.dedent(
     """
-    import json, sys
+    import json, os, sys
     import jax, jax.numpy as jnp
     import numpy as np
     sys.path.insert(0, {tests_unit!r})
+    sys.path.insert(0, os.path.dirname({tests_unit!r}))  # tests/, for helpers.float_compare
     from test_wavg_chunked_triplet_pixels import _chunked, _per_image_bytes, _wavg_case, _whole_bucket_rectangle_terms
     from relax.cuda import kernels as em_cuda_kernels
 

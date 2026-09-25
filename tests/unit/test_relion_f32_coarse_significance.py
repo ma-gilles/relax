@@ -217,7 +217,7 @@ def test_relion_cuda_f32_tail_target_preserves_text_to_float_semantics():
     sum_weight = np.asarray([2.8323050236340316e22], dtype=np.float32)
     target = np.asarray(_relion_cuda_f32_tail_target(sum_weight, 0.999))
 
-    assert_matches(target, [1606715186])
+    assert_matches(target, np.asarray([1606715186], dtype=np.uint32).view(np.float32))
 
 
 def test_relion_f32_coarse_support_gate_honors_scoped_default(monkeypatch):
