@@ -1640,7 +1640,8 @@ def test_dense_initial_model_estep_sparse_pass2_preserves_k_class_state(monkeypa
     assert calls["local_layout_count"] == 2
     assert calls["has_class_local_rotation_log_prior"] is False
     assert calls["local_stats_use_reconstruction_probs"] is True
-    assert calls["local_class_posterior_sums_from_noise"] is False
+    # K>1 normalizes by RELION's retained (significant-pruned) class mass.
+    assert calls["local_class_posterior_sums_from_noise"] is True
     assert len(calls["layouts"]) == 2
     for layout_call in calls["layouts"]:
         np.testing.assert_allclose(layout_call["pass2_parent_prior"], fine_prior[[1, 3]])
