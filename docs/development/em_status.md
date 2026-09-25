@@ -177,12 +177,29 @@ Job 14421852 (candidate 91596ff) measured rel L2 0.24 at K=2 and 0.71 at K=3
 against the resident K-class pass. The two agree on everything else to the
 default band: evidence, per-class winners, joint Pmax, class mass and both BPrefs.
 The resident K-class pass computes the noise with RELION's arithmetic
-(`resident_pass2.compute_k_class_pass2_stats_resident`, branch
-claude/ressym-kclass-20260925, landing after its kclass and K4 qualification). Its
-noise is pinned by the duplicated-class test against the K=1 resident pass. The
-compact K>1 engine is not fixed; it is deleted with compact. The K4 long and 100k
-runs against RELION on the resident route will show whether this moved the
-existing K4 rows.
+(`resident_pass2.compute_k_class_pass2_stats_resident`). Its noise is pinned by the
+duplicated-class test against the K=1 resident pass. The compact K>1 engine is not
+fixed; it is deleted with compact.
+
+Class3D on the resident engine (2026-09-25): the K-class pass 2 runs on the resident
+engine by default, with the K=1 flip's selection (unset: resident, or compact with a logged
+reason when a configuration check refuses; `RELAX_SPARSE_PASS2_RESIDENT=1`: refusal is an
+error; `=0`: compact) and its engine record. Rows carry the class axis
+(`docs/development/resident_segments.md`). K4 50k/256 long (15 iterations, candidate e2f5197,
+job 14428127 against the RELION repeat of 14427006): GT min FSC-AUC 0.216797 (masked 0.216068),
+inside RELION's band [0.216623, 0.216957] (masked [0.215882, 0.216170]); the compact long run
+14410744 scores 0.216536, 8.7e-5 below it. K4 100k/256 completion (job 14426696, CPU-matched
+pair): GT min FSC-AUC 0.26407 (masked 0.26795), above RELION's [0.26276, 0.26322] (masked
+[0.26642, 0.26679]); wall 14620 s against RELION 4666 s.
+
+OPEN (K4 100k/256, both engines, older than resident): relax's class-assignment accuracy
+against RELION is 0.878-0.894 while two RELION runs agree at 0.9335, and relax's maps agree
+with RELION's at FSC-AUC 0.852 while RELION runs agree at 0.915-0.928. Compact scores the
+same (0.852, long run 14410744), so the gap predates the resident engine; GT FSC-AUC is at or
+above RELION's band. Next: one-step K4 replays from RELION's 100k states at a few iterations
+(per-half noise), reporting per-class weights, class-assignment agreement and
+data_vs_prior, to separate a per-step bias from basin divergence. Evidence:
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclass_20260925/HANDOFF.json`.
 
 Final all-data maps are now always gridding-corrected, as in RELION; the former
 default-off selector made the K1 100k/256 masked GT FSC 0.0008 lower than both
