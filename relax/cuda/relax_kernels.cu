@@ -1239,12 +1239,17 @@ cudaError_t launch_relion_wavg_rotation_atomic_triplet_add_f32(
 
 /* One body for both term layouts.  ``FLAT_ROWS`` replaces the rectangular
  * ``[batch, rotation]`` block address with a packed row whose image comes from
- * ``row_image_ids``, exactly as the flat-row fine scorer does.  The launcher
- * keeps grid.x = row so a flattened rectangular problem issues the same
- * multiset of per-cell atomic adds under the same linear block index
- * ``rotation + batch * n_rotations``.  The order those adds land in is
- * hardware scheduled in both layouts, so the float32 accumulator is bitwise
- * reproducible only for exactly representable summands. */
+ * ``row_image_ids``, exactly as the flat-row fine scorer does.  In the
+ * rectangular layout the order the per-cell atomic adds land in is hardware
+ * scheduled, so the float32 accumulator is bitwise reproducible only for exactly
+ * representable summands.
+ *
+ * The flat-row callers hand rows sorted by image (image-major within a class),
+ * so each image's rows form one run.  The first row of a run sums the run's
+ * rows in row order and adds that sum with one atomic per cell; the other rows
+ * return.  With one run per image a cell receives a single add per launch and
+ * the accumulator is reproducible; rows of one image split over several runs
+ * stay correct and race only as the per-row atomics did. */
 template <bool FLAT_ROWS = false>
 __global__ void __launch_bounds__(256)
 relion_wavg_rotation_atomic_runtime_triplet_f32_kernel(
@@ -1281,6 +1286,28 @@ relion_wavg_rotation_atomic_runtime_triplet_f32_kernel(
             if (threadIdx.x == 0) output[0] = nanf("");
             return;
         }
+        if (row > 0 && static_cast<int64_t>(row_image_ids[row - 1]) == batch) return;
+        int64_t run_end = row + 1;
+        while (run_end < row_count && static_cast<int64_t>(row_image_ids[run_end]) == batch)
+            ++run_end;
+        for (int pixel = threadIdx.x;
+             pixel < logical_pixel_count;
+             pixel += blockDim.x) {
+            const int64_t output_index = (batch * pixel_capacity + pixel) * 3;
+            float sum0 = 0.0f;
+            float sum1 = 0.0f;
+            float sum2 = 0.0f;
+            for (int64_t run_row = row; run_row < run_end; ++run_row) {
+                const int64_t input_index = (run_row * pixel_capacity + pixel) * 3;
+                sum0 = __fadd_rn(sum0, terms[input_index]);
+                sum1 = __fadd_rn(sum1, terms[input_index + 1]);
+                sum2 = __fadd_rn(sum2, terms[input_index + 2]);
+            }
+            atomicAdd(&output[output_index], sum0);
+            atomicAdd(&output[output_index + 1], sum1);
+            atomicAdd(&output[output_index + 2], sum2);
+        }
+        return;
     }
     for (int pixel = threadIdx.x;
          pixel < logical_pixel_count;
