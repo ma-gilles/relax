@@ -304,9 +304,9 @@ def test_native_vdam_diagnostic_continuation_fails_without_second_pseudo_half(tm
 
 @pytest.mark.parametrize(
     ("prior_mode", "suspend_iteration"),
-    ((1, -1), (0, 0), (0, 2)),
+    ((0, 0), (0, 2), (1, 5)),
 )
-def test_continuation_order_replay_rejects_local_search_history(
+def test_continuation_order_replay_rejects_suspended_local_search_history(
     prior_mode,
     suspend_iteration,
 ):
@@ -315,8 +315,18 @@ def test_continuation_order_replay_rejects_local_search_history(
         grad_suspended_local_searches_iter=suspend_iteration,
     )
 
-    with pytest.raises(NotImplementedError, match="before the first local-search"):
+    with pytest.raises(NotImplementedError, match="suspended local-search"):
         vdam_checkpoint._validate_continuation_order_replay(checkpoint)
+
+
+@pytest.mark.parametrize("prior_mode", (0, 1))
+def test_continuation_order_replay_accepts_unsuspended_local_searches(prior_mode):
+    checkpoint = SimpleNamespace(
+        sampling_state=SimpleNamespace(orientational_prior_mode=prior_mode),
+        grad_suspended_local_searches_iter=-1,
+    )
+
+    vdam_checkpoint._validate_continuation_order_replay(checkpoint)
 
 
 def test_continuation_order_replay_accepts_pre_local_checkpoint():

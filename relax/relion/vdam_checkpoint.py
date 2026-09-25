@@ -14,7 +14,6 @@ import numpy as np
 from relax.relion.relion_metadata import _relion_star_list_value
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import (
-    RELION_ORIENTATIONAL_PRIOR_NOPRIOR,
     RELION_ORIENTATIONAL_PRIOR_ROTTILT_PSI,
     NativeSamplingState,
 )
@@ -414,14 +413,18 @@ def _load_native_vdam_continuation(
 
 
 def _validate_continuation_order_replay(checkpoint: NativeContinuationCheckpoint) -> None:
-    """Fail closed when native subset-order history is not reconstructible."""
+    """Fail closed when native subset-order history is not reconstructible.
 
-    if (
-        int(checkpoint.sampling_state.orientational_prior_mode)
-        != RELION_ORIENTATIONAL_PRIOR_NOPRIOR
-        or int(checkpoint.grad_suspended_local_searches_iter) != -1
-    ):
+    The subset order is a pure function of the command and iteration unless
+    RELION suspended local searches at some point, which forces full-data
+    iterations (``updateSubsetSize``, ml_optimiser.cpp:11947-11953). Only the
+    MPI optimiser ever sets that suspension (ml_optimiser_mpi.cpp:3849-3878);
+    the orientational prior mode itself does not enter the order
+    (exp_model.cpp:406-456), so local-search checkpoints replay exactly.
+    """
+
+    if int(checkpoint.grad_suspended_local_searches_iter) != -1:
         raise NotImplementedError(
-            "diagnostic native VDAM continuation can reconstruct particle "
-            "order only before the first local-search transition"
+            "diagnostic native VDAM continuation cannot reconstruct particle "
+            "order after a suspended local-search transition"
         )
