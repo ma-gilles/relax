@@ -240,17 +240,61 @@ def test_k_class_resident_matches_the_compact_fused_engine(_resident_production_
         assert _rel_l2(compact.Ft_y[k], resident.Ft_y[k]) < 1e-6, f"Ft_y class {k}"
         assert _rel_l2(compact.Ft_ctf[k], resident.Ft_ctf[k]) < 1e-6, f"Ft_ctf class {k}"
 
-    def summed(field):
-        return sum(np.asarray(getattr(stats, field), dtype=np.float64) for stats in compact.noise_stats)
-
-    assert _rel_l2(summed("wsum_sigma2_noise"), resident.noise_stats.wsum_sigma2_noise) < 1e-4
-    for field in (
-        "wsum_img_power",
-        "wsum_norm_correction",
-        "wsum_scale_correction_xa",
-        "wsum_scale_correction_aa",
-    ):
-        assert _rel_l2(summed(field), getattr(resident.noise_stats, field)) < 1e-6, field
-    total_sumw = float(summed("sumw"))
+    # The noise sums are not compared: the compact K-class engine has no RELION
+    # direct low-shell Wavg residual (its historical K>1 arithmetic), so they
+    # differ by construction; test_duplicated_class_is_the_k1_pass checks them.
+    total_sumw = float(sum(float(stats.sumw) for stats in compact.noise_stats))
     assert abs(total_sumw - float(resident.noise_stats.sumw)) <= 1e-6 * abs(total_sumw)
 
+
+@requires_resident_gpu
+def test_duplicated_class_is_the_k1_pass(_resident_production_env):
+    """Two copies of one class at prior 1/2 each are the K=1 pass split in half.
+
+    Every duplicated cell carries half the K=1 posterior, so the joint pruning
+    keeps the same cells, each class's BPref is half of the K=1 BPref, its mass
+    half of ``sumw``, its evidence ``log 1/2`` below the K=1 evidence, and every
+    noise, norm and scale sum equals the K=1 one. The K=1 driver is the one
+    measured against the compact engine with this arithmetic, so this pins the
+    K-class noise path, which the compact K-class engine cannot.
+    """
+
+    args = _driver_fixture_args()
+    single = rp.compute_pass2_stats_resident(**args)
+    k_args = dict(args)
+    support = k_args.pop("significant_sample_indices")
+    prior = k_args.pop("rotation_log_prior")
+    volume = k_args.pop("volume")
+    for name in ("normalization_other_score_log_z", "normalization_score_mode"):
+        k_args.pop(name)
+    half = (prior + np.float32(np.log(0.5))).astype(np.float32)
+    doubled = _resident(k_args, jnp.stack([volume, volume]), [support, support], [half, half])
+
+    for k in range(2):
+        assert_matches(doubled.per_class_best_pose_rotation_ids[k], single.best_rotation_indices)
+        assert_matches(
+            doubled.class_log_evidence_per_image[k],
+            np.asarray(single.relion_stats.log_evidence_per_image, dtype=np.float64) + np.log(0.5),
+        )
+        assert _rel_l2(0.5 * np.asarray(single.Ft_y), doubled.Ft_y[k]) < 1e-6, f"Ft_y class {k}"
+        assert _rel_l2(0.5 * np.asarray(single.Ft_ctf), doubled.Ft_ctf[k]) < 1e-6, f"Ft_ctf class {k}"
+    assert_matches(doubled.class_reconstruction_posterior_sums, np.full(2, 0.5 * float(single.noise_stats.sumw)))
+    assert_matches(
+        np.asarray(doubled.stats.max_posterior_per_image),
+        0.5 * np.asarray(single.relion_stats.max_posterior_per_image),
+    )
+    # The K=1 engine-comparison bounds: the Wavg residual cancels most of its
+    # magnitude, so its reduction order shows at 1e-4; the other sums at 1e-6.
+    for field, bound in (
+        ("wsum_sigma2_noise", 1e-4),
+        ("wsum_img_power", 1e-6),
+        ("wsum_norm_correction", 1e-6),
+        ("wsum_scale_correction_xa", 1e-6),
+        ("wsum_scale_correction_aa", 1e-6),
+    ):
+        measured = _rel_l2(getattr(single.noise_stats, field), getattr(doubled.noise_stats, field))
+        print(f"duplicated-class {field} rel L2 {measured:.3e}")
+        assert measured < bound, field
+    assert abs(float(single.noise_stats.sumw) - float(doubled.noise_stats.sumw)) <= 1e-6 * float(
+        single.noise_stats.sumw
+    )
