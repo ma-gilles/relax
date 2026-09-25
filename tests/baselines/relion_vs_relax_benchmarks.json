@@ -2234,9 +2234,10 @@
     "particles": true,
     "schedule": true,
     "flags": true,
-    "timing_controlled": true
+    "timing_controlled": false
    },
    "notes": [
+    "Walls provisional (manager decision 2026-09-25): VDAM walls are to be re-measured with one srun --exact -c8 step per arm. This pair job ran RELION and relax as processes of one srun task with 18 CPUs (--ntasks=1 --cpus-per-task=18), so the two engines competed for the same CPUs; vdamspeed measured the effect on 10097 as 1,184 s against 335 s for iterations 1-50. The relax wall and the ratio are not a timing measurement.",
     "Paired run on relax main: both arms at the same time in one two-GPU job, same seed, schedule, sampling and diameter; both pre-read the particle stack.",
     "Three same-command RELION runs (this pair, repeat 14382148, 2026-09-19 matrix 14148540): reference FSC-AUC 0.3412508-0.3413158, relax 0.3413152 inside; masked 0.7552-0.7560, relax 0.7554 inside. RELION-vs-RELION X-AUC 0.9768-0.9820 (masked 0.9933-0.9954); relax vs the three RELION runs 0.9718 / 0.9893 / 0.9844 (masked 0.9928 / 0.9967 / 0.9952): above every RELION pair against two of the three runs, 0.005 below the lowest RELION pair against the paired run.",
     "Earlier pre-split run (recovar 25cc4475b, 2026-09-19, separate jobs, profiling on): relax 3284 s vs RELION 1587 s (2.07x); reference FSC-AUC 0.3413 both, X-AUC 0.9798/0.9950.",
@@ -2351,6 +2352,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Walls provisional (manager decision 2026-09-25): VDAM walls are to be re-measured with one srun --exact -c8 step per arm. This row's arms ran as separate jobs (or, for the 10076 K=4 20-iteration row, in one job with an unrecorded CPU layout), not as paired --exact steps.",
     "Both arms ran the 2026-09-19 cross-dataset matrix command (RELION default InitialModel schedule, 200 iterations, same seed, sampling and diameter) as separate whole-node jobs on H100 nodes; matched stays at workload (single run per arm, separate jobs and nodes, relax profiling options on).",
     "All scored runs (FSC-AUC unmasked / masked): relion_s29 vs reference 0.0817 unmasked / 0.0738 masked; relax_s29 vs reference 0.0813 unmasked / 0.0733 masked; relion_s29 vs relax_s29 0.9223 / 0.9361.",
     "relax minus RELION reference FSC-AUC: -0.0004 unmasked, -0.0005 masked; no RELION repeat exists, so a relax deficit here is open, not attributed to RELION variation."
@@ -2470,6 +2472,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Walls provisional (manager decision 2026-09-25): VDAM walls are to be re-measured with one srun --exact -c8 step per arm. Here each arm ran in its own srun --exact -c8 step, but RELION and relax ran in different jobs and nodes.",
     "Retained-mass fix (relax commit fd05d48, 2026-09-24): VDAM K>1 divided sigma2_noise, pdf_class, sigma2_offset and ave_Pmax by the full responsibility mass N; RELION divides by the retained fine-pass mass (weights at or above significant_weight; acc_ml_optimiser_impl.h:4065-4142, ml_optimiser.cpp:6170-6171, 6387). Before the fix the per-iteration noise estimate was 0.99901 of RELION's at every shell (retained 199.8029 / 200 at iteration 1, seed 53), which moved the trajectory from iteration 1. After it a fresh relax run tracks a RELION run of the same seed to 1e-6-1e-5 in the maps through iteration 11 (job 14396822), as RELION's own same-seed repeat does.",
     "relax arms (fix) walls: seed 29 3761 s, seed 41 3814 s, seed 53 3869 s; RELION band walls seed 29 999 s, seed 41 931 s, seed 53 915 s.",
     "Population-weighted reference FSC-AUC per seed (seeds 29 / 41 / 53): RELION 0.3328 / 0.3797 / 0.4528, RELION same-seed repeat 0.3326 / - / 0.4555, relax fix 0.3301 / 0.3849 / 0.4509, relax before the fix 0.3110 / 0.1360 / 0.4410. Mean over seeds: relax 0.3886, RELION 0.3884. Class populations now match RELION at every seed (relax 0.874/0.126, 0.081/0.919, 1.00/0.00; before, seed 41 split 0.72/0.28).",
@@ -2596,6 +2599,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Walls provisional (manager decision 2026-09-25): VDAM walls are to be re-measured with one srun --exact -c8 step per arm. Here each arm ran in its own srun --exact -c8 step, but RELION and relax ran in different jobs and nodes.",
     "Retained-mass fix (relax commit fd05d48, 2026-09-24): VDAM K>1 divided sigma2_noise, pdf_class, sigma2_offset and ave_Pmax by the full responsibility mass N; RELION divides by the retained fine-pass mass (weights at or above significant_weight; acc_ml_optimiser_impl.h:4065-4142, ml_optimiser.cpp:6170-6171, 6387). Before the fix the per-iteration noise estimate was 0.99901 of RELION's at every shell (retained 199.8029 / 200 at iteration 1, seed 53), which moved the trajectory from iteration 1. After it a fresh relax run tracks a RELION run of the same seed to 1e-6-1e-5 in the maps through iteration 11 (job 14396822), as RELION's own same-seed repeat does.",
     "Seed 29 rerun on the fix: relax 3429 s; population-weighted reference FSC-AUC 0.1441 (before 0.1418), RELION 0.1236; both engines put all particles in one class.",
     "Seed band on relax main: seeds 29, 41 and 53 for each engine (band jobs 14382132, 14382133, 14382134; RELION GUI defaults, no pre-read); the row's walls and headline values are seed 29, the band is in the notes.",
@@ -2718,6 +2722,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Walls provisional (manager decision 2026-09-25): VDAM walls are to be re-measured with one srun --exact -c8 step per arm. This row's arms ran as separate jobs (or, for the 10076 K=4 20-iteration row, in one job with an unrecorded CPU layout), not as paired --exact steps.",
     "Both arms ran the 2026-09-19 cross-dataset matrix command (RELION default InitialModel schedule, 200 iterations, same seed, sampling and diameter) as separate whole-node jobs on H100 nodes; matched stays at workload (single run per arm, separate jobs and nodes, relax profiling options on).",
     "OPEN bug candidate (recorded 2026-09-24): relax's population-weighted reference FSC-AUC is below RELION's by 0.046 with no RELION repeat.",
     "The 2026-09-20 quality gate (vdam_matrix_quality_20260920, evaluate_kclass_gt, every class aligned to every GT class independently, plain mean) read 0.039139 relax vs 0.039154 RELION; with one rigid frame per run and population weights (this table) relax is below RELION. The population-weighted value follows the class occupancies each engine converged to (RELION's most populated class reaches 15.1 A against its GT class, relax's 68.0 A). One rigid frame per run is the right registration: a run's classes share one set of pose assignments, so they share one frame, and aligning each class separately lets every class find its own best rotation against every GT class, which inflates agreement for poorly resolved classes.",
@@ -2837,6 +2842,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Walls provisional (manager decision 2026-09-25): VDAM walls are to be re-measured with one srun --exact -c8 step per arm. This row's arms ran as separate jobs (or, for the 10076 K=4 20-iteration row, in one job with an unrecorded CPU layout), not as paired --exact steps.",
     "Both arms ran the 2026-09-19 cross-dataset matrix command (RELION default InitialModel schedule, 200 iterations, same seed, sampling and diameter) as separate whole-node jobs on H100 nodes; matched stays at workload (single run per arm, separate jobs and nodes, relax profiling options on).",
     "OPEN bug candidate (recorded 2026-09-24): relax's population-weighted reference FSC-AUC 0.0489 is below both RELION seeds (0.0677 seed 41, 0.0718 seed 29), so RELION's own seed variation does not cover it.",
     "The seed-29 relax arm (job 14148550) was cancelled before finishing; only RELION ran at seed 29.",
@@ -2956,6 +2962,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Walls provisional (manager decision 2026-09-25): VDAM walls are to be re-measured with one srun --exact -c8 step per arm. This row's arms ran as separate jobs (or, for the 10076 K=4 20-iteration row, in one job with an unrecorded CPU layout), not as paired --exact steps.",
     "relax wall is the median of three repeats on deb59cfdd: 6505.7 / 6732.8 / 6741.7 s (ratio 2.53-2.62 against RELION seed 41). The 2026-09-21 VDAM handoff quoted 2.29x against the seed-29 RELION wall (2899 s); the like-seed ratio is the one above.",
     "The 2026-09-19 matrix relax arms on 25cc4475b took 8041 s (seed 41, job 14148533) and 10566 s (seed 29, job 14148548).",
     "All scored runs (FSC-AUC unmasked / masked): relion_s29 vs reference 0.0463 unmasked / 0.0494 masked; relion_s41 vs reference 0.0668 unmasked / 0.0796 masked; relax_s29_25cc447 vs reference 0.0478 unmasked / 0.0533 masked; relax_s41_25cc447 vs reference 0.0527 unmasked / 0.0627 masked; relax_s41_deb59cf_14208541 vs reference 0.0518 unmasked / 0.0609 masked; relax_s41_deb59cf_14208542 vs reference 0.0521 unmasked / 0.0608 masked; relax_s41_deb59cf_14208543 vs reference 0.0485 unmasked / 0.0544 masked; relion_s29 vs relion_s41 0.0540 / 0.0716; relion_s29 vs relax_s29_25cc447 0.2272 / 0.3494; relion_s29 vs relax_s41_25cc447 0.0540 / 0.0692; relion_s29 vs relax_s41_deb59cf_14208541 0.0475 / 0.0624; relion_s29 vs relax_s41_deb59cf_14208542 0.0524 / 0.0766; relion_s29 vs relax_s41_deb59cf_14208543 0.0522 / 0.0709; relion_s41 vs relax_s29_25cc447 0.0578 / 0.0763; relion_s41 vs relax_s41_25cc447 0.2286 / 0.3411; relion_s41 vs relax_s41_deb59cf_14208541 0.2204 / 0.3347; relion_s41 vs relax_s41_deb59cf_14208542 0.2197 / 0.3310; relion_s41 vs relax_s41_deb59cf_14208543 0.2364 / 0.3505; relax_s29_25cc447 vs relax_s41_25cc447 0.0585 / 0.0824; relax_s29_25cc447 vs relax_s41_deb59cf_14208541 0.0557 / 0.0777; relax_s29_25cc447 vs relax_s41_deb59cf_14208542 0.0557 / 0.0814; relax_s29_25cc447 vs relax_s41_deb59cf_14208543 0.0588 / 0.0808; relax_s41_25cc447 vs relax_s41_deb59cf_14208541 0.3109 / 0.4383; relax_s41_25cc447 vs relax_s41_deb59cf_14208542 0.3082 / 0.4413; relax_s41_25cc447 vs relax_s41_deb59cf_14208543 0.2982 / 0.4320; relax_s41_deb59cf_14208541 vs relax_s41_deb59cf_14208542 0.2926 / 0.4274; relax_s41_deb59cf_14208541 vs relax_s41_deb59cf_14208543 0.2650 / 0.3969; relax_s41_deb59cf_14208542 vs relax_s41_deb59cf_14208543 0.2738 / 0.4144.",
@@ -3071,9 +3078,10 @@
     "particles": true,
     "schedule": true,
     "flags": true,
-    "timing_controlled": true
+    "timing_controlled": false
    },
    "notes": [
+    "Walls provisional (manager decision 2026-09-25): VDAM walls are to be re-measured with one srun --exact -c8 step per arm. This pair job ran RELION and relax as processes of one srun task with 18 CPUs (--ntasks=1 --cpus-per-task=18), so the two engines competed for the same CPUs; vdamspeed measured the effect on 10097 as 1,184 s against 335 s for iterations 1-50. The relax wall and the ratio are not a timing measurement.",
     "Paired run on relax main: both arms at the same time in one two-GPU job, same seed, schedule, sampling and diameter; both pre-read the particle stack.",
     "relax reads particles.zeropose.star (the same particles with all-zero angle columns); RELION reads the file without angles, which it treats as zero.",
     "The auto-refine reference was itself started from the seed-42 RELION InitialModel (real-data track), so that run's higher agreement with the reference is not independent evidence.",
@@ -3194,6 +3202,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Walls provisional (manager decision 2026-09-25): VDAM walls are to be re-measured with one srun --exact -c8 step per arm. This row's arms ran as separate jobs (or, for the 10076 K=4 20-iteration row, in one job with an unrecorded CPU layout), not as paired --exact steps.",
     "RELION walls 3584 / 3589 / 3524 s (jobs 13683192, 13688031, 13693797); relax without preread on 5ca9c8fff took 7701 / 8453 / 8961 s. The preread fix loads the 100k selected rows into host memory once; RELION read from disk (it did not preread), so the pair is not flag-matched.",
     "All scored runs (FSC-AUC unmasked / masked): relion_s29_r1 vs reference 0.2928 unmasked / 0.3137 masked; relion_s29_r2 vs reference 0.2951 unmasked / 0.3163 masked; relax_s29_r1 vs reference 0.2938 unmasked / 0.3148 masked; relax_s29_r2 vs reference 0.2941 unmasked / 0.3152 masked; relax_s29_preread vs reference 0.2941 unmasked / 0.3153 masked; relion_s29_r1 vs relion_s29_r2 0.9928 / 0.9941; relion_s29_r1 vs relax_s29_r1 0.9911 / 0.9933; relion_s29_r1 vs relax_s29_r2 0.9929 / 0.9946; relion_s29_r1 vs relax_s29_preread 0.9889 / 0.9926; relion_s29_r2 vs relax_s29_r1 0.9908 / 0.9934; relion_s29_r2 vs relax_s29_r2 0.9926 / 0.9945; relion_s29_r2 vs relax_s29_preread 0.9889 / 0.9924; relax_s29_r1 vs relax_s29_r2 0.9880 / 0.9924; relax_s29_r1 vs relax_s29_preread 0.9933 / 0.9947; relax_s29_r2 vs relax_s29_preread 0.9875 / 0.9920.",
     "relax minus RELION reference FSC-AUC: +0.0013 unmasked, +0.0016 masked; relax-vs-RELION X-AUC 0.9889/0.9926 is below the RELION repeat pair 0.9928/0.9941; open; the 2 RELION runs span reference FSC-AUC 0.2928-0.2951 (masked 0.3137-0.3163), relax 0.2941 is inside (masked 0.3153, inside)."
@@ -3312,6 +3321,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Walls provisional (manager decision 2026-09-25): VDAM walls are to be re-measured with one srun --exact -c8 step per arm. This row's arms ran as separate jobs (or, for the 10076 K=4 20-iteration row, in one job with an unrecorded CPU layout), not as paired --exact steps.",
     "Short 20-iteration schedule (RELION's default is 200); a parity trajectory, not a production timing. RELION's own runs branch at iteration 13-16 on the small class 3 (~300 particles); relax follows branch B.",
     "All scored runs (FSC-AUC unmasked / masked): relion_s29_pair vs reference 0.0385 unmasked / 0.0489 masked; relion_s29_a vs reference 0.0386 unmasked / 0.0490 masked; relion_s29_b vs reference 0.0389 unmasked / 0.0491 masked; relax_s29 vs reference 0.0389 unmasked / 0.0492 masked; relion_s29_pair vs relion_s29_a 0.9954 / 0.9983; relion_s29_pair vs relion_s29_b 0.9871 / 0.9937; relion_s29_pair vs relax_s29 0.9887 / 0.9940; relion_s29_a vs relion_s29_b 0.9873 / 0.9936; relion_s29_a vs relax_s29 0.9883 / 0.9939; relion_s29_b vs relax_s29 0.9962 / 0.9984.",
     "relax minus RELION reference FSC-AUC: +0.0004 unmasked, +0.0003 masked; relax-vs-RELION X-AUC 0.9887/0.9940 is at or above the RELION repeat pair 0.9873/0.9936; the 3 RELION runs span reference FSC-AUC 0.0385-0.0389 (masked 0.0489-0.0491), relax 0.0389 is above (masked 0.0492, above)."
@@ -3422,6 +3432,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Walls provisional (manager decision 2026-09-25): VDAM walls are to be re-measured with one srun --exact -c8 step per arm. This row's arms ran as separate jobs (or, for the 10076 K=4 20-iteration row, in one job with an unrecorded CPU layout), not as paired --exact steps.",
     "Long-tier test PASS: direct VDAM vs RELION iteration-8 FSC(1-16) 1.000000; GT FSC 0.143 crossing at shell 6 for both; test metric mean GT FSC over shells 1-16 RELION 0.137797, relax 0.137794. The RELION run's per-iteration STAR files span 33 s (it000 to it008, start-up excluded); relax's 196 s includes compilation. Earlier source f078ac1be (job 14284405): 198.4 s, same test result.",
     "All scored runs (FSC-AUC unmasked / masked): relion_it8 vs reference 0.0274 unmasked / -0.0259 masked; relax_it8_q427a08bd8 vs reference 0.0271 unmasked / -0.0267 masked; relion_it8 vs relax_it8_q427a08bd8 0.9925 / 0.9994.",
     "relax minus RELION reference FSC-AUC: -0.0003 unmasked, -0.0008 masked; no RELION repeat exists, so a relax deficit here is open, not attributed to RELION variation."
@@ -3531,9 +3542,10 @@
     "particles": true,
     "schedule": true,
     "flags": true,
-    "timing_controlled": true
+    "timing_controlled": false
    },
    "notes": [
+    "Walls provisional (manager decision 2026-09-25): VDAM walls are to be re-measured with one srun --exact -c8 step per arm. This pair job ran RELION and relax as processes of one srun task with 18 CPUs (--ntasks=1 --cpus-per-task=18), so the two engines competed for the same CPUs; vdamspeed measured the effect on 10097 as 1,184 s against 335 s for iterations 1-50. The relax wall and the ratio are not a timing measurement.",
     "Paired run on relax main: both arms at the same time in one two-GPU job, same seed, schedule, sampling and diameter; both pre-read the particle stack.",
     "OPEN feature gap: relax InitialModel lacks RELION's symmetry-alignment step. RELION's GUI InitialModel (src/pipeline_jobs.cpp:3520-3523, 3575-3585) runs relion_refine --sym C1 when 'Run in C1' is set, then relion_align_symmetry --i run_it200_model.star --o initial_model.mrc --sym C4 --apply_sym --select_largest_class; relax records --sym but never applies it (only the run-in-C1 mode exists; a direct symmetric run raises NotImplementedError). Both arms therefore ran the identical C1 command, and relion_align_symmetry (build_patched) was applied offline to both final model.star files; the scored maps are those initial_model.mrc outputs.",
     "Before symmetry alignment (raw C1 maps): reference FSC-AUC RELION 0.2810 / relax 0.3488, masked 0.3358 / 0.3962; X-AUC 0.4816 / 0.5448. The two C1 runs differ markedly and no RELION repeat exists, so the relax advantage is not attributed.",
