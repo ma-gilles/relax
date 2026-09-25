@@ -120,16 +120,16 @@ TIER_JOB = {
     "medium": {"gpus": 3, "time": "03:00:00", "mem_gb": 384},
     "long": {"gpus": 4, "time": "16:00:00", "mem_gb": 600},
 }
-LONG_ARM_SECONDS = {  # H100 walls: long tier (relax 14309851/14287533, Q 14320191), completions (Q 14320204/18)
-    "long_k1_standalone": 4700,
-    "long_k1_relion_seeded_debug": 4700,
-    "long_k1_native_vdam": 250,
-    "long_kclass": 6700,
-    "completion_k1": 9000,
-    "completion_k4": 19300,
-    # EMPIAR-10097 it13 -> 14 (hp3, current size 136): RELION 556 s for the iteration on H100.
-    "long_realdata_hp3_default": 1200,
-    "long_realdata_hp3_resident": 1200,
+LONG_ARM_SECONDS = {  # H100 walls of long tier 14410744 (relax 93ce1aa, one node, 4 GPUs)
+    "long_k1_standalone": 6300,
+    "long_k1_relion_seeded_debug": 4500,
+    "long_k1_native_vdam": 220,
+    "long_kclass": 11000,  # two Class3D arms (standalone, RELION-seeded debug)
+    "completion_k1": 9200,
+    "completion_k4": 21200,
+    # EMPIAR-10097 it13 -> 14 (hp3, current size 136).
+    "long_realdata_hp3_default": 1840,
+    "long_realdata_hp3_resident": 640,
     # Class3D K4 5k/128 at HEALPix 4, 2 iterations (relax 7381f84, Slurm 14410096): 1860 s on H100.
     "long_class3d_hp4": 2000,
 }
