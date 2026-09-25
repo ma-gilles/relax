@@ -325,3 +325,17 @@ def test_stale_natives_are_refused(tmp_path, monkeypatch):
     (run_root / "PLAN.json").write_text(json.dumps({"tier": "smoke", "items": []}))
     with pytest.raises(SystemExit, match="stale natives"):
         run_test_tier.main(["run", "smoke", "--run-root", str(run_root)])
+
+
+def test_relax_must_be_imported_from_the_snapshot(tmp_path):
+    import os
+
+    from scripts import native_sources
+
+    env = dict(os.environ, PYTHONPATH=str(REPO_ROOT))
+    files, reason = native_sources.check_imports(REPO_ROOT, env)
+    assert reason is None and files["relax_from_snapshot"]
+    assert files["relax"].startswith(str(REPO_ROOT.resolve())) and files["recovar"]
+    # A snapshot elsewhere whose processes still import this checkout's relax is refused.
+    files, reason = native_sources.check_imports(tmp_path, env)
+    assert not files["relax_from_snapshot"] and "not from the snapshot" in reason

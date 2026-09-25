@@ -176,7 +176,12 @@ there. The medium tier also runs periodically on `main`.
 refuses to start when the run's natives were built from other sources, and every other tool
 that freezes a candidate and reuses prebuilt natives runs
 `python scripts/native_sources.py check <natives_dir> --root <candidate checkout>` first:
-results on stale natives are not native-exact for their commit.
+results on stale natives are not native-exact for their commit. A snapshot that shares the
+checkout's pixi environment has an editable relax install pointing at the live worktree, so
+every process of the run sets `PYTHONPATH=<snapshot>`; the runner refuses to start when relax
+does not import from the snapshot (`python scripts/native_sources.py imports <snapshot>` is the
+same check for other tools), and the receipt records `relax.__file__`, `recovar.__file__` and
+the native-source digest.
 
 **Slurm sizing.** Related GPU work runs as one job with `--gres=gpu:N` and one
 worker process per GPU (della-cryoem allows 16 running jobs but 32 GPUs per

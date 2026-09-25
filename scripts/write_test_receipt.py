@@ -29,6 +29,10 @@ def _source(run_root: Path) -> dict:
     return {"head": head, "dirty": dirty, "src": str(src)}
 
 
+def _json(path: Path) -> dict:
+    return json.loads(path.read_text()) if path.is_file() else {}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--run-root", type=Path, required=True)
@@ -50,6 +54,9 @@ def main(argv: list[str] | None = None) -> int:
         "wall_s": args.wall_s,
         "run_root": str(args.run_root),
         "summary": str(args.run_root / "SUMMARY.json"),
+        # Provenance: the files relax and recovar were imported from, and the native sources.
+        "imports": _json(args.run_root / "SUMMARY.json").get("imports"),
+        "native_sources": _json(args.run_root / "natives" / "NATIVE.json").get("native_sources"),
         "written_utc": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     (args.run_root / "RECEIPT.json").write_text(json.dumps(receipt, indent=1) + "\n")

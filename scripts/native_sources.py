@@ -9,6 +9,13 @@ build time and checks it before running:
 
     python scripts/native_sources.py record <natives_dir> [--root <checkout>]
     python scripts/native_sources.py check <natives_dir> [--root <checkout>]
+    python scripts/native_sources.py imports <snapshot>
+
+``imports`` checks the other half of a run's provenance: a snapshot that shares a pixi
+environment with an editable relax install must still import relax from the snapshot (set
+PYTHONPATH to it), not from the live worktree the install points to, or a rebase during a
+queued job changes the code under test. It prints relax.__file__ and recovar.__file__ as the
+run's processes resolve them and exits 1 when relax comes from outside the snapshot.
 
 ``record`` adds ``native_sources`` to ``<natives_dir>/NATIVE.json``; ``check`` exits 1 with a
 message naming both digests when the libraries were built from different sources, or when the
@@ -80,10 +87,46 @@ def check(natives: Path, root: Path = REPO_ROOT) -> str | None:
     return None
 
 
+def import_provenance(snapshot: Path, env: dict | None = None) -> dict:
+    """relax.__file__ and recovar.__file__ as a fresh process with ``env`` resolves them.
+
+    The process starts outside the snapshot so that only PYTHONPATH (not the working
+    directory) can put the snapshot first, as for any tool that runs from elsewhere.
+    """
+    import os
+    import subprocess
+
+    code = "import json, relax, recovar; print(json.dumps({'relax': relax.__file__, 'recovar': recovar.__file__}))"
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        env=dict(os.environ if env is None else env, CUDA_VISIBLE_DEVICES="", JAX_PLATFORMS="cpu"),
+        cwd="/",
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode:
+        return {"error": proc.stderr[-2000:]}
+    files = json.loads(proc.stdout.strip().splitlines()[-1])
+    files["relax_from_snapshot"] = Path(files["relax"]).resolve().is_relative_to(Path(snapshot).resolve())
+    return files
+
+
+def check_imports(snapshot: Path, env: dict | None = None) -> tuple[dict, str | None]:
+    files = import_provenance(snapshot, env)
+    if "error" in files:
+        return files, f"cannot import relax and recovar: {files['error']}"
+    if not files["relax_from_snapshot"]:
+        return files, (
+            f"relax is imported from {files['relax']}, not from the snapshot {snapshot}: an editable install "
+            f"points at a live worktree; run with PYTHONPATH={snapshot}"
+        )
+    return files, None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("mode", choices=["record", "check"])
-    parser.add_argument("natives", type=Path)
+    parser.add_argument("mode", choices=["record", "check", "imports"])
+    parser.add_argument("natives", type=Path, help="the natives directory (the snapshot for imports)")
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
     args = parser.parse_args(argv)
     if args.mode == "record":
@@ -93,6 +136,12 @@ def main(argv: list[str] | None = None) -> int:
         path.write_text(json.dumps(record, indent=1) + "\n")
         print(f"native sources {record['native_sources']['sha256'][:12]} recorded in {path}")
         return 0
+    if args.mode == "imports":
+        files, reason = check_imports(args.natives)
+        print(json.dumps(files))
+        if reason:
+            print(reason, file=sys.stderr)
+        return 1 if reason else 0
     reason = check(args.natives, args.root)
     if reason:
         print(reason, file=sys.stderr)

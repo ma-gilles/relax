@@ -53,6 +53,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.native_sources import check as check_native_sources  # noqa: E402
+from scripts.native_sources import check_imports  # noqa: E402
 TIERS_DIR = REPO_ROOT / "tests" / "tiers"
 RUN_BASE = Path("/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_test_tiers")
 BUDGET_S = {"smoke": 5 * 60, "medium": 2 * 3600, "long": 8 * 3600}
@@ -616,6 +617,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     stale = check_native_sources(run_root / "natives", src)
     if stale:
         raise SystemExit(f"refusing to run the {spec['tier']} tier: {stale}")
+    # ... and import relax from the frozen source, not the live worktree an editable install names.
+    imports, wrong = check_imports(src)
+    if wrong:
+        raise SystemExit(f"refusing to run the {spec['tier']} tier: {wrong}")
     gpus = [g for g in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",") if g]
     if not gpus:
         raise SystemExit("no visible GPU: the tier must run inside a GPU allocation")
@@ -642,6 +647,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         "items": results,
         "fsc": fsc,
         "pinned": pinned,
+        "imports": imports,
     }
     (run_root / "SUMMARY.json").write_text(json.dumps(summary, indent=1) + "\n")
     write_receipt(run_root, spec, summary["status"], wall, model)
