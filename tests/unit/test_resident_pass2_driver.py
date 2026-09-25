@@ -1220,6 +1220,21 @@ def test_stream_projection_budget_is_capped_by_measured_free_memory():
     assert rp._stream_projection_budget_bytes(
         20 * gib, physical_free_bytes=70 * gib, allocator_free_bytes=8 * gib
     ) == 4 * gib
+    # The half's resident operands are reserved before the fraction is taken.
+    assert rp._stream_projection_budget_bytes(
+        20 * gib, physical_free_bytes=30 * gib, allocator_free_bytes=None, reserved_bytes=10 * gib
+    ) == 10 * gib
+
+
+def test_streamed_row_ladder_counts_the_padded_copy():
+    """10097 it13 (14397073): capacity 131072 at 122 KiB per rotation fit the
+    19.9 GiB budget once but not with its padded copy alive; it is now excluded."""
+
+    per_rotation = 122.3 * 1024
+    kept = rp._stream_row_capacity_ladder(
+        (8192, 32768, 131072), bytes_per_rotation=per_rotation, max_projection_bytes=19.91 * 1024**3
+    )
+    assert kept == (8192, 32768)
 
 
 @requires_resident_gpu

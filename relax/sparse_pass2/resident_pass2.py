@@ -1822,10 +1822,29 @@ def compute_pass2_stats_resident(
         score_cache = recon_cache = recon_abs2_cache = None
         physical_free_bytes = _device_free_memory_bytes()
         allocator_free_bytes = _jax_allocator_free_memory_bytes()
+        # The half's once-per-half operands are allocated after this reading;
+        # reserve them now so the chunk-local caches do not take their room.
+        reserved_operand_bytes = 0
+        if _resident_operands_requested():
+            _, _reserve_norm_dtype = relion_powerclass_noise_dtypes(
+                real_dtype=precision_policy.score_real_dtype,
+                source_faithful_spectrum_norm=resolved_spectrum_norm,
+            )
+            reserved_operand_bytes = resident_half_operand_bytes(
+                n_images=int(n_images),
+                n_score_pixels=int(n_windowed),
+                n_recon_pixels=int(n_recon_windowed),
+                n_half_pixels=int(np.shape(noise_variance_half)[-1]),
+                n_fine_trans=int(n_fine_trans),
+                score_complex_bytes=np.dtype(precision_policy.score_complex_dtype).itemsize,
+                real_bytes=np.dtype(precision_policy.score_real_dtype).itemsize,
+                norm_high_shell_bytes=np.dtype(_reserve_norm_dtype).itemsize,
+            )
         stream_projection_budget_bytes = _stream_projection_budget_bytes(
             max_projection_cache_bytes,
             physical_free_bytes=physical_free_bytes,
             allocator_free_bytes=allocator_free_bytes,
+            reserved_bytes=reserved_operand_bytes,
         )
         logger.info(
             "Resident pass-2 projections are streamed per chunk: the %d-rotation cache "
@@ -2428,24 +2447,31 @@ _STREAM_SLOT_QUANTUM = 8192
 # take; the rest stays for the chunk's scoring and M-step working set, which
 # have their own device-fraction budgets.
 _STREAM_FREE_MEMORY_FRACTION = 0.5
+# While a chunk's projections are padded to the row capacity, the projected
+# block and its padded copy are both live (flipqual 10097 it13: a 12.16 GiB pad
+# at row capacity 131072 ran the device out of memory, 14397073).
+_STREAM_PEAK_COPIES = 2
 
 
 def _stream_projection_budget_bytes(
-    max_projection_cache_bytes, *, physical_free_bytes, allocator_free_bytes
+    max_projection_cache_bytes, *, physical_free_bytes, allocator_free_bytes, reserved_bytes=0
 ):
     """Chunk-local projection budget: the cache share, capped by measured free memory.
 
     Both free-memory readings are taken when the pass plans its chunks, so
     they see whatever earlier passes and iterations left resident; an unknown
     reading does not cap. The per-iteration cache share alone would ignore
-    that. Half of the free memory stays for the half's accumulators and
-    operands and the chunk working set, which have their own budgets.
+    that. ``reserved_bytes`` (the half's resident operands, allocated after
+    the reading) comes off the free memory first; half of the rest stays for
+    the half's accumulators and the chunk working set, which have their own
+    budgets.
     """
 
     budget = int(max_projection_cache_bytes)
     for free in (physical_free_bytes, allocator_free_bytes):
         if free is not None:
-            budget = min(budget, int(float(free) * _STREAM_FREE_MEMORY_FRACTION))
+            usable = max(0.0, float(free) - float(reserved_bytes))
+            budget = min(budget, int(usable * _STREAM_FREE_MEMORY_FRACTION))
     return max(0, budget)
 
 
@@ -2459,14 +2485,16 @@ def _stream_row_capacity_ladder(row_ladder, *, bytes_per_rotation, max_projectio
     """
 
     kept = tuple(
-        int(c) for c in row_ladder if float(c) * float(bytes_per_rotation) <= float(max_projection_bytes)
+        int(c)
+        for c in row_ladder
+        if _STREAM_PEAK_COPIES * float(c) * float(bytes_per_rotation) <= float(max_projection_bytes)
     )
     if not kept:
         raise NotImplementedError(
             f"The device-resident K=1 sparse pass 2 ({RESIDENT_PASS2_ENV}=1) does not implement "
             "this configuration: even the smallest row capacity "
             f"{min(int(c) for c in row_ladder)} needs "
-            f"{min(int(c) for c in row_ladder) * bytes_per_rotation / float(1024 ** 3):.2f} GiB of "
+            f"{_STREAM_PEAK_COPIES * min(int(c) for c in row_ladder) * bytes_per_rotation / float(1024 ** 3):.2f} GiB of "
             f"streamed projections against a {max_projection_bytes / float(1024 ** 3):.2f} GiB "
             "budget. Clear the flag to use the compact engine; this path never falls back silently."
         )
