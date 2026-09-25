@@ -199,9 +199,10 @@ def test_zero_oversampling_resident_driver_matches_the_compact_engine(_resident_
     # The coarse winner and Pmax are carried through, not recomputed.
     np.testing.assert_array_equal(compact.hard_assignment, resident.hard_assignment)
     np.testing.assert_array_equal(compact.best_rotation_indices, resident.best_rotation_indices)
+    # Published in the scoring precision (float32), as RELION's max_weight / sum_weight.
     assert_matches(
-        np.asarray(resident.relion_stats.max_posterior_per_image, dtype=np.float64),
-        np.asarray(args["relion_coarse_max_posterior"], dtype=np.float64),
+        np.asarray(resident.relion_stats.max_posterior_per_image, dtype=np.float32),
+        np.asarray(args["relion_coarse_max_posterior"], dtype=np.float32),
     )
     for field in (
         "log_evidence_per_image",

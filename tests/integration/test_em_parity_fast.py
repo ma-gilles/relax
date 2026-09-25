@@ -174,6 +174,26 @@ def _assert_fsc_gate(case: str, output_dir: Path) -> None:
     )
 
 
+def _flag_on(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "on", "yes"}
+
+
+def _assert_resident_engines_ran(log: str, *, global_pass: bool, local_pass: bool, case: str) -> None:
+    """Under the resident flag set, the passes a case exists for must run resident.
+
+    The routing logs its choice (dispatch.py, local_search_iteration.py); a case
+    that silently fell back to the compact or exact local engine would pass its
+    RELION gates while testing the other engine.
+    """
+
+    if global_pass and _flag_on("RELAX_SPARSE_PASS2_RESIDENT"):
+        assert "Resident pass-2 plan:" in log, f"{case} did not run the resident global pass 2"
+    if local_pass and _flag_on("RELAX_LOCAL_SEARCH_RESIDENT"):
+        assert "running the device-resident local fine pass 2" in log, (
+            f"{case} did not run the resident local pass 2"
+        )
+
+
 @pytest.mark.gpu
 @pytest.mark.integration
 @pytest.mark.slow
@@ -222,6 +242,7 @@ def test_em_parity_fast_k1_replay(tmp_path):
     assert proc.returncode == 0, (
         f"run_multi_iter_parity.py exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     )
+    _assert_resident_engines_ran(proc.stdout + proc.stderr, global_pass=True, local_pass=False, case="K=1 replay")
 
     npz_path = output_dir / "refinement_results.npz"
     assert npz_path.exists(), f"Missing refinement_results.npz at {npz_path}"
@@ -318,6 +339,7 @@ def test_em_parity_fast_k1_local_replay(tmp_path):
     log = proc.stdout + proc.stderr
     assert "healpix_order=4, local_search=True" in log, "K=1 local replay did not run a local-search iteration"
     assert "built exact Projector::data" in log, "K=1 local replay did not build RELION's Projector::data"
+    _assert_resident_engines_ran(log, global_pass=False, local_pass=True, case="K=1 local replay")
 
     npz_path = output_dir / "refinement_results.npz"
     assert npz_path.exists(), f"Missing refinement_results.npz at {npz_path}"
@@ -827,10 +849,11 @@ def _check_k1_coldstart(
     assert len(sigma_traj) >= 2 and sigma_traj[1] <= 5.0, (
         f"K=1 cold-start iter-2 sigma_offset {sigma_traj[1]:.3f} Å too large; A.1 fix may have regressed."
     )
-    # The os1 case exists to reach the adaptive production pass 2; under the
-    # resident flag it must have run the resident driver, not a routed engine.
-    if oversampling and os.environ.get("RELAX_SPARSE_PASS2_RESIDENT", "").strip() in {"1", "true", "on", "yes"}:
-        assert "Resident pass-2 plan:" in log, "K=1 os1 cold start did not run the resident pass 2"
+    # Both cold starts reach the production pass 2 after the firstiter_cc
+    # iteration; under the resident flag they must have run the resident driver.
+    _assert_resident_engines_ran(
+        log, global_pass=True, local_pass=False, case=f"K=1 os{int(bool(oversampling))} cold start"
+    )
 
 
 @pytest.mark.gpu
@@ -896,6 +919,9 @@ def test_em_parity_fast_k1_perturbreplay(tmp_path):
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
         f"run_full_refinement.py exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    _assert_resident_engines_ran(
+        proc.stdout + proc.stderr, global_pass=True, local_pass=False, case="K=1 perturbation replay"
     )
 
     npz = np.load(output_dir / "refinement_results.npz")
