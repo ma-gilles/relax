@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.sparse_pass2 import resident_tilts
 
@@ -58,3 +59,29 @@ def test_chunk_tilt_layout_refuses_overflow_and_bad_offsets():
         resident_tilts.chunk_tilt_layout(offsets, image_capacity=4, slot_capacity=2, **kwargs)
     with pytest.raises(ValueError, match="at least one image"):
         resident_tilts.validate_unit_image_offsets([0, 2, 2], 2)
+
+
+@pytest.mark.unit
+def test_tilt_slot_rotations_are_each_images_inverse_of_l_a():
+    from relax.sampling import _relion_euler_angles_to_matrix
+
+    rng = np.random.default_rng(3)
+    offsets = resident_tilts.validate_unit_image_offsets([0, 2, 3], 2)
+    layout = resident_tilts.chunk_tilt_layout(
+        offsets,
+        unit_start=0,
+        n_valid_units=2,
+        row_unit_local=np.array([0, 1, 1, 0]),
+        n_valid_rows=3,
+        image_capacity=4,
+        slot_capacity=2,
+    )
+    eulers = rng.uniform(-180, 180, size=(4, 3))
+    left = np.stack([np.linalg.qr(rng.normal(size=(3, 3)))[0] * s for s in (1.0, 1.1, 0.9)])
+    got = resident_tilts.tilt_slot_rotations(layout, eulers, left, dtype=np.float64)
+    a = _relion_euler_angles_to_matrix(eulers)
+    for slot in range(2):
+        for row in range(4):
+            image = layout.slot_image_ids[slot, row]
+            expected = np.eye(3) if image < 0 else np.linalg.inv(left[layout.image_ids[image]] @ a[row]).T
+            assert_matches(got[slot * 4 + row], expected)

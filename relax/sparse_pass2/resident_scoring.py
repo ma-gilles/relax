@@ -549,7 +549,7 @@ def _score_flat_rows(
 
 
 def score_tilt_image_rows(
-    project_slot,  # callable: int32 [C_R] image of each row -> complex64 [C_R, N] its projections
+    project_slot,  # callable: (slot int32 [], image int32 [C_R] of each row) -> complex64 [C_R, N] its projections
     slot_image_ids,  # int32 [S, C_R] chunk-local image of each row per image slot, -1 past its particle's images
     row_unit_local,  # int32 [C_R] chunk-local particle of each row, sorted
     row_log_prior,  # real [C_R]
@@ -579,10 +579,11 @@ def score_tilt_image_rows(
 
     slot_image_ids = jnp.asarray(slot_image_ids, dtype=jnp.int32)
 
-    def add_slot(running, image_ids):
+    def add_slot(running, slot_and_images):
+        slot, image_ids = slot_and_images
         kernel_ids = jnp.where(row_is_valid & (image_ids >= 0), image_ids, jnp.int32(-1))
         raw = _flat_rows_kernel_diff2(
-            project_slot(jnp.where(image_ids >= 0, image_ids, jnp.int32(0))),
+            project_slot(slot, jnp.where(image_ids >= 0, image_ids, jnp.int32(0))),
             kernel_ids,
             chunk_image,
             chunk_corr,
@@ -598,7 +599,8 @@ def score_tilt_image_rows(
     chunk_live = _translation_chunk_live(candidate_mask, row_is_valid)
 
     zeros = jnp.zeros((slot_image_ids.shape[1], int(image_translation_angles.shape[1])), dtype=jnp.float32)
-    raw_sum, _ = jax.lax.scan(add_slot, zeros, slot_image_ids)
+    slots = jnp.arange(slot_image_ids.shape[0], dtype=jnp.int32)
+    raw_sum, _ = jax.lax.scan(add_slot, zeros, (slots, slot_image_ids))
     return _flat_rows_scores(
         raw_sum,
         jnp.asarray(row_unit_local, dtype=jnp.int32),
