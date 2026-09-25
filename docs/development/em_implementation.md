@@ -168,7 +168,7 @@ to repeat inline. `join_half_accumulators_at_low_resolution` applies RELION's
 `--low_resol_join_halves` to the K=1 half accumulators before the Wiener solve;
 the join radius is capped by the last recorded shell resolution, a non-positive
 recorded shell leaves it uncapped, and without history a finite state resolution
-is used. `_class_tau2_from_iref_power_spectrum`, `_class_tau2_update_details`
+is used (a fresh run's `--ini_high` shell, seeded by `initialize_resolution_from_ini_high`). `_class_tau2_from_iref_power_spectrum`, `_class_tau2_update_details`
 and `_stack_class_tau2_update_details` produce the Class3D per-class tau2
 volume, the RELION- and RECOVAR-frame shells, data-vs-prior and the stacked host
 detail record with `fsc_shells` left `None`. The controller keeps the enabling

@@ -486,7 +486,10 @@ During numbered split-half iterations, `join_halves_at_low_resolution` averages
 It does not average already reconstructed maps. The effective joining
 resolution is the larger Angstrom value of the configured threshold (40 Å by
 default) and the available current resolution. Thus “low resolution” means
-low Fourier frequency, not spatial wavelengths smaller than 40 Å.
+low Fourier frequency, not spatial wavelengths smaller than 40 Å. At iteration 1
+the current resolution is the `--ini_high` shell, which RELION sets before the
+first iteration (`initialize_resolution_from_ini_high`); at the GUI default of
+60 Å it, not the 40 Å threshold, bounds the first join.
 
 ## 6. Sampling transitions and convergence
 
