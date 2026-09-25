@@ -136,3 +136,14 @@ def test_gpu_old_offsets_round_half_away_from_zero():
     """ROUND (macros.h:197) as selfROUND applies it to a tomo particle's old offset (acc_ml_optimiser_impl.h:659)."""
     got = tomo_particles.relion_gpu_old_offsets([[0.5, -0.5, 1.49], [-1.5, 2.5000001, -0.2]])
     np.testing.assert_array_equal(got, [[1, -1, 1], [-2, 3, 0]])
+
+
+def test_offset_prior_3d_adds_the_rounded_pixel_offset_to_angstrom_translations():
+    # RELION's pdf_offset (acc_ml_optimiser_impl.h:3059-3094): |round(old_px) + t_A|^2 * pix^2 / (-2 sigma2).
+    pix, sigma = 4.25, 10.0
+    grid = np.array([[0.0, 0.0, 0.0], [4.25, 0.0, 0.0], [-4.25, 4.25, 8.5]])
+    old_px = np.array([[0.848, -0.31, -0.107], [-1.6, 2.5, 0.0]])
+    got = tomo_particles.relion_offset_log_prior_3d(grid, old_px, pixel_size=pix, sigma_offset_angst=sigma)
+    rounded = np.array([[1.0, 0.0, 0.0], [-2.0, 3.0, 0.0]])
+    expected = -np.sum((rounded[:, None, :] + grid[None]) ** 2, axis=2) * pix * pix / (2 * sigma * sigma)
+    assert_matches(got, expected.astype(np.float32))
