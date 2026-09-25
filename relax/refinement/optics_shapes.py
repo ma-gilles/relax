@@ -359,6 +359,20 @@ def place_by_index(parts, classes, n_half):
     return out
 
 
+def _to_reference_units(value, shape_class: ShapeClass, ref_box: int, power: int):
+    """A class's backprojected sum in the reference class's native units.
+
+    A class's native image Fourier values carry ``box_g**2`` and its noise ``box_g**4``
+    (RELION's normalised values times those), so its data sum (image / noise) carries
+    ``box_g**-2`` and its weight sum (1 / noise) ``box_g**-4``; RELION adds both in its own
+    normalisation. Rescaled by ``(box_g / ref_box) ** power`` they add to the reference
+    class's sums, as the noise sums do (``noise_sums_to_reference``).
+    """
+    if value is None or shape_class.box_size == ref_box:
+        return value
+    return value * ((float(shape_class.box_size) / float(ref_box)) ** power)
+
+
 def _sum(values):
     values = [value for value in values if value is not None]
     if not values:
@@ -424,8 +438,8 @@ def merge_class_results(results, classes, n_half, ref_box):
     ]
     return HalfScoreResult(
         ha=per_image("ha"),
-        Ft_y=_sum([result.Ft_y for result in results]),
-        Ft_ctf=_sum([result.Ft_ctf for result in results]),
+        Ft_y=_sum([_to_reference_units(r.Ft_y, c, ref_box, 2) for r, c in zip(results, classes)]),
+        Ft_ctf=_sum([_to_reference_units(r.Ft_ctf, c, ref_box, 4) for r, c in zip(results, classes)]),
         em_stats=em_stats,
         noise_stats=_merge_noise_stats([result.noise_stats for result in results], classes, n_half, ref_box),
         best_pose_rotations=per_image("best_pose_rotations"),

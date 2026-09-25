@@ -144,7 +144,10 @@ def test_score_half_by_shape_places_images_and_adds_sums():
     assert_matches(merged.ha, np.arange(5))
     assert_matches(merged.em_stats.log_evidence_per_image, np.arange(5.0))
     assert_matches(merged.noise_stats.wsum_norm_correction, np.arange(5.0) * 10)
-    assert_matches(merged.Ft_y, np.full(4, 2.0))
+    # The 28-px class's sums join the 32-px reference's in its native units: data x (28/32)^2,
+    # weight x (28/32)^4 (_to_reference_units).
+    assert_matches(merged.Ft_y, np.full(4, 1.0 + (28 / 32) ** 2))
+    assert_matches(merged.Ft_ctf, np.full(4, 2.0 + 2.0 * (28 / 32) ** 4))
     np.testing.assert_allclose(merged.noise_stats.sumw, [2.0, 2.0])
     np.testing.assert_allclose(merged.em_stats.rotation_posterior_sums, np.full(3, 2.0))
     # Class translations come back in reference pixels.
