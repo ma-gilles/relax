@@ -186,3 +186,40 @@ def particle_coarse_diff2(image_diff2_in_slot_order):
         image_diff2 = jnp.asarray(image_diff2, dtype=jnp.float32)
         total = image_diff2 if total is None else total + image_diff2
     return total
+
+
+def particle_coarse_significance(
+    particle_diff2,
+    rotation_log_prior,
+    translation_log_prior,
+    *,
+    adaptive_fraction,
+    max_significants,
+):
+    """RELION's coarse weights and significance of particles from their summed diff2 ``[P, R, T]``.
+
+    The subtomogram coarse pass converts the particle's summed diff2 exactly as the SPA pass
+    converts one image's (convertAllSquaredDifferencesToWeights, acc_ml_optimiser_impl.h:3200-3300):
+    the log weight is ``log prior + min_diff2 - diff2`` in float32, then RELION's sort, scan and
+    tail cut. ``rotation_log_prior`` is ``[R]`` (or ``None``) and ``translation_log_prior``
+    ``[P, T]``, the particle's 3D offset prior. The SPA posterior primitive is reused, so the two
+    paths cannot drift apart. Returns its statistics dict (``mask [P, R * T]``, ``n_significant``,
+    ``pmax``, ``winner``, ...).
+    """
+
+    from relax.scoring.coarse_publication import _dense_prior_scores, _posterior_statistics
+
+    raw = -jnp.asarray(particle_diff2, dtype=jnp.float32)
+    n_particles = int(raw.shape[0])
+    values = _dense_prior_scores(
+        raw, jnp.float32(0.0), rotation_log_prior, translation_log_prior, jnp.int32(n_particles)
+    )
+    raw_max = jnp.max(raw.reshape(n_particles, -1), axis=1)
+    return _posterior_statistics(
+        values,
+        raw_max,
+        None,
+        adaptive_fraction=float(adaptive_fraction),
+        max_significants=None if max_significants is None or int(max_significants) <= 0 else int(max_significants),
+        tie_score_ulps=0,
+    )
