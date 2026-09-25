@@ -1152,7 +1152,7 @@
     "Published resolution 3.5 A (EMD-8511). Input: particle STAR plus EMD-8511 low-passed to 60 A; no RELION EM output.",
     "Standalone with the ceeb8e7 recipe (--relion-half-sets-from-input --seed 42, --initial-noise-bootstrap relion, --relion-particle-shuffle mt19937): relax follows the RELION reference (seed 42) rlnCurrentResolution exactly for iterations 1-17 and is one shell apart at 18 (6.40 vs 6.28 A); both end at 6.40 A at iteration 19 and report 4.21 A after the final pass.",
     "Classification (2026-09-24): inside RELION's seed band. RELION seed repeat 14363852 (--random_seed 20260924, same command, binary and inputs): unmasked 4.16 A, masked 3.54 A, last split-half value 6.53 A at iteration 16; relax agrees with it exactly as the reference does (above). The earlier one-shell gap belonged to 14332336 (a32798c, no recipe flags: departed at iteration 2, unmasked 4.21 A, masked 3.58 A, masked agreement 0.966/0.960 with the two RELION runs); the code changes 301b89f/679bd66 and the recipe flags are not separated.",
-    "Wall pending resident coverage (C1 flip, then symmetry): 8,209 s vs 2,359 s for 14332336 on the same inputs and 4 CPUs is a configuration difference, not I/O. The standalone recipe preserves RELION's fresh particle order (use_fresh_auto_refine_order); in the compact engine that forces per-particle BPref launches (sparse_pass2_bucketed.py:681) and physical-order bucket grouping (_resolve_bpref_execution_bucket_policy): at iteration 7 the sparse pass 2 ran 325 buckets in 303 s vs 145 buckets in 22 s at the same sampling, all in the global-search iterations 2-13 (local-search iterations 14-19 equal). RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF is read only by the resident driver, and a C4 run always uses the compact engine. The unequal half split (28,101/27,769) is RELION's real split and not the cause.",
+    "Wall pending resident coverage (C1 flip, then symmetry): 8,209 s vs 2,359 s for 14332336 on the same inputs and 4 CPUs is a configuration difference, not I/O. The standalone recipe preserves RELION's fresh particle order (use_fresh_auto_refine_order); in the compact engine that forces per-particle BPref launches (sparse_pass2_bucketed.py:681) and physical-order bucket grouping (_resolve_bpref_execution_bucket_policy): at iteration 7 the sparse pass 2 ran 325 buckets in 303 s vs 145 buckets in 22 s at the same sampling, all in the global-search iterations 2-13 (local-search iterations 14-19 equal). RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF is read only by the resident driver; this run used the default compact engine. Since 0ac6139/6345059 a C4 run uses the resident engine when its flag is set: see the resident-engine row (3,828 s). The unequal half split (28,101/27,769) is RELION's real split and not the cause.",
     "Image I/O: RELION without --preread_images; relax full host read (load_dataset lazy=False).",
     "Standalone parity: this run reads no RELION output. Its recipe flags are relax main behaviour since ee4da28 (on main at 9a630fc and later): --relion-half-sets-from-input is on by default for a fresh standalone K=1 start and rebuilds the halves from particles.star and --seed as relion_refine does (the HCN1 STAR has no rlnRandomSubset or poses); --initial-noise-bootstrap relion and --relion-particle-shuffle mt19937 were removed because RELION's behaviour is now the only one. The other arguments (healpix order 2, offset 5/2, 60 A initial low-pass, firstiter_cc) are the RELION GUI defaults (0235bf5). A defaults-only rerun is not needed."
    ],
@@ -1227,6 +1227,103 @@
      "cross_engine_masked_band_auc": 0.9999
     },
     "final_all_data_grid_correct_of_producing_runs": false
+   }
+  },
+  {
+   "id": "empiar10081_hcn1_k1_autorefine_c4_resident",
+   "section": "real",
+   "dataset": "EMPIAR-10081 (HCN1, resident engine)",
+   "empiar_id": "10081",
+   "particles": 55870,
+   "box": 256,
+   "pixel_size_A": 1.3,
+   "symmetry": "C4",
+   "classes": 1,
+   "workflow": "auto-refine K=1",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 build_patched (commit f2c1a38)",
+    "resolution_A": 4.16,
+    "resolution_definition": "relion_postprocess_unmasked",
+    "relion_reported_resolution_A": 4.213,
+    "masked_resolution_A": 3.698,
+    "wall_s": 2732,
+    "wall_definition": "Slurm elapsed of the refinement job",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 19,
+    "jobs": [
+     "14313014",
+     "14363852"
+    ],
+    "masked_band_auc": 0.9118,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen"
+   },
+   "relax": {
+    "source_sha": "b1c192d8a94212e43b958b6f9a17d5f6a368e4cf",
+    "source_repo": "relax (ressym candidate cand_b1c192d; resident code identical to relax main 6345059)",
+    "resolution_A": 4.16,
+    "resolution_definition": "relion_postprocess_unmasked",
+    "masked_resolution_A": 3.698,
+    "wall_s": 3828,
+    "wall_definition": "run_full_refinement process wall (EXECUTED.json seconds)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 19,
+    "jobs": [
+     "14403136"
+    ],
+    "masked_band_auc": 0.9119,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen"
+   },
+   "gt": null,
+   "cross_engine": "masked cross-engine band FSC-AUC vs the RELION reference merged/halves 0.9984/0.9972/0.9974 (unmasked merged 0.9710); vs the RELION seed repeat 0.9918/0.9506/0.9489 (unmasked merged 0.9318), equal to reference vs repeat 0.9920/0.9504/0.9492 (unmasked merged 0.9296)",
+   "time_ratio_relax_over_relion": 1.4,
+   "matched": "workload",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": null,
+    "flags": true,
+    "timing_controlled": false
+   },
+   "notes": [
+    "Published resolution 3.5 A (EMD-8511). Input: particle STAR plus EMD-8511 low-passed to 60 A; no RELION EM output.",
+    "Same standalone command as the default-engine row (relax main recipe: --relion-half-sets-from-input --seed 42, firstiter_cc, healpix 2, offset 5/2, 60 A initial low-pass) with the device-resident flag set of tests/long_test REALDATA_HP3_RESIDENT_ENV (RELAX_SPARSE_PASS2_RESIDENT=1 and companions, RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=1). C4 runs on the resident engine since 0ac6139/6345059 (on relax main).",
+    "Per-iteration resolution follows the RELION reference like the default-engine run: identical for iterations 1-17, 6.40 vs 6.28 A at 18, both 6.40 A at 19. Unmasked 4.16 A / masked 3.698 A, masked band FSC-AUC 0.9119 (RELION 0.9118).",
+    "Wall 3,828 s (EXECUTED.json) vs RELION reference 2,732 s: 1.40x. Not timing-matched: separate jobs, relax 4 CPUs (della-h19g2); the default-engine run took 8,209 s on the same inputs.",
+    "Image I/O: RELION without --preread_images; relax full host read (load_dataset lazy=False).",
+    "Scored by ressym with the watcher's method (frozen mask empiar10081_hcn1_c4, grid_correct True); values re-read from the score files listed under evidence."
+   ],
+   "null_reasons": {
+    "gt": "real data: no ground truth"
+   },
+   "evidence": {
+    "run_roots": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_ressym_20260924/runs/hcn1_resident_b1c192d_v1",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10081_hcn1",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relion_hcn1_seed_repeat_20260924/relion_refine_c4_seed20260924"
+    ],
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_ressym_20260924/scores/hcn1_pairs_4arms_resident.json",
+    "masked_fsc_json": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_ressym_20260924/scores/hcn1_resident_vs_ref/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_ressym_20260924/scores/hcn1_resident_vs_repeat/masked_fsc.json"
+    ]
+   },
+   "date": "2026-09-25",
+   "history": [],
+   "cross_engine_masked_band_auc": 0.9984,
+   "mask": {
+    "dataset": "empiar10081_hcn1_c4",
+    "sha256": "4003c7dea2f37cb8db7f32f1903d5b82a9b2519af7d1ece0c149fca70c9fb0af"
+   },
+   "time_check": {
+    "a": "RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs). relax: 1 H100, one process, 4 CPUs, 128G, shared node.",
+    "b": "relax: standalone recipe flags plus the resident flag set (tests/long_test REALDATA_HP3_RESIDENT_ENV); default allocator with XLA_PYTHON_CLIENT_PREALLOCATE=false; --projector_setup_backend native; --timing_dir and --benchmark_ledger_json records; no intermediates dump, capture, replay or deterministic-reduction options.",
+    "c": "relax: run_full_refinement process wall (EXECUTED.json seconds), including compilation and data loading. RELION: Slurm elapsed of the refinement job.",
+    "d": "RELION 14313014 della-h19g1 H100 (2026-09-23); relax 14403136 della-h19g2 H100 (2026-09-25)"
    }
   },
   {
