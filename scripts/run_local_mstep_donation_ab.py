@@ -174,6 +174,7 @@ SEALED_STATIC_ARGNAMES = (
     "projection_relion_texture_interp",
     "projection_force_jax",
     "projection_mask_current_image_disk",
+    "projection_relion_kernel",
     "relion_exact_bpref_operands",
     "relion_exact_fine_diff2",
     "use_flat_local_rows",
