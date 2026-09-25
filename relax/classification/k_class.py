@@ -788,6 +788,23 @@ def _run_sparse_k_class_adaptive_pass2(
             "strict exact RELION Gaussian K-class pass2 requires fused scoring "
             "with one common class-by-pose minimum"
         )
+    if use_fused_pass2 and n_classes > 1:
+        resident = _run_resident_k_class_pass2(
+            experiment_dataset,
+            means_array,
+            noise_variance,
+            coarse_translations_np,
+            sig_sample_indices_by_class,
+            common=common,
+            engine_kwargs=base_engine_kwargs,
+            class_rotation_priors=[_class_rotation_prior(k) for k in range(n_classes)],
+            relion_projector_half_by_class=relion_projector_half_by_class,
+            relion_projector_r_max=relion_projector_r_max,
+            accumulate_noise=accumulate_noise,
+            mstep_accumulator_shape=mstep_accumulator_shape,
+        )
+        if resident is not None:
+            return resident
     if use_fused_pass2:
         from relax.sparse_pass2.sparse_pass2_bucketed import compute_k_class_pass2_stats_sparse_fused
 
@@ -1062,6 +1079,97 @@ def _as_host_accumulator(value):
     """Copy a full-volume accumulator off GPU before retaining it."""
 
     return np.asarray(jax.device_get(value))
+
+
+def _run_resident_k_class_pass2(
+    experiment_dataset,
+    means_array,
+    noise_variance,
+    coarse_translations_np,
+    sig_sample_indices_by_class,
+    *,
+    common: dict,
+    engine_kwargs: dict,
+    class_rotation_priors,
+    relion_projector_half_by_class,
+    relion_projector_r_max,
+    accumulate_noise: bool,
+    mstep_accumulator_shape,
+) -> KClassEMResult | None:
+    """RELION's Class3D fine pass on the device-resident engine, or None for the compact one.
+
+    Runs under ``RELAX_SPARSE_PASS2_RESIDENT`` like the K=1 pass. RELION's E-step
+    arithmetic does not depend on the class count, so the K-class pass runs the
+    K=1 production arithmetic: RELION's float32 fine posterior and pruned M-step,
+    its powerClass spectrum and exact BPref operands, and the atomic Wavg triplet
+    of the preserved BPref order (``source_faithful_spectrum_norm`` and
+    ``preserve_bpref_particle_order``). The compact K-class route keeps its
+    historical arithmetic until it is deleted. Passes the resident driver was
+    never scoped for go to the compact route, and the log says so.
+    """
+
+    from relax.sparse_pass2.resident_pass2 import (
+        compute_k_class_pass2_stats_resident,
+        resident_pass2_out_of_scope_reason,
+        resident_pass2_requested,
+    )
+
+    if not resident_pass2_requested():
+        return None
+    n_classes = int(means_array.shape[0])
+    options = dict(common)
+    options.update(
+        source_faithful_spectrum_norm=True,
+        preserve_bpref_particle_order=True,
+        relion_f32_fine_posterior=True,
+        relion_fine_mstep_prune=True,
+        relion_fine_diff2_fused_ffi=True,
+        relion_projector_half=relion_projector_half_by_class,
+        relion_projector_r_max=relion_projector_r_max,
+        accumulate_noise=accumulate_noise,
+    )
+    out_of_scope = resident_pass2_out_of_scope_reason(
+        accumulate_noise=accumulate_noise,
+        scale_groups_available=options.get("group_ids") is not None,
+        preserve_bpref_particle_order=True,
+        source_faithful_spectrum_norm=True,
+    )
+    if out_of_scope is None and engine_kwargs.get("normalization_log_evidence") is not None:
+        out_of_scope = "an externally supplied normalization"
+    if out_of_scope is not None:
+        logger.info(
+            "Device-resident sparse pass 2 is enabled but does not cover %s; "
+            "this K-class pass runs on the compact engine",
+            out_of_scope,
+        )
+        return None
+    t0 = time.time()
+    output = compute_k_class_pass2_stats_resident(
+        experiment_dataset,
+        means_array,
+        noise_variance,
+        coarse_translations_np,
+        sig_sample_indices_by_class,
+        options.pop("nside_level"),
+        options.pop("disc_type"),
+        rotation_log_priors_by_class=class_rotation_priors,
+        **options,
+    )
+    logger.info(
+        "Resident K-class pass2: classes=%d images=%d total=%.1fs",
+        n_classes,
+        _dataset_image_count(experiment_dataset),
+        time.time() - t0,
+    )
+    return _class_segmented_em_result(
+        output,
+        n_classes=n_classes,
+        class_posterior_sums_from_noise=True,
+        return_profile=False,
+        host_accumulators=True,
+        mstep_full_half_axis=0 if common["relion_x_half_mstep"] else None,
+        mstep_accumulator_shape=mstep_accumulator_shape,
+    )
 
 
 def _run_dense_k_class_score_probe(
@@ -2072,6 +2180,28 @@ def _run_local_k_class_em_segmented(
     )
     if output.class_log_evidence_per_image is None:
         raise RuntimeError("class-segmented execution returned no per-class statistics")
+    return _class_segmented_em_result(
+        output,
+        n_classes=n_classes,
+        class_posterior_sums_from_noise=class_posterior_sums_from_noise,
+        return_profile=return_profile,
+    )
+
+
+def _class_segmented_em_result(
+    output,
+    *,
+    n_classes: int,
+    class_posterior_sums_from_noise: bool,
+    return_profile: bool,
+    **accumulator_layout,
+) -> KClassEMResult:
+    """The K-class result of one engine call that scored every class jointly.
+
+    ``output`` is the class-segmented result of the exact-local engine or of the
+    resident pass 2 (``ResidentKClassPass2Output``, the same field names).
+    ``accumulator_layout`` is passed to ``_assemble_result`` as is.
+    """
 
     # Follow the existing K-class convention: the class log evidence is float64 for
     # the responsibility algebra, while every published per-image statistic keeps the
@@ -2151,6 +2281,7 @@ def _run_local_k_class_em_segmented(
         ),
         profile_summary=output.profile if return_profile else None,
         uncast_log_evidence_per_image=output.uncast_log_evidence_per_image,
+        **accumulator_layout,
     )
 
 

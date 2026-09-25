@@ -114,6 +114,7 @@ from relax.sparse_pass2.compile_ahead import (
 )
 from relax.sparse_pass2.resident_candidates import (
     materialize_chunk,
+    merge_class_tables,
     plan_capacity_chunks,
 )
 from relax.sparse_pass2.resident_operands import (
@@ -135,6 +136,7 @@ from relax.sparse_pass2.resident_statistics import (
     ResidentStatistics,
     _drop_index,
     _flat_row_norm_and_scale_terms,
+    FinalizedStatistics,
     finalize_statistics,
     make_resident_statistics,
     resolve_statistics_config,
@@ -283,7 +285,10 @@ _DEFAULT_IMAGE_CAPACITY_LADDER = (32, 128, 512)
 
 __all__ = [
     "RESIDENT_PASS2_ENV",
+    "ResidentClassInputs",
+    "ResidentKClassPass2Output",
     "ResidentPass2Plan",
+    "compute_k_class_pass2_stats_resident",
     "compute_pass2_stats_resident",
     "resident_pass2_requested",
     "require_resident_production_configuration",
@@ -949,6 +954,11 @@ class _ChunkImageOperands(NamedTuple):
     best_cell_index: jax.Array  # int64 [C_B], segment-relative (r_local * T + t)
     best_fine_rot: jax.Array  # int64 [C_B], global fine rotation id of the winner
     optics_groups: jax.Array | None = None  # int32 [C_B] with G > 1 optics groups
+    # K>1 only: each row's class and the (slot, class) reductions, flat slot * K + class.
+    row_class: jax.Array | None = None  # int32 [C_R]
+    per_class_log_z: jax.Array | None = None  # float64 [C_B * K]
+    per_class_best_log_score: jax.Array | None = None  # float32 [C_B * K]
+    per_class_best_cell: jax.Array | None = None  # int64 [C_B * K], fine rotation * T + t, -1 if none
 
 
 class _ChunkImageTables(NamedTuple):
@@ -1144,6 +1154,38 @@ def _accumulate_chunk_image_terms(
     best_cell = stats.best_cell.at[image_slot].set(best_cell_values, mode="drop")
     best_local_rot_out = stats.best_local_rot.at[image_slot].set(best_local_rot, mode="drop")
 
+    # --- 11. the class axis (K>1) ------------------------------------------
+    # Each class's evidence and winner in the image's absolute coordinates, and
+    # its pruned M-step mass (thr_wsum_pdf_class, ml_optimiser.cpp:10497).
+    classes = stats.classes
+    if classes is not None:
+        n_classes = int(config.n_classes)
+        class_best = jnp.asarray(operands.per_class_best_log_score, dtype=jnp.float64).reshape(
+            image_capacity, n_classes
+        )
+        class_absolute = (
+            jnp.asarray(operands.per_class_log_z, dtype=jnp.float64).reshape(image_capacity, n_classes)
+            + log_score_offset[:, None]
+        )
+        class_mass = jax.ops.segment_sum(
+            probs_sum_t.astype(jnp.float64),
+            jnp.asarray(operands.row_class, dtype=jnp.int32),
+            num_segments=n_classes,
+        )
+        classes = classes._replace(
+            log_evidence=classes.log_evidence.at[image_slot].set(
+                jnp.where(jnp.isfinite(class_best), class_absolute, neg_inf), mode="drop"
+            ),
+            best_log_score=classes.best_log_score.at[image_slot].set(
+                class_best + log_score_offset[:, None], mode="drop"
+            ),
+            best_cell=classes.best_cell.at[image_slot].set(
+                jnp.asarray(operands.per_class_best_cell, dtype=jnp.int64).reshape(image_capacity, n_classes),
+                mode="drop",
+            ),
+            posterior_sums=classes.posterior_sums + class_mass,
+        )
+
     return ResidentStatistics(
         wsum_sigma2_noise=wsum_sigma2_noise,
         wsum_img_power=wsum_img_power,
@@ -1160,6 +1202,7 @@ def _accumulate_chunk_image_terms(
         score_log_z=score_log_z,
         best_local_rot=best_local_rot_out,
         invalid_best_rows=stats.invalid_best_rows,
+        classes=classes,
     )
 
 
@@ -1339,7 +1382,97 @@ def _coarse_normalization_reuse(
     )
 
 
-def compute_pass2_stats_resident(
+def _class_candidate_tables(
+    significant_sample_indices,
+    rotation_log_prior,
+    *,
+    n_images,
+    n_coarse_rot,
+    n_coarse_trans,
+    nside_level,
+    oversampling_order,
+    n_fine_trans,
+    fine_translation_parent,
+    random_perturbation,
+    fine_source_eulers_override,
+    fine_rotations_override,
+    fine_mstep_rotations_override,
+    fine_rotation_parent_override,
+    use_relion_f32_fine_posterior,
+    dtype,
+    symmetry_label,
+):
+    """One class's per-image hypotheses and candidate table (T5), exactly the K=1 build.
+
+    Returns ``(tables, hypothesis_prep_seconds, table_seconds)``.
+    """
+
+    prep_t0 = time.time()
+    relion_parent_execution_order = _relion_fine_parent_execution_order_enabled(
+        use_relion_f32_fine_posterior=use_relion_f32_fine_posterior,
+    )
+    significance_csr = resident_significance_csr(
+        significant_sample_indices,
+        n_images=n_images,
+        n_coarse_rot=n_coarse_rot,
+        n_coarse_trans=n_coarse_trans,
+    )
+    per_image_inputs = None if significance_csr is not None else _prepare_per_image_pass2_inputs(
+        significant_sample_indices,
+        n_coarse_rot=n_coarse_rot,
+        n_coarse_trans=n_coarse_trans,
+        nside_level=nside_level,
+        oversampling_order=oversampling_order,
+        n_fine_trans=n_fine_trans,
+        fine_translation_parent=fine_translation_parent,
+        rotation_log_prior=rotation_log_prior,
+        random_perturbation=random_perturbation,
+        fine_source_eulers_override=fine_source_eulers_override,
+        fine_rotations_override=fine_rotations_override,
+        fine_mstep_rotations_override=fine_mstep_rotations_override,
+        fine_rotation_parent_override=fine_rotation_parent_override,
+        relion_parent_execution_order=relion_parent_execution_order,
+        dtype=dtype,
+        symmetry_label=symmetry_label,
+    )
+    prep_s = time.time() - prep_t0
+
+    table_t0 = time.time()
+    tables = resident_candidate_tables(
+        significance_csr,
+        per_image_inputs,
+        n_coarse_trans=n_coarse_trans,
+        n_fine_trans=n_fine_trans,
+        fine_translation_parent=fine_translation_parent,
+        nside_level=nside_level,
+        oversampling_order=oversampling_order,
+        rotation_log_prior=rotation_log_prior,
+        random_perturbation=random_perturbation,
+        fine_rotation_parent_override=fine_rotation_parent_override,
+        relion_parent_execution_order=relion_parent_execution_order,
+        dtype=dtype,
+        symmetry_label=symmetry_label,
+    )
+    if int(tables.n_images) != int(n_images):
+        raise ValueError(
+            f"candidate table covers {tables.n_images} images but the dataset has {n_images}"
+        )
+    return tables, prep_s, time.time() - table_t0
+
+
+class ResidentClassInputs(NamedTuple):
+    """The class axis of a K-class pass (RELION Class3D), one entry per class.
+
+    ``rotation_log_priors`` are each class's coarse rotation log prior with its
+    ``log pdf_class`` folded in, as the compact engine takes them
+    (k_class.py ``_class_rotation_prior``).
+    """
+
+    significant_sample_indices: tuple
+    rotation_log_priors: tuple
+
+
+def _resident_pass2(
     experiment_dataset,
     volume,
     noise_variance,
@@ -1414,8 +1547,17 @@ def compute_pass2_stats_resident(
     optics_group_ids=None,
     reconstruction_volume_current_size=None,
     reconstruction_image_radius=None,
+    classes: ResidentClassInputs | None = None,
 ):
-    """Device-resident K=1 sparse pass 2; same signature and return as the compact engine.
+    """The device-resident sparse pass 2 over one or K classes; returns ``_ResidentPass2Result``.
+
+    With ``classes`` set, ``volume`` (and ``relion_projector_half``, when given)
+    stack the K class references on the leading axis, and
+    ``significant_sample_indices``/``rotation_log_prior`` are unused (None): each
+    class's support and prior come from ``classes``. Every image's posterior
+    segment then spans all classes (docs/development/resident_segments.md).
+    :func:`compute_pass2_stats_resident` is the K=1 entry and
+    :func:`compute_k_class_pass2_stats_resident` the K-class one.
 
     See the module docstring for what is layout-equal to the compact engine and
     what is a deliberate reduction-order change. The configuration gate runs
@@ -1460,6 +1602,28 @@ def compute_pass2_stats_resident(
         relion_f32_fine_posterior=relion_f32_fine_posterior,
     )
     firstiter_cc = relion_firstiter_score_mode == "normalized_cc"
+    if classes is None:
+        class_supports = (significant_sample_indices,)
+        class_rotation_priors = (rotation_log_prior,)
+    else:
+        if significant_sample_indices is not None or rotation_log_prior is not None:
+            raise ValueError(
+                "a K-class pass takes each class's support and rotation prior from `classes`"
+            )
+        class_supports = tuple(classes.significant_sample_indices)
+        class_rotation_priors = tuple(classes.rotation_log_priors)
+        if len(class_supports) != len(class_rotation_priors) or len(class_supports) < 2:
+            raise ValueError("a K-class pass needs K >= 2 supports and rotation priors")
+    n_classes = len(class_supports)
+    if n_classes > 1:
+        # RELION's Class3D E-step; the zero-oversampling reuse and the
+        # --firstiter_cc winner are the auto-refine K=1 iterations.
+        _require(not firstiter_cc, "the K-class resident pass scores the Gaussian likelihood")
+        _require(
+            relion_f32_normalization_sum_weight is None,
+            "the K-class resident pass has no zero-oversampling coarse reuse",
+        )
+        _require(optics_group_ids is None, "the K-class resident pass has one optics group")
 
     n_images = experiment_dataset.n_units
     n_coarse_trans = int(np.asarray(translations).shape[0])
@@ -1621,32 +1785,46 @@ def compute_pass2_stats_resident(
         recon_volume_size,
     )
 
-    # ---- projection volume ------------------------------------------------
+    # ---- projection volumes, one per class --------------------------------
     use_relion_projector = relion_projector_half is not None
+    class_projector_halves = [None] * n_classes
     if use_relion_projector:
         if relion_projector_r_max is None:
             raise ValueError("relion_projector_r_max is required when relion_projector_half is provided")
-        relion_projector_half = jnp.asarray(relion_projector_half)
-        # RELION projects through a float32 texture (AccProjector::setMdlData),
-        # and so does the compact engine (dispatch's persistent texture, or the
-        # same narrowing in its own block path). Left complex128, this driver's
-        # projections fell back to the vmapped JAX projector: different values
-        # (os1 iteration 1: hard assignments 97.7% equal, 14384091) and twice
-        # the iteration time. One projection path in both engines.
-        if not use_float64_scoring and relion_projector_half.dtype == jnp.complex128:
-            relion_projector_half = relion_projector_half.astype(jnp.complex64)
+        # A K-class stack is split on the host, so only one class's slab at a
+        # time is converted on the device.
+        stacked_halves = relion_projector_half
+        class_projector_halves = []
+        for class_index in range(n_classes):
+            relion_projector_half = jnp.asarray(
+                stacked_halves if classes is None else stacked_halves[class_index]
+            )
+            # RELION projects through a float32 texture (AccProjector::setMdlData),
+            # and so does the compact engine (dispatch's persistent texture, or the
+            # same narrowing in its own block path). Left complex128, this driver's
+            # projections fell back to the vmapped JAX projector: different values
+            # (os1 iteration 1: hard assignments 97.7% equal, 14384091) and twice
+            # the iteration time. One projection path in both engines.
+            if not use_float64_scoring and relion_projector_half.dtype == jnp.complex128:
+                relion_projector_half = relion_projector_half.astype(jnp.complex64)
+            class_projector_halves.append(relion_projector_half)
+        del stacked_halves, relion_projector_half
+    class_volumes = [volume] if classes is None else [volume[k] for k in range(n_classes)]
     if projection_padding_factor > 1 and not use_relion_projector:
         from relax.reconstruction.relion_functions_relion import pad_volume_for_projection
 
-        mean_for_proj, proj_volume_shape = pad_volume_for_projection(
-            volume,
-            volume_shape,
-            projection_padding_factor,
-            do_gridding_correction=do_gridding_correction,
-            current_size=mstep_current_size,
-        )
+        class_means_for_proj = []
+        for class_volume in class_volumes:
+            mean_for_proj, proj_volume_shape = pad_volume_for_projection(
+                class_volume,
+                volume_shape,
+                projection_padding_factor,
+                do_gridding_correction=do_gridding_correction,
+                current_size=mstep_current_size,
+            )
+            class_means_for_proj.append(mean_for_proj)
     else:
-        mean_for_proj = volume
+        class_means_for_proj = class_volumes
         proj_volume_shape = volume_shape
 
     # ---- fine translations and priors -------------------------------------
@@ -1689,59 +1867,37 @@ def compute_pass2_stats_resident(
         dtype=precision_policy.score_real_dtype,
     )
 
-    # ---- per-image hypotheses (unchanged) ---------------------------------
-    prep_t0 = time.time()
-    significance_csr = resident_significance_csr(
-        significant_sample_indices,
-        n_images=n_images,
-        n_coarse_rot=n_coarse_rot,
-        n_coarse_trans=n_coarse_trans,
-    )
-    per_image_inputs = None if significance_csr is not None else _prepare_per_image_pass2_inputs(
-        significant_sample_indices,
-        n_coarse_rot=n_coarse_rot,
-        n_coarse_trans=n_coarse_trans,
-        nside_level=nside_level,
-        oversampling_order=oversampling_order,
-        n_fine_trans=n_fine_trans,
-        fine_translation_parent=fine_translation_parent,
-        rotation_log_prior=rotation_log_prior,
-        random_perturbation=random_perturbation,
-        fine_source_eulers_override=fine_source_eulers_override,
-        fine_rotations_override=fine_rotations_override,
-        fine_mstep_rotations_override=fine_mstep_rotations_override,
-        fine_rotation_parent_override=fine_rotation_parent_override,
-        relion_parent_execution_order=_relion_fine_parent_execution_order_enabled(
+    # ---- per-image hypotheses and candidate tables, one per class ---------
+    # A K-class table joins the classes' own tables in RELION's class-major
+    # hidden space (merge_class_tables; docs/development/resident_segments.md).
+    prep_s = table_s = 0.0
+    tables_by_class = []
+    for significant_sample_indices, rotation_log_prior in zip(class_supports, class_rotation_priors):
+        class_tables, class_prep_s, class_table_s = _class_candidate_tables(
+            significant_sample_indices,
+            rotation_log_prior,
+            n_images=n_images,
+            n_coarse_rot=n_coarse_rot,
+            n_coarse_trans=n_coarse_trans,
+            nside_level=nside_level,
+            oversampling_order=oversampling_order,
+            n_fine_trans=n_fine_trans,
+            fine_translation_parent=fine_translation_parent,
+            random_perturbation=random_perturbation,
+            fine_source_eulers_override=fine_source_eulers_override,
+            fine_rotations_override=fine_rotations_override,
+            fine_mstep_rotations_override=fine_mstep_rotations_override,
+            fine_rotation_parent_override=fine_rotation_parent_override,
             use_relion_f32_fine_posterior=use_relion_f32_fine_posterior,
-        ),
-        dtype=precision_policy.score_real_dtype,
-        symmetry_label=symmetry_label,
-    )
-    prep_s = time.time() - prep_t0
-
-    # ---- T5: candidate table and capacity chunks --------------------------
-    table_t0 = time.time()
-    tables = resident_candidate_tables(
-        significance_csr,
-        per_image_inputs,
-        n_coarse_trans=n_coarse_trans,
-        n_fine_trans=n_fine_trans,
-        fine_translation_parent=fine_translation_parent,
-        nside_level=nside_level,
-        oversampling_order=oversampling_order,
-        rotation_log_prior=rotation_log_prior,
-        random_perturbation=random_perturbation,
-        fine_rotation_parent_override=fine_rotation_parent_override,
-        relion_parent_execution_order=_relion_fine_parent_execution_order_enabled(
-            use_relion_f32_fine_posterior=use_relion_f32_fine_posterior,
-        ),
-        dtype=precision_policy.score_real_dtype,
-        symmetry_label=symmetry_label,
-    )
-    if int(tables.n_images) != int(n_images):
-        raise ValueError(
-            f"candidate table covers {tables.n_images} images but the dataset has {n_images}"
+            dtype=precision_policy.score_real_dtype,
+            symmetry_label=symmetry_label,
         )
+        tables_by_class.append(class_tables)
+        prep_s += class_prep_s
+        table_s += class_table_s
+    table_t0 = time.time()
+    tables = tables_by_class[0] if classes is None else merge_class_tables(tables_by_class)
+    table_s += time.time() - table_t0
     coarse_reuse = _coarse_normalization_reuse(
         tables,
         relion_f32_normalization_sum_weight=relion_f32_normalization_sum_weight,
@@ -1846,12 +2002,14 @@ def compute_pass2_stats_resident(
 
     # ---- projection cache (same admission and build as the compact engine) -
     n_fine_rot = int(np.asarray(fine_rotations_override).shape[0])
+    # K>1 caches every class's fine grid, class k at k * n_fine_rot.
+    n_projections = n_classes * n_fine_rot
     (
         _projection_complex_dtype,
         _projection_budget_pixels,
         max_projected_rotations_per_projection_call,
     ) = _pass2_projection_budget(
-        jnp.asarray(mean_for_proj).dtype,
+        jnp.asarray(class_means_for_proj[0]).dtype,
         precision_policy,
         n_half=n_half,
         use_relion_projector=use_relion_projector,
@@ -1860,12 +2018,12 @@ def compute_pass2_stats_resident(
         include_abs2=False,
     )
     transient_projection_bytes = _projection_cache_transient_bytes(
-        n_fine_rot,
+        n_projections,
         n_windowed,
         projection_complex_dtype=precision_policy.score_complex_dtype,
         include_abs2=False,
     ) + _projection_cache_transient_bytes(
-        n_fine_rot,
+        n_projections,
         n_recon_windowed,
         projection_complex_dtype=precision_policy.score_complex_dtype,
         include_abs2=True,
@@ -1878,11 +2036,13 @@ def compute_pass2_stats_resident(
     )
     projection_kwargs["mask_current_image_disk"] = bool(projection_mask_current_image_disk)
 
-    def project_fine_rotations(rotations):
+    fine_grid = jnp.asarray(fine_rotations_override, dtype=precision_policy.score_real_dtype)
+
+    def project_fine_rotations(rotations, class_index=0):
         """(score, recon, |recon|^2) projections of ``rotations``, as the cache holds them."""
 
         score, recon, recon_abs2 = _compute_sparse_pass2_windowed_projections_block(
-            mean_for_proj,
+            class_means_for_proj[class_index],
             jnp.asarray(rotations, dtype=precision_policy.score_real_dtype),
             image_shape,
             proj_volume_shape,
@@ -1895,7 +2055,7 @@ def compute_pass2_stats_resident(
             ),
             output_complex_dtype=precision_policy.score_complex_dtype,
             output_abs2_dtype=precision_policy.score_real_dtype,
-            relion_projector_half=relion_projector_half,
+            relion_projector_half=class_projector_halves[class_index],
             relion_projector_r_max=relion_projector_r_max,
             projection_padding_factor=projection_padding_factor,
             **projection_kwargs,
@@ -1907,12 +2067,43 @@ def compute_pass2_stats_resident(
             score = _relion_native_fine_units(score, native_fft_size)
         return score, recon, recon_abs2
 
+    def project_ids(ids):
+        """Projections of the host projection ids ``class * n_fine_rot + rotation``, in order.
+
+        With K>1 each class projects its own ids from its own reference; a
+        class's call is padded to a whole number of stream quanta so the
+        projection programs see few distinct lengths, as the K=1 stream does.
+        """
+
+        ids = np.asarray(ids, dtype=np.int64)
+        if n_classes == 1:
+            return project_fine_rotations(fine_grid[jnp.asarray(ids, dtype=jnp.int32)])
+        klass = ids // n_fine_rot
+        order = np.argsort(klass, kind="stable")
+        parts = []
+        for class_index in np.unique(klass):
+            class_ids = ids[order[klass[order] == class_index]] % n_fine_rot
+            n_call = -(-class_ids.size // _STREAM_SLOT_QUANTUM) * _STREAM_SLOT_QUANTUM
+            padded = np.full(n_call, class_ids[0], dtype=np.int64)
+            padded[: class_ids.size] = class_ids
+            projected = project_fine_rotations(
+                fine_grid[jnp.asarray(padded, dtype=jnp.int32)], int(class_index)
+            )
+            parts.append(tuple(values[: class_ids.size] for values in projected))
+        inverse = np.empty_like(order)
+        inverse[order] = np.arange(order.size)
+        inverse_device = jnp.asarray(inverse, dtype=jnp.int32)
+        return tuple(
+            jnp.concatenate([part[field] for part in parts], axis=0)[inverse_device]
+            for field in range(3)
+        )
+
     # The whole fine grid is cached when it fits. At healpix order 3 and a real
     # current size it does not (294912 rotations at 136 px is ~40 GiB), so each
     # chunk projects its own distinct fine rotations instead, as RELION projects
     # each particle's significant orientations. The projections are the same
     # arrays gathered through a chunk-local slot; see _stream_chunk_projections.
-    projection_bytes_per_rotation = transient_projection_bytes / float(max(n_fine_rot, 1))
+    projection_bytes_per_rotation = transient_projection_bytes / float(max(n_projections, 1))
     stream_projections = not _projection_cache_fits_budget(
         transient_projection_bytes, max_projection_cache_bytes
     )
@@ -1951,7 +2142,7 @@ def compute_pass2_stats_resident(
             "would take %.2f GiB against a %.2f GiB budget; chunk-local budget %.2f GiB "
             "at %.1f KiB per rotation (physical free %s, allocator free %s, "
             "pool free %s, reserved operands %.2f GiB)",
-            n_fine_rot,
+            n_projections,
             transient_projection_bytes / float(1024**3),
             max_projection_cache_bytes / float(1024**3),
             stream_projection_budget_bytes / float(1024**3),
@@ -1963,13 +2154,23 @@ def compute_pass2_stats_resident(
         )
     else:
         cache_t0 = time.time()
-        score_cache, recon_cache, recon_abs2_cache = project_fine_rotations(
-            fine_rotations_override
-        )
+        if n_classes == 1:
+            score_cache, recon_cache, recon_abs2_cache = project_fine_rotations(
+                fine_rotations_override
+            )
+        else:
+            class_caches = [
+                project_fine_rotations(fine_rotations_override, class_index)
+                for class_index in range(n_classes)
+            ]
+            score_cache, recon_cache, recon_abs2_cache = (
+                jnp.concatenate([cache[field] for cache in class_caches], axis=0) for field in range(3)
+            )
+            del class_caches
         logger.info(
             "Resident pass-2 projection cache: cached %d fine rotations in %.2fs "
             "(estimated transient %.2f GiB)",
-            n_fine_rot,
+            n_projections,
             time.time() - cache_t0,
             transient_projection_bytes / float(1024**3),
         )
@@ -2058,15 +2259,23 @@ def compute_pass2_stats_resident(
     )
 
     # ---- resident row-aligned tables --------------------------------------
-    fine_grid = jnp.asarray(fine_rotations_override, dtype=precision_policy.score_real_dtype)
     mstep_grid = (
         fine_grid
         if fine_mstep_rotations_override is None
         else jnp.asarray(fine_mstep_rotations_override, dtype=precision_policy.score_real_dtype)
     )
-    coarse_parent_grid = jnp.asarray(
-        np.asarray(fine_rotation_parent_override, dtype=np.int32), dtype=jnp.int32
-    )
+    coarse_parent_np = np.asarray(fine_rotation_parent_override, dtype=np.int32)
+    cached_slot_fine_rot = None
+    if n_classes > 1:
+        # Indexed by projection id: the M-step rotation is the class's fine
+        # rotation, and the rotation-mass slot is (class, coarse rotation).
+        mstep_grid = jnp.tile(mstep_grid, (n_classes, 1, 1))
+        coarse_parent_np = (
+            np.arange(n_classes, dtype=np.int32)[:, None] * np.int32(n_coarse_rot) + coarse_parent_np[None, :]
+        ).reshape(-1)
+        if not stream_projections:
+            cached_slot_fine_rot = jnp.asarray(np.tile(np.arange(n_fine_rot, dtype=np.int32), n_classes))
+    coarse_parent_grid = jnp.asarray(coarse_parent_np, dtype=jnp.int32)
     projection_score_cache = None if score_cache is None else jnp.asarray(score_cache)
     projection_recon_cache = None if recon_cache is None else jnp.asarray(recon_cache)
     projection_recon_abs2_cache = None if recon_abs2_cache is None else jnp.asarray(recon_abs2_cache)
@@ -2083,7 +2292,7 @@ def compute_pass2_stats_resident(
         n_shells=n_shells,
         n_fine_trans=n_fine_trans,
         n_images=n_images,
-        n_coarse_rot=n_coarse_rot,
+        n_coarse_rot=n_classes * n_coarse_rot,
         n_scale_groups=n_scale_groups,
         current_size=current_size,
         include_unweighted_high_shell=include_unweighted_norm_high_shell,
@@ -2093,6 +2302,7 @@ def compute_pass2_stats_resident(
         accumulate_scale=scale_groups_available,
         source_faithful_spectrum_norm=resolved_spectrum_norm,
         n_optics_groups=n_optics_groups,
+        n_classes=n_classes,
     )
     stats = make_resident_statistics(
         stats_config, max_posterior_dtype=precision_policy.score_real_dtype
@@ -2104,8 +2314,9 @@ def compute_pass2_stats_resident(
         translation_sqdist_ang=None,
     )
 
-    Ft_y_total = jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype)
-    Ft_ctf_total = jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype)
+    # One x-half BPref pair per class (RELION's BPref[iclass]).
+    Ft_y_total = tuple(jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype) for _ in range(n_classes))
+    Ft_ctf_total = tuple(jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype) for _ in range(n_classes))
     max_adjoint_block_bytes = _max_adjoint_block_bytes_for_pass(device_memory_bytes)
     exact_positions_device = jnp.asarray(relion_wavg_rectangle.exact_positions, dtype=jnp.int32)
     rect_indices_device = jnp.asarray(relion_wavg_rectangle.centered_indices, dtype=jnp.int32)
@@ -2160,7 +2371,7 @@ def compute_pass2_stats_resident(
             with warm_pool:
                 # The warm-up describes the cached tables; a streamed pass keys
                 # its programs on chunk-local tables, so it compiles in the loop.
-                if warm_config.enabled and not stream_projections:
+                if warm_config.enabled and not stream_projections and n_classes == 1:
                     # A warm-up must never fail a run. The pool swallows a
                     # failure on its helper thread; this covers the submission
                     # itself, which runs here on the main thread and reaches
@@ -2373,8 +2584,9 @@ def compute_pass2_stats_resident(
             projection_score_cache=projection_score_cache,
             projection_recon_cache=projection_recon_cache,
             projection_recon_abs2_cache=projection_recon_abs2_cache,
-            stream_projection_fn=project_fine_rotations if stream_projections else None,
-            fine_grid=fine_grid,
+            stream_projection_fn=project_ids if stream_projections else None,
+            n_fine_rot=n_fine_rot,
+            cache_slot_fine_rot=cached_slot_fine_rot,
             fine_translation_parent_device=fine_translation_parent_device,
             mstep_grid=mstep_grid,
             coarse_parent_grid=coarse_parent_grid,
@@ -2438,37 +2650,29 @@ def compute_pass2_stats_resident(
 
     # ---- finalize (identical to the compact return block) ------------------
     # RELION symmetriseReconstructions (ml_optimiser.cpp:5541-5575): x=0
-    # Hermitian enforcement, then applyPointGroupSymmetry on BPref. C1 is the
-    # x=0 enforcement alone.
-    Ft_y_total, Ft_ctf_total = finalize_half_volume_bpref(
-        Ft_y_total,
-        Ft_ctf_total,
-        recon_volume_shape,
-        logger=logger,
-        label="Resident pass-2",
-        symmetry_label=symmetry_label,
-        relion_x_half=True,
-    )
-    Ft_y_total, Ft_ctf_total = relion_x_half_accumulators_to_public_layout(
-        Ft_y_total,
-        Ft_ctf_total,
-        recon_volume_shape,
-    )
+    # Hermitian enforcement, then applyPointGroupSymmetry on BPref, per class.
+    # C1 is the x=0 enforcement alone.
+    Ft_y_out, Ft_ctf_out = [], []
+    for class_Ft_y, class_Ft_ctf in zip(Ft_y_total, Ft_ctf_total):
+        class_Ft_y, class_Ft_ctf = finalize_half_volume_bpref(
+            class_Ft_y,
+            class_Ft_ctf,
+            recon_volume_shape,
+            logger=logger,
+            label="Resident pass-2",
+            symmetry_label=symmetry_label,
+            relion_x_half=True,
+        )
+        class_Ft_y, class_Ft_ctf = relion_x_half_accumulators_to_public_layout(
+            class_Ft_y,
+            class_Ft_ctf,
+            recon_volume_shape,
+        )
+        Ft_y_out.append(class_Ft_y)
+        Ft_ctf_out.append(class_Ft_ctf)
 
     finalized = finalize_statistics(stats, config=stats_config)
-    hard_assignment = np.asarray(finalized.hard_assignment, dtype=np.int32)
-    best_fine_rotation_indices = np.asarray(finalized.best_fine_rotation_indices, dtype=np.int64)
-    best_rotations = np.asarray(fine_rotations_override, dtype=precision_policy.score_real_dtype)[
-        best_fine_rotation_indices
-    ]
-    best_translations = fine_translations[hard_assignment % n_fine_trans]
-    best_eulers = None
-    if return_source_eulers and fine_source_eulers_override is not None:
-        best_eulers = np.asarray(fine_source_eulers_override, dtype=np.float64)[
-            best_fine_rotation_indices
-        ]
-
-    merged_noise_stats = make_noise_stats(
+    noise_stats = make_noise_stats(
         wsum_sigma2_noise=finalized.wsum_sigma2_noise,
         wsum_img_power=finalized.wsum_img_power,
         wsum_sigma2_offset=finalized.wsum_sigma2_offset,
@@ -2477,6 +2681,132 @@ def compute_pass2_stats_resident(
         wsum_scale_correction_xa=finalized.wsum_scale_correction_xa,
         wsum_scale_correction_aa=finalized.wsum_scale_correction_aa,
     )
+    logger.info(
+        "Resident pass-2: %d images, %d classes, %d chunks, %.2fs chunk loop, %.2fs total",
+        n_images,
+        n_classes,
+        len(chunks),
+        loop_s,
+        time.time() - overall_t0,
+    )
+    return _ResidentPass2Result(
+        Ft_y=tuple(Ft_y_out),
+        Ft_ctf=tuple(Ft_ctf_out),
+        finalized=finalized,
+        noise_stats=noise_stats,
+        fine_translations=fine_translations,
+        score_real_dtype=precision_policy.score_real_dtype,
+    )
+
+
+class _ResidentPass2Result(NamedTuple):
+    """What :func:`_resident_pass2` hands its K=1 and K-class entries."""
+
+    Ft_y: tuple  # per class, public x-half layout
+    Ft_ctf: tuple
+    finalized: FinalizedStatistics
+    noise_stats: object  # one total over classes (ml_optimiser.cpp:10470, :11010)
+    fine_translations: np.ndarray  # score dtype
+    score_real_dtype: object
+
+
+def compute_pass2_stats_resident(
+    experiment_dataset,
+    volume,
+    noise_variance,
+    translations,
+    significant_sample_indices,
+    nside_level,
+    disc_type,
+    *,
+    oversampling_order,
+    current_size,
+    reconstruction_current_size=None,
+    translation_step,
+    rotation_log_prior,
+    score_with_masked_images,
+    return_stats,
+    translation_log_prior,
+    accumulate_noise,
+    half_spectrum_scoring,
+    projection_padding_factor,
+    projection_mask_current_image_disk=False,
+    reconstruction_padding_factor,
+    image_corrections,
+    scale_corrections,
+    image_pre_shifts,
+    use_float64_scoring,
+    translation_prior_centers=None,
+    do_gridding_correction=False,
+    square_window=False,
+    random_perturbation,
+    group_ids=None,
+    scale_correction_group_count=None,
+    scale_correction_data_vs_prior=None,
+    normalization_log_z=None,
+    relion_f32_normalization_sum_weight=None,
+    relion_coarse_hard_assignment=None,
+    relion_coarse_max_posterior=None,
+    normalization_other_score_log_z=None,
+    normalization_score_mode=None,
+    return_score_log_z=False,
+    return_score_log_z_only=False,
+    disable_adjoint_y=False,
+    disable_adjoint_ctf=False,
+    rotation_block_size_for_quantization=5000,
+    fine_source_eulers_override=None,
+    return_source_eulers=False,
+    fine_rotations_override=None,
+    fine_mstep_rotations_override=None,
+    fine_rotation_parent_override=None,
+    fine_translations_override=None,
+    fine_translation_parent_override=None,
+    relion_half_volume_mstep=False,
+    relion_x_half_mstep=False,
+    mstep_subtract_ctf_projection=False,
+    relion_fine_mstep_prune=False,
+    relion_firstiter_score_mode="gaussian",
+    relion_firstiter_winner_take_all=False,
+    relion_exact_fine_gaussian=True,
+    relion_fine_diff2_fused_ffi=False,
+    relion_f32_fine_posterior=False,
+    relion_exact_fine_normalized_cc=False,
+    relion_projector_half=None,
+    relion_projector_texture=None,
+    relion_projector_r_max=None,
+    adaptive_fraction=0.999,
+    bpref_device_signature_active: bool = False,
+    bpref_class_index: int = 0,
+    include_unweighted_norm_high_shell: bool = True,
+    preserve_bpref_particle_order: bool = False,
+    source_faithful_spectrum_norm: bool = False,
+    symmetry_label: str = "C1",
+    relion_translation_angle_scale: float = 1.0,
+    optics_group_ids=None,
+    reconstruction_volume_current_size=None,
+    reconstruction_image_radius=None,
+):
+    """Device-resident K=1 sparse pass 2; same signature and return as the compact engine.
+
+    A one-class :func:`_resident_pass2`. See the module docstring for what is
+    layout-equal to the compact engine and what is a deliberate reduction-order
+    change.
+    """
+
+    # Every parameter, forwarded by name: the signature is the compact engine's.
+    result = _resident_pass2(**locals())
+    finalized = result.finalized
+    hard_assignment = np.asarray(finalized.hard_assignment, dtype=np.int32)
+    best_fine_rotation_indices = np.asarray(finalized.best_fine_rotation_indices, dtype=np.int64)
+    best_rotations = np.asarray(fine_rotations_override, dtype=result.score_real_dtype)[
+        best_fine_rotation_indices
+    ]
+    best_translations = result.fine_translations[hard_assignment % result.fine_translations.shape[0]]
+    best_eulers = None
+    if return_source_eulers and fine_source_eulers_override is not None:
+        best_eulers = np.asarray(fine_source_eulers_override, dtype=np.float64)[
+            best_fine_rotation_indices
+        ]
     relion_stats = None
     if return_stats:
         relion_stats = make_relion_stats(
@@ -2485,16 +2815,9 @@ def compute_pass2_stats_resident(
             max_posterior_per_image=finalized.max_posterior_per_image,
             rotation_posterior_sums=finalized.rotation_posterior_sums,
         )
-    logger.info(
-        "Resident pass-2: %d images, %d chunks, %.2fs chunk loop, %.2fs total",
-        n_images,
-        len(chunks),
-        loop_s,
-        time.time() - overall_t0,
-    )
     return SparsePass2Output(
-        Ft_y_total,
-        Ft_ctf_total,
+        result.Ft_y[0],
+        result.Ft_ctf[0],
         hard_assignment,
         best_rotations,
         best_translations,
@@ -2503,8 +2826,112 @@ def compute_pass2_stats_resident(
         score_log_z=(
             finalized.score_log_z_per_image if (return_stats and return_score_log_z) else None
         ),
-        noise_stats=merged_noise_stats,
+        noise_stats=result.noise_stats,
         source_eulers=best_eulers if return_source_eulers else None,
+    )
+
+
+class ResidentKClassPass2Output(NamedTuple):
+    """A K-class resident pass, in the class-segmented result's field names.
+
+    The same names as the exact-local engine's class-segmented output, so one
+    adapter (``k_class._class_segmented_em_result``) turns either into the
+    K-class result. Class axes come first.
+    """
+
+    Ft_y: tuple  # per class, public x-half layout
+    Ft_ctf: tuple
+    class_log_evidence_per_image: np.ndarray  # float64 [K, N], absolute, log pdf_class included
+    class_best_log_score_per_image: np.ndarray  # float64 [K, N]
+    per_class_hard_assignments: np.ndarray  # int64 [K, N], fine rotation * T + t; -1 without a candidate
+    stats: object  # joint RelionStats: log-Z, best, Pmax over classes and poses
+    class_rotation_posterior_sums: np.ndarray  # float64 [K, n_coarse_rot]
+    class_reconstruction_posterior_sums: np.ndarray  # float64 [K], pruned M-step mass
+    noise_stats: object  # one total over classes
+    per_class_best_pose_rotations: tuple
+    per_class_best_pose_translations: tuple
+    per_class_best_pose_rotation_ids: tuple
+    per_class_best_pose_eulers_deg: tuple | None
+    profile: dict | None = None
+    uncast_log_evidence_per_image: np.ndarray | None = None
+
+
+def compute_k_class_pass2_stats_resident(
+    experiment_dataset,
+    volumes,
+    noise_variance,
+    translations,
+    significant_sample_indices_by_class,
+    nside_level,
+    disc_type,
+    *,
+    rotation_log_priors_by_class,
+    **options,
+) -> ResidentKClassPass2Output:
+    """RELION's Class3D fine pass on the resident engine, every class in one sweep.
+
+    ``volumes`` (and ``relion_projector_half``, when given) stack the K class
+    references; ``rotation_log_priors_by_class`` fold each class's
+    ``log pdf_class`` into its rotation prior. ``options`` are the K=1 driver's
+    keyword arguments. Each image's posterior segment spans all classes, so the
+    minimum, the normalization and the significance are RELION's joint ones
+    over classes and poses (ml_optimiser.cpp:8411, :9225, :9602-9660); each
+    class backprojects into its own BPref (:10826).
+    """
+
+    n_classes = len(significant_sample_indices_by_class)
+    result = _resident_pass2(
+        experiment_dataset,
+        volumes,
+        noise_variance,
+        translations,
+        None,
+        nside_level,
+        disc_type,
+        rotation_log_prior=None,
+        classes=ResidentClassInputs(
+            significant_sample_indices=tuple(significant_sample_indices_by_class),
+            rotation_log_priors=tuple(rotation_log_priors_by_class),
+        ),
+        **options,
+    )
+    finalized = result.finalized
+    per_class = finalized.classes
+    fine_rotations = np.asarray(options["fine_rotations_override"], dtype=result.score_real_dtype)
+    source_eulers = options.get("fine_source_eulers_override")
+    rotation_ids = per_class.best_fine_rotation_indices
+    translation_ids = per_class.best_translation_indices
+    has_pose = rotation_ids >= 0
+    safe_rotation = np.where(has_pose, rotation_ids, 0)
+    safe_translation = np.where(has_pose, translation_ids, 0)
+    n_fine_trans = int(result.fine_translations.shape[0])
+    return ResidentKClassPass2Output(
+        Ft_y=result.Ft_y,
+        Ft_ctf=result.Ft_ctf,
+        class_log_evidence_per_image=per_class.log_evidence,
+        class_best_log_score_per_image=per_class.best_log_score,
+        per_class_hard_assignments=np.where(
+            has_pose, rotation_ids * n_fine_trans + translation_ids, -1
+        ).astype(np.int64),
+        stats=make_relion_stats(
+            log_evidence_per_image=finalized.log_evidence_per_image,
+            best_log_score_per_image=finalized.best_log_score_per_image,
+            max_posterior_per_image=finalized.max_posterior_per_image,
+            rotation_posterior_sums=np.sum(finalized.rotation_posterior_sums, axis=0),
+        ),
+        class_rotation_posterior_sums=finalized.rotation_posterior_sums,
+        class_reconstruction_posterior_sums=per_class.posterior_sums,
+        noise_stats=result.noise_stats,
+        per_class_best_pose_rotations=tuple(fine_rotations[safe_rotation[k]] for k in range(n_classes)),
+        per_class_best_pose_translations=tuple(
+            result.fine_translations[safe_translation[k]] for k in range(n_classes)
+        ),
+        per_class_best_pose_rotation_ids=tuple(safe_rotation[k] for k in range(n_classes)),
+        per_class_best_pose_eulers_deg=(
+            None
+            if source_eulers is None
+            else tuple(np.asarray(source_eulers, dtype=np.float64)[safe_rotation[k]] for k in range(n_classes))
+        ),
     )
 
 
@@ -2651,11 +3078,15 @@ def _stream_chunk_projections(
     n_valid_rows,
     row_capacity,
     project,
-    fine_grid,
+    n_fine_rot,
     mstep_grid,
     coarse_parent_grid,
 ):
     """Project one chunk's distinct fine rotations and re-index its rows to them.
+
+    ``host_row_fine_rot`` holds the rows' projection ids (the fine rotation, or
+    ``class * n_fine_rot + rotation`` with K>1 classes) and ``project`` maps
+    projection ids to the three projection arrays.
 
     Returns ``(rows, slot_fine_rot, caches, mstep_grid, coarse_parent_grid)``
     where ``rows.row_fine_rot`` now holds each row's chunk-local cache slot,
@@ -2683,7 +3114,7 @@ def _stream_chunk_projections(
     row_slot[: valid.size] = inverse.astype(np.int32, copy=False)
 
     slot_ids_device = jnp.asarray(slot_fine_rot, dtype=jnp.int32)
-    projected = project(fine_grid[slot_ids_device[:n_project]])
+    projected = project(slot_fine_rot[:n_project])
     pad = int(row_capacity) - n_project
 
     def full_length(values):
@@ -2695,14 +3126,62 @@ def _stream_chunk_projections(
     caches = tuple(full_length(values) for values in projected)
     return (
         rows._replace(row_fine_rot=jnp.asarray(row_slot, dtype=jnp.int32)),
-        slot_ids_device,
+        jnp.asarray(slot_fine_rot % int(n_fine_rot), dtype=jnp.int32),
         caches,
         mstep_grid[slot_ids_device],
         coarse_parent_grid[slot_ids_device],
     )
 
 
-def _make_chunk_row_arrays(tables, chunk, n_fine_trans, *, place) -> _ChunkRowArrays:
+def _row_projection_ids(host_chunk, n_fine_rot: int | None) -> np.ndarray:
+    """Each row's projection: its fine rotation, offset by ``class * n_fine_rot`` for K>1.
+
+    The class-stacked projection caches and grids hold class ``k``'s fine grid at
+    ``k * n_fine_rot``, so every consumer that gathers by a row's rotation id
+    gathers its class's projection with the same statement.
+    """
+
+    row_fine_rot = np.asarray(host_chunk["row_fine_rot"], dtype=np.int64)
+    if n_fine_rot is None:
+        return row_fine_rot.astype(np.int32)
+    return (row_fine_rot + np.asarray(host_chunk["row_class"], dtype=np.int64) * int(n_fine_rot)).astype(
+        np.int32
+    )
+
+
+def _chunk_class_layout(host_chunk, chunk, *, n_classes: int, n_fine_trans: int, place) -> _ChunkClassLayout:
+    """The (slot, class) sub-segments of one chunk and its class-major M-step order."""
+
+    row_capacity = int(chunk.row_capacity)
+    image_capacity = int(chunk.image_capacity)
+    n_valid_rows = int(chunk.n_valid_rows)
+    n_segments = image_capacity * int(n_classes)
+    row_class = np.asarray(host_chunk["row_class"], dtype=np.int64)
+    row_segment = np.full(row_capacity, n_segments, dtype=np.int64)
+    row_segment[:n_valid_rows] = (
+        np.asarray(host_chunk["row_image_local"][:n_valid_rows], dtype=np.int64) * int(n_classes)
+        + row_class[:n_valid_rows]
+    )
+    if np.any(np.diff(row_segment[:n_valid_rows]) < 0):
+        raise ValueError("chunk rows must be image-major, then class-major")
+    segment_rows = np.bincount(row_segment[:n_valid_rows], minlength=n_segments)
+    segment_row_start = np.concatenate([[0], np.cumsum(segment_rows)])
+    mstep_row_order = np.arange(row_capacity, dtype=np.int64)
+    mstep_row_order[:n_valid_rows] = np.argsort(row_class[:n_valid_rows], kind="stable")
+    class_offsets = np.concatenate(
+        [[0], np.cumsum(np.bincount(row_class[:n_valid_rows], minlength=int(n_classes)))]
+    )
+    return _ChunkClassLayout(
+        row_class=place.array(row_class, jnp.int32),
+        row_segment=place.array(row_segment, jnp.int32),
+        segment_offsets=place.array(segment_row_start * int(n_fine_trans), jnp.int32),
+        segment_row_start=place.array(segment_row_start[:-1], jnp.int64),
+        mstep_row_order=place.array(mstep_row_order, jnp.int32),
+        mstep_class_offsets=place.array(class_offsets, jnp.int32),
+    )
+
+
+def _make_chunk_row_arrays(tables, chunk, n_fine_trans, *, place, n_fine_rot=None) -> _ChunkRowArrays:
     """One chunk's row-aligned inputs, on the device or as avals.
 
     Everything here is host NumPy over the plan, so the aval placement costs
@@ -2710,6 +3189,9 @@ def _make_chunk_row_arrays(tables, chunk, n_fine_trans, *, place) -> _ChunkRowAr
     chunk's capacity class and nothing else, which
     ``tests/unit/test_chunk_row_avals.py`` pins: that is why warming one chunk
     per class covers every chunk of that class.
+
+    A K-class table (``tables.n_classes > 1``) needs ``n_fine_rot``: its rows
+    carry projection ids (:func:`_row_projection_ids`) and the class layout.
     """
 
     image_capacity = int(chunk.image_capacity)
@@ -2719,9 +3201,19 @@ def _make_chunk_row_arrays(tables, chunk, n_fine_trans, *, place) -> _ChunkRowAr
     image_row_count_np = (
         segment_offsets_np.astype(np.int64)[1:] - segment_offsets_np.astype(np.int64)[:-1]
     ) // int(n_fine_trans)
+    n_classes = int(tables.n_classes)
+    if n_classes > 1 and n_fine_rot is None:
+        raise ValueError("a K-class chunk needs n_fine_rot for its projection ids")
+    classes = None
+    if n_classes > 1:
+        classes = _chunk_class_layout(
+            host_chunk, chunk, n_classes=n_classes, n_fine_trans=n_fine_trans, place=place
+        )
     return _ChunkRowArrays(
         row_image_local=place.array(host_chunk["row_image_local"], jnp.int32),
-        row_fine_rot=place.array(host_chunk["row_fine_rot"], jnp.int32),
+        row_fine_rot=place.array(
+            _row_projection_ids(host_chunk, n_fine_rot if n_classes > 1 else None), jnp.int32
+        ),
         row_log_prior=place.array(host_chunk["row_log_prior"], jnp.float32),
         row_mask_bits=place.array(host_chunk["row_mask_bits"], jnp.uint32),
         row_mask_mode=place.array(host_chunk["row_mask_mode"], jnp.int8),
@@ -2731,6 +3223,7 @@ def _make_chunk_row_arrays(tables, chunk, n_fine_trans, *, place) -> _ChunkRowAr
         segment_offsets=place.array(segment_offsets_np, jnp.int32),
         image_row_start=place.array(image_row_start_np, jnp.int64),
         image_row_count=place.array(image_row_count_np, jnp.int64),
+        classes=classes,
     )
 
 
@@ -2902,16 +3395,52 @@ def _make_mstep_block_inputs(rows, posterior) -> "_MstepBlockInputs":
 
     Shared with the compile-ahead warm-up so the warmed signature is the one
     the per-stage loop submits. ``projections`` is None here: the block program
-    gathers them from the tables itself.
+    gathers them from the tables itself. With K>1 classes the rows are taken in
+    the chunk's class-major M-step order, so each class's rows are one run of
+    blocks (:func:`_class_mstep_blocks`).
     """
 
+    if rows.classes is None:
+        return _MstepBlockInputs(
+            row_image_local=rows.row_image_local,
+            kernel_row_image_ids=posterior.kernel_row_image_ids,
+            row_posterior=posterior.row_posterior,
+            row_fine_rot=rows.row_fine_rot,
+            projections=None,
+        )
+    order = rows.classes.mstep_row_order
     return _MstepBlockInputs(
-        row_image_local=rows.row_image_local,
-        kernel_row_image_ids=posterior.kernel_row_image_ids,
-        row_posterior=posterior.row_posterior,
-        row_fine_rot=rows.row_fine_rot,
+        row_image_local=rows.row_image_local[order],
+        kernel_row_image_ids=posterior.kernel_row_image_ids[order],
+        row_posterior=posterior.row_posterior[order],
+        row_fine_rot=rows.row_fine_rot[order],
         projections=None,
     )
+
+
+def _class_mstep_blocks(blocks: "_MstepBlockInputs", rows, class_index: int, *, spec):
+    """Class ``class_index``'s M-step rows: ``(blocks, first block, block count)``.
+
+    One class has every valid row, ``ceil(n_valid_rows / B)`` blocks from 0 (or
+    the whole capacity under ``static_block_trip``). With K>1 a class owns rows
+    ``[lo, hi)`` of the class-major order; its blocks are the ones that overlap
+    them, and :func:`_resident_mstep_block_at` gives the other rows of a
+    boundary block no weight. Block counts are device scalars, so the program
+    stays keyed on the capacity class.
+    """
+
+    block_rows = int(spec.mstep_block_rows)
+    if rows.classes is None:
+        if spec.static_block_trip:
+            return blocks, jnp.int32(0), jnp.int32(int(spec.row_capacity) // block_rows)
+        n_blocks = jax.lax.div(rows.n_valid_rows + jnp.int32(block_rows - 1), jnp.int32(block_rows))
+        return blocks, jnp.int32(0), n_blocks
+    offsets = rows.classes.mstep_class_offsets
+    lo, hi = offsets[class_index], offsets[class_index + 1]
+    first = jax.lax.div(lo, jnp.int32(block_rows))
+    stop = jax.lax.div(hi + jnp.int32(block_rows - 1), jnp.int32(block_rows))
+    n_blocks = jnp.where(hi > lo, stop - first, jnp.int32(0))
+    return blocks._replace(class_row_range=offsets[class_index : class_index + 2]), first, n_blocks
 
 
 def _make_chunk_program_spec(
@@ -2937,6 +3466,7 @@ def _make_chunk_program_spec(
     reuse_coarse_normalization=False,
     firstiter_cc=False,
     mstep_subtract_ctf_projection=False,
+    n_classes=1,
 ) -> _ChunkProgramSpec:
     """The static key of one chunk program.
 
@@ -2972,6 +3502,7 @@ def _make_chunk_program_spec(
         reuse_coarse_normalization=bool(reuse_coarse_normalization),
         firstiter_cc=bool(firstiter_cc),
         mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
+        n_classes=int(n_classes),
     )
 
 
@@ -3132,8 +3663,8 @@ def _submit_resident_chunk_warmup(
             )
             mstep_avals = jax.eval_shape(
                 partial(_initial_mstep_carry, spec=_spec),
-                carry_avals[0],
-                carry_avals[1],
+                carry_avals[0][0],
+                carry_avals[1][0],
                 operand_avals,
                 table_avals,
             )
@@ -3842,6 +4373,8 @@ class _ChunkProgramSpec:
     # VDAM (--grad): BPref takes the residual shift(img) - ctf * proj, RELION's
     # cuda_kernel_backproject3D_SGD (BP.cuh:406-560); see _resident_block_residual.
     mstep_subtract_ctf_projection: bool = False
+    # RELION Class3D classes; rows carry the class axis when there is more than one.
+    n_classes: int = 1
 
 
 class _MstepOnlyStatsConfig(NamedTuple):
@@ -3861,7 +4394,9 @@ class _ChunkRowArrays(NamedTuple):
     """One chunk's row-aligned tables and its runtime extents."""
 
     row_image_local: jax.Array  # int32 [C_R]
-    row_fine_rot: jax.Array  # int32 [C_R]
+    # int32 [C_R]: the row's fine rotation; with K>1 classes its projection id
+    # class * n_fine_rot + rotation; with streamed projections its cache slot.
+    row_fine_rot: jax.Array
     row_log_prior: jax.Array  # float32 [C_R]
     row_mask_bits: jax.Array  # uint32 [C_R, n_mask_words], coarse-translation bitset per row
     row_mask_mode: jax.Array  # int8 [C_R]
@@ -3871,6 +4406,27 @@ class _ChunkRowArrays(NamedTuple):
     segment_offsets: jax.Array  # int32 [C_B + 1], cell offsets
     image_row_start: jax.Array  # int64 [C_B], chunk-local first row of a slot
     image_row_count: jax.Array  # int64 [C_B], rows owned by a slot
+    # K>1 only: the class axis of the chunk's rows.
+    classes: "_ChunkClassLayout | None" = None
+
+
+class _ChunkClassLayout(NamedTuple):
+    """The class axis of one chunk (K>1; docs/development/resident_segments.md).
+
+    An image slot's rows are class-major, so each (slot, class) pair owns a
+    contiguous sub-segment ``s = slot * K + class`` of the slot's posterior
+    segment: the per-class evidence and winner are reductions over it. The
+    M-step visits the rows class-major instead (``mstep_row_order``), so each
+    class's blocks write one accumulator, RELION's ``BPref[iclass]``
+    (ml_optimiser.cpp:10826).
+    """
+
+    row_class: jax.Array  # int32 [C_R], 0 on padded rows
+    row_segment: jax.Array  # int32 [C_R], slot * K + class; C_B * K on padded rows
+    segment_offsets: jax.Array  # int32 [C_B * K + 1], cell offsets of each (slot, class)
+    segment_row_start: jax.Array  # int64 [C_B * K], chunk-local first row of each (slot, class)
+    mstep_row_order: jax.Array  # int32 [C_R], rows by class (stable), padded rows last
+    mstep_class_offsets: jax.Array  # int32 [K + 1], each class's rows in that order
 
 
 class _ChunkStageOperands(NamedTuple):
@@ -3959,6 +4515,16 @@ class _ChunkPosterior(NamedTuple):
     max_posterior: jax.Array  # real [C_B]
     kernel_row_image_ids: jax.Array  # int32 [C_R], -1 on padded rows
     row_is_valid: jax.Array  # bool [C_R]
+    # K>1 only: the (slot, class) sub-segment reductions.
+    classes: "_ChunkClassPosterior | None" = None
+
+
+class _ChunkClassPosterior(NamedTuple):
+    """Each (image slot, class) sub-segment's log-Z and own winner, flat ``slot * K + class``."""
+
+    log_z: jax.Array  # float64 [C_B * K], -inf for a class without candidates
+    best_log_score: jax.Array  # float32 [C_B * K]
+    best_cell_index: jax.Array  # int64 [C_B * K], sub-segment-relative r_local * T + t
 
 
 class _ChunkMstepCarry(NamedTuple):
@@ -4077,6 +4643,16 @@ def _resident_chunk_posterior(
         max_posterior = tables.coarse_reuse.max_posterior[image_slot].astype(
             jnp.asarray(max_posterior).dtype
         )
+    classes = None
+    if rows.classes is not None:
+        classes = _class_sub_segment_posterior(
+            scores_flat.reshape(row_capacity, n_fine_trans),
+            rows,
+            row_is_valid,
+            n_segments=image_capacity * int(spec.n_classes),
+            n_classes=int(spec.n_classes),
+            cuda_backproject=cuda_backproject,
+        )
     return _ChunkPosterior(
         row_posterior=jnp.asarray(reconstruction_probs, dtype=jnp.float32).reshape(
             row_capacity, n_fine_trans
@@ -4088,6 +4664,39 @@ def _resident_chunk_posterior(
         max_posterior=max_posterior,
         kernel_row_image_ids=kernel_row_image_ids,
         row_is_valid=row_is_valid,
+        classes=classes,
+    )
+
+
+def _class_sub_segment_posterior(
+    scores, rows, row_is_valid, *, n_segments: int, n_classes: int, cuda_backproject
+):
+    """Each (slot, class) sub-segment's log-Z and first maximum, for the per-class statistics.
+
+    The scores are the joint-min-centred ones the image's posterior normalizes,
+    so a class's log-Z plus the image's offset is its absolute evidence and
+    ``best - logZ_image`` its share of Pmax. The log-Z is the segmented kernel
+    the image posterior uses, run on the sub-segments; the winner is the first
+    maximum in row order, as for the image (:func:`_winner_take_all_cells`).
+    """
+
+    layout = rows.classes
+    log_z = cuda_backproject.sparse_pass2_segmented_log_z_f64(
+        scores.reshape(-1),
+        layout.segment_offsets,
+        rows.n_valid_images * jnp.int32(n_classes),
+    )
+    best_log_score, best_cell_index, _winner = _winner_take_all_cells(
+        scores,
+        layout.row_segment,
+        row_is_valid,
+        layout.segment_offsets,
+        image_capacity=n_segments,
+    )
+    return _ChunkClassPosterior(
+        log_z=jnp.asarray(log_z, dtype=jnp.float64),
+        best_log_score=best_log_score,
+        best_cell_index=best_cell_index,
     )
 
 
@@ -4611,6 +5220,9 @@ class _MstepBlockInputs(NamedTuple):
     row_posterior: jax.Array  # float32 [C_R, T]
     row_fine_rot: jax.Array | None  # int32 [C_R]
     projections: tuple | None  # (proj, |proj|^2, M-step rotations) of one block
+    # K>1: the rows [start, stop) of the class these blocks accumulate; the rows
+    # of a boundary block outside it get no weight. None for one class.
+    class_row_range: jax.Array | None = None  # int32 [2]
 
 
 def _resident_mstep_block_at(
@@ -4641,10 +5253,21 @@ def _resident_mstep_block_at(
         block_projections = _cached_block_projections(tables, take(blocks.row_fine_rot))
     else:
         block_projections = blocks.projections
+    block_kernel_ids = take(blocks.kernel_row_image_ids)
+    block_posterior = take(blocks.row_posterior)
+    if blocks.class_row_range is not None:
+        # A boundary block's rows of the neighbouring class are treated as
+        # padding (no weight, kernel id -1). A block past the capacity is
+        # clamped by the slice, but its unclamped positions are all at or past
+        # ``hi``, so every row of it is excluded.
+        row = block_start + jnp.arange(block_rows, dtype=jnp.int32)
+        in_class = (row >= blocks.class_row_range[0]) & (row < blocks.class_row_range[1])
+        block_kernel_ids = jnp.where(in_class, block_kernel_ids, jnp.int32(-1))
+        block_posterior = jnp.where(in_class[:, None], block_posterior, jnp.zeros((), block_posterior.dtype))
     return _resident_mstep_block(
         block_row_image=take(blocks.row_image_local),
-        block_kernel_ids=take(blocks.kernel_row_image_ids),
-        block_posterior=take(blocks.row_posterior),
+        block_kernel_ids=block_kernel_ids,
+        block_posterior=block_posterior,
         block_projections=block_projections,
         operands=operands,
         tables=tables,
@@ -4763,6 +5386,30 @@ def _resident_chunk_statistics(
     if tables.cache_slot_fine_rot is not None:
         best_fine_rot = jnp.asarray(tables.cache_slot_fine_rot, dtype=jnp.int64)[best_fine_rot]
 
+    class_fields = {}
+    if posterior.classes is not None:
+        # Each class's own winner: its sub-segment row, then that row's fine
+        # rotation through the class-stacked (or streamed) slot table.
+        n_fine_trans = jnp.int64(int(spec.n_fine_trans))
+        class_best_row = jnp.clip(
+            rows.classes.segment_row_start + posterior.classes.best_cell_index // n_fine_trans,
+            0,
+            jnp.int64(max(int(spec.row_capacity) - 1, 0)),
+        ).astype(jnp.int32)
+        class_fine_rot = jnp.asarray(tables.cache_slot_fine_rot, dtype=jnp.int64)[
+            jnp.asarray(rows.row_fine_rot, dtype=jnp.int64)[class_best_row]
+        ]
+        class_fields = dict(
+            row_class=rows.classes.row_class,
+            per_class_log_z=posterior.classes.log_z,
+            per_class_best_log_score=posterior.classes.best_log_score,
+            per_class_best_cell=jnp.where(
+                jnp.isfinite(posterior.classes.best_log_score),
+                class_fine_rot * n_fine_trans + posterior.classes.best_cell_index % n_fine_trans,
+                jnp.int64(-1),
+            ),
+        )
+
     chunk_operands = _ChunkImageOperands(
         row_posterior=posterior.row_posterior,
         row_image_local=rows.row_image_local,
@@ -4786,6 +5433,7 @@ def _resident_chunk_statistics(
         best_cell_index=posterior.best_cell_index,
         best_fine_rot=best_fine_rot,
         optics_groups=operands.optics_groups,
+        **class_fields,
     )
     stats = _accumulate_chunk_image_terms(
         stats, chunk_operands, image_tables, config=spec.stats_config
@@ -4826,50 +5474,41 @@ def _run_resident_chunk_program(
     )
 
     block_rows = int(spec.mstep_block_rows)
-    mstep = _initial_mstep_carry(Ft_y_total, Ft_ctf_total, operands, tables, spec=spec)
-
-    def block(carry_in, take):
-        return _resident_mstep_block(
-            block_row_image=take(rows.row_image_local),
-            block_kernel_ids=take(posterior.kernel_row_image_ids),
-            block_posterior=take(posterior.row_posterior),
-            block_projections=_cached_block_projections(tables, take(rows.row_fine_rot)),
-            operands=operands,
-            tables=tables,
-            carry=carry_in,
-            spec=spec,
-            cuda_backproject=cuda_backproject,
-        )
-
+    mstep = _initial_mstep_carry(Ft_y_total[0], Ft_ctf_total[0], operands, tables, spec=spec)
+    blocks = _make_mstep_block_inputs(rows, posterior)
     unroll = max(int(spec.block_unroll), 1)
-    if spec.static_block_trip:
-        n_blocks = int(spec.row_capacity) // block_rows
-        n_outer = (n_blocks + unroll - 1) // unroll
-    else:
-        n_blocks = jax.lax.div(
-            rows.n_valid_rows + jnp.int32(block_rows - 1), jnp.int32(block_rows)
-        )
+    Ft_y_out, Ft_ctf_out = [], []
+    for class_index in range(int(spec.n_classes)):
+        # Each class's blocks accumulate into its own volumes; the per-image
+        # Wavg, noise and norm partials carry on across classes.
+        mstep = mstep._replace(Ft_y=Ft_y_total[class_index], Ft_ctf=Ft_ctf_total[class_index])
+        class_blocks, first_block, n_blocks = _class_mstep_blocks(blocks, rows, class_index, spec=spec)
         n_outer = jax.lax.div(n_blocks + jnp.int32(unroll - 1), jnp.int32(unroll))
 
-    def outer(outer_index, carry_in):
-        # ``unroll`` blocks per device-loop iteration: the predicate is read back
-        # once per iteration, and a trailing block past the live count carries
-        # only padded rows, whose posterior is zero.
-        for offset in range(unroll):
-            index = outer_index * unroll + offset
-            carry_in = block(
-                carry_in,
-                lambda values, _i=index: jax.lax.dynamic_slice_in_dim(
-                    values, _i * block_rows, block_rows, axis=0
-                ),
-            )
-        return carry_in
+        def outer(outer_index, carry_in, _blocks=class_blocks, _first=first_block):
+            # ``unroll`` blocks per device-loop iteration: the predicate is read
+            # back once per iteration, and a trailing block past the live count
+            # carries only rows without weight (padding, or another class's).
+            for offset in range(unroll):
+                index = _first + outer_index * unroll + offset
+                carry_in = _resident_mstep_block_at(
+                    index * block_rows,
+                    _blocks,
+                    operands,
+                    tables,
+                    carry_in,
+                    spec=spec,
+                    cuda_backproject=cuda_backproject,
+                )
+            return carry_in
 
-    mstep = jax.lax.fori_loop(0, n_outer, outer, mstep)
+        mstep = jax.lax.fori_loop(0, n_outer, outer, mstep)
+        Ft_y_out.append(mstep.Ft_y)
+        Ft_ctf_out.append(mstep.Ft_ctf)
     stats = _resident_chunk_statistics(
         stats, rows, operands, tables, posterior, mstep, spec=spec
     )
-    return mstep.Ft_y, mstep.Ft_ctf, stats
+    return tuple(Ft_y_out), tuple(Ft_ctf_out), stats
 
 
 def _run_resident_chunk_stages(
@@ -4880,9 +5519,13 @@ def _run_resident_chunk_stages(
     *,
     spec: _ChunkProgramSpec,
     n_valid_rows: int,
+    class_row_ranges=None,
     timing_hook=None,
 ):
     """Per-stage oracle: the same stages, dispatched one at a time.
+
+    ``class_row_ranges`` holds each class's host ``(lo, hi)`` rows in the
+    class-major M-step order (K>1); one class covers the valid rows.
 
     Kept selectable by ``RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT=0`` so the
     fused program can be compared against the path it replaces inside one
@@ -4905,34 +5548,40 @@ def _run_resident_chunk_stages(
         timing_hook("posterior", posterior.row_posterior)
 
     block_rows = int(spec.mstep_block_rows)
-    mstep = _initial_mstep_carry(Ft_y_total, Ft_ctf_total, operands, tables, spec=spec)
+    mstep = _initial_mstep_carry(Ft_y_total[0], Ft_ctf_total[0], operands, tables, spec=spec)
     blocks = _make_mstep_block_inputs(rows, posterior)
-    for start in range(0, int(spec.row_capacity), block_rows):
-        if start >= int(n_valid_rows):
-            # Every row of this block is chunk padding: its posterior is zero,
-            # so the weighted sums, the Wavg terms, the noise partials and both
-            # adjoint scatters are exactly zero and adding them changes no
-            # accumulator bit.
-            break
-        if glue_jit:
-            mstep = _resident_mstep_block_program(
-                _device_int32(start), blocks, operands, tables, mstep, spec=spec
+    if class_row_ranges is None:
+        class_row_ranges = ((0, int(n_valid_rows)),)
+    Ft_y_out, Ft_ctf_out = [], []
+    for class_index, (row_lo, row_hi) in enumerate(class_row_ranges):
+        mstep = mstep._replace(Ft_y=Ft_y_total[class_index], Ft_ctf=Ft_ctf_total[class_index])
+        class_blocks = blocks
+        if rows.classes is not None:
+            class_blocks = blocks._replace(
+                class_row_range=rows.classes.mstep_class_offsets[class_index : class_index + 2]
             )
-            continue
-        block = slice(start, start + block_rows)
-        mstep = _resident_mstep_block(
-            block_row_image=rows.row_image_local[block],
-            block_kernel_ids=posterior.kernel_row_image_ids[block],
-            block_posterior=posterior.row_posterior[block],
-            block_projections=_cached_block_projections(tables, rows.row_fine_rot[block]),
-            operands=operands,
-            tables=tables,
-            carry=mstep,
-            spec=spec,
-            cuda_backproject=em_cuda_kernels,
-        )
+        # Blocks past the class's rows hold only padding or another class's
+        # rows: no weight, so the weighted sums, the Wavg terms, the noise
+        # partials and both adjoint scatters would add exact zeros.
+        for start in range((int(row_lo) // block_rows) * block_rows, int(row_hi), block_rows):
+            if glue_jit:
+                mstep = _resident_mstep_block_program(
+                    _device_int32(start), class_blocks, operands, tables, mstep, spec=spec
+                )
+                continue
+            mstep = _resident_mstep_block_at(
+                _device_int32(start),
+                class_blocks,
+                operands,
+                tables,
+                mstep,
+                spec=spec,
+                cuda_backproject=em_cuda_kernels,
+            )
+        Ft_y_out.append(mstep.Ft_y)
+        Ft_ctf_out.append(mstep.Ft_ctf)
     if timing_hook is not None:
-        timing_hook("mstep", (mstep.Ft_y, mstep.Ft_ctf))
+        timing_hook("mstep", (Ft_y_out, Ft_ctf_out))
 
     if glue_jit:
         stats = _resident_chunk_statistics_program(
@@ -4942,7 +5591,7 @@ def _run_resident_chunk_stages(
         stats = _resident_chunk_statistics(
             stats, rows, operands, tables, posterior, mstep, spec=spec
         )
-    return mstep.Ft_y, mstep.Ft_ctf, stats
+    return tuple(Ft_y_out), tuple(Ft_ctf_out), stats
 
 
 def _run_resident_chunk(
@@ -4970,7 +5619,8 @@ def _run_resident_chunk(
     adaptive_fraction,
     windowed_prepare,
     stream_projection_fn=None,
-    fine_grid=None,
+    n_fine_rot=None,
+    cache_slot_fine_rot=None,
     window_indices,
     recon_window_indices,
     relion_x_half_recon_indices,
@@ -5032,8 +5682,16 @@ def _run_resident_chunk(
         jax.block_until_ready(Ft_y_total)
         chunk_t0 = time.time()
 
-    rows = _make_chunk_row_arrays(tables, chunk, n_fine_trans, place=_PLACE_ON_DEVICE)
-    cache_slot_fine_rot = None
+    n_classes = int(tables.n_classes)
+    rows = _make_chunk_row_arrays(
+        tables, chunk, n_fine_trans, place=_PLACE_ON_DEVICE, n_fine_rot=n_fine_rot
+    )
+    class_row_ranges = None
+    if n_classes > 1:
+        class_rows = np.concatenate(
+            [[0], np.cumsum(np.bincount(tables.row_class[chunk.row_start : chunk.row_stop], minlength=n_classes))]
+        )
+        class_row_ranges = tuple(zip(class_rows[:-1].tolist(), class_rows[1:].tolist()))
     if stream_projection_fn is not None:
         (
             rows,
@@ -5043,11 +5701,11 @@ def _run_resident_chunk(
             coarse_parent_grid,
         ) = _stream_chunk_projections(
             rows,
-            materialize_chunk(tables, chunk)["row_fine_rot"],
+            _row_projection_ids(materialize_chunk(tables, chunk), n_fine_rot if n_classes > 1 else None),
             n_valid_rows=n_valid_rows,
             row_capacity=row_capacity,
             project=stream_projection_fn,
-            fine_grid=fine_grid,
+            n_fine_rot=n_fine_rot,
             mstep_grid=mstep_grid,
             coarse_parent_grid=coarse_parent_grid,
         )
@@ -5196,6 +5854,7 @@ def _run_resident_chunk(
         reuse_coarse_normalization=coarse_reuse is not None,
         firstiter_cc=firstiter_cc,
         mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
+        n_classes=n_classes,
     )
 
     if submitted_keys is not None:
@@ -5218,6 +5877,7 @@ def _run_resident_chunk(
             (Ft_y_total, Ft_ctf_total, stats),
             spec=spec,
             n_valid_rows=n_valid_rows,
+            class_row_ranges=class_row_ranges,
             timing_hook=timing_hook if timing else None,
         )
 

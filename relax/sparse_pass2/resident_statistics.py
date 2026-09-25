@@ -73,7 +73,9 @@ from relax.sparse_pass2.sparse_pass2_wavg import (
 
 __all__ = [
     "ChunkStatisticsOperands",
+    "FinalizedClassStatistics",
     "FinalizedStatistics",
+    "ResidentClassStatistics",
     "ResidentStatistics",
     "ResidentStatisticsConfig",
     "ResidentStatisticsTables",
@@ -119,6 +121,33 @@ class ResidentStatistics(NamedTuple):
     score_log_z: jax.Array  # float64 [n_images]
     best_local_rot: jax.Array  # int32 [n_images], -1 until written
     invalid_best_rows: jax.Array  # int64 [], padding sanity counter
+    # K>1 only: the per-class fields of RELION's class-major hidden space.
+    classes: "ResidentClassStatistics | None" = None
+
+
+class ResidentClassStatistics(NamedTuple):
+    """Per-class accumulators of a K-class pass (RELION Class3D).
+
+    Everything shared by the classes (noise, image power, norm and scale sums,
+    the offset sum and ``sumw``) stays one total in :class:`ResidentStatistics`,
+    as RELION sums it over classes (ml_optimiser.cpp:10470, :11010). The class
+    axis carries only what RELION keeps per class:
+
+    - ``log_evidence`` and ``best_log_score``: each (image, class) segment's
+      log-sum-exp and maximum of the joint-min-centred scores, in the absolute
+      coordinates of ``ResidentStatistics.log_evidence``;
+    - ``best_cell``: the class's own winner, ``fine rotation * n_fine_trans + t``;
+    - ``posterior_sums``: the pruned M-step mass of each class
+      (``thr_wsum_pdf_class``, ml_optimiser.cpp:10497).
+
+    The per-class rotation mass lives in ``ResidentStatistics.rotation_posterior_sums``
+    at ``class * n_coarse_rot + coarse rotation``.
+    """
+
+    log_evidence: jax.Array  # float64 [n_images, K]
+    best_log_score: jax.Array  # float64 [n_images, K]
+    best_cell: jax.Array  # int64 [n_images, K], -1 when the class has no candidate
+    posterior_sums: jax.Array  # float64 [K]
 
 
 class ResidentStatisticsTables(NamedTuple):
@@ -207,6 +236,10 @@ class ResidentStatisticsConfig:
     # With more than one, the noise and image-power shells are [G, n_shells] and
     # ``sumw`` is [G] (``wsum_model.sigma2_noise[g]``, ``sumw_group[g]``).
     n_optics_groups: int = 1
+    # RELION Class3D classes. With more than one, ``n_coarse_rot`` counts
+    # (class, coarse rotation) slots and the statistics carry a class axis
+    # (:class:`ResidentClassStatistics`).
+    n_classes: int = 1
 
     def __post_init__(self):
         for name in (
@@ -243,6 +276,7 @@ def resolve_statistics_config(
     accumulate_scale: bool = True,
     source_faithful_spectrum_norm: bool | None = None,
     n_optics_groups: int = 1,
+    n_classes: int = 1,
 ) -> ResidentStatisticsConfig:
     """Build a config, reading the same environment the host tail reads.
 
@@ -280,6 +314,7 @@ def resolve_statistics_config(
         direct_noise_exclusive_shell_stop=int(n_shells) if cutoff is None else cutoff + 1,
         accumulate_scale=bool(accumulate_scale),
         n_optics_groups=int(n_optics_groups),
+        n_classes=int(n_classes),
     )
 
 
@@ -296,6 +331,7 @@ def make_resident_statistics(
     """
 
     n_images = int(config.n_images)
+    n_classes = int(config.n_classes)
     zeros_images = jnp.zeros(n_images, dtype=jnp.float64)
     groups = () if int(config.n_optics_groups) == 1 else (int(config.n_optics_groups),)
     return ResidentStatistics(
@@ -314,6 +350,12 @@ def make_resident_statistics(
         score_log_z=jnp.full(n_images, -jnp.inf, dtype=jnp.float64),
         best_local_rot=jnp.full(n_images, -1, dtype=jnp.int32),
         invalid_best_rows=jnp.zeros((), dtype=jnp.int64),
+        classes=None if n_classes == 1 else ResidentClassStatistics(
+            log_evidence=jnp.full((n_images, n_classes), -jnp.inf, dtype=jnp.float64),
+            best_log_score=jnp.full((n_images, n_classes), -jnp.inf, dtype=jnp.float64),
+            best_cell=jnp.full((n_images, n_classes), -1, dtype=jnp.int64),
+            posterior_sums=jnp.zeros(n_classes, dtype=jnp.float64),
+        ),
     )
 
 
@@ -639,6 +681,8 @@ def accumulate_chunk_statistics(
         raise TypeError(f"config must be a ResidentStatisticsConfig, got {type(config)!r}")
     if int(config.n_optics_groups) != 1:
         raise NotImplementedError("the T9a statistics stage keeps one optics group's noise")
+    if int(config.n_classes) != 1:
+        raise NotImplementedError("the T9a statistics stage has no class axis")
     if operands.row_posterior.shape[1] != int(config.n_fine_trans):
         raise ValueError(
             "row posterior translation axis does not match the configured fine translation count: "
@@ -675,6 +719,18 @@ class FinalizedStatistics(NamedTuple):
     hard_assignment: np.ndarray
     best_fine_rotation_indices: np.ndarray
     best_translation_indices: np.ndarray
+    # K>1 only; ``rotation_posterior_sums`` is then [K, n_coarse_rot].
+    classes: "FinalizedClassStatistics | None" = None
+
+
+class FinalizedClassStatistics(NamedTuple):
+    """Host arrays of :class:`ResidentClassStatistics`, class axis first."""
+
+    log_evidence: np.ndarray  # float64 [K, n_images]
+    best_log_score: np.ndarray  # float64 [K, n_images]
+    best_fine_rotation_indices: np.ndarray  # int64 [K, n_images], -1 without a candidate
+    best_translation_indices: np.ndarray  # int64 [K, n_images], -1 without a candidate
+    posterior_sums: np.ndarray  # float64 [K]
 
 
 def finalize_statistics(
@@ -714,6 +770,7 @@ def finalize_statistics(
         score_log_z,
         best_local_rot,
         _,
+        classes,
     ) = jax.device_get(tuple(stats))
 
     best_cell = np.asarray(best_cell, dtype=np.int64)
@@ -731,6 +788,20 @@ def finalize_statistics(
         best_local_rot * n_fine_trans + best_translation_indices,
     ).astype(np.int32)
 
+    n_classes = int(config.n_classes)
+    rotation_posterior_sums = np.asarray(rotation_posterior_sums, dtype=np.float64)
+    finalized_classes = None
+    if n_classes > 1:
+        rotation_posterior_sums = rotation_posterior_sums.reshape(n_classes, -1)
+        class_best_cell = np.asarray(classes.best_cell, dtype=np.int64).T
+        finalized_classes = FinalizedClassStatistics(
+            log_evidence=np.asarray(classes.log_evidence, dtype=np.float64).T,
+            best_log_score=np.asarray(classes.best_log_score, dtype=np.float64).T,
+            best_fine_rotation_indices=np.where(class_best_cell < 0, -1, class_best_cell // n_fine_trans),
+            best_translation_indices=np.where(class_best_cell < 0, -1, class_best_cell % n_fine_trans),
+            posterior_sums=np.asarray(classes.posterior_sums, dtype=np.float64),
+        )
+
     return FinalizedStatistics(
         wsum_sigma2_noise=np.asarray(wsum_sigma2_noise, dtype=np.float64),
         wsum_img_power=np.asarray(wsum_img_power, dtype=np.float64),
@@ -746,9 +817,10 @@ def finalize_statistics(
         log_evidence_per_image=np.asarray(log_evidence, dtype=np.float64),
         best_log_score_per_image=np.asarray(best_log_score, dtype=np.float64),
         max_posterior_per_image=np.asarray(max_posterior),
-        rotation_posterior_sums=np.asarray(rotation_posterior_sums, dtype=np.float64),
+        rotation_posterior_sums=rotation_posterior_sums,
         score_log_z_per_image=np.asarray(score_log_z, dtype=np.float64),
         hard_assignment=hard_assignment,
         best_fine_rotation_indices=best_fine_rotation_indices.astype(np.int64),
         best_translation_indices=best_translation_indices.astype(np.int64),
+        classes=finalized_classes,
     )
