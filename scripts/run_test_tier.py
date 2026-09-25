@@ -118,7 +118,7 @@ SHARD_TARGET_S = 600
 TIER_JOB = {
     "smoke": {"gpus": 1, "time": "01:00:00", "mem_gb": 128},
     "medium": {"gpus": 3, "time": "03:00:00", "mem_gb": 384},
-    "long": {"gpus": 4, "time": "16:00:00", "mem_gb": 600},
+    "long": {"gpus": 4, "time": "09:00:00", "mem_gb": 600},  # 6.1 h H100, 7.1 h A100 measured
 }
 LONG_ARM_SECONDS = {  # H100 walls of long tier 14410744 (relax 93ce1aa, one node, 4 GPUs)
     "long_k1_standalone": 6300,
