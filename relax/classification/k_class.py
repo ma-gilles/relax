@@ -2603,6 +2603,7 @@ def run_dense_k_class_em_adaptive(
     max_significants: int = -1,
     significance_image_batch_size: int | None = None,
     significance_rotation_block_size: int | None = None,
+    significance_pad_final_image_batch: bool = False,
     coarse_current_size: int | None = None,
     fine_current_size: int | None = None,
     coarse_healpix_order: int | None = None,
@@ -2660,6 +2661,10 @@ def run_dense_k_class_em_adaptive(
         with older callers.
     coarse_*_log_prior : optional priors used only at pass-1.  ``engine_kwargs``
         carries the priors used at pass-2.
+    significance_pad_final_image_batch : bool
+        Pad the last coarse image batch to the full batch size, so a caller whose
+        image count changes every iteration (VDAM's subsets) reuses one pass-1
+        executable. Splitting only the image axis leaves every score unchanged.
     skip_significance_pruning : bool
         When True, skip the pass-1 coarse significance computation entirely
         and evaluate the full fine grid with no mask.
@@ -2923,6 +2928,7 @@ def run_dense_k_class_em_adaptive(
                 engine_kwargs.get("preserve_bpref_particle_order", False)
             ),
             optics_group_ids=engine_kwargs.get("optics_group_ids"),
+            pad_final_image_batch=bool(significance_pad_final_image_batch),
         )
         if reuse_zero_oversampling_coarse_state:
             sig_kwargs["return_relion_f32_normalization"] = True

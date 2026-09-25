@@ -95,6 +95,16 @@ On pdb K=2 5k/128 the class splits now match RELION at seeds 29/41/53. OPEN
 repeats running); seed 53 is inside the band. Evidence and tools:
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/HANDOFF.json`.
 
+VDAM on the resident engine (2026-09-25, in progress): `--pass2_engine adaptive` runs the
+InitialModel E-step on auto-refine's adaptive route (`relax/vdam/adaptive_estep.py`), so its
+pass 2 is the compact or, with `RELAX_SPARSE_PASS2_RESIDENT=1`, the device-resident engine.
+RELION's three `--grad` E-step differences map onto it: the residual backprojection
+(`mstep_subtract_ctf_projection`, now on resident), two pseudo-halfset BPref slots (one call per
+pseudo-halfset for now) and the coarse-only `maximum_significants = 100 K`. K=1 only. The switch
+is transitional: remove with the old path (the exact-local VDAM route in
+`relax/vdam/sparse_pass2_estep.py`) once the resident route is qualified and made the default.
+Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamres_20260925/HANDOFF.json`.
+
 Class3D local searches, K>1 (2026-09-25): the per-class local route now keeps
 RELION's joint per-particle pass-2 support (3601775); it matches the
 class-segmented pass to 1e-7. No benchmark reaches this route (Class3D keeps

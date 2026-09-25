@@ -53,7 +53,8 @@ def test_block_residual_is_the_exact_local_statement():
 
 
 @requires_resident_gpu
-def test_resident_residual_backprojection_matches_the_compact_engine(_resident_production_env):
+@pytest.mark.usefixtures("_resident_production_env")
+def test_resident_residual_backprojection_matches_the_compact_engine():
     from relax.sparse_pass2.sparse_pass2_bucketed import compute_pass2_stats_sparse_bucketed
 
     args = _vdam_args(residual=True, groups=True)
@@ -72,7 +73,8 @@ def test_resident_residual_backprojection_matches_the_compact_engine(_resident_p
 
 
 @requires_resident_gpu
-def test_resident_without_scale_groups_keeps_the_scale_one_wavg(_resident_production_env):
+@pytest.mark.usefixtures("_resident_production_env")
+def test_resident_without_scale_groups_keeps_the_scale_one_wavg():
     """No ``--scale``: RELION's Wavg still runs at scale 1 and only the XA/AA sums are skipped.
 
     The same pass with one scale group of scale 1 is therefore the reference for every

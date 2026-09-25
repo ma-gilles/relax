@@ -265,12 +265,14 @@ def make_parser() -> argparse.ArgumentParser:
         "--pass2-engine",
         "--pass2_engine",
         dest="pass2_engine",
-        choices=("auto", "local", "local_segmented"),
+        choices=("auto", "local", "local_segmented", "adaptive"),
         default=DEFAULTS.pass2_engine,
         help=(
             "Adaptive pass-2 implementation. One exact-local engine serves K=1 and "
             "K>1: auto and local_segmented score every class in a single pass over "
-            "class-segmented rows; local is the explicit single-class spelling"
+            "class-segmented rows; local is the explicit single-class spelling. "
+            "adaptive (K=1, transitional) runs the E-step on auto-refine's adaptive "
+            "route, whose pass 2 is the compact or device-resident engine"
         ),
     )
     parser.add_argument(

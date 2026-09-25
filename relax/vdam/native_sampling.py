@@ -72,6 +72,8 @@ class NativeSamplingPlan:
     coarse_prior_translations: np.ndarray | None = None
     metadata_translations: np.ndarray | None = None
     translation_parent: np.ndarray | None = None
+    # RELION's unperturbed host-double coarse grid, before the float32 cast.
+    coarse_base_translations: np.ndarray | None = None
 
     @property
     def n_rotations(self) -> int:
@@ -655,6 +657,7 @@ def _build_sampling_plan(
         coarse_prior_translations=coarse_translations,
         metadata_translations=np.asarray(metadata_translations, dtype=np.float64),
         translation_parent=None if translation_parent is None else np.asarray(translation_parent, dtype=np.int64),
+        coarse_base_translations=np.asarray(metadata_coarse_translations, dtype=np.float64),
     )
 
 

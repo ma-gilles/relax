@@ -24,6 +24,7 @@ from relax.helpers.orientation_priors import (
 from relax.relion import relion_projector_setup
 from relax.relion.relion_projector_setup import ProjectorSetupBackend
 from relax.vdam import native_sampling
+from relax.vdam.adaptive_estep import run_adaptive_initial_model_estep
 from relax.vdam.estep_common import (
     _PARTICLE_RESULT_FIELDS,
     DenseInitialModelEstepConfig,
@@ -235,6 +236,14 @@ def _dense_estep_config(
             pass1_healpix_order=int(pass1_healpix_order),
             return_profile=bool(os.environ.get("RECOVAR_INITIAL_MODEL_PROFILE")),
         )
+        if str(opts.pass2_engine) == "adaptive":
+            # The adaptive route rebuilds RELION's fine translations from the
+            # unperturbed host grid (``_adaptive_pass2_grids``).
+            if sampling_plan.coarse_base_translations is None:
+                raise ValueError("the adaptive route needs the sampling plan's host-double coarse grid")
+            engine_kwargs["coarse_base_translations"] = np.asarray(
+                sampling_plan.coarse_base_translations, dtype=np.float64
+            )
         if _af := os.environ.get("RELAX_ADAPTIVE_FRACTION"):
             engine_kwargs["adaptive_fraction"] = float(_af)
     for env_var, kwarg in (
@@ -590,6 +599,19 @@ def run_dense_initial_model_estep(
             if particle_ids is None
             else np.asarray(particle_ids, dtype=np.int64)
         )
+        if str(config.pass2_engine) == "adaptive":
+            return run_adaptive_initial_model_estep(
+                experiment_dataset,
+                state,
+                config,
+                class_log_priors=class_log_priors,
+                groups=groups,
+                means=means,
+                mean_variance=mean_variance,
+                relion_projector_half_by_class=relion_projector_half_by_class,
+                relion_projector_r_max=relion_projector_r_max,
+                engine_kwargs=engine_kwargs,
+            )
         if state.pseudo_halfsets:
             selected_halfset_ids = (
                 np.arange(selected_particle_ids.size, dtype=np.int32) % 2
