@@ -281,11 +281,3 @@ def test_relion_f32_posterior_cuda_primitives_fail_closed_without_gpu(monkeypatc
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
         em_cuda_kernels.relion_cub_sort_scan_batched_f32.__wrapped__(matrix)
 
-
-def test_relion_batched_posterior_primitive_selector_is_explicit(monkeypatch):
-    from relax.cuda import kernels as em_cuda_kernels
-
-    monkeypatch.delenv("RELAX_RELION_BATCHED_POSTERIOR_PRIMITIVES", raising=False)
-    assert not em_cuda_kernels.relion_batched_posterior_primitives_requested()
-    monkeypatch.setenv("RELAX_RELION_BATCHED_POSTERIOR_PRIMITIVES", "1")
-    assert em_cuda_kernels.relion_batched_posterior_primitives_requested()

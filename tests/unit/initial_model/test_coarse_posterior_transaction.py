@@ -49,7 +49,6 @@ def test_invalid_contract_rejected_before_gpu_dispatch(which, value, error):
 def test_same_scores_match_cuda_posterior_bitwise(monkeypatch, case, width, maxsig):
     assert jax.default_backend() == 'gpu'
     assert cuda.cuda_available() and cuda.custom_cuda_requested()
-    monkeypatch.setenv('RELAX_RELION_BATCHED_POSTERIOR_PRIMITIVES', '1')
     rng = np.random.default_rng(293)
     values = rng.normal(-100, 4, (4,width)).astype(np.float32)
     raw_max = np.max(values, axis=1)

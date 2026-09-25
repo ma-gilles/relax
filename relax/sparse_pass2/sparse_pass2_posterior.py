@@ -372,25 +372,13 @@ def _relion_f32_fine_posterior(
         # scan policy also remains observable when the same binary is JITed
         # on Hopper, so the CUDA primitive pins that policy explicitly.
         finite_scores = jnp.where(finite, flat_scores, -jnp.inf)
-        batched_primitives = (
-            em_cuda_kernels.relion_batched_posterior_primitives_requested()
+        raw_weights = em_cuda_kernels.relion_exponentiate_batched_f32(
+            finite_scores,
+            exponent_add,
         )
-        if batched_primitives:
-            raw_weights = em_cuda_kernels.relion_exponentiate_batched_f32(
-                finite_scores,
-                exponent_add,
-            )
-            sorted_weights, cumulative = (
-                em_cuda_kernels.relion_cub_sort_scan_batched_f32(raw_weights)
-            )
-        else:
-            raw_weights = jax.vmap(em_cuda_kernels.relion_exponentiate_f32)(
-                finite_scores,
-                exponent_add,
-            )
-            sorted_weights, cumulative = jax.vmap(
-                em_cuda_kernels.relion_cub_sort_scan_f32,
-            )(raw_weights)
+        sorted_weights, cumulative = (
+            em_cuda_kernels.relion_cub_sort_scan_batched_f32(raw_weights)
+        )
     else:
         shifted = jnp.where(
             finite,
@@ -435,16 +423,10 @@ def _relion_f32_fine_posterior(
         mask_flat = has_mass[:, None] & finite & (raw_weights >= threshold[:, None])
     safe_sum_weight = jnp.where(has_mass, sum_weight, jnp.float32(1.0))
     if use_native_cuda:
-        if batched_primitives:
-            normalized_weights = em_cuda_kernels.relion_divide_batched_f32(
-                raw_weights,
-                safe_sum_weight,
-            )
-        else:
-            normalized_weights = jax.vmap(em_cuda_kernels.relion_divide_f32)(
-                raw_weights,
-                safe_sum_weight,
-            )
+        normalized_weights = em_cuda_kernels.relion_divide_batched_f32(
+            raw_weights,
+            safe_sum_weight,
+        )
     else:
         normalized_weights = raw_weights / safe_sum_weight[:, None]
     reconstruction_probs_flat = jnp.where(

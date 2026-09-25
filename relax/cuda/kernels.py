@@ -38,9 +38,6 @@ from recovar.cuda_backproject import (
     logger,
 )
 from recovar.cuda_backproject import (
-    env_flag as _env_flag,
-)
-from recovar.cuda_backproject import (
     ffi_kwargs as _ffi_kwargs,
 )
 from recovar.cuda_backproject import (
@@ -60,11 +57,6 @@ from recovar.cuda_backproject import (
 )
 from recovar.cuda_build import NativeLibrary, include_dir
 from recovar.data_io import image_backends as _image_backends
-
-_RELION_BATCHED_POSTERIOR_PRIMITIVES_ENV = (
-    "RELAX_RELION_BATCHED_POSTERIOR_PRIMITIVES"
-)
-
 
 _VDAM_EXTERNAL_HOST_REPLAY_LIBRARY_ENV = (
     "RELAX_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY"
@@ -93,17 +85,6 @@ def _next_vdam_external_host_replay_call() -> int:
         call = _vdam_external_host_replay_call
         _vdam_external_host_replay_call += 1
     return call
-
-
-def relion_batched_posterior_primitives_requested() -> bool:
-    """Return whether exact row-wise posterior CUDA calls are batched.
-
-    The value is consumed while JAX traces the posterior caller. Change it only
-    between fresh processes so an already cached executable cannot silently
-    change its execution contract.
-    """
-
-    return _env_flag(_RELION_BATCHED_POSTERIOR_PRIMITIVES_ENV)
 
 
 @contextmanager

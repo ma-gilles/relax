@@ -210,7 +210,6 @@ def test_complete_cuda_publication_matches_existing_gpu_path(monkeypatch, ties):
     import jax
 
     assert jax.default_backend() == "gpu"
-    monkeypatch.setenv("RELAX_RELION_BATCHED_POSTERIOR_PRIMITIVES", "1")
     groups = mixed_groups()
     if ties:
         selected, full = groups
