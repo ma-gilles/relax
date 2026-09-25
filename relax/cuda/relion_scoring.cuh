@@ -868,6 +868,142 @@ void launch_relion_coarse_diff2_projector_f32_variant(
     }
 }
 
+/* Stream-owned coarse projector textures.  The single-stream coarse scorer
+ * used to allocate two cudaArrays and texture objects per call, free them at
+ * the end and synchronize the stream to make that free safe, so every call
+ * stalled the host until its kernel finished.  One cache entry per
+ * (device, stream) now owns the arrays and texture objects; each call refills
+ * them with a stream-ordered copy after the previous call's kernel on the
+ * same stream, so the texels every kernel reads are unchanged.  An entry is
+ * reallocated (after a synchronize) only when the texture extent changes. */
+struct RelionCoarseTextureCacheEntry {
+    int tex_x = 0;
+    int tex_y = 0;
+    int tex_z = 0;
+    cudaArray_t array_real = nullptr;
+    cudaArray_t array_imag = nullptr;
+    cudaTextureObject_t texture_real = 0;
+    cudaTextureObject_t texture_imag = 0;
+};
+
+inline std::mutex& relion_coarse_texture_cache_mutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
+
+inline std::unordered_map<uint64_t, RelionCoarseTextureCacheEntry>&
+relion_coarse_texture_cache()
+{
+    // Deliberately never destroyed: CUDA objects must not be released after
+    // the driver has shut down at process exit.
+    static auto* cache =
+        new std::unordered_map<uint64_t, RelionCoarseTextureCacheEntry>();
+    return *cache;
+}
+
+inline void destroy_relion_coarse_texture_cache_entry(
+    RelionCoarseTextureCacheEntry* entry)
+{
+    if (entry->texture_real) cudaDestroyTextureObject(entry->texture_real);
+    if (entry->texture_imag) cudaDestroyTextureObject(entry->texture_imag);
+    if (entry->array_real) cudaFreeArray(entry->array_real);
+    if (entry->array_imag) cudaFreeArray(entry->array_imag);
+    *entry = RelionCoarseTextureCacheEntry{};
+}
+
+inline cudaError_t create_relion_coarse_texture_cache_entry(
+    int tex_x,
+    int tex_y,
+    int tex_z,
+    RelionCoarseTextureCacheEntry* entry)
+{
+    cudaChannelFormatDesc desc =
+        cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
+    cudaExtent extent = make_cudaExtent(tex_x, tex_y, tex_z);
+    cudaError_t err = cudaMalloc3DArray(&entry->array_real, &desc, extent);
+    if (err == cudaSuccess)
+        err = cudaMalloc3DArray(&entry->array_imag, &desc, extent);
+    if (err == cudaSuccess) {
+        cudaResourceDesc resource_real = {};
+        cudaResourceDesc resource_imag = {};
+        cudaTextureDesc texture_desc = {};
+        resource_real.resType = cudaResourceTypeArray;
+        resource_real.res.array.array = entry->array_real;
+        resource_imag.resType = cudaResourceTypeArray;
+        resource_imag.res.array.array = entry->array_imag;
+        texture_desc.filterMode = cudaFilterModeLinear;
+        texture_desc.readMode = cudaReadModeElementType;
+        texture_desc.normalizedCoords = false;
+        texture_desc.addressMode[0] = cudaAddressModeClamp;
+        texture_desc.addressMode[1] = cudaAddressModeClamp;
+        texture_desc.addressMode[2] = cudaAddressModeClamp;
+        err = cudaCreateTextureObject(
+            &entry->texture_real, &resource_real, &texture_desc, nullptr);
+        if (err == cudaSuccess)
+            err = cudaCreateTextureObject(
+                &entry->texture_imag, &resource_imag, &texture_desc, nullptr);
+    }
+    if (err != cudaSuccess) {
+        destroy_relion_coarse_texture_cache_entry(entry);
+        return err;
+    }
+    entry->tex_x = tex_x;
+    entry->tex_y = tex_y;
+    entry->tex_z = tex_z;
+    return cudaSuccess;
+}
+
+/* Return the stream's cached texture pair for this extent, refilled from
+ * ``real``/``imag`` on ``stream``.  Callers hold the cache mutex until their
+ * kernels are enqueued so no other host thread can refill the entry first. */
+inline cudaError_t acquire_relion_coarse_texture(
+    cudaStream_t stream,
+    const float* real,
+    const float* imag,
+    int tex_x,
+    int tex_y,
+    int tex_z,
+    cudaTextureObject_t* texture_real,
+    cudaTextureObject_t* texture_imag)
+{
+    int device = -1;
+    cudaError_t err = cudaGetDevice(&device);
+    if (err != cudaSuccess) return err;
+    const uint64_t key =
+        (static_cast<uint64_t>(static_cast<uint32_t>(device)) << 48) ^
+        reinterpret_cast<uint64_t>(stream);
+    RelionCoarseTextureCacheEntry& entry = relion_coarse_texture_cache()[key];
+    if (entry.tex_x != tex_x || entry.tex_y != tex_y || entry.tex_z != tex_z) {
+        if (entry.array_real || entry.array_imag) {
+            // Earlier kernels on this stream may still sample the old arrays.
+            err = cudaStreamSynchronize(stream);
+            if (err != cudaSuccess) return err;
+            destroy_relion_coarse_texture_cache_entry(&entry);
+        }
+        err = create_relion_coarse_texture_cache_entry(
+            tex_x, tex_y, tex_z, &entry);
+        if (err != cudaSuccess) return err;
+    }
+    cudaExtent extent = make_cudaExtent(tex_x, tex_y, tex_z);
+    cudaMemcpy3DParms copy = {0};
+    copy.extent = extent;
+    copy.kind = cudaMemcpyDeviceToDevice;
+    copy.srcPtr = make_cudaPitchedPtr(
+        const_cast<float*>(real), static_cast<size_t>(tex_x) * sizeof(float), tex_x, tex_y);
+    copy.dstArray = entry.array_real;
+    err = cudaMemcpy3DAsync(&copy, stream);
+    if (err != cudaSuccess) return err;
+    copy.srcPtr = make_cudaPitchedPtr(
+        const_cast<float*>(imag), static_cast<size_t>(tex_x) * sizeof(float), tex_x, tex_y);
+    copy.dstArray = entry.array_imag;
+    err = cudaMemcpy3DAsync(&copy, stream);
+    if (err != cudaSuccess) return err;
+    *texture_real = entry.texture_real;
+    *texture_imag = entry.texture_imag;
+    return cudaSuccess;
+}
+
 template <
     bool CAPTURE_LANES = false,
     bool CANONICAL_REDUCTION = false,
@@ -934,6 +1070,9 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
     cudaTextureObject_t texture_imag = 0;
     cudaStream_t worker_streams[kRelionVdamWorkerStreams] = {};
     cudaEvent_t worker_inputs_ready = nullptr;
+    cudaTextureObject_t launch_texture_real = 0;
+    cudaTextureObject_t launch_texture_imag = 0;
+    std::unique_lock<std::mutex> texture_cache_lock;
 
     err = recovar::scratch_alloc(reinterpret_cast<void**>(&real), voxel_count * sizeof(float), stream);
     if (err != cudaSuccess) goto cleanup;
@@ -958,47 +1097,59 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
     err = cudaGetLastError();
     if (err != cudaSuccess) goto cleanup;
 
-    {
-        cudaChannelFormatDesc desc =
-            cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
-        cudaExtent extent = make_cudaExtent(tex_x, tex_y, tex_z);
-        err = cudaMalloc3DArray(&array_real, &desc, extent);
+    if (worker_stream_count == 0) {
+        // Held until this call's kernels are enqueued (released on return).
+        texture_cache_lock =
+            std::unique_lock<std::mutex>(relion_coarse_texture_cache_mutex());
+        err = acquire_relion_coarse_texture(
+            stream, real, imag, tex_x, tex_y, tex_z,
+            &launch_texture_real, &launch_texture_imag);
         if (err != cudaSuccess) goto cleanup;
-        err = cudaMalloc3DArray(&array_imag, &desc, extent);
-        if (err != cudaSuccess) goto cleanup;
-        cudaMemcpy3DParms copy = {0};
-        copy.extent = extent;
-        copy.kind = cudaMemcpyDeviceToDevice;
-        copy.srcPtr = make_cudaPitchedPtr(
-            real, static_cast<size_t>(tex_x) * sizeof(float), tex_x, tex_y);
-        copy.dstArray = array_real;
-        err = cudaMemcpy3DAsync(&copy, stream);
-        if (err != cudaSuccess) goto cleanup;
-        copy.srcPtr = make_cudaPitchedPtr(
-            imag, static_cast<size_t>(tex_x) * sizeof(float), tex_x, tex_y);
-        copy.dstArray = array_imag;
-        err = cudaMemcpy3DAsync(&copy, stream);
-        if (err != cudaSuccess) goto cleanup;
+    } else {
+        {
+            cudaChannelFormatDesc desc =
+                cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
+            cudaExtent extent = make_cudaExtent(tex_x, tex_y, tex_z);
+            err = cudaMalloc3DArray(&array_real, &desc, extent);
+            if (err != cudaSuccess) goto cleanup;
+            err = cudaMalloc3DArray(&array_imag, &desc, extent);
+            if (err != cudaSuccess) goto cleanup;
+            cudaMemcpy3DParms copy = {0};
+            copy.extent = extent;
+            copy.kind = cudaMemcpyDeviceToDevice;
+            copy.srcPtr = make_cudaPitchedPtr(
+                real, static_cast<size_t>(tex_x) * sizeof(float), tex_x, tex_y);
+            copy.dstArray = array_real;
+            err = cudaMemcpy3DAsync(&copy, stream);
+            if (err != cudaSuccess) goto cleanup;
+            copy.srcPtr = make_cudaPitchedPtr(
+                imag, static_cast<size_t>(tex_x) * sizeof(float), tex_x, tex_y);
+            copy.dstArray = array_imag;
+            err = cudaMemcpy3DAsync(&copy, stream);
+            if (err != cudaSuccess) goto cleanup;
 
-        cudaResourceDesc resource_real = {};
-        cudaResourceDesc resource_imag = {};
-        cudaTextureDesc texture_desc = {};
-        resource_real.resType = cudaResourceTypeArray;
-        resource_real.res.array.array = array_real;
-        resource_imag.resType = cudaResourceTypeArray;
-        resource_imag.res.array.array = array_imag;
-        texture_desc.filterMode = cudaFilterModeLinear;
-        texture_desc.readMode = cudaReadModeElementType;
-        texture_desc.normalizedCoords = false;
-        texture_desc.addressMode[0] = cudaAddressModeClamp;
-        texture_desc.addressMode[1] = cudaAddressModeClamp;
-        texture_desc.addressMode[2] = cudaAddressModeClamp;
-        err = cudaCreateTextureObject(
-            &texture_real, &resource_real, &texture_desc, nullptr);
-        if (err != cudaSuccess) goto cleanup;
-        err = cudaCreateTextureObject(
-            &texture_imag, &resource_imag, &texture_desc, nullptr);
-        if (err != cudaSuccess) goto cleanup;
+            cudaResourceDesc resource_real = {};
+            cudaResourceDesc resource_imag = {};
+            cudaTextureDesc texture_desc = {};
+            resource_real.resType = cudaResourceTypeArray;
+            resource_real.res.array.array = array_real;
+            resource_imag.resType = cudaResourceTypeArray;
+            resource_imag.res.array.array = array_imag;
+            texture_desc.filterMode = cudaFilterModeLinear;
+            texture_desc.readMode = cudaReadModeElementType;
+            texture_desc.normalizedCoords = false;
+            texture_desc.addressMode[0] = cudaAddressModeClamp;
+            texture_desc.addressMode[1] = cudaAddressModeClamp;
+            texture_desc.addressMode[2] = cudaAddressModeClamp;
+            err = cudaCreateTextureObject(
+                &texture_real, &resource_real, &texture_desc, nullptr);
+            if (err != cudaSuccess) goto cleanup;
+            err = cudaCreateTextureObject(
+                &texture_imag, &resource_imag, &texture_desc, nullptr);
+            if (err != cudaSuccess) goto cleanup;
+        }
+        launch_texture_real = texture_real;
+        launch_texture_imag = texture_imag;
     }
 
     if (worker_stream_count == 0) {
@@ -1014,7 +1165,7 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
                 PREHALF_WEIGHT>(
                     blocks,
                     stream,
-                    texture_real, texture_imag, rotations, images,
+                    launch_texture_real, launch_texture_imag, rotations, images,
                     translation_angles, weight, full_to_compact, output,
                     lane_partials,
                     0, main_rotation_count, rotation_count, batch_size, translation_count,
@@ -1033,7 +1184,7 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
                 PREHALF_WEIGHT>(
                     batch_size * tail_count,
                     stream,
-                    texture_real, texture_imag, rotations, images,
+                    launch_texture_real, launch_texture_imag, rotations, images,
                     translation_angles, weight, full_to_compact, output,
                     lane_partials,
                     main_rotation_count, tail_count, rotation_count, batch_size,
@@ -1043,7 +1194,6 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
             err = cudaGetLastError();
             if (err != cudaSuccess) goto cleanup;
         }
-        err = cudaStreamSynchronize(stream);
     } else {
         // This path changes only particle scheduling.  Texture ownership,
         // projection, translation, lane arithmetic, selected lane reduction,
@@ -1081,7 +1231,7 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
                         PREHALF_WEIGHT>(
                         main_rotation_count / kRelionCoarseEulersPerBlock,
                         worker_streams[worker],
-                            texture_real, texture_imag, rotations,
+                            launch_texture_real, launch_texture_imag, rotations,
                             particle_images, translation_angles,
                             particle_weight, full_to_compact, particle_output,
                             particle_lane_partials,
@@ -1101,7 +1251,7 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
                         PREHALF_WEIGHT>(
                         tail_count,
                         worker_streams[worker],
-                            texture_real, texture_imag, rotations,
+                            launch_texture_real, launch_texture_imag, rotations,
                             particle_images, translation_angles,
                             particle_weight, full_to_compact, particle_output,
                             particle_lane_partials,
