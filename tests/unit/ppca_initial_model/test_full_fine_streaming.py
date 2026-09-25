@@ -193,3 +193,59 @@ def test_full_row_stream_rejects_parents_outside_coarse_grid(tile_problem):
             dataset, mu, W, rotation_parent=np.full(24, 3), translation_parent=np.zeros(12),
             n_coarse_rotations=3, n_coarse_translations=3, **kwargs,
         )
+
+
+def _moment_image_problem(dtype):
+    from recovar.ppca.triangular import pack_upper_tri
+
+    rng = np.random.default_rng(5)
+    B, T, R, P, F = 3, 4, 5, 3, 7
+    cdtype = np.complex128 if dtype == np.float64 else np.complex64
+    score = rng.standard_normal((B, T, R)).astype(dtype)
+    logZ = np.log(np.sum(np.exp(score), axis=(1, 2))).astype(dtype)
+    z = rng.standard_normal((B, T, R, P - 1))
+    alpha = np.concatenate([np.ones((B, T, R, 1)), z], axis=-1)
+    cov = rng.standard_normal((B, T, R, P, P)) * 0.1
+    G = alpha[..., :, None] * alpha[..., None, :] + cov @ np.swapaxes(cov, -1, -2)
+    weights = rng.choice([1.0, 2.0], F)
+    Y1_recon = (rng.standard_normal((B, T, F)) + 1j * rng.standard_normal((B, T, F))).astype(cdtype)
+    ctf2_recon = rng.uniform(0.1, 1.0, (B, F)).astype(dtype)
+    projections = (rng.standard_normal((R, P, F)) + 1j * rng.standard_normal((R, P, F))).astype(cdtype)
+    return dict(score=score, logZ=logZ, alpha=alpha.astype(dtype), G_tri=np.asarray(pack_upper_tri(G)).astype(dtype),
+                weights=weights.astype(dtype), Y1_recon=Y1_recon, ctf2_recon=ctf2_recon, projections=projections)
+
+
+def _compare_moment_image_residuals(dtype, rtol=None):
+    from relax.ppca_refinement.engine import pose_moment_images
+    from relax.ppca_refinement.residual_statistics import (
+        residual_image_statistics,
+        residual_statistics_from_moment_images,
+    )
+
+    d = {k: jnp.asarray(v) for k, v in _moment_image_problem(dtype).items()}
+    gamma = jnp.exp(d["score"] - d["logZ"][:, None, None])
+    w = d["weights"]
+    direct, correction, _ = full_float32(residual_image_statistics)(
+        d["score"], d["alpha"], d["G_tri"], d["logZ"], d["Y1_recon"] * w, d["ctf2_recon"] * w, d["projections"]
+    )
+    rhs, lhs = full_float32(pose_moment_images)(
+        gamma, d["alpha"], d["G_tri"], d["Y1_recon"], d["ctf2_recon"],
+        rhs_dtype=d["Y1_recon"].dtype, lhs_dtype=d["ctf2_recon"].dtype,
+    )
+    residual, correction_over_w = full_float32(residual_statistics_from_moment_images)(rhs, lhs, d["projections"])
+    assert np.asarray(correction_over_w).dtype == dtype
+    assert_matches(np.asarray(residual), np.asarray(direct / w), rtol=rtol)
+    assert_matches(np.asarray(correction_over_w), np.asarray(correction / w), rtol=rtol)
+
+
+def test_moment_image_residuals_match_direct_residual_statistics():
+    """Float32: the linear rewrite of the residual through the M-step images."""
+    _compare_moment_image_residuals(np.float32)
+
+
+def test_moment_image_residuals_match_direct_residual_statistics_f64():
+    """Float64 companion of the same rewrite."""
+    import jax
+
+    with jax.enable_x64(True):
+        _compare_moment_image_residuals(np.float64)

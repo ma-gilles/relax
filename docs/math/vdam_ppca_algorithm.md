@@ -964,6 +964,14 @@ scientific contract; runnable code alone does not establish recovery.
   Scores, moments, the float32 centered normalizer, the first-maximum top pose
   and block accumulation order are those of the host-mask dense routine.
   Unit tests compare both routines against the independent local layout.
+  With one score and reconstruction window, the expected residual and its
+  noise correction are linear in the block's M-step images
+  `R = sum gamma alpha Y1` and `L = sum gamma G CTF^2/sigma^2`: the residual is
+  `R_p - sum_q L_pq A_q` for projections `A`, and the correction is
+  `sum_r [sum_pq L_pq Re(conj(A_p) A_q) - 2 sum_p Re(R_p conj(A_p))]`
+  ([residual_statistics_from_moment_images](../../relax/ppca_refinement/residual_statistics.py)).
+  The streamed engine uses this form instead of repeating the per-pose
+  contractions; a float32 and float64 test checks it against the direct form.
 - After the final all-particle update,
   [compute_dense_ppca_embeddings](../../relax/ppca_refinement/dense_dataset.py)
   uses the same fine pose scores, latent means, candidate support and sequential

@@ -458,6 +458,48 @@ def dense_pose_ppca_score_with_moments_factor_once(
     )
 
 
+def pose_moment_images(gamma, alpha, G_tri, Y1_recon, ctf2_over_noise_recon, *, rhs_dtype, lhs_dtype):
+    """Posterior-weighted augmented RHS ``(P, R, F)`` and packed LHS ``(tri, R, F)`` images."""
+    rhs_images = jnp.einsum(
+        "btr,btrp,btf->prf",
+        gamma.astype(rhs_dtype),
+        jnp.conj(alpha).astype(rhs_dtype),
+        Y1_recon.astype(rhs_dtype),
+    ).astype(rhs_dtype)
+    lhs_images = jnp.einsum(
+        "btr,btrk,bf->krf",
+        gamma.astype(lhs_dtype),
+        G_tri,
+        ctf2_over_noise_recon.astype(lhs_dtype),
+    ).real.astype(lhs_dtype)
+    return rhs_images, lhs_images
+
+
+def backproject_moment_images(
+    rhs_images, lhs_images, rotations_block, image_shape, volume_shape, rhs_volume, lhs_tri_volume,
+    *, disc_type_backproject, recon_window_indices, use_recon_window, backprojection_max_r,
+):
+    """Adjoint-slice augmented RHS/LHS images into their half-volume accumulators."""
+    from relax.helpers.adjoint import batch_adjoint_slice_volume_maybe_windowed
+
+    volumes = []
+    for images, volume in ((rhs_images, rhs_volume), (lhs_images, lhs_tri_volume)):
+        volumes.append(batch_adjoint_slice_volume_maybe_windowed(
+            images,
+            recon_window_indices,
+            rotations_block,
+            volume,
+            image_shape,
+            volume_shape,
+            disc_type_backproject,
+            True,
+            True,
+            use_window=bool(use_recon_window),
+            max_r=backprojection_max_r,
+        ))
+    return tuple(volumes)
+
+
 def _backproject_pose_moments(
     gamma, alpha, G_tri, Y1_recon, ctf2_over_noise_recon,
     rotations_block, image_shape, volume_shape, rhs_volume, lhs_tri_volume,
@@ -465,52 +507,17 @@ def _backproject_pose_moments(
     backprojection_max_r,
 ):
     """Accumulate posterior-weighted augmented RHS/LHS projections into half volumes."""
-    from relax.helpers.adjoint import batch_adjoint_slice_volume_maybe_windowed
-
-    rhs_dtype = rhs_volume.dtype
-    lhs_dtype = lhs_tri_volume.dtype
-
-    rhs_images = jnp.einsum(
-        "btr,btrp,btf->prf",
-        gamma.astype(rhs_dtype),
-        jnp.conj(alpha).astype(rhs_dtype),
-        Y1_recon.astype(rhs_dtype),
-    ).astype(rhs_dtype)
-    rhs_volume = batch_adjoint_slice_volume_maybe_windowed(
-        rhs_images,
-        recon_window_indices,
-        rotations_block,
-        rhs_volume,
-        image_shape,
-        volume_shape,
-        disc_type_backproject,
-        True,
-        True,
-        use_window=bool(use_recon_window),
-        max_r=backprojection_max_r,
+    rhs_images, lhs_images = pose_moment_images(
+        gamma, alpha, G_tri, Y1_recon, ctf2_over_noise_recon,
+        rhs_dtype=rhs_volume.dtype, lhs_dtype=lhs_tri_volume.dtype,
     )
-
-    lhs_images = jnp.einsum(
-        "btr,btrk,bf->krf",
-        gamma.astype(lhs_dtype),
-        G_tri,
-        ctf2_over_noise_recon.astype(lhs_dtype),
-    ).real.astype(lhs_dtype)
-    lhs_tri_volume = batch_adjoint_slice_volume_maybe_windowed(
-        lhs_images,
-        recon_window_indices,
-        rotations_block,
-        lhs_tri_volume,
-        image_shape,
-        volume_shape,
-        disc_type_backproject,
-        True,
-        True,
-        use_window=bool(use_recon_window),
-        max_r=backprojection_max_r,
+    return backproject_moment_images(
+        rhs_images, lhs_images, rotations_block, image_shape, volume_shape, rhs_volume, lhs_tri_volume,
+        disc_type_backproject=disc_type_backproject,
+        recon_window_indices=recon_window_indices,
+        use_recon_window=use_recon_window,
+        backprojection_max_r=backprojection_max_r,
     )
-
-    return rhs_volume, lhs_tri_volume
 
 
 @partial(

@@ -49,12 +49,13 @@ from relax.ppca_refinement.dense_dataset import (
 )
 from relax.ppca_refinement.engine import (
     _enforce_augmented_x0,
-    accumulate_pose_ppca_block_cached,
+    backproject_moment_images,
     dense_pose_ppca_score_with_moments_blocked,
     dense_pose_ppca_score_with_moments_factor_once,
+    pose_moment_images,
 )
 from relax.ppca_refinement.pose_selection import top_p_from_score_block
-from relax.ppca_refinement.residual_statistics import full_float32, residual_image_statistics
+from relax.ppca_refinement.residual_statistics import full_float32, residual_statistics_from_moment_images
 
 FULL_ROW_ENGINE = "full_row_device_resident"
 
@@ -88,7 +89,6 @@ class _StreamArrays(NamedTuple):
     translation_parent: jax.Array  # (T,) int32 coarse translation of each fine shift
     score_indices: jax.Array | None  # score window in the packed half image
     recon_indices: jax.Array | None  # reconstruction window
-    window_weights: jax.Array  # Hermitian half-image weights on the score window
     coefficient_noise: jax.Array  # (n_half,) noise variance per half-image pixel
     shift_squared: jax.Array  # (T,) squared fine shift length in px^2
 
@@ -234,13 +234,19 @@ def _backproject_block(carry, arrays, tile, score, alpha, G_tri, center, centere
     rotations_block = _block_rows(arrays.rotations, start, block_size)
     proj = _score_window_projection(arrays, rotations_block, static)
     centered = score - center[:, None, None]
-    residual_images, correction, embedding = residual_image_statistics(
-        centered, alpha, G_tri, centered_logZ, tile.Y1, tile.ctf2, proj
+    gamma = jnp.exp(centered - centered_logZ[:, None, None])
+    rhs_images, lhs_images = pose_moment_images(
+        gamma, alpha, G_tri, tile.Y1_recon, tile.ctf2_recon, rhs_dtype=carry.rhs.dtype, lhs_dtype=carry.lhs_tri.dtype
     )
+    # The reconstruction operands equal the score operands without the
+    # Hermitian weight (full-real observation: one window), so these residual
+    # statistics are already divided by that weight.
+    residual_images, correction = residual_statistics_from_moment_images(rhs_images, lhs_images, proj)
+    embedding = jnp.einsum("btr,btrq->bq", gamma, alpha[..., 1:])
     indices = arrays.score_indices
     # The half-image adjoint supplies conjugate scatters itself.
     residual = batch_adjoint_slice_volume_maybe_windowed(
-        residual_images / arrays.window_weights[None, None, :],
+        residual_images,
         indices,
         rotations_block,
         carry.residual,
@@ -254,19 +260,14 @@ def _backproject_block(carry, arrays, tile, score, alpha, G_tri, center, centere
     )
     nv = jnp.broadcast_to(arrays.coefficient_noise, (carry.residual_power.size,))
     if indices is None:
-        residual_power = carry.residual_power + correction * nv / arrays.window_weights
+        residual_power = carry.residual_power + correction * nv
     else:
-        residual_power = carry.residual_power.at[indices].add(correction * nv[indices] / arrays.window_weights)
-    gamma = jnp.exp(centered - centered_logZ[:, None, None])
+        residual_power = carry.residual_power.at[indices].add(correction * nv[indices])
     latent_covariance_trace = _latent_covariance_trace_from_packed_moments(G_tri, alpha, static.basis_size)
     centered_score = centered - centered_logZ[:, None, None]
-    rhs, lhs_tri, n_significant, _pmax = accumulate_pose_ppca_block_cached(
-        centered,
-        alpha,
-        G_tri,
-        centered_logZ,
-        tile.Y1_recon,
-        tile.ctf2_recon,
+    rhs, lhs_tri = backproject_moment_images(
+        rhs_images,
+        lhs_images,
         rotations_block,
         static.image_shape,
         static.volume_shape,
@@ -277,6 +278,7 @@ def _backproject_block(carry, arrays, tile, score, alpha, G_tri, center, centere
         use_recon_window=static.use_recon_window,
         backprojection_max_r=static.backprojection_max_r,
     )
+    n_significant = jnp.sum(gamma > 1e-3, axis=(1, 2)).astype(jnp.int32)
     carry = _MomentCarry(
         rhs=rhs,
         lhs_tri=lhs_tri,
@@ -319,8 +321,10 @@ def prepare_full_row_stream(
     """Upload the model, fine grids and priors once for an expectation's tiles."""
     if scoring.image_scale_corrections is not None or scoring.class_log_prior != 0.0:
         raise ValueError("Full-row streaming supports unit image scale and no class prior")
-    if scoring.score_with_masked_images or scoring.relion_unit_half_weights:
-        raise ValueError("Residual statistics require unmasked, unit-contrast full-Hermitian observations")
+    if scoring.score_with_masked_images or scoring.relion_unit_half_weights or not scoring.full_real_observation:
+        # Pass 2 forms residuals from the reconstruction-window moment images,
+        # which requires the score operands to be those with Hermitian weights.
+        raise ValueError("Residual statistics require unmasked, unit-contrast full-real observations")
     rotations = np.asarray(rotations, dtype=np.float32)
     translations = np.asarray(translations, dtype=np.float32)
     rotation_parent = np.asarray(rotation_parent, dtype=np.int32)
@@ -343,11 +347,17 @@ def prepare_full_row_stream(
         square_window=scoring.square_window,
         full_real_observation=scoring.full_real_observation,
     )
+    same_window = (resolved.score_indices is None and resolved.recon_indices is None) or (
+        resolved.score_indices is not None
+        and resolved.recon_indices is not None
+        and np.array_equal(np.asarray(resolved.score_indices), np.asarray(resolved.recon_indices))
+    )
+    if not same_window:
+        raise ValueError("Full-row residuals require one score and reconstruction window")
     forward_config = ForwardModelConfig.from_dataset(
         experiment_dataset, disc_type=disc_type, process_fn=experiment_dataset.process_images
     )
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(noise_variance, resolved.image_shape).squeeze()
-    weights = make_half_image_weights(resolved.image_shape)
     block_size = int(schedule.rotation_block_size)
     blocks = tuple(
         (jnp.asarray(start, dtype=jnp.int32), min(block_size, n_rot - start)) for start in range(0, n_rot, block_size)
@@ -361,7 +371,6 @@ def prepare_full_row_stream(
         translation_parent=jnp.asarray(translation_parent),
         score_indices=resolved.score_indices,
         recon_indices=resolved.recon_indices,
-        window_weights=weights if resolved.score_indices is None else weights[resolved.score_indices],
         coefficient_noise=noise_variance_half,
         shift_squared=jnp.sum(jnp.asarray(translations, jnp.float32) ** 2, axis=-1),
     )
