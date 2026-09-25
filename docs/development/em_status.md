@@ -162,6 +162,16 @@ always-on final gridding correction (user decision; relax df88eab retires the op
 tier gates both the unfiltered half-map average and the merged map, and requires
 `final_all_data_grid_correct` to be recorded True in `refinement_results.npz`.
 
+Tested, no effect (2026-09-25, not landed): RELION's CUDA path normalizes each real image by
+`(XFLOAT)(avg_norm_correction / normcorr)` (`acc/acc_ml_optimiser_impl.h:875`, f2c1a38). relax
+recovers that factor as `float32(combined) / float32(group_scale)`. On the K1 50k/256 fixture this
+differs by 1-2 ULP for 34% of images. Carrying the once-rounded host ratio separately (a parallel
+session's port) moved relax by a mean |dPmax| of 2e-5. It did not move relax toward RELION. In
+one-step replays from RELION it2 and it13 (job 14421433, resident and compact, main a1786bf), map rel L2
+to RELION stayed 2.1865e-2 and 4.2172e-3, and mean |dPmax| stayed 6.0e-4 and 9.8e-4 (1.2e-3 compact
+at it13). RELION's own repeat noise is 6e-7 and 4e-6. The per-step gap has another cause. Evidence:
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_normfix_20260925/ab50k_it2_it13/`.
+
 Map sign convention: every map relax writes is in RELION's map convention, so a relax map and
 the RELION map of the same run agree voxel for voxel and in sign (`relax/helpers/map_io.py`).
 relax holds volumes internally in RECOVAR's frame, the negated transpose of RELION's file array
