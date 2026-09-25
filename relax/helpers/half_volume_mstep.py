@@ -299,12 +299,31 @@ def finalize_half_volume_bpref(
 
 
 
+# The Hermitian expansions below are pure data movement (placement, gathers and
+# a conjugate). Eager, each is about fifteen single-primitive programs that
+# compile again at every new reconstruction size; one program per shape
+# compiles once and gives the same values.
+@partial(jax.jit, static_argnames=("recon_volume_shape",))
+def _half_volume_to_full_flat(half_volume, recon_volume_shape):
+    return fourier_transform_utils.half_volume_to_full_volume(half_volume, recon_volume_shape).reshape(-1)
+
+
+@partial(jax.jit, static_argnames=("recon_volume_shape",))
+def _relion_x_half_volume_to_full_device(volume_flat, recon_volume_shape):
+    relion_full = fourier_transform_utils.half_volume_to_full_volume(
+        volume_flat,
+        recon_volume_shape,
+    ).reshape(recon_volume_shape)
+    return relion_full.transpose(2, 1, 0).reshape(-1)
+
+
 def half_volume_accumulators_to_full(Ft_y, Ft_ctf, recon_volume_shape):
     """Convert half-volume M-step accumulators back to the public full-volume contract."""
 
+    recon_volume_shape = tuple(int(v) for v in recon_volume_shape)
     return (
-        fourier_transform_utils.half_volume_to_full_volume(Ft_y, recon_volume_shape).reshape(-1),
-        fourier_transform_utils.half_volume_to_full_volume(Ft_ctf, recon_volume_shape).reshape(-1),
+        _half_volume_to_full_flat(Ft_y, recon_volume_shape),
+        _half_volume_to_full_flat(Ft_ctf, recon_volume_shape),
     )
 
 
@@ -326,11 +345,7 @@ def relion_x_half_volume_to_full(volume_flat, recon_volume_shape, *, force_host:
         )
         return _relion_x_half_volume_to_full_host(volume_flat, recon_volume_shape).reshape(-1)
 
-    relion_full = fourier_transform_utils.half_volume_to_full_volume(
-        volume_flat,
-        recon_volume_shape,
-    ).reshape(recon_volume_shape)
-    return relion_full.transpose(2, 1, 0).reshape(-1)
+    return _relion_x_half_volume_to_full_device(volume_flat, tuple(int(v) for v in recon_volume_shape))
 
 
 def relion_x_half_volume_to_native_half(volume_flat, recon_volume_shape):
