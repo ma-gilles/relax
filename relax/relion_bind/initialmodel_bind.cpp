@@ -1083,7 +1083,8 @@ static py::dict vdam_expected_angular_errors(
     py::object random_seed_particle_ids_obj,
     double model_pixel_size,
     int image_full_size,
-    int projector_current_size
+    int projector_current_size,
+    py::object projector_data_obj
 ) {
     if (model_pixel_size <= 0.0)
         model_pixel_size = pixel_size;
@@ -1160,13 +1161,36 @@ static py::dict vdam_expected_angular_errors(
     std::vector<Projector> projectors;
     projectors.reserve((size_t)K);
     const long nvox = (long)ori_size * ori_size * ori_size;
-    for (long k = 0; k < K; k++) {
-        MultidimArray<RFLOAT> vol(ori_size, ori_size, ori_size);
-        std::memcpy(vol.data, refs_ptr + k * nvox, nvox * sizeof(RFLOAT));
-        Projector projector(ori_size, interpolator, (RFLOAT)padding_factor, 10, 2);
-        MultidimArray<RFLOAT> power_spectrum;
-        projector.computeFourierTransformMap(vol, power_spectrum, projector_current_size, 1, true);
-        projectors.push_back(projector);
+    if (projector_data_obj.is_none()) {
+        for (long k = 0; k < K; k++) {
+            MultidimArray<RFLOAT> vol(ori_size, ori_size, ori_size);
+            std::memcpy(vol.data, refs_ptr + k * nvox, nvox * sizeof(RFLOAT));
+            Projector projector(ori_size, interpolator, (RFLOAT)padding_factor, 10, 2);
+            MultidimArray<RFLOAT> power_spectrum;
+            projector.computeFourierTransformMap(vol, power_spectrum, projector_current_size, 1, true);
+            projectors.push_back(projector);
+        }
+    } else {
+        // The caller's Projector::data of these references at this current size
+        // (computeFourierTransformMap's output, as compute_fourier_transform_map
+        // returns it), so the transform is not repeated here.
+        auto projector_data = projector_data_obj.cast<
+            py::array_t<std::complex<double>, py::array::c_style | py::array::forcecast>
+        >();
+        auto data_buf = projector_data.request();
+        for (long k = 0; k < K; k++) {
+            Projector projector(ori_size, interpolator, (RFLOAT)padding_factor, 10, 2);
+            projector.ref_dim = 3;
+            projector.initialiseData(projector_current_size);
+            const long pz = ZSIZE(projector.data), py_ = YSIZE(projector.data), px = XSIZE(projector.data);
+            if (data_buf.ndim != 4 || data_buf.shape[0] != K || data_buf.shape[1] != pz ||
+                data_buf.shape[2] != py_ || data_buf.shape[3] != px)
+                throw std::runtime_error("projector_data must have shape (K, pad, pad, pad / 2 + 1) at this current size");
+            std::memcpy(projector.data.data,
+                        static_cast<std::complex<double>*>(data_buf.ptr) + k * pz * py_ * px,
+                        pz * py_ * px * sizeof(Complex));
+            projectors.push_back(projector);
+        }
     }
 
     std::vector<double> acc_rot_class((size_t)K, 999.0);
@@ -1763,10 +1787,13 @@ Returns -1 when subset should span all particles.
           py::arg("model_pixel_size") = -1.0,
           py::arg("image_full_size") = -1,
           py::arg("projector_current_size") = -1,
+          py::arg("projector_data") = py::none(),
           R"doc(
 SPA 3D InitialModel accuracy estimator from
 MlOptimiser::calculateExpectedAngularErrors. Returns acc_rot/acc_trans plus
-per-class arrays.
+per-class arrays. ``projector_data`` (complex128 [K, pad, pad, pad/2+1]) is the
+references' Projector::data at ``projector_current_size`` when the caller has
+already built it; the references are then not transformed again.
 )doc");
 
     m.def("vdam_bootstrap_iref", &vdam_bootstrap_iref,

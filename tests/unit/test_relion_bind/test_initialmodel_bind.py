@@ -377,6 +377,55 @@ class TestAutoRefineExpectedAccuracyBinding:
         assert_matches(isolated.trial_local_indices, direct.trial_local_indices)
         assert_matches(isolated.trial_particle_ids, direct.trial_particle_ids)
 
+    def test_supplied_projector_data_matches_the_binding_transform(self, bind):
+        """The scoring projector's slabs stand in for the binding's own transform."""
+
+        from relax.helpers.expected_accuracy import (
+            estimate_relion_expected_accuracy_from_prepared_inputs,
+        )
+        from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps_and_power
+        from recovar.utils.helpers import relion_volume_to_recovar
+
+        rng = np.random.default_rng(11)
+        references = rng.standard_normal((2, 16, 16, 16)).astype(np.float64)
+        kwargs = {
+            "references_relion": references,
+            "trial_eulers_deg": np.asarray([[0.0, 35.0, 10.0], [75.0, 60.0, -20.0], [10.0, 100.0, 45.0]]),
+            "trial_local_indices": np.arange(3, dtype=np.int64),
+            "trial_class_ids": np.asarray([0, 1, 0], dtype=np.int32),
+            "class_weights": np.asarray([0.5, 0.5], dtype=np.float64),
+            "sigma2_noise_relion": np.ones(9, dtype=np.float64),
+            "defocus_u": np.full(3, 15000.0),
+            "defocus_v": np.full(3, 14000.0),
+            "defocus_angle": np.zeros(3),
+            "phase_shift": np.zeros(3),
+            "voltage": 300.0,
+            "spherical_aberration": 2.7,
+            "amplitude_contrast": 0.1,
+            "pixel_size": 3.0,
+            "ori_size": 16,
+            "current_image_size": 12,
+            "padding_factor": 2,
+            "sigma2_fudge": 1.0,
+            "random_seed": 17,
+            "do_ctf_correction": True,
+            "random_seed_particle_ids": np.asarray([101, 205, 7], dtype=np.int64),
+        }
+        direct = estimate_relion_expected_accuracy_from_prepared_inputs(**kwargs)
+        recovar_frame = np.stack([relion_volume_to_recovar(volume) for volume in references])
+        for backend in ("native", "jax"):
+            slabs, _power, _r_max = reference_to_relion_projector_half_maps_and_power(
+                recovar_frame,
+                current_size=12,
+                padding_factor=2,
+                projector_setup_backend=backend,
+                projector_data_dtype="complex128",
+            )
+            supplied = estimate_relion_expected_accuracy_from_prepared_inputs(**kwargs, projector_data=slabs)
+            assert_matches(supplied.acc_rot, direct.acc_rot, err_msg=backend)
+            assert_matches(supplied.acc_trans_angstrom, direct.acc_trans_angstrom, err_msg=backend)
+            assert_matches(supplied.acc_rot_per_class, direct.acc_rot_per_class, err_msg=backend)
+
     def test_python_order_applies_relion_base_order_and_stable_optics_sort(self, bind):
         from relax.helpers.expected_accuracy import relion_half1_trial_order
 

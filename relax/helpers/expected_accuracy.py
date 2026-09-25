@@ -54,6 +54,7 @@ class Half1AccuracyInputs(NamedTuple):
         class_weights,
         sigma2_noise_native,
         current_image_size,
+        projector_data=None,
     ):
         """RELION's expected angular/translational accuracy of half 1 at one image size.
 
@@ -81,6 +82,7 @@ class Half1AccuracyInputs(NamedTuple):
             ctf_params_override=self.expected_accuracy.half1_ctf_params,
             do_ctf_correction=self.expected_accuracy.do_ctf_correction,
             optics_group_ids=self.optics_group_ids,
+            projector_data=projector_data,
         )
 
 
@@ -116,6 +118,7 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     do_ctf_correction: bool,
     random_seed_particle_ids,
     group_grid=None,
+    projector_data=None,
 ) -> ExpectedAccuracy:
     """Call RELION's expected-accuracy binding from prepared native inputs.
 
@@ -125,7 +128,10 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     ``group_grid`` (``model_pixel_size``, ``image_full_size``,
     ``projector_current_size``) describes trials of an optics group on another
     pixel size or box (``pixel_size`` and ``current_image_size`` are then the
-    group's); None is the model grid.
+    group's); None is the model grid. ``projector_data`` (complex128
+    ``[K, pad, pad, pad // 2 + 1]``) is the references' ``Projector::data`` at the
+    projector current size when the caller already built it (the scoring
+    projector setup); the binding then skips its own transform of each class.
     """
     from relax.relion_bind import _relion_bind_core as bind
 
@@ -173,6 +179,11 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
         False,
         np.ascontiguousarray(trial_particles),
         **({} if group_grid is None else dict(group_grid)),
+        **(
+            {}
+            if projector_data is None
+            else {"projector_data": np.ascontiguousarray(projector_data, dtype=np.complex128)}
+        ),
     )
     return ExpectedAccuracy(
         acc_rot=float(out["acc_rot"]),
@@ -492,6 +503,7 @@ def estimate_relion_expected_accuracy(
     max_trials: int = 100,
     optics_group_ids=None,
     group_grid=None,
+    projector_data=None,
 ) -> ExpectedAccuracy:
     """Evaluate RELION ``calculateExpectedAngularErrors`` on half 1.
 
@@ -532,6 +544,7 @@ def estimate_relion_expected_accuracy(
             do_ctf_correction=do_ctf_correction,
             max_trials=max_trials,
             optics_group_ids=optics_group_ids,
+            projector_data=projector_data,
         )
     eulers = np.asarray(best_eulers_deg, dtype=np.float64)
     if eulers.ndim != 2 or eulers.shape[1] != 3:
@@ -611,6 +624,7 @@ def estimate_relion_expected_accuracy(
                     do_ctf_correction=do_ctf_correction,
                     max_trials=int(np.count_nonzero(in_group[trial_local])),
                     group_grid=group_grid,
+                    projector_data=projector_data,
                 )
             )
         return _combine_group_expected_accuracies(per_group, trial_local, trial_particle_ids)
@@ -648,6 +662,7 @@ def estimate_relion_expected_accuracy(
         do_ctf_correction=bool(do_ctf_correction),
         random_seed_particle_ids=trial_particle_ids,
         group_grid=group_grid,
+        projector_data=projector_data,
     )
 
 

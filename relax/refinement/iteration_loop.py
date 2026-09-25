@@ -1669,6 +1669,11 @@ def refine_single_volume(
                 int(init_relion_iteration) + iteration + 1,
             )
 
+        # Half 1's projector of this iteration's references, built for the
+        # expected-accuracy estimate and reused by the scoring projector setup
+        # below: RELION computes each class's projector once per iteration.
+        # ``(references, current size, slabs, r_max, power spectra)``.
+        shared_projector_half1 = None
         exact_acc_rot_this_iter = None
         exact_acc_trans_this_iter = None
         exact_acc_rot_per_class_this_iter = None
@@ -1693,8 +1698,26 @@ def refine_single_volume(
                     k_class_enabled=k_class_enabled,
                     n_units=experiment_datasets[0].n_units,
                 )
+                if iteration > 0 and replay_result.relion_projector_state is None:
+                    # Iteration 1 may project the initial real references and a
+                    # replay may supply a captured projector; both keep their own.
+                    shared_projector_size = min(int(current_size), int(grid_size))
+                    shared_projector_half1 = (
+                        means[0],
+                        shared_projector_size,
+                        *_relion_projector_half_maps_for_scoring(
+                            means[0],
+                            volume_shape=volume_shape,
+                            current_size=shared_projector_size,
+                            padding_factor=PROJECTION_PADDING_FACTOR,
+                            n_classes=n_classes,
+                            dump_label=f"iter{iteration:03d}_half0",
+                            projector_setup_backend=options.projector_setup_backend,
+                        ),
+                    )
                 try:
                     accuracy = expected_accuracy_inputs.estimate(
+                        projector_data=None if shared_projector_half1 is None else shared_projector_half1[2],
                         reference_fourier=means[0],
                         best_eulers_deg=previous_eulers_half1,
                         class_ids=accuracy_class_ids,
@@ -2315,20 +2338,31 @@ def refine_single_volume(
                             _half_idx + 1,
                         )
                         continue
-                    projector_half, projector_r_max, projector_power = _relion_projector_half_maps_for_scoring(
-                        means[_half_idx],
-                        volume_shape=volume_shape,
-                        current_size=model_current_size_for_engine,
-                        padding_factor=PROJECTION_PADDING_FACTOR,
-                        n_classes=n_classes,
-                        real_references=(
-                            initial_real_references_by_half[_half_idx]
-                            if iteration == 0
-                            else None
-                        ),
-                        dump_label=f"iter{iteration:03d}_half{_half_idx}",
-                        projector_setup_backend=options.projector_setup_backend,
+                    resolved_projector_size = (
+                        int(grid_size) if model_current_size_for_engine is None else int(model_current_size_for_engine)
                     )
+                    if (
+                        _half_idx == 0
+                        and shared_projector_half1 is not None
+                        and shared_projector_half1[0] is means[0]
+                        and shared_projector_half1[1] == resolved_projector_size
+                    ):
+                        projector_half, projector_r_max, projector_power = shared_projector_half1[2:]
+                    else:
+                        projector_half, projector_r_max, projector_power = _relion_projector_half_maps_for_scoring(
+                            means[_half_idx],
+                            volume_shape=volume_shape,
+                            current_size=model_current_size_for_engine,
+                            padding_factor=PROJECTION_PADDING_FACTOR,
+                            n_classes=n_classes,
+                            real_references=(
+                                initial_real_references_by_half[_half_idx]
+                                if iteration == 0
+                                else None
+                            ),
+                            dump_label=f"iter{iteration:03d}_half{_half_idx}",
+                            projector_setup_backend=options.projector_setup_backend,
+                        )
                     relion_projector_half_by_half[_half_idx] = projector_half
                     relion_projector_r_max_by_half[_half_idx] = projector_r_max
                     if iteration > 0:
