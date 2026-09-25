@@ -12,6 +12,8 @@ run agree voxel for voxel and in sign, and a RELION map can be read back as a re
   :data:`RELAX_MAP_LABEL`.
 * Reference and RELION maps are read with ``recovar.utils.helpers.load_relion_volume``.
 * :func:`load_relax_map` reads a map relax wrote and checks the label.
+* :func:`require_relion_convention_reference` refuses a reference map whose RELION convention
+  is not established, before it is read as one.
 
 The header matches RELION's writer (``rwMRC.h``: float32 mode 2, origin 0, start 0, axis
 order 1 2 3, voxel size, space group 0, one label).
@@ -86,3 +88,33 @@ def load_relax_map(path, *, legacy_recovar_sign: bool = False) -> np.ndarray:
             "and holds the negated array; pass legacy_recovar_sign=True to read it"
         )
     return load_mrc(str(path))
+
+
+RELION_CONVENTION_NAME_MARKER = "_relion"
+
+
+def require_relion_convention_reference(path, *, option: str = "--init_volume") -> None:
+    """Refuse a reference map that is not known to be in RELION's convention.
+
+    A reference is read with ``load_relion_volume``, so a map in RECOVAR's legacy convention
+    (the negated array, e.g. a fixture's ``reference_init.mrc``) would be read as the negated
+    reference without any error. Neither the density sign nor mrcfile's default label tells
+    the two apart (simulated RELION-convention references have negative density and carry
+    the same "Created by mrcfile.py" label as their legacy twins), so the convention must be
+    stated: a map written by RELION (a label starting with "Relion") or by relax
+    (:data:`RELAX_MAP_LABEL`) is accepted, as is an unlabeled map whose file name carries the
+    fixture marker ``_relion`` (``reference_init_relion.mrc``, the data-directory default).
+    Any other map is refused.
+    """
+    labels = map_labels(path)
+    if RELAX_MAP_LABEL in labels or any(label.startswith("Relion") for label in labels):
+        return
+    if RELION_CONVENTION_NAME_MARKER in Path(path).stem:
+        return
+    raise ValueError(
+        f"{option} {path}: the map has no RELION or relax header label (labels {labels}) and its "
+        f"file name has no '{RELION_CONVENTION_NAME_MARKER}' marker, so its sign convention is unknown; "
+        "a RECOVAR-convention map (the negated array, e.g. reference_init.mrc) would start the run "
+        "from the negated reference. Pass the map relion_refine reads with --ref "
+        "(for simulated data reference_init_relion.mrc)."
+    )

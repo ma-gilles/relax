@@ -104,3 +104,35 @@ def test_written_map_correlates_positively_with_relion(tmp_path, name):
     assert file_correlation(written, relion_map) >= SIGN_CORRELATION_MIN
     assert file_correlation(legacy, relion_map) <= -SIGN_CORRELATION_MIN  # the pre-change writer
     assert_matches(_raw(written), _raw(relion_map))
+
+
+def _write_labeled(path, label=None):
+    with mrcfile.new(str(path), overwrite=True) as handle:
+        handle.set_data(_volume())
+        if label is not None:
+            handle.header.label[0] = label.encode("ascii")
+            handle.header.nlabl = 1
+
+
+def test_reference_convention_accepts_relion_and_relax_labels_and_the_relion_name(tmp_path):
+    relax_map = tmp_path / "final_merged.mrc"
+    map_io.write_map(relax_map, _volume())
+    relion_map = tmp_path / "initial_model.mrc"
+    _write_labeled(relion_map, "Relion    28-Aug-26  22:56:40")
+    simulated = tmp_path / "reference_init_relion.mrc"  # mrcfile's default label, RELION convention by name
+    _write_labeled(simulated)
+    for path in (relax_map, relion_map, simulated):
+        map_io.require_relion_convention_reference(path)
+
+
+def test_reference_convention_refuses_an_unlabeled_map_without_the_relion_name(tmp_path):
+    # The 2026-09-25 bench run: --init_volume got the RECOVAR-convention reference_init.mrc
+    # (mrcfile's label, no marker) and ran from the negated reference without an error.
+    legacy = tmp_path / "reference_init.mrc"
+    _write_labeled(legacy, "Created by mrcfile.py                                       2026-08-29 01:17:00")
+    with pytest.raises(ValueError, match="sign convention is unknown"):
+        map_io.require_relion_convention_reference(legacy)
+    bare = tmp_path / "reference_init.recovar_frame.mrc"
+    _write_labeled(bare)
+    with pytest.raises(ValueError, match="--init_volume"):
+        map_io.require_relion_convention_reference(bare)

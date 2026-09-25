@@ -2403,7 +2403,9 @@ def _parse_args(argv=None):
         help=(
             "Initial reference map for K=1, in RELION's map convention (the file "
             "relion_refine reads with --ref). Defaults to "
-            "<data_dir>/reference_init_relion.mrc when omitted."
+            "<data_dir>/reference_init_relion.mrc when omitted. A map without a RELION "
+            "or relax header label must have '_relion' in its file name; any other map "
+            "is refused (relax.helpers.map_io.require_relion_convention_reference)."
         ),
     )
     parser.add_argument(
@@ -3497,6 +3499,12 @@ def main():
         )
     elif args.n_classes == 1:
         init_mrc_path = args.init_volume or os.path.join(args.data_dir, "reference_init_relion.mrc")
+        from relax.helpers.map_io import require_relion_convention_reference
+
+        try:
+            require_relion_convention_reference(init_mrc_path)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from None
         init_vol_real = load_relion_volume(init_mrc_path).astype(_init_volume_dtype)
         relion_model_pixel_size = relion_metadata._read_relion_mrc_model_pixel_size(init_mrc_path)
         if not np.isfinite(relion_model_pixel_size) or relion_model_pixel_size <= 0.0:
