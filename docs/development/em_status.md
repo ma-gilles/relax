@@ -107,6 +107,20 @@ pseudo-halfset for now) and the coarse-only `maximum_significants = 100 K`. K=1 
 is transitional: remove with the old path (the exact-local VDAM route in
 `relax/vdam/sparse_pass2_estep.py`) once the resident route is qualified and made the default.
 Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamres_20260925/HANDOFF.json`.
+Quality on noise1 50k/256 seed 29 (200 iterations, job 14422222, scored 14425217): relax resident
+GT FSC-AUC 0.34131 unmasked / 0.75598 masked, inside four RELION runs 0.34125-0.34141 / 0.75515-0.75603;
+relax-RELION pair FSC-AUC 0.971-0.984 against RELION-RELION 0.977-0.983. Speed gate (manager item 11,
+not met): wall 4549 s against RELION 1451 s on the same node, slower than the exact-local default; the
+E-step is 90% of it and grows from 9 s to 31 s per iteration. The resident route stays opt-in and the
+exact-local route stays until resident is no slower at equal quality on 10097 and noise1 50k.
+
+OPEN (compact, not fixed: the compact engine is to be deleted): without scale-correction groups the
+compact sparse pass 2 takes its non-atomic noise arithmetic, 19% apart in `wsum_sigma2_noise` from
+RELION's scale-1 Wavg triplet on the algebraic-Wavg test fixture (repro: `_vdam_args(residual=True,
+groups=False)` in `tests/unit/test_resident_vdam_estep.py`, compact against resident, job 14421464).
+The resident engine runs RELION's triplet at scale 1 (relax 40b14ac). The default VDAM route (exact-local,
+`run_local_k_class_em`) never calls the compact engine and is unaffected; with RELION's exact BPref
+operands the compact VDAM arm matched it (accumulators 1.7e-6, maps 4e-7, jobs 14421292/14421464).
 
 Class3D local searches, K>1 (2026-09-25): the per-class local route now keeps
 RELION's joint per-particle pass-2 support (3601775); it matches the
