@@ -193,6 +193,25 @@
     "relion_repeat_min_shell": 0.9999999999751832,
     "relion_repeat_pmax_mean_abs": 3.665199999999713e-06
    }
+  },
+  "class3d_hp4_global": {
+   "fsc_auc_floor": 0.9999,
+   "min_shell_floor": 0.9998,
+   "tier": "long (item long_class3d_hp4); per-class after Hungarian matching, shells 1..28, against both RELION runs; no per-particle Pmax ledger, so no Pmax bound",
+   "measured": {
+    "worst_relax_fsc_auc": 0.999986369685189,
+    "worst_relax_min_shell": 0.9999678083297473,
+    "relion_repeat_fsc_auc": 0.999999999011695,
+    "relion_repeat_min_shell": 0.9999999967117076,
+    "relax_vs_relax_max_deficit": [
+     1.2524486225906628e-08,
+     4.048867907613385e-10
+    ],
+    "relax_jobs": "14410096, 14416073, 14416344 (7381f84/791b53b, H100)",
+    "relion": "k4_5k128_class3d_hp4_relion: two same-command non-MPI runs (14410096)",
+    "pre_fix_control": "relax before 7381f84 (local searches at HEALPix 4): per-class FSC-AUC 0.957-0.996",
+    "source": "vdamk2 floor_proposal.json, em_work/relax_vdamk2_20260924/class3d_hp4_oracle"
+   }
   }
  },
  "pinned_tolerance": {
