@@ -375,7 +375,7 @@ def test_both_engines_key_native_units_on_the_shared_condition():
         assert "_relion_native_fine_units_enabled(" in source
     assert "fresh_k1_guard=bool(source_faithful_spectrum_norm)" in resident
     assert "has_ctf_rfloat=relion_exact_bpref_operands" in resident
-    assert "score = _relion_native_fine_units(score, native_fft_size)" in resident
+    assert "score = _relion_native_fine_units_in_place(score, native_fft_size)" in resident
     assert "recon = _relion_native_fine_units" not in resident
     assert resident.count("relion_native_fine_units=relion_native_fine_units") >= 2
     chunk = inspect.getsource(rp._run_resident_chunk)

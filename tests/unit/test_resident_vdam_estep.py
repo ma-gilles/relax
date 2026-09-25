@@ -94,11 +94,14 @@ def test_resident_without_scale_groups_keeps_the_scale_one_wavg():
         assert _rel_l2(getattr(grouped.noise_stats, field), getattr(ungrouped.noise_stats, field)) < 1e-6, field
 
 
-def test_native_fine_units_in_place_is_the_eager_conversion():
+@pytest.mark.parametrize("shape", [(64, 37), (4096, 1537)])
+def test_native_fine_units_in_place_is_the_eager_conversion(shape):
+    """On the default backend (CPU, or the Slurm GPU): a cache-sized block and a small one."""
+
     from relax.sparse_pass2.sparse_pass2_scoring import _relion_native_fine_units
 
     rng = np.random.default_rng(3)
-    values = (rng.normal(size=(64, 37)) + 1j * rng.normal(size=(64, 37))).astype(np.complex64) * np.float32(1e3)
+    values = (rng.normal(size=shape) + 1j * rng.normal(size=shape)).astype(np.complex64) * np.float32(1e3)
     eager = np.asarray(_relion_native_fine_units(values, 136 * 136))
     fused = np.asarray(rp._relion_native_fine_units_in_place(jnp.asarray(values), 136 * 136))
     assert fused.dtype == np.complex64
