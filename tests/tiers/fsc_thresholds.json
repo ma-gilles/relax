@@ -68,6 +68,26 @@
     "relion_repeat_pmax_mean_abs": 2.264399999999983e-05
    }
   },
+  "k1_gui60_coldstart_standalone": {
+   "fsc_auc_floor": 0.9999,
+   "min_shell_floor": 0.9998,
+   "pmax_mean_abs_max": 0.00042,
+   "measured": {
+    "worst_relax_fsc_auc": 0.99999935,
+    "worst_relax_min_shell": 0.9999986,
+    "relax_pmax_mean_abs": 0.00020708,
+    "relion_repeat_fsc_auc": 0.9999999996,
+    "relion_repeat_min_shell": 0.9999999987,
+    "relion_repeat_pmax_mean_abs": 7.5e-06,
+    "relax_jobs": "14402553, 14406459 (068ed30, H100)",
+    "relion_repeat": "k1_5k128_relion_gui60_repeat (14406407)",
+    "pre_fix_control_5ea66fa": [
+     0.98636,
+     0.96045,
+     0.0208
+    ]
+   }
+  },
   "k1_local_replay": {
    "fsc_auc_floor": 0.99954,
    "min_shell_floor": 0.9991,
