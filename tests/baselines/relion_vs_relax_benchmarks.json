@@ -663,6 +663,99 @@
    }
   },
   {
+   "id": "empiar10345_k1_autorefine_flipqual_64499e8",
+   "section": "real",
+   "dataset": "EMPIAR-10345 (flip pair)",
+   "empiar_id": "10345",
+   "particles": 84266,
+   "box": 300,
+   "pixel_size_A": 1.3450001,
+   "symmetry": "C1",
+   "classes": 1,
+   "workflow": "auto-refine K=1",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 build_patched (commit f2c1a38), relion_refine_mpi 3 ranks x 4 threads, one GPU, --scratch_dir",
+    "resolution_A": 8.235,
+    "resolution_definition": "scorecard_band",
+    "relion_reported_resolution_A": null,
+    "masked_resolution_A": 5.309,
+    "wall_s": 5140,
+    "wall_definition": "job-script wall of srun relion_refine_mpi (TERMINAL.json)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 21,
+    "jobs": [
+     "14397074"
+    ],
+    "masked_band_auc": 0.9273,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen"
+   },
+   "relax": {
+    "source_sha": "64499e87c7d30401880491097c1bc85c7918f9ef",
+    "source_repo": "relax (candidate cand_64499e8, speed flip qualification)",
+    "resolution_A": 8.235,
+    "resolution_definition": "scorecard_band",
+    "masked_resolution_A": 5.309,
+    "wall_s": 5439,
+    "wall_definition": "job-script wall of srun python relax_run.py end to end (TERMINAL.json)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 21,
+    "jobs": [
+     "14397074"
+    ],
+    "masked_band_auc": 0.9278,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen"
+   },
+   "gt": null,
+   "cross_engine": "scorecard PASS: merged band FSC-AUC 0.9822, halves 0.9747/0.9761 (half-AUC delta 7.0e-06)",
+   "cross_engine_masked_band_auc": 0.9981,
+   "time_ratio_relax_over_relion": 1.06,
+   "matched": "yes",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": true
+   },
+   "notes": [
+    "Candidate cand_64499e8 (speed's flip qualification); not relax main. The 10097 flip pair runs on cand_d3d62ca (separate row).",
+    "Image I/O: --scratch_dir /tmp on every arm (RELION's default reading from a node-local copy; no pre-read).",
+    "Both engines start from relion_refine's inputs only (standalone).",
+    "RELION repeat band pending: same-command RELION repeat pair 14397251 (running) and the earlier repeat 14331583."
+   ],
+   "null_reasons": {
+    "gt": "real data: no ground truth",
+    "relion.relion_reported_resolution_A": "not read for this pair"
+   },
+   "evidence": {
+    "run_roots": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/flipqual_64499e8_20260924/10345/relion",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/flipqual_64499e8_20260924/10345/relax_res_tex"
+    ],
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_64499e8_20260924/10345/flipqual_64499e8_10345.json",
+    "masked_fsc_json": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_64499e8_20260924/10345/flipqual_64499e8_10345_masked/masked_fsc.json"
+    ]
+   },
+   "date": "2026-09-24",
+   "history": [],
+   "time_check": {
+    "a": "RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs). relax: 1 H100, one process, 12 CPUs. Both arms in one --gres=gpu:h100:N job on the same node, run simultaneously; no --exclusive.",
+    "b": "relax: cand_64499e8 (relax main + resident flag set + float32 projector texture) with env RELAX_USE_FLOAT64_SCORING=0, RELAX_USE_FLOAT64_PROJECTIONS=0, RELAX_RELION_X_HALF_MSTEP_DOUBLE=0, RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=1, RELAX_K1_RELION_WAVG_SEQUENTIAL_CUDA=1, RELAX_EM_BPREF_FINITE_GUARD=1, RELAX_SPARSE_PASS2_RESIDENT=1, RELAX_SPARSE_PASS2_PROJECTOR_COMPLEX64=1, RELAX_COARSE_SIGNIFICANCE_DEVICE=1, RELAX_LOCAL_SEARCH_RESIDENT=1, RELAX_SPARSE_PASS2_RESIDENT_OPERANDS=1, RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT=1, RELAX_COARSE_PAD_FINAL_IMAGE_BATCH=1, RELAX_EM_JIT_STAGE_GLUE=1, RELAX_LOCAL_IMAGE_CAPACITY_LADDER=16,32,64,128,256; standalone start-up (relax defaults); no timing, capture, replay or dump options.",
+    "c": "Both: job-script wall around the whole process (TERMINAL.json wall_s), including start-up, particle copy to --scratch_dir, compilation and final writes.",
+    "d": "RELION and relax 14397074 della-h19g4 2x H100 80GB HBM3 (2026-09-24)"
+   },
+   "mask": {
+    "dataset": "empiar10345_c1",
+    "sha256": "f8c6764657f894224b4196ec7f3eee06b9e8f87cdecd6ebc5cbb84b2493e3fd5"
+   }
+  },
+  {
    "id": "empiar10202_k1_autorefine_i1",
    "section": "real",
    "dataset": "EMPIAR-10202 (AAV2 L336C, set 06)",
@@ -1601,6 +1694,103 @@
      ]
     },
     "final_all_data_grid_correct_of_producing_runs": false
+   }
+  },
+  {
+   "id": "noise1_k1_50k256_autorefine_flipqual_64499e8",
+   "section": "synthetic",
+   "dataset": "data_noise1_50k_256_normalized (flip pair)",
+   "empiar_id": null,
+   "particles": 50000,
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "symmetry": "C1",
+   "classes": 1,
+   "workflow": "auto-refine K=1",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 build_patched (commit f2c1a38), relion_refine_mpi 3 ranks x 4 threads, one GPU, --scratch_dir",
+    "resolution_A": 11.826,
+    "resolution_definition": "half_fsc_0143",
+    "relion_reported_resolution_A": 11.826,
+    "masked_resolution_A": 10.88,
+    "wall_s": 4978,
+    "wall_definition": "job-script wall of srun relion_refine_mpi (TERMINAL.json)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 14,
+    "jobs": [
+     "14397075"
+    ],
+    "masked_band_auc": 0.9719,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen"
+   },
+   "relax": {
+    "source_sha": "64499e87c7d30401880491097c1bc85c7918f9ef",
+    "source_repo": "relax (candidate cand_64499e8, speed flip qualification; resident arm relax_res_tex)",
+    "resolution_A": 11.826,
+    "resolution_definition": "half_fsc_0143",
+    "masked_resolution_A": 10.88,
+    "wall_s": 3218,
+    "wall_definition": "job-script wall of srun python relax_run.py end to end (TERMINAL.json)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 14,
+    "jobs": [
+     "14397075"
+    ],
+    "masked_band_auc": 0.9719,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen"
+   },
+   "gt": {
+    "metric": "merged GT FSC-AUC (rigidly aligned)",
+    "relion": 0.35118,
+    "relax": 0.35123
+   },
+   "cross_engine": "merged FSC-AUC vs RELION 0.99936 (relax_compact 0.99942; RELION vs the fixture reference relion_ref_os0 0.99973); masked cross-engine 0.999998/0.999994/0.999997",
+   "cross_engine_masked_band_auc": 1.0,
+   "time_ratio_relax_over_relion": 0.65,
+   "matched": "yes",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": true
+   },
+   "notes": [
+    "Candidate cand_64499e8 (speed's flip qualification); not relax main. The 10097 flip pair runs on cand_d3d62ca (separate row).",
+    "Image I/O: --scratch_dir /tmp on every arm (RELION's default reading from a node-local copy; no pre-read).",
+    "Both engines start from relion_refine's inputs only (standalone).",
+    "Third arm in the same job: relax_compact (main's default compact engine, same candidate without the resident flags): 14 iterations, 11.826 A, GT aligned 0.35128, masked cross-engine 0.999998, wall 5,342 s (1.07x).",
+    "GT FSC-AUC raw (unaligned): RELION 0.23846, relax_res_tex 0.23847, relax_compact 0.23848 (fixture relion_ref_os0 0.23844). Masked GT FSC-AUC over the scorecard band 1-45: 0.67940 / 0.67938 / 0.67939; full spectrum 0.300891 / 0.300593 / 0.300764 (relax_res_tex 3.0e-4 below this single RELION run; no RELION repeat in the job)."
+   ],
+   "null_reasons": {},
+   "evidence": {
+    "run_roots": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/flipqual_64499e8_20260924/k1_50k/relion",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/flipqual_64499e8_20260924/k1_50k/relax_res_tex",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/flipqual_64499e8_20260924/k1_50k/relax_compact"
+    ],
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_64499e8_20260924/k1_50k/ACCEPT_flipqual_64499e8.json",
+    "masked_fsc_json": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_64499e8_20260924/k1_50k/masked_relax_res_tex/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_64499e8_20260924/k1_50k/masked_relax_compact/masked_fsc.json"
+    ]
+   },
+   "date": "2026-09-24",
+   "history": [],
+   "time_check": {
+    "a": "RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs). relax: 1 H100 per relax arm, one process, 12 CPUs. Both arms in one --gres=gpu:h100:N job on the same node, run simultaneously; no --exclusive.",
+    "b": "relax: cand_64499e8 (relax main + resident flag set + float32 projector texture) with env RELAX_USE_FLOAT64_SCORING=0, RELAX_USE_FLOAT64_PROJECTIONS=0, RELAX_RELION_X_HALF_MSTEP_DOUBLE=0, RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=1, RELAX_K1_RELION_WAVG_SEQUENTIAL_CUDA=1, RELAX_EM_BPREF_FINITE_GUARD=1, RELAX_SPARSE_PASS2_RESIDENT=1, RELAX_SPARSE_PASS2_PROJECTOR_COMPLEX64=1, RELAX_COARSE_SIGNIFICANCE_DEVICE=1, RELAX_LOCAL_SEARCH_RESIDENT=1, RELAX_SPARSE_PASS2_RESIDENT_OPERANDS=1, RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT=1, RELAX_COARSE_PAD_FINAL_IMAGE_BATCH=1, RELAX_EM_JIT_STAGE_GLUE=1, RELAX_LOCAL_IMAGE_CAPACITY_LADDER=16,32,64,128,256; standalone start-up (relax defaults); no timing, capture, replay or dump options.",
+    "c": "Both: job-script wall around the whole process (TERMINAL.json wall_s), including start-up, particle copy to --scratch_dir, compilation and final writes.",
+    "d": "RELION and both relax arms 14397075 della-h20g5 3x H100 80GB HBM3 (2026-09-24)"
+   },
+   "mask": {
+    "dataset": "noise1_k1_50k256_c1",
+    "sha256": "afaa22523e9f2cc16b794adc9f50e7788ea03c52f561d8f3b553be5d150391cb"
    }
   },
   {

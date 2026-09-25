@@ -287,6 +287,7 @@ No gate reads these values. All rows, including synthetic data: `docs/benchmarks
 | `empiar10202_relion_reference_13217551` | `empiar10202_set6_i1` `dcc3fd17e7f7` | — | 2.12 (2.12) | — | — | — | — / — | — | — |
 | `10345_q427a08bd8_mt19937` | `empiar10345_c1` `f8c6764657f8` | 1-48 | 5.31 (5.24) | 5.31 (5.24) | 0.9274 | 0.9274 | 0.6726 / 0.6725 | 0.9981 / 0.9964 / 0.9967 | — |
 | `empiar10345_cand2_087287024` | `empiar10345_c1` `f8c6764657f8` | 1-48 | 5.31 (5.24) | 5.24 (5.17) | 0.9274 | 0.9273 | 0.6726 / 0.6722 | 0.9980 / 0.9963 / 0.9965 | — |
+| `flipqual_64499e8_10345` | `empiar10345_c1` `f8c6764657f8` | 1-48 | 5.31 (5.24) | 5.31 (5.17) | 0.9273 | 0.9278 | 0.6728 / 0.6728 | 0.9981 / 0.9964 / 0.9965 | — |
 
 ## Current relax runs against every RELION run (reporting only)
 

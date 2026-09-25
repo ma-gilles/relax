@@ -843,6 +843,40 @@
    "gt_masked_band_auc": null
   },
   {
+   "label": "flipqual_64499e8_10345",
+   "dataset": "empiar10345_c1",
+   "section": "real",
+   "mask_sha256": "f8c6764657f894224b4196ec7f3eee06b9e8f87cdecd6ebc5cbb84b2493e3fd5",
+   "band": [
+    1,
+    48
+   ],
+   "evidence": {
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_64499e8_20260924/10345/flipqual_64499e8_10345_masked/masked_fsc.json",
+    "sha256": "417a333552da2ac15124d9db150ce7f268f528fecd0f2b65e409bc80b36112ab"
+   },
+   "null_reasons": {},
+   "relion": {
+    "masked_resolution_A": 5.309211,
+    "masked_sustained_resolution_A": 5.240260129870131,
+    "masked_corrected_band_auc": 0.9273025212765956,
+    "unmasked_band_auc": 0.6727722446808511
+   },
+   "relax": {
+    "masked_resolution_A": 5.309211,
+    "masked_sustained_resolution_A": 5.173077307692308,
+    "masked_corrected_band_auc": 0.9278004042553191,
+    "unmasked_band_auc": 0.6727923829787236
+   },
+   "cross_engine_masked_band_auc": {
+    "merged": 0.9980670064586129,
+    "half1": 0.9963655003785584,
+    "half2": 0.9964944837491944
+   },
+   "frame_correlation_in_mask": 0.9997871327192187,
+   "gt_masked_band_auc": null
+  },
+  {
    "label": "fixed34_k101_ac5177d2_job11384176",
    "dataset": "fixed34_k101_c1",
    "section": "synthetic",
@@ -2823,6 +2857,80 @@
    "gt_masked_band_auc": {
     "relion": 0.5141977223011909,
     "relax": 0.5143328455860703
+   }
+  },
+  {
+   "label": "flipqual_64499e8_k1_50k_relax_compact",
+   "dataset": "noise1_k1_50k256_c1",
+   "section": "synthetic",
+   "mask_sha256": "afaa22523e9f2cc16b794adc9f50e7788ea03c52f561d8f3b553be5d150391cb",
+   "band": [
+    1,
+    45
+   ],
+   "evidence": {
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_64499e8_20260924/k1_50k/masked_relax_compact/masked_fsc.json",
+    "sha256": "94c8cfa652150223f7f73eeb3349f60048e7146118a66dac699e5941bd1ac40c"
+   },
+   "null_reasons": {},
+   "relion": {
+    "masked_resolution_A": 10.88,
+    "masked_sustained_resolution_A": 10.666666666666666,
+    "masked_corrected_band_auc": 0.9718631136363637,
+    "unmasked_band_auc": 0.8707185568181818
+   },
+   "relax": {
+    "masked_resolution_A": 10.88,
+    "masked_sustained_resolution_A": 10.666666666666666,
+    "masked_corrected_band_auc": 0.9718613636363636,
+    "unmasked_band_auc": 0.8707318977272728
+   },
+   "cross_engine_masked_band_auc": {
+    "merged": 0.9999977634944259,
+    "half1": 0.9999952144990243,
+    "half2": 0.9999955615344965
+   },
+   "frame_correlation_in_mask": 0.9999995368802119,
+   "gt_masked_band_auc": {
+    "relion": 0.6793956681215998,
+    "relax": 0.679394805835766
+   }
+  },
+  {
+   "label": "flipqual_64499e8_k1_50k_relax_res_tex",
+   "dataset": "noise1_k1_50k256_c1",
+   "section": "synthetic",
+   "mask_sha256": "afaa22523e9f2cc16b794adc9f50e7788ea03c52f561d8f3b553be5d150391cb",
+   "band": [
+    1,
+    45
+   ],
+   "evidence": {
+    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_64499e8_20260924/k1_50k/masked_relax_res_tex/masked_fsc.json",
+    "sha256": "689f7397c415a268f07524e8615773a2dc19deb69ef9db47e077893d3e13e277"
+   },
+   "null_reasons": {},
+   "relion": {
+    "masked_resolution_A": 10.88,
+    "masked_sustained_resolution_A": 10.666666666666666,
+    "masked_corrected_band_auc": 0.9718631136363637,
+    "unmasked_band_auc": 0.8707185568181818
+   },
+   "relax": {
+    "masked_resolution_A": 10.88,
+    "masked_sustained_resolution_A": 10.666666666666666,
+    "masked_corrected_band_auc": 0.971857090909091,
+    "unmasked_band_auc": 0.8707161818181817
+   },
+   "cross_engine_masked_band_auc": {
+    "merged": 0.9999979319840222,
+    "half1": 0.9999943501014986,
+    "half2": 0.9999971392434873
+   },
+   "frame_correlation_in_mask": 0.9999995150170401,
+   "gt_masked_band_auc": {
+    "relion": 0.6793956681215998,
+    "relax": 0.6793808190047019
    }
   },
   {
