@@ -201,8 +201,6 @@ def _load_native_vdam_continuation(
     padding_factor = _general("rlnPaddingFactor", float)
     if nr_classes != int(opts.nr_classes):
         raise ValueError(f"checkpoint K={nr_classes} differs from requested K={opts.nr_classes}")
-    if nr_classes != 1:
-        raise NotImplementedError("diagnostic native VDAM continuation is currently K=1-only")
     if ori_size != int(dataset.grid_size) or not np.isclose(pixel_size, float(dataset.voxel_size)):
         raise ValueError("checkpoint model geometry differs from the input particle stack")
     if not np.isclose(padding_factor, float(opts.padding_factor)):

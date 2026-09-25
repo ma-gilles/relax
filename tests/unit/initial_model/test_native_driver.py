@@ -609,17 +609,38 @@ def test_particle_state_from_star_rejects_positive_class_for_unvisited_restart_r
         )
 
 
-def test_particle_state_from_star_rejects_class_zero_for_k_greater_than_one():
+def test_particle_state_from_star_accepts_k2_restart_sentinels():
+    main = pd.DataFrame(
+        {
+            "_rlnImageName": ["1@stack.mrcs", "2@stack.mrcs", "3@stack.mrcs"],
+            "_rlnClassNumber": ["2", "0", "1"],
+            "_rlnMaxValueProbDistribution": ["0.75", "0", "0.25"],
+            "_rlnNrOfSignificantSamples": ["5", "0", "2"],
+        }
+    )
+
+    state = initial_model_io._particle_state_from_star(
+        main,
+        SimpleNamespace(voxel_size=1.0, n_images=3),
+        allow_unvisited_class_zero=True,
+        nr_classes=2,
+    )
+
+    np.testing.assert_array_equal(state.class_assignments, [1, 0, 0])
+    np.testing.assert_array_equal(state.visited, [True, False, True])
+
+
+def test_particle_state_from_star_rejects_restart_class_above_k():
     main = pd.DataFrame(
         {
             "_rlnImageName": ["1@stack.mrcs", "2@stack.mrcs"],
-            "_rlnClassNumber": ["1", "0"],
+            "_rlnClassNumber": ["3", "0"],
             "_rlnMaxValueProbDistribution": ["0.75", "0"],
             "_rlnNrOfSignificantSamples": ["5", "0"],
         }
     )
 
-    with pytest.raises(ValueError, match="only for a verified K=1"):
+    with pytest.raises(ValueError, match="must be in 0..2"):
         initial_model_io._particle_state_from_star(
             main,
             SimpleNamespace(voxel_size=1.0, n_images=2),

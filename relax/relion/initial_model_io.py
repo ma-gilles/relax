@@ -135,18 +135,16 @@ def _particle_state_from_star(
     allow_unvisited_class_zero: bool = False,
     nr_classes: int | None = None,
 ) -> NativeParticleState:
-    """Load particle state, optionally accepting RELION's K=1 restart sentinel.
+    """Load particle state, optionally accepting RELION's unvisited-class sentinel.
 
     Fresh production inputs retain the ordinary one-indexed positive-class
     contract.  Native InitialModel continuation STARs use class zero only for
-    particles that the stochastic gradient schedule has not visited yet.
+    particles that the stochastic gradient schedule has not visited yet; those
+    rows start in class index 0, as in a fresh run.
     """
 
-    if allow_unvisited_class_zero and nr_classes != 1:
-        raise ValueError(
-            "unvisited _rlnClassNumber=0 is supported only for a verified K=1 "
-            "diagnostic continuation",
-        )
+    if allow_unvisited_class_zero and (nr_classes is None or int(nr_classes) < 1):
+        raise ValueError("diagnostic continuation requires the checkpoint class count")
     n_images = int(getattr(dataset, "n_images", len(main_star)))
     if len(main_star) != n_images:
         raise ValueError(f"STAR table has {len(main_star)} particles but dataset has {n_images} images")
@@ -154,18 +152,18 @@ def _particle_state_from_star(
     if class_col is None:
         if allow_unvisited_class_zero:
             raise ValueError(
-                "K=1 diagnostic continuation requires _rlnClassNumber",
+                "diagnostic continuation requires _rlnClassNumber",
             )
         class_numbers = None
         class_assignments = np.zeros(n_images, dtype=np.int32)
     else:
         class_numbers = np.asarray(class_col.astype(int).to_numpy(), dtype=np.int32)
         if allow_unvisited_class_zero:
-            if np.any((class_numbers < 0) | (class_numbers > 1)):
+            if np.any((class_numbers < 0) | (class_numbers > int(nr_classes))):
                 raise ValueError(
-                    "K=1 diagnostic continuation _rlnClassNumber values must be 0 or 1",
+                    f"diagnostic continuation _rlnClassNumber values must be in 0..{int(nr_classes)}",
                 )
-            class_assignments = np.zeros(n_images, dtype=np.int32)
+            class_assignments = np.maximum(class_numbers - 1, 0).astype(np.int32)
         else:
             class_assignments = class_numbers - 1
         if not allow_unvisited_class_zero and np.any(class_assignments < 0):
@@ -211,7 +209,7 @@ def _particle_state_from_star(
             zero_state_evidence.append(significant_samples == 0.0)
         if not zero_state_evidence:
             raise ValueError(
-                "K=1 diagnostic continuation cannot validate unvisited class-zero rows "
+                "diagnostic continuation cannot validate unvisited class-zero rows "
                 "without posterior or significant-sample state",
             )
         state_is_unvisited = np.logical_and.reduce(zero_state_evidence)
@@ -219,7 +217,7 @@ def _particle_state_from_star(
         if not np.array_equal(class_is_unvisited, state_is_unvisited):
             mismatched_rows = np.flatnonzero(class_is_unvisited != state_is_unvisited)
             raise ValueError(
-                "K=1 diagnostic continuation class-zero sentinels disagree with "
+                "diagnostic continuation class-zero sentinels disagree with "
                 f"unvisited particle state at rows {mismatched_rows[:8].tolist()}",
             )
         visited = ~class_is_unvisited
