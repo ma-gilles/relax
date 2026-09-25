@@ -428,6 +428,9 @@ def compute_local_search_resident(
         relion_firstiter_score_mode="gaussian",
         use_exact_relion_gaussian=True,
         use_float64_scoring=use_float64_scoring,
+        # RELION's window at every size, including the box (a shape class reaches its
+        # box before the reference does): the resident driver never scores a full half.
+        window_at_box=True,
     )
 
     # ``run_local_em_exact`` uses this flag as passed rather than resolving it

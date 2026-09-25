@@ -263,6 +263,7 @@ def _pass2_window_setup(
     relion_firstiter_score_mode,
     use_exact_relion_gaussian: bool,
     use_float64_scoring: bool,
+    window_at_box: bool = False,
 ) -> _Pass2WindowSetup:
     """Resolve the M-step current size, the score/recon window and the precision policy of a pass 2."""
 
@@ -272,6 +273,8 @@ def _pass2_window_setup(
         if reconstruction_current_size is None
         else int(reconstruction_current_size)
     )
+    if window_at_box and mstep_current_size is None:
+        mstep_current_size = int(W)
     if (
         use_exact_relion_gaussian
         and current_size is not None
@@ -289,6 +292,8 @@ def _pass2_window_setup(
             "score_square": True,
             "score_include_dc": True,
         }
+    if window_at_box:
+        window_spec_kwargs = {**window_spec_kwargs, "window_at_box": True}
     budget_window_spec = make_fourier_window_spec(
         image_shape,
         current_size,

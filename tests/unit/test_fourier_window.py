@@ -1179,3 +1179,46 @@ class TestWindowedMultipleBlocks:
             err_msg="Mean differs between single-block and multi-block with windowing",
         )
         assert_matches(ha_1, ha_2)
+
+
+@pytest.mark.unit
+def test_window_at_box_is_relions_support_with_its_nyquist_row():
+    """At current size = box RELION keeps ``ires < N/2 + 1`` on rows ``ip = -(N/2-1)..+N/2``.
+
+    relax's window at the box (``window_at_box``, the resident drivers when a shape class
+    reaches its box) is exactly that support. RELION's ``ip = +N/2`` row is stored at
+    ``ky = -N/2`` here; its translation phase must use the ``+N/2`` label
+    (``relion_half_translation_lattice``), which differs from the centred label by a
+    conjugate y-phase for any non-integer shift.
+    """
+    from relax.helpers.fourier_window import make_fourier_window_spec, make_frequency_coords_half_np
+    from relax.helpers.preprocessing import relion_half_translation_lattice
+
+    n = 64
+    n_half = n * (n // 2 + 1)
+    assert not make_fourier_window_spec((n, n), n, n_half).use_window
+    spec = make_fourier_window_spec((n, n), n, n_half, window_at_box=True)
+    assert spec.use_window
+    assert make_fourier_window_spec((n, n), None, n_half, window_at_box=True).n_score == spec.n_score
+
+    coords = np.rint(np.asarray(make_frequency_coords_half_np((n, n)))).astype(int)
+    kx, ky = np.abs(coords[:, 0]), coords[:, 1]
+    relion_ky = np.where(ky == -n // 2, n // 2, ky)  # RELION's label for the packed Nyquist row
+    ires = np.rint(np.hypot(kx, relion_ky)).astype(int)
+    relion_support = (ires < n // 2 + 1) & ~((kx == 0) & (relion_ky < 0)) & (ires > 0)
+    relax_support = np.zeros(n_half, dtype=bool)
+    relax_support[np.asarray(spec.score_indices_np)] = True
+    assert np.array_equal(relax_support, relion_support)
+    nyquist = relion_support & (ky == -n // 2)
+    assert np.count_nonzero(nyquist) > 1
+
+    # A cropped window is unchanged: it never holds the layout's ky = -cs/2 row.
+    cropped = make_fourier_window_spec((n, n), 32, n_half)
+    assert not np.any(ky[np.asarray(cropped.score_indices_np)] == -16)
+
+    # On the Nyquist row RELION's label (+N/2) and the centred label (-N/2) give conjugate y-phases.
+    lattice = np.asarray(relion_half_translation_lattice((n, n)))[nyquist] * n
+    assert np.all(np.rint(lattice[:, 1]) == n // 2)
+    shift_y = 0.4
+    relion_phase = np.exp(-2j * np.pi * lattice[:, 1] * shift_y / n)
+    assert np.allclose(relion_phase, np.conj(np.exp(-2j * np.pi * ky[nyquist] * shift_y / n)))

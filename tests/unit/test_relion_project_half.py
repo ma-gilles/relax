@@ -453,3 +453,52 @@ def test_relion_project_half_center_padded_capacity_matches_logical(logical_size
     # admits. At pf 2 that shell scales to 4 * r_max**2 + 4 and cannot truncate
     # to 4 * r_max**2, so no shell pixel is kept.
     assert (shell_pixels_kept > 0) == (pf == 1)
+
+
+def test_full_box_projection_samples_relions_plus_nyquist_row():
+    """At the full box the packed Nyquist row is RELION's ip = +N/2 (fftw.h label).
+
+    relax's Projector port fills FFTW row N/2 at y = +N/2: the value is Projector::project's
+    trilinear sample at A (0, +N/2) (written out below from projector.cpp:675-740), not the
+    (0, -N/2) point, whose sample is its complex conjugate for a real map. The centred-row
+    wrapper stores that row at ky = -N/2; the window at the box (S3b) scores it. The pixel
+    sits on the r_max sphere, where the port keeps RELION's GPU integer-radius rule.
+    """
+    bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
+    import jax.numpy as jnp
+    from scipy.spatial.transform import Rotation
+
+    from relax.relion.relion_project import relion_project_half
+
+    n, pad = 32, 2
+    rng = np.random.default_rng(11)
+    volume = rng.normal(size=(n, n, n))
+    data, _ps, _ori, _pad, r_max, _nn, _interp = bind.compute_fourier_transform_map(volume, n, pad, 1, n, True, 2)
+    data = np.asarray(data)
+    zs, ys, _xs = data.shape
+
+    def relion_sample(point):
+        xp, yp, zp = point
+        conj = xp < 0
+        if conj:
+            xp, yp, zp = -xp, -yp, -zp
+        x0, y0, z0 = int(np.floor(xp)), int(np.floor(yp)), int(np.floor(zp))
+        fx, fy, fz = xp - x0, yp - y0, zp - z0
+        y0, z0 = y0 + ys // 2, z0 + zs // 2
+        d = lambda z, y, x: data[z, y, x]  # noqa: E731
+        dx00 = d(z0, y0, x0) + fx * (d(z0, y0, x0 + 1) - d(z0, y0, x0))
+        dx01 = d(z0 + 1, y0, x0) + fx * (d(z0 + 1, y0, x0 + 1) - d(z0 + 1, y0, x0))
+        dx10 = d(z0, y0 + 1, x0) + fx * (d(z0, y0 + 1, x0 + 1) - d(z0, y0 + 1, x0))
+        dx11 = d(z0 + 1, y0 + 1, x0) + fx * (d(z0 + 1, y0 + 1, x0 + 1) - d(z0 + 1, y0 + 1, x0))
+        dxy0 = dx00 + fy * (dx10 - dx00)
+        dxy1 = dx01 + fy * (dx11 - dx01)
+        value = dxy0 + fz * (dxy1 - dxy0)
+        return np.conj(value) if conj else value
+
+    for rotation in Rotation.random(3, random_state=5).as_matrix():
+        port = np.asarray(relion_project_half(jnp.asarray(data), jnp.asarray(rotation.T), n, int(r_max), pad))
+        ainv = rotation.T * pad  # Projector::project: Ainv = A.inv() * padding_factor
+        plus = relion_sample(ainv @ np.array([0.0, n / 2, 0.0]))
+        minus = relion_sample(ainv @ np.array([0.0, -n / 2, 0.0]))
+        assert np.isclose(port[n // 2, 0], plus, rtol=1e-6, atol=1e-12)
+        assert not np.isclose(port[n // 2, 0], minus, rtol=1e-3, atol=0)

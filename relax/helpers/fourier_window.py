@@ -301,8 +301,18 @@ def _relion_half_layout_mask(coords, current_size, *, square=False, include_dc=F
         else:
             radii = np.sqrt(np.sum(coords**2, axis=-1))
             mask = np.round(radii).astype(np.int32) <= r_max
-        mask &= ky != -r_max
-        mask &= ~((kx == 0) & (ky < 0))
+        if int(current_size) >= full_size:
+            # At the box RELION does not crop, and its FFTW labels put the packed Nyquist row at
+            # ip = +N/2 (fftw.h FOR_ALL_ELEMENTS_IN_FFTW_TRANSFORM: ip = i < XSIZE ? i : i - YSIZE),
+            # where this layout stores it at ky = -N/2. That row is kept, x = 0 included (its
+            # label is positive), as updateImageSizeAndResolutionPointers keeps it
+            # (ires < image_current_size / 2 + 1 && !(jp == 0 && ip < 0)).
+            mask &= ~((kx == 0) & (ky < 0) & (ky != -r_max))
+        else:
+            # A cropped window keeps ip = -(cs/2 - 1)..+cs/2 (windowFourierTransform), so the
+            # layout's ky = -cs/2 row is not RELION's.
+            mask &= ky != -r_max
+            mask &= ~((kx == 0) & (ky < 0))
 
     if exact_radius:
         mask &= kx * kx + ky * ky <= r_max * r_max
@@ -434,6 +444,7 @@ def make_fourier_window_spec(
     recon_exact_radius=True,
     projection_max_r=_DEFAULT_PROJECTION_MAX_R,
     include_recon_window=True,
+    window_at_box=False,
     dtype=jnp.int32,
 ) -> FourierWindowSpec:
     """Return shared score/reconstruction window metadata for EM engines.
@@ -443,9 +454,19 @@ def make_fourier_window_spec(
     the Projector/BackProjector support.  ``reconstruction_current_size``
     represents that separate model-coordinate cutoff; omitting it preserves
     the historical shared-size behavior.
+
+    ``window_at_box`` keeps the window when the current size reaches the box (or is
+    None, the full box): RELION's image_current_size is then the box and its
+    resolution pointers still cut the corners (``ires < image_current_size / 2 + 1``,
+    ml_optimiser.cpp updateImageSizeAndResolutionPointers), where the unwindowed
+    path would score the full half grid.
     """
 
-    use_window = current_size is not None and current_size < image_shape[0]
+    if window_at_box and (current_size is None or int(current_size) >= int(image_shape[0])):
+        current_size = int(image_shape[0])
+        use_window = True
+    else:
+        use_window = current_size is not None and current_size < image_shape[0]
     if not use_window:
         return FourierWindowSpec(
             use_window=False,
