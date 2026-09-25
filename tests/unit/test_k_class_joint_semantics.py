@@ -1329,9 +1329,18 @@ def test_adaptive_k_class_firstiter_fine_pass_uses_global_winner_subsets(monkeyp
     assert_matches(np.asarray(result.significant_counts), np.ones(4, dtype=np.int32))
 
 
-def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(monkeypatch):
+@pytest.mark.parametrize("pass2_engine", ["resident", "compact"])
+def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(monkeypatch, pass2_engine):
+    """Each image's fine pass is a K=1 pass inside its coarse global-winner class.
+
+    On the resident engine (the default) it takes the K=1 production arithmetic;
+    the compact engine (``RELAX_SPARSE_PASS2_RESIDENT=0``) keeps its historical K>1
+    arithmetic until it is deleted.
+    """
     from relax.sparse_pass2 import dispatch as sparse_dispatch
     from relax.sampling import rotation_grid_size
+
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT", "1" if pass2_engine == "resident" else "0")
 
     score_calls = []
     probe_calls = []
@@ -1398,7 +1407,12 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
         )
         assert kwargs["relion_firstiter_score_mode"] == "normalized_cc"
         assert kwargs["relion_firstiter_winner_take_all"] is True
-        assert "preserve_bpref_particle_order" not in kwargs
+        if pass2_engine == "resident":
+            assert kwargs["preserve_bpref_particle_order"] is True
+            assert kwargs["relion_exact_fine_normalized_cc"] is True
+        else:
+            assert "preserve_bpref_particle_order" not in kwargs
+            assert kwargs["relion_exact_fine_normalized_cc"] is False
         n_images = int(dataset.n_units)
         hard = np.arange(n_images, dtype=np.int32) % n_fine_trans
         best_rot_ids = np.full(n_images, class_index, dtype=np.int32)
