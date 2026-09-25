@@ -57,6 +57,7 @@ from relax.ppca_refinement.engine import (
     backproject_moment_images,
     dense_pose_ppca_score_with_moments_blocked,
     dense_pose_ppca_score_with_moments_factor_once,
+    pose_invariant_score_offset,
     pose_moment_images,
 )
 from relax.ppca_refinement.pose_selection import top_p_from_score_block
@@ -568,7 +569,8 @@ def _accumulate_full_row_tile(stream, image_indices, significant_rows, *, factor
     n_shells = int(np.max(np.asarray(shells))) + 1
     residual_num = jnp.zeros(n_shells, jnp.float32).at[shells].add(weights * carry.residual_power)
     residual_den = jnp.zeros(n_shells, jnp.float32).at[shells].add(weights * n_images)
-    logZ = top.center + centered_logZ
+    # Scores exclude the pose-invariant image constant; the absolute log-partition adds it back.
+    logZ = top.center + centered_logZ + pose_invariant_score_offset(tile.y_norm)
     host = jax.device_get(
         {
             "log_likelihood": jnp.sum(logZ),

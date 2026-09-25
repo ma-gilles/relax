@@ -344,6 +344,8 @@ class DenseScoreAndMomentsStats(NamedTuple):
     cost in the early-iter regime where sparse-pass2 cannot fire.
     """
 
+    # score, logZ and best_log_score_per_image share one frame: the absolute
+    # value is the field plus score_offset (pose_invariant_score_offset).
     score: jax.Array  # (B, T, R)
     alpha: jax.Array  # (B, T, R, q+1)
     G_tri: jax.Array  # (B, T, R, tri(q+1))
@@ -351,6 +353,43 @@ class DenseScoreAndMomentsStats(NamedTuple):
     best_log_score_per_image: jax.Array  # (B,)
     best_rotation_idx: jax.Array  # (B,)
     best_translation_idx: jax.Array  # (B,)
+    score_offset: jax.Array  # (B,) pose-invariant log-score removed from the frame
+
+
+def pose_invariant_score_offset(y_norm):
+    """The part ``-y_norm / 2`` of every pose log-score of an image.
+
+    It is the same for every pose (about 1e3 on noise-whitened particles) and
+    cancels in every posterior, yet in float32 it sets the rounding of the
+    pose-dependent score, which sharp posteriors turn into weight differences.
+    The fine score functions therefore assemble scores without it and carry it
+    here; only absolute values (log-likelihood, reported scores) add it back.
+    """
+    return -0.5 * jnp.asarray(y_norm)
+
+
+def _pose_stats_without_image_constant(Y1, proj_aug, ctf2_over_noise, y_norm):
+    """``_per_pose_stats_block`` with the pose-invariant image energy moved to the offset."""
+    y_norm = jnp.asarray(y_norm)
+    stats = _per_pose_stats_block(Y1, proj_aug, jnp.asarray(ctf2_over_noise), jnp.zeros_like(y_norm))
+    return stats, pose_invariant_score_offset(y_norm)
+
+
+def _score_and_moment_stats(score, alpha, G_tri, score_offset):
+    """Summaries of a score tensor in the frame that excludes ``score_offset``."""
+    B, T, R = score.shape
+    score_flat = score.reshape(B, T * R)
+    best_flat = jnp.argmax(score_flat, axis=-1)
+    return DenseScoreAndMomentsStats(
+        score=score,
+        alpha=alpha,
+        G_tri=G_tri,
+        logZ=jax.scipy.special.logsumexp(score_flat, axis=-1),
+        best_log_score_per_image=jnp.max(score_flat, axis=-1).astype(jnp.float32),
+        best_rotation_idx=(best_flat % R).astype(jnp.int32),
+        best_translation_idx=(best_flat // R).astype(jnp.int32),
+        score_offset=score_offset,
+    )
 
 
 @jax.jit
@@ -375,25 +414,10 @@ def dense_pose_ppca_score_with_moments_blocked(
     R, _P, _ = proj_aug.shape
     if pose_log_prior is not None and jnp.asarray(pose_log_prior).shape != (B, R, T):
         raise ValueError(f"pose_log_prior shape {jnp.asarray(pose_log_prior).shape} != ({B}, {R}, {T})")
-    y_stats = _per_pose_stats_block(
-        Y1,
-        proj_aug,
-        jnp.asarray(ctf2_over_noise),
-        jnp.asarray(y_norm),
-    )
+    y_stats, score_offset = _pose_stats_without_image_constant(Y1, proj_aug, ctf2_over_noise, y_norm)
     score_pre, alpha, G_tri = compute_ppca_pose_scores_and_moments_no_contrast(*y_stats, return_moments=True)
     score = _add_pose_log_prior(score_pre, pose_log_prior)
-    score_flat = score.reshape(B, T * R)
-    best_flat = jnp.argmax(score_flat, axis=-1)
-    return DenseScoreAndMomentsStats(
-        score=score,
-        alpha=alpha,
-        G_tri=G_tri,
-        logZ=jax.scipy.special.logsumexp(score_flat, axis=-1),
-        best_log_score_per_image=jnp.max(score_flat, axis=-1).astype(jnp.float32),
-        best_rotation_idx=(best_flat % R).astype(jnp.int32),
-        best_translation_idx=(best_flat // R).astype(jnp.int32),
-    )
+    return _score_and_moment_stats(score, alpha, G_tri, score_offset)
 
 
 @jax.jit
@@ -417,8 +441,8 @@ def dense_pose_ppca_score_with_moments_factor_once(
     R, P, _ = proj_aug.shape
     if pose_log_prior is not None and jnp.asarray(pose_log_prior).shape != (B, R, T):
         raise ValueError(f"pose_log_prior shape {jnp.asarray(pose_log_prior).shape} != ({B}, {R}, {T})")
-    y_norm, t_mx, nu_mm, g_zx, h_zm, Hzz = _per_pose_stats_block(
-        Y1, proj_aug, jnp.asarray(ctf2_over_noise), jnp.asarray(y_norm)
+    (y_norm, t_mx, nu_mm, g_zx, h_zm, Hzz), score_offset = _pose_stats_without_image_constant(
+        Y1, proj_aug, ctf2_over_noise, y_norm
     )
     q = P - 1
     if q == 0:
@@ -436,6 +460,7 @@ def dense_pose_ppca_score_with_moments_factor_once(
         logdet = 2.0 * jnp.sum(jnp.log(jnp.real(jnp.diagonal(L, axis1=-2, axis2=-1))), axis=-1)
         b = g_zx - h_zm
         z = jnp.einsum("brqp,btrp->btrq", covariance, b)
+        # y_norm is zero here; its pose-invariant term is score_offset.
         rho = y_norm - 2.0 * t_mx + nu_mm
         score_pre = -0.5 * (rho - jnp.sum(jnp.conj(b) * z, axis=-1).real + logdet[:, None, :])
         one = jnp.ones((B, T, R, 1), dtype=z.dtype)
@@ -445,17 +470,7 @@ def dense_pose_ppca_score_with_moments_factor_once(
         bottom = jnp.concatenate((z[..., :, None], bottom_right), axis=-1)
         G_tri = pack_upper_tri(jnp.concatenate((top, bottom), axis=-2))
     score = _add_pose_log_prior(score_pre, pose_log_prior)
-    score_flat = score.reshape(B, T * R)
-    best_flat = jnp.argmax(score_flat, axis=-1)
-    return DenseScoreAndMomentsStats(
-        score=score,
-        alpha=alpha,
-        G_tri=G_tri,
-        logZ=jax.scipy.special.logsumexp(score_flat, axis=-1),
-        best_log_score_per_image=jnp.max(score_flat, axis=-1).astype(jnp.float32),
-        best_rotation_idx=(best_flat % R).astype(jnp.int32),
-        best_translation_idx=(best_flat // R).astype(jnp.int32),
-    )
+    return _score_and_moment_stats(score, alpha, G_tri, score_offset)
 
 
 def pose_moment_images(gamma, alpha, G_tri, Y1_recon, ctf2_over_noise_recon, *, rhs_dtype, lhs_dtype):

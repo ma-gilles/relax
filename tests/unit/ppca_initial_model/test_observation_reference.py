@@ -45,7 +45,8 @@ def test_real_covariance_reference(dtype, tol, q, zero_loading):
     )
     latent_cov = np.linalg.inv(np.eye(q) + w.T @ w / variance)
     latent_mean = latent_cov @ w.T @ r / variance
-    np.testing.assert_allclose(result.score[0, 0, 0], reference, atol=tol, rtol=tol)
+    # Scores exclude the pose-invariant image constant; the absolute score adds it back.
+    np.testing.assert_allclose(result.score[0, 0, 0] + result.score_offset[0], reference, atol=tol, rtol=tol)
     np.testing.assert_allclose(result.alpha[0, 0, 0, 1:], latent_mean, atol=tol, rtol=tol)
     g = unpack_tri_to_full(result.G_tri, q + 1)
     np.testing.assert_allclose(g[0, 0, 0, 1:, 1:], latent_cov + np.outer(latent_mean, latent_mean), atol=tol, rtol=tol)

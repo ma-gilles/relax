@@ -45,7 +45,8 @@ def test_dense_q0_matches_homogeneous_score_expression():
     gamma = jnp.exp(scored.score - scored.logZ[:, None, None])
 
     expected_logz = _manual_homogeneous_logz(Y1, proj_aug[:, 0, :], ctf2_over_noise, y_norm)
-    np.testing.assert_allclose(np.asarray(scored.logZ), expected_logz, rtol=1e-6, atol=1e-6)
+    # logZ is in the score frame without the pose-invariant image constant.
+    np.testing.assert_allclose(np.asarray(scored.logZ + scored.score_offset), expected_logz, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(np.asarray(jnp.einsum("btr,btrp->bp", gamma, scored.alpha)), 1.0, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(np.asarray(jnp.einsum("btr,btrk->bk", gamma, scored.G_tri)), 1.0, rtol=1e-6, atol=1e-6)
 

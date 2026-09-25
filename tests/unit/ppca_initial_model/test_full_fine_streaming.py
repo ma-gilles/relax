@@ -369,3 +369,32 @@ def test_support_tile_order_groups_similar_support_and_keeps_full_rows():
     assert sorted(order.tolist()) == list(range(5))
     tiles = [set(order[i:i + 2].tolist()) for i in range(0, 5, 2)]
     assert {0, 4} in tiles  # the two single-rotation {0} images share one tile
+
+
+def test_fine_score_functions_share_the_shifted_frame():
+    """Blocked and factor-once scores both exclude the same pose-invariant -y_norm/2."""
+    import jax
+    from recovar.ppca.pose_marginal import compute_ppca_pose_scores_and_moments_no_contrast
+
+    from relax.ppca_refinement.engine import (
+        _per_pose_stats_block,
+        dense_pose_ppca_score_with_moments_blocked,
+        dense_pose_ppca_score_with_moments_factor_once,
+    )
+
+    with jax.enable_x64(True):
+        rng = np.random.default_rng(9)
+        Y1 = jnp.asarray(rng.standard_normal((2, 3, 5)) + 1j * rng.standard_normal((2, 3, 5)))
+        proj = jnp.asarray(rng.standard_normal((4, 3, 5)) + 1j * rng.standard_normal((4, 3, 5)))
+        ctf2 = jnp.asarray(rng.uniform(0.2, 1.0, (2, 5)))
+        y_norm = jnp.asarray([1500.0, 2100.0])
+        blocked = dense_pose_ppca_score_with_moments_blocked(Y1, proj, ctf2, y_norm)
+        factor = dense_pose_ppca_score_with_moments_factor_once(Y1, proj, ctf2, y_norm)
+        absolute, _, _ = compute_ppca_pose_scores_and_moments_no_contrast(
+            *_per_pose_stats_block(Y1, proj, ctf2, y_norm), return_moments=True
+        )
+        assert_matches(np.asarray(blocked.score_offset), -0.5 * np.asarray(y_norm))
+        assert_matches(np.asarray(factor.score_offset), np.asarray(blocked.score_offset))
+        assert_matches(np.asarray(blocked.score + blocked.score_offset[:, None, None]), np.asarray(absolute))
+        assert_matches(np.asarray(factor.score), np.asarray(blocked.score))
+        assert_matches(np.asarray(factor.logZ), np.asarray(blocked.logZ))

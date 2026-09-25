@@ -986,6 +986,13 @@ scientific contract; runnable code alone does not establish recovery.
   direction 6.5e-7, exact selected IDs and noise). The tile is now mostly
   GPU-bound (adjoints and contractions); larger rotation blocks are a further
   measured config choice, not a default change.
+- The fine pose scores (blocked and factor-once) are assembled without the
+  pose-invariant image energy: `-y_norm/2` is the same for every pose of an
+  image (about `1e3` here) and cancels in every posterior, but in float32 it
+  sets the rounding of the pose-dependent score, which sharp posteriors turn
+  into weight differences. It is carried as `score_offset`
+  ([pose_invariant_score_offset](../../relax/ppca_refinement/engine.py)) and
+  added back only to absolute values (log-likelihood, reported top scores).
 - After the final all-particle update,
   [compute_dense_ppca_embeddings](../../relax/ppca_refinement/dense_dataset.py)
   uses the same fine pose scores, latent means, candidate support and sequential

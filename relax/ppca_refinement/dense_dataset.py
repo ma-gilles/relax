@@ -46,6 +46,7 @@ from relax.ppca_refinement.engine import (
     dense_pose_ppca_score_with_moments_blocked,
     dense_pose_ppca_score_with_moments_factor_once,
     fused_dense_pose_ppca_block,
+    pose_invariant_score_offset,
 )
 from relax.ppca_refinement.initialization import real_volume_to_centered_fourier_half
 from relax.ppca_refinement.mean_regularization import (
@@ -1075,7 +1076,10 @@ def accumulate_dense_ppca_statistics(
             # Scores are already retained for the cached-moments pass, and
             # each reduction stays within one block's bounded score tensor.
             score_center, centered_logZ = _centered_score_partition(block_scores)
-            logZ = score_center + centered_logZ
+            # Cached scores exclude the pose-invariant image constant; the
+            # absolute log-partition and top scores add it back.
+            score_offset = pose_invariant_score_offset(group[0].y_norm)
+            logZ = score_center + centered_logZ + score_offset
             top_scores_for_posterior = [
                 scores - score_center[:, None] for scores in block_top_scores
             ]
@@ -1100,7 +1104,7 @@ def accumulate_dense_ppca_statistics(
         )
         top_scores = jnp.asarray(top_selection.log_score, dtype=jnp.float32)
         if cache_moments:
-            top_scores = top_scores + score_center[:, None]
+            top_scores = top_scores + score_center[:, None] + score_offset[:, None]
         top_rotations = jnp.asarray(top_selection.rotation_idx, dtype=jnp.int32)
         top_translations = jnp.asarray(top_selection.translation_idx, dtype=jnp.int32)
         top_posteriors = jnp.asarray(top_selection.posterior, dtype=jnp.float32)
