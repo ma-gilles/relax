@@ -133,10 +133,10 @@ from relax.sparse_pass2.resident_significance import (
     resident_significance_csr,
 )
 from relax.sparse_pass2.resident_statistics import (
+    FinalizedStatistics,
     ResidentStatistics,
     _drop_index,
     _flat_row_norm_and_scale_terms,
-    FinalizedStatistics,
     finalize_statistics,
     make_resident_statistics,
     resident_image_capacity,
