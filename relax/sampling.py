@@ -342,6 +342,66 @@ def get_relion_translation_grid(
     return grid[squared_radius < max_pixel * max_pixel + squared_tolerance_pixels]
 
 
+def get_relion_translation_grid_3d(offset_range, offset_step):
+    """RELION's 3D translation grid (subtomograms, ``is_3d_trans``) in Angstrom, ``[T, 3]`` float64.
+
+    ``HealpixSampling::setTranslations`` (healpix_sampling.cpp:345, 410-433) enumerates
+    ``x`` outer, ``y`` middle and ``z`` inner over ``-CEIL(range/step)..CEIL(range/step)``
+    and keeps ``x^2 + y^2 + z^2 <= range^2``, in Angstrom and without the 2D grid's
+    ``+0.001`` tolerance. The comparison stays in Angstrom so the axial points at exactly
+    ``range`` are kept as RELION keeps them; pixels come from
+    :func:`relion_translations_in_pixel_3d`.
+    """
+    offset_range = float(offset_range)
+    offset_step = float(offset_step)
+    if not np.isfinite(offset_range) or offset_range < 0.0:
+        raise ValueError(f"offset_range must be finite and nonnegative, got {offset_range}")
+    if not np.isfinite(offset_step) or offset_step <= 0.0:
+        raise ValueError(f"offset_step must be finite and positive, got {offset_step}")
+    max_index = int(np.ceil(offset_range / offset_step))
+    indices = np.arange(-max_index, max_index + 1, dtype=np.int64)
+    x_index, y_index, z_index = np.meshgrid(indices, indices, indices, indexing="ij")
+    grid = np.stack([x_index.reshape(-1), y_index.reshape(-1), z_index.reshape(-1)], axis=1) * offset_step
+    return grid[np.sum(grid * grid, axis=1) <= offset_range * offset_range]
+
+
+def relion_translations_in_pixel_3d(
+    translations_angst, offset_step, *, oversampling_order, pixel_size, random_perturbation=0.0
+):
+    """RELION's oversampled 3D translations in pixels and each one's parent, ``([T * 8^os, 3], [T * 8^os])``.
+
+    ``HealpixSampling::getTranslationsInPixel`` (healpix_sampling.cpp:1756-1805,
+    1825-1841): every parent is split into ``2^os`` children per axis at
+    ``t - step/2 + (0.5 + k) step / 2^os``, enumerated ``x`` outer, ``y`` middle, ``z``
+    inner, each divided by the optics group's pixel size; the iteration's perturbation
+    adds ``random_perturbation * step / pixel_size`` to every axis.
+    """
+    translations_angst = np.asarray(translations_angst, dtype=np.float64)
+    if translations_angst.ndim != 2 or translations_angst.shape[1] != 3:
+        raise ValueError(f"translations_angst must have shape (T, 3), got {translations_angst.shape}")
+    offset_step = float(offset_step)
+    pixel_size = float(pixel_size)
+    oversampling_order = int(oversampling_order)
+    if oversampling_order < 0:
+        raise ValueError("oversampling_order must be non-negative")
+    n_sub = int(round(2.0**oversampling_order))
+    if oversampling_order == 0:
+        fine = translations_angst / pixel_size
+        n_children = 1
+    else:
+        # RELION's association: (t - step/2) + (0.5 + k) * step / n, then / pixel_size.
+        steps = (0.5 + np.arange(n_sub)) * offset_step / n_sub
+        cx, cy, cz = np.meshgrid(steps, steps, steps, indexing="ij")
+        children = np.stack([cx.reshape(-1), cy.reshape(-1), cz.reshape(-1)], axis=1)
+        fine = ((translations_angst - 0.5 * offset_step)[:, None, :] + children[None, :, :]).reshape(-1, 3)
+        fine = fine / pixel_size
+        n_children = children.shape[0]
+    if abs(float(random_perturbation)) > 0.0:
+        fine = fine + float(random_perturbation) * offset_step / pixel_size  # RELION's association
+    parent = np.repeat(np.arange(translations_angst.shape[0]), n_children)
+    return fine, parent
+
+
 _K1_RELION_EXACT_TRANSLATION_GRID_ENV = "RELAX_K1_RELION_EXACT_TRANSLATION_GRID"
 
 

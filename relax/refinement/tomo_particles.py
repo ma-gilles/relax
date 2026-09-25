@@ -43,9 +43,7 @@ def tilt_projection_matrices(image_matrices, particle_matrices, image_particle):
 
     image_matrices = np.asarray(image_matrices, dtype=np.float64)
     particle_matrices = np.asarray(particle_matrices, dtype=np.float64)
-    return np.einsum(
-        "iab,icb->iac", image_matrices, particle_matrices[np.asarray(image_particle, dtype=np.int64)]
-    )
+    return np.einsum("iab,icb->iac", image_matrices, particle_matrices[np.asarray(image_particle, dtype=np.int64)])
 
 
 def tilt_image_rotations(pose_rotations, image_projections):
@@ -72,7 +70,46 @@ def tilt_image_shifts(shifts_3d, old_offsets_3d, image_projections, image_partic
     shifts_3d = np.asarray(shifts_3d, dtype=np.float64)
     old = np.asarray(old_offsets_3d, dtype=np.float64)[np.asarray(image_particle, dtype=np.int64)]
     total = shifts_3d[None, :, :] + old[:, None, :]
-    return np.einsum("iab,itb->ita", np.asarray(image_projections, dtype=np.float64)[:, :2, :], total)
+    aproj = np.asarray(image_projections, dtype=np.float64)[:, None, :, :]
+    # RELION's summation order, a(r,0) x + a(r,1) y + a(r,2) z (exp_model.cpp:111-112).
+    return np.stack(
+        [
+            aproj[..., r, 0] * total[..., 0] + aproj[..., r, 1] * total[..., 1] + aproj[..., r, 2] * total[..., 2]
+            for r in (0, 1)
+        ],
+        axis=-1,
+    )
+
+
+def tilt_translation_angles(shifts_3d, old_offsets_3d, image_projections, image_particle, image_size):
+    """Each image's scoring phase operand for every 3D trial shift: float32 ``[I, T, 2]`` radians.
+
+    RELION's GPU path adds the particle's old offset to the trial shift, projects it with
+    the image's ``Aproj`` and stores ``-2 pi shift / image_full_size`` as float
+    (acc_ml_optimiser_impl.h:1761-1787; :func:`tilt_image_shifts`). Shifts and offsets
+    are in pixels of the image's optics group; ``image_size`` is its full image size
+    (a scalar, or one value per image).
+    """
+
+    shifts = tilt_image_shifts(shifts_3d, old_offsets_3d, image_projections, image_particle)
+    size = np.broadcast_to(np.asarray(image_size, dtype=np.float64), (shifts.shape[0],))
+    return np.asarray(-2.0 * np.pi * shifts / size[:, None, None], dtype=np.float32)
+
+
+def image_slot_ids(row_unit, unit_image_offsets, slot: int) -> np.ndarray:
+    """Image of each hypothesis row for one image slot, ``-1`` where the row's particle has fewer images.
+
+    The scorer visits a particle's images in slot order ``0..n_images - 1`` (RELION's
+    ``img_id`` loop, acc_ml_optimiser_impl.h:1737 and :2282) and adds each image's diff2
+    to the row's running sum. ``unit_image_offsets`` is the CSR ``[n_units + 1]`` of the
+    units' image rows (:class:`relax.relion.tomo_input.TomoParticleIndex.image_offsets`).
+    """
+
+    row_unit = np.asarray(row_unit, dtype=np.int64)
+    offsets = np.asarray(unit_image_offsets, dtype=np.int64)
+    start = offsets[row_unit]
+    count = offsets[row_unit + 1] - start
+    return np.where(int(slot) < count, start + int(slot), -1).astype(np.int32)
 
 
 def particle_scores(image_scores, image_particle, n_particles: int):
