@@ -107,6 +107,19 @@ def stack_index_from_image_name(name: str) -> int:
     return int(m.group(1)) - 1 if m else -1
 
 
+def particle_key_from_image_name(name: str) -> tuple[int, str]:
+    """Identify a particle by (zero-based stack row, stack file name).
+
+    The stack row alone identifies a particle only in a single-stack dataset;
+    multi-stack datasets (EMPIAR-10345: 1642 stacks) repeat every row. The
+    file is compared by base name, because the RELION run and the relax input
+    STAR may reference the same stacks through different directories.
+    """
+    text = str(name)
+    row, _, path = text.partition("@")
+    return (int(row) - 1 if row.isdigit() else -1, os.path.basename(path))
+
+
 def read_relion_model_pixel_size(path: str | Path) -> float:
     """Read the model pixel size from a RELION reference MRC header."""
 
@@ -1791,7 +1804,7 @@ def main():
     our_names = list(our_particles["rlnImageName"])
 
     def _idx(name):
-        return stack_index_from_image_name(name)
+        return particle_key_from_image_name(name)
 
     relion_idx_map = {_idx(relion_names[i]): relion_subsets[i] for i in range(len(relion_names))}
     our_subsets = np.array([relion_idx_map.get(_idx(n), 0) for n in our_names])
@@ -2148,7 +2161,10 @@ def main():
             apply_iteration_normalization_factor_overrides(
                 [corr_h1_iter, corr_h2_iter],
                 [scale_corr_h1_iter, scale_corr_h2_iter],
-                half_stack_indices=[half1_our_idx, half2_our_idx],
+                half_stack_indices=[
+                    [key[0] for key in half1_our_idx],
+                    [key[0] for key in half2_our_idx],
+                ],
                 scoring_iteration=control_relion_iteration,
                 overrides=iteration_normalization_overrides,
             )

@@ -967,3 +967,16 @@ def test_normalization_overrides_are_a_no_op_for_multi_stack_datasets():
             scoring_iteration=6,
             overrides={(6, 9): 2.0},
         )
+
+
+def test_particle_key_distinguishes_rows_of_different_stacks():
+    """Multi-stack datasets repeat stack rows; the key carries the stack file."""
+
+    from scripts.run_multi_iter_parity import particle_key_from_image_name
+
+    a = particle_key_from_image_name("9@/projects/x/Particles/mic_001.mrcs")
+    b = particle_key_from_image_name("9@Particles/mic_002.mrcs")
+    c = particle_key_from_image_name("9@other/dir/mic_001.mrcs")
+    assert a == (8, "mic_001.mrcs")
+    assert a != b
+    assert a == c
