@@ -70,6 +70,8 @@ def _module_env(**overrides):
             "flatten_bucket_rotations",
             "_packed_bucket_rotations",
             "_packed_reconstruction_rows",
+            "_packed_prefix_rows",
+            "_flat_packed_prefix_rows",
             "_build_reconstruction_pack_indices",
             "_build_nonzero_reconstruction_pack_indices",
             "_unpadded_rows",
@@ -144,6 +146,20 @@ def test_disabled_packing_statement_order_matches_frozen_parent():
             if isinstance(node.func, ast.Name) and node.func.id == "_unpadded_rows" and len(node.args) == 2:
                 array, n_rows = (self.visit(arg) for arg in node.args)
                 return ast.Subscript(value=array, slice=ast.Slice(upper=n_rows), ctx=ast.Load())
+            # The packed prefix gather folds that trim into one program with the
+            # gather and mask; compare the parent's trim-then-gather statement.
+            if isinstance(node.func, ast.Name) and node.func.id == "_packed_prefix_rows" and len(node.args) == 3:
+                array, take, mask = (self.visit(arg) for arg in node.args)
+                trimmed = ast.Subscript(
+                    value=array,
+                    slice=ast.Slice(upper=ast.Name(id="unpadded_batch_size", ctx=ast.Load())),
+                    ctx=ast.Load(),
+                )
+                return ast.Call(
+                    func=ast.Name(id="_packed_reconstruction_rows", ctx=ast.Load()),
+                    args=[trimmed, take, mask],
+                    keywords=[],
+                )
             return self.generic_visit(node)
 
         def visit_Name(self, node):
