@@ -2,7 +2,7 @@
  "note": "FSC pass criteria of the fast parity cases (relax vs RELION oracle at the same iteration, scripts/em_tier_fsc.py) and of the medium K1 5k end-to-end run; the pinned relax outputs (scripts/em_tier_pinned.py) use pinned_tolerance. Floors: 1 - 2 x max(worst relax deficit, RELION same-command repeat deficit, 5e-5 for FSC-AUC / 1e-4 for min shell); Pmax bound (mean |dPmax| per particle) = 2 x max(relax, RELION repeat, 1e-4). Relax values: main 319cd10 (A100, medium 14375481) and the compact/default arms of speed b1c40f9 (H100, 14375698); RELION: two same-command repeats per fixture (14363910) and the second K4 captures. Evidence: pr179_coordination/test_policy_20260924/threshold_proposal_fast_v3.json.",
  "approved": true,
  "approved_by": "approved by the user 2026-09-24 (v3, including the e2e rule)",
- "resident_rows": "The resident arm is excluded: on k1_os1_coldstart_standalone it measures 0.999258 / dPmax 1.8e-3, outside the RELION repeat band (open bug, speed). Resident rows get their own values once that bug is fixed.",
+ "resident_rows": "The resident arm is excluded: on k1_os1_coldstart_standalone it measures 0.999258 / dPmax 1.8e-3, outside the RELION repeat band (open bug, speed). Resident rows get their own values once that bug is fixed. k1_multioptics_coldstart is the one resident row admitted early: several optics groups run only on the resident pass 2, so without it multi-optics would have no regression gate; its floors carry the open resident fine-pass Pmax bug and are re-derived after speed's texture batch.",
  "kclass_nonadaptive_replay": "Cross-grid case (os0 run against the os1 oracle): no RELION floor; gated by the pinned relax outputs.",
  "cases": {
   "e2e_k1_5k128_standalone": {
@@ -79,6 +79,21 @@
     "relion_repeat_fsc_auc": 0.9997738073943568,
     "relion_repeat_min_shell": 0.999571391609325,
     "relion_repeat_pmax_mean_abs": 0.0017698845999999996
+   }
+  },
+  "k1_multioptics_coldstart": {
+   "fsc_auc_floor": 0.98611,
+   "min_shell_floor": 0.97525,
+   "pmax_mean_abs_max": 0.00979,
+   "provisional": "provisional: re-derive after speed's texture batch",
+   "measured": {
+    "worst_relax_fsc_auc": 0.9930547209512898,
+    "worst_relax_min_shell": 0.987627107947677,
+    "relax_pmax_mean_abs": 0.004894628661661148,
+    "relion_repeat_fsc_auc": 0.9999999998637347,
+    "relion_repeat_min_shell": 0.9999999999302424,
+    "relion_repeat_pmax_mean_abs": 1.703333333333834e-06,
+    "source": "job 14400789, two same-code H100 arms, relax 99f84e3 + recovar 528c82da2; RELION f2c1a3 ini_high 30 oracle and its same-command repeat"
    }
   },
   "k1_os1_coldstart_standalone": {
