@@ -12,8 +12,6 @@ from relax.relion.relion_vdam_mstep import relion_vdam_m_step_device, relion_vda
 pytestmark = pytest.mark.unit
 
 
-
-
 def _case(size=8, padding=1, radius=2, pseudo=True, moments="populated"):
     rng = np.random.default_rng(29)
     m = padding * size
@@ -116,6 +114,26 @@ def _assert_case(bind, case):
     else:
         assert_matches(actual["mom2"], case["mom2"])
         assert_matches(actual["mom1_noise_power"], 0.0)
+
+
+@pytest.mark.parametrize("pseudo", [False, True])
+def test_nan_tau2_fudge_selects_the_fsc_spectrum_like_native(bind, pseudo):
+    # Short schedules give RELION a NaN tau2_fudge (float a = inbetween/4 = 0);
+    # its XMIPP_MAX/XMIPP_MIN ternaries then fall back to the FSC spectrum.
+    case = _case(size=16, radius=8, pseudo=pseudo)
+    case["tau2_fudge"] = np.nan
+    expected = _native(bind, case)
+    actual = relion_vdam_m_step_host(**case)
+    assert np.all(np.isfinite(expected["iref"]))
+    for key in expected:
+        if expected[key] is None:
+            assert actual[key] is None
+            continue
+        # data_vs_prior divides by the NaN fudge in both implementations.
+        finite = np.isfinite(expected[key])
+        assert np.array_equal(finite, np.isfinite(actual[key])), key
+        metrics = relative_metrics(expected[key][finite], actual[key][finite])
+        assert np.all(metrics < 1e-12), (key, metrics)
 
 
 def test_native_branch_certificate_real_only_and_serial_order(bind):

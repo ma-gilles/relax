@@ -235,7 +235,13 @@ def relion_vdam_m_step_device(
         )
     previous_power = shell_sum(jnp.sqrt(_norm(projector))) / safe_counts
     snr = jnp.where(noise_power > 0.0, 2.0 * fudge * previous_power / noise_power, 0.0)
-    fsc = jnp.where(counts > 0.0, jnp.minimum(jnp.maximum(snr / (1.0 + snr), fsc_reconstruct), 1.0), 0.0)
+    # backprojector.cpp:2339 clamps with XMIPP_MIN(XMIPP_MAX(f, fsc), 1), and
+    # macros.h:169/181 define both as ternaries: a NaN f (a NaN tau2_fudge in
+    # short schedules) selects the FSC spectrum, where jnp.maximum would carry
+    # the NaN into the reference.
+    f = snr / (1.0 + snr)
+    fsc = jnp.where(f >= fsc_reconstruct, f, fsc_reconstruct)
+    fsc = jnp.where(counts > 0.0, jnp.where(fsc >= 1.0, 1.0, fsc), 0.0)
     fsc_voxel = fsc[shell_lookup]
     # use_fsc=false changes tau2_fudge to 1 before this update.
     update_real = jax.lax.optimization_barrier(fsc_voxel * gradient.real) - (1.0 - fsc_voxel) * projector.real
