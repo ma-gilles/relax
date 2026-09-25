@@ -274,13 +274,20 @@ def test_duplicated_class_is_the_k1_pass(_resident_production_env):
 
     for k in range(2):
         assert_matches(doubled.per_class_best_pose_rotation_ids[k], single.best_rotation_indices)
+        # The class prior log 1/2 is folded into the float32 row prior, so the
+        # scores it shifts round in float32: compare at float32 (the K=1 pass's
+        # own score precision), not at the float64 of the log-sum-exp.
         assert_matches(
-            doubled.class_log_evidence_per_image[k],
-            np.asarray(single.relion_stats.log_evidence_per_image, dtype=np.float64) + np.log(0.5),
+            np.float32(doubled.class_log_evidence_per_image[k]),
+            np.float32(np.asarray(single.relion_stats.log_evidence_per_image, dtype=np.float64) + np.log(0.5)),
         )
         assert _rel_l2(0.5 * np.asarray(single.Ft_y), doubled.Ft_y[k]) < 1e-6, f"Ft_y class {k}"
         assert _rel_l2(0.5 * np.asarray(single.Ft_ctf), doubled.Ft_ctf[k]) < 1e-6, f"Ft_ctf class {k}"
-    assert_matches(doubled.class_reconstruction_posterior_sums, np.full(2, 0.5 * float(single.noise_stats.sumw)))
+    # Sums of float32 posteriors whose inputs differ by that float32 rounding.
+    assert_matches(
+        np.float32(doubled.class_reconstruction_posterior_sums),
+        np.float32(np.full(2, 0.5 * float(single.noise_stats.sumw))),
+    )
     assert_matches(
         np.asarray(doubled.stats.max_posterior_per_image),
         0.5 * np.asarray(single.relion_stats.max_posterior_per_image),

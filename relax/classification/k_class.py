@@ -1887,7 +1887,8 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
         pass2_kwargs,
         n_classes=n_classes,
     )
-    if n_classes > 1 and resident_pass2_requested():
+    resident_arithmetic = n_classes > 1 and resident_pass2_requested()
+    if resident_arithmetic:
         # Each image's fine pass is a K=1 pass inside its coarse winner class,
         # so on the resident engine it is the K=1 production pass.
         common = _resident_production_arithmetic(common)
@@ -1937,6 +1938,18 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
         subset_sig = [sig_sample_indices_by_class[class_index][int(i)] for i in image_indices]
         class_kwargs = _dense_engine_kwargs_for_class(pass2_kwargs, class_index, n_classes)
         class_kwargs = _subset_image_axis_engine_kwargs(class_kwargs, image_indices, n_images)
+        scale_groups = {
+            "group_ids": class_kwargs.get("group_ids"),
+            "scale_correction_group_count": class_kwargs.get("scale_correction_group_count"),
+        }
+        if resident_arithmetic:
+            # run_em takes no scale groups, so the class kwargs above drop them; the
+            # K=1 production pass carries them as the K=1 route does. RELION accumulates
+            # the scale sums in the firstiter_cc iteration and does not apply them
+            # (ml_optimiser.cpp:6190).
+            scale_groups = _subset_image_axis_engine_kwargs(
+                {"group_ids": pass2_kwargs.get("group_ids")}, image_indices, n_images
+            ) | {"scale_correction_group_count": pass2_kwargs.get("scale_correction_group_count")}
 
         result = compute_pass2_stats_sparse(
             subset_dataset,
@@ -1950,8 +1963,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
             accumulate_noise=accumulate_noise,
             image_corrections=class_kwargs.get("image_corrections"),
             scale_corrections=class_kwargs.get("scale_corrections"),
-            group_ids=class_kwargs.get("group_ids"),
-            scale_correction_group_count=class_kwargs.get("scale_correction_group_count"),
+            **scale_groups,
             image_pre_shifts=class_kwargs.get("image_pre_shifts"),
             translation_prior_centers=class_kwargs.get("translation_prior_centers"),
             relion_projector_half=_select_projector_half_for_class(
