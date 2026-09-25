@@ -50,6 +50,7 @@ from relax.scoring.compact_candidates import SparseCandidateMask
 
 __all__ = [
     "CapacityChunk",
+    "merge_class_tables",
     "coarse_winner_cells",
     "n_mask_words",
     "ResidentCandidateTables",
@@ -126,6 +127,12 @@ class ResidentCandidateTables:
     mask_mode: np.ndarray  # int8 [n_images]
     parent_offsets: np.ndarray  # int32 [n_images + 1]
     parent_trans_bits: np.ndarray  # uint32 [parent_offsets[-1], n_mask_words(n_coarse_trans)]
+    # Class of each row (K>1 Class3D); None means every row is class 0. Rows are
+    # image-major, then class-major (RELION's iorientclass = iclass * nr_dir *
+    # nr_psi + iorient, ml_optimiser.cpp:8450), so one image's posterior
+    # segment spans all its classes.
+    row_class: np.ndarray | None = None  # int32 [n_rows]
+    n_classes: int = 1
 
     def __post_init__(self):
         if self.row_offsets.shape != (self.n_images + 1,):
@@ -145,6 +152,15 @@ class ResidentCandidateTables:
             raise ValueError(
                 f"parent_trans_bits must have shape {expected_bits}, got {self.parent_trans_bits.shape}"
             )
+        if self.row_class is not None:
+            if self.row_class.shape != (self.n_rows,):
+                raise ValueError(f"row_class must have shape (n_rows,), got {self.row_class.shape}")
+            if self.row_class.size and (
+                int(self.row_class.min()) < 0 or int(self.row_class.max()) >= int(self.n_classes)
+            ):
+                raise ValueError(f"row_class values must lie in [0, {self.n_classes})")
+        elif int(self.n_classes) != 1:
+            raise ValueError("a K>1 table needs row_class")
 
 
 @dataclass(frozen=True)
@@ -338,6 +354,108 @@ def build_resident_candidate_tables(
         mask_mode=mask_mode,
         parent_offsets=parent_offsets,
         parent_trans_bits=parent_trans_bits,
+    )
+
+
+def merge_class_tables(tables_by_class) -> ResidentCandidateTables:
+    """One K-class candidate table from K single-class tables of the same images.
+
+    Each class's table holds that class's rows (its own significant coarse
+    support, rotation prior and bitsets, built exactly as for K=1). The merged
+    table orders rows image-major, then class-major, then in the class table's
+    own row order, so an image's posterior segment is RELION's class-major
+    hidden space (ml_optimiser.cpp:8406, :8450) and the segmented posterior
+    normalizes jointly over classes (:9225, :9602-9660).
+
+    Every image of the merged table is in bitset mode: a class that was full
+    for an image contributes all-set bitsets for its parents, an empty class
+    all-clear ones, so a row's mask never depends on another class's mode.
+    """
+
+    tables_by_class = list(tables_by_class)
+    n_classes = len(tables_by_class)
+    if n_classes == 0:
+        raise ValueError("merge_class_tables needs at least one class table")
+    first = tables_by_class[0]
+    for tables in tables_by_class[1:]:
+        if (tables.n_images, tables.n_fine_trans, tables.n_coarse_trans) != (
+            first.n_images,
+            first.n_fine_trans,
+            first.n_coarse_trans,
+        ):
+            raise ValueError("class tables must cover the same images and translation grids")
+    n_images = int(first.n_images)
+    n_words = n_mask_words(first.n_coarse_trans)
+    image_ids = np.arange(n_images, dtype=np.int64)
+
+    row_parts, parent_parts = [], []
+    for class_index, tables in enumerate(tables_by_class):
+        row_image = np.asarray(tables.row_image, dtype=np.int64)
+        parent_local = np.asarray(tables.row_parent_local, dtype=np.int64)
+        # Parents an image's rows reference in this class (bitset images store
+        # exactly these; full and empty images store none).
+        n_parents = np.zeros(n_images, dtype=np.int64)
+        np.maximum.at(n_parents, row_image, parent_local + 1)
+        mode = np.asarray(tables.mask_mode)
+        stored = np.diff(tables.parent_offsets.astype(np.int64))
+        bitset = mode == _MASK_MODE_BITSET
+        if np.any(bitset & (stored < n_parents)):
+            raise ValueError("a class table's rows reference parents outside its bitset table")
+        n_parents = np.where(bitset, stored, n_parents)
+        parent_image = np.repeat(image_ids, n_parents)
+        bits = np.zeros((int(n_parents.sum()), n_words), dtype=np.uint32)
+        first_parent = np.concatenate([[0], np.cumsum(n_parents)])[:-1]
+        within = np.arange(bits.shape[0], dtype=np.int64) - first_parent[parent_image]
+        parent_mode = mode[parent_image]
+        from_table = parent_mode == _MASK_MODE_BITSET
+        bits[from_table] = tables.parent_trans_bits[
+            tables.parent_offsets[parent_image[from_table]].astype(np.int64) + within[from_table]
+        ]
+        bits[parent_mode == _MASK_MODE_FULL] = all_translations_words(first.n_coarse_trans)
+        row_parts.append(
+            dict(
+                image=row_image,
+                klass=np.full(row_image.size, class_index, dtype=np.int64),
+                order=np.arange(row_image.size, dtype=np.int64),
+                fine_rot=np.asarray(tables.row_fine_rot, dtype=np.int32),
+                parent_local=parent_local,
+                log_prior=np.asarray(tables.row_log_prior, dtype=np.float32),
+            )
+        )
+        parent_parts.append(
+            dict(image=parent_image, klass=np.full(parent_image.size, class_index), bits=bits, n_parents=n_parents)
+        )
+
+    # Parents of an image's earlier classes shift this class's local parent ids.
+    class_parent_counts = np.stack([part["n_parents"] for part in parent_parts])  # [K, n_images]
+    parent_shift = np.cumsum(class_parent_counts, axis=0) - class_parent_counts
+    rows = {key: np.concatenate([part[key] for part in row_parts]) for key in row_parts[0]}
+    rows["parent_local"] = rows["parent_local"] + parent_shift[rows["klass"], rows["image"]]
+    row_order = np.lexsort((rows["order"], rows["klass"], rows["image"]))
+    parents_image = np.concatenate([part["image"] for part in parent_parts])
+    parents_class = np.concatenate([part["klass"] for part in parent_parts])
+    parents_bits = np.concatenate([part["bits"] for part in parent_parts])
+    parent_order = np.lexsort((np.arange(parents_image.size), parents_class, parents_image))
+
+    row_offsets = np.zeros(n_images + 1, dtype=np.int32)
+    row_offsets[1:] = np.cumsum(np.bincount(rows["image"], minlength=n_images))
+    parent_offsets = np.zeros(n_images + 1, dtype=np.int32)
+    parent_offsets[1:] = np.cumsum(class_parent_counts.sum(axis=0))
+    return ResidentCandidateTables(
+        n_images=n_images,
+        n_rows=int(row_offsets[-1]),
+        n_fine_trans=int(first.n_fine_trans),
+        n_coarse_trans=int(first.n_coarse_trans),
+        row_offsets=row_offsets,
+        row_image=rows["image"][row_order].astype(np.int32),
+        row_fine_rot=rows["fine_rot"][row_order],
+        row_parent_local=rows["parent_local"][row_order].astype(np.int32),
+        row_log_prior=rows["log_prior"][row_order],
+        mask_mode=np.full(n_images, _MASK_MODE_BITSET, dtype=np.int8),
+        parent_offsets=parent_offsets,
+        parent_trans_bits=parents_bits[parent_order],
+        row_class=rows["klass"][row_order].astype(np.int32),
+        n_classes=n_classes,
     )
 
 
@@ -625,6 +743,7 @@ def materialize_chunk(tables: ResidentCandidateTables, chunk: CapacityChunk) -> 
     n_words = n_mask_words(tables.n_coarse_trans)
     row_mask_bits = np.full((row_capacity, n_words), _ROW_MASK_BITS_PAD, dtype=np.uint32)
     row_mask_mode = np.full(row_capacity, _MASK_MODE_EMPTY, dtype=np.int8)
+    row_class = np.zeros(row_capacity, dtype=np.int32)
     image_ids = np.full(image_capacity, -1, dtype=np.int32)
 
     if n_valid_rows:
@@ -634,6 +753,8 @@ def materialize_chunk(tables: ResidentCandidateTables, chunk: CapacityChunk) -> 
         row_parent_local_valid = tables.row_parent_local[rs:re]
         row_parent_local[:n_valid_rows] = row_parent_local_valid
         row_log_prior[:n_valid_rows] = tables.row_log_prior[rs:re]
+        if tables.row_class is not None:
+            row_class[:n_valid_rows] = tables.row_class[rs:re]
 
         row_mode_valid = tables.mask_mode[row_image_global]
         row_mask_mode[:n_valid_rows] = row_mode_valid
@@ -655,6 +776,7 @@ def materialize_chunk(tables: ResidentCandidateTables, chunk: CapacityChunk) -> 
         "row_log_prior": row_log_prior,
         "row_mask_bits": row_mask_bits,
         "row_mask_mode": row_mask_mode,
+        "row_class": row_class,
         "n_valid_rows": np.int32(n_valid_rows),
         "n_valid_images": np.int32(n_valid_images),
         "image_ids": image_ids,
