@@ -441,6 +441,7 @@ def run_local_em_exact(
     do_gridding_correction: bool = False,
     square_window: bool = False,
     recon_exact_radius: bool = True,
+    window_at_box: bool = False,
     image_corrections: np.ndarray | None = None,
     scale_corrections: np.ndarray | None = None,
     group_ids: np.ndarray | None = None,
@@ -520,6 +521,14 @@ def run_local_em_exact(
     per-particle noise-spectrum tail. The default preserves ordinary local
     EM's posterior-weighted spectrum. Norm correction has its own unchanged
     high-shell ownership policy.
+
+    ``window_at_box`` keeps RELION's radial window when the current size is the
+    box (``None`` included): RELION's resolution pointers still cut the corners
+    there (``ires < image_current_size / 2 + 1``, updateImageSizeAndResolutionPointers)
+    and keep the packed +N/2 row (:func:`relax.helpers.fourier_window.make_fourier_window_spec`).
+    Without it a full-box pass scores the whole half grid, which differs from RELION
+    for images on another grid than the reference, where the corners project inside
+    the model sphere.
     """
 
 
@@ -724,6 +733,10 @@ def run_local_em_exact(
     image_shape = experiment_dataset.image_shape
     volume_shape = experiment_dataset.volume_shape
     H, W = image_shape
+    if window_at_box and current_size is None:
+        # The window is RELION's at every size, so the full box is an explicit current size
+        # (as in the resident drivers, resident_local_pass2.compute_local_search_resident).
+        current_size = int(H)
     logical_current_size = int(H) if current_size is None else int(current_size)
     mstep_current_size = (
         logical_current_size
@@ -752,6 +765,7 @@ def run_local_em_exact(
         # Images on another grid keep RELION's rounded support; their reference-sphere clip
         # is the exact cut (sparse_pass2_window._pass2_window_setup).
         recon_exact_radius=bool(recon_exact_radius) and reconstruction_image_radius is None,
+        window_at_box=bool(window_at_box),
     )
     physical_current_size = stable_window_plan.physical_current_size
     physical_mstep_current_size = (

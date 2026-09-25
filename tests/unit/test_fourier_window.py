@@ -1224,6 +1224,32 @@ def test_window_at_box_is_relions_support_with_its_nyquist_row():
     assert np.allclose(relion_phase, np.conj(np.exp(-2j * np.pi * ky[nyquist] * shift_y / n)))
 
 
+@pytest.mark.unit
+def test_stable_window_plan_keeps_relions_window_at_box():
+    """The exact local engine's window plan (window_at_box) is RELION's support at the box.
+
+    Without it a full-box local pass scored the whole half grid. For images on another grid
+    (S3b group 2: 112 px, s = 1.12, reference r_max 64) the corners then project inside the
+    model sphere, where RELION's corr_img is zero (ires >= N/2 + 1; ACC dump of iteration 13).
+    """
+    from relax.helpers.fourier_window import make_fourier_window_spec, make_stable_fourier_window_shape_plan
+
+    n = 112
+    n_half = n * (n // 2 + 1)
+    assert not make_stable_fourier_window_shape_plan((n, n), n, n_half).logical_spec.use_window
+    for recon_exact_radius in (True, False):
+        plan = make_stable_fourier_window_shape_plan(
+            (n, n), n, n_half, recon_exact_radius=recon_exact_radius, window_at_box=True
+        )
+        spec = make_fourier_window_spec(
+            (n, n), n, n_half, recon_exact_radius=recon_exact_radius, window_at_box=True
+        )
+        assert plan.logical_spec.use_window
+        for got in (plan.logical_spec, plan.physical_spec):
+            np.testing.assert_array_equal(got.score_indices_np, spec.score_indices_np)
+            np.testing.assert_array_equal(got.recon_indices_np, spec.recon_indices_np)
+
+
 def test_class_reconstruction_window_at_box_keeps_relions_outer_ring():
     """Images on another grid backproject RELION's rounded support; the reference-sphere clip is the exact cut.
 

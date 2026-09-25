@@ -4173,6 +4173,7 @@ def test_run_local_search_iteration_dispatches_aligned_mstep_grid(monkeypatch, r
         captured["relion_exact_score_translation"] = kwargs.get(
             "relion_exact_score_translation"
         )
+        captured["window_at_box"] = kwargs.get("window_at_box")
         raise DispatchCaptured
 
     monkeypatch.setattr(local_iteration_module, "run_local_em_exact", capture_dispatch)
@@ -4203,6 +4204,8 @@ def test_run_local_search_iteration_dispatches_aligned_mstep_grid(monkeypatch, r
     assert_matches(layout.rotations_flat, score_grid[layout.rotation_ids_flat])
     assert_matches(layout.mstep_rotations_flat, mstep_grid[layout.rotation_ids_flat])
     assert captured["relion_exact_score_translation"] is True
+    # The exact local engine scores RELION's radial window at the box too.
+    assert captured["window_at_box"] is True
 
     backward_compatible = build_local_hypothesis_layout(
         np.zeros((1, 3), dtype=np.float32),

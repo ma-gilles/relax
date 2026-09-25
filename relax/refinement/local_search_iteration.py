@@ -433,11 +433,8 @@ def _run_local_search_iteration(
                 )
             else:
                 logger.info(
-                    "%s=1: this pass scores at current_size=%s, the full image box "
-                    "(RELION's final all-data iteration), where the exact local engine "
-                    "scores the whole centred half and RELION's radial support does "
-                    "not; the choice between them is a scientific decision, so this "
-                    "iteration keeps the exact local engine",
+                    "%s=1: this pass scores at current_size=%s, the full image box; "
+                    "it runs on the exact local engine with RELION's radial window",
                     RESIDENT_LOCAL_SEARCH_ENV,
                     current_size,
                 )
@@ -502,6 +499,8 @@ def _run_local_search_iteration(
             optics_group_ids=optics_group_ids,
             reconstruction_volume_current_size=reconstruction_volume_current_size,
             reconstruction_image_radius=reconstruction_image_radius,
+            # RELION's radial window at the box too, as the resident drivers score it.
+            window_at_box=True,
         )
 
     result = _LocalSearchIterationResult(

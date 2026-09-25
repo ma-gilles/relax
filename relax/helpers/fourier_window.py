@@ -600,6 +600,7 @@ def make_stable_fourier_window_shape_plan(
     score_square: bool | None = None,
     score_include_dc: bool = False,
     recon_exact_radius: bool = True,
+    window_at_box: bool = False,
 ) -> StableFourierWindowShapePlan:
     """Plan exact logical supports inside optional stable physical capacities.
 
@@ -607,6 +608,7 @@ def make_stable_fourier_window_shape_plan(
     one-shape-per-current-size behavior.  When enabled, the returned physical
     capacities may be used to pad arrays after their logical prefixes.  The
     logical fields remain the source of truth for runtime CUDA loop bounds.
+    ``window_at_box`` is :func:`make_fourier_window_spec`'s, for both specs.
     """
 
     image_shape = tuple(int(value) for value in image_shape)
@@ -653,6 +655,7 @@ def make_stable_fourier_window_shape_plan(
         score_square=score_square,
         score_include_dc=score_include_dc,
         recon_exact_radius=recon_exact_radius,
+        window_at_box=window_at_box,
     )
     physical_spec = make_fourier_window_spec(
         image_shape,
@@ -663,6 +666,7 @@ def make_stable_fourier_window_shape_plan(
         score_square=score_square,
         score_include_dc=score_include_dc,
         recon_exact_radius=recon_exact_radius,
+        window_at_box=window_at_box,
     )
 
     for name in ("score", "recon", "projection"):
