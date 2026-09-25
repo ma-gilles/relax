@@ -57,7 +57,7 @@ def test_masked_value_needs_the_registered_frozen_mask(tmp_path):
 @pytest.mark.unit
 def test_result_marker_and_per_reference_tables_render(tmp_path):
     table = json.loads(DEFAULT_JSON.read_text())
-    row = next(row for row in table["rows"] if row.get("cross_engine_by_relion_run"))
+    row = next(row for row in table["rows"] if row.get("cross_engine_by_relion_run") and row.get("result_marker"))
     rendered = render_markdown(load_and_validate(DEFAULT_JSON))
     symbol = row["result_marker"]["symbol"].replace("*", "\\*")
     assert f"{symbol} {row['dataset']}: {row['result_marker']['note']}" in rendered
@@ -71,7 +71,7 @@ def test_result_marker_and_per_reference_tables_render(tmp_path):
 @pytest.mark.unit
 def test_per_reference_entries_need_every_auc_and_marker_needs_a_note(tmp_path):
     table = json.loads(DEFAULT_JSON.read_text())
-    row = next(row for row in table["rows"] if row.get("cross_engine_by_relion_run"))
+    row = next(row for row in table["rows"] if row.get("cross_engine_by_relion_run") and row.get("result_marker"))
     path = tmp_path / "table.json"
     row["cross_engine_by_relion_run"][0]["masked_half1"] = None
     path.write_text(json.dumps(table))
