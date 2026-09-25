@@ -2153,23 +2153,27 @@ def _resident_pass2(
     physical_free_bytes = _device_free_memory_bytes()
     allocator_free_bytes = _jax_allocator_free_memory_bytes()
     pool_free_bytes = _jax_allocator_pool_free_bytes()
+    # The operands are reserved only when the admission below would take them
+    # at this reading: operands that stay per chunk are never allocated, and
+    # reserving them anyway left a 0.38 GiB chunk budget at EMPIAR-10202
+    # iteration 2 (box 800, bigbox 14446465).
     reserved_operand_bytes = 0
-    if _resident_operands_requested():
-        _, _reserve_norm_dtype = relion_powerclass_noise_dtypes(
-            real_dtype=precision_policy.score_real_dtype,
-            source_faithful_spectrum_norm=resolved_spectrum_norm,
+    if _resident_operands_requested() and not firstiter_cc:
+        operand_bytes, operand_peak_bytes = _resident_half_operand_sizes(
+            n_images=n_images,
+            n_windowed=n_windowed,
+            n_recon_windowed=n_recon_windowed,
+            n_rect=n_rect,
+            n_shells=n_shells,
+            n_fine_trans=n_fine_trans,
+            precision_policy=precision_policy,
+            resolved_spectrum_norm=resolved_spectrum_norm,
         )
-        reserved_operand_bytes = resident_half_operand_bytes(
-            n_images=int(n_images),
-            n_score_pixels=int(n_windowed),
-            n_recon_pixels=int(n_recon_windowed),
-            n_rect_pixels=int(n_rect),
-            n_noise_shells=int(n_shells),
-            n_fine_trans=int(n_fine_trans),
-            score_complex_bytes=np.dtype(precision_policy.score_complex_dtype).itemsize,
-            real_bytes=np.dtype(precision_policy.score_real_dtype).itemsize,
-            norm_high_shell_bytes=np.dtype(_reserve_norm_dtype).itemsize,
-        )
+        if _resident_operands_fit(
+            operand_peak_bytes,
+            device_available_bytes(physical_free_bytes, allocator_free_bytes, pool_free_bytes),
+        ):
+            reserved_operand_bytes = operand_bytes
     stream_projection_budget_bytes = _stream_projection_budget_bytes(
         max_projection_cache_bytes,
         physical_free_bytes=physical_free_bytes,
@@ -2382,36 +2386,30 @@ def _resident_pass2(
     # normalized-CC tiles, which only the per-chunk preparation builds; it is
     # one iteration at a small current size.
     if _resident_operands_requested() and not firstiter_cc:
+        operand_bytes, operand_peak_bytes = _resident_half_operand_sizes(
+            n_images=n_images,
+            n_windowed=n_windowed,
+            n_recon_windowed=n_recon_windowed,
+            n_rect=n_rect,
+            n_shells=n_shells,
+            n_fine_trans=n_fine_trans,
+            precision_policy=precision_policy,
+            resolved_spectrum_norm=resolved_spectrum_norm,
+        )
         _, _norm_high_shell_dtype = relion_powerclass_noise_dtypes(
             real_dtype=precision_policy.score_real_dtype,
             source_faithful_spectrum_norm=resolved_spectrum_norm,
         )
-        operand_bytes = resident_half_operand_bytes(
-            n_images=int(n_images),
-            n_score_pixels=int(n_windowed),
-            n_recon_pixels=int(n_recon_windowed),
-            n_rect_pixels=int(n_rect),
-            n_noise_shells=int(n_shells),
-            n_fine_trans=int(n_fine_trans),
-            score_complex_bytes=np.dtype(precision_policy.score_complex_dtype).itemsize,
-            real_bytes=np.dtype(precision_policy.score_real_dtype).itemsize,
-            norm_high_shell_bytes=np.dtype(_norm_high_shell_dtype).itemsize,
-        )
         # Measured as the streamed projection budget is, after this pass's
-        # projection cache exists: what the allocator can still hand out.
-        budget_bytes = resident_operands_max_bytes(
-            device_available_bytes(
-                _device_free_memory_bytes(),
-                _jax_allocator_free_memory_bytes(),
-                _jax_allocator_pool_free_bytes(),
-            )
+        # projection cache exists: what the allocator can still hand out. Same
+        # predicate as the reservation before the cache decision.
+        available_bytes = device_available_bytes(
+            _device_free_memory_bytes(),
+            _jax_allocator_free_memory_bytes(),
+            _jax_allocator_pool_free_bytes(),
         )
-        # The preparation holds the operands plus one reordered copy of its
-        # largest array (resident_operands.stack).
-        operand_peak_bytes = operand_bytes + resident_image_capacity(int(n_images)) * max(
-            int(n_windowed), int(n_recon_windowed), int(n_rect)
-        ) * np.dtype(precision_policy.score_complex_dtype).itemsize
-        if operand_peak_bytes > budget_bytes:
+        budget_bytes = resident_operands_max_bytes(available_bytes)
+        if not _resident_operands_fit(operand_peak_bytes, available_bytes):
             logger.info(
                 "Resident pass-2 keeps the per-chunk operand preparation: one half's resident "
                 "operands would take %.2f GiB (%.2f GiB while preparing) against a %.2f GiB budget",
@@ -3108,6 +3106,54 @@ _STREAM_FREE_MEMORY_FRACTION = 0.5
 # block and its padded copy are both live (flipqual 10097 it13: a 12.16 GiB pad
 # at row capacity 131072 ran the device out of memory, 14397073).
 _STREAM_PEAK_COPIES = 2
+
+
+def _resident_half_operand_sizes(
+    *,
+    n_images,
+    n_windowed,
+    n_recon_windowed,
+    n_rect,
+    n_shells,
+    n_fine_trans,
+    precision_policy,
+    resolved_spectrum_norm,
+):
+    """``(bytes, peak bytes)`` of one half's resident operands.
+
+    The preparation holds the operands plus one reordered copy of its largest
+    array (resident_operands.stack), hence the peak.
+    """
+
+    _, norm_high_shell_dtype = relion_powerclass_noise_dtypes(
+        real_dtype=precision_policy.score_real_dtype,
+        source_faithful_spectrum_norm=resolved_spectrum_norm,
+    )
+    operand_bytes = resident_half_operand_bytes(
+        n_images=int(n_images),
+        n_score_pixels=int(n_windowed),
+        n_recon_pixels=int(n_recon_windowed),
+        n_rect_pixels=int(n_rect),
+        n_noise_shells=int(n_shells),
+        n_fine_trans=int(n_fine_trans),
+        score_complex_bytes=np.dtype(precision_policy.score_complex_dtype).itemsize,
+        real_bytes=np.dtype(precision_policy.score_real_dtype).itemsize,
+        norm_high_shell_bytes=np.dtype(norm_high_shell_dtype).itemsize,
+    )
+    peak_bytes = operand_bytes + resident_image_capacity(int(n_images)) * max(
+        int(n_windowed), int(n_recon_windowed), int(n_rect)
+    ) * np.dtype(precision_policy.score_complex_dtype).itemsize
+    return operand_bytes, peak_bytes
+
+
+def _resident_operands_fit(operand_peak_bytes, available_bytes) -> bool:
+    """Whether one half's resident operands are admitted at this reading.
+
+    The one predicate for both the reservation before the projection cache
+    decision and the admission after it.
+    """
+
+    return int(operand_peak_bytes) <= resident_operands_max_bytes(available_bytes)
 
 
 def _stream_projection_budget_bytes(

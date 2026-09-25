@@ -1216,6 +1216,20 @@ def test_streamed_projections_match_the_cached_pass(_resident_production_env, mo
     assert rel_l2(cached.noise_stats.wsum_img_power, streamed.noise_stats.wsum_img_power) < 1e-7
 
 
+def test_resident_operand_reservation_and_admission_share_one_predicate(monkeypatch):
+    """Operands are reserved only when they would be admitted: half of what the allocator can hand out."""
+
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", raising=False)
+    gib = 1024**3
+    assert rp._resident_operands_fit(10 * gib, 20 * gib)
+    assert not rp._resident_operands_fit(10 * gib + 1, 20 * gib)
+    # EMPIAR-10202 iteration 2 (box 800): 50.9 GiB of operands against a 51 GiB reading stay per chunk.
+    assert not rp._resident_operands_fit(int(50.9 * gib), 51 * gib)
+    # An unknown reading falls back to the fixed budget.
+    assert rp._resident_operands_fit(6 * gib, None)
+    assert not rp._resident_operands_fit(6 * gib + 1, None)
+
+
 def test_stream_projection_budget_is_capped_by_measured_free_memory():
     gib = 1024**3
     budget = rp._stream_projection_budget_bytes
