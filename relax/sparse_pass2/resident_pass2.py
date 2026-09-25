@@ -2005,8 +2005,16 @@ def _resident_pass2(
                 f"optics_group_ids must give each of {n_images} images a row of the "
                 f"{n_optics_groups}-group noise table"
             )
+    # Tilt images (S4.2) carry 3D translations whose phases are per image (tilt.image_angles); the SPA
+    # operand preparation, which never sees a trial shift of a tilt image, gets 2D zeros of the same count.
+    spa_fine_translations_source = (
+        fine_translations_source if tilt is None else np.zeros((n_fine_trans, 2), dtype=np.float64)
+    )
+    spa_fine_translations = (
+        fine_translations if tilt is None else np.zeros((n_fine_trans, 2), dtype=fine_translations.dtype)
+    )
     relion_score_translation_angles = _relion_cuda_score_translation_angles_if_available(
-        fine_translations_source,
+        spa_fine_translations_source,
         image_shape,
         enabled=True,
         dtype=np.float64 if use_float64_scoring else np.float32,
@@ -2015,7 +2023,7 @@ def _resident_pass2(
     if relion_score_translation_angles is None:
         raise ValueError("the resident scoring stage requires RELION translation angles")
     translation_phases_half = (
-        None if windowed_prepare else half_translation_phase_table(fine_translations, image_shape)
+        None if windowed_prepare else half_translation_phase_table(spa_fine_translations, image_shape)
     )
 
     n_shells = image_shape[0] // 2 + 1
@@ -2302,7 +2310,7 @@ def _resident_pass2(
     # once per chunk, which is where the chunk loop's launches came from.
     bucket_io_kwargs = dict(
         noise_variance_half=noise_variance_half,
-        fine_translations=fine_translations,
+        fine_translations=spa_fine_translations,
         config=config,
         n_trans=n_fine_trans,
         score_with_masked_images=score_with_masked_images,
