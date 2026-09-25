@@ -63,7 +63,7 @@ CASES = {
         "run_class001.mrc",
     ),
     "k4_50k256": BandCase(
-        "**/kclass_long",
+        "**/kclass_long_standalone",
         4,
         "k4_50k256_data",
         "k4_50k256_relion_os0",
