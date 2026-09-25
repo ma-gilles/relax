@@ -65,3 +65,10 @@ def test_noise_sums_are_averaged_over_a_particles_images():
     np.testing.assert_allclose(scale, [1 / 3] * 3 + [1 / 2] * 2 + [1 / 4] * 4)
     # Each particle's images carry total weight one, so per-particle sums count it once.
     np.testing.assert_allclose(np.bincount(image_particle, weights=scale), np.ones(3))
+
+
+def test_projection_matrices_recovered_from_the_flattened_image_matrices():
+    _rng, image_particle, projections, poses = _setup(3)
+    image_matrices = np.einsum("iab,ibc->iac", projections, poses[image_particle])
+    recovered = tomo_particles.tilt_projection_matrices(image_matrices, poses, image_particle)
+    np.testing.assert_allclose(recovered, projections, atol=1e-12)

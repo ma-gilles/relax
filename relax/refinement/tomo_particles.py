@@ -31,6 +31,23 @@ def image_particle_counts(image_particle, n_particles: int) -> np.ndarray:
     return np.bincount(np.asarray(image_particle, dtype=np.int64), minlength=int(n_particles))
 
 
+def tilt_projection_matrices(image_matrices, particle_matrices, image_particle):
+    """Each tilt image's projection ``Aproj_i`` from its full matrix and its particle's pose.
+
+    The flattened per-tilt STAR (recovar's RELION 5 converter) carries each image's matrix
+    ``A_i = Aproj_i A_p`` (RELION convention, ``Euler_angles2matrix``) for the particle pose
+    ``A_p`` it was written with, so ``Aproj_i = A_i A_p^T``. RELION builds ``Aproj_i`` from the
+    tilt series' projection matrix times the subtomogram orientation
+    (``Experiment::read``, exp_model.cpp:1003-1026).
+    """
+
+    image_matrices = np.asarray(image_matrices, dtype=np.float64)
+    particle_matrices = np.asarray(particle_matrices, dtype=np.float64)
+    return np.einsum(
+        "iab,icb->iac", image_matrices, particle_matrices[np.asarray(image_particle, dtype=np.int64)]
+    )
+
+
 def tilt_image_rotations(pose_rotations, image_projections):
     """``Aproj_i R_h`` for every image ``i`` and pose hypothesis ``h``: ``[I, H, 3, 3]``.
 
