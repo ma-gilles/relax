@@ -23,6 +23,7 @@ import numpy as np
 import pytest
 
 pytest.importorskip("jax")
+from helpers.float_compare import assert_matches
 
 from relax.refinement import local_search_iteration
 from relax.sparse_pass2 import resident_local_pass2 as rlp
@@ -221,12 +222,7 @@ def test_c4_resident_local_matches_the_exact_engine(monkeypatch):
     resident = local_tests._run(case, resident=True, monkeypatch=monkeypatch)
 
     np.testing.assert_array_equal(np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment))
-    np.testing.assert_allclose(
-        np.asarray(exact.best_pose_eulers_deg, dtype=np.float64),
-        np.asarray(resident.best_pose_eulers_deg, dtype=np.float64),
-        rtol=0,
-        atol=1e-9,
-    )
+    assert_matches(np.asarray(exact.best_pose_eulers_deg), np.asarray(resident.best_pose_eulers_deg))
     assert _rel_l2(exact.Ft_y, resident.Ft_y) < 1e-5
     assert _rel_l2(exact.Ft_ctf, resident.Ft_ctf) < 1e-5
     np.testing.assert_allclose(
