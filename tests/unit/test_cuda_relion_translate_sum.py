@@ -240,8 +240,10 @@ def _assert_matches(actual, expected):
         (4096, 128, 21, 415),
         (1024, 128, 21, 3386),
         (512, 32, 64, 311),
+        # A subtomogram 3D grid (515 coarse x 8): the tables exceed kMaxSharedBytes and are read from global memory.
+        (64, 8, 4120, 311),
     ],
-    ids=["early", "hp3", "many_translations"],
+    ids=["early", "hp3", "many_translations", "tilt_3d_grid"],
 )
 def test_translate_sum_matches_resident_block_weighted_sums(
     monkeypatch,
@@ -760,12 +762,13 @@ def test_ctf_probs_matches_the_resident_block_reduction(
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("bpref", [False, True])
-def test_per_image_angle_tables_equal_one_call_per_image(monkeypatch, custom_cuda_lib, gpu_device, bpref):
+@pytest.mark.parametrize("n_trans", [13, 4120], ids=["shared_tables", "global_tables"])
+def test_per_image_angle_tables_equal_one_call_per_image(monkeypatch, custom_cuda_lib, gpu_device, bpref, n_trans):
     """[B, T, 2] angles (tilt images, S4.2): every row uses its own image's table."""
 
     cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
     rng = np.random.default_rng(29)
-    image_capacity, n_trans = 5, 13
+    image_capacity = 5
     operands = _operands(rng, rows=23, image_capacity=image_capacity, n_trans=n_trans, n_pixels=300, padded_rows=(4,))
     per_image = (
         -2.0 * np.pi * rng.uniform(-4.0, 4.0, size=(image_capacity, n_trans, 2)) / float(IMAGE_SHAPE[0])

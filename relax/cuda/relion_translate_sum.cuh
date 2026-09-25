@@ -118,7 +118,8 @@ translate_sum_flat_rows_f32_kernel(
     int64_t pixel_capacity,
     int image_h,
     int image_half_width,
-    int64_t angle_image_stride)
+    int64_t angle_image_stride,
+    bool tables_in_shared)
 {
     const int64_t row_base =
         static_cast<int64_t>(blockIdx.x) * ROWS_PER_BLOCK;
@@ -175,32 +176,40 @@ translate_sum_flat_rows_f32_kernel(
     }
     if (!any_live) return;
 
-    // Shared copies of the two block-uniform tables.  Without them the inner
-    // translation loop re-reads them once per pixel pass.
-    extern __shared__ float translate_sum_shared[];
-    float* shared_angles = translate_sum_shared;                     // [2T]
-    float* shared_posterior = shared_angles + 2 * translation_count;  // [R, T]
     // Tilt images carry one [T, 2] table each (angle_image_stride = 2T); the launcher then runs one
     // row per block, so the block's table is its row's image's.
     const float* block_angles = angle_image_stride == 0
         ? translation_angles
         : translation_angles + static_cast<int64_t>(image_ids[0]) * angle_image_stride;
-    for (int64_t index = threadIdx.x;
-         index < 2 * translation_count;
-         index += kBlockThreads) {
-        shared_angles[index] = block_angles[index];
-    }
-    for (int64_t index = threadIdx.x;
-         index < ROWS_PER_BLOCK * translation_count;
-         index += kBlockThreads) {
-        const int64_t i = index / translation_count;
-        const int64_t t = index - i * translation_count;
-        const int64_t row = row_base + i;
-        // Padding rows past the valid count are never read again, but a
-        // defined zero keeps the shared tile free of stale values.
-        shared_posterior[index] = row < valid_rows
-            ? posterior[row * translation_count + t]
-            : 0.0f;
+    // Shared copies of the two block-uniform tables.  Without them the inner
+    // translation loop re-reads them once per pixel pass.  A table too large for
+    // kMaxSharedBytes (subtomogram 3D grids: thousands of translations) is read
+    // from global memory instead; the arithmetic and its order are the same.
+    extern __shared__ float translate_sum_shared[];
+    const float* angles_table = block_angles;                                    // [2T]
+    const float* posterior_table = posterior + row_base * translation_count;    // [R, T]
+    if (tables_in_shared) {
+        float* shared_angles = translate_sum_shared;
+        float* shared_posterior = shared_angles + 2 * translation_count;
+        for (int64_t index = threadIdx.x;
+             index < 2 * translation_count;
+             index += kBlockThreads) {
+            shared_angles[index] = block_angles[index];
+        }
+        for (int64_t index = threadIdx.x;
+             index < ROWS_PER_BLOCK * translation_count;
+             index += kBlockThreads) {
+            const int64_t i = index / translation_count;
+            const int64_t t = index - i * translation_count;
+            const int64_t row = row_base + i;
+            // Padding rows past the valid count are never read again, but a
+            // defined zero keeps the shared tile free of stale values.
+            shared_posterior[index] = row < valid_rows
+                ? posterior[row * translation_count + t]
+                : 0.0f;
+        }
+        angles_table = shared_angles;
+        posterior_table = shared_posterior;
     }
     __syncthreads();
 
@@ -213,7 +222,7 @@ translate_sum_flat_rows_f32_kernel(
         if (live[i]) {
             for (int64_t t = 0; t < translation_count; ++t) {
                 mass = __fadd_rn(
-                    mass, shared_posterior[i * translation_count + t]);
+                    mass, posterior_table[i * translation_count + t]);
             }
             probs_sum_t[row_base + i] = mass;
         }
@@ -258,8 +267,8 @@ translate_sum_flat_rows_f32_kernel(
              translation < translation_count;
              ++translation)
         {
-            const float tx = shared_angles[2 * translation];
-            const float ty = shared_angles[2 * translation + 1];
+            const float tx = angles_table[2 * translation];
+            const float ty = angles_table[2 * translation + 1];
             const float phase = translate_phase_f32(x, y, tx, ty);
             float sine;
             float cosine;
@@ -268,7 +277,7 @@ translate_sum_flat_rows_f32_kernel(
             for (int i = 0; i < ROWS_PER_BLOCK; ++i) {
                 if (!live[i]) continue;
                 const float weight =
-                    shared_posterior[i * translation_count + translation];
+                    posterior_table[i * translation_count + translation];
                 const float2 recon_shifted = BPREF_RECON
                     ? translate_rotate_bpref_f32(
                           recon_value[i], sine, cosine, recon_factor[i])
@@ -359,8 +368,11 @@ cudaError_t launch_templated(
 {
     const int64_t blocks =
         (row_count + ROWS_PER_BLOCK - 1) / ROWS_PER_BLOCK;
-    const size_t shared = static_cast<size_t>(
-        shared_bytes_for(ROWS_PER_BLOCK, translation_count));
+    const bool tables_in_shared =
+        shared_bytes_for(ROWS_PER_BLOCK, translation_count) <= kMaxSharedBytes;
+    const size_t shared = tables_in_shared
+        ? static_cast<size_t>(shared_bytes_for(ROWS_PER_BLOCK, translation_count))
+        : 0;
     translate_sum_flat_rows_f32_kernel<ROWS_PER_BLOCK, BPREF_RECON>
         <<<static_cast<unsigned>(blocks), kBlockThreads, shared, stream>>>(
             recon_image,
@@ -383,7 +395,8 @@ cudaError_t launch_templated(
             pixel_capacity,
             image_h,
             image_half_width,
-            angle_image_stride);
+            angle_image_stride,
+            tables_in_shared);
     return cudaGetLastError();
 }
 
@@ -443,11 +456,10 @@ inline cudaError_t launch(
     }
     if (translation_count == 0) return cudaSuccess;
 
+    // A one-row block whose tables exceed kMaxSharedBytes reads them from global memory.
     const int rows = angle_image_stride == 0
         ? choose_rows_per_block(requested_rows_per_block, row_count, translation_count)
         : 1;
-    if (shared_bytes_for(rows, translation_count) > kMaxSharedBytes)
-        return cudaErrorInvalidValue;
 
 #define RELAX_TRANSLATE_SUM_DISPATCH(R, BPREF)                  \
     case R:                                                       \
