@@ -238,6 +238,56 @@ def test_host_support_rows_match_the_host_encoder():
         assert np.asarray(got).dtype == np.int32
 
 
+@pytest.mark.parametrize("actual", [7, 5])
+def test_per_class_compaction_of_a_joint_mask_matches_the_host_encoder(actual):
+    """K>1: each class-major slice of the joint support compacts as the host encodes it.
+
+    Mirrors the coarse pass: the joint ``[batch, K * n_rot * n_trans]`` device mask
+    is split per class, each class counts its own support, and the padded tail of
+    a short batch is ignored.
+    """
+
+    import jax.numpy as jnp
+
+    n_samples = N_COARSE_ROT * N_COARSE_TRANS
+    n_classes = 3
+    class_masks = [
+        _mask_from_supports(_supports(7, n_samples, seed=41 + k), n_samples)[np.roll(np.arange(7), k)]
+        for k in range(n_classes)
+    ]
+    joint = jnp.asarray(np.concatenate(class_masks, axis=1))
+    per_class = joint.reshape(joint.shape[0], n_classes, n_samples)
+    for k in range(n_classes):
+        class_mask = per_class[:, k, :]
+        n_significant, store_excluded, ids, _rot_any = compact_batch_significance(
+            class_mask,
+            actual_batch_size=actual,
+            n_coarse_rot=N_COARSE_ROT,
+            n_coarse_trans=N_COARSE_TRANS,
+            batch_n_sig=jnp.sum(class_mask, axis=1, dtype=jnp.int32),
+        )
+        rows = host_support_rows(
+            build_coarse_significance_csr(
+                n_images=actual,
+                n_coarse_rot=N_COARSE_ROT,
+                n_coarse_trans=N_COARSE_TRANS,
+                n_significant_per_batch=[n_significant],
+                store_excluded_per_batch=[store_excluded],
+                ids_per_batch=[ids],
+            )
+        )
+        for image in range(actual):
+            expected = compact_significant_sample_indices_from_mask(class_masks[k][image])
+            got = rows[image]
+            assert type(got) is type(expected), (k, image)
+            if expected is None:
+                continue
+            if isinstance(expected, ComplementSignificantSampleIndices):
+                assert_matches(got.excluded_indices, expected.excluded_indices, strict=True)
+                continue
+            assert_matches(np.asarray(got), np.asarray(expected), strict=True)
+
+
 def test_compaction_stores_the_complement_of_a_dense_support():
     """A dense support is stored as its complement, as the host encoder does."""
 

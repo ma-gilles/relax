@@ -112,10 +112,6 @@ from relax.scoring.coarse_gemm_streaming import (
 from relax.scoring.coarse_publication import coarse_square_layout_metadata
 from relax.scoring.scoring import _e_step_block_scores, _e_step_block_scores_windowed, _update_logsumexp
 from relax.scoring.significant_samples import compact_significant_sample_indices_from_mask
-from relax.sparse_pass2.resident_significance import (
-    coarse_significance_device_explicit,
-    coarse_significance_device_requested,
-)
 
 _SIGNIFICANCE_SCORE_CACHE_ENV = "RELAX_SIGNIFICANCE_SCORE_CACHE"
 _SIGNIFICANCE_SCORE_CACHE_MAX_GB_ENV = "RELAX_SIGNIFICANCE_SCORE_CACHE_MAX_GB"
@@ -1530,24 +1526,15 @@ def _compute_k_class_significance_batched(
         relion_f32_coarse_support_requested and score_mode == "gaussian"
     )
     # Compact the coarse support mask on the device instead of pulling it
-    # (ticket T13).  K=1 only, and only when the ids are actually collected;
-    # every dense-mask diagnostic keeps the host pull, checked per batch.
-    coarse_significance_device_enabled = (
-        coarse_significance_device_requested()
-        and int(n_classes) == 1
-        and bool(collect_significance)
-        # The default-off coarse GEMM macro/hybrid keep some batches on the host
-        # path, and one pass cannot mix the two supports. With the device default
-        # such a pass stays on the host path; an explicit =1 still requires full
-        # device coverage and fails below otherwise.
-        and (
-            coarse_significance_device_explicit()
-            or not (coarse_gaussian_gemm_macro_requested or coarse_gaussian_gemm_hybrid_requested)
-        )
-    )
-    device_significance_counts = []
-    device_significance_polarity = []
-    device_significance_ids = []
+    # (ticket T13) whenever the ids are collected; every dense-mask
+    # diagnostic keeps the host pull, checked per batch.
+    coarse_significance_device_enabled = bool(collect_significance)
+    # Per class: each class's slice of the joint support mask is compacted on
+    # its own, exactly as the host path encodes each class's slice.
+    device_significance_counts = [[] for _ in range(int(n_classes))]
+    device_significance_polarity = [[] for _ in range(int(n_classes))]
+    device_significance_ids = [[] for _ in range(int(n_classes))]
+    device_significance_starts = [[] for _ in range(int(n_classes))]
     if coarse_significance_device_enabled:
         from relax.sparse_pass2.resident_significance import (
             compact_batch_significance,
@@ -4308,21 +4295,31 @@ def _compute_k_class_significance_batched(
                             "dataset order",
                         )
                     batch_sig_mask_np = None
-                    (
-                        batch_device_counts,
-                        batch_device_polarity,
-                        batch_device_ids,
-                        _batch_device_rot_any,
-                    ) = compact_batch_significance(
-                        batch_sig_mask,
-                        actual_batch_size=actual_batch_size,
-                        n_coarse_rot=n_rot,
-                        n_coarse_trans=n_trans,
-                        batch_n_sig=batch_n_sig,
-                    )
-                    device_significance_counts.append(batch_device_counts)
-                    device_significance_polarity.append(batch_device_polarity)
-                    device_significance_ids.append(batch_device_ids)
+                    samples_per_class = n_rot * n_trans
+                    class_masks = batch_sig_mask.reshape(batch_size, n_classes, samples_per_class)
+                    for class_index in range(n_classes):
+                        class_mask = class_masks[:, class_index, :]
+                        class_n_sig = (
+                            batch_n_sig
+                            if n_classes == 1
+                            else jnp.sum(class_mask, axis=1, dtype=jnp.int32)
+                        )
+                        (
+                            batch_device_counts,
+                            batch_device_polarity,
+                            batch_device_ids,
+                            _batch_device_rot_any,
+                        ) = compact_batch_significance(
+                            class_mask,
+                            actual_batch_size=actual_batch_size,
+                            n_coarse_rot=n_rot,
+                            n_coarse_trans=n_trans,
+                            batch_n_sig=class_n_sig,
+                        )
+                        device_significance_counts[class_index].append(batch_device_counts)
+                        device_significance_polarity[class_index].append(batch_device_polarity)
+                        device_significance_ids[class_index].append(batch_device_ids)
+                        device_significance_starts[class_index].append(int(start_idx))
                 else:
                     batch_sig_mask_np = np.array(batch_sig_mask, dtype=bool, copy=True)
                 if compact_hybrid_scores is None:
@@ -4811,39 +4808,59 @@ def _compute_k_class_significance_batched(
             _srt[-1],
         )
 
-    if device_significance_counts:
+    if any(device_significance_counts):
         from relax.sparse_pass2.resident_significance import (
             DeviceCompactedSignificantSamples,
             build_coarse_significance_csr,
             host_support_rows,
         )
 
-        covered = int(sum(int(counts.size) for counts in device_significance_counts))
-        if covered != n_images:
-            raise RuntimeError(
-                "the device significance compaction covered "
-                f"{covered} of {n_images} images; some batches took the host path",
+        for class_index in range(n_classes):
+            covered = int(sum(int(counts.size) for counts in device_significance_counts[class_index]))
+            if covered != n_images:
+                # Some batches kept the host mask (a compact-hybrid batch or a
+                # score dump): publish the compacted batches as host rows too.
+                for start, counts, polarity, ids in zip(
+                    device_significance_starts[class_index],
+                    device_significance_counts[class_index],
+                    device_significance_polarity[class_index],
+                    device_significance_ids[class_index],
+                    strict=True,
+                ):
+                    batch_rows = host_support_rows(
+                        build_coarse_significance_csr(
+                            n_images=int(counts.size),
+                            n_coarse_rot=n_rot,
+                            n_coarse_trans=n_trans,
+                            n_significant_per_batch=[counts],
+                            store_excluded_per_batch=[polarity],
+                            ids_per_batch=[ids],
+                        )
+                    )
+                    for offset, row in enumerate(batch_rows):
+                        significant_sample_indices[class_index][start + offset] = row
+                continue
+            coarse_significance_csr = build_coarse_significance_csr(
+                n_images=n_images,
+                n_coarse_rot=n_rot,
+                n_coarse_trans=n_trans,
+                n_significant_per_batch=device_significance_counts[class_index],
+                store_excluded_per_batch=device_significance_polarity[class_index],
+                ids_per_batch=device_significance_ids[class_index],
             )
-        coarse_significance_csr = build_coarse_significance_csr(
-            n_images=n_images,
-            n_coarse_rot=n_rot,
-            n_coarse_trans=n_trans,
-            n_significant_per_batch=device_significance_counts,
-            store_excluded_per_batch=device_significance_polarity,
-            ids_per_batch=device_significance_ids,
-        )
-        significant_sample_indices[0] = DeviceCompactedSignificantSamples(
-            host_support_rows(coarse_significance_csr),
-            csr=coarse_significance_csr,
-        )
-        logger.info(
-            "Coarse significance compacted on the device: %d images, %d ids "
-            "(%.2f MB) instead of a %.2f GB support mask",
-            n_images,
-            int(coarse_significance_csr.ids.size),
-            coarse_significance_csr.ids.nbytes / 1e6,
-            float(n_images) * float(n_rot) * float(n_trans) / 1e9,
-        )
+            significant_sample_indices[class_index] = DeviceCompactedSignificantSamples(
+                host_support_rows(coarse_significance_csr),
+                csr=coarse_significance_csr,
+            )
+            logger.info(
+                "Coarse significance compacted on the device (class %d): %d images, %d ids "
+                "(%.2f MB) instead of a %.2f GB support mask",
+                class_index,
+                n_images,
+                int(coarse_significance_csr.ids.size),
+                coarse_significance_csr.ids.nbytes / 1e6,
+                float(n_images) * float(n_rot) * float(n_trans) / 1e9,
+            )
 
     coarse_gaussian_gemm_hybrid_full_dense_batch_count = (
         coarse_gaussian_gemm_hybrid_static_dense_batch_count

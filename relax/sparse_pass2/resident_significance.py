@@ -22,19 +22,18 @@ instead of a few GB.
 
 Scope and selection
 -------------------
-Everything here is opt-in behind ``RELAX_COARSE_SIGNIFICANCE_DEVICE=1`` and
-K=1 only.  The host path stays the oracle: the CSR must equal its
+The coarse pass always compacts on the device, one CSR per class (the host
+mask pull remains only for score dumps and the compact-hybrid diagnostics).
+The host encoder stays the oracle: the CSR must equal its
 ``significant_sample_indices`` per image bitwise, and the tables built here
 must equal the tables built through ``_prepare_per_image_pass2_inputs`` field
 by field.  Nothing here changes a scientific default; the RELION significance
 selection itself (adaptive fraction, ``max_significants``, the tie-inclusive
 cutoff) happens upstream in the posterior and is only read here.
 
-The compaction covers supports up to half of the coarse grid per image.  Above
-that the host encoder switches to its sparse-complement encoding, whose rows
-come from the *full* rotation grid; a compact id list would then be larger than
-the mask it replaces, so this module refuses that regime with a named error
-instead of guessing (see :func:`host_support_rows`).
+A support larger than half of the grid is stored as its excluded cells, the
+host encoder's sparse-complement choice, taken for exactly the same images
+(see :func:`host_support_rows`).
 
 Index conventions match :mod:`recovar.em.sparse_pass2.resident_candidates`:
 "image" is a local position inside the half's dataset, "parent" is an
@@ -46,13 +45,11 @@ trans``, and coarse-translation bitsets pack bit ``k`` for coarse translation
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from functools import partial
 
 import numpy as np
 
-from relax.helpers.env_flags import parse_env_strict_flag
 from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
 from relax.sparse_pass2.resident_candidates import (
     ResidentCandidateTables,
@@ -65,20 +62,16 @@ from relax.sparse_pass2.resident_candidates import (
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "COARSE_SIGNIFICANCE_DEVICE_ENV",
     "CoarseSignificanceCSR",
     "DeviceCompactedSignificantSamples",
     "build_coarse_significance_csr",
     "build_resident_candidate_tables_from_csr",
-    "coarse_significance_device_requested",
     "compact_batch_significance",
     "csr_capacity_for_total",
     "host_support_rows",
     "resident_candidate_tables",
     "resident_significance_csr",
 ]
-
-COARSE_SIGNIFICANCE_DEVICE_ENV = "RELAX_COARSE_SIGNIFICANCE_DEVICE"
 
 # Compacted-id buffers are traced at a power-of-two capacity, so one program
 # serves every batch whose support falls in the same octave instead of one
@@ -90,19 +83,6 @@ _MASK_MODE_BITSET = np.int8(1)
 _MASK_MODE_EMPTY = np.int8(2)
 
 _compact_jitted = None
-
-
-def coarse_significance_device_requested() -> bool:
-    """Return whether the device significance compaction is selected (the default)."""
-
-    return parse_env_strict_flag(COARSE_SIGNIFICANCE_DEVICE_ENV, default=True)
-
-
-def coarse_significance_device_explicit() -> bool:
-    """Whether ``RELAX_COARSE_SIGNIFICANCE_DEVICE`` is set on explicitly rather than by default."""
-
-    raw = os.environ.get(COARSE_SIGNIFICANCE_DEVICE_ENV)
-    return raw is not None and raw.strip() != "" and coarse_significance_device_requested()
 
 
 def csr_capacity_for_total(total: int) -> int:
@@ -411,20 +391,18 @@ def resident_significance_csr(
     """Return the device-compacted CSR behind a support list, or ``None``.
 
     ``None`` means the candidate tables must be built through the host path:
-    either the flag is off, or this support did not come from the coarse
-    posterior at all (the local-search routes pass their own parent support).
+    this support did not come from the coarse posterior (the local-search
+    routes pass their own parent support, and the coarse diagnostics keep the
+    host mask).
     The caller logs which route it took, so a measured result always knows
     which one produced it.
     """
 
-    if not coarse_significance_device_requested():
-        return None
     csr = getattr(significant_sample_indices, "csr", None)
     if csr is None:
         logger.info(
-            "Resident pass-2 candidate tables: %s=1 but this support carries no "
+            "Resident pass-2 candidate tables: this support carries no "
             "device-compacted CSR; building them through the host path",
-            COARSE_SIGNIFICANCE_DEVICE_ENV,
         )
         return None
     if (
@@ -745,7 +723,7 @@ def resident_candidate_tables(
     """Candidate tables from the device-compacted CSR, or from the host path.
 
     ``significance_csr`` is present only when the coarse pass compacted its
-    support on the device (ticket T13, ``RELAX_COARSE_SIGNIFICANCE_DEVICE``);
+    support on the device (ticket T13);
     both routes return the same ``ResidentCandidateTables``.
     """
 

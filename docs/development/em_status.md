@@ -129,7 +129,8 @@ FFT in double narrowed to the complex64 slab RELION's GPU projector holds as a f
 PPCA: the VDAM comparison arm of the PPCA pilots now builds its projector in double for float32 runs
 too (before, the JAX setup followed the M-step dtype through `_projector_setup_dtype`, removed with
 its test); PPCA's own code does not call the VDAM projector. Quality, scored on cand_04e38a9 (this
-stack plus the device coarse-significance commit bc30d20, which lands next): pdb K=2 5k/128
+stack plus bc30d20, the per-class device coarse significance that follows it on main; the same code
+before the rebase): pdb K=2 5k/128
 population-weighted GT FSC-AUC 0.3204 / 0.3883 / 0.4485 at seeds 29 / 41 / 53, against RELION
 0.3229-0.3354 (7 runs) / 0.3797 / 0.4528-0.4575 and the same-job pre-stack control 0.3110 / 0.1360 /
 0.4410; that is 0.0025 / 0.0043 below RELION's seed-29 / seed-53 range, inside relax's seed-29 basin
@@ -262,9 +263,12 @@ that refusal an error. The jitted stage glue and the local image-capacity
 ladder are set at the K=1 entry points (`apply_k1_refine3d_env_defaults`), since VDAM shares that
 code and qualifies its own defaults. Transitional A/B off switches, to be removed with the compact
 engine (not permanent variants): `RELAX_SPARSE_PASS2_RESIDENT=0`, `RELAX_LOCAL_SEARCH_RESIDENT=0`,
-`RELAX_COARSE_SIGNIFICANCE_DEVICE=0`, `RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=0`,
+`RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=0`,
 `RELAX_K1_RELION_WAVG_SEQUENTIAL_CUDA=0`, `RELAX_COARSE_PAD_FINAL_IMAGE_BATCH=0`,
-`RELAX_EM_JIT_STAGE_GLUE=0`, `RELAX_LOCAL_IMAGE_CAPACITY_LADDER=0`. Flip pairs (relax vs
+`RELAX_EM_JIT_STAGE_GLUE=0`, `RELAX_LOCAL_IMAGE_CAPACITY_LADDER=0`. Device coarse significance has no
+switch: every class's coarse support is compacted on the device whenever the ids are collected
+(K>1 and VDAM too); score dumps and the compact-hybrid diagnostics keep the host mask
+(`relax/sparse_pass2/resident_significance.py`). Flip pairs (relax vs
 RELION wall, same node): EMPIAR-10073 1.05x and 10345 1.01x pass the scorecard thresholds; K1
 50k/256 runs at 0.65x, with the resident masked GT FSC 9e-5 below the three-run RELION band
 (compact inside it). OPEN (small, both engines): on 10345 and K1 50k/256 relax's map agreement with RELION

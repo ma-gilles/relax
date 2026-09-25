@@ -52,7 +52,6 @@
   "RECOVAR_COARSE_RUNTIME_PREFIX_DUMP_LABEL": "RELAX_COARSE_RUNTIME_PREFIX_DUMP_LABEL",
   "RECOVAR_COARSE_RUNTIME_PREFIX_DUMP_ORIGINAL_INDICES": "RELAX_COARSE_RUNTIME_PREFIX_DUMP_ORIGINAL_INDICES",
   "RECOVAR_COARSE_SHARED_PRETRANSLATED": "RELAX_COARSE_SHARED_PRETRANSLATED",
-  "RECOVAR_COARSE_SIGNIFICANCE_DEVICE": "RELAX_COARSE_SIGNIFICANCE_DEVICE",
   "RECOVAR_COMMAND": "RELAX_COMMAND",
   "RECOVAR_COMMAND_PREFIX": "RELAX_COMMAND_PREFIX",
   "RECOVAR_COMPACT_CANDIDATE_CAPTURE_DIR": "RELAX_COMPACT_CANDIDATE_CAPTURE_DIR",
@@ -633,6 +632,8 @@
   "RELAX_RELION_BATCHED_POSTERIOR_PRIMITIVES": "the batched RELION posterior primitives are the only CUDA posterior path (2026-09-25)",
   "RECOVAR_COARSE_MAX_POSTERIOR_PHYSICAL_BATCH": "coarse Pmax always reduces the physical batch and slices on the host (2026-09-25)",
   "RELAX_COARSE_MAX_POSTERIOR_PHYSICAL_BATCH": "coarse Pmax always reduces the physical batch and slices on the host (2026-09-25)",
-  "RECOVAR_INITIAL_MODEL_FLAT_LOCAL_ROWS": "the exact K=1 InitialModel pass 2 always packs candidates into flat local rows (2026-09-25)"
+  "RECOVAR_INITIAL_MODEL_FLAT_LOCAL_ROWS": "the exact K=1 InitialModel pass 2 always packs candidates into flat local rows (2026-09-25)",
+  "RECOVAR_COARSE_SIGNIFICANCE_DEVICE": "the coarse significance support is always compacted on the device, per class (2026-09-25)",
+  "RELAX_COARSE_SIGNIFICANCE_DEVICE": "the coarse significance support is always compacted on the device, per class (2026-09-25)"
  }
 }
