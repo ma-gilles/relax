@@ -70,6 +70,8 @@ def _compute_sparse_pass2_projections_block(
                 dense_scale=True,
                 relion_texture_interp=projection_relion_texture_interp,
                 projector_output_size=projector_output_size,
+                # Pass 2 and the weighted sums use RELION's fine and wavg kernels.
+                relion_kernel="fine",
                 mask_current_image_disk=projection_mask_current_image_disk,
                 **({"persistent_texture": relion_projector_texture} if relion_projector_texture is not None else {}),
             )

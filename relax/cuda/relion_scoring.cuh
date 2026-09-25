@@ -732,7 +732,7 @@ void relion_coarse_diff2_projector_f32_kernel(
     int current_size,
     int tex_yinit,
     int tex_zinit,
-    int model_max_r2,
+    int max_r,
     float projector_scale,
     float padding_factor)
 #define RELAX_RELION_COARSE_STAGE_WEIGHT(pixel_weight)
@@ -762,7 +762,7 @@ void relion_coarse_diff2_projector_prehalf_f32_kernel(
     int current_size,
     int tex_yinit,
     int tex_zinit,
-    int model_max_r2,
+    int max_r,
     float projector_scale,
     float padding_factor)
 #define CANONICAL_REDUCTION false
@@ -804,7 +804,7 @@ void launch_relion_coarse_diff2_projector_f32_variant(
     int current_size,
     int tex_yinit,
     int tex_zinit,
-    int model_max_r2,
+    int max_r,
     float projector_scale,
     float padding_factor)
 {
@@ -834,7 +834,7 @@ void launch_relion_coarse_diff2_projector_f32_variant(
                 current_size,
                 tex_yinit,
                 tex_zinit,
-                model_max_r2,
+                max_r,
                 projector_scale,
                 padding_factor);
     } else {
@@ -862,7 +862,7 @@ void launch_relion_coarse_diff2_projector_f32_variant(
                 current_size,
                 tex_yinit,
                 tex_zinit,
-                model_max_r2,
+                max_r,
                 projector_scale,
                 padding_factor);
     }
@@ -1048,8 +1048,9 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
     if (err != cudaSuccess) return err;
 
     // The Projector texture holds the padded model (RELION --pad); stage the
-    // compact window over the padded radius and test padded coordinates
-    // against (score_max_r * padding_factor)^2 as RELION's maxR2_padded.
+    // compact window over the padded radius. score_max_r is RELION's
+    // AccProjectorKernel maxR = min(PPref.r_max, imgX - 1): the kernel wraps rows
+    // at it and tests padded coordinates against (maxR * padding_factor)^2.
     if (padding_factor <= 0) return cudaErrorInvalidValue;
     const int padded_max_r = model_max_r * padding_factor;
     const int tex_x = padded_max_r + 2;
@@ -1058,8 +1059,6 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
     const int tex_yinit = -(padded_max_r + 1);
     const int tex_zinit = -(padded_max_r + 1);
     const int score_max_r = min(model_max_r, current_size / 2);
-    const int padded_score_max_r2 =
-        (score_max_r * padding_factor) * (score_max_r * padding_factor);
     const float padding_factor_f = static_cast<float>(padding_factor);
     const int voxel_count = tex_x * tex_y * tex_z;
     float* real = nullptr;
@@ -1170,7 +1169,7 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
                     lane_partials,
                     0, main_rotation_count, rotation_count, batch_size, translation_count,
                     compact_pixel_count, current_size, tex_yinit, tex_zinit,
-                    padded_score_max_r2, projector_scale, padding_factor_f);
+                    score_max_r, projector_scale, padding_factor_f);
             err = cudaGetLastError();
             if (err != cudaSuccess) goto cleanup;
         }
@@ -1189,7 +1188,7 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
                     lane_partials,
                     main_rotation_count, tail_count, rotation_count, batch_size,
                     translation_count, compact_pixel_count, current_size,
-                    tex_yinit, tex_zinit, padded_score_max_r2,
+                    tex_yinit, tex_zinit, score_max_r,
                     projector_scale, padding_factor_f);
             err = cudaGetLastError();
             if (err != cudaSuccess) goto cleanup;
@@ -1238,7 +1237,7 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
                             0, main_rotation_count, rotation_count, 1,
                             translation_count, compact_pixel_count,
                             current_size, tex_yinit, tex_zinit,
-                            padded_score_max_r2, projector_scale, padding_factor_f);
+                            score_max_r, projector_scale, padding_factor_f);
                     cudaError_t launch_error = cudaGetLastError();
                     if (launch_error != cudaSuccess) return launch_error;
                 }
@@ -1258,7 +1257,7 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
                             main_rotation_count, tail_count, rotation_count, 1,
                             translation_count, compact_pixel_count,
                             current_size, tex_yinit, tex_zinit,
-                            padded_score_max_r2, projector_scale, padding_factor_f);
+                            score_max_r, projector_scale, padding_factor_f);
                     const cudaError_t launch_error = cudaGetLastError();
                     if (launch_error != cudaSuccess) return launch_error;
                 }

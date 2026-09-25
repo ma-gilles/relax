@@ -49,3 +49,26 @@ Implementation: [`_project_relion_projector_texture`](../../recovar/em/helpers/p
 Boundary regressions live in `tests/unit/test_coarse_rotated_radius.py` and
 `tests/unit/test_cuda_relion_fine_diff2.py`; their focused results do not replace
 matched trajectory qualification.
+
+## Image windows wider than the model sphere
+
+An optics group on a coarser grid than the reference (scale \(1<s<\sqrt2\)) gets
+an image window of about \(s\) times the reference window, wider than
+\(2\,r_{\max}\). RELION's kernels clamp \(\mathrm{maxR}=\min(r_{\max},\,\mathrm{imgX}-1)\)
+and relabel the rows beyond it before projecting them. The coarse diff2 kernel
+labels them negative. The fine diff2 and weighted-sum kernels move them to
+\(x=\mathrm{maxR}\), except for the negative rows from \(\mathrm{imgY}-\mathrm{maxR}\).
+Each relabelled pixel then lies outside the rotated sphere, so RELION's reference there
+is zero. This holds even where the pixel's own rotated radius is inside the sphere,
+at \(|k|/s<r_{\max}\). Relax zeros those rows after projection. The coarse kernel zeros
+rows \(\mathrm{maxR}<\text{label}\le\mathrm{imgY}/2\); the fine kernels zero rows
+\(|\text{label}|>\mathrm{maxR}\). The fused coarse CUDA scorer wraps its rows at maxR
+as RELION does. Before this rule, the relabelled rows held nonzero reference values
+and the other-grid group's Pmax moved by about 0.01 per particle. Groups at
+\(s\ge\sqrt2\), where the moved fine pixel can fall inside the sphere, are refused.
+
+Implementation: [`relion_kernel_zero_rows`](../../relax/helpers/projection.py), passed
+through `compute_relion_projector_projections_block(relion_kernel=...)`, and the fused
+coarse scorer body `relax/cuda/relion_coarse_diff2_projector_body.inc`. The regression is
+`tests/unit/test_relion_kernel_rows.py`, which uses an independent scalar model of the
+RELION kernels.

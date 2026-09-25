@@ -53,7 +53,14 @@
         active_thread = lane < active_lanes;
     }
     const int current_half_width = current_size / 2 + 1;
-    const int current_max_r = current_size / 2;
+    // RELION's coarse diff2 kernel labels a row index above maxR as negative,
+    // for the projection and the image shift alike (acc/cuda/cuda_kernels/diff2.cuh:86-90
+    // and 163-164), and keeps a projected pixel when its int-truncated padded radius
+    // squared is at most (maxR * padding_factor)^2 (acc_projectorkernel_impl.h:161-179).
+    // maxR is below current_size / 2 only for an image window wider than the
+    // model sphere (an image on a coarser grid than the reference).
+    const int max_r2_padded =
+        (max_r * static_cast<int>(padding_factor)) * (max_r * static_cast<int>(padding_factor));
     const int full_pixel_count = current_size * current_half_width;
     const int padded_pixel_count =
         ((full_pixel_count + kRelionCoarseDiff2BlockSize - 1) /
@@ -85,7 +92,7 @@
             chunk_start + threadIdx.x / kRelionCoarsePrefetchFraction;
         const int reference_x = reference_full_pixel % current_half_width;
         const int reference_native_y = reference_full_pixel / current_half_width;
-        const int reference_y = reference_native_y > current_max_r
+        const int reference_y = reference_native_y > max_r
             ? reference_native_y - current_size
             : reference_native_y;
         for (int local_rotation =
@@ -112,7 +119,7 @@
                 float yp = rk1 * padding_factor;
                 float zp = rk2 * padding_factor;
                 if (static_cast<int>(xp * xp + yp * yp + zp * zp)
-                    <= model_max_r2) {
+                    <= max_r2_padded) {
                     float imag_sign = 1.0f;
                     if (xp < 0.0f) {
                         xp = -xp;
@@ -173,7 +180,7 @@
                     continue;
                 const int x = full_pixel % current_half_width;
                 const int native_y = full_pixel / current_half_width;
-                const int y = native_y > current_max_r
+                const int y = native_y > max_r
                     ? native_y - current_size
                     : native_y;
                 const int shared_pixel =

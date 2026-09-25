@@ -8,7 +8,9 @@ A group with ``box_g`` pixels at ``angpix_g`` has the scale
   (``ObservationModel::applyScaleDifference``, ``obs_model.cpp:1332-1339``); the
   projector uses the inverse, so a relax rotation is divided by ``s_g``;
 - the group's image sizes follow ``updateImageSizeAndResolutionPointers``
-  (``ml_optimiser.cpp:5741-5777``);
+  (``ml_optimiser.cpp:5741-5777``); a group with ``s_g > 1`` gets a Fourier window
+  wider than the model sphere, whose outer rows RELION's accelerated kernels project
+  as zero (:func:`relax.helpers.projection.relion_kernel_zero_rows`);
 - ``sigma2_noise`` stays on the reference shells: the E-step reads reference shell
   ``round(ires / s_g)`` for group shell ``ires`` (``:6840``), the M-step adds group shell
   ``i`` into reference shell ``round(i / s_g)`` (``:9100-9107``) and an empty shell takes

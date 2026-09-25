@@ -335,3 +335,13 @@ def test_image_clip_at_r_max_times_scale_is_relions_rotated_radius_rule():
         relion_keep = np.linalg.norm(rotated, axis=1) <= r_max
         boundary = np.abs(np.linalg.norm(rotated, axis=1) - r_max) < 1e-9
         assert np.array_equal(image_keep[~boundary], relion_keep[~boundary])
+
+
+@pytest.mark.unit
+def test_a_group_spanning_sqrt2_times_the_reference_is_refused():
+    # RELION's fine kernels project a moved pixel inside the sphere from sqrt(2) on
+    # (relion_kernel_zero_rows); relax refuses rather than diverge silently.
+    ds_ref = SimpleNamespace(image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0)
+    ds_wide = SimpleNamespace(image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0 * 1.5)
+    with pytest.raises(NotImplementedError, match="largest box x pixel size first"):
+        optics_shapes.make_shape_classes([(ds_ref, np.array([0])), (ds_wide, np.array([1]))], ref_box=REF_BOX, ref_pixel=REF_PIX)

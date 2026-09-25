@@ -1017,6 +1017,7 @@ def _compute_k_class_significance_batched(
     from relax.helpers.projection import (
         project_relion_projector_half_spectrum_centered_rows as _project_relion_projector_manual,
     )
+    from relax.helpers.projection import relion_kernel_zero_rows
     from relax.scoring.scoring import (
         _e_step_block_scores,
         _e_step_block_scores_normalized_cc,
@@ -2220,6 +2221,7 @@ def _compute_k_class_significance_batched(
             # cannot materialize its JAX mirror once per score block.
             pixel_indices=projector_compact_indices_np,
             relion_texture_interp=True,
+            relion_kernel="coarse",
             # Certificate and exact scorer share the canonical rotated
             # float32 radius. Explicit legacy diagnostics may retain the
             # source-pixel disk without changing projection storage.
@@ -2263,6 +2265,7 @@ def _compute_k_class_significance_batched(
                             centered_rows=True,
                             dense_scale=True,
                             relion_texture_interp=True,
+                            relion_kernel="coarse",
                             **projector_kwargs,
                         )
                     )
@@ -2276,6 +2279,14 @@ def _compute_k_class_significance_batched(
                     projector_kwargs.get("projector_output_size"),
                     coarse_floorf_quirk,
                 )
+                zero_rows = relion_kernel_zero_rows(
+                    int(image_shape[0]),
+                    int(projector_kwargs.get("projector_output_size") or 2 * int(relion_projector_r_max)),
+                    int(relion_projector_r_max),
+                    "coarse",
+                )
+                if zero_rows is not None:
+                    proj_half_b = jnp.where(jnp.asarray(zero_rows), 0.0, proj_half_b)
                 proj_half_b = proj_half_b * _dense_projection_scale(image_shape)
                 proj_abs2_half_b = jnp.abs(proj_half_b) ** 2
         else:

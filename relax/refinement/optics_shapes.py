@@ -20,6 +20,7 @@ A half with one shape class is a plain dataset and never reaches this module.
 from __future__ import annotations
 
 import dataclasses
+import math
 
 import numpy as np
 
@@ -73,19 +74,31 @@ class MultiShapeHalf:
 
 
 def make_shape_classes(datasets_and_indices, *, ref_box, ref_pixel):
-    """``ShapeClass`` records from ``(dataset, half positions)`` pairs."""
+    """``ShapeClass`` records from ``(dataset, half positions)`` pairs.
+
+    A class at scale ``s >= sqrt(2)`` is refused. There, RELION's fine kernels project
+    a moved pixel inside the model sphere for the image rows beyond it
+    (:func:`relax.helpers.projection.relion_kernel_zero_rows`), which relax does not reproduce.
+    """
 
     classes = []
     for dataset, indices in datasets_and_indices:
         box = int(dataset.image_shape[0])
         pixel = float(dataset.voxel_size)
+        scale = optics_scale.scale_difference(box, pixel, ref_box, ref_pixel)
+        if scale >= math.sqrt(2.0):
+            raise NotImplementedError(
+                f"an optics group of {box} px at {pixel} A spans {scale:.3f} times the reference field of view "
+                f"({ref_box} px at {ref_pixel} A); from sqrt(2) on RELION's accelerated kernels project moved "
+                "pixels there. List the optics group with the largest box x pixel size first."
+            )
         classes.append(
             ShapeClass(
                 dataset=dataset,
                 image_indices=np.asarray(indices, dtype=np.int64),
                 box_size=box,
                 pixel_size=pixel,
-                scale=optics_scale.scale_difference(box, pixel, ref_box, ref_pixel),
+                scale=scale,
                 translation_factor=float(ref_pixel) / pixel,
             )
         )
