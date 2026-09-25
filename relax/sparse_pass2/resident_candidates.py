@@ -135,6 +135,16 @@ class ResidentCandidateTables:
     # segment spans all its classes.
     row_class: np.ndarray | None = None  # int32 [n_rows]
     n_classes: int = 1
+    # M-step accumulator slots (docs/development/resident_segments.md): a row of unit u
+    # backprojects into slot row_class + n_classes * unit_slot_offset[u]. VDAM's
+    # pseudo-halfset BPref slot is iclass + (part_id % 2) * nr_classes
+    # (acc_ml_optimiser_impl.h:4800-4804); None means every unit uses offset 0.
+    unit_slot_offset: np.ndarray | None = None  # int32 [n_images], values in [0, n_slot_groups)
+    n_slot_groups: int = 1
+
+    @property
+    def n_slots(self) -> int:
+        return int(self.n_classes) * int(self.n_slot_groups)
 
     def __post_init__(self):
         if self.row_offsets.shape != (self.n_images + 1,):
@@ -163,6 +173,20 @@ class ResidentCandidateTables:
                 raise ValueError(f"row_class values must lie in [0, {self.n_classes})")
         elif int(self.n_classes) != 1:
             raise ValueError("a K>1 table needs row_class")
+        if int(self.n_slot_groups) < 1:
+            raise ValueError("n_slot_groups must be at least 1")
+        if self.unit_slot_offset is not None:
+            if self.unit_slot_offset.shape != (self.n_images,):
+                raise ValueError(
+                    f"unit_slot_offset must have shape (n_images,), got {self.unit_slot_offset.shape}"
+                )
+            if self.unit_slot_offset.size and (
+                int(self.unit_slot_offset.min()) < 0
+                or int(self.unit_slot_offset.max()) >= int(self.n_slot_groups)
+            ):
+                raise ValueError(f"unit_slot_offset values must lie in [0, {self.n_slot_groups})")
+        elif int(self.n_slot_groups) != 1:
+            raise ValueError("several slot groups need unit_slot_offset")
 
 
 @dataclass(frozen=True)
@@ -746,6 +770,7 @@ def materialize_chunk(tables: ResidentCandidateTables, chunk: CapacityChunk) -> 
     row_mask_bits = np.full((row_capacity, n_words), _ROW_MASK_BITS_PAD, dtype=np.uint32)
     row_mask_mode = np.full(row_capacity, _MASK_MODE_EMPTY, dtype=np.int8)
     row_class = np.zeros(row_capacity, dtype=np.int32)
+    row_slot = np.zeros(row_capacity, dtype=np.int32)
     image_ids = np.full(image_capacity, -1, dtype=np.int32)
 
     if n_valid_rows:
@@ -757,6 +782,9 @@ def materialize_chunk(tables: ResidentCandidateTables, chunk: CapacityChunk) -> 
         row_log_prior[:n_valid_rows] = tables.row_log_prior[rs:re]
         if tables.row_class is not None:
             row_class[:n_valid_rows] = tables.row_class[rs:re]
+        row_slot[:n_valid_rows] = row_class[:n_valid_rows]
+        if tables.unit_slot_offset is not None:
+            row_slot[:n_valid_rows] += int(tables.n_classes) * tables.unit_slot_offset[row_image_global]
 
         row_mode_valid = tables.mask_mode[row_image_global]
         row_mask_mode[:n_valid_rows] = row_mode_valid
@@ -779,6 +807,7 @@ def materialize_chunk(tables: ResidentCandidateTables, chunk: CapacityChunk) -> 
         "row_mask_bits": row_mask_bits,
         "row_mask_mode": row_mask_mode,
         "row_class": row_class,
+        "row_slot": row_slot,
         "n_valid_rows": np.int32(n_valid_rows),
         "n_valid_images": np.int32(n_valid_images),
         "image_ids": image_ids,

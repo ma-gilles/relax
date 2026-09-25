@@ -12,11 +12,11 @@ the same coarse pass, significance and weighted sums) except in three places:
    and caps the coarse pass only (acc_ml_optimiser_impl.h:3256-3260).
 
 This module runs VDAM's E-step on ``run_dense_k_class_em_adaptive``, the route
-auto-refine and Class3D take, so the pass-2 engine is the one
-``relax.sparse_pass2.dispatch`` selects (the compact engine, or the
-device-resident driver with ``RELAX_SPARSE_PASS2_RESIDENT=1``). Difference 1 is
-the route's ``mstep_subtract_ctf_projection``, 2 is one call per pseudo-halfset
-with a shared reference, and 3 is the ``max_significants`` VDAM already resolves.
+auto-refine and Class3D take, on the device-resident pass 2. Difference 1 is the
+route's ``mstep_subtract_ctf_projection``; 2 is the resident engine's accumulator
+slots ``class + K * half`` (``reconstruction_group_ids``, one pass over the subset;
+docs/development/resident_segments.md), which the compact engine refuses; 3 is the
+``max_significants`` VDAM already resolves.
 
 The route indexes coarse rotations in RECOVAR order (psi-slow,
 direction-fast); VDAM's own state (orientation priors, ``pdf_direction``) uses
@@ -28,7 +28,7 @@ qualified, and is removed with it (transitional switch, listed in em_status).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 
@@ -53,7 +53,7 @@ from relax.vdam.sparse_pass2_estep import (
     _sparse_pass2_estep_meta,
     _translation_step_from_grid,
 )
-from relax.vdam.state import InitialModelState, VdamAccumulator
+from relax.vdam.state import InitialModelState
 
 __all__ = ["AdaptiveRouteGrids", "adaptive_route_grids", "run_adaptive_initial_model_estep"]
 
@@ -67,14 +67,13 @@ def relion_order_of_recovar_rotations(healpix_order: int) -> np.ndarray:
     )
 
 
-class AdaptiveRouteGrids:
+class AdaptiveRouteGrids(NamedTuple):
     """One iteration's coarse and fine trial grids in the adaptive route's order."""
 
-    def __init__(self, *, pass1_rotations, grids, fine_source_eulers, relion_of_recovar):
-        self.pass1_rotations = pass1_rotations
-        self.grids = grids
-        self.fine_source_eulers = fine_source_eulers
-        self.relion_of_recovar = relion_of_recovar
+    pass1_rotations: np.ndarray
+    grids: object  # relax.refinement.half_scoring._AdaptivePass2Grids
+    fine_source_eulers: np.ndarray | None
+    relion_of_recovar: np.ndarray
 
 
 def adaptive_route_grids(
@@ -178,18 +177,17 @@ def run_adaptive_initial_model_estep(
     config: DenseInitialModelEstepConfig,
     *,
     class_log_priors,
-    groups: list[tuple[int, np.ndarray]],
+    joint_particle_ids: np.ndarray,
+    joint_halfset_ids: np.ndarray | None,
     means,
     mean_variance,
     relion_projector_half_by_class,
     relion_projector_r_max,
     engine_kwargs: dict[str, Any],
 ) -> DenseInitialModelEstepResult:
-    """Run one VDAM E-step as one adaptive-route call per pseudo-halfset."""
+    """Run one VDAM E-step as one adaptive-route pass over the subset, both pseudo-halfsets at once."""
 
     base_kwargs, options = _pop_sparse_pass2_options(engine_kwargs)
-    if int(state.K) != 1:
-        raise NotImplementedError("the adaptive InitialModel route is K=1 until the resident class axis lands")
     if relion_projector_half_by_class is None:
         raise ValueError("the adaptive InitialModel route requires the exact RELION projector")
     if not config.relion_bpref_frame:
@@ -227,111 +225,117 @@ def run_adaptive_initial_model_estep(
         n_translations=int(coarse_translations.shape[0]),
     )
 
-    accumulators: list[VdamAccumulator] = []
-    halfset_results: dict[int, Any] = {}
-    selected: dict[int, np.ndarray] = {}
+    image_indices = np.asarray(joint_particle_ids, dtype=np.int64)
+    grouped = bool(state.pseudo_halfsets)
+    if image_indices.size == 0:
+        empty = [_empty_accumulator(state, k, h) for h in ((0, 1) if grouped else (0,)) for k in range(state.K)]
+        return DenseInitialModelEstepResult(accumulators=empty, meta={"pass2_engine": "adaptive"}, halfset_results={})
+    group_ids = None
+    if grouped:
+        # Difference 2: one reference per class and two pseudo-halfset BPref slots,
+        # iclass + (part_id % 2) * nr_classes (acc_ml_optimiser_impl.h:4800-4804), in
+        # one pass over the subset; the subset schedule supplies each particle's half.
+        group_ids = np.asarray(joint_halfset_ids, dtype=np.int32)
+        if group_ids.shape != image_indices.shape or np.any((group_ids != 0) & (group_ids != 1)):
+            raise ValueError("pseudo-halfset ids must give each selected particle 0 or 1")
     n_images_total = int(experiment_dataset.n_images)
-    for halfset_idx, image_indices in groups:
-        image_indices = np.asarray(image_indices, dtype=np.int64)
-        if image_indices.size == 0:
-            accumulators.extend(_empty_accumulator(state, k, int(halfset_idx)) for k in range(state.K))
-            continue
-        group_kwargs = _group_local_kwargs(base_kwargs, image_indices, n_images=n_images_total)
-        group_dataset = experiment_dataset.subset(image_indices)
-        coarse_translation_log_prior = _select_image_rows(
-            options.get("coarse_translation_log_prior"),
-            image_indices,
-            n_images=n_images_total,
-            name="coarse_translation_log_prior",
-        )
-        current_size = group_kwargs.get("current_size")
-        pass1_current_size = (
-            current_size
-            if oversampling_order == 0
-            else _resolve_sparse_pass1_current_size(state, group_kwargs, options)
-        )
-        fresh_k1 = bool(state.K == 1 and uses_relion_cuda_image_preprocessing(group_dataset))
-        route_kwargs = dict(
-            image_batch_size=int(config.image_batch_size),
-            rotation_block_size=int(config.rotation_block_size),
-            current_size=current_size,
-            sparse_pass2=True,
-            mstep_relion_x_half=True,
-            # Difference 1: the SGD backprojection of the residual.
-            mstep_subtract_ctf_projection=bool(group_kwargs["reconstruction_subtract_projected_reference"]),
-            score_with_masked_images=bool(group_kwargs["score_with_masked_images"]),
-            half_spectrum_scoring=bool(group_kwargs["half_spectrum_scoring"]),
-            projection_padding_factor=int(group_kwargs["projection_padding_factor"]),
-            reconstruction_padding_factor=int(group_kwargs["reconstruction_padding_factor"]),
-            projection_mask_current_image_disk=bool(group_kwargs["projection_mask_current_image_disk"]),
-            image_pre_shifts=group_kwargs.get("image_pre_shifts"),
-            translation_prior_centers=group_kwargs.get("translation_prior_centers"),
-            # RELION reuses the coarse pdf_offset for every oversampled child.
-            translation_log_prior=coarse_translation_log_prior,
-            class_rotation_log_prior=class_rotation_log_prior,
-            rotation_log_prior=rotation_log_prior,
-            relion_firstiter_score_mode="gaussian",
-            relion_exact_fine_gaussian=True,
-            fine_source_eulers_override=route.fine_source_eulers,
-            # The fresh K=1 guard, as VDAM's exact-local route keeps it: RELION's BPref
-            # particle order, exact BPref operands and powerClass spectrum norm.
-            preserve_bpref_particle_order=fresh_k1,
-            source_faithful_spectrum_norm=fresh_k1,
-            debug_iteration=group_kwargs.get("debug_iteration"),
-        )
-        route_kwargs = {name: value for name, value in route_kwargs.items() if value is not None}
-        result = run_dense_k_class_em_adaptive(
-            group_dataset,
-            means,
-            mean_variance,
-            config.noise_variance,
-            route.pass1_rotations,
-            grids.coarse_translations,
-            grids.fine_rotations,
-            grids.fine_translations,
-            grids.rotation_parent_map,
-            grids.translation_parent_map,
-            config.disc_type,
-            class_log_priors=class_log_priors,
-            accumulate_noise=True,
-            adaptive_fraction=float(options.get("adaptive_fraction", 0.999)),
-            # Difference 3: VDAM's resolved cap, applied to the coarse pass only.
-            max_significants=int(options.get("max_significants", -1)),
-            significance_image_batch_size=significance_image_batch_size,
-            significance_rotation_block_size=int(config.rotation_block_size),
-            significance_pad_final_image_batch=True,
-            coarse_current_size=pass1_current_size,
-            fine_current_size=current_size,
-            coarse_healpix_order=healpix_order,
-            oversampling_order=oversampling_order,
-            coarse_translation_log_prior=coarse_translation_log_prior,
-            relion_fine_mstep_prune=True,
-            relion_projector_half=relion_projector_half_by_class,
-            relion_projector_r_max=relion_projector_r_max,
-            fine_mstep_rotations_override=grids.fine_mstep_rotations,
-            return_best_pose_details=True,
-            coarse_translation_phase_source=grids.coarse_translation_phase_source,
-            **route_kwargs,
-        )
-        result = _direction_posterior_stats(
-            result,
-            n_coarse_rot=n_coarse_rot,
-            rot_parent_map=np.asarray(grids.rotation_parent_map, dtype=np.int64),
-            n_psi=n_psi,
-        )
-        halfset_results[int(halfset_idx)] = result
-        selected[int(halfset_idx)] = image_indices
-        accumulators.extend(
-            _arrays_to_accumulators(
-                result.Ft_y,
-                result.Ft_ctf,
-                state,
-                halfset_idx=int(halfset_idx),
-                relion_bpref_frame=True,
-                relion_projector_frame=config.relion_projector_frame,
-                padding_factor=config.padding_factor,
-            )
-        )
+    group_kwargs = _group_local_kwargs(base_kwargs, image_indices, n_images=n_images_total)
+    group_dataset = experiment_dataset.subset(image_indices)
+    coarse_translation_log_prior = _select_image_rows(
+        options.get("coarse_translation_log_prior"),
+        image_indices,
+        n_images=n_images_total,
+        name="coarse_translation_log_prior",
+    )
+    current_size = group_kwargs.get("current_size")
+    pass1_current_size = (
+        current_size
+        if oversampling_order == 0
+        else _resolve_sparse_pass1_current_size(state, group_kwargs, options)
+    )
+    fresh_k1 = bool(state.K == 1 and uses_relion_cuda_image_preprocessing(group_dataset))
+    route_kwargs = dict(
+        image_batch_size=int(config.image_batch_size),
+        rotation_block_size=int(config.rotation_block_size),
+        current_size=current_size,
+        sparse_pass2=True,
+        mstep_relion_x_half=True,
+        # Difference 1: the SGD backprojection of the residual.
+        mstep_subtract_ctf_projection=bool(group_kwargs["reconstruction_subtract_projected_reference"]),
+        score_with_masked_images=bool(group_kwargs["score_with_masked_images"]),
+        half_spectrum_scoring=bool(group_kwargs["half_spectrum_scoring"]),
+        projection_padding_factor=int(group_kwargs["projection_padding_factor"]),
+        reconstruction_padding_factor=int(group_kwargs["reconstruction_padding_factor"]),
+        projection_mask_current_image_disk=bool(group_kwargs["projection_mask_current_image_disk"]),
+        image_pre_shifts=group_kwargs.get("image_pre_shifts"),
+        translation_prior_centers=group_kwargs.get("translation_prior_centers"),
+        # RELION reuses the coarse pdf_offset for every oversampled child.
+        translation_log_prior=coarse_translation_log_prior,
+        class_rotation_log_prior=class_rotation_log_prior,
+        rotation_log_prior=rotation_log_prior,
+        relion_firstiter_score_mode="gaussian",
+        relion_exact_fine_gaussian=True,
+        fine_source_eulers_override=route.fine_source_eulers,
+        # The fresh K=1 guard, as VDAM's exact-local route keeps it: RELION's BPref
+        # particle order, exact BPref operands and powerClass spectrum norm.
+        preserve_bpref_particle_order=fresh_k1,
+        source_faithful_spectrum_norm=fresh_k1,
+        debug_iteration=group_kwargs.get("debug_iteration"),
+        reconstruction_group_ids=group_ids,
+        reconstruction_group_count=2 if grouped else None,
+    )
+    route_kwargs = {name: value for name, value in route_kwargs.items() if value is not None}
+    result = run_dense_k_class_em_adaptive(
+        group_dataset,
+        means,
+        mean_variance,
+        config.noise_variance,
+        route.pass1_rotations,
+        grids.coarse_translations,
+        grids.fine_rotations,
+        grids.fine_translations,
+        grids.rotation_parent_map,
+        grids.translation_parent_map,
+        config.disc_type,
+        class_log_priors=class_log_priors,
+        accumulate_noise=True,
+        adaptive_fraction=float(options.get("adaptive_fraction", 0.999)),
+        # Difference 3: VDAM's resolved cap, applied to the coarse pass only.
+        max_significants=int(options.get("max_significants", -1)),
+        significance_image_batch_size=significance_image_batch_size,
+        significance_rotation_block_size=int(config.rotation_block_size),
+        significance_pad_final_image_batch=True,
+        coarse_current_size=pass1_current_size,
+        fine_current_size=current_size,
+        coarse_healpix_order=healpix_order,
+        oversampling_order=oversampling_order,
+        coarse_translation_log_prior=coarse_translation_log_prior,
+        relion_fine_mstep_prune=True,
+        relion_projector_half=relion_projector_half_by_class,
+        relion_projector_r_max=relion_projector_r_max,
+        fine_mstep_rotations_override=grids.fine_mstep_rotations,
+        return_best_pose_details=True,
+        coarse_translation_phase_source=grids.coarse_translation_phase_source,
+        **route_kwargs,
+    )
+    result = _direction_posterior_stats(
+        result,
+        n_coarse_rot=n_coarse_rot,
+        rot_parent_map=np.asarray(grids.rotation_parent_map, dtype=np.int64),
+        n_psi=n_psi,
+    )
+    accumulators = _arrays_to_accumulators(
+        result.Ft_y,
+        result.Ft_ctf,
+        state,
+        halfset_idx=None if grouped else 0,
+        reconstruction_group_count=2 if grouped else None,
+        relion_bpref_frame=True,
+        relion_projector_frame=config.relion_projector_frame,
+        padding_factor=config.padding_factor,
+    )
+    halfset_results = {0: result}
+    selected = {0: image_indices}
 
     meta = _sparse_pass2_estep_meta(halfset_results, selected)
     # The route's rotation ids index its RECOVAR-order fine grid; VDAM reads rotation
@@ -339,4 +343,7 @@ def run_adaptive_initial_model_estep(
     meta.pop("best_pose_rotation_ids", None)
     _add_accumulator_weight_meta(meta, accumulators, state.K)
     meta["pass2_engine"] = "adaptive"
+    if grouped:
+        meta["halfset_ids"] = (0, 1)
+        meta["joint_halfset_particle_stream"] = True
     return DenseInitialModelEstepResult(accumulators=accumulators, meta=meta, halfset_results=halfset_results)

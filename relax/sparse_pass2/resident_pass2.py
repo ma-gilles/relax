@@ -67,6 +67,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
+from dataclasses import replace as dataclass_replace
 from functools import lru_cache, partial
 from typing import Callable, NamedTuple
 
@@ -1575,6 +1576,8 @@ def _resident_pass2(
     optics_group_ids=None,
     reconstruction_volume_current_size=None,
     reconstruction_image_radius=None,
+    reconstruction_group_ids=None,
+    reconstruction_group_count=None,
     classes: ResidentClassInputs | None = None,
 ):
     """The device-resident sparse pass 2 over one or K classes; returns ``_ResidentPass2Result``.
@@ -1925,6 +1928,9 @@ def _resident_pass2(
         table_s += class_table_s
     table_t0 = time.time()
     tables = tables_by_class[0] if classes is None else merge_class_tables(tables_by_class)
+    tables = _with_reconstruction_groups(
+        tables, reconstruction_group_ids, reconstruction_group_count, n_images=n_images
+    )
     table_s += time.time() - table_t0
     coarse_reuse = _coarse_normalization_reuse(
         tables,
@@ -2353,9 +2359,11 @@ def _resident_pass2(
         translation_sqdist_ang=None,
     )
 
-    # One x-half BPref pair per class (RELION's BPref[iclass]).
-    Ft_y_total = tuple(jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype) for _ in range(n_classes))
-    Ft_ctf_total = tuple(jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype) for _ in range(n_classes))
+    # One x-half BPref pair per accumulator slot: RELION's BPref[iclass], and for
+    # VDAM's pseudo-halfsets BPref[iclass + half * nr_classes].
+    n_slots = int(tables.n_slots)
+    Ft_y_total = tuple(jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype) for _ in range(n_slots))
+    Ft_ctf_total = tuple(jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype) for _ in range(n_slots))
     max_adjoint_block_bytes = _max_adjoint_block_bytes_for_pass(device_memory_bytes)
     exact_positions_device = jnp.asarray(relion_wavg_rectangle.exact_positions, dtype=jnp.int32)
     rect_indices_device = jnp.asarray(relion_wavg_rectangle.centered_indices, dtype=jnp.int32)
@@ -2492,6 +2500,7 @@ def _resident_pass2(
                                 use_translate_sum_kernel=True,
                                 bpref_recon_operand=presence.has_recon_weight,
                                 reuse_coarse_normalization=coarse_reuse is not None,
+                                n_slots=int(tables.n_slots),
                                 mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
                             ),
                             translation_prior_centers_np=translation_prior_centers_np,
@@ -2731,6 +2740,8 @@ def _resident_pass2(
     return _ResidentPass2Result(
         Ft_y=tuple(Ft_y_out),
         Ft_ctf=tuple(Ft_ctf_out),
+        n_classes=int(tables.n_classes),
+        n_slot_groups=int(tables.n_slot_groups),
         finalized=finalized,
         noise_stats=noise_stats,
         fine_translations=fine_translations,
@@ -2738,11 +2749,49 @@ def _resident_pass2(
     )
 
 
+def _with_reconstruction_groups(tables, group_ids, group_count, *, n_images: int):
+    """Give each unit its M-step accumulator slot group (VDAM's pseudo-halfsets).
+
+    ``group_ids`` is the caller's per-image group (VDAM: the subset schedule's
+    pseudo-halfset, RELION's ``part_id % 2``, acc_ml_optimiser_impl.h:4800-4804);
+    nothing is derived from dataset positions. ``group_count`` fixes the number of
+    groups, so a group without images still has its (zero) accumulators.
+    """
+
+    if group_ids is None and group_count is None:
+        return tables
+    if group_ids is None or group_count is None:
+        raise ValueError("reconstruction_group_ids and reconstruction_group_count go together")
+    group_ids = np.asarray(group_ids, dtype=np.int32).reshape(-1)
+    if group_ids.shape != (int(n_images),):
+        raise ValueError(f"reconstruction_group_ids must have one entry per image ({n_images}), got {group_ids.shape}")
+    return dataclass_replace(tables, unit_slot_offset=group_ids, n_slot_groups=int(group_count))
+
+
+def _class_accumulators(result, class_index: int):
+    """Class ``class_index``'s BPref pair: one volume, or ``[groups, ...]`` with several slot groups.
+
+    The grouped form is the exact-local engine's reconstruction-group layout, which
+    VDAM's accumulator adapter (``relax.vdam.estep_common._arrays_to_accumulators``) reads.
+    """
+
+    k, n_classes = int(class_index), int(result.n_classes)
+    if int(result.n_slot_groups) == 1:
+        return result.Ft_y[k], result.Ft_ctf[k]
+    slots = [k + n_classes * group for group in range(int(result.n_slot_groups))]
+    return (
+        jnp.stack([result.Ft_y[a] for a in slots], axis=0),
+        jnp.stack([result.Ft_ctf[a] for a in slots], axis=0),
+    )
+
+
 class _ResidentPass2Result(NamedTuple):
     """What :func:`_resident_pass2` hands its K=1 and K-class entries."""
 
-    Ft_y: tuple  # per class, public x-half layout
+    Ft_y: tuple  # per accumulator slot (class + K * group), public x-half layout
     Ft_ctf: tuple
+    n_classes: int
+    n_slot_groups: int
     finalized: FinalizedStatistics
     noise_stats: object  # one total over classes (ml_optimiser.cpp:10470, :11010)
     fine_translations: np.ndarray  # score dtype
@@ -2824,6 +2873,8 @@ def compute_pass2_stats_resident(
     optics_group_ids=None,
     reconstruction_volume_current_size=None,
     reconstruction_image_radius=None,
+    reconstruction_group_ids=None,
+    reconstruction_group_count=None,
 ):
     """Device-resident K=1 sparse pass 2; same signature and return as the compact engine.
 
@@ -2854,9 +2905,10 @@ def compute_pass2_stats_resident(
             max_posterior_per_image=finalized.max_posterior_per_image,
             rotation_posterior_sums=finalized.rotation_posterior_sums,
         )
+    Ft_y_class, Ft_ctf_class = _class_accumulators(result, 0)
     return SparsePass2Output(
-        result.Ft_y[0],
-        result.Ft_ctf[0],
+        Ft_y_class,
+        Ft_ctf_class,
         hard_assignment,
         best_rotations,
         best_translations,
@@ -2944,9 +2996,10 @@ def compute_k_class_pass2_stats_resident(
     safe_rotation = np.where(has_pose, rotation_ids, 0)
     safe_translation = np.where(has_pose, translation_ids, 0)
     n_fine_trans = int(result.fine_translations.shape[0])
+    class_accumulators = [_class_accumulators(result, k) for k in range(n_classes)]
     return ResidentKClassPass2Output(
-        Ft_y=result.Ft_y,
-        Ft_ctf=result.Ft_ctf,
+        Ft_y=tuple(pair[0] for pair in class_accumulators),
+        Ft_ctf=tuple(pair[1] for pair in class_accumulators),
         class_log_evidence_per_image=per_class.log_evidence,
         class_best_log_score_per_image=per_class.best_log_score,
         per_class_hard_assignments=np.where(
@@ -3189,7 +3242,7 @@ def _row_projection_ids(host_chunk, n_fine_rot: int | None) -> np.ndarray:
 
 
 def _chunk_class_layout(host_chunk, chunk, *, n_classes: int, n_fine_trans: int, place) -> _ChunkClassLayout:
-    """The (slot, class) sub-segments of one chunk and its class-major M-step order."""
+    """The (slot, class) posterior sub-segments of one chunk."""
 
     row_capacity = int(chunk.row_capacity)
     image_capacity = int(chunk.image_capacity)
@@ -3205,18 +3258,38 @@ def _chunk_class_layout(host_chunk, chunk, *, n_classes: int, n_fine_trans: int,
         raise ValueError("chunk rows must be image-major, then class-major")
     segment_rows = np.bincount(row_segment[:n_valid_rows], minlength=n_segments)
     segment_row_start = np.concatenate([[0], np.cumsum(segment_rows)])
-    mstep_row_order = np.arange(row_capacity, dtype=np.int64)
-    mstep_row_order[:n_valid_rows] = np.argsort(row_class[:n_valid_rows], kind="stable")
-    class_offsets = np.concatenate(
-        [[0], np.cumsum(np.bincount(row_class[:n_valid_rows], minlength=int(n_classes)))]
-    )
     return _ChunkClassLayout(
         row_class=place.array(row_class, jnp.int32),
         row_segment=place.array(row_segment, jnp.int32),
         segment_offsets=place.array(segment_row_start * int(n_fine_trans), jnp.int32),
         segment_row_start=place.array(segment_row_start[:-1], jnp.int64),
-        mstep_row_order=place.array(mstep_row_order, jnp.int32),
-        mstep_class_offsets=place.array(class_offsets, jnp.int32),
+    )
+
+
+def _chunk_slot_row_ranges(host_row_slot, n_valid_rows: int, n_slots: int) -> np.ndarray:
+    """``[n_slots + 1]`` offsets of each accumulator slot's rows in the slot-major M-step order."""
+
+    return np.concatenate(
+        [[0], np.cumsum(np.bincount(np.asarray(host_row_slot[:n_valid_rows], dtype=np.int64), minlength=int(n_slots)))]
+    )
+
+
+def _chunk_mstep_layout(host_chunk, chunk, *, n_slots: int, place) -> _ChunkMstepLayout:
+    """The chunk's slot-major M-step order (docs/development/resident_segments.md).
+
+    Slot ``a = class + K * slot_offset[unit]``: a class's rows (Class3D, RELION's
+    ``BPref[iclass]``, ml_optimiser.cpp:10826) and, for VDAM, a pseudo-halfset's
+    (``iclass + (part_id % 2) * nr_classes``, acc_ml_optimiser_impl.h:4800-4804).
+    """
+
+    row_capacity = int(chunk.row_capacity)
+    n_valid_rows = int(chunk.n_valid_rows)
+    row_slot = np.asarray(host_chunk["row_slot"], dtype=np.int64)
+    row_order = np.arange(row_capacity, dtype=np.int64)
+    row_order[:n_valid_rows] = np.argsort(row_slot[:n_valid_rows], kind="stable")
+    return _ChunkMstepLayout(
+        row_order=place.array(row_order, jnp.int32),
+        slot_offsets=place.array(_chunk_slot_row_ranges(row_slot, n_valid_rows, n_slots), jnp.int32),
     )
 
 
@@ -3248,6 +3321,9 @@ def _make_chunk_row_arrays(tables, chunk, n_fine_trans, *, place, n_fine_rot=Non
         classes = _chunk_class_layout(
             host_chunk, chunk, n_classes=n_classes, n_fine_trans=n_fine_trans, place=place
         )
+    mstep = None
+    if int(tables.n_slots) > 1:
+        mstep = _chunk_mstep_layout(host_chunk, chunk, n_slots=int(tables.n_slots), place=place)
     return _ChunkRowArrays(
         row_image_local=place.array(host_chunk["row_image_local"], jnp.int32),
         row_fine_rot=place.array(
@@ -3263,6 +3339,7 @@ def _make_chunk_row_arrays(tables, chunk, n_fine_trans, *, place, n_fine_rot=Non
         image_row_start=place.array(image_row_start_np, jnp.int64),
         image_row_count=place.array(image_row_count_np, jnp.int64),
         classes=classes,
+        mstep=mstep,
     )
 
 
@@ -3436,10 +3513,10 @@ def _make_mstep_block_inputs(rows, posterior) -> "_MstepBlockInputs":
     the per-stage loop submits. ``projections`` is None here: the block program
     gathers them from the tables itself. With K>1 classes the rows are taken in
     the chunk's class-major M-step order, so each class's rows are one run of
-    blocks (:func:`_class_mstep_blocks`).
+    blocks (:func:`_slot_mstep_blocks`).
     """
 
-    if rows.classes is None:
+    if rows.mstep is None:
         return _MstepBlockInputs(
             row_image_local=rows.row_image_local,
             kernel_row_image_ids=posterior.kernel_row_image_ids,
@@ -3447,7 +3524,7 @@ def _make_mstep_block_inputs(rows, posterior) -> "_MstepBlockInputs":
             row_fine_rot=rows.row_fine_rot,
             projections=None,
         )
-    order = rows.classes.mstep_row_order
+    order = rows.mstep.row_order
     return _MstepBlockInputs(
         row_image_local=rows.row_image_local[order],
         kernel_row_image_ids=posterior.kernel_row_image_ids[order],
@@ -3457,29 +3534,30 @@ def _make_mstep_block_inputs(rows, posterior) -> "_MstepBlockInputs":
     )
 
 
-def _class_mstep_blocks(blocks: "_MstepBlockInputs", rows, class_index: int, *, spec):
-    """Class ``class_index``'s M-step rows: ``(blocks, first block, block count)``.
+def _slot_mstep_blocks(blocks: "_MstepBlockInputs", rows, slot_index: int, *, spec):
+    """Accumulator slot ``slot_index``'s M-step rows: ``(blocks, first block, block count)``.
 
-    One class has every valid row, ``ceil(n_valid_rows / B)`` blocks from 0 (or
-    the whole capacity under ``static_block_trip``). With K>1 a class owns rows
-    ``[lo, hi)`` of the class-major order; its blocks are the ones that overlap
-    them, and :func:`_resident_mstep_block_at` gives the other rows of a
-    boundary block no weight. Block counts are device scalars, so the program
-    stays keyed on the capacity class.
+    One slot has every valid row, ``ceil(n_valid_rows / B)`` blocks from 0 (or
+    the whole capacity under ``static_block_trip``). With several slots (K>1
+    classes, VDAM's pseudo-halfsets) a slot owns rows ``[lo, hi)`` of the
+    slot-major order; its blocks are the ones that overlap them, and
+    :func:`_resident_mstep_block_at` gives the other rows of a boundary block no
+    weight. Block counts are device scalars, so the program stays keyed on the
+    capacity class.
     """
 
     block_rows = int(spec.mstep_block_rows)
-    if rows.classes is None:
+    if rows.mstep is None:
         if spec.static_block_trip:
             return blocks, jnp.int32(0), jnp.int32(int(spec.row_capacity) // block_rows)
         n_blocks = jax.lax.div(rows.n_valid_rows + jnp.int32(block_rows - 1), jnp.int32(block_rows))
         return blocks, jnp.int32(0), n_blocks
-    offsets = rows.classes.mstep_class_offsets
-    lo, hi = offsets[class_index], offsets[class_index + 1]
+    offsets = rows.mstep.slot_offsets
+    lo, hi = offsets[slot_index], offsets[slot_index + 1]
     first = jax.lax.div(lo, jnp.int32(block_rows))
     stop = jax.lax.div(hi + jnp.int32(block_rows - 1), jnp.int32(block_rows))
     n_blocks = jnp.where(hi > lo, stop - first, jnp.int32(0))
-    return blocks._replace(class_row_range=offsets[class_index : class_index + 2]), first, n_blocks
+    return blocks._replace(class_row_range=offsets[slot_index : slot_index + 2]), first, n_blocks
 
 
 def _make_chunk_program_spec(
@@ -3504,6 +3582,7 @@ def _make_chunk_program_spec(
     mstep_max_r=None,
     reuse_coarse_normalization=False,
     firstiter_cc=False,
+    n_slots=1,
     mstep_subtract_ctf_projection=False,
     n_classes=1,
 ) -> _ChunkProgramSpec:
@@ -3540,6 +3619,7 @@ def _make_chunk_program_spec(
         static_block_trip=_chunk_static_block_trip_enabled(),
         reuse_coarse_normalization=bool(reuse_coarse_normalization),
         firstiter_cc=bool(firstiter_cc),
+        n_slots=int(n_slots),
         mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
         n_classes=int(n_classes),
     )
@@ -4409,6 +4489,7 @@ class _ChunkProgramSpec:
     # RELION --firstiter_cc: normalized-CC scores and a winner-take-all
     # posterior (ml_optimiser.cpp:8844-8858, :9266-9293).
     firstiter_cc: bool = False
+    n_slots: int = 1
     # VDAM (--grad): BPref takes the residual shift(img) - ctf * proj, RELION's
     # cuda_kernel_backproject3D_SGD (BP.cuh:406-560); see _resident_block_residual.
     mstep_subtract_ctf_projection: bool = False
@@ -4447,6 +4528,8 @@ class _ChunkRowArrays(NamedTuple):
     image_row_count: jax.Array  # int64 [C_B], rows owned by a slot
     # K>1 only: the class axis of the chunk's rows.
     classes: "_ChunkClassLayout | None" = None
+    # More than one accumulator slot only: the slot-major M-step order.
+    mstep: "_ChunkMstepLayout | None" = None
 
 
 class _ChunkClassLayout(NamedTuple):
@@ -4455,17 +4538,23 @@ class _ChunkClassLayout(NamedTuple):
     An image slot's rows are class-major, so each (slot, class) pair owns a
     contiguous sub-segment ``s = slot * K + class`` of the slot's posterior
     segment: the per-class evidence and winner are reductions over it. The
-    M-step visits the rows class-major instead (``mstep_row_order``), so each
-    class's blocks write one accumulator, RELION's ``BPref[iclass]``
-    (ml_optimiser.cpp:10826).
+    M-step order is :class:`_ChunkMstepLayout`'s.
     """
 
     row_class: jax.Array  # int32 [C_R], 0 on padded rows
     row_segment: jax.Array  # int32 [C_R], slot * K + class; C_B * K on padded rows
     segment_offsets: jax.Array  # int32 [C_B * K + 1], cell offsets of each (slot, class)
     segment_row_start: jax.Array  # int64 [C_B * K], chunk-local first row of each (slot, class)
-    mstep_row_order: jax.Array  # int32 [C_R], rows by class (stable), padded rows last
-    mstep_class_offsets: jax.Array  # int32 [K + 1], each class's rows in that order
+
+
+class _ChunkMstepLayout(NamedTuple):
+    """The M-step visits a chunk's rows slot-major, so each accumulator slot's blocks write one BPref pair.
+
+    Slot ``a = class + K * slot_offset[unit]`` (docs/development/resident_segments.md).
+    """
+
+    row_order: jax.Array  # int32 [C_R], rows by slot (stable), padded rows last
+    slot_offsets: jax.Array  # int32 [n_slots + 1], each slot's rows in that order
 
 
 class _ChunkStageOperands(NamedTuple):
@@ -5293,8 +5382,8 @@ class _MstepBlockInputs(NamedTuple):
     row_posterior: jax.Array  # float32 [C_R, T]
     row_fine_rot: jax.Array | None  # int32 [C_R]
     projections: tuple | None  # (proj, |proj|^2, M-step rotations) of one block
-    # K>1: the rows [start, stop) of the class these blocks accumulate; the rows
-    # of a boundary block outside it get no weight. None for one class.
+    # Several accumulator slots: the rows [start, stop) of the slot these blocks
+    # accumulate; the rows of a boundary block outside it get no weight. None for one slot.
     class_row_range: jax.Array | None = None  # int32 [2]
 
 
@@ -5553,11 +5642,11 @@ def _run_resident_chunk_program(
     blocks = _make_mstep_block_inputs(rows, posterior)
     unroll = max(int(spec.block_unroll), 1)
     Ft_y_out, Ft_ctf_out = [], []
-    for class_index in range(int(spec.n_classes)):
-        # Each class's blocks accumulate into its own volumes; the per-image
-        # Wavg, noise and norm partials carry on across classes.
-        mstep = mstep._replace(Ft_y=Ft_y_total[class_index], Ft_ctf=Ft_ctf_total[class_index])
-        class_blocks, first_block, n_blocks = _class_mstep_blocks(blocks, rows, class_index, spec=spec)
+    for slot_index in range(int(spec.n_slots)):
+        # Each slot's blocks accumulate into its own volumes; the per-image
+        # Wavg, noise and norm partials carry on across slots.
+        mstep = mstep._replace(Ft_y=Ft_y_total[slot_index], Ft_ctf=Ft_ctf_total[slot_index])
+        class_blocks, first_block, n_blocks = _slot_mstep_blocks(blocks, rows, slot_index, spec=spec)
         n_outer = jax.lax.div(n_blocks + jnp.int32(unroll - 1), jnp.int32(unroll))
 
         def outer(outer_index, carry_in, _blocks=class_blocks, _first=first_block):
@@ -5579,7 +5668,8 @@ def _run_resident_chunk_program(
 
         mstep = jax.lax.fori_loop(0, n_outer, outer, mstep)
         if mstep.scale_xa_per_image is not None:
-            mstep = _fold_class_scale_sums(mstep, tables.wavg_scale_pixel_mask[class_index])
+            # Slot ``class + K * group``: the scale sums are masked by the slot's class.
+            mstep = _fold_class_scale_sums(mstep, tables.wavg_scale_pixel_mask[slot_index % int(spec.n_classes)])
         Ft_y_out.append(mstep.Ft_y)
         Ft_ctf_out.append(mstep.Ft_ctf)
     stats = _resident_chunk_statistics(
@@ -5601,8 +5691,8 @@ def _run_resident_chunk_stages(
 ):
     """Per-stage oracle: the same stages, dispatched one at a time.
 
-    ``class_row_ranges`` holds each class's host ``(lo, hi)`` rows in the
-    class-major M-step order (K>1); one class covers the valid rows.
+    ``class_row_ranges`` holds each accumulator slot's host ``(lo, hi)`` rows in
+    the slot-major M-step order (several slots); one slot covers the valid rows.
 
     Kept selectable by ``RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT=0`` so the
     fused program can be compared against the path it replaces inside one
@@ -5633,9 +5723,9 @@ def _run_resident_chunk_stages(
     for class_index, (row_lo, row_hi) in enumerate(class_row_ranges):
         mstep = mstep._replace(Ft_y=Ft_y_total[class_index], Ft_ctf=Ft_ctf_total[class_index])
         class_blocks = blocks
-        if rows.classes is not None:
+        if rows.mstep is not None:
             class_blocks = blocks._replace(
-                class_row_range=rows.classes.mstep_class_offsets[class_index : class_index + 2]
+                class_row_range=rows.mstep.slot_offsets[class_index : class_index + 2]
             )
         # Blocks past the class's rows hold only padding or another class's
         # rows: no weight, so the weighted sums, the Wavg terms, the noise
@@ -5656,7 +5746,8 @@ def _run_resident_chunk_stages(
                 cuda_backproject=em_cuda_kernels,
             )
         if mstep.scale_xa_per_image is not None:
-            mstep = _fold_class_scale_sums(mstep, tables.wavg_scale_pixel_mask[class_index])
+            # Row range ``class_index`` is slot ``class + K * group``; its class masks the scale sums.
+            mstep = _fold_class_scale_sums(mstep, tables.wavg_scale_pixel_mask[class_index % int(spec.n_classes)])
         Ft_y_out.append(mstep.Ft_y)
         Ft_ctf_out.append(mstep.Ft_ctf)
     if timing_hook is not None:
@@ -5766,11 +5857,11 @@ def _run_resident_chunk(
         tables, chunk, n_fine_trans, place=_PLACE_ON_DEVICE, n_fine_rot=n_fine_rot
     )
     class_row_ranges = None
-    if n_classes > 1:
-        class_rows = np.concatenate(
-            [[0], np.cumsum(np.bincount(tables.row_class[chunk.row_start : chunk.row_stop], minlength=n_classes))]
+    if int(tables.n_slots) > 1:
+        slot_rows = _chunk_slot_row_ranges(
+            materialize_chunk(tables, chunk)["row_slot"], int(chunk.n_valid_rows), int(tables.n_slots)
         )
-        class_row_ranges = tuple(zip(class_rows[:-1].tolist(), class_rows[1:].tolist()))
+        class_row_ranges = tuple(zip(slot_rows[:-1].tolist(), slot_rows[1:].tolist()))
     if stream_projection_fn is not None:
         (
             rows,
@@ -5932,6 +6023,7 @@ def _run_resident_chunk(
         ),
         reuse_coarse_normalization=coarse_reuse is not None,
         firstiter_cc=firstiter_cc,
+        n_slots=int(tables.n_slots),
         mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
         n_classes=n_classes,
     )

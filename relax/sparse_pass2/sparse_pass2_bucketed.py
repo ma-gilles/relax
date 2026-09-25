@@ -618,6 +618,8 @@ def compute_pass2_stats_sparse_bucketed(
     optics_group_ids=None,
     reconstruction_volume_current_size=None,
     reconstruction_image_radius=None,
+    reconstruction_group_ids=None,
+    reconstruction_group_count=None,
 ):
     """Bucketed batched implementation of sparse pass-2 oversampling.
 
@@ -634,6 +636,11 @@ def compute_pass2_stats_sparse_bucketed(
         raise NotImplementedError(
             "the compact/bucketed sparse pass 2 keeps one optics group's noise spectrum; "
             "select the device-resident driver (RELAX_SPARSE_PASS2_RESIDENT=1) for several"
+        )
+    if reconstruction_group_ids is not None or reconstruction_group_count is not None:
+        raise NotImplementedError(
+            "the compact/bucketed sparse pass 2 has one BPref pair per class; reconstruction "
+            "groups (VDAM pseudo-halfset slots) need the device-resident pass 2"
         )
     device_signature_configured = bool(
         os.environ.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "").strip()

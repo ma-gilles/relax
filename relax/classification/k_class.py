@@ -691,6 +691,11 @@ def _run_sparse_k_class_adaptive_pass2(
            if base_engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),
         **_translation_angle_scale_kwargs(base_engine_kwargs),
     )
+    # VDAM's pseudo-halfset accumulator slots (class + K * group): the resident engine only.
+    reconstruction_groups = base_engine_kwargs.get("reconstruction_group_ids") is not None
+    if reconstruction_groups:
+        common["reconstruction_group_ids"] = base_engine_kwargs["reconstruction_group_ids"]
+        common["reconstruction_group_count"] = int(base_engine_kwargs["reconstruction_group_count"])
     if n_classes == 1 and base_engine_kwargs.get("relion_f32_normalization_sum_weight") is not None:
         common["relion_f32_normalization_sum_weight"] = base_engine_kwargs["relion_f32_normalization_sum_weight"]
         common["relion_coarse_hard_assignment"] = base_engine_kwargs.get("relion_coarse_hard_assignment")
@@ -720,6 +725,8 @@ def _run_sparse_k_class_adaptive_pass2(
 
     common["return_source_eulers"] = bool(return_best_pose_details)
     common["fine_source_eulers_override"] = base_engine_kwargs.get("fine_source_eulers_override")
+    if reconstruction_groups and n_classes == 1 and k1_local_pass2_engine_selected():
+        raise NotImplementedError("reconstruction groups need the device-resident pass 2, not the local K=1 route")
     if n_classes == 1 and k1_local_pass2_engine_selected():
         route_common = dict(common)
         route_common["rotation_log_prior"] = _class_rotation_prior(0)
@@ -805,6 +812,10 @@ def _run_sparse_k_class_adaptive_pass2(
         )
         if resident is not None:
             return resident
+    if reconstruction_groups and n_classes > 1:
+        raise NotImplementedError(
+            "reconstruction groups (VDAM pseudo-halfset slots) need the device-resident K-class pass 2"
+        )
     if use_fused_pass2:
         from relax.sparse_pass2.sparse_pass2_bucketed import compute_k_class_pass2_stats_sparse_fused
 

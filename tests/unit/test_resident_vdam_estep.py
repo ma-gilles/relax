@@ -107,3 +107,109 @@ def test_native_fine_units_in_place_is_the_eager_conversion(shape):
     assert fused.dtype == np.complex64
     # Division in binary64 and one rounding to float32 in both forms (measured: identical).
     assert_matches(fused, eager)
+
+
+# ---------------------------------------------------------------------------
+# CPU: VDAM's pseudo-halfset accumulator slots (docs/development/resident_segments.md)
+# ---------------------------------------------------------------------------
+
+
+def _two_class_tables(**fields):
+    """Three images, two classes, rows image-major then class-major, every image full-mask."""
+
+    from relax.sparse_pass2.resident_candidates import ResidentCandidateTables
+
+    row_unit = np.array([0, 0, 0, 1, 1, 2, 2, 2, 2], dtype=np.int32)
+    row_class = np.array([0, 1, 1, 0, 1, 0, 0, 1, 1], dtype=np.int32)
+    n_rows = row_unit.size
+    return ResidentCandidateTables(
+        n_images=3,
+        n_rows=n_rows,
+        n_fine_trans=4,
+        n_coarse_trans=2,
+        row_offsets=np.array([0, 3, 5, 9], dtype=np.int32),
+        row_unit=row_unit,
+        row_fine_rot=np.arange(n_rows, dtype=np.int32),
+        row_parent_local=np.zeros(n_rows, dtype=np.int32),
+        row_log_prior=np.zeros(n_rows, dtype=np.float32),
+        mask_mode=np.zeros(3, dtype=np.int8),
+        parent_offsets=np.zeros(4, dtype=np.int32),
+        parent_trans_bits=np.zeros((0, 1), dtype=np.uint32),
+        row_class=row_class,
+        n_classes=2,
+        **fields,
+    )
+
+
+def test_tables_write_each_row_its_slot():
+    from relax.sparse_pass2.resident_candidates import CapacityChunk, materialize_chunk
+
+    tables = _two_class_tables(unit_slot_offset=np.array([1, 0, 1], dtype=np.int32), n_slot_groups=2)
+    assert tables.n_slots == 4
+    chunk = CapacityChunk(image_start=0, image_stop=3, row_start=0, row_stop=9, row_capacity=12, image_capacity=4)
+    host = materialize_chunk(tables, chunk)
+    expected = tables.row_class + 2 * np.array([1, 0, 1], dtype=np.int32)[tables.row_unit]
+    np.testing.assert_array_equal(host["row_slot"][:9], expected)
+    np.testing.assert_array_equal(host["row_slot"][9:], 0)
+    plain = materialize_chunk(_two_class_tables(), chunk)
+    np.testing.assert_array_equal(plain["row_slot"][:9], _two_class_tables().row_class)
+
+
+def test_tables_refuse_inconsistent_slot_groups():
+    with pytest.raises(ValueError, match="unit_slot_offset values"):
+        _two_class_tables(unit_slot_offset=np.array([0, 2, 1], dtype=np.int32), n_slot_groups=2)
+    with pytest.raises(ValueError, match="need unit_slot_offset"):
+        _two_class_tables(n_slot_groups=2)
+    with pytest.raises(ValueError, match="shape"):
+        _two_class_tables(unit_slot_offset=np.zeros(2, dtype=np.int32), n_slot_groups=2)
+
+
+def test_reconstruction_groups_become_unit_slot_offsets():
+    tables = rp._with_reconstruction_groups(_two_class_tables(), [1, 0, 1], 2, n_images=3)
+    np.testing.assert_array_equal(tables.unit_slot_offset, [1, 0, 1])
+    assert tables.n_slots == 4
+    assert rp._with_reconstruction_groups(_two_class_tables(), None, None, n_images=3).n_slots == 2
+    with pytest.raises(ValueError, match="go together"):
+        rp._with_reconstruction_groups(_two_class_tables(), [0, 1, 0], None, n_images=3)
+    with pytest.raises(ValueError, match="one entry per image"):
+        rp._with_reconstruction_groups(_two_class_tables(), [0, 1], 2, n_images=3)
+
+
+def test_class_accumulators_stack_the_pseudo_halfsets():
+    """Slot ``k + K * h`` becomes group ``h`` of class ``k``: the exact-local engine's grouped layout."""
+
+    volumes = tuple(np.full(3, float(a)) for a in range(4))
+    result = rp._ResidentPass2Result(
+        Ft_y=volumes,
+        Ft_ctf=tuple(v + 10.0 for v in volumes),
+        n_classes=2,
+        n_slot_groups=2,
+        finalized=None,
+        noise_stats=None,
+        fine_translations=None,
+        score_real_dtype=np.float32,
+    )
+    y1, ctf1 = rp._class_accumulators(result, 1)
+    np.testing.assert_array_equal(np.asarray(y1)[:, 0], [1.0, 3.0])
+    np.testing.assert_array_equal(np.asarray(ctf1)[:, 0], [11.0, 13.0])
+    single = result._replace(Ft_y=volumes[:2], Ft_ctf=volumes[:2], n_slot_groups=1)
+    assert np.asarray(rp._class_accumulators(single, 1)[0])[0] == 1.0
+
+
+def test_compact_pass_refuses_reconstruction_groups(monkeypatch):
+    """The compact engine has one BPref pair per class; groups must not merge silently."""
+
+    from test_resident_pass2_driver import _driver_fixture_args
+
+    from relax.sparse_pass2.dispatch import compute_pass2_stats_sparse
+
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT", "0")
+    args = _driver_fixture_args()
+    n_images = len(args["significant_sample_indices"])
+    args["mean_variance"] = None
+    with pytest.raises(NotImplementedError, match="device-resident pass 2"):
+        compute_pass2_stats_sparse(
+            **args,
+            reconstruction_group_ids=np.arange(n_images) % 2,
+            reconstruction_group_count=2,
+        )

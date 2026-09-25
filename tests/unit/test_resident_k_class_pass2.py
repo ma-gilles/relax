@@ -27,8 +27,12 @@ pytestmark = pytest.mark.unit
 _CLASS_PRIORS = (0.5, 0.3, 0.2)
 
 
-def _chunk(row_counts_by_image_and_class, *, row_capacity, image_capacity):
-    """Materialized-chunk stand-in: rows image-major, then class-major."""
+def _chunk(row_counts_by_image_and_class, *, row_capacity, image_capacity, image_group=None):
+    """Materialized-chunk stand-in: rows image-major, then class-major.
+
+    ``image_group`` gives each image an accumulator slot group (VDAM's pseudo-halfset);
+    a row's slot is ``class + K * group`` as ``materialize_chunk`` writes it.
+    """
 
     image, klass = [], []
     for b, counts in enumerate(row_counts_by_image_and_class):
@@ -42,6 +46,10 @@ def _chunk(row_counts_by_image_and_class, *, row_capacity, image_capacity):
     }
     host["row_image_local"][:n_valid] = image
     host["row_class"][:n_valid] = klass
+    n_classes = len(row_counts_by_image_and_class[0]) if row_counts_by_image_and_class else 1
+    group = np.zeros(len(row_counts_by_image_and_class), dtype=np.int32) if image_group is None else image_group
+    host["row_slot"] = host["row_class"].copy()
+    host["row_slot"][:n_valid] += n_classes * np.asarray(group, dtype=np.int32)[np.asarray(image, dtype=np.int64)]
     chunk = CapacityChunk(
         image_start=0,
         image_stop=len(row_counts_by_image_and_class),
@@ -57,6 +65,7 @@ def test_class_layout_sub_segments_and_mstep_order():
     counts = [(2, 0, 1), (0, 3, 2), (1, 1, 0)]
     host, chunk = _chunk(counts, row_capacity=16, image_capacity=4)
     layout = rp._chunk_class_layout(host, chunk, n_classes=3, n_fine_trans=5, place=rp._PLACE_ON_DEVICE)
+    mstep = rp._chunk_mstep_layout(host, chunk, n_slots=3, place=rp._PLACE_ON_DEVICE)
 
     flat = np.zeros(4 * 3, dtype=np.int64)
     flat[:9] = np.asarray(counts).reshape(-1)
@@ -70,14 +79,39 @@ def test_class_layout_sub_segments_and_mstep_order():
 
     # The M-step visits class 0's rows, then class 1's, then class 2's, each in
     # image order; padded rows stay last.
-    order = np.asarray(layout.mstep_row_order)
+    order = np.asarray(mstep.row_order)
     row_class = np.asarray(host["row_class"])
     assert_matches(row_class[order[:n_valid]], np.sort(row_class[:n_valid], kind="stable"))
     assert_matches(order[n_valid:], np.arange(n_valid, 16))
-    assert_matches(np.asarray(layout.mstep_class_offsets), [0, 3, 7, 10])
+    assert_matches(np.asarray(mstep.slot_offsets), [0, 3, 7, 10])
     for k in range(3):
-        rows = order[int(layout.mstep_class_offsets[k]) : int(layout.mstep_class_offsets[k + 1])]
+        rows = order[int(mstep.slot_offsets[k]) : int(mstep.slot_offsets[k + 1])]
         assert np.all(np.diff(host["row_image_local"][rows]) >= 0)
+
+
+def test_mstep_slots_split_each_class_by_pseudo_halfset():
+    """VDAM: slot ``class + K * half`` (acc_ml_optimiser_impl.h:4800-4804); halves keep image order."""
+
+    counts = [(2, 0, 1), (0, 3, 2), (1, 1, 0), (2, 2, 2)]
+    half = np.array([1, 0, 1, 0], dtype=np.int32)
+    host, chunk = _chunk(counts, row_capacity=24, image_capacity=4, image_group=half)
+    mstep = rp._chunk_mstep_layout(host, chunk, n_slots=6, place=rp._PLACE_ON_DEVICE)
+    n_valid = int(np.sum(counts))
+    order = np.asarray(mstep.row_order)
+    offsets = np.asarray(mstep.slot_offsets)
+    per_slot = np.zeros(6, dtype=np.int64)
+    for b, row_counts in enumerate(counts):
+        for k, count in enumerate(row_counts):
+            per_slot[k + 3 * half[b]] += count
+    assert_matches(offsets, np.concatenate([[0], np.cumsum(per_slot)]))
+    assert offsets[-1] == n_valid
+    row_image = np.asarray(host["row_image_local"])
+    row_class = np.asarray(host["row_class"])
+    for a in range(6):
+        rows = order[int(offsets[a]) : int(offsets[a + 1])]
+        assert np.all(row_class[rows] == a % 3) and np.all(half[row_image[rows]] == a // 3)
+        assert np.all(np.diff(row_image[rows]) >= 0)
+    assert_matches(order[n_valid:], np.arange(n_valid, 24))
 
 
 def test_class_layout_refuses_rows_out_of_hidden_space_order():
@@ -104,12 +138,13 @@ def test_class_mstep_blocks_cover_each_class_once():
         image_row_start=None,
         image_row_count=None,
         classes=rp._chunk_class_layout(host, chunk, n_classes=2, n_fine_trans=1, place=rp._PLACE_ON_DEVICE),
+        mstep=rp._chunk_mstep_layout(host, chunk, n_slots=2, place=rp._PLACE_ON_DEVICE),
     )
     spec = type("Spec", (), {"mstep_block_rows": 4, "static_block_trip": False, "row_capacity": 32})()
     blocks = rp._MstepBlockInputs(None, None, None, None, None)
     covered = []
     for k in range(2):
-        class_blocks, first, n_blocks = rp._class_mstep_blocks(blocks, rows, k, spec=spec)
+        class_blocks, first, n_blocks = rp._slot_mstep_blocks(blocks, rows, k, spec=spec)
         lo, hi = (int(v) for v in np.asarray(class_blocks.class_row_range))
         starts = [(int(first) + i) * 4 for i in range(int(n_blocks))]
         covered.append([r for s in starts for r in range(s, s + 4) if lo <= r < hi])

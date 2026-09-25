@@ -88,6 +88,8 @@ def compute_pass2_stats_sparse(
     optics_group_ids=None,
     reconstruction_volume_current_size=None,
     reconstruction_image_radius=None,
+    reconstruction_group_ids=None,
+    reconstruction_group_count=None,
 ):
     """Exact sparse pass 2 over per-image significant coarse samples.
 
@@ -337,6 +339,14 @@ def compute_pass2_stats_sparse(
                 else {}
             ),
             **({"optics_group_ids": optics_group_ids} if optics_group_ids is not None else {}),
+            **(
+                {
+                    "reconstruction_group_ids": reconstruction_group_ids,
+                    "reconstruction_group_count": reconstruction_group_count,
+                }
+                if reconstruction_group_ids is not None or reconstruction_group_count is not None
+                else {}
+            ),
             **(
                 {"reconstruction_volume_current_size": int(reconstruction_volume_current_size)}
                 if reconstruction_volume_current_size is not None

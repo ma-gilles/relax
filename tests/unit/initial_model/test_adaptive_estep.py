@@ -77,3 +77,102 @@ def test_direction_sums_bin_recovar_order_rotations(fine):
     binned = adaptive_estep._direction_posterior_stats(result, n_coarse_rot=n_rot, rot_parent_map=parent, n_psi=n_psi)
     expected = coarse.reshape(n_psi, n_dir).sum(axis=0)
     assert_matches(np.asarray(binned.per_class_stats[0].rotation_posterior_sums), expected, rtol=1e-13)
+
+
+class _Dataset:
+    n_images = 4
+
+    def subset(self, image_indices):
+        n_images = int(np.asarray(image_indices).size)
+        return SimpleNamespace(n_images=n_images, n_units=n_images)
+
+
+class _ReplaceableNamespace(SimpleNamespace):
+    def _replace(self, **updates):
+        return type(self)(**{**vars(self), **updates})
+
+
+def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch):
+    """VDAM K=2: one adaptive pass over the subset; each particle's half is its slot group.
+
+    RELION backprojects particle p of class k into BPref[k + (part_id % 2) * K]
+    (acc_ml_optimiser_impl.h:4800-4804); the subset schedule's halves go straight
+    to the resident engine as ``reconstruction_group_ids``.
+    """
+
+    from relax.vdam.estep_common import DenseInitialModelEstepConfig
+    from relax.vdam.init import initialise_denovo_state
+
+    calls = []
+    opts = native_options.NativeInitialModelOptions(fn_img="particles.star", healpix_order=1, oversampling=1)
+    plan = native_sampling._build_sampling_plan(opts, iteration=2, defer_fine_rotations=True)
+    key = adaptive_estep.relion_order_of_recovar_rotations(1)
+    prior_relion = np.arange(2 * key.size, dtype=np.float32).reshape(2, key.size)
+
+    def fake_route(dataset, *args, **kwargs):
+        calls.append(dict(kwargs, n_images=int(dataset.n_images)))
+        stats = make_relion_stats(
+            log_evidence_per_image=np.zeros(dataset.n_images),
+            best_log_score_per_image=np.zeros(dataset.n_images),
+            max_posterior_per_image=np.ones(dataset.n_images),
+            rotation_posterior_sums=np.ones(key.size),
+            host_arrays=True,
+        )
+        return _ReplaceableNamespace(
+            Ft_y=[np.zeros(2), np.ones(2)], Ft_ctf=[np.zeros(2), np.ones(2)], per_class_stats=(stats, stats)
+        )
+
+    accumulator_calls = []
+    monkeypatch.setattr(adaptive_estep, "run_dense_k_class_em_adaptive", fake_route)
+    monkeypatch.setattr(adaptive_estep, "uses_relion_cuda_image_preprocessing", lambda dataset: True)
+    monkeypatch.setattr(
+        adaptive_estep, "_arrays_to_accumulators", lambda *a, **kw: accumulator_calls.append(kw) or []
+    )
+    monkeypatch.setattr(adaptive_estep, "_sparse_pass2_estep_meta", lambda results, selected: {})
+    monkeypatch.setattr(adaptive_estep, "_add_accumulator_weight_meta", lambda meta, acc, K: None)
+    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=2, nr_iter=4, n_directions=4, pseudo_halfsets=True)
+    config = DenseInitialModelEstepConfig(
+        noise_variance=np.ones(64, dtype=np.float32),
+        rotations=None,
+        translations=plan.translations,
+        relion_bpref_frame=True,
+        engine_kwargs={},
+    )
+    engine_kwargs = {
+        "healpix_order": 1,
+        "oversampling_order": 1,
+        "random_perturbation": plan.random_perturbation,
+        "coarse_translations": plan.coarse_translations,
+        "coarse_base_translations": plan.coarse_base_translations,
+        "translation_step": plan.offset_step_px,
+        "max_significants": 200,
+        "class_rotation_log_prior": prior_relion,
+        "current_size": 8,
+        "reconstruction_subtract_projected_reference": True,
+        "score_with_masked_images": True,
+        "half_spectrum_scoring": True,
+        "projection_padding_factor": 1,
+        "reconstruction_padding_factor": 1,
+        "projection_mask_current_image_disk": False,
+    }
+    result = adaptive_estep.run_adaptive_initial_model_estep(
+        _Dataset(),
+        state,
+        config,
+        class_log_priors=np.zeros(2),
+        joint_particle_ids=np.array([3, 0, 2], dtype=np.int64),
+        joint_halfset_ids=np.array([1, 0, 1], dtype=np.int32),
+        means=None,
+        mean_variance=None,
+        relion_projector_half_by_class=np.zeros((2, 1)),
+        relion_projector_r_max=1,
+        engine_kwargs=engine_kwargs,
+    )
+    assert len(calls) == 1 and calls[0]["n_images"] == 3
+    np.testing.assert_array_equal(calls[0]["reconstruction_group_ids"], [1, 0, 1])
+    assert calls[0]["reconstruction_group_count"] == 2
+    assert calls[0]["max_significants"] == 200
+    assert calls[0]["mstep_subtract_ctf_projection"] is True
+    assert_matches(calls[0]["class_rotation_log_prior"], prior_relion[:, key])
+    assert accumulator_calls[0]["halfset_idx"] is None and accumulator_calls[0]["reconstruction_group_count"] == 2
+    assert result.meta["halfset_ids"] == (0, 1)

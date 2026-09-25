@@ -597,19 +597,6 @@ def run_dense_initial_model_estep(
             if particle_ids is None
             else np.asarray(particle_ids, dtype=np.int64)
         )
-        if str(config.pass2_engine) == "adaptive":
-            return run_adaptive_initial_model_estep(
-                experiment_dataset,
-                state,
-                config,
-                class_log_priors=class_log_priors,
-                groups=groups,
-                means=means,
-                mean_variance=mean_variance,
-                relion_projector_half_by_class=relion_projector_half_by_class,
-                relion_projector_r_max=relion_projector_r_max,
-                engine_kwargs=engine_kwargs,
-            )
         if state.pseudo_halfsets:
             selected_halfset_ids = (
                 np.arange(selected_particle_ids.size, dtype=np.int32) % 2
@@ -618,6 +605,20 @@ def run_dense_initial_model_estep(
             )
         else:
             selected_halfset_ids = None
+        if str(config.pass2_engine) == "adaptive":
+            return run_adaptive_initial_model_estep(
+                experiment_dataset,
+                state,
+                config,
+                class_log_priors=class_log_priors,
+                joint_particle_ids=selected_particle_ids,
+                joint_halfset_ids=selected_halfset_ids,
+                means=means,
+                mean_variance=mean_variance,
+                relion_projector_half_by_class=relion_projector_half_by_class,
+                relion_projector_r_max=relion_projector_r_max,
+                engine_kwargs=engine_kwargs,
+            )
         return _run_sparse_pass2_initial_model_estep(
             experiment_dataset,
             state,
