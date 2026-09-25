@@ -1081,6 +1081,29 @@ def _as_host_accumulator(value):
     return np.asarray(jax.device_get(value))
 
 
+def _resident_production_arithmetic(options: dict) -> dict:
+    """RELION's pass-2 arithmetic, the K=1 production set, for a K>1 pass on the resident engine.
+
+    RELION's E-step arithmetic does not depend on the class count: its float32
+    fine posterior and pruned M-step, the literal normalized-CC reduction of
+    ``--firstiter_cc``, its powerClass spectrum and exact BPref operands, and
+    the atomic Wavg triplet of the preserved BPref order
+    (``source_faithful_spectrum_norm``, ``preserve_bpref_particle_order``). The
+    compact K>1 routes keep their historical arithmetic until they are deleted.
+    """
+
+    options = dict(options)
+    options.update(
+        source_faithful_spectrum_norm=True,
+        preserve_bpref_particle_order=True,
+        relion_f32_fine_posterior=True,
+        relion_fine_mstep_prune=True,
+        relion_fine_diff2_fused_ffi=True,
+        relion_exact_fine_normalized_cc=True,
+    )
+    return options
+
+
 def _run_resident_k_class_pass2(
     experiment_dataset,
     means_array,
@@ -1098,14 +1121,10 @@ def _run_resident_k_class_pass2(
 ) -> KClassEMResult | None:
     """RELION's Class3D fine pass on the device-resident engine, or None for the compact one.
 
-    Runs under ``RELAX_SPARSE_PASS2_RESIDENT`` like the K=1 pass. RELION's E-step
-    arithmetic does not depend on the class count, so the K-class pass runs the
-    K=1 production arithmetic: RELION's float32 fine posterior and pruned M-step,
-    its powerClass spectrum and exact BPref operands, and the atomic Wavg triplet
-    of the preserved BPref order (``source_faithful_spectrum_norm`` and
-    ``preserve_bpref_particle_order``). The compact K-class route keeps its
-    historical arithmetic until it is deleted. Passes the resident driver was
-    never scoped for go to the compact route, and the log says so.
+    Runs under ``RELAX_SPARSE_PASS2_RESIDENT`` like the K=1 pass, with the K=1
+    production arithmetic (:func:`_resident_production_arithmetic`). Passes the
+    resident driver was never scoped for go to the compact route, and the log
+    says so.
     """
 
     from relax.sparse_pass2.resident_pass2 import (
@@ -1117,13 +1136,9 @@ def _run_resident_k_class_pass2(
     if not resident_pass2_requested():
         return None
     n_classes = int(means_array.shape[0])
-    options = dict(common)
+    options = _resident_production_arithmetic(common)
+    options.pop("relion_exact_fine_normalized_cc")
     options.update(
-        source_faithful_spectrum_norm=True,
-        preserve_bpref_particle_order=True,
-        relion_f32_fine_posterior=True,
-        relion_fine_mstep_prune=True,
-        relion_fine_diff2_fused_ffi=True,
         relion_projector_half=relion_projector_half_by_class,
         relion_projector_r_max=relion_projector_r_max,
         accumulate_noise=accumulate_noise,
@@ -1786,6 +1801,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
     """Sparse RELION firstiter_cc fine pass over global-winner image subsets."""
 
     from relax.sparse_pass2.dispatch import compute_pass2_stats_sparse
+    from relax.sparse_pass2.resident_pass2 import resident_pass2_requested
 
     n_classes = int(means_array.shape[0])
     n_images = int(coarse_class_assignments.shape[0])
@@ -1847,6 +1863,10 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
         pass2_kwargs,
         n_classes=n_classes,
     )
+    if n_classes > 1 and resident_pass2_requested():
+        # Each image's fine pass is a K=1 pass inside its coarse winner class,
+        # so on the resident engine it is the K=1 production pass.
+        common = _resident_production_arithmetic(common)
     # Images on another grid fill the backprojector at the reference model size.
     mstep_current_size = (
         common["reconstruction_volume_current_size"]
