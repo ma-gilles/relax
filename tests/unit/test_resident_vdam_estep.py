@@ -213,3 +213,65 @@ def test_compact_pass_refuses_reconstruction_groups(monkeypatch):
             reconstruction_group_ids=np.arange(n_images) % 2,
             reconstruction_group_count=2,
         )
+
+
+# ---------------------------------------------------------------------------
+# GPU: the slots are a split of one pass's accumulators
+# ---------------------------------------------------------------------------
+
+
+def _slot_split_checks(grouped, plain, group_ids):
+    """Slots partition the rows: the groups sum to the one-slot pass; an empty group stays zero."""
+
+    y, ctf = np.asarray(grouped[0]), np.asarray(grouped[1])
+    assert y.shape[0] == 2 and ctf.shape[0] == 2
+    assert _rel_l2(np.asarray(plain[0]), y.sum(axis=0)) < 1e-6
+    assert _rel_l2(np.asarray(plain[1]), ctf.sum(axis=0)) < 1e-6
+    for g in (0, 1):
+        if not np.any(np.asarray(group_ids) == g):
+            assert not np.any(y[g]) and not np.any(ctf[g])
+
+
+@requires_resident_gpu
+@pytest.mark.usefixtures("_resident_production_env")
+@pytest.mark.parametrize("split", ["alternate", "all_first"])
+def test_resident_k1_slots_split_the_one_slot_pass(split):
+    args = _vdam_args(residual=True, groups=False)
+    n_images = len(args["significant_sample_indices"])
+    group_ids = np.arange(n_images) % 2 if split == "alternate" else np.zeros(n_images, dtype=np.int64)
+    plain = rp.compute_pass2_stats_resident(**args)
+    grouped = rp.compute_pass2_stats_resident(**args, reconstruction_group_ids=group_ids, reconstruction_group_count=2)
+    np.testing.assert_array_equal(plain.hard_assignment, grouped.hard_assignment)
+    _slot_split_checks((grouped.Ft_y, grouped.Ft_ctf), (plain.Ft_y, plain.Ft_ctf), group_ids)
+    for field in ("wsum_sigma2_noise", "wsum_img_power", "wsum_sigma2_offset"):
+        assert _rel_l2(getattr(plain.noise_stats, field), getattr(grouped.noise_stats, field)) < 1e-6, field
+
+
+@requires_resident_gpu
+@pytest.mark.usefixtures("_resident_production_env")
+def test_resident_k2_slots_split_each_class():
+    from test_resident_k_class_pass2 import _k_class_args
+
+    args, volumes, supports, priors = _k_class_args(2)
+    args["mstep_subtract_ctf_projection"] = True
+    n_images = len(supports[0])
+    group_ids = (np.arange(n_images) // 3) % 2
+    call = dict(args)
+    experiment_dataset = call.pop("experiment_dataset")
+    noise_variance = call.pop("noise_variance")
+    translations = call.pop("translations")
+    nside_level = call.pop("nside_level")
+    disc_type = call.pop("disc_type")
+
+    def run(**extra):
+        return rp.compute_k_class_pass2_stats_resident(
+            experiment_dataset, volumes, noise_variance, translations, supports, nside_level, disc_type,
+            rotation_log_priors_by_class=priors, **call, **extra,
+        )
+
+    plain = run()
+    grouped = run(reconstruction_group_ids=group_ids, reconstruction_group_count=2)
+    np.testing.assert_array_equal(plain.per_class_hard_assignments, grouped.per_class_hard_assignments)
+    assert_matches(grouped.class_reconstruction_posterior_sums, plain.class_reconstruction_posterior_sums, rtol=1e-6)
+    for k in range(2):
+        _slot_split_checks((grouped.Ft_y[k], grouped.Ft_ctf[k]), (plain.Ft_y[k], plain.Ft_ctf[k]), group_ids)
