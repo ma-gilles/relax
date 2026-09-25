@@ -1207,19 +1207,41 @@ def test_streamed_projections_match_the_cached_pass(_resident_production_env, mo
 
 def test_stream_projection_budget_is_capped_by_measured_free_memory():
     gib = 1024**3
-    assert rp._stream_projection_budget_bytes(
-        20 * gib, physical_free_bytes=None, allocator_free_bytes=None
-    ) == 20 * gib
-    assert rp._stream_projection_budget_bytes(
-        20 * gib, physical_free_bytes=30 * gib, allocator_free_bytes=60 * gib
+    budget = rp._stream_projection_budget_bytes
+    # Unknown readings do not cap.
+    assert budget(20 * gib, physical_free_bytes=None, allocator_free_bytes=None) == 20 * gib
+    # Allocator headroom caps; the device bound is physical free plus the pool's unused bytes.
+    assert budget(
+        20 * gib, physical_free_bytes=30 * gib, allocator_free_bytes=60 * gib, pool_free_bytes=0
     ) == 15 * gib
-    assert rp._stream_projection_budget_bytes(
-        20 * gib, physical_free_bytes=70 * gib, allocator_free_bytes=8 * gib
+    assert budget(
+        20 * gib, physical_free_bytes=70 * gib, allocator_free_bytes=8 * gib, pool_free_bytes=0
     ) == 4 * gib
+    # Without a pool reading the physical reading bounds only when the allocator reports nothing.
+    assert budget(20 * gib, physical_free_bytes=30 * gib, allocator_free_bytes=None) == 15 * gib
+    assert budget(20 * gib, physical_free_bytes=2 * gib, allocator_free_bytes=60 * gib) == 20 * gib
     # The half's resident operands are reserved before the fraction is taken.
-    assert rp._stream_projection_budget_bytes(
+    assert budget(
         20 * gib, physical_free_bytes=30 * gib, allocator_free_bytes=None, reserved_bytes=10 * gib
     ) == 10 * gib
+
+
+def test_stream_projection_budget_counts_the_allocator_pool_as_free():
+    """10097 it13 in a full run (14400302): the grown pool left 13.37 GiB physically
+    free against 70.04 GiB of allocator headroom, and the physical reading alone
+    set a zero budget. The pool's unused bytes are allocatable, so the budget is
+    the cache share again."""
+
+    gib = 1024**3
+    kwargs = dict(physical_free_bytes=int(13.37 * gib), allocator_free_bytes=int(70.04 * gib))
+    share = int(19.91 * gib)
+    assert rp._stream_projection_budget_bytes(
+        share, pool_free_bytes=int(56.0 * gib), reserved_bytes=int(14.0 * gib), **kwargs
+    ) == share
+    # A pool that holds little unused memory still bounds it through the device.
+    assert rp._stream_projection_budget_bytes(
+        share, pool_free_bytes=int(1.0 * gib), reserved_bytes=int(4.0 * gib), **kwargs
+    ) == int((14.37 - 4.0) * gib * rp._STREAM_FREE_MEMORY_FRACTION)
 
 
 def test_streamed_row_ladder_counts_the_padded_copy():

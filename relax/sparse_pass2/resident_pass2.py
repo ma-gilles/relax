@@ -147,6 +147,7 @@ from relax.sparse_pass2.sparse_pass2_bucket_io import (
 from relax.sparse_pass2.sparse_pass2_budget import (
     _device_free_memory_bytes,
     _jax_allocator_free_memory_bytes,
+    _jax_allocator_pool_free_bytes,
     _max_adjoint_block_bytes_for_pass,
     _max_translation_tile_bytes_for_pass,
     _projection_cache_build_max_rotations_per_call,
@@ -1814,6 +1815,7 @@ def compute_pass2_stats_resident(
         score_cache = recon_cache = recon_abs2_cache = None
         physical_free_bytes = _device_free_memory_bytes()
         allocator_free_bytes = _jax_allocator_free_memory_bytes()
+        pool_free_bytes = _jax_allocator_pool_free_bytes()
         # The half's once-per-half operands are allocated after this reading;
         # reserve them now so the chunk-local caches do not take their room.
         reserved_operand_bytes = 0
@@ -1836,12 +1838,14 @@ def compute_pass2_stats_resident(
             max_projection_cache_bytes,
             physical_free_bytes=physical_free_bytes,
             allocator_free_bytes=allocator_free_bytes,
+            pool_free_bytes=pool_free_bytes,
             reserved_bytes=reserved_operand_bytes,
         )
         logger.info(
             "Resident pass-2 projections are streamed per chunk: the %d-rotation cache "
             "would take %.2f GiB against a %.2f GiB budget; chunk-local budget %.2f GiB "
-            "at %.1f KiB per rotation (physical free %s, allocator free %s)",
+            "at %.1f KiB per rotation (physical free %s, allocator free %s, "
+            "pool free %s, reserved operands %.2f GiB)",
             n_fine_rot,
             transient_projection_bytes / float(1024**3),
             max_projection_cache_bytes / float(1024**3),
@@ -1849,6 +1853,8 @@ def compute_pass2_stats_resident(
             projection_bytes_per_rotation / 1024.0,
             "unknown" if physical_free_bytes is None else f"{physical_free_bytes / float(1024**3):.2f} GiB",
             "unknown" if allocator_free_bytes is None else f"{allocator_free_bytes / float(1024**3):.2f} GiB",
+            "unknown" if pool_free_bytes is None else f"{pool_free_bytes / float(1024**3):.2f} GiB",
+            reserved_operand_bytes / float(1024**3),
         )
     else:
         cache_t0 = time.time()
@@ -2451,24 +2457,41 @@ _STREAM_PEAK_COPIES = 2
 
 
 def _stream_projection_budget_bytes(
-    max_projection_cache_bytes, *, physical_free_bytes, allocator_free_bytes, reserved_bytes=0
+    max_projection_cache_bytes,
+    *,
+    physical_free_bytes,
+    allocator_free_bytes,
+    pool_free_bytes=None,
+    reserved_bytes=0,
 ):
     """Chunk-local projection budget: the cache share, capped by measured free memory.
 
-    Both free-memory readings are taken when the pass plans its chunks, so
-    they see whatever earlier passes and iterations left resident; an unknown
-    reading does not cap. The per-iteration cache share alone would ignore
-    that. ``reserved_bytes`` (the half's resident operands, allocated after
-    the reading) comes off the free memory first; half of the rest stays for
-    the half's accumulators and the chunk working set, which have their own
-    budgets.
+    The readings are taken when the pass plans its chunks, so they see whatever
+    earlier passes and iterations left resident; the per-iteration cache share
+    alone would ignore that. What the allocator can still hand out is its own
+    headroom (``allocator_free_bytes``, limit minus in use), bounded by the
+    device: the physically free memory plus what the allocator's pool already
+    holds unused (``pool_free_bytes``), which ``nvidia-smi`` counts as used.
+    The physical reading alone is not a bound once the pool has grown: 10097
+    it13 in a full run (14400302) read 13.37 GiB physically free against 70.04
+    GiB of allocator headroom. Without a pool reading the physical reading
+    bounds only when the allocator reports nothing; an unknown reading does not
+    cap. ``reserved_bytes`` (the half's resident operands, allocated after the
+    reading) comes off first; half of the rest stays for the half's
+    accumulators and the chunk working set, which have their own budgets.
     """
 
+    available = None if allocator_free_bytes is None else float(allocator_free_bytes)
+    if physical_free_bytes is not None:
+        if pool_free_bytes is not None:
+            device_bound = float(physical_free_bytes) + float(pool_free_bytes)
+            available = device_bound if available is None else min(available, device_bound)
+        elif available is None:
+            available = float(physical_free_bytes)
     budget = int(max_projection_cache_bytes)
-    for free in (physical_free_bytes, allocator_free_bytes):
-        if free is not None:
-            usable = max(0.0, float(free) - float(reserved_bytes))
-            budget = min(budget, int(usable * _STREAM_FREE_MEMORY_FRACTION))
+    if available is not None:
+        usable = max(0.0, available - float(reserved_bytes))
+        budget = min(budget, int(usable * _STREAM_FREE_MEMORY_FRACTION))
     return max(0, budget)
 
 

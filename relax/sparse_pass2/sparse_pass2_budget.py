@@ -377,6 +377,30 @@ def _jax_allocator_free_memory_bytes() -> int | None:
     return max(0, limit - bytes_in_use)
 
 
+def _jax_allocator_pool_free_bytes() -> int | None:
+    """Return bytes the JAX GPU allocator's pool holds but does not use, if reported.
+
+    ``nvidia-smi`` counts that memory as used, so a free-memory reading taken
+    after the pool has grown understates what the allocator can still hand out
+    by exactly this amount.
+    """
+
+    try:
+        devices = [device for device in jax.devices() if getattr(device, "platform", "") in {"gpu", "cuda"}]
+        if not devices:
+            return None
+        stats = devices[0].memory_stats()
+    except Exception:
+        return None
+    if not stats:
+        return None
+    pool = stats.get("pool_bytes")
+    bytes_in_use = stats.get("bytes_in_use")
+    if pool is None or bytes_in_use is None:
+        return None
+    return max(0, int(pool) - int(bytes_in_use))
+
+
 def _exact_raw_diff2_cache_limit_bytes(
     device_memory_bytes: int | None,
     free_device_memory_bytes: int | None,
