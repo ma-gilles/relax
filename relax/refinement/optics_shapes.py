@@ -214,6 +214,13 @@ def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
     for name in TRANSLATION_KWARGS:
         if out.get(name) is not None:
             out[name] = np.asarray(out[name]) * shape_class.translation_factor
+    state = out.get("state")
+    if state is not None and getattr(state, "translation_step", None) is not None and shape_class.translation_factor != 1.0:
+        # The oversampled translation grid is built from the step (RELION samples offsets in
+        # Angstrom and converts them with the image's pixel size, getTranslationsInPixel).
+        out["state"] = dataclasses.replace(
+            state, translation_step=float(state.translation_step) * shape_class.translation_factor
+        )
     for name in IMAGE_SIZE_KWARGS:
         if out.get(name) is not None:
             out[name] = optics_scale.group_current_size(out[name], shape_class.box_size, shape_class.scale)

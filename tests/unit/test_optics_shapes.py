@@ -256,3 +256,20 @@ def test_class_pre_shifts_are_rounded_in_the_class_pixels():
         object(), previous, sigma_offset_angstrom=1.0, base_translations=grid, current_translations=grid,
         with_log_prior=False, zero_cold_center=False,
     ) == {}
+
+
+@pytest.mark.unit
+def test_class_translation_step_is_in_class_pixels():
+    # The adaptive pass 2 builds its oversampled translations from state.translation_step; a class
+    # on another pixel size samples the same Angstrom offsets, so its step is in its pixels.
+    import dataclasses
+
+    @dataclasses.dataclass
+    class State:
+        translation_step: float
+        adaptive_oversampling: int
+
+    half = _half()
+    kwargs = dict(experiment_dataset=half, state=State(2.0, 1))
+    assert optics_shapes.class_kwargs(kwargs, half.classes[1], 5)["state"].translation_step == pytest.approx(2.0 * 0.75)
+    assert optics_shapes.class_kwargs(kwargs, half.classes[0], 5)["state"] is kwargs["state"]
