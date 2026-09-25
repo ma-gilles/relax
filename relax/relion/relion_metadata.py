@@ -107,6 +107,21 @@ def read_relion_sampling_metadata(sampling_star_path):
     )
 
 
+def read_relion_sampling_symmetry(sampling_star_path):
+    """Return the canonical point group RELION sampled with (``rlnSymmetryGroup``).
+
+    RELION writes the group into every sampling STAR (healpix_sampling.cpp:266,
+    EMDL_SAMPLING_SYMMETRY); a replay of a symmetric
+    run must restrict its grid and symmetrise its reconstruction with it.
+    """
+    from relax.symmetry import canonicalize_rotational_symmetry
+
+    text = open(sampling_star_path).read()
+    return canonicalize_rotational_symmetry(
+        _required_relion_scalar(text, sampling_star_path, "rlnSymmetryGroup", str)
+    )
+
+
 def read_relion_model_metadata(model_star_path):
     """Read RELION model star fields needed for replay.
 

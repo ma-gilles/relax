@@ -81,7 +81,7 @@ from relax.helpers.half_spectrum import (
     mask_relion_noise_shell_indices_to_current_window,
 )
 from relax.helpers.half_volume_mstep import (
-    enforce_half_volume_x0,
+    finalize_half_volume_bpref,
     half_volume_accumulator_shape,
     relion_backprojector_volume_shape,
     relion_x_half_accumulators_to_public_layout,
@@ -382,6 +382,7 @@ def compute_local_search_resident(
     score_only=False,
     optics_group_ids=None,
     reconstruction_volume_current_size=None,
+    symmetry_label="C1",
 ) -> LocalEMResult:
     """Run one K=1 local-search fine pass 2 on the device-resident stages.
 
@@ -389,6 +390,10 @@ def compute_local_search_resident(
     ``optics_group_ids`` giving each image's row, and ``reconstruction_volume_current_size``
     keeps the backprojector on the reference model size for images on another grid,
     as in the global resident pass.
+
+    ``symmetry_label`` is the point group of the reconstruction. The local
+    neighbourhoods in ``local_layout`` already include the symmetry mates of each
+    prior direction; here the group only symmetrises the BPref accumulators.
 
     Returns the same :class:`~recovar.em.helpers.types.LocalEMResult` the exact
     local engine returns for this configuration. See the module docstring for
@@ -860,12 +865,16 @@ def compute_local_search_resident(
     loop_s = time.time() - loop_t0
 
     # ---- finalize ----------------------------------------------------------
-    Ft_y_total, Ft_ctf_total = enforce_half_volume_x0(
+    # RELION symmetriseReconstructions (ml_optimiser.cpp:5541-5575): x=0
+    # Hermitian enforcement, then applyPointGroupSymmetry on BPref.
+    Ft_y_total, Ft_ctf_total = finalize_half_volume_bpref(
         Ft_y_total,
         Ft_ctf_total,
         recon_volume_shape,
         logger=logger,
         label="Resident local pass-2",
+        symmetry_label=symmetry_label,
+        relion_x_half=True,
     )
     Ft_y_total, Ft_ctf_total = relion_x_half_accumulators_to_public_layout(
         Ft_y_total,

@@ -483,6 +483,7 @@ def _run_local_search_iteration(
             score_only=score_only,
             optics_group_ids=optics_group_ids,
             reconstruction_volume_current_size=reconstruction_volume_current_size,
+            symmetry_label=symmetry,
         )
     else:
         class_details = None

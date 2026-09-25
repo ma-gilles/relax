@@ -1390,10 +1390,12 @@ def main():
         RefinementSchedule,
         RelionParityOptions,
         ReplayState,
+        SymmetryOptions,
     )
     from relax.relion.relion_metadata import (
         read_relion_optimiser_metadata,
         read_relion_sampling_metadata,
+        read_relion_sampling_symmetry,
     )
     from recovar.output.output import save_volume
     from recovar.reconstruction import noise as recon_noise
@@ -1573,8 +1575,11 @@ def main():
         else 30.0
     )
 
-    sampling_meta = read_relion_sampling_metadata(relion_dir / f"{run_prefix}_it{iteration:03d}_sampling.star")
+    sampling_star = relion_dir / f"{run_prefix}_it{iteration:03d}_sampling.star"
+    sampling_meta = read_relion_sampling_metadata(sampling_star)
     hp_order = int(sampling_meta["healpix_order"])
+    point_group = read_relion_sampling_symmetry(sampling_star)
+    print(f"  RELION point group: {point_group}")
     offset_range = float(sampling_meta["offset_range"])
     offset_step = float(sampling_meta["offset_step"])
 
@@ -2438,6 +2443,7 @@ def main():
                 local_search_profile_mode=args.local_search_profile,
                 local_search_translation_prior_mode=args.local_search_translation_prior_mode,
             ),
+            symmetry=SymmetryOptions(point_group=point_group),
         ),
     )
     elapsed = time.time() - t0
