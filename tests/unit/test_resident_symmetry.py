@@ -60,17 +60,43 @@ def _c4_rotation_residual(ctf_public_flat) -> float:
     RELION's Cn axis is z. On an odd centred grid a quarter turn about z maps
     grid points onto grid points, so a C4-symmetrised weight is invariant to
     float32 interpolation rounding; an unsymmetrised accumulator is not.
+    applyPointGroupSymmetry only symmetrises r <= ROUND(r_max * padding_factor)
+    (backprojector.cpp:2651-2680), one voxel inside the accumulator's half
+    width, so the outer shell the trilinear backprojection also touches is
+    excluded here.
     """
 
     values = np.asarray(ctf_public_flat, dtype=np.float64)
     size = int(round(values.size ** (1.0 / 3.0)))
     assert size**3 == values.size, "expected the full public layout of an odd cube"
     grid = values.reshape(size, size, size)
-    return _rel_l2(grid, np.rot90(grid, k=1, axes=(0, 1)))
+    centre = size // 2
+    axis = np.arange(size) - centre
+    r2 = axis[:, None, None] ** 2 + axis[None, :, None] ** 2 + axis[None, None, :] ** 2
+    inside = r2 <= (centre - 1) ** 2
+    masked = np.where(inside, grid, 0.0)
+    assert np.linalg.norm(masked) > 0.0, "the symmetrised support holds no weight"
+    return _rel_l2(masked, np.rot90(masked, k=1, axes=(0, 1)))
+
+
+def _rotation_diagnostics(ctf_public_flat) -> dict:
+    """Quarter-turn residuals about each axis pair, masked and whole, for failure messages."""
+
+    values = np.asarray(ctf_public_flat, dtype=np.float64)
+    size = int(round(values.size ** (1.0 / 3.0)))
+    grid = values.reshape(size, size, size)
+    axis = np.arange(size) - size // 2
+    r2 = axis[:, None, None] ** 2 + axis[None, :, None] ** 2 + axis[None, None, :] ** 2
+    masked = np.where(r2 <= (size // 2 - 1) ** 2, grid, 0.0)
+    return {
+        f"{name}{axes}": _rel_l2(volume, np.rot90(volume, k=1, axes=axes))
+        for name, volume in (("masked", masked), ("whole", grid))
+        for axes in ((0, 1), (0, 2), (1, 2))
+    }
 
 
 # ---------------------------------------------------------------------------
-# CPU: grid plumbing and wiring
+# CPU: wiring
 # ---------------------------------------------------------------------------
 
 
@@ -209,5 +235,5 @@ def test_c4_resident_local_matches_the_exact_engine(monkeypatch):
         rtol=0,
         atol=1e-5,
     )
-    assert _c4_rotation_residual(resident.Ft_ctf) < 1e-5
-    assert _c4_rotation_residual(exact.Ft_ctf) < 1e-5
+    assert _c4_rotation_residual(resident.Ft_ctf) < 1e-5, _rotation_diagnostics(resident.Ft_ctf)
+    assert _c4_rotation_residual(exact.Ft_ctf) < 1e-5, _rotation_diagnostics(exact.Ft_ctf)
