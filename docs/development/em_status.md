@@ -115,6 +115,24 @@ normalizer (VDAM zero oversampling) and are the reference for the segmented
 pass's tests. The segmented-routing task above is therefore moot unless a
 `--sigma_ang` Class3D workflow is added.
 
+Class3D noise statistics, compact K>1 (2026-09-25): OPEN against the compact
+K-class engine (`compute_k_class_pass2_stats_sparse_fused`, today's default Class3D
+pass 2). It has no RELION direct low-shell Wavg residual, so its
+`wsum_sigma2_noise` is not RELION's, and on a small fixture one shell goes
+negative. Repro (on the branch below): `tests/unit/test_resident_k_class_pass2.py::_k_class_args(3)`
+(the 8x8 resident driver fixture with 3 classes). The class sum of the compact
+noise tuples is -21.4 at shell 0, and 3835.6 against the resident 4604.7 at K=2.
+Job 14421852 (candidate 91596ff) measured rel L2 0.24 at K=2 and 0.71 at K=3
+against the resident K-class pass. The two agree on everything else to the
+default band: evidence, per-class winners, joint Pmax, class mass and both BPrefs.
+The resident K-class pass computes the noise with RELION's arithmetic
+(`resident_pass2.compute_k_class_pass2_stats_resident`, branch
+claude/ressym-kclass-20260925, landing after its kclass and K4 qualification). Its
+noise is pinned by the duplicated-class test against the K=1 resident pass. The
+compact K>1 engine is not fixed; it is deleted with compact. The K4 long and 100k
+runs against RELION on the resident route will show whether this moved the
+existing K4 rows.
+
 Final all-data maps are now always gridding-corrected, as in RELION; the former
 default-off selector made the K1 100k/256 masked GT FSC 0.0008 lower than both
 same-command RELION repeats over shells 1-60. Pinned merged-map records were
