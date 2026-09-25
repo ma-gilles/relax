@@ -518,7 +518,7 @@ def test_resident_half_operands_score_in_native_units(monkeypatch, current_size,
     expected_corr = _expected_native_corr_img(case)
     corr = np.asarray(native.corr_img_score)
     assert corr.dtype == np.float32
-    np.testing.assert_array_equal(corr == 0.0, expected_corr == 0.0)
+    assert_matches(corr == 0.0, expected_corr == 0.0)
     np.testing.assert_allclose(corr, expected_corr, rtol=_EXACT_BY_CONSTRUCTION_RTOL, atol=0.0)
     # The RECOVAR-unit corr_img is N**4 smaller; the native one never matches it.
     nonzero = expected_corr != 0.0
@@ -593,7 +593,7 @@ def test_per_chunk_operands_match_the_resident_native_operands(monkeypatch, curr
             atol=0.0,
             err_msg=name,
         )
-        np.testing.assert_array_equal(values[n_images:] == 0, True)
+        assert_matches(values[n_images:] == 0, np.ones_like(values[n_images:], dtype=bool))
     # Resident local search calls the per-chunk preparation without the flag
     # and keeps RECOVAR units.
     default = per_chunk(False)
