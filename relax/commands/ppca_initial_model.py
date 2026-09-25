@@ -30,7 +30,9 @@ def add_args(parser):
     parser.add_argument("--fine-image-tile-size", type=int, default=1,
                         help="Batch identical full-support fine rows; 1 keeps the reference path")
     parser.add_argument("--stream-full-fine-rows", action="store_true",
-                        help="Share the exact full fine rotation grid and stream its per-image pose masks")
+                        help="Stream rows of the shared fine grid with exact per-image support masks on the device")
+    parser.add_argument("--fine-devices", type=int, default=1,
+                        help="Local GPUs for the streamed pass; image tiles are split across them")
     parser.add_argument("--stochastic-batch-size", type=int)
     parser.add_argument("--resume")
     parser.add_argument("--stop-after", type=int, help="Checkpoint stop without changing the scientific schedule")
@@ -140,6 +142,7 @@ def main(args=None):
         rotation_block_size=args.rotation_block_size,
         fine_image_tile_size=args.fine_image_tile_size,
         stream_full_fine_rows=args.stream_full_fine_rows,
+        fine_devices=args.fine_devices,
         stochastic_batch_size=args.stochastic_batch_size,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
     )

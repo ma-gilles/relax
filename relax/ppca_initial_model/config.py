@@ -25,6 +25,7 @@ class Config:
     rotation_block_size: int = 128
     fine_image_tile_size: int = 1
     stream_full_fine_rows: bool = False
+    fine_devices: int = 1
     stochastic_batch_size: int | None = None
     checkpoint_interval: int = 1
 
@@ -39,6 +40,8 @@ class Config:
             raise ValueError("Invalid pose support")
         if min(self.image_batch_size, self.rotation_block_size, self.fine_image_tile_size, self.checkpoint_interval) <= 0:
             raise ValueError("Batch/checkpoint sizes must be positive")
+        if self.fine_devices < 1 or (self.fine_devices > 1 and not self.stream_full_fine_rows):
+            raise ValueError("Multiple fine devices require the streamed fine engine")
         if self.stochastic_batch_size is not None and self.stochastic_batch_size <= 0:
             raise ValueError("Stochastic batch size must be positive")
         if self.shift_range < 0 or self.shift_step <= 0:

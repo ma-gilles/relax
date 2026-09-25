@@ -1,5 +1,7 @@
 """Streamed full rotation rows versus the independent local layout and host-mask engine."""
 
+from pathlib import Path
+
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -121,8 +123,7 @@ def _half_volume(rng, scale=1.0):
     return (scale * np.asarray(ftu.full_volume_to_half_volume(full, VOLUME_SHAPE)).reshape(-1)).astype(np.complex64)
 
 
-@pytest.fixture(scope="module")
-def tile_problem():
+def make_tile_problem(device=None):
     reference, shared, parent = _layouts()
     rng = np.random.default_rng(3)
     images = (rng.standard_normal((3, N_HALF)) + 1j * rng.standard_normal((3, N_HALF))).astype(np.complex64)
@@ -141,7 +142,7 @@ def tile_problem():
         rotations=shared.rotations_flat, translations=shared.translation_grid,
         rotation_log_prior=shared.rotation_log_priors_flat, translation_log_prior=translation_prior,
         rotation_parent=shared.rotation_posterior_ids_flat, translation_parent=parent,
-        n_coarse_rotations=3, n_coarse_translations=3, **common,
+        n_coarse_rotations=3, n_coarse_translations=3, device=device, **common,
     )
     host = dict(
         rotations=shared.rotations_flat, translations=shared.translation_grid,
@@ -153,6 +154,11 @@ def tile_problem():
         image_indices=np.arange(3), **common,
     )
     return _TinyData(images), mu, W, stream, host
+
+
+@pytest.fixture(scope="module")
+def tile_problem():
+    return make_tile_problem()
 
 
 @pytest.mark.parametrize("factor_once", [True, False])
@@ -293,3 +299,61 @@ def test_device_resident_union_rows_match_per_image_host_layout(tile_problem):
         actual.diagnostics["n_significant_per_image"],
         np.concatenate([np.asarray(p.diagnostics["n_significant_per_image"]) for p in parts]),
     )
+
+
+def test_device_workers_keep_item_order_and_full_float32():
+    import jax
+
+    from relax.ppca_initial_model.iteration_loop import _coarse_significance, _on_devices
+
+    device = jax.devices()[0]
+    seen = list(_on_devices([device, device], lambda _d, item: (item, jax.config.jax_default_matmul_precision), range(7)))
+    assert seen == [(item, "highest") for item in range(7)]
+
+    class _Result:
+        def __init__(self, ids):
+            self.significant_sample_indices = [np.asarray([i]) for i in ids]
+
+    chunks = []
+    rows = _coarse_significance([device] * 3, 4, np.arange(21), lambda ids: chunks.append(ids) or _Result(ids))
+    # Chunks start on image-batch boundaries, so every batch keeps its one-device images.
+    assert [c.tolist()[0] for c in chunks] == [0, 8, 16] and all(len(c) % 4 == 0 for c in chunks[:-1])
+    assert [int(r[0]) for r in rows] == list(range(21))
+
+
+def test_two_devices_reproduce_one_device_tiles():
+    """Tiles on two (forced CPU) devices match one device and merge on the first."""
+    import os
+    import subprocess
+    import sys
+
+    here = Path(__file__).resolve().parent
+    script = f"""
+import sys
+sys.path[:0] = [{str(here.parent.parent)!r}, {str(here)!r}]
+import jax
+import numpy as np
+import test_full_fine_streaming as t
+from helpers.float_compare import assert_matches
+from relax.ppca_initial_model.iteration_loop import _on_devices, _to_device
+from relax.ppca_refinement.full_row_stream import accumulate_full_row_tile
+devices = jax.devices()
+assert len(devices) == 2
+problems = {{d.id: t.make_tile_problem(d) for d in devices}}
+tiles = [(0, 2), (2, 3)]
+def run(device, tile):
+    stream = problems[device.id][3]
+    part = accumulate_full_row_tile(stream, np.arange(*tile), t.PRUNED[tile[0]:tile[1]], factor_once=tile[1] - tile[0] > 1)
+    return _to_device(part, devices[0])
+one = [run(devices[0], tile) for tile in tiles]
+two = list(_on_devices(devices, run, tiles))
+assert two[1].rhs.devices() == {{devices[0]}}
+for a, b in zip(one, two):
+    for name in ("rhs", "lhs_tri", "residual_gradient", "residual_num", "embeddings"):
+        assert_matches(np.asarray(getattr(b, name)), np.asarray(getattr(a, name)))
+print("ok")
+"""
+    env = {**os.environ, "XLA_FLAGS": "--xla_force_host_platform_device_count=2", "JAX_PLATFORMS": "cpu",
+           "CUDA_VISIBLE_DEVICES": ""}
+    result = subprocess.run([sys.executable, "-c", script], env=env, capture_output=True, text=True, timeout=600)
+    assert result.returncode == 0 and result.stdout.strip().endswith("ok"), result.stderr[-3000:]

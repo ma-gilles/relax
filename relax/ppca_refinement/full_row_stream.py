@@ -149,6 +149,7 @@ class FullRowStream(NamedTuple):
     block_starts: tuple[jax.Array, ...]  # device start of each row-table block
     rotation_block_size: int
     rotation_parent: np.ndarray  # (R,) host copy for the per-tile row union
+    device: object  # the jax device holding this stream's operands and running its tiles
 
 
 def coarse_support_mask(significant_rows, n_coarse_rotations: int, n_coarse_translations: int) -> np.ndarray:
@@ -329,8 +330,25 @@ def prepare_full_row_stream(
     schedule: ScheduleConfig,
     scoring: ScoringConfig,
     disc_type: str = "linear_interp",
+    device=None,
 ) -> FullRowStream:
-    """Upload the model, fine grids and priors once for an expectation's tiles."""
+    """Upload the model, fine grids and priors once to ``device`` for an expectation's tiles."""
+    device = jax.local_devices()[0] if device is None else device
+    with jax.default_device(device):
+        return _prepare_full_row_stream(
+            experiment_dataset, mu, W, noise_variance=noise_variance, rotations=rotations, translations=translations,
+            rotation_log_prior=rotation_log_prior, translation_log_prior=translation_log_prior,
+            rotation_parent=rotation_parent, translation_parent=translation_parent,
+            n_coarse_rotations=n_coarse_rotations, n_coarse_translations=n_coarse_translations,
+            geometry=geometry, schedule=schedule, scoring=scoring, disc_type=disc_type, device=device,
+        )
+
+
+def _prepare_full_row_stream(
+    experiment_dataset, mu, W, *, noise_variance, rotations, translations, rotation_log_prior,
+    translation_log_prior, rotation_parent, translation_parent, n_coarse_rotations, n_coarse_translations,
+    geometry, schedule, scoring, disc_type, device,
+) -> FullRowStream:
     if scoring.image_scale_corrections is not None or scoring.class_log_prior != 0.0:
         raise ValueError("Full-row streaming supports unit image scale and no class prior")
     if scoring.score_with_masked_images or scoring.relion_unit_half_weights or not scoring.full_real_observation:
@@ -411,6 +429,7 @@ def prepare_full_row_stream(
         block_starts=block_starts,
         rotation_block_size=block_size,
         rotation_parent=rotation_parent,
+        device=device,
     )
 
 
@@ -424,6 +443,7 @@ def _load_tile(stream: FullRowStream, image_indices, significant_rows, *, collec
     if len(batches) != 1:
         raise RuntimeError("Expected exactly one image batch per full-row tile")
     batch_data, _rots, _trans, ctf_params, _noise, _particle_indices, indices = batches[0]
+    batch_data, ctf_params = jax.device_put((batch_data, ctf_params), stream.device)
     batch = prepare_dense_ppca_image_batch(
         stream.dataset,
         stream.resolved,
@@ -504,6 +524,13 @@ def accumulate_full_row_tile(
     diagnostics as the host-mask ``accumulate_dense_ppca_statistics`` call
     with ``collect_residuals=True``.
     """
+    with jax.default_device(stream.device):
+        return _accumulate_full_row_tile(
+            stream, image_indices, significant_rows, factor_once=factor_once, enforce_x0=enforce_x0
+        )
+
+
+def _accumulate_full_row_tile(stream, image_indices, significant_rows, *, factor_once, enforce_x0):
     tile, observation_power, layout = _load_tile(stream, image_indices, significant_rows, collect_observation=True)
     retained, top, centered_logZ = _score_tile(
         stream, tile, layout["n_blocks"], score_kind="factor_once" if factor_once else "blocked", keep_second_moment=True
@@ -597,6 +624,11 @@ def accumulate_full_row_tile(
 @full_float32
 def full_row_tile_embeddings(stream: FullRowStream, image_indices, significant_rows) -> DensePPCAEmbeddings:
     """Pose-marginal embeddings of one full-row tile, as ``compute_dense_ppca_embeddings``."""
+    with jax.default_device(stream.device):
+        return _full_row_tile_embeddings(stream, image_indices, significant_rows)
+
+
+def _full_row_tile_embeddings(stream, image_indices, significant_rows):
     tile, _, layout = _load_tile(stream, image_indices, significant_rows, collect_observation=False)
     retained, top, centered_logZ = _score_tile(
         stream, tile, layout["n_blocks"], score_kind="blocked", keep_second_moment=False

@@ -8,10 +8,13 @@ support, run through the device-resident engine
 (:mod:`relax.ppca_refinement.full_row_stream`), recorded as ``fine_engine``.
 """
 
+import dataclasses
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from recovar.core import fourier_transform_utils as ftu
@@ -28,6 +31,7 @@ from relax.ppca_initial_model.state import State
 from relax.ppca_initial_model.update import coupled_direction, empty_moments, metric_floor, stochastic_update
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
 from relax.ppca_refinement.dense_dataset import (
+    DensePPCAEmbeddings,
     accumulate_dense_ppca_statistics,
     compute_dense_ppca_adaptive_significance,
     compute_dense_ppca_embeddings,
@@ -68,6 +72,61 @@ def _merge_statistics(parts):
             },
         },
     )
+
+
+def _fine_devices(config):
+    devices = jax.local_devices()
+    if len(devices) < config.fine_devices:
+        raise ValueError(f"fine_devices={config.fine_devices} but only {len(devices)} local devices are visible")
+    return devices[: config.fine_devices]
+
+
+def _on_devices(devices, function, items):
+    """Yield ``function(device, item)`` in item order, running item k on device k mod n.
+
+    Image tiles and coarse chunks are independent, so each device gets one
+    worker thread that runs its items in order. JAX keeps the matmul precision
+    per thread, so workers re-enter full float32. One device runs inline.
+    """
+    if len(devices) == 1:
+        for item in items:
+            yield function(devices[0], item)
+        return
+    executors = [ThreadPoolExecutor(max_workers=1) for _ in devices]
+    try:
+        futures = [
+            executors[k % len(devices)].submit(full_float32(function), devices[k % len(devices)], item)
+            for k, item in enumerate(items)
+        ]
+        for future in futures:
+            yield future.result()
+    finally:
+        for executor in executors:
+            executor.shutdown(wait=True, cancel_futures=True)
+
+
+def _coarse_significance(devices, batch_size, ids, significance):
+    """Coarse significant samples per image; chunks split only at image-batch boundaries.
+
+    Every image batch therefore holds the same images and shapes as on one device.
+    """
+    batches = -(-len(ids) // batch_size)
+    chunk = batch_size * -(-batches // len(devices))
+    chunks = [ids[start:start + chunk] for start in range(0, len(ids), chunk)]
+
+    def run(device, chunk_ids):
+        with jax.default_device(device):
+            return significance(chunk_ids).significant_sample_indices
+
+    return [row for part in _on_devices(devices, run, chunks) for row in part]
+
+
+def _to_device(part, device):
+    """Move a tile's merged arrays to the device that merges tiles in order."""
+    if isinstance(part, DensePPCAEmbeddings):
+        return part._replace(embeddings=jax.device_put(part.embeddings, device))
+    names = ("rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings")
+    return dataclasses.replace(part, **{name: jax.device_put(getattr(part, name), device) for name in names})
 
 
 @full_float32
@@ -111,24 +170,32 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
         if not embeddings_only:
             stats.diagnostics.update({"coarse_omitted_mass_bound": 0.0, "canonical_euler_count": len(canonical_eulers)})
         return stats
-    coarse = compute_dense_ppca_adaptive_significance(
-        dataset,
-        mu,
-        W,
-        rotations=rotations,
-        translations=translations,
-        translation_log_prior=np.asarray(prior),
-        rotation_log_prior=rotation_log_prior,
-        adaptive_fraction=config.target_mass,
-        max_significants=-1,
-        **common,
+    devices = _fine_devices(config)
+    coarse_options = {key: value for key, value in common.items() if key != "image_indices"}
+    significant_samples = _coarse_significance(
+        devices,
+        config.image_batch_size,
+        ids,
+        lambda chunk_ids: compute_dense_ppca_adaptive_significance(
+            dataset,
+            mu,
+            W,
+            rotations=rotations,
+            translations=translations,
+            translation_log_prior=np.asarray(prior),
+            rotation_log_prior=rotation_log_prior,
+            adaptive_fraction=config.target_mass,
+            max_significants=-1,
+            image_indices=chunk_ids,
+            **coarse_options,
+        ),
     )
     children_per_parent = 8 ** config.oversampling
     full_rotation_count = len(rotations) * children_per_parent
     # Opt-in: stream the shared fine grid; each image's support is its device prior.
     stream_full = bool(config.stream_full_fine_rows)
     layout = build_pass2_hypothesis_layout(
-        [None] if stream_full else coarse.significant_sample_indices,
+        [None] if stream_full else significant_samples,
         len(rotations),
         len(translations),
         hp,
@@ -154,27 +221,49 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
     stream_rows = {"supported": 0, "scored": 0}
     fine_prior = -np.sum(layout.translation_grid**2, axis=-1) / (2 * state.offset_variance)
     fine_prior = fine_prior - np.log(np.sum(np.exp(fine_prior)))
-    if stream_full:
-        # One upload of the model, fine grids and priors; each tile then
-        # expands its coarse support to fine poses on the device.
-        stream = prepare_full_row_stream(
-            dataset,
-            mu,
-            W,
-            noise_variance=nv,
-            rotations=layout.rotations_flat,
-            translations=layout.translation_grid,
-            rotation_log_prior=layout.rotation_log_priors_flat,
-            translation_log_prior=fine_prior.astype(np.float32),
-            rotation_parent=layout.rotation_posterior_ids_flat,
-            translation_parent=fine_translation_parent,
-            n_coarse_rotations=len(rotations),
-            n_coarse_translations=len(translations),
-            geometry=geometry,
-            schedule=schedule,
-            scoring=scoring,
-        )
     tile_limit = min(config.fine_image_tile_size, config.image_batch_size)
+    if stream_full:
+        # One upload of the model, fine grids and priors per device; each tile
+        # then expands its coarse support to fine poses on its device.
+        streams = {
+            device.id: prepare_full_row_stream(
+                dataset,
+                mu,
+                W,
+                noise_variance=nv,
+                rotations=layout.rotations_flat,
+                translations=layout.translation_grid,
+                rotation_log_prior=layout.rotation_log_priors_flat,
+                translation_log_prior=fine_prior.astype(np.float32),
+                rotation_parent=layout.rotation_posterior_ids_flat,
+                translation_parent=fine_translation_parent,
+                n_coarse_rotations=len(rotations),
+                n_coarse_translations=len(translations),
+                geometry=geometry,
+                schedule=schedule,
+                scoring=scoring,
+                device=device,
+            )
+            for device in devices
+        }
+
+        def run_tile(device, tile):
+            row, tile_end = tile
+            stream = streams[device.id]
+            tile_ids = np.asarray(ids[row:tile_end])
+            significant = significant_samples[row:tile_end]
+            # A multi-image tile factors the latent Gram once per image/rotation.
+            part = (
+                full_row_tile_embeddings(stream, tile_ids, significant)
+                if embeddings_only
+                else accumulate_full_row_tile(stream, tile_ids, significant, factor_once=tile_end - row > 1)
+            )
+            return _to_device(part, devices[0])
+
+        # Tiles are merged below in their original order whatever device ran them.
+        tile_parts = _on_devices(
+            devices, run_tile, [(start, min(start + tile_limit, len(ids))) for start in range(0, len(ids), tile_limit)]
+        )
     row = 0
     while row < len(ids):
         if stream_full:
@@ -200,14 +289,7 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
                     break
                 tile_end += 1
         if stream_full:
-            tile_ids = np.asarray(ids[row:tile_end])
-            significant = coarse.significant_sample_indices[row:tile_end]
-            # A multi-image tile factors the latent Gram once per image/rotation.
-            part = (
-                full_row_tile_embeddings(stream, tile_ids, significant)
-                if embeddings_only
-                else accumulate_full_row_tile(stream, tile_ids, significant, factor_once=tile_end - row > 1)
-            )
+            part = next(tile_parts)
         else:
             if tile_end == row + 1:
                 mask = layout.sample_mask_rows(begin, end)
@@ -269,7 +351,7 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
             "fine_rotation_count": stream_rows["supported"] if stream_full else layout.total_local_rotations,
             "fine_engine": FULL_ROW_ENGINE if stream_full else "dense_host_mask",
             # Image-rows scored by tile unions (with block padding) versus exact support.
-            "fine_stream_rows": dict(stream_rows) if stream_full else None,
+            "fine_stream_rows": {**stream_rows, "devices": len(devices)} if stream_full else None,
             "canonical_euler_count": len(canonical_eulers),
         }
     )
