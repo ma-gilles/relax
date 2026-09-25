@@ -125,12 +125,18 @@ always-on final gridding correction (user decision; relax df88eab retires the op
 tier gates both the unfiltered half-map average and the merged map, and requires
 `final_all_data_grid_correct` to be recorded True in `refinement_results.npz`.
 
-Map sign convention: every relax MRC map is the negative of the matching RELION map on the
-same axes. This covers `final_*.mrc` from `run_full_refinement.py` and `recovar_final_*.mrc`
-from the parity harness `run_multi_iter_parity.py` (fitted scale -0.99998 against RELION on
-the K1 50k/256 fixture). `scripts/masked_fsc.py` and the harness's own "vs RELION" lines apply
-the sign. Any other direct voxel comparison with RELION maps must multiply the relax map by
--1 first; without it a matching pair reads FSC -1 and relative L2 2.
+Map sign convention: every map relax writes is in RELION's map convention, so a relax map and
+the RELION map of the same run agree voxel for voxel and in sign (`relax/helpers/map_io.py`).
+relax holds volumes internally in RECOVAR's frame, the negated transpose of RELION's file array
+(`relion_volume_to_recovar`); the sign entered at the map-file boundary, where the refinement,
+the parity harness and the per-iteration dumps wrote with RECOVAR's `write_mrc` and the K1
+refinement read its reference with `load_mrc`. Maps are now written with `write_map` (labelled
+`relax map, RELION sign and axis convention`) and references are read with `load_relion_volume`:
+`--init_volume` and `--init_class_volumes` take the same file as relion_refine's `--ref`, and the
+data-directory defaults are `reference_init_relion.mrc` and `reference_init_class00K_relion.mrc`.
+Read a relax map with `load_relax_map`; a map written before this convention has no label and
+holds the negated array, and the scorers read it as such (`legacy_recovar_sign=True`).
+Ground-truth `reference_gt*.mrc` files stay in RECOVAR's frame and are read with `load_mrc`.
 
 Follow the unchanged [quantitative gates](../math/em_parity_program.md) and
 [validation ladder](em_parity_runbook.md#validation-ladder): matched-state

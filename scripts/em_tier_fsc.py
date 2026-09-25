@@ -14,8 +14,11 @@ same stored state) measures RELION's own spread for that case:
     python scripts/em_tier_fsc.py relax --run-root <pytest basetemp root> --output fsc.json
     python scripts/em_tier_fsc.py relion --case k1_replay --other <RELION dir> --output band.json
 
-Maps are compared in the RECOVAR frame: relax MRCs through ``load_mrc`` and RELION MRCs
-through ``load_relion_volume``. FSC is the quality measure; correlation is not reported.
+relax and RELION write maps in the same (RELION) convention (``relax.helpers.map_io``); both are
+read into the internal frame, relax maps through ``load_relax_map`` and RELION maps through
+``load_relion_volume``. A relax map without the relax label predates that convention: the
+refinement and harness maps then hold the negated array and are read as such, so run roots of
+older commits still score. FSC is the quality measure; correlation is not reported.
 """
 
 from __future__ import annotations
@@ -44,7 +47,8 @@ class Case:
     iteration: int  # RELION iteration the relax output is compared with
     relax_maps: tuple[str, ...]
     classes: int  # 0 for K1 half maps, K for class maps
-    relax_relion_frame: bool = False  # run_k_class_parity.py writes its maps in the RELION frame
+    # run_k_class_parity.py maps were in RELION's convention before the relax label existed too
+    relax_relion_frame: bool = False
 
 
 def _k1(output, relion_set, iteration, prefix=""):
@@ -97,11 +101,18 @@ def relion_current_size(relion_dir: Path, case: Case) -> int:
     return int(general["rlnCurrentImageSize"])
 
 
-def _load(path: Path, *, relion: bool) -> np.ndarray:
+def _load_relion(path: Path) -> np.ndarray:
     from recovar.utils import helpers
 
-    loader = helpers.load_relion_volume if relion else helpers.load_mrc
-    return np.asarray(loader(str(path)), dtype=np.float64)
+    return np.asarray(helpers.load_relion_volume(str(path)), dtype=np.float64)
+
+
+def _load_relax(path: Path, case: Case) -> np.ndarray:
+    from relax.helpers.map_io import load_relax_map
+
+    if case.relax_relion_frame:
+        return _load_relion(path)
+    return np.asarray(load_relax_map(path, legacy_recovar_sign=True), dtype=np.float64)
 
 
 def pair_metrics(lhs: np.ndarray, rhs: np.ndarray, band_shells: int) -> dict:
@@ -210,8 +221,8 @@ def score_relax_case(name: str, out_dir: Path) -> dict:
     case = CASES[name]
     relion_dir = fixture_dir(case.relion_set)
     band = relion_current_size(relion_dir, case) // 2
-    lhs = [_load(out_dir / m, relion=case.relax_relion_frame) for m in case.relax_maps]
-    rhs = [_load(relion_dir / m, relion=True) for m in relion_map_names(case)]
+    lhs = [_load_relax(out_dir / m, case) for m in case.relax_maps]
+    rhs = [_load_relion(relion_dir / m) for m in relion_map_names(case)]
     result = compare_maps(lhs, rhs, case, band)
     result["summary"] = _summary(result)
     arrays = out_dir / "k_class_parity_arrays.npz"
@@ -235,8 +246,8 @@ def score_relion_pair(name: str, other: Path) -> dict:
     relion_dir = fixture_dir(case.relion_set)
     band = relion_current_size(relion_dir, case) // 2
     names = relion_map_names(case)
-    lhs = [_load(other / m, relion=True) for m in names]
-    rhs = [_load(relion_dir / m, relion=True) for m in names]
+    lhs = [_load_relion(other / m) for m in names]
+    rhs = [_load_relion(relion_dir / m) for m in names]
     result = compare_maps(lhs, rhs, case, band)
     result["summary"] = _summary(result)
     other_pmax = relion_pmax(other, case)

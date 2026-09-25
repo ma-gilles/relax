@@ -61,6 +61,7 @@ def _write_case(tmp_path: Path, monkeypatch, *, grid_correct_recorded: bool, fai
         return arrays[Path(path).resolve()]
 
     monkeypatch.setattr(regen, "_load_recovar_volume", load)
+    monkeypatch.setattr(regen, "_load_relax_volume", load)
     monkeypatch.setattr(regen, "_load_relion_volume", load)
     recorded = regen._final_metrics(uncorrected, relion, gt, gt_sign_invariant=False)
     report = {

@@ -51,7 +51,7 @@
   },
   "diagnostic_producer": {
     "path": "scripts/collect_em_k1_science_diagnostics.py",
-    "sha256": "0e843e4f6195a45629fb7a4aa6cb46b63faef09ff80c00103616c5412a0dcdb0",
+    "sha256": "8d7e37e51ece1beafbac83abbd6ccc8cf4004786d4a6be1abf9c9dbcc4586820",
     "schema": "recovar.em_k1_science_diagnostics.v1"
   },
   "masked_fsc_support": {

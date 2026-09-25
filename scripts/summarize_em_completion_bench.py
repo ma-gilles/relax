@@ -93,7 +93,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _load_recovar_volume(path: Path) -> np.ndarray:
+    """A map in RECOVAR's write_mrc convention (the synthetic GT references)."""
     return np.asarray(helpers.load_mrc(str(path)), dtype=np.float64)
+
+
+def _load_relax_volume(path: Path) -> np.ndarray:
+    """A relax output map; an unlabeled one predates the RELION map convention (relax.helpers.map_io)."""
+    from relax.helpers.map_io import load_relax_map
+
+    return np.asarray(load_relax_map(path, legacy_recovar_sign=True), dtype=np.float64)
 
 
 def _load_relion_volume(path: Path) -> np.ndarray:
@@ -2419,14 +2427,14 @@ def summarize_k1(recovar_dir: Path | None, relion_dir: Path | None, fixture_dir:
     rel_final_map_path = _k1_relion_final_map_path(relion_dir) if relion_selected else None
     gt_path = _existing_path(fixture_dir, ["reference_gt.mrc", "reference_gt_class001.mrc", "gt.mrc"])
 
-    rec = _load_optional(rec_merged_path, _load_recovar_volume, "K=1 RECOVAR final_merged.mrc", notes)
+    rec = _load_optional(rec_merged_path, _load_relax_volume, "K=1 RECOVAR final_merged.mrc", notes)
     rec_h1 = (
-        _load_optional(rec_h1_path, _load_recovar_volume, "K=1 RECOVAR final_half1.mrc", notes)
+        _load_optional(rec_h1_path, _load_relax_volume, "K=1 RECOVAR final_half1.mrc", notes)
         if relion_selected
         else None
     )
     rec_h2 = (
-        _load_optional(rec_h2_path, _load_recovar_volume, "K=1 RECOVAR final_half2.mrc", notes)
+        _load_optional(rec_h2_path, _load_relax_volume, "K=1 RECOVAR final_half2.mrc", notes)
         if relion_selected
         else None
     )
@@ -2590,7 +2598,7 @@ def summarize_k4(recovar_dir: Path | None, relion_dir: Path | None, fixture_dir:
     rec_vols = [
         vol
         for vol in (
-            _load_optional(path, _load_recovar_volume, f"K=4 RECOVAR class {idx}", notes)
+            _load_optional(path, _load_relax_volume, f"K=4 RECOVAR class {idx}", notes)
             for idx, path in enumerate(rec_paths, start=1)
         )
         if vol is not None

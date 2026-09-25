@@ -802,9 +802,9 @@ def _write_iteration_debug_metadata(
     from relax.diagnostics.iteration import (
         _save_iteration_intermediates,
     )
-    from recovar.output import output as output_module
+    from relax.helpers import map_io
 
-    monkeypatch.setattr(output_module, "save_volume", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(map_io, "write_map_from_ft", lambda *_args, **_kwargs: None)
     kwargs = dict(
         iteration=0,
         Ft_y_0=None,

@@ -65,7 +65,7 @@ def test_k1_start_matches_relion_run_it000_model(fixture):
 
     with mrcfile.open(reference_path, permissive=True) as mrc:
         pixel_size = float(mrc.voxel_size.x)
-    reference = np.asarray(helpers.load_mrc(str(reference_path)), dtype=np.float64)
+    reference = np.asarray(helpers.load_relion_volume(str(reference_path)), dtype=np.float64)
     n = reference.shape[0]
     reference = initial_low_pass_filter_references(
         reference[None], ori_size=n, pixel_size=pixel_size, ini_high_ang=30.0, filter_edgewidth=2.0

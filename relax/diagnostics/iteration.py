@@ -311,7 +311,7 @@ def _save_iteration_intermediates(
     symmetry: str = "C1",
 ) -> None:
     """Write per-iteration intermediate volumes + diagnostics to ``save_dir``."""
-    from recovar.output.output import save_volume
+    from relax.helpers.map_io import write_map_from_ft
 
     os.makedirs(save_dir, exist_ok=True)
     np.save(os.path.join(save_dir, f"it{iteration:03d}_Ft_y_0.npy"), _dump_array_or_empty(Ft_y_0))
@@ -323,20 +323,18 @@ def _save_iteration_intermediates(
         for class_idx in class_indices_to_save:
             suffix = f"_class{class_idx + 1}" if class_idx is not None else ""
             mean_to_save = means[k_half][class_idx] if class_idx is not None else means[k_half]
-            save_volume(
+            write_map_from_ft(
+                os.path.join(save_dir, f"it{iteration:03d}_half{k_half + 1}{suffix}_reg.mrc"),
                 np.asarray(mean_to_save).reshape(-1),
-                os.path.join(save_dir, f"it{iteration:03d}_half{k_half + 1}{suffix}_reg"),
-                volume_shape=volume_shape,
-                from_ft=True,
+                volume_shape,
                 voxel_size=voxel_size,
             )
             if unreg_means[k_half] is not None:
                 unreg_to_save = unreg_means[k_half][class_idx] if class_idx is not None else unreg_means[k_half]
-                save_volume(
+                write_map_from_ft(
+                    os.path.join(save_dir, f"it{iteration:03d}_half{k_half + 1}{suffix}_unreg.mrc"),
                     np.asarray(unreg_to_save).reshape(-1),
-                    os.path.join(save_dir, f"it{iteration:03d}_half{k_half + 1}{suffix}_unreg"),
-                    volume_shape=volume_shape,
-                    from_ft=True,
+                    volume_shape,
                     voxel_size=voxel_size,
                 )
     np.save(

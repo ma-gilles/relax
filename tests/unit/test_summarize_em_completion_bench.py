@@ -431,6 +431,7 @@ def test_k1_summary_reports_relion_final_map_separately_from_half_average(tmp_pa
         }
 
     monkeypatch.setattr(summarizer, "_load_recovar_volume", fake_load)
+    monkeypatch.setattr(summarizer, "_load_relax_volume", fake_load)
     monkeypatch.setattr(summarizer, "_load_relion_volume", fake_load)
     monkeypatch.setattr(summarizer, "map_metrics", fake_map_metrics)
     monkeypatch.setattr(summarizer, "_particle_metrics", lambda **_kwargs: None)
@@ -484,6 +485,7 @@ def test_k1_summary_treats_pre_final_all_data_map_as_missing_required_product(tm
     )
 
     monkeypatch.setattr(summarizer, "_load_recovar_volume", lambda path: np.asarray([1.0, 2.0]))
+    monkeypatch.setattr(summarizer, "_load_relax_volume", lambda path: np.asarray([1.0, 2.0]))
     monkeypatch.setattr(summarizer, "_load_relion_volume", lambda path: np.asarray([1.0, 2.0]))
     monkeypatch.setattr(
         summarizer,
@@ -548,6 +550,7 @@ def test_k1_summary_allows_missing_final_all_data_when_relion_also_stopped_at_ma
     )
 
     monkeypatch.setattr(summarizer, "_load_recovar_volume", lambda path: np.asarray([1.0, 2.0]))
+    monkeypatch.setattr(summarizer, "_load_relax_volume", lambda path: np.asarray([1.0, 2.0]))
     monkeypatch.setattr(summarizer, "_load_relion_volume", lambda path: np.asarray([1.0, 2.0]))
     monkeypatch.setattr(
         summarizer,
@@ -1263,6 +1266,7 @@ def test_k1_relion_repeats_are_scored_against_gt(tmp_path, monkeypatch):
     (repeat / "run_class001.mrc").write_bytes(b"")
     gt = np.random.default_rng(0).standard_normal((8, 8, 8))
     monkeypatch.setattr(summarizer, "_load_recovar_volume", lambda path: gt)
+    monkeypatch.setattr(summarizer, "_load_relax_volume", lambda path: gt)
     monkeypatch.setattr(summarizer, "_load_relion_volume", lambda path: gt.copy())
     section = {"status": "ok", "metrics": {}, "notes": []}
     summarizer._add_k1_relion_repeats(section, [repeat], fixture)

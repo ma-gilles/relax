@@ -22,6 +22,7 @@ from pathlib import Path
 import numpy as np
 
 from relax.diagnostics.gt_metrics import DEFAULT_GT_ALIGN_HEALPIX_ORDER, DEFAULT_GT_ALIGN_MAX_SHELL
+from relax.helpers.map_io import load_relax_map
 
 
 def resolve_intermediates_dir(recovar_dir, explicit_intermediates_dir=None):
@@ -242,8 +243,8 @@ def main():
             "voxel_size": np.float64(pixel_size),
         }
 
-        rec_reg_half1_real = helpers.load_mrc(str(intermediates_dir / f"it{tag}_half1_reg.mrc"))
-        rec_reg_half2_real = helpers.load_mrc(str(intermediates_dir / f"it{tag}_half2_reg.mrc"))
+        rec_reg_half1_real = load_relax_map(intermediates_dir / f"it{tag}_half1_reg.mrc", legacy_recovar_sign=True)
+        rec_reg_half2_real = load_relax_map(intermediates_dir / f"it{tag}_half2_reg.mrc", legacy_recovar_sign=True)
         rec_reg_half1_ft = _real_to_ft(rec_reg_half1_real)
         rec_reg_half2_ft = _real_to_ft(rec_reg_half2_real)
         rec_reg_merged_real = 0.5 * (rec_reg_half1_real + rec_reg_half2_real)
@@ -256,8 +257,8 @@ def main():
         rec_unreg_half1_path = intermediates_dir / f"it{tag}_half1_unreg.mrc"
         rec_unreg_half2_path = intermediates_dir / f"it{tag}_half2_unreg.mrc"
         if rec_unreg_half1_path.exists() and rec_unreg_half2_path.exists():
-            rec_unreg_half1_real = helpers.load_mrc(str(rec_unreg_half1_path))
-            rec_unreg_half2_real = helpers.load_mrc(str(rec_unreg_half2_path))
+            rec_unreg_half1_real = load_relax_map(rec_unreg_half1_path, legacy_recovar_sign=True)
+            rec_unreg_half2_real = load_relax_map(rec_unreg_half2_path, legacy_recovar_sign=True)
             rec_unreg_half1_ft = _real_to_ft(rec_unreg_half1_real)
             rec_unreg_half2_ft = _real_to_ft(rec_unreg_half2_real)
             rec_unreg_merged_real = 0.5 * (rec_unreg_half1_real + rec_unreg_half2_real)

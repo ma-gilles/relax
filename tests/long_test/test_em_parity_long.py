@@ -200,10 +200,12 @@ def _relion_frame_map_similarity(lhs_path: Path, rhs_path: Path) -> dict[str, fl
 
 
 def _recovar_vs_relion_map_similarity(recovar_path: Path, relion_path: Path) -> dict[str, float]:
-    """Map parity metrics between a RECOVAR ``write_mrc`` map and a RELION map, in the RECOVAR frame."""
+    """Map parity metrics between a relax map and a RELION map, both RELION-convention files."""
     from recovar.utils import helpers
 
-    return _volume_similarity(helpers.load_mrc(str(recovar_path)), helpers.load_relion_volume(str(relion_path)))
+    from relax.helpers.map_io import load_relax_map
+
+    return _volume_similarity(load_relax_map(recovar_path), helpers.load_relion_volume(str(relion_path)))
 
 
 def _assert_relion_command_tokens(optimiser: Path, required_tokens: tuple[str, ...]) -> str:
@@ -1013,6 +1015,7 @@ def test_em_parity_long_realdata_hp3_replay(tmp_path, arm):
     """
     from recovar.utils import helpers
 
+    from relax.helpers.map_io import load_relax_map
     from scripts.fsc_metrics import normalized_fsc_auc, shell_fsc
 
     _assert_parity_ancestors_or_skip()
@@ -1040,7 +1043,7 @@ def test_em_parity_long_realdata_hp3_replay(tmp_path, arm):
     band = current_size // 2
     payload = {"arm": arm, "walltime_s": elapsed, "current_size": current_size}
     for half in (1, 2):
-        relax_map = np.asarray(helpers.load_mrc(str(output_dir / f"recovar_final_half{half}.mrc")), dtype=np.float64)
+        relax_map = np.asarray(load_relax_map(output_dir / f"recovar_final_half{half}.mrc"), dtype=np.float64)
         relion_map = np.asarray(
             helpers.load_relion_volume(str(relion_dir / f"run_it014_half{half}_class001.mrc")), dtype=np.float64
         )

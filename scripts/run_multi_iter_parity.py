@@ -1069,20 +1069,20 @@ def main():
         "--initial-half1-mrc",
         type=str,
         default=None,
-        help="Diagnostic RECOVAR-frame half-1 map replacing the starting RELION map.",
+        help="Diagnostic half-1 map (RELION map convention) replacing the starting RELION map.",
     )
     parser.add_argument(
         "--initial-half2-mrc",
         type=str,
         default=None,
-        help="Diagnostic RECOVAR-frame half-2 map replacing the starting RELION map.",
+        help="Diagnostic half-2 map (RELION map convention) replacing the starting RELION map.",
     )
     parser.add_argument(
         "--fresh-initial-reference-mrc",
         type=str,
         default=None,
         help=(
-            "Diagnostic fresh-run RECOVAR-frame reference. Repeats RELION's "
+            "Diagnostic fresh-run reference map (RELION map convention). Repeats RELION's "
             "initial low-pass in memory and bypasses the lossy run_it000 MRC boundary."
         ),
     )
@@ -1404,6 +1404,7 @@ def main():
     from recovar import utils
     from recovar.core import fourier_transform_utils as ftu
     from recovar.data_io.cryoem_dataset import load_dataset
+    from relax.helpers.map_io import write_map_from_ft
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.refinement_options import (
         AdaptiveOptions,
@@ -1421,7 +1422,6 @@ def main():
         read_relion_sampling_metadata,
         read_relion_sampling_symmetry,
     )
-    from recovar.output.output import save_volume
     from recovar.reconstruction import noise as recon_noise
     from recovar.reconstruction import regularization
     from recovar.utils import helpers
@@ -1731,7 +1731,7 @@ def main():
     )
     initial_reference_real_for_projector = None
     if args.fresh_initial_reference_mrc is not None:
-        unfiltered_real = helpers.load_mrc(args.fresh_initial_reference_mrc)
+        unfiltered_real = helpers.load_relion_volume(args.fresh_initial_reference_mrc)
         filtered_real = filter_fresh_initial_reference(
             unfiltered_real,
             pixel_size=pixel_size,
@@ -1755,10 +1755,10 @@ def main():
             f"half1={args.initial_half1_ft_npz}, half2={args.initial_half2_ft_npz}"
         )
     elif args.initial_half1_mrc is not None:
-        vol_h1 = helpers.load_mrc(args.initial_half1_mrc).astype(_init_volume_dtype)
-        vol_h2 = helpers.load_mrc(args.initial_half2_mrc).astype(_init_volume_dtype)
+        vol_h1 = helpers.load_relion_volume(args.initial_half1_mrc).astype(_init_volume_dtype)
+        vol_h2 = helpers.load_relion_volume(args.initial_half2_mrc).astype(_init_volume_dtype)
         print(
-            "  Diagnostic initial half maps (RECOVAR frame): "
+            "  Diagnostic initial half maps: "
             f"half1={args.initial_half1_mrc}, half2={args.initial_half2_mrc}"
         )
         vol_ft_h1 = np.array(ftu.get_dft3(jnp.array(vol_h1))).reshape(-1)
@@ -2672,25 +2672,22 @@ def main():
     save_dict["final_half2_ft"] = final_half2_ft
     save_dict["final_merged_ft"] = final_merged_ft
 
-    save_volume(
+    write_map_from_ft(
+        os.path.join(out_dir, "recovar_final_half1.mrc"),
         np.asarray(final_half1_ft),
-        os.path.join(out_dir, "recovar_final_half1"),
-        volume_shape=(N, N, N),
-        from_ft=True,
+        (N, N, N),
         voxel_size=pixel_size,
     )
-    save_volume(
+    write_map_from_ft(
+        os.path.join(out_dir, "recovar_final_half2.mrc"),
         np.asarray(final_half2_ft),
-        os.path.join(out_dir, "recovar_final_half2"),
-        volume_shape=(N, N, N),
-        from_ft=True,
+        (N, N, N),
         voxel_size=pixel_size,
     )
-    save_volume(
+    write_map_from_ft(
+        os.path.join(out_dir, "recovar_final_merged.mrc"),
         np.asarray(final_merged_ft),
-        os.path.join(out_dir, "recovar_final_merged"),
-        volume_shape=(N, N, N),
-        from_ft=True,
+        (N, N, N),
         voxel_size=pixel_size,
     )
     print(
@@ -2775,26 +2772,23 @@ def main():
         save_dict["final_merged_fsc_auc_vs_relion"] = np.float64(merged_fsc_auc)
         print(f"  Final merged vs RELION: corr={merged_corr:.6f}, FSC-AUC={merged_fsc_auc:.6f}")
     if "half1" in relion_final_ft and "half2" in relion_final_ft:
-        save_volume(
+        write_map_from_ft(
+            os.path.join(out_dir, "relion_final_half1.mrc"),
             np.asarray(relion_final_ft["half1"]),
-            os.path.join(out_dir, "relion_final_half1"),
-            volume_shape=(N, N, N),
-            from_ft=True,
+            (N, N, N),
             voxel_size=pixel_size,
         )
-        save_volume(
+        write_map_from_ft(
+            os.path.join(out_dir, "relion_final_half2.mrc"),
             np.asarray(relion_final_ft["half2"]),
-            os.path.join(out_dir, "relion_final_half2"),
-            volume_shape=(N, N, N),
-            from_ft=True,
+            (N, N, N),
             voxel_size=pixel_size,
         )
     if relion_merged_ft is not None:
-        save_volume(
+        write_map_from_ft(
+            os.path.join(out_dir, "relion_final_merged.mrc"),
             np.asarray(relion_merged_ft, dtype=np.complex64),
-            os.path.join(out_dir, "relion_final_merged"),
-            volume_shape=(N, N, N),
-            from_ft=True,
+            (N, N, N),
             voxel_size=pixel_size,
         )
         print(f"  Saved matched RELION final map: {os.path.join(out_dir, 'relion_final_merged.mrc')}")

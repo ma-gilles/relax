@@ -23,6 +23,7 @@ import numpy as np
 
 from scripts.summarize_em_completion_bench import (
     _load_recovar_volume,
+    _load_relax_volume,
     _load_relion_volume,
     normalized_fsc_auc,
     shell_fsc,
@@ -246,8 +247,8 @@ def _load_numbered_row(
     gt_sign_invariant: bool,
     shellwise: dict[str, np.ndarray],
 ) -> dict[str, Any]:
-    rec_half1 = _load_recovar_volume(recovar_paths[1])
-    rec_half2 = _load_recovar_volume(recovar_paths[2])
+    rec_half1 = _load_relax_volume(recovar_paths[1])
+    rec_half2 = _load_relax_volume(recovar_paths[2])
     rel_half1 = _load_relion_volume(relion_paths[1])
     rel_half2 = _load_relion_volume(relion_paths[2])
     metrics = _series_metrics(
@@ -303,7 +304,7 @@ def _optional_final_metrics(
     for name, path in paths.items():
         if not present[name]:
             continue
-        loaded[name] = _load_relion_volume(path) if name.startswith("rel_") else _load_recovar_volume(path)
+        loaded[name] = _load_relion_volume(path) if name.startswith("rel_") else _load_relax_volume(path)
 
     for label in ("half1", "half2", "merged"):
         rec_key = f"rec_{label}"

@@ -2379,7 +2379,7 @@ def test_iteration_zero_artifacts_use_the_normal_iteration_writer(monkeypatch, t
         assert voxel_size == 1.5
         Path(path).write_bytes(b"iteration-zero-map")
 
-    monkeypatch.setattr(output, "write_relion_mrc", fake_write_mrc)  # the artifact writer resolves the name in output
+    monkeypatch.setattr(output, "write_map", fake_write_mrc)  # the artifact writer resolves the name in output
     monkeypatch.setenv("RECOVAR_INITIAL_MODEL_PROFILE", "1")
     prefix = str(tmp_path / "run")
     output._write_iteration_artifacts(

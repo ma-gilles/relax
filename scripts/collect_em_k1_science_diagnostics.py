@@ -386,6 +386,11 @@ def construct_common_soft_mask(
 
 
 def _load_volume(path: Path, frame: str) -> tuple[np.ndarray, float]:
+    if frame == "relax":
+        # A relax map is in RELION's convention unless it predates the relax map label.
+        from relax.helpers.map_io import is_relax_map
+
+        frame = "relion" if is_relax_map(path) else "recovar"
     if frame == "recovar":
         volume, voxel_size = helpers.load_mrc(str(path), return_voxel_size=True)
     elif frame == "relion":
@@ -420,9 +425,9 @@ def collect_diagnostics(args: argparse.Namespace) -> dict[str, Any]:
     for label, path in paths.items():
         _require(path.is_file(), f"missing {label}: {path}")
 
-    recovar_merged, recovar_voxel = _load_volume(paths["recovar_merged"], "recovar")
-    recovar_half1, recovar_half1_voxel = _load_volume(paths["recovar_half1"], "recovar")
-    recovar_half2, recovar_half2_voxel = _load_volume(paths["recovar_half2"], "recovar")
+    recovar_merged, recovar_voxel = _load_volume(paths["recovar_merged"], "relax")
+    recovar_half1, recovar_half1_voxel = _load_volume(paths["recovar_half1"], "relax")
+    recovar_half2, recovar_half2_voxel = _load_volume(paths["recovar_half2"], "relax")
     relion_merged, relion_voxel = _load_volume(paths["relion_merged"], "relion")
     relion_half1, relion_half1_voxel = _load_volume(paths["relion_half1"], "relion")
     relion_half2, relion_half2_voxel = _load_volume(paths["relion_half2"], "relion")

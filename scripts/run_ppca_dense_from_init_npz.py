@@ -20,6 +20,7 @@ import jax.numpy as jnp
 
 from recovar.core import fourier_transform_utils as ftu
 from recovar.data_io.cryoem_dataset import load_dataset
+from relax.helpers.map_io import write_map_from_ft
 from relax.ppca_refinement.config import (
     GeometryConfig,
     ScheduleConfig,
@@ -41,7 +42,6 @@ from relax.ppca_refinement.refinement_loop import run_dense_ppca_refinement_loop
 from relax.ppca_refinement.state import PoseMarginalPPCAEMState
 from relax.sampling import get_rotation_grid_at_order, get_translation_grid
 from recovar.reconstruction import noise as recon_noise
-from recovar.utils import helpers
 from recovar.utils.json_utils import to_jsonable
 
 
@@ -67,8 +67,7 @@ def _half_size(volume_shape) -> int:
 
 def _write_half_volume_mrc(path: Path, half_volume, volume_shape, *, voxel_size: float | None) -> None:
     full = ftu.half_volume_to_full_volume(jnp.asarray(half_volume), tuple(volume_shape))
-    real = np.asarray(ftu.get_idft3(full.reshape(tuple(volume_shape))).real)
-    helpers.write_mrc(path, real, voxel_size=voxel_size)
+    write_map_from_ft(path, full, volume_shape, voxel_size=voxel_size)
 
 
 def _load_init(init_npz: str | Path, *, q_override: int | None):

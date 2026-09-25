@@ -28,10 +28,10 @@ Masks are made with RELION's own tools from the build the references used
 
 1. Source map: for real data the RELION reference run's final merged map; for
    synthetic data the ground-truth map (mean of the class maps for a
-   multi-class fixture), taken from the relax-frame file because the
-   simulator's RELION-frame maps carry negative density. Both file frames share
-   one voxel layout (relax's file array is the negated RELION file array), so
-   the mask applies to either.
+   multi-class fixture), taken from the RECOVAR-frame file (`reference_gt.mrc`)
+   because the simulator's RELION-frame maps carry negative density. Both file
+   frames share one voxel layout (the RECOVAR-frame array is the negated RELION
+   file array), so the mask applies to either.
 2. `relion_image_handler --lowpass 15 --angpix <pixel>`.
 3. Threshold: `median + 0.05 * (99.99th percentile - median)` of the low-passed
    map (a robust fraction of the positive density, insensitive to map scale).
@@ -66,7 +66,10 @@ reported masked resolution. Both arms' unfiltered half maps are postprocessed
 with the frozen mask and one protocol: `--force_mask --skip_fsc_weighting
 --low_pass 0 --randomize_at_fsc 0.8 --random_seed 42`. `--force_mask` stops
 RELION from reporting an unmasked resolution when the mask looks unhelpful.
-relax maps are negated into the RELION file frame first.
+relax maps are written in RELION's map convention (`relax.helpers.map_io`) and are
+postprocessed as read; a relax map written before that convention has no relax
+header label and holds the negated array, so it is negated first, and the score
+records each relax map's convention under `relax_map_convention`.
 
 - Masked resolution: `rlnFinalResolution`, the phase-randomisation-corrected
   masked FSC at 0.143 in RELION's convention (the last shell before the first

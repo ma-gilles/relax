@@ -9,8 +9,8 @@ from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
-from recovar.utils.helpers import write_relion_mrc
 
+from relax.helpers.map_io import write_map
 from relax.relion.initial_model_io import _write_data_star, _write_model_star
 from relax.vdam.state import InitialModelState, NativeParticleState
 
@@ -104,7 +104,7 @@ def _write_iteration_artifacts(
     class_mrcs = _class_mrc_paths(output_prefix, iteration, int(state.K))
     profile.record("setup")
     for k, class_mrc in enumerate(class_mrcs):
-        write_relion_mrc(class_mrc, np.asarray(state.Iref[k]), voxel_size=float(state.pixel_size))
+        write_map(class_mrc, np.asarray(state.Iref[k]), voxel_size=float(state.pixel_size))
     profile.record("class_mrc")
     model_star = f"{output_prefix}_it{iteration:03d}_model.star"
     _write_model_star(model_star, state, class_mrcs)
@@ -144,8 +144,8 @@ def _write_final_outputs(output_prefix: str, state: InitialModelState) -> tuple[
     out_dir.mkdir(parents=True, exist_ok=True)
     for k, class_mrc in enumerate(class_mrcs):
         if not os.path.exists(class_mrc):
-            write_relion_mrc(class_mrc, np.asarray(state.Iref[k]), voxel_size=float(state.pixel_size))
+            write_map(class_mrc, np.asarray(state.Iref[k]), voxel_size=float(state.pixel_size))
     final_mrc = _initial_model_mrc_from_prefix(output_prefix)
     best_class = int(np.argmax(np.asarray(state.pdf_class)))
-    write_relion_mrc(final_mrc, np.asarray(state.Iref[best_class]), voxel_size=float(state.pixel_size))
+    write_map(final_mrc, np.asarray(state.Iref[best_class]), voxel_size=float(state.pixel_size))
     return final_mrc, class_mrcs

@@ -25,6 +25,7 @@ from scipy.optimize import linear_sum_assignment
 
 from scripts.summarize_em_completion_bench import (
     _load_recovar_volume,
+    _load_relax_volume,
     _load_relion_volume,
     normalized_fsc_auc,
     shell_fsc,
@@ -186,8 +187,8 @@ def _validate_numbered_topology(
 def _load_recovar_numbered_classes(
     paths: dict[int, dict[int, Path]],
 ) -> tuple[list[np.ndarray], list[np.ndarray], list[np.ndarray]]:
-    half1 = [_load_recovar_volume(paths[1][class_id]) for class_id in range(1, N_CLASSES + 1)]
-    half2 = [_load_recovar_volume(paths[2][class_id]) for class_id in range(1, N_CLASSES + 1)]
+    half1 = [_load_relax_volume(paths[1][class_id]) for class_id in range(1, N_CLASSES + 1)]
+    half2 = [_load_relax_volume(paths[2][class_id]) for class_id in range(1, N_CLASSES + 1)]
     merged = [0.5 * (lhs + rhs) for lhs, rhs in zip(half1, half2, strict=True)]
     return half1, half2, merged
 
@@ -420,7 +421,7 @@ def _final_metrics(
     shellwise: dict[str, np.ndarray],
 ) -> dict[str, Any]:
     rec_paths = _discover_final(recovar_dir, re.compile(r"^final_class(\d{3})\.mrc$"), engine="RECOVAR")
-    rec = [_load_recovar_volume(rec_paths[class_id]) for class_id in range(1, N_CLASSES + 1)]
+    rec = [_load_relax_volume(rec_paths[class_id]) for class_id in range(1, N_CLASSES + 1)]
     rec_last = _load_recovar_numbered_classes(recovar_last_paths)[2]
     for class_id, (final_map, numbered_map) in enumerate(zip(rec, rec_last, strict=True), start=1):
         if not np.array_equal(final_map, numbered_map):

@@ -67,6 +67,7 @@ def _make_case(
         return arrays[Path(path).resolve()]
 
     monkeypatch.setattr(auditor, "_load_recovar_volume", load)
+    monkeypatch.setattr(auditor, "_load_relax_volume", load)
     monkeypatch.setattr(auditor, "_load_relion_volume", load)
     return case_root, arrays
 

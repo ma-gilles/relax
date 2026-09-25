@@ -26,6 +26,9 @@ import numpy as np
 import pytest
 from conftest import gpu_subprocess_env
 from helpers.em_fixtures import fixture_root, require_fixture_sets
+from helpers.map_sign import assert_relion_file_sign
+
+from relax.helpers.map_io import load_relax_map
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REFINE_SCRIPT = REPO_ROOT / "scripts" / "run_full_refinement.py"
@@ -149,14 +152,14 @@ def test_k1_5k128_standalone_autorefine(tmp_path):
 
     maps = {
         "unfil_half_average": (
-            unfil_average(helpers.load_mrc, [output_dir / f"final_half{h}_unfil.mrc" for h in (1, 2)]),
+            unfil_average(load_relax_map, [output_dir / f"final_half{h}_unfil.mrc" for h in (1, 2)]),
             {
                 k: unfil_average(helpers.load_relion_volume, [p / f"run_half{h}_class001_unfil.mrc" for h in (1, 2)])
                 for k, p in _relion_runs().items()
             },
         ),
         "merged": (
-            np.asarray(helpers.load_mrc(str(output_dir / "final_merged.mrc")), dtype=np.float64),
+            np.asarray(load_relax_map(output_dir / "final_merged.mrc"), dtype=np.float64),
             {
                 k: np.asarray(helpers.load_relion_volume(str(p / "run_class001.mrc")), dtype=np.float64)
                 for k, p in _relion_runs().items()
@@ -208,3 +211,7 @@ def test_k1_5k128_standalone_autorefine(tmp_path):
             assert scores["relax_vs_gt"]["fsc_auc"] >= min(band_gt) - gate["gt_fsc_auc_below_band"], (kind, scores)
             worst = min(v["fsc_auc"] for v in scores["relax_vs_relion"].values())
             assert worst >= gate["min_cross_fsc_auc"], (kind, scores)
+    # The written files carry RELION's sign and convention (relax.helpers.map_io).
+    assert_relion_file_sign(output_dir / "final_merged.mrc", relion_ref / "run_class001.mrc")
+    for h in (1, 2):
+        assert_relion_file_sign(output_dir / f"final_half{h}_unfil.mrc", relion_ref / f"run_half{h}_class001_unfil.mrc")

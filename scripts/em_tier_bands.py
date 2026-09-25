@@ -13,8 +13,10 @@ truth, and the RELION runs with each other:
 
 K4 classes are matched by the Hungarian assignment on unmasked FSC-AUC (relax and each RELION
 run against the RELION reference; each against the GT classes); every class is reported, none is
-averaged away. Maps are compared in the RECOVAR frame (relax and GT maps and the mask through
-``load_mrc``, RELION maps through ``load_relion_volume``).
+averaged away. Maps are compared in the internal frame: relax maps through ``load_relax_map``
+(RELION's convention; an unlabeled map of an older commit holds the negated array and is read as
+such), RELION maps through ``load_relion_volume``, and the GT maps and the mask, which are written
+in RECOVAR's ``write_mrc`` convention, through ``load_mrc``.
 
     python scripts/em_tier_bands.py --run-root <long tier run root> --output bands.json
 """
@@ -91,9 +93,16 @@ CASES = {
 
 
 def _load(path: Path, *, relion: bool) -> np.ndarray:
+    """A RELION map (``relion``) or a RECOVAR-convention GT map or mask, in the internal frame."""
     from recovar.utils import helpers
 
     return np.asarray((helpers.load_relion_volume if relion else helpers.load_mrc)(str(path)), dtype=np.float64)
+
+
+def _load_relax(path: Path) -> np.ndarray:
+    from relax.helpers.map_io import load_relax_map
+
+    return np.asarray(load_relax_map(path, legacy_recovar_sign=True), dtype=np.float64)
 
 
 def _auc(a: np.ndarray, b: np.ndarray, mask: np.ndarray | None = None) -> float:
@@ -120,14 +129,14 @@ def _maps(case: BandCase, relax_dir: Path, runs: dict[str, Path]) -> tuple[list,
 
     data = fixture_root(case.data_set)
     if case.classes:
-        relax = [_load(relax_dir / f"final_class{c:03d}.mrc", relion=False) for c in range(1, case.classes + 1)]
+        relax = [_load_relax(relax_dir / f"final_class{c:03d}.mrc") for c in range(1, case.classes + 1)]
         relion = {
             k: [_load(d / f"{case.relion_final}{c:03d}.mrc", relion=True) for c in range(1, case.classes + 1)]
             for k, d in runs.items()
         }
         gt = [_load(data / f"reference_gt_class{c:03d}.mrc", relion=False) for c in range(1, case.classes + 1)]
     else:
-        relax = [_load(relax_dir / "final_merged.mrc", relion=False)]
+        relax = [_load_relax(relax_dir / "final_merged.mrc")]
         relion = {k: [_load(d / case.relion_final, relion=True)] for k, d in runs.items()}
         gt = [_load(data / "reference_gt.mrc", relion=False)]
     return relax, relion, gt

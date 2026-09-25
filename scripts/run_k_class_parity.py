@@ -1320,10 +1320,10 @@ def main() -> None:
         read_relion_optimiser_metadata,
         read_relion_sampling_metadata,
     )
+    from relax.helpers.map_io import write_map
     from relax.scoring.significance import _compute_k_class_significance_batched
     from recovar.reconstruction import noise as recon_noise
     from recovar.utils import helpers
-    from recovar.utils.helpers import write_relion_mrc
 
     relion_dir = args.relion_dir
     prev_prefix = relion_dir / f"run_it{args.prev_iter:03d}"
@@ -2064,9 +2064,9 @@ def main() -> None:
     best_variant = max(variant_results, key=lambda key: variant_results[key]["mean_corr"])
     recovar_real = variant_maps[default_variant]
     for class_index, class_real in enumerate(recovar_real):
-        write_relion_mrc(output_dir / f"recovar_class{class_index + 1:03d}.mrc", class_real, voxel_size=ds.voxel_size)
+        write_map(output_dir / f"recovar_class{class_index + 1:03d}.mrc", class_real, voxel_size=ds.voxel_size)
     for class_index, class_real in enumerate(variant_maps[best_variant]):
-        write_relion_mrc(
+        write_map(
             output_dir / f"recovar_best_variant_class{class_index + 1:03d}.mrc", class_real, voxel_size=ds.voxel_size
         )
 

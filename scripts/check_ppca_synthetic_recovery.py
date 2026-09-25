@@ -14,6 +14,7 @@ import numpy as np
 import jax.numpy as jnp
 
 from recovar.core import fourier_transform_utils as ftu
+from relax.helpers.map_io import load_relax_map
 from relax.sampling import get_rotation_grid_at_order, get_translation_grid
 from recovar.simulation import solvent_contrast, synthetic_dataset
 from recovar.utils import helpers
@@ -33,9 +34,13 @@ def _half_volume_to_real(half_volume, volume_shape) -> np.ndarray:
 def _load_estimated_maps(run_dir: Path, result_npz, q: int) -> tuple[np.ndarray, np.ndarray, str]:
     mu_mrc = run_dir / "final_mu.mrc"
     if mu_mrc.exists():
+        # run_ppca_dense_from_init_npz.py maps; an unlabeled one predates the RELION map convention.
+        def load(path):
+            return np.asarray(load_relax_map(path, legacy_recovar_sign=True), dtype=np.float64)
+
         return (
-            _load_mrc(mu_mrc),
-            np.stack([_load_mrc(run_dir / f"final_W{i + 1:02d}.mrc") for i in range(int(q))], axis=0),
+            load(mu_mrc),
+            np.stack([load(run_dir / f"final_W{i + 1:02d}.mrc") for i in range(int(q))], axis=0),
             "mrc",
         )
 

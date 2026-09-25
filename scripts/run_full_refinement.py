@@ -1907,7 +1907,7 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--data_dir",
         required=True,
-        help="Directory containing particles.star, reference_init.mrc, etc.",
+        help="Directory containing particles.star, reference_init_relion.mrc, etc.",
     )
     parser.add_argument(
         "--output",
@@ -2389,7 +2389,7 @@ def _parse_args(argv=None):
         help="Number of K-class references for Class3D-style refinement. K=1 "
         "is the auto-refine path; K>1 enables joint class×pose EM. With K>1, "
         "either --init_class_volumes must be provided or "
-        "<data_dir>/reference_init_class00K.mrc must exist for each K.",
+        "<data_dir>/reference_init_class00K_relion.mrc must exist for each K.",
     )
     parser.add_argument(
         "--relion_init_dir",
@@ -2403,9 +2403,9 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--init_class_volumes",
         default=None,
-        help="Comma-separated paths to K initial reference volumes "
-        "(K must equal --n_classes). Defaults to "
-        "<data_dir>/reference_init_class00{1..K}.mrc when omitted.",
+        help="Comma-separated paths to K initial reference maps in RELION's map "
+        "convention, as relion_refine reads them (K must equal --n_classes). Defaults to "
+        "<data_dir>/reference_init_class00{1..K}_relion.mrc when omitted.",
     )
     parser.add_argument(
         "--ref_star",
@@ -2420,8 +2420,9 @@ def _parse_args(argv=None):
         "--init_volume",
         default=None,
         help=(
-            "Initial reference volume for K=1. Defaults to "
-            "<data_dir>/reference_init.mrc when omitted."
+            "Initial reference map for K=1, in RELION's map convention (the file "
+            "relion_refine reads with --ref). Defaults to "
+            "<data_dir>/reference_init_relion.mrc when omitted."
         ),
     )
     parser.add_argument(
@@ -3400,14 +3401,15 @@ def main():
         }
 
     # ---- Load initial volume ----
-    # CANONICAL recovar idiom for loading a volume: load_mrc + get_dft3.
-    # See recovar/output/output.py:980-984 and recovar/simulation/simulator.py:425.
+    # References are RELION-convention maps, the same files relion_refine reads with --ref;
+    # load_relion_volume puts them in the internal frame (relax.helpers.map_io), and get_dft3
+    # gives the centered Fourier volume.
     # NEVER use raw `mrcfile.open` + `np.fft.fftn(np.fft.ifftshift(...))` here:
     # that produces a Fourier volume with the right values but at WRONG array
     # indices (DC at corner instead of center), so `slice_volume` reads
     # Nyquist as if it were DC and projections are off by ~2400x in amplitude
     # at low frequencies.
-    from recovar.utils.helpers import load_mrc as _load_mrc
+    from recovar.utils.helpers import load_relion_volume
 
     # RELION's Image<RFLOAT>::read() widens a reference MRC (on-disk float32)
     # to RFLOAT (double, in our ACC_DOUBLE_PRECISION oracle build) as part of
@@ -3511,8 +3513,8 @@ def main():
             frozen_boundary.source_dir,
         )
     elif args.n_classes == 1:
-        init_mrc_path = args.init_volume or os.path.join(args.data_dir, "reference_init.mrc")
-        init_vol_real = _load_mrc(init_mrc_path).astype(_init_volume_dtype)
+        init_mrc_path = args.init_volume or os.path.join(args.data_dir, "reference_init_relion.mrc")
+        init_vol_real = load_relion_volume(init_mrc_path).astype(_init_volume_dtype)
         relion_model_pixel_size = relion_metadata._read_relion_mrc_model_pixel_size(init_mrc_path)
         if not np.isfinite(relion_model_pixel_size) or relion_model_pixel_size <= 0.0:
             raise SystemExit(
@@ -3558,15 +3560,11 @@ def main():
             relion_model_pixel_size,
         )
     else:
-        load_class_volume = _load_mrc
         if args.ref_star is not None:
             if args.init_class_volumes:
                 raise SystemExit("--ref_star and --init_class_volumes are exclusive")
-            from recovar.utils.helpers import load_relion_volume
-
             class_paths, star_distribution = relion_metadata.read_relion_reference_star(args.ref_star)
             class_paths = [str(p) for p in class_paths]
-            load_class_volume = load_relion_volume
             if star_distribution is not None and not np.allclose(
                 star_distribution, 1.0 / len(class_paths), rtol=0.0, atol=1e-6
             ):
@@ -3579,14 +3577,15 @@ def main():
             class_paths = [p.strip() for p in args.init_class_volumes.split(",")]
         else:
             class_paths = [
-                os.path.join(args.data_dir, f"reference_init_class{k + 1:03d}.mrc") for k in range(args.n_classes)
+                os.path.join(args.data_dir, f"reference_init_class{k + 1:03d}_relion.mrc")
+                for k in range(args.n_classes)
             ]
         if len(class_paths) != args.n_classes:
             raise SystemExit(f"--init_class_volumes count {len(class_paths)} != --n_classes {args.n_classes}")
         per_class_ft = []
         per_class_real_for_projector = []
         for k, p in enumerate(class_paths):
-            vol_real = np.asarray(load_class_volume(p)).astype(_init_volume_dtype)
+            vol_real = np.asarray(load_relion_volume(p)).astype(_init_volume_dtype)
             assert vol_real.shape == ds.volume_shape, (
                 f"Class {k + 1} volume shape mismatch at {p}: {vol_real.shape} vs {ds.volume_shape}"
             )
@@ -3617,7 +3616,7 @@ def main():
             )
         # For downstream init_PS estimation, use class-1 as the representative
         # (K-class noise/prior bootstrap currently uses a single spectrum).
-        init_vol_real = np.asarray(load_class_volume(class_paths[0])).astype(_init_volume_dtype)
+        init_vol_real = np.asarray(load_relion_volume(class_paths[0])).astype(_init_volume_dtype)
 
     # ---- Set up rotation and translation grids ----
     from relax.sampling import get_translation_grid, rotation_grid_size
@@ -5180,9 +5179,8 @@ def main():
     if args.skip_large_outputs:
         logger.info("Skipping final MRC volume writes (--skip-large-outputs)")
     else:
-        # Also save final merged volume as MRC for visual inspection.
-        # Use the canonical idiom: get_idft3 + write_mrc (handles axis transpose).
-        from recovar.utils.helpers import write_mrc as _write_mrc
+        # Final maps are written in RELION's map convention (relax.helpers.map_io).
+        from relax.helpers.map_io import write_map
 
         def _ft_to_real_volume(ft_array):
             ft_reshape = np.asarray(ft_array).reshape(ds.volume_shape)
@@ -5190,11 +5188,11 @@ def main():
 
         if args.n_classes == 1:
             final_mean_real = _ft_to_real_volume(result["mean"])
-            _write_mrc(os.path.join(args.output, "final_merged.mrc"), final_mean_real, voxel_size=ds.voxel_size)
+            write_map(os.path.join(args.output, "final_merged.mrc"), final_mean_real, voxel_size=ds.voxel_size)
             logger.info("Final merged volume saved to final_merged.mrc")
             for k in range(2):
                 half_real = _ft_to_real_volume(result["means"][k])
-                _write_mrc(
+                write_map(
                     os.path.join(args.output, f"final_half{k + 1}.mrc"),
                     half_real,
                     voxel_size=ds.voxel_size,
@@ -5204,7 +5202,7 @@ def main():
             if unfiltered_means is not None:
                 for k in range(2):
                     unfiltered_real = _ft_to_real_volume(unfiltered_means[k])
-                    _write_mrc(
+                    write_map(
                         os.path.join(args.output, f"final_half{k + 1}_unfil.mrc"),
                         unfiltered_real,
                         voxel_size=ds.voxel_size,
@@ -5215,12 +5213,12 @@ def main():
             # has shape (K, V) for the merged final iter; result["mean"] is the
             # class-weighted merged volume.
             final_mean_real = _ft_to_real_volume(result["mean"])
-            _write_mrc(os.path.join(args.output, "final_merged.mrc"), final_mean_real, voxel_size=ds.voxel_size)
+            write_map(os.path.join(args.output, "final_merged.mrc"), final_mean_real, voxel_size=ds.voxel_size)
             if result.get("class_means") is not None:
                 class_means_arr = np.asarray(result["class_means"])
                 for c in range(args.n_classes):
                     vol_real = _ft_to_real_volume(class_means_arr[c])
-                    _write_mrc(
+                    write_map(
                         os.path.join(args.output, f"final_class{c + 1:03d}.mrc"),
                         vol_real,
                         voxel_size=ds.voxel_size,

@@ -19,15 +19,16 @@ Subcommands::
     verify-mask  regenerate a mask from its MASK.json and compare hashes
     score        masked metrics of one RELION arm and one relax arm
 
-Frames: masks and RELION maps are in RELION's MRC file frame. relax writes
-``final_*.mrc`` with ``write_mrc``, whose file array is the negated RELION file
-array (``relion_volume_to_recovar`` is ``-transpose`` and ``write_mrc``
-transposes back), so a relax map is negated before postprocessing. The two
-file frames share one voxel layout, so a mask applies to both; a mask source
-is chosen with positive molecular density (RELION's map for real data, the
-relax-frame ground truth for the synthetic fixtures, whose RELION-frame maps
-carry negative density). The score checks the sign and overlap of the two
-merged maps before any cross-engine comparison.
+Frames: masks, RELION maps and relax maps are all in RELION's MRC file frame
+(``relax.helpers.map_io``), so arrays are compared as read and a mask applies
+to every map. relax maps written before that convention carry no relax label
+and hold the negated array; such a map is negated once when it is read, and
+the score records which convention each relax map had. A mask source is chosen
+with positive molecular density (RELION's map for real data, the RECOVAR-frame
+ground truth ``reference_gt.mrc`` for the synthetic fixtures, whose RELION-frame
+maps carry negative density; its array is the negated RELION-frame array on the
+same voxel layout). The score checks the sign and overlap of the two merged maps
+before any cross-engine comparison.
 
 See docs/benchmarks/masked_fsc.md.
 """
@@ -583,10 +584,16 @@ def frame_correlation(a: np.ndarray, b: np.ndarray, mask: np.ndarray) -> float:
     return float(np.dot(x, y) / math.sqrt(np.dot(x, x) * np.dot(y, y)))
 
 
+def relax_map_sign(path: Path) -> float:
+    """+1 for a labeled relax map (RELION convention), -1 for an unlabeled one written before it."""
+    from relax.helpers.map_io import is_relax_map
+
+    return 1.0 if is_relax_map(path) else -1.0
+
+
 def load_arm(merged: Path | None, half1: Path | None, half2: Path | None, frame: str):
-    """Load an arm's maps as RELION file-frame arrays (relax maps are negated)."""
-    sign = {"relion": 1.0, "relax": -1.0}[frame]
-    out = {}
+    """Load an arm's maps as RELION file-frame arrays (older relax maps are negated)."""
+    out: dict[str, Any] = {"convention": {}}
     for name, path in (("merged", merged), ("half1", half1), ("half2", half2)):
         if path is None:
             out[name] = None
@@ -594,6 +601,8 @@ def load_arm(merged: Path | None, half1: Path | None, half2: Path | None, frame:
         data, voxel = read_mrc(path)
         if not np.all(np.isfinite(data)):
             raise ValueError(f"{path}: non-finite values")
+        sign = 1.0 if frame == "relion" else relax_map_sign(path)
+        out["convention"][name] = "relion" if sign > 0 else "negated_pre_relion_convention"
         out[name] = sign * data
         out["voxel"] = voxel
     return out
@@ -627,6 +636,7 @@ def score(args: argparse.Namespace) -> dict[str, Any]:
             }
             for engine, paths in (("relion", args.relion_maps), ("relax", args.relax_maps))
         },
+        "relax_map_convention": arms["relax"]["convention"],
         "null_reasons": {},
     }
     if args.provenance:
@@ -931,7 +941,7 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
         nargs=3,
         required=True,
         metavar=("MERGED", "HALF1", "HALF2"),
-        help="relax final_*.mrc maps; pass '' for a missing one",
+        help="relax final_*.mrc maps (RELION convention; unlabeled older maps are negated); pass '' for a missing one",
     )
     p.add_argument("--gt-map", default=None, help="RELION-frame ground-truth map (synthetic data)")
     p.add_argument(

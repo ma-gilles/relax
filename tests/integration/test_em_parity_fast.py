@@ -36,6 +36,10 @@ from conftest import gpu_subprocess_env
 from helpers.em_fixtures import fixture_root, require_fixture_sets
 from helpers.em_parity_oracles import k4_oracle
 
+from helpers.map_sign import FILE_CORRELATION_MIN, assert_relion_file_sign, file_correlation
+
+from relax.helpers.map_io import load_relax_map
+
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -756,17 +760,13 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling, gui_default=False):
     n_iters = int(pmax_traj.size)
     assert n_iters >= 3, f"Expected ≥3 iterations, got {n_iters}"
 
-    # Compare halfmaps against RELION it003. recovar's `write_mrc` saves
-    # with a (2,1,0) transpose (cryosparc/cryoDRGN convention) and `load_mrc`
-    # un-transposes round-trip; RELION's `load_relion_volume` applies
-    # `-(2,1,0)` to RELION MRCs to land in recovar's frame. Mixing helpers
-    # incorrectly gives corr ≈ -0.98 (raw + raw — sign flip) or 0.45 (raw
-    # recovar + load_relion — half-applied transpose). Both files via the
-    # right helper.
+    # Compare halfmaps against RELION it003. Both engines write RELION-convention maps
+    # (relax.helpers.map_io); load_relax_map checks relax's label and both loaders return the
+    # internal frame.
     from recovar.utils import helpers as _recovar_helpers
 
     def _load_recovar_real(p: Path) -> np.ndarray:
-        return np.asarray(_recovar_helpers.load_mrc(str(p)), dtype=np.float64)
+        return np.asarray(load_relax_map(p), dtype=np.float64)
 
     def _load_relion_real(p: Path) -> np.ndarray:
         return np.asarray(_recovar_helpers.load_relion_volume(str(p)), dtype=np.float64)
@@ -777,6 +777,10 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling, gui_default=False):
     relion_h2 = _load_relion_real(relion_dir / "run_it003_half2_class001.mrc")
     h1_corr = _map_correlation(recovar_h1, relion_h1)
     h2_corr = _map_correlation(recovar_h2, relion_h2)
+    file_corrs = [
+        file_correlation(output_dir / f"final_half{h}.mrc", relion_dir / f"run_it003_half{h}_class001.mrc")
+        for h in (1, 2)
+    ]
 
     # Read the authoritative optimizer/scheduling scalar, not the arithmetic
     # mean of the per-particle data column.
@@ -789,6 +793,7 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling, gui_default=False):
     measurements = {
         "h1_corr": h1_corr,
         "h2_corr": h2_corr,
+        "file_corrs": file_corrs,
         "pmax_iter3": float(pmax_traj[2]),
         "relion_pmax": relion_pmax,
         "pmax_diff": pmax_diff,
@@ -804,6 +809,7 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling, gui_default=False):
         output_dir=output_dir,
         h1_corr=h1_corr,
         h2_corr=h2_corr,
+        file_corrs=file_corrs,
         pmax_traj=pmax_traj,
         relion_pmax=relion_pmax,
         pmax_diff=pmax_diff,
@@ -814,7 +820,7 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling, gui_default=False):
 
 
 def _check_k1_coldstart(
-    *, case, start, oversampling, output_dir, h1_corr, h2_corr, pmax_traj, relion_pmax,
+    *, case, start, oversampling, output_dir, h1_corr, h2_corr, file_corrs, pmax_traj, relion_pmax,
     pmax_diff, sigma_traj, elapsed, log,
 ):
     print(file=sys.stderr, flush=True)
@@ -825,6 +831,7 @@ def _check_k1_coldstart(
         flush=True,
     )
     print(f"  half1_corr={h1_corr:.6f} half2_corr={h2_corr:.6f}", file=sys.stderr, flush=True)
+    print(f"  MRC file correlation with RELION: {[round(c, 6) for c in file_corrs]}", file=sys.stderr, flush=True)
     print(
         f"  pmax_iter3 recovar={pmax_traj[2]:.4f} relion={relion_pmax:.4f} diff={pmax_diff:.4g}",
         file=sys.stderr,
@@ -839,6 +846,10 @@ def _check_k1_coldstart(
     # guard separate from replay because it still bootstraps model/noise/tau/
     # sigma state from raw inputs rather than injecting per-iter RELION state.
     _assert_fsc_gate(f"{case}_{start}", output_dir)
+    # relax writes RELION-convention maps: the files carry RELION's sign (helpers/map_sign.py).
+    assert min(file_corrs) >= FILE_CORRELATION_MIN, (
+        f"relax final half maps correlate {file_corrs} with RELION's files; expected >= {FILE_CORRELATION_MIN}"
+    )
     # Pre-A.1 cold-start: iter-3 |ΔPmax| was ~22% (sigma_offset stuck at 10 Å).
     # Post-A.1: 5-12% depending on perturbation drift. Threshold 0.15 catches
     # full A.1 regression (would jump back to 22%).
@@ -929,8 +940,8 @@ def test_em_parity_fast_k1_perturbreplay(tmp_path):
 
     from recovar.utils import helpers as _recovar_helpers
 
-    rec_h1 = np.asarray(_recovar_helpers.load_mrc(str(output_dir / "final_half1.mrc")), dtype=np.float64)
-    rec_h2 = np.asarray(_recovar_helpers.load_mrc(str(output_dir / "final_half2.mrc")), dtype=np.float64)
+    rec_h1 = np.asarray(load_relax_map(str(output_dir / "final_half1.mrc")), dtype=np.float64)
+    rec_h2 = np.asarray(load_relax_map(str(output_dir / "final_half2.mrc")), dtype=np.float64)
     rel_h1 = np.asarray(
         _recovar_helpers.load_relion_volume(str(K1_RELION_DIR / "run_it003_half1_class001.mrc")), dtype=np.float64
     )
@@ -1040,7 +1051,7 @@ def test_em_parity_fast_kclass_coldstart(tmp_path):
     from recovar.utils import helpers as _recovar_helpers
 
     recov_classes = [
-        np.asarray(_recovar_helpers.load_mrc(str(output_dir / f"final_class{c + 1:03d}.mrc")), dtype=np.float64)
+        np.asarray(load_relax_map(str(output_dir / f"final_class{c + 1:03d}.mrc")), dtype=np.float64)
         for c in range(4)
     ]
     relion_classes = [
@@ -1150,7 +1161,7 @@ def test_em_parity_fast_kclass_nonadaptive_replay(tmp_path):
     from recovar.utils import helpers as _recovar_helpers
 
     recov_classes = [
-        np.asarray(_recovar_helpers.load_mrc(str(output_dir / f"final_class{c + 1:03d}.mrc")), dtype=np.float64)
+        np.asarray(load_relax_map(str(output_dir / f"final_class{c + 1:03d}.mrc")), dtype=np.float64)
         for c in range(4)
     ]
     relion_classes = [
@@ -1304,7 +1315,7 @@ def test_em_parity_fast_kclass_strict_oversample_coldstart(tmp_path):
     from recovar.utils import helpers as _recovar_helpers
 
     recov_classes = [
-        np.asarray(_recovar_helpers.load_mrc(str(output_dir / f"final_class{c + 1:03d}.mrc")), dtype=np.float64)
+        np.asarray(load_relax_map(str(output_dir / f"final_class{c + 1:03d}.mrc")), dtype=np.float64)
         for c in range(4)
     ]
     relion_classes = [
@@ -1389,7 +1400,7 @@ def test_em_parity_fast_k1_multioptics_coldstart(tmp_path):
         "--output",
         str(output_dir),
         "--init_volume",
-        str(MULTIOPTICS_FIXTURE_DIR / "reference_init_greyscale.mrc"),
+        str(MULTIOPTICS_FIXTURE_DIR / "reference_init_relion_greyscale.mrc"),
         "--max_iter",
         "3",
         "--init_resolution",
@@ -1416,11 +1427,10 @@ def test_em_parity_fast_k1_multioptics_coldstart(tmp_path):
     ]
     from recovar.utils import helpers as _recovar_helpers
 
-    # relax writes its maps with write_mrc and RELION's go through load_relion_volume (see
-    # _run_k1_coldstart for the frame conventions).
+    # Both engines write RELION-convention maps (see _run_k1_coldstart).
     h1_corr, h2_corr = (
         _map_correlation(
-            np.asarray(_recovar_helpers.load_mrc(str(output_dir / f"final_half{h}.mrc")), dtype=np.float64),
+            np.asarray(load_relax_map(str(output_dir / f"final_half{h}.mrc")), dtype=np.float64),
             np.asarray(
                 _recovar_helpers.load_relion_volume(str(MULTIOPTICS_RELION_DIR / f"run_it003_half{h}_class001.mrc")),
                 dtype=np.float64,
@@ -1441,3 +1451,5 @@ def test_em_parity_fast_k1_multioptics_coldstart(tmp_path):
     ledger = _write_quality_ledger("k1_multioptics_coldstart", payload, output_dir=output_dir)
     logger.info("K=1 multi-optics cold-start ledger: %s", ledger)
     _assert_fsc_gate("k1_multioptics_coldstart", output_dir)
+    for h in (1, 2):
+        assert_relion_file_sign(output_dir / f"final_half{h}.mrc", MULTIOPTICS_RELION_DIR / f"run_it003_half{h}_class001.mrc")

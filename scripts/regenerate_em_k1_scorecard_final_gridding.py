@@ -35,7 +35,7 @@ from typing import Any
 import numpy as np
 
 from scripts.audit_k1_fsc_trajectory import _map_metric
-from scripts.summarize_em_completion_bench import _load_recovar_volume, _load_relion_volume
+from scripts.summarize_em_completion_bench import _load_recovar_volume, _load_relax_volume, _load_relion_volume
 
 SCHEMA = "em_k1_scorecard_final_gridding_regeneration_v1"
 GRIDDING_PADDING_FACTOR = 2
@@ -189,7 +189,7 @@ def regenerate_case(
         "final_gt_fsc_auc_delta": recorded_final["merged_gt_fsc_auc_delta"],
     }
 
-    rec_merged = _load_recovar_volume(inputs["recovar_final_merged"])
+    rec_merged = _load_relax_volume(inputs["recovar_final_merged"])
     rel_merged = _load_relion_volume(inputs["relion_final_merged"])
     gt = _load_recovar_volume(inputs["gt_volume"])
 
