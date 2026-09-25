@@ -210,12 +210,23 @@ RELION wall, same node): EMPIAR-10073 1.05x and 10345 1.01x pass the scorecard t
 (compact inside it). OPEN (small, both engines): on 10345 and K1 50k/256 relax's map agreement with RELION
 sits just below RELION's run-to-run band with equal own quality (10345 merged band FSC-AUC
 0.982 vs 0.986-0.988, masked 0.9980 vs 0.9985-0.9987; 50k 0.9994 vs 0.9997). Compact shows the
-same gap, and RELION native FFT units did not change it. The earlier one-step attribution of that gap (1.3-4.2e-4 per step, about 2.5x RELION's drift) is
-superseded: `run_multi_iter_parity` scored half 2 with half 1's sigma2_noise by default (the RELION
-MPI restart broadcast), while the reference was the uninterrupted run. Half-1 particles, which the
-default does not affect, deviate 6.6e-5-1.6e-4 per step in map rel L2 and match RELION's coarse diff2
-to 5e-4 at the same state. The replay default is changing to keep each half's spectrum (pending
-its fast tier); the per-step attribution is being redone that way (`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/replay_50k_iters_cns_20260925`).
+same gap, and RELION native FFT units did not change it. Per-step attribution (measured, K1 50k/256): one-step replays from
+the uninterrupted RELION run's states, scoring each half with its own sigma2_noise, deviate from
+RELION's next iteration by 4.0e-5 / 9.5e-6 (half 1 / half 2) at it2, 3.2e-5 / 4.7e-6 at it5,
+1.5e-4 / 1.8e-4 at it9 and 5.9e-5 / 1.1e-4 at it13 (half-map rel L2 inside the frozen mask; resident
+and compact agree to the digits shown except it13, where resident sits closer, mean abs dPmax 3.5e-4 vs 6.6e-4).
+RELION's own CPU path, stepped from the same stored states, differs from its GPU path by 3.6e-4 /
+3.1e-4 at it2 and 1.4e-4 / 1.1e-4 at it13, while two GPU repeats agree to 3e-7-5e-6. relax's per-step
+deviation is therefore at or inside RELION's CPU/GPU arithmetic band (1.0-33x smaller; equal at
+it13 half 2). That the full-run
+agreement gap (0.9994 vs 0.9997) is the compounding of such arithmetic-path differences is inferred,
+not yet measured; an end-to-end RELION CPU-vs-GPU run on the K1 5k/128 fixture is running to test it.
+The earlier attribution (1.3-4.2e-4 per step, "about 2.5x RELION's drift") is superseded: the replay
+harness then scored half 2 with half 1's sigma2_noise (the RELION MPI restart broadcast); those
+replays (relax a7977c8) read 4.3e-4-7.6e-4 for half 2 at it2/it5, against the per-half-noise values
+above (relax 64b08ef, whose half 1 also moved from 6.6e-5 to 4.0e-5 at it2). Replays with per-half noise: jobs 14425333 (relax), 14411352 (RELION CPU),
+under `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/replay_50k_iters_cns_20260925`
+and `replay_50k_iters_20260925/relion_cont`.
 
 Tested, no effect (2026-09-25, not landed): RELION's CUDA path normalizes each real image by
 `(XFLOAT)(avg_norm_correction / normcorr)` (`acc/acc_ml_optimiser_impl.h:875`, f2c1a38). relax
