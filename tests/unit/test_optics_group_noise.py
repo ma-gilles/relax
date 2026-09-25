@@ -120,10 +120,10 @@ def test_k1_class_mass_and_sums_take_per_group_weight_sums():
         mass = results._resolve_class_mstep_posterior_sums(
             noise_stats=(stats,), class_posterior_sums_full=np.array([9.0]), class_posterior_sums_override=None,
         )
-        np.testing.assert_array_equal(mass, [7.5])
-    np.testing.assert_array_equal(results._summed_sumw((groups, groups)), [6.0, 9.0])
+        assert_matches(mass, [7.5])
+    assert_matches(results._summed_sumw((groups, groups)), [6.0, 9.0])
     assert results._summed_sumw((single, single)) == 15.0 and type(results._summed_sumw((single,))) is float
-    np.testing.assert_array_equal(results._sum_noise_stats((groups,), host_arrays=True).sumw, [3.0, 4.5])
+    assert_matches(results._sum_noise_stats((groups,), host_arrays=True).sumw, [3.0, 4.5])
 
 
 @pytest.mark.unit
@@ -136,8 +136,8 @@ def test_k1_aggregate_noise_keeps_per_group_weight_sums():
     )
     for host in (True, False):
         aggregate = results._sum_k_class_noise_stats((groups,), np.array([7.5]), host_arrays=host)
-        np.testing.assert_array_equal(np.asarray(aggregate.sumw), [3.0, 4.5])
-        np.testing.assert_array_equal(np.asarray(aggregate.wsum_img_power), np.ones((2, 5)))
+        assert_matches(np.asarray(aggregate.sumw), [3.0, 4.5])
+        assert_matches(np.asarray(aggregate.wsum_img_power), np.ones((2, 5)))
 
 
 @pytest.mark.unit

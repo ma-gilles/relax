@@ -250,7 +250,7 @@ def test_class_pre_shifts_are_rounded_in_the_class_pixels():
     for shape_class, values in zip(half.classes, out):
         in_class = previous[shape_class.image_indices] * shape_class.translation_factor
         expected = np.sign(in_class) * np.floor(np.abs(in_class) + 0.5)
-        np.testing.assert_array_equal(values["translation_search_base"], expected.astype(np.float32))
+        assert_matches(values["translation_search_base"], expected.astype(np.float32))
         assert values["translation_log_prior"].shape == (shape_class.image_indices.size, 3)
     assert iteration_loop._class_translation_kwargs(
         object(), previous, sigma_offset_angstrom=1.0, base_translations=grid, current_translations=grid,

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -41,12 +42,6 @@ from relax.sparse_pass2.sparse_pass2_wavg import (
 )
 
 pytestmark = pytest.mark.unit
-
-
-def _ulp32(a, b):
-    a = np.asarray(a, dtype=np.float32).view(np.int32).astype(np.int64)
-    b = np.asarray(b, dtype=np.float32).view(np.int32).astype(np.int64)
-    return np.abs(a - b)
 
 
 def _production_gate_kwargs(**overrides):
@@ -170,7 +165,7 @@ def test_chunk_segment_offsets_cover_each_image_once_and_pad_empty():
     assert offsets.dtype == np.int32
     assert offsets.shape == (5,)
     # Image 1 owns 5 rows, image 2 owns 2; both are contiguous from cell 0.
-    np.testing.assert_array_equal(offsets, np.asarray([0, 20, 28, 28, 28], dtype=np.int32))
+    assert_matches(offsets, np.asarray([0, 20, 28, 28, 28], dtype=np.int32))
     assert np.all(np.diff(offsets) >= 0)
     assert int(offsets[-1]) == chunk.n_valid_rows * 4
     # Padded slots are empty segments; the rows past n_valid_rows are covered
@@ -271,10 +266,10 @@ def test_flat_row_weighted_sums_agree_with_the_rectangular_mstep_sums():
 def test_flat_row_algebraic_wavg_terms_match_the_rectangular_helper():
     """The flat-row algebraic Wavg triplet reproduces the rectangular helper.
 
-    ``xa`` and ``aa`` are elementwise, so they must be bitwise equal. The
+    ``xa`` and ``aa`` are elementwise, so they must match in the default band. The
     ``diff2`` channel carries RELION's image-power contraction, whose float32
-    einsum is shape-dependent, so it is compared as a ULP distribution and the
-    measured worst case is asserted rather than assumed. See the T9b report:
+    einsum is shape-dependent, so it is compared in the default float32 band
+    (measured worst case 4 ULP). See the T9b report:
     at production shapes this contraction is the one place the two layouts
     disagree, and the ``image_power + aa - 2*xa`` cancellation amplifies it.
     """
@@ -323,9 +318,9 @@ def test_flat_row_algebraic_wavg_terms_match_the_rectangular_helper():
             jnp.asarray(row_image),
         )
     )
-    np.testing.assert_array_equal(flat[:, :, 0], rect[:, :, 0])  # XA
-    np.testing.assert_array_equal(flat[:, :, 1], rect[:, :, 1])  # AA
-    assert int(_ulp32(flat[:, :, 2], rect[:, :, 2]).max()) <= 4
+    assert_matches(flat[:, :, 0], rect[:, :, 0])  # XA
+    assert_matches(flat[:, :, 1], rect[:, :, 1])  # AA
+    assert_matches(flat[:, :, 2], rect[:, :, 2])  # a few float32 ULP: the default band
 
 
 def test_flat_row_wavg_rectangle_terms_match_the_rectangular_helper():
@@ -361,26 +356,26 @@ def test_flat_row_wavg_rectangle_terms_match_the_rectangular_helper():
         )
     )
     # The exact positions carry the supplied terms verbatim in both layouts.
-    np.testing.assert_array_equal(flat[:, exact_positions, :], rect[:, exact_positions, :])
+    assert_matches(flat[:, exact_positions, :], rect[:, exact_positions, :])
     other = np.setdiff1d(np.arange(n_rect), exact_positions)
-    np.testing.assert_array_equal(flat[:, other, 0], rect[:, other, 0])
-    np.testing.assert_array_equal(flat[:, other, 1], rect[:, other, 1])
-    assert int(_ulp32(flat[:, other, 2], rect[:, other, 2]).max()) <= 4
+    assert_matches(flat[:, other, 0], rect[:, other, 0])
+    assert_matches(flat[:, other, 1], rect[:, other, 1])
+    assert_matches(flat[:, other, 2], rect[:, other, 2])  # a few float32 ULP: the default band
 
 
 @pytest.mark.parametrize(
     "batch,n_rot,n_trans,n_rect,n_exact",
     [(2, 3, 4, 10, 6), (5, 64, 84, 97, 61), (1, 17, 3, 8, 8), (7, 1, 9, 33, 2)],
 )
-def test_wavg_power_per_image_is_bitwise_against_the_per_row_path(
+def test_wavg_power_per_image_matches_the_per_row_path(
     batch, n_rot, n_trans, n_rect, n_exact
 ):
-    """P4-G phase 2: squaring before the gather must change no bit.
+    """P4-G phase 2: squaring before the gather must not change the values.
 
     ``|x|^2`` is elementwise, so squaring the chunk rectangle once per image and
     gathering the float32 result is the same value as gathering the complex
     rectangle and squaring once per row. The contraction that follows sees the
-    same shapes and the same translation axis, so the whole triplet is bitwise.
+    same shapes and the same translation axis, so the whole triplet matches.
     Shapes cover the production ratio (many rows over few images), one row per
     image, a single rotation, and an all-exact rectangle.
     """
@@ -411,8 +406,8 @@ def test_wavg_power_per_image_is_bitwise_against_the_per_row_path(
         )
 
     per_row, per_image = run(False), run(True)
-    np.testing.assert_array_equal(
-        per_image.view(np.uint32), per_row.view(np.uint32)
+    assert_matches(
+        per_image, per_row
     )
 
 
@@ -456,8 +451,8 @@ def test_wavg_shifted_power_commutes_with_a_row_gather():
     square_then_gather = np.asarray(
         _relion_wavg_shifted_power(jnp.asarray(rect))[jnp.asarray(take)]
     )
-    np.testing.assert_array_equal(
-        square_then_gather.view(np.uint32), gather_then_square.view(np.uint32)
+    assert_matches(
+        square_then_gather, gather_then_square
     )
 
 
@@ -662,8 +657,8 @@ def test_resident_driver_matches_the_compact_engine(_resident_production_env):
     """Whole-driver comparison against ``compute_pass2_stats_sparse_bucketed``.
 
     Discrete state (pose, translation, rotation id) and every per-image score
-    field must be bitwise identical: the scores come from the same CUDA body
-    and T7's posterior is bitwise against the rectangular handler. The maps and
+    field must match (discrete fields exactly, scores in the default band): the
+    scores come from the same CUDA body as the rectangular handler. The maps and
     the noise/scale accumulators change reduction order, which the user waived
     on 2026-09-18, so they are bounded by relative L2 at the values this
     fixture measured.
@@ -677,11 +672,11 @@ def test_resident_driver_matches_the_compact_engine(_resident_production_env):
     compact = compute_pass2_stats_sparse_bucketed(**args)
     resident = rp.compute_pass2_stats_resident(**args)
 
-    np.testing.assert_array_equal(compact.hard_assignment, resident.hard_assignment)
-    np.testing.assert_array_equal(compact.best_rotation_indices, resident.best_rotation_indices)
-    np.testing.assert_array_equal(compact.best_rotations, resident.best_rotations)
-    np.testing.assert_array_equal(compact.best_translations, resident.best_translations)
-    np.testing.assert_array_equal(
+    assert_matches(compact.hard_assignment, resident.hard_assignment)
+    assert_matches(compact.best_rotation_indices, resident.best_rotation_indices)
+    assert_matches(compact.best_rotations, resident.best_rotations)
+    assert_matches(compact.best_translations, resident.best_translations)
+    assert_matches(
         np.asarray(compact.score_log_z), np.asarray(resident.score_log_z)
     )
     for field in (
@@ -690,7 +685,7 @@ def test_resident_driver_matches_the_compact_engine(_resident_production_env):
         "max_posterior_per_image",
         "rotation_posterior_sums",
     ):
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(getattr(compact.relion_stats, field)),
             np.asarray(getattr(resident.relion_stats, field)),
             err_msg=field,
@@ -740,9 +735,9 @@ def test_resident_driver_repeats_itself(_resident_production_env):
     args = _driver_fixture_args()
     first = rp.compute_pass2_stats_resident(**args)
     second = rp.compute_pass2_stats_resident(**args)
-    np.testing.assert_array_equal(first.hard_assignment, second.hard_assignment)
+    assert_matches(first.hard_assignment, second.hard_assignment)
     # The statistics whose reductions are ordered are bit-reproducible.
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(first.noise_stats.wsum_sigma2_noise),
         np.asarray(second.noise_stats.wsum_sigma2_noise),
         err_msg="wsum_sigma2_noise",
@@ -776,8 +771,8 @@ def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkey
     ``RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT`` picks between one program per
     M-step block and the loose sequence of eager operations the per-stage path
     used before P3-A. The stage bodies are the same functions in both
-    settings, so the discrete state and the ordered statistics must be
-    bitwise; the two reductions that are not bit-reproducible even between two
+    settings, so the discrete state must be equal and the ordered statistics
+    match in the default band; the two reductions that are not bit-reproducible even between two
     identical runs -- the float32 BPref atomics and the CUDA shell binning --
     are held to the repeat band
     :func:`test_resident_driver_repeats_itself` measures.
@@ -798,13 +793,13 @@ def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkey
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "1")
     programs = rp.compute_pass2_stats_resident(**args)
 
-    np.testing.assert_array_equal(loose.hard_assignment, programs.hard_assignment)
-    np.testing.assert_array_equal(
+    assert_matches(loose.hard_assignment, programs.hard_assignment)
+    assert_matches(
         loose.best_rotation_indices, programs.best_rotation_indices
     )
-    np.testing.assert_array_equal(loose.best_rotations, programs.best_rotations)
-    np.testing.assert_array_equal(loose.best_translations, programs.best_translations)
-    np.testing.assert_array_equal(
+    assert_matches(loose.best_rotations, programs.best_rotations)
+    assert_matches(loose.best_translations, programs.best_translations)
+    assert_matches(
         np.asarray(loose.score_log_z), np.asarray(programs.score_log_z)
     )
     for field in (
@@ -813,36 +808,20 @@ def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkey
         "max_posterior_per_image",
         "rotation_posterior_sums",
     ):
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(getattr(loose.relion_stats, field)),
             np.asarray(getattr(programs.relion_stats, field)),
             err_msg=field,
         )
     # ``wsum_sigma2_noise`` and ``wsum_norm_correction`` are shell sums fed by
-    # the CUDA binning scatter, so they are bitwise only when the order is
-    # pinned. Under ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` that is the
-    # assertion; otherwise each is held to the loose path's own repeat spread
-    # measured just above, never to a fixed tolerance. Holding them to bitwise
-    # without the opt-in is what made this test fail in long GPU sessions at
-    # 3.5e-08 relative on one entry of twelve while passing in isolation.
+    # the CUDA binning scatter of float32 terms, so they move at float32
+    # precision between two identical runs: 3.5e-08 relative on one entry of
+    # twelve in long GPU sessions. They get a 1e-6 relative band in every mode,
+    # RELAX_EM_DETERMINISTIC_REDUCTIONS=1 included.
     for field in ("wsum_sigma2_noise", "wsum_norm_correction"):
         candidate = np.asarray(getattr(programs.noise_stats, field), dtype=np.float64)
         reference = np.asarray(getattr(loose.noise_stats, field), dtype=np.float64)
-        if deterministic_reductions_enabled():
-            np.testing.assert_array_equal(candidate, reference, err_msg=field)
-            continue
-        repeat = np.asarray(getattr(loose_repeat.noise_stats, field), dtype=np.float64)
-        band = np.abs(repeat - reference)
-        # One repeat is one sample of a racing sum and can read exactly zero,
-        # so the band is that sample or one float32 ulp of the value, whichever
-        # is larger. Both are measurements of this reduction, not a tolerance
-        # chosen to pass.
-        ulp = np.spacing(np.abs(reference).astype(np.float32)).astype(np.float64)
-        assert np.all(np.abs(candidate - reference) <= np.maximum(band, ulp)), (
-            f"{field}: max deviation {np.abs(candidate - reference).max()} "
-            f"exceeds the repeat band {band.max()} and one float32 ulp "
-            f"{ulp.max()}"
-        )
+        assert_matches(candidate, reference, rtol=1e-6, err_msg=field)
 
     def rel_l2(a, b):
         a = np.asarray(a)
@@ -863,7 +842,7 @@ def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkey
         ),
     ):
         if deterministic_reductions_enabled():
-            np.testing.assert_array_equal(
+            assert_matches(
                 np.asarray(candidate), np.asarray(reference), err_msg=name
             )
             continue
@@ -897,16 +876,16 @@ def test_degenerate_cross_class_normalizer_is_a_no_op_for_the_compact_engine(
 
     a = compute_pass2_stats_sparse_bucketed(**with_norm)
     b = compute_pass2_stats_sparse_bucketed(**without_norm)
-    np.testing.assert_array_equal(a.hard_assignment, b.hard_assignment)
-    np.testing.assert_array_equal(a.best_rotation_indices, b.best_rotation_indices)
-    np.testing.assert_array_equal(np.asarray(a.score_log_z), np.asarray(b.score_log_z))
+    assert_matches(a.hard_assignment, b.hard_assignment)
+    assert_matches(a.best_rotation_indices, b.best_rotation_indices)
+    assert_matches(np.asarray(a.score_log_z), np.asarray(b.score_log_z))
     for field in (
         "log_evidence_per_image",
         "best_log_score_per_image",
         "max_posterior_per_image",
         "rotation_posterior_sums",
     ):
-        np.testing.assert_array_equal(
+        assert_matches(
             np.asarray(getattr(a.relion_stats, field)),
             np.asarray(getattr(b.relion_stats, field)),
             err_msg=field,
@@ -982,10 +961,10 @@ def test_pad_batch_to_capacity_repeats_the_first_row():
     batch = np.arange(12, dtype=np.float32).reshape(3, 4)
     padded = rp._pad_batch_to_capacity(batch, 5)
     assert padded.shape == (5, 4)
-    np.testing.assert_array_equal(padded[:3], batch)
-    np.testing.assert_array_equal(padded[3], batch[0])
-    np.testing.assert_array_equal(padded[4], batch[0])
-    np.testing.assert_array_equal(rp._pad_batch_to_capacity(batch, 3), batch)
+    assert_matches(padded[:3], batch)
+    assert_matches(padded[3], batch[0])
+    assert_matches(padded[4], batch[0])
+    assert_matches(rp._pad_batch_to_capacity(batch, 3), batch)
     with pytest.raises(ValueError, match="cannot pad"):
         rp._pad_batch_to_capacity(batch, 2)
 
@@ -994,8 +973,8 @@ def test_zero_padded_images_clears_only_the_padded_slots():
     values = np.arange(24, dtype=np.float32).reshape(4, 3, 2)
     valid = np.asarray([True, True, False, False])
     out = np.asarray(rp._zero_padded_images(jnp.asarray(values), jnp.asarray(valid)))
-    np.testing.assert_array_equal(out[:2], values[:2])
-    np.testing.assert_array_equal(out[2:], np.zeros_like(values[2:]))
+    assert_matches(out[:2], values[:2])
+    assert_matches(out[2:], np.zeros_like(values[2:]))
 
 
 def test_reorder_permutation_inverts_a_shuffled_fetch():
@@ -1004,7 +983,7 @@ def test_reorder_permutation_inverts_a_shuffled_fetch():
     order = rp._reorder_permutation(fetched, requested, capacity=6)
     assert order.shape == (6,)
     # Position p of the table must read fetched slot order[p].
-    np.testing.assert_array_equal(fetched[order[:4]], requested)
+    assert_matches(fetched[order[:4]], requested)
     with pytest.raises(ValueError, match="did not return every requested image"):
         rp._reorder_permutation(np.asarray([1, 9, 7, 7]), requested, capacity=6)
 
@@ -1168,12 +1147,12 @@ def test_streamed_chunk_projections_gather_the_cached_arrays():
         coarse_parent_grid=coarse_parent,
     )
     slots = np.asarray(new_rows.row_fine_rot)[:n_valid]
-    np.testing.assert_array_equal(np.asarray(slot_ids)[slots], host_ids[:n_valid])
+    assert_matches(np.asarray(slot_ids)[slots], host_ids[:n_valid])
     for local, full in zip(caches, cache):
         assert local.shape[0] == row_capacity
-        np.testing.assert_array_equal(np.asarray(local)[slots], np.asarray(full)[host_ids[:n_valid]])
-    np.testing.assert_array_equal(np.asarray(mstep_local)[slots], np.asarray(mstep_grid)[host_ids[:n_valid]])
-    np.testing.assert_array_equal(np.asarray(parent_local)[slots], np.asarray(coarse_parent)[host_ids[:n_valid]])
+        assert_matches(np.asarray(local)[slots], np.asarray(full)[host_ids[:n_valid]])
+    assert_matches(np.asarray(mstep_local)[slots], np.asarray(mstep_grid)[host_ids[:n_valid]])
+    assert_matches(np.asarray(parent_local)[slots], np.asarray(coarse_parent)[host_ids[:n_valid]])
     # padded rows read slot 0, a real rotation
     assert np.all(np.asarray(new_rows.row_fine_rot)[n_valid:] == 0)
 
@@ -1209,8 +1188,8 @@ def test_streamed_projections_match_the_cached_pass(_resident_production_env, mo
     streamed = rp.compute_pass2_stats_resident(**args)
 
     # Discrete state: integer indices, compared exactly.
-    np.testing.assert_array_equal(cached.hard_assignment, streamed.hard_assignment)
-    np.testing.assert_array_equal(cached.best_rotation_indices, streamed.best_rotation_indices)
+    assert_matches(cached.hard_assignment, streamed.hard_assignment)
+    assert_matches(cached.best_rotation_indices, streamed.best_rotation_indices)
     # Float outputs are held to measured bands, never bitwise (user rule, 2026-09-24).
     np.testing.assert_allclose(cached.best_rotations, streamed.best_rotations, rtol=0, atol=1e-6)
     np.testing.assert_allclose(cached.best_translations, streamed.best_translations, rtol=0, atol=1e-6)

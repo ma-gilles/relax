@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax
@@ -434,7 +435,7 @@ def test_final_all_data_shape_keeps_the_exact_local_engine(monkeypatch, _residen
     full = IMAGE_SHAPE[0]
     with_flag = _run(case, resident=True, monkeypatch=monkeypatch, current_size=full)
     without = _run(case, resident=False, monkeypatch=monkeypatch, current_size=full)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(with_flag.hard_assignment), np.asarray(without.hard_assignment)
     )
     # Both arms ran the same engine, so they agree to that engine's own repeat
@@ -465,16 +466,16 @@ def test_resident_local_matches_the_exact_engine(monkeypatch, _resident_local_en
         return float(np.linalg.norm(a - b) / den) if den else float(np.linalg.norm(a - b))
 
     # --- discrete state ----------------------------------------------------
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment)
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(exact.best_pose_translations), np.asarray(resident.best_pose_translations)
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(exact.best_pose_rotations), np.asarray(resident.best_pose_rotations)
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(exact.best_pose_eulers_deg), np.asarray(resident.best_pose_eulers_deg)
     )
 
@@ -556,7 +557,7 @@ def test_source_faithful_spectrum_norm_is_plumbed_not_refused(
     resident = _run(
         case, resident=True, monkeypatch=monkeypatch, source_faithful_spectrum_norm=True
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment)
     )
 
@@ -589,7 +590,7 @@ def test_full_parent_support_layout_runs_without_a_mask(monkeypatch, _resident_l
     assert case["layout"].sample_mask_bits is None
     exact = _run(case, resident=False, monkeypatch=monkeypatch)
     resident = _run(case, resident=True, monkeypatch=monkeypatch)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment)
     )
     np.testing.assert_allclose(
@@ -640,7 +641,7 @@ def test_complex128_projector_follows_the_exact_engine_precision(
     resident = _run(
         case, resident=True, monkeypatch=monkeypatch, projector_dtype=jnp.complex128
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment)
     )
     np.testing.assert_allclose(
@@ -667,7 +668,7 @@ def test_production_shaped_inputs_are_accepted(monkeypatch, _resident_local_env)
     case = _case()
     exact = _run(case, resident=False, monkeypatch=monkeypatch, production_shapes=True)
     resident = _run(case, resident=True, monkeypatch=monkeypatch, production_shapes=True)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment)
     )
 
@@ -692,7 +693,7 @@ def test_resident_local_repeats_itself(monkeypatch, _resident_local_env):
     case = _case()
     first = _run(case, resident=True, monkeypatch=monkeypatch)
     second = _run(case, resident=True, monkeypatch=monkeypatch)
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(first.hard_assignment), np.asarray(second.hard_assignment)
     )
     def rel_l2(a, b):
@@ -792,13 +793,13 @@ def test_local_chunk_runs_with_the_once_per_half_operand_flag(
     assert calls, "the local pass must reach run_resident_mstep_blocks"
     off = _run(case, resident=True, monkeypatch=monkeypatch, resident_operands=False)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(on.hard_assignment), np.asarray(off.hard_assignment)
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(on.best_pose_rotations), np.asarray(off.best_pose_rotations)
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(on.best_pose_translations), np.asarray(off.best_pose_translations)
     )
 
@@ -830,7 +831,7 @@ def test_block_row_program_matches_the_slicing_callback(monkeypatch, _resident_l
     With ``RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM=1`` the chunk's three
     row arrays go to ``run_resident_mstep_blocks`` whole and the block program
     reads its own rows; with the flag off the callback slices them per block.
-    The rows the two forms hand the M-step body are bitwise equal, which
+    The rows the two forms hand the M-step body match, which
     ``tests/unit/test_p3g_local_glue_programs.py`` asserts directly on CPU, so
     every discrete output must agree exactly here. The accumulators go through
     the x-half BPref atomics and the flat-row Wavg rotation atomic, which are
@@ -844,13 +845,13 @@ def test_block_row_program_matches_the_slicing_callback(monkeypatch, _resident_l
     monkeypatch.setenv(rlp._BLOCK_ROW_PROGRAM_ENV, "1")
     on = _run(case, resident=True, monkeypatch=monkeypatch, production_shapes=True)
 
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(off.hard_assignment), np.asarray(on.hard_assignment)
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(off.best_pose_rotations), np.asarray(on.best_pose_rotations)
     )
-    np.testing.assert_array_equal(
+    assert_matches(
         np.asarray(off.best_pose_translations), np.asarray(on.best_pose_translations)
     )
 
