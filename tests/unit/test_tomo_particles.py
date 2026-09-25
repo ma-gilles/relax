@@ -72,3 +72,33 @@ def test_projection_matrices_recovered_from_the_flattened_image_matrices():
     image_matrices = np.einsum("iab,ibc->iac", projections, poses[image_particle])
     recovered = tomo_particles.tilt_projection_matrices(image_matrices, poses, image_particle)
     np.testing.assert_allclose(recovered, projections, atol=1e-12)
+
+
+def test_translation_angles_follow_relions_per_image_phase_operand():
+    """acc_ml_optimiser_impl.h:1761-1787 and exp_model.cpp:106-114, written out per image and shift."""
+    rng, image_particle, projections, _ = _setup(3)
+    shifts = rng.normal(scale=2.0, size=(6, 3))
+    old = rng.normal(scale=1.5, size=(3, 3))
+    size = np.array([128, 128, 128, 100, 100, 128, 128, 128, 128])
+    out = tomo_particles.tilt_translation_angles(shifts, old, projections, image_particle, size)
+    assert out.shape == (image_particle.size, 6, 2) and out.dtype == np.float32
+    for i, p in enumerate(image_particle):
+        a = projections[i]
+        for t in range(6):
+            x, y, z = shifts[t][0] + old[p][0], shifts[t][1] + old[p][1], shifts[t][2] + old[p][2]
+            sx = a[0, 0] * x + a[0, 1] * y + a[0, 2] * z
+            sy = a[1, 0] * x + a[1, 1] * y + a[1, 2] * z
+            assert out[i, t, 0] == np.float32(-2 * np.pi * sx / float(size[i]))
+            assert out[i, t, 1] == np.float32(-2 * np.pi * sy / float(size[i]))
+
+
+def test_image_slots_visit_each_particles_images_in_order():
+    offsets = np.array([0, 3, 5, 9])  # particles with 3, 2 and 4 images
+    row_unit = np.array([0, 0, 1, 2, 2, 1])
+    slots = [tomo_particles.image_slot_ids(row_unit, offsets, k) for k in range(4)]
+    np.testing.assert_array_equal(slots[0], [0, 0, 3, 5, 5, 3])
+    np.testing.assert_array_equal(slots[2], [2, 2, -1, 7, 7, -1])
+    np.testing.assert_array_equal(slots[3], [-1, -1, -1, 8, 8, -1])
+    for r, u in enumerate(row_unit):
+        visited = [s[r] for s in slots if s[r] >= 0]
+        assert visited == list(range(offsets[u], offsets[u + 1]))
