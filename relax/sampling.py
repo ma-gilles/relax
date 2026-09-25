@@ -851,6 +851,7 @@ def _relion_adaptive_pass1_rotations(
     angular_sampling_deg: float,
     *,
     use_float64: bool = False,
+    left_matrices: np.ndarray | None = None,
 ) -> np.ndarray | None:
     """Build exact RELION matrices for adaptive coarse scoring only.
 
@@ -885,9 +886,35 @@ def _relion_adaptive_pass1_rotations(
             right_matrix = _relion_euler_angles_to_matrix(
                 np.asarray([[perturbation_deg, perturbation_deg, perturbation_deg]], dtype=np.float64)
             )[0]
+    if left_matrices is not None:
+        return _relion_device_scoring_rotations_left_f32(source_eulers_deg, right_matrix, left_matrices)
     if use_float64:
         return _relion_device_scoring_rotations_f64(source_eulers_deg, right_matrix)
     return _relion_device_scoring_rotations_f32(source_eulers_deg, right_matrix)
+
+
+def _relion_device_scoring_rotations_left_f32(eulers_deg, right_matrix, left_matrices) -> np.ndarray | None:
+    """Tilt images' coarse scorer matrices, ``[B, N, 3, 3]``: ``make_eulers_3D`` with one left matrix per image.
+
+    RELION's pass-1 plan of a tilt image passes ``MBL`` (its ``Aproj`` times the optics scale)
+    to the device as float (acc_ml_optimiser_impl.h:1600-1630); with a left matrix the inverse
+    is the float32 adjugate, not the transpose. ``None`` on CPU, like the SPA path.
+    """
+
+    if jax.default_backend() != "gpu":
+        return None
+
+    from relax.cuda import kernels as em_cuda_kernels
+
+    eulers_f32 = np.asarray(eulers_deg, dtype=np.float32).reshape(-1, 3)
+    right_f32 = np.eye(3, dtype=np.float32) if right_matrix is None else np.asarray(right_matrix, dtype=np.float32)
+    rotations = em_cuda_kernels.relion_make_scoring_rotations_left_f32(
+        jnp.asarray(eulers_f32),
+        jnp.asarray(right_f32),
+        jnp.asarray(np.asarray(left_matrices, dtype=np.float32).reshape(-1, 3, 3)),
+        do_right=right_matrix is not None,
+    )
+    return np.asarray(jax.device_get(rotations), dtype=np.float32)
 
 
 def apply_relion_rotation_perturbation_to_eulers(

@@ -249,3 +249,30 @@ def test_relion_scoring_rotations_f64_rejects_narrow_inputs(monkeypatch, eulers,
         em_cuda_kernels.relion_make_scoring_rotations_f64.__wrapped__(
             jnp.asarray(eulers), jnp.asarray(right_matrix)
         )
+
+
+@pytest.mark.gpu
+def test_relion_scoring_rotations_with_left_matrices_invert_l_a_r(monkeypatch, custom_cuda_lib, gpu_device):
+    """make_eulers_3D<true, true, do_right>: per image, the transpose of inv(L (A R)) (helper.cuh:777-811)."""
+
+    from scipy.spatial.transform import Rotation
+
+    from relax import sampling
+    from relax.cuda import kernels as em_cuda_kernels
+
+    monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
+    monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
+    eulers = _f32_from_bits(_EULER_BITS, (4, 3))
+    right_matrix = _f32_from_bits(_RIGHT_MATRIX_BITS, (3, 3))
+    left = Rotation.random(3, random_state=np.random.default_rng(2)).as_matrix().astype(np.float32)
+    left[1] *= np.float32(1.28)  # an optics scale on the second image
+    with jax.default_device(gpu_device):
+        actual = np.asarray(
+            em_cuda_kernels.relion_make_scoring_rotations_left_f32(
+                jnp.asarray(eulers), jnp.asarray(right_matrix), jnp.asarray(left)
+            )
+        )
+    relion_a = sampling._relion_euler_angles_to_matrix(eulers.astype(np.float64))
+    for b in range(3):
+        expected = np.linalg.inv(left[b].astype(np.float64) @ relion_a @ right_matrix.astype(np.float64))
+        assert_matches(actual[b], expected.swapaxes(1, 2).astype(np.float32))
