@@ -1,0 +1,188 @@
+"""Coarse pass (pass 1) of subtomogram particles: each tilt image scored, summed per particle (S4.2).
+
+RELION's GPU path scores a subtomogram one tilt image at a time (the ``img_id`` loop of
+``getAllSquaredDifferencesCoarse``, acc_ml_optimiser_impl.h:1737-2194). Every image has
+its own scorer matrices (``make_eulers_3D`` with the image's ``Aproj`` as the left matrix,
+:1600-1630) and its own phase table (``Aproj[:2]`` times the 3D trial shift plus the
+rounded old offset, :1761-1787). Each image first adds its ``highres_Xi2 / 2`` to the
+particle's running diff2 and then its pixel sums (:1869-1876, diff2.cuh:186-188), so
+the significance cut sees one diff2 per particle hypothesis.
+
+relax reuses the SPA pieces: the RELION CUDA preprocessing with no pre-shift and no norm
+correction (RELION neither translates nor normalises a tomo image, :872-919), the exact
+coarse operands, and the fused coarse projector, called once per image. The fused
+projector takes at most 128 translations, so each image is scored in translation chunks;
+RELION runs one 1024-thread block for 515 translations. The chunks change only the
+float32 order of the pixel sums, the same class as RELION's own atomic lane order.
+See PLAN.md "S4.2 implementation ladder" in the cryo-ET coordination directory.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import jax.numpy as jnp
+import numpy as np
+
+# The fused coarse projector's translation capacity (one 128-thread block).
+_FUSED_TRANSLATION_CAPACITY = 128
+
+
+@dataclass(frozen=True)
+class CoarseScoreLayout:
+    """The coarse score window and its fused-projector lookup, shared by every image of a pass."""
+
+    image_shape: tuple
+    current_size: int
+    score_indices_np: np.ndarray
+    score_active_mask: jnp.ndarray
+    full_to_compact: jnp.ndarray
+    half_weights: jnp.ndarray
+
+
+def coarse_score_layout(
+    image_shape, current_size, *, half_spectrum_scoring: bool, square_window: bool
+) -> CoarseScoreLayout:
+    """The SPA coarse pass's score window (significance.py:1105-1123, 1680-1726) for one current size."""
+
+    from relax.helpers.fourier_window import make_fourier_window_spec
+    from relax.helpers.half_spectrum import make_scoring_half_image_weights
+    from relax.scoring.significance import _coarse_gaussian_fused_logical_lookup, _plan_coarse_gaussian_square_layout
+
+    image_shape = tuple(int(size) for size in image_shape)
+    n_half = image_shape[0] * (image_shape[1] // 2 + 1)
+    window = make_fourier_window_spec(
+        image_shape, current_size, n_half, square=square_window, include_recon_window=False
+    )
+    active = (
+        np.arange(n_half, dtype=np.int32)
+        if window.score_indices_np is None
+        else np.asarray(window.score_indices_np, dtype=np.int32)
+    )
+    layout = _plan_coarse_gaussian_square_layout(
+        image_shape, int(current_size), active, stable_fourier_window_shapes=False
+    )
+    return CoarseScoreLayout(
+        image_shape=image_shape,
+        current_size=int(current_size),
+        score_indices_np=np.asarray(layout.score_indices_np, dtype=np.int32),
+        score_active_mask=jnp.asarray(layout.score_active_mask_np, dtype=jnp.bool_),
+        full_to_compact=_coarse_gaussian_fused_logical_lookup(
+            jnp.asarray(layout.full_to_compact_np, dtype=jnp.int32), layout, current_size=int(current_size)
+        ),
+        half_weights=make_scoring_half_image_weights(
+            image_shape, relion_half_sum=half_spectrum_scoring, exclude_relion_redundant_x0=True
+        ),
+    )
+
+
+def tilt_image_coarse_operands(
+    experiment_dataset,
+    image_indices,
+    layout: CoarseScoreLayout,
+    *,
+    noise_variance_half,
+    optics_group_ids=None,
+    scale_corrections=None,
+    score_with_masked_images: bool = True,
+):
+    """Corrected images, pixel weights and initial diff2 of tilt images: the SPA exact coarse operands.
+
+    ``noise_variance_half`` is one half-pixel spectrum or a ``[G, P]`` table with
+    ``optics_group_ids`` per dataset image. No pre-shift and no norm correction: RELION
+    neither translates nor normalises a tomo image (acc_ml_optimiser_impl.h:872-919);
+    ``scale_corrections`` (per dataset image) still divide the image and weight the
+    CTF, as for SPA (:1791-1810).
+    """
+
+    from relax.helpers.optics_noise import noise_rows
+    from relax.helpers.preprocessing import prepare_batch_preprocess_operands
+    from relax.relion.relion_coarse_operands import (
+        _process_relion_exact_coarse_half_image,
+        _relion_exact_coarse_operands,
+    )
+    from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star_host
+    from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_powerclass_highres_xi2_half
+
+    image_indices = np.asarray(image_indices, dtype=np.int64)
+    (batch_data, *_rest, fetched) = next(
+        iter(experiment_dataset.iter_batches(int(image_indices.size), indices=image_indices, by_image=True))
+    )
+    if not np.array_equal(np.asarray(fetched), image_indices):
+        raise RuntimeError("the dataset returned the tilt images in another order")
+    batch_data = np.asarray(batch_data)
+    relion_cuda, _shifts, _corr, batch_scale, preprocess_kwargs = prepare_batch_preprocess_operands(
+        experiment_dataset, batch_data, image_indices, scale_corrections=scale_corrections
+    )
+    if not relion_cuda:
+        raise RuntimeError("the subtomogram coarse pass needs the RELION CUDA image preprocessing")
+    processed = _process_relion_exact_coarse_half_image(
+        experiment_dataset, batch_data, score_with_masked_images, relion_preprocess_kwargs=preprocess_kwargs
+    )
+    ctf = _relion_exact_ctf_half_from_source_star_host(
+        experiment_dataset, image_indices, layout.image_shape, pixel_indices=layout.score_indices_np
+    )
+    unshifted, pixel_weight = _relion_exact_coarse_operands(
+        jnp.asarray(ctf, dtype=jnp.float64),
+        jnp.asarray(batch_scale, dtype=jnp.float32),
+        processed,
+        jnp.asarray(layout.score_indices_np),
+        layout.score_active_mask,
+        noise_rows(noise_variance_half, optics_group_ids, image_indices),
+        layout.half_weights,
+        image_shape=layout.image_shape,
+        use_float64_scoring=False,
+        scale_corrections_enabled=scale_corrections is not None,
+    )
+    initial = _relion_cuda_powerclass_highres_xi2_half(
+        processed, image_shape=layout.image_shape, current_size=layout.current_size
+    )
+    return unshifted, pixel_weight, jnp.asarray(initial, dtype=jnp.float32)
+
+
+def tilt_image_coarse_diff2(
+    projector_full,
+    rotations,
+    unshifted,
+    pixel_weight,
+    initial_diff2,
+    translation_angles,
+    layout: CoarseScoreLayout,
+    *,
+    model_max_r: int,
+    padding_factor: int,
+    canonical_reduction: bool = True,
+):
+    """One tilt image's coarse diff2 ``[R, T]`` with its own matrices ``[R, 3, 3]`` and phases ``[T, 2]``."""
+
+    from relax.cuda import kernels as em_cuda_kernels
+
+    translation_angles = jnp.asarray(translation_angles, dtype=jnp.float32)
+    chunks = [
+        em_cuda_kernels.relion_coarse_diff2_projector_f32(
+            projector_full,
+            jnp.asarray(rotations, dtype=jnp.float32),
+            jnp.asarray(unshifted, dtype=jnp.complex64)[None],
+            translation_angles[start : start + _FUSED_TRANSLATION_CAPACITY],
+            jnp.asarray(pixel_weight, dtype=jnp.float32)[None],
+            jnp.asarray(initial_diff2, dtype=jnp.float32).reshape(1),
+            layout.full_to_compact,
+            current_size=layout.current_size,
+            physical_image_size=int(layout.image_shape[0]),
+            model_max_r=int(model_max_r),
+            padding_factor=int(padding_factor),
+            canonical_reduction=canonical_reduction,
+        )[0]
+        for start in range(0, int(translation_angles.shape[0]), _FUSED_TRANSLATION_CAPACITY)
+    ]
+    return jnp.concatenate(chunks, axis=1)
+
+
+def particle_coarse_diff2(image_diff2_in_slot_order):
+    """A particle's coarse diff2: its images' diff2 added in slot (``img_id``) order, float32."""
+
+    total = None
+    for image_diff2 in image_diff2_in_slot_order:
+        image_diff2 = jnp.asarray(image_diff2, dtype=jnp.float32)
+        total = image_diff2 if total is None else total + image_diff2
+    return total
