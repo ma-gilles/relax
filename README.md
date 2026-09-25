@@ -1,6 +1,6 @@
-# relax
+# RELAX! It's RELION ... in JAX.
 
-RELION in JAX.
+
 
 ## What exists
 
