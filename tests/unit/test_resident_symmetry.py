@@ -1,16 +1,16 @@
-"""Point-group symmetry on the device-resident K=1 local pass 2 and the replay harness.
+"""Point-group symmetry on the device-resident K=1 pass 2 (global and local).
 
 RELION restricts the orientation sampling to the asymmetric unit
 (healpix_sampling.cpp removeSymmetryEquivalentPoints) and symmetrises each
 BPref after the expectation (ml_optimiser.cpp:5541-5575
 symmetriseReconstructions: enforceHermitianSymmetry, then
-applyPointGroupSymmetry). The resident local pass 2 finalizes with the same
-``finalize_half_volume_bpref`` the exact local engine uses, and the replay
-harness takes the group from RELION's sampling STAR.
+applyPointGroupSymmetry). The resident drivers take the reduced grid from the
+caller's fine rotation override and finalize with the same
+``finalize_half_volume_bpref`` the compact and exact local engines use.
 
-The CPU tests check the wiring; the GPU test compares the resident local pass
-against the exact local engine on a C4 pass and checks that the finalized
-weights are C4-invariant.
+The CPU tests check the grid plumbing and the wiring; the GPU tests compare
+the resident drivers against the compact / exact local engines on a C4 pass
+and check that the finalized weights are C4-invariant.
 """
 
 from __future__ import annotations
@@ -24,9 +24,22 @@ import pytest
 
 pytest.importorskip("jax")
 from helpers.float_compare import assert_matches
+from test_resident_significance import (
+    FINE_TRANS_PARENT,
+    N_COARSE_TRANS,
+    N_FINE_TRANS,
+    _assert_tables_equal,
+    _csr_from_supports,
+    _encoded_supports,
+    _supports,
+)
 
 from relax.refinement import local_search_iteration
+from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.sparse_pass2 import resident_local_pass2 as rlp
+from relax.sparse_pass2 import resident_pass2 as rp
+from relax.sparse_pass2.resident_candidates import build_resident_candidate_tables
+from relax.sparse_pass2.resident_significance import build_resident_candidate_tables_from_csr
 
 pytestmark = pytest.mark.unit
 
@@ -97,8 +110,65 @@ def _rotation_diagnostics(ctf_public_flat) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# CPU: wiring
+# CPU: grid plumbing and wiring
 # ---------------------------------------------------------------------------
+
+
+@requires_relion_bind
+@pytest.mark.parametrize("execution_order", [False, True])
+def test_c4_tables_from_csr_match_the_host_path_on_the_generated_grid(execution_order):
+    """The generator branch of the CSR tables follows the asymmetric-unit grid."""
+
+    from relax.sampling import rotation_grid_size
+
+    nside_level = 1
+    n_coarse_rot = rotation_grid_size(nside_level, SYMMETRY)
+    assert n_coarse_rot < rotation_grid_size(nside_level), "C4 must reduce the grid"
+    n_samples = n_coarse_rot * N_COARSE_TRANS
+    supports = _supports(9, n_samples, seed=5)
+    rotation_log_prior = np.linspace(-1.0, 1.0, n_coarse_rot, dtype=np.float32)
+
+    per_image_inputs = _prepare_per_image_pass2_inputs(
+        _encoded_supports(supports, n_samples),
+        n_coarse_rot=n_coarse_rot,
+        n_coarse_trans=N_COARSE_TRANS,
+        nside_level=nside_level,
+        oversampling_order=1,
+        n_fine_trans=N_FINE_TRANS,
+        fine_translation_parent=FINE_TRANS_PARENT,
+        rotation_log_prior=rotation_log_prior,
+        random_perturbation=0.0,
+        relion_parent_execution_order=execution_order,
+        dtype=np.float32,
+        symmetry_label=SYMMETRY,
+    )
+    expected = build_resident_candidate_tables(
+        per_image_inputs,
+        n_coarse_trans=N_COARSE_TRANS,
+        n_fine_trans=N_FINE_TRANS,
+        fine_translation_parent=FINE_TRANS_PARENT,
+    )
+    csr = _csr_from_supports(supports, n_coarse_rot=n_coarse_rot, n_coarse_trans=N_COARSE_TRANS)
+    got = build_resident_candidate_tables_from_csr(
+        csr,
+        nside_level=nside_level,
+        oversampling_order=1,
+        n_fine_trans=N_FINE_TRANS,
+        fine_translation_parent=FINE_TRANS_PARENT,
+        rotation_log_prior=rotation_log_prior,
+        random_perturbation=0.0,
+        relion_parent_execution_order=execution_order,
+        dtype=np.float32,
+        symmetry_label=SYMMETRY,
+    )
+    _assert_tables_equal(got, expected)
+
+
+def test_point_groups_are_in_scope_for_the_resident_driver():
+    """A symmetric pass is covered; the dispatcher no longer routes it to compact."""
+
+    assert "symmetry_label" not in inspect.signature(rp.resident_pass2_out_of_scope_reason).parameters
+    assert "symmetry" not in inspect.getsource(rp.require_resident_production_configuration)
 
 
 def test_resident_local_call_carries_the_point_group():
@@ -136,7 +206,7 @@ def test_replay_reads_the_point_group_relion_sampled_with(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# GPU: the resident local pass 2 against the exact local engine at C4
+# GPU: the resident drivers against the compact / exact local engines at C4
 # ---------------------------------------------------------------------------
 
 
@@ -150,6 +220,99 @@ requires_resident_gpu = pytest.mark.skipif(
     not _resident_gpu_available(),
     reason="the resident stages are CUDA FFI targets and C4 needs the relion_bind extension",
 )
+
+
+def _c4_driver_args(seed=20260924):
+    """The 8x8 production-shaped K=1 fixture of the C1 test, on the C4 grid."""
+
+    from test_resident_pass2_driver import _driver_fixture_args, _z_rotation
+
+    from relax.sampling import rotation_grid_size
+
+    args = _driver_fixture_args(seed=seed)
+    nside_level = int(args["nside_level"])
+    n_coarse_rot = rotation_grid_size(nside_level, SYMMETRY)
+    n_images = int(args["experiment_dataset"].n_units)
+    n_coarse_trans = int(np.asarray(args["translations"]).shape[0])
+    children = 2
+    rng = np.random.default_rng(seed)
+    total = n_coarse_rot * n_coarse_trans
+    samples = [None]
+    for _ in range(1, n_images):
+        count = int(rng.integers(1, total))
+        samples.append(np.sort(rng.choice(total, size=count, replace=False).astype(np.int32)))
+    # Off-axis fine rotations, so each projection differs from its C4 mates.
+    fine_rotations = np.stack(
+        [
+            _z_rotation(0.031 * k)
+            @ np.array(
+                [[1.0, 0.0, 0.0], [0.0, np.cos(0.4), -np.sin(0.4)], [0.0, np.sin(0.4), np.cos(0.4)]],
+                dtype=np.float32,
+            )
+            for k in range(n_coarse_rot * children)
+        ]
+    ).astype(np.float32)
+    args.update(
+        significant_sample_indices=samples,
+        rotation_log_prior=rng.normal(scale=0.1, size=n_coarse_rot).astype(np.float32),
+        fine_rotations_override=fine_rotations,
+        fine_rotation_parent_override=np.repeat(np.arange(n_coarse_rot, dtype=np.int32), children),
+        symmetry_label=SYMMETRY,
+    )
+    return args
+
+
+@pytest.fixture
+def _resident_production_env(monkeypatch):
+    """The production resident arm, as in ``test_resident_pass2_driver``."""
+
+    monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
+    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_SCALE_AA", "1")
+    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "1")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", "256,1024,4096")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES", "4,16,64")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "128")
+
+
+@requires_resident_gpu
+def test_c4_resident_driver_matches_the_compact_engine(_resident_production_env):
+    """C4 whole-driver comparison, with the C1 test's measured bounds."""
+
+    from relax.sparse_pass2.sparse_pass2_bucketed import compute_pass2_stats_sparse_bucketed
+
+    args = _c4_driver_args()
+    compact = compute_pass2_stats_sparse_bucketed(**args)
+    resident = rp.compute_pass2_stats_resident(**args)
+
+    np.testing.assert_array_equal(compact.hard_assignment, resident.hard_assignment)
+    np.testing.assert_array_equal(compact.best_rotation_indices, resident.best_rotation_indices)
+    for field in (
+        "log_evidence_per_image",
+        "best_log_score_per_image",
+        "max_posterior_per_image",
+        "rotation_posterior_sums",
+    ):
+        np.testing.assert_allclose(
+            np.asarray(getattr(compact.relion_stats, field), dtype=np.float64),
+            np.asarray(getattr(resident.relion_stats, field), dtype=np.float64),
+            rtol=1e-6,
+            atol=1e-9,
+            err_msg=field,
+        )
+    assert _rel_l2(compact.Ft_y, resident.Ft_y) < 1e-6
+    assert _rel_l2(compact.Ft_ctf, resident.Ft_ctf) < 1e-6
+    assert _rel_l2(compact.noise_stats.wsum_sigma2_noise, resident.noise_stats.wsum_sigma2_noise) < 1e-4
+    for field in (
+        "wsum_img_power",
+        "wsum_norm_correction",
+        "wsum_scale_correction_xa",
+        "wsum_scale_correction_aa",
+    ):
+        assert _rel_l2(getattr(compact.noise_stats, field), getattr(resident.noise_stats, field)) < 1e-6, field
+
+    # The point group was applied, not only the x=0 plane.
+    assert _c4_rotation_residual(resident.Ft_ctf) < 1e-5, _rotation_diagnostics(resident.Ft_ctf)
+    assert _c4_rotation_residual(compact.Ft_ctf) < 1e-5, _rotation_diagnostics(compact.Ft_ctf)
 
 
 def _c4_local_case(monkeypatch):

@@ -83,7 +83,7 @@ from relax.helpers.half_spectrum import (
     mask_relion_noise_shell_indices_to_current_window,
 )
 from relax.helpers.half_volume_mstep import (
-    enforce_half_volume_x0,
+    finalize_half_volume_bpref,
     half_volume_accumulator_shape,
     relion_backprojector_volume_shape,
     relion_x_half_accumulators_to_public_layout,
@@ -363,7 +363,6 @@ def resident_pass2_out_of_scope_reason(
     *,
     relion_firstiter_score_mode,
     relion_firstiter_winner_take_all,
-    symmetry_label="C1",
     zero_oversampling_coarse_normalization=False,
     accumulate_noise=False,
     scale_groups_available=False,
@@ -395,8 +394,6 @@ def resident_pass2_out_of_scope_reason(
     fallback there would hide a real mismatch.
     """
 
-    if symmetry_label != "C1":
-        return f"{symmetry_label} point-group reconstruction symmetry"
     if relion_firstiter_score_mode != "gaussian":
         return (
             "RELION normalized-CC scoring "
@@ -430,17 +427,12 @@ def require_resident_production_configuration(**kwargs) -> None:
     """
 
     _require(bool(kwargs["relion_x_half_mstep"]), "the RELION x-half M-step is required")
-    # The dispatcher opens a persistent texture only for the compact engine and
-    # routes non-C1 symmetry there (resident_pass2_out_of_scope_reason); a
-    # direct caller that supplies either gets a named refusal, not a drop.
+    # The dispatcher opens a persistent texture only for the compact engine; a
+    # direct caller that supplies one gets a named refusal, not a drop.
     _require(
         kwargs["relion_projector_texture"] is None,
         "a persistent RELION projector texture belongs to the compact engine; "
         "the resident driver projects from relion_projector_half",
-    )
-    _require(
-        kwargs["symmetry_label"] == "C1",
-        f"{kwargs['symmetry_label']} point-group reconstruction symmetry is not implemented",
     )
     _require(
         bool(kwargs["relion_exact_fine_gaussian"])
@@ -1387,6 +1379,7 @@ def compute_pass2_stats_resident(
         _pass2_projection_budget,
         _pass2_relion_flags,
     )
+    from relax.symmetry import canonicalize_rotational_symmetry
 
     overall_t0 = time.time()
     (
@@ -1402,7 +1395,11 @@ def compute_pass2_stats_resident(
 
     n_images = experiment_dataset.n_units
     n_coarse_trans = int(np.asarray(translations).shape[0])
-    n_coarse_rot = rotation_grid_size(nside_level)
+    symmetry_label = canonicalize_rotational_symmetry(symmetry_label)
+    # The coarse grid is RELION's asymmetric-unit HEALPix sampling
+    # (healpix_sampling.cpp removeSymmetryEquivalentPoints); the caller's fine
+    # rotation override already holds its children.
+    n_coarse_rot = rotation_grid_size(nside_level, symmetry_label)
     image_shape = experiment_dataset.image_shape
     volume_shape = experiment_dataset.volume_shape
 
@@ -1489,7 +1486,6 @@ def compute_pass2_stats_resident(
         relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
         relion_wavg_atomic_direct_norm=relion_wavg_atomic_direct_norm,
         relion_projector_texture=relion_projector_texture,
-        symmetry_label=symmetry_label,
     )
     _require(
         bool(use_relion_f32_fine_posterior),
@@ -1628,6 +1624,7 @@ def compute_pass2_stats_resident(
             use_relion_f32_fine_posterior=use_relion_f32_fine_posterior,
         ),
         dtype=precision_policy.score_real_dtype,
+        symmetry_label=symmetry_label,
     )
     prep_s = time.time() - prep_t0
 
@@ -1648,6 +1645,7 @@ def compute_pass2_stats_resident(
             use_relion_f32_fine_posterior=use_relion_f32_fine_posterior,
         ),
         dtype=precision_policy.score_real_dtype,
+        symmetry_label=symmetry_label,
     )
     if int(tables.n_images) != int(n_images):
         raise ValueError(
@@ -2323,12 +2321,17 @@ def compute_pass2_stats_resident(
         )
 
     # ---- finalize (identical to the compact return block) ------------------
-    Ft_y_total, Ft_ctf_total = enforce_half_volume_x0(
+    # RELION symmetriseReconstructions (ml_optimiser.cpp:5541-5575): x=0
+    # Hermitian enforcement, then applyPointGroupSymmetry on BPref. C1 is the
+    # x=0 enforcement alone.
+    Ft_y_total, Ft_ctf_total = finalize_half_volume_bpref(
         Ft_y_total,
         Ft_ctf_total,
         recon_volume_shape,
         logger=logger,
         label="Resident pass-2",
+        symmetry_label=symmetry_label,
+        relion_x_half=True,
     )
     Ft_y_total, Ft_ctf_total = relion_x_half_accumulators_to_public_layout(
         Ft_y_total,

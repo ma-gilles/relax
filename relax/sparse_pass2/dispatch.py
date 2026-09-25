@@ -201,7 +201,6 @@ def compute_pass2_stats_sparse(
             out_of_scope = resident_pass2_out_of_scope_reason(
                 relion_firstiter_score_mode=relion_firstiter_score_mode,
                 relion_firstiter_winner_take_all=relion_firstiter_winner_take_all,
-                symmetry_label=symmetry_label,
                 zero_oversampling_coarse_normalization=(
                     relion_f32_normalization_sum_weight is not None
                     or relion_coarse_hard_assignment is not None

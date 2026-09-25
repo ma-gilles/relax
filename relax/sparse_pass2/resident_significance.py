@@ -441,6 +441,7 @@ def _children_by_parent(
     oversampling_order: int,
     random_perturbation: float,
     fine_rotation_parent_override,
+    symmetry_label: str = "C1",
 ):
     """Fine-rotation children of every coarse parent, in host-path row order.
 
@@ -472,6 +473,7 @@ def _children_by_parent(
         oversampling_order=int(oversampling_order),
         random_perturbation=float(random_perturbation),
         return_rotation_indices=True,
+        **({} if symmetry_label == "C1" else {"symmetry": symmetry_label}),
     )
     parent_map = np.asarray(parent_map, dtype=np.int64)
     child_ids = np.asarray(child_ids, dtype=np.int64)
@@ -513,6 +515,7 @@ def build_resident_candidate_tables_from_csr(
     fine_rotation_parent_override=None,
     relion_parent_execution_order: bool = False,
     dtype=np.float32,
+    symmetry_label: str = "C1",
 ) -> ResidentCandidateTables:
     """Build the resident candidate tables directly from the compact CSR.
 
@@ -563,6 +566,7 @@ def build_resident_candidate_tables_from_csr(
         oversampling_order=oversampling_order,
         random_perturbation=random_perturbation,
         fine_rotation_parent_override=fine_rotation_parent_override,
+        symmetry_label=symmetry_label,
     )
 
     ids = csr.ids.astype(np.int64, copy=False)
@@ -732,6 +736,7 @@ def resident_candidate_tables(
     fine_rotation_parent_override,
     relion_parent_execution_order,
     dtype,
+    symmetry_label="C1",
 ):
     """Candidate tables from the device-compacted CSR, or from the host path.
 
@@ -752,6 +757,7 @@ def resident_candidate_tables(
             fine_rotation_parent_override=fine_rotation_parent_override,
             relion_parent_execution_order=relion_parent_execution_order,
             dtype=dtype,
+            symmetry_label=symmetry_label,
         )
     return build_resident_candidate_tables(
         per_image_inputs,
