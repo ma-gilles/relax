@@ -2278,6 +2278,10 @@ def refine_single_volume(
 
         relion_projector_half_by_half = [None, None]
         relion_projector_r_max_by_half = [None, None]
+        # Each class's power spectrum from the same projector transform; the
+        # Class3D tau2 update reads it instead of transforming the reference
+        # again on the host (RELION computes both in one computeFourierTransformMap).
+        relion_projector_power_by_half = [None, None]
         captured_projector_state = replay_result.relion_projector_state
         if captured_projector_state is not None and not (use_local or use_adaptive):
             raise RuntimeError(
@@ -2311,7 +2315,7 @@ def refine_single_volume(
                             _half_idx + 1,
                         )
                         continue
-                    projector_half, projector_r_max = _relion_projector_half_maps_for_scoring(
+                    projector_half, projector_r_max, projector_power = _relion_projector_half_maps_for_scoring(
                         means[_half_idx],
                         volume_shape=volume_shape,
                         current_size=model_current_size_for_engine,
@@ -2327,6 +2331,11 @@ def refine_single_volume(
                     )
                     relion_projector_half_by_half[_half_idx] = projector_half
                     relion_projector_r_max_by_half[_half_idx] = projector_r_max
+                    if iteration > 0:
+                        # Iteration 1 may project the initial real references
+                        # directly; tau2 transforms the Fourier means, so only
+                        # later iterations share one transform with it.
+                        relion_projector_power_by_half[_half_idx] = projector_power
                 logger.info(
                     # The slab dtype decides whether pass-2 projection runs on
                     # the native texture projector or the vmapped JAX fallback
@@ -3220,12 +3229,13 @@ def refine_single_volume(
                     )
             for class_idx in range(n_classes):
                 logger.info(
-                    "Class3D tau2 update start: iter=%d class=%d/%d current_size=%d source=%s",
+                    "Class3D tau2 update start: iter=%d class=%d/%d current_size=%d source=%s spectrum=%s",
                     iteration + 1,
                     class_idx + 1,
                     n_classes,
                     int(current_size),
                     kclass_tau2_source,
+                    "host transform" if relion_projector_power_by_half[0] is None else "scoring projector",
                 )
                 if replay_class_tau2 is not None and replay_tau2_enabled:
                     tau2_shells_recovar_frame_k = jnp.asarray(
@@ -3255,6 +3265,11 @@ def refine_single_volume(
                         padding_factor=PADDING_FACTOR,
                         current_size=current_size,
                         frame_scale=kclass_tau2_frame_scale,
+                        projector_power_spectrum=(
+                            None
+                            if relion_projector_power_by_half[0] is None
+                            else relion_projector_power_by_half[0][class_idx]
+                        ),
                     )
                 shell_stats_k = regularization_relion._compute_relion_weight_shell_stats(
                     Ft_ctf_combined[class_idx],
@@ -4905,10 +4920,11 @@ def refine_single_volume(
             )
     final_relion_projector_half_by_half = [None, None]
     final_relion_projector_r_max_by_half = [None, None]
+    final_relion_projector_power_by_half = [None, None]
     if final_use_local or int(state.adaptive_oversampling) > 0:
         projector_t0 = time.time()
         for _half_idx in range(2):
-            projector_half, projector_r_max = _relion_projector_half_maps_for_scoring(
+            projector_half, projector_r_max, projector_power = _relion_projector_half_maps_for_scoring(
                 final_join_means[_half_idx],
                 volume_shape=volume_shape,
                 current_size=final_current_size,
@@ -4919,6 +4935,7 @@ def refine_single_volume(
             )
             final_relion_projector_half_by_half[_half_idx] = projector_half
             final_relion_projector_r_max_by_half[_half_idx] = projector_r_max
+            final_relion_projector_power_by_half[_half_idx] = projector_power
         logger.info(
             "RELION final all-data: built exact Projector::data for scoring at current_size=%d r_max=%s in %.2fs",
             final_current_size,
@@ -5271,6 +5288,11 @@ def refine_single_volume(
                 padding_factor=PADDING_FACTOR,
                 current_size=final_current_size,
                 frame_scale=kclass_tau2_frame_scale,
+                projector_power_spectrum=(
+                    None
+                    if final_relion_projector_power_by_half[0] is None
+                    else final_relion_projector_power_by_half[0][class_idx]
+                ),
             )
             shell_stats_k = regularization_relion._compute_relion_weight_shell_stats(
                 final_ft_ctf[class_idx],

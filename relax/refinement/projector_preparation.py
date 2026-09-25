@@ -95,8 +95,14 @@ def _relion_projector_half_maps_for_scoring(
     real_references=None,
     dump_label: str | None = None,
     projector_setup_backend: str = "jax",
-) -> tuple[np.ndarray, int]:
+) -> tuple[np.ndarray, int, np.ndarray | None]:
     """Build RELION ``Projector::data`` slabs from current Fourier references.
+
+    Returns ``(slabs, r_max, power_spectra)``. ``power_spectra`` (float64
+    ``[K, ori_size // 2 + 1]``) is each class's corrected power spectrum from
+    the same transform, as ``computeFourierTransformMap`` returns it; Class3D
+    derives its tau2 from it. It is ``None`` when the slabs come from a
+    projector cache entry written without it.
 
     ``projector_setup_backend`` selects who computes the padded transform.
     ``"jax"`` takes the device path; ``"native"`` calls RELION's own
@@ -110,7 +116,7 @@ def _relion_projector_half_maps_for_scoring(
 
     from recovar.core import fourier_transform_utils as ftu
 
-    from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps
+    from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps_and_power
 
     refs_ft = np.asarray(means_k)
     if int(n_classes) == 1 and refs_ft.ndim == 1:
@@ -160,6 +166,9 @@ def _relion_projector_half_maps_for_scoring(
                 with np.load(cache_path, allow_pickle=False) as cached:
                     projector_half = np.asarray(cached["projector_half"])
                     projector_r_max = int(np.asarray(cached["projector_r_max"]))
+                    projector_power = (
+                        np.asarray(cached["projector_power"]) if "projector_power" in cached.files else None
+                    )
                     if (
                         int(np.asarray(cached["current_size"])) != resolved_current_size
                         or int(np.asarray(cached["padding_factor"])) != int(padding_factor)
@@ -168,7 +177,7 @@ def _relion_projector_half_maps_for_scoring(
                     ):
                         raise ValueError("metadata mismatch")
                 logger.info("RELION mode: loaded cached Projector::data from %s", cache_path)
-                return projector_half, projector_r_max
+                return projector_half, projector_r_max, projector_power
             except Exception as exc:
                 logger.warning("Ignoring unreadable RELION projector cache %s: %s", cache_path, exc)
     if refs_real_override is None:
@@ -179,7 +188,7 @@ def _relion_projector_half_maps_for_scoring(
         refs_real = np.asarray(refs_real, dtype=np.float64)
     else:
         refs_real = refs_real_override
-    projector_half, projector_r_max = reference_to_relion_projector_half_maps(
+    projector_half, projector_power, projector_r_max = reference_to_relion_projector_half_maps_and_power(
         refs_real,
         current_size=resolved_current_size,
         padding_factor=int(padding_factor),
@@ -201,6 +210,7 @@ def _relion_projector_half_maps_for_scoring(
                 tmp_path,
                 projector_half=np.asarray(projector_half),
                 projector_r_max=np.int64(projector_r_max),
+                projector_power=np.asarray(projector_power),
                 current_size=np.int64(resolved_current_size),
                 padding_factor=np.int64(padding_factor),
                 volume_shape=np.asarray(volume_shape, dtype=np.int64),
@@ -225,7 +235,7 @@ def _relion_projector_half_maps_for_scoring(
             volume_shape=np.asarray(volume_shape, dtype=np.int64),
             n_classes=np.int64(n_classes),
         )
-    return projector_half, projector_r_max
+    return projector_half, projector_r_max, projector_power
 
 
 def _validate_captured_relion_projector_for_iteration(

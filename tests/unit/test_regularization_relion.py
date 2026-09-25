@@ -578,6 +578,46 @@ def test_compute_relion_tau2_from_iref_power_spectrum_matches_relion_binding_sca
     np.testing.assert_allclose(np.asarray(details["tau2_shells"][: len(expected_tau2)]), expected_tau2, rtol=2e-2, atol=2e-6)
 
 
+def test_tau2_from_the_scoring_projector_spectrum_matches_the_host_transform():
+    """Class3D tau2 reads the spectrum the scoring projector setup already computed.
+
+    The device projector setup reproduces ``computeFourierTransformMap``, power
+    spectrum included, so tau2 from its spectrum must match tau2 from the host
+    binding's second transform of the same reference.
+    """
+    from helpers.em_fixtures import fixture_file
+    from recovar.utils.helpers import load_relion_volume
+
+    from relax.refinement.projector_preparation import _relion_projector_half_maps_for_scoring
+
+    volume_path = fixture_file("k4_5k128_relion_os0", "run_it000_class001.mrc")
+    vol_recovar = np.asarray(load_relion_volume(str(volume_path)), dtype=np.float64)
+    ft_recovar = np.asarray(fourier_transform_utils.get_dft3(jnp.asarray(vol_recovar)).reshape(-1))
+
+    for current_size in (56, vol_recovar.shape[0]):
+        _slab, _r_max, power = _relion_projector_half_maps_for_scoring(
+            ft_recovar[None, :],
+            volume_shape=vol_recovar.shape,
+            current_size=current_size,
+            padding_factor=2,
+            n_classes=1,
+            projector_setup_backend="jax",
+        )
+        host = regularization_relion.compute_relion_tau2_from_iref_power_spectrum(
+            ft_recovar, vol_recovar.shape, padding_factor=2, current_size=current_size, return_details=True
+        )
+        reused = regularization_relion.compute_relion_tau2_from_iref_power_spectrum(
+            None,
+            vol_recovar.shape,
+            padding_factor=2,
+            current_size=current_size,
+            return_details=True,
+            projector_power_spectrum=power[0],
+        )
+        assert_matches(np.asarray(reused[0]), np.asarray(host[0]))
+        assert_matches(np.asarray(reused[1]["tau2_shells"]), np.asarray(host[1]["tau2_shells"]))
+
+
 def test_streamed_packed_half_backprojector_fsc_avoids_padded_full_allocation(
     monkeypatch,
 ):

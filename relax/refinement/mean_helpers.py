@@ -297,7 +297,13 @@ _CLASS_TAU2_DETAIL_KEYS = (
 
 
 def _class_tau2_from_iref_power_spectrum(
-    iref_fourier, volume_shape, *, padding_factor, current_size: int, frame_scale: float
+    iref_fourier,
+    volume_shape,
+    *,
+    padding_factor,
+    current_size: int,
+    frame_scale: float,
+    projector_power_spectrum=None,
 ):
     """Class3D tau2 for one class from its previous ``Iref`` power spectrum.
 
@@ -306,6 +312,9 @@ def _class_tau2_from_iref_power_spectrum(
     scaled by ``frame_scale`` before the Wiener solve. Returns the
     RECOVAR-frame tau2 volume, the RELION-frame radial shells and the
     RECOVAR-frame radial shells, all in the RELION result dtype.
+    ``projector_power_spectrum`` is the class's spectrum from this iteration's
+    scoring projector setup, when it has one (see
+    ``compute_relion_tau2_from_iref_power_spectrum``).
     """
 
     mean_signal_variance_relion, details = regularization_relion.compute_relion_tau2_from_iref_power_spectrum(
@@ -314,6 +323,7 @@ def _class_tau2_from_iref_power_spectrum(
         padding_factor=padding_factor,
         current_size=current_size,
         return_details=True,
+        projector_power_spectrum=projector_power_spectrum,
     )
     mean_signal_variance = mean_signal_variance_relion * jnp.asarray(
         frame_scale,

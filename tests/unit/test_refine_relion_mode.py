@@ -3763,9 +3763,10 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
         assert projector_data_dtype == "complex128"
         calls.append(np.asarray(refs_real).copy())
         projector_half = np.full((refs_real.shape[0], 3, 3, 2), 7.0 + len(calls), dtype=np.complex64)
-        return projector_half, int(current_size // 2)
+        power = np.full((refs_real.shape[0], 3), 0.5 + len(calls), dtype=np.float64)
+        return projector_half, power, int(current_size // 2)
 
-    monkeypatch.setattr(projector_setup, "reference_to_relion_projector_half_maps", fake_projector_builder)
+    monkeypatch.setattr(projector_setup, "reference_to_relion_projector_half_maps_and_power", fake_projector_builder)
     monkeypatch.setenv("RELAX_RELION_PROJECTOR_CACHE_DIR", str(tmp_path))
 
     mean_ft = np.zeros((4, 4, 4), dtype=np.complex64)
@@ -3788,6 +3789,8 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
     assert len(calls) == 1
     assert first[1] == second[1] == 2
     assert_matches(first[0], second[0])
+    # The class power spectra round-trip through the cache with the slabs.
+    assert_matches(first[2], second[2])
     assert (tmp_path / "SAFE_TO_DELETE").exists()
     assert len(list(tmp_path.glob("projector_*.npz"))) == 1
 
@@ -3804,11 +3807,11 @@ def test_relion_projector_direct_real_reference_bypasses_fourier_roundtrip(monke
         assert projector_data_dtype == "complex128"
         captured_real.append(np.asarray(refs_real).copy())
         projector_half = np.ones((refs_real.shape[0], 3, 3, 2), dtype=np.complex64)
-        return projector_half, int(current_size // 2)
+        return projector_half, np.ones((refs_real.shape[0], 3)), int(current_size // 2)
 
     monkeypatch.setattr(
         projector_setup,
-        "reference_to_relion_projector_half_maps",
+        "reference_to_relion_projector_half_maps_and_power",
         fake_projector_builder,
     )
     mean_ft = np.zeros((4, 4, 4), dtype=np.complex64)
@@ -12719,7 +12722,7 @@ class TestRelionModeSmokeTest:
         monkeypatch.setattr(
             refine_mod,
             "_relion_projector_half_maps_for_scoring",
-            lambda *_args, **_kwargs: (None, None),
+            lambda *_args, **_kwargs: (None, None, None),
         )
 
         def fake_build_pass2_grids(

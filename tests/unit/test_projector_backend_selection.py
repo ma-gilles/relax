@@ -141,7 +141,7 @@ def test_the_projector_cache_distinguishes_the_backends(tmp_path, monkeypatch):
     flat_ft = np.zeros((1, 32 ** 3), dtype=np.complex128)
     built = {}
     for backend in ("native", "jax"):
-        slab, _r_max = _relion_projector_half_maps_for_scoring(
+        slab, _r_max, _power = _relion_projector_half_maps_for_scoring(
             flat_ft,
             volume_shape=(32, 32, 32),
             current_size=16,

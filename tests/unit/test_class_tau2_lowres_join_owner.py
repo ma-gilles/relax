@@ -169,7 +169,12 @@ class TestClassTau2FromIrefPowerSpectrum:
 
         assert len(calls) == 1
         assert calls[0][0] is iref and calls[0][1] == VOLUME_SHAPE
-        assert calls[0][2] == {"padding_factor": PADDING_FACTOR, "current_size": 6, "return_details": True}
+        assert calls[0][2] == {
+            "padding_factor": PADDING_FACTOR,
+            "current_size": 6,
+            "return_details": True,
+            "projector_power_spectrum": None,
+        }
         expected_tau2 = relion_tau2 * jnp.asarray(frame_scale, dtype=jnp.float32)
         expected_shells_relion = jnp.asarray(relion_shells, dtype=jnp.float32)
         expected_shells_recovar = expected_shells_relion * jnp.asarray(frame_scale, dtype=jnp.float32)
