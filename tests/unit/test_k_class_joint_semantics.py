@@ -1410,9 +1410,16 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
         if pass2_engine == "resident":
             assert kwargs["preserve_bpref_particle_order"] is True
             assert kwargs["relion_exact_fine_normalized_cc"] is True
+            # The K=1 production pass carries the scale groups (run_em takes none).
+            assert_matches(
+                np.asarray(kwargs["group_ids"]),
+                np.asarray([7, 8, 9, 10])[np.asarray(dataset.indices, dtype=np.int64)],
+            )
+            assert kwargs["scale_correction_group_count"] == 11
         else:
             assert "preserve_bpref_particle_order" not in kwargs
             assert kwargs["relion_exact_fine_normalized_cc"] is False
+            assert kwargs["group_ids"] is None
         n_images = int(dataset.n_units)
         hard = np.arange(n_images, dtype=np.int32) % n_fine_trans
         best_rot_ids = np.full(n_images, class_index, dtype=np.int32)
@@ -1460,6 +1467,8 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
         firstiter_cc_pass2_only_best_coarse=True,
         sparse_pass2=True,
         image_corrections=np.arange(4, dtype=np.float32),
+        group_ids=np.asarray([7, 8, 9, 10], dtype=np.int64),
+        scale_correction_group_count=11,
     )
 
     assert [call[1] for call in sparse_calls] == [(0, 3), (1, 2)]
