@@ -80,7 +80,9 @@ S3b fast case matches RELION to 1e-8. OPEN, a RELION defect not yet reproduced:
 for s >= sqrt(2) the moved fine pixel falls inside the sphere and RELION scores a
 wrong pixel at a wrong phase. relax refuses such groups (list the widest optics
 group first); the reproduction is planned inside the S4.2 scorer changes
-(MANAGER_DECISIONS items 11 and 13). Also OPEN: a coarse window strictly between
+(MANAGER_DECISIONS items 11 and 13). OPEN: the M-step of a class at its full box (S3b optics group 2 from iteration 3) differs from
+RELION at the reference-sphere edge (shells 50-51 at iteration 3); under investigation, localised
+with the multi-optics replay to the class's reconstruction window. Also OPEN: a coarse window strictly between
 2 maxR and about 2 s maxR, where RELION's wrapped coarse rows land inside the
 sphere. Only the fused coarse scorer, the global default, reproduces it. The
 non-fused coarse projection and the local parent pass refuse it.
