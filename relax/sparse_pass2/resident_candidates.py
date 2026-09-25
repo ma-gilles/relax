@@ -414,20 +414,33 @@ def merge_class_tables(tables_by_class) -> ResidentCandidateTables:
     n_words = n_mask_words(first.n_coarse_trans)
     image_ids = np.arange(n_images, dtype=np.int64)
 
-    row_parts, parent_parts = [], []
+    # Each class table is image-major (CSR row_offsets), so the merged order
+    # (image, then class, then the class table's own order) is a placement,
+    # not a sort: a row's destination is its image's merged start, plus the
+    # rows of that image's earlier classes, plus its rank inside its class.
+    # Bitsets are placed the same way.
+    class_row_counts = np.stack(
+        [np.diff(np.asarray(tables.row_offsets, dtype=np.int64)) for tables in tables_by_class]
+    )  # [K, n_images]
+    class_parent_counts = np.zeros((n_classes, n_images), dtype=np.int64)
+    class_parts = []
     for class_index, tables in enumerate(tables_by_class):
+        row_offsets_k = np.asarray(tables.row_offsets, dtype=np.int64)
         row_image = np.asarray(tables.row_unit, dtype=np.int64)
         parent_local = np.asarray(tables.row_parent_local, dtype=np.int64)
         # Parents an image's rows reference in this class (bitset images store
         # exactly these; full and empty images store none).
         n_parents = np.zeros(n_images, dtype=np.int64)
-        np.maximum.at(n_parents, row_image, parent_local + 1)
+        has_rows = class_row_counts[class_index] > 0
+        if np.any(has_rows):
+            n_parents[has_rows] = np.maximum.reduceat(parent_local + 1, row_offsets_k[:-1][has_rows])
         mode = np.asarray(tables.mask_mode)
         stored = np.diff(tables.parent_offsets.astype(np.int64))
         bitset = mode == _MASK_MODE_BITSET
         if np.any(bitset & (stored < n_parents)):
             raise ValueError("a class table's rows reference parents outside its bitset table")
         n_parents = np.where(bitset, stored, n_parents)
+        class_parent_counts[class_index] = n_parents
         parent_image = np.repeat(image_ids, n_parents)
         bits = np.zeros((int(n_parents.sum()), n_words), dtype=np.uint32)
         first_parent = np.concatenate([[0], np.cumsum(n_parents)])[:-1]
@@ -438,49 +451,58 @@ def merge_class_tables(tables_by_class) -> ResidentCandidateTables:
             tables.parent_offsets[parent_image[from_table]].astype(np.int64) + within[from_table]
         ]
         bits[parent_mode == _MASK_MODE_FULL] = all_translations_words(first.n_coarse_trans)
-        row_parts.append(
+        class_parts.append(
             dict(
-                image=row_image,
-                klass=np.full(row_image.size, class_index, dtype=np.int64),
-                order=np.arange(row_image.size, dtype=np.int64),
-                fine_rot=np.asarray(tables.row_fine_rot, dtype=np.int32),
+                row_image=row_image,
+                row_rank=np.arange(row_image.size, dtype=np.int64) - row_offsets_k[row_image],
                 parent_local=parent_local,
-                log_prior=np.asarray(tables.row_log_prior, dtype=np.float32),
+                parent_image=parent_image,
+                parent_rank=within,
+                bits=bits,
             )
         )
-        parent_parts.append(
-            dict(image=parent_image, klass=np.full(parent_image.size, class_index), bits=bits, n_parents=n_parents)
-        )
 
-    # Parents of an image's earlier classes shift this class's local parent ids.
-    class_parent_counts = np.stack([part["n_parents"] for part in parent_parts])  # [K, n_images]
-    parent_shift = np.cumsum(class_parent_counts, axis=0) - class_parent_counts
-    rows = {key: np.concatenate([part[key] for part in row_parts]) for key in row_parts[0]}
-    rows["parent_local"] = rows["parent_local"] + parent_shift[rows["klass"], rows["image"]]
-    row_order = np.lexsort((rows["order"], rows["klass"], rows["image"]))
-    parents_image = np.concatenate([part["image"] for part in parent_parts])
-    parents_class = np.concatenate([part["klass"] for part in parent_parts])
-    parents_bits = np.concatenate([part["bits"] for part in parent_parts])
-    parent_order = np.lexsort((np.arange(parents_image.size), parents_class, parents_image))
-
-    row_offsets = np.zeros(n_images + 1, dtype=np.int32)
-    row_offsets[1:] = np.cumsum(np.bincount(rows["image"], minlength=n_images))
-    parent_offsets = np.zeros(n_images + 1, dtype=np.int32)
+    row_offsets = np.zeros(n_images + 1, dtype=np.int64)
+    row_offsets[1:] = np.cumsum(class_row_counts.sum(axis=0))
+    parent_offsets = np.zeros(n_images + 1, dtype=np.int64)
     parent_offsets[1:] = np.cumsum(class_parent_counts.sum(axis=0))
+    # Rows (and parents) of an image's earlier classes come first.
+    row_class_shift = np.cumsum(class_row_counts, axis=0) - class_row_counts
+    parent_class_shift = np.cumsum(class_parent_counts, axis=0) - class_parent_counts
+    n_rows = int(row_offsets[-1])
+    merged_unit = np.empty(n_rows, dtype=np.int32)
+    merged_fine_rot = np.empty(n_rows, dtype=np.int32)
+    merged_parent_local = np.empty(n_rows, dtype=np.int32)
+    merged_log_prior = np.empty(n_rows, dtype=np.float32)
+    merged_class = np.empty(n_rows, dtype=np.int32)
+    merged_bits = np.empty((int(parent_offsets[-1]), n_words), dtype=np.uint32)
+    for class_index, (tables, part) in enumerate(zip(tables_by_class, class_parts)):
+        row_image = part["row_image"]
+        destination = row_offsets[row_image] + row_class_shift[class_index, row_image] + part["row_rank"]
+        merged_unit[destination] = row_image
+        merged_fine_rot[destination] = np.asarray(tables.row_fine_rot, dtype=np.int32)
+        merged_parent_local[destination] = part["parent_local"] + parent_class_shift[class_index, row_image]
+        merged_log_prior[destination] = np.asarray(tables.row_log_prior, dtype=np.float32)
+        merged_class[destination] = class_index
+        parent_image = part["parent_image"]
+        merged_bits[
+            parent_offsets[parent_image] + parent_class_shift[class_index, parent_image] + part["parent_rank"]
+        ] = part["bits"]
+
     return ResidentCandidateTables(
         n_images=n_images,
-        n_rows=int(row_offsets[-1]),
+        n_rows=n_rows,
         n_fine_trans=int(first.n_fine_trans),
         n_coarse_trans=int(first.n_coarse_trans),
-        row_offsets=row_offsets,
-        row_unit=rows["image"][row_order].astype(np.int32),
-        row_fine_rot=rows["fine_rot"][row_order],
-        row_parent_local=rows["parent_local"][row_order].astype(np.int32),
-        row_log_prior=rows["log_prior"][row_order],
+        row_offsets=row_offsets.astype(np.int32),
+        row_unit=merged_unit,
+        row_fine_rot=merged_fine_rot,
+        row_parent_local=merged_parent_local,
+        row_log_prior=merged_log_prior,
         mask_mode=np.full(n_images, _MASK_MODE_BITSET, dtype=np.int8),
-        parent_offsets=parent_offsets,
-        parent_trans_bits=parents_bits[parent_order],
-        row_class=rows["klass"][row_order].astype(np.int32),
+        parent_offsets=parent_offsets.astype(np.int32),
+        parent_trans_bits=merged_bits,
+        row_class=merged_class,
         n_classes=n_classes,
     )
 
