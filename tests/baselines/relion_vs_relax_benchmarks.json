@@ -1765,7 +1765,8 @@
     "Image I/O: --scratch_dir /tmp on every arm (RELION's default reading from a node-local copy; no pre-read).",
     "Both engines start from relion_refine's inputs only (standalone).",
     "Third arm in the same job: relax_compact (main's default compact engine, same candidate without the resident flags): 14 iterations, 11.826 A, GT aligned 0.35128, masked cross-engine 0.999998, wall 5,342 s (1.07x).",
-    "GT FSC-AUC raw (unaligned): RELION 0.23846, relax_res_tex 0.23847, relax_compact 0.23848 (fixture relion_ref_os0 0.23844). Masked GT FSC-AUC over the scorecard band 1-45: 0.67940 / 0.67938 / 0.67939; full spectrum 0.300891 / 0.300593 / 0.300764 (relax_res_tex 3.0e-4 below this single RELION run; no RELION repeat in the job)."
+    "GT FSC-AUC raw (unaligned): RELION 0.23846, relax_res_tex 0.23847, relax_compact 0.23848 (fixture relion_ref_os0 0.23844). Masked GT FSC-AUC over the scorecard band 1-45: 0.67940 / 0.67938 / 0.67939; full spectrum 0.300891 / 0.300593 / 0.300764 (relax_res_tex 3.0e-4 below this single RELION run; no RELION repeat in the job).",
+    "OPEN (relax_res_tex) against the RELION band. Same-command RELION 50k runs with the same seed 1775735620 (fixture relion_ref_os0, repeat 14298975, this job's RELION arm) span: masked GT FSC-AUC full spectrum 0.300683-0.300891, shells 1-45 0.679357-0.679396; unmasked GT full 0.238435-0.238457, shells 1-45 0.666259-0.666297; GT aligned 0.35118-0.35129; merged-map FSC-AUC between the three 0.99965-0.99977. relax_res_tex: masked full 0.300593 (9.0e-5 below the band), masked 1-45 0.679381, unmasked full 0.238466 (above), unmasked 1-45 0.666282, aligned 0.35123 (inside); relax_compact: 0.300764 / 0.679395 / 0.238475 (above) / 0.666295 / 0.35128 (all inside or above). Merged-map FSC-AUC of relax against the three RELION runs is 0.99936-0.99943 (res_tex) and 0.99942-0.99944 (compact), below the RELION-RELION 0.99965-0.99977, so both arms sit just outside RELION's same-seed map-agreement spread. The one other-seed RELION run (seed 20260923, 14309490) is far lower (masked full 0.296992, aligned 0.35113, agreement with the same-seed runs 0.899). Evidence: /scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/k1_50k_relion_band_20260924."
    ],
    "null_reasons": {},
    "evidence": {
@@ -1778,6 +1779,10 @@
     "masked_fsc_json": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_64499e8_20260924/k1_50k/masked_relax_res_tex/masked_fsc.json",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_64499e8_20260924/k1_50k/masked_relax_compact/masked_fsc.json"
+    ],
+    "relion_band": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/k1_50k_relion_band_20260924/gt_band.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/k1_50k_relion_band_20260924/ACCEPT_all.json"
     ]
    },
    "date": "2026-09-24",
