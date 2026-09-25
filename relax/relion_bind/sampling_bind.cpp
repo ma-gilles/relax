@@ -4,6 +4,7 @@
  * Phase 5: S1 (orientations), S2 (translations), S3 (perturbation).
  */
 
+#include <optional>
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
@@ -622,18 +623,35 @@ static py::array_t<double> euler_angles_to_matrix(double rot, double tilt, doubl
  * those ulps affect RELION's strict radius cutoff at the outer Fourier shell.
  */
 static py::array_t<double> euler_angles_to_inverse_matrices(
-    py::array_t<double, py::array::c_style | py::array::forcecast> angles
+    py::array_t<double, py::array::c_style | py::array::forcecast> angles,
+    std::optional<py::array_t<double, py::array::c_style | py::array::forcecast>> left
 ) {
     auto input = angles.unchecked<2>();
     if (input.shape(1) != 3)
         throw std::runtime_error("angles must have shape (N,3)");
 
     const py::ssize_t count = input.shape(0);
+    // Optional per-angle left matrix L (a tilt image's Aproj, times the optics scale):
+    // generateEulerMatrices' doL branch, A = L * A before the inverse
+    // (acc/acc_helper_functions_impl.h:248-255).
+    std::optional<py::detail::unchecked_reference<double, 3>> left_input;
+    if (left.has_value()) {
+        if (left->ndim() != 3 || left->shape(0) != count || left->shape(1) != 3 || left->shape(2) != 3)
+            throw std::runtime_error("left must have shape (N,3,3) matching angles");
+        left_input.emplace(left->unchecked<3>());
+    }
     py::array_t<double> result({count, (py::ssize_t)3, (py::ssize_t)3});
     auto output = result.mutable_unchecked<3>();
     for (py::ssize_t i = 0; i < count; i++) {
         Matrix2D<RFLOAT> A(3, 3);
         Euler_angles2matrix(input(i, 0), input(i, 1), input(i, 2), A);
+        if (left_input.has_value()) {
+            Matrix2D<RFLOAT> L(3, 3);
+            for (int row = 0; row < 3; row++)
+                for (int col = 0; col < 3; col++)
+                    L(row, col) = (*left_input)(i, row, col);
+            A = L * A;
+        }
         A = A.inv();
         for (int row = 0; row < 3; row++)
             for (int col = 0; col < 3; col++)
@@ -747,7 +765,8 @@ Returns (n_oversampled, 2) with [x, y] in pixels.
 
     m.def("euler_angles_to_inverse_matrices", &euler_angles_to_inverse_matrices,
           py::arg("angles"),
-          "Convert (N,3) Euler angles to RELION host inverse matrices.");
+          py::arg("left") = py::none(),
+          "Convert (N,3) Euler angles to RELION host inverse matrices, inv(L A) when (N,3,3) left matrices are given.");
 
     m.def("matrix_to_euler_angles", &matrix_to_euler_angles,
           py::arg("mat"),

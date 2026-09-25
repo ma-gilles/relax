@@ -688,6 +688,7 @@ def _relion_mstep_rotations_from_eulers(
     eulers_deg: np.ndarray,
     *,
     dtype: np.dtype = np.float32,
+    left_matrices: np.ndarray | None = None,
 ) -> np.ndarray:
     """Return RECOVAR-frame host-inverse rotations from RELION Euler rows.
 
@@ -710,8 +711,16 @@ def _relion_mstep_rotations_from_eulers(
     inverse so host-libm rounding also matches RELION. The NumPy formula below
     remains the portable fallback. Under ``ACC_DOUBLE_PRECISION`` the final
     cast is a no-op -- pass ``np.float64`` to match.
+
+    ``left_matrices`` ``[N, 3, 3]`` is ``generateEulerMatrices``' ``L`` for each row: a
+    tilt image's ``Aproj`` times its optics scale (acc_ml_optimiser_impl.h:2522-2547,
+    4521-4543). The inverse is then ``inv(L A)`` (acc_helper_functions_impl.h:248-255).
     """
     eulers = np.asarray(eulers_deg, dtype=np.float64).reshape(-1, 3)
+    if left_matrices is not None:
+        left_matrices = np.asarray(left_matrices, dtype=np.float64)
+        if left_matrices.shape != (eulers.shape[0], 3, 3):
+            raise ValueError(f"left_matrices must have shape {(eulers.shape[0], 3, 3)}, got {left_matrices.shape}")
     try:
         from relax.relion_bind import _relion_bind_core as relion_bind
 
@@ -723,7 +732,10 @@ def _relion_mstep_rotations_from_eulers(
         # Keeping that work in its C++ implementation also preserves libm trig
         # rounding, which can decide the strict radius predicate on an exact
         # outer-shell pixel in an ACC double-precision run.
-        inverse = np.asarray(native_inverse(eulers), dtype=np.float64)
+        inverse = np.asarray(
+            native_inverse(eulers) if left_matrices is None else native_inverse(eulers, left_matrices),
+            dtype=np.float64,
+        )
         if inverse.shape != (eulers.shape[0], 3, 3):
             raise RuntimeError(
                 "RELION Euler inverse binding returned an invalid shape: "
@@ -732,6 +744,9 @@ def _relion_mstep_rotations_from_eulers(
         return np.swapaxes(inverse, 1, 2).astype(dtype)
 
     matrix = _relion_euler_angles_to_matrix(eulers)
+    if left_matrices is not None:
+        # Matrix2D operator*: each entry sums over k in order.
+        matrix = sum(left_matrices[:, :, k, None] * matrix[:, None, k, :] for k in range(3))
     inverse = np.empty_like(matrix)
 
     inverse[:, 0, 0] = matrix[:, 2, 2] * matrix[:, 1, 1] - matrix[:, 2, 1] * matrix[:, 1, 2]
