@@ -129,18 +129,28 @@ def test_pinned_outputs_are_kept_and_compared_per_gpu_model(tmp_path, monkeypatc
     fsc = tmp_path / "fsc.json"
     fsc.write_text(json.dumps({"cases": cases}))
     receipt = tmp_path / "RECEIPT.json"
+    summary = tmp_path / "SUMMARY.json"
+    items = [{"name": c, "status": "pass"} for c in em_tier_pinned.TIER_CASES["medium"]]
+    summary.write_text(json.dumps({"items": items + [{"name": "unit_05", "status": "fail"}]}))
     for model in ("NVIDIA A100-SXM4-80GB", "NVIDIA H100 80GB HBM3"):
-        receipt.write_text(json.dumps({"status": "pass", "dirty": False, "gpu_model": model, "sha": "s", "job": "j"}))
+        receipt.write_text(json.dumps({"status": "fail", "dirty": False, "gpu_model": model, "sha": "s", "job": "j",
+                                       "summary": str(summary)}))
         assert em_tier_pinned.main(["regenerate", "--fsc", str(fsc), "--receipt", str(receipt)]) == 0
     stored = json.loads((tmp_path / "pinned.json").read_text())
     assert sorted(stored["models"]) == ["NVIDIA A100-SXM4-80GB", "NVIDIA H100 80GB HBM3"]
+    source = stored["models"]["NVIDIA H100 80GB HBM3"]["cases"]["k1_replay"]["source"]
+    assert source["other_failed_items"] == ["unit_05"] and source["tier_status"] == "fail"
     out = tmp_path / "cmp.json"
     em_tier_pinned.main(["compare", "--tier", "smoke", "--fsc", str(fsc), "--gpu-model", "NVIDIA H100 80GB HBM3", "--output", str(out)])
     assert json.loads(out.read_text())["verdict"]["status"] == "pass"
     em_tier_pinned.main(["compare", "--tier", "smoke", "--fsc", str(fsc), "--gpu-model", "NVIDIA L40S", "--output", str(out)])
     assert json.loads(out.read_text())["verdict"]["status"] == "not_configured"
-    receipt.write_text(json.dumps({"status": "pass", "dirty": False, "gpu_model": "A100,H100"}))
+    receipt.write_text(json.dumps({"status": "pass", "dirty": False, "gpu_model": "A100,H100", "summary": str(summary)}))
     with pytest.raises(SystemExit, match="one model"):
+        em_tier_pinned.main(["regenerate", "--fsc", str(fsc), "--receipt", str(receipt)])
+    summary.write_text(json.dumps({"items": [dict(i, status="fail") if i["name"] == "k1_replay" else i for i in items]}))
+    receipt.write_text(json.dumps({"status": "fail", "dirty": False, "gpu_model": "H100", "summary": str(summary)}))
+    with pytest.raises(SystemExit, match="k1_replay"):
         em_tier_pinned.main(["regenerate", "--fsc", str(fsc), "--receipt", str(receipt)])
 
 

@@ -129,16 +129,23 @@ def main(argv: list[str] | None = None) -> int:
     receipt = json.loads(args.receipt.read_text())
     model = receipt.get("gpu_model") or ""
     missing = sorted(set(TIER_CASES[args.tier]) - set(fsc["cases"]))
-    if missing or receipt["status"] != "pass" or receipt.get("dirty") or not model or "," in model:
+    # The pinned cases' own tier items must pass; a failure elsewhere in the tier (a unit file,
+    # say) does not change these outputs, so it is recorded with the pin rather than blocking it.
+    items = {i["name"]: i["status"] for i in json.loads(Path(receipt["summary"]).read_text())["items"]}
+    not_passed = sorted(n for n in TIER_CASES[args.tier] if items.get(n) != "pass")
+    if missing or not_passed or receipt.get("dirty") or not model or "," in model:
         raise SystemExit(
-            f"refusing to pin: missing {missing}, status {receipt['status']}, dirty {receipt.get('dirty')}, "
+            f"refusing to pin: missing {missing}, case items not passed {not_passed}, dirty {receipt.get('dirty')}, "
             f"GPU model {model!r} (exactly one model required)"
         )
+    other_failures = sorted(n for n, status in items.items() if status != "pass")
     stored["note"] = (
         "Pinned relax-vs-RELION FSC summaries of the fast parity cases, one entry per GPU model; a run is compared "
         "only with the entry of its own model. Regenerate only on explicit request (scripts/em_tier_pinned.py regenerate)."
     )
     source = {k: receipt.get(k) for k in ("sha", "job", "gpu_model", "run_root", "written_utc")}
+    source["tier_status"] = receipt["status"]
+    source["other_failed_items"] = other_failures
     entry = stored.setdefault("models", {}).setdefault(model, {"cases": {}})
     for name in TIER_CASES[args.tier]:
         entry["cases"][name] = _pin(fsc["cases"][name]) | {"source": source}
