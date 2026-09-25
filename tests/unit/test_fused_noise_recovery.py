@@ -70,6 +70,8 @@ def test_device_chunk_scalars_gpu_fused_noise_accumulator_calls(monkeypatch, cus
     the assignments must equal the host accumulation and the two noise totals match it in
     the default band, while the CUDA-atomic Ft_y/Ft_ctf are bounded at 1e-6 relative."""
 
+    # The compact K-class engine (the resident driver is the K-class default).
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT", "0")
     import jax
 
     import recovar.cuda_backproject as cb
@@ -163,6 +165,8 @@ def test_defer_fused_noise_totals_matches_and_defers_two_leaves(
     callback must carry exactly two leaves. The current owner has no separate
     fused-noise deferral switch: host mode0/1 exercises its immediate/deferred path.
     """
+    # The compact K-class engine (the resident driver is the K-class default).
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT", "0")
     import recovar.cuda_backproject as cuda_backproject
     from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
 

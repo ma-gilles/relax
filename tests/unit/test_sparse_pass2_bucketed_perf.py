@@ -9818,6 +9818,8 @@ def test_compact_pair_filter_routes_complement_masks_to_rectangular():
 def test_compact_pair_xhalf_gpu_matches_rectangular_fused(monkeypatch, raw_device_budget):
     """GPU-only guard for compact-pair parity in RELION x-half M-step mode."""
 
+    # The compact K-class engine (the resident driver is the K-class default).
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT", "0")
     if os.environ.get("RELAX_RUN_CUDA_XHALF_TEST") != "1":
         pytest.skip("set RELAX_RUN_CUDA_XHALF_TEST=1 to run the CUDA x-half compact-pair guard")
 
