@@ -165,12 +165,24 @@ tier gates both the unfiltered half-map average and the merged map, and requires
 Tested, no effect (2026-09-25, not landed): RELION's CUDA path normalizes each real image by
 `(XFLOAT)(avg_norm_correction / normcorr)` (`acc/acc_ml_optimiser_impl.h:875`, f2c1a38). relax
 recovers that factor as `float32(combined) / float32(group_scale)`. On the K1 50k/256 fixture this
-differs by 1-2 ULP for 34% of images. Carrying the once-rounded host ratio separately (a parallel
-session's port) moved relax by a mean |dPmax| of 2e-5. It did not move relax toward RELION. In
-one-step replays from RELION it2 and it13 (job 14421433, resident and compact, main a1786bf), map rel L2
-to RELION stayed 2.1865e-2 and 4.2172e-3, and mean |dPmax| stayed 6.0e-4 and 9.8e-4 (1.2e-3 compact
-at it13). RELION's own repeat noise is 6e-7 and 4e-6. The per-step gap has another cause. Evidence:
-`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_normfix_20260925/ab50k_it2_it13/`.
+differs by 1-2 ULP (1.2e-7 relative) for 34% of images at it2 and it13. A port of a parallel
+session's fix carried the once-rounded host ratio separately. It moved relax itself by a mean
+|dPmax| of 2e-5, but not toward RELION. One-step replays from the uninterrupted RELION run's state
+(job 14421433, main a1786bf, H100) were compared with RELION's next iteration of that run:
+
+| Replay | Map rel L2, control -> fix | Mean abs dPmax, control -> fix |
+| --- | --- | --- |
+| it2, resident | 2.49566e-4 -> 2.49566e-4 | 5.975e-4 -> 5.975e-4 |
+| it2, compact | 2.49567e-4 -> 2.49566e-4 | 5.975e-4 -> 5.975e-4 |
+| it13, resident | 1.25412e-4 -> 1.25457e-4 | 9.834e-4 -> 9.830e-4 |
+| it13, compact | 1.34754e-4 -> 1.34758e-4 | 1.1648e-3 -> 1.1648e-3 |
+
+The table's metrics are the half-map rel L2 inside the frozen mask and per-particle Pmax, both
+against RELION's next iteration. RELION's one-step repeat noise (continue A vs B) is 6e-7 (it2)
+and 4e-6 (it13) in map rel L2, so the per-step gap has another cause. Observation: the it13 compact
+arm's per-particle Pmax was identical between control and fix, so that route may not consume the
+carried factor. Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_normfix_20260925/ab50k_it2_it13/`
+(`PERSTEP_DEVIATION.json`, `PMAX_AB.json`).
 
 Map sign convention: every map relax writes is in RELION's map convention, so a relax map and
 the RELION map of the same run agree voxel for voxel and in sign (`relax/helpers/map_io.py`).
