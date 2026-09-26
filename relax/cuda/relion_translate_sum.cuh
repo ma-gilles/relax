@@ -179,6 +179,9 @@ translate_sum_flat_rows_f32_kernel(
     extern __shared__ float translate_sum_shared[];
     float* shared_angles = translate_sum_shared;                     // [2T]
     float* shared_posterior = shared_angles + 2 * translation_count;  // [R, T]
+    int32_t* shared_active = reinterpret_cast<int32_t*>(
+        shared_posterior + ROWS_PER_BLOCK * translation_count);      // [T]
+    __shared__ int32_t active_count;
     for (int64_t index = threadIdx.x;
          index < 2 * translation_count;
          index += kBlockThreads) {
@@ -197,6 +200,25 @@ translate_sum_flat_rows_f32_kernel(
             : 0.0f;
     }
     __syncthreads();
+
+    // The translations that carry weight in any of the block's rows, in
+    // increasing order. The fine posterior is zero outside RELION's
+    // significant samples (acc_ml_optimiser_impl.h:4819), so most translations
+    // of a row add exact zeros: w * v is +-0 for finite v, and adding it to an
+    // accumulator that starts at +0 leaves it unchanged, so skipping them keeps
+    // every sum bitwise and saves their sincosf and rotations.
+    if (threadIdx.x == 0) {
+        int32_t count = 0;
+        for (int64_t t = 0; t < translation_count; ++t) {
+            bool any = false;
+#pragma unroll
+            for (int i = 0; i < ROWS_PER_BLOCK; ++i) {
+                any = any || (live[i] && shared_posterior[i * translation_count + t] != 0.0f);
+            }
+            if (any) shared_active[count++] = static_cast<int32_t>(t);
+        }
+        active_count = count;
+    }
 
     // probs_sum_t is the same sequential translation sum, one row per lane.
     // ctf_probs needs it on every lane, so it also lands in shared memory.
@@ -248,10 +270,9 @@ translate_sum_flat_rows_f32_kernel(
             }
         }
 
-        for (int64_t translation = 0;
-             translation < translation_count;
-             ++translation)
+        for (int32_t active = 0; active < active_count; ++active)
         {
+            const int64_t translation = shared_active[active];
             const float tx = shared_angles[2 * translation];
             const float ty = shared_angles[2 * translation + 1];
             const float phase = translate_phase_f32(x, y, tx, ty);
@@ -263,6 +284,7 @@ translate_sum_flat_rows_f32_kernel(
                 if (!live[i]) continue;
                 const float weight =
                     shared_posterior[i * translation_count + translation];
+                if (weight == 0.0f) continue;
                 const float2 recon_shifted = BPREF_RECON
                     ? translate_rotate_bpref_f32(
                           recon_value[i], sine, cosine, recon_factor[i])
@@ -306,8 +328,10 @@ translate_sum_flat_rows_f32_kernel(
 
 inline int64_t shared_bytes_for(int rows_per_block, int64_t translation_count)
 {
+    // Angles, the block's posterior rows and its active-translation list.
     return static_cast<int64_t>(
-        (2 + rows_per_block) * translation_count * sizeof(float));
+        (2 + rows_per_block) * translation_count * sizeof(float)
+        + translation_count * sizeof(int32_t));
 }
 
 // Rows a block owns.  More rows share one sincosf but cost registers; the

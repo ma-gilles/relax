@@ -426,6 +426,57 @@ def test_padded_zero_mass_rows_and_pixel_tail_are_zero(
 
 
 @pytest.mark.gpu
+def test_sparse_posteriors_skip_only_exact_zeros(monkeypatch, custom_cuda_lib, gpu_device):
+    """The kernel skips the translations no row of a block weights.
+
+    Real fine posteriors are zero outside RELION's significant samples. A row
+    with one weighted translation sums a single product, which must be the
+    reference's product exactly; sparse rows must match the reference in its
+    own bound; and grouping rows into blocks (whose active translations are
+    the union of theirs) must not change any value.
+    """
+
+    cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
+    rng = np.random.default_rng(4242)
+    rows, n_trans, n_pixels = 512, 84, 629
+    operands = _operands(rng, rows=rows, image_capacity=64, n_trans=n_trans, n_pixels=n_pixels)
+    posterior = np.zeros((rows, n_trans), dtype=np.float32)
+    single = np.arange(rows) % 3 == 0
+    for row in range(rows):
+        count = 1 if single[row] else int(rng.integers(0, 6))
+        chosen = rng.choice(n_trans, size=count, replace=False)
+        posterior[row, chosen] = rng.random(count).astype(np.float32)
+    operands["posterior"] = posterior
+    with jax.default_device(gpu_device):
+        summed_ref, masked_ref, mass_ref = _reference(cuda_backproject, operands)
+        results = [
+            _kernel(
+                cuda_backproject,
+                operands,
+                n_valid_rows=rows,
+                logical_pixels=n_pixels,
+                rows_per_block=rows_per_block,
+            )
+            for rows_per_block in (1, 4, 8)
+        ]
+    for tiled in results[1:]:
+        for actual, expected in zip(tiled, results[0]):
+            np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
+    summed, masked, mass = (np.asarray(value) for value in results[1])
+    np.testing.assert_array_equal(summed[single], np.asarray(summed_ref)[single])
+    np.testing.assert_array_equal(masked[single], np.asarray(masked_ref)[single])
+    _assert_close(summed, summed_ref, _sum_scale(operands, "recon_image"), "summed")
+    _assert_close(masked, masked_ref, _sum_scale(operands, "noise_image"), "summed_masked")
+    _assert_close(
+        mass,
+        mass_ref,
+        np.abs(posterior).sum(axis=1).astype(np.float64),
+        "probs_sum_t",
+        max_ulp_of_scale=_MAX_MASS_ULP_PER_TRANSLATION * n_trans,
+    )
+
+
+@pytest.mark.gpu
 def test_wrapper_is_traceable_with_static_shapes(
     monkeypatch, custom_cuda_lib, gpu_device
 ):
