@@ -231,11 +231,14 @@ def capture_iteration_snapshot(
     significant_counts,
     avg_norm_correction,
 ) -> IterationSnapshot:
-    """Copy the loop's end-of-iteration state to the host (see the module docstring)."""
+    """Copy the loop's end-of-iteration state to the host (see the module docstring).
+
+    Every array is copied, so a background writer never sees the loop's later updates.
+    """
 
     k_class = int(n_classes) > 1
     if k_class:
-        tau2 = np.asarray(tau2_shells, dtype=np.float64)
+        tau2 = np.array(tau2_shells, dtype=np.float64)
     else:
         tau2 = np.stack([np.asarray(shells, dtype=np.float64) for shells in tau2_shells])
     eulers = host_half_pair(half_inputs.previous_best_rotation_eulers)
@@ -255,8 +258,8 @@ def capture_iteration_snapshot(
         tau2_fudge=float(tau2_fudge),
         means=[host_array(means[0])] * 2 if k_class else host_half_pair(means),
         tau2_shells=tau2,
-        data_vs_prior=np.asarray(data_vs_prior, dtype=np.float64),
-        noise_shells=[np.asarray(shells, dtype=np.float64) for shells in noise_shells],
+        data_vs_prior=np.array(data_vs_prior, dtype=np.float64),
+        noise_shells=[np.array(shells, dtype=np.float64) for shells in noise_shells],
         sigma_offset_angstrom=tuple(float(v) for v in sigma_offset_angstrom_per_half),
         current_size=int(current_size),
         incr_size=int(incr_size),
@@ -268,12 +271,12 @@ def capture_iteration_snapshot(
         image_corrections=image_corrections,
         scale_corrections=host_half_pair(half_inputs.scale_corrections),
         group_ids=[
-            np.zeros(0 if e is None else len(e), dtype=np.int64) if g is None else np.asarray(g, dtype=np.int64)
+            np.zeros(0 if e is None else len(e), dtype=np.int64) if g is None else np.array(g, dtype=np.int64)
             for g, e in zip(half_inputs.group_ids, eulers)
         ],
-        fsc=None if fsc is None or k_class else np.asarray(fsc, dtype=np.float64),
-        fsc_for_growth=None if fsc_for_growth is None or k_class else np.asarray(fsc_for_growth, dtype=np.float64),
-        class_weights=None if not k_class else np.asarray(class_weights, dtype=np.float64),
+        fsc=None if fsc is None or k_class else np.array(fsc, dtype=np.float64),
+        fsc_for_growth=None if fsc_for_growth is None or k_class else np.array(fsc_for_growth, dtype=np.float64),
+        class_weights=None if not k_class else np.array(class_weights, dtype=np.float64),
         direction_prior=host_half_pair(direction_prior)
         if direction_prior is not None and any(p is not None for p in direction_prior)
         else None,

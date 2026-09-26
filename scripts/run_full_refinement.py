@@ -4845,6 +4845,8 @@ def main():
         ),
     )
 
+    if run_file_writer is not None:
+        run_file_writer.wait()  # the last iteration's files, written in the background
     validate_state_swap_probe_application(
         state_swap_probe,
         result.get("state_swap_probe_applied_relion_iterations"),

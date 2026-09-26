@@ -8,6 +8,7 @@ from pathlib import Path
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from recovar.core import fourier_transform_utils as ftu
 
 from relax.helpers.convergence import RefinementState
@@ -25,7 +26,6 @@ from relax.refinement.run_files import (
     read_run_files,
     read_star_blocks,
 )
-from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -136,6 +136,7 @@ def _k1_snapshot(half_sizes, rng):
 
 
 def _writer(tmp_path, input_star, half_rows, **kwargs):
+    kwargs.setdefault("background", False)
     return RunFileWriter(
         tmp_path / "out",
         settings=RunSettings(
@@ -374,3 +375,25 @@ def test_host_map_transforms_follow_recovar_convention():
     assert_matches(_fourier_from_map(real, (BOX, BOX, BOX)), expected_ft.astype(np.complex64))
     back = np.asarray(ftu.get_idft3(jnp.asarray(expected_ft.reshape(BOX, BOX, BOX)))).real
     assert_matches(_real_from_fourier(expected_ft, (BOX, BOX, BOX)), back.astype(np.float32))
+
+
+def test_background_writer_hands_over_and_reports_errors(tmp_path):
+    rng = np.random.default_rng(6)
+    input_star = _write_input_star(tmp_path, 7)
+    half_rows = [np.array([4, 0, 2, 6]), np.array([5, 1, 3])]
+    writer = _writer(tmp_path, input_star, half_rows, background=True)
+    assert writer.background
+    snapshot = _k1_snapshot([4, 3], rng)
+    optimiser = writer(snapshot)
+    writer.wait()
+    assert optimiser.exists() and not optimiser.with_name(optimiser.name + ".partial").exists()
+    names = read_star_blocks(input_star)["particles"]["rlnImageName"]
+    _assert_snapshots_match(read_run_files(optimiser, image_names=names, half_rows=half_rows), snapshot)
+
+    broken = _k1_snapshot([4, 3], rng)
+    broken.relion_iteration = 6
+    broken.noise_shells = None  # the thread fails; the next call or wait() reports it
+    writer(broken)
+    with pytest.raises(RuntimeError, match="run files failed"):
+        writer.wait()
+    assert not (tmp_path / "out" / "run_it006_optimiser.star").exists()

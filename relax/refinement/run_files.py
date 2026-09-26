@@ -42,6 +42,7 @@ import logging
 import math
 import os
 import shlex
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -215,6 +216,12 @@ class RunFileWriter:
     rows of that half's images in the loop's local order. ``data.star`` keeps the input row
     order and every input column as written in the input (text unchanged), with the refined
     columns replaced, as ``Experiment::write`` does.
+
+    With ``background`` (the default) a call returns once the snapshot is handed over and a
+    thread writes the files while the next iteration runs; at most one write is in flight,
+    and :meth:`wait` joins it and re-raises its error. The snapshot is a host copy, so the
+    loop may overwrite its arrays. ``run_itNNN_optimiser.star`` is written last and renamed
+    into place, so an iteration can be continued only once all its files exist.
     """
 
     def __init__(
@@ -228,6 +235,7 @@ class RunFileWriter:
         prefix: str = "run",
         write_every: int = 1,
         write_unfiltered_maps: bool = True,
+        background: bool = True,
     ):
         if int(write_every) < 1:
             raise ValueError(f"write_every must be positive, got {write_every}")
@@ -243,7 +251,10 @@ class RunFileWriter:
         self.prefix = str(prefix)
         self.write_every = int(write_every)
         self.write_unfiltered_maps = bool(write_unfiltered_maps)
+        self.background = bool(background)
         self.seconds: dict[int, float] = {}
+        self._thread = None
+        self._error = None
         n_rows = len(self.particles["rlnImageName"])
         covered = np.concatenate(self.half_rows) if self.half_rows else np.empty(0, np.int64)
         if covered.size != n_rows or np.unique(covered).size != n_rows:
@@ -260,6 +271,38 @@ class RunFileWriter:
         return self.output_dir / f"{self.prefix}_it{int(relion_iteration):03d}"
 
     def __call__(self, snapshot: IterationSnapshot) -> Path:
+        """Write ``snapshot``'s files; returns the optimiser STAR path (complete after :meth:`wait`)."""
+
+        self.wait()
+        path = Path(f"{self.root(snapshot.relion_iteration)}_optimiser.star")
+        if not self.background:
+            self._write(snapshot)
+            return path
+        self._thread = threading.Thread(
+            target=self._write_in_thread,
+            args=(snapshot,),
+            name=f"relax-run-files-it{int(snapshot.relion_iteration):03d}",
+        )
+        self._thread.start()
+        return path
+
+    def wait(self) -> None:
+        """Join the write in flight and re-raise its error."""
+
+        if self._thread is not None:
+            self._thread.join()
+            self._thread = None
+        if self._error is not None:
+            error, self._error = self._error, None
+            raise RuntimeError("writing the RELION run files failed") from error
+
+    def _write_in_thread(self, snapshot):
+        try:
+            self._write(snapshot)
+        except BaseException as exc:  # re-raised by wait() on the refinement's thread
+            self._error = exc
+
+    def _write(self, snapshot: IterationSnapshot) -> Path:
         t0 = time.time()
         self.output_dir.mkdir(parents=True, exist_ok=True)
         root = self.root(snapshot.relion_iteration)
@@ -659,7 +702,9 @@ def _write_optimiser_star(root: Path, snapshot: IterationSnapshot, settings: Run
     if snapshot.fsc_for_growth is not None:
         text.append(_loop_block("relax_shells", {"relax_fsc_for_growth": np.asarray(snapshot.fsc_for_growth)}))
     path = Path(f"{root}_optimiser.star")
-    path.write_text("".join(text))
+    staging = path.with_name(path.name + ".partial")
+    staging.write_text("".join(text))
+    os.replace(staging, path)
     return path
 
 
@@ -867,11 +912,17 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
 # Host FFTs with recovar's centered convention (fourier_transform_utils.get_dft3/get_idft3,
 # norm "backward"), so writing and reading a map needs no device memory: at box 800 one
 # complex volume is 4 GB.
+def _fft_workers() -> int:
+    """Half the CPUs this process may use: a background write shares them with the refinement."""
+
+    return max(1, len(os.sched_getaffinity(0)) // 2)
+
+
 def _real_from_fourier(volume_ft, volume_shape) -> np.ndarray:
     import scipy.fft
 
     volume = np.asarray(volume_ft).reshape(volume_shape)
-    volume = scipy.fft.ifftn(scipy.fft.ifftshift(volume), workers=-1)
+    volume = scipy.fft.ifftn(scipy.fft.ifftshift(volume), workers=_fft_workers())
     return np.ascontiguousarray(scipy.fft.ifftshift(volume).real, dtype=np.float32)
 
 
@@ -881,7 +932,7 @@ def _fourier_from_map(volume_real, volume_shape) -> np.ndarray:
     import scipy.fft
 
     real = np.asarray(volume_real, dtype=np.float32).reshape(volume_shape)
-    volume = scipy.fft.fftn(scipy.fft.fftshift(real), workers=-1)
+    volume = scipy.fft.fftn(scipy.fft.fftshift(real), workers=_fft_workers())
     return np.asarray(scipy.fft.fftshift(volume), dtype=np.complex64).reshape(-1)
 
 
