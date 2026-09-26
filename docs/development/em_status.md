@@ -227,14 +227,33 @@ inside RELION's band [0.216623, 0.216957] (masked [0.215882, 0.216170]); the com
 pair): GT min FSC-AUC 0.26407 (masked 0.26795), above RELION's [0.26276, 0.26322] (masked
 [0.26642, 0.26679]); wall 14620 s against RELION 4666 s.
 
-OPEN (K4 100k/256, both engines, older than resident): relax's class-assignment accuracy
-against RELION is 0.878-0.894 while two RELION runs agree at 0.9335, and relax's maps agree
-with RELION's at FSC-AUC 0.852 while RELION runs agree at 0.915-0.928. Compact scores the
-same (0.852, long run 14410744), so the gap predates the resident engine; GT FSC-AUC is at or
-above RELION's band. Next: one-step K4 replays from RELION's 100k states at a few iterations
-(per-half noise), reporting per-class weights, class-assignment agreement and
-data_vs_prior, to separate a per-step bias from basin divergence. Evidence:
-`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclass_20260925/HANDOFF.json`.
+RELION MPI scale-group pack/unpack defect (RELION 5.0.1 f2c1a38; relax issue #1): the pieced
+`MlWsumModel::pack` / `unpack` that `relion_refine_mpi` uses to combine weighted sums in CUDA builds
+(`src/ml_model.cpp:2056`, `:2241`) size the scale-group loop with `sigma2_noise.size()`, the number of
+optics groups, so only scale group 1's `wsum_signal_product` / `wsum_reference_power` cross ranks. With
+`--scale` and several followers per data set, every other group's scale correction comes from one
+follower's particles; with one particle per group (the simulated fixtures) half the groups collapse to a
+common value. relax implements the non-MPI behaviour. Affected: Class3D (no split halves) run with more
+than one follower. Auto-refine with one follower per half-set (the 3-rank arms of every K=1 benchmark row)
+skips the within-half combine, and its final join's scale update is not used for any reconstruction, so the
+K=1 rows are unaffected (checked on the 10097 row: per-group scales vary normally in both halves). Evidence:
+K4 5k/128 GUI Class3D, three seeds: relax equals non-MPI RELION (class agreement 1.0000 at all 25
+iterations; GT class accuracy and FSC-AUC identical on seed 29), while MPI RELION splits from it at
+iteration 3 (0.979-0.981) and ends in another solution (GT class accuracy 0.992 vs 0.976); two MPI repeats
+also split at iteration 3 (0.981). A two-line patch (use `wsum_signal_product.size()`) makes
+`relion_refine_mpi` equal to non-MPI RELION on that case (agreement 1.0000 at every iteration, scale
+corrections to 4e-5; jobs 14456979, 14457083). Patched build, patch, verification and report draft:
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/relion_patched_mpi_scale_20260926/` (run with
+`SLURM_MPI_TYPE=pmix_v3`). Class3D benchmark references should be non-MPI RELION or this patched build.
+
+K4 100k/256 class agreement (formerly OPEN; explained by the defect above): relax's class agreement with the
+two MPI RELION runs was 0.878-0.894 at iteration 15 while they agree with each other at 0.9335. Non-MPI RELION
+with the same command (job 14455196, 3643 s) agrees with those MPI runs at 0.8785-0.8954, the same level, and
+with relax at 0.9780; map FSC-AUC relax vs non-MPI RELION 0.9696 against 0.842-0.857 for non-MPI vs MPI RELION.
+GT min FSC-AUC: relax 0.26407 (masked 0.26795), non-MPI RELION 0.26182 (0.26522), MPI RELION 0.26276-0.26322
+(0.26642-0.26679). Compact scores like resident (long run 14410744). The one-step replays are no longer needed.
+Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclass_20260925/band_100k/BAND_nompi.json`,
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclass_20260925/k4_100k_relion_nompi/TRAJ_relax_vs_nompi.json`.
 
 Final all-data maps are now always gridding-corrected, as in RELION; the former
 default-off selector made the K1 100k/256 masked GT FSC 0.0008 lower than both
