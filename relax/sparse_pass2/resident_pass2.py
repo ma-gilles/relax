@@ -63,6 +63,8 @@ program, which assumes one call per chunk with the whole pixel axis resident.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import logging
 import os
 import time
@@ -80,7 +82,11 @@ from relax.helpers.adjoint import mstep_adjoint_max_r
 from relax.helpers.batch_fetch import fetch_indexed_batch
 from relax.helpers.deterministic_reduce import deterministic_reductions_enabled
 from relax.helpers.env_flags import parse_env_capacity_ladder, parse_env_flag
-from relax.helpers.fourier_window import make_stable_fourier_window_shape_plan, stable_fourier_window_quantum
+from relax.helpers.fourier_window import (
+    make_stable_fourier_window_shape_plan,
+    stable_fourier_window_current_size,
+    stable_fourier_window_quantum,
+)
 from relax.helpers.half_spectrum import (
     make_relion_noise_shell_indices_half,
     mask_relion_noise_shell_indices_to_current_window,
@@ -1528,6 +1534,48 @@ def _resident_stable_windows_requested(*, vdam: bool = False) -> bool:
     return parse_env_flag(_RESIDENT_STABLE_WINDOWS_ENV, default=not vdam)
 
 
+# Physical window classes this refinement has already run, by (box, quantum).
+# None outside a refinement: every pass then takes its own quantized class.
+_STABLE_WINDOW_CLASSES_RUN: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "relax_stable_window_classes_run", default=None
+)
+
+
+@contextlib.contextmanager
+def stable_window_class_history():
+    """Let the passes of one refinement reuse each other's physical window classes.
+
+    RELION's current size settles by steps of two around its final value (80,
+    82, 84 on the 5k K=1 run), and a quantum-8 ladder puts 80 and 82 in
+    different classes, so each crossing compiled the resident chunk programs
+    again. Inside this scope a pass whose quantized class is new takes the
+    smallest class the refinement already ran that is at most one quantum
+    larger. The class is capacity only (the logical window is unchanged), so
+    this changes shapes, not RELION's cutoffs; the history is per refinement,
+    so a run's shapes do not depend on what else the process ran.
+    """
+
+    token = _STABLE_WINDOW_CLASSES_RUN.set({})
+    try:
+        yield
+    finally:
+        _STABLE_WINDOW_CLASSES_RUN.reset(token)
+
+
+def _stable_window_physical_class(image_size: int, current_size: int, quantum: int) -> int | None:
+    """The physical class to run ``current_size`` in, or None for its quantized class."""
+
+    history = _STABLE_WINDOW_CLASSES_RUN.get()
+    if history is None:
+        return None
+    quantized = stable_fourier_window_current_size(int(current_size), int(image_size), quantum=int(quantum))
+    classes = history.setdefault((int(image_size), int(quantum)), set())
+    reusable = [size for size in classes if quantized < size <= quantized + int(quantum)]
+    chosen = min(reusable) if reusable else quantized
+    classes.add(chosen)
+    return chosen
+
+
 def _resident_stable_window_plan(
     image_shape,
     *,
@@ -1567,14 +1615,16 @@ def _resident_stable_window_plan(
             ", ".join(reasons),
         )
         return None
+    quantum = stable_fourier_window_quantum()
     return make_stable_fourier_window_shape_plan(
         image_shape,
         int(current_size),
         n_half,
         reconstruction_current_size=int(mstep_current_size),
         enabled=True,
-        quantum=stable_fourier_window_quantum(),
+        quantum=quantum,
         square=square_window,
+        physical_current_size=_stable_window_physical_class(image_shape[0], current_size, quantum),
         **window_spec_kwargs,
     )
 

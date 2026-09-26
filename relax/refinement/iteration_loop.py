@@ -13,7 +13,7 @@ import gc
 import logging
 import os
 import time
-from functools import partial
+from functools import partial, wraps
 from types import SimpleNamespace
 from typing import NamedTuple
 
@@ -235,6 +235,7 @@ from relax.sampling import (
 )
 from relax.sparse_pass2 import firstiter_bpref, sparse_pass2_budget
 from relax.sparse_pass2.engine_record import take_pass_engines
+from relax.sparse_pass2.resident_pass2 import stable_window_class_history
 
 logger = logging.getLogger(__name__)
 
@@ -696,6 +697,18 @@ def _class_adaptive_batch_overrides(half, *, plan, cs_for_engine, coarse_cs, coa
     return tuple(overrides)
 
 
+def _with_stable_window_class_history(refine):
+    """Run a refinement inside one stable-window class history (resident_pass2)."""
+
+    @wraps(refine)
+    def run(*args, **kwargs):
+        with stable_window_class_history():
+            return refine(*args, **kwargs)
+
+    return run
+
+
+@_with_stable_window_class_history
 def refine_single_volume(
     experiment_datasets: list[cryoem_dataset.CryoEMDataset],
     init_volume: list[jnp.ndarray] | jnp.ndarray,

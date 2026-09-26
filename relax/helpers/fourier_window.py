@@ -610,6 +610,7 @@ def make_stable_fourier_window_shape_plan(
     score_include_dc: bool = False,
     recon_exact_radius: bool = True,
     window_at_box: bool = False,
+    physical_current_size: int | None = None,
 ) -> StableFourierWindowShapePlan:
     """Plan exact logical supports inside optional stable physical capacities.
 
@@ -618,6 +619,10 @@ def make_stable_fourier_window_shape_plan(
     capacities may be used to pad arrays after their logical prefixes.  The
     logical fields remain the source of truth for runtime CUDA loop bounds.
     ``window_at_box`` is :func:`make_fourier_window_spec`'s, for both specs.
+
+    ``physical_current_size`` replaces the quantized class of both sizes with a
+    larger class, below the box, that a caller already holds programs for; it
+    needs one current size for scoring and reconstruction.
     """
 
     image_shape = tuple(int(value) for value in image_shape)
@@ -640,7 +645,22 @@ def make_stable_fourier_window_shape_plan(
         image_shape[0],
         quantum=quantum,
     )
-    if enabled:
+    if enabled and physical_current_size is not None:
+        quantized = stable_fourier_window_current_size(logical_current_size, image_shape[0], quantum=quantum)
+        physical_current_size = int(physical_current_size)
+        if (
+            logical_reconstruction_current_size != logical_current_size
+            or physical_current_size % 2
+            or not quantized <= physical_current_size < image_shape[0]
+        ):
+            raise ValueError(
+                "an explicit physical class needs one current size for scoring and reconstruction "
+                f"and an even size from {quantized} to below the box {image_shape[0]}, "
+                f"got {physical_current_size} for current sizes "
+                f"{logical_current_size}/{logical_reconstruction_current_size}"
+            )
+        physical_reconstruction_current_size = physical_current_size
+    elif enabled:
         physical_current_size = stable_fourier_window_current_size(
             logical_current_size,
             image_shape[0],
