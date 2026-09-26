@@ -7,7 +7,7 @@ holds a contiguous range of units, so it also holds the contiguous range of thei
 each hypothesis row: the ``s``-th visible tilt of the row's unit, in RELION's ``img_id``
 order (frame order, ``tomo_input.relion_image_geometry``). The scorer and the M-step loop
 over ``s`` and add each image's contribution in that order, as RELION's ``img_id`` loops
-do (acc_ml_optimiser_impl.h:2282, :4268).
+do (acc_ml_optimiser_impl.h:1490, :2959).
 
 Single-particle data are the one-image case: ``unit_image_offsets = arange(n + 1)``.
 """
@@ -101,9 +101,9 @@ def tilt_slot_rotations(
 
     RELION builds a tilt image's fine and backprojection matrices on the host with its left matrix
     ``L_i`` (the image's ``Aproj`` times the optics scale; generateEulerMatrices,
-    acc_helper_functions_impl.h:248-255; acc_ml_optimiser_impl.h:2522-2547, 4521-4543), so every
+    acc_helper_functions_impl.h:248-255; acc_ml_optimiser_impl.h:1709-1734, 3212-3234), so every
     (image, rotation) pair has its own matrix. It passes ``L`` only when it is not the identity
-    (``isIdentity``, :1614-1618; ``tomo_particles.relion_left_matrices``); an identity image keeps the
+    (``isIdentity``, :1100-1104; ``tomo_particles.relion_left_matrices``); an identity image keeps the
     SPA matrices, ``row_spa_matrices`` ``[C_R, 3, 3]`` when given. ``row_source_eulers`` ``[C_R, 3]``
     are the rows' RELION Euler angles and ``image_left`` ``[n_images, 3, 3]`` the images' ``L``; entries
     of rows without an ``s``-th image are the identity and are never read. Slot ``s`` of row ``r`` is
@@ -563,8 +563,8 @@ def accumulate_tilt_chunk_terms(
     The SPA fold (resident_pass2._accumulate_chunk_image_terms) with RELION's subtomogram rules
     (acc_ml_optimiser_impl.h storeWeightedSums): the offset, sumw, rotation and score/pose terms are the
     particle's; the image power, the noise shells and the norm residual are summed over its images with
-    1 / n_images (:4903-4905, :4923-4924, :4945-4950); the scale sums are summed over its images as they
-    are (:4907-4912). The noise and norm block partials arrive already scaled (image_noise_scale).
+    1 / n_images (:3490-3491, :3512-3516); the scale sums are summed over its images as they
+    are (:3474-3479). The noise and norm block partials arrive already scaled (image_noise_scale).
     """
 
     from relax.sparse_pass2 import resident_pass2 as rp

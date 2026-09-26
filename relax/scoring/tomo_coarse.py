@@ -1,15 +1,15 @@
 """Coarse pass (pass 1) of subtomogram particles: each tilt image scored, summed per particle (S4.2).
 
 RELION's GPU path scores a subtomogram one tilt image at a time (the ``img_id`` loop of
-``getAllSquaredDifferencesCoarse``, acc_ml_optimiser_impl.h:1737-2194). Every image has
+``getAllSquaredDifferencesCoarse``, acc_ml_optimiser_impl.h:1190-1402). Every image has
 its own scorer matrices (``make_eulers_3D`` with the image's ``Aproj`` as the left matrix,
-:1600-1630) and its own phase table (``Aproj[:2]`` times the 3D trial shift plus the
-rounded old offset, :1761-1787). Each image first adds its ``highres_Xi2 / 2`` to the
-particle's running diff2 and then its pixel sums (:1869-1876, diff2.cuh:186-188), so
+:1086-1116) and its own phase table (``Aproj[:2]`` times the 3D trial shift plus the
+rounded old offset, :1214-1240). Each image first adds its ``highres_Xi2 / 2`` to the
+particle's running diff2 and then its pixel sums (:1289-1296, diff2.cuh:186-188), so
 the significance cut sees one diff2 per particle hypothesis.
 
 relax reuses the SPA pieces: the RELION CUDA preprocessing with no pre-shift and no norm
-correction (RELION neither translates nor normalises a tomo image, :872-919), the exact
+correction (RELION neither translates nor normalises a tomo image, :429-476), the exact
 coarse operands, and the fused coarse projector, called once per image. The fused
 projector takes at most 128 translations, so each image is scored in translation chunks;
 RELION runs one 1024-thread block for 515 translations. The chunks change only the
@@ -92,9 +92,9 @@ def tilt_image_coarse_operands(
 
     ``noise_variance_half`` is one half-pixel spectrum or a ``[G, P]`` table with
     ``optics_group_ids`` per dataset image. No pre-shift and no norm correction: RELION
-    neither translates nor normalises a tomo image (acc_ml_optimiser_impl.h:872-919);
+    neither translates nor normalises a tomo image (acc_ml_optimiser_impl.h:429-476);
     ``scale_corrections`` (per dataset image) still divide the image and weight the
-    CTF, as for SPA (:1791-1810).
+    CTF, as for SPA (:1244-1263).
     """
 
     from relax.helpers.optics_noise import noise_rows
@@ -296,7 +296,7 @@ def particle_coarse_significance(
     """RELION's coarse weights and significance of particles from their summed diff2 ``[P, R, T]``.
 
     The subtomogram coarse pass converts the particle's summed diff2 exactly as the SPA pass
-    converts one image's (convertAllSquaredDifferencesToWeights, acc_ml_optimiser_impl.h:3200-3300):
+    converts one image's (convertAllSquaredDifferencesToWeights, acc_ml_optimiser_impl.h:2245-2345):
     the log weight is ``log prior + min_diff2 - diff2`` in float32, then RELION's sort, scan and
     tail cut. ``rotation_log_prior`` is ``[R]`` (or ``None``) and ``translation_log_prior``
     ``[P, T]``, the particle's 3D offset prior. The SPA posterior primitive is reused, so the two
@@ -349,7 +349,7 @@ def particle_coarse_supports(
 ):
     """Each particle's coarse significant samples, ``rot * T + t`` int32 ids per unit, and its coarse Pmax.
 
-    RELION's GPU coarse pass for a subtomogram (acc_ml_optimiser_impl.h:1737-2194): every tilt image is
+    RELION's GPU coarse pass for a subtomogram (acc_ml_optimiser_impl.h:1190-1402): every tilt image is
     scored with its own device matrices (``make_eulers_3D`` with the image's ``Aproj``,
     :func:`relax.sampling._relion_adaptive_pass1_rotations`), its phases for the 3D trial shifts plus
     the rounded old offset (:func:`relax.refinement.tomo_particles.tilt_translation_angles`) and its own

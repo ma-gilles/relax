@@ -1,7 +1,7 @@
 """The resident pass with subtomogram units (S4.2) in its one-image case equals the SPA pass (GPU).
 
 A particle with one image, an identity left matrix and the SPA phases is an SPA image: RELION's GPU path
-then keeps the SPA matrices (isIdentity, acc_ml_optimiser_impl.h:1614-1618) and divides nothing by the
+then keeps the SPA matrices (isIdentity, acc_ml_optimiser_impl.h:1100-1104) and divides nothing by the
 image count. So ``_resident_pass2(tilt=...)``, which scores and backprojects through the tilt chunk runner,
 must reproduce ``_resident_pass2`` on the SPA driver fixture: the discrete state exactly, the scores in the
 float band, and the maps and sums inside the resident driver's own repeat band.

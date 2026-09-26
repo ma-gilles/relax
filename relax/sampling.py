@@ -345,7 +345,7 @@ def get_relion_translation_grid(
 def get_relion_translation_grid_3d(offset_range, offset_step):
     """RELION's 3D translation grid (subtomograms, ``is_3d_trans``) in Angstrom, ``[T, 3]`` float64.
 
-    ``HealpixSampling::setTranslations`` (healpix_sampling.cpp:345, 410-433) enumerates
+    ``HealpixSampling::setTranslations`` (healpix_sampling.cpp:330, 395-418) enumerates
     ``x`` outer, ``y`` middle and ``z`` inner over ``-CEIL(range/step)..CEIL(range/step)``
     and keeps ``x^2 + y^2 + z^2 <= range^2``, in Angstrom and without the 2D grid's
     ``+0.001`` tolerance. The comparison stays in Angstrom so the axial points at exactly
@@ -370,8 +370,8 @@ def relion_translations_in_pixel_3d(
 ):
     """RELION's oversampled 3D translations in pixels and each one's parent, ``([T * 8^os, 3], [T * 8^os])``.
 
-    ``HealpixSampling::getTranslationsInPixel`` (healpix_sampling.cpp:1756-1805,
-    1825-1841): every parent is split into ``2^os`` children per axis at
+    ``HealpixSampling::getTranslationsInPixel`` (healpix_sampling.cpp:1741-1790,
+    1810-1826): every parent is split into ``2^os`` children per axis at
     ``t - step/2 + (0.5 + k) step / 2^os``, enumerated ``x`` outer, ``y`` middle, ``z``
     inner, each divided by the optics group's pixel size; the iteration's perturbation
     adds ``random_perturbation * step / pixel_size`` to every axis.
@@ -713,8 +713,8 @@ def _relion_mstep_rotations_from_eulers(
     cast is a no-op -- pass ``np.float64`` to match.
 
     ``left_matrices`` ``[N, 3, 3]`` is ``generateEulerMatrices``' ``L`` for each row: a
-    tilt image's ``Aproj`` times its optics scale (acc_ml_optimiser_impl.h:2522-2547,
-    4521-4543). The inverse is then ``inv(L A)`` (acc_helper_functions_impl.h:248-255).
+    tilt image's ``Aproj`` times its optics scale (acc_ml_optimiser_impl.h:1709-1734,
+    3212-3234). The inverse is then ``inv(L A)`` (acc_helper_functions_impl.h:248-255).
     """
     eulers = np.asarray(eulers_deg, dtype=np.float64).reshape(-1, 3)
     if left_matrices is not None:
@@ -897,7 +897,7 @@ def _relion_device_scoring_rotations_left_f32(eulers_deg, right_matrix, left_mat
     """Tilt images' coarse scorer matrices, ``[B, N, 3, 3]``: ``make_eulers_3D`` with one left matrix per image.
 
     RELION's pass-1 plan of a tilt image passes ``MBL`` (its ``Aproj`` times the optics scale)
-    to the device as float (acc_ml_optimiser_impl.h:1600-1630); with a left matrix the inverse
+    to the device as float (acc_ml_optimiser_impl.h:1086-1116); with a left matrix the inverse
     is the float32 adjugate, not the transpose. ``None`` on CPU, like the SPA path.
     """
 

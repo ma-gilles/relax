@@ -4860,7 +4860,7 @@ class _ChunkStageOperands(NamedTuple):
     cc_half_batch_norm: jax.Array | None = None
     # Tilt images (S4.2) only: each image's 1 / n_images of its particle. RELION divides a
     # subtomogram's noise and norm sums, not its backprojection, by the particle's image count
-    # (acc_ml_optimiser_impl.h:4903-4905, :4923-4924, :4945-4950; resident_tilts).
+    # (acc_ml_optimiser_impl.h:3490-3491, :3512-3516; resident_tilts).
     image_noise_scale: jax.Array | None = None
 
 

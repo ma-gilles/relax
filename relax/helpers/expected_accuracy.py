@@ -784,7 +784,7 @@ def _estimate_tomo_half(
 
     calculateExpectedAngularErrors sums each trial particle's SNR over its tilt images, each projected
     with ``Aproj A`` and weighted by its own CTF, and perturbs the offset in 3D before projecting it
-    into each image (ml_optimiser.cpp:11296-11530). Trials of one optics group share its CTF constants
+    into each image (ml_optimiser.cpp:9368-9602). Trials of one optics group share its CTF constants
     and noise, so the binding runs once per group, as for single particles.
     """
     from recovar.core import fourier_transform_utils

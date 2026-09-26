@@ -58,7 +58,7 @@ def test_translations_are_scored_in_chunks_and_images_add_in_slot_order(monkeypa
 
 
 def _relion_coarse_cut(log_weight, adaptive_fraction):
-    """RELION's coarse significance from float32 log weights (independent NumPy reading of acc :3200-3300)."""
+    """RELION's coarse significance from float32 log weights (independent NumPy reading of acc :2245-2345)."""
     w = np.exp((log_weight + (np.float32(50.0) - log_weight.max())).astype(np.float32)).astype(np.float32)
     order = np.sort(w)
     cumulative = np.cumsum(order, dtype=np.float32)

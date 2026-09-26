@@ -572,8 +572,8 @@ def score_tilt_image_rows(
     hypothesis row is scored against each of its particle's images, visited in slot order,
     with that image's projection ``Aproj_i R`` (``project_slot``) and its own phases, and the
     image's diff2 is added to the row's float32 running sum: RELION initialises the weights
-    to zero and every image's kernel adds its ``diff2 + initial`` (acc_ml_optimiser_impl.h:2229-2230
-    and the ``img_id`` loop from :2282; diff2.cuh:549-554). The minimum, weights and
+    to zero and every image's kernel adds its ``diff2 + initial`` (acc_ml_optimiser_impl.h:1437-1438
+    and the ``img_id`` loop from :1490; diff2.cuh:323-328). The minimum, weights and
     significance then see only the per-particle sums.
     """
 
