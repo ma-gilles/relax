@@ -345,9 +345,8 @@ def _run_local_search_iteration(
         and int(current_size) < int(experiment_dataset.image_shape[0])
     ):
         # The device-resident local pass 2 (T12), and RELION's pass-1 parent
-        # probe on the same stages (score-only: significant samples, no M-step).
-        # A probe with a maximum_significants cap is refused below and runs on
-        # the exact local engine, which applies the cap.
+        # probe on the same stages (score-only: significant samples, including
+        # RELION's maximum_significants cap, no M-step).
         logger.info(
             "%s: running the device-resident local %s "
             "(image_batch_size=%d and rotation_block_size=%d are unused by this path; "

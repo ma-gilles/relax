@@ -19,17 +19,15 @@ all-data iteration runs (``iteration_loop.py`` reaches it through the same
 back silently, because a silent fallback would make a measured comparison
 meaningless.
 
-The pass-1 parent probe deliberately stays on the exact local engine
---------------------------------------------------------------------
-The probe selects pass 2's candidate set. It applies RELION's
-``maximum_significants`` cap (500 by default, ``apply_max_significants_to_support=True``
-in ``half_scoring``) on top of the 0.999 adaptive fraction, through
-``oversampling._find_significant_mask_full_sort`` in float64. The segmented
-float32 posterior kernel (T7) implements the adaptive fraction only and has no
-cap, so a resident probe would select a *different* support. That would change
-pass 2's candidate set and make every pass-2 number incomparable, so the probe
-is left where it is and only the expensive pass is moved. Lifting this needs a
-capped segmented significance kernel, which is not part of this ticket.
+The pass-1 parent probe
+-----------------------
+``score_only`` with ``return_reconstruction_sample_indices`` runs RELION's local
+pass 1 on the same stages (:func:`_run_resident_parent_probe`): score-only
+operands, the segmented float32 posterior with the adaptive fraction and
+RELION's ``maximum_significants`` cap (:func:`_cap_significant_samples`), and
+per-image significant samples in the exact engine's convention; no M-step.
+``RELAX_LOCAL_PARENT_PROBE_RESIDENT=0`` keeps the probe on the exact engine for
+A/B checks (a transitional switch, removed with the exact local engine).
 
 Semantics that differ from the exact local engine, deliberately and measurably
 ------------------------------------------------------------------------------
@@ -334,14 +332,6 @@ def _require_parent_probe_configuration(**kwargs) -> None:
     _require(
         bool(kwargs["return_reconstruction_sample_indices"]),
         "a score-only local pass is the parent probe, which returns its significant samples",
-    )
-    # The probe keeps RELION's adaptive-fraction support; the segmented float32
-    # posterior has no maximum_significants cap, and RELION's default (--maxsig
-    # -1, ml_optimiser.cpp:1109) applies none. A cap stays on the exact engine.
-    _require(
-        kwargs["max_significants"] is None or int(kwargs["max_significants"]) <= 0,
-        "a maximum_significants cap on the pass-1 support is not in the segmented "
-        "posterior's contract",
     )
     _require(
         not bool(kwargs["use_float64_scoring"]) and not bool(kwargs["use_float64_projections"]),
@@ -799,6 +789,7 @@ def compute_local_search_resident(
             return_significant_counts=return_significant_counts,
             return_profile=return_profile,
             overall_t0=overall_t0,
+            max_significants=-1 if max_significants is None else int(max_significants),
         )
 
     # ---- capacity plan ----------------------------------------------------
@@ -1178,6 +1169,35 @@ def _prepare_chunk_score_operands(
     }
 
 
+def _cap_significant_samples(mask, weights, row_bounds, max_significants: int):
+    """RELION's ``maximum_significants`` cap on one chunk's pass-1 support.
+
+    ``mask`` and ``weights`` are ``[rows, T]`` for the chunk's valid rows, and
+    image ``i`` owns rows ``row_bounds[i]:row_bounds[i + 1]``. Where an image
+    keeps more than ``max_significants`` samples, RELION lowers its count to the
+    cap and takes the weight at that position of the ascending sort as the
+    significant weight (acc_ml_optimiser_impl.h:3256-3263); every sample at or
+    above it stays significant. The weights are the posterior's, whose order is
+    RELION's sort key.
+    """
+
+    cap = int(max_significants)
+    if cap <= 0:
+        return mask
+    mask = np.array(mask, dtype=bool, copy=True)
+    weights = np.asarray(weights)
+    for i in range(len(row_bounds) - 1):
+        rs, re = int(row_bounds[i]), int(row_bounds[i + 1])
+        image_mask = mask[rs:re]
+        if int(np.count_nonzero(image_mask)) <= cap:
+            continue
+        image_weights = weights[rs:re]
+        kept = image_weights[image_mask]
+        significant_weight = np.partition(kept, kept.size - cap)[kept.size - cap]
+        mask[rs:re] = image_mask & (image_weights >= significant_weight)
+    return mask
+
+
 def _run_resident_parent_probe(
     *,
     tables,
@@ -1206,6 +1226,7 @@ def _run_resident_parent_probe(
     return_significant_counts,
     return_profile,
     overall_t0,
+    max_significants=-1,
 ) -> LocalEMResult:
     """RELION's local pass 1 (the adaptive parent probe) on the resident stages.
 
@@ -1346,7 +1367,7 @@ def _run_resident_parent_probe(
             best_cell,
             max_post,
             _probs,
-            _weights,
+            weights,
             _reconstruction_probs,
             mask,
             n_significant,
@@ -1366,6 +1387,15 @@ def _run_resident_parent_probe(
             (mask, best_cell, log_z_out, best_log, max_post, n_significant)
         )
         mask_np = np.asarray(mask_np, dtype=bool).reshape(row_capacity, t)[:n_valid_rows]
+        image_row_start = segment_offsets_np.astype(np.int64)[:n_valid_images] // t
+        if max_significants > 0 and int(np.max(np.asarray(n_sig_np)[:n_valid_images], initial=0)) > max_significants:
+            weights_np = np.asarray(jax.device_get(weights), dtype=np.float32).reshape(row_capacity, t)[:n_valid_rows]
+            row_bounds = np.append(image_row_start, n_valid_rows)
+            mask_np = _cap_significant_samples(mask_np, weights_np, row_bounds, max_significants)
+            n_sig_np = np.array(n_sig_np, copy=True)
+            n_sig_np[:n_valid_images] = np.add.reduceat(
+                mask_np.sum(axis=1), image_row_start
+            ) if n_valid_rows else 0
         rows, cols = np.nonzero(mask_np)
         posterior_ids = host_chunk["row_posterior_id"][:n_valid_rows].astype(np.int64)
         sample_ids = posterior_ids[rows] * np.int64(t) + cols.astype(np.int64)
@@ -1373,7 +1403,6 @@ def _run_resident_parent_probe(
         # np.nonzero is row-major, and an image's rows are contiguous, so each
         # image's samples come out in the exact engine's (row, translation) order.
         bounds = np.searchsorted(row_image, np.arange(n_valid_images + 1))
-        image_row_start = segment_offsets_np.astype(np.int64)[:n_valid_images] // t
         for local in range(n_valid_images):
             image = int(chunk.image_start) + local
             sample_ids_by_image[image] = sample_ids[bounds[local] : bounds[local + 1]]

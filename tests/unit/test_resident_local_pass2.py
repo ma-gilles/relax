@@ -401,7 +401,6 @@ def test_parent_probe_configuration_is_accepted_without_the_mstep_pieces():
     [
         ({"class_log_priors": np.zeros(2)}, "K-class"),
         ({"return_reconstruction_sample_indices": False}, "returns its significant samples"),
-        ({"max_significants": 500}, "maximum_significants cap on the pass-1 support"),
         ({"use_float64_scoring": True}, "float64"),
         ({"relion_exact_score_translation": False}, "translation angles"),
         ({"half_spectrum_scoring": False}, "half-spectrum"),
@@ -415,6 +414,29 @@ def test_parent_probe_gate_names_the_missing_piece(override, expected):
     kwargs.update(override)
     with pytest.raises(NotImplementedError, match=expected):
         rlp.require_resident_local_configuration(**kwargs)
+
+
+def test_parent_probe_accepts_relion_maximum_significants():
+    rlp.require_resident_local_configuration(**dict(_PROBE_KWARGS, max_significants=500))
+
+
+def test_cap_significant_samples_keeps_relions_top_n_per_image():
+    """RELION lowers an image's count to --maxsig and keeps every sample at or above
+    the weight at that position (acc_ml_optimiser_impl.h:3256-3263)."""
+
+    weights = np.array(
+        [[0.40, 0.05], [0.20, 0.20], [0.10, 0.01],   # image 0: rows 0-2
+         [0.90, 0.02], [0.03, 0.01]],               # image 1: rows 3-4
+        dtype=np.float32,
+    )
+    mask = weights >= 0.04  # the adaptive-fraction support
+    capped = rlp._cap_significant_samples(mask, weights, np.array([0, 3, 5]), 3)
+    # image 0 kept 5 > 3: the third largest weight is 0.20, a tie keeps both 0.20 cells
+    assert np.array_equal(capped[:3], np.array([[1, 0], [1, 1], [0, 0]], dtype=bool))
+    # image 1 kept 1 <= 3: unchanged
+    assert np.array_equal(capped[3:], mask[3:])
+    # no cap leaves the support as it is
+    assert rlp._cap_significant_samples(mask, weights, np.array([0, 3, 5]), -1) is mask
 
 
 def test_parent_probe_selection_is_default_on_and_switchable(monkeypatch):
@@ -538,7 +560,7 @@ def _parent_layout(seed=20260919):
     return parent, translations
 
 
-def _run_probe(case, *, resident: bool, monkeypatch):
+def _run_probe(case, *, resident: bool, monkeypatch, max_significants=-1):
     """RELION's pass-1 parent probe through the production dispatch (half_scoring's call)."""
 
     monkeypatch.delenv(rlp.RESIDENT_LOCAL_SEARCH_ENV, raising=False)
@@ -574,7 +596,7 @@ def _run_probe(case, *, resident: bool, monkeypatch):
         disable_adjoint_ctf=True,
         reconstruct_significant_only=True,
         adaptive_fraction=0.999,
-        max_significants=-1,
+        max_significants=max_significants,
         pass2_layout=parent,
         return_reconstruction_sample_indices=True,
         apply_max_significants_to_support=True,
@@ -626,6 +648,25 @@ def test_resident_parent_probe_matches_the_exact_engine(monkeypatch, _resident_l
     # Measured on this fixture; the band is the float32 cutoff tie rate.
     assert differing <= max(1, int(0.01 * total)), (differing, total)
     assert_matches(np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment))
+
+
+@requires_resident_gpu
+def test_resident_parent_probe_applies_relions_maximum_significants(monkeypatch, _resident_local_env):
+    """With --maxsig the resident probe keeps RELION's top-N support like the exact engine."""
+
+    case = _case()
+    cap = 3
+    exact, _ = _run_probe(case, resident=False, monkeypatch=monkeypatch, max_significants=cap)
+    resident, _ = _run_probe(case, resident=True, monkeypatch=monkeypatch, max_significants=cap)
+    exact_ids = exact.profile_summary["reconstruction_sample_indices_by_image"]
+    resident_ids = resident.profile_summary["reconstruction_sample_indices_by_image"]
+    differing = total = 0
+    for a, b in zip(exact_ids, resident_ids, strict=True):
+        assert 1 <= len(b)
+        differing += len(set(np.asarray(a).tolist()) ^ set(np.asarray(b).tolist()))
+        total += len(set(np.asarray(a).tolist()) | set(np.asarray(b).tolist()))
+    assert max(len(b) for b in resident_ids) <= cap + 1  # ties at the cap weight may keep one more
+    assert differing <= max(1, int(0.01 * total)), (differing, total)
 
 
 @requires_resident_gpu
