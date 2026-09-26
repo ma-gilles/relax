@@ -1337,8 +1337,17 @@ def _compute_k_class_significance_batched(
             f"{_K1_COARSE_GAUSSIAN_FFI_ENV}=1 and "
             f"{_K1_COARSE_GAUSSIAN_SINCOSF_ENV}=1",
         )
+    # The plain GEMM default reads only the exact operands, so it skips the
+    # generic square operands and generic preprocessing by default too.
+    coarse_gaussian_gemm_plain_default = bool(
+        coarse_gaussian_gemm_macro_requested
+        and exact_coarse_operands_enabled
+        and not _coarse_gaussian_gemm_hybrid_enabled()
+    )
     exact_coarse_skip_generic_operands_requested = (
-        _k1_relion_exact_coarse_skip_generic_operands_enabled()
+        _k1_relion_exact_coarse_skip_generic_operands_enabled(
+            default=coarse_gaussian_gemm_plain_default,
+        )
     )
     exact_coarse_skip_generic_operands_enabled = (
         _resolve_k1_relion_exact_coarse_skip_generic_operands(
@@ -1617,7 +1626,20 @@ def _compute_k_class_significance_batched(
             "with ordinary full scoring, float32 posterior, and no score dumps/class diagnostics"
         )
     exact_compact_preprocess_requested = (
-        _k1_relion_exact_compact_preprocess_enabled()
+        _k1_relion_exact_compact_preprocess_enabled(
+            default=bool(
+                coarse_gaussian_gemm_plain_default
+                and coarse_gaussian_gemm_macro_enabled
+                and not coarse_gaussian_gemm_any_diagnostic
+                and not (
+                    collect_significance
+                    and _significance_debug_dump_matches(
+                        current_size=current_size,
+                        debug_iteration=debug_iteration,
+                    )
+                )
+            ),
+        )
     )
     exact_compact_preprocess_enabled = (
         _resolve_k1_relion_exact_compact_preprocess(
@@ -1634,6 +1656,7 @@ def _compute_k_class_significance_batched(
             ),
             score_mode=score_mode,
             any_diagnostic_requested=coarse_gaussian_gemm_any_diagnostic,
+            coarse_gaussian_gemm_macro_enabled=coarse_gaussian_gemm_macro_enabled,
         )
     )
     if exact_compact_preprocess_enabled and (

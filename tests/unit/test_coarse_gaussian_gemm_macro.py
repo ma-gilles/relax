@@ -151,6 +151,18 @@ def test_exact_compact_preprocess_is_default_off_and_fail_closed(monkeypatch):
                 requested=True,
                 **kwargs,
             )
+    # The plain real-packed GEMM (the default exact-operand scorer) reads only the
+    # exact operands too, so it needs neither the hybrid nor its compact posterior.
+    plain = dict(valid)
+    plain.update(
+        coarse_gaussian_gemm_hybrid_requested=False,
+        coarse_gaussian_gemm_compact_posterior_requested=False,
+    )
+    assert significance._resolve_k1_relion_exact_compact_preprocess(
+        requested=True,
+        coarse_gaussian_gemm_macro_enabled=True,
+        **plain,
+    )
 
 
 def _projection_cache_request_kwargs(**updates):
