@@ -697,6 +697,27 @@ def _class_adaptive_batch_overrides(half, *, plan, cs_for_engine, coarse_cs, coa
     return tuple(overrides)
 
 
+def _host_tau2_volumes(mean_variance, mean_variance_per_half, mean_signal_variance, mean_signal_variance_per_half):
+    """Move the K=1 tau2 volumes to the host, keeping which names share one array."""
+
+    host = {}
+
+    def to_host(value):
+        if value is None or isinstance(value, np.ndarray):
+            return value
+        key = id(value)
+        if key not in host:
+            host[key] = np.asarray(jax.device_get(value))
+        return host[key]
+
+    return (
+        to_host(mean_variance),
+        [to_host(value) for value in mean_variance_per_half],
+        to_host(mean_signal_variance),
+        None if mean_signal_variance_per_half is None else [to_host(value) for value in mean_signal_variance_per_half],
+    )
+
+
 def _with_stable_window_class_history(refine):
     """Run a refinement inside one stable-window class history (resident_pass2)."""
 
@@ -3746,6 +3767,23 @@ def refine_single_volume(
                 "RELION iter-1 CC emulation: tapered post-reconstruction tau2/data-vs-prior "
                 "with ini_high=%.2f A",
                 float(parity.relion_firstiter_ini_high_angstrom),
+            )
+        if not k_class_enabled:
+            # The K=1 tau2 volumes are read again only by the next M-step (the
+            # resident E-step does not use them). Keep them on the host between
+            # uses, as RELION keeps tau2 as a host spectrum: at box 800 the four
+            # float32 volumes are 8 GB of the device floor (GPU census, bigbox
+            # 14480607).
+            (
+                mean_variance,
+                mean_variance_per_half,
+                mean_signal_variance,
+                mean_signal_variance_per_half,
+            ) = _host_tau2_volumes(
+                mean_variance,
+                mean_variance_per_half,
+                mean_signal_variance,
+                mean_signal_variance_per_half,
             )
         _parity_dump.mark_stage(iteration, "recon")
 
