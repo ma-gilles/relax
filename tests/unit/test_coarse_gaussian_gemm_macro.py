@@ -2681,3 +2681,27 @@ def test_coarse_gaussian_gemm_projection_cache_default_budget_is_a_fifth_of_gpu_
     monkeypatch.delenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB", raising=False)
     monkeypatch.setattr(coarse_gaussian_gemm.jax, "local_devices", lambda: [_Gpu()])
     assert coarse_gaussian_gemm._coarse_gaussian_gemm_projection_cache_budget_bytes() == 16 * 1024**3
+
+
+def test_coarse_gaussian_gemm_rotation_block_fits_the_projector_transient_budget():
+    # 10097 10k K=1 auto-refine, HEALPix 3 global pass (bigbox gate 14474702): a 36,864-row
+    # block of 256-px texture projections needs 9.9 GB against the 2 GiB budget.
+    budget = 2 * 1024**3
+    rows = significance._coarse_gaussian_gemm_fit_rotation_block_size(
+        36_864, image_shape=(256, 256), compact_pixel_count=420, budget_bytes=budget
+    )
+    assert 16 <= rows < 36_864 and rows % 16 == 0
+    resources = significance._coarse_gaussian_gemm_resources(
+        rotation_block_size=rows,
+        image_shape=(256, 256),
+        compact_pixel_count=420,
+        budget_bytes=budget,
+    )
+    assert resources.predicted_peak_projection_bytes <= budget
+    # A block that already fits is unchanged, and the split never drops below one row.
+    assert significance._coarse_gaussian_gemm_fit_rotation_block_size(
+        64, image_shape=(256, 256), compact_pixel_count=420, budget_bytes=budget
+    ) == 64
+    assert significance._coarse_gaussian_gemm_fit_rotation_block_size(
+        64, image_shape=(256, 256), compact_pixel_count=420, budget_bytes=1
+    ) == 1

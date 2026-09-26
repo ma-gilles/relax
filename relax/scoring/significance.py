@@ -86,6 +86,8 @@ from relax.scoring.coarse_gaussian_gemm import (
     _coarse_gaussian_gemm_projection_cache_enabled,
     _coarse_gaussian_gemm_projection_cache_stats,
     _coarse_gaussian_gemm_real_cross_enabled,
+    _coarse_gaussian_gemm_fit_rotation_block_size,
+    _coarse_gaussian_gemm_projection_row_bytes,
     _coarse_gaussian_gemm_resources,
     _compute_coarse_gaussian_gemm_hybrid_batch,
     _plan_coarse_gaussian_gemm_projection_cache,
@@ -1760,11 +1762,40 @@ def _compute_k_class_significance_batched(
             )
         coarse_gaussian_powerclass = _relion_cuda_powerclass_highres_xi2_half
         if coarse_gaussian_gemm_macro_enabled:
+            coarse_gaussian_gemm_transient_budget = (
+                _coarse_gaussian_gemm_projected_transient_budget_bytes()
+            )
+            if not coarse_gaussian_gemm_hybrid_requested:
+                # The certified hybrid keeps its source16 blocks; the plain GEMM
+                # splits the rotation axis until the projector transient fits.
+                fitted_block_size = _coarse_gaussian_gemm_fit_rotation_block_size(
+                    int(rotation_block_size),
+                    image_shape=image_shape,
+                    compact_pixel_count=int(square_score_count),
+                    budget_bytes=coarse_gaussian_gemm_transient_budget,
+                )
+                if fitted_block_size != int(rotation_block_size):
+                    logger.info(
+                        "coarse GEMM rotation block %d -> %d rows to fit the %d-byte "
+                        "projector transient budget",
+                        int(rotation_block_size),
+                        fitted_block_size,
+                        coarse_gaussian_gemm_transient_budget,
+                    )
+                    rotation_block_size = fitted_block_size
+                coarse_gaussian_gemm_transient_budget = max(
+                    coarse_gaussian_gemm_transient_budget,
+                    int(rotation_block_size)
+                    * _coarse_gaussian_gemm_projection_row_bytes(
+                        image_shape=image_shape,
+                        compact_pixel_count=int(square_score_count),
+                    ),
+                )
             coarse_gaussian_gemm_resource_estimate = _coarse_gaussian_gemm_resources(
                 rotation_block_size=int(rotation_block_size),
                 image_shape=image_shape,
                 compact_pixel_count=int(square_score_count),
-                budget_bytes=_coarse_gaussian_gemm_projected_transient_budget_bytes(),
+                budget_bytes=coarse_gaussian_gemm_transient_budget,
             )
         if coarse_gaussian_gemm_projection_cache_requested:
             coarse_gaussian_gemm_projection_cache_plan = (

@@ -360,6 +360,51 @@ def _coarse_gaussian_gemm_projection_cache_budget_bytes(
     return int(budget_gb * 1024**3)
 
 
+def _coarse_gaussian_gemm_projection_row_bytes(*, image_shape, compact_pixel_count: int) -> int:
+    """Projector transient per rotation row, as ``_coarse_gaussian_gemm_resources`` counts it."""
+
+    image_height, image_width = (int(value) for value in image_shape)
+    full_count = image_height * (image_width // 2 + 1)
+    compact_count = int(compact_pixel_count)
+    return (
+        full_count * np.dtype(np.complex64).itemsize
+        + compact_count * np.dtype(np.complex64).itemsize
+        + compact_count * np.dtype(np.float32).itemsize
+    )
+
+
+def _coarse_gaussian_gemm_fit_rotation_block_size(
+    requested_rows: int,
+    *,
+    image_shape,
+    compact_pixel_count: int,
+    budget_bytes: int,
+    row_alignment: int = 16,
+) -> int:
+    """Largest rotation block, at most ``requested_rows``, whose projector transient fits the budget.
+
+    Large boxes at fine HEALPix orders would otherwise exceed the transient
+    budget with the caller's block (10097 10k K=1 at HEALPix 3: 9.9 GB for
+    5,000 rows). Blocks only split the rotation axis of one image batch, so
+    every score is unchanged. The block keeps a 16-row alignment when that
+    fits and never drops below one row.
+    """
+
+    requested = operator.index(requested_rows)
+    if requested <= 0:
+        raise ValueError("requested rotation block must be positive")
+    row_bytes = _coarse_gaussian_gemm_projection_row_bytes(
+        image_shape=image_shape,
+        compact_pixel_count=compact_pixel_count,
+    )
+    fit = int(budget_bytes) // row_bytes
+    if fit >= requested:
+        return requested
+    if fit >= row_alignment:
+        return fit // row_alignment * row_alignment
+    return max(1, fit)
+
+
 def _coarse_gaussian_gemm_resources(
     *,
     rotation_block_size: int,
