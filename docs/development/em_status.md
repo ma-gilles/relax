@@ -98,10 +98,15 @@ decaying with radius. RELION's retained mass is 0.999 (14428592), and a float32 
 to 1e-4. By it3 the formula holds to 1e-5. relax loses less because each optics shape class starts from its own zero
 accumulator. Single-optics runs are unaffected. This is not an algorithmic choice and depends on accumulation order, so relax
 does not reproduce it. It also does not explain the S3b final gap: a free run from RELION's it001 (14431963) ends at GT FSC-AUC
-0.8929, where RELION reaches 0.9055 and relax standalone 0.8923. OPEN: that run follows RELION to 1e-3 through it012, and relax's
-ave_Pmax sits 0.003-0.009 below RELION's in the HEALPix 5-7 local-search iterations (one-step replays 14434388). Evidence:
-`/scratch/gpfs/CRYOEM/gilleslab/em_work/multioptics_spa_s3_20260924/s3b_relion_bpref_it1_20260925`,
-`s3b_relion_it1_mass_20260925`, `s3b_freerun_from_it001_20260925`.
+0.8929, where RELION reaches 0.9055 and relax standalone 0.8923. Resolved (2026-09-25): that gap was the exact local
+engine at the full box, which scored the whole half grid. RELION's resolution pointers still cut the corners there
+(ires < image_current_size / 2 + 1), and for optics group 2 (s = 1.12) the corners project inside the model sphere, so
+relax's local scores carried a rotation- and shift-dependent term (RELION ACC dumps at it013: coarse diff2 residual std
+10-11, with the same argmin). The local search now scores RELION's window at the box (window_at_box, as the resident
+drivers). One-step replays from it012: group-2 Pmax correlation 0.59 -> 0.998 (group 1 unchanged, 0.9999); standalone
+S3b GT FSC-AUC 0.9057 (RELION 0.9055, main before the fix 0.8923), relax vs RELION 0.9957 (was 0.9755), 844 s wall
+(job 14451343). Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/multioptics_spa_s3_20260924/s3b_it013_dumps_20260925`,
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/exactlocal_box_20260925`, `s3b_winbox_{ctrl_01fddc2,cand_9c41737}_20260925`.
 
 VDAM K>1 (2026-09-25): relax main 237e76b normalizes sigma2_noise, pdf_class,
 sigma2_offset and ave_Pmax by RELION's retained (significant-pruned) class mass;
