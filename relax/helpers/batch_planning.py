@@ -1329,3 +1329,29 @@ def _estimate_relion_em_batch_sizes(
 
 def _image_backend(ds):
     return getattr(getattr(ds, "image_source", None), "backend", None)
+
+
+def safe_coarse_significance_image_batch_size(
+    requested_image_batch_size: int,
+    *,
+    n_classes: int,
+    n_rotations: int,
+    n_translations: int,
+) -> int:
+    """Cap InitialModel pass-1 batches by their materialized pose tensor.
+
+    The RELION float32 coarse-posterior kernel consumes a dense
+    ``image x class x rotation x translation`` tensor.  VDAM can increase its
+    coarse Healpix order late in a run, so a batch that was safe on the
+    previous iteration can otherwise become several times larger without any
+    change to the user-selected image batch size.  Splitting only the image
+    axis leaves every particle's score and reduction order unchanged.
+    """
+
+    requested = max(1, int(requested_image_batch_size))
+    poses_per_image = max(
+        1,
+        int(n_classes) * int(n_rotations) * int(n_translations),
+    )
+    pose_tensor_cap = max(1, RELION_SCORE_TENSOR_FLOAT_BUDGET // poses_per_image)
+    return min(requested, pose_tensor_cap)

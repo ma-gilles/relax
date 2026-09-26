@@ -17,11 +17,7 @@ pytestmark = pytest.mark.unit
 
 def _calls(module, name):
     tree = ast.parse(inspect.getsource(module))
-    return [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == name
-    ]
+    return [node for node in ast.walk(tree) if isinstance(node, ast.Call) and getattr(node.func, "id", None) == name]
 
 
 def _passes_true(call, keyword="window_at_box"):

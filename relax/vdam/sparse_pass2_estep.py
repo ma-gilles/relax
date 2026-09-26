@@ -28,6 +28,9 @@ from relax.diagnostics.initial_model_capture import (
     _maybe_dump_k_class_statistics,
 )
 from relax.helpers.batch_planning import RELION_SCORE_TENSOR_FLOAT_BUDGET
+from relax.helpers.batch_planning import (
+    safe_coarse_significance_image_batch_size as _safe_coarse_significance_image_batch_size,
+)
 from relax.helpers.convergence import healpix_angular_step
 from relax.helpers.preprocessing import uses_relion_cuda_image_preprocessing
 from relax.helpers.resolution import compute_coarse_image_size
@@ -85,32 +88,6 @@ _UNIFY_LOCAL_BUCKET_SIZES_ENV = "RELAX_INITIAL_MODEL_UNIFY_LOCAL_BUCKET_SIZES"
 
 
 _RELION_F32_COARSE_TIE_ULPS_ENV = "RELAX_INITIAL_MODEL_RELION_F32_COARSE_TIE_ULPS"
-
-
-def _safe_coarse_significance_image_batch_size(
-    requested_image_batch_size: int,
-    *,
-    n_classes: int,
-    n_rotations: int,
-    n_translations: int,
-) -> int:
-    """Cap InitialModel pass-1 batches by their materialized pose tensor.
-
-    The RELION float32 coarse-posterior kernel consumes a dense
-    ``image x class x rotation x translation`` tensor.  VDAM can increase its
-    coarse Healpix order late in a run, so a batch that was safe on the
-    previous iteration can otherwise become several times larger without any
-    change to the user-selected image batch size.  Splitting only the image
-    axis leaves every particle's score and reduction order unchanged.
-    """
-
-    requested = max(1, int(requested_image_batch_size))
-    poses_per_image = max(
-        1,
-        int(n_classes) * int(n_rotations) * int(n_translations),
-    )
-    pose_tensor_cap = max(1, RELION_SCORE_TENSOR_FLOAT_BUDGET // poses_per_image)
-    return min(requested, pose_tensor_cap)
 
 
 def _env_enabled(name: str, *, default: bool = False) -> bool:
@@ -843,9 +820,7 @@ def _run_sparse_pass2_initial_model_estep(
                 image_batch_size=config.image_batch_size,
                 rotation_block_size=config.rotation_block_size,
                 current_size=group_kwargs.get("current_size"),
-                # RELION's resolution pointers cut the corners at the full box in VDAM as in
-                # auto-refine (updateImageSizeAndResolutionPointers, ml_optimiser.cpp:5784-5793, and
-                # precalculateShiftedImagesCtfsAndInvSigma2s :6841-6880, neither depending on do_grad).
+                # RELION's window at the box too (ml_optimiser.cpp:5784-5793, :6841-6880; no do_grad branch).
                 window_at_box=True,
                 accumulate_noise=True,
                 projection_padding_factor=int(group_kwargs.get("projection_padding_factor", 1)),
