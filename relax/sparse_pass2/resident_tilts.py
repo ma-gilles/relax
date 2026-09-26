@@ -21,6 +21,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.refinement import tomo_particles
+from relax.sparse_pass2.sparse_pass2_wavg import weighted_image_power_from_shells
 
 
 class ChunkTiltLayout(NamedTuple):
@@ -255,6 +256,15 @@ def run_tilt_chunk(
         exact_positions=exact_positions_device,
         image_shape=image_shape,
     )
+    # Each chunk image's unshifted Wavg window (the resident operands keep only that window of the
+    # image); the slot views translate it with each image's own phases.
+    from relax.sparse_pass2.resident_operands import _gather_rows
+
+    chunk_wavg_window = _gather_rows(
+        resident_operands.wavg_image_rect,
+        jnp.asarray(np.maximum(image_slots, 0), dtype=jnp.int32),
+        jnp.asarray(image_slots >= 0),
+    )
     noise_scale = np.where(valid_images, np.asarray(tilt.image_noise_scale, dtype=np.float32)[safe_images], 0.0)
     operands = rp._make_chunk_stage_operands(recon, None)._replace(image_noise_scale=jnp.asarray(noise_scale))
 
@@ -354,6 +364,7 @@ def run_tilt_chunk(
         )
         slot_operands = _slot_view(
             operands,
+            chunk_wavg_window,
             slot_images,
             angles=slot_angles,
             rect_indices=rect_indices_device,
@@ -460,7 +471,7 @@ def _unit_slot_images(layout: ChunkTiltLayout, *, unit_capacity: int, slot_capac
     return np.where(slots < counts[None, :], first[None, :] + slots, -1).astype(np.int64)
 
 
-def _slot_view(operands, slot_images, *, angles, rect_indices, exact_positions, image_shape):
+def _slot_view(operands, wavg_window, slot_images, *, angles, rect_indices, exact_positions, image_shape):
     """The chunk operands of one image slot, one image per unit (``slot_images``, -1 padded).
 
     Padded units read the first image with every array zeroed, except ``scale`` (1) and ``group_ids``
@@ -469,7 +480,7 @@ def _slot_view(operands, slot_images, *, angles, rect_indices, exact_positions, 
     """
 
     from relax.sparse_pass2.resident_operands import _gather_rows
-    from relax.sparse_pass2.sparse_pass2_wavg import _relion_cuda_translate_wavg_norm_images
+    from relax.sparse_pass2.sparse_pass2_wavg import relion_cuda_translate_wavg_norm_window
 
     slot_images = np.asarray(slot_images, dtype=np.int64)
     valid = jnp.asarray(slot_images >= 0)
@@ -478,10 +489,10 @@ def _slot_view(operands, slot_images, *, angles, rect_indices, exact_positions, 
     def take(values, fill=0):
         return _gather_rows(values, safe, valid, fill=fill)
 
-    processed = take(operands.processed_image_half)
+    window = take(wavg_window)
     translated = jax.lax.map(
-        lambda pair: _relion_cuda_translate_wavg_norm_images(pair[0][None], pair[1], rect_indices, image_shape)[0],
-        (processed, jnp.asarray(angles, dtype=jnp.float32)),
+        lambda pair: relion_cuda_translate_wavg_norm_window(pair[0][None], pair[1], rect_indices, image_shape)[0],
+        (window, jnp.asarray(angles, dtype=jnp.float32)),
     )
     translated = jnp.where(valid[:, None, None], translated, jnp.zeros((), translated.dtype))
     return operands._replace(
@@ -494,7 +505,7 @@ def _slot_view(operands, slot_images, *, angles, rect_indices, exact_positions, 
         noise_image=take(operands.noise_image),
         ctf2_over_nv_recon=take(operands.ctf2_over_nv_recon),
         direct_ctf_rfloat_recon=take(operands.direct_ctf_rfloat_recon),
-        processed_image_half=processed,
+        image_power_shells=take(operands.image_power_shells),
         relion_norm_high_shell=take(operands.relion_norm_high_shell),
         raw_translated_wavg_rectangle=translated,
         raw_translated_wavg_for_atomic=translated[:, :, jnp.asarray(exact_positions, dtype=jnp.int32)],
@@ -601,16 +612,13 @@ def accumulate_tilt_chunk_terms(
     # --- 3. image power: each image with its particle's mass / n_images ----
     safe_unit = jnp.minimum(image_unit_local, jnp.int32(unit_capacity - 1))
     image_mass = jnp.where(valid_image, unit_mass[safe_unit] * scale, jnp.zeros((), unit_mass.dtype))
-    weighted_img_shells, weighted_img_per_image = rp._weighted_image_power_shells_and_per_image_core(
-        operands.processed_image_half,
-        tables.shell_indices_half,
+    weighted_img_shells, weighted_img_per_image = weighted_image_power_from_shells(
+        operands.image_power_shells,
         image_mass,
         jnp.where(valid_image, operands.relion_norm_high_shell * scale, 0.0),
         valid_image,
-        shell_count=n_shells,
         norm_unweighted_shell_cutoff=config.norm_unweighted_shell_cutoff,
         include_unweighted_high_shell=config.include_unweighted_high_shell,
-        disable_cuda_binning=config.disable_cuda_binning,
         deterministic_norm_reduction=config.deterministic_norm_reduction,
     )
 
@@ -638,16 +646,13 @@ def accumulate_tilt_chunk_terms(
         residual_per_group, power_per_group = [], []
         for group in range(n_optics_groups):
             in_group = valid_image & (image_optics == group)
-            group_img_shells, _ = rp._weighted_image_power_shells_and_per_image_core(
-                operands.processed_image_half,
-                tables.shell_indices_half,
+            group_img_shells, _ = weighted_image_power_from_shells(
+                operands.image_power_shells,
                 jnp.where(in_group, image_mass, jnp.zeros((), image_mass.dtype)),
                 jnp.where(in_group, operands.relion_norm_high_shell * scale, 0.0),
                 in_group,
-                shell_count=n_shells,
                 norm_unweighted_shell_cutoff=config.norm_unweighted_shell_cutoff,
                 include_unweighted_high_shell=config.include_unweighted_high_shell,
-                disable_cuda_binning=config.disable_cuda_binning,
                 deterministic_norm_reduction=config.deterministic_norm_reduction,
             )
             group_residual, group_power = rp._replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
