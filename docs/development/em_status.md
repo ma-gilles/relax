@@ -100,6 +100,14 @@ through iteration 6. Also OPEN: a coarse window strictly between
 sphere. Only the fused coarse scorer, the global default, reproduces it. The
 non-fused coarse projection and the local parent pass refuse it.
 
+OPEN (2026-09-26): K=1 auto-refine caps the coarse HEALPix order at 7 when `--max_healpix_order` is not given
+(`scripts/run_full_refinement.py::_resolve_effective_max_healpix_order`). RELION has no such cap: its fine-enough test (angular
+step below 0.75 acc_rot, ml_optimiser.cpp:9812-9818 at f2c1a38) ends the refinement, and the S1 subtomogram fixture's RELION run
+reaches order 9. The cap came with the first RELION-parity loop in recovar (604f7c605, 2026-04-02: `max_healpix_order: int = 7`,
+"finest allowed level") and has no recorded memory or engine reason; the local engines already take high-order rotation ids
+(tests/unit/test_local_high_order_rotation_ids.py). Subtomogram runs are uncapped (relax 3650035, where the cap stalled the S1
+standalone at order 7 for 30 iterations). SPA keeps 7 until the engine owners confirm order 8+ on the resident local search.
+
 RELION float32 BPref accumulation band (2026-09-25, not reproduced; lead decision). RELION's GPU backprojector adds every
 particle of a half into one float32 volume with `atomicAdd` (acc/acc_backprojector.h:41; acc/cuda/cuda_kernels/BP.cuh:157-169)
 and reads it back once per iteration (ml_optimiser_mpi.cpp:1719). At iteration 1, when posteriors are broad, the rounding drops
