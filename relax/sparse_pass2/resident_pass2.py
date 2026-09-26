@@ -613,12 +613,17 @@ def _cap_image_capacity_ladder(
 
     A chunk materializes three ``(images, T, P)`` complex64 tiles: the
     reconstruction operand, the noise operand and RELION's Wavg rectangle.
+    When no class fits, the chunk holds the largest power of two of images
+    that does (at least one), as RELION translates one particle's images at a
+    time; keeping the smallest class instead ran EMPIAR-10202 iteration 13
+    (148 translations, 132095 pixels, 469 MiB per image against a 1.5 GiB
+    budget) out of memory with 32-image tiles (14460403).
     """
 
     per_image = max(int(n_fine_trans), 1) * max(int(n_recon_pixels), 1) * 8 * 3
     cap = max(int(max_tile_bytes) // max(per_image, 1), 1)
     kept = tuple(value for value in ladder if int(value) <= cap)
-    return kept if kept else (int(ladder[0]),)
+    return kept if kept else (1 << (int(cap).bit_length() - 1),)
 
 
 # ---------------------------------------------------------------------------

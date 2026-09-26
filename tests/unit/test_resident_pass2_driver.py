@@ -469,10 +469,18 @@ def test_image_capacity_ladder_is_capped_by_the_translation_tile_budget():
     )
     assert ladder and list(ladder) == sorted(ladder)
     assert max(ladder) <= 512
-    # A budget that fits nothing still leaves the smallest class so a plan exists.
+    # A budget below the smallest class plans the largest power of two of images
+    # that fits, at least one (10202 it13, 14460403: 32-image tiles ran out of memory).
     assert rp._cap_image_capacity_ladder(
         (32, 128, 512), n_fine_trans=100, n_recon_pixels=4324, max_tile_bytes=1
-    ) == (32,)
+    ) == (1,)
+    per_image = 148 * 132095 * 8 * 3
+    assert rp._cap_image_capacity_ladder(
+        (32, 128, 512), n_fine_trans=148, n_recon_pixels=132095, max_tile_bytes=int(0.02 * 76e9)
+    ) == (2,)
+    assert rp._cap_image_capacity_ladder(
+        (32, 128, 512), n_fine_trans=148, n_recon_pixels=132095, max_tile_bytes=31 * per_image
+    ) == (16,)
 
 
 def test_driver_is_the_default_and_the_flag_switches_it_off(monkeypatch):
