@@ -3010,12 +3010,15 @@ def compute_pass2_stats_resident(
     reconstruction_image_radius=None,
     reconstruction_group_ids=None,
     reconstruction_group_count=None,
+    tilt=None,
 ):
     """Device-resident K=1 sparse pass 2; same signature and return as the compact engine.
 
     A one-class :func:`_resident_pass2`. See the module docstring for what is
     layout-equal to the compact engine and what is a deliberate reduction-order
-    change.
+    change. ``tilt`` (:class:`relax.sparse_pass2.resident_tilts.TiltPassInputs`) makes the
+    units subtomogram particles over their tilt images (S4.2); the per-unit outputs are then
+    the particles'.
     """
 
     # Every parameter, forwarded by name: the signature is the compact engine's.
