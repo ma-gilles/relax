@@ -200,3 +200,60 @@ def test_chunk_statistics_per_group_equal_one_group_runs():
         )
         np.testing.assert_allclose(np.asarray(stats.wsum_img_power[g]), np.asarray(one.wsum_img_power), rtol=1e-6)
         np.testing.assert_allclose(float(stats.sumw[g]), float(one.sumw), rtol=1e-12)
+
+
+@pytest.mark.unit
+def test_chunk_statistics_take_the_shell_cutoff_from_the_tables():
+    """A runtime cutoff in the tables gives what the same cutoff baked into the config gives.
+
+    The resident chunk programs are keyed on the physical window class; the
+    logical current size, and with it RELION's powerClass cutoff and the direct
+    noise stop, arrive as a device scalar (resident_pass2._WindowLogicalSizes).
+    """
+
+    capacity, n_rect = 6, 20
+    image_ids = np.array([0, 1, 2, 3, 4, -1], dtype=np.int32)
+    base = np.random.default_rng(5)
+    block_noise_shells = base.normal(size=N_SHELLS)
+    wavg_diff2 = base.uniform(size=(capacity, n_rect)).astype(np.float32)
+
+    def tables(cutoff):
+        return rp._ChunkImageTables(
+            shell_indices_half=make_relion_noise_shell_indices_half(IMAGE_SHAPE),
+            wavg_shell_indices=jnp.asarray(np.arange(n_rect) % N_SHELLS, dtype=jnp.int32),
+            wavg_scale_pixel_mask=jnp.ones(n_rect, dtype=bool),
+            translation_sqdist_ang=None,
+            norm_shell_cutoff=None if cutoff is None else jnp.int32(cutoff),
+        )
+
+    def run(current_size, cutoff):
+        config = resolve_statistics_config(
+            n_shells=N_SHELLS,
+            n_fine_trans=3,
+            n_images=5,
+            n_coarse_rot=4,
+            n_scale_groups=1,
+            current_size=current_size,
+            accumulate_scale=False,
+        )
+        return rp._accumulate_chunk_image_terms(
+            make_resident_statistics(config),
+            _chunk(
+                np.random.default_rng(7),
+                image_ids=image_ids,
+                optics_groups=None,
+                block_noise_shells=block_noise_shells,
+                wavg_diff2=wavg_diff2,
+                capacity=capacity,
+                n_rect=n_rect,
+            ),
+            tables(cutoff),
+            config=config,
+        )
+
+    static = run(4, None)
+    runtime = run(6, 2)
+    for name in ("wsum_sigma2_noise", "wsum_img_power", "norm_correction", "sumw"):
+        assert_matches(np.asarray(getattr(runtime, name)), np.asarray(getattr(static, name)), err_msg=name)
+    # The cutoff matters here: a different one changes the shells.
+    assert not np.allclose(np.asarray(run(6, None).wsum_img_power), np.asarray(static.wsum_img_power))

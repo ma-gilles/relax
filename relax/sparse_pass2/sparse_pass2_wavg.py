@@ -189,10 +189,12 @@ def image_power_shells(processed_half, shell_indices_half, *, shell_count: int):
     return jnp.matmul(pixel_power, one_hot, precision=jax.lax.Precision.HIGHEST)
 
 
+# ``norm_unweighted_shell_cutoff`` is an operand, not a key: a Python int or a
+# traced int32 scalar (the resident engine's logical cutoff); None (an empty
+# pytree) means no cutoff.
 @partial(
     jax.jit,
     static_argnames=(
-        "norm_unweighted_shell_cutoff",
         "include_unweighted_high_shell",
         "deterministic_norm_reduction",
     ),
@@ -203,7 +205,7 @@ def weighted_image_power_from_shells(
     norm_unweighted_high_shell,
     valid_image_mask,
     *,
-    norm_unweighted_shell_cutoff: int | None,
+    norm_unweighted_shell_cutoff: "int | jax.Array | None",
     include_unweighted_high_shell: bool,
     deterministic_norm_reduction: bool,
 ):
@@ -228,7 +230,8 @@ def weighted_image_power_from_shells(
     )
     unweighted_shell = None
     if norm_unweighted_shell_cutoff is not None:
-        unweighted_shell = jnp.arange(n_shells) > int(norm_unweighted_shell_cutoff)
+        # A Python int or a traced int32 scalar (the resident engine's logical cutoff).
+        unweighted_shell = jnp.arange(n_shells) > jnp.asarray(norm_unweighted_shell_cutoff, dtype=jnp.int32)
         high_shell_mass = full_mass if include_unweighted_high_shell else jnp.zeros_like(full_mass)
         shell_mass = jnp.where(unweighted_shell[None, :], high_shell_mass[:, None], shell_mass)
     weighted_shells = jnp.sum(power_shells * shell_mass, axis=0)
@@ -1058,7 +1061,7 @@ def _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
     atomic_diff2_per_pixel,
     shell_indices,
     *,
-    exclusive_shell_stop: int,
+    exclusive_shell_stop: "int | jax.Array",
     shell_count: int,
 ):
     """``jax.numpy`` twin of the numpy direct-residual replacement above.
@@ -1098,7 +1101,8 @@ def _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
             "atomic Wavg diff2 must have shape (images, pixels) matching shell indices, got "
             f"{atomic_diff2.shape} and {shells.shape}"
         )
-    shell_stop = min(max(0, int(exclusive_shell_stop)), shell_count)
+    # A Python int or a traced int32 scalar (the resident engine's logical stop).
+    shell_stop = jnp.clip(jnp.asarray(exclusive_shell_stop, dtype=jnp.int32), 0, shell_count)
     # Pixels at or above the stop shell are dropped entirely, exactly as the
     # numpy original's ``valid`` mask does, not merely overwritten afterwards.
     covered_shells = jnp.where(shells < shell_stop, shells, jnp.int32(-1))
@@ -1107,7 +1111,7 @@ def _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
         covered_shells,
         shell_count,
     )
-    replaced = jnp.arange(shell_count, dtype=jnp.int32) < jnp.int32(shell_stop)
+    replaced = jnp.arange(shell_count, dtype=jnp.int32) < shell_stop
     return (
         jnp.where(replaced, direct_shells, residual),
         jnp.where(replaced, jnp.float64(0.0), image_power),

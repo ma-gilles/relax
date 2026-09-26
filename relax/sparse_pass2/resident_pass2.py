@@ -995,6 +995,9 @@ class _ChunkImageTables(NamedTuple):
     wavg_shell_indices: jax.Array  # int32 [P_rect]
     wavg_scale_pixel_mask: jax.Array  # bool [P_rect]; [K, P_rect] with K>1 classes
     translation_sqdist_ang: jax.Array | None  # real [T] or [C_B, T] or None
+    # RELION's powerClass cutoff (current_size // 2) as a device scalar; None
+    # takes the config's. Its direct-noise stop is the next shell.
+    norm_shell_cutoff: jax.Array | None = None  # int32 []
 
 
 @partial(jax.jit, static_argnames=("config",))
@@ -1015,6 +1018,11 @@ def _accumulate_chunk_image_terms(
     n_shells = int(config.n_shells)
     n_fine_trans = int(config.n_fine_trans)
     image_capacity = int(operands.image_ids.shape[0])
+    norm_shell_cutoff = config.norm_unweighted_shell_cutoff
+    direct_noise_shell_stop = config.direct_noise_exclusive_shell_stop
+    if norm_shell_cutoff is not None and tables.norm_shell_cutoff is not None:
+        norm_shell_cutoff = tables.norm_shell_cutoff
+        direct_noise_shell_stop = tables.norm_shell_cutoff + 1
 
     probs = operands.row_posterior
     row_image = jnp.asarray(operands.row_image_local, dtype=jnp.int32)
@@ -1048,7 +1056,7 @@ def _accumulate_chunk_image_terms(
         support_mass,
         operands.relion_norm_high_shell,
         valid_image,
-        norm_unweighted_shell_cutoff=config.norm_unweighted_shell_cutoff,
+        norm_unweighted_shell_cutoff=norm_shell_cutoff,
         include_unweighted_high_shell=config.include_unweighted_high_shell,
         deterministic_norm_reduction=config.deterministic_norm_reduction,
     )
@@ -1069,7 +1077,7 @@ def _accumulate_chunk_image_terms(
                 weighted_img_shells.astype(jnp.float64),
                 operands.wavg_triplet_pixels[:, :, 2],
                 tables.wavg_shell_indices,
-                exclusive_shell_stop=int(config.direct_noise_exclusive_shell_stop),
+                exclusive_shell_stop=direct_noise_shell_stop,
                 shell_count=n_shells,
             )
         )
@@ -1083,7 +1091,7 @@ def _accumulate_chunk_image_terms(
                 jnp.where(in_group, support_mass, jnp.zeros((), support_mass.dtype)),
                 operands.relion_norm_high_shell,
                 in_group,
-                norm_unweighted_shell_cutoff=config.norm_unweighted_shell_cutoff,
+                norm_unweighted_shell_cutoff=norm_shell_cutoff,
                 include_unweighted_high_shell=config.include_unweighted_high_shell,
                 deterministic_norm_reduction=config.deterministic_norm_reduction,
             )
@@ -1092,7 +1100,7 @@ def _accumulate_chunk_image_terms(
                 group_img_shells.astype(jnp.float64),
                 jnp.where(in_group[:, None], operands.wavg_triplet_pixels[:, :, 2], jnp.float32(0.0)),
                 tables.wavg_shell_indices,
-                exclusive_shell_stop=int(config.direct_noise_exclusive_shell_stop),
+                exclusive_shell_stop=direct_noise_shell_stop,
                 shell_count=n_shells,
             )
             residual_per_group.append(group_residual)
@@ -2390,6 +2398,12 @@ def _resident_pass2(
         wavg_scale_pixel_mask=jnp.asarray(scale_pixel_mask_rect_np, dtype=bool),
         translation_sqdist_ang=None,
     )
+    window_logical = _window_logical_sizes(
+        current_size=current_size,
+        recon_pixels=n_recon_windowed,
+        rect_pixels=n_rect,
+        place=_PLACE_ON_DEVICE,
+    )
 
     # One x-half BPref pair per accumulator slot: RELION's BPref[iclass], and for
     # VDAM's pseudo-halfsets BPref[iclass + half * nr_classes].
@@ -2516,6 +2530,7 @@ def _resident_pass2(
                                 relion_x_half_recon_indices=relion_x_half_recon_indices,
                                 image_tables=image_tables,
                                 coarse_reuse=coarse_reuse,
+                                window_logical=window_logical,
                             ),
                             carry=(Ft_y_total, Ft_ctf_total, stats),
                             translation_angles=jnp.asarray(
@@ -2666,6 +2681,7 @@ def _resident_pass2(
         Ft_y_total, Ft_ctf_total, stats = _run_resident_chunk(
             chunk,
             tables=tables,
+            window_logical=window_logical,
             experiment_dataset=experiment_dataset,
             bucket_io_kwargs=bucket_io_kwargs,
             half_weights=jnp.asarray(half_weights_windowed),
@@ -3957,6 +3973,7 @@ def _make_chunk_stage_tables(
     image_tables,
     cache_slot_fine_rot=None,
     coarse_reuse=None,
+    window_logical=None,
 ) -> _ChunkStageTables:
     """Assemble the iteration-global tables every chunk of a half reads.
 
@@ -3987,6 +4004,7 @@ def _make_chunk_stage_tables(
         wavg_scale_pixel_mask=image_tables.wavg_scale_pixel_mask,
         cache_slot_fine_rot=cache_slot_fine_rot,
         coarse_reuse=coarse_reuse,
+        window_logical=window_logical,
     )
 
 
@@ -4724,6 +4742,28 @@ class _CoarseNormalizationReuse(NamedTuple):
     winner_cell: jax.Array  # int64 [image capacity], segment-relative r_local * T + t
 
 
+class _WindowLogicalSizes(NamedTuple):
+    """RELION's exact window sizes as device scalars, not program keys.
+
+    The chunk programs are keyed on the physical pixel capacities in
+    :class:`_ChunkProgramSpec`; the logical current size and pixel counts the
+    kernels stop at and the statistics cut at travel here, so a program is
+    reused across the current sizes that share one physical class.
+    """
+
+    current_size: jax.Array  # int32 []
+    recon_pixels: jax.Array  # int32 [], the logical prefix of the recon window
+    rect_pixels: jax.Array  # int32 [], the logical prefix of the Wavg rectangle
+
+
+def _window_logical_sizes(*, current_size, recon_pixels, rect_pixels, place) -> _WindowLogicalSizes:
+    return _WindowLogicalSizes(
+        current_size=place.scalar(int(current_size), jnp.int32),
+        recon_pixels=place.scalar(int(recon_pixels), jnp.int32),
+        rect_pixels=place.scalar(int(rect_pixels), jnp.int32),
+    )
+
+
 class _ChunkStageTables(NamedTuple):
     """Iteration-global device tables every chunk of a half reads."""
 
@@ -4750,6 +4790,8 @@ class _ChunkStageTables(NamedTuple):
     cache_slot_fine_rot: jax.Array | None = None
     # Zero oversampling only: the retained coarse normalization (None otherwise).
     coarse_reuse: _CoarseNormalizationReuse | None = None
+    # The logical window sizes; None takes the spec's (logical == physical).
+    window_logical: _WindowLogicalSizes | None = None
 
 
 class _ChunkPosterior(NamedTuple):
@@ -4813,6 +4855,12 @@ def _fold_class_scale_sums(mstep: "_ChunkMstepCarry", class_mask_rect) -> "_Chun
     )
 
 
+def _logical_current_size(tables: _ChunkStageTables, spec: _ChunkProgramSpec):
+    if tables.window_logical is None:
+        return jnp.asarray(spec.current_size, dtype=jnp.int32)
+    return tables.window_logical.current_size
+
+
 def _resident_chunk_posterior(
     rows: _ChunkRowArrays,
     operands: _ChunkStageOperands,
@@ -4864,7 +4912,7 @@ def _resident_chunk_posterior(
         translation_angles=tables.translation_angles,
         full_to_compact=tables.full_to_compact,
         fine_translation_parent=tables.fine_translation_parent,
-        logical_current_size=jnp.asarray(spec.current_size, dtype=jnp.int32),
+        logical_current_size=_logical_current_size(tables, spec),
         row_capacity=row_capacity,
         image_capacity=image_capacity,
         n_fine_trans=n_fine_trans,
@@ -5116,8 +5164,12 @@ def _resident_mstep_block(
     """
 
     proj, proj_abs2, block_mstep_rotations = block_projections
-    logical_recon_pixels = jnp.asarray(spec.n_recon_pixels, dtype=jnp.int32)
-    logical_rect_pixels = jnp.asarray(spec.n_rect, dtype=jnp.int32)
+    if tables.window_logical is None:
+        logical_recon_pixels = jnp.asarray(spec.n_recon_pixels, dtype=jnp.int32)
+        logical_rect_pixels = jnp.asarray(spec.n_rect, dtype=jnp.int32)
+    else:
+        logical_recon_pixels = tables.window_logical.recon_pixels
+        logical_rect_pixels = tables.window_logical.rect_pixels
     block_optics_groups = (
         None if operands.optics_groups is None else operands.optics_groups[block_row_image]
     )
@@ -5656,6 +5708,9 @@ def _resident_chunk_statistics(
         wavg_shell_indices=tables.wavg_shell_indices,
         wavg_scale_pixel_mask=tables.wavg_scale_pixel_mask,
         translation_sqdist_ang=operands.translation_sqdist_ang,
+        norm_shell_cutoff=(
+            None if tables.window_logical is None else tables.window_logical.current_size // 2
+        ),
     )
     best_row_local = posterior.best_cell_index // jnp.int64(int(spec.n_fine_trans))
     slot_is_valid = jnp.arange(int(spec.image_capacity), dtype=jnp.int32) < rows.n_valid_images
@@ -5912,6 +5967,7 @@ def _run_resident_chunk(
     chunk,
     *,
     tables,
+    window_logical=None,
     experiment_dataset,
     bucket_io_kwargs,
     half_weights,
@@ -6141,6 +6197,7 @@ def _run_resident_chunk(
         image_tables=image_tables,
         cache_slot_fine_rot=cache_slot_fine_rot,
         coarse_reuse=coarse_reuse,
+        window_logical=window_logical,
     )
     spec = _make_chunk_program_spec(
         row_capacity=row_capacity,
