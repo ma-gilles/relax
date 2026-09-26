@@ -1093,6 +1093,7 @@ def test_em_parity_long_class3d_hp4_global(tmp_path):
     from recovar.utils import helpers
     from scipy.optimize import linear_sum_assignment
 
+    from relax.helpers.map_io import load_relax_map
     from scripts.fsc_metrics import normalized_fsc_auc, shell_fsc
 
     _assert_parity_ancestors_or_skip()
@@ -1129,7 +1130,10 @@ def test_em_parity_long_class3d_hp4_global(tmp_path):
 
     current_size = int(_read_relion_star_scalar(relion_a / f"run_it{final_iter:03d}_model.star", "_rlnCurrentImageSize"))
     band = current_size // 2
-    relax_maps = [np.asarray(helpers.load_mrc(str(output_dir / f"final_class{k + 1:03d}.mrc")), dtype=np.float64)
+    # relax writes RELION-convention maps; load_relax_map reads them into the frame
+    # load_relion_volume gives RELION's own maps. A plain load_mrc returns the
+    # sign-flipped array (every class came out at FSC -0.99 against RELION).
+    relax_maps = [np.asarray(load_relax_map(output_dir / f"final_class{k + 1:03d}.mrc"), dtype=np.float64)
                   for k in range(n_classes)]
 
     def relion_maps(run):
