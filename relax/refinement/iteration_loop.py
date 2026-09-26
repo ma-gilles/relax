@@ -1224,6 +1224,9 @@ def refine_single_volume(
         relion_has_high_fsc_at_limit = bool(resume.has_high_fsc_at_limit)
         random_perturbation = float(resume.random_perturbation)
         if resume.direction_prior is not None:
+            # The saved order resolves a prior length that is ambiguous under symmetry.
+            saved_orders = [int(resume.extra.get(f"direction_prior_order_half{h + 1}", -1)) for h in range(2)]
+            saved_orders = [None if order < 0 else order for order in saved_orders]
             (
                 global_direction_prior_per_half,
                 global_direction_prior_order_per_half,
@@ -1234,10 +1237,8 @@ def refine_single_volume(
                 n_classes=n_classes,
                 dtype=pose_dtype,
                 log=logger,
-                **({"symmetry": symmetry} if symmetry != "C1" else {}),
+                **({"symmetry": symmetry, "expected_order": saved_orders[0]} if symmetry != "C1" else {}),
             )
-            saved_orders = [int(resume.extra.get(f"direction_prior_order_half{h + 1}", -1)) for h in range(2)]
-            saved_orders = [None if order < 0 else order for order in saved_orders]
             if k_class_enabled:
                 class_direction_prior_order_per_half = saved_orders
             else:
