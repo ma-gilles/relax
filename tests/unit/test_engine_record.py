@@ -111,14 +111,15 @@ def test_the_compact_fallback_warns_with_the_refusal(caplog, _fresh_deprecation_
     assert "compact (bucketed sparse) pass 2 because float64 scoring is a diagnostic mode" in message
 
 
-def test_the_vdam_k1_default_warns_that_it_runs_exact_local(caplog, _fresh_deprecation_warnings):
-    from types import SimpleNamespace
+def test_the_vdam_exact_local_route_warns_once(caplog, _fresh_deprecation_warnings):
+    """``run_local_k_class_em`` is the VDAM exact-local E-step; it warns before any work."""
 
-    from relax.vdam.dense_adapter import _run_vdam_pass2_route
+    from relax.classification.k_class import run_local_k_class_em
 
     caplog.set_level("WARNING", logger="relax.sparse_pass2.engine_record")
     for _ in range(2):
-        result = _run_vdam_pass2_route("auto", 1, None, lambda: SimpleNamespace(meta={}))
-        assert result.meta["pass2_engines"] == ["global:local"]
+        # A rejected keyword stops the call right after the warning, before any device work.
+        with pytest.raises(ValueError, match="controls these arguments directly"):
+            run_local_k_class_em(None, None, None, None, "linear_interp", normalization_log_z=None)
     (message,) = _deprecation_messages(caplog)
-    assert "VDAM exact-local E-step" in message and "--pass2_engine auto selects it for K=1" in message
+    assert "VDAM exact-local E-step" in message and "--pass2_engine auto at K=1" in message

@@ -1,11 +1,8 @@
 """Sparse pass-2 E-step of the native InitialModel driver.
 
-DEPRECATED: to be removed once the resident engine covers VDAM K=1 at no more wall than this
-route (the VDAM speed gate); see em_status 'One engine' TODO.
-
-The RELION-style coarse-then-local pass 2 for InitialModel: its environment
-switches, pass-2 layout, coarse-diagnostic scopes, the run itself and its
-metadata/profile summaries. ``dense_adapter`` routes to it.
+The RELION-style coarse-then-local pass 2 for InitialModel: its environment switches, pass-2 layout,
+coarse-diagnostic scopes, the run itself and its metadata/profile summaries. ``dense_adapter`` routes to it.
+DEPRECATED: to be removed once the resident engine covers VDAM K=1 (speed gate); see em_status 'One engine' TODO.
 """
 
 from __future__ import annotations

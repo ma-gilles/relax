@@ -22,11 +22,7 @@ from relax.helpers.orientation_priors import (
     relion_sigma_offset_prior_center,
 )
 from relax.relion import relion_projector_setup
-from relax.sparse_pass2.engine_record import (
-    record_pass_engine,
-    take_pass_engines,
-    warn_deprecated_engine,
-)
+from relax.sparse_pass2.engine_record import record_pass_engine, take_pass_engines, warn_deprecated_engine
 from relax.vdam import native_sampling
 from relax.vdam.adaptive_estep import run_adaptive_initial_model_estep
 from relax.vdam.estep_common import (
@@ -99,11 +95,6 @@ def _run_vdam_pass2_route(pass2_engine: str, n_classes: int, run_adaptive, run_l
             route = "local"
             result = run_local()
     else:
-        warn_deprecated_engine(
-            "local",
-            "global",
-            "--pass2_engine local selects it" if explicit else f"--pass2_engine auto selects it for K={int(n_classes)}",
-        )
         record_pass_engine("global", "local")
         result = run_local()
     result.meta["pass2_engine"] = route
@@ -695,8 +686,6 @@ def run_dense_initial_model_estep(
         return _run_vdam_pass2_route(config.pass2_engine, int(state.K), run_adaptive, run_local)
 
     # Sparse execution constructs its own coarse/local rotation operands.
-    # DEPRECATED route (dense run_em): to be removed with the dense engine; see em_status
-    # 'One engine' TODO.
     warn_deprecated_engine("dense", "global", "RELAX_DISABLE_SPARSE_PASS2 selects the dense VDAM E-step")
     if config.rotations is None:
         raise ValueError("Dense execution requires materialized rotations")

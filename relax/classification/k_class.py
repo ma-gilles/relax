@@ -2411,6 +2411,7 @@ def run_local_k_class_em(
     zero oversampling) and, for K>1, remain the reference the segmented pass is
     tested against.
     """
+    warn_deprecated_engine("local", "global", "the VDAM exact-local E-step (--pass2_engine auto at K=1, or local)")
 
     _reject_kwargs(
         engine_kwargs,
