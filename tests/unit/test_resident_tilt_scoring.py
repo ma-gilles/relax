@@ -20,7 +20,7 @@ from relax.sparse_pass2 import resident_scoring
 pytestmark = pytest.mark.unit
 
 
-def _fake_kernel(reference, row_image_ids, image, angles, weight, full_to_compact, current_size, initial):
+def _fake_kernel(reference, row_image_ids, image, angles, weight, full_to_compact, current_size, initial, translation_chunk_live=None):
     # Additions only, so compiled and eager evaluation round alike (no fused multiply-add).
     angles, initial = jnp.asarray(angles), jnp.asarray(initial)
     safe = jnp.where(row_image_ids >= 0, row_image_ids, 0)
