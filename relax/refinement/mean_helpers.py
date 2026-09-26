@@ -800,15 +800,50 @@ def _reconstruct_volume_eager(
                 "A retained device numerator is only valid for the crop branch of the "
                 "large host-staged RELION reconstruction path"
             )
-        fftw_half_device = relion_functions.post_process_from_filter_v2(
-            *postprocess_args,
-            **postprocess_kwargs,
-            input_half_volume=True,
-            return_fftw_half_before_ifft=True,
-        )
-        fftw_half_device.block_until_ready()
-        fftw_half_host = np.asarray(jax.device_get(fftw_half_device))
-        del fftw_half_device
+        if relion_functions._large_grid_postprocess_is_physically_large(
+            int(np.prod(accumulator_shape)),
+        ):
+            # A physically large accumulator that is still smaller than the
+            # inverse-FFT grid (EMPIAR-10202 from about current size 410: 823^3
+            # to 1163^3 against 1600^3) returns its Wiener half before the pad,
+            # and the pad into the 16.4-GB FFTW half runs on the host, as RELION
+            # windows its reconstruction on the CPU. Padding on the device built
+            # the zero grid and its scattered copy side by side (32.8 GB live in
+            # the census, bigbox 14468686) on top of the resident state.
+            wiener_half_device = relion_functions.post_process_from_filter_v2(
+                *postprocess_args,
+                **postprocess_kwargs,
+                input_half_volume=True,
+                return_wiener_half_before_window=True,
+            )
+            wiener_half_device.block_until_ready()
+            wiener_half_host = np.asarray(jax.device_get(wiener_half_device))
+            _delete_device_array(wiener_half_device)
+            del wiener_half_device
+            gc.collect()
+            logger.info(
+                "RELION pre-window Wiener half padded on the host: accumulator_shape=%s "
+                "reconstruction_shape=%s",
+                accumulator_shape,
+                reconstruction_shape,
+            )
+            fftw_half_host = _pad_relion_wiener_half_to_fftw_host(
+                wiener_half_host,
+                accumulator_shape,
+                reconstruction_shape,
+                relion_functions,
+            )
+            del wiener_half_host
+        else:
+            fftw_half_device = relion_functions.post_process_from_filter_v2(
+                *postprocess_args,
+                **postprocess_kwargs,
+                input_half_volume=True,
+                return_fftw_half_before_ifft=True,
+            )
+            fftw_half_device.block_until_ready()
+            fftw_half_host = np.asarray(jax.device_get(fftw_half_device))
+            del fftw_half_device
         gc.collect()
 
     explicit_irfft_normalization = _large_irfft_requires_explicit_normalization(
@@ -1510,6 +1545,45 @@ def _crop_relion_wiener_half_to_fftw_host(
     raw_axis_idx = np.fft.ifftshift(centered_axis_idx)
     col_idx = np.arange(reconstruction_shape[-1] // 2 + 1, dtype=np.int32)
     return wiener_half[np.ix_(raw_axis_idx, raw_axis_idx, col_idx)]
+
+
+def _pad_relion_wiener_half_to_fftw_host(
+    wiener_half,
+    accumulator_shape,
+    reconstruction_shape,
+    relion_functions,
+):
+    """Pad a centered packed Wiener half into raw FFTW order on the host.
+
+    The host counterpart of recovar's ``_relion_pad_centered_half_fourier_to_fftw``
+    (the padding branch of ``post_process_from_filter_v2``): the same support
+    sphere is zeroed and the same placement is written, so the result equals the
+    device pad exactly.
+    """
+
+    accumulator_shape = tuple(int(s) for s in accumulator_shape)
+    reconstruction_shape = tuple(int(s) for s in reconstruction_shape)
+    old_dim, new_dim = accumulator_shape[0], reconstruction_shape[0]
+    if len(set(accumulator_shape)) != 1 or len(set(reconstruction_shape)) != 1 or new_dim <= old_dim:
+        raise ValueError(
+            f"host Wiener padding needs cubic shapes with a larger target, got {accumulator_shape} -> "
+            f"{reconstruction_shape}"
+        )
+    old_half_shape = fourier_transform_utils.volume_shape_to_half_volume_shape(accumulator_shape)
+    new_half_shape = fourier_transform_utils.volume_shape_to_half_volume_shape(reconstruction_shape)
+    wiener_half = np.asarray(wiener_half).reshape(old_half_shape)
+    freq = relion_functions._relion_centered_axis_fftw_frequencies(old_dim).astype(np.int64)
+    raw_axis_idx = np.where(freq >= 0, freq, new_dim + freq)
+    col_freq = np.arange(old_half_shape[-1], dtype=np.int64)
+    max_r2 = int(old_half_shape[-1] - 1) ** 2
+    out = np.zeros(new_half_shape, dtype=wiener_half.dtype)
+    freq2 = freq * freq
+    for i0 in range(old_dim):
+        # One plane at a time keeps the support mask small (old_dim^2 x cols).
+        support = (freq2[i0] + freq2[:, None] + (col_freq * col_freq)[None, :]) <= max_r2
+        plane = np.where(support, wiener_half[i0], np.zeros((), dtype=wiener_half.dtype))
+        out[raw_axis_idx[i0][None, None], raw_axis_idx[:, None], col_freq[None, :]] = plane
+    return out
 
 
 def _delete_device_array(value):

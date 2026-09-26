@@ -417,3 +417,22 @@ def test_host_join_threshold_counts_the_physical_grid_of_a_packed_half(monkeypat
     device = regularization_relion.join_halves_at_low_resolution(ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs)
     for h, d in zip(host, device, strict=True):
         np.testing.assert_allclose(np.asarray(h), np.asarray(d), rtol=1e-6, atol=0)
+
+
+@pytest.mark.parametrize("old_dim,new_dim", [(9, 16), (10, 16), (11, 15)])
+def test_host_wiener_pad_equals_the_device_fftw_pad(old_dim, new_dim):
+    """The host pad of a large accumulator's Wiener half (EMPIAR-10202, 823^3-1163^3
+    into 1600^3) must write exactly what recovar's device pad writes."""
+
+    from relax.refinement import mean_helpers
+
+    old_shape, new_shape = (old_dim,) * 3, (new_dim,) * 3
+    half_shape = ftu.volume_shape_to_half_volume_shape(old_shape)
+    rng = np.random.default_rng(old_dim * 100 + new_dim)
+    wiener = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
+    device = np.asarray(rf._relion_pad_centered_half_fourier_to_fftw(jnp.asarray(wiener), old_shape, new_shape))
+    host = mean_helpers._pad_relion_wiener_half_to_fftw_host(wiener, old_shape, new_shape, rf)
+    assert host.dtype == device.dtype and host.shape == device.shape
+    assert_matches(host, device)
+    # Zero pattern (support and placement) is discrete: exact.
+    assert np.array_equal(host == 0, device == 0)
