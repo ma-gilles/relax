@@ -35,7 +35,7 @@ results that happened to be produced.
 
 | Workload | Preserve and measure |
 | --- | --- |
-| Synthetic K1 | Fixed 34-case inventory, including known failures; small cases first, then robustness and completion trajectories |
+| Synthetic K1 | Fixed 34-case inventory, including known failures; small cases first, then robustness and completion trajectories. Reference data lost 2026-09-26 (see `/scratch/gpfs/CRYOEM/gilleslab/em_work/LOSS_AUDIT_20260926.md`): datasets, RELION references and RECOVAR arms are gone and will not be regenerated; the recorded numbers are kept |
 | Synthetic K4 | Exactly four classes, Hungarian matching, every class and iteration, worst class, occupancy/collapse and assignment behavior; required 100k/256 completion pairs |
 | Synthetic K2/K8/K16 | Existing three-seed stress cells, including preferred orientations and unequal class balance; retain per-class results |
 | Real K1 | Fixed EMPIAR-10076 cohort, halfsets, masks, metadata and initialization; autonomous trajectory plus separately labeled fixed-state diagnostics |

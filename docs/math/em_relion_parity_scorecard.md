@@ -13,7 +13,7 @@ The artifact-pinned fixture manifest is checked into the repository and binds al
 
 Acceptance uses shellwise FSC and normalized FSC-AUC, exact schedule/topology, convergence/finalization semantics, same-physical-GPU RELION/RECOVAR pairs, final all-data gridding correction always on (RELION `griddingCorrect`), and no forced K-class-like finalization. Correlation is not computed or gated.
 
-Evidence snapshot: `em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v13`, generated `2026-09-24T13:19:31+00:00`, JSON SHA-256 `2b5f516bbd0d85d0a7eee92baf078287397bd4575d26e15e64c2907a4e17ed6f` (`docs/math/em_k1_full34_superseding_ledger_v13.json`).
+Evidence snapshot: `em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v13`, generated `2026-09-24T13:19:31+00:00`, JSON SHA-256 `b76e50acf6a9e62bc76571a540c70edb7d6fb558ab0024a00a0fc4d84456435c` (`docs/math/em_k1_full34_superseding_ledger_v13.json`).
 K=4 evidence snapshot: `k4-relion-cuda-4181d340-20260725`, JSON SHA-256 `bc10d0555488b22f0bc8d54afe5afc5288064ddb4708bd1c75f3b55dd4c0060a`.
 Progress: +11 passing cases since the first frozen snapshot; +0 since the previous snapshot.
 

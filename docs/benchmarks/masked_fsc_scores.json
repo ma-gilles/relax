@@ -934,7 +934,8 @@
    "gt_masked_band_auc": {
     "relion": 0.7793843871054604,
     "relax": 0.7794533613024369
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k102_ac5177d2_job11385530",
@@ -994,7 +995,8 @@
    "gt_masked_band_auc": {
     "relion": 0.6666109108943906,
     "relax": 0.6665501738805248
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k103_ac5177d2_job11384178",
@@ -1054,7 +1056,8 @@
    "gt_masked_band_auc": {
     "relion": 0.6726379429676582,
     "relax": 0.6725782752630327
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k104_ac5177d2_job11384179",
@@ -1114,7 +1117,8 @@
    "gt_masked_band_auc": {
     "relion": 0.7502453549443261,
     "relax": 0.7502354369615678
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k105_ac5177d2_job11384180",
@@ -1174,7 +1178,8 @@
    "gt_masked_band_auc": {
     "relion": 0.6268854292340487,
     "relax": 0.6270775250805708
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k106_ac5177d2_job11384181",
@@ -1234,7 +1239,8 @@
    "gt_masked_band_auc": {
     "relion": 0.7626480910045975,
     "relax": 0.7626103028264413
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k107_ac5177d2_job11384182",
@@ -1294,7 +1300,8 @@
    "gt_masked_band_auc": {
     "relion": 0.4810027786872849,
     "relax": 0.4988221552912337
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k108_ac5177d2_job11384183",
@@ -1354,7 +1361,8 @@
    "gt_masked_band_auc": {
     "relion": 0.4892201848655454,
     "relax": 0.4892660394290686
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k109_ac5177d2_job11384224",
@@ -1384,7 +1392,8 @@
    "gt_masked_band_auc": {
     "relion": null,
     "relax": null
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k110_ac5177d2_job11384225",
@@ -1414,7 +1423,8 @@
    "gt_masked_band_auc": {
     "relion": null,
     "relax": null
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k111_ac5177d2_job11384186",
@@ -1474,7 +1484,8 @@
    "gt_masked_band_auc": {
     "relion": 0.9465676690332872,
     "relax": 0.9465608695131253
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k112_ac5177d2_job11384187",
@@ -1534,7 +1545,8 @@
    "gt_masked_band_auc": {
     "relion": 0.7550959036280143,
     "relax": 0.755095453438086
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k113_ac5177d2_job11385531",
@@ -1594,7 +1606,8 @@
    "gt_masked_band_auc": {
     "relion": 0.7953520327676131,
     "relax": 0.7953842833998274
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k114_ac5177d2_job11385532",
@@ -1654,7 +1667,8 @@
    "gt_masked_band_auc": {
     "relion": 0.9224026349418324,
     "relax": 0.9223256066402358
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k115_ac5177d2_job11385533",
@@ -1714,7 +1728,8 @@
    "gt_masked_band_auc": {
     "relion": 0.9501466051796957,
     "relax": 0.9501708572613012
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k116_ac5177d2_job11385534",
@@ -1774,7 +1789,8 @@
    "gt_masked_band_auc": {
     "relion": 0.7612300721373076,
     "relax": 0.7612355863379274
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k117_ac5177d2_job11385535",
@@ -1834,7 +1850,8 @@
    "gt_masked_band_auc": {
     "relion": 0.9477219810969212,
     "relax": 0.9477230321421569
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k118_ac5177d2_job11385536",
@@ -1894,7 +1911,8 @@
    "gt_masked_band_auc": {
     "relion": 0.9084631799337652,
     "relax": 0.9085594696024214
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k119_ac5177d2_job11385537",
@@ -1954,7 +1972,8 @@
    "gt_masked_band_auc": {
     "relion": 0.9462062873620024,
     "relax": 0.9462099994844221
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k120_ac5177d2_job11385538",
@@ -2017,7 +2036,8 @@
    "gt_masked_band_auc": {
     "relion": null,
     "relax": null
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k121_ac5177d2_job11385539",
@@ -2077,7 +2097,8 @@
    "gt_masked_band_auc": {
     "relion": 0.8809379064091042,
     "relax": 0.8809351560604667
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k122_ac5177d2_job11385540",
@@ -2137,7 +2158,8 @@
    "gt_masked_band_auc": {
     "relion": 0.6435306758749156,
     "relax": 0.6418071819688257
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k123_ac5177d2_job11385541",
@@ -2197,7 +2219,8 @@
    "gt_masked_band_auc": {
     "relion": 0.8647243109169923,
     "relax": 0.8715969538019659
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k124_ac5177d2_job11385542",
@@ -2257,7 +2280,8 @@
    "gt_masked_band_auc": {
     "relion": 0.8606181739689857,
     "relax": 0.8606652051167376
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k125_ac5177d2_job11385543",
@@ -2317,7 +2341,8 @@
    "gt_masked_band_auc": {
     "relion": 0.927094758794344,
     "relax": 0.9270936268828359
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k126_ac5177d2_job11385544",
@@ -2377,7 +2402,8 @@
    "gt_masked_band_auc": {
     "relion": 0.6653109283329569,
     "relax": 0.6661096086848851
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k127_ac5177d2_job11385545",
@@ -2437,7 +2463,8 @@
    "gt_masked_band_auc": {
     "relion": 0.7767208922371416,
     "relax": 0.7767210806277624
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k128_ac5177d2_job11384203",
@@ -2497,7 +2524,8 @@
    "gt_masked_band_auc": {
     "relion": 0.8680314099572768,
     "relax": 0.8680267345113036
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k129_ac5177d2_job11384204",
@@ -2557,7 +2585,8 @@
    "gt_masked_band_auc": {
     "relion": 0.953005986339769,
     "relax": 0.9530007451270527
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k130_ac5177d2_job11384205",
@@ -2617,7 +2646,8 @@
    "gt_masked_band_auc": {
     "relion": 0.8677554476477516,
     "relax": 0.867755911434662
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k131_ac5177d2_job11384206",
@@ -2677,7 +2707,8 @@
    "gt_masked_band_auc": {
     "relion": 0.9572745345008571,
     "relax": 0.9572476734391026
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k132_ac5177d2_job11384207",
@@ -2737,7 +2768,8 @@
    "gt_masked_band_auc": {
     "relion": 0.7912006598322966,
     "relax": 0.7917415500440261
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k133_ac5177d2_job11384208",
@@ -2797,7 +2829,8 @@
    "gt_masked_band_auc": {
     "relion": 0.9628961012669108,
     "relax": 0.9834974138619939
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "fixed34_k134_ac5177d2_job11384210",
@@ -2857,7 +2890,8 @@
    "gt_masked_band_auc": {
     "relion": 0.5141977223011909,
     "relax": 0.5143328455860703
-   }
+   },
+   "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
   },
   {
    "label": "flipqual_64499e8_k1_50k_relax_compact",

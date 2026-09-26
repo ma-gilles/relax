@@ -42,7 +42,7 @@
     "source_ledger": {
       "schema": "em_k1_gui_grid0_local_highshell_full34_superseding_ledger_v13",
       "generated_utc": "2026-09-24T13:19:31+00:00",
-      "sha256": "2b5f516bbd0d85d0a7eee92baf078287397bd4575d26e15e64c2907a4e17ed6f",
+      "sha256": "b76e50acf6a9e62bc76571a540c70edb7d6fb558ab0024a00a0fc4d84456435c",
       "path": "docs/math/em_k1_full34_superseding_ledger_v13.json"
     }
   },
@@ -321,7 +321,8 @@
           "recovar_refinement_results": "bfca6971c7f387a402f9e05c6d482ab8ee48ab017e2216dd48424fdf142acd8f",
           "relion_final_merged": "07ed62834bf6db2d775e8412a2f2030d6666fd6a2e847ce6bec21025d31bbf5e"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-02",
@@ -376,7 +377,8 @@
           "recovar_refinement_results": "246cf7356ea4490b6499452475f20fbd5448c173ff7e2ae40d45c4f3a43f5d02",
           "relion_final_merged": "bae1b1dcdeabbf8724d4cc1782cb448945d825a3cca0c0d22a0c6af518df6a93"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-03",
@@ -431,7 +433,8 @@
           "recovar_refinement_results": "776b13ff9697819a15a8c169b55391a90266258e74788e232c635ccf5fc887be",
           "relion_final_merged": "6ccbdd40fc9fe7d5806b51cb37f08309153fb08694ad7ee7d788fc785dbe99a5"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-04",
@@ -486,7 +489,8 @@
           "recovar_refinement_results": "2f70acc3f318671fd68c4a472cfec2c5e6c8dd341827cc6f50093c3dd3c8df36",
           "relion_final_merged": "f762777d71be12cc2a3efb5932432481847d9cd61ae3930dc34511320ca5778c"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-05",
@@ -541,7 +545,8 @@
           "recovar_refinement_results": "68a92f07917c7c91d1a835ac5dd3e31a34e1ba998061256dfb9736092d7cc54d",
           "relion_final_merged": "0ece8838920e244c0d68fbe99694d9bccf898296b7c6a5098fedcc947d3e7b18"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-06",
@@ -596,7 +601,8 @@
           "recovar_refinement_results": "da29459cab140eb45d749f8997516617d323edfe5befc3c921e680243d663835",
           "relion_final_merged": "dcdf85fcdb4cac7353e559b552484c4771a566d5bd1946a63bb15c94a471f359"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-07",
@@ -651,7 +657,8 @@
           "recovar_refinement_results": "0478b326fba7469a663ab1002274e5e4687af6bc507a563719c3a3eba58fb9b3",
           "relion_final_merged": "5bfcb6433b357d57ebfecd907152e6a68e0298b4e9adf59dec32b28c5509e484"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-08",
@@ -706,7 +713,8 @@
           "recovar_refinement_results": "e15d49c4979874629b698af83cff0c30028b1d16060d3d7d493f6f6c521ebe88",
           "relion_final_merged": "5e39318f71a1c6f4eb9d58a17dafbd8be2c9038e7027ddc5354c237cd1544139"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-09",
@@ -761,7 +769,8 @@
           "recovar_refinement_results": "95f3852a6710046eff068eb2ebfb02090a6fc036939598b25f08e735322925a7",
           "relion_final_merged": "588e6d9d327f74f5767c073ad325a859884dd5e6208cd61b9e522df4f3371f34"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-10",
@@ -816,7 +825,8 @@
           "recovar_refinement_results": "ddf15c039f626f79c7f75e8a4a42056ddc90ebe7b34210bd6d660645388554b4",
           "relion_final_merged": "a216ee3534022fee3af010d5cbce4c1f851aad76406f8b4c8383689db181b403"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-11",
@@ -871,7 +881,8 @@
           "recovar_refinement_results": "35f6b1808c6b6408d3e4d34bf88b2ebec480afb8272f2f54b6ae52b582021c4a",
           "relion_final_merged": "402dc5e2d69b2b02978c4937682d43ade3a27c6b164c7ce480bb717e267ab949"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-12",
@@ -926,7 +937,8 @@
           "recovar_refinement_results": "3fb3971984eb8ccaa887da26eb6b32be5784ea7cf61ec8f9424d8a6302b2583b",
           "relion_final_merged": "4fdb7db2c6ee84652d54318e1698b4df47597efebf2d3b8a6d4f4b6ef6d21017"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-13",
@@ -981,7 +993,8 @@
           "recovar_refinement_results": "cdabf98c6b5b3fde756de03549517f8c6438d3b5562de52a4c8b95b7d6bb0b76",
           "relion_final_merged": "d2e92f448a4de42d512a3cbf20acc41a8e2ff444563f54f8b05357fba6c6c5a3"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-14",
@@ -1036,7 +1049,8 @@
           "recovar_refinement_results": "b44cb399735fd243b84dfa73be6aaab7d2f6116d44b73f34e840891efa109ed3",
           "relion_final_merged": "5447f1def203c1cd5baeb79e2083f3fd84f8fd5664a5e8d2067d46ebbe89c81f"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-15",
@@ -1091,7 +1105,8 @@
           "recovar_refinement_results": "1ef1f16b3a755edad0d0feb872261cba136bfc3d8f2dd4e0356ed1a8ec2c1eba",
           "relion_final_merged": "b8550e15c00cb250bdc540de058fee144fa10e6bb47218a1e9e47c49c293fc7a"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-16",
@@ -1146,7 +1161,8 @@
           "recovar_refinement_results": "fda0c69bc22e0dd3cfd29b160527814488ce67284dd5865e5bbacfd81e8b3eac",
           "relion_final_merged": "c06396e69f5f58a6ef424c50aabcc2086b792a22076223819303cb0ea2a68979"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-17",
@@ -1201,7 +1217,8 @@
           "recovar_refinement_results": "a858a8b7f09e2d30394659a87cc58d0908900525f6cd61c00c22ff5a76ca9ef3",
           "relion_final_merged": "e3b7ef4e40f240b559556435d7867076f2ead6064f38d78d36731f964fe0db06"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-18",
@@ -1256,7 +1273,8 @@
           "recovar_refinement_results": "d23c1778c50dea6e877e05de7c4c337616e52a0bad5d721d74f71cc91c07887c",
           "relion_final_merged": "6d373a3ee767e6dcfad852e992f71fc715ab880e84ecf9b5d2dbe9a0c62a8d29"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-19",
@@ -1311,7 +1329,8 @@
           "recovar_refinement_results": "469bccad999ed688055fa65c964b5871e2cbea28bf9ada936e0fba368d1e2065",
           "relion_final_merged": "dc11fc16d6b51ea46344f1a8ff1394dfeba2ffd382c9daf719f40cc7c9f92468"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-20",
@@ -1366,7 +1385,8 @@
           "recovar_refinement_results": "82fb05c1dd574357eda81b562faa2e7974eb58b7591ae314fbea978dbff99a1b",
           "relion_final_merged": "097e6695da00d1e04831215e711e74ff6faecf7cba26485dba8f1383582d9362"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-21",
@@ -1421,7 +1441,8 @@
           "recovar_refinement_results": "53a082840a4b9cf49bd8d540a639d6339ee10467eb8ab65dd7b20a7fec3d21c0",
           "relion_final_merged": "7b4bf1689b501430bf80d541344e2765504564c9990881e916a688e137b3bb3c"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-22",
@@ -1476,7 +1497,8 @@
           "recovar_refinement_results": "f299eb85596b63c39b314d9420511d116f08190b0b5678090c2932ac1ed1daea",
           "relion_final_merged": "08f942100dc86d87ef3678520aab9adcddf6ac42ca1dcb97ad289f44965dc98b"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-23",
@@ -1531,7 +1553,8 @@
           "recovar_refinement_results": "6376e0100999c9613335727752d969f3a2c48e61b986f5ed963119d93cc9e1d4",
           "relion_final_merged": "a3be787beaa0ed2221565c058229cef10ad435915fd818829537ae4e1e8af4d8"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-24",
@@ -1586,7 +1609,8 @@
           "recovar_refinement_results": "887f3885fd44abc9f417adbfab4d20ddcf9abfc61172f16997bd597c94022be1",
           "relion_final_merged": "1678774a6980ebe59f6284e4df88ef545f0ff7d898cab1cfe1ad7e26107e503b"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-25",
@@ -1641,7 +1665,8 @@
           "recovar_refinement_results": "592807b917d60b07c60e7003307f5a410670ff92f50cd11533ec18aac2a9d035",
           "relion_final_merged": "eea1b3343a45f5a98a4a5261dc65116e30677aebdbaab3fe18caa1796abf3fa0"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-26",
@@ -1696,7 +1721,8 @@
           "recovar_refinement_results": "0c0eaeed80ae8c73ff20df32647f0daefd3fae949a564cfc38e3ef122d1f27d5",
           "relion_final_merged": "bda24cdafbeda45305f2eec8d21264b60e855f2b686d74820a584b5a116180cc"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-27",
@@ -1751,7 +1777,8 @@
           "recovar_refinement_results": "6d1df0001addc3c84afc595245ce0efb896158eb1dc0c42dc3fa5e3718be541a",
           "relion_final_merged": "e831b4ba6ce2c4f00c14d037cc3c87902043838be25c4a10e807eb72f3df4a31"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-28",
@@ -1806,7 +1833,8 @@
           "recovar_refinement_results": "396d91baa039d7c46e2252628e16cb6200847c3cac2938043139f252599d4805",
           "relion_final_merged": "2a3cc898f395f40bb7d54020859ceb7cc7442db2432bc6f4c0d683b0009c6813"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-29",
@@ -1861,7 +1889,8 @@
           "recovar_refinement_results": "0a74e643a1632c0281dc48b58de82a426cbdcd85dec78589def24867caa706a8",
           "relion_final_merged": "da82616b7727ddff20d2e100f2db69af42164842adf0f10ee5e2ff88fcdd6b14"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-30",
@@ -1916,7 +1945,8 @@
           "recovar_refinement_results": "c23805be732ca505ee3b5fd545dacda8f7e911b12bdbbe8ecb9db729197e3900",
           "relion_final_merged": "c3f508e5337663f7eb7f56bdcff0ae319202ad69118a71c5f10f183e7deb77b5"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-31",
@@ -1971,7 +2001,8 @@
           "recovar_refinement_results": "fe27ad964dd7733ab46a6b5d178df137004e89091bbb82ee4b98f2cc92dedc5d",
           "relion_final_merged": "43a0b0f5aef29bedbf101abc69ab3aa2a2d383a17ac73436712c2a419db0ba61"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-32",
@@ -2026,7 +2057,8 @@
           "recovar_refinement_results": "bc439291ea6a9cf83ac6842277b39dd94e4b63ab1ba7416181369c29868dc914",
           "relion_final_merged": "99d2aa47dd66ca6b889a2e8c86a023286e3dd3b38e30efed32035c86dc37af40"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-33",
@@ -2081,7 +2113,8 @@
           "recovar_refinement_results": "cc0dd5a44f29a29d0544c71bbdcf8c882dfc33a781225eaa6ddf71e4221cf1aa",
           "relion_final_merged": "c6c209ed1bcfbfcaedaacf6020d58bbd8be0564c5cd1c7296ae2584df44b0436"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "id": "k1-34",
@@ -2136,7 +2169,16 @@
           "recovar_refinement_results": "9a58c14b9d7d769dcef628848fe7b3ab3dfc99ff2c2b751ec148fb62a164c9bd",
           "relion_final_merged": "ca29ec9087852e32f2cbe80262a3658625b17169816c5c134047b3d2e3168f9f"
         }
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     }
-  ]
+  ],
+  "reference_data_status": {
+    "status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)",
+    "audit": "/scratch/gpfs/CRYOEM/gilleslab/em_work/LOSS_AUDIT_20260926.md",
+    "lost": "the 34 pinned case datasets, the RELION references and the RECOVAR arms under em_work/codex (deleted by the 2026-09-26 em_work cleanup)",
+    "kept": "every recorded number; no case is re-scored and none will be (user decision 2026-09-26: the fixed suite is not regenerated)",
+    "effect": "input paths and inputs_sha256 below name files that no longer exist; artifact-verification and regeneration modes that read them fail",
+    "ledger_repinned": "current_snapshot.source_ledger.sha256 moved from 2b5f516bbd0d85d0a7eee92baf078287397bd4575d26e15e64c2907a4e17ed6f to b76e50acf6a9e62bc76571a540c70edb7d6fb558ab0024a00a0fc4d84456435c only because the ledger gained these reference_data_status fields; its scores are unchanged (history keeps the old digest)"
+  }
 }

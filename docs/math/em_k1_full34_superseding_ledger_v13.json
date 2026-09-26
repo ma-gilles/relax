@@ -88,7 +88,8 @@
         "bitwise_equal": false,
         "max_abs": 1.4901161193847656e-08,
         "max_abs_relative_to_map_max": 1.513133316275277e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-02",
@@ -135,7 +136,8 @@
         "bitwise_equal": false,
         "max_abs": 1.4901161193847656e-08,
         "max_abs_relative_to_map_max": 1.4566039802577723e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-03",
@@ -182,7 +184,8 @@
         "bitwise_equal": false,
         "max_abs": 1.4901161193847656e-08,
         "max_abs_relative_to_map_max": 1.4210396141081665e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-04",
@@ -231,7 +234,8 @@
         "bitwise_equal": false,
         "max_abs": 7.450580596923828e-09,
         "max_abs_relative_to_map_max": 1.606623143245716e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-05",
@@ -280,7 +284,8 @@
         "bitwise_equal": false,
         "max_abs": 3.725290298461914e-09,
         "max_abs_relative_to_map_max": 1.5781397346468505e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-06",
@@ -327,7 +332,8 @@
         "bitwise_equal": false,
         "max_abs": 7.450580596923828e-09,
         "max_abs_relative_to_map_max": 1.4051617351695893e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-07",
@@ -374,7 +380,8 @@
         "bitwise_equal": false,
         "max_abs": 1.1175870895385742e-08,
         "max_abs_relative_to_map_max": 2.625428305810239e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-08",
@@ -421,7 +428,8 @@
         "bitwise_equal": false,
         "max_abs": 5.587935447692871e-09,
         "max_abs_relative_to_map_max": 2.0377070904735156e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-09",
@@ -468,7 +476,8 @@
         "bitwise_equal": false,
         "max_abs": 9.313225746154785e-09,
         "max_abs_relative_to_map_max": 2.539800450926331e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-10",
@@ -517,7 +526,8 @@
         "bitwise_equal": false,
         "max_abs": 6.51925802230835e-09,
         "max_abs_relative_to_map_max": 3.61098246269623e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-11",
@@ -564,7 +574,8 @@
         "bitwise_equal": false,
         "max_abs": 4.470348358154297e-08,
         "max_abs_relative_to_map_max": 1.8216792214774523e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-12",
@@ -611,7 +622,8 @@
         "bitwise_equal": false,
         "max_abs": 2.2351741790771484e-08,
         "max_abs_relative_to_map_max": 2.4814802989488947e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-13",
@@ -658,7 +670,8 @@
         "bitwise_equal": false,
         "max_abs": 2.9802322387695312e-08,
         "max_abs_relative_to_map_max": 3.1305160671389257e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-14",
@@ -705,7 +718,8 @@
         "bitwise_equal": false,
         "max_abs": 2.9802322387695312e-08,
         "max_abs_relative_to_map_max": 2.3509094375613734e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-15",
@@ -752,7 +766,8 @@
         "bitwise_equal": false,
         "max_abs": 4.470348358154297e-08,
         "max_abs_relative_to_map_max": 2.0494377674900555e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-16",
@@ -799,7 +814,8 @@
         "bitwise_equal": false,
         "max_abs": 2.9802322387695312e-08,
         "max_abs_relative_to_map_max": 3.2332847262862814e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-17",
@@ -846,7 +862,8 @@
         "bitwise_equal": false,
         "max_abs": 1.1920928955078125e-07,
         "max_abs_relative_to_map_max": 2.0493974464097938e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-18",
@@ -893,7 +910,8 @@
         "bitwise_equal": false,
         "max_abs": 7.450580596923828e-08,
         "max_abs_relative_to_map_max": 1.7144042530940712e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-19",
@@ -940,7 +958,8 @@
         "bitwise_equal": false,
         "max_abs": 5.960464477539063e-08,
         "max_abs_relative_to_map_max": 2.4218618074754277e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-20",
@@ -987,7 +1006,8 @@
         "bitwise_equal": false,
         "max_abs": 7.450580596923828e-09,
         "max_abs_relative_to_map_max": 1.886150627800521e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-21",
@@ -1034,7 +1054,8 @@
         "bitwise_equal": false,
         "max_abs": 2.9802322387695312e-08,
         "max_abs_relative_to_map_max": 2.699150037653143e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-22",
@@ -1081,7 +1102,8 @@
         "bitwise_equal": false,
         "max_abs": 3.725290298461914e-08,
         "max_abs_relative_to_map_max": 2.23560884929099e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-23",
@@ -1128,7 +1150,8 @@
         "bitwise_equal": false,
         "max_abs": 2.9802322387695312e-08,
         "max_abs_relative_to_map_max": 2.813116380171862e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-24",
@@ -1175,7 +1198,8 @@
         "bitwise_equal": false,
         "max_abs": 2.9802322387695312e-08,
         "max_abs_relative_to_map_max": 2.744112848896798e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-25",
@@ -1222,7 +1246,8 @@
         "bitwise_equal": false,
         "max_abs": 2.9802322387695312e-08,
         "max_abs_relative_to_map_max": 2.9711686705713763e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-26",
@@ -1269,7 +1294,8 @@
         "bitwise_equal": false,
         "max_abs": 4.470348358154297e-08,
         "max_abs_relative_to_map_max": 2.1754787576101872e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-27",
@@ -1316,7 +1342,8 @@
         "bitwise_equal": false,
         "max_abs": 4.470348358154297e-08,
         "max_abs_relative_to_map_max": 2.1957319362622934e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-28",
@@ -1363,7 +1390,8 @@
         "bitwise_equal": false,
         "max_abs": 5.960464477539063e-08,
         "max_abs_relative_to_map_max": 1.9482131816688337e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-29",
@@ -1410,7 +1438,8 @@
         "bitwise_equal": false,
         "max_abs": 1.1920928955078125e-07,
         "max_abs_relative_to_map_max": 1.8136266475437872e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-30",
@@ -1457,7 +1486,8 @@
         "bitwise_equal": false,
         "max_abs": 1.1920928955078125e-07,
         "max_abs_relative_to_map_max": 1.8727347517488767e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-31",
@@ -1504,7 +1534,8 @@
         "bitwise_equal": false,
         "max_abs": 5.960464477539063e-08,
         "max_abs_relative_to_map_max": 2.0651833831214628e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-32",
@@ -1551,7 +1582,8 @@
         "bitwise_equal": false,
         "max_abs": 2.9802322387695312e-08,
         "max_abs_relative_to_map_max": 2.2549065921855986e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-33",
@@ -1598,7 +1630,8 @@
         "bitwise_equal": false,
         "max_abs": 8.940696716308594e-08,
         "max_abs_relative_to_map_max": 2.826225031950474e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     },
     {
       "case_id": "k1-34",
@@ -1645,8 +1678,16 @@
         "bitwise_equal": false,
         "max_abs": 2.9802322387695312e-08,
         "max_abs_relative_to_map_max": 2.2798476514605387e-07
-      }
+      },
+      "reference_data_status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)"
     }
   ],
-  "status_note": "Every case's final merged-map metrics re-scored with RELION's final gridding correction; numbered-iteration evidence is unchanged."
+  "status_note": "Every case's final merged-map metrics re-scored with RELION's final gridding correction; numbered-iteration evidence is unchanged.",
+  "reference_data_status": {
+    "status": "reference data lost 2026-09-26 (see LOSS_AUDIT_20260926.md)",
+    "audit": "/scratch/gpfs/CRYOEM/gilleslab/em_work/LOSS_AUDIT_20260926.md",
+    "lost": "the 34 pinned case datasets, the RELION references and the RECOVAR arms under em_work/codex (deleted by the 2026-09-26 em_work cleanup)",
+    "kept": "every recorded number; no case is re-scored and none will be (user decision 2026-09-26: the fixed suite is not regenerated)",
+    "effect": "input paths and inputs_sha256 below name files that no longer exist; artifact-verification and regeneration modes that read them fail"
+  }
 }
