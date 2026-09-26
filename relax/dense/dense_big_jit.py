@@ -21,6 +21,7 @@ from recovar import core
 from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.projection import DEFAULT_PROJECTION_MAX_R, compute_noise_block, project_half_spectrum
 from relax.scoring.score_constraints import apply_dense_score_constraints
+from relax.scoring.scoring import _e_step_block_score_components
 
 
 class DenseBucketResult(NamedTuple):
@@ -142,20 +143,14 @@ def _score_block(
 ):
     batch_size = batch_norm.shape[0]
     n_trans = shifted_score_half.shape[0] // batch_size
-    rot_block_size = proj_weighted.shape[0]
-    cross = (
-        -2.0
-        * jnp.matmul(
-            jnp.conj(shifted_score_half),
-            proj_weighted.T,
-            precision=jax.lax.Precision.HIGHEST,
-        ).real
-    )
-    cross = cross.reshape(batch_size, n_trans, rot_block_size).swapaxes(1, 2)
-    norms = jnp.matmul(
+    # The one cross/model-energy GEMM owner every dense scorer shares.
+    cross, norms = _e_step_block_score_components(
+        shifted_score_half,
         score_weight_half,
-        proj_abs2_weighted.T,
-        precision=jax.lax.Precision.HIGHEST,
+        proj_weighted,
+        proj_abs2_weighted,
+        batch_size,
+        n_trans,
     )
     if score_mode == "normalized_cc":
         denom = jnp.sqrt(jnp.maximum(norms, jnp.asarray(1e-30, dtype=norms.dtype)))
