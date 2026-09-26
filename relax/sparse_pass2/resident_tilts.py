@@ -328,8 +328,16 @@ def run_tilt_chunk(
     # Each slot backprojects the C_U images that are its units' s-th images (a slot view of the chunk's
     # operands, indexed by unit), and its per-image partials land on those images' chunk rows.
     mstep = rp._initial_mstep_carry(Ft_y_total, Ft_ctf_total, operands, stage_tables, spec=spec)
+    # Only the translations with posterior mass in this chunk enter the M-step: a subtomogram's 3D grid
+    # has thousands, and the Wavg rectangle is [images, T, P_rect] (gathered per row, [rows, T, P_rect]).
+    # Dropped translations carry exactly zero posterior.
+    kept = mstep_translations(np.asarray(row_posterior[:n_valid_rows]), n_fine_trans)
+    kept_device = jnp.asarray(kept.index)
+    mstep_posterior = jnp.where(
+        jnp.asarray(kept.valid)[None, :], row_posterior[:, kept_device], jnp.zeros((), row_posterior.dtype)
+    )
     slot_spec = rp._make_chunk_program_spec(
-        row_capacity=row_capacity, image_capacity=unit_capacity, n_fine_trans=n_fine_trans, **spec_kwargs
+        row_capacity=row_capacity, image_capacity=unit_capacity, n_fine_trans=int(kept.index.size), **spec_kwargs
     )
     block_rows = int(spec.mstep_block_rows)
     row_index = jnp.arange(row_capacity, dtype=jnp.int32)
@@ -342,7 +350,7 @@ def run_tilt_chunk(
         slot_angles = jnp.asarray(
             np.asarray(tilt.image_angles, dtype=np.float32)[
                 np.where(slot_images >= 0, layout.image_ids[np.maximum(slot_images, 0)], 0)
-            ]
+            ][:, kept.index]
         )
         slot_operands = _slot_view(
             operands,
@@ -364,7 +372,7 @@ def run_tilt_chunk(
         blocks = rp._MstepBlockInputs(
             row_image_local=units,
             kernel_row_image_ids=jnp.where(has_image, units, jnp.int32(-1)),
-            row_posterior=jnp.where(has_image[:, None], row_posterior, jnp.zeros((), row_posterior.dtype)),
+            row_posterior=jnp.where(has_image[:, None], mstep_posterior, jnp.zeros((), mstep_posterior.dtype)),
             row_fine_rot=jnp.int32(slot * row_capacity) + row_index,
             projections=None,
         )
@@ -413,6 +421,32 @@ def run_tilt_chunk(
         spec=spec,
     )
     return mstep.Ft_y, mstep.Ft_ctf, stats
+
+
+class MstepTranslations(NamedTuple):
+    """The translations one tilt chunk's M-step visits: ``index`` into the fine grid, ``valid`` false on padding."""
+
+    index: np.ndarray  # int64 [T_cap]
+    valid: np.ndarray  # bool [T_cap]
+
+
+def mstep_translations(row_posterior, n_fine_trans: int, *, minimum: int = 32) -> MstepTranslations:
+    """The fine translations with posterior mass in any of a chunk's rows, padded to a power of two.
+
+    The capacity is the next power of two of their count (at least ``minimum``, at most the grid), so
+    chunks share programs; padding repeats the last kept translation with ``valid`` false.
+    """
+
+    n_fine_trans = int(n_fine_trans)
+    used = np.flatnonzero(np.any(np.asarray(row_posterior) > 0.0, axis=0))
+    if used.size == 0:
+        used = np.zeros(1, dtype=np.int64)
+    capacity = max(int(minimum), 1 << int(used.size - 1).bit_length())
+    if capacity >= n_fine_trans:
+        return MstepTranslations(index=np.arange(n_fine_trans, dtype=np.int64), valid=np.ones(n_fine_trans, dtype=bool))
+    index = np.concatenate([used, np.full(capacity - used.size, used[-1])]).astype(np.int64)
+    valid = np.arange(capacity) < used.size
+    return MstepTranslations(index=index, valid=valid)
 
 
 def _unit_slot_images(layout: ChunkTiltLayout, *, unit_capacity: int, slot_capacity: int) -> np.ndarray:

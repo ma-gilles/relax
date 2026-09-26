@@ -147,3 +147,18 @@ def test_slot_views_visit_every_chunk_image_once_and_their_partials_land_on_it()
     assert_matches(np.asarray(full.wavg_triplet_pixels)[:, 0, 0], expected)
     assert_matches(np.asarray(full.noise_shells), np.full(4, 3.0))
     assert_matches(np.asarray(full.Ft_y), np.full(2, 3.0))
+
+
+@pytest.mark.unit
+def test_mstep_translations_keep_every_translation_with_mass_and_pad_to_a_power_of_two():
+    posterior = np.zeros((3, 500), dtype=np.float32)
+    posterior[0, [7, 300]] = 0.5
+    posterior[2, 41] = 1.0
+    kept = resident_tilts.mstep_translations(posterior, 500)
+    assert kept.index.size == 32
+    np.testing.assert_array_equal(kept.index[kept.valid], [7, 41, 300])
+    assert not np.any(kept.valid[3:])
+    # Mass on every translation keeps the whole grid.
+    full = resident_tilts.mstep_translations(np.ones((2, 40), dtype=np.float32), 40)
+    np.testing.assert_array_equal(full.index, np.arange(40))
+    assert full.valid.all()
