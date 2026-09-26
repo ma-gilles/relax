@@ -956,65 +956,64 @@ def _relion_coarse_gaussian_gemm_scores_jit(
     image_shape: tuple[int, int],
     volume_shape: tuple[int, int, int],
 ):
-    """Score exact RELION coarse operands with the mature half-spectrum GEMMs."""
+    """Score exact RELION coarse operands with two real-packed binary64 GEMMs.
 
+    RELION's direct square ``d0 + 0.5 sum_k w_k |p_k - y_k|^2`` expands into
+    ``d0 + 0.5 A + 0.5 C - X`` with the model energy ``A = w . |p|^2``, the
+    image energy ``C = w . |y|^2`` and the cross term ``X = Re(conj(w y) . p)``.
+    ``X`` is one real GEMM over ``[Re, Im]``-packed operands (the complex
+    product's imaginary half is never formed) and ``A`` is a second GEMM.
+    The stored float32 operands are promoted to binary64 before weighting and
+    both GEMMs run with the F64 dot algorithm, so the expansion's cancellation
+    stays ~1e-12 relative to the energies; on H100 the FP64 tensor-core GEMM
+    is also faster than a float32 SIMT one. The score is narrowed to the input
+    real dtype once, before RELION's float32 posterior and significance.
+    """
+
+    del projected_reference_abs2, image_shape, volume_shape
+    out_dtype = pixel_weight.dtype
+    wide = jnp.float64
     active = jnp.arange(n_images, dtype=jnp.int32) < jnp.asarray(
         actual_image_count,
         dtype=jnp.int32,
     )
-    shifted_corrected = jnp.where(
-        active[:, None, None],
-        shifted_corrected,
-        jnp.zeros((), dtype=shifted_corrected.dtype),
-    )
-    pixel_weight = jnp.where(
-        active[:, None],
-        pixel_weight,
-        jnp.zeros((), dtype=pixel_weight.dtype),
-    )
-    initial_diff2 = jnp.where(
-        active,
-        initial_diff2,
-        jnp.zeros((), dtype=initial_diff2.dtype),
-    )
+    weight = jnp.where(active[:, None], pixel_weight, 0).astype(wide)
+    shifted_re = jnp.where(active[:, None, None], shifted_corrected.real, 0).astype(wide)
+    shifted_im = jnp.where(active[:, None, None], shifted_corrected.imag, 0).astype(wide)
+    initial = jnp.where(active, initial_diff2, 0).astype(wide)
+    reference_re = projected_reference.real.astype(wide)
+    reference_im = projected_reference.imag.astype(wide)
 
-    # RELION's exact coarse operands store the image divided by its pixel
-    # correction separately from corr_img * half_weight.  Absorb that
-    # image-specific weight on the image side, then reuse the same two GEMMs
-    # as ordinary dense EM.  Candidate axes remain [image, rotation,
-    # translation]; only the pixel reduction topology changes.
-    weighted_shifted = shifted_corrected * pixel_weight[:, None, :]
-    model_scores = _e_step_block_scores_windowed(
-        weighted_shifted.reshape(n_images * n_trans, -1),
-        jnp.zeros((n_images, 1), dtype=pixel_weight.dtype),
-        pixel_weight,
-        projected_reference,
-        projected_reference_abs2,
-        jnp.ones((projected_reference.shape[-1],), dtype=pixel_weight.dtype),
-        n_images,
-        n_trans,
-        int(projected_reference.shape[-1]),
-        image_shape,
-        volume_shape,
+    algorithm = jax.lax.DotAlgorithmPreset.F64_F64_F64
+    weighted_packed = jnp.concatenate(
+        [shifted_re * weight[:, None, :], shifted_im * weight[:, None, :]],
+        axis=-1,
+    ).reshape(n_images * n_trans, -1)
+    reference_packed = jnp.concatenate([reference_re, reference_im], axis=-1)
+    cross = jax.lax.dot(
+        weighted_packed,
+        reference_packed.T,
+        precision=algorithm,
+        preferred_element_type=wide,
+    ).reshape(n_images, n_trans, -1)
+    model_energy = jax.lax.dot(
+        weight,
+        (reference_re * reference_re + reference_im * reference_im).T,
+        precision=algorithm,
+        preferred_element_type=wide,
     )
-
-    # The mature dense score omits the pose-independent image term.  Restore
-    # it here because the exact RELION coarse FFI reports absolute diff2 and
-    # the public log-evidence path deliberately applies no later offset.
-    image_power = (
-        shifted_corrected.real * shifted_corrected.real
-        + shifted_corrected.imag * shifted_corrected.imag
-    )
-    image_diff2 = jnp.asarray(0.5, dtype=pixel_weight.dtype) * jnp.sum(
-        image_power * pixel_weight[:, None, :],
+    image_energy = jnp.sum(
+        (shifted_re * shifted_re + shifted_im * shifted_im) * weight[:, None, :],
         axis=-1,
     )
-    scores = model_scores - image_diff2[:, None, :] - initial_diff2[:, None, None]
-    return jnp.where(
-        active[:, None, None],
-        scores,
-        jnp.zeros((), dtype=scores.dtype),
+    half = jnp.asarray(0.5, dtype=wide)
+    scores = (
+        cross.swapaxes(1, 2)
+        - half * model_energy[:, :, None]
+        - half * image_energy[:, None, :]
+        - initial[:, None, None]
     )
+    return jnp.where(active[:, None, None], scores, 0).astype(out_dtype)
 
 
 def _relion_coarse_gaussian_gemm_scores(
