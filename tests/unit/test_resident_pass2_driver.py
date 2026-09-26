@@ -1437,3 +1437,18 @@ def test_stable_windows_match_the_logical_window(_resident_production_env, monke
         "wsum_scale_correction_aa",
     ):
         assert rel_l2(getattr(logical.noise_stats, field), getattr(stable.noise_stats, field)) < 1e-7, field
+
+
+def test_stream_parts_gather_rows_from_the_padded_class_calls():
+    """K>1 streamed projections: each id reads its row of its class's whole padded call."""
+
+    rng = np.random.default_rng(3)
+    parts = tuple(
+        tuple(jnp.asarray(rng.normal(size=(8, 5)).astype(np.float32)) for _ in range(3)) for _ in range(2)
+    )
+    # ids of classes [1, 0, 1, 0, 0]: class 0's rows 0-2 of call 0, class 1's rows 0-1 of call 1.
+    rows = np.array([8 + 0, 0, 8 + 1, 1, 2], dtype=np.int32)
+    gathered = rp._gather_stream_parts(parts, jnp.asarray(rows))
+    for field in range(3):
+        expected = np.concatenate([np.asarray(parts[0][field]), np.asarray(parts[1][field])])[rows]
+        assert_matches(np.asarray(gathered[field]), expected)

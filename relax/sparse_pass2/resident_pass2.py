@@ -2286,24 +2286,25 @@ def _resident_pass2(
         if n_classes == 1:
             return project_fine_rotations(fine_grid[jnp.asarray(ids, dtype=jnp.int32)])
         klass = ids // n_fine_rot
-        order = np.argsort(klass, kind="stable")
         parts = []
+        # Each id's row in the concatenation of the classes' padded calls. The
+        # padded calls are kept whole, so every array here has a quantized
+        # length and the gather compiles once per (classes, lengths) class
+        # rather than once per chunk.
+        gather_rows = np.empty(ids.size, dtype=np.int64)
+        offset = 0
         for class_index in np.unique(klass):
-            class_ids = ids[order[klass[order] == class_index]] % n_fine_rot
+            positions = np.flatnonzero(klass == class_index)
+            class_ids = ids[positions] % n_fine_rot
             n_call = -(-class_ids.size // _STREAM_SLOT_QUANTUM) * _STREAM_SLOT_QUANTUM
             padded = np.full(n_call, class_ids[0], dtype=np.int64)
             padded[: class_ids.size] = class_ids
-            projected = project_fine_rotations(
-                fine_grid[jnp.asarray(padded, dtype=jnp.int32)], int(class_index)
+            parts.append(
+                project_fine_rotations(fine_grid[jnp.asarray(padded, dtype=jnp.int32)], int(class_index))
             )
-            parts.append(tuple(values[: class_ids.size] for values in projected))
-        inverse = np.empty_like(order)
-        inverse[order] = np.arange(order.size)
-        inverse_device = jnp.asarray(inverse, dtype=jnp.int32)
-        return tuple(
-            jnp.concatenate([part[field] for part in parts], axis=0)[inverse_device]
-            for field in range(3)
-        )
+            gather_rows[positions] = offset + np.arange(class_ids.size)
+            offset += n_call
+        return _gather_stream_parts(tuple(parts), jnp.asarray(gather_rows, dtype=jnp.int32))
 
     # The whole fine grid is cached when it fits. At healpix order 3 and a real
     # current size it does not (294912 rotations at 136 px is ~40 GiB), so each
@@ -3354,6 +3355,15 @@ def _resident_operands_fit(operand_peak_bytes, available_bytes) -> bool:
     """
 
     return int(operand_peak_bytes) <= resident_operands_max_bytes(available_bytes)
+
+
+@jax.jit
+def _gather_stream_parts(parts, gather_rows):
+    """The fields of the classes' padded projection calls, concatenated and gathered by row."""
+
+    return tuple(
+        jnp.concatenate([part[field] for part in parts], axis=0)[gather_rows] for field in range(3)
+    )
 
 
 def _stream_projection_budget_bytes(
