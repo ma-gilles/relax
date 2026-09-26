@@ -247,6 +247,8 @@ def particle_coarse_supports(
     image_size: int,
     optics_group_ids=None,
     scale_corrections=None,
+    unit_rotation_ids=None,
+    unit_rotation_log_priors=None,
 ):
     """Each particle's coarse significant samples, ``rot * T + t`` int32 ids per unit, and its coarse Pmax.
 
@@ -257,6 +259,11 @@ def particle_coarse_supports(
     CTF and noise; the images' diff2 is summed in ``img_id`` order and the particle's weights are cut
     once (:func:`particle_coarse_significance`). Dataset images ``unit_image_offsets[u]:[u+1]`` are
     particle ``u``'s, in ``img_id`` order.
+
+    A local search scores each particle over its own rotations only: ``unit_rotation_ids[u]`` (ascending
+    rows of ``coarse_eulers_deg``) with the log prior ``unit_rotation_log_priors[u]`` (RELION's
+    orientations with a nonzero prior, selectOrientationsWithNonZeroPriorProbability); the returned
+    ids keep indexing ``coarse_eulers_deg``.
     """
 
     from relax.refinement import tomo_particles
@@ -266,11 +273,22 @@ def particle_coarse_supports(
     image_projections = np.asarray(image_projections, dtype=np.float64)
     old = tomo_particles.relion_gpu_old_offsets(np.asarray(unit_old_offsets_px, dtype=np.float64))
     supports, pmax = [], np.zeros(offsets.size - 1, dtype=np.float64)
+    local = unit_rotation_ids is not None
+    if local != (unit_rotation_log_priors is not None) or (local and rotation_log_prior is not None):
+        raise ValueError("a local search takes each particle's rotations and priors, and no shared prior")
+    coarse_eulers_deg = np.asarray(coarse_eulers_deg)
+    n_coarse_trans = int(np.asarray(coarse_translations_px).shape[0])
     for unit in range(offsets.size - 1):
         images = np.arange(offsets[unit], offsets[unit + 1])
         left, _applies = tomo_particles.relion_left_matrices(image_projections[images])
+        unit_rotations = None if not local else np.asarray(unit_rotation_ids[unit], dtype=np.int64)
+        if local and (unit_rotations.size == 0 or np.any(np.diff(unit_rotations) <= 0)):
+            raise ValueError(f"particle {unit}'s local rotations must be ascending and non-empty")
         rotations = _relion_adaptive_pass1_rotations(
-            coarse_eulers_deg, random_perturbation, angular_sampling_deg, left_matrices=left
+            coarse_eulers_deg if not local else coarse_eulers_deg[unit_rotations],
+            random_perturbation,
+            angular_sampling_deg,
+            left_matrices=left,
         )
         angles = tomo_particles.tilt_translation_angles(
             coarse_translations_px,
@@ -303,11 +321,14 @@ def particle_coarse_supports(
         )
         stats = particle_coarse_significance(
             diff2[None],
-            rotation_log_prior,
+            rotation_log_prior if not local else np.asarray(unit_rotation_log_priors[unit], dtype=np.float32),
             np.asarray(unit_translation_log_prior, dtype=np.float32)[unit : unit + 1],
             adaptive_fraction=adaptive_fraction,
             max_significants=max_significants,
         )
-        supports.append(np.flatnonzero(np.asarray(stats["mask"][0])).astype(np.int32))
+        cells = np.flatnonzero(np.asarray(stats["mask"][0]))
+        if local:
+            cells = unit_rotations[cells // n_coarse_trans] * n_coarse_trans + cells % n_coarse_trans
+        supports.append(cells.astype(np.int32))
         pmax[unit] = float(stats["pmax"][0])
     return supports, pmax

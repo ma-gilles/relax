@@ -275,6 +275,7 @@ def score_tomo_half(
     scale_correction_data_vs_prior=None,
     reconstruction_current_size=None,
     rotation_index_order: str = "recovar",
+    local_rotations=None,
 ) -> TomoScoreResult:
     """RELION's adaptive two-pass E-step and M-step of subtomogram particles (global search).
 
@@ -287,6 +288,11 @@ def score_tomo_half(
     ones (the one-iteration RELION-pinned replay, em_work/cryoet_s42_20260925/tomo_replay_it1.py).
     The coarse grid is RELION's HEALPix grid at ``sampling.healpix_order`` in ``rotation_index_order``
     (the loop's order, so ``rotation_log_prior`` and the returned rotation sums share it).
+
+    A local search passes ``local_rotations`` (:func:`tomo_local_rotations`): the coarse grid is then
+    the union of the particles' local rotations at ``sampling.healpix_order`` and each particle is
+    scored over its own with its own prior (``rotation_log_prior`` must be None); the returned rotation
+    sums are over that union.
     """
 
     import jax.numpy as jnp
@@ -303,12 +309,19 @@ def score_tomo_half(
     image_groups = np.repeat(unit_groups, np.diff(half.unit_image_offsets))
     old_offsets_px = np.asarray(old_offsets_px, dtype=np.float64).reshape(half.n_units, 3)
     coarse_angst, coarse_px, fine_px, fine_parent = tomo_translation_grids(sampling, pixel)
-    n_rot = int(relax_sampling.rotation_grid_size(sampling.healpix_order))
+    if local_rotations is not None and rotation_log_prior is not None:
+        raise ValueError("a local search's priors are the particles' own")
+    coarse_ids = (
+        np.arange(int(relax_sampling.rotation_grid_size(sampling.healpix_order)))
+        if local_rotations is None
+        else local_rotations.coarse_rotation_ids
+    )
+    n_rot = int(coarse_ids.size)
     coarse_eulers_deg = relax_sampling.rotation_indices_to_relion_eulers(
-        np.arange(n_rot), sampling.healpix_order, rotation_index_order=rotation_index_order
+        coarse_ids, sampling.healpix_order, rotation_index_order=rotation_index_order
     )
     fine_rot, rot_parent, fine_mstep, fine_eulers = relax_sampling.get_oversampled_rotation_grid_from_samples(
-        np.arange(n_rot),
+        coarse_ids,
         sampling.healpix_order,
         oversampling_order=sampling.oversampling_order,
         random_perturbation=sampling.random_perturbation,
@@ -351,6 +364,14 @@ def score_tomo_half(
         image_size=size,
         optics_group_ids=image_groups,
         scale_corrections=image_scale,
+        **(
+            {}
+            if local_rotations is None
+            else {
+                "unit_rotation_ids": local_rotations.unit_rotation_ids,
+                "unit_rotation_log_priors": local_rotations.unit_rotation_log_priors,
+            }
+        ),
     )
     tilt = tilt_pass_inputs(
         half,
@@ -420,6 +441,14 @@ def score_tomo_half(
         source_faithful_spectrum_norm=True,
         optics_group_ids=image_groups if np.asarray(noise_variance).ndim == 2 else None,
         tilt=tilt,
+        **(
+            {}
+            if local_rotations is None
+            else {
+                "coarse_rotation_ids": coarse_ids,
+                "unit_rotation_log_prior": local_rotations.support_priors(supports, coarse_px.shape[0]),
+            }
+        ),
     )
     hard = np.asarray(pass2.hard_assignment, dtype=np.int64)
     n_fine_trans = int(fine_px.shape[0])
@@ -456,12 +485,17 @@ def score_tomo_half_in_loop(
     reconstruction_current_size,
     outputs,
     k: int,
+    local_search=None,
 ):
     """The refinement loop's E+M step for a tomo half: :func:`score_tomo_half` as a ``HalfScoreResult``.
 
     Per-unit fields are the particles'. The best translations are the winning trial shifts in pixels
     (3D); the loop adds the rounded previous offset, as RELION writes ``old + shift``. The explicit
     best poses also go to ``outputs`` (the loop's pose update reads them there).
+
+    A local-search iteration passes ``local_search``: a dict with the particles' previous angles
+    (``previous_eulers_deg``), ``sigma_rot`` and ``sigma_psi`` and the pass-1 HEALPix order
+    (``parent_order``); ``sampling`` then carries that order and the local grid's perturbation.
     """
 
     from relax.dense.score_outputs import HalfScoreResult
@@ -469,9 +503,9 @@ def score_tomo_half_in_loop(
     from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
     from relax.sampling import rotation_grid_size
 
-    if use_local:
-        raise NotImplementedError("subtomogram local search is S4.2 P7 phase 3 (PLAN.md)")
-    if not use_adaptive or int(sampling.oversampling_order) < 1:
+    if bool(use_local) != (local_search is not None):
+        raise ValueError("a local-search iteration needs its local-search inputs, and only it")
+    if not (use_adaptive or use_local) or int(sampling.oversampling_order) < 1:
         raise NotImplementedError("subtomogram particles run RELION's adaptive two-pass E-step only")
     if PADDING_FACTOR != PROJECTION_PADDING_FACTOR:
         raise ValueError("the tomo half pass projects and backprojects with one padding factor")
@@ -488,14 +522,26 @@ def score_tomo_half_in_loop(
         if np.shape(volume)[0] != 1:
             raise ValueError("the tomo half pass refines one class")
         volume = volume[0]
-    n_rot = int(rotation_grid_size(sampling.healpix_order))
-    prior = (
-        np.zeros(n_rot, dtype=np.float32)
-        if rotation_log_prior is None
-        else np.asarray(rotation_log_prior, dtype=np.float32).reshape(-1)
-    )
-    if prior.shape != (n_rot,):
-        raise ValueError(f"a global tomo pass needs one rotation log prior per coarse rotation, got {prior.shape}")
+    local_rotations = None
+    if local_search is not None:
+        local_rotations = tomo_local_rotations(
+            local_search["previous_eulers_deg"],
+            sigma_rot=local_search["sigma_rot"],
+            sigma_psi=local_search["sigma_psi"],
+            healpix_order=int(sampling.healpix_order),
+            random_perturbation=float(sampling.random_perturbation),
+            voxel_size=half.voxel_size,
+        )
+        prior = None
+    else:
+        n_rot = int(rotation_grid_size(sampling.healpix_order))
+        prior = (
+            np.zeros(n_rot, dtype=np.float32)
+            if rotation_log_prior is None
+            else np.asarray(rotation_log_prior, dtype=np.float32).reshape(-1)
+        )
+        if prior.shape != (n_rot,):
+            raise ValueError(f"a global tomo pass needs one rotation log prior per coarse rotation, got {prior.shape}")
     old = (
         np.zeros((half.n_units, 3), dtype=np.float64)
         if previous_translations is None
@@ -523,6 +569,7 @@ def score_tomo_half_in_loop(
         scale_correction_group_count=scale_correction_group_count,
         scale_correction_data_vs_prior=scale_correction_data_vs_prior,
         reconstruction_current_size=reconstruction_current_size,
+        local_rotations=local_rotations,
     )
     pass2 = result.pass2
     outputs.best_pose_rotations[k] = np.asarray(pass2.best_rotations, dtype=np.float32)
@@ -602,3 +649,78 @@ def tilt_image_accuracy_inputs(half: TomoHalf) -> dict:
         "spherical_aberration": optics_column("rlnSphericalAberration"),
         "amplitude_contrast": optics_column("rlnAmplitudeContrast"),
     }
+
+
+
+@dataclasses.dataclass(frozen=True)
+class TomoLocalRotations:
+    """The particles' local orientations at one HEALPix order (RELION's nonzero-prior orientations).
+
+    ``coarse_rotation_ids`` are the union's grid rotations (ascending, the loop's index order);
+    ``unit_rotation_ids[u]`` index that union (ascending) with ``unit_rotation_log_priors[u]``.
+    """
+
+    coarse_rotation_ids: np.ndarray
+    unit_rotation_ids: tuple
+    unit_rotation_log_priors: tuple
+
+    def support_priors(self, supports, n_coarse_trans: int):
+        """Each unit's prior over its support's coarse rotations, ascending (the pass-2 tables' contract)."""
+
+        out = []
+        for unit, cells in enumerate(supports):
+            rotations = np.unique(np.asarray(cells, dtype=np.int64) // int(n_coarse_trans))
+            position = np.searchsorted(self.unit_rotation_ids[unit], rotations)
+            if np.any(position >= self.unit_rotation_ids[unit].size) or np.any(
+                self.unit_rotation_ids[unit][np.minimum(position, self.unit_rotation_ids[unit].size - 1)] != rotations
+            ):
+                raise ValueError(f"particle {unit}'s support leaves its local rotations")
+            out.append(np.asarray(self.unit_rotation_log_priors[unit], dtype=np.float32)[position])
+        return out
+
+
+def tomo_local_rotations(
+    previous_eulers_deg, *, sigma_rot, sigma_psi, healpix_order: int, random_perturbation: float, voxel_size: float
+) -> TomoLocalRotations:
+    """Every particle's local orientations and log priors around its previous pose (subtomogram local search).
+
+    The single-particle local search's neighbourhoods (relax.local.local_layout.build_local_hypothesis_layout,
+    RELION's selectOrientationsWithNonZeroPriorProbability) with the particle's subtomogram-frame angles;
+    only the rotation part is used (the 3D offset prior is the particle's own, score_tomo_half).
+    """
+
+    from relax.local.local_layout import build_local_hypothesis_layout
+    from relax.sampling import build_local_search_grid_metadata, relion_angular_sampling_deg
+
+    eulers = np.asarray(previous_eulers_deg, dtype=np.float64)
+    n_units = int(eulers.shape[0])
+    layout = build_local_hypothesis_layout(
+        eulers,
+        None,
+        sigma_rot,
+        sigma_psi,
+        int(healpix_order),
+        np.zeros((1, 2), dtype=np.float32),
+        np.zeros((n_units, 2), dtype=np.float32),
+        1.0,
+        None,
+        float(voxel_size),
+        grid_metadata=build_local_search_grid_metadata(int(healpix_order)),
+        rotation_log_prior=None,
+        rotation_grid_random_perturbation=float(random_perturbation),
+        rotation_grid_angular_sampling_deg=relion_angular_sampling_deg(int(healpix_order), adaptive_oversampling=0),
+        dtype=np.float32,
+    )
+    offsets = np.asarray(layout.rotation_offsets, dtype=np.int64)
+    ids = np.asarray(layout.rotation_ids_flat, dtype=np.int64)
+    priors = np.asarray(layout.rotation_log_priors_flat, dtype=np.float32)
+    union = np.unique(ids)
+    unit_ids, unit_priors = [], []
+    for unit in range(n_units):
+        rows = slice(int(offsets[unit]), int(offsets[unit + 1]))
+        order = np.argsort(ids[rows], kind="stable")
+        unit_ids.append(np.searchsorted(union, ids[rows][order]).astype(np.int64))
+        unit_priors.append(priors[rows][order])
+    return TomoLocalRotations(
+        coarse_rotation_ids=union, unit_rotation_ids=tuple(unit_ids), unit_rotation_log_priors=tuple(unit_priors)
+    )

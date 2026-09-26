@@ -789,6 +789,8 @@ def _prepare_per_image_pass2_inputs(
     relion_parent_execution_order=False,
     dtype: np.dtype = np.float32,
     symmetry_label: str = "C1",
+    coarse_rotation_ids=None,
+    per_image_rotation_log_prior=None,
 ):
     """Compute per-image oversampled rotations / parent maps / candidate masks.
 
@@ -805,11 +807,30 @@ def _prepare_per_image_pass2_inputs(
     ``RFLOAT`` (double) end to end in a double-precision build; pass
     ``precision_policy.score_real_dtype`` from the caller so this matches
     ``use_float64_scoring`` instead of always narrowing to float32.
+
+    ``coarse_rotation_ids`` makes the coarse grid a compact subset of the HEALPix grid at
+    ``nside_level`` (coarse id ``c`` is grid rotation ``coarse_rotation_ids[c]``; subtomogram
+    local searches, relax.refinement.tomo_half); RELION's parent execution order is then the
+    grid's. ``per_image_rotation_log_prior`` replaces ``rotation_log_prior`` by one prior per
+    image over that image's significant coarse rotations in ascending order (RELION's local
+    orientation prior is the particle's own).
     """
     from relax.sampling import (
         get_oversampled_rotation_grid_from_samples,
         rotation_grid_size,
     )
+
+    if per_image_rotation_log_prior is not None and rotation_log_prior is not None:
+        raise ValueError("a pass takes one shared rotation prior or one per image, not both")
+    if coarse_rotation_ids is not None:
+        coarse_rotation_ids = np.asarray(coarse_rotation_ids, dtype=np.int64).reshape(-1)
+        if coarse_rotation_ids.shape != (int(n_coarse_rot),):
+            raise ValueError("coarse_rotation_ids must give one grid rotation per coarse rotation")
+        grid_rotation_count = int(rotation_grid_size(nside_level, symmetry_label))
+        if coarse_rotation_ids.size and (
+            int(coarse_rotation_ids.min()) < 0 or int(coarse_rotation_ids.max()) >= grid_rotation_count
+        ):
+            raise ValueError("coarse_rotation_ids must index the HEALPix grid")
     from relax.symmetry import canonicalize_rotational_symmetry
 
     symmetry_label = canonicalize_rotational_symmetry(symmetry_label)
@@ -899,9 +920,14 @@ def _prepare_per_image_pass2_inputs(
         parent_ids = np.asarray(parent_ids, dtype=np.int64).reshape(-1)
         if parent_ids.shape != np.asarray(parent_map).shape:
             raise ValueError("RELION parent execution keys must match fine rotations")
-        relion_parent_key = relion_parent_execution_key(
-            parent_ids, n_coarse_rot=n_coarse_rot, nside_level=nside_level
-        )
+        if coarse_rotation_ids is None:
+            relion_parent_key = relion_parent_execution_key(
+                parent_ids, n_coarse_rot=n_coarse_rot, nside_level=nside_level
+            )
+        else:
+            relion_parent_key = relion_parent_execution_key(
+                coarse_rotation_ids[parent_ids], n_coarse_rot=grid_rotation_count, nside_level=nside_level
+            )
         order = np.argsort(relion_parent_key, kind="stable")
         return (
             np.asarray(rotations)[order],
@@ -914,6 +940,7 @@ def _prepare_per_image_pass2_inputs(
     if (
         fine_rotations_np is not None
         and not relion_parent_execution_order
+        and per_image_rotation_log_prior is None
         and vectorized_hypothesis_prep_enabled()
     ):
         children = _fine_children_ranges(fine_parent_np, n_coarse_rot)
@@ -1065,7 +1092,17 @@ def _prepare_per_image_pass2_inputs(
             oversampled_rots if fine_mstep_rotations_np is None else fine_mstep_rotations_np[oversampled_rot_indices]
         )
 
-        if use_full_rotation_support and full_support_log_prior_cache is not None:
+        if per_image_rotation_log_prior is not None:
+            if use_full_rotation_support:
+                raise ValueError("a per-image rotation prior needs each image's explicit coarse support")
+            image_prior = np.asarray(per_image_rotation_log_prior[image_idx], dtype=dtype).reshape(-1)
+            if image_prior.shape != (unique_rot.size,):
+                raise ValueError(
+                    f"image {image_idx}'s rotation prior covers {image_prior.size} rotations, "
+                    f"its support {unique_rot.size}"
+                )
+            local_rotation_log_prior = image_prior[parent_map]
+        elif use_full_rotation_support and full_support_log_prior_cache is not None:
             local_rotation_log_prior = full_support_log_prior_cache
         elif rotation_log_prior_np is not None:
             local_rotation_log_prior = rotation_log_prior_np[unique_rot][parent_map]
