@@ -4713,13 +4713,19 @@ def main():
             )
     continued_iterations = 0 if resume_snapshot is None else int(resume_snapshot.relion_iteration)
 
+    # The start-up tau2 is a box-scale volume (float64 at start-up: 4.1 GB at box 800).
+    # Hand it over as a host array and drop the device copy, so this frame does not
+    # hold it on the device for the whole refinement; the loop stages its own copy
+    # and releases it after the first tau2 update (census, bigbox 14468686).
+    initial_mean_variance_host = np.asarray(jax.device_get(mean_variance))
+    del mean_variance
     result = refine_single_volume(
         experiment_datasets=experiment_datasets,
         init_volume=init_vol_ft,
         init_noise_variance=(
             noise_variance if optics_group_ids_per_half is None else [noise_variance, noise_variance]
         ),
-        init_mean_variance=mean_variance,
+        init_mean_variance=initial_mean_variance_host,
         translations=translations_jnp,
         options=RefinementOptions(
             symmetry=SymmetryOptions(point_group=symmetry),

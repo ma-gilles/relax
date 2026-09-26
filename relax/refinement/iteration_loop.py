@@ -1078,13 +1078,15 @@ def refine_single_volume(
     optics_group_ids_per_half = _optics_group_ids_per_half(
         parity.optics_group_ids_per_half, noise_variance_per_half, experiment_datasets
     )
-    initial_mean_variance = jnp.asarray(init_mean_variance)
     mean_variance, mean_variance_per_half = prepare_initial_mean_variance(
-        initial_mean_variance,
+        jnp.asarray(init_mean_variance),
         use_per_half_mean_variance=parity.use_per_half_mean_variance,
         k_class_enabled=k_class_enabled,
         log=logger,
     )
+    # Only the loop's own mean_variance names keep the start-up tau2 on the device,
+    # so it is released once the first M-step replaces it.
+    del init_mean_variance
     _mark_setup_phase("initial_arrays")
 
     # History tracking: one RefinementHistory instance accumulates every
