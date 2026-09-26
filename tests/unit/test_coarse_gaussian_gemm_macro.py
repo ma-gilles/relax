@@ -196,7 +196,10 @@ def test_coarse_gaussian_gemm_projection_cache_plan_is_conservative_for_gf46(
 ):
     variable = "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB"
     monkeypatch.delenv(variable, raising=False)
-    budget_bytes = significance._coarse_gaussian_gemm_projection_cache_budget_bytes()
+    # Off-GPU the default budget is 4 GB; on a GPU it is a fifth of its memory.
+    budget_bytes = significance._coarse_gaussian_gemm_projection_cache_budget_bytes(
+        default_gb=4.0,
+    )
     plan = significance._plan_coarse_gaussian_gemm_projection_cache(
         n_rotations=36_864,
         compact_pixel_count=5_100,
@@ -2662,3 +2665,19 @@ def test_coarse_gaussian_gemm_macro_rejects_ambiguous_bindings(
             image_shape=(8, 8),
             volume_shape=(8, 8, 8),
         )
+
+
+def test_coarse_gaussian_gemm_projection_cache_default_budget_is_a_fifth_of_gpu_memory(
+    monkeypatch,
+):
+    from relax.scoring import coarse_gaussian_gemm
+
+    class _Gpu:
+        platform = "gpu"
+
+        def memory_stats(self):
+            return {"bytes_limit": 80 * 1024**3}
+
+    monkeypatch.delenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB", raising=False)
+    monkeypatch.setattr(coarse_gaussian_gemm.jax, "local_devices", lambda: [_Gpu()])
+    assert coarse_gaussian_gemm._coarse_gaussian_gemm_projection_cache_budget_bytes() == 16 * 1024**3

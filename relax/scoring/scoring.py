@@ -994,8 +994,11 @@ def _relion_coarse_gaussian_gemm_scores_jit(
     reference_re = projected_reference.real.astype(wide)
     reference_im = projected_reference.imag.astype(wide)
 
+    # float32 names its full-precision algorithm so it never falls to TF32;
+    # binary64 dots are always binary64, and XLA's small-dot emitters reject
+    # the explicit F64 algorithm.
     algorithm = (
-        jax.lax.DotAlgorithmPreset.F64_F64_F64
+        jax.lax.Precision.HIGHEST
         if wide == jnp.float64
         else jax.lax.DotAlgorithmPreset.F32_F32_F32
     )
