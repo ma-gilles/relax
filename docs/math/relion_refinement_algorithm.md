@@ -554,6 +554,46 @@ Hierarchical candidate propagation and multiple local-search centers remain
 future engine design questions. They would change search support, state and
 memory requirements and need their own scientific validation after this cleanup.
 
+## 8. Per-iteration run files and `--continue`
+
+RELION writes its state after every numbered iteration and restarts from it with
+`--continue <run_itNNN_optimiser.star>` (`MlOptimiser::write`/`read`,
+ml_optimiser.cpp:1359-1557 and 1089-1357). relax does the same.
+[`iteration_snapshot.py`](../../relax/refinement/iteration_snapshot.py) defines the state
+one numbered iteration hands to the next (`IterationSnapshot`): the half or class
+references, tau2, data_vs_prior, the FSC and the growth FSC, per-half and per-optics-group
+noise, per-half sigma offsets, class weights, direction priors, current size, `incr_size`
+and `has_high_fsc_at_limit`, the sampling perturbation, every `RefinementState` scalar,
+and per particle the pose, offset, norm and scale corrections, group and class.
+[`run_files.py`](../../relax/refinement/run_files.py) writes it as RELION's
+`run_itNNN_optimiser.star`, `run_itNNN_half{1,2}_model.star` (Class3D: `run_itNNN_model.star`),
+`run_itNNN_data.star`, `run_itNNN_sampling.star`, the reference maps and, for auto-refine,
+the unregularized `run_itNNN_half{1,2}_class001_unfil.mrc`, and reads them back.
+`run_full_refinement.py --write-iteration-every N` (default 1) sets the frequency.
+
+`--continue` restores that state before the loop (`options.checkpoint.resume`), and the
+loop's first iteration then takes the same branches as iteration N+1 of the uninterrupted
+run (`has_previous_iteration` in `iteration_loop.py`): the current-size growth reads the
+restored FSC, current size and data_vs_prior, sampling is updated at the expectation
+boundary and convergence is checked at the top. A continued run reproduces the
+uninterrupted run within same-code repeat noise, with three deliberate differences from
+RELION's restart:
+
+* Each half keeps its own noise spectrum. RELION's MPI restart broadcasts rank 1's
+  `sigma2_noise` to every rank (ml_optimiser_mpi.cpp:750-758), so half 2 restarts on
+  half 1's noise; an uninterrupted RELION run keeps both (relax issue #7).
+* The particle order stays the one the run started with. RELION randomises the order once
+  per process with `random_seed + iter` (exp_model.cpp:406-446), so its restart processes
+  the particles in a new order and draws new expected-accuracy trial particles.
+* STAR floats are written at full precision, and the optimiser STAR carries the scalars
+  RELION's files lack (the latched fine-enough flag, the growth FSC and the rest of
+  `RefinementState`) in extra `data_relax_state`/`data_relax_shells` blocks, which
+  `MlOptimiser::read` does not parse. The references pass through float32 real-space
+  MRCs, as RELION's do.
+
+`--max_iter` stays the last numbered iteration of the whole run, like RELION's `--iter`.
+Multi-shape particle STARs and VDAM (InitialModel) have no run files yet.
+
 ## BPref translation arithmetic
 
 The float32 BPref translation computes the imaginary component as
