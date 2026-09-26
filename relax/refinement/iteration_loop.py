@@ -2844,6 +2844,8 @@ def refine_single_volume(
                 )
                 return
             if tomo_halves:
+                tomo_oversampling = int(state.adaptive_oversampling)
+                tomo_coarse_size = local_pass1_current_size if use_local else coarse_cs
                 score_result = _score_tomo_half_in_loop(
                     experiment_datasets[k],
                     use_local=use_local,
@@ -2853,14 +2855,24 @@ def refine_single_volume(
                     relion_projector_half=relion_projector_half_by_half[k],
                     relion_projector_r_max=relion_projector_r_max_by_half[k],
                     sampling=TomoSampling(
-                        healpix_order=int(current_healpix_order),
-                        oversampling_order=int(state.adaptive_oversampling),
+                        # A local search's pass 1 is one oversampling order below its fine order.
+                        healpix_order=int(local_search_order) - tomo_oversampling if use_local else int(current_healpix_order),
+                        oversampling_order=tomo_oversampling,
                         # RefinementState keeps the offset range and step in pixels of the model grid.
                         offset_range_angst=float(state.translation_range) * float(cryo.voxel_size),
                         offset_step_angst=float(state.translation_step) * float(cryo.voxel_size),
-                        random_perturbation=float(random_perturbation),
-                        coarse_size=int(cryo.image_shape[0] if coarse_cs is None else coarse_cs),
+                        random_perturbation=float(local_search_random_perturbation if use_local else random_perturbation),
+                        coarse_size=int(cryo.image_shape[0] if tomo_coarse_size is None else tomo_coarse_size),
                         fine_size=int(cryo.image_shape[0] if cs_for_engine is None else cs_for_engine),
+                    ),
+                    local_search=(
+                        dict(
+                            previous_eulers_deg=relion_half_inputs.previous_best_rotation_eulers[k],
+                            sigma_rot=sigma_rot,
+                            sigma_psi=sigma_psi,
+                        )
+                        if use_local
+                        else None
                     ),
                     rotation_log_prior=rotation_log_prior_k,
                     previous_translations=previous_translations_k,

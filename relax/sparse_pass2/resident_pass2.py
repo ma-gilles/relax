@@ -1431,9 +1431,13 @@ def _class_candidate_tables(
     use_relion_f32_fine_posterior,
     dtype,
     symmetry_label,
+    coarse_rotation_ids=None,
+    per_image_rotation_log_prior=None,
 ):
     """One class's per-image hypotheses and candidate table (T5), exactly the K=1 build.
 
+    ``coarse_rotation_ids`` and ``per_image_rotation_log_prior`` are the compact coarse grid and
+    the per-unit priors of a subtomogram local search (``_prepare_per_image_pass2_inputs``).
     Returns ``(tables, hypothesis_prep_seconds, table_seconds)``.
     """
 
@@ -1464,7 +1468,11 @@ def _class_candidate_tables(
         relion_parent_execution_order=relion_parent_execution_order,
         dtype=dtype,
         symmetry_label=symmetry_label,
+        coarse_rotation_ids=coarse_rotation_ids,
+        per_image_rotation_log_prior=per_image_rotation_log_prior,
     )
+    if significance_csr is not None and (coarse_rotation_ids is not None or per_image_rotation_log_prior is not None):
+        raise ValueError("a compact coarse grid or per-image priors take the host candidate-table path")
     prep_s = time.time() - prep_t0
 
     table_t0 = time.time()
@@ -1581,6 +1589,8 @@ def _resident_pass2(
     reconstruction_group_count=None,
     classes: ResidentClassInputs | None = None,
     tilt=None,
+    coarse_rotation_ids=None,
+    unit_rotation_log_prior=None,
 ):
     """The device-resident sparse pass 2 over one or K classes; returns ``_ResidentPass2Result``.
 
@@ -1682,6 +1692,14 @@ def _resident_pass2(
     # (healpix_sampling.cpp removeSymmetryEquivalentPoints); the caller's fine
     # rotation override already holds its children.
     n_coarse_rot = rotation_grid_size(nside_level, symmetry_label)
+    if coarse_rotation_ids is not None or unit_rotation_log_prior is not None:
+        # A subtomogram local search (relax.refinement.tomo_half): its coarse grid is the union of the
+        # particles' local rotations (coarse id c is grid rotation coarse_rotation_ids[c]) and each
+        # particle carries its own orientation prior over its support's coarse rotations.
+        _require(tilt is not None and classes is None, "a compact coarse grid is the subtomogram local search's")
+        _require(rotation_log_prior is None, "a local search's rotation priors are the particles' own")
+        if coarse_rotation_ids is not None:
+            n_coarse_rot = int(np.asarray(coarse_rotation_ids).size)
     image_shape = experiment_dataset.image_shape
     volume_shape = experiment_dataset.volume_shape
 
@@ -1941,6 +1959,8 @@ def _resident_pass2(
             use_relion_f32_fine_posterior=use_relion_f32_fine_posterior,
             dtype=precision_policy.score_real_dtype,
             symmetry_label=symmetry_label,
+            coarse_rotation_ids=coarse_rotation_ids,
+            per_image_rotation_log_prior=unit_rotation_log_prior,
         )
         tables_by_class.append(class_tables)
         prep_s += class_prep_s
@@ -3011,6 +3031,8 @@ def compute_pass2_stats_resident(
     reconstruction_group_ids=None,
     reconstruction_group_count=None,
     tilt=None,
+    coarse_rotation_ids=None,
+    unit_rotation_log_prior=None,
 ):
     """Device-resident K=1 sparse pass 2; same signature and return as the compact engine.
 
@@ -3018,7 +3040,8 @@ def compute_pass2_stats_resident(
     layout-equal to the compact engine and what is a deliberate reduction-order
     change. ``tilt`` (:class:`relax.sparse_pass2.resident_tilts.TiltPassInputs`) makes the
     units subtomogram particles over their tilt images (S4.2); the per-unit outputs are then
-    the particles'.
+    the particles'; ``coarse_rotation_ids`` and ``unit_rotation_log_prior`` are its local search's
+    compact coarse grid and per-particle priors (:func:`_resident_pass2`).
     """
 
     # Every parameter, forwarded by name: the signature is the compact engine's.
