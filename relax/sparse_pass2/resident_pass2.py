@@ -2985,22 +2985,56 @@ def compute_pass2_stats_resident(
     reconstruction_image_radius=None,
     reconstruction_group_ids=None,
     reconstruction_group_count=None,
-    tilt=None,
-    coarse_rotation_ids=None,
-    unit_rotation_log_prior=None,
 ):
     """Device-resident K=1 sparse pass 2; same signature and return as the compact engine.
 
     A one-class :func:`_resident_pass2`. See the module docstring for what is
     layout-equal to the compact engine and what is a deliberate reduction-order
-    change. ``tilt`` (:class:`relax.sparse_pass2.resident_tilts.TiltPassInputs`) makes the
-    units subtomogram particles over their tilt images (S4.2); the per-unit outputs are then
-    the particles'; ``coarse_rotation_ids`` and ``unit_rotation_log_prior`` are its local search's
-    compact coarse grid and per-particle priors (:func:`_resident_pass2`).
+    change.
     """
 
     # Every parameter, forwarded by name: the signature is the compact engine's.
     result = _resident_pass2(**locals())
+    return _k1_pass2_output(
+        result,
+        fine_rotations_override=fine_rotations_override,
+        fine_source_eulers_override=fine_source_eulers_override,
+        return_stats=return_stats,
+        return_score_log_z=return_score_log_z,
+        return_source_eulers=return_source_eulers,
+    )
+
+
+def compute_tilt_pass2_stats_resident(*, tilt, coarse_rotation_ids=None, unit_rotation_log_prior=None, **options):
+    """:func:`compute_pass2_stats_resident` for subtomogram particles over their tilt images (S4.2).
+
+    ``tilt`` is the :class:`relax.sparse_pass2.resident_tilts.TiltPassInputs`; ``coarse_rotation_ids``
+    and ``unit_rotation_log_prior`` are a local search's compact coarse grid and per-particle priors
+    (:func:`_resident_pass2`). ``options`` are the K=1 driver's keyword arguments; the per-unit outputs
+    are the particles'.
+    """
+
+    result = _resident_pass2(
+        tilt=tilt,
+        coarse_rotation_ids=coarse_rotation_ids,
+        unit_rotation_log_prior=unit_rotation_log_prior,
+        **options,
+    )
+    return _k1_pass2_output(
+        result,
+        fine_rotations_override=options["fine_rotations_override"],
+        fine_source_eulers_override=options.get("fine_source_eulers_override"),
+        return_stats=options["return_stats"],
+        return_score_log_z=options.get("return_score_log_z", False),
+        return_source_eulers=options.get("return_source_eulers", False),
+    )
+
+
+def _k1_pass2_output(
+    result, *, fine_rotations_override, fine_source_eulers_override, return_stats, return_score_log_z, return_source_eulers
+):
+    """The compact engine's K=1 output from a one-class resident result."""
+
     finalized = result.finalized
     hard_assignment = np.asarray(finalized.hard_assignment, dtype=np.int32)
     best_fine_rotation_indices = np.asarray(finalized.best_fine_rotation_indices, dtype=np.int64)

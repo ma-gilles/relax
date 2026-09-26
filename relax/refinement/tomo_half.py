@@ -247,7 +247,7 @@ def tilt_pass_inputs(
 class TomoScoreResult:
     """One tomo half's E- and M-step, per particle (the units of the half)."""
 
-    pass2: object  # SparsePass2Output of compute_pass2_stats_resident: Ft, per-particle poses and stats
+    pass2: object  # SparsePass2Output of compute_tilt_pass2_stats_resident: Ft, per-particle poses and stats
     coarse_hard_assignment: np.ndarray  # int32 [P], coarse rotation * T_coarse + coarse translation
     best_translations_px: np.ndarray  # [P, 3] rounded old offset + the winning trial shift (RELION's new offset)
     significant_counts: np.ndarray  # int32 [P], coarse significant samples
@@ -282,7 +282,7 @@ def score_tomo_half(
     Pass 1 scores every particle's tilt images on the coarse grid and cuts the particle's summed
     posterior (:func:`relax.scoring.tomo_coarse.particle_coarse_supports`); pass 2 scores the
     significant samples' oversampled children and backprojects every tilt image
-    (``resident_pass2.compute_pass2_stats_resident(tilt=...)``). ``old_offsets_px`` are the particles'
+    (``resident_pass2.compute_tilt_pass2_stats_resident``). ``old_offsets_px`` are the particles'
     previous 3D offsets (unrounded, pixels); ``noise_variance`` is one spectrum or ``[G, N^2]`` rows
     with ``unit_groups`` the dense optics group of each particle. The flags are the production K=1
     ones (the one-iteration RELION-pinned replay, em_work/cryoet_s42_20260925/tomo_replay_it1.py).
@@ -301,7 +301,7 @@ def score_tomo_half(
     from relax import sampling as relax_sampling
     from relax.helpers.projection import relion_projector_half_to_texture_full
     from relax.scoring import tomo_coarse
-    from relax.sparse_pass2.resident_pass2 import compute_pass2_stats_resident
+    from relax.sparse_pass2.resident_pass2 import compute_tilt_pass2_stats_resident
 
     pixel = float(half.voxel_size)
     size = int(half.grid_size)
@@ -387,14 +387,14 @@ def score_tomo_half(
     image_group_ids = None if group_ids is None else np.repeat(
         np.asarray(group_ids, dtype=np.int32), np.diff(half.unit_image_offsets)
     )
-    pass2 = compute_pass2_stats_resident(
-        half.images,
-        volume,
-        noise,
-        coarse_px,
-        supports,
-        sampling.healpix_order,
-        "linear_interp",
+    pass2 = compute_tilt_pass2_stats_resident(
+        experiment_dataset=half.images,
+        volume=volume,
+        noise_variance=noise,
+        translations=coarse_px,
+        significant_sample_indices=supports,
+        nside_level=sampling.healpix_order,
+        disc_type="linear_interp",
         oversampling_order=sampling.oversampling_order,
         current_size=sampling.fine_size,
         reconstruction_current_size=(
