@@ -22,8 +22,10 @@ from relax.local.local_layout import _local_search_engine_rotation_block_size, b
 from relax.sampling import build_local_search_grid_metadata
 from relax.sparse_pass2.engine_record import record_pass_engine
 from relax.sparse_pass2.resident_local_pass2 import (
+    RESIDENT_LOCAL_PARENT_PROBE_ENV,
     RESIDENT_LOCAL_SEARCH_ENV,
     compute_local_search_resident,
+    resident_local_parent_probe_requested,
     resident_local_search_requested,
 )
 from relax.sparse_pass2.sparse_pass2_policy import (
@@ -335,22 +337,23 @@ def _run_local_search_iteration(
             ),
         )
 
+    resident_env = RESIDENT_LOCAL_PARENT_PROBE_ENV if score_only else RESIDENT_LOCAL_SEARCH_ENV
     if (
         resident_local_search_requested()
-        and not score_only
+        and (not score_only or resident_local_parent_probe_requested())
         and current_size is not None
         and int(current_size) < int(experiment_dataset.image_shape[0])
     ):
-        # The device-resident local pass 2 (T12). Only the fine pass is routed
-        # here: the pass-1 parent probe selects pass 2's candidate set with
-        # RELION's ``maximum_significants`` cap, which the segmented float32
-        # posterior does not implement, so routing it would change the support
-        # rather than only its layout. The boundary is logged, not silent.
+        # The device-resident local pass 2 (T12), and RELION's pass-1 parent
+        # probe on the same stages (score-only: significant samples, no M-step).
+        # A probe with a maximum_significants cap is refused below and runs on
+        # the exact local engine, which applies the cap.
         logger.info(
-            "%s=1: running the device-resident local fine pass 2 "
+            "%s: running the device-resident local %s "
             "(image_batch_size=%d and rotation_block_size=%d are unused by this path; "
             "its capacity plan is sized from the projection byte budget)",
-            RESIDENT_LOCAL_SEARCH_ENV,
+            resident_env,
+            "pass-1 parent probe" if score_only else "fine pass 2",
             image_batch_size,
             rotation_block_size,
         )
@@ -403,33 +406,32 @@ def _run_local_search_iteration(
                 reconstruction_image_radius=reconstruction_image_radius,
             )
         except ResidentConfigurationUnsupported as exc:
-            if resident_engine_selection(RESIDENT_LOCAL_SEARCH_ENV) == "explicit":
+            if resident_engine_selection(resident_env) == "explicit":
                 raise
             # The resident default: a pass the resident driver refuses before any
             # device work runs on the exact local engine below.
             logger.info(
-                "Device-resident local pass 2 (the K=1 default) does not cover this pass; "
+                "Device-resident local %s (the K=1 default) does not cover this pass; "
                 "it runs on the exact local engine: %s",
+                "pass-1 probe" if score_only else "pass 2",
                 exc,
             )
             engine_outputs = None
             exact_local_reason = resident_refusal_reason(exc)
         else:
-            record_pass_engine("local", "resident")
+            record_pass_engine("local_probe" if score_only else "local", "resident")
     else:
         engine_outputs = None
         exact_local_reason = (
-            "parent probe" if score_only
+            f"{RESIDENT_LOCAL_PARENT_PROBE_ENV}=0" if score_only and resident_local_search_requested()
             else "full-box final pass" if resident_local_search_requested()
             else f"{RESIDENT_LOCAL_SEARCH_ENV}=0"
         )
         if resident_local_search_requested():
             if score_only:
                 logger.info(
-                    "%s=1: the pass-1 parent probe keeps the exact local engine "
-                    "(its RELION maximum_significants cap is outside the segmented "
-                    "posterior's contract, and changing it would change pass 2's support)",
-                    RESIDENT_LOCAL_SEARCH_ENV,
+                    "%s: the pass-1 parent probe runs on the exact local engine",
+                    exact_local_reason,
                 )
             else:
                 logger.info(
@@ -439,7 +441,7 @@ def _run_local_search_iteration(
                     current_size,
                 )
     if engine_outputs is None:
-        record_pass_engine("local", "exact_local", exact_local_reason)
+        record_pass_engine("local_probe" if score_only else "local", "exact_local", exact_local_reason)
         engine_outputs = run_local_em_exact(
             experiment_dataset,
             mean,

@@ -76,6 +76,7 @@ import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
 from relax.helpers.adjoint import mstep_adjoint_max_r
+from relax.helpers.batch_fetch import fetch_indexed_batch
 from relax.helpers.env_flags import parse_env_capacity_ladder, parse_env_flag
 from relax.helpers.half_spectrum import (
     make_relion_noise_shell_indices_half,
@@ -115,6 +116,7 @@ from relax.sparse_pass2.resident_statistics import (
     resolve_statistics_config,
 )
 from relax.sparse_pass2.sparse_pass2_bucket_io import (
+    _prepare_bucket_io,
     _relion_cuda_score_translation_angles_if_available,
 )
 from relax.sparse_pass2.sparse_pass2_budget import (
@@ -133,6 +135,7 @@ from relax.sparse_pass2.sparse_pass2_projection_blocks import (
 )
 from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_cuda_fine_full_to_compact_lookup,
+    _relion_powerclass_noise_terms,
 )
 from relax.sparse_pass2.sparse_pass2_wavg import (
     _make_relion_wavg_rectangle,
@@ -186,11 +189,26 @@ _DEFAULT_ROW_CAPACITY_LADDER = (1024, 4096, 16384, 65536)
 _DEFAULT_IMAGE_CAPACITY_LADDER = (32, 128, 512)
 
 __all__ = [
+    "RESIDENT_LOCAL_PARENT_PROBE_ENV",
     "RESIDENT_LOCAL_SEARCH_ENV",
     "compute_local_search_resident",
     "require_resident_local_configuration",
+    "resident_local_parent_probe_requested",
     "resident_local_search_requested",
 ]
+
+
+RESIDENT_LOCAL_PARENT_PROBE_ENV = "RELAX_LOCAL_PARENT_PROBE_RESIDENT"
+
+
+def resident_local_parent_probe_requested() -> bool:
+    """Return whether the pass-1 parent probe runs on the resident stages (the default).
+
+    ``RELAX_LOCAL_PARENT_PROBE_RESIDENT=0`` keeps it on the exact local engine for
+    A/B checks; a maximum_significants cap is refused and runs there as well.
+    """
+
+    return resident_engine_selection(RESIDENT_LOCAL_PARENT_PROBE_ENV) != "off"
 
 
 def resident_local_search_requested() -> bool:
@@ -213,14 +231,12 @@ def _require(condition: bool, message: str) -> None:
 
 
 def require_resident_local_configuration(**kwargs) -> None:
-    """Raise unless this is the K=1 local fine pass 2 in its production shape."""
+    """Raise unless this is the K=1 local fine pass 2, or its pass-1 parent probe, in production shape."""
 
     _require(kwargs["class_log_priors"] is None, "K-class local search keeps its own engine")
-    _require(
-        not bool(kwargs["score_only"]),
-        "the pass-1 parent probe stays on the exact local engine; its RELION "
-        "maximum_significants cap is not in the segmented posterior's contract",
-    )
+    if bool(kwargs["score_only"]):
+        _require_parent_probe_configuration(**kwargs)
+        return
     _require(
         not (bool(kwargs["disable_adjoint_y"]) or bool(kwargs["disable_adjoint_ctf"])),
         "a score-only pass has no M-step to make resident",
@@ -300,6 +316,53 @@ def require_resident_local_configuration(**kwargs) -> None:
         "support does not; choosing between them is a scientific decision, "
         "not a layout change",
     )
+    for name in rp._DIAGNOSTIC_DIR_ENVS:
+        _require(
+            not os.environ.get(name, "").strip(),
+            f"the diagnostic dump {name} is set; this driver emits no dumps",
+        )
+    for name in rp._DIAGNOSTIC_FLAG_ENVS:
+        _require(
+            not parse_env_flag(name, default=False),
+            f"the diagnostic flag {name} is set; this driver has no such arm",
+        )
+
+
+def _require_parent_probe_configuration(**kwargs) -> None:
+    """Raise unless this is RELION's local pass 1 (the parent probe) in production shape."""
+
+    _require(
+        bool(kwargs["return_reconstruction_sample_indices"]),
+        "a score-only local pass is the parent probe, which returns its significant samples",
+    )
+    # The probe keeps RELION's adaptive-fraction support; the segmented float32
+    # posterior has no maximum_significants cap, and RELION's default (--maxsig
+    # -1, ml_optimiser.cpp:1109) applies none. A cap stays on the exact engine.
+    _require(
+        kwargs["max_significants"] is None or int(kwargs["max_significants"]) <= 0,
+        "a maximum_significants cap on the pass-1 support is not in the segmented "
+        "posterior's contract",
+    )
+    _require(
+        not bool(kwargs["use_float64_scoring"]) and not bool(kwargs["use_float64_projections"]),
+        "float64 local search is a diagnostic mode",
+    )
+    _require(
+        bool(kwargs["relion_exact_score_translation"]),
+        "the fused translate-and-score kernel needs RELION translation angles",
+    )
+    _require(bool(kwargs["half_spectrum_scoring"]), "RELION half-spectrum scoring is required")
+    _require(
+        kwargs["relion_projector_half"] is not None
+        and kwargs["relion_projector_r_max"] is not None,
+        "the resident row projection uses the RELION PPref projector",
+    )
+    _require(
+        kwargs["normalization_log_z"] is None
+        and kwargs["normalization_log_evidence"] is None,
+        "an externally supplied normalizer belongs to the broad-denominator probe",
+    )
+    _require(bool(kwargs["use_window"]), "the probe scores RELION's current-size window")
     for name in rp._DIAGNOSTIC_DIR_ENVS:
         _require(
             not os.environ.get(name, "").strip(),
@@ -676,6 +739,68 @@ def compute_local_search_resident(
     projection_kwargs["mask_current_image_disk"] = bool(projection_mask_current_image_disk)
     projection_kwargs["relion_kernel"] = projection_relion_kernel
 
+    # ---- per-image resident operands --------------------------------------
+    bucket_io_kwargs = dict(
+        noise_variance_half=noise_variance_half,
+        fine_translations=fine_translations,
+        config=config,
+        n_trans=n_fine_trans,
+        score_with_masked_images=score_with_masked_images,
+        half_spectrum_scoring=half_spectrum_scoring,
+        image_corrections=image_corrections,
+        scale_corrections=scale_corrections,
+        image_pre_shifts=image_pre_shifts,
+        use_float64_scoring=use_float64_scoring,
+        score_only=False,
+        score_mode="gaussian",
+        window_indices=window_indices,
+        recon_window_indices=recon_window_indices,
+        translation_phases_half=translation_phases_half,
+        relion_score_translation_angles=relion_score_translation_angles,
+        return_windowed_shifted=windowed_prepare,
+        relion_exact_normalized_cc_operands=False,
+        # The exact local engine runs its production path with the plain
+        # ``CTF^2 / sigma2`` operand order, not RELION's RFLOAT-square order,
+        # so keep that here rather than silently switching operand families.
+        relion_exact_bpref_operands=False,
+        noise_optics_groups=optics_groups_np,
+    )
+    fine_translation_prior_2d = np.asarray(
+        tables.translation_log_prior, dtype=precision_policy.score_real_dtype
+    )
+
+    if score_only:
+        # RELION's pass 1 (the local adaptive parent probe): score, posterior and
+        # significance only, no M-step. See _run_resident_parent_probe.
+        return _run_resident_parent_probe(
+            tables=tables,
+            experiment_dataset=experiment_dataset,
+            bucket_io_kwargs=dict(bucket_io_kwargs, score_only=True),
+            fine_translation_prior_2d=fine_translation_prior_2d,
+            half_weights=half_weights_windowed,
+            full_to_compact=relion_score_full_to_compact,
+            translation_angles=relion_score_translation_angles,
+            n_score_pixels=int(n_windowed),
+            mean=mean,
+            volume_shape=volume_shape,
+            disc_type=disc_type,
+            projection_kwargs=projection_kwargs,
+            projection_padding_factor=projection_padding_factor,
+            relion_projector_half=relion_projector_half,
+            relion_projector_r_max=relion_projector_r_max,
+            precision_policy=precision_policy,
+            n_fine_trans=n_fine_trans,
+            adaptive_fraction=float(adaptive_fraction),
+            windowed_prepare=windowed_prepare,
+            window_indices=window_indices,
+            image_shape=image_shape,
+            current_size=current_size,
+            source_faithful_spectrum_norm=resolved_spectrum_norm,
+            return_significant_counts=return_significant_counts,
+            return_profile=return_profile,
+            overall_t0=overall_t0,
+        )
+
     # ---- capacity plan ----------------------------------------------------
     row_ladder = _cap_row_capacity_ladder(
         parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER),
@@ -764,36 +889,6 @@ def compute_local_search_resident(
         memory_plan.peak_bytes / float(1024**3),
         rp.format_budget_gib(memory_plan.budget_bytes),
         table_s,
-    )
-
-    # ---- per-image resident operands --------------------------------------
-    bucket_io_kwargs = dict(
-        noise_variance_half=noise_variance_half,
-        fine_translations=fine_translations,
-        config=config,
-        n_trans=n_fine_trans,
-        score_with_masked_images=score_with_masked_images,
-        half_spectrum_scoring=half_spectrum_scoring,
-        image_corrections=image_corrections,
-        scale_corrections=scale_corrections,
-        image_pre_shifts=image_pre_shifts,
-        use_float64_scoring=use_float64_scoring,
-        score_only=False,
-        score_mode="gaussian",
-        window_indices=window_indices,
-        recon_window_indices=recon_window_indices,
-        translation_phases_half=translation_phases_half,
-        relion_score_translation_angles=relion_score_translation_angles,
-        return_windowed_shifted=windowed_prepare,
-        relion_exact_normalized_cc_operands=False,
-        # The exact local engine runs its production path with the plain
-        # ``CTF^2 / sigma2`` operand order, not RELION's RFLOAT-square order,
-        # so keep that here rather than silently switching operand families.
-        relion_exact_bpref_operands=False,
-        noise_optics_groups=optics_groups_np,
-    )
-    fine_translation_prior_2d = np.asarray(
-        tables.translation_log_prior, dtype=precision_policy.score_real_dtype
     )
 
     # ---- statistics accumulators ------------------------------------------
@@ -1000,6 +1095,331 @@ def compute_local_search_resident(
         profile=profile,
         significant_counts=significant_counts,
         best_pose_eulers_deg=best_pose_eulers_deg,
+    )
+
+
+# Probe chunks carry no reconstruction operands: a row keeps its score-window
+# projection and its per-cell score/posterior outputs, an image its score operands.
+_PROBE_IMAGE_CAPACITY_LADDER = (32, 128, 512)
+_PROBE_CELL_BYTES = 6 * 4  # scores, probs, weights, reconstruction probs, mask, scratch
+
+
+def _prepare_chunk_score_operands(
+    *,
+    chunk,
+    image_indices,
+    experiment_dataset,
+    bucket_io_kwargs,
+    windowed_prepare,
+    score_window_indices,
+    fine_translation_prior_2d,
+    score_real_dtype,
+    n_fine_trans,
+    image_shape,
+    current_size,
+    source_faithful_spectrum_norm,
+):
+    """One probe chunk's score operands, from the same preparation as pass 2.
+
+    :func:`~relax.sparse_pass2.resident_pass2._prepare_chunk_reconstruction_operands`
+    minus every reconstruction, noise and Wavg tile: ``_prepare_bucket_io`` runs
+    with ``score_only`` and the rows are permuted and padded exactly as there.
+    """
+
+    image_capacity = int(chunk.image_capacity)
+    n_valid_images = int(chunk.n_valid_images)
+    image_indices = np.asarray(image_indices)
+    batch_data, ctf_params, fetched_indices = fetch_indexed_batch(experiment_dataset, image_indices)
+    order = rp._reorder_permutation(fetched_indices, image_indices, image_capacity)
+    padded_fetched_indices = rp._pad_batch_to_capacity(np.asarray(fetched_indices), image_capacity)
+    prepared = _prepare_bucket_io(
+        experiment_dataset,
+        jnp.asarray(rp._pad_batch_to_capacity(batch_data, image_capacity)),
+        rp._pad_batch_to_capacity(ctf_params, image_capacity),
+        padded_fetched_indices,
+        return_direct_scoring_io=True,
+        **bucket_io_kwargs,
+    )
+    ctf2_over_nv_half = prepared[3]
+    processed_score_half_for_noise = prepared[6]
+    direct_score_input = prepared[8]
+    if windowed_prepare:
+        score_input = direct_score_input
+        corr_img_score = ctf2_over_nv_half
+    else:
+        gather_score = jnp.asarray(score_window_indices, dtype=jnp.int32)
+        score_input = direct_score_input[:, gather_score]
+        corr_img_score = ctf2_over_nv_half[:, gather_score]
+    highres_xi2_half, _ = _relion_powerclass_noise_terms(
+        processed_score_half_for_noise,
+        image_shape=image_shape,
+        current_size=current_size,
+        use_exact_relion_gaussian=True,
+        accumulate_noise=False,
+        source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+    )
+    permutation = jnp.asarray(order, dtype=jnp.int32)
+    valid_images = jnp.asarray(np.arange(image_capacity) < n_valid_images, dtype=bool)
+
+    def take(values):
+        return rp._zero_padded_images(values[permutation], valid_images)
+
+    translation_prior = jnp.asarray(
+        np.zeros((image_capacity, int(n_fine_trans)), dtype=np.float32)
+        if fine_translation_prior_2d is None
+        else rp._pad_batch_to_capacity(np.asarray(fine_translation_prior_2d)[image_indices], image_capacity),
+        dtype=score_real_dtype,
+    )
+    return {
+        "score_input": take(score_input),
+        "corr_img_score": take(corr_img_score),
+        "highres_xi2_half": take(highres_xi2_half),
+        "translation_prior": rp._zero_padded_images(translation_prior, valid_images),
+    }
+
+
+def _run_resident_parent_probe(
+    *,
+    tables,
+    experiment_dataset,
+    bucket_io_kwargs,
+    fine_translation_prior_2d,
+    half_weights,
+    full_to_compact,
+    translation_angles,
+    n_score_pixels,
+    mean,
+    volume_shape,
+    disc_type,
+    projection_kwargs,
+    projection_padding_factor,
+    relion_projector_half,
+    relion_projector_r_max,
+    precision_policy,
+    n_fine_trans,
+    adaptive_fraction,
+    windowed_prepare,
+    window_indices,
+    image_shape,
+    current_size,
+    source_faithful_spectrum_norm,
+    return_significant_counts,
+    return_profile,
+    overall_t0,
+) -> LocalEMResult:
+    """RELION's local pass 1 (the adaptive parent probe) on the resident stages.
+
+    Scores every parent candidate with the pass-2 scorer, forms the segmented
+    float32 posterior with RELION's adaptive-fraction significance, and returns,
+    per image, the significant samples as ``posterior_id * n_trans + t`` in the
+    layout's row order: the ``reconstruction_sample_indices_by_image`` contract
+    of the exact local engine (local_bucket_stages.py), which builds pass 2's
+    support from them. There is no M-step, so no accumulator, statistic or
+    reconstruction operand is formed. RELION GPU sorts and sums the pass-1
+    weights in float as well (acc_ml_optimiser_impl.h findSignificantPoints);
+    a cutoff tie may resolve differently from the exact engine's float64 sort.
+    """
+
+    from relax.cuda import kernels as em_cuda_kernels
+
+    n_images = int(tables.n_images)
+    t = int(n_fine_trans)
+    complex_bytes = np.dtype(precision_policy.score_complex_dtype).itemsize
+    row_bytes = int(n_score_pixels) * complex_bytes + t * _PROBE_CELL_BYTES
+    image_bytes = int(n_score_pixels) * (2 * complex_bytes + 8) + t * 4
+    budget = rp.resident_chunk_budget_bytes()
+    if budget is not None:
+        budget = max(0, budget - _projection_call_transient_max_bytes())
+    row_ladder = tuple(int(v) for v in parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER))
+    image_ladder = tuple(int(v) for v in parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _PROBE_IMAGE_CAPACITY_LADDER))
+    if budget is not None:
+        while len(row_ladder) > 1 and max(row_ladder) * row_bytes + max(image_ladder) * image_bytes > budget:
+            row_ladder = row_ladder[:-1]
+        while len(image_ladder) > 1 and max(row_ladder) * row_bytes + max(image_ladder) * image_bytes > budget:
+            image_ladder = image_ladder[:-1]
+        if max(row_ladder) * row_bytes + max(image_ladder) * image_bytes > budget:
+            raise ResidentConfigurationUnsupported(
+                "The device-resident local pass-1 parent probe does not implement this configuration: "
+                f"its smallest chunk needs {(min(row_ladder) * row_bytes + min(image_ladder) * image_bytes) / 1024**3:.2f} "
+                f"GiB against a {budget / 1024**3:.2f} GiB budget"
+            )
+    # As in pass 2: one projector call materializes full half-spectrum rows.
+    n_half = int(image_shape[0]) * (int(image_shape[1]) // 2 + 1)
+    projection_block_rows = max(
+        1,
+        _projection_call_transient_max_bytes()
+        // max(n_half * int(jnp.asarray(relion_projector_half).dtype.itemsize), 1),
+    )
+    chunks = plan_local_capacity_chunks(tables, row_capacity_ladder=row_ladder, image_capacity_ladder=image_ladder)
+    logger.info(
+        "Resident local pass-1 probe plan: %d images, %d candidate rows, %d translations -> %d chunks "
+        "(row capacities %s, image capacities %s); %s budget",
+        n_images,
+        tables.n_rows,
+        t,
+        len(chunks),
+        ",".join(str(v) for v in row_ladder),
+        ",".join(str(v) for v in image_ladder),
+        rp.format_budget_gib(budget),
+    )
+
+    sample_ids_by_image: list[np.ndarray] = [np.zeros(0, dtype=np.int64)] * n_images
+    significant_counts = np.zeros(n_images, dtype=np.int32) if return_significant_counts else None
+    log_evidence = np.zeros(n_images, dtype=np.float64)
+    best_log_score = np.zeros(n_images, dtype=np.float64)
+    max_posterior = np.zeros(n_images, dtype=np.float64)
+    hard_assignments = np.full(n_images, -1, dtype=np.int64)
+    loop_t0 = time.time()
+    for chunk in chunks:
+        row_capacity = int(chunk.row_capacity)
+        image_capacity = int(chunk.image_capacity)
+        n_valid_rows = int(chunk.n_valid_rows)
+        n_valid_images = int(chunk.n_valid_images)
+        image_indices = np.arange(chunk.image_start, chunk.image_stop, dtype=np.int64)
+        host_chunk = materialize_local_chunk(tables, chunk)
+        ops = _prepare_chunk_score_operands(
+            chunk=chunk,
+            image_indices=image_indices,
+            experiment_dataset=experiment_dataset,
+            bucket_io_kwargs=bucket_io_kwargs,
+            windowed_prepare=windowed_prepare,
+            score_window_indices=window_indices,
+            fine_translation_prior_2d=fine_translation_prior_2d,
+            score_real_dtype=precision_policy.score_real_dtype,
+            n_fine_trans=t,
+            image_shape=image_shape,
+            current_size=current_size,
+            source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+        )
+        score_proj, _, _ = project_resident_rows(
+            mean,
+            jnp.asarray(host_chunk["rotations"], dtype=precision_policy.score_real_dtype),
+            image_shape,
+            volume_shape,
+            disc_type,
+            score_indices=window_indices,
+            recon_indices=None,
+            max_projected_rotations=int(projection_block_rows),
+            output_complex_dtype=precision_policy.score_complex_dtype,
+            output_abs2_dtype=precision_policy.score_real_dtype,
+            relion_projector_half=relion_projector_half,
+            relion_projector_r_max=relion_projector_r_max,
+            projection_padding_factor=projection_padding_factor,
+            **projection_kwargs,
+        )
+        n_valid_images_device = jnp.asarray(host_chunk["n_valid_images"], dtype=jnp.int32)
+        chunk_image_ids = jnp.where(
+            jnp.arange(image_capacity, dtype=jnp.int32) < n_valid_images_device,
+            jnp.arange(image_capacity, dtype=jnp.int32),
+            jnp.int32(-1),
+        )
+        scored = score_resident_projected_chunk(
+            score_proj,
+            jnp.asarray(host_chunk["row_image_local"], dtype=jnp.int32),
+            jnp.asarray(host_chunk["row_log_prior"], dtype=jnp.float32),
+            None if host_chunk["row_mask_bits"] is None else jnp.asarray(host_chunk["row_mask_bits"], dtype=jnp.uint8),
+            jnp.asarray(host_chunk["n_valid_rows"], dtype=jnp.int32),
+            chunk_image_ids,
+            ops["score_input"],
+            ops["corr_img_score"],
+            ops["highres_xi2_half"],
+            ops["translation_prior"],
+            half_weights=half_weights,
+            translation_angles=translation_angles,
+            full_to_compact=full_to_compact,
+            logical_current_size=jnp.asarray(current_size, dtype=jnp.int32),
+            row_capacity=row_capacity,
+            image_capacity=image_capacity,
+            n_fine_trans=t,
+            n_score_pixels=int(n_score_pixels),
+        )
+        del score_proj, ops
+        scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
+        segment_offsets_np = _local_chunk_segment_offsets(tables, chunk, t)
+        segment_offsets = jnp.asarray(segment_offsets_np, dtype=jnp.int32)
+        log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
+            scores_flat, segment_offsets, n_valid_images_device
+        )
+        (
+            log_z_out,
+            best_log,
+            best_cell,
+            max_post,
+            _probs,
+            _weights,
+            _reconstruction_probs,
+            mask,
+            n_significant,
+            _sum_weight,
+            _threshold,
+        ) = em_cuda_kernels.sparse_pass2_segmented_posterior_f32(
+            scores_flat,
+            segment_offsets,
+            n_valid_images_device,
+            log_z,
+            jnp.ones((image_capacity,), dtype=jnp.float32),
+            adaptive_fraction=float(adaptive_fraction),
+            keep_all=False,
+            use_external_sum_weight=False,
+        )
+        mask_np, best_cell_np, log_z_np, best_log_np, max_post_np, n_sig_np = jax.device_get(
+            (mask, best_cell, log_z_out, best_log, max_post, n_significant)
+        )
+        mask_np = np.asarray(mask_np, dtype=bool).reshape(row_capacity, t)[:n_valid_rows]
+        rows, cols = np.nonzero(mask_np)
+        posterior_ids = host_chunk["row_posterior_id"][:n_valid_rows].astype(np.int64)
+        sample_ids = posterior_ids[rows] * np.int64(t) + cols.astype(np.int64)
+        row_image = host_chunk["row_image_local"][:n_valid_rows][rows]
+        # np.nonzero is row-major, and an image's rows are contiguous, so each
+        # image's samples come out in the exact engine's (row, translation) order.
+        bounds = np.searchsorted(row_image, np.arange(n_valid_images + 1))
+        image_row_start = segment_offsets_np.astype(np.int64)[:n_valid_images] // t
+        for local in range(n_valid_images):
+            image = int(chunk.image_start) + local
+            sample_ids_by_image[image] = sample_ids[bounds[local] : bounds[local + 1]]
+            best_row = image_row_start[local] + int(best_cell_np[local]) // t
+            hard_assignments[image] = (
+                int(host_chunk["row_rotation_id"][best_row]) * t + int(best_cell_np[local]) % t
+            )
+        sl = slice(int(chunk.image_start), int(chunk.image_stop))
+        log_evidence[sl] = np.asarray(log_z_np)[:n_valid_images]
+        best_log_score[sl] = np.asarray(best_log_np)[:n_valid_images]
+        max_posterior[sl] = np.asarray(max_post_np)[:n_valid_images]
+        if significant_counts is not None:
+            significant_counts[sl] = np.asarray(n_sig_np, dtype=np.int32)[:n_valid_images]
+    loop_s = time.time() - loop_t0
+
+    if any(ids.size == 0 for ids in sample_ids_by_image):
+        raise RuntimeError("Resident local pass-1 probe: an image kept no significant sample")
+    stats = make_relion_stats(
+        log_evidence_per_image=log_evidence,
+        best_log_score_per_image=best_log_score,
+        max_posterior_per_image=max_posterior,
+        rotation_posterior_sums=np.zeros(0, dtype=np.float64),
+        host_arrays=True,
+    )
+    profile = {
+        "reconstruction_sample_indices_by_image": tuple(sample_ids_by_image),
+        "resident_probe_chunks": np.int32(len(chunks)),
+        "resident_probe_loop_time_s": np.float64(loop_s),
+        "resident_probe_total_time_s": np.float64(time.time() - overall_t0),
+    }
+    logger.info(
+        "Resident local pass-1 probe done: %d images, %d chunks, %d significant samples, "
+        "%.2fs chunk loop, %.2fs total",
+        n_images,
+        len(chunks),
+        int(sum(ids.size for ids in sample_ids_by_image)),
+        loop_s,
+        time.time() - overall_t0,
+    )
+    return LocalEMResult(
+        Ft_y=None,
+        Ft_ctf=None,
+        hard_assignments=hard_assignments,
+        stats=stats,
+        profile=profile,
+        significant_counts=significant_counts,
     )
 
 

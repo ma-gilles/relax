@@ -267,14 +267,15 @@ def test_resident_local_is_the_default_and_the_flag_selects_strictness(monkeypat
     assert resident_engine_selection(rlp.RESIDENT_LOCAL_SEARCH_ENV) == "off"
 
 
-def test_dispatch_routes_only_the_fine_pass():
-    """The wiring: the fine pass routes and the parent probe does not (local searches are K=1 only)."""
+def test_dispatch_routes_the_fine_pass_and_the_parent_probe():
+    """The wiring: the fine pass and, unless switched off, the pass-1 parent probe route
+    to the resident driver (local searches are K=1 only)."""
 
     import inspect
 
     source = inspect.getsource(local_search_iteration._run_local_search_iteration)
     assert "resident_local_search_requested()" in source
-    assert "and not score_only" in source
+    assert "(not score_only or resident_local_parent_probe_requested())" in source
     # the zero-oversampling route (every scored sample) is routed too
     assert "and reconstruct_significant_only" not in source
     # and only below the full image box (RELION's final all-data shape)
@@ -314,7 +315,6 @@ def test_dispatch_call_keywords_are_resident_parameters():
 @pytest.mark.parametrize(
     ("override", "expected"),
     [
-        ({"score_only": True}, "parent probe"),
         ({"class_log_priors": np.zeros(2)}, "K-class"),
         ({"mstep_relion_x_half": False}, "x-half M-step"),
         ({"accumulate_noise": False}, "noise statistics"),
@@ -360,6 +360,68 @@ def test_gate_names_the_missing_piece(override, expected):
     kwargs.update(override)
     with pytest.raises(NotImplementedError, match=expected):
         rlp.require_resident_local_configuration(**kwargs)
+
+
+_PROBE_KWARGS = dict(
+    class_log_priors=None,
+    score_only=True,
+    disable_adjoint_y=True,
+    disable_adjoint_ctf=True,
+    mstep_relion_x_half=False,
+    accumulate_noise=False,
+    reconstruct_significant_only=True,
+    max_significants=-1,
+    stats_use_reconstruction_probs=True,
+    use_float64_scoring=False,
+    use_float64_projections=False,
+    relion_exact_score_translation=True,
+    half_spectrum_scoring=True,
+    relion_projector_half=object(),
+    relion_projector_r_max=4,
+    mstep_subtract_ctf_projection=False,
+    normalization_log_z=None,
+    normalization_log_evidence=None,
+    return_reconstruction_sample_indices=True,
+    group_ids=None,
+    use_window=True,
+    relion_wavg_atomic_scale_aa=False,
+    relion_wavg_atomic_direct_noise=False,
+    relion_wavg_atomic_direct_norm=False,
+)
+
+
+def test_parent_probe_configuration_is_accepted_without_the_mstep_pieces():
+    """RELION's pass 1 has no M-step: no noise statistics, x-half accumulators or scale groups."""
+
+    rlp.require_resident_local_configuration(**_PROBE_KWARGS)
+
+
+@pytest.mark.parametrize(
+    ("override", "expected"),
+    [
+        ({"class_log_priors": np.zeros(2)}, "K-class"),
+        ({"return_reconstruction_sample_indices": False}, "returns its significant samples"),
+        ({"max_significants": 500}, "maximum_significants cap on the pass-1 support"),
+        ({"use_float64_scoring": True}, "float64"),
+        ({"relion_exact_score_translation": False}, "translation angles"),
+        ({"half_spectrum_scoring": False}, "half-spectrum"),
+        ({"relion_projector_half": None}, "PPref projector"),
+        ({"normalization_log_evidence": np.zeros(3)}, "externally supplied normalizer"),
+        ({"use_window": False}, "current-size window"),
+    ],
+)
+def test_parent_probe_gate_names_the_missing_piece(override, expected):
+    kwargs = dict(_PROBE_KWARGS)
+    kwargs.update(override)
+    with pytest.raises(NotImplementedError, match=expected):
+        rlp.require_resident_local_configuration(**kwargs)
+
+
+def test_parent_probe_selection_is_default_on_and_switchable(monkeypatch):
+    monkeypatch.delenv(rlp.RESIDENT_LOCAL_PARENT_PROBE_ENV, raising=False)
+    assert rlp.resident_local_parent_probe_requested()
+    monkeypatch.setenv(rlp.RESIDENT_LOCAL_PARENT_PROBE_ENV, "0")
+    assert not rlp.resident_local_parent_probe_requested()
 
 
 def test_projector_call_bound_covers_the_shape_that_ran_out_of_memory():
@@ -452,6 +514,118 @@ def test_final_all_data_shape_keeps_the_exact_local_engine(monkeypatch, _residen
     a = np.asarray(with_flag.Ft_y, dtype=np.complex128)
     b = np.asarray(without.Ft_y, dtype=np.complex128)
     assert float(np.linalg.norm(a - b) / np.linalg.norm(b)) < 1e-6
+
+
+def _parent_layout(seed=20260919):
+    translations = np.array(
+        [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]], dtype=np.float32
+    )
+    parent = build_local_hypothesis_layout(
+        _prior_eulers(N_IMAGES, seed),
+        None,
+        0.35,
+        0.35,
+        PARENT_ORDER,
+        translations,
+        np.zeros((N_IMAGES, 2), dtype=np.float32),
+        3.0,
+        None,
+        1.0,
+        grid_metadata=build_local_search_grid_metadata(PARENT_ORDER),
+        translation_prior_reference_translations=translations,
+        dtype=np.float32,
+    )
+    return parent, translations
+
+
+def _run_probe(case, *, resident: bool, monkeypatch):
+    """RELION's pass-1 parent probe through the production dispatch (half_scoring's call)."""
+
+    monkeypatch.delenv(rlp.RESIDENT_LOCAL_SEARCH_ENV, raising=False)
+    monkeypatch.setenv(rlp.RESIDENT_LOCAL_PARENT_PROBE_ENV, "1" if resident else "0")
+    parent, translations = _parent_layout()
+    result = local_search_iteration._run_local_search_iteration(
+        case["dataset"],
+        case["volume"],
+        case["noise_variance"],
+        _prior_eulers(N_IMAGES, 20260919),
+        None,
+        PARENT_ORDER,
+        0.35,
+        0.35,
+        translations,
+        np.zeros((N_IMAGES, 2), dtype=np.float32),
+        3.0,
+        "linear_interp",
+        image_batch_size=4,
+        rotation_block_size=64,
+        current_size=CURRENT_SIZE,
+        accumulate_noise=False,
+        projection_padding_factor=1,
+        half_spectrum_scoring=True,
+        relion_exact_score_translation=True,
+        projection_relion_texture_interp=False,
+        projection_relion_kernel="coarse",
+        relion_projector_half=case["projector_half"],
+        relion_projector_r_max=case["r_max"],
+        do_gridding_correction=True,
+        return_profile=True,
+        disable_adjoint_y=True,
+        disable_adjoint_ctf=True,
+        reconstruct_significant_only=True,
+        adaptive_fraction=0.999,
+        max_significants=-1,
+        pass2_layout=parent,
+        return_reconstruction_sample_indices=True,
+        apply_max_significants_to_support=True,
+        score_only=True,
+    )
+    return result, parent
+
+
+@requires_resident_gpu
+def test_resident_parent_probe_matches_the_exact_engine(monkeypatch, _resident_local_env):
+    """The resident pass-1 probe keeps the exact engine's significant samples.
+
+    The support is the discrete output pass 2 is built from, so it is compared
+    exactly, except for samples whose weight sits on the float32/float64
+    significance cutoff: the exact engine sorts float64 weights on the host, the
+    resident probe uses the segmented float32 posterior (as RELION GPU does).
+    Winners and the sample-id convention (posterior id x n_trans + t, row order)
+    must agree; a measured tie fraction is allowed on the support.
+    """
+
+    from relax.sparse_pass2.engine_record import take_pass_engines
+
+    case = _case()
+    take_pass_engines()
+    exact, parent = _run_probe(case, resident=False, monkeypatch=monkeypatch)
+    assert take_pass_engines() == ["local_probe:exact_local (RELAX_LOCAL_PARENT_PROBE_RESIDENT=0)"]
+    resident, _ = _run_probe(case, resident=True, monkeypatch=monkeypatch)
+    assert take_pass_engines() == ["local_probe:resident"]
+
+    exact_ids = exact.profile_summary["reconstruction_sample_indices_by_image"]
+    resident_ids = resident.profile_summary["reconstruction_sample_indices_by_image"]
+    assert len(exact_ids) == len(resident_ids) == N_IMAGES
+    n_trans = int(np.asarray(parent.translation_grid).shape[0])
+    differing = 0
+    total = 0
+    for image, (a, b) in enumerate(zip(exact_ids, resident_ids, strict=True)):
+        a = np.asarray(a, dtype=np.int64)
+        b = np.asarray(b, dtype=np.int64)
+        # Every id is a parent row of this image and a valid translation.
+        start, stop = int(parent.rotation_offsets[image]), int(parent.rotation_offsets[image + 1])
+        rows = set(np.asarray(parent.rotation_ids_flat[start:stop], dtype=np.int64).tolist())
+        assert set((b // n_trans).tolist()) <= rows
+        # Row order: ids appear in the layout's (row, translation) order.
+        order = {rot: k for k, rot in enumerate(parent.rotation_ids_flat[start:stop])}
+        keys = [(order[int(i // n_trans)], int(i % n_trans)) for i in b]
+        assert keys == sorted(keys)
+        differing += len(set(a.tolist()) ^ set(b.tolist()))
+        total += len(set(a.tolist()) | set(b.tolist()))
+    # Measured on this fixture; the band is the float32 cutoff tie rate.
+    assert differing <= max(1, int(0.01 * total)), (differing, total)
+    assert_matches(np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment))
 
 
 @requires_resident_gpu
