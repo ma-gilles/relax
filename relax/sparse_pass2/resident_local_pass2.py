@@ -683,19 +683,38 @@ def compute_local_search_resident(
         n_recon_pixels=n_recon_windowed,
         max_bytes=_projection_cache_max_bytes_for_pass(device_memory_bytes),
     )
-    image_ladder = rp._cap_image_capacity_ladder(
+    chunk_budget_bytes = rp.resident_chunk_budget_bytes()
+    if chunk_budget_bytes is not None:
+        # One projector call's transient is live next to the chunk; reserve it.
+        chunk_budget_bytes = max(0, chunk_budget_bytes - _projection_call_transient_max_bytes())
+    image_ladder = rp.resident_image_capacity_start(
         parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER),
         n_fine_trans=n_fine_trans,
         n_recon_pixels=n_recon_windowed,
         max_tile_bytes=_max_translation_tile_bytes_for_pass(
             device_memory_bytes, has_external_normalization=False
         ),
+        chunk_budget_bytes=chunk_budget_bytes,
     )
     mstep_block_rows = rp._resolve_mstep_block_rows(
         n_recon_pixels=n_recon_windowed,
         max_block_bytes=_max_adjoint_block_bytes_for_pass(device_memory_bytes),
         row_capacity_ladder=row_ladder,
     )
+    memory_plan = rp.plan_resident_chunk_memory(
+        row_capacity_ladder=row_ladder,
+        image_capacity_ladder=image_ladder,
+        mstep_block_rows=mstep_block_rows,
+        row_bytes=resident_row_projection_bytes(
+            n_score_pixels=n_windowed, n_recon_pixels=n_recon_windowed
+        ),
+        n_fine_trans=n_fine_trans,
+        n_recon_pixels=n_recon_windowed,
+        budget_bytes=chunk_budget_bytes,
+    )
+    row_ladder = memory_plan.row_capacity_ladder
+    image_ladder = memory_plan.image_capacity_ladder
+    mstep_block_rows = memory_plan.mstep_block_rows
     # Bound one projector call by the array it actually materializes. The
     # compact projection-block helper returns *full half-spectrum* rows and
     # windows them afterwards (projection.py, the dense_scale multiply runs on
@@ -727,7 +746,7 @@ def compute_local_search_resident(
         "Resident local pass-2 plan: %d images, %d candidate rows, %d translations -> %d chunks "
         "(row capacities %s, image capacities %s, M-step block rows %d, projection block rows %d); "
         "row projections %.2f KiB/row, largest chunk %.2f GiB, projection window %d px, "
-        "projector slab %d B/element; setup %.2fs",
+        "projector slab %d B/element; chunk peak %.2f GiB of a %s budget; setup %.2fs",
         tables.n_images,
         tables.n_rows,
         n_fine_trans,
@@ -742,6 +761,8 @@ def compute_local_search_resident(
         / float(1024**3),
         n_projection_pixels,
         projector_slab_bytes,
+        memory_plan.peak_bytes / float(1024**3),
+        rp.format_budget_gib(memory_plan.budget_bytes),
         table_s,
     )
 

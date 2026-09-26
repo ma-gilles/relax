@@ -446,6 +446,63 @@ def test_image_capacity_ladder_is_capped_by_the_translation_tile_budget():
     ) == (16,)
 
 
+def test_joint_chunk_plan_fits_the_10202_iteration_14_shape():
+    """10202 it14 (14475506): T=148, 135755 recon pixels, local rows of 2.6 MiB. The
+    rows, the translation tiles and a 64-row M-step block (9.7 GiB, sized without T)
+    overcommitted the device together; one plan now sizes all three from one budget."""
+
+    from relax.sparse_pass2.resident_scoring import resident_row_projection_bytes
+
+    gib = 1024**3
+    t, p_recon, p_score = 148, 135755, 137153
+    row_bytes = resident_row_projection_bytes(n_score_pixels=p_score, n_recon_pixels=p_recon)
+    fixed_tile = int(0.02 * 76e9)
+    budget = 20 * gib
+    images = rp.resident_image_capacity_start(
+        (32, 128, 512), n_fine_trans=t, n_recon_pixels=p_recon, max_tile_bytes=fixed_tile,
+        chunk_budget_bytes=budget,
+    )
+    assert images == (32, 128, 512)  # the fixed tile budget fits no class: the joint plan sizes them
+    plan = rp.plan_resident_chunk_memory(
+        row_capacity_ladder=(1024, 4096), image_capacity_ladder=images, mstep_block_rows=64,
+        row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, budget_bytes=budget,
+    )
+    assert plan.peak_bytes <= budget
+    assert plan.peak_bytes == rp.resident_chunk_bytes(
+        row_capacity=max(plan.row_capacity_ladder), image_capacity=max(plan.image_capacity_ladder),
+        mstep_block_rows=plan.mstep_block_rows, row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon,
+    )
+    assert plan.mstep_block_rows < 64
+    assert max(plan.image_capacity_ladder) >= 4  # more than the 2-image fixed fallback
+    assert 1024 % plan.mstep_block_rows == 0
+    # A budget below the smallest chunk is a refusal the default route runs on compact.
+    with pytest.raises(rp.ResidentConfigurationUnsupported, match="smallest chunk"):
+        rp.plan_resident_chunk_memory(
+            row_capacity_ladder=(1024,), image_capacity_ladder=(1,), mstep_block_rows=1,
+            row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, budget_bytes=1 * gib,
+        )
+
+
+def test_joint_chunk_plan_leaves_a_box_256_plan_unchanged():
+    """Box-256 K=1 plans (10097, noise1 50k: T<=116, <=8.4k pixels) fit the joint budget
+    as they stand; the planner changes nothing there, and an unknown budget never caps."""
+
+    kwargs = dict(
+        row_capacity_ladder=(8192, 32768, 131072), image_capacity_ladder=(32, 128), mstep_block_rows=256,
+        row_bytes=8121 * 8, n_fine_trans=116, n_recon_pixels=7475,
+    )
+    for budget in (30 * 1024**3, None):
+        plan = rp.plan_resident_chunk_memory(budget_bytes=budget, **kwargs)
+        assert plan.row_capacity_ladder == (8192, 32768, 131072)
+        assert plan.image_capacity_ladder == (32, 128)
+        assert plan.mstep_block_rows == 256
+    # Where the fixed tile budget fits a class, the starting image classes are its classes.
+    fixed = dict(n_fine_trans=116, n_recon_pixels=7475, max_tile_bytes=int(0.02 * 80e9))
+    assert rp.resident_image_capacity_start(
+        (32, 128, 512), chunk_budget_bytes=30 * 1024**3, **fixed
+    ) == rp._cap_image_capacity_ladder((32, 128, 512), **fixed)
+
+
 def test_driver_is_the_default_and_the_flag_switches_it_off(monkeypatch):
     from relax.sparse_pass2 import dispatch as sparse_dispatch
 

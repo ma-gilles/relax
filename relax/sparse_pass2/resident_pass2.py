@@ -636,6 +636,156 @@ def _cap_image_capacity_ladder(
     return kept if kept else (1 << (int(cap).bit_length() - 1),)
 
 
+# Share of the measured headroom (after the half's reserved operands) that one
+# chunk's row block, translation tiles and M-step block may take together; the
+# rest covers XLA temporaries of the scoring and M-step programs.
+_RESIDENT_CHUNK_FREE_MEMORY_FRACTION = 0.6
+
+
+@dataclass(frozen=True)
+class ResidentChunkMemoryPlan:
+    """One chunk's capacity classes, sized together against one memory budget."""
+
+    row_capacity_ladder: tuple
+    image_capacity_ladder: tuple
+    mstep_block_rows: int
+    peak_bytes: int
+    budget_bytes: int | None
+
+
+def resident_chunk_bytes(
+    *, row_capacity: int, image_capacity: int, mstep_block_rows: int, row_bytes: int, n_fine_trans: int,
+    n_recon_pixels: int,
+) -> int:
+    """Device bytes one chunk holds at its peak: row block + translation tiles + M-step block.
+
+    ``row_bytes`` is what one row keeps live (the cached gather's score row, a
+    streamed or local chunk's own projections). The three ``(images, T, P)``
+    complex64 tiles are the reconstruction and noise operands and RELION's Wavg
+    rectangle. An M-step block gathers each row's recon and noise tiles
+    (``[block, T, P]`` complex64, twice) next to its 44-byte-per-pixel sums.
+    """
+
+    t, p = max(int(n_fine_trans), 1), max(int(n_recon_pixels), 1)
+    rows = int(row_capacity) * int(row_bytes)
+    tiles = 3 * int(image_capacity) * t * p * 8
+    mstep = int(mstep_block_rows) * (2 * t * p * 8 + 44 * p)
+    return rows + tiles + mstep
+
+
+def plan_resident_chunk_memory(
+    *,
+    row_capacity_ladder: tuple,
+    image_capacity_ladder: tuple,
+    mstep_block_rows: int,
+    row_bytes: int,
+    n_fine_trans: int,
+    n_recon_pixels: int,
+    budget_bytes: int | None,
+) -> ResidentChunkMemoryPlan:
+    """Shrink the three per-chunk classes until their sum fits one budget.
+
+    Each class starts from its own device-fraction rule, which alone let the
+    row gather, the translation tiles and the M-step block overcommit the device
+    together (EMPIAR-10202 iteration 14: a 9.7 GiB M-step block sized without
+    its translation axis, bigbox 14475506). While the largest chunk exceeds the
+    budget, the largest of the three terms shrinks: the M-step block halves, the
+    image ladder drops its largest class and then halves a single class, the row
+    ladder drops its largest class. Plans that already fit are unchanged; an
+    unknown budget does not cap. A row ladder that cannot shrink further is a
+    :class:`ResidentConfigurationUnsupported`, which the default route runs on
+    the compact engine.
+    """
+
+    rows = tuple(int(v) for v in row_capacity_ladder)
+    images = tuple(int(v) for v in image_capacity_ladder)
+    block = int(mstep_block_rows)
+    kwargs = dict(row_bytes=row_bytes, n_fine_trans=n_fine_trans, n_recon_pixels=n_recon_pixels)
+
+    def peak():
+        return resident_chunk_bytes(
+            row_capacity=max(rows), image_capacity=max(images), mstep_block_rows=block, **kwargs
+        )
+
+    if budget_bytes is not None:
+        while peak() > int(budget_bytes):
+            t, p = max(int(n_fine_trans), 1), max(int(n_recon_pixels), 1)
+            terms = {
+                "mstep": block * (2 * t * p * 8 + 44 * p) if block > 1 else -1,
+                "images": 3 * max(images) * t * p * 8 if (len(images) > 1 or max(images) > 1) else -1,
+                "rows": max(rows) * int(row_bytes) if len(rows) > 1 else -1,
+            }
+            largest = max(terms, key=terms.get)
+            if terms[largest] < 0:
+                raise ResidentConfigurationUnsupported(
+                    f"The device-resident K=1 pass 2 ({RESIDENT_PASS2_ENV}=1) does not implement this "
+                    f"configuration: its smallest chunk (rows {min(rows)}, images 1, M-step block 1) needs "
+                    f"{peak() / float(1024 ** 3):.2f} GiB against a {int(budget_bytes) / float(1024 ** 3):.2f} "
+                    "GiB budget. Clear the flag to use the compact engine; this path never falls back silently."
+                )
+            if largest == "mstep":
+                block //= 2
+            elif largest == "images":
+                images = images[:-1] if len(images) > 1 else (max(images) // 2,)
+            else:
+                rows = rows[:-1]
+    block = min(block, min(rows))
+    while block > 1 and min(rows) % block:
+        block //= 2
+    return ResidentChunkMemoryPlan(
+        row_capacity_ladder=rows,
+        image_capacity_ladder=images,
+        mstep_block_rows=max(block, 1),
+        peak_bytes=peak(),
+        budget_bytes=None if budget_bytes is None else int(budget_bytes),
+    )
+
+
+def resident_image_capacity_start(
+    ladder: tuple,
+    *,
+    n_fine_trans: int,
+    n_recon_pixels: int,
+    max_tile_bytes: int,
+    chunk_budget_bytes: int | None,
+) -> tuple:
+    """Image classes a chunk starts from before the joint memory plan.
+
+    The fixed tile budget decides as before wherever it fits a class. When it
+    fits none (EMPIAR-10202 from iteration 4: 2-8 images against 32, which
+    doubled the chunk loops, bigbox 14468367) and the device headroom is known,
+    the plan starts from the whole ladder and :func:`plan_resident_chunk_memory`
+    sizes the tiles from the measured budget together with the rows and the
+    M-step block.
+    """
+
+    fixed = _cap_image_capacity_ladder(
+        ladder, n_fine_trans=n_fine_trans, n_recon_pixels=n_recon_pixels, max_tile_bytes=max_tile_bytes
+    )
+    if chunk_budget_bytes is None or min(fixed) >= min(int(v) for v in ladder):
+        return fixed
+    return tuple(int(v) for v in ladder)
+
+
+def format_budget_gib(budget_bytes: int | None) -> str:
+    """A chunk budget for a log line; ``unknown`` when the device reported nothing."""
+
+    return "unknown" if budget_bytes is None else f"{int(budget_bytes) / float(1024**3):.2f} GiB"
+
+
+def resident_chunk_budget_bytes(*, reserved_bytes: int = 0) -> int | None:
+    """The joint chunk budget from the device readings now; ``None`` when nothing is known."""
+
+    available = device_available_bytes(
+        _device_free_memory_bytes(),
+        _jax_allocator_free_memory_bytes(),
+        _jax_allocator_pool_free_bytes(),
+    )
+    if available is None:
+        return None
+    return int(max(0.0, float(available) - float(reserved_bytes)) * _RESIDENT_CHUNK_FREE_MEMORY_FRACTION)
+
+
 # ---------------------------------------------------------------------------
 # Device programs with a pixel axis (one per (block rows, pixel count) pair)
 # ---------------------------------------------------------------------------
@@ -2487,19 +2637,37 @@ def _resident_pass2(
             gather_budget_bytes / float(1024**3),
             int(n_windowed) * np.dtype(precision_policy.score_complex_dtype).itemsize / 1024.0,
         )
-    image_ladder = _cap_image_capacity_ladder(
+    chunk_budget_bytes = resident_chunk_budget_bytes(reserved_bytes=reserved_operand_bytes)
+    image_ladder = resident_image_capacity_start(
         parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER),
         n_fine_trans=n_fine_trans,
         n_recon_pixels=n_recon_windowed,
         max_tile_bytes=_max_translation_tile_bytes_for_pass(
             device_memory_bytes, has_external_normalization=False
         ),
+        chunk_budget_bytes=chunk_budget_bytes,
     )
     mstep_block_rows = _resolve_mstep_block_rows(
         n_recon_pixels=n_recon_windowed,
         max_block_bytes=_max_adjoint_block_bytes_for_pass(device_memory_bytes),
         row_capacity_ladder=row_ladder,
     )
+    memory_plan = plan_resident_chunk_memory(
+        row_capacity_ladder=row_ladder,
+        image_capacity_ladder=image_ladder,
+        mstep_block_rows=mstep_block_rows,
+        row_bytes=(
+            _STREAM_PEAK_COPIES * int(projection_bytes_per_rotation)
+            if stream_projections
+            else int(n_windowed) * np.dtype(precision_policy.score_complex_dtype).itemsize
+        ),
+        n_fine_trans=n_fine_trans,
+        n_recon_pixels=n_recon_windowed,
+        budget_bytes=chunk_budget_bytes,
+    )
+    row_ladder = memory_plan.row_capacity_ladder
+    image_ladder = memory_plan.image_capacity_ladder
+    mstep_block_rows = memory_plan.mstep_block_rows
     chunks = plan_capacity_chunks(
         tables,
         row_capacity_ladder=row_ladder,
@@ -2517,7 +2685,8 @@ def _resident_pass2(
     logger.info(
         "Resident pass-2 plan: %d images, %d candidate rows -> %d chunks "
         "(row capacities %s, image capacities %s, M-step block rows %d, "
-        "row occupancy %.3f of %d slots, image occupancy %.3f of %d slots); "
+        "row occupancy %.3f of %d slots, image occupancy %.3f of %d slots; "
+        "chunk peak %.2f GiB of a %s budget); "
         "setup hypothesis_prep=%.2fs table+plan=%.2fs",
         tables.n_images,
         tables.n_rows,
@@ -2529,6 +2698,8 @@ def _resident_pass2(
         row_slots,
         tables.n_images / max(image_slots, 1),
         image_slots,
+        memory_plan.peak_bytes / float(1024**3),
+        format_budget_gib(memory_plan.budget_bytes),
         prep_s,
         table_s,
     )
