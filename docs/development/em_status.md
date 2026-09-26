@@ -52,6 +52,16 @@ these are progress measures, not completion. The three recorded real-data K1
 calibration cases remain in the maintained science-equivalence scorecard, while
 the 10202 target is still pending.
 
+EMPIAR-10202 (box 800, I1) progress on the resident K=1 engine: iteration 3
+(current size 304) spent 4,530 s per half in the pass-2 M-step on 589ce09, which
+visited all 55.4M candidate rows (bigbox 14450997, cancelled). With the live-row
+M-step of 68a3cf0 the pass-2 chunk loop takes 52.9 s and 49.4 s per half and pass 1
+about 128 s per half (bigbox 14456981), against RELION's 485 s for the whole
+iteration on 2 H100s. The same runs exposed two box-800 memory faults, both fixed:
+the cached-path chunk gather (131072 rows x 36514 pixels = 35.7 GiB, now bounded by
+measured free memory) and the low-resolution half join, which moved a physically
+large grid's host accumulators back to the device before the 1600^3 inverse FFT.
+
 The supported K4 comparison still has a class below its FSC-AUC gate. Saved
 launch-ladder contributors agree in a bounded sample, while GPU accumulators are
 not bitwise repeatable even on the control. Neither finding justifies a tolerance
