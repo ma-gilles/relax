@@ -1349,3 +1349,87 @@ def test_streamed_projection_rows_equal_the_cached_rows_exactly(
             np.testing.assert_allclose(part, full[ids], rtol=1e-6, atol=0, err_msg=name)
         compared += ids.size
     assert compared > 0
+
+
+def test_stable_window_plan_applies_only_to_the_supported_passes(monkeypatch, caplog):
+    """The flag is off by default; on, a sub-box model-grid pass gets a physical class above its size."""
+
+    kwargs = dict(
+        current_size=36,
+        mstep_current_size=36,
+        n_half=64 * 33,
+        square_window=False,
+        window_spec_kwargs={"window_at_box": True},
+        firstiter_cc=False,
+        reconstruction_image_radius=None,
+        reconstruction_volume_current_size=None,
+    )
+    monkeypatch.delenv(rp._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
+    assert rp._resident_stable_window_plan((64, 64), **kwargs) is None
+    monkeypatch.setenv(rp._RESIDENT_STABLE_WINDOWS_ENV, "1")
+    plan = rp._resident_stable_window_plan((64, 64), **kwargs)
+    assert plan.logical_current_size == 36 and plan.physical_current_size == 40
+    assert plan.physical_reconstruction_pixels > plan.logical_reconstruction_pixels
+    for override in (
+        {"current_size": 64, "mstep_current_size": 64, "n_half": 64 * 33},
+        {"firstiter_cc": True},
+        {"mstep_current_size": 34},
+        {"reconstruction_volume_current_size": 36},
+    ):
+        with caplog.at_level("INFO"):
+            assert rp._resident_stable_window_plan((64, 64), **{**kwargs, **override}) is None
+    assert "not applicable" in caplog.text
+
+
+@requires_resident_gpu
+def test_stable_windows_match_the_logical_window(_resident_production_env, monkeypatch):
+    """Inside a physical window class the resident driver reproduces RELION's logical window.
+
+    The fixture box is 8 pixels, so current size 4 gets the physical class 6.
+    Discrete state is exact and the per-image scores are in the default band
+    (the runtime scorer stops at the logical rectangle). The maps, noise and
+    scale sums may change reduction order over the longer pixel axis; float
+    results are never required to be bitwise (user rule), so the maps take this
+    file's resident-vs-compact band and the sums the driver's repeat band.
+    """
+
+    args = {**_driver_fixture_args(), "current_size": 4}
+    monkeypatch.delenv(rp._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
+    logical = rp.compute_pass2_stats_resident(**args)
+    monkeypatch.setenv(rp._RESIDENT_STABLE_WINDOWS_ENV, "1")
+    stable = rp.compute_pass2_stats_resident(**args)
+
+    assert_matches(logical.hard_assignment, stable.hard_assignment)
+    assert_matches(logical.best_rotation_indices, stable.best_rotation_indices)
+    for field in (
+        "log_evidence_per_image",
+        "best_log_score_per_image",
+        "max_posterior_per_image",
+        "rotation_posterior_sums",
+    ):
+        assert_matches(
+            np.asarray(getattr(logical.relion_stats, field)),
+            np.asarray(getattr(stable.relion_stats, field)),
+            err_msg=field,
+        )
+
+    def rel_l2(a, b):
+        a = np.asarray(a)
+        b = np.asarray(b)
+        den = float(np.linalg.norm(a))
+        return float(np.linalg.norm(a - b) / den) if den else 0.0
+
+    # The BPref atomics add the tail's zeros in another order: measured 1.2e-7
+    # (Ft_y) and 1.1e-7 (Ft_ctf) on an H100 (job 14460993), the same size as the
+    # resident-vs-compact map difference this file bounds at 1e-6.
+    assert rel_l2(logical.Ft_y, stable.Ft_y) < 1e-6
+    assert rel_l2(logical.Ft_ctf, stable.Ft_ctf) < 1e-6
+    # The noise, norm and scale sums measured 0 there; held to the repeat band.
+    for field in (
+        "wsum_sigma2_noise",
+        "wsum_img_power",
+        "wsum_norm_correction",
+        "wsum_scale_correction_xa",
+        "wsum_scale_correction_aa",
+    ):
+        assert rel_l2(getattr(logical.noise_stats, field), getattr(stable.noise_stats, field)) < 1e-7, field

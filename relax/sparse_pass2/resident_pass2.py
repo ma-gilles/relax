@@ -80,6 +80,7 @@ from relax.helpers.adjoint import mstep_adjoint_max_r
 from relax.helpers.batch_fetch import fetch_indexed_batch
 from relax.helpers.deterministic_reduce import deterministic_reductions_enabled
 from relax.helpers.env_flags import parse_env_capacity_ladder, parse_env_flag
+from relax.helpers.fourier_window import make_stable_fourier_window_shape_plan, stable_fourier_window_quantum
 from relax.helpers.half_spectrum import (
     make_relion_noise_shell_indices_half,
     mask_relion_noise_shell_indices_to_current_window,
@@ -188,6 +189,7 @@ from relax.sparse_pass2.sparse_pass2_scoring import (
 )
 from relax.sparse_pass2.sparse_pass2_wavg import (
     _make_relion_wavg_rectangle,
+    _make_stable_relion_wavg_rectangle,
     _relion_cuda_translate_wavg_norm_images,
     _relion_wavg_rectangle_image_power,
     _relion_wavg_rectangle_power_contraction,
@@ -262,6 +264,12 @@ _WAVG_POWER_PER_IMAGE_ENV = "RELAX_SPARSE_PASS2_RESIDENT_WAVG_POWER_PER_IMAGE"
 # against. The stage bodies are the same functions in both settings, so the
 # flag changes only where the JIT boundary sits.
 _RESIDENT_GLUE_JIT_ENV = "RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT"
+# Stable Fourier windows: the chunk programs are keyed on a physical window
+# class (the current size rounded up to the stable-window quantum) and RELION's
+# logical current size and pixel counts travel as device scalars
+# (_WindowLogicalSizes), so the current sizes of one class share their chunk
+# programs. Default off until its quality band and census are in.
+_RESIDENT_STABLE_WINDOWS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS"
 # Diagnostic, default off. Checks the statically computed M-step carry avals
 # against a ``jax.eval_shape`` probe of the same block stages, once per
 # capacity class. The probes are what this change removes from the chunk loop;
@@ -1510,6 +1518,60 @@ class ResidentClassInputs(NamedTuple):
     rotation_log_priors: tuple
 
 
+def _resident_stable_windows_requested() -> bool:
+    return parse_env_flag(_RESIDENT_STABLE_WINDOWS_ENV, default=False)
+
+
+def _resident_stable_window_plan(
+    image_shape,
+    *,
+    current_size,
+    mstep_current_size,
+    n_half,
+    square_window,
+    window_spec_kwargs,
+    firstiter_cc,
+    reconstruction_image_radius,
+    reconstruction_volume_current_size,
+):
+    """The pass's stable-window plan, or None to keep the logical window.
+
+    The plan applies when the flag is on and the current size is below the box,
+    with one current size for scoring and reconstruction on the model grid.
+    The --firstiter_cc iteration (normalized-CC tiles), reconstructions on
+    another grid and a split score/reconstruction current size keep RELION's
+    logical window, as the compact and local engines do.
+    """
+
+    if not _resident_stable_windows_requested():
+        return None
+    reasons = []
+    if int(current_size) >= int(image_shape[0]):
+        reasons.append("current size at the box")
+    if firstiter_cc:
+        reasons.append("--firstiter_cc")
+    if int(mstep_current_size) != int(current_size):
+        reasons.append("reconstruction current size differs from the score's")
+    if reconstruction_image_radius is not None or reconstruction_volume_current_size is not None:
+        reasons.append("reconstruction on another grid")
+    if reasons:
+        logger.info(
+            "Resident pass-2 stable windows requested but not applicable (%s); using the logical window",
+            ", ".join(reasons),
+        )
+        return None
+    return make_stable_fourier_window_shape_plan(
+        image_shape,
+        int(current_size),
+        n_half,
+        reconstruction_current_size=int(mstep_current_size),
+        enabled=True,
+        quantum=stable_fourier_window_quantum(),
+        square=square_window,
+        **window_spec_kwargs,
+    )
+
+
 def _resident_pass2(
     experiment_dataset,
     volume,
@@ -1952,6 +2014,44 @@ def _resident_pass2(
     )
 
     # ---- window / weights / lookups (unchanged) ---------------------------
+    stable_window_plan = _resident_stable_window_plan(
+        image_shape,
+        current_size=current_size,
+        mstep_current_size=mstep_current_size,
+        n_half=n_half,
+        square_window=square_window,
+        window_spec_kwargs=window_spec_kwargs,
+        firstiter_cc=firstiter_cc,
+        reconstruction_image_radius=reconstruction_image_radius,
+        reconstruction_volume_current_size=reconstruction_volume_current_size,
+    )
+    stable_window_spec = None
+    # The spec's current size: the physical class with stable windows, RELION's otherwise.
+    program_current_size = int(current_size)
+    if stable_window_plan is not None:
+        # Capacity changes storage, not the projection or reconstruction
+        # cutoffs: the projector keeps the logical radius and crop, so the
+        # tail's projections never enter a logical pixel.
+        stable_window_spec = dataclass_replace(
+            stable_window_plan.packed_physical_spec(),
+            max_r=stable_window_plan.logical_spec.max_r,
+            projection_max_r=stable_window_plan.logical_spec.projection_max_r,
+            image_current_size=stable_window_plan.logical_spec.image_current_size,
+        )
+        budget_window_spec = stable_window_spec
+        program_current_size = int(stable_window_plan.physical_current_size)
+        logger.info(
+            "Resident pass-2 stable windows: logical current_size %d -> physical class %d "
+            "(score pixels %d -> %d, recon pixels %d -> %d, Wavg rectangle %d -> %d)",
+            stable_window_plan.logical_current_size,
+            stable_window_plan.physical_current_size,
+            stable_window_plan.logical_score_pixels,
+            stable_window_plan.physical_score_pixels,
+            stable_window_plan.logical_reconstruction_pixels,
+            stable_window_plan.physical_reconstruction_pixels,
+            stable_window_plan.logical_rectangle_pixels,
+            stable_window_plan.physical_rectangle_pixels,
+        )
     window_setup = _sparse_pass2_window_setup(
         experiment_dataset,
         disc_type=disc_type,
@@ -1963,6 +2063,7 @@ def _resident_pass2(
         window_spec_kwargs=window_spec_kwargs,
         use_relion_x_half_mstep=True,
         log_label="Resident pass-2",
+        window_spec_override=stable_window_spec,
     )
     config = window_setup.config
     window_spec = window_setup.window_spec
@@ -1981,10 +2082,32 @@ def _resident_pass2(
         relion_firstiter_score_mode=relion_firstiter_score_mode,
         use_float64_scoring=use_float64_scoring,
     )
-    relion_score_full_to_compact = jnp.asarray(
-        _relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, window_indices_np),
-        dtype=jnp.int32,
-    )
+    if stable_window_plan is None:
+        relion_score_full_to_compact = jnp.asarray(
+            _relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, window_indices_np),
+            dtype=jnp.int32,
+        )
+    else:
+        # The score tail gets no weight, and the fine scorer's lookup covers the
+        # logical rectangle only (the runtime kernel never reads past it); its
+        # -1 pad keeps the buffer at the physical class's size.
+        score_logical_mask = jnp.asarray(
+            np.arange(int(n_windowed)) < int(stable_window_plan.logical_score_pixels)
+        )
+        half_weights_windowed = half_weights_windowed * score_logical_mask.astype(half_weights_windowed.dtype)
+        logical_lookup = _relion_cuda_fine_full_to_compact_lookup(
+            image_shape,
+            current_size,
+            window_indices_np[: int(stable_window_plan.logical_score_pixels)],
+        )
+        relion_score_full_to_compact = jnp.asarray(
+            np.pad(
+                logical_lookup,
+                (0, int(stable_window_plan.physical_rectangle_pixels) - logical_lookup.size),
+                constant_values=-1,
+            ),
+            dtype=jnp.int32,
+        )
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(
         noise_variance, image_shape
     ).squeeze()
@@ -2019,16 +2142,39 @@ def _resident_pass2(
         make_relion_noise_shell_indices_half(image_shape),
         image_shape,
         current_size,
-        window_indices,
+        # The crop mask sees RELION's logical window, not the physical class.
+        window_indices
+        if stable_window_plan is None
+        else window_indices_np[: int(stable_window_plan.logical_score_pixels)],
     )
     shell_indices_noise = window_spec.recon_values(shell_indices_half)
     noise_variance_for_noise = window_spec.recon_values(noise_variance_half)
-    relion_wavg_rectangle = _make_relion_wavg_rectangle(
-        image_shape,
-        current_size,
-        recon_window_indices,
-        reconstruction_current_size=mstep_current_size,
-    )
+    if stable_window_plan is None:
+        relion_wavg_rectangle = _make_relion_wavg_rectangle(
+            image_shape,
+            current_size,
+            recon_window_indices,
+            reconstruction_current_size=mstep_current_size,
+        )
+        logical_rect_pixels = int(relion_wavg_rectangle.centered_indices.size)
+        logical_recon_pixels = int(n_recon_windowed)
+    else:
+        # The recon tail holds real pixels above RELION's cutoff. They take the
+        # shell sentinel and zero noise variance, so every residual, power and
+        # scale term they could enter is exactly zero; the M-step masks their
+        # sums (_resident_mstep_block) and the Wavg kernels stop at the logical
+        # rectangle, whose layout is RELION's byte for byte.
+        recon_tail = ~jnp.asarray(
+            np.arange(int(n_recon_windowed)) < int(stable_window_plan.logical_reconstruction_pixels)
+        )
+        shell_indices_noise = jnp.where(recon_tail, jnp.int32(image_shape[0] // 2 + 1), shell_indices_noise)
+        # [P] or, with optics groups, [G, P]: the tail mask broadcasts over groups.
+        noise_variance_for_noise = jnp.where(
+            recon_tail, jnp.zeros((), noise_variance_for_noise.dtype), noise_variance_for_noise
+        )
+        relion_wavg_rectangle = _make_stable_relion_wavg_rectangle(image_shape, stable_window_plan)
+        logical_rect_pixels = int(stable_window_plan.logical_rectangle_pixels)
+        logical_recon_pixels = int(stable_window_plan.logical_reconstruction_pixels)
     n_rect = int(relion_wavg_rectangle.centered_indices.size)
     # RELION masks each class's scale sums with its own data_vs_prior_class[iclass] > 3
     # (acc_ml_optimiser_impl.h:4908); one shell vector serves every class.
@@ -2379,7 +2525,7 @@ def _resident_pass2(
         n_images=n_images,
         n_coarse_rot=n_classes * n_coarse_rot,
         n_scale_groups=n_scale_groups,
-        current_size=current_size,
+        current_size=program_current_size,
         include_unweighted_high_shell=include_unweighted_norm_high_shell,
         use_exact_relion_gaussian=use_exact_relion_gaussian,
         relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
@@ -2400,8 +2546,8 @@ def _resident_pass2(
     )
     window_logical = _window_logical_sizes(
         current_size=current_size,
-        recon_pixels=n_recon_windowed,
-        rect_pixels=n_rect,
+        recon_pixels=logical_recon_pixels,
+        rect_pixels=logical_rect_pixels,
         place=_PLACE_ON_DEVICE,
     )
 
@@ -2546,7 +2692,7 @@ def _resident_pass2(
                                 n_rect=n_rect,
                                 mstep_block_rows=mstep_block_rows,
                                 adaptive_fraction=adaptive_fraction,
-                                current_size=current_size,
+                                current_size=program_current_size,
                                 mstep_current_size=volume_current_size,
                                 mstep_max_r=mstep_max_r,
                                 image_shape=image_shape,
@@ -2559,6 +2705,7 @@ def _resident_pass2(
                                 reuse_coarse_normalization=coarse_reuse is not None,
                                 n_slots=int(tables.n_slots),
                                 mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
+                                stable_window=stable_window_plan is not None,
                             ),
                             translation_prior_centers_np=translation_prior_centers_np,
                             fine_translations=fine_translations,
@@ -2715,6 +2862,8 @@ def _resident_pass2(
             verify_operands=verify_operands and chunk is chunks[0],
             image_shape=image_shape,
             current_size=current_size,
+            # The physical class with stable windows; None keeps RELION's size.
+            program_current_size=None if stable_window_plan is None else program_current_size,
             mstep_current_size=volume_current_size,
             mstep_max_r=mstep_max_r,
             recon_volume_shape=recon_volume_shape,
@@ -3712,6 +3861,7 @@ def _make_chunk_program_spec(
     n_slots=1,
     mstep_subtract_ctf_projection=False,
     n_classes=1,
+    stable_window=False,
 ) -> _ChunkProgramSpec:
     """The static key of one chunk program.
 
@@ -3749,6 +3899,7 @@ def _make_chunk_program_spec(
         n_slots=int(n_slots),
         mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
         n_classes=int(n_classes),
+        stable_window=bool(stable_window),
     )
 
 
@@ -4634,6 +4785,9 @@ class _ChunkProgramSpec:
     mstep_subtract_ctf_projection: bool = False
     # RELION Class3D classes; rows carry the class axis when there is more than one.
     n_classes: int = 1
+    # Stable Fourier windows: the pixel axes are a physical class and the
+    # M-step masks their tail past the logical window (_WindowLogicalSizes).
+    stable_window: bool = False
 
 
 class _MstepOnlyStatsConfig(NamedTuple):
@@ -5198,6 +5352,15 @@ def _resident_mstep_block(
             operands.shifted_noise,
             operands.ctf2_over_nv_recon,
         )
+
+    if spec.stable_window:
+        # The physical tail holds real pixels above RELION's cutoff: they add
+        # nothing to the weighted sums, the Wavg terms, the noise or either
+        # adjoint (the translate-sum kernel's own bound is the physical count).
+        recon_live = jnp.arange(int(spec.n_recon_pixels), dtype=jnp.int32) < logical_recon_pixels
+        summed = jnp.where(recon_live, summed, jnp.zeros((), summed.dtype))
+        summed_masked = jnp.where(recon_live, summed_masked, jnp.zeros((), summed_masked.dtype))
+        ctf_probs = jnp.where(recon_live, ctf_probs, jnp.zeros((), ctf_probs.dtype))
 
     if spec.mstep_subtract_ctf_projection:
         summed = _resident_block_residual(
@@ -6006,6 +6169,7 @@ def _run_resident_chunk(
     recon_volume_shape,
     max_adjoint_block_bytes,
     noise_variance_for_noise,
+    program_current_size=None,
     shell_indices_noise,
     group_ids_np,
     scale_corrections_np,
@@ -6208,7 +6372,7 @@ def _run_resident_chunk(
         n_rect=n_rect,
         mstep_block_rows=mstep_block_rows,
         adaptive_fraction=adaptive_fraction,
-        current_size=current_size,
+        current_size=current_size if program_current_size is None else program_current_size,
         mstep_current_size=mstep_current_size,
         mstep_max_r=mstep_max_r,
         image_shape=image_shape,
@@ -6225,6 +6389,7 @@ def _run_resident_chunk(
         n_slots=int(tables.n_slots),
         mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
         n_classes=n_classes,
+        stable_window=program_current_size is not None,
     )
 
     if submitted_keys is not None:
