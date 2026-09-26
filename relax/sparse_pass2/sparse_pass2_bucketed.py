@@ -576,6 +576,7 @@ def compute_pass2_stats_sparse_bucketed(
     translation_prior_centers=None,
     do_gridding_correction=False,
     square_window=False,
+    window_at_box=False,
     random_perturbation,
     group_ids=None,
     scale_correction_group_count=None,
@@ -805,6 +806,11 @@ def compute_pass2_stats_sparse_bucketed(
     image_shape = experiment_dataset.image_shape
     volume_shape = experiment_dataset.volume_shape
     H, W = image_shape
+    window_at_box = bool(window_at_box) and relion_firstiter_score_mode != "normalized_cc"
+    if window_at_box and current_size is None:
+        # RELION's window at every size, the box included, so the box is an explicit current
+        # size (as in the resident drivers, resident_pass2._resident_pass2).
+        current_size = int(H)
     (
         mstep_current_size,
         n_half,
@@ -821,6 +827,7 @@ def compute_pass2_stats_sparse_bucketed(
         relion_firstiter_score_mode=relion_firstiter_score_mode,
         use_exact_relion_gaussian=use_exact_relion_gaussian,
         use_float64_scoring=use_float64_scoring,
+        window_at_box=window_at_box,
     )
 
     if bool(relion_x_half_mstep):
@@ -5056,6 +5063,7 @@ def compute_k_class_pass2_stats_sparse_fused(
     translation_prior_centers=None,
     do_gridding_correction=False,
     square_window=False,
+    window_at_box=False,
     random_perturbation=0.0,
     rotation_block_size_for_quantization=5000,
     fine_source_eulers_override=None,
@@ -5211,6 +5219,11 @@ def compute_k_class_pass2_stats_sparse_fused(
     image_shape = experiment_dataset.image_shape
     volume_shape = experiment_dataset.volume_shape
     H, W = image_shape
+    window_at_box = bool(window_at_box) and relion_firstiter_score_mode != "normalized_cc"
+    if window_at_box and current_size is None:
+        # RELION's window at every size, the box included, so the box is an explicit current
+        # size (as in the resident drivers, resident_pass2._resident_pass2).
+        current_size = int(H)
     (
         mstep_current_size,
         n_half,
@@ -5227,6 +5240,7 @@ def compute_k_class_pass2_stats_sparse_fused(
         relion_firstiter_score_mode=relion_firstiter_score_mode,
         use_exact_relion_gaussian=use_exact_relion_gaussian,
         use_float64_scoring=use_float64_scoring,
+        window_at_box=window_at_box,
     )
     winner_take_all = bool(relion_firstiter_winner_take_all)
     # The fused K-class route deliberately excludes the K=1-only

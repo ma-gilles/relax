@@ -658,6 +658,7 @@ def _run_sparse_pass2_initial_model_estep(
             image_batch_size=significance_image_batch_size,
             rotation_block_size=config.rotation_block_size,
             current_size=pass1_current_size,
+            window_at_box=True,
             score_with_masked_images=bool(group_kwargs.get("score_with_masked_images", False)),
             rotation_log_prior=group_kwargs.get("class_rotation_log_prior", group_kwargs.get("rotation_log_prior")),
             translation_log_prior=pass1_translation_log_prior,

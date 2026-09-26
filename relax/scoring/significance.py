@@ -963,6 +963,7 @@ def _compute_k_class_significance_batched(
     projection_padding_factor=1,
     do_gridding_correction=False,
     square_window=False,
+    window_at_box=False,
     use_float64_scoring=False,
     use_float64_projections: bool | None = None,
     relion_projector_half=None,
@@ -1122,6 +1123,9 @@ def _compute_k_class_significance_batched(
         n_half,
         square=square_window,
         include_recon_window=False,
+        # RELION's radial window at the box too (Gaussian scoring; the normalized-CC score
+        # keeps its rectangular window).
+        window_at_box=bool(window_at_box) and score_mode != "normalized_cc",
         **window_spec_kwargs,
     )
     use_window = window_spec.use_window

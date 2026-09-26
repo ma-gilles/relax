@@ -1327,3 +1327,52 @@ def test_dense_run_em_window_at_box_scores_relions_window_at_the_box(seeded_inpu
     for a, b in zip(outputs(corner, 8, True), at_box):
         assert_matches(a, b)
     assert not matches(outputs(ds, 8, False)[0], at_box[0])
+
+
+def test_pass1_significance_window_at_box_scores_the_dense_window(seeded_inputs):
+    """VDAM's pass-1 significance at the box (window_at_box) scores the same window as the dense E-step.
+
+    Both engines keep RELION's radial window at ``current_size = N``; their per-image log evidence
+    then agrees, and the significance pass without the flag scores another support.
+    """
+    from relax.scoring.significance import _compute_k_class_significance_batched
+
+    s = seeded_inputs
+    ds = s["dataset"]
+
+    def significance(window_at_box):
+        return _compute_k_class_significance_batched(
+            ds,
+            np.asarray(s["volume"])[None],
+            s["noise_variance"],
+            np.array(s["rotations"]),
+            np.array(s["translations"]),
+            "linear_interp",
+            class_log_priors=np.zeros(1),
+            adaptive_fraction=0.999,
+            max_significants=-1,
+            image_batch_size=N_IMAGES,
+            rotation_block_size=N_ROTATIONS,
+            current_size=8,
+            half_spectrum_scoring=True,
+            window_at_box=window_at_box,
+        )[5]["log_evidence_per_image"]
+
+    dense = run_em(
+        ds,
+        s["volume"],
+        np.ones(VOLUME_SIZE, dtype=np.float32) * 100.0,
+        s["noise_variance"],
+        np.array(s["rotations"]),
+        np.array(s["translations"]),
+        "linear_interp",
+        image_batch_size=N_IMAGES,
+        rotation_block_size=N_ROTATIONS,
+        current_size=8,
+        half_spectrum_scoring=True,
+        window_at_box=True,
+        return_stats=True,
+    ).stats.log_evidence_per_image
+    windowed = np.asarray(significance(True), np.float32)
+    assert_matches(windowed, np.asarray(dense, np.float32))
+    assert not matches(np.asarray(significance(False), np.float32), windowed)
