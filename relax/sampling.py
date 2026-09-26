@@ -925,7 +925,71 @@ def _relion_nested_child_offsets(oversampling_order: int) -> np.ndarray:
     return offsets
 
 
+_OVERSAMPLED_GRID_MEMO: dict = {}
+
+
 def get_oversampled_rotation_grid_from_samples(
+    parent_rotation_indices,
+    parent_nside_level,
+    oversampling_order=1,
+    *,
+    random_perturbation=0.0,
+    return_rotation_indices=False,
+    return_mstep_rotations=False,
+    return_source_eulers=False,
+    rotation_index_order: str = "recovar",
+    dtype: np.dtype = np.float32,
+    symmetry: str = "C1",
+):
+    """Oversampled child orientations of coarse samples (see ``_compute_oversampled_rotation_grid``).
+
+    One VDAM iteration asks for the same full fine grid more than once (the
+    pass-2 grids and the source Euler rows); the most recent grid is kept, as
+    read-only arrays, and served again for identical arguments.
+    """
+
+    parents = np.ascontiguousarray(np.asarray(parent_rotation_indices, dtype=np.int64))
+    key = (
+        parents.shape,
+        parents.tobytes(),
+        int(parent_nside_level),
+        int(oversampling_order),
+        float(random_perturbation),
+        str(rotation_index_order),
+        np.dtype(dtype).str,
+        str(symmetry),
+    )
+    cached = _OVERSAMPLED_GRID_MEMO.get(key)
+    if cached is None:
+        cached = _compute_oversampled_rotation_grid(
+            parents,
+            parent_nside_level,
+            oversampling_order,
+            random_perturbation=random_perturbation,
+            return_rotation_indices=True,
+            return_mstep_rotations=True,
+            return_source_eulers=True,
+            rotation_index_order=rotation_index_order,
+            dtype=dtype,
+            symmetry=symmetry,
+        )
+        for value in cached:
+            if isinstance(value, np.ndarray):
+                value.setflags(write=False)
+        _OVERSAMPLED_GRID_MEMO.clear()
+        _OVERSAMPLED_GRID_MEMO[key] = cached
+    matrices, parent_map, rotation_indices, mstep_rotations, source_eulers = cached
+    outputs = [matrices, parent_map]
+    if return_rotation_indices:
+        outputs.append(rotation_indices)
+    if return_mstep_rotations:
+        outputs.append(mstep_rotations)
+    if return_source_eulers:
+        outputs.append(source_eulers)
+    return tuple(outputs)
+
+
+def _compute_oversampled_rotation_grid(
     parent_rotation_indices,
     parent_nside_level,
     oversampling_order=1,
