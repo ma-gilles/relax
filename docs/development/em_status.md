@@ -148,17 +148,35 @@ spread (0.3161-0.3381). EMPIAR-10097 0.2248 / 0.3565 (unmasked / masked) inside 
 0.2225-0.2254 / 0.3550-0.3588. Evidence:
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamspeed_20260924/scoring` (jobs 14427596, 14427597).
 
-VDAM on the resident engine (2026-09-25, in progress): `--pass2_engine adaptive` runs the
-InitialModel E-step on auto-refine's adaptive route (`relax/vdam/adaptive_estep.py`), so its
-pass 2 is the compact or, with `RELAX_SPARSE_PASS2_RESIDENT=1`, the device-resident engine.
+VDAM on the resident engine (2026-09-25; K>1 default 2026-09-26): the adaptive route runs the
+InitialModel E-step on auto-refine's adaptive route (`relax/vdam/adaptive_estep.py`) with the
+device-resident pass 2. `--pass2_engine auto` (the default) selects it for K>1 and the exact-local
+route for K=1 (`relax.vdam.dense_adapter.vdam_pass2_route`); a K>1 configuration the adaptive route
+refuses before device work runs exact-local with a logged reason, `adaptive` makes the refusal an
+error, and each iteration's `run_itNNN_recovar_meta.json` records `pass2_engine` and `pass2_engines`.
+Gate (200 iterations, relax 47103e5, one H100 + 8 CPUs per arm, uncapped; GT FSC-AUC against the
+same-seed RELION runs, `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclass_20260925/vdam_gate/GATE_SUMMARY.json`):
+
+| case | RELION band | exact-local | resident | walls RELION / local / resident (s) |
+|---|---|---|---|---|
+| pdb K2 s29 | 0.20307-0.20755 | 0.20480 | 0.20706 | 883 / 2665 / 1682 |
+| pdb K2 s41 | 0.22357-0.22536 | 0.22500 | 0.22650 | 962 / 2537 / 1518 |
+| pdb K2 s53 | 0.24476-0.24661 | 0.24450 | 0.24677 | 966 / 2548 / 1519 |
+| pdb K4 s29 | 0.07542-0.07554 | 0.07439 | 0.07577 | 773* / 1932 / 1750 |
+| pdb K4 s41 | 0.12389-0.12641 | 0.12733 | 0.12141 | 1087* / 2502 / 1933 |
+| pdb K4 s53 | 0.07777-0.07800 | 0.07860 | 0.07757 | 794* / 2087 / 1995 |
+| noise1 50k K1 s29 | 0.34125-0.34141 | 0.34134 | 0.34134 | 1565 / 2232 / 2382 |
+
+(* bench's RELION jobs 14445855-7 on other nodes.) Resident is 0.60-0.96x the exact-local wall at K>1 and
+1.07x at K=1, so K=1 stays exact-local until resident is faster there. K4 needs more RELION seeds before any
+quality claim: single seeds scatter about ±2.5e-3 around RELION's two same-seed runs, for both routes.
 RELION's three `--grad` E-step differences map onto it: the residual backprojection
 (`mstep_subtract_ctf_projection`, now on resident), the pseudo-halfset BPref slots (one resident pass
 whose accumulator slot is `class + K * pseudo-halfset`, `docs/development/resident_segments.md`) and the
 coarse-only `maximum_significants = 100 K`. K>1 runs through the same pass (2026-09-25; pdb K2 seed 29
 iterations 1-12 match the exact-local route to 7.9e-6 in the maps with identical classes and angles,
-job 14444404). The switch
-is transitional: remove with the old path (the exact-local VDAM route in
-`relax/vdam/sparse_pass2_estep.py`) once the resident route is qualified and made the default.
+job 14444404). The switch is transitional: remove it with the exact-local VDAM route
+(`relax/vdam/sparse_pass2_estep.py`) once resident is the default for K=1 too.
 Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamres_20260925/HANDOFF.json`.
 Quality on noise1 50k/256 seed 29 (200 iterations, job 14422222, scored 14425217): relax resident
 GT FSC-AUC 0.34131 unmasked / 0.75598 masked, inside four RELION runs 0.34125-0.34141 / 0.75515-0.75603;

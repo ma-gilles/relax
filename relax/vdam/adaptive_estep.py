@@ -21,9 +21,9 @@ docs/development/resident_segments.md), which the compact engine refuses; 3 is t
 The route indexes coarse rotations in RECOVAR order (psi-slow,
 direction-fast); VDAM's own state (orientation priors, ``pdf_direction``) uses
 RELION's direction-major order. The permutation is applied at this boundary
-only. Selected by ``--pass2_engine adaptive``; the exact-local VDAM route in
-:mod:`relax.vdam.sparse_pass2_estep` stays the default until this one is
-qualified, and is removed with it (transitional switch, listed in em_status).
+only. It is the K>1 default (``--pass2_engine auto``; ``adaptive`` selects it for any K); K=1
+defaults to the exact-local VDAM route in :mod:`relax.vdam.sparse_pass2_estep` until the resident
+route is faster there (``relax.vdam.dense_adapter.vdam_pass2_route``).
 """
 
 from __future__ import annotations
@@ -187,9 +187,9 @@ def run_adaptive_initial_model_estep(
 
     base_kwargs, options = _pop_sparse_pass2_options(engine_kwargs)
     if relion_projector_half_by_class is None:
-        raise ValueError("the adaptive InitialModel route requires the exact RELION projector")
+        raise NotImplementedError("the adaptive InitialModel route requires the exact RELION projector")
     if not config.relion_bpref_frame:
-        raise ValueError("the adaptive InitialModel route writes RELION BPref accumulators")
+        raise NotImplementedError("the adaptive InitialModel route writes RELION BPref accumulators")
     healpix_order = int(options.get("healpix_order", 1))
     oversampling_order = int(options.get("oversampling_order", 1))
     random_perturbation = float(options.get("random_perturbation", 0.0))

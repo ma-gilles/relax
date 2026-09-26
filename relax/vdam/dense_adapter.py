@@ -22,6 +22,7 @@ from relax.helpers.orientation_priors import (
     relion_sigma_offset_prior_center,
 )
 from relax.relion import relion_projector_setup
+from relax.sparse_pass2.engine_record import record_pass_engine, take_pass_engines
 from relax.vdam import native_sampling
 from relax.vdam.adaptive_estep import run_adaptive_initial_model_estep
 from relax.vdam.estep_common import (
@@ -54,6 +55,51 @@ VDAM_PROJECTOR_SETUP_BACKEND = "jax"
 
 
 logger = logging.getLogger(__name__)
+
+
+def vdam_pass2_route(pass2_engine: str, n_classes: int) -> tuple[str, bool]:
+    """The E-step route ``--pass2_engine`` selects for ``n_classes``, and whether it was explicit.
+
+    ``auto``: K>1 on the resident adaptive route, K=1 exact-local (the 200-iteration gate in
+    docs/development/em_status.md). ``adaptive`` and ``local``/``local_segmented`` are explicit.
+    """
+
+    engine = str(pass2_engine).strip().lower()
+    if engine == "auto":
+        return ("adaptive" if int(n_classes) > 1 else "local"), False
+    return ("adaptive" if engine == "adaptive" else "local"), True
+
+
+def _run_vdam_pass2_route(pass2_engine: str, n_classes: int, run_adaptive, run_local) -> DenseInitialModelEstepResult:
+    """Run the selected route; ``meta`` records the route that ran and the per-pass engines.
+
+    Under ``auto`` a configuration the adaptive route refuses before device work (a
+    ``NotImplementedError``) runs exact-local with a logged reason; explicit ``adaptive`` raises.
+    """
+
+    route, explicit = vdam_pass2_route(pass2_engine, n_classes)
+    if route == "adaptive":
+        try:
+            result = run_adaptive()
+        except NotImplementedError as exc:
+            if explicit:
+                raise
+            refused = take_pass_engines()
+            logger.info(
+                "VDAM K>1 default: the resident adaptive route does not cover this E-step; "
+                "it runs on the exact-local route: %s (%s)",
+                exc,
+                refused,
+            )
+            record_pass_engine("global", "local", f"resident adaptive route refused: {exc}")
+            route = "local"
+            result = run_local()
+    else:
+        record_pass_engine("global", "local")
+        result = run_local()
+    result.meta["pass2_engine"] = route
+    result.meta["pass2_engines"] = take_pass_engines()
+    return result
 
 
 @dataclass
@@ -238,7 +284,7 @@ def _dense_estep_config(
             pass1_healpix_order=int(pass1_healpix_order),
             return_profile=bool(os.environ.get("RECOVAR_INITIAL_MODEL_PROFILE")),
         )
-        if str(opts.pass2_engine) == "adaptive":
+        if vdam_pass2_route(opts.pass2_engine, int(opts.nr_classes))[0] == "adaptive":
             # The adaptive route rebuilds RELION's fine translations from the
             # unperturbed host grid (``_adaptive_pass2_grids``).
             if sampling_plan.coarse_base_translations is None:
@@ -605,7 +651,7 @@ def run_dense_initial_model_estep(
             )
         else:
             selected_halfset_ids = None
-        if str(config.pass2_engine) == "adaptive":
+        def run_adaptive():
             return run_adaptive_initial_model_estep(
                 experiment_dataset,
                 state,
@@ -619,19 +665,25 @@ def run_dense_initial_model_estep(
                 relion_projector_r_max=relion_projector_r_max,
                 engine_kwargs=engine_kwargs,
             )
-        return _run_sparse_pass2_initial_model_estep(
-            experiment_dataset,
-            state,
-            config,
-            class_log_priors=class_log_priors,
-            groups=groups,
-            joint_particle_ids=selected_particle_ids,
-            joint_halfset_ids=selected_halfset_ids,
-            means=means,
-            relion_projector_half_by_class=relion_projector_half_by_class,
-            relion_projector_r_max=relion_projector_r_max,
-            engine_kwargs=engine_kwargs,
-        )
+
+        def run_local():
+            # The adaptive route's host-double coarse grid is not an exact-local option.
+            local_kwargs = {k: v for k, v in engine_kwargs.items() if k != "coarse_base_translations"}
+            return _run_sparse_pass2_initial_model_estep(
+                experiment_dataset,
+                state,
+                config,
+                class_log_priors=class_log_priors,
+                groups=groups,
+                joint_particle_ids=selected_particle_ids,
+                joint_halfset_ids=selected_halfset_ids,
+                means=means,
+                relion_projector_half_by_class=relion_projector_half_by_class,
+                relion_projector_r_max=relion_projector_r_max,
+                engine_kwargs=local_kwargs,
+            )
+
+        return _run_vdam_pass2_route(config.pass2_engine, int(state.K), run_adaptive, run_local)
 
     # Sparse execution constructs its own coarse/local rotation operands.
     if config.rotations is None:
