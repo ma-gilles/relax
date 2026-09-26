@@ -1352,7 +1352,7 @@ def test_streamed_projection_rows_equal_the_cached_rows_exactly(
 
 
 def test_stable_window_plan_applies_only_to_the_supported_passes(monkeypatch, caplog):
-    """The flag is off by default; on, a sub-box model-grid pass gets a physical class above its size."""
+    """The flag is on by default: a sub-box model-grid pass gets a physical class above its size."""
 
     kwargs = dict(
         current_size=36,
@@ -1364,12 +1364,16 @@ def test_stable_window_plan_applies_only_to_the_supported_passes(monkeypatch, ca
         reconstruction_image_radius=None,
         reconstruction_volume_current_size=None,
     )
-    monkeypatch.delenv(rp._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
+    monkeypatch.setenv(rp._RESIDENT_STABLE_WINDOWS_ENV, "0")
     assert rp._resident_stable_window_plan((64, 64), **kwargs) is None
-    monkeypatch.setenv(rp._RESIDENT_STABLE_WINDOWS_ENV, "1")
+    monkeypatch.delenv(rp._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
     plan = rp._resident_stable_window_plan((64, 64), **kwargs)
     assert plan.logical_current_size == 36 and plan.physical_current_size == 40
     assert plan.physical_reconstruction_pixels > plan.logical_reconstruction_pixels
+    # VDAM's resident route takes them only when asked.
+    assert rp._resident_stable_window_plan((64, 64), **kwargs, vdam=True) is None
+    monkeypatch.setenv(rp._RESIDENT_STABLE_WINDOWS_ENV, "1")
+    assert rp._resident_stable_window_plan((64, 64), **kwargs, vdam=True) is not None
     for override in (
         {"current_size": 64, "mstep_current_size": 64, "n_half": 64 * 33},
         {"firstiter_cc": True},
@@ -1394,7 +1398,7 @@ def test_stable_windows_match_the_logical_window(_resident_production_env, monke
     """
 
     args = {**_driver_fixture_args(), "current_size": 4}
-    monkeypatch.delenv(rp._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
+    monkeypatch.setenv(rp._RESIDENT_STABLE_WINDOWS_ENV, "0")
     logical = rp.compute_pass2_stats_resident(**args)
     monkeypatch.setenv(rp._RESIDENT_STABLE_WINDOWS_ENV, "1")
     stable = rp.compute_pass2_stats_resident(**args)

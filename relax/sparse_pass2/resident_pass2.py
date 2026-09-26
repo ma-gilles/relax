@@ -268,7 +268,10 @@ _RESIDENT_GLUE_JIT_ENV = "RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT"
 # class (the current size rounded up to the stable-window quantum) and RELION's
 # logical current size and pixel counts travel as device scalars
 # (_WindowLogicalSizes), so the current sizes of one class share their chunk
-# programs. Default off until its quality band and census are in.
+# programs. Default on for Class3D and auto-refine: on the 5k K4 census
+# (14460993) the 25-iteration wall drops from 367 to 336 s with maps identical
+# to non-MPI RELION (14468487). ``=0`` restores RELION's logical window as the
+# programs' key; VDAM's resident route (--grad) takes them only with ``=1``.
 _RESIDENT_STABLE_WINDOWS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS"
 # Diagnostic, default off. Checks the statically computed M-step carry avals
 # against a ``jax.eval_shape`` probe of the same block stages, once per
@@ -1518,8 +1521,10 @@ class ResidentClassInputs(NamedTuple):
     rotation_log_priors: tuple
 
 
-def _resident_stable_windows_requested() -> bool:
-    return parse_env_flag(_RESIDENT_STABLE_WINDOWS_ENV, default=False)
+def _resident_stable_windows_requested(*, vdam: bool = False) -> bool:
+    # On by default for Class3D and auto-refine; VDAM's resident route (its
+    # residual M-step) takes them only when asked until its own gate has run.
+    return parse_env_flag(_RESIDENT_STABLE_WINDOWS_ENV, default=not vdam)
 
 
 def _resident_stable_window_plan(
@@ -1533,6 +1538,7 @@ def _resident_stable_window_plan(
     firstiter_cc,
     reconstruction_image_radius,
     reconstruction_volume_current_size,
+    vdam=False,
 ):
     """The pass's stable-window plan, or None to keep the logical window.
 
@@ -1543,7 +1549,7 @@ def _resident_stable_window_plan(
     logical window, as the compact and local engines do.
     """
 
-    if not _resident_stable_windows_requested():
+    if not _resident_stable_windows_requested(vdam=vdam):
         return None
     reasons = []
     if int(current_size) >= int(image_shape[0]):
@@ -2024,6 +2030,7 @@ def _resident_pass2(
         firstiter_cc=firstiter_cc,
         reconstruction_image_radius=reconstruction_image_radius,
         reconstruction_volume_current_size=reconstruction_volume_current_size,
+        vdam=bool(mstep_subtract_ctf_projection),
     )
     stable_window_spec = None
     # The spec's current size: the physical class with stable windows, RELION's otherwise.
