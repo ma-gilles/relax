@@ -434,6 +434,10 @@ def _build_factorized_local_entries(
     biggest_sigma_deg = sigma_rot_deg
     cutoff_dir_deg = 3.0 * biggest_sigma_deg
     cutoff_psi_deg = 3.0 * sigma_psi_deg
+    # cos of the cone half-angle widened by 1e-4 relative: every direction the
+    # exact degree test keeps has a larger dot product (see the chunk loop).
+    widened_cutoff_rad = np.deg2rad(cutoff_dir_deg) * (1.0 + 1e-4) + 1e-9
+    cos_prefilter = -np.inf if widened_cutoff_rad >= np.pi else float(np.cos(widened_cutoff_rad))
 
     rotation_ids_parts: list[np.ndarray] = []
     log_prior_parts: list[np.ndarray] = []
@@ -465,10 +469,13 @@ def _build_factorized_local_entries(
                     ),
                     axis=1,
                 )
-            dots = np.clip(dots, -1.0, 1.0)
-            diffang_chunk = np.rad2deg(np.arccos(dots))
+            # Only directions inside the cone need their angle. A cosine
+            # prefilter with a margin keeps a superset of them, the exact test
+            # below runs on the same arccos values as before, and the
+            # arccos over every direction of the grid is skipped.
+            candidate_chunk = dots >= cos_prefilter
         else:
-            diffang_chunk = None
+            dots = None
 
         if sigma_psi_deg > 0.0:
             diffpsi_chunk = _wrapped_abs_diff_deg(
@@ -480,14 +487,16 @@ def _build_factorized_local_entries(
 
         for local_idx, image_idx in enumerate(range(chunk_start, chunk_stop)):
             if sigma_rot_deg > 0.0:
-                diffang_i = diffang_chunk[local_idx]
-                dir_mask = diffang_i < cutoff_dir_deg
-                dir_indices = np.flatnonzero(dir_mask).astype(np.int64)
+                candidates = np.flatnonzero(candidate_chunk[local_idx])
+                candidate_angles = np.rad2deg(np.arccos(np.clip(dots[local_idx, candidates], -1.0, 1.0)))
+                inside = candidate_angles < cutoff_dir_deg
+                dir_indices = candidates[inside].astype(np.int64)
                 if dir_indices.size == 0:
+                    diffang_i = np.rad2deg(np.arccos(np.clip(dots[local_idx], -1.0, 1.0)))
                     dir_indices = np.array([int(np.argmin(diffang_i))], dtype=np.int64)
                     dir_log_prior = np.zeros(1, dtype=dtype)
                 else:
-                    dir_log_prior = _normalized_log_weights(diffang_i[dir_indices], biggest_sigma_deg)
+                    dir_log_prior = _normalized_log_weights(candidate_angles[inside], biggest_sigma_deg)
             else:
                 dir_indices = np.arange(n_pixels, dtype=np.int64)
                 dir_log_prior = np.full(n_pixels, -np.log(max(n_pixels, 1)), dtype=dtype)
