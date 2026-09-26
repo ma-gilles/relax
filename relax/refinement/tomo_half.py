@@ -475,6 +475,17 @@ def score_tomo_half_in_loop(
         raise ValueError("the tomo half pass projects and backprojects with one padding factor")
     if relion_projector_half is None or relion_projector_r_max is None:
         raise ValueError("the tomo half pass needs RELION's Projector::data half map")
+    relion_projector_half = np.asarray(relion_projector_half)
+    if relion_projector_half.ndim == 4:
+        # The loop keeps a class axis; K = 1 here.
+        if relion_projector_half.shape[0] != 1:
+            raise ValueError("the tomo half pass refines one class")
+        relion_projector_half = relion_projector_half[0]
+    relion_projector_r_max = np.asarray(relion_projector_r_max).reshape(-1)[0]
+    if np.ndim(volume) == 2:
+        if np.shape(volume)[0] != 1:
+            raise ValueError("the tomo half pass refines one class")
+        volume = volume[0]
     n_rot = int(rotation_grid_size(sampling.healpix_order))
     prior = (
         np.zeros(n_rot, dtype=np.float32)
