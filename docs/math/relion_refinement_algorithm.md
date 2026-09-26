@@ -569,7 +569,9 @@ and per particle the pose, offset, norm and scale corrections, group and class.
 `run_itNNN_optimiser.star`, `run_itNNN_half{1,2}_model.star` (Class3D: `run_itNNN_model.star`),
 `run_itNNN_data.star`, `run_itNNN_sampling.star`, the reference maps and, for auto-refine,
 the unregularized `run_itNNN_half{1,2}_class001_unfil.mrc`, and reads them back.
-`run_full_refinement.py --write-iteration-every N` (default 1) sets the frequency.
+`run_full_refinement.py --write-iteration-every N` (default 1) sets the frequency and
+`--keep-iterations N` (default 0, keep all, as RELION) keeps only the newest N iterations'
+files. A background thread writes each iteration's files while the next one runs.
 
 `--continue` restores that state before the loop (`options.checkpoint.resume`), and the
 loop's first iteration then takes the same branches as iteration N+1 of the uninterrupted

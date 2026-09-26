@@ -96,6 +96,18 @@ the cached-path chunk gather (131072 rows x 36514 pixels = 35.7 GiB, now bounded
 measured free memory) and the low-resolution half join, which moved a physically
 large grid's host accumulators back to the device before the 1600^3 inverse FFT.
 
+Run files and `--continue` (2026-09-26): auto-refine and Class3D write RELION's
+`run_itNNN_{optimiser,model,data,sampling}.star` and maps every iteration and continue from
+them ([algorithm map section 8](../math/relion_refinement_algorithm.md)). Two departures from
+relion_refine `--continue` keep a continued run equal to the uninterrupted one: each half keeps
+its own noise (RELION's MPI restart broadcasts half 1's, ml_optimiser_mpi.cpp:750-758) and the
+particle order stays the run's first mt19937 order (RELION reshuffles with random_seed + iter,
+exp_model.cpp:406-446); STAR floats are written at full precision. On K1 5k/128 to convergence
+(17 iterations, local search from 8), K4 5k/128 (12 iterations) and K1 C4, runs continued from
+several iterations stay inside the same-code repeat band at every later iteration, with identical
+schedules and convergence iteration (Slurm 14470000/1, 14470259, 14470264, 14470328). VDAM has
+no continuation yet.
+
 The supported K4 comparison still has a class below its FSC-AUC gate. Saved
 launch-ladder contributors agree in a bounded sample, while GPU accumulators are
 not bitwise repeatable even on the control. Neither finding justifies a tolerance
