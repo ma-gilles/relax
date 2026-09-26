@@ -47,6 +47,7 @@ import numpy as np
 from relax.relion import input_poses, relion_metadata
 from relax.diagnostics import parity_dump, relion_replay
 from relax.helpers import iteration_history
+from relax.helpers.compilation_cache import activate_recovar_compilation_cache
 from relax.helpers.particle_io import (
     ParticleReadPolicy,
     add_particle_read_arguments,
@@ -2662,7 +2663,11 @@ def _savez_deflate_fast(path, arrays):
 
 
 def main():
+    # This script imports JAX before recovar, so recovar's cache environment must be applied to the live config.
+    cache_directory = activate_recovar_compilation_cache()
     args = _parse_args()
+    if cache_directory:
+        logger.info("Persistent JAX compilation cache: %s", cache_directory)
     if int(args.n_classes) == 1:
         apply_k1_refine3d_env_defaults()
     _resolve_relion_gui_defaults(args)

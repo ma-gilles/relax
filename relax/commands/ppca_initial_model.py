@@ -127,6 +127,9 @@ def main(args=None):
         args = parser.parse_args(args)
     import os
 
+    from relax.helpers.compilation_cache import activate_recovar_compilation_cache
+
+    activate_recovar_compilation_cache()
     if not os.environ.get("SLURM_JOB_ID"):
         raise RuntimeError("Particle refinement runs require Slurm; use unit tests for local numerical checks")
     from relax.ppca_initial_model.iteration_loop import run

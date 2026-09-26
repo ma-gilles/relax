@@ -450,6 +450,9 @@ def _configure_jax_compilation_cache(*, enabled: bool, requested_dir: str) -> di
         "jax_persistent_cache_min_compile_time_secs",
         float(min_compile_time_secs),
     )
+    from relax.helpers.compilation_cache import start_background_prune
+
+    start_background_prune(directory)
     return {"enabled": True, "directory": str(directory), "source": source}
 
 
