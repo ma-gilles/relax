@@ -41,6 +41,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
 import shlex
 import threading
 import time
@@ -236,6 +237,7 @@ class RunFileWriter:
         write_every: int = 1,
         write_unfiltered_maps: bool = True,
         background: bool = True,
+        keep_iterations: int = 0,
     ):
         if int(write_every) < 1:
             raise ValueError(f"write_every must be positive, got {write_every}")
@@ -250,6 +252,9 @@ class RunFileWriter:
         self.group_names = group_names
         self.prefix = str(prefix)
         self.write_every = int(write_every)
+        if int(keep_iterations) < 0:
+            raise ValueError(f"keep_iterations must be >= 0, got {keep_iterations}")
+        self.keep_iterations = int(keep_iterations)
         self.write_unfiltered_maps = bool(write_unfiltered_maps)
         self.background = bool(background)
         self.seconds: dict[int, float] = {}
@@ -318,7 +323,42 @@ class RunFileWriter:
             root,
             self.seconds[int(snapshot.relion_iteration)],
         )
+        if self.keep_iterations:
+            self._remove_old_iterations(int(snapshot.relion_iteration))
         return optimiser
+
+    def _remove_old_iterations(self, written: int) -> None:
+        """Keep the ``keep_iterations`` newest complete iterations up to ``written``.
+
+        Older run files in the output directory go, including a crashed run's incomplete
+        ones; later iterations (left by an earlier run this one continues) stay until they are
+        overwritten. Only the file names this writer produces are removed, the optimiser STAR
+        first so a partly removed iteration can no longer be continued. The run's final
+        outputs are not run_itNNN files and are never touched.
+        """
+
+        pattern = re.compile(
+            rf"{re.escape(self.prefix)}_it(\d{{3}})_(optimiser\.star|data\.star|sampling\.star|model\.star"
+            rf"|half[12]_model\.star|class\d{{3}}\.mrc|half[12]_class\d{{3}}\.mrc|half[12]_class001_unfil\.mrc)"
+        )
+        by_iteration: dict[int, list[Path]] = {}
+        for path in self.output_dir.iterdir():
+            match = pattern.fullmatch(path.name)
+            if match:
+                by_iteration.setdefault(int(match.group(1)), []).append(path)
+        complete = sorted(
+            it
+            for it, paths in by_iteration.items()
+            if it <= written and any(p.name.endswith("_optimiser.star") for p in paths)
+        )
+        keep = set(complete[-self.keep_iterations :])
+        for it in sorted(by_iteration):
+            if it in keep or it >= written:
+                continue
+            paths = sorted(by_iteration[it], key=lambda p: not p.name.endswith("_optimiser.star"))
+            for path in paths:
+                path.unlink(missing_ok=True)
+            logger.info("Removed the run files of iteration %d (--keep-iterations %d)", it, self.keep_iterations)
 
     def _group_rows(self, snapshot):
         """``(group number, name, particle count)`` per scale group, 1-based as RELION."""

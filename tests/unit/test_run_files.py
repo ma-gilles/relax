@@ -397,3 +397,25 @@ def test_background_writer_hands_over_and_reports_errors(tmp_path):
     with pytest.raises(RuntimeError, match="run files failed"):
         writer.wait()
     assert not (tmp_path / "out" / "run_it006_optimiser.star").exists()
+
+
+def test_keep_iterations_removes_older_run_files_only(tmp_path):
+    rng = np.random.default_rng(7)
+    input_star = _write_input_star(tmp_path, 7)
+    half_rows = [np.array([4, 0, 2, 6]), np.array([5, 1, 3])]
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "final_merged.mrc").write_text("x")
+    (out / "run_it009_optimiser.star").write_text("left by an earlier run")
+    writer = _writer(tmp_path, input_star, half_rows, keep_iterations=2)
+    for it in (1, 2, 3):
+        snapshot = _k1_snapshot([4, 3], rng)
+        snapshot.relion_iteration = it
+        writer(snapshot)
+    names = sorted(p.name for p in out.iterdir())
+    assert not any(n.startswith("run_it001_") for n in names)
+    for it in (2, 3):
+        assert f"run_it{it:03d}_optimiser.star" in names and f"run_it{it:03d}_half1_class001_unfil.mrc" in names
+    assert "final_merged.mrc" in names and "run_it009_optimiser.star" in names
+    with pytest.raises(ValueError, match="keep_iterations"):
+        _writer(tmp_path, input_star, half_rows, keep_iterations=-1)

@@ -2601,7 +2601,23 @@ def _parse_args(argv=None):
             "the original command (data, seed, sampling and model options) and add this "
             "option; the run files supply the maps, noise, tau2, poses, corrections, "
             "sampling and convergence state. --max_iter stays the last numbered "
-            "iteration of the whole run, like RELION's --iter."
+            "iteration of the whole run, like RELION's --iter. Two departures from "
+            "relion_refine --continue keep a continued run equal to the uninterrupted one: "
+            "each half keeps its own noise spectrum (RELION's MPI restart gives both halves "
+            "half 1's), and the particle order stays the run's first mt19937 order (RELION "
+            "reshuffles with random_seed + iteration). The run files carry full-precision "
+            "floats and extra data_relax_* blocks for the same reason."
+        ),
+    )
+    parser.add_argument(
+        "--keep-iterations",
+        dest="keep_iterations",
+        type=int,
+        default=0,
+        help=(
+            "Keep only the run files of the N newest numbered iterations (the final outputs "
+            "are always kept); 0 keeps every iteration, as RELION does. At box 800 each "
+            "half map is about 2 GB."
         ),
     )
     parser.add_argument(
@@ -4677,6 +4693,7 @@ def main():
                 half_rows=[half1_idx, half2_idx],
                 write_every=int(args.write_iteration_every),
                 write_unfiltered_maps=bool(args.write_unfiltered_half_maps),
+                keep_iterations=int(args.keep_iterations),
             )
     continued_iterations = 0 if resume_snapshot is None else int(resume_snapshot.relion_iteration)
 
