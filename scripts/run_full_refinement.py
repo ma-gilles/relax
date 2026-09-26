@@ -78,6 +78,7 @@ from relax.relion.initial_noise import (
 from relax.refinement.iteration_snapshot import noise_pixel_rows
 from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
 from relax.refinement.run_files import RunFileWriter, RunSettings, read_run_files, read_star_blocks
+from relax.refinement.tomo_half import TomoDataset, is_relion5_2d_stack_star
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.relion.relion_worker_scale import (
     load_relion_dispatch_schedule,
@@ -1096,7 +1097,15 @@ def _compute_relion_fresh_k1_initial_sigma2(
         for source_row, optics_label in zip(source_rows, optics_labels, strict=True)
     }
 
+    tomo = isinstance(dataset, TomoDataset)
+
     def image_iter():
+        if tomo:
+            # Every tilt image of the first minimum_nr_particles_sigma2_noise particles per optics group
+            # (10 for subtomograms, ml_optimiser.cpp:2813), each counted once (:3100-3300).
+            dense_groups = [optics_by_source_row[int(row)] for row in source_rows]
+            yield from dataset.startup_noise_images(source_rows, unit_groups=dense_groups, particles_per_group=10)
+            return
         if isinstance(dataset, MultiShapeDataset):
             for row, image in dataset.iter_images(source_rows, batch_size=min(256, source_rows.size)):
                 yield optics_by_source_row[row], image
@@ -1128,7 +1137,8 @@ def _compute_relion_fresh_k1_initial_sigma2(
         width_mask_edge_px=int(width_mask_edge_px),
         do_zero_mask=True,
         nr_optics_groups=len(unique_optics),
-        minimum_nr_particles=int(minimum_nr_particles),
+        # A subtomogram iterator is already capped per particle; every one of its images counts.
+        minimum_nr_particles=int(dataset.unit_image_offsets[-1]) if tomo else int(minimum_nr_particles),
         **(
             {}
             if group_pixel_sizes is None
@@ -1824,6 +1834,21 @@ def _validate_continue_cli(args) -> int:
     if args.seed is not None and int(args.seed) != seed:
         raise SystemExit(f"--seed {args.seed} differs from the continued run's seed {seed}")
     return seed
+
+
+def _validate_tomo_run(args, frozen_boundary, double_image_preprocessing):
+    """Refuse options the subtomogram (2D-stack) path does not implement yet (S4.2)."""
+
+    if int(args.n_classes) != 1:
+        raise SystemExit("subtomogram particles run the K=1 auto-refine only (S4.2)")
+    if frozen_boundary is not None or args.relion_init_dir is not None or args.init_noise_from_npz is not None:
+        raise SystemExit("subtomogram particles start fresh from RELION's inputs (no frozen, replayed or loaded state)")
+    if double_image_preprocessing:
+        raise SystemExit("subtomogram particles have no float64 scoring diagnostic")
+    if args.relion_softmask_reduction != "control":
+        raise SystemExit("subtomogram particles have no soft-mask reduction probe")
+    if getattr(args, "continue_optimiser_star", None) is not None:
+        raise SystemExit("--continue does not map subtomogram particles' run files yet")
 
 
 def _initial_current_size(voxel_size: float, grid_size: int, init_resolution: float) -> int:
@@ -2849,8 +2874,34 @@ def main():
     particle_scratch = prepare_particle_reads(
         os.path.join(args.data_dir, "particles.star"), particle_read_policy
     )
-    shape_class_rows = optics_shape_class_rows(os.path.join(args.data_dir, "particles.star"))
-    if shape_class_rows is None:
+    tomo_run = is_relion5_2d_stack_star(os.path.join(args.data_dir, "particles.star"))
+    shape_class_rows = None if tomo_run else optics_shape_class_rows(os.path.join(args.data_dir, "particles.star"))
+    if tomo_run:
+        # RELION 5 subtomogram 2D stacks (S4.2): the units are the particles, each over its tilt images.
+        _validate_tomo_run(args, frozen_boundary, _double_image_preprocessing)
+        from recovar.data_io.starfile import read_star
+
+        from relax.relion.tomo_input import flatten_relion5_tomo
+
+        tomo_particles_star = os.path.join(args.data_dir, "particles.star")
+        tomo_tomograms_star = os.path.join(args.data_dir, "tomograms.star")
+        flat_star = flatten_relion5_tomo(
+            tomo_particles_star, tomo_tomograms_star, os.path.join(args.output, "particles_2d.star")
+        )
+        tomo_images = load_dataset(
+            str(flat_star),
+            datadir=args.data_dir,
+            lazy=not particle_read_policy.preread_images,
+            dtype=np.complex64,
+            absent_angles_zero=True,
+        )
+        assert_reads_from_scratch(tomo_images, particle_scratch)
+        ds = TomoDataset(tomo_images, read_star(str(flat_star))[0], tomo_particles_star, tomo_tomograms_star)
+        logger.info(
+            "Subtomogram particles: %d particles over %d tilt images (%s)",
+            ds.n_units, int(ds.unit_image_offsets[-1]), flat_star,
+        )
+    elif shape_class_rows is None:
         ds = load_dataset(
             os.path.join(args.data_dir, "particles.star"),
             lazy=not particle_read_policy.preread_images,
@@ -2888,7 +2939,9 @@ def main():
             "float64/complex128 through particle masking and FFT"
         )
     # RELION masks every image with its own optics group's pixel size.
-    for class_dataset in (ds.datasets if shape_class_rows is not None else (ds,)):
+    for class_dataset in (
+        ds.datasets if shape_class_rows is not None else (ds.images,) if tomo_run else (ds,)
+    ):
         relion_mask_params = _maybe_apply_relion_image_mask(
             class_dataset,
             args,
@@ -3033,16 +3086,19 @@ def main():
                 relion_fresh_initial_noise_source_rows,
                 relion_fresh_initial_noise_optics_group_ids,
             ) = _relion_fresh_initial_noise_layout(our_particles, relion_particles)
-        from recovar.data_io import metadata_readers
+        if not tomo_run:
+            # Subtomogram particles have one CTF per tilt image; their expected accuracy reads
+            # those from the tomo half (relax.refinement.tomo_half).
+            from recovar.data_io import metadata_readers
 
-        relion_ctf_with_apix = metadata_readers.parse_ctf_from_star(
-            args.relion_half_sets,
-            ds.grid_size,
-        )
-        expected_accuracy_half1_ctf_params = np.asarray(
-            relion_ctf_with_apix[expected_accuracy_half1_particle_ids, 1:],
-            dtype=np.float64,
-        )
+            relion_ctf_with_apix = metadata_readers.parse_ctf_from_star(
+                args.relion_half_sets,
+                ds.grid_size,
+            )
+            expected_accuracy_half1_ctf_params = np.asarray(
+                relion_ctf_with_apix[expected_accuracy_half1_particle_ids, 1:],
+                dtype=np.float64,
+            )
         logger.info("Using RELION half-set split: %d (subset=1) + %d (subset=2)", len(half1_idx), len(half2_idx))
         if use_fresh_auto_refine_order:
             logger.info(
