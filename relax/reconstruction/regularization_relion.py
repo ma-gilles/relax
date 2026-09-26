@@ -963,6 +963,53 @@ def _compute_relion_fsc_from_packed_half_streamed(
     return fsc, numerator, denom0, denom1
 
 
+@functools.lru_cache(maxsize=4)
+def _relion_fsc_downsample_labels(padded_shape, pf, max_shell):
+    """``BackProjector::getDownsampledAverage``'s native-grid bins for one accumulator shape.
+
+    They depend only on the shape, the padding factor and the FSC radius, and
+    computing them (three padded-grid meshgrids and RELION roundings) took
+    about 0.3 s per call, twice an iteration on the 5k K=1 run. Returns the
+    padded-grid mask of voxels that land on the downsampled grid, their
+    flattened downsampled labels, and the downsampled grid's radius and sizes.
+    Read-only: the arrays are shared between calls.
+    """
+
+    axes = [
+        np.asarray(fourier_transform_utils.get_1d_frequency_grid(s, scaled=False), dtype=np.float64)
+        for s in padded_shape
+    ]
+    # RECOVAR stores centered Fourier volumes as (z, y, x), but the RELION
+    # BackProjector's compact half-axis is its logical x coordinate.  In the
+    # dense EM rotation convention that logical RELION x corresponds to
+    # RECOVAR axis 0 after the CUDA rotation-row swap.  Interpret the saved
+    # full accumulator as (relion_y, relion_x, relion_z) before mirroring
+    # BackProjector::getDownsampledAverage.  This is source-level layout
+    # emulation; the shell bins are rotationally invariant, but the compact
+    # half-axis selection is not.
+    relion_z, relion_y, relion_x = np.meshgrid(axes[1], axes[2], axes[0], indexing="ij")
+    dz = _relion_round_away_from_zero(relion_z / pf)
+    dy = _relion_round_away_from_zero(relion_y / pf)
+    dx = _relion_round_away_from_zero(relion_x / pf)
+
+    down_radius = max_shell + 1
+    down_size = 2 * down_radius + 1
+    down_xsize = down_size // 2 + 1
+    valid = (
+        (dz >= -down_radius)
+        & (dz <= down_radius)
+        & (dy >= -down_radius)
+        & (dy <= down_radius)
+        & (dx >= 0)
+        & (dx < down_xsize)
+    )
+    labels = ((dz[valid] + down_radius) * down_size + (dy[valid] + down_radius)) * down_xsize + dx[valid]
+    labels = labels.reshape(-1)
+    valid.setflags(write=False)
+    labels.setflags(write=False)
+    return valid, labels, down_radius, down_size, down_xsize
+
+
 def compute_relion_fsc_from_backprojector(
     Ft_y_0,
     Ft_y_1,
@@ -1093,22 +1140,6 @@ def compute_relion_fsc_from_backprojector(
     weight0 = _as_padded_full(Ft_ctf_0, "Ft_ctf_0").real
     weight1 = _as_padded_full(Ft_ctf_1, "Ft_ctf_1").real
 
-    axes = [
-        np.asarray(fourier_transform_utils.get_1d_frequency_grid(s, scaled=False), dtype=np.float64)
-        for s in padded_shape
-    ]
-    # RECOVAR stores centered Fourier volumes as (z, y, x), but the RELION
-    # BackProjector's compact half-axis is its logical x coordinate.  In the
-    # dense EM rotation convention that logical RELION x corresponds to
-    # RECOVAR axis 0 after the CUDA rotation-row swap.  Interpret the saved
-    # full accumulator as (relion_y, relion_x, relion_z) before mirroring
-    # BackProjector::getDownsampledAverage.  This is source-level layout
-    # emulation; the shell bins are rotationally invariant, but the compact
-    # half-axis selection is not.
-    relion_z, relion_y, relion_x = np.meshgrid(axes[1], axes[2], axes[0], indexing="ij")
-    dz = _relion_round_away_from_zero(relion_z / pf)
-    dy = _relion_round_away_from_zero(relion_y / pf)
-    dx = _relion_round_away_from_zero(relion_x / pf)
     data0 = np.transpose(data0, (1, 2, 0))
     data1 = np.transpose(data1, (1, 2, 0))
     weight0 = np.transpose(weight0, (1, 2, 0))
@@ -1116,19 +1147,9 @@ def compute_relion_fsc_from_backprojector(
 
     half = n // 2
     max_shell = half if r_max is None else int(r_max)
-    down_radius = max_shell + 1
-    down_size = 2 * down_radius + 1
-    down_xsize = down_size // 2 + 1
-    valid = (
-        (dz >= -down_radius)
-        & (dz <= down_radius)
-        & (dy >= -down_radius)
-        & (dy <= down_radius)
-        & (dx >= 0)
-        & (dx < down_xsize)
+    valid, labels, down_radius, down_size, down_xsize = _relion_fsc_downsample_labels(
+        padded_shape, pf, max_shell
     )
-    labels = ((dz[valid] + down_radius) * down_size + (dy[valid] + down_radius)) * down_xsize + dx[valid]
-    labels = labels.reshape(-1)
     minlength = down_size * down_size * down_xsize
 
     def _downsample_average(data, weight):
