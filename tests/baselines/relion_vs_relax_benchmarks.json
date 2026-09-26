@@ -3699,7 +3699,9 @@
     "gpu_count": 1,
     "iterations": 200,
     "jobs": [
-     "14148538"
+     "14148538",
+     "14425400",
+     "14450986"
     ],
     "masked_band_auc": null
    },
@@ -3715,7 +3717,8 @@
     "gpu_count": 1,
     "iterations": 200,
     "jobs": [
-     "14401805"
+     "14401805",
+     "14425400"
     ],
     "masked_band_auc": null,
     "source_sha": "cb18995a6d56a328d3df186c98060ced3b2e7ff1",
@@ -3745,7 +3748,11 @@
      "fsc_auc": 0.3582,
      "masked_fsc_auc": 0.4402
     },
-    "relion_repeat": null
+    "relion_repeat": {
+     "pair": "RELION seed 29 vs seed 41 (different-seed repeat; seed 53 in the notes)",
+     "fsc_auc": 0.0504,
+     "masked_fsc_auc": 0.0771
+    }
    },
    "gt": null,
    "cross_engine": null,
@@ -3766,15 +3773,17 @@
     "relax K=15 seed 29 on the fix: 33155 s (pre-split 25cc4475b: 38463 s). Population-weighted reference FSC-AUC relax fix 0.1321 (masked 0.1374), before the fix 0.0974; RELION 0.1435 (masked 0.1514).",
     "Occupied classes after the fix: relax 0.363/0.391/0.214/0.030 vs RELION 0.366/0.355/0.233/0.031 (+0.015 in a fifth class); before the fix relax 0.332/0.358/0.269/0.039.",
     "All scored runs (FSC-AUC unmasked / masked): relion_s29 vs reference 0.1435 unmasked / 0.1514 masked; relax_s29 vs reference 0.0974 unmasked / 0.0985 masked; relaxfix_s29 vs reference 0.1321 unmasked / 0.1374 masked; relion_s29 vs relax_s29 0.2267 / 0.2690; relion_s29 vs relaxfix_s29 0.3582 / 0.4402; relax_s29 vs relaxfix_s29 0.2170 / 0.2884.",
-    "Improved by the fix (0.0974 to 0.1321) but still below the single RELION run (0.1435); no RELION repeat or second seed exists at K=15, so the remaining gap is not attributed (pdb K=2 seed-29 RELION repeats alone span 0.323-0.335)."
+    "Seeds (2026-09-25, same command and candidate cand_cb18995): RELION seeds 29/41/53 masked population-weighted reference FSC-AUC 0.1514/0.0367/0.0606 (unmasked 0.1435/0.0342/0.0600); relax seeds 29/41 0.1374/0.0371 (unmasked 0.1321/0.0360). Both relax seeds are inside the RELION band 0.0367-0.1514; at seed 41 relax is at RELION's value (0.0371 vs 0.0367). The seed spread (0.037-0.151) is far wider than the seed-29 relax-RELION difference, so the seed-29 gap is within RELION's own seed variation.",
+    "Same-seed relax-vs-RELION X-AUC: seed 29 0.3591 (masked 0.4410), seed 41 0.2895 (masked 0.4777); RELION different-seed pairs 0.0386-0.0672 (masked 0.0771-0.0998), so K=15 runs of different seeds land in different class structures.",
+    "Seed-41 walls (vdamk2 job 14425400, one node, 8 CPUs and one H100 per arm): relax 29,808 s with the JAX pool capped at .50 (XLA_PYTHON_CLIENT_MEM_FRACTION inherited from the submitting shell), RELION 10,955 s. RELION seed 53 ran in the same lane and hit a RELION illegal memory access at iteration 200 (custom_allocator.cuh:176); its rerun (job 14450986, 13,229 s, separate job) is the band member. Scores: docs/benchmarks/initialmodel_scores/ribo_k15_seeds.json."
    ],
-   "null_reasons": {
-    "initial_model.relion_repeat": "no second RELION run of this command exists"
-   },
+   "null_reasons": {},
    "evidence": {
     "run_roots": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/ribo_rerun"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/ribo_rerun",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/ribo_k15_s41",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/vdam/ribo_k15/relion_s53_rerun"
     ],
     "score_json": "docs/benchmarks/initialmodel_scores/ribo_k15_fix.json"
    },
@@ -3782,7 +3791,7 @@
     "dataset": "ribosembly_k15_50k256_c1",
     "sha256": "8fe2c4cd8b74d59043836b02d0720839a18ed98870c6ee3307d0c2b4d277bd72"
    },
-   "date": "2026-09-24",
+   "date": "2026-09-26",
    "time_check": {
     "a": "RELION 1 GPU, one non-MPI relion_refine process, --j 8 (2026-09-19 matrix jobs); relax 1 GPU, --j 8, one srun --exact -c8 step per arm (K=15 alone in 14401805; K=4 s41, K=1 s41 and K=1 s29 as three steps of 14401806)",
     "b": "both pre-read the particle stack (RELION --preread_images, relax --preread_images); relax production defaults, no profiling or capture variables; RELION --grad_write_iter 50, relax --grad-write-iter 50",
