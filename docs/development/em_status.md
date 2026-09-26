@@ -103,9 +103,15 @@ relion_refine `--continue` keep a continued run equal to the uninterrupted one: 
 its own noise (RELION's MPI restart broadcasts half 1's, ml_optimiser_mpi.cpp:750-758) and the
 particle order stays the run's first mt19937 order (RELION reshuffles with random_seed + iter,
 exp_model.cpp:406-446); STAR floats are written at full precision. On K1 5k/128 to convergence
-(17 iterations, local search from 8), K4 5k/128 (12 iterations) and K1 C4, runs continued from
-several iterations stay inside the same-code repeat band at every later iteration, with identical
-schedules and convergence iteration (Slurm 14470000/1, 14470259, 14470264, 14470328). VDAM has
+(17 iterations, local search from 8) and K4 5k/128 (12 iterations), runs continued from several
+iterations stay inside the same-code repeat band at every later iteration, with identical
+schedules and convergence iteration (Slurm 14470000/1, 14470259, 14470264). On K1 C4 (14470328,
+14470680, 14475183) continuations from iterations 4, 6, 8, 12, 17 and 20 match to 1e-6; from 5, the
+iteration after a HEALPix refinement, every restored input equals the uninterrupted run's except the
+references, which differ by 2.6e-7 after the float32 MRC round trip that RELION's `--continue` also
+makes, and that flips one half-2 particle's significance support (44071 vs 44072 samples): half maps
+differ by 1.9e-4 at iteration 6, the kind of single-particle flip a same-code repeat shows there. This
+C4 fixture is chaotic from iteration 7 (one of two repeats converges at 19 instead of 21). VDAM has
 no continuation yet.
 
 The supported K4 comparison still has a class below its FSC-AUC gate. Saved
