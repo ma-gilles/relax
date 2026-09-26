@@ -1,5 +1,8 @@
 """Bounded RELION projection caches for consecutive local-search buckets.
 
+DEPRECATED: to be removed once the resident engine covers the local-search parent probe, the
+full-box final iteration and VDAM K=1; see em_status 'One engine' TODO.
+
 The engine decides when to plan/build/release a cache. This module owns its
 budget, stable grouping, rotation-ID mapping and projection materialization.
 Only IDs selected by a bucket mask refer to initialized cache rows; unused

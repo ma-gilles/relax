@@ -1,4 +1,8 @@
-"""Exact local score and normalization helpers."""
+"""Exact local score and normalization helpers.
+
+DEPRECATED: to be removed once the resident engine covers the local-search parent probe, the
+full-box final iteration and VDAM K=1; see em_status 'One engine' TODO.
+"""
 
 from __future__ import annotations
 

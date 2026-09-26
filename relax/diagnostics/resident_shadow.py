@@ -1,5 +1,9 @@
 """Diagnostic: run the compact engine alongside a resident pass and save both outputs.
 
+DEPRECATED: to be removed once the resident engine covers subset and focused replays, the
+K-class fused and 2K-1 fallbacks, CPU-only execution and its memory refusals; see em_status 'One
+engine' TODO.
+
 ``RELAX_SPARSE_PASS2_RESIDENT_SHADOW_DIR=<dir>`` makes every in-scope resident pass 2
 also run ``compute_pass2_stats_sparse_bucketed`` on the same arguments and write the
 per-image outputs of both engines to ``<dir>/pass2_shadow_<n>.npz``. The resident

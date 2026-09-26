@@ -1,5 +1,9 @@
 """Compact-pair weighted sums and active-row selection of the sparse bucketed pass 2.
 
+DEPRECATED: to be removed once the resident engine covers subset and focused replays, the
+K-class fused and 2K-1 fallbacks, CPU-only execution and its memory refusals; see em_status 'One
+engine' TODO.
+
 The probability-weighted image and rotation sums of RELION's ``storeWeightedSums``
 counterpart for compact hypothesis pairs (dense, pair-sparse, fused and native
 variants), the active flat-row selection and grouping, and the rectangular

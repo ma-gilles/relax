@@ -1,4 +1,8 @@
-"""Source-ordered flat-row plans for exact local scoring."""
+"""Source-ordered flat-row plans for exact local scoring.
+
+DEPRECATED: to be removed once the resident engine covers the local-search parent probe, the
+full-box final iteration and VDAM K=1; see em_status 'One engine' TODO.
+"""
 
 from __future__ import annotations
 

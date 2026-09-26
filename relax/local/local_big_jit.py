@@ -1,5 +1,8 @@
 """Large JIT bucket kernel for exact local EM.
 
+DEPRECATED: to be removed once the resident engine covers the local-search parent probe, the
+full-box final iteration and VDAM K=1; see em_status 'One engine' TODO.
+
 This module is intentionally separate from ``local_em_engine`` so the Python
 orchestration can stay thin while the numeric bucket hot path is compiled as a
 single unit.

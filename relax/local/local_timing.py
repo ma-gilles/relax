@@ -1,5 +1,8 @@
 """Host-side timing and bucket-progress reporting for the exact-local EM engine.
 
+DEPRECATED: to be removed once the resident engine covers the local-search parent probe, the
+full-box final iteration and VDAM K=1; see em_status 'One engine' TODO.
+
 Extracted from ``local_em_engine.py`` so the engine module stays focused
 on the bucket-driven EM body.
 """

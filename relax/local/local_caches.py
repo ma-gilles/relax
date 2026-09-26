@@ -1,5 +1,8 @@
 """Host caches for the exact local EM engine.
 
+DEPRECATED: to be removed once the resident engine covers the local-search parent probe, the
+full-box final iteration and VDAM K=1; see em_status 'One engine' TODO.
+
 The local engine visits every image exactly once but bucket sorting turns
 that into many small indexed dataset reads. These helpers precompute raw
 image / CTF batches and per-image half spectra once so the per-bucket loop

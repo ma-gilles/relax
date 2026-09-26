@@ -1,5 +1,9 @@
 """Bucket planning of the sparse bucketed pass 2.
 
+DEPRECATED: to be removed once the resident engine covers subset and focused replays, the
+K-class fused and 2K-1 fallbacks, CPU-only execution and its memory refusals; see em_status 'One
+engine' TODO.
+
 The hypothesis-bucket summaries and execution tags, the compact-pair plan
 statistics and execution masks, the hybrid K-class bucket partition with its
 validation and the threshold reports that explain a partition choice.

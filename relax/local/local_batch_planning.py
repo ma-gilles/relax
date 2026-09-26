@@ -1,5 +1,8 @@
 """Exact-local batch limits and runtime memory probes.
 
+DEPRECATED: to be removed once the resident engine covers the local-search parent probe, the
+full-box final iteration and VDAM K=1; see em_status 'One engine' TODO.
+
 The engine applies these policies at dispatch; reporting uses the same limits
 without importing execution kernels. Probe results are cached here. Importing
 this module retains its dependencies' normal import behavior; memory probes

@@ -64,6 +64,7 @@ from relax.sampling import (
     relion_angular_sampling_deg,
     rotation_grid_size,
 )
+from relax.sparse_pass2.engine_record import warn_deprecated_engine
 
 logger = logging.getLogger("relax.dense.half_scoring")
 
@@ -577,6 +578,11 @@ def _score_half_dense_one_shape(
             )
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
         else:
+            warn_deprecated_engine(
+                "dense",
+                "global",
+                "a K-class pass at oversampling 0 without scale groups takes the direct dense engine",
+            )
             dense_em_kwargs = dict(em_kwargs)
             # The direct dense K-class wrapper delegates to run_em, which does
             # not implement RELION x-half accumulators. Keep that branch on its
@@ -857,6 +863,9 @@ def _score_half_dense_one_shape(
     if optics_group_ids_k is not None:
         raise NotImplementedError("the single-pass dense engine keeps one optics group's noise spectrum")
     # Scale groups never reach the direct dense engine: see _dense_uses_adaptive_engine.
+    warn_deprecated_engine(
+        "dense", "global", "a K=1 pass at oversampling 0 without scale groups takes the direct dense engine"
+    )
     direct_em_kwargs = dict(em_kwargs)
     direct_em_kwargs.pop("group_ids", None)
     direct_em_kwargs.pop("scale_correction_group_count", None)

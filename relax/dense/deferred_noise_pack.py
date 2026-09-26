@@ -1,4 +1,8 @@
-"""Device packing for the final partial bucket's shared noise computation."""
+"""Device packing for the final partial bucket's shared noise computation.
+
+DEPRECATED: to be removed once the resident engine covers the local-search parent probe, the
+full-box final iteration and VDAM K=1; see em_status 'One engine' TODO.
+"""
 
 from functools import partial
 

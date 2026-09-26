@@ -51,6 +51,7 @@ from relax.helpers.types import NoiseStats, RelionStats, make_relion_stats, tota
 from relax.local.local_em_engine import run_local_em_exact
 from relax.local.local_layout import LocalHypothesisLayout
 from relax.scoring.significant_samples import ComplementSignificantSampleIndices, significant_sample_count
+from relax.sparse_pass2.engine_record import warn_deprecated_engine
 
 logger = logging.getLogger(__name__)
 NVTX_DOMAIN_EM = "recovar_em"
@@ -728,6 +729,9 @@ def _run_sparse_k_class_adaptive_pass2(
     if reconstruction_groups and n_classes == 1 and k1_local_pass2_engine_selected():
         raise NotImplementedError("reconstruction groups need the device-resident pass 2, not the local K=1 route")
     if n_classes == 1 and k1_local_pass2_engine_selected():
+        warn_deprecated_engine(
+            "exact_local", "global", "RELAX_K1_PASS2_ENGINE=local selects the K=1 exact-local adaptive route"
+        )
         route_common = dict(common)
         route_common["rotation_log_prior"] = _class_rotation_prior(0)
         route_common["relion_projector_half"] = _select_projector_half_for_class(
@@ -918,6 +922,15 @@ def _run_sparse_k_class_adaptive_pass2(
                 mstep_full_half_axis=0 if common["relion_x_half_mstep"] else None,
                 mstep_accumulator_shape=mstep_accumulator_shape,
             )
+
+    if n_classes > 1:
+        # DEPRECATED route: the 2K-1 per-class compact passes; see em_status 'One engine' TODO.
+        warn_deprecated_engine(
+            "compact",
+            "global",
+            "the fused K-class pass is off (RELAX_SPARSE_KCLASS_FUSED=0) or raised, so the K-class "
+            "pass takes the 2K-1 per-class sparse path",
+        )
 
     def _support_work_units(samples_by_image) -> int:
         total = 0
@@ -1236,6 +1249,9 @@ def _run_dense_k_class_score_probe(
 ) -> _DenseKClassScoreProbeResult:
     """Run the shared dense K-class score-only pass.
 
+    DEPRECATED: to be removed once the resident engine covers a per-class K-class score probe
+    outside --firstiter_cc; see em_status 'One engine' TODO.
+
     This evaluates each class independently and returns the same coarse
     hard assignments and best-score class assignments that the full dense
     K-class wrapper uses before its M-step.  Callers that only need those
@@ -1261,6 +1277,7 @@ def _run_dense_k_class_score_probe(
             engine_kwargs=base_engine_kwargs,
         )
 
+    warn_deprecated_engine("dense", "coarse probe", "a per-class K-class score probe outside --firstiter_cc")
     class_log_evidence = []
     hard_assignments = []
     per_class_stats = []
@@ -1703,6 +1720,9 @@ def _run_firstiter_global_winner_subset_pass2(
 ) -> KClassEMResult:
     """Fine pass-2 for RELION firstiter-CC after coarse global class winners.
 
+    DEPRECATED: to be removed once the resident engine covers a --firstiter_cc global-winner
+    subset pass without the sparse pass 2; see em_status 'One engine' TODO.
+
     RELION's firstiter-CC binarization chooses one global class x pose winner
     per image at the coarse step. The fine pass only needs to refine that
     winning class's pose, so evaluating every class for every image is pure
@@ -2037,7 +2057,12 @@ def run_dense_k_class_em(
     return_best_pose_details: bool = False,
     **engine_kwargs,
 ) -> KClassEMResult:
-    """Run dense K-class EM using ``run_em`` as the only scoring/M-step kernel."""
+    """Run dense K-class EM using ``run_em`` as the only scoring/M-step kernel.
+
+    DEPRECATED: to be removed once the resident engine covers the pass at oversampling 0 without
+    scale groups, the *_DENSE_PASS2 and RELAX_DISABLE_SPARSE_PASS2 switches and the dense
+    K-class fallbacks; see em_status 'One engine' TODO.
+    """
 
     _reject_kwargs(
         engine_kwargs,
@@ -2216,6 +2241,9 @@ def _run_local_k_class_em_segmented(
 ) -> KClassEMResult:
     """Run every class in one exact-local pass over class-segmented rows.
 
+    DEPRECATED: to be removed once the resident engine covers VDAM K=1 at no more wall than the
+    exact-local route (the VDAM speed gate); see em_status 'One engine' TODO.
+
     The per-class route calls the single-class engine 2K times, a probe pass per
     class for the joint evidence and an M-step pass per class. With the classes laid
     out as segments of one bucket's row axis the engine scores the joint
@@ -2371,6 +2399,9 @@ def run_local_k_class_em(
     **engine_kwargs,
 ) -> KClassEMResult:
     """Run exact-local K-class EM using ``run_local_em_exact`` for all kernels.
+
+    DEPRECATED: to be removed once the resident engine covers VDAM K=1 at no more wall than the
+    exact-local route (the VDAM speed gate); see em_status 'One engine' TODO.
 
     ``segmented_class_rows`` runs every class in one pass over class-segmented rows
     instead of a probe pass and an M-step pass per class. Production K>1 (VDAM)
@@ -3542,6 +3573,9 @@ def run_dense_k_class_em_adaptive(
         # class/pose winner selected by the joint coarse probe.
         global_winner = np.asarray(coarse_class_assignments, dtype=np.int64)
     if global_winner is not None and hasattr(experiment_dataset, "subset"):
+        warn_deprecated_engine(
+            "dense", "global", "a --firstiter_cc global-winner subset pass without the sparse pass 2"
+        )
         with score_dump_label("fine"):
             with nvtx.annotate("kclass.adaptive.fine_subset_em", color="green", domain=NVTX_DOMAIN_EM):
                 pass2_t0 = time.time()
@@ -3609,6 +3643,12 @@ def run_dense_k_class_em_adaptive(
         )
     mask_s = time.time() - mask_t0
 
+    warn_deprecated_engine(
+        "dense",
+        "global",
+        "the adaptive K-class pass 2 has no sparse route here (broad support, a *_DENSE_PASS2 "
+        "switch or no RELION projector)",
+    )
     with score_dump_label("fine"):
         with nvtx.annotate("kclass.adaptive.fine_dense_em", color="green", domain=NVTX_DOMAIN_EM):
             pass2_t0 = time.time()

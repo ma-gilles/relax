@@ -1,5 +1,8 @@
 """Per-bucket stages of the exact local EM engine.
 
+DEPRECATED: to be removed once the resident engine covers the local-search parent probe, the
+full-box final iteration and VDAM K=1; see em_status 'One engine' TODO.
+
 The projection, packed-noise projection, post-processing and adjoint windows
 of one hypothesis bucket, the big-JIT argument and capacity planning around
 them and the packed reconstruction/rotation gathers they share.

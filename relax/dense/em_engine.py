@@ -1,5 +1,9 @@
 """Dense EM scoring and accumulation on a shared pose grid.
 
+DEPRECATED: to be removed once the resident engine covers the pass at oversampling 0 without
+scale groups, the *_DENSE_PASS2 and RELAX_DISABLE_SPARSE_PASS2 switches and the dense K-class
+fallbacks; see em_status 'One engine' TODO.
+
 ``run_em`` batches images and rotations, normalizes posterior weights and
 accumulates Fourier sufficient statistics. Numerical kernels and layout policies
 live in the helper modules imported below; supported configurations use the

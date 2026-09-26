@@ -1,5 +1,8 @@
 """Host orchestration of score, reconstruction and noise inputs for local buckets.
 
+DEPRECATED: to be removed once the resident engine covers the local-search parent probe, the
+full-box final iteration and VDAM K=1; see em_status 'One engine' TODO.
+
 The split path reuses the compiled preprocessing primitive for exact BPref
 operands. Keep its cast/order policy distinct from the general image backend;
 local_big_jit owns fused execution, while this module owns the split preparation.

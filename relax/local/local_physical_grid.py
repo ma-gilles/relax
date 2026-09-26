@@ -1,5 +1,8 @@
 """RELION physical-particle-grid accumulation of the exact local EM engine.
 
+DEPRECATED: to be removed once the resident engine covers the local-search parent probe, the
+full-box final iteration and VDAM K=1; see em_status 'One engine' TODO.
+
 RELION's physical particle ordering for BPref accumulation, the VDAM variant
 with its per-particle launches and the source-faithful particle chunking
 that bounds them.

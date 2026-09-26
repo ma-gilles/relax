@@ -1,5 +1,9 @@
 """Diagnostic-only compact capture of the already-computed K=1 pass-2 state.
 
+DEPRECATED: to be removed once the resident engine covers subset and focused replays, the
+K-class fused and 2K-1 fallbacks, CPU-only execution and its memory refusals; see em_status 'One
+engine' TODO.
+
 This module never selects a scoring, projection, normalization, or M-step
 implementation.  Its caller invokes it only after production ``scores`` and
 ``probs`` exist.  The full-run capture-inertness gate remains mandatory.

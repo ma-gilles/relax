@@ -1,5 +1,8 @@
 """K=1 adaptive pass 2 through the exact local engine (opt-in, shape-stable route).
 
+DEPRECATED: to be removed once the resident engine covers the K=1 adaptive pass 2, which it
+already does (this opt-in route has no remaining case); see em_status 'One engine' TODO.
+
 The compact engine (``sparse_pass2_bucketed.compute_pass2_stats_sparse_bucketed``)
 stays the default and the numerical oracle.  With ``RELAX_K1_PASS2_ENGINE=local``
 the same significant coarse samples are laid out as a per-image local hypothesis

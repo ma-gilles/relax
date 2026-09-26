@@ -1,4 +1,8 @@
-"""Independent per-image dense calculation for sparse pass-2 comparisons and fallback."""
+"""Independent per-image dense calculation for sparse pass-2 comparisons and fallback.
+
+DEPRECATED: to be removed once the resident engine covers a full-grid C1 pass without
+significance supports; see em_status 'One engine' TODO.
+"""
 
 import logging
 

@@ -6,7 +6,7 @@ import logging
 import numpy as np
 
 from relax.reference.sparse_pass2 import _compute_pass2_stats_sparse_perimage_reference
-from relax.sparse_pass2.engine_record import record_pass_engine
+from relax.sparse_pass2.engine_record import record_pass_engine, warn_deprecated_engine
 from relax.sparse_pass2.sparse_pass2_policy import resident_refusal_reason
 
 # Preserve the category consumed by existing run-log collectors.
@@ -381,6 +381,15 @@ def compute_pass2_stats_sparse(
             "separate score/reconstruction current sizes require the bucketed sparse pass-2 path",
         )
 
+    # DEPRECATED route: to be removed once the resident engine covers a full-grid C1 pass
+    # without significance supports; see em_status 'One engine' TODO.
+    warn_deprecated_engine(
+        "per_image_reference",
+        "global",
+        "use_perimage_reference=True"
+        if use_perimage_reference
+        else "a full-grid C1 pass without significance supports takes the per-image reference",
+    )
     return _compute_pass2_stats_sparse_perimage_reference(
         experiment_dataset,
         volume,
@@ -466,6 +475,10 @@ def _open_persistent_relion_projector_texture(
 
 def _resident_with_compact_default(resident_impl, compact_impl, open_texture, *args, **kwargs):
     """The resident default: the resident driver where it covers the pass, compact elsewhere.
+
+    DEPRECATED: to be removed once the resident engine covers subset and focused replays, the
+    K-class fused and 2K-1 fallbacks, CPU-only execution and its memory refusals; see em_status
+    'One engine' TODO.
 
     The resident configuration checks run before any device work, so a pass they
     refuse (:class:`ResidentConfigurationUnsupported`) runs on the compact engine,

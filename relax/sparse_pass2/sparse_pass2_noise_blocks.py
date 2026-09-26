@@ -1,5 +1,9 @@
 """Noise-block accumulation of the sparse bucketed pass 2.
 
+DEPRECATED: to be removed once the resident engine covers subset and focused replays, the
+K-class fused and 2K-1 fallbacks, CPU-only execution and its memory refusals; see em_status 'One
+engine' TODO.
+
 The chunked per-hypothesis noise block and the residual-norm variants that
 feed RELION's ``sigma2_noise`` update from flat hypothesis rows.
 ``sparse_pass2_bucketed`` and the compact-pair sums call them per bucket.

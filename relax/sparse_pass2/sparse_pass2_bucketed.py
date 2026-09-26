@@ -1,5 +1,9 @@
 """Bucketed batched implementation of sparse pass-2 oversampling.
 
+DEPRECATED: to be removed once the resident engine covers subset and focused replays, the
+K-class fused and 2K-1 fallbacks, CPU-only execution and its memory refusals; see em_status 'One
+engine' TODO.
+
 Replaces the per-image Python loop in
 ``compute_pass2_stats_sparse`` with a shape-bucketed batched evaluation.
 

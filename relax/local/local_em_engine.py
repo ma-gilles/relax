@@ -1,4 +1,8 @@
-"""Exact per-image local EM engine for RELION-mode local search."""
+"""Exact per-image local EM engine for RELION-mode local search.
+
+DEPRECATED: to be removed once the resident engine covers the local-search parent probe, the
+full-box final iteration and VDAM K=1; see em_status 'One engine' TODO.
+"""
 
 from __future__ import annotations
 

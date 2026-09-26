@@ -1,5 +1,9 @@
 """Dense/global single-volume EM bucket big-JIT path.
 
+DEPRECATED: to be removed once the resident engine covers the pass at oversampling 0 without
+scale groups, the *_DENSE_PASS2 and RELAX_DISABLE_SPARSE_PASS2 switches and the dense K-class
+fallbacks; see em_status 'One engine' TODO.
+
 This module provides the compiled per-rotation-bucket boundary used by
 ``em_engine.run_em`` for eligible dense/global RELION buckets. Inputs stay in
 half-spectrum layout so the hot path avoids full Fourier image tensors.

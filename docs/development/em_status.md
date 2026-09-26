@@ -43,6 +43,40 @@ maintained workflows, current scorecards and unique numerical tests. The exact
 pre-cleanup status and real-data evidence inventories are preserved in
 [archive commit 8b62d4e](https://github.com/ma-gilles/recovar-experiments/tree/8b62d4e1389cb7c106de2436ac38df6e0b7ca172/snapshots/em_development_records_20260921).
 
+## One engine: removal TODO
+
+User decision (2026-09-26): relax keeps one pass-2 engine, the device-resident one
+(`relax/sparse_pass2/resident_*.py`), as RELION keeps one algorithm. Every other pass-2
+engine or route is deprecated: its docstring says so, and a run that routes a pass to it
+logs one `DEPRECATED engine` warning per engine, pass kind and reason
+(`relax.sparse_pass2.engine_record.warn_deprecated_engine`), next to the per-iteration
+`pass2_engine_trajectory` entry. They are removed in the order below once resident covers
+what still routes to them. Inventory and line estimates (relax bc6d3e1):
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_onengine_20260926/PLAN.md`.
+
+| Deprecated engine or route | What still routes to it on main | Resident work needed |
+|---|---|---|
+| Compact (bucketed sparse) pass 2: `sparse_pass2_bucketed` and its bucket plan, compact-pair sums, noise blocks, `compact_candidate_capture`, `resident_shadow`; the K-class fused and 2K-1 compact paths in `k_class._run_sparse_k_class_adaptive_pass2` | Only refusals: subset and focused replays (non-atomic Wavg), square-window replays, diagnostic dumps and flags, float64 and score-only diagnostic passes, CPU-only execution, and the memory refusals of `_stream_row_capacity_ladder` / `_cached_row_capacity_ladder`; `RELAX_SPARSE_PASS2_RESIDENT=0` | RELION's atomic Wavg arithmetic for replays; retire or port the dumps; resident always fits (row capacity 1 or image streaming); a decision on CPU pass 2 (GPU-only, or a JAX back end for the resident CUDA stages) |
+| K=1 exact-local adaptive route (`classification/k1_local_pass2.py`) | Only `RELAX_K1_PASS2_ENGINE=local` | None |
+| Exact local engine (`local/local_em_engine.py` and the other `local/` execution modules; `local_layout` stays) | Refine3D local-search parent probe (score-only, `maximum_significants` cap), every local iteration; Refine3D final all-data iteration (`current_size == box`, `local_search_iteration.py`); refusals of the resident local checks; `RELAX_LOCAL_SEARCH_RESIDENT=0` | Route the full-box pass to resident local (both engines score RELION's radial window at the box since aa03fd2) and qualify it, including 10202 memory; a resident score-only local mode with RELION's cap for the parent probe; the scale-1 triplet without scale groups |
+| VDAM exact-local E-step (`vdam/sparse_pass2_estep.py`, `k_class.run_local_k_class_em`) | VDAM K=1 by default (`--pass2_engine auto`); a K>1 adaptive refusal; `--pass2_engine local` | The VDAM K=1 speed gate: resident no slower than exact local at equal quality on noise1 50k and 10097 |
+| Dense `run_em` (`dense/em_engine.py`, `dense_big_jit.py`, `k_class.run_dense_k_class_em`) and the per-image reference route (`reference/sparse_pass2.py`) | Nothing in production (the CLI always builds scale groups and supplies RELION's projector): oversampling 0 without scale groups, `RELAX_K1_DENSE_PASS2` / `RELAX_K_CLASS_DENSE_PASS2`, VDAM `RELAX_DISABLE_SPARSE_PASS2`, the dense K-class fallbacks, a full-grid C1 pass without supports | Move the joint `--firstiter_cc` coarse probe (pass 1) out of the dense K-class wrapper |
+
+Removal order:
+
+1. Tests first: an independent NumPy RELION E-step reference for the 8x8/16x16 fixtures,
+   including a full-box case, replaces the tests that pin resident against compact or
+   exact local; sibling-engine agreement cannot validate a convention.
+2. Compact, with the K=1 exact-local adaptive route and the dispatch fallback
+   (about 22k lines).
+3. The full-box final pass and the parent probe on resident local.
+4. VDAM K=1 on resident (speed gate), then the VDAM exact-local route.
+5. The exact local engine (about 24k lines).
+6. Dense `run_em` and the per-image reference (about 4k lines).
+
+Tomography (S4) runs only on the resident engine (`compute_tilt_pass2_stats_resident`)
+and pins none of these.
+
 ## Current evidence and open gates
 
 The integrated CPU EM/InitialModel scope and focused GPU kernel suites pass. The
