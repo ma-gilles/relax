@@ -943,17 +943,32 @@ def refine_single_volume(
         )
     if replay.init_refinement_state_fields is not None:
         _restore_diagnostic_frozen_boundary_state(state, options)
+    # A continuation (RELION --continue) starts from the run files' sampling state; the
+    # rest of its snapshot is installed just before the loop.
+    resume = options.checkpoint.resume
+    if resume is not None:
+        _validate_resume_snapshot(
+            resume,
+            init_relion_iteration=init_relion_iteration,
+            n_classes=n_classes,
+            grid_size=grid_size,
+            options=options,
+        )
+        state = resume.refinement_state(state)
     _mark_setup_phase("state_init")
 
-    # The refinement schedule owns the initial coarse HEALPix grid.
-    current_healpix_order = int(schedule.init_healpix_order)
+    # The refinement schedule owns the initial coarse HEALPix grid; a continuation
+    # rebuilds the grid of its restored sampling state.
+    current_healpix_order = (
+        int(schedule.init_healpix_order) if resume is None else _exhaustive_grid_order_for_state(state)
+    )
     initial_grids = _initial_coarse_grids(
         healpix_order=current_healpix_order,
         sealed_sampling_state=sealed_sampling_state,
-        translations=translations,
-        init_healpix_order=schedule.init_healpix_order,
-        init_translation_range=schedule.init_translation_range,
-        init_translation_step=schedule.init_translation_step,
+        translations=translations if resume is None else None,
+        init_healpix_order=schedule.init_healpix_order if resume is None else state.healpix_order,
+        init_translation_range=schedule.init_translation_range if resume is None else state.translation_range,
+        init_translation_step=schedule.init_translation_step if resume is None else state.translation_step,
         n_classes=n_classes,
         voxel_size=cryo.voxel_size,
         log=logger,
@@ -1179,17 +1194,8 @@ def refine_single_volume(
     # The snapshot replaces every value the next numbered iteration reads, so the
     # first loop iteration runs as iteration init_relion_iteration + 1 of the
     # uninterrupted run (see relax/refinement/iteration_snapshot.py).
-    resume = options.checkpoint.resume
     if resume is not None:
-        _validate_resume_snapshot(
-            resume,
-            init_relion_iteration=init_relion_iteration,
-            n_classes=n_classes,
-            grid_size=grid_size,
-            options=options,
-        )
         pose_dtype = _dense_global_scoring_dtype()
-        state = resume.refinement_state(state)
         means = [jnp.asarray(mean) for mean in resume.means]
         if k_class_enabled:
             means[1] = means[0]
@@ -1243,23 +1249,6 @@ def refine_single_volume(
                 class_direction_prior_order_per_half = saved_orders
             else:
                 global_direction_prior_order_per_half = saved_orders
-        resumed_grids = _initial_coarse_grids(
-            healpix_order=_exhaustive_grid_order_for_state(state),
-            sealed_sampling_state=None,
-            translations=None,
-            init_healpix_order=state.healpix_order,
-            init_translation_range=state.translation_range,
-            init_translation_step=state.translation_step,
-            n_classes=n_classes,
-            voxel_size=cryo.voxel_size,
-            log=logger,
-            **({"symmetry": symmetry} if symmetry != "C1" else {}),
-        )
-        current_rotations = resumed_grids.rotations
-        current_rotation_eulers = resumed_grids.rotation_eulers
-        base_translations = resumed_grids.base_translations
-        current_translations = resumed_grids.translations
-        current_healpix_order = resumed_grids.healpix_order
         logger.info(
             "Continuing after numbered iteration %d: current_size=%d healpix_order=%d "
             "local_search=%s resolution=%.3f A",
