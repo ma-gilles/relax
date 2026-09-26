@@ -238,7 +238,7 @@ spare diagnostic budget cannot conceal growth in the E-step. Review justified
 new functionality before revising any budget. Preserve separate numerical paths
 when merging them would complicate control flow or change arithmetic.
 
-The [source inventory and growth audit](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_budget_history_audit_20260913/REVIEW.md)
+The source inventory and growth audit (artifact lost 2026-09-26, see em_work/LOSS_AUDIT_20260926.md)
 records the original comparison at `4f83abed4` (8,633 lines). The subsequent
 prior cleanup removed 11 lines and the startup metadata boundary added four;
 the table above accounts for both. Historical file/name counts distinguish

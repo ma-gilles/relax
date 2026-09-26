@@ -191,9 +191,9 @@ failures and repeat comparisons; the peer's “closed at repeat-band level”
 wording is not an integrator acceptance decision. Large reported K-class runtime
 ratios also remain an open performance concern, not a qualified comparison here.
 
-[All comparisons and pinned saved artifacts](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/kclass_audit_identity_guard_20260910/saved_review.json);
-[reproducible CPU review](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/kclass_audit_identity_guard_20260910/review_saved.py);
-[red/green test commands, source hashes and limits](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/kclass_audit_identity_guard_20260910/result.json).
+All comparisons and pinned saved artifacts (artifact lost 2026-09-26, see em_work/LOSS_AUDIT_20260926.md);
+reproducible CPU review (artifact lost 2026-09-26, see em_work/LOSS_AUDIT_20260926.md);
+red/green test commands, source hashes and limits (artifact lost 2026-09-26, see em_work/LOSS_AUDIT_20260926.md).
 
 ## Robustness GT-curve review — September 10
 
@@ -232,8 +232,8 @@ replay also retains coarse support10 versus7, so “all discrete outputs exact�
 is not established. Neither these summaries nor double contraction justifies
 a deterministic-accumulation rewrite during structural cleanup.
 
-[All full-precision values and input hashes](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/robustness_fsc_review_20260910/result.json);
-[reproducible CPU audit](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/robustness_fsc_review_20260910/review.py);
-[execution/source receipt](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/robustness_fsc_review_20260910/verification/receipt.json).
+All full-precision values and input hashes (artifact lost 2026-09-26, see em_work/LOSS_AUDIT_20260926.md);
+reproducible CPU audit (artifact lost 2026-09-26, see em_work/LOSS_AUDIT_20260926.md);
+execution/source receipt (artifact lost 2026-09-26, see em_work/LOSS_AUDIT_20260926.md).
 Next scientific review requires the actual first-divergence score/support
 records and registration/source admission; no kernel change or rerun is implied.

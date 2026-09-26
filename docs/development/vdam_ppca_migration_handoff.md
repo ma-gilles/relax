@@ -11,7 +11,7 @@ science or performance result.
 
 The [source inventory and per-file hashes](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/relax_ppca_migration_20260923/INVENTORY.md)
 identify the old source snapshots and new owners. The
-[block repair receipt](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_ppca_blocks_20260923/README.md)
+block repair receipt (artifact lost 2026-09-26, see em_work/LOSS_AUDIT_20260926.md)
 pins its candidate-6-relative patch and fixed-state tests. The shared
 `AugmentedPPCAStats` optional fields are in isolated RECOVAR `dev2` feature
 commit `7c418660e39da7b452facf7fadd8eede4223b982`, fast-forward published
@@ -22,7 +22,7 @@ records the coordinated dependency lineage. The earlier A100 readiness probe
 was queued against the immutable pre-repin `a2097a4` snapshot, whose numerical
 PPCA source and shared stats container bytes are unchanged by this repin.
 
-The [managed science gallery](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_ppca_managed_science_20260923/README.md)
+The managed science gallery (artifact lost 2026-09-26, see em_work/LOSS_AUDIT_20260926.md)
 shows the completed 2k paired panels and 5k native-K3-only panels. The
 [historical pilot scorecard](../math/vdam_ppca_pilot_scorecard_v1.md) retains
 its RECOVAR-source measurements. The [faster K3 block-size evaluation](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/relax_ppca_migration_20260923/K3_BLOCKS500.md)
