@@ -339,17 +339,22 @@ def run_tilt_chunk(
         if not np.any(unit_slot_images[slot] >= 0):
             continue
         slot_images = unit_slot_images[slot]
+        slot_angles = jnp.asarray(
+            np.asarray(tilt.image_angles, dtype=np.float32)[
+                np.where(slot_images >= 0, layout.image_ids[np.maximum(slot_images, 0)], 0)
+            ]
+        )
         slot_operands = _slot_view(
             operands,
             slot_images,
-            angles=np.asarray(tilt.image_angles, dtype=np.float32)[
-                np.where(slot_images >= 0, layout.image_ids[np.maximum(slot_images, 0)], 0)
-            ],
+            angles=slot_angles,
             rect_indices=rect_indices_device,
             exact_positions=exact_positions_device,
             image_shape=image_shape,
         )
-        slot_carry = rp._initial_mstep_carry(mstep.Ft_y, mstep.Ft_ctf, slot_operands, stage_tables, spec=slot_spec)
+        # The M-step kernels read each row's image phases by its slot-local image (the unit).
+        slot_tables = stage_tables._replace(translation_angles=slot_angles)
+        slot_carry = rp._initial_mstep_carry(mstep.Ft_y, mstep.Ft_ctf, slot_operands, slot_tables, spec=slot_spec)
         row_has_image = np.zeros(row_capacity, dtype=bool)
         row_has_image[:n_valid_rows] = slot_images[row_unit[:n_valid_rows]] >= 0
         has_image = jnp.asarray(row_has_image)
@@ -368,7 +373,7 @@ def run_tilt_chunk(
                 rp._device_int32(start),
                 blocks,
                 slot_operands,
-                stage_tables,
+                slot_tables,
                 slot_carry,
                 spec=slot_spec,
                 cuda_backproject=em_cuda_kernels,
