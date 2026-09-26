@@ -134,12 +134,12 @@ def test_device_chunk_scalars_gpu_fused_noise_accumulator_calls(monkeypatch, cus
     assert device_calls, "the fused-noise path must reach the device accumulator with the flag on"
     assert any(padded > 0 for padded in device_calls), "image-capacity padding must exercise duplicate indices"
     # The RELION x-half BPref accumulators use CUDA atomics whose order varies run to
-    # run (1 ULP, documented for the flat-row pin); the flag does not touch them, so
-    # they are bounded above. Every statistic the flag produces matches in the default band.
+    # run; the flag does not touch them. Element by element that noise reaches 1.17e-6 on
+    # small voxels (2 of 2662 in medium tier 14470429; up to 5.3e-7 over six H100 repeats,
+    # job 14478580), but scaled by the largest voxel it is at most 1.14e-7, inside the float32
+    # band. Every statistic the flag produces matches in the default band.
     for name in ("Ft_y", "Ft_ctf"):
-        np.testing.assert_allclose(
-            np.asarray(getattr(device, name)), np.asarray(getattr(host, name)), rtol=1e-6, atol=0.0, err_msg=name
-        )
+        assert_matches(np.asarray(getattr(device, name)), np.asarray(getattr(host, name)), err_msg=name)
     for name in ("per_class_hard_assignments", "class_assignments", "pose_assignments"):
         assert_matches(np.asarray(getattr(device, name)), np.asarray(getattr(host, name)), err_msg=name)
     # Scope (lead review 2026-09-13): the three assignment fields exact (discrete); the two

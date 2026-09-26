@@ -9220,7 +9220,10 @@ def test_compact_pair_half_spectrum_reuses_mstep_sums_for_noise(monkeypatch):
     assert_matches(np.asarray(defaulted.class_assignments), np.asarray(disabled.class_assignments))
     assert_matches(np.asarray(defaulted.pose_assignments), np.asarray(disabled.pose_assignments))
     _assert_noise_stats_close(reused.noise_stats, disabled.noise_stats, rtol=1e-5, atol=1e-5)
-    _assert_noise_stats_close(defaulted.noise_stats, disabled.noise_stats, rtol=0, atol=0)
+    # The default and the disabled run take the same float64 path, but not bitwise: medium tier
+    # 14470429 (0be3019) measured one of five noise-sum elements 2.1e-16 relative apart. Compare
+    # within the float64 band of helpers/float_compare.py.
+    _assert_noise_stats_close(defaulted.noise_stats, disabled.noise_stats, rtol=1e-13, atol=0)
     _assert_k_class_extra_outputs_close(reused, disabled)
     _assert_k_class_extra_outputs_close(defaulted, disabled)
 

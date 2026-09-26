@@ -64,9 +64,13 @@ what still routes to them. Inventory and line estimates (relax bc6d3e1):
 
 Removal order:
 
-1. Tests first: an independent NumPy RELION E-step reference for the 8x8/16x16 fixtures,
-   including a full-box case, replaces the tests that pin resident against compact or
-   exact local; sibling-engine agreement cannot validate a convention.
+1. Tests first (done 2026-09-26): `tests/helpers/relion_estep_reference.py` restates RELION's
+   GPU fine pass in NumPy float64, and `tests/unit/test_resident_relion_reference.py` pins the
+   resident drivers to it on the 8x8 fixtures: K=1 at current size 6 and the full box, K=2/3
+   Class3D, wide translation grids, VDAM's residual backprojection, zero oversampling, C4 and
+   the local fine pass. Sibling-engine agreement cannot validate a convention, so the tests
+   that pin resident against compact or exact local are deleted with the engine they compare
+   against.
 2. Compact, with the K=1 exact-local adaptive route and the dispatch fallback
    (about 22k lines).
 3. The full-box final pass and the parent probe on resident local.
