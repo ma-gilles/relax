@@ -532,3 +532,60 @@ def score_tomo_half_in_loop(
             half.volume_shape, PADDING_FACTOR, current_size=mstep_size
         ),
     )
+
+
+def tilt_image_accuracy_inputs(half: TomoHalf) -> dict:
+    """Per-tilt-image inputs of RELION's expected-accuracy estimate for a tomo half.
+
+    Each image's ``Aproj`` and CTF as Experiment::addImageToParticle stores them (exp_model.cpp:196-243):
+    defocus, astigmatism angle, scale and phase shift from the tilt's CTF; the cumulative dose as the
+    CTF dose (Grant-Grigorieff damping, ctf.h:219-231), or, with a B-factor per electron dose, dose
+    ``-999`` and B-factor ``B_dose * dose``. Also each image's optics constants (voltage, Cs, Q0).
+    """
+
+    from recovar.data_io.starfile import read_star, star_column
+
+    rows = np.asarray(
+        half.images._index_layout.original_image_indices_for_local(np.arange(half.n_images)), dtype=np.int64
+    )
+    table, optics = read_star(str(half.images.particles_file))
+
+    def column(name, default=None):
+        values = star_column(table, name)
+        if values is None:
+            if default is None:
+                raise ValueError(f"the per-tilt STAR has no {name}")
+            return np.full(rows.size, float(default))
+        return np.asarray(values, dtype=np.float64)[rows]
+
+    dose = column("rlnMicrographPreExposure")
+    b_per_dose = column("rlnCtfBfactorPerElectronDose", 0.0)
+    per_dose = b_per_dose > 0.0
+    image_ctf = np.stack(
+        [
+            column("rlnDefocusU"),
+            column("rlnDefocusV"),
+            column("rlnDefocusAngle"),
+            np.where(per_dose, b_per_dose * dose, 0.0),
+            column("rlnCtfScalefactor", 1.0),
+            column("rlnPhaseShift", 0.0),
+            np.where(per_dose, -999.0, dose),
+        ],
+        axis=1,
+    )
+    group_of = np.asarray(star_column(table, "rlnOpticsGroup", required=True), dtype=np.int64)[rows]
+    labels = np.asarray(star_column(optics, "rlnOpticsGroup", required=True), dtype=np.int64)
+    row_of_label = {int(label): i for i, label in enumerate(labels)}
+    optics_rows = np.asarray([row_of_label[int(g)] for g in group_of], dtype=np.int64)
+
+    def optics_column(name):
+        return np.asarray(star_column(optics, name, required=True), dtype=np.float64)[optics_rows]
+
+    return {
+        "image_offsets": half.unit_image_offsets,
+        "image_projections": half.image_projections,
+        "image_ctf": image_ctf,
+        "voltage": optics_column("rlnVoltage"),
+        "spherical_aberration": optics_column("rlnSphericalAberration"),
+        "amplitude_contrast": optics_column("rlnAmplitudeContrast"),
+    }

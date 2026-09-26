@@ -451,12 +451,16 @@ def _relion_image_identity(name, *, label: str) -> tuple[int, str]:
 
 
 def _particle_identity_rows(particles, *, label: str) -> dict[tuple[int, str], int]:
-    if "rlnImageName" not in particles.columns:
+    if "rlnTomoParticleName" in particles.columns:
+        # A subtomogram particle's rlnImageName is its whole 2D stack; its name identifies it.
+        identities = [(0, str(name)) for name in np.asarray(particles["rlnTomoParticleName"]).reshape(-1)]
+    elif "rlnImageName" not in particles.columns:
         raise ValueError(f"{label} is missing rlnImageName")
-    identities = [
-        _relion_image_identity(name, label=label)
-        for name in np.asarray(particles["rlnImageName"]).reshape(-1)
-    ]
+    else:
+        identities = [
+            _relion_image_identity(name, label=label)
+            for name in np.asarray(particles["rlnImageName"]).reshape(-1)
+        ]
     if len(set(identities)) != len(identities):
         raise ValueError(f"{label} contains duplicate rlnImageName/stack identities")
     return {identity: row for row, identity in enumerate(identities)}

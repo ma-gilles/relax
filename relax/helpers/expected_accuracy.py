@@ -119,12 +119,16 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     random_seed_particle_ids,
     group_grid=None,
     projector_data=None,
+    tilt_images=None,
 ) -> ExpectedAccuracy:
     """Call RELION's expected-accuracy binding from prepared native inputs.
 
     Supplied-map EM and InitialModel have different state containers and noise
     conventions, but the native calculation itself must have one owner.
     Callers prepare their layouts, then cross this shared binding boundary.
+    ``tilt_images`` (``image_offsets``, ``image_projections``, ``image_ctf``; see
+    :func:`relax.refinement.tomo_half.tilt_image_accuracy_inputs`) makes the particles
+    subtomograms over their tilt images; the per-particle defocus arrays are then unused.
     ``group_grid`` (``model_pixel_size``, ``image_full_size``,
     ``projector_current_size``) describes trials of an optics group on another
     pixel size or box (``pixel_size`` and ``current_image_size`` are then the
@@ -183,6 +187,15 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
             {}
             if projector_data is None
             else {"projector_data": np.ascontiguousarray(projector_data, dtype=np.complex128)}
+        ),
+        **(
+            {}
+            if tilt_images is None
+            else {
+                "image_offsets": np.ascontiguousarray(tilt_images["image_offsets"], dtype=np.int64),
+                "image_projections": np.ascontiguousarray(tilt_images["image_projections"], dtype=np.float64),
+                "image_ctf": np.ascontiguousarray(tilt_images["image_ctf"], dtype=np.float64),
+            }
         ),
     )
     return ExpectedAccuracy(
@@ -524,7 +537,27 @@ def estimate_relion_expected_accuracy(
     from recovar.utils.helpers import recovar_volume_to_relion
 
     from relax.refinement.optics_shapes import MultiShapeHalf
+    from relax.refinement.tomo_half import TomoHalf
 
+    if isinstance(dataset, TomoHalf):
+        return _estimate_tomo_half(
+            dataset,
+            reference_fourier=reference_fourier,
+            volume_shape=volume_shape,
+            best_eulers_deg=best_eulers_deg,
+            class_ids=class_ids,
+            class_weights=class_weights,
+            sigma2_noise_native=sigma2_noise_native,
+            trial_order_local=trial_order_local,
+            current_image_size=current_image_size,
+            padding_factor=padding_factor,
+            sigma2_fudge=sigma2_fudge,
+            random_seed=random_seed,
+            random_seed_particle_ids=random_seed_particle_ids,
+            do_ctf_correction=do_ctf_correction,
+            max_trials=max_trials,
+            optics_group_ids=optics_group_ids,
+        )
     if isinstance(dataset, MultiShapeHalf):
         return _estimate_by_shape_class(
             dataset,
@@ -726,3 +759,111 @@ def _estimate_by_shape_class(half, *, best_eulers_deg, class_ids, trial_order_lo
             per_class[0], trial_local_indices=trial_local.copy(), trial_particle_ids=particle_ids[trial_local]
         )
     return _combine_group_expected_accuracies(per_class, trial_local, particle_ids[trial_local])
+
+
+def _estimate_tomo_half(
+    half,
+    *,
+    reference_fourier,
+    volume_shape,
+    best_eulers_deg,
+    class_ids,
+    class_weights,
+    sigma2_noise_native,
+    trial_order_local,
+    current_image_size,
+    padding_factor,
+    sigma2_fudge,
+    random_seed,
+    random_seed_particle_ids,
+    do_ctf_correction,
+    max_trials,
+    optics_group_ids,
+):
+    """Expected accuracy of subtomogram particles (a ``TomoHalf``): RELION's per-image branches.
+
+    calculateExpectedAngularErrors sums each trial particle's SNR over its tilt images, each projected
+    with ``Aproj A`` and weighted by its own CTF, and perturbs the offset in 3D before projecting it
+    into each image (ml_optimiser.cpp:11296-11530). Trials of one optics group share its CTF constants
+    and noise, so the binding runs once per group, as for single particles.
+    """
+    from recovar.core import fourier_transform_utils
+    from recovar.utils.helpers import recovar_volume_to_relion
+
+    from relax.refinement.tomo_half import tilt_image_accuracy_inputs
+
+    eulers = np.asarray(best_eulers_deg, dtype=np.float64)
+    n_particles = int(half.n_units)
+    order = np.asarray(trial_order_local, dtype=np.int64).reshape(-1)
+    if eulers.shape != (n_particles, 3) or order.shape != (n_particles,):
+        raise ValueError("a tomo half needs one Euler triple and one trial-order entry per particle")
+    trial_local = order[: min(int(max_trials), n_particles)]
+    particle_ids = np.asarray(
+        half._index_layout.original_image_indices_for_local(np.arange(n_particles))
+        if random_seed_particle_ids is None
+        else random_seed_particle_ids,
+        dtype=np.int64,
+    ).reshape(-1)
+    refs_ft = np.asarray(reference_fourier)
+    refs_ft = refs_ft[None, :] if refs_ft.ndim == 1 else refs_ft
+    references = np.ascontiguousarray(
+        np.stack(
+            [
+                np.asarray(
+                    recovar_volume_to_relion(
+                        np.asarray(fourier_transform_utils.get_idft3(r.reshape(volume_shape)).real, dtype=np.float64)
+                    ),
+                    dtype=np.float64,
+                )
+                for r in refs_ft
+            ]
+        )
+    )
+    classes = np.asarray(class_ids, dtype=np.int32).reshape(-1)
+    weights = np.asarray(class_weights, dtype=np.float64).reshape(-1)
+    tilt = tilt_image_accuracy_inputs(half)
+    sigma2 = np.asarray(sigma2_noise_native, dtype=np.float64)
+    groups = (
+        np.zeros(n_particles, dtype=np.int64)
+        if optics_group_ids is None
+        else np.asarray(optics_group_ids, dtype=np.int64).reshape(-1)
+    )
+    ori_size = int(volume_shape[0])
+    zeros = np.zeros(n_particles, dtype=np.float64)
+    per_group = []
+    for group in np.unique(groups[trial_local]):
+        group_trials = trial_local[groups[trial_local] == group]
+        images = np.concatenate(
+            [np.arange(half.unit_image_offsets[u], half.unit_image_offsets[u + 1]) for u in group_trials]
+        )
+        voltage = _constant_selected(tilt["voltage"], images, "voltage")
+        cs = _constant_selected(tilt["spherical_aberration"], images, "spherical aberration")
+        q0 = _constant_selected(tilt["amplitude_contrast"], images, "amplitude contrast")
+        noise = sigma2 if sigma2.ndim == 1 else sigma2[int(group)]
+        per_group.append(
+            estimate_relion_expected_accuracy_from_prepared_inputs(
+                references_relion=references,
+                trial_eulers_deg=eulers[group_trials],
+                trial_local_indices=group_trials,
+                trial_class_ids=classes[group_trials],
+                class_weights=weights,
+                sigma2_noise_relion=np.asarray(noise, dtype=np.float64).reshape(-1) / float(ori_size**4),
+                defocus_u=zeros,
+                defocus_v=zeros,
+                defocus_angle=zeros,
+                phase_shift=zeros,
+                voltage=voltage,
+                spherical_aberration=cs,
+                amplitude_contrast=q0,
+                pixel_size=float(half.voxel_size),
+                ori_size=ori_size,
+                current_image_size=int(current_image_size),
+                padding_factor=int(padding_factor),
+                sigma2_fudge=float(sigma2_fudge),
+                random_seed=int(random_seed),
+                do_ctf_correction=True if do_ctf_correction is None else bool(do_ctf_correction),
+                random_seed_particle_ids=particle_ids[group_trials],
+                tilt_images=tilt,
+            )
+        )
+    return _combine_group_expected_accuracies(per_group, trial_local, particle_ids[trial_local])
