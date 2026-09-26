@@ -214,6 +214,8 @@ from relax.refinement.projector_preparation import (
     prepare_initial_real_references,
 )
 from relax.refinement.refinement_options import RefinementOptions, with_validated_sampling_schedule
+from relax.refinement.tomo_half import TomoHalf, TomoSampling
+from relax.refinement.tomo_half import score_tomo_half_in_loop as _score_tomo_half_in_loop
 from relax.relion.relion_metadata import _relion_metadata_translations, read_relion_sampling_metadata
 from relax.relion.relion_normalization import update_relion_norm_scale_corrections
 from relax.relion.relion_worker_scale import (
@@ -811,10 +813,12 @@ def refine_single_volume(
     if not np.isfinite(model_pixel_size) or model_pixel_size <= 0.0:
         raise ValueError(f"RELION model pixel size must be positive, got {model_pixel_size}")
     multi_shape_halves = isinstance(experiment_datasets[0], MultiShapeHalf)
+    # Subtomogram particles (S4.2): units are particles over their tilt images, offsets are 3D.
+    tomo_halves = isinstance(experiment_datasets[0], TomoHalf)
     relion_translation_angle_scale = (
-        # Shape classes carry their translations in class pixels already.
+        # Shape classes carry their translations in class pixels already; tilt images have their own phases.
         1.0
-        if multi_shape_halves
+        if multi_shape_halves or tomo_halves
         else _relion_k1_translation_angle_scale(
             n_classes=n_classes,
             model_pixel_size=model_pixel_size,
@@ -869,7 +873,11 @@ def refine_single_volume(
     image_datasets = [
         dataset
         for half in experiment_datasets
-        for dataset in ([c.dataset for c in half.classes] if isinstance(half, MultiShapeHalf) else [half])
+        for dataset in (
+            [c.dataset for c in half.classes]
+            if isinstance(half, MultiShapeHalf)
+            else [half.images] if isinstance(half, TomoHalf) else [half]
+        )
     ]
     for ds in image_datasets:
         backend = _image_backend(ds)
@@ -2714,18 +2722,23 @@ def refine_single_volume(
             # RELION translation priors: relion_half_translation_prior_inputs
             # documents the pdf_offset / wsum_sigma2_offset centers, the
             # cold-start engine center and the prior-grid selection.
-            translation_prior_inputs = relion_half_translation_prior_inputs(
-                previous_translations_k,
-                voxel_size=cryo.voxel_size,
-                base_translations=base_translations,
-                current_translations=current_translations,
-                dtype=_dense_global_scoring_dtype(),
-            )
-            trans_prior_center = translation_prior_inputs.prior_center
-            local_trans_prior_center = translation_prior_inputs.local_prior_center
-            trans_prior_center_for_engine = translation_prior_inputs.engine_prior_center
+            if tomo_halves:
+                # A subtomogram half builds its 3D offset priors per particle (score_tomo_half).
+                translation_prior_inputs = None
+                trans_prior_center = local_trans_prior_center = trans_prior_center_for_engine = None
+            else:
+                translation_prior_inputs = relion_half_translation_prior_inputs(
+                    previous_translations_k,
+                    voxel_size=cryo.voxel_size,
+                    base_translations=base_translations,
+                    current_translations=current_translations,
+                    dtype=_dense_global_scoring_dtype(),
+                )
+                trans_prior_center = translation_prior_inputs.prior_center
+                local_trans_prior_center = translation_prior_inputs.local_prior_center
+                trans_prior_center_for_engine = translation_prior_inputs.engine_prior_center
             translation_log_prior = None
-            if not use_local:
+            if not use_local and not tomo_halves:
                 if not k_class_enabled and trans_prior_center is None:
                     # A fresh K1 half has implicit zero offsets, not a flat
                     # pdf_offset. Native ACC applies the Gaussian even at
@@ -2830,7 +2843,48 @@ def refine_single_volume(
                     original_image_indices=np.zeros(0, dtype=np.int64),
                 )
                 return
-            if use_local:
+            if tomo_halves:
+                score_result = _score_tomo_half_in_loop(
+                    experiment_datasets[k],
+                    use_local=use_local,
+                    use_adaptive=use_adaptive,
+                    volume=means[k],
+                    noise_variance=noise_variance_k,
+                    relion_projector_half=relion_projector_half_by_half[k],
+                    relion_projector_r_max=relion_projector_r_max_by_half[k],
+                    sampling=TomoSampling(
+                        healpix_order=int(current_healpix_order),
+                        oversampling_order=int(state.adaptive_oversampling),
+                        # RefinementState keeps the offset range and step in pixels of the model grid.
+                        offset_range_angst=float(state.translation_range) * float(cryo.voxel_size),
+                        offset_step_angst=float(state.translation_step) * float(cryo.voxel_size),
+                        random_perturbation=float(random_perturbation),
+                        coarse_size=int(cryo.image_shape[0] if coarse_cs is None else coarse_cs),
+                        fine_size=int(cryo.image_shape[0] if cs_for_engine is None else cs_for_engine),
+                    ),
+                    rotation_log_prior=rotation_log_prior_k,
+                    previous_translations=previous_translations_k,
+                    sigma_offset_angst=float(sigma_offset_k),
+                    max_significants=adaptive.max_significants,
+                    unit_groups=optics_group_ids_per_half[k],
+                    scale_corrections=relion_half_inputs.scale_corrections[k],
+                    group_ids=follower_setup.scale_stats_group_ids_per_half[k],
+                    scale_correction_group_count=follower_setup.scale_stats_group_count_per_half[k],
+                    scale_correction_data_vs_prior=scale_correction_data_vs_prior_this_iter,
+                    reconstruction_current_size=model_current_size_for_engine,
+                    outputs=per_half,
+                    k=k,
+                )
+                ha_k = score_result.ha
+                Ft_y_k = score_result.Ft_y
+                Ft_ctf_k = score_result.Ft_ctf
+                em_stats_k = score_result.em_stats
+                noise_stats_k = score_result.noise_stats
+                noise_stats_per_half[k] = noise_stats_k
+                pose_rotations[k] = None
+                pose_rotation_eulers[k] = None
+                coarse_ha[k] = score_result.coarse_ha
+            elif use_local:
                 local_parent_oversampling_order = int(state.adaptive_oversampling) if state.adaptive_oversampling > 0 else 0
                 local_result = _score_half_local_in_bpref_scope(
                     **_optics_group_kwargs(
@@ -4060,14 +4114,14 @@ def refine_single_volume(
         )
         current_translations_pixel_combined = concatenate_pose_stacks_or_none(
             new_iter_best_translations,
-            trailing_shape=(2,),
+            trailing_shape=(3,) if tomo_halves else (2,),
             label="current translation",
             dtype=_dense_global_scoring_dtype(),
             logger=logger,
         )
         previous_translations_pixel_combined = concatenate_pose_stacks_or_none(
             prior_iter_best_translations,
-            trailing_shape=(2,),
+            trailing_shape=(3,) if tomo_halves else (2,),
             label="previous translation",
             dtype=_dense_global_scoring_dtype(),
             logger=logger,
@@ -4315,6 +4369,7 @@ def refine_single_volume(
             current_sigma_offset_angstrom_per_half=current_sigma_offset_angstrom_per_half,
             n_classes=n_classes,
             state_fallback_offsets_angstrom=state.current_changes_optimal_offsets_angstrom,
+            offset_dims=3 if tomo_halves else 2,
         )
         current_sigma_offset_angstrom = sigma_offset_result.current_sigma_offset_angstrom
         current_sigma_offset_angstrom_per_half = _normalize_sigma_offset_per_half(

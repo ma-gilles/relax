@@ -37,10 +37,11 @@ def _sigma_offset_from_moment(
     *,
     current_sigma_offset_angstrom: float,
     state_fallback_offsets_angstrom: float,
+    offset_dims: int = 2,
 ) -> float:
     min_sigma2_angstrom2 = 2.0
     if wsum > 0.0 and sumw > 0.0:
-        return float(np.sqrt(max(wsum / (2.0 * sumw), min_sigma2_angstrom2)))
+        return float(np.sqrt(max(wsum / (float(offset_dims) * sumw), min_sigma2_angstrom2)))
     if np.isfinite(state_fallback_offsets_angstrom) and state_fallback_offsets_angstrom > 0.0:
         return max(float(state_fallback_offsets_angstrom), float(np.sqrt(min_sigma2_angstrom2)))
     return float(current_sigma_offset_angstrom)
@@ -53,14 +54,16 @@ def update_c1_sigma_offset_from_posterior(
     current_sigma_offset_angstrom_per_half,
     n_classes: int,
     state_fallback_offsets_angstrom: float,
+    offset_dims: int = 2,
 ) -> SigmaOffsetUpdateResult:
     """RELION C1 posterior-weighted ``sigma_offset`` update per half-set.
 
     Prefer RELION's posterior-weighted sufficient statistic:
 
-        sigma2_offset_new = wsum_sigma2_offset / (2 * sum_weight)
+        sigma2_offset_new = wsum_sigma2_offset / (offset_dims * sum_weight)
 
-    for 2D single-particle data. A half without a propagated posterior moment
+    with ``offset_dims`` 2 for single-particle data and 3 for subtomograms
+    (ml_optimiser.cpp:6292-6297). A half without a propagated posterior moment
     uses the hard-assignment fallback independently; pooling the other half's
     posterior into it would not match RELION's gold-standard models.
     """
@@ -85,11 +88,14 @@ def update_c1_sigma_offset_from_posterior(
                 sumw_k,
                 current_sigma_offset_angstrom=float(current_per_half[half_idx]),
                 state_fallback_offsets_angstrom=state_fallback_offsets_angstrom,
+                offset_dims=offset_dims,
             )
         )
     if len(per_half_values) != 2:
         raise ValueError(f"noise_stats_per_half must contain two halves, got {len(per_half_values)}")
     per_half_sigma_offset = np.asarray(per_half_values, dtype=np.float64)
+    if n_classes > 1 and offset_dims != 2:
+        raise NotImplementedError("Class3D sigma offsets are two-dimensional")
     if n_classes > 1:
         shared_sigma_offset = _sigma_offset_from_moment(
             pooled_wsum,

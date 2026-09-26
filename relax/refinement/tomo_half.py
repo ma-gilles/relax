@@ -260,7 +260,6 @@ def score_tomo_half(
     relion_projector_half,
     relion_projector_r_max: int,
     sampling: TomoSampling,
-    coarse_eulers_deg,
     rotation_log_prior,
     old_offsets_px,
     sigma_offset_angst: float,
@@ -273,6 +272,7 @@ def score_tomo_half(
     scale_correction_group_count=None,
     scale_correction_data_vs_prior=None,
     reconstruction_current_size=None,
+    rotation_index_order: str = "recovar",
 ) -> TomoScoreResult:
     """RELION's adaptive two-pass E-step and M-step of subtomogram particles (global search).
 
@@ -283,6 +283,8 @@ def score_tomo_half(
     previous 3D offsets (unrounded, pixels); ``noise_variance`` is one spectrum or ``[G, N^2]`` rows
     with ``unit_groups`` the dense optics group of each particle. The flags are the production K=1
     ones (the one-iteration RELION-pinned replay, em_work/cryoet_s42_20260925/tomo_replay_it1.py).
+    The coarse grid is RELION's HEALPix grid at ``sampling.healpix_order`` in ``rotation_index_order``
+    (the loop's order, so ``rotation_log_prior`` and the returned rotation sums share it).
     """
 
     import jax.numpy as jnp
@@ -299,7 +301,10 @@ def score_tomo_half(
     image_groups = np.repeat(unit_groups, np.diff(half.unit_image_offsets))
     old_offsets_px = np.asarray(old_offsets_px, dtype=np.float64).reshape(half.n_units, 3)
     coarse_angst, coarse_px, fine_px, fine_parent = tomo_translation_grids(sampling, pixel)
-    n_rot = int(np.asarray(coarse_eulers_deg).shape[0])
+    n_rot = int(relax_sampling.rotation_grid_size(sampling.healpix_order))
+    coarse_eulers_deg = relax_sampling.rotation_indices_to_relion_eulers(
+        np.arange(n_rot), sampling.healpix_order, rotation_index_order=rotation_index_order
+    )
     fine_rot, rot_parent, fine_mstep, fine_eulers = relax_sampling.get_oversampled_rotation_grid_from_samples(
         np.arange(n_rot),
         sampling.healpix_order,
@@ -307,7 +312,7 @@ def score_tomo_half(
         random_perturbation=sampling.random_perturbation,
         return_mstep_rotations=True,
         return_source_eulers=True,
-        rotation_index_order="relion",
+        rotation_index_order=rotation_index_order,
         dtype=np.float32,
     )
     unit_coarse_prior = tomo_particles.relion_offset_log_prior_3d(
@@ -424,4 +429,106 @@ def score_tomo_half(
         + tomo_particles.relion_gpu_old_offsets(old_offsets_px),
         significant_counts=np.asarray([s.size for s in supports], dtype=np.int32),
         coarse_max_posterior=np.asarray(coarse_pmax, dtype=np.float64),
+    )
+
+
+def score_tomo_half_in_loop(
+    half: TomoHalf,
+    *,
+    use_local: bool,
+    use_adaptive: bool,
+    volume,
+    noise_variance,
+    relion_projector_half,
+    relion_projector_r_max,
+    sampling: TomoSampling,
+    rotation_log_prior,
+    previous_translations,
+    sigma_offset_angst: float,
+    max_significants,
+    unit_groups,
+    scale_corrections,
+    group_ids,
+    scale_correction_group_count,
+    scale_correction_data_vs_prior,
+    reconstruction_current_size,
+    outputs,
+    k: int,
+):
+    """The refinement loop's E+M step for a tomo half: :func:`score_tomo_half` as a ``HalfScoreResult``.
+
+    Per-unit fields are the particles'. The best translations are the winning trial shifts in pixels
+    (3D); the loop adds the rounded previous offset, as RELION writes ``old + shift``. The explicit
+    best poses also go to ``outputs`` (the loop's pose update reads them there).
+    """
+
+    from relax.dense.score_outputs import HalfScoreResult
+    from relax.dense.scoring_policy import PADDING_FACTOR, PROJECTION_PADDING_FACTOR
+    from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+    from relax.sampling import rotation_grid_size
+
+    if use_local:
+        raise NotImplementedError("subtomogram local search is S4.2 P7 phase 3 (PLAN.md)")
+    if not use_adaptive or int(sampling.oversampling_order) < 1:
+        raise NotImplementedError("subtomogram particles run RELION's adaptive two-pass E-step only")
+    if PADDING_FACTOR != PROJECTION_PADDING_FACTOR:
+        raise ValueError("the tomo half pass projects and backprojects with one padding factor")
+    if relion_projector_half is None or relion_projector_r_max is None:
+        raise ValueError("the tomo half pass needs RELION's Projector::data half map")
+    n_rot = int(rotation_grid_size(sampling.healpix_order))
+    prior = (
+        np.zeros(n_rot, dtype=np.float32)
+        if rotation_log_prior is None
+        else np.asarray(rotation_log_prior, dtype=np.float32).reshape(-1)
+    )
+    if prior.shape != (n_rot,):
+        raise ValueError(f"a global tomo pass needs one rotation log prior per coarse rotation, got {prior.shape}")
+    old = (
+        np.zeros((half.n_units, 3), dtype=np.float64)
+        if previous_translations is None
+        else np.asarray(previous_translations, dtype=np.float64)
+    )
+    if old.shape != (half.n_units, 3):
+        raise ValueError(f"tomo particles carry 3D offsets, got previous translations of shape {old.shape}")
+    groups = np.zeros(half.n_units, dtype=np.int32) if unit_groups is None else np.asarray(unit_groups, dtype=np.int32)
+    result = score_tomo_half(
+        half,
+        volume=volume,
+        noise_variance=noise_variance,
+        relion_projector_half=relion_projector_half,
+        relion_projector_r_max=int(relion_projector_r_max),
+        sampling=sampling,
+        rotation_log_prior=prior,
+        old_offsets_px=old,
+        sigma_offset_angst=sigma_offset_angst,
+        adaptive_fraction=0.999,
+        max_significants=max_significants,
+        unit_groups=groups,
+        padding_factor=PROJECTION_PADDING_FACTOR,
+        scale_corrections=scale_corrections,
+        group_ids=group_ids,
+        scale_correction_group_count=scale_correction_group_count,
+        scale_correction_data_vs_prior=scale_correction_data_vs_prior,
+        reconstruction_current_size=reconstruction_current_size,
+    )
+    pass2 = result.pass2
+    outputs.best_pose_rotations[k] = np.asarray(pass2.best_rotations, dtype=np.float32)
+    outputs.best_pose_rotation_eulers[k] = np.asarray(pass2.source_eulers, dtype=np.float64)
+    outputs.best_pose_translations[k] = np.asarray(pass2.best_translations, dtype=np.float32)
+    mstep_size = sampling.fine_size if reconstruction_current_size is None else int(reconstruction_current_size)
+    return HalfScoreResult(
+        ha=np.asarray(pass2.hard_assignment, dtype=np.int32),
+        Ft_y=pass2.Ft_y,
+        Ft_ctf=pass2.Ft_ctf,
+        em_stats=pass2.relion_stats,
+        noise_stats=pass2.noise_stats,
+        best_pose_rotations=outputs.best_pose_rotations[k],
+        best_pose_rotation_eulers=outputs.best_pose_rotation_eulers[k],
+        best_pose_translations=outputs.best_pose_translations[k],
+        coarse_ha=result.coarse_hard_assignment,
+        significant_counts=result.significant_counts,
+        mstep_full_half_axis=0,
+        mstep_accumulator_shape=relion_backprojector_volume_shape(
+            half.volume_shape, PADDING_FACTOR, current_size=mstep_size
+        ),
     )
