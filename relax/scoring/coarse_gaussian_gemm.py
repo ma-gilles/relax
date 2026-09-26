@@ -317,12 +317,30 @@ def _coarse_gaussian_gemm_projected_transient_budget_bytes(
     return int(budget_gb * 1024**3)
 
 
+_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_DEVICE_FRACTION = 0.2
+
+
 def _coarse_gaussian_gemm_projection_cache_budget_bytes(
     *,
-    default_gb: float = _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_DEFAULT_MAX_GB,
+    default_gb: float | None = None,
 ) -> int:
-    """Return the explicit conservative call-scoped cache budget."""
+    """Return the call-scoped cache budget.
 
+    Without an explicit budget the cache may use a fifth of the GPU's memory
+    (16 GB on an 80 GB H100/A100); off-GPU it keeps the fixed 4 GB default.
+    """
+
+    if default_gb is None:
+        default_gb = _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_DEFAULT_MAX_GB
+        devices = jax.local_devices()
+        if devices and devices[0].platform == "gpu":
+            stats = devices[0].memory_stats() or {}
+            if "bytes_limit" in stats:
+                default_gb = (
+                    _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_DEVICE_FRACTION
+                    * float(stats["bytes_limit"])
+                    / 1024**3
+                )
     token = os.environ.get(
         _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB_ENV,
         str(default_gb),
@@ -589,6 +607,8 @@ def _validate_coarse_gaussian_gemm_hybrid_request(
         raise ValueError(
             f"{prefix} {_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV}=1",
         )
+    if int(n_classes) != 1:
+        raise ValueError(f"{prefix} K=1, got K={int(n_classes)}")
     if int(n_rotations) <= 0 or int(n_rotations) % SOURCE_ROTATION_BLOCK_SIZE:
         raise ValueError(
             f"{prefix} a rotation count divisible by "

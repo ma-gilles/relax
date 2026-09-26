@@ -72,6 +72,7 @@ from relax.scoring.coarse_gaussian_gemm import (
     _COARSE_GAUSSIAN_GEMM_HYBRID_ENV,
     _COARSE_GAUSSIAN_GEMM_HYBRID_IMAGE_BATCH_SIZE_ENV,
     _COARSE_GAUSSIAN_GEMM_MACRO_ENV,
+    _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV,
     _K1_RELION_EXACT_COARSE_OPERANDS_ENV,
     _K1_RELION_F32_COARSE_SUPPORT_ENV,
     _coarse_gaussian_gemm_compact_posterior_enabled,
@@ -1168,11 +1169,22 @@ def _compute_k_class_significance_batched(
             f"{_K1_COARSE_GAUSSIAN_SINCOSF_ENV} requires "
             f"{_K1_COARSE_GAUSSIAN_FFI_ENV}=1",
         )
+    # The shared real-packed GEMMs are the default exact-operand coarse
+    # scorer; the fused per-pair projector/diff2 kernel remains an explicit
+    # opt-in (RECOVAR_COARSE_GAUSSIAN_GEMM_MACRO=0) until it is removed.
+    coarse_gaussian_gemm_macro_requested = _coarse_gaussian_gemm_macro_enabled(
+        default=bool(
+            relion_coarse_gaussian_default
+            and coarse_gaussian_ffi_enabled
+            and coarse_gaussian_sincosf_enabled
+        ),
+    )
     coarse_fused_projector_requested = _k1_coarse_fused_projector_enabled(
         default=(
             relion_coarse_gaussian_default
             and coarse_gaussian_ffi_enabled
             and coarse_gaussian_sincosf_enabled
+            and not coarse_gaussian_gemm_macro_requested
         ),
     )
     coarse_fused_projector_enabled = (
@@ -1343,9 +1355,10 @@ def _compute_k_class_significance_batched(
     coarse_gaussian_native_texture_enabled = (
         coarse_gaussian_native_texture_requested and score_mode == "gaussian"
     )
-    coarse_gaussian_gemm_macro_requested = _coarse_gaussian_gemm_macro_enabled()
     coarse_gaussian_gemm_projection_cache_requested = (
-        _coarse_gaussian_gemm_projection_cache_enabled()
+        _coarse_gaussian_gemm_projection_cache_enabled(
+            default=coarse_gaussian_gemm_macro_requested,
+        )
     )
     coarse_gaussian_gemm_hybrid_requested = (
         _coarse_gaussian_gemm_hybrid_enabled()
@@ -1503,6 +1516,30 @@ def _compute_k_class_significance_batched(
             f"{_COARSE_GAUSSIAN_GEMM_MACRO_ENV}=1 requires "
             f"{_K1_RELION_EXACT_COARSE_OPERANDS_ENV}=1",
         )
+    # An explicit cache request fails closed; the default cache quietly stands
+    # down wherever its contract or memory budget does not hold.
+    coarse_gaussian_gemm_projection_cache_explicit = (
+        _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV in os.environ
+    )
+    if coarse_gaussian_gemm_projection_cache_requested and not (
+        coarse_gaussian_gemm_projection_cache_explicit
+    ):
+        try:
+            _validate_coarse_gaussian_gemm_projection_cache_request(
+                macro_enabled=coarse_gaussian_gemm_macro_enabled,
+                n_rotations=n_rot,
+                coarse_gaussian_ffi_enabled=coarse_gaussian_ffi_enabled,
+                exact_coarse_operands_enabled=exact_coarse_operands_enabled,
+                use_relion_projector=use_relion_projector,
+                relion_texture_interp_enabled=coarse_texture_interp,
+                use_float64_scoring=use_float64_scoring,
+                relion_projector_dtype=(
+                    relion_projector_half[0].dtype if use_relion_projector else None
+                ),
+            )
+        except (ValueError, TypeError) as reason:
+            logger.info("coarse GEMM projection cache off: %s", reason)
+            coarse_gaussian_gemm_projection_cache_requested = False
     if coarse_gaussian_gemm_projection_cache_requested:
         _validate_coarse_gaussian_gemm_projection_cache_request(
             macro_enabled=coarse_gaussian_gemm_macro_enabled,
@@ -1741,6 +1778,15 @@ def _compute_k_class_significance_batched(
                     ),
                 )
             )
+            if not (
+                coarse_gaussian_gemm_projection_cache_plan.admitted
+                or coarse_gaussian_gemm_projection_cache_explicit
+            ):
+                logger.info(
+                    "coarse GEMM projection cache off: %s",
+                    coarse_gaussian_gemm_projection_cache_plan.admission_reason,
+                )
+                coarse_gaussian_gemm_projection_cache_plan = None
         if coarse_gaussian_gemm_hybrid_image_batch_size_request is not None:
             image_batch_size = _resolve_coarse_gaussian_gemm_hybrid_image_batch_size(
                 input_image_batch_size,
@@ -1922,7 +1968,7 @@ def _compute_k_class_significance_batched(
             )
         if coarse_gaussian_gemm_macro_enabled:
             logger.warning(
-                "Opt-in shared coarse projection-once/GEMM macro enabled: "
+                "RELION coarse real-packed float32 GEMM scorer enabled: "
                 "classes=%d rotations=%d image_lanes=%d translations=%d",
                 n_classes,
                 n_rot,
@@ -2449,7 +2495,7 @@ def _compute_k_class_significance_batched(
             )
         )
         logger.warning(
-            "Opt-in call-scoped coarse GEMM C64 projection cache built: "
+            "Coarse GEMM C64 projection cache built: "
             "shape=%s chunks=%d conservative_peak_bytes=%d budget_bytes=%d",
             coarse_gaussian_gemm_projection_cache_plan.cache_shape,
             coarse_gaussian_gemm_projection_cache_plan.chunk_count_per_table,
