@@ -2705,3 +2705,18 @@ def test_coarse_gaussian_gemm_rotation_block_fits_the_projector_transient_budget
     assert significance._coarse_gaussian_gemm_fit_rotation_block_size(
         64, image_shape=(256, 256), compact_pixel_count=420, budget_bytes=1
     ) == 1
+
+
+def test_coarse_gaussian_gemm_cached_block_rows_fit_and_balance():
+    budget = 2 * 1024**3
+    # noise1 50k/256 late pass 1: every rotation fits in two balanced blocks or fewer.
+    rows = significance._coarse_gaussian_gemm_cached_block_rows(
+        36_864, image_batch_size=60, n_translations=45, compact_pixel_count=1_512, budget_bytes=budget
+    )
+    assert rows % 16 == 0 and rows * 4 * (6 * 1_512 + 3 * 60 * 45) <= budget
+    blocks = -(-36_864 // rows)
+    assert blocks * rows - 36_864 < 16 * blocks
+    # A small grid is one block.
+    assert significance._coarse_gaussian_gemm_cached_block_rows(
+        4_608, image_batch_size=60, n_translations=45, compact_pixel_count=1_512, budget_bytes=budget
+    ) == 4_608

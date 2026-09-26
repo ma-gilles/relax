@@ -405,6 +405,36 @@ def _coarse_gaussian_gemm_fit_rotation_block_size(
     return max(1, fit)
 
 
+def _coarse_gaussian_gemm_cached_block_rows(
+    n_rotations: int,
+    *,
+    image_batch_size: int,
+    n_translations: int,
+    compact_pixel_count: int,
+    budget_bytes: int,
+    row_alignment: int = 16,
+) -> int:
+    """Rotation rows per GEMM block when cached projections feed the scorer.
+
+    Without a projector transient the block is bounded by the GEMM's own
+    per-row temporaries: the float32 reference components and their packed
+    copy (about six floats per compact pixel) and the image-batch cross, its
+    transpose and the scores (three floats per image-translation lane). The
+    rows are balanced over the fewest blocks that fit the budget.
+    """
+
+    rows = operator.index(n_rotations)
+    if rows <= 0:
+        raise ValueError("coarse GEMM needs at least one rotation")
+    row_bytes = 4 * (6 * int(compact_pixel_count) + 3 * int(image_batch_size) * int(n_translations))
+    fit = max(row_alignment, int(budget_bytes) // row_bytes // row_alignment * row_alignment)
+    if fit >= rows:
+        return rows
+    blocks = -(-rows // fit)
+    balanced = -(-rows // blocks)
+    return -(-balanced // row_alignment) * row_alignment
+
+
 def _coarse_gaussian_gemm_resources(
     *,
     rotation_block_size: int,

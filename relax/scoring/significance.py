@@ -75,6 +75,7 @@ from relax.scoring.coarse_gaussian_gemm import (
     _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV,
     _K1_RELION_EXACT_COARSE_OPERANDS_ENV,
     _K1_RELION_F32_COARSE_SUPPORT_ENV,
+    _coarse_gaussian_gemm_cached_block_rows,
     _coarse_gaussian_gemm_compact_posterior_enabled,
     _coarse_gaussian_gemm_device_transaction_enabled,
     _coarse_gaussian_gemm_fit_rotation_block_size,
@@ -1822,6 +1823,21 @@ def _compute_k_class_significance_batched(
                     coarse_gaussian_gemm_projection_cache_plan.admission_reason,
                 )
                 coarse_gaussian_gemm_projection_cache_plan = None
+        if (
+            coarse_gaussian_gemm_projection_cache_plan is not None
+            and not coarse_gaussian_gemm_hybrid_requested
+        ):
+            # Cached projections need no per-block projector transient, so the
+            # GEMM block grows to what its own temporaries allow (usually every
+            # rotation): each image batch runs one score, prior and reduction
+            # program per class and block instead of one per 5,000 rows.
+            rotation_block_size = _coarse_gaussian_gemm_cached_block_rows(
+                n_rot,
+                image_batch_size=int(image_batch_size),
+                n_translations=int(n_trans),
+                compact_pixel_count=int(square_score_count),
+                budget_bytes=_coarse_gaussian_gemm_projected_transient_budget_bytes(),
+            )
         if coarse_gaussian_gemm_hybrid_image_batch_size_request is not None:
             image_batch_size = _resolve_coarse_gaussian_gemm_hybrid_image_batch_size(
                 input_image_batch_size,
