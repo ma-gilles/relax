@@ -519,6 +519,7 @@ def _gpu_available():
     if jax.default_backend() != "gpu":
         return False
     from recovar import cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     return bool(
@@ -1172,6 +1173,25 @@ def test_streamed_row_ladder_keeps_capacities_whose_cache_fits():
         rp._stream_row_capacity_ladder(
             (8192,), bytes_per_rotation=10e6, max_projection_bytes=20 * 1024**3
         )
+
+
+def test_cached_row_ladder_bounds_the_gathered_chunk():
+    """10202 it3 (14434683): box 800 at current size 304 scores 36514 pixels, so a
+    131072-row chunk gathered 35.70 GiB of cached projections and ran the H100 out
+    of memory; capacities whose gathered block exceeds the budget are dropped."""
+
+    row_bytes = 36514 * 8
+    gib = 1024**3
+    assert rp._cached_row_capacity_ladder(
+        (8192, 32768, 131072), bytes_per_row=row_bytes, max_gather_bytes=30 * gib
+    ) == (8192, 32768)
+    # A 256-pixel-class workload keeps the whole ladder.
+    assert rp._cached_row_capacity_ladder(
+        (8192, 32768, 131072), bytes_per_row=6000 * 8, max_gather_bytes=30 * gib
+    ) == (8192, 32768, 131072)
+    # A refusal the default route falls back on (compact engine), not a crash.
+    with pytest.raises(rp.ResidentConfigurationUnsupported, match="smallest row capacity"):
+        rp._cached_row_capacity_ladder((8192,), bytes_per_row=row_bytes, max_gather_bytes=1 * gib)
 
 
 def test_stream_slot_count_quantises_and_caps():

@@ -2232,6 +2232,29 @@ def _resident_pass2(
             bytes_per_rotation=projection_bytes_per_rotation,
             max_projection_bytes=stream_projection_budget_bytes,
         )
+    else:
+        # The chunk gathers its rows out of the cache into one [rows, pixels]
+        # block; at box 800 (10202, current size 304) capacity 131072 needs
+        # 35.7 GiB for it (14434683). The budget is read again now that the
+        # cache is resident; unknown readings do not cap.
+        gather_budget_bytes = _stream_projection_budget_bytes(
+            device_memory_bytes if device_memory_bytes is not None else 1 << 62,
+            physical_free_bytes=_device_free_memory_bytes(),
+            allocator_free_bytes=_jax_allocator_free_memory_bytes(),
+            pool_free_bytes=_jax_allocator_pool_free_bytes(),
+            reserved_bytes=reserved_operand_bytes,
+        )
+        row_ladder = _cached_row_capacity_ladder(
+            row_ladder,
+            bytes_per_row=int(n_windowed) * np.dtype(precision_policy.score_complex_dtype).itemsize,
+            max_gather_bytes=gather_budget_bytes,
+        )
+        logger.info(
+            "Resident pass-2 cached-path row capacities %s: gather budget %.2f GiB at %.1f KiB per row",
+            ",".join(str(v) for v in row_ladder),
+            gather_budget_bytes / float(1024**3),
+            int(n_windowed) * np.dtype(precision_policy.score_complex_dtype).itemsize / 1024.0,
+        )
     image_ladder = _cap_image_capacity_ladder(
         parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER),
         n_fine_trans=n_fine_trans,
@@ -3207,6 +3230,32 @@ def _stream_row_capacity_ladder(row_ladder, *, bytes_per_rotation, max_projectio
             f"{min(int(c) for c in row_ladder)} needs "
             f"{_STREAM_PEAK_COPIES * min(int(c) for c in row_ladder) * bytes_per_rotation / float(1024 ** 3):.2f} GiB of "
             f"streamed projections against a {max_projection_bytes / float(1024 ** 3):.2f} GiB budget"
+        )
+    return kept
+
+
+def _cached_row_capacity_ladder(row_ladder, *, bytes_per_row, max_gather_bytes):
+    """Row capacities whose gathered chunk of cached score projections fits the budget.
+
+    With the whole fine grid cached, a chunk still gathers one score projection
+    per row (``score_resident_chunk``: ``projection_score_cache[row_fine_rot]``),
+    so capacity times the score-row bytes is one live block. RELION projects each
+    orientation inside its diff2 kernel and never holds such a block; bounding the
+    chunk by measured free memory keeps the gather within the device. The budget
+    is :func:`_stream_projection_budget_bytes` with the device as its cap, read
+    after the cache is built. A refusal falls back to the compact engine by
+    default, as :func:`_stream_row_capacity_ladder` does.
+    """
+
+    kept = tuple(int(c) for c in row_ladder if float(c) * float(bytes_per_row) <= float(max_gather_bytes))
+    if not kept:
+        smallest = min(int(c) for c in row_ladder)
+        raise ResidentConfigurationUnsupported(
+            f"The device-resident K=1 sparse pass 2 ({RESIDENT_PASS2_ENV}=1) does not implement "
+            f"this configuration: even the smallest row capacity {smallest} gathers "
+            f"{smallest * bytes_per_row / float(1024 ** 3):.2f} GiB of cached projections against a "
+            f"{max_gather_bytes / float(1024 ** 3):.2f} GiB budget. Clear the flag to use the compact "
+            "engine; this path never falls back silently."
         )
     return kept
 
