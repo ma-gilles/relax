@@ -384,3 +384,36 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
     assert calls[0][0][1] is joined[0]
     assert calls[0][1]["retained_device_numerator"] is retained_half0
     assert calls[1][1]["retained_device_numerator"] is None
+
+
+def test_host_join_threshold_counts_the_physical_grid_of_a_packed_half(monkeypatch):
+    """EMPIAR-10202 it3 (14456981): a 611^3 accumulator stored as a packed half has
+    114M elements but 228M voxels. The join counted stored elements, moved the host
+    halves to the device, and the reconstruction took its monolithic device 1600^3
+    iFFT. The join now counts the physical grid, the reconstruction's unit."""
+
+    accumulator_shape = (9, 9, 9)
+    half_shape = ftu.volume_shape_to_half_volume_shape(accumulator_shape)
+    stored, voxels = int(np.prod(half_shape)), int(np.prod(accumulator_shape))
+    threshold = (stored + voxels) // 2
+    assert stored < threshold <= voxels
+    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "auto")
+    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK_MIN_ELEMENTS", str(threshold))
+    rng = np.random.default_rng(20260926)
+    ft_y_0 = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
+    ft_y_1 = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
+    ft_ctf_0 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
+    ft_ctf_1 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
+    kwargs = dict(
+        volume_shape=accumulator_shape,
+        voxel_size=10.0,
+        grid_size=4,
+        low_resol_join_halves_angstrom=40.0,
+        padding_factor=2,
+    )
+    host = regularization_relion.join_halves_at_low_resolution(ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs)
+    assert all(isinstance(value, np.ndarray) for value in host)
+    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "never")
+    device = regularization_relion.join_halves_at_low_resolution(ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs)
+    for h, d in zip(host, device, strict=True):
+        np.testing.assert_allclose(np.asarray(h), np.asarray(d), rtol=1e-6, atol=0)

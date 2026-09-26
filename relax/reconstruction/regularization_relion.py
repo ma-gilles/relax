@@ -1696,7 +1696,16 @@ def join_halves_at_low_resolution(
         int(np.size(Ft_ctf_0)),
         int(np.size(Ft_ctf_1)),
     )
-    if _low_resolution_join_host_fallback_enabled_for_size(max_input_size, join_indices_np.size):
+    # The host/device decision counts the physical accumulator grid, the unit the
+    # reconstruction's large-grid boundary uses (mean_helpers.
+    # _should_host_stage_large_relion_ifft): a packed half of a physically large
+    # grid stores about half its voxels. Counting stored elements moved the host
+    # half accumulators of a 611^3 grid (114M elements, 228M voxels) back to the
+    # device, and the reconstruction then took its monolithic device 1600^3
+    # inverse FFT and failed to create the cuFFT plan (EMPIAR-10202 it3, 14456981).
+    if _low_resolution_join_host_fallback_enabled_for_size(
+        max(max_input_size, full_size), join_indices_np.size
+    ):
         retain_first_device = (
             return_retained_first_numerator
             and not preserve_inputs
