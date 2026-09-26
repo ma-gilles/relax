@@ -404,8 +404,13 @@ def collapse_rotation_posterior_to_direction_prior(
         )
 
     n_pixels = n_rot // rotation_grid_n_in_planes(healpix_order)
-    direction_weights = np.zeros(n_pixels, dtype=np.float64)
-    np.add.at(direction_weights, np.arange(n_rot, dtype=np.int64) % n_pixels, rotation_posterior_sums)
+    # bincount adds each direction's rotations in index order, as np.add.at
+    # did, at a fraction of its cost on the 19M-rotation order-6 grid.
+    direction_weights = np.bincount(
+        np.arange(n_rot, dtype=np.int64) % n_pixels,
+        weights=rotation_posterior_sums,
+        minlength=n_pixels,
+    )
     total = float(direction_weights.sum())
     if total <= 0.0 or not np.isfinite(total):
         direction_weights.fill(1.0 / max(n_pixels, 1))
@@ -738,7 +743,12 @@ def make_relion_direction_log_prior(direction_prior, healpix_order, rotations=No
         )
 
     if rotations is None:
-        pixel_idx = np.arange(n_rot, dtype=np.int64) % n_pixels
+        # Rotation r takes direction r % n_pixels, so the grid's log prior is
+        # the per-direction log prior repeated once per in-plane angle.
+        log_direction = np.full(direction_prior.shape, -np.inf, dtype=dtype)
+        positive = direction_prior > 0.0
+        log_direction[positive] = np.log(direction_prior[positive]).astype(dtype)
+        return np.tile(log_direction, n_rot // n_pixels)
     else:
         rotations = np.asarray(rotations, dtype=dtype).reshape(-1, 3, 3)
         if rotations.shape[0] != n_rot:
