@@ -251,6 +251,28 @@ RELION-RELION 0.688-0.773. Wall 6954 s against RELION 3025 s on the same node (2
 measured 6835 s in a separate job (vdamspeed j14, not a matched pair), so the 10097 speed gate is not shown
 met. The run predates the image-capacity change (834b3b3), which removes the per-subset re-trace.
 
+VDAM coarse scorer, native vs GEMM (2026-09-26, relax main bc6d3e1; same node, one H100 + 8 CPUs per
+arm, uncapped). The default exact-operand coarse pass is a real-packed float32 GEMM pair
+(`relax/scoring/scoring.py::_relion_coarse_gaussian_gemm_scores_jit`); the native arm is RELION's fused
+per-pair projector/diff2 kernel (`RECOVAR_COARSE_GAUSSIAN_GEMM_MACRO=0`, and for the K>1 resident route
+also `RECOVAR_K1_COARSE_GAUSSIAN_FFI=1 RECOVAR_K1_COARSE_GAUSSIAN_SINCOSF=1
+RECOVAR_K1_RELION_EXACT_COARSE_OPERANDS=1 RECOVAR_K1_COARSE_FUSED_PROJECTOR=1`, because K>1 resident
+otherwise scores pass 1 with the generic dense GEMM):
+
+| case, route | RELION | native coarse | GEMM coarse (default) |
+|---|---|---|---|
+| noise1 50k K1 s29, exact-local | 1422 s | 2238 s (1.57x) | 1592 s (1.12x) |
+| pdb K2 s29, resident | 993 s | 2181 s (2.20x) | 1249 s (1.26x) |
+
+GEMM quality (relax 12fe042 gate, `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamfast_20260926/gate_s1_12fe042/scores`):
+mean GT FSC-AUC inside or above RELION's same-seed runs for pdb K2 s29/s41/s53 and K4 s29, noise1 masked
+0.7554 (exact-local) and 0.7547/0.7555 (resident repeat) against RELION 0.7552-0.7560. Float32 against
+binary64 GEMM scores differ by at most 0.02 (about 20 ulp) near the best pose. The late iterations are
+already faster than RELION on the GEMM path (noise1 its 151-200: 544 s against about 766 s); the remaining
+gap is early and middle iterations, where XLA compilation is 46-70% of main-thread time
+(whole-run py-spy, `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamfast_20260926/e11_latepy`,
+`e15_localpy`). Evidence: gates 14474812 and 14475131 in `.../relax_vdamfast_20260926/gate_main_bc6d3e1`.
+
 OPEN (compact, not fixed: the compact engine is to be deleted): without scale-correction groups the
 compact sparse pass 2 takes its non-atomic noise arithmetic, 19% apart in `wsum_sigma2_noise` from
 RELION's scale-1 Wavg triplet on the algebraic-Wavg test fixture (repro: `_vdam_args(residual=True,
