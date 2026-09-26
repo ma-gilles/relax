@@ -26,6 +26,7 @@ import platform
 import re
 import sys
 import time
+import zipfile
 from collections.abc import MutableMapping
 from pathlib import Path
 from typing import NamedTuple
@@ -2643,6 +2644,21 @@ def _parse_args(argv=None):
         ),
     )
     return parser.parse_args(argv)
+
+
+def _savez_deflate_fast(path, arrays):
+    """``np.savez_compressed`` at zlib level 1 instead of its default 6.
+
+    The archive is an ordinary compressed ``.npz`` that ``np.load`` reads
+    unchanged. Most of its bytes are the dense rotation posteriors, which are
+    almost all zeros: level 1 compresses a 301 MB posterior in 0.5 s instead
+    of 1.4 s, and the reference maps do not compress at either level.
+    """
+
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1, allowZip64=True) as archive:
+        for name, value in arrays.items():
+            with archive.open(f"{name}.npy", "w", force_zip64=True) as member:
+                np.lib.format.write_array(member, np.asanyarray(value), allow_pickle=True)
 
 
 def main():
@@ -5269,7 +5285,7 @@ def main():
     if args.skip_large_outputs:
         logger.info("Skipping large refinement result archive (--skip-large-outputs): %s", out_path)
     else:
-        np.savez_compressed(out_path, **save_dict)
+        _savez_deflate_fast(out_path, save_dict)
         logger.info("Results saved to %s", out_path)
 
     timing_rows = parity_dump._collect_timing_rows(timing_dir_path)
