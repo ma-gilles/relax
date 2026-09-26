@@ -623,6 +623,7 @@ def run_em(
     use_float64_projections: bool = False,
     do_gridding_correction: bool = False,
     square_window: bool = False,
+    window_at_box: bool = False,
     return_profile: bool = False,
     sparse_pass2: bool = True,
     disable_adjoint_y: bool = False,
@@ -657,6 +658,11 @@ def run_em(
         Gaussian scoring follows ``square_window``; normalized-CC scoring
         selects a rectangular score window with DC included. Reconstruction
         keeps its own window indices.
+    window_at_box : bool
+        Keep RELION's radial window when ``current_size`` is the box (or None):
+        RELION's resolution pointers cut the corners at every size
+        (:func:`relax.helpers.fourier_window.make_fourier_window_spec`). Gaussian
+        scoring only; the normalized-CC score keeps its rectangular window.
     rotation_log_prior : np.ndarray or None
         Log-prior weights added to E-step scores before softmax. Supports
         either a shared vector of shape ``(n_rot,)`` or an image-specific
@@ -783,6 +789,11 @@ def run_em(
         )
     image_shape = experiment_dataset.image_shape
     volume_shape = experiment_dataset.volume_shape
+    window_at_box = bool(window_at_box) and relion_firstiter_score_mode != "normalized_cc"
+    if window_at_box and current_size is None:
+        # The window is RELION's at every size, so the full box is an explicit current size
+        # (as in the exact local engine, local_em_engine.run_local_em_exact).
+        current_size = int(image_shape[0])
     debug_options = _DenseDebugOptions.from_env(current_size)
     # Pad volume in real space for smoother trilinear projection.
     if projection_padding_factor > 1:
@@ -849,6 +860,7 @@ def run_em(
         n_half,
         square=square_window,
         include_recon_window=True,
+        window_at_box=window_at_box,
         **window_spec_kwargs,
     )
     use_window = window_spec.use_window

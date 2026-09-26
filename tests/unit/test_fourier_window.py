@@ -1281,3 +1281,49 @@ def test_class_reconstruction_window_at_box_keeps_relions_outer_ring():
     assert ring and not ring & single_recon
     assert ring <= clipped_recon and clipped_recon - single_recon == ring
     np.testing.assert_array_equal(clipped.score_indices_np, single.score_indices_np)
+
+
+def test_dense_run_em_window_at_box_scores_relions_window_at_the_box(seeded_inputs):
+    """VDAM's dense E-step (window_at_box) keeps RELION's window when the current size is the box.
+
+    RELION's resolution pointers cut ``ires >= N/2 + 1`` at every size, so the box is the windowed
+    path at ``current_size = N``: ``None`` and ``8`` agree, the unwindowed box path does not (it
+    scores and backprojects another support), and the frequency (3, 4) of an 8-pixel box, at
+    radius 5 = N/2 + 1, changes nothing.
+    """
+    s = seeded_inputs
+    ds = s["dataset"]
+    y, x = np.indices(IMAGE_SHAPE)
+    corner = MockDataset(np.random.default_rng(SEED))
+    corner._images = ds._images + np.cos(2.0 * np.pi * (3.0 * x + 4.0 * y) / IMAGE_SHAPE[0])[None].astype(np.float32)
+
+    def outputs(dataset, current_size, window_at_box):
+        result = run_em(
+            dataset,
+            s["volume"],
+            np.ones(VOLUME_SIZE, dtype=np.float32) * 100.0,
+            s["noise_variance"],
+            np.array(s["rotations"]),
+            np.array(s["translations"]),
+            "linear_interp",
+            image_batch_size=N_IMAGES,
+            rotation_block_size=N_ROTATIONS,
+            current_size=current_size,
+            window_at_box=window_at_box,
+            return_stats=True,
+        )
+        # float32 inputs: the added wave moves the other pixels' FFT by float32 rounding only. The best
+        # score is left out: its image-power term covers every pixel (RELION's highres_Xi2), a per-image
+        # constant the posterior does not see.
+        return (
+            np.asarray(result.Ft_y, np.complex64),
+            np.asarray(result.Ft_ctf, np.complex64),
+            np.asarray(result.stats.max_posterior_per_image, np.float32),
+        )
+
+    at_box = outputs(ds, 8, True)
+    for a, b in zip(outputs(ds, None, True), at_box):
+        assert_matches(a, b)
+    for a, b in zip(outputs(corner, 8, True), at_box):
+        assert_matches(a, b)
+    assert not matches(outputs(ds, 8, False)[0], at_box[0])

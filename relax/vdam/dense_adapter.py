@@ -389,6 +389,8 @@ def _image_groups(
 def _dense_engine_kwargs(state: InitialModelState, config: DenseInitialModelEstepConfig) -> dict[str, Any]:
     engine_kwargs = {
         "current_size": None if state.current_size <= 0 else state.current_size,
+        # RELION's radial window at the full box too (ml_optimiser.cpp:5784-5793, :6841-6880).
+        "window_at_box": True,
         "projection_padding_factor": config.padding_factor,
         "reconstruction_padding_factor": config.padding_factor,
         "half_spectrum_scoring": True,
