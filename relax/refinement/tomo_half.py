@@ -3,7 +3,7 @@
 RELION refines a subtomogram particle as one unit over its tilt images: every image is scored with
 its own projection matrix, CTF and noise, the images' diff2 is summed per particle, and the particle
 has one pose (rotation in its subtomogram frame, 3D offset) and one posterior (ml_optimiser.cpp:7650;
-acc_ml_optimiser_impl.h:1737-2194). A :class:`TomoHalf` presents a half as those particles, in
+acc_ml_optimiser_impl.h:1190-1402). A :class:`TomoHalf` presents a half as those particles, in
 particle-STAR row order, over a flat dataset of their tilt images in RELION's ``img_id`` order
 (:func:`relax.relion.tomo_input.relion_image_geometry`). The half's scoring goes through
 :func:`score_tomo_half`: the coarse pass per particle (:mod:`relax.scoring.tomo_coarse`) and the
@@ -98,10 +98,10 @@ class TomoDataset:
     def startup_noise_images(self, units, *, unit_groups, minimum_nr_particles: int = 10):
         """``(group, real-space image)`` of the tilt images RELION's start-up noise estimate reads.
 
-        calculateSumOfPowerSpectraAndAverageImage (ml_optimiser.cpp:3063-3372) visits particles in
+        calculateSumOfPowerSpectraAndAverageImage (ml_optimiser.cpp:2806-3080) visits particles in
         ``units`` order and skips a particle whose optics group already counts
-        ``minimum_nr_particles_sigma2_noise`` (10 for subtomograms, :2813). The count goes up once per
-        *image* (:3350-3351), so a group's first particle contributes all its tilt images and fills it;
+        ``minimum_nr_particles_sigma2_noise`` (10 for subtomograms, :2574). The count goes up once per
+        *image* (:3058-3059), so a group's first particle contributes all its tilt images and fills it;
         the loop stops after the particle that fills the last group. Each image is counted once in the
         group's ``sumw`` (the per-image average of setSigmaNoiseEstimatesAndSetAverageImage).
         """
@@ -225,7 +225,7 @@ def tilt_pass_inputs(
     image_particle = half.image_particle()
     rounded_old = tomo_particles.relion_gpu_old_offsets(old_offsets_px)
     # sigma2_offset sums: pixel_size^2 |rounded old + trial shift - prior|^2, prior zero in auto-refine
-    # (acc_ml_optimiser_impl.h:3999-4035, :4144).
+    # (acc_ml_optimiser_impl.h:2700-2736, :2845).
     shifted = rounded_old[:, None, :] + np.asarray(fine_px, dtype=np.float64)[None, :, :]
     return TiltPassInputs(
         unit_image_offsets=half.unit_image_offsets,
@@ -409,7 +409,7 @@ def score_tomo_half(
         half_spectrum_scoring=True,
         projection_padding_factor=int(padding_factor),
         reconstruction_padding_factor=int(padding_factor),
-        image_corrections=None,  # RELION neither normalises nor pre-shifts a tilt image (acc :872-919)
+        image_corrections=None,  # RELION neither normalises nor pre-shifts a tilt image (acc :429-476)
         scale_corrections=image_scale,
         image_pre_shifts=None,
         use_float64_scoring=False,

@@ -63,7 +63,7 @@ def update_c1_sigma_offset_from_posterior(
         sigma2_offset_new = wsum_sigma2_offset / (offset_dims * sum_weight)
 
     with ``offset_dims`` 2 for single-particle data and 3 for subtomograms
-    (ml_optimiser.cpp:6292-6297). A half without a propagated posterior moment
+    (ml_optimiser.cpp:5222-5227). A half without a propagated posterior moment
     uses the hard-assignment fallback independently; pooling the other half's
     posterior into it would not match RELION's gold-standard models.
     """

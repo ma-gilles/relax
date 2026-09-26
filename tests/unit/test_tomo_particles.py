@@ -76,7 +76,7 @@ def test_projection_matrices_recovered_from_the_flattened_image_matrices():
 
 
 def test_translation_angles_follow_relions_per_image_phase_operand():
-    """acc_ml_optimiser_impl.h:1761-1787 and exp_model.cpp:106-114, written out per image and shift."""
+    """acc_ml_optimiser_impl.h:1214-1240 and exp_model.cpp:106-114, written out per image and shift."""
     rng, image_particle, projections, _ = _setup(3)
     shifts = rng.normal(scale=2.0, size=(6, 3))
     old = rng.normal(scale=1.5, size=(3, 3))
@@ -133,13 +133,13 @@ def test_identity_tilt_keeps_the_spa_matrices():
 
 
 def test_gpu_old_offsets_round_half_away_from_zero():
-    """ROUND (macros.h:197) as selfROUND applies it to a tomo particle's old offset (acc_ml_optimiser_impl.h:659)."""
+    """ROUND (macros.h:197) as selfROUND applies it to a tomo particle's old offset (acc_ml_optimiser_impl.h:216)."""
     got = tomo_particles.relion_gpu_old_offsets([[0.5, -0.5, 1.49], [-1.5, 2.5000001, -0.2]])
     np.testing.assert_array_equal(got, [[1, -1, 1], [-2, 3, 0]])
 
 
 def test_offset_prior_3d_adds_the_rounded_pixel_offset_to_angstrom_translations():
-    # RELION's pdf_offset (acc_ml_optimiser_impl.h:3059-3094): |round(old_px) + t_A|^2 * pix^2 / (-2 sigma2).
+    # RELION's pdf_offset (acc_ml_optimiser_impl.h:2135-2170): |round(old_px) + t_A|^2 * pix^2 / (-2 sigma2).
     pix, sigma = 4.25, 10.0
     grid = np.array([[0.0, 0.0, 0.0], [4.25, 0.0, 0.0], [-4.25, 4.25, 8.5]])
     old_px = np.array([[0.848, -0.31, -0.107], [-1.6, 2.5, 0.0]])

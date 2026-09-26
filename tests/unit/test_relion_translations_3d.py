@@ -12,7 +12,7 @@ pytestmark = pytest.mark.unit
 
 
 def _relion_set_translations_3d(offset_range, offset_step):
-    """HealpixSampling::setTranslations, non-helical is_3d_trans branch (healpix_sampling.cpp:345, 410-433)."""
+    """HealpixSampling::setTranslations, non-helical is_3d_trans branch (healpix_sampling.cpp:330, 395-418)."""
     maxp = math.ceil(offset_range / offset_step)
     out = []
     for ix in range(-maxp, maxp + 1):
@@ -28,7 +28,7 @@ def _relion_set_translations_3d(offset_range, offset_step):
 
 
 def _relion_translations_in_pixel_3d(t, offset_step, order, pixel_size, perturbation):
-    """HealpixSampling::getTranslationsInPixel, non-helical 3D (healpix_sampling.cpp:1756-1805, 1825-1841)."""
+    """HealpixSampling::getTranslationsInPixel, non-helical 3D (healpix_sampling.cpp:1741-1790, 1810-1826)."""
     out = []
     if order == 0:
         out.append([t[0] / pixel_size, t[1] / pixel_size, t[2] / pixel_size])
