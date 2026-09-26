@@ -4737,6 +4737,10 @@ def main():
     if int(args.write_iteration_every) > 0:
         if shape_class_rows is not None:
             logger.warning("RELION run files are not written for particle STARs with several image shapes")
+        elif tomo_run:
+            # The writer maps half rows onto the SPA particles.star; subtomogram particles' 3D offsets and
+            # 2D-stack STAR blocks are not mapped yet (resume's RunFileWriter, S4.2 follow-up).
+            logger.warning("RELION run files are not written for subtomogram (2D-stack) particles yet")
         else:
             run_file_writer = RunFileWriter(
                 args.output,
