@@ -431,18 +431,19 @@ def _e_step_block_score_components(
     the full inner product from half-spectrum pixels (the half weights are
     absorbed into the projections once per block), and
     ``norms[i, r] = ctf2_over_nv[i] . proj_abs2[r]`` is the model energy. Every
-    dense scorer (residual, windowed, normalized-CC and the coarse Gaussian
-    GEMM) builds its score from these two HIGHEST-precision GEMMs.
+    dense scorer (residual, windowed and normalized-CC) builds its score from
+    these two HIGHEST-precision GEMMs. The cross term is one real GEMM over
+    ``[Re, Im]``-packed operands, ``Re(conj(s) . p) = s_re . p_re + s_im . p_im``,
+    so the unused imaginary half of a complex product is never formed.
     """
 
     rot_block_size = proj_weighted.shape[0]
-    cross = (
-        -2.0
-        * jnp.matmul(
-            jnp.conj(shifted),
-            proj_weighted.T,
-            precision=jax.lax.Precision.HIGHEST,
-        ).real
+    shifted_packed = jnp.concatenate([shifted.real, shifted.imag], axis=-1)
+    proj_packed = jnp.concatenate([proj_weighted.real, proj_weighted.imag], axis=-1)
+    cross = -2.0 * jnp.matmul(
+        shifted_packed,
+        proj_packed.T,
+        precision=jax.lax.Precision.HIGHEST,
     )
     cross = cross.reshape(n_images, n_trans, rot_block_size)
     cross = cross.swapaxes(1, 2)
