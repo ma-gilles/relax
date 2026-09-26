@@ -261,6 +261,21 @@ class HalfOverlapOptions:
 
 
 @dataclass(frozen=True)
+class CheckpointOptions:
+    """RELION's per-iteration run files and ``--continue``.
+
+    ``writer`` is called with an ``IterationSnapshot`` at the end of every numbered
+    iteration it reports as due (``relax.refinement.run_files.RunFileWriter``).
+    ``resume`` is the snapshot of the last completed iteration of an earlier run;
+    ``schedule.init_relion_iteration`` must equal its ``relion_iteration``. See
+    ``relax/refinement/iteration_snapshot.py``.
+    """
+
+    writer: Any | None = None
+    resume: Any | None = None
+
+
+@dataclass(frozen=True)
 class RefinementOptions:
     """Configuration groups consumed by ``refine_single_volume``.
 
@@ -289,6 +304,7 @@ class RefinementOptions:
     # Keep new option groups after the historical positional fields so
     # external positional construction retains its pre-symmetry meaning.
     symmetry: SymmetryOptions = field(default_factory=SymmetryOptions)
+    checkpoint: CheckpointOptions = field(default_factory=CheckpointOptions)
 
 
 def _validate_relion_healpix_orders(orders, *, max_iter, init_healpix_order, max_healpix_order):
@@ -366,6 +382,7 @@ __all__ = [
     "ReplayState",
     "RefinementBatching",
     "HalfOverlapOptions",
+    "CheckpointOptions",
     "RefinementOptions",
     "with_validated_sampling_schedule",
 ]

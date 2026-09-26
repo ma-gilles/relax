@@ -275,6 +275,7 @@ def _validate_bpref_particle_order_scope(
     sealed_scoring_context,
     allow_replayed_bpref_particle_order: bool = False,
     allow_state_swap_fresh_bpref_particle_order: bool = False,
+    continues_own_run: bool = False,
 ) -> None:
     """Fail closed unless RELION's physical order can be preserved for this K=1 run.
 
@@ -284,7 +285,9 @@ def _validate_bpref_particle_order_scope(
     perturbations and per-iteration state (``--perturb_replay_relion_dir``),
     and an imported-boundary replay that reconstructs the native order
     (``allow_replayed_bpref_particle_order``). A sealed boundary fixes its own
-    arithmetic, so it is refused.
+    arithmetic, so it is refused. A ``--continue`` of relax's own run
+    (``continues_own_run``) keeps that run's fresh order, and with it the
+    same arithmetic.
     """
 
     if not preserve_bpref_particle_order:
@@ -308,6 +311,12 @@ def _validate_bpref_particle_order_scope(
             raise ValueError(
                 "state-swap RELION BPref particle-order preservation requires numbered replay state"
             )
+        return
+    if int(init_relion_iteration) > 0 and continues_own_run:
+        if perturb_replay_relion_dir is not None or _has_numbered_replay_iteration_overrides(
+            replay_iteration_overrides
+        ):
+            raise ValueError("a continued run cannot also replay a RELION trajectory")
         return
     if int(init_relion_iteration) > 0:
         if not allow_replayed_bpref_particle_order:

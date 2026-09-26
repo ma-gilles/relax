@@ -75,7 +75,9 @@ from relax.relion.initial_noise import (
     compute_avg_unaligned_and_sigma2,
     read_relion_single_optics_sigma2_noise,
 )
+from relax.refinement.iteration_snapshot import noise_pixel_rows
 from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
+from relax.refinement.run_files import RunFileWriter, RunSettings, read_run_files, read_star_blocks
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.relion.relion_worker_scale import (
     load_relion_dispatch_schedule,
@@ -1785,6 +1787,45 @@ def _validate_multi_shape_run(args, frozen_boundary, double_image_preprocessing)
 RELION_GUI_PARTICLE_DIAMETER_ANG = 200.0
 
 
+def _validate_continue_cli(args) -> int:
+    """Refuse options a continuation cannot honour; return the run's random seed.
+
+    The run files pin the trajectory, so a RELION-seeded or replayed start, a frozen
+    boundary or a sampling oracle would contradict them. The seed must be the original
+    run's: it fixes the particle order and the sampling perturbations.
+    """
+
+    conflicts = [
+        flag
+        for flag, value in (
+            ("--perturb_replay_relion_dir", args.perturb_replay_relion_dir),
+            ("--relion_init_dir", args.relion_init_dir),
+            ("--frozen-boundary-dir", args.frozen_boundary_dir),
+            ("--init_noise_from_npz", args.init_noise_from_npz),
+            ("--init_previous_best_poses_npz", args.init_previous_best_poses_npz),
+            ("--relion_current_sizes", args.relion_current_sizes),
+            ("--relion_healpix_orders", args.relion_healpix_orders),
+            ("--final-replay-relion-dir", args.final_replay_relion_dir),
+            ("--relion-projector-capture-dir", args.relion_projector_capture_dir),
+            ("--state-swap-variant", args.state_swap_variant),
+        )
+        if value is not None
+    ]
+    if int(args.init_relion_iteration) != 0:
+        conflicts.append("--init_relion_iteration")
+    if args.diagnostic_single_half:
+        conflicts.append("--diagnostic_single_half")
+    if conflicts:
+        raise SystemExit("--continue cannot be combined with " + ", ".join(conflicts))
+    general = read_star_blocks(args.continue_optimiser_star).get("optimiser_general", {})
+    if "rlnRandomSeed" not in general:
+        raise SystemExit(f"{args.continue_optimiser_star} has no rlnRandomSeed")
+    seed = int(general["rlnRandomSeed"])
+    if args.seed is not None and int(args.seed) != seed:
+        raise SystemExit(f"--seed {args.seed} differs from the continued run's seed {seed}")
+    return seed
+
+
 def _initial_current_size(voxel_size: float, grid_size: int, init_resolution: float) -> int:
     """Twice RELION's --ini_high pixel, ``getPixelFromResolution(1 / ini_high)`` (ml_model.h:441,
     ml_optimiser.cpp:2801): ``2 ROUND(ori_size pixel_size / ini_high)``. The first E-step then adds
@@ -2550,6 +2591,41 @@ def _parse_args(argv=None):
         default=None,
         help="Optional JSON path for an auto-refine quality/performance ledger.",
     )
+    parser.add_argument(
+        "--continue",
+        dest="continue_optimiser_star",
+        default=None,
+        help=(
+            "Continue a relax run after the numbered iteration of this "
+            "<output>/run_itNNN_optimiser.star, as relion_refine --continue does. Repeat "
+            "the original command (data, seed, sampling and model options) and add this "
+            "option; the run files supply the maps, noise, tau2, poses, corrections, "
+            "sampling and convergence state. --max_iter stays the last numbered "
+            "iteration of the whole run, like RELION's --iter."
+        ),
+    )
+    parser.add_argument(
+        "--write-iteration-every",
+        dest="write_iteration_every",
+        type=int,
+        default=1,
+        help=(
+            "Write RELION's run_itNNN_{optimiser,model,data,sampling}.star and maps after "
+            "every Nth numbered iteration (RELION writes every iteration, N=1); 0 turns "
+            "them off. Any written iteration can be continued with --continue."
+        ),
+    )
+    parser.add_argument(
+        "--write-unfiltered-half-maps",
+        dest="write_unfiltered_half_maps",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "With the run files of an auto-refine iteration, also reconstruct and write "
+            "run_itNNN_half{1,2}_class001_unfil.mrc, as RELION does "
+            "(ml_optimiser_mpi.cpp:3237-3272)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -2713,6 +2789,9 @@ def main():
         raise SystemExit(
             "fixed diagnostic boundary flags require --frozen-boundary-dir"
         )
+
+    if args.continue_optimiser_star is not None:
+        args.seed = _validate_continue_cli(args)
 
     seed_optimiser_star = (
         _relion_optimiser_star_for_runtime(
@@ -3017,6 +3096,26 @@ def main():
             int(half1_idx.size),
         )
         half2_idx = np.empty(0, dtype=np.int64)
+
+    resume_snapshot = None
+    if args.continue_optimiser_star is not None:
+        if shape_class_rows is not None:
+            raise SystemExit("--continue does not support particle STARs with several image shapes yet")
+        resume_snapshot = read_run_files(
+            args.continue_optimiser_star,
+            image_names=[str(name) for name in our_names],
+            half_rows=[half1_idx, half2_idx],
+        )
+        logger.info(
+            "Continuing after numbered iteration %d from %s",
+            resume_snapshot.relion_iteration,
+            args.continue_optimiser_star,
+        )
+        if int(args.max_iter) < int(resume_snapshot.relion_iteration):
+            raise SystemExit(
+                f"--max_iter {args.max_iter} is the last numbered iteration of the whole run "
+                f"(RELION's --iter); the run files are already at iteration {resume_snapshot.relion_iteration}"
+            )
 
     ds_half1 = ds.subset(half1_idx)
     ds_half2 = ds.subset(half2_idx)
@@ -3729,6 +3828,15 @@ def main():
         # The RELION-seeded debug start loads RELION's iteration-0 model noise below.
         initial_noise_radial = None
         noise_variance = None
+    elif resume_snapshot is not None:
+        # The run files own the noise; the loop installs each half's own spectrum.
+        initial_noise_radial = np.mean(np.stack(resume_snapshot.noise_shells, axis=0), axis=0)
+        noise_variance = np.asarray(noise_pixel_rows(resume_snapshot.noise_shells[0], ds.image_shape))
+        if noise_variance.ndim == 2:
+            from relax.helpers.optics_noise import dense_optics_groups
+
+            image_optics_groups, _ = dense_optics_groups(our_particles["rlnOpticsGroup"])
+            optics_group_ids_per_half = [image_optics_groups[half1_idx], image_optics_groups[half2_idx]]
     else:
         initial_noise_radial, noise_variance = _compute_relion_startup_noise(
             ds, args=args, frozen_boundary=frozen_boundary,
@@ -4009,6 +4117,7 @@ def main():
     # ---- Run refinement ----
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.refinement_options import (
+        CheckpointOptions,
         AdaptiveOptions,
         EngineDebugOptions,
         ExpectedAccuracyOptions,
@@ -4542,6 +4651,35 @@ def main():
 
     sampling_kwargs = _refine_sampling_kwargs(args, init_healpix_order)
 
+    run_file_writer = None
+    if int(args.write_iteration_every) > 0:
+        if shape_class_rows is not None:
+            logger.warning("RELION run files are not written for particle STARs with several image shapes")
+        else:
+            run_file_writer = RunFileWriter(
+                args.output,
+                settings=RunSettings(
+                    output_root=os.path.join(args.output, "run"),
+                    random_seed=int(args.seed),
+                    nr_iter=int(args.max_iter),
+                    particle_diameter=float(particle_diameter_ang or 0.0),
+                    adaptive_oversampling=int(args.adaptive_oversampling),
+                    auto_local_healpix_order=int(sampling_kwargs["auto_local_healpix_order"]),
+                    max_significants=int(args.max_significants),
+                    symmetry=symmetry,
+                    healpix_order_original=int(init_healpix_order),
+                    offset_range_original_angstrom=float(args.offset_range) * float(ds.voxel_size),
+                    offset_step_original_angstrom=float(args.offset_step) * float(ds.voxel_size),
+                    perturbation_factor=float(args.perturb_factor),
+                    command_line=" ".join(sys.argv),
+                ),
+                input_star=os.path.join(args.data_dir, "particles.star"),
+                half_rows=[half1_idx, half2_idx],
+                write_every=int(args.write_iteration_every),
+                write_unfiltered_maps=bool(args.write_unfiltered_half_maps),
+            )
+    continued_iterations = 0 if resume_snapshot is None else int(resume_snapshot.relion_iteration)
+
     result = refine_single_volume(
         experiment_datasets=experiment_datasets,
         init_volume=init_vol_ft,
@@ -4554,7 +4692,8 @@ def main():
             symmetry=SymmetryOptions(point_group=symmetry),
             disc_type=os.environ.get("RELAX_DISC_TYPE_OVERRIDE", "linear_interp"),
             schedule=RefinementSchedule(
-                max_iter=args.max_iter,
+                # --max_iter counts from iteration 1 of the whole run, as RELION's --iter.
+                max_iter=int(args.max_iter) - continued_iterations,
                 init_current_size=init_current_size,
                 init_fsc=None if frozen_boundary is None else frozen_boundary.fsc,
                 ini_high_angstrom=_ini_high_for_lowpass,
@@ -4580,7 +4719,9 @@ def main():
                     )
                 ),
                 particle_diameter_ang=particle_diameter_ang,
-                init_relion_iteration=args.init_relion_iteration,
+                init_relion_iteration=(
+                    args.init_relion_iteration if resume_snapshot is None else continued_iterations
+                ),
                 skip_final_iteration=bool(args.skip_final_iteration),
             ),
             batching=RefinementBatching(
@@ -4626,8 +4767,9 @@ def main():
             k_class=KClassOptions(
                 n_classes=args.n_classes,
             ),
+            checkpoint=CheckpointOptions(writer=run_file_writer, resume=resume_snapshot),
             replay=ReplayState(
-                init_reference_real=init_reference_real_for_projector,
+                init_reference_real=None if resume_snapshot is not None else init_reference_real_for_projector,
                 init_refinement_state_fields=(
                     None if frozen_boundary is None else frozen_boundary.refinement_state_fields
                 ),

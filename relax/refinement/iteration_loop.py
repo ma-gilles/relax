@@ -175,6 +175,12 @@ from relax.refinement.half_inputs import (
     _normalize_sigma_offset_per_half,
 )
 from relax.refinement.half_scoring import _score_half_dense_in_bpref_scope, _score_half_local_in_bpref_scope
+from relax.refinement.iteration_snapshot import (
+    capture_iteration_snapshot,
+    noise_pixel_rows,
+    tau2_mean_variance,
+)
+from relax.refinement.iteration_snapshot import validate_resume_snapshot as _validate_resume_snapshot
 from relax.refinement.local_search_iteration import _precompute_exact_local_fine_grid_enabled
 from relax.refinement.mean_helpers import (
     _class_tau2_from_iref_power_spectrum,
@@ -833,6 +839,7 @@ def refine_single_volume(
         sealed_scoring_context=debug.sealed_scoring_context,
         allow_replayed_bpref_particle_order=parity.allow_replayed_bpref_particle_order,
         allow_state_swap_fresh_bpref_particle_order=debug.state_swap_probe is not None,
+        continues_own_run=options.checkpoint.resume is not None,
     )
     source_faithful_spectrum_norm = _fresh_k1_spectrum_norm_default(
         preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
@@ -1168,6 +1175,99 @@ def refine_single_volume(
         )
     else:
         random_perturbation = 0.0
+    # --- Continue from the run files of an earlier run (RELION --continue) ---
+    # The snapshot replaces every value the next numbered iteration reads, so the
+    # first loop iteration runs as iteration init_relion_iteration + 1 of the
+    # uninterrupted run (see relax/refinement/iteration_snapshot.py).
+    resume = options.checkpoint.resume
+    if resume is not None:
+        _validate_resume_snapshot(
+            resume,
+            init_relion_iteration=init_relion_iteration,
+            n_classes=n_classes,
+            grid_size=grid_size,
+            options=options,
+        )
+        pose_dtype = _dense_global_scoring_dtype()
+        state = resume.refinement_state(state)
+        means = [jnp.asarray(mean) for mean in resume.means]
+        if k_class_enabled:
+            means[1] = means[0]
+        mean_variance = tau2_mean_variance(resume, volume_shape, dtype=pose_dtype)
+        mean_variance_per_half = [mean_variance, mean_variance]
+        noise_variance_per_half = [noise_pixel_rows(shells, cryo.image_shape) for shells in resume.noise_shells]
+        noise_variance = _mean_noise_variance(noise_variance_per_half)
+        previous_noise_radial_per_half = [np.asarray(shells, dtype=np.float64) for shells in resume.noise_shells]
+        previous_noise_radial = jnp.asarray(np.mean(np.stack(previous_noise_radial_per_half, axis=0), axis=0))
+        relion_half_inputs.previous_best_rotation_eulers = list(resume.rotation_eulers)
+        relion_half_inputs.previous_best_translations = list(resume.translations)
+        relion_half_inputs.image_corrections = list(resume.image_corrections)
+        relion_half_inputs.scale_corrections = list(resume.scale_corrections)
+        # An empty half (Class3D's second accumulator) keeps an empty stack, as the loop does.
+        previous_best_rotations = [
+            None
+            if eulers is None
+            else np.zeros((0, 3, 3), dtype=pose_dtype)
+            if len(eulers) == 0
+            else np.asarray(utils.R_from_relion(np.asarray(eulers), degrees=True), dtype=pose_dtype)
+            for eulers in resume.rotation_eulers
+        ]
+        if k_class_enabled:
+            class_assignments = [None if c is None else np.asarray(c) for c in resume.class_assignments]
+            previous_class_assignments = [None if c is None else c.copy() for c in class_assignments]
+            class_weights = np.asarray(resume.class_weights, dtype=np.float64)
+            class_log_priors = np.log(class_weights)
+        previous_data_vs_prior_for_scheduling = np.asarray(resume.data_vs_prior, dtype=pose_dtype)
+        current_sigma_offset_angstrom_per_half = _as_sigma_offset_half_pair(resume.sigma_offset_angstrom)
+        current_sigma_offset_angstrom = _mean_sigma_offset_per_half(current_sigma_offset_angstrom_per_half)
+        relion_incr_size = int(resume.incr_size)
+        relion_has_high_fsc_at_limit = bool(resume.has_high_fsc_at_limit)
+        random_perturbation = float(resume.random_perturbation)
+        if resume.direction_prior is not None:
+            (
+                global_direction_prior_per_half,
+                global_direction_prior_order_per_half,
+                class_direction_prior_per_half,
+                class_direction_prior_order_per_half,
+            ) = initial_direction_priors_from_snapshot(
+                resume.direction_prior,
+                n_classes=n_classes,
+                dtype=pose_dtype,
+                log=logger,
+                **({"symmetry": symmetry} if symmetry != "C1" else {}),
+            )
+            saved_orders = [int(resume.extra.get(f"direction_prior_order_half{h + 1}", -1)) for h in range(2)]
+            saved_orders = [None if order < 0 else order for order in saved_orders]
+            if k_class_enabled:
+                class_direction_prior_order_per_half = saved_orders
+            else:
+                global_direction_prior_order_per_half = saved_orders
+        resumed_grids = _initial_coarse_grids(
+            healpix_order=_exhaustive_grid_order_for_state(state),
+            sealed_sampling_state=None,
+            translations=None,
+            init_healpix_order=state.healpix_order,
+            init_translation_range=state.translation_range,
+            init_translation_step=state.translation_step,
+            n_classes=n_classes,
+            voxel_size=cryo.voxel_size,
+            log=logger,
+            **({"symmetry": symmetry} if symmetry != "C1" else {}),
+        )
+        current_rotations = resumed_grids.rotations
+        current_rotation_eulers = resumed_grids.rotation_eulers
+        base_translations = resumed_grids.base_translations
+        current_translations = resumed_grids.translations
+        current_healpix_order = resumed_grids.healpix_order
+        logger.info(
+            "Continuing after numbered iteration %d: current_size=%d healpix_order=%d "
+            "local_search=%s resolution=%.3f A",
+            int(resume.relion_iteration),
+            int(resume.current_size),
+            int(state.healpix_order),
+            bool(state.do_local_search),
+            float(state.current_resolution),
+        )
     perturb_rng = None if parity.perturb_seed is not None else np.random.default_rng()
     iteration = 0
     _mark_setup_phase("before_iterations")
@@ -1242,6 +1342,8 @@ def refine_single_volume(
     # iteration and reports none.
     hard_assignments = [None, None]
     while (schedule.force_max_iter_after_convergence or not state.has_converged) and iteration < schedule.max_iter:
+        # A continued run's first iteration follows the snapshot's iteration.
+        has_previous_iteration = iteration > 0 or resume is not None
         if perturb_replay_relion_dir is not None and replay_policy._past_perturb_replay_max_iter(
             iteration, perturb_replay_max_iter
         ):
@@ -1269,7 +1371,7 @@ def refine_single_volume(
                 k_class_enabled=k_class_enabled,
             )
             and not schedule.force_max_iter_after_convergence
-            and iteration > 0
+            and has_previous_iteration
             and check_convergence(state)
         ):
             state.has_converged = True
@@ -1321,7 +1423,7 @@ def refine_single_volume(
         # 2. convert FSC -> SSNR (= data_vs_prior in split-half auto-refine)
         # 3. grow current_size using ave_Pmax, FSC at the current limit, and
         #    RELION's dynamic incr_size heuristic.
-        if iteration == 0:
+        if not has_previous_iteration:
             if init_relion_iteration == 0:
                 seeded_cs = bootstrap_current_size_from_ini_high_relion(
                     grid_size,
@@ -1375,7 +1477,7 @@ def refine_single_volume(
                 current_size = _bootstrap_current_size_relion(schedule.init_current_size, grid_size)
                 data_vs_prior_iter = None
         else:
-            prev_cs = history.current_sizes[-1]
+            prev_cs = history.current_sizes[-1] if history.current_sizes else int(resume.current_size)
             if k_class_enabled:
                 if previous_data_vs_prior_for_scheduling is None:
                     raise RuntimeError("K-class current-size scheduling requires a previous data_vs_prior curve")
@@ -1438,11 +1540,13 @@ def refine_single_volume(
                 current_size = computed_cs
             else:
                 fsc_prev_raw = np.asarray(
-                    history.fsc_history[-1],
+                    history.fsc_history[-1] if history.fsc_history else resume.fsc,
                     dtype=_dense_global_scoring_dtype(),
                 ).copy()
                 fsc_prev_for_growth = _truncate_fsc_for_current_size_growth(
-                    history.fsc_for_growth_history[-1] if history.fsc_for_growth_history else fsc_prev_raw,
+                    history.fsc_for_growth_history[-1]
+                    if history.fsc_for_growth_history
+                    else (fsc_prev_raw if resume is None or resume.fsc_for_growth is None else resume.fsc_for_growth),
                     current_size=prev_cs,
                     grid_size=grid_size,
                     dtype=_dense_global_scoring_dtype(),
@@ -1494,7 +1598,7 @@ def refine_single_volume(
                 current_size = quantize_current_size(raw_cs, ori_size=grid_size)
 
         current_size = quantize_current_size(current_size, ori_size=grid_size)
-        if iteration > 0:
+        if has_previous_iteration:
             logger.info(
                 "RELION current-size decision: iter=%d prev=%d res_shell=%d "
                 "incr_size=%d high_fsc_at_limit=%s ave_Pmax=%.6f raw=%d quantized=%d",
@@ -1698,7 +1802,7 @@ def refine_single_volume(
                     k_class_enabled=k_class_enabled,
                     n_units=experiment_datasets[0].n_units,
                 )
-                if iteration > 0 and replay_result.relion_projector_state is None:
+                if has_previous_iteration and replay_result.relion_projector_state is None:
                     # Iteration 1 may project the initial real references and a
                     # replay may supply a captured projector; both keep their own.
                     shared_projector_size = min(int(current_size), int(grid_size))
@@ -1778,7 +1882,7 @@ def refine_single_volume(
                 native_sampling_boundary=native_sampling_boundary,
                 k_class_enabled=k_class_enabled,
             )
-            and iteration > 0
+            and has_previous_iteration
             and adaptive.relion_healpix_orders is None
         ):
             state = update_angular_sampling(state)
@@ -2365,7 +2469,7 @@ def refine_single_volume(
                         )
                     relion_projector_half_by_half[_half_idx] = projector_half
                     relion_projector_r_max_by_half[_half_idx] = projector_r_max
-                    if iteration > 0:
+                    if has_previous_iteration:
                         # Iteration 1 may project the initial real references
                         # directly; tau2 transforms the Fourier means, so only
                         # later iterations share one transform with it.
@@ -3684,6 +3788,10 @@ def refine_single_volume(
         need_unreg_means = (
             (debug.save_intermediates_dir is not None and not debug.save_intermediates_skip_unregularized)
             or _parity_dump.is_active()
+            or (
+                options.checkpoint.writer is not None
+                and options.checkpoint.writer.wants_unfiltered_maps(numbered_relion_iteration, n_classes=n_classes)
+            )
         )
         unreg_means = compute_unregularized_halfmaps_and_align_signs(
             means=means,
@@ -4252,6 +4360,65 @@ def refine_single_volume(
         previous_assignments = [ha.copy() if ha is not None else None for ha in coarse_ha]
         previous_class_assignments = [cls.copy() if cls is not None else None for cls in class_assignments]
         _parity_dump.mark_stage(iteration, "convergence")
+
+        # --- RELION's run_itNNN files (ml_optimiser.cpp:3489) ---
+        checkpoint_writer = options.checkpoint.writer
+        if checkpoint_writer is not None and checkpoint_writer.due(numbered_relion_iteration):
+            # The files hold incr_size/has_high_fsc_at_limit after this iteration's FSC
+            # update, which the loop applies (idempotently) at the top of the next one.
+            incr_size_after, high_fsc_after = relion_incr_size, relion_has_high_fsc_at_limit
+            if not k_class_enabled:
+                incr_size_after, high_fsc_after = update_relion_growth_state_from_fsc(
+                    _truncate_fsc_for_current_size_growth(
+                        tau2_fsc_for_update,
+                        current_size=current_size,
+                        grid_size=grid_size,
+                        dtype=_dense_global_scoring_dtype(),
+                    ),
+                    current_size,
+                    incr_size=relion_incr_size,
+                    has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
+                )
+            checkpoint_writer(
+                capture_iteration_snapshot(
+                    relion_iteration=numbered_relion_iteration,
+                    n_classes=n_classes,
+                    grid_size=grid_size,
+                    voxel_size=cryo.voxel_size,
+                    tau2_fudge=tau2_fudge,
+                    means=means,
+                    unfiltered_means=unreg_means,
+                    tau2_shells=(
+                        mean_signal_variance_shells
+                        if k_class_enabled
+                        else [details["prior_shells"] for details in tau2_update_details_per_half]
+                    ),
+                    data_vs_prior=previous_data_vs_prior_for_scheduling,
+                    fsc=fsc,
+                    fsc_for_growth=None if k_class_enabled else tau2_fsc_for_update,
+                    noise_shells=previous_noise_radial_per_half,
+                    sigma_offset_angstrom_per_half=current_sigma_offset_angstrom_per_half,
+                    current_size=current_size,
+                    incr_size=incr_size_after,
+                    has_high_fsc_at_limit=high_fsc_after,
+                    random_perturbation=random_perturbation,
+                    state=state,
+                    half_inputs=relion_half_inputs,
+                    class_weights=class_weights if k_class_enabled else None,
+                    direction_prior=(
+                        class_direction_prior_per_half if k_class_enabled else global_direction_prior_per_half
+                    ),
+                    direction_prior_order=(
+                        class_direction_prior_order_per_half
+                        if k_class_enabled
+                        else global_direction_prior_order_per_half
+                    ),
+                    class_assignments=class_assignments if k_class_enabled else None,
+                    max_posterior=max_posterior_per_half,
+                    significant_counts=iter_significant_counts_per_half,
+                    avg_norm_correction=avg_norm_corrections_for_dump,
+                )
+            )
 
         if _parity_dump.is_active():
             try:
