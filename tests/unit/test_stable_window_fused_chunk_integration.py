@@ -148,10 +148,20 @@ def test_fused_chunk_scoring_matches_the_chunk_loop_on_gpu(monkeypatch, caplog, 
     # control runs; every key the control reproduces within the default band must stay
     # in that band under the flag, and a key it does not reproduce is held to the same float32 atomics
     # bound, with the control's own spread reported next to the flag's delta.
+    # wsum_img_power is an atomic sum by construction, so it always takes the atomics
+    # bound: two control runs agree on it only by chance (6 of 8 repeats on an H100, job
+    # 14457077), and a chance agreement used to hold it to the exact band, failing the
+    # flag's float32-ulp moves (flag deltas up to 3.7e-4 at |x| = 1.06e4, where one
+    # float32 ulp is 9.8e-4; medium tiers failed 6 of 22 times on unrelated heads).
+    # Float results are never required to be bitwise (user rule).
+    atomic_keys = {k for k in base_a if "wsum_img_power" in k}
     reproducible, spread = [], {}
     for k in base_a:
         a, b = np.asarray(base_a[k]), np.asarray(base_b[k])
         d = float(np.max(np.abs(np.nan_to_num(a) - np.nan_to_num(b)))) if a.size else 0.0
+        if k in atomic_keys:
+            spread[k] = d
+            continue
         (reproducible.append(k) if matches(np.nan_to_num(a), np.nan_to_num(b)) else spread.__setitem__(k, d))
     assert reproducible, "the two control runs agreed on nothing"
     _assert_fused_arrays_match(
