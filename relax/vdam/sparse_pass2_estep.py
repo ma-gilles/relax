@@ -842,6 +842,10 @@ def _run_sparse_pass2_initial_model_estep(
                 image_batch_size=config.image_batch_size,
                 rotation_block_size=config.rotation_block_size,
                 current_size=group_kwargs.get("current_size"),
+                # RELION's resolution pointers cut the corners at the full box in VDAM as in
+                # auto-refine (updateImageSizeAndResolutionPointers, ml_optimiser.cpp:5784-5793, and
+                # precalculateShiftedImagesCtfsAndInvSigma2s :6841-6880, neither depending on do_grad).
+                window_at_box=True,
                 accumulate_noise=True,
                 projection_padding_factor=int(group_kwargs.get("projection_padding_factor", 1)),
                 reconstruction_padding_factor=int(group_kwargs.get("reconstruction_padding_factor", 1)),
