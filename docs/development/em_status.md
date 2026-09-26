@@ -74,7 +74,7 @@ sphere. RELION's accelerated kernels relabel the image rows beyond
 maxR = min(PPref.r_max, imgX - 1): the coarse diff2 kernel wraps them negative
 (acc/cuda/cuda_kernels/diff2.cuh:86-90, 163-164), and the fine diff2 and wavg kernels
 move them to the pixel (maxR, i) for both the projection and the image shift
-(diff2.cuh:494-530, wavg.cuh:81-86). relax reproduces this
+(diff2.cuh:268-304, wavg.cuh:81-86). relax reproduces this
 ([sparse_projection_radius.md](../math/sparse_projection_radius.md)). With it, the
 S3b fast case matches RELION to 1e-8. OPEN, a RELION defect not yet reproduced:
 for s >= sqrt(2) the moved fine pixel falls inside the sphere and RELION scores a
@@ -92,7 +92,7 @@ non-fused coarse projection and the local parent pass refuse it.
 
 RELION float32 BPref accumulation band (2026-09-25, not reproduced; lead decision). RELION's GPU backprojector adds every
 particle of a half into one float32 volume with `atomicAdd` (acc/acc_backprojector.h:41; acc/cuda/cuda_kernels/BP.cuh:157-169)
-and reads it back once per iteration (ml_optimiser_mpi.cpp:1857). At iteration 1, when posteriors are broad, the rounding drops
+and reads it back once per iteration (ml_optimiser_mpi.cpp:1719). At iteration 1, when posteriors are broad, the rounding drops
 tiny terms. On S3b the DC BPref weight is 0.32 % below `0.999 sum Q^2/sigma2[0]` for RELION and 0.083 % below it for relax,
 decaying with radius. RELION's retained mass is 0.999 (14428592), and a float32 sequential-sum simulation reproduces RELION's DC
 to 1e-4. By it3 the formula holds to 1e-5. relax loses less because each optics shape class starts from its own zero
@@ -180,9 +180,9 @@ class-segmented pass padding factor 2 and a per-class scale-correction mask
 it, then delete the per-class K>1 loop (one implementation; K=1 keeps its path).
 Update 2026-09-25: Class3D no longer reaches local searches at all. RELION switches
 to local searches from the HEALPix order only under auto-refine: the iteration-0
-switch is inside `if (do_auto_refine)` (ml_optimiser.cpp:2541-2565) and later
+switch is inside `if (do_auto_refine)` (ml_optimiser.cpp:2302-2326) and later
 switches come from `updateAngularSampling`, which Class3D never calls
-(ml_optimiser.cpp:3936-3938); relax has no `--sigma_ang`. relax switched Class3D
+(ml_optimiser.cpp:3550-3552); relax has no `--sigma_ang`. relax switched Class3D
 to local searches at HEALPix >= 4 (fixed 7381f84, replays 016e261), and the
 Class3D local K>1 route (the K>1 branch of `_run_local_search_iteration` and the
 class arms of the local half scorer) is deleted as unreachable. The per-class
@@ -300,7 +300,7 @@ under `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/replay_50k_it
 and `replay_50k_iters_20260925/relion_cont`.
 
 Tested, no effect (2026-09-25, not landed): RELION's CUDA path normalizes each real image by
-`(XFLOAT)(avg_norm_correction / normcorr)` (`acc/acc_ml_optimiser_impl.h:875`, f2c1a38). relax
+`(XFLOAT)(avg_norm_correction / normcorr)` (`acc/acc_ml_optimiser_impl.h:432`, f2c1a38). relax
 recovers that factor as `float32(combined) / float32(group_scale)`. On the K1 50k/256 fixture this
 differs by 1-2 ULP (1.2e-7 relative) for 34% of images at it2 and it13. A port of a parallel
 session's fix carried the once-rounded host ratio separately. It moved relax itself by a mean

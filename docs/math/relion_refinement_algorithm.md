@@ -9,7 +9,7 @@ rounded-radius half-spectrum shell power. K1 takes the stable subset-1 then
 subset-2 source order of its half sets. Class3D (K>1) splits no halves, so
 RELION's `sorted_idx` is the micrograph-sorted input order itself
 ([`_relion_class3d_initial_noise_layout`](../../scripts/run_full_refinement.py),
-`ml_optimiser.cpp:3068-3072`, `exp_model.cpp:900-901`). It does not load oracle
+`ml_optimiser.cpp:2804-2808`, `exp_model.cpp:900-901`). It does not load oracle
 tau2, poses, priors or normalization corrections. On the K4 50k/256 and 5k/128
 fixtures the Class3D spectrum agrees with RELION's `run_it000_model.star` to its
 six-digit serialization (maximum relative difference 3.4e-7); the former RECOVAR
@@ -63,7 +63,7 @@ The pieces:
   `part_id` seeds its draws
   ([`relion_class3d_trial_layout`](../../relax/helpers/expected_accuracy.py)).
   The estimator divides by `sigma2_fudge * sigma2_noise` with RELION's default
-  `sigma2_fudge = 1` (`ml_optimiser.cpp:1308, 11219`), never by `tau2_fudge`.
+  `sigma2_fudge = 1` (`ml_optimiser.cpp:1069, 9291`), never by `tau2_fudge`.
   With RELION's iteration-1 state this reproduces `run_it002`'s per-class
   `rlnAccuracyRotations` to 1e-14 on the K4 5k/128 and 50k/256 fixtures.
 - Group scales: a standalone run is single-process, like a non-MPI
@@ -82,7 +82,7 @@ The pieces:
 - Fixed schedule: Class3D keeps `--healpix_order` and runs every `--iter`
   iteration. relion_refine calls `updateAngularSampling` only under auto-refine
   or auto-sampling and `checkConvergence` only under auto-refine
-  (`ml_optimiser.cpp:3670-3675, 3936-3938`), so K>1 skips both
+  (`ml_optimiser.cpp:3308-3313, 3550-3552`), so K>1 skips both
   ([`_relion_auto_refine_transitions`](../../relax/refinement/iteration_loop.py));
   its expected accuracy is written to the history but never gates. Before this,
   a K>1 run could latch fine-enough sampling once the overall accuracy exceeded

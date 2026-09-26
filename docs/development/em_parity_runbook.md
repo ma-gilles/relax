@@ -142,6 +142,13 @@ gives an unmasked resolution of 6.650052 A while the modern ordering gives
 - Use the shared env-gated dump build under
   `/scratch/gpfs/GILLES/mg6942/relion/build_patched/`; do not create another
   RELION clone. Coordinate before editing or rebuilding this shared resource.
+- Cite RELION source lines at pristine f2c1a38
+  (`git -C /scratch/gpfs/GILLES/mg6942/relion show HEAD:src/<file>`). The
+  working tree there carries the dump instrumentation, so its line numbers
+  differ in `ml_optimiser.cpp`, `ml_optimiser_mpi.cpp`,
+  `acc_ml_optimiser_impl.h`, `diff2.cuh` and other patched files (its
+  `acc_ml_optimiser_impl.h:875` is `:432` at f2c1a38). Older code comments
+  and benchmark provenance records may still cite the instrumented tree.
 - Load RELION MRCs with `recovar.utils.helpers.load_relion_volume`; the frame
   convention is `vol_recovar = -transpose(vol_relion, (2, 1, 0))`.
 - `--healpix_order` means the coarse pass-1 order. Adaptive oversampling is

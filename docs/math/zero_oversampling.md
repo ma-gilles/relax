@@ -69,5 +69,5 @@ resident gate requires the sum, winner and Pmax together, as the K=1 adaptive
 route supplies them. On the local route the resident pass keeps every weight for
 the reconstruction and the statistics (`reconstruct_significant_only=False`),
 following RELION's symbolic second pass (`significant_weight = sorted[0]`,
-acc_ml_optimiser_impl.h:3590). Engine tests:
+acc_ml_optimiser_impl.h:2532). Engine tests:
 [`test_resident_zero_oversampling.py`](../../tests/unit/test_resident_zero_oversampling.py).
