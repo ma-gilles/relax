@@ -3,7 +3,7 @@
 This module wires the five stage modules of
 ``em_device_resident_pass2_design_20260918.md`` into one driver with the
 signature and return type of
-:func:`recovar.em.sparse_pass2.sparse_pass2_bucketed.compute_pass2_stats_sparse_bucketed`:
+the compact engine's ``compute_pass2_stats_sparse_bucketed`` (deleted):
 
 * T5 :mod:`recovar.em.sparse_pass2.resident_candidates` -- the flat image-CSR
   candidate table and its fixed-capacity chunks;
@@ -18,13 +18,12 @@ signature and return type of
 
 Selection and scope
 -------------------
-The driver is selected only by ``RELAX_SPARSE_PASS2_RESIDENT=1`` and only in
-the production K=1 configuration (RELION x-half M-step, exact RELION fine
-Gaussian scoring, float32 fine posterior, fine M-step prune, float32 scoring,
-no diagnostics or dumps). Every other configuration raises
-:class:`NotImplementedError` naming the missing piece; the driver never falls
-back to the compact engine silently, because a silent fallback would make a
-measured comparison meaningless.
+The driver is relax's one pass-2 engine (``relax.sparse_pass2.dispatch``). It runs the
+production configuration (RELION x-half M-step, exact RELION fine Gaussian scoring, float32
+fine posterior, fine M-step prune, float32 scoring, no diagnostics or dumps); every other
+configuration raises :class:`ResidentConfigurationUnsupported` naming the missing piece.
+There is no other engine to fall back to. It is checked against the NumPy RELION E-step
+reference (``tests/unit/test_resident_relion_reference.py``).
 
 What is deliberately different from the compact engine
 ------------------------------------------------------
@@ -172,12 +171,10 @@ from relax.sparse_pass2.sparse_pass2_budget import (
 from relax.sparse_pass2.sparse_pass2_policy import (
     _RELION_WAVG_ATOMIC_SCALE_AA_ENV,
     ResidentConfigurationUnsupported,
-    _fresh_k1_direct_noise_default,
     _projection_cache_enabled_for_pass,
     _relion_exact_bpref_operands_enabled,
     _relion_powerclass_spectrum_norm_enabled,
     _relion_wavg_direct_modes,
-    resident_engine_selection,
 )
 from relax.sparse_pass2.sparse_pass2_posterior import (
     _relion_fine_parent_execution_order_enabled,
@@ -211,7 +208,6 @@ from relax.sparse_pass2.sparse_pass2_window import (
 
 logger = logging.getLogger(__name__)
 
-RESIDENT_PASS2_ENV = "RELAX_SPARSE_PASS2_RESIDENT"
 _ROW_CAPACITY_LADDER_ENV = "RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES"
 _IMAGE_CAPACITY_LADDER_ENV = "RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES"
 _MSTEP_BLOCK_ROWS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS"
@@ -296,27 +292,13 @@ _DEFAULT_ROW_CAPACITY_LADDER = (8192, 32768, 131072)
 _DEFAULT_IMAGE_CAPACITY_LADDER = (32, 128, 512)
 
 __all__ = [
-    "RESIDENT_PASS2_ENV",
     "ResidentClassInputs",
     "ResidentKClassPass2Output",
     "ResidentPass2Plan",
     "compute_k_class_pass2_stats_resident",
     "compute_pass2_stats_resident",
-    "resident_pass2_requested",
     "require_resident_production_configuration",
-    "resident_pass2_out_of_scope_reason",
 ]
-
-
-def resident_pass2_requested() -> bool:
-    """Return whether the device-resident K=1 pass 2 is selected (the default).
-
-    ``RELAX_SPARSE_PASS2_RESIDENT=0`` selects the compact engine for A/B checks;
-    configurations outside the resident scope route to compact either way
-    (:func:`resident_pass2_out_of_scope_reason`).
-    """
-
-    return resident_engine_selection(RESIDENT_PASS2_ENV) != "off"
 
 
 # ---------------------------------------------------------------------------
@@ -345,9 +327,7 @@ _DIAGNOSTIC_FLAG_ENVS = (
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise ResidentConfigurationUnsupported(
-            "The device-resident K=1 sparse pass 2 "
-            f"({RESIDENT_PASS2_ENV}=1) does not implement this configuration: {message}. "
-            "Clear the flag to use the compact engine; this path never falls back silently."
+            f"The device-resident sparse pass 2 does not implement this configuration: {message}."
         )
 
 
@@ -358,25 +338,23 @@ def _resident_wavg_arithmetic(
     preserve_bpref_particle_order,
     source_faithful_spectrum_norm,
 ):
-    """Resolve the fresh-K=1 Wavg arithmetic exactly as the compact engine does.
+    """Resolve the pass's Wavg arithmetic: RELION's atomic triplet with the direct low-shell residual.
 
     Returns ``(spectrum_norm, exact_bpref_operands, direct_noise_default,
-    atomic_scale_aa)``. The resident statistics stage implements only the
-    atomic Wavg triplet, which the compact engine selects inside the fresh
-    K=1 guard (``source_faithful_spectrum_norm``, i.e. a run that does not
-    replay RELION's BPref particle order).
+    atomic_scale_aa)``. The resident statistics stage implements RELION's atomic Wavg triplet
+    only, for fresh passes and subset or focused replays alike (user decision 2026-09-26: the
+    replays' earlier unordered, non-atomic arithmetic was the compact engine's).
+    ``preserve_bpref_particle_order`` no longer changes it.
     """
 
+    del preserve_bpref_particle_order
     fresh_k1_guard = bool(source_faithful_spectrum_norm)
     spectrum_norm = _relion_powerclass_spectrum_norm_enabled(fresh_k1_guard=fresh_k1_guard)
     exact_bpref_operands = _relion_exact_bpref_operands_enabled(
         fresh_k1_guard=fresh_k1_guard,
         source_faithful_spectrum_norm=spectrum_norm,
     )
-    direct_noise_default = _fresh_k1_direct_noise_default(
-        preserve_bpref_particle_order=preserve_bpref_particle_order,
-        relion_exact_bpref_operands=exact_bpref_operands,
-    )
+    direct_noise_default = True
     atomic_scale_aa = bool(
         accumulate_noise
         and scale_groups_available
@@ -385,45 +363,23 @@ def _resident_wavg_arithmetic(
     return spectrum_norm, exact_bpref_operands, direct_noise_default, atomic_scale_aa
 
 
-def resident_pass2_out_of_scope_reason(
-    *,
-    accumulate_noise=False,
-    scale_groups_available=False,
-    preserve_bpref_particle_order=False,
-    source_faithful_spectrum_norm=False,
-) -> str | None:
-    """Name the pass-2 routes the resident driver was never scoped to cover.
+def _require_gpu_pass2() -> None:
+    """Fail clearly without a GPU: the resident driver is relax's only pass 2 (no CPU back end).
 
-    These are not configuration drift inside the covered path, so they are not
-    a reason to stop a run. The caller sends them to the compact engine and
-    says so:
-
-    - a production-shaped pass (noise and group-scale statistics) that does not
-      preserve RELION's particle order (a subset or focused debugging replay)
-      uses the compact engine's unordered, non-atomic Wavg arithmetic; the
-      resident statistics stage implements only the atomic triplet.
-
-    A fresh K=1 pass at any box is in scope: the resident driver scores its
-    fine diff2 in RELION's native FFT units, as the compact engine does.
-
-    Everything else still raises through
-    :func:`require_resident_production_configuration`, because a silent
-    fallback there would hide a real mismatch.
+    Every resident stage is a CUDA FFI target (user decision 2026-09-26: pass 2 is GPU-only;
+    CPU correctness tests use the NumPy RELION E-step reference instead).
     """
 
-    if accumulate_noise and scale_groups_available:
-        atomic_scale_aa = _resident_wavg_arithmetic(
-            accumulate_noise=accumulate_noise,
-            scale_groups_available=scale_groups_available,
-            preserve_bpref_particle_order=preserve_bpref_particle_order,
-            source_faithful_spectrum_norm=source_faithful_spectrum_norm,
-        )[3]
-        if not atomic_scale_aa:
-            return (
-                "the non-atomic Wavg arithmetic of a pass without RELION's "
-                "preserved particle order (subset or focused replay)"
-            )
-    return None
+    from recovar import cuda_backproject
+
+    backend = jax.default_backend()
+    if backend != "gpu" or not cuda_backproject.custom_cuda_requested():
+        raise RuntimeError(
+            "relax's pass 2 runs only on the device-resident engine, which needs a CUDA GPU "
+            f"and relax's custom CUDA library (JAX backend {backend!r}, custom CUDA "
+            f"{'available' if cuda_backproject.custom_cuda_requested() else 'unavailable'}). "
+            "There is no CPU pass 2: run on a GPU node."
+        )
 
 
 def require_resident_production_configuration(**kwargs) -> None:
@@ -435,12 +391,11 @@ def require_resident_production_configuration(**kwargs) -> None:
     """
 
     _require(bool(kwargs["relion_x_half_mstep"]), "the RELION x-half M-step is required")
-    # The dispatcher opens a persistent texture only for the compact engine; a
-    # direct caller that supplies one gets a named refusal, not a drop.
+    # The resident driver builds its own texture from relion_projector_half; a
+    # caller that supplies a persistent one gets a named refusal, not a drop.
     _require(
         kwargs["relion_projector_texture"] is None,
-        "a persistent RELION projector texture belongs to the compact engine; "
-        "the resident driver projects from relion_projector_half",
+        "the resident driver projects from relion_projector_half, not a caller's persistent texture",
     )
     score_mode = kwargs["relion_firstiter_score_mode"]
     _require(
@@ -845,10 +800,10 @@ def plan_resident_chunk_memory(
             largest = max(terms, key=terms.get)
             if terms[largest] < 0:
                 raise ResidentConfigurationUnsupported(
-                    f"The device-resident K=1 pass 2 ({RESIDENT_PASS2_ENV}=1) does not implement this "
-                    f"configuration: its smallest chunk (rows {min(rows)}, images 1, M-step block 1) needs "
-                    f"{peak() / float(1024 ** 3):.2f} GiB against a {int(budget_bytes) / float(1024 ** 3):.2f} "
-                    "GiB budget. Clear the flag to use the compact engine; this path never falls back silently."
+                    "The device-resident pass 2 cannot fit this configuration: its smallest chunk "
+                    f"(rows {min(rows)}, images 1, M-step block 1) needs {peak() / float(1024 ** 3):.2f} GiB "
+                    f"against a {int(budget_bytes) / float(1024 ** 3):.2f} GiB budget. There is no other "
+                    "pass-2 engine; run on a GPU with more memory."
                 )
             if largest == "mstep":
                 block //= 2
@@ -2035,8 +1990,6 @@ def _resident_pass2(
     pixels, the accumulator and its adjoint radius use the reference model size.
     """
 
-    from recovar import cuda_backproject
-
     from relax.cuda import kernels as em_cuda_kernels
     from relax.sampling import (
         get_oversampled_translation_grid,
@@ -2050,6 +2003,7 @@ def _resident_pass2(
     )
     from relax.symmetry import canonicalize_rotational_symmetry
 
+    _require_gpu_pass2()
     overall_t0 = time.time()
     (
         use_exact_relion_gaussian,
@@ -2209,11 +2163,6 @@ def _resident_pass2(
         bool(relion_fine_mstep_prune) or bool(relion_x_half_mstep),
         "the resident M-step reconstructs from RELION's pruned fine weights",
     )
-    _require(
-        jax.default_backend() == "gpu" and cuda_backproject.custom_cuda_requested(),
-        "every resident stage is a CUDA FFI target",
-    )
-
     # ---- accumulator layout (identical to the compact engine) -------------
     volume_current_size = (
         mstep_current_size
@@ -2259,12 +2208,10 @@ def _resident_pass2(
             relion_projector_half = jnp.asarray(
                 stacked_halves if classes is None else stacked_halves[class_index]
             )
-            # RELION projects through a float32 texture (AccProjector::setMdlData),
-            # and so does the compact engine (dispatch's persistent texture, or the
-            # same narrowing in its own block path). Left complex128, this driver's
-            # projections fell back to the vmapped JAX projector: different values
-            # (os1 iteration 1: hard assignments 97.7% equal, 14384091) and twice
-            # the iteration time. One projection path in both engines.
+            # RELION projects through a float32 texture (AccProjector::setMdlData).
+            # Left complex128, this driver's projections fell back to the vmapped
+            # JAX projector: different values (os1 iteration 1: hard assignments
+            # 97.7% equal, 14384091) and twice the iteration time.
             if not use_float64_scoring and relion_projector_half.dtype == jnp.complex128:
                 relion_projector_half = relion_projector_half.astype(jnp.complex64)
             class_projector_halves.append(relion_projector_half)
@@ -3641,14 +3588,14 @@ def compute_pass2_stats_resident(
     reconstruction_group_ids=None,
     reconstruction_group_count=None,
 ):
-    """Device-resident K=1 sparse pass 2; same signature and return as the compact engine.
+    """Device-resident K=1 sparse pass 2, relax's one pass-2 engine.
 
     A one-class :func:`_resident_pass2`. See the module docstring for what is
-    layout-equal to the compact engine and what is a deliberate reduction-order
-    change.
+    layout-equal to the deleted compact engine and what is a deliberate
+    reduction-order change.
     """
 
-    # Every parameter, forwarded by name: the signature is the compact engine's.
+    # Every parameter, forwarded by name.
     del window_at_box  # _resident_pass2 keeps RELION's window at every size, the box included
     result = _resident_pass2(**locals())
     finalized = result.finalized
@@ -3978,9 +3925,7 @@ def _stream_row_capacity_ladder(row_ladder, *, bytes_per_rotation, max_projectio
         if _STREAM_PEAK_COPIES * float(c) * float(bytes_per_rotation) <= float(max_projection_bytes)
     )
     if not kept:
-        # A configuration refusal, so the resident default falls back to the
-        # compact engine with a logged reason and an explicit =1 stops the run
-        # (dispatch._resident_with_compact_default catches only this type).
+        # A configuration refusal, raised before any device work.
         raise ResidentConfigurationUnsupported(
             "the device-resident sparse pass 2 does not fit this pass: even the smallest row capacity "
             f"{min(int(c) for c in row_ladder)} needs "
@@ -3999,19 +3944,17 @@ def _cached_row_capacity_ladder(row_ladder, *, bytes_per_row, max_gather_bytes):
     orientation inside its diff2 kernel and never holds such a block; bounding the
     chunk by measured free memory keeps the gather within the device. The budget
     is :func:`_stream_projection_budget_bytes` with the device as its cap, read
-    after the cache is built. A refusal falls back to the compact engine by
-    default, as :func:`_stream_row_capacity_ladder` does.
+    after the cache is built. A refusal is an error, as in :func:`_stream_row_capacity_ladder`.
     """
 
     kept = tuple(int(c) for c in row_ladder if float(c) * float(bytes_per_row) <= float(max_gather_bytes))
     if not kept:
         smallest = min(int(c) for c in row_ladder)
         raise ResidentConfigurationUnsupported(
-            f"The device-resident K=1 sparse pass 2 ({RESIDENT_PASS2_ENV}=1) does not implement "
-            f"this configuration: even the smallest row capacity {smallest} gathers "
+            "The device-resident sparse pass 2 does not implement this configuration: even the "
+            f"smallest row capacity {smallest} gathers "
             f"{smallest * bytes_per_row / float(1024 ** 3):.2f} GiB of cached projections against a "
-            f"{max_gather_bytes / float(1024 ** 3):.2f} GiB budget. Clear the flag to use the compact "
-            "engine; this path never falls back silently."
+            f"{max_gather_bytes / float(1024 ** 3):.2f} GiB budget."
         )
     return kept
 
@@ -4924,7 +4867,7 @@ def _prepare_chunk_reconstruction_operands(
     )
     score_shifted_cc = cc_half_batch_norm = None
     if normalized_cc:
-        # The compact engine's operands (sparse_pass2_bucketed.py, the
+        # The compact engine's operands (the deleted sparse_pass2_bucketed.py, the
         # normalized_cc branch): the translated corrected score tile in the
         # score window, and the -0.5 * |image|^2 evidence offset.
         tile = shifted_corrected_score_half.reshape(image_capacity, int(n_fine_trans), -1)
@@ -5709,7 +5652,7 @@ def _resident_chunk_posterior(
     ) = posterior
     if reuse:
         # The compact engine's zero-oversampling arithmetic
-        # (sparse_pass2_bucketed.py, reuse_coarse_normalization): RELION keeps the
+        # (the deleted sparse_pass2_bucketed.py, reuse_coarse_normalization): RELION keeps the
         # coarse numeric sum but the fine pass's own exponent shift,
         # dLL = log(sum_weight) - (50 - best), and the coarse winner and Pmax.
         exponent_add = jnp.float32(50.0) - jnp.asarray(best_log_score, dtype=jnp.float32)

@@ -1,6 +1,5 @@
 """Full-box Wavg sentinel regressions recovered from donor344eca9fb4."""
 import numpy as np
-import pytest
 import jax.numpy as jnp
 from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle
 from relax.sparse_pass2.sparse_pass2_scoring import (
@@ -75,30 +74,3 @@ def test_full_box_resident_statistics_replaces_all_shells_without_norm_cutoff():
     assert cropped.norm_unweighted_shell_cutoff == 2
 
 
-@pytest.mark.gpu
-@pytest.mark.parametrize("direct_norm", [False, True])
-def test_full_box_native_host_noise_route(monkeypatch, direct_norm):
-    import jax
-    from test_resident_pass2_driver import _driver_fixture_args
-    from relax.sparse_pass2 import sparse_pass2_bucketed as sp
-
-    monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
-    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_SCALE_AA", "1")
-    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "0" if direct_norm else "1")
-    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", "1" if direct_norm else "0")
-    original = sp._replace_low_shell_noise_with_relion_wavg_direct_residual
-    calls = []
-
-    def tracked(*args, **kwargs):
-        calls.append(int(kwargs["exclusive_shell_stop"]))
-        assert kwargs["exclusive_shell_stop"] == 5
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(sp, "_replace_low_shell_noise_with_relion_wavg_direct_residual", tracked)
-    args = _driver_fixture_args()
-    args["current_size"] = None
-    result = sp.compute_pass2_stats_sparse_bucketed(**args)
-    for value in jax.tree_util.tree_leaves(result):
-        if value is not None:
-            assert np.isfinite(np.asarray(value)).all()
-    assert calls, "direct noise replacement not exercised"

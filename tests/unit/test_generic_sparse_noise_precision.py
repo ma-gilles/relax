@@ -1,7 +1,8 @@
 import numpy as np
 import jax.numpy as jnp
 import pytest
-from test_sparse_pass2_bucketed_perf import MockDataset, IMAGE_SHAPE, ForwardModelConfig
+from helpers.sparse_pass2_mock import IMAGE_SHAPE, MockDataset
+from recovar.core.configs import ForwardModelConfig
 from relax.sparse_pass2.sparse_pass2_bucket_io import prepare_unshifted_bucket_operands
 from helpers.float_compare import assert_matches
 

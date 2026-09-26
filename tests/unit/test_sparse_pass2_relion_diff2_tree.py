@@ -1,42 +1,20 @@
 """Reduction-order tests for RELION CUDA-style fine Gaussian scores."""
 
-import gc
-import weakref
 
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
-import jax
 import jax.numpy as jnp
 from helpers.sparse_pass2_test_support import (
     _relion_cuda_fine_tree_sum,
-    _score_pass2_bucket_relion_gpu_diff2_single_cached,
 )
 
 from relax.helpers.fourier_window import make_fourier_window_spec
 from relax.local.local_big_jit import _validate_relion_exact_fine_diff2_preconditions
 from relax.local.local_bucket_stages import _relion_exact_fine_full_to_compact_lookup
-from relax.sparse_pass2.sparse_pass2_scoring import (
-    _RELION_CUDA_FINE_REF3D_BLOCK_SIZE,
-    _RELION_CUDA_POWERCLASS_BLOCK_SIZE,
-    _relion_cuda_fine_diff2_min,
-    _relion_cuda_fine_diff2_sum,
-    _relion_cuda_fine_diff2_to_scores,
-    _relion_cuda_fine_full_to_compact_lookup,
-    _relion_cuda_fine_global_diff2_min,
-    _relion_cuda_fine_log_evidence_offset,
-    _relion_cuda_fine_pixel_weights,
-    _relion_cuda_powerclass_highres_norm_units,
-    _relion_cuda_powerclass_highres_xi2_half,
-    _score_pass2_bucket_relion_gpu_diff2,
-    _score_pass2_bucket_relion_gpu_diff2_from_raw,
-    _score_pass2_bucket_relion_gpu_diff2_raw,
-    _score_pass2_bucket_relion_gpu_diff2_single_cached_raw,
-    _score_pass2_pairs_relion_gpu_diff2,
-    _score_pass2_pairs_relion_gpu_diff2_raw,
-)
+from relax.sparse_pass2.sparse_pass2_scoring import _RELION_CUDA_FINE_REF3D_BLOCK_SIZE, _RELION_CUDA_POWERCLASS_BLOCK_SIZE, _relion_cuda_fine_diff2_sum, _relion_cuda_fine_diff2_to_scores, _relion_cuda_fine_full_to_compact_lookup, _relion_cuda_fine_pixel_weights, _relion_cuda_powerclass_highres_norm_units, _relion_cuda_powerclass_highres_xi2_half, _score_pass2_bucket_relion_gpu_diff2, _score_pass2_bucket_relion_gpu_diff2_raw
 
 pytestmark = pytest.mark.unit
 
@@ -299,87 +277,6 @@ def test_relion_cuda_powerclass_norm_units_preserve_divide_before_square(height)
     assert actual.dtype == np.float32
 
 
-def test_relion_cuda_fine_raw_routes_add_powerclass_tail_once_per_hypothesis():
-    shifted = jnp.zeros((1, 2, 5), dtype=jnp.complex64)
-    projection = jnp.zeros((1, 3, 5), dtype=jnp.complex64)
-    corr = jnp.ones((1, 5), dtype=jnp.float32)
-    half_weight = jnp.ones((5,), dtype=jnp.float32)
-    highres = jnp.asarray([0.02080046385526657], dtype=jnp.float32)
-    dense = np.asarray(
-        _score_pass2_bucket_relion_gpu_diff2_raw(
-            shifted, corr, projection, half_weight, None, highres
-        )
-    )
-    cached = np.asarray(
-        _score_pass2_bucket_relion_gpu_diff2_single_cached_raw(
-            shifted[0], corr[0], projection[0], half_weight, None, highres[0]
-        )
-    )
-    local_rotation_row = jnp.asarray([[0, 2, 1]], dtype=jnp.int32)
-    translation_idx = jnp.asarray([[1, 0, 1]], dtype=jnp.int32)
-    pair_mask = jnp.ones((1, 3), dtype=bool)
-    pairs = np.asarray(
-        _score_pass2_pairs_relion_gpu_diff2_raw(
-            shifted,
-            corr,
-            projection,
-            half_weight,
-            local_rotation_row,
-            translation_idx,
-            pair_mask,
-            None,
-            highres,
-        )
-    )
-
-    expected = np.float32(np.asarray(highres)[0])
-    assert_matches(dense, np.full((1, 3, 2), expected, dtype=np.float32))
-    assert_matches(cached, dense[0])
-    assert_matches(pairs, np.full((1, 3), expected, dtype=np.float32))
-
-
-def test_relion_cuda_fine_retained_raw_conversion_matches_recompute():
-    rng = np.random.default_rng(12131)
-    shifted = jnp.asarray(
-        (rng.normal(size=(2, 4, 17)) + 1j * rng.normal(size=(2, 4, 17))).astype(np.complex64)
-    )
-    projection = jnp.asarray(
-        (rng.normal(size=(2, 5, 17)) + 1j * rng.normal(size=(2, 5, 17))).astype(np.complex64)
-    )
-    corr = jnp.asarray(rng.uniform(0.2, 2.0, size=(2, 17)), dtype=jnp.float32)
-    half_weight = jnp.asarray(rng.choice([1.0, 2.0], size=17), dtype=jnp.float32)
-    rotation_prior = jnp.asarray(rng.normal(size=(2, 5)), dtype=jnp.float32)
-    translation_prior = jnp.asarray(rng.normal(size=(2, 4)), dtype=jnp.float32)
-    candidate_mask = jnp.asarray(rng.random(size=(2, 5, 4)) > 0.2)
-
-    raw = _score_pass2_bucket_relion_gpu_diff2_raw(
-        shifted,
-        corr,
-        projection,
-        half_weight,
-    )
-    common_min = _relion_cuda_fine_diff2_min(raw, candidate_mask)
-    retained_scores = _score_pass2_bucket_relion_gpu_diff2_from_raw(
-        raw,
-        rotation_prior,
-        translation_prior,
-        candidate_mask,
-        common_min,
-    )
-    recomputed_scores = _score_pass2_bucket_relion_gpu_diff2(
-        shifted,
-        corr,
-        projection,
-        half_weight,
-        rotation_prior,
-        translation_prior,
-        candidate_mask,
-        min_diff2=common_min,
-    )
-
-    assert_matches(np.asarray(retained_scores), np.asarray(recomputed_scores))
-
-
 def test_relion_cuda_fine_conversion_uses_common_min_and_source_operation_order():
     # Captured case-20 particle 469 values: RELION's candidates differ by one
     # ULP in positive diff2. The large common min must be inserted at the same
@@ -428,153 +325,6 @@ def test_relion_cuda_fine_conversion_rejects_diff2_below_external_minimum():
         scores[0, 1:],
         np.float32(external_min - np.asarray(diff2, dtype=np.float32)[0, 1:]),
     )
-
-
-def test_relion_cuda_fine_common_min_spans_chunks_and_classes_and_sets_evidence_offset():
-    raw_partitions = (
-        np.asarray([[[1000.25, 999.75]], [[1200.0, 1199.5]]], dtype=np.float32),
-        np.asarray([[[999.5]], [[1201.0]]], dtype=np.float32),
-        np.asarray([[[1002.0, 1003.0]], [[1198.75, 1199.0]]], dtype=np.float32),
-    )
-    masks = tuple(np.ones(raw.shape, dtype=bool) for raw in raw_partitions)
-    masks[1][1, 0, 0] = False
-    common_min = np.asarray(
-        _relion_cuda_fine_global_diff2_min(
-            tuple(jnp.asarray(raw) for raw in raw_partitions),
-            tuple(jnp.asarray(mask) for mask in masks),
-        )
-    )
-    assert_matches(common_min, np.asarray([999.5, 1198.75], dtype=np.float32))
-
-    converted = []
-    for raw, mask in zip(raw_partitions, masks, strict=True):
-        converted.append(
-            np.asarray(
-                _relion_cuda_fine_diff2_to_scores(
-                    jnp.asarray(raw),
-                    jnp.zeros_like(jnp.asarray(raw)),
-                    jnp.zeros_like(jnp.asarray(raw)),
-                    jnp.asarray(mask),
-                    min_diff2=jnp.asarray(common_min),
-                )
-            )
-        )
-    merged_scores = np.concatenate([score.reshape(2, -1) for score in converted], axis=1)
-    merged_mask = np.concatenate([mask.reshape(2, -1) for mask in masks], axis=1)
-    expected = np.float32(common_min[:, None] - np.concatenate(
-        [raw.reshape(2, -1) for raw in raw_partitions], axis=1
-    ))
-    expected = np.where(merged_mask, expected, -np.inf)
-    assert_matches(merged_scores, expected)
-
-    finite_scores = np.where(merged_mask, merged_scores, -np.inf).astype(np.float64)
-    max_score = np.max(finite_scores, axis=1)
-    centered_log_z = max_score + np.log(np.sum(np.exp(finite_scores - max_score[:, None]), axis=1))
-    absolute_log_evidence = centered_log_z + np.asarray(
-        _relion_cuda_fine_log_evidence_offset(jnp.asarray(common_min)), dtype=np.float64
-    )
-    assert_matches(absolute_log_evidence, centered_log_z - common_min.astype(np.float64))
-
-
-def test_relion_cuda_fine_common_min_ignores_invalid_partitions_and_nonfinite_padding():
-    raw_partitions = (
-        jnp.asarray(
-            [
-                [[np.nan, np.inf]],
-                [[np.nan, 50.0]],
-                [[np.nan, np.inf]],
-            ],
-            dtype=jnp.float32,
-        ),
-        jnp.asarray(
-            [
-                [[9.0, 7.0]],
-                [[11.0, 13.0]],
-                [[np.nan, np.inf]],
-            ],
-            dtype=jnp.float32,
-        ),
-    )
-    masks = (
-        jnp.asarray(
-            [
-                [[False, False]],
-                [[True, False]],
-                [[False, False]],
-            ]
-        ),
-        jnp.asarray(
-            [
-                [[True, True]],
-                [[True, True]],
-                [[True, True]],
-            ]
-        ),
-    )
-
-    # Image zero has a completely invalid first class: it must not inject the
-    # local all-invalid sentinel zero ahead of the valid class minimum seven.
-    # Image one ignores both the masked finite 50 and a candidate NaN. Image
-    # two is globally invalid, for which zero is only an inert output sentinel.
-    common_min = np.asarray(_relion_cuda_fine_global_diff2_min(raw_partitions, masks))
-    assert_matches(common_min, np.asarray([7.0, 11.0, 0.0], dtype=np.float32))
-
-    local_min = np.asarray(_relion_cuda_fine_diff2_min(raw_partitions[0], masks[0]))
-    assert_matches(local_min, np.zeros(3, dtype=np.float32))
-
-    converted = [
-        np.asarray(
-            _relion_cuda_fine_diff2_to_scores(
-                raw,
-                jnp.zeros_like(raw),
-                jnp.zeros_like(raw),
-                mask,
-                min_diff2=jnp.asarray(common_min),
-            )
-        )
-        for raw, mask in zip(raw_partitions, masks, strict=True)
-    ]
-    assert np.all(np.isneginf(converted[0]))
-    assert_matches(converted[1][0, 0], np.asarray([-2.0, 0.0], dtype=np.float32))
-    assert_matches(converted[1][1, 0], np.asarray([0.0, -2.0], dtype=np.float32))
-    assert np.all(np.isneginf(converted[1][2]))
-
-
-def test_relion_cuda_fine_host_staged_common_min_serializes_raw_device_uploads(monkeypatch):
-    from relax.sparse_pass2 import sparse_pass2_scoring as bucketed_mod
-    original_partition_min = bucketed_mod._relion_cuda_fine_partition_diff2_min_or_inf
-    raw_device_refs = []
-    max_prior_raw_uploads_alive = 0
-
-    def tracked_partition_min(raw_device, mask_device):
-        nonlocal max_prior_raw_uploads_alive
-        gc.collect()
-        max_prior_raw_uploads_alive = max(
-            max_prior_raw_uploads_alive,
-            sum(ref() is not None for ref in raw_device_refs),
-        )
-        result = original_partition_min(raw_device, mask_device)
-        jax.block_until_ready(result)
-        raw_device_refs.append(weakref.ref(raw_device))
-        return result
-
-    monkeypatch.setattr(
-        bucketed_mod,
-        "_relion_cuda_fine_partition_diff2_min_or_inf",
-        tracked_partition_min,
-    )
-    host_raw = tuple(
-        np.full((2, 3, 4), 20.0 - index, dtype=np.float32)
-        for index in range(4)
-    )
-    host_masks = tuple(np.ones(raw.shape, dtype=bool) for raw in host_raw)
-    minimum = np.asarray(
-        bucketed_mod._relion_cuda_fine_global_diff2_min(host_raw, host_masks)
-    )
-
-    assert_matches(minimum, np.asarray([17.0, 17.0], dtype=np.float32))
-    assert len(raw_device_refs) == 4
-    assert max_prior_raw_uploads_alive <= 1
 
 
 def test_relion_cuda_fine_raw_scorer_hlo_avoids_hypothesis_pixel_temporary():
@@ -723,114 +473,6 @@ def test_exact_fine_big_jit_still_rejects_missing_exact_preprocessing():
             relion_exact_bpref_operands=True,
             use_relion_cuda_preprocess=False,
         )
-
-
-def test_dense_cached_and_compact_gaussian_routes_use_same_exact_scores():
-    rng = np.random.default_rng(469)
-    batch, rotations, translations, pixels = 2, 4, 3, 513
-    shifted = (
-        rng.normal(size=(batch, translations, pixels))
-        + 1j * rng.normal(size=(batch, translations, pixels))
-    ).astype(np.complex64)
-    projection = (
-        rng.normal(size=(batch, rotations, pixels))
-        + 1j * rng.normal(size=(batch, rotations, pixels))
-    ).astype(np.complex64)
-    corr = rng.uniform(0.01, 2.0, size=(batch, pixels)).astype(np.float32)
-    half_weight = rng.choice(np.asarray([1.0, 2.0], dtype=np.float32), size=pixels)
-    # Global x64 is enabled in RECOVAR; scorers must nevertheless follow
-    # RELION GPU XFLOAT for both orientation and translation log-priors.
-    rotation_prior = rng.normal(scale=0.1, size=(batch, rotations)).astype(np.float64)
-    translation_prior = rng.normal(scale=0.1, size=(batch, translations)).astype(np.float64)
-    candidate_mask = np.ones((batch, rotations, translations), dtype=bool)
-    candidate_mask[0, 2, 1] = False
-
-    dense_raw = np.asarray(
-        _score_pass2_bucket_relion_gpu_diff2_raw(
-            jnp.asarray(shifted),
-            jnp.asarray(corr),
-            jnp.asarray(projection),
-            jnp.asarray(half_weight),
-        )
-    )
-
-    dense = np.asarray(
-        _score_pass2_bucket_relion_gpu_diff2(
-            jnp.asarray(shifted),
-            jnp.asarray(corr),
-            jnp.asarray(projection),
-            jnp.asarray(half_weight),
-            jnp.asarray(rotation_prior),
-            jnp.asarray(translation_prior),
-            jnp.asarray(candidate_mask),
-        )
-    )
-    cached = np.asarray(
-        _score_pass2_bucket_relion_gpu_diff2_single_cached(
-            jnp.asarray(shifted[0]),
-            jnp.asarray(corr[0]),
-            jnp.asarray(projection[0]),
-            jnp.asarray(half_weight),
-            jnp.asarray(rotation_prior[0]),
-            jnp.asarray(translation_prior[0]),
-            jnp.asarray(candidate_mask[0]),
-        )
-    )
-    cached_raw = np.asarray(
-        _score_pass2_bucket_relion_gpu_diff2_single_cached_raw(
-            jnp.asarray(shifted[0]),
-            jnp.asarray(corr[0]),
-            jnp.asarray(projection[0]),
-            jnp.asarray(half_weight),
-        )
-    )
-    assert_matches(cached_raw, dense_raw[0])
-    assert_matches(cached, dense[0])
-
-    pair_count = max(int(np.count_nonzero(row)) for row in candidate_mask)
-    local_rotation_row = np.zeros((batch, pair_count), dtype=np.int32)
-    translation_idx = np.zeros((batch, pair_count), dtype=np.int32)
-    pair_mask = np.zeros((batch, pair_count), dtype=bool)
-    for batch_index in range(batch):
-        rows_valid, translations_valid = np.nonzero(candidate_mask[batch_index])
-        count = rows_valid.size
-        local_rotation_row[batch_index, :count] = rows_valid
-        translation_idx[batch_index, :count] = translations_valid
-        pair_mask[batch_index, :count] = True
-    pair_rotation_prior = np.take_along_axis(rotation_prior, local_rotation_row, axis=1)
-    compact = np.asarray(
-        _score_pass2_pairs_relion_gpu_diff2(
-            jnp.asarray(shifted),
-            jnp.asarray(corr),
-            jnp.asarray(projection),
-            jnp.asarray(half_weight),
-            jnp.asarray(pair_rotation_prior),
-            jnp.asarray(translation_prior),
-            jnp.asarray(local_rotation_row),
-            jnp.asarray(translation_idx),
-            jnp.asarray(pair_mask),
-        )
-    )
-    compact_raw = np.asarray(
-        _score_pass2_pairs_relion_gpu_diff2_raw(
-            jnp.asarray(shifted),
-            jnp.asarray(corr),
-            jnp.asarray(projection),
-            jnp.asarray(half_weight),
-            jnp.asarray(local_rotation_row),
-            jnp.asarray(translation_idx),
-            jnp.asarray(pair_mask),
-        )
-    )
-    rows = np.arange(batch)[:, None]
-    expected_compact_raw = dense_raw[rows, local_rotation_row, translation_idx]
-    assert_matches(compact_raw, expected_compact_raw)
-    expected_compact = dense[rows, local_rotation_row, translation_idx]
-    expected_compact = np.where(pair_mask, expected_compact, -np.inf)
-    assert_matches(compact, expected_compact)
-    assert dense.dtype == cached.dtype == compact.dtype == np.float32
-    assert np.isneginf(dense[0, 2, 1])
-    assert np.all(np.isneginf(compact[~pair_mask]))
 
 
 def test_relion_cuda_fine_diff2_handles_zero_pixels_and_nonfinite_scores():

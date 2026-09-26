@@ -7,90 +7,11 @@ from typing import NamedTuple
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from helpers.float_compare import assert_matches
-from helpers.mstep_reference import numpy_relion_f32_mstep_sums
 
 from relax.helpers.types import make_relion_stats
-from relax.sparse_pass2.sparse_pass2_compact_pair_sums import _compact_pair_weighted_rotation_sums
-from relax.sparse_pass2.sparse_pass2_window import (
-    subtract_projected_reference_from_sparse_mstep_rotation_sums,
-    subtract_projected_reference_from_sparse_mstep_sums,
-)
 from relax.vdam.sparse_pass2_estep import _resolve_pass2_engine
 
 pytestmark = pytest.mark.unit
-
-
-def test_sparse_residual_mstep_matches_vdam_formula():
-    summed = jnp.asarray(
-        [[[7.0 + 2.0j, -3.0 + 1.0j], [4.0 - 1.0j, 5.0 + 3.0j]]],
-        dtype=jnp.complex64,
-    )
-    reconstruction_probs = jnp.asarray(
-        [[[0.2, 0.3, 0.0], [0.1, 0.15, 0.25]]],
-        dtype=jnp.float32,
-    )
-    projected_reference = jnp.asarray(
-        [[[2.0 + 1.0j, -1.0 + 0.5j], [3.0 - 2.0j, 0.5 + 1.0j]]],
-        dtype=jnp.complex64,
-    )
-    ctf2_over_noise = jnp.asarray([[4.0, 0.25]], dtype=jnp.float32)
-
-    actual = subtract_projected_reference_from_sparse_mstep_sums(
-        summed,
-        reconstruction_probs,
-        projected_reference,
-        ctf2_over_noise,
-    )
-    posterior_mass = np.asarray(reconstruction_probs).sum(axis=-1)
-    expected = np.asarray(summed) - (
-        posterior_mass[..., None]
-        * np.asarray(projected_reference)
-        * np.asarray(ctf2_over_noise)[:, None, :]
-    )
-    assert_matches(actual, expected)
-    from_mass = subtract_projected_reference_from_sparse_mstep_rotation_sums(
-        summed,
-        posterior_mass,
-        projected_reference,
-        ctf2_over_noise,
-    )
-    assert_matches(from_mass, expected)
-
-
-def test_compact_mstep_can_preserve_relion_translation_reduction(monkeypatch):
-    monkeypatch.setenv("RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION", "1")
-    pair_probs = jnp.asarray([[0.2, 0.3, 0.1, 0.4]], dtype=jnp.float32)
-    rotation_rows = jnp.asarray([[0, 0, 1, 1]], dtype=jnp.int32)
-    translation_ids = jnp.asarray([[0, 1, 0, 1]], dtype=jnp.int32)
-    pair_mask = jnp.ones_like(pair_probs, dtype=bool)
-    shifted = jnp.asarray(
-        [[[1.0 + 2.0j, -3.0 + 0.5j], [4.0 - 1.0j, 2.0 + 3.0j]]],
-        dtype=jnp.complex64,
-    )
-    ctf2 = jnp.asarray([[2.0, 0.25]], dtype=jnp.float32)
-
-    summed, weight, probs_sum_t, _translation_posterior = (
-        _compact_pair_weighted_rotation_sums(
-            pair_probs,
-            rotation_rows,
-            translation_ids,
-            pair_mask,
-            shifted,
-            ctf2,
-            n_rotation_rows=2,
-            relion_x_half=True,
-        )
-    )
-    dense_probs = jnp.asarray([[[0.2, 0.3], [0.1, 0.4]]], dtype=jnp.float32)
-    expected_summed, expected_weight = numpy_relion_f32_mstep_sums(
-        dense_probs,
-        shifted,
-        ctf2,
-    )
-    assert_matches(summed, expected_summed)
-    assert_matches(weight, expected_weight)
-    assert_matches(probs_sum_t, jnp.sum(dense_probs, axis=-1))
 
 
 class _StatsResult(NamedTuple):
@@ -106,8 +27,6 @@ def _stats(rotation_sums):
         rotation_posterior_sums=np.asarray(rotation_sums, dtype=np.float64),
         rotation_dtype=jnp.float64,
     )
-
-
 
 
 def test_one_engine_serves_k1_and_kclass():

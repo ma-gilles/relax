@@ -55,26 +55,6 @@ def test_block_residual_is_the_exact_local_statement():
 
 @requires_resident_gpu
 @pytest.mark.usefixtures("_resident_production_env")
-def test_resident_residual_backprojection_matches_the_compact_engine():
-    from relax.sparse_pass2.sparse_pass2_bucketed import compute_pass2_stats_sparse_bucketed
-
-    args = _vdam_args(residual=True, groups=True)
-    compact = compute_pass2_stats_sparse_bucketed(**args)
-    resident = rp.compute_pass2_stats_resident(**args)
-    plain = rp.compute_pass2_stats_resident(**_vdam_args(residual=False, groups=True))
-
-    # The residual changes the numerator only; the weight is RELION's Fweight either way.
-    assert _rel_l2(plain.Ft_y, resident.Ft_y) > 1e-3
-    assert _rel_l2(plain.Ft_ctf, resident.Ft_ctf) < 1e-6
-    np.testing.assert_array_equal(compact.hard_assignment, resident.hard_assignment)
-    assert _rel_l2(compact.Ft_y, resident.Ft_y) < 1e-6
-    assert _rel_l2(compact.Ft_ctf, resident.Ft_ctf) < 1e-6
-    for field in ("wsum_sigma2_noise", "wsum_img_power"):
-        assert _rel_l2(getattr(compact.noise_stats, field), getattr(resident.noise_stats, field)) < 1e-4, field
-
-
-@requires_resident_gpu
-@pytest.mark.usefixtures("_resident_production_env")
 def test_resident_without_scale_groups_keeps_the_scale_one_wavg():
     """No ``--scale``: RELION's Wavg still runs at scale 1 and only the XA/AA sums are skipped.
 
@@ -194,25 +174,6 @@ def test_class_accumulators_stack_the_pseudo_halfsets():
     np.testing.assert_array_equal(np.asarray(ctf1)[:, 0], [11.0, 13.0])
     single = result._replace(Ft_y=volumes[:2], Ft_ctf=volumes[:2], n_slot_groups=1)
     assert np.asarray(rp._class_accumulators(single, 1)[0])[0] == 1.0
-
-
-def test_compact_pass_refuses_reconstruction_groups(monkeypatch):
-    """The compact engine has one BPref pair per class; groups must not merge silently."""
-
-    from test_resident_pass2_driver import _driver_fixture_args
-
-    from relax.sparse_pass2.dispatch import compute_pass2_stats_sparse
-
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT", "0")
-    args = _driver_fixture_args()
-    n_images = len(args["significant_sample_indices"])
-    args["mean_variance"] = None
-    with pytest.raises(NotImplementedError, match="device-resident pass 2"):
-        compute_pass2_stats_sparse(
-            **args,
-            reconstruction_group_ids=np.arange(n_images) % 2,
-            reconstruction_group_count=2,
-        )
 
 
 # ---------------------------------------------------------------------------

@@ -981,7 +981,6 @@ def test_em_parity_long_kclass_full(tmp_path, start):
 # ``resident`` adds the resident flag set that is becoming the default (speed's 10097 it13 run,
 # relax_speed_20260923/runs/pair1it_d8f4ce1_it13); drop the arm once those are the defaults.
 REALDATA_HP3_RESIDENT_ENV = {
-    "RELAX_SPARSE_PASS2_RESIDENT": "1",
     "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS": "1",
     "RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT": "1",
     "RELAX_LOCAL_SEARCH_RESIDENT": "1",

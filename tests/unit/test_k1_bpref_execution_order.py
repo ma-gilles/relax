@@ -1,26 +1,14 @@
 from __future__ import annotations
 
-import jax.numpy as jnp
 import numpy as np
 import pytest
-from helpers.float_compare import assert_matches, matches
 
 from relax.classification.k_class import _apply_bpref_particle_order_policy
 from relax.diagnostics.relion_replay import _validate_bpref_particle_order_scope
 from relax.helpers.batch_planning import _plan_consecutive_padded_batches
 from relax.helpers.env_flags import parse_env_flag
 from relax.scoring.sparse_bucket_arrays import _bucket_pass2_inputs
-from relax.sparse_pass2.sparse_pass2_policy import (
-    _BPREF_EXECUTION_BATCH_CONSECUTIVE_EQUAL_SUPPORT_ENV,
-    _BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE_ENV,
-    _BPREF_EXECUTION_ORDER_CHUNK_SIZE_ENV,
-    _BPREF_EXECUTION_ORDER_LOCAL_FILE_ENV,
-    _BPREF_REVERSE_PHYSICAL_ORDER_ENV,
-    _load_bpref_execution_order_local_override,
-    _resolve_bpref_execution_bucket_policy,
-    _resolve_bpref_processing_order,
-)
-from relax.sparse_pass2.sparse_pass2_posterior import _normalize_pass2_bucket
+from relax.sparse_pass2.sparse_pass2_policy import _BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE_ENV
 
 
 def test_sparse_pass2_execution_order_override_is_exact_and_single_particle():
@@ -292,134 +280,6 @@ def test_sparse_pass2_execution_order_can_stay_stable_within_size_buckets():
 def test_grouped_execution_order_environment_flag_uses_module_parser(monkeypatch):
     monkeypatch.setenv(_BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE_ENV, "1")
     assert parse_env_flag(_BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE_ENV)
-
-
-def test_fresh_k1_defaults_to_bounded_mixed_support_buckets(monkeypatch):
-    monkeypatch.delenv(_BPREF_EXECUTION_ORDER_CHUNK_SIZE_ENV, raising=False)
-    monkeypatch.delenv(
-        _BPREF_EXECUTION_BATCH_CONSECUTIVE_EQUAL_SUPPORT_ENV,
-        raising=False,
-    )
-    assert _resolve_bpref_execution_bucket_policy(
-        preserve_bpref_particle_order=True,
-        processing_order_group_by_bucket_size=False,
-    ) == (220, False)
-
-    monkeypatch.setenv(_BPREF_EXECUTION_ORDER_CHUNK_SIZE_ENV, "4")
-    assert _resolve_bpref_execution_bucket_policy(
-        preserve_bpref_particle_order=True,
-        processing_order_group_by_bucket_size=False,
-    ) == (4, False)
-
-
-def test_consecutive_equal_support_batching_is_an_explicit_diagnostic(monkeypatch):
-    monkeypatch.delenv(_BPREF_EXECUTION_ORDER_CHUNK_SIZE_ENV, raising=False)
-    monkeypatch.setenv(_BPREF_EXECUTION_BATCH_CONSECUTIVE_EQUAL_SUPPORT_ENV, "1")
-    assert _resolve_bpref_execution_bucket_policy(
-        preserve_bpref_particle_order=True,
-        processing_order_group_by_bucket_size=False,
-    ) == (1, True)
-
-    monkeypatch.setenv(_BPREF_EXECUTION_ORDER_CHUNK_SIZE_ENV, "4")
-    with pytest.raises(ValueError, match="cannot be combined"):
-        _resolve_bpref_execution_bucket_policy(
-            preserve_bpref_particle_order=True,
-            processing_order_group_by_bucket_size=False,
-        )
-
-    monkeypatch.delenv(_BPREF_EXECUTION_ORDER_CHUNK_SIZE_ENV)
-    with pytest.raises(ValueError, match="requires the guarded fresh K=1"):
-        _resolve_bpref_execution_bucket_policy(
-            preserve_bpref_particle_order=False,
-            processing_order_group_by_bucket_size=False,
-        )
-
-
-def test_bounded_fresh_k1_default_does_not_expand_to_other_order_policies(monkeypatch):
-    monkeypatch.delenv(_BPREF_EXECUTION_ORDER_CHUNK_SIZE_ENV, raising=False)
-    monkeypatch.delenv(
-        _BPREF_EXECUTION_BATCH_CONSECUTIVE_EQUAL_SUPPORT_ENV,
-        raising=False,
-    )
-    assert _resolve_bpref_execution_bucket_policy(
-        preserve_bpref_particle_order=False,
-        processing_order_group_by_bucket_size=False,
-    ) == (1, False)
-    assert _resolve_bpref_execution_bucket_policy(
-        preserve_bpref_particle_order=True,
-        processing_order_group_by_bucket_size=True,
-    ) == (1, False)
-
-
-def test_mixed_support_padding_keeps_float_outputs_in_the_default_band():
-    rng = np.random.default_rng(7)
-    scores = rng.normal(size=(1, 16, 116)).astype(np.float32)
-    padded_scores = np.full((1, 32, 116), -np.inf, dtype=np.float32)
-    padded_scores[:, :16] = scores
-
-    unpadded = _normalize_pass2_bucket(jnp.asarray(scores))
-    padded = _normalize_pass2_bucket(jnp.asarray(padded_scores))
-    for field_index, (unpadded_field, padded_field) in enumerate(zip(unpadded, padded)):
-        padded_array = np.asarray(padded_field)
-        if field_index == 1:
-            padded_array = padded_array[:, :16]
-        unpadded_array = np.asarray(unpadded_field)
-        # Hopper may select a different float64 reduction tree when the all-zero
-        # padded tail changes shape (up to 4 ULP measured): floats get the default
-        # band, discrete winners stay exactly equal.
-        assert_matches(unpadded_array, padded_array)
-
-
-def test_execution_order_file_is_fail_closed(monkeypatch, tmp_path):
-    order_path = tmp_path / "order.txt"
-    order_path.write_text("2\n0\n1\n")
-    monkeypatch.setenv(_BPREF_EXECUTION_ORDER_LOCAL_FILE_ENV, str(order_path))
-    assert matches(
-        _load_bpref_execution_order_local_override(3),
-        np.asarray([2, 0, 1]),
-    )
-
-    order_path.write_text("2\n0\n0\n")
-    with pytest.raises(ValueError, match="must contain a permutation"):
-        _load_bpref_execution_order_local_override(3)
-
-
-def test_production_execution_order_is_identity_and_rejects_diagnostic_override(
-    monkeypatch,
-    tmp_path,
-):
-    assert matches(
-        _resolve_bpref_processing_order(
-            4,
-            preserve_bpref_particle_order=True,
-        ),
-        np.arange(4, dtype=np.int64),
-    )
-
-    order_path = tmp_path / "order.txt"
-    order_path.write_text("2\n0\n1\n")
-    monkeypatch.setenv(_BPREF_EXECUTION_ORDER_LOCAL_FILE_ENV, str(order_path))
-    with pytest.raises(ValueError, match="cannot be combined"):
-        _resolve_bpref_processing_order(
-            3,
-            preserve_bpref_particle_order=True,
-        )
-
-
-def test_reverse_physical_execution_order_is_narrow_and_exact(monkeypatch):
-    monkeypatch.setenv(_BPREF_REVERSE_PHYSICAL_ORDER_ENV, "1")
-    assert matches(
-        _resolve_bpref_processing_order(
-            5,
-            preserve_bpref_particle_order=True,
-        ),
-        np.asarray([4, 3, 2, 1, 0], dtype=np.int64),
-    )
-    with pytest.raises(ValueError, match="requires the guarded fresh K=1"):
-        _resolve_bpref_processing_order(
-            5,
-            preserve_bpref_particle_order=False,
-        )
 
 
 def test_sparse_pass_order_policy_is_k1_only_and_dormant_by_default():

@@ -102,8 +102,8 @@ That module builds local pose neighborhoods, asks
 batch sizes, calls the selected kernel and returns `_LocalSearchIterationResult`
 with named accumulators, pose fields, statistics and optional class summaries.
 The controller reads those fields directly.
-The exact sparse pass-2 kernels in
-[`sparse_pass2_bucketed`](../../relax/sparse_pass2/sparse_pass2_bucketed.py)
+The resident pass-2 operands in
+[`sparse_pass2_scoring`](../../relax/sparse_pass2/sparse_pass2_scoring.py)
 reproduce RELION's CUDA `powerClass` through one operand owner:
 `_relion_powerclass_packed_image` (RELION's unshifted `Faux` layout and
 amplitude convention), `_relion_powerclass_operands` (CUDA shell map and pixel
@@ -111,12 +111,9 @@ validity) and `_relion_powerclass_native_spectrum_highres` (native atomics),
 shared by the JAX reproductions and the native wrappers
 ([`test_powerclass_operand_owner.py`](../../tests/unit/test_powerclass_operand_owner.py)).
 `_relion_powerclass_noise_terms` selects the `highres_Xi2` and high-shell norm
-terms a sparse pass-2 batch needs for both sparse scorers
-([`test_powerclass_noise_terms_owner.py`](../../tests/unit/test_powerclass_noise_terms_owner.py)).
-`_sparse_pass2_window_setup` builds the forward-model configuration, score and
-reconstruction windows, RELION x-half reconstruction indices and the windowed-prepare
-decision for both sparse scorers
-([`test_sparse_pass2_window_setup_owner.py`](../../tests/unit/test_sparse_pass2_window_setup_owner.py)).
+terms the resident scoring and operand stages need. `_sparse_pass2_window_setup` builds the
+forward-model configuration, score and reconstruction windows, RELION x-half reconstruction
+indices and the windowed-prepare decision of a resident pass.
 In [`local_score_pass`](../../relax/local/local_score_pass.py),
 `_support_from_local_probs` is the one reconstruction-support rule (full-sort
 significance or per-image threshold, else the rotation mask) used by every fused
@@ -266,24 +263,12 @@ projects one rotation block through RELION's Projector onto the clamped `2 r_max
 requested) square with the scorer rotations transposed at the handoff; the centered-row
 projector reorders its rows and the indexed projector gathers its pixels from that block
 ([`test_projector_fftw_block_owner.py`](../../tests/unit/test_projector_fftw_block_owner.py)).
-[`pass2_diagnostics._optional_operand_row_fields`](../../relax/diagnostics/pass2.py)
-captures one image's optional RELION score operands for the K=1 pass-2 dump, recording
-operands the caller did not supply as absent (empty arrays of the capture dtype, or NaN for
-the per-image normalization factor and batch corrections); the selected-rows and
-effective-grid schemas both write these fields
-([`test_pass2_dump_operand_fields_owner.py`](../../tests/unit/test_pass2_dump_operand_fields_owner.py)).
-[`sparse_pass2_bucketed._gaussian_algebraic_score_terms`](../../relax/sparse_pass2/sparse_pass2_bucketed.py)
-computes the historical algebraic Gaussian scores of one bucket before candidate masking
-(HIGHEST-precision weighted cross einsum and projection norm, prior-free and prior-added
-scores); the production algebraic scorer and its components variant only apply their masks
-([`test_gaussian_algebraic_terms_owner.py`](../../tests/unit/test_gaussian_algebraic_terms_owner.py)).
 [`types.SparsePass2Output`](../../relax/helpers/types.py) carries sparse
-pass-2 accumulators, poses and optional diagnostics in named fields. The bucketed
-and per-image reference paths construct it directly; K-class callers no longer
+pass-2 accumulators, poses and optional diagnostics in named fields. The resident driver
+and the per-image reference path construct it directly; K-class callers no longer
 need a positional decoder or flags to locate fields. Unrequested diagnostics are
-`None`. Score log-Z still requires statistics, and the normalizer-only probe
-retains its separate two-value result. Independent bucketed/reference comparisons
-remain in [`test_sparse_pass2_bucketed_parity.py`](../../tests/unit/test_sparse_pass2_bucketed_parity.py).
+`None`. The resident driver's independent check is the NumPy RELION E-step reference
+([`test_resident_relion_reference.py`](../../tests/unit/test_resident_relion_reference.py)).
 In [`significance`](../../relax/scoring/significance.py),
 `_coarse_gaussian_ffi_default` applies the fresh-InitialModel coarse Gaussian FFI
 default only when the supplied RELION projector operands exist; a dense pass
@@ -453,14 +438,10 @@ scripts import these helpers directly; saved-audit validation does not require
 loading `significance`. `significance` calls this owner directly. JAX scoring/M-step kernels remain in
 `helpers.scoring`; diagnostic imports do not initialize those execution modules.
 
-[`diagnostics.pass2`](../../relax/diagnostics/pass2.py)
-owns K1/K-class score dumps and target-row selection, including staging effective K-class raw operands after
-scoring. It reads the shared numbered-half context from `bpref_diagnostics`;
-it does not import sparse scoring. The scorer retains scheduling and numerical
-operand preparation, calling the capture helpers at their original boundaries. Capture schemas, casts and reduction order are unchanged.
-[`diagnostics.norm_scale`](../../relax/diagnostics/norm_scale.py) owns
-normalization-residual and chunked scale-AA captures. The diagnostics package
-itself imports no engines or capture modules; import specific writers directly.
+The compact engine's K1/K-class score dumps and normalization-residual captures
+(`diagnostics.pass2`, `diagnostics.norm_scale`) were deleted with it (2026-09-26); the
+resident drivers refuse the dump environment variables. The diagnostics package itself
+imports no engines or capture modules; import specific writers directly.
 
 K1 and fused K-class preprocessing captures share
 `bpref_diagnostics.build_bpref_preprocess_capture`. Callers retain the raw

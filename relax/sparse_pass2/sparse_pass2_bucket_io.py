@@ -1,8 +1,8 @@
-"""Per-bucket input preparation of the sparse bucketed pass 2.
+"""Per-image input preparation of the sparse pass 2.
 
-The bucket's images, CTF and noise operands, its translation phase tables and
-RELION translation angles, and the small CTF/noise algebra those operands
-share. ``sparse_pass2_bucketed`` prepares every bucket through this owner.
+The images, CTF and noise operands, the translation phase tables and RELION translation
+angles, and the small CTF/noise algebra those operands share. The resident drivers prepare
+their per-image operands through this owner (``resident_operands``).
 """
 
 from __future__ import annotations
@@ -1054,31 +1054,3 @@ def _prepare_bucket_io(
     )
 
 
-@jax.jit
-def _best_pair_indices_device(best_log_score, best_argmax, local_rotation_row, translation_idx):
-    """Gather the best pair's (row, translation) ids in one program."""
-
-    safe_argmax = jnp.where(jnp.isfinite(best_log_score), best_argmax, 0).astype(jnp.int32)
-    rows = jnp.arange(safe_argmax.shape[0], dtype=jnp.int32)
-    return local_rotation_row[rows, safe_argmax], translation_idx[rows, safe_argmax]
-
-
-@jax.jit
-def _log_score_offset_from_min_diff2_device(global_min_diff2):
-    """float64 ``-min_diff2`` on the device (host path: ``np.asarray(-x, float64)``)."""
-
-    return (-jnp.asarray(global_min_diff2)).astype(jnp.float64)
-
-
-@jax.jit
-def _log_score_offset_from_batch_norm_device(batch_norm):
-    """float64 ``-0.5 * squeeze(batch_norm)`` on the device, host operation order."""
-
-    return -0.5 * jnp.squeeze(batch_norm, axis=1).astype(jnp.float64)
-
-
-@jax.jit
-def _absolute_log_z_to_score_frame_device(absolute_log_evidence, log_score_offset):
-    """``absolute - offset`` in float64 on the device (host: NumPy float64 subtraction)."""
-
-    return jnp.asarray(absolute_log_evidence, dtype=jnp.float64) - log_score_offset

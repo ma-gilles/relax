@@ -221,7 +221,6 @@
   "RECOVAR_K1_LOCAL_PASS2_STABLE_ROW_CAPACITY": "RELAX_K1_LOCAL_PASS2_STABLE_ROW_CAPACITY",
   "RECOVAR_K1_LOCAL_PASS2_STABLE_WINDOWS": "RELAX_K1_LOCAL_PASS2_STABLE_WINDOWS",
   "RECOVAR_K1_LOCAL_PASS2_UNIFY_BUCKET_SIZES": "RELAX_K1_LOCAL_PASS2_UNIFY_BUCKET_SIZES",
-  "RECOVAR_K1_PASS2_ENGINE": "RELAX_K1_PASS2_ENGINE",
   "RECOVAR_K1_POSE_PUBLISH_DIRECT": "RELAX_K1_POSE_PUBLISH_DIRECT",
   "RECOVAR_K1_RELION_DETERMINISTIC_NORM_REDUCTION": "RELAX_K1_RELION_DETERMINISTIC_NORM_REDUCTION",
   "RECOVAR_K1_RELION_EXACT_BPREF_OPERANDS": "RELAX_K1_RELION_EXACT_BPREF_OPERANDS",
@@ -492,7 +491,6 @@
   "RECOVAR_SPARSE_PASS2_PIPELINE_TAIL": "RELAX_SPARSE_PASS2_PIPELINE_TAIL",
   "RECOVAR_SPARSE_PASS2_PROJECTION_CACHE": "RELAX_SPARSE_PASS2_PROJECTION_CACHE",
   "RECOVAR_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES": "RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES",
-  "RECOVAR_SPARSE_PASS2_RESIDENT": "RELAX_SPARSE_PASS2_RESIDENT",
   "RECOVAR_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE": "RELAX_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE",
   "RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_BLOCK_UNROLL": "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_BLOCK_UNROLL",
   "RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_JIT": "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT",
@@ -636,6 +634,10 @@
   "RECOVAR_COARSE_SIGNIFICANCE_DEVICE": "the coarse significance support is always compacted on the device, per class (2026-09-25)",
   "RELAX_COARSE_SIGNIFICANCE_DEVICE": "the coarse significance support is always compacted on the device, per class (2026-09-25)",
   "RECOVAR_SPARSE_PASS2_RESIDENT_WAVG_POWER_PER_IMAGE": "the Wavg rectangle image power is always taken per image from the translation marginal (2026-09-26)",
-  "RELAX_SPARSE_PASS2_RESIDENT_WAVG_POWER_PER_IMAGE": "the Wavg rectangle image power is always taken per image from the translation marginal (2026-09-26)"
+  "RELAX_SPARSE_PASS2_RESIDENT_WAVG_POWER_PER_IMAGE": "the Wavg rectangle image power is always taken per image from the translation marginal (2026-09-26)",
+  "RECOVAR_SPARSE_PASS2_RESIDENT": "the device-resident pass 2 is relax's one pass-2 engine; the compact engine it switched off was deleted (2026-09-26)",
+  "RELAX_SPARSE_PASS2_RESIDENT": "the device-resident pass 2 is relax's one pass-2 engine; the compact engine it switched off was deleted (2026-09-26)",
+  "RECOVAR_K1_PASS2_ENGINE": "the device-resident pass 2 is relax's one pass-2 engine; the K=1 engine choice was deleted with the compact engine (2026-09-26)",
+  "RELAX_K1_PASS2_ENGINE": "the device-resident pass 2 is relax's one pass-2 engine; the K=1 engine choice was deleted with the compact engine (2026-09-26)"
  }
 }

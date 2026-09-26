@@ -425,7 +425,6 @@ def test_pair_workers_preserve_row_major_results_and_drop_aligned_volumes(monkey
     assert all("aligned_volume" not in entry for entry in result["per_class"])
 
 
-
 def test_pair_workers_must_be_positive():
     args = Namespace(
         gt_align_refine_orders=[],
@@ -448,7 +447,6 @@ def test_pair_workers_must_be_positive():
             rotations=np.eye(3, dtype=np.float64)[None, ...],
             args=args,
         )
-
 
 
 def test_pair_workers_match_serial_alignment_exactly():

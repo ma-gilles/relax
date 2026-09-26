@@ -14,7 +14,7 @@ import relax.classification.k_class as k_class_module
 from relax.classification import k_class_results
 from relax.classification.k_class import (
     _ClassFineGridSignificanceMask,
-    _compact_sparse_pass2_preferred_over_dense,
+    _sparse_pass2_preferred_over_dense,
     _dense_engine_kwargs_for_class,
     _run_sparse_firstiter_global_winner_subset_pass2,
     _run_sparse_k_class_adaptive_pass2,
@@ -173,36 +173,24 @@ def test_large_k_class_prefers_compact_sparse_pass2_over_dense_fallback(monkeypa
     monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", raising=False)
     monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
 
-    assert _compact_sparse_pass2_preferred_over_dense(n_classes=4, n_images=50_000)
-    assert not _compact_sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
-    assert not _compact_sparse_pass2_preferred_over_dense(n_classes=1, n_images=50_000)
+    assert _sparse_pass2_preferred_over_dense(n_classes=4, n_images=50_000)
+    assert not _sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
+    assert not _sparse_pass2_preferred_over_dense(n_classes=1, n_images=50_000)
 
 
-def test_compact_sparse_pass2_preference_respects_env_overrides(monkeypatch):
+def test_sparse_pass2_preference_respects_env_overrides(monkeypatch):
     monkeypatch.delenv("RELAX_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION", raising=False)
     monkeypatch.delenv("RELAX_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", raising=False)
-    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", raising=False)
 
     monkeypatch.setenv("RELAX_K_CLASS_COMPACT_SPARSE_PASS2_MIN_IMAGES", "1000")
-    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
-    assert _compact_sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
+    assert _sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
 
-    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "0")
-    assert not _compact_sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
-
-    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", "1")
     monkeypatch.setenv("RELAX_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", "0.2")
-    assert not _compact_sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
+    assert not _sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
 
     monkeypatch.setenv("RELAX_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", "")
     monkeypatch.setenv("RELAX_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION", "  ")
-    assert _compact_sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
-
-    monkeypatch.delenv("RELAX_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION", raising=False)
-    monkeypatch.delenv("RELAX_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION", raising=False)
-    monkeypatch.setenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", "1")
-    monkeypatch.delenv("RELAX_SPARSE_KCLASS_COMPACT_PAIRS", raising=False)
-    assert not _compact_sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
+    assert _sparse_pass2_preferred_over_dense(n_classes=4, n_images=10_000)
 
 
 def test_exact_fine_gaussian_requires_sparse_gaussian_pass2_in_either_precision():
@@ -1329,18 +1317,13 @@ def test_adaptive_k_class_firstiter_fine_pass_uses_global_winner_subsets(monkeyp
     assert_matches(np.asarray(result.significant_counts), np.ones(4, dtype=np.int32))
 
 
-@pytest.mark.parametrize("pass2_engine", ["resident", "compact"])
-def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(monkeypatch, pass2_engine):
+def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(monkeypatch):
     """Each image's fine pass is a K=1 pass inside its coarse global-winner class.
 
-    On the resident engine (the default) it takes the K=1 production arithmetic;
-    the compact engine (``RELAX_SPARSE_PASS2_RESIDENT=0``) keeps its historical K>1
-    arithmetic until it is deleted.
+    It takes the K=1 production arithmetic of the resident pass 2.
     """
     from relax.sparse_pass2 import dispatch as sparse_dispatch
     from relax.sampling import rotation_grid_size
-
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT", "1" if pass2_engine == "resident" else "0")
 
     score_calls = []
     probe_calls = []
@@ -1407,19 +1390,14 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
         )
         assert kwargs["relion_firstiter_score_mode"] == "normalized_cc"
         assert kwargs["relion_firstiter_winner_take_all"] is True
-        if pass2_engine == "resident":
-            assert kwargs["preserve_bpref_particle_order"] is True
-            assert kwargs["relion_exact_fine_normalized_cc"] is True
-            # The K=1 production pass carries the scale groups (run_em takes none).
-            assert_matches(
-                np.asarray(kwargs["group_ids"]),
-                np.asarray([7, 8, 9, 10])[np.asarray(dataset.indices, dtype=np.int64)],
-            )
-            assert kwargs["scale_correction_group_count"] == 11
-        else:
-            assert "preserve_bpref_particle_order" not in kwargs
-            assert kwargs["relion_exact_fine_normalized_cc"] is False
-            assert kwargs["group_ids"] is None
+        assert kwargs["preserve_bpref_particle_order"] is True
+        assert kwargs["relion_exact_fine_normalized_cc"] is True
+        # The K=1 production pass carries the scale groups (run_em takes none).
+        assert_matches(
+            np.asarray(kwargs["group_ids"]),
+            np.asarray([7, 8, 9, 10])[np.asarray(dataset.indices, dtype=np.int64)],
+        )
+        assert kwargs["scale_correction_group_count"] == 11
         n_images = int(dataset.n_units)
         hard = np.arange(n_images, dtype=np.int32) % n_fine_trans
         best_rot_ids = np.full(n_images, class_index, dtype=np.int32)
@@ -1653,222 +1631,6 @@ def test_lazy_k_class_adaptive_mask_matches_dense_blocks_without_materializing()
                 rotation_block_size=rotation_block_size,
             )
             assert_matches(np.asarray(actual), expected)
-
-
-def test_sparse_k_class_adaptive_mstep_uses_score_space_log_z(monkeypatch):
-    """Sparse K-class pass-2 normalizes scores, not evidence plus image offset."""
-
-    # This probe exercises the legacy 2K-1 normalization choreography. The
-    # production default is the joint fused path, covered separately.
-    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "0")
-
-    from relax.sparse_pass2 import dispatch as sparse_dispatch
-    from relax.sampling import rotation_grid_size
-
-    calls = []
-    n_coarse_rot = rotation_grid_size(1)
-    n_fine_rot = rotation_grid_size(2)
-
-    class TinyDataset:
-        n_units = 2
-
-    probe_log_evidence = [
-        np.asarray([1000.0, 2000.0], dtype=np.float64),
-        np.asarray([1005.0, 1997.0], dtype=np.float64),
-    ]
-    probe_score_log_z = [
-        np.asarray([1.0, 2.0], dtype=np.float64),
-        np.asarray([3.0, 0.0], dtype=np.float64),
-    ]
-
-    def fake_compute_pass2_stats_sparse(
-        _dataset,
-        volume,
-        _mean_variance,
-        _noise_variance,
-        _translations,
-        _significant_sample_indices,
-        **kwargs,
-    ):
-        calls.append(kwargs)
-        class_index = (len(calls) - 1) % 2
-        n_images = TinyDataset.n_units
-        if kwargs.get("return_score_log_z_only"):
-            return probe_log_evidence[class_index], probe_score_log_z[class_index]
-        stats = make_relion_stats(
-            log_evidence_per_image=probe_log_evidence[class_index],
-            best_log_score_per_image=np.full(n_images, float(class_index), dtype=np.float64),
-            max_posterior_per_image=np.full(n_images, 0.5, dtype=np.float32),
-            rotation_posterior_sums=np.zeros(n_coarse_rot, dtype=np.float32),
-        )
-        common = SparsePass2Output(
-            jnp.zeros_like(volume),
-            jnp.zeros_like(volume),
-            np.zeros(n_images, dtype=np.int32),
-            np.repeat(np.eye(3, dtype=np.float32)[None], n_images, axis=0),
-            np.zeros((n_images, 2), dtype=np.float32),
-            np.zeros(n_images, dtype=np.int32),
-            stats,
-        )
-        if kwargs.get("return_score_log_z"):
-            return common._replace(score_log_z=probe_score_log_z[class_index])
-        return common
-
-
-    monkeypatch.setattr(sparse_dispatch, "compute_pass2_stats_sparse", fake_compute_pass2_stats_sparse)
-
-    result = _run_sparse_k_class_adaptive_pass2(
-        TinyDataset(),
-        jnp.zeros((2, 4), dtype=jnp.complex64),
-        jnp.ones(4, dtype=jnp.float32),
-        jnp.ones(4, dtype=jnp.float32),
-        np.repeat(np.eye(3, dtype=np.float32)[None], n_coarse_rot, axis=0),
-        np.zeros((1, 2), dtype=np.float32),
-        np.repeat(np.eye(3, dtype=np.float32)[None], n_fine_rot, axis=0),
-        fine_mstep_rotations_np=None,
-        rot_parent_map_np=np.repeat(np.arange(n_coarse_rot, dtype=np.int64), n_fine_rot // n_coarse_rot),
-        fine_translations_np=np.zeros((2, 2), dtype=np.float32),
-        trans_parent_map_np=np.asarray([0, 0], dtype=np.int64),
-        sig_sample_indices_by_class=[
-            [np.asarray([0], dtype=np.int32)] * TinyDataset.n_units for _ in range(2)
-        ],
-        disc_type="linear_interp",
-        class_log_priors=np.log(np.asarray([0.5, 0.5], dtype=np.float64)),
-        accumulate_noise=False,
-        return_best_pose_details=False,
-        oversampling_order=1,
-        random_perturbation=0.0,
-        engine_kwargs={
-            "relion_half_volume_mstep": True,
-            "relion_exact_fine_gaussian": False,
-        },
-    )
-
-    assert len(calls) == 3
-    assert all(call["relion_exact_fine_normalized_cc"] is False for call in calls)
-    assert all(call["relion_fine_diff2_fused_ffi"] is False for call in calls)
-    assert all(call["relion_f32_fine_posterior"] is False for call in calls)
-    assert calls[0].get("return_score_log_z_only")
-    assert calls[1].get("return_score_log_z")
-    np.testing.assert_allclose(calls[1]["normalization_other_score_log_z"], probe_score_log_z[0])
-    assert all(call.get("relion_half_volume_mstep") is True for call in calls)
-    expected_score_log_z = np.logaddexp(probe_score_log_z[0], probe_score_log_z[1])
-    np.testing.assert_allclose(calls[2]["normalization_log_z"], expected_score_log_z)
-    evidence_log_z = np.logaddexp(probe_log_evidence[0], probe_log_evidence[1])
-    assert not np.allclose(expected_score_log_z, evidence_log_z)
-    assert isinstance(result.Ft_y, np.ndarray)
-    assert isinstance(result.Ft_ctf, np.ndarray)
-
-
-def test_sparse_k_class_adaptive_single_pass_uses_largest_support_class(monkeypatch):
-    """Avoid duplicating the most expensive class in the current sparse scheme."""
-
-    # Largest-support-class reuse is specific to the legacy 2K-1 path.
-    monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "0")
-
-    from relax.sparse_pass2 import dispatch as sparse_dispatch
-    from relax.sampling import rotation_grid_size
-
-    calls = []
-    n_classes = 3
-    n_images = 2
-    n_coarse_rot = rotation_grid_size(1)
-    n_fine_rot = rotation_grid_size(2)
-    score_log_z = [
-        np.asarray([1.0, 2.0], dtype=np.float64),
-        np.asarray([4.0, 1.0], dtype=np.float64),
-        np.asarray([0.5, 3.0], dtype=np.float64),
-    ]
-
-    class TinyDataset:
-        n_units = n_images
-
-    def fake_compute_pass2_stats_sparse(
-        _dataset,
-        volume,
-        _mean_variance,
-        _noise_variance,
-        _translations,
-        _significant_sample_indices,
-        **kwargs,
-    ):
-        class_index = int(np.asarray(volume)[0].real)
-        calls.append((class_index, kwargs))
-        stats = make_relion_stats(
-            log_evidence_per_image=np.full(n_images, float(class_index), dtype=np.float64),
-            best_log_score_per_image=np.full(n_images, float(class_index), dtype=np.float64),
-            max_posterior_per_image=np.full(n_images, 0.5, dtype=np.float32),
-            rotation_posterior_sums=np.zeros(n_coarse_rot, dtype=np.float32),
-        )
-        if kwargs.get("return_score_log_z_only"):
-            return np.full(n_images, float(class_index), dtype=np.float64), score_log_z[class_index]
-        common = SparsePass2Output(
-            jnp.zeros_like(volume),
-            jnp.zeros_like(volume),
-            np.zeros(n_images, dtype=np.int32),
-            np.repeat(np.eye(3, dtype=np.float32)[None], n_images, axis=0),
-            np.zeros((n_images, 2), dtype=np.float32),
-            np.zeros(n_images, dtype=np.int32),
-            stats,
-        )
-        if kwargs.get("return_score_log_z"):
-            return common._replace(score_log_z=score_log_z[class_index])
-        return common
-
-
-    monkeypatch.setattr(sparse_dispatch, "compute_pass2_stats_sparse", fake_compute_pass2_stats_sparse)
-
-    _run_sparse_k_class_adaptive_pass2(
-        TinyDataset(),
-        jnp.asarray(
-            [
-                [0, 0, 0, 0],
-                [1, 0, 0, 0],
-                [2, 0, 0, 0],
-            ],
-            dtype=jnp.complex64,
-        ),
-        jnp.ones(4, dtype=jnp.float32),
-        jnp.ones(4, dtype=jnp.float32),
-        np.repeat(np.eye(3, dtype=np.float32)[None], n_coarse_rot, axis=0),
-        np.zeros((1, 2), dtype=np.float32),
-        np.repeat(np.eye(3, dtype=np.float32)[None], n_fine_rot, axis=0),
-        fine_mstep_rotations_np=None,
-        rot_parent_map_np=np.repeat(np.arange(n_coarse_rot, dtype=np.int64), n_fine_rot // n_coarse_rot),
-        fine_translations_np=np.zeros((2, 2), dtype=np.float32),
-        trans_parent_map_np=np.asarray([0, 0], dtype=np.int64),
-        sig_sample_indices_by_class=[
-            [np.asarray([0], dtype=np.int32)] * n_images,
-            [np.asarray([0, 1, 2, 3, 4], dtype=np.int32)] * n_images,
-            [np.asarray([0, 1], dtype=np.int32)] * n_images,
-        ],
-        disc_type="linear_interp",
-        class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes, dtype=np.float64)),
-        accumulate_noise=False,
-        return_best_pose_details=False,
-        oversampling_order=1,
-        random_perturbation=0.0,
-        engine_kwargs={
-            "relion_half_volume_mstep": True,
-            "relion_exact_fine_gaussian": False,
-        },
-    )
-
-    assert [class_index for class_index, _ in calls] == [0, 2, 1, 0, 2]
-    assert all(
-        call_kwargs["relion_exact_fine_normalized_cc"] is False
-        for _, call_kwargs in calls
-    )
-    assert all(
-        call_kwargs["relion_fine_diff2_fused_ffi"] is False
-        and call_kwargs["relion_f32_fine_posterior"] is False
-        for _, call_kwargs in calls
-    )
-    other_log_z = np.logaddexp(score_log_z[0], score_log_z[2])
-    global_log_z = np.logaddexp(other_log_z, score_log_z[1])
-    np.testing.assert_allclose(calls[2][1]["normalization_other_score_log_z"], other_log_z)
-    np.testing.assert_allclose(calls[3][1]["normalization_log_z"], global_log_z)
-    np.testing.assert_allclose(calls[4][1]["normalization_log_z"], global_log_z)
 
 
 def test_sparse_k1_adapter_forwards_source_faithful_spectrum_norm(monkeypatch):

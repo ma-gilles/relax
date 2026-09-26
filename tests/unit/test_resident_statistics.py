@@ -24,7 +24,6 @@ from relax.helpers.projection import (
     compute_norm_residual_per_image,
     compute_scale_correction_terms_per_image,
 )
-from relax.local.local_backprojection import flatten_bucket_rows
 from relax.sparse_pass2.resident_statistics import (
     ChunkStatisticsOperands,
     ResidentStatisticsTables,
@@ -35,13 +34,7 @@ from relax.sparse_pass2.resident_statistics import (
     resolve_statistics_config,
     segment_sum_by_image,
 )
-from relax.sparse_pass2.sparse_pass2_noise_blocks import _compute_noise_block_chunked
-from relax.sparse_pass2.sparse_pass2_wavg import (
-    _replace_low_shell_noise_with_relion_wavg_direct_residual,
-    _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
-    _weighted_image_power_shells_and_per_image,
-    image_power_shells,
-)
+from relax.sparse_pass2.sparse_pass2_wavg import image_power_shells
 
 pytestmark = pytest.mark.unit
 
@@ -160,181 +153,6 @@ def _make_bucket(rng, image_indices, n_rot, tables, *, zero_posterior=False, flo
 
 
 # --- Host reference ---------------------------------------------------------
-
-
-def _host_tail_reference(buckets, tables, *, atomic_scale=True, direct_noise=True):
-    """The production ``_bucket_tail`` statements, transcribed and run in numpy.
-
-    Configuration: ``accumulate_noise=True``, ``use_relion_fine_mstep_prune=True``,
-    ``relion_wavg_atomic_scale_aa=True``, ``relion_wavg_atomic_direct_noise=True``,
-    ``relion_wavg_atomic_direct_norm=False``, ``translated_wavg_norm=False``,
-    ``use_exact_relion_gaussian=True``, ``include_unweighted_norm_high_shell=True``,
-    ``source_faithful_spectrum_norm=True``.
-    """
-
-    noise_wsum_total = np.zeros(N_SHELLS, dtype=np.float64)
-    noise_img_power_total = np.zeros(N_SHELLS, dtype=np.float64)
-    noise_norm_correction_total = np.zeros(N_IMAGES, dtype=np.float64)
-    noise_scale_xa_total = np.zeros(N_GROUPS, dtype=np.float64)
-    noise_scale_aa_total = np.zeros(N_GROUPS, dtype=np.float64)
-    rotation_posterior_sums = np.zeros(N_COARSE_ROT, dtype=np.float64)
-    noise_sumw_total = 0.0
-    noise_sigma2_offset_total = 0.0
-    log_evidence = np.full(N_IMAGES, np.nan, dtype=np.float64)
-    score_log_z = np.full(N_IMAGES, np.nan, dtype=np.float64)
-    best_log_score = np.full(N_IMAGES, np.nan, dtype=np.float64)
-    score_real_dtype = buckets[0]["max_posterior"].dtype
-    max_posterior = np.full(N_IMAGES, np.nan, dtype=score_real_dtype)
-    hard_assignment = np.full(N_IMAGES, -1, dtype=np.int32)
-    best_rotation_indices = np.full(N_IMAGES, -1, dtype=np.int64)
-
-    noise_variance = jnp.asarray(tables["noise_variance"])
-    shell_indices_noise = jnp.asarray(tables["shell_indices_noise"])
-    shell_indices_half = jnp.asarray(tables["shell_indices_half"])
-
-    for bucket in buckets:
-        noise_probs = jnp.asarray(bucket["probs"])
-        image_indices = bucket["image_indices"]
-
-        translation_posterior = np.asarray(jnp.sum(noise_probs, axis=1), dtype=np.float64)
-        noise_sigma2_offset_total += float(
-            np.sum(translation_posterior * tables["translation_sqdist_ang"], dtype=np.float64)
-        )
-
-        support_mass = jnp.sum(noise_probs, axis=(1, 2))
-        weighted_img_shells, weighted_img_per_image = _weighted_image_power_shells_and_per_image(
-            jnp.asarray(bucket["processed_half"]),
-            shell_indices_half,
-            support_mass,
-            shell_count=N_SHELLS,
-            norm_unweighted_shell_cutoff=CURRENT_SIZE // 2,
-            norm_unweighted_high_shell=jnp.asarray(bucket["relion_norm_high_shell"]),
-            include_unweighted_high_shell=True,
-            source_faithful_spectrum_norm=True,
-        )
-        support_mass_np = np.asarray(support_mass, dtype=np.float64)
-        weighted_img_shells_np = np.asarray(weighted_img_shells, dtype=np.float64)
-        noise_norm_correction_total[image_indices] += np.asarray(
-            weighted_img_per_image, dtype=np.float64
-        )
-        noise_sumw_total += float(np.sum(support_mass_np, dtype=np.float64))
-
-        block_noise_shells, _, _ = _compute_noise_block_chunked(
-            flatten_bucket_rows(jnp.asarray(bucket["proj"])),
-            flatten_bucket_rows(jnp.asarray(bucket["proj_abs2"])),
-            flatten_bucket_rows(jnp.asarray(bucket["summed"])),
-            flatten_bucket_rows(jnp.asarray(bucket["ctf_probs"])),
-            noise_variance,
-            shell_indices_noise,
-            N_SHELLS,
-            max_block_bytes=None,
-        )
-        block_noise_shells_np = np.asarray(block_noise_shells, dtype=np.float64)
-
-        if direct_noise:
-            direct_residual_shells, direct_image_power_shells = (
-                _replace_low_shell_noise_with_relion_wavg_direct_residual(
-                    block_noise_shells_np,
-                    weighted_img_shells_np,
-                    bucket["triplet"][:, :, 2],
-                    tables["wavg_shell_indices"],
-                    exclusive_shell_stop=CURRENT_SIZE // 2 + 1,
-                )
-            )
-            noise_wsum_total += direct_residual_shells
-            noise_img_power_total += direct_image_power_shells
-        else:
-            noise_wsum_total += block_noise_shells_np
-            noise_img_power_total += weighted_img_shells_np
-
-        block_norm_residual = compute_norm_residual_per_image(
-            jnp.asarray(bucket["proj"]),
-            jnp.asarray(bucket["proj_abs2"]),
-            jnp.asarray(bucket["summed"]),
-            jnp.asarray(bucket["ctf_probs"]),
-            noise_variance,
-        )
-        noise_norm_correction_total[image_indices] += np.asarray(
-            block_norm_residual, dtype=np.float64
-        )
-
-        scale_xa_per_image, scale_aa_per_image = compute_scale_correction_terms_per_image(
-            jnp.asarray(bucket["proj"]),
-            jnp.asarray(bucket["proj_abs2"]),
-            jnp.asarray(bucket["summed"]),
-            jnp.asarray(bucket["ctf_probs"]),
-            noise_variance,
-            jnp.asarray(bucket["scale"]),
-            jnp.asarray(tables["scale_pixel_mask"]),
-        )
-        if atomic_scale:
-            scale_pixel_mask_np = np.asarray(tables["wavg_scale_pixel_mask"]).reshape(1, -1)
-            scale_xa_per_image = np.sum(
-                np.where(scale_pixel_mask_np, bucket["triplet"][:, :, 0], np.float32(0.0)),
-                axis=1,
-                dtype=np.float64,
-            )
-            scale_aa_per_image = np.sum(
-                np.where(scale_pixel_mask_np, bucket["triplet"][:, :, 1], np.float32(0.0)),
-                axis=1,
-                dtype=np.float64,
-            )
-        np.add.at(
-            noise_scale_xa_total,
-            np.asarray(bucket["group_ids"], dtype=np.int64),
-            np.asarray(scale_xa_per_image, dtype=np.float64),
-        )
-        np.add.at(
-            noise_scale_aa_total,
-            np.asarray(bucket["group_ids"], dtype=np.int64),
-            np.asarray(scale_aa_per_image, dtype=np.float64),
-        )
-
-        log_score_offset = -np.asarray(bucket["min_diff2"], dtype=np.float64)
-        class_log_Z_np = np.asarray(bucket["class_log_z"], dtype=np.float64)
-        best_log_score_np = np.asarray(bucket["best_log_score"], dtype=np.float64)
-        max_posterior_np = np.asarray(bucket["max_posterior"], dtype=score_real_dtype)
-        for row, image_idx in enumerate(image_indices.tolist()):
-            r = int(bucket["best_rot"][row])
-            t = int(bucket["best_trans"][row])
-            hard_assignment[image_idx] = r * N_FINE_TRANS + t
-            best_rotation_indices[image_idx] = bucket["fine_rot"][row, r]
-            if np.isfinite(best_log_score_np[row]):
-                log_evidence[image_idx] = float(class_log_Z_np[row] + log_score_offset[row])
-                score_log_z[image_idx] = float(class_log_Z_np[row] + log_score_offset[row])
-            else:
-                log_evidence[image_idx] = -np.inf
-                score_log_z[image_idx] = -np.inf
-            best_log_score[image_idx] = float(best_log_score_np[row] + log_score_offset[row])
-            max_posterior[image_idx] = float(max_posterior_np[row])
-
-        probs_sum_t = np.asarray(jnp.sum(noise_probs, axis=-1), dtype=np.float64)
-        for row, image_idx in enumerate(image_indices.tolist()):
-            cnt = int(bucket["actual_counts"][row])
-            if cnt == 0:
-                continue
-            np.add.at(
-                rotation_posterior_sums,
-                bucket["coarse_rot"][row, :cnt].astype(np.int64),
-                probs_sum_t[row, :cnt],
-            )
-
-    return {
-        "wsum_sigma2_noise": noise_wsum_total,
-        "wsum_img_power": noise_img_power_total,
-        "wsum_sigma2_offset": noise_sigma2_offset_total,
-        "sumw": noise_sumw_total,
-        "wsum_norm_correction": noise_norm_correction_total,
-        "wsum_scale_correction_xa": noise_scale_xa_total,
-        "wsum_scale_correction_aa": noise_scale_aa_total,
-        "rotation_posterior_sums": rotation_posterior_sums,
-        "log_evidence_per_image": log_evidence,
-        "score_log_z_per_image": score_log_z,
-        "best_log_score_per_image": best_log_score,
-        "max_posterior_per_image": max_posterior,
-        "hard_assignment": hard_assignment,
-        "best_fine_rotation_indices": best_rotation_indices,
-    }
 
 
 # --- Rectangular bucket -> flat resident chunk ------------------------------
@@ -474,60 +292,6 @@ def _config(*, atomic_scale=True, direct_noise=True):
 
 
 # --- Helper twins -----------------------------------------------------------
-
-
-def test_direct_residual_twin_is_bitwise_when_order_cannot_matter():
-    """One summand per shell: the twin must match the numpy original bitwise."""
-
-    rng = _rng()
-    # One image and distinct shells per pixel -> every shell receives at most
-    # one float64 summand, so association order is not a degree of freedom.
-    shells = np.asarray([0, 1, 2, 3, 4, 5, -1, 7], dtype=np.int32)
-    atomic = rng.standard_normal((1, shells.size)).astype(np.float32)
-    residual = rng.standard_normal(N_SHELLS).astype(np.float64)
-    image_power = rng.standard_normal(N_SHELLS).astype(np.float64)
-
-    expected = _replace_low_shell_noise_with_relion_wavg_direct_residual(
-        residual, image_power, atomic, shells, exclusive_shell_stop=5
-    )
-    got = _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
-        jnp.asarray(residual),
-        jnp.asarray(image_power),
-        jnp.asarray(atomic),
-        jnp.asarray(shells),
-        exclusive_shell_stop=5,
-        shell_count=N_SHELLS,
-    )
-    for expected_part, got_part in zip(expected, got):
-        assert matches(expected_part, np.asarray(got_part))
-
-
-@pytest.mark.parametrize("shell_stop", [0, 3, 5, N_SHELLS, N_SHELLS + 4])
-def test_direct_residual_twin_matches_numpy_original(shell_stop):
-    """Many images and repeated shells: float64 association order only."""
-
-    rng = np.random.default_rng(7 + shell_stop)
-    shells = rng.integers(-1, N_SHELLS + 2, size=N_RECT).astype(np.int32)
-    atomic = rng.standard_normal((5, N_RECT)).astype(np.float32)
-    residual = rng.standard_normal(N_SHELLS).astype(np.float64)
-    image_power = rng.standard_normal(N_SHELLS).astype(np.float64)
-
-    expected_residual, expected_power = (
-        _replace_low_shell_noise_with_relion_wavg_direct_residual(
-            residual, image_power, atomic, shells, exclusive_shell_stop=shell_stop
-        )
-    )
-    got_residual, got_power = _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
-        jnp.asarray(residual),
-        jnp.asarray(image_power),
-        jnp.asarray(atomic),
-        jnp.asarray(shells),
-        exclusive_shell_stop=shell_stop,
-        shell_count=N_SHELLS,
-    )
-    np.testing.assert_allclose(np.asarray(got_residual), expected_residual, rtol=1e-14, atol=0.0)
-    # The replaced image-power entries are exact zeros, so this half is bitwise.
-    assert matches(np.asarray(got_power), expected_power)
 
 
 def test_segment_sum_by_image_matches_numpy_add_at():
@@ -693,45 +457,6 @@ def _assert_finalized_matches_host(got, expected, *, rtol, label=""):
     return observed
 
 
-def test_device_stage_matches_host_tail_single_chunk():
-    """One chunk holding every image reproduces the whole production host tail."""
-
-    rng = _rng()
-    tables = _make_tables(rng)
-    bucket = _make_bucket(rng, list(range(N_IMAGES)), n_rot=max(ROWS_PER_IMAGE), tables=tables)
-    expected = _host_tail_reference([bucket], tables)
-    got = _run_device([[bucket]], tables, _config(), row_capacity=64, image_capacity=8)
-    _assert_finalized_matches_host(got, expected, rtol=FLOAT32_STREAM_RTOL, label="f32 single ")
-
-
-def test_device_stage_matches_host_tail_single_chunk_float64_companion():
-    """Float64 companion: with float64 producers every entry tightens to 1e-13."""
-
-    rng = _rng()
-    tables = _make_tables(rng, float_dtype=np.float64)
-    bucket = _make_bucket(
-        rng, list(range(N_IMAGES)), n_rot=max(ROWS_PER_IMAGE), tables=tables, float_dtype=np.float64
-    )
-    expected = _host_tail_reference([bucket], tables)
-    got = _run_device([[bucket]], tables, _config(), row_capacity=64, image_capacity=8)
-    _assert_finalized_matches_host(got, expected, rtol=FLOAT64_STREAM_RTOL, label="f64 single ")
-
-
-def test_device_stage_matches_host_tail_multiple_chunks():
-    """Several chunks accumulate exactly like several host buckets."""
-
-    rng = _rng()
-    tables = _make_tables(rng)
-    groups = [[0, 1, 2], [3, 4], [5, 6]]
-    buckets = [
-        _make_bucket(rng, ids, n_rot=max(ROWS_PER_IMAGE[i] for i in ids), tables=tables)
-        for ids in groups
-    ]
-    expected = _host_tail_reference(buckets, tables)
-    got = _run_device([[b] for b in buckets], tables, _config(), row_capacity=32, image_capacity=4)
-    _assert_finalized_matches_host(got, expected, rtol=FLOAT32_STREAM_RTOL, label="f32 multi ")
-
-
 def test_image_capacity_holds_what_an_image_count_axis_holds():
     """Fix 1: the accumulators' image axis is resident_image_capacity(n_images).
 
@@ -771,50 +496,6 @@ def test_resident_image_capacity_classes(n_images, capacity):
     assert resident_image_capacity(n_images) == capacity
     assert resident_image_capacity(n_images) >= n_images
     assert resident_image_capacity(n_images) - n_images <= max(255, n_images // 4)
-
-
-def test_device_stage_matches_host_tail_multiple_chunks_float64_companion():
-    """Float64 companion for the multi-chunk accumulation order."""
-
-    rng = _rng()
-    tables = _make_tables(rng, float_dtype=np.float64)
-    groups = [[0, 1, 2], [3, 4], [5, 6]]
-    buckets = [
-        _make_bucket(
-            rng, ids, n_rot=max(ROWS_PER_IMAGE[i] for i in ids), tables=tables,
-            float_dtype=np.float64,
-        )
-        for ids in groups
-    ]
-    expected = _host_tail_reference(buckets, tables)
-    got = _run_device([[b] for b in buckets], tables, _config(), row_capacity=32, image_capacity=4)
-    _assert_finalized_matches_host(got, expected, rtol=FLOAT64_STREAM_RTOL, label="f64 multi ")
-
-
-def test_device_stage_matches_host_tail_algebraic_scale_branch():
-    """The non-atomic scale branch reproduces the algebraic host statistics."""
-
-    rng = _rng()
-    tables = _make_tables(rng)
-    bucket = _make_bucket(rng, list(range(N_IMAGES)), n_rot=max(ROWS_PER_IMAGE), tables=tables)
-    expected = _host_tail_reference([bucket], tables, atomic_scale=False, direct_noise=False)
-    config = _config(atomic_scale=False, direct_noise=False)
-    got = _run_device([[bucket]], tables, config, row_capacity=64, image_capacity=8)
-    _assert_finalized_matches_host(got, expected, rtol=FLOAT32_STREAM_RTOL, label="f32 algebraic ")
-
-
-def test_device_stage_matches_host_tail_algebraic_scale_branch_float64_companion():
-    """Float64 companion for the algebraic scale / plain-noise branch."""
-
-    rng = _rng()
-    tables = _make_tables(rng, float_dtype=np.float64)
-    bucket = _make_bucket(
-        rng, list(range(N_IMAGES)), n_rot=max(ROWS_PER_IMAGE), tables=tables, float_dtype=np.float64
-    )
-    expected = _host_tail_reference([bucket], tables, atomic_scale=False, direct_noise=False)
-    config = _config(atomic_scale=False, direct_noise=False)
-    got = _run_device([[bucket]], tables, config, row_capacity=64, image_capacity=8)
-    _assert_finalized_matches_host(got, expected, rtol=FLOAT64_STREAM_RTOL, label="f64 algebraic ")
 
 
 def test_padded_rows_and_images_contribute_nothing():
@@ -950,46 +631,3 @@ def test_finalize_reports_images_no_chunk_covered():
         finalize_statistics(stats, config=config, n_images=N_IMAGES)
 
 
-@pytest.mark.parametrize("cutoff", [None, 2])
-@pytest.mark.parametrize("include_high", [True, False])
-@pytest.mark.parametrize("with_replacement", [True, False])
-def test_image_power_from_shells_matches_the_pixel_form(cutoff, include_high, with_replacement):
-    """Weighting each image's shell sums equals weighting its pixels (float64 inputs)."""
-
-    from relax.sparse_pass2.sparse_pass2_wavg import (
-        _weighted_image_power_shells_and_per_image_core,
-        weighted_image_power_from_shells,
-    )
-
-    if with_replacement and cutoff is None:
-        pytest.skip("a replacement high-shell term needs a cutoff")
-    rng = _rng()
-    n_images, n_pixels = 7, 40
-    processed = rng.standard_normal((n_images, n_pixels)) + 1j * rng.standard_normal((n_images, n_pixels))
-    shells = rng.integers(-1, N_SHELLS + 1, size=n_pixels).astype(np.int32)
-    mass = rng.random(n_images)
-    valid = np.arange(n_images) < 6
-    replacement = rng.random(n_images) if with_replacement else None
-    expected_shells, expected_norm = _weighted_image_power_shells_and_per_image_core(
-        jnp.asarray(processed),
-        jnp.asarray(shells),
-        jnp.asarray(mass),
-        None if replacement is None else jnp.asarray(replacement),
-        jnp.asarray(valid),
-        shell_count=N_SHELLS,
-        norm_unweighted_shell_cutoff=cutoff,
-        include_unweighted_high_shell=include_high,
-        disable_cuda_binning=True,
-        deterministic_norm_reduction=True,
-    )
-    got_shells, got_norm = weighted_image_power_from_shells(
-        image_power_shells(jnp.asarray(processed), jnp.asarray(shells), shell_count=N_SHELLS),
-        jnp.asarray(mass),
-        None if replacement is None else jnp.asarray(replacement),
-        jnp.asarray(valid),
-        norm_unweighted_shell_cutoff=cutoff,
-        include_unweighted_high_shell=include_high,
-        deterministic_norm_reduction=True,
-    )
-    assert_matches(np.asarray(got_shells), np.asarray(expected_shells))
-    assert_matches(np.asarray(got_norm), np.asarray(expected_norm))

@@ -1,10 +1,10 @@
-"""Both sparse pass-2 scorers select their RELION powerClass noise terms through one owner."""
+"""The pass-2 RELION powerClass noise terms are selected by one owner (sparse_pass2_scoring)."""
 
 from __future__ import annotations
 
 import pytest
 
-from relax.sparse_pass2 import sparse_pass2_bucketed as sp
+from relax.sparse_pass2 import sparse_pass2_scoring as sp
 from relax.sparse_pass2 import sparse_pass2_scoring
 
 pytestmark = pytest.mark.unit

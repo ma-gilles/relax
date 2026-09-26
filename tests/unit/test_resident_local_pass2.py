@@ -27,7 +27,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 from helpers.em_arrays import _hermitian_volume
-from test_sparse_pass2_bucketed_parity import IMAGE_SHAPE, VOLUME_SHAPE, MockDataset
+from helpers.sparse_pass2_mock import IMAGE_SHAPE, VOLUME_SHAPE, MockDataset
 
 import recovar.core.fourier_transform_utils as ftu
 from relax.refinement import local_search_iteration

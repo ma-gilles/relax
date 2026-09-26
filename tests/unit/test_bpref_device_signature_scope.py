@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -14,10 +13,7 @@ from relax.refinement import half_scoring
 from relax.diagnostics import bpref_diagnostics, local_bpref_capture
 from relax.diagnostics import iteration as debug_dumps
 from relax.local import local_em_engine
-from relax.local.local_backprojection import compute_local_mstep_sums
 from relax.refinement import iteration_loop
-from relax.sparse_pass2 import sparse_pass2_bucketed, sparse_pass2_policy
-from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -117,77 +113,6 @@ def test_scoped_capture_ignores_all_process_flags_off_target(monkeypatch):
         assert cuda_backproject.relion_x_half_bp_block_topology_enabled()
 
 
-def test_scoped_device_capture_keeps_live_reduction_and_adjoint_modes_ordinary(monkeypatch):
-    monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "/tmp/device")
-    monkeypatch.setenv("RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION", "1")
-    monkeypatch.setenv("RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH", "1")
-    flags = bpref_diagnostics._scoped_bpref_diagnostic_flags(active=True)
-
-    modes = sparse_pass2_policy._resolve_bpref_execution_modes(
-        flags,
-        device_signature_requested=True,
-    )
-
-    assert modes["shadow_only"]
-    assert modes["diagnostic_sequential_translation_reduction"]
-    assert modes["diagnostic_per_particle_launches"]
-    assert not modes["live_sequential_translation_reduction"]
-    assert not modes["live_per_particle_launches"]
-
-
-def test_firstiter_xhalf_topology_is_production_even_without_diagnostic_flags():
-    modes = sparse_pass2_policy._resolve_bpref_execution_modes(
-        {
-            "sequential_translation_reduction": False,
-            "per_particle_launches": False,
-        },
-        device_signature_requested=False,
-        production_firstiter_xhalf_topology=True,
-    )
-
-    assert modes["live_sequential_translation_reduction"]
-    assert modes["live_per_particle_launches"]
-
-
-def test_scoped_device_capture_disables_shadows_for_empty_target_bucket():
-    modes = bpref_diagnostics._resolve_bpref_bucket_diagnostic_modes(
-        device_signature_requested=True,
-        contribution_diagnostics_active=True,
-        target_particle_rows=np.empty((0,), dtype=np.int64),
-        high_precision_operand_bundle_requested=True,
-    )
-
-    assert modes == {
-        "device_signature_requested": False,
-        "contribution_diagnostics_active": False,
-        "shadow_only": False,
-        "high_precision_operand_bundle": False,
-    }
-
-
-def test_scoped_device_capture_activates_only_bucket_with_target_rows():
-    target_modes = bpref_diagnostics._resolve_bpref_bucket_diagnostic_modes(
-        device_signature_requested=True,
-        contribution_diagnostics_active=True,
-        target_particle_rows=np.asarray([2], dtype=np.int64),
-        high_precision_operand_bundle_requested=True,
-    )
-    assert all(target_modes.values())
-
-    legacy_modes = bpref_diagnostics._resolve_bpref_bucket_diagnostic_modes(
-        device_signature_requested=False,
-        contribution_diagnostics_active=True,
-        target_particle_rows=np.empty((0,), dtype=np.int64),
-        high_precision_operand_bundle_requested=True,
-    )
-    assert legacy_modes == {
-        "device_signature_requested": False,
-        "contribution_diagnostics_active": True,
-        "shadow_only": False,
-        "high_precision_operand_bundle": True,
-    }
-
-
 def test_device_panel_flush_writes_separate_class_artifacts(tmp_path, monkeypatch):
     monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", str(tmp_path))
     monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_RUN_ID", "class-aware")
@@ -223,77 +148,6 @@ def test_device_panel_flush_writes_separate_class_artifacts(tmp_path, monkeypatc
         "recovar_device_panel_native_it001_h2_class004_rank000.npz",
     ]
     assert [int(np.load(path)["class_index"]) for path in outputs] == [0, 3]
-
-
-def test_legacy_native_half_dump_remains_independent_of_class_index(tmp_path, monkeypatch):
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_NATIVE_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_NATIVE_DUMP_RUN_ID", "native-control")
-    monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "iteration", 1)
-    monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "half", 1)
-
-    bpref_diagnostics._maybe_dump_native_half_mstep(
-        np.zeros(4, dtype=np.complex64),
-        np.zeros(4, dtype=np.float32),
-        current_size=2,
-        n_images=1,
-        recon_volume_shape=(2, 2, 2),
-        stage="pre_x0",
-    )
-
-    outputs = list(Path(tmp_path).glob("native_half_mstep_*.npz"))
-    assert len(outputs) == 1
-    with np.load(outputs[0]) as artifact:
-        assert artifact["run_id"] == "native-control"
-
-
-def test_scoped_soft_row_gate_ignores_unrelated_rows_and_accepts_single_row_bucket():
-    bpref_diagnostics._validate_bpref_positive_rotation_rows(
-        np.asarray([0, 2, 1], dtype=np.int64),
-        np.asarray([1], dtype=np.int64),
-        device_signature_requested=True,
-        winner_take_all=False,
-    )
-
-    bpref_diagnostics._validate_bpref_positive_rotation_rows(
-        np.asarray([0, 1, 3], dtype=np.int64),
-        np.asarray([1], dtype=np.int64),
-        device_signature_requested=True,
-        winner_take_all=False,
-    )
-
-    with pytest.raises(RuntimeError, match="at least one positive row"):
-        bpref_diagnostics._validate_bpref_positive_rotation_rows(
-            np.asarray([0, 2], dtype=np.int64),
-            np.empty((0,), dtype=np.int64),
-            device_signature_requested=False,
-            winner_take_all=False,
-        )
-
-
-def test_scoped_kclass_row_gate_accepts_empty_class_slice_but_not_invalid_wta():
-    bpref_diagnostics._validate_bpref_positive_rotation_rows(
-        np.asarray([0, 2], dtype=np.int64),
-        np.asarray([0], dtype=np.int64),
-        device_signature_requested=True,
-        winner_take_all=False,
-        posterior_partitioned_across_classes=True,
-    )
-    bpref_diagnostics._validate_bpref_positive_rotation_rows(
-        np.asarray([0, 1], dtype=np.int64),
-        np.asarray([0, 1], dtype=np.int64),
-        device_signature_requested=True,
-        winner_take_all=True,
-        posterior_partitioned_across_classes=True,
-    )
-
-    with pytest.raises(RuntimeError, match="at most one positive"):
-        bpref_diagnostics._validate_bpref_positive_rotation_rows(
-            np.asarray([0, 2], dtype=np.int64),
-            np.asarray([0, 1], dtype=np.int64),
-            device_signature_requested=True,
-            winner_take_all=True,
-            posterior_partitioned_across_classes=True,
-        )
 
 
 def test_empty_kclass_device_signature_payload_preserves_zero_row_topology():
@@ -426,31 +280,6 @@ def test_zero_contributor_class_capture_writes_manifest_only_signature(
         assert signature["program_axis_sizes"].tolist() == [0, 12, 8]
 
 
-def test_scoped_wta_row_gate_checks_target_and_rejects_invalid_target_row():
-    bpref_diagnostics._validate_bpref_positive_rotation_rows(
-        np.asarray([0, 1, 3], dtype=np.int64),
-        np.asarray([1], dtype=np.int64),
-        device_signature_requested=True,
-        winner_take_all=True,
-    )
-
-    with pytest.raises(RuntimeError, match="exactly one positive rotation row"):
-        bpref_diagnostics._validate_bpref_positive_rotation_rows(
-            np.asarray([1, 2], dtype=np.int64),
-            np.asarray([1], dtype=np.int64),
-            device_signature_requested=True,
-            winner_take_all=True,
-        )
-
-    with pytest.raises(RuntimeError, match="outside the sparse bucket"):
-        bpref_diagnostics._validate_bpref_positive_rotation_rows(
-            np.asarray([1, 1], dtype=np.int64),
-            np.asarray([2], dtype=np.int64),
-            device_signature_requested=True,
-            winner_take_all=True,
-        )
-
-
 def test_target_dense_half_keeps_block_topology_inactive_for_live_work(monkeypatch):
     monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "/tmp/device")
     monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY", "1")
@@ -465,127 +294,6 @@ def test_target_dense_half_keeps_block_topology_inactive_for_live_work(monkeypat
         bpref_device_signature_active=True,
     ) == "ordinary-live"
     assert not cuda_backproject.relion_x_half_bp_block_topology_enabled()
-
-
-def test_target_capture_preserves_rotation_chunk_plan_and_fails_if_target_is_chunked():
-    planned_chunk_size = 809
-    assert bpref_diagnostics._guard_bpref_target_rotation_chunking(
-        planned_chunk_size,
-        bucket_size=128,
-        target_particle_rows=np.asarray([3], dtype=np.int64),
-    ) == planned_chunk_size
-    assert bpref_diagnostics._guard_bpref_target_rotation_chunking(
-        64,
-        bucket_size=128,
-        target_particle_rows=np.empty((0,), dtype=np.int64),
-    ) == 64
-
-    with pytest.raises(RuntimeError, match="refuses to change that plan"):
-        bpref_diagnostics._guard_bpref_target_rotation_chunking(
-            64,
-            bucket_size=128,
-            target_particle_rows=np.asarray([3], dtype=np.int64),
-        )
-
-    source = inspect.getsource(sparse_pass2_bucketed.compute_pass2_stats_sparse_bucketed)
-    assert "Scoped BPref device capture disables rotation-chunked pass 2" not in source
-    assert "rotation_chunk_size = bpref_diagnostics._guard_bpref_target_rotation_chunking(" in source
-
-
-def test_posterior_mask_and_reduced_operand_diagnostic_branches_agree_on_cpu():
-    rng = np.random.default_rng(20260715)
-    batch, rotations, translations, pixels = 2, 4, 3, 11
-    shifted = (
-        rng.normal(size=(batch, translations, pixels))
-        + 1j * rng.normal(size=(batch, translations, pixels))
-    ).astype(np.complex64)
-    projection = (
-        rng.normal(size=(batch, rotations, pixels))
-        + 1j * rng.normal(size=(batch, rotations, pixels))
-    ).astype(np.complex64)
-    corr = rng.uniform(0.2, 2.0, size=(batch, pixels)).astype(np.float32)
-    half_weights = rng.uniform(0.5, 2.0, size=pixels).astype(np.float32)
-    rotation_prior = rng.normal(scale=0.1, size=(batch, rotations)).astype(np.float32)
-    translation_prior = rng.normal(scale=0.1, size=(batch, translations)).astype(np.float32)
-    candidate_mask = np.ones((batch, rotations, translations), dtype=bool)
-    candidate_mask[0, -1, -1] = False
-
-    authoritative_scores = sparse_pass2_bucketed._score_pass2_bucket_relion_gpu_diff2(
-        shifted,
-        corr,
-        projection,
-        half_weights,
-        rotation_prior,
-        translation_prior,
-        candidate_mask,
-    )
-    authoritative_normalized = sparse_pass2_bucketed._normalize_pass2_bucket(
-        authoritative_scores
-    )
-    probs = authoritative_normalized[1]
-    authoritative_reconstruction = (
-        sparse_pass2_bucketed._relion_pass2_reconstruction_probs_for_mstep(
-            authoritative_scores,
-            probs,
-            adaptive_fraction=0.999,
-            use_relion_x_half_mstep=True,
-            winner_take_all=False,
-        )
-    )
-    shadow_reconstruction = (
-        sparse_pass2_bucketed._relion_pass2_reconstruction_probs_for_mstep(
-            authoritative_scores,
-            probs,
-            adaptive_fraction=0.999,
-            use_relion_x_half_mstep=True,
-            winner_take_all=False,
-            return_diagnostics=True,
-        )
-    )
-    for label, authoritative, shadow in zip(
-        ("probabilities", "mask", "counts"),
-        authoritative_reconstruction,
-        shadow_reconstruction[:3],
-        strict=True,
-    ):
-        bpref_diagnostics._require_bpref_shadow_exact(
-            f"CPU test reconstruction {label}", authoritative, shadow
-        )
-
-    reconstruction_probs = authoritative_reconstruction[0]
-    shifted_reconstruction = (
-        rng.normal(size=(batch, translations, pixels))
-        + 1j * rng.normal(size=(batch, translations, pixels))
-    ).astype(np.complex64)
-    ctf2 = rng.uniform(0.1, 1.5, size=(batch, pixels)).astype(np.float32)
-    ordinary_summed, ordinary_weights = compute_local_mstep_sums(
-        reconstruction_probs,
-        shifted_reconstruction,
-        ctf2,
-        relion_x_half=True,
-        sequential_translation_reduction=False,
-    )
-    shadow_summed, shadow_weights = compute_local_mstep_sums(
-        reconstruction_probs,
-        shifted_reconstruction,
-        ctf2,
-        relion_x_half=True,
-        sequential_translation_reduction=True,
-    )
-    metrics = bpref_diagnostics._require_bpref_reduction_shadow_agreement(
-        ordinary_summed,
-        ordinary_weights,
-        shadow_summed,
-        shadow_weights,
-    )
-    assert set(metrics) == {
-        "data_rel_l1",
-        "data_normalized_max",
-        "weight_rel_l1",
-        "weight_normalized_max",
-        "rel_l1_bound",
-        "normalized_max_bound",
-    }
 
 
 def test_standalone_diagnostics_keep_legacy_flags_without_device_capture(monkeypatch):
@@ -844,13 +552,6 @@ def test_iteration_loop_clears_dump_context_before_every_final_exit_or_half():
     ]
 
 
-def test_bucketed_source_has_no_unscoped_capture_branches():
-    source = inspect.getsource(sparse_pass2_bucketed.compute_pass2_stats_sparse_bucketed)
-    assert 'if os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_DIR")' not in source
-    assert "relion_x_half_bp_per_particle_launch_enabled()" not in source
-    assert "device_signature_active=bucket_device_signature_requested" in source
-
-
 def test_active_capture_accepts_fused_kclass_route(monkeypatch):
     monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "1")
     k_class._validate_bpref_device_signature_sparse_route(
@@ -879,72 +580,6 @@ def test_bpref_contribution_class_filter_uses_relion_one_based_numbers(monkeypat
         bpref_diagnostics._bpref_contribution_class_enabled(0)
 
 
-def test_fused_kclass_compact_capture_materializes_only_target_rows():
-    image_indices = np.asarray([10, 11, 12], dtype=np.int64)
-    log_priors = [np.asarray([], dtype=np.float32) for _ in range(13)]
-    log_priors[10] = np.asarray([0.1, 0.2])
-    log_priors[11] = np.asarray([0.3, 0.4, 0.5])
-    log_priors[12] = np.asarray([0.6])
-    per_image_inputs = {"log_prior": log_priors}
-    rotations = np.broadcast_to(np.eye(3, dtype=np.float32), (3, 4, 3, 3)).copy()
-    class_bucket_arrays = {
-        "bucket_size": 4,
-        "mstep_rotations": rotations,
-        "rotation_indices": np.asarray(
-            [[1, 2, -1, -1], [3, 4, 5, -1], [6, -1, -1, -1]],
-            dtype=np.int64,
-        ),
-        "actual_counts": np.asarray([2, 3, 1], dtype=np.int64),
-    }
-    compact_pair_arrays = {
-        "local_rotation_row": np.asarray(
-            [[0, 1, -1], [2, 0, 1], [0, -1, -1]],
-            dtype=np.int32,
-        ),
-        "translation_idx": np.asarray(
-            [[1, 0, -1], [0, 1, 1], [0, -1, -1]],
-            dtype=np.int32,
-        ),
-        "pair_mask": np.asarray(
-            [[True, True, False], [True, True, True], [True, False, False]],
-            dtype=bool,
-        ),
-    }
-    scores = np.asarray(
-        [[1.0, 2.0, -np.inf], [3.0, 4.0, 5.0], [6.0, -np.inf, -np.inf]],
-        dtype=np.float32,
-    )
-    probs = np.asarray(
-        [[0.1, 0.2, 0.0], [0.3, 0.4, 0.5], [0.6, 0.0, 0.0]],
-        dtype=np.float32,
-    )
-    capture = bpref_diagnostics._materialize_k_class_capture_rows(
-        image_indices=image_indices,
-        target_particle_rows=np.asarray([1], dtype=np.int64),
-        per_image_inputs=per_image_inputs,
-        class_bucket_arrays=class_bucket_arrays,
-        compact_pair_arrays=compact_pair_arrays,
-        scores=scores,
-        probs=probs,
-        reconstruction_mask=None,
-        reconstruction_probs=None,
-        bucket_translation_prior=np.asarray(
-            [[-0.1, -0.2], [-0.3, -0.4], [-0.5, -0.6]],
-            dtype=np.float32,
-        ),
-        n_fine_trans=2,
-    )
-
-    assert_matches(capture["image_indices"], np.asarray([11]))
-    assert capture["scores"].shape == (1, 4, 2)
-    assert capture["scores"][0, 2, 0] == 3.0
-    assert capture["scores"][0, 0, 1] == 4.0
-    assert capture["scores"][0, 1, 1] == 5.0
-    assert np.count_nonzero(capture["candidate_mask"]) == 3
-    np.testing.assert_allclose(capture["rotation_log_prior"][0], [0.3, 0.4, 0.5, 0.0])
-    np.testing.assert_allclose(capture["translation_log_prior"][0], [-0.3, -0.4])
-
-
 def test_later_capture_support_excludes_dense_full_support_fallback():
     source = inspect.getsource(k_class.run_dense_k_class_em_adaptive)
     support_start = source.index("later_soft_particle_fused_supported =")
@@ -953,69 +588,3 @@ def test_later_capture_support_excludes_dense_full_support_fallback():
     assert "and not skip_significance_pruning" in support_block
 
 
-@pytest.mark.parametrize("native", [False, True])
-@pytest.mark.parametrize("provided", [False, True])
-@pytest.mark.parametrize("masked", [False, True])
-def test_preprocess_capture_preserves_selected_metadata(native, provided, masked):
-    from relax.helpers.preprocessing import prepare_batch_preprocess_operands
-
-    mask = np.arange(16, dtype=np.float32).reshape(4, 4) if masked else None
-    backend = SimpleNamespace(relion_fourier_backend="relion_cuda" if native else "jax", image_mask=mask)
-    dataset = SimpleNamespace(image_source=SimpleNamespace(backend=backend))
-    indices = np.asarray([2, 0])
-    shifts = np.asarray([[1, -1], [2, -2], [3, -3]], dtype=np.int32)
-    operands = prepare_batch_preprocess_operands(
-        dataset,
-        np.zeros((2, 4, 4), dtype=np.float32),
-        indices,
-        image_corrections=np.asarray([4.0, 8.0, 16.0]) if provided else None,
-        scale_corrections=np.asarray([2.0, 4.0, 8.0]) if provided else None,
-        image_pre_shifts=shifts if provided else None,
-    )
-    result = bpref_diagnostics.build_bpref_preprocess_capture(
-        dataset,
-        (4, 4),
-        operands,
-        batch=2,
-        score_with_masked_images=masked,
-    )
-    assert list(result) == [
-        "integer_pre_shifts",
-        "batch_image_corrections",
-        "batch_scale_corrections",
-        "relion_preprocess_normalization_factors",
-        "relion_cuda_preprocess",
-        "image_mask",
-        "image_mask_mode",
-    ]
-    assert_matches(result["integer_pre_shifts"], shifts[indices] if provided else np.zeros((2, 2)))
-    assert_matches(result["batch_image_corrections"], [16.0, 4.0] if provided else [1.0, 1.0])
-    assert_matches(result["batch_scale_corrections"], [8.0, 2.0] if provided else [1.0, 1.0])
-    assert_matches(
-        result["relion_preprocess_normalization_factors"], [2.0, 2.0] if native and provided else [1.0, 1.0]
-    )
-    assert result["relion_cuda_preprocess"] == native
-    assert result["integer_pre_shifts"].dtype == np.int32
-    for key in ("batch_image_corrections", "batch_scale_corrections", "relion_preprocess_normalization_factors"):
-        assert result[key].dtype == np.float32
-    if masked:
-        assert result["image_mask"] is mask
-        assert result["image_mask_mode"] == "multiply"
-    else:
-        assert_matches(result["image_mask"], np.ones((4, 4)))
-        assert result["image_mask_mode"] == "none"
-
-
-@pytest.mark.parametrize("mode", ["multiply", "invalid"])
-def test_preprocess_capture_rejects_missing_or_invalid_required_mask(mode):
-    backend = SimpleNamespace(image_mask_mode=mode)
-    dataset = SimpleNamespace(image_source=SimpleNamespace(backend=backend))
-    operands = (False, None, None, np.ones(2, dtype=np.float32), None)
-    with pytest.raises(ValueError, match="image.mask"):
-        bpref_diagnostics.build_bpref_preprocess_capture(
-            dataset,
-            (4, 4),
-            operands,
-            batch=2,
-            score_with_masked_images=True,
-        )

@@ -1,6 +1,5 @@
 """``RELAX_SPARSE_PASS2_LADDER_CHUNKS``: power-of-two bucket chunking so K-class bucket shapes repeat."""
 
-import numpy as np
 import pytest
 
 from relax.scoring import sparse_bucket_arrays as sba
@@ -36,19 +35,6 @@ def test_ladder_respects_cap_and_env(monkeypatch):
     monkeypatch.setenv(sba.LADDER_CHUNKS_ENV, "2")
     with pytest.raises(ValueError):
         sba.ladder_chunks_enabled()
-
-
-def test_k_class_planner_uses_ladder(monkeypatch):
-    monkeypatch.setenv(sba.LADDER_CHUNKS_ENV, "1")
-    rng = np.random.default_rng(0)
-    n = 300
-    per_image = [{"oversampled_rots": [np.zeros((int(c), 3, 3), dtype=np.float32) for c in rng.integers(1, 40, n)]} for _ in range(2)]
-    buckets = sba._bucket_sparse_k_class_pass2_inputs(per_image, 4)
-    seen = np.concatenate([b["image_indices"] for b in buckets])
-    assert sorted(seen.tolist()) == list(range(n))
-    for b in buckets:
-        size = int(b["image_indices"].shape[0])
-        assert size < sba.LADDER_CHUNK_FLOOR or size & (size - 1) == 0
 
 
 @pytest.mark.parametrize("cap", [1, 2, 7, 15, 16, 100, 2048])

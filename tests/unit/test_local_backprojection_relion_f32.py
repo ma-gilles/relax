@@ -158,7 +158,6 @@ def test_local_noise_scalar_terms_match_dense_relion_order_exactly():
     assert np.asarray(actual[0])[-1] == np.float32(0.0)
 
 
-
 def test_local_noise_scalar_terms_inline_the_mature_big_jit_primitives():
     probs = jnp.ones((3, 5, 7), dtype=jnp.float32)
     translation_sqdist = jnp.ones((3, 7), dtype=jnp.float32)
@@ -195,7 +194,6 @@ def test_local_noise_scalar_terms_inline_the_mature_big_jit_primitives():
 
     assert str(helper_jaxpr) == str(oracle_jaxpr)
     assert "name=compute_local_noise_scalar_terms" not in str(helper_jaxpr)
-
 
 
 def test_local_mstep_sums_preserve_promoted_precision_for_mixed_operands(monkeypatch):

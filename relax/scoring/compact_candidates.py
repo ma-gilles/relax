@@ -96,20 +96,6 @@ def _candidate_mask_to_dense(candidate_mask) -> np.ndarray:
     return np.asarray(candidate_mask, dtype=bool)
 
 
-def _candidate_mask_count(candidate_mask) -> int:
-    if isinstance(candidate_mask, SparseCandidateMask):
-        return int(candidate_mask.count)
-    return int(np.asarray(candidate_mask, dtype=bool).sum())
-
-
-def _candidate_mask_is_full(candidate_mask) -> bool:
-    if isinstance(candidate_mask, SparseCandidateMask):
-        total = int(candidate_mask.n_rows) * int(candidate_mask.n_fine_trans)
-        return total > 0 and int(candidate_mask.count) >= total
-    dense = np.asarray(candidate_mask, dtype=bool)
-    return dense.size > 0 and bool(np.all(dense))
-
-
 def _coarse_candidate_rows(mask: SparseCandidateMask):
     """Return coarse-row translation masks and each fine row's coarse index."""
 

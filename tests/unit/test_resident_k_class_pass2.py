@@ -77,7 +77,6 @@ def test_class_layout_sub_segments():
     assert np.all(segment[n_valid:] == 12)
 
 
-
 def test_class_layout_refuses_rows_out_of_hidden_space_order():
     host, chunk = _chunk([(1, 1)], row_capacity=4, image_capacity=2)
     host["row_class"][:2] = [1, 0]
@@ -214,7 +213,7 @@ def _k_class_args(n_classes, seed=20260925):
     """The K=1 driver fixture with K class references, supports and priors."""
 
     from helpers.em_arrays import _hermitian_volume
-    from test_sparse_pass2_bucketed_parity import VOLUME_SHAPE
+    from helpers.sparse_pass2_mock import VOLUME_SHAPE
 
     args = _driver_fixture_args()
     rng = np.random.default_rng(seed)
@@ -242,27 +241,6 @@ def _k_class_args(n_classes, seed=20260925):
         per_class[k, dvp.size - 1 - k :] = 1.0
     args["scale_correction_data_vs_prior"] = per_class
     return args, volumes, supports, priors
-
-
-def _compact(args, volumes, supports, priors):
-    from relax.sparse_pass2.sparse_pass2_bucketed import compute_k_class_pass2_stats_sparse_fused
-
-    compact_args = dict(args)
-    for name in ("relion_fine_mstep_prune", "preserve_bpref_particle_order", "return_score_log_z"):
-        compact_args.pop(name)
-    experiment_dataset = compact_args.pop("experiment_dataset")
-    noise_variance = compact_args.pop("noise_variance")
-    translations = compact_args.pop("translations")
-    return compute_k_class_pass2_stats_sparse_fused(
-        experiment_dataset,
-        volumes,
-        noise_variance,
-        translations,
-        supports,
-        rotation_log_priors_by_class=priors,
-        relion_fine_mstep_prune_mode="joint",
-        **compact_args,
-    )
 
 
 def _resident(args, volumes, supports, priors):
@@ -298,58 +276,6 @@ def _resident_production_env(monkeypatch):
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", "256,1024,4096")
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES", "4,16,64")
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "128")
-
-
-@requires_resident_gpu
-@pytest.mark.parametrize("n_classes", [2, 3])
-def test_k_class_resident_matches_the_compact_fused_engine(_resident_production_env, n_classes):
-    args, volumes, supports, priors = _k_class_args(n_classes)
-    compact = _compact(args, volumes, supports, priors)
-    resident = _resident(args, volumes, supports, priors)
-
-    compact_evidence = np.asarray(compact.class_log_evidence, dtype=np.float64)
-    has_class = np.isfinite(compact_evidence)
-    assert_matches(np.isfinite(resident.class_log_evidence_per_image), has_class)
-    assert_matches(resident.class_log_evidence_per_image[has_class], compact_evidence[has_class])
-    assert_matches(
-        np.asarray(resident.per_class_hard_assignments)[has_class],
-        np.asarray(compact.per_class_hard_assignments)[has_class],
-    )
-    for k in range(n_classes):
-        class_stats = compact.per_class_stats[k]
-        rows = has_class[k]
-        assert_matches(
-            resident.class_best_log_score_per_image[k][rows],
-            np.asarray(class_stats.best_log_score_per_image, dtype=np.float64)[rows],
-            err_msg=f"best score, class {k}",
-        )
-        assert_matches(
-            resident.class_rotation_posterior_sums[k],
-            np.asarray(class_stats.rotation_posterior_sums, dtype=np.float64),
-            err_msg=f"rotation mass, class {k}",
-        )
-    # Pmax of the joint posterior is its best class's share.
-    compact_pmax = np.max(np.stack([np.asarray(s.max_posterior_per_image) for s in compact.per_class_stats]), axis=0)
-    assert_matches(np.asarray(resident.stats.max_posterior_per_image), compact_pmax)
-    assert_matches(resident.class_reconstruction_posterior_sums, np.asarray(compact.class_posterior_sums))
-
-    # Float32 BPref atomics and blocked pixel-axis reductions, as for K=1.
-    for k in range(n_classes):
-        assert _rel_l2(compact.Ft_y[k], resident.Ft_y[k]) < 1e-6, f"Ft_y class {k}"
-        assert _rel_l2(compact.Ft_ctf[k], resident.Ft_ctf[k]) < 1e-6, f"Ft_ctf class {k}"
-
-    # The noise sums are not compared: the compact K-class engine has no RELION
-    # direct low-shell Wavg residual (its historical K>1 arithmetic), so they
-    # differ by construction; test_duplicated_class_is_the_k1_pass checks them.
-    # The group scale sums take each class's own mask; both engines run the
-    # atomic Wavg triplet here (_resident_production_env).
-    for field in ("wsum_scale_correction_xa", "wsum_scale_correction_aa"):
-        compact_sum = sum(np.asarray(getattr(stats, field), dtype=np.float64) for stats in compact.noise_stats)
-        measured = _rel_l2(compact_sum, getattr(resident.noise_stats, field))
-        print(f"K={n_classes} {field} rel L2 vs compact {measured:.3e}")
-        assert measured < 1e-6, field
-    total_sumw = float(sum(float(stats.sumw) for stats in compact.noise_stats))
-    assert abs(total_sumw - float(resident.noise_stats.sumw)) <= 1e-6 * abs(total_sumw)
 
 
 @requires_resident_gpu
@@ -420,76 +346,6 @@ def test_duplicated_class_is_the_k1_pass(_resident_production_env):
 # ---------------------------------------------------------------------------
 # Engine selection: the K=1 flip's rules for the K-class pass
 # ---------------------------------------------------------------------------
-
-
-def _selection_run(monkeypatch, env_value, outcome):
-    """Run the K-class route with a stub resident driver; return (result, engine entries)."""
-
-    from relax.classification import k_class
-    from relax.sparse_pass2 import engine_record
-    from relax.sparse_pass2.sparse_pass2_policy import ResidentConfigurationUnsupported
-
-    if env_value is None:
-        monkeypatch.delenv(rp.RESIDENT_PASS2_ENV, raising=False)
-    else:
-        monkeypatch.setenv(rp.RESIDENT_PASS2_ENV, env_value)
-    calls = []
-
-    def stub(*args, **kwargs):
-        calls.append(kwargs)
-        if outcome == "refuse":
-            raise ResidentConfigurationUnsupported(
-                f"The device-resident K=1 sparse pass 2 ({rp.RESIDENT_PASS2_ENV}=1) does not implement "
-                "this configuration: a stub refusal. Clear the flag to use the compact engine; this path "
-                "never falls back silently."
-            )
-        return "resident-output"
-
-    monkeypatch.setattr(rp, "compute_k_class_pass2_stats_resident", stub)
-    monkeypatch.setattr(k_class, "_class_segmented_em_result", lambda output, **_: output)
-    engine_record.take_pass_engines()
-    result = k_class._run_resident_k_class_pass2(
-        SimpleNamespace(n_units=3),
-        np.zeros((2, 4, 4, 4), dtype=np.float32),
-        None,
-        None,
-        [None, None],
-        common={"nside_level": 1, "disc_type": "linear_interp", "relion_x_half_mstep": True},
-        engine_kwargs={},
-        class_rotation_priors=[None, None],
-        relion_projector_half_by_class=None,
-        relion_projector_r_max=None,
-        accumulate_noise=True,
-        mstep_accumulator_shape=None,
-    )
-    return result, engine_record.take_pass_engines(), calls
-
-
-def test_k_class_default_falls_back_on_a_refusal_and_records_it(monkeypatch):
-    result, entries, calls = _selection_run(monkeypatch, None, "refuse")
-    assert result is None and len(calls) == 1
-    assert entries == ["global:compact (a stub refusal)"]
-
-
-def test_k_class_explicit_resident_makes_a_refusal_an_error(monkeypatch):
-    from relax.sparse_pass2.sparse_pass2_policy import ResidentConfigurationUnsupported
-
-    with pytest.raises(ResidentConfigurationUnsupported, match="a stub refusal"):
-        _selection_run(monkeypatch, "1", "refuse")
-
-
-def test_k_class_default_runs_resident_with_the_production_arithmetic(monkeypatch):
-    result, entries, calls = _selection_run(monkeypatch, None, "run")
-    assert result == "resident-output" and entries == ["global:resident"]
-    (kwargs,) = calls
-    for name in ("source_faithful_spectrum_norm", "preserve_bpref_particle_order", "relion_f32_fine_posterior"):
-        assert kwargs[name] is True, name
-
-
-def test_k_class_resident_off_records_the_compact_engine(monkeypatch):
-    result, entries, calls = _selection_run(monkeypatch, "0", "run")
-    assert result is None and not calls
-    assert entries == [f"global:compact ({rp.RESIDENT_PASS2_ENV}=0)"]
 
 
 def test_fold_class_scale_sums_masks_each_class_and_clears_its_channels():

@@ -612,7 +612,6 @@ def test_the_optional_operands_against_a_star_backed_preparation(
         )
 
 
-
 def test_exact_bpref_is_refused_by_name_on_a_dataset_that_is_not_production_shaped():
     """The refusal I first mistook for a resident-path bug.
 

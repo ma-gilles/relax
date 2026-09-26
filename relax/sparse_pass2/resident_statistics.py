@@ -1,16 +1,14 @@
 """Device-resident noise, norm, scale and posterior statistics for K=1 pass 2.
 
 Stage 7 of ``../em_device_resident_pass2_design_20260918.md``. This module is
-the device twin of the host bucket tail in
-:func:`recovar.em.sparse_pass2.sparse_pass2_bucketed.compute_pass2_stats_sparse_bucketed`
-(its inner ``_bucket_tail``): instead of pulling ~35 per-bucket arrays to the
+the device twin of the host bucket tail of the deleted compact engine (its inner
+``_bucket_tail``): instead of pulling ~35 per-bucket arrays to the
 host and accumulating them with numpy, one traced program folds a chunk's
 operands into float64 accumulators that stay on the device until
 :func:`finalize_statistics` pulls them once per half.
 
 Ported production branches (the fresh K=1 guard, confirmed from
-``sparse_pass2_policy._fresh_k1_direct_noise_default`` and
-``sparse_pass2_bucketed`` lines ~2190-2262): ``accumulate_noise=True``,
+the compact engine's ``_fresh_k1_direct_noise_default`` and its bucket tail, both deleted): ``accumulate_noise=True``,
 ``use_relion_fine_mstep_prune=True`` (so the noise and statistics posteriors
 are the same pruned ``reconstruction_probs``), RELION x-half M-step,
 ``relion_wavg_atomic_scale_aa=True``, ``relion_wavg_atomic_direct_noise=True``,

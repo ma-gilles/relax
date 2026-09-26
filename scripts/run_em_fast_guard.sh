@@ -56,11 +56,11 @@ for helper in (
     "diagnostics.vdam_replay", "relion.vdam_checkpoint", "local.fixed_capacity_local", "local.local_layout", "diagnostics.local_debug", "local.local_projection_cache", "local.local_timing",
 ):
     importlib.import_module(f"relax.{helper}")
-for diagnostic in ("iteration", "pass2", "norm_scale", "reconstruction"):
+for diagnostic in ("iteration", "reconstruction"):
     importlib.import_module(f"relax.diagnostics.{diagnostic}")
 execution_modules = (
     "refinement.iteration_loop", "refinement.half_scoring", "classification.k_class", "dense.em_engine", "local.local_em_engine", "local.local_big_jit",
-    "scoring.significance", "sparse_pass2.sparse_pass2_bucketed", "sparse_pass2.dispatch",
+    "scoring.significance", "sparse_pass2.resident_pass2", "sparse_pass2.dispatch",
     "refinement.firstiter_cc", "refinement.local_search_iteration",
 )
 loaded = [name for name in execution_modules

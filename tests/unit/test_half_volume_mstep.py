@@ -323,38 +323,6 @@ def test_enforce_half_volume_x0_can_force_host_path(monkeypatch):
     np.testing.assert_allclose(got_ctf, expected_ctf, rtol=1e-6, atol=1e-6)
 
 
-def test_relion_x_half_sparse_allocators_use_current_size_backprojector_shape():
-    from relax.classification import k_class
-    from relax.sparse_pass2 import sparse_pass2_bucketed
-
-    def assert_uses_current_size_shape(fn):
-        source = inspect.getsource(fn)
-        assert "relion_backprojector_volume_shape(" in source
-        calls = re.findall(r"relion_backprojector_volume_shape\([^)]*\)", source, flags=re.DOTALL)
-        assert calls
-
-        def uses_explicit_current_size(call):
-            return (
-                "current_size=current_size" in call
-                or "current_size=mstep_current_size" in call
-                or 'current_size=common["current_size"]' in call
-                or (
-                    "current_size=(" in call
-                    and 'common["current_size"]' in call
-                    and 'common["reconstruction_current_size"]' in call
-                )
-            )
-
-        assert any(uses_explicit_current_size(call) for call in calls)
-        for call in calls:
-            if "reconstruction_padding_factor" in call or 'common["reconstruction_padding_factor"]' in call:
-                assert uses_explicit_current_size(call)
-
-    assert_uses_current_size_shape(sparse_pass2_bucketed.compute_pass2_stats_sparse_bucketed)
-    assert_uses_current_size_shape(sparse_pass2_bucketed.compute_k_class_pass2_stats_sparse_fused)
-    assert_uses_current_size_shape(k_class._run_sparse_k_class_adaptive_pass2)
-
-
 def test_relion_x_half_public_layout_shape_switch(monkeypatch):
     volume_shape = (4, 4, 4)
     half_shape = ftu.volume_shape_to_half_volume_shape(volume_shape)
@@ -1476,7 +1444,6 @@ def test_relion_fused_x_half_particle_grid_preserves_particle_axis_in_native_att
     assert observed["args"][0].shape == (6, 12)
     assert observed["args"][3].shape == (6, 6)
     assert result[0] is data_volume and result[1] is weight_volume
-
 
 
 def test_enforce_half_volume_x0_uses_host_path_for_large_grids(monkeypatch):

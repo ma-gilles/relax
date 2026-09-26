@@ -93,7 +93,6 @@ def test_candidate_block_map_writer_keeps_only_launched_native_grid(tmp_path, mo
     assert records["native_orientation_row"].tolist() == [2, 1, 3]
 
 
-
 def test_candidate_map_writer_preserves_wire_bytes(tmp_path, monkeypatch):
     """Independent struct layout protects the shared producer/reader schema."""
     output = tmp_path / "map.bin"

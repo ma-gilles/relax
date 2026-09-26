@@ -6,7 +6,6 @@ import pytest
 from relax.reference.normalized_cc_replay import (
     RELION_COARSE_REDUCTION_LANES,
     RELION_FINE_REDUCTION_LANES,
-    REPLAY_SCHEMA,
     canonical_float32_reduce,
     canonical_float64_reduce,
     classify_normalized_cc_candidate_replays,
@@ -48,44 +47,6 @@ def _relion_coarse_atomic_score(numerator, norm):
     for _ in range(128):
         accumulated = np.float32(accumulated + contribution)
     return accumulated
-
-
-def test_recovar_logical_replay_matches_production_normalized_cc_score():
-    pytest.importorskip("jax")
-    import jax.numpy as jnp
-
-    from relax.sparse_pass2.sparse_pass2_scoring import _score_pass2_pairs_normalized_cc
-
-    shifted, score_weight, projections, half_weight = _production_inputs()
-    production = np.asarray(
-        _score_pass2_pairs_normalized_cc(
-            jnp.asarray(shifted),
-            jnp.asarray(score_weight),
-            jnp.asarray(projections),
-            jnp.asarray(half_weight),
-            jnp.asarray([[0]], dtype=jnp.int32),
-            jnp.asarray([[0]], dtype=jnp.int32),
-            jnp.asarray([[True]]),
-        )
-    )[0, 0]
-    contributions = normalized_cc_pixel_contributions(
-        projections[0, 0],
-        shifted[0, 0],
-        score_weight[0],
-        half_weight,
-    )
-    replay = replay_normalized_cc(contributions)
-
-    # XLA is free to select a backend-specific reduction tree; the pure NumPy
-    # flat fold is a logical control, not a device replay (measured within one
-    # float32 ulp).  Device-captured contributions plus the explicit RELION
-    # reducers below provide the device replay path.
-    assert_matches(
-        np.asarray(replay.recovar_logical_float32.score, dtype=np.float32),
-        production,
-    )
-    assert replay.schema == REPLAY_SCHEMA
-    assert replay.schema_version == 1
 
 
 def test_relion_256lane_reduction_matches_hand_reference():

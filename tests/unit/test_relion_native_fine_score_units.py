@@ -22,7 +22,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 import recovar.core.fourier_transform_utils as ftu
-from helpers.em_arrays import _hermitian_volume, _raw_real_image_2d
+from helpers.em_arrays import _raw_real_image_2d
 
 from relax.helpers.half_spectrum import make_relion_noise_shell_indices_half, make_shell_indices_half
 from relax.sparse_pass2.sparse_pass2_scoring import (
@@ -180,162 +180,6 @@ class _NativeUnitsDataset:
         return np.ones(self.volume_size, dtype=bool)
 
 
-def _capture_fresh_k1_fine_score_operands(monkeypatch, image_size, current_size):
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.relion import relion_ctf
-    from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
-    from relax.sparse_pass2 import sparse_pass2_policy, sparse_pass2_projection_blocks
-    from relax.sparse_pass2.dispatch import compute_pass2_stats_sparse
-
-    for name in (
-        "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
-        "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
-        "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
-        "RELAX_BPREF_ACCUMULATOR_DELTA_DUMP_DIR",
-        "RELAX_PASS2_DUMP_DIR",
-        "RELAX_SPARSE_PASS2_RESIDENT",
-        sparse_pass2_policy._BPREF_EXECUTION_ORDER_LOCAL_FILE_ENV,
-    ):
-        monkeypatch.delenv(name, raising=False)
-
-    dataset = _NativeUnitsDataset(image_size)
-    shape = dataset.image_shape
-    n_half = image_size * (image_size // 2 + 1)
-    ctf_rfloat = np.linspace(0.2, 1.1, 2 * n_half, dtype=np.float64).reshape(2, n_half)
-    monkeypatch.setattr(
-        relion_ctf,
-        "_relion_exact_ctf_half_from_source_star",
-        lambda _dataset, indices, _shape: jnp.asarray(ctf_rfloat[np.asarray(indices)]),
-    )
-    monkeypatch.setattr(
-        bucketed_mod,
-        "_relion_cuda_score_translation_angles_if_available",
-        lambda translations, _shape, **_kwargs: jnp.zeros((len(translations), 2), dtype=jnp.float32),
-    )
-    translated_inputs = []
-
-    def fake_translate_score(images, angles, _pixel_indices, _shape):
-        translated_inputs.append(np.asarray(images))
-        return jnp.repeat(jnp.asarray(images), int(angles.shape[0]), axis=0)
-
-    monkeypatch.setattr(em_cuda_kernels, "relion_translate_score_f32", fake_translate_score)
-    monkeypatch.setattr(
-        em_cuda_kernels,
-        "relion_translate_bpref_f32",
-        lambda images, weights, angles, _pixel_indices, _shape: jnp.repeat(
-            jnp.asarray(images) * jnp.asarray(weights), int(angles.shape[0]), axis=0
-        ),
-    )
-
-    projected_rows = []
-
-    def fake_projector(_projector, rotations, image_shape, **kwargs):
-        pixel_indices = kwargs.get("pixel_indices")
-        n_pixels = n_half if pixel_indices is None else int(np.asarray(pixel_indices).size)
-        row = (jnp.linspace(0.25, 1.25, n_pixels, dtype=jnp.float32) * (1.0 + 0.5j)).astype(jnp.complex64)
-        projected_rows.append(np.asarray(row))
-        projections = jnp.broadcast_to(row, (int(rotations.shape[0]), n_pixels))
-        return projections, (jnp.abs(projections) ** 2 if kwargs.get("return_abs2", True) else None)
-
-    monkeypatch.setattr(sparse_pass2_projection_blocks, "_compute_relion_projector_projections_block", fake_projector)
-    captured = {}
-
-    def capture(shifted, corr_img, proj, half_weights, *args, **kwargs):
-        captured.update(shifted=np.asarray(shifted), corr_img=np.asarray(corr_img), proj=np.asarray(proj))
-        raise _Captured
-
-    monkeypatch.setattr(bucketed_mod, "_score_pass2_bucket_relion_gpu_diff2_raw", capture)
-    fine_rotations = np.repeat(np.eye(3, dtype=np.float32)[None], 2, axis=0)
-    with pytest.raises(_Captured):
-        compute_pass2_stats_sparse(
-            experiment_dataset=dataset,
-            volume=_hermitian_volume(dataset.volume_shape, seed=20260923),
-            mean_variance=jnp.ones(dataset.volume_size, dtype=jnp.float32),
-            noise_variance=jnp.ones(dataset.image_size, dtype=jnp.float32),
-            translations=jnp.zeros((1, 2), dtype=jnp.float32),
-            significant_sample_indices=[np.asarray([0, 1], dtype=np.int32)] * 2,
-            nside_level=0,
-            disc_type="linear_interp",
-            oversampling_order=0,
-            current_size=current_size,
-            half_spectrum_scoring=True,
-            fine_rotations_override=fine_rotations,
-            fine_rotation_parent_override=np.asarray([0, 1], dtype=np.int64),
-            fine_translations_override=np.zeros((1, 2), dtype=np.float32),
-            fine_translation_parent_override=np.asarray([0], dtype=np.int32),
-            relion_x_half_mstep=True,
-            relion_firstiter_winner_take_all=False,
-            relion_exact_fine_gaussian=True,
-            relion_projector_half=np.zeros((3, 3, 2), dtype=np.complex64),
-            relion_projector_r_max=image_size // 2,
-            preserve_bpref_particle_order=True,
-            source_faithful_spectrum_norm=True,
-        )
-    return captured, translated_inputs, projected_rows, ctf_rfloat, shape
-
-
-@pytest.mark.parametrize("current_size", [None, 4], ids=["full-box", "windowed"])
-def test_fresh_k1_fine_diff2_receives_native_unit_operands(monkeypatch, current_size):
-    image_size = 6
-    captured, translated_inputs, projected_rows, ctf_rfloat, shape = _capture_fresh_k1_fine_score_operands(
-        monkeypatch, image_size, current_size
-    )
-    fft_size = image_size * image_size
-    n_score = captured["corr_img"].shape[-1]
-
-    native_corr = np.array(
-        _relion_cuda_native_corr_img_from_noise_variance(
-            np.ones((1, ctf_rfloat.shape[1]), dtype=np.float32), ctf_rfloat, shape
-        )
-    )
-    native_corr[:, np.asarray(make_shell_indices_half(shape)) == 0] = 0.0
-    if current_size is None:
-        assert n_score == ctf_rfloat.shape[1]
-        expected_corr = native_corr
-    else:
-        from relax.helpers.fourier_window import make_fourier_window_spec
-
-        window = make_fourier_window_spec(shape, current_size, ctf_rfloat.shape[1], square=False)
-        expected_corr = native_corr[:, np.asarray(window.score_indices_np)]
-    # The zero origin is a discrete mask and stays exact; the values are a
-    # measured-exact band.
-    assert_matches(captured["corr_img"] == 0.0, expected_corr == 0.0)
-    np.testing.assert_allclose(captured["corr_img"], expected_corr, rtol=_EXACT_BY_CONSTRUCTION_RTOL, atol=0.0)
-
-    # The fake translation repeats its input, so the shifted operand is the
-    # corrected score input divided by N**2 once, in float32.
-    translated = translated_inputs[-1]
-    expected_shifted = _divide_correctly_rounded(translated, fft_size)
-    np.testing.assert_allclose(
-        captured["shifted"].reshape(expected_shifted.shape),
-        expected_shifted,
-        rtol=_EXACT_BY_CONSTRUCTION_RTOL,
-        atol=0.0,
-    )
-    # The scored reference is a gather of the projector's pixels, each divided
-    # by N**2 once; RECOVAR-unit values are N**2 larger and never match.
-    native_projection_values = _divide_correctly_rounded(np.concatenate(projected_rows), fft_size)
-    assert _nearest_relative_distance(captured["proj"], native_projection_values).max() <= (
-        _EXACT_BY_CONSTRUCTION_RTOL
-    )
-    recovar_unit_values = np.concatenate(projected_rows)
-    assert _nearest_relative_distance(captured["proj"], recovar_unit_values).min() > 0.5
-
-
-@pytest.mark.parametrize("image_size", [300, 384, 256, None])
-@pytest.mark.parametrize("fresh", [True, False])
-def test_resident_driver_covers_fresh_passes_at_every_box(fresh, image_size):
-    """Resident scores native units itself, so no box size is sent to compact."""
-
-    import inspect
-
-    from relax.sparse_pass2 import resident_pass2 as rp
-
-    assert "image_size" not in inspect.signature(rp.resident_pass2_out_of_scope_reason).parameters
-    reason = rp.resident_pass2_out_of_scope_reason(source_faithful_spectrum_norm=fresh)
-    assert reason is None
-
-
 @pytest.mark.parametrize(
     ("fresh", "exact", "float64", "rfloat", "expected"),
     [
@@ -358,28 +202,6 @@ def test_native_unit_condition_is_the_compact_condition(fresh, exact, float64, r
         )
         is expected
     )
-
-
-def test_both_engines_key_native_units_on_the_shared_condition():
-    """Compact and resident resolve native units from one helper, and resident
-    divides only its score projections, never the M-step/noise recon rows."""
-
-    import inspect
-
-    from relax.sparse_pass2 import resident_pass2 as rp
-    from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed_mod
-
-    compact = inspect.getsource(bucketed_mod.compute_pass2_stats_sparse_bucketed)
-    resident = inspect.getsource(rp._resident_pass2)
-    for source in (compact, resident):
-        assert "_relion_native_fine_units_enabled(" in source
-    assert "fresh_k1_guard=bool(source_faithful_spectrum_norm)" in resident
-    assert "has_ctf_rfloat=relion_exact_bpref_operands" in resident
-    assert "score = _relion_native_fine_units_in_place(score, native_fft_size)" in resident
-    assert "recon = _relion_native_fine_units" not in resident
-    assert resident.count("relion_native_fine_units=relion_native_fine_units") >= 2
-    chunk = inspect.getsource(rp._run_resident_chunk)
-    assert chunk.count("relion_native_fine_units=relion_native_fine_units") == 2
 
 
 def _resident_native_case(monkeypatch, image_size, current_size, with_scale):

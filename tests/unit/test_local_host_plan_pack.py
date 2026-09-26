@@ -52,7 +52,6 @@ def test_unsupported_request_fails_before_dataset_access(monkeypatch, deferred, 
         )
 
 
-
 def _module_env(**overrides):
     """The engine module names the extracted block resolves, plus this test's stand-ins.
 

@@ -18,11 +18,7 @@ from helpers.float_compare import assert_matches
 from test_resident_significance import _encoded_supports, _supports
 
 from relax.scoring.compact_candidates import _candidate_mask_to_dense
-from relax.scoring.sparse_bucket_arrays import (
-    _prepare_per_image_pass2_inputs,
-    coarse_winner_local_pose_ids,
-)
-from relax.sparse_pass2 import resident_pass2 as rp
+from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.sparse_pass2.resident_candidates import (
     build_resident_candidate_tables,
     coarse_winner_cells,
@@ -81,21 +77,6 @@ def _os0_case(seed=11):
         fine_translation_parent=fine_translation_parent,
     )
     return per_image_inputs, tables, fine_parent, fine_translation_parent
-
-
-def test_coarse_winner_cells_match_the_compact_winner_ids():
-    """The resident segment cell of the coarse winner is the compact engine's local pose id."""
-
-    per_image_inputs, tables, fine_parent, fine_translation_parent = _os0_case()
-    winners = _selected_winners(per_image_inputs, np.random.default_rng(3))
-    compact = coarse_winner_local_pose_ids(per_image_inputs, winners, fine_translation_parent, N_COARSE_TRANS)
-    resident = coarse_winner_cells(
-        tables,
-        winners,
-        fine_rotation_parent=fine_parent,
-        fine_translation_parent=fine_translation_parent,
-    )
-    assert_matches(resident, compact)
 
 
 def test_coarse_winner_cells_refuse_an_unselected_winner():
@@ -184,44 +165,6 @@ def _rel_l2(a, b):
     b = np.asarray(b, dtype=np.float64)
     den = float(np.linalg.norm(a))
     return float(np.linalg.norm(a - b) / den) if den else float(np.linalg.norm(a - b))
-
-
-@requires_resident_gpu
-def test_zero_oversampling_resident_driver_matches_the_compact_engine(_resident_production_env):
-    """Winner, Pmax, evidence, maps and statistics against the compact engine's os0 arithmetic."""
-
-    from relax.sparse_pass2.sparse_pass2_bucketed import compute_pass2_stats_sparse_bucketed
-
-    args = _os0_driver_args()
-    compact = compute_pass2_stats_sparse_bucketed(**args)
-    resident = rp.compute_pass2_stats_resident(**args)
-
-    # The coarse winner and Pmax are carried through, not recomputed.
-    np.testing.assert_array_equal(compact.hard_assignment, resident.hard_assignment)
-    np.testing.assert_array_equal(compact.best_rotation_indices, resident.best_rotation_indices)
-    # Published in the scoring precision (float32), as RELION's max_weight / sum_weight.
-    assert_matches(
-        np.asarray(resident.relion_stats.max_posterior_per_image, dtype=np.float32),
-        np.asarray(args["relion_coarse_max_posterior"], dtype=np.float32),
-    )
-    for field in (
-        "log_evidence_per_image",
-        "best_log_score_per_image",
-        "max_posterior_per_image",
-        "rotation_posterior_sums",
-    ):
-        np.testing.assert_allclose(
-            np.asarray(getattr(compact.relion_stats, field), dtype=np.float64),
-            np.asarray(getattr(resident.relion_stats, field), dtype=np.float64),
-            rtol=1e-6,
-            atol=1e-9,
-            err_msg=field,
-        )
-    assert _rel_l2(compact.Ft_y, resident.Ft_y) < 1e-6
-    assert _rel_l2(compact.Ft_ctf, resident.Ft_ctf) < 1e-6
-    assert _rel_l2(compact.noise_stats.wsum_sigma2_noise, resident.noise_stats.wsum_sigma2_noise) < 1e-4
-    for field in ("wsum_img_power", "wsum_norm_correction", "wsum_scale_correction_xa", "wsum_scale_correction_aa"):
-        assert _rel_l2(getattr(compact.noise_stats, field), getattr(resident.noise_stats, field)) < 1e-6, field
 
 
 @requires_resident_gpu

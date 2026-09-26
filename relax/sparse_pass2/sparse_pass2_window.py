@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 from typing import NamedTuple
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 from recovar.core.configs import ForwardModelConfig
@@ -131,42 +130,6 @@ def _sparse_pass2_window_setup(
         n_windowed,
         n_recon_windowed,
     )
-
-
-@jax.jit
-def subtract_projected_reference_from_sparse_mstep_sums(
-    summed,
-    reconstruction_probs,
-    projected_reference,
-    ctf2_over_noise,
-):
-    """Form RELION VDAM's residual backprojection operand on compact support."""
-
-    reconstruction_probs_sum_t = jnp.sum(reconstruction_probs, axis=-1)
-    return subtract_projected_reference_from_sparse_mstep_rotation_sums(
-        summed,
-        reconstruction_probs_sum_t,
-        projected_reference,
-        ctf2_over_noise,
-    )
-
-
-@jax.jit
-def subtract_projected_reference_from_sparse_mstep_rotation_sums(
-    summed,
-    posterior_mass_by_rotation,
-    projected_reference,
-    ctf2_over_noise,
-):
-    """Subtract reference signal after dense or pair-sparse translation sums."""
-
-    projected_reference_weighted = projected_reference * ctf2_over_noise[:, None, :]
-    projected_reference_delta = jnp.where(
-        posterior_mass_by_rotation[..., None] != 0.0,
-        posterior_mass_by_rotation[..., None] * projected_reference_weighted,
-        0.0,
-    )
-    return summed - projected_reference_delta
 
 
 def _pass2_relion_flags(*, relion_exact_fine_gaussian, relion_firstiter_score_mode, relion_fine_diff2_fused_ffi, relion_f32_fine_posterior):
@@ -339,11 +302,3 @@ def _fine_translation_prior_2d(translation_log_prior, fine_translation_parent, *
     )
 
 
-def _shared_k_class_noise_variance(noise_variance, n_classes: int):
-    noise_np = np.asarray(noise_variance)
-    if noise_np.ndim >= 2 and int(noise_np.shape[0]) == int(n_classes):
-        first = noise_np[0]
-        if not np.allclose(noise_np, first[None, ...], rtol=0.0, atol=0.0):
-            return None
-        return first
-    return noise_variance

@@ -1,6 +1,5 @@
 """Native-oracle coverage of the VDAM device projector adapter boundary."""
 
-from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -13,8 +12,6 @@ from recovar.utils.helpers import recovar_volume_to_relion
 from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
-
-
 
 
 def _assert_existing_consumer_policy(control1, candidate1, candidate2, control2):

@@ -27,7 +27,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 from test_resident_scoring import N_FINE_TRANS, _build_case
-from test_sparse_pass2_bucketed_parity import IMAGE_SHAPE, VOLUME_SHAPE
+from helpers.sparse_pass2_mock import IMAGE_SHAPE, VOLUME_SHAPE
 
 from relax.sparse_pass2.resident_candidates import expand_mask_rows, materialize_chunk
 from relax.sparse_pass2.resident_scoring import (

@@ -215,7 +215,7 @@ sha256sum \
   "${REPO_ROOT}/relax/local/flat_local_rows.py" \
   "${REPO_ROOT}/relax/helpers/fourier_window.py" \
   "${REPO_ROOT}/relax/scoring/significance.py" \
-  "${REPO_ROOT}/relax/sparse_pass2/sparse_pass2_bucketed.py" \
+  "${REPO_ROOT}/relax/sparse_pass2/resident_pass2.py" \
   "${REPO_ROOT}/relax/local/local_backprojection.py" \
   "${REPO_ROOT}/relax/local/local_big_jit.py" \
   "${REPO_ROOT}/relax/local/local_em_engine.py" \

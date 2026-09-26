@@ -1,6 +1,6 @@
-"""Both bucketed pass-2 entry points size their projection budget through one owner."""
+"""The pass-2 projection budget is sized by one owner (sparse_pass2_window)."""
 
-from relax.sparse_pass2 import sparse_pass2_bucketed as sp
+from relax.sparse_pass2 import sparse_pass2_window as sp
 from relax.sparse_pass2 import sparse_pass2_window
 
 

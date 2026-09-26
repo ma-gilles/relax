@@ -94,44 +94,6 @@ def test_flatten_bucket_rotations_is_host_side_for_numpy_and_not_jitted():
     assert_matches(np.asarray(dev), rots.reshape(6, 3, 3))
 
 
-def test_per_particle_launch_rung_is_power_of_two_at_or_above_count():
-    from relax.sparse_pass2.sparse_pass2_adjoint import _per_particle_launch_rung
-
-    assert [_per_particle_launch_rung(c, 4096) for c in (0, 1, 2, 3, 4, 5, 100, 1000)] == [0, 1, 2, 4, 4, 8, 128, 1024]
-    assert _per_particle_launch_rung(3000, 2048) == 2048  # never beyond the bucket rows
-
-
-def test_per_particle_launches_pad_to_rungs_with_zeroed_spare_rows(monkeypatch):
-    import jax.numpy as jnp
-    from relax.sparse_pass2 import sparse_pass2_adjoint as adjoint_mod
-
-    values = (1.0 + jnp.arange(2 * 6 * 2, dtype=jnp.float32)).reshape(2, 6, 2).astype(jnp.complex64)
-    ctf_values = (100.0 + jnp.arange(2 * 6 * 2, dtype=jnp.float32)).reshape(2, 6, 2)
-    rotations = jnp.arange(2 * 6 * 9, dtype=jnp.float32).reshape(2, 6, 3, 3)
-    actual_counts = np.asarray([3, 5], dtype=np.int32)  # rungs 4 and 8 -> 8 capped to 6 bucket rows
-    calls = []
-
-    def fake_adjoint(block, window_indices, rotations_block, volume, image_shape, volume_shape, disc_type, half_image, half_volume, max_r, relion_x_half):
-        calls.append((np.asarray(block).copy(), np.asarray(rotations_block).copy()))
-        return volume
-
-    # 41128dcd0 made per-particle launches donate the accumulator; the
-    # donating adjoint keeps the non-donating positional signature.
-    monkeypatch.setattr(adjoint_mod, "_adjoint_slice_volume_windowed_donating", fake_adjoint)
-    monkeypatch.delenv("RELAX_RELION_X_HALF_BP_PARTICLE_POOL_SIZE", raising=False)
-    adjoint_mod._accumulate_relion_x_half_per_particle_launches(
-        values, ctf_values, rotations, actual_counts, jnp.zeros((4,), jnp.complex64), jnp.zeros((4,), jnp.float32),
-        window_indices=jnp.arange(2), image_shape=(8, 8), volume_shape=(8, 8, 8), disc_type="linear_interp",
-        half_volume=True, max_r=4.0, log_label_prefix="test",
-    )
-    assert [c[0].shape[0] for c in calls] == [4, 4, 6, 6]
-    # particle 0: rows 0-2 live, row 3 zeroed; particle 1: rows 0-4 live, row 5 zeroed
-    assert_matches(calls[0][0][:3], np.asarray(values[0, :3])); assert np.all(calls[0][0][3:] == 0)
-    assert_matches(calls[1][0][:3], np.asarray(ctf_values[0, :3])); assert np.all(calls[1][0][3:] == 0)
-    assert_matches(calls[2][0][:5], np.asarray(values[1, :5])); assert np.all(calls[2][0][5:] == 0)
-    assert_matches(calls[0][1], np.asarray(rotations[0, :4]))
-
-
 def test_large_bucket_pow2_rung_is_opt_in(monkeypatch):
     from relax.scoring import sparse_bucket_arrays as sba
 
@@ -144,17 +106,6 @@ def test_large_bucket_pow2_rung_is_opt_in(monkeypatch):
     assert pow2[:3] == default[:3]
     assert pow2[3:] == [8192, 16384, 32768, 131072, 262144]
     assert all(p >= d for p, d in zip(pow2, default))  # never smaller than the shared quantiser
-
-
-def test_candidate_density_logging_is_default_off(monkeypatch):
-    """The pass-2 candidate-density diagnostic must not run in production."""
-    from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed
-
-    monkeypatch.delenv(bucketed._CANDIDATE_DENSITY_LOG_ENV, raising=False)
-    assert bucketed._candidate_density_logging_enabled() is False
-    monkeypatch.setenv(bucketed._CANDIDATE_DENSITY_LOG_ENV, "1")
-    assert bucketed._candidate_density_logging_enabled() is True
-    assert bucketed._CANDIDATE_DENSITY_LOG_ENV == "RELAX_SPARSE_PASS2_LOG_CANDIDATE_DENSITY"
 
 
 def test_texture_projector_fallback_is_reported_once_per_reason(monkeypatch, caplog):
@@ -183,28 +134,6 @@ def test_texture_projector_fallback_is_reported_once_per_reason(monkeypatch, cap
     messages = [r.message for r in caplog.records if "texture projector unavailable" in r.message]
     assert len(messages) == 1, messages
     assert "complex128" in messages[0] and "want complex64" in messages[0]
-
-
-def test_pass2_projector_narrows_without_a_gate():
-    """Pass 2 always projects through the float32 texture unless scoring in float64.
-
-    The former opt-in RELAX_SPARSE_PASS2_PROJECTOR_COMPLEX64 is retired: the
-    standalone entry already narrowed through the dispatcher's persistent
-    texture, so the gate only made the saved-state entry path differ.
-    """
-    import inspect
-    import json
-    from pathlib import Path
-
-    from relax.sparse_pass2 import sparse_pass2_bucketed as bucketed
-
-    assert not hasattr(bucketed, "_pass2_projector_complex64_enabled")
-    source = inspect.getsource(bucketed)
-    assert "if not use_float64_scoring and relion_projector_half.dtype == jnp.complex128:" in source
-    retired = json.loads(
-        (Path(bucketed.__file__).parents[1] / "renamed_environment.json").read_text()
-    )["retired"]
-    assert "RELAX_SPARSE_PASS2_PROJECTOR_COMPLEX64" in retired
 
 
 def test_pass2_projector_cast_unblocks_the_texture_projector(monkeypatch):

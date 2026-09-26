@@ -1,4 +1,3 @@
-import inspect
 from pathlib import Path
 
 import jax.numpy as jnp
@@ -9,37 +8,8 @@ from relax.helpers.fourier_window import (
     make_fourier_window_indices_np,
     make_frequency_coords_half_np,
 )
-from relax.sparse_pass2.sparse_pass2_wavg import (
-    RelionWavgRectangle,
-    _make_relion_wavg_rectangle,
-    _relion_wavg_atomic_triplet_terms,
-    _relion_wavg_direct_norm_per_image,
-    _relion_wavg_rectangle_triplet_terms,
-    _relion_wavg_sequential_triplet_terms,
-    _replace_low_shell_noise_with_relion_wavg_direct_residual,
-    _select_optional_wavg_exact_pixels,
-)
-from relax.diagnostics.bpref_diagnostics import (
-    _bpref_contribution_context,
-)
-from relax.sparse_pass2.sparse_pass2_policy import (
-    _fresh_k1_direct_noise_default,
-    _relion_exact_bpref_operands_enabled,
-    _relion_powerclass_spectrum_norm_enabled,
-    _relion_wavg_direct_modes,
-)
-from relax.diagnostics.sparse_pass2_dump import (
-    _prioritize_stopped_pass2_dump_buckets,
-)
-from relax.sparse_pass2.sparse_pass2_scoring import (
-    _relion_cuda_powerclass_highres_xi2_half,
-)
-from relax.sparse_pass2.firstiter_bpref import (
-    _relion_firstiter_fused_bpref_enabled,
-)
-from relax.sparse_pass2.sparse_pass2_bucketed import (
-    compute_pass2_stats_sparse_bucketed,
-)
+from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle, _relion_wavg_rectangle_triplet_terms, _relion_wavg_sequential_triplet_terms
+from relax.sparse_pass2.sparse_pass2_policy import _relion_exact_bpref_operands_enabled, _relion_powerclass_spectrum_norm_enabled, _relion_wavg_direct_modes
 from scripts.analyze_k1_scale_aa_pixels import analyze
 from helpers.float_compare import assert_matches
 
@@ -76,43 +46,6 @@ def test_fresh_k1_default_enables_direct_noise_but_explicit_zero_disables(monkey
 
     monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "0")
     assert _relion_wavg_direct_modes(**kwargs) == (False, False)
-
-
-
-
-def test_full_box_wavg_noise_uses_numeric_size_in_both_accumulation_routes():
-    source = inspect.getsource(compute_pass2_stats_sparse_bucketed)
-
-    assert "direct Wavg noise replacement requires current_size" not in source
-    assert source.count(
-        "exclusive_shell_stop=int((image_shape[0] if current_size is None else current_size) // 2) + 1"
-    ) == 2
-    assert source.count(
-        "norm_unweighted_shell_cutoff=None if current_size is None else int(current_size // 2)"
-    ) == 2
-
-
-@pytest.mark.parametrize(
-    ("preserve_order", "exact_operands", "expected"),
-    [
-        (True, True, True),
-        (True, False, False),
-        (False, True, False),
-        (False, False, False),
-    ],
-)
-def test_direct_noise_default_is_limited_to_fresh_k1_exact_bpref_guard(
-    preserve_order,
-    exact_operands,
-    expected,
-):
-    assert (
-        _fresh_k1_direct_noise_default(
-            preserve_bpref_particle_order=preserve_order,
-            relion_exact_bpref_operands=exact_operands,
-        )
-        is expected
-    )
 
 
 @pytest.mark.parametrize("fresh_k1_guard", (False, True))
@@ -175,10 +108,6 @@ def test_exact_bpref_explicit_env_overrides_default(monkeypatch, override, expec
     )
 
 
-
-
-
-
 def test_wavg_direct_modes_reject_overlapping_factorial_arms(monkeypatch):
     monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", "1")
     monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "1")
@@ -200,124 +129,6 @@ def test_wavg_direct_residual_preserves_coupled_noise_and_norm(monkeypatch):
         scale_groups_available=True,
         scale_aa_enabled=True,
     ) == (True, True)
-
-
-def test_stopped_pass2_dump_prioritizes_only_requested_bucket(monkeypatch):
-    monkeypatch.setenv("RELAX_PASS2_DUMP_STOP_AFTER_TARGET", "1")
-    monkeypatch.setattr(
-        "relax.diagnostics.sparse_pass2_dump._pass2_dump_enabled",
-        lambda: True,
-    )
-    monkeypatch.setattr(
-        "relax.diagnostics.sparse_pass2_dump._pass2_dump_requested_for_bucket",
-        lambda **kwargs: int(np.asarray(kwargs["image_indices"])[0]) == 7,
-    )
-    buckets = [
-        {"image_indices": np.asarray([3])},
-        {"image_indices": np.asarray([7])},
-        {"image_indices": np.asarray([11])},
-    ]
-
-    prioritized = _prioritize_stopped_pass2_dump_buckets(
-        buckets,
-        experiment_dataset=object(),
-        current_size=80,
-    )
-
-    assert [int(bucket["image_indices"][0]) for bucket in prioritized] == [7, 3, 11]
-
-
-def test_nonstopped_pass2_dump_preserves_bucket_order(monkeypatch):
-    monkeypatch.delenv("RELAX_PASS2_DUMP_STOP_AFTER_TARGET", raising=False)
-    monkeypatch.setattr(
-        "relax.diagnostics.sparse_pass2_dump._pass2_dump_enabled",
-        lambda: True,
-    )
-    buckets = [
-        {"image_indices": np.asarray([3])},
-        {"image_indices": np.asarray([7])},
-    ]
-
-    preserved = _prioritize_stopped_pass2_dump_buckets(
-        buckets,
-        experiment_dataset=object(),
-        current_size=80,
-    )
-
-    assert preserved is buckets
-
-
-def test_stopped_norm_residual_dump_prioritizes_requested_bucket(monkeypatch):
-    monkeypatch.setattr(
-        "relax.diagnostics.sparse_pass2_dump._pass2_dump_enabled",
-        lambda: False,
-    )
-    monkeypatch.setenv("RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS", "1")
-    monkeypatch.setenv("RELAX_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET", "1")
-    monkeypatch.setattr(
-        "relax.diagnostics.sparse_pass2_dump._pass2_dump_requested_for_bucket",
-        lambda **kwargs: int(np.asarray(kwargs["image_indices"])[0]) == 7,
-    )
-    buckets = [
-        {"image_indices": np.asarray([3])},
-        {"image_indices": np.asarray([7])},
-        {"image_indices": np.asarray([11])},
-    ]
-
-    prioritized = _prioritize_stopped_pass2_dump_buckets(
-        buckets,
-        experiment_dataset=object(),
-        current_size=60,
-    )
-
-    assert [int(bucket["image_indices"][0]) for bucket in prioritized] == [7, 3, 11]
-
-
-def test_wavg_atomic_triplet_preserves_scale_units_and_forms_raw_diff2():
-    proj = jnp.asarray([[[2.0 + 1.0j, 3.0 - 2.0j]]], dtype=jnp.complex64)
-    shifted = jnp.asarray(
-        [[[1.0 + 2.0j, 2.0 + 1.0j], [0.0 + 1.0j, 1.0 - 1.0j]]],
-        dtype=jnp.complex64,
-    )
-    posterior = jnp.asarray([[[0.25, 0.75]]], dtype=jnp.float32)
-    summed = jnp.einsum("brt,btp->brp", posterior, shifted)
-    ctf_posterior = jnp.asarray([[[0.5, 0.25]]], dtype=jnp.float32)
-    noise = jnp.asarray([2.0, 4.0], dtype=jnp.float32)
-    scale = jnp.asarray([2.0], dtype=jnp.float32)
-
-    result = np.asarray(
-        _relion_wavg_atomic_triplet_terms(
-            proj,
-            jnp.abs(proj) ** 2,
-            summed,
-            ctf_posterior,
-            noise,
-            scale,
-            shifted,
-            posterior,
-        )
-    )
-
-    image_power = np.sum(
-        np.asarray(posterior)[..., None] * np.abs(np.asarray(shifted))[:, None, :, :] ** 2,
-        axis=2,
-        dtype=np.float32,
-    )
-    aa_raw = np.asarray(jnp.abs(proj) ** 2) * np.asarray(ctf_posterior) * np.asarray(noise)[None, None]
-    xa_raw = np.asarray(noise)[None, None] * np.real(
-        np.asarray(proj) * np.conj(np.asarray(summed))
-    )
-    expected_diff2 = (image_power + aa_raw - 2.0 * xa_raw).astype(np.float32)
-
-    np.testing.assert_allclose(
-        result[..., 0],
-        xa_raw / 2.0,
-    )
-    np.testing.assert_allclose(
-        result[..., 1],
-        aa_raw / 4.0,
-    )
-    np.testing.assert_allclose(result[..., 2], expected_diff2)
 
 
 def test_wavg_sequential_triplet_matches_relion_translation_loop():
@@ -394,37 +205,6 @@ def test_wavg_sequential_triplet_matches_relion_translation_loop():
                 )
 
     assert_matches(result, expected)
-
-
-def test_direct_wavg_residual_replaces_only_complete_low_shells():
-    residual = np.asarray([100.0, 200.0, 300.0, 400.0])
-    image_power = np.asarray([10.0, 20.0, 30.0, 40.0])
-    shell_indices = np.asarray([0, 1, 2, 1, 3], dtype=np.int32)
-    atomic_diff2 = np.asarray(
-        [
-            [1.0, 2.0, 1000.0, 3.0, 10000.0],
-            [4.0, 5.0, 2000.0, 6.0, 20000.0],
-        ],
-        dtype=np.float32,
-    )
-
-    replaced_residual, replaced_image_power = (
-        _replace_low_shell_noise_with_relion_wavg_direct_residual(
-            residual,
-            image_power,
-            atomic_diff2,
-            shell_indices,
-            exclusive_shell_stop=2,
-        )
-    )
-
-    # Shells 0 and 1 use fused residuals in image-major, pixel-major order.
-    assert_matches(replaced_residual, [5.0, 16.0, 300.0, 400.0])
-    assert_matches(replaced_image_power, [0.0, 0.0, 30.0, 40.0])
-    # The partially represented cutoff shell (2) and all higher shells remain
-    # on the original algebraic path despite large direct diagnostic values.
-    assert_matches(residual, [100.0, 200.0, 300.0, 400.0])
-    assert_matches(image_power, [10.0, 20.0, 30.0, 40.0])
 
 
 def test_relion_wavg_rectangle_matches_native_size60_topology_and_order():
@@ -531,39 +311,6 @@ def test_relion_wavg_rectangle_terms_keep_image_only_pixels_in_issue_stream():
     shifted_power = np.abs(np.asarray(shifted)) ** 2
     expected_power = np.einsum("brt,btp->brp", np.asarray(posterior), shifted_power)
     np.testing.assert_allclose(result[:, :, image_only, 2], expected_power[:, :, image_only])
-
-
-def test_relion_wavg_direct_norm_uses_valid_pixels_then_high_shell_power():
-    atomic_diff2 = np.asarray(
-        [[1.0, 1000.0, 2.0, 3.0], [4.0, 2000.0, 5.0, 6.0]],
-        dtype=np.float32,
-    )
-    shells = np.asarray([0, -1, 2, 1], dtype=np.int32)
-    high_shell = np.asarray([10.0, 20.0], dtype=np.float64)
-
-    result = _relion_wavg_direct_norm_per_image(
-        atomic_diff2,
-        shells,
-        high_shell,
-    )
-
-    assert_matches(result, [16.0, 35.0])
-
-
-def test_optional_wavg_exact_pixel_selection_is_inert_without_atomic_capture():
-    rectangle = RelionWavgRectangle(
-        centered_indices=np.asarray([8, 9, 10], dtype=np.int32),
-        exact_positions=np.asarray([2, 0], dtype=np.int32),
-        shell_indices=np.asarray([0, 1, 2], dtype=np.int32),
-    )
-    values = np.asarray([[1.0, 2.0, 3.0]], dtype=np.float32)
-
-    assert _select_optional_wavg_exact_pixels(None, rectangle) is None
-    assert _select_optional_wavg_exact_pixels(values, None) is None
-    assert_matches(
-        _select_optional_wavg_exact_pixels(values, rectangle),
-        [[3.0, 1.0]],
-    )
 
 
 def test_scale_aa_pixels_joins_fourier_coordinates_and_localizes_operand_delta(tmp_path: Path):

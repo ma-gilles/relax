@@ -94,8 +94,6 @@ def test_k_class_replay_star_precision_is_explicitly_rounded():
     assert source == "star-rounded"
 
 
-
-
 def test_k_class_replay_inherits_relion_model_padding_factor():
     from scripts.run_k_class_parity import _resolve_relion_padding_factor
 
@@ -298,8 +296,6 @@ def test_k_class_replay_firstiter_lowpass_follows_relion_ini_high():
     ) == 25.0
 
 
-
-
 def test_k_class_replay_batch_plan_preserves_smaller_estimator_plan(monkeypatch):
     from relax.helpers import batch_planning
     from scripts.run_k_class_parity import _safe_k_class_replay_batch_plan
@@ -326,22 +322,6 @@ def test_k_class_replay_batch_plan_preserves_smaller_estimator_plan(monkeypatch)
 
     assert plan.image_batch_size == 9
     assert plan.rotation_block_size == 11
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def test_k_class_replay_rejects_stop_after_pass2_with_contribution_capture(
@@ -372,8 +352,6 @@ def test_k_class_replay_rejects_stop_after_pass2_with_contribution_capture(
     assert "contribution capture runs during the M-step" in capsys.readouterr().err
 
 
-
-
 def test_k_class_replay_stop_after_contribution_requires_exact_target_filters(
     monkeypatch,
     capsys,
@@ -400,10 +378,6 @@ def test_k_class_replay_stop_after_contribution_requires_exact_target_filters(
     error = capsys.readouterr().err
     assert "--stop-after-contribution-dump requires exact target filters" in error
     assert "RELAX_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES" in error
-
-
-
-
 
 
 def test_relion_adaptive_coarse_image_size_matches_replay_case8():

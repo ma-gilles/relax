@@ -184,17 +184,15 @@ def _resident_on(name: str) -> bool:
 
 
 def _assert_resident_engines_ran(log: str, *, global_pass: bool, local_pass: bool, case: str) -> None:
-    """Unless the resident drivers are switched off, the passes a case exists for must run resident.
+    """The passes a case exists for must run resident (the local one unless it is switched off).
 
     The routing logs its choice (dispatch.py, local_search_iteration.py); a case
-    that silently fell back to the compact or exact local engine would pass its
-    RELION gates while testing the other engine.
+    that silently fell back to the exact local engine would pass its RELION gates
+    while testing the other engine.
     """
 
-    if global_pass and _resident_on("RELAX_SPARSE_PASS2_RESIDENT"):
+    if global_pass:
         assert "Resident pass-2 plan:" in log, f"{case} did not run the resident global pass 2"
-        # No global pass may leave for the compact engine (dispatch.py logs each one).
-        assert "does not cover" not in log, f"{case} routed a global pass to the compact engine"
     if local_pass and _resident_on("RELAX_LOCAL_SEARCH_RESIDENT"):
         assert "running the device-resident local fine pass 2" in log, (
             f"{case} did not run the resident local pass 2"
@@ -642,7 +640,7 @@ def test_em_parity_fast_k1_os1_coldstart_standalone(tmp_path):
 
     Every other K=1 case here is oversampling 0 or a replay, so this is the
     fast-tier case that reaches the production adaptive pass 2 (the device-resident
-    driver unless RELAX_SPARSE_PASS2_RESIDENT=0). The RELION
+    driver). The RELION
     oracle differs from the os0 one only in --oversampling 1.
     """
     m, check = _run_k1_coldstart(tmp_path, start="standalone", oversampling=1)
@@ -1373,7 +1371,6 @@ def test_em_parity_fast_kclass_strict_oversample_coldstart(tmp_path):
 # Several optics groups need the device-resident pass 2 on main (README); the flags are explicit here
 # until auto-routing lands.
 MULTIOPTICS_RESIDENT_ENV = {
-    "RELAX_SPARSE_PASS2_RESIDENT": "1",
     "RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF": "1",
     "RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM": "1",
     "RELAX_K1_RELION_EXACT_BPREF_OPERANDS": "1",

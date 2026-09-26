@@ -329,15 +329,13 @@ divided by `N²` in binary64 and rounded once
 ([`sparse_pass2_scoring.py`](../../relax/sparse_pass2/sparse_pass2_scoring.py),
 `_relion_native_fine_units`), and RELION's own `corr_img` before its `N⁻⁴`
 conversion, with the zero origin of `Minvsigma2`
-(`_relion_native_score_corr_img`). The compact engine divides the translated
-image; the device-resident driver divides the unshifted image, which its
-kernel translates, and the reference rows of its score projections
+(`_relion_native_score_corr_img`). The device-resident driver divides the unshifted image,
+which its kernel translates, and the reference rows of its score projections
 ([`resident_operands.py`](../../relax/sparse_pass2/resident_operands.py),
 `prepare_resident_half_operands`;
 [`resident_pass2.py`](../../relax/sparse_pass2/resident_pass2.py),
-`_prepare_chunk_reconstruction_operands`). The two engines therefore agree to
-rounding, not bit for bit. Reconstruction and noise operands keep RECOVAR units
-in both. The exact local engine scores in RECOVAR units. The regressions are in
+`_prepare_chunk_reconstruction_operands`). Reconstruction and noise operands keep RECOVAR
+units. The exact local engine scores in RECOVAR units. The regressions are in
 [`test_relion_native_fine_score_units.py`](../../tests/unit/test_relion_native_fine_score_units.py).
 
 For bounded normalized-CC rescoring, the stored projector radius and the
@@ -385,11 +383,11 @@ owns cumulative-mass selection and coarse/fine mappings. Significance selects
 rotation/translation pairs; it is not simply an independent probability cutoff
 on every orientation.
 
-Fine execution can use dense or sparse routes.
-[`sparse_pass2_bucketed.py`](../../relax/sparse_pass2/sparse_pass2_bucketed.py)
-owns bucketed and compact-pair scoring, posterior reconstruction policies and
-accumulation, including `compute_k_class_pass2_stats_sparse_fused`.
-The support representation, execution buckets and float32 posterior policy
+Fine execution runs on the device-resident pass 2:
+[`resident_pass2.py`](../../relax/sparse_pass2/resident_pass2.py) owns the K=1 and
+K-class scoring, the segmented float32 posterior and the accumulation
+(`compute_pass2_stats_resident`, `compute_k_class_pass2_stats_resident`); the dense route
+is a deprecated diagnostic. The support representation and float32 posterior policy
 are part of the comparison contract. Preserving only final MAP assignments
 does not establish equivalent soft M-step contributions.
 

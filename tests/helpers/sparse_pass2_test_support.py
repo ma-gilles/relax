@@ -14,10 +14,8 @@ import jax.numpy as jnp
 
 from relax.sparse_pass2.sparse_pass2_scoring import (
     _RELION_CUDA_FINE_REF3D_BLOCK_SIZE,
-    _relion_cuda_fine_diff2_to_scores,
     _relion_cuda_fine_normalized_cc_score,
     _relion_cuda_fine_reduce_lanes,
-    _score_pass2_bucket_relion_gpu_diff2_single_cached_raw,
 )
 
 
@@ -39,42 +37,6 @@ def _relion_cuda_fine_tree_sum(values):
     return _relion_cuda_fine_reduce_lanes(lanes)
 
 
-@partial(jax.jit, static_argnames=("use_fused_ffi",))
-def _score_pass2_bucket_relion_gpu_diff2_single_cached(
-    shifted_corrected,  # (T, N) complex
-    corr_img_score,  # (N,) real
-    proj_half,  # (R, N) complex
-    half_weights,  # (N,) real
-    rotation_log_prior,  # (R,) real
-    translation_log_prior,  # (T,) real
-    candidate_mask,  # (R, T) bool
-    relion_full_to_compact=None,  # (current_size * (current_size // 2 + 1),) int
-    min_diff2=None,  # scalar or (1,) optional external common minimum
-    highres_xi2_half=None,  # scalar float32 powerClass tail already divided by two
-    *,
-    use_fused_ffi=False,
-):
-    """Single-image cached-projection variant that avoids a ``(1, R, N)`` copy."""
-
-    score_dtype = jnp.float64 if jnp.asarray(corr_img_score).dtype == jnp.float64 else jnp.float32
-    rotation_log_prior = jnp.asarray(rotation_log_prior, dtype=score_dtype)
-    translation_log_prior = jnp.asarray(translation_log_prior, dtype=score_dtype)
-    diff2 = _score_pass2_bucket_relion_gpu_diff2_single_cached_raw(
-        shifted_corrected,
-        corr_img_score,
-        proj_half,
-        half_weights,
-        relion_full_to_compact,
-        highres_xi2_half,
-        use_fused_ffi=use_fused_ffi,
-    )
-    return _relion_cuda_fine_diff2_to_scores(
-        diff2[jnp.newaxis, :, :],
-        rotation_log_prior[jnp.newaxis, :, None],
-        translation_log_prior[jnp.newaxis, None, :],
-        candidate_mask[jnp.newaxis, :, :],
-        min_diff2=min_diff2,
-    )[0]
 
 
 @jax.jit

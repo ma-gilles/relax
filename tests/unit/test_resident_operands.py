@@ -33,7 +33,7 @@ from helpers.float_compare import assert_matches, matches
 pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
-from test_sparse_pass2_bucketed_parity import IMAGE_SHAPE, MockDataset
+from helpers.sparse_pass2_mock import IMAGE_SHAPE, MockDataset
 
 from recovar.core.configs import ForwardModelConfig
 from relax.helpers.batch_fetch import fetch_indexed_batch

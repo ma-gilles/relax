@@ -22,16 +22,12 @@ from relax.sampling import (
 
 
 def single_class_bucketed_pass2_selected(*, firstiter: bool) -> bool:
-    """Whether K1 uses the bucketed projector/BPref lifetime."""
-    from relax.classification.k1_local_pass2 import k1_local_pass2_engine_selected
-    from relax.classification.k_class import _use_fused_sparse_k_class_pass2
-    from relax.sparse_pass2.resident_pass2 import resident_pass2_requested
-    return bool(
-        _sparse_pass2_selected("RELAX_K_CLASS_DENSE_PASS2" if firstiter else "RELAX_K1_DENSE_PASS2")
-        and (firstiter or not resident_pass2_requested())
-        and not _use_fused_sparse_k_class_pass2(1)
-        and not k1_local_pass2_engine_selected()
-    )
+    """Whether K=1 plans its batches for the sparse projector/BPref lifetime.
+
+    Only the ``--firstiter_cc`` pass does (its compact batch planning), and only while the
+    ``RELAX_K_CLASS_DENSE_PASS2`` diagnostic keeps the sparse pass 2.
+    """
+    return bool(firstiter and _sparse_pass2_selected("RELAX_K_CLASS_DENSE_PASS2"))
 
 
 def _score_kclass_firstiter_cc_pass2(

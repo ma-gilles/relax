@@ -1,8 +1,8 @@
-"""Both bucketed pass-2 entry points build their scoring half-image weights through one owner."""
+"""The pass-2 scoring half-image weights are built by one owner (sparse_pass2_window)."""
 
 import jax.numpy as jnp
 
-from relax.sparse_pass2 import sparse_pass2_bucketed as sp
+from relax.sparse_pass2 import sparse_pass2_window as sp
 from relax.sparse_pass2 import sparse_pass2_window
 
 

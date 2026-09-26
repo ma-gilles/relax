@@ -105,7 +105,7 @@ for detailed module contracts. Start with the boundary being changed:
 | Replay selection and final-pass admission | [`relion_replay.py`](../../relax/diagnostics/relion_replay.py), [`finalization_policy.py`](../../relax/refinement/finalization_policy.py) |
 | Sparse engine dispatch and independent reference | [`sparse_pass2/dispatch.py`](../../relax/sparse_pass2/dispatch.py), [`reference/sparse_pass2.py`](../../relax/reference/sparse_pass2.py); grid and support arithmetic stay in `helpers/oversampling.py` |
 | Standard half-set and first-iteration adapters | [`refinement/half_scoring.py`](../../relax/refinement/half_scoring.py), [`refinement/firstiter_cc.py`](../../relax/refinement/firstiter_cc.py) |
-| Coarse/sparse scoring | [`scoring/significance.py`](../../relax/scoring/significance.py), [`sparse_pass2/sparse_pass2_bucketed.py`](../../relax/sparse_pass2/sparse_pass2_bucketed.py) |
+| Coarse/sparse scoring | [`scoring/significance.py`](../../relax/scoring/significance.py), [`sparse_pass2/resident_pass2.py`](../../relax/sparse_pass2/resident_pass2.py) |
 
 Coarse window metadata is published by `scoring/coarse_publication.py`; local
 reconstruction-group admission belongs to `local/local_batch_planning.py`.

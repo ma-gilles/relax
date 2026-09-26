@@ -68,7 +68,6 @@ def _logsumexp_np(values: np.ndarray, axis: int) -> np.ndarray:
     return np.squeeze(max_value, axis=axis) + log_sum
 
 
-
 def _stack_or_none(values):
     # Host stack: every consumer of the selected poses reads them with
     # np.asarray, and a device stack compiled one program per subset size.
@@ -77,13 +76,11 @@ def _stack_or_none(values):
     return np.stack([np.asarray(value) for value in values], axis=0)
 
 
-
 def _k1_pose_publish_direct_requested() -> bool:
     token = os.environ.get(_K1_POSE_PUBLISH_DIRECT_ENV, "0").strip()
     if token not in {"0", "1"}:
         raise ValueError(f"{_K1_POSE_PUBLISH_DIRECT_ENV} must be 0 or 1")
     return token == "1"
-
 
 
 def _selected_by_class(per_class_values, class_assignments: np.ndarray, *, direct_single_class: bool = False):
@@ -105,7 +102,6 @@ def _selected_by_class(per_class_values, class_assignments: np.ndarray, *, direc
         return None
     class_assignments = np.asarray(class_assignments, dtype=np.int32)
     return stacked[class_assignments, np.arange(class_assignments.shape[0])]
-
 
 
 def _summed_sumw(noise_stats):
@@ -160,7 +156,6 @@ def _sum_noise_stats(noise_stats: tuple[NoiseStats, ...] | None, *, host_arrays=
     )
 
 
-
 def _stack_accumulators(values, *, host: bool):
     if host:
         host_values = tuple(np.asarray(value) for value in values)
@@ -171,7 +166,6 @@ def _stack_accumulators(values, *, host: bool):
             return host_values[0][None, ...]
         return np.stack(host_values, axis=0)
     return jnp.stack([jnp.asarray(value) for value in values], axis=0)
-
 
 
 def _sum_k_class_noise_stats(
@@ -220,7 +214,6 @@ def _sum_k_class_noise_stats(
     )
 
 
-
 def _resolve_class_mstep_posterior_sums(
     *,
     noise_stats: tuple[NoiseStats, ...] | None,
@@ -252,7 +245,6 @@ def _resolve_class_mstep_posterior_sums(
     if not np.all(np.isfinite(resolved)) or np.any(resolved < 0.0):
         raise ValueError("class M-step posterior sums must be finite and non-negative")
     return resolved
-
 
 
 def _assemble_result(
@@ -588,7 +580,6 @@ def _expand_subset_noise_stats(
     )
 
 
-
 def _zero_subset_noise_stats(
     noise_variance,
     *,
@@ -612,7 +603,6 @@ def _zero_subset_noise_stats(
     )
 
 
-
 def _full_stats_from_subset(
     subset_stats: RelionStats,
     image_indices: np.ndarray,
@@ -634,7 +624,6 @@ def _full_stats_from_subset(
     )
 
 
-
 def _expand_subset_pose_details(best_rots, best_trans, best_rot_ids, image_indices, n_images):
     """Scatter scored poses to parent image rows, leaving unvisited rows zero.
 
@@ -650,370 +639,3 @@ def _expand_subset_pose_details(best_rots, best_trans, best_rot_ids, image_indic
     return best_rots_full, best_trans_full, best_rot_ids_full
 
 
-class SparseKClassHostStatistics(NamedTuple):
-    """Host arrays updated in bucket order during joint sparse classification."""
-
-    class_hard_assignments: np.ndarray
-    best_rotations: list[np.ndarray]
-    best_eulers: list[np.ndarray] | None
-    best_rotation_indices: list[np.ndarray]
-    class_log_evidence: np.ndarray
-    class_score_log_z: np.ndarray
-    best_log_score: np.ndarray
-    max_posterior: np.ndarray
-    rotation_posterior_sums: np.ndarray
-
-    def update_bucket(
-        self,
-        *,
-        class_index,
-        actual_counts,
-        rotation_indices,
-        image_indices,
-        local_rotation_row,
-        translation_idx,
-        bucket_uses_compact_pairs,
-        batch,
-        n_fine_trans,
-        best_argmax,
-        best_log_score_bucket,
-        max_posterior_bucket,
-        class_log_z,
-        probs_sum_t_jax,
-        score_real_dtype,
-        log_score_offset,
-        use_exact_relion_gaussian,
-        per_image_inputs_by_class,
-        best_pair_row=None,
-        best_pair_translation=None,
-        vectorized_stats_replay=False,
-    ):
-        """Apply one bucket with explicit inputs; never read a loop closure.
-
-        Keep host casts and updates in source order. The caller owns transfer
-        timing and must retain each bucket's arrays until this method returns.
-        """
-        (
-            class_hard_assignments,
-            best_rotations,
-            best_eulers,
-            best_rotation_indices,
-            class_log_evidence,
-            class_score_log_z,
-            best_log_score,
-            max_posterior,
-            rotation_posterior_sums,
-        ) = self
-        for name, value in (
-            ("image_indices", image_indices),
-            ("best_argmax", best_argmax),
-            ("best_log_score", best_log_score_bucket),
-            ("max_posterior", max_posterior_bucket),
-            ("class_log_z", class_log_z),
-            ("probs_sum_t", probs_sum_t_jax),
-        ):
-            shape = np.shape(value)
-            if not shape or shape[0] != int(batch):
-                raise RuntimeError(
-                    f"deferred statistics leaf {name} has shape {shape} but the bucket "
-                    f"has {batch} real images (class {class_index + 1})"
-                )
-        actual_counts_arr = np.asarray(actual_counts, dtype=np.int64)
-        best_argmax_np = np.asarray(best_argmax, dtype=np.int64)
-        best_log_score_np = np.asarray(best_log_score_bucket, dtype=np.float64)
-        has_best_pose_np = np.isfinite(best_log_score_np)
-        if bucket_uses_compact_pairs:
-            safe_best_argmax_np = np.where(has_best_pose_np, best_argmax_np, 0)
-            row_index_np = np.arange(batch, dtype=np.int64)
-            if best_pair_row is None:
-                pair_local_rotation_row = np.asarray(local_rotation_row, dtype=np.int32)
-                pair_translation_idx = np.asarray(translation_idx, dtype=np.int32)
-                best_pair_row = pair_local_rotation_row[row_index_np, safe_best_argmax_np]
-                best_pair_translation = pair_translation_idx[row_index_np, safe_best_argmax_np]
-            best_rot_idx = np.where(
-                has_best_pose_np, np.asarray(best_pair_row), 0,
-            ).astype(np.int64, copy=False)
-            best_trans_idx = np.where(
-                has_best_pose_np, np.asarray(best_pair_translation), 0,
-            ).astype(np.int64, copy=False)
-        else:
-            best_rot_idx = best_argmax_np // n_fine_trans
-            best_trans_idx = best_argmax_np % n_fine_trans
-            row_index_np = np.arange(batch, dtype=np.int64)
-        best_fine_rot_idx = np.asarray(rotation_indices, dtype=np.int64)[
-            row_index_np,
-            best_rot_idx,
-        ]
-        if np.any(best_rot_idx >= actual_counts_arr):
-            bad = np.flatnonzero(best_rot_idx >= actual_counts_arr)
-            raise RuntimeError(
-                "Fused sparse K-class pass-2: best rotation index points into padding for "
-                f"class {class_index + 1}, images {bad.tolist()}",
-            )
-        max_posterior_np = np.asarray(
-            max_posterior_bucket,
-            dtype=score_real_dtype,
-        )
-        class_log_z_np = np.asarray(class_log_z, dtype=np.float64)
-        probs_sum_t = np.asarray(probs_sum_t_jax, dtype=np.float64)
-        if vectorized_stats_replay:
-            n_real = int(batch)
-            img = np.asarray(image_indices[:n_real], dtype=np.int64)
-            per_image_inputs = per_image_inputs_by_class[class_index]
-            fine_rot = best_fine_rot_idx[:n_real].astype(np.int64)
-            trans = best_trans_idx[:n_real].astype(np.int64)
-            rot_local = best_rot_idx[:n_real].astype(np.int64)
-            class_hard_assignments[class_index, img] = fine_rot * n_fine_trans + trans
-            rotation_table = per_image_inputs.get("rotation_table") if isinstance(per_image_inputs, dict) else None
-            if rotation_table is not None:
-                best_rotations[class_index][img] = np.asarray(rotation_table)[fine_rot]
-            else:
-                for row, image_idx in enumerate(img.tolist()):
-                    best_rotations[class_index][image_idx] = per_image_inputs["oversampled_rots"][image_idx][int(rot_local[row])]
-            if best_eulers is not None:
-                for row, image_idx in enumerate(img.tolist()):
-                    best_eulers[class_index][image_idx] = per_image_inputs["source_eulers"][image_idx][int(rot_local[row])]
-            best_rotation_indices[class_index][img] = fine_rot
-            finite_z = np.isfinite(class_log_z_np[:n_real])
-            evidence = class_log_z_np[:n_real] + log_score_offset[:n_real]
-            class_log_evidence[class_index, img] = np.where(finite_z, evidence, -np.inf)
-            class_score_log_z[class_index, img] = np.where(
-                finite_z, evidence if use_exact_relion_gaussian else class_log_z_np[:n_real], -np.inf
-            )
-            best_log_score[class_index, img] = best_log_score_np[:n_real] + log_score_offset[:n_real]
-            max_posterior[class_index, img] = max_posterior_np[:n_real]
-            counts = actual_counts_arr[:n_real]
-            active = np.flatnonzero(counts > 0)
-            if active.size:
-                coarse_parts = []
-                prob_parts = []
-                for row in active.tolist():
-                    image_idx = int(img[row])
-                    cnt = int(counts[row])
-                    coarse_parts.append(
-                        per_image_inputs["unique_rot"][image_idx][per_image_inputs["parent_map"][image_idx]]
-                    )
-                    prob_parts.append(probs_sum_t[row, :cnt])
-                np.add.at(
-                    rotation_posterior_sums[class_index],
-                    np.concatenate(coarse_parts).astype(np.int64, copy=False),
-                    np.concatenate(prob_parts),
-                )
-            return
-        for row, image_idx in enumerate(image_indices.tolist()):
-            r = int(best_rot_idx[row])
-            t = int(best_trans_idx[row])
-            fine_rot_idx = int(best_fine_rot_idx[row])
-            class_hard_assignments[class_index, image_idx] = fine_rot_idx * n_fine_trans + t
-            best_rotations[class_index][image_idx] = per_image_inputs_by_class[class_index]["oversampled_rots"][
-                image_idx
-            ][r]
-            if best_eulers is not None:
-                best_eulers[class_index][image_idx] = per_image_inputs_by_class[class_index]["source_eulers"][
-                    image_idx
-                ][r]
-            best_rotation_indices[class_index][image_idx] = fine_rot_idx
-            if np.isfinite(class_log_z_np[row]):
-                class_log_evidence[class_index, image_idx] = float(class_log_z_np[row] + log_score_offset[row])
-                class_score_log_z[class_index, image_idx] = float(
-                    class_log_z_np[row] + log_score_offset[row]
-                    if use_exact_relion_gaussian
-                    else class_log_z_np[row]
-                )
-            else:
-                class_log_evidence[class_index, image_idx] = -np.inf
-                class_score_log_z[class_index, image_idx] = -np.inf
-            best_log_score[class_index, image_idx] = float(best_log_score_np[row] + log_score_offset[row])
-            max_posterior[class_index, image_idx] = float(max_posterior_np[row])
-            cnt = int(actual_counts_arr[row])
-            if cnt == 0:
-                continue
-            unique_rot_image = per_image_inputs_by_class[class_index]["unique_rot"][image_idx]
-            parent_map_image = per_image_inputs_by_class[class_index]["parent_map"][image_idx]
-            coarse_rot_indices = unique_rot_image[parent_map_image]
-            np.add.at(
-                rotation_posterior_sums[class_index],
-                coarse_rot_indices,
-                probs_sum_t[row, :cnt],
-            )
-
-
-class DeferredHostUpdates:
-    """Transfer small groups of device leaves, then apply updates in order.
-
-    Host metadata belongs to the producing bucket and must remain immutable
-    until replay. Each callback receives explicit named inputs, never a loop
-    closure. A single oversized record is transferred alone.
-    """
-
-    def __init__(self, *, max_records=4, max_bytes=64 * 1024**2, check=False):
-        if max_records < 1 or max_bytes < 1:
-            raise ValueError("host update limits must be positive")
-        self.max_records = max_records
-        self.max_bytes = max_bytes
-        self.records = []
-        self.pending_bytes = 0
-        from relax.diagnostics.deferred_replay import DeferredReplayCheck
-        self.check = DeferredReplayCheck() if check else None
-
-    def append(self, update, *, host, device):
-        if host.keys() & device.keys():
-            raise ValueError("host and device update inputs must be disjoint")
-        size = sum(int(value.nbytes) for value in device.values())
-        if self.records and self.pending_bytes + size > self.max_bytes:
-            self.flush()
-        if self.check is not None:
-            self.check.append(update, host, device)
-        self.records.append((update, host, device))
-        self.pending_bytes += size
-        if len(self.records) >= self.max_records or self.pending_bytes >= self.max_bytes:
-            self.flush()
-
-    def flush(self):
-        if not self.records:
-            return
-        # Record and byte limits bound each transfer group; optional winning-pair
-        # and score-offset leaves travel with their producing record.
-        pulled = jax.device_get([device for _, _, device in self.records])
-        records = self.records
-        if self.check is not None:
-            self.check.validate_inputs(records, pulled)
-        self.records = []
-        self.pending_bytes = 0
-        for position, ((update, host, _), device) in enumerate(zip(records, pulled, strict=True)):
-            update(**host, **device)
-            if self.check is not None:
-                self.check.validate_output(position, update, host)
-        if self.check is not None:
-            self.check.finish()
-
-
-class SparseKClassNoiseStatistics(NamedTuple):
-    """Source-order host updates for class mass and noise sufficient statistics."""
-
-    class_posterior_sums_mstep: np.ndarray
-    noise_img_power_total: list[np.ndarray | None]
-    noise_norm_correction_total: list[np.ndarray | None]
-    noise_sumw_total: np.ndarray
-    noise_sigma2_offset_total: np.ndarray
-    noise_scale_correction_xa_total: np.ndarray | None
-    noise_scale_correction_aa_total: np.ndarray | None
-    noise_wsum_total: list[np.ndarray | None]
-
-    def posterior(self, *, class_index, probs_sum_t_jax):
-        self.class_posterior_sums_mstep[class_index] += float(
-            np.sum(np.asarray(probs_sum_t_jax, dtype=np.float64))
-        )
-
-    def offset(self, *, class_index, translation_sqdist_ang, translation_posterior_jax):
-        translation_posterior = np.asarray(translation_posterior_jax, dtype=np.float64)
-        self.noise_sigma2_offset_total[class_index] += float(
-            np.sum(translation_posterior * translation_sqdist_ang, dtype=np.float64)
-        )
-
-    def power(self, *, class_index, image_indices, support_mass, weighted_img_shells, weighted_img_per_image=None, update_norm=True):
-        support_mass_np = np.asarray(support_mass, dtype=np.float64)
-        self.noise_img_power_total[class_index] += np.asarray(weighted_img_shells, dtype=np.float64)
-        if update_norm:
-            np.add.at(
-                self.noise_norm_correction_total[class_index], image_indices,
-                np.asarray(weighted_img_per_image, dtype=np.float64),
-            )
-        self.noise_sumw_total[class_index] += float(np.sum(support_mass_np, dtype=np.float64))
-
-    def scale(self, *, class_index, bucket_group_ids, scale_xa_per_image, scale_aa_per_image):
-        np.add.at(
-            self.noise_scale_correction_xa_total[class_index],
-            np.asarray(bucket_group_ids, dtype=np.int64),
-            np.asarray(scale_xa_per_image, dtype=np.float64),
-        )
-        np.add.at(
-            self.noise_scale_correction_aa_total[class_index],
-            np.asarray(bucket_group_ids, dtype=np.int64),
-            np.asarray(scale_aa_per_image, dtype=np.float64),
-        )
-
-    def residual(self, *, class_index, image_indices, block_noise_shells, block_norm_residual):
-        self.noise_wsum_total[class_index] += np.asarray(block_noise_shells, dtype=np.float64)
-        np.add.at(
-            self.noise_norm_correction_total[class_index], image_indices,
-            np.asarray(block_norm_residual, dtype=np.float64),
-        )
-
-
-@jax.jit
-def _accumulate_noise_totals_device(
-    wsum_total, norm_total, padded_leak, image_indices, n_real_images, block_shells, block_norm_residual
-):
-    """float64 ``wsum += shells`` and ``norm[image] += residual`` on the device.
-
-    The chunk's first ``n_real_images`` indices are unique, so their scatter-add
-    is a plain per-element add and equals the host ``np.add.at`` bit for bit.
-    Image-capacity padding repeats the last real image's index; those rows
-    carry exactly zero residual (zero posterior mass zeroes every term of
-    :func:`_compute_noise_block_and_norm_residual_from_flat_rows_residual_terms`),
-    so the host adds exact zeros for them.  They are routed to an out-of-bounds
-    slot and dropped here (the unique-index promise is undefined for
-    overlapping indices, JAX ``lax.slicing``), and ``padded_leak`` records
-    whether any padded row carried a non-zero residual so the fold can fail
-    closed instead of silently diverging from the host.  A per-row device
-    loop is not used: XLA executes while loops with a host round trip per
-    iteration.
-    """
-
-    wsum_total = wsum_total + jnp.asarray(block_shells, dtype=jnp.float64)
-    residual = jnp.asarray(block_norm_residual, dtype=jnp.float64)
-    rows = jnp.arange(residual.shape[0], dtype=jnp.int32)
-    real = rows < n_real_images
-    out_of_bounds = jnp.int32(norm_total.shape[0])
-    scatter_indices = jnp.where(real, image_indices, out_of_bounds)
-    norm_total = norm_total.at[scatter_indices].add(residual, unique_indices=True, mode="drop")
-    padded_leak = padded_leak | jnp.any(jnp.where(real, False, residual != 0.0))
-    return wsum_total, norm_total, padded_leak
-
-
-class SparseKClassDeviceNoiseTotals:
-    """Keep norm and residual totals on device across bounded host-stat flushes.
-
-    Power and residual contributions enter in their original loop order. These
-    are the existing float64 statistics accumulators, not double EM scoring.
-    The host owner must not mutate these two totals before ``finish``.
-    """
-
-    def __init__(self, host_statistics):
-        self.host = host_statistics
-        self.totals = {}
-        self.snapshots = {}
-
-    def add(self, class_index, image_indices, n_real_images, residual, shells=None):
-        if class_index not in self.totals:
-            wsum = self.host.noise_wsum_total[class_index]
-            norm = self.host.noise_norm_correction_total[class_index]
-            self.snapshots[class_index] = (wsum.copy(), norm.copy())
-            self.totals[class_index] = (
-                jnp.asarray(wsum, dtype=jnp.float64),
-                jnp.asarray(norm, dtype=jnp.float64),
-                jnp.asarray(False),
-            )
-        wsum, norm, leak = self.totals[class_index]
-        self.totals[class_index] = _accumulate_noise_totals_device(
-            wsum, norm, leak, jnp.asarray(image_indices, dtype=jnp.int32),
-            jnp.int32(n_real_images),
-            jnp.zeros_like(wsum) if shells is None else shells, residual,
-        )
-
-    def finish(self):
-        for class_index, values in self.totals.items():
-            wsum, norm, leak = jax.device_get(values)
-            old_wsum, old_norm = self.snapshots[class_index]
-            if not (
-                np.array_equal(self.host.noise_wsum_total[class_index], old_wsum)
-                and np.array_equal(self.host.noise_norm_correction_total[class_index], old_norm)
-            ):
-                raise RuntimeError("host noise totals changed during device accumulation")
-            if bool(leak):
-                raise RuntimeError("padded image row carried non-zero norm residual")
-            self.host.noise_wsum_total[class_index][...] = wsum
-            self.host.noise_norm_correction_total[class_index][...] = norm
-        self.totals.clear()
-        self.snapshots.clear()

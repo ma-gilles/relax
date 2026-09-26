@@ -61,7 +61,7 @@ from relax.local.local_big_jit import _reconstruct_fixed_capacity_score_only_res
 from relax.local.local_layout import LocalBucketSpec, _exact_bucket_rotation_size, _local_mstep_rotations
 from relax.relion.relion_projector_setup import prepare_local_projector_slab
 from relax.scoring import compact_candidates
-from relax.sparse_pass2 import sparse_pass2_bucketed
+from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_full_to_compact_lookup
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ def _relion_exact_fine_full_to_compact_lookup(
         if window_spec.use_window
         else np.arange(int(n_half), dtype=np.int32)
     )
-    return sparse_pass2_bucketed._relion_cuda_fine_full_to_compact_lookup(
+    return _relion_cuda_fine_full_to_compact_lookup(
         image_shape,
         int(current_size),
         compact_indices,

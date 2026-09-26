@@ -197,34 +197,3 @@ def _rel_l2(a, b):
     return float(np.linalg.norm(a - b) / den) if den else float(np.linalg.norm(a - b))
 
 
-@requires_resident_gpu
-@pytest.mark.parametrize("n_coarse_trans", WIDE_TRANSLATION_COUNTS)
-def test_wide_grid_resident_driver_matches_the_compact_engine(_resident_production_env, n_coarse_trans):
-    """Resident vs compact at 33, 37 and 64 coarse translations, the C1 test's bounds."""
-
-    from relax.sparse_pass2.sparse_pass2_bucketed import compute_pass2_stats_sparse_bucketed
-
-    args = _wide_driver_args(n_coarse_trans)
-    compact = compute_pass2_stats_sparse_bucketed(**args)
-    resident = rp.compute_pass2_stats_resident(**args)
-
-    np.testing.assert_array_equal(compact.hard_assignment, resident.hard_assignment)
-    np.testing.assert_array_equal(compact.best_rotation_indices, resident.best_rotation_indices)
-    for field in (
-        "log_evidence_per_image",
-        "best_log_score_per_image",
-        "max_posterior_per_image",
-        "rotation_posterior_sums",
-    ):
-        np.testing.assert_allclose(
-            np.asarray(getattr(compact.relion_stats, field), dtype=np.float64),
-            np.asarray(getattr(resident.relion_stats, field), dtype=np.float64),
-            rtol=1e-6,
-            atol=1e-9,
-            err_msg=field,
-        )
-    assert _rel_l2(compact.Ft_y, resident.Ft_y) < 1e-6
-    assert _rel_l2(compact.Ft_ctf, resident.Ft_ctf) < 1e-6
-    assert _rel_l2(compact.noise_stats.wsum_sigma2_noise, resident.noise_stats.wsum_sigma2_noise) < 1e-4
-    for field in ("wsum_img_power", "wsum_norm_correction", "wsum_scale_correction_xa", "wsum_scale_correction_aa"):
-        assert _rel_l2(getattr(compact.noise_stats, field), getattr(resident.noise_stats, field)) < 1e-6, field

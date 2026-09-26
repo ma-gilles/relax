@@ -1740,11 +1740,8 @@ def _resolve_relion_gui_defaults(args) -> None:
         args.max_iter = 999 if k1 else 25
     if args.image_fourier_backend == "auto":
         # RELION's CUDA image preprocessing is the one the resident pass 2's exact
-        # BPref operands read, so a Class3D run on the resident engine takes it too;
-        # host_numpy stays with the compact K-class engine until that is deleted.
-        from relax.sparse_pass2.resident_pass2 import resident_pass2_requested
-
-        args.image_fourier_backend = "relion_cuda" if k1 or resident_pass2_requested() else "host_numpy"
+        # BPref operands read, for K=1 and Class3D alike.
+        args.image_fourier_backend = "relion_cuda"
     if args.apply_initial_lowpass is None:
         args.apply_initial_lowpass = args.frozen_boundary_dir is None
 

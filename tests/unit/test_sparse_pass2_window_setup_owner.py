@@ -1,14 +1,13 @@
-"""Both sparse pass-2 scorers build their forward model and Fourier windows through one owner."""
+"""The pass-2 forward model and Fourier windows are built by one owner (sparse_pass2_window)."""
 
 from __future__ import annotations
 
 import inspect
-import re
 from types import SimpleNamespace
 
 import pytest
 
-from relax.sparse_pass2 import sparse_pass2_bucketed as sp
+from relax.sparse_pass2 import sparse_pass2_window as sp
 from relax.sparse_pass2 import sparse_pass2_window
 
 pytestmark = pytest.mark.unit
@@ -40,18 +39,6 @@ def test_x_half_mstep_converts_the_reconstruction_window_or_the_full_half(monkey
     out, calls = _setup(monkeypatch, use_window=False, recon=None, x_half=True, prepare=False)
     assert out.relion_x_half_recon_indices == "xhalf" and calls[-1] == ("fftw", 40)
 
-
-def test_both_sparse_scorers_use_the_owner():
-    for name in ("compute_pass2_stats_sparse_bucketed", "compute_k_class_pass2_stats_sparse_fused"):
-        source = inspect.getsource(getattr(sp, name))
-        assert source.count("_sparse_pass2_window_setup(") == 1
-        # The scorers keep only their separate budget-planning window; the scoring/reconstruction window lives in the owner.
-        assert re.search(r"^\s*window_spec = make_fourier_window_spec\(", source, re.MULTILINE) is None
-        # The budget-planning window is resolved by the shared pass-2 window setup owner.
-        assert source.count("= _pass2_window_setup(") == 1
-        assert "budget_window_spec = make_fourier_window_spec(" not in source
-        assert "ForwardModelConfig.from_dataset(" not in source
-        assert "centered_half_indices_to_fftw_half_indices(" not in source
 
 def test_pass2_window_setup_owner_builds_the_budget_window():
     assert inspect.getsource(sp._pass2_window_setup).count("budget_window_spec = make_fourier_window_spec(") == 1

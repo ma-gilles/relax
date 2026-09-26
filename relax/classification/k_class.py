@@ -14,10 +14,6 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.utils.nvtx_shim import nvtx
 
-from relax.classification.k1_local_pass2 import (
-    k1_local_pass2_engine_selected,
-    run_k1_local_adaptive_pass2,
-)
 from relax.classification.k_class_inputs import (
     _as_class_means,
     _class_local_layouts,
@@ -50,13 +46,12 @@ from relax.helpers.scale_groups import prepare_scale_correction_groups
 from relax.helpers.types import NoiseStats, RelionStats, make_relion_stats, total_sumw
 from relax.local.local_em_engine import run_local_em_exact
 from relax.local.local_layout import LocalHypothesisLayout
-from relax.scoring.significant_samples import ComplementSignificantSampleIndices, significant_sample_count
+from relax.scoring.significant_samples import ComplementSignificantSampleIndices
 from relax.sparse_pass2.engine_record import warn_deprecated_engine
 
 logger = logging.getLogger(__name__)
 NVTX_DOMAIN_EM = "recovar_em"
 _RUN_EM_ALLOWED_KWARGS = frozenset(inspect.signature(run_em).parameters)
-_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE_ENV = "RELAX_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE"
 _RELION_X_HALF_BP_FUSED_ATOMICS_ENV = "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS"
 _LOCAL_HOST_RESULT_PUBLICATION_ENV = "RELAX_EXACT_LOCAL_HOST_RESULT_PUBLICATION"
 
@@ -78,22 +73,6 @@ class _DenseKClassScoreProbeResult(NamedTuple):
     coarse_selector_audit: dict | None = None
 
 
-def _k_class_fused_relion_fine_mstep_prune_mode_override(
-    *,
-    relion_fine_mstep_prune: bool,
-    keep_all_candidates: bool = False,
-) -> str | None:
-    """Default K-class sparse pass-2 to joint pruning, unless explicitly overridden."""
-
-    if bool(keep_all_candidates):
-        return "joint_keep_all"
-    if not bool(relion_fine_mstep_prune):
-        return None
-    if _SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE_ENV in os.environ:
-        return None
-    return "joint"
-
-
 def _env_value_or_none(name: str) -> str | None:
     value = os.environ.get(name)
     if value is None:
@@ -113,15 +92,6 @@ def _sparse_pass2_selected(env_name: str) -> bool:
     """
 
     return os.environ.get(env_name, "0").strip().lower() not in {"1", "true", "yes", "on"}
-
-
-def _use_fused_sparse_k_class_pass2(n_classes: int) -> bool:
-    # Keep K=1 on the single-class sparse path by default.  That path already
-    # chunks broad full-support pass-2 work by rotation and is the safer RELION
-    # parity route for first-iteration/default-GUI refinements.  Multi-class
-    # runs still default to the fused path, and K=1 fused remains available for
-    # explicit experiments via RELAX_SPARSE_KCLASS_FUSED=1.
-    return parse_env_flag("RELAX_SPARSE_KCLASS_FUSED", default=int(n_classes) > 1)
 
 
 def _apply_bpref_particle_order_policy(
@@ -173,29 +143,21 @@ def _positive_k_class_threshold(
     return threshold
 
 
-def _compact_sparse_pass2_preferred_over_dense(n_classes: int, n_images: int) -> bool:
-    """Return whether large K-class jobs should keep compact sparse pass-2.
+def _sparse_pass2_preferred_over_dense(n_classes: int, n_images: int) -> bool:
+    """Return whether a large K-class job keeps the sparse pass 2 despite broad support.
 
-    The dense fallback is still useful as an escape hatch and for small jobs,
-    but on the 50k/256 K=4 RELION-parity cases compact-pair sparse pass-2 is
-    faster even when coarse significance leaves broad fine-grid support.
-    Explicit dense-threshold env overrides keep their historical meaning.
+    The dense fallback is still useful as an escape hatch and for small jobs, but on the
+    50k/256 K=4 RELION-parity cases the sparse pass 2 is faster even when coarse significance
+    leaves broad fine-grid support. Explicit dense-threshold env overrides keep their meaning.
     """
 
     min_images = _positive_k_class_threshold(n_classes, "RELAX_K_CLASS_COMPACT_SPARSE_PASS2_MIN_IMAGES", 20_000)
     if min_images is None or int(n_images) < min_images:
         return False
-    if (
-        _env_value_or_none("RELAX_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION") is not None
-        or _env_value_or_none("RELAX_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION") is not None
-    ):
-        return False
-    compact_pair_check = parse_env_flag("RELAX_SPARSE_KCLASS_COMPACT_PAIRS_CHECK", default=False)
-    compact_pairs = parse_env_flag(
-        "RELAX_SPARSE_KCLASS_COMPACT_PAIRS",
-        default=not compact_pair_check,
+    return (
+        _env_value_or_none("RELAX_K_CLASS_DENSE_PASS2_SUPPORT_FRACTION") is None
+        and _env_value_or_none("RELAX_K_CLASS_DENSE_PASS2_MEAN_SUPPORT_FRACTION") is None
     )
-    return bool(compact_pairs and not compact_pair_check)
 
 
 def _fine_support_stats(
@@ -581,7 +543,6 @@ def _run_sparse_k_class_adaptive_pass2(
 
     n_classes = int(means_array.shape[0])
     n_rot_coarse = int(coarse_rotations_np.shape[0])
-    n_coarse_trans = int(coarse_translations_np.shape[0])
     n_fine_trans = int(fine_translations_np.shape[0])
     symmetry_label = engine_kwargs.get("symmetry_label", "C1")
     healpix_order = (
@@ -727,81 +688,9 @@ def _run_sparse_k_class_adaptive_pass2(
 
     common["return_source_eulers"] = bool(return_best_pose_details)
     common["fine_source_eulers_override"] = base_engine_kwargs.get("fine_source_eulers_override")
-    if reconstruction_groups and n_classes == 1 and k1_local_pass2_engine_selected():
-        raise NotImplementedError("reconstruction groups need the device-resident pass 2, not the local K=1 route")
-    if n_classes == 1 and k1_local_pass2_engine_selected():
-        warn_deprecated_engine(
-            "exact_local", "global", "RELAX_K1_PASS2_ENGINE=local selects the K=1 exact-local adaptive route"
-        )
-        route_common = dict(common)
-        route_common["rotation_log_prior"] = _class_rotation_prior(0)
-        route_common["relion_projector_half"] = _select_projector_half_for_class(
-            relion_projector_half_by_class, 0, n_classes
-        )
-        route_common["relion_projector_r_max"] = relion_projector_r_max
-        route_t0 = time.time()
-        result = run_k1_local_adaptive_pass2(
-            experiment_dataset,
-            means_array[0],
-            _select_class_value(noise_variance, 0, n_classes),
-            coarse_translations_np,
-            sig_sample_indices_by_class[0],
-            disc_type,
-            n_rot_coarse=n_rot_coarse,
-            healpix_order=healpix_order,
-            oversampling_order=int(oversampling_order),
-            random_perturbation=float(random_perturbation),
-            fine_rotations_np=fine_rotations_np,
-            fine_mstep_rotations_np=fine_mstep_rotations_np,
-            rot_parent_map_np=rot_parent_map_np,
-            fine_translations_np=fine_translations_np,
-            trans_parent_map_np=trans_parent_map_np,
-            fine_source_eulers=common["fine_source_eulers_override"],
-            class_log_prior=float(class_log_priors[0]),
-            common=route_common,
-            engine_kwargs=base_engine_kwargs,
-            accumulate_noise=accumulate_noise,
-            return_best_pose_details=return_best_pose_details,
-            mstep_accumulator_shape=mstep_accumulator_shape,
-        )
-        logger.info(
-            "Sparse adaptive K=1 pass2 profile (local engine): images=%d total=%.1fs",
-            _dataset_image_count(experiment_dataset),
-            time.time() - route_t0,
-        )
-        return result
-
-    def _common_for_class(class_index: int) -> dict:
-        class_common = dict(common)
-        # RELION accumulates the unweighted power_img high-shell term once,
-        # after all class-weighted residuals. The legacy 2K-1 route returns
-        # class-local statistics, so assign that shared term to one class only.
-        class_common["include_unweighted_norm_high_shell"] = class_index == last_class_index
-        scale_dvp = class_common.get("scale_correction_data_vs_prior")
-        if scale_dvp is not None:
-            class_common["scale_correction_data_vs_prior"] = _select_class_value(
-                scale_dvp,
-                class_index,
-                n_classes,
-            )
-        return class_common
-
-    use_fused_pass2 = _use_fused_sparse_k_class_pass2(n_classes)
-    if preserve_bpref_particle_order and use_fused_pass2:
-        raise RuntimeError(
-            "RELION BPref particle-order preservation requires the K=1 single-class sparse path"
-        )
-    strict_exact_gaussian = bool(
-        common["relion_exact_fine_gaussian"]
-        and common["relion_firstiter_score_mode"] == "gaussian"
-    )
-    if strict_exact_gaussian and n_classes > 1 and not use_fused_pass2:
-        raise RuntimeError(
-            "strict exact RELION Gaussian K-class pass2 requires fused scoring "
-            "with one common class-by-pose minimum"
-        )
-    if use_fused_pass2 and n_classes > 1:
-        resident = _run_resident_k_class_pass2(
+    if n_classes > 1:
+        # RELION's Class3D fine pass: every class in one resident sweep.
+        return _run_resident_k_class_pass2(
             experiment_dataset,
             means_array,
             noise_variance,
@@ -815,283 +704,51 @@ def _run_sparse_k_class_adaptive_pass2(
             accumulate_noise=accumulate_noise,
             mstep_accumulator_shape=mstep_accumulator_shape,
         )
-        if resident is not None:
-            return resident
-    if reconstruction_groups and n_classes > 1:
-        raise NotImplementedError(
-            "reconstruction groups (VDAM pseudo-halfset slots) need the device-resident K-class pass 2"
-        )
-    if use_fused_pass2:
-        from relax.sparse_pass2.sparse_pass2_bucketed import compute_k_class_pass2_stats_sparse_fused
 
-        fused_t0 = time.time()
-        fused_common = dict(common)
-        if (
-            fused_common.pop("optics_group_ids", None) is not None
-            or fused_common.pop("reconstruction_volume_current_size", None) is not None
-            or fused_common.pop("reconstruction_image_radius", None) is not None
-        ):
-            raise NotImplementedError("the fused sparse pass 2 has one optics group and one image grid")
-        fused_common.pop("relion_fine_mstep_prune", None)
-        fused_common.pop("relion_exact_fine_normalized_cc", None)
-        fused_common.pop("relion_fine_diff2_fused_ffi", None)
-        fused_common.pop("relion_f32_fine_posterior", None)
-        # The fused K-class scorer preserves one joint class-by-pose minimum,
-        # so it can use the same source-faithful CUDA reduction qualified by
-        # the K=1 path.  The legacy 2K-1 fallback remains unchanged.
-        if strict_exact_gaussian:
-            from recovar import cuda_backproject
-
-            fused_common["relion_fine_diff2_fused_ffi"] = (
-                cuda_backproject.cuda_available()
-            )
-            fused_common["relion_f32_fine_posterior"] = (
-                cuda_backproject.cuda_available()
-            )
-        # The separate model-coordinate cutoff and source-faithful spectrum
-        # norm are qualified only for K=1. Keep fused K>1 on its historical
-        # score-space cutoff until Class3D is diagnosed.
-        if n_classes > 1:
-            fused_common.pop("reconstruction_current_size", None)
-            fused_common.pop("source_faithful_spectrum_norm", None)
-        fused_common["relion_projector_half"] = relion_projector_half_by_class
-        fused_common["relion_projector_r_max"] = relion_projector_r_max
-        if "normalization_log_evidence" in base_engine_kwargs:
-            fused_common["normalization_log_evidence"] = base_engine_kwargs[
-                "normalization_log_evidence"
-            ]
-        if "relion_f32_normalization_sum_weight" in base_engine_kwargs:
-            fused_common["relion_f32_normalization_sum_weight"] = base_engine_kwargs[
-                "relion_f32_normalization_sum_weight"
-            ]
-        for planner_name in (
-            "compact_pair_min_bucket_size_default",
-            "compact_pair_tail_coalesce_max_images_default",
-            "compact_pair_tail_coalesce_max_inflation_default",
-            "compact_pair_tail_coalesce_min_bucket_size_default",
-        ):
-            if planner_name in base_engine_kwargs:
-                fused_common[planner_name] = base_engine_kwargs[planner_name]
-        try:
-            fused = compute_k_class_pass2_stats_sparse_fused(
-                experiment_dataset,
-                means_array,
-                noise_variance,
-                coarse_translations_np,
-                sig_sample_indices_by_class,
-                rotation_log_priors_by_class=[
-                    _class_rotation_prior(class_index) for class_index in range(n_classes)
-                ],
-                accumulate_noise=accumulate_noise,
-                relion_fine_mstep_prune_mode=_k_class_fused_relion_fine_mstep_prune_mode_override(
-                    relion_fine_mstep_prune=bool(base_engine_kwargs.get("relion_fine_mstep_prune", False)),
-                    keep_all_candidates=bool(
-                        base_engine_kwargs.get("relion_fine_mstep_keep_all", False)
-                    ),
-                ),
-                **fused_common,
-            )
-        except NotImplementedError as exc:
-            if strict_exact_gaussian:
-                raise RuntimeError(
-                    "strict exact RELION Gaussian K-class pass2 cannot fall back to "
-                    "independent per-class minima"
-                ) from exc
-            logger.info("Sparse fused K-class pass2 unavailable; falling back to 2K-1 sparse path: %s", exc)
-        else:
-            logger.info(
-                "Sparse fused K-class pass2 profile: classes=%d images=%d total=%.1fs",
-                n_classes,
-                _dataset_image_count(experiment_dataset),
-                time.time() - fused_t0,
-            )
-            return _assemble_result(
-                class_log_evidence=fused.class_log_evidence,
-                new_means=None,
-                Ft_y=fused.Ft_y,
-                Ft_ctf=fused.Ft_ctf,
-                per_class_hard_assignments=fused.per_class_hard_assignments,
-                per_class_stats=fused.per_class_stats,
-                noise_stats=fused.noise_stats,
-                per_class_best_pose_eulers_deg=fused.per_class_best_pose_eulers_deg,
-                per_class_best_pose_rotations=fused.per_class_best_pose_rotations,
-                per_class_best_pose_translations=fused.per_class_best_pose_translations,
-                per_class_best_pose_rotation_ids=fused.per_class_best_pose_rotation_ids,
-                profile_summary=fused.profile_summary,
-                class_posterior_sums_override=fused.class_posterior_sums,
-                host_accumulators=True,
-                mstep_full_half_axis=0 if common["relion_x_half_mstep"] else None,
-                mstep_accumulator_shape=mstep_accumulator_shape,
-            )
-
-    if n_classes > 1:
-        # DEPRECATED route: the 2K-1 per-class compact passes; see em_status 'One engine' TODO.
-        warn_deprecated_engine(
-            "compact",
-            "global",
-            "the fused K-class pass is off (RELAX_SPARSE_KCLASS_FUSED=0) or raised, so the K-class "
-            "pass takes the 2K-1 per-class sparse path",
-        )
-
-    def _support_work_units(samples_by_image) -> int:
-        total = 0
-        for samples in samples_by_image:
-            total += significant_sample_count(samples, n_rot_coarse * n_coarse_trans)
-        return int(total)
-
-    class_log_evidence = [None] * n_classes
-    class_score_log_z = [None] * n_classes
-    support_work = np.asarray(
-        [_support_work_units(samples) for samples in sig_sample_indices_by_class],
-        dtype=np.int64,
-    )
-    # The class selected here is evaluated once with
-    # ``normalization_other_score_log_z``; all other classes need a score-only
-    # probe plus a normalized M-step. Pick the largest support class so the
-    # current 2K-1 sparse scheme avoids duplicating the most expensive sweep.
-    # On ties, keep the historical last-class choice for stable tests/logs.
-    last_class_index = int(np.flatnonzero(support_work == support_work.max())[-1])
-    probe_class_indices = [idx for idx in range(n_classes) if idx != last_class_index]
-    logger.info(
-        "Sparse adaptive K-class pass2: single-pass class=%d support_work=%s",
-        last_class_index + 1,
-        support_work.tolist(),
-    )
-    probe_t0 = time.time()
-    for class_index in probe_class_indices:
-        output = compute_pass2_stats_sparse(
-            experiment_dataset,
-            means_array[class_index],
-            _select_class_value(mean_variance, class_index, n_classes),
-            _select_class_value(noise_variance, class_index, n_classes),
-            coarse_translations_np,
-            sig_sample_indices_by_class[class_index],
-            rotation_log_prior=_class_rotation_prior(class_index),
-            accumulate_noise=False,
-            return_score_log_z_only=True,
-            disable_adjoint_y=True,
-            disable_adjoint_ctf=True,
-            relion_projector_half=_select_projector_half_for_class(
-                relion_projector_half_by_class,
-                class_index,
-                n_classes,
-            ),
-            relion_projector_r_max=relion_projector_r_max,
-            **_common_for_class(class_index),
-        )
-        log_evidence, score_log_z = output
-        class_log_evidence[class_index] = np.asarray(log_evidence, dtype=np.float64)
-        class_score_log_z[class_index] = np.asarray(score_log_z, dtype=np.float64)
-    if probe_class_indices:
-        other_score_log_z = _logsumexp_np(
-            np.stack([class_score_log_z[idx] for idx in probe_class_indices], axis=0),
-            axis=0,
-        )
-    else:
-        other_score_log_z = np.full(_dataset_image_count(experiment_dataset), -np.inf, dtype=np.float64)
-    probe_s = time.time() - probe_t0
-
-    Ft_y = [None] * n_classes
-    Ft_ctf = [None] * n_classes
-    hard_assignments = [None] * n_classes
-    per_class_stats = [None] * n_classes
-    per_class_noise = [None] * n_classes if accumulate_noise else None
-    per_class_best_pose_eulers_deg = [None] * n_classes if return_best_pose_details else None
-    per_class_best_pose_rotations = [None] * n_classes if return_best_pose_details else None
-    per_class_best_pose_translations = [None] * n_classes if return_best_pose_details else None
-    per_class_best_pose_rotation_ids = [None] * n_classes if return_best_pose_details else None
-
-    def _store_mstep_output(class_index: int, result):
-        score_log_z = None if result.score_log_z is None else np.asarray(result.score_log_z, dtype=np.float64)
-        Ft_y[class_index] = _as_host_accumulator(result.Ft_y)
-        Ft_ctf[class_index] = _as_host_accumulator(result.Ft_ctf)
-        hard_assignments[class_index] = _sparse_pose_ids_to_fine_grid(
-            result.hard_assignment, result.best_rotation_indices, n_fine_trans
-        )
-        per_class_stats[class_index] = result.relion_stats
-        if per_class_noise is not None:
-            per_class_noise[class_index] = result.noise_stats
-        if return_best_pose_details:
-            per_class_best_pose_eulers_deg[class_index] = result.source_eulers
-            per_class_best_pose_rotations[class_index] = result.best_rotations
-            per_class_best_pose_translations[class_index] = result.best_translations
-            per_class_best_pose_rotation_ids[class_index] = result.best_rotation_indices
-        return result.relion_stats, score_log_z
-
+    # K=1: one resident pass. RELION's shared unweighted power_img high-shell term
+    # belongs to this only class.
+    common["include_unweighted_norm_high_shell"] = True
+    del preserve_bpref_particle_order
     mstep_t0 = time.time()
-    output = compute_pass2_stats_sparse(
+    result = compute_pass2_stats_sparse(
         experiment_dataset,
-        means_array[last_class_index],
-        _select_class_value(mean_variance, last_class_index, n_classes),
-        _select_class_value(noise_variance, last_class_index, n_classes),
+        means_array[0],
+        _select_class_value(mean_variance, 0, n_classes),
+        _select_class_value(noise_variance, 0, n_classes),
         coarse_translations_np,
-        sig_sample_indices_by_class[last_class_index],
-        rotation_log_prior=_class_rotation_prior(last_class_index),
+        sig_sample_indices_by_class[0],
+        rotation_log_prior=_class_rotation_prior(0),
         accumulate_noise=accumulate_noise,
-        normalization_other_score_log_z=other_score_log_z,
+        # No other classes: the degenerate cross-class normalizer of the production K=1 pass.
+        normalization_other_score_log_z=np.full(_dataset_image_count(experiment_dataset), -np.inf, dtype=np.float64),
         normalization_score_mode=common["relion_firstiter_score_mode"],
         return_score_log_z=True,
-        relion_projector_half=_select_projector_half_for_class(
-            relion_projector_half_by_class,
-            last_class_index,
-            n_classes,
-        ),
+        relion_projector_half=_select_projector_half_for_class(relion_projector_half_by_class, 0, n_classes),
         relion_projector_r_max=relion_projector_r_max,
-        **_common_for_class(last_class_index),
+        **common,
     )
-    last_stats, last_score_log_z = _store_mstep_output(last_class_index, output)
-    class_log_evidence[last_class_index] = np.asarray(last_stats.log_evidence_per_image, dtype=np.float64)
-    class_score_log_z[last_class_index] = last_score_log_z
-    global_score_log_z = np.logaddexp(other_score_log_z, last_score_log_z)
-
-    for class_index in probe_class_indices:
-        output = compute_pass2_stats_sparse(
-            experiment_dataset,
-            means_array[class_index],
-            _select_class_value(mean_variance, class_index, n_classes),
-            _select_class_value(noise_variance, class_index, n_classes),
-            coarse_translations_np,
-            sig_sample_indices_by_class[class_index],
-            rotation_log_prior=_class_rotation_prior(class_index),
-            accumulate_noise=accumulate_noise,
-            normalization_log_z=global_score_log_z,
-            normalization_score_mode=common["relion_firstiter_score_mode"],
-            relion_projector_half=_select_projector_half_for_class(
-                relion_projector_half_by_class,
-                class_index,
-                n_classes,
-            ),
-            relion_projector_r_max=relion_projector_r_max,
-            **_common_for_class(class_index),
-        )
-        _store_mstep_output(class_index, output)
     mstep_s = time.time() - mstep_t0
     logger.info(
-        "Sparse adaptive K-class pass2 profile: classes=%d probe_classes=%d images=%d "
-        "probe=%.1fs mstep=%.1fs total=%.1fs",
-        n_classes,
-        len(probe_class_indices),
+        "Sparse adaptive K=1 pass2 profile: images=%d mstep=%.1fs",
         _dataset_image_count(experiment_dataset),
-        probe_s,
         mstep_s,
-        probe_s + mstep_s,
     )
-    class_log_evidence_np = np.stack(class_log_evidence, axis=0)
-
     return _assemble_result(
-        class_log_evidence=class_log_evidence_np,
+        class_log_evidence=np.asarray(result.relion_stats.log_evidence_per_image, dtype=np.float64)[None],
         new_means=None,
-        Ft_y=Ft_y,
-        Ft_ctf=Ft_ctf,
-        per_class_hard_assignments=np.stack(hard_assignments, axis=0),
-        per_class_stats=tuple(per_class_stats),
-        noise_stats=None if per_class_noise is None else tuple(per_class_noise),
-        per_class_best_pose_eulers_deg=per_class_best_pose_eulers_deg,
-        per_class_best_pose_rotations=per_class_best_pose_rotations,
-        per_class_best_pose_translations=per_class_best_pose_translations,
-        per_class_best_pose_rotation_ids=per_class_best_pose_rotation_ids,
+        Ft_y=[_as_host_accumulator(result.Ft_y)],
+        Ft_ctf=[_as_host_accumulator(result.Ft_ctf)],
+        per_class_hard_assignments=_sparse_pose_ids_to_fine_grid(
+            result.hard_assignment, result.best_rotation_indices, n_fine_trans
+        )[None],
+        per_class_stats=(result.relion_stats,),
+        noise_stats=None if not accumulate_noise else (result.noise_stats,),
+        per_class_best_pose_eulers_deg=[result.source_eulers] if return_best_pose_details else None,
+        per_class_best_pose_rotations=[result.best_rotations] if return_best_pose_details else None,
+        per_class_best_pose_translations=[result.best_translations] if return_best_pose_details else None,
+        per_class_best_pose_rotation_ids=[result.best_rotation_indices] if return_best_pose_details else None,
         profile_summary={
-            "sparse_adaptive_probe_s": np.float64(probe_s),
+            "sparse_adaptive_probe_s": np.float64(0.0),
             "sparse_adaptive_mstep_s": np.float64(mstep_s),
         },
         host_accumulators=True,
@@ -1143,34 +800,22 @@ def _run_resident_k_class_pass2(
     relion_projector_r_max,
     accumulate_noise: bool,
     mstep_accumulator_shape,
-) -> KClassEMResult | None:
-    """RELION's Class3D fine pass on the device-resident engine, or None for the compact one.
+) -> KClassEMResult:
+    """RELION's Class3D fine pass on the device-resident engine.
 
-    Selected like the K=1 pass (``resident_engine_selection``): the resident
-    engine by default, with the K=1 production arithmetic
-    (:func:`_resident_production_arithmetic`). A pass it was never scoped for, or
-    one its configuration checks refuse before any device work
-    (``ResidentConfigurationUnsupported``), runs on the compact engine with a
-    logged reason; under an explicit ``RELAX_SPARSE_PASS2_RESIDENT=1`` the refusal
-    is an error. Every pass records its engine (``engine_record``).
+    Runs with the K=1 production arithmetic (:func:`_resident_production_arithmetic`). A
+    configuration the resident checks refuse (``ResidentConfigurationUnsupported``) is an
+    error: the resident engine is relax's one pass-2 engine. The pass records its engine
+    (``engine_record``).
     """
 
     from relax.sparse_pass2.engine_record import record_pass_engine
-    from relax.sparse_pass2.resident_pass2 import (
-        RESIDENT_PASS2_ENV,
-        compute_k_class_pass2_stats_resident,
-        resident_pass2_out_of_scope_reason,
-    )
-    from relax.sparse_pass2.sparse_pass2_policy import (
-        ResidentConfigurationUnsupported,
-        resident_engine_selection,
-        resident_refusal_reason,
-    )
+    from relax.sparse_pass2.resident_pass2 import compute_k_class_pass2_stats_resident
 
-    selection = resident_engine_selection(RESIDENT_PASS2_ENV)
-    if selection == "off":
-        record_pass_engine("global", "compact", f"{RESIDENT_PASS2_ENV}=0")
-        return None
+    if engine_kwargs.get("normalization_log_evidence") is not None:
+        raise NotImplementedError(
+            "an externally supplied normalization is not part of the resident K-class pass"
+        )
     n_classes = int(means_array.shape[0])
     options = _resident_production_arithmetic(common)
     options.pop("relion_exact_fine_normalized_cc")
@@ -1179,45 +824,18 @@ def _run_resident_k_class_pass2(
         relion_projector_r_max=relion_projector_r_max,
         accumulate_noise=accumulate_noise,
     )
-    out_of_scope = resident_pass2_out_of_scope_reason(
-        accumulate_noise=accumulate_noise,
-        scale_groups_available=options.get("group_ids") is not None,
-        preserve_bpref_particle_order=True,
-        source_faithful_spectrum_norm=True,
-    )
-    if out_of_scope is None and engine_kwargs.get("normalization_log_evidence") is not None:
-        out_of_scope = "an externally supplied normalization"
-    if out_of_scope is not None:
-        logger.info(
-            "Device-resident sparse pass 2 is enabled but does not cover %s; "
-            "this K-class pass runs on the compact engine",
-            out_of_scope,
-        )
-        record_pass_engine("global", "compact", f"out of resident scope: {out_of_scope}")
-        return None
     t0 = time.time()
-    try:
-        output = compute_k_class_pass2_stats_resident(
-            experiment_dataset,
-            means_array,
-            noise_variance,
-            coarse_translations_np,
-            sig_sample_indices_by_class,
-            options.pop("nside_level"),
-            options.pop("disc_type"),
-            rotation_log_priors_by_class=class_rotation_priors,
-            **options,
-        )
-    except ResidentConfigurationUnsupported as exc:
-        if selection == "explicit":
-            raise
-        logger.info(
-            "Device-resident sparse pass 2 (the default) does not cover this K-class pass; "
-            "it runs on the compact engine: %s",
-            exc,
-        )
-        record_pass_engine("global", "compact", resident_refusal_reason(exc))
-        return None
+    output = compute_k_class_pass2_stats_resident(
+        experiment_dataset,
+        means_array,
+        noise_variance,
+        coarse_translations_np,
+        sig_sample_indices_by_class,
+        options.pop("nside_level"),
+        options.pop("disc_type"),
+        rotation_log_priors_by_class=class_rotation_priors,
+        **options,
+    )
     record_pass_engine("global", "resident")
     logger.info(
         "Resident K-class pass2: classes=%d images=%d total=%.1fs",
@@ -1857,7 +1475,6 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
     """Sparse RELION firstiter_cc fine pass over global-winner image subsets."""
 
     from relax.sparse_pass2.dispatch import compute_pass2_stats_sparse
-    from relax.sparse_pass2.resident_pass2 import resident_pass2_requested
 
     n_classes = int(means_array.shape[0])
     n_images = int(coarse_class_assignments.shape[0])
@@ -1919,7 +1536,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
         pass2_kwargs,
         n_classes=n_classes,
     )
-    resident_arithmetic = n_classes > 1 and resident_pass2_requested()
+    resident_arithmetic = n_classes > 1
     if resident_arithmetic:
         # Each image's fine pass is a K=1 pass inside its coarse winner class,
         # so on the resident engine it is the K=1 production pass.
@@ -3272,10 +2889,6 @@ def run_dense_k_class_em_adaptive(
         and sparse_pass2_requested
         and not firstiter_cc_pass2_only_best_coarse
         and not skip_significance_pruning
-        and (
-            n_classes == 1
-            or _use_fused_sparse_k_class_pass2(n_classes)
-        )
         and bool(pass2_kwargs.get("mstep_relion_x_half", False))
     )
     fused_atomic_diagnostic_supported = bool(
@@ -3370,7 +2983,7 @@ def run_dense_k_class_em_adaptive(
             n_rot_fine=n_rot_fine,
             n_trans_fine=n_trans_fine,
         )
-        compact_sparse_preferred = _compact_sparse_pass2_preferred_over_dense(n_classes, n_images)
+        compact_sparse_preferred = _sparse_pass2_preferred_over_dense(n_classes, n_images)
         compact_sparse_min_images = _positive_k_class_threshold(
             n_classes, "RELAX_K_CLASS_COMPACT_SPARSE_PASS2_MIN_IMAGES", 20_000,
         )

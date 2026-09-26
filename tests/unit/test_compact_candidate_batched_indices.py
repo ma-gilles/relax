@@ -189,34 +189,6 @@ def test_images_with_different_rotation_row_counts_share_the_batched_path(seed, 
 # ---------------------------------------------------------------------------
 
 
-def _host_reference_at_capacity(masks, pair_bucket_size, n_alloc):
-    from relax.scoring.sparse_bucket_arrays import _rows_at_capacity
-
-    host = build_compact_pair_index_arrays(masks, pair_bucket_size=pair_bucket_size)
-    return {
-        "pair_counts": _rows_at_capacity(host["pair_counts"], n_alloc, 0),
-        "local_rotation_row": _rows_at_capacity(host["local_rotation_row"], n_alloc, 0),
-        "translation_idx": _rows_at_capacity(host["translation_idx"], n_alloc, 0),
-        "pair_mask": _rows_at_capacity(host["pair_mask"], n_alloc, False),
-    }
-
-
-def _assert_device_matches_host(masks, pair_bucket_size, n_alloc=None, rows_capacity=None):
-    jax = pytest.importorskip("jax")
-    with jax.default_device(jax.devices("cpu")[0]):
-        got = cc.compact_pair_index_arrays_device(
-            masks, pair_bucket_size=pair_bucket_size, n_alloc=n_alloc, rows_capacity=rows_capacity
-        )
-    assert got is not None, "device path must engage for this bucket"
-    want = _host_reference_at_capacity(masks, pair_bucket_size, len(masks) if n_alloc is None else n_alloc)
-    for k in ("pair_counts", "local_rotation_row", "translation_idx", "pair_mask"):
-        assert_matches(np.asarray(got[k]), want[k], err_msg=k)
-        assert np.asarray(got[k]).dtype == want[k].dtype, k
-    for k in ("local_rotation_row", "translation_idx", "pair_mask"):
-        assert isinstance(got[k], jax.Array), k
-    assert isinstance(got["pair_counts"], np.ndarray)
-
-
 def _coarse_exclude_mask(rng, n_rows, n_trans, n_coarse_rot, n_coarse_trans, n_excluded, ftp):
     parent_map = rng.integers(0, n_coarse_rot, size=n_rows)
     excluded = np.unique(rng.integers(0, n_coarse_rot * n_coarse_trans, size=n_excluded)).astype(np.int32)
@@ -224,31 +196,6 @@ def _coarse_exclude_mask(rng, n_rows, n_trans, n_coarse_rot, n_coarse_trans, n_e
         mode="coarse_exclude", n_rows=n_rows, n_fine_trans=n_trans,
         parent_map=parent_map, coarse_excluded=excluded, fine_translation_parent=ftp,
     )
-
-
-@pytest.mark.parametrize("seed", range(8))
-def test_device_index_arrays_match_the_host_builder_bitwise(seed):
-    """Same ids, order, dtypes and padding as build_compact_pair_index_arrays + _rows_at_capacity."""
-    rng = np.random.default_rng(seed)
-    n_trans, n_coarse_trans = 7, 3
-    ftp = rng.integers(0, n_coarse_trans, size=n_trans)
-    masks = []
-    for _ in range(9):
-        n_rows = int(rng.integers(1, 40))
-        kind = rng.choice(["coarse", "coarse_exclude", "full", "empty"], p=[0.4, 0.4, 0.1, 0.1])
-        if kind == "coarse":
-            masks.append(_coarse_mask(rng, n_rows, n_trans, int(rng.integers(2, 12)), n_coarse_trans, rng.uniform(0.1, 0.9), ftp))
-        elif kind == "coarse_exclude":
-            masks.append(_coarse_exclude_mask(rng, n_rows, n_trans, int(rng.integers(2, 12)), n_coarse_trans, int(rng.integers(0, 20)), ftp))
-        else:
-            masks.append(SparseCandidateMask(mode=kind, n_rows=n_rows, n_fine_trans=n_trans))
-    required = max(m.count for m in masks)
-    pair_bucket_size = int(rng.integers(required, required + 37)) if required else 8
-    _assert_device_matches_host(masks, pair_bucket_size)
-    # image-axis capacity: padded image rows are 0 / 0 / False with count 0
-    _assert_device_matches_host(masks, pair_bucket_size, n_alloc=len(masks) + int(rng.integers(1, 6)))
-    # class row capacity larger than every image's row count
-    _assert_device_matches_host(masks, pair_bucket_size, n_alloc=len(masks) + 2, rows_capacity=64)
 
 
 def test_device_index_arrays_source_order_and_row_padding_values():
@@ -295,33 +242,3 @@ def test_device_index_arrays_reject_too_small_bucket():
         cc.compact_pair_index_arrays_device(masks, pair_bucket_size=11)
 
 
-
-@pytest.mark.parametrize(
-    "mean_valid, expected",
-    [
-        (16446.0, 32768),  # iteration 2 of the 100k/256 K=4 fixture: 2x mean exceeds the cap
-        (6847.0, 16384),  # iteration 3
-        (4334.0, 16384),  # iteration 4
-        (2633.0, 8192),  # iteration 5
-        (1638.0, 4096),  # iteration 6 on
-        (100.0, 4096),  # floor
-    ],
-)
-def test_auto_pair_bucket_quantum_follows_mean_valid_pairs(monkeypatch, mean_valid, expected):
-    """``auto`` resolves the quantum from the plan's own valid-pair counts: the power of two
-    at or above twice the mean valid pairs per image-class, clamped to [4096, 32768]. A fixed
-    numeric value and an unset variable behave as before."""
-    from relax.scoring import sparse_bucket_arrays as bucketed_mod
-
-    # Two classes whose per-image counts average to ``mean_valid`` exactly.
-    counts = (
-        np.asarray([mean_valid - 10.0, mean_valid + 10.0], dtype=np.int64),
-        np.asarray([mean_valid, mean_valid], dtype=np.int64),
-    )
-    monkeypatch.setenv("RELAX_SPARSE_KCLASS_PAIR_BUCKET_QUANTUM", "auto")
-    assert bucketed_mod._compact_pair_bucket_quantum(counts) == expected
-    assert bucketed_mod._compact_pair_bucket_quantum(()) is None
-    monkeypatch.setenv("RELAX_SPARSE_KCLASS_PAIR_BUCKET_QUANTUM", "12345")
-    assert bucketed_mod._compact_pair_bucket_quantum(counts) == 12345
-    monkeypatch.delenv("RELAX_SPARSE_KCLASS_PAIR_BUCKET_QUANTUM", raising=False)
-    assert bucketed_mod._compact_pair_bucket_quantum(counts) is None

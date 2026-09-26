@@ -21,7 +21,6 @@ def _initial_model_package_source() -> str:
     return "\n".join(path.read_text() for path in sorted((REPO_ROOT / "relax/vdam").glob("*.py")))
 
 
-
 def _load_long_guard_module():
     sys.path.insert(0, str(REPO_ROOT / "tests"))
     module_path = REPO_ROOT / "tests/long_test/test_em_parity_long.py"
@@ -833,8 +832,6 @@ def test_vdam_native_full_repeat_supports_focused_coarse_capture():
     ]
     missing = [token for token in expected_tokens if token not in runner]
     assert not missing, f"VDAM native repeat lost focused capture wiring: {missing}"
-
-
 
 
 def test_native_vdam_tau2_refresh_and_ssnr_diagnostics_are_merge_guarded():

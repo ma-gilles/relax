@@ -1,6 +1,6 @@
-"""Both bucketed pass-2 entry points resolve their RELION fine-scoring flags through one owner."""
+"""The pass-2 RELION fine-scoring flags are resolved by one owner (sparse_pass2_window)."""
 
-from relax.sparse_pass2 import sparse_pass2_bucketed as sp
+from relax.sparse_pass2 import sparse_pass2_window as sp
 
 
 def test_owner_rules(monkeypatch):

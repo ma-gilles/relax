@@ -1,13 +1,11 @@
-"""Select the supported sparse pass-2 engine without changing admission policy."""
+"""Route a sparse pass 2 to the device-resident engine (or the deprecated per-image reference)."""
 
-import functools
 import logging
 
 import numpy as np
 
 from relax.reference.sparse_pass2 import _compute_pass2_stats_sparse_perimage_reference
 from relax.sparse_pass2.engine_record import record_pass_engine, warn_deprecated_engine
-from relax.sparse_pass2.sparse_pass2_policy import resident_refusal_reason
 
 # Preserve the category consumed by existing run-log collectors.
 logger = logging.getLogger("relax.helpers.oversampling")
@@ -100,16 +98,11 @@ def compute_pass2_stats_sparse(
 
     Implementation note
     -------------------
-    By default the bucketed batched implementation in
-    :mod:`recovar.em.sparse_pass2.sparse_pass2_bucketed`
-    is used: images are grouped by their oversampled rotation count
-    (quantized) and evaluated as one GPU call per bucket, which keeps
-    the number of distinct XLA shapes bounded across iterations.
-
-    The original per-image Python loop is preserved as
-    :func:`_compute_pass2_stats_sparse_perimage_reference` for testing
-    parity; it can be selected by setting ``use_perimage_reference=True``.
-    The two paths must produce identical outputs (modulo float rounding).
+    The device-resident driver
+    (:func:`relax.sparse_pass2.resident_pass2.compute_pass2_stats_resident`) runs the pass.
+    The per-image Python loop is preserved as
+    :func:`_compute_pass2_stats_sparse_perimage_reference` (``use_perimage_reference=True``,
+    or a full-grid C1 pass without significance supports); it is deprecated.
 
     ``relion_exact_fine_gaussian`` selects the float32 scorer that follows
     RELION's fine-search diff2/minimum ordering. Float64 diagnostics retain
@@ -137,7 +130,7 @@ def compute_pass2_stats_sparse(
             f"external={normalization_score_mode!r}, pass={relion_firstiter_score_mode!r}"
         )
     if use_perimage_reference and (return_score_log_z or return_score_log_z_only):
-        raise NotImplementedError("score-logZ returns are only implemented for the bucketed sparse pass-2 path")
+        raise NotImplementedError("score-logZ returns are only implemented by the resident sparse pass 2")
     if (
         use_perimage_reference
         and relion_exact_fine_gaussian
@@ -145,16 +138,16 @@ def compute_pass2_stats_sparse(
         and not use_float64_scoring
     ):
         raise NotImplementedError(
-            "exact RELION fine Gaussian scoring requires the bucketed sparse pass-2 path"
+            "exact RELION fine Gaussian scoring requires the resident sparse pass 2"
         )
     if use_perimage_reference and group_ids is not None:
         logger.warning(
             "Sparse per-image reference pass-2 does not accumulate native group-scale correction stats; "
-            "use the bucketed sparse pass-2 path for native scale updates."
+            "use the resident sparse pass 2 for native scale updates."
         )
     if use_perimage_reference and fine_mstep_rotations_override is not None:
         raise NotImplementedError(
-            "fine_mstep_rotations_override is only implemented for the bucketed sparse pass-2 path",
+            "fine_mstep_rotations_override is only implemented by the resident sparse pass 2",
         )
     full_grid_reference = (
         symmetry_label == "C1"
@@ -186,86 +179,12 @@ def compute_pass2_stats_sparse(
         )
     )
     if not use_perimage_reference and not full_grid_reference:
-        from relax.sparse_pass2.resident_pass2 import (
-            RESIDENT_PASS2_ENV,
-            compute_pass2_stats_resident,
-            resident_pass2_out_of_scope_reason,
-            resident_pass2_requested,
-        )
-        from relax.sparse_pass2.sparse_pass2_bucketed import compute_pass2_stats_sparse_bucketed
-        from relax.sparse_pass2.sparse_pass2_policy import resident_engine_selection
+        from relax.sparse_pass2.resident_pass2 import compute_pass2_stats_resident
 
-        # The device-resident K=1 driver is the default (RELAX_SPARSE_PASS2_RESIDENT
-        # unset). Under an explicit =1 it raises a named NotImplementedError on
-        # any configuration mismatch rather than falling back, so a measured
-        # comparison always knows which engine produced a result; with the
-        # default a mismatch runs the compact engine and logs why
-        # (_resident_with_compact_default). The scoring route it was never
-        # scoped to cover is different (the unordered Wavg arithmetic of subset
-        # replays; see
-        # resident_pass2_out_of_scope_reason), so those passes go to the
-        # compact engine and the log says which and why.
-        sparse_pass2_impl = compute_pass2_stats_sparse_bucketed
-        compact_reason = f"{RESIDENT_PASS2_ENV}=0"
-        if resident_pass2_requested():
-            out_of_scope = resident_pass2_out_of_scope_reason(
-                accumulate_noise=accumulate_noise,
-                scale_groups_available=group_ids is not None,
-                preserve_bpref_particle_order=preserve_bpref_particle_order,
-                source_faithful_spectrum_norm=source_faithful_spectrum_norm,
-            )
-            if out_of_scope is None:
-                sparse_pass2_impl = compute_pass2_stats_resident
-            else:
-                compact_reason = f"out of resident scope: {out_of_scope}"
-                logger.info(
-                    "Device-resident sparse pass 2 is enabled but does not cover %s; "
-                    "this pass runs on the compact engine",
-                    out_of_scope,
-                )
-        texture = None
-        if sparse_pass2_impl is compute_pass2_stats_sparse_bucketed and not use_float64_scoring:
-            texture = _open_persistent_relion_projector_texture(
-                relion_projector_half,
-                relion_projector_r_max=relion_projector_r_max,
-                projection_padding_factor=projection_padding_factor,
-            )
-        from relax.diagnostics import resident_shadow
-
-        def open_compact_texture():
-            return _open_persistent_relion_projector_texture(
-                relion_projector_half,
-                relion_projector_r_max=relion_projector_r_max,
-                projection_padding_factor=projection_padding_factor,
-            )
-
-        if (
-            sparse_pass2_impl is compute_pass2_stats_resident
-            and resident_shadow.shadow_dir() is None
-            and resident_engine_selection(RESIDENT_PASS2_ENV) == "default"
-        ):
-            sparse_pass2_impl = functools.partial(
-                _resident_with_compact_default,
-                compute_pass2_stats_resident,
-                compute_pass2_stats_sparse_bucketed,
-                open_compact_texture,
-            )
-        if sparse_pass2_impl is compute_pass2_stats_resident and resident_shadow.shadow_dir() is not None:
-            sparse_pass2_impl = functools.partial(
-                resident_shadow.run_resident_with_compact_shadow,
-                compute_pass2_stats_resident,
-                compute_pass2_stats_sparse_bucketed,
-                open_compact_texture,
-            )
-        # The default wrapper records its own outcome; the other routes are fixed here.
-        if sparse_pass2_impl is compute_pass2_stats_sparse_bucketed:
-            record_pass_engine("global", "compact", compact_reason)
-        elif not isinstance(sparse_pass2_impl, functools.partial) or (
-            sparse_pass2_impl.func is not _resident_with_compact_default
-        ):
-            record_pass_engine("global", "resident")
-        return _call_with_persistent_texture_cleanup(
-            texture, sparse_pass2_impl,
+        # The device-resident pass 2 is relax's one pass-2 engine: a configuration its
+        # checks refuse (ResidentConfigurationUnsupported) is an error, not a fallback.
+        record_pass_engine("global", "resident")
+        return compute_pass2_stats_resident(
             experiment_dataset,
             volume,
             noise_variance,
@@ -325,8 +244,7 @@ def compute_pass2_stats_sparse(
             relion_fine_diff2_fused_ffi=relion_fine_diff2_fused_ffi,
             relion_f32_fine_posterior=relion_f32_fine_posterior,
             relion_exact_fine_normalized_cc=relion_exact_fine_normalized_cc,
-            relion_projector_half=relion_projector_half if texture is None else None,
-            **({"relion_projector_texture": texture} if texture is not None else {}),
+            relion_projector_half=relion_projector_half,
             relion_projector_r_max=relion_projector_r_max,
             adaptive_fraction=adaptive_fraction,
             bpref_device_signature_active=bpref_device_signature_active,
@@ -371,16 +289,16 @@ def compute_pass2_stats_sparse(
     if any(value is not None for value in (
         relion_f32_normalization_sum_weight, relion_coarse_hard_assignment, relion_coarse_max_posterior,
     )):
-        raise NotImplementedError("coarse float32 normalization requires bucketed sparse pass 2")
+        raise NotImplementedError("coarse float32 normalization requires the resident sparse pass 2")
     if float(relion_translation_angle_scale) != 1.0:
         raise NotImplementedError(
-            "RELION model/optics translation-angle scaling requires the bucketed sparse pass-2 path"
+            "RELION model/optics translation-angle scaling requires the resident sparse pass 2"
         )
     if relion_projector_half is not None:
-        raise NotImplementedError("RELION projector sparse pass-2 requires the bucketed implementation")
+        raise NotImplementedError("RELION projector sparse pass-2 requires the resident sparse pass 2")
     if reconstruction_current_size is not None:
         raise NotImplementedError(
-            "separate score/reconstruction current sizes require the bucketed sparse pass-2 path",
+            "separate score/reconstruction current sizes require the resident sparse pass 2",
         )
     if window_at_box and (current_size is None or int(current_size) >= int(experiment_dataset.image_shape[0])):
         raise NotImplementedError("RELION's window at the full box requires the bucketed sparse pass-2 path")
@@ -433,7 +351,6 @@ def compute_pass2_stats_sparse(
     )
 
 
-
 def _open_persistent_relion_projector_texture(
     relion_projector_half,
     *,
@@ -442,10 +359,10 @@ def _open_persistent_relion_projector_texture(
     relion_texture_interp=None,
     log_label="Sparse pass-2",
 ):
-    """Upload an eligible host ``PPref`` slab without staging it through JAX.
+    """Upload an eligible host ``PPref`` slab once as a persistent float32 RELION texture.
 
-    This is deliberately a narrow fast path for fine sparse pass-2.  Other
-    inputs retain the established transient texture/JAX behavior.
+    Returns ``None`` when the slab is not eligible (the caller then projects from
+    ``relion_projector_half`` as before). The caller owns the texture and closes it.
     """
 
     from relax.helpers.projection import _host_relion_projector_texture_enabled
@@ -459,7 +376,7 @@ def _open_persistent_relion_projector_texture(
 
     from relax.cuda.kernels import RelionPersistentHalfTextureF32
 
-    # Match the bucketed float32 consumer cast, before any device upload.
+    # RELION's texture is float32 (AccProjector::setMdlData); cast before any device upload.
     relion_projector_half = np.asarray(relion_projector_half, dtype=np.complex64)
 
     logger.info(
@@ -474,50 +391,3 @@ def _open_persistent_relion_projector_texture(
         projector_max_r=int(relion_projector_r_max),
         projector_scale=1.0,
     )
-
-
-
-def _resident_with_compact_default(resident_impl, compact_impl, open_texture, *args, **kwargs):
-    """The resident default: the resident driver where it covers the pass, compact elsewhere.
-
-    DEPRECATED: to be removed once the resident engine covers subset and focused replays, the
-    K-class fused and 2K-1 fallbacks, CPU-only execution and its memory refusals; see em_status
-    'One engine' TODO.
-
-    The resident configuration checks run before any device work, so a pass they
-    refuse (:class:`ResidentConfigurationUnsupported`) runs on the compact engine,
-    with its own persistent texture, and the log names the reason. Any other error
-    propagates.
-    """
-
-    from relax.sparse_pass2.sparse_pass2_policy import ResidentConfigurationUnsupported
-
-    try:
-        result = resident_impl(*args, **kwargs)
-    except ResidentConfigurationUnsupported as exc:
-        logger.info(
-            "Device-resident sparse pass 2 (the K=1 default) does not cover this pass; "
-            "it runs on the compact engine: %s",
-            exc,
-        )
-        record_pass_engine("global", "compact", resident_refusal_reason(exc))
-    else:
-        record_pass_engine("global", "resident")
-        return result
-    compact_kwargs = dict(kwargs)
-    texture = open_texture()
-    if texture is not None:
-        compact_kwargs["relion_projector_half"] = None
-        compact_kwargs["relion_projector_texture"] = texture
-    return _call_with_persistent_texture_cleanup(texture, compact_impl, *args, **compact_kwargs)
-
-
-def _call_with_persistent_texture_cleanup(texture, callback, *args, **kwargs):
-    """Run ``callback`` and close an optional texture on every exit path."""
-
-    try:
-        return callback(*args, **kwargs)
-    finally:
-        if texture is not None:
-            texture.close()
-

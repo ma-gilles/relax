@@ -18,52 +18,14 @@ import numpy as np
 
 from relax.helpers.env_flags import parse_env_nonnegative_int
 from relax.helpers.xla_memory_reserve import _nvidia_smi_visible_device_memory_bytes
-from relax.scoring.sparse_bucket_arrays import _DEFAULT_MAX_HYPOTHESES_PER_MICROBATCH
 
 logger = logging.getLogger(__name__)
-
-
-_DEFAULT_SCORE_ONLY_MAX_HYPOTHESES_PER_MICROBATCH = 1_250_000
 
 
 _DEFAULT_MAX_TRANSLATION_TILE_BYTES = 384 * 1024**2
 
 
-_AUTO_SCORE_ONLY_HYPOTHESIS_DEVICE_FRACTION = 0.640
-
-
-_AUTO_FULL_HYPOTHESIS_DEVICE_FRACTION = 0.305
-
-
-_AUTO_FUSED_KCLASS_SCORE_GATHER_DEVICE_FRACTION = 0.100
 _FUSED_KCLASS_SCORE_GATHER_FRACTION_ENV = "RELAX_SPARSE_PASS2_FUSED_KCLASS_SCORE_GATHER_FRACTION"
-
-
-def _fused_kclass_score_gather_device_fraction() -> float:
-    """Device-memory share the fused K-class score gather may use per live buffer.
-
-    This fraction sets the hypotheses-per-microbatch budget, which divided by
-    (classes x pair bucket size) is what actually caps images per chunk - not the
-    projection-gather byte budget, which at 100k/256 K=4 does not bind (doubling it
-    left the dominant group at 2688 chunks, job 13840889). Every per-chunk host cost
-    scales with the chunk count, so this fraction is the lever on the ~5200 chunks an
-    iteration. It stays a fraction of real device memory rather than a fixed count so
-    the cap remains dimension- and capacity-dependent.
-    """
-
-    raw = os.environ.get(_FUSED_KCLASS_SCORE_GATHER_FRACTION_ENV)
-    if raw is None or not raw.strip():
-        return _AUTO_FUSED_KCLASS_SCORE_GATHER_DEVICE_FRACTION
-    value = float(raw)
-    if not (0.0 < value <= 0.45):
-        raise ValueError(
-            f"{_FUSED_KCLASS_SCORE_GATHER_FRACTION_ENV} must be in (0, 0.45], got {raw!r}; "
-            "the budget is multiplied by the number of live gathers"
-        )
-    return value
-
-
-_AUTO_FUSED_KCLASS_LIVE_COMPLEX_GATHERS = 2
 
 
 _AUTO_TRANSLATION_TILE_DEVICE_FRACTION = 0.020
@@ -95,52 +57,16 @@ _AUTO_PROJECTION_CACHE_DEVICE_FRACTION = 0.300
 _AUTO_PROJECTED_ROTATIONS_DEVICE_FRACTION = 0.040
 
 
-_AUTO_PROJECTION_GATHER_DEVICE_FRACTION = 0.020
-
-
-_AUTO_NOISE_BLOCK_DEVICE_FRACTION = 0.0125
-
-
 _AUTO_ADJOINT_BLOCK_DEVICE_FRACTION = 0.006
-
-
-_DEFAULT_PROJECTION_GATHER_MAX_BYTES = 1024 * 1024**2
-
-
-_DEFAULT_NOISE_BLOCK_MAX_BYTES = 512 * 1024**2
 
 
 _DEFAULT_ADJOINT_BLOCK_MAX_BYTES = 512 * 1024**2
 
 
-_EXACT_RAW_DIFF2_CACHE_MAX_BYTES = 512 * 1024**2
-
-
-_EXACT_RAW_DIFF2_CACHE_DEVICE_FRACTION = 0.01
-
-
-_EXACT_RAW_DIFF2_CACHE_FREE_FRACTION = 0.25
-
-
-_MAX_HYPOTHESES_ENV = "RELAX_SPARSE_PASS2_MAX_HYPOTHESES"
-
-
-_SCORE_ONLY_MAX_HYPOTHESES_ENV = "RELAX_SPARSE_PASS2_SCORE_ONLY_MAX_HYPOTHESES"
-
-
 _MAX_TRANSLATION_TILE_BYTES_ENV = "RELAX_SPARSE_PASS2_MAX_TRANSLATION_TILE_BYTES"
 
 
-_MAX_PROJECTION_GATHER_BYTES_ENV = "RELAX_SPARSE_PASS2_MAX_PROJECTION_GATHER_BYTES"
-
-
-_MAX_NOISE_BLOCK_BYTES_ENV = "RELAX_SPARSE_PASS2_MAX_NOISE_BLOCK_BYTES"
-
-
 _MAX_ADJOINT_BLOCK_BYTES_ENV = "RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES"
-
-
-_COMPACT_PAIR_DENSE_MSTEP_MAX_BYTES_ENV = "RELAX_SPARSE_KCLASS_COMPACT_PAIR_DENSE_MSTEP_MAX_BYTES"
 
 
 _MAX_PROJECTED_ROTATIONS_ENV = "RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS"
@@ -162,19 +88,6 @@ def _optional_positive_int_env(name: str) -> int | None:
         raise ValueError(f"{name} must be a positive integer, got {raw!r}") from exc
     if value <= 0:
         raise ValueError(f"{name} must be a positive integer, got {raw!r}")
-    return value
-
-
-def _optional_positive_float_env(name: str) -> float | None:
-    raw = os.environ.get(name)
-    if raw is None or raw == "":
-        return None
-    try:
-        value = float(raw)
-    except ValueError as exc:
-        raise ValueError(f"{name} must be a positive float, got {raw!r}") from exc
-    if value <= 0:
-        raise ValueError(f"{name} must be a positive float, got {raw!r}")
     return value
 
 
@@ -398,51 +311,6 @@ def _jax_allocator_pool_free_bytes() -> int | None:
     return max(0, int(pool) - int(bytes_in_use))
 
 
-def _exact_raw_diff2_cache_limit_bytes(
-    device_memory_bytes: int | None,
-    free_device_memory_bytes: int | None,
-    allocator_free_memory_bytes: int | None,
-    *,
-    max_cache_bytes: int = _EXACT_RAW_DIFF2_CACHE_MAX_BYTES,
-) -> int:
-    """Return the strict per-bucket cap for exact fine-score reuse."""
-
-    if (
-        device_memory_bytes is None
-        or free_device_memory_bytes is None
-        or allocator_free_memory_bytes is None
-        or int(device_memory_bytes) <= 0
-        or int(free_device_memory_bytes) <= 0
-        or int(allocator_free_memory_bytes) <= 0
-        or int(max_cache_bytes) <= 0
-    ):
-        return 0
-    return min(
-        int(max_cache_bytes),
-        int(int(device_memory_bytes) * _EXACT_RAW_DIFF2_CACHE_DEVICE_FRACTION),
-        int(int(free_device_memory_bytes) * _EXACT_RAW_DIFF2_CACHE_FREE_FRACTION),
-        int(int(allocator_free_memory_bytes) * _EXACT_RAW_DIFF2_CACHE_FREE_FRACTION),
-    )
-
-
-def _exact_raw_diff2_cache_estimated_bytes(
-    batch_size: int,
-    bucket_size: int,
-    n_fine_translations: int,
-    dtype=np.float32,
-) -> int:
-    return (
-        int(batch_size)
-        * int(bucket_size)
-        * int(n_fine_translations)
-        * np.dtype(dtype).itemsize
-    )
-
-
-def _exact_raw_diff2_cache_fits_budget(estimated_bytes: int, cache_limit_bytes: int) -> bool:
-    return int(estimated_bytes) > 0 and int(estimated_bytes) <= int(cache_limit_bytes)
-
-
 def _dtype_itemsize(dtype) -> int:
     return int(np.dtype(dtype).itemsize)
 
@@ -452,99 +320,6 @@ def _complex_counterpart_real_dtype(complex_dtype):
     if complex_dtype.itemsize <= np.dtype(np.complex64).itemsize:
         return np.float32
     return np.float64
-
-
-def _auto_hypotheses_per_microbatch(
-    *,
-    score_only: bool,
-    fused_k_class: bool = False,
-    fused_k_class_count: int | None = None,
-    n_score_pixels: int | None,
-    device_memory_bytes: int | None,
-    score_complex_dtype=np.complex64,
-) -> int | None:
-    if device_memory_bytes is None or n_score_pixels is None or int(n_score_pixels) <= 0:
-        return None
-    if score_only:
-        fraction = _AUTO_SCORE_ONLY_HYPOTHESIS_DEVICE_FRACTION
-    elif fused_k_class:
-        if fused_k_class_count is None or int(fused_k_class_count) <= 0:
-            raise ValueError("fused_k_class_count must be positive for fused K-class planning")
-        bytes_per_score_pixel = _dtype_itemsize(score_complex_dtype)
-        return max(
-            1,
-            int(
-                float(device_memory_bytes)
-                * _fused_kclass_score_gather_device_fraction()
-                * int(fused_k_class_count)
-                / (
-                    int(n_score_pixels)
-                    * bytes_per_score_pixel
-                    * _AUTO_FUSED_KCLASS_LIVE_COMPLEX_GATHERS
-                )
-            ),
-        )
-    else:
-        fraction = _AUTO_FULL_HYPOTHESIS_DEVICE_FRACTION
-    # The score kernel's dominant live block scales with candidate count times
-    # active Fourier pixels. This keeps larger windows and smaller GPUs from
-    # inheriting the same candidate cap as low-resolution H100 runs.
-    bytes_per_score_pixel = _dtype_itemsize(score_complex_dtype)
-    return max(1, int(float(device_memory_bytes) * fraction / (int(n_score_pixels) * bytes_per_score_pixel)))
-
-
-def _max_hypotheses_per_microbatch_for_pass(
-    *,
-    score_only: bool,
-    use_window: bool,
-    has_external_normalization: bool,
-    conservative_dump_execution: bool,
-    fused_k_class: bool = False,
-    fused_k_class_count: int | None = None,
-    n_score_pixels: int | None = None,
-    device_memory_bytes: int | None = None,
-    score_complex_dtype=np.complex64,
-) -> int:
-    if score_only and use_window and not has_external_normalization and not conservative_dump_execution:
-        override = _optional_positive_int_env(_SCORE_ONLY_MAX_HYPOTHESES_ENV)
-        auto = _auto_hypotheses_per_microbatch(
-            score_only=True,
-            fused_k_class=False,
-            n_score_pixels=n_score_pixels,
-            device_memory_bytes=device_memory_bytes,
-            score_complex_dtype=score_complex_dtype,
-        )
-        if override is not None:
-            if auto is not None and int(override) < int(auto):
-                logger.warning(
-                    "%s=%d is below the auto sparse pass-2 score-only cap %d; "
-                    "this can fragment buckets and slow pass-2.",
-                    _SCORE_ONLY_MAX_HYPOTHESES_ENV,
-                    int(override),
-                    int(auto),
-                )
-            return override
-        return int(auto) if auto is not None else _DEFAULT_SCORE_ONLY_MAX_HYPOTHESES_PER_MICROBATCH
-    override = _optional_positive_int_env(_MAX_HYPOTHESES_ENV)
-    auto = _auto_hypotheses_per_microbatch(
-        score_only=False,
-        fused_k_class=fused_k_class,
-        fused_k_class_count=fused_k_class_count,
-        n_score_pixels=n_score_pixels,
-        device_memory_bytes=device_memory_bytes,
-        score_complex_dtype=score_complex_dtype,
-    )
-    if override is not None:
-        if auto is not None and int(override) < int(auto):
-            logger.warning(
-                "%s=%d is below the auto sparse pass-2 cap %d; "
-                "this can fragment buckets and slow pass-2.",
-                _MAX_HYPOTHESES_ENV,
-                int(override),
-                int(auto),
-            )
-        return override
-    return int(auto) if auto is not None else _DEFAULT_MAX_HYPOTHESES_PER_MICROBATCH
 
 
 def _max_translation_tile_bytes_for_pass(
@@ -567,24 +342,6 @@ def _max_translation_tile_bytes_for_pass(
     return max(1, int(float(device_memory_bytes) * fraction))
 
 
-def _max_projection_gather_bytes_for_pass(device_memory_bytes: int | None = None) -> int:
-    override = _optional_positive_int_env(_MAX_PROJECTION_GATHER_BYTES_ENV)
-    if override is not None:
-        return int(override)
-    if device_memory_bytes is None:
-        return _DEFAULT_PROJECTION_GATHER_MAX_BYTES
-    return max(1, int(float(device_memory_bytes) * _AUTO_PROJECTION_GATHER_DEVICE_FRACTION))
-
-
-def _max_noise_block_bytes_for_pass(device_memory_bytes: int | None = None) -> int:
-    override = _optional_positive_int_env(_MAX_NOISE_BLOCK_BYTES_ENV)
-    if override is not None:
-        return int(override)
-    if device_memory_bytes is None:
-        return _DEFAULT_NOISE_BLOCK_MAX_BYTES
-    return max(1, int(float(device_memory_bytes) * _AUTO_NOISE_BLOCK_DEVICE_FRACTION))
-
-
 def _max_adjoint_block_bytes_for_pass(device_memory_bytes: int | None = None) -> int:
     override = _optional_positive_int_env(_MAX_ADJOINT_BLOCK_BYTES_ENV)
     if override is not None:
@@ -592,13 +349,6 @@ def _max_adjoint_block_bytes_for_pass(device_memory_bytes: int | None = None) ->
     if device_memory_bytes is None:
         return _DEFAULT_ADJOINT_BLOCK_MAX_BYTES
     return max(1, int(float(device_memory_bytes) * _AUTO_ADJOINT_BLOCK_DEVICE_FRACTION))
-
-
-def _compact_pair_dense_mstep_max_bytes_for_pass(device_memory_bytes: int | None = None) -> int:
-    override = _optional_positive_int_env(_COMPACT_PAIR_DENSE_MSTEP_MAX_BYTES_ENV)
-    if override is not None:
-        return int(override)
-    return _max_adjoint_block_bytes_for_pass(device_memory_bytes)
 
 
 def _projection_cache_max_bytes_for_pass(device_memory_bytes: int | None = None) -> int:
@@ -617,25 +367,6 @@ def _projection_call_max_bytes_for_pass(device_memory_bytes: int | None = None) 
     if device_memory_bytes is None:
         return _DEFAULT_PROJECTION_CACHE_MAX_BYTES
     return max(1, int(float(device_memory_bytes) * _AUTO_PROJECTED_ROTATIONS_DEVICE_FRACTION))
-
-
-def _max_images_for_translation_tile(
-    image_shape,
-    n_fine_trans,
-    *,
-    max_tile_bytes=384 * 1024**2,
-    complex_dtype=np.complex64,
-    n_half_pixels: int | None = None,
-):
-    """Limit one translated-image tile allocation to a bounded size."""
-    half_image_size = (
-        max(1, int(n_half_pixels))
-        if n_half_pixels is not None
-        else int(image_shape[0]) * (int(image_shape[1]) // 2 + 1)
-    )
-    bytes_per_complex_value = _dtype_itemsize(complex_dtype)
-    bytes_per_image = int(n_fine_trans) * half_image_size * bytes_per_complex_value
-    return max(1, int(max_tile_bytes) // max(1, bytes_per_image))
 
 
 def _projection_cache_transient_bytes(
@@ -745,72 +476,6 @@ def _projection_budget_pixels_for_pass(
     if bool(use_window) and bool(use_relion_projector):
         return max(1, 8 * pixels)
     return max(1, pixels)
-
-
-def _kclass_raw_diff2_bytes(class_bucket_arrays, compact_pair_arrays, *, n_fine_trans, dtype):
-    """Bytes of all raw class scores, using the actual padded bucket shapes."""
-    if compact_pair_arrays is not None:
-        elements = sum(int(arrays["pair_mask"].size) for arrays in compact_pair_arrays)
-    else:
-        elements = sum(
-            int(arrays["rotations"].shape[0]) * int(arrays["rotations"].shape[1]) * int(n_fine_trans)
-            for arrays in class_bucket_arrays
-        )
-    return elements * np.dtype(dtype).itemsize
-
-
-def _max_images_for_mstep_output_budget(
-    bucket_size: int,
-    n_recon_pixels: int,
-    *,
-    max_output_bytes: int,
-    numerator_complex_dtype=np.complex64,
-    denominator_real_dtype=np.float32,
-) -> int:
-    """Cap one dense M-step bucket by its materialized output rows.
-
-    ``compute_local_mstep_sums`` returns a complex numerator and a real
-    denominator with shape ``(B, R, N)``.  The adjoint path can chunk these
-    rows only after both dense outputs have been formed, so its existing block
-    budget must also constrain the input bucket that creates them.
-    """
-
-    bytes_per_image = (
-        int(bucket_size)
-        * int(n_recon_pixels)
-        * (
-            _dtype_itemsize(numerator_complex_dtype)
-            + _dtype_itemsize(denominator_real_dtype)
-        )
-    )
-    return max(1, int(max_output_bytes) // max(1, bytes_per_image))
-
-
-def _split_sparse_pass2_buckets_by_mstep_output_budget(
-    buckets,
-    *,
-    n_recon_pixels: int,
-    max_output_bytes: int,
-    numerator_complex_dtype=np.complex64,
-    denominator_real_dtype=np.float32,
-):
-    """Split dense pass-2 buckets before their full-pixel M-step outputs exist."""
-
-    split_buckets = []
-    for bucket in buckets:
-        image_indices = np.asarray(bucket["image_indices"], dtype=np.int64)
-        max_images = _max_images_for_mstep_output_budget(
-            int(bucket["bucket_size"]),
-            int(n_recon_pixels),
-            max_output_bytes=int(max_output_bytes),
-            numerator_complex_dtype=numerator_complex_dtype,
-            denominator_real_dtype=denominator_real_dtype,
-        )
-        for start in range(0, int(image_indices.size), int(max_images)):
-            split_bucket = dict(bucket)
-            split_bucket["image_indices"] = image_indices[start : start + max_images]
-            split_buckets.append(split_bucket)
-    return split_buckets
 
 
 def device_available_bytes(physical_free_bytes, allocator_free_bytes, pool_free_bytes=None) -> float | None:

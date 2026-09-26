@@ -178,7 +178,6 @@ def test_compact_k1_plan_rejects_genuine_float64_and_kclass_routes():
         )
 
 
-
 def _box800_plan(**overrides):
     kwargs = dict(
         requested_image_batch_size=64,
@@ -405,26 +404,3 @@ def test_adaptive_planner_distinguishes_allocation_phases_with_equal_windows():
     assert (plan.significance_image_batch_size, plan.significance_rotation_block_size) == (3, 5)
 
 
-@pytest.mark.parametrize("override", [None, "dense", "fused", "local"])
-def test_firstiter_compact_budget_requires_single_class_bucketed_route(monkeypatch, override):
-    from relax.refinement.firstiter_cc import single_class_bucketed_pass2_selected
-    from relax.classification.k1_local_pass2 import K1_PASS2_ENGINE_ENV
-    for name in ["RELAX_K_CLASS_DENSE_PASS2", "RELAX_SPARSE_KCLASS_FUSED", K1_PASS2_ENGINE_ENV]:
-        monkeypatch.delenv(name, raising=False)
-    if override == "dense": monkeypatch.setenv("RELAX_K_CLASS_DENSE_PASS2", "1")
-    if override == "fused": monkeypatch.setenv("RELAX_SPARSE_KCLASS_FUSED", "1")
-    if override == "local": monkeypatch.setenv(K1_PASS2_ENGINE_ENV, "local")
-    assert single_class_bucketed_pass2_selected(firstiter=True) is (override is None)
-
-
-@pytest.mark.parametrize("override", [None, "dense", "fused", "local", "resident"])
-def test_soft_compact_budget_requires_bucketed_route(monkeypatch, override):
-    from relax.refinement.firstiter_cc import single_class_bucketed_pass2_selected
-    from relax.classification.k1_local_pass2 import K1_PASS2_ENGINE_ENV
-    names = {"dense": "RELAX_K1_DENSE_PASS2", "fused": "RELAX_SPARSE_KCLASS_FUSED",
-             "local": K1_PASS2_ENGINE_ENV, "resident": "RELAX_SPARSE_PASS2_RESIDENT"}
-    for name in names.values(): monkeypatch.delenv(name, raising=False)
-    # The resident driver is the K=1 default; the bucketed route is compact, selected with =0.
-    if override is None: monkeypatch.setenv(names["resident"], "0")
-    elif override != "resident": monkeypatch.setenv(names[override], "local" if override == "local" else "1")
-    assert single_class_bucketed_pass2_selected(firstiter=False) is (override is None)

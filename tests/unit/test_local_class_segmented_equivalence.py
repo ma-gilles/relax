@@ -18,7 +18,6 @@ Tolerances come from the measured residuals rather than convention: they sit at 
 reduction-order floor of each precision, about 1e-7 relative in float32 and about
 3e-16 in float64, so the comparison would fail on a real behavior change.
 """
-import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -421,7 +420,6 @@ def test_segmented_rows_refuse_external_normalization():
             class_log_priors=np.zeros(2), image_batch_size=3, rotation_block_size=4, current_size=None,
             normalization_log_evidence=np.zeros(N_IMAGES), segmented_class_rows=True,
         )
-
 
 
 def test_class_packs_contain_only_their_own_rows():

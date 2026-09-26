@@ -109,41 +109,6 @@ def test_unit_translation_angle_scale_keeps_every_angle_producer_unchanged():
         _relion_translation_angles_f64(translations, (256, 256), angle_scale=0.0)
 
 
-def test_non_unit_translation_angle_scale_is_forwarded_or_refused_by_every_scorer():
-    """The scale reaches each exact scorer; routes without RELION angles refuse it."""
-    import inspect
-
-    from relax.classification import k_class
-    from relax.dense import em_engine
-    from relax.local import local_em_engine
-    from relax.refinement import half_scoring, local_search_iteration
-    from relax.scoring import significance
-    from relax.sparse_pass2 import dispatch, resident_local_pass2, resident_pass2, sparse_pass2_bucketed
-
-    assert k_class._translation_angle_scale_kwargs({}) == {}
-    assert k_class._translation_angle_scale_kwargs({"relion_translation_angle_scale": 1.0}) == {}
-    assert k_class._translation_angle_scale_kwargs({"relion_translation_angle_scale": 0.5}) == {
-        "relion_translation_angle_scale": 0.5
-    }
-    for function in (
-        half_scoring._score_half_dense_one_shape,
-        half_scoring._score_half_local_one_shape,
-        local_search_iteration._run_local_search_iteration,
-        local_em_engine.run_local_em_exact,
-        significance._compute_k_class_significance_batched,
-        dispatch.compute_pass2_stats_sparse,
-        sparse_pass2_bucketed.compute_pass2_stats_sparse_bucketed,
-        resident_pass2.compute_pass2_stats_resident,
-        resident_local_pass2.compute_local_search_resident,
-        em_engine.run_em,
-    ):
-        assert inspect.signature(function).parameters["relion_translation_angle_scale"].default == 1.0
-    k_class_source = inspect.getsource(k_class)
-    assert k_class_source.count("**_translation_angle_scale_kwargs(") == 4
-    with pytest.raises(NotImplementedError, match="translation-angle scaling"):
-        em_engine.run_em(None, None, None, None, None, None, "linear_interp", relion_translation_angle_scale=0.5)
-
-
 def test_relion_translation_cuda_source_preserves_explicit_arithmetic():
     source = read_em_cuda_source()
 
@@ -466,7 +431,6 @@ def test_relion_vdam_exact_native_ptx_discriminator_is_opt_in_and_fail_closed():
     parameter_array = exact_launch.split("void* kernel_parameters[] = {", 1)[1].split("};", 1)[0]
     actual_arguments = tuple(arg.strip() for arg in parameter_array.split(",") if arg.strip())
     assert actual_arguments == expected_arguments
-
 
 
 def _relion_row_label(pixel_index, half_width, image_size):

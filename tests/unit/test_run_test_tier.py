@@ -235,7 +235,6 @@ SKIPIF_GATED_GPU_FILES = (
     "tests/unit/test_normalized_cc_replay.py",
     "tests/unit/test_resident_local_pass2.py",
     "tests/unit/test_resident_pass2_driver.py",
-    "tests/unit/test_stable_window_fused_chunk_integration.py",
 )
 
 

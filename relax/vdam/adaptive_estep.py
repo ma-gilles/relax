@@ -15,7 +15,7 @@ This module runs VDAM's E-step on ``run_dense_k_class_em_adaptive``, the route
 auto-refine and Class3D take, on the device-resident pass 2. Difference 1 is the
 route's ``mstep_subtract_ctf_projection``; 2 is the resident engine's accumulator
 slots ``class + K * half`` (``reconstruction_group_ids``, one pass over the subset;
-docs/development/resident_segments.md), which the compact engine refuses; 3 is the
+docs/development/resident_segments.md); 3 is the
 ``max_significants`` VDAM already resolves.
 
 The route indexes coarse rotations in RECOVAR order (psi-slow,

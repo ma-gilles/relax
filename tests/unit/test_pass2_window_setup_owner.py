@@ -1,8 +1,8 @@
-"""Both bucketed pass-2 entry points resolve their window, precision and fine translation prior through one owner."""
+"""The pass-2 window, precision and fine translation prior are resolved by one owner (sparse_pass2_window)."""
 
 import numpy as np
 
-from relax.sparse_pass2 import sparse_pass2_bucketed as sp
+from relax.sparse_pass2 import sparse_pass2_window as sp
 
 
 def test_window_setup_owner_rejects_exact_gaussian_below_the_image_size_without_half_spectrum():

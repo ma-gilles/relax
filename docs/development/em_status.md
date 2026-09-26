@@ -56,8 +56,6 @@ what still routes to them. Inventory and line estimates (relax bc6d3e1):
 
 | Deprecated engine or route | What still routes to it on main | Resident work needed |
 |---|---|---|
-| Compact (bucketed sparse) pass 2: `sparse_pass2_bucketed` and its bucket plan, compact-pair sums, noise blocks, `compact_candidate_capture`, `resident_shadow`; the K-class fused and 2K-1 compact paths in `k_class._run_sparse_k_class_adaptive_pass2` | Only refusals: subset and focused replays (non-atomic Wavg), square-window replays, diagnostic dumps and flags, float64 and score-only diagnostic passes, CPU-only execution, and the memory refusals of `_stream_row_capacity_ladder` / `_cached_row_capacity_ladder`; `RELAX_SPARSE_PASS2_RESIDENT=0` | RELION's atomic Wavg arithmetic for replays; retire or port the dumps; resident always fits (row capacity 1 or image streaming); a decision on CPU pass 2 (GPU-only, or a JAX back end for the resident CUDA stages) |
-| K=1 exact-local adaptive route (`classification/k1_local_pass2.py`) | Only `RELAX_K1_PASS2_ENGINE=local` | None |
 | Exact local engine (`local/local_em_engine.py` and the other `local/` execution modules; `local_layout` stays) | Refine3D local-search parent probe (score-only, `maximum_significants` cap), every local iteration; refusals of the resident local checks; `RELAX_LOCAL_SEARCH_RESIDENT=0` | 10202 memory for the full-box pass, which runs on resident local since 1178448 (below); a resident score-only local mode with RELION's cap for the parent probe; the scale-1 triplet without scale groups |
 | VDAM exact-local E-step (`vdam/sparse_pass2_estep.py`, `k_class.run_local_k_class_em`) | An adaptive refusal (any K; logged); `--pass2_engine local` | Port or refuse the configurations the adaptive route still refuses, then delete it |
 | Dense `run_em` (`dense/em_engine.py`, `dense_big_jit.py`, `k_class.run_dense_k_class_em`) and the per-image reference route (`reference/sparse_pass2.py`) | Nothing in production (the CLI always builds scale groups and supplies RELION's projector): oversampling 0 without scale groups, `RELAX_K1_DENSE_PASS2` / `RELAX_K_CLASS_DENSE_PASS2`, VDAM `RELAX_DISABLE_SPARSE_PASS2`, the dense K-class fallbacks, a full-grid C1 pass without supports | Move the joint `--firstiter_cc` coarse probe (pass 1) out of the dense K-class wrapper |
@@ -71,9 +69,14 @@ Removal order:
    the local fine pass. Sibling-engine agreement cannot validate a convention, so the tests
    that pin resident against compact or exact local are deleted with the engine they compare
    against.
-2. Compact, with the K=1 exact-local adaptive route and the dispatch fallback
-   (about 22k lines).
-3. The full-box final pass and the parent probe on resident local.
+2. Compact, with the K=1 exact-local adaptive route and the dispatch fallback (done
+   2026-09-26, about 22k lines of `relax/`): a configuration the resident checks refuse is now
+   an error, subset and focused replays take RELION's atomic Wavg arithmetic (user decision),
+   the compact-only diagnostic dumps are retired, and pass 2 needs a CUDA GPU (user decision:
+   no CPU back end; CPU correctness runs on the NumPy reference). The one memory refusal left is
+   a smallest chunk that does not fit the device (the joint chunk planner, 4c3b2af, shrinks
+   every larger plan to fit).
+3. The full-box final pass on resident local (done, 1178448), then the parent probe.
 4. The VDAM exact-local route (resident has been the VDAM default for every K since 2026-09-26).
 5. The exact local engine (about 24k lines).
 6. Dense `run_em` and the per-image reference (about 4k lines).
@@ -367,9 +370,7 @@ duplicated-class test against the K=1 resident pass. The compact K>1 engine is n
 fixed; it is deleted with compact.
 
 Class3D on the resident engine (2026-09-25): the K-class pass 2 runs on the resident
-engine by default, with the K=1 flip's selection (unset: resident, or compact with a logged
-reason when a configuration check refuses; `RELAX_SPARSE_PASS2_RESIDENT=1`: refusal is an
-error; `=0`: compact) and its engine record. Rows carry the class axis
+engine (the only pass-2 engine since the compact removal of 2026-09-26) and records its engine. Rows carry the class axis
 (`docs/development/resident_segments.md`). K4 50k/256 long (15 iterations, candidate e2f5197,
 job 14428127 against the RELION repeat of 14427006): GT min FSC-AUC 0.216797 (masked 0.216068),
 inside RELION's band [0.216623, 0.216957] (masked [0.215882, 0.216170]); the compact long run
@@ -463,12 +464,12 @@ tier gates both the unfiltered half-map average and the merged map, and requires
 
 K=1 engine (2026-09-25): the device-resident pass 2, local search and device significance are the
 Refine3D default, with the qualified flag set, including the first-iteration CC pass and
-`--adaptive_oversampling 0`. Unset, a pass the resident checks refuse runs on the earlier engine
-with a logged reason, recorded per iteration in `pass2_engine_trajectory`; an explicit `=1` makes
-that refusal an error. The jitted stage glue and the local image-capacity
+`--adaptive_oversampling 0`. A global pass the resident checks refuse is an error (the compact
+engine is deleted); a local pass they refuse runs on the deprecated exact-local engine with a
+logged reason, recorded per iteration in `pass2_engine_trajectory`. The jitted stage glue and the local image-capacity
 ladder are set at the K=1 entry points (`apply_k1_refine3d_env_defaults`), since VDAM shares that
-code and qualifies its own defaults. Transitional A/B off switches, to be removed with the compact
-engine (not permanent variants): `RELAX_SPARSE_PASS2_RESIDENT=0`, `RELAX_LOCAL_SEARCH_RESIDENT=0`,
+code and qualifies its own defaults. Transitional A/B off switches (not permanent variants;
+`RELAX_SPARSE_PASS2_RESIDENT` is retired with the compact engine and setting it is an error): `RELAX_LOCAL_SEARCH_RESIDENT=0`,
 `RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=0`,
 `RELAX_K1_RELION_WAVG_SEQUENTIAL_CUDA=0`, `RELAX_COARSE_PAD_FINAL_IMAGE_BATCH=0`,
 `RELAX_EM_JIT_STAGE_GLUE=0`, `RELAX_LOCAL_IMAGE_CAPACITY_LADDER=0`. Device coarse significance has no

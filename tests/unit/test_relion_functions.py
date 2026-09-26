@@ -1787,7 +1787,6 @@ def _jax_cpu_default_device():
         yield
 
 
-
 @pytest.mark.usefixtures("_jax_cpu_default_device")
 def test_post_process_small_grid_auto_guard_matches_disabled(monkeypatch):
     clear_cache = getattr(rf.post_process_from_filter_v2, "clear_cache", None)

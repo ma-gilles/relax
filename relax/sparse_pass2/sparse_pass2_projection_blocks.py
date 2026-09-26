@@ -1,8 +1,7 @@
-"""Projection blocks of the sparse bucketed pass 2.
+"""Projection blocks of the sparse pass 2.
 
-The per-bucket projection of hypothesis rotations (full and windowed) with
-their chunking and finalization. ``sparse_pass2_bucketed`` projects every
-bucket through these owners.
+The projection of hypothesis rotations (full and windowed) with their chunking and
+finalization. The resident drivers project their fine rotations through these owners.
 
 Radius propagation: ``docs/math/sparse_projection_radius.md``.
 """
@@ -261,14 +260,3 @@ def _finalize_windowed_projection_chunks(score_chunks, recon_chunks, *, output_a
     return score_proj, recon_proj, recon_abs2
 
 
-def _close_relion_projector_texture_after_sparse_scoring(texture):
-    """Release the function-scoped projector before output finalization."""
-
-    if texture is None:
-        return None
-    logger.info(
-        "Sparse pass-2 score/adjoint phase complete: releasing persistent "
-        "RELION projector texture before output finalization"
-    )
-    texture.close()
-    return None

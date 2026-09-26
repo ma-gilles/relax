@@ -226,7 +226,8 @@ from relax.local.local_timing import (
 )
 from relax.relion import relion_ctf
 from relax.relion.relion_projector_setup import prepare_local_projector_slab
-from relax.sparse_pass2 import sparse_pass2_bucketed
+from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_cuda_score_translation_angles_if_available
+from relax.sparse_pass2.sparse_pass2_posterior import _relion_f32_fine_reconstruction_probs
 from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle, _make_stable_relion_wavg_rectangle
 
 logger = logging.getLogger(__name__)
@@ -1722,7 +1723,7 @@ def run_local_em_exact(
         dtype=precision_policy.score_real_dtype,
     )
     relion_score_translation_angles = (
-        sparse_pass2_bucketed._relion_cuda_score_translation_angles_if_available(
+        _relion_cuda_score_translation_angles_if_available(
             local_layout.translation_grid,
             image_shape,
             enabled=relion_exact_score_translation,
@@ -5400,7 +5401,7 @@ def run_local_em_exact(
                     n_significant_samples,
                     _relion_sum_weight,
                     _relion_significant_weight,
-                ) = sparse_pass2_bucketed._relion_f32_fine_reconstruction_probs(
+                ) = _relion_f32_fine_reconstruction_probs(
                     scores,
                     adaptive_fraction=adaptive_fraction,
                 )

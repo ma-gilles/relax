@@ -19,12 +19,7 @@ from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_cuda_powerclass_highres_norm_units,
     _relion_cuda_powerclass_spectrum_highres_norm_units,
 )
-from relax.sparse_pass2.sparse_pass2_wavg import (
-    _relion_cuda_translate_wavg_norm_images,
-    _replace_untranslated_low_shell_norm_power,
-    _translated_wavg_low_shell_power_pixels,
-    _weighted_image_power_shells_and_per_image,
-)
+from relax.sparse_pass2.sparse_pass2_wavg import _relion_cuda_translate_wavg_norm_images
 
 
 @pytest.mark.parametrize(
@@ -418,33 +413,6 @@ def test_powerclass_spectrum_norm_runtime_current_size_reuses_trace_and_matches_
         function.clear_cache()
 
 
-def test_translated_wavg_low_shell_power_preserves_per_pixel_boundary():
-    shifted = np.asarray(
-        [
-            [
-                [3 + 4j, 5 + 12j, 8 + 15j, 7 + 24j],
-                [6 + 8j, 9 + 12j, 20 + 21j, 10 + 24j],
-            ]
-        ],
-        dtype=np.complex64,
-    )
-    posterior = np.asarray([[0.25, 0.75]], dtype=np.float32)
-    shells = np.asarray([0, 1, 2, -1], dtype=np.int32)
-
-    actual = _translated_wavg_low_shell_power_pixels(
-        jnp.asarray(shifted),
-        jnp.asarray(posterior),
-        jnp.asarray(shells),
-        jnp.asarray(1, dtype=jnp.int32),
-    )
-
-    power = shifted.real * shifted.real
-    power = np.asarray(power + shifted.imag * shifted.imag, dtype=np.float32)
-    expected = np.sum(posterior[:, :, None] * power, axis=1, dtype=np.float32)
-    expected[:, 2:] = 0.0
-    assert_matches(np.asarray(actual), expected)
-
-
 def test_relion_wavg_norm_translation_uses_raw_windowed_image(monkeypatch):
     from relax.cuda import kernels as em_cuda_kernels
 
@@ -476,49 +444,3 @@ def test_relion_wavg_norm_translation_uses_raw_windowed_image(monkeypatch):
     )
 
 
-def test_translated_wavg_norm_replaces_only_untranslated_low_shell_power(monkeypatch):
-    monkeypatch.setenv("RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM", "1")
-    processed = np.asarray([[3 + 4j, 5 + 12j, 8 + 15j, 7 + 24j]], dtype=np.complex64)
-    shifted = np.asarray(
-        [
-            [
-                [3 + 4j, 5 + 12j, 8 + 15j, 7 + 24j],
-                [6 + 8j, 9 + 12j, 20 + 21j, 10 + 24j],
-            ]
-        ],
-        dtype=np.complex64,
-    )
-    posterior = np.asarray([[0.25, 0.75]], dtype=np.float32)
-    shells = np.asarray([0, 1, 2, -1], dtype=np.int32)
-    high_and_residual = np.float64(123.5)
-    _, baseline = _weighted_image_power_shells_and_per_image(
-        jnp.asarray(processed),
-        jnp.asarray(shells),
-        jnp.ones(1, dtype=jnp.float32),
-        shell_count=3,
-        norm_unweighted_shell_cutoff=1,
-        norm_unweighted_high_shell=jnp.asarray([high_and_residual], dtype=jnp.float64),
-    )
-
-    actual = _replace_untranslated_low_shell_norm_power(
-        baseline,
-        jnp.asarray(processed),
-        jnp.asarray(shifted),
-        jnp.asarray(posterior),
-        jnp.asarray(shells),
-        jnp.arange(4, dtype=jnp.int32),
-        shell_cutoff=1,
-    )
-
-    shifted_power = shifted.real * shifted.real
-    shifted_power = np.asarray(
-        shifted_power + shifted.imag * shifted.imag,
-        dtype=np.float32,
-    )
-    translated_low_pixels = np.sum(
-        posterior[:, :, None] * shifted_power,
-        axis=1,
-        dtype=np.float32,
-    )[:, :2]
-    expected = high_and_residual + np.sum(translated_low_pixels, dtype=np.float64)
-    assert_matches(np.asarray(actual), np.asarray([expected]))

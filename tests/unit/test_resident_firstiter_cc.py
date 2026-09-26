@@ -20,11 +20,8 @@ import pytest
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
-from helpers.float_compare import assert_matches
 
 from relax.sparse_pass2.resident_pass2 import _winner_take_all_cells
-from relax.sparse_pass2.resident_scoring import score_resident_chunk_normalized_cc
-from relax.sparse_pass2.sparse_pass2_scoring import _score_pass2_bucket_relion_gpu_normalized_cc
 
 pytestmark = pytest.mark.unit
 
@@ -34,53 +31,6 @@ N_TRANS = 3
 
 def _complex(rng, shape):
     return (rng.normal(size=shape) + 1j * rng.normal(size=shape)).astype(np.complex64)
-
-
-def test_flat_row_cc_scores_match_the_compact_bucket_scorer():
-    """Same scores per (image, rotation, translation), in blocks of rows."""
-
-    rng = np.random.default_rng(7)
-    n_rot, image_rows = 9, [4, 3, 1]
-    cache = _complex(rng, (n_rot, N_PIXELS))
-    images = _complex(rng, (len(image_rows), N_TRANS, N_PIXELS))
-    weight = rng.uniform(0.1, 2.0, (len(image_rows), N_PIXELS)).astype(np.float32)
-    half_weights = rng.choice([1.0, 2.0], N_PIXELS).astype(np.float32)
-    full_to_compact = rng.permutation(N_PIXELS).astype(np.int32)
-    row_image = np.repeat(np.arange(len(image_rows)), image_rows).astype(np.int32)
-    row_rot = rng.integers(0, n_rot, row_image.size).astype(np.int32)
-    row_capacity = 16
-    pad = row_capacity - row_image.size
-    scored = score_resident_chunk_normalized_cc(
-        jnp.asarray(np.concatenate([row_image, np.zeros(pad, np.int32)])),
-        jnp.asarray(np.concatenate([row_rot, np.zeros(pad, np.int32)])),
-        jnp.zeros((row_capacity, 1), jnp.uint32),
-        jnp.asarray(np.concatenate([np.zeros(row_image.size, np.int8), np.full(pad, 2, np.int8)])),
-        jnp.int32(row_image.size),
-        jnp.asarray(cache),
-        jnp.asarray(images),
-        jnp.asarray(weight),
-        jnp.full((len(image_rows),), 3.0),
-        half_weights=jnp.asarray(half_weights),
-        full_to_compact=jnp.asarray(full_to_compact),
-        fine_translation_parent=jnp.arange(N_TRANS, dtype=jnp.int32),
-        row_capacity=row_capacity,
-        n_fine_trans=N_TRANS,
-        block_rows=4,
-    )
-    scores = np.asarray(scored.scores)
-    assert np.all(np.isneginf(scores[row_image.size :]))
-    for image in range(len(image_rows)):
-        rows = np.flatnonzero(row_image == image)
-        compact = _score_pass2_bucket_relion_gpu_normalized_cc(
-            jnp.asarray(images[image : image + 1]),
-            jnp.asarray(weight[image : image + 1]),
-            jnp.asarray(cache[row_rot[rows]][None]),
-            jnp.asarray(half_weights),
-            jnp.ones((1, rows.size, N_TRANS), dtype=bool),
-            jnp.asarray(full_to_compact),
-        )
-        assert_matches(scores[rows], np.asarray(compact[0]))
-    assert_matches(np.asarray(scored.min_diff2), np.full(len(image_rows), 3.0))
 
 
 def test_winner_is_the_first_maximum_of_each_segment():

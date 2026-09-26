@@ -981,7 +981,6 @@ def test_score_tile_free_memory_fraction_is_resolvable(monkeypatch):
             planning._exact_local_score_tile_free_memory_fraction()
 
 
-
 @pytest.mark.unit
 def test_packed_row_capacity_ladder_only_ever_rounds_up():
     """The capacity ladder must never hand back less room than was required.

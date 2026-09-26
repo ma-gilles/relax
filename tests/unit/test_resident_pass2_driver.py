@@ -22,7 +22,6 @@ needs a GPU and the custom CUDA library; it is the GPU test at the end.
 
 from __future__ import annotations
 
-import inspect
 
 import numpy as np
 import pytest
@@ -40,7 +39,6 @@ from relax.sparse_pass2.resident_candidates import (
 )
 from relax.sparse_pass2.sparse_pass2_policy import ResidentConfigurationUnsupported
 from relax.sparse_pass2.sparse_pass2_wavg import (
-    _relion_wavg_atomic_triplet_terms,
     _relion_wavg_rectangle_triplet_terms,
 )
 
@@ -104,7 +102,7 @@ def test_production_configuration_is_accepted():
         ({"relion_wavg_atomic_direct_noise": False}, "direct low-shell residual"),
         ({"relion_wavg_atomic_direct_norm": True}, "stopped diagnostic"),
         ({"relion_firstiter_score_mode": "normalized_cc"}, "fine Gaussian"),
-        ({"relion_projector_texture": object()}, "persistent RELION projector texture"),
+        ({"relion_projector_texture": object()}, "not a caller.s persistent texture"),
     ],
 )
 def test_gate_names_the_missing_piece(override, expected):
@@ -259,72 +257,6 @@ def test_flat_row_weighted_sums_agree_with_the_rectangular_mstep_sums():
         rtol=1e-6,
         atol=0.0,
     )
-
-
-def test_flat_row_algebraic_wavg_terms_match_the_rectangular_helper():
-    """The flat-row algebraic Wavg triplet is the rectangular helper's without its image power.
-
-    ``xa`` and ``aa`` are elementwise, so they must match in the default band.
-    The flat ``diff2`` is ``aa - 2*xa``: the helper's per-row image power
-    ``sum_t w[r, t] |x_t[p]|^2`` is added once per image by the chunk
-    (``_add_wavg_rectangle_image_power``), so adding each row's power back
-    (float64, from the same float32 squares) must give the helper's ``diff2``
-    in the default float32 band.
-    """
-
-    rng = np.random.default_rng(31)
-    batch, n_rot, n_trans, n_pix = 3, 4, 5, 9
-    proj = (
-        rng.normal(size=(batch, n_rot, n_pix)) + 1j * rng.normal(size=(batch, n_rot, n_pix))
-    ).astype(np.complex64)
-    proj_abs2 = np.abs(proj) ** 2
-    summed = (
-        rng.normal(size=(batch, n_rot, n_pix)) + 1j * rng.normal(size=(batch, n_rot, n_pix))
-    ).astype(np.complex64)
-    ctf_probs = np.abs(rng.normal(size=(batch, n_rot, n_pix))).astype(np.float32)
-    ctf_probs[1, 0, :] = 0.0
-    noise_variance = np.abs(rng.normal(size=n_pix)).astype(np.float32) + 0.1
-    scale = np.abs(rng.normal(size=batch)).astype(np.float32) + 0.5
-    raw_shifted = (
-        rng.normal(size=(batch, n_trans, n_pix)) + 1j * rng.normal(size=(batch, n_trans, n_pix))
-    ).astype(np.complex64)
-    posterior = np.abs(rng.normal(size=(batch, n_rot, n_trans))).astype(np.float32)
-
-    rect = np.asarray(
-        _relion_wavg_atomic_triplet_terms(
-            jnp.asarray(proj),
-            jnp.asarray(proj_abs2),
-            jnp.asarray(summed),
-            jnp.asarray(ctf_probs),
-            jnp.asarray(noise_variance),
-            jnp.asarray(scale),
-            jnp.asarray(raw_shifted),
-            jnp.asarray(posterior),
-        )
-    ).reshape(batch * n_rot, n_pix, 3)
-    row_image = np.repeat(np.arange(batch, dtype=np.int32), n_rot)
-    flat = np.asarray(
-        rp._resident_block_wavg_algebraic_terms(
-            jnp.asarray(proj.reshape(batch * n_rot, n_pix)),
-            jnp.asarray(proj_abs2.reshape(batch * n_rot, n_pix)),
-            jnp.asarray(summed.reshape(batch * n_rot, n_pix)),
-            jnp.asarray(ctf_probs.reshape(batch * n_rot, n_pix)),
-            jnp.asarray(noise_variance),
-            jnp.asarray(scale),
-            jnp.asarray(row_image),
-        )
-    )
-    assert_matches(flat[:, :, 0], rect[:, :, 0])  # XA
-    assert_matches(flat[:, :, 1], rect[:, :, 1])  # AA
-    square = (raw_shifted.real * raw_shifted.real).astype(np.float32) + (
-        raw_shifted.imag * raw_shifted.imag
-    ).astype(np.float32)
-    row_power = np.einsum(
-        "rt,rtp->rp",
-        posterior.reshape(batch * n_rot, n_trans).astype(np.float64),
-        square[row_image].astype(np.float64),
-    )
-    assert_matches((flat[:, :, 2] + row_power).astype(np.float32), rect[:, :, 2])
 
 
 @pytest.mark.parametrize(
@@ -495,7 +427,7 @@ def test_joint_chunk_plan_fits_the_10202_iteration_14_shape():
     assert plan.mstep_block_rows < 64
     assert max(plan.image_capacity_ladder) >= 4  # more than the 2-image fixed fallback
     assert 1024 % plan.mstep_block_rows == 0
-    # A budget below the smallest chunk is a refusal the default route runs on compact.
+    # A budget below the smallest chunk is a refusal (there is no other pass-2 engine to run it on).
     with pytest.raises(rp.ResidentConfigurationUnsupported, match="smallest chunk"):
         rp.plan_resident_chunk_memory(
             row_capacity_ladder=(1024,), image_capacity_ladder=(1,), mstep_block_rows=1,
@@ -673,41 +605,8 @@ def test_joint_chunk_plan_leaves_a_box_256_plan_unchanged():
     ) == rp._cap_image_capacity_ladder((32, 128, 512), **fixed)
 
 
-def test_driver_is_the_default_and_the_flag_switches_it_off(monkeypatch):
-    from relax.sparse_pass2 import dispatch as sparse_dispatch
-
-    monkeypatch.delenv(rp.RESIDENT_PASS2_ENV, raising=False)
-    assert rp.resident_pass2_requested()
-    monkeypatch.setenv(rp.RESIDENT_PASS2_ENV, "1")
-    assert rp.resident_pass2_requested()
-    monkeypatch.setenv(rp.RESIDENT_PASS2_ENV, "0")
-    assert not rp.resident_pass2_requested()
-    source = sparse_dispatch.compute_pass2_stats_sparse.__doc__ or ""
-    del source
-    import inspect
-
-    dispatch = inspect.getsource(sparse_dispatch.compute_pass2_stats_sparse)
-    assert "resident_pass2_requested()" in dispatch
-    assert "compute_pass2_stats_resident" in dispatch
-
-
-def test_signature_matches_the_compact_engine():
-    import inspect
-
-    from relax.sparse_pass2.sparse_pass2_bucketed import (
-        compute_pass2_stats_sparse_bucketed,
-    )
-
-    compact = inspect.signature(compute_pass2_stats_sparse_bucketed).parameters
-    resident = inspect.signature(rp.compute_pass2_stats_resident).parameters
-    assert list(compact) == list(resident)
-    for name in compact:
-        assert compact[name].default == resident[name].default, name
-        assert compact[name].kind == resident[name].kind, name
-
-
 # ---------------------------------------------------------------------------
-# GPU: the whole driver against the compact engine
+# GPU: the whole driver
 # ---------------------------------------------------------------------------
 
 
@@ -955,82 +854,6 @@ def test_global_chunk_tile_count_matches_the_live_translated_arrays(_resident_pr
 
 
 @requires_resident_gpu
-def test_resident_driver_matches_the_compact_engine(_resident_production_env):
-    """Whole-driver comparison against ``compute_pass2_stats_sparse_bucketed``.
-
-    Discrete state (pose, translation, rotation id) and every per-image score
-    field must match (discrete fields exactly, scores in the default band): the
-    scores come from the same CUDA body as the rectangular handler. The maps and
-    the noise/scale accumulators change reduction order, which the user waived
-    on 2026-09-18, so they are bounded by relative L2 at the values this
-    fixture measured.
-    """
-
-    from relax.sparse_pass2.sparse_pass2_bucketed import (
-        compute_pass2_stats_sparse_bucketed,
-    )
-
-    args = _driver_fixture_args()
-    compact = compute_pass2_stats_sparse_bucketed(**args)
-    resident = rp.compute_pass2_stats_resident(**args)
-
-    assert_matches(compact.hard_assignment, resident.hard_assignment)
-    assert_matches(compact.best_rotation_indices, resident.best_rotation_indices)
-    assert_matches(compact.best_rotations, resident.best_rotations)
-    assert_matches(compact.best_translations, resident.best_translations)
-    assert_matches(
-        np.asarray(compact.score_log_z), np.asarray(resident.score_log_z)
-    )
-    for field in (
-        "log_evidence_per_image",
-        "best_log_score_per_image",
-        "max_posterior_per_image",
-        "rotation_posterior_sums",
-    ):
-        assert_matches(
-            np.asarray(getattr(compact.relion_stats, field)),
-            np.asarray(getattr(resident.relion_stats, field)),
-            err_msg=field,
-        )
-
-    def rel_l2(a, b):
-        a = np.asarray(a)
-        b = np.asarray(b)
-        den = float(np.linalg.norm(a))
-        return float(np.linalg.norm(a - b) / den) if den else 0.0
-
-    # Float32 BPref atomics and the blocked pixel-axis reductions; measured at
-    # 1.2e-7 on this fixture, against a compact-vs-compact repeat band of 4e-8.
-    assert rel_l2(compact.Ft_y, resident.Ft_y) < 1e-6
-    assert rel_l2(compact.Ft_ctf, resident.Ft_ctf) < 1e-6
-    # The Wavg diff2 residual cancels most of its magnitude, so the
-    # shape-dependent float32 image-power contraction shows up here at 6.2e-6.
-    assert rel_l2(
-        compact.noise_stats.wsum_sigma2_noise, resident.noise_stats.wsum_sigma2_noise
-    ) < 1e-4
-    for field in (
-        "wsum_img_power",
-        "wsum_norm_correction",
-        "wsum_scale_correction_xa",
-        "wsum_scale_correction_aa",
-    ):
-        assert rel_l2(
-            getattr(compact.noise_stats, field), getattr(resident.noise_stats, field)
-        ) < 1e-6, field
-    # No translation prior centers in this fixture, so the offset is exactly
-    # zero on both paths.
-    assert float(compact.noise_stats.wsum_sigma2_offset) == float(
-        resident.noise_stats.wsum_sigma2_offset
-    )
-    # The support mass is a float64 sum over a reassociated float32 posterior
-    # reduction; it came out bitwise on one A100 and 1.0e-8 relative on
-    # another, so the bound is relative, not equality.
-    assert abs(
-        float(compact.noise_stats.sumw) - float(resident.noise_stats.sumw)
-    ) <= 1e-6 * abs(float(compact.noise_stats.sumw))
-
-
-@requires_resident_gpu
 def test_resident_driver_repeats_itself(_resident_production_env):
     """The resident driver's own repeat band, the reference for the table above."""
 
@@ -1158,45 +981,6 @@ def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkey
 
 
 @requires_resident_gpu
-def test_degenerate_cross_class_normalizer_is_a_no_op_for_the_compact_engine(
-    _resident_production_env,
-):
-    """The all -inf normalizer the K=1 route supplies changes no compact output.
-
-    This is the premise the gate's relaxation rests on, so it is measured
-    rather than argued: running the compact engine with and without the
-    degenerate vector must give the same maps, poses and per-image statistics.
-    """
-
-    from relax.sparse_pass2.sparse_pass2_bucketed import (
-        compute_pass2_stats_sparse_bucketed,
-    )
-
-    with_norm = _driver_fixture_args()
-    without_norm = _driver_fixture_args()
-    without_norm.pop("normalization_other_score_log_z")
-    without_norm.pop("normalization_score_mode")
-    assert with_norm["normalization_other_score_log_z"] is not None
-
-    a = compute_pass2_stats_sparse_bucketed(**with_norm)
-    b = compute_pass2_stats_sparse_bucketed(**without_norm)
-    assert_matches(a.hard_assignment, b.hard_assignment)
-    assert_matches(a.best_rotation_indices, b.best_rotation_indices)
-    assert_matches(np.asarray(a.score_log_z), np.asarray(b.score_log_z))
-    for field in (
-        "log_evidence_per_image",
-        "best_log_score_per_image",
-        "max_posterior_per_image",
-        "rotation_posterior_sums",
-    ):
-        assert_matches(
-            np.asarray(getattr(a.relion_stats, field)),
-            np.asarray(getattr(b.relion_stats, field)),
-            err_msg=field,
-        )
-
-
-@requires_resident_gpu
 def test_gate_refuses_a_finite_cross_class_normalizer(_resident_production_env):
     args = _driver_fixture_args()
     args["normalization_other_score_log_z"] = np.zeros(
@@ -1214,30 +998,6 @@ def test_resident_driver_refuses_an_unsupported_pass(_resident_production_env):
     args["relion_x_half_mstep"] = False
     with pytest.raises(NotImplementedError, match="x-half M-step"):
         rp.compute_pass2_stats_resident(**args)
-
-
-def test_driver_projects_like_the_compact_engine():
-    """Both engines narrow Projector::data to complex64 unless scoring in float64.
-
-    The compact engine projects through RELION's float32 texture (the
-    dispatcher's persistent texture, or the same narrowing in its block path).
-    The driver kept the complex128 slab and fell back to the vmapped JAX
-    projector, which is why the os1 cold start differed from compact at
-    iteration 1 (14384091); with the narrowing the two agree to their repeat
-    band (14394736). The fixture datasets have no RELION projector, so only a
-    source check catches this class of bug.
-    """
-
-    import inspect
-
-    from relax.sparse_pass2 import sparse_pass2_bucketed
-
-    condition = "if not use_float64_scoring and relion_projector_half.dtype == jnp.complex128:"
-    driver = inspect.getsource(rp._resident_pass2)
-    assert condition in driver
-    cast = driver.index("astype(jnp.complex64)")
-    assert cast - driver.index(condition) < 200, "the projector cast is not the narrowing branch"
-    assert condition in inspect.getsource(sparse_pass2_bucketed)
 
 
 def test_chunk_operands_are_padded_on_the_host():
@@ -1292,111 +1052,20 @@ def test_reorder_permutation_inverts_a_shuffled_fetch():
         rp._reorder_permutation(np.asarray([1, 9, 7, 7]), requested, capacity=6)
 
 
-def test_the_firstiter_cc_pass_is_in_scope():
-    """RELION's --firstiter_cc iteration runs on the resident driver.
-
-    It scores with normalized cross-correlation and keeps the winner
-    (test_resident_firstiter_cc.py); the gate pairs the two and refuses either
-    alone.
-    """
-
-    assert "relion_firstiter_score_mode" not in inspect.signature(
-        rp.resident_pass2_out_of_scope_reason
-    ).parameters
-    rp.require_resident_production_configuration(
-        **_production_gate_kwargs(
-            relion_firstiter_score_mode="normalized_cc",
-            relion_firstiter_winner_take_all=True,
-            relion_exact_fine_normalized_cc=True,
-        )
-    )
-    with pytest.raises(NotImplementedError, match="winner-take-all goes with"):
-        rp.require_resident_production_configuration(
-            **_production_gate_kwargs(relion_firstiter_winner_take_all=True)
-        )
-
-
-def test_the_production_gaussian_pass_is_in_scope():
-    assert rp.resident_pass2_out_of_scope_reason() is None
-
-
-def test_zero_oversampling_coarse_reuse_is_in_scope():
-    """--adaptive_oversampling 0 runs on the resident driver.
-
-    It reuses the coarse float32 normalization, winner and Pmax
-    (test_resident_zero_oversampling.py); the dispatcher no longer routes it away.
-    """
-
-    assert "zero_oversampling_coarse_normalization" not in inspect.signature(
-        rp.resident_pass2_out_of_scope_reason
-    ).parameters
-    rp.require_resident_production_configuration(
-        **_production_gate_kwargs(
-            relion_f32_normalization_sum_weight=np.ones(3),
-            relion_coarse_hard_assignment=np.zeros(3),
-            relion_coarse_max_posterior=np.full(3, 0.5),
-            oversampling_order=0,
-        )
-    )
-    with pytest.raises(NotImplementedError, match="only at zero oversampling"):
-        rp.require_resident_production_configuration(
-            **_production_gate_kwargs(
-                relion_f32_normalization_sum_weight=np.ones(3),
-                relion_coarse_hard_assignment=np.zeros(3),
-                relion_coarse_max_posterior=np.full(3, 0.5),
-                oversampling_order=1,
-            )
-        )
-
-
-def test_replayed_particle_order_wavg_arithmetic_is_out_of_scope(monkeypatch):
-    """Without RELION's preserved order the compact engine uses non-atomic Wavg.
-
-    k1_adaptive_replay (os1, then replayed without RELION's order) hit the
-    gate's atomic-Wavg refusal in 14363460. Replays now preserve the native
-    order (production arithmetic); a subset replay that cannot still routes to
-    the compact engine. The explicit RELION operand flags keep a pass in scope.
-    """
-
-    for name in (
-        "RELAX_RELION_WAVG_ATOMIC_SCALE_AA",
-        "RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM",
-        "RELAX_K1_RELION_EXACT_BPREF_OPERANDS",
-    ):
-        monkeypatch.delenv(name, raising=False)
-    production = dict(
-        accumulate_noise=True,
-        scale_groups_available=True,
-        preserve_bpref_particle_order=True,
-    )
-    replay = rp.resident_pass2_out_of_scope_reason(
-        **production, source_faithful_spectrum_norm=False
-    )
-    assert replay is not None and "non-atomic Wavg" in replay
-    assert rp.resident_pass2_out_of_scope_reason(
-        **production, source_faithful_spectrum_norm=True
-    ) is None
-    monkeypatch.setenv("RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM", "1")
-    monkeypatch.setenv("RELAX_K1_RELION_EXACT_BPREF_OPERANDS", "1")
-    assert rp.resident_pass2_out_of_scope_reason(
-        **production, source_faithful_spectrum_norm=False
-    ) is None
-
-
-def test_dispatcher_routes_out_of_scope_passes_to_the_compact_engine():
-    """Selection, not the gate, decides which engine an out-of-scope pass uses."""
-
-    import inspect
+def test_dispatcher_sends_every_pass_to_the_resident_engine(monkeypatch):
+    """The resident driver is relax's one pass-2 engine: dispatch has no other route."""
 
     from relax.sparse_pass2 import dispatch as sparse_dispatch
+    from relax.sparse_pass2.engine_record import take_pass_engines
 
-    dispatch = inspect.getsource(sparse_dispatch.compute_pass2_stats_sparse)
-    assert "resident_pass2_out_of_scope_reason(" in dispatch
-    # The default must be the compact engine, with the resident driver chosen
-    # only when the pass is both requested and in scope.
-    assert "sparse_pass2_impl = compute_pass2_stats_sparse_bucketed" in dispatch
-    assert "if out_of_scope is None:" in dispatch
-    assert "does not cover %s" in dispatch
+    calls = []
+    monkeypatch.setattr(rp, "compute_pass2_stats_resident", lambda *a, **k: calls.append(k) or "resident")
+    args = _driver_fixture_args()
+    args.setdefault("mean_variance", None)
+    take_pass_engines()
+    assert sparse_dispatch.compute_pass2_stats_sparse(**args) == "resident"
+    assert len(calls) == 1
+    assert take_pass_engines() == ["global:resident"]
 
 
 def test_gate_still_raises_for_in_scope_mismatches():
@@ -1471,7 +1140,7 @@ def test_streamed_row_ladder_keeps_capacities_whose_cache_fits():
     assert rp._stream_row_capacity_ladder(
         (8192, 32768, 131072), bytes_per_rotation=300e3, max_projection_bytes=20 * 1024**3
     ) == (8192, 32768)
-    # A configuration refusal, so the default route falls back to compact.
+    # A configuration refusal: an error, since there is no other pass-2 engine.
     with pytest.raises(ResidentConfigurationUnsupported, match="smallest row capacity"):
         rp._stream_row_capacity_ladder(
             (8192,), bytes_per_rotation=10e6, max_projection_bytes=20 * 1024**3
@@ -1492,7 +1161,7 @@ def test_cached_row_ladder_bounds_the_gathered_chunk():
     assert rp._cached_row_capacity_ladder(
         (8192, 32768, 131072), bytes_per_row=6000 * 8, max_gather_bytes=30 * gib
     ) == (8192, 32768, 131072)
-    # A refusal the default route falls back on (compact engine), not a crash.
+    # A named configuration refusal (there is no other pass-2 engine), not a crash.
     with pytest.raises(rp.ResidentConfigurationUnsupported, match="smallest row capacity"):
         rp._cached_row_capacity_ladder((8192,), bytes_per_row=row_bytes, max_gather_bytes=1 * gib)
 

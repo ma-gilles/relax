@@ -227,7 +227,6 @@ def test_persistent_texture_geometry_device_and_constructor_cleanup(monkeypatch)
     assert events
 
 
-
 @pytest.mark.gpu
 def test_persistent_host_texture_matches_transient_and_rejects_stale_token(
     monkeypatch,
@@ -375,8 +374,6 @@ def test_persistent_texture_preserves_nyquist_and_current_radius(
             assert_matches(np.asarray(actual), np.asarray(expected))
 
 
-
-
 def test_loader_stays_on_the_ffi_bound_library(monkeypatch, tmp_path):
     """After FFI registration the loader neither re-resolves nor loads another copy."""
     import recovar.cuda_backproject as cb
@@ -446,171 +443,6 @@ def test_bound_cuda_library_keeps_persistent_texture_handles_live(
     assert em_cuda_kernels._LIBRARY.loaded_path == bound
 
 
-def test_sparse_pass2_opens_eligible_texture_from_original_host_slab(monkeypatch):
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.sparse_pass2 import dispatch as oversampling
-    from relax.helpers import projection
-
-    projector = _projector()
-    created = []
-    sentinel = object()
-
-    def fake_constructor(value, **kwargs):
-        created.append((value, kwargs))
-        return sentinel
-
-    monkeypatch.setattr(
-        projection,
-        "_relion_projector_texture_enabled",
-        lambda *args, **kwargs: True,
-    )
-    monkeypatch.setattr(
-        em_cuda_kernels,
-        "RelionPersistentHalfTextureF32",
-        fake_constructor,
-    )
-    actual = oversampling._open_persistent_relion_projector_texture(
-        projector,
-        relion_projector_r_max=1,
-        projection_padding_factor=1,
-    )
-    assert actual is sentinel
-    assert created == [
-        (
-            projector,
-            {
-                "padding_factor": 1,
-                "projector_max_r": 1,
-                "projector_scale": 1.0,
-            },
-        )
-    ]
-
-
-@pytest.mark.parametrize("raise_from_bucket", [False, True])
-def test_sparse_pass2_routes_host_projector_and_always_closes(
-    monkeypatch,
-    raise_from_bucket,
-):
-    from relax.sparse_pass2 import dispatch as oversampling
-    from relax.sparse_pass2 import sparse_pass2_bucketed
-
-    # The persistent texture belongs to the compact engine (the resident driver is the default).
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT", "0")
-    projector = _projector()
-
-    class FakeTexture:
-        close_count = 0
-
-        def close(self):
-            self.close_count += 1
-
-    texture = FakeTexture()
-    opened = []
-    captured = []
-
-    def fake_open(value, **kwargs):
-        opened.append((value, kwargs))
-        return texture
-
-    def fake_bucket(*args, **kwargs):
-        captured.append((args, kwargs))
-        if raise_from_bucket:
-            raise RuntimeError("synthetic bucket failure")
-        return "bucket-result"
-
-    monkeypatch.setattr(
-        oversampling,
-        "_open_persistent_relion_projector_texture",
-        fake_open,
-    )
-    monkeypatch.setattr(
-        sparse_pass2_bucketed,
-        "compute_pass2_stats_sparse_bucketed",
-        fake_bucket,
-    )
-
-    def call():
-        return oversampling.compute_pass2_stats_sparse(
-            object(),
-            object(),
-            None,
-            None,
-            np.zeros((1, 2), dtype=np.float32),
-            [np.asarray([0], dtype=np.int64)],
-            0,
-            "linear_interp",
-            relion_projector_half=projector,
-            relion_projector_r_max=1,
-        )
-
-    if raise_from_bucket:
-        with pytest.raises(RuntimeError, match="synthetic bucket failure"):
-            call()
-    else:
-        assert call() == "bucket-result"
-    assert opened[0][0] is projector
-    assert captured[0][1]["relion_projector_half"] is None
-    assert captured[0][1]["relion_projector_texture"] is texture
-    assert texture.close_count == 1
-
-
-@pytest.mark.parametrize("raise_from_finalize", [False, True])
-def test_sparse_pass2_early_texture_release_precedes_finalize_and_outer_cleanup(
-    caplog,
-    raise_from_finalize,
-):
-    from relax.sparse_pass2 import dispatch as oversampling
-    from relax.sparse_pass2 import sparse_pass2_projection_blocks as sparse_pass2_bucketed
-
-    events = []
-
-    class FakeTexture:
-        def __init__(self):
-            self.closed = False
-            self.close_calls = 0
-
-        def close(self):
-            self.close_calls += 1
-            if self.closed:
-                return
-            self.closed = True
-            events.append("destroy")
-
-    texture = FakeTexture()
-
-    def finalize_after_early_release():
-        released = (
-            sparse_pass2_bucketed._close_relion_projector_texture_after_sparse_scoring(
-                texture,
-            )
-        )
-        assert released is None
-        events.append("finalize")
-        if raise_from_finalize:
-            raise RuntimeError("synthetic finalization failure")
-        return "result"
-
-    with caplog.at_level("INFO"):
-        if raise_from_finalize:
-            with pytest.raises(RuntimeError, match="synthetic finalization failure"):
-                oversampling._call_with_persistent_texture_cleanup(
-                    texture,
-                    finalize_after_early_release,
-                )
-        else:
-            result = oversampling._call_with_persistent_texture_cleanup(
-                texture,
-                finalize_after_early_release,
-            )
-            assert result == "result"
-
-    assert events == ["destroy", "finalize"]
-    assert texture.close_calls == 2
-    assert "releasing persistent RELION projector texture before output finalization" in caplog.text
-
-
-
 def test_large_static_projector_uses_half_storage_without_full_cube(monkeypatch):
     from relax.cuda import kernels as em_cuda_kernels
     from relax.helpers import projection
@@ -663,6 +495,47 @@ def test_projector_class_selection_preserves_host_view(monkeypatch, classes, dty
     assert result.shape == (7, 7, 4) and result.flags.c_contiguous
     assert np.shares_memory(source, result)
     assert_matches(result, source[classes - 1])
+
+
+def test_sparse_pass2_opens_eligible_texture_from_original_host_slab(monkeypatch):
+    from relax.cuda import kernels as em_cuda_kernels
+    from relax.sparse_pass2 import dispatch as oversampling
+    from relax.helpers import projection
+
+    projector = _projector()
+    created = []
+    sentinel = object()
+
+    def fake_constructor(value, **kwargs):
+        created.append((value, kwargs))
+        return sentinel
+
+    monkeypatch.setattr(
+        projection,
+        "_relion_projector_texture_enabled",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        em_cuda_kernels,
+        "RelionPersistentHalfTextureF32",
+        fake_constructor,
+    )
+    actual = oversampling._open_persistent_relion_projector_texture(
+        projector,
+        relion_projector_r_max=1,
+        projection_padding_factor=1,
+    )
+    assert actual is sentinel
+    assert created == [
+        (
+            projector,
+            {
+                "padding_factor": 1,
+                "projector_max_r": 1,
+                "projector_scale": 1.0,
+            },
+        )
+    ]
 
 
 def test_host_float32_upload_cast_preserves_double_source(monkeypatch):
