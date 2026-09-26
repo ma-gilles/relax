@@ -17,10 +17,8 @@ import numpy as np
 
 from relax.helpers.batch_planning import _estimate_relion_em_batch_sizes
 from relax.helpers.types import NoiseStats, RelionStats
-from relax.local.local_em_engine import run_local_em_exact
 from relax.local.local_layout import _local_search_engine_rotation_block_size, build_local_hypothesis_layout
 from relax.relion.optics_aberrations import (
-    dataset_needs_exact_ctf,
     dataset_projection_magnification,
     projection_rotations,
     reported_rotations,
@@ -168,15 +166,11 @@ def _run_local_search_iteration(
     support: LocalSearchSupportPolicy,
     diagnostics: LocalSearchDiagnosticPolicy,
 ) -> _LocalSearchIterationResult:
-    """Run exact local search and return named halfset statistics and pose fields.
+    """Run local search on the device-resident engine and return named halfset statistics and pose fields.
 
-    ``debug_pass_label`` is diagnostic-only and forwarded verbatim to
-    ``run_local_em_exact``: pass a distinct label per call site whenever a
-    caller invokes this function more than once for the same image at the
-    same ``current_size``/``debug_iteration`` (e.g. local search's pass-1
-    "parent" probe vs. its pass-2 fine call), or the later call's
-    ``RELAX_LOCAL_SCORE_DUMP_*`` output silently overwrites the earlier
-    one at the same path.
+    The diagnostics' ``debug_iteration`` and ``debug_pass_label`` and the kernel's
+    ``do_gridding_correction`` were read only by the exact local engine, which no
+    pass calls any more.
 
     Optional fields are None when their corresponding return flags are disabled.
     Arrays retain the engine's layouts and identities; profile metadata is copied
@@ -375,142 +369,69 @@ def _run_local_search_iteration(
             ),
         )
 
-    if support.score_only:
-        # The pass-1 parent probe selects pass 2's candidate set with RELION's
-        # ``maximum_significants`` cap, which the segmented float32 posterior does not
-        # implement; it stays on the exact local engine until the resident driver has a
-        # score-only mode with that cap.
-        engine_outputs = None
-        exact_local_reason = "parent probe"
-    else:
-        # A regular iteration at the full box hands current_size=None (full-box support;
-        # MS2 box 512 it25, bench 14641044); the resident driver scores RELION's radial
-        # window at the box for it, as for the final all-data pass's explicit box size.
-        # The device-resident local pass 2 is relax's one local fine pass; a configuration
-        # it does not implement is an error (ResidentConfigurationUnsupported).
-        logger.info(
-            "running the device-resident local fine pass 2 "
-            "(image_batch_size=%d and rotation_block_size=%d are unused by this path; "
-            "its capacity plan is sized from the projection byte budget)",
-            image_batch_size,
-            rotation_block_size,
-        )
-        engine_outputs = compute_local_search_resident(
-            data.experiment_dataset,
-            data.mean,
-            data.noise_variance,
-            local_layout,
-            kernel.disc_type,
-            current_size=kernel.current_size,
-            reconstruction_current_size=kernel.reconstruction_current_size,
-            accumulate_noise=kernel.accumulate_noise,
-            projection_padding_factor=kernel.projection_padding_factor,
-            reconstruction_padding_factor=kernel.reconstruction_padding_factor,
-            half_spectrum_scoring=kernel.half_spectrum_scoring,
-            relion_exact_score_translation=kernel.relion_exact_score_translation,
-            projection_relion_texture_interp=kernel.projection_relion_texture_interp,
-            projection_relion_acc_double_floorf_quirk=kernel.projection_relion_acc_double_floorf_quirk,
-            projection_relion_kernel=kernel.projection_relion_kernel,
-            relion_projector_half=kernel.relion_projector_half,
-            relion_projector_r_max=kernel.relion_projector_r_max,
-            use_float64_scoring=kernel.use_float64_scoring,
-            use_float64_projections=kernel.use_float64_projections,
-            square_window=kernel.square_window,
-            image_corrections=data.image_corrections,
-            scale_corrections=data.scale_corrections,
-            group_ids=data.group_ids,
-            scale_correction_group_count=data.scale_correction_group_count,
-            scale_correction_data_vs_prior=data.scale_correction_data_vs_prior,
-            image_pre_shifts=data.image_pre_shifts,
-            mstep_relion_x_half=support.mstep_relion_x_half,
-            disable_adjoint_y=support.disable_adjoint_y,
-            disable_adjoint_ctf=support.disable_adjoint_ctf,
-            reconstruct_significant_only=support.reconstruct_significant_only,
-            adaptive_fraction=support.adaptive_fraction,
-            max_significants=support.max_significants if support.apply_max_significants_to_support else -1,
-            return_best_pose_details=support.return_best_pose_details,
-            return_reconstruction_sample_indices=support.return_reconstruction_sample_indices,
-            return_profile=diagnostics.return_profile,
-            stats_use_reconstruction_probs=support.stats_use_reconstruction_probs,
-            translation_prior_centers=grid.translation_prior_centers,
-            normalization_log_evidence=support.normalization_log_evidence,
-            source_faithful_spectrum_norm=kernel.source_faithful_spectrum_norm,
-            relion_translation_angle_scale=kernel.relion_translation_angle_scale,
-            score_only=support.score_only,
-            optics_group_ids=data.optics_group_ids,
-            reconstruction_volume_current_size=kernel.reconstruction_volume_current_size,
-            symmetry_label=grid.symmetry,
-            reconstruction_image_radius=kernel.reconstruction_image_radius,
-        )
-        record_pass_engine("local", "resident")
-    if engine_outputs is None:
-        record_pass_engine("local", "exact_local", exact_local_reason)
-        engine_outputs = run_local_em_exact(
-            data.experiment_dataset,
-            data.mean,
-            data.noise_variance,
-            local_layout,
-            kernel.disc_type,
-            image_batch_size=image_batch_size,
-            rotation_block_size=rotation_block_size,
-            current_size=kernel.current_size,
-            reconstruction_current_size=kernel.reconstruction_current_size,
-            accumulate_noise=kernel.accumulate_noise,
-            projection_padding_factor=kernel.projection_padding_factor,
-            reconstruction_padding_factor=kernel.reconstruction_padding_factor,
-            half_spectrum_scoring=kernel.half_spectrum_scoring,
-            relion_exact_score_translation=kernel.relion_exact_score_translation,
-            projection_relion_texture_interp=kernel.projection_relion_texture_interp,
-            projection_relion_acc_double_floorf_quirk=kernel.projection_relion_acc_double_floorf_quirk,
-            projection_relion_kernel=kernel.projection_relion_kernel,
-            relion_projector_half=kernel.relion_projector_half,
-            relion_projector_r_max=kernel.relion_projector_r_max,
-            use_float64_scoring=kernel.use_float64_scoring,
-            # Keep posterior/log-Z reductions in float64 even when score/projection
-            # tensors stay float32 for throughput. The dtype policy default is
-            # float64 normalization, and the significance threshold is sensitive
-            # to small log-sum-exp changes near RELION's 0.999 cutoff.
-            use_float64_normalization=True,
-            use_float64_projections=kernel.use_float64_projections,
-            do_gridding_correction=kernel.do_gridding_correction,
-            square_window=kernel.square_window,
-            image_corrections=data.image_corrections,
-            scale_corrections=data.scale_corrections,
-            group_ids=data.group_ids,
-            scale_correction_group_count=data.scale_correction_group_count,
-            scale_correction_data_vs_prior=data.scale_correction_data_vs_prior,
-            image_pre_shifts=data.image_pre_shifts,
-            mstep_relion_x_half=support.mstep_relion_x_half,
-            return_profile=diagnostics.return_profile,
-            disable_adjoint_y=support.disable_adjoint_y,
-            disable_adjoint_ctf=support.disable_adjoint_ctf,
-            reconstruct_significant_only=support.reconstruct_significant_only,
-            adaptive_fraction=support.adaptive_fraction,
-            # RELION's maximum_significants cap is used to define the coarse
-            # adaptive support. In pass 2, the reconstruction threshold is
-            # governed by adaptive_fraction only; do not reapply the cap there.
-            max_significants=support.max_significants if support.apply_max_significants_to_support else -1,
-            debug_iteration=diagnostics.debug_iteration,
-            debug_pass_label=diagnostics.debug_pass_label,
-            return_best_pose_details=support.return_best_pose_details,
-            normalization_log_evidence=support.normalization_log_evidence,
-            translation_prior_centers=grid.translation_prior_centers,
-            return_reconstruction_sample_indices=support.return_reconstruction_sample_indices,
-            stats_use_reconstruction_probs=support.stats_use_reconstruction_probs,
-            score_only=support.score_only,
-            source_faithful_spectrum_norm=kernel.source_faithful_spectrum_norm,
-            relion_translation_angle_scale=kernel.relion_translation_angle_scale,
-            **({"symmetry_label": grid.symmetry} if grid.symmetry != "C1" else {}),
-            optics_group_ids=data.optics_group_ids,
-            reconstruction_volume_current_size=kernel.reconstruction_volume_current_size,
-            reconstruction_image_radius=kernel.reconstruction_image_radius,
-            # RELION's radial window at the box too, as the resident drivers score it.
-            window_at_box=True,
-            # CTF-premultiplied images, even Zernike terms and magnification are scored with
-            # RELION's exact CTF rows (relion_ctf); the generic CTF carries none of them.
-            relion_exact_bpref_operands=dataset_needs_exact_ctf(data.experiment_dataset),
-        )
-
+    # A regular iteration at the full box hands current_size=None (full-box support;
+    # MS2 box 512 it25, bench 14641044); the resident driver scores RELION's radial
+    # window at the box for it, as for the final all-data pass's explicit box size.
+    # The device-resident local pass is relax's one local engine, for the fine pass 2
+    # and for RELION's pass-1 parent probe (score-only: significant samples, no
+    # M-step); a configuration it does not implement is an error
+    # (ResidentConfigurationUnsupported).
+    logger.info(
+        "running the device-resident local %s "
+        "(image_batch_size=%d and rotation_block_size=%d are unused by this path; "
+        "its capacity plan is sized from the projection byte budget)",
+        "pass-1 parent probe" if support.score_only else "fine pass 2",
+        image_batch_size,
+        rotation_block_size,
+    )
+    engine_outputs = compute_local_search_resident(
+        data.experiment_dataset,
+        data.mean,
+        data.noise_variance,
+        local_layout,
+        kernel.disc_type,
+        current_size=kernel.current_size,
+        reconstruction_current_size=kernel.reconstruction_current_size,
+        accumulate_noise=kernel.accumulate_noise,
+        projection_padding_factor=kernel.projection_padding_factor,
+        reconstruction_padding_factor=kernel.reconstruction_padding_factor,
+        half_spectrum_scoring=kernel.half_spectrum_scoring,
+        relion_exact_score_translation=kernel.relion_exact_score_translation,
+        projection_relion_texture_interp=kernel.projection_relion_texture_interp,
+        projection_relion_acc_double_floorf_quirk=kernel.projection_relion_acc_double_floorf_quirk,
+        projection_relion_kernel=kernel.projection_relion_kernel,
+        relion_projector_half=kernel.relion_projector_half,
+        relion_projector_r_max=kernel.relion_projector_r_max,
+        use_float64_scoring=kernel.use_float64_scoring,
+        use_float64_projections=kernel.use_float64_projections,
+        square_window=kernel.square_window,
+        image_corrections=data.image_corrections,
+        scale_corrections=data.scale_corrections,
+        group_ids=data.group_ids,
+        scale_correction_group_count=data.scale_correction_group_count,
+        scale_correction_data_vs_prior=data.scale_correction_data_vs_prior,
+        image_pre_shifts=data.image_pre_shifts,
+        mstep_relion_x_half=support.mstep_relion_x_half,
+        disable_adjoint_y=support.disable_adjoint_y,
+        disable_adjoint_ctf=support.disable_adjoint_ctf,
+        reconstruct_significant_only=support.reconstruct_significant_only,
+        adaptive_fraction=support.adaptive_fraction,
+        max_significants=support.max_significants if support.apply_max_significants_to_support else -1,
+        return_best_pose_details=support.return_best_pose_details,
+        return_reconstruction_sample_indices=support.return_reconstruction_sample_indices,
+        return_profile=diagnostics.return_profile,
+        stats_use_reconstruction_probs=support.stats_use_reconstruction_probs,
+        translation_prior_centers=grid.translation_prior_centers,
+        normalization_log_evidence=support.normalization_log_evidence,
+        source_faithful_spectrum_norm=kernel.source_faithful_spectrum_norm,
+        relion_translation_angle_scale=kernel.relion_translation_angle_scale,
+        score_only=support.score_only,
+        optics_group_ids=data.optics_group_ids,
+        reconstruction_volume_current_size=kernel.reconstruction_volume_current_size,
+        symmetry_label=grid.symmetry,
+        reconstruction_image_radius=kernel.reconstruction_image_radius,
+    )
+    record_pass_engine("local_probe" if support.score_only else "local", "resident")
     result = _LocalSearchIterationResult(
         Ft_y=engine_outputs.Ft_y,
         Ft_ctf=engine_outputs.Ft_ctf,

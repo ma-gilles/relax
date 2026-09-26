@@ -63,6 +63,7 @@ from relax.sparse_pass2.sparse_pass2_bucket_io import _prepare_bucket_io
 from relax.sparse_pass2.sparse_pass2_projection_blocks import (
     _compute_sparse_pass2_projections_block,
     _compute_sparse_pass2_windowed_projections_block,
+    _place_score_window_block,
     _place_windowed_projection_block,
     window_union_applies,
     with_zero_column,
@@ -1183,7 +1184,9 @@ def project_resident_live_rows(
     ``relion_projector_half``) projects without restaging the texture per call.
     ``window_union`` (:func:`projection_window_union` of the two windows) has
     the RELION projector compute only the windows' pixels, as
-    :func:`project_resident_rows` does with it.
+    :func:`project_resident_rows` does with it. ``recon_indices=None`` projects
+    the score window alone (the pass-1 parent probe, which has no M-step);
+    ``recon_proj`` and ``recon_abs2`` are then ``None``.
 
     Returns ``(score_proj, recon_proj, recon_abs2, n_projected_rows)``.
     """
@@ -1192,17 +1195,21 @@ def project_resident_live_rows(
     block = live_projection_block_rows(row_capacity, max_projected_rotations)
     n_projected = min(-(-max(int(n_valid_rows), 1) // block) * block, row_capacity)
     score_indices = jnp.asarray(score_indices, dtype=jnp.int32)
-    recon_indices = jnp.asarray(recon_indices, dtype=jnp.int32)
+    recon_indices = None if recon_indices is None else jnp.asarray(recon_indices, dtype=jnp.int32)
     projection_kwargs = dict(projection_kwargs)
     projection_kwargs["return_abs2"] = False
 
     score_proj = jnp.zeros((row_capacity, int(score_indices.shape[0])), dtype=output_complex_dtype)
-    recon_proj = jnp.zeros((row_capacity, int(recon_indices.shape[0])), dtype=output_complex_dtype)
-    recon_abs2 = jnp.zeros((row_capacity, int(recon_indices.shape[0])), dtype=output_abs2_dtype)
+    recon_proj = recon_abs2 = None
+    if recon_indices is not None:
+        recon_proj = jnp.zeros((row_capacity, int(recon_indices.shape[0])), dtype=output_complex_dtype)
+        recon_abs2 = jnp.zeros((row_capacity, int(recon_indices.shape[0])), dtype=output_abs2_dtype)
     pixel_indices = None
     if window_union_applies(
         window_union, relion_projector=relion_projector_half is not None, projection_kwargs=projection_kwargs
     ):
+        if (window_union.recon_take is None) != (recon_indices is None):
+            raise ValueError("the window union does not describe these windows")
         pixel_indices = window_union.indices
         score_indices, recon_indices = window_union.score_take, window_union.recon_take
     for start in range(0, n_projected, block):
@@ -1222,17 +1229,22 @@ def project_resident_live_rows(
         )
         if pixel_indices is not None:
             proj_block = with_zero_column(proj_block)
-        score_proj, recon_proj, recon_abs2 = _place_windowed_projection_block(
-            score_proj,
-            recon_proj,
-            recon_abs2,
-            proj_block,
-            score_indices,
-            recon_indices,
-            np.int32(start),
-            output_complex_dtype=output_complex_dtype,
-            output_abs2_dtype=output_abs2_dtype,
-        )
+        if recon_indices is None:
+            score_proj = _place_score_window_block(
+                score_proj, proj_block, score_indices, np.int32(start), output_complex_dtype=output_complex_dtype
+            )
+        else:
+            score_proj, recon_proj, recon_abs2 = _place_windowed_projection_block(
+                score_proj,
+                recon_proj,
+                recon_abs2,
+                proj_block,
+                score_indices,
+                recon_indices,
+                np.int32(start),
+                output_complex_dtype=output_complex_dtype,
+                output_abs2_dtype=output_abs2_dtype,
+            )
         del proj_block
     return score_proj, recon_proj, recon_abs2, n_projected
 
