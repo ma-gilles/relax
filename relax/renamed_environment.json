@@ -507,7 +507,6 @@
   "RECOVAR_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH": "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH",
   "RECOVAR_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES": "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES",
   "RECOVAR_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES": "RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES",
-  "RECOVAR_SPARSE_PASS2_RESIDENT_WAVG_POWER_PER_IMAGE": "RELAX_SPARSE_PASS2_RESIDENT_WAVG_POWER_PER_IMAGE",
   "RECOVAR_SPARSE_PASS2_SCORE_ONLY_MAX_HYPOTHESES": "RELAX_SPARSE_PASS2_SCORE_ONLY_MAX_HYPOTHESES",
   "RECOVAR_SPARSE_PASS2_SEGMENTED_SORT_SCAN": "RELAX_SPARSE_PASS2_SEGMENTED_SORT_SCAN",
   "RECOVAR_SPARSE_PASS2_SMALL_BUCKET_COALESCE_SIZE": "RELAX_SPARSE_PASS2_SMALL_BUCKET_COALESCE_SIZE",
@@ -634,6 +633,8 @@
   "RELAX_COARSE_MAX_POSTERIOR_PHYSICAL_BATCH": "coarse Pmax always reduces the physical batch and slices on the host (2026-09-25)",
   "RECOVAR_INITIAL_MODEL_FLAT_LOCAL_ROWS": "the exact K=1 InitialModel pass 2 always packs candidates into flat local rows (2026-09-25)",
   "RECOVAR_COARSE_SIGNIFICANCE_DEVICE": "the coarse significance support is always compacted on the device, per class (2026-09-25)",
-  "RELAX_COARSE_SIGNIFICANCE_DEVICE": "the coarse significance support is always compacted on the device, per class (2026-09-25)"
+  "RELAX_COARSE_SIGNIFICANCE_DEVICE": "the coarse significance support is always compacted on the device, per class (2026-09-25)",
+  "RECOVAR_SPARSE_PASS2_RESIDENT_WAVG_POWER_PER_IMAGE": "the Wavg rectangle image power is always taken per image from the translation marginal (2026-09-26)",
+  "RELAX_SPARSE_PASS2_RESIDENT_WAVG_POWER_PER_IMAGE": "the Wavg rectangle image power is always taken per image from the translation marginal (2026-09-26)"
  }
 }

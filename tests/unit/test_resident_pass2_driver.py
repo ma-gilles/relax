@@ -321,11 +321,27 @@ def test_flat_row_algebraic_wavg_terms_match_the_rectangular_helper():
     assert_matches(flat[:, :, 2], rect[:, :, 2])  # a few float32 ULP: the default band
 
 
-def test_flat_row_wavg_rectangle_terms_match_the_rectangular_helper():
-    """The rectangle embedding places the same terms at the same positions."""
+@pytest.mark.parametrize(
+    "batch,n_rot,n_trans,n_rect,n_exact",
+    [(2, 3, 4, 10, 6), (5, 64, 84, 97, 61), (1, 17, 3, 8, 8), (7, 1, 9, 33, 2)],
+)
+def test_flat_row_wavg_rectangle_image_sums_match_the_rectangular_helper(
+    batch, n_rot, n_trans, n_rect, n_exact
+):
+    """Per image, the rows' rectangle terms plus the marginal's power are the helper's sums.
 
-    rng = np.random.default_rng(97)
-    batch, n_rot, n_trans, n_rect, n_exact = 2, 3, 4, 10, 6
+    The rectangular helper fills the rectangle with each row's posterior-weighted
+    image power and overwrites the exact positions; the Wavg accumulator sums
+    those rows per image. The flat-row form returns the exact terms per row and
+    the image power of each image's translation marginal, so every image's sum
+    over its rows must match: exactly at the exact positions (the same terms,
+    summed in row order), and in the float32 band elsewhere, where only the
+    grouping of the power's additions differs. Shapes cover the production ratio
+    (many rows over few images), one row per image, a single rotation, an
+    all-exact rectangle and a padded row.
+    """
+
+    rng = np.random.default_rng(4207 + n_rect)
     exact_positions = np.sort(
         rng.choice(n_rect, size=n_exact, replace=False).astype(np.int32)
     )
@@ -342,91 +358,38 @@ def test_flat_row_wavg_rectangle_terms_match_the_rectangular_helper():
             jnp.asarray(posterior),
             jnp.asarray(exact_positions),
         )
-    ).reshape(batch * n_rot, n_rect, 3)
-    row_image = np.repeat(np.arange(batch, dtype=np.int32), n_rot)
-    flat = np.asarray(
-        rp._resident_block_wavg_rectangle_terms(
-            jnp.asarray(exact_terms.reshape(batch * n_rot, n_exact, 3)),
+    )
+    # One padding row (id -1) with weight must contribute nothing.
+    row_ids = np.concatenate([np.repeat(np.arange(batch, dtype=np.int32), n_rot), [-1]])
+    flat_exact = np.concatenate([exact_terms.reshape(batch * n_rot, n_exact, 3), exact_terms[:1, 0]])
+    flat_posterior = np.concatenate([posterior.reshape(batch * n_rot, n_trans), posterior[:1, 0]])
+    terms, power = (
+        np.asarray(value)
+        for value in rp._resident_block_wavg_rectangle_terms(
+            jnp.asarray(flat_exact),
             jnp.asarray(raw_rect),
-            jnp.asarray(posterior.reshape(batch * n_rot, n_trans)),
-            jnp.asarray(row_image),
+            jnp.asarray(flat_posterior),
+            jnp.asarray(row_ids),
             jnp.asarray(exact_positions),
+            image_capacity=batch,
         )
     )
-    # The exact positions carry the supplied terms verbatim in both layouts.
-    assert_matches(flat[:, exact_positions, :], rect[:, exact_positions, :])
     other = np.setdiff1d(np.arange(n_rect), exact_positions)
-    assert_matches(flat[:, other, 0], rect[:, other, 0])
-    assert_matches(flat[:, other, 1], rect[:, other, 1])
-    assert_matches(flat[:, other, 2], rect[:, other, 2])  # a few float32 ULP: the default band
-
-
-@pytest.mark.parametrize(
-    "batch,n_rot,n_trans,n_rect,n_exact",
-    [(2, 3, 4, 10, 6), (5, 64, 84, 97, 61), (1, 17, 3, 8, 8), (7, 1, 9, 33, 2)],
-)
-def test_wavg_power_per_image_matches_the_per_row_path(
-    batch, n_rot, n_trans, n_rect, n_exact
-):
-    """P4-G phase 2: squaring before the gather must not change the values.
-
-    ``|x|^2`` is elementwise, so squaring the chunk rectangle once per image and
-    gathering the float32 result is the same value as gathering the complex
-    rectangle and squaring once per row. The contraction that follows sees the
-    same shapes and the same translation axis, so the whole triplet matches.
-    Shapes cover the production ratio (many rows over few images), one row per
-    image, a single rotation, and an all-exact rectangle.
-    """
-
-    rng = np.random.default_rng(4207 + n_rect)
-    exact_positions = np.sort(
-        rng.choice(n_rect, size=n_exact, replace=False).astype(np.int32)
-    )
-    rows = batch * n_rot
-    exact_terms = rng.normal(size=(rows, n_exact, 3)).astype(np.float32)
-    raw_rect = (
-        rng.normal(size=(batch, n_trans, n_rect))
-        + 1j * rng.normal(size=(batch, n_trans, n_rect))
-    ).astype(np.complex64)
-    posterior = np.abs(rng.normal(size=(rows, n_trans))).astype(np.float32)
-    row_image = np.repeat(np.arange(batch, dtype=np.int32), n_rot)
-
-    def run(power_per_image):
-        return np.asarray(
-            rp._resident_block_wavg_rectangle_terms(
-                jnp.asarray(exact_terms),
-                jnp.asarray(raw_rect),
-                jnp.asarray(posterior),
-                jnp.asarray(row_image),
-                jnp.asarray(exact_positions),
-                power_per_image=power_per_image,
-            )
+    assert np.all(terms[:, other, :] == 0)
+    # The power's float64 truth: sum over the image's rows and translations of
+    # w[r, t] |x_t[p]|^2, from the same float32 squares.
+    square = (raw_rect.real * raw_rect.real).astype(np.float32) + (raw_rect.imag * raw_rect.imag).astype(np.float32)
+    truth = np.einsum("brt,btp->bp", posterior.astype(np.float64), square.astype(np.float64))
+    # Both float32 groupings of these n_rot * n_trans positive terms are within
+    # (n_rot + n_trans) float32 eps of their sum.
+    bound = (n_rot + n_trans) * np.finfo(np.float32).eps * truth[:, other]
+    for image in range(batch):
+        rows = terms[row_ids == image]
+        np.testing.assert_array_equal(
+            np.cumsum(rows[:, exact_positions, :], axis=0, dtype=np.float32)[-1],
+            np.cumsum(rect[image][:, exact_positions, :], axis=0, dtype=np.float32)[-1],
         )
-
-    per_row, per_image = run(False), run(True)
-    assert_matches(
-        per_image, per_row
-    )
-
-
-def test_wavg_power_per_image_flag_defaults_on_and_reaches_the_spec(monkeypatch):
-    """The flag is the default and the block body reads it from the spec.
-
-    P4-G shipped the hoist opt-in and measured the two forms bitwise on GPU at
-    production shapes; it is the default from the P4-F/P4-G merge, with ``0``
-    restoring the per-row square as the oracle.
-    """
-
-    monkeypatch.delenv(rp._WAVG_POWER_PER_IMAGE_ENV, raising=False)
-    assert rp._wavg_power_per_image_enabled() is True
-    monkeypatch.setenv(rp._WAVG_POWER_PER_IMAGE_ENV, "0")
-    assert rp._wavg_power_per_image_enabled() is False
-    monkeypatch.setenv(rp._WAVG_POWER_PER_IMAGE_ENV, "1")
-    assert rp._wavg_power_per_image_enabled() is True
-    import dataclasses
-
-    fields = {f.name for f in dataclasses.fields(rp._ChunkProgramSpec)}
-    assert "wavg_power_per_image" in fields
+        assert np.all(np.abs(power[image, other] - truth[image, other]) <= bound[image])
 
 
 def test_wavg_shifted_power_commutes_with_a_row_gather():
