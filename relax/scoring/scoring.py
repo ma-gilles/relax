@@ -1,6 +1,7 @@
 """JAX scoring and M-step kernels shared by dense single-volume EM helpers."""
 
 import operator
+import os
 from functools import partial
 from typing import NamedTuple
 
@@ -939,9 +940,18 @@ def _relion_coarse_gaussian_gemm_update_certificate_state(
         )
 
 
+def _coarse_gemm_float64_requested() -> bool:
+    """Whether ``RELAX_COARSE_GEMM_FLOAT64=1`` asks for binary64 coarse GEMMs."""
+
+    token = os.environ.get("RELAX_COARSE_GEMM_FLOAT64", "0").strip()
+    if token not in {"0", "1"}:
+        raise ValueError(f"Unsupported RELAX_COARSE_GEMM_FLOAT64={token!r}")
+    return token == "1"
+
+
 @partial(
     jax.jit,
-    static_argnames=("n_images", "n_trans", "image_shape", "volume_shape"),
+    static_argnames=("n_images", "n_trans", "image_shape", "volume_shape", "float64"),
 )
 def _relion_coarse_gaussian_gemm_scores_jit(
     projected_reference,
@@ -955,24 +965,24 @@ def _relion_coarse_gaussian_gemm_scores_jit(
     n_trans: int,
     image_shape: tuple[int, int],
     volume_shape: tuple[int, int, int],
+    float64: bool = False,
 ):
-    """Score exact RELION coarse operands with two real-packed binary64 GEMMs.
+    """Score exact RELION coarse operands with two real-packed GEMMs.
 
     RELION's direct square ``d0 + 0.5 sum_k w_k |p_k - y_k|^2`` expands into
     ``d0 + 0.5 A + 0.5 C - X`` with the model energy ``A = w . |p|^2``, the
     image energy ``C = w . |y|^2`` and the cross term ``X = Re(conj(w y) . p)``.
     ``X`` is one real GEMM over ``[Re, Im]``-packed operands (the complex
     product's imaginary half is never formed) and ``A`` is a second GEMM.
-    The stored float32 operands are promoted to binary64 before weighting and
-    both GEMMs run with the F64 dot algorithm, so the expansion's cancellation
-    stays ~1e-12 relative to the energies; on H100 the FP64 tensor-core GEMM
-    is also faster than a float32 SIMT one. The score is narrowed to the input
-    real dtype once, before RELION's float32 posterior and significance.
+    Both run at the operands' precision with an explicit full-precision dot
+    algorithm (float32 never falls to TF32). ``RELAX_COARSE_GEMM_FLOAT64=1``
+    promotes the stored operands to binary64 instead, for measuring the
+    expansion's cancellation; float32 is the production arithmetic.
     """
 
     del projected_reference_abs2, image_shape, volume_shape
     out_dtype = pixel_weight.dtype
-    wide = jnp.float64
+    wide = jnp.float64 if float64 else out_dtype
     active = jnp.arange(n_images, dtype=jnp.int32) < jnp.asarray(
         actual_image_count,
         dtype=jnp.int32,
@@ -984,7 +994,11 @@ def _relion_coarse_gaussian_gemm_scores_jit(
     reference_re = projected_reference.real.astype(wide)
     reference_im = projected_reference.imag.astype(wide)
 
-    algorithm = jax.lax.DotAlgorithmPreset.F64_F64_F64
+    algorithm = (
+        jax.lax.DotAlgorithmPreset.F64_F64_F64
+        if wide == jnp.float64
+        else jax.lax.DotAlgorithmPreset.F32_F32_F32
+    )
     weighted_packed = jnp.concatenate(
         [shifted_re * weight[:, None, :], shifted_im * weight[:, None, :]],
         axis=-1,
@@ -1108,6 +1122,7 @@ def _relion_coarse_gaussian_gemm_scores(
         n_trans=n_trans,
         image_shape=tuple(int(value) for value in image_shape),
         volume_shape=tuple(int(value) for value in volume_shape),
+        float64=_coarse_gemm_float64_requested(),
     )
 
 
