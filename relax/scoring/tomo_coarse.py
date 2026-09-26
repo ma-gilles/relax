@@ -20,7 +20,9 @@ See PLAN.md "S4.2 implementation ladder" in the cryo-ET coordination directory.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -188,6 +190,101 @@ def particle_coarse_diff2(image_diff2_in_slot_order):
     return total
 
 
+@partial(
+    jax.jit, static_argnames=("current_size", "physical_image_size", "model_max_r", "padding_factor", "n_chunks")
+)
+def _particle_coarse_diff2_scan(
+    projector_full,
+    rotations,
+    unshifted,
+    pixel_weight,
+    initial_diff2,
+    translation_angles,
+    full_to_compact,
+    *,
+    current_size: int,
+    physical_image_size: int,
+    model_max_r: int,
+    padding_factor: int,
+    n_chunks: int,
+):
+    """One particle's coarse diff2 ``[R, T]``: its images' diff2 (:func:`tilt_image_coarse_diff2`) added in slot order.
+
+    One program per (slots, rotations, translations): the images run in a device loop, not one
+    host dispatch per image and translation chunk. A padded slot has zero pixel weight and zero
+    initial diff2, so it adds exact zeros.
+    """
+
+    from relax.cuda import kernels as em_cuda_kernels
+
+    capacity = _FUSED_TRANSLATION_CAPACITY
+
+    def image_diff2(rotation, image, weight, initial, angles):
+        return jnp.concatenate(
+            [
+                em_cuda_kernels.relion_coarse_diff2_projector_f32(
+                    projector_full,
+                    rotation,
+                    image[None],
+                    angles[chunk * capacity : (chunk + 1) * capacity],
+                    weight[None],
+                    initial.reshape(1),
+                    full_to_compact,
+                    current_size=current_size,
+                    physical_image_size=physical_image_size,
+                    model_max_r=model_max_r,
+                    padding_factor=padding_factor,
+                    canonical_reduction=True,
+                )[0]
+                for chunk in range(n_chunks)
+            ],
+            axis=1,
+        )
+
+    def body(total, xs):
+        return total + image_diff2(*xs), None
+
+    n_rot, n_trans = rotations.shape[1], translation_angles.shape[1]
+    total, _ = jax.lax.scan(
+        body,
+        jnp.zeros((n_rot, n_trans), dtype=jnp.float32),
+        (rotations, unshifted, pixel_weight, initial_diff2, translation_angles),
+    )
+    return total
+
+
+_OPERAND_IMAGE_BATCH = 1024
+
+
+def _all_image_coarse_operands(
+    experiment_dataset, n_images: int, layout, *, noise_variance_half, optics_group_ids, scale_corrections
+):
+    """:func:`tilt_image_coarse_operands` of every dataset image, in batches of ``_OPERAND_IMAGE_BATCH``.
+
+    The last batch is padded with repeats of its last image (dropped after), so every batch runs
+    the same programs.
+    """
+
+    parts = ([], [], [])
+    for start in range(0, int(n_images), _OPERAND_IMAGE_BATCH):
+        indices = np.arange(start, min(start + _OPERAND_IMAGE_BATCH, int(n_images)))
+        n_valid = indices.size
+        padded = np.concatenate([indices, np.full(_OPERAND_IMAGE_BATCH - n_valid, indices[-1])])
+        for part, values in zip(
+            parts,
+            tilt_image_coarse_operands(
+                experiment_dataset,
+                padded,
+                layout,
+                noise_variance_half=noise_variance_half,
+                optics_group_ids=optics_group_ids,
+                scale_corrections=scale_corrections,
+            ),
+        ):
+            part.append(values[:n_valid])
+    return tuple(jnp.concatenate(part, axis=0) for part in parts)
+
+
 def particle_coarse_significance(
     particle_diff2,
     rotation_log_prior,
@@ -278,7 +375,19 @@ def particle_coarse_supports(
         raise ValueError("a local search takes each particle's rotations and priors, and no shared prior")
     coarse_eulers_deg = np.asarray(coarse_eulers_deg)
     n_coarse_trans = int(np.asarray(coarse_translations_px).shape[0])
-    for unit in range(offsets.size - 1):
+    n_units = int(offsets.size - 1)
+    slots = int(np.max(np.diff(offsets))) if n_units else 1
+    # Every tilt image's coarse operands, in fixed image batches (one preprocessing program).
+    unshifted, weight, initial = _all_image_coarse_operands(
+        experiment_dataset,
+        int(offsets[-1]),
+        layout,
+        noise_variance_half=noise_variance_half,
+        optics_group_ids=optics_group_ids,
+        scale_corrections=scale_corrections,
+    )
+    n_chunks = -(-n_coarse_trans // _FUSED_TRANSLATION_CAPACITY)
+    for unit in range(n_units):
         images = np.arange(offsets[unit], offsets[unit + 1])
         left, _applies = tomo_particles.relion_left_matrices(image_projections[images])
         unit_rotations = None if not local else np.asarray(unit_rotation_ids[unit], dtype=np.int64)
@@ -297,27 +406,20 @@ def particle_coarse_supports(
             np.zeros(images.size, int),
             image_size,
         )
-        unshifted, weight, initial = tilt_image_coarse_operands(
-            experiment_dataset,
-            images,
-            layout,
-            noise_variance_half=noise_variance_half,
-            optics_group_ids=optics_group_ids,
-            scale_corrections=scale_corrections,
-        )
-        diff2 = particle_coarse_diff2(
-            tilt_image_coarse_diff2(
-                projector_full,
-                rotations[k],
-                unshifted[k],
-                weight[k],
-                initial[k],
-                angles[k],
-                layout,
-                model_max_r=model_max_r,
-                padding_factor=padding_factor,
-            )
-            for k in range(images.size)
+        pad = slots - images.size
+        diff2 = _particle_coarse_diff2_scan(
+            projector_full,
+            jnp.asarray(np.pad(np.asarray(rotations, dtype=np.float32), ((0, pad), (0, 0), (0, 0), (0, 0)))),
+            jnp.pad(unshifted[images], ((0, pad), (0, 0))),
+            jnp.pad(weight[images], ((0, pad), (0, 0))),
+            jnp.pad(initial[images], (0, pad)),
+            jnp.asarray(np.pad(angles, ((0, pad), (0, 0), (0, 0)))),
+            layout.full_to_compact,
+            current_size=int(layout.current_size),
+            physical_image_size=int(layout.image_shape[0]),
+            model_max_r=int(model_max_r),
+            padding_factor=int(padding_factor),
+            n_chunks=int(n_chunks),
         )
         stats = particle_coarse_significance(
             diff2[None],
