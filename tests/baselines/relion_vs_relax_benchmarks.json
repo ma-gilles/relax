@@ -2071,7 +2071,8 @@
     "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.3893 / RELION 0.3877, class accuracy 0.5004 / 0.5032, masked relax-vs-RELION per GT class 0.9850/0.9880, walls relax 437 s / RELION 323 s; seed 29: masked mean GT FSC-AUC relax 0.2886 / RELION 0.2900, class accuracy 0.5056 / 0.5072, masked relax-vs-RELION per GT class 0.9859/0.9877, walls relax 435 s / RELION 325 s; seed 41: masked mean GT FSC-AUC relax 0.3152 / RELION 0.3148, class accuracy 0.5038 / 0.5054, masked relax-vs-RELION per GT class 0.9844/0.9854, walls relax 441 s / RELION 325 s.",
     "RELION band (all RELION runs of this command, 3: relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.2900-0.3877, class accuracy 0.5032-0.5072.",
     "The compact engine ran in the same jobs (its own row).",
-    "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 1.34-1.36x over the three seeds."
+    "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 1.34-1.36x over the three seeds.",
+    "The RELION arm is relion_refine_mpi; RELION 5.0.1's MPI per-group scale-sum reduction covers only the first group (ml_model.cpp:2056/2241, see the data_pdb_k4_5k_128 rows), which can move MPI runs with --scale; here relax agrees with the MPI arm within its band."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
@@ -2221,7 +2222,8 @@
     "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.3893 / RELION 0.3877, class accuracy 0.5004 / 0.5032, masked relax-vs-RELION per GT class 0.9850/0.9880, walls relax 652 s / RELION 323 s; seed 29: masked mean GT FSC-AUC relax 0.2886 / RELION 0.2900, class accuracy 0.5056 / 0.5072, masked relax-vs-RELION per GT class 0.9859/0.9877, walls relax 611 s / RELION 325 s; seed 41: masked mean GT FSC-AUC relax 0.3152 / RELION 0.3148, class accuracy 0.5038 / 0.5054, masked relax-vs-RELION per GT class 0.9844/0.9854, walls relax 616 s / RELION 325 s.",
     "RELION band (all RELION runs of this command, 3: relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.2900-0.3877, class accuracy 0.5032-0.5072.",
     "The resident engine ran in the same jobs (its own row).",
-    "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 1.88-2.02x over the three seeds."
+    "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 1.88-2.02x over the three seeds.",
+    "The RELION arm is relion_refine_mpi; RELION 5.0.1's MPI per-group scale-sum reduction covers only the first group (ml_model.cpp:2056/2241, see the data_pdb_k4_5k_128 rows), which can move MPI runs with --scale; here relax agrees with the MPI arm within its band."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
@@ -2355,6 +2357,20 @@
     "class_accuracy_relion_band": [
      0.991,
      0.9932
+    ],
+    "relion_nompi_per_seed": {
+     "1775735620": 0.492991,
+     "29": 0.476104,
+     "41": 0.49444
+    },
+    "class_accuracy_relion_nompi_per_seed": {
+     "1775735620": 0.9806,
+     "29": 0.9764,
+     "41": 0.9816
+    },
+    "relion_nompi_band": [
+     0.476104,
+     0.49444
     ]
    },
    "cross_engine": "same-seed masked relax-vs-RELION FSC-AUC per GT class: seed 1775735620 0.8738/0.9663/0.9779/0.9839; seed 29 0.8992/0.9579/0.9631/0.9841; seed 41 0.8507/0.9617/0.9614/0.9831",
@@ -2376,7 +2392,7 @@
     "RELION band (all RELION runs of this command, 3: relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.4778-0.4968, class accuracy 0.9910-0.9932.",
     "The compact engine ran in the same jobs (its own row).",
     "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 1.47-1.51x over the three seeds.",
-    "OPEN: relax below RELION's band in class accuracy and masked AUC, both engines: class accuracy relax 0.9806/0.9764/0.9816 vs RELION 0.9922/0.9932/0.9910; the fixture schedule (8 iterations, hp1, offset 6/2, ini_high 30) matches RELION to 1e-5. Reported to kclass 2026-09-25."
+    "RELION reference caveat (kclass, 2026-09-25): this job's RELION arm is relion_refine_mpi, and RELION 5.0.1's pieced MPI pack/unpack (ml_model.cpp:2056/2241) takes nr_groups = sigma2_noise.size() (optics groups), so with --scale and one particle per group the per-group scale sums are combined across ranks for group 1 only; the MPI runs land in another basin (class accuracy 0.991-0.993). relax equals RELION non-MPI (relion_refine --j 12, same command) exactly: seed 1775735620 relax 0.4930/0.9806, RELION non-MPI 0.4930/0.9806, masked cross per GT class 1.0000/1.0000/1.0000/1.0000; seed 29 relax 0.4761/0.9764, RELION non-MPI 0.4761/0.9764, masked cross per GT class 1.0000/1.0000/1.0000/1.0000; seed 41 relax 0.4944/0.9816, RELION non-MPI 0.4944/0.9816, masked cross per GT class 1.0000/1.0000/1.0000/1.0000. Walls are against the MPI arm (same job); the non-MPI runs ran in kclass's bisect jobs."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
@@ -2392,7 +2408,12 @@
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/class3d/k4_5k_full/s41"
     ],
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/class3d/k4_5k_full/SCORE.json",
-    "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py"
+    "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py",
+    "relion_nompi_runs": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclass_20260925/k4_5k_bisect/nompi_seeds/s41/relion",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclass_20260925/k4_5k_bisect/nompi_seeds/s1775735620/relion",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclass_20260925/k4_5k_bisect/s29/relion_ctrl/nompi/relion"
+    ]
    },
    "date": "2026-09-25",
    "history": [
@@ -2425,10 +2446,6 @@
    "mask": {
     "dataset": "pdb_k4_5k128_c1",
     "sha256": "41916d7c348cc82afc7e25c03fad1322f6692e5ba7283c2a428e56214a4078e9"
-   },
-   "result_marker": {
-    "symbol": "*",
-    "note": "OPEN: class accuracy against GT below the RELION band at all three seeds (relax 0.9806/0.9764/0.9816, RELION 0.9922/0.9932/0.9910), masked mean GT FSC-AUC lower per seed; resident and compact agree, so the gap is not engine-specific."
    }
   },
   {
@@ -2516,6 +2533,20 @@
     "class_accuracy_relion_band": [
      0.991,
      0.9932
+    ],
+    "relion_nompi_per_seed": {
+     "1775735620": 0.492991,
+     "29": 0.476104,
+     "41": 0.49444
+    },
+    "class_accuracy_relion_nompi_per_seed": {
+     "1775735620": 0.9806,
+     "29": 0.9764,
+     "41": 0.9816
+    },
+    "relion_nompi_band": [
+     0.476104,
+     0.49444
     ]
    },
    "cross_engine": "same-seed masked relax-vs-RELION FSC-AUC per GT class: seed 1775735620 0.8738/0.9663/0.9779/0.9839; seed 29 0.8992/0.9579/0.9631/0.9841; seed 41 0.8507/0.9617/0.9614/0.9831",
@@ -2537,7 +2568,7 @@
     "RELION band (all RELION runs of this command, 3: relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.4778-0.4968, class accuracy 0.9910-0.9932.",
     "The resident engine ran in the same jobs (its own row).",
     "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 2.59-2.65x over the three seeds.",
-    "OPEN: relax below RELION's band in class accuracy and masked AUC, both engines: class accuracy relax 0.9806/0.9764/0.9816 vs RELION 0.9922/0.9932/0.9910; the fixture schedule (8 iterations, hp1, offset 6/2, ini_high 30) matches RELION to 1e-5. Reported to kclass 2026-09-25."
+    "RELION reference caveat (kclass, 2026-09-25): this job's RELION arm is relion_refine_mpi, and RELION 5.0.1's pieced MPI pack/unpack (ml_model.cpp:2056/2241) takes nr_groups = sigma2_noise.size() (optics groups), so with --scale and one particle per group the per-group scale sums are combined across ranks for group 1 only; the MPI runs land in another basin (class accuracy 0.991-0.993). relax equals RELION non-MPI (relion_refine --j 12, same command) exactly: seed 1775735620 relax 0.4930/0.9806, RELION non-MPI 0.4930/0.9806, masked cross per GT class 1.0000/1.0000/1.0000/1.0000; seed 29 relax 0.4761/0.9764, RELION non-MPI 0.4761/0.9764, masked cross per GT class 1.0000/1.0000/1.0000/1.0000; seed 41 relax 0.4944/0.9816, RELION non-MPI 0.4944/0.9816, masked cross per GT class 1.0000/1.0000/1.0000/1.0000. Walls are against the MPI arm (same job); the non-MPI runs ran in kclass's bisect jobs."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
@@ -2553,7 +2584,12 @@
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/class3d/k4_5k_full/s41"
     ],
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/class3d/k4_5k_full/SCORE.json",
-    "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py"
+    "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py",
+    "relion_nompi_runs": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclass_20260925/k4_5k_bisect/nompi_seeds/s41/relion",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclass_20260925/k4_5k_bisect/nompi_seeds/s1775735620/relion",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclass_20260925/k4_5k_bisect/s29/relion_ctrl/nompi/relion"
+    ]
    },
    "date": "2026-09-25",
    "history": [
@@ -2586,10 +2622,6 @@
    "mask": {
     "dataset": "pdb_k4_5k128_c1",
     "sha256": "41916d7c348cc82afc7e25c03fad1322f6692e5ba7283c2a428e56214a4078e9"
-   },
-   "result_marker": {
-    "symbol": "*",
-    "note": "OPEN: class accuracy against GT below the RELION band at all three seeds (relax 0.9806/0.9764/0.9816, RELION 0.9922/0.9932/0.9910), masked mean GT FSC-AUC lower per seed; resident and compact agree, so the gap is not engine-specific."
    }
   },
   {
@@ -2699,7 +2731,8 @@
     "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.2408 / RELION 0.2408, class accuracy 0.8749 / 0.8753, masked relax-vs-RELION per GT class 0.9823/0.9957/0.9956/0.9990, walls relax 1632 s / RELION 1650 s; seed 29: masked mean GT FSC-AUC relax 0.2397 / RELION 0.2397, class accuracy 0.8779 / 0.8781, masked relax-vs-RELION per GT class 0.9820/0.9951/0.9956/0.9990, walls relax 1650 s / RELION 1632 s; seed 41: masked mean GT FSC-AUC relax 0.2411 / RELION 0.2411, class accuracy 0.8751 / 0.8752, masked relax-vs-RELION per GT class 0.9838/0.9962/0.9963/0.9990, walls relax 1641 s / RELION 1620 s.",
     "RELION band (all RELION runs of this command, 5: relion_fixture, relion_prior_repeat_0, relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.2397-0.2411, class accuracy 0.8751-0.8781.",
     "The compact engine ran in the same jobs (its own row).",
-    "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 0.99-1.01x over the three seeds."
+    "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 0.99-1.01x over the three seeds.",
+    "The RELION arm is relion_refine_mpi; RELION 5.0.1's MPI per-group scale-sum reduction covers only the first group (ml_model.cpp:2056/2241, see the data_pdb_k4_5k_128 rows), which can move MPI runs with --scale; here relax agrees with the MPI arm within its band."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
@@ -2857,7 +2890,8 @@
     "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.2409 / RELION 0.2408, class accuracy 0.8751 / 0.8753, masked relax-vs-RELION per GT class 0.9827/0.9957/0.9955/0.9989, walls relax 5528 s / RELION 1650 s; seed 29: masked mean GT FSC-AUC relax 0.2397 / RELION 0.2397, class accuracy 0.8782 / 0.8781, masked relax-vs-RELION per GT class 0.9837/0.9955/0.9956/0.9988, walls relax 5538 s / RELION 1632 s; seed 41: masked mean GT FSC-AUC relax 0.2411 / RELION 0.2411, class accuracy 0.8752 / 0.8752, masked relax-vs-RELION per GT class 0.9832/0.9968/0.9966/0.9991, walls relax 5518 s / RELION 1620 s.",
     "RELION band (all RELION runs of this command, 5: relion_fixture, relion_prior_repeat_0, relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.2397-0.2411, class accuracy 0.8751-0.8781.",
     "The resident engine ran in the same jobs (its own row).",
-    "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 3.35-3.41x over the three seeds."
+    "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 3.35-3.41x over the three seeds.",
+    "The RELION arm is relion_refine_mpi; RELION 5.0.1's MPI per-group scale-sum reduction covers only the first group (ml_model.cpp:2056/2241, see the data_pdb_k4_5k_128 rows), which can move MPI runs with --scale; here relax agrees with the MPI arm within its band."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
