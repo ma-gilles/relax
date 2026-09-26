@@ -235,12 +235,6 @@ RELION against RELION (same band FSC-AUCs):
 
 Timing record: (a) relax: 1 H100, one process, 12 CPUs. RELION: 1 H100 each, relion_refine --j 12 (12 CPUs) and relion_refine_mpi 3 ranks x 4 threads (12 CPUs). All three arms in one --gres=gpu:h100:3 job on one node, started together; no --exclusive. (b) relax: production defaults (every RELAX_* unset; XLA_PYTHON_CLIENT_MEM_FRACTION unset so recovar's .90 applies), standalone, no timing, capture, replay, deterministic-reduction or dump options. (c) All arms: arm-script wall (WALL.json) around the whole process, including start-up, particle copy to --scratch_dir, compilation (fresh JAX cache) and final writes. (d) All arms 14460309 della-h20g4 (H100 80GB HBM3).
 
-<a id="ribosembly_k4_100k256_class3d_2it_speed"></a>
-
-### ribosembly_k4_g256_n100000_completion_20260512_171123: Class3D K=4 (2 iterations, speed)
-
-`ribosembly_k4_100k256_class3d_2it_speed`: relax source `88589e9d4`, recovar (pre-split EM lineage, merged candidate). Cross-engine: per-class FSC-AUC vs RELION run_it002 0.999991-0.999997. Speed-retention measurement against the previous K4 donor (median iteration 2 657.6 s), ABBA on four exclusive H100 nodes; --skip_final_iteration. `relion.resolution_A` is null: two-iteration speed workload; resolution not tracked. `relion.wall_s` is null: RELION two-iteration wall not measured (its 15-iteration run is in the Class3D K=4 row). `relax.resolution_A` is null: two-iteration speed workload; resolution not tracked. `gt` is null: not computed for the two-iteration workload. `time_ratio_relax_over_relion` is null: no RELION wall for this workload. `mask` is null: no frozen mask: two-iteration speed workload or InitialModel run without final half maps. `relion.masked_resolution_A` is null: Class3D has no gold-standard half maps; masked half-map resolution does not apply. `relax.masked_resolution_A` is null: Class3D has no gold-standard half maps; masked half-map resolution does not apply. Jobs: relax 14309380, 14309381, 14311272, 14311273; RELION —.
-
 <a id="noise1_k1_50k256_autorefine_flipqual_64499e8"></a>
 
 ### data_noise1_50k_256_normalized (flip pair): auto-refine K=1
