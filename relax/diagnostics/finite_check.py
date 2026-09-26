@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
+from functools import lru_cache
 
 import numpy as np
 
@@ -86,6 +87,25 @@ def finite_check_warn_only() -> bool:
     return _flag(FINITE_CHECK_WARN_ENV)
 
 
+@lru_cache(maxsize=None)
+def _device_all_finite_program():
+    import jax
+    import jax.numpy as jnp
+
+    def all_finite(array):
+        if jnp.iscomplexobj(array):
+            return jnp.isfinite(array.real).all() & jnp.isfinite(array.imag).all()
+        return jnp.isfinite(array).all()
+
+    # One program per shape: eager, the check was up to five single-primitive
+    # programs compiled again at every new reconstruction size.
+    return jax.jit(all_finite)
+
+
+def _device_all_finite(array):
+    return _device_all_finite_program()(array)
+
+
 def _all_finite(value) -> bool:
     """Whether every entry is finite, reduced where the array already lives.
 
@@ -99,11 +119,7 @@ def _all_finite(value) -> bool:
         array = jnp.asarray(value)
         if array.dtype.kind not in "fgc":
             return True
-        if array.dtype.kind == "c":
-            ok = jnp.isfinite(array.real).all() & jnp.isfinite(array.imag).all()
-        else:
-            ok = jnp.isfinite(array).all()
-        return bool(ok)
+        return bool(_device_all_finite(array))
     except Exception:  # pragma: no cover - host arrays and exotic dtypes
         array = np.asarray(value)
         if array.dtype.kind not in "fgc":

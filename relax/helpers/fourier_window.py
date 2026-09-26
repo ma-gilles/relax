@@ -20,8 +20,10 @@ See ``docs/math/plan_relion_parity.md``, Phase 3.
 
 import os
 from dataclasses import dataclass, replace
+from functools import partial
 from typing import Any
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import recovar.core.fourier_transform_utils as ftu
@@ -379,9 +381,16 @@ def centered_half_indices_to_fftw_half_indices(image_shape, indices):
     need this row remapping.
     """
 
-    height, width = (int(image_shape[0]), int(image_shape[1]))
+    return _centered_to_fftw_half_indices(
+        jnp.asarray(indices, dtype=jnp.int32), (int(image_shape[0]), int(image_shape[1]))
+    )
+
+
+@partial(jax.jit, static_argnames=("image_shape",))
+def _centered_to_fftw_half_indices(indices, image_shape):
+    # One integer program per window size instead of five eager ones.
+    height, width = image_shape
     half_width = width // 2 + 1
-    indices = jnp.asarray(indices, dtype=jnp.int32)
     rows = indices // half_width
     cols = indices % half_width
     fftw_rows = (rows + height // 2) % height
