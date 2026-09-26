@@ -147,6 +147,19 @@ def test_k1_default_max_healpix_order_keeps_autorefine_cap():
     assert "auto-refine" in source
 
 
+def test_subtomogram_default_max_healpix_order_is_relions_uncapped_autorefine():
+    """RELION's auto-refine has no HEALPix cap; the S1 subtomogram run reaches order 9."""
+    cap, source = _resolve_effective_max_healpix_order(
+        n_classes=1,
+        healpix_order=2,
+        max_healpix_order=None,
+        subtomogram=True,
+    )
+
+    assert cap == 13
+    assert "no cap" in source
+
+
 def test_explicit_max_healpix_order_allows_kclass_refinement():
     cap, source = _resolve_effective_max_healpix_order(
         n_classes=4,

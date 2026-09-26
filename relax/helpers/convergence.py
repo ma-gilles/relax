@@ -370,6 +370,10 @@ class RefinementState:
     voxel_size_angstrom : float
         Pixel size used to convert the stored pixel translation grid to the
         Angstrom units used by RELION's sampling scheduler.
+    subtomogram : bool
+        RELION's ``data_dim == 3 || is_tomo`` branch of the translational
+        sampling update: the new step is at least half the previous one
+        (ml_optimiser.cpp:9832-9834).
     max_healpix_order : int
         Maximum allowed HEALPix order (finest angular sampling).
     auto_local_healpix_order : int
@@ -427,6 +431,7 @@ class RefinementState:
     acc_rot: float = float("inf")
     acc_trans: float = float("inf")
     voxel_size_angstrom: float = 1.0
+    subtomogram: bool = False
     # Particle diameter in Å (used for the resolution-based acc_rot proxy
     # in update_angular_sampling). Set by the caller via
     # update_refinement_state(..., particle_diameter_angstrom=...).
@@ -1096,6 +1101,9 @@ def _relion_next_translation_sampling_pixels(state: RefinementState) -> tuple[fl
 
     if _finite_positive(state.acc_trans):
         new_step_ang = min(1.5, 0.75 * float(state.acc_trans)) * (2**state.adaptive_oversampling)
+        if state.subtomogram and _finite_positive(old_step_ang):
+            # For subtomogram averaging: at least half the previous step (ml_optimiser.cpp:9832-9834).
+            new_step_ang = max(old_step_ang / 2.0, new_step_ang)
     else:
         # Native RECOVAR currently lacks RELION's expensive projection-based
         # acc_trans estimate. Start from a deliberately fine provisional step;
@@ -1104,6 +1112,8 @@ def _relion_next_translation_sampling_pixels(state: RefinementState) -> tuple[fl
 
     offset_change_ang = _translation_change_for_range_angstrom(state, voxel_size)
     if _finite_positive(offset_change_ang):
+        # Five times the last offset changes: RELION's 3x branch is data_dim == 3 only, and 2D-stack
+        # subtomograms have data_dim 2 (ml_optimiser.cpp:9836-9838; the S1 RELION run's ranges are 5x).
         new_range_ang = 5.0 * offset_change_ang
         if _finite_positive(old_range_ang):
             new_range_ang = min(new_range_ang, 1.3 * old_range_ang)

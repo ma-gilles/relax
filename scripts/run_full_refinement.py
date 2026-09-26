@@ -602,11 +602,17 @@ def _resolve_relion_sampling_orders(healpix_order: int, adaptive_oversampling: i
     return coarse_order, coarse_order + oversampling
 
 
+# RELION's auto-refine has no HEALPix cap: the fine-enough test (angular step < 0.75 acc_rot,
+# ml_optimiser.cpp:9812-9818) stops the refinement. 13 is the largest HEALPix order (Healpix_Base).
+_UNCAPPED_HEALPIX_ORDER = 13
+
+
 def _resolve_effective_max_healpix_order(
     *,
     n_classes: int,
     healpix_order: int,
     max_healpix_order: int | None,
+    subtomogram: bool = False,
 ) -> tuple[int, str]:
     """Resolve the backend HEALPix refinement cap.
 
@@ -623,6 +629,9 @@ def _resolve_effective_max_healpix_order(
     if max_healpix_order is None:
         if int(n_classes) > 1:
             return init_order, "RELION Class3D fixed --healpix_order"
+        if subtomogram:
+            # The S1 subtomogram fixture's RELION auto-refine reaches order 9 (0.12 deg).
+            return _UNCAPPED_HEALPIX_ORDER, "RELION auto-refine (subtomograms): no cap"
         return 7, "K=1 auto-refine default"
 
     cap = int(max_healpix_order)
@@ -3820,6 +3829,7 @@ def main():
         n_classes=args.n_classes,
         healpix_order=init_healpix_order,
         max_healpix_order=args.max_healpix_order,
+        subtomogram=tomo_run,
     )
     rotation_grid_order = init_healpix_order
     logger.info(

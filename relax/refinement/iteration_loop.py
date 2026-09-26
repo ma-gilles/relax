@@ -928,6 +928,7 @@ def refine_single_volume(
         current_resolution=float("inf"),
         voxel_size_angstrom=float(cryo.voxel_size if cryo.voxel_size > 0 else 1.0),
         particle_diameter_angstrom=float(particle_diameter_ang or 0.0),
+        subtomogram=tomo_halves,
     )
     # RELION's convergence counters are not initialized against an infinite
     # previous resolution.  They resume from the previous optimiser/model STAR
