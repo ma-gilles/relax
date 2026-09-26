@@ -95,31 +95,33 @@ class TomoDataset:
             voxel_size=self.voxel_size,
         )
 
-    def startup_noise_images(self, units, *, unit_groups, particles_per_group: int = 10):
+    def startup_noise_images(self, units, *, unit_groups, minimum_nr_particles: int = 10):
         """``(group, real-space image)`` of the tilt images RELION's start-up noise estimate reads.
 
-        calculateSumOfPowerSpectraAndAverageImage (ml_optimiser.cpp:3100-3300) visits particles in
-        ``units`` order, skips a particle whose optics group already has ``minimum_nr_particles_sigma2_noise``
-        particles (10 for subtomograms, :2813) and adds every tilt image of the others, each counted
-        once in the group's ``sumw`` (the per-image average of setSigmaNoiseEstimatesAndSetAverageImage).
+        calculateSumOfPowerSpectraAndAverageImage (ml_optimiser.cpp:3063-3372) visits particles in
+        ``units`` order and skips a particle whose optics group already counts
+        ``minimum_nr_particles_sigma2_noise`` (10 for subtomograms, :2813). The count goes up once per
+        *image* (:3350-3351), so a group's first particle contributes all its tilt images and fills it;
+        the loop stops after the particle that fills the last group. Each image is counted once in the
+        group's ``sumw`` (the per-image average of setSigmaNoiseEstimatesAndSetAverageImage).
         """
 
         units = np.asarray(units, dtype=np.int64).reshape(-1)
         unit_groups = np.asarray(unit_groups, dtype=np.int64).reshape(-1)
-        taken = {}
-        chosen = []
+        all_groups = set(unit_groups.tolist())
+        done = {group: 0 for group in all_groups}
         for unit, group in zip(units.tolist(), unit_groups.tolist()):
-            if taken.get(group, 0) >= int(particles_per_group):
+            if done[group] >= int(minimum_nr_particles):
                 continue
-            taken[group] = taken.get(group, 0) + 1
-            chosen.append((unit, group))
-        for unit, group in chosen:
             rows = self.image_rows[self.unit_image_offsets[unit] : self.unit_image_offsets[unit + 1]]
             for batch_images, _particles, _local in self.images.image_source.iter_batches(
                 batch_size=int(rows.size), batch_mode="images", subset_indices=rows
             ):
                 for image in np.asarray(batch_images):
                     yield group, image
+            done[group] += int(rows.size)
+            if all(count >= int(minimum_nr_particles) for count in done.values()):
+                return
 
 
 class TomoHalf:
