@@ -1099,10 +1099,10 @@ def _compute_relion_fresh_k1_initial_sigma2(
 
     def image_iter():
         if tomo:
-            # Every tilt image of the first minimum_nr_particles_sigma2_noise particles per optics group
-            # (10 for subtomograms, ml_optimiser.cpp:2813), each counted once (:3100-3300).
+            # RELION's per-image count against minimum_nr_particles_sigma2_noise (10 for subtomograms,
+            # ml_optimiser.cpp:2813, :3350): each group's first particle fills it (TomoDataset.startup_noise_images).
             dense_groups = [optics_by_source_row[int(row)] for row in source_rows]
-            yield from dataset.startup_noise_images(source_rows, unit_groups=dense_groups, particles_per_group=10)
+            yield from dataset.startup_noise_images(source_rows, unit_groups=dense_groups, minimum_nr_particles=10)
             return
         if isinstance(dataset, MultiShapeDataset):
             for row, image in dataset.iter_images(source_rows, batch_size=min(256, source_rows.size)):
