@@ -1110,19 +1110,27 @@ def _relion_powerclass_noise_terms(
         accumulate_noise=accumulate_noise,
         current_size=current_size,
     )
+    # The current size reaches the kernels as a traced scalar, so one program per
+    # box serves every current size (the first high shell is the only thing it
+    # sets); the static key is the box.
+    size_kwargs = (
+        {"current_size": None}
+        if current_size is None
+        else {"current_size": int(image_shape[0]), "runtime_current_size": jnp.int32(int(current_size))}
+    )
     relion_highres_xi2_half = None
     if wants_xi2:
         relion_highres_xi2_half = _relion_cuda_powerclass_highres_xi2_half(
             processed_score_half_for_noise,
             image_shape=image_shape,
-            current_size=current_size,
+            **size_kwargs,
         )
     if accumulate_noise and current_size is not None and relion_highres_xi2_half is not None:
         if source_faithful_spectrum_norm:
             relion_norm_high_shell = _relion_cuda_powerclass_spectrum_highres_norm_units(
                 processed_score_half_for_noise,
                 image_shape=image_shape,
-                current_size=current_size,
+                **size_kwargs,
             )
         else:
             relion_norm_high_shell = _relion_powerclass_highres_xi2_half_to_norm_units(
