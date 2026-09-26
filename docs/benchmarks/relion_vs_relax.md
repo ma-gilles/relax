@@ -34,7 +34,7 @@ Matched:
 
 | Dataset | Workflow | N / box | RELION res (Å) unmasked / masked | relax res (Å) unmasked / masked | Masked X-AUC | RELION time | relax time | Ratio | GPU | Matched? | Date |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
-| ribosembly_k4_g256_n100000_completion_20260512_171123 [notes](relion_vs_relax_provenance.md#ribosembly_k4_100k256_class3d_15it) | Class3D K=4, C1, replay | 100,000 / 256 | 15.54 d / — | 15.54 d / — | — | 4,525 s | 18,851 s | 4.17x | 1x H100 | no | 2026-09-24 |
+| ribosembly_k4_g256_n100000_completion_20260512_171123 (resident engine) [notes](relion_vs_relax_provenance.md#ribosembly_k4_100k256_class3d_15it_resident_68a3cf0) | Class3D K=4 (15 iterations), C1, standalone | 100,000 / 256 | 15.54 d / — | 15.11 d / — | — | 3,624 s | 2,517 s | 0.69x | 1x H100 | yes | 2026-09-26 |
 | ribosembly_k4_g256_n100000_completion_20260512_171123 [notes](relion_vs_relax_provenance.md#ribosembly_k4_100k256_class3d_2it_speed) | Class3D K=4 (2 iterations, speed), C1, replay | 100,000 / 256 | — / — | — / — | — | — | 855 s | — | RELION —, relax 1x H100 | no | 2026-09-23 |
 | data_noise1_50k_256_normalized (flip pair) [notes](relion_vs_relax_provenance.md#noise1_k1_50k256_autorefine_flipqual_64499e8) | auto-refine K=1, C1, standalone | 50,000 / 256 | 11.83 b / 10.88 | 11.83 b / 10.88 | 1.0000 | 4,978 s | 3,218 s | 0.65x | 1x H100 | yes | 2026-09-24 |
 | pdb_k1_g256_n100000_noise1_bf80_20260516 (resident engine) [notes](relion_vs_relax_provenance.md#pdb_k1_100k256_noise1_bf80_autorefine_resident_589ce09) | auto-refine K=1, C1, standalone | 100,000 / 256 | 5.98 a / 4.35 | 6.04 a / 4.35 | 0.9980 | 14,851 s | 6,472 s | 0.44x | 1x H100 | yes | 2026-09-25 |
