@@ -330,9 +330,15 @@ def _accumulate_adjoint_block_chunked(
     relion_x_half: bool,
     max_block_bytes: int,
     log_label: str,
+    runtime_max_r=None,
 ):
-    """Accumulate adjoint-slice rows in capped chunks for pathological tails."""
+    """Accumulate adjoint-slice rows in capped chunks for pathological tails.
 
+    ``runtime_max_r`` (windowed adjoint only) clips at a traced radius up to ``max_r``.
+    """
+
+    if runtime_max_r is not None and not use_windowed_adjoint:
+        raise NotImplementedError("a runtime adjoint radius needs the windowed (indexed) adjoint")
     if flat_block is None:
         return volume
     n_rows = int(flat_block.shape[0])
@@ -353,6 +359,7 @@ def _accumulate_adjoint_block_chunked(
                 half_volume,
                 max_r,
                 relion_x_half,
+                runtime_max_r,
             )
         return _adjoint_slice_volume_half(
             flat_block,
@@ -395,6 +402,7 @@ def _accumulate_adjoint_block_chunked(
                 half_volume,
                 max_r,
                 relion_x_half,
+                runtime_max_r,
             )
         else:
             volume = _adjoint_slice_volume_half(

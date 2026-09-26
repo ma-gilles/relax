@@ -55,9 +55,16 @@ def adjoint_slice_volume_windowed(
     half_volume=False,
     max_r=None,
     relion_x_half=False,
+    runtime_max_r=None,
 ):
-    """Scatter a windowed half-spectrum into a full half-grid and adjoint-slice."""
+    """Scatter a windowed half-spectrum into a full half-grid and adjoint-slice.
 
+    ``runtime_max_r`` (a traced scalar, not a key) clips at RELION's radius while
+    the static ``max_r`` sizes a larger capacity volume
+    (recovar ``backproject_indexed``).
+    """
+
+    extra = {} if runtime_max_r is None else {"runtime_max_r": runtime_max_r}
     return core.adjoint_slice_volume_indexed(
         windowed_half,
         window_indices,
@@ -70,6 +77,7 @@ def adjoint_slice_volume_windowed(
         half_volume=half_volume,
         relion_x_half=relion_x_half,
         **_recovar_clip_kwargs(max_r),
+        **extra,
     )
 
 
