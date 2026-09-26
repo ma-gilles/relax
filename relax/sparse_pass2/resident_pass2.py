@@ -3074,6 +3074,7 @@ def compute_pass2_stats_resident(
     translation_prior_centers=None,
     do_gridding_correction=False,
     square_window=False,
+    window_at_box=False,
     random_perturbation,
     group_ids=None,
     scale_correction_group_count=None,
@@ -3131,6 +3132,7 @@ def compute_pass2_stats_resident(
     """
 
     # Every parameter, forwarded by name: the signature is the compact engine's.
+    del window_at_box  # _resident_pass2 keeps RELION's window at every size, the box included
     result = _resident_pass2(**locals())
     finalized = result.finalized
     hard_assignment = np.asarray(finalized.hard_assignment, dtype=np.int32)
@@ -3218,6 +3220,7 @@ def compute_k_class_pass2_stats_resident(
     """
 
     n_classes = len(significant_sample_indices_by_class)
+    options.pop("window_at_box", None)  # _resident_pass2 keeps RELION's window at every size
     result = _resident_pass2(
         experiment_dataset,
         volumes,

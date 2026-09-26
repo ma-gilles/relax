@@ -650,6 +650,7 @@ def _run_sparse_k_class_adaptive_pass2(
         translation_prior_centers=base_engine_kwargs.get("translation_prior_centers"),
         do_gridding_correction=bool(base_engine_kwargs.get("do_gridding_correction", False)),
         square_window=bool(base_engine_kwargs.get("square_window", False)),
+        window_at_box=bool(base_engine_kwargs.get("window_at_box", False)),
         relion_half_volume_mstep=bool(base_engine_kwargs.get("relion_half_volume_mstep", False)),
         relion_x_half_mstep=bool(base_engine_kwargs.get("mstep_relion_x_half", False)),
         mstep_subtract_ctf_projection=bool(
@@ -3146,6 +3147,7 @@ def run_dense_k_class_em_adaptive(
             projection_padding_factor=engine_kwargs.get("projection_padding_factor", 1),
             do_gridding_correction=engine_kwargs.get("do_gridding_correction", False),
             square_window=engine_kwargs.get("square_window", False),
+            window_at_box=bool(engine_kwargs.get("window_at_box", False)),
             use_float64_scoring=engine_kwargs.get("use_float64_scoring", False),
             use_float64_projections=_projection_float64_from_kwargs(engine_kwargs),
             score_mode=engine_kwargs.get("relion_firstiter_score_mode", "gaussian"),

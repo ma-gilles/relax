@@ -247,15 +247,14 @@ def run_adaptive_initial_model_estep(
     )
     current_size = group_kwargs.get("current_size")
     pass1_current_size = (
-        current_size
-        if oversampling_order == 0
-        else _resolve_sparse_pass1_current_size(state, group_kwargs, options)
+        current_size if oversampling_order == 0 else _resolve_sparse_pass1_current_size(state, group_kwargs, options)
     )
     fresh_k1 = bool(state.K == 1 and uses_relion_cuda_image_preprocessing(group_dataset))
     route_kwargs = dict(
         image_batch_size=int(config.image_batch_size),
         rotation_block_size=int(config.rotation_block_size),
         current_size=current_size,
+        window_at_box=True,  # RELION's radial window at the box too (ml_optimiser.cpp:5784-5793)
         sparse_pass2=True,
         mstep_relion_x_half=True,
         # Difference 1: the SGD backprojection of the residual.

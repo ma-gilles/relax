@@ -45,6 +45,7 @@ def compute_pass2_stats_sparse(
     use_float64_scoring=False,
     do_gridding_correction=False,
     square_window=False,
+    window_at_box=False,
     random_perturbation=0.0,
     translation_prior_centers=None,
     normalization_log_z=None,
@@ -295,6 +296,7 @@ def compute_pass2_stats_sparse(
             translation_prior_centers=translation_prior_centers,
             do_gridding_correction=do_gridding_correction,
             square_window=square_window,
+            window_at_box=window_at_box,
             random_perturbation=random_perturbation,
             normalization_log_z=normalization_log_z,
             relion_f32_normalization_sum_weight=relion_f32_normalization_sum_weight,
@@ -380,6 +382,8 @@ def compute_pass2_stats_sparse(
         raise NotImplementedError(
             "separate score/reconstruction current sizes require the bucketed sparse pass-2 path",
         )
+    if window_at_box and (current_size is None or int(current_size) >= int(experiment_dataset.image_shape[0])):
+        raise NotImplementedError("RELION's window at the full box requires the bucketed sparse pass-2 path")
 
     # DEPRECATED route: to be removed once the resident engine covers a full-grid C1 pass
     # without significance supports; see em_status 'One engine' TODO.
