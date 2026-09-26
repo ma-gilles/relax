@@ -177,3 +177,31 @@ def test_tilt_operand_budget_is_a_quarter_of_the_device(monkeypatch):
     )
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", "1234")
     assert ro.resident_operands_max_bytes(device, device_fraction=0.25) == 1234
+
+
+@pytest.mark.unit
+def test_subtomogram_translation_schedule_is_relions_s1_schedule():
+    """RELION's subtomogram rule: each new offset step is at least half the previous one.
+
+    The S1 depth-fix RELION run (relion_ref, run_it00{4,5,7,8,9,10}_sampling.star) goes 4.25 -> 2.125
+    -> 1.0625 -> 0.6375 A with ranges 5x its offset changes (1.344198, 0.813644, 0.358909 A) and
+    acc_trans 0.425 A at oversampling 1. The SPA rule would jump straight to 0.6375 A.
+    """
+    from relax.helpers.convergence import RefinementState, _relion_next_translation_sampling_pixels
+
+    pixel = 4.25
+    step_px, range_px = 1.0, 5.0
+    expected = [(2.125, 6.720990), (1.0625, 4.068220), (0.6375, 1.794545)]
+    for changes, (want_step, want_range) in zip((1.344198, 0.813644, 0.358909), expected):
+        state = RefinementState(
+            adaptive_oversampling=1,
+            translation_range=range_px,
+            translation_step=step_px,
+            voxel_size_angstrom=pixel,
+            subtomogram=True,
+        )
+        state.acc_trans = 0.425
+        state.current_changes_optimal_offsets_angstrom = changes
+        range_px, step_px = _relion_next_translation_sampling_pixels(state)
+        # RELION's STAR values carry 6 decimals.
+        assert_matches(np.array([step_px * pixel, range_px * pixel]), np.array([want_step, want_range]), rtol=1e-6)
