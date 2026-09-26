@@ -1415,12 +1415,12 @@ def _relion_mstep_source_eulers(rotation_eulers, healpix_order, *, use_grid_eule
     if use_grid_eulers:
         return np.asarray(rotation_eulers, dtype=np.float64)
     symmetry = canonicalize_rotational_symmetry(symmetry)
-    source = _get_relion_rotation_grid_eulers_float64(
-        healpix_order, **({"symmetry": symmetry} if symmetry != "C1" else {})
-    )
-    if int(source.shape[0]) != int(rotation_eulers.shape[0]):
+    symmetry_kwargs = {"symmetry": symmetry} if symmetry != "C1" else {}
+    # Compare row counts before building the canonical grid: a final local search at a high
+    # order (subtomograms reach order 9, 9.7e9 rows) would otherwise build it only to discard it.
+    if int(rotation_grid_size(healpix_order, **symmetry_kwargs)) != int(np.shape(rotation_eulers)[0]):
         return np.asarray(rotation_eulers, dtype=np.float64)
-    return source
+    return _get_relion_rotation_grid_eulers_float64(healpix_order, **symmetry_kwargs)
 
 
 def _perturbed_trial_grid(

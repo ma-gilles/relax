@@ -4505,7 +4505,8 @@ def relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
         )(*operands)
     expected_live_shape = (
         reference.shape[0],
-        -(-int(translation_angles.shape[0]) // RELION_FINE_DIFF2_TRANSLATION_CHUNK),
+        # [T, 2] shared or [B, T, 2] per image (tilt images): T is the second-to-last axis.
+        -(-int(translation_angles.shape[-2]) // RELION_FINE_DIFF2_TRANSLATION_CHUNK),
     )
     if tuple(translation_chunk_live.shape) != expected_live_shape:
         raise ValueError(
