@@ -21,9 +21,9 @@ docs/development/resident_segments.md), which the compact engine refuses; 3 is t
 The route indexes coarse rotations in RECOVAR order (psi-slow,
 direction-fast); VDAM's own state (orientation priors, ``pdf_direction``) uses
 RELION's direction-major order. The permutation is applied at this boundary
-only. It is the K>1 default (``--pass2_engine auto``; ``adaptive`` selects it for any K); K=1
-defaults to the exact-local VDAM route in :mod:`relax.vdam.sparse_pass2_estep` until the resident
-route is faster there (``relax.vdam.dense_adapter.vdam_pass2_route``).
+only. It is the default for every K (``--pass2_engine auto``,
+``relax.vdam.dense_adapter.vdam_pass2_route``); ``local`` still selects the deprecated exact-local
+VDAM route in :mod:`relax.vdam.sparse_pass2_estep`.
 """
 
 from __future__ import annotations

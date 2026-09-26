@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import pytest
+from helpers.float_compare import assert_matches
 from recovar.data_io.starfile import read_star
 from recovar.utils.helpers import R_from_relion, write_relion_mrc
 
@@ -16,8 +17,8 @@ import relax.vdam.driver as driver
 from relax import sampling
 from relax.commands import initial_model
 from relax.diagnostics import vdam_mstep_replay
-from relax.helpers.particle_io import ParticleReadPolicy
 from relax.helpers.orientation_priors import relion_round_away_from_zero
+from relax.helpers.particle_io import ParticleReadPolicy
 from relax.relion import initial_model_io, vdam_checkpoint
 from relax.vdam import (
     bootstrap_iref,
@@ -31,7 +32,6 @@ from relax.vdam import (
 from relax.vdam.init import initialise_denovo_state
 from relax.vdam.state import NativeOpticsState, NativeParticleState
 from relax.vdam.subset_schedule import select_subset_for_iter
-from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -801,10 +801,11 @@ def test_sampling_plan_oversamples_relion_grid():
 def test_native_expectation_step_uses_rfloat_metadata_translations(monkeypatch):
     metadata_translation = np.float64(1.00000006)
 
-    def fake_build_sampling_plan(opts, *, iteration, sampling_state):
+    def fake_build_sampling_plan(opts, *, iteration, sampling_state, defer_fine_rotations=False):
         return native_sampling.NativeSamplingPlan(
             rotations=np.zeros((1, 3, 3), dtype=np.float32),
             translations=np.asarray([[0.0, 0.0], [metadata_translation, 0.0]], dtype=np.float32),
+            coarse_base_translations=np.asarray([[0.0, 0.0], [metadata_translation, 0.0]], dtype=np.float64),
             metadata_translations=np.asarray([[0.0, 0.0], [metadata_translation, 0.0]], dtype=np.float64),
             random_perturbation=0.0,
         )
@@ -1532,11 +1533,12 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
 def test_native_expectation_step_rebuilds_sampling_per_iteration(monkeypatch):
     calls = []
 
-    def fake_build_sampling_plan(opts, *, iteration, sampling_state):
+    def fake_build_sampling_plan(opts, *, iteration, sampling_state, defer_fine_rotations=False):
         calls.append(iteration)
         return native_sampling.NativeSamplingPlan(
             rotations=np.zeros((iteration, 3, 3), dtype=np.float32),
             translations=np.zeros((iteration + 1, 2), dtype=np.float32),
+            coarse_base_translations=np.zeros((iteration + 1, 2), dtype=np.float64),
             random_perturbation=0.125,
         )
 
@@ -1581,10 +1583,11 @@ def test_native_expectation_step_rebuilds_sampling_per_iteration(monkeypatch):
 def test_native_expectation_step_updates_translation_offsets_between_iterations(monkeypatch):
     calls = []
 
-    def fake_build_sampling_plan(opts, *, iteration, sampling_state):
+    def fake_build_sampling_plan(opts, *, iteration, sampling_state, defer_fine_rotations=False):
         return native_sampling.NativeSamplingPlan(
             rotations=np.zeros((1, 3, 3), dtype=np.float32),
             translations=np.asarray([[0.0, 0.0], [2.0, -1.0], [4.0, 0.0]], dtype=np.float32),
+            coarse_base_translations=np.asarray([[0.0, 0.0], [2.0, -1.0], [4.0, 0.0]], dtype=np.float64),
             random_perturbation=0.0,
         )
 
@@ -1749,12 +1752,13 @@ def test_best_eulers_from_particle_state_prefers_stored_rotation_matrices():
 def test_native_expectation_step_uses_autosampling_state_at_iteration_ten(monkeypatch):
     build_calls = []
 
-    def fake_build_sampling_plan(opts, *, iteration, sampling_state=None):
+    def fake_build_sampling_plan(opts, *, iteration, sampling_state=None, defer_fine_rotations=False):
         assert sampling_state is not None
         build_calls.append((iteration, sampling_state.healpix_order, sampling_state.offset_range_angstrom))
         return native_sampling.NativeSamplingPlan(
             rotations=np.zeros((2, 3, 3), dtype=np.float32),
             translations=np.asarray([[0.0, 0.0], [1.0, 0.0]], dtype=np.float32),
+            coarse_base_translations=np.asarray([[0.0, 0.0], [1.0, 0.0]], dtype=np.float64),
             random_perturbation=0.0,
             healpix_order=sampling_state.healpix_order,
             oversampling=sampling_state.adaptive_oversampling,
@@ -1847,12 +1851,13 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
         sampling_state.acc_trans_angstrom = 2.125
         return {"estimated_acc_rot": 3.666, "estimated_acc_trans_angstrom": 2.125}
 
-    def fake_build_sampling_plan(opts, *, iteration, sampling_state=None):
+    def fake_build_sampling_plan(opts, *, iteration, sampling_state=None, defer_fine_rotations=False):
         assert sampling_state is not None
         build_calls.append((iteration, sampling_state.healpix_order, sampling_state.offset_range_angstrom))
         return native_sampling.NativeSamplingPlan(
             rotations=np.zeros((2, 3, 3), dtype=np.float32),
             translations=np.asarray([[0.0, 0.0], [1.0, 0.0]], dtype=np.float32),
+            coarse_base_translations=np.asarray([[0.0, 0.0], [1.0, 0.0]], dtype=np.float64),
             random_perturbation=0.0,
             healpix_order=sampling_state.healpix_order,
             oversampling=sampling_state.adaptive_oversampling,
@@ -2054,11 +2059,12 @@ def test_native_expectation_step_records_sampling_changes_each_gradient_iteratio
 ):
     build_calls = []
 
-    def fake_build_sampling_plan(opts, *, iteration, sampling_state=None):
+    def fake_build_sampling_plan(opts, *, iteration, sampling_state=None, defer_fine_rotations=False):
         build_calls.append(iteration)
         return native_sampling.NativeSamplingPlan(
             rotations=np.zeros((2, 3, 3), dtype=np.float32),
             translations=np.asarray([[0.0, 0.0], [2.0, 0.0]], dtype=np.float32),
+            coarse_base_translations=np.asarray([[0.0, 0.0], [2.0, 0.0]], dtype=np.float64),
             random_perturbation=0.0,
             healpix_order=1 if sampling_state is None else sampling_state.healpix_order,
             oversampling=0,
@@ -2124,10 +2130,11 @@ def test_native_expectation_step_expands_class_rotation_prior_for_dense_fallback
 
     monkeypatch.setenv("RELAX_DISABLE_SPARSE_PASS2", "1")
 
-    def fake_build_sampling_plan(opts, *, iteration, sampling_state=None):
+    def fake_build_sampling_plan(opts, *, iteration, sampling_state=None, defer_fine_rotations=False):
         return native_sampling.NativeSamplingPlan(
             rotations=np.zeros((4, 3, 3), dtype=np.float32),
             translations=np.asarray([[0.0, 0.0], [1.0, 0.0]], dtype=np.float32),
+            coarse_base_translations=np.asarray([[0.0, 0.0], [1.0, 0.0]], dtype=np.float64),
             random_perturbation=0.0,
             healpix_order=1,
             oversampling=1,
@@ -2234,6 +2241,7 @@ def test_dense_estep_config_splits_fine_and_coarse_translation_priors():
         translations=np.asarray([[0.5, 0.0], [1.5, 0.0]], dtype=np.float32),
         random_perturbation=0.0,
         coarse_translations=np.asarray([[99.0, 0.0]], dtype=np.float32),
+        coarse_base_translations=np.asarray([[99.0, 0.0]], dtype=np.float64),
         coarse_prior_translations=np.asarray([[1.0, 0.0]], dtype=np.float32),
         translation_parent=np.asarray([0, 0], dtype=np.int64),
     )
@@ -2300,6 +2308,7 @@ def test_dense_estep_config_keeps_zero_oversampling_on_exact_adaptive_route():
         oversampling=0,
         offset_step_px=2.0,
         coarse_translations=np.asarray([[0.0, 0.0], [2.0, 0.0]], dtype=np.float32),
+        coarse_base_translations=np.asarray([[0.0, 0.0], [2.0, 0.0]], dtype=np.float64),
     )
 
     config = dense_adapter._dense_estep_config(

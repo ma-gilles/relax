@@ -19,7 +19,7 @@ def _clear_engine_record():
 @pytest.mark.parametrize(
     ("engine", "n_classes", "expected"),
     [
-        ("auto", 1, ("local", False)),
+        ("auto", 1, ("adaptive", False)),
         ("auto", 2, ("adaptive", False)),
         ("auto", 4, ("adaptive", False)),
         ("adaptive", 1, ("adaptive", True)),
@@ -57,12 +57,12 @@ def test_auto_k2_runs_the_resident_adaptive_route():
     assert result.meta["pass2_engines"] == ["global:resident"]
 
 
-def test_auto_k1_runs_the_exact_local_route():
+def test_auto_k1_runs_the_resident_adaptive_route():
     calls = []
-    result = _run_vdam_pass2_route("auto", 1, _adaptive_refused, _local_run(calls))
-    assert calls == ["local"]
-    assert result.meta["pass2_engine"] == "local"
-    assert result.meta["pass2_engines"] == ["global:local"]
+    result = _run_vdam_pass2_route("auto", 1, _adaptive_ok, _local_run(calls))
+    assert calls == []
+    assert result.meta["pass2_engine"] == "adaptive"
+    assert result.meta["pass2_engines"] == ["global:resident"]
 
 
 def test_auto_k2_refusal_falls_back_to_exact_local_with_the_reason():

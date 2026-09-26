@@ -59,7 +59,7 @@ what still routes to them. Inventory and line estimates (relax bc6d3e1):
 | Compact (bucketed sparse) pass 2: `sparse_pass2_bucketed` and its bucket plan, compact-pair sums, noise blocks, `compact_candidate_capture`, `resident_shadow`; the K-class fused and 2K-1 compact paths in `k_class._run_sparse_k_class_adaptive_pass2` | Only refusals: subset and focused replays (non-atomic Wavg), square-window replays, diagnostic dumps and flags, float64 and score-only diagnostic passes, CPU-only execution, and the memory refusals of `_stream_row_capacity_ladder` / `_cached_row_capacity_ladder`; `RELAX_SPARSE_PASS2_RESIDENT=0` | RELION's atomic Wavg arithmetic for replays; retire or port the dumps; resident always fits (row capacity 1 or image streaming); a decision on CPU pass 2 (GPU-only, or a JAX back end for the resident CUDA stages) |
 | K=1 exact-local adaptive route (`classification/k1_local_pass2.py`) | Only `RELAX_K1_PASS2_ENGINE=local` | None |
 | Exact local engine (`local/local_em_engine.py` and the other `local/` execution modules; `local_layout` stays) | Refine3D local-search parent probe (score-only, `maximum_significants` cap), every local iteration; Refine3D final all-data iteration (`current_size == box`, `local_search_iteration.py`); refusals of the resident local checks; `RELAX_LOCAL_SEARCH_RESIDENT=0` | Route the full-box pass to resident local (both engines score RELION's radial window at the box since aa03fd2) and qualify it, including 10202 memory; a resident score-only local mode with RELION's cap for the parent probe; the scale-1 triplet without scale groups |
-| VDAM exact-local E-step (`vdam/sparse_pass2_estep.py`, `k_class.run_local_k_class_em`) | VDAM K=1 by default (`--pass2_engine auto`); a K>1 adaptive refusal; `--pass2_engine local` | The VDAM K=1 speed gate: resident no slower than exact local at equal quality on noise1 50k and 10097 |
+| VDAM exact-local E-step (`vdam/sparse_pass2_estep.py`, `k_class.run_local_k_class_em`) | An adaptive refusal (any K; logged); `--pass2_engine local` | Port or refuse the configurations the adaptive route still refuses, then delete it |
 | Dense `run_em` (`dense/em_engine.py`, `dense_big_jit.py`, `k_class.run_dense_k_class_em`) and the per-image reference route (`reference/sparse_pass2.py`) | Nothing in production (the CLI always builds scale groups and supplies RELION's projector): oversampling 0 without scale groups, `RELAX_K1_DENSE_PASS2` / `RELAX_K_CLASS_DENSE_PASS2`, VDAM `RELAX_DISABLE_SPARSE_PASS2`, the dense K-class fallbacks, a full-grid C1 pass without supports | Move the joint `--firstiter_cc` coarse probe (pass 1) out of the dense K-class wrapper |
 
 Removal order:
@@ -74,7 +74,7 @@ Removal order:
 2. Compact, with the K=1 exact-local adaptive route and the dispatch fallback
    (about 22k lines).
 3. The full-box final pass and the parent probe on resident local.
-4. VDAM K=1 on resident (speed gate), then the VDAM exact-local route.
+4. The VDAM exact-local route (resident has been the VDAM default for every K since 2026-09-26).
 5. The exact local engine (about 24k lines).
 6. Dense `run_em` and the per-image reference (about 4k lines).
 
@@ -212,10 +212,10 @@ spread (0.3161-0.3381). EMPIAR-10097 0.2248 / 0.3565 (unmasked / masked) inside 
 0.2225-0.2254 / 0.3550-0.3588. Evidence:
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamspeed_20260924/scoring` (jobs 14427596, 14427597).
 
-VDAM on the resident engine (2026-09-25; K>1 default 2026-09-26): the adaptive route runs the
-InitialModel E-step on auto-refine's adaptive route (`relax/vdam/adaptive_estep.py`) with the
-device-resident pass 2. `--pass2_engine auto` (the default) selects it for K>1 and the exact-local
-route for K=1 (`relax.vdam.dense_adapter.vdam_pass2_route`); a K>1 configuration the adaptive route
+VDAM on the resident engine (2026-09-25; K>1 default 2026-09-26, K=1 default 2026-09-26): the adaptive
+route runs the InitialModel E-step on auto-refine's adaptive route (`relax/vdam/adaptive_estep.py`) with
+the device-resident pass 2. `--pass2_engine auto` (the default) selects it for every K
+(`relax.vdam.dense_adapter.vdam_pass2_route`); a configuration the adaptive route
 refuses before device work runs exact-local with a logged reason, `adaptive` makes the refusal an
 error, and each iteration's `run_itNNN_recovar_meta.json` records `pass2_engine` and `pass2_engines`.
 Gate (200 iterations, relax 47103e5, one H100 + 8 CPUs per arm, uncapped; GT FSC-AUC against the
@@ -232,7 +232,7 @@ same-seed RELION runs, `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclass_2026
 | noise1 50k K1 s29 | 0.34125-0.34141 | 0.34134 | 0.34134 | 1565 / 2232 / 2382 |
 
 (* bench's RELION jobs 14445855-7 on other nodes.) Resident is 0.60-0.96x the exact-local wall at K>1 and
-1.07x at K=1, so K=1 stays exact-local until resident is faster there. K4 needs more RELION seeds before any
+1.07x at K=1 at 47103e5; K=1 moved to resident on 2026-09-26 (below). K4 needs more RELION seeds before any
 quality claim: single seeds scatter about ±2.5e-3 around RELION's two same-seed runs, for both routes.
 RELION's three `--grad` E-step differences map onto it: the residual backprojection
 (`mstep_subtract_ctf_projection`, now on resident), the pseudo-halfset BPref slots (one resident pass
@@ -254,6 +254,13 @@ of four seed-41 RELION runs 0.2225-0.2243 / 0.3550-0.3573; relax-RELION pair FSC
 RELION-RELION 0.688-0.773. Wall 6954 s against RELION 3025 s on the same node (2.3x); the exact-local default
 measured 6835 s in a separate job (vdamspeed j14, not a matched pair), so the 10097 speed gate is not shown
 met. The run predates the image-capacity change (834b3b3), which removes the per-subset re-trace.
+K=1 default flip (2026-09-26): with stable Fourier windows and S2 (relax 5802a5e) resident is faster
+than exact-local at K=1: noise1 50k s29 resident 1303 s, 0.92x its same-node RELION (job 14502014), where
+exact-local took 1437 s against RELION 1421 s (job 14497728); EMPIAR-10097 s41 on one node 2469 s against
+exact-local 4274 s and RELION 2957 s (job 14504146).
+10097 quality (scored 14508334, `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamfast_20260926/e10097_route_1dafaae/scores`):
+resident GT FSC-AUC 0.2269 unmasked / 0.3611 masked, exact-local 0.2236 / 0.3552, five seed-41 RELION
+runs 0.2225-0.2259 / 0.3550-0.3605. `--pass2_engine auto` now selects resident for every K.
 
 VDAM coarse scorer, native vs GEMM (2026-09-26, relax main bc6d3e1; same node, one H100 + 8 CPUs per
 arm, uncapped). The default exact-operand coarse pass is a real-packed float32 GEMM pair

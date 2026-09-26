@@ -60,13 +60,13 @@ logger = logging.getLogger(__name__)
 def vdam_pass2_route(pass2_engine: str, n_classes: int) -> tuple[str, bool]:
     """The E-step route ``--pass2_engine`` selects for ``n_classes``, and whether it was explicit.
 
-    ``auto``: K>1 on the resident adaptive route, K=1 exact-local (the 200-iteration gate in
+    ``auto``: the resident adaptive route for every K (the 200-iteration gates in
     docs/development/em_status.md). ``adaptive`` and ``local``/``local_segmented`` are explicit.
     """
 
     engine = str(pass2_engine).strip().lower()
     if engine == "auto":
-        return ("adaptive" if int(n_classes) > 1 else "local"), False
+        return "adaptive", False
     return ("adaptive" if engine == "adaptive" else "local"), True
 
 
@@ -86,7 +86,7 @@ def _run_vdam_pass2_route(pass2_engine: str, n_classes: int, run_adaptive, run_l
                 raise
             refused = take_pass_engines()
             logger.info(
-                "VDAM K>1 default: the resident adaptive route does not cover this E-step; "
+                "VDAM default: the resident adaptive route does not cover this E-step; "
                 "it runs on the exact-local route: %s (%s)",
                 exc,
                 refused,
