@@ -1333,10 +1333,7 @@ def test_stable_window_plan_applies_only_to_the_supported_passes(monkeypatch, ca
     plan = rp._resident_stable_window_plan((64, 64), **kwargs)
     assert plan.logical_current_size == 36 and plan.physical_current_size == 40
     assert plan.physical_reconstruction_pixels > plan.logical_reconstruction_pixels
-    # VDAM's resident route takes them only when asked.
-    assert rp._resident_stable_window_plan((64, 64), **kwargs, vdam=True) is None
     monkeypatch.setenv(rp._RESIDENT_STABLE_WINDOWS_ENV, "1")
-    assert rp._resident_stable_window_plan((64, 64), **kwargs, vdam=True) is not None
     for override in (
         {"current_size": 64, "mstep_current_size": 64, "n_half": 64 * 33},
         {"firstiter_cc": True},

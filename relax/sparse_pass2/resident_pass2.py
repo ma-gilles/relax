@@ -1525,10 +1525,9 @@ class ResidentClassInputs(NamedTuple):
     rotation_log_priors: tuple
 
 
-def _resident_stable_windows_requested(*, vdam: bool = False) -> bool:
-    # On by default for Class3D and auto-refine; VDAM's resident route (its
-    # residual M-step) takes them only when asked until its own gate has run.
-    return parse_env_flag(_RESIDENT_STABLE_WINDOWS_ENV, default=not vdam)
+def _resident_stable_windows_requested() -> bool:
+    # On by default for Class3D, auto-refine and VDAM (VDAM gate 14502014).
+    return parse_env_flag(_RESIDENT_STABLE_WINDOWS_ENV, default=True)
 
 
 # Physical window classes this refinement has already run, by (box, quantum).
@@ -1584,7 +1583,6 @@ def _resident_stable_window_plan(
     firstiter_cc,
     reconstruction_image_radius,
     reconstruction_volume_current_size,
-    vdam=False,
 ):
     """The pass's stable-window plan, or None to keep the logical window.
 
@@ -1595,7 +1593,7 @@ def _resident_stable_window_plan(
     logical window, as the compact and local engines do.
     """
 
-    if not _resident_stable_windows_requested(vdam=vdam):
+    if not _resident_stable_windows_requested():
         return None
     reasons = []
     if int(current_size) >= int(image_shape[0]):
@@ -2078,7 +2076,6 @@ def _resident_pass2(
         firstiter_cc=firstiter_cc,
         reconstruction_image_radius=reconstruction_image_radius,
         reconstruction_volume_current_size=reconstruction_volume_current_size,
-        vdam=bool(mstep_subtract_ctf_projection),
     )
     stable_window_spec = None
     # The spec's current size: the physical class with stable windows, RELION's otherwise.
