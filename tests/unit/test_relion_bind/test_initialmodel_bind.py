@@ -502,6 +502,83 @@ class TestAutoRefineExpectedAccuracyBinding:
         assert out["acc_trans"] == pytest.approx(0.6)
 
 
+class TestTiltImageExpectedAccuracyBinding:
+    """Subtomogram trial particles (tilt images) in RELION's calculateExpectedAngularErrors (S4.2)."""
+
+    @staticmethod
+    def _call(bind, *, tomo, n_images=1, projections=None):
+        rng = np.random.default_rng(29)
+        reference = rng.standard_normal((16, 16, 16)).astype(np.float64)
+        eulers = np.asarray([[10.0, 40.0, 20.0], [70.0, 100.0, -30.0], [200.0, 60.0, 5.0]], dtype=np.float64)
+        n = eulers.shape[0]
+        defocus = np.asarray([12000.0, 15000.0, 18000.0])
+        extra = {}
+        if tomo:
+            image_proj = np.tile(np.eye(3), (n * n_images, 1, 1)) if projections is None else projections
+            image_ctf = np.stack(
+                [
+                    np.repeat(defocus, n_images),
+                    np.repeat(defocus, n_images),
+                    np.zeros(n * n_images),
+                    np.zeros(n * n_images),
+                    np.ones(n * n_images),
+                    np.zeros(n * n_images),
+                    np.full(n * n_images, -1.0),
+                ],
+                axis=1,
+            )
+            extra = dict(
+                image_offsets=np.arange(0, n * n_images + 1, n_images, dtype=np.int64),
+                image_projections=image_proj,
+                image_ctf=image_ctf,
+            )
+        return bind.vdam_expected_angular_errors(
+            reference[None],
+            eulers,
+            np.arange(n, dtype=np.int64),
+            np.zeros(n, dtype=np.int32),
+            np.ones(1, dtype=np.float64),
+            np.full(9, 0.05, dtype=np.float64),
+            defocus,
+            defocus,
+            np.zeros(n),
+            np.zeros(n),
+            300.0,
+            2.7,
+            0.1,
+            2.0,
+            16,
+            16,
+            1,
+            1,
+            1.0,
+            17,
+            True,
+            False,
+            np.asarray([4, 8, 15], dtype=np.int64),
+            **extra,
+        )
+
+    def test_one_identity_tilt_image_is_the_single_particle_rotation_accuracy(self, bind):
+        """With one image, Aproj = I and the particle's CTF, the rotational search is RELION's SPA one.
+
+        The translational search differs by design: a subtomogram offset is perturbed along x, y or z
+        (three-way draw) and then projected, a single particle's along x or y.
+        """
+        spa = self._call(bind, tomo=False)
+        tomo = self._call(bind, tomo=True)
+        assert_matches(np.asarray(tomo["acc_rot_class"]), np.asarray(spa["acc_rot_class"]))
+        assert tomo["acc_rot"] == pytest.approx(spa["acc_rot"])
+
+    def test_more_tilt_images_add_signal(self, bind):
+        """Two identical images per particle double every image's SNR term, so errors can only shrink."""
+
+        one = self._call(bind, tomo=True, n_images=1)
+        two = self._call(bind, tomo=True, n_images=2)
+        assert two["acc_rot"] <= one["acc_rot"]
+        assert two["acc_trans"] <= one["acc_trans"]
+
+
 class TestRndUnifRangeBinding:
     def test_scaled_range_preserves_relion_float_operation_boundary(self, bind):
         if not hasattr(bind, "vdam_rnd_unif_range_sequence"):

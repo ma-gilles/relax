@@ -1083,7 +1083,10 @@ static py::dict vdam_expected_angular_errors(
     py::object random_seed_particle_ids_obj,
     double model_pixel_size,
     int image_full_size,
-    int projector_current_size
+    int projector_current_size,
+    py::object image_offsets_obj,
+    py::object image_projections_obj,
+    py::object image_ctf_obj
 ) {
     if (model_pixel_size <= 0.0)
         model_pixel_size = pixel_size;
@@ -1132,11 +1135,43 @@ static py::dict vdam_expected_angular_errors(
         throw std::runtime_error("pdf_class must have shape (K,)");
     if (sigma_buf.ndim != 1)
         throw std::runtime_error("sigma2_noise must be a 1D shell spectrum");
-    const long n_particles = defU_buf.shape[0];
-    if (defU_buf.ndim != 1 || defV_buf.ndim != 1 || defA_buf.ndim != 1 || phase_buf.ndim != 1)
-        throw std::runtime_error("CTF parameter arrays must be 1D");
-    if (defV_buf.shape[0] != n_particles || defA_buf.shape[0] != n_particles || phase_buf.shape[0] != n_particles)
-        throw std::runtime_error("CTF parameter arrays must have matching lengths");
+    // Subtomogram particles (RELION 5 2D stacks): each particle owns several tilt images, each with its
+    // own Aproj and CTF (ml_optimiser.cpp calculateExpectedAngularErrors, is_tomo branches). A
+    // single-particle image is the one-image case with the identity Aproj.
+    const bool tomo = !image_offsets_obj.is_none();
+    py::array_t<long, py::array::c_style | py::array::forcecast> image_offsets;
+    py::array_t<double, py::array::c_style | py::array::forcecast> image_projections;
+    py::array_t<double, py::array::c_style | py::array::forcecast> image_ctf;
+    const long *image_offsets_ptr = nullptr;
+    const double *image_projections_ptr = nullptr;
+    const double *image_ctf_ptr = nullptr;
+    long n_particles = defU_buf.shape[0];
+    if (tomo) {
+        if (image_projections_obj.is_none() || image_ctf_obj.is_none())
+            throw std::runtime_error("tilt images need image_offsets, image_projections and image_ctf together");
+        image_offsets = image_offsets_obj.cast<py::array_t<long, py::array::c_style | py::array::forcecast>>();
+        image_projections = image_projections_obj.cast<py::array_t<double, py::array::c_style | py::array::forcecast>>();
+        image_ctf = image_ctf_obj.cast<py::array_t<double, py::array::c_style | py::array::forcecast>>();
+        auto off_buf = image_offsets.request();
+        auto proj_buf = image_projections.request();
+        auto ctf_buf = image_ctf.request();
+        if (off_buf.ndim != 1 || off_buf.shape[0] < 1)
+            throw std::runtime_error("image_offsets must have shape (n_particles + 1,)");
+        n_particles = off_buf.shape[0] - 1;
+        image_offsets_ptr = static_cast<long*>(off_buf.ptr);
+        const long n_images = image_offsets_ptr[n_particles];
+        if (proj_buf.ndim != 3 || proj_buf.shape[0] != n_images || proj_buf.shape[1] != 3 || proj_buf.shape[2] != 3)
+            throw std::runtime_error("image_projections must have shape (n_images, 3, 3)");
+        if (ctf_buf.ndim != 2 || ctf_buf.shape[0] != n_images || ctf_buf.shape[1] != 7)
+            throw std::runtime_error("image_ctf must have shape (n_images, 7): defU, defV, defAngle, Bfac, scale, phase_shift, dose");
+        image_projections_ptr = static_cast<double*>(proj_buf.ptr);
+        image_ctf_ptr = static_cast<double*>(ctf_buf.ptr);
+    } else {
+        if (defU_buf.ndim != 1 || defV_buf.ndim != 1 || defA_buf.ndim != 1 || phase_buf.ndim != 1)
+            throw std::runtime_error("CTF parameter arrays must be 1D");
+        if (defV_buf.shape[0] != n_particles || defA_buf.shape[0] != n_particles || phase_buf.shape[0] != n_particles)
+            throw std::runtime_error("CTF parameter arrays must have matching lengths");
+    }
     if (current_image_size <= 0 || current_image_size > image_full_size || current_image_size % 2 != 0)
         throw std::runtime_error("current_image_size must be a positive even size <= image_full_size");
     if (projector_current_size <= 0 || projector_current_size > ori_size || projector_current_size % 2 != 0)
@@ -1193,33 +1228,42 @@ static py::dict vdam_expected_angular_errors(
             if (part_id < 0 || part_id >= n_particles)
                 throw std::runtime_error("particle_ids contains an entry outside the CTF parameter arrays");
 
-            MultidimArray<RFLOAT> Fctf(current_image_size, current_image_size / 2 + 1);
-            Fctf.initConstant(1.0);
-            if (do_ctf_correction) {
-                CTF ctf;
-                ctf.setValues(
-                    defU_ptr[part_id],
-                    defV_ptr[part_id],
-                    defA_ptr[part_id],
-                    voltage,
-                    Cs,
-                    Q0,
-                    0.0,
-                    1.0,
-                    phase_ptr[part_id],
-                    -1.0
-                );
-                ctf.getFftwImage(
-                    Fctf,
-                    image_full_size,
-                    image_full_size,
-                    pixel_size,
-                    false,
-                    false,
-                    false,
-                    true,
-                    do_ctf_padding
-                );
+            // One CTF per image (Fctfs[img_id] of RELION); a single-particle image has no B-factor,
+            // scale 1 and no dose (setValuesByGroup with the particle's metadata).
+            const long first_image = tomo ? image_offsets_ptr[part_id] : part_id;
+            const long n_images = tomo ? image_offsets_ptr[part_id + 1] - first_image : 1;
+            std::vector<MultidimArray<RFLOAT>> Fctfs((size_t)n_images);
+            for (long img = 0; img < n_images; img++) {
+                MultidimArray<RFLOAT>& Fctf = Fctfs[(size_t)img];
+                Fctf.resize(current_image_size, current_image_size / 2 + 1);
+                Fctf.initConstant(1.0);
+                if (do_ctf_correction) {
+                    const double *c = tomo ? image_ctf_ptr + (first_image + img) * 7 : nullptr;
+                    CTF ctf;
+                    ctf.setValues(
+                        tomo ? c[0] : defU_ptr[part_id],
+                        tomo ? c[1] : defV_ptr[part_id],
+                        tomo ? c[2] : defA_ptr[part_id],
+                        voltage,
+                        Cs,
+                        Q0,
+                        tomo ? c[3] : 0.0,
+                        tomo ? c[4] : 1.0,
+                        tomo ? c[5] : phase_ptr[part_id],
+                        tomo ? c[6] : -1.0
+                    );
+                    ctf.getFftwImage(
+                        Fctf,
+                        image_full_size,
+                        image_full_size,
+                        pixel_size,
+                        false,
+                        false,
+                        false,
+                        true,
+                        do_ctf_padding
+                    );
+                }
             }
 
             for (int imode = 0; imode < 2; imode++) {
@@ -1269,79 +1313,113 @@ static py::dict vdam_expected_angular_errors(
                     const double rot1 = eulers_ptr[trial * 3 + 0];
                     const double tilt1 = eulers_ptr[trial * 3 + 1];
                     const double psi1 = eulers_ptr[trial * 3 + 2];
-                    double rot2 = rot1;
-                    double tilt2 = tilt1;
-                    double psi2 = psi1;
-                    double xshift = 0.0;
-                    double yshift = 0.0;
 
-                    if (imode == 0) {
-                        const double ran = rnd_unif();
-                        if (ran < 0.3333)
-                            rot2 = rot1 + ang_error;
-                        else if (ran < 0.6667)
-                            tilt2 = tilt1 + ang_error;
-                        else
-                            psi2 = psi1 + ang_error;
-                    } else {
-                        const double ran = rnd_unif();
-                        if (ran < 0.5)
-                            xshift = sh_error;
-                        else
-                            yshift = sh_error;
-                    }
-
-                    MultidimArray<Complex> F1(current_image_size, current_image_size / 2 + 1);
-                    MultidimArray<Complex> F2(current_image_size, current_image_size / 2 + 1);
-                    F1.initZeros();
-                    F2.initZeros();
-                    Matrix2D<RFLOAT> A1(3, 3), A2(3, 3);
-                    Euler_angles2matrix(rot1, tilt1, psi1, A1, false);
-                    A1 *= scale_difference;
-                    projectors[(size_t)k].get2DFourierTransform(F1, A1);
-
-                    if (imode == 0) {
-                        Euler_angles2matrix(rot2, tilt2, psi2, A2, false);
-                        A2 *= scale_difference;
-                        projectors[(size_t)k].get2DFourierTransform(F2, A2);
-                    } else {
-                        shiftImageInFourierTransform(F1, F2, (RFLOAT)image_full_size, (RFLOAT)(-xshift), (RFLOAT)(-yshift), (RFLOAT)0.0);
-                    }
-
-                    if (do_ctf_correction) {
-                        FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(F1) {
-                            DIRECT_MULTIDIM_ELEM(F1, n) *= DIRECT_MULTIDIM_ELEM(Fctf, n);
-                            DIRECT_MULTIDIM_ELEM(F2, n) *= DIRECT_MULTIDIM_ELEM(Fctf, n);
-                        }
-                    }
-
+                    // The SNR sums over the particle's images; each image draws its own perturbation
+                    // (rnd_unif inside RELION's img_id loop).
                     my_snr = 0.0;
-                    FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(F1) {
-                        const long idx = n;
-                        const long ix = idx % XSIZE(F1);
-                        const long iy_linear = idx / XSIZE(F1);
-                        const long iy = (iy_linear < current_image_size / 2 + 1)
-                            ? iy_linear
-                            : (iy_linear - current_image_size);
-                        const int ires = ROUND(std::sqrt((double)(iy * iy + ix * ix)));
-                        const int ires_remapped = ROUND(remap_image_sizes * ires);
-                        // Match Mresol_fine/Mresol_coarse: the packed x=0
-                        // Fourier column stores both Hermitian y halves, so
-                        // RELION counts only y>=0.  It also excludes shells
-                        // beyond the current image Nyquist boundary.
-                        if (
-                            ires > 0
-                            && ires < current_image_size / 2 + 1
-                            && !(ix == 0 && iy < 0)
-                            && ires_remapped < sigma_buf.shape[0]
-                        ) {
-                            const double sigma = sigma_ptr[ires_remapped];
-                            if (sigma > 0.0) {
-                                const Complex diff = DIRECT_MULTIDIM_ELEM(F1, n) - DIRECT_MULTIDIM_ELEM(F2, n);
-                                my_snr += norm(diff) / (2.0 * sigma2_fudge * sigma);
+                    for (long img = 0; img < n_images; img++) {
+                        Matrix2D<RFLOAT> Aproj(3, 3);
+                        Aproj.initIdentity();
+                        if (tomo) {
+                            const double *a = image_projections_ptr + (first_image + img) * 9;
+                            for (int r = 0; r < 3; r++)
+                                for (int c = 0; c < 3; c++)
+                                    Aproj(r, c) = a[r * 3 + c];
+                        }
+                        double rot2 = rot1;
+                        double tilt2 = tilt1;
+                        double psi2 = psi1;
+                        double xshift = 0.0;
+                        double yshift = 0.0;
+                        double zshift = 0.0;
+
+                        MultidimArray<Complex> F1(current_image_size, current_image_size / 2 + 1);
+                        MultidimArray<Complex> F2(current_image_size, current_image_size / 2 + 1);
+                        F1.initZeros();
+                        F2.initZeros();
+                        Matrix2D<RFLOAT> A1(3, 3), A2(3, 3);
+                        Euler_angles2matrix(rot1, tilt1, psi1, A1, false);
+                        if (tomo)
+                            A1 = Aproj * A1;
+                        A1 *= scale_difference;
+                        projectors[(size_t)k].get2DFourierTransform(F1, A1);
+
+                        if (imode == 0) {
+                            const double ran = rnd_unif();
+                            if (ran < 0.3333)
+                                rot2 = rot1 + ang_error;
+                            else if (ran < 0.6667)
+                                tilt2 = tilt1 + ang_error;
+                            else
+                                psi2 = psi1 + ang_error;
+                        } else {
+                            const double ran = rnd_unif();
+                            if (tomo) {
+                                if (ran < 0.3333)
+                                    xshift = sh_error;
+                                else if (ran < 0.6667)
+                                    yshift = sh_error;
+                                else
+                                    zshift = sh_error;
+                            } else {
+                                if (ran < 0.5)
+                                    xshift = sh_error;
+                                else
+                                    yshift = sh_error;
                             }
                         }
-                    }
+
+                        if (imode == 0) {
+                            Euler_angles2matrix(rot2, tilt2, psi2, A2, false);
+                            if (tomo)
+                                A2 = Aproj * A2;
+                            A2 *= scale_difference;
+                            projectors[(size_t)k].get2DFourierTransform(F2, A2);
+                        } else {
+                            if (tomo) {
+                                // Experiment::getTranslationInTiltSeries (exp_model.cpp:105-113).
+                                const double x3 = xshift, y3 = yshift, z3 = zshift;
+                                xshift = Aproj(0, 0) * x3 + Aproj(0, 1) * y3 + Aproj(0, 2) * z3;
+                                yshift = Aproj(1, 0) * x3 + Aproj(1, 1) * y3 + Aproj(1, 2) * z3;
+                                zshift = 0.0;
+                            }
+                            shiftImageInFourierTransform(F1, F2, (RFLOAT)image_full_size, (RFLOAT)(-xshift), (RFLOAT)(-yshift), (RFLOAT)(-zshift));
+                        }
+
+                        if (do_ctf_correction) {
+                            const MultidimArray<RFLOAT>& Fctf = Fctfs[(size_t)img];
+                            FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(F1) {
+                                DIRECT_MULTIDIM_ELEM(F1, n) *= DIRECT_MULTIDIM_ELEM(Fctf, n);
+                                DIRECT_MULTIDIM_ELEM(F2, n) *= DIRECT_MULTIDIM_ELEM(Fctf, n);
+                            }
+                        }
+                        FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(F1) {
+                            const long idx = n;
+                            const long ix = idx % XSIZE(F1);
+                            const long iy_linear = idx / XSIZE(F1);
+                            const long iy = (iy_linear < current_image_size / 2 + 1)
+                                ? iy_linear
+                                : (iy_linear - current_image_size);
+                            const int ires = ROUND(std::sqrt((double)(iy * iy + ix * ix)));
+                            const int ires_remapped = ROUND(remap_image_sizes * ires);
+                            // Match Mresol_fine/Mresol_coarse: the packed x=0
+                            // Fourier column stores both Hermitian y halves, so
+                            // RELION counts only y>=0.  It also excludes shells
+                            // beyond the current image Nyquist boundary.
+                            if (
+                                ires > 0
+                                && ires < current_image_size / 2 + 1
+                                && !(ix == 0 && iy < 0)
+                                && ires_remapped < sigma_buf.shape[0]
+                            ) {
+                                const double sigma = sigma_ptr[ires_remapped];
+                                if (sigma > 0.0) {
+                                    const Complex diff = DIRECT_MULTIDIM_ELEM(F1, n) - DIRECT_MULTIDIM_ELEM(F2, n);
+                                    my_snr += norm(diff) / (2.0 * sigma2_fudge * sigma);
+                                }
+                            }
+                        }
+                    } // end for img
                 }
 
                 if (imode == 0)
@@ -1763,10 +1841,15 @@ Returns -1 when subset should span all particles.
           py::arg("model_pixel_size") = -1.0,
           py::arg("image_full_size") = -1,
           py::arg("projector_current_size") = -1,
+          py::arg("image_offsets") = py::none(),
+          py::arg("image_projections") = py::none(),
+          py::arg("image_ctf") = py::none(),
           R"doc(
-SPA 3D InitialModel accuracy estimator from
-MlOptimiser::calculateExpectedAngularErrors. Returns acc_rot/acc_trans plus
-per-class arrays.
+3D accuracy estimator from MlOptimiser::calculateExpectedAngularErrors. Returns
+acc_rot/acc_trans plus per-class arrays. With image_offsets (CSR over particle ids),
+image_projections (Aproj per tilt image) and image_ctf (defU, defV, defAngle, Bfac,
+scale, phase_shift, dose per tilt image) the particles are subtomograms: the SNR sums
+over their tilt images and the shift error is 3D.
 )doc");
 
     m.def("vdam_bootstrap_iref", &vdam_bootstrap_iref,
