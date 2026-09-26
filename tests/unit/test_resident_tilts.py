@@ -88,7 +88,9 @@ def test_tilt_slot_rotations_are_each_images_inverse_of_l_a():
 
 
 @pytest.mark.unit
-def test_tilt_capacity_ladders_divide_by_the_slot_count():
+def test_tilt_capacity_ladders_divide_the_rows_by_the_slot_count():
+    # Rows project once per slot; the Wavg tile is built per slot for the units' images, so units keep the
+    # image ladder.
     rows, units = resident_tilts.tilt_capacity_ladders((8192, 32768, 131072), (32, 128, 512), slot_capacity=41)
     assert rows == (256, 512, 2048)
-    assert units == (1, 3, 12)
+    assert units == (32, 128, 512)

@@ -207,7 +207,6 @@ def run_tilt_chunk(
     from relax.sparse_pass2 import resident_pass2 as rp
     from relax.sparse_pass2.resident_candidates import expand_chunk_mask_jnp, materialize_chunk
     from relax.sparse_pass2.resident_scoring import score_tilt_image_rows
-    from relax.sparse_pass2.sparse_pass2_wavg import _relion_cuda_translate_wavg_norm_images
 
     row_capacity = int(chunk.row_capacity)
     unit_capacity = int(chunk.image_capacity)
@@ -245,23 +244,17 @@ def run_tilt_chunk(
 
     # --- per-image operands: the SPA gather, with each image's own phases ---
     image_angles = jnp.asarray(np.asarray(tilt.image_angles, dtype=np.float32)[safe_images])
+    # The translated Wavg tile is [images, T, P_rect]; with a subtomogram's 3D grid (thousands of
+    # translations) it is built per image slot in the M-step below, for C_U images at a time, never
+    # for the chunk's C_U * S images. The chunk-wide gather takes one zero translation.
     recon = rp.gather_resident_chunk_operands(
         resident_operands,
         image_slots,
-        translation_angles=image_angles[0],
+        translation_angles=np.zeros((1, 2), dtype=np.float32),
         rect_indices=rect_indices_device,
         exact_positions=exact_positions_device,
         image_shape=image_shape,
     )
-    translated = jax.lax.map(
-        lambda pair: _relion_cuda_translate_wavg_norm_images(pair[0][None], pair[1], rect_indices_device, image_shape)[
-            0
-        ],
-        (recon["processed_image_half"], image_angles),
-    )
-    translated = jnp.where(jnp.asarray(valid_images)[:, None, None], translated, jnp.zeros((), translated.dtype))
-    recon["raw_translated_wavg_rectangle"] = translated
-    recon["raw_translated_wavg_for_atomic"] = translated[:, :, jnp.asarray(exact_positions_device, dtype=jnp.int32)]
     noise_scale = np.where(valid_images, np.asarray(tilt.image_noise_scale, dtype=np.float32)[safe_images], 0.0)
     operands = rp._make_chunk_stage_operands(recon, None)._replace(image_noise_scale=jnp.asarray(noise_scale))
 
@@ -332,31 +325,55 @@ def run_tilt_chunk(
     row_posterior = jnp.asarray(reconstruction_probs, dtype=jnp.float32).reshape(row_capacity, n_fine_trans)
 
     # --- M-step, one pass per image slot ------------------------------------
+    # Each slot backprojects the C_U images that are its units' s-th images (a slot view of the chunk's
+    # operands, indexed by unit), and its per-image partials land on those images' chunk rows.
     mstep = rp._initial_mstep_carry(Ft_y_total, Ft_ctf_total, operands, stage_tables, spec=spec)
+    slot_spec = rp._make_chunk_program_spec(
+        row_capacity=row_capacity, image_capacity=unit_capacity, n_fine_trans=n_fine_trans, **spec_kwargs
+    )
     block_rows = int(spec.mstep_block_rows)
     row_index = jnp.arange(row_capacity, dtype=jnp.int32)
+    unit_slot_images = _unit_slot_images(layout, unit_capacity=unit_capacity, slot_capacity=n_slots)
+    row_unit = np.asarray(host["row_image_local"], dtype=np.int64)
     for slot in range(n_slots):
-        slot_ids = slot_image_ids[slot]
-        if not np.any(layout.slot_image_ids[slot, :n_valid_rows] >= 0):
+        if not np.any(unit_slot_images[slot] >= 0):
             continue
-        has_image = row_is_valid & (slot_ids >= 0)
+        slot_images = unit_slot_images[slot]
+        slot_operands = _slot_view(
+            operands,
+            slot_images,
+            angles=np.asarray(tilt.image_angles, dtype=np.float32)[
+                np.where(slot_images >= 0, layout.image_ids[np.maximum(slot_images, 0)], 0)
+            ],
+            rect_indices=rect_indices_device,
+            exact_positions=exact_positions_device,
+            image_shape=image_shape,
+        )
+        slot_carry = rp._initial_mstep_carry(mstep.Ft_y, mstep.Ft_ctf, slot_operands, stage_tables, spec=slot_spec)
+        row_has_image = np.zeros(row_capacity, dtype=bool)
+        row_has_image[:n_valid_rows] = slot_images[row_unit[:n_valid_rows]] >= 0
+        has_image = jnp.asarray(row_has_image)
+        units = jnp.asarray(
+            np.where(row_has_image, np.pad(row_unit, (0, row_capacity - row_unit.size)), 0), dtype=jnp.int32
+        )
         blocks = rp._MstepBlockInputs(
-            row_image_local=jnp.where(has_image, slot_ids, jnp.int32(0)),
-            kernel_row_image_ids=jnp.where(has_image, slot_ids, jnp.int32(-1)),
+            row_image_local=units,
+            kernel_row_image_ids=jnp.where(has_image, units, jnp.int32(-1)),
             row_posterior=jnp.where(has_image[:, None], row_posterior, jnp.zeros((), row_posterior.dtype)),
             row_fine_rot=jnp.int32(slot * row_capacity) + row_index,
             projections=None,
         )
         for start in range(0, n_valid_rows, block_rows):
-            mstep = rp._resident_mstep_block_at(
+            slot_carry = rp._resident_mstep_block_at(
                 rp._device_int32(start),
                 blocks,
-                operands,
+                slot_operands,
                 stage_tables,
-                mstep,
-                spec=spec,
+                slot_carry,
+                spec=slot_spec,
                 cuda_backproject=em_cuda_kernels,
             )
+        mstep = _fold_slot_carry(mstep, slot_carry, slot_images, image_capacity=image_capacity)
 
     stats = accumulate_tilt_chunk_terms(
         stats,
@@ -391,6 +408,84 @@ def run_tilt_chunk(
         spec=spec,
     )
     return mstep.Ft_y, mstep.Ft_ctf, stats
+
+
+def _unit_slot_images(layout: ChunkTiltLayout, *, unit_capacity: int, slot_capacity: int) -> np.ndarray:
+    """``[S, C_U]`` chunk image of each unit's s-th image, -1 past its images or on a padded unit."""
+
+    n_images = int(layout.n_valid_images)
+    unit_of_image = np.asarray(layout.image_unit_local[:n_images], dtype=np.int64)
+    counts = np.bincount(unit_of_image, minlength=int(unit_capacity))[: int(unit_capacity)]
+    first = np.concatenate([[0], np.cumsum(counts)[:-1]])
+    slots = np.arange(int(slot_capacity))[:, None]
+    return np.where(slots < counts[None, :], first[None, :] + slots, -1).astype(np.int64)
+
+
+def _slot_view(operands, slot_images, *, angles, rect_indices, exact_positions, image_shape):
+    """The chunk operands of one image slot, one image per unit (``slot_images``, -1 padded).
+
+    Padded units read the first image with every array zeroed, except ``scale`` (1) and ``group_ids``
+    (-1), the chunk gather's padding values (resident_operands._gather_chunk_arrays). The slot's
+    translated Wavg rectangle is built here with each image's own phases.
+    """
+
+    from relax.sparse_pass2.resident_operands import _gather_rows
+    from relax.sparse_pass2.sparse_pass2_wavg import _relion_cuda_translate_wavg_norm_images
+
+    slot_images = np.asarray(slot_images, dtype=np.int64)
+    valid = jnp.asarray(slot_images >= 0)
+    safe = jnp.asarray(np.where(slot_images >= 0, slot_images, int(np.max(slot_images))), dtype=jnp.int32)
+
+    def take(values, fill=0):
+        return _gather_rows(values, safe, valid, fill=fill)
+
+    processed = take(operands.processed_image_half)
+    translated = jax.lax.map(
+        lambda pair: _relion_cuda_translate_wavg_norm_images(pair[0][None], pair[1], rect_indices, image_shape)[0],
+        (processed, jnp.asarray(angles, dtype=jnp.float32)),
+    )
+    translated = jnp.where(valid[:, None, None], translated, jnp.zeros((), translated.dtype))
+    return operands._replace(
+        score_input=take(operands.score_input),
+        corr_img_score=take(operands.corr_img_score),
+        highres_xi2_half=take(operands.highres_xi2_half),
+        translation_prior=take(operands.translation_prior),
+        recon_image=take(operands.recon_image),
+        recon_weight=take(operands.recon_weight),
+        noise_image=take(operands.noise_image),
+        ctf2_over_nv_recon=take(operands.ctf2_over_nv_recon),
+        direct_ctf_rfloat_recon=take(operands.direct_ctf_rfloat_recon),
+        processed_image_half=processed,
+        relion_norm_high_shell=take(operands.relion_norm_high_shell),
+        raw_translated_wavg_rectangle=translated,
+        raw_translated_wavg_for_atomic=translated[:, :, jnp.asarray(exact_positions, dtype=jnp.int32)],
+        scale=take(operands.scale, fill=1.0),
+        group_ids=take(operands.group_ids, fill=-1),
+        optics_groups=take(operands.optics_groups),
+        image_noise_scale=take(operands.image_noise_scale),
+    )
+
+
+def _fold_slot_carry(full, slot, slot_images, *, image_capacity: int):
+    """Put one slot's per-image M-step partials on their chunk images; carry its volume and noise sums."""
+
+    slot_images = np.asarray(slot_images, dtype=np.int64)
+    # Padded units write past the end and are dropped (an out-of-range positive index, never -1).
+    target = jnp.asarray(np.where(slot_images >= 0, slot_images, int(image_capacity)), dtype=jnp.int32)
+
+    def place(full_values, slot_values):
+        if full_values is None:
+            return None
+        return full_values.at[target].set(slot_values, mode="drop")
+
+    return full._replace(
+        Ft_y=slot.Ft_y,
+        Ft_ctf=slot.Ft_ctf,
+        wavg_triplet_pixels=place(full.wavg_triplet_pixels, slot.wavg_triplet_pixels),
+        noise_shells=full.noise_shells + slot.noise_shells,
+        a2_per_image=place(full.a2_per_image, slot.a2_per_image),
+        xa_per_image=place(full.xa_per_image, slot.xa_per_image),
+    )
 
 
 def row_fine_rot_device(host, row_capacity: int) -> np.ndarray:
@@ -585,13 +680,14 @@ def accumulate_tilt_chunk_terms(
 def tilt_capacity_ladders(row_ladder, image_ladder, *, slot_capacity: int, min_rows: int = 256):
     """The row and unit capacity ladders of a tilt pass.
 
-    A tilt chunk holds ``S * C_R`` projections and ``S * C_U`` images, where the SPA ladders budget
-    ``C_R`` and ``C_B``, so both are divided by the slot count ``S``. Rows are floored to a power of
-    two (the M-step blocks must divide every row capacity) and to at least ``min_rows``; every ladder
-    keeps at least one entry.
+    A tilt chunk projects every row once per image slot (``S * C_R`` projections), so the SPA row ladder
+    is divided by the slot count ``S``; rows are floored to a power of two (the M-step blocks must divide
+    every row capacity) and to at least ``min_rows``. The SPA image ladder is capped by the translated
+    Wavg tile per image; a tilt chunk builds that tile one slot at a time, for its ``C_U`` units'
+    images (run_tilt_chunk), so the image ladder is the unit ladder. Every ladder keeps at least one entry.
     """
 
     slots = max(int(slot_capacity), 1)
     rows = sorted({max(int(min_rows), 1 << max(int(r) // slots, 1).bit_length() - 1) for r in row_ladder})
-    units = sorted({max(1, int(b) // slots) for b in image_ladder})
+    units = sorted({max(1, int(b)) for b in image_ladder})
     return tuple(rows), tuple(units)
