@@ -480,6 +480,54 @@ def _merged_mean_from_halves(means, class_weights=None):
     return jnp.sum(class_weights_jax[:, None] * merged, axis=0), merged
 
 
+def _stable_reconstruction_class(current_size, vol_shape, padding_factor, accumulator_volume_shape, tau_is_1d):
+    """``(physical current size, physical accumulator shape)`` of a stable class, or None.
+
+    With the resident engine's stable Fourier windows on, RELION's
+    reconstruction runs in the current size's physical class: the current-size
+    accumulator is zero-padded to the class's cube and
+    ``post_process_from_filter_v2`` takes the class size as its static bound and
+    RELION's size as the traced ``logical_current_size``, so one program serves
+    the class (recovar 8633a2a24). The padded voxels lie outside every logical
+    support, so the reconstruction is the logical one.
+    """
+
+    from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
+    from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+    from relax.sparse_pass2.resident_pass2 import _resident_stable_windows_requested
+
+    if current_size is None or accumulator_volume_shape is None or not tau_is_1d:
+        return None
+    if not _resident_stable_windows_requested():
+        return None
+    box = int(vol_shape[0])
+    logical = int(current_size)
+    if logical <= 0 or logical >= box:
+        return None
+    logical_shape = tuple(int(v) for v in relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=logical))
+    if logical_shape != tuple(int(v) for v in accumulator_volume_shape):
+        return None
+    physical = int(stable_fourier_window_current_size(logical, box, quantum=stable_fourier_window_quantum()))
+    if physical == logical:
+        return None
+    physical_shape = tuple(int(v) for v in relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=physical))
+    return physical, physical_shape
+
+
+def _pad_accumulator_to_class(values, logical_shape, physical_shape):
+    """Zero-pad a centered full or packed-half (x, y, z>=0) accumulator to a larger odd cube."""
+
+    logical_size, physical_size = int(logical_shape[0]), int(physical_shape[0])
+    pad = (physical_size - logical_size) // 2
+    values = jnp.asarray(values)
+    flat = values.ndim == 1
+    full = int(values.size) == logical_size**3
+    grid = values.reshape((logical_size,) * 3 if full else (logical_size, logical_size, logical_size // 2 + 1))
+    widths = [(pad, pad), (pad, pad), (pad, pad) if full else (0, physical_size // 2 - logical_size // 2)]
+    padded = jnp.pad(grid, widths)
+    return padded.reshape(-1) if flat else padded
+
+
 def _reconstruct_volume_eager(
     Ft_ctf,
     Ft_y,
@@ -517,6 +565,9 @@ def _reconstruct_volume_eager(
         accumulator_volume_shape,
         relion_functions,
     )
+    stable_class = _stable_reconstruction_class(
+        current_size, vol_shape, padding_factor, accumulator_volume_shape, tau_is_1d
+    )
     postprocess_args = (Ft_ctf, Ft_y, vol_shape, padding_factor)
     postprocess_kwargs = dict(
         tau=tau,
@@ -553,6 +604,20 @@ def _reconstruct_volume_eager(
             "RELION reconstruction path"
         )
     if not host_stage_large_ifft:
+        if stable_class is not None:
+            physical_size, physical_shape = stable_class
+            postprocess_args = (
+                _pad_accumulator_to_class(Ft_ctf, accumulator_volume_shape, physical_shape),
+                _pad_accumulator_to_class(Ft_y, accumulator_volume_shape, physical_shape),
+                vol_shape,
+                padding_factor,
+            )
+            postprocess_kwargs = dict(
+                postprocess_kwargs,
+                current_size=int(physical_size),
+                accumulator_volume_shape=physical_shape,
+                logical_current_size=jnp.int32(int(current_size)),
+            )
         result = relion_functions.post_process_from_filter_v2(
             *postprocess_args,
             **postprocess_kwargs,
