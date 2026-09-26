@@ -1657,6 +1657,207 @@
    }
   },
   {
+   "id": "pdb_k1_100k256_noise1_bf80_autorefine_resident_589ce09",
+   "section": "synthetic",
+   "dataset": "pdb_k1_g256_n100000_noise1_bf80_20260516 (resident engine)",
+   "empiar_id": null,
+   "particles": 100000,
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "symmetry": "C1",
+   "classes": 1,
+   "workflow": "auto-refine K=1",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 build_patched (commit f2c1a38), relion_refine_mpi 3 ranks x 4 threads, one GPU, --scratch_dir",
+    "resolution_A": 5.978,
+    "resolution_definition": "scorecard_band",
+    "relion_reported_resolution_A": null,
+    "masked_resolution_A": 4.352,
+    "wall_s": 14851,
+    "wall_definition": "arm-script wall of srun relion_refine_mpi (WALL.json)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 18,
+    "jobs": [
+     "14445854"
+    ],
+    "masked_band_auc": 0.9222,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen"
+   },
+   "relax": {
+    "source_sha": "589ce095c55fcc873089a4fb37887261d6911db9",
+    "source_repo": "relax main (resident engine default since 90c3f63)",
+    "resolution_A": 6.044,
+    "resolution_definition": "scorecard_band",
+    "masked_resolution_A": 4.352,
+    "wall_s": 6472,
+    "wall_definition": "arm-script wall of python relax_run.py end to end, cold JAX cache (WALL.json)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 16,
+    "jobs": [
+     "14445854"
+    ],
+    "masked_band_auc": 0.9215,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen"
+   },
+   "gt": {
+    "metric": "merged GT FSC-AUC (unmasked, full spectrum; k1_completion_band.py with relax's label-aware loaders)",
+    "relion": 0.469886,
+    "relax": 0.490363,
+    "relion_repeats": {
+     "relion_ref": 0.490627,
+     "relion_rep1": 0.469929,
+     "relion_rep2": 0.469911
+    }
+   },
+   "cross_engine": "scorecard rule PASS: thresholds (merged >= 0.95, each half >= 0.90) met against 4 of 4 same-command RELION runs; against this job's RELION arm 0.9904/0.9877/0.9876; RELION-vs-RELION band merged 0.9943-0.9999, halves 0.9929-0.9998 / 0.9928-0.9999",
+   "cross_engine_masked_band_auc": 0.998,
+   "time_ratio_relax_over_relion": 0.44,
+   "matched": "yes",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": true
+   },
+   "notes": [
+    "Replaces the old-engine row removed after the 90c3f63 default switch: relax main 589ce09 with production defaults (resident pass 2, resident local search, device significance; every RELAX_* unset, JAX memory at the production .90).",
+    "Both engines start from relion_refine's inputs only (standalone); relax reads the same reference file as RELION's --ref (reference_init_relion.mrc).",
+    "RELION command: --auto_refine --split_random_halves --i particles.star --ref reference_init_relion.mrc --particle_diameter 200 --ini_high 30 --firstiter_cc --ctf --flatten_solvent --zero_mask --low_resol_join_halves 40 --norm --scale --healpix_order 3 --offset_range 3.0 --offset_step 1.0 --oversampling 1 --pad 2 --pool 3 --random_seed 1775735620.",
+    "Both arms in one job on one node, one H100 and 12 CPUs each, --scratch_dir on node-local /tmp on both, started together.",
+    "Below the RELION-vs-RELION band (reported only; the 2026-09-23 rule gates on thresholds against >= 1 run): recovar__relion_pair:half1_cross_engine_band_auc, recovar__relion_pair:half2_cross_engine_band_auc, recovar__relion_pair:merged_cross_engine_band_auc, recovar__relion_ref:half1_cross_engine_band_auc, recovar__relion_ref:half2_cross_engine_band_auc, recovar__relion_ref:merged_cross_engine_band_auc, recovar__relion_rep1:half1_cross_engine_band_auc, recovar__relion_rep1:half2_cross_engine_band_auc, recovar__relion_rep1:merged_cross_engine_band_auc, recovar__relion_rep2:half1_cross_engine_band_auc, recovar__relion_rep2:half2_cross_engine_band_auc, recovar__relion_rep2:merged_cross_engine_band_auc.",
+    "GT FSC-AUC: relax 0.490363; RELION this job 0.469886, fixture reference 0.490627, repeats 0.469929/0.469911: relax sits with the fixture reference, above this job's arm and the repeats (relax vs reference map FSC-AUC 0.9805, vs this job's arm 0.9709; reference vs this job's arm 0.9847)."
+   ],
+   "null_reasons": {
+    "relion.relion_reported_resolution_A": "not read for this pair"
+   },
+   "evidence": {
+    "run_roots": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/relax",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/relion"
+    ],
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/scores/bench_k1_pdb100k.json",
+    "masked_fsc_json": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/scores/bench_k1_pdb100k_masked/masked_fsc.json"
+    ],
+    "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_k1_pdb100k.sh"
+   },
+   "date": "2026-09-25",
+   "history": [],
+   "time_check": {
+    "a": "RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs). relax: 1 H100, one process, 12 CPUs. Both arms in one --gres=gpu:h100:2 job on one node, started together; no --exclusive.",
+    "b": "relax: main 589ce09 production defaults (every RELAX_* unset, XLA_PYTHON_CLIENT_MEM_FRACTION unset so recovar's .90 applies); standalone start-up; no timing, capture, replay, deterministic-reduction or dump options.",
+    "c": "Both: arm-script wall (WALL.json) around the whole process, including start-up, particle copy to --scratch_dir, compilation (fresh JAX cache) and final writes.",
+    "d": "RELION and relax 14445854 della-h21g4 H100 80GB HBM3 (2026-09-25)."
+   },
+   "mask": {
+    "dataset": "pdb_k1_100k256_c1",
+    "sha256": "74253532c379621cea0f730c89b7245b9f67506d54f8b09a021116e791d316d2"
+   },
+   "cross_engine_by_relion_run": [
+    {
+     "run": "this job's RELION arm",
+     "jobs": [
+      "14445854"
+     ],
+     "merged": 0.9904,
+     "half1": 0.9877,
+     "half2": 0.9876,
+     "masked_merged": 0.998,
+     "masked_half1": 0.9976,
+     "masked_half2": 0.9975,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/scores/masked_vs_relion_pair/masked_fsc.json"
+    },
+    {
+     "run": "fixture reference relion_autorefine_k1_it015_os1",
+     "jobs": [
+      "8314160"
+     ],
+     "merged": 0.994,
+     "half1": 0.992,
+     "half2": 0.9921,
+     "masked_merged": 0.9997,
+     "masked_half1": 0.9994,
+     "masked_half2": 0.9994,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/scores/masked_vs_relion_ref/masked_fsc.json"
+    },
+    {
+     "run": "same-command repeat 1",
+     "jobs": [
+      "14305945"
+     ],
+     "merged": 0.9904,
+     "half1": 0.9877,
+     "half2": 0.9877,
+     "masked_merged": 0.998,
+     "masked_half1": 0.9976,
+     "masked_half2": 0.9975,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/scores/masked_vs_relion_rep1/masked_fsc.json"
+    },
+    {
+     "run": "same-command repeat 2",
+     "jobs": [
+      "14305946"
+     ],
+     "merged": 0.9904,
+     "half1": 0.9877,
+     "half2": 0.9876,
+     "masked_merged": 0.998,
+     "masked_half1": 0.9976,
+     "masked_half2": 0.9975,
+     "meets_thresholds": true,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/scores/masked_vs_relion_rep2/masked_fsc.json"
+    }
+   ],
+   "relion_vs_relion": [
+    {
+     "pair": "this job's RELION arm vs fixture reference relion_autorefine_k1_it015_os1",
+     "merged": 0.9943,
+     "half1": 0.9929,
+     "half2": 0.9928
+    },
+    {
+     "pair": "this job's RELION arm vs same-command repeat 1",
+     "merged": 0.9999,
+     "half1": 0.9998,
+     "half2": 0.9999
+    },
+    {
+     "pair": "this job's RELION arm vs same-command repeat 2",
+     "merged": 0.9999,
+     "half1": 0.9998,
+     "half2": 0.9999
+    },
+    {
+     "pair": "fixture reference relion_autorefine_k1_it015_os1 vs same-command repeat 1",
+     "merged": 0.9943,
+     "half1": 0.9929,
+     "half2": 0.9928
+    },
+    {
+     "pair": "fixture reference relion_autorefine_k1_it015_os1 vs same-command repeat 2",
+     "merged": 0.9943,
+     "half1": 0.9929,
+     "half2": 0.9928
+    },
+    {
+     "pair": "same-command repeat 1 vs same-command repeat 2",
+     "merged": 0.9999,
+     "half1": 0.9998,
+     "half2": 0.9999
+    }
+   ],
+   "gt_band_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/scores/gt_band.json"
+  },
+  {
    "id": "pdb_k4_50k256_class3d_15it_long_tier",
    "section": "synthetic",
    "dataset": "data_pdb_k4_50k_256",
@@ -1794,7 +1995,7 @@
     "gpu_count": 1,
     "iterations": 25,
     "jobs": [
-     "14434518"
+     "14445927"
     ],
     "masked_band_auc": null
    },
@@ -1804,23 +2005,23 @@
     "resolution_A": 13.268,
     "resolution_definition": "engine_current_resolution",
     "masked_resolution_A": null,
-    "wall_s": 472,
+    "wall_s": 437,
     "wall_definition": "arm-script wall of python relax_run.py end to end, cold JAX cache (WALL.json)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 25,
     "jobs": [
-     "14434518"
+     "14445927"
     ],
     "masked_band_auc": null
    },
    "gt": {
     "metric": "mean per-class GT FSC-AUC, masked with the frozen mask (classes matched to GT by Hungarian on unmasked AUC), seed 1775735620",
-    "relion": 0.388478,
+    "relion": 0.387742,
     "relax": 0.389325,
     "relion_band": [
-     0.288775,
-     0.388478
+     0.289979,
+     0.387742
     ],
     "relion_band_runs": [
      "relion_s1775735620",
@@ -1830,31 +2031,31 @@
     "relax_per_seed": {
      "1775735620": 0.389325,
      "29": 0.288637,
-     "41": 0.315725
+     "41": 0.315154
     },
     "relion_per_seed": {
-     "1775735620": 0.388478,
-     "29": 0.288775,
-     "41": 0.310367
+     "1775735620": 0.387742,
+     "29": 0.289979,
+     "41": 0.314844
     },
     "class_accuracy_relax_per_seed": {
      "1775735620": 0.5004,
      "29": 0.5056,
-     "41": 0.5048
+     "41": 0.5038
     },
     "class_accuracy_relion_per_seed": {
-     "1775735620": 0.504,
-     "29": 0.5062,
-     "41": 0.5028
+     "1775735620": 0.5032,
+     "29": 0.5072,
+     "41": 0.5054
     },
     "class_accuracy_relion_band": [
-     0.5028,
-     0.5062
+     0.5032,
+     0.5072
     ]
    },
-   "cross_engine": "same-seed masked relax-vs-RELION FSC-AUC per GT class: seed 1775735620 0.9862/0.9895; seed 29 0.9919/0.9900; seed 41 0.9849/0.9886",
+   "cross_engine": "same-seed masked relax-vs-RELION FSC-AUC per GT class: seed 1775735620 0.9850/0.9880; seed 29 0.9859/0.9877; seed 41 0.9844/0.9854",
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 1.46,
+   "time_ratio_relax_over_relion": 1.35,
    "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
@@ -1867,10 +2068,10 @@
    "notes": [
     "Standalone Class3D from the fixture's reference_init_classes_relion.star on both engines, RELION command --K 2 --tau2_fudge 4 --iter 25 --healpix_order 2 --offset_range 5 --offset_step 2 --particle_diameter 200 --ini_high 60 --firstiter_cc --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --random_seed <seed>; relax the same settings with production defaults (no RELAX_* overrides).",
     "Three seeds (1775735620, 29, 41), each one Slurm job with three arms started together on one node: relax resident (5cf5505), relax compact (main 8b82249), RELION; one H100 and 12 CPUs per arm, --scratch_dir on node-local /tmp on every arm. The row's resolution and walls are seed 1775735620.",
-    "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.3893 / RELION 0.3885, class accuracy 0.5004 / 0.5040, masked relax-vs-RELION per GT class 0.9862/0.9895, walls relax 472 s / RELION 323 s; seed 29: masked mean GT FSC-AUC relax 0.2886 / RELION 0.2888, class accuracy 0.5056 / 0.5062, masked relax-vs-RELION per GT class 0.9919/0.9900, walls relax 445 s / RELION 326 s; seed 41: masked mean GT FSC-AUC relax 0.3157 / RELION 0.3104, class accuracy 0.5048 / 0.5028, masked relax-vs-RELION per GT class 0.9849/0.9886, walls relax 454 s / RELION 324 s.",
-    "RELION band (all RELION runs of this command, 3: relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.2888-0.3885, class accuracy 0.5028-0.5062.",
+    "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.3893 / RELION 0.3877, class accuracy 0.5004 / 0.5032, masked relax-vs-RELION per GT class 0.9850/0.9880, walls relax 437 s / RELION 323 s; seed 29: masked mean GT FSC-AUC relax 0.2886 / RELION 0.2900, class accuracy 0.5056 / 0.5072, masked relax-vs-RELION per GT class 0.9859/0.9877, walls relax 435 s / RELION 325 s; seed 41: masked mean GT FSC-AUC relax 0.3152 / RELION 0.3148, class accuracy 0.5038 / 0.5054, masked relax-vs-RELION per GT class 0.9844/0.9854, walls relax 441 s / RELION 325 s.",
+    "RELION band (all RELION runs of this command, 3: relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.2900-0.3877, class accuracy 0.5032-0.5072.",
     "The compact engine ran in the same jobs (its own row).",
-    "relax walls ran with a 42 GB JAX memory cap (XLA_PYTHON_CLIENT_MEM_FRACTION=.50 inherited from the submitting shell, found 2026-09-25 after these runs); quality is unaffected by the cap, the walls may be pessimistic for relax."
+    "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 1.34-1.36x over the three seeds."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
@@ -1889,12 +2090,30 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py"
    },
    "date": "2026-09-25",
-   "history": [],
+   "history": [
+    {
+     "date": "2026-09-25",
+     "note": "first run of the same three seeds with every relax arm capped at 42 of 80 GB (XLA_PYTHON_CLIENT_MEM_FRACTION=.50 inherited from the submitting shell); quality matched this run, walls below",
+     "relax_wall_s": {
+      "1775735620": 472,
+      "29": 445,
+      "41": 454
+     },
+     "relion_wall_s": {
+      "1775735620": 323,
+      "29": 326,
+      "41": 324
+     },
+     "jobs": [
+      "14434518"
+     ]
+    }
+   ],
    "time_check": {
     "a": "RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs). relax: 1 H100, one process, 12 CPUs. All arms in one --gres=gpu:h100:3 job on one node, started together; no --exclusive.",
-    "b": "relax: production defaults (every RELAX_* variable unset), standalone start-up, no timing, capture, replay, deterministic-reduction or dump options; engine per pass confirmed from pass2_engine_trajectory. Caveat: every relax arm inherited XLA_PYTHON_CLIENT_MEM_FRACTION=.50 from the submitting shell, so JAX's GPU pool and relax's batch planner saw 42 of the H100's 80 GB (production default .90); the relax walls are measured under that cap. RELION is unaffected.",
+    "b": "relax: production defaults (every RELAX_* variable unset; XLA_PYTHON_CLIENT_MEM_FRACTION unset so recovar's .90 applies), standalone start-up, no timing, capture, replay, deterministic-reduction or dump options; engine per pass confirmed from pass2_engine_trajectory.",
     "c": "Both: arm-script wall (WALL.json) around the whole process, including start-up, particle copy to --scratch_dir, compilation (fresh JAX cache) and final writes.",
-    "d": "RELION and relax arms of each seed in one job: 14434518 della-h21g4, 14434518 della-h21g4, 14434518 della-h21g4 (H100 80GB HBM3, nvidia-smi GPU.csv)."
+    "d": "RELION and relax arms of each seed in one job: 14445927 della-h20g5, 14445927 della-h20g5, 14445927 della-h20g5 (H100 80GB HBM3, nvidia-smi GPU.csv)."
    },
    "mask": {
     "dataset": "pdb_k2_5k128_c1",
@@ -1926,7 +2145,7 @@
     "gpu_count": 1,
     "iterations": 25,
     "jobs": [
-     "14434518"
+     "14445927"
     ],
     "masked_band_auc": null
    },
@@ -1936,23 +2155,23 @@
     "resolution_A": 13.268,
     "resolution_definition": "engine_current_resolution",
     "masked_resolution_A": null,
-    "wall_s": 658,
+    "wall_s": 652,
     "wall_definition": "arm-script wall of python relax_run.py end to end, cold JAX cache (WALL.json)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 25,
     "jobs": [
-     "14434518"
+     "14445927"
     ],
     "masked_band_auc": null
    },
    "gt": {
     "metric": "mean per-class GT FSC-AUC, masked with the frozen mask (classes matched to GT by Hungarian on unmasked AUC), seed 1775735620",
-    "relion": 0.388478,
+    "relion": 0.387742,
     "relax": 0.389325,
     "relion_band": [
-     0.288775,
-     0.388478
+     0.289979,
+     0.387742
     ],
     "relion_band_runs": [
      "relion_s1775735620",
@@ -1965,9 +2184,9 @@
      "41": 0.315154
     },
     "relion_per_seed": {
-     "1775735620": 0.388478,
-     "29": 0.288775,
-     "41": 0.310367
+     "1775735620": 0.387742,
+     "29": 0.289979,
+     "41": 0.314844
     },
     "class_accuracy_relax_per_seed": {
      "1775735620": 0.5004,
@@ -1975,18 +2194,18 @@
      "41": 0.5038
     },
     "class_accuracy_relion_per_seed": {
-     "1775735620": 0.504,
-     "29": 0.5062,
-     "41": 0.5028
+     "1775735620": 0.5032,
+     "29": 0.5072,
+     "41": 0.5054
     },
     "class_accuracy_relion_band": [
-     0.5028,
-     0.5062
+     0.5032,
+     0.5072
     ]
    },
-   "cross_engine": "same-seed masked relax-vs-RELION FSC-AUC per GT class: seed 1775735620 0.9862/0.9895; seed 29 0.9919/0.9900; seed 41 0.9871/0.9903",
+   "cross_engine": "same-seed masked relax-vs-RELION FSC-AUC per GT class: seed 1775735620 0.9850/0.9880; seed 29 0.9859/0.9877; seed 41 0.9844/0.9854",
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 2.04,
+   "time_ratio_relax_over_relion": 2.02,
    "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
@@ -1999,10 +2218,10 @@
    "notes": [
     "Standalone Class3D from the fixture's reference_init_classes_relion.star on both engines, RELION command --K 2 --tau2_fudge 4 --iter 25 --healpix_order 2 --offset_range 5 --offset_step 2 --particle_diameter 200 --ini_high 60 --firstiter_cc --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --random_seed <seed>; relax the same settings with production defaults (no RELAX_* overrides).",
     "Three seeds (1775735620, 29, 41), each one Slurm job with three arms started together on one node: relax resident (5cf5505), relax compact (main 8b82249), RELION; one H100 and 12 CPUs per arm, --scratch_dir on node-local /tmp on every arm. The row's resolution and walls are seed 1775735620.",
-    "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.3893 / RELION 0.3885, class accuracy 0.5004 / 0.5040, masked relax-vs-RELION per GT class 0.9862/0.9895, walls relax 658 s / RELION 323 s; seed 29: masked mean GT FSC-AUC relax 0.2886 / RELION 0.2888, class accuracy 0.5056 / 0.5062, masked relax-vs-RELION per GT class 0.9919/0.9900, walls relax 613 s / RELION 326 s; seed 41: masked mean GT FSC-AUC relax 0.3152 / RELION 0.3104, class accuracy 0.5038 / 0.5028, masked relax-vs-RELION per GT class 0.9871/0.9903, walls relax 617 s / RELION 324 s.",
-    "RELION band (all RELION runs of this command, 3: relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.2888-0.3885, class accuracy 0.5028-0.5062.",
+    "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.3893 / RELION 0.3877, class accuracy 0.5004 / 0.5032, masked relax-vs-RELION per GT class 0.9850/0.9880, walls relax 652 s / RELION 323 s; seed 29: masked mean GT FSC-AUC relax 0.2886 / RELION 0.2900, class accuracy 0.5056 / 0.5072, masked relax-vs-RELION per GT class 0.9859/0.9877, walls relax 611 s / RELION 325 s; seed 41: masked mean GT FSC-AUC relax 0.3152 / RELION 0.3148, class accuracy 0.5038 / 0.5054, masked relax-vs-RELION per GT class 0.9844/0.9854, walls relax 616 s / RELION 325 s.",
+    "RELION band (all RELION runs of this command, 3: relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.2900-0.3877, class accuracy 0.5032-0.5072.",
     "The resident engine ran in the same jobs (its own row).",
-    "relax walls ran with a 42 GB JAX memory cap (XLA_PYTHON_CLIENT_MEM_FRACTION=.50 inherited from the submitting shell, found 2026-09-25 after these runs); quality is unaffected by the cap, the walls may be pessimistic for relax."
+    "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 1.88-2.02x over the three seeds."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
@@ -2021,12 +2240,30 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py"
    },
    "date": "2026-09-25",
-   "history": [],
+   "history": [
+    {
+     "date": "2026-09-25",
+     "note": "first run of the same three seeds with every relax arm capped at 42 of 80 GB (XLA_PYTHON_CLIENT_MEM_FRACTION=.50 inherited from the submitting shell); quality matched this run, walls below",
+     "relax_wall_s": {
+      "1775735620": 658,
+      "29": 613,
+      "41": 617
+     },
+     "relion_wall_s": {
+      "1775735620": 323,
+      "29": 326,
+      "41": 324
+     },
+     "jobs": [
+      "14434518"
+     ]
+    }
+   ],
    "time_check": {
     "a": "RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs). relax: 1 H100, one process, 12 CPUs. All arms in one --gres=gpu:h100:3 job on one node, started together; no --exclusive.",
-    "b": "relax: production defaults (every RELAX_* variable unset), standalone start-up, no timing, capture, replay, deterministic-reduction or dump options; engine per pass confirmed from pass2_engine_trajectory. Caveat: every relax arm inherited XLA_PYTHON_CLIENT_MEM_FRACTION=.50 from the submitting shell, so JAX's GPU pool and relax's batch planner saw 42 of the H100's 80 GB (production default .90); the relax walls are measured under that cap. RELION is unaffected.",
+    "b": "relax: production defaults (every RELAX_* variable unset; XLA_PYTHON_CLIENT_MEM_FRACTION unset so recovar's .90 applies), standalone start-up, no timing, capture, replay, deterministic-reduction or dump options; engine per pass confirmed from pass2_engine_trajectory.",
     "c": "Both: arm-script wall (WALL.json) around the whole process, including start-up, particle copy to --scratch_dir, compilation (fresh JAX cache) and final writes.",
-    "d": "RELION and relax arms of each seed in one job: 14434518 della-h21g4, 14434518 della-h21g4, 14434518 della-h21g4 (H100 80GB HBM3, nvidia-smi GPU.csv)."
+    "d": "RELION and relax arms of each seed in one job: 14445927 della-h20g5, 14445927 della-h20g5, 14445927 della-h20g5 (H100 80GB HBM3, nvidia-smi GPU.csv)."
    },
    "mask": {
     "dataset": "pdb_k2_5k128_c1",
@@ -2052,15 +2289,15 @@
     "resolution_definition": "engine_current_resolution",
     "relion_reported_resolution_A": 16.0,
     "masked_resolution_A": null,
-    "wall_s": 383,
+    "wall_s": 382,
     "wall_definition": "arm-script wall of srun relion_refine_mpi (WALL.json)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 25,
     "jobs": [
-     "14434519",
-     "14434520",
-     "14434521"
+     "14445924",
+     "14445925",
+     "14445926"
     ],
     "masked_band_auc": null
    },
@@ -2070,25 +2307,25 @@
     "resolution_A": 16.485,
     "resolution_definition": "engine_current_resolution",
     "masked_resolution_A": null,
-    "wall_s": 578,
+    "wall_s": 561,
     "wall_definition": "arm-script wall of python relax_run.py end to end, cold JAX cache (WALL.json)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 25,
     "jobs": [
-     "14434519",
-     "14434520",
-     "14434521"
+     "14445924",
+     "14445925",
+     "14445926"
     ],
     "masked_band_auc": null
    },
    "gt": {
     "metric": "mean per-class GT FSC-AUC, masked with the frozen mask (classes matched to GT by Hungarian on unmasked AUC), seed 1775735620",
-    "relion": 0.495684,
+    "relion": 0.49557,
     "relax": 0.492991,
     "relion_band": [
-     0.478667,
-     0.497221
+     0.477781,
+     0.49678
     ],
     "relion_band_runs": [
      "relion_s1775735620",
@@ -2101,9 +2338,9 @@
      "41": 0.49444
     },
     "relion_per_seed": {
-     "1775735620": 0.495684,
-     "29": 0.478667,
-     "41": 0.497221
+     "1775735620": 0.49557,
+     "29": 0.477781,
+     "41": 0.49678
     },
     "class_accuracy_relax_per_seed": {
      "1775735620": 0.9806,
@@ -2111,18 +2348,18 @@
      "41": 0.9816
     },
     "class_accuracy_relion_per_seed": {
-     "1775735620": 0.9918,
-     "29": 0.9936,
-     "41": 0.9918
+     "1775735620": 0.9922,
+     "29": 0.9932,
+     "41": 0.991
     },
     "class_accuracy_relion_band": [
-     0.9918,
-     0.9936
+     0.991,
+     0.9932
     ]
    },
-   "cross_engine": "same-seed masked relax-vs-RELION FSC-AUC per GT class: seed 1775735620 0.8564/0.9692/0.9828/0.9869; seed 29 0.8923/0.9719/0.9703/0.9814; seed 41 0.8663/0.9574/0.9765/0.9846",
+   "cross_engine": "same-seed masked relax-vs-RELION FSC-AUC per GT class: seed 1775735620 0.8738/0.9663/0.9779/0.9839; seed 29 0.8992/0.9579/0.9631/0.9841; seed 41 0.8507/0.9617/0.9614/0.9831",
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 1.51,
+   "time_ratio_relax_over_relion": 1.47,
    "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
@@ -2135,11 +2372,11 @@
    "notes": [
     "Standalone Class3D from the fixture's reference_init_classes_relion.star on both engines, RELION command --K 4 --tau2_fudge 4 --iter 25 --healpix_order 2 --offset_range 5 --offset_step 2 --particle_diameter 200 --ini_high 60 --firstiter_cc --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --random_seed <seed>; relax the same settings with production defaults (no RELAX_* overrides).",
     "Three seeds (1775735620, 29, 41), each one Slurm job with three arms started together on one node: relax resident (5cf5505), relax compact (main 8b82249), RELION; one H100 and 12 CPUs per arm, --scratch_dir on node-local /tmp on every arm. The row's resolution and walls are seed 1775735620.",
-    "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.4930 / RELION 0.4957, class accuracy 0.9806 / 0.9918, masked relax-vs-RELION per GT class 0.8564/0.9692/0.9828/0.9869, walls relax 578 s / RELION 383 s; seed 29: masked mean GT FSC-AUC relax 0.4761 / RELION 0.4787, class accuracy 0.9764 / 0.9936, masked relax-vs-RELION per GT class 0.8923/0.9719/0.9703/0.9814, walls relax 581 s / RELION 385 s; seed 41: masked mean GT FSC-AUC relax 0.4944 / RELION 0.4972, class accuracy 0.9816 / 0.9918, masked relax-vs-RELION per GT class 0.8663/0.9574/0.9765/0.9846, walls relax 585 s / RELION 380 s.",
-    "RELION band (all RELION runs of this command, 3: relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.4787-0.4972, class accuracy 0.9918-0.9936.",
+    "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.4930 / RELION 0.4956, class accuracy 0.9806 / 0.9922, masked relax-vs-RELION per GT class 0.8738/0.9663/0.9779/0.9839, walls relax 561 s / RELION 382 s; seed 29: masked mean GT FSC-AUC relax 0.4761 / RELION 0.4778, class accuracy 0.9764 / 0.9932, masked relax-vs-RELION per GT class 0.8992/0.9579/0.9631/0.9841, walls relax 575 s / RELION 390 s; seed 41: masked mean GT FSC-AUC relax 0.4944 / RELION 0.4968, class accuracy 0.9816 / 0.9910, masked relax-vs-RELION per GT class 0.8507/0.9617/0.9614/0.9831, walls relax 577 s / RELION 383 s.",
+    "RELION band (all RELION runs of this command, 3: relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.4778-0.4968, class accuracy 0.9910-0.9932.",
     "The compact engine ran in the same jobs (its own row).",
-    "OPEN: relax below RELION's band in class accuracy and masked AUC, both engines (identical numbers per seed): class accuracy relax 0.9806/0.9764/0.9816 vs RELION 0.9918/0.9936/0.9918, masked mean GT FSC-AUC about 0.0026 lower per seed; the fixture schedule (8 iterations, hp1, offset 6/2, ini_high 30) matches RELION to 1e-5. Reported to kclass 2026-09-25.",
-    "relax walls ran with a 42 GB JAX memory cap (XLA_PYTHON_CLIENT_MEM_FRACTION=.50 inherited from the submitting shell, found 2026-09-25 after these runs); quality is unaffected by the cap, the walls may be pessimistic for relax."
+    "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 1.47-1.51x over the three seeds.",
+    "OPEN: relax below RELION's band in class accuracy and masked AUC, both engines: class accuracy relax 0.9806/0.9764/0.9816 vs RELION 0.9922/0.9932/0.9910; the fixture schedule (8 iterations, hp1, offset 6/2, ini_high 30) matches RELION to 1e-5. Reported to kclass 2026-09-25."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
@@ -2158,12 +2395,32 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py"
    },
    "date": "2026-09-25",
-   "history": [],
+   "history": [
+    {
+     "date": "2026-09-25",
+     "note": "first run of the same three seeds with every relax arm capped at 42 of 80 GB (XLA_PYTHON_CLIENT_MEM_FRACTION=.50 inherited from the submitting shell); quality matched this run, walls below",
+     "relax_wall_s": {
+      "1775735620": 578,
+      "29": 581,
+      "41": 585
+     },
+     "relion_wall_s": {
+      "1775735620": 383,
+      "29": 385,
+      "41": 380
+     },
+     "jobs": [
+      "14434519",
+      "14434520",
+      "14434521"
+     ]
+    }
+   ],
    "time_check": {
     "a": "RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs). relax: 1 H100, one process, 12 CPUs. All arms in one --gres=gpu:h100:3 job on one node, started together; no --exclusive.",
-    "b": "relax: production defaults (every RELAX_* variable unset), standalone start-up, no timing, capture, replay, deterministic-reduction or dump options; engine per pass confirmed from pass2_engine_trajectory. Caveat: every relax arm inherited XLA_PYTHON_CLIENT_MEM_FRACTION=.50 from the submitting shell, so JAX's GPU pool and relax's batch planner saw 42 of the H100's 80 GB (production default .90); the relax walls are measured under that cap. RELION is unaffected.",
+    "b": "relax: production defaults (every RELAX_* variable unset; XLA_PYTHON_CLIENT_MEM_FRACTION unset so recovar's .90 applies), standalone start-up, no timing, capture, replay, deterministic-reduction or dump options; engine per pass confirmed from pass2_engine_trajectory.",
     "c": "Both: arm-script wall (WALL.json) around the whole process, including start-up, particle copy to --scratch_dir, compilation (fresh JAX cache) and final writes.",
-    "d": "RELION and relax arms of each seed in one job: 14434519 della-h20g3, 14434520 della-h20g5, 14434521 della-h20g3 (H100 80GB HBM3, nvidia-smi GPU.csv)."
+    "d": "RELION and relax arms of each seed in one job: 14445924 della-h21g3, 14445925 della-h21g1, 14445926 della-h19g4 (H100 80GB HBM3, nvidia-smi GPU.csv)."
    },
    "mask": {
     "dataset": "pdb_k4_5k128_c1",
@@ -2171,7 +2428,7 @@
    },
    "result_marker": {
     "symbol": "*",
-    "note": "OPEN: class accuracy against GT is below the RELION band at all three seeds (relax 0.9806/0.9764/0.9816, RELION 0.9918/0.9936/0.9918) and the masked mean GT FSC-AUC is about 0.0026 lower per seed; resident and compact agree, so the gap is not engine-specific."
+    "note": "OPEN: class accuracy against GT below the RELION band at all three seeds (relax 0.9806/0.9764/0.9816, RELION 0.9922/0.9932/0.9910), masked mean GT FSC-AUC lower per seed; resident and compact agree, so the gap is not engine-specific."
    }
   },
   {
@@ -2193,15 +2450,15 @@
     "resolution_definition": "engine_current_resolution",
     "relion_reported_resolution_A": 16.0,
     "masked_resolution_A": null,
-    "wall_s": 383,
+    "wall_s": 382,
     "wall_definition": "arm-script wall of srun relion_refine_mpi (WALL.json)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 25,
     "jobs": [
-     "14434519",
-     "14434520",
-     "14434521"
+     "14445924",
+     "14445925",
+     "14445926"
     ],
     "masked_band_auc": null
    },
@@ -2211,25 +2468,25 @@
     "resolution_A": 16.485,
     "resolution_definition": "engine_current_resolution",
     "masked_resolution_A": null,
-    "wall_s": 997,
+    "wall_s": 1006,
     "wall_definition": "arm-script wall of python relax_run.py end to end, cold JAX cache (WALL.json)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 25,
     "jobs": [
-     "14434519",
-     "14434520",
-     "14434521"
+     "14445924",
+     "14445925",
+     "14445926"
     ],
     "masked_band_auc": null
    },
    "gt": {
     "metric": "mean per-class GT FSC-AUC, masked with the frozen mask (classes matched to GT by Hungarian on unmasked AUC), seed 1775735620",
-    "relion": 0.495684,
+    "relion": 0.49557,
     "relax": 0.492991,
     "relion_band": [
-     0.478667,
-     0.497221
+     0.477781,
+     0.49678
     ],
     "relion_band_runs": [
      "relion_s1775735620",
@@ -2238,13 +2495,13 @@
     ],
     "relax_per_seed": {
      "1775735620": 0.492991,
-     "29": 0.476104,
+     "29": 0.476103,
      "41": 0.49444
     },
     "relion_per_seed": {
-     "1775735620": 0.495684,
-     "29": 0.478667,
-     "41": 0.497221
+     "1775735620": 0.49557,
+     "29": 0.477781,
+     "41": 0.49678
     },
     "class_accuracy_relax_per_seed": {
      "1775735620": 0.9806,
@@ -2252,18 +2509,18 @@
      "41": 0.9816
     },
     "class_accuracy_relion_per_seed": {
-     "1775735620": 0.9918,
-     "29": 0.9936,
-     "41": 0.9918
+     "1775735620": 0.9922,
+     "29": 0.9932,
+     "41": 0.991
     },
     "class_accuracy_relion_band": [
-     0.9918,
-     0.9936
+     0.991,
+     0.9932
     ]
    },
-   "cross_engine": "same-seed masked relax-vs-RELION FSC-AUC per GT class: seed 1775735620 0.8564/0.9692/0.9828/0.9869; seed 29 0.8923/0.9719/0.9703/0.9814; seed 41 0.8663/0.9574/0.9765/0.9846",
+   "cross_engine": "same-seed masked relax-vs-RELION FSC-AUC per GT class: seed 1775735620 0.8738/0.9663/0.9779/0.9839; seed 29 0.8992/0.9579/0.9631/0.9841; seed 41 0.8507/0.9617/0.9614/0.9831",
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 2.6,
+   "time_ratio_relax_over_relion": 2.63,
    "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
@@ -2276,11 +2533,11 @@
    "notes": [
     "Standalone Class3D from the fixture's reference_init_classes_relion.star on both engines, RELION command --K 4 --tau2_fudge 4 --iter 25 --healpix_order 2 --offset_range 5 --offset_step 2 --particle_diameter 200 --ini_high 60 --firstiter_cc --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --random_seed <seed>; relax the same settings with production defaults (no RELAX_* overrides).",
     "Three seeds (1775735620, 29, 41), each one Slurm job with three arms started together on one node: relax resident (5cf5505), relax compact (main 8b82249), RELION; one H100 and 12 CPUs per arm, --scratch_dir on node-local /tmp on every arm. The row's resolution and walls are seed 1775735620.",
-    "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.4930 / RELION 0.4957, class accuracy 0.9806 / 0.9918, masked relax-vs-RELION per GT class 0.8564/0.9692/0.9828/0.9869, walls relax 997 s / RELION 383 s; seed 29: masked mean GT FSC-AUC relax 0.4761 / RELION 0.4787, class accuracy 0.9764 / 0.9936, masked relax-vs-RELION per GT class 0.8923/0.9719/0.9703/0.9814, walls relax 1014 s / RELION 385 s; seed 41: masked mean GT FSC-AUC relax 0.4944 / RELION 0.4972, class accuracy 0.9816 / 0.9918, masked relax-vs-RELION per GT class 0.8663/0.9574/0.9765/0.9846, walls relax 1010 s / RELION 380 s.",
-    "RELION band (all RELION runs of this command, 3: relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.4787-0.4972, class accuracy 0.9918-0.9936.",
+    "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.4930 / RELION 0.4956, class accuracy 0.9806 / 0.9922, masked relax-vs-RELION per GT class 0.8738/0.9663/0.9779/0.9839, walls relax 1006 s / RELION 382 s; seed 29: masked mean GT FSC-AUC relax 0.4761 / RELION 0.4778, class accuracy 0.9764 / 0.9932, masked relax-vs-RELION per GT class 0.8992/0.9579/0.9631/0.9841, walls relax 1009 s / RELION 390 s; seed 41: masked mean GT FSC-AUC relax 0.4944 / RELION 0.4968, class accuracy 0.9816 / 0.9910, masked relax-vs-RELION per GT class 0.8507/0.9617/0.9614/0.9831, walls relax 1014 s / RELION 383 s.",
+    "RELION band (all RELION runs of this command, 3: relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.4778-0.4968, class accuracy 0.9910-0.9932.",
     "The resident engine ran in the same jobs (its own row).",
-    "OPEN: relax below RELION's band in class accuracy and masked AUC, both engines (identical numbers per seed): class accuracy relax 0.9806/0.9764/0.9816 vs RELION 0.9918/0.9936/0.9918, masked mean GT FSC-AUC about 0.0026 lower per seed; the fixture schedule (8 iterations, hp1, offset 6/2, ini_high 30) matches RELION to 1e-5. Reported to kclass 2026-09-25.",
-    "relax walls ran with a 42 GB JAX memory cap (XLA_PYTHON_CLIENT_MEM_FRACTION=.50 inherited from the submitting shell, found 2026-09-25 after these runs); quality is unaffected by the cap, the walls may be pessimistic for relax."
+    "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 2.59-2.65x over the three seeds.",
+    "OPEN: relax below RELION's band in class accuracy and masked AUC, both engines: class accuracy relax 0.9806/0.9764/0.9816 vs RELION 0.9922/0.9932/0.9910; the fixture schedule (8 iterations, hp1, offset 6/2, ini_high 30) matches RELION to 1e-5. Reported to kclass 2026-09-25."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
@@ -2299,12 +2556,32 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py"
    },
    "date": "2026-09-25",
-   "history": [],
+   "history": [
+    {
+     "date": "2026-09-25",
+     "note": "first run of the same three seeds with every relax arm capped at 42 of 80 GB (XLA_PYTHON_CLIENT_MEM_FRACTION=.50 inherited from the submitting shell); quality matched this run, walls below",
+     "relax_wall_s": {
+      "1775735620": 997,
+      "29": 1014,
+      "41": 1010
+     },
+     "relion_wall_s": {
+      "1775735620": 383,
+      "29": 385,
+      "41": 380
+     },
+     "jobs": [
+      "14434519",
+      "14434520",
+      "14434521"
+     ]
+    }
+   ],
    "time_check": {
     "a": "RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs). relax: 1 H100, one process, 12 CPUs. All arms in one --gres=gpu:h100:3 job on one node, started together; no --exclusive.",
-    "b": "relax: production defaults (every RELAX_* variable unset), standalone start-up, no timing, capture, replay, deterministic-reduction or dump options; engine per pass confirmed from pass2_engine_trajectory. Caveat: every relax arm inherited XLA_PYTHON_CLIENT_MEM_FRACTION=.50 from the submitting shell, so JAX's GPU pool and relax's batch planner saw 42 of the H100's 80 GB (production default .90); the relax walls are measured under that cap. RELION is unaffected.",
+    "b": "relax: production defaults (every RELAX_* variable unset; XLA_PYTHON_CLIENT_MEM_FRACTION unset so recovar's .90 applies), standalone start-up, no timing, capture, replay, deterministic-reduction or dump options; engine per pass confirmed from pass2_engine_trajectory.",
     "c": "Both: arm-script wall (WALL.json) around the whole process, including start-up, particle copy to --scratch_dir, compilation (fresh JAX cache) and final writes.",
-    "d": "RELION and relax arms of each seed in one job: 14434519 della-h20g3, 14434520 della-h20g5, 14434521 della-h20g3 (H100 80GB HBM3, nvidia-smi GPU.csv)."
+    "d": "RELION and relax arms of each seed in one job: 14445924 della-h21g3, 14445925 della-h21g1, 14445926 della-h19g4 (H100 80GB HBM3, nvidia-smi GPU.csv)."
    },
    "mask": {
     "dataset": "pdb_k4_5k128_c1",
@@ -2312,7 +2589,7 @@
    },
    "result_marker": {
     "symbol": "*",
-    "note": "OPEN: class accuracy against GT is below the RELION band at all three seeds (relax 0.9806/0.9764/0.9816, RELION 0.9918/0.9936/0.9918) and the masked mean GT FSC-AUC is about 0.0026 lower per seed; resident and compact agree, so the gap is not engine-specific."
+    "note": "OPEN: class accuracy against GT below the RELION band at all three seeds (relax 0.9806/0.9764/0.9816, RELION 0.9922/0.9932/0.9910), masked mean GT FSC-AUC lower per seed; resident and compact agree, so the gap is not engine-specific."
    }
   },
   {
@@ -2334,15 +2611,15 @@
     "resolution_definition": "engine_current_resolution",
     "relion_reported_resolution_A": 14.703,
     "masked_resolution_A": null,
-    "wall_s": 1673,
+    "wall_s": 1650,
     "wall_definition": "arm-script wall of srun relion_refine_mpi (WALL.json)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 15,
     "jobs": [
-     "14434465",
-     "14434466",
-     "14434467"
+     "14445921",
+     "14445922",
+     "14445923"
     ],
     "masked_band_auc": null
    },
@@ -2352,25 +2629,25 @@
     "resolution_A": 14.703,
     "resolution_definition": "engine_current_resolution",
     "masked_resolution_A": null,
-    "wall_s": 1682,
+    "wall_s": 1632,
     "wall_definition": "arm-script wall of python relax_run.py end to end, cold JAX cache (WALL.json)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 15,
     "jobs": [
-     "14434465",
-     "14434466",
-     "14434467"
+     "14445921",
+     "14445922",
+     "14445923"
     ],
     "masked_band_auc": null
    },
    "gt": {
     "metric": "mean per-class GT FSC-AUC, masked with the frozen mask (classes matched to GT by Hungarian on unmasked AUC), seed 1775735620",
-    "relion": 0.240821,
-    "relax": 0.24085,
+    "relion": 0.240814,
+    "relax": 0.240801,
     "relion_band": [
-     0.239756,
-     0.241095
+     0.239703,
+     0.241085
     ],
     "relion_band_runs": [
      "relion_fixture",
@@ -2380,33 +2657,33 @@
      "relion_s41"
     ],
     "relax_per_seed": {
-     "1775735620": 0.24085,
-     "29": 0.239757,
-     "41": 0.241066
+     "1775735620": 0.240801,
+     "29": 0.239684,
+     "41": 0.241085
     },
     "relion_per_seed": {
-     "1775735620": 0.240821,
-     "29": 0.239756,
-     "41": 0.241095
+     "1775735620": 0.240814,
+     "29": 0.239703,
+     "41": 0.241085
     },
     "class_accuracy_relax_per_seed": {
-     "1775735620": 0.87502,
-     "29": 0.8778,
-     "41": 0.87524
-    },
-    "class_accuracy_relion_per_seed": {
-     "1775735620": 0.87506,
-     "29": 0.87808,
+     "1775735620": 0.87488,
+     "29": 0.87792,
      "41": 0.87506
     },
+    "class_accuracy_relion_per_seed": {
+     "1775735620": 0.87534,
+     "29": 0.87814,
+     "41": 0.8752
+    },
     "class_accuracy_relion_band": [
-     0.87506,
-     0.87808
+     0.87512,
+     0.87814
     ]
    },
-   "cross_engine": "same-seed masked relax-vs-RELION FSC-AUC per GT class: seed 1775735620 0.9818/0.9961/0.9962/0.9990; seed 29 0.9850/0.9946/0.9953/0.9987; seed 41 0.9845/0.9961/0.9967/0.9990",
+   "cross_engine": "same-seed masked relax-vs-RELION FSC-AUC per GT class: seed 1775735620 0.9823/0.9957/0.9956/0.9990; seed 29 0.9820/0.9951/0.9956/0.9990; seed 41 0.9838/0.9962/0.9963/0.9990",
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 1.01,
+   "time_ratio_relax_over_relion": 0.99,
    "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
@@ -2419,11 +2696,10 @@
    "notes": [
     "Standalone Class3D from the fixture's reference_init_classes_relion.star on both engines, RELION command --K 4 --tau2_fudge 4 --iter 15 --healpix_order 1 --offset_range 6 --offset_step 2 --particle_diameter 200 --ini_high 30 --firstiter_cc --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --random_seed <seed>; relax the same settings with production defaults (no RELAX_* overrides).",
     "Three seeds (1775735620, 29, 41), each one Slurm job with three arms started together on one node: relax resident (5cf5505), relax compact (main 8b82249), RELION; one H100 and 12 CPUs per arm, --scratch_dir on node-local /tmp on every arm. The row's resolution and walls are seed 1775735620.",
-    "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.2409 / RELION 0.2408, class accuracy 0.8750 / 0.8751, masked relax-vs-RELION per GT class 0.9818/0.9961/0.9962/0.9990, walls relax 1682 s / RELION 1673 s; seed 29: masked mean GT FSC-AUC relax 0.2398 / RELION 0.2398, class accuracy 0.8778 / 0.8781, masked relax-vs-RELION per GT class 0.9850/0.9946/0.9953/0.9987, walls relax 1675 s / RELION 1695 s; seed 41: masked mean GT FSC-AUC relax 0.2411 / RELION 0.2411, class accuracy 0.8752 / 0.8751, masked relax-vs-RELION per GT class 0.9845/0.9961/0.9967/0.9990, walls relax 1645 s / RELION 1709 s.",
-    "RELION band (all RELION runs of this command, 5: relion_fixture, relion_prior_repeat_0, relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.2398-0.2411, class accuracy 0.8751-0.8781.",
+    "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.2408 / RELION 0.2408, class accuracy 0.8749 / 0.8753, masked relax-vs-RELION per GT class 0.9823/0.9957/0.9956/0.9990, walls relax 1632 s / RELION 1650 s; seed 29: masked mean GT FSC-AUC relax 0.2397 / RELION 0.2397, class accuracy 0.8779 / 0.8781, masked relax-vs-RELION per GT class 0.9820/0.9951/0.9956/0.9990, walls relax 1650 s / RELION 1632 s; seed 41: masked mean GT FSC-AUC relax 0.2411 / RELION 0.2411, class accuracy 0.8751 / 0.8752, masked relax-vs-RELION per GT class 0.9838/0.9962/0.9963/0.9990, walls relax 1641 s / RELION 1620 s.",
+    "RELION band (all RELION runs of this command, 5: relion_fixture, relion_prior_repeat_0, relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.2397-0.2411, class accuracy 0.8751-0.8781.",
     "The compact engine ran in the same jobs (its own row).",
-    "relax walls ran with a 42 GB JAX memory cap (XLA_PYTHON_CLIENT_MEM_FRACTION=.50 inherited from the submitting shell, found 2026-09-25 after these runs); quality is unaffected by the cap, the walls may be pessimistic for relax.",
-    "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); resident relax / RELION wall 0.97-1.01x over the three seeds (1682/1673, 1675/1695, 1645/1709 s)."
+    "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 0.99-1.01x over the three seeds."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
@@ -2442,12 +2718,32 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py"
    },
    "date": "2026-09-25",
-   "history": [],
+   "history": [
+    {
+     "date": "2026-09-25",
+     "note": "first run of the same three seeds with every relax arm capped at 42 of 80 GB (XLA_PYTHON_CLIENT_MEM_FRACTION=.50 inherited from the submitting shell); quality matched this run, walls below",
+     "relax_wall_s": {
+      "1775735620": 1682,
+      "29": 1675,
+      "41": 1645
+     },
+     "relion_wall_s": {
+      "1775735620": 1673,
+      "29": 1695,
+      "41": 1709
+     },
+     "jobs": [
+      "14434465",
+      "14434466",
+      "14434467"
+     ]
+    }
+   ],
    "time_check": {
     "a": "RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs). relax: 1 H100, one process, 12 CPUs. All arms in one --gres=gpu:h100:3 job on one node, started together; no --exclusive.",
-    "b": "relax: production defaults (every RELAX_* variable unset), standalone start-up, no timing, capture, replay, deterministic-reduction or dump options; engine per pass confirmed from pass2_engine_trajectory. Caveat: every relax arm inherited XLA_PYTHON_CLIENT_MEM_FRACTION=.50 from the submitting shell, so JAX's GPU pool and relax's batch planner saw 42 of the H100's 80 GB (production default .90); the relax walls are measured under that cap. RELION is unaffected.",
+    "b": "relax: production defaults (every RELAX_* variable unset; XLA_PYTHON_CLIENT_MEM_FRACTION unset so recovar's .90 applies), standalone start-up, no timing, capture, replay, deterministic-reduction or dump options; engine per pass confirmed from pass2_engine_trajectory.",
     "c": "Both: arm-script wall (WALL.json) around the whole process, including start-up, particle copy to --scratch_dir, compilation (fresh JAX cache) and final writes.",
-    "d": "RELION and relax arms of each seed in one job: 14434465 della-h20g2, 14434466 della-h21g3, 14434467 della-h19g1 (H100 80GB HBM3, nvidia-smi GPU.csv)."
+    "d": "RELION and relax arms of each seed in one job: 14445921 della-h20g2, 14445922 della-h20g3, 14445923 della-h19g1 (H100 80GB HBM3, nvidia-smi GPU.csv)."
    },
    "mask": {
     "dataset": "pdb_k4_50k256_c1",
@@ -2473,15 +2769,15 @@
     "resolution_definition": "engine_current_resolution",
     "relion_reported_resolution_A": 14.703,
     "masked_resolution_A": null,
-    "wall_s": 1673,
+    "wall_s": 1650,
     "wall_definition": "arm-script wall of srun relion_refine_mpi (WALL.json)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 15,
     "jobs": [
-     "14434465",
-     "14434466",
-     "14434467"
+     "14445921",
+     "14445922",
+     "14445923"
     ],
     "masked_band_auc": null
    },
@@ -2491,25 +2787,25 @@
     "resolution_A": 14.703,
     "resolution_definition": "engine_current_resolution",
     "masked_resolution_A": null,
-    "wall_s": 5609,
+    "wall_s": 5528,
     "wall_definition": "arm-script wall of python relax_run.py end to end, cold JAX cache (WALL.json)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 15,
     "jobs": [
-     "14434465",
-     "14434466",
-     "14434467"
+     "14445921",
+     "14445922",
+     "14445923"
     ],
     "masked_band_auc": null
    },
    "gt": {
     "metric": "mean per-class GT FSC-AUC, masked with the frozen mask (classes matched to GT by Hungarian on unmasked AUC), seed 1775735620",
-    "relion": 0.240821,
-    "relax": 0.240842,
+    "relion": 0.240814,
+    "relax": 0.240852,
     "relion_band": [
-     0.239756,
-     0.241095
+     0.239703,
+     0.241085
     ],
     "relion_band_runs": [
      "relion_fixture",
@@ -2519,31 +2815,31 @@
      "relion_s41"
     ],
     "relax_per_seed": {
-     "1775735620": 0.240842,
-     "29": 0.239679,
-     "41": 0.241062
+     "1775735620": 0.240852,
+     "29": 0.239669,
+     "41": 0.241078
     },
     "relion_per_seed": {
-     "1775735620": 0.240821,
-     "29": 0.239756,
-     "41": 0.241095
+     "1775735620": 0.240814,
+     "29": 0.239703,
+     "41": 0.241085
     },
     "class_accuracy_relax_per_seed": {
-     "1775735620": 0.87464,
-     "29": 0.87774,
-     "41": 0.87494
+     "1775735620": 0.87514,
+     "29": 0.8782,
+     "41": 0.87522
     },
     "class_accuracy_relion_per_seed": {
-     "1775735620": 0.87506,
-     "29": 0.87808,
-     "41": 0.87506
+     "1775735620": 0.87534,
+     "29": 0.87814,
+     "41": 0.8752
     },
     "class_accuracy_relion_band": [
-     0.87506,
-     0.87808
+     0.87512,
+     0.87814
     ]
    },
-   "cross_engine": "same-seed masked relax-vs-RELION FSC-AUC per GT class: seed 1775735620 0.9815/0.9953/0.9957/0.9990; seed 29 0.9839/0.9949/0.9956/0.9987; seed 41 0.9838/0.9961/0.9965/0.9990",
+   "cross_engine": "same-seed masked relax-vs-RELION FSC-AUC per GT class: seed 1775735620 0.9827/0.9957/0.9955/0.9989; seed 29 0.9837/0.9955/0.9956/0.9988; seed 41 0.9832/0.9968/0.9966/0.9991",
    "cross_engine_masked_band_auc": null,
    "time_ratio_relax_over_relion": 3.35,
    "matched": "yes",
@@ -2558,10 +2854,10 @@
    "notes": [
     "Standalone Class3D from the fixture's reference_init_classes_relion.star on both engines, RELION command --K 4 --tau2_fudge 4 --iter 15 --healpix_order 1 --offset_range 6 --offset_step 2 --particle_diameter 200 --ini_high 30 --firstiter_cc --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --random_seed <seed>; relax the same settings with production defaults (no RELAX_* overrides).",
     "Three seeds (1775735620, 29, 41), each one Slurm job with three arms started together on one node: relax resident (5cf5505), relax compact (main 8b82249), RELION; one H100 and 12 CPUs per arm, --scratch_dir on node-local /tmp on every arm. The row's resolution and walls are seed 1775735620.",
-    "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.2408 / RELION 0.2408, class accuracy 0.8746 / 0.8751, masked relax-vs-RELION per GT class 0.9815/0.9953/0.9957/0.9990, walls relax 5609 s / RELION 1673 s; seed 29: masked mean GT FSC-AUC relax 0.2397 / RELION 0.2398, class accuracy 0.8777 / 0.8781, masked relax-vs-RELION per GT class 0.9839/0.9949/0.9956/0.9987, walls relax 5592 s / RELION 1695 s; seed 41: masked mean GT FSC-AUC relax 0.2411 / RELION 0.2411, class accuracy 0.8749 / 0.8751, masked relax-vs-RELION per GT class 0.9838/0.9961/0.9965/0.9990, walls relax 5541 s / RELION 1709 s.",
-    "RELION band (all RELION runs of this command, 5: relion_fixture, relion_prior_repeat_0, relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.2398-0.2411, class accuracy 0.8751-0.8781.",
+    "Per seed: seed 1775735620: masked mean GT FSC-AUC relax 0.2409 / RELION 0.2408, class accuracy 0.8751 / 0.8753, masked relax-vs-RELION per GT class 0.9827/0.9957/0.9955/0.9989, walls relax 5528 s / RELION 1650 s; seed 29: masked mean GT FSC-AUC relax 0.2397 / RELION 0.2397, class accuracy 0.8782 / 0.8781, masked relax-vs-RELION per GT class 0.9837/0.9955/0.9956/0.9988, walls relax 5538 s / RELION 1632 s; seed 41: masked mean GT FSC-AUC relax 0.2411 / RELION 0.2411, class accuracy 0.8752 / 0.8752, masked relax-vs-RELION per GT class 0.9832/0.9968/0.9966/0.9991, walls relax 5518 s / RELION 1620 s.",
+    "RELION band (all RELION runs of this command, 5: relion_fixture, relion_prior_repeat_0, relion_s1775735620, relion_s29, relion_s41): masked mean GT FSC-AUC 0.2397-0.2411, class accuracy 0.8751-0.8781.",
     "The resident engine ran in the same jobs (its own row).",
-    "relax walls ran with a 42 GB JAX memory cap (XLA_PYTHON_CLIENT_MEM_FRACTION=.50 inherited from the submitting shell, found 2026-09-25 after these runs); quality is unaffected by the cap, the walls may be pessimistic for relax."
+    "Speed: CPU-matched (12 CPUs and one H100 per arm, same node, started together); relax / RELION wall 3.35-3.41x over the three seeds."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
@@ -2580,12 +2876,32 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py"
    },
    "date": "2026-09-25",
-   "history": [],
+   "history": [
+    {
+     "date": "2026-09-25",
+     "note": "first run of the same three seeds with every relax arm capped at 42 of 80 GB (XLA_PYTHON_CLIENT_MEM_FRACTION=.50 inherited from the submitting shell); quality matched this run, walls below",
+     "relax_wall_s": {
+      "1775735620": 5609,
+      "29": 5592,
+      "41": 5541
+     },
+     "relion_wall_s": {
+      "1775735620": 1673,
+      "29": 1695,
+      "41": 1709
+     },
+     "jobs": [
+      "14434465",
+      "14434466",
+      "14434467"
+     ]
+    }
+   ],
    "time_check": {
     "a": "RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs). relax: 1 H100, one process, 12 CPUs. All arms in one --gres=gpu:h100:3 job on one node, started together; no --exclusive.",
-    "b": "relax: production defaults (every RELAX_* variable unset), standalone start-up, no timing, capture, replay, deterministic-reduction or dump options; engine per pass confirmed from pass2_engine_trajectory. Caveat: every relax arm inherited XLA_PYTHON_CLIENT_MEM_FRACTION=.50 from the submitting shell, so JAX's GPU pool and relax's batch planner saw 42 of the H100's 80 GB (production default .90); the relax walls are measured under that cap. RELION is unaffected.",
+    "b": "relax: production defaults (every RELAX_* variable unset; XLA_PYTHON_CLIENT_MEM_FRACTION unset so recovar's .90 applies), standalone start-up, no timing, capture, replay, deterministic-reduction or dump options; engine per pass confirmed from pass2_engine_trajectory.",
     "c": "Both: arm-script wall (WALL.json) around the whole process, including start-up, particle copy to --scratch_dir, compilation (fresh JAX cache) and final writes.",
-    "d": "RELION and relax arms of each seed in one job: 14434465 della-h20g2, 14434466 della-h21g3, 14434467 della-h19g1 (H100 80GB HBM3, nvidia-smi GPU.csv)."
+    "d": "RELION and relax arms of each seed in one job: 14445921 della-h20g2, 14445922 della-h20g3, 14445923 della-h19g1 (H100 80GB HBM3, nvidia-smi GPU.csv)."
    },
    "mask": {
     "dataset": "pdb_k4_50k256_c1",
@@ -3182,6 +3498,7 @@
     "Per seed: seed 29: reference FSC-AUC (population-weighted, masked) relax 0.1458 / RELION 0.1393 (unmasked 0.1469 / 0.1406); relax-vs-RELION X-AUC 0.8795 (masked 0.8955); RELION vs its earlier same-command run 0.8459 (masked 0.8527); populations relax [1.0, 0.0, 0.0, 0.0] / RELION [1.0, 0.0, 0.0, 0.0]; walls relax 2138 s / RELION 773 s; seed 41: reference FSC-AUC (population-weighted, masked) relax 0.1886 / RELION 0.1843 (unmasked 0.1871 / 0.1829); relax-vs-RELION X-AUC 0.7949 (masked 0.8507); RELION vs its earlier same-command run 0.8412 (masked 0.8817); populations relax [0.48, 0.235, 0.285, 0.0] / RELION [0.474, 0.243, 0.283, 0.0]; walls relax 2364 s / RELION 1087 s; seed 53: reference FSC-AUC (population-weighted, masked) relax 0.1085 / RELION 0.1110 (unmasked 0.1068 / 0.1091); relax-vs-RELION X-AUC 0.8603 (masked 0.8536); RELION vs its earlier same-command run 0.8751 (masked 0.8799); populations relax [1.0, 0.0, 0.0, 0.0] / RELION [1.0, 0.0, 0.0, 0.0]; walls relax 1832 s / RELION 794 s.",
     "RELION band (masked population-weighted reference FSC-AUC over all 6 RELION runs of this command: relion_s29, relion_s41, relion_s53, x_relion_band_s29, x_relion_band_s41, x_relion_band_s53): 0.0935-0.1856; relax seeds 0.1458, 0.1886, 0.1085; at or above each same-seed RELION run except seed 53 (0.0025 below this job's RELION, above the earlier seed-53 run), inside or above the band at every seed.",
     "relax / RELION wall 2.17-2.77x over the three seeds (CPU-matched, 8 CPUs per arm).",
+    "Walls describe the VDAM stack 83b9ae9 before 7ada1ce (per-class device coarse significance for K>1, on main after the stack landed as 272a11f..9a9b31c); they are not current-main walls. Maps are expected to be unchanged by 7ada1ce (its CSR is bitwise equal to the host encoding).",
     "Seeds 29 and 53 collapse to one populated class in both engines (as in the 2026-09-24 band); seed 41 keeps three."
    ],
    "null_reasons": {},

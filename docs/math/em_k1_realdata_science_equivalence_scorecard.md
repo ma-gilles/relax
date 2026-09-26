@@ -434,6 +434,28 @@ RELION against RELION (same band FSC-AUCs):
 | 2026-09-18 repeat e vs bench attempt 2 RELION arm | 0.9786 | 0.9657 | 0.9669 |
 | bench attempt 1 RELION arm vs bench attempt 2 RELION arm | 0.9790 | 0.9670 | 0.9674 |
 
+### pdb_k1_g256_n100000_noise1_bf80_20260516 (resident engine) (relax `589ce095c`)
+
+relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
+
+| RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| this job's RELION arm | 14445854 | 0.9904 | 0.9877 | 0.9876 | 0.9980 | 0.9976 | 0.9975 | met |
+| fixture reference relion_autorefine_k1_it015_os1 | 8314160 | 0.9940 | 0.9920 | 0.9921 | 0.9997 | 0.9994 | 0.9994 | met |
+| same-command repeat 1 | 14305945 | 0.9904 | 0.9877 | 0.9877 | 0.9980 | 0.9976 | 0.9975 | met |
+| same-command repeat 2 | 14305946 | 0.9904 | 0.9877 | 0.9876 | 0.9980 | 0.9976 | 0.9975 | met |
+
+RELION against RELION (same band FSC-AUCs):
+
+| Pair | Merged | Half 1 | Half 2 |
+| --- | ---: | ---: | ---: |
+| this job's RELION arm vs fixture reference relion_autorefine_k1_it015_os1 | 0.9943 | 0.9929 | 0.9928 |
+| this job's RELION arm vs same-command repeat 1 | 0.9999 | 0.9998 | 0.9999 |
+| this job's RELION arm vs same-command repeat 2 | 0.9999 | 0.9998 | 0.9999 |
+| fixture reference relion_autorefine_k1_it015_os1 vs same-command repeat 1 | 0.9943 | 0.9929 | 0.9928 |
+| fixture reference relion_autorefine_k1_it015_os1 vs same-command repeat 2 | 0.9943 | 0.9929 | 0.9928 |
+| same-command repeat 1 vs same-command repeat 2 | 0.9999 | 0.9998 | 0.9999 |
+
 ## Code references
 
 - `scripts/summarize_em_k1_realdata_science_equivalence.py`: scorecard validation, FSC band metrics, provenance gates, and rendering.
