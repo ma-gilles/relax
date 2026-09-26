@@ -1287,12 +1287,17 @@ relion_wavg_rotation_atomic_runtime_triplet_f32_kernel(
             return;
         }
         if (row > 0 && static_cast<int64_t>(row_image_ids[row - 1]) == batch) return;
+        /* A run's pixels are spread over gridDim.y blocks, one pixel per
+         * thread: an early-state M-step block holds only a few images of
+         * thousands of rows each, and one block per run left the GPU nearly
+         * idle.  Each (image, pixel) cell still sums its run's rows in row
+         * order in one thread, so the values are unchanged. */
+        const int pixel = static_cast<int>(blockIdx.y) * blockDim.x + threadIdx.x;
+        if (pixel >= logical_pixel_count) return;
         int64_t run_end = row + 1;
         while (run_end < row_count && static_cast<int64_t>(row_image_ids[run_end]) == batch)
             ++run_end;
-        for (int pixel = threadIdx.x;
-             pixel < logical_pixel_count;
-             pixel += blockDim.x) {
+        {
             const int64_t output_index = (batch * pixel_capacity + pixel) * 3;
             float sum0 = 0.0f;
             float sum1 = 0.0f;
@@ -1353,9 +1358,11 @@ cudaError_t launch_relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32
     int64_t pixel_capacity,
     const int32_t* runtime_logical_pixel_count)
 {
-    if (row_count == 0) return cudaSuccess;
-    dim3 grid(static_cast<unsigned>(row_count));
+    if (row_count == 0 || pixel_capacity == 0) return cudaSuccess;
     dim3 block(256);
+    dim3 grid(
+        static_cast<unsigned>(row_count),
+        static_cast<unsigned>((pixel_capacity + block.x - 1) / block.x));
     relion_wavg_rotation_atomic_runtime_triplet_f32_kernel<true><<<grid, block, 0, stream>>>(
         terms,
         output,

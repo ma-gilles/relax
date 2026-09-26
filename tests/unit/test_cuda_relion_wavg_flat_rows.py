@@ -283,6 +283,45 @@ def test_flat_rows_wavg_atomics_ragged_and_padded_rows(
 
 
 @pytest.mark.gpu
+def test_flat_rows_wavg_atomics_long_runs_sum_in_row_order(monkeypatch, custom_cuda_lib, gpu_device):
+    """Long image runs over many pixel tiles: one ordered float32 sum per cell.
+
+    The early-state M-step block holds a few images of thousands of rows, and
+    the run's pixels are spread over several blocks. Every (image, pixel)
+    cell must still be the accumulator plus its rows summed in row order, which
+    NumPy's sequential float32 cumsum reproduces bit for bit.
+    """
+
+    cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
+    rng = np.random.default_rng(9021)
+    batch_size, pixel_capacity, logical_pixel_count = 4, 700, 651
+    run_lengths = [1500, 3, 0, 900]
+    row_image_ids = np.concatenate(
+        [np.full(length, image, dtype=np.int32) for image, length in enumerate(run_lengths)]
+        + [np.full(5, -1, dtype=np.int32)]
+    )
+    terms = rng.standard_normal((row_image_ids.size, pixel_capacity, 3)).astype(np.float32)
+    accumulator = rng.standard_normal((batch_size, pixel_capacity, 3)).astype(np.float32)
+
+    with jax.default_device(gpu_device):
+        actual = cuda_backproject.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
+            jnp.asarray(terms),
+            jnp.asarray(row_image_ids),
+            jnp.asarray(accumulator),
+            jnp.asarray(logical_pixel_count, dtype=jnp.int32),
+        )
+        actual = np.asarray(jax.block_until_ready(actual))
+
+    expected = accumulator.copy()
+    for image in range(batch_size):
+        rows = terms[row_image_ids == image]
+        if rows.shape[0]:
+            run_sum = np.cumsum(rows[:, :logical_pixel_count, :], axis=0, dtype=np.float32)[-1]
+            expected[image, :logical_pixel_count, :] = accumulator[image, :logical_pixel_count, :] + run_sum
+    np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.gpu
 def test_flat_rows_wavg_all_padding_rows_leave_operands_untouched(
     monkeypatch, custom_cuda_lib, gpu_device
 ):
