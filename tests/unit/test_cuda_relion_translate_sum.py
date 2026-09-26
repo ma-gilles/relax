@@ -855,7 +855,13 @@ def test_translate_sum_matches_a_float64_reduction_at_a_subtomogram_grid(
     """T = 4120 (S1 subtomogram 3D grid, tables in global memory) against an independent float64 reduction.
 
     The sibling test above compares the global-memory launch with the shared-memory one; this one
-    checks the result itself, with the same bounds as the small-T comparisons.
+    checks the result itself. The kernel sums the T products sequentially in float32 (RELION's
+    order, kept). Higham's worst case for that sum is (T - 1) eps of the summation scale, about
+    4000 ulp here and too loose to catch anything; rounding errors of randomly phased terms add
+    as a random walk, so the bound is max(4, sqrt(T)) ulp of the summation scale (64 at T = 4120;
+    the small-T cases keep 4). Measured on an H100 (job 14456768): 9.9 ulp (score) and 17.3 ulp
+    (bpref), about 0.25 sqrt(T). A wrong phase or index is an O(1) relative error and fails by
+    orders of magnitude.
     """
 
     cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
@@ -868,9 +874,12 @@ def test_translate_sum_matches_a_float64_reduction_at_a_subtomogram_grid(
     recon_scale = _sum_scale(operands, "recon_image")
     if bpref:
         recon_scale = recon_scale * np.abs(operands["recon_weight"]).astype(np.float64)[operands["row_image_ids"]]
+    random_walk = max(_MAX_ULP_OF_SUM_SCALE, float(np.sqrt(n_trans)))
     worst = [
-        _assert_close(summed, summed_ref, recon_scale, "summed"),
-        _assert_close(masked, masked_ref, _sum_scale(operands, "noise_image"), "summed_masked"),
+        _assert_close(summed, summed_ref, recon_scale, "summed", max_ulp_of_scale=random_walk),
+        _assert_close(
+            masked, masked_ref, _sum_scale(operands, "noise_image"), "summed_masked", max_ulp_of_scale=random_walk
+        ),
         _assert_close(
             mass,
             mass_ref,
