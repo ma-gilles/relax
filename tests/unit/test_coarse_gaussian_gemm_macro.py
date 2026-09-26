@@ -156,13 +156,11 @@ def test_exact_compact_preprocess_is_default_off_and_fail_closed(monkeypatch):
 def _projection_cache_request_kwargs(**updates):
     values = dict(
         macro_enabled=True,
-        n_classes=1,
         n_rotations=16,
         coarse_gaussian_ffi_enabled=True,
         exact_coarse_operands_enabled=True,
         use_relion_projector=True,
         relion_texture_interp_enabled=True,
-        half_spectrum_scoring=True,
         use_float64_scoring=False,
         relion_projector_dtype=np.complex64,
     )
@@ -174,13 +172,11 @@ def _projection_cache_request_kwargs(**updates):
     ("updates", "message"),
     [
         ({"macro_enabled": False}, "GEMM_MACRO"),
-        ({"n_classes": 2}, "K=1"),
         ({"n_rotations": 17}, "divisible by 16"),
         ({"coarse_gaussian_ffi_enabled": False}, "exact RELION"),
         ({"exact_coarse_operands_enabled": False}, "EXACT_COARSE_OPERANDS"),
         ({"use_relion_projector": False}, "RELION texture projector"),
         ({"relion_texture_interp_enabled": False}, "RELION texture projector"),
-        ({"half_spectrum_scoring": False}, "half-spectrum"),
         ({"use_float64_scoring": True}, "float32/complex64"),
         ({"relion_projector_dtype": np.complex128}, "complex64 RELION projector"),
     ],

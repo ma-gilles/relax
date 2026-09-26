@@ -1506,13 +1506,11 @@ def _compute_k_class_significance_batched(
     if coarse_gaussian_gemm_projection_cache_requested:
         _validate_coarse_gaussian_gemm_projection_cache_request(
             macro_enabled=coarse_gaussian_gemm_macro_enabled,
-            n_classes=n_classes,
             n_rotations=n_rot,
             coarse_gaussian_ffi_enabled=coarse_gaussian_ffi_enabled,
             exact_coarse_operands_enabled=exact_coarse_operands_enabled,
             use_relion_projector=use_relion_projector,
             relion_texture_interp_enabled=coarse_texture_interp,
-            half_spectrum_scoring=half_spectrum_scoring,
             use_float64_scoring=use_float64_scoring,
             relion_projector_dtype=(
                 relion_projector_half[0].dtype if use_relion_projector else None
@@ -1734,6 +1732,7 @@ def _compute_k_class_significance_batched(
         if coarse_gaussian_gemm_projection_cache_requested:
             coarse_gaussian_gemm_projection_cache_plan = (
                 _plan_coarse_gaussian_gemm_projection_cache(
+                    n_classes=n_classes,
                     n_rotations=n_rot,
                     compact_pixel_count=int(square_score_count),
                     image_shape=image_shape,

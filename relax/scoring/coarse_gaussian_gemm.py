@@ -388,25 +388,25 @@ def _coarse_gaussian_gemm_resources(
 def _validate_coarse_gaussian_gemm_projection_cache_request(
     *,
     macro_enabled: bool,
-    n_classes: int,
     n_rotations: int,
     coarse_gaussian_ffi_enabled: bool,
     exact_coarse_operands_enabled: bool,
     use_relion_projector: bool,
     relion_texture_interp_enabled: bool,
-    half_spectrum_scoring: bool,
     use_float64_scoring: bool,
     relion_projector_dtype,
 ) -> None:
-    """Fail closed unless the first cache seam's exact K=1 contract holds."""
+    """Fail closed unless the cache serves the exact RELION projector rows.
+
+    The cache holds exactly the complex64 rows the macro's projector callback
+    returns, one table per class, so any class count is served unchanged.
+    """
 
     prefix = f"{_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV}=1 requires"
     if not macro_enabled:
         raise ValueError(
             f"{prefix} {_COARSE_GAUSSIAN_GEMM_MACRO_ENV}=1",
         )
-    if int(n_classes) != 1:
-        raise ValueError(f"{prefix} K=1, got K={int(n_classes)}")
     if int(n_rotations) <= 0 or int(n_rotations) % int(
         _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ROW_ALIGNMENT
     ):
@@ -427,8 +427,6 @@ def _validate_coarse_gaussian_gemm_projection_cache_request(
         raise ValueError(
             f"{prefix} the supplied RELION texture projector",
         )
-    if not half_spectrum_scoring:
-        raise ValueError(f"{prefix} half-spectrum scoring")
     if use_float64_scoring:
         raise ValueError(f"{prefix} production float32/complex64 scoring")
     if relion_projector_dtype is None or np.dtype(relion_projector_dtype) != np.dtype(
@@ -442,16 +440,17 @@ def _validate_coarse_gaussian_gemm_projection_cache_request(
 
 def _plan_coarse_gaussian_gemm_projection_cache(
     *,
+    n_classes: int = 1,
     n_rotations: int,
     compact_pixel_count: int,
     image_shape,
     budget_bytes: int,
 ) -> projection_cache_helpers.ProjectionCachePlan:
-    """Plan one conservative C64 K=1 cache in qualified 4,608-row chunks."""
+    """Plan one conservative C64 cache table per class in 4,608-row chunks."""
 
     image_height, image_width = (int(value) for value in image_shape)
     return projection_cache_helpers.plan_projection_cache(
-        table_count=1,
+        table_count=int(n_classes),
         row_count=int(n_rotations),
         pixel_count=int(compact_pixel_count),
         cache_dtype=np.complex64,
@@ -590,8 +589,6 @@ def _validate_coarse_gaussian_gemm_hybrid_request(
         raise ValueError(
             f"{prefix} {_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV}=1",
         )
-    if int(n_classes) != 1:
-        raise ValueError(f"{prefix} K=1, got K={int(n_classes)}")
     if int(n_rotations) <= 0 or int(n_rotations) % SOURCE_ROTATION_BLOCK_SIZE:
         raise ValueError(
             f"{prefix} a rotation count divisible by "
