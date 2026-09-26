@@ -282,9 +282,16 @@ and compact agree to the digits shown except it13, where resident sits closer, m
 RELION's own CPU path, stepped from the same stored states, differs from its GPU path by 3.6e-4 /
 3.1e-4 at it2 and 1.4e-4 / 1.1e-4 at it13, while two GPU repeats agree to 3e-7-5e-6. relax's per-step
 deviation is therefore at or inside RELION's CPU/GPU arithmetic band (1.0-33x smaller; equal at
-it13 half 2). That the full-run
-agreement gap (0.9994 vs 0.9997) is the compounding of such arithmetic-path differences is inferred,
-not yet measured; an end-to-end RELION CPU-vs-GPU run on the K1 5k/128 fixture is running to test it.
+it13 half 2). End to end, such
+arithmetic-path differences compound into a larger map disagreement than relax's (measured on the K1
+5k/128 os0 fixture, auto-refine to convergence plus the final all-data iteration; cross FSC-AUC of the
+unfiltered half-map average / merged map against the RELION GPU oracle): RELION's CPU path 0.99772 /
+0.99719 (job 14426055, converged at iteration 14 like the GPU runs); relax main b0276ba 0.99990 /
+0.99986 (two identical arms 14446428, 1.000000 / 0.999999 to each other); RELION GPU same-command
+repeats 0.99999 / 0.99998 and 0.99900 / 0.99814. relax therefore sits inside RELION's GPU repeat band
+and about 20x closer to the GPU oracle than RELION's own CPU path. The 50k/256 full-run gap (0.9994 vs
+0.9997) has no CPU-path end-to-end run; it is attributed by the same mechanism, not measured at 50k.
+Scores: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_landing_20260925/score_5k_all.json`.
 The earlier attribution (1.3-4.2e-4 per step, "about 2.5x RELION's drift") is superseded: the replay
 harness then scored half 2 with half 1's sigma2_noise (the RELION MPI restart broadcast); those
 replays (relax a7977c8) read 4.3e-4-7.6e-4 for half 2 at it2/it5, against the per-half-noise values
