@@ -810,3 +810,73 @@ def test_per_image_angle_tables_equal_one_call_per_image(monkeypatch, custom_cud
         )
         for a, b in zip(got, one):
             assert_matches(np.asarray(a)[rows], np.asarray(b)[rows])
+
+
+def _reference_float64(cuda_backproject, operands, *, bpref=False):
+    """The production tile builder, then the weighted sums in float64 (NumPy), independent of the kernel's order.
+
+    With the sums in float64 the gap to the kernel is the kernel's own float32 summation error, so
+    this file's bounds apply at any translation count (the XLA float32 reduction reorders from T = 32).
+    """
+
+    n_images, n_pixels = operands["recon_image"].shape
+    n_trans = operands["translation_angles"].shape[0]
+    angles = jnp.asarray(operands["translation_angles"])
+    pixels = jnp.asarray(operands["pixel_indices"])
+    if bpref:
+        recon = cuda_backproject.relion_translate_bpref_f32(
+            jnp.asarray(operands["recon_image"]), jnp.asarray(operands["recon_weight"]), angles, pixels, IMAGE_SHAPE
+        )
+    else:
+        recon = cuda_backproject.relion_translate_score_f32(
+            jnp.asarray(operands["recon_image"]), angles, pixels, IMAGE_SHAPE
+        )
+    noise = cuda_backproject.relion_translate_score_f32(
+        jnp.asarray(operands["noise_image"]), angles, pixels, IMAGE_SHAPE
+    )
+    recon = np.asarray(recon).reshape(n_images, n_trans, n_pixels).astype(np.complex128)
+    noise = np.asarray(noise).reshape(n_images, n_trans, n_pixels).astype(np.complex128)
+    posterior = np.asarray(operands["posterior"], dtype=np.float64)
+    ids = np.asarray(operands["row_image_ids"])
+    summed = np.zeros((ids.size, n_pixels), np.complex128)
+    masked = np.zeros((ids.size, n_pixels), np.complex128)
+    for image in range(n_images):
+        rows = ids == image
+        summed[rows] = posterior[rows] @ recon[image]
+        masked[rows] = posterior[rows] @ noise[image]
+    return summed, masked, posterior.sum(axis=1)
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("bpref", [False, True], ids=["score", "bpref"])
+def test_translate_sum_matches_a_float64_reduction_at_a_subtomogram_grid(
+    monkeypatch, custom_cuda_lib, gpu_device, bpref
+):
+    """T = 4120 (S1 subtomogram 3D grid, tables in global memory) against an independent float64 reduction.
+
+    The sibling test above compares the global-memory launch with the shared-memory one; this one
+    checks the result itself, with the same bounds as the small-T comparisons.
+    """
+
+    cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
+    rng = np.random.default_rng(4120)
+    n_trans, n_pixels, rows = 4120, 311, 48
+    operands = _operands(rng, rows=rows, image_capacity=6, n_trans=n_trans, n_pixels=n_pixels)
+    with jax.default_device(gpu_device):
+        summed_ref, masked_ref, mass_ref = _reference_float64(cuda_backproject, operands, bpref=bpref)
+        summed, masked, mass = _kernel(cuda_backproject, operands, n_valid_rows=rows, logical_pixels=n_pixels, bpref=bpref)
+    recon_scale = _sum_scale(operands, "recon_image")
+    if bpref:
+        recon_scale = recon_scale * np.abs(operands["recon_weight"]).astype(np.float64)[operands["row_image_ids"]]
+    worst = [
+        _assert_close(summed, summed_ref, recon_scale, "summed"),
+        _assert_close(masked, masked_ref, _sum_scale(operands, "noise_image"), "summed_masked"),
+        _assert_close(
+            mass,
+            mass_ref,
+            np.abs(operands["posterior"]).sum(axis=1).astype(np.float64),
+            "probs_sum_t",
+            max_ulp_of_scale=_MAX_MASS_ULP_PER_TRANSLATION * n_trans,
+        ),
+    ]
+    print(f"T={n_trans} bpref={bpref}: max ulp of the summation scale {max(entry[0] for entry in worst)}")
