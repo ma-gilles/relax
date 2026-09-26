@@ -162,3 +162,18 @@ def test_mstep_translations_keep_every_translation_with_mass_and_pad_to_a_power_
     full = resident_tilts.mstep_translations(np.ones((2, 40), dtype=np.float32), 40)
     np.testing.assert_array_equal(full.index, np.arange(40))
     assert full.valid.all()
+
+
+@pytest.mark.unit
+def test_tilt_operand_budget_is_a_quarter_of_the_device(monkeypatch):
+    """Tilt passes have no per-chunk operand path, so their resident operands get a larger budget."""
+    from relax.sparse_pass2 import resident_operands as ro
+
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", raising=False)
+    device = 80 * 1024**3
+    assert ro.resident_operands_max_bytes(device) == int(device * 0.10)
+    assert ro.resident_operands_max_bytes(device, device_fraction=ro.TILT_RESIDENT_OPERAND_DEVICE_FRACTION) == int(
+        device * 0.25
+    )
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", "1234")
+    assert ro.resident_operands_max_bytes(device, device_fraction=0.25) == 1234

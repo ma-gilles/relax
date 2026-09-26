@@ -79,6 +79,9 @@ RESIDENT_OPERANDS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS"
 # the per-chunk preparation and says so, instead of failing part way through.
 _RESIDENT_OPERAND_BYTES_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES"
 _RESIDENT_OPERAND_DEVICE_FRACTION = 0.10
+# Subtomogram (tilt) passes have no per-chunk operand preparation, and a tilt half holds tens of
+# thousands of images (S1 at the box: 8.4 GiB for 23.4k images), so their operands get a quarter.
+TILT_RESIDENT_OPERAND_DEVICE_FRACTION = 0.25
 _DEFAULT_RESIDENT_OPERAND_MAX_BYTES = 6 * 1024**3
 _PREPARE_IMAGE_BATCH_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH"
 _DEFAULT_PREPARE_IMAGE_BATCH = 256
@@ -432,8 +435,10 @@ def resident_half_operand_avals(
     )
 
 
-def resident_operands_max_bytes(device_memory_bytes: int | None = None) -> int:
-    """Budget for one half's resident per-image operands."""
+def resident_operands_max_bytes(
+    device_memory_bytes: int | None = None, *, device_fraction: float = _RESIDENT_OPERAND_DEVICE_FRACTION
+) -> int:
+    """Budget for one half's resident per-image operands: ``device_fraction`` of the device."""
 
     override = os.environ.get(_RESIDENT_OPERAND_BYTES_ENV, "").strip()
     if override:
@@ -442,8 +447,8 @@ def resident_operands_max_bytes(device_memory_bytes: int | None = None) -> int:
             raise ValueError(f"{_RESIDENT_OPERAND_BYTES_ENV} must be positive, got {value}")
         return value
     if device_memory_bytes is None:
-        return _DEFAULT_RESIDENT_OPERAND_MAX_BYTES
-    return max(1, int(float(device_memory_bytes) * _RESIDENT_OPERAND_DEVICE_FRACTION))
+        return int(_DEFAULT_RESIDENT_OPERAND_MAX_BYTES * device_fraction / _RESIDENT_OPERAND_DEVICE_FRACTION)
+    return max(1, int(float(device_memory_bytes) * device_fraction))
 
 
 def _prepare_image_batch_size() -> int:

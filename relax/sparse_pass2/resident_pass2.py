@@ -119,6 +119,7 @@ from relax.sparse_pass2.resident_candidates import (
     plan_capacity_chunks,
 )
 from relax.sparse_pass2.resident_operands import (
+    TILT_RESIDENT_OPERAND_DEVICE_FRACTION,
     ResidentOperandsUnsupported,
     describe_resident_operand_mismatch,
     gather_resident_chunk_operands,
@@ -2449,7 +2450,10 @@ def _resident_pass2(
             real_bytes=np.dtype(precision_policy.score_real_dtype).itemsize,
             norm_high_shell_bytes=np.dtype(_norm_high_shell_dtype).itemsize,
         )
-        budget_bytes = resident_operands_max_bytes(device_memory_bytes)
+        budget_bytes = resident_operands_max_bytes(
+            device_memory_bytes,
+            **({} if tilt is None else {"device_fraction": TILT_RESIDENT_OPERAND_DEVICE_FRACTION}),
+        )
         if operand_bytes > budget_bytes:
             logger.info(
                 "Resident pass-2 keeps the per-chunk operand preparation: one half's resident "
