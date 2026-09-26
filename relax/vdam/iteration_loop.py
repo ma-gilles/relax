@@ -310,6 +310,11 @@ def run_vdam_iterations(
         )
         if profile_iterations:
             _record_stage("expectation")
+            # The local route reports its coarse (pass 1) and fine (pass 2) walls.
+            passes = meta.get("sparse_pass2_profile_summary") or {}
+            for key in ("pass1_time_s", "pass2_time_s"):
+                if key in passes:
+                    iteration_profile[f"expectation_{key}"] = float(passes[key])
 
         # M-step
         current = vdam_m_step(
