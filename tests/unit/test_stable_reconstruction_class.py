@@ -1,9 +1,9 @@
-"""RELION reconstruction in a stable window class equals the logical reconstruction.
+"""RELION reconstruction in the full-box class equals the logical reconstruction.
 
 With the resident engine's stable windows on, _reconstruct_volume_eager
-zero-pads the current-size accumulator to its physical class and passes
+zero-pads the current-size accumulator to the full-box cube and passes
 RELION's size as recovar's traced logical_current_size, so one program serves
-the class. The padded voxels lie outside every logical support.
+the run. The padded voxels lie outside every logical support.
 """
 
 import jax.numpy as jnp
@@ -17,10 +17,11 @@ from relax.refinement import mean_helpers
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.parametrize("current_size", [18, 32])
 @pytest.mark.parametrize("half", [False, True])
-def test_stable_class_reconstruction_matches_the_logical_one(monkeypatch, half):
+def test_stable_class_reconstruction_matches_the_logical_one(monkeypatch, half, current_size):
     vol_shape = (32, 32, 32)
-    padding_factor, current_size = 2, 18  # physical class 24 at the quantum-8 ladder
+    padding_factor = 2
     accumulator_shape = relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=current_size)
     size = accumulator_shape[0]
     shape = (size, size, size // 2 + 1) if half else (size,) * 3
@@ -44,12 +45,14 @@ def test_stable_class_reconstruction_matches_the_logical_one(monkeypatch, half):
     assert_matches(np.asarray(stable), np.asarray(logical))
 
 
-def test_stable_class_needs_a_sub_box_current_size_and_a_1d_prior(monkeypatch):
+def test_every_current_size_shares_the_full_box_class_with_a_1d_prior(monkeypatch):
     monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS", raising=False)
     vol_shape = (32, 32, 32)
+    box_shape = relion_backprojector_volume_shape(vol_shape, 2, current_size=32)
+    for current_size in (18, 24, 32):
+        shape = relion_backprojector_volume_shape(vol_shape, 2, current_size=current_size)
+        assert mean_helpers._stable_reconstruction_class(current_size, vol_shape, 2, shape, True) == (32, box_shape)
     shape_18 = relion_backprojector_volume_shape(vol_shape, 2, current_size=18)
-    assert mean_helpers._stable_reconstruction_class(18, vol_shape, 2, shape_18, True)[0] == 24
     assert mean_helpers._stable_reconstruction_class(18, vol_shape, 2, shape_18, False) is None
     assert mean_helpers._stable_reconstruction_class(None, vol_shape, 2, shape_18, True) is None
-    shape_24 = relion_backprojector_volume_shape(vol_shape, 2, current_size=24)
-    assert mean_helpers._stable_reconstruction_class(24, vol_shape, 2, shape_24, True) is None
+    assert mean_helpers._stable_reconstruction_class(18, vol_shape, 2, box_shape, True) is None

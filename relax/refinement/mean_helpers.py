@@ -481,18 +481,20 @@ def _merged_mean_from_halves(means, class_weights=None):
 
 
 def _stable_reconstruction_class(current_size, vol_shape, padding_factor, accumulator_volume_shape, tau_is_1d):
-    """``(physical current size, physical accumulator shape)`` of a stable class, or None.
+    """``(physical current size, physical accumulator shape)`` of the reconstruction class, or None.
 
     With the resident engine's stable Fourier windows on, RELION's
-    reconstruction runs in the current size's physical class: the current-size
-    accumulator is zero-padded to the class's cube and
-    ``post_process_from_filter_v2`` takes the class size as its static bound and
+    reconstruction runs in one class for the whole run, the full box: the
+    current-size accumulator is zero-padded to the full-box cube and
+    ``post_process_from_filter_v2`` takes the box as its static bound and
     RELION's size as the traced ``logical_current_size``, so one program serves
-    the class (recovar 8633a2a24). The padded voxels lie outside every logical
-    support, so the reconstruction is the logical one.
+    every iteration (recovar 8633a2a24). The padded voxels lie outside every
+    logical support, so the reconstruction is the logical one. The inverse
+    transform already runs on the padded full box at every size, so the larger
+    accumulator adds only elementwise work, and no early iteration needs more
+    memory than the final full-box one.
     """
 
-    from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
     from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
     from relax.sparse_pass2.resident_pass2 import _resident_stable_windows_requested
 
@@ -502,16 +504,13 @@ def _stable_reconstruction_class(current_size, vol_shape, padding_factor, accumu
         return None
     box = int(vol_shape[0])
     logical = int(current_size)
-    if logical <= 0 or logical >= box:
+    if logical <= 0 or logical > box:
         return None
     logical_shape = tuple(int(v) for v in relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=logical))
     if logical_shape != tuple(int(v) for v in accumulator_volume_shape):
         return None
-    physical = int(stable_fourier_window_current_size(logical, box, quantum=stable_fourier_window_quantum()))
-    if physical == logical:
-        return None
-    physical_shape = tuple(int(v) for v in relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=physical))
-    return physical, physical_shape
+    physical_shape = tuple(int(v) for v in relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=box))
+    return box, physical_shape
 
 
 def _pad_accumulator_to_class(values, logical_shape, physical_shape):
