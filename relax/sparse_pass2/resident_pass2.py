@@ -2617,11 +2617,38 @@ def _resident_pass2(
     # the pass reads free device memory (projection cache, resident operand and
     # chunk budgets), so every budget sees them; allocated after the chunk
     # budget they were not counted, up to 23 GiB at EMPIAR-10202's full box.
+    # A K-class pass whose sums fit carries per-projection row sums instead
+    # (_projection_sums_bytes); the volumes are then built after the chunk loop.
+    # K=1 keeps the per-row backprojection: it measured no gain (K1 50k, job
+    # 14585996: 1095 -> 1092 s), and its cold-start parity cases carry the
+    # reassociation into the trajectory (fast tier k1_os1_coldstart_standalone
+    # half-1 FSC-AUC 1.000000 -> 0.998679, bisect 14587006).
+    n_fine_rot = int(np.asarray(fine_rotations_override).shape[0])
+    sums_bytes = _projection_sums_bytes(
+        n_slots=int(tables.n_slots),
+        n_fine_rot=n_fine_rot,
+        n_recon_pixels=int(n_recon_windowed),
+        y_dtype=recon_y_accum_dtype,
+        ctf_dtype=recon_ctf_accum_dtype,
+    )
+    free_bytes = _device_free_memory_bytes()
+    presum_adjoint = (
+        n_classes > 1
+        and free_bytes is not None
+        and sums_bytes <= _PRESUM_ADJOINT_FREE_FRACTION * float(free_bytes)
+    )
+    accumulator_shape = (n_fine_rot, int(n_recon_windowed)) if presum_adjoint else (program_recon_volume_size,)
     Ft_y_total = tuple(
-        jnp.zeros(program_recon_volume_size, dtype=recon_y_accum_dtype) for _ in range(int(tables.n_slots))
+        jnp.zeros(accumulator_shape, dtype=recon_y_accum_dtype) for _ in range(int(tables.n_slots))
     )
     Ft_ctf_total = tuple(
-        jnp.zeros(program_recon_volume_size, dtype=recon_ctf_accum_dtype) for _ in range(int(tables.n_slots))
+        jnp.zeros(accumulator_shape, dtype=recon_ctf_accum_dtype) for _ in range(int(tables.n_slots))
+    )
+    logger.info(
+        "Resident pass-2 M-step adjoint: %s (per-projection sums %.2f GiB, %s GiB free)",
+        "per-projection sums, one backprojection per pass" if presum_adjoint else "per-row backprojection",
+        sums_bytes / float(1024**3),
+        "unknown" if free_bytes is None else f"{float(free_bytes) / float(1024**3):.2f}",
     )
     # RELION masks each class's scale sums with its own data_vs_prior_class[iclass] > 3
     # (acc_ml_optimiser_impl.h:4908); one shell vector serves every class.
@@ -2648,7 +2675,6 @@ def _resident_pass2(
     )
 
     # ---- projection cache (same admission and build as the compact engine) -
-    n_fine_rot = int(np.asarray(fine_rotations_override).shape[0])
     # K>1 caches every class's fine grid, class k at k * n_fine_rot.
     n_projections = n_classes * n_fine_rot
     (
@@ -3355,6 +3381,7 @@ def _resident_pass2(
                                 n_slots=int(tables.n_slots),
                                 mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
                                 stable_window=stable_window_plan is not None,
+                                presum_adjoint=presum_adjoint,
                             ),
                             translation_prior_centers_np=translation_prior_centers_np,
                             fine_translations=fine_translations,
@@ -3572,6 +3599,29 @@ def _resident_pass2(
         pending = result
     if pending is not None:
         Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
+    if presum_adjoint:
+        adjoint_kwargs = dict(
+            window_indices=relion_x_half_recon_indices,
+            use_windowed_adjoint=True,
+            image_shape=image_shape,
+            volume_shape=program_recon_volume_shape,
+            disc_type="linear_interp",
+            half_image=True,
+            half_volume=True,
+            max_r=program_mstep_max_r,
+            relion_x_half=True,
+            max_block_bytes=int(max_adjoint_block_bytes),
+            runtime_max_r=None if stable_window_plan is None else window_logical.mstep_max_r,
+        )
+        Ft_y_total, Ft_ctf_total = _backproject_projection_sums(
+            Ft_y_total,
+            Ft_ctf_total,
+            mstep_grid=mstep_grid,
+            n_classes=n_classes,
+            n_fine_rot=n_fine_rot,
+            volume_size=program_recon_volume_size,
+            adjoint_kwargs=adjoint_kwargs,
+        )
     loop_s = time.time() - loop_t0
     if warmup is not None:
         used = submitted_keys or set()
@@ -3643,6 +3693,60 @@ def _resident_pass2(
         fine_translations=fine_translations,
         score_real_dtype=precision_policy.score_real_dtype,
     )
+
+
+# Per-projection M-step row sums replace the per-slot BPref volumes of a pass
+# while they take at most this share of the free device memory.
+_PRESUM_ADJOINT_FREE_FRACTION = 0.2
+
+
+def _projection_sums_bytes(*, n_slots, n_fine_rot, n_recon_pixels, y_dtype, ctf_dtype) -> int:
+    """Bytes of one pass's per-projection sums: a ``[n_fine_rot, pixels]`` pair per slot."""
+
+    per_row = int(n_recon_pixels) * (np.dtype(y_dtype).itemsize + np.dtype(ctf_dtype).itemsize)
+    return int(n_slots) * int(n_fine_rot) * per_row
+
+
+def _carries_projection_sums(Ft_y_total) -> bool:
+    """Whether the chunk carry holds per-projection sums (2-D) rather than BPref volumes (1-D)."""
+
+    return int(jnp.ndim(Ft_y_total[0])) == 2
+
+
+def _backproject_projection_sums(sums_y, sums_ctf, *, mstep_grid, n_classes, n_fine_rot, volume_size, adjoint_kwargs):
+    """Each slot's BPref pair from its per-projection row sums, one backprojection per projection.
+
+    The M-step adjoint is linear in its rows, so backprojecting a fine
+    rotation's summed rows once equals backprojecting each row (RELION's
+    per-image BPref.set2DFourierTransform) up to float32 reassociation: the
+    rows of one projection are added before the trilinear scatter instead of
+    after it. Slot ``class + K * group`` takes class ``slot % K``'s M-step
+    rotations, ``mstep_grid[class * n_fine_rot : (class + 1) * n_fine_rot]``.
+    """
+
+    Ft_y_out, Ft_ctf_out = [], []
+    for slot, (slot_y, slot_ctf) in enumerate(zip(sums_y, sums_ctf)):
+        start = (slot % int(n_classes)) * int(n_fine_rot)
+        rotations = mstep_grid[start : start + int(n_fine_rot)]
+        Ft_y_out.append(
+            _accumulate_adjoint_block_chunked(
+                slot_y,
+                rotations,
+                jnp.zeros(int(volume_size), dtype=slot_y.dtype),
+                log_label="resident-y-sums",
+                **adjoint_kwargs,
+            )
+        )
+        Ft_ctf_out.append(
+            _accumulate_adjoint_block_chunked(
+                slot_ctf,
+                rotations,
+                jnp.zeros(int(volume_size), dtype=slot_ctf.dtype),
+                log_label="resident-ctf-sums",
+                **adjoint_kwargs,
+            )
+        )
+    return tuple(Ft_y_out), tuple(Ft_ctf_out)
 
 
 def _with_reconstruction_groups(tables, group_ids, group_count, *, n_images: int):
@@ -4590,6 +4694,7 @@ def _make_chunk_program_spec(
     n_classes=1,
     stable_window=False,
     union_native_fft_size=0,
+    presum_adjoint=False,
 ) -> _ChunkProgramSpec:
     """The static key of one chunk program.
 
@@ -4628,6 +4733,7 @@ def _make_chunk_program_spec(
         n_classes=int(n_classes),
         stable_window=bool(stable_window),
         union_native_fft_size=int(union_native_fft_size),
+        presum_adjoint=bool(presum_adjoint),
     )
 
 
@@ -5655,6 +5761,10 @@ class _ChunkProgramSpec:
     # native-unit division of the score rows, applied after the gather; 0 keeps
     # RECOVAR units.
     union_native_fft_size: int = 0
+    # The M-step carry holds per-projection row sums instead of BPref volumes;
+    # the pass backprojects them once after its chunk loop
+    # (_backproject_projection_sums).
+    presum_adjoint: bool = False
 
 
 class _MstepOnlyStatsConfig(NamedTuple):
@@ -6185,6 +6295,7 @@ def _resident_mstep_block(
     block_kernel_ids,
     block_posterior,
     block_projections,
+    block_sum_ids=None,
     operands: _ChunkStageOperands,
     tables: _ChunkStageTables,
     carry: _ChunkMstepCarry,
@@ -6301,6 +6412,20 @@ def _resident_mstep_block(
         image_capacity=int(spec.image_capacity),
     )
 
+    if spec.presum_adjoint:
+        # The adjoint is linear in the rows, so a projection's rows are summed
+        # here and backprojected once per pass (_backproject_projection_sums).
+        # Padded and other-slot rows carry zero sums.
+        Ft_y = carry.Ft_y.at[block_sum_ids].add(summed.astype(carry.Ft_y.dtype))
+        Ft_ctf = carry.Ft_ctf.at[block_sum_ids].add(ctf_probs.astype(carry.Ft_ctf.dtype))
+        return carry._replace(
+            Ft_y=Ft_y,
+            Ft_ctf=Ft_ctf,
+            wavg_triplet_pixels=wavg_triplet_pixels,
+            noise_shells=carry.noise_shells + block_shells,
+            a2_per_image=carry.a2_per_image + block_a2,
+            xa_per_image=carry.xa_per_image + block_xa,
+        )
     runtime_mstep_max_r = None
     if spec.stable_window and tables.window_logical is not None:
         runtime_mstep_max_r = tables.window_logical.mstep_max_r
@@ -6638,8 +6763,18 @@ def _resident_mstep_block_at(
     def take(values):
         return jax.lax.dynamic_slice_in_dim(values, block_start, block_rows, axis=0)
 
+    block_sum_ids = None
     if blocks.projections is None:
-        block_projections = _cached_block_projections(tables, take(blocks.row_fine_rot))
+        block_row_ids = take(blocks.row_fine_rot)
+        block_projections = _cached_block_projections(tables, block_row_ids)
+        if spec.presum_adjoint:
+            # The row's fine rotation within its class: its projection id, or
+            # a class's (or a streamed chunk's) slot mapped back through the table.
+            block_sum_ids = (
+                block_row_ids
+                if tables.cache_slot_fine_rot is None
+                else jnp.asarray(tables.cache_slot_fine_rot, dtype=jnp.int32)[block_row_ids]
+            )
     else:
         block_projections = blocks.projections
     block_kernel_ids = take(blocks.kernel_row_image_ids)
@@ -6658,6 +6793,7 @@ def _resident_mstep_block_at(
         block_kernel_ids=block_kernel_ids,
         block_posterior=block_posterior,
         block_projections=block_projections,
+        block_sum_ids=block_sum_ids,
         operands=operands,
         tables=tables,
         carry=carry,
@@ -7345,6 +7481,7 @@ def _run_resident_chunk(
         n_classes=n_classes,
         stable_window=program_current_size is not None,
         union_native_fft_size=union_native_fft_size,
+        presum_adjoint=_carries_projection_sums(Ft_y_total),
     )
 
     if submitted_keys is not None:

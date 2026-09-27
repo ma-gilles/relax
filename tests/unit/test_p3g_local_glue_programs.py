@@ -51,10 +51,11 @@ def _chunk_rows(row_capacity=16, n_recon=5, seed=20260920):
 
 
 class _Spec:
-    """The two fields ``_resident_mstep_block_at`` reads off the spec."""
+    """The fields ``_resident_mstep_block_at`` reads off the spec."""
 
     def __init__(self, mstep_block_rows):
         self.mstep_block_rows = int(mstep_block_rows)
+        self.presum_adjoint = False
 
 
 def _tables_with_chunk_rows(proj, proj_abs2, rotations):

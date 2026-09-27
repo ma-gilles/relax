@@ -343,6 +343,51 @@ def test_duplicated_class_is_the_k1_pass(_resident_production_env):
     )
 
 
+def _count_projection_sum_flushes(monkeypatch):
+    flushes = []
+    backproject = rp._backproject_projection_sums
+
+    def counted(*args, **kwargs):
+        flushes.append(1)
+        return backproject(*args, **kwargs)
+
+    monkeypatch.setattr(rp, "_backproject_projection_sums", counted)
+    return flushes
+
+
+@requires_resident_gpu
+def test_projection_sums_backproject_like_every_row(_resident_production_env, monkeypatch):
+    """Summing each projection's rows before one backprojection is the per-row BPref.
+
+    The adjoint is linear in its rows, so the two differ only by float32
+    reassociation of a handful of rows per projection. The noise sums never
+    read the adjoint; they move only by the run-to-run order of their own
+    float atomics, so they take the K=1 engine-comparison bound.
+    """
+
+    flushes = _count_projection_sum_flushes(monkeypatch)
+    summed = _resident(*_k_class_args(3))
+    assert flushes, "the fixture's projection sums must fit, so the pass takes that route"
+    monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
+    flushes.clear()
+    per_row = _resident(*_k_class_args(3))
+    assert not flushes
+
+    for got, want in list(zip(summed.Ft_y, per_row.Ft_y)) + list(zip(summed.Ft_ctf, per_row.Ft_ctf)):
+        assert _rel_l2(want, got) < 1e-6
+    for field in ("wsum_sigma2_noise", "wsum_img_power", "wsum_norm_correction"):
+        assert _rel_l2(getattr(per_row.noise_stats, field), getattr(summed.noise_stats, field)) < 1e-6, field
+
+
+@requires_resident_gpu
+def test_k1_pass_backprojects_every_row(_resident_production_env, monkeypatch):
+    """Auto-refine (K=1) keeps the per-row backprojection even when the sums would fit."""
+
+    flushes = _count_projection_sum_flushes(monkeypatch)
+    rp.compute_pass2_stats_resident(**_driver_fixture_args())
+    assert not flushes
+
+
 # ---------------------------------------------------------------------------
 # Engine selection: the K=1 flip's rules for the K-class pass
 # ---------------------------------------------------------------------------
