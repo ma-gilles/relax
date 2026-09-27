@@ -395,15 +395,20 @@ def test_every_program_a_runner_submits_is_one_the_warm_up_warms():
     holds them to `chunk_programs_for_path`, so the next such split fails here.
     """
 
-    def referenced(fn):
-        return {n for n in fn.__code__.co_names if n.endswith("_program")}
+    def referenced(*fns):
+        return {n for fn in fns for n in fn.__code__.co_names if n.endswith("_program")}
 
-    for path, runner in (
-        ("per-stage", rp._run_resident_chunk_stages),
-        ("fused", rp._run_resident_chunk),
+    # The per-stage runner is its front and finish halves (the pipelined loop
+    # calls them separately); the fused runner is one program.
+    for path, runners in (
+        (
+            "per-stage",
+            (rp._run_resident_chunk_stages, rp._resident_chunk_stages_front, rp._resident_chunk_stages_finish),
+        ),
+        ("fused", (rp._run_resident_chunk,)),
     ):
         warmed = {f.__name__ for f in rp.chunk_programs_for_path(path)}
-        assert warmed == referenced(runner), (path, warmed, referenced(runner))
+        assert warmed == referenced(*runners), (path, warmed, referenced(*runners))
 
 
 def test_the_eager_path_warms_nothing():

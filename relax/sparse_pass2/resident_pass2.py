@@ -3339,8 +3339,14 @@ def _resident_pass2(
     # itself, which is what a mis-predicted spec looks like.
     submitted_keys = set() if warmup is not None else None
     loop_t0 = time.time()
+    # Software-pipelined as the local pass is: chunk k+1 is enqueued up to its
+    # posterior before chunk k's M-step reads its live row ranges back. A
+    # streamed pass projects per chunk because the cache did not fit, so it
+    # keeps one chunk's projections alive at a time and is not pipelined.
+    deferred = not _chunk_timing_enabled() and not _chunk_jit_enabled() and not stream_projections
+    pending = None
     for chunk in chunks:
-        Ft_y_total, Ft_ctf_total, stats = _run_resident_chunk(
+        result = _run_resident_chunk(
             chunk,
             tables=tables,
             window_logical=window_logical,
@@ -3410,7 +3416,16 @@ def _resident_pass2(
             union_native_fft_size=(
                 native_fft_size if (union_score_take is not None and relion_native_fine_units) else 0
             ),
+            deferred=deferred,
         )
+        if not deferred:
+            Ft_y_total, Ft_ctf_total, stats = result
+            continue
+        if pending is not None:
+            Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
+        pending = result
+    if pending is not None:
+        Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
     loop_s = time.time() - loop_t0
     if warmup is not None:
         used = submitted_keys or set()
@@ -6625,11 +6640,18 @@ def _run_resident_chunk_stages(
     diagnostic arm.
     """
 
+    front = _resident_chunk_stages_front(rows, operands, tables, spec=spec, timing_hook=timing_hook)
+    return _resident_chunk_stages_finish(
+        front, rows, operands, tables, carry, spec=spec, timing_hook=timing_hook
+    )
+
+
+def _resident_chunk_stages_front(rows, operands, tables, *, spec, timing_hook=None):
+    """The per-stage path's posterior and M-step row order, enqueued; no host read."""
+
     from relax.cuda import kernels as em_cuda_kernels
 
-    glue_jit = _resident_glue_jit_enabled()
-    Ft_y_total, Ft_ctf_total, stats = carry
-    if glue_jit:
+    if _resident_glue_jit_enabled():
         posterior = _resident_chunk_posterior_program(rows, operands, tables, spec=spec)
     else:
         posterior = _resident_chunk_posterior(
@@ -6637,9 +6659,18 @@ def _run_resident_chunk_stages(
         )
     if timing_hook is not None:
         timing_hook("posterior", posterior.row_posterior)
+    return posterior, _make_mstep_block_inputs(rows, posterior, n_slots=int(spec.n_slots))
 
+
+def _resident_chunk_stages_finish(front, rows, operands, tables, carry, *, spec, timing_hook=None):
+    """The per-stage path after its front: the live row ranges, the M-step blocks, the statistics."""
+
+    from relax.cuda import kernels as em_cuda_kernels
+
+    glue_jit = _resident_glue_jit_enabled()
+    posterior, blocks = front
+    Ft_y_total, Ft_ctf_total, stats = carry
     mstep = _initial_mstep_carry(Ft_y_total[0], Ft_ctf_total[0], operands, tables, spec=spec)
-    blocks = _make_mstep_block_inputs(rows, posterior, n_slots=int(spec.n_slots))
     slot_offsets = np.asarray(jax.device_get(blocks.slot_offsets), dtype=np.int64)
     Ft_y_out, Ft_ctf_out = [], []
     for slot_index in range(int(spec.n_slots)):
@@ -6756,6 +6787,7 @@ def _run_resident_chunk(
     union_score_take=None,
     union_recon_take=None,
     union_native_fft_size=0,
+    deferred=False,
 ):
     """Run every resident stage for one capacity chunk.
 
@@ -6771,6 +6803,12 @@ def _run_resident_chunk(
     is the chunk's materialize/pad, its operand preparation and the T7 offsets
     readback the segmented posterior performs internally; no per-chunk result
     is pulled.
+
+    ``deferred`` (per-stage path, timing off) enqueues the chunk up to its
+    posterior and M-step row order and returns ``finish(Ft_y_total,
+    Ft_ctf_total, stats)`` for the rest, whose live row ranges are read back
+    on the host, so the caller can enqueue the next chunk first; the
+    accumulator arguments are then unused.
     """
 
     row_capacity = int(chunk.row_capacity)
@@ -6968,6 +7006,15 @@ def _run_resident_chunk(
         submitted_keys.update(chunk_program_keys(chunk_program_path(), spec))
 
     use_jit = _chunk_jit_enabled()
+    if deferred and not use_jit and not timing:
+        front = _resident_chunk_stages_front(rows, operands, stage_tables, spec=spec)
+
+        def finish(Ft_y_total, Ft_ctf_total, stats):
+            return _resident_chunk_stages_finish(
+                front, rows, operands, stage_tables, (Ft_y_total, Ft_ctf_total, stats), spec=spec
+            )
+
+        return finish
     if use_jit:
         Ft_y_total, Ft_ctf_total, stats = _run_resident_chunk_program(
             rows, operands, stage_tables, (Ft_y_total, Ft_ctf_total, stats), spec=spec
