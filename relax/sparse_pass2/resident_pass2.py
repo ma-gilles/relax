@@ -6736,10 +6736,18 @@ def run_resident_mstep_blocks(
     max_adjoint_block_bytes,
     cuda_backproject,
     n_optics_groups: int = 1,
+    row_ids=None,
 ):
     """Walk one chunk's pixel axis in row blocks: Wavg, noise and both adjoints.
 
     Exactly one of ``block_projections`` and ``chunk_projections`` is given.
+
+    ``row_ids`` (int32 ``[row_capacity]``) is the chunk row each M-step row
+    reads its ``chunk_projections`` at; ``None`` is the identity. The row
+    arrays (``row_image_local``, ``kernel_row_image_ids``, ``row_posterior``)
+    are already in that order, and ``n_valid_rows`` counts the rows that carry
+    weight, so a caller that puts its live rows first launches only their
+    blocks.
 
     ``block_projections(start, stop)`` returns this block's reconstruction-window
     projection, its ``|proj|^2`` and its M-step rotations. The global pass 2
@@ -6886,7 +6894,11 @@ def run_resident_mstep_blocks(
     else:
         # A host-side index vector, so it costs one transfer for the chunk and
         # no eager primitive: the block program slices it and gathers the rows.
-        chunk_row_ids = jnp.asarray(np.arange(int(row_capacity), dtype=np.int32))
+        chunk_row_ids = (
+            jnp.asarray(np.arange(int(row_capacity), dtype=np.int32))
+            if row_ids is None
+            else jnp.asarray(row_ids, dtype=jnp.int32)
+        )
         projection_dtypes = (chunk_proj.dtype, chunk_proj_abs2.dtype)
 
     def start_carry(projections):

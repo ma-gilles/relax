@@ -69,6 +69,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -1021,6 +1022,35 @@ def _local_chunk_segment_offsets(tables, chunk, n_fine_trans: int) -> np.ndarray
     return offsets.astype(np.int32)
 
 
+class _LiveRowsFirst(NamedTuple):
+    """A chunk's M-step rows, live rows first (see :func:`_live_rows_first`)."""
+
+    row_ids: jax.Array  # int32 [C_R]: the chunk row at each M-step position
+    row_image_local: jax.Array  # int32 [C_R]
+    kernel_row_image_ids: jax.Array  # int32 [C_R]
+    row_posterior: jax.Array  # float32 [C_R, T]
+
+
+@jax.jit
+def _live_rows_first(row_posterior, row_is_valid, row_image_local, kernel_row_image_ids):
+    """Order a chunk's rows live first (stable) and count the live ones.
+
+    A row is live when it is valid and has a positive reconstruction weight.
+    The M-step sums are taken in a different row grouping than chunk order;
+    each row's contribution is unchanged.
+    """
+
+    live = row_is_valid & jnp.any(row_posterior > 0, axis=1)
+    order = jnp.argsort(jnp.where(live, 0, 1).astype(jnp.int32), stable=True).astype(jnp.int32)
+    rows = _LiveRowsFirst(
+        row_ids=order,
+        row_image_local=row_image_local[order],
+        kernel_row_image_ids=kernel_row_image_ids[order],
+        row_posterior=row_posterior[order],
+    )
+    return rows, jnp.sum(live, dtype=jnp.int32)
+
+
 def _run_resident_local_chunk(
     chunk,
     *,
@@ -1242,10 +1272,20 @@ def _run_resident_local_chunk(
         host_chunk["mstep_rotations"], dtype=precision_policy.score_real_dtype
     )
 
+    # Only rows the pruned posterior keeps enter the M-step, live rows first in
+    # chunk order, as in the global pass (_make_mstep_block_inputs): a row with
+    # no positive cell adds exact zeros to every M-step accumulator, and the
+    # block walk stops after the live rows. At the 10097 full-box final pass
+    # about a third of the scored rows carry no weight.
+    mstep_rows, n_live_rows = _live_rows_first(
+        row_posterior, row_is_valid, row_image_local, kernel_row_image_ids
+    )
+    n_live_rows = int(n_live_rows)
+
     # P3-G: with the flag on the three chunk-wide arrays go to the M-step entry
-    # point whole and the block program slices them inside the jit; with it off
-    # the Python callback slices them per block, three eager dispatches each
-    # time, which is the path this change is measured against.
+    # point whole and the block program gathers its rows inside the jit; with it
+    # off the Python callback gathers them per block, three eager dispatches
+    # each time, which is the path this change is measured against.
     block_row_program = parse_env_flag(_BLOCK_ROW_PROGRAM_ENV, default=False)
     if block_row_program:
         block_projections = None
@@ -1254,10 +1294,8 @@ def _run_resident_local_chunk(
         chunk_projections = None
 
         def block_projections(start, stop):
-            # A slice, not a gather: the layout's flat order is the chunk's row
-            # order, so a block's projections are contiguous in the arrays this
-            # chunk just produced.
-            return recon_proj[start:stop], recon_abs2[start:stop], mstep_rotations[start:stop]
+            rows = mstep_rows.row_ids[start:stop]
+            return recon_proj[rows], recon_abs2[rows], mstep_rotations[rows]
 
     (
         Ft_y_total,
@@ -1270,12 +1308,13 @@ def _run_resident_local_chunk(
         block_projections,
         chunk_projections=chunk_projections,
         row_capacity=row_capacity,
-        n_valid_rows=n_valid_rows,
+        n_valid_rows=n_live_rows,
         mstep_block_rows=int(mstep_block_rows),
         image_capacity=image_capacity,
-        row_image_local=row_image_local,
-        kernel_row_image_ids=kernel_row_image_ids,
-        row_posterior=row_posterior,
+        row_image_local=mstep_rows.row_image_local,
+        kernel_row_image_ids=mstep_rows.kernel_row_image_ids,
+        row_posterior=mstep_rows.row_posterior,
+        row_ids=mstep_rows.row_ids,
         recon=recon,
         n_rect=int(n_rect),
         n_shells=int(stats_config.n_shells),
@@ -1376,11 +1415,11 @@ def _run_resident_local_chunk(
             for prev, name in zip(order, order[1:])
             if name in marks and prev in marks
         }
-        n_blocks = len(range(0, min(row_capacity, max(n_valid_rows, 1)), int(mstep_block_rows))) or 1
+        n_blocks = len(range(0, min(row_capacity, max(n_live_rows, 1)), int(mstep_block_rows))) or 1
         logger.info(
-            "Resident local chunk profile: images=%d/%d rows=%d/%d row_pad=%.1f%% "
+            "Resident local chunk profile: images=%d/%d rows=%d/%d live_rows=%d row_pad=%.1f%% "
             "blocks=%d proj_rows=%d recon_tile=%s wavg_tile=%s | %s | chunk=%.3fs",
-            n_valid_images, image_capacity, n_valid_rows, row_capacity,
+            n_valid_images, image_capacity, n_valid_rows, row_capacity, n_live_rows,
             100.0 * (row_capacity - n_valid_rows) / max(row_capacity, 1),
             n_blocks, row_capacity,
             f"{recon['shifted_recon'].dtype}{tuple(recon['shifted_recon'].shape)}",
