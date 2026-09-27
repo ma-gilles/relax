@@ -34,7 +34,7 @@ Matched:
 
 | Dataset | Workflow | N / box | RELION res (Å) unmasked / masked | relax res (Å) unmasked / masked | Masked X-AUC | RELION time | relax time | Ratio | GPU | Matched? | Date |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
-| ribosembly_k4_g256_n100000_completion_20260512_171123 (resident engine) [notes](relion_vs_relax_provenance.md#ribosembly_k4_100k256_class3d_15it_resident_68a3cf0) | Class3D K=4 (15 iterations), C1, standalone | 100,000 / 256 | 15.54 d / — | 15.11 d / — | — | 3,624 s | 2,517 s | 0.69x | 1x H100 | yes | 2026-09-26 |
+| ribosembly_k4_g256_n100000_completion_20260512_171123 (resident engine) [notes](relion_vs_relax_provenance.md#ribosembly_k4_100k256_class3d_15it_resident_d7f9a7a) | Class3D K=4 (15 iterations), C1, standalone | 100,000 / 256 | 15.54 d / — | 15.11 d / — | — | 3,598 s | 1,593 s | 0.44x | 1x H100 | yes | 2026-09-27 |
 | data_noise1_50k_256_normalized (flip pair) [notes](relion_vs_relax_provenance.md#noise1_k1_50k256_autorefine_flipqual_64499e8) | auto-refine K=1, C1, standalone | 50,000 / 256 | 11.83 b / 10.88 | 11.83 b / 10.88 | 1.0000 | 4,978 s | 3,218 s | 0.65x | 1x H100 | yes | 2026-09-24 |
 | pdb_k1_g256_n100000_noise1_bf80_20260516 (resident engine) [notes](relion_vs_relax_provenance.md#pdb_k1_100k256_noise1_bf80_autorefine_resident_589ce09) | auto-refine K=1, C1, standalone | 100,000 / 256 | 5.98 a / 4.35 | 6.04 a / 4.35 | 0.9980 | 14,851 s | 6,472 s | 0.44x | 1x H100 | yes | 2026-09-25 |
 | data_pdb_k2_5k_128 (resident engine) [notes](relion_vs_relax_provenance.md#pdb_k2_5k_class3d_25it_resident_bench) | Class3D K=2 (25 iterations, GUI defaults), C1, standalone | 5,000 / 128 | 13.27 d / — | 13.27 d / — | — | 201 s | 437 s | 2.17x | 1x H100 | workload | 2026-09-25 |
@@ -45,7 +45,7 @@ Matched:
 
 | Dataset | Workflow | N / box | RELION res (Å) unmasked / masked | relax res (Å) unmasked / masked | Masked X-AUC | RELION time | relax time | Ratio | GPU | Matched? | Date |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
-| EMPIAR-10097 [notes](relion_vs_relax_provenance.md#empiar10097_initialmodel_vdam_200it) | InitialModel-VDAM K=1 (200 iterations, seed 41), C1, standalone | 130,000 / 256 | 10.16 f / 8.38 | 10.16 f / 8.38 | 0.8912 | 3,001 s | 5,707 s | 1.90x | 1x H100 | yes | 2026-09-25 |
+| EMPIAR-10097 [notes](relion_vs_relax_provenance.md#empiar10097_initialmodel_vdam_200it) | InitialModel-VDAM K=1 (200 iterations, seed 41), C1, standalone | 130,000 / 256 | 10.16 f / 8.38 | 10.16 f / 8.38 | 0.8485 | 3,021 s | 2,011 s | 0.67x | 1x H100 | yes | 2026-09-27 |
 | EMPIAR-10076 (100k subset) [notes](relion_vs_relax_provenance.md#empiar10076_100k256_initialmodel_vdam_200it) | InitialModel-VDAM K=1 (200 iterations, seed 29), C1, standalone | 100,000 / 256 | 10.75 f / 10.48 | 10.75 f / 10.48 | 0.9897 | 3,618 s | 3,643 s | 1.01x | 1x H100 | workload | 2026-09-26 |
 | EMPIAR-10076 (10k subset) [notes](relion_vs_relax_provenance.md#empiar10076_10k256_initialmodel_vdam_k4_20it) | InitialModel-VDAM K=4 (20 iterations, seed 29), C1, standalone | 10,000 / 256 | 69.87 f / 69.87 | 69.87 f / 69.87 | 0.9979 | 132 s | 304 s | 2.30x | 1x H100 | workload | 2026-09-26 |
 | EMPIAR-10081 (HCN1) [notes](relion_vs_relax_provenance.md#empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align) | InitialModel-VDAM K=1 (200 iterations, seed 42; relion_align_symmetry C4 on both), C4 (run in C1), standalone | 55,870 / 256 | 6.53 f / 6.40 | 6.79 f / 6.66 | 0.7131 | 1,627 s | 3,711 s | 2.28x | 1x H100 | yes | 2026-09-24 |
