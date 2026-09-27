@@ -30,7 +30,7 @@ def test_results_page_holds_tables_and_links_every_row_to_its_provenance():
     results = render_markdown(table)
     provenance = render_provenance(table)
     assert "## Notes" not in results and "Jobs:" not in results
-    for row in table["rows"]:
+    for row in (r for r in table["rows"] if r.get("benchmark", True)):
         assert f"[notes](relion_vs_relax_provenance.md#{row['id']})" in results
         assert '<a id="' + row["id"] + '"></a>' in provenance
         assert f"`{row['id']}`" in provenance
@@ -131,7 +131,7 @@ def test_one_table_with_workflow_subheaders_in_order():
     titles = ["**EM auto-refine (K=1)**", "**Class3D (K>1)**", "**VDAM (K=1)**", "**VDAM (K>1)**"]
     positions = [rendered.index(title) for title in titles]
     assert positions == sorted(positions)
-    for row in table["rows"]:
+    for row in (r for r in table["rows"] if r.get("benchmark", True)):
         at = rendered.index(f"#{row['id']})")
         if row.get("table") == "initialmodel":
             title = "**VDAM (K=1)**" if int(row["classes"]) == 1 else "**VDAM (K>1)**"
@@ -154,7 +154,7 @@ def test_status_mark_follows_quality_and_ratio():
     assert status(dict(base, matched="no")) == "⚪"
     assert status(dict(base, matched="workload", time_ratio_relax_over_relion=1.4)) == "⚪"
     assert status(dict(base, matched="no", quality_pass=False)) == "🔴"
-    for row in table["rows"]:
+    for row in (r for r in table["rows"] if r.get("benchmark", True)):
         line = next(x for x in rendered.splitlines() if f"#{row['id']})" in x)
         assert line.startswith(f"| {status(row)} |")
         assert row["quality_reason"] in line
@@ -184,7 +184,7 @@ def test_initialmodel_rows_keep_every_auc_on_the_provenance_page():
     after = render_provenance(table)
     letters = {name: chr(ord("a") + i) for i, name in enumerate(table["resolution_definitions"])}
     letter = letters["vdam_fsc05_vs_reference"]
-    for row in (r for r in table["rows"] if r.get("table") == "initialmodel"):
+    for row in (r for r in table["rows"] if r.get("table") == "initialmodel" and r.get("benchmark", True)):
         im = row["initial_model"]
         line = next(x for x in tables.splitlines() if f"#{row['id']})" in x)
         if im["relion"]["res_05_A"] is not None:
@@ -233,3 +233,29 @@ def test_row_provenance_renders_in_the_note():
         "Provenance: regenerated post hoc with RELION griddingCorrect on the saved final maps; "
         "relax merged `/c/final_merged.mrc` (sha256 `aaaaaaaaaaaaaaaa`)." in rendered
     )
+
+
+@pytest.mark.unit
+def test_small_fixtures_are_debug_rows_off_both_pages(tmp_path):
+    """Single-particle and VDAM rows with at most 10k particles carry benchmark: false and render on neither page
+    (user, 2026-09-27); cryo-ET rows are exempt."""
+    table = load_and_validate(DEFAULT_JSON)
+    results, provenance = render_markdown(table), render_provenance(table)
+    debug = [r for r in table["rows"] if not r.get("benchmark", True)]
+    assert debug
+    for row in debug:
+        assert f"#{row['id']})" not in results and f'<a id="{row["id"]}">' not in provenance
+    assert "full-size datasets only" in results
+    raw = json.loads(DEFAULT_JSON.read_text())
+    small = next(r for r in raw["rows"] if not r.get("benchmark", True))
+    small["benchmark"] = True
+    path = tmp_path / "table.json"
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match="debug fixture"):
+        load_and_validate(path)
+    raw = json.loads(DEFAULT_JSON.read_text())
+    small = next(r for r in raw["rows"] if not r.get("benchmark", True))
+    del small["benchmark_note"]
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match="benchmark_note"):
+        load_and_validate(path)

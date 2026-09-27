@@ -1,6 +1,6 @@
 {
  "schema": "relax-relion-benchmarks-v1",
- "updated": "2026-09-25",
+ "updated": "2026-09-27",
  "purpose": "Standing RELION-vs-relax resolution and wall-time table for every synthetic and real dataset run so far. relax is the RECOVAR EM code; rows before the relax split (2026-09-23) cite the RECOVAR source SHA that ran. Rendered by scripts/render_benchmark_table.py into docs/benchmarks/relion_vs_relax.md.",
  "rules": [
   "Missing measurements are null and carry a reason in null_reasons; no value is interpolated or invented.",
@@ -1253,7 +1253,9 @@
     }
    ],
    "quality_pass": true,
-   "quality_reason": "same resolution (15.97 Å, masked 22.36 Å); map gate thresholds met vs 4 of 4 RELION runs"
+   "quality_reason": "same resolution (15.97 Å, masked 22.36 Å); map gate thresholds met vs 4 of 4 RELION runs",
+   "benchmark": false,
+   "benchmark_note": "debug fixture: single-particle/VDAM rows with at most 10k particles are for testing and debugging, not the benchmark page (user, 2026-09-27)"
   },
   {
    "id": "ribosembly_k4_100k256_class3d_15it_resident_d7f9a7a",
@@ -1976,7 +1978,9 @@
     "sha256": "aca84f352343539e736efb667d15b7a7716627c039480f45270faa10ef9cce7f"
    },
    "quality_pass": false,
-   "quality_reason": "worst s29 −2.4e-4 vs same-seed RELION; s29 below across-seed RELION band 0.288878-0.388816 (masked mean GT FSC-AUC)"
+   "quality_reason": "worst s29 −2.4e-4 vs same-seed RELION; s29 below across-seed RELION band 0.288878-0.388816 (masked mean GT FSC-AUC)",
+   "benchmark": false,
+   "benchmark_note": "debug fixture: single-particle/VDAM rows with at most 10k particles are for testing and debugging, not the benchmark page (user, 2026-09-27)"
   },
   {
    "id": "pdb_k4_5k_class3d_25it_resident_bench",
@@ -2196,7 +2200,9 @@
     "sha256": "41916d7c348cc82afc7e25c03fad1322f6692e5ba7283c2a428e56214a4078e9"
    },
    "quality_pass": true,
-   "quality_reason": "worst s1775735620 −1.8e-7 vs same-seed RELION; inside or above across-seed band (masked mean GT FSC-AUC)"
+   "quality_reason": "worst s1775735620 −1.8e-7 vs same-seed RELION; inside or above across-seed band (masked mean GT FSC-AUC)",
+   "benchmark": false,
+   "benchmark_note": "debug fixture: single-particle/VDAM rows with at most 10k particles are for testing and debugging, not the benchmark page (user, 2026-09-27)"
   },
   {
    "id": "pdb_k4_50k_class3d_15it_resident_bench",
@@ -2691,7 +2697,9 @@
      "quality_pass": false,
      "time_ratio_relax_over_relion": 2.83
     }
-   ]
+   ],
+   "benchmark": false,
+   "benchmark_note": "debug fixture: single-particle/VDAM rows with at most 10k particles are for testing and debugging, not the benchmark page (user, 2026-09-27)"
   },
   {
    "id": "pdb_k2_5k128_initialmodel_vdam_200it",
@@ -2851,7 +2859,9 @@
      "quality_pass": false,
      "time_ratio_relax_over_relion": 2.39
     }
-   ]
+   ],
+   "benchmark": false,
+   "benchmark_note": "debug fixture: single-particle/VDAM rows with at most 10k particles are for testing and debugging, not the benchmark page (user, 2026-09-27)"
   },
   {
    "id": "pdb_k4_5k128_initialmodel_vdam_200it",
@@ -2982,7 +2992,9 @@
     "d": "H100 80GB HBM3 on every arm (GPU.txt per arm); RELION and relax in different jobs and nodes, so the wall ratio is not timing-controlled"
    },
    "quality_pass": true,
-   "quality_reason": "masked ref AUC 0.1433 above RELION 0.1235"
+   "quality_reason": "masked ref AUC 0.1433 above RELION 0.1235",
+   "benchmark": false,
+   "benchmark_note": "debug fixture: single-particle/VDAM rows with at most 10k particles are for testing and debugging, not the benchmark page (user, 2026-09-27)"
   },
   {
    "id": "pdb_k4_5k128_initialmodel_vdam_200it_bench83b9ae9",
@@ -3111,7 +3123,9 @@
     "sha256": "41916d7c348cc82afc7e25c03fad1322f6692e5ba7283c2a428e56214a4078e9"
    },
    "quality_pass": true,
-   "quality_reason": "inside or above the 6-run RELION band at 3 seeds"
+   "quality_reason": "inside or above the 6-run RELION band at 3 seeds",
+   "benchmark": false,
+   "benchmark_note": "debug fixture: single-particle/VDAM rows with at most 10k particles are for testing and debugging, not the benchmark page (user, 2026-09-27)"
   },
   {
    "id": "ribosembly_k15_50k256_initialmodel_vdam_200it",
@@ -3882,7 +3896,9 @@
     "d": "H100 80GB HBM3 on every arm (nvidia-smi records in RUN.json / RUN.txt); RELION on della-h20g4, relax on della-h21g1, each job sharing its node with the other arm of its job"
    },
    "quality_pass": true,
-   "quality_reason": "masked ref AUC 0.0491 vs RELION 0.0490"
+   "quality_reason": "masked ref AUC 0.0491 vs RELION 0.0490",
+   "benchmark": false,
+   "benchmark_note": "debug fixture: single-particle/VDAM rows with at most 10k particles are for testing and debugging, not the benchmark page (user, 2026-09-27)"
   },
   {
    "id": "empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align",

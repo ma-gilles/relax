@@ -80,6 +80,7 @@ CATEGORIES = (
     ("vdam_k", "VDAM (K>1)"),
     ("cryoet", "Cryo-ET"),
 )
+DEBUG_MAX_PARTICLES = 10_000
 GREEN_MAX = 0.6
 ORANGE_MAX = 1.2
 STATUS_LEGEND = (
@@ -87,7 +88,9 @@ STATUS_LEGEND = (
     " · ⚪ not a speed comparison (arms not timed in one job, or a wall is missing). Accuracy hit: relax inside or above"
     " the RELION band by the row's metric (Quality column). Multi-seed rows: every relax seed inside or above the"
     " across-seed RELION band (all RELION runs of all seeds), and relax not below its same-seed RELION run on a majority"
-    " of seeds; the Quality column shows the worst per-seed gap to the same-seed RELION run."
+    " of seeds; the Quality column shows the worst per-seed gap to the same-seed RELION run. The page lists full-size"
+    " datasets only: single-particle and VDAM rows need more than 10k particles (smaller fixtures are for testing and"
+    " debugging and stay in the JSON with benchmark: false); cryo-ET rows count from 1k particles (about 40 tilts each)."
 )
 # One-line legends on the results page; the full definitions render on the provenance page.
 LETTER_LEGEND = {
@@ -131,6 +134,7 @@ def load_and_validate(path, registry=DEFAULT_REGISTRY):
         raise ValueError("duplicate row id")
     for row in table["rows"]:
         _validate_quality(row)
+        _validate_page_scope(row)
         if _is_initialmodel(row):
             if IM_RESOLUTION not in definitions:
                 raise ValueError(f"resolution_definitions needs {IM_RESOLUTION} for the InitialModel rows")
@@ -140,6 +144,19 @@ def load_and_validate(path, registry=DEFAULT_REGISTRY):
         _validate_masked(row, masks)
         _validate_per_reference(row)
     return table
+
+
+def _validate_page_scope(row):
+    """Single-particle and VDAM rows with at most 10k particles are debug fixtures (user, 2026-09-27): they carry
+    benchmark: false and a benchmark_note, and neither page renders them. Cryo-ET rows count from 1k particles."""
+    small = row.get("table") != "cryoet" and int(row.get("particles") or 0) <= DEBUG_MAX_PARTICLES
+    flag = row.get("benchmark", True)
+    if flag not in (True, False):
+        raise ValueError(f"{row['id']}: benchmark must be true or false")
+    if small and flag:
+        raise ValueError(f"{row['id']}: {row.get('particles')} particles is a debug fixture; set benchmark: false")
+    if not flag and not row.get("benchmark_note"):
+        raise ValueError(f"{row['id']}: benchmark: false needs a benchmark_note")
 
 
 def _validate_quality(row):
@@ -275,11 +292,16 @@ def render_markdown(table):
         *TABLE_HEADER,
     ]
     for key, title in CATEGORIES:
-        rows = [row for row in table["rows"] if _category(row) == key]
+        rows = [row for row in _page_rows(table) if _category(row) == key]
         if rows:
             lines.append(f"| | **{title}** | | | | | | | | |")
             lines += [_line(row, letters) for row in rows]
     return "\n".join(lines) + "\n"
+
+
+def _page_rows(table):
+    """Rows rendered on both pages; debug fixtures (benchmark: false) stay in the JSON only."""
+    return [row for row in table["rows"] if row.get("benchmark", True)]
 
 
 def _category(row):
@@ -366,12 +388,12 @@ def render_provenance(table):
         "",
     ]
     lines += [f"- **{key}**: {text}" for key, text in table["matched_definition"].items()]
-    im_rows = [row for row in table["rows"] if _is_initialmodel(row)]
+    im_rows = [row for row in _page_rows(table) if _is_initialmodel(row)]
     if im_rows:
         intro = list(table["initial_model_intro"])
         lines += ["", "## InitialModel (VDAM) method", "", *intro[:1], "", IM_RESOLUTION_LINE, *intro[1:]]
     groups = [
-        (title, [r for r in table["rows"] if r["section"] == s and not _is_initialmodel(r)]) for s, title in SECTIONS
+        (title, [r for r in _page_rows(table) if r["section"] == s and not _is_initialmodel(r)]) for s, title in SECTIONS
     ]
     groups += [(title, [r for r in im_rows if r["section"] == s]) for s, title in IM_SECTIONS]
     for title, rows in groups:
