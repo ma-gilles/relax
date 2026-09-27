@@ -15,7 +15,6 @@ from relax.helpers.batch_planning import (
 from relax.helpers.orientation_priors import make_relion_translation_log_prior
 from relax.helpers.shape_buckets import coarse_bucket, power_bucket
 from relax.sampling import (
-    _normalized_log_weights,
     _wrapped_abs_diff_deg,
     apply_relion_rotation_perturbation_to_eulers,
     build_local_search_grid_metadata,
@@ -402,6 +401,95 @@ def _local_selector_chunk_size(n_images: int, n_pixels: int, n_psi: int, use_dir
     return max(1, min(int(n_images), max_elements // per_image_elements))
 
 
+def _segment_starts(counts: np.ndarray) -> np.ndarray:
+    starts = np.zeros(counts.shape[0], dtype=np.int64)
+    if counts.shape[0]:
+        starts[1:] = np.cumsum(counts, dtype=np.int64)[:-1]
+    return starts
+
+
+def _chunk_local_supports(values, candidates, to_distance, cutoff_deg, sigma_deg):
+    """Each image's kept grid points and their normalized log Gaussian prior, for a chunk of images.
+
+    The chunk form of the per-image statements: a point is kept when its
+    distance (``to_distance`` of ``values``, or ``values`` itself) is below
+    ``cutoff_deg``, among the ``candidates`` prefilter when given; an image
+    with no kept point keeps its nearest point with log prior 0. Returns
+    ``(image, point, log_prior)`` flat arrays, image-major with ascending point
+    ids, which is the order the per-image loop produced. The per-image
+    normalization is a segmented sum, so the log priors can differ from the
+    loop's pairwise sum in the last float64 bit before their float32 rounding.
+    """
+
+    n_images = int(values.shape[0])
+    if candidates is None:
+        image = np.repeat(np.arange(n_images, dtype=np.int64), values.shape[1])
+        point = np.tile(np.arange(values.shape[1], dtype=np.int64), n_images)
+        distance = np.asarray(values, dtype=np.float64).reshape(-1)
+    else:
+        image, point = np.nonzero(candidates)
+        distance = to_distance(values[image, point])
+    inside = distance < cutoff_deg
+    image, point, distance = image[inside], point[inside], distance[inside]
+    n_kept = np.bincount(image, minlength=n_images)
+    # float32 as _normalized_log_weights returns it; the outer product adds it
+    # to the other axis's prior in whichever dtype the two promote to.
+    log_prior = np.zeros(distance.shape[0], dtype=np.float32)
+    kept = n_kept > 0
+    if distance.size:
+        weights = np.exp(-0.5 * (np.asarray(distance, dtype=np.float64) / float(sigma_deg)) ** 2)
+        starts = _segment_starts(n_kept[kept])
+        totals = np.add.reduceat(weights, starts)
+        per_point_total = np.repeat(totals, n_kept[kept])
+        normalized = weights / per_point_total
+        bad = ~np.isfinite(totals) | (totals <= 0.0)
+        if np.any(bad):
+            bad_points = np.repeat(bad, n_kept[kept])
+            normalized[bad_points] = 1.0 / np.repeat(n_kept[kept], n_kept[kept])[bad_points]
+        log_prior = np.log(np.clip(normalized, np.finfo(np.float32).tiny, None)).astype(np.float32)
+    empty = np.flatnonzero(~kept)
+    if empty.size:
+        distances = values[empty] if to_distance is None else to_distance(values[empty])
+        image = np.concatenate([image, empty])
+        point = np.concatenate([point, np.argmin(distances, axis=1)])
+        log_prior = np.concatenate([log_prior, np.zeros(empty.size, dtype=np.float32)])
+        order = np.argsort(image, kind="stable")
+        image, point, log_prior = image[order], point[order], log_prior[order]
+    return image, point.astype(np.int64), log_prior
+
+
+def _chunk_uniform_supports(n_images: int, n_points: int, *, dtype):
+    """Every grid point for every image with a uniform log prior, as ``(image, point, log_prior)``."""
+
+    image = np.repeat(np.arange(n_images, dtype=np.int64), n_points)
+    point = np.tile(np.arange(n_points, dtype=np.int64), n_images)
+    log_prior = np.full(image.shape[0], -np.log(max(n_points, 1)), dtype=dtype)
+    return image, point, log_prior
+
+
+def _chunk_outer_supports(n_images, psi_supports, dir_supports, *, n_pixels: int, dtype):
+    """Each image's psi x direction products, psi-major, as the per-image loop built them.
+
+    Returns the flat rotation ids ``psi * n_pixels + direction``, their log
+    priors ``psi_log_prior + direction_log_prior`` and the per-image counts.
+    """
+
+    psi_image, psi_ids, psi_log_prior = psi_supports
+    dir_image, dir_ids, dir_log_prior = dir_supports
+    n_psi = np.bincount(psi_image, minlength=n_images).astype(np.int64)
+    n_dir = np.bincount(dir_image, minlength=n_images).astype(np.int64)
+    counts = n_psi * n_dir
+    total = int(counts.sum())
+    image = np.repeat(np.arange(n_images, dtype=np.int64), counts)
+    local = np.arange(total, dtype=np.int64) - np.repeat(_segment_starts(counts), counts)
+    image_dirs = n_dir[image]
+    psi_row = _segment_starts(n_psi)[image] + local // image_dirs
+    dir_row = _segment_starts(n_dir)[image] + local % image_dirs
+    ids = psi_ids[psi_row] * np.int64(n_pixels) + dir_ids[dir_row]
+    log_prior = (psi_log_prior[psi_row] + dir_log_prior[dir_row]).astype(dtype)
+    return ids, log_prior, counts.astype(np.int32)
+
+
 def _build_factorized_local_entries(
     prior_rotations: np.ndarray,
     healpix_order: int,
@@ -485,46 +573,37 @@ def _build_factorized_local_entries(
         else:
             diffpsi_chunk = None
 
-        for local_idx, image_idx in enumerate(range(chunk_start, chunk_stop)):
-            if sigma_rot_deg > 0.0:
-                candidates = np.flatnonzero(candidate_chunk[local_idx])
-                candidate_angles = np.rad2deg(np.arccos(np.clip(dots[local_idx, candidates], -1.0, 1.0)))
-                inside = candidate_angles < cutoff_dir_deg
-                dir_indices = candidates[inside].astype(np.int64)
-                if dir_indices.size == 0:
-                    diffang_i = np.rad2deg(np.arccos(np.clip(dots[local_idx], -1.0, 1.0)))
-                    dir_indices = np.array([int(np.argmin(diffang_i))], dtype=np.int64)
-                    dir_log_prior = np.zeros(1, dtype=dtype)
-                else:
-                    dir_log_prior = _normalized_log_weights(candidate_angles[inside], biggest_sigma_deg)
-            else:
-                dir_indices = np.arange(n_pixels, dtype=np.int64)
-                dir_log_prior = np.full(n_pixels, -np.log(max(n_pixels, 1)), dtype=dtype)
-
-            if sigma_psi_deg > 0.0:
-                diffpsi_i = diffpsi_chunk[local_idx]
-                psi_mask = diffpsi_i < cutoff_psi_deg
-                psi_indices = np.flatnonzero(psi_mask).astype(np.int64)
-                if psi_indices.size == 0:
-                    psi_indices = np.array([int(np.argmin(diffpsi_i))], dtype=np.int64)
-                    psi_log_prior = np.zeros(1, dtype=dtype)
-                else:
-                    psi_log_prior = _normalized_log_weights(diffpsi_i[psi_indices], sigma_psi_deg)
-            else:
-                psi_indices = np.arange(int(grid_metadata["n_psi"]), dtype=np.int64)
-                psi_log_prior = np.full(
-                    psi_indices.shape[0],
-                    -np.log(max(psi_indices.shape[0], 1)),
-                    dtype=dtype,
-                )
-
-            local_ids = (psi_indices[:, None] * n_pixels + dir_indices[None, :]).reshape(-1).astype(np.int64)
-            local_log_prior = (psi_log_prior[:, None] + dir_log_prior[None, :]).reshape(-1).astype(dtype)
-            counts[image_idx] = int(local_ids.shape[0])
-            running_offset += int(local_ids.shape[0])
-            offsets[image_idx + 1] = running_offset
-            rotation_ids_parts.append(local_ids)
-            log_prior_parts.append(local_log_prior)
+        n_chunk = chunk_stop - chunk_start
+        if sigma_rot_deg > 0.0:
+            dir_image, dir_ids, dir_log_prior = _chunk_local_supports(
+                dots,
+                candidate_chunk,
+                lambda values: np.rad2deg(np.arccos(np.clip(values, -1.0, 1.0))),
+                cutoff_dir_deg,
+                biggest_sigma_deg,
+            )
+        else:
+            dir_image, dir_ids, dir_log_prior = _chunk_uniform_supports(n_chunk, n_pixels, dtype=dtype)
+        if sigma_psi_deg > 0.0:
+            psi_image, psi_ids, psi_log_prior = _chunk_local_supports(
+                diffpsi_chunk, None, None, cutoff_psi_deg, sigma_psi_deg
+            )
+        else:
+            psi_image, psi_ids, psi_log_prior = _chunk_uniform_supports(
+                n_chunk, int(grid_metadata["n_psi"]), dtype=dtype
+            )
+        local_ids, local_log_prior, chunk_counts = _chunk_outer_supports(
+            n_chunk,
+            (psi_image, psi_ids, psi_log_prior),
+            (dir_image, dir_ids, dir_log_prior),
+            n_pixels=n_pixels,
+            dtype=dtype,
+        )
+        counts[chunk_start:chunk_stop] = chunk_counts
+        offsets[chunk_start + 1 : chunk_stop + 1] = running_offset + np.cumsum(chunk_counts, dtype=np.int64)
+        running_offset = int(offsets[chunk_stop])
+        rotation_ids_parts.append(local_ids)
+        log_prior_parts.append(local_log_prior)
 
     rotation_ids_flat = _flat_parts(rotation_ids_parts, empty_shape=0, dtype=np.int64, cast=np.int64)
     rotation_log_priors_flat = _flat_parts(log_prior_parts, empty_shape=0, dtype=dtype)
