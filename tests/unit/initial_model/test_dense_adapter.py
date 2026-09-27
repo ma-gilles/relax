@@ -762,7 +762,9 @@ def test_projector_conversion_uses_relion_frame(monkeypatch):
     monkeypatch.setattr("relax.vdam.dense_adapter._relion_projector_to_dense_volume", fake_embed)
 
     refs = np.zeros((1, 4, 4, 4), dtype=np.float32)
-    projector_maps, _ = reference_to_relion_projector_half_maps(refs, current_size=2, padding_factor=1)
+    projector_maps, _ = reference_to_relion_projector_half_maps(
+        refs, current_size=2, padding_factor=1, projector_setup_backend="native"
+    )
     means = relion_projector_half_maps_to_dense_means(projector_maps, refs.shape[-1])
 
     assert means.shape == (1, 4**3)

@@ -126,7 +126,9 @@ def test_float32_fft_ir_has_no_double_payload():
     case = _case()
     ir = str(relion_vdam_m_step_device.lower(**case, compute_dtype=np.float32).compiler_ir())
     fft_lines = [line for line in ir.splitlines() if "stablehlo.fft " in line]
-    assert len(fft_lines) == 2, fft_lines
+    # The projector build's three one-axis transforms (x RFFT, y and z FFT) and the inverse.
+    assert len(fft_lines) == 4, fft_lines
+    assert [line.split("type =")[1].split(",")[0].strip() for line in fft_lines] == ["RFFT", "FFT", "FFT", "IRFFT"]
     assert all("f32" in line and "f64" not in line for line in fft_lines)
     assert "complex<f64>" not in ir
     # F64 is allowed only for authoritative tau2 passthrough and coordinate

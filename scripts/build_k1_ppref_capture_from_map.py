@@ -97,6 +97,7 @@ def main() -> None:
         reference[None],
         current_size=args.current_size,
         padding_factor=args.padding_factor,
+        projector_setup_backend="native",
     )
     write_ppref_capture(
         args.output,

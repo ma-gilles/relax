@@ -310,11 +310,13 @@ def build_report(
         relion_map[np.newaxis, ...],
         current_size=expected_current_size,
         padding_factor=inputs["padding_factor"],
+        projector_setup_backend="native",
     )
     rebuilt_recovar_ppref, rebuilt_recovar_r_max = reference_to_relion_projector_half_maps(
         recovar_map[np.newaxis, ...],
         current_size=expected_current_size,
         padding_factor=inputs["padding_factor"],
+        projector_setup_backend="native",
     )
     _require(
         rebuilt_relion_r_max == rebuilt_recovar_r_max == inputs["r_max"],

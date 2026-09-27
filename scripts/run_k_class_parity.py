@@ -1538,6 +1538,7 @@ def main() -> None:
         prev_reference_real,
         current_size=projector_current_size,
         padding_factor=args.projection_padding_factor,
+        projector_setup_backend="native",
     )
     print(
         "  exact RELION Projector::data: "

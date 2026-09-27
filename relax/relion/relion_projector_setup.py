@@ -26,6 +26,7 @@ from relax.helpers.deterministic_reduce import (
     fixed_order_shell_sums,
     static_shell_voxel_lists,
 )
+from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
 from relax.relion.relion_project import gridding_correct_volume_real
 
 
@@ -104,20 +105,28 @@ def setup_relion_projector_on_host(
     compute_dtype=jnp.float64,
     chunk_bytes: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """:func:`setup_relion_projector` with the window at ``r_max``, dispatched chunk by chunk to host arrays.
+    """:func:`setup_relion_projector` for one ``r_max``, dispatched chunk by chunk to host arrays.
 
     Returns the slab ``[L, L, L // 2 + 1]`` for ``L = 2 (pf r + 1) + 1``, the
-    shape the native binding returns, and the shell power. The chunks are
-    separate device programs, so a large box never holds the whole transform:
-    at EMPIAR-10202 (box 800, padding 2) the full-capacity transform needed
-    about 100 GB and the build fell back to two single-threaded host builds
-    (117 s per iteration, bigbox py-spy 14561585).
+    shape the native binding returns, and the shell power. The transform runs in
+    the stable Fourier-window class of ``2 r`` (``stable_fourier_window_current_size``,
+    the quantum the pass-2 engines use), so consecutive iterations whose current
+    size stays in one class reuse the compiled programs; each chunk is cropped to
+    ``L`` on its way to the host. The chunks are separate device programs, so a
+    large box never holds the whole transform: at EMPIAR-10202 (box 800, padding
+    2) the full-capacity transform needed about 100 GB and the build fell back to
+    two single-threaded host builds (117 s per iteration, bigbox py-spy 14561585).
     """
     reference = _checked_reference(reference_relion, ori_size, padding_factor, compute_dtype)
     radius = ori_size // 2 if int(r_max) < 0 else min(int(r_max), ori_size // 2)
+    window = radius
+    if 0 < radius < ori_size // 2:
+        quantum = stable_fourier_window_quantum()
+        window = stable_fourier_window_current_size(2 * radius, ori_size, quantum=quantum) // 2
     reference = gridding_correct_volume_real(reference, ori_size, padding_factor)
     return _build_projector_window(
-        reference, radius, ori_size, padding_factor, radius, chunk_bytes=chunk_bytes, to_host=True
+        reference, radius, ori_size, padding_factor, window,
+        chunk_bytes=chunk_bytes, to_host=True, output_radius=radius,
     )
 
 
@@ -140,7 +149,9 @@ def _checked_reference(reference_relion, ori_size, padding_factor, compute_dtype
 _CHUNK_BYTES = 2 * 1024**3
 
 
-def _build_projector_window(reference, r_max, ori_size, padding_factor, window_radius, *, chunk_bytes=None, to_host=False):
+def _build_projector_window(
+    reference, r_max, ori_size, padding_factor, window_radius, *, chunk_bytes=None, to_host=False, output_radius=None
+):
     """RELION's computeFourierTransformMap evaluated inside a static window, one axis at a time.
 
     Native computes ``rfftn(fftshift(padded), norm="forward")`` of the padded
@@ -154,7 +165,8 @@ def _build_projector_window(reference, r_max, ori_size, padding_factor, window_r
     padded 128-512 and agrees with it to 4.8e-16 (bigbox 14563130), and a smaller
     window is proportionally cheaper. Only the order of the three one-dimensional
     passes differs from native; tests/unit/test_relion_projector_setup.py holds
-    the float64 bound. ``to_host`` collects each chunk on the host (eager calls only).
+    the float64 bound. ``to_host`` collects each chunk on the host (eager calls
+    only), cropped to the window of ``output_radius`` when that is smaller.
     """
     n, pf = int(ori_size), int(padding_factor)
     m = pf * n
@@ -169,20 +181,33 @@ def _build_projector_window(reference, r_max, ori_size, padding_factor, window_r
     xy = [_transform_xy(reference[z0 : z0 + cz], yz_index, fft_size=m, n_x=n_x) for z0 in range(0, n, cz)]
     xy = xy[0] if len(xy) == 1 else jnp.concatenate(xy, axis=0)
     cy = max(1, chunk_bytes // (16 * m * n_x))
-    blocks, sums, counts = [], None, None
+    out_size = size if output_radius is None else 2 * (pf * int(output_radius) + 1) + 1
+    off = (size - out_size) // 2
+    if not to_host and out_size != size:
+        raise ValueError("a device slab keeps its window; crop on the host path only")
+    blocks, slab, sums, counts = [], None, None, None
     for y0 in range(0, size, cy):
         block = _transform_z(xy[:, y0 : y0 + cy], yz_index, fft_size=m)
         block, block_sums, block_counts = _mask_and_shell_power(
             block, r_max, ori_size=n, padding_factor=pf, size=size, y_start=y0
         )
-        blocks.append(np.asarray(jax.device_get(block)) if to_host else block)
+        if to_host:
+            if slab is None:
+                slab = np.empty((out_size, out_size, out_size // 2 + 1), dtype=block.dtype)
+            lo, hi = max(y0, off), min(y0 + block.shape[1], off + out_size)
+            if lo < hi:
+                slab[:, lo - off : hi - off] = np.asarray(jax.device_get(block))[
+                    off : off + out_size, lo - y0 : hi - y0, : out_size // 2 + 1
+                ]
+        else:
+            blocks.append(block)
         sums = block_sums if sums is None else sums + block_sums
         counts = block_counts if counts is None else counts + block_counts
     del xy
-    if len(blocks) == 1:
-        projector = blocks[0]
+    if to_host:
+        projector = slab
     else:
-        projector = np.concatenate(blocks, axis=1) if to_host else jnp.concatenate(blocks, axis=1)
+        projector = blocks[0] if len(blocks) == 1 else jnp.concatenate(blocks, axis=1)
     spectrum = jnp.where(counts >= 1, sums / jnp.maximum(counts, 1), jnp.zeros((), dtype=sums.dtype))
     return (projector, np.asarray(jax.device_get(spectrum))) if to_host else (projector, spectrum)
 
@@ -276,7 +301,7 @@ def reference_to_relion_projector_half_maps(
     current_size: int,
     padding_factor: int = 1,
     interpolator: int = 1,
-    projector_setup_backend: ProjectorSetupBackend = "native",
+    projector_setup_backend: ProjectorSetupBackend = "jax",
     projector_data_dtype=None,
     compute_dtype=np.float64,
 ) -> tuple[np.ndarray, int]:
@@ -299,15 +324,17 @@ def reference_to_relion_projector_half_maps_and_power(
     current_size: int,
     padding_factor: int = 1,
     interpolator: int = 1,
-    projector_setup_backend: ProjectorSetupBackend = "native",
+    projector_setup_backend: ProjectorSetupBackend = "jax",
     projector_data_dtype=None,
     compute_dtype=np.float64,
 ) -> tuple[np.ndarray, np.ndarray, int]:
     """Convert references to native-layout half maps and their corrected spectrum.
 
-    The JAX backend uses ``compute_dtype`` for gridding correction, FFT and
-    power. Unsupported geometry retains the native implementation only for
-    the default float64 route.
+    The JAX backend (the default) is the device build of
+    :func:`setup_relion_projector_on_host` and uses ``compute_dtype`` for
+    gridding correction, FFT and power. The native binding is the test
+    reference; unsupported geometry (odd box, padding other than 1 or 2, an
+    interpolator other than trilinear) also takes it, for the float64 route only.
 
     ``projector_data_dtype`` is what the caller wants the slab in. ``None``
     keeps each backend's own output: complex64 from the JAX path, whose

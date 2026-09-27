@@ -520,11 +520,13 @@ def _projection_source_boundary(
         native_map[None],
         current_size=int(current_size),
         padding_factor=int(padding_factor),
+        projector_setup_backend="native",
     )
     rebuilt_recovar, recovar_r_max = reference_to_relion_projector_half_maps(
         recovar_map[None],
         current_size=int(current_size),
         padding_factor=int(padding_factor),
+        projector_setup_backend="native",
     )
     if int(native_r_max) != int(r_max) or int(recovar_r_max) != int(r_max):
         raise ValueError(

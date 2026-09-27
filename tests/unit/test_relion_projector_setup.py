@@ -236,3 +236,23 @@ def test_jax_backend_builds_on_the_device_at_every_size(monkeypatch):
     bound = _float64_fft_bound(16, 2)
     assert all(value < bound for value in _relative_metrics(native, slab[0]).values())
     assert all(value < _float64_power_bound(16, 2) for value in _relative_metrics(native_power, power[0]).values())
+
+
+def test_host_build_reuses_programs_inside_a_stable_window_class():
+    """Radii whose current sizes share a stable window class (quantum 8) share compiled programs."""
+
+    from relax.relion import relion_projector_setup as setup
+
+    reference = np.random.default_rng(65).normal(size=(32,) * 3).astype(np.float64)
+    programs = (setup._transform_xy, setup._transform_z, setup._mask_and_shell_power)
+    setup.setup_relion_projector_on_host(reference, 5, ori_size=32, padding_factor=2)
+    compiled = [program._cache_size() for program in programs]
+    slab, power = setup.setup_relion_projector_on_host(reference, 6, ori_size=32, padding_factor=2)
+    assert [program._cache_size() for program in programs] == compiled
+    # Current sizes 10 and 12 both run in class 16; the slab is still cropped to radius 6.
+    assert slab.shape == (27, 27, 14)
+    exact = setup._build_projector_window(
+        setup.gridding_correct_volume_real(reference, 32, 2), 6, 32, 2, 6, to_host=True
+    )
+    assert_matches(slab, exact[0])
+    assert all(value < _float64_power_bound(32, 2) for value in _relative_metrics(exact[1], power).values())

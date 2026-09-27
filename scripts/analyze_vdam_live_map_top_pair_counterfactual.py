@@ -171,6 +171,7 @@ def analyze(
             volume[None],
             current_size=current_size,
             padding_factor=padding_factor,
+            projector_setup_backend="native",
         )
         projected, _ = compute_relion_projector_projections_block(
             jnp.asarray(projector[0], dtype=jnp.complex64),

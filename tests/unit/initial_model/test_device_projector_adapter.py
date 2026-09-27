@@ -56,12 +56,17 @@ def test_adapter_native_radius_layout_frame_and_consumer_policy(size, padding, c
 
     monkeypatch.setattr(setup, "setup_relion_projector_on_host", capture)
     kwargs = dict(current_size=current_size, padding_factor=padding)
-    controls = [relion_projector_setup.reference_to_relion_projector_half_maps_and_power(references, **kwargs) for _ in range(2)]
+    controls = [
+        relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
+            references, **kwargs, projector_setup_backend="native"
+        )
+        for _ in range(2)
+    ]
     candidates = [
         relion_projector_setup.reference_to_relion_projector_half_maps_and_power(references, **kwargs, projector_setup_backend="jax")
         for _ in range(2)
     ]
-    assert len(raw) == 4  # Native-default calls never enter the device helper.
+    assert len(raw) == 4  # The native controls never enter the device helper.
     assert candidates[0][2] == controls[0][2]
     assert candidates[0][0].shape == controls[0][0].shape
     assert candidates[0][0].dtype == np.complex64
@@ -101,7 +106,9 @@ def test_unsupported_projector_geometry_uses_native(size, padding, interpolator,
     monkeypatch.setattr(setup, "setup_relion_projector_on_host", forbidden)
     refs = np.random.default_rng(31).normal(size=(1, size, size, size))
     kwargs = dict(current_size=size, padding_factor=padding, interpolator=interpolator)
-    native = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(refs, **kwargs)
+    native = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
+        refs, **kwargs, projector_setup_backend="native"
+    )
     requested = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(refs, **kwargs, projector_setup_backend="jax")
     for left, right in zip(native, requested):
         assert_matches(left, right)
