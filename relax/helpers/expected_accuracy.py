@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import multiprocessing
+import os
 import traceback
 from dataclasses import dataclass
 from typing import Any, NamedTuple
@@ -94,6 +95,20 @@ def _expected_accuracy_class_ids(class_assignments_half1, *, k_class_enabled, n_
     return np.zeros(int(n_units), dtype=np.int32)
 
 
+def _accuracy_threads() -> int:
+    """Worker threads for the binding's trials: the CPUs this process may use.
+
+    The trials are independent and summed in trial order afterwards, so the
+    result does not depend on the count; at EMPIAR-10202 the 100 serial trials
+    took 13.4 s of every iteration (bigbox py-spy 14561585).
+    """
+
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except AttributeError:  # pragma: no cover - non-Linux
+        return max(1, os.cpu_count() or 1)
+
+
 def estimate_relion_expected_accuracy_from_prepared_inputs(
     *,
     references_relion,
@@ -178,6 +193,7 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
         bool(do_ctf_correction),
         False,
         np.ascontiguousarray(trial_particles),
+        n_threads=_accuracy_threads(),
         **({} if group_grid is None else dict(group_grid)),
         **(
             {}

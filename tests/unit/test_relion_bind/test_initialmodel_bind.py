@@ -478,6 +478,33 @@ class TestAutoRefineExpectedAccuracyBinding:
             np.asarray([101, 205], dtype=np.int64),
         )
 
+    def test_expected_accuracy_threads_do_not_change_the_result(self, bind):
+        """Trials run on worker threads and are summed in trial order: any count gives the serial result."""
+        if "n_threads" not in bind.vdam_expected_angular_errors.__doc__:
+            pytest.skip("relion_bind must be rebuilt with threaded expected-accuracy trials")
+        rng = np.random.default_rng(11)
+        n, n_trials = 16, 13
+        references = rng.standard_normal((2, n, n, n)).astype(np.float64)
+        eulers = rng.uniform(-180.0, 180.0, size=(n_trials, 3))
+        particle_ids = rng.integers(0, 20, size=n_trials).astype(np.int64)
+
+        def run(n_threads):
+            return bind.vdam_expected_angular_errors(
+                references, eulers, particle_ids, np.zeros(n_trials, dtype=np.int32),
+                np.asarray([0.6, 0.4]), np.linspace(2.0, 0.5, n // 2 + 1),
+                rng_ctf[0], rng_ctf[1], rng_ctf[2], np.zeros(20),
+                300.0, 2.7, 0.07, 1.3, n, n, 1, 1, 1.0, 17, True, False,
+                particle_ids + 1000, n_threads=n_threads,
+            )
+
+        ctf_rng = np.random.default_rng(12)
+        rng_ctf = (ctf_rng.uniform(8000, 20000, 20), ctf_rng.uniform(8000, 20000, 20), ctf_rng.uniform(0, 180, 20))
+        serial = run(1)
+        for n_threads in (2, 5, 64):
+            threaded = run(n_threads)
+            for key in ("acc_rot", "acc_trans", "acc_rot_class", "acc_trans_class", "class_counts"):
+                assert_matches(np.asarray(threaded[key]), np.asarray(serial[key]))
+
     def test_no_ctf_does_not_construct_invalid_ctf(self, bind):
         out = self._accuracy_fixture(
             bind,

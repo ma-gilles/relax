@@ -39,6 +39,8 @@
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <exception>
 
 #include <src/backprojector.h>
 #include <src/ctf.h>
@@ -1084,7 +1086,8 @@ static py::dict vdam_expected_angular_errors(
     double model_pixel_size,
     int image_full_size,
     int projector_current_size,
-    py::object projector_data_obj
+    py::object projector_data_obj,
+    int n_threads
 ) {
     if (model_pixel_size <= 0.0)
         model_pixel_size = pixel_size;
@@ -1200,22 +1203,39 @@ static py::dict vdam_expected_angular_errors(
     double acc_trans = 999.0;
     const double pvalue = 4.60517;
 
+    // Every step of a trial reseeds RELION's global generator with the same
+    // seed and draws once (ml_optimiser.cpp:11427-11428), so each trial's draw is
+    // one number. Drawing them here, in trial order, leaves the generator where
+    // the serial loop leaves it and lets the trials run on worker threads.
+    bool any_class = false;
+    for (long k = 0; k < K; k++)
+        any_class = any_class || pdf_ptr[k] >= 0.01;
+    std::vector<double> trial_draw((size_t)n_trials, 0.0);
+    for (long trial = 0; trial < n_trials; trial++) {
+        const long part_id = particle_ptr[trial];
+        if (part_id < 0 || part_id >= n_particles)
+            throw std::runtime_error("particle_ids contains an entry outside the CTF parameter arrays");
+        if (any_class) {
+            const long seed_part_id = random_seed_particle_ptr == nullptr ? part_id : random_seed_particle_ptr[trial];
+            init_random_generator(random_seed + (int)seed_part_id);
+            trial_draw[(size_t)trial] = rnd_unif();
+        }
+    }
+
     for (long k = 0; k < K; k++) {
         if (pdf_ptr[k] < 0.01)
             continue;
 
-        double rot_sum = 0.0;
-        double trans_sum = 0.0;
-        long count = 0;
+        // Per-trial errors, summed below in trial order as the serial loop did.
+        std::vector<double> trial_ang((size_t)n_trials, 0.0);
+        std::vector<double> trial_sh((size_t)n_trials, 0.0);
 
         // RELION evaluates every trial particle against every non-empty
         // candidate class.  The particle's current class assignment is not
         // consulted; only its current Euler angles are reused for the active
         // class projector (ml_optimiser.cpp:9300-9648).
-        for (long trial = 0; trial < n_trials; trial++) {
+        auto run_trial = [&](long trial) {
             const long part_id = particle_ptr[trial];
-            if (part_id < 0 || part_id >= n_particles)
-                throw std::runtime_error("particle_ids contains an entry outside the CTF parameter arrays");
 
             MultidimArray<RFLOAT> Fctf(current_image_size, current_image_size / 2 + 1);
             Fctf.initConstant(1.0);
@@ -1285,11 +1305,6 @@ static py::dict vdam_expected_angular_errors(
                     if ((imode == 0 && ang_error > 30.0) || (imode == 1 && sh_error > 10.0))
                         break;
 
-                    const long seed_part_id = random_seed_particle_ptr == nullptr
-                        ? part_id
-                        : random_seed_particle_ptr[trial];
-                    init_random_generator(random_seed + (int)seed_part_id);
-
                     const double rot1 = eulers_ptr[trial * 3 + 0];
                     const double tilt1 = eulers_ptr[trial * 3 + 1];
                     const double psi1 = eulers_ptr[trial * 3 + 2];
@@ -1299,8 +1314,8 @@ static py::dict vdam_expected_angular_errors(
                     double xshift = 0.0;
                     double yshift = 0.0;
 
+                    const double ran = trial_draw[(size_t)trial];
                     if (imode == 0) {
-                        const double ran = rnd_unif();
                         if (ran < 0.3333)
                             rot2 = rot1 + ang_error;
                         else if (ran < 0.6667)
@@ -1308,7 +1323,6 @@ static py::dict vdam_expected_angular_errors(
                         else
                             psi2 = psi1 + ang_error;
                     } else {
-                        const double ran = rnd_unif();
                         if (ran < 0.5)
                             xshift = sh_error;
                         else
@@ -1369,10 +1383,41 @@ static py::dict vdam_expected_angular_errors(
                 }
 
                 if (imode == 0)
-                    rot_sum += ang_error;
+                    trial_ang[(size_t)trial] = ang_error;
                 else
-                    trans_sum += pixel_size * sh_error;
+                    trial_sh[(size_t)trial] = sh_error;
             }
+        };
+
+        const long workers = std::max(1L, std::min<long>(n_threads, n_trials));
+        {
+            py::gil_scoped_release release;
+            std::vector<std::exception_ptr> errors((size_t)workers);
+            auto run = [&](long worker) {
+                try {
+                    for (long trial = worker; trial < n_trials; trial += workers)
+                        run_trial(trial);
+                } catch (...) {
+                    errors[(size_t)worker] = std::current_exception();
+                }
+            };
+            std::vector<std::thread> threads;
+            for (long w = 1; w < workers; w++)
+                threads.emplace_back(run, w);
+            run(0);
+            for (auto &t : threads)
+                t.join();
+            for (auto &error : errors)
+                if (error)
+                    std::rethrow_exception(error);
+        }
+
+        double rot_sum = 0.0;
+        double trans_sum = 0.0;
+        long count = 0;
+        for (long trial = 0; trial < n_trials; trial++) {
+            rot_sum += trial_ang[(size_t)trial];
+            trans_sum += pixel_size * trial_sh[(size_t)trial];
             count++;
         }
 
@@ -1795,12 +1840,14 @@ Returns -1 when subset should span all particles.
           py::arg("image_full_size") = -1,
           py::arg("projector_current_size") = -1,
           py::arg("projector_data") = py::none(),
+          py::arg("n_threads") = 1,
           R"doc(
 SPA 3D InitialModel accuracy estimator from
 MlOptimiser::calculateExpectedAngularErrors. Returns acc_rot/acc_trans plus
 per-class arrays. ``projector_data`` (complex128 [K, pad, pad, pad/2+1]) is the
 references' Projector::data at ``projector_current_size`` when the caller has
 already built it; the references are then not transformed again.
+The trials run on ``n_threads`` worker threads; the result does not depend on it.
 )doc");
 
     m.def("vdam_bootstrap_iref", &vdam_bootstrap_iref,

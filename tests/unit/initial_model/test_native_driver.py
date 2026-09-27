@@ -688,7 +688,7 @@ def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(
 
     captured = {}
 
-    def fake_expected_accuracy(*args):
+    def fake_expected_accuracy(*args, **_kwargs):
         captured["eulers"] = np.asarray(args[1]).copy()
         captured["particle_ids"] = np.asarray(args[2]).copy()
         return {
@@ -1972,7 +1972,7 @@ def test_sampling_accuracy_binding_uses_sigma2_fudge_not_dynamic_tau2(monkeypatc
 
     captured = {}
 
-    def fake_expected_accuracy(*args):
+    def fake_expected_accuracy(*args, **_kwargs):
         captured["interpolator"] = args[17]
         captured["sigma2_fudge"] = args[18]
         captured["random_seed_particle_ids"] = np.asarray(args[22]).copy()
