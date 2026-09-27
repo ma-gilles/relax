@@ -81,6 +81,16 @@ Removal order:
 Tomography (S4) runs only on the resident engine (`compute_tilt_pass2_stats_resident`)
 and pins none of these.
 
+Projection kernel TODO (team-lead, 2026-09-27; owner kspeed, after the current stack): lift
+`project_relion_half_capacity`'s 1025 slab limit so one projection kernel and one texture serve
+every size, then delete the >1025 per-call/persistent path: the `relion_projector_half_texture_f32`
+branch of `relax.helpers.projection._project_relion_projector_texture` and
+`resident_local_pass2._open_resident_local_projector_texture`. Until then a resident local half
+opens one texture, never both: kspeed's capacity texture (ec9a811) where the half-storage kernel
+serves the slab, and otherwise the persistent texture (de80259), which EMPIAR-10202 needs from
+current size ~512 (slab 1255 at 626). The XLA pool reserve (`relax/helpers/xla_memory_reserve.py`)
+sizes whichever is open.
+
 ## Current evidence and open gates
 
 The integrated CPU EM/InitialModel scope and focused GPU kernel suites pass. The
