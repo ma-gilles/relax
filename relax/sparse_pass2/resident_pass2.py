@@ -664,6 +664,7 @@ def resident_chunk_bytes(
     n_recon_pixels: int, held_tile_pixels: int | None = None, prepare_tile_pixels: int = 0,
     rows_live_during_prepare: bool = False,
     mstep_tile_pixels: int | None = None,
+    pipelined: bool = False,
 ) -> int:
     """Device bytes one chunk holds at its peak, the larger of its two stages.
 
@@ -684,6 +685,14 @@ def resident_chunk_bytes(
     before it projects the chunk's rows; the global pass projects (or gathers)
     them first, so ``rows_live_during_prepare`` adds the row block to that
     stage.
+
+    A ``pipelined`` loop enqueues chunk k+1 up to its posterior before chunk
+    k's M-step, so chunk k's rows and held tiles stay live through the next
+    chunk's preparation, projection, scoring and its own M-step: both stages
+    add one more row block and held tiles. Unmodelled, that let EMPIAR-10202
+    iteration 22 plan 4096-row chunks (11.78 GiB of row projections, a 19.03
+    GiB modelled peak of a 22.12 GiB budget) and run out of memory (bigbox
+    14564062).
     """
 
     t, p = max(int(n_fine_trans), 1), max(int(n_recon_pixels), 1)
@@ -694,7 +703,8 @@ def resident_chunk_bytes(
     prepare = int(image_capacity) * t * int(prepare_tile_pixels) * 8
     if rows_live_during_prepare:
         prepare += rows
-    return max(rows + tiles + mstep, prepare)
+    previous_chunk = rows + tiles if pipelined else 0
+    return max(rows + tiles + mstep, prepare) + previous_chunk
 
 
 def chunk_translated_tile_pixels(
@@ -768,6 +778,7 @@ def plan_resident_chunk_memory(
     prepare_tile_pixels: int = 0,
     rows_live_during_prepare: bool = False,
     mstep_tile_pixels: int | None = None,
+    pipelined: bool = False,
 ) -> ResidentChunkMemoryPlan:
     """Shrink the three per-chunk classes until their sum fits one budget.
 
@@ -797,6 +808,7 @@ def plan_resident_chunk_memory(
         prepare_tile_pixels=prepare_tile_pixels,
         rows_live_during_prepare=rows_live_during_prepare,
         mstep_tile_pixels=mstep_tile_pixels,
+        pipelined=pipelined,
     )
     held_pixels = 3 * max(int(n_recon_pixels), 1) if held_tile_pixels is None else int(held_tile_pixels)
 
@@ -814,17 +826,21 @@ def plan_resident_chunk_memory(
             held_bytes = max(images) * t * held_pixels * 8
             prepare_bytes = max(images) * t * int(prepare_tile_pixels) * 8
             prepare_stage = prepare_bytes + (rows_bytes if rows_live_during_prepare else 0)
+            # A pipelined loop holds the previous chunk's rows and held tiles
+            # next to either stage (resident_chunk_bytes).
+            copies = 2 if pipelined else 1
+            rows_in_prepare = rows_bytes * (int(rows_live_during_prepare) + int(pipelined))
             if prepare_stage > rows_bytes + held_bytes + mstep_bytes:
                 # The preparation stage is the peak; only its own terms shrink it.
                 terms = {
-                    "images": prepare_bytes if images_can_shrink else -1,
-                    "rows": rows_bytes if rows_live_during_prepare and len(rows) > 1 else -1,
+                    "images": prepare_bytes + (held_bytes if pipelined else 0) if images_can_shrink else -1,
+                    "rows": rows_in_prepare if rows_in_prepare and len(rows) > 1 else -1,
                 }
             else:
                 terms = {
                     "mstep": mstep_bytes if block > 1 else -1,
-                    "images": held_bytes if images_can_shrink else -1,
-                    "rows": rows_bytes if len(rows) > 1 else -1,
+                    "images": held_bytes * copies if images_can_shrink else -1,
+                    "rows": rows_bytes * copies if len(rows) > 1 else -1,
                 }
             largest = max(terms, key=terms.get)
             if terms[largest] < 0:
@@ -2901,6 +2917,7 @@ def _resident_pass2(
             n_recon_pixels=n_recon_windowed,
             budget_bytes=chunk_budget_bytes,
             rows_live_during_prepare=True,
+            pipelined=_global_chunk_loop_pipelined(stream_projections),
             **chunk_translated_tile_pixels(
                 unshifted_operands=unshifted_operands,
                 n_score_pixels=n_windowed if windowed_prepare else n_half_pixels,
@@ -3340,7 +3357,7 @@ def _resident_pass2(
     # posterior before chunk k's M-step reads its live row ranges back. A
     # streamed pass projects per chunk because the cache did not fit, so it
     # keeps one chunk's projections alive at a time and is not pipelined.
-    deferred = not _chunk_timing_enabled() and not _chunk_jit_enabled() and not stream_projections
+    deferred = _global_chunk_loop_pipelined(stream_projections)
     pending = None
     for chunk in chunks:
         result = _run_resident_chunk(
@@ -5008,6 +5025,16 @@ def _prepare_chunk_reconstruction_operands(
         "score_shifted_cc": score_shifted_cc,
         "cc_half_batch_norm": cc_half_batch_norm,
     }
+
+
+def _global_chunk_loop_pipelined(stream_projections: bool) -> bool:
+    """Whether the global chunk loop overlaps chunk k+1's front with chunk k's M-step.
+
+    The chunk plan counts the second chunk's arrays (:func:`resident_chunk_bytes`)
+    exactly when the loop runs this way.
+    """
+
+    return not _chunk_timing_enabled() and not _chunk_jit_enabled() and not stream_projections
 
 
 def _chunk_timing_enabled() -> bool:

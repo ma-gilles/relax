@@ -622,6 +622,37 @@ def test_unshifted_mstep_blocks_gather_no_translated_tile():
     )
 
 
+def test_pipelined_chunk_plan_counts_the_previous_chunk():
+    """EMPIAR-10202 iteration 22 (box 800, current size 626, T=84): the pipelined local loop
+    holds chunk k's row projections and tiles while chunk k+1 runs, and the plan counted one
+    chunk. It kept a 4096-row class (11.78 GiB of 3016.72 KiB rows, a 19.03 GiB modelled
+    peak of a 22.12 GiB budget) and ran out of memory (bigbox 14564062)."""
+
+    gib = 1024**3
+    t, p = 84, 155356
+    tiles = rp.chunk_translated_tile_pixels(
+        unshifted_operands=True, n_score_pixels=p, n_recon_pixels=p, n_rect_pixels=158000,
+        n_exact_rect_pixels=158000,
+    )
+    kwargs = dict(
+        row_capacity_ladder=(1024, 4096), image_capacity_ladder=(32,), mstep_block_rows=32,
+        row_bytes=int(3016.72 * 1024), n_fine_trans=t, n_recon_pixels=p, budget_bytes=int(22.12 * gib),
+        **tiles,
+    )
+    serial = rp.plan_resident_chunk_memory(**kwargs)
+    assert serial.row_capacity_ladder == (1024, 4096)
+    pipelined = rp.plan_resident_chunk_memory(**kwargs, pipelined=True)
+    assert pipelined.row_capacity_ladder == (1024,)
+    assert pipelined.peak_bytes <= kwargs["budget_bytes"]
+    rows = 1024 * kwargs["row_bytes"]
+    held = 32 * t * tiles["held_tile_pixels"] * 8
+    single = rp.resident_chunk_bytes(
+        row_capacity=1024, image_capacity=32, mstep_block_rows=pipelined.mstep_block_rows,
+        row_bytes=kwargs["row_bytes"], n_fine_trans=t, n_recon_pixels=p, **tiles,
+    )
+    assert pipelined.peak_bytes == single + rows + held
+
+
 def test_joint_chunk_plan_leaves_a_box_256_plan_unchanged():
     """Box-256 K=1 plans (10097, noise1 50k: T<=116, <=8.4k pixels) fit the joint budget
     as they stand; the planner changes nothing there, and an unknown budget never caps."""

@@ -312,6 +312,16 @@ def require_resident_local_configuration(**kwargs) -> None:
         )
 
 
+def _local_chunk_loop_pipelined() -> bool:
+    """Whether the chunk loop enqueues chunk k+1 before chunk k's M-step (off while profiling).
+
+    The chunk plan counts the second chunk's arrays exactly when it does
+    (:func:`resident_pass2.resident_chunk_bytes`).
+    """
+
+    return not parse_env_flag(_CHUNK_PROFILE_ENV, default=False)
+
+
 def _unshifted_operands_route(bucket_io_kwargs, *, window_indices, recon_window_indices) -> bool:
     """Whether this pass's chunks take the unshifted per-image operands (T16) or the translated tiles."""
 
@@ -843,6 +853,7 @@ def compute_local_search_resident(
             n_fine_trans=n_fine_trans,
             n_recon_pixels=n_recon_windowed,
             budget_bytes=chunk_budget_bytes,
+            pipelined=_local_chunk_loop_pipelined(),
             **tile_pixels,
         )
         row_ladder = memory_plan.row_capacity_ladder
@@ -962,7 +973,7 @@ def compute_local_search_resident(
         # row count back, so the device works through k+1's front while the host
         # waits on and dispatches k's M-step. The chunk-profile diagnostic finishes
         # every chunk at once so its stage timers stay per chunk.
-        pipelined = not parse_env_flag(_CHUNK_PROFILE_ENV, default=False)
+        pipelined = _local_chunk_loop_pipelined()
         pending = None
         for chunk in chunks:
             finish = _start_resident_local_chunk(
