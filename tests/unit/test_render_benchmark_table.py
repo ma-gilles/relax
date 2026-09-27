@@ -124,16 +124,19 @@ def _initialmodel_row(table):
 
 @pytest.mark.unit
 def test_one_table_with_workflow_subheaders_in_order():
-    """The results page is one table; rows sit under bold workflow subheaders (EM K=1, Class3D, VDAM K=1, VDAM K>1)."""
+    """The results page is one table; rows sit under bold workflow subheaders (EM K=1, Class3D, VDAM K=1, VDAM K>1,
+    Cryo-ET)."""
     table = load_and_validate(DEFAULT_JSON)
     rendered = render_markdown(table)
     assert rendered.count(TABLE_HEADER[0]) == 1
-    titles = ["**EM auto-refine (K=1)**", "**Class3D (K>1)**", "**VDAM (K=1)**", "**VDAM (K>1)**"]
+    titles = ["**EM auto-refine (K=1)**", "**Class3D (K>1)**", "**VDAM (K=1)**", "**VDAM (K>1)**", "**Cryo-ET**"]
     positions = [rendered.index(title) for title in titles]
     assert positions == sorted(positions)
     for row in (r for r in table["rows"] if r.get("benchmark", True)):
         at = rendered.index(f"#{row['id']})")
-        if row.get("table") == "initialmodel":
+        if row.get("table") == "cryoet":
+            title = "**Cryo-ET**"
+        elif row.get("table") == "initialmodel":
             title = "**VDAM (K=1)**" if int(row["classes"]) == 1 else "**VDAM (K>1)**"
         else:
             title = "**Class3D (K>1)**" if int(row["classes"]) > 1 else "**EM auto-refine (K=1)**"
