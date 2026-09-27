@@ -463,6 +463,9 @@ def test_local_projector_texture_is_not_opened_for_manual_or_double_projection()
     assert rlp._open_resident_local_projector_texture(
         slab.astype(np.complex128), relion_texture_interp=None, **kwargs
     ) is None
+    # A slab the half-storage kernel takes keeps that kernel (the capacity path).
+    assert slab.shape[0] <= rlp._HALF_STORAGE_MAX_SLAB
+    assert rlp._open_resident_local_projector_texture(slab, relion_texture_interp=None, **kwargs) is None
 
 
 @requires_resident_gpu
@@ -480,6 +483,9 @@ def test_resident_local_persistent_texture_matches_the_per_call_texture(monkeypa
         return texture
 
     monkeypatch.setattr(rlp, "_open_resident_local_projector_texture", spy)
+    # The fixture's slab is narrow enough for the half-storage kernel; open the
+    # persistent texture anyway so it is compared on the same projections.
+    monkeypatch.setattr(rlp, "_HALF_STORAGE_MAX_SLAB", 0)
     persistent = _run(case, resident=True, monkeypatch=monkeypatch)
     assert opened == [True]
     monkeypatch.setattr(rlp, "_open_resident_local_projector_texture", lambda *a, **k: None)

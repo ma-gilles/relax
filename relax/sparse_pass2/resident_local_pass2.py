@@ -365,6 +365,11 @@ def _local_chunk_tile_pixels(
     }
 
 
+# Widest slab the half-storage projection kernel takes (project_relion_half_capacity,
+# the shape[0] <= 1025 test in relax.helpers.projection._project_relion_projector_texture).
+_HALF_STORAGE_MAX_SLAB = 1025
+
+
 def _open_resident_local_projector_texture(
     relion_projector_half, *, relion_projector_r_max, projection_padding_factor, relion_texture_interp
 ):
@@ -372,8 +377,13 @@ def _open_resident_local_projector_texture(
 
     The same persistent texture the compact engine opens
     (:func:`relax.sparse_pass2.dispatch._open_persistent_relion_projector_texture`),
-    from a host copy of the float32 slab; slabs the texture projector does not
-    take keep the per-call path.
+    from a host copy of the float32 slab. It stands in for the per-call
+    ``relion_projector_half_texture_f32`` that
+    :func:`relax.helpers.projection._project_relion_projector_texture` uses for
+    slabs wider than the half-storage kernel takes
+    (:data:`_HALF_STORAGE_MAX_SLAB`); narrower slabs keep the half-storage
+    kernel, and slabs the texture projector does not take keep the per-call
+    path, so no slab changes kernel.
     """
 
     from relax.sparse_pass2.dispatch import _open_persistent_relion_projector_texture
@@ -381,6 +391,8 @@ def _open_resident_local_projector_texture(
     if relion_projector_half is None or relion_texture_interp is False:
         return None
     if np.dtype(relion_projector_half.dtype) != np.dtype(np.complex64) or np.ndim(relion_projector_half) != 3:
+        return None
+    if int(relion_projector_half.shape[0]) <= _HALF_STORAGE_MAX_SLAB:
         return None
     return _open_persistent_relion_projector_texture(
         np.ascontiguousarray(jax.device_get(relion_projector_half)),
