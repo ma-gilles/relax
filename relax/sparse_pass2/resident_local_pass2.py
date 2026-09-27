@@ -109,6 +109,7 @@ from relax.sparse_pass2.resident_operands import (
     ResidentOperandsUnsupported,
     gather_resident_chunk_operands,
     prepare_resident_half_operands,
+    require_unshifted_operand_support,
 )
 from relax.sparse_pass2.resident_scoring import (
     project_resident_rows,
@@ -311,23 +312,53 @@ def require_resident_local_configuration(**kwargs) -> None:
         )
 
 
-def _local_chunk_tile_pixels(
-    *, n_score_pixels: int, n_recon_pixels: int, n_rect_pixels: int, n_exact_rect_pixels: int
-) -> dict:
-    """Per-image, per-translation complex64 pixels of a local chunk's translated tiles, by stage.
+def _unshifted_operands_route(bucket_io_kwargs, *, window_indices, recon_window_indices) -> bool:
+    """Whether this pass's chunks take the unshifted per-image operands (T16) or the translated tiles."""
 
-    Counted from the live device arrays of one chunk (bigbox 14514327): the
-    preparation peak is inside :func:`resident_pass2._chunk_operand_rows`, where
-    ``_prepare_bucket_io``'s two score-window and two recon-window tiles, the
-    Wavg rectangle and the row-order copies (recon, noise, rectangle and its
-    exact positions) are live together. The chunk then holds the three
-    row-order recon-window tiles and the rectangle through projection, scoring
-    and the M-step. Planning with three recon tiles instead let EMPIAR-10202
-    iteration 22 take 32 images per chunk, a ~30 GiB preparation against a
-    22 GiB budget, and run out of memory (14509861).
+    if not rp._resident_operands_requested():
+        return False
+    try:
+        require_unshifted_operand_support(
+            bucket_io_kwargs, window_indices=window_indices, recon_window_indices=recon_window_indices
+        )
+    except ResidentOperandsUnsupported as reason:
+        logger.info("Resident local pass-2 keeps the pre-shifted translation tiles: %s", reason)
+        return False
+    return True
+
+
+def _local_chunk_tile_pixels(
+    *,
+    unshifted_operands: bool,
+    n_score_pixels: int,
+    n_recon_pixels: int,
+    n_rect_pixels: int,
+    n_exact_rect_pixels: int,
+) -> dict:
+    """Per-image, per-translation complex64 pixels of a local chunk's translated arrays, by stage.
+
+    Counted from the live device arrays of one chunk (bigbox 14514327, 14521841).
+
+    With the translated tiles, the preparation peak is inside
+    :func:`resident_pass2._chunk_operand_rows`, where ``_prepare_bucket_io``'s two
+    score-window and two recon-window tiles, the Wavg rectangle and the
+    row-order copies (recon, noise, rectangle and its exact positions) are live
+    together; the chunk then holds the three row-order recon-window tiles and
+    the rectangle through projection, scoring and the M-step. Planning with
+    three recon tiles instead let EMPIAR-10202 iteration 22 take 32 images per
+    chunk, a ~30 GiB preparation against a 22 GiB budget, and run out of memory
+    (14509861).
+
+    With the unshifted operands (T16) the only translated arrays are the Wavg
+    rectangle and its exact positions, from preparation to the M-step. Their
+    per-image buffers have no translation axis; the preparation pads them to
+    :func:`resident_image_capacity` rows (256 at least), about 1.7 GB at
+    EMPIAR-10202 current size 626, which the budget's free-memory margin covers.
     """
 
     s, p, r, e = int(n_score_pixels), int(n_recon_pixels), int(n_rect_pixels), int(n_exact_rect_pixels)
+    if unshifted_operands:
+        return {"held_tile_pixels": r + e, "prepare_tile_pixels": r + e}
     return {
         "held_tile_pixels": 2 * p + r + e,
         "prepare_tile_pixels": 2 * s + 4 * p + 2 * r + e,
@@ -740,6 +771,40 @@ def compute_local_search_resident(
     if projector_texture is not None:
         projection_kwargs["relion_projector_texture"] = projector_texture
     try:
+        # ---- per-image resident operands --------------------------------------
+        bucket_io_kwargs = dict(
+            noise_variance_half=noise_variance_half,
+            fine_translations=fine_translations,
+            config=config,
+            n_trans=n_fine_trans,
+            score_with_masked_images=score_with_masked_images,
+            half_spectrum_scoring=half_spectrum_scoring,
+            image_corrections=image_corrections,
+            scale_corrections=scale_corrections,
+            image_pre_shifts=image_pre_shifts,
+            use_float64_scoring=use_float64_scoring,
+            score_only=False,
+            score_mode="gaussian",
+            window_indices=window_indices,
+            recon_window_indices=recon_window_indices,
+            translation_phases_half=translation_phases_half,
+            relion_score_translation_angles=relion_score_translation_angles,
+            return_windowed_shifted=windowed_prepare,
+            relion_exact_normalized_cc_operands=False,
+            # The exact local engine runs its production path with the plain
+            # ``CTF^2 / sigma2`` operand order, not RELION's RFLOAT-square order,
+            # so keep that here rather than silently switching operand families.
+            relion_exact_bpref_operands=False,
+            noise_optics_groups=optics_groups_np,
+        )
+        # The operand family decides what a chunk holds, so it is chosen before the
+        # plan; the per-chunk fallback in _run_resident_local_chunk stays as a guard.
+        operand_route = {
+            "unshifted": _unshifted_operands_route(
+                bucket_io_kwargs, window_indices=window_indices, recon_window_indices=recon_window_indices
+            )
+        }
+
         # ---- capacity plan ----------------------------------------------------
         row_ladder = _cap_row_capacity_ladder(
             parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER),
@@ -776,6 +841,7 @@ def compute_local_search_resident(
             n_recon_pixels=n_recon_windowed,
             budget_bytes=chunk_budget_bytes,
             **_local_chunk_tile_pixels(
+                unshifted_operands=operand_route["unshifted"],
                 n_score_pixels=n_windowed,
                 n_recon_pixels=n_recon_windowed,
                 n_rect_pixels=n_rect,
@@ -836,32 +902,6 @@ def compute_local_search_resident(
             table_s,
         )
 
-        # ---- per-image resident operands --------------------------------------
-        bucket_io_kwargs = dict(
-            noise_variance_half=noise_variance_half,
-            fine_translations=fine_translations,
-            config=config,
-            n_trans=n_fine_trans,
-            score_with_masked_images=score_with_masked_images,
-            half_spectrum_scoring=half_spectrum_scoring,
-            image_corrections=image_corrections,
-            scale_corrections=scale_corrections,
-            image_pre_shifts=image_pre_shifts,
-            use_float64_scoring=use_float64_scoring,
-            score_only=False,
-            score_mode="gaussian",
-            window_indices=window_indices,
-            recon_window_indices=recon_window_indices,
-            translation_phases_half=translation_phases_half,
-            relion_score_translation_angles=relion_score_translation_angles,
-            return_windowed_shifted=windowed_prepare,
-            relion_exact_normalized_cc_operands=False,
-            # The exact local engine runs its production path with the plain
-            # ``CTF^2 / sigma2`` operand order, not RELION's RFLOAT-square order,
-            # so keep that here rather than silently switching operand families.
-            relion_exact_bpref_operands=False,
-            noise_optics_groups=optics_groups_np,
-        )
         fine_translation_prior_2d = np.asarray(
             tables.translation_log_prior, dtype=precision_policy.score_real_dtype
         )
@@ -919,7 +959,6 @@ def compute_local_search_resident(
         significant_counts = (
             np.zeros(n_images, dtype=np.int32) if return_significant_counts else None
         )
-        operand_route = {"unshifted": rp._resident_operands_requested()}
         loop_t0 = time.time()
         for chunk in chunks:
             Ft_y_total, Ft_ctf_total, stats = _run_resident_local_chunk(

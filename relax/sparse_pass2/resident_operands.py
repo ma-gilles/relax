@@ -578,6 +578,36 @@ def _batch_window_operands(
     return batch_arrays
 
 
+def require_unshifted_operand_support(bucket_io_kwargs: dict, *, window_indices, recon_window_indices) -> None:
+    """Raise :class:`ResidentOperandsUnsupported` for a configuration the unshifted operands do not cover.
+
+    The configuration checks of :func:`prepare_resident_half_operands`, callable
+    before any image is prepared (the resident local pass sizes its chunks for
+    the operand family it will use).
+    """
+
+    kwargs = dict(bucket_io_kwargs)
+    # The M-step reads the unshifted operands through T15's float32 kernel, and
+    # that kernel knows two translate conventions: BPref for the reconstruction
+    # operand and score for the noise operand. Without masked scoring the two
+    # operands are the same array in the per-chunk path, which means the noise
+    # sum is taken over the *BPref*-translated tile; the kernel cannot express
+    # that pairing, so refuse it rather than change the arithmetic.
+    score_mode = kwargs.get("score_mode", "gaussian")
+    _require_supported(
+        bool(kwargs.get("score_with_masked_images", False)), "unmasked scoring (score_with_masked_images=0)"
+    )
+    _require_supported(not bool(kwargs.get("use_float64_scoring", False)), "float64 scoring")
+    _require_supported(score_mode == "gaussian", f"score_mode={score_mode!r}")
+    _require_supported(
+        kwargs.get("relion_score_translation_angles", None) is not None,
+        "a pass without RELION translation angles",
+    )
+    _require_supported(not bool(kwargs.get("score_only", False)), "score-only preparation")
+    _require_supported(window_indices is not None, "an unwindowed score spectrum")
+    _require_supported(recon_window_indices is not None, "an unwindowed reconstruction spectrum")
+
+
 def prepare_resident_half_operands(
     experiment_dataset,
     image_indices,
@@ -638,29 +668,15 @@ def prepare_resident_half_operands(
     if len(position_of) != n_images:
         raise ValueError("image_indices must not repeat an image")
 
+    require_unshifted_operand_support(
+        bucket_io_kwargs, window_indices=window_indices, recon_window_indices=recon_window_indices
+    )
     kwargs = dict(bucket_io_kwargs)
     relion_exact_bpref_operands = bool(kwargs.get("relion_exact_bpref_operands", False))
     score_with_masked_images = bool(kwargs.get("score_with_masked_images", False))
     half_spectrum_scoring = bool(kwargs.get("half_spectrum_scoring", False))
     use_float64_scoring = bool(kwargs.get("use_float64_scoring", False))
     score_mode = kwargs.get("score_mode", "gaussian")
-
-    # The M-step reads the unshifted operands through T15's float32 kernel, and
-    # that kernel knows two translate conventions: BPref for the reconstruction
-    # operand and score for the noise operand. Without masked scoring the two
-    # operands are the same array in the per-chunk path, which means the noise
-    # sum is taken over the *BPref*-translated tile; the kernel cannot express
-    # that pairing, so refuse it rather than change the arithmetic.
-    _require_supported(score_with_masked_images, "unmasked scoring (score_with_masked_images=0)")
-    _require_supported(not use_float64_scoring, "float64 scoring")
-    _require_supported(score_mode == "gaussian", f"score_mode={score_mode!r}")
-    _require_supported(
-        kwargs.get("relion_score_translation_angles", None) is not None,
-        "a pass without RELION translation angles",
-    )
-    _require_supported(not bool(kwargs.get("score_only", False)), "score-only preparation")
-    _require_supported(window_indices is not None, "an unwindowed score spectrum")
-    _require_supported(recon_window_indices is not None, "an unwindowed reconstruction spectrum")
 
     precision_policy = precision_policy or DensePrecisionPolicy(
         use_float64_scoring=use_float64_scoring

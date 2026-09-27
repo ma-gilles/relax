@@ -486,9 +486,11 @@ def test_joint_chunk_plan_fits_the_10202_iteration_14_shape():
 def test_joint_chunk_plan_counts_the_local_preparation_stage():
     """10202 it22 (14509861): T=84, 153857 recon and 155355 score pixels, a 626 x 314 Wavg
     rectangle. Three recon tiles per image put 32 images and an 18.55 GiB peak inside a
-    22.2 GiB budget, but the local preparation holds ~30 GiB of translated tiles at 32
-    images and ran out of memory. Counting that stage shrinks the image classes until
-    it fits; the default count (no preparation stage) reproduces the old plan."""
+    22.2 GiB budget, but the local preparation of the translated tiles holds ~30 GiB at
+    32 images and ran out of memory. Counting that stage shrinks the image classes until
+    it fits; the default count (no preparation stage) reproduces the old plan, and the
+    unshifted operands (T16), whose only translated arrays are the Wavg rectangle and its
+    exact positions, keep the 32 images."""
 
     from relax.sparse_pass2.resident_local_pass2 import _local_chunk_tile_pixels
 
@@ -505,7 +507,8 @@ def test_joint_chunk_plan_counts_the_local_preparation_stage():
     assert old.peak_bytes / gib == pytest.approx(18.55, abs=0.01)
 
     tiles = _local_chunk_tile_pixels(
-        n_score_pixels=p_score, n_recon_pixels=p_recon, n_rect_pixels=n_rect, n_exact_rect_pixels=p_recon
+        unshifted_operands=False,
+        n_score_pixels=p_score, n_recon_pixels=p_recon, n_rect_pixels=n_rect, n_exact_rect_pixels=p_recon,
     )
     assert 32 * t * tiles["prepare_tile_pixels"] * 8 > budget
     plan = rp.plan_resident_chunk_memory(**kwargs, **tiles)
@@ -517,6 +520,12 @@ def test_joint_chunk_plan_counts_the_local_preparation_stage():
         row_capacity=1024, image_capacity=max(plan.image_capacity_ladder), mstep_block_rows=plan.mstep_block_rows,
         row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, **tiles,
     )
+
+    unshifted = _local_chunk_tile_pixels(
+        unshifted_operands=True,
+        n_score_pixels=p_score, n_recon_pixels=p_recon, n_rect_pixels=n_rect, n_exact_rect_pixels=p_recon,
+    )
+    assert rp.plan_resident_chunk_memory(**kwargs, **unshifted).image_capacity_ladder == (32,)
 
 
 def test_joint_chunk_plan_leaves_a_box_256_plan_unchanged():

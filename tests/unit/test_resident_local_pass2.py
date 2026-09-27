@@ -497,40 +497,50 @@ def test_resident_local_persistent_texture_matches_the_per_call_texture(monkeypa
 
 
 @requires_resident_gpu
-def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, _resident_local_env):
+@pytest.mark.parametrize("unshifted", [True, False], ids=["unshifted-operands", "translated-tiles"])
+def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, _resident_local_env, unshifted):
     """The capacity plan's per-stage tile counts are the translated arrays a chunk
-    actually holds. EMPIAR-10202 it22 (14509861) ran out of memory when the plan
-    counted three recon tiles and the preparation held about ten; a new tile in
-    the preparation or the row-order copies must update ``_local_chunk_tile_pixels``."""
+    actually holds, for both operand families. EMPIAR-10202 it22 (14509861) ran out
+    of memory when the plan counted three recon tiles and the tile preparation held
+    about ten; a new translated array must update ``_local_chunk_tile_pixels``."""
 
     from relax.sparse_pass2 import resident_pass2 as rp_module
 
     planned = []
     measured = []
+    baseline = set()
     real_plan = rp_module.plan_resident_chunk_memory
     real_prepare = rp_module._prepare_chunk_reconstruction_operands
     real_rows = rp_module._chunk_operand_rows
+    real_unshifted = rlp._unshifted_chunk_operands
+    real_gather = rlp.gather_resident_chunk_operands
 
     def plan(**kwargs):
         planned.append(kwargs)
         return real_plan(**kwargs)
 
-    def translated_bytes(capacity, n_trans, exclude):
+    def translated_bytes(capacity, n_trans):
         total = 0
         for array in jax.live_arrays():
-            if id(array) in exclude or array.ndim < 2:
+            if id(array) in baseline:
                 continue
-            if array.shape[0] == capacity * n_trans or tuple(array.shape[:2]) == (capacity, n_trans):
+            if (array.ndim == 2 and array.shape[0] == capacity * n_trans) or (
+                array.ndim == 3 and tuple(array.shape[:2]) == (capacity, n_trans)
+            ):
                 total += array.nbytes
         return total
 
+    def record(key, capacity, n_trans):
+        measured.append((key, capacity * n_trans, translated_bytes(capacity, n_trans)))
+
     def prepare(**kwargs):
         capacity, n_trans = int(kwargs["chunk"].image_capacity), int(kwargs["n_fine_trans"])
-        before = {id(a) for a in jax.live_arrays()}
+        baseline.clear()
+        baseline.update(id(a) for a in jax.live_arrays())
 
         def rows(arrays, *args, **row_kwargs):
             out = real_rows(arrays, *args, **row_kwargs)
-            measured.append(("prepare_tile_pixels", capacity * n_trans, translated_bytes(capacity, n_trans, before)))
+            record("prepare_tile_pixels", capacity, n_trans)
             return out
 
         monkeypatch.setattr(rp_module, "_chunk_operand_rows", rows)
@@ -538,13 +548,32 @@ def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, 
             result = real_prepare(**kwargs)
         finally:
             monkeypatch.setattr(rp_module, "_chunk_operand_rows", real_rows)
-        measured.append(("held_tile_pixels", capacity * n_trans, translated_bytes(capacity, n_trans, before)))
+        record("held_tile_pixels", capacity, n_trans)
+        return result
+
+    def unshifted_operands(*args, **kwargs):
+        capacity, n_trans = int(kwargs["image_capacity"]), int(kwargs["n_fine_trans"])
+        baseline.clear()
+        baseline.update(id(a) for a in jax.live_arrays())
+
+        def gather(*gather_args, **gather_kwargs):
+            out = real_gather(*gather_args, **gather_kwargs)
+            record("prepare_tile_pixels", capacity, n_trans)
+            return out
+
+        monkeypatch.setattr(rlp, "gather_resident_chunk_operands", gather)
+        try:
+            result = real_unshifted(*args, **kwargs)
+        finally:
+            monkeypatch.setattr(rlp, "gather_resident_chunk_operands", real_gather)
+        record("held_tile_pixels", capacity, n_trans)
         return result
 
     monkeypatch.setattr(rp_module, "plan_resident_chunk_memory", plan)
     monkeypatch.setattr(rp_module, "_prepare_chunk_reconstruction_operands", prepare)
-    _run(_case(), resident=True, monkeypatch=monkeypatch)
-    assert len(planned) == 1 and measured
+    monkeypatch.setattr(rlp, "_unshifted_chunk_operands", unshifted_operands)
+    _run(_case(), resident=True, monkeypatch=monkeypatch, resident_operands=unshifted)
+    assert len(planned) == 1 and len(measured) >= 2
     for key, image_translations, live in measured:
         assert live == image_translations * planned[0][key] * 8, (key, live, planned[0][key])
 
