@@ -1206,16 +1206,20 @@ def _add_wavg_rectangle_image_power(
 
     image_capacity = int(wavg_triplet_pixels.shape[0])
     row_kernel_ids = jnp.asarray(row_kernel_ids, dtype=jnp.int32)
-    # Padding rows go to an out-of-range segment and are dropped: a -1 would
-    # wrap to the last image under a scatter's drop mode.
-    segment = jnp.where(row_kernel_ids < 0, jnp.int32(image_capacity), row_kernel_ids)
-    marginal = jax.ops.segment_sum(
+    # The marginal is a one-hot contraction rather than a segment sum: a
+    # scatter-add over a chunk's rows lands its float32 additions in atomic
+    # order, and the chunk's Wavg statistics repeat bitwise. Padding rows
+    # (id -1) match no image.
+    row_image = row_kernel_ids[:, None] == jnp.arange(image_capacity, dtype=jnp.int32)[None, :]
+    # HIGHEST keeps both contractions in float32 arithmetic: at DEFAULT
+    # precision a GPU dot may take TF32 operands.
+    marginal = jnp.einsum(
+        "rb,rt->bt",
+        row_image.astype(jnp.float32),
         jnp.asarray(row_posterior, dtype=jnp.float32),
-        segment,
-        num_segments=image_capacity,
-    )
-    # HIGHEST keeps the contraction in float32 arithmetic: at DEFAULT precision
-    # a GPU dot may take TF32 operands.
+        precision=jax.lax.Precision.HIGHEST,
+        preferred_element_type=jnp.float32,
+    ).astype(jnp.float32)
     image_power = jnp.einsum(
         "bt,btp->bp",
         marginal,
