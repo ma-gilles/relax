@@ -2741,28 +2741,35 @@ def _resident_pass2(
         # Raw union rows: the native-unit division of the score window runs
         # after the chunk's gather (score_resident_chunk), and the recon window
         # keeps RECOVAR units, as in the three-cache build.
-        class_unions = [
-            _compute_sparse_pass2_windowed_projections_block(
+        rows_per_call = _projection_cache_build_max_rotations_per_call(
+            max_projected_rotations_per_projection_call, int(n_fine_rot)
+        ) or int(n_fine_rot)
+
+        def project_union_rows(class_index, start, stop):
+            return _compute_sparse_pass2_windowed_projections_block(
                 class_means_for_proj[class_index],
-                fine_grid,
+                fine_grid[start:stop],
                 image_shape,
                 proj_volume_shape,
                 disc_type,
                 score_indices=union_indices,
                 recon_indices=None,
-                max_projected_rotations=_projection_cache_build_max_rotations_per_call(
-                    max_projected_rotations_per_projection_call, int(n_fine_rot)
-                ),
+                max_projected_rotations=rows_per_call,
                 output_complex_dtype=precision_policy.score_complex_dtype,
                 relion_projector_half=class_projector_halves[class_index],
                 relion_projector_r_max=relion_projector_r_max,
                 projection_padding_factor=projection_padding_factor,
                 **projection_kwargs,
             )[0]
-            for class_index in range(n_classes)
-        ]
-        score_cache = class_unions[0] if n_classes == 1 else jnp.concatenate(class_unions, axis=0)
-        del class_unions
+
+        score_cache = build_projection_cache_in_place(
+            project_union_rows,
+            n_classes=n_classes,
+            n_rows_per_class=int(n_fine_rot),
+            n_pixels=int(union_indices.shape[0]),
+            rows_per_call=rows_per_call,
+            dtype=precision_policy.score_complex_dtype,
+        )
         recon_cache = recon_abs2_cache = None
         logger.info(
             "Resident pass-2 projection cache: cached %d fine rotations in %.2fs as one "
@@ -2780,14 +2787,23 @@ def _resident_pass2(
                 fine_rotations_override
             )
         else:
-            class_caches = [
-                project_fine_rotations(fine_rotations_override, class_index)
-                for class_index in range(n_classes)
-            ]
-            score_cache, recon_cache, recon_abs2_cache = (
-                jnp.concatenate([cache[field] for cache in class_caches], axis=0) for field in range(3)
-            )
-            del class_caches
+            # Each class's caches are written into the three caches in place,
+            # so only one class's caches are ever transient, not a second copy.
+            caches = None
+            for class_index in range(n_classes):
+                class_cache = project_fine_rotations(fine_rotations_override, class_index)
+                if caches is None:
+                    caches = [
+                        jnp.zeros((n_classes * int(a.shape[0]),) + tuple(a.shape[1:]), dtype=a.dtype)
+                        for a in class_cache
+                    ]
+                caches = [
+                    _write_projection_cache_rows(cache, rows, np.int32(class_index * int(rows.shape[0])))
+                    for cache, rows in zip(caches, class_cache, strict=True)
+                ]
+                del class_cache
+            score_cache, recon_cache, recon_abs2_cache = caches
+            del caches
         logger.info(
             "Resident pass-2 projection cache: cached %d fine rotations in %.2fs "
             "(estimated transient %.2f GiB)",
@@ -4968,6 +4984,35 @@ def _prepare_chunk_reconstruction_operands(
         "score_shifted_cc": score_shifted_cc,
         "cc_half_batch_norm": cc_half_batch_norm,
     }
+
+
+def build_projection_cache_in_place(project_rows, *, n_classes, n_rows_per_class, n_pixels, rows_per_call, dtype):
+    """A ``[n_classes * n_rows_per_class, n_pixels]`` cache, class-major, filled one projector call at a time.
+
+    ``project_rows(class_index, start, stop)`` returns that class's rows
+    ``[start, stop)``. Each call's rows are written into the one cache in place,
+    so the cache is never held twice: concatenating the per-class caches (and
+    the per-call chunks inside each) held it twice, 19 GiB past the plan at
+    VDAM pdb K=2 (main 46b4f64, iteration 96).
+    """
+
+    cache = jnp.zeros((int(n_classes) * int(n_rows_per_class), int(n_pixels)), dtype=dtype)
+    for class_index in range(int(n_classes)):
+        for start in range(0, int(n_rows_per_class), int(rows_per_call)):
+            stop = min(start + int(rows_per_call), int(n_rows_per_class))
+            cache = _write_projection_cache_rows(
+                cache,
+                project_rows(class_index, start, stop),
+                np.int32(class_index * int(n_rows_per_class) + start),
+            )
+    return cache
+
+
+@partial(jax.jit, donate_argnums=0)
+def _write_projection_cache_rows(cache, rows, start):
+    """``cache`` with ``rows`` written at row ``start``, in place (the cache is donated)."""
+
+    return jax.lax.dynamic_update_slice(cache, rows.astype(cache.dtype), (start, jnp.int32(0)))
 
 
 def _global_chunk_loop_pipelined(stream_projections: bool) -> bool:

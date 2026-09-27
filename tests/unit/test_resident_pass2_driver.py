@@ -585,6 +585,35 @@ def test_pipelined_chunk_plan_counts_the_previous_chunk():
     assert pipelined.peak_bytes == single + rows + held
 
 
+def test_k_class_projection_cache_is_built_in_place():
+    """VDAM pdb K=2 5k (main 46b4f64) ran out of memory at iteration 96 concatenating the
+    per-class union caches, which held the cache twice. The build writes every projector
+    call's rows into one class-major cache, so at most one call's rows are live next to it."""
+
+    n_classes, n_rows, n_pixels, per_call = 3, 10, 7, 4
+    rng = np.random.default_rng(3)
+    classes = [
+        (rng.standard_normal((n_rows, n_pixels)) + 1j * rng.standard_normal((n_rows, n_pixels))).astype(np.complex64)
+        for _ in range(n_classes)
+    ]
+    cache_bytes = n_classes * n_rows * n_pixels * 8
+    peak = []
+
+    def project_rows(class_index, start, stop):
+        rows = jnp.asarray(classes[class_index][start:stop])
+        peak.append(sum(a.nbytes for a in jax.live_arrays() if a.dtype == jnp.complex64))
+        return rows
+
+    baseline = sum(a.nbytes for a in jax.live_arrays() if a.dtype == jnp.complex64)
+    cache = rp.build_projection_cache_in_place(
+        project_rows, n_classes=n_classes, n_rows_per_class=n_rows, n_pixels=n_pixels,
+        rows_per_call=per_call, dtype=jnp.complex64,
+    )
+    assert_matches(np.asarray(cache), np.concatenate(classes, axis=0))
+    assert len(peak) == n_classes * 3
+    assert max(peak) - baseline <= cache_bytes + per_call * n_pixels * 8
+
+
 def test_joint_chunk_plan_leaves_a_box_256_plan_unchanged():
     """Box-256 K=1 plans (10097, noise1 50k: T<=116, <=8.4k pixels) fit the joint budget
     as they stand; the planner changes nothing there, and an unknown budget never caps."""
