@@ -588,7 +588,15 @@ def build_resident_candidate_tables_from_csr(
     sparse_parent_bits = np.zeros((sparse_parent_rot.size, n_words), dtype=np.uint32)
     if cell_rot.size:
         cell_word, cell_bit = translation_word_and_bit(cell_trans)
-        np.bitwise_or.at(sparse_parent_bits, (cell_parent, cell_word), cell_bit)
+        # A parent's cells are distinct translations, so their bits never
+        # overlap and OR equals the sum: one bincount instead of the unbuffered
+        # bitwise_or.at. A word's sum is below 2**32, exact in float64.
+        word_sums = np.bincount(
+            cell_parent * n_words + cell_word,
+            weights=cell_bit.astype(np.float64),
+            minlength=sparse_parent_bits.size,
+        )
+        sparse_parent_bits = word_sums.astype(np.uint32).reshape(sparse_parent_bits.shape)
 
     # Full-support and complement-encoded images take the whole coarse
     # rotation grid as their parents, ascending, exactly as the host path's
@@ -649,7 +657,9 @@ def build_resident_candidate_tables_from_csr(
         key = relion_parent_execution_key(
             parent_rot, n_coarse_rot=n_coarse_rot, nside_level=nside_level
         )
-        parent_order = np.lexsort((key, parent_image))
+        # The key permutes [0, n_coarse_rot), so (image, key) is one unique
+        # integer and a single argsort gives lexsort's order.
+        parent_order = np.argsort(parent_image * np.int64(n_coarse_rot) + key)
     else:
         parent_order = np.arange(parent_rot.size, dtype=np.int64)
 
