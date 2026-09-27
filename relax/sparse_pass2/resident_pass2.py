@@ -2565,6 +2565,28 @@ def _resident_pass2(
     stream_projections = not _projection_cache_fits_budget(
         transient_projection_bytes, stream_projection_budget_bytes
     )
+    # Streamed chunks keep the per-chunk operand preparation. Their working set
+    # (chunk-local projection caches and the posterior program's temporaries)
+    # is not in the chunk estimate, and next to 21.5 GiB of resident operands
+    # the full EMPIAR-10097 hp3 pass (65000 images, current size 126) could not
+    # allocate 9.65 GiB (job 14518607); the per-chunk preparation ran that pass
+    # at cd26a5e. When the reservation alone is what makes the whole-grid cache
+    # miss, the cache is kept instead of the operands.
+    operands_yield_to_cache = False
+    if stream_projections and reserved_operand_bytes:
+        unreserved_budget_bytes = _stream_projection_budget_bytes(
+            max_projection_cache_bytes,
+            physical_free_bytes=physical_free_bytes,
+            allocator_free_bytes=allocator_free_bytes,
+            pool_free_bytes=pool_free_bytes,
+            reserved_bytes=0,
+        )
+        if _projection_cache_fits_budget(transient_projection_bytes, unreserved_budget_bytes):
+            stream_projections = False
+            operands_yield_to_cache = True
+            stream_projection_budget_bytes = unreserved_budget_bytes
+        reserved_operand_bytes = 0
+    stream_keeps_chunk_operands = stream_projections or operands_yield_to_cache
     if stream_projections:
         score_cache = recon_cache = recon_abs2_cache = None
         logger.info(
@@ -2843,7 +2865,16 @@ def _resident_pass2(
             _jax_allocator_pool_free_bytes(),
         )
         budget_bytes = resident_operands_max_bytes(available_bytes)
-        if not _resident_operands_fit(operand_peak_bytes, available_bytes):
+        if stream_keeps_chunk_operands:
+            logger.info(
+                "Resident pass-2 keeps the per-chunk operand preparation: %s, and one half's "
+                "resident operands (%.2f GiB) would sit next to that working set",
+                "the projections are streamed per chunk"
+                if stream_projections
+                else "the whole-grid projection cache fits only without them",
+                operand_bytes / float(1024**3),
+            )
+        elif not _resident_operands_fit(operand_peak_bytes, available_bytes):
             logger.info(
                 "Resident pass-2 keeps the per-chunk operand preparation: one half's resident "
                 "operands would take %.2f GiB (%.2f GiB while preparing) against a %.2f GiB budget",
