@@ -62,11 +62,13 @@ def test_deferred_plan_cannot_enter_dense_execution(monkeypatch):
 def test_expectation_deferred_plan_routing_and_metadata(monkeypatch, selector):
     monkeypatch.setenv("RELAX_VDAM_DEFER_SPARSE_ROTATIONS", selector)
     monkeypatch.delenv("RELAX_DISABLE_SPARSE_PASS2", raising=False)
+    # The selector applies to the exact-local route; the adaptive route always defers.
     opts = native_options.NativeInitialModelOptions(
         fn_img="particles.star",
         healpix_order=0,
         oversampling=1,
         random_perturbation=0.25,
+        pass2_engine="local",
     )
     dense = native_sampling._build_sampling_plan(opts, iteration=3)
     expected_count = len(dense.rotations)
