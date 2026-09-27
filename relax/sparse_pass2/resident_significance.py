@@ -270,7 +270,11 @@ def compact_batch_significance(
         store_excluded, n_samples - n_significant.astype(np.int64), n_significant,
     ).astype(np.int32)
     total = int(stored.sum(dtype=np.int64))
-    capacity = csr_capacity_for_total(total)
+    # An image stores at most half its grid (the smaller of the included and
+    # excluded sets), so this bound depends only on the batch's shape: one
+    # program per mask shape, where a capacity sized to each batch's total
+    # compiled the same shape again whenever the total crossed a power of two.
+    capacity = max(batch_size * (n_samples // 2), 1)
     image_valid = jnp.asarray(np.arange(batch_size, dtype=np.int32) < actual_batch_size)
     padded_polarity = np.zeros(batch_size, dtype=bool)
     padded_polarity[:actual_batch_size] = store_excluded
@@ -288,7 +292,8 @@ def compact_batch_significance(
             "the device significance compaction disagrees with the posterior's "
             "significant-sample counts",
         )
-    ids = np.asarray(ids, dtype=np.int32)[:total].copy()
+    # Only the power-of-two prefix holding the ids leaves the device.
+    ids = np.asarray(ids[: min(capacity, csr_capacity_for_total(total))], dtype=np.int32)[:total].copy()
     if ids.size and (int(ids.min()) < 0 or int(ids.max()) >= n_samples):
         raise RuntimeError("a compacted significance id is outside the coarse pose grid")
     return n_significant, store_excluded, ids, np.asarray(rot_any, dtype=bool)

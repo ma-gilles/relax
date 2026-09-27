@@ -590,3 +590,34 @@ def test_fixture_covers_every_support_regime():
     assert modes == {"coarse", "empty", "full", "coarse_exclude"}, (
         f"fixture built modes {modes}; update the fixture, not the assertion"
     )
+
+
+def test_batches_of_one_shape_share_one_compaction_program():
+    """The id capacity depends on the mask shape only, not on the batch's total.
+
+    Totals on either side of a power of two used to key two programs for the
+    same mask shape; now both batches reuse one and still compact exactly.
+    """
+
+    from relax.sparse_pass2.resident_significance import _compact_program
+
+    n_coarse_rot, n_coarse_trans = 512, 16
+    n_samples = n_coarse_rot * n_coarse_trans
+    rng = np.random.default_rng(11)
+    before = None
+    for density in (0.01, 0.3):
+        mask = rng.random((3, n_samples)) < density
+        n_significant, store_excluded, ids, _rot_any = compact_batch_significance(
+            mask,
+            actual_batch_size=3,
+            n_coarse_rot=n_coarse_rot,
+            n_coarse_trans=n_coarse_trans,
+            batch_n_sig=mask.sum(axis=1).astype(np.int32),
+        )
+        expected = np.concatenate([np.flatnonzero(row).astype(np.int32) for row in mask])
+        assert not store_excluded.any()
+        np.testing.assert_array_equal(ids, expected)
+        size = _compact_program()._cache_size()
+        if before is None:
+            before = size
+    assert _compact_program()._cache_size() == before
