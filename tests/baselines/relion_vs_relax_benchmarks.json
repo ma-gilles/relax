@@ -184,7 +184,9 @@
      "half1": 0.9815,
      "half2": 0.9815
     }
-   ]
+   ],
+   "quality_pass": true,
+   "quality_reason": "same resolution; scorecard thresholds met; masked cross 0.9989"
   },
   {
    "id": "empiar10097_k1_autorefine_flipqual_cd26a5e",
@@ -384,7 +386,9 @@
    "result_marker": {
     "symbol": "*",
     "note": "RELION's four runs split into its two known 10097 pose basins: this job's RELION arm with speedbench r1 (0.9780/0.9623/0.9622) and the d3d62ca arm with its repeat (0.9770/0.9596/0.9609); across basins 0.9287-0.9299. relax lands in the d3d62ca basin (0.9758/0.9605/0.9564 and 0.9761/0.9586/0.9586) and matches its own paired RELION arm only at the cross-basin level (0.9296/0.8820/0.8858). It passes under the user's 2026-09-23 rule (thresholds met against at least one same-command RELION run; band condition dropped). All comparisons: see the per-reference table."
-   }
+   },
+   "quality_pass": true,
+   "quality_reason": "same resolution; thresholds met vs 2 of 4 RELION runs (RELION's two pose basins)"
   },
   {
    "id": "empiar10345_k1_autorefine_flipqual_64499e8",
@@ -548,7 +552,9 @@
      "half1": 0.981,
      "half2": 0.982
     }
-   ]
+   ],
+   "quality_pass": true,
+   "quality_reason": "same resolution; scorecard thresholds met; masked cross 0.9981"
   },
   {
    "id": "empiar10345_k1_autorefine_flipqual_cd26a5e",
@@ -752,7 +758,9 @@
      "half1": 0.981,
      "half2": 0.982
     }
-   ]
+   ],
+   "quality_pass": true,
+   "quality_reason": "same resolution; scorecard thresholds met; masked cross 0.9980"
   },
   {
    "id": "empiar10081_hcn1_k1_autorefine_c4_resident",
@@ -849,7 +857,9 @@
     "b": "relax: standalone recipe flags plus the resident flag set (tests/long_test REALDATA_HP3_RESIDENT_ENV); default allocator with XLA_PYTHON_CLIENT_PREALLOCATE=false; --projector_setup_backend native; --timing_dir and --benchmark_ledger_json records; no intermediates dump, capture, replay or deterministic-reduction options.",
     "c": "relax: run_full_refinement process wall (EXECUTED.json seconds), including compilation and data loading. RELION: Slurm elapsed of the refinement job.",
     "d": "RELION 14313014 della-h19g1 H100 (2026-09-23); relax 14403136 della-h19g2 H100 (2026-09-25)"
-   }
+   },
+   "quality_pass": true,
+   "quality_reason": "same resolution; masked cross 0.9984"
   },
   {
    "id": "empiar10081_hcn1_k1_autorefine_c4_resident_timed",
@@ -1009,7 +1019,9 @@
      "half1": 0.7986,
      "half2": 0.7965
     }
-   ]
+   ],
+   "quality_pass": true,
+   "quality_reason": "same resolution; masked cross 0.9999"
   },
   {
    "id": "empiar10097_10k_k1_autorefine_resident_589ce09",
@@ -1324,7 +1336,9 @@
      "half1": 0.967,
      "half2": 0.9674
     }
-   ]
+   ],
+   "quality_pass": true,
+   "quality_reason": "same resolution; thresholds met vs all 7 RELION runs"
   },
   {
    "id": "ribosembly_k4_100k256_class3d_15it_resident_d7f9a7a",
@@ -1448,7 +1462,9 @@
    "mask": {
     "dataset": "ribosembly_k4_100k256_c1",
     "sha256": "df91001bda61b529c9602ab630906cbb11db881f23aaa4f8e762d4fddd0526bf"
-   }
+   },
+   "quality_pass": true,
+   "quality_reason": "class acc 0.8315 vs non-MPI RELION 0.8310-0.8314; GT AUC above"
   },
   {
    "id": "noise1_k1_50k256_autorefine_flipqual_64499e8",
@@ -1551,7 +1567,9 @@
    "mask": {
     "dataset": "noise1_k1_50k256_c1",
     "sha256": "afaa22523e9f2cc16b794adc9f50e7788ea03c52f561d8f3b553be5d150391cb"
-   }
+   },
+   "quality_pass": false,
+   "quality_reason": "masked GT FSC-AUC 9e-5 below the same-seed RELION band (OPEN)"
   },
   {
    "id": "pdb_k1_100k256_noise1_bf80_autorefine_resident_589ce09",
@@ -1752,7 +1770,9 @@
      "half2": 0.9999
     }
    ],
-   "gt_band_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/scores/gt_band.json"
+   "gt_band_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/scores/gt_band.json",
+   "quality_pass": true,
+   "quality_reason": "GT FSC-AUC 0.4904 = RELION reference, above repeats; thresholds met"
   },
   {
    "id": "pdb_k2_5k_class3d_25it_resident_bench",
@@ -1928,7 +1948,9 @@
    "mask": {
     "dataset": "pdb_k2_5k128_c1",
     "sha256": "aca84f352343539e736efb667d15b7a7716627c039480f45270faa10ef9cce7f"
-   }
+   },
+   "quality_pass": true,
+   "quality_reason": "inside the RELION non-MPI band at 3 seeds"
   },
   {
    "id": "pdb_k4_5k_class3d_25it_resident_bench",
@@ -2111,7 +2133,9 @@
    "mask": {
     "dataset": "pdb_k4_5k128_c1",
     "sha256": "41916d7c348cc82afc7e25c03fad1322f6692e5ba7283c2a428e56214a4078e9"
-   }
+   },
+   "quality_pass": true,
+   "quality_reason": "identical to RELION non-MPI at 3 seeds (cross 1.0000)"
   },
   {
    "id": "pdb_k4_50k_class3d_15it_resident_bench",
@@ -2295,7 +2319,9 @@
    "mask": {
     "dataset": "pdb_k4_50k256_c1",
     "sha256": "72b04bea86924aa5240d3245d5c40a0ba110c40120346b718ec5326e366cd0d2"
-   }
+   },
+   "quality_pass": true,
+   "quality_reason": "inside the RELION non-MPI band at 3 seeds"
   },
   {
    "id": "noise1_k1_50k256_initialmodel_vdam_200it",
@@ -2414,7 +2440,9 @@
     "b": "relax production defaults (native projector setup and M-step, float64 M-step compute), no JAX_LOG_COMPILES, profiling, capture or replay variables, cold per-run JAX cache; image I/O matched: RELION --preread_images, relax RECOVAR_PREREAD_IMAGES=1; both --grad_write_iter 50",
     "c": "RELION: wall of the relion_refine process; relax: whole wrapper process (import, provenance checks, compilation and run); both end to end",
     "d": "H100 80GB HBM3 on both GPUs of the job (GPU.csv, nvidia-smi UUIDs per arm); node della-h20g4; the P1 pair job (14373888) shared the node throughout"
-   }
+   },
+   "quality_pass": true,
+   "quality_reason": "masked ref AUC 0.7554 vs RELION 0.7552"
   },
   {
    "id": "noise1_k1_5k128_initialmodel_vdam_200it",
@@ -2530,7 +2558,9 @@
     "b": "relax production defaults, no profiling, capture, replay or dump variables, cold JAX cache on node-local /tmp; both pre-read the particle stack (RELION --preread_images, relax --preread_images); both --grad_write_iter 50",
     "c": "RELION: wall of the relion_refine process; relax: whole wrapper process (import, compilation and run); both end to end",
     "d": "H100 80GB HBM3 on every arm (nvidia-smi records in RUN.json / RUN.txt); RELION on della-h20g4, relax on della-h21g1, each job sharing its node with the other arm of its job"
-   }
+   },
+   "quality_pass": false,
+   "quality_reason": "masked ref AUC 0.0717 below both RELION runs (0.0738, 0.0767)"
   },
   {
    "id": "pdb_k2_5k128_initialmodel_vdam_200it",
@@ -2658,7 +2688,9 @@
     "b": "RELION GUI InitialModel defaults on both (no pre-read, pool 3, pad 1, default write interval); relax production defaults, no profiling, capture or replay variables, cold per-run JAX cache",
     "c": "RELION: wall of the relion_refine process; relax: whole wrapper process (import, provenance checks, compilation and run); both end to end",
     "d": "H100 80GB HBM3 on every arm (GPU.txt per arm); RELION and relax in different jobs and nodes, so the wall ratio is not timing-controlled"
-   }
+   },
+   "quality_pass": false,
+   "quality_reason": "seed 29/53 0.0025/0.0043 below the same-seed RELION ranges; seed-mean equal"
   },
   {
    "id": "pdb_k4_5k128_initialmodel_vdam_200it",
@@ -2787,7 +2819,9 @@
     "b": "RELION GUI InitialModel defaults on both (no pre-read, pool 3, pad 1, default write interval); relax production defaults, no profiling, capture or replay variables, cold per-run JAX cache",
     "c": "RELION: wall of the relion_refine process; relax: whole wrapper process (import, provenance checks, compilation and run); both end to end",
     "d": "H100 80GB HBM3 on every arm (GPU.txt per arm); RELION and relax in different jobs and nodes, so the wall ratio is not timing-controlled"
-   }
+   },
+   "quality_pass": true,
+   "quality_reason": "masked ref AUC 0.1433 above RELION 0.1235"
   },
   {
    "id": "pdb_k4_5k128_initialmodel_vdam_200it_bench83b9ae9",
@@ -2914,7 +2948,9 @@
    "mask": {
     "dataset": "pdb_k4_5k128_c1",
     "sha256": "41916d7c348cc82afc7e25c03fad1322f6692e5ba7283c2a428e56214a4078e9"
-   }
+   },
+   "quality_pass": true,
+   "quality_reason": "inside or above the 6-run RELION band at 3 seeds"
   },
   {
    "id": "ribosembly_k15_50k256_initialmodel_vdam_200it",
@@ -3040,7 +3076,9 @@
     "b": "both pre-read the particle stack (RELION --preread_images, relax --preread_images); relax production defaults, no profiling or capture variables; RELION --grad_write_iter 50, relax --grad-write-iter 50",
     "c": "RELION: wall of the relion_refine process; relax: whole wrapper process (import, provenance checks, compilation and run); both end to end",
     "d": "H100 80GB HBM3 on every arm; RELION and relax in different jobs and nodes (RELION in 2026-09-19 whole-node jobs), so the ratio is not timing-controlled"
-   }
+   },
+   "quality_pass": false,
+   "quality_reason": "FSC 0.5 77.7 Å vs RELION 15.1 Å; masked ref AUC 0.1374 vs 0.1514 (seed 29)"
   },
   {
    "id": "ribosembly_k4_100k256_initialmodel_vdam_k4_200it",
@@ -3163,7 +3201,9 @@
     "b": "both pre-read the particle stack (RELION --preread_images, relax --preread_images); relax production defaults, no profiling or capture variables; RELION --grad_write_iter 50, relax --grad-write-iter 50",
     "c": "RELION: wall of the relion_refine process; relax: whole wrapper process (import, provenance checks, compilation and run); both end to end",
     "d": "H100 80GB HBM3 on every arm; RELION (2026-09-26) and relax (2026-09-25) in different jobs and nodes, so the ratio is not timing-controlled"
-   }
+   },
+   "quality_pass": true,
+   "quality_reason": "masked ref AUC 0.0752 inside RELION two-seed range 0.0500-0.0757"
   },
   {
    "id": "ribosembly_k4_100k256_initialmodel_vdam_k1_200it",
@@ -3285,7 +3325,9 @@
     "b": "both pre-read the particle stack (RELION --preread_images, relax --preread_images); relax production defaults, no profiling or capture variables; RELION --grad_write_iter 50, relax --grad-write-iter 50",
     "c": "RELION: wall of the relion_refine process; relax: whole wrapper process (import, provenance checks, compilation and run); both end to end",
     "d": "H100 80GB HBM3 on every arm; RELION (2026-09-26) and relax (2026-09-25) in different jobs and nodes, so the ratio is not timing-controlled"
-   }
+   },
+   "quality_pass": false,
+   "quality_reason": "masked ref AUC 0.0614 just below regenerated RELION range 0.0635-0.0722"
   },
   {
    "id": "empiar10097_initialmodel_vdam_200it",
@@ -3412,7 +3454,9 @@
       "14422766"
      ]
     }
-   ]
+   ],
+   "quality_pass": true,
+   "quality_reason": "masked ref AUC 0.3578 inside seed-41 RELION band 0.3550-0.3605"
   },
   {
    "id": "empiar10076_100k256_initialmodel_vdam_200it",
@@ -3530,7 +3574,9 @@
     "b": "relax production defaults, no profiling, capture, replay or dump variables, cold JAX cache on node-local /tmp; neither pre-reads (RELION reads from disk; relax without --preread_images); both --grad_write_iter 1 (every iteration written)",
     "c": "RELION: wall of the relion_refine process; relax: whole wrapper process (import, compilation and run); both end to end",
     "d": "H100 80GB HBM3 on every arm (nvidia-smi records in RUN.json / RUN.txt); RELION on della-h20g4, relax on della-h21g1, each job sharing its node with the other arm of its job"
-   }
+   },
+   "quality_pass": true,
+   "quality_reason": "masked ref AUC 0.3158 vs RELION 0.3117"
   },
   {
    "id": "empiar10076_10k256_initialmodel_vdam_k4_20it",
@@ -3648,7 +3694,9 @@
     "b": "relax production defaults, no profiling, capture, replay or dump variables, cold JAX cache on node-local /tmp; neither pre-reads; both --grad_write_iter 1 (every iteration written)",
     "c": "RELION: wall of the relion_refine process; relax: whole wrapper process (import, compilation and run); both end to end",
     "d": "H100 80GB HBM3 on every arm (nvidia-smi records in RUN.json / RUN.txt); RELION on della-h20g4, relax on della-h21g1, each job sharing its node with the other arm of its job"
-   }
+   },
+   "quality_pass": true,
+   "quality_reason": "masked ref AUC 0.0491 vs RELION 0.0490"
   },
   {
    "id": "empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align",
@@ -3765,7 +3813,9 @@
     "b": "relax production defaults (native projector setup and M-step, float64 M-step compute), no JAX_LOG_COMPILES, profiling, capture or replay variables, cold per-run JAX cache; image I/O matched: RELION --preread_images, relax RECOVAR_PREREAD_IMAGES=1; both --grad_write_iter 50",
     "c": "RELION: wall of the relion_refine process; relax: whole wrapper process (import, provenance checks, compilation and run); both end to end",
     "d": "H100 80GB HBM3 on both GPUs of the job (GPU.csv, nvidia-smi UUIDs per arm); node della-h20g3; the P3 pair job (14373890) shared the node for the first 18 minutes"
-   }
+   },
+   "quality_pass": true,
+   "quality_reason": "masked ref AUC 0.4124 above RELION 0.3946"
   }
  ],
  "initial_model_intro": [

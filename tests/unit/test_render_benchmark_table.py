@@ -10,6 +10,7 @@ from scripts.render_benchmark_table import (
     DEFAULT_PROVENANCE,
     TABLE_HEADER,
     load_and_validate,
+    status,
     render_markdown,
     render_provenance,
 )
@@ -109,7 +110,8 @@ def test_per_reference_entries_need_every_auc_and_marker_needs_a_note(tmp_path):
 def test_resolution_cells_read_unmasked_then_masked():
     table = load_and_validate(DEFAULT_JSON)
     rendered = render_markdown(table)
-    assert "| RELION res (Å) unmasked / masked | relax res (Å) unmasked / masked | Masked X-AUC |" in rendered
+    assert "| RELION res (Å) | relax res (Å) | Quality vs RELION |" in rendered
+    assert "reads unmasked / masked" in rendered
     row = next(r for r in table["rows"] if r["relax"]["resolution_A"] is not None and r["relax"]["masked_resolution_A"] is not None)
     letter = "abcdefgh"[list(table["resolution_definitions"]).index(row["relax"]["resolution_definition"])]
     assert f"{row['relax']['resolution_A']:.2f} {letter}" in rendered
@@ -121,51 +123,75 @@ def _initialmodel_row(table):
 
 
 @pytest.mark.unit
-def test_initialmodel_rows_render_in_their_own_sections():
+def test_one_table_with_workflow_subheaders_in_order():
+    """The results page is one table; rows sit under bold workflow subheaders (EM K=1, Class3D, VDAM K=1, VDAM K>1)."""
     table = load_and_validate(DEFAULT_JSON)
     rendered = render_markdown(table)
-    im_rows = [row for row in table["rows"] if row.get("table") == "initialmodel"]
-    assert im_rows
-    assert "## InitialModel (VDAM): synthetic data" in rendered
-    head, _, rest = rendered.partition("## InitialModel (VDAM)")
-    for row in im_rows:
-        assert f"#{row['id']})" not in head and f"#{row['id']})" in rest
+    assert rendered.count(TABLE_HEADER[0]) == 1
+    titles = ["**EM auto-refine (K=1)**", "**Class3D (K>1)**", "**VDAM (K=1)**", "**VDAM (K>1)**"]
+    positions = [rendered.index(title) for title in titles]
+    assert positions == sorted(positions)
+    for row in table["rows"]:
+        at = rendered.index(f"#{row['id']})")
+        if row.get("table") == "initialmodel":
+            title = "**VDAM (K=1)**" if int(row["classes"]) == 1 else "**VDAM (K>1)**"
+        else:
+            title = "**Class3D (K>1)**" if int(row["classes"]) > 1 else "**EM auto-refine (K=1)**"
+        start = rendered.index(title)
+        later = [p for p in positions if p > start]
+        assert start < at < (min(later) if later else len(rendered)), row["id"]
 
 
 @pytest.mark.unit
-def test_initialmodel_tables_use_the_em_columns_and_keep_every_auc():
-    """VDAM tables share the EM header; FSC 0.5 against the reference fills the resolution cells, masked X-AUC its
-    column, and the reference FSC-AUCs, unmasked X-AUC and RELION-repeat X-AUC move to the note and comparisons."""
+def test_status_mark_follows_quality_and_ratio():
+    table = load_and_validate(DEFAULT_JSON)
+    rendered = render_markdown(table)
+    base = next(r for r in table["rows"] if r["matched"] != "no" and r["time_ratio_relax_over_relion"] is not None)
+    cases = [(True, 0.44, "🟢"), (True, 0.6, "🟢"), (True, 0.61, "🟠"), (True, 1.2, "🟠"), (True, 1.21, "🔴"), (False, 0.3, "🔴"), (None, 0.3, "⚪")]
+    for passed, ratio, mark in cases:
+        row = dict(base, quality_pass=passed, time_ratio_relax_over_relion=ratio)
+        assert status(row) == mark, (passed, ratio)
+    assert status(dict(base, matched="no")) == "⚪"
+    assert status(dict(base, matched="no", quality_pass=False)) == "🔴"
+    for row in table["rows"]:
+        line = next(x for x in rendered.splitlines() if f"#{row['id']})" in x)
+        assert line.startswith(f"| {status(row)} |")
+        assert row["quality_reason"] in line
+
+
+@pytest.mark.unit
+def test_every_row_needs_quality_pass_and_a_one_line_reason(tmp_path):
+    table = json.loads(DEFAULT_JSON.read_text())
+    path = tmp_path / "table.json"
+    del table["rows"][0]["quality_pass"]
+    path.write_text(json.dumps(table))
+    with pytest.raises(ValueError, match="quality_pass"):
+        load_and_validate(path)
+    table = json.loads(DEFAULT_JSON.read_text())
+    table["rows"][0]["quality_reason"] = "a | b"
+    path.write_text(json.dumps(table))
+    with pytest.raises(ValueError, match="quality_reason"):
+        load_and_validate(path)
+
+
+@pytest.mark.unit
+def test_initialmodel_rows_keep_every_auc_on_the_provenance_page():
+    """VDAM rows show FSC 0.5 against the reference in the resolution cells; the reference FSC-AUCs, X-AUCs and
+    RELION-repeat X-AUC are on the provenance page."""
     table = load_and_validate(DEFAULT_JSON)
     tables = render_markdown(table)
     after = render_provenance(table)
     letters = {name: chr(ord("a") + i) for i, name in enumerate(table["resolution_definitions"])}
     letter = letters["vdam_fsc05_vs_reference"]
-    header = TABLE_HEADER[0]
-    for title in ("## InitialModel (VDAM): synthetic data", "## InitialModel (VDAM): real data"):
-        section = tables.partition(title)[2]
-        assert section.lstrip("\n").startswith(header)
-    assert "Ref FSC-AUC RELION / relax" not in tables
     for row in (r for r in table["rows"] if r.get("table") == "initialmodel"):
         im = row["initial_model"]
         line = next(x for x in tables.splitlines() if f"#{row['id']})" in x)
         if im["relion"]["res_05_A"] is not None:
             assert f"| {im['relion']['res_05_A']:.2f} {letter} / " in line
-        if im["cross"]["masked_fsc_auc"] is not None:
-            assert f"| {im['cross']['masked_fsc_auc']:.4f} |" in line
         comparisons = after.partition(f"`{row['id']}`: FSC-AUC of rigidly registered")[2].partition("###")[0]
-        for value in (
-            im["relion"]["fsc_auc"],
-            im["relax"]["fsc_auc"],
-            im["cross"]["fsc_auc"],
-            im["relion"]["masked_fsc_auc"],
-            im["relax"]["masked_fsc_auc"],
-        ):
+        for value in (im["relion"]["fsc_auc"], im["relax"]["fsc_auc"], im["cross"]["fsc_auc"], im["cross"]["masked_fsc_auc"]):
             if value is not None:
                 assert f"| {value:.4f} |" in comparisons
-        if im.get("relion_repeat"):
-            assert f"| {im['relion_repeat']['fsc_auc']:.4f} |" in comparisons
-            assert f"RELION repeat X-AUC unmasked {im['relion_repeat']['fsc_auc']:.4f}" in after
 
 
 @pytest.mark.unit
