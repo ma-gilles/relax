@@ -50,15 +50,31 @@ def first_shell_below_threshold(fsc_values: np.ndarray, threshold: float) -> int
     return int(below[0]) if below.size else -1
 
 
+def mirror_x_about_origin(volume: np.ndarray) -> np.ndarray:
+    """Mirror array axis 0 about the origin voxel ``N // 2`` (index ``i`` -> ``2 (N // 2) - i``).
+
+    For odd ``N`` this is the plain flip ``volume[::-1]``; for even ``N`` the flip is about ``(N-1)/2``, so it
+    is rolled by one voxel to keep the origin fixed, matching ``rotate_volume_about_center``.
+    """
+    vol = np.asarray(volume)
+    flipped = vol[::-1, :, :]
+    return np.roll(flipped, 1, axis=0) if vol.shape[0] % 2 == 0 else flipped
+
+
 def rotate_volume_about_center(volume: np.ndarray, rotation_matrix: np.ndarray, *, order: int = 1) -> np.ndarray:
-    """Rotate ``volume`` around its geometric center (matrix in array-axis coordinates)."""
+    """Rotate ``volume`` about its origin voxel ``N // 2`` (matrix in array-axis coordinates).
+
+    The origin is the DFT centre of recovar's and RELION's grids (``N/2`` for even ``N``, the
+    geometric centre ``(N-1)/2`` for odd ``N``), the point RELION's ``symmetriseMap`` rotates about.
+    Rotating an even box about ``(N-1)/2`` instead shifts the map by half a voxel per axis.
+    """
     vol = np.asarray(volume, dtype=np.float64)
     if vol.ndim != 3 or len(set(vol.shape)) != 1:
         raise ValueError(f"Expected a cubic 3D volume, got shape {vol.shape}")
     matrix = np.asarray(rotation_matrix, dtype=np.float64)
     if matrix.shape != (3, 3):
         raise ValueError(f"rotation_matrix must have shape (3, 3), got {matrix.shape}")
-    center = (np.asarray(vol.shape, dtype=np.float64) - 1.0) * 0.5
+    center = (np.asarray(vol.shape) // 2).astype(np.float64)
     inv_matrix = matrix.T
     return ndimage.affine_transform(
         vol,
@@ -88,7 +104,12 @@ def lowpass_volume_by_shell(
     *,
     output_size: int | None = None,
 ) -> np.ndarray:
-    """Zero Fourier shells > ``max_shell``; optional smaller-box crop before iFFT for cheap scoring."""
+    """Zero Fourier shells > ``max_shell``; optional smaller-box crop before iFFT for cheap scoring.
+
+    The crop keeps the origin voxel ``N // 2`` at the small box's origin voxel, so a rotation about the
+    origin (``rotate_volume_about_center``) means the same thing in both boxes. Without a crop the result
+    equals the plain shell low-pass (the filter is shift invariant).
+    """
     vol = np.asarray(volume, dtype=np.float64)
     if vol.ndim != 3 or len(set(vol.shape)) != 1:
         raise ValueError(f"Expected a cubic 3D volume, got shape {vol.shape}")
@@ -105,7 +126,7 @@ def lowpass_volume_by_shell(
     if out_n != n and out_n % 2 == 0:
         raise ValueError(f"cropped output_size must be odd, got {out_n}")
 
-    ft = np.fft.fftn(vol)
+    ft = np.fft.fftn(np.fft.ifftshift(vol))
     if out_n != n:
         shifted = np.fft.fftshift(ft)
         half = out_n // 2
@@ -121,7 +142,7 @@ def lowpass_volume_by_shell(
     z, y, x = np.meshgrid(freqs, freqs, freqs, indexing="ij")
     shells = np.rint(np.sqrt(x * x + y * y + z * z)).astype(np.int32)
     ft[shells > shell_limit] = 0.0
-    return np.real(np.fft.ifftn(ft))
+    return np.real(np.fft.fftshift(np.fft.ifftn(ft)))
 
 
 def relion_alignment_rotations(healpix_order: int) -> np.ndarray:
@@ -155,7 +176,7 @@ def _scan_grid(
     best_mirror = False
     best_sign = 1
     for mirror_x in mirror_options:
-        base = vol_lowpass[::-1, :, :] if mirror_x else vol_lowpass
+        base = mirror_x_about_origin(vol_lowpass) if mirror_x else vol_lowpass
         for idx, rotation in enumerate(rotations):
             candidate = rotate_volume_about_center(base, rotation, order=interpolation_order)
             corr = centered_correlation(candidate, ref_lowpass)
@@ -239,7 +260,7 @@ def align_volume_to_reference(
                 best_score = r_score
                 best_rotation_matrix = np.asarray(local_rotations[r_idx_local], dtype=np.float64)
 
-    full_base = vol[::-1, :, :] if best_mirror else vol
+    full_base = mirror_x_about_origin(vol) if best_mirror else vol
     aligned = rotate_volume_about_center(full_base, best_rotation_matrix, order=interpolation_order)
     if best_sign < 0:
         aligned = -aligned

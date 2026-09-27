@@ -132,3 +132,43 @@ def test_order_two_alignment_improves_over_too_coarse_grid():
     assert order2_alignment.rotation_index == true_rotation_index
     assert order2_alignment.corr > 0.98
     assert order2_alignment.corr > coarse_alignment.corr + 0.35
+
+
+def _icosahedral_orbit_volume(n):
+    """A smooth map that is exactly RELION-I2 symmetric about the origin voxel n // 2."""
+    from relax.symmetry import rotational_operators
+
+    operators = rotational_operators("I2")
+    z, y, x = np.indices((n, n, n), dtype=np.float64) - n // 2
+    seeds = (np.array([0.20, 0.08, 0.03]), np.array([-0.05, 0.14, 0.17]))
+    volume = np.zeros((n, n, n))
+    for seed, amplitude in zip(seeds, (1.0, 0.6)):
+        for operator in operators:
+            cz, cy, cx = operator @ (seed * n)
+            volume += amplitude * np.exp(-((z - cz) ** 2 + (y - cy) ** 2 + (x - cx) ** 2) / (2 * 2.0**2))
+    return volume, operators
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("n", (32, 33))
+def test_rotation_is_about_the_origin_voxel_so_symmetric_maps_are_invariant(n):
+    """RELION symmetrises about the DFT origin N // 2 (N/2 for even boxes); an exactly I2-symmetric map must be
+    invariant under every I2 operator. Rotating an even box about (N-1)/2 shifted it by half a voxel per axis."""
+    volume, operators = _icosahedral_orbit_volume(n)
+    for operator in operators[1:]:
+        rotated = rotate_volume_about_center(volume, operator, order=3)
+        assert np.linalg.norm(rotated - volume) / np.linalg.norm(volume) < 1e-3
+
+
+@pytest.mark.unit
+def test_odd_box_rotation_is_unchanged():
+    """For odd boxes N // 2 equals the geometric centre (N-1)/2, so the rotation is the same as before."""
+    from scipy import ndimage
+
+    volume = _asymmetric_volume(17)
+    rotation = relion_alignment_rotations(1)[7]
+    center = (np.asarray(volume.shape, dtype=np.float64) - 1.0) * 0.5
+    expected = ndimage.affine_transform(
+        volume, rotation.T, offset=center - rotation.T @ center, output_shape=volume.shape, order=1, mode="constant"
+    )
+    np.testing.assert_array_equal(rotate_volume_about_center(volume, rotation, order=1), expected)

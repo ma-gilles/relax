@@ -25,6 +25,7 @@ from relax.diagnostics.gt_metrics import (
     DEFAULT_GT_ALIGN_REFINE_ORDERS,
     align_volume_to_reference,
     relion_alignment_rotations,
+    mirror_x_about_origin,
     rotate_volume_about_center,
 )
 
@@ -113,9 +114,11 @@ def test_refinement_locks_mirror_and_sign_from_coarse():
     """Mirror and sign decisions are fixed at the coarse stage; refinement
     only moves rotation."""
     gt = _asymmetric_volume()
-    # Mirrored copy of GT — coarse pass should pick mirror_x=True.
-    mirrored = gt[::-1, :, :].copy()
-    rotations = relion_alignment_rotations(1)
+    # Mirrored copy of GT (about the origin voxel, as the alignment mirrors) — coarse pass should pick mirror_x=True.
+    mirrored = mirror_x_about_origin(gt).copy()
+    # The HEALPix-1 grid has no identity (nearest ~20 deg); add it so the pure mirror is on the coarse grid and the
+    # coarse stage, not a lucky proper rotation of this three-blob volume, decides the mirror.
+    rotations = np.concatenate([np.eye(3)[None], relion_alignment_rotations(1)])
 
     a = align_volume_to_reference(
         mirrored,
