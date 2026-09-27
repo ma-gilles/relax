@@ -802,15 +802,30 @@ def compute_local_search_resident(
         if chunk_budget_bytes is not None:
             # One projector call's transient is live next to the chunk; reserve it.
             chunk_budget_bytes = max(0, chunk_budget_bytes - _projection_call_transient_max_bytes())
-        image_ladder = rp.resident_image_capacity_start(
-            parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER),
-            n_fine_trans=n_fine_trans,
+        tile_pixels = rp.chunk_translated_tile_pixels(
+            unshifted_operands=operand_route["unshifted"],
+            n_score_pixels=n_windowed,
             n_recon_pixels=n_recon_windowed,
-            max_tile_bytes=_max_translation_tile_bytes_for_pass(
-                device_memory_bytes, has_external_normalization=False
-            ),
-            chunk_budget_bytes=chunk_budget_bytes,
+            n_rect_pixels=n_rect,
+            n_exact_rect_pixels=int(relion_wavg_rectangle.exact_positions.size),
+            masked_scoring=bool(score_with_masked_images),
         )
+        image_ladder = parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER)
+        if not (operand_route["unshifted"] and chunk_budget_bytes is not None):
+            # The fixed translation-tile budget bounds the pre-shifted route's
+            # three recon tiles per image. An unshifted chunk holds only the
+            # Wavg rectangle and its exact positions, which the joint plan below
+            # counts against the measured budget; capped at three recon tiles,
+            # the 10097 full-box final pass ran 32-image chunks, 2032 per half.
+            image_ladder = rp.resident_image_capacity_start(
+                image_ladder,
+                n_fine_trans=n_fine_trans,
+                n_recon_pixels=n_recon_windowed,
+                max_tile_bytes=_max_translation_tile_bytes_for_pass(
+                    device_memory_bytes, has_external_normalization=False
+                ),
+                chunk_budget_bytes=chunk_budget_bytes,
+            )
         mstep_block_rows = rp._resolve_mstep_block_rows(
             n_recon_pixels=n_recon_windowed,
             max_block_bytes=_max_adjoint_block_bytes_for_pass(device_memory_bytes),
@@ -826,14 +841,7 @@ def compute_local_search_resident(
             n_fine_trans=n_fine_trans,
             n_recon_pixels=n_recon_windowed,
             budget_bytes=chunk_budget_bytes,
-            **rp.chunk_translated_tile_pixels(
-                unshifted_operands=operand_route["unshifted"],
-                n_score_pixels=n_windowed,
-                n_recon_pixels=n_recon_windowed,
-                n_rect_pixels=n_rect,
-                n_exact_rect_pixels=int(relion_wavg_rectangle.exact_positions.size),
-                masked_scoring=bool(score_with_masked_images),
-            ),
+            **tile_pixels,
         )
         row_ladder = memory_plan.row_capacity_ladder
         image_ladder = memory_plan.image_capacity_ladder

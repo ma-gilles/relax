@@ -593,6 +593,36 @@ def test_joint_chunk_plan_counts_the_global_per_chunk_preparation_with_its_rows(
     ).image_capacity_ladder) >= images
 
 
+def test_unshifted_mstep_blocks_gather_no_translated_tile():
+    """An unshifted chunk's M-step block row holds only its sums, so the joint plan keeps
+    larger blocks and images than the pre-shifted count at the 10097 full-box final pass
+    (T=36, 25717 recon, 33024 rectangle pixels, 503 KiB rows, a 37.6 GiB budget)."""
+
+    t, p, rect = 36, 25717, 33024
+    assert rp._mstep_block_row_bytes(t, p, 0) == 44 * p
+    assert rp._mstep_block_row_bytes(t, p) == 2 * t * p * 8 + 44 * p
+    kwargs = dict(
+        row_capacity_ladder=(1024, 4096, 16384), image_capacity_ladder=(32, 128, 512), mstep_block_rows=1024,
+        row_bytes=503 * 1024, n_fine_trans=t, n_recon_pixels=p, budget_bytes=int(37.6 * 1024**3),
+    )
+    tiles = rp.chunk_translated_tile_pixels(
+        unshifted_operands=False, n_score_pixels=p, n_recon_pixels=p, n_rect_pixels=rect, n_exact_rect_pixels=p
+    )
+    unshifted = rp.chunk_translated_tile_pixels(
+        unshifted_operands=True, n_score_pixels=p, n_recon_pixels=p, n_rect_pixels=rect, n_exact_rect_pixels=p
+    )
+    assert unshifted["mstep_tile_pixels"] == 0 and tiles["mstep_tile_pixels"] == 2 * p
+    pre_shifted = rp.plan_resident_chunk_memory(**kwargs, **tiles)
+    plan = rp.plan_resident_chunk_memory(**kwargs, **unshifted)
+    assert plan.peak_bytes <= kwargs["budget_bytes"]
+    assert plan.mstep_block_rows >= pre_shifted.mstep_block_rows
+    assert max(plan.image_capacity_ladder) >= max(pre_shifted.image_capacity_ladder)
+    assert plan.peak_bytes == rp.resident_chunk_bytes(
+        row_capacity=max(plan.row_capacity_ladder), image_capacity=max(plan.image_capacity_ladder),
+        mstep_block_rows=plan.mstep_block_rows, row_bytes=503 * 1024, n_fine_trans=t, n_recon_pixels=p, **unshifted,
+    )
+
+
 def test_joint_chunk_plan_leaves_a_box_256_plan_unchanged():
     """Box-256 K=1 plans (10097, noise1 50k: T<=116, <=8.4k pixels) fit the joint budget
     as they stand; the planner changes nothing there, and an unknown budget never caps."""

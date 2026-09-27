@@ -651,10 +651,19 @@ class ResidentChunkMemoryPlan:
     budget_bytes: int | None
 
 
+def _mstep_block_row_bytes(n_fine_trans: int, n_recon_pixels: int, mstep_tile_pixels: int | None = None) -> int:
+    """Device bytes of one M-step block row (:func:`resident_chunk_bytes`)."""
+
+    t, p = max(int(n_fine_trans), 1), max(int(n_recon_pixels), 1)
+    gathered = 2 * p if mstep_tile_pixels is None else int(mstep_tile_pixels)
+    return t * gathered * 8 + 44 * p
+
+
 def resident_chunk_bytes(
     *, row_capacity: int, image_capacity: int, mstep_block_rows: int, row_bytes: int, n_fine_trans: int,
     n_recon_pixels: int, held_tile_pixels: int | None = None, prepare_tile_pixels: int = 0,
     rows_live_during_prepare: bool = False,
+    mstep_tile_pixels: int | None = None,
 ) -> int:
     """Device bytes one chunk holds at its peak, the larger of its two stages.
 
@@ -664,8 +673,10 @@ def resident_chunk_bytes(
     ``held_tile_pixels`` is the per-image, per-translation complex64 pixel count
     of the held tiles; the default, three ``P``-pixel tiles, is the
     reconstruction and noise operands and RELION's Wavg rectangle. An M-step
-    block gathers each row's recon and noise tiles (``[block, T, P]`` complex64,
-    twice) next to its 44-byte-per-pixel sums.
+    block row holds its 44-byte-per-pixel sums and ``mstep_tile_pixels``
+    complex64 pixels per translation of gathered tiles; the default, ``2 P``, is
+    the row's recon and noise tiles. Unshifted operands (T16) gather none: the
+    translate-and-sum kernel translates the per-image operands itself.
 
     The preparation stage holds ``prepare_tile_pixels`` per image and
     translation (:func:`chunk_translated_tile_pixels`); zero means the caller
@@ -679,7 +690,7 @@ def resident_chunk_bytes(
     held = 3 * p if held_tile_pixels is None else int(held_tile_pixels)
     rows = int(row_capacity) * int(row_bytes)
     tiles = int(image_capacity) * t * held * 8
-    mstep = int(mstep_block_rows) * (2 * t * p * 8 + 44 * p)
+    mstep = int(mstep_block_rows) * _mstep_block_row_bytes(n_fine_trans, n_recon_pixels, mstep_tile_pixels)
     prepare = int(image_capacity) * t * int(prepare_tile_pixels) * 8
     if rows_live_during_prepare:
         prepare += rows
@@ -723,7 +734,8 @@ def chunk_translated_tile_pixels(
     With the unshifted operands (T16), gathered per chunk from the half's
     resident arrays or prepared for the chunk's images, the only translated
     arrays are the Wavg rectangle and its exact positions, from preparation to
-    the M-step. The chunk-local preparation's translation-free buffers are
+    the M-step, and its M-step blocks gather no translated tile
+    (``mstep_tile_pixels``). The chunk-local preparation's translation-free buffers are
     padded to :func:`resident_image_capacity` rows (256 at least), about 1.7 GB
     at EMPIAR-10202 current size 626, which the budget's free-memory margin
     covers.
@@ -731,12 +743,15 @@ def chunk_translated_tile_pixels(
 
     s, p, r, e = int(n_score_pixels), int(n_recon_pixels), int(n_rect_pixels), int(n_exact_rect_pixels)
     if unshifted_operands:
-        return {"held_tile_pixels": r + e, "prepare_tile_pixels": r + e}
+        # The translate-and-sum kernel translates the per-image operands, so an
+        # M-step block gathers no translated tile.
+        return {"held_tile_pixels": r + e, "prepare_tile_pixels": r + e, "mstep_tile_pixels": 0}
     cc = s if normalized_cc else 0
     shared = 0 if masked_scoring else p
     return {
         "held_tile_pixels": 2 * p + r + e + cc,
         "prepare_tile_pixels": 2 * s + 4 * p + 2 * r + e + cc - shared,
+        "mstep_tile_pixels": 2 * p,
     }
 
 
@@ -752,6 +767,7 @@ def plan_resident_chunk_memory(
     held_tile_pixels: int | None = None,
     prepare_tile_pixels: int = 0,
     rows_live_during_prepare: bool = False,
+    mstep_tile_pixels: int | None = None,
 ) -> ResidentChunkMemoryPlan:
     """Shrink the three per-chunk classes until their sum fits one budget.
 
@@ -780,6 +796,7 @@ def plan_resident_chunk_memory(
         held_tile_pixels=held_tile_pixels,
         prepare_tile_pixels=prepare_tile_pixels,
         rows_live_during_prepare=rows_live_during_prepare,
+        mstep_tile_pixels=mstep_tile_pixels,
     )
     held_pixels = 3 * max(int(n_recon_pixels), 1) if held_tile_pixels is None else int(held_tile_pixels)
 
@@ -792,7 +809,7 @@ def plan_resident_chunk_memory(
         while peak() > int(budget_bytes):
             t, p = max(int(n_fine_trans), 1), max(int(n_recon_pixels), 1)
             images_can_shrink = len(images) > 1 or max(images) > 1
-            mstep_bytes = block * (2 * t * p * 8 + 44 * p)
+            mstep_bytes = block * _mstep_block_row_bytes(t, p, mstep_tile_pixels)
             rows_bytes = max(rows) * int(row_bytes)
             held_bytes = max(images) * t * held_pixels * 8
             prepare_bytes = max(images) * t * int(prepare_tile_pixels) * 8
