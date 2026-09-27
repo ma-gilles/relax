@@ -70,7 +70,7 @@ def _run_k1_prepare(monkeypatch, tmp_path, pdb_bfactor, **extra):
 def test_k1_prepare_enables_preset_with_bfactor_100_for_unblurred_pdb_volumes(monkeypatch, tmp_path):
     captured = _run_k1_prepare(monkeypatch, tmp_path, pdb_bfactor=0.0)
     assert captured["atomic_solvent_correction"] is True
-    assert "atomic_bfactor" not in captured  # recovar's default B_atomic = 100 A^2
+    assert captured["atomic_bfactor"] == 100.0  # unblurred source: the total defaults to recovar's 100 A^2
 
 
 def test_k1_prepare_adds_only_solvent_term_to_already_bfactored_volumes(monkeypatch, tmp_path):
@@ -79,7 +79,8 @@ def test_k1_prepare_adds_only_solvent_term_to_already_bfactored_volumes(monkeypa
     assert captured["atomic_bfactor"] == 0.0
 
 
-def test_k1_prepare_opt_out_and_explicit_bfactor_are_forwarded(monkeypatch, tmp_path):
+def test_k1_prepare_opt_out_and_explicit_total_bfactor(monkeypatch, tmp_path):
+    """--atomic-bfactor is the total B: the preset adds total minus the baked-in part, and a total below it is refused."""
     off = _run_k1_prepare(
         monkeypatch, tmp_path / "off", pdb_bfactor=80.0, atomic_volume_kwargs={"atomic_solvent_correction": False}
     )
@@ -88,9 +89,16 @@ def test_k1_prepare_opt_out_and_explicit_bfactor_are_forwarded(monkeypatch, tmp_
         monkeypatch,
         tmp_path / "explicit",
         pdb_bfactor=80.0,
-        atomic_volume_kwargs={"atomic_solvent_correction": True, "atomic_bfactor": 50.0},
+        atomic_volume_kwargs={"atomic_solvent_correction": True, "atomic_bfactor": 120.0},
     )
-    assert explicit["atomic_bfactor"] == 50.0
+    assert explicit["atomic_bfactor"] == 40.0
+    with pytest.raises(ValueError, match="below the 80.0 A\\^2 already baked"):
+        _run_k1_prepare(
+            monkeypatch,
+            tmp_path / "too_low",
+            pdb_bfactor=80.0,
+            atomic_volume_kwargs={"atomic_solvent_correction": True, "atomic_bfactor": 50.0},
+        )
 
 
 @pytest.mark.parametrize(
@@ -217,7 +225,8 @@ def test_synthetic_recovery_check_refuses_raw_maps_for_corrected_dataset(tmp_pat
     ],
 )
 def test_asset_volume_scripts_add_only_the_solvent_term(monkeypatch, tmp_path, module_name, writer, extra):
-    """recovar's bundled asset maps already carry B = 100 A^2, so B_atomic defaults to 0 here."""
+    """recovar's bundled asset maps already carry B = 100 A^2: the default total is 100 (solvent term only), an explicit
+    total adds its excess over 100, and a total below 100 is refused."""
     import importlib
 
     prep = importlib.import_module(f"scripts.{module_name}")
@@ -229,11 +238,15 @@ def test_asset_volume_scripts_add_only_the_solvent_term(monkeypatch, tmp_path, m
     prep.prepare_benchmark(str(tmp_path / "default"), **common)
     prep.prepare_benchmark(
         str(tmp_path / "explicit"),
-        atomic_volume_kwargs={"atomic_solvent_correction": True, "atomic_bfactor": 100.0},
+        atomic_volume_kwargs={"atomic_solvent_correction": True, "atomic_bfactor": 150.0},
         **common,
     )
     prep.prepare_benchmark(str(tmp_path / "off"), atomic_volume_kwargs={"atomic_solvent_correction": False}, **common)
+    with pytest.raises(ValueError, match="below the 100.0 A\\^2 already baked"):
+        prep.prepare_benchmark(
+            str(tmp_path / "low"), atomic_volume_kwargs={"atomic_solvent_correction": True, "atomic_bfactor": 40.0}, **common
+        )
 
     assert captured[0]["atomic_solvent_correction"] is True and captured[0]["atomic_bfactor"] == 0.0
-    assert captured[1]["atomic_bfactor"] == 100.0
+    assert captured[1]["atomic_bfactor"] == 50.0
     assert captured[2]["atomic_solvent_correction"] is False and "atomic_bfactor" not in captured[2]

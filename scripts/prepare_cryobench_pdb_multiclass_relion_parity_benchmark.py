@@ -23,6 +23,8 @@ from recovar.simulation import simulator, solvent_contrast, synthetic_dataset
 from recovar.simulation.trajectory_generation import compute_bfactor_scaling
 from recovar.utils.helpers import write_relion_mrc
 
+from scripts.fixture_bfactor import resolve_total_bfactor
+
 logger = logging.getLogger(__name__)
 
 SYMMETRY_INTERPOLATION_ORDER = 1
@@ -394,6 +396,10 @@ def prepare_benchmark(
             ),
         )
 
+    # One total B: the PDB maps carry pdb_bfactor (0 by default) and the preset adds the rest.
+    atomic_volume_kwargs, bfactor_record = resolve_total_bfactor(
+        atomic_volume_kwargs, baked_in=pdb_bfactor, source="PDB-derived (--pdb-bfactor baked in)"
+    )
     required = _required_dataset_files(output_dir, grid_size)
     if not all(path.exists() for path in required):
         logger.info(
@@ -409,17 +415,6 @@ def prepare_benchmark(
             streaming_mmap,
             disc_type,
         )
-        # EM/VDAM development default: the recovar atomic-volume preset (solvent contrast
-        # plus B_atomic); pass {'atomic_solvent_correction': False} for experimental maps.
-        if atomic_volume_kwargs is None:
-            atomic_volume_kwargs = {"atomic_solvent_correction": True}
-        if (
-            pdb_bfactor > 0
-            and atomic_volume_kwargs.get("atomic_solvent_correction")
-            and atomic_volume_kwargs.get("atomic_bfactor") is None
-        ):
-            # The PDB volumes already carry pdb_bfactor; add only the solvent term.
-            atomic_volume_kwargs = {**atomic_volume_kwargs, "atomic_bfactor": 0.0}
         simulator.generate_synthetic_dataset(
             str(output_dir),
             voxel_size,
@@ -462,6 +457,7 @@ def prepare_benchmark(
         "noise_model": noise_model,
         "dataset_params_option": dataset_params_option,
         "pdb_bfactor": pdb_bfactor,
+        "bfactor": bfactor_record,
         "noise_scale_std": noise_scale_std,
         "contrast_std": contrast_std,
         "volume_radius": volume_radius,
@@ -504,7 +500,13 @@ def main() -> None:
         help="Pose/CTF generator option forwarded to simulator.generate_synthetic_dataset.",
     )
     parser.add_argument("--init-radius", type=int, default=10)
-    parser.add_argument("--pdb-bfactor", type=float, default=80.0)
+    parser.add_argument(
+        "--pdb-bfactor",
+        type=float,
+        default=0.0,
+        help="B baked into the PDB maps (default 0). Set the total B with --atomic-bfactor instead; a non-zero value "
+        "here counts toward that total.",
+    )
     parser.add_argument("--noise-scale-std", type=float, default=0.0)
     parser.add_argument("--contrast-std", type=float, default=0.0)
     parser.add_argument("--volume-radius", type=float, default=0.7)
