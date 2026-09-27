@@ -35,10 +35,11 @@ def test_exact_coarse_assembly_precision_and_padding(
         scales[:2] = [0.875, 1.25]
         active_mask[3] = False  # Repeated score position used as inactive padding.
     scale_operand = jnp.asarray(scales[:, None], dtype=real_dtype)
+    # The assembler asks for the padded batch's indices (row 0 repeated).
     monkeypatch.setattr(
         relion_ctf,
-        "_relion_exact_ctf_half_from_source_star_host",
-        lambda *_args, pixel_indices: ctf[:, pixel_indices],
+        "_relion_exact_ctf_half_from_source_star",
+        lambda _dataset, indices, _shape, *, pixel_indices: jnp.asarray(ctf[np.asarray(indices)][:, pixel_indices]),
     )
     seen = []
 

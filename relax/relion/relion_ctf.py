@@ -352,44 +352,49 @@ def _relion_exact_ctf_half_from_source_star(
     experiment_dataset,
     image_indices,
     image_shape,
+    *,
+    pixel_indices=None,
 ):
-    """Return the shared source-precision CTF operand on the JAX device.
+    """Return the source-precision CTF rows of these images on the JAX device.
 
-    Device-first EM callers reuse this single binary64 placement for their
-    float32 score and reconstruction operands.  Host-padding callers should
-    use :func:`_relion_exact_ctf_half_from_source_star_host` to avoid a
-    device-to-host-to-device round trip.
-
-    When the whole row block fits :func:`_exact_ctf_device_budget_bytes`, the
-    rows live in a device mirror that receives each particle's row once, and a
-    request is one device gather. The host path copied and uploaded every
-    requested row on each call: a whole pass-2 half at noise1 50k/256 is about
-    6.6 GB per iteration (72.6 s of main-thread gather, job 14523070). Both paths
-    return the same binary64 values.
+    The binary64 rows are evaluated once per particle on the host
+    (:func:`_evaluate_exact_ctf_rows`) and served from a bounded device row
+    cache (:func:`_exact_ctf_device_rows`): a request uploads only the rows the
+    cache does not hold and is one device gather, optionally of planned pixel
+    columns, whose order and duplicates are preserved. The host path copied and
+    uploaded every requested row on each call, 72.6 s of main-thread gather in a
+    noise1 50k VDAM run (py-spy, job 14523070).
     """
 
     image_h, image_w = (int(size) for size in image_shape)
+    if image_h != image_w:
+        raise ValueError("exact RELION CTF replay currently requires square images")
     width = image_h * (image_w // 2 + 1)
+    if pixel_indices is not None:
+        pixel_indices = np.asarray(pixel_indices)
+        if pixel_indices.ndim != 1 or pixel_indices.dtype.kind not in "iu":
+            raise ValueError("CTF pixel indices must be a one-dimensional integer array")
+        if np.any(pixel_indices < 0) or np.any(pixel_indices >= width):
+            raise ValueError("CTF pixel indices are outside the full half-spectrum")
     _, cache = _exact_ctf_source_cache(experiment_dataset, image_shape)
-    if image_h != image_w or cache["slots"].size * width * 8 > _exact_ctf_device_budget_bytes():
-        return jnp.asarray(
-            _relion_exact_ctf_half_from_source_star_host(experiment_dataset, image_indices, image_shape),
-            dtype=jnp.float64,
-        )
     original_indices = np.asarray(
         original_image_indices(experiment_dataset, np.asarray(image_indices, dtype=np.int64)), dtype=np.int64
     )
     batch_slots = _evaluate_exact_ctf_rows(cache, original_indices, image_h, image_w)
-    return jnp.take(_exact_ctf_device_rows(cache, width), jnp.asarray(batch_slots), axis=0)
+    block, device_rows = _exact_ctf_device_rows(cache, batch_slots, width)
+    rows = jnp.asarray(device_rows)
+    if pixel_indices is None:
+        return jnp.take(block, rows, axis=0)
+    return block[rows[:, None], jnp.asarray(pixel_indices, dtype=jnp.int32)[None, :]]
 
 
 _EXACT_CTF_DEVICE_GB_ENV = "RELAX_RELION_EXACT_CTF_DEVICE_GB"
-_EXACT_CTF_DEVICE_UPLOAD_ROWS = 1024
+_EXACT_CTF_DEVICE_MIN_ROWS = 4096
 
 
 def _exact_ctf_device_budget_bytes() -> int:
-    """Device bytes the CTF row mirror may hold: ``RELAX_RELION_EXACT_CTF_DEVICE_GB``,
-    else a fifth of the device's memory limit (0 without memory statistics)."""
+    """Device bytes the CTF row cache may hold: ``RELAX_RELION_EXACT_CTF_DEVICE_GB``,
+    else a fifth of the device's memory limit (2 GB without memory statistics)."""
 
     token = os.environ.get(_EXACT_CTF_DEVICE_GB_ENV, "").strip()
     if token:
@@ -397,52 +402,74 @@ def _exact_ctf_device_budget_bytes() -> int:
             budget = float(token)
         except ValueError as exc:
             raise ValueError(f"{_EXACT_CTF_DEVICE_GB_ENV} must be a number of gigabytes, got {token!r}") from exc
-        if budget < 0:
-            raise ValueError(f"{_EXACT_CTF_DEVICE_GB_ENV} must not be negative, got {token!r}")
+        if budget <= 0:
+            raise ValueError(f"{_EXACT_CTF_DEVICE_GB_ENV} must be positive, got {token!r}")
         return int(budget * (1024**3))
     import jax
 
     stats = jax.devices()[0].memory_stats() or {}
-    return int(stats.get("bytes_limit", 0)) // 5
+    return int(stats.get("bytes_limit", 10 * 1024**3)) // 5
 
 
-def _exact_ctf_device_rows(cache, width: int):
-    """The device mirror of the row block, with every evaluated row uploaded.
+def _exact_ctf_device_rows(cache, batch_slots: np.ndarray, width: int):
+    """The device row cache and the cache rows of ``batch_slots``.
 
-    Rows are evaluated into consecutive slots, so the rows not yet mirrored are
-    one contiguous run. It goes up in fixed-size chunks written in place; a chunk
-    that runs past the evaluated rows carries uninitialized rows, which a later
-    upload replaces before any slot of theirs can be requested.
+    The cache holds as many rows as the budget allows (at least
+    ``_EXACT_CTF_DEVICE_MIN_ROWS`` and at most one per particle). Rows a request
+    needs and the cache lacks replace rows in clock order, skipping rows the same
+    request reads, and go up as one scatter written in place. A request larger
+    than the cache grows it to the request's size.
     """
 
     import jax
 
-    block = cache.get("device_rows")
-    if block is None:
-        block = jnp.zeros((cache["slots"].size, width), dtype=jnp.float64)
-        cache["device_mirrored"] = 0
-    total, chunk = block.shape[0], min(_EXACT_CTF_DEVICE_UPLOAD_ROWS, block.shape[0])
-    mirrored, evaluated = cache["device_mirrored"], cache["n_cached"]
-    while mirrored < evaluated:
-        start = min(mirrored, total - chunk)
-        block = _write_exact_ctf_device_rows(block, jax.device_put(cache["rows"][start : start + chunk]), start)
-        mirrored = start + chunk
-    # Rows past the evaluated count that a chunk carried are not valid yet.
-    cache["device_rows"], cache["device_mirrored"] = block, evaluated
-    return block
+    state = cache.get("device_cache")
+    n_particles = cache["slots"].size
+    requested = np.unique(batch_slots)
+    if state is None or state["block"].shape[0] < requested.size:
+        capacity = min(n_particles, max(_EXACT_CTF_DEVICE_MIN_ROWS, _exact_ctf_device_budget_bytes() // (width * 8)))
+        capacity = max(capacity, requested.size)
+        state = {
+            "block": jnp.zeros((capacity, width), dtype=jnp.float64),
+            "row_of_slot": np.full(n_particles, -1, dtype=np.int64),
+            "slot_of_row": np.full(capacity, -1, dtype=np.int64),
+            "clock": 0,
+        }
+        cache["device_cache"] = state
+    capacity = state["block"].shape[0]
+    missing = requested[state["row_of_slot"][requested] < 0]
+    if missing.size:
+        keep = np.zeros(capacity, dtype=bool)
+        keep[state["row_of_slot"][requested[state["row_of_slot"][requested] >= 0]]] = True
+        order = (np.arange(capacity) + state["clock"]) % capacity
+        free = order[~keep[order]][: missing.size]
+        evicted = state["slot_of_row"][free]
+        state["row_of_slot"][evicted[evicted >= 0]] = -1
+        state["row_of_slot"][missing] = free
+        state["slot_of_row"][free] = missing
+        state["clock"] = int((free[-1] + 1) % capacity)
+        # Pad the upload to a power-of-two row count so few scatter shapes compile;
+        # padded positions point past the cache and are dropped.
+        padded = 1 << int(np.ceil(np.log2(missing.size)))
+        positions = np.full(padded, capacity, dtype=np.int32)
+        positions[: missing.size] = free
+        values = np.zeros((padded, width), dtype=np.float64)
+        values[: missing.size] = cache["rows"][missing]
+        state["block"] = _scatter_exact_ctf_rows(state["block"], jax.device_put(positions), jax.device_put(values))
+    return state["block"], state["row_of_slot"][batch_slots]
 
 
-def _write_exact_ctf_device_rows(block, rows, start):
+def _scatter_exact_ctf_rows(block, positions, values):
     import jax
 
-    global _write_exact_ctf_device_rows_program
-    if _write_exact_ctf_device_rows_program is None:
-        _write_exact_ctf_device_rows_program = jax.jit(
-            lambda block, rows, start: jax.lax.dynamic_update_slice(block, rows, (start, jnp.zeros_like(start))), donate_argnums=0
+    global _scatter_exact_ctf_rows_program
+    if _scatter_exact_ctf_rows_program is None:
+        _scatter_exact_ctf_rows_program = jax.jit(
+            lambda block, positions, values: block.at[positions].set(values, mode="drop"), donate_argnums=0
         )
-    return _write_exact_ctf_device_rows_program(block, rows, jnp.int32(start))
+    return _scatter_exact_ctf_rows_program(block, positions, values)
 
 
-_write_exact_ctf_device_rows_program = None
+_scatter_exact_ctf_rows_program = None
 
 

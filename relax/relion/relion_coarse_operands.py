@@ -595,7 +595,7 @@ def _assemble_relion_exact_coarse_gaussian_operands(
     """Assemble the single exact-source operand set without generic formulas."""
 
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star_host
+    from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star
     from relax.sparse_pass2.sparse_pass2_bucket_io import (
         _relion_translation_angles_f32,
         _relion_translation_angles_f64,
@@ -606,21 +606,13 @@ def _assemble_relion_exact_coarse_gaussian_operands(
     angle_fn = _relion_translation_angles_f64 if use_float64_scoring else _relion_translation_angles_f32
     translate_fn = em_cuda_kernels.relion_translate_score_f64 if use_float64_scoring else em_cuda_kernels.relion_translate_score_f32
 
-    ctf_half_rfloat_np = np.asarray(
-        _relion_exact_ctf_half_from_source_star_host(
-            experiment_dataset,
-            indices,
-            image_shape,
-            pixel_indices=score_indices_np,
-        ),
-        dtype=np.float64,
+    # The padded rows of a short last batch repeat its first image's CTF row.
+    ctf_half_rfloat = _relion_exact_ctf_half_from_source_star(
+        experiment_dataset,
+        _repeat_pad_batch_axis(np.asarray(indices), batch_size),
+        image_shape,
+        pixel_indices=score_indices_np,
     )
-    if batch_size > actual_batch_size:
-        ctf_half_rfloat_np = _repeat_pad_batch_axis(
-            ctf_half_rfloat_np,
-            batch_size,
-        )
-    ctf_half_rfloat = jnp.asarray(ctf_half_rfloat_np, dtype=jnp.float64)
     batch_scale_exact = jnp.asarray(batch_scale_np, dtype=real_dtype)
     assemble = (
         _relion_exact_coarse_operand_program

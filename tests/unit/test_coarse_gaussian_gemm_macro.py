@@ -1200,10 +1200,10 @@ def _mock_unit_ctf_and_zero_highres_power(monkeypatch):
     monkeypatch.setattr(
         relion_ctf,
         "_relion_exact_ctf_half_from_source_star",
-        lambda _dataset, indices, image_shape: jnp.ones(
+        lambda _dataset, indices, image_shape, *, pixel_indices=None: jnp.ones(
             (
                 len(indices),
-                int(image_shape[0]) * (int(image_shape[1]) // 2 + 1),
+                (int(image_shape[0]) * (int(image_shape[1]) // 2 + 1) if pixel_indices is None else len(pixel_indices)),
             ),
             dtype=jnp.float64,
         ),
@@ -2209,8 +2209,11 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     monkeypatch.setattr(
         relion_ctf,
         "_relion_exact_ctf_half_from_source_star",
-        lambda _dataset, indices, image_shape: jnp.ones(
-            (len(indices), int(image_shape[0]) * (int(image_shape[1]) // 2 + 1)),
+        lambda _dataset, indices, image_shape, *, pixel_indices=None: jnp.ones(
+            (
+                len(indices),
+                (int(image_shape[0]) * (int(image_shape[1]) // 2 + 1) if pixel_indices is None else len(pixel_indices)),
+            ),
             dtype=jnp.float64,
         ),
     )

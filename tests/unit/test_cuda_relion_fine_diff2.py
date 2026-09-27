@@ -1096,7 +1096,7 @@ def test_k1_coarse_gaussian_exact_operand_flags_honor_default_and_opt_out(monkey
     operands_source = Path(relion_coarse_operands.__file__).read_text()
     assembler_start = operands_source.index("def _assemble_relion_exact_coarse_gaussian_operands(")
     assembler = operands_source[assembler_start : operands_source.index("\ndef ", assembler_start + 1)]
-    assert "_relion_exact_ctf_half_from_source_star_host(" in assembler
+    assert "_relion_exact_ctf_half_from_source_star(" in assembler
     assert "pixel_indices=score_indices_np" in assembler
     assert "shifted_corrected = translate_fn(" in assembler
     # P3-I: the elementwise operand chain that used to sit inline here now
