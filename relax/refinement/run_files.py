@@ -85,7 +85,13 @@ def _format_value(value) -> str:
     return text
 
 
+class _FormattedColumn(list):
+    """A column whose cells are already STAR text: :func:`_format_column` passes it through."""
+
+
 def _format_column(values) -> list[str]:
+    if isinstance(values, _FormattedColumn):
+        return values
     if isinstance(values, list) and (not values or isinstance(values[0], str)):
         return [_format_value(v) for v in values]  # input text, kept as written
     array = np.asarray(values)
@@ -261,6 +267,9 @@ class RunFileWriter:
         self._thread = None
         self._error = None
         n_rows = len(self.particles["rlnImageName"])
+        # The input columns are written unchanged every iteration; format their
+        # cells once instead of once per iteration (4M cells at 130k particles).
+        self.particles = {label: _FormattedColumn(_format_column(values)) for label, values in self.particles.items()}
         covered = np.concatenate(self.half_rows) if self.half_rows else np.empty(0, np.int64)
         if covered.size != n_rows or np.unique(covered).size != n_rows:
             raise ValueError("half_rows must partition the particle table rows")
