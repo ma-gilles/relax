@@ -338,9 +338,7 @@ class TestAutoRefineExpectedAccuracyBinding:
         reference = rng.standard_normal((8, 8, 8)).astype(np.float64)
         kwargs = {
             "references_relion": np.stack([reference, reference], axis=0),
-            "trial_eulers_deg": np.asarray(
-                [[0.0, 35.0, 10.0], [75.0, 60.0, -20.0]], dtype=np.float64
-            ),
+            "trial_eulers_deg": np.asarray([[0.0, 35.0, 10.0], [75.0, 60.0, -20.0]], dtype=np.float64),
             "trial_local_indices": np.arange(2, dtype=np.int64),
             "trial_class_ids": np.asarray([0, 0], dtype=np.int32),
             "class_weights": np.asarray([0.5, 0.5], dtype=np.float64),
@@ -362,9 +360,7 @@ class TestAutoRefineExpectedAccuracyBinding:
             "random_seed_particle_ids": np.asarray([101, 205], dtype=np.int64),
         }
         direct = estimate_relion_expected_accuracy_from_prepared_inputs(**kwargs)
-        isolated = estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs(
-            **kwargs
-        )
+        isolated = estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs(**kwargs)
 
         assert isolated.acc_rot == direct.acc_rot
         assert isolated.acc_trans_angstrom == direct.acc_trans_angstrom
@@ -490,11 +486,30 @@ class TestAutoRefineExpectedAccuracyBinding:
 
         def run(n_threads):
             return bind.vdam_expected_angular_errors(
-                references, eulers, particle_ids, np.zeros(n_trials, dtype=np.int32),
-                np.asarray([0.6, 0.4]), np.linspace(2.0, 0.5, n // 2 + 1),
-                rng_ctf[0], rng_ctf[1], rng_ctf[2], np.zeros(20),
-                300.0, 2.7, 0.07, 1.3, n, n, 1, 1, 1.0, 17, True, False,
-                particle_ids + 1000, n_threads=n_threads,
+                references,
+                eulers,
+                particle_ids,
+                np.zeros(n_trials, dtype=np.int32),
+                np.asarray([0.6, 0.4]),
+                np.linspace(2.0, 0.5, n // 2 + 1),
+                rng_ctf[0],
+                rng_ctf[1],
+                rng_ctf[2],
+                np.zeros(20),
+                300.0,
+                2.7,
+                0.07,
+                1.3,
+                n,
+                n,
+                1,
+                1,
+                1.0,
+                17,
+                True,
+                False,
+                particle_ids + 1000,
+                n_threads=n_threads,
             )
 
         ctf_rng = np.random.default_rng(12)
@@ -577,6 +592,94 @@ class TestAutoRefineExpectedAccuracyBinding:
         # RELION's Mresol map excludes y<0 on packed x=0. Counting that
         # Hermitian duplicate produces 0.4 instead of the correct 0.6 pixels.
         assert out["acc_trans"] == pytest.approx(0.6)
+
+
+class TestTiltImageExpectedAccuracyBinding:
+    """Subtomogram trial particles (tilt images) in RELION's calculateExpectedAngularErrors (S4.2)."""
+
+    @staticmethod
+    def _call(bind, *, tomo, n_images=1, projections=None, n_threads=1):
+        rng = np.random.default_rng(29)
+        reference = rng.standard_normal((16, 16, 16)).astype(np.float64)
+        eulers = np.asarray([[10.0, 40.0, 20.0], [70.0, 100.0, -30.0], [200.0, 60.0, 5.0]], dtype=np.float64)
+        n = eulers.shape[0]
+        defocus = np.asarray([12000.0, 15000.0, 18000.0])
+        extra = {}
+        if tomo:
+            image_proj = np.tile(np.eye(3), (n * n_images, 1, 1)) if projections is None else projections
+            image_ctf = np.stack(
+                [
+                    np.repeat(defocus, n_images),
+                    np.repeat(defocus, n_images),
+                    np.zeros(n * n_images),
+                    np.zeros(n * n_images),
+                    np.ones(n * n_images),
+                    np.zeros(n * n_images),
+                    np.full(n * n_images, -1.0),
+                ],
+                axis=1,
+            )
+            extra = dict(
+                image_offsets=np.arange(0, n * n_images + 1, n_images, dtype=np.int64),
+                image_projections=image_proj,
+                image_ctf=image_ctf,
+            )
+        return bind.vdam_expected_angular_errors(
+            reference[None],
+            eulers,
+            np.arange(n, dtype=np.int64),
+            np.zeros(n, dtype=np.int32),
+            np.ones(1, dtype=np.float64),
+            np.full(9, 0.05, dtype=np.float64),
+            defocus,
+            defocus,
+            np.zeros(n),
+            np.zeros(n),
+            300.0,
+            2.7,
+            0.1,
+            2.0,
+            16,
+            16,
+            1,
+            1,
+            1.0,
+            17,
+            True,
+            False,
+            np.asarray([4, 8, 15], dtype=np.int64),
+            n_threads=n_threads,
+            **extra,
+        )
+
+    def test_one_identity_tilt_image_is_the_single_particle_rotation_accuracy(self, bind):
+        """With one image, Aproj = I and the particle's CTF, the rotational search is RELION's SPA one.
+
+        The translational search differs by design: a subtomogram offset is perturbed along x, y or z
+        (three-way draw) and then projected, a single particle's along x or y.
+        """
+        spa = self._call(bind, tomo=False)
+        tomo = self._call(bind, tomo=True)
+        assert_matches(np.asarray(tomo["acc_rot_class"]), np.asarray(spa["acc_rot_class"]))
+        assert tomo["acc_rot"] == pytest.approx(spa["acc_rot"])
+
+    def test_more_tilt_images_add_signal(self, bind):
+        """Two identical images per particle double every image's SNR term, so errors can only shrink."""
+
+        one = self._call(bind, tomo=True, n_images=1)
+        two = self._call(bind, tomo=True, n_images=2)
+        assert two["acc_rot"] <= one["acc_rot"]
+        assert two["acc_trans"] <= one["acc_trans"]
+
+    def test_tilt_image_draws_do_not_depend_on_the_thread_count(self, bind):
+        """Each tilt image's perturbation draw is taken up front per trial, so threads give the serial result."""
+        from scipy.spatial.transform import Rotation
+
+        projections = Rotation.random(9, random_state=5).as_matrix()
+        serial = self._call(bind, tomo=True, n_images=3, projections=projections, n_threads=1)
+        threaded = self._call(bind, tomo=True, n_images=3, projections=projections, n_threads=3)
+        for key in ("acc_rot", "acc_trans", "acc_rot_class", "acc_trans_class", "class_counts"):
+            assert_matches(np.asarray(threaded[key]), np.asarray(serial[key]))
 
 
 class TestRndUnifRangeBinding:

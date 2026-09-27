@@ -270,11 +270,19 @@ def _pose_history_half_arrays(iter_entry, *, dtype=np.float32):
 
 
 
-def _pose_history_by_image(iter_entry, half_indices, n_images, trailing_shape, *, dtype=np.float32):
+def _pose_history_by_image(iter_entry, half_indices, n_images, *, dtype=np.float32):
+    """One half-ordered pose array per half, placed in image order; the trailing shape is the data's.
+
+    Translations are 2D for SPA and 3D for subtomograms (relax.refinement.tomo_half).
+    """
+
     half_arrays = _pose_history_half_arrays(iter_entry, dtype=dtype)
     if half_arrays is None or all(arr is None for arr in half_arrays):
         return None
-    out = np.full((int(n_images), *trailing_shape), np.nan, dtype=dtype)
+    trailing = {tuple(arr.shape[1:]) for arr in half_arrays if arr is not None}
+    if len(trailing) != 1:
+        raise ValueError(f"Pose history halves disagree on their per-image shape: {sorted(trailing)}")
+    out = np.full((int(n_images), *trailing.pop()), np.nan, dtype=dtype)
     for half_idx, arr in zip(half_indices, half_arrays):
         if arr is None:
             continue
@@ -418,10 +426,7 @@ def add_refinement_history_artifacts(save_dict, result, half1_idx, half2_idx, n_
         np.asarray(half1_idx, dtype=np.int64),
         np.asarray(half2_idx, dtype=np.int64),
     ]
-    for prefix, trailing_shape in (
-        ("best_rotation_eulers", (3,)),
-        ("best_translations", (2,)),
-    ):
+    for prefix in ("best_rotation_eulers", "best_translations"):
         for i, iter_poses in enumerate(result.get(f"{prefix}_history", [])):
             half_arrays = _pose_history_half_arrays(iter_poses, dtype=np.float32)
             if half_arrays is None or all(arr is None for arr in half_arrays):
@@ -434,15 +439,15 @@ def add_refinement_history_artifacts(save_dict, result, half1_idx, half2_idx, n_
                 compact.append(arr)
             if compact:
                 save_dict[f"{prefix}_iter_{i:03d}"] = np.concatenate(compact, axis=0)
-            by_image = _pose_history_by_image(iter_poses, half_indices, n_images, trailing_shape, dtype=np.float32)
+            by_image = _pose_history_by_image(iter_poses, half_indices, n_images, dtype=np.float32)
             if by_image is not None:
                 save_dict[f"{prefix}_by_image_iter_{i:03d}"] = by_image
                 save_dict[f"{prefix}_final_by_image"] = by_image
 
-    for result_key, prefix, trailing_shape in (
-        ("final_all_data_best_rotation_eulers", "best_rotation_eulers", (3,)),
-        ("final_all_data_best_translations", "best_translations", (2,)),
-        ("final_all_data_max_posterior", "pmax", ()),
+    for result_key, prefix in (
+        ("final_all_data_best_rotation_eulers", "best_rotation_eulers"),
+        ("final_all_data_best_translations", "best_translations"),
+        ("final_all_data_max_posterior", "pmax"),
     ):
         final_values = result.get(result_key)
         half_arrays = _pose_history_half_arrays(final_values, dtype=np.float32)
@@ -456,7 +461,7 @@ def add_refinement_history_artifacts(save_dict, result, half1_idx, half2_idx, n_
             compact.append(arr)
         if compact:
             save_dict[f"{prefix}_final_all_data"] = np.concatenate(compact, axis=0)
-        by_image = _pose_history_by_image(final_values, half_indices, n_images, trailing_shape, dtype=np.float32)
+        by_image = _pose_history_by_image(final_values, half_indices, n_images, dtype=np.float32)
         if by_image is not None:
             save_dict[f"{prefix}_final_all_data_by_image"] = by_image
 

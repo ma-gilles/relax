@@ -432,6 +432,50 @@ def relion_make_scoring_rotations_f32(
     )
 
 
+@functools.partial(jax.jit, static_argnums=(3,))
+def relion_make_scoring_rotations_left_f32(
+    eulers_deg: jax.Array,
+    right_matrix: jax.Array,
+    left_matrices: jax.Array,
+    do_right: bool = True,
+) -> jax.Array:
+    """Scorer rotations of tilt images with RELION's float32 ``make_eulers_3D<true, true, do_right>``.
+
+    Each image ``b`` has its own left matrix ``L_b`` (its ``Aproj`` times the optics scale):
+    ``B = L_b (A R)``, inverted with RELION's float32 adjugate and determinant, since with a
+    left matrix the inverse is not the transpose (acc/cuda/cuda_kernels/helper.cuh:777-811).
+    Returns ``[B, N, 3, 3]`` in RECOVAR's scorer frame, the transpose of RELION's stored
+    matrices, like :func:`relion_make_scoring_rotations_f32`. CUDA only.
+    """
+
+    for name, value in (("eulers_deg", eulers_deg), ("right_matrix", right_matrix), ("left_matrices", left_matrices)):
+        if value.dtype != jnp.float32:
+            raise TypeError(f"{name} must be float32, got {value.dtype}")
+    if eulers_deg.ndim != 2 or eulers_deg.shape[1:] != (3,):
+        raise ValueError(f"eulers_deg must have shape (N, 3), got {eulers_deg.shape}")
+    if right_matrix.shape != (3, 3):
+        raise ValueError(f"right_matrix must have shape (3, 3), got {right_matrix.shape}")
+    if left_matrices.ndim != 3 or left_matrices.shape[1:] != (3, 3):
+        raise ValueError(f"left_matrices must have shape (B, 3, 3), got {left_matrices.shape}")
+    if jax.default_backend() != "gpu":
+        raise RuntimeError("RELION scorer-rotation construction requires a JAX GPU backend")
+    if not custom_cuda_requested():
+        raise RuntimeError("RELION scorer-rotation construction was explicitly requested but custom CUDA is disabled")
+    _ensure_ffi()
+
+    out_type = jax.ShapeDtypeStruct((left_matrices.shape[0], eulers_deg.shape[0], 3, 3), jnp.float32)
+    return jax.ffi.ffi_call(
+        _TARGET_RELION_MAKE_SCORING_ROTATIONS_LEFT_F32,
+        out_type,
+        vmap_method="sequential",
+    )(
+        eulers_deg,
+        right_matrix,
+        left_matrices,
+        do_right=np.int64(int(do_right)),
+    )
+
+
 @functools.partial(jax.jit, static_argnums=(2,))
 def relion_make_scoring_rotations_f64(
     eulers_deg: jax.Array,
@@ -4012,14 +4056,16 @@ def _prepare_relion_fine_diff2_fused_translate_flat_rows_operands(
         reference.ndim != 2
         or row_image_ids.shape != (reference.shape[0],)
         or image.ndim != 2
-        or translation_angles.ndim != 2
-        or translation_angles.shape[1] != 2
+        or translation_angles.ndim not in (2, 3)
+        or translation_angles.shape[-1] != 2
+        # [T, 2] shared, or [B, T, 2] one table per image (tilt images).
+        or (translation_angles.ndim == 3 and translation_angles.shape[0] != image.shape[0])
         or weight.shape != image.shape
         or reference.shape[1] != image.shape[1]
         or reference.shape[0] <= 0
         or reference.shape[1] <= 0
         or image.shape[0] <= 0
-        or translation_angles.shape[0] <= 0
+        or translation_angles.shape[-2] <= 0
     ):
         raise ValueError(
             "flat-row RELION fine diff2 operands have inconsistent shapes: "
@@ -4105,7 +4151,7 @@ def relion_fine_diff2_fused_translate_flat_rows_f32(
     _ensure_ffi()
 
     out_type = jax.ShapeDtypeStruct(
-        (reference.shape[0], translation_angles.shape[0]),
+        (reference.shape[0], translation_angles.shape[-2]),
         jnp.float32,
     )
     return jax.ffi.ffi_call(
@@ -4185,7 +4231,7 @@ def relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
     _ensure_ffi()
 
     out_type = jax.ShapeDtypeStruct(
-        (reference.shape[0], translation_angles.shape[0]),
+        (reference.shape[0], translation_angles.shape[-2]),
         jnp.float32,
     )
     operands = (
@@ -4206,7 +4252,8 @@ def relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
         )(*operands)
     expected_live_shape = (
         reference.shape[0],
-        -(-int(translation_angles.shape[0]) // RELION_FINE_DIFF2_TRANSLATION_CHUNK),
+        # [T, 2] shared or [B, T, 2] per image (tilt images): T is the second-to-last axis.
+        -(-int(translation_angles.shape[-2]) // RELION_FINE_DIFF2_TRANSLATION_CHUNK),
     )
     if tuple(translation_chunk_live.shape) != expected_live_shape:
         raise ValueError(
@@ -5769,13 +5816,16 @@ def relion_translate_sum_flat_rows_f32(
             "flat-row translate-and-sum expects int32 row_image_ids[Q]"
         )
     row_count = int(row_image_ids.shape[0])
-    if translation_angles.dtype != jnp.float32 or (
-        translation_angles.ndim != 2 or translation_angles.shape[1] != 2
+    # [T, 2] shared by every image, or [B, T, 2], one table per image (tilt images; one row per block).
+    per_image_angles = translation_angles.ndim == 3
+    if translation_angles.dtype != jnp.float32 or translation_angles.ndim not in (2, 3) or (
+        translation_angles.shape[-1] != 2
+        or (per_image_angles and int(translation_angles.shape[0]) != batch_size)
     ):
         raise ValueError(
-            "flat-row translate-and-sum expects float32 translation_angles[T,2]"
+            "flat-row translate-and-sum expects float32 translation_angles[T,2] or [B,T,2]"
         )
-    n_trans = int(translation_angles.shape[0])
+    n_trans = int(translation_angles.shape[-2])
     if posterior.dtype != jnp.float32 or posterior.shape != (row_count, n_trans):
         raise ValueError(
             "flat-row translate-and-sum expects float32 posterior[Q,T], got "
@@ -6826,6 +6876,9 @@ _TARGET_RELION_PREPROCESS_REAL_F32_NATIVE_ATOMIC = (
 _TARGET_RELION_MAKE_SCORING_ROTATIONS_F32 = "cuda_relion_make_scoring_rotations_f32"
 
 
+_TARGET_RELION_MAKE_SCORING_ROTATIONS_LEFT_F32 = "cuda_relion_make_scoring_rotations_left_f32"
+
+
 _TARGET_RELION_MAKE_SCORING_ROTATIONS_F64 = "cuda_relion_make_scoring_rotations_f64"
 
 
@@ -7267,6 +7320,10 @@ _FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
     (
         _TARGET_RELION_MAKE_SCORING_ROTATIONS_F32,
         "RelionMakeScoringRotationsF32",
+    ),
+    (
+        _TARGET_RELION_MAKE_SCORING_ROTATIONS_LEFT_F32,
+        "RelionMakeScoringRotationsLeftF32",
     ),
     (
         _TARGET_RELION_MAKE_SCORING_ROTATIONS_F64,

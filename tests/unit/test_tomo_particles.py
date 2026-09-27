@@ -6,6 +6,7 @@ RELION-pinned one-E-step test on the S1 dataset checks the conventions end to en
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from scipy.spatial.transform import Rotation
 
 from relax.refinement import tomo_particles
@@ -72,3 +73,77 @@ def test_projection_matrices_recovered_from_the_flattened_image_matrices():
     image_matrices = np.einsum("iab,ibc->iac", projections, poses[image_particle])
     recovered = tomo_particles.tilt_projection_matrices(image_matrices, poses, image_particle)
     np.testing.assert_allclose(recovered, projections, atol=1e-12)
+
+
+def test_translation_angles_follow_relions_per_image_phase_operand():
+    """acc_ml_optimiser_impl.h:1214-1240 and exp_model.cpp:106-114, written out per image and shift."""
+    rng, image_particle, projections, _ = _setup(3)
+    shifts = rng.normal(scale=2.0, size=(6, 3))
+    old = rng.normal(scale=1.5, size=(3, 3))
+    size = np.array([128, 128, 128, 100, 100, 128, 128, 128, 128])
+    out = tomo_particles.tilt_translation_angles(shifts, old, projections, image_particle, size)
+    assert out.shape == (image_particle.size, 6, 2) and out.dtype == np.float32
+    expected = np.zeros(out.shape, dtype=np.float32)
+    for i, p in enumerate(image_particle):
+        a = projections[i]
+        for t in range(6):
+            x, y, z = shifts[t][0] + old[p][0], shifts[t][1] + old[p][1], shifts[t][2] + old[p][2]
+            sx = a[0, 0] * x + a[0, 1] * y + a[0, 2] * z
+            sy = a[1, 0] * x + a[1, 1] * y + a[1, 2] * z
+            expected[i, t] = (-2 * np.pi * sx / float(size[i]), -2 * np.pi * sy / float(size[i]))
+    assert_matches(out, expected)
+
+
+def test_image_slots_visit_each_particles_images_in_order():
+    offsets = np.array([0, 3, 5, 9])  # particles with 3, 2 and 4 images
+    row_unit = np.array([0, 0, 1, 2, 2, 1])
+    slots = [tomo_particles.image_slot_ids(row_unit, offsets, k) for k in range(4)]
+    np.testing.assert_array_equal(slots[0], [0, 0, 3, 5, 5, 3])
+    np.testing.assert_array_equal(slots[2], [2, 2, -1, 7, 7, -1])
+    np.testing.assert_array_equal(slots[3], [-1, -1, -1, 8, 8, -1])
+    for r, u in enumerate(row_unit):
+        visited = [s[r] for s in slots if s[r] >= 0]
+        assert visited == list(range(offsets[u], offsets[u + 1]))
+
+
+def test_tilt_row_matrices_are_relions_host_inverse_of_aproj_times_euler():
+    """generateEulerMatrices with L = Aproj: inv(L A) (acc_helper_functions_impl.h:248-255), from the native binding
+    when it is built and from the NumPy fallback otherwise; with L = I both equal the SPA matrices."""
+    from relax import sampling
+
+    rng = np.random.default_rng(5)
+    eulers = rng.uniform([-180, 0, -180], [180, 180, 180], size=(6, 3))
+    left = Rotation.random(6, random_state=rng).as_matrix()
+    got = sampling._relion_mstep_rotations_from_eulers(eulers, dtype=np.float64, left_matrices=left)
+    relion = np.stack([sampling._relion_euler_angles_to_matrix(e[None])[0] for e in eulers])
+    # RECOVAR frame: the transpose of RELION's inverse.
+    expected = np.swapaxes(np.linalg.inv(left @ relion), 1, 2)
+    assert_matches(got, expected)
+    identity = sampling._relion_mstep_rotations_from_eulers(
+        eulers, dtype=np.float64, left_matrices=np.broadcast_to(np.eye(3), (6, 3, 3))
+    )
+    assert_matches(identity, sampling._relion_mstep_rotations_from_eulers(eulers, dtype=np.float64))
+
+
+def test_identity_tilt_keeps_the_spa_matrices():
+    """Matrix2D::isIdentity to 1e-6 (matrix2d.h:1191-1206): only non-identity images take the left matrix."""
+    left = np.stack([np.eye(3), np.eye(3) + 5e-7, Rotation.from_euler("x", 3, degrees=True).as_matrix()])
+    _, applies = tomo_particles.relion_left_matrices(left)
+    assert applies.tolist() == [False, False, True]
+
+
+def test_gpu_old_offsets_round_half_away_from_zero():
+    """ROUND (macros.h:197) as selfROUND applies it to a tomo particle's old offset (acc_ml_optimiser_impl.h:216)."""
+    got = tomo_particles.relion_gpu_old_offsets([[0.5, -0.5, 1.49], [-1.5, 2.5000001, -0.2]])
+    np.testing.assert_array_equal(got, [[1, -1, 1], [-2, 3, 0]])
+
+
+def test_offset_prior_3d_adds_the_rounded_pixel_offset_to_angstrom_translations():
+    # RELION's pdf_offset (acc_ml_optimiser_impl.h:2135-2170): |round(old_px) + t_A|^2 * pix^2 / (-2 sigma2).
+    pix, sigma = 4.25, 10.0
+    grid = np.array([[0.0, 0.0, 0.0], [4.25, 0.0, 0.0], [-4.25, 4.25, 8.5]])
+    old_px = np.array([[0.848, -0.31, -0.107], [-1.6, 2.5, 0.0]])
+    got = tomo_particles.relion_offset_log_prior_3d(grid, old_px, pixel_size=pix, sigma_offset_angst=sigma)
+    rounded = np.array([[1.0, 0.0, 0.0], [-2.0, 3.0, 0.0]])
+    expected = -np.sum((rounded[:, None, :] + grid[None]) ** 2, axis=2) * pix * pix / (2 * sigma * sigma)
+    assert_matches(got, expected.astype(np.float32))

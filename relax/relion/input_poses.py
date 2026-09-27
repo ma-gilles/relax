@@ -37,16 +37,21 @@ def _input_star_origins_pixels(input_particles, *, voxel_size: float):
 
     rlnOriginX/YAngst are divided by ``voxel_size``; pixel origins are used as
     read; absent origins are zero, as relion_refine reads them
-    (Experiment::read, exp_model.cpp:1104-1144).
+    (Experiment::read, exp_model.cpp:1104-1144). Subtomogram particles (a
+    ``rlnOriginZAngst`` column) have 3D origins (exp_model.cpp:1007-1020).
     """
-    angstrom_columns = ("rlnOriginXAngst", "rlnOriginYAngst")
-    pixel_columns = ("rlnOriginX", "rlnOriginY")
+    if "rlnOriginZAngst" in input_particles.columns:
+        angstrom_columns = ("rlnOriginXAngst", "rlnOriginYAngst", "rlnOriginZAngst")
+        pixel_columns = ("rlnOriginX", "rlnOriginY", "rlnOriginZ")
+    else:
+        angstrom_columns = ("rlnOriginXAngst", "rlnOriginYAngst")
+        pixel_columns = ("rlnOriginX", "rlnOriginY")
     has_angstrom = [column in input_particles.columns for column in angstrom_columns]
     has_pixels = [column in input_particles.columns for column in pixel_columns]
     if any(has_angstrom) and not all(has_angstrom):
-        raise ValueError("RECOVAR input STAR must provide both rlnOriginXAngst and rlnOriginYAngst")
+        raise ValueError(f"RECOVAR input STAR must provide all of {angstrom_columns}")
     if any(has_pixels) and not all(has_pixels):
-        raise ValueError("RECOVAR input STAR must provide both rlnOriginX and rlnOriginY")
+        raise ValueError(f"RECOVAR input STAR must provide all of {pixel_columns}")
     if all(has_angstrom):
         if not np.isfinite(voxel_size) or float(voxel_size) <= 0.0:
             raise ValueError("voxel_size must be positive and finite for Angstrom origins")
@@ -58,7 +63,7 @@ def _input_star_origins_pixels(input_particles, *, voxel_size: float):
         return translations, "angstrom"
     if all(has_pixels):
         return _input_numeric_columns(input_particles, pixel_columns, field="pixel-origin"), "pixel"
-    return np.zeros((len(input_particles), 2), dtype=np.float64), "implicit_zero"
+    return np.zeros((len(input_particles), len(angstrom_columns)), dtype=np.float64), "implicit_zero"
 
 
 def _load_input_star_previous_best_poses(
@@ -192,7 +197,7 @@ def _load_input_star_previous_best_poses(
     ):
         if half_eulers.shape != (indices.size, 3):
             raise ValueError(f"half-{half} input Euler array has an invalid shape")
-        if half_translations.shape != (indices.size, 2):
+        if half_translations.shape != (indices.size, translations.shape[1]):
             raise ValueError(f"half-{half} input translation array has an invalid shape")
         if not np.all(np.isfinite(half_eulers)) or not np.all(np.isfinite(half_translations)):
             raise ValueError(f"half-{half} input poses are not finite after float32 conversion")

@@ -165,3 +165,116 @@ def tomo_particle_index(rows: pd.DataFrame) -> TomoParticleIndex:
         half_set=per_particle("rlnRandomSubset"),
         optics_group=per_particle("rlnOpticsGroup"),
     )
+
+
+def relion_tilt_rotations(x_tilt_deg, y_tilt_deg, z_rot_deg) -> np.ndarray:
+    """``[F, 3, 3]`` rotation part ``r2 r1 r0`` of RELION's tilt projection matrices.
+
+    ``Tomogram::setProjectionMatrix`` (jaz/tomography/tomogram.cpp:57-62) builds
+    ``Rz(rlnTomoZRot) Ry(rlnTomoYTilt) Rx(rlnTomoXTilt)`` with gravis
+    ``t3Matrix::rotation``, the GL axis-angle formula in degrees (t3Matrix.h:478-496).
+    The shifts ``s0``, ``s1``, ``s2`` only move positions, not directions.
+    """
+
+    def axis_rotation(angle_deg, i, j):
+        angle = np.deg2rad(np.asarray(angle_deg, dtype=np.float64).reshape(-1))
+        m = np.tile(np.eye(3), (angle.size, 1, 1))
+        m[:, i, i] = m[:, j, j] = np.cos(angle)
+        m[:, i, j] = -np.sin(angle)
+        m[:, j, i] = np.sin(angle)
+        return m
+
+    return axis_rotation(z_rot_deg, 0, 1) @ axis_rotation(y_tilt_deg, 2, 0) @ axis_rotation(x_tilt_deg, 1, 2)
+
+
+@dataclasses.dataclass(frozen=True)
+class TomoImageGeometry:
+    """Each image's place in RELION's particle, in RELION's ``img_id`` order.
+
+    relion_refine adds a particle's visible tilts in tilt-series frame order
+    (exp_model.cpp:1012-1025), not in dose order. Image ``i`` is per-tilt STAR row
+    ``rows[i]``; particle ``p`` owns images ``index.image_offsets[p]:[p + 1]``.
+    ``projections[i]`` is RELION's ``Aproj``: the frame's tilt rotation times the
+    particle's subtomogram matrix (``P = projectionMatrices[f] * A``, exp_model.cpp:1007,
+    1020; its 3x3 part is copied in addImageToParticle, exp_model.cpp:204-208).
+    """
+
+    rows: np.ndarray
+    frames: np.ndarray
+    projections: np.ndarray
+
+
+def relion_image_geometry(
+    rows: pd.DataFrame, index: TomoParticleIndex, particles_star, tomograms_star
+) -> TomoImageGeometry:
+    """Put ``rows`` (the per-tilt STAR, ``index`` its particles) in RELION's image order.
+
+    The subtomogram matrix is ``Euler::anglesToMatrix3`` of ``rlnTomoSubtomogramRot/Tilt/Psi``
+    (particle_set.cpp:381-398, Euler_angles_relion.h:38-47, the same matrix as RELION's
+    ``Euler_angles2matrix``) and the identity without those columns.
+    """
+
+    from ast import literal_eval
+
+    from relax.sampling import _relion_euler_angles_to_matrix
+
+    particles_star, tomograms_star = Path(particles_star), Path(tomograms_star)
+    particles, _ = read_star(str(particles_star))
+    tomograms, _ = read_star(str(tomograms_star))
+    project_root = tomograms_star.parent
+    names = np.asarray(star_column(particles, "rlnTomoParticleName", required=True))
+    source = {name: p for p, name in enumerate(names)}
+    tomo_names = np.asarray(star_column(particles, "rlnTomoName", required=True))
+    visible = np.asarray(star_column(particles, "rlnTomoVisibleFrames", required=True))
+    if star_column(particles, "rlnTomoSubtomogramRot") is not None:
+        subtomogram = _relion_euler_angles_to_matrix(
+            np.stack(
+                [
+                    np.asarray(star_column(particles, label, required=True), dtype=np.float64)
+                    for label in ("rlnTomoSubtomogramRot", "rlnTomoSubtomogramTilt", "rlnTomoSubtomogramPsi")
+                ],
+                axis=1,
+            )
+        )
+    else:
+        subtomogram = np.tile(np.eye(3), (names.size, 1, 1))
+
+    series = {}
+    series_file = dict(
+        zip(
+            np.asarray(star_column(tomograms, "rlnTomoName", required=True)),
+            np.asarray(star_column(tomograms, "rlnTomoTiltSeriesStarFile", required=True)),
+        )
+    )
+
+    def tilt_series(tomo):
+        if tomo not in series:
+            table, _ = read_star(str(project_root / str(series_file[tomo])))
+            x_tilt = star_column(table, "rlnTomoXTilt")
+            rotations = relion_tilt_rotations(
+                np.zeros(len(table)) if x_tilt is None else x_tilt,
+                star_column(table, "rlnTomoYTilt", required=True),
+                star_column(table, "rlnTomoZRot", required=True),
+            )
+            frame_of = {str(m): f for f, m in enumerate(star_column(table, "rlnMicrographName", required=True))}
+            series[tomo] = (rotations, frame_of)
+        return series[tomo]
+
+    micrographs = np.asarray(star_column(rows, "rlnMicrographName", required=True)).astype(str)
+    out_rows = np.empty(index.n_images, dtype=np.int64)
+    frames = np.empty(index.n_images, dtype=np.int64)
+    projections = np.empty((index.n_images, 3, 3), dtype=np.float64)
+    for p, name in enumerate(index.particle_names):
+        s = source[name]
+        rotations, frame_of = tilt_series(tomo_names[s])
+        start, stop = int(index.image_offsets[p]), int(index.image_offsets[p + 1])
+        particle_rows = np.arange(start, stop)
+        particle_frames = np.array([frame_of[m] for m in micrographs[particle_rows]], dtype=np.int64)
+        order = np.argsort(particle_frames, kind="stable")
+        expected = [f for f, v in enumerate(literal_eval(str(visible[s]))) if int(v) == 1]
+        if particle_frames[order].tolist() != expected:
+            raise ValueError(f"per-tilt rows of {name} are not its visible frames {expected}")
+        out_rows[start:stop] = particle_rows[order]
+        frames[start:stop] = particle_frames[order]
+        projections[start:stop] = rotations[particle_frames[order]] @ subtomogram[s]
+    return TomoImageGeometry(rows=out_rows, frames=frames, projections=projections)

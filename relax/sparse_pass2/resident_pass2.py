@@ -1729,9 +1729,13 @@ def _class_candidate_tables(
     use_relion_f32_fine_posterior,
     dtype,
     symmetry_label,
+    coarse_rotation_ids=None,
+    per_image_rotation_log_prior=None,
 ):
     """One class's per-image hypotheses and candidate table (T5), exactly the K=1 build.
 
+    ``coarse_rotation_ids`` and ``per_image_rotation_log_prior`` are the compact coarse grid and
+    the per-unit priors of a subtomogram local search (``_prepare_per_image_pass2_inputs``).
     Returns ``(tables, hypothesis_prep_seconds, table_seconds)``.
     """
 
@@ -1762,7 +1766,11 @@ def _class_candidate_tables(
         relion_parent_execution_order=relion_parent_execution_order,
         dtype=dtype,
         symmetry_label=symmetry_label,
+        coarse_rotation_ids=coarse_rotation_ids,
+        per_image_rotation_log_prior=per_image_rotation_log_prior,
     )
+    if significance_csr is not None and (coarse_rotation_ids is not None or per_image_rotation_log_prior is not None):
+        raise ValueError("a compact coarse grid or per-image priors take the host candidate-table path")
     prep_s = time.time() - prep_t0
 
     table_t0 = time.time()
@@ -1826,7 +1834,12 @@ def _candidate_table_blocks(
     def merged(tables_by_class):
         return tables_by_class[0] if len(tables_by_class) == 1 else merge_class_tables(tables_by_class)
 
-    if whole or any(csr is None for csr in csrs):
+    # A subtomogram local search's compact coarse grid and per-unit priors take the host build.
+    compact_local = (
+        table_kwargs.get("coarse_rotation_ids") is not None
+        or table_kwargs.get("per_image_rotation_log_prior") is not None
+    )
+    if whole or compact_local or any(csr is None for csr in csrs):
         class_builds = map_over_classes(
             lambda item: _class_candidate_tables(item[0], item[1], **table_kwargs),
             zip(class_supports, class_rotation_priors),
@@ -2082,6 +2095,9 @@ def _resident_pass2(
     reconstruction_group_ids=None,
     reconstruction_group_count=None,
     classes: ResidentClassInputs | None = None,
+    tilt=None,
+    coarse_rotation_ids=None,
+    unit_rotation_log_prior=None,
 ):
     """The device-resident sparse pass 2 over one or K classes; returns ``_ResidentPass2Result``.
 
@@ -2159,12 +2175,37 @@ def _resident_pass2(
         _require(optics_group_ids is None, "the K-class resident pass has one optics group")
 
     n_images = experiment_dataset.n_units
+    # Subtomogram particles (S4.2, resident_tilts): the posterior unit is the particle; the dataset's
+    # rows are its tilt images. The candidate tables and the statistics are per particle.
+    n_units = n_images if tilt is None else int(np.asarray(tilt.unit_image_offsets).size - 1)
+    if tilt is not None:
+        _require(
+            classes is None and not firstiter_cc and relion_f32_normalization_sum_weight is None,
+            "subtomogram particles run the K=1 Gaussian fine pass without zero-oversampling reuse",
+        )
+        _require(
+            int(np.asarray(tilt.unit_image_offsets)[-1]) == n_images,
+            "the tilt layout must cover every image of the half",
+        )
+        # The offset prior is the particle's (tilt.unit_translation_prior), not an image's.
+        _require(
+            translation_log_prior is None and translation_prior_centers is None,
+            "a tilt pass takes its offset prior from tilt.unit_translation_prior",
+        )
     n_coarse_trans = int(np.asarray(translations).shape[0])
     symmetry_label = canonicalize_rotational_symmetry(symmetry_label)
     # The coarse grid is RELION's asymmetric-unit HEALPix sampling
     # (healpix_sampling.cpp removeSymmetryEquivalentPoints); the caller's fine
     # rotation override already holds its children.
     n_coarse_rot = rotation_grid_size(nside_level, symmetry_label)
+    if coarse_rotation_ids is not None or unit_rotation_log_prior is not None:
+        # A subtomogram local search (relax.refinement.tomo_half): its coarse grid is the union of the
+        # particles' local rotations (coarse id c is grid rotation coarse_rotation_ids[c]) and each
+        # particle carries its own orientation prior over its support's coarse rotations.
+        _require(tilt is not None and classes is None, "a compact coarse grid is the subtomogram local search's")
+        _require(rotation_log_prior is None, "a local search's rotation priors are the particles' own")
+        if coarse_rotation_ids is not None:
+            n_coarse_rot = int(np.asarray(coarse_rotation_ids).size)
     image_shape = experiment_dataset.image_shape
     volume_shape = experiment_dataset.volume_shape
 
@@ -2406,7 +2447,7 @@ def _resident_pass2(
         whole=relion_f32_normalization_sum_weight is not None,
         reconstruction_group_ids=reconstruction_group_ids,
         reconstruction_group_count=reconstruction_group_count,
-        n_images=n_images,
+        n_images=n_units,
         n_coarse_rot=n_coarse_rot,
         n_coarse_trans=n_coarse_trans,
         nside_level=nside_level,
@@ -2421,6 +2462,8 @@ def _resident_pass2(
         use_relion_f32_fine_posterior=use_relion_f32_fine_posterior,
         dtype=precision_policy.score_real_dtype,
         symmetry_label=symmetry_label,
+        coarse_rotation_ids=coarse_rotation_ids,
+        per_image_rotation_log_prior=unit_rotation_log_prior,
     )
     table_t0 = time.time() - table_s  # the plan log's table+plan time includes the build
     coarse_reuse = _coarse_normalization_reuse(
@@ -2435,7 +2478,9 @@ def _resident_pass2(
     )
 
     # ---- window / weights / lookups (unchanged) ---------------------------
-    stable_window_plan = _resident_stable_window_plan(
+    # Tilt passes keep RELION's logical window sizes: their scoring and M-step (resident_tilts) do not
+    # take a stable window's logical bounds.
+    stable_window_plan = None if tilt is not None else _resident_stable_window_plan(
         image_shape,
         current_size=current_size,
         mstep_current_size=mstep_current_size,
@@ -2545,8 +2590,16 @@ def _resident_pass2(
                 f"optics_group_ids must give each of {n_images} images a row of the "
                 f"{n_optics_groups}-group noise table"
             )
+    # Tilt images (S4.2) carry 3D translations whose phases are per image (tilt.image_angles); the SPA
+    # operand preparation, which never sees a trial shift of a tilt image, gets 2D zeros of the same count.
+    spa_fine_translations_source = (
+        fine_translations_source if tilt is None else np.zeros((n_fine_trans, 2), dtype=np.float64)
+    )
+    spa_fine_translations = (
+        fine_translations if tilt is None else np.zeros((n_fine_trans, 2), dtype=fine_translations.dtype)
+    )
     relion_score_translation_angles = _relion_cuda_score_translation_angles_if_available(
-        fine_translations_source,
+        spa_fine_translations_source,
         image_shape,
         enabled=True,
         dtype=np.float64 if use_float64_scoring else np.float32,
@@ -2555,7 +2608,7 @@ def _resident_pass2(
     if relion_score_translation_angles is None:
         raise ValueError("the resident scoring stage requires RELION translation angles")
     translation_phases_half = (
-        None if windowed_prepare else half_translation_phase_table(fine_translations, image_shape)
+        None if windowed_prepare else half_translation_phase_table(spa_fine_translations, image_shape)
     )
 
     n_shells = image_shape[0] // 2 + 1
@@ -2869,7 +2922,8 @@ def _resident_pass2(
         pool_free_bytes=pool_free_bytes,
         reserved_bytes=reserved_operand_bytes,
     )
-    stream_projections = not _projection_cache_fits_budget(
+    # Tilt images project every (image, rotation) pair per chunk (resident_tilts.run_tilt_chunk).
+    stream_projections = tilt is not None or not _projection_cache_fits_budget(
         cache_projection_bytes, stream_projection_budget_bytes
     )
     # Streamed chunks keep the per-chunk operand preparation. Their working set
@@ -2880,7 +2934,8 @@ def _resident_pass2(
     # at cd26a5e. When the reservation alone is what makes the whole-grid cache
     # miss, the cache is kept instead of the operands.
     operands_yield_to_cache = False
-    if stream_projections and reserved_operand_bytes:
+    # Tilt passes always stream and have no per-chunk operand path: they keep the resident operands.
+    if tilt is None and stream_projections and reserved_operand_bytes:
         unreserved_budget_bytes = _stream_projection_budget_bytes(
             max_projection_cache_bytes,
             physical_free_bytes=physical_free_bytes,
@@ -2893,7 +2948,7 @@ def _resident_pass2(
             operands_yield_to_cache = True
             stream_projection_budget_bytes = unreserved_budget_bytes
         reserved_operand_bytes = 0
-    stream_keeps_chunk_operands = stream_projections or operands_yield_to_cache
+    stream_keeps_chunk_operands = tilt is None and (stream_projections or operands_yield_to_cache)
     if stream_projections:
         score_cache = recon_cache = recon_abs2_cache = None
         union_indices = union_score_take = union_recon_take = None
@@ -3043,16 +3098,29 @@ def _resident_pass2(
     n_half_pixels = int(image_shape[0]) * (int(image_shape[1]) // 2 + 1)
     row_ladder_start = row_ladder
 
+    # A tilt unit gathers its S images with one zero translation (S tiles where SPA has T per image) and
+    # each of its rows is projected once per image slot; the M-step's translated tiles are sized per
+    # chunk in translation blocks (resident_tilts.run_tilt_chunk, mstep_translation_blocks).
+    plan_translations = n_fine_trans if tilt is None else int(tilt.slot_capacity)
+    row_projection_factor = 1 if tilt is None else int(tilt.slot_capacity)
+    if tilt is not None:
+        from relax.sparse_pass2.resident_tilts import tilt_capacity_ladders
+
+        row_ladder_start, _ = tilt_capacity_ladders(
+            row_ladder_start, (1,), slot_capacity=int(tilt.slot_capacity)
+        )
+
     def plan_chunks(unshifted_operands: bool):
         chunk_budget_bytes = resident_chunk_budget_bytes(reserved_bytes=reserved_operand_bytes)
         image_ladder = parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER)
-        if not (unshifted_operands and chunk_budget_bytes is not None):
+        if tilt is not None or not (unshifted_operands and chunk_budget_bytes is not None):
             # The fixed translation-tile budget bounds the translated tiles; an
             # unshifted chunk holds only the Wavg rectangle and its exact
             # positions, which the joint plan below counts against the budget.
+            # A tilt pass keeps its resident operands and this start (at S translations).
             image_ladder = resident_image_capacity_start(
                 image_ladder,
-                n_fine_trans=n_fine_trans,
+                n_fine_trans=plan_translations,
                 n_recon_pixels=n_recon_windowed,
                 max_tile_bytes=_max_translation_tile_bytes_for_pass(
                     device_memory_bytes, has_external_normalization=False
@@ -3072,12 +3140,13 @@ def _resident_pass2(
                 _STREAM_PEAK_COPIES * int(projection_bytes_per_rotation)
                 if stream_projections
                 else gathered_row_pixels * np.dtype(precision_policy.score_complex_dtype).itemsize
-            ),
-            n_fine_trans=n_fine_trans,
+            )
+            * row_projection_factor,
+            n_fine_trans=plan_translations,
             n_recon_pixels=n_recon_windowed,
             budget_bytes=chunk_budget_bytes,
             rows_live_during_prepare=True,
-            pipelined=_global_chunk_loop_pipelined(stream_projections),
+            pipelined=tilt is None and _global_chunk_loop_pipelined(stream_projections),
             **chunk_translated_tile_pixels(
                 unshifted_operands=unshifted_operands,
                 n_score_pixels=n_windowed if windowed_prepare else n_half_pixels,
@@ -3143,7 +3212,7 @@ def _resident_pass2(
     # once per chunk, which is where the chunk loop's launches came from.
     bucket_io_kwargs = dict(
         noise_variance_half=noise_variance_half,
-        fine_translations=fine_translations,
+        fine_translations=spa_fine_translations,
         config=config,
         n_trans=n_fine_trans,
         score_with_masked_images=score_with_masked_images,
@@ -3212,7 +3281,7 @@ def _resident_pass2(
     stats_config = resolve_statistics_config(
         n_shells=n_shells,
         n_fine_trans=n_fine_trans,
-        n_images=n_images,
+        n_images=n_units,
         n_coarse_rot=n_classes * n_coarse_rot,
         n_scale_groups=n_scale_groups,
         current_size=program_current_size,
@@ -3536,9 +3605,68 @@ def _resident_pass2(
     # posterior before chunk k's M-step reads its live row ranges back. A
     # streamed pass projects per chunk because the cache did not fit, so it
     # keeps one chunk's projections alive at a time and is not pipelined.
+    if tilt is not None:
+        from relax.sparse_pass2.resident_tilts import run_tilt_chunk
+
+        _require(resident_operands is not None, "subtomogram particles need the resident per-image operands")
+        tilt_base_tables = _make_chunk_stage_tables(
+            projection_score_cache=None,
+            projection_recon_cache=None,
+            projection_recon_abs2_cache=None,
+            mstep_grid=mstep_grid,
+            coarse_parent_grid=coarse_parent_grid,
+            fine_translation_parent_device=fine_translation_parent_device,
+            half_weights=jnp.asarray(half_weights_windowed),
+            translation_angles=None,
+            full_to_compact=relion_score_full_to_compact,
+            noise_variance_for_noise=noise_variance_for_noise_device,
+            shell_indices_noise=shell_indices_noise_device,
+            exact_positions_device=exact_positions_device,
+            recon_pixel_indices=recon_pixel_indices_device,
+            relion_x_half_recon_indices=relion_x_half_recon_indices,
+            image_tables=image_tables,
+        )
+        tilt_spec_kwargs = dict(
+            n_score_pixels=int(n_windowed),
+            n_recon_pixels=int(n_recon_windowed),
+            n_rect=n_rect,
+            mstep_block_rows=mstep_block_rows,
+            adaptive_fraction=float(adaptive_fraction),
+            current_size=current_size,
+            mstep_current_size=program_volume_current_size,
+            mstep_max_r=program_mstep_max_r,
+            image_shape=image_shape,
+            recon_volume_shape=program_recon_volume_shape,
+            max_adjoint_block_bytes=max_adjoint_block_bytes,
+            stats_config=stats_config,
+            use_rfloat_ctf_wavg=resident_operands.direct_ctf_rfloat_recon is not None,
+            use_translate_sum_kernel=True,
+            bpref_recon_operand=resident_operands.recon_weight is not None,
+        )
+        for chunk in chunks:
+            Ft_y_chunk, Ft_ctf_chunk, stats = run_tilt_chunk(
+                chunk,
+                tables=tables,
+                tilt=tilt,
+                resident_operands=resident_operands,
+                project_rotations=project_fine_rotations,
+                base_tables=tilt_base_tables,
+                n_fine_trans=n_fine_trans,
+                spec_kwargs=tilt_spec_kwargs,
+                stats=stats,
+                Ft_y_total=Ft_y_total[0],
+                Ft_ctf_total=Ft_ctf_total[0],
+                image_shape=image_shape,
+                rect_indices_device=rect_indices_device,
+                exact_positions_device=exact_positions_device,
+                tile_budget_bytes=_max_translation_tile_bytes_for_pass(
+                    device_memory_bytes, has_external_normalization=False
+                ),
+            )
+            Ft_y_total, Ft_ctf_total = (Ft_y_chunk,), (Ft_ctf_chunk,)
     deferred = _global_chunk_loop_pipelined(stream_projections)
     pending = None
-    for chunk in chunks:
+    for chunk in chunks if tilt is None else ():
         result = _run_resident_chunk(
             chunk,
             tables=tables,
@@ -3687,7 +3815,7 @@ def _resident_pass2(
         Ft_y_out.append(class_Ft_y)
         Ft_ctf_out.append(class_Ft_ctf)
 
-    finalized = finalize_statistics(stats, config=stats_config, n_images=n_images)
+    finalized = finalize_statistics(stats, config=stats_config, n_images=n_units)
     noise_stats = make_noise_stats(
         wsum_sigma2_noise=finalized.wsum_sigma2_noise,
         wsum_img_power=finalized.wsum_img_power,
@@ -3932,6 +4060,46 @@ def compute_pass2_stats_resident(
     # Every parameter, forwarded by name.
     del window_at_box  # _resident_pass2 keeps RELION's window at every size, the box included
     result = _resident_pass2(**locals())
+    return _k1_pass2_output(
+        result,
+        fine_rotations_override=fine_rotations_override,
+        fine_source_eulers_override=fine_source_eulers_override,
+        return_stats=return_stats,
+        return_score_log_z=return_score_log_z,
+        return_source_eulers=return_source_eulers,
+    )
+
+
+def compute_tilt_pass2_stats_resident(*, tilt, coarse_rotation_ids=None, unit_rotation_log_prior=None, **options):
+    """:func:`compute_pass2_stats_resident` for subtomogram particles over their tilt images (S4.2).
+
+    ``tilt`` is the :class:`relax.sparse_pass2.resident_tilts.TiltPassInputs`; ``coarse_rotation_ids``
+    and ``unit_rotation_log_prior`` are a local search's compact coarse grid and per-particle priors
+    (:func:`_resident_pass2`). ``options`` are the K=1 driver's keyword arguments; the per-unit outputs
+    are the particles'.
+    """
+
+    result = _resident_pass2(
+        tilt=tilt,
+        coarse_rotation_ids=coarse_rotation_ids,
+        unit_rotation_log_prior=unit_rotation_log_prior,
+        **options,
+    )
+    return _k1_pass2_output(
+        result,
+        fine_rotations_override=options["fine_rotations_override"],
+        fine_source_eulers_override=options.get("fine_source_eulers_override"),
+        return_stats=options["return_stats"],
+        return_score_log_z=options.get("return_score_log_z", False),
+        return_source_eulers=options.get("return_source_eulers", False),
+    )
+
+
+def _k1_pass2_output(
+    result, *, fine_rotations_override, fine_source_eulers_override, return_stats, return_score_log_z, return_source_eulers
+):
+    """The compact engine's K=1 output from a one-class resident result."""
+
     finalized = result.finalized
     hard_assignment = np.asarray(finalized.hard_assignment, dtype=np.int32)
     best_fine_rotation_indices = np.asarray(finalized.best_fine_rotation_indices, dtype=np.int64)
@@ -5902,6 +6070,10 @@ class _ChunkStageOperands(NamedTuple):
     # [C_B, T, P_score] and 0.5 * |image|^2 per image (the evidence offset).
     score_shifted_cc: jax.Array | None = None
     cc_half_batch_norm: jax.Array | None = None
+    # Tilt images (S4.2) only: each image's 1 / n_images of its particle. RELION divides a
+    # subtomogram's noise and norm sums, not its backprojection, by the particle's image count
+    # (acc_ml_optimiser_impl.h:3490-3491, :3512-3516; resident_tilts).
+    image_noise_scale: jax.Array | None = None
 
 
 class _CoarseNormalizationReuse(NamedTuple):
@@ -6444,11 +6616,17 @@ def _resident_mstep_block(
         logical_rect_pixels,
     )
 
+    noise_summed_masked, noise_ctf_probs = summed_masked, ctf_probs
+    if operands.image_noise_scale is not None:
+        # The noise and norm terms are linear in these two sums; the backprojection keeps them whole.
+        row_scale = jnp.asarray(operands.image_noise_scale, dtype=jnp.float32)[block_row_image][:, None]
+        noise_summed_masked = summed_masked * row_scale.astype(summed_masked.real.dtype)
+        noise_ctf_probs = ctf_probs * row_scale.astype(ctf_probs.dtype)
     block_shells, block_a2, block_xa = _resident_block_noise_and_norm(
         proj,
         proj_abs2,
-        summed_masked,
-        ctf_probs,
+        noise_summed_masked,
+        noise_ctf_probs,
         tables.noise_variance_for_noise,
         tables.shell_indices_noise,
         block_row_image,

@@ -342,6 +342,66 @@ def get_relion_translation_grid(
     return grid[squared_radius < max_pixel * max_pixel + squared_tolerance_pixels]
 
 
+def get_relion_translation_grid_3d(offset_range, offset_step):
+    """RELION's 3D translation grid (subtomograms, ``is_3d_trans``) in Angstrom, ``[T, 3]`` float64.
+
+    ``HealpixSampling::setTranslations`` (healpix_sampling.cpp:330, 395-418) enumerates
+    ``x`` outer, ``y`` middle and ``z`` inner over ``-CEIL(range/step)..CEIL(range/step)``
+    and keeps ``x^2 + y^2 + z^2 <= range^2``, in Angstrom and without the 2D grid's
+    ``+0.001`` tolerance. The comparison stays in Angstrom so the axial points at exactly
+    ``range`` are kept as RELION keeps them; pixels come from
+    :func:`relion_translations_in_pixel_3d`.
+    """
+    offset_range = float(offset_range)
+    offset_step = float(offset_step)
+    if not np.isfinite(offset_range) or offset_range < 0.0:
+        raise ValueError(f"offset_range must be finite and nonnegative, got {offset_range}")
+    if not np.isfinite(offset_step) or offset_step <= 0.0:
+        raise ValueError(f"offset_step must be finite and positive, got {offset_step}")
+    max_index = int(np.ceil(offset_range / offset_step))
+    indices = np.arange(-max_index, max_index + 1, dtype=np.int64)
+    x_index, y_index, z_index = np.meshgrid(indices, indices, indices, indexing="ij")
+    grid = np.stack([x_index.reshape(-1), y_index.reshape(-1), z_index.reshape(-1)], axis=1) * offset_step
+    return grid[np.sum(grid * grid, axis=1) <= offset_range * offset_range]
+
+
+def relion_translations_in_pixel_3d(
+    translations_angst, offset_step, *, oversampling_order, pixel_size, random_perturbation=0.0
+):
+    """RELION's oversampled 3D translations in pixels and each one's parent, ``([T * 8^os, 3], [T * 8^os])``.
+
+    ``HealpixSampling::getTranslationsInPixel`` (healpix_sampling.cpp:1741-1790,
+    1810-1826): every parent is split into ``2^os`` children per axis at
+    ``t - step/2 + (0.5 + k) step / 2^os``, enumerated ``x`` outer, ``y`` middle, ``z``
+    inner, each divided by the optics group's pixel size; the iteration's perturbation
+    adds ``random_perturbation * step / pixel_size`` to every axis.
+    """
+    translations_angst = np.asarray(translations_angst, dtype=np.float64)
+    if translations_angst.ndim != 2 or translations_angst.shape[1] != 3:
+        raise ValueError(f"translations_angst must have shape (T, 3), got {translations_angst.shape}")
+    offset_step = float(offset_step)
+    pixel_size = float(pixel_size)
+    oversampling_order = int(oversampling_order)
+    if oversampling_order < 0:
+        raise ValueError("oversampling_order must be non-negative")
+    n_sub = int(round(2.0**oversampling_order))
+    if oversampling_order == 0:
+        fine = translations_angst / pixel_size
+        n_children = 1
+    else:
+        # RELION's association: (t - step/2) + (0.5 + k) * step / n, then / pixel_size.
+        steps = (0.5 + np.arange(n_sub)) * offset_step / n_sub
+        cx, cy, cz = np.meshgrid(steps, steps, steps, indexing="ij")
+        children = np.stack([cx.reshape(-1), cy.reshape(-1), cz.reshape(-1)], axis=1)
+        fine = ((translations_angst - 0.5 * offset_step)[:, None, :] + children[None, :, :]).reshape(-1, 3)
+        fine = fine / pixel_size
+        n_children = children.shape[0]
+    if abs(float(random_perturbation)) > 0.0:
+        fine = fine + float(random_perturbation) * offset_step / pixel_size  # RELION's association
+    parent = np.repeat(np.arange(translations_angst.shape[0]), n_children)
+    return fine, parent
+
+
 _K1_RELION_EXACT_TRANSLATION_GRID_ENV = "RELAX_K1_RELION_EXACT_TRANSLATION_GRID"
 
 
@@ -628,6 +688,7 @@ def _relion_mstep_rotations_from_eulers(
     eulers_deg: np.ndarray,
     *,
     dtype: np.dtype = np.float32,
+    left_matrices: np.ndarray | None = None,
 ) -> np.ndarray:
     """Return RECOVAR-frame host-inverse rotations from RELION Euler rows.
 
@@ -650,8 +711,16 @@ def _relion_mstep_rotations_from_eulers(
     inverse so host-libm rounding also matches RELION. The NumPy formula below
     remains the portable fallback. Under ``ACC_DOUBLE_PRECISION`` the final
     cast is a no-op -- pass ``np.float64`` to match.
+
+    ``left_matrices`` ``[N, 3, 3]`` is ``generateEulerMatrices``' ``L`` for each row: a
+    tilt image's ``Aproj`` times its optics scale (acc_ml_optimiser_impl.h:1709-1734,
+    3212-3234). The inverse is then ``inv(L A)`` (acc_helper_functions_impl.h:248-255).
     """
     eulers = np.asarray(eulers_deg, dtype=np.float64).reshape(-1, 3)
+    if left_matrices is not None:
+        left_matrices = np.asarray(left_matrices, dtype=np.float64)
+        if left_matrices.shape != (eulers.shape[0], 3, 3):
+            raise ValueError(f"left_matrices must have shape {(eulers.shape[0], 3, 3)}, got {left_matrices.shape}")
     try:
         from relax.relion_bind import _relion_bind_core as relion_bind
 
@@ -663,7 +732,10 @@ def _relion_mstep_rotations_from_eulers(
         # Keeping that work in its C++ implementation also preserves libm trig
         # rounding, which can decide the strict radius predicate on an exact
         # outer-shell pixel in an ACC double-precision run.
-        inverse = np.asarray(native_inverse(eulers), dtype=np.float64)
+        inverse = np.asarray(
+            native_inverse(eulers) if left_matrices is None else native_inverse(eulers, left_matrices),
+            dtype=np.float64,
+        )
         if inverse.shape != (eulers.shape[0], 3, 3):
             raise RuntimeError(
                 "RELION Euler inverse binding returned an invalid shape: "
@@ -672,6 +744,9 @@ def _relion_mstep_rotations_from_eulers(
         return np.swapaxes(inverse, 1, 2).astype(dtype)
 
     matrix = _relion_euler_angles_to_matrix(eulers)
+    if left_matrices is not None:
+        # Matrix2D operator*: each entry sums over k in order.
+        matrix = sum(left_matrices[:, :, k, None] * matrix[:, None, k, :] for k in range(3))
     inverse = np.empty_like(matrix)
 
     inverse[:, 0, 0] = matrix[:, 2, 2] * matrix[:, 1, 1] - matrix[:, 2, 1] * matrix[:, 1, 2]
@@ -776,6 +851,7 @@ def _relion_adaptive_pass1_rotations(
     angular_sampling_deg: float,
     *,
     use_float64: bool = False,
+    left_matrices: np.ndarray | None = None,
 ) -> np.ndarray | None:
     """Build exact RELION matrices for adaptive coarse scoring only.
 
@@ -810,9 +886,35 @@ def _relion_adaptive_pass1_rotations(
             right_matrix = _relion_euler_angles_to_matrix(
                 np.asarray([[perturbation_deg, perturbation_deg, perturbation_deg]], dtype=np.float64)
             )[0]
+    if left_matrices is not None:
+        return _relion_device_scoring_rotations_left_f32(source_eulers_deg, right_matrix, left_matrices)
     if use_float64:
         return _relion_device_scoring_rotations_f64(source_eulers_deg, right_matrix)
     return _relion_device_scoring_rotations_f32(source_eulers_deg, right_matrix)
+
+
+def _relion_device_scoring_rotations_left_f32(eulers_deg, right_matrix, left_matrices) -> np.ndarray | None:
+    """Tilt images' coarse scorer matrices, ``[B, N, 3, 3]``: ``make_eulers_3D`` with one left matrix per image.
+
+    RELION's pass-1 plan of a tilt image passes ``MBL`` (its ``Aproj`` times the optics scale)
+    to the device as float (acc_ml_optimiser_impl.h:1086-1116); with a left matrix the inverse
+    is the float32 adjugate, not the transpose. ``None`` on CPU, like the SPA path.
+    """
+
+    if jax.default_backend() != "gpu":
+        return None
+
+    from relax.cuda import kernels as em_cuda_kernels
+
+    eulers_f32 = np.asarray(eulers_deg, dtype=np.float32).reshape(-1, 3)
+    right_f32 = np.eye(3, dtype=np.float32) if right_matrix is None else np.asarray(right_matrix, dtype=np.float32)
+    rotations = em_cuda_kernels.relion_make_scoring_rotations_left_f32(
+        jnp.asarray(eulers_f32),
+        jnp.asarray(right_f32),
+        jnp.asarray(np.asarray(left_matrices, dtype=np.float32).reshape(-1, 3, 3)),
+        do_right=right_matrix is not None,
+    )
+    return np.asarray(jax.device_get(rotations), dtype=np.float32)
 
 
 def apply_relion_rotation_perturbation_to_eulers(
@@ -1429,12 +1531,12 @@ def _relion_mstep_source_eulers(rotation_eulers, healpix_order, *, use_grid_eule
     if use_grid_eulers:
         return np.asarray(rotation_eulers, dtype=np.float64)
     symmetry = canonicalize_rotational_symmetry(symmetry)
-    source = _get_relion_rotation_grid_eulers_float64(
-        healpix_order, **({"symmetry": symmetry} if symmetry != "C1" else {})
-    )
-    if int(source.shape[0]) != int(rotation_eulers.shape[0]):
+    symmetry_kwargs = {"symmetry": symmetry} if symmetry != "C1" else {}
+    # Compare row counts before building the canonical grid: a final local search at a high
+    # order (subtomograms reach order 9, 9.7e9 rows) would otherwise build it only to discard it.
+    if int(rotation_grid_size(healpix_order, **symmetry_kwargs)) != int(np.shape(rotation_eulers)[0]):
         return np.asarray(rotation_eulers, dtype=np.float64)
-    return source
+    return _get_relion_rotation_grid_eulers_float64(healpix_order, **symmetry_kwargs)
 
 
 def _perturbed_trial_grid(

@@ -21,7 +21,7 @@ masks, shifts and exact tomo CTF with dose, and a numpy port of Projector::proje
   most about 0.3 Å per iteration.
 - M-step noise: residuals at RELION's poses are averaged over each particle's images and
   normalised by the particles' weight per optics group. That reproduces RELION's it019
-  sigma2 per group and half (the GPU path, acc_ml_optimiser_impl.h:4903-4905).
+  sigma2 per group and half (the GPU path, acc_ml_optimiser_impl.h:3490-3491).
 
 Pinned full-data runs of the same computation are in
 em_work/cryoet_s1_20260923/s4_offsets_fixture_20260925 (jobs 14410210, 14410538).

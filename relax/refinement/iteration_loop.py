@@ -214,6 +214,8 @@ from relax.refinement.projector_preparation import (
     prepare_initial_real_references,
 )
 from relax.refinement.refinement_options import RefinementOptions, with_validated_sampling_schedule
+from relax.refinement.tomo_half import TomoHalf, TomoSampling, local_tomo_sampling
+from relax.refinement.tomo_half import score_tomo_half_in_loop as _score_tomo_half_in_loop
 from relax.relion.relion_metadata import _relion_metadata_translations, read_relion_sampling_metadata
 from relax.relion.relion_normalization import update_relion_norm_scale_corrections
 from relax.relion.relion_worker_scale import (
@@ -845,10 +847,12 @@ def refine_single_volume(
     if not np.isfinite(model_pixel_size) or model_pixel_size <= 0.0:
         raise ValueError(f"RELION model pixel size must be positive, got {model_pixel_size}")
     multi_shape_halves = isinstance(experiment_datasets[0], MultiShapeHalf)
+    # Subtomogram particles (S4.2): units are particles over their tilt images, offsets are 3D.
+    tomo_halves = isinstance(experiment_datasets[0], TomoHalf)
     relion_translation_angle_scale = (
-        # Shape classes carry their translations in class pixels already.
+        # Shape classes carry their translations in class pixels already; tilt images have their own phases.
         1.0
-        if multi_shape_halves
+        if multi_shape_halves or tomo_halves
         else _relion_k1_translation_angle_scale(
             n_classes=n_classes,
             model_pixel_size=model_pixel_size,
@@ -903,7 +907,11 @@ def refine_single_volume(
     image_datasets = [
         dataset
         for half in experiment_datasets
-        for dataset in ([c.dataset for c in half.classes] if isinstance(half, MultiShapeHalf) else [half])
+        for dataset in (
+            [c.dataset for c in half.classes]
+            if isinstance(half, MultiShapeHalf)
+            else [half.images] if isinstance(half, TomoHalf) else [half]
+        )
     ]
     for ds in image_datasets:
         backend = _image_backend(ds)
@@ -954,6 +962,7 @@ def refine_single_volume(
         current_resolution=float("inf"),
         voxel_size_angstrom=float(cryo.voxel_size if cryo.voxel_size > 0 else 1.0),
         particle_diameter_angstrom=float(particle_diameter_ang or 0.0),
+        subtomogram=tomo_halves,
     )
     # RELION's convergence counters are not initialized against an infinite
     # previous resolution.  They resume from the previous optimiser/model STAR
@@ -2750,18 +2759,23 @@ def refine_single_volume(
             # RELION translation priors: relion_half_translation_prior_inputs
             # documents the pdf_offset / wsum_sigma2_offset centers, the
             # cold-start engine center and the prior-grid selection.
-            translation_prior_inputs = relion_half_translation_prior_inputs(
-                previous_translations_k,
-                voxel_size=cryo.voxel_size,
-                base_translations=base_translations,
-                current_translations=current_translations,
-                dtype=_dense_global_scoring_dtype(),
-            )
-            trans_prior_center = translation_prior_inputs.prior_center
-            local_trans_prior_center = translation_prior_inputs.local_prior_center
-            trans_prior_center_for_engine = translation_prior_inputs.engine_prior_center
+            if tomo_halves:
+                # A subtomogram half builds its 3D offset priors per particle (score_tomo_half).
+                translation_prior_inputs = None
+                trans_prior_center = local_trans_prior_center = trans_prior_center_for_engine = None
+            else:
+                translation_prior_inputs = relion_half_translation_prior_inputs(
+                    previous_translations_k,
+                    voxel_size=cryo.voxel_size,
+                    base_translations=base_translations,
+                    current_translations=current_translations,
+                    dtype=_dense_global_scoring_dtype(),
+                )
+                trans_prior_center = translation_prior_inputs.prior_center
+                local_trans_prior_center = translation_prior_inputs.local_prior_center
+                trans_prior_center_for_engine = translation_prior_inputs.engine_prior_center
             translation_log_prior = None
-            if not use_local:
+            if not use_local and not tomo_halves:
                 if not k_class_enabled and trans_prior_center is None:
                     # A fresh K1 half has implicit zero offsets, not a flat
                     # pdf_offset. Native ACC applies the Gaussian even at
@@ -2866,7 +2880,60 @@ def refine_single_volume(
                     original_image_indices=np.zeros(0, dtype=np.int64),
                 )
                 return
-            if use_local:
+            if tomo_halves:
+                tomo_oversampling = int(state.adaptive_oversampling)
+                tomo_coarse_size = local_pass1_current_size if use_local else coarse_cs
+                score_result = _score_tomo_half_in_loop(
+                    experiment_datasets[k],
+                    use_local=use_local,
+                    use_adaptive=use_adaptive,
+                    volume=means[k],
+                    noise_variance=noise_variance_k,
+                    relion_projector_half=relion_projector_half_by_half[k],
+                    relion_projector_r_max=relion_projector_r_max_by_half[k],
+                    sampling=TomoSampling(
+                        # A local search's pass 1 is one oversampling order below its fine order.
+                        healpix_order=int(local_search_order) - tomo_oversampling if use_local else int(current_healpix_order),
+                        oversampling_order=tomo_oversampling,
+                        # RefinementState keeps the offset range and step in pixels of the model grid.
+                        offset_range_angst=float(state.translation_range) * float(cryo.voxel_size),
+                        offset_step_angst=float(state.translation_step) * float(cryo.voxel_size),
+                        random_perturbation=float(local_search_random_perturbation if use_local else random_perturbation),
+                        coarse_size=int(cryo.image_shape[0] if tomo_coarse_size is None else tomo_coarse_size),
+                        fine_size=int(cryo.image_shape[0] if cs_for_engine is None else cs_for_engine),
+                    ),
+                    local_search=(
+                        dict(
+                            previous_eulers_deg=relion_half_inputs.previous_best_rotation_eulers[k],
+                            sigma_rot=sigma_rot,
+                            sigma_psi=sigma_psi,
+                        )
+                        if use_local
+                        else None
+                    ),
+                    rotation_log_prior=rotation_log_prior_k,
+                    previous_translations=previous_translations_k,
+                    sigma_offset_angst=float(sigma_offset_k),
+                    max_significants=adaptive.max_significants,
+                    unit_groups=optics_group_ids_per_half[k],
+                    scale_corrections=relion_half_inputs.scale_corrections[k],
+                    group_ids=follower_setup.scale_stats_group_ids_per_half[k],
+                    scale_correction_group_count=follower_setup.scale_stats_group_count_per_half[k],
+                    scale_correction_data_vs_prior=scale_correction_data_vs_prior_this_iter,
+                    reconstruction_current_size=model_current_size_for_engine,
+                    outputs=per_half,
+                    k=k,
+                )
+                ha_k = score_result.ha
+                Ft_y_k = score_result.Ft_y
+                Ft_ctf_k = score_result.Ft_ctf
+                em_stats_k = score_result.em_stats
+                noise_stats_k = score_result.noise_stats
+                noise_stats_per_half[k] = noise_stats_k
+                pose_rotations[k] = None
+                pose_rotation_eulers[k] = None
+                coarse_ha[k] = score_result.coarse_ha
+            elif use_local:
                 local_parent_oversampling_order = int(state.adaptive_oversampling) if state.adaptive_oversampling > 0 else 0
                 local_result = _score_half_local_in_bpref_scope(
                     **_optics_group_kwargs(
@@ -4140,14 +4207,14 @@ def refine_single_volume(
         )
         current_translations_pixel_combined = concatenate_pose_stacks_or_none(
             new_iter_best_translations,
-            trailing_shape=(2,),
+            trailing_shape=(3,) if tomo_halves else (2,),
             label="current translation",
             dtype=_dense_global_scoring_dtype(),
             logger=logger,
         )
         previous_translations_pixel_combined = concatenate_pose_stacks_or_none(
             prior_iter_best_translations,
-            trailing_shape=(2,),
+            trailing_shape=(3,) if tomo_halves else (2,),
             label="previous translation",
             dtype=_dense_global_scoring_dtype(),
             logger=logger,
@@ -4395,6 +4462,7 @@ def refine_single_volume(
             current_sigma_offset_angstrom_per_half=current_sigma_offset_angstrom_per_half,
             n_classes=n_classes,
             state_fallback_offsets_angstrom=state.current_changes_optimal_offsets_angstrom,
+            offset_dims=3 if tomo_halves else 2,
         )
         current_sigma_offset_angstrom = sigma_offset_result.current_sigma_offset_angstrom
         current_sigma_offset_angstrom_per_half = _normalize_sigma_offset_per_half(
@@ -5252,179 +5320,224 @@ def refine_single_volume(
             current_sigma_offset_angstrom_per_half,
             k,
         )
-        final_translation_prior_inputs = relion_half_translation_prior_inputs(
-            previous_translations_k,
-            voxel_size=cryo.voxel_size,
-            base_translations=final_base_translations,
-            current_translations=final_current_translations,
-            dtype=_dense_global_scoring_dtype(),
-        )
-        final_trans_prior_center = final_translation_prior_inputs.prior_center
-        final_local_trans_prior_center = final_translation_prior_inputs.local_prior_center
-        final_trans_prior_center_for_engine = final_translation_prior_inputs.engine_prior_center
-        final_translation_log_prior = make_relion_translation_log_prior(
-            final_translation_prior_inputs.prior_translations,
-            cryo.voxel_size,
-            final_sigma_offset_k,
-            final_trans_prior_center,
-            offset_range_pixels=None,
-            dtype=_dense_global_scoring_dtype(),
-        )
-        final_direction_prior_healpix_order = None
-        if not final_use_local:
-            final_direction_prior_healpix_order = _direction_prior_healpix_order_for_scoring(
-                use_local=False,
-                current_healpix_order=final_current_healpix_order,
-                state_healpix_order=state.healpix_order,
-                adaptive_oversampling=final_local_parent_oversampling_order,
-                local_search_order=None,
-            )
-        # The final pass scores each half with its own priors on the grid rows it
-        # actually uses; sealed rows apply only when the sealed grid is reused.
-        final_half_direction_priors = relion_direction_log_priors_for_half(
-            use_local=final_use_local,
-            scoring_healpix_order=final_direction_prior_healpix_order,
-            n_classes=n_classes,
-            class_direction_prior=class_direction_prior_per_half[k],
-            class_direction_prior_order=class_direction_prior_order_per_half[k],
-            global_direction_prior=global_direction_prior_per_half[k],
-            global_direction_prior_order=global_direction_prior_order_per_half[k],
-            sealed_sampling_state=(
-                sealed_sampling_state if final_current_rotations is current_rotations else None
-            ),
-            dtype=_dense_global_scoring_dtype(),
-            log=logger,
-            half_index=k,
-            **({"symmetry": symmetry} if symmetry != "C1" else {}),
-        )
-        final_rotation_log_prior_k = final_half_direction_priors.rotation_log_prior
-        final_class_rotation_log_prior_k = final_half_direction_priors.class_rotation_log_prior
-        if final_use_local:
-            final_result = _score_half_local_in_bpref_scope(
-                **_optics_group_kwargs(
-                    optics_group_ids_per_half[k],
-                    experiment_datasets[k],
-                    previous_noise_radial_per_half[k],
-                    final_local_pass1_step_deg,
-                    particle_diameter_ang,
-                ),
-                **_class_translation_kwargs(
-                    experiment_datasets[k],
-                    previous_translations_k,
-                    sigma_offset_angstrom=final_sigma_offset_k,
-                    base_translations=final_base_translations,
-                    current_translations=final_current_translations,
-                    with_log_prior=False,
-                    zero_cold_center=False,
-                ),
-                bpref_device_signature_active=False,
-                k=k,
-                experiment_dataset=experiment_datasets[k],
-                means_k=final_join_means[k],
-                noise_variance_k=final_noise_variance_per_half[k],
-                previous_best_rotation_eulers_k=relion_half_inputs.previous_best_rotation_eulers[k],
-                local_search_rotations=final_local_search_rotations,
-                local_search_mstep_rotations=final_local_search_mstep_rotations,
-                local_search_order=final_local_search_order,
-                sigma_rot=final_sigma_rot,
-                sigma_psi=final_sigma_psi,
-                current_translations=final_current_translations,
-                base_translations=final_base_translations,
-                trans_prior_center=final_local_trans_prior_center,
-                trans_prior_center_for_engine=final_trans_prior_center_for_engine,
-                current_sigma_offset_angstrom=final_sigma_offset_k,
-                disc_type=options.disc_type,
-                cs_for_engine=final_current_size,
-                local_pass1_current_size=final_local_pass1_current_size,
-                image_corrections_k=relion_half_inputs.image_corrections[k],
-                scale_corrections_k=relion_half_inputs.scale_corrections[k],
-                group_ids_k=follower_setup.scale_stats_group_ids_per_half[k],
-                group_count_k=follower_setup.scale_stats_group_count_per_half[k],
-                scale_correction_data_vs_prior=previous_data_vs_prior_for_scheduling,
-                translation_search_base=translation_search_base,
-                disable_adjoint_y=debug.disable_adjoint_y,
-                disable_adjoint_ctf=debug.disable_adjoint_ctf,
-                max_significants=adaptive.max_significants,
-                iteration=iteration + 1,
-                debug_iteration=final_sampling_relion_iteration,
-                save_intermediates_dir=debug.save_intermediates_dir,
-                local_search_random_perturbation=final_local_search_random_perturbation,
-                local_search_angular_sampling_deg=final_local_search_angular_sampling_deg,
-                local_parent_oversampling_order=final_local_parent_oversampling_order,
-                local_search_translation_prior_mode=local_search.local_search_translation_prior_mode,
-                replay_prior_translations=None,
-                collect_local_search_profile=collect_local_search_profile,
-                diagnostic_score_only=False,
-                safe_batch_sizes=_safe_batch_sizes,
-                outputs=final_outs,
-                local_profile_history=history.local_profile_history,
+        if tomo_halves:
+            # Subtomograms: the tomo half pass at the final sampling (RELION's local search on the
+            # previous poses), with the merged reference for both halves.
+            if not final_use_local:
+                raise NotImplementedError(
+                    "a subtomogram final all-data pass without local search needs the global direction priors"
+                )
+            final_tomo_oversampling = int(state.adaptive_oversampling)
+            final_result = _score_tomo_half_in_loop(
+                experiment_datasets[k],
+                use_local=True,
+                use_adaptive=final_tomo_oversampling > 0,
+                volume=final_join_means[k],
+                noise_variance=final_noise_variance_per_half[k],
                 relion_projector_half=final_relion_projector_half_by_half[k],
                 relion_projector_r_max=final_relion_projector_r_max_by_half[k],
-                relion_translation_angle_scale=relion_translation_angle_scale,
-                **({"symmetry": symmetry} if symmetry != "C1" else {}),
+                sampling=local_tomo_sampling(
+                    fine_order=int(final_local_search_order),
+                    oversampling_order=final_tomo_oversampling,
+                    translation_range_px=final_translation_range,
+                    translation_step_px=final_translation_step,
+                    voxel_size=cryo.voxel_size,
+                    random_perturbation=final_local_search_random_perturbation,
+                    pass1_size=final_local_pass1_current_size,
+                    current_size=final_current_size,
+                ),
+                local_search=dict(
+                    previous_eulers_deg=relion_half_inputs.previous_best_rotation_eulers[k],
+                    sigma_rot=final_sigma_rot,
+                    sigma_psi=final_sigma_psi,
+                ),
+                rotation_log_prior=None,
+                previous_translations=previous_translations_k,
+                sigma_offset_angst=float(final_sigma_offset_k),
+                max_significants=adaptive.max_significants,
+                unit_groups=optics_group_ids_per_half[k],
+                scale_corrections=relion_half_inputs.scale_corrections[k],
+                group_ids=follower_setup.scale_stats_group_ids_per_half[k],
+                scale_correction_group_count=follower_setup.scale_stats_group_count_per_half[k],
+                scale_correction_data_vs_prior=previous_data_vs_prior_for_scheduling,
+                reconstruction_current_size=int(final_current_size),
+                outputs=final_outs,
+                k=k,
             )
         else:
-            final_result = _score_half_dense_in_bpref_scope(
-                **_optics_group_kwargs(
-                    optics_group_ids_per_half[k], experiment_datasets[k], previous_noise_radial_per_half[k]
+            final_translation_prior_inputs = relion_half_translation_prior_inputs(
+                previous_translations_k,
+                voxel_size=cryo.voxel_size,
+                base_translations=final_base_translations,
+                current_translations=final_current_translations,
+                dtype=_dense_global_scoring_dtype(),
+            )
+            final_trans_prior_center = final_translation_prior_inputs.prior_center
+            final_local_trans_prior_center = final_translation_prior_inputs.local_prior_center
+            final_trans_prior_center_for_engine = final_translation_prior_inputs.engine_prior_center
+            final_translation_log_prior = make_relion_translation_log_prior(
+                final_translation_prior_inputs.prior_translations,
+                cryo.voxel_size,
+                final_sigma_offset_k,
+                final_trans_prior_center,
+                offset_range_pixels=None,
+                dtype=_dense_global_scoring_dtype(),
+            )
+            final_direction_prior_healpix_order = None
+            if not final_use_local:
+                final_direction_prior_healpix_order = _direction_prior_healpix_order_for_scoring(
+                    use_local=False,
+                    current_healpix_order=final_current_healpix_order,
+                    state_healpix_order=state.healpix_order,
+                    adaptive_oversampling=final_local_parent_oversampling_order,
+                    local_search_order=None,
+                )
+            # The final pass scores each half with its own priors on the grid rows it
+            # actually uses; sealed rows apply only when the sealed grid is reused.
+            final_half_direction_priors = relion_direction_log_priors_for_half(
+                use_local=final_use_local,
+                scoring_healpix_order=final_direction_prior_healpix_order,
+                n_classes=n_classes,
+                class_direction_prior=class_direction_prior_per_half[k],
+                class_direction_prior_order=class_direction_prior_order_per_half[k],
+                global_direction_prior=global_direction_prior_per_half[k],
+                global_direction_prior_order=global_direction_prior_order_per_half[k],
+                sealed_sampling_state=(
+                    sealed_sampling_state if final_current_rotations is current_rotations else None
                 ),
-                **_class_translation_kwargs(
-                    experiment_datasets[k],
-                    previous_translations_k,
-                    sigma_offset_angstrom=final_sigma_offset_k,
-                    base_translations=final_base_translations,
-                    current_translations=final_current_translations,
-                    with_log_prior=True,
-                    zero_cold_center=False,
-                ),
-                bpref_device_signature_active=False,
-                k=k,
-            experiment_dataset=experiment_datasets[k],
-            means_k=final_join_means[k],
-            mean_variance=mean_variance,
-            noise_variance_k=final_noise_variance_per_half[k],
-            effective_rotations=final_effective_rotations,
-            current_translations=final_current_translations,
-            base_translations=final_base_translations,
-            current_healpix_order=final_current_healpix_order,
-            state=state,
-            random_perturbation=final_random_perturbation if final_perturbation_applied else 0.0,
-            disc_type=options.disc_type,
-            image_batch_size=batching.image_batch_size,
-                rotation_log_prior_k=final_rotation_log_prior_k,
-                class_rotation_log_prior_k=final_class_rotation_log_prior_k,
-                translation_log_prior=final_translation_log_prior,
-                translation_search_base=translation_search_base,
-                trans_prior_center_for_engine=final_trans_prior_center_for_engine,
-                image_corrections_k=relion_half_inputs.image_corrections[k],
-                scale_corrections_k=relion_half_inputs.scale_corrections[k],
-                group_ids_k=follower_setup.scale_stats_group_ids_per_half[k],
-                group_count_k=follower_setup.scale_stats_group_count_per_half[k],
-                scale_correction_data_vs_prior=previous_data_vs_prior_for_scheduling,
-                firstiter_score_mode_this_iter="gaussian",
-                firstiter_winner_take_all_this_iter=False,
-                cs_for_engine=final_current_size,
-                class_log_priors=class_log_priors,
-                k_class_enabled=k_class_enabled,
-                relion_firstiter_cc_this_iter=False,
-                disable_adjoint_y=debug.disable_adjoint_y,
-                disable_adjoint_ctf=debug.disable_adjoint_ctf,
-                safe_batch_sizes=_safe_batch_sizes,
-                max_significants=adaptive.max_significants,
-                outputs=final_outs,
-                relion_projector_half=final_relion_projector_half_by_half[k],
-                relion_projector_r_max=final_relion_projector_r_max_by_half[k],
-                firstiter_coarse_current_size=final_adaptive_pass1_current_size,
-                firstiter_fine_current_size=final_adaptive_pass2_current_size,
-                firstiter_log_label="final all-data ",
-                firstiter_updates_em_kwargs_ibs=True,
-                return_best_pose_details=not k_class_enabled,
-                debug_iteration=final_sampling_relion_iteration,
-                preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
-                source_faithful_spectrum_norm=source_faithful_spectrum_norm,
-                relion_translation_angle_scale=relion_translation_angle_scale,
+                dtype=_dense_global_scoring_dtype(),
+                log=logger,
+                half_index=k,
                 **({"symmetry": symmetry} if symmetry != "C1" else {}),
             )
+            final_rotation_log_prior_k = final_half_direction_priors.rotation_log_prior
+            final_class_rotation_log_prior_k = final_half_direction_priors.class_rotation_log_prior
+            if final_use_local:
+                final_result = _score_half_local_in_bpref_scope(
+                    **_optics_group_kwargs(
+                        optics_group_ids_per_half[k],
+                        experiment_datasets[k],
+                        previous_noise_radial_per_half[k],
+                        final_local_pass1_step_deg,
+                        particle_diameter_ang,
+                    ),
+                    **_class_translation_kwargs(
+                        experiment_datasets[k],
+                        previous_translations_k,
+                        sigma_offset_angstrom=final_sigma_offset_k,
+                        base_translations=final_base_translations,
+                        current_translations=final_current_translations,
+                        with_log_prior=False,
+                        zero_cold_center=False,
+                    ),
+                    bpref_device_signature_active=False,
+                    k=k,
+                    experiment_dataset=experiment_datasets[k],
+                    means_k=final_join_means[k],
+                    noise_variance_k=final_noise_variance_per_half[k],
+                    previous_best_rotation_eulers_k=relion_half_inputs.previous_best_rotation_eulers[k],
+                    local_search_rotations=final_local_search_rotations,
+                    local_search_mstep_rotations=final_local_search_mstep_rotations,
+                    local_search_order=final_local_search_order,
+                    sigma_rot=final_sigma_rot,
+                    sigma_psi=final_sigma_psi,
+                    current_translations=final_current_translations,
+                    base_translations=final_base_translations,
+                    trans_prior_center=final_local_trans_prior_center,
+                    trans_prior_center_for_engine=final_trans_prior_center_for_engine,
+                    current_sigma_offset_angstrom=final_sigma_offset_k,
+                    disc_type=options.disc_type,
+                    cs_for_engine=final_current_size,
+                    local_pass1_current_size=final_local_pass1_current_size,
+                    image_corrections_k=relion_half_inputs.image_corrections[k],
+                    scale_corrections_k=relion_half_inputs.scale_corrections[k],
+                    group_ids_k=follower_setup.scale_stats_group_ids_per_half[k],
+                    group_count_k=follower_setup.scale_stats_group_count_per_half[k],
+                    scale_correction_data_vs_prior=previous_data_vs_prior_for_scheduling,
+                    translation_search_base=translation_search_base,
+                    disable_adjoint_y=debug.disable_adjoint_y,
+                    disable_adjoint_ctf=debug.disable_adjoint_ctf,
+                    max_significants=adaptive.max_significants,
+                    iteration=iteration + 1,
+                    debug_iteration=final_sampling_relion_iteration,
+                    save_intermediates_dir=debug.save_intermediates_dir,
+                    local_search_random_perturbation=final_local_search_random_perturbation,
+                    local_search_angular_sampling_deg=final_local_search_angular_sampling_deg,
+                    local_parent_oversampling_order=final_local_parent_oversampling_order,
+                    local_search_translation_prior_mode=local_search.local_search_translation_prior_mode,
+                    replay_prior_translations=None,
+                    collect_local_search_profile=collect_local_search_profile,
+                    diagnostic_score_only=False,
+                    safe_batch_sizes=_safe_batch_sizes,
+                    outputs=final_outs,
+                    local_profile_history=history.local_profile_history,
+                    relion_projector_half=final_relion_projector_half_by_half[k],
+                    relion_projector_r_max=final_relion_projector_r_max_by_half[k],
+                    relion_translation_angle_scale=relion_translation_angle_scale,
+                    **({"symmetry": symmetry} if symmetry != "C1" else {}),
+                )
+            else:
+                final_result = _score_half_dense_in_bpref_scope(
+                    **_optics_group_kwargs(
+                        optics_group_ids_per_half[k], experiment_datasets[k], previous_noise_radial_per_half[k]
+                    ),
+                    **_class_translation_kwargs(
+                        experiment_datasets[k],
+                        previous_translations_k,
+                        sigma_offset_angstrom=final_sigma_offset_k,
+                        base_translations=final_base_translations,
+                        current_translations=final_current_translations,
+                        with_log_prior=True,
+                        zero_cold_center=False,
+                    ),
+                    bpref_device_signature_active=False,
+                    k=k,
+                experiment_dataset=experiment_datasets[k],
+                means_k=final_join_means[k],
+                mean_variance=mean_variance,
+                noise_variance_k=final_noise_variance_per_half[k],
+                effective_rotations=final_effective_rotations,
+                current_translations=final_current_translations,
+                base_translations=final_base_translations,
+                current_healpix_order=final_current_healpix_order,
+                state=state,
+                random_perturbation=final_random_perturbation if final_perturbation_applied else 0.0,
+                disc_type=options.disc_type,
+                image_batch_size=batching.image_batch_size,
+                    rotation_log_prior_k=final_rotation_log_prior_k,
+                    class_rotation_log_prior_k=final_class_rotation_log_prior_k,
+                    translation_log_prior=final_translation_log_prior,
+                    translation_search_base=translation_search_base,
+                    trans_prior_center_for_engine=final_trans_prior_center_for_engine,
+                    image_corrections_k=relion_half_inputs.image_corrections[k],
+                    scale_corrections_k=relion_half_inputs.scale_corrections[k],
+                    group_ids_k=follower_setup.scale_stats_group_ids_per_half[k],
+                    group_count_k=follower_setup.scale_stats_group_count_per_half[k],
+                    scale_correction_data_vs_prior=previous_data_vs_prior_for_scheduling,
+                    firstiter_score_mode_this_iter="gaussian",
+                    firstiter_winner_take_all_this_iter=False,
+                    cs_for_engine=final_current_size,
+                    class_log_priors=class_log_priors,
+                    k_class_enabled=k_class_enabled,
+                    relion_firstiter_cc_this_iter=False,
+                    disable_adjoint_y=debug.disable_adjoint_y,
+                    disable_adjoint_ctf=debug.disable_adjoint_ctf,
+                    safe_batch_sizes=_safe_batch_sizes,
+                    max_significants=adaptive.max_significants,
+                    outputs=final_outs,
+                    relion_projector_half=final_relion_projector_half_by_half[k],
+                    relion_projector_r_max=final_relion_projector_r_max_by_half[k],
+                    firstiter_coarse_current_size=final_adaptive_pass1_current_size,
+                    firstiter_fine_current_size=final_adaptive_pass2_current_size,
+                    firstiter_log_label="final all-data ",
+                    firstiter_updates_em_kwargs_ibs=True,
+                    return_best_pose_details=not k_class_enabled,
+                    debug_iteration=final_sampling_relion_iteration,
+                    preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
+                    source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+                    relion_translation_angle_scale=relion_translation_angle_scale,
+                    **({"symmetry": symmetry} if symmetry != "C1" else {}),
+                )
         if final_result.best_pose_translations is not None:
             final_result.best_pose_translations = _relion_metadata_translations(
                 relion_half_inputs.previous_best_translations[k],

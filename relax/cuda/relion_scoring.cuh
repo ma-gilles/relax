@@ -2405,7 +2405,8 @@ void relion_fine_diff2_fused_translate_rows_f32_kernel(
     int64_t full_pixel_capacity,
     int current_size,
     const int32_t* runtime_current_size,
-    const uint8_t* translation_chunk_live)
+    const uint8_t* translation_chunk_live,
+    int64_t translation_image_stride)
 {
     const int64_t translation_chunks =
         (translation_count + kRelionFineDiff2Ref3dJobChunk - 1) /
@@ -2487,8 +2488,11 @@ void relion_fine_diff2_fused_translate_rows_f32_kernel(
                      ++translation_offset) {
                     const int64_t translation =
                         translation_start + translation_offset;
-                    const float tx = translation_angles[2 * translation];
-                    const float ty = translation_angles[2 * translation + 1];
+                    // Tilt images carry their own phases (stride 2T); SPA shares one table (stride 0).
+                    const float* angles =
+                        translation_angles + batch * translation_image_stride;
+                    const float tx = angles[2 * translation];
+                    const float ty = angles[2 * translation + 1];
                     const float2 shifted = relion_score_translate_f32(
                         image_value, x, y, tx, ty);
                     const int lane_index =
@@ -3275,7 +3279,8 @@ cudaError_t launch_relion_fine_diff2_fused_translate_rectangular_f32(
             full_pixel_count,
             current_size,
             runtime_current_size,
-            nullptr);
+            nullptr,
+            0);
     return cudaGetLastError();
 }
 
@@ -3296,7 +3301,8 @@ cudaError_t launch_relion_fine_diff2_fused_translate_flat_rows_f32(
     int64_t full_pixel_count,
     int current_size,
     const int32_t* runtime_current_size,
-    const uint8_t* translation_chunk_live)
+    const uint8_t* translation_chunk_live,
+    int64_t translation_image_stride)
 {
     const int64_t translation_chunks =
         (translation_count + kRelionFineDiff2Ref3dJobChunk - 1) /
@@ -3324,7 +3330,8 @@ cudaError_t launch_relion_fine_diff2_fused_translate_flat_rows_f32(
             full_pixel_count,
             current_size,
             runtime_current_size,
-            translation_chunk_live);
+            translation_chunk_live,
+            translation_image_stride);
     return cudaGetLastError();
 }
 

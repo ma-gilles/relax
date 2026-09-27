@@ -307,7 +307,6 @@ def test_pose_history_by_image_restores_original_particle_order():
         half_pose_arrays,
         half_indices,
         n_images=4,
-        trailing_shape=(2,),
         dtype=np.float32,
     )
 
@@ -324,12 +323,17 @@ def test_pose_history_by_image_restores_original_particle_order():
         ),
     )
 
+    # Subtomogram translations are 3D: the data's trailing shape is kept.
+    three_d = _pose_history_by_image(
+        [np.ones((2, 3), np.float32), np.zeros((2, 3), np.float32)], half_indices, n_images=4, dtype=np.float32
+    )
+    assert three_d.shape == (4, 3)
+
     with pytest.raises(ValueError, match="does not match half-set index length"):
         _pose_history_by_image(
             [half_pose_arrays[0][:1], half_pose_arrays[1]],
             half_indices,
             n_images=4,
-            trailing_shape=(2,),
             dtype=np.float32,
         )
 

@@ -2027,6 +2027,78 @@ __global__ void relion_make_scoring_rotations_kernel(
     for (int i = 0; i < 9; ++i) scorer_rotations[9 * oid + i] = B[i];
 }
 
+// make_eulers_3D<invert=true, doL=true, doR> for tilt images: one left matrix L per image
+// (Aproj times the optics scale), B = L (A R) and RELION's adjugate inverse, float32
+// (acc/cuda/cuda_kernels/helper.cuh:714-811). Output [n_left, N, 3, 3] in RECOVAR's
+// scorer frame, the transpose of RELION's stored eulers.
+template <bool DoRight>
+__global__ void relion_make_scoring_rotations_left_f32_kernel(
+    const float* eulers_deg,
+    const float* right_matrix,
+    const float* left_matrices,
+    float* scorer_rotations,
+    int64_t orientation_count,
+    int64_t left_count)
+{
+    const int64_t flat = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (flat >= orientation_count * left_count) return;
+    const int64_t image = flat / orientation_count;
+    const int64_t oid = flat - image * orientation_count;
+    const float* L = left_matrices + 9 * image;
+
+    float a = eulers_deg[3 * oid] * static_cast<float>(3.14159265358979323846) / 180.0f;
+    float b = eulers_deg[3 * oid + 1] * static_cast<float>(3.14159265358979323846) / 180.0f;
+    float g = eulers_deg[3 * oid + 2] * static_cast<float>(3.14159265358979323846) / 180.0f;
+    float ca, sa, cb, sb, cg, sg;
+    sincosf(a, &sa, &ca);
+    sincosf(b, &sb, &cb);
+    sincosf(g, &sg, &cg);
+    const float cc = cb * ca;
+    const float cs = cb * sa;
+    const float sc = sb * ca;
+    const float ss = sb * sa;
+    float A[9], B[9];
+    A[0] = (cg * cc - sg * sa);
+    A[1] = (cg * cs + sg * ca);
+    A[2] = (-cg * sb);
+    A[3] = (-sg * cc - cg * sa);
+    A[4] = (-sg * cs + cg * ca);
+    A[5] = (sg * sb);
+    A[6] = (sc);
+    A[7] = (ss);
+    A[8] = (cb);
+    if constexpr (DoRight) {
+        for (int i = 0; i < 9; ++i) B[i] = 0.f;
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                for (int k = 0; k < 3; ++k)
+                    B[i * 3 + j] += A[i * 3 + k] * right_matrix[k * 3 + j];
+        for (int i = 0; i < 9; ++i) A[i] = B[i];
+    }
+    for (int i = 0; i < 9; ++i) B[i] = 0.f;
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            for (int k = 0; k < 3; ++k)
+                B[i * 3 + j] += L[i * 3 + k] * A[k * 3 + j];
+    const float det = B[0] * (B[4] * B[8] - B[7] * B[5])
+        - B[1] * (B[3] * B[8] - B[6] * B[5])
+        + B[2] * (B[3] * B[7] - B[6] * B[4]);
+    float E[9];
+    E[0] = (B[4] * B[8] - B[7] * B[5]) / det;
+    E[1] = (B[7] * B[2] - B[1] * B[8]) / det;
+    E[2] = (B[1] * B[5] - B[4] * B[2]) / det;
+    E[3] = (B[5] * B[6] - B[8] * B[3]) / det;
+    E[4] = (B[8] * B[0] - B[2] * B[6]) / det;
+    E[5] = (B[2] * B[3] - B[5] * B[0]) / det;
+    E[6] = (B[3] * B[7] - B[6] * B[4]) / det;
+    E[7] = (B[6] * B[1] - B[0] * B[7]) / det;
+    E[8] = (B[0] * B[4] - B[3] * B[1]) / det;
+    float* out = scorer_rotations + 9 * flat;
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            out[3 * i + j] = E[3 * j + i];
+}
+
 template <typename T, bool DoRight>
 cudaError_t launch_relion_make_scoring_rotations(
     cudaStream_t stream,
@@ -2543,6 +2615,54 @@ namespace {
 
 }  // namespace
 
+ffi::Error RelionMakeScoringRotationsLeftF32Impl(
+    cudaStream_t stream,
+    int64_t do_right,
+    ffi::AnyBuffer eulers_deg,
+    ffi::AnyBuffer right_matrix,
+    ffi::AnyBuffer left_matrices,
+    ffi::Result<ffi::AnyBuffer> scorer_rotations)
+{
+    if (eulers_deg.element_type() != ffi::DataType::F32 ||
+        right_matrix.element_type() != ffi::DataType::F32 ||
+        left_matrices.element_type() != ffi::DataType::F32 ||
+        scorer_rotations->element_type() != ffi::DataType::F32)
+        return ffi::Error::InvalidArgument(
+            "RelionMakeScoringRotationsLeftF32: inputs/output must be F32");
+    if (do_right != 0 && do_right != 1)
+        return ffi::Error::InvalidArgument(
+            "RelionMakeScoringRotationsLeftF32: do_right must be 0 or 1");
+    auto euler_dims = eulers_deg.dimensions();
+    auto right_dims = right_matrix.dimensions();
+    auto left_dims = left_matrices.dimensions();
+    auto output_dims = scorer_rotations->dimensions();
+    if (euler_dims.size() != 2 || euler_dims[1] != 3 ||
+        right_dims.size() != 2 || right_dims[0] != 3 || right_dims[1] != 3 ||
+        left_dims.size() != 3 || left_dims[1] != 3 || left_dims[2] != 3 ||
+        output_dims.size() != 4 || output_dims[0] != left_dims[0] ||
+        output_dims[1] != euler_dims[0] || output_dims[2] != 3 || output_dims[3] != 3)
+        return ffi::Error::InvalidArgument(
+            "RelionMakeScoringRotationsLeftF32: expected eulers (N,3), right (3,3), "
+            "left (B,3,3) and output (B,N,3,3)");
+    const int64_t total = euler_dims[0] * left_dims[0];
+    if (total == 0) return ffi::Error::Success();
+    const int blocks = static_cast<int>((total + kRelionEulerBlockSize - 1) / kRelionEulerBlockSize);
+    const float* eulers_ptr = static_cast<const float*>(eulers_deg.untyped_data());
+    const float* right_ptr = static_cast<const float*>(right_matrix.untyped_data());
+    const float* left_ptr = static_cast<const float*>(left_matrices.untyped_data());
+    float* output_ptr = static_cast<float*>(scorer_rotations->untyped_data());
+    if (do_right)
+        relion_make_scoring_rotations_left_f32_kernel<true><<<blocks, kRelionEulerBlockSize, 0, stream>>>(
+            eulers_ptr, right_ptr, left_ptr, output_ptr, euler_dims[0], left_dims[0]);
+    else
+        relion_make_scoring_rotations_left_f32_kernel<false><<<blocks, kRelionEulerBlockSize, 0, stream>>>(
+            eulers_ptr, right_ptr, left_ptr, output_ptr, euler_dims[0], left_dims[0]);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+        return ffi::Error::Internal(std::string("CUDA: ") + cudaGetErrorString(err));
+    return ffi::Error::Success();
+}
+
 ffi::Error RelionMakeScoringRotationsF32Impl(
     cudaStream_t stream,
     int64_t do_right,
@@ -2831,6 +2951,17 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
     ffi::Ffi::Bind()
         .Ctx<ffi::PlatformStream<cudaStream_t>>()
         .Attr<int64_t>("do_right")
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+);
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    RelionMakeScoringRotationsLeftF32, RelionMakeScoringRotationsLeftF32Impl,
+    ffi::Ffi::Bind()
+        .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Attr<int64_t>("do_right")
+        .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
@@ -6109,24 +6240,32 @@ ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Common(
     const int64_t expected_full_pixels = runtime_current_size == nullptr
         ? current_size * (current_size / 2 + 1)
         : (lookup_shape_valid ? lookup_dims[0] : 0);
+    // Angles are one shared [T, 2] table, or one [T, 2] table per image, [B, T, 2] (tilt images).
+    const bool per_image_angles = translation_dims.size() == 3;
+    const int64_t translation_count = per_image_angles
+        ? translation_dims[1]
+        : (translation_dims.size() == 2 ? translation_dims[0] : 0);
+    const bool angles_shape_valid = per_image_angles
+        ? translation_dims[0] == image_dims[0] && translation_dims[2] == 2
+        : translation_dims.size() == 2 && translation_dims[1] == 2;
     if (reference_dims.size() != 2 || row_image_dims.size() != 1 ||
-        image_dims.size() != 2 || translation_dims.size() != 2 ||
-        translation_dims[1] != 2 || weight_dims.size() != 2 ||
+        image_dims.size() != 2 || !angles_shape_valid ||
+        weight_dims.size() != 2 ||
         initial_dims.size() != 1 || !lookup_shape_valid ||
         output_dims.size() != 2 || reference_dims[0] <= 0 ||
         reference_dims[1] <= 0 || row_image_dims[0] != reference_dims[0] ||
         image_dims[0] <= 0 || image_dims[1] != reference_dims[1] ||
-        translation_dims[0] <= 0 || weight_dims[0] != image_dims[0] ||
+        translation_count <= 0 || weight_dims[0] != image_dims[0] ||
         weight_dims[1] != reference_dims[1] ||
         initial_dims[0] != image_dims[0] ||
         lookup_dims[0] != expected_full_pixels ||
         output_dims[0] != reference_dims[0] ||
-        output_dims[1] != translation_dims[0])
+        output_dims[1] != translation_count)
         return ffi::Error::InvalidArgument(
             "RelionFineDiff2FusedTranslateFlatRowsF32: inconsistent operand shapes");
 
     const int64_t translation_chunks =
-        (translation_dims[0] + kRelionFineDiff2Ref3dJobChunk - 1) /
+        (translation_count + kRelionFineDiff2Ref3dJobChunk - 1) /
         kRelionFineDiff2Ref3dJobChunk;
     const int64_t total_blocks = reference_dims[0] * translation_chunks;
     if (total_blocks > static_cast<int64_t>(std::numeric_limits<int>::max()))
@@ -6153,7 +6292,7 @@ ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Common(
         static_cast<float*>(output->untyped_data()),
         image_dims[0],
         reference_dims[0],
-        translation_dims[0],
+        translation_count,
         reference_dims[1],
         lookup_dims[0],
         static_cast<int>(current_size),
@@ -6162,7 +6301,8 @@ ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Common(
             : static_cast<const int32_t*>(runtime_current_size->untyped_data()),
         translation_chunk_live == nullptr
             ? nullptr
-            : static_cast<const uint8_t*>(translation_chunk_live->untyped_data()));
+            : static_cast<const uint8_t*>(translation_chunk_live->untyped_data()),
+        per_image_angles ? 2 * translation_count : 0);
     if (err != cudaSuccess)
         return ffi::Error::Internal(
             std::string("CUDA: ") + cudaGetErrorString(err));
