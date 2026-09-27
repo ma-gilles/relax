@@ -170,7 +170,7 @@ _DEFAULT_PROJECTION_CALL_MAX_BYTES = 4 * 1024**3
 
 
 def _projection_call_transient_max_bytes() -> int:
-    """Bytes one projector call may hold for its full-half-spectrum rows."""
+    """Bytes one projector call may hold (:func:`relax.sparse_pass2.resident_pass2.projection_call_row_bytes`)."""
 
     raw = os.environ.get(_PROJECTION_CALL_MAX_BYTES_ENV, "").strip()
     if not raw:
@@ -763,10 +763,29 @@ def compute_local_search_resident(
             n_recon_pixels=n_recon_windowed,
             max_bytes=_projection_cache_max_bytes_for_pass(device_memory_bytes),
         )
+        # The accumulators already exist, so the budget reading counts them; the
+        # plan records them so that its pass_bytes is the pass's total need.
+        accumulator_bytes = rp.resident_accumulator_bytes(
+            recon_volume_size, recon_y_accum_dtype, recon_ctf_accum_dtype
+        )
         chunk_budget_bytes = rp.resident_chunk_budget_bytes()
-        if chunk_budget_bytes is not None:
-            # One projector call's transient is live next to the chunk; reserve it.
-            chunk_budget_bytes = max(0, chunk_budget_bytes - _projection_call_transient_max_bytes())
+        # One projector call holds the texture crop and the gathered rows
+        # together (rp.projection_call_row_bytes); its block of rows is sized to
+        # the per-call cap and its bytes enter the chunk plan.
+        projector_output_size = projection_kwargs.get("projector_output_size")
+        projector_slab_bytes = int(np.dtype(relion_projector_half.dtype).itemsize)
+        projection_row_bytes = rp.projection_call_row_bytes(
+            crop_pixels=(
+                n_half
+                if projector_output_size is None
+                else int(projector_output_size) * (int(projector_output_size) // 2 + 1)
+            ),
+            output_pixels=n_half if window_union is None else int(window_union.indices.shape[0]),
+            n_score_pixels=n_windowed,
+            n_recon_pixels=n_recon_windowed,
+            complex_bytes=projector_slab_bytes,
+        )
+        projection_block_rows = max(1, _projection_call_transient_max_bytes() // projection_row_bytes)
         tile_pixels = rp.chunk_translated_tile_pixels(
             unshifted_operands=operand_route["unshifted"],
             n_score_pixels=n_windowed,
@@ -807,29 +826,14 @@ def compute_local_search_resident(
             n_recon_pixels=n_recon_windowed,
             budget_bytes=chunk_budget_bytes,
             pipelined=_local_chunk_loop_pipelined(),
+            projection_transient_bytes=projection_block_rows * projection_row_bytes,
+            fixed_bytes=accumulator_bytes,
             **tile_pixels,
         )
         row_ladder = memory_plan.row_capacity_ladder
         image_ladder = memory_plan.image_capacity_ladder
         mstep_block_rows = memory_plan.mstep_block_rows
-        # Bound one projector call by the array it actually materializes. The
-        # compact projection-block helper returns *full half-spectrum* rows and
-        # windows them afterwards (projection.py, the dense_scale multiply runs on
-        # proj_half before any gather), so the transient is
-        # rows x n_half x itemsize(Projector::data), not rows x windowed pixels.
-        # Budgeting on the window is what refused a 16.1 GiB allocation twice: at
-        # current size 92 with 32768 rows, and again at 52 where the window is
-        # 1104 px but the materialized row is still 33024.
-        #
-        # The exact local engine does not hit this because it hands the projector
-        # its compact pixel indices; this driver goes through the shared compact
-        # helper, so it pays the full row and must budget for it.
         n_projection_pixels = int(getattr(window_spec, "n_projection", n_recon_windowed))
-        projector_slab_bytes = int(np.dtype(relion_projector_half.dtype).itemsize)
-        projection_call_max_bytes = _projection_call_transient_max_bytes()
-        projection_block_rows = max(
-            1, projection_call_max_bytes // max(n_half * projector_slab_bytes, 1)
-        )
         chunks = plan_local_capacity_chunks(
             tables,
             row_capacity_ladder=row_ladder,
@@ -843,7 +847,8 @@ def compute_local_search_resident(
             "Resident local pass-2 plan: %d images, %d candidate rows, %d translations -> %d chunks "
             "(row capacities %s, image capacities %s, M-step block rows %d, projection block rows %d); "
             "row projections %.2f KiB/row, largest chunk %.2f GiB, projection window %d px, "
-            "projector slab %d B/element; chunk peak %.2f GiB of a %s budget; setup %.2fs",
+            "projector slab %d B/element; chunk peak %.2f GiB of a %s budget, pass need %.2f GiB "
+            "(accumulators %.2f GiB); setup %.2fs",
             tables.n_images,
             tables.n_rows,
             n_fine_trans,
@@ -860,6 +865,8 @@ def compute_local_search_resident(
             projector_slab_bytes,
             memory_plan.peak_bytes / float(1024**3),
             rp.format_budget_gib(memory_plan.budget_bytes),
+            memory_plan.pass_bytes / float(1024**3),
+            accumulator_bytes / float(1024**3),
             table_s,
         )
 

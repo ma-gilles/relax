@@ -618,6 +618,14 @@ class ResidentChunkMemoryPlan:
     mstep_block_rows: int
     peak_bytes: int
     budget_bytes: int | None
+    # Device bytes the pass allocates once besides its chunks (accumulators).
+    fixed_bytes: int = 0
+
+    @property
+    def pass_bytes(self) -> int:
+        """The pass's total device need: its fixed buffers plus its largest chunk."""
+
+        return int(self.fixed_bytes) + int(self.peak_bytes)
 
 
 def _mstep_block_row_bytes(n_fine_trans: int, n_recon_pixels: int, mstep_tile_pixels: int | None = None) -> int:
@@ -634,6 +642,7 @@ def resident_chunk_bytes(
     rows_live_during_prepare: bool = False,
     mstep_tile_pixels: int | None = None,
     pipelined: bool = False,
+    projection_transient_bytes: int = 0,
 ) -> int:
     """Device bytes one chunk holds at its peak, the larger of its two stages.
 
@@ -662,6 +671,13 @@ def resident_chunk_bytes(
     iteration 22 plan 4096-row chunks (11.78 GiB of row projections, a 19.03
     GiB modelled peak of a 22.12 GiB budget) and run out of memory (bigbox
     14564062).
+
+    ``projection_transient_bytes`` is what one projector call holds while it
+    projects a block of the chunk's rows (:func:`projection_call_row_bytes`);
+    it is live in the row stage, before scoring, never together with the
+    M-step block. A constant reserve of one full-half-spectrum call missed the
+    texture crop held beside it: the EMPIAR-10202 final pass (current size 800)
+    ran out of memory allocating the second 4 GiB array (bigbox 14560923).
     """
 
     t, p = max(int(n_fine_trans), 1), max(int(n_recon_pixels), 1)
@@ -673,7 +689,43 @@ def resident_chunk_bytes(
     if rows_live_during_prepare:
         prepare += rows
     previous_chunk = rows + tiles if pipelined else 0
-    return max(rows + tiles + mstep, prepare) + previous_chunk
+    return max(rows + tiles + max(mstep, int(projection_transient_bytes)), prepare) + previous_chunk
+
+
+def projection_call_row_bytes(
+    *,
+    crop_pixels: int,
+    output_pixels: int,
+    n_score_pixels: int,
+    n_recon_pixels: int,
+    complex_bytes: int = 8,
+    real_bytes: int = 4,
+) -> int:
+    """Device bytes per projected row at the peak of one RELION projector call.
+
+    The texture kernel's ``[rows, crop_pixels]`` output is live while the call
+    gathers its ``[rows, output_pixels]`` output (the pass's window union, or
+    the full half spectrum without one); the zero-row and dense-scale steps each
+    make a new output array beside the previous one, and a zero column is
+    appended; the placement builds the score and reconstruction windows and
+    ``|recon|^2`` from the widened output (kspeed, 50c2542). The call's peak is
+    the largest of those three stages.
+    """
+
+    c, u = int(crop_pixels), int(output_pixels)
+    s, r = int(n_score_pixels), int(n_recon_pixels)
+    return max(
+        complex_bytes * (c + u),
+        complex_bytes * (2 * u + 1),
+        complex_bytes * (u + 1 + s + r) + real_bytes * r,
+    )
+
+
+def resident_accumulator_bytes(volume_size: int, y_dtype, ctf_dtype, *, n_slots: int = 1) -> int:
+    """Device bytes of a pass's BPref accumulators (``Ft_y`` and ``Ft_ctf`` per slot)."""
+
+    per_slot = np.dtype(y_dtype).itemsize + np.dtype(ctf_dtype).itemsize
+    return int(n_slots) * int(volume_size) * per_slot
 
 
 def chunk_translated_tile_pixels(
@@ -748,6 +800,8 @@ def plan_resident_chunk_memory(
     rows_live_during_prepare: bool = False,
     mstep_tile_pixels: int | None = None,
     pipelined: bool = False,
+    projection_transient_bytes: int = 0,
+    fixed_bytes: int = 0,
 ) -> ResidentChunkMemoryPlan:
     """Shrink the three per-chunk classes until their sum fits one budget.
 
@@ -764,6 +818,10 @@ def plan_resident_chunk_memory(
     unknown budget does not cap. A row ladder that cannot shrink further is a
     :class:`ResidentConfigurationUnsupported`, which the default route runs on
     the compact engine.
+
+    ``fixed_bytes`` (the pass's accumulators, allocated before the budget is
+    read) is recorded in the plan, whose ``pass_bytes`` is the pass's total
+    device need.
     """
 
     rows = tuple(int(v) for v in row_capacity_ladder)
@@ -778,8 +836,10 @@ def plan_resident_chunk_memory(
         rows_live_during_prepare=rows_live_during_prepare,
         mstep_tile_pixels=mstep_tile_pixels,
         pipelined=pipelined,
+        projection_transient_bytes=projection_transient_bytes,
     )
     held_pixels = 3 * max(int(n_recon_pixels), 1) if held_tile_pixels is None else int(held_tile_pixels)
+    projection = int(projection_transient_bytes)
 
     def peak():
         return resident_chunk_bytes(
@@ -799,7 +859,7 @@ def plan_resident_chunk_memory(
             # next to either stage (resident_chunk_bytes).
             copies = 2 if pipelined else 1
             rows_in_prepare = rows_bytes * (int(rows_live_during_prepare) + int(pipelined))
-            if prepare_stage > rows_bytes + held_bytes + mstep_bytes:
+            if prepare_stage > rows_bytes + held_bytes + max(mstep_bytes, projection):
                 # The preparation stage is the peak; only its own terms shrink it.
                 terms = {
                     "images": prepare_bytes + (held_bytes if pipelined else 0) if images_can_shrink else -1,
@@ -807,7 +867,8 @@ def plan_resident_chunk_memory(
                 }
             else:
                 terms = {
-                    "mstep": mstep_bytes if block > 1 else -1,
+                    # A smaller M-step block helps only while it outweighs the projector call.
+                    "mstep": mstep_bytes if block > 1 and mstep_bytes > projection else -1,
                     "images": held_bytes * copies if images_can_shrink else -1,
                     "rows": rows_bytes * copies if len(rows) > 1 else -1,
                 }
@@ -834,6 +895,7 @@ def plan_resident_chunk_memory(
         mstep_block_rows=max(block, 1),
         peak_bytes=peak(),
         budget_bytes=None if budget_bytes is None else int(budget_bytes),
+        fixed_bytes=int(fixed_bytes),
     )
 
 
@@ -3109,6 +3171,11 @@ def _resident_pass2(
         row_ladder_start, _ = tilt_capacity_ladders(
             row_ladder_start, (1,), slot_capacity=int(tilt.slot_capacity)
         )
+    # The accumulators already exist, so the budget reading counts them; the plan
+    # records them so that its pass_bytes is the pass's total need.
+    accumulator_bytes = resident_accumulator_bytes(
+        int(np.prod(accumulator_shape)), recon_y_accum_dtype, recon_ctf_accum_dtype, n_slots=int(tables.n_slots)
+    )
 
     def plan_chunks(unshifted_operands: bool):
         chunk_budget_bytes = resident_chunk_budget_bytes(reserved_bytes=reserved_operand_bytes)
@@ -3147,6 +3214,7 @@ def _resident_pass2(
             budget_bytes=chunk_budget_bytes,
             rows_live_during_prepare=True,
             pipelined=tilt is None and _global_chunk_loop_pipelined(stream_projections),
+            fixed_bytes=accumulator_bytes,
             **chunk_translated_tile_pixels(
                 unshifted_operands=unshifted_operands,
                 n_score_pixels=n_windowed if windowed_prepare else n_half_pixels,
@@ -3183,7 +3251,7 @@ def _resident_pass2(
             "Resident pass-2 plan: %d images, %d candidate rows in %d table blocks -> %d chunks "
             "(row capacities %s, image capacities %s, M-step block rows %d, "
             "row occupancy %.3f of %d slots, image occupancy %.3f of %d slots; "
-            "chunk peak %.2f GiB of a %s budget); "
+            "chunk peak %.2f GiB of a %s budget, pass need %.2f GiB with %.2f GiB of accumulators); "
             "setup hypothesis_prep=%.2fs table+plan=%.2fs",
             tables.n_images,
             tables.n_rows,
@@ -3198,6 +3266,8 @@ def _resident_pass2(
             image_slots,
             memory_plan.peak_bytes / float(1024**3),
             format_budget_gib(memory_plan.budget_bytes),
+            memory_plan.pass_bytes / float(1024**3),
+            accumulator_bytes / float(1024**3),
             prep_s,
             table_s,
         )

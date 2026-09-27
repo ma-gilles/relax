@@ -614,6 +614,71 @@ def test_k_class_projection_cache_is_built_in_place():
     assert max(peak) - baseline <= cache_bytes + per_call * n_pixels * 8
 
 
+def test_full_box_chunk_plan_counts_the_projector_call_and_the_accumulators():
+    """EMPIAR-10202 final pass (box 800, current size 800, padding 2, T=36): one projector call
+    holds the texture crop (800 x 401 px) beside its gathered rows, so a constant reserve of
+    one full-half-spectrum call (1673 rows x 320,800 px x 8 B = 4 GiB) was about a third of
+    the call's real peak and the pass ran out of memory allocating the second 4 GiB array
+    (bigbox 14560923). The call's bytes now enter the chunk plan, and the pass's accumulators
+    (1603 x 1603 x 802 x (8 + 4) B) are its fixed bytes."""
+
+    import numpy as np
+
+    from relax.sparse_pass2.resident_scoring import resident_row_projection_bytes
+
+    gib = 1024**3
+    crop, n_score, n_recon, union = 800 * 401, 251966, 251313, 252000
+    per_row = rp.projection_call_row_bytes(
+        crop_pixels=crop, output_pixels=union, n_score_pixels=n_score, n_recon_pixels=n_recon
+    )
+    # The placement stage (union + zero column + both windows + |recon|^2) is this call's peak.
+    assert per_row == 8 * (union + 1 + n_score + n_recon) + 4 * n_recon
+    assert per_row > 8 * (crop + union) > 8 * crop
+    old_rows = 4 * gib // (crop * 8)
+    assert old_rows == 1673
+    full_row = rp.projection_call_row_bytes(
+        crop_pixels=crop, output_pixels=crop, n_score_pixels=n_score, n_recon_pixels=n_recon
+    )
+    assert old_rows * full_row > 2.5 * 4 * gib  # what the old reserve let one call hold
+    rows = 4 * gib // per_row
+    transient = rows * per_row
+    assert transient <= 4 * gib
+
+    t = 36
+    tiles = rp.chunk_translated_tile_pixels(
+        unshifted_operands=True, n_score_pixels=n_score, n_recon_pixels=n_recon, n_rect_pixels=crop,
+        n_exact_rect_pixels=crop,
+    )
+    accumulators = rp.resident_accumulator_bytes(1603 * 1603 * 802, np.complex64, np.float32)
+    assert accumulators == 1603 * 1603 * 802 * 12
+    kwargs = dict(
+        row_capacity_ladder=(1024, 4096), image_capacity_ladder=(16, 32), mstep_block_rows=32,
+        row_bytes=resident_row_projection_bytes(n_score_pixels=n_score, n_recon_pixels=n_recon),
+        n_fine_trans=t, n_recon_pixels=n_recon, budget_bytes=int(22.12 * gib), **tiles,
+    )
+    without = rp.plan_resident_chunk_memory(**kwargs)
+    plan = rp.plan_resident_chunk_memory(**kwargs, projection_transient_bytes=transient, fixed_bytes=accumulators)
+    assert plan.peak_bytes <= kwargs["budget_bytes"]
+    mstep = plan.mstep_block_rows * rp._mstep_block_row_bytes(t, n_recon, tiles["mstep_tile_pixels"])
+    assert transient > mstep
+    assert plan.peak_bytes == rp.resident_chunk_bytes(
+        row_capacity=max(plan.row_capacity_ladder), image_capacity=max(plan.image_capacity_ladder),
+        mstep_block_rows=plan.mstep_block_rows, row_bytes=kwargs["row_bytes"], n_fine_trans=t,
+        n_recon_pixels=n_recon, projection_transient_bytes=transient, **tiles,
+    )
+    assert plan.peak_bytes - without.peak_bytes == transient - mstep
+    assert plan.pass_bytes == accumulators + plan.peak_bytes
+    # The projector call and the M-step block are never live together: a call smaller than
+    # the block adds nothing.
+    assert rp.resident_chunk_bytes(
+        row_capacity=1024, image_capacity=32, mstep_block_rows=32, row_bytes=kwargs["row_bytes"],
+        n_fine_trans=t, n_recon_pixels=n_recon, projection_transient_bytes=mstep // 2, **tiles,
+    ) == rp.resident_chunk_bytes(
+        row_capacity=1024, image_capacity=32, mstep_block_rows=32, row_bytes=kwargs["row_bytes"],
+        n_fine_trans=t, n_recon_pixels=n_recon, **tiles,
+    )
+
+
 def test_joint_chunk_plan_leaves_a_box_256_plan_unchanged():
     """Box-256 K=1 plans (10097, noise1 50k: T<=116, <=8.4k pixels) fit the joint budget
     as they stand; the planner changes nothing there, and an unknown budget never caps."""
