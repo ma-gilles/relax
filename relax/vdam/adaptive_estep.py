@@ -277,6 +277,7 @@ def run_adaptive_initial_model_estep(
         # particle order, exact BPref operands and powerClass spectrum norm.
         preserve_bpref_particle_order=fresh_k1,
         source_faithful_spectrum_norm=fresh_k1,
+        relion_exact_coarse=fresh_k1 or uses_relion_cuda_image_preprocessing(group_dataset),  # every K
         debug_iteration=group_kwargs.get("debug_iteration"),
         reconstruction_group_ids=group_ids,
         reconstruction_group_count=2 if grouped else None,

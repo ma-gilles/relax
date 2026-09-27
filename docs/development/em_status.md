@@ -84,6 +84,15 @@ Removal order:
 Tomography (S4) runs only on the resident engine (`compute_tilt_pass2_stats_resident`)
 and pins none of these.
 
+Coarse scorer TODO (team-lead, 2026-09-27): one coarse path for every K. Class3D and VDAM at every
+K score pass 1 on RELION's exact coarse operands (`relion_exact_coarse`, set by
+`relax.refinement.half_scoring` and `relax.vdam.adaptive_estep`), and fresh K=1 Refine3D does too.
+K=1 runs without the fresh order (RELION-seeded or replay starts) and every normalized-CC pass
+(`--firstiter_cc`) still take the generic dense K-class scorer in
+`relax.scoring.significance._compute_k_class_significance_batched` (`_score_block`, `_add_priors`,
+`_e_step_block_scores_normalized_cc`). Owner kspeed: move them, then delete the generic scorer and
+the temporary `relion_exact_coarse` switch (`relax.classification.k_class`) together.
+
 Projection kernel (2026-09-27, kspeed, from team-lead's TODO): `project_relion_half_capacity`
 and the half-storage branch of `relax.helpers.projection._project_relion_projector_texture` take
 every slab whose texels fit the staging kernel's int32 indexing (box 800 at padding 2 is 1603 x
