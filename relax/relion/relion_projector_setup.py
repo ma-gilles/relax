@@ -178,8 +178,20 @@ def _build_projector_window(
     chunk_bytes = _CHUNK_BYTES if chunk_bytes is None else int(chunk_bytes)
 
     cz = max(1, chunk_bytes // (16 * m * m))
-    xy = [_transform_xy(reference[z0 : z0 + cz], yz_index, fft_size=m, n_x=n_x) for z0 in range(0, n, cz)]
-    xy = xy[0] if len(xy) == 1 else jnp.concatenate(xy, axis=0)
+    if to_host and cz < n:
+        # Eager chunks are written into one preallocated array in place, so the
+        # xy stage never holds its chunks and their concatenation together (2 x
+        # 15.3 GiB at EMPIAR-10202's full box, current size 800).
+        xy = None
+        for z0 in range(0, n, cz):
+            block = _transform_xy(reference[z0 : z0 + cz], yz_index, fft_size=m, n_x=n_x)
+            if xy is None:
+                xy = jnp.zeros((n,) + block.shape[1:], dtype=block.dtype)
+            xy = _place_z_block(xy, block, z0)
+            del block
+    else:
+        xy = [_transform_xy(reference[z0 : z0 + cz], yz_index, fft_size=m, n_x=n_x) for z0 in range(0, n, cz)]
+        xy = xy[0] if len(xy) == 1 else jnp.concatenate(xy, axis=0)
     cy = max(1, chunk_bytes // (16 * m * n_x))
     out_size = size if output_radius is None else 2 * (pf * int(output_radius) + 1) + 1
     off = (size - out_size) // 2
@@ -237,6 +249,13 @@ def _transform_xy(block, yz_index, *, fft_size: int, n_x: int):
     fx = jnp.take(fx, jnp.minimum(jnp.arange(n_x), fft_size // 2), axis=2)
     fy = jnp.fft.fft(_wrap_pad(fx, 1, fft_size), axis=1, norm="forward")
     return jnp.take(fy, yz_index, axis=1)
+
+
+@partial(jax.jit, donate_argnums=0)
+def _place_z_block(xy, block, z0):
+    """Write a z-slab of the xy stage into ``xy`` at ``z0``, in place (``xy`` is donated)."""
+
+    return jax.lax.dynamic_update_slice_in_dim(xy, block, z0, axis=0)
 
 
 @partial(jax.jit, static_argnames=("fft_size",))
