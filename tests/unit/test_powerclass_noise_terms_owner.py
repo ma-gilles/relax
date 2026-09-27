@@ -38,7 +38,7 @@ def test_noise_accumulation_selects_the_norm_term(monkeypatch, source_faithful, 
 
 
 def test_noise_terms_key_on_the_box_and_take_the_current_size_at_runtime():
-    """The powerClass terms at a traced current size equal the static ones, from one program per box."""
+    """The powerClass terms at a traced current size match the static ones to float32 summation order."""
 
     import jax.numpy as jnp
     import numpy as np
@@ -64,5 +64,8 @@ def test_noise_terms_key_on_the_box_and_take_the_current_size_at_runtime():
         static_norm = scoring._relion_cuda_powerclass_spectrum_highres_norm_units(
             images, image_shape=image_shape, current_size=current_size
         )
-        np.testing.assert_array_equal(np.asarray(xi2), np.asarray(static_xi2))
-        np.testing.assert_array_equal(np.asarray(norm), np.asarray(static_norm))
+        # Both terms are float32 sums of at most ``half`` non-negative pixel powers, so the traced and static
+        # programs may differ by their summation order: at most half * eps32 times the value (plus the unit scaling).
+        rtol = (half + 4) * float(np.finfo(np.float32).eps)
+        np.testing.assert_allclose(np.asarray(xi2), np.asarray(static_xi2), rtol=rtol, atol=0)
+        np.testing.assert_allclose(np.asarray(norm), np.asarray(static_norm), rtol=rtol, atol=0)
