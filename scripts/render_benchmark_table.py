@@ -85,7 +85,9 @@ ORANGE_MAX = 1.2
 STATUS_LEGEND = (
     "🟢 accuracy hit and ratio ≤ 0.6x · 🟠 accuracy hit and 0.6x < ratio ≤ 1.2x · 🔴 accuracy missed or ratio > 1.2x"
     " · ⚪ not a speed comparison (arms not timed in one job, or a wall is missing). Accuracy hit: relax inside or above"
-    " the RELION band by the row's metric (Quality column)."
+    " the RELION band by the row's metric (Quality column). Multi-seed rows: every relax seed inside or above the"
+    " across-seed RELION band (all RELION runs of all seeds), and relax not below its same-seed RELION run on a majority"
+    " of seeds; the Quality column shows the worst per-seed gap to the same-seed RELION run."
 )
 # One-line legends on the results page; the full definitions render on the provenance page.
 LETTER_LEGEND = {
@@ -262,7 +264,11 @@ def render_markdown(table):
         STATUS_LEGEND,
         "",
         "Resolution (Å) reads unmasked / masked; "
-        + "; ".join(f"**{letters[name]}** {LETTER_LEGEND[name]}" for name in table["resolution_definitions"] if name != MASKED_DEFINITION)
+        + "; ".join(
+            f"**{letters[name]}** {LETTER_LEGEND[name]}"
+            for name in table["resolution_definitions"]
+            if name != MASKED_DEFINITION
+        )
         + f". Ratio: relax wall / RELION wall (fastest RELION configuration on the same hardware). Definitions, matching,"
         f" GPUs and per-row notes: [provenance]({PROVENANCE_LINK}) (updated {table['updated']}).",
         "",
@@ -303,7 +309,10 @@ def _line(row, letters):
         im = row["initial_model"]
         res = (_im_resolution(im["relion"], letters), _im_resolution(im["relax"], letters))
     else:
-        res = (f"{_resolution(row, 'relion', letters)} / {_masked(row, 'relion')}", f"{_resolution(row, 'relax', letters)} / {_masked(row, 'relax')}")
+        res = (
+            f"{_resolution(row, 'relion', letters)} / {_masked(row, 'relion')}",
+            f"{_resolution(row, 'relax', letters)} / {_masked(row, 'relax')}",
+        )
     tag = "real" if row["section"] == "real" else "synthetic"
     cells = [
         status(row),
@@ -361,7 +370,9 @@ def render_provenance(table):
     if im_rows:
         intro = list(table["initial_model_intro"])
         lines += ["", "## InitialModel (VDAM) method", "", *intro[:1], "", IM_RESOLUTION_LINE, *intro[1:]]
-    groups = [(title, [r for r in table["rows"] if r["section"] == s and not _is_initialmodel(r)]) for s, title in SECTIONS]
+    groups = [
+        (title, [r for r in table["rows"] if r["section"] == s and not _is_initialmodel(r)]) for s, title in SECTIONS
+    ]
     groups += [(title, [r for r in im_rows if r["section"] == s]) for s, title in IM_SECTIONS]
     for title, rows in groups:
         if not rows:
@@ -376,7 +387,11 @@ def render_provenance(table):
                 _note(row),
             ]
             if row.get("time_check"):
-                lines += ["", "Timing record: " + " ".join(f"({k}) {v.rstrip('.')}." for k, v in sorted(row["time_check"].items()))]
+                lines += [
+                    "",
+                    "Timing record: "
+                    + " ".join(f"({k}) {v.rstrip('.')}." for k, v in sorted(row["time_check"].items())),
+                ]
             if row.get("result_marker"):
                 marker = row["result_marker"]
                 lines += ["", f"{_escape(marker['symbol'])} {row['dataset']}: {marker['note']}"]

@@ -394,19 +394,16 @@ RELION against RELION (same band FSC-AUCs):
 | this job's RELION arm vs seed repeat 14363852 (seed 20260924) | 0.9318 | 0.8003 | 0.7979 |
 | reference 14313014 (seed 42) vs seed repeat 14363852 (seed 20260924) | 0.9296 | 0.7986 | 0.7965 |
 
-### EMPIAR-10097 10k subset (resident engine) (relax `589ce095c`)
+### EMPIAR-10097 10k subset (resident engine) (relax `ddf88c8be`)
 
 relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
 
 | RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| this job's RELION arm | 14445853 | 0.9953 | 0.9927 | 0.9929 | 0.9993 | 0.9979 | 0.9980 | met |
-| 2026-09-16 sampler run | — | 0.9950 | 0.9927 | 0.9918 | 0.9992 | 0.9979 | 0.9977 | met |
-| 2026-09-18 repeat c | — | 0.9948 | 0.9926 | 0.9913 | 0.9991 | 0.9979 | 0.9974 | met |
-| 2026-09-18 repeat d | — | 0.9952 | 0.9913 | 0.9936 | 0.9993 | 0.9974 | 0.9983 | met |
-| 2026-09-18 repeat e | — | 0.9787 | 0.9663 | 0.9662 | 0.9963 | 0.9903 | 0.9901 | met |
-| bench attempt 1 RELION arm | 14434594 | 0.9786 | 0.9669 | 0.9657 | 0.9962 | 0.9900 | 0.9899 | met |
-| bench attempt 2 RELION arm | 14445196 | 0.9950 | 0.9914 | 0.9926 | 0.9992 | 0.9974 | 0.9979 | met |
+| curated reference relion_pair (bench pair RELION arm) | 14445853 | 0.9780 | 0.9653 | 0.9649 | 0.9959 | 0.9893 | 0.9897 | met |
+| curated reference relion_a1 (bench attempt 1 RELION arm) | 14434594 | 0.9927 | 0.9896 | 0.9870 | — | — | — | met |
+| curated reference relion_a2 (bench attempt 2 RELION arm) | 14445196 | 0.9774 | 0.9652 | 0.9640 | — | — | — | met |
+| this job's RELION arm | 14547790 | 0.9913 | 0.9865 | 0.9859 | — | — | — | met |
 
 RELION against RELION (same band FSC-AUCs):
 
