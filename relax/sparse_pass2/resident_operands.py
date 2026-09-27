@@ -716,8 +716,8 @@ def prepare_resident_half_operands(
         )
 
     starts = range(0, n_images, batch_size)
-    # The host reads run ahead on a worker thread when RELAX_EM_PREFETCH_BATCHES
-    # asks for it, as in the coarse pass; the batches and their order are unchanged.
+    # The host reads run ahead on a worker thread (RELAX_EM_PREFETCH_BATCHES,
+    # default 2), as in the coarse pass; the batches and their order are unchanged.
     fetches = (
         fetch_indexed_batch(experiment_dataset, image_indices[start : start + batch_size])
         for start in starts
