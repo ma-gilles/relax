@@ -155,22 +155,20 @@ def _run_m_step_transaction(
     min_resol_shell: float,
     mstep_compute_dtype: Literal["float32", "float64"],
 ) -> InitialModelState:
-    """Apply one shared-layout transaction and preserve state ownership."""
-    from recovar.utils.helpers import recovar_volume_to_relion, relion_volume_to_recovar
+    """Apply one shared-layout transaction and preserve state ownership.
 
+    ``transaction`` takes and returns the reference in RECOVAR's axes
+    (``relion_vdam_m_step_host(..., recovar_layout=True)``).
+    """
     if mstep_compute_dtype == "float32":
         _validate_mstep_state_precision(state)
-    copy_token = os.environ.get("RELAX_VDAM_MSTEP_COPY_UNTOUCHED", "0")
-    if copy_token not in {"0", "1"}:
-        raise ValueError("RELAX_VDAM_MSTEP_COPY_UNTOUCHED must be 0 or 1")
-    copy_untouched = copy_token == "1"
     slot_h0 = half_slot_index(k, 0, state.K, state.pseudo_halfsets)
     slot_h1 = half_slot_index(k, 1, state.K, True) if state.pseudo_halfsets else None
     effective_stepsize = float(grad_current_stepsize) * (
         1.0 - np.exp(-float(3 * state.K + 10) * float(np.asarray(state.pdf_class)[k]))
     )
     result = transaction(
-        recovar_volume_to_relion(np.asarray(state.Iref[k])),
+        np.asarray(state.Iref[k]),
         accum_h0.data,
         accum_h0.weight,
         accum_h1.data if accum_h1 is not None else None,
@@ -212,16 +210,14 @@ def _run_m_step_transaction(
         ):
             raise ValueError("float32 M-step must preserve authoritative tau2")
     out = replace(state)
-    out.Iref = _copy_mstep_untouched_slots(state.Iref, (k,)) if copy_untouched else state.Iref.copy()
-    out.Iref[k] = relion_volume_to_recovar(np.asarray(result["iref"]))
+    out.Iref = _copy_mstep_untouched_slots(state.Iref, (k,))
+    out.Iref[k] = np.asarray(result["iref"])
     moment_slots = (slot_h0,) if slot_h1 is None else (slot_h0, slot_h1)
-    out.Igrad1 = (
-        _copy_mstep_untouched_slots(state.Igrad1, moment_slots) if copy_untouched else state.Igrad1.copy()
-    )
+    out.Igrad1 = _copy_mstep_untouched_slots(state.Igrad1, moment_slots)
     out.Igrad1[slot_h0] = np.asarray(result["mom1_h0"])
     if slot_h1 is not None:
         out.Igrad1[slot_h1] = np.asarray(result["mom1_h1"])
-    out.Igrad2 = _copy_mstep_untouched_slots(state.Igrad2, (k,)) if copy_untouched else state.Igrad2.copy()
+    out.Igrad2 = _copy_mstep_untouched_slots(state.Igrad2, (k,))
     out.Igrad2[k] = np.asarray(result["mom2"])
     for attribute, key in (
         ("tau2_class", "tau2"),
@@ -312,7 +308,7 @@ def vdam_m_step_single_class(
             raise RuntimeError("JAX M-step requires the native moment initialization binding")
         from relax.relion.relion_vdam_mstep import relion_vdam_m_step_host
 
-        transaction = relion_vdam_m_step_host
+        transaction = partial(relion_vdam_m_step_host, recovar_layout=True)
         if mstep_compute_dtype == "float32":
             transaction = partial(transaction, compute_dtype=np.float32)
         return _run_m_step_transaction(

@@ -28,6 +28,15 @@ from relax.helpers.deterministic_reduce import (
 from relax.relion.relion_project import gridding_correct_volume_real
 
 
+@partial(jax.jit, static_argnames=("dtype",))
+def swap_relion_volume_layout(volume, dtype=jnp.float64):
+    """``recovar_volume_to_relion`` on the device: ``-transpose(2, 1, 0)``, its own inverse, cast to ``dtype``.
+
+    Exact like the host helper; the host's transposed copy of a 256^3 map takes about 130 ms.
+    """
+    return -jnp.transpose(jnp.asarray(volume, dtype), (2, 1, 0))
+
+
 @partial(jax.jit, static_argnames=("ori_size", "padding_factor", "compute_dtype"))
 def setup_relion_projector(
     reference_relion,
@@ -236,8 +245,8 @@ def reference_to_relion_projector_half_maps_and_power(
     power_spectra = []
     r_max_values = []
     for ref in refs:
-        ref_relion = np.asarray(recovar_volume_to_relion(ref), dtype=np.float64)
         if use_jax:
+            ref_relion = swap_relion_volume_layout(ref)
             # Projector::initialiseData uses a negative size for full resolution;
             # zero means radius zero here (state wrappers retain their defaults).
             r_max = n // 2 if int(current_size) < 0 else min(int(current_size) // 2, n // 2)
@@ -258,7 +267,7 @@ def reference_to_relion_projector_half_maps_and_power(
                 projector_data, power, _ori_size, _padding_factor_out,
                 r_max, _r_min_nn, _interpolator_out,
             ) = bind.compute_fourier_transform_map(
-                ref_relion,
+                np.asarray(recovar_volume_to_relion(ref), dtype=np.float64),
                 n,
                 int(padding_factor),
                 int(interpolator),

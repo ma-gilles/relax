@@ -1597,22 +1597,29 @@ static py::dict vdam_m_step_transaction(
 // sequential RFLOAT sum of real components over the complete moment array.
 // Keep this certificate on already-host-resident inputs; a parallel device
 // reduction can change the exact-zero branch for cancelling nonzero moments.
-static bool vdam_first_moment_initializes(
-    py::array_t<std::complex<double>, py::array::c_style | py::array::forcecast> moment
-) {
+// A complex64 moment is summed in place: widening each float to RFLOAT is
+// exact, so this equals the sum over the complex128 cast without the copy.
+template <typename T>
+static bool vdam_first_moment_initializes(py::array_t<std::complex<T>, py::array::c_style> moment) {
     const auto buf = moment.request();
     if (buf.ndim != 3)
         throw std::invalid_argument("moment must be a three-dimensional complex array");
-    const auto *values = static_cast<const std::complex<double> *>(buf.ptr);
+    const auto *values = static_cast<const std::complex<T> *>(buf.ptr);
     RFLOAT sum = 0;
     for (py::ssize_t index = 0; index < buf.size; ++index)
-        sum += values[index].real();
+        sum += static_cast<RFLOAT>(values[index].real());
     return sum == 0.;
 }
 
 
 void init_initialmodel_bindings(py::module_ &m) {
-    m.def("vdam_first_moment_initializes", &vdam_first_moment_initializes,
+    m.def("vdam_first_moment_initializes", &vdam_first_moment_initializes<float>,
+          py::arg("moment").noconvert(),
+          "Return the native serial real-sum==0 first-moment branch certificate.");
+    m.def("vdam_first_moment_initializes",
+          [](py::array_t<std::complex<double>, py::array::c_style | py::array::forcecast> moment) {
+              return vdam_first_moment_initializes<double>(moment);
+          },
           py::arg("moment"),
           "Return the native serial real-sum==0 first-moment branch certificate.");
 

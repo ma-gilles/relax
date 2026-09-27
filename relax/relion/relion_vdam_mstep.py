@@ -29,7 +29,11 @@ from relax.helpers.deterministic_reduce import (
     fixed_order_shell_sums,
     static_shell_voxel_lists,
 )
-from relax.relion.relion_projector_setup import setup_relion_projector, setup_relion_projector_uncorrected
+from relax.relion.relion_projector_setup import (
+    setup_relion_projector,
+    setup_relion_projector_uncorrected,
+    swap_relion_volume_layout,
+)
 
 
 def _compute_dtypes(compute_dtype):
@@ -304,6 +308,7 @@ def relion_vdam_m_step_host(
     min_resol_shell=0.0,
     *,
     compute_dtype=jnp.float64,
+    recovar_layout: bool = False,
 ):
     """Host-facing oracle adapter with native fallback for FFT grids <16.
 
@@ -313,16 +318,23 @@ def relion_vdam_m_step_host(
     ``compute_dtype`` controls only this transaction; it does not narrow the
     caller's persistent numerical state. Requested F32 never falls back to native
     double. Certificates use original moments, and authoritative tau2 is retained.
+    ``recovar_layout``: ``reference_relion`` and the returned ``iref`` use RECOVAR's
+    axes (``recovar_volume_to_relion``, exact); the device swaps them, since a host
+    transposed copy of a 256^3 map costs about 130 ms per iteration.
     """
     real_dtype, complex_dtype = _compute_dtypes(compute_dtype)
     if real_dtype == jnp.float32 and ori_size * padding_factor < 16:
         raise ValueError("float32 M-step requires FFT grid >=16; native fallback is float64")
+    from recovar.utils.helpers import recovar_volume_to_relion
+
     from relax.relion_bind import _relion_bind_core as bind
 
     # Preserve all native arithmetic for the unsupported small FFT capability.
     # Do this before certificate/packing/device setup: no GPU work is required.
     if ori_size * padding_factor < 16:
-        return bind.vdam_m_step_transaction(
+        if recovar_layout:
+            reference_relion = recovar_volume_to_relion(np.asarray(reference_relion))
+        result = bind.vdam_m_step_transaction(
             reference_relion,
             data_h0,
             weight_h0,
@@ -342,6 +354,9 @@ def relion_vdam_m_step_host(
             r_max,
             min_resol_shell,
         )
+        if recovar_layout:
+            result["iref"] = np.ascontiguousarray(recovar_volume_to_relion(np.asarray(result["iref"])))
+        return result
     if interpolator != 1 or r_max > ori_size // 2:
         raise ValueError("unsupported interpolator or radius")
     pseudo = data_h1 is not None
@@ -358,9 +373,11 @@ def relion_vdam_m_step_host(
         radius = r_max if r_max > 0 else ori_size // 2
         if value.shape[0] // 2 < padding_factor * radius or value.shape[0] > capacity:
             raise ValueError("BPref does not cover the logical radius or exceeds capacity")
+        # Zeros plus one slice write equals np.pad's zero padding at half its cost.
         before = capacity // 2 - value.shape[0] // 2
-        after = capacity - value.shape[0] - before
-        return np.pad(value, ((before, after), (before, after), (0, capacity // 2 + 1 - value.shape[2])))
+        packed = np.zeros((capacity, capacity, capacity // 2 + 1), dtype=value.dtype)
+        packed[before : before + value.shape[0], before : before + value.shape[1], : value.shape[2]] = value
+        return packed
 
     if np.shape(data_h0) != np.shape(weight_h0) or (
         pseudo and (np.shape(data_h0) != np.shape(data_h1) or np.shape(data_h1) != np.shape(weight_h1))
@@ -368,29 +385,35 @@ def relion_vdam_m_step_host(
         raise ValueError("halfset data/weight shapes differ")
     first0 = bind.vdam_first_moment_initializes(mom1_h0)
     first1 = bind.vdam_first_moment_initializes(mom1_h1) if pseudo else first0
-    result = jax.device_get(
-        relion_vdam_m_step_device(
-            np.asarray(reference_relion, real_dtype),
-            pack(data_h0),
-            pack(weight_h0),
-            pack(data_h1) if pseudo else None,
-            pack(weight_h1) if pseudo else None,
-            np.asarray(mom1_h0, complex_dtype),
-            np.asarray(mom1_h1, complex_dtype) if pseudo else None,
-            np.asarray(mom2, complex_dtype),
-            np.asarray(fsc_reconstruct, real_dtype),
-            np.asarray(tau2, np.float64) if real_dtype == jnp.float64 else np.asarray(tau2),
-            real_dtype.type(grad_stepsize),
-            real_dtype.type(tau2_fudge),
-            np.int32(r_max),
-            np.bool_(first0),
-            np.bool_(first1),
-            ori_size=ori_size,
-            padding_factor=padding_factor,
-            pseudo_halfsets=pseudo,
-            compute_dtype=real_dtype,
-        )
+    reference = (
+        swap_relion_volume_layout(reference_relion, real_dtype)
+        if recovar_layout
+        else np.asarray(reference_relion, real_dtype)
     )
+    result = relion_vdam_m_step_device(
+        reference,
+        pack(data_h0),
+        pack(weight_h0),
+        pack(data_h1) if pseudo else None,
+        pack(weight_h1) if pseudo else None,
+        np.asarray(mom1_h0, complex_dtype),
+        np.asarray(mom1_h1, complex_dtype) if pseudo else None,
+        np.asarray(mom2, complex_dtype),
+        np.asarray(fsc_reconstruct, real_dtype),
+        np.asarray(tau2, np.float64) if real_dtype == jnp.float64 else np.asarray(tau2),
+        real_dtype.type(grad_stepsize),
+        real_dtype.type(tau2_fudge),
+        np.int32(r_max),
+        np.bool_(first0),
+        np.bool_(first1),
+        ori_size=ori_size,
+        padding_factor=padding_factor,
+        pseudo_halfsets=pseudo,
+        compute_dtype=real_dtype,
+    )
+    if recovar_layout:
+        result["iref"] = swap_relion_volume_layout(result["iref"], real_dtype)
+    result = jax.device_get(result)
     if result.pop("_invalid_sigma2"):
         raise ValueError("native SSNR rejects unexpectedly small nonzero sigma2 sum")
     if result.pop("_invalid_tau2"):

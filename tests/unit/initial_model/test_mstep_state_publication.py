@@ -10,7 +10,6 @@ from relax.vdam import m_step, mstep_single_class
 from relax.vdam.state import InitialModelState, half_slot_index
 
 pytestmark = pytest.mark.unit
-SELECTOR = "RELAX_VDAM_MSTEP_COPY_UNTOUCHED"
 CHANGED = {"Iref", "Igrad1", "Igrad2", "tau2_class", "sigma2_class", "data_vs_prior_class", "fourier_coverage_class"}
 
 
@@ -93,11 +92,11 @@ def test_publication_matches_full_copy_and_preserves_ownership(monkeypatch, K, k
         calls.append(tuple((a.shape, a.dtype, a.tobytes()) if isinstance(a, np.ndarray) else a for a in args))
         return result
 
-    monkeypatch.setenv(SELECTOR, "0")
-    expected = _call(state, k, transaction)
-    monkeypatch.setenv(SELECTOR, "1")
-    slots = []
     original = mstep_single_class._copy_mstep_untouched_slots
+    # The reference publication copies every slot and then overwrites the updated ones.
+    monkeypatch.setattr(mstep_single_class, "_copy_mstep_untouched_slots", lambda values, _updated: values.copy())
+    expected = _call(state, k, transaction)
+    slots = []
 
     def observe(values, updated):
         slots.append(updated)
@@ -123,36 +122,3 @@ def test_publication_matches_full_copy_and_preserves_ownership(monkeypatch, K, k
                 assert a is before
         else:
             assert a == e == before
-
-
-@pytest.mark.parametrize("token", ["", "true", "2", " 1", "1 "])
-def test_invalid_selector_rejected_before_transaction(monkeypatch, token):
-    monkeypatch.setenv(SELECTOR, token)
-
-    def forbidden(*args):
-        raise AssertionError("invalid selector invoked scientific transaction")
-
-    with pytest.raises(ValueError, match="must be 0 or 1"):
-        _call(_case(1, True, "C"), 0, forbidden)
-
-
-def test_selector_defaults_to_existing_copy_path(monkeypatch):
-    monkeypatch.delenv(SELECTOR, raising=False)
-
-    def forbidden(*args):
-        raise AssertionError("default enabled new publication helper")
-
-    monkeypatch.setattr(mstep_single_class, "_copy_mstep_untouched_slots", forbidden)
-    state = _case(1, False, "C")
-    result = {
-        "iref": state.Iref[0],
-        "mom1_h0": state.Igrad1[0],
-        "mom2": state.Igrad2[0],
-        "tau2": state.tau2_class[0],
-        "sigma2": state.sigma2_class[0],
-        "data_vs_prior": state.data_vs_prior_class[0],
-        "fourier_coverage": state.fourier_coverage_class[0],
-    }
-    actual = _call(state, 0, lambda *args: result)
-    assert_matches(actual.Igrad1, state.Igrad1, strict=True)
-    assert not np.shares_memory(actual.Igrad1, state.Igrad1)
