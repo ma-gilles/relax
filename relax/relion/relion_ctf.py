@@ -237,8 +237,8 @@ def _relion_exact_ctf_half_from_source_star_host(
         # Cached CTF rows live in one 2-D block rather than a dict of rows, so a
         # batch is gathered with two vectorized indexing operations instead of a
         # Python loop per particle. `slots` maps a particle's original index to its
-        # row in that block, with -1 meaning "not evaluated yet"; the block grows by
-        # doubling so a run that touches every particle allocates a handful of times.
+        # row in that block, with -1 meaning "not evaluated yet"; the block has a
+        # row for every particle and is allocated once.
         cache = {
             "particles": particles,
             "optics": {
@@ -306,11 +306,10 @@ def _relion_exact_ctf_half_from_source_star_host(
         used = cache["n_cached"]
         width = image_h * (image_w // 2 + 1)
         if rows is None:
-            rows = np.empty((max(64, n_new), width), dtype=np.float64)
-        elif used + n_new > rows.shape[0]:
-            grown = np.empty((max(2 * rows.shape[0], used + n_new), width), dtype=np.float64)
-            grown[:used] = rows[:used]
-            rows = grown
+            # One block with a row for every particle of the source STAR; pages are
+            # touched only as rows are evaluated. Growing by doubling recopied the
+            # whole cache (17.5 s of a noise1 50k VDAM run, job 14523070).
+            rows = np.empty((slots.size, width), dtype=np.float64)
         shift = image_h // 2            # np.fft.fftshift is np.roll(x, image_h // 2)
         split = image_h - shift
         block = rows[used : used + n_new].reshape(n_new, image_h, image_w // 2 + 1)
