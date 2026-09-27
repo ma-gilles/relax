@@ -1,16 +1,19 @@
-"""The refinement results archive: a compressed ``.npz`` written at zlib level 1."""
+"""The refinement results archive: an ``.npz`` deflated at zlib level 1, with its Fourier maps stored."""
 
 import zipfile
 
 import numpy as np
 import pytest
 
+import scripts.run_full_refinement as run_full_refinement
 from scripts.run_full_refinement import _savez_deflate_fast
 
 pytestmark = pytest.mark.unit
 
 
-def test_fast_archive_loads_like_savez_compressed(tmp_path):
+def test_fast_archive_loads_like_savez_compressed(tmp_path, monkeypatch):
+    # The 64-element complex128 map (1 KiB) stands for a production Fourier map.
+    monkeypatch.setattr(run_full_refinement, "_NPZ_STORED_COMPLEX_MIN_BYTES", 1024)
     rng = np.random.default_rng(0)
     posterior = np.zeros((2, 4096))
     posterior[:, rng.integers(0, 4096, size=7)] = rng.uniform(size=7)
@@ -31,4 +34,6 @@ def test_fast_archive_loads_like_savez_compressed(tmp_path):
             assert got[name].dtype == want[name].dtype
             np.testing.assert_array_equal(got[name], want[name])
     with zipfile.ZipFile(fast) as archive:
-        assert {info.compress_type for info in archive.infolist()} == {zipfile.ZIP_DEFLATED}
+        compress_types = {info.filename: info.compress_type for info in archive.infolist()}
+    assert compress_types.pop("half0_mean_ft.npy") == zipfile.ZIP_STORED
+    assert set(compress_types.values()) == {zipfile.ZIP_DEFLATED}

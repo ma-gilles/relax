@@ -2647,19 +2647,33 @@ def _parse_args(argv=None):
     return parser.parse_args(argv)
 
 
-def _savez_deflate_fast(path, arrays):
-    """``np.savez_compressed`` at zlib level 1 instead of its default 6.
+# Complex arrays at least this large are Fourier maps, which deflate does not
+# shrink: the 10097 run's three 134 MB maps compressed to 94% and took most of
+# the 12.5 s the archive cost; stored, the archive writes in 0.35 s at 437 MB
+# instead of 391 MB (job 14514567's archive, login node).
+_NPZ_STORED_COMPLEX_MIN_BYTES = 16 * 1024**2
 
-    The archive is an ordinary compressed ``.npz`` that ``np.load`` reads
-    unchanged. Most of its bytes are the dense rotation posteriors, which are
-    almost all zeros: level 1 compresses a 301 MB posterior in 0.5 s instead
-    of 1.4 s, and the reference maps do not compress at either level.
+
+def _savez_deflate_fast(path, arrays):
+    """``np.savez_compressed`` at zlib level 1 instead of its default 6, with Fourier maps stored.
+
+    The archive is an ordinary ``.npz`` that ``np.load`` reads unchanged; zip
+    members may mix stored and deflated entries. The dense rotation posteriors
+    are almost all zeros: level 1 compresses a 301 MB posterior in 0.5 s
+    instead of 1.4 s. Complex arrays of at least
+    ``_NPZ_STORED_COMPLEX_MIN_BYTES`` are the reference maps, which do not
+    compress at either level, so they are stored.
     """
 
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1, allowZip64=True) as archive:
         for name, value in arrays.items():
-            with archive.open(f"{name}.npy", "w", force_zip64=True) as member:
-                np.lib.format.write_array(member, np.asanyarray(value), allow_pickle=True)
+            value = np.asanyarray(value)
+            entry = f"{name}.npy"  # the archive's deflate at level 1
+            if value.dtype.kind == "c" and value.nbytes >= _NPZ_STORED_COMPLEX_MIN_BYTES:
+                entry = zipfile.ZipInfo(entry, date_time=time.localtime(time.time())[:6])
+                entry.compress_type = zipfile.ZIP_STORED
+            with archive.open(entry, "w", force_zip64=True) as member:
+                np.lib.format.write_array(member, value, allow_pickle=True)
 
 
 def main():
