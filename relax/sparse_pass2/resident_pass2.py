@@ -654,22 +654,33 @@ class ResidentChunkMemoryPlan:
 
 def resident_chunk_bytes(
     *, row_capacity: int, image_capacity: int, mstep_block_rows: int, row_bytes: int, n_fine_trans: int,
-    n_recon_pixels: int,
+    n_recon_pixels: int, held_tile_pixels: int | None = None, prepare_tile_pixels: int = 0,
 ) -> int:
-    """Device bytes one chunk holds at its peak: row block + translation tiles + M-step block.
+    """Device bytes one chunk holds at its peak, the larger of its two stages.
 
-    ``row_bytes`` is what one row keeps live (the cached gather's score row, a
-    streamed or local chunk's own projections). The three ``(images, T, P)``
-    complex64 tiles are the reconstruction and noise operands and RELION's Wavg
-    rectangle. An M-step block gathers each row's recon and noise tiles
-    (``[block, T, P]`` complex64, twice) next to its 44-byte-per-pixel sums.
+    The row stage holds the row block, the translated image tiles the M-step
+    reads and the M-step block. ``row_bytes`` is what one row keeps live (the
+    cached gather's score row, a streamed or local chunk's own projections).
+    ``held_tile_pixels`` is the per-image, per-translation complex64 pixel count
+    of the held tiles; the default, three ``P``-pixel tiles, is the
+    reconstruction and noise operands and RELION's Wavg rectangle. An M-step
+    block gathers each row's recon and noise tiles (``[block, T, P]`` complex64,
+    twice) next to its 44-byte-per-pixel sums.
+
+    The preparation stage runs before the chunk's rows are projected and holds
+    ``prepare_tile_pixels`` per image and translation: the translated tiles
+    ``_prepare_bucket_io`` returns, the Wavg rectangle and their row-order
+    copies (:func:`_chunk_operand_rows` keeps its inputs and outputs live
+    together). Zero means the caller builds no translated tiles.
     """
 
     t, p = max(int(n_fine_trans), 1), max(int(n_recon_pixels), 1)
+    held = 3 * p if held_tile_pixels is None else int(held_tile_pixels)
     rows = int(row_capacity) * int(row_bytes)
-    tiles = 3 * int(image_capacity) * t * p * 8
+    tiles = int(image_capacity) * t * held * 8
     mstep = int(mstep_block_rows) * (2 * t * p * 8 + 44 * p)
-    return rows + tiles + mstep
+    prepare = int(image_capacity) * t * int(prepare_tile_pixels) * 8
+    return max(rows + tiles + mstep, prepare)
 
 
 def plan_resident_chunk_memory(
@@ -681,6 +692,8 @@ def plan_resident_chunk_memory(
     n_fine_trans: int,
     n_recon_pixels: int,
     budget_bytes: int | None,
+    held_tile_pixels: int | None = None,
+    prepare_tile_pixels: int = 0,
 ) -> ResidentChunkMemoryPlan:
     """Shrink the three per-chunk classes until their sum fits one budget.
 
@@ -690,7 +703,9 @@ def plan_resident_chunk_memory(
     its translation axis, bigbox 14475506). While the largest chunk exceeds the
     budget, the largest of the three terms shrinks: the M-step block halves, the
     image ladder drops its largest class and then halves a single class, the row
-    ladder drops its largest class. Plans that already fit are unchanged; an
+    ladder drops its largest class. When the preparation stage alone exceeds the
+    budget (:func:`resident_chunk_bytes`), only the image ladder shrinks. Plans
+    that already fit are unchanged; an
     unknown budget does not cap. A row ladder that cannot shrink further is a
     :class:`ResidentConfigurationUnsupported`, which the default route runs on
     the compact engine.
@@ -699,7 +714,14 @@ def plan_resident_chunk_memory(
     rows = tuple(int(v) for v in row_capacity_ladder)
     images = tuple(int(v) for v in image_capacity_ladder)
     block = int(mstep_block_rows)
-    kwargs = dict(row_bytes=row_bytes, n_fine_trans=n_fine_trans, n_recon_pixels=n_recon_pixels)
+    kwargs = dict(
+        row_bytes=row_bytes,
+        n_fine_trans=n_fine_trans,
+        n_recon_pixels=n_recon_pixels,
+        held_tile_pixels=held_tile_pixels,
+        prepare_tile_pixels=prepare_tile_pixels,
+    )
+    held_pixels = 3 * max(int(n_recon_pixels), 1) if held_tile_pixels is None else int(held_tile_pixels)
 
     def peak():
         return resident_chunk_bytes(
@@ -709,11 +731,15 @@ def plan_resident_chunk_memory(
     if budget_bytes is not None:
         while peak() > int(budget_bytes):
             t, p = max(int(n_fine_trans), 1), max(int(n_recon_pixels), 1)
+            images_can_shrink = len(images) > 1 or max(images) > 1
             terms = {
                 "mstep": block * (2 * t * p * 8 + 44 * p) if block > 1 else -1,
-                "images": 3 * max(images) * t * p * 8 if (len(images) > 1 or max(images) > 1) else -1,
+                "images": max(images) * t * held_pixels * 8 if images_can_shrink else -1,
                 "rows": max(rows) * int(row_bytes) if len(rows) > 1 else -1,
             }
+            if max(images) * t * int(prepare_tile_pixels) * 8 > int(budget_bytes):
+                # The preparation stage alone overflows; only fewer images shrink it.
+                terms = {"images": terms["images"] if images_can_shrink else -1}
             largest = max(terms, key=terms.get)
             if terms[largest] < 0:
                 raise ResidentConfigurationUnsupported(

@@ -483,6 +483,42 @@ def test_joint_chunk_plan_fits_the_10202_iteration_14_shape():
         )
 
 
+def test_joint_chunk_plan_counts_the_local_preparation_stage():
+    """10202 it22 (14509861): T=84, 153857 recon and 155355 score pixels, a 626 x 314 Wavg
+    rectangle. Three recon tiles per image put 32 images and an 18.55 GiB peak inside a
+    22.2 GiB budget, but the local preparation holds ~30 GiB of translated tiles at 32
+    images and ran out of memory. Counting that stage shrinks the image classes until
+    it fits; the default count (no preparation stage) reproduces the old plan."""
+
+    from relax.sparse_pass2.resident_local_pass2 import _local_chunk_tile_pixels
+
+    gib = 1024**3
+    t, p_recon, p_score, n_rect = 84, 153857, 155355, 626 * 314
+    row_bytes = int(3016.72 * 1024)
+    budget = int(22.20 * gib)
+    kwargs = dict(
+        row_capacity_ladder=(1024,), image_capacity_ladder=(32,), mstep_block_rows=32,
+        row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, budget_bytes=budget,
+    )
+    old = rp.plan_resident_chunk_memory(**kwargs)
+    assert old.image_capacity_ladder == (32,)
+    assert old.peak_bytes / gib == pytest.approx(18.55, abs=0.01)
+
+    tiles = _local_chunk_tile_pixels(
+        n_score_pixels=p_score, n_recon_pixels=p_recon, n_rect_pixels=n_rect, n_exact_rect_pixels=p_recon
+    )
+    assert 32 * t * tiles["prepare_tile_pixels"] * 8 > budget
+    plan = rp.plan_resident_chunk_memory(**kwargs, **tiles)
+    assert plan.peak_bytes <= budget
+    assert max(plan.image_capacity_ladder) * t * tiles["prepare_tile_pixels"] * 8 <= budget
+    assert max(plan.image_capacity_ladder) >= 8
+    assert plan.row_capacity_ladder == (1024,)  # only the image classes pay for the preparation stage
+    assert plan.peak_bytes == rp.resident_chunk_bytes(
+        row_capacity=1024, image_capacity=max(plan.image_capacity_ladder), mstep_block_rows=plan.mstep_block_rows,
+        row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, **tiles,
+    )
+
+
 def test_joint_chunk_plan_leaves_a_box_256_plan_unchanged():
     """Box-256 K=1 plans (10097, noise1 50k: T<=116, <=8.4k pixels) fit the joint budget
     as they stand; the planner changes nothing there, and an unknown budget never caps."""

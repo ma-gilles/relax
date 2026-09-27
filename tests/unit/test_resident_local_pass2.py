@@ -497,6 +497,59 @@ def test_resident_local_persistent_texture_matches_the_per_call_texture(monkeypa
 
 
 @requires_resident_gpu
+def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, _resident_local_env):
+    """The capacity plan's per-stage tile counts are the translated arrays a chunk
+    actually holds. EMPIAR-10202 it22 (14509861) ran out of memory when the plan
+    counted three recon tiles and the preparation held about ten; a new tile in
+    the preparation or the row-order copies must update ``_local_chunk_tile_pixels``."""
+
+    from relax.sparse_pass2 import resident_pass2 as rp_module
+
+    planned = []
+    measured = []
+    real_plan = rp_module.plan_resident_chunk_memory
+    real_prepare = rp_module._prepare_chunk_reconstruction_operands
+    real_rows = rp_module._chunk_operand_rows
+
+    def plan(**kwargs):
+        planned.append(kwargs)
+        return real_plan(**kwargs)
+
+    def translated_bytes(capacity, n_trans, exclude):
+        total = 0
+        for array in jax.live_arrays():
+            if id(array) in exclude or array.ndim < 2:
+                continue
+            if array.shape[0] == capacity * n_trans or tuple(array.shape[:2]) == (capacity, n_trans):
+                total += array.nbytes
+        return total
+
+    def prepare(**kwargs):
+        capacity, n_trans = int(kwargs["chunk"].image_capacity), int(kwargs["n_fine_trans"])
+        before = {id(a) for a in jax.live_arrays()}
+
+        def rows(arrays, *args, **row_kwargs):
+            out = real_rows(arrays, *args, **row_kwargs)
+            measured.append(("prepare_tile_pixels", capacity * n_trans, translated_bytes(capacity, n_trans, before)))
+            return out
+
+        monkeypatch.setattr(rp_module, "_chunk_operand_rows", rows)
+        try:
+            result = real_prepare(**kwargs)
+        finally:
+            monkeypatch.setattr(rp_module, "_chunk_operand_rows", real_rows)
+        measured.append(("held_tile_pixels", capacity * n_trans, translated_bytes(capacity, n_trans, before)))
+        return result
+
+    monkeypatch.setattr(rp_module, "plan_resident_chunk_memory", plan)
+    monkeypatch.setattr(rp_module, "_prepare_chunk_reconstruction_operands", prepare)
+    _run(_case(), resident=True, monkeypatch=monkeypatch)
+    assert len(planned) == 1 and measured
+    for key, image_translations, live in measured:
+        assert live == image_translations * planned[0][key] * 8, (key, live, planned[0][key])
+
+
+@requires_resident_gpu
 def test_resident_local_matches_the_exact_engine(monkeypatch, _resident_local_env):
     """Pose, translation and every statistic against the exact local engine.
 

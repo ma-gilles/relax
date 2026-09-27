@@ -311,6 +311,29 @@ def require_resident_local_configuration(**kwargs) -> None:
         )
 
 
+def _local_chunk_tile_pixels(
+    *, n_score_pixels: int, n_recon_pixels: int, n_rect_pixels: int, n_exact_rect_pixels: int
+) -> dict:
+    """Per-image, per-translation complex64 pixels of a local chunk's translated tiles, by stage.
+
+    Counted from the live device arrays of one chunk (bigbox 14514327): the
+    preparation peak is inside :func:`resident_pass2._chunk_operand_rows`, where
+    ``_prepare_bucket_io``'s two score-window and two recon-window tiles, the
+    Wavg rectangle and the row-order copies (recon, noise, rectangle and its
+    exact positions) are live together. The chunk then holds the three
+    row-order recon-window tiles and the rectangle through projection, scoring
+    and the M-step. Planning with three recon tiles instead let EMPIAR-10202
+    iteration 22 take 32 images per chunk, a ~30 GiB preparation against a
+    22 GiB budget, and run out of memory (14509861).
+    """
+
+    s, p, r, e = int(n_score_pixels), int(n_recon_pixels), int(n_rect_pixels), int(n_exact_rect_pixels)
+    return {
+        "held_tile_pixels": 2 * p + r + e,
+        "prepare_tile_pixels": 2 * s + 4 * p + 2 * r + e,
+    }
+
+
 def _open_resident_local_projector_texture(
     relion_projector_half, *, relion_projector_r_max, projection_padding_factor, relion_texture_interp
 ):
@@ -752,6 +775,12 @@ def compute_local_search_resident(
             n_fine_trans=n_fine_trans,
             n_recon_pixels=n_recon_windowed,
             budget_bytes=chunk_budget_bytes,
+            **_local_chunk_tile_pixels(
+                n_score_pixels=n_windowed,
+                n_recon_pixels=n_recon_windowed,
+                n_rect_pixels=n_rect,
+                n_exact_rect_pixels=int(relion_wavg_rectangle.exact_positions.size),
+            ),
         )
         row_ladder = memory_plan.row_capacity_ladder
         image_ladder = memory_plan.image_capacity_ladder
