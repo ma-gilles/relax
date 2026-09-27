@@ -121,6 +121,7 @@ from relax.sparse_pass2.compile_ahead import (
     resolve_compile_ahead_config,
 )
 from relax.sparse_pass2.resident_candidates import (
+    map_over_classes,
     materialize_chunk,
     merge_class_tables,
     plan_capacity_chunks,
@@ -2277,10 +2278,11 @@ def _resident_pass2(
     # ---- per-image hypotheses and candidate tables, one per class ---------
     # A K-class table joins the classes' own tables in RELION's class-major
     # hidden space (merge_class_tables; docs/development/resident_segments.md).
-    prep_s = table_s = 0.0
-    tables_by_class = []
-    for significant_sample_indices, rotation_log_prior in zip(class_supports, class_rotation_priors):
-        class_tables, class_prep_s, class_table_s = _class_candidate_tables(
+    # The classes build side by side (map_over_classes); prep_s and table_s
+    # sum the per-class seconds, which can exceed the wall of the build.
+    def class_build(class_inputs):
+        significant_sample_indices, rotation_log_prior = class_inputs
+        return _class_candidate_tables(
             significant_sample_indices,
             rotation_log_prior,
             n_images=n_images,
@@ -2299,9 +2301,11 @@ def _resident_pass2(
             dtype=precision_policy.score_real_dtype,
             symmetry_label=symmetry_label,
         )
-        tables_by_class.append(class_tables)
-        prep_s += class_prep_s
-        table_s += class_table_s
+
+    class_builds = map_over_classes(class_build, zip(class_supports, class_rotation_priors))
+    tables_by_class = [class_tables for class_tables, _, _ in class_builds]
+    prep_s = sum(class_prep_s for _, class_prep_s, _ in class_builds)
+    table_s = sum(class_table_s for _, _, class_table_s in class_builds)
     table_t0 = time.time()
     tables = tables_by_class[0] if classes is None else merge_class_tables(tables_by_class)
     tables = _with_reconstruction_groups(

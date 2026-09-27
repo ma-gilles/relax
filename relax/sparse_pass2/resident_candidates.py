@@ -42,6 +42,8 @@ Index conventions
 
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import numpy as np
@@ -383,6 +385,27 @@ def build_resident_candidate_tables(
     )
 
 
+def map_over_classes(function, items) -> list:
+    """``[function(item) for item in items]``, one host thread per class.
+
+    The per-class candidate work is NumPy on disjoint inputs and outputs, which
+    releases the GIL, so the classes run side by side; results keep the input
+    order. On Class3D K=4 100k the serial class loop and merge were about 170 s
+    of host time with the device idle (py-spy of job 14557476).
+    """
+
+    items = list(items)
+    try:
+        cpus = len(os.sched_getaffinity(0))
+    except AttributeError:  # pragma: no cover - non-Linux
+        cpus = os.cpu_count() or 1
+    workers = min(len(items), max(1, cpus))
+    if workers <= 1:
+        return [function(item) for item in items]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(function, items))
+
+
 def merge_class_tables(tables_by_class) -> ResidentCandidateTables:
     """One K-class candidate table from K single-class tables of the same images.
 
@@ -423,8 +446,9 @@ def merge_class_tables(tables_by_class) -> ResidentCandidateTables:
         [np.diff(np.asarray(tables.row_offsets, dtype=np.int64)) for tables in tables_by_class]
     )  # [K, n_images]
     class_parent_counts = np.zeros((n_classes, n_images), dtype=np.int64)
-    class_parts = []
-    for class_index, tables in enumerate(tables_by_class):
+
+    def class_part(class_index):
+        tables = tables_by_class[class_index]
         row_offsets_k = np.asarray(tables.row_offsets, dtype=np.int64)
         row_image = np.asarray(tables.row_unit, dtype=np.int64)
         parent_local = np.asarray(tables.row_parent_local, dtype=np.int64)
@@ -451,16 +475,17 @@ def merge_class_tables(tables_by_class) -> ResidentCandidateTables:
             tables.parent_offsets[parent_image[from_table]].astype(np.int64) + within[from_table]
         ]
         bits[parent_mode == _MASK_MODE_FULL] = all_translations_words(first.n_coarse_trans)
-        class_parts.append(
-            dict(
-                row_image=row_image,
-                row_rank=np.arange(row_image.size, dtype=np.int64) - row_offsets_k[row_image],
-                parent_local=parent_local,
-                parent_image=parent_image,
-                parent_rank=within,
-                bits=bits,
-            )
+        return dict(
+            row_image=row_image,
+            row_rank=np.arange(row_image.size, dtype=np.int64) - row_offsets_k[row_image],
+            parent_local=parent_local,
+            parent_image=parent_image,
+            parent_rank=within,
+            bits=bits,
         )
+
+    # Each class writes only its own row of class_parent_counts.
+    class_parts = map_over_classes(class_part, range(n_classes))
 
     row_offsets = np.zeros(n_images + 1, dtype=np.int64)
     row_offsets[1:] = np.cumsum(class_row_counts.sum(axis=0))
@@ -476,7 +501,10 @@ def merge_class_tables(tables_by_class) -> ResidentCandidateTables:
     merged_log_prior = np.empty(n_rows, dtype=np.float32)
     merged_class = np.empty(n_rows, dtype=np.int32)
     merged_bits = np.empty((int(parent_offsets[-1]), n_words), dtype=np.uint32)
-    for class_index, (tables, part) in enumerate(zip(tables_by_class, class_parts)):
+
+    def place_class(class_index):
+        # A class's destinations are disjoint from every other class's.
+        tables, part = tables_by_class[class_index], class_parts[class_index]
         row_image = part["row_image"]
         destination = row_offsets[row_image] + row_class_shift[class_index, row_image] + part["row_rank"]
         merged_unit[destination] = row_image
@@ -488,6 +516,8 @@ def merge_class_tables(tables_by_class) -> ResidentCandidateTables:
         merged_bits[
             parent_offsets[parent_image] + parent_class_shift[class_index, parent_image] + part["parent_rank"]
         ] = part["bits"]
+
+    map_over_classes(place_class, range(n_classes))
 
     return ResidentCandidateTables(
         n_images=n_images,

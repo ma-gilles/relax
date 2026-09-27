@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from test_resident_significance import _encoded_supports, _supports
 
 from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.sparse_pass2 import resident_candidates
 from relax.sparse_pass2.resident_candidates import (
     build_resident_candidate_tables,
     expand_mask_rows,
@@ -107,3 +109,22 @@ def test_chunks_carry_the_row_class():
             materialized["row_class"][: chunk.n_valid_rows], merged.row_class[chunk.row_start : chunk.row_stop]
         )
         assert not materialized["row_class"][chunk.n_valid_rows :].any()
+
+
+def test_threaded_merge_matches_the_serial_merge(monkeypatch):
+    """The classes are merged on host threads; one worker gives the same table."""
+
+    class_tables = _class_tables(seed=13, n_classes=4)
+    threaded = merge_class_tables(class_tables)
+    monkeypatch.setattr(resident_candidates.os, "sched_getaffinity", lambda pid: {0})
+    serial = merge_class_tables(class_tables)
+    for name in (
+        "row_offsets", "row_unit", "row_fine_rot", "row_parent_local", "row_class",
+        "mask_mode", "parent_offsets", "parent_trans_bits",
+    ):
+        np.testing.assert_array_equal(getattr(threaded, name), getattr(serial, name), err_msg=name)
+    assert_matches(threaded.row_log_prior, serial.row_log_prior)
+
+
+def test_map_over_classes_keeps_the_input_order():
+    assert resident_candidates.map_over_classes(lambda k: k * k, range(7)) == [k * k for k in range(7)]
