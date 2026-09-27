@@ -41,6 +41,8 @@ _STATE_ARRAY_FIELDS = frozenset({"best_rotations", "best_translations"})
 REFINEMENT_STATE_SCALAR_FIELDS = tuple(
     f.name for f in dataclasses.fields(RefinementState) if f.name not in _STATE_ARRAY_FIELDS
 )
+# Limits the command line sets rather than state the iterations evolve; a continued run keeps its own.
+RUN_LIMIT_FIELDS = ("max_healpix_order",)
 
 
 @dataclass
@@ -87,7 +89,12 @@ class IterationSnapshot:
         return int(self.n_classes) > 1
 
     def refinement_state(self, base: RefinementState) -> RefinementState:
-        """``base`` with every scalar field replaced by the snapshot's value."""
+        """``base`` with every scalar field replaced by the snapshot's value.
+
+        Except the configured limits in :data:`RUN_LIMIT_FIELDS`, which come from
+        the continuing run's command line: a continuation from a run capped at
+        HEALPix 7 kept that cap over ``--max_healpix_order 12`` (bigbox 14557970).
+        """
 
         unknown = sorted(set(self.state_fields) - set(REFINEMENT_STATE_SCALAR_FIELDS))
         missing = sorted(set(REFINEMENT_STATE_SCALAR_FIELDS) - set(self.state_fields))
@@ -95,7 +102,8 @@ class IterationSnapshot:
             raise ValueError(
                 f"snapshot RefinementState fields do not match: unknown={unknown} missing={missing}"
             )
-        return dataclasses.replace(base, **self.state_fields)
+        restored = {name: value for name, value in self.state_fields.items() if name not in RUN_LIMIT_FIELDS}
+        return dataclasses.replace(base, **restored)
 
 
 def refinement_state_fields(state: RefinementState) -> dict:
@@ -104,7 +112,9 @@ def refinement_state_fields(state: RefinementState) -> dict:
     values = {}
     for name in REFINEMENT_STATE_SCALAR_FIELDS:
         value = getattr(state, name)
-        if isinstance(value, (bool, np.bool_)):
+        if value is None:
+            values[name] = None
+        elif isinstance(value, (bool, np.bool_)):
             values[name] = bool(value)
         elif isinstance(value, (int, np.integer)):
             values[name] = int(value)

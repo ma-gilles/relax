@@ -757,6 +757,9 @@ def _state_value(name, text):
     from relax.helpers.convergence import RefinementState
 
     default = RefinementState.__dataclass_fields__[name].default
+    if default is None:
+        # An optional integer limit (max_healpix_order); None is written as "None".
+        return None if text == "None" else int(text)
     if isinstance(default, bool):
         return _bool(text)
     if isinstance(default, int):

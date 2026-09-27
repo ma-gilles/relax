@@ -226,6 +226,27 @@ def test_auto_refine_run_files_round_trip(tmp_path):
         assert_matches(read.unfiltered_means[h], snapshot.unfiltered_means[h], rtol=1e-6)
 
 
+def test_healpix_cap_round_trips_and_the_continuing_run_keeps_its_own(tmp_path):
+    """An uncapped run writes max_healpix_order as None and reads it back; a continued run
+    keeps its own command-line limit (a restored cap of 7 overrode --max_healpix_order 12,
+    bigbox 14557970)."""
+
+    rng = np.random.default_rng(1)
+    input_star = _write_input_star(tmp_path, 7)
+    half_rows = [np.array([4, 0, 2, 6]), np.array([5, 1, 3])]
+    names = read_star_blocks(input_star)["particles"]["rlnImageName"]
+    for cap in (None, 7):
+        snapshot = _k1_snapshot([4, 3], rng)
+        snapshot.state_fields["max_healpix_order"] = cap
+        optimiser = _writer(tmp_path, input_star, half_rows)(snapshot)
+        read = read_run_files(optimiser, image_names=names, half_rows=half_rows)
+        assert read.state_fields["max_healpix_order"] == cap
+        for limit in (None, 12):
+            restored = read.refinement_state(RefinementState(max_healpix_order=limit))
+            assert restored.max_healpix_order == limit
+            assert restored.healpix_order == snapshot.state_fields["healpix_order"]
+
+
 def test_run_files_use_relion_blocks_and_keep_input_columns(tmp_path):
     rng = np.random.default_rng(1)
     input_star = _write_input_star(tmp_path, 7)
