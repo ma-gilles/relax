@@ -289,7 +289,9 @@ def test_resident_driver_is_relions_fine_pass(_resident_env, current_size, noise
     _assert_k1_pass(rp.compute_pass2_stats_resident(**args), reference)
 
 
-def _assert_k1_pass(out, reference, *, posterior=True, scale_sums=True, best=None, stats_rtol=1e-6):
+def _assert_k1_pass(
+    out, reference, *, posterior=True, scale_sums=True, best=None, stats_rtol=1e-6, noise_rtol=1e-6
+):
     """A K=1 driver result against the reference: discrete state, posterior, BPref and statistics."""
 
     posts = ref.posteriors(reference)
@@ -336,13 +338,13 @@ def _assert_k1_pass(out, reference, *, posterior=True, scale_sums=True, best=Non
     # relax keeps the image-power tail beyond current_size/2 in wsum_img_power; RELION adds it
     # to both sums (acc_ml_optimiser_impl.h:4947-4948).
     total_noise = np.asarray(noise_stats.wsum_sigma2_noise) + np.asarray(noise_stats.wsum_img_power)
-    assert _rel_l2(total_noise, mstep["wsum_sigma2_noise"]) < 1e-6
+    assert _rel_l2(total_noise, mstep["wsum_sigma2_noise"]) < noise_rtol
     assert_matches(np.asarray(noise_stats.wsum_img_power), mstep["wsum_img_power"], rtol=F32)
     assert _rel_l2(noise_stats.wsum_norm_correction, mstep["wsum_norm_correction"]) < stats_rtol
     if scale_sums:
         for name in ("wsum_scale_correction_xa", "wsum_scale_correction_aa"):
             assert _rel_l2(getattr(noise_stats, name), mstep[name]) < stats_rtol, name
-    assert float(noise_stats.sumw) == pytest.approx(mstep["sumw"], rel=1e-6)
+    assert float(noise_stats.sumw) == pytest.approx(mstep["sumw"], rel=noise_rtol)
 
 
 @requires_resident_gpu
@@ -401,10 +403,18 @@ def test_zero_oversampling_reuses_relions_coarse_normalization(_resident_env):
     # so the statistics bound is derived from the largest per-image cell count, with a factor of
     # 2: it is 1.1e-5 here (up to 2304 cells). Measured 3.2e-6 relative L2 on the per-image norm
     # sums (A100, job 14487449). The pruned passes above keep the 1e-6 bound (at most 3.1e-7).
+    # The noise sums (with their weight total sumw) take the same derived bound (user decision
+    # 2026-09-27): measured 1.0036e-6 relative L2 on H100 (jobs 14508921, 14508156; below 1e-6 in
+    # 14508412, same code); sumw 1.03e-6 relative (job 14548775).
     n_cells = max(len(post.cells) for post in ref.posteriors(reference))
     stats_rtol = 2.0 * np.sqrt(n_cells) * float(np.finfo(np.float32).eps)
     _assert_k1_pass(
-        rp.compute_pass2_stats_resident(**args), reference, posterior=False, best=winners, stats_rtol=stats_rtol
+        rp.compute_pass2_stats_resident(**args),
+        reference,
+        posterior=False,
+        best=winners,
+        stats_rtol=stats_rtol,
+        noise_rtol=stats_rtol,
     )
 
 
@@ -584,15 +594,12 @@ def _run_local(case, current_size: int):
 
 
 @requires_resident_gpu
-@pytest.mark.parametrize("current_size, noise", [(6, 200.0), (6, 2.0), (8, 200.0)])
+@pytest.mark.parametrize("current_size, noise", [(6, 200.0), (6, 2.0), (8, 200.0), (8, 2.0)])
 def test_resident_local_pass_is_relions_local_fine_pass(monkeypatch, noise, current_size):
     """The resident local fine pass against the reference, windowed and at the box.
 
     Current size 8 is RELION's final all-data shape: its window still cuts the
     corners, and the local search routes that pass to the resident driver too.
-    The box case runs at noise 200 only: at noise 2 its Ft_y relative L2 is
-    1.18e-5 (the exact local engine's is 2.3e-5, job 14508921), above this
-    test's 1e-5 bound, which is not widened here.
     """
 
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT", "1")
@@ -633,7 +640,17 @@ def test_resident_local_pass_is_relions_local_fine_pass(monkeypatch, noise, curr
         rtol=0.0,
         atol=posterior_atol * len(posts),
     )
-    assert _rel_l2(out.Ft_y, _accumulator(out.Ft_y, mstep["data"])) < 1e-5
+    ft_y_rtol = 1e-5
+    if (current_size, noise) == (8, 2.0):
+        # At the box and low noise the posteriors are sharp and every voxel of the float32
+        # accumulator sums the weighted hypotheses of all images; the rounding error of a float32
+        # sum of n terms grows like sqrt(n) eps32, so this case's bound is derived from the
+        # total cell count (user decision 2026-09-27): 3.1e-5 here (16480 cells). Measured
+        # 1.18e-5 relative L2 for the resident driver and 2.3e-5 for the exact local engine
+        # (H100, job 14508921). Every other case keeps the 1e-5 bound.
+        n_cells = sum(len(post.cells) for post in posts)
+        ft_y_rtol = 2.0 * np.sqrt(n_cells) * float(np.finfo(np.float32).eps)
+    assert _rel_l2(out.Ft_y, _accumulator(out.Ft_y, mstep["data"])) < ft_y_rtol
     assert _rel_l2(out.Ft_ctf, _accumulator(out.Ft_ctf, mstep["weight"])) < 1e-5
     noise_stats = out.noise_stats
     total_noise = np.asarray(noise_stats.wsum_sigma2_noise) + np.asarray(noise_stats.wsum_img_power)
