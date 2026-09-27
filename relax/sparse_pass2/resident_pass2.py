@@ -1171,34 +1171,6 @@ def _resident_block_wavg_algebraic_terms(
     return jnp.stack((xa, aa, diff2), axis=-1)
 
 
-@partial(jax.jit, static_argnames=("n_rect",))
-def _resident_block_wavg_rectangle_terms(
-    exact_terms,  # float32 [block, P_exact, 3]
-    exact_positions,  # int32 [P_exact]
-    *,
-    n_rect: int,
-):
-    """One row block's Wavg rectangle: the rows' exact terms, zero elsewhere.
-
-    The flat-row twin of ``_relion_wavg_rectangle_triplet_terms`` fills the
-    rectangle's ``diff2`` slot with each row's posterior-weighted image power
-    and then overwrites the exact-radius positions with the projected triplet.
-    The image power ``sum_t w[r, t] |x_t[p]|^2`` depends on the row only
-    through its weights, and the Wavg accumulator sums an image's rows, so the
-    chunk adds ``sum_t (sum_r w[r, t]) |x_t[p]|^2`` once per image instead
-    (:func:`_add_wavg_rectangle_image_power`); these block terms are the exact
-    positions alone. RELION adds these per-orientation sums with atomics
-    (wavg.cuh:147-149), so the grouping of the additions is not RELION's
-    either way.
-    """
-
-    rows = exact_terms.shape[0]
-    rectangle_terms = jnp.zeros((rows, int(n_rect), 3), dtype=jnp.float32)
-    return rectangle_terms.at[:, jnp.asarray(exact_positions, dtype=jnp.int32), :].set(
-        jnp.asarray(exact_terms, dtype=jnp.float32)
-    )
-
-
 @partial(jax.jit, static_argnames=("power_at_exact_positions",))
 def _add_wavg_rectangle_image_power(
     wavg_triplet_pixels,  # float32 [C_B, P_rect, 3]
@@ -1211,6 +1183,14 @@ def _add_wavg_rectangle_image_power(
     power_at_exact_positions: bool,
 ):
     """Add a chunk's Wavg image power to its per-image ``diff2`` slot, once.
+
+    The flat-row twin of ``_relion_wavg_rectangle_triplet_terms`` fills the
+    rectangle's ``diff2`` slot with each row's posterior-weighted image power
+    and overwrites the exact-radius positions with the projected triplet; the
+    M-step blocks add only their rows' exact terms
+    (:func:`~relax.cuda.kernels.relion_wavg_exact_atomic_flat_rows_triplet_add_f32`).
+    RELION adds these per-orientation sums with atomics (wavg.cuh:147-149), so
+    the grouping of the additions is not RELION's either way.
 
     Per image, the rows' power sums to the power of the image's translation
     marginal, ``sum_t (sum_r w[r, t]) |x_t[p]|^2``, so one contraction per
@@ -5972,19 +5952,14 @@ def _resident_mstep_block(
             logical_recon_pixels,
         )
     # The image power is added once per chunk after the block walk
-    # (_add_chunk_wavg_image_power); the blocks add their rows' exact terms.
-    rectangle_terms = _resident_block_wavg_rectangle_terms(
-        exact_terms,
-        tables.exact_positions,
-        n_rect=int(operands.raw_translated_wavg_rectangle.shape[-1]),
-    )
-    wavg_triplet_pixels = (
-        cuda_backproject.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
-            rectangle_terms,
-            block_kernel_ids,
-            carry.wavg_triplet_pixels,
-            logical_rect_pixels,
-        )
+    # (_add_chunk_wavg_image_power); the blocks add their rows' exact terms at
+    # their rectangle positions, the rest of the rectangle receiving nothing.
+    wavg_triplet_pixels = cuda_backproject.relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
+        jnp.asarray(exact_terms, dtype=jnp.float32),
+        block_kernel_ids,
+        jnp.asarray(tables.exact_positions, dtype=jnp.int32),
+        carry.wavg_triplet_pixels,
+        logical_rect_pixels,
     )
 
     block_shells, block_a2, block_xa = _resident_block_noise_and_norm(

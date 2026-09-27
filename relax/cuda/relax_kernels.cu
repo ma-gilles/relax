@@ -1260,8 +1260,16 @@ relion_wavg_rotation_atomic_runtime_triplet_f32_kernel(
     const int32_t* __restrict__ runtime_logical_pixel_count,
     const int32_t* __restrict__ row_image_ids = nullptr,
     int64_t row_count = 0,
-    int64_t batch_size = 0)
+    int64_t batch_size = 0,
+    const int32_t* __restrict__ exact_positions = nullptr,
+    int output_pixel_capacity = 0)
 {
+    /* ``exact_positions`` (flat rows only): ``terms`` holds only the Wavg
+     * rectangle's exact-radius pixels, ``pixel_capacity`` of them, and pixel
+     * ``i`` adds into rectangle position ``exact_positions[i]`` of an
+     * ``output_pixel_capacity``-wide accumulator.  The other positions would
+     * receive exact zeros, which change no accumulator value. */
+    const int out_capacity = exact_positions == nullptr ? pixel_capacity : output_pixel_capacity;
     const int rotation = FLAT_ROWS ? 0 : static_cast<int>(blockIdx.x);
     const int64_t row = FLAT_ROWS
         ? static_cast<int64_t>(blockIdx.x)
@@ -1269,9 +1277,9 @@ relion_wavg_rotation_atomic_runtime_triplet_f32_kernel(
               static_cast<int64_t>(blockIdx.x);
     int64_t batch = FLAT_ROWS ? -1 : static_cast<int64_t>(blockIdx.y);
     const int logical_pixel_count = runtime_logical_pixel_count == nullptr
-        ? pixel_capacity
+        ? out_capacity
         : runtime_logical_pixel_count[0];
-    if (logical_pixel_count < 0 || logical_pixel_count > pixel_capacity) {
+    if (logical_pixel_count < 0 || logical_pixel_count > out_capacity) {
         if (row == 0 && threadIdx.x == 0)
             output[0] = nanf("");
         return;
@@ -1293,12 +1301,14 @@ relion_wavg_rotation_atomic_runtime_triplet_f32_kernel(
          * idle.  Each (image, pixel) cell still sums its run's rows in row
          * order in one thread, so the values are unchanged. */
         const int pixel = static_cast<int>(blockIdx.y) * blockDim.x + threadIdx.x;
-        if (pixel >= logical_pixel_count) return;
+        if (pixel >= pixel_capacity) return;
+        const int position = exact_positions == nullptr ? pixel : exact_positions[pixel];
+        if (position >= logical_pixel_count) return;
         int64_t run_end = row + 1;
         while (run_end < row_count && static_cast<int64_t>(row_image_ids[run_end]) == batch)
             ++run_end;
         {
-            const int64_t output_index = (batch * pixel_capacity + pixel) * 3;
+            const int64_t output_index = (batch * out_capacity + position) * 3;
             float sum0 = 0.0f;
             float sum1 = 0.0f;
             float sum2 = 0.0f;
@@ -1356,7 +1366,9 @@ cudaError_t launch_relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32
     int64_t batch_size,
     int64_t row_count,
     int64_t pixel_capacity,
-    const int32_t* runtime_logical_pixel_count)
+    const int32_t* runtime_logical_pixel_count,
+    const int32_t* exact_positions = nullptr,
+    int64_t output_pixel_capacity = 0)
 {
     if (row_count == 0 || pixel_capacity == 0) return cudaSuccess;
     dim3 block(256);
@@ -1371,7 +1383,9 @@ cudaError_t launch_relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32
         runtime_logical_pixel_count,
         row_image_ids,
         row_count,
-        batch_size);
+        batch_size,
+        exact_positions,
+        static_cast<int>(output_pixel_capacity));
     return cudaGetLastError();
 }
 
@@ -8961,6 +8975,77 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
     RelionWavgRotationAtomicRuntimeFlatRowsTripletAddF32Impl,
     ffi::Ffi::Bind()
         .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>());
+
+/* The flat-row Wavg atomics on the rectangle's exact-radius pixels only:
+ * ``terms`` [Q, P_exact, 3] adds into positions ``exact_positions`` of the
+ * [B, P_rect, 3] accumulator.  The embedding of the exact terms in a zeroed
+ * rectangle is gone; positions outside the exact radius received zeros. */
+ffi::Error RelionWavgExactAtomicFlatRowsTripletAddF32Impl(
+    cudaStream_t stream,
+    ffi::AnyBuffer terms,
+    ffi::AnyBuffer row_image_ids,
+    ffi::AnyBuffer exact_positions,
+    ffi::AnyBuffer accumulator_in,
+    ffi::AnyBuffer logical_pixel_count,
+    ffi::Result<ffi::AnyBuffer> accumulator_out)
+{
+    if (terms.element_type() != ffi::DataType::F32 ||
+        accumulator_in.element_type() != ffi::DataType::F32 ||
+        accumulator_out->element_type() != ffi::DataType::F32 ||
+        row_image_ids.element_type() != ffi::DataType::S32 ||
+        exact_positions.element_type() != ffi::DataType::S32 ||
+        logical_pixel_count.element_type() != ffi::DataType::S32 ||
+        logical_pixel_count.dimensions().size() != 0)
+        return ffi::Error::InvalidArgument(
+            "RelionWavgExactAtomicFlatRowsTripletAddF32: invalid buffers");
+    const auto dims = terms.dimensions();
+    const auto row_dims = row_image_ids.dimensions();
+    const auto position_dims = exact_positions.dimensions();
+    const auto accumulator_dims = accumulator_in.dimensions();
+    const auto output_dims = accumulator_out->dimensions();
+    if (dims.size() != 3 || row_dims.size() != 1 || position_dims.size() != 1 ||
+        accumulator_dims.size() != 3 || output_dims.size() != 3 ||
+        dims[2] != 3 || accumulator_dims[2] != 3 ||
+        output_dims[0] != accumulator_dims[0] ||
+        output_dims[1] != accumulator_dims[1] ||
+        output_dims[2] != accumulator_dims[2] ||
+        row_dims[0] != dims[0] || position_dims[0] != dims[1] ||
+        dims[1] > accumulator_dims[1] ||
+        dims[0] <= 0 || dims[0] > std::numeric_limits<int>::max() ||
+        dims[1] <= 0 || dims[1] > std::numeric_limits<int>::max() ||
+        accumulator_dims[1] > std::numeric_limits<int>::max() ||
+        accumulator_dims[0] <= 0 ||
+        accumulator_dims[0] > std::numeric_limits<int>::max())
+        return ffi::Error::InvalidArgument(
+            "RelionWavgExactAtomicFlatRowsTripletAddF32: inconsistent topology");
+    cudaError_t err =
+        launch_relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
+            stream,
+            static_cast<const float*>(terms.untyped_data()),
+            static_cast<const int32_t*>(row_image_ids.untyped_data()),
+            static_cast<float*>(accumulator_out->untyped_data()),
+            accumulator_dims[0],
+            dims[0],
+            dims[1],
+            static_cast<const int32_t*>(logical_pixel_count.untyped_data()),
+            static_cast<const int32_t*>(exact_positions.untyped_data()),
+            accumulator_dims[1]);
+    if (err != cudaSuccess)
+        return ffi::Error::Internal(std::string("CUDA: ") + cudaGetErrorString(err));
+    return ffi::Error::Success();
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    RelionWavgExactAtomicFlatRowsTripletAddF32,
+    RelionWavgExactAtomicFlatRowsTripletAddF32Impl,
+    ffi::Ffi::Bind()
+        .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()

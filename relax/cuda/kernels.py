@@ -6072,6 +6072,54 @@ def relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
     )(terms, row_image_ids, accumulator, logical_pixel_count)
 
 
+def relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
+    exact_terms: jax.Array,
+    row_image_ids: jax.Array,
+    exact_positions: jax.Array,
+    accumulator: jax.Array,
+    logical_pixel_count: jax.Array,
+) -> jax.Array:
+    """:func:`relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32` on the exact pixels only.
+
+    ``exact_terms`` is ``(Q, P_exact, 3)`` and ``exact_positions`` ``(P_exact,)``
+    their positions in the ``(B, P_rect, 3)`` accumulator's rectangle; the
+    rectangle's other positions would have received zeros, which change no
+    accumulator value. Each image's run of rows is summed in row order and
+    added with one atomic per cell, as in the rectangle form. Positions at or
+    past ``logical_pixel_count`` are skipped.
+    """
+
+    exact_terms = jnp.asarray(exact_terms)
+    row_image_ids = jnp.asarray(row_image_ids)
+    exact_positions = jnp.asarray(exact_positions)
+    accumulator = jnp.asarray(accumulator)
+    logical_pixel_count = jnp.asarray(logical_pixel_count, dtype=jnp.int32)
+    if exact_terms.dtype != jnp.float32 or exact_terms.ndim != 3 or exact_terms.shape[-1] != 3:
+        raise ValueError("exact-position RELION Wavg atomics require float32 [row, exact pixel, 3] terms")
+    row_count, n_exact = exact_terms.shape[0], exact_terms.shape[1]
+    if row_image_ids.dtype != jnp.int32 or row_image_ids.shape != (row_count,):
+        raise ValueError("exact-position RELION Wavg atomics require int32 row_image_ids[Q]")
+    if exact_positions.dtype != jnp.int32 or exact_positions.shape != (n_exact,):
+        raise ValueError("exact-position RELION Wavg atomics require int32 exact_positions[P_exact]")
+    if (
+        accumulator.dtype != jnp.float32
+        or accumulator.ndim != 3
+        or accumulator.shape[2] != 3
+        or accumulator.shape[1] < n_exact
+    ):
+        raise ValueError("exact-position RELION Wavg atomics require a float32 [batch,rect pixel,3] accumulator")
+    if logical_pixel_count.shape != ():
+        raise ValueError("logical_pixel_count must be an int32 scalar")
+    _ensure_optional_ffi(_TARGET_RELION_WAVG_EXACT_ATOMIC_FLAT_ROWS_TRIPLET_ADD_F32)
+    output_type = jax.ShapeDtypeStruct(accumulator.shape, jnp.float32)
+    return jax.ffi.ffi_call(
+        _TARGET_RELION_WAVG_EXACT_ATOMIC_FLAT_ROWS_TRIPLET_ADD_F32,
+        output_type,
+        input_output_aliases={3: 0},
+        vmap_method="sequential",
+    )(exact_terms, row_image_ids, exact_positions, accumulator, logical_pixel_count)
+
+
 @functools.partial(
     jax.jit, static_argnames=("image_shape", "rows_per_block")
 )
@@ -7677,6 +7725,9 @@ _TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32 = (
 _TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32 = (
     "cuda_relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32"
 )
+_TARGET_RELION_WAVG_EXACT_ATOMIC_FLAT_ROWS_TRIPLET_ADD_F32 = (
+    "cuda_relion_wavg_exact_atomic_flat_rows_triplet_add_f32"
+)
 
 
 _TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32 = (
@@ -8077,6 +8128,10 @@ _OPTIONAL_FFI_REGISTRATIONS = {
     _TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32: (
         "RelionWavgRotationAtomicRuntimeFlatRowsTripletAddF32",
         "Flat-row RELION Wavg atomics require an explicit CUDA build with RelionWavgRotationAtomicRuntimeFlatRowsTripletAddF32",
+    ),
+    _TARGET_RELION_WAVG_EXACT_ATOMIC_FLAT_ROWS_TRIPLET_ADD_F32: (
+        "RelionWavgExactAtomicFlatRowsTripletAddF32",
+        "Exact-position flat-row RELION Wavg atomics require an explicit CUDA build with RelionWavgExactAtomicFlatRowsTripletAddF32",
     ),
     _TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32: (
         "RelionTranslateSumFlatRowsF32",

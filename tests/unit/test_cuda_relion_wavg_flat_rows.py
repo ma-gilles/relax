@@ -246,6 +246,46 @@ def test_flat_rows_wavg_atomics_match_flattened_rectangular(
 
 
 @pytest.mark.gpu
+@pytest.mark.parametrize("logical_pixel_count", [23, 17, 11])
+def test_exact_position_atomics_match_the_embedded_rectangle(
+    monkeypatch, custom_cuda_lib, gpu_device, logical_pixel_count
+):
+    """Adding exact terms at their positions is adding them embedded in a zero rectangle.
+
+    Rows sorted by image with one padding row; positions at or past the logical
+    rectangle are skipped. Exactly representable summands make the comparison
+    independent of the atomic issue order.
+    """
+
+    cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
+    rng = np.random.default_rng(9127 + logical_pixel_count)
+    batch_size, n_rect = 4, 23
+    exact_positions = np.sort(rng.choice(n_rect, size=15, replace=False)).astype(np.int32)
+    row_image_ids = np.asarray([0, 0, 1, 1, 1, 2, 3, 3, -1], dtype=np.int32)
+    exact_terms = _exact_float32(rng, (row_image_ids.size, exact_positions.size, 3))
+    rectangle = np.zeros((row_image_ids.size, n_rect, 3), dtype=np.float32)
+    rectangle[:, exact_positions, :] = exact_terms
+    accumulator = _exact_float32(rng, (batch_size, n_rect, 3))
+
+    with jax.default_device(gpu_device):
+        logical = jnp.asarray(logical_pixel_count, dtype=jnp.int32)
+        expected = cuda_backproject.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
+            jnp.asarray(rectangle), jnp.asarray(row_image_ids), jnp.asarray(accumulator), logical
+        )
+        actual = cuda_backproject.relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
+            jnp.asarray(exact_terms),
+            jnp.asarray(row_image_ids),
+            jnp.asarray(exact_positions),
+            jnp.asarray(accumulator),
+            logical,
+        )
+        expected, actual = jax.block_until_ready((expected, actual))
+
+    assert_matches(np.asarray(actual), np.asarray(expected))
+    assert_matches(np.asarray(actual)[:, logical_pixel_count:, :], accumulator[:, logical_pixel_count:, :])
+
+
+@pytest.mark.gpu
 def test_flat_rows_wavg_atomics_ragged_and_padded_rows(
     monkeypatch, custom_cuda_lib, gpu_device
 ):

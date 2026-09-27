@@ -372,11 +372,10 @@ def test_flat_row_wavg_rectangle_image_sums_match_the_rectangular_helper(
     row_ids = np.concatenate([np.repeat(np.arange(batch, dtype=np.int32), n_rot), [-1]])
     flat_exact = np.concatenate([exact_terms.reshape(batch * n_rot, n_exact, 3), exact_terms[:1, 0]])
     flat_posterior = np.concatenate([posterior.reshape(batch * n_rot, n_trans), posterior[:1, 0]])
-    terms = np.asarray(
-        rp._resident_block_wavg_rectangle_terms(
-            jnp.asarray(flat_exact), jnp.asarray(exact_positions), n_rect=n_rect
-        )
-    )
+    # The M-step blocks add the exact terms at their rectangle positions and
+    # nothing elsewhere (relion_wavg_exact_atomic_flat_rows_triplet_add_f32).
+    terms = np.zeros((flat_exact.shape[0], n_rect, 3), dtype=np.float32)
+    terms[:, exact_positions, :] = flat_exact
     logical = n_rect - 1
     power = np.asarray(
         rp._add_wavg_rectangle_image_power(
