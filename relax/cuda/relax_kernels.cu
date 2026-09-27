@@ -7851,9 +7851,11 @@ ffi::Error ProjectRelionHalfRuntimeCore(
         return ffi::Error::InvalidArgument("ProjectRelionHalfRuntime: require C64 half, F32 rotations, scalar S32 radius and C64 output");
     if (padding_factor != 1 && padding_factor != 2)
         return ffi::Error::InvalidArgument("ProjectRelionHalfRuntime: padding must be 1 or 2");
+    // The staging fill kernel (launch_project_texture_float) indexes texels with int.
     if (h.size() != 3 || h[0] < 5 || h[0] != h[1] || h[0] % 2 != 1 ||
         h[2] != h[0] / 2 + 1 || (h[0] - 3) % (2 * padding_factor) != 0 ||
-        h[0] > 1025 || r.size() != 2 || r[1] != 6 || r[0] <= 0 || r[0] > 65535 ||
+        h[0] * h[1] * h[2] > std::numeric_limits<int>::max() ||
+        r.size() != 2 || r[1] != 6 || r[0] <= 0 || r[0] > 65535 ||
         image_h <= 0 || image_h != image_w || image_h % 2 != 0 || image_h > 4096 ||
         o.size() != 2 || o[0] != r[0] || o[1] != image_h * (image_w / 2 + 1) ||
         r[0] * o[1] > std::numeric_limits<int>::max())

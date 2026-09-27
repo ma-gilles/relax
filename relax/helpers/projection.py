@@ -529,6 +529,9 @@ def _texture_centered_crop_at_indices(
     return jnp.where(output_disk[None, :], selected, jnp.zeros((), dtype=selected.dtype))
 
 
+_HALF_STORAGE_MAX_ROTATIONS = 65535
+
+
 def _half_storage_projection(volume_relion_half, *, r_max, padding_factor, projector_output_size) -> bool:
     """Whether a fixed-radius texture projection of this slab takes the half-storage kernel."""
 
@@ -543,7 +546,8 @@ def _half_storage_projection(volume_relion_half, *, r_max, padding_factor, proje
             2 * int(r_max) * int(padding_factor) + 3,
             int(r_max) * int(padding_factor) + 2,
         )
-        and volume_relion_half.shape[0] <= 1025
+        # The staging fill kernel indexes texels with int.
+        and int(np.prod(volume_relion_half.shape)) <= np.iinfo(np.int32).max
     )
 
 
@@ -630,7 +634,7 @@ def _project_relion_projector_texture(
             projector_output_size=projector_output_size,
         )
         and rotations_block.dtype == jnp.float32
-        and 0 < rotations_block.shape[0] <= 65535
+        and 0 < rotations_block.shape[0]
     ):
         # The half-storage kernel stages the same texels without a cubic
         # transpose/zero-fill buffer. Output image extent is independent of
@@ -649,18 +653,33 @@ def _project_relion_projector_texture(
                 or capacity_texture.padding_factor != int(padding_factor)
             ):
                 raise ValueError("the capacity projector texture does not hold this projector")
-            projection_crop = capacity_texture.project(
-                rotations_block,
+            project = partial(
+                capacity_texture.project,
                 image_shape=(int(projector_output_size), int(projector_output_size)),
                 **image_radius_kwargs,
             )
             capacity_texture = None
         else:
-            projection_crop = project_relion_half_capacity(
-                volume_relion_half, rotations_block, jnp.asarray(r_max, jnp.int32),
-                image_shape=(int(projector_output_size), int(projector_output_size)),
-                padding_factor=int(padding_factor),
-                **image_radius_kwargs,
+
+            def project(rotations):
+                return project_relion_half_capacity(
+                    volume_relion_half, rotations, jnp.asarray(r_max, jnp.int32),
+                    image_shape=(int(projector_output_size), int(projector_output_size)),
+                    padding_factor=int(padding_factor),
+                    **image_radius_kwargs,
+                )
+
+        # The kernel takes at most _HALF_STORAGE_MAX_ROTATIONS rotations per launch.
+        n_rotations = int(rotations_block.shape[0])
+        if n_rotations <= _HALF_STORAGE_MAX_ROTATIONS:
+            projection_crop = project(rotations_block)
+        else:
+            projection_crop = jnp.concatenate(
+                [
+                    project(rotations_block[start : start + _HALF_STORAGE_MAX_ROTATIONS])
+                    for start in range(0, n_rotations, _HALF_STORAGE_MAX_ROTATIONS)
+                ],
+                axis=0,
             )
     elif (
         runtime_r_max is None and int(r_max) > 0 and int(padding_factor) > 0
@@ -672,6 +691,8 @@ def _project_relion_projector_texture(
             int(r_max) * int(padding_factor) + 2,
         )
     ):
+        # Geometry the half-storage kernel does not take (an odd output size, a
+        # padding factor other than 1 or 2); every slab size it takes goes there.
         from relax.cuda.kernels import relion_projector_half_texture_f32
         projection_crop = relion_projector_half_texture_f32(
             volume_relion_half, rotations_block,

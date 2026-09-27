@@ -451,20 +451,23 @@ def test_large_static_projector_uses_half_storage_without_full_cube(monkeypatch)
         shape = (1603, 1603, 802)
     slab = HostShape()
     observed = []
-    def project(value, rotations, **kwargs):
+    # A box-800 slab (1603 x 1603 x 802 texels) takes the half-storage kernel,
+    # as every size within its int32 texel indexing does.
+    def project(value, rotations, radius, **kwargs):
         assert value is slab
-        observed.append(kwargs)
+        observed.append((int(radius), kwargs["image_shape"], kwargs["padding_factor"]))
         return jnp.zeros((rotations.shape[0], 40), dtype=jnp.complex64)
     def forbid_full(*args, **kwargs):
         raise AssertionError('large static projector expanded to a full cube')
-    monkeypatch.setattr(em_cuda_kernels, 'relion_projector_half_texture_f32', project)
+    monkeypatch.setattr(em_cuda_kernels, 'project_relion_half_capacity', project)
+    monkeypatch.setattr(em_cuda_kernels, 'relion_projector_half_texture_f32', lambda *a, **k: pytest.fail("per-call half texture"))
     monkeypatch.setattr(projection, 'relion_projector_half_to_texture_full', forbid_full)
     result = projection._project_relion_projector_texture(
         slab, jnp.eye(3, dtype=jnp.float32)[None], (8, 8),
         r_max=400, padding_factor=2, projector_output_size=8,
     )
     assert result.shape == (1, 40)
-    assert observed == [dict(current_size=8, padding_factor=2, projector_max_r=400)]
+    assert observed == [(400, (8, 8), 2)]
 
 
 @pytest.mark.parametrize("layout", ["valid", "strided", "double", "class_axis", "missing_radius"])

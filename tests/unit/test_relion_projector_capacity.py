@@ -294,3 +294,45 @@ def test_gpu_projection_block_with_a_staged_texture_matches_the_per_call_block(m
     with em_cuda_kernels.RelionCapacityHalfTextureF32(other, radius, padding_factor=pf) as texture:
         with pytest.raises(ValueError, match="does not hold this projector"):
             compute_relion_projector_projections_block(logical, _rotations(), capacity_texture=texture, **common)
+
+
+@pytest.mark.gpu
+def test_gpu_wide_slab_takes_the_half_storage_kernel_and_matches_the_persistent_texture():
+    """A slab wider than the former 1025 limit (radius 257 at padding 2: 1031 texels) is
+    staged by the half-storage kernel, once or per call alike, and projects what the
+    persistent host-uploaded texture (the former wide-slab path) projects."""
+
+    assert jax.default_backend() == "gpu"
+    cb._ensure_ffi()
+    radius, pf, q = 257, 2, 64
+    size = 2 * pf * radius + 3
+    assert size > 1025
+    rng = np.random.default_rng(1031)
+    logical = np.zeros((size, size, size // 2 + 1), dtype=np.complex64)
+    # A random band around the origin keeps the host setup small; the rest is zero.
+    band = slice(size // 2 - 40, size // 2 + 41)
+    logical[band, band, :41] = (
+        rng.standard_normal((81, 81, 41)) + 1j * rng.standard_normal((81, 81, 41))
+    ).astype(np.complex64)
+    half = jnp.asarray(logical)
+    rotations = _rotations()
+    image_r_max = jnp.asarray(q // 2, jnp.int32)
+    per_call = em_cuda_kernels.project_relion_half_capacity(
+        half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(q, q), padding_factor=pf, image_r_max=image_r_max
+    )
+    with em_cuda_kernels.RelionCapacityHalfTextureF32(half, radius, padding_factor=pf) as texture:
+        staged = texture.project(rotations, image_shape=(q, q), image_r_max=image_r_max)
+        staged = np.asarray(staged)
+    assert_matches(staged, np.asarray(per_call))
+    with em_cuda_kernels.RelionPersistentHalfTextureF32(
+        logical, padding_factor=pf, projector_max_r=radius
+    ) as persistent:
+        wide = em_cuda_kernels.relion_projector_persistent_half_texture_f32(
+            persistent, rotations, current_size=q, padding_factor=pf, projector_max_r=radius
+        )
+    # The persistent path applies no image radius; compare inside the image disk
+    # (centered rows, x >= 0), away from its rotated boundary.
+    ky = np.arange(q)[:, None] - q // 2
+    kx = np.arange(q // 2 + 1)[None, :]
+    inside = ((ky**2 + kx**2) < (q // 2 - 1) ** 2).reshape(-1)
+    assert_matches(staged[:, inside], np.asarray(wide)[:, inside])

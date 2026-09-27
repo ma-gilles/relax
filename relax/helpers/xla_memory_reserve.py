@@ -3,7 +3,8 @@
 recovar sets ``XLA_PYTHON_CLIENT_MEM_FRACTION`` to 0.90, and the BFC pool grows to
 that limit during a refinement. The RELION projector texture is a pair of float32
 CUDA arrays allocated outside the pool (``relion_scoring.cuh``,
-``RelionPersistentHalfTextureF32``), so it has to fit in the rest of the card
+``RelionPersistentHalfTextureF32``; the resident local pass's
+``RelionCapacityHalfTextureF32``, ``relion_capacity_texture.cuh``), so it has to fit in the rest of the card
 next to the CUDA context and the CUB scratch. At EMPIAR-10202 current size 626
 that is 7.9 GB of a ~9 GB remainder, and the allocation failed with CUDA out of
 memory (bigbox 14480549, 14507538). A fixed fraction only moves that cliff to

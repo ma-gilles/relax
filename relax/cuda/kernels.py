@@ -5029,13 +5029,14 @@ def project_relion_half_capacity(
         projector_half.dtype != jnp.complex64
         or len(shape) != 3
         or shape[0] < 5
-        or shape[0] > 1025
         or shape[0] != shape[1]
         or shape[0] % 2 != 1
         or shape[2] != shape[0] // 2 + 1
         or (shape[0] - 3) % (2 * padding_factor) != 0
     ):
         raise ValueError("projector_half must be C64 [pf*Q+3,pf*Q+3,pf*Q//2+2] for even Q")
+    if int(np.prod(shape)) > np.iinfo(np.int32).max:
+        raise ValueError("projector_half has more texels than the staging kernel's int32 indexing")
     if (
         rotation_matrices.dtype != jnp.float32
         or rotation_matrices.ndim != 3

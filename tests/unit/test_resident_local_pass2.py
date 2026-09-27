@@ -458,37 +458,36 @@ def test_final_all_data_shape_runs_resident_and_matches_the_exact_engine(monkeyp
 def test_local_projector_texture_is_not_opened_for_manual_or_double_projection():
     slab = np.zeros((11, 11, 6), dtype=np.complex64)
     kwargs = dict(relion_projector_r_max=4, projection_padding_factor=1)
-    assert rlp._open_resident_local_projector_texture(None, relion_texture_interp=None, **kwargs) is None
-    assert rlp._open_resident_local_projector_texture(slab, relion_texture_interp=False, **kwargs) is None
-    assert rlp._open_resident_local_projector_texture(
-        slab.astype(np.complex128), relion_texture_interp=None, **kwargs
-    ) is None
-    # A slab the half-storage kernel takes keeps that kernel (the capacity path).
-    assert slab.shape[0] <= rlp._HALF_STORAGE_MAX_SLAB
-    assert rlp._open_resident_local_projector_texture(slab, relion_texture_interp=None, **kwargs) is None
+    projection_kwargs = {"projector_output_size": 8, "relion_texture_interp": None}
+    assert rlp._open_capacity_texture(None, projection_kwargs=projection_kwargs, **kwargs) is None
+    assert (
+        rlp._open_capacity_texture(slab, projection_kwargs=dict(projection_kwargs, relion_texture_interp=False), **kwargs)
+        is None
+    )
+    assert rlp._open_capacity_texture(slab.astype(np.complex128), projection_kwargs=projection_kwargs, **kwargs) is None
 
 
 @requires_resident_gpu
-def test_resident_local_persistent_texture_matches_the_per_call_texture(monkeypatch, _resident_local_env):
-    """EMPIAR-10202 (14507538): the per-call texture allocated the slab's CUDA arrays on every
-    chunk and ran out of memory; one persistent texture for the pass projects the same rows."""
+def test_resident_local_capacity_texture_matches_the_per_call_texture(monkeypatch, _resident_local_env):
+    """One texture staged for the pass projects the rows the per-call staging projects.
+
+    EMPIAR-10202 (14507538): the per-call texture allocated the slab's CUDA arrays on
+    every chunk and ran out of memory; every local slab now stages its texture once.
+    """
 
     case = _case()
     opened = []
-    real_open = rlp._open_resident_local_projector_texture
+    real_open = rlp._open_capacity_texture
 
     def spy(*args, **kwargs):
         texture = real_open(*args, **kwargs)
         opened.append(texture is not None)
         return texture
 
-    monkeypatch.setattr(rlp, "_open_resident_local_projector_texture", spy)
-    # The fixture's slab is narrow enough for the half-storage kernel; open the
-    # persistent texture anyway so it is compared on the same projections.
-    monkeypatch.setattr(rlp, "_HALF_STORAGE_MAX_SLAB", 0)
-    persistent = _run(case, resident=True, monkeypatch=monkeypatch)
+    monkeypatch.setattr(rlp, "_open_capacity_texture", spy)
+    staged = _run(case, resident=True, monkeypatch=monkeypatch)
     assert opened == [True]
-    monkeypatch.setattr(rlp, "_open_resident_local_projector_texture", lambda *a, **k: None)
+    monkeypatch.setattr(rlp, "_open_capacity_texture", lambda *a, **k: None)
     per_call = _run(case, resident=True, monkeypatch=monkeypatch)
 
     def rel_l2(a, b):
@@ -496,10 +495,10 @@ def test_resident_local_persistent_texture_matches_the_per_call_texture(monkeypa
         b = np.asarray(b, dtype=np.float64)
         return float(np.linalg.norm(a - b) / max(np.linalg.norm(a), 1e-300))
 
-    assert_matches(np.asarray(per_call.hard_assignment), np.asarray(persistent.hard_assignment))
+    assert_matches(np.asarray(per_call.hard_assignment), np.asarray(staged.hard_assignment))
     # Same texture kernel, same texels: the resident driver's own repeat band (1e-7).
-    assert rel_l2(per_call.Ft_y, persistent.Ft_y) < 1e-6
-    assert rel_l2(per_call.Ft_ctf, persistent.Ft_ctf) < 1e-6
+    assert rel_l2(per_call.Ft_y, staged.Ft_y) < 1e-6
+    assert rel_l2(per_call.Ft_ctf, staged.Ft_ctf) < 1e-6
 
 
 @requires_resident_gpu

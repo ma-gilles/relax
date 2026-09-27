@@ -87,15 +87,51 @@ static std::unordered_map<uint64_t, std::shared_ptr<CapacityRelionHalfTextureF32
     capacity_relion_half_texture_f32_registry;
 static std::atomic<uint64_t> capacity_relion_half_texture_f32_next_handle{1};
 
-/* The staging of launch_project_texture_float<true> (recovar_cuda_common.cuh),
- * statement for statement, into textures the owner keeps. */
+/* fill_relion_texture_capacity_kernel (recovar_cuda_common.cuh) for the texture
+ * z-planes [z_begin, z_begin + n_planes): the same texel values, written into a
+ * plane-sized staging buffer and addressed with 64-bit indices. */
+__global__ void __launch_bounds__(BLOCK_SIZE)
+fill_relion_texture_capacity_planes_kernel(
+    const float2* __restrict__ vol, float* real, float* imag,
+    const int32_t* logical_radius, int upsampling,
+    int texX, int texY, int texZ, int z_begin, int n_planes)
+{
+    const int64_t idx = static_cast<int64_t>(blockIdx.x) * BLOCK_SIZE + threadIdx.x;
+    if (idx >= static_cast<int64_t>(texX) * texY * n_planes) return;
+    const int x = static_cast<int>(idx % texX);
+    const int y = static_cast<int>((idx / texX) % texY);
+    const int z = z_begin + static_cast<int>(idx / (static_cast<int64_t>(texX) * texY));
+    const int radius = *logical_radius;
+    float2 value = make_float2(0.0f, 0.0f);
+    if (radius >= 0 && radius <= (texY / 2 - 1) / upsampling) {
+        const int R = radius * upsampling;
+        if (x < R + 2 && y < 2 * R + 3 && z < 2 * R + 3) {
+            const int64_t iy = texY / 2 + y - (R + 1);
+            const int64_t iz = texZ / 2 + z - (R + 1);
+            value = vol[(iz * texY + iy) * texX + x];
+        }
+    }
+    real[idx] = value.x;
+    imag[idx] = value.y;
+}
+
+// Staging buffers are at most this many texels per plane group (two float
+// buffers of 512 MiB), so the transient beside the texture stays inside the
+// XLA pool reserve's slack (relax/helpers/xla_memory_reserve.py).
+constexpr int64_t kCapacityTextureStagingTexels = int64_t(1) << 27;
+
+/* The staging of launch_project_texture_float<true> (recovar_cuda_common.cuh):
+ * the same texel values into the same float texture pair, filled and copied a
+ * group of z-planes at a time so the staging transient is bounded rather than
+ * a second copy of the slab. */
 static cudaError_t stage_capacity_relion_half_texture_f32(
     const float2* projector_half, int logical_radius, CapacityRelionHalfTextureF32* owner)
 {
     const int texX = owner->half_x;
     const int texY = owner->half_y;
     const int texZ = owner->half_z;
-    const int n_voxels = texX * texY * texZ;
+    const int64_t plane = static_cast<int64_t>(texX) * texY;
+    const int group = static_cast<int>(std::max<int64_t>(1, std::min<int64_t>(texZ, kCapacityTextureStagingTexels / plane)));
     float* real = nullptr;
     float* imag = nullptr;
     cudaStream_t stream = nullptr;
@@ -103,31 +139,28 @@ static cudaError_t stage_capacity_relion_half_texture_f32(
     if (err == cudaSuccess) err = cudaMalloc(reinterpret_cast<void**>(&owner->logical_radius), sizeof(int32_t));
     if (err == cudaSuccess)
         err = cudaMemcpy(owner->logical_radius, &logical_radius, sizeof(int32_t), cudaMemcpyHostToDevice);
-    if (err == cudaSuccess) err = cudaMalloc(reinterpret_cast<void**>(&real), n_voxels * sizeof(float));
-    if (err == cudaSuccess) err = cudaMalloc(reinterpret_cast<void**>(&imag), n_voxels * sizeof(float));
-    if (err == cudaSuccess) {
-        dim3 block(BLOCK_SIZE);
-        dim3 grid((n_voxels + BLOCK_SIZE - 1) / BLOCK_SIZE);
-        fill_relion_texture_capacity_kernel<<<grid, block, 0, stream>>>(
-            projector_half, real, imag, owner->logical_radius, owner->padding_factor, texX, texY, texZ);
-        err = cudaGetLastError();
-    }
+    if (err == cudaSuccess) err = cudaMalloc(reinterpret_cast<void**>(&real), plane * group * sizeof(float));
+    if (err == cudaSuccess) err = cudaMalloc(reinterpret_cast<void**>(&imag), plane * group * sizeof(float));
     cudaChannelFormatDesc desc = cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
     cudaExtent extent = make_cudaExtent((size_t)texX, (size_t)texY, (size_t)texZ);
     if (err == cudaSuccess) err = cudaMalloc3DArray(&owner->array_real, &desc, extent);
     if (err == cudaSuccess) err = cudaMalloc3DArray(&owner->array_imag, &desc, extent);
-    if (err == cudaSuccess) {
+    for (int z_begin = 0; z_begin < texZ && err == cudaSuccess; z_begin += group) {
+        const int n_planes = std::min(group, texZ - z_begin);
+        const int64_t texels = plane * n_planes;
+        fill_relion_texture_capacity_planes_kernel<<<static_cast<unsigned>((texels + BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE, 0, stream>>>(
+            projector_half, real, imag, owner->logical_radius, owner->padding_factor, texX, texY, texZ, z_begin, n_planes);
+        err = cudaGetLastError();
         cudaMemcpy3DParms copy_params = {0};
-        copy_params.extent = extent;
+        copy_params.extent = make_cudaExtent((size_t)texX, (size_t)texY, (size_t)n_planes);
+        copy_params.dstPos = make_cudaPos(0, 0, (size_t)z_begin);
         copy_params.kind = cudaMemcpyDeviceToDevice;
         copy_params.dstArray = owner->array_real;
         copy_params.srcPtr = make_cudaPitchedPtr(real, (size_t)texX * sizeof(float), (size_t)texX, (size_t)texY);
-        err = cudaMemcpy3DAsync(&copy_params, stream);
-        if (err == cudaSuccess) {
-            copy_params.dstArray = owner->array_imag;
-            copy_params.srcPtr = make_cudaPitchedPtr(imag, (size_t)texX * sizeof(float), (size_t)texX, (size_t)texY);
-            err = cudaMemcpy3DAsync(&copy_params, stream);
-        }
+        if (err == cudaSuccess) err = cudaMemcpy3DAsync(&copy_params, stream);
+        copy_params.dstArray = owner->array_imag;
+        copy_params.srcPtr = make_cudaPitchedPtr(imag, (size_t)texX * sizeof(float), (size_t)texX, (size_t)texY);
+        if (err == cudaSuccess) err = cudaMemcpy3DAsync(&copy_params, stream);
     }
     if (err == cudaSuccess) {
         cudaResourceDesc resource_real, resource_imag;
@@ -149,7 +182,9 @@ static cudaError_t stage_capacity_relion_half_texture_f32(
         if (err == cudaSuccess)
             err = cudaCreateTextureObject(&owner->texture_imag, &resource_imag, &texture_desc, nullptr);
     }
-    /* The texture is complete before create returns; the staging buffers go. */
+    /* The texture is complete before create returns; the staging buffers go.
+     * Each plane group's buffers are reused only after its copies, which are
+     * ordered before the next group's fill on the one stream. */
     if (stream) {
         const cudaError_t sync = cudaStreamSynchronize(stream);
         if (err == cudaSuccess) err = sync;
@@ -168,7 +203,7 @@ extern "C" int relax_relion_capacity_half_texture_f32_create(
     int logical_radius, int padding_factor, int device, uint64_t* owner_handle)
 {
     if (!projector_half || !owner_handle || half_z < 5 || half_z != half_y ||
-        half_z % 2 != 1 || half_x != half_z / 2 + 1 || half_z > 1025 ||
+        half_z % 2 != 1 || half_x != half_z / 2 + 1 ||
         (padding_factor != 1 && padding_factor != 2) ||
         (half_z - 3) % (2 * padding_factor) != 0 ||
         logical_radius < 0 || logical_radius > (half_y / 2 - 1) / padding_factor || device < 0)
@@ -185,6 +220,13 @@ extern "C" int relax_relion_capacity_half_texture_f32_create(
         cudaError_t err = cudaGetDevice(&original_device);
         if (err != cudaSuccess) return static_cast<int>(err);
         if (original_device != device) err = cudaSetDevice(device);
+        // The slab's extent is bounded by the device's 3-D texture extents.
+        cudaDeviceProp properties;
+        if (err == cudaSuccess) err = cudaGetDeviceProperties(&properties, device);
+        if (err == cudaSuccess &&
+            (half_x > properties.maxTexture3D[0] || half_y > properties.maxTexture3D[1] ||
+             half_z > properties.maxTexture3D[2]))
+            err = cudaErrorInvalidValue;
         if (err == cudaSuccess)
             err = stage_capacity_relion_half_texture_f32(
                 static_cast<const float2*>(projector_half), logical_radius, owner.get());

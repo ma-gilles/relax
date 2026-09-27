@@ -335,44 +335,6 @@ def _unshifted_operands_route(bucket_io_kwargs, *, window_indices, recon_window_
     return True
 
 
-# Widest slab the half-storage projection kernel takes (project_relion_half_capacity,
-# the shape[0] <= 1025 test in relax.helpers.projection._project_relion_projector_texture).
-_HALF_STORAGE_MAX_SLAB = 1025
-
-
-def _open_resident_local_projector_texture(
-    relion_projector_half, *, relion_projector_r_max, projection_padding_factor, relion_texture_interp
-):
-    """Upload the pass's ``PPref`` slab once as a persistent RELION texture, or ``None``.
-
-    The same persistent texture the compact engine opens
-    (:func:`relax.sparse_pass2.dispatch._open_persistent_relion_projector_texture`),
-    from a host copy of the float32 slab. It stands in for the per-call
-    ``relion_projector_half_texture_f32`` that
-    :func:`relax.helpers.projection._project_relion_projector_texture` uses for
-    slabs wider than the half-storage kernel takes
-    (:data:`_HALF_STORAGE_MAX_SLAB`); narrower slabs keep the half-storage
-    kernel, and slabs the texture projector does not take keep the per-call
-    path, so no slab changes kernel.
-    """
-
-    from relax.sparse_pass2.dispatch import _open_persistent_relion_projector_texture
-
-    if relion_projector_half is None or relion_texture_interp is False:
-        return None
-    if np.dtype(relion_projector_half.dtype) != np.dtype(np.complex64) or np.ndim(relion_projector_half) != 3:
-        return None
-    if int(relion_projector_half.shape[0]) <= _HALF_STORAGE_MAX_SLAB:
-        return None
-    return _open_persistent_relion_projector_texture(
-        np.ascontiguousarray(jax.device_get(relion_projector_half)),
-        relion_projector_r_max=relion_projector_r_max,
-        projection_padding_factor=projection_padding_factor,
-        relion_texture_interp=relion_texture_interp,
-        log_label="Resident local pass-2",
-    )
-
-
 def _cap_row_capacity_ladder(
     ladder: tuple,
     *,
@@ -739,32 +701,18 @@ def compute_local_search_resident(
     projection_kwargs["mask_current_image_disk"] = bool(projection_mask_current_image_disk)
     projection_kwargs["relion_kernel"] = projection_relion_kernel
 
-    # One persistent RELION projector texture for the whole pass, opened before
-    # the capacity plan so the plan's device reading sees it. Projected per
-    # call, the texture path allocates the slab's two float32 CUDA arrays
-    # (7.9 GB at EMPIAR-10202 current size 626) outside the XLA pool on every
-    # chunk, which failed with CUDA out of memory once the pool had grown
-    # (bigbox 14480549, 14507538). RELION builds its projector texture once
-    # per iteration.
-    projector_texture = _open_resident_local_projector_texture(
+    # One RELION projector texture for the whole pass, staged before the
+    # capacity plan so the plan's device reading sees it. Projected per call,
+    # the texture path stages the slab's two float32 CUDA arrays outside the
+    # XLA pool on every chunk (7.9 GB at EMPIAR-10202 current size 626, which
+    # failed with CUDA out of memory once the pool had grown, bigbox 14480549,
+    # 14507538) and synchronizes the stream. RELION builds its projector
+    # texture once per iteration.
+    capacity_texture = _open_capacity_texture(
         relion_projector_half,
         relion_projector_r_max=relion_projector_r_max,
         projection_padding_factor=projection_padding_factor,
-        relion_texture_interp=projection_relion_texture_interp,
-    )
-    if projector_texture is not None:
-        projection_kwargs["relion_projector_texture"] = projector_texture
-    # Slabs the half-storage kernel takes stage its texture once per pass
-    # instead of once per projection call.
-    capacity_texture = (
-        None
-        if projector_texture is not None
-        else _open_capacity_texture(
-            relion_projector_half,
-            relion_projector_r_max=relion_projector_r_max,
-            projection_padding_factor=projection_padding_factor,
-            projection_kwargs=projection_kwargs,
-        )
+        projection_kwargs=projection_kwargs,
     )
     try:
         # ---- per-image resident operands --------------------------------------
@@ -1040,8 +988,6 @@ def compute_local_search_resident(
             Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
         loop_s = time.time() - loop_t0
     finally:
-        if projector_texture is not None:
-            projector_texture.close()
         if capacity_texture is not None:
             capacity_texture.close()
 
