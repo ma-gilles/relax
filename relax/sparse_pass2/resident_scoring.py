@@ -393,7 +393,7 @@ class ResidentChunkScores:
 
 @partial(
     jax.jit,
-    static_argnames=("row_capacity", "image_capacity", "n_fine_trans", "n_score_pixels"),
+    static_argnames=("row_capacity", "image_capacity", "n_fine_trans", "n_score_pixels", "native_fft_size"),
 )
 def score_resident_chunk(
     row_image_local,  # int32 [C_R] chunk-local image id of each row
@@ -418,6 +418,8 @@ def score_resident_chunk(
     image_capacity: int,
     n_fine_trans: int,
     n_score_pixels: int,
+    score_take=None,  # int32 [N] score window positions in a union-cache row, or None
+    native_fft_size: int = 0,
 ):
     """Score one capacity chunk in a single device program.
 
@@ -438,6 +440,12 @@ def score_resident_chunk(
     The chunk's ``n_valid_images`` is not a separate operand: padded image
     slots are exactly the slots with ``image_ids == -1``, and no valid row ever
     addresses one.
+
+    ``score_take`` reads a union projection cache (score and reconstruction
+    windows in one row): the gathered rows keep their score window, and a
+    non-zero ``native_fft_size`` then applies RELION's native-unit division
+    that the three-cache build applied to its score cache, with the same
+    elementwise statements.
     """
 
     row_image_local = jnp.asarray(row_image_local, dtype=jnp.int32)
@@ -467,6 +475,12 @@ def score_resident_chunk(
 
     # --- stage 2: "project" = gather the cached fine-rotation projections ---
     reference = jnp.asarray(projection_score_cache, dtype=jnp.complex64)[row_fine_rot]
+    if score_take is not None:
+        reference = reference[:, jnp.asarray(score_take, dtype=jnp.int32)]
+        if native_fft_size:
+            from relax.sparse_pass2.sparse_pass2_scoring import _relion_native_fine_units
+
+            reference = _relion_native_fine_units(reference, int(native_fft_size))
 
     # --- stage 3: score ----------------------------------------------------
     row_is_valid = jnp.arange(row_capacity, dtype=jnp.int32) < jnp.asarray(

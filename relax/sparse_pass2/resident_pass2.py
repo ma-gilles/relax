@@ -2449,6 +2449,33 @@ def _resident_pass2(
         projection_complex_dtype=precision_policy.score_complex_dtype,
         include_abs2=True,
     )
+    # Union projection cache: one row per rotation holding the score window and
+    # the reconstruction window together, from which the chunk programs take
+    # each window and form |recon|^2. The two windows differ only by RELION's DC
+    # pixel and the rounded shell rim, so the union is a little over a third of
+    # the three-cache bytes: the full EMPIAR-10097 hp3 cache (294912 rotations
+    # at current size 126) is 14.4 GiB instead of 35.5 GiB and fits instead of
+    # streaming its projections per chunk. The values are the same gathers of
+    # the same projection. Streamed chunks keep their three chunk-local caches.
+    union_indices = union_score_take = union_recon_take = None
+    cache_projection_bytes = transient_projection_bytes
+    if not firstiter_cc and not use_float64_scoring:
+        score_indices_np = np.asarray(window_indices, dtype=np.int64)
+        recon_indices_np = np.asarray(recon_window_indices, dtype=np.int64)
+        union_indices_np = np.union1d(score_indices_np, recon_indices_np)
+        union_indices = jnp.asarray(union_indices_np, dtype=jnp.int32)
+        union_score_take = jnp.asarray(
+            np.searchsorted(union_indices_np, score_indices_np), dtype=jnp.int32
+        )
+        union_recon_take = jnp.asarray(
+            np.searchsorted(union_indices_np, recon_indices_np), dtype=jnp.int32
+        )
+        cache_projection_bytes = _projection_cache_transient_bytes(
+            n_projections,
+            int(union_indices_np.size),
+            projection_complex_dtype=precision_policy.score_complex_dtype,
+            include_abs2=False,
+        )
     max_projection_cache_bytes = _projection_cache_max_bytes_for_pass(device_memory_bytes)
     projection_kwargs = _projection_kwargs_for_relion_score_window(
         window_spec.projection_kwargs(return_abs2=False),
@@ -2563,7 +2590,7 @@ def _resident_pass2(
         reserved_bytes=reserved_operand_bytes,
     )
     stream_projections = not _projection_cache_fits_budget(
-        transient_projection_bytes, stream_projection_budget_bytes
+        cache_projection_bytes, stream_projection_budget_bytes
     )
     # Streamed chunks keep the per-chunk operand preparation. Their working set
     # (chunk-local projection caches and the posterior program's temporaries)
@@ -2581,7 +2608,7 @@ def _resident_pass2(
             pool_free_bytes=pool_free_bytes,
             reserved_bytes=0,
         )
-        if _projection_cache_fits_budget(transient_projection_bytes, unreserved_budget_bytes):
+        if _projection_cache_fits_budget(cache_projection_bytes, unreserved_budget_bytes):
             stream_projections = False
             operands_yield_to_cache = True
             stream_projection_budget_bytes = unreserved_budget_bytes
@@ -2589,13 +2616,14 @@ def _resident_pass2(
     stream_keeps_chunk_operands = stream_projections or operands_yield_to_cache
     if stream_projections:
         score_cache = recon_cache = recon_abs2_cache = None
+        union_indices = union_score_take = union_recon_take = None
         logger.info(
             "Resident pass-2 projections are streamed per chunk: the %d-rotation cache "
             "would take %.2f GiB against a %.2f GiB budget (cache share %.2f GiB) "
             "at %.1f KiB per rotation (physical free %s, allocator free %s, "
             "pool free %s, reserved operands %.2f GiB)",
             n_projections,
-            transient_projection_bytes / float(1024**3),
+            cache_projection_bytes / float(1024**3),
             stream_projection_budget_bytes / float(1024**3),
             max_projection_cache_bytes / float(1024**3),
             projection_bytes_per_rotation / 1024.0,
@@ -2603,6 +2631,43 @@ def _resident_pass2(
             "unknown" if allocator_free_bytes is None else f"{allocator_free_bytes / float(1024**3):.2f} GiB",
             "unknown" if pool_free_bytes is None else f"{pool_free_bytes / float(1024**3):.2f} GiB",
             reserved_operand_bytes / float(1024**3),
+        )
+    elif union_indices is not None:
+        cache_t0 = time.time()
+        # Raw union rows: the native-unit division of the score window runs
+        # after the chunk's gather (score_resident_chunk), and the recon window
+        # keeps RECOVAR units, as in the three-cache build.
+        class_unions = [
+            _compute_sparse_pass2_windowed_projections_block(
+                class_means_for_proj[class_index],
+                fine_grid,
+                image_shape,
+                proj_volume_shape,
+                disc_type,
+                score_indices=union_indices,
+                recon_indices=None,
+                max_projected_rotations=_projection_cache_build_max_rotations_per_call(
+                    max_projected_rotations_per_projection_call, int(n_fine_rot)
+                ),
+                output_complex_dtype=precision_policy.score_complex_dtype,
+                relion_projector_half=class_projector_halves[class_index],
+                relion_projector_r_max=relion_projector_r_max,
+                projection_padding_factor=projection_padding_factor,
+                **projection_kwargs,
+            )[0]
+            for class_index in range(n_classes)
+        ]
+        score_cache = class_unions[0] if n_classes == 1 else jnp.concatenate(class_unions, axis=0)
+        del class_unions
+        recon_cache = recon_abs2_cache = None
+        logger.info(
+            "Resident pass-2 projection cache: cached %d fine rotations in %.2fs as one "
+            "union window of %d pixels (%.2f GiB; three caches would take %.2f GiB)",
+            n_projections,
+            time.time() - cache_t0,
+            int(union_indices.shape[0]),
+            cache_projection_bytes / float(1024**3),
+            transient_projection_bytes / float(1024**3),
         )
     else:
         cache_t0 = time.time()
@@ -3167,6 +3232,11 @@ def _resident_pass2(
             coarse_reuse=coarse_reuse,
             firstiter_cc=firstiter_cc,
             mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
+            union_score_take=union_score_take,
+            union_recon_take=union_recon_take,
+            union_native_fft_size=(
+                native_fft_size if (union_score_take is not None and relion_native_fine_units) else 0
+            ),
         )
     loop_s = time.time() - loop_t0
     if warmup is not None:
@@ -4156,6 +4226,7 @@ def _make_chunk_program_spec(
     mstep_subtract_ctf_projection=False,
     n_classes=1,
     stable_window=False,
+    union_native_fft_size=0,
 ) -> _ChunkProgramSpec:
     """The static key of one chunk program.
 
@@ -4193,6 +4264,7 @@ def _make_chunk_program_spec(
         mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
         n_classes=int(n_classes),
         stable_window=bool(stable_window),
+        union_native_fft_size=int(union_native_fft_size),
     )
 
 
@@ -4418,6 +4490,8 @@ def _make_chunk_stage_tables(
     cache_slot_fine_rot=None,
     coarse_reuse=None,
     window_logical=None,
+    union_score_take=None,
+    union_recon_take=None,
 ) -> _ChunkStageTables:
     """Assemble the iteration-global tables every chunk of a half reads.
 
@@ -4449,6 +4523,8 @@ def _make_chunk_stage_tables(
         cache_slot_fine_rot=cache_slot_fine_rot,
         coarse_reuse=coarse_reuse,
         window_logical=window_logical,
+        union_score_take=union_score_take,
+        union_recon_take=union_recon_take,
     )
 
 
@@ -5064,6 +5140,10 @@ class _ChunkProgramSpec:
     # Stable Fourier windows: the pixel axes are a physical class and the
     # M-step masks their tail past the logical window (_WindowLogicalSizes).
     stable_window: bool = False
+    # Union projection cache (_ChunkStageTables.union_score_take): RELION's
+    # native-unit division of the score rows, applied after the gather; 0 keeps
+    # RECOVAR units.
+    union_native_fft_size: int = 0
 
 
 class _MstepOnlyStatsConfig(NamedTuple):
@@ -5225,6 +5305,12 @@ class _ChunkStageTables(NamedTuple):
     coarse_reuse: _CoarseNormalizationReuse | None = None
     # The logical window sizes; None takes the spec's (logical == physical).
     window_logical: _WindowLogicalSizes | None = None
+    # Union projection cache: projection_score_cache holds the union of the
+    # score and reconstruction windows, and these take each window out of a
+    # gathered row (the recon caches are then None). None for the three-cache
+    # layout.
+    union_score_take: jax.Array | None = None
+    union_recon_take: jax.Array | None = None
 
 
 class _ChunkPosterior(NamedTuple):
@@ -5350,6 +5436,8 @@ def _resident_chunk_posterior(
         image_capacity=image_capacity,
         n_fine_trans=n_fine_trans,
         n_score_pixels=int(spec.n_score_pixels),
+        score_take=tables.union_score_take,
+        native_fft_size=int(spec.union_native_fft_size),
     )
     scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
 
@@ -5566,6 +5654,13 @@ def _cached_block_projections(tables: _ChunkStageTables, block_fine_rot):
     slices the projections it computed for the chunk's own rows instead.
     """
 
+    if tables.union_recon_take is not None:
+        # The union cache: the reconstruction window is taken out of the
+        # gathered rows and |recon|^2 is formed as the three-cache build formed
+        # it (_finalize_windowed_projection_chunks).
+        recon = tables.projection_score_cache[block_fine_rot][:, tables.union_recon_take]
+        recon_abs2 = (jnp.abs(recon) ** 2).astype(jnp.real(recon).dtype)
+        return recon, recon_abs2, tables.mstep_grid[block_fine_rot]
     return (
         tables.projection_recon_cache[block_fine_rot],
         tables.projection_recon_abs2_cache[block_fine_rot],
@@ -5793,8 +5888,15 @@ def _mstep_block_operand_dtypes(
         # The global pass reads the per-iteration caches; local search has no
         # cache and hands the dtypes of the projections it just computed.
         projection_dtypes = (
-            tables.projection_recon_cache.dtype,
-            tables.projection_recon_abs2_cache.dtype,
+            (
+                tables.projection_score_cache.dtype,
+                jnp.real(jnp.zeros((), dtype=tables.projection_score_cache.dtype)).dtype,
+            )
+            if tables.union_recon_take is not None
+            else (
+                tables.projection_recon_cache.dtype,
+                tables.projection_recon_abs2_cache.dtype,
+            )
         )
     proj_dtype, proj_abs2_dtype = (jnp.dtype(value) for value in projection_dtypes)
     noise_dtype = jnp.dtype(tables.noise_variance_for_noise.dtype)
@@ -6486,8 +6588,15 @@ def _run_resident_chunk(
     coarse_reuse=None,
     firstiter_cc=False,
     mstep_subtract_ctf_projection=False,
+    union_score_take=None,
+    union_recon_take=None,
+    union_native_fft_size=0,
 ):
     """Run every resident stage for one capacity chunk.
+
+    ``union_score_take`` / ``union_recon_take`` / ``union_native_fft_size``
+    describe a union projection cache (see ``_ChunkStageTables``); they are
+    None / 0 for the three-cache layout and for streamed chunks.
 
     ``submitted_keys``, when given, collects the ``(program name, spec)`` keys
     this chunk submits, so the driver can say how many of them the compile-ahead
@@ -6657,6 +6766,8 @@ def _run_resident_chunk(
         cache_slot_fine_rot=cache_slot_fine_rot,
         coarse_reuse=coarse_reuse,
         window_logical=window_logical,
+        union_score_take=union_score_take,
+        union_recon_take=union_recon_take,
     )
     spec = _make_chunk_program_spec(
         row_capacity=row_capacity,
@@ -6685,6 +6796,7 @@ def _run_resident_chunk(
         mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
         n_classes=n_classes,
         stable_window=program_current_size is not None,
+        union_native_fft_size=union_native_fft_size,
     )
 
     if submitted_keys is not None:

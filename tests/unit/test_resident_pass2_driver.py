@@ -1335,9 +1335,11 @@ def test_streamed_projection_rows_equal_the_cached_rows_exactly(
     """Every on-the-fly projection row matches the fine-grid cache row (float32-tight band).
 
     Records each call of the projection block: the cached pass makes one call
-    over the whole fine grid, the streamed pass one per chunk over its distinct
-    rotations. Each streamed row is matched to its fine-grid row by the exact
-    rotation matrix and compared in all three outputs.
+    over the whole fine grid (its union window of the score and reconstruction
+    windows), the streamed pass one per chunk over its distinct rotations (the
+    three chunk-local caches). Each streamed row is matched to its fine-grid row
+    by the exact rotation matrix and compared in all three outputs, the cached
+    ones taken out of the union row as the chunk programs take them.
     """
 
     calls = []
@@ -1345,28 +1347,40 @@ def test_streamed_projection_rows_equal_the_cached_rows_exactly(
 
     def recording(volume, rotations, *args, **kwargs):
         out = original(volume, rotations, *args, **kwargs)
-        calls.append((np.asarray(rotations), tuple(np.asarray(v) for v in out)))
+        windows = tuple(
+            None if kwargs.get(key) is None else np.asarray(kwargs[key])
+            for key in ("score_indices", "recon_indices")
+        )
+        calls.append((np.asarray(rotations), windows, tuple(None if v is None else np.asarray(v) for v in out)))
         return out
 
     monkeypatch.setattr(rp, "_compute_sparse_pass2_windowed_projections_block", recording)
     args = _driver_fixture_args()
     rp.compute_pass2_stats_resident(**args)
     assert len(calls) == 1
-    grid, cached = calls.pop()
+    grid, (union_indices, no_recon), (union_rows, _, _) = calls.pop()
+    assert no_recon is None
     index = {row.tobytes(): i for i, row in enumerate(grid.reshape(grid.shape[0], -1))}
 
     monkeypatch.setattr(rp, "_projection_cache_fits_budget", lambda *a, **k: False)
     rp.compute_pass2_stats_resident(**args)
     assert calls, "the streamed pass made no projection call"
     compared = 0
-    for rotations, streamed in calls:
+    for rotations, (score_indices, recon_indices), streamed in calls:
         ids = np.asarray(
             [index[row.tobytes()] for row in rotations.reshape(rotations.shape[0], -1)]
+        )
+        rows = union_rows[ids]
+        cached_recon = rows[:, np.searchsorted(union_indices, recon_indices)]
+        cached = (
+            rows[:, np.searchsorted(union_indices, score_indices)],
+            cached_recon,
+            (np.abs(cached_recon) ** 2).astype(np.float32),
         )
         for name, full, part in zip(("score", "recon", "recon_abs2"), cached, streamed):
             # The same projection gathered by another index; measured equal, held
             # to a float32-tight band rather than bitwise (user rule, 2026-09-24).
-            np.testing.assert_allclose(part, full[ids], rtol=1e-6, atol=0, err_msg=name)
+            np.testing.assert_allclose(part, full, rtol=1e-6, atol=0, err_msg=name)
         compared += ids.size
     assert compared > 0
 
