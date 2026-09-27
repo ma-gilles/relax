@@ -1290,14 +1290,31 @@ def _run_resident_parent_probe(
     best_log_score = np.zeros(n_images, dtype=np.float64)
     max_posterior = np.zeros(n_images, dtype=np.float64)
     hard_assignments = np.full(n_images, -1, dtype=np.int64)
+    profile = parse_env_flag(_CHUNK_PROFILE_ENV, default=False)
+    stage_s: dict[str, float] = {}
+    stage_t = [time.time()]
+
+    def mark(name, *values):
+        # Stage wall per chunk when profiling: block on the stage's outputs so the
+        # time lands on the stage that produced them rather than on the next sync.
+        if not profile:
+            return
+        if values:
+            jax.block_until_ready(values)
+        now = time.time()
+        stage_s[name] = stage_s.get(name, 0.0) + now - stage_t[0]
+        stage_t[0] = now
+
     loop_t0 = time.time()
     for chunk in chunks:
+        stage_t[0] = time.time()
         row_capacity = int(chunk.row_capacity)
         image_capacity = int(chunk.image_capacity)
         n_valid_rows = int(chunk.n_valid_rows)
         n_valid_images = int(chunk.n_valid_images)
         image_indices = np.arange(chunk.image_start, chunk.image_stop, dtype=np.int64)
         host_chunk = materialize_local_chunk(tables, chunk)
+        mark("tables")
         ops = _prepare_chunk_score_operands(
             chunk=chunk,
             image_indices=image_indices,
@@ -1312,6 +1329,7 @@ def _run_resident_parent_probe(
             current_size=current_size,
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         )
+        mark("operands", ops["score_input"])
         score_proj, _, _ = project_resident_rows(
             mean,
             jnp.asarray(host_chunk["rotations"], dtype=precision_policy.score_real_dtype),
@@ -1328,6 +1346,7 @@ def _run_resident_parent_probe(
             projection_padding_factor=projection_padding_factor,
             **projection_kwargs,
         )
+        mark("project", score_proj)
         n_valid_images_device = jnp.asarray(host_chunk["n_valid_images"], dtype=jnp.int32)
         chunk_image_ids = jnp.where(
             jnp.arange(image_capacity, dtype=jnp.int32) < n_valid_images_device,
@@ -1356,6 +1375,7 @@ def _run_resident_parent_probe(
         )
         del score_proj, ops
         scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
+        mark("score", scores_flat)
         segment_offsets_np = _local_chunk_segment_offsets(tables, chunk, t)
         segment_offsets = jnp.asarray(segment_offsets_np, dtype=jnp.int32)
         log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
@@ -1383,9 +1403,11 @@ def _run_resident_parent_probe(
             keep_all=False,
             use_external_sum_weight=False,
         )
+        mark("posterior", mask, best_cell, log_z_out, best_log, max_post, n_significant)
         mask_np, best_cell_np, log_z_np, best_log_np, max_post_np, n_sig_np = jax.device_get(
             (mask, best_cell, log_z_out, best_log, max_post, n_significant)
         )
+        mark("readback")
         mask_np = np.asarray(mask_np, dtype=bool).reshape(row_capacity, t)[:n_valid_rows]
         image_row_start = segment_offsets_np.astype(np.int64)[:n_valid_images] // t
         if max_significants > 0 and int(np.max(np.asarray(n_sig_np)[:n_valid_images], initial=0)) > max_significants:
@@ -1416,7 +1438,13 @@ def _run_resident_parent_probe(
         max_posterior[sl] = np.asarray(max_post_np)[:n_valid_images]
         if significant_counts is not None:
             significant_counts[sl] = np.asarray(n_sig_np, dtype=np.int32)[:n_valid_images]
+        mark("samples")
     loop_s = time.time() - loop_t0
+    if profile:
+        logger.info(
+            "Resident local pass-1 probe stage walls (s, synchronized per chunk): %s",
+            ", ".join(f"{name}={value:.2f}" for name, value in stage_s.items()),
+        )
 
     if any(ids.size == 0 for ids in sample_ids_by_image):
         raise RuntimeError("Resident local pass-1 probe: an image kept no significant sample")
