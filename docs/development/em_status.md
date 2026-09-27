@@ -385,6 +385,20 @@ that fixture. Remaining cost is concentrated in new-shape transitions and the
 final all-data iteration; the latter still uses the exact local path. The
 100k/256 K1 and exactly-K4 quality and performance gates remain open.
 
+Wall references (2026-09-26, user decision). The speed target is at most 0.5x RELION's cold
+wall for one full-size run, as a same-node pair: K=1 on EMPIAR-10097 and the 50k/100k synthetic
+fixtures, Class3D on K4 100k. Compile amortized over a run's iterations counts; warm-cache walls
+are not quoted. 5k fixtures serve iteration and profiling only, since compile dominates them.
+Quote each wall against the fastest RELION configuration that runs, and show both when both run.
+Auto-refine (`--split_random_halves`) runs only under MPI (non-MPI exits at start), so K=1
+references are `relion_refine_mpi` 3 ranks x 4 threads (K=1 5k/128: 196 and 200 s, jobs 14497840
+and 14499533). Class3D runs both; non-MPI `--j 12` is faster (K4 5k/128: 268-271 s against MPI
+382-390 s) and is also the quality reference (MPI scale-group defect below). The 268-271 s walls in
+`tests/baselines/relion_vs_relax_benchmarks.json` rows `pdb_k4_5k_class3d_25it_*` are that Class3D
+non-MPI reference and are labelled correctly; no non-MPI K=1 wall exists. Since ed7d5d7 the
+refinement entry point activates the persistent compilation cache, so a cold arm needs its own
+empty `JAX_COMPILATION_CACHE_DIR` (or `RECOVAR_DISABLE_JAX_CACHE=1`).
+
 Explained (2026-09-24, test tiers): the medium K1 5k/128 standalone end-to-end run (medium
 14375481, relax 319cd10) scored GT FSC-AUC 0.6084 on relax's `final_merged.mrc` against
 0.5959-0.5960 for RELION's `run_class001.mrc`. The cause is the map kind. RELION's map is
