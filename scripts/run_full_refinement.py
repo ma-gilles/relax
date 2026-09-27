@@ -17,6 +17,9 @@ Environment variables:
     XLA_PYTHON_CLIENT_PREALLOCATE: set to false for dynamic allocation
 """
 
+# The XLA pool reserve (_reserve_projector_texture_memory) runs before the jax, recovar and
+# relax imports, so the imports below it are not at the top of the file.
+# ruff: noqa: E402
 import argparse
 import importlib
 import json
@@ -38,9 +41,31 @@ from typing import NamedTuple
 # which recovar.jax_config performs, and `setdefault` so an explicit
 # RECOVAR_EM_XLA_DEFAULTS=0 in the environment still wins.
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
-# relax's launch hooks (relax/__init__.py), including the XLA pool reserve for the RELION
-# projector texture, must run before `from recovar import ...` initialises the JAX backend.
-import relax  # noqa: F401
+
+
+def _reserve_projector_texture_memory(argv) -> str | None:
+    """Size the XLA pool for this run's RELION projector texture before JAX starts; return a log line.
+
+    The pool limit is fixed when the backend starts, and ``import relax`` imports
+    recovar, whose ``jax_config`` starts it. So the standard-library-only
+    ``relax/helpers/xla_memory_reserve.py`` is loaded by path here, before the
+    first ``jax``, ``recovar`` or ``relax`` import, instead of through the package.
+    """
+
+    import importlib.util
+
+    package = importlib.util.find_spec("relax")
+    if package is None or not package.submodule_search_locations:
+        return None
+    path = Path(next(iter(package.submodule_search_locations))) / "helpers" / "xla_memory_reserve.py"
+    spec = importlib.util.spec_from_file_location("_relax_xla_memory_reserve", path)
+    reserve = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(reserve)
+    record = reserve.reserve_for_reference_maps(reserve.reference_maps_from_argv(argv))
+    return None if record is None else reserve.format_reserve_record(record)
+
+
+_XLA_RESERVE_LOG_LINE = _reserve_projector_texture_memory(sys.argv[1:])
 
 # isort: split
 
@@ -2868,10 +2893,8 @@ def main():
     else:
         timing_dir_path = None
 
-    from relax.helpers import xla_memory_reserve
-
-    if xla_memory_reserve.LAUNCH_RESERVE_RECORD is not None:
-        logger.info("%s", xla_memory_reserve.format_reserve_record(xla_memory_reserve.LAUNCH_RESERVE_RECORD))
+    if _XLA_RESERVE_LOG_LINE is not None:
+        logger.info("%s", _XLA_RESERVE_LOG_LINE)
 
     # Verify GPU
     devices = jax.devices()

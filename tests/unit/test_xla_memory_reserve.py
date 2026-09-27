@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import struct
+import subprocess
+import sys
+from pathlib import Path
+
 import mrcfile
 import numpy as np
 import pytest
@@ -78,7 +84,7 @@ def test_reserve_does_nothing_after_backend_start_or_without_a_device(monkeypatc
     assert reserve.os.environ[reserve.MEM_FRACTION_ENV] == ".90"
 
 
-def test_command_line_hook_reads_the_drivers_reference_flags(tmp_path, monkeypatch):
+def test_reference_maps_follow_the_drivers_flags(tmp_path, monkeypatch):
     data_dir = tmp_path / "inputs"
     data_dir.mkdir()
     with mrcfile.new(str(data_dir / "reference_init_relion.mrc")) as handle:
@@ -94,7 +100,65 @@ def test_command_line_hook_reads_the_drivers_reference_flags(tmp_path, monkeypat
     monkeypatch.setenv(reserve.MEM_FRACTION_ENV, ".90")
     monkeypatch.setattr(reserve, "_jax_backend_initialized", lambda: False)
     monkeypatch.setattr(reserve, "_visible_device_total_bytes", lambda: H100_TOTAL_BYTES)
-    monkeypatch.setattr(reserve, "LAUNCH_RESERVE_RECORD", None)
-    record = reserve.reserve_for_command_line(["--data_dir", str(data_dir)])
-    assert record["model_box"] == 32 and reserve.LAUNCH_RESERVE_RECORD is record
-    assert reserve.reserve_for_command_line(["tests/unit"]) is None
+    assert reserve.reserve_for_reference_maps(paths)["model_box"] == 32
+    assert reserve.reserve_for_reference_maps([]) is None
+
+
+def test_module_imports_only_the_standard_library():
+    """Entry points load this file by path before jax, recovar or relax is imported;
+    a relax or recovar import here would start the JAX backend before the reserve."""
+
+    import ast
+    import sys
+
+    tree = ast.parse(Path(reserve.__file__).read_text())
+    top_level = set()
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            top_level.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module != "__future__":
+            top_level.add(node.module.split(".")[0])
+    assert top_level <= set(sys.stdlib_module_names), top_level
+
+
+def _raw_mrc_header(path, box):
+    """A header-only MRC file of a ``box``-cubed float32 map (the reserve reads only the header)."""
+
+    header = bytearray(1024)
+    struct.pack_into("<4i", header, 0, box, box, box, 2)
+    header[208:212] = b"MAP "
+    header[212:216] = bytes([0x44, 0x44, 0, 0])
+    path.write_bytes(bytes(header))
+
+
+def test_refine_driver_reserves_before_the_jax_backend_starts(tmp_path):
+    """The refine entry point loads the reserve by path and applies it before its jax,
+    recovar and relax imports: a 640-pixel reference lowers the fraction below 0.90."""
+
+    data_dir = tmp_path / "inputs"
+    data_dir.mkdir()
+    _raw_mrc_header(data_dir / "reference_init_relion.mrc", 640)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    smi = fake_bin / "nvidia-smi"
+    smi.write_text("#!/bin/sh\necho '0, GPU-fake, 81559'\n")
+    smi.chmod(0o755)
+    driver = Path(__file__).resolve().parents[2] / "scripts" / "run_full_refinement.py"
+    code = (
+        "import importlib.util, os, sys\n"
+        f"sys.argv = [{str(driver)!r}, '--data_dir', {str(data_dir)!r}]\n"
+        f"spec = importlib.util.spec_from_file_location('refine_driver', {str(driver)!r})\n"
+        "module = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(module)\n"
+        "print(os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'])\n"
+        "print(module._XLA_RESERVE_LOG_LINE)\n"
+    )
+    env = {k: v for k, v in os.environ.items() if k != reserve.MEM_FRACTION_ENV}
+    env.update(PATH=f"{fake_bin}:{env.get('PATH', '')}", CUDA_VISIBLE_DEVICES="0", JAX_PLATFORMS="cpu")
+    result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=600)
+    assert result.returncode == 0, result.stderr[-2000:]
+    fraction_line, log_line = result.stdout.strip().splitlines()[-2:]
+    expected = reserve.xla_memory_fraction(640, 2, H100_TOTAL_BYTES)
+    assert expected < 0.90
+    assert float(fraction_line) == pytest.approx(expected, abs=1e-4)
+    assert "640-pixel model" in log_line

@@ -12,9 +12,15 @@ JAX backend initialises: the texture of the largest local-search slab
 (``r_max = box // 2``) plus a fixed allowance for the context and scratch.
 
 ``import recovar`` initialises the backend (``recovar.jax_config`` queries the
-devices), so the reserve runs as a launch hook of the ``relax`` package, before
-it imports recovar, from the reference-map flags on the command line. This
-module therefore imports nothing from relax or recovar.
+devices), and ``import relax`` imports recovar, so the reserve has to run before
+either. Entry points call :func:`reserve_projector_texture_memory` with the
+model box (or :func:`reserve_for_reference_maps` with the reference maps) before
+their first ``jax``, ``recovar`` or ``relax`` import. This module therefore
+imports only the standard library (and ``mrcfile`` inside a function), so an
+entry point can load it by file path without starting the package:
+:func:`scripts/run_full_refinement.py <_reserve_projector_texture_memory>` does
+exactly that. Called after the backend has started, the reserve does nothing
+and says so in its record.
 """
 
 from __future__ import annotations
@@ -22,7 +28,6 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
-import sys
 
 MEM_FRACTION_ENV = "XLA_PYTHON_CLIENT_MEM_FRACTION"
 # CUDA context, cuFFT/CUB workspaces and the coarse-kernel texture cache.
@@ -31,8 +36,6 @@ _CONTEXT_AND_SCRATCH_BYTES = 3 * 1024**3
 _MIN_FRACTION = 0.5
 # Padding of relax's projectors (run_full_refinement's projection_padding_factor, RELION's --pad 2).
 PROJECTION_PADDING_FACTOR = 2
-# What the launch hook did, for the driver to log once logging is configured.
-LAUNCH_RESERVE_RECORD: dict | None = None
 
 
 def relion_projector_texture_bytes(model_box: int, padding_factor: int) -> int:
@@ -153,7 +156,11 @@ def reserve_projector_texture_memory(model_box: int | None, padding_factor: int)
     if model_box is None:
         return None
     if _jax_backend_initialized():
-        return {"model_box": int(model_box), "skipped": "the JAX backend was already initialised"}
+        return {
+            "model_box": int(model_box),
+            "skipped": "the JAX backend was already initialised with "
+            f"{MEM_FRACTION_ENV}={os.environ.get(MEM_FRACTION_ENV, 'unset')}",
+        }
     total = _visible_device_total_bytes()
     if total is None:
         return None
@@ -190,17 +197,10 @@ def reference_maps_from_argv(argv) -> list[str | None]:
     ]
 
 
-def reserve_for_command_line(argv=None) -> dict | None:
-    """The ``relax`` launch hook: reserve the texture of the command line's reference box."""
+def reserve_for_reference_maps(paths, padding_factor: int = PROJECTION_PADDING_FACTOR) -> dict | None:
+    """:func:`reserve_projector_texture_memory` for the box of the first existing map in ``paths``."""
 
-    global LAUNCH_RESERVE_RECORD
-    paths = reference_maps_from_argv(argv if argv is not None else sys.argv[1:])
-    if not paths:
-        return None
-    LAUNCH_RESERVE_RECORD = reserve_projector_texture_memory(
-        model_box_from_map_headers(paths), PROJECTION_PADDING_FACTOR
-    )
-    return LAUNCH_RESERVE_RECORD
+    return reserve_projector_texture_memory(model_box_from_map_headers(paths), padding_factor)
 
 
 def format_reserve_record(record: dict) -> str:
