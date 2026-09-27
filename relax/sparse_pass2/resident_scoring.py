@@ -61,6 +61,7 @@ from relax.sparse_pass2.resident_candidates import (
 from relax.sparse_pass2.resident_local_layout import expand_local_chunk_mask_jnp
 from relax.sparse_pass2.sparse_pass2_bucket_io import _prepare_bucket_io
 from relax.sparse_pass2.sparse_pass2_projection_blocks import (
+    _compute_sparse_pass2_projections_block,
     _compute_sparse_pass2_windowed_projections_block,
 )
 from relax.sparse_pass2.sparse_pass2_scoring import (
@@ -74,6 +75,8 @@ __all__ = [
     "ResidentImageOperands",
     "materialize_chunk_device",
     "prepare_resident_image_operands",
+    "live_projection_block_rows",
+    "project_resident_live_rows",
     "project_resident_rows",
     "resident_operand_bytes",
     "resident_projection_block_rows",
@@ -851,6 +854,132 @@ def project_resident_rows(
         projection_padding_factor=projection_padding_factor,
         **projection_kwargs,
     )
+
+
+# The live-row quantum is a sixteenth of the row capacity, no smaller than this
+# many rows: a chunk projects at most capacity / 16 rows past its valid ones.
+_MIN_LIVE_PROJECTION_ROWS = 256
+
+
+def live_projection_block_rows(row_capacity: int, max_projected_rotations: int) -> int:
+    """Rows per projector call when only a chunk's valid rows are projected.
+
+    A power of two dividing ``row_capacity`` (the local capacity ladder is
+    powers of two; any other capacity projects in one block), at most
+    ``max_projected_rotations`` and ``row_capacity / 16`` but at least
+    :data:`_MIN_LIVE_PROJECTION_ROWS`, so every call of a capacity class has one
+    shape and the unused tail is at most one block.
+    """
+
+    row_capacity = int(row_capacity)
+    if row_capacity <= 0 or row_capacity & (row_capacity - 1):
+        return max(row_capacity, 1)
+    block = max(row_capacity // 16, _MIN_LIVE_PROJECTION_ROWS)
+    while block > max(int(max_projected_rotations), 1):
+        block //= 2
+    return max(min(block, row_capacity), 1)
+
+
+@partial(jax.jit, static_argnames=("output_complex_dtype", "output_abs2_dtype"), donate_argnums=(0, 1, 2))
+def _place_windowed_projection_block(
+    score_proj,  # [C_R, N_score], donated
+    recon_proj,  # [C_R, N_recon], donated
+    recon_abs2,  # [C_R, N_recon], donated
+    proj_block,  # [Q, N_half]
+    score_indices,
+    recon_indices,
+    start,  # int32 scalar, runtime
+    *,
+    output_complex_dtype,
+    output_abs2_dtype,
+):
+    """Window one projector block and write it into the chunk's rows at ``start``.
+
+    The windows and ``|recon|^2`` are :func:`_window_projection_chunk` and
+    :func:`_finalize_windowed_projection_chunks` applied to the block's rows.
+    """
+
+    score_block = proj_block[:, score_indices].astype(output_complex_dtype)
+    recon_block = proj_block[:, recon_indices].astype(output_complex_dtype)
+    abs2_block = (jnp.abs(recon_block) ** 2).astype(output_abs2_dtype)
+    start = jnp.asarray(start, dtype=jnp.int32)
+    zero = jnp.int32(0)
+    return (
+        jax.lax.dynamic_update_slice(score_proj, score_block, (start, zero)),
+        jax.lax.dynamic_update_slice(recon_proj, recon_block, (start, zero)),
+        jax.lax.dynamic_update_slice(recon_abs2, abs2_block, (start, zero)),
+    )
+
+
+def project_resident_live_rows(
+    mean_for_proj,
+    rotations,
+    image_shape,
+    proj_volume_shape,
+    disc_type,
+    *,
+    n_valid_rows: int,
+    score_indices,
+    recon_indices,
+    max_projected_rotations: int,
+    output_complex_dtype,
+    output_abs2_dtype,
+    relion_projector_half=None,
+    relion_projector_r_max: int | None = None,
+    projection_padding_factor: int = 1,
+    **projection_kwargs,
+):
+    """:func:`project_resident_rows` for a padded chunk: only the valid rows are projected.
+
+    A local chunk's rows past ``n_valid_rows`` are padding (identity rotations,
+    image id ``-1``, zero posterior): the scoring kernel skips them and the
+    M-step walks live rows only, so their projections are never read. The rows
+    ``[0, n_valid_rows)`` are projected in blocks of
+    :func:`live_projection_block_rows` and written into zero-filled
+    ``[row_capacity, ...]`` outputs; each projected row is the projector call
+    :func:`project_resident_rows` makes for it. At the 10097 local iterations a
+    chunk's valid rows are about 30% of its capacity.
+
+    Returns ``(score_proj, recon_proj, recon_abs2, n_projected_rows)``.
+    """
+
+    row_capacity = int(rotations.shape[0])
+    block = live_projection_block_rows(row_capacity, max_projected_rotations)
+    n_projected = min(-(-max(int(n_valid_rows), 1) // block) * block, row_capacity)
+    score_indices = jnp.asarray(score_indices, dtype=jnp.int32)
+    recon_indices = jnp.asarray(recon_indices, dtype=jnp.int32)
+    projection_kwargs = dict(projection_kwargs)
+    projection_kwargs["return_abs2"] = False
+
+    score_proj = jnp.zeros((row_capacity, int(score_indices.shape[0])), dtype=output_complex_dtype)
+    recon_proj = jnp.zeros((row_capacity, int(recon_indices.shape[0])), dtype=output_complex_dtype)
+    recon_abs2 = jnp.zeros((row_capacity, int(recon_indices.shape[0])), dtype=output_abs2_dtype)
+    for start in range(0, n_projected, block):
+        proj_block, _ = _compute_sparse_pass2_projections_block(
+            mean_for_proj,
+            rotations[start : start + block],
+            image_shape,
+            proj_volume_shape,
+            disc_type,
+            max_projected_rotations=None,
+            relion_projector_half=relion_projector_half,
+            relion_projector_r_max=relion_projector_r_max,
+            projection_padding_factor=projection_padding_factor,
+            **projection_kwargs,
+        )
+        score_proj, recon_proj, recon_abs2 = _place_windowed_projection_block(
+            score_proj,
+            recon_proj,
+            recon_abs2,
+            proj_block,
+            score_indices,
+            recon_indices,
+            np.int32(start),
+            output_complex_dtype=output_complex_dtype,
+            output_abs2_dtype=output_abs2_dtype,
+        )
+        del proj_block
+    return score_proj, recon_proj, recon_abs2, n_projected
 
 
 def materialize_chunk_device(tables: ResidentCandidateTables, chunk: CapacityChunk) -> dict:

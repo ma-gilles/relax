@@ -31,6 +31,8 @@ from test_sparse_pass2_bucketed_parity import IMAGE_SHAPE, VOLUME_SHAPE
 
 from relax.sparse_pass2.resident_candidates import expand_mask_rows, materialize_chunk
 from relax.sparse_pass2.resident_scoring import (
+    live_projection_block_rows,
+    project_resident_live_rows,
     project_resident_rows,
     resident_projection_block_rows,
     resident_row_projection_bytes,
@@ -272,3 +274,78 @@ def test_row_projection_blocking_is_bitwise(monkeypatch, custom_cuda_lib, gpu_de
         assert_matches(np.asarray(a), np.asarray(b), err_msg=name)
     assert np.asarray(whole[0]).shape == (n_rows, score_indices.size)
     assert np.asarray(whole[1]).shape == (n_rows, recon_indices.size)
+
+
+def test_live_projection_blocks_divide_the_capacity():
+    assert live_projection_block_rows(65536, 16256) == 4096
+    assert live_projection_block_rows(16384, 16256) == 1024
+    assert live_projection_block_rows(1024, 16256) == 256
+    assert live_projection_block_rows(65536, 3000) == 2048
+    assert live_projection_block_rows(256, 16256) == 256
+    assert live_projection_block_rows(100, 16256) == 100
+
+
+@pytest.mark.parametrize("n_valid_rows", [1, 9, 16])
+def test_live_row_projection_matches_whole_chunk_projection(monkeypatch, n_valid_rows):
+    """Projecting only a chunk's valid rows gives their projections, and zeros past them.
+
+    ``live_projection_block_rows(16, ...)`` is 16, so a patched quantum of four
+    rows exercises several blocks and a partial last block.
+    """
+
+    from helpers.em_arrays import _hermitian_volume
+
+    import relax.sparse_pass2.resident_scoring as resident_scoring
+
+    capacity = 16
+    rng = np.random.default_rng(20260927)
+    angles = rng.uniform(0.0, 2 * np.pi, capacity)
+    rotations = np.stack(
+        [
+            np.array(
+                [[np.cos(a), -np.sin(a), 0.0], [np.sin(a), np.cos(a), 0.0], [0.0, 0.0, 1.0]],
+                dtype=np.float32,
+            )
+            for a in angles
+        ]
+    )
+    rotations[n_valid_rows:] = np.eye(3, dtype=np.float32)
+    volume = _hermitian_volume(VOLUME_SHAPE, seed=5)
+    n_half = IMAGE_SHAPE[0] * (IMAGE_SHAPE[1] // 2 + 1)
+    score_indices = np.arange(0, n_half, 2, dtype=np.int32)
+    recon_indices = np.arange(1, n_half, 3, dtype=np.int32)
+    kwargs = dict(
+        score_indices=score_indices,
+        recon_indices=recon_indices,
+        output_complex_dtype=jnp.complex64,
+        output_abs2_dtype=jnp.float32,
+        relion_texture_interp=False,
+    )
+
+    whole = project_resident_rows(
+        jnp.asarray(volume),
+        jnp.asarray(rotations),
+        IMAGE_SHAPE,
+        VOLUME_SHAPE,
+        "linear_interp",
+        max_projected_rotations=capacity,
+        **kwargs,
+    )
+    monkeypatch.setattr(resident_scoring, "live_projection_block_rows", lambda row_capacity, max_rows: 4)
+    *live, n_projected = project_resident_live_rows(
+        jnp.asarray(volume),
+        jnp.asarray(rotations),
+        IMAGE_SHAPE,
+        VOLUME_SHAPE,
+        "linear_interp",
+        n_valid_rows=n_valid_rows,
+        max_projected_rotations=capacity,
+        **kwargs,
+    )
+
+    assert n_projected == min(-(-n_valid_rows // 4) * 4, capacity)
+    for name, a, b in zip(("score", "recon", "recon_abs2"), whole, live, strict=True):
+        a, b = np.asarray(a), np.asarray(b)
+        assert b.shape == a.shape and b.dtype == a.dtype, name
+        assert_matches(b[:n_valid_rows], a[:n_valid_rows], err_msg=name)
+        assert not np.any(b[n_projected:]), name

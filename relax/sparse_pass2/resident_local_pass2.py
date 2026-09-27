@@ -112,7 +112,7 @@ from relax.sparse_pass2.resident_operands import (
     require_unshifted_operand_support,
 )
 from relax.sparse_pass2.resident_scoring import (
-    project_resident_rows,
+    project_resident_live_rows,
     resident_row_projection_bytes,
     score_resident_projected_chunk,
 )
@@ -1390,12 +1390,15 @@ def _run_resident_local_chunk(
     mark("operands", recon_operand, recon["score_input"])
 
     # --- stages 1-2: project this chunk's own rows -------------------------
-    score_proj, recon_proj, recon_abs2 = project_resident_rows(
+    # Only the valid rows: the padding past them (about 70% of a chunk at the
+    # 10097 local iterations) is never scored or reconstructed.
+    score_proj, recon_proj, recon_abs2, n_projected_rows = project_resident_live_rows(
         mean,
         jnp.asarray(host_chunk["rotations"], dtype=precision_policy.score_real_dtype),
         image_shape,
         volume_shape,
         disc_type,
+        n_valid_rows=n_valid_rows,
         score_indices=window_indices,
         recon_indices=recon_window_indices,
         max_projected_rotations=int(projection_block_rows),
@@ -1633,7 +1636,7 @@ def _run_resident_local_chunk(
             "blocks=%d proj_rows=%d recon_tile=%s wavg_tile=%s | %s | chunk=%.3fs",
             n_valid_images, image_capacity, n_valid_rows, row_capacity, n_live_rows,
             100.0 * (row_capacity - n_valid_rows) / max(row_capacity, 1),
-            n_blocks, row_capacity,
+            n_blocks, n_projected_rows,
             f"{recon_operand.dtype}{tuple(recon_operand.shape)}",
             f"{recon['raw_translated_wavg_rectangle'].dtype}"
             f"{tuple(recon['raw_translated_wavg_rectangle'].shape)}",
