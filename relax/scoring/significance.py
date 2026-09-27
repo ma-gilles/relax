@@ -2907,15 +2907,13 @@ def _compute_k_class_significance_batched(
 
     start_idx = 0
     image_indices = np.arange(n_images)
-    from relax.helpers.batch_fetch import prefetched_batches
+    from relax.helpers.batch_fetch import iter_indexed_batches, prefetched_batches
 
     _coarse_batch_starts = []
     _coarse_loop_t0 = time.time()
-    with prefetched_batches(experiment_dataset.iter_batches(
-        image_batch_size,
-        indices=image_indices,
-        by_image=False,
-    )) as batches:
+    with prefetched_batches(
+        iter_indexed_batches(experiment_dataset, image_indices, image_batch_size)
+    ) as batches:
         for batch_data, _, _, ctf_params, _, _, indices in batches:
             _coarse_batch_starts.append(time.time())
             actual_batch_size = len(indices)

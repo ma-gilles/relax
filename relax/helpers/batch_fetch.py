@@ -34,6 +34,23 @@ def fetch_indexed_batch(experiment_dataset, image_indices):
     return fetch_indexed_batch_via_iterator(experiment_dataset, image_indices)
 
 
+def iter_indexed_batches(experiment_dataset, image_indices, batch_size):
+    """Yield the dataset iterator's batch tuples for ``image_indices``, fetched per batch.
+
+    Each item is ``(images, None, None, ctf_params, None, None, indices)``, the
+    fields of ``CryoEMDataset.iter_batches`` that indexed consumers read, with
+    the batch served by :func:`fetch_indexed_batch` (one vectorized host read
+    for single-particle sources).
+    """
+
+    image_indices = np.asarray(image_indices)
+    for start in range(0, int(image_indices.shape[0]), int(batch_size)):
+        images, ctf_params, indices = fetch_indexed_batch(
+            experiment_dataset, image_indices[start : start + int(batch_size)]
+        )
+        yield images, None, None, ctf_params, None, None, indices
+
+
 def fetch_indexed_batch_via_iterator(experiment_dataset, image_indices):
     """The dataset batch iterator's route for one explicitly indexed batch."""
 
