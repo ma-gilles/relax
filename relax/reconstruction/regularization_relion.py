@@ -745,7 +745,13 @@ def compute_relion_tau2_from_weights(
     return prior, fsc_clamped, details
 
 
-_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS = 200_000_000
+# Packed-half accumulators of every size take the streamed reduction: it visits
+# the coefficients in the expanded path's order (tests assert the two FSCs equal)
+# and is faster at every measured size, because it never expands four padded
+# full cubes on the host: 0.12 vs 0.27 s at a 185^3 accumulator, 0.29 vs 0.64 s
+# at 259^3 and 2.2 vs 9.8 s at 515^3, the 10097 final all-data pass (login node,
+# 8 threads). The environment variable keeps the expanded path selectable.
+_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS = 0
 
 
 def _relion_fsc_packed_stream_enabled(half_size):
