@@ -393,7 +393,7 @@ Quote each wall against the fastest RELION configuration that runs, and show bot
 Auto-refine (`--split_random_halves`) runs only under MPI (non-MPI exits at start), so K=1
 references are `relion_refine_mpi` 3 ranks x 4 threads (K=1 5k/128: 196 and 200 s, jobs 14497840
 and 14499533). Class3D runs both; non-MPI `--j 12` is faster (K4 5k/128: 268-271 s against MPI
-382-390 s) and is also the quality reference (MPI scale-group defect below). The 268-271 s walls in
+382-390 s) and is also the quality reference (MPI scale-group defect above). The 268-271 s walls in
 `tests/baselines/relion_vs_relax_benchmarks.json` rows `pdb_k4_5k_class3d_25it_*` are that Class3D
 non-MPI reference and are labelled correctly; no non-MPI K=1 wall exists. Since ed7d5d7 the
 refinement entry point activates the persistent compilation cache, so a cold arm needs its own
