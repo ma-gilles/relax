@@ -17,6 +17,7 @@ import jax
 import numpy as np
 
 from relax.helpers.env_flags import parse_env_nonnegative_int
+from relax.helpers.xla_memory_reserve import _nvidia_smi_visible_device_memory_bytes
 from relax.scoring.sparse_bucket_arrays import _DEFAULT_MAX_HYPOTHESES_PER_MICROBATCH
 
 logger = logging.getLogger(__name__)
@@ -175,46 +176,6 @@ def _optional_positive_float_env(name: str) -> float | None:
     if value <= 0:
         raise ValueError(f"{name} must be a positive float, got {raw!r}")
     return value
-
-
-def _parse_nvidia_smi_memory_rows(output: str) -> dict[str, int]:
-    rows: dict[str, int] = {}
-    for line in output.splitlines():
-        parts = [part.strip() for part in line.split(",")]
-        if len(parts) < 3:
-            continue
-        index, uuid, memory_mib = parts[:3]
-        try:
-            memory_bytes = int(memory_mib.split()[0]) * 1024**2
-        except (ValueError, IndexError):
-            continue
-        if memory_bytes <= 0:
-            continue
-        rows[index] = memory_bytes
-        rows[uuid] = memory_bytes
-        if uuid.startswith("GPU-"):
-            rows[uuid[4:]] = memory_bytes
-    return rows
-
-
-def _nvidia_smi_visible_device_memory_bytes(output: str, visible_devices: str | None) -> int | None:
-    rows = _parse_nvidia_smi_memory_rows(output)
-    if not rows:
-        return None
-    # An unset variable exposes every device; a set but empty one exposes none.
-    if visible_devices is not None:
-        tokens = [
-            part.strip()
-            for part in visible_devices.split(",")
-            if part.strip() and part.strip() not in {"-1", "none", "NoDevFiles"}
-        ]
-        if not tokens:
-            return None
-        for token in tokens:
-            if token in rows:
-                return rows[token]
-        return None
-    return next(iter(rows.values()))
 
 
 _CONCURRENT_DEVICE_SHARES = 1

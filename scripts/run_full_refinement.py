@@ -38,6 +38,11 @@ from typing import NamedTuple
 # which recovar.jax_config performs, and `setdefault` so an explicit
 # RECOVAR_EM_XLA_DEFAULTS=0 in the environment still wins.
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
+# relax's launch hooks (relax/__init__.py), including the XLA pool reserve for the RELION
+# projector texture, must run before `from recovar import ...` initialises the JAX backend.
+import relax  # noqa: F401
+
+# isort: split
 
 import jax
 import jax.numpy as jnp
@@ -2862,6 +2867,11 @@ def main():
         os.environ["RELAX_PARITY_TIMING_DIR"] = str(timing_dir_path)
     else:
         timing_dir_path = None
+
+    from relax.helpers import xla_memory_reserve
+
+    if xla_memory_reserve.LAUNCH_RESERVE_RECORD is not None:
+        logger.info("%s", xla_memory_reserve.format_reserve_record(xla_memory_reserve.LAUNCH_RESERVE_RECORD))
 
     # Verify GPU
     devices = jax.devices()

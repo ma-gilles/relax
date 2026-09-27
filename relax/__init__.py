@@ -96,6 +96,10 @@ def _reject_renamed_environment(*, environ=None):
 _reject_renamed_environment()
 _configure_initial_model_cuda_allocator()
 _configure_em_xla_defaults()
+# Size the XLA pool so the RELION projector texture fits beside it (relax/helpers/xla_memory_reserve.py).
+from relax.helpers.xla_memory_reserve import reserve_for_command_line  # noqa: E402
+
+reserve_for_command_line()
 
 try:
     # recovar's package import applies the XLA configuration (including the EM defaults marker set above);
