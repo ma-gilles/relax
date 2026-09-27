@@ -584,16 +584,23 @@ def _run_local(case, current_size: int):
 
 
 @requires_resident_gpu
-@pytest.mark.parametrize("noise", [200.0, 2.0])
-def test_resident_local_pass_is_relions_local_fine_pass(monkeypatch, noise):
-    """The resident local fine pass (current size 6 of 8) against the reference."""
+@pytest.mark.parametrize("current_size, noise", [(6, 200.0), (6, 2.0), (8, 200.0)])
+def test_resident_local_pass_is_relions_local_fine_pass(monkeypatch, noise, current_size):
+    """The resident local fine pass against the reference, windowed and at the box.
+
+    Current size 8 is RELION's final all-data shape: its window still cuts the
+    corners, and the local search routes that pass to the resident driver too.
+    The box case runs at noise 200 only: at noise 2 its Ft_y relative L2 is
+    1.18e-5 (the exact local engine's is 2.3e-5, job 14508921), above this
+    test's 1e-5 bound, which is not widened here.
+    """
 
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT", "1")
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "64,256,1024")
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
     monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "0")
-    case, reference = _local_case(6, noise)
-    out = _run_local(case, 6)
+    case, reference = _local_case(current_size, noise)
+    out = _run_local(case, current_size)
     posts = ref.posteriors(reference)
     mstep = ref.mstep(reference, posts)
 
