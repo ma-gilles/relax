@@ -135,6 +135,7 @@ from relax.sparse_pass2.sparse_pass2_policy import (
 )
 from relax.sparse_pass2.sparse_pass2_projection_blocks import (
     _projection_kwargs_for_relion_score_window,
+    projection_window_union,
 )
 from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_cuda_fine_full_to_compact_lookup,
@@ -700,6 +701,18 @@ def compute_local_search_resident(
     projection_kwargs["force_jax"] = bool(projection_force_jax)
     projection_kwargs["mask_current_image_disk"] = bool(projection_mask_current_image_disk)
     projection_kwargs["relion_kernel"] = projection_relion_kernel
+    # The pixels the projector computes for a chunk's rows: the two windows,
+    # not the full half spectrum (10202 box 800: ~155k of 320,800 px per row).
+    window_union = (
+        projection_window_union(
+            window_indices,
+            recon_window_indices,
+            image_shape=image_shape,
+            projector_output_size=int(projection_kwargs["projector_output_size"]),
+        )
+        if projection_kwargs.get("projector_output_size") is not None
+        else None
+    )
 
     # One RELION projector texture for the whole pass, staged before the
     # capacity plan so the plan's device reading sees it. Projected per call,
@@ -950,6 +963,7 @@ def compute_local_search_resident(
                 windowed_prepare=windowed_prepare,
                 window_indices=window_indices,
                 recon_window_indices=recon_window_indices,
+                window_union=window_union,
                 relion_x_half_recon_indices=relion_x_half_recon_indices,
                 exact_positions_device=exact_positions_device,
                 rect_indices_device=rect_indices_device,
@@ -1217,6 +1231,7 @@ def _start_resident_local_chunk(
     windowed_prepare,
     window_indices,
     recon_window_indices,
+    window_union,
     relion_x_half_recon_indices,
     exact_positions_device,
     rect_indices_device,
@@ -1379,6 +1394,7 @@ def _start_resident_local_chunk(
         relion_projector_r_max=relion_projector_r_max,
         projection_padding_factor=projection_padding_factor,
         relion_projector_capacity_texture=relion_projector_capacity_texture,
+        window_union=window_union,
         **projection_kwargs,
     )
 

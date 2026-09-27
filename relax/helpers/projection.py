@@ -209,20 +209,16 @@ def project_relion_projector_half_spectrum_centered_rows_at_indices(
     return proj_fftw.reshape((rotations_block.shape[0], -1))[:, projector_flat_indices]
 
 
-def _validate_centered_relion_projector_pixel_indices(
-    pixel_indices,
-    *,
-    image_shape,
-    projector_output_size: int,
-) -> None:
-    """Validate compact indices against the RELION projector crop.
+def centered_relion_projector_crop_mask(pixel_indices, *, image_shape, projector_output_size: int) -> np.ndarray:
+    """Which centered full-image half-spectrum pixels lie in the RELION projector crop.
 
-    See ``docs/math/em_projector_indices.md`` for full-box Nyquist labeling.
+    The crop's row zero is the even box's Nyquist row (+N/2), then rows
+    -N/2+1 .. N/2-1 (:func:`_texture_centered_crop_to_full`); a pixel outside
+    the crop is zero in the full row. See ``docs/math/em_projector_indices.md``
+    for full-box Nyquist labeling.
     """
 
     indices = np.asarray(pixel_indices, dtype=np.int64)
-    if indices.size == 0:
-        return
     image_size = int(image_shape[0])
     full_x_half = image_size // 2 + 1
     rows = indices // full_x_half
@@ -236,13 +232,29 @@ def _validate_centered_relion_projector_pixel_indices(
         # The full even box stores its positive Nyquist row at centered row zero,
         # matching the texture gather. Smaller crops exclude that physical row.
         ky = np.where(rows == 0, max_ky, ky)
-    valid = (
+    return (
         (indices >= 0)
         & (indices < image_size * full_x_half)
         & (ky >= min_ky)
         & (ky <= max_ky)
         & (cols >= 0)
         & (cols < projector_x_half)
+    )
+
+
+def _validate_centered_relion_projector_pixel_indices(
+    pixel_indices,
+    *,
+    image_shape,
+    projector_output_size: int,
+) -> None:
+    """Validate compact indices against the RELION projector crop (:func:`centered_relion_projector_crop_mask`)."""
+
+    indices = np.asarray(pixel_indices, dtype=np.int64)
+    if indices.size == 0:
+        return
+    valid = centered_relion_projector_crop_mask(
+        indices, image_shape=image_shape, projector_output_size=projector_output_size
     )
     if not np.all(valid):
         bad = indices[~valid][:8].tolist()

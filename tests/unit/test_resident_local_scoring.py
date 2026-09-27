@@ -349,3 +349,76 @@ def test_live_row_projection_matches_whole_chunk_projection(monkeypatch, n_valid
         assert b.shape == a.shape and b.dtype == a.dtype, name
         assert_matches(b[:n_valid_rows], a[:n_valid_rows], err_msg=name)
         assert not np.any(b[n_projected:]), name
+
+
+def _relion_half_case(seed=11):
+    """A random RELION ``PPref`` half slab (r_max 7, padding 2) and 12 rotations."""
+
+    r_max, pf = 7, 2
+    rng = np.random.default_rng(seed)
+    shape = (2 * r_max * pf + 3, 2 * r_max * pf + 3, r_max * pf + 2)
+    half = (rng.standard_normal(shape) + 1j * rng.standard_normal(shape)).astype(np.complex64)
+    angles = rng.uniform(0.0, 2 * np.pi, (12, 3))
+    rotations = []
+    for a, b, c in angles:
+        rz = np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]])
+        ry = np.array([[np.cos(b), 0, np.sin(b)], [0, 1, 0], [-np.sin(b), 0, np.cos(b)]])
+        rz2 = np.array([[np.cos(c), -np.sin(c), 0], [np.sin(c), np.cos(c), 0], [0, 0, 1]])
+        rotations.append(rz @ ry @ rz2)
+    return jnp.asarray(half), jnp.asarray(np.stack(rotations).astype(np.float32)), r_max, pf
+
+
+def _window_union_projection_matches(texture_interp: bool, crop: int = 16):
+    from relax.sparse_pass2.sparse_pass2_projection_blocks import projection_window_union
+
+    half, rotations, r_max, pf = _relion_half_case()
+    image_shape = (16, 16)
+    n_half = image_shape[0] * (image_shape[1] // 2 + 1)
+    score_indices = np.arange(3, n_half - 5, 2, dtype=np.int32)
+    recon_indices = np.arange(1, n_half, 3, dtype=np.int32)
+    kwargs = dict(
+        n_valid_rows=9,
+        score_indices=score_indices,
+        recon_indices=recon_indices,
+        max_projected_rotations=12,
+        output_complex_dtype=jnp.complex64,
+        output_abs2_dtype=jnp.float32,
+        relion_projector_half=half,
+        relion_projector_r_max=r_max,
+        projection_padding_factor=pf,
+        relion_texture_interp=texture_interp,
+        projector_output_size=crop,
+    )
+    args = (None, rotations, image_shape, (16, 16, 16), "linear_interp")
+    full = project_resident_live_rows(*args, **kwargs)
+    union = project_resident_live_rows(
+        *args, window_union=projection_window_union(
+            score_indices, recon_indices, image_shape=image_shape, projector_output_size=crop
+        ), **kwargs
+    )
+    assert full[3] == union[3]
+    for name, a, b in zip(("score", "recon", "recon_abs2"), full[:3], union[:3], strict=True):
+        assert np.any(np.asarray(a)), name
+        assert_matches(np.asarray(b), np.asarray(a), err_msg=name)
+
+
+def test_window_union_projection_matches_the_full_row_windows():
+    """The RELION projector computing only the windows' pixels gives the windows of the full rows."""
+
+    _window_union_projection_matches(texture_interp=False)
+    # A crop smaller than the box: window pixels outside it are zero in both.
+    _window_union_projection_matches(texture_interp=False, crop=10)
+
+
+@pytest.mark.gpu
+def test_window_union_texture_projection_matches_the_full_row_windows(monkeypatch, custom_cuda_lib, gpu_device):
+    """The same with RELION's CUDA texture projector (the production path)."""
+
+    import recovar.cuda_backproject as cuda_backproject
+
+    monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
+    monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
+    monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
+    with jax.default_device(gpu_device):
+        _window_union_projection_matches(texture_interp=True)
+        _window_union_projection_matches(texture_interp=True, crop=10)

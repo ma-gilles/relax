@@ -184,6 +184,7 @@ from relax.sparse_pass2.sparse_pass2_posterior import (
 from relax.sparse_pass2.sparse_pass2_projection_blocks import (
     _compute_sparse_pass2_windowed_projections_block,
     _projection_kwargs_for_relion_score_window,
+    projection_window_union,
 )
 from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_cuda_fine_full_to_compact_lookup,
@@ -2594,6 +2595,17 @@ def _resident_pass2(
     projection_kwargs["mask_current_image_disk"] = bool(projection_mask_current_image_disk)
 
     fine_grid = jnp.asarray(fine_rotations_override, dtype=precision_policy.score_real_dtype)
+    # The RELION projector computes only the windows' pixels, not full half rows.
+    fine_window_union = (
+        projection_window_union(
+            window_indices,
+            recon_window_indices,
+            image_shape=image_shape,
+            projector_output_size=int(projection_kwargs["projector_output_size"]),
+        )
+        if projection_kwargs.get("projector_output_size") is not None
+        else None
+    )
 
     def project_fine_rotations(rotations, class_index=0):
         """(score, recon, |recon|^2) projections of ``rotations``, as the cache holds them."""
@@ -2615,6 +2627,7 @@ def _resident_pass2(
             relion_projector_half=class_projector_halves[class_index],
             relion_projector_r_max=relion_projector_r_max,
             projection_padding_factor=projection_padding_factor,
+            window_union=fine_window_union,
             **projection_kwargs,
         )
         recon, recon_abs2 = precision_policy.cast_local_noise_projection_scores(recon, recon_abs2)
@@ -2743,6 +2756,15 @@ def _resident_pass2(
         )
     elif union_indices is not None:
         cache_t0 = time.time()
+        union_window_union = (
+            projection_window_union(
+                union_indices_np,
+                image_shape=image_shape,
+                projector_output_size=int(projection_kwargs["projector_output_size"]),
+            )
+            if projection_kwargs.get("projector_output_size") is not None
+            else None
+        )
         # Raw union rows: the native-unit division of the score window runs
         # after the chunk's gather (score_resident_chunk), and the recon window
         # keeps RECOVAR units, as in the three-cache build.
@@ -2764,6 +2786,7 @@ def _resident_pass2(
                 relion_projector_half=class_projector_halves[class_index],
                 relion_projector_r_max=relion_projector_r_max,
                 projection_padding_factor=projection_padding_factor,
+                window_union=union_window_union,
                 **projection_kwargs,
             )[0]
 

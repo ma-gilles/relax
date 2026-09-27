@@ -13,9 +13,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 from functools import partial
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from relax.helpers.projection import compute_projections_block as _compute_projections_block
 from relax.helpers.projection import (
@@ -40,8 +42,16 @@ def _compute_sparse_pass2_projections_block(
     projection_padding_factor: int = 1,
     projector_output_size: int | None = None,
     relion_projector_capacity_texture=None,
+    pixel_indices=None,
     **projection_kwargs,
 ):
+    """One rotation block's projections, full half-spectrum rows or, with ``pixel_indices``, those pixels.
+
+    ``pixel_indices`` (RELION projector only) are centered-row half-spectrum
+    pixels: the projector gathers them from its crop instead of expanding the
+    crop to the full half, the same values the full row holds there.
+    """
+
     projection_kwargs = dict(projection_kwargs)
     return_abs2 = projection_kwargs.pop("return_abs2", True)
     # Pass 2 and the weighted sums use RELION's fine and wavg kernels; a local parent pass
@@ -61,6 +71,8 @@ def _compute_sparse_pass2_projections_block(
         raise ValueError("relion_projector_r_max is required when relion_projector_half is provided")
     if relion_projector_capacity_texture is not None and relion_projector_half is None:
         raise ValueError("a capacity projector texture projects relion_projector_half; none was given")
+    if pixel_indices is not None and not use_relion_projector:
+        raise ValueError("pixel_indices select the RELION projector's pixels; no RELION projector was given")
 
     def _project(rotations):
         if use_relion_projector:
@@ -77,6 +89,7 @@ def _compute_sparse_pass2_projections_block(
                 projector_output_size=projector_output_size,
                 relion_kernel=relion_kernel,
                 mask_current_image_disk=projection_mask_current_image_disk,
+                pixel_indices=pixel_indices,
                 **({"persistent_texture": relion_projector_texture} if relion_projector_texture is not None else {}),
                 **(
                     {"capacity_texture": relion_projector_capacity_texture}
@@ -175,15 +188,33 @@ def _compute_sparse_pass2_windowed_projections_block(
     relion_projector_texture=None,
     relion_projector_r_max: int | None = None,
     projection_padding_factor: int = 1,
+    window_union: "ProjectionWindowUnion | None" = None,
     **projection_kwargs,
 ):
-    """Project in capped chunks and retain only score/reconstruction windows."""
+    """Project in capped chunks and retain only score/reconstruction windows.
+
+    With ``window_union`` (:func:`projection_window_union` of these windows) a
+    RELION projector projects only the union's pixels and the windows are
+    taken from it, instead of expanding every row to the full half spectrum
+    first: at EMPIAR-10202 box 800 a row is 320,800 pixels for a ~155,000-pixel
+    window (bigbox 14558025).
+    """
 
     if max_projected_rotations is None:
         max_projected_rotations = _optional_positive_int_env(_MAX_PROJECTED_ROTATIONS_ENV)
 
     projection_kwargs = dict(projection_kwargs)
     projection_kwargs["return_abs2"] = False
+    pixel_indices = None
+    if window_union_applies(
+        window_union,
+        relion_projector=relion_projector_half is not None or relion_projector_texture is not None,
+        projection_kwargs=projection_kwargs,
+    ):
+        if (window_union.recon_take is None) != (recon_indices is None):
+            raise ValueError("the window union does not describe these windows")
+        pixel_indices = window_union.indices
+        score_indices, recon_indices = window_union.score_take, window_union.recon_take
     score_indices = jnp.asarray(score_indices, dtype=jnp.int32)
     recon_indices = None if recon_indices is None else jnp.asarray(recon_indices, dtype=jnp.int32)
 
@@ -211,8 +242,11 @@ def _compute_sparse_pass2_windowed_projections_block(
             relion_projector_texture=relion_projector_texture,
             relion_projector_r_max=relion_projector_r_max,
             projection_padding_factor=projection_padding_factor,
+            pixel_indices=pixel_indices,
             **projection_kwargs,
         )
+        if pixel_indices is not None:
+            proj_chunk = with_zero_column(proj_chunk)
         score_chunk, recon_chunk = _window_projection_chunk(
             proj_chunk,
             score_indices,
@@ -231,6 +265,69 @@ def _compute_sparse_pass2_windowed_projections_block(
         tuple(recon_chunks),
         output_abs2_dtype=output_abs2_dtype,
     )
+
+
+class ProjectionWindowUnion(NamedTuple):
+    """The pixels a RELION projector computes for two windows, and where each window sits in them.
+
+    ``indices`` are the windows' pixels inside the projector crop of
+    ``projector_output_size``; a window pixel outside the crop is zero in the
+    full row, so its take position is ``len(indices)``, a zero column appended
+    to the projected pixels.
+    """
+
+    indices: jax.Array  # int32 [U]: sorted in-crop pixels of the score and reconstruction windows
+    score_take: jax.Array  # int32 [N_score]: positions in ``indices`` + one zero column
+    recon_take: jax.Array | None  # int32 [N_recon], or None for a score-only window
+    projector_output_size: int
+
+
+def projection_window_union(
+    score_indices, recon_indices=None, *, image_shape, projector_output_size
+) -> ProjectionWindowUnion:
+    """:class:`ProjectionWindowUnion` of host pixel windows; computed once per pass, not per call."""
+
+    from relax.helpers.projection import centered_relion_projector_crop_mask
+
+    score_np = np.asarray(score_indices, dtype=np.int64)
+    recon_np = None if recon_indices is None else np.asarray(recon_indices, dtype=np.int64)
+    union = np.unique(score_np) if recon_np is None else np.union1d(score_np, recon_np)
+    union = union[
+        centered_relion_projector_crop_mask(
+            union, image_shape=image_shape, projector_output_size=int(projector_output_size)
+        )
+    ]
+
+    def take(window):
+        position = np.searchsorted(union, window)
+        clipped = np.minimum(position, max(union.size - 1, 0))
+        inside = (position < union.size) & (union[clipped] == window) if union.size else np.zeros(window.shape, bool)
+        return jnp.asarray(np.where(inside, position, union.size), dtype=jnp.int32)
+
+    return ProjectionWindowUnion(
+        indices=jnp.asarray(union, dtype=jnp.int32),
+        score_take=take(score_np),
+        recon_take=None if recon_np is None else take(recon_np),
+        projector_output_size=int(projector_output_size),
+    )
+
+
+def window_union_applies(window_union, *, relion_projector: bool, projection_kwargs) -> bool:
+    """Whether ``window_union`` describes this RELION projector's crop."""
+
+    return (
+        window_union is not None
+        and relion_projector
+        and projection_kwargs.get("projector_output_size") is not None
+        and int(projection_kwargs["projector_output_size"]) == int(window_union.projector_output_size)
+    )
+
+
+@jax.jit
+def with_zero_column(proj_block):
+    """``proj_block`` with one zero column appended, the value of every out-of-crop window pixel."""
+
+    return jnp.pad(proj_block, ((0, 0), (0, 1)))
 
 
 @partial(jax.jit, static_argnames=("output_complex_dtype",))

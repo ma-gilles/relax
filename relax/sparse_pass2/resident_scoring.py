@@ -63,6 +63,8 @@ from relax.sparse_pass2.sparse_pass2_bucket_io import _prepare_bucket_io
 from relax.sparse_pass2.sparse_pass2_projection_blocks import (
     _compute_sparse_pass2_projections_block,
     _compute_sparse_pass2_windowed_projections_block,
+    window_union_applies,
+    with_zero_column,
 )
 from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_cuda_fine_normalized_cc_score,
@@ -820,6 +822,7 @@ def project_resident_rows(
     relion_projector_half=None,
     relion_projector_r_max: int | None = None,
     projection_padding_factor: int = 1,
+    window_union=None,
     **projection_kwargs,
 ):
     """Project a chunk's own rows into the score and reconstruction windows.
@@ -852,6 +855,7 @@ def project_resident_rows(
         relion_projector_half=relion_projector_half,
         relion_projector_r_max=relion_projector_r_max,
         projection_padding_factor=projection_padding_factor,
+        window_union=window_union,
         **projection_kwargs,
     )
 
@@ -928,6 +932,7 @@ def project_resident_live_rows(
     relion_projector_r_max: int | None = None,
     projection_padding_factor: int = 1,
     relion_projector_capacity_texture=None,
+    window_union=None,
     **projection_kwargs,
 ):
     """:func:`project_resident_rows` for a padded chunk: only the valid rows are projected.
@@ -943,6 +948,9 @@ def project_resident_live_rows(
     ``relion_projector_capacity_texture`` (a
     :class:`~relax.cuda.kernels.RelionCapacityHalfTextureF32` of
     ``relion_projector_half``) projects without restaging the texture per call.
+    ``window_union`` (:func:`projection_window_union` of the two windows) has
+    the RELION projector compute only the windows' pixels, as
+    :func:`project_resident_rows` does with it.
 
     Returns ``(score_proj, recon_proj, recon_abs2, n_projected_rows)``.
     """
@@ -958,6 +966,12 @@ def project_resident_live_rows(
     score_proj = jnp.zeros((row_capacity, int(score_indices.shape[0])), dtype=output_complex_dtype)
     recon_proj = jnp.zeros((row_capacity, int(recon_indices.shape[0])), dtype=output_complex_dtype)
     recon_abs2 = jnp.zeros((row_capacity, int(recon_indices.shape[0])), dtype=output_abs2_dtype)
+    pixel_indices = None
+    if window_union_applies(
+        window_union, relion_projector=relion_projector_half is not None, projection_kwargs=projection_kwargs
+    ):
+        pixel_indices = window_union.indices
+        score_indices, recon_indices = window_union.score_take, window_union.recon_take
     for start in range(0, n_projected, block):
         proj_block, _ = _compute_sparse_pass2_projections_block(
             mean_for_proj,
@@ -970,8 +984,11 @@ def project_resident_live_rows(
             relion_projector_r_max=relion_projector_r_max,
             projection_padding_factor=projection_padding_factor,
             relion_projector_capacity_texture=relion_projector_capacity_texture,
+            pixel_indices=pixel_indices,
             **projection_kwargs,
         )
+        if pixel_indices is not None:
+            proj_block = with_zero_column(proj_block)
         score_proj, recon_proj, recon_abs2 = _place_windowed_projection_block(
             score_proj,
             recon_proj,
