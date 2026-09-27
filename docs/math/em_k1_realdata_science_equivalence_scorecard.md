@@ -312,29 +312,29 @@ RELION against RELION (same band FSC-AUCs):
 | flip-job RELION arm vs speedbench r1 (--preread_images) | 0.9919 | 0.9847 | 0.9838 |
 | repeat 14397251 vs speedbench r1 (--preread_images) | 0.9904 | 0.9815 | 0.9815 |
 
-### EMPIAR-10097 (flip pair, cd26a5e)\* (relax `cd26a5e41`)
+### EMPIAR-10097 (resident engine)\* (relax `ef6234c5d`)
 
-\* RELION's four runs split into its two known 10097 pose basins: this job's RELION arm with speedbench r1 (0.9780/0.9623/0.9622) and the d3d62ca arm with its repeat (0.9770/0.9596/0.9609); across basins 0.9287-0.9299. relax lands in the d3d62ca basin (0.9758/0.9605/0.9564 and 0.9761/0.9586/0.9586) and matches its own paired RELION arm only at the cross-basin level (0.9296/0.8820/0.8858). It passes under the user's 2026-09-23 rule (thresholds met against at least one same-command RELION run; band condition dropped). All comparisons: see the per-reference table.
+\* RELION's same-command runs split into its two known 10097 pose basins: this job's RELION arm and the d3d62ca arm with its repeat agree (0.9767-0.9792 merged), the cd26a5e job's RELION arm differs from all three (0.9287-0.9299). relax lands in the majority basin and meets the thresholds against those three runs (0.9753-0.9755 merged). All comparisons: see the per-reference table.
 
 relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
 
 | RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| this job's RELION arm | 14407806 | 0.9296 | 0.8820 | 0.8858 | 0.9824 | 0.9615 | 0.9625 | not met |
-| d3d62ca job's RELION arm | 14400302 | 0.9758 | 0.9605 | 0.9564 | 0.9941 | 0.9875 | 0.9856 | met |
-| d3d62ca job's RELION repeat | 14400302 | 0.9761 | 0.9586 | 0.9586 | 0.9941 | 0.9868 | 0.9861 | met |
-| speedbench r1 (--preread_images) | 14331581 | 0.9297 | 0.8816 | 0.8857 | 0.9825 | 0.9615 | 0.9622 | not met |
+| this job's RELION arm | 14530715 | 0.9755 | 0.9584 | 0.9578 | 0.9941 | 0.9868 | 0.9863 | met |
+| cd26a5e flip job's RELION arm | 14407806 | 0.9295 | 0.8832 | 0.8850 | — | — | — | not met |
+| d3d62ca job's RELION arm | 14400302 | 0.9754 | 0.9577 | 0.9580 | — | — | — | met |
+| d3d62ca job's RELION repeat | 14400302 | 0.9753 | 0.9570 | 0.9583 | — | — | — | met |
 
 RELION against RELION (same band FSC-AUCs):
 
 | Pair | Merged | Half 1 | Half 2 |
 | --- | ---: | ---: | ---: |
-| this job's RELION arm vs d3d62ca job's RELION arm | 0.9299 | 0.8828 | 0.8861 |
-| this job's RELION arm vs d3d62ca job's RELION repeat | 0.9287 | 0.8807 | 0.8856 |
-| this job's RELION arm vs speedbench r1 (--preread_images) | 0.9780 | 0.9623 | 0.9622 |
+| this job's RELION arm vs cd26a5e flip job's RELION arm | 0.9291 | 0.8827 | 0.8835 |
+| this job's RELION arm vs d3d62ca job's RELION arm | 0.9792 | 0.9662 | 0.9626 |
+| this job's RELION arm vs d3d62ca job's RELION repeat | 0.9767 | 0.9607 | 0.9592 |
+| cd26a5e flip job's RELION arm vs d3d62ca job's RELION arm | 0.9299 | 0.8828 | 0.8861 |
+| cd26a5e flip job's RELION arm vs d3d62ca job's RELION repeat | 0.9287 | 0.8807 | 0.8856 |
 | d3d62ca job's RELION arm vs d3d62ca job's RELION repeat | 0.9770 | 0.9596 | 0.9609 |
-| d3d62ca job's RELION arm vs speedbench r1 (--preread_images) | 0.9298 | 0.8823 | 0.8862 |
-| d3d62ca job's RELION repeat vs speedbench r1 (--preread_images) | 0.9288 | 0.8804 | 0.8858 |
 
 ### EMPIAR-10345 (flip pair) (relax `64499e87c`)
 
@@ -433,6 +433,24 @@ RELION against RELION (same band FSC-AUCs):
 | 2026-09-18 repeat e vs bench attempt 1 RELION arm | 0.9958 | 0.9946 | 0.9920 |
 | 2026-09-18 repeat e vs bench attempt 2 RELION arm | 0.9786 | 0.9657 | 0.9669 |
 | bench attempt 1 RELION arm vs bench attempt 2 RELION arm | 0.9790 | 0.9670 | 0.9674 |
+
+### data_noise1_50k_256_normalized (resident engine) (relax `ef6234c5d`)
+
+relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
+
+| RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| this job's RELION arm | 14530777 | 1.0000 | 0.9999 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | met |
+| fixture relion_ref_os0 | — | 1.0000 | 0.9999 | 1.0000 | — | — | — | met |
+| repeat 14298975 | 14298975 | 1.0000 | 1.0000 | 1.0000 | — | — | — | met |
+
+RELION against RELION (same band FSC-AUCs):
+
+| Pair | Merged | Half 1 | Half 2 |
+| --- | ---: | ---: | ---: |
+| this job's RELION arm vs fixture relion_ref_os0 | 1.0000 | 1.0000 | 1.0000 |
+| this job's RELION arm vs repeat 14298975 | 1.0000 | 1.0000 | 1.0000 |
+| fixture relion_ref_os0 vs repeat 14298975 | 1.0000 | 1.0000 | 1.0000 |
 
 ### pdb_k1_g256_n100000_noise1_bf80_20260516 (resident engine) (relax `589ce095c`)
 

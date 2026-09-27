@@ -67,37 +67,37 @@ RELION against RELION (same band FSC-AUCs):
 | flip-job RELION arm vs speedbench r1 (--preread_images) | 0.9919 | 0.9847 | 0.9838 |
 | repeat 14397251 vs speedbench r1 (--preread_images) | 0.9904 | 0.9815 | 0.9815 |
 
-<a id="empiar10097_k1_autorefine_flipqual_cd26a5e"></a>
+<a id="empiar10097_k1_autorefine_resident_ef6234c"></a>
 
-### EMPIAR-10097 (flip pair, cd26a5e): auto-refine K=1
+### EMPIAR-10097 (resident engine): auto-refine K=1
 
-Status 🟠; quality vs RELION: hit (same resolution; thresholds met vs 2 of 4 RELION runs (RELION's two pose basins)); matched: yes; GPU: 1x H100.
+Status 🟢; quality vs RELION: hit (same resolution (7.45 Å, masked 5.99 Å); thresholds met vs 3 of 4 RELION runs); matched: yes; GPU: 1x H100.
 
-`empiar10097_k1_autorefine_flipqual_cd26a5e`: relax source `cd26a5e41`, relax main. Frozen mask `empiar10097_c1` (`3c184a29e87c`); masked FSC-AUC over the scorecard band RELION 0.8719, relax 0.8722. Cross-engine: 10097 rule PASS: thresholds met against the d3d62ca job's RELION arm (0.9758/0.9605/0.9564) and its repeat (0.9761/0.9586/0.9586), same command; not against this job's RELION arm (0.9296/0.8820/0.8858), which fell into RELION's other pose basin. relax main cd26a5e (RELION native FFT units, float32 projector texture, resident symmetry and bitsets, pool-aware stream budget: fixes the d3d62ca failure at iteration 13) with speed's resident_env_v2. Image I/O: --scratch_dir /tmp on every arm (RELION's default reading from a node-local copy; no pre-read). Both engines start from relion_refine's inputs only (standalone). Within the d3d62ca basin relax sits at 0.9758/0.9605/0.9564 against RELION-RELION 0.9770/0.9596/0.9609 (half 2 lower by 0.0023). Masked cross-engine 0.9941/0.9941 merged against the d3d62ca arm/repeat, 0.9824/0.9825 against the other basin. Own quality equals RELION's: 7.452 A scorecard band both; masked 5.989 A both, masked band FSC-AUC relax 0.8722, RELION 0.8719. `gt` is null: real data: no ground truth. Jobs: relax 14407806; RELION 14407806.
+`empiar10097_k1_autorefine_resident_ef6234c`: relax source `ef6234c5d`, relax main ef6234c (production defaults). Frozen mask `empiar10097_c1` (`3c184a29e87c`); masked FSC-AUC over the scorecard band RELION 0.8718, relax 0.873. Cross-engine: scorecard rule: thresholds (merged >= 0.95, each half >= 0.90) met against relion_pair, relion_d3d6, relion_d3d6rep; vs this job's RELION arm 0.9755/0.9584/0.9578. kspeed job 14530715 on relax main ef6234c: relax production defaults and RELION build_patched relion_refine_mpi 3x4 with the same command, one H100 and 12 CPUs each, same node, started together, --scratch_dir on both; standalone from relion_refine's inputs. RELION's same-command runs split into its two known 10097 pose basins; relax and this job's RELION arm share the d3d62ca basin (thresholds met against 3 of 4 runs; the cd26a5e job's RELION arm is the other basin, 0.929 against every run). `gt` is null: real data: no ground truth. Jobs: relax 14530715; RELION 14530715.
 
-Timing record: (a) RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs). relax: 1 H100, one process, 12 CPUs. Both arms in one --gres=gpu:h100:N job on the same node, run simultaneously; no --exclusive. (b) relax: main cd26a5e with env RELAX_USE_FLOAT64_SCORING=0, RELAX_USE_FLOAT64_PROJECTIONS=0, RELAX_RELION_X_HALF_MSTEP_DOUBLE=0, RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=1, RELAX_K1_RELION_WAVG_SEQUENTIAL_CUDA=1, RELAX_EM_BPREF_FINITE_GUARD=1, RELAX_SPARSE_PASS2_RESIDENT=1, RELAX_COARSE_SIGNIFICANCE_DEVICE=1, RELAX_LOCAL_SEARCH_RESIDENT=1, RELAX_SPARSE_PASS2_RESIDENT_OPERANDS=1, RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT=1, RELAX_COARSE_PAD_FINAL_IMAGE_BATCH=1, RELAX_EM_JIT_STAGE_GLUE=1, RELAX_LOCAL_IMAGE_CAPACITY_LADDER=16,32,64,128,256; standalone start-up (relax defaults); no timing, capture, replay or dump options. (c) Both: job-script wall around the whole process (TERMINAL.json wall_s), including start-up, particle copy to --scratch_dir, compilation and final writes. (d) RELION and relax 14407806 della-h19g4 2x H100 80GB HBM3 (2026-09-25).
+Timing record: (a) RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs; auto-refine needs MPI). relax: 1 H100, one process, 12 CPUs. Same job, same node, started together; no --exclusive. (b) relax: main ef6234c production defaults, standalone; no timing, capture, replay or dump options (the job's extra diagnostic relax arms are not the row). (c) Both: arm-script wall (WALL.json) around the whole process, including start-up, particle copy to --scratch_dir, compilation and final writes; cold compile cache (ef6234c predates ed7d5d7, which turned recovar's persistent cache on). (d) Both 14530715 della-h20g4 (H100 80GB HBM3).
 
-\* EMPIAR-10097 (flip pair, cd26a5e): RELION's four runs split into its two known 10097 pose basins: this job's RELION arm with speedbench r1 (0.9780/0.9623/0.9622) and the d3d62ca arm with its repeat (0.9770/0.9596/0.9609); across basins 0.9287-0.9299. relax lands in the d3d62ca basin (0.9758/0.9605/0.9564 and 0.9761/0.9586/0.9586) and matches its own paired RELION arm only at the cross-basin level (0.9296/0.8820/0.8858). It passes under the user's 2026-09-23 rule (thresholds met against at least one same-command RELION run; band condition dropped). All comparisons: see the per-reference table.
+\* EMPIAR-10097 (resident engine): RELION's same-command runs split into its two known 10097 pose basins: this job's RELION arm and the d3d62ca arm with its repeat agree (0.9767-0.9792 merged), the cd26a5e job's RELION arm differs from all three (0.9287-0.9299). relax lands in the majority basin and meets the thresholds against those three runs (0.9753-0.9755 merged). All comparisons: see the per-reference table.
 
 relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
 
 | RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| this job's RELION arm | 14407806 | 0.9296 | 0.8820 | 0.8858 | 0.9824 | 0.9615 | 0.9625 | not met |
-| d3d62ca job's RELION arm | 14400302 | 0.9758 | 0.9605 | 0.9564 | 0.9941 | 0.9875 | 0.9856 | met |
-| d3d62ca job's RELION repeat | 14400302 | 0.9761 | 0.9586 | 0.9586 | 0.9941 | 0.9868 | 0.9861 | met |
-| speedbench r1 (--preread_images) | 14331581 | 0.9297 | 0.8816 | 0.8857 | 0.9825 | 0.9615 | 0.9622 | not met |
+| this job's RELION arm | 14530715 | 0.9755 | 0.9584 | 0.9578 | 0.9941 | 0.9868 | 0.9863 | met |
+| cd26a5e flip job's RELION arm | 14407806 | 0.9295 | 0.8832 | 0.8850 | — | — | — | not met |
+| d3d62ca job's RELION arm | 14400302 | 0.9754 | 0.9577 | 0.9580 | — | — | — | met |
+| d3d62ca job's RELION repeat | 14400302 | 0.9753 | 0.9570 | 0.9583 | — | — | — | met |
 
 RELION against RELION (same band FSC-AUCs):
 
 | Pair | Merged | Half 1 | Half 2 |
 | --- | ---: | ---: | ---: |
-| this job's RELION arm vs d3d62ca job's RELION arm | 0.9299 | 0.8828 | 0.8861 |
-| this job's RELION arm vs d3d62ca job's RELION repeat | 0.9287 | 0.8807 | 0.8856 |
-| this job's RELION arm vs speedbench r1 (--preread_images) | 0.9780 | 0.9623 | 0.9622 |
+| this job's RELION arm vs cd26a5e flip job's RELION arm | 0.9291 | 0.8827 | 0.8835 |
+| this job's RELION arm vs d3d62ca job's RELION arm | 0.9792 | 0.9662 | 0.9626 |
+| this job's RELION arm vs d3d62ca job's RELION repeat | 0.9767 | 0.9607 | 0.9592 |
+| cd26a5e flip job's RELION arm vs d3d62ca job's RELION arm | 0.9299 | 0.8828 | 0.8861 |
+| cd26a5e flip job's RELION arm vs d3d62ca job's RELION repeat | 0.9287 | 0.8807 | 0.8856 |
 | d3d62ca job's RELION arm vs d3d62ca job's RELION repeat | 0.9770 | 0.9596 | 0.9609 |
-| d3d62ca job's RELION arm vs speedbench r1 (--preread_images) | 0.9298 | 0.8823 | 0.8862 |
-| d3d62ca job's RELION repeat vs speedbench r1 (--preread_images) | 0.9288 | 0.8804 | 0.8858 |
 
 <a id="empiar10345_k1_autorefine_flipqual_64499e8"></a>
 
@@ -241,15 +241,31 @@ Status 🟢; quality vs RELION: hit (class acc 0.8315 vs non-MPI RELION 0.8310-0
 
 Timing record: (a) relax: 1 H100, one process, 12 CPUs per arm (three relax arms); RELION: 1 H100, relion_refine --j 12 (12 CPUs). All arms in one --gres=gpu:h100:4 job on one node, started together; no --exclusive. (b) relax: main d7f9a7a with RELAX_EM_PREFETCH_BATCHES=2 (the default since 44edd1d), otherwise production defaults; standalone; no timing, capture, replay or dump options; XLA memory fraction unset. (c) All arms: arm-script wall (WALL.json) around the whole process, including start-up, particle copy to --scratch_dir, compilation (cold) and final writes. (d) All arms 14523034 della-h20g5 (H100 80GB HBM3).
 
-<a id="noise1_k1_50k256_autorefine_flipqual_64499e8"></a>
+<a id="noise1_k1_50k256_autorefine_resident_ef6234c"></a>
 
-### data_noise1_50k_256_normalized (flip pair): auto-refine K=1
+### data_noise1_50k_256_normalized (resident engine): auto-refine K=1
 
-Status 🔴; quality vs RELION: missed (masked GT FSC-AUC 9e-5 below the same-seed RELION band (OPEN)); matched: yes; GPU: 1x H100.
+Status 🟢; quality vs RELION: hit (GT masked AUC 0.3007 inside same-seed RELION band 0.3007-0.3008); matched: yes; GPU: 1x H100.
 
-`noise1_k1_50k256_autorefine_flipqual_64499e8`: relax source `64499e87c`, relax (candidate cand_64499e8, speed flip qualification; resident arm relax_res_tex). Frozen mask `noise1_k1_50k256_c1` (`afaa22523e9f`); masked FSC-AUC over the scorecard band RELION 0.9719, relax 0.9719. GT merged GT FSC-AUC (rigidly aligned): RELION 0.35118, relax 0.35123. Cross-engine: merged FSC-AUC vs RELION 0.99936 (relax_compact 0.99942; RELION vs the fixture reference relion_ref_os0 0.99973); masked cross-engine 0.999998/0.999994/0.999997. Candidate cand_64499e8 (speed's flip qualification); not relax main. The 10097 flip pair runs on cand_d3d62ca (separate row). Image I/O: --scratch_dir /tmp on every arm (RELION's default reading from a node-local copy; no pre-read). Both engines start from relion_refine's inputs only (standalone). Third arm in the same job: relax_compact (main's default compact engine, same candidate without the resident flags): 14 iterations, 11.826 A, GT aligned 0.35128, masked cross-engine 0.999998, wall 5,342 s (1.07x). GT FSC-AUC raw (unaligned): RELION 0.23846, relax_res_tex 0.23847, relax_compact 0.23848 (fixture relion_ref_os0 0.23844). Masked GT FSC-AUC over the scorecard band 1-45: 0.67940 / 0.67938 / 0.67939; full spectrum 0.300891 / 0.300593 / 0.300764 (relax_res_tex 3.0e-4 below this single RELION run; no RELION repeat in the job). OPEN (relax_res_tex) against the RELION band. Same-command RELION 50k runs with the same seed 1775735620 (fixture relion_ref_os0, repeat 14298975, this job's RELION arm) span: masked GT FSC-AUC full spectrum 0.300683-0.300891, shells 1-45 0.679357-0.679396; unmasked GT full 0.238435-0.238457, shells 1-45 0.666259-0.666297; GT aligned 0.35118-0.35129; merged-map FSC-AUC between the three 0.99965-0.99977. relax_res_tex: masked full 0.300593 (9.0e-5 below the band), masked 1-45 0.679381, unmasked full 0.238466 (above), unmasked 1-45 0.666282, aligned 0.35123 (inside); relax_compact: 0.300764 / 0.679395 / 0.238475 (above) / 0.666295 / 0.35128 (all inside or above). Merged-map FSC-AUC of relax against the three RELION runs is 0.99936-0.99943 (res_tex) and 0.99942-0.99944 (compact), below the RELION-RELION 0.99965-0.99977, so both arms sit just outside RELION's same-seed map-agreement spread. The one other-seed RELION run (seed 20260923, 14309490) is far lower (masked full 0.296992, aligned 0.35113, agreement with the same-seed runs 0.899). Evidence: /scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/k1_50k_relion_band_20260924. Both engines ran --ini_high 30 (relax --init_resolution 30) with --firstiter_cc. Jobs: relax 14397075; RELION 14397075.
+`noise1_k1_50k256_autorefine_resident_ef6234c`: relax source `ef6234c5d`, relax main ef6234c (production defaults). Frozen mask `noise1_k1_50k256_c1` (`afaa22523e9f`); masked FSC-AUC over the scorecard band RELION 0.9719, relax 0.9719. GT masked GT FSC-AUC, full spectrum (kspeed SCORE.json, scripts.em_tier_bands): RELION 0.300762, relax 0.300716. Cross-engine: scorecard rule: thresholds (merged >= 0.95, each half >= 0.90) met against relion_pair, relion_ref, relion_rep1; vs this job's RELION arm 1.0000/0.9999/1.0000. kspeed job 14530777 on relax main ef6234c: relax production defaults and RELION build_patched relion_refine_mpi 3x4 with the same command, one H100 and 12 CPUs each, same node, started together, --scratch_dir on both; standalone from relion_refine's inputs. GT (kspeed k1_50k_ef6234c/SCORE.json): masked GT FSC-AUC relax 0.300716, same-seed RELION runs 0.300683-0.300762 (this pair, fixture relion_ref_os0, repeat 14298975); relax is inside. The cross-engine band FSC-AUCs are 0.9999-1.0000 against every RELION run. Jobs: relax 14530777; RELION 14530777.
 
-Timing record: (a) RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs). relax: 1 H100 per relax arm, one process, 12 CPUs. Both arms in one --gres=gpu:h100:N job on the same node, run simultaneously; no --exclusive. (b) relax: cand_64499e8 (relax main + resident flag set + float32 projector texture) with env RELAX_USE_FLOAT64_SCORING=0, RELAX_USE_FLOAT64_PROJECTIONS=0, RELAX_RELION_X_HALF_MSTEP_DOUBLE=0, RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=1, RELAX_K1_RELION_WAVG_SEQUENTIAL_CUDA=1, RELAX_EM_BPREF_FINITE_GUARD=1, RELAX_SPARSE_PASS2_RESIDENT=1, RELAX_SPARSE_PASS2_PROJECTOR_COMPLEX64=1, RELAX_COARSE_SIGNIFICANCE_DEVICE=1, RELAX_LOCAL_SEARCH_RESIDENT=1, RELAX_SPARSE_PASS2_RESIDENT_OPERANDS=1, RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT=1, RELAX_COARSE_PAD_FINAL_IMAGE_BATCH=1, RELAX_EM_JIT_STAGE_GLUE=1, RELAX_LOCAL_IMAGE_CAPACITY_LADDER=16,32,64,128,256; standalone start-up (relax defaults); no timing, capture, replay or dump options. (c) Both: job-script wall around the whole process (TERMINAL.json wall_s), including start-up, particle copy to --scratch_dir, compilation and final writes. (d) RELION and both relax arms 14397075 della-h20g5 3x H100 80GB HBM3 (2026-09-24).
+Timing record: (a) RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs; auto-refine needs MPI). relax: 1 H100, one process, 12 CPUs. Same job, same node, started together; no --exclusive. (b) relax: main ef6234c production defaults, standalone; no timing, capture, replay or dump options (the job's extra diagnostic relax arms are not the row). (c) Both: arm-script wall (WALL.json) around the whole process, including start-up, particle copy to --scratch_dir, compilation and final writes; cold compile cache (ef6234c predates ed7d5d7, which turned recovar's persistent cache on). (d) Both 14530777 della-h20g5 (H100 80GB HBM3).
+
+relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
+
+| RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| this job's RELION arm | 14530777 | 1.0000 | 0.9999 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | met |
+| fixture relion_ref_os0 | — | 1.0000 | 0.9999 | 1.0000 | — | — | — | met |
+| repeat 14298975 | 14298975 | 1.0000 | 1.0000 | 1.0000 | — | — | — | met |
+
+RELION against RELION (same band FSC-AUCs):
+
+| Pair | Merged | Half 1 | Half 2 |
+| --- | ---: | ---: | ---: |
+| this job's RELION arm vs fixture relion_ref_os0 | 1.0000 | 1.0000 | 1.0000 |
+| this job's RELION arm vs repeat 14298975 | 1.0000 | 1.0000 | 1.0000 |
+| fixture relion_ref_os0 vs repeat 14298975 | 1.0000 | 1.0000 | 1.0000 |
 
 <a id="pdb_k1_100k256_noise1_bf80_autorefine_resident_589ce09"></a>
 
@@ -397,20 +413,20 @@ No RELION repeat: no second RELION run of this command exists.
 
 ### data_noise1_50k_256_normalized: InitialModel-VDAM K=1 (200 iterations)
 
-Status 🔴; quality vs RELION: hit (masked ref AUC 0.7554 vs RELION 0.7552); matched: yes; GPU: 1x H100.
+Status 🟢; quality vs RELION: hit (masked ref AUC 0.7556 inside 7-run RELION band 0.7549-0.7563); matched: yes; GPU: 1x H100.
 
-`noise1_k1_50k256_initialmodel_vdam_200it`: relax source `02b4cb37b`, relax main (frozen candidate cand_02b4cb3, own pixi env and sealed CUDA libraries). Reference: ground truth (simulator maps; mean of the class maps for alignment when K>1), RELION file frame. Runs scored: RELION relion_main_pair, relax relax_main_pair. Frozen mask `noise1_k1_50k256_c1` (`afaa22523e9f`). Ref FSC-AUC RELION 0.3413 / relax 0.3413, masked 0.7552 / 0.7554; X-AUC unmasked 0.9718, masked 0.9928; RELION repeat X-AUC unmasked 0.9768, masked 0.9933. RELION repeat pair: RELION seed 29 in this pair vs its same-command repeat (job 14382148, 1358 s, same build and flags, 2026-09-24). Walls provisional (manager decision 2026-09-25): VDAM walls are to be re-measured with one srun --exact -c8 step per arm. This pair job ran RELION and relax as processes of one srun task with 18 CPUs (--ntasks=1 --cpus-per-task=18), so the two engines competed for the same CPUs; vdamspeed measured the effect on 10097 as 1,184 s against 335 s for iterations 1-50. The relax wall and the ratio are not a timing measurement. Paired run on relax main: both arms at the same time in one two-GPU job, same seed, schedule, sampling and diameter; both pre-read the particle stack. Three same-command RELION runs (this pair, repeat 14382148, 2026-09-19 matrix 14148540): reference FSC-AUC 0.3412508-0.3413158, relax 0.3413152 inside; masked 0.7552-0.7560, relax 0.7554 inside. RELION-vs-RELION X-AUC 0.9768-0.9820 (masked 0.9933-0.9954); relax vs the three RELION runs 0.9718 / 0.9893 / 0.9844 (masked 0.9928 / 0.9967 / 0.9952): above every RELION pair against two of the three runs, 0.005 below the lowest RELION pair against the paired run. Earlier pre-split run (recovar 25cc4475b, 2026-09-19, separate jobs, profiling on): relax 3284 s vs RELION 1587 s (2.07x); reference FSC-AUC 0.3413 both, X-AUC 0.9798/0.9950. All scored runs (FSC-AUC unmasked / masked): relion_main_pair vs reference 0.3413 unmasked / 0.7552 masked; relax_main_pair vs reference 0.3413 unmasked / 0.7554 masked; relion_s29_20260919 vs reference 0.3413 unmasked / 0.7560 masked; relion_repeat_s29 vs reference 0.3413 unmasked / 0.7555 masked; relion_main_pair vs relax_main_pair 0.9718 / 0.9928; relion_main_pair vs relion_s29_20260919 0.9809 / 0.9943; relion_main_pair vs relion_repeat_s29 0.9768 / 0.9933; relax_main_pair vs relion_s29_20260919 0.9844 / 0.9952; relax_main_pair vs relion_repeat_s29 0.9893 / 0.9967; relion_s29_20260919 vs relion_repeat_s29 0.9820 / 0.9954. Closed as inside the RELION band (manager rule 2026-09-24): the paired RELION run is the outlier among the three same-command RELION runs, since both RELION pairs that include it are the lowest (X-AUC 0.9768 and 0.9809, masked 0.9933 and 0.9943) while the pair without it is highest (0.9820, masked 0.9954); relax is inside the RELION range on reference FSC-AUC (unmasked and masked) and its X-AUC against the other two runs (0.9893, 0.9844; masked 0.9967, 0.9952) is above every RELION pair. Jobs: relax 14373889; RELION 14373889. Scores: `docs/benchmarks/initialmodel_scores/noise1_50k_k1_main_rep.json`.
+`noise1_k1_50k256_initialmodel_vdam_200it`: relax source `ef6234c5d`, relax main ef6234c (vdamfast control arm, production defaults). Reference: ground truth (simulator maps; mean of the class maps for alignment when K>1), RELION file frame. Runs scored: RELION relion_pair_14530879, relax relax_ef6234c_14530879. Frozen mask `noise1_k1_50k256_c1` (`afaa22523e9f`). Ref FSC-AUC RELION 0.3413 / relax 0.3413, masked 0.7555 / 0.7556; X-AUC unmasked 0.9878, masked 0.9967; RELION repeat X-AUC unmasked 0.9873, masked 0.9961. RELION repeat pair: this job's RELION vs the 2026-09-24 same-command repeat (relion_repeat_s29). vdamfast job 14530879 on relax main ef6234c: relax control arm (production defaults, --pass2_engine auto) and RELION build_patched relion_refine --grad --denovo_3dref --j 8 with the same command (seed 29, 200 iterations, diameter 380), one H100 each, same node, started together; the job's nomadvise arm is not the row. The relax arm ran with RECOVAR_INITIAL_MODEL_PROFILE=1, overhead not measured. Masked population-weighted reference FSC-AUC relax 0.75562 vs 7 same-command RELION runs 0.75494-0.75627 (relion_pair_14530879, relion_main_pair, relion_repeat_s29, relion_vdamres_pair, relion_gate_s29, vf_relion_s29, relion_ctfab); relax is inside. Jobs: relax 14530879; RELION 14530879. Scores: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/publish_20260927/vdam50k_band/noise1_50k_k1_ef6234c_band.json`.
 
-Timing record: (a) RELION 1 GPU, one non-MPI relion_refine process, --j 8; relax 1 GPU, --j 8; both arms in one --gres=gpu:h100:2 job, one GPU each, simultaneous. (b) relax production defaults (native projector setup and M-step, float64 M-step compute), no JAX_LOG_COMPILES, profiling, capture or replay variables, cold per-run JAX cache; image I/O matched: RELION --preread_images, relax RECOVAR_PREREAD_IMAGES=1; both --grad_write_iter 50. (c) RELION: wall of the relion_refine process; relax: whole wrapper process (import, provenance checks, compilation and run); both end to end. (d) H100 80GB HBM3 on both GPUs of the job (GPU.csv, nvidia-smi UUIDs per arm); node della-h20g4; the P1 pair job (14373888) shared the node throughout.
+Timing record: (a) relax: 1 H100, one process; RELION: 1 H100, relion_refine --j 8. Same job, same node, started together. (b) relax: main ef6234c production defaults with RECOVAR_INITIAL_MODEL_PROFILE=1 (overhead not measured). (c) Both: arm-script wall (WALL.json) around the whole process, cold. (d) Both 14530879 della-h21g1 (H100 80GB HBM3).
 
 `noise1_k1_50k256_initialmodel_vdam_200it`: FSC-AUC of rigidly registered final maps (no half maps; masked columns use the frozen mask):
 
 | Comparison | FSC-AUC | Masked FSC-AUC | FSC 0.5 (Å) | Masked FSC 0.5 (Å) |
 | --- | ---: | ---: | ---: | ---: |
-| RELION (relion_main_pair) vs reference | 0.3413 | 0.7552 | 11.83 | 11.57 |
-| relax (relax_main_pair) vs reference | 0.3413 | 0.7554 | 11.83 | 11.57 |
-| relax vs RELION (X-AUC) | 0.9718 | 0.9928 | — | — |
-| RELION vs RELION repeat (RELION seed 29 in this pair vs its same-command repeat (job 14382148, 1358 s, same build and flags, 2026-09-24)) | 0.9768 | 0.9933 | — | — |
+| RELION (relion_pair_14530879) vs reference | 0.3413 | 0.7555 | 11.83 | 11.57 |
+| relax (relax_ef6234c_14530879) vs reference | 0.3413 | 0.7556 | 11.83 | 11.57 |
+| relax vs RELION (X-AUC) | 0.9878 | 0.9967 | — | — |
+| RELION vs RELION repeat (this job's RELION vs the 2026-09-24 same-command repeat (relion_repeat_s29)) | 0.9873 | 0.9961 | — | — |
 
 <a id="noise1_k1_5k128_initialmodel_vdam_200it"></a>
 
