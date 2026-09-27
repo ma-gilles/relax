@@ -4,6 +4,7 @@ from copy import deepcopy
 from dataclasses import fields
 from functools import partial
 
+import jax
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
@@ -64,8 +65,8 @@ def _case(K, pseudo, current_size, populated_moments, padding_factor=1):
 def _assert_state_exact(actual, expected):
     for field in fields(actual):
         a, e = getattr(actual, field.name), getattr(expected, field.name)
-        if isinstance(a, np.ndarray):
-            assert_matches(a, e, err_msg=field.name)
+        if isinstance(a, (np.ndarray, jax.Array)):
+            assert_matches(np.asarray(a), np.asarray(e), err_msg=field.name)
         else:
             assert a == e, field.name
 
@@ -149,7 +150,8 @@ def test_device_backend_preserves_complete_state_and_inputs(transaction_bind, K,
                       "data_vs_prior_class", "fourier_coverage_class"}
     for field in fields(actual):
         a, e = getattr(actual, field.name), getattr(expected, field.name)
-        if isinstance(a, np.ndarray):
+        if isinstance(a, (np.ndarray, jax.Array)):
+            a, e = np.asarray(a), np.asarray(e)
             assert a.shape == e.shape and a.dtype == e.dtype, field.name
             if field.name in changed_arrays and np.any(e):
                 difference = np.abs(a-e)

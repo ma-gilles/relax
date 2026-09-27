@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Literal
 
+import jax.numpy as jnp
 import numpy as np
 
 from relax.vdam.mstep_single_class import vdam_m_step_single_class
@@ -60,7 +61,7 @@ def relion_solvent_flatten_state(
     """Apply RELION's spherical ``solventFlatten`` mask to all references (post-maximization)."""
     if compute_dtype not in {"float32", "float64"}:
         raise ValueError(f"Unknown solvent compute_dtype: {compute_dtype!r}")
-    iref = np.asarray(state.Iref)
+    iref = jnp.asarray(state.Iref)
     if compute_dtype == "float32" and iref.dtype != np.dtype(np.float32):
         raise ValueError("float32 solvent multiplication requires float32 state.Iref")
     if iref.ndim != 4 or iref.shape[1:] != (state.ori_size,) * 3:
@@ -74,11 +75,25 @@ def relion_solvent_flatten_state(
             particle_diameter_ang=float(particle_diameter_ang),
             width_mask_edge_px=float(width_mask_edge_px),
         )
-    mask = np.asarray(mask, dtype=np.dtype(compute_dtype))
-    if mask.shape != (state.ori_size,) * 3:
-        raise ValueError(f"mask must have shape ({state.ori_size},)*3, got {mask.shape}")
+    if np.shape(mask) != (state.ori_size,) * 3:
+        raise ValueError(f"mask must have shape ({state.ori_size},)*3, got {np.shape(mask)}")
+    # The references stay on the device (vdam/mstep_single_class._run_m_step_transaction);
+    # the same elementwise product and cast run there, with the mask uploaded once.
+    return replace(state, Iref=(iref * _device_solvent_mask(mask, compute_dtype)[None]).astype(iref.dtype))
 
-    return replace(state, Iref=(iref * mask[None, :, :, :]).astype(iref.dtype, copy=False))
+
+_DEVICE_SOLVENT_MASK: tuple = (None, None, None)
+
+
+def _device_solvent_mask(mask, compute_dtype: str):
+    """The mask as a device array of ``compute_dtype``, kept for the same host mask object."""
+
+    global _DEVICE_SOLVENT_MASK
+    held, held_dtype, device_mask = _DEVICE_SOLVENT_MASK
+    if held is not mask or held_dtype != compute_dtype:
+        device_mask = jnp.asarray(np.asarray(mask, dtype=np.dtype(compute_dtype)))
+        _DEVICE_SOLVENT_MASK = (mask, compute_dtype, device_mask)
+    return device_mask
 
 
 def vdam_m_step(

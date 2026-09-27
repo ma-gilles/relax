@@ -13,6 +13,7 @@ from dataclasses import replace
 from functools import partial
 from typing import Literal, Optional
 
+import jax.numpy as jnp
 import numpy as np
 
 from relax.diagnostics import vdam_mstep_replay as replay
@@ -79,7 +80,10 @@ def _validate_mstep_precision_route(
 
 def _validate_mstep_state_precision(state: InitialModelState) -> None:
     for name, dtype in _MSTEP_F32_STATE_DTYPES.items():
-        if np.asarray(getattr(state, name)).dtype != np.dtype(dtype):
+        value = getattr(state, name)
+        # Read the dtype without np.asarray, which would copy a device volume back.
+        value_dtype = value.dtype if hasattr(value, "dtype") else np.asarray(value).dtype
+        if np.dtype(value_dtype) != np.dtype(dtype):
             raise ValueError(f"float32 M-step requires state.{name} dtype {np.dtype(dtype)}")
 
 
@@ -125,22 +129,6 @@ def _has_relion_reconstruction_weight(state: InitialModelState, k: int, accum_h0
     return float(np.sum(np.asarray(accum_h0.weight, dtype=np.float64))) > XMIPP_EQUAL_ACCURACY
 
 
-def _copy_mstep_untouched_slots(values: np.ndarray, updated_slots: tuple[int, ...]) -> np.ndarray:
-    """Allocate independent C-order state, leaving only replaced slots unwritten.
-
-    The caller must fill every listed slot before publishing the new state.
-    In K=1 all large slots are replaced, so none of the previous values need
-    copying. In K-class updates the other classes retain their original bytes.
-    """
-    out = np.empty_like(values, order="C")
-    start = 0
-    for slot in updated_slots:
-        out[start:slot] = values[start:slot]
-        start = slot + 1
-    out[start:] = values[start:]
-    return out
-
-
 def _run_m_step_transaction(
     transaction,
     state: InitialModelState,
@@ -155,10 +143,13 @@ def _run_m_step_transaction(
     min_resol_shell: float,
     mstep_compute_dtype: Literal["float32", "float64"],
 ) -> InitialModelState:
-    """Apply one shared-layout transaction and preserve state ownership.
+    """Apply one shared-layout transaction and publish the new state on the device.
 
     ``transaction`` takes and returns the reference in RECOVAR's axes
-    (``relion_vdam_m_step_host(..., recovar_layout=True)``).
+    (``relion_vdam_m_step_host(..., recovar_layout=True, device_volumes=True)``).
+    The reference and moment volumes stay device arrays across iterations: each
+    update writes its slots into a new device array, so the previous state is
+    never modified, and the host reads the volumes back only to write them.
     """
     if mstep_compute_dtype == "float32":
         _validate_mstep_state_precision(state)
@@ -168,7 +159,7 @@ def _run_m_step_transaction(
         1.0 - np.exp(-float(3 * state.K + 10) * float(np.asarray(state.pdf_class)[k]))
     )
     result = transaction(
-        np.asarray(state.Iref[k]),
+        state.Iref[k],
         accum_h0.data,
         accum_h0.weight,
         accum_h1.data if accum_h1 is not None else None,
@@ -199,7 +190,7 @@ def _run_m_step_transaction(
         if slot_h1 is not None:
             expected_dtypes["mom1_h1"] = np.complex64
         for name, dtype in expected_dtypes.items():
-            if np.asarray(result[name]).dtype != np.dtype(dtype):
+            if np.dtype(result[name].dtype) != np.dtype(dtype):
                 raise ValueError(f"float32 M-step output {name} must have dtype {np.dtype(dtype)}")
         prior = np.asarray(state.tau2_class[k])
         returned_prior = np.asarray(result["tau2"])
@@ -210,15 +201,10 @@ def _run_m_step_transaction(
         ):
             raise ValueError("float32 M-step must preserve authoritative tau2")
     out = replace(state)
-    out.Iref = _copy_mstep_untouched_slots(state.Iref, (k,))
-    out.Iref[k] = np.asarray(result["iref"])
-    moment_slots = (slot_h0,) if slot_h1 is None else (slot_h0, slot_h1)
-    out.Igrad1 = _copy_mstep_untouched_slots(state.Igrad1, moment_slots)
-    out.Igrad1[slot_h0] = np.asarray(result["mom1_h0"])
-    if slot_h1 is not None:
-        out.Igrad1[slot_h1] = np.asarray(result["mom1_h1"])
-    out.Igrad2 = _copy_mstep_untouched_slots(state.Igrad2, (k,))
-    out.Igrad2[k] = np.asarray(result["mom2"])
+    out.Iref = jnp.asarray(state.Iref).at[k].set(result["iref"])
+    igrad1 = jnp.asarray(state.Igrad1).at[slot_h0].set(result["mom1_h0"])
+    out.Igrad1 = igrad1 if slot_h1 is None else igrad1.at[slot_h1].set(result["mom1_h1"])
+    out.Igrad2 = jnp.asarray(state.Igrad2).at[k].set(result["mom2"])
     for attribute, key in (
         ("tau2_class", "tau2"),
         ("sigma2_class", "sigma2"),
@@ -308,7 +294,7 @@ def vdam_m_step_single_class(
             raise RuntimeError("JAX M-step requires the native moment initialization binding")
         from relax.relion.relion_vdam_mstep import relion_vdam_m_step_host
 
-        transaction = partial(relion_vdam_m_step_host, recovar_layout=True)
+        transaction = partial(relion_vdam_m_step_host, recovar_layout=True, device_volumes=True)
         if mstep_compute_dtype == "float32":
             transaction = partial(transaction, compute_dtype=np.float32)
         return _run_m_step_transaction(
@@ -359,7 +345,7 @@ def vdam_m_step_single_class(
 
     # Step 3. getFristMoment per halfset
     slot_h0 = half_slot_index(k, 0, state.K, state.pseudo_halfsets)
-    new_Igrad1 = state.Igrad1.copy()
+    new_Igrad1 = np.array(state.Igrad1, order="C")
 
     new_Igrad1[slot_h0] = np.asarray(
         bind.vdam_first_moment(
@@ -399,7 +385,7 @@ def vdam_m_step_single_class(
         _dump("m1_h1_post", new_Igrad1[slot_h1])
 
     # Step 4. getSecondMoment (uses both halfset accumulators)
-    new_Igrad2 = state.Igrad2.copy()
+    new_Igrad2 = np.array(state.Igrad2, order="C")
     if state.pseudo_halfsets:
         computed_Igrad2 = np.asarray(
             bind.vdam_second_moment(
@@ -484,7 +470,7 @@ def vdam_m_step_single_class(
         1.0 - np.exp(-float(3 * state.K + 10) * float(np.asarray(state.pdf_class)[k]))
     )
     _dump("effective_stepsize", np.asarray([effective_stepsize], dtype=np.float64))
-    new_Iref = state.Iref.copy()
+    new_Iref = np.array(state.Iref, order="C")
     new_Iref[k] = relion_volume_to_recovar(
         np.asarray(
             bind.vdam_reconstruct_grad(

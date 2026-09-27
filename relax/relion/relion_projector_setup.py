@@ -351,7 +351,8 @@ def reference_to_relion_projector_half_maps_and_power(
     compute_dtype = np.dtype(compute_dtype)
     if compute_dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
         raise ValueError("Projector computation dtype must be float32 or float64")
-    refs = np.asarray(references)
+    # VDAM's references are device arrays; reading them back here is not needed on the JAX backend.
+    refs = references if isinstance(references, jax.Array) else np.asarray(references)
     if refs.ndim != 4:
         raise ValueError(f"references must have shape (K, N, N, N), got {refs.shape}")
     n = int(refs.shape[-1])

@@ -1,7 +1,8 @@
-"""State and ownership checks for avoiding overwritten M-step copies."""
+"""M-step state publication: updated slots on the device, the input state untouched."""
 
 from dataclasses import fields
 
+import jax
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
@@ -65,15 +66,14 @@ def _call(state, k, transaction):
 @pytest.mark.parametrize("K,k", [(1, 0), (4, 0), (4, 1), (4, 3)])
 @pytest.mark.parametrize("pseudo", [False, True])
 @pytest.mark.parametrize("order", ["C", "F", "strided"])
-def test_publication_matches_full_copy_and_preserves_ownership(monkeypatch, K, k, pseudo, order):
+def test_publication_writes_the_updated_slots_and_leaves_the_input_state(K, k, pseudo, order):
     state = _case(K, pseudo, order)
     originals = {
         f.name: getattr(state, f.name).tobytes()
         for f in fields(state)
         if isinstance(getattr(state, f.name), np.ndarray)
     }
-    # Transaction outputs deliberately alias input state: publication must
-    # still return independent storage, including for every updated slot.
+    # Transaction outputs deliberately alias the input state.
     result = {
         "iref": state.Iref[k],
         "mom1_h0": state.Igrad1[k],
@@ -89,36 +89,36 @@ def test_publication_matches_full_copy_and_preserves_ownership(monkeypatch, K, k
     calls = []
 
     def transaction(*args):
-        calls.append(tuple((a.shape, a.dtype, a.tobytes()) if isinstance(a, np.ndarray) else a for a in args))
+        calls.append(args)
         return result
 
-    original = mstep_single_class._copy_mstep_untouched_slots
-    # The reference publication copies every slot and then overwrites the updated ones.
-    monkeypatch.setattr(mstep_single_class, "_copy_mstep_untouched_slots", lambda values, _updated: values.copy())
-    expected = _call(state, k, transaction)
-    slots = []
-
-    def observe(values, updated):
-        slots.append(updated)
-        return original(values, updated)
-
-    monkeypatch.setattr(mstep_single_class, "_copy_mstep_untouched_slots", observe)
     actual = _call(state, k, transaction)
-    assert calls[0] == calls[1]
+    assert len(calls) == 1
+    # The reference is the input state with each updated slot replaced.
     h1 = half_slot_index(k, 1, K, True) if pseudo else None
-    assert slots == [(k,), (k, h1) if pseudo else (k,), (k,)]
+    updates = {
+        "Iref": {k: result["iref"]},
+        "Igrad1": {k: result["mom1_h0"], **({h1: result["mom1_h1"]} if pseudo else {})},
+        "Igrad2": {k: result["mom2"]},
+        "tau2_class": {k: result["tau2"]},
+        "sigma2_class": {k: result["sigma2"]},
+        "data_vs_prior_class": {k: result["data_vs_prior"]},
+        "fourier_coverage_class": {k: result["fourier_coverage"]},
+    }
     assert actual is not state
     for f in fields(state):
-        a, e, before = getattr(actual, f.name), getattr(expected, f.name), getattr(state, f.name)
-        if isinstance(a, np.ndarray):
-            assert a.shape == e.shape and a.dtype == e.dtype
-            assert_matches(a, e, err_msg=f.name, strict=True)
-            assert before.tobytes() == originals[f.name], f.name
-            if f.name in CHANGED:
-                assert a.flags.c_contiguous and a.flags.writeable
-                assert not np.shares_memory(a, before), f.name
-                assert all(not np.shares_memory(a, v) for v in result.values()), f.name
-            else:
-                assert a is before
+        a, before = getattr(actual, f.name), getattr(state, f.name)
+        if f.name in CHANGED:
+            expected = np.array(before, order="C")
+            for slot, value in updates[f.name].items():
+                expected[slot] = value
+            assert a.shape == expected.shape and np.dtype(a.dtype) == expected.dtype, f.name
+            assert_matches(np.asarray(a), expected, err_msg=f.name, strict=True)
+            if f.name in ("Iref", "Igrad1", "Igrad2"):
+                assert isinstance(a, jax.Array), f.name  # the volumes stay on the device
+        elif isinstance(a, np.ndarray):
+            assert a is before
         else:
-            assert a == e == before
+            assert a == before
+        if isinstance(before, np.ndarray):
+            assert before.tobytes() == originals[f.name], f.name

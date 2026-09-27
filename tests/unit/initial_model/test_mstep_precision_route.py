@@ -216,7 +216,7 @@ def test_real_host_device_transaction_publishes_f32_and_preserves_k4_other_slots
     for name, dtype in F32_STATE.items():
         assert getattr(actual, name).dtype == np.dtype(dtype)
         slots = [0, 1, 2, 4, 5, 6] if name == "Igrad1" else [0, 1, 2]
-        assert_matches(getattr(actual, name)[slots], before[name][slots], strict=True)
+        assert_matches(np.asarray(getattr(actual, name))[slots], before[name][slots], strict=True)
         assert_matches(getattr(state, name), before[name], strict=True)
     assert_matches(actual.Iref[3], state.Iref[3])
     assert_matches(actual.tau2_class, state.tau2_class, strict=True)

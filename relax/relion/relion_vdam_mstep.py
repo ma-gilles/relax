@@ -287,6 +287,32 @@ def relion_vdam_m_step_device(
     return result
 
 
+def _first_moment_initializes(moment) -> bool:
+    """RELION's first-moment branch: the serial RFLOAT sum of the real parts is zero.
+
+    The native certificate sums on the host (``vdam_first_moment_initializes``).
+    For a device moment, a device sum ``s`` and ``a = sum |re|`` decide without a
+    read-back when ``|s|`` exceeds twice the worst-case rounding of either
+    summation order (``(n - 1) eps a`` each): the serial sum is then nonzero too.
+    Otherwise, as for an all-zero moment, the moment comes back for the native sum.
+    """
+
+    from relax.relion_bind import _relion_bind_core as bind
+
+    if isinstance(moment, jax.Array):
+        total, magnitude = (float(value) for value in _moment_real_sum_and_magnitude(moment))
+        if abs(total) > 4.0 * moment.size * np.finfo(np.float64).eps * magnitude:
+            return False
+        moment = np.asarray(moment)
+    return bool(bind.vdam_first_moment_initializes(moment))
+
+
+@jax.jit
+def _moment_real_sum_and_magnitude(moment):
+    real = jnp.real(moment).astype(jnp.float64)
+    return jnp.sum(real), jnp.sum(jnp.abs(real))
+
+
 def relion_vdam_m_step_host(
     reference_relion,
     data_h0,
@@ -309,6 +335,7 @@ def relion_vdam_m_step_host(
     *,
     compute_dtype=jnp.float64,
     recovar_layout: bool = False,
+    device_volumes: bool = False,
 ):
     """Host-facing oracle adapter with native fallback for FFT grids <16.
 
@@ -321,6 +348,10 @@ def relion_vdam_m_step_host(
     ``recovar_layout``: ``reference_relion`` and the returned ``iref`` use RECOVAR's
     axes (``recovar_volume_to_relion``, exact); the device swaps them, since a host
     transposed copy of a 256^3 map costs about 130 ms per iteration.
+    ``device_volumes``: the reference and moments may be device arrays, and the
+    returned ``iref`` and moments stay on the device; the shell spectra and
+    flags come back to the host. VDAM keeps its volumes on the device across
+    iterations this way instead of reading back and re-uploading them.
     """
     real_dtype, complex_dtype = _compute_dtypes(compute_dtype)
     if real_dtype == jnp.float32 and ori_size * padding_factor < 16:
@@ -383,8 +414,8 @@ def relion_vdam_m_step_host(
         pseudo and (np.shape(data_h0) != np.shape(data_h1) or np.shape(data_h1) != np.shape(weight_h1))
     ):
         raise ValueError("halfset data/weight shapes differ")
-    first0 = bind.vdam_first_moment_initializes(mom1_h0)
-    first1 = bind.vdam_first_moment_initializes(mom1_h1) if pseudo else first0
+    first0 = _first_moment_initializes(mom1_h0)
+    first1 = _first_moment_initializes(mom1_h1) if pseudo else first0
     reference = (
         swap_relion_volume_layout(reference_relion, real_dtype)
         if recovar_layout
@@ -396,9 +427,9 @@ def relion_vdam_m_step_host(
         pack(weight_h0),
         pack(data_h1) if pseudo else None,
         pack(weight_h1) if pseudo else None,
-        np.asarray(mom1_h0, complex_dtype),
-        np.asarray(mom1_h1, complex_dtype) if pseudo else None,
-        np.asarray(mom2, complex_dtype),
+        jnp.asarray(mom1_h0, complex_dtype),
+        jnp.asarray(mom1_h1, complex_dtype) if pseudo else None,
+        jnp.asarray(mom2, complex_dtype),
         np.asarray(fsc_reconstruct, real_dtype),
         np.asarray(tau2, np.float64) if real_dtype == jnp.float64 else np.asarray(tau2),
         real_dtype.type(grad_stepsize),
@@ -413,7 +444,9 @@ def relion_vdam_m_step_host(
     )
     if recovar_layout:
         result["iref"] = swap_relion_volume_layout(result["iref"], real_dtype)
+    volumes = {name: result.pop(name) for name in ("iref", "mom1_h0", "mom1_h1", "mom2")} if device_volumes else {}
     result = jax.device_get(result)
+    result.update(volumes)
     if result.pop("_invalid_sigma2"):
         raise ValueError("native SSNR rejects unexpectedly small nonzero sigma2 sum")
     if result.pop("_invalid_tau2"):
