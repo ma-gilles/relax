@@ -655,6 +655,7 @@ class ResidentChunkMemoryPlan:
 def resident_chunk_bytes(
     *, row_capacity: int, image_capacity: int, mstep_block_rows: int, row_bytes: int, n_fine_trans: int,
     n_recon_pixels: int, held_tile_pixels: int | None = None, prepare_tile_pixels: int = 0,
+    rows_live_during_prepare: bool = False,
 ) -> int:
     """Device bytes one chunk holds at its peak, the larger of its two stages.
 
@@ -667,11 +668,12 @@ def resident_chunk_bytes(
     block gathers each row's recon and noise tiles (``[block, T, P]`` complex64,
     twice) next to its 44-byte-per-pixel sums.
 
-    The preparation stage runs before the chunk's rows are projected and holds
-    ``prepare_tile_pixels`` per image and translation: the translated tiles
-    ``_prepare_bucket_io`` returns, the Wavg rectangle and their row-order
-    copies (:func:`_chunk_operand_rows` keeps its inputs and outputs live
-    together). Zero means the caller builds no translated tiles.
+    The preparation stage holds ``prepare_tile_pixels`` per image and
+    translation (:func:`chunk_translated_tile_pixels`); zero means the caller
+    builds no translated tiles. The local pass prepares a chunk's operands
+    before it projects the chunk's rows; the global pass projects (or gathers)
+    them first, so ``rows_live_during_prepare`` adds the row block to that
+    stage.
     """
 
     t, p = max(int(n_fine_trans), 1), max(int(n_recon_pixels), 1)
@@ -680,7 +682,59 @@ def resident_chunk_bytes(
     tiles = int(image_capacity) * t * held * 8
     mstep = int(mstep_block_rows) * (2 * t * p * 8 + 44 * p)
     prepare = int(image_capacity) * t * int(prepare_tile_pixels) * 8
+    if rows_live_during_prepare:
+        prepare += rows
     return max(rows + tiles + mstep, prepare)
+
+
+def chunk_translated_tile_pixels(
+    *,
+    unshifted_operands: bool,
+    n_score_pixels: int,
+    n_recon_pixels: int,
+    n_rect_pixels: int,
+    n_exact_rect_pixels: int,
+    normalized_cc: bool = False,
+) -> dict:
+    """Per-image, per-translation complex64 pixels of a chunk's translated arrays, by stage.
+
+    The ``held_tile_pixels`` / ``prepare_tile_pixels`` arguments of
+    :func:`plan_resident_chunk_memory` for the global and the local resident
+    pass. Counted from the live device arrays of one chunk (bigbox 14514327,
+    14521841); ``n_score_pixels`` / ``n_recon_pixels`` are the windows the
+    preparation's tiles carry (the half spectrum when the preparation is not
+    windowed).
+
+    With the translated tiles (:func:`_prepare_chunk_reconstruction_operands`),
+    the preparation peak is inside :func:`_chunk_operand_rows`, where
+    ``_prepare_bucket_io``'s two score-window and two recon-window tiles, the
+    Wavg rectangle and the row-order copies (recon, noise, rectangle and its
+    exact positions) are live together; the chunk then holds the three
+    row-order recon-window tiles and the rectangle through projection, scoring
+    and the M-step. ``normalized_cc`` (the ``--firstiter_cc`` iteration) adds
+    the row-order corrected score tile to both. Planning with three recon tiles
+    instead let EMPIAR-10202 iteration 22 take 32 images per chunk, a ~30 GiB
+    preparation against a 22 GiB budget (14509861), and the global pass of
+    VDAM K=1 ribosembly 100k run out of memory allocating the rectangle
+    (9.93 GiB, bench refresh 2026-09-27).
+
+    With the unshifted operands (T16), gathered per chunk from the half's
+    resident arrays or prepared for the chunk's images, the only translated
+    arrays are the Wavg rectangle and its exact positions, from preparation to
+    the M-step. The chunk-local preparation's translation-free buffers are
+    padded to :func:`resident_image_capacity` rows (256 at least), about 1.7 GB
+    at EMPIAR-10202 current size 626, which the budget's free-memory margin
+    covers.
+    """
+
+    s, p, r, e = int(n_score_pixels), int(n_recon_pixels), int(n_rect_pixels), int(n_exact_rect_pixels)
+    if unshifted_operands:
+        return {"held_tile_pixels": r + e, "prepare_tile_pixels": r + e}
+    cc = s if normalized_cc else 0
+    return {
+        "held_tile_pixels": 2 * p + r + e + cc,
+        "prepare_tile_pixels": 2 * s + 4 * p + 2 * r + e + cc,
+    }
 
 
 def plan_resident_chunk_memory(
@@ -694,6 +748,7 @@ def plan_resident_chunk_memory(
     budget_bytes: int | None,
     held_tile_pixels: int | None = None,
     prepare_tile_pixels: int = 0,
+    rows_live_during_prepare: bool = False,
 ) -> ResidentChunkMemoryPlan:
     """Shrink the three per-chunk classes until their sum fits one budget.
 
@@ -703,9 +758,10 @@ def plan_resident_chunk_memory(
     its translation axis, bigbox 14475506). While the largest chunk exceeds the
     budget, the largest of the three terms shrinks: the M-step block halves, the
     image ladder drops its largest class and then halves a single class, the row
-    ladder drops its largest class. When the preparation stage alone exceeds the
-    budget (:func:`resident_chunk_bytes`), only the image ladder shrinks. Plans
-    that already fit are unchanged; an
+    ladder drops its largest class. When the preparation stage is the chunk's
+    peak (:func:`resident_chunk_bytes`), only its own terms shrink: the image
+    ladder, and the row ladder where the rows are live during it. Plans that
+    already fit are unchanged; an
     unknown budget does not cap. A row ladder that cannot shrink further is a
     :class:`ResidentConfigurationUnsupported`, which the default route runs on
     the compact engine.
@@ -720,6 +776,7 @@ def plan_resident_chunk_memory(
         n_recon_pixels=n_recon_pixels,
         held_tile_pixels=held_tile_pixels,
         prepare_tile_pixels=prepare_tile_pixels,
+        rows_live_during_prepare=rows_live_during_prepare,
     )
     held_pixels = 3 * max(int(n_recon_pixels), 1) if held_tile_pixels is None else int(held_tile_pixels)
 
@@ -732,14 +789,23 @@ def plan_resident_chunk_memory(
         while peak() > int(budget_bytes):
             t, p = max(int(n_fine_trans), 1), max(int(n_recon_pixels), 1)
             images_can_shrink = len(images) > 1 or max(images) > 1
-            terms = {
-                "mstep": block * (2 * t * p * 8 + 44 * p) if block > 1 else -1,
-                "images": max(images) * t * held_pixels * 8 if images_can_shrink else -1,
-                "rows": max(rows) * int(row_bytes) if len(rows) > 1 else -1,
-            }
-            if max(images) * t * int(prepare_tile_pixels) * 8 > int(budget_bytes):
-                # The preparation stage alone overflows; only fewer images shrink it.
-                terms = {"images": terms["images"] if images_can_shrink else -1}
+            mstep_bytes = block * (2 * t * p * 8 + 44 * p)
+            rows_bytes = max(rows) * int(row_bytes)
+            held_bytes = max(images) * t * held_pixels * 8
+            prepare_bytes = max(images) * t * int(prepare_tile_pixels) * 8
+            prepare_stage = prepare_bytes + (rows_bytes if rows_live_during_prepare else 0)
+            if prepare_stage > rows_bytes + held_bytes + mstep_bytes:
+                # The preparation stage is the peak; only its own terms shrink it.
+                terms = {
+                    "images": prepare_bytes if images_can_shrink else -1,
+                    "rows": rows_bytes if rows_live_during_prepare and len(rows) > 1 else -1,
+                }
+            else:
+                terms = {
+                    "mstep": mstep_bytes if block > 1 else -1,
+                    "images": held_bytes if images_can_shrink else -1,
+                    "rows": rows_bytes if len(rows) > 1 else -1,
+                }
             largest = max(terms, key=terms.get)
             if terms[largest] < 0:
                 raise ResidentConfigurationUnsupported(
@@ -2749,73 +2815,95 @@ def _resident_pass2(
             gather_budget_bytes / float(1024**3),
             int(n_windowed) * np.dtype(precision_policy.score_complex_dtype).itemsize / 1024.0,
         )
-    chunk_budget_bytes = resident_chunk_budget_bytes(reserved_bytes=reserved_operand_bytes)
-    image_ladder = resident_image_capacity_start(
-        parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER),
-        n_fine_trans=n_fine_trans,
-        n_recon_pixels=n_recon_windowed,
-        max_tile_bytes=_max_translation_tile_bytes_for_pass(
-            device_memory_bytes, has_external_normalization=False
-        ),
-        chunk_budget_bytes=chunk_budget_bytes,
-    )
-    mstep_block_rows = _resolve_mstep_block_rows(
-        n_recon_pixels=n_recon_windowed,
-        max_block_bytes=_max_adjoint_block_bytes_for_pass(device_memory_bytes),
-        row_capacity_ladder=row_ladder,
-    )
-    memory_plan = plan_resident_chunk_memory(
-        row_capacity_ladder=row_ladder,
-        image_capacity_ladder=image_ladder,
-        mstep_block_rows=mstep_block_rows,
-        row_bytes=(
-            _STREAM_PEAK_COPIES * int(projection_bytes_per_rotation)
-            if stream_projections
-            else int(n_windowed) * np.dtype(precision_policy.score_complex_dtype).itemsize
-        ),
-        n_fine_trans=n_fine_trans,
-        n_recon_pixels=n_recon_windowed,
-        budget_bytes=chunk_budget_bytes,
-    )
-    row_ladder = memory_plan.row_capacity_ladder
-    image_ladder = memory_plan.image_capacity_ladder
-    mstep_block_rows = memory_plan.mstep_block_rows
-    chunks = plan_capacity_chunks(
-        tables,
-        row_capacity_ladder=row_ladder,
-        image_capacity_ladder=image_ladder,
-    )
-    plan = ResidentPass2Plan(
-        chunks=tuple(chunks),
-        row_capacity_ladder=tuple(row_ladder),
-        image_capacity_ladder=tuple(image_ladder),
-        mstep_block_rows=int(mstep_block_rows),
-    )
-    table_s = time.time() - table_t0
-    row_slots = sum(int(chunk.row_capacity) for chunk in chunks)
-    image_slots = sum(int(chunk.image_capacity) for chunk in chunks)
-    logger.info(
-        "Resident pass-2 plan: %d images, %d candidate rows -> %d chunks "
-        "(row capacities %s, image capacities %s, M-step block rows %d, "
-        "row occupancy %.3f of %d slots, image occupancy %.3f of %d slots; "
-        "chunk peak %.2f GiB of a %s budget); "
-        "setup hypothesis_prep=%.2fs table+plan=%.2fs",
-        tables.n_images,
-        tables.n_rows,
-        len(chunks),
-        ",".join(str(v) for v in plan.row_capacity_ladder),
-        ",".join(str(v) for v in plan.image_capacity_ladder),
-        plan.mstep_block_rows,
-        tables.n_rows / max(row_slots, 1),
-        row_slots,
-        tables.n_images / max(image_slots, 1),
-        image_slots,
-        memory_plan.peak_bytes / float(1024**3),
-        format_budget_gib(memory_plan.budget_bytes),
-        prep_s,
-        table_s,
-    )
+    # The chunk's translated arrays depend on its operand family, so the plan
+    # counts the family the pass expects: the half's resident operands when
+    # they are reserved above. The operand selection below can still fall back
+    # to the per-chunk preparation (a re-measured budget, a refused
+    # configuration); the pass is then planned again for it.
+    n_half_pixels = int(image_shape[0]) * (int(image_shape[1]) // 2 + 1)
+    row_ladder_start = row_ladder
 
+    def plan_chunks(unshifted_operands: bool):
+        chunk_budget_bytes = resident_chunk_budget_bytes(reserved_bytes=reserved_operand_bytes)
+        image_ladder = resident_image_capacity_start(
+            parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER),
+            n_fine_trans=n_fine_trans,
+            n_recon_pixels=n_recon_windowed,
+            max_tile_bytes=_max_translation_tile_bytes_for_pass(
+                device_memory_bytes, has_external_normalization=False
+            ),
+            chunk_budget_bytes=chunk_budget_bytes,
+        )
+        mstep_block_rows = _resolve_mstep_block_rows(
+            n_recon_pixels=n_recon_windowed,
+            max_block_bytes=_max_adjoint_block_bytes_for_pass(device_memory_bytes),
+            row_capacity_ladder=row_ladder_start,
+        )
+        memory_plan = plan_resident_chunk_memory(
+            row_capacity_ladder=row_ladder_start,
+            image_capacity_ladder=image_ladder,
+            mstep_block_rows=mstep_block_rows,
+            row_bytes=(
+                _STREAM_PEAK_COPIES * int(projection_bytes_per_rotation)
+                if stream_projections
+                else int(n_windowed) * np.dtype(precision_policy.score_complex_dtype).itemsize
+            ),
+            n_fine_trans=n_fine_trans,
+            n_recon_pixels=n_recon_windowed,
+            budget_bytes=chunk_budget_bytes,
+            rows_live_during_prepare=True,
+            **chunk_translated_tile_pixels(
+                unshifted_operands=unshifted_operands,
+                n_score_pixels=n_windowed if windowed_prepare else n_half_pixels,
+                n_recon_pixels=n_recon_windowed if windowed_prepare else n_half_pixels,
+                n_rect_pixels=n_rect,
+                n_exact_rect_pixels=int(relion_wavg_rectangle.exact_positions.size),
+                normalized_cc=bool(firstiter_cc),
+            ),
+        )
+        row_ladder = memory_plan.row_capacity_ladder
+        image_ladder = memory_plan.image_capacity_ladder
+        mstep_block_rows = memory_plan.mstep_block_rows
+        chunks = plan_capacity_chunks(
+            tables,
+            row_capacity_ladder=row_ladder,
+            image_capacity_ladder=image_ladder,
+        )
+        plan = ResidentPass2Plan(
+            chunks=tuple(chunks),
+            row_capacity_ladder=tuple(row_ladder),
+            image_capacity_ladder=tuple(image_ladder),
+            mstep_block_rows=int(mstep_block_rows),
+        )
+        table_s = time.time() - table_t0
+        row_slots = sum(int(chunk.row_capacity) for chunk in chunks)
+        image_slots = sum(int(chunk.image_capacity) for chunk in chunks)
+        logger.info(
+            "Resident pass-2 plan: %d images, %d candidate rows -> %d chunks "
+            "(row capacities %s, image capacities %s, M-step block rows %d, "
+            "row occupancy %.3f of %d slots, image occupancy %.3f of %d slots; "
+            "chunk peak %.2f GiB of a %s budget); "
+            "setup hypothesis_prep=%.2fs table+plan=%.2fs",
+            tables.n_images,
+            tables.n_rows,
+            len(chunks),
+            ",".join(str(v) for v in plan.row_capacity_ladder),
+            ",".join(str(v) for v in plan.image_capacity_ladder),
+            plan.mstep_block_rows,
+            tables.n_rows / max(row_slots, 1),
+            row_slots,
+            tables.n_images / max(image_slots, 1),
+            image_slots,
+            memory_plan.peak_bytes / float(1024**3),
+            format_budget_gib(memory_plan.budget_bytes),
+            prep_s,
+            table_s,
+        )
+
+        return memory_plan, row_ladder, image_ladder, mstep_block_rows, chunks, plan
+
+    planned_unshifted = bool(reserved_operand_bytes)
+    memory_plan, row_ladder, image_ladder, mstep_block_rows, chunks, plan = plan_chunks(planned_unshifted)
     # ---- preparation arguments --------------------------------------------
     # One keyword set, used by whichever preparation the pass selects: the
     # once-per-half resident preparation below, or the per-chunk call that
@@ -3182,6 +3270,12 @@ def _resident_pass2(
                         spec_difference if spec_difference
                         else "matches the prepared operands",
                     )
+
+    if planned_unshifted and resident_operands is None:
+        # The chunks were sized for the unshifted operands; the per-chunk
+        # preparation holds the translated tiles, several times their size.
+        logger.info("Resident pass-2 plans its chunks again for the per-chunk operand preparation")
+        memory_plan, row_ladder, image_ladder, mstep_block_rows, chunks, plan = plan_chunks(False)
 
     verify_operands = resident_operands is not None and _resident_operands_verify_enabled()
 

@@ -508,7 +508,7 @@ def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, 
     """The capacity plan's per-stage tile counts are the translated arrays a chunk
     actually holds, for both operand families. EMPIAR-10202 it22 (14509861) ran out
     of memory when the plan counted three recon tiles and the tile preparation held
-    about ten; a new translated array must update ``_local_chunk_tile_pixels``."""
+    about ten; a new translated array must update ``resident_pass2.chunk_translated_tile_pixels``."""
 
     from relax.sparse_pass2 import resident_pass2 as rp_module
 

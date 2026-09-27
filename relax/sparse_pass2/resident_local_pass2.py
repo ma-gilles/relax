@@ -327,44 +327,6 @@ def _unshifted_operands_route(bucket_io_kwargs, *, window_indices, recon_window_
     return True
 
 
-def _local_chunk_tile_pixels(
-    *,
-    unshifted_operands: bool,
-    n_score_pixels: int,
-    n_recon_pixels: int,
-    n_rect_pixels: int,
-    n_exact_rect_pixels: int,
-) -> dict:
-    """Per-image, per-translation complex64 pixels of a local chunk's translated arrays, by stage.
-
-    Counted from the live device arrays of one chunk (bigbox 14514327, 14521841).
-
-    With the translated tiles, the preparation peak is inside
-    :func:`resident_pass2._chunk_operand_rows`, where ``_prepare_bucket_io``'s two
-    score-window and two recon-window tiles, the Wavg rectangle and the
-    row-order copies (recon, noise, rectangle and its exact positions) are live
-    together; the chunk then holds the three row-order recon-window tiles and
-    the rectangle through projection, scoring and the M-step. Planning with
-    three recon tiles instead let EMPIAR-10202 iteration 22 take 32 images per
-    chunk, a ~30 GiB preparation against a 22 GiB budget, and run out of memory
-    (14509861).
-
-    With the unshifted operands (T16) the only translated arrays are the Wavg
-    rectangle and its exact positions, from preparation to the M-step. Their
-    per-image buffers have no translation axis; the preparation pads them to
-    :func:`resident_image_capacity` rows (256 at least), about 1.7 GB at
-    EMPIAR-10202 current size 626, which the budget's free-memory margin covers.
-    """
-
-    s, p, r, e = int(n_score_pixels), int(n_recon_pixels), int(n_rect_pixels), int(n_exact_rect_pixels)
-    if unshifted_operands:
-        return {"held_tile_pixels": r + e, "prepare_tile_pixels": r + e}
-    return {
-        "held_tile_pixels": 2 * p + r + e,
-        "prepare_tile_pixels": 2 * s + 4 * p + 2 * r + e,
-    }
-
-
 # Widest slab the half-storage projection kernel takes (project_relion_half_capacity,
 # the shape[0] <= 1025 test in relax.helpers.projection._project_relion_projector_texture).
 _HALF_STORAGE_MAX_SLAB = 1025
@@ -852,7 +814,7 @@ def compute_local_search_resident(
             n_fine_trans=n_fine_trans,
             n_recon_pixels=n_recon_windowed,
             budget_bytes=chunk_budget_bytes,
-            **_local_chunk_tile_pixels(
+            **rp.chunk_translated_tile_pixels(
                 unshifted_operands=operand_route["unshifted"],
                 n_score_pixels=n_windowed,
                 n_recon_pixels=n_recon_windowed,

@@ -492,8 +492,6 @@ def test_joint_chunk_plan_counts_the_local_preparation_stage():
     unshifted operands (T16), whose only translated arrays are the Wavg rectangle and its
     exact positions, keep the 32 images."""
 
-    from relax.sparse_pass2.resident_local_pass2 import _local_chunk_tile_pixels
-
     gib = 1024**3
     t, p_recon, p_score, n_rect = 84, 153857, 155355, 626 * 314
     row_bytes = int(3016.72 * 1024)
@@ -506,7 +504,7 @@ def test_joint_chunk_plan_counts_the_local_preparation_stage():
     assert old.image_capacity_ladder == (32,)
     assert old.peak_bytes / gib == pytest.approx(18.55, abs=0.01)
 
-    tiles = _local_chunk_tile_pixels(
+    tiles = rp.chunk_translated_tile_pixels(
         unshifted_operands=False,
         n_score_pixels=p_score, n_recon_pixels=p_recon, n_rect_pixels=n_rect, n_exact_rect_pixels=p_recon,
     )
@@ -521,11 +519,57 @@ def test_joint_chunk_plan_counts_the_local_preparation_stage():
         row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, **tiles,
     )
 
-    unshifted = _local_chunk_tile_pixels(
+    unshifted = rp.chunk_translated_tile_pixels(
         unshifted_operands=True,
         n_score_pixels=p_score, n_recon_pixels=p_recon, n_rect_pixels=n_rect, n_exact_rect_pixels=p_recon,
     )
     assert rp.plan_resident_chunk_memory(**kwargs, **unshifted).image_capacity_ladder == (32,)
+
+
+def test_joint_chunk_plan_counts_the_global_per_chunk_preparation_with_its_rows():
+    """VDAM K=1 ribosembly 100k (bench refresh 2026-09-27): a streamed global pass keeps the
+    per-chunk preparation, and the plan counted three recon tiles, so 512-image chunks at
+    current size 248 (T=84, a 248 x 125 Wavg rectangle) allocated the 9.93 GiB rectangle
+    tile (512 x 84 x 31000 x 8 bytes) next to the chunk's projected rows and ran out of
+    memory. The global pass projects the rows before it prepares the operands, so the
+    preparation stage includes them."""
+
+    gib = 1024**3
+    # T and the rectangle from the failed allocation; the window sizes are the current-size-248
+    # half disk (the run logged no plan line).
+    t, p_recon, p_score, n_rect, n_exact = 84, 24000, 24200, 248 * 125, 24000
+    assert 512 * t * n_rect * 8 == 10_665_984_000
+    row_bytes = 3 * p_score * 8
+    budget = 30 * gib
+    kwargs = dict(
+        row_capacity_ladder=(8192, 32768), image_capacity_ladder=(32, 128, 512), mstep_block_rows=1024,
+        row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, budget_bytes=budget,
+    )
+    tiles = rp.chunk_translated_tile_pixels(
+        unshifted_operands=False,
+        n_score_pixels=p_score, n_recon_pixels=p_recon, n_rect_pixels=n_rect, n_exact_rect_pixels=n_exact,
+    )
+    # The failing 512-image chunk's preparation, which three recon tiles per image did not count.
+    assert 512 * t * tiles["prepare_tile_pixels"] * 8 > budget
+
+    plan = rp.plan_resident_chunk_memory(**kwargs, **tiles, rows_live_during_prepare=True)
+    assert plan.peak_bytes <= budget
+    images, rows = max(plan.image_capacity_ladder), max(plan.row_capacity_ladder)
+    assert images * t * tiles["prepare_tile_pixels"] * 8 + rows * row_bytes <= budget
+    assert 32 <= images < 512
+    assert plan.peak_bytes == rp.resident_chunk_bytes(
+        row_capacity=rows, image_capacity=images, mstep_block_rows=plan.mstep_block_rows,
+        row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, rows_live_during_prepare=True, **tiles,
+    )
+    # With the half's resident operands the chunk holds only the rectangle and its exact positions.
+    unshifted = rp.chunk_translated_tile_pixels(
+        unshifted_operands=True,
+        n_score_pixels=p_score, n_recon_pixels=p_recon, n_rect_pixels=n_rect, n_exact_rect_pixels=n_exact,
+    )
+    assert unshifted["prepare_tile_pixels"] < tiles["prepare_tile_pixels"] / 4
+    assert max(rp.plan_resident_chunk_memory(
+        **kwargs, **unshifted, rows_live_during_prepare=True
+    ).image_capacity_ladder) >= images
 
 
 def test_joint_chunk_plan_leaves_a_box_256_plan_unchanged():
@@ -724,6 +768,89 @@ def _resident_production_env(monkeypatch):
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", "256,1024,4096")
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES", "4,16,64")
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "128")
+
+
+@requires_resident_gpu
+@pytest.mark.parametrize("masked", [True, False], ids=["unshifted-operands", "per-chunk-tiles"])
+def test_global_chunk_tile_count_matches_the_live_translated_arrays(_resident_production_env, masked):
+    """The global pass's planned per-stage tile counts are the translated arrays a chunk
+    holds. Unmasked scoring is a configuration the half's resident operands refuse after
+    the plan, so that case also covers planning again for the per-chunk preparation
+    (VDAM K=1 ribosembly 100k ran out of memory in that preparation, bench refresh
+    2026-09-27)."""
+
+    args = _driver_fixture_args()
+    if masked:
+        dataset = args["experiment_dataset"]
+        dataset.image_source.image_mask = jnp.linspace(
+            0.2, 1.0, dataset.image_size, dtype=jnp.float32
+        ).reshape(dataset.image_shape)
+    args["score_with_masked_images"] = masked
+
+    planned, measured, baseline = [], [], set()
+    real_plan = rp.plan_resident_chunk_memory
+    real_prepare = rp._prepare_chunk_reconstruction_operands
+    real_rows = rp._chunk_operand_rows
+    real_gather = rp.gather_resident_chunk_operands
+
+    def translated_bytes(capacity, n_trans):
+        total = 0
+        for array in jax.live_arrays():
+            if id(array) in baseline:
+                continue
+            if (array.ndim == 2 and array.shape[0] == capacity * n_trans) or (
+                array.ndim == 3 and tuple(array.shape[:2]) == (capacity, n_trans)
+            ):
+                total += array.nbytes
+        return total
+
+    def plan(**kwargs):
+        planned.append(kwargs)
+        return real_plan(**kwargs)
+
+    def prepare(**kwargs):
+        capacity, n_trans = int(kwargs["chunk"].image_capacity), int(kwargs["n_fine_trans"])
+        baseline.clear()
+        baseline.update(id(a) for a in jax.live_arrays())
+
+        def rows(arrays, *a, **k):
+            out = real_rows(arrays, *a, **k)
+            measured.append(("prepare_tile_pixels", capacity * n_trans, translated_bytes(capacity, n_trans)))
+            return out
+
+        rp._chunk_operand_rows = rows
+        try:
+            result = real_prepare(**kwargs)
+        finally:
+            rp._chunk_operand_rows = real_rows
+        measured.append(("held_tile_pixels", capacity * n_trans, translated_bytes(capacity, n_trans)))
+        return result
+
+    def gather(operands, image_slots, **kwargs):
+        capacity, n_trans = int(np.asarray(image_slots).shape[0]), int(kwargs["translation_angles"].shape[0])
+        baseline.clear()
+        baseline.update(id(a) for a in jax.live_arrays())
+        result = real_gather(operands, image_slots, **kwargs)
+        for key in ("prepare_tile_pixels", "held_tile_pixels"):
+            measured.append((key, capacity * n_trans, translated_bytes(capacity, n_trans)))
+        return result
+
+    patch = pytest.MonkeyPatch()
+    patch.setattr(rp, "plan_resident_chunk_memory", plan)
+    patch.setattr(rp, "_prepare_chunk_reconstruction_operands", prepare)
+    patch.setattr(rp, "gather_resident_chunk_operands", gather)
+    try:
+        rp.compute_pass2_stats_resident(**args)
+    finally:
+        patch.undo()
+    assert planned and measured
+    final_plan = planned[-1]
+    if masked:
+        assert final_plan["prepare_tile_pixels"] == final_plan["held_tile_pixels"]
+    else:
+        assert final_plan["prepare_tile_pixels"] > final_plan["held_tile_pixels"]
+    for key, image_translations, live in measured:
+        assert live == image_translations * final_plan[key] * 8, (key, live, final_plan[key])
 
 
 @requires_resident_gpu
