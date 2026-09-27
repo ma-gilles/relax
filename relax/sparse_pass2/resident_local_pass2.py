@@ -1579,11 +1579,12 @@ def _start_resident_local_chunk(
 
         n_live_rows_host = int(n_live_rows)
 
-        # P3-G: with the flag on the three chunk-wide arrays go to the M-step entry
-        # point whole and the block program gathers its rows inside the jit; with it
-        # off the Python callback gathers them per block, three eager dispatches
-        # each time, which is the path this change is measured against.
-        block_row_program = parse_env_flag(_BLOCK_ROW_PROGRAM_ENV, default=False)
+        # P3-G (default on): the three chunk-wide arrays go to the M-step entry
+        # point whole and the block program gathers its rows inside the jit.
+        # RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM=0 has the Python callback
+        # gather them per block, three eager dispatches each time; on the full
+        # EMPIAR-10097 run that path took 2964 s against 2868 s (job 14550046).
+        block_row_program = parse_env_flag(_BLOCK_ROW_PROGRAM_ENV, default=True)
         if block_row_program:
             block_projections = None
             chunk_projections = (recon_proj, recon_abs2, mstep_rotations)
