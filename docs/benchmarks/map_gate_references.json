@@ -1,0 +1,16 @@
+{
+ "purpose": "Named same-command RELION reference sets for scripts/score_k1_map_gate.py. Each run directory is a curated fixture (em_fixtures), never agent scratch.",
+ "sets": {
+  "empiar10097_10k_k1": {
+   "description": "EMPIAR-10097 10k subset auto-refine K=1, RELION 5.0.1 build_patched relion_refine_mpi 3x4, seed 42 (command in each run's command.txt); relax runs the bench recipe (tests/baselines row empiar10097_10k_k1_autorefine_resident_589ce09).",
+   "box": 256,
+   "voxel_size_angstrom": 1.3099979040033536,
+   "mask_dataset": "empiar10097_c1",
+   "runs": {
+    "relion_pair": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar10097_10k_relion_refs_20260927/pair_14445853",
+    "relion_a1": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar10097_10k_relion_refs_20260927/attempt1_14434594",
+    "relion_a2": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar10097_10k_relion_refs_20260927/attempt2_14445196"
+   }
+  }
+ }
+}
