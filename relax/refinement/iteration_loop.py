@@ -9,7 +9,6 @@ to ``diagnostics.state_swap_runtime``. Pure trial-grid construction belongs to
 See ``docs/math/relion_refinement_algorithm.md`` for the algorithm map.
 """
 
-import gc
 import logging
 import os
 import time
@@ -4546,7 +4545,6 @@ def refine_single_volume(
         unreg_means = previous_means = None
         mean_signal_variance_per_half = mean_signal_variance_shells_per_half = tau2_update_details_per_half = None
         noise_stats_per_half = noise_stats_per_half_per_class = None
-        gc.collect()
         if parse_env_true_flag("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"):
             jax.clear_caches()
 

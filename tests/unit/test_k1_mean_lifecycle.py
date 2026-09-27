@@ -13,21 +13,13 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.mark.parametrize("complex_dtype", [np.complex64, np.complex128], ids=["production-f32", "diagnostic-f64"])
-def test_snapshot_and_release_previous_k1_means_owns_host_copies(monkeypatch, complex_dtype):
+def test_snapshot_and_release_previous_k1_means_owns_host_copies(complex_dtype):
     first = np.arange(12, dtype=np.float64).astype(complex_dtype).reshape(3, 4)
     second = (first + complex_dtype(2.0 + 3.0j)).copy()
     means = [first, second]
-    collect_states = []
-
-    def _collect_after_release():
-        collect_states.append(tuple(means))
-        return 0
-
-    monkeypatch.setattr(mean_helpers.gc, "collect", _collect_after_release)
     snapshots = mean_helpers._snapshot_and_release_previous_k1_means(means)
 
     assert means == [None, None]
-    assert collect_states == [(None, None)]
     for snapshot, original in zip(snapshots, (first, second), strict=True):
         assert type(snapshot) is np.ndarray
         assert snapshot.flags.owndata

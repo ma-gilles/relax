@@ -43,7 +43,6 @@ def test_offload_preserves_transfer_release_and_collection_order(monkeypatch):
         events.append(("log", args))
 
     monkeypatch.setattr(score_outputs.jax, "device_get", device_get)
-    monkeypatch.setattr(score_outputs.gc, "collect", lambda: events.append(("gc",)))
     actual = score_outputs._maybe_host_offload_half0_local_accumulators(
         half_index=0, use_local=True, k_class_enabled=False, score_result=result,
         log=SimpleNamespace(info=log_info),
@@ -51,7 +50,7 @@ def test_offload_preserves_transfer_release_and_collection_order(monkeypatch):
     assert actual is result
     assert events == [
         ("get", "y"), ("delete", "y"), ("get", "ctf"), ("delete", "ctf"),
-        ("gc",), ("log", (y.nbytes / 1e9, ctf.nbytes / 1e9)),
+        ("log", (y.nbytes / 1e9, ctf.nbytes / 1e9)),
     ]
 
 
@@ -64,7 +63,6 @@ def test_ineligible_results_are_untouched(monkeypatch, half_index, use_local, k_
         pytest.fail("Ineligible result must not transfer, collect or log")
 
     monkeypatch.setattr(score_outputs.jax, "device_get", unexpected)
-    monkeypatch.setattr(score_outputs.gc, "collect", unexpected)
     y, ctf = object(), object()
     result = SimpleNamespace(Ft_y=y, Ft_ctf=ctf, mstep_full_half_axis=axis)
     actual = score_outputs._maybe_host_offload_half0_local_accumulators(

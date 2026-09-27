@@ -5,7 +5,6 @@ Adapters preserve engine layouts and normalize only the fields documented by
 their existing casts and coarse-grid reductions.
 """
 
-import gc
 from dataclasses import dataclass, field
 
 import jax
@@ -87,7 +86,6 @@ def _maybe_host_offload_half0_local_accumulators(
     ft_ctf_nbytes = int(np.size(score_result.Ft_ctf)) * int(np.dtype(getattr(score_result.Ft_ctf, "dtype")).itemsize)
     score_result.Ft_y = _host_offload_array(score_result.Ft_y)
     score_result.Ft_ctf = _host_offload_array(score_result.Ft_ctf)
-    gc.collect()
     log.info(
         "Offloaded half-1 local RELION M-step accumulators to host before scoring half-2 "
         "(Ft_y=%.2f GB, Ft_ctf=%.2f GB)",

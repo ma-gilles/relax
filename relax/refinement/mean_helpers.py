@@ -132,9 +132,11 @@ def _snapshot_and_release_previous_k1_means(means):
     previous_means = [
         np.asarray(mean).copy() if mean is not None else None for mean in means
     ]
+    # Dropping the list's references frees the device buffers; there is no
+    # cycle for a collection to break (every explicit gc.collect() of the 5k
+    # K=1 run found nothing and freed no device memory, job 14503450).
     for half_index in range(2):
         means[half_index] = None
-    gc.collect()
     return previous_means
 
 
