@@ -1295,6 +1295,21 @@ relion_wavg_rotation_atomic_runtime_triplet_f32_kernel(
             return;
         }
         if (row > 0 && static_cast<int64_t>(row_image_ids[row - 1]) == batch) return;
+        /* Every return above is uniform over the block.  The whole block finds
+         * the run's end: thread t reads rows row + 1 + t, + blockDim.x, ... and
+         * the smallest row of another image is the end.  One thread walking an
+         * early-state run of thousands of rows was a chain of dependent loads. */
+        __shared__ unsigned long long run_end_shared;
+        if (threadIdx.x == 0) run_end_shared = static_cast<unsigned long long>(row_count);
+        __syncthreads();
+        for (int64_t k = row + 1 + threadIdx.x; k < row_count; k += blockDim.x) {
+            if (static_cast<int64_t>(row_image_ids[k]) != batch) {
+                atomicMin(&run_end_shared, static_cast<unsigned long long>(k));
+                break;
+            }
+        }
+        __syncthreads();
+        const int64_t run_end = static_cast<int64_t>(run_end_shared);
         /* A run's pixels are spread over gridDim.y blocks, one pixel per
          * thread: an early-state M-step block holds only a few images of
          * thousands of rows each, and one block per run left the GPU nearly
@@ -1304,15 +1319,35 @@ relion_wavg_rotation_atomic_runtime_triplet_f32_kernel(
         if (pixel >= pixel_capacity) return;
         const int position = exact_positions == nullptr ? pixel : exact_positions[pixel];
         if (position >= logical_pixel_count) return;
-        int64_t run_end = row + 1;
-        while (run_end < row_count && static_cast<int64_t>(row_image_ids[run_end]) == batch)
-            ++run_end;
         {
             const int64_t output_index = (batch * out_capacity + position) * 3;
             float sum0 = 0.0f;
             float sum1 = 0.0f;
             float sum2 = 0.0f;
-            for (int64_t run_row = row; run_row < run_end; ++run_row) {
+            /* The loads of kPrefetch rows are issued before their adds, which
+             * stay one rounded add each in row order: the same sums, with the
+             * loads in flight together instead of one at a time. */
+            constexpr int kPrefetch = 16;
+            int64_t run_row = row;
+            for (; run_row + kPrefetch <= run_end; run_row += kPrefetch) {
+                float term0[kPrefetch];
+                float term1[kPrefetch];
+                float term2[kPrefetch];
+#pragma unroll
+                for (int j = 0; j < kPrefetch; ++j) {
+                    const int64_t input_index = ((run_row + j) * pixel_capacity + pixel) * 3;
+                    term0[j] = terms[input_index];
+                    term1[j] = terms[input_index + 1];
+                    term2[j] = terms[input_index + 2];
+                }
+#pragma unroll
+                for (int j = 0; j < kPrefetch; ++j) {
+                    sum0 = __fadd_rn(sum0, term0[j]);
+                    sum1 = __fadd_rn(sum1, term1[j]);
+                    sum2 = __fadd_rn(sum2, term2[j]);
+                }
+            }
+            for (; run_row < run_end; ++run_row) {
                 const int64_t input_index = (run_row * pixel_capacity + pixel) * 3;
                 sum0 = __fadd_rn(sum0, terms[input_index]);
                 sum1 = __fadd_rn(sum1, terms[input_index + 1]);
