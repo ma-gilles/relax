@@ -67,7 +67,9 @@ __all__ = [
     "build_coarse_significance_csr",
     "build_resident_candidate_tables_from_csr",
     "compact_batch_significance",
+    "csr_candidate_rows_per_image",
     "csr_capacity_for_total",
+    "fine_rotation_children",
     "host_support_rows",
     "resident_candidate_tables",
     "resident_significance_csr",
@@ -199,6 +201,24 @@ class CoarseSignificanceCSR:
     def image_ids(self, image: int) -> np.ndarray:
         image = int(image)
         return self.ids[int(self.offsets[image]) : int(self.offsets[image + 1])]
+
+    def image_block(self, start: int, stop: int) -> "CoarseSignificanceCSR":
+        """Images ``[start, stop)`` as their own CSR; ``ids`` is a view of this one's."""
+
+        start, stop = int(start), int(stop)
+        if not 0 <= start <= stop <= self.n_images:
+            raise ValueError(f"image block [{start}, {stop}) is outside the CSR's {self.n_images} images")
+        offsets = self.offsets[start : stop + 1]
+        base = int(offsets[0])
+        return CoarseSignificanceCSR(
+            n_images=stop - start,
+            n_coarse_rot=self.n_coarse_rot,
+            n_coarse_trans=self.n_coarse_trans,
+            offsets=(offsets - np.int32(base)).astype(np.int32),
+            ids=self.ids[base : int(offsets[-1])],
+            store_excluded=self.store_excluded[start:stop],
+            n_significant=self.n_significant[start:stop],
+        )
 
 
 class DeviceCompactedSignificantSamples(list):
@@ -428,7 +448,7 @@ def resident_significance_csr(
 # ---------------------------------------------------------------------------
 
 
-def _children_by_parent(
+def fine_rotation_children(
     *,
     n_coarse_rot: int,
     nside_level: int,
@@ -479,6 +499,51 @@ def _children_by_parent(
     return child_offsets, child_ids
 
 
+def csr_candidate_rows_per_image(
+    csr: CoarseSignificanceCSR,
+    child_offsets: np.ndarray,
+    *,
+    images_per_step: int = 8192,
+) -> np.ndarray:
+    """Candidate rows each image's table holds, without building the table.
+
+    The counts :func:`build_resident_candidate_tables_from_csr` produces: a
+    full or complement-encoded support takes every coarse parent, an empty one
+    parent 0, and a sparse one the distinct coarse rotations of its ids; each
+    parent brings its fine children (``child_offsets`` from
+    :func:`fine_rotation_children`). The ids are read ``images_per_step``
+    images at a time, so the int64 temporaries stay a fraction of the ids.
+    """
+
+    n_images = int(csr.n_images)
+    child_counts = np.diff(np.asarray(child_offsets, dtype=np.int64))
+    if child_counts.shape != (int(csr.n_coarse_rot),):
+        raise ValueError("child_offsets must cover every coarse rotation")
+    n_samples = csr.n_samples
+    n_significant = csr.n_significant.astype(np.int64)
+    store_excluded = np.asarray(csr.store_excluded, dtype=bool)
+    sparse = ~store_excluded & (n_significant != n_samples) & (n_significant != 0)
+    rows = np.where(n_significant == 0, child_counts[0], int(child_counts.sum())).astype(np.int64)
+    offsets = csr.offsets.astype(np.int64)
+    n_trans = int(csr.n_coarse_trans)
+    for start in range(0, n_images, int(images_per_step)):
+        stop = min(n_images, start + int(images_per_step))
+        if not bool(sparse[start:stop].any()):
+            continue
+        rot = csr.ids[offsets[start] : offsets[stop]].astype(np.int64) // n_trans
+        cell_image = np.repeat(np.arange(stop - start, dtype=np.int64), np.diff(offsets[start : stop + 1]))
+        parent_start = np.ones(rot.size, dtype=bool)
+        parent_start[1:] = (rot[1:] != rot[:-1]) | (cell_image[1:] != cell_image[:-1])
+        # Row counts stay far below 2**53, so the float64 bincount is exact.
+        block_rows = np.bincount(
+            cell_image[parent_start],
+            weights=child_counts[rot[parent_start]].astype(np.float64),
+            minlength=stop - start,
+        ).astype(np.int64)
+        rows[start:stop] = np.where(sparse[start:stop], block_rows, rows[start:stop])
+    return rows
+
+
 def _ragged_gather(
     child_offsets: np.ndarray,
     child_ids: np.ndarray,
@@ -510,8 +575,13 @@ def build_resident_candidate_tables_from_csr(
     relion_parent_execution_order: bool = False,
     dtype=np.float32,
     symmetry_label: str = "C1",
+    children=None,
 ) -> ResidentCandidateTables:
     """Build the resident candidate tables directly from the compact CSR.
+
+    ``children`` is :func:`fine_rotation_children`'s ``(child_offsets,
+    child_ids)`` for these arguments, when the caller already has it (one
+    pass builds several image blocks from the same grid).
 
     Produces exactly what
     :func:`recovar.em.sparse_pass2.resident_candidates.build_resident_candidate_tables`
@@ -550,7 +620,7 @@ def build_resident_candidate_tables_from_csr(
         ~store_excluded & (n_significant != n_samples) & (n_significant != 0),
     )
 
-    child_offsets, child_ids = _children_by_parent(
+    child_offsets, child_ids = children if children is not None else fine_rotation_children(
         n_coarse_rot=n_coarse_rot,
         nside_level=nside_level,
         oversampling_order=oversampling_order,

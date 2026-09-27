@@ -39,6 +39,7 @@ from relax.sparse_pass2.compile_ahead import (  # noqa: E402
     CompileAheadPool,
 )
 from relax.sparse_pass2.resident_candidates import (  # noqa: E402
+    CandidateTableBlocks,
     plan_capacity_chunks,
 )
 from relax.sparse_pass2.resident_operands import (  # noqa: E402
@@ -58,7 +59,7 @@ N_FINE_TRANS = 4
 
 
 def _chunks():
-    tables = _synthetic_tables([3, 5, 2, 7, 1, 4, 6, 2, 1, 1, 9])
+    tables = CandidateTableBlocks.whole(_synthetic_tables([3, 5, 2, 7, 1, 4, 6, 2, 1, 1, 9]))
     chunks = plan_capacity_chunks(
         tables,
         row_capacity_ladder=ROW_CAPACITY_LADDER,

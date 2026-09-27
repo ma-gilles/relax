@@ -121,10 +121,13 @@ from relax.sparse_pass2.compile_ahead import (
     resolve_compile_ahead_config,
 )
 from relax.sparse_pass2.resident_candidates import (
+    _BLOCK_ROWS,
+    CandidateTableBlocks,
     map_over_classes,
     materialize_chunk,
     merge_class_tables,
     plan_capacity_chunks,
+    table_block_starts,
 )
 from relax.sparse_pass2.resident_operands import (
     ResidentOperandsUnsupported,
@@ -139,6 +142,9 @@ from relax.sparse_pass2.resident_operands import (
 )
 from relax.sparse_pass2.resident_scoring import score_resident_chunk
 from relax.sparse_pass2.resident_significance import (
+    build_resident_candidate_tables_from_csr,
+    csr_candidate_rows_per_image,
+    fine_rotation_children,
     resident_candidate_tables,
     resident_significance_csr,
 )
@@ -1777,6 +1783,111 @@ def _class_candidate_tables(
     return tables, prep_s, time.time() - table_t0
 
 
+def _candidate_table_blocks(
+    class_supports,
+    class_rotation_priors,
+    *,
+    whole: bool,
+    reconstruction_group_ids,
+    reconstruction_group_count,
+    **table_kwargs,
+):
+    """The pass's candidate tables over every class, as :class:`CandidateTableBlocks`.
+
+    With every class's device-compacted CSR the tables are built one image
+    block of at most ``_BLOCK_ROWS`` rows at a time, when the chunk loop first
+    reaches the block; only the per-image row counts are computed here. The
+    rows, their order and their fields are the whole-pass build's, since each
+    image's rows depend on that image alone. ``whole`` (the zero-oversampling
+    coarse reuse reads every image's table) and a host-path support build the
+    one-block tables as before. Returns ``(blocks, hypothesis_prep_s, table_s)``.
+    """
+
+    n_images = int(table_kwargs["n_images"])
+    csrs = [
+        resident_significance_csr(
+            support,
+            n_images=n_images,
+            n_coarse_rot=table_kwargs["n_coarse_rot"],
+            n_coarse_trans=table_kwargs["n_coarse_trans"],
+        )
+        for support in class_supports
+    ]
+
+    def with_groups(tables, start, stop):
+        group_ids = None if reconstruction_group_ids is None else np.asarray(reconstruction_group_ids)[start:stop]
+        return _with_reconstruction_groups(tables, group_ids, reconstruction_group_count, n_images=stop - start)
+
+    def merged(tables_by_class):
+        return tables_by_class[0] if len(tables_by_class) == 1 else merge_class_tables(tables_by_class)
+
+    if whole or any(csr is None for csr in csrs):
+        class_builds = map_over_classes(
+            lambda item: _class_candidate_tables(item[0], item[1], **table_kwargs),
+            zip(class_supports, class_rotation_priors),
+        )
+        table_t0 = time.time()
+        tables = with_groups(merged([built for built, _, _ in class_builds]), 0, n_images)
+        prep_s = sum(class_prep_s for _, class_prep_s, _ in class_builds)
+        table_s = sum(class_table_s for _, _, class_table_s in class_builds) + time.time() - table_t0
+        return CandidateTableBlocks.whole(tables), prep_s, table_s
+
+    table_t0 = time.time()
+    children = fine_rotation_children(
+        n_coarse_rot=table_kwargs["n_coarse_rot"],
+        nside_level=table_kwargs["nside_level"],
+        oversampling_order=table_kwargs["oversampling_order"],
+        random_perturbation=table_kwargs["random_perturbation"],
+        fine_rotation_parent_override=table_kwargs["fine_rotation_parent_override"],
+        symmetry_label=table_kwargs["symmetry_label"],
+    )
+    rows_per_image = np.sum(
+        map_over_classes(lambda csr: csr_candidate_rows_per_image(csr, children[0]), csrs), axis=0
+    )
+    row_offsets = np.zeros(n_images + 1, dtype=np.int64)
+    row_offsets[1:] = np.cumsum(rows_per_image)
+    csr_kwargs = dict(
+        nside_level=table_kwargs["nside_level"],
+        oversampling_order=table_kwargs["oversampling_order"],
+        n_fine_trans=table_kwargs["n_fine_trans"],
+        fine_translation_parent=table_kwargs["fine_translation_parent"],
+        random_perturbation=table_kwargs["random_perturbation"],
+        fine_rotation_parent_override=table_kwargs["fine_rotation_parent_override"],
+        relion_parent_execution_order=_relion_fine_parent_execution_order_enabled(
+            use_relion_f32_fine_posterior=table_kwargs["use_relion_f32_fine_posterior"],
+        ),
+        dtype=table_kwargs["dtype"],
+        symmetry_label=table_kwargs["symmetry_label"],
+        children=children,
+    )
+
+    def build_block(start, stop):
+        return with_groups(
+            merged(
+                map_over_classes(
+                    lambda item: build_resident_candidate_tables_from_csr(
+                        item[0].image_block(start, stop), rotation_log_prior=item[1], **csr_kwargs
+                    ),
+                    zip(csrs, class_rotation_priors),
+                )
+            ),
+            start,
+            stop,
+        )
+
+    blocks = CandidateTableBlocks(
+        n_images=n_images,
+        n_fine_trans=int(table_kwargs["n_fine_trans"]),
+        n_coarse_trans=int(table_kwargs["n_coarse_trans"]),
+        n_classes=len(csrs),
+        n_slot_groups=1 if reconstruction_group_count is None else int(reconstruction_group_count),
+        row_offsets=row_offsets,
+        block_starts=table_block_starts(row_offsets, _BLOCK_ROWS),
+        build_block=build_block,
+    )
+    return blocks, 0.0, time.time() - table_t0
+
+
 class ResidentClassInputs(NamedTuple):
     """The class axis of a K-class pass (RELION Class3D), one entry per class.
 
@@ -2281,41 +2392,35 @@ def _resident_pass2(
     # A K-class table joins the classes' own tables in RELION's class-major
     # hidden space (merge_class_tables; docs/development/resident_segments.md).
     # The classes build side by side (map_over_classes); prep_s and table_s
-    # sum the per-class seconds, which can exceed the wall of the build.
-    def class_build(class_inputs):
-        significant_sample_indices, rotation_log_prior = class_inputs
-        return _class_candidate_tables(
-            significant_sample_indices,
-            rotation_log_prior,
-            n_images=n_images,
-            n_coarse_rot=n_coarse_rot,
-            n_coarse_trans=n_coarse_trans,
-            nside_level=nside_level,
-            oversampling_order=oversampling_order,
-            n_fine_trans=n_fine_trans,
-            fine_translation_parent=fine_translation_parent,
-            random_perturbation=random_perturbation,
-            fine_source_eulers_override=fine_source_eulers_override,
-            fine_rotations_override=fine_rotations_override,
-            fine_mstep_rotations_override=fine_mstep_rotations_override,
-            fine_rotation_parent_override=fine_rotation_parent_override,
-            use_relion_f32_fine_posterior=use_relion_f32_fine_posterior,
-            dtype=precision_policy.score_real_dtype,
-            symmetry_label=symmetry_label,
-        )
-
-    class_builds = map_over_classes(class_build, zip(class_supports, class_rotation_priors))
-    tables_by_class = [class_tables for class_tables, _, _ in class_builds]
-    prep_s = sum(class_prep_s for _, class_prep_s, _ in class_builds)
-    table_s = sum(class_table_s for _, _, class_table_s in class_builds)
-    table_t0 = time.time()
-    tables = tables_by_class[0] if classes is None else merge_class_tables(tables_by_class)
-    tables = _with_reconstruction_groups(
-        tables, reconstruction_group_ids, reconstruction_group_count, n_images=n_images
+    # sum the per-class seconds, which can exceed the wall of the build. Tables
+    # from the device-compacted CSR are built per image block in the chunk loop
+    # (_candidate_table_blocks).
+    tables, prep_s, table_s = _candidate_table_blocks(
+        class_supports,
+        class_rotation_priors,
+        whole=relion_f32_normalization_sum_weight is not None,
+        reconstruction_group_ids=reconstruction_group_ids,
+        reconstruction_group_count=reconstruction_group_count,
+        n_images=n_images,
+        n_coarse_rot=n_coarse_rot,
+        n_coarse_trans=n_coarse_trans,
+        nside_level=nside_level,
+        oversampling_order=oversampling_order,
+        n_fine_trans=n_fine_trans,
+        fine_translation_parent=fine_translation_parent,
+        random_perturbation=random_perturbation,
+        fine_source_eulers_override=fine_source_eulers_override,
+        fine_rotations_override=fine_rotations_override,
+        fine_mstep_rotations_override=fine_mstep_rotations_override,
+        fine_rotation_parent_override=fine_rotation_parent_override,
+        use_relion_f32_fine_posterior=use_relion_f32_fine_posterior,
+        dtype=precision_policy.score_real_dtype,
+        symmetry_label=symmetry_label,
     )
-    table_s += time.time() - table_t0
+    table_t0 = time.time() - table_s  # the plan log's table+plan time includes the build
     coarse_reuse = _coarse_normalization_reuse(
-        tables,
+        # The reuse is a whole-pass (one-block) table; it reads every image's rows.
+        tables.block_tables(0) if relion_f32_normalization_sum_weight is not None else tables,
         relion_f32_normalization_sum_weight=relion_f32_normalization_sum_weight,
         relion_coarse_hard_assignment=relion_coarse_hard_assignment,
         relion_coarse_max_posterior=relion_coarse_max_posterior,
@@ -2938,11 +3043,16 @@ def _resident_pass2(
         row_ladder = memory_plan.row_capacity_ladder
         image_ladder = memory_plan.image_capacity_ladder
         mstep_block_rows = memory_plan.mstep_block_rows
-        chunks = plan_capacity_chunks(
-            tables,
-            row_capacity_ladder=row_ladder,
-            image_capacity_ladder=image_ladder,
-        )
+        chunks = [
+            chunk
+            for block in tables.blocks()
+            for chunk in plan_capacity_chunks(
+                tables,
+                row_capacity_ladder=row_ladder,
+                image_capacity_ladder=image_ladder,
+                image_range=block,
+            )
+        ]
         plan = ResidentPass2Plan(
             chunks=tuple(chunks),
             row_capacity_ladder=tuple(row_ladder),
@@ -2953,13 +3063,14 @@ def _resident_pass2(
         row_slots = sum(int(chunk.row_capacity) for chunk in chunks)
         image_slots = sum(int(chunk.image_capacity) for chunk in chunks)
         logger.info(
-            "Resident pass-2 plan: %d images, %d candidate rows -> %d chunks "
+            "Resident pass-2 plan: %d images, %d candidate rows in %d table blocks -> %d chunks "
             "(row capacities %s, image capacities %s, M-step block rows %d, "
             "row occupancy %.3f of %d slots, image occupancy %.3f of %d slots; "
             "chunk peak %.2f GiB of a %s budget); "
             "setup hypothesis_prep=%.2fs table+plan=%.2fs",
             tables.n_images,
             tables.n_rows,
+            tables.n_blocks,
             len(chunks),
             ",".join(str(v) for v in plan.row_capacity_ladder),
             ",".join(str(v) for v in plan.image_capacity_ladder),
@@ -4156,6 +4267,20 @@ def _chunk_mstep_layout(host_chunk, *, place) -> _ChunkMstepLayout:
     return _ChunkMstepLayout(row_slot=place.array(host_chunk["row_slot"], jnp.int32))
 
 
+def _chunk_host_rows(tables: CandidateTableBlocks, chunk):
+    """``(block tables, materialized host rows, chunk in block numbering)`` of one chunk.
+
+    The rows are :func:`materialize_chunk`'s over the chunk's table block, with
+    ``image_ids`` back in the pass's image numbering.
+    """
+
+    block_tables, local_chunk, image_base = tables.chunk_tables(chunk)
+    host_chunk = materialize_chunk(block_tables, local_chunk)
+    n_valid_images = int(chunk.n_valid_images)
+    host_chunk["image_ids"][:n_valid_images] += np.int32(image_base)
+    return block_tables, host_chunk, local_chunk
+
+
 def _make_chunk_row_arrays(tables, chunk, n_fine_trans, *, place, n_fine_rot=None) -> _ChunkRowArrays:
     """One chunk's row-aligned inputs, on the device or as avals.
 
@@ -4170,8 +4295,8 @@ def _make_chunk_row_arrays(tables, chunk, n_fine_trans, *, place, n_fine_rot=Non
     """
 
     image_capacity = int(chunk.image_capacity)
-    host_chunk = materialize_chunk(tables, chunk)
-    segment_offsets_np = _chunk_segment_offsets(tables, chunk, n_fine_trans)
+    tables, host_chunk, local_chunk = _chunk_host_rows(tables, chunk)
+    segment_offsets_np = _chunk_segment_offsets(tables, local_chunk, n_fine_trans)
     image_row_start_np = segment_offsets_np.astype(np.int64)[:image_capacity] // int(n_fine_trans)
     image_row_count_np = (
         segment_offsets_np.astype(np.int64)[1:] - segment_offsets_np.astype(np.int64)[:-1]
@@ -7031,7 +7156,7 @@ def _run_resident_chunk(
             coarse_parent_grid,
         ) = _stream_chunk_projections(
             rows,
-            _row_projection_ids(materialize_chunk(tables, chunk), n_fine_rot if n_classes > 1 else None),
+            _row_projection_ids(_chunk_host_rows(tables, chunk)[1], n_fine_rot if n_classes > 1 else None),
             n_valid_rows=n_valid_rows,
             row_capacity=row_capacity,
             project=stream_projection_fn,

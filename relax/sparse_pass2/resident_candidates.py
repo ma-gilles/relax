@@ -51,6 +51,7 @@ import numpy as np
 from relax.scoring.compact_candidates import SparseCandidateMask
 
 __all__ = [
+    "CandidateTableBlocks",
     "CapacityChunk",
     "merge_class_tables",
     "coarse_winner_cells",
@@ -62,6 +63,7 @@ __all__ = [
     "expand_mask_rows",
     "materialize_chunk",
     "plan_capacity_chunks",
+    "table_block_starts",
 ]
 
 # Per-image mask modes (int8). Kept as module-level constants so both the
@@ -711,12 +713,18 @@ def _smallest_fit(ladder: tuple[int, ...], value: int) -> int | None:
 
 
 def plan_capacity_chunks(
-    tables: ResidentCandidateTables,
+    tables,
     *,
     row_capacity_ladder=(8192, 32768, 131072, 524288),
     image_capacity_ladder=(32, 128, 512),
+    image_range: tuple[int, int] | None = None,
 ) -> list[CapacityChunk]:
     """Greedily group images (in image order) into fixed-capacity chunks.
+
+    ``tables`` needs only ``n_images`` and ``row_offsets`` (a
+    :class:`ResidentCandidateTables` or :class:`CandidateTableBlocks`);
+    ``image_range`` plans the images ``[start, stop)`` alone, so no chunk
+    crosses its ends.
 
     Images are never reordered (RELION particle order is preserved for the
     x-half BPref). The chunker grows a chunk one image at a time while both
@@ -739,9 +747,8 @@ def plan_capacity_chunks(
         raise ValueError("image_capacity_ladder must be increasing")
 
     row_offsets = tables.row_offsets
-    n_images = tables.n_images
+    i, n_images = (0, int(tables.n_images)) if image_range is None else (int(image_range[0]), int(image_range[1]))
     chunks: list[CapacityChunk] = []
-    i = 0
     while i < n_images:
         row_start = int(row_offsets[i])
         best_row_cap = None
@@ -789,6 +796,127 @@ def plan_capacity_chunks(
             i = best_stop
 
     return chunks
+
+
+# Candidate rows one image block's tables may hold: about 1.3 GB of merged
+# host rows, plus the per-class builders' int64 temporaries while it builds.
+# Class3D K4 100k/256 held 1.3e9 rows at once and its host process was killed
+# at 134 GB (bench job 14557771).
+_BLOCK_ROWS = 1 << 26
+
+
+def table_block_starts(row_offsets, max_rows: int) -> np.ndarray:
+    """Image starts of consecutive blocks of at most ``max_rows`` rows (one image may exceed it)."""
+
+    row_offsets = np.asarray(row_offsets, dtype=np.int64)
+    n_images = row_offsets.size - 1
+    starts = [0]
+    while starts[-1] < n_images:
+        start = starts[-1]
+        stop = int(np.searchsorted(row_offsets, row_offsets[start] + int(max_rows), side="right")) - 1
+        starts.append(min(n_images, max(stop, start + 1)))
+    return np.asarray(starts if n_images else [0, 0], dtype=np.int64)
+
+
+@dataclass
+class CandidateTableBlocks:
+    """A pass's candidate tables, built one image block at a time.
+
+    ``row_offsets`` are the whole pass's CSR row ranges (int64), enough to
+    plan every chunk up front; ``build_block(start, stop)`` returns the
+    :class:`ResidentCandidateTables` of images ``[start, stop)`` in block-local
+    image and row numbering. A chunk lies inside one block
+    (``plan_capacity_chunks(..., image_range=block)``); :meth:`chunk_tables`
+    returns that block's tables, built on first use, and the chunk in the
+    block's numbering. The chunk loop walks the blocks in order, so only the
+    last ``blocks_kept`` blocks are held: the one being run and the one the
+    pipelined loop still finishes.
+    """
+
+    n_images: int
+    n_fine_trans: int
+    n_coarse_trans: int
+    n_classes: int
+    n_slot_groups: int
+    row_offsets: np.ndarray
+    block_starts: np.ndarray
+    build_block: object
+    blocks_kept: int = 2
+
+    def __post_init__(self):
+        self.row_offsets = np.asarray(self.row_offsets, dtype=np.int64)
+        self.block_starts = np.asarray(self.block_starts, dtype=np.int64)
+        if self.row_offsets.shape != (int(self.n_images) + 1,) or int(self.row_offsets[0]) != 0:
+            raise ValueError("row_offsets must be the pass's CSR row ranges starting at 0")
+        if int(self.block_starts[0]) != 0 or int(self.block_starts[-1]) != int(self.n_images):
+            raise ValueError("block_starts must run from 0 to n_images")
+        self._built: dict[int, ResidentCandidateTables] = {}
+
+    @classmethod
+    def whole(cls, tables: ResidentCandidateTables) -> "CandidateTableBlocks":
+        """One block holding already-built tables."""
+
+        return cls(
+            n_images=int(tables.n_images),
+            n_fine_trans=int(tables.n_fine_trans),
+            n_coarse_trans=int(tables.n_coarse_trans),
+            n_classes=int(tables.n_classes),
+            n_slot_groups=int(tables.n_slot_groups),
+            row_offsets=np.asarray(tables.row_offsets, dtype=np.int64),
+            block_starts=np.asarray([0, int(tables.n_images)], dtype=np.int64),
+            build_block=lambda _start, _stop: tables,
+        )
+
+    @property
+    def n_rows(self) -> int:
+        return int(self.row_offsets[-1])
+
+    @property
+    def n_slots(self) -> int:
+        return int(self.n_classes) * int(self.n_slot_groups)
+
+    @property
+    def n_blocks(self) -> int:
+        return int(self.block_starts.size) - 1
+
+    def blocks(self) -> list[tuple[int, int]]:
+        return [(int(a), int(b)) for a, b in zip(self.block_starts[:-1], self.block_starts[1:])]
+
+    def block_tables(self, block: int) -> ResidentCandidateTables:
+        """Block ``block``'s tables (block-local numbering), built on first use."""
+
+        block = int(block)
+        if block not in self._built:
+            start, stop = int(self.block_starts[block]), int(self.block_starts[block + 1])
+            tables = self.build_block(start, stop)
+            expected_rows = int(self.row_offsets[stop] - self.row_offsets[start])
+            if int(tables.n_images) != stop - start or int(tables.n_rows) != expected_rows:
+                raise ValueError(
+                    f"block [{start}, {stop}) built {tables.n_images} images and {tables.n_rows} rows, "
+                    f"expected {stop - start} and {expected_rows}"
+                )
+            self._built[block] = tables
+            for old in sorted(self._built)[: -int(self.blocks_kept)]:
+                del self._built[old]
+        return self._built[block]
+
+    def chunk_tables(self, chunk: CapacityChunk) -> tuple[ResidentCandidateTables, CapacityChunk, int]:
+        """``(block tables, chunk in block numbering, the block's first image)``."""
+
+        block = int(np.searchsorted(self.block_starts, int(chunk.image_start), side="right")) - 1
+        start, stop = int(self.block_starts[block]), int(self.block_starts[block + 1])
+        if int(chunk.image_stop) > stop:
+            raise ValueError(f"chunk images [{chunk.image_start}, {chunk.image_stop}) cross block end {stop}")
+        row_base = int(self.row_offsets[start])
+        local = CapacityChunk(
+            image_start=int(chunk.image_start) - start,
+            image_stop=int(chunk.image_stop) - start,
+            row_start=int(chunk.row_start) - row_base,
+            row_stop=int(chunk.row_stop) - row_base,
+            row_capacity=int(chunk.row_capacity),
+            image_capacity=int(chunk.image_capacity),
+        )
+        return self.block_tables(block), local, start
 
 
 def materialize_chunk(tables: ResidentCandidateTables, chunk: CapacityChunk) -> dict:
