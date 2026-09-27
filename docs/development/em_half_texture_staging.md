@@ -34,6 +34,22 @@ Incremental GPU comparisons establish bitwise projection and squared-amplitude
 equality for tested inputs. The large-grid routing guard does not allocate a
 full box and does not establish full-size memory or trajectory qualification.
 
+A resident local pass projects one fixed slab per half from every chunk, and
+`project_relion_half_capacity` stages its texture (fill kernel, two
+`cudaMalloc3DArray`, two 3-D copies), projects, synchronizes the stream and frees
+the texture on each call. [`RelionCapacityHalfTextureF32`](../../relax/cuda/kernels.py)
+stages the same texture once with the same fill kernel and launches the same
+`project_texture_kernel<true, true>` per call without a synchronization; its
+`close()` waits for the last projection. The local pass opens one per half where
+[`relion_capacity_texture_serves`](../../relax/helpers/projection.py) says the
+half-storage kernel is the projection's, and the projection helpers refuse a
+texture they cannot use. The GPU tests in
+[`test_relion_projector_capacity.py`](../../tests/unit/test_relion_projector_capacity.py)
+hold it to the per-call projector, call after call and through the projection
+helper. On the full EMPIAR-10097 run the per-call staging and synchronization
+had taken 254 s of the main thread; with the staged texture the run went from
+3352 s to 3255 s (job 14544760).
+
 Focused coverage is in
 [`test_em_half_texture_staging.py`](../../tests/unit/test_em_half_texture_staging.py),
 with existing ABI/geometry tests in
