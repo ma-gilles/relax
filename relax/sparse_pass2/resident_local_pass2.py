@@ -469,7 +469,6 @@ def compute_local_search_resident(
     overall_t0 = time.time()
     image_shape = experiment_dataset.image_shape
     volume_shape = experiment_dataset.volume_shape
-    n_images = int(experiment_dataset.n_units)
 
     if current_size is None:
         # The resident drivers score RELION's window at every size, the box included
@@ -552,6 +551,9 @@ def compute_local_search_resident(
     )
 
     # ---- candidate rows ---------------------------------------------------
+    # Read after the configuration checks, so a pass the driver refuses touches
+    # nothing of the dataset beyond its shapes.
+    n_images = int(experiment_dataset.n_units)
     table_t0 = time.time()
     tables = tables_from_local_layout(
         local_layout, rotation_dtype=precision_policy.score_real_dtype
