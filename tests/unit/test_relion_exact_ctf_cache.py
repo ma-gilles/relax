@@ -113,9 +113,9 @@ def test_exact_ctf_takes_relion_defaults_for_absent_ctf_columns(monkeypatch, tmp
     relion_ctf.clear_exact_ctf_result_cache()
     calls = []
 
-    def get_ctf_image(*args):
-        calls.append(args)
-        return np.zeros((4, 3), dtype=np.float64)
+    def get_ctf_images_batch(params, *args):
+        calls.append(np.asarray(params))
+        return np.zeros((len(params), 4, 3), dtype=np.float64)
 
     particles = pd.DataFrame(
         {"rlnDefocusU": [1.0e4, 2.0e4], "rlnDefocusV": [1.1e4, 2.1e4], "rlnDefocusAngle": [5.0, 6.0],
@@ -128,7 +128,7 @@ def test_exact_ctf_takes_relion_defaults_for_absent_ctf_columns(monkeypatch, tmp
     monkeypatch.setitem(
         relion_ctf._RELION_EXACT_CTF_SOURCE_CACHE,
         (str(star.resolve()), (4, 4)),
-        {"particles": particles, "optics": {1: optics_row}, "relion_bind": SimpleNamespace(get_ctf_image=get_ctf_image),
+        {"particles": particles, "optics": {1: optics_row}, "relion_bind": SimpleNamespace(get_ctf_images_batch=get_ctf_images_batch),
          "slots": np.full(2, -1, dtype=np.int64), "rows": None, "n_cached": 0},
     )
 
@@ -136,7 +136,7 @@ def test_exact_ctf_takes_relion_defaults_for_absent_ctf_columns(monkeypatch, tmp
         SimpleNamespace(particles_file=str(star)), np.asarray([0, 1], dtype=np.int64), (4, 4)
     )
 
-    assert len(calls) == 2
-    for args in calls:
-        bfactor, phase_shift, scale = args[6], args[13], args[14]
+    assert len(calls) == 1 and calls[0].shape == (2, 10)
+    for row in calls[0]:
+        bfactor, phase_shift, scale = row[6], row[8], row[9]
         assert (bfactor, phase_shift, scale) == (0.0, 0.0, 0.75)

@@ -146,6 +146,62 @@ def _relion_exact_ctf_source_star(experiment_dataset) -> Path:
     return Path(source_star).expanduser().resolve()
 
 
+def _relion_ctf_threads() -> int:
+    """Worker threads for the batched RELION CTF binding: the CPUs this process may use."""
+
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except AttributeError:  # pragma: no cover - non-Linux
+        return max(1, os.cpu_count() or 1)
+
+
+def _relion_ctf_column(cache, name: str, default: float | None, *, optics_only: bool = False) -> np.ndarray:
+    """One CTF parameter for every particle, resolved as ``CTF::readValue`` resolves it."""
+
+    columns = cache.setdefault("columns", {})
+    if name in columns:
+        return columns[name]
+    particles = cache["particles"]
+    groups = np.asarray(star_column(particles, "rlnOpticsGroup", required=True), dtype=np.int64)
+    values = None if optics_only else star_column(particles, name)
+    if values is not None:
+        column = np.asarray(values, dtype=np.float64)
+    else:
+        by_group = {}
+        for group, optics in cache["optics"].items():
+            found = [float(optics[key]) for key in (name, f"_{name}") if key in optics]
+            if found:
+                by_group[group] = found[0]
+            elif default is None:
+                raise KeyError(f"RELION optics group {group} has no {name}")
+            else:
+                by_group[group] = float(default)
+        column = np.asarray([by_group[int(group)] for group in groups], dtype=np.float64)
+    columns[name] = column
+    return column
+
+
+def _relion_ctf_batch_params(cache, original_indices: np.ndarray) -> np.ndarray:
+    """``get_ctf_images_batch`` rows for these particles, in the get_ctf_image argument order."""
+
+    idx = np.asarray(original_indices, dtype=np.int64)
+    names = (
+        ("rlnDefocusU", None, False),
+        ("rlnDefocusV", None, False),
+        ("rlnDefocusAngle", None, False),
+        ("rlnVoltage", None, True),
+        ("rlnSphericalAberration", None, True),
+        ("rlnAmplitudeContrast", None, True),
+        ("rlnCtfBfactor", 0.0, False),
+        ("rlnImagePixelSize", None, True),
+        ("rlnPhaseShift", 0.0, False),
+        ("rlnCtfScalefactor", 1.0, False),
+    )
+    return np.ascontiguousarray(
+        np.stack([_relion_ctf_column(cache, n, d, optics_only=o)[idx] for n, d, o in names], axis=1)
+    )
+
+
 def _relion_exact_ctf_half_from_source_star_host(
     experiment_dataset,
     image_indices,
@@ -219,50 +275,15 @@ def _relion_exact_ctf_half_from_source_star_host(
         return memoized
 
     slots = cache["slots"]
-    for original_index in np.unique(original_indices[slots[original_indices] < 0]):
-        original_index = int(original_index)
-        particle = cache["particles"].iloc[original_index]
-        optics_group = int(
-            particle["rlnOpticsGroup"]
-            if "rlnOpticsGroup" in particle
-            else particle["_rlnOpticsGroup"]
-        )
-        optics = cache["optics"][optics_group]
-
-        def particle_value(name: str) -> float:
-            return float(
-                particle[name] if name in particle else particle[f"_{name}"]
-            )
-
-        def optics_value(name: str) -> float:
-            return float(optics[name] if name in optics else optics[f"_{name}"])
-
-        def ctf_value(name: str, default: float) -> float:
-            # CTF::readValue (ctf.cpp:71-74, 81-91): the particle row, then its
-            # optics group, then RELION's default.
-            for table in (particle, optics):
-                for key in (name, f"_{name}"):
-                    if key in table:
-                        return float(table[key])
-            return float(default)
-
+    missing = np.unique(original_indices[slots[original_indices] < 0])
+    if missing.size:
+        # One threaded RELION call evaluates every missing particle
+        # (get_ctf_images_batch: get_ctf_image's arithmetic per row).
+        n_new = int(missing.size)
+        params = _relion_ctf_batch_params(cache, missing)
         native = np.asarray(
-            cache["relion_bind"].get_ctf_image(
-                particle_value("rlnDefocusU"),
-                particle_value("rlnDefocusV"),
-                particle_value("rlnDefocusAngle"),
-                optics_value("rlnVoltage"),
-                optics_value("rlnSphericalAberration"),
-                optics_value("rlnAmplitudeContrast"),
-                ctf_value("rlnCtfBfactor", 0.0),
-                optics_value("rlnImagePixelSize"),
-                image_w,
-                image_h,
-                False,
-                False,
-                False,
-                ctf_value("rlnPhaseShift", 0.0),
-                ctf_value("rlnCtfScalefactor", 1.0),
+            cache["relion_bind"].get_ctf_images_batch(
+                params, image_w, image_h, False, False, False, _relion_ctf_threads()
             ),
             dtype=np.float64,
         )
@@ -272,37 +293,32 @@ def _relion_exact_ctf_half_from_source_star_host(
             # multiplies before the scale factor and before the |CTF| >= 1e-8 floor
             # (src/ctf.h:219-253); applying it here reorders one product and moves the
             # floor, both below 1e-8 absolute.
-            native = native * relion_tomo_damping(
-                fftw_half_freq_sq(image_h, image_w, optics_value("rlnImagePixelSize")),
-                particle_value("rlnMicrographPreExposure"),
-                ctf_value("rlnCtfBfactorPerElectronDose", 0.0),
-            )
+            dose = _relion_ctf_column(cache, "rlnMicrographPreExposure", None)[missing]
+            dose_bfactor = _relion_ctf_column(cache, "rlnCtfBfactorPerElectronDose", 0.0)[missing]
+            for row in range(n_new):
+                native[row] = native[row] * relion_tomo_damping(
+                    fftw_half_freq_sq(image_h, image_w, params[row, 7]), dose[row], dose_bfactor[row]
+                )
         # RELION/FFTW stores y in standard order and uses the opposite CTF
-        # sign from RECOVAR's forward-model convention. `-fftshift(native)`
-        # allocates twice, once to roll and once to negate; this writes the two
-        # row blocks straight into one buffer with the sign applied. It is
-        # bit-identical for either row parity and ~2.9x faster, which matters
-        # because this runs once per particle and was ~40 s of a 100k run.
-        rows = native.shape[0]
-        shift = rows // 2               # np.fft.fftshift is np.roll(x, rows // 2)
-        split = rows - shift            # np.roll(x, k) == concat([x[n-k:], x[:n-k]])
-        shifted = np.empty_like(native)
-        np.negative(native[split:], out=shifted[:shift])
-        np.negative(native[:split], out=shifted[shift:])
-        cached_image = shifted.reshape(-1)
-
+        # sign from RECOVAR's forward-model convention: one roll and negation
+        # of the row axis, written straight into the cache block.
         rows = cache["rows"]
         used = cache["n_cached"]
+        width = image_h * (image_w // 2 + 1)
         if rows is None:
-            rows = np.empty((64, cached_image.size), dtype=np.float64)
-        elif used == rows.shape[0]:
-            grown = np.empty((used * 2, rows.shape[1]), dtype=np.float64)
-            grown[:used] = rows
+            rows = np.empty((max(64, n_new), width), dtype=np.float64)
+        elif used + n_new > rows.shape[0]:
+            grown = np.empty((max(2 * rows.shape[0], used + n_new), width), dtype=np.float64)
+            grown[:used] = rows[:used]
             rows = grown
-        rows[used] = cached_image
+        shift = image_h // 2            # np.fft.fftshift is np.roll(x, image_h // 2)
+        split = image_h - shift
+        block = rows[used : used + n_new].reshape(n_new, image_h, image_w // 2 + 1)
+        np.negative(native[:, split:], out=block[:, :shift])
+        np.negative(native[:, :split], out=block[:, shift:])
         cache["rows"] = rows
-        cache["n_cached"] = used + 1
-        slots[original_index] = used
+        cache["n_cached"] = used + n_new
+        slots[missing] = np.arange(used, used + n_new, dtype=np.int64)
 
     batch_slots = slots[original_indices]
     if np.any(batch_slots < 0):

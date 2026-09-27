@@ -1159,18 +1159,12 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
 ):
     from types import SimpleNamespace
 
-    class Rows:
-        def __init__(self, rows):
-            self.rows = rows
-            self.iloc = self
-
-        def __getitem__(self, index):
-            return self.rows[index]
+    import pandas as pd
 
     class RelionBinding:
         @staticmethod
-        def get_ctf_image(*_args):
-            return np.arange(12, dtype=np.float64).reshape(4, 3)
+        def get_ctf_images_batch(params, *_args):
+            return np.broadcast_to(np.arange(12, dtype=np.float64).reshape(4, 3), (len(params), 4, 3)).copy()
 
     source = (tmp_path / "particles.star").resolve()
     cache_key = (str(source), (4, 4))
@@ -1196,7 +1190,7 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
         relion_ctf._RELION_EXACT_CTF_SOURCE_CACHE,
         cache_key,
         {
-            "particles": Rows([particle]),
+            "particles": pd.DataFrame([particle]),
             "optics": {1: optics},
             "relion_bind": RelionBinding(),
             "slots": np.asarray([-1], dtype=np.int64),
