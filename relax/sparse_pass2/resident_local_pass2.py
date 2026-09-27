@@ -105,6 +105,11 @@ from relax.sparse_pass2.resident_local_layout import (
     plan_local_capacity_chunks,
     tables_from_local_layout,
 )
+from relax.sparse_pass2.resident_operands import (
+    ResidentOperandsUnsupported,
+    gather_resident_chunk_operands,
+    prepare_resident_half_operands,
+)
 from relax.sparse_pass2.resident_scoring import (
     project_resident_rows,
     resident_row_projection_bytes,
@@ -843,6 +848,7 @@ def compute_local_search_resident(
     significant_counts = (
         np.zeros(n_images, dtype=np.int32) if return_significant_counts else None
     )
+    operand_route = {"unshifted": rp._resident_operands_requested()}
     loop_t0 = time.time()
     for chunk in chunks:
         Ft_y_total, Ft_ctf_total, stats = _run_resident_local_chunk(
@@ -901,6 +907,7 @@ def compute_local_search_resident(
             Ft_ctf_total=Ft_ctf_total,
             cuda_backproject=em_cuda_kernels,
             significant_counts=significant_counts,
+            operand_route=operand_route,
         )
     loop_s = time.time() - loop_t0
 
@@ -1022,6 +1029,83 @@ def _local_chunk_segment_offsets(tables, chunk, n_fine_trans: int) -> np.ndarray
     return offsets.astype(np.int32)
 
 
+def _unshifted_chunk_operands(
+    experiment_dataset,
+    image_indices,
+    *,
+    image_capacity: int,
+    bucket_io_kwargs,
+    window_indices,
+    recon_window_indices,
+    rect_indices_device,
+    exact_positions_device,
+    translation_angles,
+    noise_shell_indices_half,
+    n_noise_shells: int,
+    image_shape,
+    current_size,
+    n_fine_trans: int,
+    accumulate_noise,
+    source_faithful_spectrum_norm: bool,
+    fine_translation_prior_2d,
+    scale_corrections_np,
+    group_ids_np,
+    optics_groups_np,
+    precision_policy,
+):
+    """One chunk's unshifted per-image operands, or ``None`` where they are refused.
+
+    The global pass's once-per-half preparation (T16) run for the chunk's own
+    images, then its chunk gather: the M-step translates these operands inside
+    T15's translate-and-sum kernel, which skips zero weights, instead of
+    reducing a pre-shifted ``[images, translations, pixels]`` tile. Per chunk,
+    not per half, so the operands never scale with the particle count. The
+    padded slots carry -1 and the gather zeroes them, as the tile path's
+    capacity mask did.
+    """
+
+    try:
+        operands = prepare_resident_half_operands(
+            experiment_dataset,
+            image_indices,
+            bucket_io_kwargs=bucket_io_kwargs,
+            window_indices=window_indices,
+            recon_window_indices=recon_window_indices,
+            wavg_rect_indices=rect_indices_device,
+            noise_shell_indices_half=noise_shell_indices_half,
+            n_noise_shells=int(n_noise_shells),
+            image_shape=image_shape,
+            current_size=current_size,
+            n_fine_trans=int(n_fine_trans),
+            use_exact_relion_gaussian=True,
+            accumulate_noise=accumulate_noise,
+            source_faithful_spectrum_norm=bool(source_faithful_spectrum_norm),
+            fine_translation_prior_2d=fine_translation_prior_2d,
+            scale_corrections_np=scale_corrections_np,
+            group_ids_np=group_ids_np,
+            precision_policy=precision_policy,
+            image_batch_size=int(image_capacity),
+            optics_groups_np=optics_groups_np,
+            log_summary=False,
+        )
+    except ResidentOperandsUnsupported as reason:
+        logger.info(
+            "Resident local pass-2 keeps the pre-shifted translation tiles: %s", reason
+        )
+        return None
+    n_images = int(np.asarray(image_indices).shape[0])
+    image_slots = np.full(int(image_capacity), -1, dtype=np.int32)
+    image_slots[:n_images] = np.arange(n_images, dtype=np.int32)
+    return gather_resident_chunk_operands(
+        operands,
+        image_slots,
+        translation_angles=translation_angles,
+        rect_indices=rect_indices_device,
+        exact_positions=exact_positions_device,
+        image_shape=image_shape,
+    )
+
+
 class _LiveRowsFirst(NamedTuple):
     """A chunk's M-step rows, live rows first (see :func:`_live_rows_first`)."""
 
@@ -1106,8 +1190,17 @@ def _run_resident_local_chunk(
     Ft_ctf_total,
     cuda_backproject,
     significant_counts,
+    operand_route,
 ):
     """Every resident stage for one local capacity chunk.
+
+    ``operand_route`` is the half's mutable choice of reconstruction operands:
+    ``{"unshifted": True}`` prepares the chunk's unshifted per-image operands
+    and lets the M-step translate them inside T15's translate-and-sum kernel,
+    as the global pass does (T16); ``False`` keeps the pre-shifted
+    ``[images, translations, pixels]`` tiles and the XLA reduction. A
+    configuration the unshifted preparation refuses switches the half to the
+    tiles at its first chunk.
 
     The only host work inside is the chunk's operand upload, the T7 offsets
     readback the segmented posterior performs internally, and the optional
@@ -1150,34 +1243,63 @@ def _run_resident_local_chunk(
     # ``_prepare_bucket_io`` runs once per image instead of twice and every
     # per-chunk program is keyed on the image-capacity class rather than on
     # the chunk's occupancy.
-    recon = rp._prepare_chunk_reconstruction_operands(
-        chunk=chunk,
-        image_indices=image_indices,
-        experiment_dataset=experiment_dataset,
-        bucket_io_kwargs=bucket_io_kwargs,
-        windowed_prepare=windowed_prepare,
-        recon_window_indices=recon_window_indices,
-        n_fine_trans=int(n_fine_trans),
-        n_recon_windowed=int(n_recon_windowed),
-        image_shape=image_shape,
-        current_size=current_size,
-        use_exact_relion_gaussian=True,
-        accumulate_noise=accumulate_noise,
-        source_faithful_spectrum_norm=bool(source_faithful_spectrum_norm),
-        score_window_indices=window_indices,
-        fine_translation_prior_2d=fine_translation_prior_2d,
-        score_real_dtype=precision_policy.score_real_dtype,
-        relion_score_translation_angles=translation_angles,
-        rect_indices_device=rect_indices_device,
-        exact_positions_device=exact_positions_device,
-        scale_corrections_np=scale_corrections_np,
-        group_ids_np=group_ids_np,
-        optics_groups_np=optics_groups_np,
-        noise_shell_indices_half=image_tables.shell_indices_half,
-        n_noise_shells=int(stats_config.n_shells),
-    )
+    recon = None
+    if operand_route["unshifted"]:
+        recon = _unshifted_chunk_operands(
+            experiment_dataset,
+            image_indices,
+            image_capacity=image_capacity,
+            bucket_io_kwargs=bucket_io_kwargs,
+            window_indices=window_indices,
+            recon_window_indices=recon_window_indices,
+            rect_indices_device=rect_indices_device,
+            exact_positions_device=exact_positions_device,
+            translation_angles=translation_angles,
+            noise_shell_indices_half=image_tables.shell_indices_half,
+            n_noise_shells=int(stats_config.n_shells),
+            image_shape=image_shape,
+            current_size=current_size,
+            n_fine_trans=int(n_fine_trans),
+            accumulate_noise=accumulate_noise,
+            source_faithful_spectrum_norm=bool(source_faithful_spectrum_norm),
+            fine_translation_prior_2d=fine_translation_prior_2d,
+            scale_corrections_np=scale_corrections_np,
+            group_ids_np=group_ids_np,
+            optics_groups_np=optics_groups_np,
+            precision_policy=precision_policy,
+        )
+        if recon is None:
+            operand_route["unshifted"] = False
+    if recon is None:
+        recon = rp._prepare_chunk_reconstruction_operands(
+            chunk=chunk,
+            image_indices=image_indices,
+            experiment_dataset=experiment_dataset,
+            bucket_io_kwargs=bucket_io_kwargs,
+            windowed_prepare=windowed_prepare,
+            recon_window_indices=recon_window_indices,
+            n_fine_trans=int(n_fine_trans),
+            n_recon_windowed=int(n_recon_windowed),
+            image_shape=image_shape,
+            current_size=current_size,
+            use_exact_relion_gaussian=True,
+            accumulate_noise=accumulate_noise,
+            source_faithful_spectrum_norm=bool(source_faithful_spectrum_norm),
+            score_window_indices=window_indices,
+            fine_translation_prior_2d=fine_translation_prior_2d,
+            score_real_dtype=precision_policy.score_real_dtype,
+            relion_score_translation_angles=translation_angles,
+            rect_indices_device=rect_indices_device,
+            exact_positions_device=exact_positions_device,
+            scale_corrections_np=scale_corrections_np,
+            group_ids_np=group_ids_np,
+            optics_groups_np=optics_groups_np,
+            noise_shell_indices_half=image_tables.shell_indices_half,
+            n_noise_shells=int(stats_config.n_shells),
+        )
+    recon_operand = recon["recon_image"] if recon.get("recon_image") is not None else recon["shifted_recon"]
 
-    mark("operands", recon["shifted_recon"], recon["score_input"])
+    mark("operands", recon_operand, recon["score_input"])
 
     # --- stages 1-2: project this chunk's own rows -------------------------
     score_proj, recon_proj, recon_abs2 = project_resident_rows(
@@ -1316,6 +1438,8 @@ def _run_resident_local_chunk(
         row_posterior=mstep_rows.row_posterior,
         row_ids=mstep_rows.row_ids,
         recon=recon,
+        recon_pixel_indices=recon_window_indices,
+        translation_angles=translation_angles,
         n_rect=int(n_rect),
         n_shells=int(stats_config.n_shells),
         n_recon_windowed=int(n_recon_windowed),
@@ -1422,7 +1546,7 @@ def _run_resident_local_chunk(
             n_valid_images, image_capacity, n_valid_rows, row_capacity, n_live_rows,
             100.0 * (row_capacity - n_valid_rows) / max(row_capacity, 1),
             n_blocks, row_capacity,
-            f"{recon['shifted_recon'].dtype}{tuple(recon['shifted_recon'].shape)}",
+            f"{recon_operand.dtype}{tuple(recon_operand.shape)}",
             f"{recon['raw_translated_wavg_rectangle'].dtype}"
             f"{tuple(recon['raw_translated_wavg_rectangle'].shape)}",
             " ".join(f"{k}={v:.3f}s" for k, v in spans.items()),

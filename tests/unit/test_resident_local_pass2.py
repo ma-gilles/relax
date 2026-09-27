@@ -720,13 +720,13 @@ def test_resident_local_repeats_itself(monkeypatch, _resident_local_env):
     ) < 1e-6
 
 
-def test_mstep_adapter_refuses_once_per_half_operands():
-    """The local M-step entry point fails closed on T16's operand family.
+def test_mstep_adapter_refuses_unshifted_operands_without_the_kernel_tables():
+    """The local M-step entry point fails closed on T16's operand family without its tables.
 
-    ``run_resident_mstep_blocks`` has no translate-and-sum kernel path, so a
-    ``recon`` carrying the once-per-half per-image images instead of the
-    per-chunk pre-shifted tiles must be refused by name rather than reach the
-    XLA weighted sums with ``None`` operands.
+    Unshifted per-image operands are translated inside the translate-and-sum
+    kernel, which needs the reconstruction pixel indices and the translation
+    angles; a ``recon`` of that family handed without them must be refused by
+    name rather than reach the kernel with ``None`` tables.
     """
 
     resident_recon = {
@@ -741,7 +741,7 @@ def test_mstep_adapter_refuses_once_per_half_operands():
         "raw_translated_wavg_for_atomic": object(),
         "scale": object(),
     }
-    with pytest.raises(ValueError, match="pre-shifted"):
+    with pytest.raises(ValueError, match="translate-sum kernel"):
         rp.run_resident_mstep_blocks(
             lambda start, stop: None,
             row_capacity=64,

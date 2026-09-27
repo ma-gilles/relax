@@ -601,6 +601,7 @@ def prepare_resident_half_operands(
     image_batch_size: int | None = None,
     optics_groups_np=None,
     relion_native_fine_units: bool = False,
+    log_summary: bool = True,
 ) -> ResidentHalfOperands:
     """Run the per-image preparation once for ``image_indices`` and keep it resident.
 
@@ -619,6 +620,9 @@ def prepare_resident_half_operands(
     (:func:`~relax.sparse_pass2.sparse_pass2_scoring._relion_native_fine_units_enabled`):
     ``score_input`` divided by N**2 and ``corr_img_score`` RELION's native
     ``corr_img``. Every reconstruction and noise operand keeps RECOVAR units.
+
+    ``log_summary=False`` drops the two summary log lines, for a caller that
+    prepares one chunk's images at a time (resident local search).
 
     ``wavg_rect_indices`` is RELION's Wavg rectangle and
     ``noise_shell_indices_half`` / ``n_noise_shells`` the noise-shell binning of
@@ -893,6 +897,8 @@ def prepare_resident_half_operands(
         group_ids=jnp.asarray(group_ids),
         optics_groups=None if optics_groups is None else jnp.asarray(optics_groups),
     )
+    if not log_summary:
+        return operands
     logger.info(
         "Resident pass-2 per-half operands: %d images, %d score / %d recon / %d Wavg pixels, "
         "%.2f GiB resident (%d preparation calls)",

@@ -271,12 +271,15 @@ def test_the_adapter_still_fails_closed_on_the_once_per_half_operands():
     kwargs["recon"] = dict(
         kwargs["recon"], shifted_recon=None, shifted_noise=None, recon_image=object()
     )
-    with pytest.raises(ValueError, match="pre-shifted"):
+    with pytest.raises(ValueError, match="translate-sum kernel"):
         rp.run_resident_mstep_blocks(lambda start, stop: None, **kwargs)
-    with pytest.raises(ValueError, match="pre-shifted"):
+    with pytest.raises(ValueError, match="translate-sum kernel"):
         rp.run_resident_mstep_blocks(
             chunk_projections=(proj, proj_abs2, rotations), **kwargs
         )
+    kwargs["recon"] = dict(kwargs["recon"], recon_image=None)
+    with pytest.raises(ValueError, match="carries neither"):
+        rp.run_resident_mstep_blocks(lambda start, stop: None, **kwargs)
 
 
 # --------------------------------------------------------------------------

@@ -6737,6 +6737,8 @@ def run_resident_mstep_blocks(
     cuda_backproject,
     n_optics_groups: int = 1,
     row_ids=None,
+    recon_pixel_indices=None,
+    translation_angles=None,
 ):
     """Walk one chunk's pixel axis in row blocks: Wavg, noise and both adjoints.
 
@@ -6770,20 +6772,20 @@ def run_resident_mstep_blocks(
     statistics fields are unused by that body.
     """
 
-    if recon.get("shifted_recon") is None or recon.get("shifted_noise") is None:
-        # Fail closed rather than hand ``None`` to the XLA weighted sums: a
-        # ``recon`` without the pre-shifted tiles is T16's once-per-half
-        # preparation, whose weighted sums are the translate-and-sum kernel's,
-        # and this entry point has no kernel path (``spec`` below pins
-        # ``use_translate_sum_kernel=False``).
+    use_translate_sum_kernel = recon.get("recon_image") is not None
+    if use_translate_sum_kernel:
+        if recon_pixel_indices is None or translation_angles is None:
+            raise ValueError(
+                "run_resident_mstep_blocks needs recon_pixel_indices and translation_angles "
+                "to translate unshifted per-image operands inside the translate-sum kernel"
+            )
+    elif recon.get("shifted_recon") is None or recon.get("shifted_noise") is None:
+        # Fail closed rather than hand ``None`` to the XLA weighted sums.
         raise ValueError(
-            "run_resident_mstep_blocks takes the per-chunk pre-shifted "
-            "reconstruction operands ('shifted_recon'/'shifted_noise'); this "
-            "chunk carries T16's once-per-half per-image operands instead "
-            f"(keys present: {sorted(k for k, v in recon.items() if v is not None)}). "
-            "Prepare the chunk with _prepare_chunk_reconstruction_operands, or "
-            "give this entry point the kernel path before handing it resident "
-            "operands."
+            "run_resident_mstep_blocks takes either the unshifted per-image operands "
+            "('recon_image'/'noise_image', T16) or the per-chunk pre-shifted tiles "
+            "('shifted_recon'/'shifted_noise'); this chunk carries neither "
+            f"(keys present: {sorted(k for k, v in recon.items() if v is not None)})."
         )
 
     if (block_projections is None) == (chunk_projections is None):
@@ -6825,12 +6827,11 @@ def run_resident_mstep_blocks(
         max_adjoint_block_bytes=int(max_adjoint_block_bytes),
         stats_config=_MstepOnlyStatsConfig(n_shells=int(n_shells), n_optics_groups=int(n_optics_groups)),
         use_rfloat_ctf_wavg=recon["direct_ctf_rfloat_recon"] is not None,
-        # T12's local pass hands pre-shifted per-chunk operands, not T16's
-        # once-per-half resident images, so the M-step body takes its weighted
-        # sums from the XLA statement, as it did before T16.
-        use_translate_sum_kernel=False,
-        bpref_recon_operand=False,
-        kernel_ctf_probs=False,
+        # Unshifted per-image operands take T15's kernel, which translates them
+        # inside the reduction; pre-shifted tiles take the XLA statement.
+        use_translate_sum_kernel=use_translate_sum_kernel,
+        bpref_recon_operand=use_translate_sum_kernel and recon.get("recon_weight") is not None,
+        kernel_ctf_probs=use_translate_sum_kernel and _kernel_ctf_probs_enabled(),
         block_unroll=1,
         static_block_trip=False,
     )
@@ -6839,14 +6840,11 @@ def run_resident_mstep_blocks(
         corr_img_score=None,
         highres_xi2_half=None,
         translation_prior=None,
-        shifted_recon=recon["shifted_recon"],
-        shifted_noise=recon["shifted_noise"],
-        # The unshifted per-image images are T16's once-per-half operands; the
-        # local pass prepares pre-shifted tiles per chunk, so this pair stays
-        # empty and the M-step body takes the XLA weighted sums.
-        recon_image=None,
-        recon_weight=None,
-        noise_image=None,
+        shifted_recon=recon.get("shifted_recon"),
+        shifted_noise=recon.get("shifted_noise"),
+        recon_image=recon.get("recon_image"),
+        recon_weight=recon.get("recon_weight"),
+        noise_image=recon.get("noise_image"),
         ctf2_over_nv_recon=recon["ctf2_over_nv_recon"],
         direct_ctf_rfloat_recon=recon["direct_ctf_rfloat_recon"],
         image_power_shells=None,
@@ -6871,14 +6869,17 @@ def run_resident_mstep_blocks(
         coarse_parent_grid=None,
         fine_translation_parent=None,
         half_weights=None,
-        translation_angles=None,
+        translation_angles=(
+            jnp.asarray(translation_angles, dtype=jnp.float32) if use_translate_sum_kernel else None
+        ),
         full_to_compact=None,
         noise_variance_for_noise=noise_variance_for_noise,
         shell_indices_noise=shell_indices_noise,
         exact_positions=exact_positions_device,
-        # T16's kernel path addresses the reconstruction window by pixel index;
-        # the XLA path this caller takes does not read it.
-        recon_pixel_indices=None,
+        # The kernel addresses the reconstruction window by pixel index.
+        recon_pixel_indices=(
+            jnp.asarray(recon_pixel_indices, dtype=jnp.int32) if use_translate_sum_kernel else None
+        ),
         relion_x_half_recon_indices=relion_x_half_recon_indices,
         shell_indices_half=None,
         wavg_shell_indices=None,
