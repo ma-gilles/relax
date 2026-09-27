@@ -110,6 +110,16 @@ the cached-path chunk gather (131072 rows x 36514 pixels = 35.7 GiB, now bounded
 measured free memory) and the low-resolution half join, which moved a physically
 large grid's host accumulators back to the device before the 1600^3 inverse FFT.
 
+RELION's projector (`Projector::computeFourierTransformMap`) has one device build
+(`relax/relion/relion_projector_setup.py::_build_projector_window`, bigbox 2026-09-27): the padded
+transform one axis at a time inside a window, mask and shell power on the device. It replaced the
+whole-volume rfftn build, which needed about 100 GB at box 800 and left 10202 on the native host
+binding (two single-threaded builds, 117 s per iteration in py-spy 14561585). At 10202 it22 the
+logged projector step is 14.1 s, against 61.8 s native (bigbox 14564062, 14561585); padded
+128-512 costs 0.85-1.02x the old device build at full radius and
+0.40-0.79x at half radius (bench 14564054). The device build is the default; native is the test
+reference.
+
 K=1 auto-refine HEALPix cap removed (2026-09-27, team-lead decision): relax capped K=1 sampling
 at HEALPix order 7 by default, and at the cap `convergence.update_angular_sampling` never latches
 `has_fine_enough_angular_sampling`, so a dataset that needs a finer grid never converges. RELION's
