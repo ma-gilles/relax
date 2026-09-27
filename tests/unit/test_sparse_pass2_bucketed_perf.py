@@ -1226,6 +1226,22 @@ def test_sparse_pass2_windowed_projection_cap_keeps_only_requested_pixels(monkey
     assert recon_abs2.shape == (7, 2)
     assert_matches(np.asarray(score[4].real), np.asarray([40.0, 42.0], dtype=np.float32))
     assert_matches(np.asarray(recon[4].real), np.asarray([41.0, 45.0], dtype=np.float32))
+    # The chunks are written into the outputs in place (bench 14572645): every
+    # chunk's rows, the short last one included, land at their own offsets.
+    assert recon_abs2.dtype == jnp.float32
+    assert_matches(np.asarray(score[:, 0].real), 10.0 * np.arange(7, dtype=np.float32))
+    assert_matches(np.asarray(recon_abs2[6]), np.asarray([61.0**2, 65.0**2], dtype=np.float32))
+    score_only, no_recon, no_abs2 = _compute_sparse_pass2_windowed_projections_block(
+        jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
+        jnp.asarray(rotations),
+        IMAGE_SHAPE,
+        VOLUME_SHAPE,
+        "linear_interp",
+        score_indices=jnp.asarray([0, 2], dtype=jnp.int32),
+        max_projected_rotations=3,
+    )
+    assert no_recon is None and no_abs2 is None
+    assert_matches(np.asarray(score_only), np.asarray(score))
 
 
 def test_sparse_pass2_windowed_projection_uses_relion_projector_branch(monkeypatch):

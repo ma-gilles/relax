@@ -228,8 +228,10 @@ def _compute_sparse_pass2_windowed_projections_block(
             for start in range(0, n_rotations, max_projected_rotations)
         ]
 
-    score_chunks = []
-    recon_chunks = []
+    # Each chunk's windows are written into the outputs in place: concatenating
+    # the chunks held a streamed chunk's projections twice, outside every plan
+    # (bench 14572645, K=1 50k/256 at current size 178: 7.70 GiB).
+    score_proj = recon_proj = recon_abs2 = None
     for start, stop in chunk_ranges:
         proj_chunk, _ = _compute_sparse_pass2_projections_block(
             mean_for_proj,
@@ -247,24 +249,33 @@ def _compute_sparse_pass2_windowed_projections_block(
         )
         if pixel_indices is not None:
             proj_chunk = with_zero_column(proj_chunk)
-        score_chunk, recon_chunk = _window_projection_chunk(
-            proj_chunk,
-            score_indices,
-            recon_indices,
-            output_complex_dtype=output_complex_dtype,
-        )
-        score_chunks.append(score_chunk)
-        if recon_indices is not None:
-            recon_chunks.append(recon_chunk)
+        if score_proj is None:
+            complex_dtype = jnp.dtype(proj_chunk.dtype if output_complex_dtype is None else output_complex_dtype)
+            abs2_dtype = jnp.dtype(
+                jnp.finfo(complex_dtype).dtype if output_abs2_dtype is None else output_abs2_dtype
+            )
+            score_proj = jnp.zeros((n_rotations, int(score_indices.shape[0])), dtype=complex_dtype)
+            if recon_indices is not None:
+                recon_proj = jnp.zeros((n_rotations, int(recon_indices.shape[0])), dtype=complex_dtype)
+                recon_abs2 = jnp.zeros((n_rotations, int(recon_indices.shape[0])), dtype=abs2_dtype)
+        if recon_indices is None:
+            score_proj = _place_score_window_block(
+                score_proj, proj_chunk, score_indices, np.int32(start), output_complex_dtype=complex_dtype
+            )
+        else:
+            score_proj, recon_proj, recon_abs2 = _place_windowed_projection_block(
+                score_proj,
+                recon_proj,
+                recon_abs2,
+                proj_chunk,
+                score_indices,
+                recon_indices,
+                np.int32(start),
+                output_complex_dtype=complex_dtype,
+                output_abs2_dtype=abs2_dtype,
+            )
         del proj_chunk
-
-    if recon_indices is None:
-        return jnp.concatenate(score_chunks, axis=0), None, None
-    return _finalize_windowed_projection_chunks(
-        tuple(score_chunks),
-        tuple(recon_chunks),
-        output_abs2_dtype=output_abs2_dtype,
-    )
+    return score_proj, recon_proj, recon_abs2
 
 
 class ProjectionWindowUnion(NamedTuple):
@@ -330,30 +341,38 @@ def with_zero_column(proj_block):
     return jnp.pad(proj_block, ((0, 0), (0, 1)))
 
 
-@partial(jax.jit, static_argnames=("output_complex_dtype",))
-def _window_projection_chunk(proj_chunk, score_indices, recon_indices, *, output_complex_dtype):
-    """Select the score and reconstruction windows of one projection chunk."""
+@partial(jax.jit, static_argnames=("output_complex_dtype",), donate_argnums=(0,))
+def _place_score_window_block(score_proj, proj_block, score_indices, start, *, output_complex_dtype):
+    """Write one projector block's score window into ``score_proj`` (donated) at row ``start``."""
 
-    score_chunk = proj_chunk[:, score_indices]
-    if output_complex_dtype is not None:
-        score_chunk = score_chunk.astype(output_complex_dtype)
-    if recon_indices is None:
-        return score_chunk, None
-    recon_chunk = proj_chunk[:, recon_indices]
-    if output_complex_dtype is not None:
-        recon_chunk = recon_chunk.astype(output_complex_dtype)
-    return score_chunk, recon_chunk
+    score_block = proj_block[:, score_indices].astype(output_complex_dtype)
+    return jax.lax.dynamic_update_slice(score_proj, score_block, (jnp.asarray(start, dtype=jnp.int32), jnp.int32(0)))
 
 
-@partial(jax.jit, static_argnames=("output_abs2_dtype",))
-def _finalize_windowed_projection_chunks(score_chunks, recon_chunks, *, output_abs2_dtype):
-    """Concatenate projection chunks and form |recon|^2 in one program."""
+@partial(jax.jit, static_argnames=("output_complex_dtype", "output_abs2_dtype"), donate_argnums=(0, 1, 2))
+def _place_windowed_projection_block(
+    score_proj,  # [C_R, N_score], donated
+    recon_proj,  # [C_R, N_recon], donated
+    recon_abs2,  # [C_R, N_recon], donated
+    proj_block,  # [Q, N_half]
+    score_indices,
+    recon_indices,
+    start,  # int32 scalar, runtime
+    *,
+    output_complex_dtype,
+    output_abs2_dtype,
+):
+    """Window one projector block and write it, with ``|recon|^2``, into the rows at ``start``."""
 
-    score_proj = jnp.concatenate(score_chunks, axis=0)
-    recon_proj = jnp.concatenate(recon_chunks, axis=0)
-    recon_abs2 = jnp.abs(recon_proj) ** 2
-    if output_abs2_dtype is not None:
-        recon_abs2 = recon_abs2.astype(output_abs2_dtype)
-    return score_proj, recon_proj, recon_abs2
+    score_block = proj_block[:, score_indices].astype(output_complex_dtype)
+    recon_block = proj_block[:, recon_indices].astype(output_complex_dtype)
+    abs2_block = (jnp.abs(recon_block) ** 2).astype(output_abs2_dtype)
+    start = jnp.asarray(start, dtype=jnp.int32)
+    zero = jnp.int32(0)
+    return (
+        jax.lax.dynamic_update_slice(score_proj, score_block, (start, zero)),
+        jax.lax.dynamic_update_slice(recon_proj, recon_block, (start, zero)),
+        jax.lax.dynamic_update_slice(recon_abs2, abs2_block, (start, zero)),
+    )
 
 

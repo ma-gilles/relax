@@ -63,6 +63,7 @@ from relax.sparse_pass2.sparse_pass2_bucket_io import _prepare_bucket_io
 from relax.sparse_pass2.sparse_pass2_projection_blocks import (
     _compute_sparse_pass2_projections_block,
     _compute_sparse_pass2_windowed_projections_block,
+    _place_windowed_projection_block,
     window_union_applies,
     with_zero_column,
 )
@@ -882,37 +883,6 @@ def live_projection_block_rows(row_capacity: int, max_projected_rotations: int) 
     while block > max(int(max_projected_rotations), 1):
         block //= 2
     return max(min(block, row_capacity), 1)
-
-
-@partial(jax.jit, static_argnames=("output_complex_dtype", "output_abs2_dtype"), donate_argnums=(0, 1, 2))
-def _place_windowed_projection_block(
-    score_proj,  # [C_R, N_score], donated
-    recon_proj,  # [C_R, N_recon], donated
-    recon_abs2,  # [C_R, N_recon], donated
-    proj_block,  # [Q, N_half]
-    score_indices,
-    recon_indices,
-    start,  # int32 scalar, runtime
-    *,
-    output_complex_dtype,
-    output_abs2_dtype,
-):
-    """Window one projector block and write it into the chunk's rows at ``start``.
-
-    The windows and ``|recon|^2`` are :func:`_window_projection_chunk` and
-    :func:`_finalize_windowed_projection_chunks` applied to the block's rows.
-    """
-
-    score_block = proj_block[:, score_indices].astype(output_complex_dtype)
-    recon_block = proj_block[:, recon_indices].astype(output_complex_dtype)
-    abs2_block = (jnp.abs(recon_block) ** 2).astype(output_abs2_dtype)
-    start = jnp.asarray(start, dtype=jnp.int32)
-    zero = jnp.int32(0)
-    return (
-        jax.lax.dynamic_update_slice(score_proj, score_block, (start, zero)),
-        jax.lax.dynamic_update_slice(recon_proj, recon_block, (start, zero)),
-        jax.lax.dynamic_update_slice(recon_abs2, abs2_block, (start, zero)),
-    )
 
 
 def project_resident_live_rows(

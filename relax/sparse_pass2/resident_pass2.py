@@ -6283,7 +6283,7 @@ def _cached_block_projections(tables: _ChunkStageTables, block_fine_rot):
     if tables.union_recon_take is not None:
         # The union cache: the reconstruction window is taken out of the
         # gathered rows and |recon|^2 is formed as the three-cache build formed
-        # it (_finalize_windowed_projection_chunks).
+        # it (_place_windowed_projection_block).
         recon = tables.projection_score_cache[block_fine_rot][:, tables.union_recon_take]
         recon_abs2 = (jnp.abs(recon) ** 2).astype(jnp.real(recon).dtype)
         return recon, recon_abs2, tables.mstep_grid[block_fine_rot]
