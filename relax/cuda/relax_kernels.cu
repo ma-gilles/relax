@@ -1633,6 +1633,12 @@ relion_wavg_sequential_runtime_triplet_f32_kernel(
              ++translation)
         {
             const float weight = posterior[posterior_base + translation];
+            /* The fine posterior is zero outside RELION's significant samples.
+             * A zero weight adds +-0 to accumulators that start at +0 and, in
+             * round-to-nearest, never become -0, so skipping it leaves every
+             * sum bitwise unchanged and saves the image read; the branch is
+             * uniform over the block's threads (one row per block). */
+            if (weight == 0.0f) continue;
             const float2 translated = shifted_images[
                 shifted_base + translation * shifted_stride + stored_pixel];
             const float diff_real = __fsub_rn(ref_real, translated.x);
