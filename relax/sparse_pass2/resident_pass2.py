@@ -198,7 +198,6 @@ from relax.sparse_pass2.sparse_pass2_wavg import (
     _make_relion_wavg_rectangle,
     _make_stable_relion_wavg_rectangle,
     _relion_cuda_translate_wavg_norm_images,
-    _relion_wavg_rectangle_image_power,
     _relion_wavg_shifted_power,
     _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
     image_power_shells,
@@ -1113,20 +1112,20 @@ def _resident_block_wavg_algebraic_terms(
     ctf_probs,  # real [block, P]
     noise_variance,  # real [P]
     scale,  # real [C_B]
-    raw_shifted_images,  # complex64 [C_B, T, P]
-    row_posterior,  # float32 [block, T]
     row_image_local,  # int32 [block]
     row_optics_groups=None,  # int32 [block] with a [G, P] noise table
 ):
-    """Flat-row twin of ``_relion_wavg_atomic_triplet_terms``.
+    """Flat-row twin of ``_relion_wavg_atomic_triplet_terms``, without its image power.
 
     Used when the pass does not carry RELION's RFLOAT CTF operand, which is
     the branch the host bucket tail takes when ``direct_ctf_rfloat_recon`` is
     ``None``. Term for term it is the rectangular helper with the
     ``(image, rotation)`` axes folded into the row axis: the two ``!= 0`` mass
-    predicates, the per-image scale division, the float32 casts and the
-    optimization barrier between the real and imaginary image-power halves all
-    stay where they are.
+    predicates, the per-image scale division and the float32 casts stay where
+    they are. The ``diff2`` slot is ``aa - 2 xa``: the helper's per-row image
+    power ``sum_t w[r, t] |x_t[p]|^2`` is summed over an image's rows by the
+    Wavg accumulator, so the chunk adds it once per image from the
+    translation marginal (:func:`_add_wavg_rectangle_image_power`).
     """
 
     proj = jnp.asarray(proj, dtype=jnp.complex64)
@@ -1140,7 +1139,6 @@ def _resident_block_wavg_algebraic_terms(
     )
     row_image_local = jnp.asarray(row_image_local, dtype=jnp.int32)
     row_scale = jnp.asarray(scale, dtype=jnp.float32).reshape(-1)[row_image_local]
-    posterior = jnp.asarray(row_posterior, dtype=jnp.float32)
 
     ctf_has_mass = ctf_probs != 0.0
     ctf_posterior_raw = jnp.where(ctf_has_mass, ctf_probs * noise_variance, 0.0)
@@ -1152,40 +1150,61 @@ def _resident_block_wavg_algebraic_terms(
     xa = (xa_raw / safe_scale[:, None]).astype(jnp.float32)
     aa = (aa_raw / (safe_scale[:, None] ** 2)).astype(jnp.float32)
 
-    tiles = jnp.asarray(raw_shifted_images, dtype=jnp.complex64)[row_image_local]
-    image_power = _relion_wavg_rectangle_image_power(tiles, posterior[:, None, :])[:, 0, :]
-    diff2 = (
-        (image_power + aa_raw) - jnp.asarray(2.0, dtype=jnp.float32) * xa_raw
-    ).astype(jnp.float32)
+    diff2 = (aa_raw - jnp.asarray(2.0, dtype=jnp.float32) * xa_raw).astype(jnp.float32)
     return jnp.stack((xa, aa, diff2), axis=-1)
 
 
-@partial(jax.jit, static_argnames=("image_capacity",))
+@partial(jax.jit, static_argnames=("n_rect",))
 def _resident_block_wavg_rectangle_terms(
     exact_terms,  # float32 [block, P_exact, 3]
-    raw_shifted_rectangle,  # complex64 [C_B, T, P_rect]
-    row_posterior,  # float32 [block, T]
-    row_kernel_ids,  # int32 [block], the chunk image of each row, -1 for padding
     exact_positions,  # int32 [P_exact]
     *,
-    image_capacity: int,
+    n_rect: int,
 ):
-    """One row block's Wavg rectangle: per-row exact terms and per-image image power.
+    """One row block's Wavg rectangle: the rows' exact terms, zero elsewhere.
 
     The flat-row twin of ``_relion_wavg_rectangle_triplet_terms`` fills the
-    rectangle's ``diff2`` slot with the posterior-weighted image power and then
-    overwrites the exact-radius positions with the projected triplet. The
-    image power ``sum_t w[r, t] |x_t[p]|^2`` depends on the row only through
-    its weights, so its sum over an image's rows is
-    ``sum_t (sum_r w[r, t]) |x_t[p]|^2``: this returns the rows' exact terms
-    (zero elsewhere in the rectangle) and, per chunk image, the power of its
-    translation marginal over the block's rows. The caller adds the power at
-    the rectangle's other positions. RELION adds these per-orientation sums
-    with atomics (wavg.cuh:147-149), so the grouping of the additions is not
-    RELION's either way; the contraction runs over images instead of rows, a
-    [rows, T, P] tile and its reduction per block less.
+    rectangle's ``diff2`` slot with each row's posterior-weighted image power
+    and then overwrites the exact-radius positions with the projected triplet.
+    The image power ``sum_t w[r, t] |x_t[p]|^2`` depends on the row only
+    through its weights, and the Wavg accumulator sums an image's rows, so the
+    chunk adds ``sum_t (sum_r w[r, t]) |x_t[p]|^2`` once per image instead
+    (:func:`_add_wavg_rectangle_image_power`); these block terms are the exact
+    positions alone. RELION adds these per-orientation sums with atomics
+    (wavg.cuh:147-149), so the grouping of the additions is not RELION's
+    either way.
     """
 
+    rows = exact_terms.shape[0]
+    rectangle_terms = jnp.zeros((rows, int(n_rect), 3), dtype=jnp.float32)
+    return rectangle_terms.at[:, jnp.asarray(exact_positions, dtype=jnp.int32), :].set(
+        jnp.asarray(exact_terms, dtype=jnp.float32)
+    )
+
+
+@partial(jax.jit, static_argnames=("power_at_exact_positions",))
+def _add_wavg_rectangle_image_power(
+    wavg_triplet_pixels,  # float32 [C_B, P_rect, 3]
+    raw_shifted_rectangle,  # complex64 [C_B, T, P_rect]
+    row_posterior,  # float32 [rows, T], a chunk's rows in any order
+    row_kernel_ids,  # int32 [rows], the chunk image of each row, -1 for padding
+    exact_positions,  # int32 [P_exact]
+    logical_rect_pixels,  # int32 scalar
+    *,
+    power_at_exact_positions: bool,
+):
+    """Add a chunk's Wavg image power to its per-image ``diff2`` slot, once.
+
+    Per image, the rows' power sums to the power of the image's translation
+    marginal, ``sum_t (sum_r w[r, t]) |x_t[p]|^2``, so one contraction per
+    chunk replaces the per-row (or per-block) ones. It fills the logical
+    rectangle; ``power_at_exact_positions`` is False on the sequential RFLOAT
+    CTF route, whose kernel already puts each row's power into its exact
+    terms, and True on the algebraic route, whose exact ``diff2`` is
+    ``aa - 2 xa`` (:func:`_resident_block_wavg_algebraic_terms`).
+    """
+
+    image_capacity = int(wavg_triplet_pixels.shape[0])
     row_kernel_ids = jnp.asarray(row_kernel_ids, dtype=jnp.int32)
     # Padding rows go to an out-of-range segment and are dropped: a -1 would
     # wrap to the last image under a scatter's drop mode.
@@ -1193,7 +1212,7 @@ def _resident_block_wavg_rectangle_terms(
     marginal = jax.ops.segment_sum(
         jnp.asarray(row_posterior, dtype=jnp.float32),
         segment,
-        num_segments=int(image_capacity),
+        num_segments=image_capacity,
     )
     # HIGHEST keeps the contraction in float32 arithmetic: at DEFAULT precision
     # a GPU dot may take TF32 operands.
@@ -1204,12 +1223,37 @@ def _resident_block_wavg_rectangle_terms(
         precision=jax.lax.Precision.HIGHEST,
         preferred_element_type=jnp.float32,
     ).astype(jnp.float32)
-    rows = exact_terms.shape[0]
-    rectangle_terms = jnp.zeros((rows, raw_shifted_rectangle.shape[-1], 3), dtype=jnp.float32)
-    rectangle_terms = rectangle_terms.at[:, jnp.asarray(exact_positions, dtype=jnp.int32), :].set(
-        jnp.asarray(exact_terms, dtype=jnp.float32)
+    n_rect = int(image_power.shape[-1])
+    mask = jnp.arange(n_rect, dtype=jnp.int32) < jnp.asarray(logical_rect_pixels, dtype=jnp.int32)
+    if not power_at_exact_positions:
+        mask = mask & jnp.ones((n_rect,), dtype=bool).at[jnp.asarray(exact_positions, dtype=jnp.int32)].set(False)
+    return wavg_triplet_pixels.at[..., 2].add(
+        jnp.where(mask, image_power, jnp.zeros((), image_power.dtype))
     )
-    return rectangle_terms, image_power
+
+
+def _logical_rect_pixels(tables, spec):
+    """The Wavg rectangle's logical pixel count: the stable window's, else the spec's."""
+
+    if tables.window_logical is None:
+        return jnp.asarray(spec.n_rect, dtype=jnp.int32)
+    return tables.window_logical.rect_pixels
+
+
+def _add_chunk_wavg_image_power(mstep, operands, tables, row_posterior, row_kernel_ids, *, spec):
+    """:func:`_add_wavg_rectangle_image_power` on a chunk's M-step carry."""
+
+    return mstep._replace(
+        wavg_triplet_pixels=_add_wavg_rectangle_image_power(
+            mstep.wavg_triplet_pixels,
+            operands.raw_translated_wavg_rectangle,
+            row_posterior,
+            row_kernel_ids,
+            tables.exact_positions,
+            _logical_rect_pixels(tables, spec),
+            power_at_exact_positions=not spec.use_rfloat_ctf_wavg,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -5878,8 +5922,6 @@ def _resident_mstep_block(
             ctf_probs,
             tables.noise_variance_for_noise,
             operands.scale,
-            operands.raw_translated_wavg_for_atomic,
-            block_posterior,
             block_row_image,
             block_optics_groups,
         )
@@ -5893,13 +5935,12 @@ def _resident_mstep_block(
             block_posterior,
             logical_recon_pixels,
         )
-    rectangle_terms, rectangle_power = _resident_block_wavg_rectangle_terms(
+    # The image power is added once per chunk after the block walk
+    # (_add_chunk_wavg_image_power); the blocks add their rows' exact terms.
+    rectangle_terms = _resident_block_wavg_rectangle_terms(
         exact_terms,
-        operands.raw_translated_wavg_rectangle,
-        block_posterior,
-        block_kernel_ids,
         tables.exact_positions,
-        image_capacity=int(carry.wavg_triplet_pixels.shape[0]),
+        n_rect=int(operands.raw_translated_wavg_rectangle.shape[-1]),
     )
     wavg_triplet_pixels = (
         cuda_backproject.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
@@ -5908,17 +5949,6 @@ def _resident_mstep_block(
             carry.wavg_triplet_pixels,
             logical_rect_pixels,
         )
-    )
-    # The image power fills the rectangle outside the exact radius, up to the
-    # logical rectangle as the atomic kernel's own bound.
-    rect_power_mask = (
-        jnp.ones((rectangle_power.shape[-1],), dtype=bool)
-        .at[jnp.asarray(tables.exact_positions, dtype=jnp.int32)]
-        .set(False)
-        & (jnp.arange(rectangle_power.shape[-1], dtype=jnp.int32) < logical_rect_pixels)
-    )
-    wavg_triplet_pixels = wavg_triplet_pixels.at[..., 2].add(
-        jnp.where(rect_power_mask, rectangle_power, jnp.zeros((), rectangle_power.dtype))
     )
 
     block_shells, block_a2, block_xa = _resident_block_noise_and_norm(
@@ -6535,6 +6565,9 @@ def _run_resident_chunk_program(
             mstep = _fold_class_scale_sums(mstep, tables.wavg_scale_pixel_mask[slot_index % int(spec.n_classes)])
         Ft_y_out.append(mstep.Ft_y)
         Ft_ctf_out.append(mstep.Ft_ctf)
+    mstep = _add_chunk_wavg_image_power(
+        mstep, operands, tables, posterior.row_posterior, posterior.kernel_row_image_ids, spec=spec
+    )
     stats = _resident_chunk_statistics(
         stats, rows, operands, tables, posterior, mstep, spec=spec
     )
@@ -6634,6 +6667,9 @@ def _run_resident_chunk_stages(
             mstep = _fold_class_scale_sums(mstep, tables.wavg_scale_pixel_mask[slot_index % int(spec.n_classes)])
         Ft_y_out.append(mstep.Ft_y)
         Ft_ctf_out.append(mstep.Ft_ctf)
+    mstep = _add_chunk_wavg_image_power(
+        mstep, operands, tables, posterior.row_posterior, posterior.kernel_row_image_ids, spec=spec
+    )
     if timing_hook is not None:
         timing_hook("mstep", (Ft_y_out, Ft_ctf_out))
 
@@ -7236,6 +7272,9 @@ def run_resident_mstep_blocks(
         carry = start_carry(
             block_projections(0, block_rows) if chunk_projections is None else None
         )
+    carry = _add_chunk_wavg_image_power(
+        carry, operands, tables, row_posterior, kernel_row_image_ids, spec=spec
+    )
 
     return (
         carry.Ft_y,

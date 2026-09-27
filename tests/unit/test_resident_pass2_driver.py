@@ -262,14 +262,14 @@ def test_flat_row_weighted_sums_agree_with_the_rectangular_mstep_sums():
 
 
 def test_flat_row_algebraic_wavg_terms_match_the_rectangular_helper():
-    """The flat-row algebraic Wavg triplet reproduces the rectangular helper.
+    """The flat-row algebraic Wavg triplet is the rectangular helper's without its image power.
 
-    ``xa`` and ``aa`` are elementwise, so they must match in the default band. The
-    ``diff2`` channel carries RELION's image-power contraction, whose float32
-    einsum is shape-dependent, so it is compared in the default float32 band
-    (measured worst case 4 ULP). See the T9b report:
-    at production shapes this contraction is the one place the two layouts
-    disagree, and the ``image_power + aa - 2*xa`` cancellation amplifies it.
+    ``xa`` and ``aa`` are elementwise, so they must match in the default band.
+    The flat ``diff2`` is ``aa - 2*xa``: the helper's per-row image power
+    ``sum_t w[r, t] |x_t[p]|^2`` is added once per image by the chunk
+    (``_add_wavg_rectangle_image_power``), so adding each row's power back
+    (float64, from the same float32 squares) must give the helper's ``diff2``
+    in the default float32 band.
     """
 
     rng = np.random.default_rng(31)
@@ -311,34 +311,43 @@ def test_flat_row_algebraic_wavg_terms_match_the_rectangular_helper():
             jnp.asarray(ctf_probs.reshape(batch * n_rot, n_pix)),
             jnp.asarray(noise_variance),
             jnp.asarray(scale),
-            jnp.asarray(raw_shifted),
-            jnp.asarray(posterior.reshape(batch * n_rot, n_trans)),
             jnp.asarray(row_image),
         )
     )
     assert_matches(flat[:, :, 0], rect[:, :, 0])  # XA
     assert_matches(flat[:, :, 1], rect[:, :, 1])  # AA
-    assert_matches(flat[:, :, 2], rect[:, :, 2])  # a few float32 ULP: the default band
+    square = (raw_shifted.real * raw_shifted.real).astype(np.float32) + (
+        raw_shifted.imag * raw_shifted.imag
+    ).astype(np.float32)
+    row_power = np.einsum(
+        "rt,rtp->rp",
+        posterior.reshape(batch * n_rot, n_trans).astype(np.float64),
+        square[row_image].astype(np.float64),
+    )
+    assert_matches((flat[:, :, 2] + row_power).astype(np.float32), rect[:, :, 2])
 
 
 @pytest.mark.parametrize(
     "batch,n_rot,n_trans,n_rect,n_exact",
     [(2, 3, 4, 10, 6), (5, 64, 84, 97, 61), (1, 17, 3, 8, 8), (7, 1, 9, 33, 2)],
 )
+@pytest.mark.parametrize("power_at_exact_positions", [False, True])
 def test_flat_row_wavg_rectangle_image_sums_match_the_rectangular_helper(
-    batch, n_rot, n_trans, n_rect, n_exact
+    batch, n_rot, n_trans, n_rect, n_exact, power_at_exact_positions
 ):
     """Per image, the rows' rectangle terms plus the marginal's power are the helper's sums.
 
     The rectangular helper fills the rectangle with each row's posterior-weighted
     image power and overwrites the exact positions; the Wavg accumulator sums
     those rows per image. The flat-row form returns the exact terms per row and
-    the image power of each image's translation marginal, so every image's sum
-    over its rows must match: exactly at the exact positions (the same terms,
-    summed in row order), and in the float32 band elsewhere, where only the
-    grouping of the power's additions differs. Shapes cover the production ratio
-    (many rows over few images), one row per image, a single rotation, an
-    all-exact rectangle and a padded row.
+    the chunk adds the image power of each image's translation marginal once,
+    so every image's sum over its rows must match: in the default band at the
+    exact positions (the same terms, summed in row order), and in the float32
+    band of the power's sum elsewhere, where only the grouping of the power's additions differs. On the
+    algebraic route (``power_at_exact_positions``) the power covers the exact
+    positions too. Only the logical rectangle is filled. Shapes cover the
+    production ratio (many rows over few images), one row per image, a single
+    rotation, an all-exact rectangle and a padded row.
     """
 
     rng = np.random.default_rng(4207 + n_rect)
@@ -363,33 +372,45 @@ def test_flat_row_wavg_rectangle_image_sums_match_the_rectangular_helper(
     row_ids = np.concatenate([np.repeat(np.arange(batch, dtype=np.int32), n_rot), [-1]])
     flat_exact = np.concatenate([exact_terms.reshape(batch * n_rot, n_exact, 3), exact_terms[:1, 0]])
     flat_posterior = np.concatenate([posterior.reshape(batch * n_rot, n_trans), posterior[:1, 0]])
-    terms, power = (
-        np.asarray(value)
-        for value in rp._resident_block_wavg_rectangle_terms(
-            jnp.asarray(flat_exact),
+    terms = np.asarray(
+        rp._resident_block_wavg_rectangle_terms(
+            jnp.asarray(flat_exact), jnp.asarray(exact_positions), n_rect=n_rect
+        )
+    )
+    logical = n_rect - 1
+    power = np.asarray(
+        rp._add_wavg_rectangle_image_power(
+            jnp.zeros((batch, n_rect, 3), dtype=jnp.float32),
             jnp.asarray(raw_rect),
             jnp.asarray(flat_posterior),
             jnp.asarray(row_ids),
             jnp.asarray(exact_positions),
-            image_capacity=batch,
+            jnp.int32(logical),
+            power_at_exact_positions=power_at_exact_positions,
         )
     )
+    assert np.all(power[..., :2] == 0) and np.all(power[:, logical:, 2] == 0)
+    power = power[..., 2]
     other = np.setdiff1d(np.arange(n_rect), exact_positions)
     assert np.all(terms[:, other, :] == 0)
     # The power's float64 truth: sum over the image's rows and translations of
     # w[r, t] |x_t[p]|^2, from the same float32 squares.
     square = (raw_rect.real * raw_rect.real).astype(np.float32) + (raw_rect.imag * raw_rect.imag).astype(np.float32)
     truth = np.einsum("brt,btp->bp", posterior.astype(np.float64), square.astype(np.float64))
+    filled = np.arange(n_rect) < logical
+    if not power_at_exact_positions:
+        filled &= ~np.isin(np.arange(n_rect), exact_positions)
     # Both float32 groupings of these n_rot * n_trans positive terms are within
     # (n_rot + n_trans) float32 eps of their sum.
-    bound = (n_rot + n_trans) * np.finfo(np.float32).eps * truth[:, other]
+    bound = (n_rot + n_trans) * np.finfo(np.float32).eps * truth[:, filled]
     for image in range(batch):
         rows = terms[row_ids == image]
-        np.testing.assert_array_equal(
+        assert_matches(
             np.cumsum(rows[:, exact_positions, :], axis=0, dtype=np.float32)[-1],
             np.cumsum(rect[image][:, exact_positions, :], axis=0, dtype=np.float32)[-1],
         )
-        assert np.all(np.abs(power[image, other] - truth[image, other]) <= bound[image])
+        assert np.all(np.abs(power[image, filled] - truth[image, filled]) <= bound[image])
+        assert np.all(power[image, ~filled] == 0)
 
 
 def test_wavg_shifted_power_commutes_with_a_row_gather():

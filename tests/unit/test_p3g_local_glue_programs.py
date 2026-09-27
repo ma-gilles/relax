@@ -194,8 +194,9 @@ def test_the_adapter_walks_the_same_blocks_in_both_forms(monkeypatch):
 
     The driver loop, its block bounds, its row slices and the arrays each block
     receives are compared between the callback form and the chunk-array form.
-    ``_resident_mstep_block`` and the carry are stubbed, so this is the loop and
-    its slicing, on CPU, without the CUDA M-step body.
+    ``_resident_mstep_block``, the carry and the chunk's Wavg image power are
+    stubbed, so this is the loop and its slicing, on CPU, without the CUDA
+    M-step body.
     """
 
     row_capacity, block_rows, n_recon = 16, 4, 5
@@ -211,6 +212,8 @@ def test_the_adapter_walks_the_same_blocks_in_both_forms(monkeypatch):
         **{name: None for name in rp._ChunkMstepCarry._fields}
     )
     monkeypatch.setattr(rp, "_initial_mstep_carry", lambda *a, **k: carry)
+    # The chunk's once-per-chunk Wavg image power reads operands the stub lacks.
+    monkeypatch.setattr(rp, "_add_chunk_wavg_image_power", lambda mstep, *a, **k: mstep)
     seen = _record_block_projections(monkeypatch)
 
     kwargs = _adapter_kwargs(row_capacity, block_rows, posterior)
