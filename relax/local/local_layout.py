@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import functools
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 from recovar import utils
@@ -410,6 +412,51 @@ def _segment_starts(counts: np.ndarray) -> np.ndarray:
     return starts
 
 
+def _dense_direction_dots(prior_dir_vecs, dir_vecs, rows):
+    return prior_dir_vecs[rows] @ dir_vecs.T
+
+
+class _SparseCandidates(NamedTuple):
+    """Candidate ``(image, point)`` pairs of a chunk, image-major with ascending points, and their values."""
+
+    n_images: int
+    image: np.ndarray
+    point: np.ndarray
+    values: np.ndarray
+
+
+def _direction_cone_candidates(prior_dir_vecs, dir_vecs, dir_z_order, dir_z_sorted, cone_rad, cos_prefilter):
+    """The grid directions within ``cone_rad`` of each prior direction, with their dot products.
+
+    A direction within the cone has a polar angle within ``cone_rad`` of the
+    prior's, so only the grid's latitude band (a contiguous run of the grid
+    sorted by z) is tested: about 6% of an order-5 grid at the 10097 local
+    cones instead of every direction. The dot products of the band are formed
+    elementwise and kept where ``dot >= cos_prefilter``, the dense prefilter's
+    test; a pairwise sum can differ from a BLAS dot product in the last bit.
+    """
+
+    n_images = int(prior_dir_vecs.shape[0])
+    polar = np.arccos(np.clip(prior_dir_vecs[:, 2], -1.0, 1.0))
+    z_high = np.cos(np.clip(polar - cone_rad, 0.0, np.pi)) + 1e-12
+    z_low = np.cos(np.clip(polar + cone_rad, 0.0, np.pi)) - 1e-12
+    lo = np.searchsorted(dir_z_sorted, z_low, side="left")
+    hi = np.searchsorted(dir_z_sorted, z_high, side="right")
+    band = (hi - lo).astype(np.int64)
+    image = np.repeat(np.arange(n_images, dtype=np.int64), band)
+    position = lo.astype(np.int64)[image] + np.arange(image.shape[0], dtype=np.int64) - np.repeat(
+        _segment_starts(band), band
+    )
+    point = dir_z_order[position]
+    prior = prior_dir_vecs[image]
+    grid = dir_vecs[point]
+    dots = prior[:, 0] * grid[:, 0] + prior[:, 1] * grid[:, 1] + prior[:, 2] * grid[:, 2]
+    inside = dots >= cos_prefilter
+    image, point, dots = image[inside], point[inside], dots[inside]
+    order = np.argsort(image * np.int64(dir_vecs.shape[0]) + point, kind="stable")
+    return _SparseCandidates(n_images, image[order], point[order], dots[order])
+
+
 def _chunk_local_supports(values, candidates, to_distance, cutoff_deg, sigma_deg):
     """Each image's kept grid points and their normalized log Gaussian prior, for a chunk of images.
 
@@ -423,12 +470,20 @@ def _chunk_local_supports(values, candidates, to_distance, cutoff_deg, sigma_deg
     loop's pairwise sum in the last float64 bit before their float32 rounding.
     """
 
-    n_images = int(values.shape[0])
-    if candidates is None:
+    if isinstance(candidates, _SparseCandidates):
+        # Candidate (image, point) pairs already listed, image-major with
+        # ascending points, with their values; ``values`` gives the dense
+        # values of an image that keeps no candidate.
+        n_images = int(candidates.n_images)
+        image, point = candidates.image, candidates.point
+        distance = to_distance(candidates.values)
+    elif candidates is None:
+        n_images = int(values.shape[0])
         image = np.repeat(np.arange(n_images, dtype=np.int64), values.shape[1])
         point = np.tile(np.arange(values.shape[1], dtype=np.int64), n_images)
         distance = np.asarray(values, dtype=np.float64).reshape(-1)
     else:
+        n_images = int(values.shape[0])
         image, point = np.nonzero(candidates)
         distance = to_distance(values[image, point])
     inside = distance < cutoff_deg
@@ -451,7 +506,8 @@ def _chunk_local_supports(values, candidates, to_distance, cutoff_deg, sigma_deg
         log_prior = np.log(np.clip(normalized, np.finfo(np.float32).tiny, None)).astype(np.float32)
     empty = np.flatnonzero(~kept)
     if empty.size:
-        distances = values[empty] if to_distance is None else to_distance(values[empty])
+        empty_values = values(empty) if callable(values) else values[empty]
+        distances = empty_values if to_distance is None else to_distance(empty_values)
         image = np.concatenate([image, empty])
         point = np.concatenate([point, np.argmin(distances, axis=1)])
         log_prior = np.concatenate([log_prior, np.zeros(empty.size, dtype=np.float32)])
@@ -542,10 +598,24 @@ def _build_factorized_local_entries(
         sigma_psi_deg > 0.0,
     )
     running_offset = 0
+    # Without symmetry the direction cone is searched in the grid's latitude
+    # band (_direction_cone_candidates) instead of against every direction.
+    banded = symmetry_operators is None and np.isfinite(cos_prefilter)
+    if banded:
+        dir_z_order = np.argsort(dir_vecs[:, 2], kind="stable").astype(np.int64)
+        dir_z_sorted = dir_vecs[dir_z_order, 2]
 
     for chunk_start in range(0, n_images, chunk_size):
         chunk_stop = min(n_images, chunk_start + chunk_size)
-        if sigma_rot_deg > 0.0:
+        if sigma_rot_deg > 0.0 and banded:
+            chunk_dirs = prior_dir_vecs[chunk_start:chunk_stop]
+            candidate_chunk = _direction_cone_candidates(
+                chunk_dirs, dir_vecs, dir_z_order, dir_z_sorted, widened_cutoff_rad, cos_prefilter
+            )
+            # An image that keeps no candidate falls back to its nearest
+            # direction, which needs its dense row.
+            dots = functools.partial(_dense_direction_dots, chunk_dirs, dir_vecs)
+        elif sigma_rot_deg > 0.0:
             if symmetry_operators is None:
                 dots = prior_dir_vecs[chunk_start:chunk_stop] @ dir_vecs.T
             else:
