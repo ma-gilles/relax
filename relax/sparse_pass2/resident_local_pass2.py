@@ -784,7 +784,7 @@ def compute_local_search_resident(
             noise_optics_groups=optics_groups_np,
         )
         # The operand family decides what a chunk holds, so it is chosen before the
-        # plan; the per-chunk fallback in _run_resident_local_chunk stays as a guard.
+        # plan; the per-chunk fallback in _start_resident_local_chunk stays as a guard.
         operand_route = {
             "unshifted": _unshifted_operands_route(
                 bucket_io_kwargs, window_indices=window_indices, recon_window_indices=recon_window_indices
@@ -947,8 +947,15 @@ def compute_local_search_resident(
             np.zeros(n_images, dtype=np.int32) if return_significant_counts else None
         )
         loop_t0 = time.time()
+        # The chunks are software-pipelined: chunk k+1's operands, projections,
+        # scores and posterior are enqueued before chunk k's M-step reads its live
+        # row count back, so the device works through k+1's front while the host
+        # waits on and dispatches k's M-step. The chunk-profile diagnostic finishes
+        # every chunk at once so its stage timers stay per chunk.
+        pipelined = not parse_env_flag(_CHUNK_PROFILE_ENV, default=False)
+        pending = None
         for chunk in chunks:
-            Ft_y_total, Ft_ctf_total, stats = _run_resident_local_chunk(
+            finish = _start_resident_local_chunk(
                 chunk,
                 tables=tables,
                 experiment_dataset=experiment_dataset,
@@ -997,16 +1004,21 @@ def compute_local_search_resident(
                 voxel_size=experiment_dataset.voxel_size,
                 accumulate_noise=accumulate_noise,
                 source_faithful_spectrum_norm=resolved_spectrum_norm,
-                stats=stats,
                 stats_config=stats_config,
                 image_tables=image_tables,
-                Ft_y_total=Ft_y_total,
-                Ft_ctf_total=Ft_ctf_total,
                 cuda_backproject=em_cuda_kernels,
                 significant_counts=significant_counts,
                 operand_route=operand_route,
                 relion_projector_capacity_texture=capacity_texture,
             )
+            if pending is not None:
+                Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
+            pending = finish
+            if not pipelined:
+                Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
+                pending = None
+        if pending is not None:
+            Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
         loop_s = time.time() - loop_t0
     finally:
         if projector_texture is not None:
@@ -1276,7 +1288,7 @@ def _open_capacity_texture(
     )
 
 
-def _run_resident_local_chunk(
+def _start_resident_local_chunk(
     chunk,
     *,
     tables,
@@ -1323,18 +1335,22 @@ def _run_resident_local_chunk(
     voxel_size,
     accumulate_noise,
     source_faithful_spectrum_norm,
-    stats,
     optics_groups_np=None,
     stats_config,
     image_tables,
-    Ft_y_total,
-    Ft_ctf_total,
     cuda_backproject,
     significant_counts,
     operand_route,
     relion_projector_capacity_texture=None,
 ):
-    """Every resident stage for one local capacity chunk.
+    """Enqueue one local capacity chunk's front stages; return its ``finish``.
+
+    The front is the chunk's operands, projections, scores, segmented
+    posterior and live-row order, none of which reads the half's running
+    accumulators. ``finish(Ft_y_total, Ft_ctf_total, stats)`` reads the live row
+    count back, runs the M-step and the image statistics and returns the
+    updated accumulators, so the caller can enqueue the next chunk's front
+    before it finishes this one.
 
     ``operand_route`` is the half's mutable choice of reconstruction operands:
     ``{"unshifted": True}`` prepares the chunk's unshifted per-image operands
@@ -1345,8 +1361,9 @@ def _run_resident_local_chunk(
     tiles at its first chunk.
 
     The only host work inside is the chunk's operand upload, the T7 offsets
-    readback the segmented posterior performs internally, and the optional
-    significance-count pull; no per-chunk result is otherwise brought back.
+    readback the segmented posterior performs internally, the optional
+    significance-count pull and ``finish``'s live row count; no per-chunk
+    result is otherwise brought back.
     """
 
     row_capacity = int(chunk.row_capacity)
@@ -1548,154 +1565,160 @@ def _run_resident_local_chunk(
     mstep_rows, n_live_rows = _live_rows_first(
         row_posterior, row_is_valid, row_image_local, kernel_row_image_ids
     )
-    n_live_rows = int(n_live_rows)
 
-    # P3-G: with the flag on the three chunk-wide arrays go to the M-step entry
-    # point whole and the block program gathers its rows inside the jit; with it
-    # off the Python callback gathers them per block, three eager dispatches
-    # each time, which is the path this change is measured against.
-    block_row_program = parse_env_flag(_BLOCK_ROW_PROGRAM_ENV, default=False)
-    if block_row_program:
-        block_projections = None
-        chunk_projections = (recon_proj, recon_abs2, mstep_rotations)
-    else:
-        chunk_projections = None
+    def finish(Ft_y_total, Ft_ctf_total, stats):
+        """The chunk's M-step and statistics, added into the running accumulators."""
 
-        def block_projections(start, stop):
-            rows = mstep_rows.row_ids[start:stop]
-            return recon_proj[rows], recon_abs2[rows], mstep_rotations[rows]
+        n_live_rows_host = int(n_live_rows)
 
-    (
-        Ft_y_total,
-        Ft_ctf_total,
-        wavg_triplet_pixels,
-        block_noise_shells,
-        a2_per_image,
-        xa_per_image,
-    ) = rp.run_resident_mstep_blocks(
-        block_projections,
-        chunk_projections=chunk_projections,
-        row_capacity=row_capacity,
-        n_valid_rows=n_live_rows,
-        mstep_block_rows=int(mstep_block_rows),
-        image_capacity=image_capacity,
-        row_image_local=mstep_rows.row_image_local,
-        kernel_row_image_ids=mstep_rows.kernel_row_image_ids,
-        row_posterior=mstep_rows.row_posterior,
-        row_ids=mstep_rows.row_ids,
-        recon=recon,
-        recon_pixel_indices=recon_window_indices,
-        translation_angles=translation_angles,
-        n_rect=int(n_rect),
-        n_shells=int(stats_config.n_shells),
-        n_recon_windowed=int(n_recon_windowed),
-        noise_variance_for_noise=noise_variance_for_noise,
-        shell_indices_noise=shell_indices_noise,
-        exact_positions_device=exact_positions_device,
-        Ft_y_total=Ft_y_total,
-        Ft_ctf_total=Ft_ctf_total,
-        image_shape=image_shape,
-        recon_volume_shape=recon_volume_shape,
-        mstep_current_size=mstep_current_size,
-        mstep_max_r=mstep_max_r,
-        relion_x_half_recon_indices=relion_x_half_recon_indices,
-        max_adjoint_block_bytes=max_adjoint_block_bytes,
-        cuda_backproject=cuda_backproject,
-        n_optics_groups=int(stats_config.n_optics_groups),
-    )
+        # P3-G: with the flag on the three chunk-wide arrays go to the M-step entry
+        # point whole and the block program gathers its rows inside the jit; with it
+        # off the Python callback gathers them per block, three eager dispatches
+        # each time, which is the path this change is measured against.
+        block_row_program = parse_env_flag(_BLOCK_ROW_PROGRAM_ENV, default=False)
+        if block_row_program:
+            block_projections = None
+            chunk_projections = (recon_proj, recon_abs2, mstep_rotations)
+        else:
+            chunk_projections = None
 
-    mark("mstep", Ft_y_total, Ft_ctf_total, wavg_triplet_pixels, block_noise_shells)
+            def block_projections(start, stop):
+                rows = mstep_rows.row_ids[start:stop]
+                return recon_proj[rows], recon_abs2[rows], mstep_rotations[rows]
 
-    # --- stage 7: image-level statistics ------------------------------------
-    translation_sqdist_ang = image_tables.translation_sqdist_ang
-    if translation_prior_centers_np is not None:
-        from relax.helpers.translation_prior import (
-            translation_prior_centers_for_images,
-            translation_sqdist_angstrom,
+        (
+            Ft_y_total,
+            Ft_ctf_total,
+            wavg_triplet_pixels,
+            block_noise_shells,
+            a2_per_image,
+            xa_per_image,
+        ) = rp.run_resident_mstep_blocks(
+            block_projections,
+            chunk_projections=chunk_projections,
+            row_capacity=row_capacity,
+            n_valid_rows=n_live_rows_host,
+            mstep_block_rows=int(mstep_block_rows),
+            image_capacity=image_capacity,
+            row_image_local=mstep_rows.row_image_local,
+            kernel_row_image_ids=mstep_rows.kernel_row_image_ids,
+            row_posterior=mstep_rows.row_posterior,
+            row_ids=mstep_rows.row_ids,
+            recon=recon,
+            recon_pixel_indices=recon_window_indices,
+            translation_angles=translation_angles,
+            n_rect=int(n_rect),
+            n_shells=int(stats_config.n_shells),
+            n_recon_windowed=int(n_recon_windowed),
+            noise_variance_for_noise=noise_variance_for_noise,
+            shell_indices_noise=shell_indices_noise,
+            exact_positions_device=exact_positions_device,
+            Ft_y_total=Ft_y_total,
+            Ft_ctf_total=Ft_ctf_total,
+            image_shape=image_shape,
+            recon_volume_shape=recon_volume_shape,
+            mstep_current_size=mstep_current_size,
+            mstep_max_r=mstep_max_r,
+            relion_x_half_recon_indices=relion_x_half_recon_indices,
+            max_adjoint_block_bytes=max_adjoint_block_bytes,
+            cuda_backproject=cuda_backproject,
+            n_optics_groups=int(stats_config.n_optics_groups),
         )
 
-        # Build the centres at capacity on the host so the squared-distance
-        # program is keyed on the capacity class, not the occupancy; padded
-        # rows multiply a zero posterior, so their value is never observable.
-        padded_image_indices = rp._pad_batch_to_capacity(
-            np.asarray(image_indices).reshape(-1, 1), image_capacity
-        ).reshape(-1)
-        centers = translation_prior_centers_for_images(
-            translation_prior_centers_np,
-            padded_image_indices,
-            batch_size=image_capacity,
-        )
-        translation_sqdist_ang = rp._zero_padded_images(
-            jnp.asarray(translation_sqdist_angstrom(fine_translations, centers, voxel_size)),
-            jnp.asarray(np.arange(image_capacity) < n_valid_images, dtype=bool),
-        )
-    chunk_tables = image_tables._replace(translation_sqdist_ang=translation_sqdist_ang)
+        mark("mstep", Ft_y_total, Ft_ctf_total, wavg_triplet_pixels, block_noise_shells)
 
-    image_row_start_np = segment_offsets_np.astype(np.int64)[:image_capacity] // int(n_fine_trans)
-    image_row_count_np = (
-        segment_offsets_np.astype(np.int64)[1:] - segment_offsets_np.astype(np.int64)[:-1]
-    ) // int(n_fine_trans)
-    image_row_start = jnp.asarray(image_row_start_np, dtype=jnp.int64)
-    image_row_count = jnp.asarray(image_row_count_np, dtype=jnp.int64)
+        # --- stage 7: image-level statistics ------------------------------------
+        translation_sqdist_ang = image_tables.translation_sqdist_ang
+        if translation_prior_centers_np is not None:
+            from relax.helpers.translation_prior import (
+                translation_prior_centers_for_images,
+                translation_sqdist_angstrom,
+            )
 
-    best_row_local = jnp.asarray(best_cell_index, dtype=jnp.int64) // jnp.int64(n_fine_trans)
-    slot_is_valid = jnp.arange(image_capacity, dtype=jnp.int32) < n_valid_images_device
-    invalid_best = slot_is_valid & ((best_row_local < 0) | (best_row_local >= image_row_count))
-    best_chunk_row = jnp.clip(
-        image_row_start + best_row_local, 0, jnp.int64(max(row_capacity - 1, 0))
-    ).astype(jnp.int32)
-    # The winner's global row in the layout's flat order; the pose decode reads
-    # rotations, M-step rotations, fine ids and source Eulers at that row.
-    best_global_row = jnp.int64(int(chunk.row_start)) + best_chunk_row.astype(jnp.int64)
+            # Build the centres at capacity on the host so the squared-distance
+            # program is keyed on the capacity class, not the occupancy; padded
+            # rows multiply a zero posterior, so their value is never observable.
+            padded_image_indices = rp._pad_batch_to_capacity(
+                np.asarray(image_indices).reshape(-1, 1), image_capacity
+            ).reshape(-1)
+            centers = translation_prior_centers_for_images(
+                translation_prior_centers_np,
+                padded_image_indices,
+                batch_size=image_capacity,
+            )
+            translation_sqdist_ang = rp._zero_padded_images(
+                jnp.asarray(translation_sqdist_angstrom(fine_translations, centers, voxel_size)),
+                jnp.asarray(np.arange(image_capacity) < n_valid_images, dtype=bool),
+            )
+        chunk_tables = image_tables._replace(translation_sqdist_ang=translation_sqdist_ang)
 
-    row_posterior_bin = jnp.asarray(host_chunk["row_posterior_id"], dtype=jnp.int32)
-    chunk_operands = rp._ChunkImageOperands(
-        row_posterior=row_posterior,
-        row_image_local=row_image_local,
-        row_coarse_rot=jnp.where(
-            row_is_valid, row_posterior_bin, jnp.int32(int(stats_config.n_coarse_rot))
-        ),
-        image_ids=image_ids,
-        group_ids=recon["group_ids"],
-        image_power_shells=recon["image_power_shells"],
-        relion_norm_high_shell=recon["relion_norm_high_shell"],
-        wavg_triplet_pixels=wavg_triplet_pixels,
-        block_noise_shells=block_noise_shells,
-        a2_per_image=a2_per_image,
-        xa_per_image=xa_per_image,
-        class_log_z=jnp.asarray(log_z_out, dtype=jnp.float64),
-        min_diff2=scored.min_diff2,
-        best_log_score=best_log_score,
-        max_posterior=max_posterior,
-        best_cell_index=jnp.asarray(best_cell_index, dtype=jnp.int64),
-        best_fine_rot=best_global_row,
-        optics_groups=recon.get("optics_groups"),
-    )
-    stats = rp._accumulate_chunk_image_terms(
-        stats, chunk_operands, chunk_tables, config=stats_config
-    )
-    stats = stats._replace(
-        invalid_best_rows=stats.invalid_best_rows + jnp.sum(invalid_best.astype(jnp.int64))
-    )
-    mark("stats", stats)
-    if profile:
-        order = ("t0", "operands", "project", "score", "posterior", "mstep", "stats")
-        spans = {
-            name: marks[name] - marks[prev]
-            for prev, name in zip(order, order[1:])
-            if name in marks and prev in marks
-        }
-        n_blocks = len(range(0, min(row_capacity, max(n_live_rows, 1)), int(mstep_block_rows))) or 1
-        logger.info(
-            "Resident local chunk profile: images=%d/%d rows=%d/%d live_rows=%d row_pad=%.1f%% "
-            "blocks=%d proj_rows=%d recon_tile=%s wavg_tile=%s | %s | chunk=%.3fs",
-            n_valid_images, image_capacity, n_valid_rows, row_capacity, n_live_rows,
-            100.0 * (row_capacity - n_valid_rows) / max(row_capacity, 1),
-            n_blocks, n_projected_rows,
-            f"{recon_operand.dtype}{tuple(recon_operand.shape)}",
-            f"{recon['raw_translated_wavg_rectangle'].dtype}"
-            f"{tuple(recon['raw_translated_wavg_rectangle'].shape)}",
-            " ".join(f"{k}={v:.3f}s" for k, v in spans.items()),
-            marks["stats"] - marks["t0"],
+        image_row_start_np = segment_offsets_np.astype(np.int64)[:image_capacity] // int(n_fine_trans)
+        image_row_count_np = (
+            segment_offsets_np.astype(np.int64)[1:] - segment_offsets_np.astype(np.int64)[:-1]
+        ) // int(n_fine_trans)
+        image_row_start = jnp.asarray(image_row_start_np, dtype=jnp.int64)
+        image_row_count = jnp.asarray(image_row_count_np, dtype=jnp.int64)
+
+        best_row_local = jnp.asarray(best_cell_index, dtype=jnp.int64) // jnp.int64(n_fine_trans)
+        slot_is_valid = jnp.arange(image_capacity, dtype=jnp.int32) < n_valid_images_device
+        invalid_best = slot_is_valid & ((best_row_local < 0) | (best_row_local >= image_row_count))
+        best_chunk_row = jnp.clip(
+            image_row_start + best_row_local, 0, jnp.int64(max(row_capacity - 1, 0))
+        ).astype(jnp.int32)
+        # The winner's global row in the layout's flat order; the pose decode reads
+        # rotations, M-step rotations, fine ids and source Eulers at that row.
+        best_global_row = jnp.int64(int(chunk.row_start)) + best_chunk_row.astype(jnp.int64)
+
+        row_posterior_bin = jnp.asarray(host_chunk["row_posterior_id"], dtype=jnp.int32)
+        chunk_operands = rp._ChunkImageOperands(
+            row_posterior=row_posterior,
+            row_image_local=row_image_local,
+            row_coarse_rot=jnp.where(
+                row_is_valid, row_posterior_bin, jnp.int32(int(stats_config.n_coarse_rot))
+            ),
+            image_ids=image_ids,
+            group_ids=recon["group_ids"],
+            image_power_shells=recon["image_power_shells"],
+            relion_norm_high_shell=recon["relion_norm_high_shell"],
+            wavg_triplet_pixels=wavg_triplet_pixels,
+            block_noise_shells=block_noise_shells,
+            a2_per_image=a2_per_image,
+            xa_per_image=xa_per_image,
+            class_log_z=jnp.asarray(log_z_out, dtype=jnp.float64),
+            min_diff2=scored.min_diff2,
+            best_log_score=best_log_score,
+            max_posterior=max_posterior,
+            best_cell_index=jnp.asarray(best_cell_index, dtype=jnp.int64),
+            best_fine_rot=best_global_row,
+            optics_groups=recon.get("optics_groups"),
         )
-    return Ft_y_total, Ft_ctf_total, stats
+        stats = rp._accumulate_chunk_image_terms(
+            stats, chunk_operands, chunk_tables, config=stats_config
+        )
+        stats = stats._replace(
+            invalid_best_rows=stats.invalid_best_rows + jnp.sum(invalid_best.astype(jnp.int64))
+        )
+        mark("stats", stats)
+        if profile:
+            order = ("t0", "operands", "project", "score", "posterior", "mstep", "stats")
+            spans = {
+                name: marks[name] - marks[prev]
+                for prev, name in zip(order, order[1:])
+                if name in marks and prev in marks
+            }
+            n_blocks = len(range(0, min(row_capacity, max(n_live_rows_host, 1)), int(mstep_block_rows))) or 1
+            logger.info(
+                "Resident local chunk profile: images=%d/%d rows=%d/%d live_rows=%d row_pad=%.1f%% "
+                "blocks=%d proj_rows=%d recon_tile=%s wavg_tile=%s | %s | chunk=%.3fs",
+                n_valid_images, image_capacity, n_valid_rows, row_capacity, n_live_rows_host,
+                100.0 * (row_capacity - n_valid_rows) / max(row_capacity, 1),
+                n_blocks, n_projected_rows,
+                f"{recon_operand.dtype}{tuple(recon_operand.shape)}",
+                f"{recon['raw_translated_wavg_rectangle'].dtype}"
+                f"{tuple(recon['raw_translated_wavg_rectangle'].shape)}",
+                " ".join(f"{k}={v:.3f}s" for k, v in spans.items()),
+                marks["stats"] - marks["t0"],
+            )
+        return Ft_y_total, Ft_ctf_total, stats
+
+    return finish
