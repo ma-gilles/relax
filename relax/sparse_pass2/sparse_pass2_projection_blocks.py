@@ -40,6 +40,7 @@ def _compute_sparse_pass2_projections_block(
     relion_projector_r_max: int | None = None,
     projection_padding_factor: int = 1,
     projector_output_size: int | None = None,
+    relion_projector_capacity_texture=None,
     **projection_kwargs,
 ):
     projection_kwargs = dict(projection_kwargs)
@@ -59,6 +60,8 @@ def _compute_sparse_pass2_projections_block(
     use_relion_projector = relion_projector_half is not None or relion_projector_texture is not None
     if use_relion_projector and relion_projector_r_max is None:
         raise ValueError("relion_projector_r_max is required when relion_projector_half is provided")
+    if relion_projector_capacity_texture is not None and relion_projector_half is None:
+        raise ValueError("a capacity projector texture projects relion_projector_half; none was given")
 
     def _project(rotations):
         if use_relion_projector:
@@ -76,6 +79,11 @@ def _compute_sparse_pass2_projections_block(
                 relion_kernel=relion_kernel,
                 mask_current_image_disk=projection_mask_current_image_disk,
                 **({"persistent_texture": relion_projector_texture} if relion_projector_texture is not None else {}),
+                **(
+                    {"capacity_texture": relion_projector_capacity_texture}
+                    if relion_projector_capacity_texture is not None
+                    else {}
+                ),
             )
         return _compute_projections_block(
             mean_for_proj,

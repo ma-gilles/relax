@@ -10,3 +10,4 @@ include relax/cuda/vdam_trace.cuh
 include relax/cuda/relion_preprocess.cuh
 include relax/cuda/sparse_pass2_posterior.cuh
 include relax/cuda/relion_translate_sum.cuh
+include relax/cuda/relion_capacity_texture.cuh

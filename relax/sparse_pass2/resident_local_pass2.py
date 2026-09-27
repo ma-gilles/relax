@@ -744,6 +744,18 @@ def compute_local_search_resident(
     )
     if projector_texture is not None:
         projection_kwargs["relion_projector_texture"] = projector_texture
+    # Slabs the half-storage kernel takes stage its texture once per pass
+    # instead of once per projection call.
+    capacity_texture = (
+        None
+        if projector_texture is not None
+        else _open_capacity_texture(
+            relion_projector_half,
+            relion_projector_r_max=relion_projector_r_max,
+            projection_padding_factor=projection_padding_factor,
+            projection_kwargs=projection_kwargs,
+        )
+    )
     try:
         # ---- per-image resident operands --------------------------------------
         bucket_io_kwargs = dict(
@@ -993,11 +1005,14 @@ def compute_local_search_resident(
                 cuda_backproject=em_cuda_kernels,
                 significant_counts=significant_counts,
                 operand_route=operand_route,
+                relion_projector_capacity_texture=capacity_texture,
             )
         loop_s = time.time() - loop_t0
     finally:
         if projector_texture is not None:
             projector_texture.close()
+        if capacity_texture is not None:
+            capacity_texture.close()
 
     # ---- finalize ----------------------------------------------------------
     # RELION symmetriseReconstructions (ml_optimiser.cpp:5541-5575): x=0
@@ -1223,6 +1238,44 @@ def _live_rows_first(row_posterior, row_is_valid, row_image_local, kernel_row_im
     return rows, jnp.sum(live, dtype=jnp.int32)
 
 
+def _open_capacity_texture(
+    relion_projector_half,
+    *,
+    relion_projector_r_max,
+    projection_padding_factor,
+    projection_kwargs,
+):
+    """One staged projector texture for a half's chunks, or None where it does not apply.
+
+    Every chunk projects the same slab, and the per-call projector stages its
+    texture and synchronizes the stream each time
+    (:func:`~relax.cuda.kernels.project_relion_half_capacity`). Where that
+    half-storage kernel is the one the projection takes
+    (:func:`~relax.helpers.projection.relion_capacity_texture_serves`), the
+    texture is staged once here instead; the caller closes it after the loop.
+    """
+
+    from relax.helpers.projection import relion_capacity_texture_serves
+
+    if relion_projector_half is None or jax.default_backend() != "gpu":
+        return None
+    if not relion_capacity_texture_serves(
+        relion_projector_half,
+        r_max=int(relion_projector_r_max),
+        padding_factor=int(projection_padding_factor),
+        projector_output_size=int(projection_kwargs["projector_output_size"]),
+        relion_texture_interp=projection_kwargs.get("relion_texture_interp"),
+    ):
+        return None
+    from relax.cuda.kernels import RelionCapacityHalfTextureF32
+
+    return RelionCapacityHalfTextureF32(
+        relion_projector_half,
+        int(relion_projector_r_max),
+        padding_factor=int(projection_padding_factor),
+    )
+
+
 def _run_resident_local_chunk(
     chunk,
     *,
@@ -1279,6 +1332,7 @@ def _run_resident_local_chunk(
     cuda_backproject,
     significant_counts,
     operand_route,
+    relion_projector_capacity_texture=None,
 ):
     """Every resident stage for one local capacity chunk.
 
@@ -1407,6 +1461,7 @@ def _run_resident_local_chunk(
         relion_projector_half=relion_projector_half,
         relion_projector_r_max=relion_projector_r_max,
         projection_padding_factor=projection_padding_factor,
+        relion_projector_capacity_texture=relion_projector_capacity_texture,
         **projection_kwargs,
     )
 

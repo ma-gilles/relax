@@ -232,3 +232,65 @@ def test_capacity_compact_support_preserves_positive_nyquist(output_size, pf, ma
     assert_matches(np.asarray(compact), expected)
     if output_size == image_size:
         assert np.any(np.abs(expected[:, 0]) > 0), "Nyquist check must not be vacuous"
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("pf", [1, 2])
+@pytest.mark.parametrize("image_r_max", [None, 11])
+@pytest.mark.parametrize("q,radius", [(32, 14), (64, 20)])
+def test_gpu_staged_capacity_texture_is_the_per_call_projector(q, radius, pf, image_r_max):
+    """A texture staged once projects what the per-call staging projects, call after call."""
+
+    assert jax.default_backend() == "gpu"
+    cb._ensure_ffi()
+    rng = np.random.default_rng(q * 7 + radius + pf)
+    size = 2 * pf * radius + 3
+    logical = (
+        rng.standard_normal((size, size, size // 2 + 1)) + 1j * rng.standard_normal((size, size, size // 2 + 1))
+    ).astype(np.complex64)
+    # Once at the exact slab (the local pass's) and once inside poisoned capacity.
+    for half in (jnp.asarray(logical), jnp.asarray(_pad_with_poison(logical, q, pf))):
+        radius_kwargs = {} if image_r_max is None else {"image_r_max": jnp.asarray(image_r_max, jnp.int32)}
+        with em_cuda_kernels.RelionCapacityHalfTextureF32(half, radius, padding_factor=pf) as texture:
+            for rotations in (_rotations(), _rotations()[::-1]):
+                expected = em_cuda_kernels.project_relion_half_capacity(
+                    half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(q, q), padding_factor=pf, **radius_kwargs
+                )
+                staged = texture.project(rotations, image_shape=(q, q), **radius_kwargs)
+                assert_matches(np.asarray(staged), np.asarray(expected), err_msg=f"q={q} r={radius} pf={pf}")
+        assert texture.closed
+        with pytest.raises(RuntimeError, match="closed"):
+            texture.project(_rotations(), image_shape=(q, q))
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("mask_disk", [False, True])
+def test_gpu_projection_block_with_a_staged_texture_matches_the_per_call_block(mask_disk):
+    """The helper the resident local pass calls gives the same windowed rows with the texture."""
+    from relax.helpers.projection import compute_relion_projector_projections_block, relion_capacity_texture_serves
+
+    image_size, radius, pf = 32, 14, 2
+    size = 2 * pf * radius + 3
+    rng = np.random.default_rng(20260927)
+    logical = jnp.asarray(
+        (rng.standard_normal((size, size, size // 2 + 1)) + 1j * rng.standard_normal((size, size, size // 2 + 1))).astype(
+            np.complex64
+        )
+    )
+    common = dict(
+        image_shape=(image_size, image_size), r_max=radius, padding_factor=pf, return_abs2=False,
+        centered_rows=True, dense_scale=True, projector_output_size=2 * radius, relion_texture_interp=True,
+        mask_current_image_disk=mask_disk,
+    )
+    assert relion_capacity_texture_serves(
+        logical, r_max=radius, padding_factor=pf, projector_output_size=2 * radius, relion_texture_interp=True
+    )
+    expected, _ = compute_relion_projector_projections_block(logical, _rotations(), **common)
+    with em_cuda_kernels.RelionCapacityHalfTextureF32(logical, radius, padding_factor=pf) as texture:
+        staged, _ = compute_relion_projector_projections_block(logical, _rotations(), capacity_texture=texture, **common)
+        assert_matches(np.asarray(staged), np.asarray(expected))
+    # A texture of another slab is refused rather than projected.
+    other = jnp.asarray(_pad_with_poison(np.asarray(logical), 40, pf))
+    with em_cuda_kernels.RelionCapacityHalfTextureF32(other, radius, padding_factor=pf) as texture:
+        with pytest.raises(ValueError, match="does not hold this projector"):
+            compute_relion_projector_projections_block(logical, _rotations(), capacity_texture=texture, **common)

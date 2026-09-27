@@ -645,6 +645,7 @@ def test_relion_coarse_prehalf_shared_body_is_built_packaged_and_stale_checked()
         "relion_posterior.cuh",
         "sparse_pass2_posterior.cuh",
         "relion_translate_sum.cuh",
+        "relion_capacity_texture.cuh",
     )
     public_headers = ("$(RECOVAR_CUDA_INCLUDE)/device_scratch.cuh", "$(RECOVAR_CUDA_INCLUDE)/recovar_cuda_common.cuh")
     library_rule = next(line for line in makefile.splitlines() if line.startswith("$(LIB):"))

@@ -529,6 +529,45 @@ def _texture_centered_crop_at_indices(
     return jnp.where(output_disk[None, :], selected, jnp.zeros((), dtype=selected.dtype))
 
 
+def _half_storage_projection(volume_relion_half, *, r_max, padding_factor, projector_output_size) -> bool:
+    """Whether a fixed-radius texture projection of this slab takes the half-storage kernel."""
+
+    return (
+        int(padding_factor) in (1, 2)
+        and int(r_max) > 0
+        and 0 < int(projector_output_size) <= 4096
+        and int(projector_output_size) % 2 == 0
+        and volume_relion_half.dtype == jnp.complex64
+        and tuple(volume_relion_half.shape) == (
+            2 * int(r_max) * int(padding_factor) + 3,
+            2 * int(r_max) * int(padding_factor) + 3,
+            int(r_max) * int(padding_factor) + 2,
+        )
+        and volume_relion_half.shape[0] <= 1025
+    )
+
+
+def relion_capacity_texture_serves(
+    volume_relion_half, *, r_max, padding_factor, projector_output_size, relion_texture_interp=None
+) -> bool:
+    """Whether :class:`~relax.cuda.kernels.RelionCapacityHalfTextureF32` can serve this slab's projections.
+
+    It serves exactly the fixed-radius projections that
+    :func:`compute_relion_projector_projections_block` sends to the
+    half-storage kernel: the RELION texture projector is enabled and the slab
+    has the half-storage geometry.
+    """
+
+    return _relion_projector_texture_enabled(
+        volume_relion_half, r_max=int(r_max), padding_factor=int(padding_factor), enabled=relion_texture_interp
+    ) and _half_storage_projection(
+        volume_relion_half,
+        r_max=r_max,
+        padding_factor=padding_factor,
+        projector_output_size=projector_output_size,
+    )
+
+
 def _project_relion_projector_texture(
     volume_relion_half,
     rotations_block,
@@ -543,6 +582,7 @@ def _project_relion_projector_texture(
     padding_factor=1,
     image_r_max=None,
     persistent_texture=None,
+    capacity_texture=None,
 ):
     """Project one RELION ``PPref`` block with RELION's CUDA texture arithmetic.
 
@@ -583,17 +623,12 @@ def _project_relion_projector_texture(
         )
     elif (
         runtime_r_max is None
-        and int(padding_factor) in (1, 2)
-        and int(r_max) > 0
-        and 0 < int(projector_output_size) <= 4096
-        and int(projector_output_size) % 2 == 0
-        and volume_relion_half.dtype == jnp.complex64
-        and volume_relion_half.shape == (
-            2 * int(r_max) * int(padding_factor) + 3,
-            2 * int(r_max) * int(padding_factor) + 3,
-            int(r_max) * int(padding_factor) + 2,
+        and _half_storage_projection(
+            volume_relion_half,
+            r_max=r_max,
+            padding_factor=padding_factor,
+            projector_output_size=projector_output_size,
         )
-        and volume_relion_half.shape[0] <= 1025
         and rotations_block.dtype == jnp.float32
         and 0 < rotations_block.shape[0] <= 65535
     ):
@@ -602,13 +637,31 @@ def _project_relion_projector_texture(
         # model radius; keep crop, mask, gather and scaling unchanged below.
         from relax.cuda.kernels import project_relion_half_capacity
 
-        projection_crop = project_relion_half_capacity(
-            volume_relion_half, rotations_block, jnp.asarray(r_max, jnp.int32),
-            image_shape=(int(projector_output_size), int(projector_output_size)),
-            padding_factor=int(padding_factor),
-            **({"image_r_max": jnp.asarray(projector_output_size // 2, jnp.int32)}
-               if not mask_current_image_disk else {}),
+        image_radius_kwargs = (
+            {"image_r_max": jnp.asarray(projector_output_size // 2, jnp.int32)}
+            if not mask_current_image_disk else {}
         )
+        if capacity_texture is not None:
+            # The same staging and kernel, with the texture staged once per pass.
+            if (
+                tuple(capacity_texture.shape) != tuple(volume_relion_half.shape)
+                or capacity_texture.logical_r_max != int(r_max)
+                or capacity_texture.padding_factor != int(padding_factor)
+            ):
+                raise ValueError("the capacity projector texture does not hold this projector")
+            projection_crop = capacity_texture.project(
+                rotations_block,
+                image_shape=(int(projector_output_size), int(projector_output_size)),
+                **image_radius_kwargs,
+            )
+            capacity_texture = None
+        else:
+            projection_crop = project_relion_half_capacity(
+                volume_relion_half, rotations_block, jnp.asarray(r_max, jnp.int32),
+                image_shape=(int(projector_output_size), int(projector_output_size)),
+                padding_factor=int(padding_factor),
+                **image_radius_kwargs,
+            )
     elif (
         runtime_r_max is None and int(r_max) > 0 and int(padding_factor) > 0
         and volume_relion_half.dtype == jnp.complex64
@@ -647,6 +700,8 @@ def _project_relion_projector_texture(
             **({"image_r_max": jnp.asarray(projector_output_size // 2, jnp.int32)}
                if not mask_current_image_disk else {}),
         )
+    if capacity_texture is not None:
+        raise ValueError("a capacity projector texture serves only the fixed-radius half-storage projection")
     if pixel_indices is not None:
         return _texture_centered_crop_at_indices(
             projection_crop,
@@ -685,6 +740,7 @@ def compute_relion_projector_projections_block(
     runtime_r_max=None,
     image_r_max=None,
     persistent_texture=None,
+    capacity_texture=None,
     relion_kernel: str = "fine",
 ):
     """Project precomputed RELION ``PPref`` data for one rotation block.
@@ -765,6 +821,8 @@ def compute_relion_projector_projections_block(
         }
         if persistent_texture is not None:
             texture_kwargs["persistent_texture"] = persistent_texture
+        if capacity_texture is not None:
+            texture_kwargs["capacity_texture"] = capacity_texture
         if int(padding_factor) != 1:
             texture_kwargs["padding_factor"] = int(padding_factor)
         if image_r_max is not None:
@@ -793,6 +851,8 @@ def compute_relion_projector_projections_block(
                 axes=1,
             ).reshape((proj_centered.shape[0], -1))
 
+    elif capacity_texture is not None:
+        raise RuntimeError("a capacity projector texture requires the RELION texture projector")
     elif current_image_mask_size is not None or image_r_max is not None:
         raise RuntimeError(
             "a runtime current-image projection mask requires the RELION "

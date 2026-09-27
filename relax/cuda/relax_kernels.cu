@@ -7892,6 +7892,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Arg<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>());
 
+#include "relion_capacity_texture.cuh"
+
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     ProjectRelionHalfRuntime, ProjectRelionHalfRuntimeImpl,
     ffi::Ffi::Bind()

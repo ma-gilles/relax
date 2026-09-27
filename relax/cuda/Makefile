@@ -101,7 +101,7 @@ check-nvcc:
 		exit 1; \
 	fi
 
-$(LIB): relax_kernels.cu relion_coarse_diff2_projector_body.inc noise_residual.cuh relion_vdam_mstep.cuh relion_scoring.cuh relion_posterior.cuh vdam_trace.cuh relion_preprocess.cuh sparse_pass2_posterior.cuh relion_translate_sum.cuh $(RECOVAR_CUDA_INCLUDE)/device_scratch.cuh $(RECOVAR_CUDA_INCLUDE)/recovar_cuda_common.cuh | check-nvcc
+$(LIB): relax_kernels.cu relion_coarse_diff2_projector_body.inc noise_residual.cuh relion_vdam_mstep.cuh relion_scoring.cuh relion_posterior.cuh vdam_trace.cuh relion_preprocess.cuh sparse_pass2_posterior.cuh relion_translate_sum.cuh relion_capacity_texture.cuh $(RECOVAR_CUDA_INCLUDE)/device_scratch.cuh $(RECOVAR_CUDA_INCLUDE)/recovar_cuda_common.cuh | check-nvcc
 	@mkdir -p $(dir $@)
 	$(NVCC) $(NVCC_FLAGS) -o $@ $< $(CUDA_LIBS)
 

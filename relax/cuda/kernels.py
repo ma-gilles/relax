@@ -5524,6 +5524,130 @@ def project_relion_half_capacity(
     )
 
 
+class RelionCapacityHalfTextureF32:
+    """:func:`project_relion_half_capacity` with the texture staged once.
+
+    ``project_relion_half_capacity`` stages the projector into a CUDA texture,
+    projects, synchronizes the stream and frees the texture on every call. This
+    owner stages ``projector_half`` at ``logical_r_max`` once (the same fill
+    kernel and texture arrays) and :meth:`project` launches the same projection
+    kernel on it with no synchronization, so it returns what
+    ``project_relion_half_capacity(projector_half, rotations, logical_r_max,
+    ...)`` returns. :meth:`close` waits for the last projection before the
+    texture is destroyed; use it as a context manager.
+    """
+
+    def __init__(self, projector_half: jax.Array, logical_r_max: int, *, padding_factor: int) -> None:
+        projector_half = jnp.asarray(projector_half)
+        shape = tuple(int(v) for v in projector_half.shape)
+        padding_factor = int(padding_factor)
+        logical_r_max = int(logical_r_max)
+        if projector_half.dtype != jnp.complex64 or len(shape) != 3:
+            raise ValueError("projector_half must be C64 [pf*Q+3,pf*Q+3,pf*Q//2+2]")
+        if jax.default_backend() != "gpu" or not custom_cuda_requested():
+            raise RuntimeError("a persistent capacity projector texture requires the custom CUDA GPU backend")
+        _ensure_optional_ffi(_TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE)
+        (device,) = projector_half.devices()
+        device_ordinal = int(getattr(device, "local_hardware_id", getattr(device, "id", -1)))
+        # The C API reads the device buffer directly on its own stream.
+        projector_half = jax.block_until_ready(projector_half)
+        lib = _get_lib()
+        create = lib.relax_relion_capacity_half_texture_f32_create
+        create.argtypes = (ctypes.c_void_p,) + (ctypes.c_int,) * 6 + (ctypes.POINTER(ctypes.c_uint64),)
+        create.restype = ctypes.c_int
+        handle = ctypes.c_uint64()
+        status = int(
+            create(
+                ctypes.c_void_p(projector_half.unsafe_buffer_pointer()),
+                *(ctypes.c_int(v) for v in shape),
+                ctypes.c_int(logical_r_max),
+                ctypes.c_int(padding_factor),
+                ctypes.c_int(device_ordinal),
+                ctypes.byref(handle),
+            )
+        )
+        if status != 0 or int(handle.value) == 0:
+            raise RuntimeError(f"failed to create a persistent capacity projector texture: CUDA error code {status}")
+        self.shape = shape
+        self.logical_r_max = logical_r_max
+        self.padding_factor = padding_factor
+        self._handle = int(handle.value)
+        self._last_output = None
+        self._finalizer = weakref.finalize(self, _destroy_capacity_half_texture, self._handle)
+
+    @property
+    def closed(self) -> bool:
+        return self._handle == 0
+
+    def project(
+        self,
+        rotation_matrices: jax.Array,
+        *,
+        image_shape: Tuple[int, int],
+        image_r_max: jax.Array | None = None,
+    ) -> jax.Array:
+        """C64 [rotation, H*(W//2+1)], as :func:`project_relion_half_capacity` returns it."""
+
+        if self.closed:
+            raise RuntimeError("the persistent capacity projector texture is closed")
+        rotation_matrices = jnp.asarray(rotation_matrices)
+        if rotation_matrices.dtype != jnp.float32 or rotation_matrices.ndim != 3 or rotation_matrices.shape[1:] != (3, 3):
+            raise ValueError("rotation_matrices must be F32 [rotation,3,3]")
+        radius = (
+            jnp.zeros((), dtype=jnp.int32) if image_r_max is None else jnp.asarray(image_r_max, dtype=jnp.int32)
+        )
+        output = _project_relion_half_capacity_texture(
+            rotation_matrices,
+            radius,
+            owner_handle=self._handle,
+            image_shape=(int(image_shape[0]), int(image_shape[1])),
+            has_image_radius=image_r_max is not None,
+        )
+        self._last_output = output
+        return output
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        handle, self._handle = self._handle, 0
+        try:
+            if self._last_output is not None:
+                jax.block_until_ready(self._last_output)
+        finally:
+            self._last_output = None
+            self._finalizer.detach()
+            _destroy_capacity_half_texture(handle, raise_on_error=True)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self.close()
+
+
+def _destroy_capacity_half_texture(handle: int, *, raise_on_error: bool = False) -> None:
+    destroy = _get_lib().relax_relion_capacity_half_texture_f32_destroy
+    destroy.argtypes = (ctypes.c_uint64,)
+    destroy.restype = ctypes.c_int
+    status = int(destroy(ctypes.c_uint64(int(handle))))
+    if status != 0 and raise_on_error:
+        raise RuntimeError(f"failed to destroy a persistent capacity projector texture: CUDA error code {status}")
+
+
+@functools.partial(jax.jit, static_argnames=("owner_handle", "image_shape", "has_image_radius"))
+def _project_relion_half_capacity_texture(rotation_matrices, image_r_max, *, owner_handle, image_shape, has_image_radius):
+    n_pixels = image_shape[0] * (image_shape[1] // 2 + 1)
+    output = jax.ShapeDtypeStruct((rotation_matrices.shape[0], n_pixels), jnp.complex64)
+    return jax.ffi.ffi_call(_TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE, output, vmap_method="sequential")(
+        _rot_to_compact(rotation_matrices, jnp.float32),
+        image_r_max,
+        owner_handle=np.int64(owner_handle),
+        image_h=np.int64(image_shape[0]),
+        image_w=np.int64(image_shape[1]),
+        has_image_radius=np.int64(bool(has_image_radius)),
+    )
+
+
 @jax.jit
 def relion_wavg_rotation_atomic_triplet_add_f32(
     terms: jax.Array,
@@ -7253,6 +7377,7 @@ _TARGET_PROJECT_RELION_HALF_RUNTIME = "cuda_project_relion_half_runtime"
 
 
 _TARGET_PROJECT_RELION_HALF_IMAGE_RADIUS = "cuda_project_relion_half_image_radius"
+_TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE = "cuda_project_relion_half_capacity_texture"
 
 
 _TARGET_RELION_PROJECTOR_HALF_TEXTURE_F32 = "cuda_relion_projector_half_texture_f32"
@@ -7700,6 +7825,7 @@ _RELAX_CUDA_BUILD_SOURCE_NAMES = (
     "relion_posterior.cuh",
     "sparse_pass2_posterior.cuh",
     "relion_translate_sum.cuh",
+    "relion_capacity_texture.cuh",
     "relion_coarse_diff2_projector_body.inc",
     str(include_dir() / "recovar_cuda_common.cuh"),
     str(include_dir() / "device_scratch.cuh"),
@@ -7903,6 +8029,10 @@ _OPTIONAL_FFI_REGISTRATIONS = {
     _TARGET_PROJECT_RELION_HALF_IMAGE_RADIUS: (
         "ProjectRelionHalfImageRadius",
         "Image-radius projection requires ProjectRelionHalfImageRadius; explicitly rebuild the custom CUDA library",
+    ),
+    _TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE: (
+        "ProjectRelionHalfCapacityTexture",
+        "A persistent capacity projector texture requires ProjectRelionHalfCapacityTexture; explicitly rebuild the custom CUDA library",
     ),
     _TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_CAPACITY_X_HALF: (
         "RelionVdamMstepFusedProjectorCapacityXHalf",

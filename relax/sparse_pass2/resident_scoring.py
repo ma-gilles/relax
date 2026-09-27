@@ -927,6 +927,7 @@ def project_resident_live_rows(
     relion_projector_half=None,
     relion_projector_r_max: int | None = None,
     projection_padding_factor: int = 1,
+    relion_projector_capacity_texture=None,
     **projection_kwargs,
 ):
     """:func:`project_resident_rows` for a padded chunk: only the valid rows are projected.
@@ -939,6 +940,9 @@ def project_resident_live_rows(
     ``[row_capacity, ...]`` outputs; each projected row is the projector call
     :func:`project_resident_rows` makes for it. At the 10097 local iterations a
     chunk's valid rows are about 30% of its capacity.
+    ``relion_projector_capacity_texture`` (a
+    :class:`~relax.cuda.kernels.RelionCapacityHalfTextureF32` of
+    ``relion_projector_half``) projects without restaging the texture per call.
 
     Returns ``(score_proj, recon_proj, recon_abs2, n_projected_rows)``.
     """
@@ -965,6 +969,7 @@ def project_resident_live_rows(
             relion_projector_half=relion_projector_half,
             relion_projector_r_max=relion_projector_r_max,
             projection_padding_factor=projection_padding_factor,
+            relion_projector_capacity_texture=relion_projector_capacity_texture,
             **projection_kwargs,
         )
         score_proj, recon_proj, recon_abs2 = _place_windowed_projection_block(
