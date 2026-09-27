@@ -660,6 +660,10 @@ def compute_local_search_resident(
         experiment_dataset.dtype,
         use_relion_x_half_mstep=True,
     )
+    # Allocated before the pass reads free device memory for its chunk budget,
+    # which then counts them (up to 23 GiB at EMPIAR-10202's full box).
+    Ft_y_total = jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype)
+    Ft_ctf_total = jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype)
 
     # ---- projection setup -------------------------------------------------
     # The refinement loop hands local search a projector with a singleton class
@@ -899,8 +903,6 @@ def compute_local_search_resident(
             translation_sqdist_ang=None,
         )
 
-        Ft_y_total = jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype)
-        Ft_ctf_total = jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype)
         exact_positions_device = jnp.asarray(relion_wavg_rectangle.exact_positions, dtype=jnp.int32)
         rect_indices_device = jnp.asarray(relion_wavg_rectangle.centered_indices, dtype=jnp.int32)
         noise_variance_for_noise_device = jnp.asarray(noise_variance_for_noise)

@@ -2507,6 +2507,17 @@ def _resident_pass2(
             program_volume_current_size, reconstruction_image_radius, reconstruction_padding_factor
         )
     program_recon_volume_size = int(np.prod(half_volume_accumulator_shape(program_recon_volume_shape)))
+    # One x-half BPref pair per accumulator slot: RELION's BPref[iclass], and for
+    # VDAM's pseudo-halfsets BPref[iclass + half * nr_classes]. They exist before
+    # the pass reads free device memory (projection cache, resident operand and
+    # chunk budgets), so every budget sees them; allocated after the chunk
+    # budget they were not counted, up to 23 GiB at EMPIAR-10202's full box.
+    Ft_y_total = tuple(
+        jnp.zeros(program_recon_volume_size, dtype=recon_y_accum_dtype) for _ in range(int(tables.n_slots))
+    )
+    Ft_ctf_total = tuple(
+        jnp.zeros(program_recon_volume_size, dtype=recon_ctf_accum_dtype) for _ in range(int(tables.n_slots))
+    )
     # RELION masks each class's scale sums with its own data_vs_prior_class[iclass] > 3
     # (acc_ml_optimiser_impl.h:4908); one shell vector serves every class.
     scale_dvp_by_class = [scale_correction_data_vs_prior] * n_classes
@@ -3074,11 +3085,6 @@ def _resident_pass2(
         mstep_max_r=None if stable_window_plan is None else mstep_max_r,
     )
 
-    # One x-half BPref pair per accumulator slot: RELION's BPref[iclass], and for
-    # VDAM's pseudo-halfsets BPref[iclass + half * nr_classes].
-    n_slots = int(tables.n_slots)
-    Ft_y_total = tuple(jnp.zeros(program_recon_volume_size, dtype=recon_y_accum_dtype) for _ in range(n_slots))
-    Ft_ctf_total = tuple(jnp.zeros(program_recon_volume_size, dtype=recon_ctf_accum_dtype) for _ in range(n_slots))
     max_adjoint_block_bytes = _max_adjoint_block_bytes_for_pass(device_memory_bytes)
     exact_positions_device = jnp.asarray(relion_wavg_rectangle.exact_positions, dtype=jnp.int32)
     rect_indices_device = jnp.asarray(relion_wavg_rectangle.centered_indices, dtype=jnp.int32)

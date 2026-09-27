@@ -1521,3 +1521,18 @@ def test_stream_parts_gather_rows_from_the_padded_class_calls():
     for field in range(3):
         expected = np.concatenate([np.asarray(parts[0][field]), np.asarray(parts[1][field])])[rows]
         assert_matches(np.asarray(gathered[field]), expected)
+
+
+def test_accumulators_exist_before_the_chunk_budget_is_read():
+    """The x-half accumulators (15.35 + 7.7 GiB at EMPIAR-10202's full box) are allocated
+    before either pass reads free device memory for its chunk budget, so the budget counts
+    them; the local pass allocated them after its plan."""
+
+    import inspect
+
+    from relax.sparse_pass2 import resident_local_pass2 as rlp
+
+    for source in (inspect.getsource(rp._resident_pass2), inspect.getsource(rlp.compute_local_search_resident)):
+        first_budget_read = source.index("resident_chunk_budget_bytes(")
+        assert source.index("Ft_y_total = ") < first_budget_read
+        assert source.index("Ft_ctf_total = ") < first_budget_read
