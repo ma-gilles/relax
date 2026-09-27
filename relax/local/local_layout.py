@@ -26,6 +26,7 @@ from relax.sampling import (
     rotation_grid_n_in_planes,
     rotation_grid_size,
     rotation_indices_to_relion_eulers,
+    unique_nonnegative_ids,
 )
 from relax.scoring.significant_samples import significant_sample_ids
 from relax.symmetry import canonicalize_rotational_symmetry, rotational_operators
@@ -791,7 +792,7 @@ def _selected_rotation_matrices(
         return np.zeros((0, 3, 3), dtype=dtype)
     if rotation_grid_rotations is not None:
         return np.asarray(rotation_grid_rotations, dtype=dtype).reshape(-1, 3, 3)[rotation_ids]
-    unique_ids, inverse = np.unique(rotation_ids, return_inverse=True)
+    unique_ids, inverse = unique_nonnegative_ids(rotation_ids)
     # Stage eulers at the requested dtype before apply_relion_rotation_perturbation_to_eulers
     # re-derives float64 internally regardless; truncating to float32 here
     # first (the previous unconditional default) would discard precision
@@ -837,7 +838,7 @@ def _selected_mstep_rotation_matrices(
         return np.zeros((0, 3, 3), dtype=dtype)
     if rotation_grid_mstep_rotations is not None:
         return np.asarray(rotation_grid_mstep_rotations, dtype=dtype).reshape(-1, 3, 3)[rotation_ids]
-    unique_ids, inverse = np.unique(rotation_ids, return_inverse=True)
+    unique_ids, inverse = unique_nonnegative_ids(rotation_ids)
     selected_eulers = _rotation_eulers_from_grid_metadata(unique_ids, grid_metadata, dtype=np.float64)
     if angular_sampling_deg is None:
         if abs(float(random_perturbation)) > 1e-12:

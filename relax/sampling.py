@@ -928,6 +928,27 @@ def _relion_nested_child_offsets(oversampling_order: int) -> np.ndarray:
 _OVERSAMPLED_GRID_MEMO: dict = {}
 
 
+def unique_nonnegative_ids(ids: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """``np.unique(ids, return_inverse=True)`` for non-negative integer ids, without a sort.
+
+    A presence table over ``[0, max]`` gives the same sorted distinct ids and
+    the same inverse in linear time when the ids are dense (grid rotation ids);
+    sparse ids fall back to ``np.unique``.
+    """
+
+    ids = np.asarray(ids, dtype=np.int64).reshape(-1)
+    if ids.size == 0:
+        return ids.copy(), np.zeros(0, dtype=np.int64)
+    top = int(ids.max())
+    if int(ids.min()) < 0 or top >= 4 * ids.size + 1024:
+        return np.unique(ids, return_inverse=True)
+    present = np.zeros(top + 1, dtype=bool)
+    present[ids] = True
+    distinct = np.flatnonzero(present)
+    rank = np.cumsum(present, dtype=np.int64) - 1
+    return distinct, rank[ids]
+
+
 def get_oversampled_rotation_grid_from_samples(
     parent_rotation_indices,
     parent_nside_level,
@@ -1005,9 +1026,9 @@ def _compute_oversampled_rotation_grid(
     """
 
     parents = np.asarray(parent_rotation_indices, dtype=np.int64).reshape(-1)
-    if parents.size < 1024:
+    if parents.size < 1024 or int(parents.min()) < 0:
         return _compute_oversampled_rotation_grid_rows(parents, parent_nside_level, oversampling_order, **kwargs)
-    distinct, inverse = np.unique(parents, return_inverse=True)
+    distinct, inverse = unique_nonnegative_ids(parents)
     if 2 * distinct.size > parents.size:
         return _compute_oversampled_rotation_grid_rows(parents, parent_nside_level, oversampling_order, **kwargs)
     outputs = _compute_oversampled_rotation_grid_rows(distinct, parent_nside_level, oversampling_order, **kwargs)
