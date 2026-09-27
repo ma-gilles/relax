@@ -56,7 +56,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.batch_fetch import fetch_indexed_batch
+from relax.helpers.batch_fetch import fetch_indexed_batch, prefetched_batches
 from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.half_spectrum import make_shell_indices_half
 from relax.helpers.optics_noise import pixel_rows
@@ -715,113 +715,117 @@ def prepare_resident_half_operands(
             "native-unit fine scores without RELION's RFLOAT CTF operand",
         )
 
-    for start in range(0, n_images, batch_size):
-        batch_image_indices = image_indices[start : start + batch_size]
-        batch_data, ctf_params, fetched_indices = fetch_indexed_batch(
-            experiment_dataset, batch_image_indices
-        )
-        fetched_indices = np.asarray(fetched_indices)
-        n_fetched = int(fetched_indices.shape[0])
-        if n_fetched < batch_size:
-            # The last batch repeats its first image up to the batch size, as the
-            # per-chunk path pads a capacity class, so every batch of the half
-            # runs the same preparation programs. The preparation is per image;
-            # the repeated rows land in padding no chunk addresses.
-            pad = np.concatenate([np.arange(n_fetched), np.zeros(batch_size - n_fetched, dtype=np.int64)])
-            batch_data = np.asarray(batch_data)[pad]
-            ctf_params = np.asarray(ctf_params)[pad]
-            prepared_indices = fetched_indices[pad]
-        else:
-            prepared_indices = fetched_indices
-        unshifted = prepare_unshifted_bucket_operands(
-            experiment_dataset,
-            jnp.asarray(batch_data),
-            ctf_params,
-            prepared_indices,
-            **unshifted_kwargs,
-        )
-        score_corr_img_half = unshifted.ctf2_over_nv_half
-        if relion_native_fine_units:
-            # The native corr_img the compact engine scores with; the DC mask
-            # and window gather below apply to it exactly as to the RECOVAR one.
-            score_corr_img_half = _relion_native_score_corr_img(
-                pixel_rows(unshifted.noise_variance_half),
-                unshifted.ctf_half_rfloat,
-                image_shape,
-                (
-                    jnp.asarray(unshifted.batch_scale_np, dtype=jnp.float32)[:, None]
-                    if kwargs["scale_corrections"] is not None
-                    else None
+    starts = range(0, n_images, batch_size)
+    # The host reads run ahead on a worker thread when RELAX_EM_PREFETCH_BATCHES
+    # asks for it, as in the coarse pass; the batches and their order are unchanged.
+    fetches = (
+        fetch_indexed_batch(experiment_dataset, image_indices[start : start + batch_size])
+        for start in starts
+    )
+    with prefetched_batches(fetches) as fetched_batches:
+        for start, (batch_data, ctf_params, fetched_indices) in zip(starts, fetched_batches, strict=True):
+            fetched_indices = np.asarray(fetched_indices)
+            n_fetched = int(fetched_indices.shape[0])
+            if n_fetched < batch_size:
+                # The last batch repeats its first image up to the batch size, as the
+                # per-chunk path pads a capacity class, so every batch of the half
+                # runs the same preparation programs. The preparation is per image;
+                # the repeated rows land in padding no chunk addresses.
+                pad = np.concatenate([np.arange(n_fetched), np.zeros(batch_size - n_fetched, dtype=np.int64)])
+                batch_data = np.asarray(batch_data)[pad]
+                ctf_params = np.asarray(ctf_params)[pad]
+                prepared_indices = fetched_indices[pad]
+            else:
+                prepared_indices = fetched_indices
+            unshifted = prepare_unshifted_bucket_operands(
+                experiment_dataset,
+                jnp.asarray(batch_data),
+                ctf_params,
+                prepared_indices,
+                **unshifted_kwargs,
+            )
+            score_corr_img_half = unshifted.ctf2_over_nv_half
+            if relion_native_fine_units:
+                # The native corr_img the compact engine scores with; the DC mask
+                # and window gather below apply to it exactly as to the RECOVAR one.
+                score_corr_img_half = _relion_native_score_corr_img(
+                    pixel_rows(unshifted.noise_variance_half),
+                    unshifted.ctf_half_rfloat,
+                    image_shape,
+                    (
+                        jnp.asarray(unshifted.batch_scale_np, dtype=jnp.float32)[:, None]
+                        if kwargs["scale_corrections"] is not None
+                        else None
+                    ),
+                    zero_dc=half_spectrum_scoring,
+                )
+
+            batch_arrays = _batch_window_operands(
+                _BatchWindowInputs(
+                    ctf2_over_nv_half=score_corr_img_half,
+                    sparse_score_input_half=unshifted.sparse_score_input_half,
+                    processed_score_half_for_noise=unshifted.processed_score_half_for_noise,
+                    recon_input_half=(
+                        unshifted.recon_bpref_input_half
+                        if relion_exact_bpref_operands
+                        else unshifted.recon_weighted_half
+                    ),
+                    weighted_ctf_half=(
+                        unshifted.weighted_ctf_half if relion_exact_bpref_operands else None
+                    ),
+                    score_weighted_half=unshifted.score_weighted_half,
+                    ctf2_over_nv_recon_half=unshifted.ctf2_over_nv_recon_half,
+                    ctf_half_rfloat=unshifted.ctf_half_rfloat,
+                    dc_mask=dc_mask,
+                    score_indices=score_indices,
+                    recon_indices=recon_indices,
+                    rect_indices=rect_indices,
                 ),
-                zero_dc=half_spectrum_scoring,
+                mask_dc=bool(half_spectrum_scoring and not unshifted.use_normalized_cc),
+                score_real_dtype=jnp.dtype(score_real_dtype),
+                score_complex_dtype=jnp.dtype(score_complex_dtype),
+                acc_real_dtype=jnp.dtype(unshifted.acc_real_dtype),
+            )
+            if relion_native_fine_units:
+                # The kernel translates this unshifted image in-kernel, so the pass
+                # scores translate(image / N**2); the compact engine divides the
+                # already translated image. Each is one correctly rounded division,
+                # so the two agree to rounding, not bit for bit.
+                batch_arrays["score_input"] = _relion_native_fine_units(
+                    batch_arrays["score_input"], native_fft_size
+                )
+
+            batch_arrays["image_power_shells"] = image_power_shells(
+                unshifted.processed_score_half_for_noise,
+                noise_shell_indices_half,
+                shell_count=int(n_noise_shells),
             )
 
-        batch_arrays = _batch_window_operands(
-            _BatchWindowInputs(
-                ctf2_over_nv_half=score_corr_img_half,
-                sparse_score_input_half=unshifted.sparse_score_input_half,
-                processed_score_half_for_noise=unshifted.processed_score_half_for_noise,
-                recon_input_half=(
-                    unshifted.recon_bpref_input_half
-                    if relion_exact_bpref_operands
-                    else unshifted.recon_weighted_half
-                ),
-                weighted_ctf_half=(
-                    unshifted.weighted_ctf_half if relion_exact_bpref_operands else None
-                ),
-                score_weighted_half=unshifted.score_weighted_half,
-                ctf2_over_nv_recon_half=unshifted.ctf2_over_nv_recon_half,
-                ctf_half_rfloat=unshifted.ctf_half_rfloat,
-                dc_mask=dc_mask,
-                score_indices=score_indices,
-                recon_indices=recon_indices,
-                rect_indices=rect_indices,
-            ),
-            mask_dc=bool(half_spectrum_scoring and not unshifted.use_normalized_cc),
-            score_real_dtype=jnp.dtype(score_real_dtype),
-            score_complex_dtype=jnp.dtype(score_complex_dtype),
-            acc_real_dtype=jnp.dtype(unshifted.acc_real_dtype),
-        )
-        if relion_native_fine_units:
-            # The kernel translates this unshifted image in-kernel, so the pass
-            # scores translate(image / N**2); the compact engine divides the
-            # already translated image. Each is one correctly rounded division,
-            # so the two agree to rounding, not bit for bit.
-            batch_arrays["score_input"] = _relion_native_fine_units(
-                batch_arrays["score_input"], native_fft_size
+            highres_xi2_half, relion_norm_high_shell = _relion_powerclass_noise_terms(
+                unshifted.processed_score_half_for_noise,
+                image_shape=image_shape,
+                current_size=current_size,
+                use_exact_relion_gaussian=use_exact_relion_gaussian,
+                accumulate_noise=accumulate_noise,
+                source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             )
+            if highres_xi2_half is not None:
+                batch_arrays["highres_xi2_half"] = highres_xi2_half
+            if relion_norm_high_shell is not None:
+                batch_arrays["relion_norm_high_shell"] = relion_norm_high_shell
 
-        batch_arrays["image_power_shells"] = image_power_shells(
-            unshifted.processed_score_half_for_noise,
-            noise_shell_indices_half,
-            shell_count=int(n_noise_shells),
-        )
+            for name, flag in optional_available.items():
+                present = name in batch_arrays
+                if flag is None:
+                    optional_available[name] = present
+                elif flag != present:
+                    raise ValueError(f"{name} availability changed between image batches")
 
-        highres_xi2_half, relion_norm_high_shell = _relion_powerclass_noise_terms(
-            unshifted.processed_score_half_for_noise,
-            image_shape=image_shape,
-            current_size=current_size,
-            use_exact_relion_gaussian=use_exact_relion_gaussian,
-            accumulate_noise=accumulate_noise,
-            source_faithful_spectrum_norm=source_faithful_spectrum_norm,
-        )
-        if highres_xi2_half is not None:
-            batch_arrays["highres_xi2_half"] = highres_xi2_half
-        if relion_norm_high_shell is not None:
-            batch_arrays["relion_norm_high_shell"] = relion_norm_high_shell
-
-        for name, flag in optional_available.items():
-            present = name in batch_arrays
-            if flag is None:
-                optional_available[name] = present
-            elif flag != present:
-                raise ValueError(f"{name} availability changed between image batches")
-
-        for name, value in batch_arrays.items():
-            if name not in buffers:
-                buffers[name] = jnp.zeros((buffer_rows,) + tuple(value.shape[1:]), dtype=value.dtype)
-            buffers[name] = _place_batch(buffers[name], value, np.int32(start))
-        fetched_order.append(fetched_indices)
+            for name, value in batch_arrays.items():
+                if name not in buffers:
+                    buffers[name] = jnp.zeros((buffer_rows,) + tuple(value.shape[1:]), dtype=value.dtype)
+                buffers[name] = _place_batch(buffers[name], value, np.int32(start))
+            fetched_order.append(fetched_indices)
 
     fetched_all = np.concatenate(fetched_order)
     if fetched_all.shape[0] != n_images:
