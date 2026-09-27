@@ -760,6 +760,20 @@ def _driver_fixture_args(seed=20260918):
     )
 
 
+def _float32_atomic_order_bound(args) -> float:
+    """Relative-L2 bound on a map accumulated by float32 atomics in a run-dependent order.
+
+    The x-half backprojection adds each image's weighted slice into the shared
+    float32 accumulator with atomics, so a voxel is a float32 sum of up to one
+    term per image whose order changes between identical runs. Reordering an
+    n-term float32 sum moves it by about sqrt(n) * eps32 relative, which bounds
+    the map's relative L2 difference.
+    """
+
+    n_images = int(args["experiment_dataset"].n_units)
+    return float(np.sqrt(n_images) * np.finfo(np.float32).eps)
+
+
 @pytest.fixture
 def _resident_production_env(monkeypatch):
     monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
@@ -958,8 +972,10 @@ def test_resident_driver_repeats_itself(_resident_production_env):
 
     # Two reductions are not: the float32 BPref atomics, and the CUDA shell
     # binning behind the unweighted high image-power shell. Measured repeat
-    # band on an A100: 1.5e-8 for the maps, 1.4e-8 for the image power.
-    assert rel_l2(first.Ft_y, second.Ft_y) < 1e-7
+    # band on an A100: 1.5e-8 for the maps, 1.4e-8 for the image power. The map
+    # bound is derived from the atomics (user approval 2026-09-27): an H100
+    # repeat measured 1.036e-7 against the former 1e-7 (bigbox 14507539).
+    assert rel_l2(first.Ft_y, second.Ft_y) < _float32_atomic_order_bound(args)
     assert rel_l2(first.noise_stats.wsum_img_power, second.noise_stats.wsum_img_power) < 1e-7
     # wsum_norm_correction adds the per-image relion_norm_high_shell term,
     # whose shell binning is the same racing scatter-add (resident_operands.py:
@@ -1437,7 +1453,9 @@ def test_streamed_projections_match_the_cached_pass(_resident_production_env, mo
         assert rel_l2(
             getattr(cached.noise_stats, field), getattr(streamed.noise_stats, field)
         ) < 1e-7, field
-    assert rel_l2(cached.Ft_y, streamed.Ft_y) < 1e-7
+    # Derived from the float32 BPref atomics (user approval 2026-09-27): a run
+    # measured 1.058e-7 against the former 1e-7 (bigbox 14558037).
+    assert rel_l2(cached.Ft_y, streamed.Ft_y) < _float32_atomic_order_bound(args)
     assert rel_l2(cached.Ft_ctf, streamed.Ft_ctf) < 1e-7
     assert rel_l2(cached.noise_stats.wsum_img_power, streamed.noise_stats.wsum_img_power) < 1e-7
 
