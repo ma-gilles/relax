@@ -993,6 +993,37 @@ def _compute_oversampled_rotation_grid(
     parent_rotation_indices,
     parent_nside_level,
     oversampling_order=1,
+    **kwargs,
+):
+    """:func:`_compute_oversampled_rotation_grid_rows`, computed once per distinct parent.
+
+    Every output row depends on its parent sample alone and the rows are
+    parent-major, so a parent list with many repeats (the local rotations of
+    every image, 13M rows over a 2.4M-sample grid on the full EMPIAR-10097
+    dataset) expands its distinct parents and gathers their rows; the returned
+    rows are the same rows, and ``parent_map`` still indexes the given list.
+    """
+
+    parents = np.asarray(parent_rotation_indices, dtype=np.int64).reshape(-1)
+    if parents.size < 1024:
+        return _compute_oversampled_rotation_grid_rows(parents, parent_nside_level, oversampling_order, **kwargs)
+    distinct, inverse = np.unique(parents, return_inverse=True)
+    if 2 * distinct.size > parents.size:
+        return _compute_oversampled_rotation_grid_rows(parents, parent_nside_level, oversampling_order, **kwargs)
+    outputs = _compute_oversampled_rotation_grid_rows(distinct, parent_nside_level, oversampling_order, **kwargs)
+    per_parent = 8 ** int(oversampling_order)
+    rows = (inverse.reshape(-1)[:, None] * per_parent + np.arange(per_parent, dtype=np.int64)[None, :]).reshape(-1)
+    parent_map = np.repeat(np.arange(parents.size, dtype=np.int64), per_parent)
+    return tuple(
+        parent_map if position == 1 else (None if value is None else value[rows])
+        for position, value in enumerate(outputs)
+    )
+
+
+def _compute_oversampled_rotation_grid_rows(
+    parent_rotation_indices,
+    parent_nside_level,
+    oversampling_order=1,
     *,
     random_perturbation=0.0,
     return_rotation_indices=False,
