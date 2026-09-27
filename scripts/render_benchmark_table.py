@@ -84,7 +84,7 @@ GREEN_MAX = 0.6
 ORANGE_MAX = 1.2
 STATUS_LEGEND = (
     "🟢 accuracy hit and ratio ≤ 0.6x · 🟠 accuracy hit and 0.6x < ratio ≤ 1.2x · 🔴 accuracy missed or ratio > 1.2x"
-    " · ⚪ not a speed comparison (workload or schedule differs, or a wall is missing). Accuracy hit: relax inside or above"
+    " · ⚪ not a speed comparison (arms not timed in one job, or a wall is missing). Accuracy hit: relax inside or above"
     " the RELION band by the row's metric (Quality column)."
 )
 # One-line legends on the results page; the full definitions render on the provenance page.
@@ -286,9 +286,9 @@ def _category(row):
 
 def status(row):
     """🟢 accuracy hit and ratio <= 0.6x; 🟠 accuracy hit and 0.6x < ratio <= 1.2x; 🔴 accuracy missed or ratio > 1.2x;
-    ⚪ the ratio is not a speed comparison (Matched no, or a wall missing)."""
+    ⚪ the ratio is not a speed comparison (Matched workload or no, or a wall missing)."""
     ratio = row["time_ratio_relax_over_relion"]
-    comparable = row["matched"] != "no" and ratio is not None
+    comparable = row["matched"] == "yes" and ratio is not None
     if row["quality_pass"] is False:
         return "🔴"
     if not comparable or row["quality_pass"] is None:

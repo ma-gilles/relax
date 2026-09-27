@@ -146,12 +146,13 @@ def test_one_table_with_workflow_subheaders_in_order():
 def test_status_mark_follows_quality_and_ratio():
     table = load_and_validate(DEFAULT_JSON)
     rendered = render_markdown(table)
-    base = next(r for r in table["rows"] if r["matched"] != "no" and r["time_ratio_relax_over_relion"] is not None)
+    base = next(r for r in table["rows"] if r["matched"] == "yes" and r["time_ratio_relax_over_relion"] is not None)
     cases = [(True, 0.44, "🟢"), (True, 0.6, "🟢"), (True, 0.61, "🟠"), (True, 1.2, "🟠"), (True, 1.21, "🔴"), (False, 0.3, "🔴"), (None, 0.3, "⚪")]
     for passed, ratio, mark in cases:
         row = dict(base, quality_pass=passed, time_ratio_relax_over_relion=ratio)
         assert status(row) == mark, (passed, ratio)
     assert status(dict(base, matched="no")) == "⚪"
+    assert status(dict(base, matched="workload", time_ratio_relax_over_relion=1.4)) == "⚪"
     assert status(dict(base, matched="no", quality_pass=False)) == "🔴"
     for row in table["rows"]:
         line = next(x for x in rendered.splitlines() if f"#{row['id']})" in x)
