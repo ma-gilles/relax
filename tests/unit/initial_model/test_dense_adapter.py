@@ -1109,7 +1109,7 @@ def test_dense_initial_model_estep_sparse_pass2_uses_coarse_parent_prior(monkeyp
     )
     monkeypatch.setattr(
         "relax.vdam.dense_adapter._resolve_class_inputs",
-        lambda state, config: (
+        lambda state, config, **_kwargs: (
             config.means,
             config.mean_variance,
             np.zeros((1, 1), dtype=np.complex64),
@@ -1290,7 +1290,7 @@ def test_dense_initial_model_estep_os0_uses_device_coarse_rotations(monkeypatch)
     )
     monkeypatch.setattr(
         "relax.vdam.dense_adapter._resolve_class_inputs",
-        lambda state, config: (
+        lambda state, config, **_kwargs: (
             config.means,
             config.mean_variance,
             np.zeros((1, 1, 1, 1), dtype=np.complex64),
@@ -1860,7 +1860,7 @@ def test_exact_k1_sparse_pass2_preserves_joint_halfset_particle_stream(monkeypat
     )
     monkeypatch.setattr(
         "relax.vdam.dense_adapter._resolve_class_inputs",
-        lambda state, config: (
+        lambda state, config, **_kwargs: (
             np.zeros((1, 8**3), dtype=np.complex64),
             np.ones((1, 8**3), dtype=np.float32),
             np.zeros((1, 9, 9, 5), dtype=np.complex64),

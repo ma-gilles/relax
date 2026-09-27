@@ -113,8 +113,9 @@ class _IterationProjectorContext:
     def refresh(self, state, *, padding_factor, interpolator):
         # Clear even if construction fails, so stale data cannot survive a retry.
         self.prepared = self.reference = self.geometry = None
+        # The E-step builds dense means only for a route that reads them (_resolve_class_inputs).
         inputs, power = prepare_relion_projector_class_inputs_and_power(
-            state, padding_factor=padding_factor, interpolator=interpolator,
+            state, padding_factor=padding_factor, interpolator=interpolator, dense_means=False,
         )
         self.prepared = inputs
         self.reference = state.Iref
@@ -532,6 +533,7 @@ def prepare_relion_projector_class_inputs_and_power(
     *,
     padding_factor: int,
     interpolator: int = 1,
+    dense_means: bool = True,
 ) -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray, int], np.ndarray]:
     """Produce scoring operands and tau2 from the identical corrected FFT."""
     half_maps, power, r_max = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
@@ -541,7 +543,7 @@ def prepare_relion_projector_class_inputs_and_power(
         projector_setup_backend=VDAM_PROJECTOR_SETUP_BACKEND,
         interpolator=interpolator,
     )
-    inputs = _finish_relion_projector_class_inputs(state, padding_factor, half_maps, r_max)
+    inputs = _finish_relion_projector_class_inputs(state, padding_factor, half_maps, r_max, dense_means=dense_means)
     return inputs, power
 
 
@@ -550,6 +552,8 @@ def _finish_relion_projector_class_inputs(
     padding_factor: int,
     projector_half_by_class: np.ndarray,
     projector_r_max: int,
+    *,
+    dense_means: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     projector_dump_dir = os.environ.get(_RELION_PROJECTOR_DUMP_DIR_ENV, "").strip()
     if projector_dump_dir:
@@ -564,6 +568,8 @@ def _finish_relion_projector_class_inputs(
             padding_factor=np.int64(padding_factor),
             iteration=np.int64(state.iter),
         )
+    if not dense_means:
+        return None, None, projector_half_by_class, int(projector_r_max)
     means = relion_projector_half_maps_to_dense_means(
         projector_half_by_class,
         int(state.ori_size),
@@ -575,7 +581,16 @@ def _finish_relion_projector_class_inputs(
 def _resolve_class_inputs(
     state: InitialModelState,
     config: DenseInitialModelEstepConfig,
+    *,
+    dense_means: bool = True,
 ) -> tuple[Any, Any, np.ndarray | None, int | None]:
+    """Class means, their power, and the exact RELION projector for one E-step.
+
+    ``dense_means=False`` is for the resident adaptive route with a RELION
+    projector: it reads only K and the dtype of the dense N^3 means (a NaN
+    stand-in left 12-iteration K=1 and K=2 maps unchanged, job 14512033), so a
+    NaN (K, 1) stand-in replaces them and any read shows up as NaN.
+    """
     mean_variance = config.mean_variance
     relion_projector_half_by_class = None
     relion_projector_r_max = None
@@ -586,14 +601,14 @@ def _resolve_class_inputs(
             )
         relion_projector_half_by_class = np.asarray(config.relion_projector_half_by_class)
         relion_projector_r_max = int(config.relion_projector_r_max)
-        means = (
-            config.means
-            if config.means is not None
-            else relion_projector_half_maps_to_dense_means(
-                relion_projector_half_by_class,
-                int(state.ori_size),
-            )
-        )
+        if config.means is not None:
+            means = config.means
+        elif not dense_means:
+            means = np.full((int(state.K), 1), np.nan, dtype=np.complex64)
+            if mean_variance is None:
+                mean_variance = np.full((int(state.K), 1), np.nan, dtype=np.float32)
+        else:
+            means = relion_projector_half_maps_to_dense_means(relion_projector_half_by_class, int(state.ori_size))
     elif config.means is not None:
         means = config.means
     elif config.relion_projector_frame:
@@ -635,10 +650,6 @@ def run_dense_initial_model_estep(
         pseudo_halfsets=state.pseudo_halfsets,
     )
     engine_kwargs = _dense_engine_kwargs(state, config)
-    means, mean_variance, relion_projector_half_by_class, relion_projector_r_max = _resolve_class_inputs(
-        state,
-        config,
-    )
     if bool(engine_kwargs.get("sparse_pass2", False)):
         selected_particle_ids = (
             np.arange(int(experiment_dataset.n_images), dtype=np.int64)
@@ -654,6 +665,9 @@ def run_dense_initial_model_estep(
         else:
             selected_halfset_ids = None
         def run_adaptive():
+            means, mean_variance, relion_projector_half_by_class, relion_projector_r_max = _resolve_class_inputs(
+                state, config, dense_means=False
+            )
             return run_adaptive_initial_model_estep(
                 experiment_dataset,
                 state,
@@ -669,6 +683,7 @@ def run_dense_initial_model_estep(
             )
 
         def run_local():
+            means, _, relion_projector_half_by_class, relion_projector_r_max = _resolve_class_inputs(state, config)
             # The adaptive route's host-double coarse grid is not an exact-local option.
             local_kwargs = {k: v for k, v in engine_kwargs.items() if k != "coarse_base_translations"}
             return _run_sparse_pass2_initial_model_estep(
@@ -688,6 +703,7 @@ def run_dense_initial_model_estep(
         return _run_vdam_pass2_route(config.pass2_engine, int(state.K), run_adaptive, run_local)
 
     # Sparse execution constructs its own coarse/local rotation operands.
+    means, mean_variance, _, _ = _resolve_class_inputs(state, config)
     warn_deprecated_engine("dense", "global", "RELAX_DISABLE_SPARSE_PASS2 selects the dense VDAM E-step")
     if config.rotations is None:
         raise ValueError("Dense execution requires materialized rotations")

@@ -75,7 +75,7 @@ def test_context_builds_once_and_consumes_once(monkeypatch):
     )
     calls = []
 
-    def prepare(current, *, padding_factor, interpolator):
+    def prepare(current, *, padding_factor, interpolator, dense_means=True):
         calls.append((current.iter, current.Iref.copy()))
         return (None, None, current.Iref.copy(), 4), np.full((1, 5), current.iter)
 
