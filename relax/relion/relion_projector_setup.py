@@ -3,13 +3,15 @@
 Matches Projector::computeFourierTransformMap for a 3-D RELION-frame real
 reference, data_dim=2 and trilinear gridding correction. No axis/contrast
 conversion is performed by the device kernel. Host wrappers below convert
-RECOVAR references and select the native or JAX implementation. The FFT and output capacity depend only on the
-original size and padding; the logical radius remains a device scalar.
+RECOVAR references and select the native or JAX implementation.
 
-For M=padding_factor*ori_size, output capacity is
-(M+3, M+3, M//2+2). Major payload sizes are 8*M**3 bytes for padded real data,
-16*M*M*(M//2+1) for the FFT, and 16*(M+3)**2*(M//2+2) for output, plus FFT
-workspace and compiler temporaries. One reference is processed per call.
+There is one device build (``_build_projector_window``): the padded transform
+taken one axis at a time inside a static window of radius w, giving a
+``(L, L, L // 2 + 1)`` slab with ``L = 2 (pf w + 1) + 1``. Jitted callers keep
+the fixed capacity w = N / 2, ``(M + 3, M + 3, M // 2 + 2)`` for
+``M = padding_factor * ori_size``, so the logical radius remains a device scalar;
+the host wrapper uses w = r_max and runs large boxes in chunks. The native binding
+is the test reference and the default of the host wrapper.
 """
 
 from functools import partial
@@ -18,7 +20,6 @@ from typing import Literal
 import jax
 import jax.numpy as jnp
 import numpy as np
-from recovar.core import fourier_transform_utils as ftu
 
 from relax.helpers.deterministic_reduce import (
     deterministic_reductions_enabled,
@@ -37,7 +38,7 @@ def swap_relion_volume_layout(volume, dtype=jnp.float64):
     return -jnp.transpose(jnp.asarray(volume, dtype), (2, 1, 0))
 
 
-@partial(jax.jit, static_argnames=("ori_size", "padding_factor", "compute_dtype"))
+@partial(jax.jit, static_argnames=("ori_size", "padding_factor", "compute_dtype", "window_radius"))
 def setup_relion_projector(
     reference_relion,
     r_max,
@@ -46,34 +47,32 @@ def setup_relion_projector(
     padding_factor: int = 1,
     do_gridding=True,
     compute_dtype=jnp.float64,
+    window_radius: int | None = None,
 ):
     """Return corrected projector data and power at ``compute_dtype``.
 
     ``r_max`` is the unpadded logical radius; negative means original Nyquist,
     zero means DC only, and larger radii are clamped like native initialiseData.
-    For native comparison, crop the centered y/z region of width
-    ``2*(padding_factor*r_max+1)+1`` and the corresponding positive-x prefix.
-    The default is the existing float64 native-oracle route. Opt-in float32
-    performs gridding correction, FFT and power calculation in float32.
+    The slab covers the static window of ``window_radius`` (default ``ori_size // 2``,
+    the fixed capacity), so the radius may change without recompiling; ``r_max``
+    must not exceed the window. For native comparison, crop the centered y/z
+    region of width ``2*(padding_factor*r_max+1)+1`` and the corresponding
+    positive-x prefix. The default is the existing float64 native-oracle route.
+    Opt-in float32 performs gridding correction, FFT and power calculation in float32.
     See ``docs/math/vdam_ppca_algorithm.md`` for the production precision path.
 
     The global RECOVAR x64 policy is required. No Python callbacks, host
     materialization, persistent mutable cache, or per-class batching is used.
     """
-    _validate_reference(reference_relion, ori_size, padding_factor)
-    dtype = jnp.dtype(compute_dtype)
-    if dtype not in (jnp.dtype(jnp.float32), jnp.dtype(jnp.float64)):
-        raise ValueError("Projector computation dtype must be float32 or float64")
-    if dtype == jnp.dtype(jnp.float64) and not jax.config.x64_enabled:
-        raise ValueError("Float64 projector setup requires JAX float64 support")
-    reference = jnp.asarray(reference_relion, dtype=dtype)
+    reference = _checked_reference(reference_relion, ori_size, padding_factor, compute_dtype)
     reference = jax.lax.cond(
         jnp.asarray(do_gridding, dtype=jnp.bool_),
         lambda volume: gridding_correct_volume_real(volume, ori_size, padding_factor),
         lambda volume: volume,
         reference,
     )
-    return _project_reference(reference, r_max, ori_size, padding_factor)
+    window = ori_size // 2 if window_radius is None else window_radius
+    return _build_projector_window(reference, r_max, ori_size, padding_factor, window)
 
 
 @partial(jax.jit, static_argnames=("ori_size", "padding_factor", "compute_dtype"))
@@ -92,43 +91,152 @@ def setup_relion_projector_uncorrected(
     does not trace the double-precision gridding-correction branch used by
     the existing E-step wrapper. Radius and Nyquist ownership are shared.
     """
-    _validate_reference(reference_relion, ori_size, padding_factor)
-    dtype = jnp.dtype(compute_dtype)
-    if dtype not in (jnp.dtype(jnp.float32), jnp.dtype(jnp.float64)):
-        raise ValueError("Projector computation dtype must be float32 or float64")
-    if dtype == jnp.dtype(jnp.float64) and not jax.config.x64_enabled:
-        raise ValueError("Float64 projector setup requires JAX float64 support")
-    reference = jnp.asarray(reference_relion, dtype=dtype)
-    return _project_reference(reference, r_max, ori_size, padding_factor)
+    reference = _checked_reference(reference_relion, ori_size, padding_factor, compute_dtype)
+    return _build_projector_window(reference, r_max, ori_size, padding_factor, ori_size // 2)
 
 
-def _validate_reference(reference_relion, ori_size, padding_factor):
+def setup_relion_projector_on_host(
+    reference_relion,
+    r_max: int,
+    *,
+    ori_size: int,
+    padding_factor: int = 1,
+    compute_dtype=jnp.float64,
+    chunk_bytes: int | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """:func:`setup_relion_projector` with the window at ``r_max``, dispatched chunk by chunk to host arrays.
+
+    Returns the slab ``[L, L, L // 2 + 1]`` for ``L = 2 (pf r + 1) + 1``, the
+    shape the native binding returns, and the shell power. The chunks are
+    separate device programs, so a large box never holds the whole transform:
+    at EMPIAR-10202 (box 800, padding 2) the full-capacity transform needed
+    about 100 GB and the build fell back to two single-threaded host builds
+    (117 s per iteration, bigbox py-spy 14561585).
+    """
+    reference = _checked_reference(reference_relion, ori_size, padding_factor, compute_dtype)
+    radius = ori_size // 2 if int(r_max) < 0 else min(int(r_max), ori_size // 2)
+    reference = gridding_correct_volume_real(reference, ori_size, padding_factor)
+    return _build_projector_window(
+        reference, radius, ori_size, padding_factor, radius, chunk_bytes=chunk_bytes, to_host=True
+    )
+
+
+def _checked_reference(reference_relion, ori_size, padding_factor, compute_dtype):
     if ori_size <= 0 or ori_size % 2:
         raise ValueError("ori_size must be positive and even")
     if padding_factor not in (1, 2):
         raise ValueError("projector setup supports padding_factor 1 or 2")
     if reference_relion.shape != (ori_size,) * 3:
         raise ValueError("reference_relion must have shape (ori_size,)*3")
+    dtype = jnp.dtype(compute_dtype)
+    if dtype not in (jnp.dtype(jnp.float32), jnp.dtype(jnp.float64)):
+        raise ValueError("Projector computation dtype must be float32 or float64")
+    if dtype == jnp.dtype(jnp.float64) and not jax.config.x64_enabled:
+        raise ValueError("Float64 projector setup requires JAX float64 support")
+    return jnp.asarray(reference_relion, dtype=dtype)
 
 
-def _project_reference(reference, r_max, ori_size, padding_factor):
-    """Shared FFT, native half-grid ownership and shell-power calculation."""
+# Complex working set of one chunk of the transform. Boxes up to padded 512 are one chunk.
+_CHUNK_BYTES = 2 * 1024**3
+
+
+def _build_projector_window(reference, r_max, ori_size, padding_factor, window_radius, *, chunk_bytes=None, to_host=False):
+    """RELION's computeFourierTransformMap evaluated inside a static window, one axis at a time.
+
+    Native computes ``rfftn(fftshift(padded), norm="forward")`` of the padded
+    reference, scales by ``pf^3 N`` and keeps the half grid inside the sphere of
+    ``pf r_max``. This takes the x rfft, the y FFT (over z-slabs) and the z FFT
+    (over y-slabs) in turn, keeping after each axis only the frequencies inside
+    the window ``L = 2 (pf w + 1) + 1`` of ``window_radius`` w. The unpadded half
+    of every padded axis is zero, so only the reference's own voxels are
+    transformed. With w = N / 2 the window is the fixed capacity
+    ``(M + 3, M + 3, M // 2 + 2)``; that costs 0.99-1.04x the whole-volume rfftn at
+    padded 128-512 and agrees with it to 4.8e-16 (bigbox 14563130), and a smaller
+    window is proportionally cheaper. Only the order of the three one-dimensional
+    passes differs from native; tests/unit/test_relion_projector_setup.py holds
+    the float64 bound. ``to_host`` collects each chunk on the host (eager calls only).
+    """
+    n, pf = int(ori_size), int(padding_factor)
+    m = pf * n
+    size = 2 * (pf * int(window_radius) + 1) + 1
+    n_x = size // 2 + 1
+    # ftu centers y/z with -Nyquist at index zero. RELION's FFTW traversal
+    # instead gives that same coefficient +Nyquist; never duplicate it at -N/2.
+    yz_index = jnp.asarray((np.arange(size) - size // 2) % m, dtype=jnp.int32)
+    chunk_bytes = _CHUNK_BYTES if chunk_bytes is None else int(chunk_bytes)
+
+    cz = max(1, chunk_bytes // (16 * m * m))
+    xy = [_transform_xy(reference[z0 : z0 + cz], yz_index, fft_size=m, n_x=n_x) for z0 in range(0, n, cz)]
+    xy = xy[0] if len(xy) == 1 else jnp.concatenate(xy, axis=0)
+    cy = max(1, chunk_bytes // (16 * m * n_x))
+    blocks, sums, counts = [], None, None
+    for y0 in range(0, size, cy):
+        block = _transform_z(xy[:, y0 : y0 + cy], yz_index, fft_size=m)
+        block, block_sums, block_counts = _mask_and_shell_power(
+            block, r_max, ori_size=n, padding_factor=pf, size=size, y_start=y0
+        )
+        blocks.append(np.asarray(jax.device_get(block)) if to_host else block)
+        sums = block_sums if sums is None else sums + block_sums
+        counts = block_counts if counts is None else counts + block_counts
+    del xy
+    if len(blocks) == 1:
+        projector = blocks[0]
+    else:
+        projector = np.concatenate(blocks, axis=1) if to_host else jnp.concatenate(blocks, axis=1)
+    spectrum = jnp.where(counts >= 1, sums / jnp.maximum(counts, 1), jnp.zeros((), dtype=sums.dtype))
+    return (projector, np.asarray(jax.device_get(spectrum))) if to_host else (projector, spectrum)
+
+
+def _wrap_pad(values, axis: int, fft_size: int):
+    """Zero-pad a centered axis of length N to ``fft_size`` and apply ``fftshift``.
+
+    That is what ``get_dft3_real`` does to the centred padded volume before its
+    FFT: sample ``i`` of the unpadded axis lands at ``(i - N // 2) mod fft_size``.
+    """
+
+    n = values.shape[axis]
+    head = jax.lax.slice_in_dim(values, n // 2, n, axis=axis)
+    tail = jax.lax.slice_in_dim(values, 0, n // 2, axis=axis)
+    shape = list(values.shape)
+    shape[axis] = fft_size - n
+    return jnp.concatenate([head, jnp.zeros(shape, values.dtype), tail], axis=axis)
+
+
+@partial(jax.jit, static_argnames=("fft_size", "n_x"))
+def _transform_xy(block, yz_index, *, fft_size: int, n_x: int):
+    """x rfft then y FFT of a z-slab ``[cz, N, N]``, kept inside the window: ``[cz, L, n_x]``."""
+
+    fx = jnp.fft.rfft(_wrap_pad(block, 2, fft_size), axis=2, norm="forward")
+    # At the full radius the window reaches one column past Nyquist; like
+    # native, read Nyquist there and let the validity mask zero it.
+    fx = jnp.take(fx, jnp.minimum(jnp.arange(n_x), fft_size // 2), axis=2)
+    fy = jnp.fft.fft(_wrap_pad(fx, 1, fft_size), axis=1, norm="forward")
+    return jnp.take(fy, yz_index, axis=1)
+
+
+@partial(jax.jit, static_argnames=("fft_size",))
+def _transform_z(block, yz_index, *, fft_size: int):
+    """z FFT of a y-slab ``[N, cy, n_x]`` of the xy stage, kept inside the window: ``[L, cy, n_x]``."""
+
+    fz = jnp.fft.fft(_wrap_pad(block, 0, fft_size), axis=0, norm="forward")
+    return jnp.take(fz, yz_index, axis=0)
+
+
+@partial(jax.jit, static_argnames=("ori_size", "padding_factor", "size", "y_start"))
+def _mask_and_shell_power(block, r_max, *, ori_size: int, padding_factor: int, size: int, y_start: int):
+    """Scale, mask and shell-sum window rows ``y_start:`` (``block`` is ``[L, cy, n_x]``)."""
+
     fft_size = padding_factor * ori_size
-    pad = (fft_size - ori_size) // 2
-    padded = jnp.pad(reference, ((pad, pad),) * 3)
+    real_dtype = block.real.dtype
     # Native FourierTransformer divides by M^3, then projector.cpp multiplies
     # by pf^3*N for 3-D references projected into 2-D images. Keep that order.
-    transformed = ftu.get_dft3_real(padded, norm="forward")
-    transformed = transformed * float(padding_factor**3 * ori_size)
-
-    capacity = fft_size + 3
-    center = capacity // 2
-    coord = jnp.arange(capacity, dtype=jnp.int32) - center
-    x = jnp.arange(capacity // 2 + 1, dtype=jnp.int32)
+    block = block * float(padding_factor**3 * ori_size)
+    rows = block.shape[1]
+    coord = jnp.arange(size, dtype=jnp.int32) - size // 2
     z = coord[:, None, None]
-    y = coord[None, :, None]
-    x_grid = x[None, None, :]
-    r2 = z * z + y * y + x_grid * x_grid
+    y = coord[y_start : y_start + rows][None, :, None]
+    x = jnp.arange(block.shape[2], dtype=jnp.int32)[None, None, :]
+    r2 = z * z + y * y + x * x
     radius = jnp.asarray(r_max, dtype=jnp.int32)
     radius = jnp.where(radius < 0, ori_size // 2, jnp.minimum(radius, ori_size // 2))
     valid = (
@@ -136,32 +244,27 @@ def _project_reference(reference, r_max, ori_size, padding_factor):
         & (z <= fft_size // 2)
         & (y > -fft_size // 2)
         & (y <= fft_size // 2)
-        & (x_grid <= fft_size // 2)
+        & (x <= fft_size // 2)
         & (r2 <= (padding_factor * radius) ** 2)
     )
-    # ftu centers y/z with -Nyquist at index zero. RELION's FFTW traversal
-    # instead gives that same coefficient +Nyquist; never duplicate it at -N/2.
-    yz_indices = (coord + fft_size // 2) % fft_size
-    x_indices = jnp.minimum(x, fft_size // 2)
-    gathered = transformed[yz_indices[:, None, None], yz_indices[None, :, None], x_indices[None, None, :]]
-    projector = jnp.where(valid, gathered, jnp.asarray(0, dtype=transformed.dtype))
-    shells = jnp.floor(jnp.sqrt(r2.astype(reference.dtype)) / padding_factor + 0.5).astype(jnp.int32)
-    shells = jnp.minimum(shells, ori_size // 2)
+    projector = jnp.where(valid, block, jnp.asarray(0, dtype=block.dtype))
     # Native uses norm(complex)/2 rather than abs(complex)**2/2.
     power = (projector.real * projector.real + projector.imag * projector.imag) / 2.0
+    n_shells = ori_size // 2 + 1
     if deterministic_reductions_enabled():
         # ``bincount`` lowers to a scatter-add with duplicate shells (float
         # atomics); use static per-shell gathers with fixed-order reductions.
-        shell_lists = static_shell_voxel_lists(capacity, padding_factor, ori_size // 2 + 1, clamp_to_last=True)
-        sums = fixed_order_shell_sums(power.reshape(-1), shell_lists, reference.dtype)
-        counts = fixed_order_shell_sums(valid.reshape(-1).astype(reference.dtype), shell_lists, reference.dtype)
-    else:
-        sums = jnp.bincount(shells.reshape(-1), weights=power.reshape(-1), length=ori_size // 2 + 1)
-        counts = jnp.bincount(
-            shells.reshape(-1), weights=valid.reshape(-1).astype(reference.dtype), length=ori_size // 2 + 1
+        shell_lists = static_shell_voxel_lists(
+            size, padding_factor, n_shells, clamp_to_last=True, rows=(y_start, y_start + rows)
         )
-    spectrum = jnp.where(counts >= 1, sums / jnp.maximum(counts, 1), jnp.zeros((), dtype=reference.dtype))
-    return projector, spectrum
+        sums = fixed_order_shell_sums(power.reshape(-1), shell_lists, real_dtype)
+        counts = fixed_order_shell_sums(valid.reshape(-1).astype(real_dtype), shell_lists, real_dtype)
+    else:
+        shells = jnp.floor(jnp.sqrt(r2.astype(real_dtype)) / padding_factor + 0.5).astype(jnp.int32)
+        shells = jnp.minimum(shells, ori_size // 2).reshape(-1)
+        sums = jnp.bincount(shells, weights=power.reshape(-1), length=n_shells)
+        counts = jnp.bincount(shells, weights=valid.reshape(-1).astype(real_dtype), length=n_shells)
+    return projector, sums, counts
 
 
 ProjectorSetupBackend = Literal["native", "jax"]
@@ -234,11 +337,7 @@ def reference_to_relion_projector_half_maps_and_power(
     )
     if compute_dtype == np.dtype(np.float32) and not use_jax:
         raise ValueError("Float32 projector setup requires supported JAX geometry and backend")
-    if use_jax:
-        import jax
-        import jax.numpy as jnp
-
-    else:
+    if not use_jax:
         from relax.relion_bind import _relion_bind_core as bind
 
     halves = []
@@ -246,22 +345,15 @@ def reference_to_relion_projector_half_maps_and_power(
     r_max_values = []
     for ref in refs:
         if use_jax:
-            ref_relion = swap_relion_volume_layout(ref)
             # Projector::initialiseData uses a negative size for full resolution;
             # zero means radius zero here (state wrappers retain their defaults).
             r_max = n // 2 if int(current_size) < 0 else min(int(current_size) // 2, n // 2)
-            projector_data, power = setup_relion_projector(
-                ref_relion, np.int32(r_max), ori_size=n,
-                padding_factor=int(padding_factor),
-                compute_dtype=compute_dtype.type,
+            projector_data, power = setup_relion_projector_on_host(
+                swap_relion_volume_layout(ref), r_max, ori_size=n,
+                padding_factor=int(padding_factor), compute_dtype=compute_dtype.type,
             )
-            logical_size = 2 * (int(padding_factor) * r_max + 1) + 1
-            start = projector_data.shape[0] // 2 - logical_size // 2
-            projector_data = projector_data[
-                start : start + logical_size, start : start + logical_size,
-                : logical_size // 2 + 1,
-            ].astype(jnp.complex64 if projector_data_dtype is None else projector_data_dtype)
-            projector_data, power = jax.device_get((projector_data, power))
+            if projector_data_dtype is None:
+                projector_data = projector_data.astype(np.complex64)
         else:
             (
                 projector_data, power, _ori_size, _padding_factor_out,

@@ -58,18 +58,27 @@ def add_segment_sum(accumulator, segment_ids, values):
     )
 
 
-def static_shell_voxel_lists(capacity: int, padding_factor: int, n_shells: int, *, clamp_to_last: bool = False):
+def static_shell_voxel_lists(
+    capacity: int,
+    padding_factor: int,
+    n_shells: int,
+    *,
+    clamp_to_last: bool = False,
+    rows: tuple[int, int] | None = None,
+):
     """Host voxel index lists per RELION shell on the padded half-Fourier grid.
 
     Shell rule ``floor(sqrt(z^2 + y^2 + x^2) / padding + 0.5)`` on centred (z, y)
     and non-negative x axes of a ``(capacity, capacity, capacity // 2 + 1)`` grid.
     With ``clamp_to_last`` shells beyond the last bin are folded into it (the
     projector-setup rule); otherwise they are left out (the M-step rule).
+    ``rows = (start, stop)`` restricts the grid to those y rows (a chunk of it).
     """
 
     coord = np.arange(int(capacity), dtype=np.int64) - int(capacity) // 2
+    y = coord if rows is None else coord[int(rows[0]) : int(rows[1])]
     x = np.arange(int(capacity) // 2 + 1, dtype=np.int64)
-    r2 = coord[:, None, None] ** 2 + coord[None, :, None] ** 2 + x[None, None, :] ** 2
+    r2 = coord[:, None, None] ** 2 + y[None, :, None] ** 2 + x[None, None, :] ** 2
     shells = np.floor(np.sqrt(r2.astype(np.float64)) / float(padding_factor) + 0.5).astype(np.int64)
     if clamp_to_last:
         shells = np.minimum(shells, int(n_shells) - 1)

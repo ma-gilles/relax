@@ -144,3 +144,95 @@ def test_positive_nyquist_only_and_inclusive_sphere():
     assert actual[center, center - 4, 0] == 0
     assert actual[center, center, 4] != 0
     assert actual[center + 4, center + 1, 0] == 0
+
+
+def _float64_fft_bound(size, padding):
+    """Derived float64 bound between two evaluations of the padded transform.
+
+    Each evaluation is three one-dimensional FFTs of length M; a radix-2 FFT
+    carries a relative error of about log2(M) eps64 per pass (Higham, Accuracy
+    and Stability of Numerical Algorithms, 2nd ed., section 24.1), and the
+    gridding division and pf^3 N scale each add one rounding. The difference of
+    two such evaluations is bounded by the sum of both errors.
+    """
+
+    per_evaluation = (3 * np.log2(padding * size) + 2) * np.finfo(np.float64).eps
+    return 2 * per_evaluation
+
+
+def _float64_power_bound(size, padding):
+    """The shell power: squares double the slab bound; shell sums over the capacity
+    grid add the derived sqrt(n) eps64 accumulation-order term."""
+
+    capacity = padding * size + 3
+    voxels = capacity * capacity * (capacity // 2 + 1)
+    return 2 * _float64_fft_bound(size, padding) + np.sqrt(voxels) * np.finfo(np.float64).eps
+
+
+@pytest.mark.parametrize("size", [8, 16])
+@pytest.mark.parametrize("padding", [1, 2])
+@pytest.mark.parametrize("full", [False, True])
+def test_host_window_build_meets_the_derived_float64_bound(size, padding, full):
+    """The host wrapper's build (window at r_max) against RELION's own computeFourierTransformMap."""
+
+    from relax.relion.relion_projector_setup import setup_relion_projector_on_host
+    from relax.relion_bind import _relion_bind_core as bind
+
+    reference = np.random.default_rng(62).normal(size=(size,) * 3).astype(np.float64)
+    radius = size // (2 if full else 4)
+    native_slab, native_power, *_ = bind.compute_fourier_transform_map(
+        reference, size, padding, 1, 2 * radius, True, 2
+    )
+    slab, power = setup_relion_projector_on_host(reference, radius, ori_size=size, padding_factor=padding)
+    assert slab.dtype == np.complex128 and slab.shape == np.asarray(native_slab).shape
+    assert_matches(slab == 0, np.asarray(native_slab) == 0)
+    bound = _float64_fft_bound(size, padding)
+    for control, candidate, limit in (
+        (native_slab, slab, bound),
+        (native_power, power, _float64_power_bound(size, padding)),
+    ):
+        metrics = _relative_metrics(control, candidate)
+        assert all(value < limit for value in metrics.values()), (metrics, limit)
+    capacity_slab, capacity_power = setup_relion_projector(
+        reference, np.int32(radius), ori_size=size, padding_factor=padding
+    )
+    metrics = _relative_metrics(_crop(np.asarray(capacity_slab), radius, padding), slab)
+    assert all(value < bound for value in metrics.values()), (metrics, bound)
+
+
+def test_host_window_build_is_chunking_invariant():
+    from relax.relion.relion_projector_setup import setup_relion_projector_on_host
+
+    reference = np.random.default_rng(63).normal(size=(16,) * 3).astype(np.float64)
+    whole = setup_relion_projector_on_host(reference, 6, ori_size=16, padding_factor=2)
+    chunked = setup_relion_projector_on_host(reference, 6, ori_size=16, padding_factor=2, chunk_bytes=1)
+    # Each one-dimensional FFT sees the same row, so the slab is unchanged; the
+    # shell power is summed per chunk, in a different order.
+    assert_matches(chunked[0], whole[0])
+    assert all(value < _float64_power_bound(16, 2) for value in _relative_metrics(whole[1], chunked[1]).values())
+
+
+def test_jax_backend_builds_on_the_device_at_every_size(monkeypatch):
+    """The JAX backend has one device build: the window core, dispatched chunk by chunk."""
+
+    from recovar.utils.helpers import recovar_volume_to_relion
+
+    from relax.relion import relion_projector_setup as setup
+    from relax.relion_bind import _relion_bind_core as bind
+
+    called = []
+    real = setup.setup_relion_projector_on_host
+    monkeypatch.setattr(setup, "setup_relion_projector_on_host", lambda *a, **k: called.append(1) or real(*a, **k))
+    monkeypatch.setattr(setup, "_CHUNK_BYTES", 1)
+    reference = np.random.default_rng(64).normal(size=(1, 16, 16, 16)).astype(np.float64)
+    slab, power, r_max = setup.reference_to_relion_projector_half_maps_and_power(
+        reference, current_size=12, padding_factor=2, projector_setup_backend="jax", projector_data_dtype="complex128"
+    )
+    assert called == [1]
+    native, native_power, *_ = bind.compute_fourier_transform_map(
+        np.asarray(recovar_volume_to_relion(reference[0]), dtype=np.float64), 16, 2, 1, 12, True, 2
+    )
+    assert int(r_max) == 6 and slab.dtype == np.complex128
+    bound = _float64_fft_bound(16, 2)
+    assert all(value < bound for value in _relative_metrics(native, slab[0]).values())
+    assert all(value < _float64_power_bound(16, 2) for value in _relative_metrics(native_power, power[0]).values())

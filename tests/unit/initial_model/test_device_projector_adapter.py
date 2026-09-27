@@ -46,7 +46,7 @@ def test_adapter_native_radius_layout_frame_and_consumer_policy(size, padding, c
     }[current]
     references = np.random.default_rng(29).normal(size=(2, size, size, size))
     before = references.copy()
-    original_setup = setup.setup_relion_projector
+    original_setup = setup.setup_relion_projector_on_host
     raw = []
 
     def capture(*args, **kwargs):
@@ -54,7 +54,7 @@ def test_adapter_native_radius_layout_frame_and_consumer_policy(size, padding, c
         raw.append(result)
         return result
 
-    monkeypatch.setattr(setup, "setup_relion_projector", capture)
+    monkeypatch.setattr(setup, "setup_relion_projector_on_host", capture)
     kwargs = dict(current_size=current_size, padding_factor=padding)
     controls = [relion_projector_setup.reference_to_relion_projector_half_maps_and_power(references, **kwargs) for _ in range(2)]
     candidates = [
@@ -98,7 +98,7 @@ def test_unsupported_projector_geometry_uses_native(size, padding, interpolator,
     def forbidden(*args, **kwargs):
         raise AssertionError("Unsupported geometry must stay native")
 
-    monkeypatch.setattr(setup, "setup_relion_projector", forbidden)
+    monkeypatch.setattr(setup, "setup_relion_projector_on_host", forbidden)
     refs = np.random.default_rng(31).normal(size=(1, size, size, size))
     kwargs = dict(current_size=size, padding_factor=padding, interpolator=interpolator)
     native = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(refs, **kwargs)
@@ -152,14 +152,14 @@ def test_unknown_backend_rejected():
 def test_float32_projector_route_rejects_native_fallback(monkeypatch):
     refs = np.random.default_rng(41).normal(size=(1, 8, 8, 8)).astype(np.float32)
     captured = []
-    original = relion_projector_setup.setup_relion_projector
+    original = relion_projector_setup.setup_relion_projector_on_host
 
     def capture(*args, **kwargs):
         result = original(*args, **kwargs)
         captured.append(result)
         return result
 
-    monkeypatch.setattr(relion_projector_setup, "setup_relion_projector", capture)
+    monkeypatch.setattr(relion_projector_setup, "setup_relion_projector_on_host", capture)
     halves, power, radius = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
         refs, current_size=8, projector_setup_backend="jax", compute_dtype=np.float32,
     )
