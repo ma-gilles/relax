@@ -5589,6 +5589,9 @@ def refine_single_volume(
             r_max=final_current_size // 2,
             accumulator_volume_shape=final_mstep_accumulator_shape,
             output_dtype=_dense_global_scoring_dtype(),
+            # The final pass's accumulators are the public full layout of the
+            # x-half BackProjectors, joined at low resolution symmetrically.
+            full_is_hermitian=True,
         )
         # RELION's joined-half final reconstruction combines the two half
         # BackProjectors before updateSSNRarrays, then applies the whole-data

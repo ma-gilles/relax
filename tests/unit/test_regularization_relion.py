@@ -690,3 +690,28 @@ def test_streamed_fsc_preserves_requested_output_precision(monkeypatch, output_d
     actual = regularization_relion.compute_relion_fsc_from_backprojector(*data, *weights, shape, **kwargs)
     assert actual.dtype == expected.dtype == output_dtype
     assert_matches(np.asarray(actual), np.asarray(expected))
+
+
+@pytest.mark.parametrize("shape, accumulator_shape", [((4, 4, 4), (8, 8, 8)), ((8, 8, 8), (19, 19, 19))])
+def test_hermitian_full_accumulators_take_the_streamed_fsc_with_equal_result(shape, accumulator_shape):
+    """``full_is_hermitian`` streams the packed half of Hermitian full inputs; the FSC is unchanged."""
+
+    half_shape = fourier_transform_utils.volume_shape_to_half_volume_shape(accumulator_shape)
+    rng = np.random.default_rng(515)
+    halves = [
+        (rng.normal(size=half_shape) + 1j * rng.normal(size=half_shape)).astype(np.complex64) for _ in range(2)
+    ] + [(0.25 + rng.random(size=half_shape)).astype(np.float32) for _ in range(2)]
+    fulls = [
+        np.asarray(fourier_transform_utils.half_volume_to_full_volume(value, accumulator_shape)).reshape(-1)
+        for value in halves
+    ]
+    kwargs = dict(padding_factor=2, r_max=shape[0] // 2, accumulator_volume_shape=accumulator_shape)
+    expected = regularization_relion.compute_relion_fsc_from_backprojector(*fulls, shape, **kwargs)
+    actual = regularization_relion.compute_relion_fsc_from_backprojector(
+        *fulls, shape, full_is_hermitian=True, **kwargs
+    )
+    assert_matches(np.asarray(actual), np.asarray(expected))
+    for half, full in zip(halves, fulls, strict=True):
+        assert_matches(
+            regularization_relion._packed_half_of_hermitian_full(full, accumulator_shape), half.reshape(-1)
+        )
