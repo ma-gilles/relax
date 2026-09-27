@@ -788,20 +788,26 @@ def test_global_chunk_tile_count_matches_the_live_translated_arrays(_resident_pr
     args["score_with_masked_images"] = masked
 
     planned, measured, baseline = [], [], set()
+    live_log = []
     real_plan = rp.plan_resident_chunk_memory
     real_prepare = rp._prepare_chunk_reconstruction_operands
     real_rows = rp._chunk_operand_rows
     real_gather = rp.gather_resident_chunk_operands
 
     def translated_bytes(capacity, n_trans):
+        # Complex arrays only: the fixture's 8 translations equal its 8x8 image rows, so a real
+        # [images, 8, 8] image batch has the tiles' leading shape.
         total = 0
         for array in jax.live_arrays():
-            if id(array) in baseline:
+            if id(array) in baseline or not jnp.issubdtype(array.dtype, jnp.complexfloating):
                 continue
             if (array.ndim == 2 and array.shape[0] == capacity * n_trans) or (
                 array.ndim == 3 and tuple(array.shape[:2]) == (capacity, n_trans)
             ):
                 total += array.nbytes
+        live_log.append(
+            (capacity, n_trans, sorted((tuple(a.shape), str(a.dtype)) for a in jax.live_arrays() if id(a) not in baseline))
+        )
         return total
 
     def plan(**kwargs):
@@ -849,8 +855,8 @@ def test_global_chunk_tile_count_matches_the_live_translated_arrays(_resident_pr
         assert final_plan["prepare_tile_pixels"] == final_plan["held_tile_pixels"]
     else:
         assert final_plan["prepare_tile_pixels"] > final_plan["held_tile_pixels"]
-    for key, image_translations, live in measured:
-        assert live == image_translations * final_plan[key] * 8, (key, live, final_plan[key])
+    for (key, image_translations, live), arrays in zip(measured, live_log):
+        assert live == image_translations * final_plan[key] * 8, (key, live, final_plan[key], arrays)
 
 
 @requires_resident_gpu
