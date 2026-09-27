@@ -311,6 +311,32 @@ def require_resident_local_configuration(**kwargs) -> None:
         )
 
 
+def _open_resident_local_projector_texture(
+    relion_projector_half, *, relion_projector_r_max, projection_padding_factor, relion_texture_interp
+):
+    """Upload the pass's ``PPref`` slab once as a persistent RELION texture, or ``None``.
+
+    The same persistent texture the compact engine opens
+    (:func:`relax.sparse_pass2.dispatch._open_persistent_relion_projector_texture`),
+    from a host copy of the float32 slab; slabs the texture projector does not
+    take keep the per-call path.
+    """
+
+    from relax.sparse_pass2.dispatch import _open_persistent_relion_projector_texture
+
+    if relion_projector_half is None or relion_texture_interp is False:
+        return None
+    if np.dtype(relion_projector_half.dtype) != np.dtype(np.complex64) or np.ndim(relion_projector_half) != 3:
+        return None
+    return _open_persistent_relion_projector_texture(
+        np.ascontiguousarray(jax.device_get(relion_projector_half)),
+        relion_projector_r_max=relion_projector_r_max,
+        projection_padding_factor=projection_padding_factor,
+        relion_texture_interp=relion_texture_interp,
+        log_label="Resident local pass-2",
+    )
+
+
 def _cap_row_capacity_ladder(
     ladder: tuple,
     *,
@@ -675,241 +701,260 @@ def compute_local_search_resident(
     projection_kwargs["mask_current_image_disk"] = bool(projection_mask_current_image_disk)
     projection_kwargs["relion_kernel"] = projection_relion_kernel
 
-    # ---- capacity plan ----------------------------------------------------
-    row_ladder = _cap_row_capacity_ladder(
-        parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER),
-        n_score_pixels=n_windowed,
-        n_recon_pixels=n_recon_windowed,
-        max_bytes=_projection_cache_max_bytes_for_pass(device_memory_bytes),
+    # One persistent RELION projector texture for the whole pass, opened before
+    # the capacity plan so the plan's device reading sees it. Projected per
+    # call, the texture path allocates the slab's two float32 CUDA arrays
+    # (7.9 GB at EMPIAR-10202 current size 626) outside the XLA pool on every
+    # chunk, which failed with CUDA out of memory once the pool had grown
+    # (bigbox 14480549, 14507538). RELION builds its projector texture once
+    # per iteration.
+    projector_texture = _open_resident_local_projector_texture(
+        relion_projector_half,
+        relion_projector_r_max=relion_projector_r_max,
+        projection_padding_factor=projection_padding_factor,
+        relion_texture_interp=projection_relion_texture_interp,
     )
-    chunk_budget_bytes = rp.resident_chunk_budget_bytes()
-    if chunk_budget_bytes is not None:
-        # One projector call's transient is live next to the chunk; reserve it.
-        chunk_budget_bytes = max(0, chunk_budget_bytes - _projection_call_transient_max_bytes())
-    image_ladder = rp.resident_image_capacity_start(
-        parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER),
-        n_fine_trans=n_fine_trans,
-        n_recon_pixels=n_recon_windowed,
-        max_tile_bytes=_max_translation_tile_bytes_for_pass(
-            device_memory_bytes, has_external_normalization=False
-        ),
-        chunk_budget_bytes=chunk_budget_bytes,
-    )
-    mstep_block_rows = rp._resolve_mstep_block_rows(
-        n_recon_pixels=n_recon_windowed,
-        max_block_bytes=_max_adjoint_block_bytes_for_pass(device_memory_bytes),
-        row_capacity_ladder=row_ladder,
-    )
-    memory_plan = rp.plan_resident_chunk_memory(
-        row_capacity_ladder=row_ladder,
-        image_capacity_ladder=image_ladder,
-        mstep_block_rows=mstep_block_rows,
-        row_bytes=resident_row_projection_bytes(
+    if projector_texture is not None:
+        projection_kwargs["relion_projector_texture"] = projector_texture
+    try:
+        # ---- capacity plan ----------------------------------------------------
+        row_ladder = _cap_row_capacity_ladder(
+            parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER),
+            n_score_pixels=n_windowed,
+            n_recon_pixels=n_recon_windowed,
+            max_bytes=_projection_cache_max_bytes_for_pass(device_memory_bytes),
+        )
+        chunk_budget_bytes = rp.resident_chunk_budget_bytes()
+        if chunk_budget_bytes is not None:
+            # One projector call's transient is live next to the chunk; reserve it.
+            chunk_budget_bytes = max(0, chunk_budget_bytes - _projection_call_transient_max_bytes())
+        image_ladder = rp.resident_image_capacity_start(
+            parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER),
+            n_fine_trans=n_fine_trans,
+            n_recon_pixels=n_recon_windowed,
+            max_tile_bytes=_max_translation_tile_bytes_for_pass(
+                device_memory_bytes, has_external_normalization=False
+            ),
+            chunk_budget_bytes=chunk_budget_bytes,
+        )
+        mstep_block_rows = rp._resolve_mstep_block_rows(
+            n_recon_pixels=n_recon_windowed,
+            max_block_bytes=_max_adjoint_block_bytes_for_pass(device_memory_bytes),
+            row_capacity_ladder=row_ladder,
+        )
+        memory_plan = rp.plan_resident_chunk_memory(
+            row_capacity_ladder=row_ladder,
+            image_capacity_ladder=image_ladder,
+            mstep_block_rows=mstep_block_rows,
+            row_bytes=resident_row_projection_bytes(
+                n_score_pixels=n_windowed, n_recon_pixels=n_recon_windowed
+            ),
+            n_fine_trans=n_fine_trans,
+            n_recon_pixels=n_recon_windowed,
+            budget_bytes=chunk_budget_bytes,
+        )
+        row_ladder = memory_plan.row_capacity_ladder
+        image_ladder = memory_plan.image_capacity_ladder
+        mstep_block_rows = memory_plan.mstep_block_rows
+        # Bound one projector call by the array it actually materializes. The
+        # compact projection-block helper returns *full half-spectrum* rows and
+        # windows them afterwards (projection.py, the dense_scale multiply runs on
+        # proj_half before any gather), so the transient is
+        # rows x n_half x itemsize(Projector::data), not rows x windowed pixels.
+        # Budgeting on the window is what refused a 16.1 GiB allocation twice: at
+        # current size 92 with 32768 rows, and again at 52 where the window is
+        # 1104 px but the materialized row is still 33024.
+        #
+        # The exact local engine does not hit this because it hands the projector
+        # its compact pixel indices; this driver goes through the shared compact
+        # helper, so it pays the full row and must budget for it.
+        n_projection_pixels = int(getattr(window_spec, "n_projection", n_recon_windowed))
+        projector_slab_bytes = int(jnp.asarray(relion_projector_half).dtype.itemsize)
+        projection_call_max_bytes = _projection_call_transient_max_bytes()
+        projection_block_rows = max(
+            1, projection_call_max_bytes // max(n_half * projector_slab_bytes, 1)
+        )
+        chunks = plan_local_capacity_chunks(
+            tables,
+            row_capacity_ladder=row_ladder,
+            image_capacity_ladder=image_ladder,
+        )
+        table_s = time.time() - table_t0
+        per_row_bytes = resident_row_projection_bytes(
             n_score_pixels=n_windowed, n_recon_pixels=n_recon_windowed
-        ),
-        n_fine_trans=n_fine_trans,
-        n_recon_pixels=n_recon_windowed,
-        budget_bytes=chunk_budget_bytes,
-    )
-    row_ladder = memory_plan.row_capacity_ladder
-    image_ladder = memory_plan.image_capacity_ladder
-    mstep_block_rows = memory_plan.mstep_block_rows
-    # Bound one projector call by the array it actually materializes. The
-    # compact projection-block helper returns *full half-spectrum* rows and
-    # windows them afterwards (projection.py, the dense_scale multiply runs on
-    # proj_half before any gather), so the transient is
-    # rows x n_half x itemsize(Projector::data), not rows x windowed pixels.
-    # Budgeting on the window is what refused a 16.1 GiB allocation twice: at
-    # current size 92 with 32768 rows, and again at 52 where the window is
-    # 1104 px but the materialized row is still 33024.
-    #
-    # The exact local engine does not hit this because it hands the projector
-    # its compact pixel indices; this driver goes through the shared compact
-    # helper, so it pays the full row and must budget for it.
-    n_projection_pixels = int(getattr(window_spec, "n_projection", n_recon_windowed))
-    projector_slab_bytes = int(jnp.asarray(relion_projector_half).dtype.itemsize)
-    projection_call_max_bytes = _projection_call_transient_max_bytes()
-    projection_block_rows = max(
-        1, projection_call_max_bytes // max(n_half * projector_slab_bytes, 1)
-    )
-    chunks = plan_local_capacity_chunks(
-        tables,
-        row_capacity_ladder=row_ladder,
-        image_capacity_ladder=image_ladder,
-    )
-    table_s = time.time() - table_t0
-    per_row_bytes = resident_row_projection_bytes(
-        n_score_pixels=n_windowed, n_recon_pixels=n_recon_windowed
-    )
-    logger.info(
-        "Resident local pass-2 plan: %d images, %d candidate rows, %d translations -> %d chunks "
-        "(row capacities %s, image capacities %s, M-step block rows %d, projection block rows %d); "
-        "row projections %.2f KiB/row, largest chunk %.2f GiB, projection window %d px, "
-        "projector slab %d B/element; chunk peak %.2f GiB of a %s budget; setup %.2fs",
-        tables.n_images,
-        tables.n_rows,
-        n_fine_trans,
-        len(chunks),
-        ",".join(str(v) for v in row_ladder),
-        ",".join(str(v) for v in image_ladder),
-        mstep_block_rows,
-        projection_block_rows,
-        per_row_bytes / 1024.0,
-        max((int(chunk.row_capacity) for chunk in chunks), default=0)
-        * per_row_bytes
-        / float(1024**3),
-        n_projection_pixels,
-        projector_slab_bytes,
-        memory_plan.peak_bytes / float(1024**3),
-        rp.format_budget_gib(memory_plan.budget_bytes),
-        table_s,
-    )
-
-    # ---- per-image resident operands --------------------------------------
-    bucket_io_kwargs = dict(
-        noise_variance_half=noise_variance_half,
-        fine_translations=fine_translations,
-        config=config,
-        n_trans=n_fine_trans,
-        score_with_masked_images=score_with_masked_images,
-        half_spectrum_scoring=half_spectrum_scoring,
-        image_corrections=image_corrections,
-        scale_corrections=scale_corrections,
-        image_pre_shifts=image_pre_shifts,
-        use_float64_scoring=use_float64_scoring,
-        score_only=False,
-        score_mode="gaussian",
-        window_indices=window_indices,
-        recon_window_indices=recon_window_indices,
-        translation_phases_half=translation_phases_half,
-        relion_score_translation_angles=relion_score_translation_angles,
-        return_windowed_shifted=windowed_prepare,
-        relion_exact_normalized_cc_operands=False,
-        # The exact local engine runs its production path with the plain
-        # ``CTF^2 / sigma2`` operand order, not RELION's RFLOAT-square order,
-        # so keep that here rather than silently switching operand families.
-        relion_exact_bpref_operands=False,
-        noise_optics_groups=optics_groups_np,
-    )
-    fine_translation_prior_2d = np.asarray(
-        tables.translation_log_prior, dtype=precision_policy.score_real_dtype
-    )
-
-    # ---- statistics accumulators ------------------------------------------
-    stats_config = resolve_statistics_config(
-        n_shells=n_shells,
-        n_fine_trans=n_fine_trans,
-        n_images=n_images,
-        n_coarse_rot=tables.n_posterior_bins,
-        n_scale_groups=n_scale_groups,
-        current_size=current_size,
-        include_unweighted_high_shell=include_unweighted_norm_high_shell,
-        use_exact_relion_gaussian=True,
-        relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
-        relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
-        accumulate_scale=scale_groups_available,
-        source_faithful_spectrum_norm=resolved_spectrum_norm,
-        n_optics_groups=n_optics_groups,
-    )
-    stats = make_resident_statistics(
-        stats_config, max_posterior_dtype=precision_policy.score_real_dtype
-    )
-    image_tables = rp._ChunkImageTables(
-        shell_indices_half=jnp.asarray(shell_indices_half, dtype=jnp.int32),
-        wavg_shell_indices=jnp.asarray(relion_wavg_rectangle.shell_indices, dtype=jnp.int32),
-        wavg_scale_pixel_mask=jnp.asarray(scale_pixel_mask_rect_np, dtype=bool),
-        translation_sqdist_ang=None,
-    )
-
-    Ft_y_total = jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype)
-    Ft_ctf_total = jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype)
-    exact_positions_device = jnp.asarray(relion_wavg_rectangle.exact_positions, dtype=jnp.int32)
-    rect_indices_device = jnp.asarray(relion_wavg_rectangle.centered_indices, dtype=jnp.int32)
-    noise_variance_for_noise_device = jnp.asarray(noise_variance_for_noise)
-    shell_indices_noise_device = jnp.asarray(shell_indices_noise, dtype=jnp.int32)
-    max_adjoint_block_bytes = _max_adjoint_block_bytes_for_pass(device_memory_bytes)
-
-    scale_corrections_np = (
-        None
-        if scale_corrections is None
-        else np.asarray(scale_corrections, dtype=precision_policy.score_real_dtype)
-    )
-    translation_prior_centers_np = None
-    if translation_prior_centers is not None:
-        from relax.helpers.translation_prior import validate_translation_prior_centers
-
-        translation_prior_centers_np = validate_translation_prior_centers(
-            translation_prior_centers,
-            n_images=n_images,
-            n_dims=int(fine_translations.shape[1]),
+        )
+        logger.info(
+            "Resident local pass-2 plan: %d images, %d candidate rows, %d translations -> %d chunks "
+            "(row capacities %s, image capacities %s, M-step block rows %d, projection block rows %d); "
+            "row projections %.2f KiB/row, largest chunk %.2f GiB, projection window %d px, "
+            "projector slab %d B/element; chunk peak %.2f GiB of a %s budget; setup %.2fs",
+            tables.n_images,
+            tables.n_rows,
+            n_fine_trans,
+            len(chunks),
+            ",".join(str(v) for v in row_ladder),
+            ",".join(str(v) for v in image_ladder),
+            mstep_block_rows,
+            projection_block_rows,
+            per_row_bytes / 1024.0,
+            max((int(chunk.row_capacity) for chunk in chunks), default=0)
+            * per_row_bytes
+            / float(1024**3),
+            n_projection_pixels,
+            projector_slab_bytes,
+            memory_plan.peak_bytes / float(1024**3),
+            rp.format_budget_gib(memory_plan.budget_bytes),
+            table_s,
         )
 
-    # ---- chunk loop --------------------------------------------------------
-    significant_counts = (
-        np.zeros(n_images, dtype=np.int32) if return_significant_counts else None
-    )
-    operand_route = {"unshifted": rp._resident_operands_requested()}
-    loop_t0 = time.time()
-    for chunk in chunks:
-        Ft_y_total, Ft_ctf_total, stats = _run_resident_local_chunk(
-            chunk,
-            tables=tables,
-            experiment_dataset=experiment_dataset,
-            bucket_io_kwargs=bucket_io_kwargs,
-            fine_translation_prior_2d=fine_translation_prior_2d,
-            half_weights=half_weights_windowed,
-            full_to_compact=relion_score_full_to_compact,
-            translation_angles=relion_score_translation_angles,
-            n_score_pixels=int(n_windowed),
-            mean=mean,
-            volume_shape=volume_shape,
-            disc_type=disc_type,
-            projection_kwargs=projection_kwargs,
-            projection_block_rows=projection_block_rows,
-            projection_padding_factor=projection_padding_factor,
-            relion_projector_half=relion_projector_half,
-            relion_projector_r_max=relion_projector_r_max,
-            precision_policy=precision_policy,
-            n_fine_trans=n_fine_trans,
-            n_recon_windowed=n_recon_windowed,
-            n_rect=n_rect,
-            mstep_block_rows=mstep_block_rows,
-            adaptive_fraction=float(adaptive_fraction),
-            keep_all_weights=not bool(reconstruct_significant_only),
-            windowed_prepare=windowed_prepare,
+        # ---- per-image resident operands --------------------------------------
+        bucket_io_kwargs = dict(
+            noise_variance_half=noise_variance_half,
+            fine_translations=fine_translations,
+            config=config,
+            n_trans=n_fine_trans,
+            score_with_masked_images=score_with_masked_images,
+            half_spectrum_scoring=half_spectrum_scoring,
+            image_corrections=image_corrections,
+            scale_corrections=scale_corrections,
+            image_pre_shifts=image_pre_shifts,
+            use_float64_scoring=use_float64_scoring,
+            score_only=False,
+            score_mode="gaussian",
             window_indices=window_indices,
             recon_window_indices=recon_window_indices,
-            relion_x_half_recon_indices=relion_x_half_recon_indices,
-            exact_positions_device=exact_positions_device,
-            rect_indices_device=rect_indices_device,
-            image_shape=image_shape,
-            current_size=current_size,
-            mstep_current_size=volume_current_size,
-            mstep_max_r=mstep_adjoint_max_r(
-                volume_current_size, reconstruction_image_radius, reconstruction_padding_factor
-            ),
-            recon_volume_shape=recon_volume_shape,
-            max_adjoint_block_bytes=max_adjoint_block_bytes,
-            noise_variance_for_noise=noise_variance_for_noise_device,
-            shell_indices_noise=shell_indices_noise_device,
-            group_ids_np=group_ids_np,
-            optics_groups_np=optics_groups_np,
-            scale_corrections_np=scale_corrections_np,
-            translation_prior_centers_np=translation_prior_centers_np,
-            fine_translations=fine_translations,
-            voxel_size=experiment_dataset.voxel_size,
-            accumulate_noise=accumulate_noise,
-            source_faithful_spectrum_norm=resolved_spectrum_norm,
-            stats=stats,
-            stats_config=stats_config,
-            image_tables=image_tables,
-            Ft_y_total=Ft_y_total,
-            Ft_ctf_total=Ft_ctf_total,
-            cuda_backproject=em_cuda_kernels,
-            significant_counts=significant_counts,
-            operand_route=operand_route,
+            translation_phases_half=translation_phases_half,
+            relion_score_translation_angles=relion_score_translation_angles,
+            return_windowed_shifted=windowed_prepare,
+            relion_exact_normalized_cc_operands=False,
+            # The exact local engine runs its production path with the plain
+            # ``CTF^2 / sigma2`` operand order, not RELION's RFLOAT-square order,
+            # so keep that here rather than silently switching operand families.
+            relion_exact_bpref_operands=False,
+            noise_optics_groups=optics_groups_np,
         )
-    loop_s = time.time() - loop_t0
+        fine_translation_prior_2d = np.asarray(
+            tables.translation_log_prior, dtype=precision_policy.score_real_dtype
+        )
+
+        # ---- statistics accumulators ------------------------------------------
+        stats_config = resolve_statistics_config(
+            n_shells=n_shells,
+            n_fine_trans=n_fine_trans,
+            n_images=n_images,
+            n_coarse_rot=tables.n_posterior_bins,
+            n_scale_groups=n_scale_groups,
+            current_size=current_size,
+            include_unweighted_high_shell=include_unweighted_norm_high_shell,
+            use_exact_relion_gaussian=True,
+            relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
+            relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
+            accumulate_scale=scale_groups_available,
+            source_faithful_spectrum_norm=resolved_spectrum_norm,
+            n_optics_groups=n_optics_groups,
+        )
+        stats = make_resident_statistics(
+            stats_config, max_posterior_dtype=precision_policy.score_real_dtype
+        )
+        image_tables = rp._ChunkImageTables(
+            shell_indices_half=jnp.asarray(shell_indices_half, dtype=jnp.int32),
+            wavg_shell_indices=jnp.asarray(relion_wavg_rectangle.shell_indices, dtype=jnp.int32),
+            wavg_scale_pixel_mask=jnp.asarray(scale_pixel_mask_rect_np, dtype=bool),
+            translation_sqdist_ang=None,
+        )
+
+        Ft_y_total = jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype)
+        Ft_ctf_total = jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype)
+        exact_positions_device = jnp.asarray(relion_wavg_rectangle.exact_positions, dtype=jnp.int32)
+        rect_indices_device = jnp.asarray(relion_wavg_rectangle.centered_indices, dtype=jnp.int32)
+        noise_variance_for_noise_device = jnp.asarray(noise_variance_for_noise)
+        shell_indices_noise_device = jnp.asarray(shell_indices_noise, dtype=jnp.int32)
+        max_adjoint_block_bytes = _max_adjoint_block_bytes_for_pass(device_memory_bytes)
+
+        scale_corrections_np = (
+            None
+            if scale_corrections is None
+            else np.asarray(scale_corrections, dtype=precision_policy.score_real_dtype)
+        )
+        translation_prior_centers_np = None
+        if translation_prior_centers is not None:
+            from relax.helpers.translation_prior import validate_translation_prior_centers
+
+            translation_prior_centers_np = validate_translation_prior_centers(
+                translation_prior_centers,
+                n_images=n_images,
+                n_dims=int(fine_translations.shape[1]),
+            )
+
+        # ---- chunk loop --------------------------------------------------------
+        significant_counts = (
+            np.zeros(n_images, dtype=np.int32) if return_significant_counts else None
+        )
+        operand_route = {"unshifted": rp._resident_operands_requested()}
+        loop_t0 = time.time()
+        for chunk in chunks:
+            Ft_y_total, Ft_ctf_total, stats = _run_resident_local_chunk(
+                chunk,
+                tables=tables,
+                experiment_dataset=experiment_dataset,
+                bucket_io_kwargs=bucket_io_kwargs,
+                fine_translation_prior_2d=fine_translation_prior_2d,
+                half_weights=half_weights_windowed,
+                full_to_compact=relion_score_full_to_compact,
+                translation_angles=relion_score_translation_angles,
+                n_score_pixels=int(n_windowed),
+                mean=mean,
+                volume_shape=volume_shape,
+                disc_type=disc_type,
+                projection_kwargs=projection_kwargs,
+                projection_block_rows=projection_block_rows,
+                projection_padding_factor=projection_padding_factor,
+                relion_projector_half=relion_projector_half,
+                relion_projector_r_max=relion_projector_r_max,
+                precision_policy=precision_policy,
+                n_fine_trans=n_fine_trans,
+                n_recon_windowed=n_recon_windowed,
+                n_rect=n_rect,
+                mstep_block_rows=mstep_block_rows,
+                adaptive_fraction=float(adaptive_fraction),
+                keep_all_weights=not bool(reconstruct_significant_only),
+                windowed_prepare=windowed_prepare,
+                window_indices=window_indices,
+                recon_window_indices=recon_window_indices,
+                relion_x_half_recon_indices=relion_x_half_recon_indices,
+                exact_positions_device=exact_positions_device,
+                rect_indices_device=rect_indices_device,
+                image_shape=image_shape,
+                current_size=current_size,
+                mstep_current_size=volume_current_size,
+                mstep_max_r=mstep_adjoint_max_r(
+                    volume_current_size, reconstruction_image_radius, reconstruction_padding_factor
+                ),
+                recon_volume_shape=recon_volume_shape,
+                max_adjoint_block_bytes=max_adjoint_block_bytes,
+                noise_variance_for_noise=noise_variance_for_noise_device,
+                shell_indices_noise=shell_indices_noise_device,
+                group_ids_np=group_ids_np,
+                optics_groups_np=optics_groups_np,
+                scale_corrections_np=scale_corrections_np,
+                translation_prior_centers_np=translation_prior_centers_np,
+                fine_translations=fine_translations,
+                voxel_size=experiment_dataset.voxel_size,
+                accumulate_noise=accumulate_noise,
+                source_faithful_spectrum_norm=resolved_spectrum_norm,
+                stats=stats,
+                stats_config=stats_config,
+                image_tables=image_tables,
+                Ft_y_total=Ft_y_total,
+                Ft_ctf_total=Ft_ctf_total,
+                cuda_backproject=em_cuda_kernels,
+                significant_counts=significant_counts,
+                operand_route=operand_route,
+            )
+        loop_s = time.time() - loop_t0
+    finally:
+        if projector_texture is not None:
+            projector_texture.close()
 
     # ---- finalize ----------------------------------------------------------
     # RELION symmetriseReconstructions (ml_optimiser.cpp:5541-5575): x=0

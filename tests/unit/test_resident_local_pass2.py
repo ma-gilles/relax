@@ -406,7 +406,9 @@ def test_plan_log_line_formats_without_a_logging_error(caplog):
 
     src = inspect.getsource(rlp.compute_local_search_resident)
     start = src.index('"Resident local pass-2 plan:')
-    block = src[start : src.index("\n    )\n", start)]
+    call = src.rindex("logger.info(", 0, start)
+    indent = call - src.rindex("\n", 0, call) - 1
+    block = src[start : src.index("\n" + " " * indent + ")\n", start)]
     fmt = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', block))
     placeholders = len(re.findall(r"%[-0-9.]*[dsfgex]", fmt))
     arguments = len(
@@ -451,6 +453,47 @@ def test_final_all_data_shape_runs_resident_and_matches_the_exact_engine(monkeyp
     exact = _run(case, resident=False, exact=True, monkeypatch=monkeypatch, current_size=full)
     assert take_pass_engines()[0].startswith("local:exact_local")
     assert_matches(np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment))
+
+
+def test_local_projector_texture_is_not_opened_for_manual_or_double_projection():
+    slab = np.zeros((11, 11, 6), dtype=np.complex64)
+    kwargs = dict(relion_projector_r_max=4, projection_padding_factor=1)
+    assert rlp._open_resident_local_projector_texture(None, relion_texture_interp=None, **kwargs) is None
+    assert rlp._open_resident_local_projector_texture(slab, relion_texture_interp=False, **kwargs) is None
+    assert rlp._open_resident_local_projector_texture(
+        slab.astype(np.complex128), relion_texture_interp=None, **kwargs
+    ) is None
+
+
+@requires_resident_gpu
+def test_resident_local_persistent_texture_matches_the_per_call_texture(monkeypatch, _resident_local_env):
+    """EMPIAR-10202 (14507538): the per-call texture allocated the slab's CUDA arrays on every
+    chunk and ran out of memory; one persistent texture for the pass projects the same rows."""
+
+    case = _case()
+    opened = []
+    real_open = rlp._open_resident_local_projector_texture
+
+    def spy(*args, **kwargs):
+        texture = real_open(*args, **kwargs)
+        opened.append(texture is not None)
+        return texture
+
+    monkeypatch.setattr(rlp, "_open_resident_local_projector_texture", spy)
+    persistent = _run(case, resident=True, monkeypatch=monkeypatch)
+    assert opened == [True]
+    monkeypatch.setattr(rlp, "_open_resident_local_projector_texture", lambda *a, **k: None)
+    per_call = _run(case, resident=True, monkeypatch=monkeypatch)
+
+    def rel_l2(a, b):
+        a = np.asarray(a, dtype=np.float64)
+        b = np.asarray(b, dtype=np.float64)
+        return float(np.linalg.norm(a - b) / max(np.linalg.norm(a), 1e-300))
+
+    assert_matches(np.asarray(per_call.hard_assignment), np.asarray(persistent.hard_assignment))
+    # Same texture kernel, same texels: the resident driver's own repeat band (1e-7).
+    assert rel_l2(per_call.Ft_y, persistent.Ft_y) < 1e-6
+    assert rel_l2(per_call.Ft_ctf, persistent.Ft_ctf) < 1e-6
 
 
 @requires_resident_gpu
