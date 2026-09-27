@@ -519,7 +519,7 @@ def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, 
     real_prepare = rp_module._prepare_chunk_reconstruction_operands
     real_rows = rp_module._chunk_operand_rows
     real_unshifted = rlp._unshifted_chunk_operands
-    real_gather = rlp.gather_resident_chunk_operands
+    real_gather = rp_module.gather_resident_chunk_operands
 
     def plan(**kwargs):
         planned.append(kwargs)
@@ -567,11 +567,11 @@ def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, 
             record("prepare_tile_pixels", capacity, n_trans)
             return out
 
-        monkeypatch.setattr(rlp, "gather_resident_chunk_operands", gather)
+        monkeypatch.setattr(rp_module, "gather_resident_chunk_operands", gather)
         try:
             result = real_unshifted(*args, **kwargs)
         finally:
-            monkeypatch.setattr(rlp, "gather_resident_chunk_operands", real_gather)
+            monkeypatch.setattr(rp_module, "gather_resident_chunk_operands", real_gather)
         record("held_tile_pixels", capacity, n_trans)
         return result
 

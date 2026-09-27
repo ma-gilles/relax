@@ -883,6 +883,69 @@ def test_global_chunk_tile_count_matches_the_live_translated_arrays(_resident_pr
 
 
 @requires_resident_gpu
+def test_global_chunks_prepare_their_own_unshifted_operands(_resident_production_env, monkeypatch):
+    """Without the half's resident operands, each chunk prepares its own images' unshifted
+    operands, not the translated tiles, and the pass returns what the resident operands give.
+
+    The operands are per-image pure, so only the M-step's float32 atomics may differ: the
+    maps are held to the atomics' order bound, the ordered statistics to the default band.
+    """
+
+    args = _driver_fixture_args()
+    dataset = args["experiment_dataset"]
+    dataset.image_source.image_mask = jnp.linspace(
+        0.2, 1.0, dataset.image_size, dtype=jnp.float32
+    ).reshape(dataset.image_shape)
+    args["score_with_masked_images"] = True
+    resident = rp.compute_pass2_stats_resident(**args)
+
+    chunk_calls, tile_calls = [], []
+    real_chunk, real_tiles = rp.unshifted_chunk_operands, rp._prepare_chunk_reconstruction_operands
+    monkeypatch.setattr(rp, "_resident_operands_fit", lambda *a, **k: False)
+    monkeypatch.setattr(
+        rp, "unshifted_chunk_operands", lambda *a, **k: chunk_calls.append(1) or real_chunk(*a, **k)
+    )
+    monkeypatch.setattr(
+        rp, "_prepare_chunk_reconstruction_operands", lambda **k: tile_calls.append(1) or real_tiles(**k)
+    )
+    per_chunk = rp.compute_pass2_stats_resident(**args)
+    assert chunk_calls and not tile_calls
+
+    assert_matches(resident.hard_assignment, per_chunk.hard_assignment)
+    assert_matches(resident.best_rotation_indices, per_chunk.best_rotation_indices)
+    assert_matches(resident.best_translations, per_chunk.best_translations)
+    assert_matches(np.asarray(resident.score_log_z), np.asarray(per_chunk.score_log_z))
+    for field in (
+        "log_evidence_per_image",
+        "best_log_score_per_image",
+        "max_posterior_per_image",
+        "rotation_posterior_sums",
+    ):
+        assert_matches(
+            np.asarray(getattr(resident.relion_stats, field)),
+            np.asarray(getattr(per_chunk.relion_stats, field)),
+            err_msg=field,
+        )
+    for field in ("wsum_sigma2_noise", "wsum_norm_correction"):
+        assert_matches(
+            np.asarray(getattr(per_chunk.noise_stats, field), dtype=np.float64),
+            np.asarray(getattr(resident.noise_stats, field), dtype=np.float64),
+            rtol=1e-6,
+            err_msg=field,
+        )
+
+    def rel_l2(a, b):
+        a = np.asarray(a)
+        b = np.asarray(b)
+        den = float(np.linalg.norm(a))
+        return float(np.linalg.norm(a - b) / den) if den else 0.0
+
+    bound = _float32_atomic_order_bound(args)
+    assert rel_l2(resident.Ft_y, per_chunk.Ft_y) < bound
+    assert rel_l2(resident.Ft_ctf, per_chunk.Ft_ctf) < bound
+
+
+@requires_resident_gpu
 def test_resident_driver_repeats_itself(_resident_production_env):
     """The resident driver's own repeat band, the reference for the table above."""
 

@@ -131,6 +131,7 @@ from relax.sparse_pass2.resident_operands import (
     describe_resident_operand_mismatch,
     gather_resident_chunk_operands,
     prepare_resident_half_operands,
+    require_unshifted_operand_support,
     resident_half_operand_avals,
     resident_half_operand_bytes,
     resident_half_operand_presence,
@@ -2857,15 +2858,20 @@ def _resident_pass2(
 
     def plan_chunks(unshifted_operands: bool):
         chunk_budget_bytes = resident_chunk_budget_bytes(reserved_bytes=reserved_operand_bytes)
-        image_ladder = resident_image_capacity_start(
-            parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER),
-            n_fine_trans=n_fine_trans,
-            n_recon_pixels=n_recon_windowed,
-            max_tile_bytes=_max_translation_tile_bytes_for_pass(
-                device_memory_bytes, has_external_normalization=False
-            ),
-            chunk_budget_bytes=chunk_budget_bytes,
-        )
+        image_ladder = parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER)
+        if not (unshifted_operands and chunk_budget_bytes is not None):
+            # The fixed translation-tile budget bounds the translated tiles; an
+            # unshifted chunk holds only the Wavg rectangle and its exact
+            # positions, which the joint plan below counts against the budget.
+            image_ladder = resident_image_capacity_start(
+                image_ladder,
+                n_fine_trans=n_fine_trans,
+                n_recon_pixels=n_recon_windowed,
+                max_tile_bytes=_max_translation_tile_bytes_for_pass(
+                    device_memory_bytes, has_external_normalization=False
+                ),
+                chunk_budget_bytes=chunk_budget_bytes,
+            )
         mstep_block_rows = _resolve_mstep_block_rows(
             n_recon_pixels=n_recon_windowed,
             max_block_bytes=_max_adjoint_block_bytes_for_pass(device_memory_bytes),
@@ -2936,8 +2942,6 @@ def _resident_pass2(
 
         return memory_plan, row_ladder, image_ladder, mstep_block_rows, chunks, plan
 
-    planned_unshifted = bool(reserved_operand_bytes)
-    memory_plan, row_ladder, image_ladder, mstep_block_rows, chunks, plan = plan_chunks(planned_unshifted)
     # ---- preparation arguments --------------------------------------------
     # One keyword set, used by whichever preparation the pass selects: the
     # once-per-half resident preparation below, or the per-chunk call that
@@ -2966,6 +2970,21 @@ def _resident_pass2(
         relion_exact_bpref_operands=relion_exact_bpref_operands,
         noise_optics_groups=optics_groups_np,
     )
+    # Without the half's resident operands (streamed projections, or operands
+    # too large), a chunk prepares its own images' unshifted operands (T16)
+    # where they are supported, instead of translated tiles: several times
+    # smaller per image, so a chunk takes more images. At K=1 100k/256 hp3 the
+    # tiles held 32 images per chunk, 1560 chunks per half (job 14561455).
+    chunk_unshifted_supported = _chunk_unshifted_operands_supported(
+        bucket_io_kwargs,
+        window_indices=window_indices,
+        recon_window_indices=recon_window_indices,
+        firstiter_cc=firstiter_cc,
+        relion_native_fine_units=relion_native_fine_units,
+        relion_exact_bpref_operands=relion_exact_bpref_operands,
+    )
+    planned_unshifted = bool(reserved_operand_bytes) or chunk_unshifted_supported
+    memory_plan, row_ladder, image_ladder, mstep_block_rows, chunks, plan = plan_chunks(planned_unshifted)
 
     # ---- resident row-aligned tables --------------------------------------
     mstep_grid = (
@@ -3247,6 +3266,7 @@ def _resident_pass2(
                         "Resident pass-2 keeps the per-chunk operand preparation: %s", reason
                     )
                     resident_operands = None
+                    chunk_unshifted_supported = False
                 else:
                     if int(resident_operands.n_score_pixels) != int(n_windowed):
                         raise ValueError(
@@ -3305,7 +3325,10 @@ def _resident_pass2(
                         else "matches the prepared operands",
                     )
 
-    if planned_unshifted and resident_operands is None:
+    chunk_unshifted = resident_operands is None and chunk_unshifted_supported
+    if chunk_unshifted:
+        logger.info("Resident pass-2 prepares each chunk's unshifted per-image operands")
+    elif planned_unshifted and resident_operands is None:
         # The chunks were sized for the unshifted operands; the per-chunk
         # preparation holds the translated tiles, several times their size.
         logger.info("Resident pass-2 plans its chunks again for the per-chunk operand preparation")
@@ -3361,6 +3384,8 @@ def _resident_pass2(
             rect_indices_device=rect_indices_device,
             recon_pixel_indices=recon_pixel_indices_device,
             resident_operands=resident_operands,
+            chunk_unshifted_operands=chunk_unshifted,
+            precision_policy=precision_policy,
             verify_operands=verify_operands and chunk is chunks[0],
             image_shape=image_shape,
             current_size=current_size,
@@ -4709,6 +4734,115 @@ def _make_chunk_stage_tables(
         window_logical=window_logical,
         union_score_take=union_score_take,
         union_recon_take=union_recon_take,
+    )
+
+
+def _chunk_unshifted_operands_supported(
+    bucket_io_kwargs,
+    *,
+    window_indices,
+    recon_window_indices,
+    firstiter_cc,
+    relion_native_fine_units,
+    relion_exact_bpref_operands,
+) -> bool:
+    """Whether a chunk can take its own images' unshifted operands (:func:`unshifted_chunk_operands`).
+
+    The checks :func:`prepare_resident_half_operands` makes, before any image
+    is prepared, so the chunks are sized for the operand family they will use.
+    The ``--firstiter_cc`` iteration scores translated normalized-CC tiles,
+    which only the translated preparation builds.
+    """
+
+    if not _resident_operands_requested() or firstiter_cc:
+        return False
+    try:
+        require_unshifted_operand_support(
+            bucket_io_kwargs, window_indices=window_indices, recon_window_indices=recon_window_indices
+        )
+        if relion_native_fine_units and not relion_exact_bpref_operands:
+            raise ResidentOperandsUnsupported(
+                "native-unit fine scores without RELION's RFLOAT CTF operand"
+            )
+    except ResidentOperandsUnsupported as reason:
+        logger.info("Resident pass-2 chunks keep the translated tiles: %s", reason)
+        return False
+    return True
+
+
+def unshifted_chunk_operands(
+    experiment_dataset,
+    image_indices,
+    *,
+    image_capacity: int,
+    bucket_io_kwargs,
+    window_indices,
+    recon_window_indices,
+    rect_indices_device,
+    exact_positions_device,
+    translation_angles,
+    noise_shell_indices_half,
+    n_noise_shells: int,
+    image_shape,
+    current_size,
+    n_fine_trans: int,
+    accumulate_noise,
+    source_faithful_spectrum_norm: bool,
+    fine_translation_prior_2d,
+    scale_corrections_np,
+    group_ids_np,
+    optics_groups_np,
+    precision_policy,
+    use_exact_relion_gaussian: bool = True,
+    relion_native_fine_units: bool = False,
+):
+    """One chunk's unshifted per-image operands, gathered at the chunk's image capacity.
+
+    The once-per-half preparation (T16, :func:`prepare_resident_half_operands`)
+    run for the chunk's own images, then its chunk gather: the M-step
+    translates these operands inside T15's translate-and-sum kernel, which
+    skips zero weights, instead of reducing a pre-shifted ``[images,
+    translations, pixels]`` tile. Per chunk, not per half, so the operands
+    never scale with the particle count. The padded slots carry -1 and the
+    gather zeroes them, as the tile path's capacity mask did. Raises
+    :class:`ResidentOperandsUnsupported` for a configuration the preparation
+    does not cover.
+    """
+
+    operands = prepare_resident_half_operands(
+        experiment_dataset,
+        image_indices,
+        bucket_io_kwargs=bucket_io_kwargs,
+        window_indices=window_indices,
+        recon_window_indices=recon_window_indices,
+        wavg_rect_indices=rect_indices_device,
+        noise_shell_indices_half=noise_shell_indices_half,
+        n_noise_shells=int(n_noise_shells),
+        image_shape=image_shape,
+        current_size=current_size,
+        n_fine_trans=int(n_fine_trans),
+        use_exact_relion_gaussian=bool(use_exact_relion_gaussian),
+        accumulate_noise=accumulate_noise,
+        source_faithful_spectrum_norm=bool(source_faithful_spectrum_norm),
+        fine_translation_prior_2d=fine_translation_prior_2d,
+        scale_corrections_np=scale_corrections_np,
+        group_ids_np=group_ids_np,
+        precision_policy=precision_policy,
+        image_batch_size=int(image_capacity),
+        optics_groups_np=optics_groups_np,
+        relion_native_fine_units=bool(relion_native_fine_units),
+        log_summary=False,
+    )
+    n_images = int(np.asarray(image_indices).shape[0])
+    image_slots = np.full(int(image_capacity), -1, dtype=np.int32)
+    image_slots[:n_images] = np.arange(n_images, dtype=np.int32)
+    return gather_resident_chunk_operands(
+        operands,
+        image_slots,
+        translation_angles=translation_angles,
+        rect_indices=rect_indices_device,
+        exact_positions=exact_positions_device,
+        image_shape=image_shape,
     )
 
 
@@ -6788,6 +6922,8 @@ def _run_resident_chunk(
     image_shape,
     current_size,
     mstep_current_size,
+    chunk_unshifted_operands=False,
+    precision_policy=None,
     mstep_max_r,
     recon_volume_shape,
     max_adjoint_block_bytes,
@@ -6878,7 +7014,33 @@ def _run_resident_chunk(
             jax.block_until_ready(projection_score_cache)
             stage_t["projections"] = time.time() - chunk_t0
 
-    if resident_operands is None:
+    if resident_operands is None and chunk_unshifted_operands:
+        recon = unshifted_chunk_operands(
+            experiment_dataset,
+            image_indices,
+            image_capacity=image_capacity,
+            bucket_io_kwargs=bucket_io_kwargs,
+            window_indices=window_indices,
+            recon_window_indices=recon_window_indices,
+            rect_indices_device=rect_indices_device,
+            exact_positions_device=exact_positions_device,
+            translation_angles=translation_angles,
+            noise_shell_indices_half=image_tables.shell_indices_half,
+            n_noise_shells=int(stats_config.n_shells),
+            image_shape=image_shape,
+            current_size=current_size,
+            n_fine_trans=int(n_fine_trans),
+            use_exact_relion_gaussian=use_exact_relion_gaussian,
+            accumulate_noise=accumulate_noise,
+            source_faithful_spectrum_norm=bool(source_faithful_spectrum_norm),
+            fine_translation_prior_2d=fine_translation_prior_2d,
+            scale_corrections_np=scale_corrections_np,
+            group_ids_np=group_ids_np,
+            optics_groups_np=optics_groups_np,
+            precision_policy=precision_policy,
+            relion_native_fine_units=relion_native_fine_units,
+        )
+    elif resident_operands is None:
         recon = _prepare_chunk_reconstruction_operands(
             chunk=chunk,
             image_indices=image_indices,
@@ -6959,10 +7121,11 @@ def _run_resident_chunk(
                 label=f"chunk images {chunk.image_start}-{chunk.image_stop}",
                 cuda_backproject=cuda_backproject,
             )
+    # The unshifted operands, the half's or this chunk's, carry recon_image; the
+    # M-step translates them inside the translate-and-sum kernel.
+    unshifted_operands = recon.get("recon_image") is not None
     if timing:
-        jax.block_until_ready(
-            recon["shifted_recon"] if resident_operands is None else recon["recon_image"]
-        )
+        jax.block_until_ready(recon["recon_image"] if unshifted_operands else recon["shifted_recon"])
         stage_t["operands"] = time.time() - chunk_t0
 
     # The prior squared distances are a per-image host table; building them at
@@ -7019,10 +7182,8 @@ def _run_resident_chunk(
         max_adjoint_block_bytes=max_adjoint_block_bytes,
         stats_config=stats_config,
         use_rfloat_ctf_wavg=recon["direct_ctf_rfloat_recon"] is not None,
-        use_translate_sum_kernel=resident_operands is not None,
-        bpref_recon_operand=(
-            resident_operands is not None and resident_operands.recon_weight is not None
-        ),
+        use_translate_sum_kernel=unshifted_operands,
+        bpref_recon_operand=unshifted_operands and recon.get("recon_weight") is not None,
         reuse_coarse_normalization=coarse_reuse is not None,
         firstiter_cc=firstiter_cc,
         n_slots=int(tables.n_slots),

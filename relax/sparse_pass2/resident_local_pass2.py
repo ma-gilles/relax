@@ -107,8 +107,6 @@ from relax.sparse_pass2.resident_local_layout import (
 )
 from relax.sparse_pass2.resident_operands import (
     ResidentOperandsUnsupported,
-    gather_resident_chunk_operands,
-    prepare_resident_half_operands,
     require_unshifted_operand_support,
 )
 from relax.sparse_pass2.resident_scoring import (
@@ -1165,81 +1163,16 @@ def _local_chunk_segment_offsets(tables, chunk, n_fine_trans: int) -> np.ndarray
     return offsets.astype(np.int32)
 
 
-def _unshifted_chunk_operands(
-    experiment_dataset,
-    image_indices,
-    *,
-    image_capacity: int,
-    bucket_io_kwargs,
-    window_indices,
-    recon_window_indices,
-    rect_indices_device,
-    exact_positions_device,
-    translation_angles,
-    noise_shell_indices_half,
-    n_noise_shells: int,
-    image_shape,
-    current_size,
-    n_fine_trans: int,
-    accumulate_noise,
-    source_faithful_spectrum_norm: bool,
-    fine_translation_prior_2d,
-    scale_corrections_np,
-    group_ids_np,
-    optics_groups_np,
-    precision_policy,
-):
-    """One chunk's unshifted per-image operands, or ``None`` where they are refused.
-
-    The global pass's once-per-half preparation (T16) run for the chunk's own
-    images, then its chunk gather: the M-step translates these operands inside
-    T15's translate-and-sum kernel, which skips zero weights, instead of
-    reducing a pre-shifted ``[images, translations, pixels]`` tile. Per chunk,
-    not per half, so the operands never scale with the particle count. The
-    padded slots carry -1 and the gather zeroes them, as the tile path's
-    capacity mask did.
-    """
+def _unshifted_chunk_operands(experiment_dataset, image_indices, **kwargs):
+    """:func:`resident_pass2.unshifted_chunk_operands`, or ``None`` where they are refused."""
 
     try:
-        operands = prepare_resident_half_operands(
-            experiment_dataset,
-            image_indices,
-            bucket_io_kwargs=bucket_io_kwargs,
-            window_indices=window_indices,
-            recon_window_indices=recon_window_indices,
-            wavg_rect_indices=rect_indices_device,
-            noise_shell_indices_half=noise_shell_indices_half,
-            n_noise_shells=int(n_noise_shells),
-            image_shape=image_shape,
-            current_size=current_size,
-            n_fine_trans=int(n_fine_trans),
-            use_exact_relion_gaussian=True,
-            accumulate_noise=accumulate_noise,
-            source_faithful_spectrum_norm=bool(source_faithful_spectrum_norm),
-            fine_translation_prior_2d=fine_translation_prior_2d,
-            scale_corrections_np=scale_corrections_np,
-            group_ids_np=group_ids_np,
-            precision_policy=precision_policy,
-            image_batch_size=int(image_capacity),
-            optics_groups_np=optics_groups_np,
-            log_summary=False,
-        )
+        return rp.unshifted_chunk_operands(experiment_dataset, image_indices, **kwargs)
     except ResidentOperandsUnsupported as reason:
         logger.info(
             "Resident local pass-2 keeps the pre-shifted translation tiles: %s", reason
         )
         return None
-    n_images = int(np.asarray(image_indices).shape[0])
-    image_slots = np.full(int(image_capacity), -1, dtype=np.int32)
-    image_slots[:n_images] = np.arange(n_images, dtype=np.int32)
-    return gather_resident_chunk_operands(
-        operands,
-        image_slots,
-        translation_angles=translation_angles,
-        rect_indices=rect_indices_device,
-        exact_positions=exact_positions_device,
-        image_shape=image_shape,
-    )
 
 
 class _LiveRowsFirst(NamedTuple):
