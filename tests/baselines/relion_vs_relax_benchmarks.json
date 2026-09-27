@@ -2426,6 +2426,131 @@
    "quality_reason": "worst s29 −1.2e-4 vs same-seed RELION; s29 below across-seed RELION band 0.239791-0.241146 (masked mean GT FSC-AUC)"
   },
   {
+   "id": "synth_pdb_k2_50k256_class3d_25it",
+   "section": "synthetic",
+   "dataset": "synth_pdb_k2_50k256 (new generation, B 40)",
+   "empiar_id": null,
+   "particles": 50000,
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "symmetry": "C1",
+   "classes": 2,
+   "workflow": "Class3D K=2 (25 iterations, GUI defaults)",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 + MPI scale-sum patch (relax #1), relion_refine --j 12 (non-MPI), one H100, --scratch_dir",
+    "resolution_A": 24.727273,
+    "resolution_definition": "engine_current_resolution",
+    "relion_reported_resolution_A": 24.727273,
+    "masked_resolution_A": null,
+    "wall_s": 2261,
+    "wall_definition": "arm-script wall (WALL.json) of relion_refine, same node and time as relax",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 25,
+    "jobs": [
+     "14557769"
+    ],
+    "masked_band_auc": null
+   },
+   "relax": {
+    "source_sha": "6a53f9ce394be474bb7601a65984d7ab594a43f1",
+    "source_repo": "relax main 6a53f9c (frozen candidate cand_6a53f9c, sealed native libraries, pinned recovar 5514ac6), production defaults",
+    "resolution_A": 24.727272727272727,
+    "resolution_definition": "engine_current_resolution",
+    "masked_resolution_A": null,
+    "wall_s": 1516,
+    "wall_definition": "arm-script wall of python relax_run.py end to end, empty JAX cache (WALL.json)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 25,
+    "jobs": [
+     "14557769"
+    ],
+    "masked_band_auc": null
+   },
+   "gt": {
+    "metric": "mean per-class GT FSC-AUC, masked with the frozen mask synth_pdb_k2_50k256_c1 (classes matched to GT by Hungarian on unmasked AUC); seed 29; RELION = patched build run non-MPI",
+    "relion": 0.09788,
+    "relax": 0.097166,
+    "relion_band": [
+     0.09788,
+     0.09788
+    ],
+    "relion_band_runs": [
+     "ng_relion_s29"
+    ],
+    "relax_per_seed": {
+     "29": 0.097166
+    },
+    "relion_per_seed": {
+     "29": 0.09788
+    },
+    "class_accuracy_relax_per_seed": {
+     "29": 0.72298
+    },
+    "class_accuracy_relion_per_seed": {
+     "29": 0.72202
+    },
+    "unmasked_relax_per_seed": {
+     "29": 0.07742
+    },
+    "unmasked_relion_per_seed": {
+     "29": 0.077989
+    }
+   },
+   "cross_engine": "same-seed masked relax-vs-RELION FSC-AUC per GT class: seed 29 0.9859/0.9920",
+   "cross_engine_masked_band_auc": null,
+   "time_ratio_relax_over_relion": 0.67,
+   "matched": "yes",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": true
+   },
+   "notes": [
+    "New-generation synthetic fixture synth_pdb_k2_50k256_20260927 (curated, README in the fixture): 50000 particles, box 256, 2.125 Å/px, noise_level 1.0, total B 40 Å² (README), seed 42.",
+    "Standalone Class3D from the fixture's reference_init_classes_relion.star on both engines. RELION command: --i particles.star --ref reference_init_classes_relion.star --K 2 --tau2_fudge 4 --iter 25 --sym C1 --healpix_order 2 --offset_range 5 --offset_step 2 --particle_diameter 380 --ini_high 60 --firstiter_cc --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --pool 3 --dont_combine_weights_via_disc --random_seed 29; relax the same settings with production defaults on main 6a53f9c.",
+    "seed 29: masked mean GT FSC-AUC relax 0.097166 / RELION 0.097880 (unmasked 0.077420 / 0.077989); class accuracy 0.72298 / 0.72202; masked relax-vs-RELION per GT class 0.9859/0.9920; walls relax 1516 s / RELION 2261 s"
+   ],
+   "null_reasons": {
+    "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
+    "relion.masked_band_auc": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
+    "relax.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
+    "relax.masked_band_auc": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
+    "cross_engine_masked_band_auc": "Class3D has no gold-standard half maps; the masked per-class cross-engine FSC-AUC is in cross_engine"
+   },
+   "evidence": {
+    "run_roots": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_c3d_k2_50k/s29"
+    ],
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/SCORE_ng_c3d_k2_50k.json",
+    "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py",
+    "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/synth_pdb_k2_50k256_20260927",
+    "relion_runs": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_refresh_20260927/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_c3d_k2_50k/s29/relion"
+    ]
+   },
+   "date": "2026-09-27",
+   "history": [],
+   "time_check": {
+    "a": "One Slurm job (14557769, della-h19g1): relax and RELION started together as two srun steps, one H100 and 12 CPUs each; RELION relion_refine --j 12 non-MPI (patched build)",
+    "b": "relax production defaults (every RELAX_* variable and XLA_PYTHON_CLIENT_MEM_FRACTION unset), empty per-arm compile cache, standalone start-up; --scratch_dir on node-local /tmp for both",
+    "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, particle copy, compilation and final writes included",
+    "d": "H100 80GB HBM3 on both GPUs (GPU.csv); same node, same time"
+   },
+   "mask": {
+    "dataset": "synth_pdb_k2_50k256_c1",
+    "sha256": "babe27c751e81f2477221de36d49f239bb74f423b7b382de365ab0a385c8d196"
+   },
+   "quality_pass": false,
+   "quality_reason": "masked mean GT AUC 0.0972 vs RELION 0.0979 (−7.1e-4); class acc 0.7230 vs 0.7220 (seed 29)"
+  },
+  {
    "id": "noise1_k1_50k256_initialmodel_vdam_200it",
    "table": "initialmodel",
    "section": "synthetic",
