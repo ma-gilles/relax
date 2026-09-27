@@ -123,11 +123,23 @@ def setup_relion_projector_on_host(
     if 0 < radius < ori_size // 2:
         quantum = stable_fourier_window_quantum()
         window = stable_fourier_window_current_size(2 * radius, ori_size, quantum=quantum) // 2
-    reference = gridding_correct_volume_real(reference, ori_size, padding_factor)
+    reference = _gridding_corrected(reference, ori_size=ori_size, padding_factor=padding_factor)
     return _build_projector_window(
         reference, radius, ori_size, padding_factor, window,
         chunk_bytes=chunk_bytes, to_host=True, output_radius=radius,
     )
+
+
+@partial(jax.jit, static_argnames=("ori_size", "padding_factor"))
+def _gridding_corrected(reference, *, ori_size: int, padding_factor: int):
+    """:func:`gridding_correct_volume_real` as one fused program.
+
+    Called eagerly it materializes its coordinate grids, radius and sinc as
+    separate volumes: about 31 GiB of float64 temporaries at box 800, the peak of
+    the whole host build (bigbox 14575379).
+    """
+
+    return gridding_correct_volume_real(reference, ori_size, padding_factor)
 
 
 def _checked_reference(reference_relion, ori_size, padding_factor, compute_dtype):
