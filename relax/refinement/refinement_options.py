@@ -24,7 +24,8 @@ class RefinementSchedule:
     max_iter: int = 10
     init_current_size: int = 32
     init_healpix_order: int = 2
-    max_healpix_order: int = 7
+    # None: RELION's auto-refine has no HEALPix cap; an int is an explicit opt-in cap.
+    max_healpix_order: int | None = None
     init_translation_range: float = 10.0
     init_translation_step: float = 2.0
     init_translation_sigma_angstrom: float = 10.0
@@ -323,7 +324,7 @@ def _validate_relion_healpix_orders(orders, *, max_iter, init_healpix_order, max
             "relion_healpix_orders cannot coarsen below init_healpix_order "
             f"({orders[0]} < {int(init_healpix_order)})"
         )
-    if orders[-1] > int(max_healpix_order):
+    if max_healpix_order is not None and orders[-1] > int(max_healpix_order):
         raise ValueError(
             "relion_healpix_orders exceeds max_healpix_order "
             f"({orders[-1]} > {int(max_healpix_order)})"

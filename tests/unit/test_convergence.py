@@ -13,6 +13,7 @@ Tests cover:
 """
 
 import logging
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -103,6 +104,24 @@ class TestRefinementStateConstruction:
         )
         assert state.has_fine_enough_angular_sampling is False
         assert update_angular_sampling(state).has_fine_enough_angular_sampling is True
+
+    def test_uncapped_sampling_refines_past_order_7_until_fine_enough(self):
+        """RELION's auto-refine has no HEALPix cap (ml_optimiser.cpp updateAngularSampling,
+        11731-11753): with the step still above 75% of acc_rot the order goes up, and the
+        latch fires only once it is below. EMPIAR-10202 needed HEALPix 9 (RELION 14475516)."""
+
+        state = RefinementState(
+            healpix_order=7,
+            acc_rot=0.1,
+            nr_iter_wo_resol_gain=1,
+            nr_iter_wo_assignment_changes=1,
+        )
+        assert state.max_healpix_order is None
+        refined = update_angular_sampling(state)
+        assert refined.healpix_order == 8
+        assert refined.has_fine_enough_angular_sampling is False
+        capped = update_angular_sampling(replace(state, max_healpix_order=7))
+        assert capped.healpix_order == 7 and capped.has_fine_enough_angular_sampling is False
 
     def test_resolution_required_sampling_does_not_replace_measured_acc_rot(self):
         """RELION's fine-enough decision uses acc_rot, not resolution."""

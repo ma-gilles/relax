@@ -110,6 +110,15 @@ the cached-path chunk gather (131072 rows x 36514 pixels = 35.7 GiB, now bounded
 measured free memory) and the low-resolution half join, which moved a physically
 large grid's host accumulators back to the device before the 1600^3 inverse FFT.
 
+K=1 auto-refine HEALPix cap removed (2026-09-27, team-lead decision): relax capped K=1 sampling
+at HEALPix order 7 by default, and at the cap `convergence.update_angular_sampling` never latches
+`has_fine_enough_angular_sampling`, so a dataset that needs a finer grid never converges. RELION's
+auto-refine has no cap (ml_optimiser.cpp `updateAngularSampling`, 11731-11753: the order goes up
+while the old step is at least 75% of `acc_rot`, and the flag latches below it). On EMPIAR-10202
+RELION went to order 8 at iteration 21 and 9 at 24 and converged at 27 (14475516), while relax
+continuations sat at order 7 and 2.96 A for 23 and 44 iterations (bigbox 14522322, 14514496). The
+default is now uncapped; `--max_healpix_order` remains an explicit opt-in cap.
+
 Run files and `--continue` (2026-09-26): auto-refine and Class3D write RELION's
 `run_itNNN_{optimiser,model,data,sampling}.star` and maps every iteration and continue from
 them ([algorithm map section 8](../math/relion_refinement_algorithm.md)). Two departures from

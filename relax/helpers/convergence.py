@@ -370,8 +370,11 @@ class RefinementState:
     voxel_size_angstrom : float
         Pixel size used to convert the stored pixel translation grid to the
         Angstrom units used by RELION's sampling scheduler.
-    max_healpix_order : int
-        Maximum allowed HEALPix order (finest angular sampling).
+    max_healpix_order : int or None
+        Optional cap on the HEALPix order (finest angular sampling). ``None``,
+        the default, is RELION's auto-refine: no cap, the sampling refines until
+        ``has_fine_enough_angular_sampling`` latches (ml_optimiser.cpp
+        ``updateAngularSampling``, 11731-11753).
     auto_local_healpix_order : int
         RELION ``--auto_local_healpix_order`` threshold. Local searches are
         enabled when ``healpix_order >= auto_local_healpix_order`` and
@@ -433,7 +436,7 @@ class RefinementState:
     particle_diameter_angstrom: float = 0.0
 
     # Limits
-    max_healpix_order: int = 7
+    max_healpix_order: int | None = None
     auto_local_healpix_order: int = LOCAL_SEARCH_HEALPIX_ORDER
     auto_sampling: bool = True
     auto_resolution_based_angles: bool = False
@@ -994,7 +997,7 @@ def update_angular_sampling(state: RefinementState) -> RefinementState:
             _fine_enough_angular_accuracy(state),
         )
         return replace(state, has_fine_enough_angular_sampling=True)
-    if state.healpix_order >= state.max_healpix_order:
+    if state.max_healpix_order is not None and state.healpix_order >= state.max_healpix_order:
         logger.info(
             "Angular sampling reached max_healpix_order=%d; keeping RELION "
             "fine-enough flag false",

@@ -419,7 +419,7 @@ def _fixed_diagnostic_runtime_config(
         "provenance_verification_scope": FROZEN_BOUNDARY_PROVENANCE_VERIFICATION_SCOPE,
         "numerical_classification_scope": FROZEN_BOUNDARY_NUMERICAL_CLASSIFICATION_SCOPE,
         "auto_local_healpix_order": int(args.auto_local_healpix_order),
-        "max_healpix_order": int(effective_max_healpix_order),
+        "max_healpix_order": -1 if effective_max_healpix_order is None else int(effective_max_healpix_order),
         "max_significants": int(args.max_significants),
         "particle_diameter_angstrom": float(particle_diameter),
         "width_mask_edge_px": float(mask_edge),
@@ -638,14 +638,18 @@ def _resolve_effective_max_healpix_order(
     n_classes: int,
     healpix_order: int,
     max_healpix_order: int | None,
-) -> tuple[int, str]:
-    """Resolve the backend HEALPix refinement cap.
+) -> tuple[int | None, str]:
+    """Resolve the backend HEALPix refinement cap (``None``: uncapped).
 
     RELION Class3D runs launched with ``--healpix_order`` use fixed coarse
     sampling (``_rlnDoAutoSampling 0`` in the optimiser STAR).  In that mode,
     adaptive oversampling only controls the pass-2 child grid; it does not let
-    later iterations increase the coarse HEALPix order.  K=1 auto-refine keeps
-    RECOVAR's historical broad cap unless an explicit cap is provided.
+    later iterations increase the coarse HEALPix order.  K=1 auto-refine has no
+    cap, as RELION's has none (ml_optimiser.cpp ``updateAngularSampling``,
+    11731-11753): the sampling refines until the step is below 75% of the
+    measured angular accuracy. The historical K=1 cap of 7 kept EMPIAR-10202
+    from ever converging (RELION reached HEALPix 9, job 14475516). An explicit
+    cap stays available.
     """
     init_order = int(healpix_order)
     if init_order < 0:
@@ -654,7 +658,7 @@ def _resolve_effective_max_healpix_order(
     if max_healpix_order is None:
         if int(n_classes) > 1:
             return init_order, "RELION Class3D fixed --healpix_order"
-        return 7, "K=1 auto-refine default"
+        return None, "K=1 auto-refine, uncapped as RELION"
 
     cap = int(max_healpix_order)
     if cap < init_order:
@@ -2023,11 +2027,11 @@ def _parse_args(argv=None):
         type=int,
         default=None,
         help=(
-            "Maximum coarse HEALPix order for RECOVAR's RELION-style sampling "
+            "Optional cap on the coarse HEALPix order of RELION-style sampling "
             "updates. If omitted, K>1 Class3D stays fixed at --healpix_order "
-            "to match RELION's _rlnDoAutoSampling=0 command path; K=1 keeps "
-            "the historical auto-refine cap of 7. Set explicitly to allow "
-            "Class3D coarse-grid refinement."
+            "to match RELION's _rlnDoAutoSampling=0 command path, and K=1 "
+            "auto-refine is uncapped as RELION's is. Set explicitly to cap K=1 "
+            "or to allow Class3D coarse-grid refinement."
         ),
     )
     parser.add_argument(
@@ -3841,8 +3845,8 @@ def main():
         args.adaptive_oversampling,
     )
     logger.info(
-        "Max coarse HEALPix order: %d (%s)",
-        effective_max_healpix_order,
+        "Max coarse HEALPix order: %s (%s)",
+        "none" if effective_max_healpix_order is None else effective_max_healpix_order,
         max_healpix_order_source,
     )
 
@@ -5071,7 +5075,7 @@ def main():
         "healpix_order": args.healpix_order,
         "coarse_healpix_order": init_healpix_order,
         "finest_healpix_order": finest_healpix_order,
-        "max_healpix_order": effective_max_healpix_order,
+        "max_healpix_order": -1 if effective_max_healpix_order is None else effective_max_healpix_order,
         "max_healpix_order_source": np.asarray(max_healpix_order_source),
         "n_rotations": n_rotations,
         "n_translations": translations.shape[0],
@@ -5382,7 +5386,7 @@ def main():
             "healpix_order": int(args.healpix_order),
             "coarse_healpix_order": int(init_healpix_order),
             "finest_healpix_order": int(finest_healpix_order),
-            "max_healpix_order": int(effective_max_healpix_order),
+            "max_healpix_order": None if effective_max_healpix_order is None else int(effective_max_healpix_order),
             "max_healpix_order_source": str(max_healpix_order_source),
             "auto_local_healpix_order": int(args.auto_local_healpix_order),
             "adaptive_oversampling": int(args.adaptive_oversampling),

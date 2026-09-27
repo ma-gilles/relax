@@ -1095,7 +1095,7 @@ def apply_iter_replay_overrides(
             raise ValueError("sealed frozen-boundary sampling currently owns exactly one iteration")
         _px = float(cryo.voxel_size) if cryo.voxel_size > 0 else 1.0
         _relion_hp = int(sealed_sampling_state["healpix_order_original"])
-        if _relion_hp > int(state.max_healpix_order):
+        if state.max_healpix_order is not None and _relion_hp > int(state.max_healpix_order):
             raise ValueError(
                 "sealed sampling HEALPix order exceeds runtime maximum: "
                 f"sealed={_relion_hp} max={state.max_healpix_order}"
@@ -1182,7 +1182,7 @@ def apply_iter_replay_overrides(
             )
             _replay_prior_translations_np = _state_prior_translations
         _replay_prior_translations = jnp.array(_replay_prior_translations_np)
-        _capped_hp = min(_relion_hp, state.max_healpix_order)
+        _capped_hp = _relion_hp if state.max_healpix_order is None else min(_relion_hp, state.max_healpix_order)
         if state.healpix_order != _capped_hp:
             if _capped_hp < _relion_hp:
                 logger.info(

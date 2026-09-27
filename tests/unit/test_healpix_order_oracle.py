@@ -103,7 +103,7 @@ def test_sampling_validation_preserves_payloads_and_input_options(orders):
 )
 def test_sampling_validation_runs_at_entry_and_preserves_error_precedence(sizes, orders, message):
     options = RefinementOptions(
-        schedule=RefinementSchedule(max_iter=3, init_healpix_order=3),
+        schedule=RefinementSchedule(max_iter=3, init_healpix_order=3, max_healpix_order=7),
         adaptive=AdaptiveOptions(relion_current_sizes=sizes, relion_healpix_orders=orders),
     )
     # Invalid schedules can still be constructed for later configuration/replay.

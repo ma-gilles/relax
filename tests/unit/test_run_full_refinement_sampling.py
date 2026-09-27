@@ -136,15 +136,22 @@ def test_kclass_default_max_healpix_order_matches_relion_fixed_class3d_sampling(
     assert "Class3D fixed" in source
 
 
-def test_k1_default_max_healpix_order_keeps_autorefine_cap():
+def test_k1_default_max_healpix_order_is_uncapped_as_relion():
+    """RELION's auto-refine has no HEALPix cap (ml_optimiser.cpp updateAngularSampling); the
+    old K=1 cap of 7 kept EMPIAR-10202 from converging while RELION went to 9 (14475516)."""
+
     cap, source = _resolve_effective_max_healpix_order(
         n_classes=1,
         healpix_order=3,
         max_healpix_order=None,
     )
 
-    assert cap == 7
-    assert "auto-refine" in source
+    assert cap is None
+    assert "auto-refine" in source and "uncapped" in source
+    assert _resolve_effective_max_healpix_order(n_classes=1, healpix_order=3, max_healpix_order=7) == (
+        7,
+        "explicit CLI",
+    )
 
 
 def test_explicit_max_healpix_order_allows_kclass_refinement():

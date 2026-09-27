@@ -601,7 +601,8 @@ def _validate_runtime_config_against_capture(
     active_healpix_order = int(
         _shared_capture_scalar(capture, consumer, "sampling_healpix_order")
     )
-    if int(runtime_config["max_healpix_order"]) < active_healpix_order:
+    # -1 records an uncapped run (K=1 auto-refine without --max_healpix_order).
+    if 0 <= int(runtime_config["max_healpix_order"]) < active_healpix_order:
         raise ValueError("runtime max_healpix_order is below captured active sampling order")
     full_size = _shared_capture_vector(
         capture,
