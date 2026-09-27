@@ -199,7 +199,6 @@ from relax.sparse_pass2.sparse_pass2_wavg import (
     _make_stable_relion_wavg_rectangle,
     _relion_cuda_translate_wavg_norm_images,
     _relion_wavg_rectangle_image_power,
-    _relion_wavg_rectangle_power_contraction,
     _relion_wavg_shifted_power,
     _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
     image_power_shells,
