@@ -1,6 +1,6 @@
 """Per-optics-group noise in the exact local engine's big-JIT bucket route (CPU).
 
-Local search runs its pass-1 parent probe (score-only) and the full-box final pass
+Local search runs its pass-1 parent probe (score-only)
 on this route. Two optics groups with identical noise rows must reproduce the
 one-group result, and different rows must change it.
 """

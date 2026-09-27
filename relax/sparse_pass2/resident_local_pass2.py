@@ -284,21 +284,14 @@ def require_resident_local_configuration(**kwargs) -> None:
         not bool(kwargs["relion_wavg_atomic_direct_norm"]),
         "the direct per-particle Wavg norm arm is a stopped diagnostic",
     )
-    # RELION's final all-data iteration scores at current_size == ori_size.
-    # There the exact local engine scores the whole centred half, corners of
-    # the FFTW rectangle included, while RELION's radial support (which every
-    # windowed size uses, and which the RELION Wavg rectangle requires) stops
-    # at |k| <= current_size/2. Running this pass on the radial support was
-    # measured on the 8x8 unit fixture to move the maps by 0.45 relative L2 and
-    # to flip a winner, so it is a change of scoring support, not of layout.
-    # Deciding which support the final iteration should use is a scientific
-    # question outside a speed ticket, so refuse it here.
+    # RELION scores its radial support at every current size, the final
+    # all-data iteration's full box included (updateImageSizeAndResolutionPointers
+    # cuts the FFTW rectangle's corners); both local engines take that window at
+    # the box (window_at_box, aa03fd2), and the RELION Wavg rectangle requires it.
     _require(
         bool(kwargs["use_window"]),
-        "RELION's final all-data current_size equals the image box, where the "
-        "exact local engine scores the full rectangle and RELION's radial "
-        "support does not; choosing between them is a scientific decision, "
-        "not a layout change",
+        "the resident local pass scores RELION's radial window; a full-rectangle "
+        "support is not RELION's scoring support and is not implemented here",
     )
     for name in rp._DIAGNOSTIC_DIR_ENVS:
         _require(

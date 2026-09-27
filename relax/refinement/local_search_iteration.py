@@ -335,12 +335,7 @@ def _run_local_search_iteration(
             ),
         )
 
-    if (
-        resident_local_search_requested()
-        and not score_only
-        and current_size is not None
-        and int(current_size) < int(experiment_dataset.image_shape[0])
-    ):
+    if resident_local_search_requested() and not score_only and current_size is not None:
         # The device-resident local pass 2 (T12). Only the fine pass is routed
         # here: the pass-1 parent probe selects pass 2's candidate set with
         # RELION's ``maximum_significants`` cap, which the segmented float32
@@ -420,24 +415,16 @@ def _run_local_search_iteration(
         engine_outputs = None
         exact_local_reason = (
             "parent probe" if score_only
-            else "full-box final pass" if resident_local_search_requested()
+            else "no current size" if resident_local_search_requested()
             else f"{RESIDENT_LOCAL_SEARCH_ENV}=0"
         )
-        if resident_local_search_requested():
-            if score_only:
-                logger.info(
-                    "%s=1: the pass-1 parent probe keeps the exact local engine "
-                    "(its RELION maximum_significants cap is outside the segmented "
-                    "posterior's contract, and changing it would change pass 2's support)",
-                    RESIDENT_LOCAL_SEARCH_ENV,
-                )
-            else:
-                logger.info(
-                    "%s=1: this pass scores at current_size=%s, the full image box; "
-                    "it runs on the exact local engine with RELION's radial window",
-                    RESIDENT_LOCAL_SEARCH_ENV,
-                    current_size,
-                )
+        if resident_local_search_requested() and score_only:
+            logger.info(
+                "%s=1: the pass-1 parent probe keeps the exact local engine "
+                "(its RELION maximum_significants cap is outside the segmented "
+                "posterior's contract, and changing it would change pass 2's support)",
+                RESIDENT_LOCAL_SEARCH_ENV,
+            )
     if engine_outputs is None:
         record_pass_engine("local", "exact_local", exact_local_reason)
         engine_outputs = run_local_em_exact(

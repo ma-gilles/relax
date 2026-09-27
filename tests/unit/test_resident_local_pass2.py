@@ -175,6 +175,7 @@ def _run(
     projector_dtype=None,
     resident_operands: bool | None = None,
     zero_oversampling: bool = False,
+    exact: bool = False,
 ):
     """``production_shapes`` mirrors what the refinement loop actually passes:
     a projector with a singleton class axis, per-image contrast and scale
@@ -184,6 +185,8 @@ def _run(
 
     if resident:
         monkeypatch.setenv(rlp.RESIDENT_LOCAL_SEARCH_ENV, "1")
+    elif exact:
+        monkeypatch.setenv(rlp.RESIDENT_LOCAL_SEARCH_ENV, "0")
     else:
         monkeypatch.delenv(rlp.RESIDENT_LOCAL_SEARCH_ENV, raising=False)
     if resident_operands is None:
@@ -277,8 +280,8 @@ def test_dispatch_routes_only_the_fine_pass():
     assert "and not score_only" in source
     # the zero-oversampling route (every scored sample) is routed too
     assert "and reconstruct_significant_only" not in source
-    # and only below the full image box (RELION's final all-data shape)
-    assert "int(current_size) < int(experiment_dataset.image_shape[0])" in source
+    # at every current size, RELION's final all-data full box included
+    assert "int(current_size) < int(experiment_dataset.image_shape[0])" not in source
     assert "compute_local_search_resident" in source
     assert "class_log_priors" not in source
 
@@ -325,7 +328,7 @@ def test_dispatch_call_keywords_are_resident_parameters():
         ({"group_ids": None}, "group scale terms"),
         ({"normalization_log_evidence": np.zeros(3)}, "externally supplied normalizer"),
         ({"return_reconstruction_sample_indices": True}, "significant-sample capture"),
-        ({"use_window": False}, "scientific decision"),
+        ({"use_window": False}, "radial window"),
         ({"max_significants": 500}, "maximum_significants cap"),
         ({"stats_use_reconstruction_probs": False}, "same \\(pruned or complete\\) weights"),
     ],
@@ -427,31 +430,30 @@ def test_row_capacity_ladder_is_capped_by_the_projection_budget():
 
 
 @requires_resident_gpu
-def test_final_all_data_shape_keeps_the_exact_local_engine(monkeypatch, _resident_local_env):
+def test_final_all_data_shape_runs_resident_and_matches_the_exact_engine(monkeypatch, _resident_local_env):
     """``current_size == image box`` is RELION's final all-data shape.
 
-    The dispatch leaves that iteration on the exact local engine and says so,
-    because the two engines disagree about the scoring support there, not about
-    its layout: the exact engine scores the whole centred half including the
-    FFTW rectangle's corners, while RELION's radial support (the one every
-    windowed size uses, and the one the RELION Wavg rectangle requires) stops at
-    ``|k| <= current_size/2``. Running the pass on the radial support was
-    measured on this fixture to move the maps by 0.45 relative L2 and to flip a
-    winner, so it is not a rounding-level difference.
+    RELION scores its radial window there too (the FFTW rectangle's corners are
+    cut at every size), and both local engines take that window at the box
+    (window_at_box, aa03fd2), so the final pass runs on the resident driver.
+    It must agree with the exact engine on the same support to the bounds the
+    windowed sizes meet (test_resident_local_matches_the_exact_engine).
     """
+
+    from relax.sparse_pass2.engine_record import take_pass_engines
 
     case = _case()
     full = IMAGE_SHAPE[0]
-    with_flag = _run(case, resident=True, monkeypatch=monkeypatch, current_size=full)
-    without = _run(case, resident=False, monkeypatch=monkeypatch, current_size=full)
-    assert_matches(
-        np.asarray(with_flag.hard_assignment), np.asarray(without.hard_assignment)
-    )
-    # Both arms ran the same engine, so they agree to that engine's own repeat
-    # band (float32 backprojection atomics), not bitwise.
-    a = np.asarray(with_flag.Ft_y, dtype=np.complex128)
-    b = np.asarray(without.Ft_y, dtype=np.complex128)
-    assert float(np.linalg.norm(a - b) / np.linalg.norm(b)) < 1e-6
+    take_pass_engines()
+    resident = _run(case, resident=True, monkeypatch=monkeypatch, current_size=full)
+    assert take_pass_engines() == ["local:resident"]
+    exact = _run(case, resident=False, exact=True, monkeypatch=monkeypatch, current_size=full)
+    assert take_pass_engines()[0].startswith("local:exact_local")
+    assert_matches(np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment))
+    for field in ("Ft_y", "Ft_ctf"):
+        a = np.asarray(getattr(exact, field), dtype=np.complex128)
+        b = np.asarray(getattr(resident, field), dtype=np.complex128)
+        assert float(np.linalg.norm(a - b) / np.linalg.norm(a)) < 1e-5, field
 
 
 @requires_resident_gpu
