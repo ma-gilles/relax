@@ -2377,6 +2377,8 @@ def test_lazy_pass2_layouts_request_aligned_relion_mstep_rotations(monkeypatch, 
         return tuple(outputs)
 
     monkeypatch.setattr(local_layout_module, "get_oversampled_rotation_grid_from_samples", fake_oversampled_rotations)
+    # The adaptive builder expands every image's parents in one uncached call.
+    monkeypatch.setattr(local_layout_module, "_compute_oversampled_rotation_grid", fake_oversampled_rotations)
     translations = np.array([[0.0, 0.0]], dtype=np.float32)
     if builder_name == "parent_expanded":
         layout = build_local_hypothesis_layout(

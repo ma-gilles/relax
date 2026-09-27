@@ -15,6 +15,7 @@ from relax.helpers.batch_planning import (
 from relax.helpers.orientation_priors import make_relion_translation_log_prior
 from relax.helpers.shape_buckets import coarse_bucket, power_bucket
 from relax.sampling import (
+    _compute_oversampled_rotation_grid,
     _wrapped_abs_diff_deg,
     apply_relion_rotation_perturbation_to_eulers,
     build_local_search_grid_metadata,
@@ -1151,126 +1152,103 @@ def build_local_adaptive_pass2_hypothesis_layout(
     fine_translation_parent = np.asarray(fine_translation_parent, dtype=np.int32)
     n_fine_trans = int(fine_translations.shape[0])
 
-    offsets = np.zeros(n_images + 1, dtype=np.int64)
-    counts = np.zeros(n_images, dtype=np.int32)
-    rotations_parts: list[np.ndarray] = []
-    source_eulers_parts: list[np.ndarray | None] = []
-    mstep_rotations_parts: list[np.ndarray] = []
-    rotation_ids_parts: list[np.ndarray] = []
-    posterior_ids_parts: list[np.ndarray] = []
-    log_prior_parts: list[np.ndarray] = []
-    sample_mask_parts: list[np.ndarray | None] = []
-
     n_parent_global = int(parent_layout.n_global_rotations)
-    running_offset = 0
-    for image_idx, sig_samples in enumerate(significant_sample_indices):
-        parent_start = int(parent_layout.rotation_offsets[image_idx])
-        parent_stop = int(parent_layout.rotation_offsets[image_idx + 1])
-        local_parent_ids = np.asarray(parent_layout.rotation_ids_flat[parent_start:parent_stop], dtype=np.int64)
-        local_parent_log_prior = np.asarray(
-            parent_layout.rotation_log_priors_flat[parent_start:parent_stop],
+    parent_offsets = np.asarray(parent_layout.rotation_offsets, dtype=np.int64)
+    parent_ids_flat = np.asarray(parent_layout.rotation_ids_flat, dtype=np.int64)
+    parent_log_prior_flat = np.asarray(parent_layout.rotation_log_priors_flat, dtype=dtype)
+    parent_counts = np.diff(parent_offsets)
+    if n_images and np.any(parent_counts == 0):
+        image_idx = int(np.flatnonzero(parent_counts == 0)[0])
+        raise ValueError(f"Image {image_idx} has no local parent rotations for adaptive pass 2")
+
+    # Each image's parent rotations, flat and image-major: the sorted unique
+    # rotations of its significant samples, or every local parent (in the
+    # parent layout's order) when it has none. One pass over all images; the
+    # per-image statements are unchanged.
+    sig_arrays = [
+        np.zeros(0, dtype=np.int64) if samples is None else np.asarray(samples, dtype=np.int64).reshape(-1)
+        for samples in significant_sample_indices
+    ]
+    sig_counts = np.fromiter((a.size for a in sig_arrays), dtype=np.int64, count=n_images)
+    full_images = sig_counts == 0
+    sig_flat = np.concatenate(sig_arrays) if sig_arrays else np.zeros(0, dtype=np.int64)
+    sig_image = np.repeat(np.arange(n_images, dtype=np.int64), sig_counts)
+    sig_rot = sig_flat // n_coarse_trans
+    sig_trans = sig_flat % n_coarse_trans
+    key_scale = np.int64(max(n_parent_global, 1)) + np.int64(1)
+    sparse_keys = np.unique(sig_image * key_scale + sig_rot)
+    sparse_image = sparse_keys // key_scale
+    sparse_rot = sparse_keys % key_scale
+    full_parent_rows = np.flatnonzero(np.repeat(full_images, parent_counts))
+    full_image = np.repeat(np.arange(n_images, dtype=np.int64), parent_counts)[full_parent_rows]
+    unit_image = np.concatenate([sparse_image, full_image])
+    unit_rot = np.concatenate([sparse_rot, parent_ids_flat[full_parent_rows]])
+    order = np.argsort(unit_image, kind="stable")
+    unit_image, unit_rot = unit_image[order], unit_rot[order]
+    bad_rot = (unit_rot < 0) | (unit_rot >= n_parent_global)
+    if np.any(bad_rot):
+        image_idx = int(unit_image[np.flatnonzero(bad_rot)[0]])
+        raise ValueError(f"Image {image_idx} has significant rotation ids outside the parent grid")
+
+    # Each unit's log prior from its image's local parents (a later duplicate
+    # id wins, as in _lookup_values_by_id).
+    parent_image = np.repeat(np.arange(n_images, dtype=np.int64), parent_counts)
+    parent_keys = parent_image * key_scale + parent_ids_flat
+    parent_order = np.argsort(parent_keys, kind="stable")
+    sorted_parent_keys = parent_keys[parent_order]
+    unit_keys = unit_image * key_scale + unit_rot
+    position = np.searchsorted(sorted_parent_keys, unit_keys, side="right") - 1
+    matched = position >= 0
+    matched[matched] = sorted_parent_keys[position[matched]] == unit_keys[matched]
+    if not np.all(matched):
+        image_idx = int(unit_image[np.flatnonzero(~matched)[0]])
+        missing = unit_rot[(unit_image == image_idx) & ~matched]
+        raise ValueError(
+            f"Image {image_idx} has significant rotations outside its local parent support: {missing[:8].tolist()}"
+        )
+    unit_log_prior = parent_log_prior_flat[parent_order[position]]
+
+    # Every image's oversampled children in one call: each parent's children
+    # depend on that parent only, so the rows are the per-image calls' rows.
+    oversampled_rots, parent_map, oversampled_rot_indices, oversampled_mstep_rots, source_eulers = (
+        _compute_oversampled_rotation_grid(
+            unit_rot,
+            parent_healpix_order,
+            oversampling_order=oversampling_order,
+            random_perturbation=float(random_perturbation),
+            return_rotation_indices=True,
+            return_mstep_rotations=True,
+            return_source_eulers=True,
+            rotation_index_order="recovar",
             dtype=dtype,
+            symmetry=symmetry,
         )
-        if local_parent_ids.size == 0:
-            raise ValueError(f"Image {image_idx} has no local parent rotations for adaptive pass 2")
+    )
+    rotations_flat = np.asarray(oversampled_rots, dtype=dtype).reshape(-1, 3, 3)
+    mstep_rotations_flat = np.asarray(oversampled_mstep_rots, dtype=dtype).reshape(-1, 3, 3)
+    parent_map = np.asarray(parent_map, dtype=np.int64)
+    rotation_ids_flat = np.asarray(oversampled_rot_indices, dtype=np.int32).astype(np.int64)
+    posterior_ids_flat = unit_rot[parent_map].astype(np.int32)
+    rotation_log_priors_flat = unit_log_prior[parent_map].astype(dtype, copy=False)
+    child_image = unit_image[parent_map]
+    counts = np.bincount(child_image, minlength=n_images).astype(np.int32)
+    offsets = np.zeros(n_images + 1, dtype=np.int64)
+    offsets[1:] = np.cumsum(counts, dtype=np.int64)
 
-        if sig_samples is None:
-            unique_rot = local_parent_ids
-            coarse_rot = local_parent_ids
-            coarse_trans = np.tile(np.arange(n_coarse_trans, dtype=np.int32), local_parent_ids.size)
-            use_full_candidate_mask = True
-        else:
-            sig_samples = np.asarray(sig_samples, dtype=np.int64).reshape(-1)
-            if sig_samples.size == 0:
-                unique_rot = local_parent_ids
-                coarse_rot = local_parent_ids
-                coarse_trans = np.tile(np.arange(n_coarse_trans, dtype=np.int32), local_parent_ids.size)
-                use_full_candidate_mask = True
-            else:
-                coarse_rot = sig_samples // n_coarse_trans
-                coarse_trans = sig_samples % n_coarse_trans
-                unique_rot = np.unique(coarse_rot).astype(np.int64, copy=False)
-                use_full_candidate_mask = False
-
-        if np.any(unique_rot < 0) or np.any(unique_rot >= n_parent_global):
-            raise ValueError(f"Image {image_idx} has significant rotation ids outside the parent grid")
-        selected_parent_log_prior, matched_parent_ids = _lookup_values_by_id(
-            local_parent_ids,
-            local_parent_log_prior,
-            unique_rot,
-        )
-        if not np.all(matched_parent_ids):
-            missing = unique_rot[~matched_parent_ids]
-            raise ValueError(
-                f"Image {image_idx} has significant rotations outside its local parent support: {missing[:8].tolist()}"
-            )
-
-        oversampled_rots, parent_map, oversampled_rot_indices, oversampled_mstep_rots, source_eulers = (
-            get_oversampled_rotation_grid_from_samples(
-                unique_rot,
-                parent_healpix_order,
-                oversampling_order=oversampling_order,
-                random_perturbation=float(random_perturbation),
-                return_rotation_indices=True,
-                return_mstep_rotations=True,
-                return_source_eulers=True,
-                rotation_index_order="recovar",
-                dtype=dtype,
-                symmetry=symmetry,
-            )
-        )
-        oversampled_rots = np.asarray(oversampled_rots, dtype=dtype)
-        oversampled_mstep_rots = np.asarray(oversampled_mstep_rots, dtype=dtype)
-        parent_map = np.asarray(parent_map, dtype=np.int32)
-        oversampled_rot_indices = np.asarray(oversampled_rot_indices, dtype=np.int32)
-        parent_posterior_ids = unique_rot[parent_map].astype(np.int32, copy=False)
-
-        if use_full_candidate_mask:
-            sample_mask = None
-        else:
-            local_idx_per_sample, matched_coarse_rot = _positions_in_sorted_unique_ids(unique_rot, coarse_rot)
-            if not np.all(matched_coarse_rot):
-                raise ValueError(f"Image {image_idx} has significant samples outside unique parent rotations")
-            significance_mask_coarse = np.zeros((unique_rot.shape[0], n_coarse_trans), dtype=bool)
-            significance_mask_coarse[local_idx_per_sample, coarse_trans] = True
-            sample_mask = significance_mask_coarse[parent_map][:, fine_translation_parent]
-
-        if sample_mask is not None and not np.any(sample_mask):
-            raise ValueError(f"Image {image_idx} has no valid adaptive local pass-2 candidates")
-
-        counts[image_idx] = int(oversampled_rots.shape[0])
-        running_offset += int(oversampled_rots.shape[0])
-        offsets[image_idx + 1] = running_offset
-        rotations_parts.append(oversampled_rots)
-        source_eulers_parts.append(source_eulers)
-        mstep_rotations_parts.append(oversampled_mstep_rots)
-        rotation_ids_parts.append(oversampled_rot_indices)
-        posterior_ids_parts.append(parent_posterior_ids)
-        log_prior_parts.append(selected_parent_log_prior[parent_map].astype(dtype, copy=False))
-        sample_mask_parts.append(None if sample_mask is None else np.packbits(sample_mask, axis=1, bitorder="little"))
-
-    fine_metadata = build_local_search_grid_metadata(fine_healpix_order, symmetry=symmetry)
-    rotations_flat = _flat_parts(rotations_parts, empty_shape=(0, 3, 3), dtype=dtype)
-    mstep_rotations_flat = _flat_parts(mstep_rotations_parts, empty_shape=(0, 3, 3), dtype=dtype)
-    rotation_ids_flat = _flat_parts(rotation_ids_parts, empty_shape=0, dtype=np.int64, cast=np.int64)
-    posterior_ids_flat = _flat_parts(posterior_ids_parts, empty_shape=0, dtype=np.int32)
-    rotation_log_priors_flat = _flat_parts(log_prior_parts, empty_shape=0, dtype=dtype)
-    if not sample_mask_parts:
-        sample_mask_bits = np.zeros((0, (n_fine_trans + 7) // 8), dtype=np.uint8)
-    elif all(sample_mask is None for sample_mask in sample_mask_parts):
+    if np.all(full_images):
         # ``None`` is the exact-local engine's compact representation of full
         # per-rotation/per-translation support. Avoid materializing massive
         # all-ones masks for RELION full-parent local pass 2.
-        sample_mask_bits = None
+        sample_mask_bits = None if n_images else np.zeros((0, (n_fine_trans + 7) // 8), dtype=np.uint8)
     else:
-        sample_mask_bits = np.concatenate(
-            [
-                np.packbits(np.ones((int(count), n_fine_trans), dtype=bool), axis=1, bitorder="little")
-                if sample_mask is None else sample_mask
-                for sample_mask, count in zip(sample_mask_parts, counts, strict=True)
-            ],
-            axis=0,
+        coarse_mask = np.repeat(full_images[unit_image][:, None], n_coarse_trans, axis=1)
+        sig_unit = np.searchsorted(unit_keys, sig_image * key_scale + sig_rot)
+        coarse_mask[sig_unit, sig_trans] = True
+        sample_mask_bits = np.packbits(
+            coarse_mask[parent_map][:, fine_translation_parent], axis=1, bitorder="little"
         )
+
+    fine_metadata = build_local_search_grid_metadata(fine_healpix_order, symmetry=symmetry)
     return LocalHypothesisLayout(
         n_global_rotations=rotation_grid_size(parent_healpix_order, symmetry),
         n_pixels=int(fine_metadata["n_pixels"]),
@@ -1279,9 +1257,9 @@ def build_local_adaptive_pass2_hypothesis_layout(
         rotation_ids_flat=rotation_ids_flat,
         rotations_flat=rotations_flat,
         source_eulers_flat=(
-            np.concatenate(source_eulers_parts)
-            if source_eulers_parts and all(x is not None for x in source_eulers_parts)
-            else (np.empty((0, 3), dtype=np.float64) if not source_eulers_parts else None)
+            np.empty((0, 3), dtype=np.float64)
+            if not n_images
+            else (None if source_eulers is None else np.asarray(source_eulers))
         ),
         rotation_log_priors_flat=rotation_log_priors_flat,
         rotation_counts=counts,
