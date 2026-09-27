@@ -119,6 +119,16 @@ RELION went to order 8 at iteration 21 and 9 at 24 and converged at 27 (14475516
 continuations sat at order 7 and 2.96 A for 23 and 44 iterations (bigbox 14522322, 14514496). The
 default is now uncapped; `--max_healpix_order` remains an explicit opt-in cap.
 
+Knife-edge note, pdb K=1 100k/256 (bench 14445854): relax converged at HEALPix 6, RELION refined to 7 at
+its iteration 16 and converged at 18. Every latch input matched through iteration 15 (resolution, current
+size, stall counters, the 0.46875 deg step) except `acc_rot` at the start of iteration 16: relax
+0.6250000000000003, RELION 0.624, around the 0.625 threshold of `old_rottilt_step < 0.75 * acc_rot`
+(ml_optimiser.cpp 11746-11748). relax's expected-accuracy binding accumulates the trial errors in RELION's
+order and type (double, trial order, one division) and reproduces RELION exactly on RELION's own inputs:
+0.6270000000000002 from `run_it014`, 0.6240000000000003 from `run_it015` (bigbox 2026-09-27). The flip is
+therefore trajectory, one 0.1 deg step in one of the 100 trial particles from relax's own iteration-15 maps
+and poses, not a parity defect.
+
 Run files and `--continue` (2026-09-26): auto-refine and Class3D write RELION's
 `run_itNNN_{optimiser,model,data,sampling}.star` and maps every iteration and continue from
 them ([algorithm map section 8](../math/relion_refinement_algorithm.md)). Two departures from
