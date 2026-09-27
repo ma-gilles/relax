@@ -97,9 +97,9 @@
    "evidence": {
     "run_roots": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/flipqual_64499e8_20260924/10073/relax_res_tex",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/flipqual_64499e8_20260924/10073/relion",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speedbench_20260923/runs/10073_relion_r1",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relion_repeats_realdata_20260924/10073_r_rep_14397251"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_speed_20260923/flipqual_64499e8_20260924/10073/relion",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_speedbench_20260923/runs/10073_relion_r1",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relion_repeats_realdata_20260924/10073_r_rep_14397251"
     ],
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_64499e8_20260924/10073/flipqual_64499e8_10073.json",
     "masked_fsc_json": [
@@ -259,7 +259,7 @@
    "evidence": {
     "run_roots": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kspeed_20260925/e10097full_ef6234c/relax",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kspeed_20260925/e10097full_ef6234c/relion"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_kspeed_20260925/e10097full_ef6234c/relion"
     ],
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/publish_20260927/e10097full.json",
     "masked_fsc_json": [
@@ -479,9 +479,9 @@
    "evidence": {
     "run_roots": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/flipqual_64499e8_20260924/10345/relax_res_tex",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/flipqual_64499e8_20260924/10345/relion",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speedbench_20260923/runs/10345_relion_r1",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relion_repeats_realdata_20260924/10345_r_rep_14397251"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_speed_20260923/flipqual_64499e8_20260924/10345/relion",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_speedbench_20260923/runs/10345_relion_r1",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relion_repeats_realdata_20260924/10345_r_rep_14397251"
     ],
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_64499e8_20260924/10345/flipqual_64499e8_10345.json",
     "masked_fsc_json": [
@@ -644,11 +644,11 @@
    },
    "evidence": {
     "run_roots": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/flipqual_cd26a5e_10345_20260925/relion",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_speed_20260923/flipqual_cd26a5e_10345_20260925/relion",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/flipqual_cd26a5e_10345_20260925/relax_res",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speed_20260923/flipqual_64499e8_20260924/10345/relion",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relion_repeats_realdata_20260924/10345_r_rep_14397251",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_speedbench_20260923/runs/10345_relion_r1"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_speed_20260923/flipqual_64499e8_20260924/10345/relion",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relion_repeats_realdata_20260924/10345_r_rep_14397251",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_speedbench_20260923/runs/10345_relion_r1"
     ],
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_cd26a5e_10345_20260925/flipqual_cd26a5e_10345.json",
     "relion_band_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/flipqual_cd26a5e_10345_20260925/flipqual_cd26a5e_10345.json",
@@ -846,10 +846,10 @@
    },
    "evidence": {
     "run_roots": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_ressym_20260924/timing_pair_3c7e1c5/relion",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_ressym_20260924/timing_pair_3c7e1c5/relion",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_ressym_20260924/timing_pair_3c7e1c5/relax",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10081_hcn1",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relion_hcn1_seed_repeat_20260924/relion_refine_c4_seed20260924"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relion_hcn1_seed_repeat_20260924/relion_refine_c4_seed20260924"
     ],
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_watcher_20260923/scores/hcn1_timing_pair_14410266/hcn1_timing_pair.json",
     "masked_fsc_json": [
@@ -1012,7 +1012,7 @@
    "evidence": {
     "run_roots": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/10097_10k/relax",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/10097_10k/relion"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_bench_k1plus_20260925/k1/10097_10k/relion"
     ],
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/10097_10k/scores/bench_k1_10097_10k.json",
     "masked_fsc_json": [
@@ -1350,7 +1350,7 @@
     "run_roots": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kspeed_20260925/k100_d7f9a7a/d2",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kspeed_20260925/k100_d7f9a7a/d0",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kspeed_20260925/k100_d7f9a7a/relion_nompi"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_kspeed_20260925/k100_d7f9a7a/relion_nompi"
     ],
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kspeed_20260925/k100_d7f9a7a/SCORE.json",
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py"
@@ -1457,7 +1457,7 @@
    "evidence": {
     "run_roots": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kspeed_20260925/k1_50k_ef6234c/relax",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kspeed_20260925/k1_50k_ef6234c/relion"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_kspeed_20260925/k1_50k_ef6234c/relion"
     ],
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/publish_20260927/k1_50k.json",
     "masked_fsc_json": [
@@ -1643,7 +1643,7 @@
    "evidence": {
     "run_roots": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/relax",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/relion"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_bench_k1plus_20260925/k1/pdb_k1_100k/relion"
     ],
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/scores/bench_k1_pdb100k.json",
     "masked_fsc_json": [
@@ -1903,9 +1903,9 @@
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/class3d/k2_5k_full/SCORE.json",
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py",
     "relion_nompi_runs": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/class3d/nompi/k2_5k_full/s1775735620",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/class3d/nompi/k2_5k_full/s29",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/class3d/nompi/k2_5k_full/s41"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_bench_k1plus_20260925/class3d/nompi/k2_5k_full/s1775735620",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_bench_k1plus_20260925/class3d/nompi/k2_5k_full/s29",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_bench_k1plus_20260925/class3d/nompi/k2_5k_full/s41"
     ]
    },
    "date": "2026-09-25",
@@ -2086,9 +2086,9 @@
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/class3d/k4_5k_full/SCORE.json",
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py",
     "relion_nompi_runs": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclass_20260925/k4_5k_bisect/nompi_seeds/s1775735620/relion",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclass_20260925/k4_5k_bisect/s29/relion_ctrl/nompi/relion",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kclass_20260925/k4_5k_bisect/nompi_seeds/s41/relion"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_kclass_20260925/k4_5k_bisect/nompi_seeds/s1775735620/relion",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_kclass_20260925/k4_5k_bisect/s29/relion_ctrl/nompi/relion",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_kclass_20260925/k4_5k_bisect/nompi_seeds/s41/relion"
     ]
    },
    "date": "2026-09-25",
@@ -2272,9 +2272,9 @@
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/class3d/k4_50k/SCORE.json",
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py",
     "relion_nompi_runs": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/class3d/nompi/k4_50k/s1775735620",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/class3d/nompi/k4_50k/s29",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/class3d/nompi/k4_50k/s41"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_bench_k1plus_20260925/class3d/nompi/k4_50k/s1775735620",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_bench_k1plus_20260925/class3d/nompi/k4_50k/s29",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_bench_k1plus_20260925/class3d/nompi/k4_50k/s41"
     ]
    },
    "date": "2026-09-25",
@@ -2412,7 +2412,7 @@
    "evidence": {
     "run_roots": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamfast_20260926/madvise50k_ef6234c/control",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamfast_20260926/madvise50k_ef6234c/relion"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_vdamfast_20260926/madvise50k_ef6234c/relion"
     ],
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/publish_20260927/vdam50k_band/noise1_50k_k1_ef6234c_band.json"
    },
@@ -3108,7 +3108,7 @@
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/ribo_rerun",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/ribo_k15_s41",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/vdam/ribo_k15/relion_s53_rerun"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_bench_k1plus_20260925/vdam/ribo_k15/relion_s53_rerun"
     ],
     "score_json": "docs/benchmarks/initialmodel_scores/ribo_k15_fix.json"
    },
@@ -3475,7 +3475,7 @@
    "evidence": {
     "run_roots": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamfast_20260926/program_gate_d58405d/e10097_main",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamfast_20260926/program_gate_d58405d/e10097_relion"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_20260927/relax_vdamfast_20260926/program_gate_d58405d/e10097_relion"
     ],
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamfast_20260926/program_gate_d58405d/scores_10097/empiar10097_program.json"
    },
