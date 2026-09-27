@@ -297,7 +297,12 @@ _SOFT_POSTERIOR_BLOCK_BPREF_PROTOTYPE_ENV = "RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_B
 # ladder costs 84 extra traced programs. Every extra class is one more program
 # per capacity-class stage, and with the chunk program one more program again.
 # The occupancy of each plan is still logged, so a future change has its number.
-_DEFAULT_ROW_CAPACITY_LADDER = (8192, 32768, 131072)
+# 524288 is for early low-SNR states, where each image keeps thousands of rows:
+# Class3D K4 100k/256 snr05 iteration 2 ran 8722 chunks of 131072 rows, 2028 of
+# 524288, chunk loop 619 -> 523 s and iteration 3 453 -> 374 s (job 14580683).
+# The cached-path gather budget (_cached_row_capacity_ladder) and the chunk
+# memory plan drop it wherever a chunk that size does not fit.
+_DEFAULT_ROW_CAPACITY_LADDER = (8192, 32768, 131072, 524288)
 _DEFAULT_IMAGE_CAPACITY_LADDER = (32, 128, 512)
 
 __all__ = [
