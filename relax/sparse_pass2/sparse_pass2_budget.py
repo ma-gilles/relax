@@ -80,10 +80,15 @@ _AUTO_FUSED_KCLASS_TRANSLATION_TILE_DEVICE_FRACTION = 0.007
 # the score+recon+abs2 cache estimate is 18.4 GiB, which the former 10% cap
 # (7.96 GiB on an 80 GB device) rejected in every hp3 iteration of the 10k
 # EMPIAR-10097 convergence run while per-chunk recompute cost 1200-3900 s per
-# iteration.  25% admits that cache on 80 GB devices and still rejects it on
+# iteration.  25% admitted that cache on 80 GB devices and still rejected it on
 # 40 GB devices.  Measured evidence: docs handoff em_soft_posterior_block_bpref
-# prototype 2026-09-17, jobs 14045912 / 14046044.
-_AUTO_PROJECTION_CACHE_DEVICE_FRACTION = 0.250
+# prototype 2026-09-17, jobs 14045912 / 14046044.  The stable Fourier windows
+# pad the window to a physical class, so the same cache now takes 20.00 GiB
+# (71.1 KiB per rotation) against the 17.81 GiB 25% share, and the 10097 10k
+# hp3 iterations streamed their projections again: 21.0 s and 11.7 s of
+# projection per half (job 14514823).  30% admits it on 80 GB devices; the
+# chunk plan is read from free memory after the cache exists.
+_AUTO_PROJECTION_CACHE_DEVICE_FRACTION = 0.300
 
 
 _AUTO_PROJECTED_ROTATIONS_DEVICE_FRACTION = 0.040

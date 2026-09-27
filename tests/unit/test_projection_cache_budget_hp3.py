@@ -8,6 +8,7 @@ These checks pin the admission rule that lets an 80 GB device cache the
 """
 
 import numpy as np
+import pytest
 
 from relax.sparse_pass2.sparse_pass2_budget import (
     _projection_cache_fits_budget,
@@ -38,16 +39,20 @@ def test_hp3_cs92_cache_estimate_matches_logged_value():
     assert transient == _HP3_FINE_ROTATIONS * _CS92_HALF_PIXELS * (8 + 4)
 
 
-def test_hp3_cache_admitted_on_80gb_rejected_on_40gb(monkeypatch):
+@pytest.mark.parametrize(
+    "logged_gib",
+    [18.36, 20.00],  # before and after the stable windows' physical-class padding (job 14514823)
+)
+def test_hp3_cache_admitted_on_80gb_rejected_on_40gb(monkeypatch, logged_gib):
     _clear_env(monkeypatch)
-    logged_hp3_estimate = int(18.36 * 1024**3)
+    logged_hp3_estimate = int(logged_gib * 1024**3)
     assert _projection_cache_fits_budget(logged_hp3_estimate, _projection_cache_max_bytes_for_pass(_H100_BYTES))
     assert not _projection_cache_fits_budget(logged_hp3_estimate, _projection_cache_max_bytes_for_pass(_A100_40_BYTES))
 
 
-def test_cache_cap_is_quarter_of_device_memory_without_override(monkeypatch):
+def test_cache_cap_is_thirty_percent_of_device_memory_without_override(monkeypatch):
     _clear_env(monkeypatch)
-    assert _projection_cache_max_bytes_for_pass(_H100_BYTES) == int(_H100_BYTES * 0.25)
+    assert _projection_cache_max_bytes_for_pass(_H100_BYTES) == int(_H100_BYTES * 0.30)
 
 
 def test_cache_cap_change_leaves_per_call_rotation_budget_alone(monkeypatch):
