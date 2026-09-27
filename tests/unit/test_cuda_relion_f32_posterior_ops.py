@@ -188,6 +188,47 @@ def test_batched_relion_f32_posterior_primitives_match_scalar_rows(
 
 
 @pytest.mark.gpu
+@pytest.mark.parametrize("rows,count", [(37, 24192), (500, 777), (1, 5)])
+def test_batched_cub_sort_scan_matches_scalar_rows_at_pass1_sizes(
+    monkeypatch,
+    custom_cuda_lib,
+    gpu_device,
+    rows,
+    count,
+):
+    """The batch's segmented sort gives every row the per-row sort's keys and scan.
+
+    Pass-1 significance sorts batches of 500 images of about 24k coarse
+    weights; ties, zeros and a signed zero are planted so the sort order of
+    equal keys is exercised.
+    """
+
+    import recovar.cuda_backproject as cuda_backproject
+    from relax.cuda import kernels as em_cuda_kernels
+
+    monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
+    monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
+    monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
+
+    rng = np.random.default_rng(rows * 7919 + count)
+    weights = np.exp(rng.normal(scale=4.0, size=(rows, count))).astype(np.float32)
+    weights[:, : max(count // 5, 1)] = 0.0
+    weights[:, -1] = -0.0
+    weights[:, count // 2 :: 7] = weights[:, count // 2 : count // 2 + 1]
+    for row in weights:
+        rng.shuffle(row)
+
+    with jax.default_device(gpu_device):
+        matrix = jnp.asarray(weights)
+        scalar_sorted, scalar_cumulative = jax.vmap(em_cuda_kernels.relion_cub_sort_scan_f32)(matrix)
+        batched_sorted, batched_cumulative = em_cuda_kernels.relion_cub_sort_scan_batched_f32(matrix)
+
+    assert_matches(np.asarray(batched_sorted), np.asarray(scalar_sorted))
+    assert_matches(np.asarray(batched_cumulative), np.asarray(scalar_cumulative))
+    assert_matches(np.asarray(batched_sorted), np.sort(weights, axis=1))
+
+
+@pytest.mark.gpu
 def test_relion_positive_cub_sort_scan_matches_native_sized_input_and_right_aligns(
     monkeypatch,
     custom_cuda_lib,
