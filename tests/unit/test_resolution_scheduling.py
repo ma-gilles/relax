@@ -33,6 +33,30 @@ class TestResolutionScheduling:
         np.testing.assert_allclose(taper[19], expected19, rtol=0, atol=1e-15)
         assert_matches(taper[20:], 0.0)
 
+    def test_class3d_firstiter_taper_matches_relion_model_star_and_scale_gate(self):
+        """Class3D's per-class data_vs_prior after the CC iteration is RELION's tapered one.
+
+        Shells 8-11 of both classes after iteration 1 of the new-gen K2 50k s29
+        pair (box 256, 2.125 A, --ini_high 60): relax's untapered curves and
+        RELION's run_it001_model.star rlnSsnrMap, both printed to 4 significant
+        figures (hence rtol 1.5e-3). Untapered, class 2's shell 10 passes
+        RELION's scale gate data_vs_prior_class > 3 (ml_optimiser.cpp:10473);
+        RELION's tapered curve excludes it.
+        """
+
+        untapered = np.zeros((2, 20), dtype=np.float64)
+        untapered[:, 8:12] = [[124.6, 45.45, 0.5746, 0.02933], [654.6, 217.5, 3.272, 0.2915]]
+        relion = np.array([[124.6, 13.86, 4.311e-6, 0.0], [654.6, 66.35, 2.455e-5, 0.0]])
+
+        tapered = resolution_helpers._firstiter_cc_ini_high_tapered(
+            untapered, 256, 2.125, 60.0, filter_edgewidth=2
+        )
+
+        assert tapered.shape == untapered.shape and tapered.dtype == untapered.dtype
+        np.testing.assert_allclose(tapered[:, 8:12], relion, rtol=1.5e-3, atol=0.0)
+        assert_matches(tapered[:, 12:], 0.0)
+        assert bool(untapered[1, 10] > 3.0) and not bool(tapered[1, 10] > 3.0)
+
     def test_k1_current_size_scheduling_raw_fsc_matches_gui_default(self):
         """GUI-default K=1 scheduling uses raw FSC-derived DVP."""
         raw_fsc = np.ones(129, dtype=np.float32) * 0.9

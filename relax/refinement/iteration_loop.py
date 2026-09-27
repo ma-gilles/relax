@@ -139,6 +139,7 @@ from relax.helpers.orientation_priors import (
 from relax.helpers.projection import _host_relion_projector_texture_enabled
 from relax.helpers.resolution import (
     _bootstrap_current_size_relion,
+    _firstiter_cc_ini_high_tapered,
     _firstiter_cc_ini_high_tau2_taper,
     _firstiter_cc_scheduling_resolution_shell,
     _k1_data_vs_prior_for_scheduling,
@@ -3765,6 +3766,33 @@ def refine_single_volume(
             logger.info(
                 "RELION iter-1 CC emulation: tapered post-reconstruction tau2/data-vs-prior "
                 "with ini_high=%.2f A",
+                float(parity.relion_firstiter_ini_high_angstrom),
+            )
+        elif relion_firstiter_cc_this_iter and parity.relion_firstiter_ini_high_angstrom is not None:
+            # Class3D tapers each class's tau2_class and data_vs_prior_class the
+            # same way (ml_optimiser.cpp:6389-6420). RELION's comment calls this
+            # output only, but the next E-step gates each class's scale sums on
+            # data_vs_prior_class > 3 (:10473), so the untapered curve let
+            # shells past ini_high into iteration 2's scale correction. The
+            # class tau2 volumes are recomputed from the Iref power next
+            # iteration, so only the shell curves carry the taper.
+            def taper_shells(values):
+                return _firstiter_cc_ini_high_tapered(
+                    values,
+                    grid_size,
+                    cryo.voxel_size,
+                    parity.relion_firstiter_ini_high_angstrom,
+                    filter_edgewidth=RELION_WIDTH_FMASK_EDGE,
+                )
+
+            data_vs_prior_iter = taper_shells(data_vs_prior_iter)
+            history.data_vs_prior_trajectory[-1] = data_vs_prior_iter
+            previous_data_vs_prior_for_scheduling = data_vs_prior_iter
+            mean_signal_variance_shells = jnp.asarray(taper_shells(np.asarray(mean_signal_variance_shells)))
+            for field in ("prior_shells", "ssnr_shells"):
+                tau2_update_details[field] = taper_shells(np.asarray(tau2_update_details[field]))
+            logger.info(
+                "RELION iter-1 CC emulation: tapered Class3D tau2/data-vs-prior with ini_high=%.2f A",
                 float(parity.relion_firstiter_ini_high_angstrom),
             )
         if not k_class_enabled:

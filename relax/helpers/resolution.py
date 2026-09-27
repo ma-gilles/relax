@@ -404,3 +404,28 @@ def _firstiter_cc_ini_high_tau2_taper(
     transition = (shells >= radius) & (shells <= radius_p)
     taper[transition] = 0.5 - 0.5 * np.cos(np.pi * (radius_p - shells[transition]) / edge)
     return taper * taper
+
+
+def _firstiter_cc_ini_high_tapered(
+    values,
+    grid_size,
+    voxel_size,
+    ini_high_angstrom,
+    *,
+    filter_edgewidth,
+):
+    """``values`` times :func:`_firstiter_cc_ini_high_tau2_taper` along its last (shell) axis.
+
+    Class3D's per-class tau2 and data_vs_prior curves ``[K, n_shells]``
+    (ml_optimiser.cpp:6389-6420); the result keeps ``values``' dtype.
+    """
+
+    values = np.asarray(values)
+    taper = _firstiter_cc_ini_high_tau2_taper(
+        int(values.shape[-1]),
+        grid_size,
+        voxel_size,
+        ini_high_angstrom,
+        filter_edgewidth=filter_edgewidth,
+    )
+    return values * taper.astype(values.dtype)
