@@ -820,6 +820,7 @@ def compute_local_search_resident(
                 n_recon_pixels=n_recon_windowed,
                 n_rect_pixels=n_rect,
                 n_exact_rect_pixels=int(relion_wavg_rectangle.exact_positions.size),
+                masked_scoring=bool(score_with_masked_images),
             ),
         )
         row_ladder = memory_plan.row_capacity_ladder

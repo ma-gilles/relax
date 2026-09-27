@@ -695,6 +695,7 @@ def chunk_translated_tile_pixels(
     n_rect_pixels: int,
     n_exact_rect_pixels: int,
     normalized_cc: bool = False,
+    masked_scoring: bool = True,
 ) -> dict:
     """Per-image, per-translation complex64 pixels of a chunk's translated arrays, by stage.
 
@@ -712,7 +713,9 @@ def chunk_translated_tile_pixels(
     exact positions) are live together; the chunk then holds the three
     row-order recon-window tiles and the rectangle through projection, scoring
     and the M-step. ``normalized_cc`` (the ``--firstiter_cc`` iteration) adds
-    the row-order corrected score tile to both. Planning with three recon tiles
+    the row-order corrected score tile to both; without ``masked_scoring`` the
+    preparation's recon and noise tiles are one array
+    (``sparse_pass2_bucket_io``), one recon tile fewer. Planning with three recon tiles
     instead let EMPIAR-10202 iteration 22 take 32 images per chunk, a ~30 GiB
     preparation against a 22 GiB budget (14509861), and the global pass of
     VDAM K=1 ribosembly 100k run out of memory allocating the rectangle
@@ -731,9 +734,10 @@ def chunk_translated_tile_pixels(
     if unshifted_operands:
         return {"held_tile_pixels": r + e, "prepare_tile_pixels": r + e}
     cc = s if normalized_cc else 0
+    shared = 0 if masked_scoring else p
     return {
         "held_tile_pixels": 2 * p + r + e + cc,
-        "prepare_tile_pixels": 2 * s + 4 * p + 2 * r + e + cc,
+        "prepare_tile_pixels": 2 * s + 4 * p + 2 * r + e + cc - shared,
     }
 
 
@@ -2859,6 +2863,7 @@ def _resident_pass2(
                 n_rect_pixels=n_rect,
                 n_exact_rect_pixels=int(relion_wavg_rectangle.exact_positions.size),
                 normalized_cc=bool(firstiter_cc),
+                masked_scoring=bool(score_with_masked_images),
             ),
         )
         row_ladder = memory_plan.row_capacity_ladder
