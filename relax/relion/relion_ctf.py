@@ -389,12 +389,22 @@ def _relion_exact_ctf_half_from_source_star(
 
 
 _EXACT_CTF_DEVICE_GB_ENV = "RELAX_RELION_EXACT_CTF_DEVICE_GB"
-_EXACT_CTF_DEVICE_MIN_ROWS = 4096
+# The cache takes this share of what the allocator can still hand out (plus what
+# it already holds), so the passes that plan from free memory keep the rest.
+_EXACT_CTF_DEVICE_FREE_FRACTION = 0.25
+# Shrink only below this share of the current capacity, so small swings in free
+# memory do not rebuild the cache.
+_EXACT_CTF_DEVICE_SHRINK_BELOW = 0.75
+# Uploads go up in power-of-two row chunks of at most this many rows: few scatter
+# shapes compile and no padded rows travel (a box-800 row is 2.57 MB).
+_EXACT_CTF_DEVICE_UPLOAD_ROWS = 256
 
 
-def _exact_ctf_device_budget_bytes() -> int:
-    """Device bytes the CTF row cache may hold: ``RELAX_RELION_EXACT_CTF_DEVICE_GB``,
-    else a fifth of the device's memory limit (2 GB without memory statistics)."""
+def _exact_ctf_device_budget_bytes(held_bytes: int) -> int:
+    """Device bytes the CTF row cache may hold: ``RELAX_RELION_EXACT_CTF_DEVICE_GB``, else
+    ``_EXACT_CTF_DEVICE_FREE_FRACTION`` of the allocator's available bytes now plus the
+    ``held_bytes`` the cache already occupies (``device_available_bytes``); the held
+    bytes alone when the device reports nothing."""
 
     token = os.environ.get(_EXACT_CTF_DEVICE_GB_ENV, "").strip()
     if token:
@@ -405,34 +415,93 @@ def _exact_ctf_device_budget_bytes() -> int:
         if budget <= 0:
             raise ValueError(f"{_EXACT_CTF_DEVICE_GB_ENV} must be positive, got {token!r}")
         return int(budget * (1024**3))
-    import jax
+    from relax.sparse_pass2.sparse_pass2_budget import (
+        _device_free_memory_bytes,
+        _jax_allocator_free_memory_bytes,
+        _jax_allocator_pool_free_bytes,
+        device_available_bytes,
+    )
 
-    stats = jax.devices()[0].memory_stats() or {}
-    return int(stats.get("bytes_limit", 10 * 1024**3)) // 5
+    available = device_available_bytes(
+        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
+    )
+    if available is None:
+        return int(held_bytes)
+    return int((float(available) + held_bytes) * _EXACT_CTF_DEVICE_FREE_FRACTION)
+
+
+def release_exact_ctf_device_cache() -> None:
+    """Free every device CTF row cache; the next request rebuilds one at the budget then.
+
+    A pass whose fixed allocations need the memory the cache holds (for example a
+    box-800 reconstruction accumulator) calls this before allocating them.
+    """
+
+    for cache in _RELION_EXACT_CTF_SOURCE_CACHE.values():
+        cache.pop("device_cache", None)
+
+
+def ensure_device_headroom(n_bytes: int) -> bool:
+    """Free the device CTF row caches only if the device cannot hand out ``n_bytes`` now.
+
+    For a pass about to allocate large fixed buffers (a box-800 reconstruction
+    accumulator): at 256 px it never fires, so the cache keeps its rows across
+    passes. Returns whether it released anything. Call it once before the
+    allocation, not per chunk.
+    """
+
+    from relax.sparse_pass2.sparse_pass2_budget import (
+        _device_free_memory_bytes,
+        _jax_allocator_free_memory_bytes,
+        _jax_allocator_pool_free_bytes,
+        device_available_bytes,
+    )
+
+    available = device_available_bytes(
+        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
+    )
+    held = any("device_cache" in cache for cache in _RELION_EXACT_CTF_SOURCE_CACHE.values())
+    if not held or available is None or available >= n_bytes:
+        return False
+    release_exact_ctf_device_cache()
+    return True
+
+
+def _exact_ctf_device_capacity(n_particles: int, request_rows: int, row_bytes: int, held_rows: int) -> int:
+    """Rows the cache should hold: the budget's rows, at least the request, at most one per particle."""
+
+    budget_rows = _exact_ctf_device_budget_bytes(held_rows * row_bytes) // row_bytes
+    return int(min(n_particles, max(request_rows, budget_rows)))
 
 
 def _exact_ctf_device_rows(cache, batch_slots: np.ndarray, width: int):
     """The device row cache and the cache rows of ``batch_slots``.
 
-    The cache holds as many rows as the budget allows (at least
-    ``_EXACT_CTF_DEVICE_MIN_ROWS`` and at most one per particle). Rows a request
-    needs and the cache lacks replace rows in clock order, skipping rows the same
-    request reads, and go up as one scatter written in place. A request larger
-    than the cache grows it to the request's size.
+    The cache holds as many rows as :func:`_exact_ctf_device_budget_bytes` allows,
+    re-read at every request, and never fewer than the request needs nor more than
+    one per particle. It is rebuilt empty at the budget when a request does not fit
+    or the budget falls below ``_EXACT_CTF_DEVICE_SHRINK_BELOW`` of its capacity.
+    Rows a request needs and the cache lacks replace rows in clock order, skipping
+    rows the same request reads, and go up in place. It grows only when a request
+    does not fit (the first request of a pass, as batch sizes are fixed), never
+    because memory freed up, so it does not race a chunk loop's next allocation.
     """
 
     import jax
 
     state = cache.get("device_cache")
     n_particles = cache["slots"].size
+    row_bytes = width * 8
     requested = np.unique(batch_slots)
-    if state is None or state["block"].shape[0] < requested.size:
-        capacity = min(n_particles, max(_EXACT_CTF_DEVICE_MIN_ROWS, _exact_ctf_device_budget_bytes() // (width * 8)))
-        capacity = max(capacity, requested.size)
+    capacity = 0 if state is None else state["block"].shape[0]
+    target = _exact_ctf_device_capacity(n_particles, requested.size, row_bytes, capacity)
+    if capacity < requested.size or target < _EXACT_CTF_DEVICE_SHRINK_BELOW * capacity:
+        cache.pop("device_cache", None)
+        state = None  # drop the old block before allocating the new one
         state = {
-            "block": jnp.zeros((capacity, width), dtype=jnp.float64),
+            "block": jnp.zeros((target, width), dtype=jnp.float64),
             "row_of_slot": np.full(n_particles, -1, dtype=np.int64),
-            "slot_of_row": np.full(capacity, -1, dtype=np.int64),
+            "slot_of_row": np.full(target, -1, dtype=np.int64),
             "clock": 0,
         }
         cache["device_cache"] = state
@@ -448,14 +517,15 @@ def _exact_ctf_device_rows(cache, batch_slots: np.ndarray, width: int):
         state["row_of_slot"][missing] = free
         state["slot_of_row"][free] = missing
         state["clock"] = int((free[-1] + 1) % capacity)
-        # Pad the upload to a power-of-two row count so few scatter shapes compile;
-        # padded positions point past the cache and are dropped.
-        padded = 1 << int(np.ceil(np.log2(missing.size)))
-        positions = np.full(padded, capacity, dtype=np.int32)
-        positions[: missing.size] = free
-        values = np.zeros((padded, width), dtype=np.float64)
-        values[: missing.size] = cache["rows"][missing]
-        state["block"] = _scatter_exact_ctf_rows(state["block"], jax.device_put(positions), jax.device_put(values))
+        start = 0
+        while start < missing.size:
+            size = min(_EXACT_CTF_DEVICE_UPLOAD_ROWS, 1 << int(np.log2(missing.size - start)))
+            state["block"] = _scatter_exact_ctf_rows(
+                state["block"],
+                jax.device_put(free[start : start + size].astype(np.int32)),
+                jax.device_put(cache["rows"][missing[start : start + size]]),
+            )
+            start += size
     return state["block"], state["row_of_slot"][batch_slots]
 
 
@@ -465,7 +535,7 @@ def _scatter_exact_ctf_rows(block, positions, values):
     global _scatter_exact_ctf_rows_program
     if _scatter_exact_ctf_rows_program is None:
         _scatter_exact_ctf_rows_program = jax.jit(
-            lambda block, positions, values: block.at[positions].set(values, mode="drop"), donate_argnums=0
+            lambda block, positions, values: block.at[positions].set(values), donate_argnums=0
         )
     return _scatter_exact_ctf_rows_program(block, positions, values)
 
