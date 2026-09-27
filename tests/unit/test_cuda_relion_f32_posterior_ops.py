@@ -71,10 +71,15 @@ def test_relion_f32_posterior_cuda_source_pins_deployed_arithmetic():
     assert "values[index] / divisor[index / row_size]" in batched_divide
 
     batched_sort_start = source.index("ffi::Error RelionCubSortScanBatchedF32Impl")
-    batched_sort_end = source.index("struct RelionPositiveF32", batched_sort_start)
+    batched_sort_end = source.index("// Opt-in grouped coarse score-to-support transaction.", batched_sort_start)
     batched_sort = source[batched_sort_start:batched_sort_end]
+    # One segmented radix sort per group of rows (an exact permutation of the
+    # per-row sort's keys), then RELION's Ampere scan once per row.
+    assert "cub::DeviceSegmentedRadixSort::SortKeys(" in batched_sort
+    assert "cub::DeviceRadixSort::SortKeys(" not in batched_sort
     assert "for (int64_t row = 0; row < row_count" in batched_sort
-    assert "cudaMallocAsync(&temporary, temporary_bytes, stream)" in batched_sort
+    assert "relion_ampere_inclusive_sum_f32(" in batched_sort
+    assert "cudaMallocAsync(&temporary, aligned_cub_bytes + offsets_bytes, stream)" in batched_sort
     assert "cudaFreeAsync(temporary, stream)" in batched_sort
     assert "cudaStreamSynchronize" not in batched_sort
 
