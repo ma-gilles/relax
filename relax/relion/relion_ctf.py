@@ -202,23 +202,8 @@ def _relion_ctf_batch_params(cache, original_indices: np.ndarray) -> np.ndarray:
     )
 
 
-def _relion_exact_ctf_half_from_source_star_host(
-    experiment_dataset,
-    image_indices,
-    image_shape,
-    *,
-    pixel_indices=None,
-):
-    """Evaluate source-precision SPA CTFs into one host-native operand.
-
-    The result uses RECOVAR's centered-y half-spectrum coordinates and sign.
-    The source STAR is mandatory because the ordinary dataset metadata has
-    already been rounded to float32 before pass 2.  RELION's binding and the
-    source cache are host-native; callers that must pad on the image axis use
-    this helper so they place the final operand exactly once. Optional host
-    pixel indices gather the requested columns before stacking full CTF rows;
-    their order and duplicates are preserved without changing source precision.
-    """
+def _exact_ctf_source_cache(experiment_dataset, image_shape):
+    """The source STAR, its parsed tables and the per-particle CTF row block."""
 
     source_path = _relion_exact_ctf_source_star(experiment_dataset)
     cache_key = (str(source_path), tuple(int(size) for size in image_shape))
@@ -254,25 +239,11 @@ def _relion_exact_ctf_half_from_source_star_host(
         }
         _RELION_EXACT_CTF_SOURCE_CACHE[cache_key] = cache
 
-    original_indices = original_image_indices(
-        experiment_dataset,
-        np.asarray(image_indices, dtype=np.int64),
-    )
-    image_h, image_w = (int(size) for size in image_shape)
-    if image_h != image_w:
-        raise ValueError("exact RELION CTF replay currently requires square images")
-    if pixel_indices is not None:
-        if not isinstance(pixel_indices, np.ndarray):
-            raise TypeError("CTF pixel indices must already be a host NumPy array")
-        if pixel_indices.ndim != 1 or pixel_indices.dtype.kind not in "iu":
-            raise ValueError("CTF pixel indices must be a one-dimensional integer array")
-        if np.any(pixel_indices < 0) or np.any(pixel_indices >= image_h * (image_w // 2 + 1)):
-            raise ValueError("CTF pixel indices are outside the full half-spectrum")
-    original_indices = np.asarray(original_indices, dtype=np.int64)
-    cache_key = _exact_ctf_result_key(source_path, image_shape, original_indices, pixel_indices)
-    memoized = _exact_ctf_result_lookup(cache_key, original_indices, pixel_indices)
-    if memoized is not None:
-        return memoized
+    return source_path, cache
+
+
+def _evaluate_exact_ctf_rows(cache, original_indices, image_h: int, image_w: int) -> np.ndarray:
+    """Evaluate the particles' missing CTF rows into the block; return their row slots."""
 
     slots = cache["slots"]
     missing = np.unique(original_indices[slots[original_indices] < 0])
@@ -322,6 +293,49 @@ def _relion_exact_ctf_half_from_source_star_host(
     batch_slots = slots[original_indices]
     if np.any(batch_slots < 0):
         raise RuntimeError("a requested RELION CTF row was not evaluated")
+    return batch_slots
+
+
+def _relion_exact_ctf_half_from_source_star_host(
+    experiment_dataset,
+    image_indices,
+    image_shape,
+    *,
+    pixel_indices=None,
+):
+    """Evaluate source-precision SPA CTFs into one host-native operand.
+
+    The result uses RECOVAR's centered-y half-spectrum coordinates and sign.
+    The source STAR is mandatory because the ordinary dataset metadata has
+    already been rounded to float32 before pass 2.  RELION's binding and the
+    source cache are host-native; callers that must pad on the image axis use
+    this helper so they place the final operand exactly once. Optional host
+    pixel indices gather the requested columns before stacking full CTF rows;
+    their order and duplicates are preserved without changing source precision.
+    """
+
+    source_path, cache = _exact_ctf_source_cache(experiment_dataset, image_shape)
+    original_indices = original_image_indices(
+        experiment_dataset,
+        np.asarray(image_indices, dtype=np.int64),
+    )
+    image_h, image_w = (int(size) for size in image_shape)
+    if image_h != image_w:
+        raise ValueError("exact RELION CTF replay currently requires square images")
+    if pixel_indices is not None:
+        if not isinstance(pixel_indices, np.ndarray):
+            raise TypeError("CTF pixel indices must already be a host NumPy array")
+        if pixel_indices.ndim != 1 or pixel_indices.dtype.kind not in "iu":
+            raise ValueError("CTF pixel indices must be a one-dimensional integer array")
+        if np.any(pixel_indices < 0) or np.any(pixel_indices >= image_h * (image_w // 2 + 1)):
+            raise ValueError("CTF pixel indices are outside the full half-spectrum")
+    original_indices = np.asarray(original_indices, dtype=np.int64)
+    cache_key = _exact_ctf_result_key(source_path, image_shape, original_indices, pixel_indices)
+    memoized = _exact_ctf_result_lookup(cache_key, original_indices, pixel_indices)
+    if memoized is not None:
+        return memoized
+
+    batch_slots = _evaluate_exact_ctf_rows(cache, original_indices, image_h, image_w)
     rows = cache["rows"]
     # Gather rows and the planned columns in one step, so the intermediate is the
     # size of the result rather than of the full half-spectrum.
@@ -345,13 +359,90 @@ def _relion_exact_ctf_half_from_source_star(
     float32 score and reconstruction operands.  Host-padding callers should
     use :func:`_relion_exact_ctf_half_from_source_star_host` to avoid a
     device-to-host-to-device round trip.
+
+    When the whole row block fits :func:`_exact_ctf_device_budget_bytes`, the
+    rows live in a device mirror that receives each particle's row once, and a
+    request is one device gather. The host path copied and uploaded every
+    requested row on each call: a whole pass-2 half at noise1 50k/256 is about
+    6.6 GB per iteration (72.6 s of main-thread gather, job 14523070). Both paths
+    return the same binary64 values.
     """
 
-    return jnp.asarray(
-        _relion_exact_ctf_half_from_source_star_host(
-            experiment_dataset,
-            image_indices,
-            image_shape,
-        ),
-        dtype=jnp.float64,
+    image_h, image_w = (int(size) for size in image_shape)
+    width = image_h * (image_w // 2 + 1)
+    _, cache = _exact_ctf_source_cache(experiment_dataset, image_shape)
+    if image_h != image_w or cache["slots"].size * width * 8 > _exact_ctf_device_budget_bytes():
+        return jnp.asarray(
+            _relion_exact_ctf_half_from_source_star_host(experiment_dataset, image_indices, image_shape),
+            dtype=jnp.float64,
+        )
+    original_indices = np.asarray(
+        original_image_indices(experiment_dataset, np.asarray(image_indices, dtype=np.int64)), dtype=np.int64
     )
+    batch_slots = _evaluate_exact_ctf_rows(cache, original_indices, image_h, image_w)
+    return jnp.take(_exact_ctf_device_rows(cache, width), jnp.asarray(batch_slots), axis=0)
+
+
+_EXACT_CTF_DEVICE_GB_ENV = "RELAX_RELION_EXACT_CTF_DEVICE_GB"
+_EXACT_CTF_DEVICE_UPLOAD_ROWS = 1024
+
+
+def _exact_ctf_device_budget_bytes() -> int:
+    """Device bytes the CTF row mirror may hold: ``RELAX_RELION_EXACT_CTF_DEVICE_GB``,
+    else a fifth of the device's memory limit (0 without memory statistics)."""
+
+    token = os.environ.get(_EXACT_CTF_DEVICE_GB_ENV, "").strip()
+    if token:
+        try:
+            budget = float(token)
+        except ValueError as exc:
+            raise ValueError(f"{_EXACT_CTF_DEVICE_GB_ENV} must be a number of gigabytes, got {token!r}") from exc
+        if budget < 0:
+            raise ValueError(f"{_EXACT_CTF_DEVICE_GB_ENV} must not be negative, got {token!r}")
+        return int(budget * (1024**3))
+    import jax
+
+    stats = jax.devices()[0].memory_stats() or {}
+    return int(stats.get("bytes_limit", 0)) // 5
+
+
+def _exact_ctf_device_rows(cache, width: int):
+    """The device mirror of the row block, with every evaluated row uploaded.
+
+    Rows are evaluated into consecutive slots, so the rows not yet mirrored are
+    one contiguous run. It goes up in fixed-size chunks written in place; a chunk
+    that runs past the evaluated rows carries uninitialized rows, which a later
+    upload replaces before any slot of theirs can be requested.
+    """
+
+    import jax
+
+    block = cache.get("device_rows")
+    if block is None:
+        block = jnp.zeros((cache["slots"].size, width), dtype=jnp.float64)
+        cache["device_mirrored"] = 0
+    total, chunk = block.shape[0], min(_EXACT_CTF_DEVICE_UPLOAD_ROWS, block.shape[0])
+    mirrored, evaluated = cache["device_mirrored"], cache["n_cached"]
+    while mirrored < evaluated:
+        start = min(mirrored, total - chunk)
+        block = _write_exact_ctf_device_rows(block, jax.device_put(cache["rows"][start : start + chunk]), start)
+        mirrored = start + chunk
+    # Rows past the evaluated count that a chunk carried are not valid yet.
+    cache["device_rows"], cache["device_mirrored"] = block, evaluated
+    return block
+
+
+def _write_exact_ctf_device_rows(block, rows, start):
+    import jax
+
+    global _write_exact_ctf_device_rows_program
+    if _write_exact_ctf_device_rows_program is None:
+        _write_exact_ctf_device_rows_program = jax.jit(
+            lambda block, rows, start: jax.lax.dynamic_update_slice(block, rows, (start, jnp.zeros_like(start))), donate_argnums=0
+        )
+    return _write_exact_ctf_device_rows_program(block, rows, jnp.int32(start))
+
+
+_write_exact_ctf_device_rows_program = None
+
+
