@@ -124,3 +124,38 @@ def test_source_without_a_host_path_still_works(monkeypatch):
     assert images.shape[0] == indices.size
     assert ctf.shape[0] == indices.size
     assert_matches(np.sort(np.asarray(fetched)), np.sort(indices))
+
+
+@pytest.mark.parametrize(
+    "indices",
+    [
+        np.arange(N_IMAGES, dtype=np.int32),
+        np.asarray([3, 0, 5, 1], dtype=np.int32),
+        np.asarray([2, 2, 4, 2], dtype=np.int32),
+        np.asarray([4], dtype=np.int32),
+    ],
+)
+def test_fetch_indexed_batch_host_path_matches_the_iterator(indices):
+    """fetch_indexed_batch's vectorized host read equals the batch iterator's route."""
+
+    from relax.helpers.batch_fetch import fetch_indexed_batch_via_iterator
+
+    cryo = _dataset()
+    images, ctf, fetched = fetch_indexed_batch(cryo, indices)
+    assert isinstance(images, np.ndarray)
+    reference_images, reference_ctf, reference_indices = fetch_indexed_batch_via_iterator(cryo, indices)
+    lookup = {int(i): pos for pos, i in enumerate(np.asarray(reference_indices))}
+    np.testing.assert_array_equal(np.asarray(fetched), indices)
+    assert np.asarray(fetched).dtype == np.int32
+    for row, index in enumerate(np.asarray(fetched)):
+        np.testing.assert_array_equal(images[row], np.asarray(reference_images)[lookup[int(index)]])
+        np.testing.assert_array_equal(np.asarray(ctf)[row], np.asarray(reference_ctf)[lookup[int(index)]])
+
+
+def test_fetch_indexed_batch_without_a_host_path_uses_the_iterator(monkeypatch):
+    cryo = _dataset()
+    monkeypatch.delattr(type(cryo.image_source), "host_images", raising=True)
+    indices = np.asarray([1, 3], dtype=np.int32)
+    images, ctf, fetched = fetch_indexed_batch(cryo, indices)
+    assert np.asarray(images).shape[0] == indices.size
+    np.testing.assert_array_equal(np.sort(np.asarray(fetched)), np.sort(indices))
