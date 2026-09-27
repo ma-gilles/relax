@@ -58,7 +58,7 @@ what still routes to them. Inventory and line estimates (relax bc6d3e1):
 |---|---|---|
 | Compact (bucketed sparse) pass 2: `sparse_pass2_bucketed` and its bucket plan, compact-pair sums, noise blocks, `compact_candidate_capture`, `resident_shadow`; the K-class fused and 2K-1 compact paths in `k_class._run_sparse_k_class_adaptive_pass2` | Only refusals: subset and focused replays (non-atomic Wavg), square-window replays, diagnostic dumps and flags, float64 and score-only diagnostic passes, CPU-only execution, and the memory refusals of `_stream_row_capacity_ladder` / `_cached_row_capacity_ladder`; `RELAX_SPARSE_PASS2_RESIDENT=0` | RELION's atomic Wavg arithmetic for replays; retire or port the dumps; resident always fits (row capacity 1 or image streaming); a decision on CPU pass 2 (GPU-only, or a JAX back end for the resident CUDA stages) |
 | K=1 exact-local adaptive route (`classification/k1_local_pass2.py`) | Only `RELAX_K1_PASS2_ENGINE=local` | None |
-| Exact local engine (`local/local_em_engine.py` and the other `local/` execution modules; `local_layout` stays) | Refine3D local-search parent probe (score-only, `maximum_significants` cap), every local iteration; Refine3D final all-data iteration (`current_size == box`, `local_search_iteration.py`); refusals of the resident local checks; `RELAX_LOCAL_SEARCH_RESIDENT=0` | Route the full-box pass to resident local (both engines score RELION's radial window at the box since aa03fd2) and qualify it, including 10202 memory; a resident score-only local mode with RELION's cap for the parent probe; the scale-1 triplet without scale groups |
+| Exact local engine (`local/local_em_engine.py` and the other `local/` execution modules; `local_layout` stays) | Refine3D local-search parent probe (score-only, `maximum_significants` cap), every local iteration; refusals of the resident local checks; `RELAX_LOCAL_SEARCH_RESIDENT=0` | 10202 memory for the full-box pass, which runs on resident local since 1178448 (below); a resident score-only local mode with RELION's cap for the parent probe; the scale-1 triplet without scale groups |
 | VDAM exact-local E-step (`vdam/sparse_pass2_estep.py`, `k_class.run_local_k_class_em`) | An adaptive refusal (any K; logged); `--pass2_engine local` | Port or refuse the configurations the adaptive route still refuses, then delete it |
 | Dense `run_em` (`dense/em_engine.py`, `dense_big_jit.py`, `k_class.run_dense_k_class_em`) and the per-image reference route (`reference/sparse_pass2.py`) | Nothing in production (the CLI always builds scale groups and supplies RELION's projector): oversampling 0 without scale groups, `RELAX_K1_DENSE_PASS2` / `RELAX_K_CLASS_DENSE_PASS2`, VDAM `RELAX_DISABLE_SPARSE_PASS2`, the dense K-class fallbacks, a full-grid C1 pass without supports | Move the joint `--firstiter_cc` coarse probe (pass 1) out of the dense K-class wrapper |
 
@@ -382,8 +382,21 @@ On the 10k EMPIAR-10097 fixture at 256 px on one H100, the resident K1 path
 reduced the cold auto-refine gap from 3.26x to about 1.7-1.8x RELION, with a
 further small gain from building the projector on device. This qualifies only
 that fixture. Remaining cost is concentrated in new-shape transitions and the
-final all-data iteration; the latter still uses the exact local path. The
-100k/256 K1 and exactly-K4 quality and performance gates remain open.
+final all-data iteration. The 100k/256 K1 and exactly-K4 quality and
+performance gates remain open.
+
+Final all-data pass on resident local (2026-09-27, 1178448..73c2a22). The full-box
+pass routes to the resident local driver, whose M-step now walks only rows with
+weight and translates unshifted per-image operands inside the translate-sum kernel.
+Same-node 10097 10k gate (job 14518565, scored 14518568): final iteration 123.3 s
+on the exact local engine, 92.6 s on resident; run walls main c423fb7 603 s,
+candidate 595 s, RELION MPI 3x4 592 s; map gate passes against all five
+same-command RELION runs (the candidate landed in the RELION basin of run a1,
+cross-engine merged 0.9938). The fast parity tier (13/13) and the resident GPU unit
+files (78 passed, job 14518566) pass. The NumPy reference test covers the box case
+at noise 200; at noise 2 the resident Ft_y relative L2 is 1.18e-5 against the exact
+engine's 2.3e-5 (job 14508921), above the test's 1e-5 bound, pending a decision on a
+derived float32 bound.
 
 Wall references (2026-09-26, user decision). The speed target is at most 0.5x RELION's cold
 wall for one full-size run, as a same-node pair: K=1 on EMPIAR-10097 and the 50k/100k synthetic
