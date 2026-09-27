@@ -10,7 +10,7 @@ import operator
 import os
 import time
 from enum import Enum
-from functools import partial
+from functools import lru_cache, partial
 from typing import NamedTuple
 
 import jax
@@ -761,6 +761,26 @@ def _pass1_fused_enabled() -> bool:
     when active (same ops, same order, same dtypes).
     """
     return parse_env_true_flag(_SIGNIFICANCE_FUSED_PASS1_ENV)
+
+
+@lru_cache(maxsize=8)
+def _pass1_batch_constants(batch_size: int, enable_x64: bool):
+    """The coarse pass's per-batch initial values, built once per batch size.
+
+    ``-inf`` at the default float dtype, float64 zeros and int32 zeros: the
+    running maxima, sums and argmaxes start from these every batch and every
+    class, which was 2 + 2K eager dispatches per image batch (41 s of the main
+    thread on K4 100k/256, job 14514641). JAX arrays are immutable and nothing
+    donates them, so one copy serves every batch. ``enable_x64`` keys the
+    default float dtype.
+    """
+
+    del enable_x64
+    return (
+        jnp.full(batch_size, -jnp.inf),
+        jnp.zeros(batch_size, dtype=jnp.float64),
+        jnp.zeros(batch_size, dtype=jnp.int32),
+    )
 
 
 @partial(
@@ -3743,21 +3763,18 @@ def _compute_k_class_significance_batched(
                 if coarse_gaussian_gemm_hybrid_batch_result is None
                 else coarse_gaussian_gemm_hybrid_batch_result.compact_scores
             )
-            global_max = jnp.full(batch_size, -jnp.inf)
-            global_sum = jnp.zeros(batch_size, dtype=jnp.float64)
+            neg_inf_f, zeros_f64, zeros_i32 = _pass1_batch_constants(batch_size, bool(jax.config.jax_enable_x64))
+            global_max = neg_inf_f
+            global_sum = zeros_f64
             class_max_values = []
             class_sum_values = []
-            best_score_batch = jnp.full(batch_size, -jnp.inf)
-            best_argmax_batch = jnp.zeros(batch_size, dtype=jnp.int32)
-            best_class_batch = jnp.zeros(batch_size, dtype=jnp.int32)
-            class_best_scores = [jnp.full(batch_size, -jnp.inf) for _ in range(n_classes)] if return_class_best else None
-            class_best_argmaxes = [jnp.zeros(batch_size, dtype=jnp.int32) for _ in range(n_classes)] if return_class_best else None
-            class_second_best_scores = (
-                [jnp.full(batch_size, -jnp.inf) for _ in range(n_classes)] if track_class_second else None
-            )
-            class_second_best_argmaxes = (
-                [jnp.zeros(batch_size, dtype=jnp.int32) for _ in range(n_classes)] if track_class_second else None
-            )
+            best_score_batch = neg_inf_f
+            best_argmax_batch = zeros_i32
+            best_class_batch = zeros_i32
+            class_best_scores = [neg_inf_f] * n_classes if return_class_best else None
+            class_best_argmaxes = [zeros_i32] * n_classes if return_class_best else None
+            class_second_best_scores = [neg_inf_f] * n_classes if track_class_second else None
+            class_second_best_argmaxes = [zeros_i32] * n_classes if track_class_second else None
             cache_score_blocks = compact_hybrid_scores is None and collect_significance and (
                 coarse_gemm_diagnostic_positions is not None
                 or _significance_score_cache_enabled(
@@ -3828,8 +3845,8 @@ def _compute_k_class_significance_batched(
                     _fused_trans_lp_per_image = jnp.asarray(batch_translation_log_prior, dtype=score_real_dtype)
 
             for class_index, mean_for_proj in enumerate(means_for_proj):
-                class_max = jnp.full(batch_size, -jnp.inf)
-                class_sum = jnp.zeros(batch_size, dtype=jnp.float64)
+                class_max = neg_inf_f
+                class_sum = zeros_f64
                 cached_score_blocks = [] if cached_class_score_blocks is not None else None
                 score_block_count = n_blocks if compact_hybrid_scores is None else 0
                 for block_index in range(score_block_count):
@@ -4085,15 +4102,15 @@ def _compute_k_class_significance_batched(
                 # are certified at least 138 score units below the maximum and
                 # therefore contribute exact zero to RELION's float32 posterior.
                 global_max, global_sum = _update_logsumexp(
-                    jnp.full(batch_size, -jnp.inf),
-                    jnp.zeros(batch_size, dtype=jnp.float64),
+                    neg_inf_f,
+                    zeros_f64,
                     compact_hybrid_scores.posterior_scores_flat,
                 )
                 class_max_values = [global_max]
                 class_sum_values = [global_sum]
                 best_score_batch = compact_hybrid_scores.best_score
                 best_argmax_batch = compact_hybrid_scores.best_pose
-                best_class_batch = jnp.zeros(batch_size, dtype=jnp.int32)
+                best_class_batch = zeros_i32
 
             # The second significance pass may recompute score blocks when the
             # production cache is disabled.  The all-particle diagnostic is a
