@@ -660,11 +660,6 @@ def compute_local_search_resident(
         experiment_dataset.dtype,
         use_relion_x_half_mstep=True,
     )
-    # Allocated before the pass reads free device memory for its chunk budget,
-    # which then counts them (up to 23 GiB at EMPIAR-10202's full box).
-    Ft_y_total = jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype)
-    Ft_ctf_total = jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype)
-
     # ---- projection setup -------------------------------------------------
     # The refinement loop hands local search a projector with a singleton class
     # axis; the exact local engine normalizes it with the same helper before
@@ -732,6 +727,18 @@ def compute_local_search_resident(
         projection_kwargs=projection_kwargs,
     )
     try:
+        if capacity_texture is not None:
+            # The staged texture serves every projection of the pass, which reads
+            # only the slab's geometry from here on, so the device slab is released
+            # (15.35 GiB at EMPIAR-10202's full box, where it left no free block for
+            # the x-half accumulators: bigbox 14575557).
+            relion_projector_half = jax.ShapeDtypeStruct(relion_projector_half.shape, relion_projector_half.dtype)
+        # Allocated after the slab is released and before the pass reads free device
+        # memory for its chunk budget, which then counts them (up to 23 GiB at
+        # EMPIAR-10202's full box).
+        Ft_y_total = jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype)
+        Ft_ctf_total = jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype)
+
         # ---- per-image resident operands --------------------------------------
         bucket_io_kwargs = dict(
             noise_variance_half=noise_variance_half,
@@ -835,7 +842,7 @@ def compute_local_search_resident(
         # its compact pixel indices; this driver goes through the shared compact
         # helper, so it pays the full row and must budget for it.
         n_projection_pixels = int(getattr(window_spec, "n_projection", n_recon_windowed))
-        projector_slab_bytes = int(jnp.asarray(relion_projector_half).dtype.itemsize)
+        projector_slab_bytes = int(np.dtype(relion_projector_half.dtype).itemsize)
         projection_call_max_bytes = _projection_call_transient_max_bytes()
         projection_block_rows = max(
             1, projection_call_max_bytes // max(n_half * projector_slab_bytes, 1)

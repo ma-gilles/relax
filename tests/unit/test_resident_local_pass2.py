@@ -485,10 +485,24 @@ def test_resident_local_capacity_texture_matches_the_per_call_texture(monkeypatc
         return texture
 
     monkeypatch.setattr(rlp, "_open_capacity_texture", spy)
+    # EMPIAR-10202 full-box pass (14575557): the device slab next to the staged
+    # texture left no free block for the x-half accumulators, so the chunks of a
+    # staged pass get only the slab's geometry.
+    chunk_slabs = []
+    real_start = rlp._start_resident_local_chunk
+
+    def start_spy(*args, **kwargs):
+        chunk_slabs.append(type(kwargs["relion_projector_half"]))
+        return real_start(*args, **kwargs)
+
+    monkeypatch.setattr(rlp, "_start_resident_local_chunk", start_spy)
     staged = _run(case, resident=True, monkeypatch=monkeypatch)
     assert opened == [True]
+    assert chunk_slabs and set(chunk_slabs) == {jax.ShapeDtypeStruct}
+    chunk_slabs.clear()
     monkeypatch.setattr(rlp, "_open_capacity_texture", lambda *a, **k: None)
     per_call = _run(case, resident=True, monkeypatch=monkeypatch)
+    assert chunk_slabs and all(issubclass(kind, jax.Array) for kind in chunk_slabs)
 
     def rel_l2(a, b):
         a = np.asarray(a, dtype=np.float64)
