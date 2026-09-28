@@ -4303,7 +4303,8 @@ def refine_single_volume(
                 group_ids_per_half=group_ids_per_half,
                 group_count_per_half=relion_half_inputs.group_count,
                 relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-                do_norm_correction=True,
+                # RELION switches norm correction off for subtomograms (ml_optimiser.cpp:2688-2693).
+                do_norm_correction=not tomo_halves,
                 do_scale_correction=follower_setup.follower_scale_state is None,
                 dtype=_dense_global_scoring_dtype(),
             )
