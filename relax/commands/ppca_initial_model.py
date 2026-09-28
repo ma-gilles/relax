@@ -39,13 +39,22 @@ def add_args(parser):
     parser.add_argument("--fine-devices", type=int, default=1,
                         help="Local GPUs for the streamed pass; image tiles are split across them")
     parser.add_argument("--stochastic-batch-size", type=int)
-    parser.add_argument("--stochastic-all-iterations", action="store_true",
-                        help="Keep the fixed stochastic batch on the final update as well")
-    parser.add_argument("--balanced-stochastic-halves", action="store_true",
-                        help="Draw equal-sized even/odd pseudo-halves from one shuffled batch order")
+    parser.add_argument(
+        "--stochastic-all-iterations",
+        action="store_true",
+        help="Keep the fixed stochastic batch on the final update as well",
+    )
+    parser.add_argument(
+        "--balanced-stochastic-halves",
+        action="store_true",
+        help="Draw equal-sized even/odd pseudo-halves from one shuffled batch order",
+    )
     parser.add_argument("--checkpoint-interval", type=int, default=1)
-    parser.add_argument("--skip-final-embeddings", action="store_true",
-                        help="Skip the separate all-particle embedding E-step after the final update")
+    parser.add_argument(
+        "--skip-final-embeddings",
+        action="store_true",
+        help="Skip the separate all-particle embedding E-step after the final update",
+    )
     parser.add_argument("--optimizer", choices=("vdam", "momentum_sgd"), default="vdam")
     parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
     parser.add_argument("--resume")
