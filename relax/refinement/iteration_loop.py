@@ -9,6 +9,7 @@ to ``diagnostics.state_swap_runtime``. Pure trial-grid construction belongs to
 See ``docs/math/relion_refinement_algorithm.md`` for the algorithm map.
 """
 
+import dataclasses
 import logging
 import os
 import time
@@ -4449,6 +4450,13 @@ def refine_single_volume(
             check_convergence_now=not native_sampling_boundary and not k_class_enabled,
             **({"symmetry_label": symmetry} if symmetry != "C1" else {}),
         )
+        if iteration == 0 and resume is None and int(init_relion_iteration) == 0 and not k_class_enabled:
+            # Auto-refine only: RELION's followers first run updateAngularSampling at iteration 2
+            # (do_auto_refine && iter > 1, ml_optimiser_mpi.cpp:1233-1234; Class3D does not, and its
+            # sampling and convergence here ignore the counter); as after a sampling refinement, iteration 2's
+            # hidden-variable counter is the followers' reset (S1 optimiser STARs, four seeds:
+            # 0, 0, 1, 2 at iterations 1-4, with the trackers seeded at iteration 1).
+            state = dataclasses.replace(state, suppress_hidden_variable_increment_once=True)
         if accuracy_replay.metadata is not None:
             apply_optimiser_convergence_replay(
                 state,

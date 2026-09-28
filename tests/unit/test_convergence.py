@@ -1067,6 +1067,35 @@ class TestUpdateRefinementState:
             check_convergence_now=False,
         )
 
+    def test_first_iterations_seed_the_trackers_and_count_as_relion(self):
+        """S1 seed 20260925 (RELION optimiser STARs): 0, 0, 1, 2 at iterations 1-4.
+
+        Iteration 1's changes (from the input angles) seed the trackers; the loop suppresses iteration 2's
+        increment (RELION's followers' first updateAngularSampling). Unseeded trackers reset the counter at
+        iteration 4 (1.03 * 1.344 < 1.498) and kept the order-2 sampling one iteration too long.
+        """
+
+        import dataclasses
+
+        state = RefinementState(
+            healpix_order=2,
+            adaptive_oversampling=1,
+            translation_step=1.0,
+            current_resolution=38.8571,
+            voxel_size_angstrom=4.25,
+            mpi_leader_hidden_variable_angular_step_deg=7.5 / 2.0,
+            mpi_leader_hidden_variable_translation_step_angstrom=4.25 / 2.0,
+        )
+        relion_changes = ((3.639418, 1.12395), (5.10381, 1.4983), (5.26732, 1.5024), (5.12007, 1.3442))
+        counts = []
+        for index, (angle, offset) in enumerate(relion_changes):
+            state = self._record_relion_hidden_change(state, angle, offset)
+            if index == 0:
+                state = dataclasses.replace(state, suppress_hidden_variable_increment_once=True)
+            counts.append(state.nr_iter_wo_large_hidden_variable_changes)
+        assert counts == [0, 0, 1, 2]
+        assert_matches(state.smallest_changes_optimal_offsets_angstrom, 1.12395, rtol=1e-4)
+
     def test_relion_order4_to_order5_hidden_change_boundary(self):
         state = RefinementState(
             healpix_order=4,
