@@ -239,5 +239,15 @@ growth rather than moving code outside the counted package.
 - Production Ruff lint, Python compilation and diff checks: passed. The edited
   `test_refine_relion_mode.py` retains unrelated pre-existing import-order
   findings; it was not broadly reformatted.
-- CPU EM fast guard and GPU smoke tier remain to be run on this committed
-  package; their results belong in the next receipt entry.
+- CPU EM fast guard: 102 passed in 57.80 seconds on committed source
+  `a2a1b6eaa0e2d21b48c3c228296d27e6a663aa48` after loading
+  `FFTW/3.3.10-GCC-12.2.0`; exit 0. The initial sandboxed invocation could not
+  acquire Pixi's shared-prefix lock, so the identical command was rerun with
+  access to that lock.
+- GPU smoke tier: infrastructure-blocked before execution. The default
+  `/scratch/gpfs/...` run root is unavailable on this host. With the explicit
+  writable run root
+  `/home/ry295/palmer_scratch/tmp/relax_smoke_a2a1b6e_20260928_1039`, the
+  runner froze the committed source and then failed mandatory verification for
+  all five pinned K1/K2 fixture sets because their `/scratch/gpfs/...` inputs
+  are absent. No GPU test ran; no Slurm job ID or test receipt exists.
