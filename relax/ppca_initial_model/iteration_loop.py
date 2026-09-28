@@ -27,6 +27,7 @@ from relax.local.local_layout import build_pass2_hypothesis_layout
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask
 from relax.ppca_initial_model.noise import update_noise
+from relax.ppca_initial_model.sgd_update import momentum_step
 from relax.ppca_initial_model.state import State
 from relax.ppca_initial_model.update import coupled_direction, empty_moments, metric_floor, stochastic_update
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
@@ -418,7 +419,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
         order = rng.permutation(dataset.n_images)
         state = State(
             theta,
-            empty_moments(theta),
+            empty_moments(theta) if config.optimizer == "vdam" else None,
             noise,
             0,
             order,
@@ -426,12 +427,18 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
             100.0 / dataset.voxel_size**2,
             0,
             info,
+            sgd_momentum=jnp.zeros_like(theta) if config.optimizer == "momentum_sgd" else None,
         )
         checkpoint.save(output / "checkpoint_0000.npz", state, config, identity)
     if dataset.n_images < 4:
         raise ValueError("Both pseudo-halfsets need particles")
     mask = support_mask(dataset.grid_size, diameter_ang / dataset.voxel_size)
     shells = np.asarray(ftu.get_grid_of_radial_distances_real(dataset.volume_shape), np.int32).reshape(-1)
+    sgd_radii = (
+        np.asarray(ftu.get_grid_of_radial_distances_real(dataset.volume_shape, rounded=False)).reshape(-1)
+        if config.optimizer == "momentum_sgd"
+        else None
+    )
     end = config.iterations if stop_after is None else min(config.iterations, stop_after)
     for iteration in range(state.iteration + 1, end + 1):
         started = time.monotonic()
@@ -445,28 +452,46 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
         if any(len(ids) == 0 for ids in halves):
             raise ValueError("Selected batch has an empty pseudo-halfset")
         stats = [expectation(dataset, state, config, ids, iteration) for ids in halves]
-        directions = []
-        metric_info = []
-        coverage = []
-        for result in stats:
-            direction, info = coupled_direction(
-                result.lhs_tri, result.residual_gradient, floor=metric_floor(dataset.grid_size)
+        if config.optimizer == "momentum_sgd":
+            radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
+            _, proposed_momentum, diagnostics = momentum_step(
+                state.theta,
+                state.sgd_momentum,
+                sum(result.residual_gradient for result in stats),
+                sum(result.lhs_tri for result in stats),
+                sgd_radii <= radius,
+                learning_rate=config.sgd_learning_rate,
+                floor=metric_floor(dataset.grid_size),
             )
-            directions.append(direction)
-            metric_info.append(info)
-            coverage.append(jnp.trace(unpack_tri_to_full(result.lhs_tri, config.q + 1), axis1=-2, axis2=-1) > 0)
-        theta, moments, diagnostics = stochastic_update(
-            state.theta,
-            state.moments,
-            jnp.stack(directions),
-            jnp.stack(coverage),
-            shells,
-            step=step,
-            fudge=fudge,
-            image_size=dataset.grid_size,
-        )
-        radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
-        theta = bandlimit_and_mask(theta, dataset.volume_shape, radius, mask)
+            momentum = bandlimit_and_mask(proposed_momentum, dataset.volume_shape, radius, mask)
+            theta = bandlimit_and_mask(state.theta + proposed_momentum, dataset.volume_shape, radius, mask)
+            moments = None
+            metric_info = []
+            diagnostics["velocity_l2_after_support"] = float(jnp.linalg.norm(momentum))
+        else:
+            directions = []
+            metric_info = []
+            coverage = []
+            for result in stats:
+                direction, info = coupled_direction(
+                    result.lhs_tri, result.residual_gradient, floor=metric_floor(dataset.grid_size)
+                )
+                directions.append(direction)
+                metric_info.append(info)
+                coverage.append(jnp.trace(unpack_tri_to_full(result.lhs_tri, config.q + 1), axis1=-2, axis2=-1) > 0)
+            theta, moments, diagnostics = stochastic_update(
+                state.theta,
+                state.moments,
+                jnp.stack(directions),
+                jnp.stack(coverage),
+                shells,
+                step=step,
+                fudge=fudge,
+                image_size=dataset.grid_size,
+            )
+            radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
+            theta = bandlimit_and_mask(theta, dataset.volume_shape, radius, mask)
+            momentum = None
         numerator = sum(s.residual_num for s in stats)
         denominator = sum(s.residual_den for s in stats)
         previous = np.pad(np.asarray(state.noise), (0, max(0, len(numerator) - len(state.noise))), mode="edge")[
@@ -487,7 +512,11 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
         offset = sum(s.diagnostics["offset_second_sum_px2"] for s in stats) / (2 * count)
         beta = 0 if count == dataset.n_images else 0.9
         offset_variance = max(2.0 / dataset.voxel_size**2, beta * state.offset_variance + (1 - beta) * offset)
-        if theta.dtype != jnp.complex64 or moments.first.dtype != jnp.complex64 or moments.second.dtype != jnp.float32:
+        if (
+            theta.dtype != jnp.complex64
+            or (moments is not None and (moments.first.dtype != jnp.complex64 or moments.second.dtype != jnp.float32))
+            or (momentum is not None and momentum.dtype != jnp.complex64)
+        ):
             raise TypeError("Non-float32 production model/moments")
         if not np.all(np.isfinite(np.asarray(theta))):
             raise ValueError("Nonfinite PPCA model")
@@ -516,6 +545,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
             state.initialization,
             direction_prior,
             hp,
+            momentum,
         )
         diagnostics.update(
             {
@@ -524,7 +554,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 "half_counts": [s.n_images for s in stats],
                 "radius": radius,
                 "healpix_order": config.stage(iteration)[1],
-                "step": step,
+                "step": config.sgd_learning_rate if config.optimizer == "momentum_sgd" else step,
                 "fudge": fudge,
                 "noise": noise,
                 "metric": metric_info,
@@ -555,6 +585,13 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 "elapsed_seconds": time.monotonic() - started,
             }
         )
+        if config.optimizer == "momentum_sgd":
+            diagnostics.update(
+                optimizer="momentum_sgd",
+                sgd_learning_rate=config.sgd_learning_rate,
+                vdam_scheduled_step_unused=step,
+                vdam_scheduled_fudge_unused=fudge,
+            )
         with open(output / "iterations.jsonl", "a") as stream:
             stream.write(json.dumps(diagnostics, default=_json) + "\n")
         if iteration % config.checkpoint_interval == 0 or iteration == end:

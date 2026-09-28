@@ -34,6 +34,8 @@ def add_args(parser):
     parser.add_argument("--fine-devices", type=int, default=1,
                         help="Local GPUs for the streamed pass; image tiles are split across them")
     parser.add_argument("--stochastic-batch-size", type=int)
+    parser.add_argument("--optimizer", choices=("vdam", "momentum_sgd"), default="vdam")
+    parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
     parser.add_argument("--resume")
     parser.add_argument("--stop-after", type=int, help="Checkpoint stop without changing the scientific schedule")
     parser.add_argument("--stop-file", help="Stop between iterations after an atomic checkpoint")
@@ -147,6 +149,8 @@ def main(args=None):
         stream_full_fine_rows=args.stream_full_fine_rows,
         fine_devices=args.fine_devices,
         stochastic_batch_size=args.stochastic_batch_size,
+        optimizer=args.optimizer,
+        sgd_learning_rate=args.sgd_learning_rate,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
     )
     data, manifest, identity = load_training(args.manifest)

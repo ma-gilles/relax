@@ -39,18 +39,27 @@ def save(path, state, config, identity):
         "direction_order": state.direction_order,
     }
     temporary = path.with_suffix(".tmp")
-    with open(temporary, "wb") as stream:
-        np.savez(
-            stream,
-            theta=np.asarray(state.theta),
+    arrays = {"theta": np.asarray(state.theta)}
+    if config.optimizer == "vdam":
+        if state.moments is None or state.sgd_momentum is not None:
+            raise ValueError("VDAM checkpoint requires VDAM moments only")
+        arrays.update(
             first=np.asarray(state.moments.first),
             second=np.asarray(state.moments.second),
             initialized=np.asarray(state.moments.initialized),
-            noise=np.asarray(state.noise),
-            order=np.asarray(state.order),
-            direction_prior=np.asarray([] if state.direction_prior is None else state.direction_prior),
-            metadata=json.dumps(metadata),
         )
+    else:
+        if state.sgd_momentum is None or state.moments is not None:
+            raise ValueError("Momentum SGD checkpoint requires momentum only")
+        arrays["sgd_momentum"] = np.asarray(state.sgd_momentum)
+    arrays.update(
+        noise=np.asarray(state.noise),
+        order=np.asarray(state.order),
+        direction_prior=np.asarray([] if state.direction_prior is None else state.direction_prior),
+        metadata=json.dumps(metadata),
+    )
+    with open(temporary, "wb") as stream:
+        np.savez(stream, **arrays)
         stream.flush()
         os.fsync(stream.fileno())
     os.replace(temporary, path)
@@ -65,15 +74,25 @@ def load(path, config, identity):
             or meta["identity"] != canonical(identity)
         ):
             raise ValueError("Checkpoint input/configuration/source identity mismatch")
-        if (
-            arrays["theta"].dtype != np.complex64
-            or arrays["first"].dtype != np.complex64
-            or arrays["noise"].dtype != np.float32
-        ):
+        if arrays["theta"].dtype != np.complex64 or arrays["noise"].dtype != np.float32:
             raise ValueError("Checkpoint is not a production float32 model")
+        if config.optimizer == "vdam":
+            if "sgd_momentum" in arrays or arrays["first"].dtype != np.complex64:
+                raise ValueError("VDAM checkpoint has incorrect optimizer state")
+            moments = Moments(
+                jnp.asarray(arrays["first"]), jnp.asarray(arrays["second"]), jnp.asarray(arrays["initialized"])
+            )
+            momentum = None
+        else:
+            if "first" in arrays or "sgd_momentum" not in arrays or arrays["sgd_momentum"].dtype != np.complex64:
+                raise ValueError("Momentum SGD checkpoint has incorrect optimizer state")
+            moments = None
+            momentum = jnp.asarray(arrays["sgd_momentum"])
+            if momentum.shape != arrays["theta"].shape:
+                raise ValueError("Momentum SGD checkpoint momentum shape mismatch")
         return State(
             jnp.asarray(arrays["theta"]),
-            Moments(jnp.asarray(arrays["first"]), jnp.asarray(arrays["second"]), jnp.asarray(arrays["initialized"])),
+            moments,
             jnp.asarray(arrays["noise"]),
             meta["iteration"],
             arrays["order"].copy(),
@@ -83,4 +102,5 @@ def load(path, config, identity):
             meta["initialization"],
             arrays["direction_prior"].copy() if arrays["direction_prior"].size else None,
             meta["direction_order"],
+            momentum,
         )

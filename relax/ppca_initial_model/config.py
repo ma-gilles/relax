@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+import numpy as np
+
 from relax.vdam.schedules import (
     compute_phase_lengths,
     compute_stepsize,
@@ -28,6 +30,8 @@ class Config:
     fine_devices: int = 1
     stochastic_batch_size: int | None = None
     checkpoint_interval: int = 1
+    optimizer: str = "vdam"
+    sgd_learning_rate: float = 0.4
 
     def __post_init__(self):
         if self.q != 2 or self.seed <= 0 or self.iterations <= 0:
@@ -46,6 +50,10 @@ class Config:
             raise ValueError("Stochastic batch size must be positive")
         if self.shift_range < 0 or self.shift_step <= 0:
             raise ValueError("Shift range must be nonnegative and step positive")
+        if self.optimizer not in ("vdam", "momentum_sgd"):
+            raise ValueError("Optimizer must be vdam or momentum_sgd")
+        if not np.isfinite(self.sgd_learning_rate) or self.sgd_learning_rate <= 0:
+            raise ValueError("Momentum SGD learning rate must be finite and positive")
 
     def stage(self, iteration):
         return next((r, hp) for start, r, hp in reversed(self.stages) if start <= iteration)

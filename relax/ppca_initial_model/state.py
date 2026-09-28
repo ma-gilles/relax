@@ -8,7 +8,7 @@ from relax.ppca_initial_model.update import Moments
 @dataclass
 class State:
     theta: object
-    moments: Moments
+    moments: Moments | None
     noise: object
     iteration: int
     order: object
@@ -19,3 +19,4 @@ class State:
 
     direction_prior: object = None
     direction_order: int = -1
+    sgd_momentum: object = None
