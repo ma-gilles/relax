@@ -55,6 +55,7 @@ from relax.helpers.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
 from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches, _local_search_precision_flags
 from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
 from relax.helpers.oversampling import build_adaptive_pass2_grids
+from relax.helpers.preprocessing import uses_relion_cuda_image_preprocessing
 from relax.local.local_layout import build_local_adaptive_pass2_hypothesis_layout, build_local_hypothesis_layout
 from relax.refinement.firstiter_cc import _score_kclass_firstiter_cc_pass2
 from relax.refinement.local_search_iteration import _run_local_search_iteration
@@ -541,7 +542,7 @@ def _score_half_dense_one_shape(
             adaptive_em_kwargs["sparse_pass2"] = kclass_sparse_pass2
             # Class3D pass 1 scores RELION's exact coarse operands; a normalized-CC
             # pass keeps the generic scorer, which the exact path leaves dormant.
-            adaptive_em_kwargs["relion_exact_coarse"] = True
+            adaptive_em_kwargs["relion_exact_coarse"] = uses_relion_cuda_image_preprocessing(experiment_dataset)
             logger.info(
                 "RELION adaptive K-class routing through run_dense_k_class_em_adaptive "
                 "(oversampling=%d, pass2_backend=%s, fine_mstep_prune=%s)",
@@ -714,6 +715,11 @@ def _score_half_dense_one_shape(
                 raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
             k1_skip_significance_pruning = _k1_skip_significance_pruning_enabled()
             adaptive_em_kwargs["sparse_pass2"] = k1_sparse_pass2
+            # Every K=1 start scores RELION's exact coarse operands, as Class3D and
+            # VDAM do; a fresh start requires the RELION CUDA preprocessing anyway.
+            adaptive_em_kwargs["relion_exact_coarse"] = bool(
+                preserve_bpref_particle_order or uses_relion_cuda_image_preprocessing(experiment_dataset)
+            )
             if group_ids_k is not None:
                 adaptive_em_kwargs["group_ids"] = group_ids_k
             if k1_relion_x_half_mstep:

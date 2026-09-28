@@ -2773,10 +2773,9 @@ def run_dense_k_class_em_adaptive(
             relion_projector_texture_interp=coarse_relion_projector_texture_interp,
             debug_iteration=debug_iteration,
             translation_phase_source=coarse_translation_phase_source,
-            # The exact-operand coarse path (em_status coarse-scorer TODO): Class3D
-            # asks for it (relion_exact_coarse), fresh K=1 Refine3D takes it through
-            # its particle-order setting; the generic dense scorer stays for the
-            # other starts and every normalized-CC pass until they move.
+            # The exact-operand coarse path (em_status coarse-scorer TODO): the
+            # Refine3D, Class3D and VDAM routes ask for it (relion_exact_coarse); the
+            # generic dense scorer stays for every normalized-CC pass until it moves.
             relion_coarse_gaussian_default=bool(
                 engine_kwargs.get(
                     "relion_exact_coarse", engine_kwargs.get("preserve_bpref_particle_order", False)

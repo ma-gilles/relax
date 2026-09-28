@@ -12714,6 +12714,8 @@ class TestRelionModeSmokeTest:
                 disc_type,
             )
             assert kwargs.get("preserve_bpref_particle_order", False) == preserve_order
+            # The mock datasets have no RELION CUDA preprocessing: only a fresh start asks.
+            assert kwargs["relion_exact_coarse"] is preserve_order
             half_idx = call_idx["value"]
             call_idx["value"] += 1
             fine_mstep_prune_values.append(kwargs.get("relion_fine_mstep_prune"))
