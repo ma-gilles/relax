@@ -539,6 +539,9 @@ def _score_half_dense_one_shape(
             if symmetry != "C1" and not kclass_sparse_pass2:
                 raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
             adaptive_em_kwargs["sparse_pass2"] = kclass_sparse_pass2
+            # Class3D pass 1 scores RELION's exact coarse operands; a normalized-CC
+            # pass keeps the generic scorer, which the exact path leaves dormant.
+            adaptive_em_kwargs["relion_exact_coarse"] = True
             logger.info(
                 "RELION adaptive K-class routing through run_dense_k_class_em_adaptive "
                 "(oversampling=%d, pass2_backend=%s, fine_mstep_prune=%s)",

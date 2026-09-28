@@ -2773,8 +2773,14 @@ def run_dense_k_class_em_adaptive(
             relion_projector_texture_interp=coarse_relion_projector_texture_interp,
             debug_iteration=debug_iteration,
             translation_phase_source=coarse_translation_phase_source,
+            # The exact-operand coarse path (em_status coarse-scorer TODO): Class3D
+            # asks for it (relion_exact_coarse), fresh K=1 Refine3D takes it through
+            # its particle-order setting; the generic dense scorer stays for the
+            # other starts and every normalized-CC pass until they move.
             relion_coarse_gaussian_default=bool(
-                engine_kwargs.get("preserve_bpref_particle_order", False)
+                engine_kwargs.get(
+                    "relion_exact_coarse", engine_kwargs.get("preserve_bpref_particle_order", False)
+                )
             ),
             optics_group_ids=engine_kwargs.get("optics_group_ids"),
             pad_final_image_batch=bool(significance_pad_final_image_batch),
@@ -2840,6 +2846,7 @@ def run_dense_k_class_em_adaptive(
 
     mask_t0 = time.time()
     pass2_kwargs = dict(engine_kwargs)
+    pass2_kwargs.pop("relion_exact_coarse", None)  # a pass-1 choice
     if reuse_zero_oversampling_coarse_state:
         pass2_kwargs["relion_f32_normalization_sum_weight"] = _full_coarse_stats["relion_f32_sum_weight"]
         pass2_kwargs["relion_coarse_max_posterior"] = _full_coarse_stats["relion_f32_max_posterior"]
