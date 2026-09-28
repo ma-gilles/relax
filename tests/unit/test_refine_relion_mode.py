@@ -4503,7 +4503,7 @@ def test_run_local_search_iteration_fallback_planner_uses_resolved_score_precisi
     monkeypatch.setattr(local_iteration_module, "_estimate_relion_em_batch_sizes", capture_planner)
 
     with pytest.raises(PlannerCaptured):
-        local_search_iteration._run_local_search_iteration(
+        local_search_iteration._run_local_search_iteration(*local_iteration_owners(
             MockDataset(1, rng),
             jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -4520,7 +4520,7 @@ def test_run_local_search_iteration_fallback_planner_uses_resolved_score_precisi
             rotation_block_size=16,
             current_size=4,
             use_float64_scoring=use_float64_scoring,
-        )
+        ))
 
     assert captured["use_float64_scoring"] is use_float64_scoring
 
@@ -4561,7 +4561,7 @@ def test_run_local_search_iteration_plumbs_score_only_to_exact_engine(monkeypatc
 
     monkeypatch.setattr(local_iteration_module, "run_local_em_exact", fake_run_local_em_exact)
 
-    outputs = local_search_iteration._run_local_search_iteration(
+    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -4583,7 +4583,7 @@ def test_run_local_search_iteration_plumbs_score_only_to_exact_engine(monkeypatc
         disable_adjoint_y=True,
         disable_adjoint_ctf=True,
         score_only=True,
-    )
+    ))
 
     assert captured["score_only"] is True
     assert captured["disable_adjoint_y"] is True
