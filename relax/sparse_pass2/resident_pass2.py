@@ -2988,6 +2988,12 @@ def _resident_pass2(
         )
 
     # ---- capacity plan ----------------------------------------------------
+    # A chunk gathers one cached row per candidate: the union window's pixels
+    # when the cache holds one (_cached_block_projections), not the score
+    # window's. Counting the score window let a 524288-row chunk past both
+    # budgets at current size 108 and its 19.8 GiB gather ran out of memory
+    # (union 5008 vs score 3690 pixels, job 14592696).
+    gathered_row_pixels = int(n_windowed) if union_indices is None else int(union_indices.shape[0])
     row_ladder = parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER)
     if stream_projections:
         row_ladder = _stream_row_capacity_ladder(
@@ -3009,14 +3015,14 @@ def _resident_pass2(
         )
         row_ladder = _cached_row_capacity_ladder(
             row_ladder,
-            bytes_per_row=int(n_windowed) * np.dtype(precision_policy.score_complex_dtype).itemsize,
+            bytes_per_row=gathered_row_pixels * np.dtype(precision_policy.score_complex_dtype).itemsize,
             max_gather_bytes=gather_budget_bytes,
         )
         logger.info(
             "Resident pass-2 cached-path row capacities %s: gather budget %.2f GiB at %.1f KiB per row",
             ",".join(str(v) for v in row_ladder),
             gather_budget_bytes / float(1024**3),
-            int(n_windowed) * np.dtype(precision_policy.score_complex_dtype).itemsize / 1024.0,
+            gathered_row_pixels * np.dtype(precision_policy.score_complex_dtype).itemsize / 1024.0,
         )
     # The chunk's translated arrays depend on its operand family, so the plan
     # counts the family the pass expects: the half's resident operands when
@@ -3054,7 +3060,7 @@ def _resident_pass2(
             row_bytes=(
                 _STREAM_PEAK_COPIES * int(projection_bytes_per_rotation)
                 if stream_projections
-                else int(n_windowed) * np.dtype(precision_policy.score_complex_dtype).itemsize
+                else gathered_row_pixels * np.dtype(precision_policy.score_complex_dtype).itemsize
             ),
             n_fine_trans=n_fine_trans,
             n_recon_pixels=n_recon_windowed,
