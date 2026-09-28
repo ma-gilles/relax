@@ -499,3 +499,50 @@ single-volume boundary has 17 parameters.
   resident-reference selection: 124 passed and 28 CUDA-only cases skipped.
 - Fresh post-rebase CPU EM fast guard: 102 passed in 56.88 seconds with
   `FFTW/3.3.10-GCC-12.2.0` loaded.
+
+## 2026-09-28 — direction-prior update specification ownership
+
+### Change
+
+- Replaced the 16-parameter direction-prior publication boundary with
+  `DirectionPriorUpdateSpec` and owners for posterior inputs, caller-owned
+  mutable priors, scoring-grid identity and execution precision/logging.
+- `update_learned_direction_priors` keeps those four owners visible and does
+  not unpack stable fields. An AST ownership regression enforces the boundary.
+- The numbered-iteration controller constructs the specification where it
+  already resolves the K1 scoring order and exhaustive K-class grid size.
+  K1/K-class route selection, symmetry handling, validation/warning order and
+  independent per-half copies remain unchanged.
+
+### Structural delta from the active upstream baseline
+
+| Metric | Baseline | Current | Delta |
+| --- | ---: | ---: | ---: |
+| Production files | 15 | 16 | +1 |
+| Physical production lines | 14,187 | 15,104 | +917 |
+| Nonblank, non-comment lines | 12,410 | 13,173 | +763 |
+| Production functions | 223 | 225 | +2 |
+| Functions with at least 10 parameters | 17 | 8 | -9 |
+| Functions with at least 20 parameters | 8 | 2 | -6 |
+| Largest parameter count | 67 | 21 | -46 |
+| Largest function span | 5,234 | 5,452 | +218 |
+
+This package adds 77 physical production lines. Excluding the two out-of-scope
+tomography scoring boundaries, six single-volume functions remain at 10+
+parameters and the largest has 17.
+
+### Validation
+
+- Implementation commit:
+  `5e21a5020fe01ce060bd32376aaba2880f55fca9`.
+- AST-normalized comparison against its parent: passed after removing the four
+  owner aliases and translating `owner.field` back to its former parameter
+  name; the complete update body is identical.
+- Direction-prior update, ownership and snapshot-consumption tests: 18 passed.
+- Production and affected-test Ruff lint, Python compilation, snapshot check
+  and diff checks: passed.
+- CPU EM fast guard: 102 passed in 56.83 seconds on the implementation commit
+  with `FFTW/3.3.10-GCC-12.2.0` loaded.
+- GPU smoke remains infrastructure-blocked by the unchanged absence of the five
+  mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
+  produced.
