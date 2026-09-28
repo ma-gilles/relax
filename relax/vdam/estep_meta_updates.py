@@ -46,9 +46,7 @@ def with_uniform_class_direction_priors(
     return replace(
         state,
         pdf_class=np.full(state.K, 1.0 / float(state.K), dtype=np.float64),
-        pdf_direction=np.full(
-            (state.K, n_directions), 1.0 / float(state.K * n_directions), dtype=np.float64
-        ),
+        pdf_direction=np.full((state.K, n_directions), 1.0 / float(state.K * n_directions), dtype=np.float64),
     )
 
 
