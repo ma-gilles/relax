@@ -192,8 +192,12 @@ def run_tilt_chunk(
     rect_indices_device,
     exact_positions_device,
     tile_budget_bytes: int,
+    operand_image_start: int = 0,
 ):
     """Score, weight and backproject one chunk of particles; return ``(Ft_y_total, Ft_ctf_total, stats)``.
+
+    ``resident_operands`` hold the half's images from ``operand_image_start`` on: the whole half
+    (0), or only this chunk's images when the half's operands do not fit (resident_pass2).
 
     - Rows are the chunk's particle hypotheses (unit-major, as the candidate tables hold them).
     - Each row is scored by every image of its particle, image slot by image slot, with that image's
@@ -235,6 +239,7 @@ def run_tilt_chunk(
     )
     valid_images = layout.image_ids >= 0
     image_slots = np.where(valid_images, layout.image_ids, -1).astype(np.int32)
+    operand_slots = np.where(valid_images, layout.image_ids - int(operand_image_start), -1).astype(np.int32)
     safe_images = np.where(valid_images, layout.image_ids, 0)
 
     # --- projections of every (slot, row): RELION's host inv(L_i A_r) ------
@@ -256,7 +261,7 @@ def run_tilt_chunk(
     # for the chunk's C_U * S images. The chunk-wide gather takes one zero translation.
     recon = rp.gather_resident_chunk_operands(
         resident_operands,
-        image_slots,
+        operand_slots,
         translation_angles=np.zeros((1, 2), dtype=np.float32),
         rect_indices=rect_indices_device,
         exact_positions=exact_positions_device,
@@ -268,8 +273,8 @@ def run_tilt_chunk(
 
     chunk_wavg_window = _gather_rows(
         resident_operands.wavg_image_rect,
-        jnp.asarray(np.maximum(image_slots, 0), dtype=jnp.int32),
-        jnp.asarray(image_slots >= 0),
+        jnp.asarray(np.maximum(operand_slots, 0), dtype=jnp.int32),
+        jnp.asarray(operand_slots >= 0),
     )
     noise_scale = np.where(valid_images, np.asarray(tilt.image_noise_scale, dtype=np.float32)[safe_images], 0.0)
     operands = rp._make_chunk_stage_operands(recon, None)._replace(image_noise_scale=jnp.asarray(noise_scale))

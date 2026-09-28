@@ -3327,6 +3327,26 @@ def _resident_pass2(
     # over the half produces the same rows; the chunk loop then gathers them.
     resident_operands = None
     warmup = None
+    resident_operand_kwargs = dict(
+        bucket_io_kwargs=bucket_io_kwargs,
+        window_indices=window_indices,
+        recon_window_indices=recon_window_indices,
+        wavg_rect_indices=relion_wavg_rectangle.centered_indices,
+        noise_shell_indices_half=shell_indices_half,
+        n_noise_shells=int(n_shells),
+        image_shape=image_shape,
+        current_size=current_size,
+        n_fine_trans=int(n_fine_trans),
+        use_exact_relion_gaussian=use_exact_relion_gaussian,
+        accumulate_noise=accumulate_noise,
+        source_faithful_spectrum_norm=resolved_spectrum_norm,
+        fine_translation_prior_2d=fine_translation_prior_2d,
+        scale_corrections_np=scale_corrections_np,
+        group_ids_np=group_ids_np,
+        precision_policy=precision_policy,
+        optics_groups_np=optics_groups_np,
+        relion_native_fine_units=relion_native_fine_units,
+    )
     # The --firstiter_cc iteration scores the compact engine's translated
     # normalized-CC tiles, which only the per-chunk preparation builds; it is
     # one iteration at a small current size.
@@ -3498,26 +3518,7 @@ def _resident_pass2(
                 operands_t0 = time.time()
                 try:
                     resident_operands = prepare_resident_half_operands(
-                        experiment_dataset,
-                        np.arange(n_images, dtype=np.int64),
-                        bucket_io_kwargs=bucket_io_kwargs,
-                        window_indices=window_indices,
-                        recon_window_indices=recon_window_indices,
-                        wavg_rect_indices=relion_wavg_rectangle.centered_indices,
-                        noise_shell_indices_half=shell_indices_half,
-                        n_noise_shells=int(n_shells),
-                        image_shape=image_shape,
-                        current_size=current_size,
-                        n_fine_trans=int(n_fine_trans),
-                        use_exact_relion_gaussian=use_exact_relion_gaussian,
-                        accumulate_noise=accumulate_noise,
-                        source_faithful_spectrum_norm=resolved_spectrum_norm,
-                        fine_translation_prior_2d=fine_translation_prior_2d,
-                        scale_corrections_np=scale_corrections_np,
-                        group_ids_np=group_ids_np,
-                        precision_policy=precision_policy,
-                        optics_groups_np=optics_groups_np,
-                        relion_native_fine_units=relion_native_fine_units,
+                        experiment_dataset, np.arange(n_images, dtype=np.int64), **resident_operand_kwargs
                     )
                 except ResidentOperandsUnsupported as reason:
                     logger.info(
@@ -3608,7 +3609,10 @@ def _resident_pass2(
     if tilt is not None:
         from relax.sparse_pass2.resident_tilts import run_tilt_chunk
 
-        _require(resident_operands is not None, "subtomogram particles need the resident per-image operands")
+        # Without the half's resident operands (they do not fit), each chunk prepares the same
+        # per-image operands for its own tilt images, a consecutive range of the half's images.
+        if resident_operands is None:
+            logger.info("Resident pass-2 tilt chunks prepare their own images' resident operands")
         tilt_base_tables = _make_chunk_stage_tables(
             projection_score_cache=None,
             projection_recon_cache=None,
@@ -3639,16 +3643,29 @@ def _resident_pass2(
             recon_volume_shape=program_recon_volume_shape,
             max_adjoint_block_bytes=max_adjoint_block_bytes,
             stats_config=stats_config,
-            use_rfloat_ctf_wavg=resident_operands.direct_ctf_rfloat_recon is not None,
             use_translate_sum_kernel=True,
-            bpref_recon_operand=resident_operands.recon_weight is not None,
         )
+        unit_image_offsets = np.asarray(tilt.unit_image_offsets, dtype=np.int64)
         for chunk in chunks:
+            chunk_operands, operand_image_start = resident_operands, 0
+            if chunk_operands is None:
+                operand_image_start = int(unit_image_offsets[int(chunk.image_start)])
+                operand_image_stop = int(unit_image_offsets[int(chunk.image_start) + int(chunk.n_valid_images)])
+                chunk_operands = prepare_resident_half_operands(
+                    experiment_dataset,
+                    np.arange(operand_image_start, operand_image_stop, dtype=np.int64),
+                    **resident_operand_kwargs,
+                )
+            tilt_spec_kwargs.update(
+                use_rfloat_ctf_wavg=chunk_operands.direct_ctf_rfloat_recon is not None,
+                bpref_recon_operand=chunk_operands.recon_weight is not None,
+            )
             Ft_y_chunk, Ft_ctf_chunk, stats = run_tilt_chunk(
                 chunk,
                 tables=tables,
                 tilt=tilt,
-                resident_operands=resident_operands,
+                resident_operands=chunk_operands,
+                operand_image_start=operand_image_start,
                 project_rotations=project_fine_rotations,
                 base_tables=tilt_base_tables,
                 n_fine_trans=n_fine_trans,

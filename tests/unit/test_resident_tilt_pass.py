@@ -67,7 +67,23 @@ def test_one_image_particles_reproduce_the_spa_pass(_resident_production_env):  
     spa = rp._resident_pass2(**args)
     # The tilt pass takes the offset prior per particle, from the tilt inputs.
     tomo = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=_one_image_tilt_inputs(args))
+    _assert_tilt_pass_matches_spa(spa, tomo)
 
+
+@requires_resident_gpu
+def test_tilt_chunks_prepare_their_own_operands_when_the_half_does_not_fit(_resident_production_env, monkeypatch):  # noqa: F811
+    """A half whose resident operands exceed the budget: each tilt chunk prepares its own images' operands."""
+
+    from relax.sparse_pass2 import resident_pass2 as rp
+
+    args = dict(_driver_fixture_args(), score_with_masked_images=True)
+    spa = rp._resident_pass2(**args)
+    monkeypatch.setattr(rp, "_resident_operands_fit", lambda *a, **k: False)
+    tomo = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=_one_image_tilt_inputs(args))
+    _assert_tilt_pass_matches_spa(spa, tomo)
+
+
+def _assert_tilt_pass_matches_spa(spa, tomo):
     for field in ("hard_assignment", "best_fine_rotation_indices"):
         assert_matches(getattr(spa.finalized, field), getattr(tomo.finalized, field), err_msg=field)
     for field in (
