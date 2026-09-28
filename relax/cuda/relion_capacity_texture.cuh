@@ -18,6 +18,9 @@ struct CapacityRelionHalfTextureF32 {
     cudaTextureObject_t texture_real = 0;
     cudaTextureObject_t texture_imag = 0;
     int32_t* logical_radius = nullptr;  // device scalar the fill kernel read
+    float* staging_real = nullptr;
+    float* staging_imag = nullptr;
+    bool reusable_staging = false;
     int half_z = 0;
     int half_y = 0;
     int half_x = 0;
@@ -27,12 +30,14 @@ struct CapacityRelionHalfTextureF32 {
     std::mutex state_mutex;
     std::condition_variable state_changed;
     bool closing = false;
+    bool refreshing = false;
+    bool refresh_failed = false;
     int active_calls = 0;
 
     bool acquire_call()
     {
         std::lock_guard<std::mutex> lock(state_mutex);
-        if (closing) return false;
+        if (closing || refreshing || refresh_failed) return false;
         ++active_calls;
         return true;
     }
@@ -51,7 +56,24 @@ struct CapacityRelionHalfTextureF32 {
     {
         std::unique_lock<std::mutex> lock(state_mutex);
         closing = true;
+        state_changed.wait(lock, [this] { return active_calls == 0 && !refreshing; });
+    }
+
+    bool begin_refresh()
+    {
+        std::unique_lock<std::mutex> lock(state_mutex);
+        if (closing || refreshing || refresh_failed || !reusable_staging) return false;
+        refreshing = true;
         state_changed.wait(lock, [this] { return active_calls == 0; });
+        return true;
+    }
+
+    void finish_refresh(bool success) noexcept
+    {
+        std::lock_guard<std::mutex> lock(state_mutex);
+        refresh_failed = !success;
+        refreshing = false;
+        state_changed.notify_all();
     }
 
     cudaError_t destroy_owned() noexcept
@@ -68,9 +90,12 @@ struct CapacityRelionHalfTextureF32 {
         if (array_real) { const auto e = cudaFreeArray(array_real); if (cleanup == cudaSuccess) cleanup = e; }
         if (array_imag) { const auto e = cudaFreeArray(array_imag); if (cleanup == cudaSuccess) cleanup = e; }
         if (logical_radius) { const auto e = cudaFree(logical_radius); if (cleanup == cudaSuccess) cleanup = e; }
+        if (staging_real) { const auto e = cudaFree(staging_real); if (cleanup == cudaSuccess) cleanup = e; }
+        if (staging_imag) { const auto e = cudaFree(staging_imag); if (cleanup == cudaSuccess) cleanup = e; }
         texture_real = texture_imag = 0;
         array_real = array_imag = nullptr;
         logical_radius = nullptr;
+        staging_real = staging_imag = nullptr;
         if (err == cudaSuccess) err = cleanup;
         if (original_device >= 0 && original_device != device) {
             const cudaError_t restore = cudaSetDevice(original_device);
@@ -132,19 +157,24 @@ static cudaError_t stage_capacity_relion_half_texture_f32(
     const int texZ = owner->half_z;
     const int64_t plane = static_cast<int64_t>(texX) * texY;
     const int group = static_cast<int>(std::max<int64_t>(1, std::min<int64_t>(texZ, kCapacityTextureStagingTexels / plane)));
-    float* real = nullptr;
-    float* imag = nullptr;
+    float* real = owner->staging_real;
+    float* imag = owner->staging_imag;
     cudaStream_t stream = nullptr;
     cudaError_t err = cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking);
-    if (err == cudaSuccess) err = cudaMalloc(reinterpret_cast<void**>(&owner->logical_radius), sizeof(int32_t));
+    if (err == cudaSuccess && !owner->logical_radius)
+        err = cudaMalloc(reinterpret_cast<void**>(&owner->logical_radius), sizeof(int32_t));
     if (err == cudaSuccess)
         err = cudaMemcpy(owner->logical_radius, &logical_radius, sizeof(int32_t), cudaMemcpyHostToDevice);
-    if (err == cudaSuccess) err = cudaMalloc(reinterpret_cast<void**>(&real), plane * group * sizeof(float));
-    if (err == cudaSuccess) err = cudaMalloc(reinterpret_cast<void**>(&imag), plane * group * sizeof(float));
+    if (err == cudaSuccess && !real) err = cudaMalloc(reinterpret_cast<void**>(&real), plane * group * sizeof(float));
+    if (err == cudaSuccess && !imag) err = cudaMalloc(reinterpret_cast<void**>(&imag), plane * group * sizeof(float));
+    if (owner->reusable_staging) {
+        owner->staging_real = real;
+        owner->staging_imag = imag;
+    }
     cudaChannelFormatDesc desc = cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
     cudaExtent extent = make_cudaExtent((size_t)texX, (size_t)texY, (size_t)texZ);
-    if (err == cudaSuccess) err = cudaMalloc3DArray(&owner->array_real, &desc, extent);
-    if (err == cudaSuccess) err = cudaMalloc3DArray(&owner->array_imag, &desc, extent);
+    if (err == cudaSuccess && !owner->array_real) err = cudaMalloc3DArray(&owner->array_real, &desc, extent);
+    if (err == cudaSuccess && !owner->array_imag) err = cudaMalloc3DArray(&owner->array_imag, &desc, extent);
     for (int z_begin = 0; z_begin < texZ && err == cudaSuccess; z_begin += group) {
         const int n_planes = std::min(group, texZ - z_begin);
         const int64_t texels = plane * n_planes;
@@ -162,7 +192,7 @@ static cudaError_t stage_capacity_relion_half_texture_f32(
         copy_params.srcPtr = make_cudaPitchedPtr(imag, (size_t)texX * sizeof(float), (size_t)texX, (size_t)texY);
         if (err == cudaSuccess) err = cudaMemcpy3DAsync(&copy_params, stream);
     }
-    if (err == cudaSuccess) {
+    if (err == cudaSuccess && !owner->texture_real) {
         cudaResourceDesc resource_real, resource_imag;
         cudaTextureDesc texture_desc;
         memset(&resource_real, 0, sizeof(resource_real));
@@ -190,17 +220,20 @@ static cudaError_t stage_capacity_relion_half_texture_f32(
         if (err == cudaSuccess) err = sync;
         cudaStreamDestroy(stream);
     }
-    if (real) cudaFree(real);
-    if (imag) cudaFree(imag);
+    if (!owner->reusable_staging) {
+        if (real) cudaFree(real);
+        if (imag) cudaFree(imag);
+    }
     return err;
 }
 
 /* ``projector_half`` is a device pointer to the C64 [z, y, x>=0] capacity half
  * storage of ProjectRelionHalfImageRadius; the caller keeps it alive and
  * complete until this returns. */
-extern "C" int relax_relion_capacity_half_texture_f32_create(
+static int create_capacity_relion_half_texture_f32(
     const void* projector_half, int half_z, int half_y, int half_x,
-    int logical_radius, int padding_factor, int device, uint64_t* owner_handle)
+    int logical_radius, int padding_factor, int device, uint64_t* owner_handle,
+    bool reusable_staging)
 {
     if (!projector_half || !owner_handle || half_z < 5 || half_z != half_y ||
         half_z % 2 != 1 || half_x != half_z / 2 + 1 ||
@@ -216,6 +249,7 @@ extern "C" int relax_relion_capacity_half_texture_f32_create(
         owner->half_x = half_x;
         owner->padding_factor = padding_factor;
         owner->device = device;
+        owner->reusable_staging = reusable_staging;
         int original_device = -1;
         cudaError_t err = cudaGetDevice(&original_device);
         if (err != cudaSuccess) return static_cast<int>(err);
@@ -246,6 +280,69 @@ extern "C" int relax_relion_capacity_half_texture_f32_create(
         }
         *owner_handle = handle;
         return static_cast<int>(cudaSuccess);
+    } catch (const std::bad_alloc&) {
+        return static_cast<int>(cudaErrorMemoryAllocation);
+    } catch (...) {
+        return static_cast<int>(cudaErrorUnknown);
+    }
+}
+
+extern "C" int relax_relion_capacity_half_texture_f32_create(
+    const void* projector_half, int half_z, int half_y, int half_x,
+    int logical_radius, int padding_factor, int device, uint64_t* owner_handle)
+{
+    return create_capacity_relion_half_texture_f32(
+        projector_half, half_z, half_y, half_x, logical_radius,
+        padding_factor, device, owner_handle, false);
+}
+
+extern "C" int relax_relion_capacity_half_texture_f32_create_reusable(
+    const void* projector_half, int half_z, int half_y, int half_x,
+    int logical_radius, int padding_factor, int device, uint64_t* owner_handle)
+{
+    return create_capacity_relion_half_texture_f32(
+        projector_half, half_z, half_y, half_x, logical_radius,
+        padding_factor, device, owner_handle, true);
+}
+
+extern "C" int relax_relion_capacity_half_texture_f32_refresh(
+    uint64_t owner_handle, const void* projector_half, int logical_radius, int device)
+{
+    if (owner_handle == 0 || !projector_half || device < 0) return static_cast<int>(cudaErrorInvalidValue);
+    try {
+        std::shared_ptr<CapacityRelionHalfTextureF32> owner;
+        {
+            std::lock_guard<std::mutex> lock(capacity_relion_half_texture_f32_mutex);
+            const auto found = capacity_relion_half_texture_f32_registry.find(owner_handle);
+            if (found == capacity_relion_half_texture_f32_registry.end())
+                return static_cast<int>(cudaErrorInvalidResourceHandle);
+            owner = found->second;
+        }
+        if (device != owner->device || logical_radius < 0 ||
+            logical_radius > (owner->half_y / 2 - 1) / owner->padding_factor ||
+            !owner->begin_refresh())
+            return static_cast<int>(cudaErrorInvalidValue);
+        struct RefreshGuard {
+            CapacityRelionHalfTextureF32* owner;
+            bool success = false;
+            ~RefreshGuard() { owner->finish_refresh(success); }
+        } guard{owner.get()};
+        int original_device = -1;
+        cudaError_t err = cudaGetDevice(&original_device);
+        if (err == cudaSuccess && original_device != device) err = cudaSetDevice(device);
+        // Iteration boundary only: no compiled projector may still be using
+        // these arrays when the refill starts. Python also blocks on the final
+        // compiled completion token before entering this C API.
+        if (err == cudaSuccess) err = cudaDeviceSynchronize();
+        if (err == cudaSuccess)
+            err = stage_capacity_relion_half_texture_f32(
+                static_cast<const float2*>(projector_half), logical_radius, owner.get());
+        if (original_device >= 0 && original_device != device) {
+            const cudaError_t restore = cudaSetDevice(original_device);
+            if (err == cudaSuccess) err = restore;
+        }
+        guard.success = err == cudaSuccess;
+        return static_cast<int>(err);
     } catch (const std::bad_alloc&) {
         return static_cast<int>(cudaErrorMemoryAllocation);
     } catch (...) {

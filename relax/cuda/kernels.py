@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import weakref
 from contextlib import contextmanager
 from typing import Tuple
@@ -5201,11 +5202,17 @@ class RelionCapacityHalfTextureF32:
     kernel and texture arrays) and :meth:`project` launches the same projection
     kernel on it with no synchronization, so it returns what
     ``project_relion_half_capacity(projector_half, rotations, logical_r_max,
-    ...)`` returns. :meth:`close` waits for the last projection before the
-    texture is destroyed; use it as a context manager.
+    ...)`` returns. :meth:`close` waits for the last eager projection before
+    the texture is destroyed. For a compiled caller, keep this owner alive
+    across every invocation and call :meth:`close_after` with a concrete
+    completed result from the final invocation. A trace-time projection is
+    not evidence that the compiled GPU work has completed.
     """
 
-    def __init__(self, projector_half: jax.Array, logical_r_max: int, *, padding_factor: int) -> None:
+    def __init__(
+        self, projector_half: jax.Array, logical_r_max: int, *, padding_factor: int,
+        reusable_staging: bool = False,
+    ) -> None:
         projector_half = jnp.asarray(projector_half)
         shape = tuple(int(v) for v in projector_half.shape)
         padding_factor = int(padding_factor)
@@ -5220,7 +5227,10 @@ class RelionCapacityHalfTextureF32:
         # The C API reads the device buffer directly on its own stream.
         projector_half = jax.block_until_ready(projector_half)
         lib = _get_lib()
-        create = lib.relax_relion_capacity_half_texture_f32_create
+        create = (
+            lib.relax_relion_capacity_half_texture_f32_create_reusable
+            if reusable_staging else lib.relax_relion_capacity_half_texture_f32_create
+        )
         create.argtypes = (ctypes.c_void_p,) + (ctypes.c_int,) * 6 + (ctypes.POINTER(ctypes.c_uint64),)
         create.restype = ctypes.c_int
         handle = ctypes.c_uint64()
@@ -5239,6 +5249,8 @@ class RelionCapacityHalfTextureF32:
         self.shape = shape
         self.logical_r_max = logical_r_max
         self.padding_factor = padding_factor
+        self.reusable_staging = bool(reusable_staging)
+        self.device = device
         self._handle = int(handle.value)
         self._last_output = None
         self._finalizer = weakref.finalize(self, _destroy_capacity_half_texture, self._handle)
@@ -5274,17 +5286,77 @@ class RelionCapacityHalfTextureF32:
         self._last_output = output
         return output
 
+    def close_after(self, completion) -> None:
+        """Destroy after a concrete result depending on the last use is ready.
+
+        A compiled executable captures this owner's native handle. The caller
+        must not invoke that executable again after closing the owner.
+        """
+        if self.closed:
+            return
+        leaves = jax.tree_util.tree_leaves(completion)
+        if not leaves or any(isinstance(leaf, jax.core.Tracer) for leaf in leaves):
+            raise ValueError("texture completion must be a concrete result, not a tracer")
+        jax.block_until_ready(completion)
+        handle = self._handle
+        _destroy_capacity_half_texture(handle, raise_on_error=True)
+        self._handle = 0
+        self._last_output = None
+        self._finalizer.detach()
+
+    def refresh_after(self, projector_half: jax.Array, completion, *, logical_r_max: int | None = None) -> float:
+        """Refill the same texture at an iteration boundary and return elapsed seconds.
+
+        ``completion`` must depend on the last compiled use of this owner;
+        the caller must not launch another use until this synchronous refill
+        finishes. A compiled executable may then be invoked again unchanged.
+        Only owners created with ``reusable_staging=True`` support refresh.
+        """
+        if self.closed or not self.reusable_staging:
+            raise RuntimeError("texture refresh requires a live reusable-staging owner")
+        leaves = jax.tree_util.tree_leaves(completion)
+        if not leaves or not any(isinstance(leaf, jax.Array) for leaf in leaves) or any(
+            isinstance(leaf, jax.core.Tracer) for leaf in leaves
+        ):
+            raise ValueError("refresh completion must contain a concrete result of the final invocation")
+        if isinstance(projector_half, jax.core.Tracer):
+            raise ValueError("refresh projector must be concrete")
+        projector_half = jnp.asarray(projector_half)
+        if projector_half.dtype != jnp.complex64 or tuple(projector_half.shape) != self.shape:
+            raise ValueError("refresh projector must be C64 with the owner's capacity shape")
+        if projector_half.devices() != {self.device}:
+            raise ValueError("refresh projector must be on the owner's CUDA device")
+        radius = self.logical_r_max if logical_r_max is None else int(logical_r_max)
+        if radius < 0 or radius > (self.shape[1] // 2 - 1) // self.padding_factor:
+            raise ValueError("refresh logical radius is outside the owner's capacity")
+        start = time.perf_counter()
+        jax.block_until_ready(completion)
+        projector_half = jax.block_until_ready(projector_half)
+        refresh = _get_lib().relax_relion_capacity_half_texture_f32_refresh
+        refresh.argtypes = (ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int, ctypes.c_int)
+        refresh.restype = ctypes.c_int
+        status = int(refresh(
+            ctypes.c_uint64(self._handle),
+            ctypes.c_void_p(projector_half.unsafe_buffer_pointer()),
+            ctypes.c_int(radius),
+            ctypes.c_int(int(getattr(self.device, "local_hardware_id", getattr(self.device, "id", -1)))),
+        ))
+        if status != 0:
+            raise RuntimeError(f"failed to refresh capacity projector texture: CUDA error code {status}")
+        self.logical_r_max = radius
+        self._last_output = None
+        return time.perf_counter() - start
+
     def close(self) -> None:
         if self.closed:
             return
-        handle, self._handle = self._handle, 0
-        try:
-            if self._last_output is not None:
-                jax.block_until_ready(self._last_output)
-        finally:
-            self._last_output = None
-            self._finalizer.detach()
-            _destroy_capacity_half_texture(handle, raise_on_error=True)
+        if self._last_output is not None:
+            self.close_after(self._last_output)
+            return
+        handle = self._handle
+        _destroy_capacity_half_texture(handle, raise_on_error=True)
+        self._handle = 0
+        self._finalizer.detach()
 
     def __enter__(self):
         return self

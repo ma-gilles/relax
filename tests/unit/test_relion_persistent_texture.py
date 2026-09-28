@@ -40,6 +40,114 @@ def _rotations():
     return np.asarray(base)[np.asarray([3, 1, 3, 0, 2, 1, 0])]
 
 
+def test_capacity_texture_close_after_concrete_completion(monkeypatch):
+    from relax.cuda import kernels as em_cuda_kernels
+
+    events = []
+
+    class Finalizer:
+        def detach(self):
+            events.append("detach")
+
+    texture = object.__new__(em_cuda_kernels.RelionCapacityHalfTextureF32)
+    texture._handle = 97
+    texture._last_output = None
+    texture._finalizer = Finalizer()
+    monkeypatch.setattr(
+        em_cuda_kernels,
+        "_destroy_capacity_half_texture",
+        lambda handle, **kwargs: events.append(("destroy", handle)),
+    )
+    original_ready = jax.block_until_ready
+
+    def ready(value):
+        events.append("ready")
+        return original_ready(value)
+
+    monkeypatch.setattr(em_cuda_kernels.jax, "block_until_ready", ready)
+    completion = jnp.asarray([1.0], dtype=jnp.float32)
+    texture.close_after(completion)
+    assert events == ["ready", ("destroy", 97), "detach"]
+    assert texture.closed
+    texture.close_after(completion)
+    texture.close()
+    assert events == ["ready", ("destroy", 97), "detach"]
+
+
+def test_capacity_texture_rejects_traced_completion_without_destroy(monkeypatch):
+    from relax.cuda import kernels as em_cuda_kernels
+
+    events = []
+    texture = object.__new__(em_cuda_kernels.RelionCapacityHalfTextureF32)
+    texture._handle = 98
+    texture._last_output = None
+    class Finalizer:
+        def detach(self):
+            pass
+
+    texture._finalizer = Finalizer()
+    monkeypatch.setattr(
+        em_cuda_kernels,
+        "_destroy_capacity_half_texture",
+        lambda *args, **kwargs: events.append("destroy"),
+    )
+
+    def attempt(value):
+        texture._last_output = value
+        with pytest.raises(ValueError, match="concrete result"):
+            texture.close_after(value)
+        with pytest.raises(ValueError, match="concrete result"):
+            texture.close()
+        return value
+
+    jax.jit(attempt)(jnp.asarray(1.0)).block_until_ready()
+    assert not texture.closed
+    assert events == []
+    texture.close_after(jnp.asarray(1.0))
+    assert texture.closed
+    assert events == ["destroy"]
+
+
+def test_capacity_texture_refresh_requires_concrete_boundary_and_same_geometry(monkeypatch):
+    from relax.cuda import kernels as em_cuda_kernels
+
+    calls = []
+
+    def native_refresh(handle, pointer, radius, device):
+        calls.append((int(handle.value), int(radius.value), int(device.value)))
+        return 0
+
+    monkeypatch.setattr(
+        em_cuda_kernels, "_get_lib", lambda: type("Lib", (), {"relax_relion_capacity_half_texture_f32_refresh": staticmethod(native_refresh)})()
+    )
+    texture = object.__new__(em_cuda_kernels.RelionCapacityHalfTextureF32)
+    texture._handle = 601
+    texture._last_output = None
+    texture.reusable_staging = True
+    texture.shape = (5, 5, 3)
+    texture.padding_factor = 1
+    texture.logical_r_max = 1
+    texture.device = jax.devices("cpu")[0]
+    projector = jax.device_put(np.ones(texture.shape, dtype=np.complex64), texture.device)
+    completion = jax.device_put(np.asarray([2.0], dtype=np.float32), texture.device)
+    with pytest.raises(ValueError, match="capacity shape"):
+        texture.refresh_after(projector[:-1], completion)
+    with pytest.raises(ValueError, match="concrete result"):
+        texture.refresh_after(projector, 1.0)
+
+    def traced(value):
+        with pytest.raises(ValueError, match="concrete result"):
+            texture.refresh_after(projector, value)
+        return value
+
+    jax.jit(traced)(completion).block_until_ready()
+    assert calls == []
+    elapsed = texture.refresh_after(projector, completion)
+    assert elapsed >= 0
+    assert calls == [(601, 1, int(getattr(texture.device, "local_hardware_id", texture.device.id)))]
+    assert not texture.closed
+
+
 def test_persistent_texture_rejects_nonexact_host_inputs():
     from relax.cuda import kernels as em_cuda_kernels
 

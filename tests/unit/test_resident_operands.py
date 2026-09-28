@@ -26,6 +26,8 @@ comparison against the per-chunk preparation inside a production pass.
 
 from __future__ import annotations
 
+from dataclasses import fields
+
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
@@ -34,14 +36,16 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, MockDataset
-
 from recovar.core.configs import ForwardModelConfig
+from recovar.reconstruction import noise as noise_utils
+
 from relax.helpers.batch_fetch import fetch_indexed_batch
 from relax.helpers.half_spectrum import make_relion_noise_shell_indices_half
 from relax.helpers.preprocessing import (
     apply_half_translation_phases,
     half_translation_phase_table,
 )
+from relax.sparse_pass2 import resident_operands as resident_module
 from relax.sparse_pass2.resident_operands import (
     ResidentOperandsUnsupported,
     gather_resident_chunk_operands,
@@ -51,11 +55,10 @@ from relax.sparse_pass2.resident_operands import (
 from relax.sparse_pass2.sparse_pass2_bucket_io import (
     _prepare_bucket_io,
     _relion_cuda_score_translation_angles_if_available,
+    _relion_translation_angles_f64,
     prepare_unshifted_bucket_operands,
 )
 from relax.sparse_pass2.sparse_pass2_wavg import image_power_shells
-from recovar.reconstruction import noise as noise_utils
-
 
 pytestmark = pytest.mark.unit
 
@@ -322,6 +325,7 @@ def test_unmasked_scoring_is_refused():
 
 def _gpu_case(monkeypatch, custom_cuda_lib):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -334,10 +338,12 @@ def _gpu_case(monkeypatch, custom_cuda_lib):
     return em_cuda_kernels
 
 
-def _resident_operands(case):
+def _resident_operands(case, image_indices=None, *, staged_batch=None):
+    if image_indices is None:
+        image_indices = np.arange(N_IMAGES)
     return prepare_resident_half_operands(
         case["dataset"],
-        np.arange(N_IMAGES),
+        image_indices,
         bucket_io_kwargs=case["bucket_io_kwargs"],
         window_indices=case["window_indices"],
         recon_window_indices=case["window_indices"],
@@ -351,7 +357,59 @@ def _resident_operands(case):
         accumulate_noise=False,
         source_faithful_spectrum_norm=False,
         image_batch_size=4,
+        staged_batch=staged_batch,
     )
+
+
+@pytest.mark.parametrize("count", [4, 3], ids=["full-batch", "short-tail"])
+def test_staged_raw_batch_reuses_fetch_and_matches_default_operands(monkeypatch, count):
+    case = _case(relion_angles=False)
+    case["bucket_io_kwargs"]["relion_score_translation_angles"] = np.asarray(
+        _relion_translation_angles_f64(case["fine_translations"], case["image_shape"]),
+        dtype=np.float32,
+    )
+    indices = np.arange(count, dtype=np.int32)
+    baseline = _resident_operands(case, indices)
+    raw, ctf_params, fetched_indices = fetch_indexed_batch(case["dataset"], indices)
+    staged_raw = jnp.asarray(raw)
+    assert isinstance(staged_raw, jax.Array)
+
+    def unexpected_fetch(*_args, **_kwargs):
+        raise AssertionError("staged resident operands fetched raw images again")
+
+    monkeypatch.setattr(resident_module, "fetch_indexed_batch", unexpected_fetch)
+    reused = _resident_operands(
+        case, indices, staged_batch=(staged_raw, ctf_params, fetched_indices),
+    )
+    for field in fields(baseline):
+        expected = getattr(baseline, field.name)
+        actual = getattr(reused, field.name)
+        if expected is None or isinstance(expected, int):
+            assert actual == expected, field.name
+        else:
+            _assert_matches(actual, expected, field.name)
+
+
+def test_staged_raw_batch_rejects_host_array_and_mismatched_ids():
+    case = _case(relion_angles=False)
+    case["bucket_io_kwargs"]["relion_score_translation_angles"] = np.asarray(
+        _relion_translation_angles_f64(case["fine_translations"], case["image_shape"]),
+        dtype=np.float32,
+    )
+    indices = np.arange(3, dtype=np.int32)
+    raw, ctf_params, fetched_indices = fetch_indexed_batch(case["dataset"], indices)
+    with pytest.raises(ValueError, match="concrete JAX image array"):
+        _resident_operands(case, indices, staged_batch=(np.asarray(raw), ctf_params, fetched_indices))
+    with pytest.raises(ValueError, match="IDs must match"):
+        _resident_operands(
+            case, indices,
+            staged_batch=(jnp.asarray(raw), ctf_params, fetched_indices[::-1]),
+        )
+    with pytest.raises(ValueError, match="CTF row count"):
+        _resident_operands(
+            case, indices,
+            staged_batch=(jnp.asarray(raw), None, fetched_indices),
+        )
 
 
 @pytest.mark.gpu

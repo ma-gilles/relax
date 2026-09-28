@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import logging
 import os
+from contextlib import nullcontext
 from dataclasses import dataclass
 from functools import partial
 from typing import NamedTuple
@@ -632,6 +633,7 @@ def prepare_resident_half_operands(
     optics_groups_np=None,
     relion_native_fine_units: bool = False,
     log_summary: bool = True,
+    staged_batch=None,
 ) -> ResidentHalfOperands:
     """Run the per-image preparation once for ``image_indices`` and keep it resident.
 
@@ -658,6 +660,10 @@ def prepare_resident_half_operands(
     ``noise_shell_indices_half`` / ``n_noise_shells`` the noise-shell binning of
     the packed half the statistics use; they decide ``wavg_image_rect`` and
     ``image_power_shells``.
+
+    ``staged_batch`` optionally supplies one device-resident raw image batch
+    with its host CTF rows and dataset indices. It must cover the requested
+    images in order; only the fetch/staging step is skipped.
     """
 
     image_indices = np.asarray(image_indices)
@@ -723,6 +729,22 @@ def prepare_resident_half_operands(
         "relion_norm_high_shell": None,
     }
     batch_size = int(image_batch_size or _prepare_image_batch_size())
+    if staged_batch is not None:
+        if not isinstance(staged_batch, tuple) or len(staged_batch) != 3:
+            raise ValueError("staged_batch must be (device_images, ctf_params, image_indices)")
+        staged_images, staged_ctf, staged_indices = staged_batch
+        if not isinstance(staged_images, jax.Array) or staged_images.ndim != 3:
+            raise ValueError("staged_batch images must be one concrete JAX image array [B,H,W]")
+        if staged_images.shape != (n_images, *tuple(image_shape)):
+            raise ValueError("staged_batch image shape must match requested IDs and image_shape")
+        if n_images > batch_size:
+            raise ValueError("staged_batch must fit one image preparation batch")
+        staged_indices = np.asarray(staged_indices)
+        if staged_indices.shape != image_indices.shape or not np.array_equal(staged_indices, image_indices):
+            raise ValueError("staged_batch IDs must match requested image IDs in order")
+        ctf_shape = np.shape(staged_ctf)
+        if not ctf_shape or ctf_shape[0] != n_images:
+            raise ValueError("staged_batch CTF row count must match requested image IDs")
     buffer_rows = -(-image_capacity // batch_size) * batch_size
     native_fft_size = int(np.prod(image_shape))
     if relion_native_fine_units:
@@ -738,7 +760,12 @@ def prepare_resident_half_operands(
         fetch_indexed_batch(experiment_dataset, image_indices[start : start + batch_size])
         for start in starts
     )
-    with prefetched_batches(fetches) as fetched_batches:
+    source = (
+        nullcontext(iter((staged_batch,)))
+        if staged_batch is not None
+        else prefetched_batches(fetches)
+    )
+    with source as fetched_batches:
         for start, (batch_data, ctf_params, fetched_indices) in zip(starts, fetched_batches, strict=True):
             fetched_indices = np.asarray(fetched_indices)
             n_fetched = int(fetched_indices.shape[0])
@@ -748,7 +775,11 @@ def prepare_resident_half_operands(
                 # runs the same preparation programs. The preparation is per image;
                 # the repeated rows land in padding no chunk addresses.
                 pad = np.concatenate([np.arange(n_fetched), np.zeros(batch_size - n_fetched, dtype=np.int64)])
-                batch_data = np.asarray(batch_data)[pad]
+                batch_data = (
+                    jnp.take(batch_data, pad, axis=0)
+                    if staged_batch is not None
+                    else np.asarray(batch_data)[pad]
+                )
                 ctf_params = np.asarray(ctf_params)[pad]
                 prepared_indices = fetched_indices[pad]
             else:

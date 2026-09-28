@@ -16,6 +16,20 @@ and [source, validation, timing and reproduction](../benchmarks/cryosparc_sgd_co
 The user-requested next package holds settings fixed while varying noise,
 preferred orientations and shifts. Native VDAM defaults are unchanged.
 
+## Opt-in dense GEMM K1 experiment (September 28)
+
+The requested full dense grid experiment has exact two-sweep and lagged one-sweep
+normalization, image/projection translation expansion, and serial/mixed/full
+translation tiles. Exact three-iteration reconstruction closely agrees with the
+native dense control; lagged absolute normalization overflows at iteration two.
+Production defaults are unchanged. [Math and measured scope](../math/dense_gemm_experiment.md)
+and the [detailed plan](dense_gemm_experiment_plan_20260928.md) link the evidence.
+Smoke14629659 and medium14630553 passed for the core/texture change. The final
+single raw-batch staging seam passes real GPU operand/upload checks14632476;
+medium14632505 is validating that seam on current main df5d0118. The measured
+speedup is against production CUDA primitives forced through the same dense
+experimental schedule, not a measured complete production-driver runtime.
+
 ## Scope and invariants
 
 Refactor EM/VDAM for readable, succinct code and direct APIs; integrate qualified
