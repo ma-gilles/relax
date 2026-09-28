@@ -187,3 +187,57 @@ dispatch has one parameter and no forwarding/compatibility layer.
   lines, 12,410 nonblank/non-comment lines, 17 functions with at least 10
   parameters and 8 with at least 20. The first-iteration package remains a
   reduction to 15 and 7 respectively.
+
+## 2026-09-28 — dense half-scoring specification ownership
+
+### Change
+
+- Replaced the 58-parameter dense half scorer and dictionary-backed half plan
+  with `DenseHalfScoringSpec` and cohesive owners for half data, sampling,
+  priors, batching, route policy, execution policy and optics adaptations.
+- The scoring body reads stable values through those seven owners. It creates
+  local variables only for five values changed by route planning plus the
+  canonicalized symmetry; an AST regression prevents wholesale field
+  unpacking.
+- Normal numbered iterations and the final all-data pass now construct the
+  same typed boundary. Multi-shape execution derives each shape's shallow spec
+  with `dataclasses.replace`, preserving the existing authoritative optics
+  transformations and fixed-order result merge.
+- The shared adaptive-engine keyword builder now receives the specification
+  instead of forwarding its own 13-argument subset. No compatibility wrapper
+  or parallel kwargs API remains.
+
+### Structural delta from the active upstream baseline
+
+| Metric | Baseline | Current | Delta |
+| --- | ---: | ---: | ---: |
+| Production files | 15 | 16 | +1 |
+| Physical production lines | 14,185 | 14,525 | +340 |
+| Nonblank, non-comment lines | 12,410 | 12,695 | +285 |
+| Production functions | 223 | 224 | +1 |
+| Functions with at least 10 parameters | 17 | 13 | -4 |
+| Functions with at least 20 parameters | 8 | 6 | -2 |
+| Largest parameter count | 67 | 67 | 0 |
+| Largest function span | 5,234 | 5,273 | +39 |
+
+The cumulative line increase covers the initial-grid, firstiter-CC and dense
+half-scoring ownership contracts. In this package, explicit constructors and
+the typed multi-shape derivation add more lines than the removed argument and
+kwargs plumbing; the numerical bodies and their statement order remain in
+place. The next controller-splitting packages must recover that orchestration
+growth rather than moving code outside the counted package.
+
+### Validation
+
+- Implementation commit:
+  `f628d5aa2b2352f32f058a5517d95f54f6af1548`.
+- Dense routing, multi-shape, firstiter-CC, BPref-scope, zero-coarse and
+  K-class focused set: 149 passed.
+- Numbered/final controller handoff and tau2/scoring-prior probes: 18 passed,
+  365 deselected.
+- Complete symmetry unit suite: 360 passed.
+- Production Ruff lint, Python compilation and diff checks: passed. The edited
+  `test_refine_relion_mode.py` retains unrelated pre-existing import-order
+  findings; it was not broadly reformatted.
+- CPU EM fast guard and GPU smoke tier remain to be run on this committed
+  package; their results belong in the next receipt entry.
