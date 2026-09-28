@@ -4607,25 +4607,25 @@
     "masked_band_auc": null
    },
    "relax": {
-    "source_sha": "2d337c565ca42dcb8a3210f177cb6ec1a90516f7",
-    "source_repo": "relax 2d337c5 (the tomo code of main 7628b1c1; et's gate 14631015)",
+    "source_sha": "52900077b8e73fb69b79a246d249ff2b7f9abe5e",
+    "source_repo": "relax 5290007 (the HEALPix-step trajectory fixes 158ec64c/241140e1 before their rebase onto main; et's gate 14633970)",
     "resolution_A": 8.635,
     "resolution_definition": "half_fsc_0143",
     "masked_resolution_A": null,
-    "wall_s": 1528,
-    "wall_definition": "median run_full_refinement.py total wall of three seeds run concurrently in job 14631015 (1377-1639 s, one H100 and 8 CPUs each)",
+    "wall_s": 1518,
+    "wall_definition": "median run_full_refinement.py total wall of three seeds run concurrently in job 14633970 (1448-1638 s, one H100 and 8 CPUs each)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 20,
     "jobs": [
-     "14631015"
+     "14633970"
     ],
     "masked_band_auc": null
    },
    "gt": {
     "metric": "unmasked GT FSC-AUC, shells 1-63 (em_work/cryoet_s42_20260925/compare_s1_standalone.py)",
     "relion": 0.938103,
-    "relax": 0.93544,
+    "relax": 0.938078,
     "relion_band": [
      0.938103,
      0.940933
@@ -4637,21 +4637,26 @@
      "repeat seed 20260928"
     ],
     "relax_band": [
-     0.93544,
-     0.940934
+     0.938078,
+     0.940908
     ],
     "relax_band_runs": [
-     "2d337c5 seed 20260925 (14631015)",
-     "2d337c5 seed 20260926 (14631015)",
-     "2d337c5 seed 20260927 (14631015)"
+     "5290007 seed 20260925 (14633970)",
+     "5290007 seed 20260926 (14633970)",
+     "5290007 seed 20260927 (14633970)"
     ],
     "same_seed_gap": {
-     "20260925": -0.00266,
-     "20260926": 8.71e-07,
-     "20260927": -7.2e-06
+     "20260925": -2.44e-05,
+     "20260926": -2.53e-05,
+     "20260927": -1.04e-06
+    },
+    "same_seed_map_fsc_auc": {
+     "20260925": 0.999984,
+     "20260926": 0.999925,
+     "20260927": 0.999997
     }
    },
-   "cross_engine": "unmasked relax-vs-RELION map FSC-AUC 0.965-0.999996 over 3 relax x 4 RELION runs; seeds 20260926 and 20260927 reproduce the same-seed RELION map (0.999996, 0.999985), seed 20260925 does not (0.9739 against the RELION reference run of that seed)",
+   "cross_engine": "unmasked relax-vs-RELION map FSC-AUC 0.99993-0.999997 against the same-seed RELION run for all three seeds (0.972-0.989 against other-seed RELION runs; RELION-vs-RELION 0.972-0.989)",
    "cross_engine_masked_band_auc": null,
    "time_ratio_relax_over_relion": null,
    "matched": "no",
@@ -4666,8 +4671,8 @@
    "notes": [
     "First cryo-ET row: relax's RELION 5 tomo refinement port (S4.2: 3D offsets, tilt-summed diff2) run standalone from the fixture's particles/tomograms/optimisation-set STAR files with the fixture's RELION command (--ios, --ini_high 40, healpix 2, auto local healpix 4, offset range 5 step 1).",
     "Both engines converge after iteration 20 and report a final unmasked resolution of 8.63 A, shell 63 of 64 at 4.25 A (one shell below Nyquist), so resolution cannot separate them; the GT FSC-AUC is the row's metric.",
-    "Three relax runs on 2d337c5 (main 7628b1c1's tomo code: high-shell noise fix 3409d7bc, no norm correction 608a997b, BPref group scale 9f8efc89, tomo speed work), seeds 20260925-27 in et's gate 14631015, give GT FSC-AUC 0.9354, 0.9409, 0.9405 against the RELION band 0.9381-0.9409 (reference run and three seed repeats). Seeds 20260926 and 20260927 match their same-seed RELION runs (+8.7e-7, -7.2e-6; map FSC-AUC 0.99999); seed 20260925 is 0.0027 below its same-seed RELION reference run and below the band, and its map does not reproduce that run's (FSC-AUC 0.974), so by the multi-seed rule the row stays red. The 9f8efc8 gate (14624974) gave the same GT values; code before the noise, norm and BPref fixes (343399e/799c24b) gave 0.9346-0.9367 in 14547997 and 14593473.",
-    "Walls are from separate jobs (relax: three seeds concurrently on one node, 8 CPUs each; RELION: 3 MPI ranks x 4 threads), so there is no speed ratio; relax took 1377-1639 s per run against RELION's 4751 s Slurm elapsed (343399e took 11380 s).",
+    "Three relax runs on 5290007 (tomo noise, no-norm, BPref group-scale, operand-route and HEALPix-step trajectory fixes), seeds 20260925-27 in et's gate 14633970, reproduce their same-seed RELION maps (map FSC-AUC 0.99993-0.999997) and give GT FSC-AUC 0.938078, 0.940908, 0.940554 against the same-seed RELION runs -2.4e-05, -2.5e-05, -1.0e-06. Seed 20260925 is 2.4e-05 below the across-seed RELION band 0.938103-0.940933 and every seed is marginally below its same-seed RELION run, so by the multi-seed rule the row is red, by margins of order 1e-5. Earlier gates: 9f8efc8/2d337c5 (14624974, 14631015) gave 0.9354/0.9409/0.9405 with seed 20260925 diverging from its RELION run; 343399e/799c24b gave 0.9346-0.9367.",
+    "Walls are from separate jobs (relax: three seeds concurrently on one node, 8 CPUs each; RELION: 3 MPI ranks x 4 threads), so there is no speed ratio; relax took 1448-1638 s per run against RELION's 4751 s Slurm elapsed (343399e took 11380 s).",
     "Fixture: 1200 particles, 41 tilts each (46,779 images), effective B about 180 A^2 (S1 source volume B 80 + preset 100)."
    ],
    "null_reasons": {
@@ -4681,26 +4686,26 @@
    },
    "evidence": {
     "run_roots": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_2d337c5_seed20260925/out",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_2d337c5_seed20260926/out",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_2d337c5_seed20260927/out",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_5290007_seed20260925/out",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_5290007_seed20260926/out",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_5290007_seed20260927/out",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_s1_offsets_depthfix_20260925/relion_ref",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_s1_offsets_depthfix_20260925/relion_repeats"
     ],
-    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_2d337c5_seed20260925/compare.json",
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_5290007_seed20260925/compare.json",
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/compare_s1_standalone.py",
     "handoff": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/HANDOFF.json",
     "score_jsons": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_2d337c5_seed20260925/compare.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_2d337c5_seed20260926/compare.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_2d337c5_seed20260927/compare.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_5290007_seed20260925/compare.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_5290007_seed20260926/compare.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_5290007_seed20260927/compare.json"
     ]
    },
    "date": "2026-09-28",
    "history": [],
    "mask": null,
    "quality_pass": false,
-   "quality_reason": "worst s20260925 -2.7e-3 vs same-seed RELION, below RELION band 0.9381-0.9409; s20260926 +8.7e-7, s20260927 -7.2e-6 (same-seed maps reproduced); relax 0.9354-0.9409 (GT FSC-AUC)"
+   "quality_reason": "worst -2.5e-5 vs same-seed RELION (s20260925 -2.4e-5, s20260926 -2.5e-5, s20260927 -1.0e-6); s20260925 -2.4e-5 below across-seed band; same-seed maps reproduced (map FSC-AUC >= 0.99993) (GT FSC-AUC)"
   }
  ],
  "initial_model_intro": [
