@@ -58,8 +58,7 @@ The same posterior algebra is used by:
 
 - standard dense EM and K-class/Class3D replay, through
   [`em_engine.py::run_em`](../../recovar/em/dense/em_engine.py),
-  [`k_class.py::run_dense_k_class_em`](../../recovar/em/classification/k_class.py),
-  and [`k_class.py::run_local_k_class_em`](../../recovar/em/classification/k_class.py);
+  and [`k_class.py::run_dense_k_class_em`](../../recovar/em/classification/k_class.py);
 - native InitialModel, through
   [`driver.py::_native_expectation_step`](../../recovar/em/vdam/driver.py)
   and [`dense_adapter.py::run_dense_initial_model_estep`](../../recovar/em/vdam/dense_adapter.py).
@@ -654,7 +653,7 @@ that class's own `Ft_y`, `Ft_ctf`, class weight/normalisation, and tau spectrum.
 
 RECOVAR's current dense K-class replay mirrors that layout at the E-step level:
 [`k_class.py::run_dense_k_class_em`](../../recovar/em/classification/k_class.py)
-and `run_local_k_class_em` accept one mean and one `mean_variance` per class,
+accepts one mean and one `mean_variance` per class,
 then normalize evidence over class x pose. The parity harness
 [`scripts/run_k_class_parity.py`](../../scripts/run_k_class_parity.py) reads
 per-class tau spectra from target or previous RELION model files, reconstructs

@@ -76,10 +76,8 @@ def _split_site():
 # Capture 14036320 died on the masked NON-exact big-JIT path: the kernel call at
 # local_em_engine.py:2406 always receives big_jit_image_mask_arg, but the capture site
 # gated it on relion_exact_bpref_operands and passed None. Earlier coverage evaluated only
-# the path label, and only for exact=True, so it could not see this. At K>1
-# use_exact_local_relion_operands is False by construction
-# (sparse_pass2_estep.py:826-830 requires state.K == 1), so the non-exact branch is the
-# one every K=4 capture actually takes.
+# the path label, and only for exact=True, so it could not see this. The K=4 capture ran
+# the non-exact branch.
 
 MASK = _np_mask = None  # set below
 
@@ -178,44 +176,12 @@ def _production_ctf_evaluator():
     return ForwardModelConfig.from_dataset(ds).ctf
 
 
-def _production_exact_flag(*, n_classes, exact_projector=True, relion_cuda=True):
-    """Evaluate sparse_pass2_estep's own use_exact_local_relion_operands expression.
-
-    Executed, not mirrored: the expression is lifted from the real assignment and run
-    against controlled values, so a change to that gate breaks this test.
-    """
-    from relax.vdam import sparse_pass2_estep
-
-    tree = ast.parse(inspect.getsource(sparse_pass2_estep))
-    expr = next(
-        node.value for node in ast.walk(tree)
-        if isinstance(node, ast.Assign)
-        and any(getattr(t, "id", None) == "use_exact_local_relion_operands" for t in node.targets)
-    )
-
-    class _State:
-        K = n_classes
-
-    return bool(eval(compile(ast.Expression(expr), "<gate>", "eval"), {}, {
-        "state": _State(), "bool": bool,
-        "use_exact_relion_projector": exact_projector,
-        "uses_relion_cuda_image_preprocessing": lambda ds: relion_cuda,
-        "group_dataset": object(),
-    }))
-
-
-def test_the_k4_workload_cannot_reach_the_exact_operand_branch():
-    """sparse_pass2_estep requires state.K == 1, so every K=4 capture runs non-exact."""
-    assert _production_exact_flag(n_classes=1) is True
-    assert _production_exact_flag(n_classes=4) is False
-
-
 def test_k4_production_configuration_gets_a_masked_non_exact_big_jit_capture(tmp_path):
     """The configuration capture 14036320 actually ran, end to end through the writer.
 
     This is the branch that failed: exact flag false, mask radius set, masked scoring on.
     """
-    exact = _production_exact_flag(n_classes=4)
+    exact = False
     site = _big_jit_site()
     env = _big_jit_env(exact, RADIUS)
     assert _evaluate(site["preprocess_path"], env) == "big_jit_jax"

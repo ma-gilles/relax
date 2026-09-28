@@ -300,8 +300,7 @@ def test_big_jit_cuda_path_records_the_real_normalization_when_unmasked():
 
 
 def test_k_gt_1_capture_path_records_a_non_exact_ctf_and_keeps_its_mask():
-    """At K>1 use_exact_local_relion_operands is False (sparse_pass2_estep.py:826-830
-    requires state.K == 1), so every K=4 capture runs big_jit_jax with
+    """The K=4 capture ran the non-exact branch: big_jit_jax with
     config.compute_ctf_half and the array mask resolved at local_em_engine.py:1529."""
     with mock.patch.dict(os.environ, {BUNDLE_ENV: "1"}, clear=False):
         out = _bundle(preprocess_path="big_jit_jax", exact_source_star_ctf=False,

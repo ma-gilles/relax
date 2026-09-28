@@ -13,7 +13,6 @@ import mrcfile
 import numpy as np
 import starfile
 
-from recovar import cuda_backproject
 from relax.cuda import kernels as em_cuda_kernels
 from relax.cuda import kernels as em_cuda_kernels
 from relax.diagnostics.bpref_contribution_replay import native_current_fft_rows  # noqa: E402

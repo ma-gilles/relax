@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from relax.helpers import preprocessing
-from relax.vdam import sparse_pass2_estep
+from relax.vdam import adaptive_estep
 
 pytestmark = pytest.mark.unit
 
@@ -33,4 +33,4 @@ def test_datasets_without_a_backend_are_not_cuda():
 
 
 def test_initial_model_patch_point_is_the_owner():
-    assert sparse_pass2_estep.uses_relion_cuda_image_preprocessing is preprocessing.uses_relion_cuda_image_preprocessing
+    assert adaptive_estep.uses_relion_cuda_image_preprocessing is preprocessing.uses_relion_cuda_image_preprocessing

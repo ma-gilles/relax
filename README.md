@@ -17,9 +17,9 @@ pass 2 (the K=1 default) and without the first-iteration cross-correlation, i.e.
 (end-to-end GPU qualification against RELION in progress).
 
 Refine3D (K=1) and Class3D (K>1) run their pass 2 on the device-resident engine, relax's one
-pass-2 engine (a CUDA GPU is required; there is no CPU pass 2). The local-search parent probe,
-the final full-box local pass and VDAM K=1 still use the deprecated exact-local engine
-(`RELAX_LOCAL_SEARCH_RESIDENT=0` selects it for the other local passes); each run's
+pass-2 engine (a CUDA GPU is required; there is no CPU pass 2). VDAM runs its E-step on the
+same engine for every K. Only the local-search parent probe still uses the deprecated exact-local
+engine; each run's
 `refinement_results.npz` records the engine of every pass (`pass2_engine_trajectory`).
 InitialModel and Class3D take one optics group. Not yet: cryo-ET subtomograms,
 CTF-premultiplied particles, beam tilt, higher-order aberrations and magnification. More to come.

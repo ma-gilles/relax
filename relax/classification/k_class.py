@@ -16,9 +16,7 @@ from recovar.utils.nvtx_shim import nvtx
 
 from relax.classification.k_class_inputs import (
     _as_class_means,
-    _class_local_layouts,
     _class_log_priors,
-    _local_engine_kwargs_for_class,
     _select_class_value,
     _select_projector_half_for_class,
     _select_required_class_value,
@@ -33,7 +31,6 @@ from relax.classification.k_class_results import (
     _zero_subset_noise_stats,
 )
 from relax.dense.em_engine import run_em
-from relax.diagnostics import initial_model_capture
 from relax.diagnostics.coarse_score_diagnostics import (
     _coarse_selector_audit_from_full_stats,
     _with_coarse_significance_diagnostics,
@@ -41,11 +38,8 @@ from relax.diagnostics.coarse_score_diagnostics import (
 from relax.diagnostics.local_debug import score_dump_label
 from relax.helpers.env_flags import parse_env_flag
 from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
-from relax.helpers.normalization_inputs import optional_normalization_vector
 from relax.helpers.scale_groups import prepare_scale_correction_groups
-from relax.helpers.types import NoiseStats, RelionStats, make_relion_stats, total_sumw
-from relax.local.local_em_engine import run_local_em_exact
-from relax.local.local_layout import LocalHypothesisLayout
+from relax.helpers.types import RelionStats, make_relion_stats
 from relax.scoring.significant_samples import ComplementSignificantSampleIndices
 from relax.sparse_pass2.engine_record import warn_deprecated_engine
 
@@ -54,13 +48,6 @@ NVTX_DOMAIN_EM = "recovar_em"
 _RUN_EM_ALLOWED_KWARGS = frozenset(inspect.signature(run_em).parameters)
 _RELION_X_HALF_BP_FUSED_ATOMICS_ENV = "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS"
 _LOCAL_HOST_RESULT_PUBLICATION_ENV = "RELAX_EXACT_LOCAL_HOST_RESULT_PUBLICATION"
-
-
-def _local_host_result_publication_requested():
-    token = os.environ.get(_LOCAL_HOST_RESULT_PUBLICATION_ENV, "0")
-    if token not in {"0", "1"}:
-        raise ValueError(f"{_LOCAL_HOST_RESULT_PUBLICATION_ENV} must be 0 or 1")
-    return token == "1"
 
 
 class _DenseKClassScoreProbeResult(NamedTuple):
@@ -272,62 +259,6 @@ def _fine_support_stats(
     }
 
 
-def _global_reconstruction_probability_thresholds(
-    support_values_by_class: list[tuple[np.ndarray, ...]],
-    class_log_evidence: np.ndarray,
-    global_log_evidence: np.ndarray,
-    adaptive_fraction: float,
-) -> np.ndarray:
-    """RELION pass-2 support threshold over the global class x pose posterior.
-
-    RELION sorts a particle's fine-pass weights over every class and pose in
-    ascending order, finds the index where their cumulative sum first exceeds
-    ``(1 - adaptive_fraction)`` of the total and keeps the weights at or above the
-    weight at that index (acc_ml_optimiser_impl.h:3554-3581,
-    acc_helper_functions.h:231-237). The per-class M-step passes recompute these
-    probabilities in separate engine calls, so a threshold equal to the boundary
-    weight drops the boundary sample whenever the recomputation rounds it down.
-    The returned threshold is therefore the midpoint between the largest excluded
-    weight (zero when none is excluded) and the smallest kept one: it selects
-    RELION's set, and rounding at the boundary cannot flip it.
-    """
-
-    n_classes, n_images = class_log_evidence.shape
-    if len(support_values_by_class) != n_classes:
-        raise ValueError("support value class count does not match class_log_evidence")
-    # Rows without positive support must reconstruct nothing. Keep the public
-    # exact-local threshold finite while using a value that remains above every
-    # posterior probability after either float32 or float64 device casting.
-    no_support_threshold = float(np.finfo(np.float32).max)
-    thresholds = np.full(n_images, no_support_threshold, dtype=np.float64)
-    excluded_fraction = 1.0 - float(adaptive_fraction)
-    for image_index in range(n_images):
-        values = []
-        for class_index in range(n_classes):
-            if not np.isfinite(class_log_evidence[class_index, image_index]) or not np.isfinite(
-                global_log_evidence[image_index]
-            ):
-                continue
-            class_values = np.asarray(support_values_by_class[class_index][image_index], dtype=np.float64)
-            if class_values.size == 0:
-                continue
-            scale = np.exp(class_log_evidence[class_index, image_index] - global_log_evidence[image_index])
-            scaled = class_values[class_values > 0.0] * scale
-            if scaled.size:
-                values.append(scaled)
-        if not values:
-            continue
-        ascending = np.sort(np.concatenate(values))
-        cumulative = np.cumsum(ascending, dtype=np.float64)
-        cut = excluded_fraction * cumulative[-1]
-        # RELION's index: i + 1 for the last i with cumulative[i] <= cut < cumulative[i + 1].
-        crossing = np.flatnonzero((cumulative[:-1] <= cut) & (cut < cumulative[1:]))
-        boundary_index = int(crossing[-1]) + 1 if crossing.size else 0
-        largest_excluded = ascending[boundary_index - 1] if boundary_index > 0 else 0.0
-        thresholds[image_index] = 0.5 * (largest_excluded + ascending[boundary_index])
-    return thresholds
-
-
 def _is_class_lazy_mask(value) -> bool:
     return hasattr(value, "for_class") and hasattr(value, "shape")
 
@@ -496,7 +427,6 @@ def _infer_healpix_order_from_rotation_count(
     raise ValueError(
         f"Cannot infer RELION {symmetry_label} HEALPix order from {n_rot} rotations"
     )
-
 
 
 def _rotation_prior_with_class_log_prior(
@@ -851,6 +781,103 @@ def _run_resident_k_class_pass2(
         host_accumulators=True,
         mstep_full_half_axis=0 if common["relion_x_half_mstep"] else None,
         mstep_accumulator_shape=mstep_accumulator_shape,
+    )
+
+
+def _class_segmented_em_result(
+    output,
+    *,
+    n_classes: int,
+    class_posterior_sums_from_noise: bool,
+    return_profile: bool,
+    **accumulator_layout,
+) -> KClassEMResult:
+    """The K-class result of one engine call that scored every class jointly.
+
+    ``output`` is the class-segmented result of the exact-local engine or of the
+    resident pass 2 (``ResidentKClassPass2Output``, the same field names).
+    ``accumulator_layout`` is passed to ``_assemble_result`` as is.
+    """
+
+    # Follow the existing K-class convention: the class log evidence is float64 for
+    # the responsibility algebra, while every published per-image statistic keeps the
+    # engine's scoring precision, which is what the per-class route returns and what
+    # downstream consumers read.
+    class_log_evidence = np.asarray(output.class_log_evidence_per_image, dtype=np.float64)
+    class_best_log_score = np.asarray(output.class_best_log_score_per_image)
+    joint_log_evidence = np.asarray(output.stats.log_evidence_per_image)
+    # Every class's Pmax is measured against the joint normalizer, which is what the
+    # per-class M-step calls do when they are given the joint log evidence.
+    #
+    # The normalizer is now published at the normalization dtype, which is wider than
+    # the scoring dtype by default. Pmax is a scoring quantity, so the operand is cast
+    # to the winning score's dtype before the subtraction, reproducing the precision
+    # this subtraction and exponential had when the normalizer was itself narrowed.
+    # Casting only the final result would leave the subtraction and the exponential at
+    # the wider precision and silently change them.
+    joint_log_evidence_for_posterior = joint_log_evidence.astype(
+        class_best_log_score.dtype, copy=False,
+    )
+    with np.errstate(over="ignore"):
+        class_max_posterior = np.exp(
+            class_best_log_score - joint_log_evidence_for_posterior[None, :]
+        )
+    class_rotation_posterior_sums = np.asarray(output.class_rotation_posterior_sums, dtype=np.float64)
+    # Every per-class M-step call in the per-class route is given the joint log
+    # evidence as its normalizer, so each class's RelionStats reports that joint
+    # value; the class's own evidence travels separately as class_log_evidence.
+    # Keep both conventions rather than moving a per-class value into the field
+    # that names the normalizer actually used.
+    per_class_stats = tuple(
+        make_relion_stats(
+            log_evidence_per_image=joint_log_evidence,
+            best_log_score_per_image=class_best_log_score[class_index],
+            max_posterior_per_image=class_max_posterior[class_index],
+            rotation_posterior_sums=class_rotation_posterior_sums[class_index],
+        )
+        for class_index in range(n_classes)
+    )
+    return _assemble_result(
+        class_log_evidence=class_log_evidence,
+        # One engine call scored every class jointly, so its joint max posterior is
+        # authoritative; see _assemble_result for why it is not rebuilt downstream.
+        joint_max_posterior_per_image=np.asarray(output.stats.max_posterior_per_image),
+        new_means=None,
+        Ft_y=[output.Ft_y[class_index] for class_index in range(n_classes)],
+        Ft_ctf=[output.Ft_ctf[class_index] for class_index in range(n_classes)],
+        per_class_hard_assignments=np.asarray(output.per_class_hard_assignments, dtype=np.int64),
+        per_class_stats=per_class_stats,
+        noise_stats=None,
+        aggregate_noise_stats_override=output.noise_stats,
+        class_posterior_sums_override=(
+            np.asarray(output.class_reconstruction_posterior_sums, dtype=np.float64)
+            if class_posterior_sums_from_noise
+            else None
+        ),
+        per_class_best_pose_rotations=(
+            None if output.per_class_best_pose_rotations is None else list(output.per_class_best_pose_rotations)
+        ),
+        per_class_best_pose_translations=(
+            None
+            if output.per_class_best_pose_translations is None
+            else list(output.per_class_best_pose_translations)
+        ),
+        per_class_best_pose_rotation_ids=(
+            None
+            if output.per_class_best_pose_rotation_ids is None
+            else list(output.per_class_best_pose_rotation_ids)
+        ),
+        # Canonical source Eulers are published to STAR metadata and read back by
+        # local search, so they are carried from the winning row, never rebuilt from
+        # its rotation matrix.
+        per_class_best_pose_eulers_deg=(
+            None
+            if output.per_class_best_pose_eulers_deg is None
+            else list(output.per_class_best_pose_eulers_deg)
+        ),
+        profile_summary=output.profile if return_profile else None,
+        uncast_log_evidence_per_image=output.uncast_log_evidence_per_image,
+        **accumulator_layout,
     )
 
 
@@ -1840,459 +1867,6 @@ def run_dense_k_class_em(
         per_class_best_pose_translations=results.best_pose_translations,
         per_class_best_pose_rotation_ids=results.best_pose_rotation_ids,
         host_accumulators=keep_half_accumulators,
-    )
-
-
-def _run_local_k_class_em_segmented(
-    experiment_dataset,
-    means_array,
-    noise_variance,
-    class_layouts,
-    disc_type,
-    *,
-    log_priors,
-    accumulate_noise: bool,
-    return_best_pose_details: bool,
-    stats_use_reconstruction_probs: bool,
-    class_posterior_sums_from_noise: bool,
-    return_profile: bool,
-    engine_kwargs,
-) -> KClassEMResult:
-    """Run every class in one exact-local pass over class-segmented rows.
-
-    DEPRECATED: to be removed once the resident engine covers VDAM K=1 at no more wall than the
-    exact-local route (the VDAM speed gate); see em_status 'One engine' TODO.
-
-    The per-class route calls the single-class engine 2K times, a probe pass per
-    class for the joint evidence and an M-step pass per class. With the classes laid
-    out as segments of one bucket's row axis the engine scores the joint
-    class-by-pose posterior once and returns the same per-class quantities, so this
-    adapter only reshapes them into the K-class result.
-
-    ``class_posterior_sums_from_noise`` publishes each class's retained
-    (significant-pruned) mass as its M-step mass, as the per-class route does from
-    its per-class noise sums; the joint noise normalizer is then their total,
-    RELION's ``sumw_group`` (acc_ml_optimiser_impl.h:4138-4142).
-    """
-
-    if class_posterior_sums_from_noise and not accumulate_noise:
-        raise ValueError("class_posterior_sums_from_noise requires accumulate_noise=True")
-
-    n_classes = int(means_array.shape[0])
-    output = run_local_em_exact(
-        experiment_dataset,
-        means_array,
-        noise_variance,
-        tuple(class_layouts),
-        disc_type,
-        class_log_priors=np.asarray(log_priors, dtype=np.float64),
-        accumulate_noise=accumulate_noise,
-        return_best_pose_details=return_best_pose_details,
-        return_profile=return_profile,
-        stats_use_reconstruction_probs=stats_use_reconstruction_probs,
-        **engine_kwargs,
-    )
-    if output.class_log_evidence_per_image is None:
-        raise RuntimeError("class-segmented execution returned no per-class statistics")
-    return _class_segmented_em_result(
-        output,
-        n_classes=n_classes,
-        class_posterior_sums_from_noise=class_posterior_sums_from_noise,
-        return_profile=return_profile,
-    )
-
-
-def _class_segmented_em_result(
-    output,
-    *,
-    n_classes: int,
-    class_posterior_sums_from_noise: bool,
-    return_profile: bool,
-    **accumulator_layout,
-) -> KClassEMResult:
-    """The K-class result of one engine call that scored every class jointly.
-
-    ``output`` is the class-segmented result of the exact-local engine or of the
-    resident pass 2 (``ResidentKClassPass2Output``, the same field names).
-    ``accumulator_layout`` is passed to ``_assemble_result`` as is.
-    """
-
-    # Follow the existing K-class convention: the class log evidence is float64 for
-    # the responsibility algebra, while every published per-image statistic keeps the
-    # engine's scoring precision, which is what the per-class route returns and what
-    # downstream consumers read.
-    class_log_evidence = np.asarray(output.class_log_evidence_per_image, dtype=np.float64)
-    class_best_log_score = np.asarray(output.class_best_log_score_per_image)
-    joint_log_evidence = np.asarray(output.stats.log_evidence_per_image)
-    # Every class's Pmax is measured against the joint normalizer, which is what the
-    # per-class M-step calls do when they are given the joint log evidence.
-    #
-    # The normalizer is now published at the normalization dtype, which is wider than
-    # the scoring dtype by default. Pmax is a scoring quantity, so the operand is cast
-    # to the winning score's dtype before the subtraction, reproducing the precision
-    # this subtraction and exponential had when the normalizer was itself narrowed.
-    # Casting only the final result would leave the subtraction and the exponential at
-    # the wider precision and silently change them.
-    joint_log_evidence_for_posterior = joint_log_evidence.astype(
-        class_best_log_score.dtype, copy=False,
-    )
-    with np.errstate(over="ignore"):
-        class_max_posterior = np.exp(
-            class_best_log_score - joint_log_evidence_for_posterior[None, :]
-        )
-    class_rotation_posterior_sums = np.asarray(output.class_rotation_posterior_sums, dtype=np.float64)
-    # Every per-class M-step call in the per-class route is given the joint log
-    # evidence as its normalizer, so each class's RelionStats reports that joint
-    # value; the class's own evidence travels separately as class_log_evidence.
-    # Keep both conventions rather than moving a per-class value into the field
-    # that names the normalizer actually used.
-    per_class_stats = tuple(
-        make_relion_stats(
-            log_evidence_per_image=joint_log_evidence,
-            best_log_score_per_image=class_best_log_score[class_index],
-            max_posterior_per_image=class_max_posterior[class_index],
-            rotation_posterior_sums=class_rotation_posterior_sums[class_index],
-        )
-        for class_index in range(n_classes)
-    )
-    return _assemble_result(
-        class_log_evidence=class_log_evidence,
-        # One engine call scored every class jointly, so its joint max posterior is
-        # authoritative; see _assemble_result for why it is not rebuilt downstream.
-        joint_max_posterior_per_image=np.asarray(output.stats.max_posterior_per_image),
-        new_means=None,
-        Ft_y=[output.Ft_y[class_index] for class_index in range(n_classes)],
-        Ft_ctf=[output.Ft_ctf[class_index] for class_index in range(n_classes)],
-        per_class_hard_assignments=np.asarray(output.per_class_hard_assignments, dtype=np.int64),
-        per_class_stats=per_class_stats,
-        noise_stats=None,
-        aggregate_noise_stats_override=output.noise_stats,
-        class_posterior_sums_override=(
-            np.asarray(output.class_reconstruction_posterior_sums, dtype=np.float64)
-            if class_posterior_sums_from_noise
-            else None
-        ),
-        per_class_best_pose_rotations=(
-            None if output.per_class_best_pose_rotations is None else list(output.per_class_best_pose_rotations)
-        ),
-        per_class_best_pose_translations=(
-            None
-            if output.per_class_best_pose_translations is None
-            else list(output.per_class_best_pose_translations)
-        ),
-        per_class_best_pose_rotation_ids=(
-            None
-            if output.per_class_best_pose_rotation_ids is None
-            else list(output.per_class_best_pose_rotation_ids)
-        ),
-        # Canonical source Eulers are published to STAR metadata and read back by
-        # local search, so they are carried from the winning row, never rebuilt from
-        # its rotation matrix.
-        per_class_best_pose_eulers_deg=(
-            None
-            if output.per_class_best_pose_eulers_deg is None
-            else list(output.per_class_best_pose_eulers_deg)
-        ),
-        profile_summary=output.profile if return_profile else None,
-        uncast_log_evidence_per_image=output.uncast_log_evidence_per_image,
-        **accumulator_layout,
-    )
-
-
-def run_local_k_class_em(
-    experiment_dataset,
-    means,
-    noise_variance,
-    local_layout: LocalHypothesisLayout,
-    disc_type: str,
-    *,
-    class_log_priors=None,
-    accumulate_noise: bool = False,
-    return_best_pose_details: bool = False,
-    class_log_evidence=None,
-    normalization_log_evidence=None,
-    normalization_max_posterior=None,
-    stats_use_reconstruction_probs: bool = False,
-    class_posterior_sums_from_noise: bool = False,
-    segmented_class_rows: bool = False,
-    **engine_kwargs,
-) -> KClassEMResult:
-    """Run exact-local K-class EM using ``run_local_em_exact`` for all kernels.
-
-    DEPRECATED: to be removed once the resident engine covers VDAM K=1 at no more wall than the
-    exact-local route (the VDAM speed gate); see em_status 'One engine' TODO.
-
-    ``segmented_class_rows`` runs every class in one pass over class-segmented rows
-    instead of a probe pass and an M-step pass per class. Production K>1 (VDAM)
-    uses the segmented pass; Class3D never reaches local searches (RELION switches
-    to them from the HEALPix order only under auto-refine, ml_optimiser.cpp:2541-2565,
-    3936-3938). The per-class passes serve K=1 with an external normalizer (VDAM
-    zero oversampling) and, for K>1, remain the reference the segmented pass is
-    tested against.
-    """
-    warn_deprecated_engine("local", "global", "the VDAM exact-local E-step (--pass2_engine auto at K=1, or local)")
-
-    _reject_kwargs(
-        engine_kwargs,
-        (
-            "accumulate_noise",
-            "class_log_prior",
-            "normalization_log_z",
-            "disable_adjoint_y",
-            "disable_adjoint_ctf",
-            "return_best_pose_details",
-        ),
-        "run_local_k_class_em",
-    )
-    means_array = _as_class_means(means)
-    n_classes = int(means_array.shape[0])
-    fallback_n_images = local_layout[0].n_images if isinstance(local_layout, (list, tuple)) else local_layout.n_images
-    n_images = _dataset_image_count(experiment_dataset, fallback=fallback_n_images)
-    log_priors = _class_log_priors(n_classes, class_log_priors)
-    base_engine_kwargs = dict(engine_kwargs)
-    publish_host_result = (
-        _local_host_result_publication_requested()
-        and n_classes == 1
-        and bool(base_engine_kwargs.get("host_accumulator_finalize", False))
-    )
-    if publish_host_result:
-        base_engine_kwargs["host_stats_publication"] = True
-    return_profile = bool(base_engine_kwargs.pop("return_profile", False))
-
-    def _class_posterior_sums_override(noise_values: tuple[NoiseStats, ...] | None):
-        if not class_posterior_sums_from_noise:
-            return None
-        if noise_values is None:
-            raise ValueError("class_posterior_sums_from_noise requires accumulate_noise=True")
-        return np.asarray([total_sumw(stats.sumw) for stats in noise_values], dtype=np.float64)
-
-    class_log_evidence_np = None
-    if class_log_evidence is not None:
-        class_log_evidence_np = np.asarray(class_log_evidence, dtype=np.float64)
-        if class_log_evidence_np.shape != (n_classes, n_images):
-            raise ValueError(
-                f"class_log_evidence must have shape ({n_classes}, {n_images}), got {class_log_evidence_np.shape}",
-            )
-    normalization_log_evidence_np = optional_normalization_vector(
-        normalization_log_evidence, name="normalization_log_evidence", n_images=n_images,
-    )
-    normalization_max_posterior_np = optional_normalization_vector(
-        normalization_max_posterior, name="normalization_max_posterior", n_images=n_images,
-    )
-    if normalization_max_posterior_np is not None:
-        if normalization_log_evidence_np is not None:
-            raise ValueError(
-                "normalization_max_posterior and normalization_log_evidence are mutually exclusive",
-            )
-        if n_classes != 1:
-            raise ValueError("normalization_max_posterior is currently supported only for K=1")
-    if class_log_evidence_np is not None:
-        if normalization_log_evidence_np is None and normalization_max_posterior_np is None:
-            normalization_log_evidence_np = _logsumexp_np(class_log_evidence_np, axis=0)
-
-    class_layouts = _class_local_layouts(local_layout, n_classes)
-
-    if segmented_class_rows:
-        if n_classes == 1:
-            raise ValueError("class-segmented rows need more than one class")
-        for name, value in (
-            ("class_log_evidence", class_log_evidence),
-            ("normalization_log_evidence", normalization_log_evidence),
-            ("normalization_max_posterior", normalization_max_posterior),
-        ):
-            if value is not None:
-                raise NotImplementedError(f"class-segmented rows do not take an external {name}")
-        return _run_local_k_class_em_segmented(
-            experiment_dataset,
-            means_array,
-            noise_variance,
-            class_layouts,
-            disc_type,
-            log_priors=log_priors,
-            accumulate_noise=accumulate_noise,
-            return_best_pose_details=return_best_pose_details,
-            stats_use_reconstruction_probs=stats_use_reconstruction_probs,
-            class_posterior_sums_from_noise=class_posterior_sums_from_noise,
-            return_profile=return_profile,
-            engine_kwargs=base_engine_kwargs,
-        )
-
-    if class_log_evidence_np is None:
-        if n_classes == 1 and normalization_log_evidence_np is None and normalization_max_posterior_np is None:
-            class_layout = class_layouts[0]
-            class_engine_kwargs = _local_engine_kwargs_for_class(base_engine_kwargs, 0, n_classes)
-            with score_dump_label("single_class", local=True):
-                output = run_local_em_exact(
-                    experiment_dataset,
-                    means_array[0],
-                    _select_class_value(noise_variance, 0, n_classes),
-                    class_layout,
-                    disc_type,
-                    accumulate_noise=accumulate_noise,
-                    return_profile=return_profile,
-                    return_best_pose_details=return_best_pose_details,
-                    class_log_prior=float(log_priors[0]),
-                    stats_use_reconstruction_probs=stats_use_reconstruction_probs,
-                    **class_engine_kwargs,
-                )
-            class_Ft_y = output.Ft_y
-            class_Ft_ctf = output.Ft_ctf
-            hard_assignment = output.hard_assignments
-            best_pose_rotations = output.best_pose_rotations
-            best_pose_translations = output.best_pose_translations
-            best_pose_rotation_ids = output.best_pose_rotation_ids
-            stats = output.stats
-            noise = output.noise_stats
-            profile_summary = output.profile if return_profile else None
-            return _assemble_result(
-                class_log_evidence=np.asarray(stats.log_evidence_per_image, dtype=np.float64)[None, :],
-                new_means=None,
-                Ft_y=[class_Ft_y],
-                Ft_ctf=[class_Ft_ctf],
-                per_class_hard_assignments=np.asarray(hard_assignment, dtype=np.int32)[None, :],
-                per_class_stats=(stats,),
-                noise_stats=None if noise is None else (noise,),
-                per_class_best_pose_eulers_deg=[output.best_pose_eulers_deg],
-                per_class_best_pose_rotations=None if best_pose_rotations is None else [best_pose_rotations],
-                per_class_best_pose_translations=None if best_pose_translations is None else [best_pose_translations],
-                per_class_best_pose_rotation_ids=None if best_pose_rotation_ids is None else [best_pose_rotation_ids],
-                profile_summary=profile_summary,
-                host_accumulators=publish_host_result,
-                host_stats_publication=publish_host_result,
-                class_posterior_sums_override=_class_posterior_sums_override(
-                    None if noise is None else (noise,),
-                ),
-            )
-
-        collect_global_reconstruction_threshold = bool(
-            base_engine_kwargs.get("reconstruct_significant_only", False)
-            and base_engine_kwargs.get("reconstruction_probability_threshold") is None
-        )
-        class_log_evidence = []
-        support_values_by_class = [] if collect_global_reconstruction_threshold else None
-        for class_index in range(n_classes):
-            class_layout = class_layouts[class_index]
-            class_engine_kwargs = _local_engine_kwargs_for_class(base_engine_kwargs, class_index, n_classes)
-            # The normalization probe neither reconstructs nor publishes
-            # accumulators; do not inherit the reconstruction pass's M-step modes.
-            probe_engine_kwargs = dict(class_engine_kwargs)
-            probe_engine_kwargs["mstep_subtract_ctf_projection"] = False
-            probe_engine_kwargs["mstep_relion_x_half"] = False
-            probe_engine_kwargs["return_half_volume_accumulators"] = False
-            with score_dump_label(f"probe_class{class_index:03d}", local=True):
-                probe = run_local_em_exact(
-                    experiment_dataset,
-                    means_array[class_index],
-                    _select_class_value(noise_variance, class_index, n_classes),
-                    class_layout,
-                    disc_type,
-                    accumulate_noise=False,
-                    return_best_pose_details=False,
-                    class_log_prior=float(log_priors[class_index]),
-                    disable_adjoint_y=True,
-                    disable_adjoint_ctf=True,
-                    score_only=True,
-                    stats_use_reconstruction_probs=stats_use_reconstruction_probs,
-                    return_profile=return_profile or collect_global_reconstruction_threshold,
-                    return_reconstruction_probability_values=collect_global_reconstruction_threshold,
-                    **probe_engine_kwargs,
-                )
-            class_log_evidence.append(np.asarray(probe.stats.log_evidence_per_image, dtype=np.float64))
-            if support_values_by_class is not None:
-                support_values_by_class.append(tuple(probe.profile["reconstruction_probability_values_by_image"]))
-            del probe
-        class_log_evidence_np = np.stack(class_log_evidence, axis=0)
-        normalization_log_evidence_np = _logsumexp_np(class_log_evidence_np, axis=0)
-        if support_values_by_class is not None:
-            base_engine_kwargs["reconstruction_probability_threshold"] = _global_reconstruction_probability_thresholds(
-                support_values_by_class,
-                class_log_evidence_np,
-                normalization_log_evidence_np,
-                float(base_engine_kwargs.get("adaptive_fraction", 0.999)),
-            )
-            del support_values_by_class
-
-    global_log_evidence = _logsumexp_np(class_log_evidence_np, axis=0)
-    if normalization_log_evidence_np is not None:
-        global_log_evidence = normalization_log_evidence_np
-    # The same diagnostic quantity for this route: the normalizer before the engine
-    # casts it to the scoring dtype. No production consumer, so it is only
-    # materialized when the K-class statistics capture is switched on.
-    uncast_global_log_evidence = (
-        np.asarray(global_log_evidence, dtype=np.float64).copy()
-        if initial_model_capture.k_class_statistics_capture_enabled()
-        else None
-    )
-
-    results = _PerClassResults(
-        accumulate_noise=accumulate_noise,
-        return_best_pose_details=return_best_pose_details,
-        return_profile=return_profile,
-    )
-    for class_index in range(n_classes):
-        class_layout = class_layouts[class_index]
-        class_engine_kwargs = _local_engine_kwargs_for_class(base_engine_kwargs, class_index, n_classes)
-        with score_dump_label(f"mstep_class{class_index:03d}", local=True):
-            normalization_kwargs = (
-                {"normalization_max_posterior": normalization_max_posterior_np}
-                if normalization_max_posterior_np is not None
-                else {"normalization_log_evidence": global_log_evidence}
-            )
-            output = run_local_em_exact(
-                experiment_dataset,
-                means_array[class_index],
-                _select_class_value(noise_variance, class_index, n_classes),
-                class_layout,
-                disc_type,
-                accumulate_noise=accumulate_noise,
-                return_profile=return_profile,
-                return_best_pose_details=return_best_pose_details,
-                class_log_prior=float(log_priors[class_index]),
-                stats_use_reconstruction_probs=stats_use_reconstruction_probs,
-                **normalization_kwargs,
-                **class_engine_kwargs,
-            )
-        results.append(
-            Ft_y=output.Ft_y,
-            Ft_ctf=output.Ft_ctf,
-            hard_assignment=output.hard_assignments,
-            stats=output.stats,
-            noise=output.noise_stats,
-            best_pose=(output.best_pose_rotations, output.best_pose_translations, output.best_pose_rotation_ids),
-            best_pose_eulers_deg=output.best_pose_eulers_deg if return_best_pose_details else None,
-            profile_summary=output.profile if return_profile else None,
-        )
-
-    profile_summary = None
-    if results.profile_summaries is not None:
-        profile_summary = {
-            "per_class_profile_summary": tuple(results.profile_summaries),
-            "em_time_s": np.float64(
-                sum(
-                    float(summary.get("em_time_s", 0.0))
-                    for summary in results.profile_summaries
-                    if summary is not None
-                )
-            ),
-        }
-
-    return _assemble_result(
-        uncast_log_evidence_per_image=uncast_global_log_evidence,
-        class_log_evidence=class_log_evidence_np,
-        new_means=None,
-        Ft_y=results.Ft_y,
-        Ft_ctf=results.Ft_ctf,
-        per_class_hard_assignments=np.stack(results.hard_assignments, axis=0),
-        per_class_stats=tuple(results.per_class_stats),
-        noise_stats=results.noise_tuple(),
-        per_class_best_pose_eulers_deg=results.best_pose_eulers_deg,
-        per_class_best_pose_rotations=results.best_pose_rotations,
-        per_class_best_pose_translations=results.best_pose_translations,
-        per_class_best_pose_rotation_ids=results.best_pose_rotation_ids,
-        profile_summary=profile_summary,
-        host_accumulators=publish_host_result,
-        host_stats_publication=publish_host_result,
-        class_posterior_sums_override=_class_posterior_sums_override(results.noise_tuple()),
     )
 
 

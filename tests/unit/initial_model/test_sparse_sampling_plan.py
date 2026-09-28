@@ -58,17 +58,14 @@ def test_deferred_plan_cannot_enter_dense_execution(monkeypatch):
         )
 
 
-@pytest.mark.parametrize("selector", ["0", "1", "invalid"])
-def test_expectation_deferred_plan_routing_and_metadata(monkeypatch, selector):
-    monkeypatch.setenv("RELAX_VDAM_DEFER_SPARSE_ROTATIONS", selector)
+def test_expectation_deferred_plan_routing_and_metadata(monkeypatch):
     monkeypatch.delenv("RELAX_DISABLE_SPARSE_PASS2", raising=False)
-    # The selector applies to the exact-local route; the adaptive route always defers.
+    # The adaptive route, VDAM's only E-step route, builds its own fine grid: the plan defers it.
     opts = native_options.NativeInitialModelOptions(
         fn_img="particles.star",
         healpix_order=0,
         oversampling=1,
         random_perturbation=0.25,
-        pass2_engine="local",
     )
     dense = native_sampling._build_sampling_plan(opts, iteration=3)
     expected_count = len(dense.rotations)
@@ -76,21 +73,16 @@ def test_expectation_deferred_plan_routing_and_metadata(monkeypatch, selector):
 
     def fake_run(dataset, state, config, *, particle_ids, halfset_ids):
         calls.append(config)
-        if selector == "1":
-            assert config.rotations is None
-        else:
-            assert_matches(config.rotations, dense.rotations)
+        assert config.rotations is None
         assert_matches(config.translations, dense.translations)
         assert config.engine_kwargs["sparse_pass2"]
         return SimpleNamespace(accumulators=[], meta={})
 
     monkeypatch.setattr(driver, "run_dense_initial_model_estep", fake_run)
-    if selector == "1":
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Sparse E-step built a full fine grid")
 
-        def forbidden(*args, **kwargs):
-            raise AssertionError("Sparse E-step built a full fine grid")
-
-        monkeypatch.setattr(sampling, "get_oversampled_relion_hidden_rotation_grid_from_samples", forbidden)
+    monkeypatch.setattr(sampling, "get_oversampled_relion_hidden_rotation_grid_from_samples", forbidden)
     dataset = SimpleNamespace(image_shape=(8, 8), voxel_size=1.0, n_images=2)
     state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=3, n_directions=3)
     state.iter = 3
@@ -108,12 +100,7 @@ def test_expectation_deferred_plan_routing_and_metadata(monkeypatch, selector):
         ),
     )
     args = (state, np.asarray([0, 1]), np.asarray([0, 1], dtype=np.int8))
-    if selector == "invalid":
-        with pytest.raises(ValueError, match="must be 0 or 1"):
-            expectation(*args)
-        assert not calls
-    else:
-        _, meta = expectation(*args)
-        assert len(calls) == 1
-        assert meta["n_rotations"] == expected_count
-        assert meta["n_translations"] == len(dense.translations)
+    _, meta = expectation(*args)
+    assert len(calls) == 1
+    assert meta["n_rotations"] == expected_count
+    assert meta["n_translations"] == len(dense.translations)

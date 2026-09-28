@@ -602,7 +602,6 @@ def test_resident_local_pass_is_relions_local_fine_pass(monkeypatch, noise, curr
     corners, and the local search routes that pass to the resident driver too.
     """
 
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT", "1")
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "64,256,1024")
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
     monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "0")

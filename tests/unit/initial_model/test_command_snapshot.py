@@ -13,8 +13,6 @@ from __future__ import annotations
 import pytest
 from helpers import relion_initial_model_command
 
-from relax.commands import initial_model
-
 
 @pytest.fixture(scope="module")
 def relion_command():
@@ -156,39 +154,6 @@ class TestInputValidation:
         opts = _basic_opts(relion_command, ctf_intact_first_peak=False)
         cmd = relion_command.build_command(opts)
         assert "--ctf_intact_first_peak" not in cmd
-
-
-class TestRecovarRuntimeOptions:
-    def test_stable_fourier_window_shapes_defaults_off(self):
-        args = initial_model.make_parser().parse_args(["--no-require-custom-cuda", "--no-jax-compilation-cache", "--gpu", "", "--i", "particles.star"])
-        assert args.stable_fourier_window_shapes is False
-
-    def test_stable_fourier_window_shapes_reaches_native_driver(
-        self, monkeypatch
-    ):
-        from types import SimpleNamespace
-
-        import relax.vdam.driver as driver
-
-        captured = {}
-
-        def fake_run_native_initial_model(options):
-            captured["options"] = options
-            return SimpleNamespace(final_mrc="initial_model.mrc", final_model_star="model.star")
-
-        monkeypatch.setattr(driver, "run_native_initial_model", fake_run_native_initial_model)
-        assert (
-            initial_model.main(
-                [
-                    "--no-require-custom-cuda", "--no-jax-compilation-cache", "--gpu", "", "--i",
-                    "particles.star",
-                    "--stable-fourier-window-shapes",
-                    "--no-write-iter-artifacts",
-                ]
-            )
-            == 0
-        )
-        assert captured["options"].stable_fourier_window_shapes is True
 
 
 # ---------------------------------------------------------------------------

@@ -297,7 +297,6 @@ def _compare_particle(
     )
     production_preprocessed_real = raw_real_image[None, ...]
     if preprocess_backend == "relion_cuda":
-        from recovar import cuda_backproject
         from relax.cuda import kernels as em_cuda_kernels
         from relax.cuda import kernels as em_cuda_kernels
 
@@ -371,7 +370,6 @@ def _compare_particle(
     native_replay_denominator = (
         native_ctf_replay**2 * native_inverse_noise_replay / n4
     ).astype(np.float32)
-    from recovar import cuda_backproject
     from relax.cuda import kernels as em_cuda_kernels
     from relax.cuda import kernels as em_cuda_kernels
 

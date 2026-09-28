@@ -48,10 +48,6 @@ def test_public_defaults_match_native_option_defaults():
         "image_batch_size",
         "rotation_block_size",
         "pass2_engine",
-        "relion_wavg_sequential_cuda",
-        "exact_local_bucket_radix",
-        "exact_local_physical_order_chunk_size",
-        "stable_fourier_window_shapes",
         "bootstrap_min_particles",
         "sigma2_min_particles",
         "padding_factor",
@@ -81,10 +77,6 @@ def test_parser_resolves_gui_defaults_and_auto_gpu_backend():
     assert options["preread_images"] is False
     assert options["scratch_dir"] == ""
     assert options["keep_free_scratch_gb"] == 10.0
-    assert options["relion_wavg_sequential_cuda"] is True
-    assert options["exact_local_bucket_radix"] == 4
-    assert options["exact_local_physical_order_chunk_size"] == 0
-    assert options["stable_fourier_window_shapes"] is False
 
 
 @pytest.mark.unit
@@ -130,13 +122,7 @@ def test_parser_accepts_important_overrides():
             "--padding-factor",
             "2",
             "--pass2-engine",
-            "local_segmented",
-            "--no-relion-wavg-sequential-cuda",
-            "--exact-local-bucket-radix",
-            "2",
-            "--exact-local-physical-order-chunk-size",
-            "220",
-            "--stable-fourier-window-shapes",
+            "adaptive",
             "--image-fourier-backend",
             "host_numpy",
             "--gpu",
@@ -167,37 +153,11 @@ def test_parser_accepts_important_overrides():
     assert options["offset_range_px"] == 4.5
     assert options["offset_step_px"] == 1.5
     assert options["padding_factor"] == 2
-    assert options["pass2_engine"] == "local_segmented"
-    assert options["relion_wavg_sequential_cuda"] is False
-    assert options["exact_local_bucket_radix"] == 2
-    assert options["exact_local_physical_order_chunk_size"] == 220
-    assert options["stable_fourier_window_shapes"] is True
+    assert options["pass2_engine"] == "adaptive"
     assert options["image_fourier_backend"] == "host_numpy"
     assert "deterministic_cuda" not in options
     assert args.deterministic_cuda is True
     assert args.require_custom_cuda is False
-
-
-@pytest.mark.unit
-def test_parser_rejects_unqualified_exact_local_bucket_radix():
-    with pytest.raises(SystemExit):
-        initial_model.make_parser().parse_args(
-            ["--i", "particles.star", "--exact-local-bucket-radix", "3"],
-        )
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("chunk_size", ["-1", "1", "2"])
-def test_parser_rejects_physical_order_chunks_that_cannot_hold_a_pool(chunk_size):
-    with pytest.raises(SystemExit):
-        initial_model.make_parser().parse_args(
-            [
-                "--i",
-                "particles.star",
-                "--exact-local-physical-order-chunk-size",
-                chunk_size,
-            ],
-        )
 
 
 @pytest.mark.unit

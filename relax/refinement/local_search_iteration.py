@@ -21,16 +21,7 @@ from relax.local.local_em_engine import run_local_em_exact
 from relax.local.local_layout import _local_search_engine_rotation_block_size, build_local_hypothesis_layout
 from relax.sampling import build_local_search_grid_metadata
 from relax.sparse_pass2.engine_record import record_pass_engine
-from relax.sparse_pass2.resident_local_pass2 import (
-    RESIDENT_LOCAL_SEARCH_ENV,
-    compute_local_search_resident,
-    resident_local_search_requested,
-)
-from relax.sparse_pass2.sparse_pass2_policy import (
-    ResidentConfigurationUnsupported,
-    resident_engine_selection,
-    resident_refusal_reason,
-)
+from relax.sparse_pass2.resident_local_pass2 import compute_local_search_resident
 
 logger = logging.getLogger("relax.local.local_search_iteration")
 
@@ -335,96 +326,73 @@ def _run_local_search_iteration(
             ),
         )
 
-    if resident_local_search_requested() and not score_only and current_size is not None:
-        # The device-resident local pass 2 (T12). Only the fine pass is routed
-        # here: the pass-1 parent probe selects pass 2's candidate set with
-        # RELION's ``maximum_significants`` cap, which the segmented float32
-        # posterior does not implement, so routing it would change the support
-        # rather than only its layout. The boundary is logged, not silent.
+    if score_only:
+        # The pass-1 parent probe selects pass 2's candidate set with RELION's
+        # ``maximum_significants`` cap, which the segmented float32 posterior does not
+        # implement; it stays on the exact local engine until the resident driver has a
+        # score-only mode with that cap.
+        engine_outputs = None
+        exact_local_reason = "parent probe"
+    else:
+        if current_size is None:
+            raise ValueError("the resident local pass 2 scores RELION's window and needs a current size")
+        # The device-resident local pass 2 is relax's one local fine pass; a configuration
+        # it does not implement is an error (ResidentConfigurationUnsupported).
         logger.info(
-            "%s=1: running the device-resident local fine pass 2 "
+            "running the device-resident local fine pass 2 "
             "(image_batch_size=%d and rotation_block_size=%d are unused by this path; "
             "its capacity plan is sized from the projection byte budget)",
-            RESIDENT_LOCAL_SEARCH_ENV,
             image_batch_size,
             rotation_block_size,
         )
-        try:
-            engine_outputs = compute_local_search_resident(
-                experiment_dataset,
-                mean,
-                noise_variance,
-                local_layout,
-                disc_type,
-                current_size=current_size,
-                reconstruction_current_size=reconstruction_current_size,
-                accumulate_noise=accumulate_noise,
-                projection_padding_factor=projection_padding_factor,
-                reconstruction_padding_factor=reconstruction_padding_factor,
-                half_spectrum_scoring=half_spectrum_scoring,
-                relion_exact_score_translation=relion_exact_score_translation,
-                projection_relion_texture_interp=projection_relion_texture_interp,
-                projection_relion_acc_double_floorf_quirk=projection_relion_acc_double_floorf_quirk,
-                projection_relion_kernel=projection_relion_kernel,
-                relion_projector_half=relion_projector_half,
-                relion_projector_r_max=relion_projector_r_max,
-                use_float64_scoring=use_float64_scoring,
-                use_float64_projections=use_float64_projections,
-                square_window=square_window,
-                image_corrections=image_corrections,
-                scale_corrections=scale_corrections,
-                group_ids=group_ids,
-                scale_correction_group_count=scale_correction_group_count,
-                scale_correction_data_vs_prior=scale_correction_data_vs_prior,
-                image_pre_shifts=image_pre_shifts,
-                mstep_relion_x_half=mstep_relion_x_half,
-                disable_adjoint_y=disable_adjoint_y,
-                disable_adjoint_ctf=disable_adjoint_ctf,
-                reconstruct_significant_only=reconstruct_significant_only,
-                adaptive_fraction=adaptive_fraction,
-                max_significants=max_significants if apply_max_significants_to_support else -1,
-                return_best_pose_details=return_best_pose_details,
-                return_reconstruction_sample_indices=return_reconstruction_sample_indices,
-                return_profile=return_profile,
-                stats_use_reconstruction_probs=stats_use_reconstruction_probs,
-                translation_prior_centers=translation_prior_centers,
-                normalization_log_evidence=normalization_log_evidence,
-                source_faithful_spectrum_norm=source_faithful_spectrum_norm,
-                relion_translation_angle_scale=relion_translation_angle_scale,
-                score_only=score_only,
-                optics_group_ids=optics_group_ids,
-                reconstruction_volume_current_size=reconstruction_volume_current_size,
-                symmetry_label=symmetry,
-                reconstruction_image_radius=reconstruction_image_radius,
-            )
-        except ResidentConfigurationUnsupported as exc:
-            if resident_engine_selection(RESIDENT_LOCAL_SEARCH_ENV) == "explicit":
-                raise
-            # The resident default: a pass the resident driver refuses before any
-            # device work runs on the exact local engine below.
-            logger.info(
-                "Device-resident local pass 2 (the K=1 default) does not cover this pass; "
-                "it runs on the exact local engine: %s",
-                exc,
-            )
-            engine_outputs = None
-            exact_local_reason = resident_refusal_reason(exc)
-        else:
-            record_pass_engine("local", "resident")
-    else:
-        engine_outputs = None
-        exact_local_reason = (
-            "parent probe" if score_only
-            else "no current size" if resident_local_search_requested()
-            else f"{RESIDENT_LOCAL_SEARCH_ENV}=0"
+        engine_outputs = compute_local_search_resident(
+            experiment_dataset,
+            mean,
+            noise_variance,
+            local_layout,
+            disc_type,
+            current_size=current_size,
+            reconstruction_current_size=reconstruction_current_size,
+            accumulate_noise=accumulate_noise,
+            projection_padding_factor=projection_padding_factor,
+            reconstruction_padding_factor=reconstruction_padding_factor,
+            half_spectrum_scoring=half_spectrum_scoring,
+            relion_exact_score_translation=relion_exact_score_translation,
+            projection_relion_texture_interp=projection_relion_texture_interp,
+            projection_relion_acc_double_floorf_quirk=projection_relion_acc_double_floorf_quirk,
+            projection_relion_kernel=projection_relion_kernel,
+            relion_projector_half=relion_projector_half,
+            relion_projector_r_max=relion_projector_r_max,
+            use_float64_scoring=use_float64_scoring,
+            use_float64_projections=use_float64_projections,
+            square_window=square_window,
+            image_corrections=image_corrections,
+            scale_corrections=scale_corrections,
+            group_ids=group_ids,
+            scale_correction_group_count=scale_correction_group_count,
+            scale_correction_data_vs_prior=scale_correction_data_vs_prior,
+            image_pre_shifts=image_pre_shifts,
+            mstep_relion_x_half=mstep_relion_x_half,
+            disable_adjoint_y=disable_adjoint_y,
+            disable_adjoint_ctf=disable_adjoint_ctf,
+            reconstruct_significant_only=reconstruct_significant_only,
+            adaptive_fraction=adaptive_fraction,
+            max_significants=max_significants if apply_max_significants_to_support else -1,
+            return_best_pose_details=return_best_pose_details,
+            return_reconstruction_sample_indices=return_reconstruction_sample_indices,
+            return_profile=return_profile,
+            stats_use_reconstruction_probs=stats_use_reconstruction_probs,
+            translation_prior_centers=translation_prior_centers,
+            normalization_log_evidence=normalization_log_evidence,
+            source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+            relion_translation_angle_scale=relion_translation_angle_scale,
+            score_only=score_only,
+            optics_group_ids=optics_group_ids,
+            reconstruction_volume_current_size=reconstruction_volume_current_size,
+            symmetry_label=symmetry,
+            reconstruction_image_radius=reconstruction_image_radius,
         )
-        if resident_local_search_requested() and score_only:
-            logger.info(
-                "%s=1: the pass-1 parent probe keeps the exact local engine "
-                "(its RELION maximum_significants cap is outside the segmented "
-                "posterior's contract, and changing it would change pass 2's support)",
-                RESIDENT_LOCAL_SEARCH_ENV,
-            )
+        record_pass_engine("local", "resident")
     if engine_outputs is None:
         record_pass_engine("local", "exact_local", exact_local_reason)
         engine_outputs = run_local_em_exact(

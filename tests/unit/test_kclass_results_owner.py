@@ -48,13 +48,6 @@ def test_collector_appends_in_class_order_and_honours_options():
     )
 
 
-def test_both_full_image_runners_collect_through_the_owner():
-    for fn in (k_class.run_dense_k_class_em, k_class.run_local_k_class_em):
-        src = inspect.getsource(fn)
-        assert src.count("_PerClassResults(") == 1 and src.count("results.append(") == 1
-        assert "per_class_best_pose_rotations = [] if" not in src and "hard_assignments.append(" not in src
-
-
 def _results(**overrides):
     kwargs = dict(
         n_images=3,

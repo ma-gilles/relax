@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-from inspect import getsource
 from types import SimpleNamespace
 from typing import NamedTuple
 
 import numpy as np
 import pytest
-from helpers.float_compare import assert_matches
 
 from relax.diagnostics import coarse_score_diagnostics
 from relax.diagnostics.coarse_score_diagnostics import _with_coarse_selector_audit
-from relax.vdam import dense_adapter, sparse_pass2_estep
+from relax.vdam import dense_adapter
 
 pytestmark = pytest.mark.unit
 
@@ -61,7 +59,7 @@ def test_sparse_adapter_propagates_each_selector_topology(workers, atomic):
     audit = _active_audit(workers=workers, atomic=atomic)
     result = _ProfileResult(profile_summary={"pass2_time_s": 1.25})
 
-    validated = sparse_pass2_estep._coarse_selector_audit_from_full_stats({"coarse_selector_audit": audit})
+    validated = coarse_score_diagnostics._coarse_selector_audit_from_full_stats({"coarse_selector_audit": audit})
     sealed = _with_coarse_selector_audit(result, validated)
     meta = dense_adapter._estep_meta({0: SimpleNamespace(profile_summary=sealed.profile_summary)})
 
@@ -94,80 +92,11 @@ def test_sparse_adapter_fails_closed_on_invalid_selector_topology(
     corrupt(audit)
 
     with pytest.raises(RuntimeError, match="invalid coarse selector audit"):
-        sparse_pass2_estep._coarse_selector_audit_from_full_stats({"coarse_selector_audit": audit})
+        coarse_score_diagnostics._coarse_selector_audit_from_full_stats({"coarse_selector_audit": audit})
 
 
 def test_sparse_adapter_fails_closed_when_selector_audit_is_missing():
     with pytest.raises(RuntimeError, match="did not return.*execution audit"):
-        sparse_pass2_estep._coarse_selector_audit_from_full_stats({})
+        coarse_score_diagnostics._coarse_selector_audit_from_full_stats({})
 
 
-def test_sparse_adapter_propagates_real_coarse_support_hybrid_and_counts():
-    audit = _active_audit(workers=0, atomic=False)
-    support = {
-        "schema": "recovar.coarse_significance_support_audit.v2",
-        "aggregate_support_sha256": "a" * 64,
-    }
-    hybrid = {
-        "enabled": True,
-        "published_score_source": "exact_relion_source16_or_full_rectangular",
-    }
-    exact_assembly = {
-        "skip_generic_effective": False,
-        "translate_score_call_count": 4,
-    }
-    result = _CoarseResult(
-        profile_summary={"pass2_time_s": 1.25},
-        significant_counts=None,
-        pose_assignments=np.asarray([3, 7], dtype=np.int32),
-    )
-
-    sealed = coarse_score_diagnostics._with_initial_model_coarse_diagnostics(
-        result,
-        full_stats={
-            "significant_cutoff_counts": np.asarray([17, 23], dtype=np.int32),
-            "coarse_significance_support_audit": support,
-            "coarse_gaussian_gemm_hybrid": hybrid,
-            "exact_coarse_operand_assembly": exact_assembly,
-        },
-        selector_audit=audit,
-    )
-
-    assert_matches(sealed.significant_counts, [17, 23])
-    assert sealed.profile_summary == {
-        "pass2_time_s": 1.25,
-        "coarse_selector_audit": audit,
-        "coarse_significance_support_audit": support,
-        "coarse_gaussian_gemm_hybrid": hybrid,
-        "exact_coarse_operand_assembly": exact_assembly,
-    }
-
-
-def test_sparse_adapter_rejects_coarse_count_shape_drift():
-    result = _CoarseResult(
-        profile_summary=None,
-        significant_counts=None,
-        pose_assignments=np.asarray([3, 7], dtype=np.int32),
-    )
-
-    with pytest.raises(RuntimeError, match="significant counts.*pass-2 images"):
-        coarse_score_diagnostics._with_initial_model_coarse_diagnostics(
-            result,
-            full_stats={"significant_cutoff_counts": np.asarray([17], dtype=np.int32)},
-            selector_audit=None,
-        )
-
-
-def test_sparse_adapter_extracts_before_pass2_and_seals_before_meta():
-    source = getsource(dense_adapter._run_sparse_pass2_initial_model_estep)
-
-    extraction = source.index("coarse_selector_audit = _coarse_selector_audit_from_full_stats(")
-    # One engine: the compact sparse pass-2 route and its
-    # _run_sparse_k_class_adaptive_pass2 call site are gone, so there is a single
-    # scoring call to order against.
-    pass2 = source.index("result = run_local_k_class_em(")
-    sealing = source.index("result = _with_initial_model_coarse_diagnostics(")
-    result_storage = source.index("halfset_results[int(halfset_idx)] = result")
-
-    assert extraction < pass2
-    assert sealing < result_storage

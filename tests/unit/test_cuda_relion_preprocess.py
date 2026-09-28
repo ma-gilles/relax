@@ -14,7 +14,6 @@ pytestmark = [pytest.mark.unit, pytest.mark.gpu]
 @pytest.fixture(autouse=True)
 def _use_custom_cuda_lib(monkeypatch, custom_cuda_lib):
     import recovar.cuda_backproject as cuda_backproject
-    from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -272,7 +271,6 @@ def test_relion_cuda_softmask_deferred_check_queues_and_fails_closed_on_drain(gp
     and the invalid row carries NaN in its masked exterior until the drain.
     """
 
-    from recovar import cuda_backproject
     from relax.cuda import kernels as em_cuda_kernels
     from relax.cuda.kernels import relion_preprocess_real_f32
 
@@ -316,7 +314,6 @@ def test_relion_cuda_softmask_deferred_check_queues_and_fails_closed_on_drain(gp
 
 
 def test_relion_cuda_softmask_deferred_check_drains_clean_batches(gpu_device):
-    from recovar import cuda_backproject
     from relax.cuda import kernels as em_cuda_kernels
     from relax.cuda.kernels import relion_preprocess_real_f32
 
@@ -349,7 +346,6 @@ def test_relion_cuda_softmask_deferred_check_drains_clean_batches(gpu_device):
 
 
 def test_relion_preprocess_deferred_check_flag_is_strict(monkeypatch):
-    from recovar import cuda_backproject
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv(em_cuda_kernels.RELION_PREPROCESS_DEFERRED_CHECK_ENV, "1")

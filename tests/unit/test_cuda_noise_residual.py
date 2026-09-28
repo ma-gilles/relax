@@ -5,7 +5,6 @@ import numpy as np
 import pytest
 
 from relax.cuda import noise_residual as nr
-from recovar import cuda_backproject as cb
 from relax.cuda import kernels as em_cuda_kernels
 from relax.helpers import projection
 from relax.helpers.half_spectrum import bin_shell_values_jax

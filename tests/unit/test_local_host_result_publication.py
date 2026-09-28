@@ -1,7 +1,6 @@
 """Exact publication contracts; the same tests also run on a pinned GPU."""
 
 from dataclasses import fields, is_dataclass
-from types import SimpleNamespace
 
 import jax
 import jax.numpy as jnp
@@ -9,8 +8,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.classification import k_class, k_class_results
-from relax.helpers.types import LocalEMResult, _stats_array, make_noise_stats, make_relion_stats
+from relax.classification import k_class_results
+from relax.helpers.types import _stats_array, make_noise_stats, make_relion_stats
 from relax.local.local_layout import LocalHypothesisLayout
 
 pytestmark = pytest.mark.unit
@@ -129,75 +128,6 @@ def test_complete_result_publication_matches_device_result(host):
     ):
         assert isinstance(getattr(actual, name), np.ndarray)
     assert all(isinstance(field, np.ndarray) for field in actual.stats)
-
-
-@pytest.mark.parametrize("n_classes", [1, 4])
-@pytest.mark.parametrize("host_finalize", [False, True])
-@pytest.mark.parametrize("flag", ["0", "1"])
-def test_local_result_route_is_opt_in_and_single_class(monkeypatch, n_classes, host_finalize, flag):
-    monkeypatch.setenv(k_class._LOCAL_HOST_RESULT_PUBLICATION_ENV, flag)
-    calls = []
-    layout = LocalHypothesisLayout(
-        n_global_rotations=2,
-        n_pixels=1,
-        n_psi=2,
-        rotation_offsets=np.asarray([0, 1, 2], dtype=np.int64),
-        rotation_ids_flat=np.asarray([0, 1], dtype=np.int32),
-        rotations_flat=np.tile(np.eye(3, dtype=np.float32), (2, 1, 1)),
-        rotation_log_priors_flat=np.zeros(2, dtype=np.float32),
-        rotation_counts=np.ones(2, dtype=np.int32),
-        translation_grid=np.zeros((1, 2), dtype=np.float32),
-        translation_log_priors=np.zeros((2, 1), dtype=np.float32),
-    )
-
-    def engine(_dataset, mean, *_args, **kwargs):
-        calls.append(kwargs)
-        stats = make_relion_stats(
-            log_evidence_per_image=np.asarray([4, 5], dtype=np.float32),
-            best_log_score_per_image=np.asarray([3, 4], dtype=np.float32),
-            max_posterior_per_image=np.asarray([0.5, 0.8], dtype=np.float32),
-            rotation_posterior_sums=np.asarray([1, 2], dtype=np.float32),
-            host_arrays=kwargs.get("host_stats_publication", False),
-        )
-        return LocalEMResult(
-            Ft_y=np.zeros(mean.shape, dtype=np.complex64),
-            Ft_ctf=np.zeros(mean.shape, dtype=np.float32),
-            hard_assignments=np.asarray([1, 0], dtype=np.int32),
-            stats=stats,
-        )
-
-    monkeypatch.setattr(k_class, "run_local_em_exact", engine)
-    result = k_class.run_local_k_class_em(
-        SimpleNamespace(n_units=2),
-        jnp.zeros((n_classes, 4), dtype=jnp.complex64),
-        jnp.ones(4),
-        layout,
-        "linear_interp",
-        class_log_evidence=np.zeros((n_classes, 2)),
-        host_accumulator_finalize=host_finalize,
-    )
-    selected = flag == "1" and host_finalize and n_classes == 1
-    assert len(calls) == n_classes
-    assert all(call.get("host_stats_publication", False) == selected for call in calls)
-    assert isinstance(result.Ft_y, np.ndarray if selected else jax.Array)
-    assert isinstance(result.stats.rotation_posterior_sums, np.ndarray if selected else jax.Array)
-
-
-@pytest.mark.parametrize("token", ["", "true", "2", " 1"])
-def test_invalid_publication_selector_rejected(monkeypatch, token):
-    monkeypatch.setenv(k_class._LOCAL_HOST_RESULT_PUBLICATION_ENV, token)
-    with pytest.raises(ValueError, match="must be 0 or 1"):
-        k_class._local_host_result_publication_requested()
-
-
-def test_host_publication_default_and_multiclass_rejection(monkeypatch):
-    monkeypatch.delenv(k_class._LOCAL_HOST_RESULT_PUBLICATION_ENV, raising=False)
-    assert not k_class._local_host_result_publication_requested()
-    stats = _noise(np.ones(2, dtype=np.float32))
-    with pytest.raises(ValueError, match="exactly one class"):
-        k_class_results._sum_noise_stats((stats, stats), host_arrays=True)
-    with pytest.raises(TypeError, match="must be a bool"):
-        _stats_array([1.0], None, 1)
 
 
 def test_actual_local_engine_publishes_exact_host_statistics():

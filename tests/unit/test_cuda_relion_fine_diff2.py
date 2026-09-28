@@ -2875,52 +2875,6 @@ def test_relion_projector_half_texture_fails_closed_without_gpu(monkeypatch):
         )
 
 
-def test_relion_projector_singleton_selection_is_shape_only_across_handoffs():
-    from relax.classification import k_class_inputs
-    from relax.local import local_em_engine
-
-    select_relion_projector_half_for_class = k_class_inputs._select_projector_half_for_class
-    projector = np.arange(1 * 5 * 5 * 3, dtype=np.float32).reshape(1, 5, 5, 3).astype(np.complex64)
-    selected = select_relion_projector_half_for_class(projector, 0, 1)
-    assert selected.shape == (5, 5, 3)
-    assert np.shares_memory(selected, projector)
-    assert_matches(selected, projector.reshape(5, 5, 3))
-
-    projector_jax = jnp.asarray(projector)
-    stablehlo = str(
-        jax.jit(lambda value: select_relion_projector_half_for_class(value, 0, 1))
-        .lower(projector_jax)
-        .compiler_ir(dialect="stablehlo")
-    )
-    assert "stablehlo.reshape" in stablehlo
-    assert "stablehlo.slice" not in stablehlo
-    assert "stablehlo.dynamic_slice" not in stablehlo
-    with pytest.raises(ValueError, match="before eager device transfer"):
-        select_relion_projector_half_for_class(projector_jax, 0, 1)
-
-    two_classes = np.concatenate((projector, projector + 100), axis=0)
-    selected_second = select_relion_projector_half_for_class(two_classes, 1, 2)
-    assert np.shares_memory(selected_second, two_classes)
-    assert_matches(
-        selected_second,
-        two_classes[1],
-    )
-
-    local_kwargs = k_class_inputs._local_engine_kwargs_for_class(
-        {"relion_projector_half": projector},
-        0,
-        1,
-    )
-    assert local_kwargs["relion_projector_half"].shape == (5, 5, 3)
-    assert np.shares_memory(local_kwargs["relion_projector_half"], projector)
-
-    local_source = Path(local_em_engine.__file__).read_text()
-    k_class_source = Path(k_class_inputs.__file__).read_text()
-    assert "relion_projector_half_big_jit = relion_projector_half_big_jit[0]" not in local_source
-    assert "relion_projector_half = relion_projector_half[0]" not in local_source
-    assert "projector_half_arr[class_index]" not in k_class_source
-
-
 def test_relion_coarse_native_texture_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
     from relax.cuda import kernels as em_cuda_kernels

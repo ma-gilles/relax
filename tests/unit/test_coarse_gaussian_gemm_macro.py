@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from helpers import score_diagnostics
 
-from relax.diagnostics import coarse_gaussian_diagnostics, coarse_score_diagnostics
+from relax.diagnostics import coarse_score_diagnostics
 from relax.helpers.projection_cache import build_projection_cache
 from relax.relion import relion_ctf
 from relax.scoring import coarse_gaussian_gemm, scoring, significance
@@ -480,37 +480,6 @@ def test_coarse_gaussian_gemm_resource_gate_records_full_transient_and_host_sync
             compact_pixel_count=64 * 33,
             budget_bytes=resources.predicted_peak_projection_bytes - 1,
         )
-
-
-def test_initial_model_multigroup_diagnostic_scopes_are_deterministic_and_unique():
-
-    groups = [
-        (0, np.asarray([0, 2], dtype=np.int64), None),
-        (1, np.asarray([1], dtype=np.int64), None),
-    ]
-    first = coarse_gaussian_diagnostics._initial_model_coarse_gemm_diagnostic_scopes(
-        groups,
-        debug_iteration=3,
-        current_size=8,
-        n_classes=2,
-    )
-    second = coarse_gaussian_diagnostics._initial_model_coarse_gemm_diagnostic_scopes(
-        groups,
-        debug_iteration=3,
-        current_size=8,
-        n_classes=2,
-    )
-
-    assert first == second
-    assert tuple(first) == (0, 1)
-    assert first[0].run_id == first[1].run_id
-    assert "_cs0008_" in first[0].run_id
-    assert first[0].call_id != first[1].call_id
-    assert "group0000_halfseth00" in first[0].call_id
-    assert "group0001_halfseth01" in first[1].call_id
-    assert first[0].expected_call_ids == first[1].expected_call_ids
-    assert first[0].finalize is False
-    assert first[1].finalize is True
 
 
 def test_coarse_gemm_scope_manifests_fail_closed_on_collisions_and_duplicates(
@@ -1076,12 +1045,8 @@ def test_coarse_gaussian_gemm_macro_projects_once_and_binds_all_image_lanes(
 
 def test_coarse_gaussian_gemm_macro_is_shared_by_em_and_initial_model():
     from relax.classification import k_class
-    from relax.vdam import sparse_pass2_estep
 
-    assert (
-        sparse_pass2_estep._compute_k_class_significance_batched
-        is significance._compute_k_class_significance_batched
-    )
+    # InitialModel reaches the coarse pass through the same adaptive route as auto-refine.
     assert (
         "_compute_k_class_significance_batched"
         in k_class.run_dense_k_class_em_adaptive.__code__.co_names

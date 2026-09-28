@@ -5,60 +5,22 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import replace
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
 from relax import sampling
-from relax.classification import k_class, k_class_inputs, k_class_results
-from relax.helpers.types import LocalEMResult, make_relion_stats
+from relax.classification import k_class_results
+from relax.helpers.types import make_relion_stats
 from relax.local import local_bucket_stages as engine
 from relax.local.local_layout import (
-    LocalHypothesisLayout,
     bucket_local_hypothesis_layout,
     build_pass2_hypothesis_layout,
 )
 from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
 
 pytestmark = pytest.mark.unit
-
-
-@pytest.mark.parametrize("dtype", [np.float32, np.float64])
-@pytest.mark.parametrize("with_source", [False, True])
-def test_per_class_layout_selection_preserves_source_eulers(dtype, with_source):
-    source = np.array([[159.3271497477632, 126.91279408422895, 85.75518260708287]]) if with_source else None
-    layout = LocalHypothesisLayout(
-        n_global_rotations=1,
-        n_pixels=1,
-        n_psi=1,
-        rotation_offsets=np.array([0, 1]),
-        rotation_ids_flat=np.array([0]),
-        rotations_flat=np.eye(3, dtype=dtype)[None],
-        rotation_log_priors_flat=np.zeros(1, dtype),
-        rotation_counts=np.ones(1, np.int32),
-        translation_grid=np.zeros((1, 2), dtype),
-        translation_log_priors=np.zeros((1, 1), dtype),
-        source_eulers_flat=source,
-    )
-    assert k_class_inputs._class_local_layouts(layout, 4)[0] is layout
-    priors = np.arange(4, dtype=dtype).reshape(4, 1)
-    layouts = [replace(layout, rotation_log_priors_flat=prior) for prior in priors]
-    selected = k_class_inputs._class_local_layouts(layouts, 4)
-    for class_id in range(4):
-        result = selected[class_id]
-        assert result is layouts[class_id]
-        assert result.source_eulers_flat is source
-        assert result.rotations_flat is layout.rotations_flat
-        assert_matches(result.rotation_log_priors_flat, priors[class_id])
-        assert result.rotation_log_priors_flat.dtype == dtype
-        buckets = bucket_local_hypothesis_layout(result, 1, 4)
-        assert len(buckets) == 1
-        if source is None:
-            assert buckets[0].local_source_eulers is None
-        else:
-            assert_matches(buckets[0].local_source_eulers[0, :1], source)
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
@@ -166,24 +128,6 @@ def _stats(n):
     )
 
 
-def test_direct_k1_result_preserves_host_eulers(monkeypatch):
-    eulers = np.array([[13.0 + 2**-35, 27.0, 41.0]])
-    output = LocalEMResult(
-        np.zeros(1, np.complex64), np.ones(1, np.float32), np.zeros(1, np.int32), _stats(1), best_pose_eulers_deg=eulers
-    )
-    monkeypatch.setattr(k_class, "run_local_em_exact", lambda *a, **kw: output)
-    result = k_class.run_local_k_class_em(
-        SimpleNamespace(n_images=1),
-        np.zeros((1, 8), np.complex64),
-        np.ones(4),
-        SimpleNamespace(n_images=1),
-        "linear_interp",
-        return_best_pose_details=True,
-    )
-    assert isinstance(result.best_pose_eulers_deg, np.ndarray)
-    assert_matches(result.best_pose_eulers_deg, eulers)
-
-
 def test_inactive_class_without_metadata_does_not_erase_winner():
     eulers = np.array([[1.0 + 2**-40, 2.0, 3.0], [4.0, 5.0, 6.0]])
     result = k_class_results._assemble_result(
@@ -276,7 +220,6 @@ def test_loader_reordering_preserves_source_rows_and_legacy_unavailability():
     assert_matches(reordered.local_rotations, bucket.local_rotations[[2, 1, 0]])
     assert reordered.local_source_eulers.dtype == np.float64
     assert engine._reorder_bucket_to_indices(bucket, bucket.image_indices) is bucket
-    from dataclasses import replace
 
     legacy = engine._reorder_bucket_to_indices(replace(bucket, local_source_eulers=None), np.array([7, 4, 9]))
     assert legacy.local_source_eulers is None

@@ -29,7 +29,7 @@ def test_local_sample_capture_preserves_profile_visibility(monkeypatch, return_p
             profile=profile,
         )
 
-    monkeypatch.setattr(local_search_iteration, "run_local_em_exact", run_local)
+    monkeypatch.setattr(local_search_iteration, "compute_local_search_resident", run_local)
     monkeypatch.setattr(
         local_search_iteration, "_estimate_relion_em_batch_sizes",
         lambda **kwargs: SimpleNamespace(

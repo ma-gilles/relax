@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import subprocess
 import sys
 import time
@@ -178,22 +177,16 @@ def _assert_fsc_gate(case: str, output_dir: Path) -> None:
     )
 
 
-def _resident_on(name: str) -> bool:
-    """A resident driver is the K=1 default; only an explicit off disables it."""
-    return os.environ.get(name, "").strip().lower() not in {"0", "false", "off", "no"}
-
-
 def _assert_resident_engines_ran(log: str, *, global_pass: bool, local_pass: bool, case: str) -> None:
-    """The passes a case exists for must run resident (the local one unless it is switched off).
+    """The passes a case exists for must run on the resident drivers.
 
-    The routing logs its choice (dispatch.py, local_search_iteration.py); a case
-    that silently fell back to the exact local engine would pass its RELION gates
-    while testing the other engine.
+    The routing logs its choice (dispatch.py, local_search_iteration.py), so a
+    case that ran another engine would fail here even if it met its RELION gates.
     """
 
     if global_pass:
         assert "Resident pass-2 plan:" in log, f"{case} did not run the resident global pass 2"
-    if local_pass and _resident_on("RELAX_LOCAL_SEARCH_RESIDENT"):
+    if local_pass:
         assert "running the device-resident local fine pass 2" in log, (
             f"{case} did not run the resident local pass 2"
         )

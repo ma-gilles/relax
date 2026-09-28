@@ -21,9 +21,7 @@ docs/development/resident_segments.md); 3 is the
 The route indexes coarse rotations in RECOVAR order (psi-slow,
 direction-fast); VDAM's own state (orientation priors, ``pdf_direction``) uses
 RELION's direction-major order. The permutation is applied at this boundary
-only. It is the default for every K (``--pass2_engine auto``,
-``relax.vdam.dense_adapter.vdam_pass2_route``); ``local`` still selects the deprecated exact-local
-VDAM route in :mod:`relax.vdam.sparse_pass2_estep`.
+only. It is VDAM's only E-step route, for every K.
 """
 
 from __future__ import annotations
@@ -34,28 +32,147 @@ import numpy as np
 
 from relax import sampling
 from relax.classification.k_class import run_dense_k_class_em_adaptive
+from relax.helpers.batch_planning import (
+    safe_coarse_significance_image_batch_size as _safe_coarse_significance_image_batch_size,
+)
+from relax.helpers.convergence import healpix_angular_step
 from relax.helpers.preprocessing import uses_relion_cuda_image_preprocessing
+from relax.helpers.resolution import compute_coarse_image_size
 from relax.refinement.half_scoring import _adaptive_pass2_grids
 from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
 from relax.vdam.estep_common import (
+    _PARTICLE_RESULT_FIELDS,
     DenseInitialModelEstepConfig,
     DenseInitialModelEstepResult,
     _add_accumulator_weight_meta,
     _arrays_to_accumulators,
     _empty_accumulator,
+    _estep_meta,
     _group_local_kwargs,
     _select_image_rows,
-)
-from relax.vdam.sparse_pass2_estep import (
-    _pop_sparse_pass2_options,
-    _resolve_sparse_pass1_current_size,
-    _safe_coarse_significance_image_batch_size,
-    _sparse_pass2_estep_meta,
-    _translation_step_from_grid,
 )
 from relax.vdam.state import InitialModelState
 
 __all__ = ["AdaptiveRouteGrids", "adaptive_route_grids", "run_adaptive_initial_model_estep"]
+
+
+_SPARSE_PASS2_CONTROL_KEYS = {
+    "adaptive_fraction",
+    "max_significants",
+    "healpix_order",
+    "oversampling_order",
+    "translation_step",
+    "random_perturbation",
+    "coarse_translations",
+    "coarse_translation_log_prior",
+    "particle_diameter_ang",
+    "pass1_healpix_order",
+    "pass1_current_size",
+    "return_profile",
+}
+
+
+def _pop_sparse_pass2_options(engine_kwargs: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Split shared-engine kwargs from pass controls once per E-step.
+
+    Keep absent keys absent: coarse sizing and sampling have distinct fallbacks.
+    Values remain shared with the caller; scoped environment flags are read
+    separately at their execution boundary.
+    """
+
+    cleaned = dict(engine_kwargs)
+    options = {name: cleaned.pop(name) for name in list(cleaned) if name in _SPARSE_PASS2_CONTROL_KEYS}
+    cleaned.pop("sparse_pass2", None)
+    return cleaned, options
+
+
+def _translation_step_from_grid(translations: np.ndarray) -> float:
+    unique_vals = np.unique(np.asarray(translations, dtype=np.float32))
+    diffs = np.diff(np.sort(unique_vals))
+    diffs = diffs[diffs > 1.0e-6]
+    return float(diffs.min()) if diffs.size else 1.0
+
+
+def _resolve_sparse_pass1_current_size(
+    state: InitialModelState,
+    group_kwargs: dict[str, Any],
+    options: dict[str, Any],
+) -> int | None:
+    """RELION's coarse pass-1 scoring size (``image_coarse_size``) for sparse pass 2."""
+    explicit = options.get("pass1_current_size")
+    if explicit is not None:
+        explicit = int(explicit)
+        return None if explicit <= 0 or explicit >= int(state.ori_size) else explicit
+
+    current_size = group_kwargs.get("current_size")
+    particle_diameter = options.get("particle_diameter_ang")
+    if particle_diameter is None:
+        return current_size
+
+    coarse_size = int(
+        compute_coarse_image_size(
+            healpix_angular_step(
+                int(options.get("pass1_healpix_order", options.get("healpix_order", 0)))
+            ),
+            float(state.pixel_size),
+            int(state.ori_size),
+            particle_diameter=float(particle_diameter),
+        )
+    )
+    current_limit = int(current_size) if current_size is not None else int(state.ori_size)
+    coarse_size = min(max(2, coarse_size), current_limit, int(state.ori_size))
+    if coarse_size % 2:
+        coarse_size += 1
+    return None if int(coarse_size) >= int(state.ori_size) else int(coarse_size)
+
+
+def _sparse_pass2_estep_meta(
+    halfset_results: dict[int, Any],
+    selected_particle_ids_by_halfset: dict[int, np.ndarray],
+) -> dict[str, Any]:
+    """Meta merger for the pseudo-halfset results of one E-step."""
+
+    meta = _estep_meta(halfset_results)
+    source_euler_rows = []
+    source_euler_valid = []
+    selected_particle_ids: list[np.ndarray] = []
+    max_posterior: list[np.ndarray] = []
+    field_lists: dict[str, list[np.ndarray]] = {attr: [] for attr, _ in _PARTICLE_RESULT_FIELDS}
+
+    for halfset_idx, result in sorted(halfset_results.items()):
+        image_ids = np.asarray(selected_particle_ids_by_halfset[int(halfset_idx)], dtype=np.int64)
+        selected_particle_ids.append(image_ids)
+        source = getattr(result, "best_pose_eulers_deg", None)
+        if source is not None:
+            source = np.asarray(source)
+            if source.dtype != np.float64 or source.shape != (image_ids.size, 3) or not np.all(np.isfinite(source)):
+                raise ValueError("source Euler rows must match their pseudo-halfset particle IDs")
+        source_euler_rows.append(np.zeros((image_ids.size, 3), dtype=np.float64) if source is None else source)
+        source_euler_valid.append(np.full(image_ids.size, source is not None, dtype=bool))
+        for attr, dtype in _PARTICLE_RESULT_FIELDS:
+            value = getattr(result, attr, None)
+            if value is not None:
+                field_lists[attr].append(np.asarray(value, dtype=dtype))
+        stats = getattr(result, "stats", None)
+        if stats is not None and getattr(stats, "max_posterior_per_image", None) is not None:
+            max_posterior.append(np.asarray(stats.max_posterior_per_image, dtype=np.float32))
+            meta[f"halfset_{halfset_idx}_pmax_mean"] = (
+                float(np.mean(np.asarray(stats.max_posterior_per_image))) if image_ids.size else 0.0
+            )
+
+    def _merge(arrays: list[np.ndarray], key: str, dtype) -> None:
+        if arrays:
+            meta[key] = np.concatenate(arrays).astype(dtype, copy=False)
+
+    if any(np.any(valid) for valid in source_euler_valid):
+        meta["best_pose_eulers_deg"] = np.concatenate(source_euler_rows)
+        meta["best_pose_eulers_valid"] = np.concatenate(source_euler_valid)
+    _merge(selected_particle_ids, "selected_particle_ids", np.int64)
+    for attr, dtype in _PARTICLE_RESULT_FIELDS:
+        _merge(field_lists[attr], attr, dtype)
+    _merge(max_posterior, "max_posterior_per_image", np.float32)
+    meta["sparse_pass2"] = True
+    return meta
 
 
 def relion_order_of_recovar_rotations(healpix_order: int) -> np.ndarray:

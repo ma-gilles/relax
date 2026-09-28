@@ -27,7 +27,6 @@ import numpy as np
 import pytest
 
 pytest.importorskip("jax")
-import jax
 import jax.numpy as jnp
 
 from relax.sparse_pass2 import resident_operands as ro

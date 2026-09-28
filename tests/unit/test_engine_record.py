@@ -3,9 +3,6 @@
 import pytest
 
 from relax.sparse_pass2.engine_record import record_pass_engine, take_pass_engines
-from relax.sparse_pass2.sparse_pass2_policy import (
-    resident_engine_selection,
-)
 
 
 def test_entries_are_taken_once():
@@ -14,16 +11,6 @@ def test_entries_are_taken_once():
     record_pass_engine("local", "exact_local", "parent probe")
     assert take_pass_engines() == ["global:resident", "local:exact_local (parent probe)"]
     assert take_pass_engines() == []
-
-
-@pytest.mark.parametrize("raw, mode", [(None, "default"), ("", "default"), ("1", "explicit"), ("0", "off")])
-def test_selection_modes(monkeypatch, raw, mode):
-    name = "RELAX_LOCAL_SEARCH_RESIDENT"
-    if raw is None:
-        monkeypatch.delenv(name, raising=False)
-    else:
-        monkeypatch.setenv(name, raw)
-    assert resident_engine_selection(name) == mode
 
 
 @pytest.fixture
@@ -61,15 +48,3 @@ def test_a_deprecated_engine_warns_once_per_reason(caplog, _fresh_deprecation_wa
     ]
 
 
-def test_the_vdam_exact_local_route_warns_once(caplog, _fresh_deprecation_warnings):
-    """``run_local_k_class_em`` is the VDAM exact-local E-step; it warns before any work."""
-
-    from relax.classification.k_class import run_local_k_class_em
-
-    caplog.set_level("WARNING", logger="relax.sparse_pass2.engine_record")
-    for _ in range(2):
-        # A rejected keyword stops the call right after the warning, before any device work.
-        with pytest.raises(ValueError, match="controls these arguments directly"):
-            run_local_k_class_em(None, None, None, None, "linear_interp", normalization_log_z=None)
-    (message,) = _deprecation_messages(caplog)
-    assert "VDAM exact-local E-step" in message and "--pass2_engine auto at K=1" in message

@@ -694,10 +694,7 @@ Import execution entry points explicitly from their owners:
 ```python
 from relax.refinement.iteration_loop import refine_single_volume
 from relax.classification.k_class_results import KClassEMResult
-from relax.classification.k_class import (
-    run_dense_k_class_em,
-    run_local_k_class_em,
-)
+from relax.classification.k_class import run_dense_k_class_em
 ```
 
 The package initializer does not re-export these names. The CPU fast guard

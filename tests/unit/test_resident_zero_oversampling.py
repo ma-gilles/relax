@@ -14,7 +14,6 @@ import numpy as np
 import pytest
 
 pytest.importorskip("jax")
-from helpers.float_compare import assert_matches
 from test_resident_significance import _encoded_supports, _supports
 
 from relax.scoring.compact_candidates import _candidate_mask_to_dense
@@ -165,40 +164,3 @@ def _rel_l2(a, b):
     b = np.asarray(b, dtype=np.float64)
     den = float(np.linalg.norm(a))
     return float(np.linalg.norm(a - b) / den) if den else float(np.linalg.norm(a - b))
-
-
-@requires_resident_gpu
-def test_zero_oversampling_resident_local_matches_the_exact_engine(monkeypatch):
-    """The local zero-oversampling route keeps every weight on both engines.
-
-    RELION's symbolic second pass sets ``significant_weight`` to the minimum
-    weight (acc_ml_optimiser_impl.h:3590), so the reconstruction and the
-    statistics use the complete posterior; bounds as in the pruned local test.
-    """
-
-    import test_resident_local_pass2 as local_tests
-
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "64,256,1024")
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
-    case = local_tests._case()
-    exact = local_tests._run(case, resident=False, monkeypatch=monkeypatch, zero_oversampling=True)
-    resident = local_tests._run(case, resident=True, monkeypatch=monkeypatch, zero_oversampling=True)
-
-    np.testing.assert_array_equal(np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment))
-    assert_matches(np.asarray(exact.best_pose_eulers_deg), np.asarray(resident.best_pose_eulers_deg))
-    assert _rel_l2(exact.Ft_y, resident.Ft_y) < 1e-5
-    assert _rel_l2(exact.Ft_ctf, resident.Ft_ctf) < 1e-5
-    np.testing.assert_allclose(
-        np.asarray(exact.relion_stats.max_posterior_per_image, dtype=np.float64),
-        np.asarray(resident.relion_stats.max_posterior_per_image, dtype=np.float64),
-        rtol=0,
-        atol=1e-5,
-    )
-    exact_total = np.asarray(exact.noise_stats.wsum_sigma2_noise) + np.asarray(exact.noise_stats.wsum_img_power)
-    resident_total = np.asarray(resident.noise_stats.wsum_sigma2_noise) + np.asarray(
-        resident.noise_stats.wsum_img_power
-    )
-    assert _rel_l2(exact_total, resident_total) < 1e-4
-    assert abs(float(exact.noise_stats.sumw) - float(resident.noise_stats.sumw)) <= 1e-5 * abs(
-        float(exact.noise_stats.sumw)
-    )

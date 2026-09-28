@@ -167,7 +167,6 @@ def _case(seed=20260919, full_support=False):
 def _run(
     case,
     *,
-    resident: bool,
     monkeypatch,
     current_size=CURRENT_SIZE,
     source_faithful_spectrum_norm=False,
@@ -175,7 +174,6 @@ def _run(
     projector_dtype=None,
     resident_operands: bool | None = None,
     zero_oversampling: bool = False,
-    exact: bool = False,
 ):
     """``production_shapes`` mirrors what the refinement loop actually passes:
     a projector with a singleton class axis, per-image contrast and scale
@@ -183,12 +181,6 @@ def _run(
 
     """One fine pass 2 through the production dispatch."""
 
-    if resident:
-        monkeypatch.setenv(rlp.RESIDENT_LOCAL_SEARCH_ENV, "1")
-    elif exact:
-        monkeypatch.setenv(rlp.RESIDENT_LOCAL_SEARCH_ENV, "0")
-    else:
-        monkeypatch.delenv(rlp.RESIDENT_LOCAL_SEARCH_ENV, raising=False)
     if resident_operands is None:
         monkeypatch.delenv(rp._RESIDENT_OPERANDS_ENV, raising=False)
     else:
@@ -256,28 +248,13 @@ def _resident_local_env(monkeypatch):
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
 
 
-def test_resident_local_is_the_default_and_the_flag_selects_strictness(monkeypatch):
-    from relax.sparse_pass2.sparse_pass2_policy import resident_engine_selection
-
-    monkeypatch.delenv(rlp.RESIDENT_LOCAL_SEARCH_ENV, raising=False)
-    assert rlp.resident_local_search_requested()
-    assert resident_engine_selection(rlp.RESIDENT_LOCAL_SEARCH_ENV) == "default"
-    monkeypatch.setenv(rlp.RESIDENT_LOCAL_SEARCH_ENV, "1")
-    assert rlp.resident_local_search_requested()
-    assert resident_engine_selection(rlp.RESIDENT_LOCAL_SEARCH_ENV) == "explicit"
-    monkeypatch.setenv(rlp.RESIDENT_LOCAL_SEARCH_ENV, "0")
-    assert not rlp.resident_local_search_requested()
-    assert resident_engine_selection(rlp.RESIDENT_LOCAL_SEARCH_ENV) == "off"
-
-
 def test_dispatch_routes_only_the_fine_pass():
     """The wiring: the fine pass routes and the parent probe does not (local searches are K=1 only)."""
 
     import inspect
 
     source = inspect.getsource(local_search_iteration._run_local_search_iteration)
-    assert "resident_local_search_requested()" in source
-    assert "and not score_only" in source
+    assert "if score_only:" in source
     # the zero-oversampling route (every scored sample) is routed too
     assert "and reconstruct_significant_only" not in source
     # at every current size, RELION's final all-data full box included
@@ -431,30 +408,6 @@ def test_row_capacity_ladder_is_capped_by_the_projection_budget():
     ) == (1024,)
 
 
-@requires_resident_gpu
-def test_final_all_data_shape_runs_resident_and_matches_the_exact_engine(monkeypatch, _resident_local_env):
-    """``current_size == image box`` is RELION's final all-data shape.
-
-    RELION scores its radial window there too (the FFTW rectangle's corners are
-    cut at every size), so the final pass runs on the resident driver, whose
-    full-box pass test_resident_relion_reference pins to the NumPy RELION
-    reference. On this 8x8 fixture the exact engine's maps differ from the
-    resident driver's by 15% relative L2 at the box (they agree to 1e-5 below
-    it), so only the pose is compared across engines here.
-    """
-
-    from relax.sparse_pass2.engine_record import take_pass_engines
-
-    case = _case()
-    full = IMAGE_SHAPE[0]
-    take_pass_engines()
-    resident = _run(case, resident=True, monkeypatch=monkeypatch, current_size=full)
-    assert take_pass_engines() == ["local:resident"]
-    exact = _run(case, resident=False, exact=True, monkeypatch=monkeypatch, current_size=full)
-    assert take_pass_engines()[0].startswith("local:exact_local")
-    assert_matches(np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment))
-
-
 def test_local_projector_texture_is_not_opened_for_manual_or_double_projection():
     slab = np.zeros((11, 11, 6), dtype=np.complex64)
     kwargs = dict(relion_projector_r_max=4, projection_padding_factor=1)
@@ -496,12 +449,12 @@ def test_resident_local_capacity_texture_matches_the_per_call_texture(monkeypatc
         return real_start(*args, **kwargs)
 
     monkeypatch.setattr(rlp, "_start_resident_local_chunk", start_spy)
-    staged = _run(case, resident=True, monkeypatch=monkeypatch)
+    staged = _run(case, monkeypatch=monkeypatch)
     assert opened == [True]
     assert chunk_slabs and set(chunk_slabs) == {jax.ShapeDtypeStruct}
     chunk_slabs.clear()
     monkeypatch.setattr(rlp, "_open_capacity_texture", lambda *a, **k: None)
-    per_call = _run(case, resident=True, monkeypatch=monkeypatch)
+    per_call = _run(case, monkeypatch=monkeypatch)
     assert chunk_slabs and all(issubclass(kind, jax.Array) for kind in chunk_slabs)
 
     def rel_l2(a, b):
@@ -591,169 +544,10 @@ def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, 
     monkeypatch.setattr(rp_module, "plan_resident_chunk_memory", plan)
     monkeypatch.setattr(rp_module, "_prepare_chunk_reconstruction_operands", prepare)
     monkeypatch.setattr(rlp, "_unshifted_chunk_operands", unshifted_operands)
-    _run(_case(), resident=True, monkeypatch=monkeypatch, resident_operands=unshifted)
+    _run(_case(), monkeypatch=monkeypatch, resident_operands=unshifted)
     assert len(planned) == 1 and len(measured) >= 2
     for key, image_translations, live in measured:
         assert live == image_translations * planned[0][key] * 8, (key, live, planned[0][key])
-
-
-@requires_resident_gpu
-def test_resident_local_matches_the_exact_engine(monkeypatch, _resident_local_env):
-    """Pose, translation and every statistic against the exact local engine.
-
-    Bounds are the ones this fixture measured; they exist to catch a regression,
-    not to certify parity. The two engines factor the likelihood differently
-    (see the driver's module docstring), so the continuous fields agree to
-    float32 association rather than bitwise.
-    """
-
-    case = _case()
-    exact = _run(case, resident=False, monkeypatch=monkeypatch)
-    resident = _run(case, resident=True, monkeypatch=monkeypatch)
-
-    def rel_l2(a, b):
-        a = np.asarray(a, dtype=np.float64)
-        b = np.asarray(b, dtype=np.float64)
-        den = float(np.linalg.norm(a))
-        return float(np.linalg.norm(a - b) / den) if den else float(np.linalg.norm(a - b))
-
-    # --- discrete state ----------------------------------------------------
-    assert_matches(
-        np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment)
-    )
-    assert_matches(
-        np.asarray(exact.best_pose_translations), np.asarray(resident.best_pose_translations)
-    )
-    assert_matches(
-        np.asarray(exact.best_pose_rotations), np.asarray(resident.best_pose_rotations)
-    )
-    assert_matches(
-        np.asarray(exact.best_pose_eulers_deg), np.asarray(resident.best_pose_eulers_deg)
-    )
-
-    # --- maps --------------------------------------------------------------
-    # Measured 5.1e-7 and 1.5e-7 on an A100; the resident driver's own repeat
-    # band for Ft_y is 1e-7 (the float32 BPref atomics).
-    assert rel_l2(exact.Ft_y, resident.Ft_y) < 1e-5
-    assert rel_l2(exact.Ft_ctf, resident.Ft_ctf) < 1e-5
-
-    # --- per-image statistics ----------------------------------------------
-    # The posterior is non-degenerate here (Pmax between 0.12 and 0.87), so
-    # these compare the whole posterior, not just its winner.
-    exact_pmax = np.asarray(exact.relion_stats.max_posterior_per_image, dtype=np.float64)
-    resident_pmax = np.asarray(resident.relion_stats.max_posterior_per_image, dtype=np.float64)
-    assert exact_pmax.max() < 0.95, "the fixture must keep the posterior non-degenerate"
-    np.testing.assert_allclose(exact_pmax, resident_pmax, rtol=0, atol=1e-5)
-    assert rel_l2(
-        exact.relion_stats.rotation_posterior_sums,
-        resident.relion_stats.rotation_posterior_sums,
-    ) < 1e-5
-
-    # Absolute log evidence carries each engine's own additive per-image
-    # constant: the exact engine subtracts its Hermitian-weighted full-spectrum
-    # image power (``-0.5 * batch_norm``), this driver subtracts RELION's
-    # common minimum over the current-size window plus the powerClass tail
-    # (``-min_diff2``). The convention-free part is the distance from the
-    # winner, which is what the posterior sees, so that is what is bounded.
-    exact_span = np.asarray(
-        exact.relion_stats.log_evidence_per_image, dtype=np.float64
-    ) - np.asarray(exact.relion_stats.best_log_score_per_image, dtype=np.float64)
-    resident_span = np.asarray(
-        resident.relion_stats.log_evidence_per_image, dtype=np.float64
-    ) - np.asarray(resident.relion_stats.best_log_score_per_image, dtype=np.float64)
-    np.testing.assert_allclose(exact_span, resident_span, rtol=0, atol=1e-4)
-
-    # --- noise statistics ---------------------------------------------------
-    # wsum_sigma2_noise and wsum_img_power are one quantity split two ways, and
-    # the two engines split it differently (RELION's direct low-shell residual
-    # versus the algebraic A2-2XA). Compare the sum, which is the quantity the
-    # sigma2 update consumes, and report the split separately.
-    exact_total = np.asarray(exact.noise_stats.wsum_sigma2_noise) + np.asarray(
-        exact.noise_stats.wsum_img_power
-    )
-    resident_total = np.asarray(resident.noise_stats.wsum_sigma2_noise) + np.asarray(
-        resident.noise_stats.wsum_img_power
-    )
-    assert rel_l2(exact_total, resident_total) < 1e-4
-    assert abs(float(exact.noise_stats.sumw) - float(resident.noise_stats.sumw)) <= 1e-5 * abs(
-        float(exact.noise_stats.sumw)
-    )
-    assert rel_l2(
-        exact.noise_stats.wsum_norm_correction, resident.noise_stats.wsum_norm_correction
-    ) < 1e-4
-    for field in ("wsum_scale_correction_xa", "wsum_scale_correction_aa"):
-        assert rel_l2(
-            getattr(exact.noise_stats, field), getattr(resident.noise_stats, field)
-        ) < 1e-4, field
-    assert float(exact.noise_stats.wsum_sigma2_offset) == pytest.approx(
-        float(resident.noise_stats.wsum_sigma2_offset), abs=1e-9
-    )
-
-
-@requires_resident_gpu
-def test_source_faithful_spectrum_norm_is_plumbed_not_refused(
-    monkeypatch, _resident_local_env
-):
-    """The production local search sets this flag, so the driver must carry it.
-
-    ``source_faithful_spectrum_norm`` selects RELION's powerClass shell
-    spectrum for the image-power statistics and the deterministic float64 norm
-    reduction. The exact local engine uses the caller's value directly, with no
-    environment resolution of its own, and so does this driver.
-    """
-
-    case = _case()
-    exact = _run(
-        case, resident=False, monkeypatch=monkeypatch, source_faithful_spectrum_norm=True
-    )
-    resident = _run(
-        case, resident=True, monkeypatch=monkeypatch, source_faithful_spectrum_norm=True
-    )
-    assert_matches(
-        np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment)
-    )
-
-    def rel_l2(a, b):
-        a = np.asarray(a, dtype=np.complex128)
-        b = np.asarray(b, dtype=np.complex128)
-        den = float(np.linalg.norm(a))
-        return float(np.linalg.norm(a - b) / den) if den else 0.0
-
-    assert rel_l2(exact.Ft_y, resident.Ft_y) < 1e-5
-    total_exact = np.asarray(exact.noise_stats.wsum_sigma2_noise) + np.asarray(
-        exact.noise_stats.wsum_img_power
-    )
-    total_resident = np.asarray(resident.noise_stats.wsum_sigma2_noise) + np.asarray(
-        resident.noise_stats.wsum_img_power
-    )
-    assert rel_l2(total_exact, total_resident) < 1e-4
-
-
-@requires_resident_gpu
-def test_full_parent_support_layout_runs_without_a_mask(monkeypatch, _resident_local_env):
-    """A layout whose ``sample_mask_bits`` is ``None`` drives the driver too.
-
-    RELION's full-parent local pass 2 produces exactly that, and the adapter
-    keeps the compact ``None`` spelling instead of materializing an all-ones
-    mask. The whole pass must still agree with the exact local engine.
-    """
-
-    case = _case(full_support=True)
-    assert case["layout"].sample_mask_bits is None
-    exact = _run(case, resident=False, monkeypatch=monkeypatch)
-    resident = _run(case, resident=True, monkeypatch=monkeypatch)
-    assert_matches(
-        np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment)
-    )
-    np.testing.assert_allclose(
-        np.asarray(exact.relion_stats.max_posterior_per_image, dtype=np.float64),
-        np.asarray(resident.relion_stats.max_posterior_per_image, dtype=np.float64),
-        rtol=0,
-        atol=1e-5,
-    )
-    a = np.asarray(exact.Ft_y, dtype=np.complex128)
-    b = np.asarray(resident.Ft_y, dtype=np.complex128)
-    assert float(np.linalg.norm(a - b) / np.linalg.norm(a)) < 1e-5
 
 
 def test_driver_does_not_narrow_the_projector_slab():
@@ -774,77 +568,12 @@ def test_driver_does_not_narrow_the_projector_slab():
 
 
 @requires_resident_gpu
-def test_complex128_projector_follows_the_exact_engine_precision(
-    monkeypatch, _resident_local_env
-):
-    """A double Projector::data slab, which is what the refinement loop builds.
-
-    The other fixtures build the slab through the JAX projector-setup backend,
-    which already returns complex64, so they cannot see a precision mismatch.
-    This one hands both engines the same complex128 slab; they must still
-    agree, so the driver must apply the exact local engine's execution
-    precision (``cast_relion_projector_for_execution``) rather than its own.
-    """
-
-    case = _case()
-    exact = _run(
-        case, resident=False, monkeypatch=monkeypatch, projector_dtype=jnp.complex128
-    )
-    resident = _run(
-        case, resident=True, monkeypatch=monkeypatch, projector_dtype=jnp.complex128
-    )
-    assert_matches(
-        np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment)
-    )
-    np.testing.assert_allclose(
-        np.asarray(exact.relion_stats.max_posterior_per_image, dtype=np.float64),
-        np.asarray(resident.relion_stats.max_posterior_per_image, dtype=np.float64),
-        rtol=0,
-        atol=1e-5,
-    )
-    a = np.asarray(exact.Ft_y, dtype=np.complex128)
-    b = np.asarray(resident.Ft_y, dtype=np.complex128)
-    assert float(np.linalg.norm(a - b) / np.linalg.norm(a)) < 1e-5
-
-
-@requires_resident_gpu
-def test_production_shaped_inputs_are_accepted(monkeypatch, _resident_local_env):
-    """The shapes the refinement loop actually hands local search.
-
-    A projector with a singleton class axis (normalized by the same helper the
-    exact local engine uses), per-image contrast and scale corrections, and
-    translation-prior centres, which switch on the sigma2-offset accumulator.
-    The 3-D fixture elsewhere in this file would not have caught the class axis.
-    """
-
-    case = _case()
-    exact = _run(case, resident=False, monkeypatch=monkeypatch, production_shapes=True)
-    resident = _run(case, resident=True, monkeypatch=monkeypatch, production_shapes=True)
-    assert_matches(
-        np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment)
-    )
-
-    def rel_l2(a, b):
-        a = np.asarray(a, dtype=np.complex128)
-        b = np.asarray(b, dtype=np.complex128)
-        den = float(np.linalg.norm(a))
-        return float(np.linalg.norm(a - b) / den) if den else 0.0
-
-    assert rel_l2(exact.Ft_y, resident.Ft_y) < 1e-5
-    # Translation-prior centres switch on the sigma2 offset on both paths.
-    assert float(exact.noise_stats.wsum_sigma2_offset) != 0.0
-    assert float(resident.noise_stats.wsum_sigma2_offset) == pytest.approx(
-        float(exact.noise_stats.wsum_sigma2_offset), rel=1e-6
-    )
-
-
-@requires_resident_gpu
 def test_resident_local_repeats_itself(monkeypatch, _resident_local_env):
     """The resident driver's own repeat band, the reference for the table above."""
 
     case = _case()
-    first = _run(case, resident=True, monkeypatch=monkeypatch)
-    second = _run(case, resident=True, monkeypatch=monkeypatch)
+    first = _run(case, monkeypatch=monkeypatch)
+    second = _run(case, monkeypatch=monkeypatch)
     assert_matches(
         np.asarray(first.hard_assignment), np.asarray(second.hard_assignment)
     )
@@ -941,9 +670,9 @@ def test_local_chunk_runs_with_the_once_per_half_operand_flag(
 
     monkeypatch.setattr(rp, "run_resident_mstep_blocks", counting_mstep_blocks)
 
-    on = _run(case, resident=True, monkeypatch=monkeypatch, resident_operands=True)
+    on = _run(case, monkeypatch=monkeypatch, resident_operands=True)
     assert calls, "the local pass must reach run_resident_mstep_blocks"
-    off = _run(case, resident=True, monkeypatch=monkeypatch, resident_operands=False)
+    off = _run(case, monkeypatch=monkeypatch, resident_operands=False)
 
     assert_matches(
         np.asarray(on.hard_assignment), np.asarray(off.hard_assignment)
@@ -993,9 +722,9 @@ def test_block_row_program_matches_the_slicing_callback(monkeypatch, _resident_l
 
     case = _case()
     monkeypatch.setenv(rlp._BLOCK_ROW_PROGRAM_ENV, "0")
-    off = _run(case, resident=True, monkeypatch=monkeypatch, production_shapes=True)
+    off = _run(case, monkeypatch=monkeypatch, production_shapes=True)
     monkeypatch.setenv(rlp._BLOCK_ROW_PROGRAM_ENV, "1")
-    on = _run(case, resident=True, monkeypatch=monkeypatch, production_shapes=True)
+    on = _run(case, monkeypatch=monkeypatch, production_shapes=True)
 
     assert_matches(
         np.asarray(off.hard_assignment), np.asarray(on.hard_assignment)

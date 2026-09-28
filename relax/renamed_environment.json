@@ -279,7 +279,6 @@
   "RECOVAR_LOCAL_SCORE_DUMP_LABEL": "RELAX_LOCAL_SCORE_DUMP_LABEL",
   "RECOVAR_LOCAL_SCORE_DUMP_OPERANDS": "RELAX_LOCAL_SCORE_DUMP_OPERANDS",
   "RECOVAR_LOCAL_SCORE_DUMP_TARGET_ONLY": "RELAX_LOCAL_SCORE_DUMP_TARGET_ONLY",
-  "RECOVAR_LOCAL_SEARCH_RESIDENT": "RELAX_LOCAL_SEARCH_RESIDENT",
   "RECOVAR_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM": "RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM",
   "RECOVAR_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE": "RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE",
   "RECOVAR_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES": "RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES",
@@ -536,7 +535,6 @@
   "RECOVAR_VDAM_CANDIDATE_BLOCK_TRACE_CAPTURE": "RELAX_VDAM_CANDIDATE_BLOCK_TRACE_CAPTURE",
   "RECOVAR_VDAM_CANDIDATE_BLOCK_TRACE_ITER": "RELAX_VDAM_CANDIDATE_BLOCK_TRACE_ITER",
   "RECOVAR_VDAM_CLASS_CANDIDATE_COUNT_DUMP_DIR": "RELAX_VDAM_CLASS_CANDIDATE_COUNT_DUMP_DIR",
-  "RECOVAR_VDAM_DEFER_SPARSE_ROTATIONS": "RELAX_VDAM_DEFER_SPARSE_ROTATIONS",
   "RECOVAR_VDAM_EXACT_NATIVE_PTX": "RELAX_VDAM_EXACT_NATIVE_PTX",
   "RECOVAR_VDAM_EXACT_WAVG_PREDECESSOR": "RELAX_VDAM_EXACT_WAVG_PREDECESSOR",
   "RECOVAR_VDAM_EXTERNAL_HOST_REPLAY_CAPTURE_DIR": "RELAX_VDAM_EXTERNAL_HOST_REPLAY_CAPTURE_DIR",
@@ -639,6 +637,12 @@
   "RECOVAR_K1_PASS2_ENGINE": "the device-resident pass 2 is relax's one pass-2 engine; the K=1 engine choice was deleted with the compact engine (2026-09-26)",
   "RELAX_K1_PASS2_ENGINE": "the device-resident pass 2 is relax's one pass-2 engine; the K=1 engine choice was deleted with the compact engine (2026-09-26)",
   "RECOVAR_COARSE_OPERAND_PROGRAM": "the coarse operand assemblies always run as one jitted program per image batch (2026-09-27)",
-  "RELAX_COARSE_OPERAND_PROGRAM": "the coarse operand assemblies always run as one jitted program per image batch (2026-09-27)"
+  "RELAX_COARSE_OPERAND_PROGRAM": "the coarse operand assemblies always run as one jitted program per image batch (2026-09-27)",
+  "RECOVAR_LOCAL_SEARCH_RESIDENT": "the device-resident local pass 2 is relax's one local fine pass; the exact-local fallback it switched off was removed (2026-09-27)",
+  "RELAX_LOCAL_SEARCH_RESIDENT": "the device-resident local pass 2 is relax's one local fine pass; the exact-local fallback it switched off was removed (2026-09-27)",
+  "RECOVAR_VDAM_DEFER_SPARSE_ROTATIONS": "VDAM's adaptive route, its only E-step route, always builds its own fine rotations (2026-09-27)",
+  "RELAX_VDAM_DEFER_SPARSE_ROTATIONS": "VDAM's adaptive route, its only E-step route, always builds its own fine rotations (2026-09-27)",
+  "RELAX_LOCAL_PARENT_PROBE_RESIDENT": "the parent probe has one engine and no switch: the resident parent probe replaces the exact-local one when it lands (2026-09-27)",
+  "RECOVAR_LOCAL_PARENT_PROBE_RESIDENT": "the parent probe has one engine and no switch: the resident parent probe replaces the exact-local one when it lands (2026-09-27)"
  }
 }

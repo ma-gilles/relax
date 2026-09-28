@@ -6,8 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from relax.classification import k_class_results
-from relax.vdam import estep_meta_updates, native_sampling, sparse_pass2_estep
+from relax.vdam import adaptive_estep, estep_meta_updates, native_sampling
 from relax.relion import initial_model_io
 from relax.vdam.state import NativeParticleState
 from recovar.utils.helpers import R_from_relion, R_to_relion
@@ -94,7 +93,7 @@ def test_invalid_restored_source_metadata_rejected(fault):
 def test_mixed_halfset_rows_keep_identity_and_validity():
     source = np.array([[2.0 + 2**-40, 30.0, 4.0]])
     results = {1: SimpleNamespace(best_pose_eulers_deg=source), 0: SimpleNamespace()}
-    meta = sparse_pass2_estep._sparse_pass2_estep_meta(results, {1: np.array([2]), 0: np.array([1, 0])})
+    meta = adaptive_estep._sparse_pass2_estep_meta(results, {1: np.array([2]), 0: np.array([1, 0])})
     assert_matches(meta["selected_particle_ids"], [1, 0, 2])
     assert_matches(meta["best_pose_eulers_valid"], [False, False, True])
     assert_matches(meta["best_pose_eulers_deg"][2], source[0])
@@ -104,37 +103,3 @@ def test_mixed_halfset_rows_keep_identity_and_validity():
     assert_matches(value.best_pose_eulers_deg[2], source[0])
 
 
-def test_coarse_winner_replaces_or_invalidates_fine_source_metadata():
-    from relax.helpers.types import make_relion_stats
-
-    stats = make_relion_stats(
-        log_evidence_per_image=np.zeros(1),
-        best_log_score_per_image=np.zeros(1),
-        max_posterior_per_image=np.ones(1),
-        rotation_posterior_sums=np.ones(1),
-    )
-    result = k_class_results._assemble_result(
-        class_log_evidence=np.zeros((1, 1)),
-        new_means=None,
-        Ft_y=[np.zeros(1, np.complex64)],
-        Ft_ctf=[np.ones(1, np.float32)],
-        per_class_hard_assignments=np.zeros((1, 1), np.int32),
-        per_class_stats=(stats,),
-        noise_stats=None,
-        per_class_best_pose_eulers_deg=[np.array([[91.0, 33.0, 42.0]])],
-    )
-    kwargs = dict(
-        full_stats=dict(
-            log_evidence_per_image=np.zeros(1), best_log_score_per_image=np.zeros(1), max_posterior_per_image=np.ones(1)
-        ),
-        hard_assignment=np.array([1]),
-        class_assignment=np.array([0]),
-        coarse_rotations=np.tile(np.eye(3, dtype=np.float32), (2, 1, 1)),
-        coarse_translations=np.zeros((1, 2), np.float32),
-    )
-    legacy = sparse_pass2_estep._restore_zero_oversampling_coarse_metadata(result, **kwargs)
-    assert legacy.best_pose_eulers_deg is None and legacy.per_class_best_pose_eulers_deg is None
-    source = np.array([[0.0, 0.0, 0.0], [17.0 + 2**-40, 22.0, 31.0]])
-    exact = sparse_pass2_estep._restore_zero_oversampling_coarse_metadata(result, coarse_source_eulers=source, **kwargs)
-    assert_matches(exact.best_pose_eulers_deg, source[1:2])
-    assert_matches(exact.best_pose_rotations, legacy.best_pose_rotations)

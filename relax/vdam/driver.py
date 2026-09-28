@@ -91,11 +91,7 @@ def _native_expectation_step(
     projector_context: dense_adapter._IterationProjectorContext | None = None,
 ):
     def _expectation_step(state: InitialModelState, particle_ids: np.ndarray, halfset_ids: np.ndarray):
-        defer_token = os.environ.get("RELAX_VDAM_DEFER_SPARSE_ROTATIONS", "0").strip()
-        if defer_token not in {"0", "1"}:
-            raise ValueError("RELAX_VDAM_DEFER_SPARSE_ROTATIONS must be 0 or 1")
-        adaptive = dense_adapter.vdam_pass2_route(str(opts.pass2_engine), int(state.K))[0] == "adaptive"
-        sampling_kwargs = {"defer_fine_rotations": True} if defer_token == "1" or adaptive else {}  # own grids
+        sampling_kwargs = {"defer_fine_rotations": True}  # the adaptive route builds its own grids
         iteration = max(1, int(state.iter))
         do_grad = schedules._native_initialmodel_do_grad(
             state,

@@ -12,17 +12,7 @@ from helpers.fine_grid_significance_reference import _build_fine_grid_significan
 
 import relax.classification.k_class as k_class_module
 from relax.classification import k_class_results
-from relax.classification.k_class import (
-    _ClassFineGridSignificanceMask,
-    _sparse_pass2_preferred_over_dense,
-    _dense_engine_kwargs_for_class,
-    _run_sparse_firstiter_global_winner_subset_pass2,
-    _run_sparse_k_class_adaptive_pass2,
-    _strict_exact_fine_gaussian_requested,
-    run_dense_k_class_em,
-    run_dense_k_class_em_adaptive,
-    run_local_k_class_em,
-)
+from relax.classification.k_class import _ClassFineGridSignificanceMask, _sparse_pass2_preferred_over_dense, _dense_engine_kwargs_for_class, _run_sparse_firstiter_global_winner_subset_pass2, _run_sparse_k_class_adaptive_pass2, _strict_exact_fine_gaussian_requested, run_dense_k_class_em, run_dense_k_class_em_adaptive
 from relax.classification.k_class_results import (
     _assemble_result,
     _expand_subset_noise_stats,
@@ -36,12 +26,10 @@ from relax.helpers.orientation_priors import (
 from relax.helpers.oversampling import build_adaptive_pass2_grids
 from relax.helpers.types import (
     DenseEMResult,
-    LocalEMResult,
     SparsePass2Output,
     make_noise_stats,
     make_relion_stats,
 )
-from relax.local.local_layout import LocalHypothesisLayout
 from relax.refinement.noise_updates import update_c1_sigma_offset_from_posterior
 from relax.relion.relion_metadata import read_relion_direction_priors
 from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
@@ -1830,158 +1818,6 @@ def test_firstiter_adaptive_grid_can_return_relion_host_mstep_rotations():
     np.testing.assert_allclose(fine_mstep_rotations, extended[2], rtol=2e-7, atol=2e-7)
 
 
-def test_local_k_class_single_class_skips_score_probe(monkeypatch):
-    calls = []
-
-    class TinyDataset:
-        n_units = 2
-
-    local_layout = LocalHypothesisLayout(
-        n_global_rotations=2,
-        n_pixels=1,
-        n_psi=2,
-        rotation_offsets=np.asarray([0, 1, 2], dtype=np.int64),
-        rotation_ids_flat=np.asarray([0, 1], dtype=np.int32),
-        rotations_flat=np.repeat(np.eye(3, dtype=np.float32)[None], 2, axis=0),
-        rotation_log_priors_flat=np.zeros(2, dtype=np.float32),
-        rotation_counts=np.asarray([1, 1], dtype=np.int32),
-        translation_grid=np.zeros((1, 2), dtype=np.float32),
-        translation_log_priors=np.zeros((2, 1), dtype=np.float32),
-        rotation_posterior_ids_flat=np.asarray([0, 1], dtype=np.int32),
-        sample_mask_bits=np.packbits(np.ones((2, 1), dtype=bool), axis=1, bitorder="little"),
-    )
-
-    def fake_run_local_em_exact(
-        _dataset,
-        mean,
-        _noise_variance,
-        _local_layout,
-        _disc_type,
-        **kwargs,
-    ):
-        calls.append(kwargs)
-        stats = make_relion_stats(
-            log_evidence_per_image=np.asarray([4.0, 5.0], dtype=np.float32),
-            best_log_score_per_image=np.asarray([3.0, 4.0], dtype=np.float32),
-            max_posterior_per_image=np.asarray([0.5, 0.8], dtype=np.float32),
-            rotation_posterior_sums=np.asarray([1.0, 2.0], dtype=np.float32),
-        )
-        return LocalEMResult(
-            Ft_y=jnp.ones_like(mean),
-            Ft_ctf=jnp.ones_like(mean) * 2,
-            hard_assignments=np.asarray([1, 0], dtype=np.int32),
-            best_pose_rotations=np.repeat(np.eye(3, dtype=np.float32)[None], 2, axis=0),
-            best_pose_translations=np.zeros((2, 2), dtype=np.float32),
-            best_pose_rotation_ids=np.asarray([1, 0], dtype=np.int32),
-            stats=stats,
-        )
-
-    monkeypatch.setattr(k_class_module, "run_local_em_exact", fake_run_local_em_exact)
-
-    result = run_local_k_class_em(
-        TinyDataset(),
-        jnp.zeros((1, 4), dtype=jnp.complex64),
-        jnp.ones(4, dtype=jnp.float32),
-        local_layout,
-        "linear_interp",
-        return_best_pose_details=True,
-    )
-
-    assert len(calls) == 1
-    assert calls[0]["return_best_pose_details"] is True
-    assert calls[0]["accumulate_noise"] is False
-    assert "normalization_log_evidence" not in calls[0]
-    assert_matches(np.asarray(result.class_assignments), np.asarray([0, 0], dtype=np.int32))
-    assert_matches(np.asarray(result.pose_assignments), np.asarray([1, 0], dtype=np.int32))
-    np.testing.assert_allclose(np.asarray(result.class_responsibilities), np.ones((1, 2), dtype=np.float32))
-    np.testing.assert_allclose(np.asarray(result.class_posterior_sums), np.asarray([2.0], dtype=np.float32))
-    assert_matches(np.asarray(result.best_pose_rotation_ids), np.asarray([1, 0], dtype=np.int32))
-
-    calls.clear()
-    coarse_pmax = np.asarray([0.25, 0.5], dtype=np.float64)
-    run_local_k_class_em(
-        TinyDataset(),
-        jnp.zeros((1, 4), dtype=jnp.complex64),
-        jnp.ones(4, dtype=jnp.float32),
-        local_layout,
-        "linear_interp",
-        return_best_pose_details=True,
-        class_log_evidence=np.asarray([[4.0, 5.0]], dtype=np.float64),
-        normalization_max_posterior=coarse_pmax,
-    )
-    assert len(calls) == 1
-    assert_matches(calls[0]["normalization_max_posterior"], coarse_pmax)
-    assert "normalization_log_evidence" not in calls[0]
-
-
-def test_local_k_class_accepts_per_class_layouts_and_external_evidence(monkeypatch):
-    calls = []
-
-    class TinyDataset:
-        n_units = 2
-
-    def layout_with_prior(prior):
-        return LocalHypothesisLayout(
-            n_global_rotations=2,
-            n_pixels=1,
-            n_psi=2,
-            rotation_offsets=np.asarray([0, 1, 2], dtype=np.int64),
-            rotation_ids_flat=np.asarray([0, 1], dtype=np.int32),
-            rotations_flat=np.repeat(np.eye(3, dtype=np.float32)[None], 2, axis=0),
-            rotation_log_priors_flat=np.asarray(prior, dtype=np.float32),
-            rotation_counts=np.asarray([1, 1], dtype=np.int32),
-            translation_grid=np.zeros((1, 2), dtype=np.float32),
-            translation_log_priors=np.zeros((2, 1), dtype=np.float32),
-            rotation_posterior_ids_flat=np.asarray([0, 1], dtype=np.int32),
-            sample_mask_bits=np.packbits(np.ones((2, 1), dtype=bool), axis=1, bitorder="little"),
-        )
-
-    def fake_run_local_em_exact(
-        _dataset,
-        mean,
-        _noise_variance,
-        local_layout,
-        _disc_type,
-        **kwargs,
-    ):
-        calls.append((local_layout, kwargs))
-        call_index = len(calls)
-        stats = make_relion_stats(
-            log_evidence_per_image=np.full(2, float(call_index), dtype=np.float32),
-            best_log_score_per_image=np.full(2, float(call_index), dtype=np.float32),
-            max_posterior_per_image=np.full(2, 0.25, dtype=np.float32),
-            rotation_posterior_sums=np.zeros(2, dtype=np.float32),
-        )
-        return LocalEMResult(
-            Ft_y=jnp.zeros_like(mean),
-            Ft_ctf=jnp.zeros_like(mean),
-            hard_assignments=np.zeros(2, dtype=np.int32),
-            stats=stats,
-        )
-
-    monkeypatch.setattr(k_class_module, "run_local_em_exact", fake_run_local_em_exact)
-
-    class_log_evidence = np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
-    normalization_log_evidence = np.logaddexp(class_log_evidence[0], class_log_evidence[1])
-    run_local_k_class_em(
-        TinyDataset(),
-        jnp.zeros((2, 4), dtype=jnp.complex64),
-        jnp.ones(4, dtype=jnp.float32),
-        (layout_with_prior([0.0, -1.0]), layout_with_prior([-2.0, -3.0])),
-        "linear_interp",
-        class_log_priors=np.log(np.asarray([0.5, 0.5], dtype=np.float64)),
-        class_log_evidence=class_log_evidence,
-        normalization_log_evidence=normalization_log_evidence,
-    )
-
-    assert len(calls) == 2
-    np.testing.assert_allclose(calls[0][0].rotation_log_priors_flat, np.asarray([0.0, -1.0]))
-    np.testing.assert_allclose(calls[1][0].rotation_log_priors_flat, np.asarray([-2.0, -3.0]))
-    assert [kwargs["include_unweighted_norm_high_shell"] for _layout, kwargs in calls] == [True, False]
-    for _layout, kwargs in calls:
-        np.testing.assert_allclose(kwargs["normalization_log_evidence"], normalization_log_evidence)
-
-
 def test_class_direction_prior_normalizes_relion_joint_rows():
     raw_half1 = np.asarray(
         [
@@ -2226,84 +2062,6 @@ def test_k4_assembly_rejects_missing_or_duplicated_class_rows():
     duplicated["Ft_y"] = [*duplicated["Ft_y"], duplicated["Ft_y"][-1]]
     with pytest.raises(ValueError, match="Ft_y must contain exactly 4 classes, got 5"):
         _assemble_result(**duplicated)
-
-
-def test_local_k4_probe_is_score_only_and_preserves_all_class_pose_winners(monkeypatch):
-    import relax.classification.k_class as k_class_module
-
-    n_classes = 4
-    n_images = 4
-    dataset = type("Dataset", (), {"n_images": n_images, "n_units": n_images})()
-    means = jnp.zeros((n_classes, 4), dtype=jnp.complex64)
-    noise_variance = jnp.ones(4, dtype=jnp.float32)
-    local_layout = LocalHypothesisLayout(
-        n_global_rotations=1,
-        n_pixels=1,
-        n_psi=1,
-        rotation_offsets=np.arange(n_images + 1, dtype=np.int64),
-        rotation_ids_flat=np.zeros(n_images, dtype=np.int32),
-        rotations_flat=np.broadcast_to(np.eye(3, dtype=np.float32), (n_images, 3, 3)).copy(),
-        rotation_log_priors_flat=np.zeros(n_images, dtype=np.float32),
-        rotation_counts=np.ones(n_images, dtype=np.int32),
-        translation_grid=np.zeros((1, 2), dtype=np.float32),
-        translation_log_priors=np.zeros((n_images, 1), dtype=np.float32),
-    )
-    probabilities = np.full((n_classes, n_images), 0.05, dtype=np.float64)
-    np.fill_diagonal(probabilities, 0.85)
-    log_evidence = np.log(probabilities)
-    calls = []
-
-    def fake_run_local_em_exact(*_args, **kwargs):
-        class_index = len(calls) % n_classes
-        calls.append(kwargs)
-        stats = make_relion_stats(
-            log_evidence_per_image=jnp.asarray(log_evidence[class_index], dtype=jnp.float32),
-            best_log_score_per_image=jnp.asarray(log_evidence[class_index] - 0.25, dtype=jnp.float32),
-            max_posterior_per_image=jnp.ones(n_images, dtype=jnp.float32),
-            rotation_posterior_sums=jnp.full(1, class_index + 1, dtype=jnp.float32),
-        )
-        return LocalEMResult(
-            jnp.full(4, class_index + 1j, dtype=jnp.complex64),
-            jnp.full(4, class_index + 1, dtype=jnp.float32),
-            jnp.asarray(100 * class_index + np.arange(n_images), dtype=jnp.int32),
-            stats,
-        )
-
-    monkeypatch.setattr(k_class_module, "run_local_em_exact", fake_run_local_em_exact)
-
-    result = run_local_k_class_em(
-        dataset,
-        means,
-        noise_variance,
-        local_layout,
-        "linear_interp",
-        image_batch_size=n_images,
-        rotation_block_size=1,
-        current_size=None,
-        mstep_subtract_ctf_projection=True,
-        mstep_relion_x_half=True,
-        return_half_volume_accumulators=True,
-    )
-
-    assert len(calls) == 2 * n_classes
-    assert [bool(call.get("score_only", False)) for call in calls] == [True] * n_classes + [False] * n_classes
-    assert all(call["disable_adjoint_y"] and call["disable_adjoint_ctf"] for call in calls[:n_classes])
-    assert all("disable_adjoint_y" not in call and "disable_adjoint_ctf" not in call for call in calls[n_classes:])
-    for option in (
-        "mstep_subtract_ctf_projection",
-        "mstep_relion_x_half",
-        "return_half_volume_accumulators",
-    ):
-        assert all(call[option] is False for call in calls[:n_classes])
-        assert all(call[option] is True for call in calls[n_classes:])
-    np.testing.assert_allclose(
-        np.sum(np.asarray(result.class_responsibilities), axis=0),
-        np.ones(n_images),
-        rtol=0.0,
-        atol=5e-8,
-    )
-    assert_matches(np.asarray(result.class_assignments), np.arange(n_classes, dtype=np.int32))
-    assert_matches(np.asarray(result.pose_assignments), [0, 101, 202, 303])
 
 
 @pytest.mark.parametrize("texture_interp", [True, False])

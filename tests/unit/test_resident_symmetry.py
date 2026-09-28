@@ -23,7 +23,6 @@ import numpy as np
 import pytest
 
 pytest.importorskip("jax")
-from helpers.float_compare import assert_matches
 from test_resident_significance import (
     FINE_TRANS_PARENT,
     N_COARSE_TRANS,
@@ -325,25 +324,12 @@ def _c4_local_case(monkeypatch):
 
 
 @requires_resident_gpu
-def test_c4_resident_local_matches_the_exact_engine(monkeypatch):
-    """C4 local fine pass 2 against the exact local engine, with the C1 test's bounds."""
+def test_c4_resident_local_backprojection_is_c4_invariant(monkeypatch):
+    """The C4 local fine pass 2 symmetrizes its CTF backprojection over the point group."""
 
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "64,256,1024")
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
     local_tests, case = _c4_local_case(monkeypatch)
     assert case["layout"].symmetry == SYMMETRY
-    exact = local_tests._run(case, resident=False, monkeypatch=monkeypatch)
-    resident = local_tests._run(case, resident=True, monkeypatch=monkeypatch)
-
-    np.testing.assert_array_equal(np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment))
-    assert_matches(np.asarray(exact.best_pose_eulers_deg), np.asarray(resident.best_pose_eulers_deg))
-    assert _rel_l2(exact.Ft_y, resident.Ft_y) < 1e-5
-    assert _rel_l2(exact.Ft_ctf, resident.Ft_ctf) < 1e-5
-    np.testing.assert_allclose(
-        np.asarray(exact.relion_stats.max_posterior_per_image, dtype=np.float64),
-        np.asarray(resident.relion_stats.max_posterior_per_image, dtype=np.float64),
-        rtol=0,
-        atol=1e-5,
-    )
+    resident = local_tests._run(case, monkeypatch=monkeypatch)
     assert _c4_rotation_residual(resident.Ft_ctf) < 1e-5, _rotation_diagnostics(resident.Ft_ctf)
-    assert _c4_rotation_residual(exact.Ft_ctf) < 1e-5, _rotation_diagnostics(exact.Ft_ctf)

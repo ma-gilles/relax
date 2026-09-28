@@ -8,16 +8,14 @@ recompiles per bucket shape. This module runs the same pass on the
 device-resident driver's stages: fixed-capacity flat-row chunks, one program
 per capacity class, accumulators that stay on the device and one pull per half.
 
-Scope, and how to select it
----------------------------
-``RELAX_LOCAL_SEARCH_RESIDENT=1`` selects :func:`compute_local_search_resident`
-for the **fine pass 2** of a K=1 local search, which is also the pass the final
-all-data iteration runs (``iteration_loop.py`` reaches it through the same
-``local_outputs = _run_local_search_iteration`` call site in
-``recovar/em/refinement/half_scoring.py``). Any other configuration raises
-:class:`NotImplementedError` naming the missing piece; this path never falls
-back silently, because a silent fallback would make a measured comparison
-meaningless.
+Scope
+-----
+:func:`compute_local_search_resident` is the **fine pass 2** of every K=1 local search,
+which is also the pass the final all-data iteration runs (``iteration_loop.py``
+reaches it through the same ``local_outputs = _run_local_search_iteration`` call
+site in ``relax/refinement/half_scoring.py``). Any other configuration raises
+:class:`NotImplementedError` naming the missing piece: there is no other local
+fine-pass engine to fall back to.
 
 The pass-1 parent probe deliberately stays on the exact local engine
 --------------------------------------------------------------------
@@ -131,7 +129,6 @@ from relax.sparse_pass2.sparse_pass2_policy import (
     _RELION_WAVG_ATOMIC_SCALE_AA_ENV,
     ResidentConfigurationUnsupported,
     _relion_wavg_direct_modes,
-    resident_engine_selection,
 )
 from relax.sparse_pass2.sparse_pass2_projection_blocks import (
     _projection_kwargs_for_relion_score_window,
@@ -151,7 +148,6 @@ from relax.sparse_pass2.sparse_pass2_window import (
 
 logger = logging.getLogger(__name__)
 
-RESIDENT_LOCAL_SEARCH_ENV = "RELAX_LOCAL_SEARCH_RESIDENT"
 _ROW_CAPACITY_LADDER_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES"
 _IMAGE_CAPACITY_LADDER_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES"
 # Diagnostic only: log one line per chunk with its occupancy, padding and
@@ -192,29 +188,16 @@ _DEFAULT_ROW_CAPACITY_LADDER = (1024, 4096, 16384, 65536)
 _DEFAULT_IMAGE_CAPACITY_LADDER = (32, 128, 512)
 
 __all__ = [
-    "RESIDENT_LOCAL_SEARCH_ENV",
     "compute_local_search_resident",
     "require_resident_local_configuration",
-    "resident_local_search_requested",
 ]
-
-
-def resident_local_search_requested() -> bool:
-    """Return whether the device-resident K=1 local search is selected (the default).
-
-    ``RELAX_LOCAL_SEARCH_RESIDENT=0`` selects the exact local engine for A/B checks.
-    """
-
-    return resident_engine_selection(RESIDENT_LOCAL_SEARCH_ENV) != "off"
 
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise ResidentConfigurationUnsupported(
-            "The device-resident local-search pass 2 "
-            f"({RESIDENT_LOCAL_SEARCH_ENV}=1) does not implement this configuration: "
-            f"{message}. Clear the flag to use the exact local engine; this path "
-            "never falls back silently."
+            "The device-resident local-search pass 2 does not implement this configuration: "
+            f"{message}. There is no other local fine-pass engine."
         )
 
 

@@ -113,7 +113,7 @@ normalizations. `C` is the diagonal reconstruction metric, not the exact
 marginal-likelihood Hessian. Interpolated projections generally produce
 off-voxel normal-operator terms that diagonal gridding does not retain.
 
-Sources: [E-step](../../relax/vdam/sparse_pass2_estep.py),
+Sources: [E-step](../../relax/vdam/adaptive_estep.py),
 [layouts](../../relax/vdam/layout.py),
 [state](../../relax/vdam/state.py).
 
@@ -612,7 +612,7 @@ current-size selection allows roughly ten shells of headroom and is not a
 general monotone-resolution guarantee.
 
 Sources: [sampling](../../relax/vdam/native_sampling.py),
-[E-step](../../relax/vdam/sparse_pass2_estep.py),
+[E-step](../../relax/vdam/adaptive_estep.py),
 [schedules](../../relax/vdam/schedules.py), and the iteration loop.
 
 ### PPCA changes and decisions

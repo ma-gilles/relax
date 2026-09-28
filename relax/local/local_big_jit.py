@@ -1856,7 +1856,6 @@ def _class_segment_statistics(
     )
 
 
-
 class _LocalMstepAccumulators(NamedTuple):
     """The two reconstruction buffers donated at the local JIT boundary."""
 
@@ -3815,32 +3814,6 @@ def _canonicalize_fixed_capacity_static_options(
     return canonical
 
 
-def _run_fixed_capacity_whole_local_program(
-    call_program,
-    carry,
-    static_options,
-    *,
-    numeric_call,
-):
-    """Trace all sealed calls through one carry-preserving numeric program."""
-
-    options = dict(static_options)
-    call_outputs = []
-    for call_index, prepared_call in enumerate(call_program):
-        result = numeric_call(
-            *prepared_call.leading_arguments,
-            _LocalMstepAccumulators(*carry[:2]),
-            _LocalNoiseAccumulators(*carry[2:]),
-            *prepared_call.trailing_arguments,
-            **options,
-        )
-        carry, call_output = _split_local_big_jit_carry(result)
-        call_outputs.append(call_output)
-        if call_index + 1 < len(call_program):
-            carry = jax.lax.optimization_barrier(carry)
-    return carry, tuple(call_outputs)
-
-
 def _reconstruct_fixed_capacity_score_only_result(final_carry, call_output):
     """Restore carry fields without retaining per-call reconstruction buffers."""
     if len(final_carry) != len(_LOCAL_BIG_JIT_CARRY_FIELDS):
@@ -4052,89 +4025,3 @@ def run_fixed_capacity_segmented_local_scan(
     return carry, tuple(call_outputs)
 
 
-@partial(
-    jax.jit,
-    donate_argnums=(1, 2),
-    static_argnames=("static_options",),
-)
-def _run_fixed_capacity_whole_local_jit(
-    call_program,
-    Ft_y,
-    Ft_ctf,
-    noise_wsum,
-    noise_img_power,
-    noise_a2,
-    noise_xa,
-    noise_scale_xa,
-    noise_scale_aa,
-    noise_sigma2_offset,
-    noise_sumw,
-    *,
-    static_options,
-):
-    carry = (
-        Ft_y,
-        Ft_ctf,
-        noise_wsum,
-        noise_img_power,
-        noise_a2,
-        noise_xa,
-        noise_scale_xa,
-        noise_scale_aa,
-        noise_sigma2_offset,
-        noise_sumw,
-    )
-    return _run_fixed_capacity_whole_local_program(
-        call_program,
-        carry,
-        static_options,
-        numeric_call=run_local_bucket_big_jit.__wrapped__,
-    )
-
-
-def run_fixed_capacity_whole_local(
-    call_program,
-    Ft_y,
-    Ft_ctf,
-    noise_wsum,
-    noise_img_power,
-    noise_a2,
-    noise_xa,
-    noise_scale_xa,
-    noise_scale_aa,
-    noise_sigma2_offset,
-    noise_sumw,
-    **static_options,
-):
-    """Run a nonempty sealed local-call program behind one JAX boundary.
-
-    This shared primitive deliberately owns no EM or InitialModel policy.  It
-    only threads the mature bucket kernel's invariant state in chronological
-    order.  Call construction and production admission remain default-off
-    host concerns until the fixed-capacity correctness and speed gates pass.
-    """
-
-    call_program = tuple(call_program)
-    if not call_program:
-        raise ValueError("fixed-capacity whole-local execution requires at least one call")
-    if not all(
-        isinstance(call, _FixedCapacityPreparedLocalCall) for call in call_program
-    ):
-        raise ValueError(
-            "fixed-capacity whole-local execution requires sealed prepared calls"
-        )
-    canonical_options = _canonicalize_fixed_capacity_static_options(static_options)
-    return _run_fixed_capacity_whole_local_jit(
-        call_program,
-        Ft_y,
-        Ft_ctf,
-        noise_wsum,
-        noise_img_power,
-        noise_a2,
-        noise_xa,
-        noise_scale_xa,
-        noise_scale_aa,
-        noise_sigma2_offset,
-        noise_sumw,
-        static_options=canonical_options,
-    )

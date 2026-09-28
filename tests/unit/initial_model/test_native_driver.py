@@ -856,19 +856,6 @@ def test_native_driver_rejects_unimplemented_direct_symmetry_before_io():
         driver.run_native_initial_model(opts)
 
 
-@pytest.mark.parametrize("chunk_size", [-1, 1, 2])
-def test_native_driver_rejects_physical_order_chunks_that_cannot_hold_a_pool_before_io(
-    chunk_size,
-):
-    opts = native_options.NativeInitialModelOptions(
-        fn_img="missing.star",
-        exact_local_physical_order_chunk_size=chunk_size,
-    )
-
-    with pytest.raises(ValueError, match="must be 0 .* or at least 3"):
-        driver.run_native_initial_model(opts)
-
-
 @pytest.mark.parametrize("preread_images", [False, True])
 def test_native_driver_prepares_particle_reads_before_loading(monkeypatch, preread_images):
     events = []
@@ -2267,16 +2254,13 @@ def test_dense_estep_config_propagates_public_pass2_engine():
     dataset = SimpleNamespace(voxel_size=2.0, n_images=1, image_shape=(8, 8))
     opts = native_options.NativeInitialModelOptions(
         fn_img="particles.star",
-        pass2_engine="compact",
-        relion_wavg_sequential_cuda=False,
-        exact_local_bucket_radix=2,
-        exact_local_physical_order_chunk_size=220,
-        stable_fourier_window_shapes=True,
+        pass2_engine="adaptive",
     )
     plan = native_sampling.NativeSamplingPlan(
         rotations=np.zeros((1, 3, 3), dtype=np.float32),
         translations=np.asarray([[0.0, 0.0]], dtype=np.float32),
         random_perturbation=0.0,
+        coarse_base_translations=np.asarray([[0.0, 0.0]], dtype=np.float64),
     )
 
     config = dense_adapter._dense_estep_config(
@@ -2290,11 +2274,7 @@ def test_dense_estep_config_propagates_public_pass2_engine():
         pass1_healpix_order=plan.healpix_order,
     )
 
-    assert config.pass2_engine == "compact"
-    assert config.relion_wavg_sequential_cuda is False
-    assert config.exact_local_bucket_radix == 2
-    assert config.exact_local_physical_order_chunk_size == 220
-    assert config.stable_fourier_window_shapes is True
+    assert config.pass2_engine == "adaptive"
 
 
 def test_dense_estep_config_keeps_zero_oversampling_on_exact_adaptive_route():
@@ -2564,10 +2544,6 @@ def test_cli_non_dry_run_calls_native_driver(monkeypatch, capsys):
             "1.5",
             "--random_perturbation",
             "0.25",
-            "--exact-local-bucket-radix",
-            "2",
-            "--exact-local-physical-order-chunk-size",
-            "220",
             "--translation_sigma_angstrom",
             "6.5",
             "--diagnostic-stop-after-iteration",
@@ -2590,8 +2566,6 @@ def test_cli_non_dry_run_calls_native_driver(monkeypatch, capsys):
     assert opts.offset_range_px == 4.5
     assert opts.offset_step_px == 1.5
     assert opts.random_perturbation == 0.25
-    assert opts.exact_local_bucket_radix == 2
-    assert opts.exact_local_physical_order_chunk_size == 220
     assert opts.translation_sigma_angstrom == 6.5
     assert opts.diagnostic_stop_after_iteration == 2
     assert opts.image_fourier_backend == "host_numpy"

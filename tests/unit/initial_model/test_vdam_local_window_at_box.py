@@ -1,4 +1,4 @@
-"""Every VDAM E-step route scores RELION's radial window at the full box.
+"""VDAM's E-step scores RELION's radial window at the full box.
 
 RELION builds ``Mresol_fine`` in updateImageSizeAndResolutionPointers for every mode
 (ml_optimiser.cpp:5784-5793 at f2c1a38) and precalculateShiftedImagesCtfsAndInvSigma2s masks the
@@ -23,14 +23,6 @@ def _calls(module, name):
 def _passes_true(call, keyword="window_at_box"):
     value = {kw.arg: kw.value for kw in call.keywords}.get(keyword)
     return isinstance(value, ast.Constant) and value.value is True
-
-
-@pytest.mark.parametrize("callee", ["run_local_k_class_em", "_compute_k_class_significance_batched"])
-def test_default_vdam_route_passes_window_at_box(callee):
-    from relax.vdam import sparse_pass2_estep
-
-    calls = _calls(sparse_pass2_estep, callee)
-    assert calls and all(_passes_true(call) for call in calls)
 
 
 def test_adaptive_vdam_route_passes_window_at_box():

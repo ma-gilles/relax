@@ -46,10 +46,6 @@ class InitialModelDefaults:
     rotation_block_size: int = 5000
     pilot_controls: object | None = None  # relax.ppca_initial_model.vdam_controls.VdamPilotControls
     pass2_engine: str = "auto"
-    relion_wavg_sequential_cuda: bool = True
-    exact_local_bucket_radix: int = 4
-    exact_local_physical_order_chunk_size: int = 0
-    stable_fourier_window_shapes: bool = False
     bootstrap_min_particles: int = 1000
     sigma2_min_particles: int = 1000
     padding_factor: int = 1
@@ -95,14 +91,6 @@ class NativeInitialModelOptions(InitialModelDefaults):
             raise ValueError("grad_write_iter must be >= 1")
         if self.pilot_controls is not None:
             self.pilot_controls.validate(initial_healpix_order=self.healpix_order)
-        if int(self.exact_local_bucket_radix) not in (2, 4):
-            raise ValueError("exact_local_bucket_radix must be 2 or 4")
-        if int(self.exact_local_physical_order_chunk_size) not in (0,) and int(
-            self.exact_local_physical_order_chunk_size
-        ) < 3:
-            raise ValueError(
-                "exact_local_physical_order_chunk_size must be 0 (disabled) or at least 3"
-            )
         if self.diagnostic_stop_after_iteration is not None and not (
             1 <= int(self.diagnostic_stop_after_iteration) <= int(self.nr_iter)
         ):

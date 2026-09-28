@@ -56,8 +56,8 @@ what still routes to them. Inventory and line estimates (relax bc6d3e1):
 
 | Deprecated engine or route | What still routes to it on main | Resident work needed |
 |---|---|---|
-| Exact local engine (`local/local_em_engine.py` and the other `local/` execution modules; `local_layout` stays) | Refine3D local-search parent probe (score-only, `maximum_significants` cap), every local iteration; refusals of the resident local checks; `RELAX_LOCAL_SEARCH_RESIDENT=0` | 10202 memory for the full-box pass, which runs on resident local since 1178448 (below); a resident score-only local mode with RELION's cap for the parent probe; the scale-1 triplet without scale groups |
-| VDAM exact-local E-step (`vdam/sparse_pass2_estep.py`, `k_class.run_local_k_class_em`) | An adaptive refusal (any K; logged); `--pass2_engine local` | Port or refuse the configurations the adaptive route still refuses, then delete it |
+| Exact local engine (`local/local_em_engine.py` and the other `local/` execution modules; `local_layout` stays) | Only the Refine3D local-search parent probe (score-only, `maximum_significants` cap); a local fine pass the resident checks refuse is an error | A resident score-only local mode with RELION's cap for the parent probe (bigbox) |
+| Generic dense K-class coarse scorer (pass 1: `scoring.significance._compute_k_class_significance_batched`, `_score_block`, `_add_priors`, `_e_step_block_scores_normalized_cc`) | K=1 runs without the fresh BPref order (RELION-seeded or replay starts) and every normalized-CC (`--firstiter_cc`) pass; Class3D and VDAM at every K already score on RELION's exact coarse operands | Exact-operand coarse scoring for those passes, then delete the generic scorer with the temporary `relion_exact_coarse` switch (kspeed; Coarse scorer TODO below) |
 | Dense `run_em` (`dense/em_engine.py`, `dense_big_jit.py`, `k_class.run_dense_k_class_em`) and the per-image reference route (`reference/sparse_pass2.py`) | Nothing in production (the CLI always builds scale groups and supplies RELION's projector): oversampling 0 without scale groups, `RELAX_K1_DENSE_PASS2` / `RELAX_K_CLASS_DENSE_PASS2`, VDAM `RELAX_DISABLE_SPARSE_PASS2`, the dense K-class fallbacks, a full-grid C1 pass without supports | Move the joint `--firstiter_cc` coarse probe (pass 1) out of the dense K-class wrapper |
 
 Removal order:
@@ -77,8 +77,11 @@ Removal order:
    a smallest chunk that does not fit the device (the joint chunk planner, 4c3b2af, shrinks
    every larger plan to fit).
 3. The full-box final pass on resident local (done, 1178448), then the parent probe.
-4. The VDAM exact-local route (resident has been the VDAM default for every K since 2026-09-26).
-5. The exact local engine (about 24k lines).
+4. The VDAM exact-local route (done 2026-09-27: `vdam/sparse_pass2_estep.py`, `k_class.run_local_k_class_em`,
+   `--pass2_engine local/local_segmented` and the four options only it read are removed; the
+   adaptive route is VDAM's only E-step route, and a configuration it refuses is an error).
+5. The exact local engine, `local/local_em_engine.run_local_em_exact` and the `local/` modules only it
+   reaches (about 16k lines by the 2026-09-27 reachability trace), once the resident parent probe lands.
 6. Dense `run_em` and the per-image reference (about 4k lines).
 
 Tomography (S4) runs only on the resident engine (`compute_tilt_pass2_stats_resident`)
@@ -297,8 +300,7 @@ RELION's three `--grad` E-step differences map onto it: the residual backproject
 whose accumulator slot is `class + K * pseudo-halfset`, `docs/development/resident_segments.md`) and the
 coarse-only `maximum_significants = 100 K`. K>1 runs through the same pass (2026-09-25; pdb K2 seed 29
 iterations 1-12 match the exact-local route to 7.9e-6 in the maps with identical classes and angles,
-job 14444404). The switch is transitional: remove it with the exact-local VDAM route
-(`relax/vdam/sparse_pass2_estep.py`) once resident is the default for K=1 too.
+job 14444404). The exact-local VDAM route was removed on 2026-09-27; resident is VDAM's only route.
 Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamres_20260925/HANDOFF.json`.
 Quality on noise1 50k/256 seed 29 (200 iterations, job 14422222, scored 14425217): relax resident
 GT FSC-AUC 0.34131 unmasked / 0.75598 masked, inside four RELION runs 0.34125-0.34141 / 0.75515-0.75603;
@@ -346,9 +348,7 @@ OPEN (compact, not fixed: the compact engine is to be deleted): without scale-co
 compact sparse pass 2 takes its non-atomic noise arithmetic, 19% apart in `wsum_sigma2_noise` from
 RELION's scale-1 Wavg triplet on the algebraic-Wavg test fixture (repro: `_vdam_args(residual=True,
 groups=False)` in `tests/unit/test_resident_vdam_estep.py`, compact against resident, job 14421464).
-The resident engine runs RELION's triplet at scale 1 (relax 40b14ac). The default VDAM route (exact-local,
-`run_local_k_class_em`) never calls the compact engine and is unaffected; with RELION's exact BPref
-operands the compact VDAM arm matched it (accumulators 1.7e-6, maps 4e-7, jobs 14421292/14421464).
+The resident engine runs RELION's triplet at scale 1 (relax 40b14ac).
 
 Class3D local searches, K>1 (2026-09-25): the per-class local route now keeps
 RELION's joint per-particle pass-2 support (3601775); it matches the
@@ -365,10 +365,8 @@ switches come from `updateAngularSampling`, which Class3D never calls
 to local searches at HEALPix >= 4 (fixed 7381f84, replays 016e261), and the
 Class3D local K>1 route (the K>1 branch of `_run_local_search_iteration` and the
 class arms of the local half scorer) is deleted as unreachable. The per-class
-passes in `run_local_k_class_em` stay: they serve K=1 with an external
-normalizer (VDAM zero oversampling) and are the reference for the segmented
-pass's tests. The segmented-routing task above is therefore moot unless a
-`--sigma_ang` Class3D workflow is added.
+and segmented K-class local passes (`run_local_k_class_em`) were removed with
+the VDAM exact-local route on 2026-09-27.
 
 Class3D noise statistics, compact K>1 (2026-09-25): OPEN against the compact
 K-class engine (`compute_k_class_pass2_stats_sparse_fused`, today's default Class3D
@@ -481,12 +479,13 @@ tier gates both the unfiltered half-map average and the merged map, and requires
 K=1 engine (2026-09-25): the device-resident pass 2, local search and device significance are the
 Refine3D default, with the qualified flag set, including the first-iteration CC pass and
 `--adaptive_oversampling 0`. A global pass the resident checks refuse is an error (the compact
-engine is deleted); a local pass they refuse runs on the deprecated exact-local engine with a
-logged reason, recorded per iteration in `pass2_engine_trajectory`. The jitted stage glue and the local image-capacity
+engine is deleted), and so is a local fine pass they refuse (2026-09-27); only the pass-1 parent
+probe still runs on the deprecated exact-local engine, with a logged reason recorded per iteration
+in `pass2_engine_trajectory`. The jitted stage glue and the local image-capacity
 ladder are set at the K=1 entry points (`apply_k1_refine3d_env_defaults`), since VDAM shares that
 code and qualifies its own defaults. Transitional A/B off switches (not permanent variants;
-`RELAX_SPARSE_PASS2_RESIDENT` is retired with the compact engine and setting it is an error): `RELAX_LOCAL_SEARCH_RESIDENT=0`,
-`RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=0`,
+`RELAX_SPARSE_PASS2_RESIDENT` and `RELAX_LOCAL_SEARCH_RESIDENT` are retired and setting either is an
+error): `RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=0`,
 `RELAX_K1_RELION_WAVG_SEQUENTIAL_CUDA=0`, `RELAX_COARSE_PAD_FINAL_IMAGE_BATCH=0`,
 `RELAX_EM_JIT_STAGE_GLUE=0`, `RELAX_LOCAL_IMAGE_CAPACITY_LADDER=0`. Device coarse significance has no
 switch: every class's coarse support is compacted on the device whenever the ids are collected

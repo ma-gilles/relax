@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.local import local_big_jit, local_bucket_stages, local_em_engine
+from relax.local import local_big_jit, local_bucket_stages
 
 pytestmark = pytest.mark.unit
 

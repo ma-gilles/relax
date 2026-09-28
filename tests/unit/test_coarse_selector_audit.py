@@ -6,6 +6,7 @@ import pytest
 
 pytest.importorskip("jax")
 
+from relax.vdam.adaptive_estep import _sparse_pass2_estep_meta
 from relax.diagnostics import coarse_score_diagnostics
 from relax.diagnostics.coarse_score_diagnostics import (
     _coarse_selector_audit_from_full_stats,
@@ -14,7 +15,6 @@ from relax.diagnostics.coarse_score_diagnostics import (
 )
 from relax.scoring import significance
 from relax.vdam.estep_common import _estep_meta
-from relax.vdam.sparse_pass2_estep import _sparse_pass2_estep_meta
 
 
 def _control_audit() -> dict:

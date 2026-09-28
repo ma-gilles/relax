@@ -7,13 +7,9 @@ they do not import execution engines or change scoring precision.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 import jax
 import jax.numpy as jnp
 import numpy as np
-
-from relax.local.local_layout import LocalHypothesisLayout
 
 
 def _class_log_priors(n_classes: int, class_log_priors) -> np.ndarray:
@@ -79,38 +75,3 @@ def _select_required_class_value(value, class_index: int, n_classes: int, name: 
     return value_array[class_index]
 
 
-def _local_engine_kwargs_for_class(engine_kwargs: dict, class_index: int, n_classes: int) -> dict:
-    """Select class-indexed local-engine kwargs before calling the single-class kernel."""
-
-    kwargs = dict(engine_kwargs)
-    # RELION adds the unweighted high-shell power_img term once per particle,
-    # outside the class loop. Local K-class runs return class-local noise
-    # statistics which are summed downstream, so assign the shared term to one
-    # class while leaving the single-class route unchanged.
-    kwargs["include_unweighted_norm_high_shell"] = class_index == 0
-    projector_half = kwargs.get("relion_projector_half")
-    if projector_half is not None:
-        kwargs["relion_projector_half"] = _select_projector_half_for_class(
-            projector_half,
-            class_index,
-            n_classes,
-        )
-    scale_dvp = kwargs.get("scale_correction_data_vs_prior")
-    if scale_dvp is not None:
-        kwargs["scale_correction_data_vs_prior"] = _select_class_value(
-            scale_dvp,
-            class_index,
-            n_classes,
-        )
-    return kwargs
-
-
-def _class_local_layouts(
-    local_layout,
-    n_classes: int,
-) -> Sequence[LocalHypothesisLayout]:
-    if isinstance(local_layout, (list, tuple)):
-        if len(local_layout) != n_classes:
-            raise ValueError(f"local_layout must contain {n_classes} per-class layouts, got {len(local_layout)}")
-        return local_layout
-    return (local_layout,) * n_classes

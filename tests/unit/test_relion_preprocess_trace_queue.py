@@ -2,7 +2,6 @@
 import jax
 import jax.numpy as jnp
 import pytest
-from recovar import cuda_backproject as cuda
 from relax.cuda import kernels as em_cuda_kernels
 from helpers.float_compare import assert_matches
 

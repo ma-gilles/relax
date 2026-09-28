@@ -1,9 +1,8 @@
 """Which engine each K=1 E-step pass of the current iteration ran, for the run's results.
 
-The resident drivers are relax's one pass-2 engine; a local pass they do not cover still runs
-on the deprecated exact-local engine with a logged reason (``resident_engine_selection``). The
-log alone makes a fallback on a real dataset easy to miss, so the routing also appends one
-entry per pass here, and the
+The resident drivers are relax's one pass-2 engine; the pass-1 local parent probe still runs
+on the deprecated exact-local engine with a logged reason. The log alone makes that easy to
+miss on a real dataset, so the routing also appends one entry per pass here, and the
 iteration loop moves the entries into the per-iteration ``pass2_engine_trajectory`` of the
 results. Entries read ``"<pass>:<engine>"`` or ``"<pass>:<engine> (<reason>)"``.
 

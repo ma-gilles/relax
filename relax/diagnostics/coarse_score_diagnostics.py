@@ -6,7 +6,6 @@ These reports do not establish scientific or performance acceptance by themselve
 
 import hashlib
 import operator
-from typing import Any
 
 import numpy as np
 
@@ -154,10 +153,6 @@ def _coarse_gaussian_direct_macro_diagnostics(
             ).astype(np.int64),
         )
     return diagnostics
-
-
-
-
 
 
 def _coarse_gaussian_qualification_decision(
@@ -426,7 +421,6 @@ def _validate_coarse_selector_audit(audit: dict) -> dict:
     return normalized
 
 
-
 def _build_coarse_significance_support_audit(
     significant_sample_indices,
     *,
@@ -530,7 +524,6 @@ def _build_coarse_significance_support_audit(
     return result
 
 
-
 def _coarse_selector_audit_from_full_stats(full_stats: dict) -> dict:
     """Require a valid execution audit at the coarse-score boundary."""
 
@@ -546,7 +539,6 @@ def _coarse_selector_audit_from_full_stats(full_stats: dict) -> dict:
         raise RuntimeError("K-class significance returned an invalid coarse selector audit") from error
 
 
-
 def _with_coarse_selector_audit(result, audit: dict | None):
     """Seal the validated coarse audit into a result profile summary."""
 
@@ -559,7 +551,6 @@ def _with_coarse_selector_audit(result, audit: dict | None):
     profile_summary = dict(result.profile_summary or {})
     profile_summary["coarse_selector_audit"] = validated
     return result._replace(profile_summary=profile_summary)
-
 
 
 def _with_coarse_significance_diagnostics(
@@ -592,31 +583,3 @@ def _with_coarse_significance_diagnostics(
     return result._replace(profile_summary=profile_summary)
 
 
-def _with_initial_model_coarse_diagnostics(
-    result,
-    *,
-    full_stats: dict[str, Any] | None,
-    selector_audit: dict[str, Any] | None,
-):
-    """Carry the shared coarse result diagnostics through InitialModel pass 2."""
-
-    stats = {} if full_stats is None else full_stats
-    significant_counts = stats.get("significant_cutoff_counts")
-    if significant_counts is not None:
-        counts = np.asarray(significant_counts, dtype=np.int32)
-        n_images = int(np.asarray(result.pose_assignments).size)
-        if counts.shape != (n_images,):
-            raise RuntimeError(
-                "InitialModel coarse significant counts do not match pass-2 images: "
-                f"{counts.shape} vs ({n_images},)",
-            )
-        result = result._replace(significant_counts=counts)
-    return _with_coarse_significance_diagnostics(
-        result,
-        selector_audit=selector_audit,
-        support_audit=stats.get("coarse_significance_support_audit"),
-        hybrid_stats=stats.get("coarse_gaussian_gemm_hybrid"),
-        exact_coarse_operand_assembly=stats.get(
-            "exact_coarse_operand_assembly",
-        ),
-    )

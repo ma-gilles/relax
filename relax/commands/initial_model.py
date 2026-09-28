@@ -89,13 +89,6 @@ def _nonnegative_int(value: str) -> int:
     return parsed
 
 
-def _disabled_or_pool_aligned_chunk_size(value: str) -> int:
-    parsed = _nonnegative_int(value)
-    if parsed not in (0,) and parsed < 3:
-        raise argparse.ArgumentTypeError("must be 0 (disabled) or at least 3")
-    return parsed
-
-
 def _positive_float(value: str) -> float:
     parsed = float(value)
     if parsed <= 0.0:
@@ -270,46 +263,13 @@ def make_parser() -> argparse.ArgumentParser:
         "--pass2-engine",
         "--pass2_engine",
         dest="pass2_engine",
-        choices=("auto", "local", "local_segmented", "adaptive"),
+        choices=("auto", "adaptive"),
         default=DEFAULTS.pass2_engine,
         help=(
-            "E-step route. auto: K>1 runs auto-refine's adaptive route with the "
-            "device-resident pass 2 (both pseudo-halfsets in one pass), falling back to "
-            "the exact-local route with a logged reason for a configuration it does not "
-            "cover; K=1 runs the exact-local route. adaptive selects the adaptive route "
-            "for any K (a refusal is an error); local and local_segmented select the "
-            "exact-local route, which scores every class in one pass over class-segmented rows"
-        ),
-    )
-    parser.add_argument(
-        "--relion-wavg-sequential-cuda",
-        action=argparse.BooleanOptionalAction,
-        default=DEFAULTS.relion_wavg_sequential_cuda,
-        help="Use the qualified shared CUDA kernel for RELION-ordered weighted sums",
-    )
-    parser.add_argument(
-        "--exact-local-bucket-radix",
-        type=int,
-        choices=(2, 4),
-        default=DEFAULTS.exact_local_bucket_radix,
-        help="Static-shape radix for exact-local K=1 hypothesis buckets",
-    )
-    parser.add_argument(
-        "--exact-local-physical-order-chunk-size",
-        type=_disabled_or_pool_aligned_chunk_size,
-        default=DEFAULTS.exact_local_physical_order_chunk_size,
-        help=(
-            "Bound consecutive physical-order K=1 buckets; 0 keeps the "
-            "qualified run-global shape"
-        ),
-    )
-    parser.add_argument(
-        "--stable-fourier-window-shapes",
-        action=argparse.BooleanOptionalAction,
-        default=DEFAULTS.stable_fourier_window_shapes,
-        help=(
-            "Experimental K=1 exact-local VDAM policy: reuse low-cardinality "
-            "physical Fourier capacities while retaining logical CUDA bounds"
+            "E-step route. VDAM has one: auto-refine's adaptive route on the device-resident "
+            "pass 2 (both pseudo-halfsets in one pass); auto and adaptive both select it. "
+            "The exact-local route (local, local_segmented) was removed; a configuration the "
+            "resident pass 2 does not implement is an error"
         ),
     )
     parser.add_argument(
@@ -514,12 +474,6 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
             args.stochastic_batch_size, args.max_fourier_radius, args.max_healpix_order, args.stop_file
         ),
         "pass2_engine": args.pass2_engine,
-        "relion_wavg_sequential_cuda": args.relion_wavg_sequential_cuda,
-        "exact_local_bucket_radix": args.exact_local_bucket_radix,
-        "exact_local_physical_order_chunk_size": (
-            args.exact_local_physical_order_chunk_size
-        ),
-        "stable_fourier_window_shapes": args.stable_fourier_window_shapes,
         "bootstrap_min_particles": args.bootstrap_min_particles,
         "sigma2_min_particles": args.sigma2_min_particles,
         "padding_factor": args.padding_factor,

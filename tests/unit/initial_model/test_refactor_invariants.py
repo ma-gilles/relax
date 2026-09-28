@@ -25,6 +25,7 @@ from relax.helpers.expected_accuracy import estimate_relion_expected_accuracy_fr
 from relax.refinement.mean_helpers import initial_low_pass_filter_references
 from relax.relion import relion_projector_setup
 from relax.vdam import (
+    adaptive_estep,
     dense_adapter,
     driver,
     estep_common,
@@ -34,7 +35,6 @@ from relax.vdam import (
     mstep_single_class,
     native_options,
     native_sampling,
-    sparse_pass2_estep,
     state,
     subset_schedule,
 )
@@ -90,22 +90,11 @@ def test_initial_model_estep_reuses_shared_dense_em_engine():
     """
     from relax.classification import k_class
     from relax.helpers import expected_accuracy
-    from relax.local import local_layout
-    from relax.scoring import significance
-    from relax.vdam import sparse_pass2_estep
 
     shared_callables = {
-        "_compute_k_class_significance_batched": (
-            sparse_pass2_estep._compute_k_class_significance_batched,
-            significance._compute_k_class_significance_batched,
-        ),
-        "run_local_k_class_em": (
-            sparse_pass2_estep.run_local_k_class_em,
-            k_class.run_local_k_class_em,
-        ),
-        "build_pass2_hypothesis_layout": (
-            sparse_pass2_estep.build_pass2_hypothesis_layout,
-            local_layout.build_pass2_hypothesis_layout,
+        "run_dense_k_class_em_adaptive": (
+            adaptive_estep.run_dense_k_class_em_adaptive,
+            k_class.run_dense_k_class_em_adaptive,
         ),
         "estimate_relion_expected_accuracy_from_prepared_inputs": (
             estimate_relion_expected_accuracy_from_prepared_inputs,
@@ -327,13 +316,13 @@ LOC_BUDGETS = {
     )),
     "initialization": (500, ("bootstrap_iref.py", "init.py")),
     "sampling_layout": (950, ("native_sampling.py", "layout.py")),
-    "estep": (2525, (
-        "dense_adapter.py", "estep_common.py", "estep_meta_updates.py", "sparse_pass2_estep.py",
+    # The exact-local VDAM route (sparse_pass2_estep.py, 1062 lines) was removed on
+    # 2026-09-27; the adaptive-route E-step joins this budget with the helpers it shared
+    # (1844 counted lines then, with the shared projector setup), and the cap comes down from
+    # 2525 to keep the reviewed headroom small.
+    "estep": (1900, (
+        "dense_adapter.py", "estep_common.py", "estep_meta_updates.py", "adaptive_estep.py",
     )),
-    # The transitional adaptive-route E-step (2026-09-25): VDAM on auto-refine's
-    # adaptive route and the resident engine. It replaces sparse_pass2_estep.py,
-    # whose lines leave the estep budget when the exact-local VDAM route is removed.
-    "adaptive_estep": (350, ("adaptive_estep.py",)),
     "reconstruction_state": (790, ("m_step.py", "mstep_single_class.py", "state.py")),
     # relion/initial_noise.py gained 53 lines bringing an optics group on another pixel
     # size or box onto the model grid for the start-up noise (RELION resizeMap and
@@ -370,8 +359,6 @@ def test_responsibility_loc_budget(responsibility):
     """Moving code must preserve its accounting; review growth before revising a cap."""
     from recovar.data_io.starfile import star_column
     from relax.relion.relion_metadata import _relion_star_list_value
-    from relax.diagnostics.coarse_gaussian_diagnostics import _initial_model_coarse_gemm_diagnostic_scopes
-    from relax.diagnostics.coarse_score_diagnostics import _with_initial_model_coarse_diagnostics
 
     def source_lines(fn):
         return len(inspect.getsourcelines(fn)[0])
@@ -385,9 +372,6 @@ def test_responsibility_loc_budget(responsibility):
         "estep": 1 + sum(source_lines(getattr(relion_projector_setup, name)) + 2 for name in (
             "reference_to_relion_projector_half_maps", "reference_to_relion_projector_half_maps_and_power",
         )),
-        "diagnostics": sum(source_lines(fn) + 2 for fn in (
-            _initial_model_coarse_gemm_diagnostic_scopes, _with_initial_model_coarse_diagnostics,
-        )) + 2,
     }
     ceiling, names = LOC_BUDGETS[responsibility]
     total = sum(len((PACKAGE_DIR / name).read_bytes().splitlines()) for name in names)
@@ -514,13 +498,13 @@ def test_native_sampling_definition_ownership():
     assert "import relax.vdam.driver" not in inspect.getsource(native_sampling)
 
 
-def test_sparse_pass2_estep_definition_ownership():
+def test_adaptive_estep_definition_ownership():
     adapter_src = inspect.getsource(dense_adapter)
-    for name in ("_run_sparse_pass2_initial_model_estep", "_sparse_pass2_estep_meta", "_initial_model_pass2_layout", "_pop_sparse_pass2_options"):
-        assert inspect.getmodule(getattr(sparse_pass2_estep, name)) is sparse_pass2_estep and f"\ndef {name}(" not in adapter_src
+    for name in ("run_adaptive_initial_model_estep", "_sparse_pass2_estep_meta", "_pop_sparse_pass2_options"):
+        assert inspect.getmodule(getattr(adaptive_estep, name)) is adaptive_estep and f"\ndef {name}(" not in adapter_src
     for name in ("DenseInitialModelEstepConfig", "DenseInitialModelEstepResult", "_estep_meta", "_select_image_rows"):
         assert inspect.getmodule(getattr(estep_common, name)) is estep_common
-    assert dense_adapter._run_sparse_pass2_initial_model_estep is sparse_pass2_estep._run_sparse_pass2_initial_model_estep
+    assert dense_adapter.run_adaptive_initial_model_estep is adaptive_estep.run_adaptive_initial_model_estep
     assert dense_adapter.DenseInitialModelEstepConfig is estep_common.DenseInitialModelEstepConfig
-    for mod in (sparse_pass2_estep, estep_common):
+    for mod in (adaptive_estep, estep_common):
         assert "vdam.dense_adapter import" not in inspect.getsource(mod)

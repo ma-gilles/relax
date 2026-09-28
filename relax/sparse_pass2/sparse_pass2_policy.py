@@ -35,36 +35,8 @@ class ResidentConfigurationUnsupported(NotImplementedError):
     """A device-resident K=1 driver does not implement this pass's configuration.
 
     Raised by the resident drivers' configuration checks, which run before any
-    device work. Under an explicit ``=1`` it stops the run, so a measured
-    comparison always knows which engine produced a result; with the resident
-    default the caller runs the previous engine and logs the reason
-    (:func:`resident_engine_selection`).
+    device work. It stops the run: there is no other pass-2 engine to fall back to.
     """
-
-
-def resident_refusal_reason(exc: BaseException) -> str:
-    """The specific missing piece a resident refusal names, without its boilerplate."""
-
-    text = str(exc)
-    marker = "does not implement this configuration: "
-    if marker in text:
-        text = text.split(marker, 1)[1].split(". Clear the flag", 1)[0]
-    return text
-
-
-def resident_engine_selection(env_name: str) -> str:
-    """``"explicit"`` (set on), ``"default"`` (unset) or ``"off"`` for the resident local driver.
-
-    Unset runs it where it covers the pass and the deprecated exact local engine
-    elsewhere; an explicit on makes a configuration it does not implement an
-    error; an explicit off selects the exact local engine (transitional A/B
-    switch until that engine is deleted).
-    """
-
-    raw = os.environ.get(env_name)
-    if raw is None or raw.strip() == "":
-        return "default"
-    return "explicit" if parse_env_flag(env_name, default=True) else "off"
 
 
 _RELION_EXACT_BPREF_OPERANDS_ENV = "RELAX_K1_RELION_EXACT_BPREF_OPERANDS"
