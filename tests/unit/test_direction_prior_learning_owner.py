@@ -7,6 +7,9 @@ per-half prior lists; ``RefinementHistory.record_direction_prior`` and
 
 from __future__ import annotations
 
+import ast
+import dataclasses
+import inspect
 import logging
 
 import numpy as np
@@ -48,7 +51,71 @@ def _update(rotation_posterior_per_half, lists, **overrides):
         log=logging.getLogger(__name__),
     )
     kwargs.update(overrides)
-    return mean_helpers.update_learned_direction_priors(**kwargs)
+    spec = mean_helpers.DirectionPriorUpdateSpec(
+        posterior=mean_helpers.DirectionPosteriorState(
+            rotation_posterior_per_half=kwargs.pop(
+                "rotation_posterior_per_half"
+            ),
+            class_rotation_posterior_per_half=kwargs.pop(
+                "class_rotation_posterior_per_half"
+            ),
+        ),
+        priors=mean_helpers.DirectionPriorState(
+            global_direction_prior_per_half=kwargs.pop(
+                "global_direction_prior_per_half"
+            ),
+            global_direction_prior_order_per_half=kwargs.pop(
+                "global_direction_prior_order_per_half"
+            ),
+            class_direction_prior_per_half=kwargs.pop(
+                "class_direction_prior_per_half"
+            ),
+            class_direction_prior_order_per_half=kwargs.pop(
+                "class_direction_prior_order_per_half"
+            ),
+        ),
+        grid=mean_helpers.DirectionPriorGridSpec(
+            n_classes=kwargs.pop("n_classes"),
+            use_local=kwargs.pop("use_local"),
+            k1_direction_prior_order=kwargs.pop("k1_direction_prior_order"),
+            k1_direction_prior_size=kwargs.pop("k1_direction_prior_size"),
+            current_healpix_order=kwargs.pop("current_healpix_order"),
+            exhaustive_grid_size=kwargs.pop("exhaustive_grid_size"),
+            n_effective_rotations=kwargs.pop("n_effective_rotations"),
+            symmetry=kwargs.pop("symmetry", "C1"),
+        ),
+        execution=mean_helpers.DirectionPriorExecution(
+            dtype=kwargs.pop("dtype"),
+            log=kwargs.pop("log"),
+        ),
+    )
+    assert not kwargs, f"unmapped direction-prior values: {sorted(kwargs)}"
+    return mean_helpers.update_learned_direction_priors(spec)
+
+
+def test_direction_prior_update_keeps_spec_ownership_visible():
+    function = mean_helpers.update_learned_direction_priors
+    assert tuple(inspect.signature(function).parameters) == ("spec",)
+
+    tree = ast.parse(inspect.getsource(function))
+    assigned_names = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in ([*node.targets] if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name)
+    }
+    stable_field_names = {
+        field.name
+        for owner in (
+            mean_helpers.DirectionPosteriorState,
+            mean_helpers.DirectionPriorState,
+            mean_helpers.DirectionPriorGridSpec,
+            mean_helpers.DirectionPriorExecution,
+        )
+        for field in dataclasses.fields(owner)
+    }
+    assert assigned_names.isdisjoint(stable_field_names)
 
 
 def test_k1_learns_one_prior_per_half_at_the_scoring_order():

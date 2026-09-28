@@ -403,24 +403,58 @@ def _stack_class_tau2_update_details(details_per_class):
     }
 
 
+@dataclass(frozen=True, kw_only=True)
+class DirectionPosteriorState:
+    """Per-half rotation posteriors available after one E-step."""
+
+    rotation_posterior_per_half: list
+    class_rotation_posterior_per_half: list
+
+
+@dataclass(frozen=True, kw_only=True)
+class DirectionPriorState:
+    """Caller-owned prior values and grid orders mutated for the next iteration."""
+
+    global_direction_prior_per_half: list
+    global_direction_prior_order_per_half: list
+    class_direction_prior_per_half: list
+    class_direction_prior_order_per_half: list
+
+
+@dataclass(frozen=True, kw_only=True)
+class DirectionPriorGridSpec:
+    """Active scoring-grid identity and K1/K-class route selection."""
+
+    n_classes: int
+    use_local: bool
+    k1_direction_prior_order: int
+    k1_direction_prior_size: int
+    current_healpix_order: int
+    exhaustive_grid_size: int
+    n_effective_rotations: int
+    symmetry: str = "C1"
+
+
+@dataclass(frozen=True, kw_only=True)
+class DirectionPriorExecution:
+    """Output precision and owner logger for direction-prior publication."""
+
+    dtype: object
+    log: object
+
+
+@dataclass(frozen=True, kw_only=True)
+class DirectionPriorUpdateSpec:
+    """Complete shallow specification for learned direction-prior publication."""
+
+    posterior: DirectionPosteriorState
+    priors: DirectionPriorState
+    grid: DirectionPriorGridSpec
+    execution: DirectionPriorExecution
+
+
 def update_learned_direction_priors(
-    *,
-    rotation_posterior_per_half,
-    class_rotation_posterior_per_half,
-    global_direction_prior_per_half,
-    global_direction_prior_order_per_half,
-    class_direction_prior_per_half,
-    class_direction_prior_order_per_half,
-    n_classes: int,
-    use_local: bool,
-    k1_direction_prior_order: int,
-    k1_direction_prior_size: int,
-    current_healpix_order: int,
-    exhaustive_grid_size: int,
-    n_effective_rotations: int,
-    dtype,
-    log,
-    symmetry: str = "C1",
+    spec: DirectionPriorUpdateSpec,
 ) -> None:
     """Learn the next iteration's direction priors from this iteration's posteriors.
 
@@ -435,44 +469,48 @@ def update_learned_direction_priors(
     single source of grid geometry.
     """
 
-    if n_classes <= 1 and all(
-        np.asarray(rot_sum).shape[0] == k1_direction_prior_size for rot_sum in rotation_posterior_per_half
+    posterior = spec.posterior
+    priors = spec.priors
+    grid = spec.grid
+    execution = spec.execution
+    if grid.n_classes <= 1 and all(
+        np.asarray(rot_sum).shape[0] == grid.k1_direction_prior_size for rot_sum in posterior.rotation_posterior_per_half
     ):
         for k in range(2):
             direction_prior_k = collapse_rotation_posterior_to_direction_prior(
-                np.asarray(rotation_posterior_per_half[k], dtype=np.float64),
-                k1_direction_prior_order,
-                dtype=dtype,
-                **({"symmetry": symmetry} if symmetry != "C1" else {}),
+                np.asarray(posterior.rotation_posterior_per_half[k], dtype=np.float64),
+                grid.k1_direction_prior_order,
+                dtype=execution.dtype,
+                **({"symmetry": grid.symmetry} if grid.symmetry != "C1" else {}),
             )
             try:
-                make_relion_direction_log_prior(direction_prior_k, k1_direction_prior_order, **({"symmetry": symmetry} if symmetry != "C1" else {}))
+                make_relion_direction_log_prior(direction_prior_k, grid.k1_direction_prior_order, **({"symmetry": grid.symmetry} if grid.symmetry != "C1" else {}))
             except ValueError as exc:
-                log.warning(
+                execution.log.warning(
                     "Skipping K=1 direction prior update for half-%d at healpix_order=%d: %s",
                     k + 1,
-                    k1_direction_prior_order,
+                    grid.k1_direction_prior_order,
                     exc,
                 )
                 continue
-            global_direction_prior_per_half[k] = direction_prior_k
-            global_direction_prior_order_per_half[k] = k1_direction_prior_order
+            priors.global_direction_prior_per_half[k] = direction_prior_k
+            priors.global_direction_prior_order_per_half[k] = grid.k1_direction_prior_order
     elif (
-        not use_local
-        and n_classes > 1
-        and n_effective_rotations == exhaustive_grid_size
-        and all(rot_sum is not None for rot_sum in class_rotation_posterior_per_half)
+        not grid.use_local
+        and grid.n_classes > 1
+        and grid.n_effective_rotations == grid.exhaustive_grid_size
+        and all(rot_sum is not None for rot_sum in posterior.class_rotation_posterior_per_half)
     ):
         combined_class_direction_prior = _combined_class_direction_prior_from_halves(
-            class_rotation_posterior_per_half,
-            n_classes,
-            current_healpix_order,
-            dtype=dtype,
-            **({"symmetry": symmetry} if symmetry != "C1" else {}),
+            posterior.class_rotation_posterior_per_half,
+            grid.n_classes,
+            grid.current_healpix_order,
+            dtype=execution.dtype,
+            **({"symmetry": grid.symmetry} if grid.symmetry != "C1" else {}),
         )
         for k in range(2):
-            class_direction_prior_per_half[k] = combined_class_direction_prior.copy()
-            class_direction_prior_order_per_half[k] = current_healpix_order
+            priors.class_direction_prior_per_half[k] = combined_class_direction_prior.copy()
+            priors.class_direction_prior_order_per_half[k] = grid.current_healpix_order
 
 
 def _merged_mean_from_halves(means, class_weights=None):

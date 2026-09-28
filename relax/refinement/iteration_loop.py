@@ -208,6 +208,11 @@ from relax.refinement.iteration_snapshot import (
 from relax.refinement.iteration_snapshot import validate_resume_snapshot as _validate_resume_snapshot
 from relax.refinement.local_search_iteration import _precompute_exact_local_fine_grid_enabled
 from relax.refinement.mean_helpers import (
+    DirectionPosteriorState,
+    DirectionPriorExecution,
+    DirectionPriorGridSpec,
+    DirectionPriorState,
+    DirectionPriorUpdateSpec,
     MeanAccumulatorState,
     MeanGeometrySpec,
     MeanPostprocessPolicy,
@@ -3956,22 +3961,56 @@ def refine_single_volume(
                 local_search_order=local_search_order,
             )
             update_learned_direction_priors(
-                rotation_posterior_per_half=rotation_posterior_per_half,
-                class_rotation_posterior_per_half=class_rotation_posterior_per_half,
-                global_direction_prior_per_half=global_direction_prior_per_half,
-                global_direction_prior_order_per_half=global_direction_prior_order_per_half,
-                class_direction_prior_per_half=class_direction_prior_per_half,
-                class_direction_prior_order_per_half=class_direction_prior_order_per_half,
-                n_classes=n_classes,
-                use_local=use_local,
-                k1_direction_prior_order=k1_direction_prior_order,
-                k1_direction_prior_size=rotation_grid_size(k1_direction_prior_order, **({"symmetry": symmetry} if symmetry != "C1" else {})),
-                current_healpix_order=current_healpix_order,
-                exhaustive_grid_size=rotation_grid_size(current_healpix_order, **({"symmetry": symmetry} if symmetry != "C1" else {})),
-                n_effective_rotations=effective_rotations.shape[0],
-                dtype=_dense_global_scoring_dtype(),
-                log=logger,
-                **({"symmetry": symmetry} if symmetry != "C1" else {}),
+                DirectionPriorUpdateSpec(
+                    posterior=DirectionPosteriorState(
+                        rotation_posterior_per_half=rotation_posterior_per_half,
+                        class_rotation_posterior_per_half=(
+                            class_rotation_posterior_per_half
+                        ),
+                    ),
+                    priors=DirectionPriorState(
+                        global_direction_prior_per_half=(
+                            global_direction_prior_per_half
+                        ),
+                        global_direction_prior_order_per_half=(
+                            global_direction_prior_order_per_half
+                        ),
+                        class_direction_prior_per_half=(
+                            class_direction_prior_per_half
+                        ),
+                        class_direction_prior_order_per_half=(
+                            class_direction_prior_order_per_half
+                        ),
+                    ),
+                    grid=DirectionPriorGridSpec(
+                        n_classes=n_classes,
+                        use_local=use_local,
+                        k1_direction_prior_order=k1_direction_prior_order,
+                        k1_direction_prior_size=rotation_grid_size(
+                            k1_direction_prior_order,
+                            **(
+                                {"symmetry": symmetry}
+                                if symmetry != "C1"
+                                else {}
+                            ),
+                        ),
+                        current_healpix_order=current_healpix_order,
+                        exhaustive_grid_size=rotation_grid_size(
+                            current_healpix_order,
+                            **(
+                                {"symmetry": symmetry}
+                                if symmetry != "C1"
+                                else {}
+                            ),
+                        ),
+                        n_effective_rotations=effective_rotations.shape[0],
+                        symmetry=symmetry,
+                    ),
+                    execution=DirectionPriorExecution(
+                        dtype=_dense_global_scoring_dtype(),
+                        log=logger,
+                    ),
+                )
             )
         history.record_direction_prior(
             class_direction_prior_per_half,
