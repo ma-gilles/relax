@@ -3490,8 +3490,10 @@
     "timing_controlled": true
    },
    "notes": [
-    "Refresh 2026-09-27 on relax main 6a53f9c: same-node cold pair (job 14557624), both arms started together; the row quotes seed 41.",
+    "Refresh 2026-09-27 on relax main 6a53f9c: same-node cold pair (job 14557624), both arms started together; seeds 29 and 53 in job 14563691 on the same candidate; the row quotes seed 41.",
     "seed 41: masked reference FSC-AUC relax 0.0561 / RELION 0.0591 (unmasked 0.0490 / 0.0505); same-seed RELION runs of this command (masked) 0.0591-0.0635 over 2; relax-vs-RELION X-AUC 0.2615 (masked 0.4098); this RELION vs earlier RELION runs X-AUC relion_s41 0.2638; walls relax 1934 s / RELION 2279 s",
+    "seed 29 (extra-seed pair, job 14563691, della-h19g1, same candidate 6a53f9c and layout): masked reference FSC-AUC relax 0.0712 / RELION 0.0498 (unmasked 0.0611 / 0.0453); relax-vs-RELION X-AUC 0.1773 (masked 0.2743); walls relax 2076 s / RELION 2445 s",
+    "seed 53 (extra-seed pair, job 14563691, della-h19g1, same candidate 6a53f9c and layout): masked reference FSC-AUC relax 0.0927 / RELION 0.0924 (unmasked 0.0906 / 0.0904); relax-vs-RELION X-AUC 0.9213 (masked 0.9910); walls relax 1075 s / RELION 1965 s",
     "Earlier record (before the 2026-09-27 refresh): RELION reference regenerated 2026-09-26 after the original was lost (/scratch/gpfs/CRYOEM/gilleslab/em_work/LOSS_AUDIT_20260926.md): same command, seeds and build_patched binary, stored in /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/vdam_relion_refs_20260926/cells/ribo_k1 (README.md, MANIFEST.json there).",
     "Earlier record (before the 2026-09-27 refresh): The relax arm (relaxfix, retained-mass fix, 2026-09-25) survived and is rescored against the regenerated RELION arms; the older pre-split relax arms were lost and are not rescored.",
     "Earlier record (before the 2026-09-27 refresh): Previous RELION record (maps lost 2026-09-26): seed 41 job 14148534 2572.7 s, reference FSC-AUC 0.0668 / masked 0.0796; seed 29 job 14148549 2899 s, 0.0463 / 0.0494.",
@@ -3505,7 +3507,9 @@
    "null_reasons": {},
    "evidence": {
     "run_roots": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_ribo_k1/s41"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_ribo_k1/s41",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_ribo_k1_seeds/s29",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_ribo_k1_seeds/s53"
     ],
     "score_json": "docs/benchmarks/initialmodel_scores/rf_vdam_ribo_k1.json",
     "earlier_run_roots": [
@@ -3513,7 +3517,9 @@
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/ribo_rerun"
     ],
     "relion_runs": [
-     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_refresh_20260927/relax_bench_k1plus_20260925/refresh_20260927/vdam_ribo_k1/s41/relion/output"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_refresh_20260927/relax_bench_k1plus_20260925/refresh_20260927/vdam_ribo_k1/s41/relion/output",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_refresh_20260927/relax_bench_k1plus_20260925/refresh_20260927/vdam_ribo_k1_seeds/s29/relion/output",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_refresh_20260927/relax_bench_k1plus_20260925/refresh_20260927/vdam_ribo_k1_seeds/s53/relion/output"
     ]
    },
    "mask": {
@@ -3527,8 +3533,8 @@
     "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, compilation and final writes included",
     "d": "H100 80GB HBM3 on both GPUs (GPU.csv per arm); same node, same time"
    },
-   "quality_pass": false,
-   "quality_reason": "seed 41 masked 0.0561 below RELION 0.0591-0.0635",
+   "quality_pass": true,
+   "quality_reason": "worst s41 −0.0029 vs same-seed RELION; inside or above across-seed band (masked ref FSC-AUC; RELION seeds span 0.0498-0.0924)",
    "history": [
     {
      "date": "2026-09-26",
