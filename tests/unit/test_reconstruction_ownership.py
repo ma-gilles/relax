@@ -48,6 +48,32 @@ def test_mean_reconstruction_core_keeps_spec_ownership_visible():
     assert assigned_names & stable_field_names == {"retained_Ft_y_0_device"}
 
 
+def test_unregularized_reconstruction_keeps_spec_ownership_visible():
+    from relax.refinement import mean_helpers as mean_helpers_module
+
+    function = mean_helpers_module.compute_unregularized_halfmaps_and_align_signs
+    assert tuple(inspect.signature(function).parameters) == ("spec",)
+
+    tree = ast.parse(inspect.getsource(function))
+    assigned_names = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in ([*node.targets] if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name)
+    }
+    stable_field_names = {
+        field.name
+        for owner in (
+            mean_helpers_module.UnregularizedMeanState,
+            mean_helpers_module.UnregularizedAccumulatorState,
+            mean_helpers_module.UnregularizedReconstructionPolicy,
+        )
+        for field in dataclasses.fields(owner)
+    }
+    assert assigned_names.isdisjoint(stable_field_names)
+
+
 class TestReconstructionOwnership:
     def test_k1_reconstruction_uses_per_half_1d_tau_shell_prior(self, monkeypatch):
         """K=1 reconstruction should not round-trip tau2 through full volumes."""

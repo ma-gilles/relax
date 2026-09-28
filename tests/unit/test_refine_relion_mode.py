@@ -14871,13 +14871,27 @@ def test_k_class_reconstruction_preserves_data_determined_volume_signs(monkeypat
 
     monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", reconstruct)
     result = mean_helpers_module.compute_unregularized_halfmaps_and_align_signs(
-        means=means, previous_means=[jnp.asarray(previous), jnp.asarray(previous)],
-        Ft_y_per_half=(None, None), Ft_ctf_per_half=(None, None),
-        Ft_y_combined=jnp.asarray(unregularized),
-        Ft_ctf_combined=jnp.ones_like(jnp.asarray(unregularized).real),
-        volume_shape=(2, 1, 1), n_classes=n_classes,
-        tau2_fudge=1.0, padding_factor=1, projection_padding_factor=1,
-        minres_map=1, need_unreg_means=need_unreg,
+        mean_helpers_module.UnregularizedMeanSpec(
+            state=mean_helpers_module.UnregularizedMeanState(
+                means=means,
+                previous_means=[jnp.asarray(previous), jnp.asarray(previous)],
+            ),
+            accumulators=mean_helpers_module.UnregularizedAccumulatorState(
+                Ft_y_per_half=(None, None),
+                Ft_ctf_per_half=(None, None),
+                Ft_y_combined=jnp.asarray(unregularized),
+                Ft_ctf_combined=jnp.ones_like(jnp.asarray(unregularized).real),
+            ),
+            policy=mean_helpers_module.UnregularizedReconstructionPolicy(
+                volume_shape=(2, 1, 1),
+                n_classes=n_classes,
+                tau2_fudge=1.0,
+                padding_factor=1,
+                projection_padding_factor=1,
+                minres_map=1,
+                need_unreg_means=need_unreg,
+            ),
+        )
     )
     assert_matches(means[0], reconstructed)
     assert_matches(means[1], reconstructed)

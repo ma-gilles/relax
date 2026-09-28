@@ -1290,22 +1290,49 @@ def _reconstruct_and_postprocess_means(
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True, kw_only=True)
+class UnregularizedMeanState:
+    """Caller-owned current means and immutable previous-reference snapshots."""
+
+    means: list
+    previous_means: list
+
+
+@dataclass(frozen=True, kw_only=True)
+class UnregularizedAccumulatorState:
+    """Per-half and combined accumulators available for diagnostic maps."""
+
+    Ft_y_per_half: tuple
+    Ft_ctf_per_half: tuple
+    Ft_y_combined: object
+    Ft_ctf_combined: object
+
+
+@dataclass(frozen=True, kw_only=True)
+class UnregularizedReconstructionPolicy:
+    """Geometry, class route and diagnostic reconstruction decision."""
+
+    volume_shape: tuple
+    n_classes: int
+    tau2_fudge: float
+    padding_factor: int
+    projection_padding_factor: int
+    minres_map: int
+    need_unreg_means: bool
+    accumulator_volume_shape: tuple | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class UnregularizedMeanSpec:
+    """Complete shallow specification for unregularized map publication."""
+
+    state: UnregularizedMeanState
+    accumulators: UnregularizedAccumulatorState
+    policy: UnregularizedReconstructionPolicy
+
+
 def compute_unregularized_halfmaps_and_align_signs(
-    *,
-    means: list,
-    previous_means: list,
-    Ft_y_per_half: tuple,
-    Ft_ctf_per_half: tuple,
-    Ft_y_combined,
-    Ft_ctf_combined,
-    volume_shape,
-    n_classes: int,
-    tau2_fudge: float,
-    padding_factor: int,
-    projection_padding_factor: int,
-    minres_map: int,
-    need_unreg_means: bool,
-    accumulator_volume_shape=None,
+    spec: UnregularizedMeanSpec,
 ) -> list:
     """Reconstruct unregularized half-maps (only when diagnostics need them)
     and apply the legacy K=1 sign-continuity check.
@@ -1324,23 +1351,26 @@ def compute_unregularized_halfmaps_and_align_signs(
     reconstruction convention.
     """
 
+    state = spec.state
+    accumulators = spec.accumulators
+    policy = spec.policy
     _t_unreg = time.time()
-    if need_unreg_means:
-        if n_classes > 1:
+    if policy.need_unreg_means:
+        if policy.n_classes > 1:
             unreg_shared = jnp.stack(
                 [
                     _reconstruct_volume_eager(
-                        Ft_ctf_combined[class_idx],
-                        Ft_y_combined[class_idx],
-                        volume_shape,
-                        padding_factor,
+                        accumulators.Ft_ctf_combined[class_idx],
+                        accumulators.Ft_y_combined[class_idx],
+                        policy.volume_shape,
+                        policy.padding_factor,
                         tau=None,
-                        tau2_fudge=tau2_fudge,
-                        projection_padding_factor=projection_padding_factor,
-                        minres_map=minres_map,
-                        accumulator_volume_shape=accumulator_volume_shape,
+                        tau2_fudge=policy.tau2_fudge,
+                        projection_padding_factor=policy.projection_padding_factor,
+                        minres_map=policy.minres_map,
+                        accumulator_volume_shape=policy.accumulator_volume_shape,
                     ).reshape(-1)
-                    for class_idx in range(n_classes)
+                    for class_idx in range(policy.n_classes)
                 ],
                 axis=0,
             )
@@ -1350,31 +1380,31 @@ def compute_unregularized_halfmaps_and_align_signs(
                 _reconstruct_volume_eager(
                     Ft_ctf_half,
                     Ft_y_half,
-                    volume_shape,
-                    padding_factor,
+                    policy.volume_shape,
+                    policy.padding_factor,
                     tau=None,
-                    tau2_fudge=tau2_fudge,
-                    projection_padding_factor=projection_padding_factor,
-                    minres_map=minres_map,
-                    accumulator_volume_shape=accumulator_volume_shape,
+                    tau2_fudge=policy.tau2_fudge,
+                    projection_padding_factor=policy.projection_padding_factor,
+                    minres_map=policy.minres_map,
+                    accumulator_volume_shape=policy.accumulator_volume_shape,
                 )
-                for Ft_ctf_half, Ft_y_half in zip(Ft_ctf_per_half, Ft_y_per_half)
+                for Ft_ctf_half, Ft_y_half in zip(accumulators.Ft_ctf_per_half, accumulators.Ft_y_per_half)
             ]
     else:
         unreg_means = [None, None]
 
-    if n_classes > 1:
+    if policy.n_classes > 1:
         # The image/CTF convention fixes K-class reconstruction signs.
         # Weak overlap with a previous reference must not negate a class.
-        means[1] = means[0]
+        state.means[1] = state.means[0]
         if unreg_means[0] is not None:
             unreg_means[1] = unreg_means[0]
     else:
         for k in range(2):
-            means[k], sign_flipped = _align_fourier_volume_sign_to_reference(
-                means[k],
-                previous_means[k],
-                volume_shape,
+            state.means[k], sign_flipped = _align_fourier_volume_sign_to_reference(
+                state.means[k],
+                state.previous_means[k],
+                policy.volume_shape,
             )
             if sign_flipped and unreg_means[k] is not None:
                 unreg_means[k] = -unreg_means[k]
@@ -1383,7 +1413,7 @@ def compute_unregularized_halfmaps_and_align_signs(
     logger.info(
         "Unregularized reconstruction (2 halves): %.1fs%s",
         time.time() - _t_unreg,
-        "" if need_unreg_means else " (skipped; diagnostics disabled)",
+        "" if policy.need_unreg_means else " (skipped; diagnostics disabled)",
     )
     return unreg_means
 
