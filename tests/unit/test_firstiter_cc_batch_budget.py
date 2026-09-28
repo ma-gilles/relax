@@ -1,12 +1,15 @@
+import ast
+import dataclasses
+import inspect
 from types import SimpleNamespace
 
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.classification import k_class_results
 from relax.classification.k_class_results import KClassEMResult
-from relax.refinement import firstiter_cc, half_scoring
 from relax.dense import score_outputs
 from relax.helpers import batch_planning
 from relax.helpers.batch_planning import (
@@ -15,8 +18,35 @@ from relax.helpers.batch_planning import (
     _safe_firstiter_cc_image_batch_size,
 )
 from relax.helpers.types import NoiseStats, make_relion_stats
-from relax.refinement import iteration_loop
-from helpers.float_compare import assert_matches
+from relax.refinement import firstiter_cc, half_scoring, iteration_loop
+
+
+def test_firstiter_cc_core_keeps_spec_ownership_visible():
+    function = firstiter_cc._score_kclass_firstiter_cc_pass2
+    assert tuple(inspect.signature(function).parameters) == ("spec",)
+
+    tree = ast.parse(inspect.getsource(function))
+    assigned_names = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in (
+            [*node.targets] if isinstance(node, ast.Assign) else [node.target]
+        )
+        if isinstance(target, ast.Name)
+    }
+    stable_field_names = {
+        field.name
+        for owner in (
+            firstiter_cc.FirstIterCCData,
+            firstiter_cc.FirstIterCCGridSpec,
+            firstiter_cc.FirstIterCCPolicy,
+            firstiter_cc.FirstIterCCBatching,
+            firstiter_cc.FirstIterCCExecution,
+        )
+        for field in dataclasses.fields(owner)
+    }
+    assert assigned_names.isdisjoint(stable_field_names)
 
 
 def test_firstiter_winner_take_all_assembly_reports_unit_pmax_across_score_normalizations():
@@ -139,27 +169,40 @@ def test_firstiter_cc_adaptive_dispatch_clamps_against_fine_translation_grid(mon
             return 120, 700
         raise AssertionError((n_rot, n_trans, current_size_for_batch))
 
-    result, _rot_parent, _trans_parent, n_trans_fine, _adaptive_os = firstiter_cc._score_kclass_firstiter_cc_pass2(
-        logger=iteration_loop.logger,
-        experiment_dataset=object(),
-        mean=np.zeros((2, 4), dtype=np.complex64),
-        mean_variance=None,
-        noise_variance_k=None,
-        effective_rotations=np.zeros((576, 3, 3), dtype=np.float32),
-        current_translations=np.zeros((29, 2), dtype=np.float32),
-        base_translations=np.zeros((29, 2), dtype=np.float32),
-        current_healpix_order=1,
-        state=SimpleNamespace(adaptive_oversampling=1, translation_step=2.0),
-        random_perturbation=0.0,
-        disc_type="linear_interp",
-        class_log_priors=None,
-        image_batch_size=200,
-        image_shape_k=(256, 256),
-        em_kwargs={"image_batch_size": 88, "rotation_block_size": 576},
-        safe_batch_sizes=fake_safe_batch_sizes,
-        coarse_current_size=40,
-        fine_current_size=90,
-        update_em_kwargs_image_batch_size=True,
+    spec = firstiter_cc.FirstIterCCSpec(
+        data=firstiter_cc.FirstIterCCData(
+            logger=iteration_loop.logger,
+            experiment_dataset=object(),
+            mean=np.zeros((2, 4), dtype=np.complex64),
+            mean_variance=None,
+            noise_variance=None,
+            image_shape=(256, 256),
+        ),
+        grid=firstiter_cc.FirstIterCCGridSpec(
+            effective_rotations=np.zeros((576, 3, 3), dtype=np.float32),
+            current_translations=np.zeros((29, 2), dtype=np.float32),
+            base_translations=np.zeros((29, 2), dtype=np.float32),
+            current_healpix_order=1,
+            state=SimpleNamespace(adaptive_oversampling=1, translation_step=2.0),
+            random_perturbation=0.0,
+        ),
+        policy=firstiter_cc.FirstIterCCPolicy(
+            disc_type="linear_interp",
+            class_log_priors=None,
+        ),
+        batching=firstiter_cc.FirstIterCCBatching(
+            image_batch_size=200,
+            em_kwargs={"image_batch_size": 88, "rotation_block_size": 576},
+            safe_batch_sizes=fake_safe_batch_sizes,
+            coarse_current_size=40,
+            fine_current_size=90,
+        ),
+        execution=firstiter_cc.FirstIterCCExecution(
+            update_em_kwargs_image_batch_size=True,
+        ),
+    )
+    result, _rot_parent, _trans_parent, n_trans_fine, _adaptive_os = (
+        firstiter_cc._score_kclass_firstiter_cc_pass2(spec)
     )
 
     assert result == "result"
@@ -187,9 +230,9 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
     dispatch = {}
     original_dispatch = half_scoring._score_kclass_firstiter_cc_pass2
 
-    def capture_dispatch(**kwargs):
-        dispatch.update(kwargs)
-        return original_dispatch(**kwargs)
+    def capture_dispatch(spec):
+        dispatch["spec"] = spec
+        return original_dispatch(spec)
     calls = []
 
     class TinyDataset:
@@ -338,16 +381,19 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
     assert result.ha.shape == (3,)
     assert result.coarse_ha.shape == (3,)
 
-    assert dispatch["mean"].shape == (n_classes, 4)
-    assert dispatch["log_label"] == ("K=1 " if n_classes == 1 else "test K-class ")
-    assert dispatch["update_em_kwargs_image_batch_size"] is update_batch
-    assert dispatch["em_kwargs"]["image_batch_size"] == (captured["image_batch_size"] if update_batch else 187)
+    dispatch_spec = dispatch["spec"]
+    assert dispatch_spec.data.mean.shape == (n_classes, 4)
+    assert dispatch_spec.execution.log_label == ("K=1 " if n_classes == 1 else "test K-class ")
+    assert dispatch_spec.execution.update_em_kwargs_image_batch_size is update_batch
+    assert dispatch_spec.batching.em_kwargs["image_batch_size"] == (
+        captured["image_batch_size"] if update_batch else 187
+    )
     if n_classes == 1:
-        assert "coarse_rotation_ids" not in dispatch
+        assert dispatch_spec.grid.coarse_rotation_ids is None
         assert captured["coarse_rotation_ids"] is None
     else:
-        assert dispatch["mean"] is means
-        assert dispatch["coarse_rotation_ids"] is coarse_ids
+        assert dispatch_spec.data.mean is means
+        assert dispatch_spec.grid.coarse_rotation_ids is coarse_ids
         assert captured["coarse_rotation_ids"] is coarse_ids
 
 

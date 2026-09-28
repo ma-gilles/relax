@@ -9,6 +9,7 @@ by the ownership boundary.
 
 import logging
 import os
+from dataclasses import replace
 from typing import NamedTuple
 
 import jax.numpy as jnp
@@ -57,7 +58,15 @@ from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
 from relax.helpers.oversampling import build_adaptive_pass2_grids
 from relax.helpers.preprocessing import uses_relion_cuda_image_preprocessing
 from relax.local.local_layout import build_local_adaptive_pass2_hypothesis_layout, build_local_hypothesis_layout
-from relax.refinement.firstiter_cc import _score_kclass_firstiter_cc_pass2
+from relax.refinement.firstiter_cc import (
+    FirstIterCCBatching,
+    FirstIterCCData,
+    FirstIterCCExecution,
+    FirstIterCCGridSpec,
+    FirstIterCCPolicy,
+    FirstIterCCSpec,
+    _score_kclass_firstiter_cc_pass2,
+)
 from relax.refinement.local_search_iteration import _run_local_search_iteration
 from relax.sampling import (
     apply_relion_translation_perturbation,
@@ -416,28 +425,43 @@ def _score_half_dense_one_shape(
     )
     if relion_firstiter_cc_this_iter:
         # Shared first-iteration inputs; means, layouts and pose IDs remain route-specific.
-        firstiter_kwargs = {
-            "logger": logger,
-            "experiment_dataset": experiment_dataset,
-            "mean_variance": mean_variance,
-            "noise_variance_k": noise_variance_k,
-            "effective_rotations": effective_rotations,
-            "current_translations": current_translations,
-            "base_translations": base_translations,
-            "current_healpix_order": current_healpix_order,
-            "state": state,
-            "random_perturbation": random_perturbation,
-            "disc_type": disc_type,
-            "class_log_priors": class_log_priors,
-            "image_batch_size": image_batch_size,
-            "safe_batch_sizes": safe_batch_sizes,
-            "significance_safe_batch_sizes": significance_safe_batch_sizes,
-            "coarse_current_size": firstiter_coarse_current_size,
-            "fine_current_size": firstiter_fine_current_size,
-            "update_em_kwargs_image_batch_size": firstiter_updates_em_kwargs_ibs,
-            "bpref_device_signature_active": bpref_device_signature_active,
-            "debug_iteration": debug_iteration,
-        }
+        firstiter_spec = FirstIterCCSpec(
+            data=FirstIterCCData(
+                logger=logger,
+                experiment_dataset=experiment_dataset,
+                mean=means_k,
+                mean_variance=mean_variance,
+                noise_variance=noise_variance_k,
+                image_shape=experiment_dataset.image_shape,
+            ),
+            grid=FirstIterCCGridSpec(
+                effective_rotations=effective_rotations,
+                current_translations=current_translations,
+                base_translations=base_translations,
+                current_healpix_order=current_healpix_order,
+                state=state,
+                random_perturbation=random_perturbation,
+                symmetry=symmetry,
+            ),
+            policy=FirstIterCCPolicy(
+                disc_type=disc_type,
+                class_log_priors=class_log_priors,
+            ),
+            batching=FirstIterCCBatching(
+                image_batch_size=image_batch_size,
+                em_kwargs=em_kwargs,
+                safe_batch_sizes=safe_batch_sizes,
+                significance_safe_batch_sizes=significance_safe_batch_sizes,
+                coarse_current_size=firstiter_coarse_current_size,
+                fine_current_size=firstiter_fine_current_size,
+            ),
+            execution=FirstIterCCExecution(
+                log_label=firstiter_log_label,
+                update_em_kwargs_image_batch_size=firstiter_updates_em_kwargs_ibs,
+                bpref_device_signature_active=bpref_device_signature_active,
+                debug_iteration=debug_iteration,
+            ),
+        )
 
     if k_class_enabled:
         if disable_adjoint_y or disable_adjoint_ctf:
@@ -468,13 +492,13 @@ def _score_half_dense_one_shape(
                 n_trans_fine_for_collapse,
                 adaptive_os_local,
             ) = _score_kclass_firstiter_cc_pass2(
-                mean=means_k,
-                image_shape_k=experiment_dataset.image_shape,
-                em_kwargs=em_kwargs,
-                log_label=firstiter_log_label,
-                coarse_rotation_ids=coarse_rotation_ids,
-                **firstiter_kwargs,
-                **({"symmetry": symmetry} if symmetry != "C1" else {}),
+                replace(
+                    firstiter_spec,
+                    grid=replace(
+                        firstiter_spec.grid,
+                        coarse_rotation_ids=coarse_rotation_ids,
+                    ),
+                )
             )
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
         elif _dense_uses_adaptive_engine(state.adaptive_oversampling, group_ids_k):
@@ -682,16 +706,19 @@ def _score_half_dense_one_shape(
                 n_trans_fine_for_collapse,
                 adaptive_os_local,
             ) = _score_kclass_firstiter_cc_pass2(
-                mean=means_single,
-                image_shape_k=experiment_dataset.image_shape,
-                em_kwargs=(
-                    {**em_kwargs, "mstep_relion_x_half": True}
-                    if k1_relion_x_half_mstep
-                    else em_kwargs
-                ),
-                log_label="K=1 ",
-                **firstiter_kwargs,
-                **({"symmetry": symmetry} if symmetry != "C1" else {}),
+                replace(
+                    firstiter_spec,
+                    data=replace(firstiter_spec.data, mean=means_single),
+                    batching=replace(
+                        firstiter_spec.batching,
+                        em_kwargs=(
+                            {**em_kwargs, "mstep_relion_x_half": True}
+                            if k1_relion_x_half_mstep
+                            else em_kwargs
+                        ),
+                    ),
+                    execution=replace(firstiter_spec.execution, log_label="K=1 "),
+                )
             )
         else:
             pass2_grids = _adaptive_pass2_grids(
