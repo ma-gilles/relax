@@ -592,6 +592,25 @@ parameters and the largest has 17.
   mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
   produced.
 
+## 2026-09-28 — owner-visible state boundaries
+
+- Commit `1811ebe8378802dd3d829c52cc9dfba15744b331` removed the call-only
+  reconstruction, direction-prior, unregularized-mean and snapshot wrappers.
+  Their functions now expose three to five cohesive owners directly.
+- Focused ownership and behavior tests: 26 passed, 405 deselected. CPU EM fast
+  guard: 102 passed in 58.74 seconds.
+- Production totals fell to 15,094 physical and 13,163 nonblank lines.
+
+## 2026-09-28 — owner-visible pass boundaries
+
+- Commit `b1966cea4758c12449ac1e822c6ff4942a3f1692` removed the call-only
+  first-iteration CC and local-search pass wrappers. Their functions now expose
+  five and six cohesive owners directly.
+- Focused pass, resident-reference and local-controller tests: 70 passed, with
+  28 CUDA-only skips. CPU EM fast guard: 102 passed in 57.04 seconds.
+- Production totals are 15,043 physical and 13,119 nonblank lines. Dense/local
+  half scoring and initial-grid planning remain in the corrective audit.
+
 ## 2026-09-28 — owner-visible signature correction started
 
 The earlier packages over-corrected long parameter lists by introducing
