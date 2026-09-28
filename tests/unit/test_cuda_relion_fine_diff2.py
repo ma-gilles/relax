@@ -1099,12 +1099,10 @@ def test_k1_coarse_gaussian_exact_operand_flags_honor_default_and_opt_out(monkey
     assert "pixel_indices=score_indices_np" in assembler
     assert "shifted_corrected = translate_fn(" in assembler
     # P3-I: the elementwise operand chain that used to sit inline here now
-    # lives in _relion_exact_coarse_operands, which the assembler calls
-    # eagerly or, under RELAX_COARSE_OPERAND_PROGRAM, as jax.jit of the same
-    # function. The expression itself is unchanged and still owned by this
-    # module.
-    assert "_relion_exact_coarse_operand_program" in assembler
-    assert "else _relion_exact_coarse_operands" in assembler
+    # lives in _relion_exact_coarse_operands, which the assembler calls as
+    # jax.jit of the same function. The expression itself is unchanged and
+    # still owned by this module.
+    assert "_relion_exact_coarse_operand_program(" in assembler
     operands_start = operands_source.index("def _relion_exact_coarse_operands(")
     exact_operands = operands_source[
         operands_start : operands_source.index("\ndef ", operands_start + 1)

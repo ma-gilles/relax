@@ -1,10 +1,10 @@
 """Equivalence tests for the jitted RELION coarse operand assemblies (P3-I).
 
-``RELAX_COARSE_OPERAND_PROGRAM=1`` traces the coarse operand assembly once
-per batch shape instead of dispatching one compiled program per primitive. The
-eager path stays the oracle, so every test here compares the program's output
-against the eager function it is ``jax.jit`` of: equal dtype and shape, values
-within the default float band of ``helpers.float_compare``.
+The coarse operand assembly runs as one traced program per batch shape instead
+of dispatching one compiled program per primitive. The eager function stays
+the reference, so every test here compares the program's output against the
+eager function it is ``jax.jit`` of: equal dtype and shape, values within the
+default float band of ``helpers.float_compare``.
 
 The three assemblies are the generic coarse sincosf operands, the exact-source
 operands, and the normalized-CC (``--firstiter_cc``) tree-rescore operands. The
@@ -20,8 +20,6 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.relion.relion_coarse_operands import (
-    _COARSE_OPERAND_PROGRAM_ENV,
-    _coarse_operand_program_enabled,
     _relion_cc_coarse_operand_program,
     _relion_cc_coarse_operands,
     _relion_cc_inverse_power_from_processed,
@@ -252,8 +250,8 @@ def test_cc_program_matches_the_eager_assembly(
         assert eager.windowed_corr_img.shape == (ACTUAL_BATCH, N_SCORE)
 
 
-def test_cc_entry_point_follows_the_flag(monkeypatch):
-    """The public entry point selects the program only when the flag is on."""
+def test_cc_entry_point_runs_the_program():
+    """The public entry point returns the program's operands, equal to the eager function's."""
 
     rng = np.random.default_rng(20260924)
     processed = jnp.asarray(
@@ -264,28 +262,18 @@ def test_cc_entry_point_follows_the_flag(monkeypatch):
     scale = jnp.asarray(rng.uniform(0.8, 1.2, ACTUAL_BATCH), dtype=jnp.float32)
     inverse_power = _relion_cc_inverse_power_from_processed(processed, None)
 
-    monkeypatch.delenv(_COARSE_OPERAND_PROGRAM_ENV, raising=False)
-    assert not _coarse_operand_program_enabled()
-    off = assemble_relion_cc_coarse_operands(
+    eager = _relion_cc_coarse_operands(
+        processed, ctf, inverse_power, scale, None, None, scale_corrections_enabled=True
+    )
+    entry = assemble_relion_cc_coarse_operands(
         processed, ctf, inverse_power, scale, scale_corrections_enabled=True
     )
-    monkeypatch.setenv(_COARSE_OPERAND_PROGRAM_ENV, "1")
-    assert _coarse_operand_program_enabled()
-    on = assemble_relion_cc_coarse_operands(
-        processed, ctf, inverse_power, scale, scale_corrections_enabled=True
-    )
-    for name in off._fields:
-        _assert_same_operand(getattr(on, name), getattr(off, name), f"cc entry {name}")
-
-
-def test_coarse_operand_program_flag_fails_closed(monkeypatch):
-    monkeypatch.setenv(_COARSE_OPERAND_PROGRAM_ENV, "maybe")
-    with pytest.raises(ValueError, match=_COARSE_OPERAND_PROGRAM_ENV):
-        _coarse_operand_program_enabled()
+    for name, value in zip(entry._fields, eager):
+        _assert_same_operand(getattr(entry, name), value, f"cc entry {name}")
 
 
 def test_each_assembly_is_one_program_per_batch_shape():
-    """The point of the flag: one traced program, not one program per primitive.
+    """The point of the program: one traced program, not one program per primitive.
 
     The eager path dispatches one compiled program per primitive it runs, so
     the number of equations in the assembly's jaxpr is the number of eager

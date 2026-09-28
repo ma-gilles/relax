@@ -39,7 +39,6 @@ _K1_RELION_EXACT_COMPACT_PREPROCESS_ENV = (
 )
 
 
-_COARSE_OPERAND_PROGRAM_ENV = "RELAX_COARSE_OPERAND_PROGRAM"
 
 
 def _repeat_pad_batch_axis(value, target_size: int):
@@ -157,18 +156,6 @@ def _resolve_k1_relion_exact_compact_preprocess(
     return True
 
 
-def _coarse_operand_program_enabled(*, default: bool = False) -> bool:
-    """Return whether the coarse operand assembly runs as one jitted program.
-
-    Off by default: the eager assembly, one compiled program per primitive,
-    stays the oracle. With the flag on the same Python function is traced once
-    per batch shape, so a coarse image batch costs one program call instead of
-    roughly fifty-five single-primitive dispatches.
-    """
-
-    return parse_env_strict_flag(_COARSE_OPERAND_PROGRAM_ENV, default=default)
-
-
 def _k1_relion_f32_coarse_support_enabled(*, default: bool = False) -> bool:
     """Return whether the RELION CUDA float32 coarse support is active."""
 
@@ -192,11 +179,12 @@ def _relion_coarse_sincosf_operands(
     after the call.
 
     :data:`_relion_coarse_sincosf_operand_program` is ``jax.jit`` of this exact
-    function, which is what ``RELAX_COARSE_OPERAND_PROGRAM=1`` selects: the
-    two paths share their source, so the only difference between them is that
-    XLA sees the whole chain at once. Nothing here reduces along an axis and no
-    multiply feeds an add, so that cannot re-associate an expression or
-    contract a multiply-add; the paired unit tests hold the pair bitwise.
+    function and the only caller path, one program call per coarse image batch
+    instead of one dispatch per primitive. The eager function stays as the
+    unit tests' reference: the two share their source, so the only difference
+    is that XLA sees the whole chain at once. Nothing here reduces along an
+    axis and no multiply feeds an add, so that cannot re-associate an
+    expression or contract a multiply-add.
     """
 
     square_score_weight = score_weight_half[:, score_indices]
@@ -396,20 +384,15 @@ def assemble_relion_cc_coarse_operands(
 ) -> RelionCcCoarseOperands:
     """Build one coarse batch's ``--firstiter_cc`` tree-rescore operands.
 
-    ``RELAX_COARSE_OPERAND_PROGRAM=1`` traces the assembly once per batch
-    shape; the default eager path is the oracle. ``ctf_rfloat`` is already
+    The assembly runs as :data:`_relion_cc_coarse_operand_program`, traced once
+    per batch shape. ``ctf_rfloat`` is already
     repeat-padded by the caller when the coarse image batch is padded, so every
     operand carries the padded extent and the caller slices the repeated rows
     off with the rest.
     """
 
-    assemble = (
-        _relion_cc_coarse_operand_program
-        if _coarse_operand_program_enabled()
-        else _relion_cc_coarse_operands
-    )
     return RelionCcCoarseOperands(
-        *assemble(
+        *_relion_cc_coarse_operand_program(
             processed,
             ctf_rfloat,
             inverse_power,
@@ -483,12 +466,7 @@ def _relion_coarse_gaussian_square_operands_sincosf(
     score_indices = jnp.asarray(score_indices, dtype=jnp.int32)
     if translation_phase_source is None:
         translation_phase_source = translations
-    assemble = (
-        _relion_coarse_sincosf_operand_program
-        if _coarse_operand_program_enabled()
-        else _relion_coarse_sincosf_operands
-    )
-    unshifted_corrected, pixel_weight = assemble(
+    unshifted_corrected, pixel_weight = _relion_coarse_sincosf_operand_program(
         unshifted_score_weighted,
         score_weight_half,
         half_weights,
@@ -614,12 +592,7 @@ def _assemble_relion_exact_coarse_gaussian_operands(
         pixel_indices=score_indices_np,
     )
     batch_scale_exact = jnp.asarray(batch_scale_np, dtype=real_dtype)
-    assemble = (
-        _relion_exact_coarse_operand_program
-        if _coarse_operand_program_enabled()
-        else _relion_exact_coarse_operands
-    )
-    exact_unshifted_corrected, pixel_weight = assemble(
+    exact_unshifted_corrected, pixel_weight = _relion_exact_coarse_operand_program(
         ctf_half_rfloat,
         batch_scale_exact,
         processed_direct,
