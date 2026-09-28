@@ -10,6 +10,7 @@ from scripts.render_benchmark_table import (
     DEFAULT_PROVENANCE,
     TABLE_HEADER,
     load_and_validate,
+    multiseed_quality,
     status,
     render_markdown,
     render_provenance,
@@ -263,3 +264,16 @@ def test_small_fixtures_are_debug_rows_off_both_pages(tmp_path):
     path.write_text(json.dumps(raw))
     with pytest.raises(ValueError, match="benchmark_note"):
         load_and_validate(path)
+
+
+@pytest.mark.unit
+def test_multiseed_rule_ties_small_gt_gaps_only_when_maps_reproduce():
+    relax, relion, band = {1: 0.93808, 2: 0.94091}, {1: 0.93810, 2: 0.94093}, [0.93810, 0.94093]
+    hit, reason = multiseed_quality(relax, relion, band)
+    assert not hit and "below across-seed RELION band" in reason
+    hit, reason = multiseed_quality(relax, relion, band, {1: 0.99998, 2: 0.99993})
+    assert hit and "−2.0e-5" in reason and "ties" in reason
+    hit, _ = multiseed_quality(relax, relion, band, {1: 0.9990, 2: 0.99993})
+    assert not hit
+    hit, _ = multiseed_quality({1: 0.9379, 2: 0.9408}, relion, band, {1: 0.99998, 2: 0.99993})
+    assert not hit

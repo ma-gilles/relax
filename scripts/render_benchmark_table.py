@@ -88,7 +88,9 @@ STATUS_LEGEND = (
     " Accuracy hit: relax inside or above"
     " the RELION band by the row's metric (Quality column). Multi-seed rows: every relax seed inside or above the"
     " across-seed RELION band (all RELION runs of all seeds), and relax not below its same-seed RELION run on a majority"
-    " of seeds; the Quality column shows the worst per-seed gap to the same-seed RELION run. The page lists full-size"
+    " of seeds; the Quality column shows the worst per-seed gap to the same-seed RELION run. A seed whose relax map"
+    " reproduces its same-seed RELION map (map FSC-AUC ≥ 0.9999) counts GT differences under 1e-4 as ties; the numbers"
+    " are still shown. The page lists full-size"
     " datasets only: single-particle and VDAM rows need more than 10k particles (smaller fixtures are for testing and"
     " debugging and stay in the JSON with benchmark: false); cryo-ET rows count from 1k particles (about 40 tilts each)."
 )
@@ -312,6 +314,56 @@ def _category(row):
     return "class3d" if int(row.get("classes") or 1) > 1 else "k1"
 
 
+TIE = 1e-6  # float32 round-off of identical maps: relax and RELION agree to ~1e-7 on some fixtures
+REPRODUCED_MAP_AUC = 0.9999  # relax map vs same-seed RELION map FSC-AUC at which the seed counts as reproduced
+REPRODUCED_TIE = 1e-4  # GT-metric differences below this are ties for a reproduced seed
+
+
+def _gap(x):
+    if abs(x) < 1e-3 and x != 0:
+        mantissa, exponent = f"{x:+.1e}".split("e")
+        text = f"{mantissa}e{int(exponent)}"
+    else:
+        text = f"{x:+.4f}"
+    return "−" + text[1:] if text.startswith("-") else text
+
+
+def multiseed_quality(relax, same_seed_relion, band_values, same_seed_map_auc=None):
+    """The multi-seed accuracy rule of STATUS_LEGEND. Returns (hit, reason).
+
+    relax, same_seed_relion: {seed: value of the row's metric}; band_values: every RELION value of the row (all
+    seeds); same_seed_map_auc: optional {seed: relax-vs-same-seed-RELION map FSC-AUC}. Hit when every relax seed is
+    inside or above the across-seed RELION band and relax is not below its same-seed RELION run on a majority of
+    seeds. Differences below TIE count as equal, and below REPRODUCED_TIE for a seed whose map reproduces its
+    same-seed RELION map (map FSC-AUC >= REPRODUCED_MAP_AUC). The reason states the worst per-seed gap.
+    """
+    lo, hi = min(band_values), max(band_values)
+    maps = same_seed_map_auc or {}
+    tie = {s: REPRODUCED_TIE if maps.get(s, 0.0) >= REPRODUCED_MAP_AUC else TIE for s in relax}
+    gaps = {s: relax[s] - same_seed_relion[s] for s in relax}
+    worst = min(gaps, key=gaps.get)
+    below_band = [s for s in relax if relax[s] < lo - tie[s]]
+    n_below = sum(gaps[s] < -tie[s] for s in gaps)
+    worst_txt = f"worst s{worst} {_gap(gaps[worst])} vs same-seed RELION"
+    reproduced = [s for s in relax if tie[s] == REPRODUCED_TIE]
+    if reproduced:
+        worst_txt += (
+            f"; same-seed maps reproduced (map FSC-AUC ≥ {min(maps[s] for s in reproduced):.6f}) at"
+            f" {len(reproduced)} of {len(relax)} seeds, GT differences under {REPRODUCED_TIE:.0e} are ties".replace(
+                "e-0", "e-"
+            )
+        )
+    if below_band:
+        return False, f"{worst_txt}; s{'/s'.join(map(str, below_band))} below across-seed RELION band {lo:.6g}-{hi:.6g}"
+    if n_below * 2 > len(gaps):
+        return (
+            False,
+            f"{worst_txt}; below same-seed RELION at {n_below} of {len(gaps)} seeds (systematic); inside across-seed band",
+        )
+    where = "inside" if all(v <= hi + tie[s] for s, v in relax.items()) else "inside or above"
+    return True, f"{worst_txt}; {where} across-seed band"
+
+
 def status(row):
     """🟢 accuracy hit and ratio <= 0.6x; 🟠 accuracy hit and ratio > 0.6x; 🔴 accuracy missed, whatever the speed;
     ⚪ accuracy hit or not scored, and the ratio is not a speed comparison (Matched workload or no, or a wall missing)."""
@@ -391,7 +443,8 @@ def render_provenance(table):
         intro = list(table["initial_model_intro"])
         lines += ["", "## InitialModel (VDAM) method", "", *intro[:1], "", IM_RESOLUTION_LINE, *intro[1:]]
     groups = [
-        (title, [r for r in _page_rows(table) if r["section"] == s and not _is_initialmodel(r)]) for s, title in SECTIONS
+        (title, [r for r in _page_rows(table) if r["section"] == s and not _is_initialmodel(r)])
+        for s, title in SECTIONS
     ]
     groups += [(title, [r for r in im_rows if r["section"] == s]) for s, title in IM_SECTIONS]
     for title, rows in groups:
