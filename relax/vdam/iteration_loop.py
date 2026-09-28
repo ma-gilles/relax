@@ -22,6 +22,7 @@ module is the pure orchestrator.
 from __future__ import annotations
 
 import os
+import hashlib
 import time
 from dataclasses import replace
 from typing import Callable, Literal, Sequence
@@ -226,6 +227,10 @@ def run_vdam_iterations(
     projector_interpolator: int = 1,
     start_iteration: int = 0,
     diagnostic_stop_after_iteration: int | None = None,
+    optimizer: Literal["vdam", "cryosparc_sgd"] = "vdam",
+    sgd_learning_rate: float = 1.0,
+    fourier_radius_schedule: tuple[int, ...] | None = None,
+    stochastic_all_iterations: bool = False,
 ) -> InitialModelState:
     """Full VDAM loop; ``state`` must come from ``initialise_denovo_state`` + ``seed_noise_from_mavg``."""
     phase_lengths = _resolve_phase_lengths(
@@ -241,6 +246,15 @@ def run_vdam_iterations(
         raise ValueError(
             f"state.iter must equal start_iteration ({int(state.iter)} != {start_iteration})"
         )
+    if optimizer not in {"vdam", "cryosparc_sgd"}:
+        raise ValueError(f"unknown InitialModel optimizer {optimizer!r}")
+    if fourier_radius_schedule is not None and len(fourier_radius_schedule) != int(state.nr_iter):
+        raise ValueError("fourier_radius_schedule must have one radius per iteration")
+    if stochastic_all_iterations and (
+        grad_em_iters != 0 or pilot_controls is None
+        or pilot_controls.stochastic_batch_size is None
+    ):
+        raise ValueError("stochastic_all_iterations requires a fixed batch and no EM tail")
     final_iteration = int(state.nr_iter)
     if diagnostic_stop_after_iteration is not None:
         final_iteration = int(diagnostic_stop_after_iteration)
@@ -263,7 +277,9 @@ def run_vdam_iterations(
             iteration_profile[f"{name}_time_s"] = float(now - stage_started)
             stage_started = now
 
-        do_grad = ((state.nr_iter - it) >= grad_em_iters) and not current.has_converged
+        do_grad = bool(stochastic_all_iterations) or (
+            ((state.nr_iter - it) >= grad_em_iters) and not current.has_converged
+        )
 
         current = default_schedule_update(
             current,
@@ -276,6 +292,11 @@ def run_vdam_iterations(
             grad_em_iters=grad_em_iters,
             grad_stepsize=grad_stepsize,
         )
+        if stochastic_all_iterations:
+            batch_size = min(int(pilot_controls.stochastic_batch_size), int(nr_particles))
+            if batch_size >= int(nr_particles):
+                raise ValueError("stochastic_all_iterations batch must be smaller than the particle count")
+            current = replace(current, subset_size=batch_size)
         if profile_iterations:
             _record_stage("schedule")
 
@@ -288,10 +309,23 @@ def run_vdam_iterations(
             do_grad=do_grad,
             particle_order=particle_order,
         )
+        if fourier_radius_schedule is not None or stochastic_all_iterations:
+            subset_ids = np.ascontiguousarray(current.subset_particle_ids, dtype=np.int64)
+            subset_halfsets = np.ascontiguousarray(current.subset_halfset_ids, dtype=np.int8)
         if profile_iterations:
             _record_stage("subset")
 
         current = update_image_size_and_resolution_pointers(current, pilot_controls)
+        if fourier_radius_schedule is not None:
+            radius = int(fourier_radius_schedule[it - 1])
+            if radius < 1 or radius > int(state.ori_size) // 2:
+                raise ValueError("scheduled Fourier radius exceeds the model box")
+            current = replace(
+                current,
+                current_size=2 * radius,
+                current_resolution_shell=radius,
+                current_resolution=float(radius) / (float(state.pixel_size) * float(state.ori_size)),
+            )
         if refresh_tau2_from_projector:
             refresh = projector_refresh_fn or refresh_tau2_from_projector_power
             current = refresh(
@@ -308,6 +342,10 @@ def run_vdam_iterations(
             current.subset_particle_ids,
             current.subset_halfset_ids,
         )
+        if fourier_radius_schedule is not None or stochastic_all_iterations:
+            meta["subset_particle_ids_sha256"] = hashlib.sha256(subset_ids.tobytes()).hexdigest()
+            meta["subset_halfset_ids_sha256"] = hashlib.sha256(subset_halfsets.tobytes()).hexdigest()
+            meta["effective_estep_fourier_radius"] = int(current.current_size) // 2
         if profile_iterations:
             _record_stage("expectation")
             # The local route reports its coarse (pass 1) and fine (pass 2) walls.
@@ -317,25 +355,39 @@ def run_vdam_iterations(
                     iteration_profile[f"expectation_{key}"] = float(passes[key])
 
         # M-step
-        current = vdam_m_step(
-            current,
-            accumulators=accumulators,
-            grad_current_stepsize=current.grad_current_stepsize,
-            tau2_fudge_factor=current.tau2_fudge_factor,
-            padding_factor=projector_padding_factor,
-            mstep_compute_dtype=mstep_compute_dtype,
-        )
+        if optimizer == "vdam":
+            current = vdam_m_step(
+                current,
+                accumulators=accumulators,
+                grad_current_stepsize=current.grad_current_stepsize,
+                tau2_fudge_factor=current.tau2_fudge_factor,
+                padding_factor=projector_padding_factor,
+                mstep_compute_dtype=mstep_compute_dtype,
+            )
+        else:
+            from relax.sgd_initial_model.optimizer import sgd_m_step
+
+            current = sgd_m_step(
+                current, accumulators, learning_rate=sgd_learning_rate,
+                padding_factor=projector_padding_factor, meta=meta,
+            )
         if profile_iterations:
             _record_stage("mstep")
         current = update_probabilities_from_estep_meta(current, meta, do_grad=do_grad, mu=mu)
-        current = update_noise_from_estep_meta(current, meta, do_grad=do_grad, mu=mu)
+        if optimizer == "vdam":
+            current = update_noise_from_estep_meta(current, meta, do_grad=do_grad, mu=mu)
+        else:
+            from relax.sgd_initial_model.noise import update_sgd_noise
+
+            current = update_sgd_noise(current, meta)
         ave_pmax = _ave_pmax_from_meta(meta)
         if ave_pmax is not None:
             current = replace(current, ave_Pmax=float(ave_pmax))
-        if post_mstep_update is not None and not current.has_converged:
+        if post_mstep_update is not None and (stochastic_all_iterations or not current.has_converged):
             current = post_mstep_update(current, it, meta)
 
-        current = update_current_resolution_from_data_vs_prior(current)
+        if optimizer == "vdam":
+            current = update_current_resolution_from_data_vs_prior(current)
         if profile_iterations:
             _record_stage("state_update")
         meta = dict(meta)

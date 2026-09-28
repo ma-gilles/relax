@@ -32,6 +32,11 @@ class InitialModelState:
     Iref: np.ndarray
     Igrad1: np.ndarray
     Igrad2: np.ndarray
+    # Opt-in cryoSPARC-style SGD keeps its previous real-space update here.
+    sgd_previous_update: Optional[np.ndarray] = None
+    sgd_noise_sum: Optional[np.ndarray] = None
+    sgd_noise_count: Optional[np.ndarray] = None
+    sgd_corner_sigma2: Optional[np.ndarray] = None
 
     sigma2_noise: np.ndarray = field(default_factory=lambda: np.zeros((1, 33)))
     tau2_class: np.ndarray = field(default_factory=lambda: np.zeros((1, 33)))

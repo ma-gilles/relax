@@ -8,6 +8,7 @@ artifact writing are coordinated here through their implementation owners.
 from __future__ import annotations
 
 import logging
+import hashlib
 import os
 import time
 from dataclasses import dataclass, replace
@@ -93,7 +94,7 @@ def _native_expectation_step(
     def _expectation_step(state: InitialModelState, particle_ids: np.ndarray, halfset_ids: np.ndarray):
         sampling_kwargs = {"defer_fine_rotations": True}  # the adaptive route builds its own grids
         iteration = max(1, int(state.iter))
-        do_grad = schedules._native_initialmodel_do_grad(
+        do_grad = bool(opts.stochastic_all_iterations) or schedules._native_initialmodel_do_grad(
             state,
             iteration,
             grad_em_iters=int(opts.grad_em_iters),
@@ -136,11 +137,8 @@ def _native_expectation_step(
                 sigma2_fudge=DEFAULT_SIGMA2_FUDGE,
             )
         sampling_updated = _prepare_native_sampling_for_iteration(
-            sampling_state,
-            state,
-            iteration=iteration,
-            do_grad=do_grad,
-        )
+            sampling_state, state, iteration=iteration, do_grad=do_grad,
+        ) if opts.fixed_healpix_order is None else False
         sampling_plan = _build_sampling_plan(
             opts,
             iteration=iteration,
@@ -404,6 +402,22 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         )
         sampling_state = continuation.sampling_state
     state = _prepare_mstep_state_precision(state, opts.mstep_compute_dtype)
+    if opts.optimizer == "cryosparc_sgd":
+        from relax.sgd_initial_model.noise import corner_white_sigma2, initialize_sgd_noise
+        from relax.vdam.bootstrap_iref import _load_raw_images
+
+        corner_count = min(int(opts.sigma2_min_particles), int(dataset.n_images))
+        corner_images = _load_raw_images(
+            dataset, particle_order[:corner_count], batch_size=max(1, int(opts.image_batch_size)),
+        )
+        state = initialize_sgd_noise(
+            state,
+            corner_white_sigma2(
+                corner_images,
+                dataset.image_source.backend.image_mask,
+                image_multiplier=dataset.image_source.backend.mult,
+            ),
+        )
     profile.record("state_setup")
     exact_projector_setting = os.environ.get(
         "RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR", "1"
@@ -425,11 +439,16 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     if opts.write_iter_artifacts:
         output._write_initial_run_metadata(opts, continuation)
         if continuation is None:
+            initial_meta = {"checkpoint_iteration": 0, "phase": "bootstrap"}
+            if opts.fourier_radius_schedule is not None or opts.stochastic_all_iterations:
+                initial_meta["initial_iref_sha256"] = hashlib.sha256(
+                    np.ascontiguousarray(np.asarray(state.Iref)).tobytes()
+                ).hexdigest()
             _write_iteration_artifacts(
                 opts.outputname,
                 state,
                 0,
-                {"checkpoint_iteration": 0, "phase": "bootstrap"},
+                initial_meta,
                 main_star=main_star,
                 optics_star=optics_star,
                 dataset=dataset,
@@ -511,6 +530,10 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         projector_refresh_fn=None if projector_context is None else projector_context.refresh,
         start_iteration=int(state.iter),
         diagnostic_stop_after_iteration=opts.diagnostic_stop_after_iteration,
+        optimizer=opts.optimizer,
+        sgd_learning_rate=float(opts.sgd_learning_rate),
+        fourier_radius_schedule=opts.fourier_radius_schedule,
+        stochastic_all_iterations=bool(opts.stochastic_all_iterations),
     )
     profile.record("iterations")
     if opts.pilot_controls is not None:

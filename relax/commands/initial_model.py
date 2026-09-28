@@ -110,6 +110,20 @@ def _closed_unit_float(value: str) -> float:
     return parsed
 
 
+def _fourier_radius_schedule(value: str) -> tuple[int, ...]:
+    """Parse comma-separated ``radius x iterations`` segments."""
+    radii: list[int] = []
+    try:
+        for segment in value.split(","):
+            radius, count = (int(part.strip()) for part in segment.lower().split("x"))
+            if radius < 1 or count < 1:
+                raise ValueError
+            radii.extend([radius] * count)
+    except (ValueError, TypeError) as error:
+        raise argparse.ArgumentTypeError("expected R x COUNT[,R x COUNT...] with positive integers") from error
+    return tuple(radii)
+
+
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run RECOVAR's RELION-equivalent InitialModel/VDAM refinement.",
@@ -127,6 +141,26 @@ def make_parser() -> argparse.ArgumentParser:
         help="Write trajectory artifacts every N iterations and at the final iteration",
     )
     parser.add_argument("--K", dest="nr_classes", type=_positive_int, default=DEFAULTS.nr_classes)
+    parser.add_argument(
+        "--optimizer", choices=("vdam", "cryosparc_sgd"), default=DEFAULTS.optimizer,
+        help="InitialModel update rule; cryosparc_sgd is opt in and requires oversampling 0",
+    )
+    parser.add_argument(
+        "--sgd-learning-rate", type=_positive_float, default=DEFAULTS.sgd_learning_rate,
+        help="Multiplier on cryosparc_sgd's inverse maximum-curvature step",
+    )
+    parser.add_argument(
+        "--fourier-radius-schedule", type=_fourier_radius_schedule,
+        help="Shared per-iteration Fourier radii, e.g. 15x50,24x150",
+    )
+    parser.add_argument(
+        "--fixed-healpix-order", type=_nonnegative_int,
+        help="Hold the angular grid at --healpix-order in both optimizers",
+    )
+    parser.add_argument(
+        "--stochastic-all-iterations", action="store_true",
+        help="Keep the fixed stochastic batch, including the terminal K-class iteration",
+    )
     parser.add_argument(
         "--tau2-fudge",
         "--tau2_fudge",
@@ -442,6 +476,11 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
     if backend == "auto":
         backend = "relion_cuda" if args.gpu_ids else "host_numpy"
     return {
+        "optimizer": args.optimizer,
+        "sgd_learning_rate": args.sgd_learning_rate,
+        "fourier_radius_schedule": args.fourier_radius_schedule,
+        "fixed_healpix_order": args.fixed_healpix_order,
+        "stochastic_all_iterations": args.stochastic_all_iterations,
         "mstep_compute_dtype": args.mstep_compute_dtype,
         "diagnostic_continue_optimiser": args.diagnostic_continue_optimiser,
         "diagnostic_stop_after_iteration": args.diagnostic_stop_after_iteration,
