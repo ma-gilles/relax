@@ -719,6 +719,12 @@ def compute_local_search_resident(
         # Allocated after the slab is released and before the pass reads free device
         # memory for its chunk budget, which then counts them (up to 23 GiB at
         # EMPIAR-10202's full box).
+        rp.ensure_pass_headroom(
+            rp.resident_accumulator_bytes(recon_volume_size, recon_y_accum_dtype, recon_ctf_accum_dtype),
+            min_row_capacity=min(parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER)),
+            n_score_pixels=n_windowed,
+            n_recon_pixels=n_recon_windowed,
+        )
         Ft_y_total = jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype)
         Ft_ctf_total = jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype)
 
