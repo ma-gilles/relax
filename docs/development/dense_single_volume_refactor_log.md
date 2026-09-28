@@ -591,3 +591,19 @@ parameters and the largest has 17.
 - GPU smoke remains infrastructure-blocked by the unchanged absence of the five
   mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
   produced.
+
+## 2026-09-28 — owner-visible signature correction started
+
+The earlier packages over-corrected long parameter lists by introducing
+single aggregate `*Spec` call bundles. Although their numerical bodies retained
+cohesive subowners, the public helper signatures hid those dependencies. The
+plan now requires a small set of owner arguments to be visible at each
+boundary, and permits a one-object signature only when that object has a real
+lifecycle beyond forwarding one call.
+
+The corrective audit covers initial-grid planning, first-iteration CC, dense
+and exact-local half scoring, one local-search pass, mean reconstruction,
+direction-prior updates, unregularized means and iteration snapshots. The
+aggregate wrappers will be removed; their existing data/state/policy owner
+types remain the unit of ownership. Numerical statements, JAX boundaries and
+call order are not changed by this correction.

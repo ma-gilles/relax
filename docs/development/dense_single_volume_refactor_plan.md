@@ -83,8 +83,17 @@ Ownership rules:
   not cast, copy, synchronize or transfer arrays.
 - `RefinementRunState` is the sole mutable owner of evolving maps, noise,
   priors, poses, corrections, convergence state and history.
-- Helpers receive the smallest cohesive specification or substate, not the
-  whole run state as a service locator.
+- A function signature is a readable dependency map. Orchestration helpers
+  normally receive two to seven cohesive owners directly (for example data,
+  sampling, batching and execution policy), rather than either a long list of
+  fields or one aggregate object that hides every dependency.
+- Do not introduce an aggregate `*Spec` solely to turn several meaningful
+  arguments into one. A one-argument boundary is appropriate only when the
+  function genuinely operates on that one domain object and the object has an
+  independent lifecycle such as storage, reuse, validation or serialization.
+- Helpers receive the smallest cohesive owners or substates, not the whole run
+  state as a service locator. They use owner fields at the point of need; they
+  do not immediately unpack stable fields back into a long local-parameter list.
 - Results retain the existing array objects, layouts and precision. Creating a
   result must not extend device-buffer lifetime unintentionally.
 - Specification objects remain outside JIT boundaries. Numerical kernels receive the
@@ -122,15 +131,38 @@ safe code movement with behavioral or AST ownership checks.
 Introduce small contracts for initial inputs, model state, iteration plans,
 accumulator layout and run/iteration results. Migrate maintained callers in the
 same package and remove superseded APIs rather than keeping two permanent
-interfaces. Constructors remain shallow and host-only.
+interfaces. Constructors remain shallow and host-only. Pass those contracts as
+the explicit owner arguments of a function; do not wrap them in a second
+call-only aggregate.
+
+Before continuing the package sequence, audit the already-refactored
+boundaries and remove synthetic aggregate call bundles. The audit covers:
+
+| Boundary | Dependency owners that must be visible in its signature |
+| --- | --- |
+| Initial coarse-grid construction | initialized sampling, replay state, logging context |
+| First-iteration CC dispatch | data, grid, scoring policy, batching, execution |
+| Dense half scoring | data, sampling, priors, batching, variant, execution, optics |
+| Exact-local half scoring | data, sampling, priors, batching, execution, diagnostics, optics |
+| One local-search pass | data, grid, batching, kernel, support, diagnostics |
+| Mean reconstruction | data, accumulators, prior, geometry, post-processing |
+| Direction-prior update | posterior, mutable priors, grid, execution |
+| Unregularized means | state, accumulators, reconstruction policy |
+| Iteration snapshot | run identity, references, sampling, particles |
+
+Each amended boundary gets an AST signature/ownership guard. The guard checks
+the owner names and rejects immediate field flattening. Removing the aggregate
+must not move casts, copies, mutation, environment reads or numerical work.
 
 ### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring
-plans with a common per-half context plus explicit direct-dense,
-adaptive-dense, exact-local and first-iteration-CC plans. Scorers return owned
-result objects instead of mutating caller-owned result lists. Preserve the two
-halves' independence and overlap behavior.
+plans with explicit, cohesive owner arguments for direct-dense,
+adaptive-dense, exact-local and first-iteration-CC variants. Shared owner types
+are used only where their contents and semantics are actually shared; there is
+no common all-inputs wrapper. Scorers return owned result objects instead of
+mutating caller-owned result lists. Preserve the two halves' independence and
+overlap behavior.
 
 ### 3. Environment and instrumentation boundary
 
