@@ -424,6 +424,7 @@ def _resolution_columns(snapshot, n_shells):
 
 def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSettings, group_rows):
     frame = float(snapshot.ori_size) ** 4
+    norm_frame = float(snapshot.ori_size) ** 2
     state = snapshot.state_fields
     current_resolution = float(state["current_resolution"])
     inverse_resolution = (
@@ -453,7 +454,7 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
             ("rlnNrGroups", len(group_rows)),
             ("rlnNrOpticsGroups", int(noise.shape[0])),
             ("rlnTau2FudgeFactor", float(snapshot.tau2_fudge)),
-            ("rlnNormCorrectionAverage", float(snapshot.avg_norm_correction[h])),
+            ("rlnNormCorrectionAverage", float(snapshot.avg_norm_correction[h]) / norm_frame),
             ("rlnSigmaOffsetsAngst", float(snapshot.sigma_offset_angstrom[h])),
             ("rlnOrientationalPriorMode", 1 if state["do_local_search"] else 0),
             ("rlnSigmaPriorRotAngle", float(np.degrees(state["sigma_rot"]))),
@@ -476,8 +477,8 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
                 {
                     "rlnReferenceImage": [p.name for p in class_paths],
                     "rlnClassDistribution": class_weights,
-                    "rlnAccuracyRotations": np.full(n_classes, float(state["acc_rot"])),
-                    "rlnAccuracyTranslationsAngst": np.full(n_classes, float(state["acc_trans"])),
+                    "rlnAccuracyRotations": snapshot.acc_rot_per_class,
+                    "rlnAccuracyTranslationsAngst": snapshot.acc_trans_per_class_angstrom,
                 },
             )
         )
@@ -535,7 +536,8 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
             )
         if snapshot.direction_prior is not None and snapshot.direction_prior[h] is not None:
             prior = np.asarray(snapshot.direction_prior[h], dtype=np.float64)
-            prior = prior.reshape(n_classes, -1) if snapshot.k_class else prior.reshape(1, -1)
+            # RELION's pdf_direction[class] sums to the class fraction (ml_optimiser.cpp:5325).
+            prior = prior.reshape(n_classes, -1) * class_weights[:, None] if snapshot.k_class else prior.reshape(1, -1)
             for k in range(prior.shape[0]):
                 text.append(_loop_block(f"model_pdf_orient_class_{k + 1}", {"rlnOrientationDistribution": prior[k]}))
         path.write_text("".join(text))
@@ -611,12 +613,13 @@ def _write_data_star(root: Path, snapshot: IterationSnapshot, particles, optics,
     offsets *= float(snapshot.pixel_size)
     # rlnNormCorrection = avg_norm * scale / image_correction: the loop's image correction
     # is (avg_norm / normcorr) * scale (relion_normalization.update_relion_norm_scale_corrections).
+    # RELION's norm is relax's over ori_size**2 (iteration_snapshot).
     norm = np.ones(n_rows, dtype=np.float64)
     for h, rows in enumerate(half_rows):
         if rows.size and snapshot.image_corrections[h] is not None:
             image = np.asarray(snapshot.image_corrections[h], dtype=np.float64)
             scale = np.asarray(snapshot.scale_corrections[h], dtype=np.float64)
-            norm[rows] = float(snapshot.avg_norm_correction[h]) * scale / image
+            norm[rows] = float(snapshot.avg_norm_correction[h]) / float(snapshot.ori_size) ** 2 * scale / image
     table = dict(particles)
     columns = {
         "rlnAngleRot": eulers[:, 0],
@@ -897,6 +900,7 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
             rows[g, index] = _floats(table.get("rlnSigma2Noise", [])) * frame
         noise_shells.append(rows[0] if n_optics == 1 else rows)
 
+    class_weights = _floats(models[0]["model_classes"]["rlnClassDistribution"]) if k_class else None
     direction_prior = []
     for model in halves:
         tables = [model.get(f"model_pdf_orient_class_{k + 1}") for k in range(n_classes)]
@@ -904,12 +908,15 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
             direction_prior.append(None)
             continue
         prior = np.stack([_floats(t["rlnOrientationDistribution"]) for t in tables])
-        direction_prior.append(prior if k_class else prior[0])
+        # Back to the loop's per-class conditionals (the writer's inverse).
+        direction_prior.append(prior / class_weights[:, None] if k_class else prior[0])
     if all(p is None for p in direction_prior):
         direction_prior = None
 
-    class_weights = _floats(models[0]["model_classes"]["rlnClassDistribution"]) if k_class else None
-    avg_norm = tuple(float(_general(m, "rlnNormCorrectionAverage")) for m in halves)
+    avg_norm = tuple(float(_general(m, "rlnNormCorrectionAverage")) * float(ori_size) ** 2 for m in halves)
+    classes_table = models[0]["model_classes"]
+    acc_rot = _floats(classes_table["rlnAccuracyRotations"])
+    acc_trans = _floats(classes_table["rlnAccuracyTranslationsAngst"])
     sigma_offset = (float(relax_state["relax_sigma_offset_half1"]), float(relax_state["relax_sigma_offset_half2"]))
 
     data = read_star_blocks(directory / general["rlnExperimentalDataStarFile"])["particles"]
@@ -923,7 +930,7 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
     # A subtomogram run's data.star carries rlnOriginZAngst (3D offsets).
     offset_labels = ("rlnOriginXAngst", "rlnOriginYAngst") + (("rlnOriginZAngst",) if "rlnOriginZAngst" in data else ())
     offsets = np.stack([_floats(data[c]) for c in offset_labels], axis=1) / pixel_size
-    norm = _floats(data["rlnNormCorrection"])
+    norm = _floats(data["rlnNormCorrection"]) * float(ori_size) ** 2
     group_number = _ints(data["rlnGroupNumber"])
     class_number = _ints(data["rlnClassNumber"]) if k_class else None
     pmax = _floats(data["rlnMaxValueProbDistribution"]) if "rlnMaxValueProbDistribution" in data else None
@@ -979,6 +986,8 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
         significant_counts=None if nsig is None else [nsig[np.asarray(r)] for r in half_rows],
         avg_norm_correction=avg_norm,
         unfiltered_means=unfiltered,
+        acc_rot_per_class=acc_rot,
+        acc_trans_per_class_angstrom=acc_trans,
         extra=extra,
     )
 

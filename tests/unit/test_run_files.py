@@ -130,7 +130,9 @@ def _k1_snapshot(half_sizes, rng):
         direction_prior=[rng.random(48), rng.random(48)],
         max_posterior=[rng.random(n) for n in half_sizes],
         significant_counts=[rng.integers(1, 500, n) for n in half_sizes],
-        avg_norm_correction=(0.9876543210987654, 1.0123456789),
+        avg_norm_correction=(0.9876543210987654 * BOX**2, 1.0123456789 * BOX**2),
+        acc_rot_per_class=np.array([2.25]),
+        acc_trans_per_class_angstrom=np.array([1.125]),
         extra={"euler_dtype": "float64", "translation_dtype": "float32", "correction_dtype": "float32"},
     )
 
@@ -169,6 +171,8 @@ def _assert_snapshots_match(read, written):
         "random_perturbation",
         "class_weights",
         "avg_norm_correction",
+        "acc_rot_per_class",
+        "acc_trans_per_class_angstrom",
     ):
         expected = getattr(written, name)
         if expected is None:
@@ -346,10 +350,24 @@ def test_class3d_run_files_round_trip(tmp_path):
         class_weights=np.array([0.5, 0.3, 0.2]),
         direction_prior=[rng.random((k, 48))] * 2,
         class_assignments=[rng.integers(0, k, n), np.zeros(0, dtype=np.int64)],
+        avg_norm_correction=(0.75 * BOX**2, 0.75 * BOX**2),
+        acc_rot_per_class=np.array([3.5, 999.0, 7.25]),
+        acc_trans_per_class_angstrom=np.array([1.5, 999.0, 2.75]),
         extra={"euler_dtype": "float64", "translation_dtype": "float32", "correction_dtype": "float32"},
     )
     optimiser = _writer(tmp_path, input_star, half_rows)(snapshot)
     out = tmp_path / "out"
+    # RELION's conventions in the files: per-class accuracies, norm corrections over
+    # ori_size**2, and pdf_direction rows summing to the class fraction.
+    model = read_star_blocks(out / "run_it003_model.star")
+    assert [float(v) for v in model["model_classes"]["rlnAccuracyRotations"]] == [3.5, 999.0, 7.25]
+    assert [float(v) for v in model["model_classes"]["rlnAccuracyTranslationsAngst"]] == [1.5, 999.0, 2.75]
+    assert float(model["model_general"]["rlnNormCorrectionAverage"]) == pytest.approx(0.75)
+    for c in range(k):
+        orient = np.asarray(model[f"model_pdf_orient_class_{c + 1}"]["rlnOrientationDistribution"], dtype=np.float64)
+        assert_matches(orient, snapshot.direction_prior[0][c] * snapshot.class_weights[c])
+    norm = np.asarray(read_star_blocks(out / "run_it003_data.star")["particles"]["rlnNormCorrection"], dtype=np.float64)
+    assert_matches(norm[half_rows[0]], 0.75 / snapshot.image_corrections[0].astype(np.float64))
     assert (out / "run_it003_model.star").exists() and not (out / "run_it003_half1_model.star").exists()
     assert [p.name for p in sorted(out.glob("run_it003_class*.mrc"))] == [
         "run_it003_class001.mrc",

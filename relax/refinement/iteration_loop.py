@@ -1316,6 +1316,14 @@ def refine_single_volume(
             float(state.current_resolution),
         )
     perturb_rng = None if parity.perturb_seed is not None else np.random.default_rng()
+    # RELION's per-class MlModel::acc_rot/acc_trans for model.star: zero until the
+    # first expected-accuracy estimate (ml_model.cpp:68), then the latest estimate.
+    if resume is not None and resume.acc_rot_per_class is not None:
+        model_acc_rot_per_class = np.array(resume.acc_rot_per_class, dtype=np.float64)
+        model_acc_trans_per_class = np.array(resume.acc_trans_per_class_angstrom, dtype=np.float64)
+    else:
+        model_acc_rot_per_class = np.zeros(n_classes, dtype=np.float64)
+        model_acc_trans_per_class = np.zeros(n_classes, dtype=np.float64)
     iteration = 0
     _mark_setup_phase("before_iterations")
     logger.info(
@@ -1899,6 +1907,8 @@ def refine_single_volume(
                         dtype=np.int64,
                     ).copy()
                     exact_accuracy_status_this_iter = "ok"
+                    model_acc_rot_per_class = exact_acc_rot_per_class_this_iter.copy()
+                    model_acc_trans_per_class = exact_acc_trans_per_class_this_iter.copy()
                     state.acc_rot = exact_acc_rot_this_iter
                     state.acc_trans = exact_acc_trans_this_iter
                     logger.info(
@@ -4576,6 +4586,8 @@ def refine_single_volume(
                     max_posterior=max_posterior_per_half,
                     significant_counts=iter_significant_counts_per_half,
                     avg_norm_correction=avg_norm_corrections_for_dump,
+                    acc_rot_per_class=model_acc_rot_per_class,
+                    acc_trans_per_class_angstrom=model_acc_trans_per_class,
                 )
             )
 

@@ -17,6 +17,13 @@ Arrays are host NumPy arrays in the loop's own layouts and frames:
   (``relion_replay._build_replay_iteration_overrides`` reads RELION's model
   STAR with the same factor).
 * Per-particle arrays are per half, in the half's local particle order.
+* Norm corrections are in relax's frame too, RELION's times ``ori_size**2``
+  (relax's forward FFT is unnormalized).
+* ``direction_prior`` rows of a Class3D snapshot are per-class conditionals that
+  sum to one; RELION's ``pdf_direction[class]`` sums to the class fraction.
+* ``acc_rot_per_class``/``acc_trans_per_class_angstrom`` are RELION's
+  ``MlModel::acc_rot``/``acc_trans``: zero until the first expected-accuracy
+  estimate (ml_model.cpp:68), then that estimate's per-class values.
 
 ``incr_size`` and ``has_high_fsc_at_limit`` are RELION's values after the
 iteration's FSC update, as ``run_itNNN_optimiser.star`` holds them; the loop
@@ -82,6 +89,8 @@ class IterationSnapshot:
     significant_counts: list | None = None
     avg_norm_correction: tuple = (1.0, 1.0)
     unfiltered_means: list | None = None
+    acc_rot_per_class: np.ndarray | None = None
+    acc_trans_per_class_angstrom: np.ndarray | None = None
     extra: dict = field(default_factory=dict)
 
     @property
@@ -240,6 +249,8 @@ def capture_iteration_snapshot(
     max_posterior,
     significant_counts,
     avg_norm_correction,
+    acc_rot_per_class,
+    acc_trans_per_class_angstrom,
 ) -> IterationSnapshot:
     """Copy the loop's end-of-iteration state to the host (see the module docstring).
 
@@ -294,6 +305,8 @@ def capture_iteration_snapshot(
         max_posterior=host_half_pair(max_posterior),
         significant_counts=host_half_pair(significant_counts),
         avg_norm_correction=avg_norm,
+        acc_rot_per_class=np.array(acc_rot_per_class, dtype=np.float64),
+        acc_trans_per_class_angstrom=np.array(acc_trans_per_class_angstrom, dtype=np.float64),
         unfiltered_means=None
         if unfiltered_means is None or all(m is None for m in unfiltered_means)
         else host_half_pair(unfiltered_means),
