@@ -146,6 +146,34 @@ def test_dense_half_core_keeps_spec_ownership_visible():
     assert assigned_names & stable_field_names == route_planning_locals
 
 
+def test_local_half_core_keeps_spec_ownership_visible():
+    function = half_scoring._score_half_local_one_shape
+    assert tuple(inspect.signature(function).parameters) == ("spec",)
+
+    tree = ast.parse(inspect.getsource(function))
+    assigned_names = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in ([*node.targets] if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name)
+    }
+    stable_field_names = {
+        field.name
+        for owner in (
+            half_scoring.LocalHalfData,
+            half_scoring.LocalSamplingSpec,
+            half_scoring.LocalPriorSpec,
+            half_scoring.LocalBatchPolicy,
+            half_scoring.LocalExecutionPolicy,
+            half_scoring.LocalDiagnosticPolicy,
+            half_scoring.LocalOpticsSpec,
+        )
+        for field in dataclasses.fields(owner)
+    }
+    assert assigned_names.isdisjoint(stable_field_names)
+
+
 def test_firstiter_winner_take_all_assembly_reports_unit_pmax_across_score_normalizations():
     """RELION reports Pmax=1 after firstiter-CC binarizes the winning weight."""
     per_class_stats = (

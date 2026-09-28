@@ -8,6 +8,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from helpers.float_compare import assert_matches, matches
+from helpers.refinement_specs import local_half_spec
 from relax.symmetry import (
     canonicalize_rotational_symmetry,
     parse_rotational_symmetry,
@@ -15,7 +17,6 @@ from relax.symmetry import (
     rotational_operators,
     symmetry_operator_sha256,
 )
-from helpers.float_compare import assert_matches, matches
 
 pytestmark = pytest.mark.unit
 
@@ -1043,7 +1044,7 @@ def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monke
         symmetry="C4",
     )
     with pytest.raises(RuntimeError, match="C4 exact-local reconstruction requires RELION x-half BPref"):
-        half_scoring._score_half_local(**kwargs)
+        half_scoring._score_half_local(local_half_spec(**kwargs))
 
 
 @pytest.mark.parametrize("label", ["C4", "O", "I1"])

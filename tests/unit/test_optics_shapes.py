@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.refinement_specs import local_half_spec
 
 from relax.dense.score_outputs import HalfScoreResult, PerHalfOutputs
 from relax.helpers.types import RelionStats, make_noise_stats
@@ -242,6 +243,74 @@ def test_dense_spec_shape_derivation_preserves_multi_shape_merge(monkeypatch):
     assert [getattr(item.half.experiment_dataset, "_dataset", item.half.experiment_dataset) for item in seen] == [
         shape_class.dataset for shape_class in half.classes
     ]
+    assert seen[1].half.noise_variance_k.shape == (2, 28 * 28)
+    assert_matches(merged.ha, np.arange(5))
+    assert outputs.best_pose_translations[0] is merged.best_pose_translations
+
+
+@pytest.mark.unit
+def test_local_spec_shape_derivation_preserves_multi_shape_merge(monkeypatch):
+    half = _half()
+    outputs = PerHalfOutputs()
+    seen = []
+
+    def fake_score(spec):
+        seen.append(spec)
+        images = np.asarray(spec.half.image_corrections_k).astype(int)
+        return _fake_result(
+            images.size,
+            images,
+            1.0,
+            box=spec.half.experiment_dataset.image_shape[0],
+        )
+
+    monkeypatch.setattr(half_scoring, "_score_half_local_one_shape", fake_score)
+    spec = local_half_spec(
+        k=0,
+        experiment_dataset=half,
+        means_k=np.zeros(4),
+        noise_variance_k=None,
+        previous_best_rotation_eulers_k=np.zeros((5, 3)),
+        image_corrections_k=np.arange(5.0),
+        scale_corrections_k=np.ones(5),
+        outputs=outputs,
+        optics_group_ids_k=np.array([0, 1, 1, 0, 0]),
+        local_search_rotations=np.eye(3)[None],
+        local_search_order=0,
+        sigma_rot=0.1,
+        sigma_psi=0.1,
+        current_translations=np.zeros((1, 2)),
+        base_translations=np.zeros((1, 2)),
+        disc_type="linear_interp",
+        cs_for_engine=None,
+        local_pass1_current_size=None,
+        local_search_random_perturbation=0.0,
+        local_search_angular_sampling_deg=None,
+        local_parent_oversampling_order=0,
+        trans_prior_center=np.zeros((5, 2)),
+        trans_prior_center_for_engine=np.zeros((5, 2)),
+        current_sigma_offset_angstrom=1.0,
+        translation_search_base=np.zeros((5, 2)),
+        local_search_translation_prior_mode="current",
+        replay_prior_translations=None,
+        max_significants=-1,
+        safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),
+        disable_adjoint_y=False,
+        disable_adjoint_ctf=False,
+        iteration=0,
+        save_intermediates_dir=None,
+        collect_local_search_profile=False,
+        diagnostic_score_only=False,
+        local_profile_history=[],
+        noise_radial_k=np.ones((2, 17)) * REF_BOX**4,
+    )
+
+    merged = half_scoring._score_half_local(spec)
+
+    assert [
+        getattr(item.half.experiment_dataset, "_dataset", item.half.experiment_dataset)
+        for item in seen
+    ] == [shape_class.dataset for shape_class in half.classes]
     assert seen[1].half.noise_variance_k.shape == (2, 28 * 28)
     assert_matches(merged.ha, np.arange(5))
     assert outputs.best_pose_translations[0] is merged.best_pose_translations

@@ -1152,16 +1152,112 @@ def _score_half_dense(spec: DenseHalfScoringSpec) -> HalfScoreResult:
     return merged
 
 
-def _score_half_local(**kwargs) -> HalfScoreResult:
-    """Local-search E+M scoring for one half; several image shapes run per shape class."""
+@dataclass(frozen=True, kw_only=True)
+class LocalHalfData:
+    """Per-half arrays and caller-owned outputs for exact-local scoring."""
 
-    from relax.refinement.optics_shapes import MultiShapeHalf, require_exact_local_parent_windows, score_half_by_shape
+    k: int
+    experiment_dataset: object
+    means_k: object
+    noise_variance_k: object
+    previous_best_rotation_eulers_k: object
+    image_corrections_k: object
+    scale_corrections_k: object
+    outputs: PerHalfOutputs
+    group_ids_k: object | None = None
+    group_count_k: object | None = None
+    scale_correction_data_vs_prior: object | None = None
+    optics_group_ids_k: object | None = None
 
-    if isinstance(kwargs["experiment_dataset"], MultiShapeHalf):
-        require_exact_local_parent_windows(kwargs)
-        return score_half_by_shape(_score_half_local_one_shape, kwargs)
-    kwargs.pop("noise_radial_k", None)
-    return _score_half_local_one_shape(**kwargs)
+
+@dataclass(frozen=True, kw_only=True)
+class LocalSamplingSpec:
+    """Local orientation/translation grids and reconstruction sizes."""
+
+    local_search_rotations: object
+    local_search_order: int
+    sigma_rot: object
+    sigma_psi: object
+    current_translations: object
+    base_translations: object
+    disc_type: str
+    cs_for_engine: int | None
+    local_pass1_current_size: int | None
+    local_search_random_perturbation: float
+    local_search_angular_sampling_deg: float
+    local_parent_oversampling_order: int
+    local_search_mstep_rotations: object | None = None
+    model_current_size_for_engine: int | None = None
+    symmetry: str = "C1"
+
+
+@dataclass(frozen=True, kw_only=True)
+class LocalPriorSpec:
+    """Translation-prior operands and their grid-selection policy."""
+
+    trans_prior_center: object
+    trans_prior_center_for_engine: object
+    current_sigma_offset_angstrom: float
+    translation_search_base: object
+    local_search_translation_prior_mode: str
+    replay_prior_translations: object
+
+
+@dataclass(frozen=True, kw_only=True)
+class LocalBatchPolicy:
+    """Exact-local support and batch planning controls."""
+
+    max_significants: int | None
+    safe_batch_sizes: object
+
+
+@dataclass(frozen=True, kw_only=True)
+class LocalExecutionPolicy:
+    """Projector, reconstruction and source-compatibility controls."""
+
+    disable_adjoint_y: bool
+    disable_adjoint_ctf: bool
+    relion_projector_half: object | None = None
+    relion_projector_r_max: int | None = None
+    source_faithful_spectrum_norm: bool = False
+    relion_translation_angle_scale: float = 1.0
+
+
+@dataclass(frozen=True, kw_only=True)
+class LocalDiagnosticPolicy:
+    """Profiling, debug capture and score-only controls."""
+
+    iteration: int
+    save_intermediates_dir: object
+    collect_local_search_profile: bool
+    diagnostic_score_only: bool
+    local_profile_history: object
+    debug_iteration: int | None = None
+    bpref_device_signature_active: bool = False
+
+
+@dataclass(frozen=True, kw_only=True)
+class LocalOpticsSpec:
+    """Multi-shape adaptations, absent for an ordinary single-shape half."""
+
+    noise_radial_k: object | None = None
+    coarse_sizing: tuple[float, float | None] | None = None
+    class_translation_overrides: tuple[dict, ...] | None = None
+    projection_scale: float = 1.0
+    reference_current_size: int | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class LocalHalfScoringSpec:
+    """Complete shallow specification for one exact-local half-set call."""
+
+    half: LocalHalfData
+    sampling: LocalSamplingSpec
+    priors: LocalPriorSpec
+    batching: LocalBatchPolicy
+    execution: LocalExecutionPolicy
+    diagnostics: LocalDiagnosticPolicy
+    optics: LocalOpticsSpec = LocalOpticsSpec()
 
 
 def _score_half_dense_in_bpref_scope(
@@ -1209,60 +1305,143 @@ def _relion_coarse_significant_counts(significant_sample_indices):
     )
 
 
+def _local_spec_for_shape(
+    spec: LocalHalfScoringSpec,
+    shape_class,
+    class_index: int,
+) -> LocalHalfScoringSpec:
+    """Derive one exact-local shape class through the optics owner."""
+
+    from relax.refinement import optics_shapes
+
+    half = spec.half
+    sampling = spec.sampling
+    priors = spec.priors
+    optics = spec.optics
+    shape_values = optics_shapes.class_kwargs(
+        {
+            "experiment_dataset": half.experiment_dataset,
+            "previous_best_rotation_eulers_k": half.previous_best_rotation_eulers_k,
+            "image_corrections_k": half.image_corrections_k,
+            "scale_corrections_k": half.scale_corrections_k,
+            "group_ids_k": half.group_ids_k,
+            "optics_group_ids_k": half.optics_group_ids_k,
+            "current_translations": sampling.current_translations,
+            "base_translations": sampling.base_translations,
+            "cs_for_engine": sampling.cs_for_engine,
+            "model_current_size_for_engine": sampling.model_current_size_for_engine,
+            "local_pass1_current_size": sampling.local_pass1_current_size,
+            "trans_prior_center": priors.trans_prior_center,
+            "trans_prior_center_for_engine": priors.trans_prior_center_for_engine,
+            "translation_search_base": priors.translation_search_base,
+            "replay_prior_translations": priors.replay_prior_translations,
+            "coarse_sizing": optics.coarse_sizing,
+        },
+        shape_class,
+        half.experiment_dataset.n_units,
+    )
+    if optics.class_translation_overrides is not None:
+        shape_values.update(
+            {
+                key: value
+                for key, value in optics.class_translation_overrides[class_index].items()
+                if key in shape_values
+            }
+        )
+    return replace(
+        spec,
+        half=replace(
+            half,
+            experiment_dataset=shape_values["experiment_dataset"],
+            noise_variance_k=optics_shapes.class_noise_table(
+                optics.noise_radial_k,
+                shape_class,
+                int(half.experiment_dataset.image_shape[0]),
+            ),
+            previous_best_rotation_eulers_k=shape_values[
+                "previous_best_rotation_eulers_k"
+            ],
+            image_corrections_k=shape_values["image_corrections_k"],
+            scale_corrections_k=shape_values["scale_corrections_k"],
+            group_ids_k=shape_values["group_ids_k"],
+            optics_group_ids_k=shape_values["optics_group_ids_k"],
+            outputs=PerHalfOutputs(),
+        ),
+        sampling=replace(
+            sampling,
+            current_translations=shape_values["current_translations"],
+            base_translations=shape_values["base_translations"],
+            cs_for_engine=shape_values["cs_for_engine"],
+            model_current_size_for_engine=shape_values[
+                "model_current_size_for_engine"
+            ],
+            local_pass1_current_size=shape_values["local_pass1_current_size"],
+        ),
+        priors=replace(
+            priors,
+            trans_prior_center=shape_values["trans_prior_center"],
+            trans_prior_center_for_engine=shape_values[
+                "trans_prior_center_for_engine"
+            ],
+            translation_search_base=shape_values["translation_search_base"],
+            replay_prior_translations=shape_values["replay_prior_translations"],
+        ),
+        optics=replace(
+            optics,
+            noise_radial_k=None,
+            class_translation_overrides=None,
+            projection_scale=shape_values["projection_scale"],
+            reference_current_size=shape_values["reference_current_size"],
+        ),
+    )
+
+
+def _score_half_local(spec: LocalHalfScoringSpec) -> HalfScoreResult:
+    """Exact-local scoring for one half; several shapes run per shape class."""
+
+    from relax.refinement import optics_shapes
+
+    half = spec.half.experiment_dataset
+    if not isinstance(half, optics_shapes.MultiShapeHalf):
+        return _score_half_local_one_shape(spec)
+    if spec.optics.noise_radial_k is None:
+        raise ValueError("a half with several image shapes needs reference-shell noise spectra")
+    if spec.half.optics_group_ids_k is None:
+        raise ValueError("a half with several image shapes needs each image's optics group")
+    optics_shapes.require_exact_local_parent_windows(
+        {
+            "experiment_dataset": half,
+            "cs_for_engine": spec.sampling.cs_for_engine,
+            "local_pass1_current_size": spec.sampling.local_pass1_current_size,
+            "coarse_sizing": spec.optics.coarse_sizing,
+        }
+    )
+    results = [
+        _score_half_local_one_shape(_local_spec_for_shape(spec, shape_class, index))
+        for index, shape_class in enumerate(half.classes)
+    ]
+    merged = optics_shapes.merge_class_results(
+        results,
+        half.classes,
+        half.n_units,
+        int(half.image_shape[0]),
+    )
+    spec.half.outputs.best_pose_rotations[spec.half.k] = merged.best_pose_rotations
+    spec.half.outputs.best_pose_rotation_eulers[spec.half.k] = (
+        merged.best_pose_rotation_eulers
+    )
+    spec.half.outputs.best_pose_translations[spec.half.k] = merged.best_pose_translations
+    return merged
+
+
 def _score_half_local_one_shape(
-    *,
-    k: int,
-    experiment_dataset,
-    means_k,
-    noise_variance_k,
-    previous_best_rotation_eulers_k,
-    local_search_rotations,
-    local_search_order: int,
-    sigma_rot,
-    sigma_psi,
-    current_translations,
-    base_translations,
-    trans_prior_center,
-    trans_prior_center_for_engine,
-    current_sigma_offset_angstrom: float,
-    disc_type,
-    cs_for_engine,
-    model_current_size_for_engine=None,
-    local_pass1_current_size,
-    image_corrections_k,
-    scale_corrections_k,
-    translation_search_base,
-    disable_adjoint_y: bool,
-    disable_adjoint_ctf: bool,
-    max_significants,
-    iteration: int,
-    debug_iteration: int | None = None,
-    save_intermediates_dir,
-    local_search_random_perturbation,
-    local_search_angular_sampling_deg,
-    local_parent_oversampling_order: int,
-    local_search_translation_prior_mode: str,
-    replay_prior_translations,
-    collect_local_search_profile: bool,
-    diagnostic_score_only: bool,
-    safe_batch_sizes,
-    # Output lists are owned by the caller and mutated in place:
-    outputs: "PerHalfOutputs",
-    local_profile_history,
-    local_search_mstep_rotations=None,
-    group_ids_k=None,
-    group_count_k=None,
-    scale_correction_data_vs_prior=None,
-    relion_projector_half=None,
-    relion_projector_r_max: int | None = None,
-    source_faithful_spectrum_norm: bool = False,
-    relion_translation_angle_scale: float = 1.0,
-    symmetry: str = "C1",
-    optics_group_ids_k=None,
-    projection_scale: float = 1.0,
-    reference_current_size=None,
+    spec: LocalHalfScoringSpec,
 ) -> HalfScoreResult:
     """Local-search E+M scoring for one half-set.
+
+    Stable inputs remain under their data, sampling, prior, batching,
+    execution, diagnostic and optics owners. Only route-derived values become
+    locals inside this function.
 
     Sizes the per-chunk M-step batches against the cone-restricted
     rotation count (not the full HEALPix grid) so chunk_size doesn't
@@ -1275,6 +1454,14 @@ def _score_half_local_one_shape(
     and ``coarse_ha[k] = ha_k`` from the returned ``HalfScoreResult``.
     """
 
+    half = spec.half
+    sampling = spec.sampling
+    priors = spec.priors
+    batching = spec.batching
+    execution = spec.execution
+    diagnostics = spec.diagnostics
+    optics = spec.optics
+
     # RELION's convertAllSquaredDifferencesToWeights uses mymodel.pdf_direction
     # only when orientational_prior_mode == NOPRIOR. Local searches run through
     # PRIOR_ROTTILT_PSI and score the local direction/psi priors in the
@@ -1282,9 +1469,9 @@ def _score_half_local_one_shape(
     # biases both support selection and final weights.
 
     reconstruction_current_size_for_engine = (
-        cs_for_engine
-        if model_current_size_for_engine is None
-        else model_current_size_for_engine
+        sampling.cs_for_engine
+        if sampling.model_current_size_for_engine is None
+        else sampling.model_current_size_for_engine
     )
 
     # For local search the per-chunk M-step only sees the cone-restricted
@@ -1295,17 +1482,17 @@ def _score_half_local_one_shape(
     # (spherical cap area as a fraction of full SO(3) volume; good to
     # within ~30% for reasonable cones). Use that for an effective rotation
     # count equal to ``chunk_size * cone_size`` with a 2x safety factor.
-    cone_radius = 3.0 * float(sigma_rot)  # sigma_cutoff=3.0
+    cone_radius = 3.0 * float(sampling.sigma_rot)  # sigma_cutoff=3.0
     cone_fraction = max(
         (cone_radius / float(np.pi)) ** 2,
-        1.0 / float(rotation_grid_size(local_search_order)),
+        1.0 / float(rotation_grid_size(sampling.local_search_order)),
     )
-    est_cone_rots = int(np.ceil(rotation_grid_size(local_search_order) * cone_fraction))
+    est_cone_rots = int(np.ceil(rotation_grid_size(sampling.local_search_order) * cone_fraction))
     eff_n_rot = max(64, 2 * est_cone_rots)
-    local_n_trans = int(current_translations.shape[0])
-    if int(local_parent_oversampling_order) > 0:
-        local_n_trans *= int(4 ** int(local_parent_oversampling_order))
-    local_debug_iteration = iteration + 1 if debug_iteration is None else int(debug_iteration)
+    local_n_trans = int(sampling.current_translations.shape[0])
+    if int(sampling.local_parent_oversampling_order) > 0:
+        local_n_trans *= int(4 ** int(sampling.local_parent_oversampling_order))
+    local_debug_iteration = diagnostics.iteration + 1 if diagnostics.debug_iteration is None else int(diagnostics.debug_iteration)
     parent_use_float64_scoring, parent_use_float64_projections = _local_search_precision_flags(
         local_debug_iteration,
         pass_index=1,
@@ -1332,11 +1519,11 @@ def _score_half_local_one_shape(
             fine_use_float64_projections,
         )
 
-    safe_ibs, safe_rbs = safe_batch_sizes(
+    safe_ibs, safe_rbs = batching.safe_batch_sizes(
         eff_n_rot,
         local_n_trans,
-        image_shape_for_batch=experiment_dataset.image_shape,
-        current_size_for_batch=cs_for_engine,
+        image_shape_for_batch=half.experiment_dataset.image_shape,
+        current_size_for_batch=sampling.cs_for_engine,
     )
     logger.info(
         "Local search batch sizing: cone_radius=%.3f rad (%.2f deg), est_cone_rots=%d, eff_n_rot=%d "
@@ -1356,14 +1543,14 @@ def _score_half_local_one_shape(
         np.float64 if (parent_use_float64_scoring or parent_use_float64_projections) else np.float32
     )
     translation_prior_reference_translations = np.asarray(
-        current_translations, dtype=parent_local_layout_dtype
+        sampling.current_translations, dtype=parent_local_layout_dtype
     )
-    if local_search_translation_prior_mode == "coarse":
+    if priors.local_search_translation_prior_mode == "coarse":
         translation_prior_reference_translations, prior_grid_source, prior_grid_shape_mismatch = (
             _local_translation_prior_reference_translations(
-                current_translations=current_translations,
-                base_translations=base_translations,
-                replay_prior_translations=replay_prior_translations,
+                current_translations=sampling.current_translations,
+                base_translations=sampling.base_translations,
+                replay_prior_translations=priors.replay_prior_translations,
                 dtype=parent_local_layout_dtype,
             )
         )
@@ -1373,18 +1560,18 @@ def _score_half_local_one_shape(
                 "using %s grid shape=%s for scoring grid shape=%s",
                 prior_grid_source,
                 translation_prior_reference_translations.shape,
-                np.asarray(current_translations).shape,
+                np.asarray(sampling.current_translations).shape,
             )
         logger.info(
             "RELION mode: local translation prior uses coarse %s grid (n=%d) while scoring perturbed translations",
             prior_grid_source,
             translation_prior_reference_translations.shape[0],
         )
-    if int(local_parent_oversampling_order) > 0:
+    if int(sampling.local_parent_oversampling_order) > 0:
         logger.info(
             "RELION local search: expanding translations by oversampling_order=%d (coarse n=%d -> fine n=%d)",
-            int(local_parent_oversampling_order),
-            int(current_translations.shape[0]),
+            int(sampling.local_parent_oversampling_order),
+            int(sampling.current_translations.shape[0]),
             int(local_n_trans),
         )
     # Shared operands and options for parent, denominator and final scoring.
@@ -1392,73 +1579,74 @@ def _score_half_local_one_shape(
     common_local_kwargs = {
         "projection_padding_factor": PROJECTION_PADDING_FACTOR,
         "reconstruction_padding_factor": PADDING_FACTOR,
-        "relion_projector_half": relion_projector_half,
-        "relion_projector_r_max": relion_projector_r_max,
+        "relion_projector_half": execution.relion_projector_half,
+        "relion_projector_r_max": execution.relion_projector_r_max,
         "do_gridding_correction": True,
         "square_window": RELION_FOURIER_WINDOW_SQUARE,
         "half_spectrum_scoring": True,
-        "image_corrections": image_corrections_k,
-        "scale_corrections": scale_corrections_k,
-        "group_ids": group_ids_k,
-        "scale_correction_group_count": group_count_k,
-        "scale_correction_data_vs_prior": scale_correction_data_vs_prior,
-        "image_pre_shifts": translation_search_base,
+        "image_corrections": half.image_corrections_k,
+        "scale_corrections": half.scale_corrections_k,
+        "group_ids": half.group_ids_k,
+        "scale_correction_group_count": half.group_count_k,
+        "scale_correction_data_vs_prior": half.scale_correction_data_vs_prior,
+        "image_pre_shifts": priors.translation_search_base,
         "adaptive_fraction": RELION_ADAPTIVE_FRACTION,
-        "max_significants": max_significants,
+        "max_significants": batching.max_significants,
         "translation_prior_reference_translations": translation_prior_reference_translations,
-        "translation_prior_centers": trans_prior_center_for_engine,
-        "source_faithful_spectrum_norm": source_faithful_spectrum_norm,
-        **({} if optics_group_ids_k is None else {"optics_group_ids": optics_group_ids_k}),
+        "translation_prior_centers": priors.trans_prior_center_for_engine,
+        "source_faithful_spectrum_norm": execution.source_faithful_spectrum_norm,
+        **({} if half.optics_group_ids_k is None else {"optics_group_ids": half.optics_group_ids_k}),
         **(
             {}
-            if projection_scale == 1.0 and reference_current_size is None
+            if optics.projection_scale == 1.0 and optics.reference_current_size is None
             else {
-                "projection_scale": float(projection_scale),
-                "reconstruction_volume_current_size": reference_current_size,
-                "reconstruction_image_radius": _reconstruction_image_radius(reference_current_size, projection_scale),
+                "projection_scale": float(optics.projection_scale),
+                "reconstruction_volume_current_size": optics.reference_current_size,
+                "reconstruction_image_radius": _reconstruction_image_radius(optics.reference_current_size, optics.projection_scale),
             }
         ),
     }
-    if float(relion_translation_angle_scale) != 1.0:
-        common_local_kwargs["relion_translation_angle_scale"] = float(relion_translation_angle_scale)
+    if float(execution.relion_translation_angle_scale) != 1.0:
+        common_local_kwargs["relion_translation_angle_scale"] = float(execution.relion_translation_angle_scale)
     pass2_layout = None
     relion_significant_counts_k = None
     local_adaptive_pass2_parent_mode = "none"
     local_adaptive_pass2_denominator_layout = None
     local_normalization_log_evidence = None
-    if int(local_parent_oversampling_order) > 0:
+    if int(sampling.local_parent_oversampling_order) > 0:
         local_adaptive_pass2_full_parent = _local_adaptive_pass2_full_parent_enabled()
         local_adaptive_pass2_rotation_only = _local_adaptive_pass2_rotation_only_enabled()
         local_adaptive_pass2_denominator_mode = _local_adaptive_pass2_denominator_support_mode()
         local_adaptive_pass2_parent_mode = "full_parent" if local_adaptive_pass2_full_parent else "pruned_parent"
-        parent_prior_translations = trans_prior_center
+        parent_prior_translations = priors.trans_prior_center
         if parent_prior_translations is None:
             parent_prior_translations = np.zeros(
-                (np.asarray(previous_best_rotation_eulers_k).shape[0], np.asarray(current_translations).shape[1]),
+                (np.asarray(half.previous_best_rotation_eulers_k).shape[0], np.asarray(sampling.current_translations).shape[1]),
                 dtype=parent_local_layout_dtype,
             )
-        parent_order = int(local_search_order) - int(local_parent_oversampling_order)
+        parent_order = int(sampling.local_search_order) - int(sampling.local_parent_oversampling_order)
         if parent_order < 0:
             raise ValueError(
                 "local_search_order must be >= local_parent_oversampling_order; "
-                f"got {local_search_order} and {local_parent_oversampling_order}",
+                f"got {sampling.local_search_order} and "
+                f"{sampling.local_parent_oversampling_order}",
             )
-        parent_grid_metadata = build_local_search_grid_metadata(parent_order, **({"symmetry": symmetry} if symmetry != "C1" else {}))
+        parent_grid_metadata = build_local_search_grid_metadata(parent_order, **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {}))
         parent_layout = build_local_hypothesis_layout(
-            previous_best_rotation_eulers_k,
+            half.previous_best_rotation_eulers_k,
             None,
-            sigma_rot,
-            sigma_psi,
+            sampling.sigma_rot,
+            sampling.sigma_psi,
             parent_order,
-            current_translations,
+            sampling.current_translations,
             parent_prior_translations,
-            current_sigma_offset_angstrom,
+            priors.current_sigma_offset_angstrom,
             None,
-            experiment_dataset.voxel_size,
+            half.experiment_dataset.voxel_size,
             grid_metadata=parent_grid_metadata,
             translation_prior_reference_translations=translation_prior_reference_translations,
             rotation_log_prior=None,
-            rotation_grid_random_perturbation=local_search_random_perturbation,
+            rotation_grid_random_perturbation=sampling.local_search_random_perturbation,
             rotation_grid_angular_sampling_deg=relion_angular_sampling_deg(parent_order, adaptive_oversampling=0),
             dtype=parent_local_layout_dtype,
         )
@@ -1467,34 +1655,34 @@ def _score_half_local_one_shape(
             if int(np.asarray(parent_layout.rotation_counts).size)
             else 1
         )
-        parent_ibs, parent_rbs = safe_batch_sizes(
+        parent_ibs, parent_rbs = batching.safe_batch_sizes(
             max(64, parent_local_rot_max),
-            int(current_translations.shape[0]),
+            int(sampling.current_translations.shape[0]),
         )
         logger.info(
             "RELION local adaptive pass 1: parent_order=%d local_rot_max=%d n_trans=%d current_size=%s",
             parent_order,
             parent_local_rot_max,
-            int(current_translations.shape[0]),
-            local_pass1_current_size,
+            int(sampling.current_translations.shape[0]),
+            sampling.local_pass1_current_size,
         )
         logger.info("RELION local adaptive pass 1: using manual supplied-PPref interpolation")
         parent_outputs = _run_local_search_iteration(
-            experiment_dataset,
-            means_k,
-            noise_variance_k,
-            previous_best_rotation_eulers_k,
+            half.experiment_dataset,
+            half.means_k,
+            half.noise_variance_k,
+            half.previous_best_rotation_eulers_k,
             None,
             parent_order,
-            sigma_rot,
-            sigma_psi,
-            current_translations,
-            trans_prior_center,
-            current_sigma_offset_angstrom,
-            disc_type,
+            sampling.sigma_rot,
+            sampling.sigma_psi,
+            sampling.current_translations,
+            priors.trans_prior_center,
+            priors.current_sigma_offset_angstrom,
+            sampling.disc_type,
             image_batch_size=parent_ibs,
             rotation_block_size=parent_rbs,
-            current_size=local_pass1_current_size,
+            current_size=sampling.local_pass1_current_size,
             accumulate_noise=False,
             projection_relion_texture_interp=False,
             projection_relion_acc_double_floorf_quirk=RELION_ACC_DOUBLE_FLOORF_QUIRK,
@@ -1518,8 +1706,8 @@ def _score_half_local_one_shape(
             apply_max_significants_to_support=True,
             score_only=True,
             **common_local_kwargs,
-            **({"symmetry": symmetry} if symmetry != "C1" else {}),
-            batch_size_planner=safe_batch_sizes,
+            **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {}),
+            batch_size_planner=batching.safe_batch_sizes,
         )
         parent_profile = parent_outputs.profile_summary
         significant_sample_indices = parent_profile["reconstruction_sample_indices_by_image"]
@@ -1546,7 +1734,7 @@ def _score_half_local_one_shape(
         elif local_adaptive_pass2_rotation_only:
             significant_sample_indices = _expand_significant_samples_to_full_parent_translations(
                 significant_sample_indices,
-                int(current_translations.shape[0]),
+                int(sampling.current_translations.shape[0]),
             )
             local_adaptive_pass2_parent_mode = "significant_rotation_full_translation"
             logger.info(
@@ -1558,10 +1746,10 @@ def _score_half_local_one_shape(
             parent_layout,
             significant_sample_indices,
             parent_order,
-            oversampling_order=int(local_parent_oversampling_order),
-            random_perturbation=float(local_search_random_perturbation),
+            oversampling_order=int(sampling.local_parent_oversampling_order),
+            random_perturbation=float(sampling.local_search_random_perturbation),
             dtype=fine_local_layout_dtype,
-            **({"symmetry": symmetry} if symmetry != "C1" else {}),
+            **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {}),
         )
         if local_adaptive_pass2_denominator_mode is not None:
             if local_adaptive_pass2_denominator_mode == "full_parent":
@@ -1569,7 +1757,7 @@ def _score_half_local_one_shape(
             elif local_adaptive_pass2_denominator_mode == "rotation_only":
                 denominator_significant_sample_indices = _expand_significant_samples_to_full_parent_translations(
                     pruned_parent_significant_sample_indices,
-                    int(current_translations.shape[0]),
+                    int(sampling.current_translations.shape[0]),
                 )
             else:  # Defensive only; parser restricts values.
                 raise AssertionError(f"unexpected denominator mode {local_adaptive_pass2_denominator_mode!r}")
@@ -1577,10 +1765,10 @@ def _score_half_local_one_shape(
                 parent_layout,
                 denominator_significant_sample_indices,
                 parent_order,
-                oversampling_order=int(local_parent_oversampling_order),
-                random_perturbation=float(local_search_random_perturbation),
+                oversampling_order=int(sampling.local_parent_oversampling_order),
+                random_perturbation=float(sampling.local_search_random_perturbation),
                 dtype=fine_local_layout_dtype,
-                **({"symmetry": symmetry} if symmetry != "C1" else {}),
+                **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {}),
             )
             log_local_denominator_support(
                 logger,
@@ -1589,14 +1777,14 @@ def _score_half_local_one_shape(
                 _LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV,
             )
         log_local_adaptive_support(
-            logger, parent_layout, significant_sample_indices, current_translations, pass2_layout
+            logger, parent_layout, significant_sample_indices, sampling.current_translations, pass2_layout
         )
     local_relion_x_half_mstep = _k1_relion_x_half_mstep_enabled()
-    if diagnostic_score_only:
+    if diagnostics.diagnostic_score_only:
         local_relion_x_half_mstep = False
-    if symmetry != "C1" and not diagnostic_score_only and not local_relion_x_half_mstep:
+    if sampling.symmetry != "C1" and not diagnostics.diagnostic_score_only and not local_relion_x_half_mstep:
         raise RuntimeError(
-            f"{symmetry} exact-local reconstruction requires RELION x-half BPref "
+            f"{sampling.symmetry} exact-local reconstruction requires RELION x-half BPref "
             f"accumulation; {_K1_RELION_X_HALF_MSTEP_ENV}=0, CPU-only execution, or disabled custom CUDA "
             "is unsupported for non-C1 symmetry"
         )
@@ -1618,21 +1806,21 @@ def _score_half_local_one_shape(
         saved_local_debug_env = {name: os.environ.pop(name) for name in local_debug_env_names}
         try:
             denominator_outputs = _run_local_search_iteration(
-                experiment_dataset,
-                means_k,
-                noise_variance_k,
-                previous_best_rotation_eulers_k,
-                local_search_rotations,
-                local_search_order,
-                sigma_rot,
-                sigma_psi,
-                current_translations,
-                trans_prior_center,
-                current_sigma_offset_angstrom,
-                disc_type,
+                half.experiment_dataset,
+                half.means_k,
+                half.noise_variance_k,
+                half.previous_best_rotation_eulers_k,
+                sampling.local_search_rotations,
+                sampling.local_search_order,
+                sampling.sigma_rot,
+                sampling.sigma_psi,
+                sampling.current_translations,
+                priors.trans_prior_center,
+                priors.current_sigma_offset_angstrom,
+                sampling.disc_type,
                 image_batch_size=safe_ibs,
                 rotation_block_size=safe_rbs,
-                current_size=cs_for_engine,
+                current_size=sampling.cs_for_engine,
                 reconstruction_current_size=reconstruction_current_size_for_engine,
                 accumulate_noise=False,
                 use_float64_scoring=fine_use_float64_scoring,
@@ -1648,15 +1836,15 @@ def _score_half_local_one_shape(
                 debug_iteration=None,
                 pass2_layout=local_adaptive_pass2_denominator_layout,
                 return_best_pose_details=False,
-                rotation_grid_random_perturbation=local_search_random_perturbation,
+                rotation_grid_random_perturbation=sampling.local_search_random_perturbation,
                 rotation_grid_angular_sampling_deg=relion_angular_sampling_deg(
-                    local_search_order,
+                    sampling.local_search_order,
                     adaptive_oversampling=0,
                 ),
                 score_only=True,
                 **common_local_kwargs,
-                **({"symmetry": symmetry} if symmetry != "C1" else {}),
-                batch_size_planner=safe_batch_sizes,
+                **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {}),
+                batch_size_planner=batching.safe_batch_sizes,
             )
         finally:
             os.environ.update(saved_local_debug_env)
@@ -1677,30 +1865,30 @@ def _score_half_local_one_shape(
     # minimum fine-pass weight, so storeWeightedSums keeps all local
     # candidates. Do not apply the 0.999 significant-support prune on
     # this os0 path.
-    local_reconstruct_significant_only = int(local_parent_oversampling_order) > 0
-    local_accumulate_noise = not diagnostic_score_only
-    local_disable_adjoint_y = bool(disable_adjoint_y or diagnostic_score_only)
-    local_disable_adjoint_ctf = bool(disable_adjoint_ctf or diagnostic_score_only)
+    local_reconstruct_significant_only = int(sampling.local_parent_oversampling_order) > 0
+    local_accumulate_noise = not diagnostics.diagnostic_score_only
+    local_disable_adjoint_y = bool(execution.disable_adjoint_y or diagnostics.diagnostic_score_only)
+    local_disable_adjoint_ctf = bool(execution.disable_adjoint_ctf or diagnostics.diagnostic_score_only)
     logger.info(
         "RELION local fine pass 2: supplied-PPref interpolation follows "
         "RELAX_RELION_PROJECTOR_TEXTURE_INTERP (default texture)"
     )
     local_outputs = _run_local_search_iteration(
-        experiment_dataset,
-        means_k,
-        noise_variance_k,
-        previous_best_rotation_eulers_k,
-        local_search_rotations,
-        local_search_order,
-        sigma_rot,
-        sigma_psi,
-        current_translations,
-        trans_prior_center,
-        current_sigma_offset_angstrom,
-        disc_type,
+        half.experiment_dataset,
+        half.means_k,
+        half.noise_variance_k,
+        half.previous_best_rotation_eulers_k,
+        sampling.local_search_rotations,
+        sampling.local_search_order,
+        sampling.sigma_rot,
+        sampling.sigma_psi,
+        sampling.current_translations,
+        priors.trans_prior_center,
+        priors.current_sigma_offset_angstrom,
+        sampling.disc_type,
         image_batch_size=safe_ibs,
         rotation_block_size=safe_rbs,
-        current_size=cs_for_engine,
+        current_size=sampling.cs_for_engine,
         reconstruction_current_size=reconstruction_current_size_for_engine,
         accumulate_noise=local_accumulate_noise,
         # RELION's local adaptive path is intentionally hybrid: parent pass 1
@@ -1715,7 +1903,7 @@ def _score_half_local_one_shape(
             and not fine_use_float64_scoring
         ),
         mstep_relion_x_half=local_relion_x_half_mstep,
-        return_profile=collect_local_search_profile,
+        return_profile=diagnostics.collect_local_search_profile,
         disable_adjoint_y=local_disable_adjoint_y,
         disable_adjoint_ctf=local_disable_adjoint_ctf,
         reconstruct_significant_only=local_reconstruct_significant_only,
@@ -1725,15 +1913,15 @@ def _score_half_local_one_shape(
         pass2_layout=pass2_layout,
         return_best_pose_details=True,
         normalization_log_evidence=local_normalization_log_evidence,
-        rotation_grid_random_perturbation=local_search_random_perturbation,
-        rotation_grid_angular_sampling_deg=local_search_angular_sampling_deg,
-        local_parent_oversampling_order=local_parent_oversampling_order,
-        score_only=diagnostic_score_only,
-        rotation_grid_mstep_rotations=local_search_mstep_rotations,
+        rotation_grid_random_perturbation=sampling.local_search_random_perturbation,
+        rotation_grid_angular_sampling_deg=sampling.local_search_angular_sampling_deg,
+        local_parent_oversampling_order=sampling.local_parent_oversampling_order,
+        score_only=diagnostics.diagnostic_score_only,
+        rotation_grid_mstep_rotations=sampling.local_search_mstep_rotations,
         generate_relion_mstep_rotations=True,
         **common_local_kwargs,
-        **({"symmetry": symmetry} if symmetry != "C1" else {}),
-        batch_size_planner=safe_batch_sizes,
+        **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {}),
+        batch_size_planner=batching.safe_batch_sizes,
     )
     Ft_y_k = local_outputs.Ft_y
     Ft_ctf_k = local_outputs.Ft_ctf
@@ -1742,40 +1930,40 @@ def _score_half_local_one_shape(
     best_trans_k = local_outputs.best_pose_translations
     em_stats_k = local_outputs.relion_stats
     noise_stats_k = local_outputs.noise_stats
-    if collect_local_search_profile:
+    if diagnostics.collect_local_search_profile:
         local_profile_k = local_outputs.profile_summary
         profile_row = dict(local_profile_k)
-        profile_row["iteration"] = np.int32(iteration)
-        profile_row["half_index"] = np.int32(k)
+        profile_row["iteration"] = np.int32(diagnostics.iteration)
+        profile_row["half_index"] = np.int32(half.k)
         profile_row["local_adaptive_pass2_parent_mode"] = local_adaptive_pass2_parent_mode
         profile_row["local_adaptive_pass2_full_parent"] = np.bool_(local_adaptive_pass2_parent_mode == "full_parent")
-        profile_row["diagnostic_score_only"] = np.bool_(diagnostic_score_only)
-        local_profile_history.append(profile_row)
-        if save_intermediates_dir is not None:
+        profile_row["diagnostic_score_only"] = np.bool_(diagnostics.diagnostic_score_only)
+        diagnostics.local_profile_history.append(profile_row)
+        if diagnostics.save_intermediates_dir is not None:
             np.savez_compressed(
                 os.path.join(
-                    save_intermediates_dir,
-                    f"it{iteration:03d}_half{k + 1}_local_profile.npz",
+                    diagnostics.save_intermediates_dir,
+                    f"it{diagnostics.iteration:03d}_half{half.k + 1}_local_profile.npz",
                 ),
                 **local_profile_k,
             )
     pose_dtype = _dense_global_scoring_dtype()
-    outputs.best_pose_rotations[k] = np.asarray(best_rots_k, dtype=pose_dtype)
-    outputs.best_pose_rotation_eulers[k] = (
+    half.outputs.best_pose_rotations[half.k] = np.asarray(best_rots_k, dtype=pose_dtype)
+    half.outputs.best_pose_rotation_eulers[half.k] = (
         np.asarray(local_outputs.best_pose_eulers_deg, dtype=np.float64)
         if local_outputs.best_pose_eulers_deg is not None
         else utils.R_to_relion(np.asarray(best_rots_k), degrees=True).astype(pose_dtype)
     )
-    outputs.best_pose_translations[k] = np.asarray(best_trans_k, dtype=pose_dtype)
+    half.outputs.best_pose_translations[half.k] = np.asarray(best_trans_k, dtype=pose_dtype)
     return HalfScoreResult(
         ha=ha_k,
         Ft_y=Ft_y_k,
         Ft_ctf=Ft_ctf_k,
         em_stats=em_stats_k,
         noise_stats=noise_stats_k,
-        best_pose_rotations=outputs.best_pose_rotations[k],
-        best_pose_rotation_eulers=outputs.best_pose_rotation_eulers[k],
-        best_pose_translations=outputs.best_pose_translations[k],
+        best_pose_rotations=half.outputs.best_pose_rotations[half.k],
+        best_pose_rotation_eulers=half.outputs.best_pose_rotation_eulers[half.k],
+        best_pose_translations=half.outputs.best_pose_translations[half.k],
         significant_counts=relion_significant_counts_k,
         mstep_full_half_axis=0 if local_relion_x_half_mstep else None,
         mstep_accumulator_shape=(
@@ -1783,13 +1971,13 @@ def _score_half_local_one_shape(
             # engine above; downstream join/reconstruct calls infer layout
             # from this shape.
             relion_backprojector_volume_shape(
-                experiment_dataset.volume_shape,
+                half.experiment_dataset.volume_shape,
                 PADDING_FACTOR,
                 # Images on another grid fill the backprojector at the reference model size.
                 current_size=(
                     reconstruction_current_size_for_engine
-                    if reference_current_size is None
-                    else reference_current_size
+                    if optics.reference_current_size is None
+                    else optics.reference_current_size
                 ),
             )
             if local_relion_x_half_mstep
@@ -1799,15 +1987,13 @@ def _score_half_local_one_shape(
 
 
 def _score_half_local_in_bpref_scope(
-    *,
-    bpref_device_signature_active: bool,
-    **kwargs,
+    spec: LocalHalfScoringSpec,
 ) -> HalfScoreResult:
     """Run local scoring with device-capture flags disabled or fail closed."""
 
-    if bpref_device_signature_active:
+    if spec.diagnostics.bpref_device_signature_active:
         raise RuntimeError(
             "BPref device signature capture is supported only by sparse adaptive pass 2"
         )
     with em_cuda_kernels.bpref_device_signature_scope(False):
-        return _score_half_local(**kwargs)
+        return _score_half_local(spec)

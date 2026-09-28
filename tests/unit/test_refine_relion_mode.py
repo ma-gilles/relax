@@ -23,6 +23,7 @@ pytest.importorskip("jax")
 import healpy as hp
 import jax.numpy as jnp
 from helpers.em_arrays import _hermitian_volume, _make_rotations
+from helpers.refinement_specs import local_half_spec
 
 import recovar.core.fourier_transform_utils as ftu
 import relax.diagnostics.relion_replay as relion_replay_module
@@ -2170,7 +2171,7 @@ def test_score_half_local_parent_layout_ignores_global_rotation_prior_for_adapti
     monkeypatch.setattr(half_scoring, "build_local_hypothesis_layout", fake_build_local_hypothesis_layout)
 
     with pytest.raises(StopAfterParentLayout):
-        half_scoring._score_half_local(
+        half_scoring._score_half_local(local_half_spec(
             k=0,
             experiment_dataset=dataset,
             means_k=jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
@@ -2206,7 +2207,7 @@ def test_score_half_local_parent_layout_ignores_global_rotation_prior_for_adapti
             safe_batch_sizes=lambda *args, **kwargs: (1, 1),
             outputs=score_outputs.PerHalfOutputs(),
             local_profile_history=[],
-        )
+        ))
 
     assert captured["rotation_log_prior"] is None
 
@@ -2231,7 +2232,7 @@ def test_score_half_local_forwards_mstep_grid(monkeypatch, rng):
     monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
     with pytest.raises(DispatchCaptured):
-        half_scoring._score_half_local(
+        half_scoring._score_half_local(local_half_spec(
             k=0,
             experiment_dataset=dataset,
             means_k=jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
@@ -2268,7 +2269,7 @@ def test_score_half_local_forwards_mstep_grid(monkeypatch, rng):
             safe_batch_sizes=lambda *args, **kwargs: (1, 16),
             outputs=score_outputs.PerHalfOutputs(),
             local_profile_history=[],
-        )
+        ))
 
     assert captured["mean_shape"] == (VOLUME_SIZE,)
     assert_matches(captured["rotation_grid_mstep_rotations"], mstep_grid)

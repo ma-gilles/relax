@@ -331,18 +331,18 @@ def test_target_half2_cannot_leak_into_final_all_data_or_local_search(monkeypatc
     monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "/tmp/device")
     monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY", "1")
 
-    def fake_local(**kwargs):
-        del kwargs
+    def fake_local(spec):
+        del spec
         assert not cuda_backproject.relion_x_half_bp_block_topology_enabled()
         return "ordinary-local"
 
     monkeypatch.setattr(half_scoring, "_score_half_local", fake_local)
     assert half_scoring._score_half_local_in_bpref_scope(
-        bpref_device_signature_active=False
+        SimpleNamespace(diagnostics=SimpleNamespace(bpref_device_signature_active=False))
     ) == "ordinary-local"
     with pytest.raises(RuntimeError, match="sparse adaptive pass 2"):
         half_scoring._score_half_local_in_bpref_scope(
-            bpref_device_signature_active=True
+            SimpleNamespace(diagnostics=SimpleNamespace(bpref_device_signature_active=True))
         )
 
 

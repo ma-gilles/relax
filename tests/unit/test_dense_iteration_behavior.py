@@ -6,15 +6,16 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
+from helpers.refinement_specs import local_half_spec
 
 import relax.refinement.iteration_loop as iteration_loop
-from relax.refinement import half_scoring
 from relax.dense import score_outputs, scoring_policy
 from relax.diagnostics import local_debug
 from relax.helpers.convergence import _native_final_perturbation_healpix_order
+from relax.refinement import half_scoring
 from relax.refinement.local_search_iteration import _LocalSearchIterationResult
 from relax.relion import relion_worker_scale
-from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -219,7 +220,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
     monkeypatch.setattr(scoring_policy, "_k1_relion_x_half_mstep_default_available", lambda: True)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
 
-    result = half_scoring._score_half_local(
+    result = half_scoring._score_half_local(local_half_spec(
         k=0,
         experiment_dataset=SimpleNamespace(
             voxel_size=1.0,
@@ -260,7 +261,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
         safe_batch_sizes=lambda *_args, **_kwargs: (2, 3),
         outputs=score_outputs.PerHalfOutputs(),
         local_profile_history=[],
-    )
+    ))
 
     assert captured["mstep_relion_x_half"] is True
     assert result.significant_counts is None
@@ -340,7 +341,7 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
     monkeypatch.setattr(half_scoring, "_k1_relion_x_half_mstep_enabled", lambda: False)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
 
-    result = half_scoring._score_half_local(
+    result = half_scoring._score_half_local(local_half_spec(
         k=0,
         experiment_dataset=SimpleNamespace(
             voxel_size=1.0,
@@ -381,7 +382,7 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         safe_batch_sizes=lambda *_args, **_kwargs: (2, 3),
         outputs=score_outputs.PerHalfOutputs(),
         local_profile_history=[],
-    )
+    ))
 
     assert len(calls) == (2 if denominator_mode is None else 3)
     parent_call, fine_call = calls[0], calls[-1]
