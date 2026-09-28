@@ -530,6 +530,46 @@
    "source_role": "mean of the ground-truth class maps (relax file frame)",
    "generation": "adopted",
    "sanity": "PASS: box fraction 0.048, 1 component(s), captures 0.795 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "etbench_w2_05_snr_low_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/cases/w2_05_snr_low/masks/etbench_w2_05_snr_low_c1/MASK.json",
+   "mask_sha256": "d370b4d637d2030b0b12345a320af5e96ba8a3a40f4bd5de4fa1d8532a8be0dd",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth (class mean for K=2), simulator output on optics group 1's grid",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.015, 1 component(s), captures 0.955 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "etbench_w2_06_snr_high_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/cases/w2_06_snr_high/masks/etbench_w2_06_snr_high_c1/MASK.json",
+   "mask_sha256": "d370b4d637d2030b0b12345a320af5e96ba8a3a40f4bd5de4fa1d8532a8be0dd",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth (class mean for K=2), simulator output on optics group 1's grid",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.015, 1 component(s), captures 0.955 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "etbench_w2_09_box192_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/cases/w2_09_box192/masks/etbench_w2_09_box192_c1/MASK.json",
+   "mask_sha256": "22c86e3d970a6af1229d0abd99d0ace4a14183b9a9bfc50d46040ccb59838114",
+   "symmetry": "C1",
+   "box": 192,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth (class mean for K=2), simulator output on optics group 1's grid",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.030, 1 component(s), captures 0.965 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "etbench_w2_14_prefori_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/cases/w2_14_prefori/masks/etbench_w2_14_prefori_c1/MASK.json",
+   "mask_sha256": "d370b4d637d2030b0b12345a320af5e96ba8a3a40f4bd5de4fa1d8532a8be0dd",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth (class mean for K=2), simulator output on optics group 1's grid",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.015, 1 component(s), captures 0.955 of positive density, strong density outside hard mask 0.0000, edge-clear True"
   }
  }
 }
