@@ -188,10 +188,37 @@ round, with exact two-pass normalization on the same dense R=6,144/T=29 support:
 | 256 | 3072 | image | 29 | 26.459 |
 | 512 | 3072 | image | 29 | 48.300 |
 
-The native control invokes existing production CUDA primitives in this experiment's
-two-sweep dense schedule; it is not the complete production driver. It backprojects
-per-image/orientation rows, whereas GEMM sums images before backprojection. The
-speedup includes this accumulation reorganization as well as GEMM scoring.
+The corrected `resident_cuda` control uses the current SPA F32 GEMM scorer,
+shares projected slices across images, and streams all image/orientation rows
+through the production CUDA translate-sum and indexed adjoint. Job14634396 used
+two matched H100s with swapped roles, two warmups and seven measured repetitions.
+Both engines evaluated every R6144/T29 hypothesis in two sweeps:
+
+| Images B | Current SPA row control, ms | Collapsed-slice GEMM, ms | Ratio |
+| ---: | ---: | ---: | ---: |
+| 100 | 271.23 / 271.64 | 13.375 / 13.412 | 20.27× |
+| 512 | 1338.49 / 1338.08 | 48.023 / 48.084 | 27.85× |
+
+Each pair lists the two GPU assignments. The best tested control used Q768 and
+2048 rows per accumulation block; GEMM used Q3072 and full image-side translation
+expansion. All twelve tile comparisons passed the exploratory operator checks;
+worst numerator/denominator relative L2 errors were 2.80e-5/1.51e-5. Sampled
+process memory stayed below the experiment's 4 GiB budget (largest 2956 MiB).
+These warmed timings exclude staging, compilation and reconstruction. They compare
+fully dense schedules; they do not estimate a normal adaptive production run.
+Current-control full-trajectory quality and profiling remain in progress.
+
+The historical `native` control invokes CUDA primitives in this experiment's
+two-sweep dense schedule. Its fused score/projector is used in tomography and
+repeats projection across images; its ordered per-particle adjoint comes from the
+deprecated physical-grid route. Current SPA CUDA shares projections and batches
+row adjoints differently. Thus this historical ratio is not a current SPA-resident
+performance comparison. A control using the current SPA scoring and row-accumulation owners while
+retaining all dense matches is implemented and undergoing GPU qualification. No adaptive pruning is introduced.
+
+The historical control backprojects per-image/orientation rows, whereas GEMM sums
+images before backprojection. Its ratio includes this accumulation reorganization
+and projection sharing as well as GEMM scoring.
 
 The best measured native control within the chosen 4 GiB process comparison
 budget used B100/Q256: 338.167 ms versus 13.441 ms for GEMM B100/Q3072, about

@@ -24,11 +24,15 @@ translation tiles. Exact three-iteration reconstruction closely agrees with the
 native dense control; lagged absolute normalization overflows at iteration two.
 Production defaults are unchanged. [Math and measured scope](../math/dense_gemm_experiment.md)
 and the [detailed plan](dense_gemm_experiment_plan_20260928.md) link the evidence.
-Smoke14629659 and medium14630553 passed for the core/texture change. The final
-single raw-batch staging seam passes real GPU operand/upload checks14632476;
-medium14632505 is validating that seam on current main df5d0118. The measured
-speedup is against production CUDA primitives forced through the same dense
-experimental schedule, not a measured complete production-driver runtime.
+The final single raw-batch staging seam passes real GPU operand/upload checks
+14632476. Medium14632505 passed all 27 items and 13 FSC comparisons; integrated
+smoke14633325 passed all four items and three FSC comparisons. Both enforced
+pinned comparisons passed; detailed receipts record the optional fixture skips.
+The historical timing control used tomography scoring and a deprecated adjoint
+schedule, so its speed ratio does not measure current SPA performance. A corrected
+control now uses production-selected GEMM scoring and SPA CUDA row accumulation,
+retaining every dense hypothesis. Its full performance/quality qualification is
+in progress; production-runtime extrapolations from the historical ratio are withdrawn.
 
 ## Scope and invariants
 

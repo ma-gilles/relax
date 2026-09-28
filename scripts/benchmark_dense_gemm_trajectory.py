@@ -671,6 +671,160 @@ def _native_fixture_program(args, geometry, bp_shape, current_size, image_shape,
     return program
 
 
+def _resident_cuda_fixture_program(
+    args, geometry, bp_shape, current_size, image_shape, project, *, mode,
+):
+    """Production-selected GEMM score and SPA resident row M-step on a dense grid.
+
+    Coarse Gaussian scoring currently selects shared GEMMs by default. The
+    resident M-step keeps its CUDA translate-sum, XLA CTF-mass convention and
+    chunked indexed adjoint. Only the support is changed to every R x T pose.
+    """
+    from relax.cuda import kernels as cuda_backproject
+    from relax.cuda.kernels import relion_translate_score_f32
+    from relax.dense.gemm_experiment import DenseGemmBatchResult
+    from relax.dense.gemm_experiment_kernels import (
+        empty_normalizer_table,
+        merge_normalizers,
+        normalizer_logz,
+        tile_normalizer,
+    )
+    from relax.scoring.scoring import _relion_coarse_gaussian_gemm_scores_jit
+    from relax.sparse_pass2.resident_pass2 import _resident_block_weighted_sums_kernel
+    from relax.sparse_pass2.sparse_pass2_adjoint import _accumulate_adjoint_block_chunked
+    from relax.sparse_pass2.sparse_pass2_budget import _max_adjoint_block_bytes_for_pass
+
+    qsize = args.rotation_tile
+    image_capacity = args.images
+    n_translations = args.translations
+    row_tile = int(getattr(args, "row_tile", 2048))
+    if row_tile <= 0:
+        raise ValueError("resident CUDA row_tile must be positive")
+    row_count = image_capacity * qsize
+    padded_rows = -(-row_count // row_tile) * row_tile
+    n_row_tiles = padded_rows // row_tile
+    max_adjoint_block_bytes = _max_adjoint_block_bytes_for_pass()
+    exact = mode == "exact"
+    score_indices = jnp.asarray(geometry["score_indices"], dtype=jnp.int32)
+    recon_indices = jnp.asarray(geometry["window"].recon_window_indices, dtype=jnp.int32)
+    native_indices = jnp.asarray(geometry["window"].relion_x_half_recon_indices, dtype=jnp.int32)
+    angles = jnp.asarray(geometry["angles"], dtype=jnp.float32)
+    n_recon_pixels = int(recon_indices.size)
+
+    @partial(jax.jit, donate_argnames=("numerator", "denominator", "next_pair_table"))
+    def program(reference, numerator, denominator, old_pair_table, next_pair_table, batch, grid):
+        nrot = grid.score_rotations.shape[0] // qsize
+        old_pair = old_pair_table[batch.particle_ids]
+        actual_images = jnp.sum(batch.valid_images, dtype=jnp.int32)
+        shifted = relion_translate_score_f32(
+            batch.score_image, angles, score_indices, image_shape,
+        ).reshape(image_capacity, n_translations, score_indices.size)
+
+        def scores_for(index):
+            start = index * qsize
+            rotations = jax.lax.dynamic_slice_in_dim(grid.score_rotations, start, qsize, axis=0)
+            projections = project(reference, rotations)
+            raw_scores = _relion_coarse_gaussian_gemm_scores_jit(
+                projections, None, shifted, batch.score_weight, batch.initial_diff2,
+                actual_images, n_images=image_capacity, n_trans=n_translations,
+                image_shape=image_shape, volume_shape=bp_shape, float64=False,
+            )
+            rotation_prior = jax.lax.dynamic_slice_in_dim(batch.rotation_prior, start, qsize, axis=1)
+            valid_rotations = jax.lax.dynamic_slice_in_dim(grid.valid_rotations, start, qsize, axis=0)
+            scores = raw_scores + rotation_prior[:, :, None] + batch.translation_prior[:, None, :n_translations]
+            return jnp.where(
+                batch.valid_images[:, None, None] & valid_rotations[None, :, None],
+                scores, -jnp.inf,
+            )
+
+        if exact:
+            normalizer = jax.lax.fori_loop(
+                0, nrot,
+                lambda index, pair: merge_normalizers(pair, tile_normalizer(scores_for(index))),
+                empty_normalizer_table(image_capacity),
+            )
+        else:
+            normalizer = old_pair
+
+        def reconstruct(index, state):
+            y_volume, w_volume, calculated_pair, mass = state
+            scores = scores_for(index)
+            if not exact:
+                calculated_pair = merge_normalizers(calculated_pair, tile_normalizer(scores))
+            weights = jnp.where(
+                batch.valid_images[:, None, None],
+                jnp.exp((scores - normalizer[:, 0, None, None]) - normalizer[:, 1, None, None]),
+                jnp.float32(0),
+            )
+            flat_weights = jnp.pad(
+                weights.reshape(row_count, n_translations),
+                ((0, padded_rows - row_count), (0, 0)),
+            )
+            rotations = jax.lax.dynamic_slice_in_dim(
+                grid.backprojection_rotations, index * qsize, qsize, axis=0,
+            )
+
+            def accumulate_rows(row_index, volumes):
+                y_acc, w_acc = volumes
+                row_start = row_index * row_tile
+                positions = row_start + jnp.arange(row_tile, dtype=jnp.int32)
+                valid_rows = positions < row_count
+                row_local = jnp.where(valid_rows, positions // qsize, 0)
+                row_ids = jnp.where(valid_rows, row_local, -1)
+                row_rotation = jnp.where(valid_rows, positions % qsize, 0)
+                posterior_rows = jax.lax.dynamic_slice_in_dim(
+                    flat_weights, row_start, row_tile, axis=0,
+                )
+                summed, _unused_masked, ctf_probs, _row_mass = _resident_block_weighted_sums_kernel(
+                    posterior_rows, row_ids, row_local,
+                    batch.rec_raw_image, batch.rec_weighted_ctf, batch.rec_raw_image,
+                    batch.rec_weight, recon_indices, angles,
+                    image_shape=image_shape, n_recon_pixels=n_recon_pixels,
+                    kernel_ctf_probs=False, cuda_backproject=cuda_backproject,
+                )
+                row_rotations = rotations[row_rotation]
+                adjoint_kwargs = dict(
+                    window_indices=native_indices, use_windowed_adjoint=True,
+                    image_shape=image_shape, volume_shape=bp_shape,
+                    disc_type="linear_interp", half_image=True, half_volume=True,
+                    max_r=float(current_size // 2), relion_x_half=True,
+                    max_block_bytes=max_adjoint_block_bytes, log_label="dense-resident-cuda",
+                )
+                y_acc = _accumulate_adjoint_block_chunked(
+                    summed, row_rotations, y_acc, **adjoint_kwargs,
+                )
+                w_acc = _accumulate_adjoint_block_chunked(
+                    ctf_probs, row_rotations, w_acc, **adjoint_kwargs,
+                )
+                return y_acc, w_acc
+
+            y_volume, w_volume = jax.lax.fori_loop(
+                0, n_row_tiles, accumulate_rows, (y_volume, w_volume),
+            )
+            return (
+                y_volume, w_volume, calculated_pair,
+                mass + jnp.sum(weights, axis=(1, 2)),
+            )
+
+        numerator, denominator, calculated_pair, mass = jax.lax.fori_loop(
+            0, nrot, reconstruct,
+            (numerator, denominator, empty_normalizer_table(image_capacity),
+             jnp.zeros((image_capacity,), dtype=jnp.float32)),
+        )
+        pair = normalizer if exact else calculated_pair
+        next_pair_table = next_pair_table.at[batch.particle_ids].set(pair)
+        invalid_normalizer = batch.valid_images & (
+            ~jnp.isfinite(pair).all(axis=1) | (~jnp.isfinite(old_pair).all(axis=1) if not exact else False)
+        )
+        invalid_weight = batch.valid_images & (~jnp.isfinite(mass) | (mass <= 0))
+        return DenseGemmBatchResult(
+            numerator, denominator, normalizer_logz(next_pair_table), next_pair_table,
+            normalizer_logz(pair), mass, invalid_normalizer, invalid_weight,
+        )
+
+    return program
+
+
 def run_fixed_fixture_trajectory(args, model_dir):
     """Execute two half maps on one unchanged dense pose grid for each iteration."""
     from relax.cuda.kernels import RelionCapacityHalfTextureF32
@@ -715,7 +869,7 @@ def run_fixed_fixture_trajectory(args, model_dir):
         for half in (0, 1):
             setup_start = time.perf_counter()
             slab, radius = _projector_slab(fourier_maps[half], volume_shape, checkpoint.current_size)
-            if args.engine == "gemm":
+            if args.engine in {"gemm", "resident_cuda"}:
                 references.append(slab)
                 owner = RelionCapacityHalfTextureF32(slab, radius, padding_factor=2, reusable_staging=True)
                 owners.append(owner)
@@ -726,12 +880,20 @@ def run_fixed_fixture_trajectory(args, model_dir):
                     r_max=radius, projector_output_size=dataset.image_shape[0],
                     volume_shape=bp_shape, padding_factor=2, capacity_texture=owner,
                 )
-                programs.append({
-                    mode: make_batch_program(
-                        DenseGemmTileConfig(args.images, args.rotation_tile, args.translation_tile,
-                                            args.translation_side, mode), project, backproject,
-                    ) for mode in ("exact", "lagged")
-                })
+                if args.engine == "gemm":
+                    programs.append({
+                        mode: make_batch_program(
+                            DenseGemmTileConfig(args.images, args.rotation_tile, args.translation_tile,
+                                                args.translation_side, mode), project, backproject,
+                        ) for mode in ("exact", "lagged")
+                    })
+                else:
+                    programs.append({
+                        mode: _resident_cuda_fixture_program(
+                            args, geometry, bp_shape, checkpoint.current_size,
+                            dataset.image_shape, project, mode=mode,
+                        ) for mode in ("exact", "lagged")
+                    })
             else:
                 references.append(relion_projector_half_to_texture_full(slab))
                 owners.append(None)
@@ -822,12 +984,12 @@ def run_fixed_fixture_trajectory(args, model_dir):
             })
             fourier_maps = half_maps
             if iteration + 1 < args.iterations:
-                stage = "projector_refresh" if args.engine == "gemm" else "projector_setup"
+                stage = "projector_refresh" if args.engine != "native" else "projector_setup"
                 for half in (0, 1):
                     setup_start = time.perf_counter()
                     slab, radius = _projector_slab(fourier_maps[half], volume_shape, checkpoint.current_size)
                     projector_setup_seconds[half] += time.perf_counter() - setup_start
-                    if args.engine == "gemm":
+                    if args.engine != "native":
                         refresh_seconds[half] += owners[half].refresh_after(slab, last_completions[half], logical_r_max=radius)
                         references[half] = slab
                     else:
@@ -852,6 +1014,19 @@ def run_fixed_fixture_trajectory(args, model_dir):
                 "half_particles": [len(ids) for ids in source_ids], "batch_capacity": args.images,
                 "rotations": args.rotations, "translations": args.translations,
                 "rotation_tile": args.rotation_tile, "translation_tile": args.translation_tile,
+                "row_tile": args.row_tile if args.engine == "resident_cuda" else None,
+                "score_owner": (
+                    "production_selected_coarse_gemm"
+                    if args.engine == "resident_cuda" else
+                    "dense_experiment_gemm" if args.engine == "gemm" else
+                    "historical_fused_projector"
+                ),
+                "mstep_owner": (
+                    "spa_resident_cuda_chunked_rows"
+                    if args.engine == "resident_cuda" else
+                    "collapsed_rotation_slices" if args.engine == "gemm" else
+                    "historical_particle_grid"
+                ),
                 "score_pixels": int(geometry["score_indices"].size),
                 "recon_pixels": int(geometry["window"].relion_x_half_recon_indices.size),
                 "bp_shape": list(bp_shape), "volume_size": volume_size,
@@ -945,7 +1120,7 @@ def benchmark_fixed_fixture_batch(args, model_dir):
     projector_start = time.perf_counter()
     slab, radius = _projector_slab(checkpoint.fourier_maps[half], volume_shape, checkpoint.current_size)
     texture = None
-    if args.engine == "gemm":
+    if args.engine in {"gemm", "resident_cuda"}:
         texture = RelionCapacityHalfTextureF32(slab, radius, padding_factor=2, reusable_staging=True)
         reference = slab
         project, backproject = native_relion_callbacks(
@@ -955,11 +1130,18 @@ def benchmark_fixed_fixture_batch(args, model_dir):
             volume_shape=bp_shape, padding_factor=2, capacity_texture=texture,
         )
 
-        def make_program(mode):
-            return make_batch_program(
-                DenseGemmTileConfig(args.images, args.rotation_tile, args.translation_tile,
-                                    args.translation_side, mode), project, backproject,
-            )
+        if args.engine == "gemm":
+            def make_program(mode):
+                return make_batch_program(
+                    DenseGemmTileConfig(args.images, args.rotation_tile, args.translation_tile,
+                                        args.translation_side, mode), project, backproject,
+                )
+        else:
+            def make_program(mode):
+                return _resident_cuda_fixture_program(
+                    args, geometry, bp_shape, checkpoint.current_size,
+                    dataset.image_shape, project, mode=mode,
+                )
 
     else:
         reference = relion_projector_half_to_texture_full(slab)
@@ -1062,6 +1244,19 @@ def benchmark_fixed_fixture_batch(args, model_dir):
                 "candidate_count": args.images * args.rotations * args.translations,
                 "exact_score_sweeps": 2 if args.mode == "exact" else 1,
                 "native_per_image_row_adjoint": args.engine == "native",
+                "score_owner": (
+                    "production_selected_coarse_gemm"
+                    if args.engine == "resident_cuda" else
+                    "dense_experiment_gemm" if args.engine == "gemm" else
+                    "historical_fused_projector"
+                ),
+                "mstep_owner": (
+                    "spa_resident_cuda_chunked_rows"
+                    if args.engine == "resident_cuda" else
+                    "collapsed_rotation_slices" if args.engine == "gemm" else
+                    "historical_particle_grid"
+                ),
+                "row_tile": args.row_tile if args.engine == "resident_cuda" else None,
             },
             "source_sha256": checkpoint.source_sha256, "native": _native_identity(),
             "dataset_and_grid_setup_seconds": setup_seconds,
@@ -1126,7 +1321,7 @@ def arguments():
     parser.add_argument("--probe-operands", action="store_true")
     parser.add_argument("--benchmark-batch", action="store_true")
     parser.add_argument("--save-arrays", action="store_true")
-    parser.add_argument("--engine", choices=("gemm", "native"), default="gemm")
+    parser.add_argument("--engine", choices=("gemm", "native", "resident_cuda"), default="gemm")
     parser.add_argument("--mode", choices=("exact", "lagged"), default="exact")
     parser.add_argument("--translation-side", choices=("image", "projection"), default="image")
     parser.add_argument("--iterations", type=int, default=2)
@@ -1140,6 +1335,7 @@ def arguments():
     parser.add_argument("--translations", type=int, default=3)
     parser.add_argument("--rotation-tile", type=int, default=4)
     parser.add_argument("--translation-tile", type=int, default=1)
+    parser.add_argument("--row-tile", type=int, default=2048)
     return parser.parse_args()
 
 
