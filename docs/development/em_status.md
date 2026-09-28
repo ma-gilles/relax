@@ -220,8 +220,10 @@ RELION's `_model.star` and `_data.star` (poses equal to same-seed RELION through
 tilt-image power above the norm cutoff with mass 1 instead of 1 / n_images, so the noise beyond the current size was 39x
 RELION's. Fixed in 3409d7bc (gate 14605082: 110 GPU tests and replay green): the noise now matches RELION's in every shell at
 iteration 1 and the three runs give 0.9348-0.9380 (0.9365 mean). Still about 0.001-0.002 low at iteration 2 with equal poses and
-Pmax, and relax's sigma_offset is 1-1.5% below RELION's from iteration 1. Next: find what still lowers the iteration-2
-gold-standard FSC.
+Pmax. Ruled out: sigma_offset (relax's trajectory pools both halves, RELION's model.star is per half; the per-half values match in
+the it001 replay) and norm correction (RELION switches it off for tomo, ml_optimiser.cpp:2688-2693; relax does too since 608a997b,
+and the group scales now equal RELION's to 6 digits at it2; the band did not move, gate 14622150). Next: find what still lowers
+the iteration-2 gold-standard FSC.
 
 RELION float32 BPref accumulation band (2026-09-25, not reproduced; lead decision). RELION's GPU backprojector adds every
 particle of a half into one float32 volume with `atomicAdd` (acc/acc_backprojector.h:41; acc/cuda/cuda_kernels/BP.cuh:157-169)
