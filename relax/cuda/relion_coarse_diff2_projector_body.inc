@@ -30,9 +30,13 @@
         const int local_rotation = index / 6;
         const int component = index - local_rotation * 6;
         const int rotation = rotation_start + local_rotation;
+        // PER_IMAGE_POSES: image ``batch`` has its own rotations [output_rotation_count, 6].
+        const int64_t rotation_base = PER_IMAGE_POSES
+            ? static_cast<int64_t>(batch) * output_rotation_count * 6
+            : 0;
         shared_rotations[index] =
             rotation < rotation_offset + rotation_count
-            ? rotations[rotation * 6 + component]
+            ? rotations[rotation_base + rotation * 6 + component]
             : 0.0f;
     }
     __syncthreads();
@@ -68,14 +72,18 @@
         kRelionCoarseDiff2BlockSize;
     float tx;
     float ty;
+    // PER_IMAGE_POSES: image ``batch`` has its own translation phases [translation_count, 2].
+    const float* image_angles = PER_IMAGE_POSES
+        ? translation_angles + static_cast<int64_t>(batch) * translation_count * 2
+        : translation_angles;
     if constexpr (SINGLE_LANE_CANONICAL) {
         // Threads above the runtime translation count do no scoring, and must
         // not read past the compact translation-angle array.
-        tx = active_thread ? translation_angles[2 * translation] : 0.0f;
-        ty = active_thread ? translation_angles[2 * translation + 1] : 0.0f;
+        tx = active_thread ? image_angles[2 * translation] : 0.0f;
+        ty = active_thread ? image_angles[2 * translation + 1] : 0.0f;
     } else {
-        tx = translation_angles[2 * translation];
-        ty = translation_angles[2 * translation + 1];
+        tx = image_angles[2 * translation];
+        ty = image_angles[2 * translation + 1];
     }
     float lane_sums[EULERS_PER_BLOCK] = {0.0f};
 

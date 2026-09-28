@@ -711,7 +711,8 @@ template <
     int EULERS_PER_BLOCK,
     bool CAPTURE_LANES = false,
     bool CANONICAL_REDUCTION = false,
-    bool SINGLE_LANE_CANONICAL = false>
+    bool SINGLE_LANE_CANONICAL = false,
+    bool PER_IMAGE_POSES = false>
 __global__ __launch_bounds__(kRelionCoarseDiff2BlockSize)
 void relion_coarse_diff2_projector_f32_kernel(
     cudaTextureObject_t tex_real,
@@ -767,6 +768,7 @@ void relion_coarse_diff2_projector_prehalf_f32_kernel(
     float padding_factor)
 #define CANONICAL_REDUCTION false
 #define SINGLE_LANE_CANONICAL false
+#define PER_IMAGE_POSES false
 #define RELAX_RELION_COARSE_STAGE_WEIGHT(pixel_weight) \
     pixel_weight = __fmul_rn(pixel_weight, 0.5f);
 #define RELAX_RELION_COARSE_DIFF2_UPDATE \
@@ -774,6 +776,7 @@ void relion_coarse_diff2_projector_prehalf_f32_kernel(
 #include "relion_coarse_diff2_projector_body.inc"
 #undef RELAX_RELION_COARSE_DIFF2_UPDATE
 #undef RELAX_RELION_COARSE_STAGE_WEIGHT
+#undef PER_IMAGE_POSES
 #undef SINGLE_LANE_CANONICAL
 #undef CANONICAL_REDUCTION
 
@@ -782,7 +785,8 @@ template <
     bool CAPTURE_LANES,
     bool CANONICAL_REDUCTION,
     bool SINGLE_LANE_CANONICAL,
-    bool PREHALF_WEIGHT>
+    bool PREHALF_WEIGHT,
+    bool PER_IMAGE_POSES = false>
 void launch_relion_coarse_diff2_projector_f32_variant(
     int blocks,
     cudaStream_t stream,
@@ -811,6 +815,7 @@ void launch_relion_coarse_diff2_projector_f32_variant(
     static_assert(
         !PREHALF_WEIGHT || (!CANONICAL_REDUCTION && !SINGLE_LANE_CANONICAL),
         "prehalved coarse weights require native atomic reduction");
+    static_assert(!PREHALF_WEIGHT || !PER_IMAGE_POSES, "per-image poses use the default weights");
     if constexpr (PREHALF_WEIGHT) {
         relion_coarse_diff2_projector_prehalf_f32_kernel<
             EULERS_PER_BLOCK,
@@ -842,7 +847,8 @@ void launch_relion_coarse_diff2_projector_f32_variant(
             EULERS_PER_BLOCK,
             CAPTURE_LANES,
             CANONICAL_REDUCTION,
-            SINGLE_LANE_CANONICAL><<<
+            SINGLE_LANE_CANONICAL,
+            PER_IMAGE_POSES><<<
             blocks, kRelionCoarseDiff2BlockSize, 0, stream>>>(
                 tex_real,
                 tex_imag,
@@ -1008,7 +1014,8 @@ template <
     bool CAPTURE_LANES = false,
     bool CANONICAL_REDUCTION = false,
     bool SINGLE_LANE_CANONICAL = false,
-    bool PREHALF_WEIGHT = false>
+    bool PREHALF_WEIGHT = false,
+    bool PER_IMAGE_POSES = false>
 cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
     cudaStream_t stream,
     const float2* projector_full,
@@ -1161,7 +1168,8 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
                 CAPTURE_LANES,
                 CANONICAL_REDUCTION,
                 SINGLE_LANE_CANONICAL,
-                PREHALF_WEIGHT>(
+                PREHALF_WEIGHT,
+                PER_IMAGE_POSES>(
                     blocks,
                     stream,
                     launch_texture_real, launch_texture_imag, rotations, images,
@@ -1180,7 +1188,8 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
                 CAPTURE_LANES,
                 CANONICAL_REDUCTION,
                 SINGLE_LANE_CANONICAL,
-                PREHALF_WEIGHT>(
+                PREHALF_WEIGHT,
+                PER_IMAGE_POSES>(
                     batch_size * tail_count,
                     stream,
                     launch_texture_real, launch_texture_imag, rotations, images,
@@ -1193,6 +1202,10 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
             err = cudaGetLastError();
             if (err != cudaSuccess) goto cleanup;
         }
+    } else if (PER_IMAGE_POSES) {
+        // Per-image poses run on the caller's stream only.
+        err = cudaErrorInvalidValue;
+        goto cleanup;
     } else {
         // This path changes only particle scheduling.  Texture ownership,
         // projection, translation, lane arithmetic, selected lane reduction,

@@ -424,7 +424,11 @@ def test_relion_fused_coarse_projector_source_pins_vdam_support_and_segmentation
         source.index("relion_coarse_diff2_projector_prehalf_f32_kernel", start) :
         source.index("launch_relion_coarse_diff2_projector_f32_variant", start)
     ]
-    assert "bool SINGLE_LANE_CANONICAL = false>" in default_kernel
+    assert "bool SINGLE_LANE_CANONICAL = false,\n    bool PER_IMAGE_POSES = false>" in default_kernel
+    # Per-image poses (subtomogram tilt images) only offset the rotation and phase reads.
+    assert "#define PER_IMAGE_POSES false" in prehalf_kernel
+    assert "rotations[rotation_base + rotation * 6 + component]" in block
+    assert "image_angles[2 * translation]" in block
     assert "PREHALF_WEIGHT" not in default_kernel
     assert "#define RELAX_RELION_COARSE_STAGE_WEIGHT(pixel_weight)\n" in default_kernel
     assert "relion_fine_diff2_update_f32" in default_kernel

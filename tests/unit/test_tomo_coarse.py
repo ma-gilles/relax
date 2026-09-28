@@ -82,3 +82,123 @@ def test_particle_significance_cuts_the_summed_diff2_with_its_3d_offset_prior():
         expected = _relion_coarse_cut(log_weight.astype(np.float32).reshape(-1), 0.999)
         assert np.array_equal(np.asarray(got["mask"][p]), expected)
         assert int(got["n_significant"][p]) == int(expected.sum())
+
+
+def _fake_per_image_projector(projector_full, rotations, images, angles, weight, initial, full_to_compact, **kwargs):
+    # [B, R, Tc]: each image's own rotations and phases, plus its initial diff2 and a weight term.
+    per_rot = jnp.sum(rotations, axis=(2, 3))
+    return initial[:, None, None] + per_rot[:, :, None] + angles[:, None, :, 0] + jnp.sum(weight, axis=1)[:, None, None]
+
+
+def test_particles_are_scored_with_each_images_poses_and_summed_in_slot_order(monkeypatch):
+    monkeypatch.setattr(em_cuda_kernels, "relion_coarse_diff2_projector_per_image_f32", _fake_per_image_projector)
+    rng = np.random.default_rng(7)
+    n_particles, n_slots, n_rot, n_trans = 2, 3, 5, 300  # three translation chunks
+    rotations = rng.normal(size=(n_particles, n_slots, n_rot, 3, 3)).astype(np.float32)
+    angles = rng.normal(size=(n_particles, n_slots, n_trans, 2)).astype(np.float32)
+    weight = rng.uniform(size=(n_particles, n_slots, 4)).astype(np.float32)
+    initial = rng.uniform(1.0, 2.0, size=(n_particles, n_slots)).astype(np.float32)
+    total = tomo_coarse._particles_coarse_diff2.__wrapped__(
+        jnp.zeros((n_particles, n_rot, n_trans), jnp.float32),
+        None,
+        jnp.asarray(rotations),
+        jnp.zeros((n_particles, n_slots, 4), jnp.complex64),
+        jnp.asarray(weight),
+        jnp.asarray(initial),
+        jnp.asarray(angles),
+        jnp.zeros(1, jnp.int32),
+        current_size=6,
+        physical_image_size=8,
+        model_max_r=3,
+        padding_factor=2,
+        n_chunks=3,
+    )
+    for p in range(n_particles):
+        expected = np.zeros((n_rot, n_trans), np.float32)
+        for s in range(n_slots):
+            image = (
+                initial[p, s]
+                + rotations[p, s].sum(axis=(1, 2))[:, None]
+                + angles[p, s][None, :, 0]
+                + weight[p, s].sum()
+            ).astype(np.float32)
+            expected = (expected + image).astype(np.float32)
+        assert_matches(np.asarray(total[p]), expected)
+
+
+def test_coarse_batches_share_one_shape_within_the_budget():
+    batches = tomo_coarse._coarse_batches(
+        [130, 90, 200, 50, 70], n_slots=39, n_trans=81, budget_bytes=40 * 256 * 81 * 4 * 2
+    )
+    assert [b[1] for b in batches] == [256] * 3 and all(b[2] == 2 and b[3] == 39 for b in batches)
+    np.testing.assert_array_equal(np.concatenate([b[0] for b in batches]), np.arange(5))
+    # One particle over the budget is scored a block of slots at a time.
+    ((units, r_pad, p_pad, slot_block),) = tomo_coarse._coarse_batches(
+        [4608], n_slots=39, n_trans=515, budget_bytes=4608 * 515 * 4 * 6
+    )
+    assert (r_pad, p_pad, slot_block) == (4608, 1, 6)
+
+
+@pytest.mark.gpu
+def test_the_per_image_kernel_matches_the_one_image_calls(gpu_device):
+    """The batched per-image launch and one call per image score every (image, rotation, translation) alike."""
+
+    import jax
+
+    from relax.cuda.kernels import custom_cuda_requested
+
+    if not custom_cuda_requested():
+        pytest.skip("custom CUDA is disabled")
+    rng = np.random.default_rng(11)
+    box, size, pad, max_r = 32, 32, 2, 16
+    layout = tomo_coarse.coarse_score_layout((box, box), size, half_spectrum_scoring=True, square_window=False)
+    n_px = int(layout.score_indices_np.size)
+    side = 2 * max_r * pad + 3
+    with jax.default_device(gpu_device):
+        projector = jnp.asarray((rng.normal(size=(side,) * 3) + 1j * rng.normal(size=(side,) * 3)).astype(np.complex64))
+        n_images, n_rot, n_trans = 5, 144, 81  # 128 main-segment rotations and a 16-rotation tail
+        q = rng.normal(size=(n_images * n_rot, 4))
+        q /= np.linalg.norm(q, axis=1, keepdims=True)
+        w, x, y, z = q.T
+        rotations = (
+            np.stack(
+                [
+                    np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)], -1),
+                    np.stack([2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)], -1),
+                    np.stack([2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)], -1),
+                ],
+                -2,
+            )
+            .astype(np.float32)
+            .reshape(n_images, n_rot, 3, 3)
+        )
+        images = (rng.normal(size=(n_images, n_px)) + 1j * rng.normal(size=(n_images, n_px))).astype(np.complex64)
+        weight = rng.uniform(0.1, 1.0, size=(n_images, n_px)).astype(np.float32)
+        initial = rng.uniform(10.0, 20.0, size=n_images).astype(np.float32)
+        angles = rng.uniform(-0.2, 0.2, size=(n_images, n_trans, 2)).astype(np.float32)
+        batched = em_cuda_kernels.relion_coarse_diff2_projector_per_image_f32(
+            projector,
+            jnp.asarray(rotations),
+            jnp.asarray(images),
+            jnp.asarray(angles),
+            jnp.asarray(weight),
+            jnp.asarray(initial),
+            layout.full_to_compact,
+            current_size=size,
+            physical_image_size=box,
+            model_max_r=max_r,
+            padding_factor=pad,
+        )
+        for b in range(n_images):
+            single = tomo_coarse.tilt_image_coarse_diff2(
+                projector,
+                rotations[b],
+                images[b],
+                weight[b],
+                initial[b],
+                angles[b],
+                layout,
+                model_max_r=max_r,
+                padding_factor=pad,
+            )
+            assert_matches(np.asarray(batched[b]), np.asarray(single), err_msg=f"image {b}")

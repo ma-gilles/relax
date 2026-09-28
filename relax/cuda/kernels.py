@@ -3291,6 +3291,70 @@ def relion_coarse_diff2_projector_f32(
 
 @functools.partial(
     jax.jit,
+    static_argnames=("current_size", "physical_image_size", "model_max_r", "padding_factor"),
+)
+def relion_coarse_diff2_projector_per_image_f32(
+    projector_full: jax.Array,
+    rotation_matrices: jax.Array,
+    images: jax.Array,
+    translation_angles: jax.Array,
+    weight: jax.Array,
+    initial_diff2: jax.Array,
+    full_to_compact: jax.Array,
+    *,
+    current_size: int,
+    physical_image_size: int,
+    model_max_r: int,
+    padding_factor: int = 1,
+) -> jax.Array:
+    """:func:`relion_coarse_diff2_projector_f32` with one pose set per image, canonical reduction.
+
+    Image ``b`` is scored with its own rotations ``rotation_matrices[b]`` ``[R, 3, 3]`` and phases
+    ``translation_angles[b]`` ``[T, 2]`` (``T <= 128``), as a subtomogram's tilt images each have their
+    own ``Aproj``; returns ``[B, R, T]``. Each image's diff2 is the per-image call's (same kernel
+    arithmetic and lane reduction); the texture is staged once and all images run in one launch.
+    """
+
+    n_images, n_rotations = int(rotation_matrices.shape[0]), int(rotation_matrices.shape[1])
+    if rotation_matrices.shape[2:] != (3, 3) or translation_angles.ndim != 3 or translation_angles.shape[2] != 2:
+        raise ValueError(
+            f"per-image poses are [B, R, 3, 3] and [B, T, 2], got {rotation_matrices.shape} {translation_angles.shape}"
+        )
+    if images.shape[0] != n_images or translation_angles.shape[0] != n_images:
+        raise ValueError("rotations, phases and images must have one entry per image")
+    compact_rotations, _ = _prepare_relion_coarse_diff2_projector_f32(
+        projector_full,
+        rotation_matrices.reshape(n_images * n_rotations, 3, 3),
+        images,
+        translation_angles[0],
+        weight,
+        initial_diff2,
+        full_to_compact,
+        current_size=current_size,
+        physical_image_size=physical_image_size,
+        model_max_r=model_max_r,
+    )
+    return jax.ffi.ffi_call(
+        _TARGET_RELION_COARSE_DIFF2_PROJECTOR_PER_IMAGE_F32,
+        jax.ShapeDtypeStruct((n_images, n_rotations, int(translation_angles.shape[1])), jnp.float32),
+        vmap_method="sequential",
+    )(
+        projector_full,
+        compact_rotations.reshape(n_images, n_rotations, 6),
+        images,
+        translation_angles,
+        weight,
+        initial_diff2,
+        full_to_compact,
+        current_size=np.int64(current_size),
+        physical_image_size=np.int64(physical_image_size),
+        model_max_r=np.int64(model_max_r),
+        padding_factor=np.int64(int(padding_factor)),
+    )
+
+
+@functools.partial(
+    jax.jit,
     static_argnames=(
         "current_size",
         "physical_image_size",
@@ -6973,6 +7037,9 @@ _TARGET_RELION_COARSE_DIFF2_PROJECTOR_MULTISTREAM_F32 = (
 )
 
 
+_TARGET_RELION_COARSE_DIFF2_PROJECTOR_PER_IMAGE_F32 = "cuda_relion_coarse_diff2_projector_per_image_f32"
+
+
 _TARGET_RELION_COARSE_DIFF2_PROJECTOR_LANES_F32 = (
     "cuda_relion_coarse_diff2_projector_lanes_f32"
 )
@@ -7374,6 +7441,10 @@ _FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
     (
         _TARGET_RELION_COARSE_DIFF2_PROJECTOR_MULTISTREAM_F32,
         "RelionCoarseDiff2ProjectorMultistreamF32",
+    ),
+    (
+        _TARGET_RELION_COARSE_DIFF2_PROJECTOR_PER_IMAGE_F32,
+        "RelionCoarseDiff2ProjectorPerImageF32",
     ),
     (
         _TARGET_RELION_COARSE_DIFF2_PROJECTOR_LANES_F32,

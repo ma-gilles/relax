@@ -14,6 +14,7 @@ Single-particle data are the one-image case: ``unit_image_offsets = arange(n + 1
 
 from __future__ import annotations
 
+from functools import partial
 from typing import NamedTuple
 
 import jax
@@ -347,8 +348,12 @@ def run_tilt_chunk(
     # has thousands, and the Wavg rectangle is [images, T, P_rect] (gathered per row, [rows, T, P_rect]).
     # Dropped translations carry exactly zero posterior.
     block_rows = int(spec.mstep_block_rows)
+    host_posterior = np.asarray(row_posterior[:n_valid_rows])
+    # Rows without posterior mass (RELION's non-significant samples) add exact zeros; the M-step
+    # blocks visit only the rows with mass (row_has_mass), gathered to the front of each slot's order.
+    row_has_mass = np.any(host_posterior > 0.0, axis=1)
     translation_blocks = mstep_translation_blocks(
-        mstep_translations(np.asarray(row_posterior[:n_valid_rows]), n_fine_trans),
+        mstep_translations(host_posterior, n_fine_trans),
         bytes_per_translation=(unit_capacity + block_rows)
         * (int(rect_indices_device.shape[0]) + int(exact_positions_device.shape[0]))
         * 8,
@@ -360,7 +365,6 @@ def run_tilt_chunk(
         n_fine_trans=int(translation_blocks[0].index.size),
         **spec_kwargs,
     )
-    row_index = jnp.arange(row_capacity, dtype=jnp.int32)
     unit_slot_images = _unit_slot_images(layout, unit_capacity=unit_capacity, slot_capacity=n_slots)
     row_unit = np.asarray(host["row_image_local"], dtype=np.int64)
     for slot in range(n_slots):
@@ -369,9 +373,18 @@ def run_tilt_chunk(
         slot_images = unit_slot_images[slot]
         row_has_image = np.zeros(row_capacity, dtype=bool)
         row_has_image[:n_valid_rows] = slot_images[row_unit[:n_valid_rows]] >= 0
-        has_image = jnp.asarray(row_has_image)
+        row_active = row_has_image.copy()
+        row_active[:n_valid_rows] &= row_has_mass
+        n_active = int(np.count_nonzero(row_active))
+        if n_active == 0:
+            continue
+        # The slot's rows in visiting order: the active rows first (ascending), then the rest.
+        order = np.concatenate([np.flatnonzero(row_active), np.flatnonzero(~row_active)])
+        order_device = jnp.asarray(order, dtype=jnp.int32)
+        # Rows past the active ones are padding for the kernels (id -1, zero posterior).
+        active = jnp.asarray(row_active[order])
         units = jnp.asarray(
-            np.where(row_has_image, np.pad(row_unit, (0, row_capacity - row_unit.size)), 0), dtype=jnp.int32
+            np.where(row_has_image, np.pad(row_unit, (0, row_capacity - row_unit.size)), 0)[order], dtype=jnp.int32
         )
         slot_carry = None
         for kept in translation_blocks:
@@ -399,17 +412,17 @@ def run_tilt_chunk(
             # partial sums add in the slot's carry.
             block_posterior = jnp.where(
                 jnp.asarray(kept.valid)[None, :],
-                row_posterior[:, jnp.asarray(kept.index)],
+                row_posterior[order_device][:, jnp.asarray(kept.index)],
                 jnp.zeros((), row_posterior.dtype),
             )
             blocks = rp._MstepBlockInputs(
                 row_image_local=units,
-                kernel_row_image_ids=jnp.where(has_image, units, jnp.int32(-1)),
-                row_posterior=jnp.where(has_image[:, None], block_posterior, jnp.zeros((), block_posterior.dtype)),
-                row_fine_rot=jnp.int32(slot * row_capacity) + row_index,
+                kernel_row_image_ids=jnp.where(active, units, jnp.int32(-1)),
+                row_posterior=jnp.where(active[:, None], block_posterior, jnp.zeros((), block_posterior.dtype)),
+                row_fine_rot=jnp.int32(slot * row_capacity) + order_device,
                 projections=None,
             )
-            for start in range(0, n_valid_rows, block_rows):
+            for start in range(0, n_active, block_rows):
                 slot_carry = rp._resident_mstep_block_at(
                     rp._device_int32(start),
                     blocks,
@@ -539,49 +552,72 @@ def _unit_slot_images(layout: ChunkTiltLayout, *, unit_capacity: int, slot_capac
     return np.where(slots < counts[None, :], first[None, :] + slots, -1).astype(np.int64)
 
 
+# The per-image fields a slot view gathers, and their padding value when not zero.
+_SLOT_VIEW_FIELDS = (
+    "score_input",
+    "corr_img_score",
+    "highres_xi2_half",
+    "translation_prior",
+    "recon_image",
+    "recon_weight",
+    "noise_image",
+    "ctf2_over_nv_recon",
+    "direct_ctf_rfloat_recon",
+    "image_power_shells",
+    "relion_norm_high_shell",
+    "scale",
+    "group_ids",
+    "optics_groups",
+    "image_noise_scale",
+)
+_SLOT_VIEW_FILL = {"scale": 1.0, "group_ids": -1}
+
+
 def _slot_view(operands, wavg_window, slot_images, *, angles, rect_indices, exact_positions, image_shape):
     """The chunk operands of one image slot, one image per unit (``slot_images``, -1 padded).
 
     Padded units read the first image with every array zeroed, except ``scale`` (1) and ``group_ids``
     (-1), the chunk gather's padding values (resident_operands._gather_chunk_arrays). The slot's
-    translated Wavg rectangle is built here with each image's own phases.
+    translated Wavg rectangle is built here with each image's own phases. One jitted program
+    (:func:`_slot_view_arrays`) per slot shape.
     """
-
-    from relax.sparse_pass2.resident_operands import _gather_rows
-    from relax.sparse_pass2.sparse_pass2_wavg import relion_cuda_translate_wavg_norm_window
 
     slot_images = np.asarray(slot_images, dtype=np.int64)
     valid = jnp.asarray(slot_images >= 0)
     safe = jnp.asarray(np.where(slot_images >= 0, slot_images, int(np.max(slot_images))), dtype=jnp.int32)
+    fields = {name: getattr(operands, name) for name in _SLOT_VIEW_FIELDS}
+    gathered, translated, translated_atomic = _slot_view_arrays(
+        fields,
+        wavg_window,
+        safe,
+        valid,
+        jnp.asarray(angles, dtype=jnp.float32),
+        rect_indices,
+        jnp.asarray(exact_positions, dtype=jnp.int32),
+        image_shape=tuple(int(n) for n in image_shape),
+    )
+    return operands._replace(
+        **gathered, raw_translated_wavg_rectangle=translated, raw_translated_wavg_for_atomic=translated_atomic
+    )
 
-    def take(values, fill=0):
-        return _gather_rows(values, safe, valid, fill=fill)
 
-    window = take(wavg_window)
+@partial(jax.jit, static_argnames=("image_shape",))
+def _slot_view_arrays(fields, wavg_window, safe, valid, angles, rect_indices, exact_positions, *, image_shape):
+    """:func:`_slot_view`'s device work: the per-image gathers and the translated Wavg rectangle."""
+
+    from relax.sparse_pass2.resident_operands import _gather_rows
+    from relax.sparse_pass2.sparse_pass2_wavg import relion_cuda_translate_wavg_norm_window
+
+    gathered = {
+        name: _gather_rows(values, safe, valid, fill=_SLOT_VIEW_FILL.get(name, 0)) for name, values in fields.items()
+    }
+    window = _gather_rows(wavg_window, safe, valid)
     translated = jax.lax.map(
         lambda pair: relion_cuda_translate_wavg_norm_window(pair[0][None], pair[1], rect_indices, image_shape)[0],
-        (window, jnp.asarray(angles, dtype=jnp.float32)),
+        (window, angles),
     )
     translated = jnp.where(valid[:, None, None], translated, jnp.zeros((), translated.dtype))
-    return operands._replace(
-        score_input=take(operands.score_input),
-        corr_img_score=take(operands.corr_img_score),
-        highres_xi2_half=take(operands.highres_xi2_half),
-        translation_prior=take(operands.translation_prior),
-        recon_image=take(operands.recon_image),
-        recon_weight=take(operands.recon_weight),
-        noise_image=take(operands.noise_image),
-        ctf2_over_nv_recon=take(operands.ctf2_over_nv_recon),
-        direct_ctf_rfloat_recon=take(operands.direct_ctf_rfloat_recon),
-        image_power_shells=take(operands.image_power_shells),
-        relion_norm_high_shell=take(operands.relion_norm_high_shell),
-        raw_translated_wavg_rectangle=translated,
-        raw_translated_wavg_for_atomic=translated[:, :, jnp.asarray(exact_positions, dtype=jnp.int32)],
-        scale=take(operands.scale, fill=1.0),
-        group_ids=take(operands.group_ids, fill=-1),
-        optics_groups=take(operands.optics_groups),
-        image_noise_scale=take(operands.image_noise_scale),
-    )
+    return gathered, translated, translated[:, :, exact_positions]
 
 
 def _fold_slot_carry(full, slot, slot_images, *, image_capacity: int):
@@ -590,20 +626,29 @@ def _fold_slot_carry(full, slot, slot_images, *, image_capacity: int):
     slot_images = np.asarray(slot_images, dtype=np.int64)
     # Padded units write past the end and are dropped (an out-of-range positive index, never -1).
     target = jnp.asarray(np.where(slot_images >= 0, slot_images, int(image_capacity)), dtype=jnp.int32)
-
-    def place(full_values, slot_values):
-        if full_values is None:
-            return None
-        return full_values.at[target].set(slot_values, mode="drop")
-
-    return full._replace(
-        Ft_y=slot.Ft_y,
-        Ft_ctf=slot.Ft_ctf,
-        wavg_triplet_pixels=place(full.wavg_triplet_pixels, slot.wavg_triplet_pixels),
-        noise_shells=full.noise_shells + slot.noise_shells,
-        a2_per_image=place(full.a2_per_image, slot.a2_per_image),
-        xa_per_image=place(full.xa_per_image, slot.xa_per_image),
+    placed = _place_slot_partials(
+        {name: getattr(full, name) for name in _SLOT_PARTIAL_FIELDS},
+        {name: getattr(slot, name) for name in _SLOT_PARTIAL_FIELDS},
+        full.noise_shells,
+        slot.noise_shells,
+        target,
     )
+    return full._replace(Ft_y=slot.Ft_y, Ft_ctf=slot.Ft_ctf, **placed)
+
+
+_SLOT_PARTIAL_FIELDS = ("wavg_triplet_pixels", "a2_per_image", "xa_per_image")
+
+
+@jax.jit
+def _place_slot_partials(full_fields, slot_fields, full_noise, slot_noise, target):
+    """:func:`_fold_slot_carry`'s device work: scatter the slot's per-image partials and add its noise sums."""
+
+    placed = {
+        name: None if full_fields[name] is None else full_fields[name].at[target].set(slot_fields[name], mode="drop")
+        for name in _SLOT_PARTIAL_FIELDS
+    }
+    placed["noise_shells"] = full_noise + slot_noise
+    return placed
 
 
 def row_fine_rot_device(host, row_capacity: int) -> np.ndarray:

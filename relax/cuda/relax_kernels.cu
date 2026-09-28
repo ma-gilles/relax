@@ -5291,6 +5291,110 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ret<ffi::AnyBuffer>()
 );
 
+// The fused coarse projector with one pose set per image: image b scores its own rotations
+// rotations[b] [R, 6] and translation phases translation_angles[b] [T, 2] (a subtomogram's tilt
+// images, each with its own Aproj). One texture staging and one launch for every image of the
+// batch; the per-image arithmetic and the canonical lane reduction are the shared kernel's.
+ffi::Error RelionCoarseDiff2ProjectorPerImageF32Impl(
+    cudaStream_t stream,
+    int64_t current_size,
+    int64_t physical_image_size,
+    int64_t model_max_r,
+    int64_t padding_factor,
+    ffi::AnyBuffer projector_full,
+    ffi::AnyBuffer rotations,
+    ffi::AnyBuffer images,
+    ffi::AnyBuffer translation_angles,
+    ffi::AnyBuffer weight,
+    ffi::AnyBuffer initial_diff2,
+    ffi::AnyBuffer full_to_compact,
+    ffi::Result<ffi::AnyBuffer> output)
+{
+    if (projector_full.element_type() != ffi::DataType::C64 ||
+        images.element_type() != ffi::DataType::C64 ||
+        rotations.element_type() != ffi::DataType::F32 ||
+        translation_angles.element_type() != ffi::DataType::F32 ||
+        weight.element_type() != ffi::DataType::F32 ||
+        initial_diff2.element_type() != ffi::DataType::F32 ||
+        full_to_compact.element_type() != ffi::DataType::S32 ||
+        output->element_type() != ffi::DataType::F32)
+        return ffi::Error::InvalidArgument(
+            "RelionCoarseDiff2ProjectorPerImageF32: operand dtypes");
+    const auto projector_dims = projector_full.dimensions();
+    const auto rotation_dims = rotations.dimensions();
+    const auto image_dims = images.dimensions();
+    const auto angle_dims = translation_angles.dimensions();
+    const auto weight_dims = weight.dimensions();
+    const auto initial_dims = initial_diff2.dimensions();
+    const auto lookup_dims = full_to_compact.dimensions();
+    const auto output_dims = output->dimensions();
+    if (projector_dims.size() != 3 ||
+        projector_dims[0] != projector_dims[1] ||
+        projector_dims[1] != projector_dims[2] ||
+        image_dims.size() != 2 || image_dims[0] <= 0 || image_dims[1] <= 0 ||
+        rotation_dims.size() != 3 || rotation_dims[0] != image_dims[0] ||
+        rotation_dims[1] <= 0 || rotation_dims[2] != 6 ||
+        angle_dims.size() != 3 || angle_dims[0] != image_dims[0] ||
+        angle_dims[1] <= 0 || angle_dims[1] > kRelionCoarseDiff2BlockSize ||
+        angle_dims[2] != 2 ||
+        weight_dims.size() != 2 || weight_dims[0] != image_dims[0] ||
+        weight_dims[1] != image_dims[1] ||
+        initial_dims.size() != 1 || initial_dims[0] != image_dims[0] ||
+        lookup_dims.size() != 1 ||
+        lookup_dims[0] != current_size * (current_size / 2 + 1) ||
+        output_dims.size() != 3 || output_dims[0] != image_dims[0] ||
+        output_dims[1] != rotation_dims[1] || output_dims[2] != angle_dims[1] ||
+        current_size <= 0 || physical_image_size <= 0 || model_max_r <= 0 ||
+        padding_factor <= 0)
+        return ffi::Error::InvalidArgument(
+            "RelionCoarseDiff2ProjectorPerImageF32: inconsistent operand shapes or attributes");
+
+    const cudaError_t err = launch_relion_coarse_diff2_projector_f32_impl<false, true, false, false, true>(
+        stream,
+        static_cast<const float2*>(projector_full.untyped_data()),
+        static_cast<const float*>(rotations.untyped_data()),
+        static_cast<const float2*>(images.untyped_data()),
+        static_cast<const float*>(translation_angles.untyped_data()),
+        static_cast<const float*>(weight.untyped_data()),
+        static_cast<const float*>(initial_diff2.untyped_data()),
+        static_cast<const int32_t*>(full_to_compact.untyped_data()),
+        static_cast<float*>(output->untyped_data()),
+        nullptr,
+        image_dims[0],
+        rotation_dims[1],
+        angle_dims[1],
+        image_dims[1],
+        current_size,
+        projector_dims[0],
+        model_max_r,
+        -static_cast<float>(physical_image_size * physical_image_size),
+        image_dims[0],
+        0,
+        static_cast<int>(padding_factor));
+    if (err != cudaSuccess)
+        return ffi::Error::Internal(
+            std::string("CUDA: ") + cudaGetErrorString(err));
+    return ffi::Error::Success();
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    RelionCoarseDiff2ProjectorPerImageF32, RelionCoarseDiff2ProjectorPerImageF32Impl,
+    ffi::Ffi::Bind()
+        .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Attr<int64_t>("current_size")
+        .Attr<int64_t>("physical_image_size")
+        .Attr<int64_t>("model_max_r")
+        .Attr<int64_t>("padding_factor")
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+);
+
 ffi::Error RelionCoarseDiff2ProjectorLanesF32Impl(
     cudaStream_t stream,
     int64_t current_size,

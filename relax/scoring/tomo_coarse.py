@@ -10,8 +10,9 @@ the significance cut sees one diff2 per particle hypothesis.
 
 relax reuses the SPA pieces: the RELION CUDA preprocessing with no pre-shift and no norm
 correction (RELION neither translates nor normalises a tomo image, :429-476), the exact
-coarse operands, and the fused coarse projector, called once per image. The fused
-projector takes at most 128 translations, so each image is scored in translation chunks;
+coarse operands, and the fused coarse projector with each image's own poses, all images of
+a batch of particles in one launch. The fused projector takes at most 128 translations, so
+each image is scored in translation chunks;
 RELION runs one 1024-thread block for 515 translations. The chunks change only the
 float32 order of the pixel sums, the same class as RELION's own atomic lane order.
 See PLAN.md "S4.2 implementation ladder" in the cryo-ET coordination directory.
@@ -190,10 +191,13 @@ def particle_coarse_diff2(image_diff2_in_slot_order):
     return total
 
 
-@partial(
-    jax.jit, static_argnames=("current_size", "physical_image_size", "model_max_r", "padding_factor", "n_chunks")
-)
-def _particle_coarse_diff2_scan(
+# Bytes of per-image coarse diff2 ([images, R, T] float32) one batched call materialises.
+_COARSE_BATCH_BYTES = 512 << 20
+
+
+@partial(jax.jit, static_argnames=("current_size", "physical_image_size", "model_max_r", "padding_factor", "n_chunks"))
+def _particles_coarse_diff2(
+    total,
     projector_full,
     rotations,
     unshifted,
@@ -208,49 +212,69 @@ def _particle_coarse_diff2_scan(
     padding_factor: int,
     n_chunks: int,
 ):
-    """One particle's coarse diff2 ``[R, T]``: its images' diff2 (:func:`tilt_image_coarse_diff2`) added in slot order.
+    """``total`` ``[P, R, T]`` plus the particles' images' coarse diff2, added in slot order.
 
-    One program per (slots, rotations, translations): the images run in a device loop, not one
-    host dispatch per image and translation chunk. A padded slot has zero pixel weight and zero
-    initial diff2, so it adds exact zeros.
+    ``rotations`` ``[P, S, R, 3, 3]``, ``unshifted``/``pixel_weight`` ``[P, S, pixels]``, ``initial_diff2``
+    ``[P, S]`` and ``translation_angles`` ``[P, S, T, 2]`` are the particles' tilt images (or a block of
+    their slots) with each image's own poses; every image of the call is scored in one launch per
+    translation chunk (:func:`relax.cuda.kernels.relion_coarse_diff2_projector_per_image_f32`, the
+    per-image arithmetic of :func:`tilt_image_coarse_diff2`). A padded slot or particle has zero
+    pixel weight and zero initial diff2, so it adds exact zeros.
     """
 
     from relax.cuda import kernels as em_cuda_kernels
 
+    n_particles, n_slots, n_rot = (int(n) for n in rotations.shape[:3])
     capacity = _FUSED_TRANSLATION_CAPACITY
 
-    def image_diff2(rotation, image, weight, initial, angles):
-        return jnp.concatenate(
-            [
-                em_cuda_kernels.relion_coarse_diff2_projector_f32(
-                    projector_full,
-                    rotation,
-                    image[None],
-                    angles[chunk * capacity : (chunk + 1) * capacity],
-                    weight[None],
-                    initial.reshape(1),
-                    full_to_compact,
-                    current_size=current_size,
-                    physical_image_size=physical_image_size,
-                    model_max_r=model_max_r,
-                    padding_factor=padding_factor,
-                    canonical_reduction=True,
-                )[0]
-                for chunk in range(n_chunks)
-            ],
-            axis=1,
-        )
+    def flat(values):
+        return values.reshape((n_particles * n_slots,) + values.shape[2:])
 
-    def body(total, xs):
-        return total + image_diff2(*xs), None
-
-    n_rot, n_trans = rotations.shape[1], translation_angles.shape[1]
-    total, _ = jax.lax.scan(
-        body,
-        jnp.zeros((n_rot, n_trans), dtype=jnp.float32),
-        (rotations, unshifted, pixel_weight, initial_diff2, translation_angles),
+    image_diff2 = jnp.concatenate(
+        [
+            em_cuda_kernels.relion_coarse_diff2_projector_per_image_f32(
+                projector_full,
+                flat(rotations),
+                flat(unshifted),
+                flat(translation_angles[:, :, chunk * capacity : (chunk + 1) * capacity]),
+                flat(pixel_weight),
+                flat(initial_diff2),
+                full_to_compact,
+                current_size=current_size,
+                physical_image_size=physical_image_size,
+                model_max_r=model_max_r,
+                padding_factor=padding_factor,
+            ).reshape(n_particles, n_slots, n_rot, -1)
+            for chunk in range(n_chunks)
+        ],
+        axis=3,
     )
+    for slot in range(n_slots):
+        total = total + image_diff2[:, slot]
     return total
+
+
+def _coarse_batches(rotation_counts, *, n_slots: int, n_trans: int, budget_bytes: int = _COARSE_BATCH_BYTES):
+    """Batches of consecutive particles for :func:`_particles_coarse_diff2`: ``(units, R_pad, P_pad, slot_block)``.
+
+    One shape for the whole pass, so one program compiles: ``R_pad`` is the largest rotation count
+    rounded up to a multiple of 128 (the kernel's main segment), and ``P_pad`` particles of
+    ``slot_block`` slots per call keep ``P_pad * slot_block * R_pad * T`` float32 within ``budget_bytes``
+    (a particle whose images exceed it is scored ``slot_block`` slots at a time).
+    """
+
+    counts = np.asarray(rotation_counts, dtype=np.int64)
+    if counts.size == 0:
+        return []
+    r_pad = -(-int(np.max(counts)) // 128) * 128
+    per_image = r_pad * int(n_trans) * 4
+    slot_block = int(min(n_slots, max(1, int(budget_bytes) // per_image)))
+    p_pad = max(1, int(budget_bytes) // (int(n_slots) * per_image)) if slot_block == n_slots else 1
+    p_pad = min(p_pad, int(counts.size))
+    return [
+        (np.arange(start, min(start + p_pad, counts.size)), r_pad, p_pad, slot_block)
+        for start in range(0, int(counts.size), p_pad)
+    ]
 
 
 _OPERAND_IMAGE_BATCH = 1024
@@ -387,50 +411,74 @@ def particle_coarse_supports(
         scale_corrections=scale_corrections,
     )
     n_chunks = -(-n_coarse_trans // _FUSED_TRANSLATION_CAPACITY)
-    for unit in range(n_units):
-        images = np.arange(offsets[unit], offsets[unit + 1])
-        left, _applies = tomo_particles.relion_left_matrices(image_projections[images])
-        unit_rotations = None if not local else np.asarray(unit_rotation_ids[unit], dtype=np.int64)
-        if local and (unit_rotations.size == 0 or np.any(np.diff(unit_rotations) <= 0)):
-            raise ValueError(f"particle {unit}'s local rotations must be ascending and non-empty")
-        rotations = _relion_adaptive_pass1_rotations(
-            coarse_eulers_deg if not local else coarse_eulers_deg[unit_rotations],
-            random_perturbation,
-            angular_sampling_deg,
-            left_matrices=left,
-        )
-        angles = tomo_particles.tilt_translation_angles(
-            coarse_translations_px,
-            old[unit : unit + 1],
-            image_projections[images],
-            np.zeros(images.size, int),
-            image_size,
-        )
-        pad = slots - images.size
-        diff2 = _particle_coarse_diff2_scan(
-            projector_full,
-            jnp.asarray(np.pad(np.asarray(rotations, dtype=np.float32), ((0, pad), (0, 0), (0, 0), (0, 0)))),
-            jnp.pad(unshifted[images], ((0, pad), (0, 0))),
-            jnp.pad(weight[images], ((0, pad), (0, 0))),
-            jnp.pad(initial[images], (0, pad)),
-            jnp.asarray(np.pad(angles, ((0, pad), (0, 0), (0, 0)))),
-            layout.full_to_compact,
-            current_size=int(layout.current_size),
-            physical_image_size=int(layout.image_shape[0]),
-            model_max_r=int(model_max_r),
-            padding_factor=int(padding_factor),
-            n_chunks=int(n_chunks),
-        )
-        stats = particle_coarse_significance(
-            diff2[None],
-            rotation_log_prior if not local else np.asarray(unit_rotation_log_priors[unit], dtype=np.float32),
-            np.asarray(unit_translation_log_prior, dtype=np.float32)[unit : unit + 1],
-            adaptive_fraction=adaptive_fraction,
-            max_significants=max_significants,
-        )
-        cells = np.flatnonzero(np.asarray(stats["mask"][0]))
-        if local:
-            cells = unit_rotations[cells // n_coarse_trans] * n_coarse_trans + cells % n_coarse_trans
-        supports.append(cells.astype(np.int32))
-        pmax[unit] = float(stats["pmax"][0])
+    unit_rotations = [None if not local else np.asarray(unit_rotation_ids[u], dtype=np.int64) for u in range(n_units)]
+    for u, rows in enumerate(unit_rotations):
+        if local and (rows.size == 0 or np.any(np.diff(rows) <= 0)):
+            raise ValueError(f"particle {u}'s local rotations must be ascending and non-empty")
+    rotation_counts = [coarse_eulers_deg.shape[0] if rows is None else rows.size for rows in unit_rotations]
+    for units, r_pad, p_pad, slot_block in _coarse_batches(rotation_counts, n_slots=slots, n_trans=n_coarse_trans):
+        # Host operands of the batch, padded to [P_pad, S, R_pad, ...]: padded rotations repeat the particle's
+        # last one, padded slots and particles carry zero weight (their diff2 adds zeros and is not read).
+        rotations = np.zeros((p_pad, slots, r_pad, 3, 3), dtype=np.float32)
+        rotations[:] = np.eye(3, dtype=np.float32)
+        angles = np.zeros((p_pad, slots, n_coarse_trans, 2), dtype=np.float32)
+        image_index = np.zeros((p_pad, slots), dtype=np.int64)
+        image_valid = np.zeros((p_pad, slots), dtype=bool)
+        for p, unit in enumerate(units):
+            images = np.arange(offsets[unit], offsets[unit + 1])
+            left, _applies = tomo_particles.relion_left_matrices(image_projections[images])
+            unit_rot = _relion_adaptive_pass1_rotations(
+                coarse_eulers_deg if not local else coarse_eulers_deg[unit_rotations[unit]],
+                random_perturbation,
+                angular_sampling_deg,
+                left_matrices=left,
+            )
+            n_rot = int(rotation_counts[unit])
+            rotations[p, : images.size, :n_rot] = np.asarray(unit_rot, dtype=np.float32)
+            rotations[p, : images.size, n_rot:] = np.asarray(unit_rot, dtype=np.float32)[:, -1:]
+            angles[p, : images.size] = tomo_particles.tilt_translation_angles(
+                coarse_translations_px,
+                old[unit : unit + 1],
+                image_projections[images],
+                np.zeros(images.size, int),
+                image_size,
+            )
+            image_index[p, : images.size] = images
+            image_valid[p, : images.size] = True
+        index = jnp.asarray(image_index)
+        valid = jnp.asarray(image_valid)
+        batch_unshifted = jnp.where(valid[..., None], unshifted[index], jnp.zeros((), unshifted.dtype))
+        batch_weight = jnp.where(valid[..., None], weight[index], jnp.zeros((), weight.dtype))
+        batch_initial = jnp.where(valid, initial[index], jnp.zeros((), initial.dtype))
+        total = jnp.zeros((p_pad, r_pad, n_coarse_trans), dtype=jnp.float32)
+        for first in range(0, slots, slot_block):
+            block = slice(first, first + slot_block)
+            total = _particles_coarse_diff2(
+                total,
+                projector_full,
+                jnp.asarray(rotations[:, block]),
+                batch_unshifted[:, block],
+                batch_weight[:, block],
+                batch_initial[:, block],
+                jnp.asarray(angles[:, block]),
+                layout.full_to_compact,
+                current_size=int(layout.current_size),
+                physical_image_size=int(layout.image_shape[0]),
+                model_max_r=int(model_max_r),
+                padding_factor=int(padding_factor),
+                n_chunks=int(n_chunks),
+            )
+        for p, unit in enumerate(units):
+            stats = particle_coarse_significance(
+                total[p : p + 1, : int(rotation_counts[unit])],
+                rotation_log_prior if not local else np.asarray(unit_rotation_log_priors[unit], dtype=np.float32),
+                np.asarray(unit_translation_log_prior, dtype=np.float32)[unit : unit + 1],
+                adaptive_fraction=adaptive_fraction,
+                max_significants=max_significants,
+            )
+            cells = np.flatnonzero(np.asarray(stats["mask"][0]))
+            if local:
+                cells = unit_rotations[unit][cells // n_coarse_trans] * n_coarse_trans + cells % n_coarse_trans
+            supports.append(cells.astype(np.int32))
+            pmax[unit] = float(stats["pmax"][0])
     return supports, pmax
