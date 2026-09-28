@@ -1,4 +1,4 @@
-"""Initial coarse-grid planning has one typed owner outside the controller.
+"""Initial coarse-grid planning exposes sampling, replay, and logging inputs.
 
 ``build_initial_coarse_grids`` builds the first exhaustive grid (sealed capture,
 caller translation table, or RELION translation grid) and
@@ -50,17 +50,20 @@ def _same(x, y):
 def _initial_grids(**overrides):
     kwargs = dict(
         healpix_order=3,
-        sealed_sampling_state=None,
         translations=None,
         init_healpix_order=3,
         init_translation_range=4.25,
         init_translation_step=1.416667,
         n_classes=1,
         voxel_size=2.0,
-        log=logging.getLogger("test_initial_coarse_grid_owner"),
     )
     kwargs.update(overrides)
-    return iteration_planning.build_initial_coarse_grids(iteration_planning.InitialCoarseGridSpec(**kwargs))
+    sealed_sampling_state = kwargs.pop("sealed_sampling_state", None)
+    return iteration_planning.build_initial_coarse_grids(
+        iteration_planning.InitialGridSampling(**kwargs),
+        sealed_sampling_state,
+        logging.getLogger("test_initial_coarse_grid_owner"),
+    )
 
 
 @pytest.mark.parametrize("n_classes", [1, 4])
@@ -115,9 +118,14 @@ def test_caller_translation_table_is_kept_as_the_base_grid(monkeypatch):
 
 
 def test_controller_materializes_coarse_grids_through_the_owners():
+    assert tuple(inspect.signature(iteration_planning.build_initial_coarse_grids).parameters) == (
+        "sampling_plan",
+        "sealed_sampling_state",
+        "log",
+    )
     source = inspect.getsource(iteration_loop.refine_single_volume)
     assert source.count("build_initial_coarse_grids(") == 1
-    assert source.count("InitialCoarseGridSpec(") == 1
+    assert source.count("InitialGridSampling(") == 1
     assert "_sealed_sampling_base_grids(" not in source
     assert "_translation_grid_for_class_count(" not in source
     assert source.count("_relion_base_translation_grid(") == 6
