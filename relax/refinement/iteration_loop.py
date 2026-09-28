@@ -196,7 +196,6 @@ from relax.refinement.half_scoring import (
 )
 from relax.refinement.iteration_planning import InitialCoarseGridSpec, build_initial_coarse_grids
 from relax.refinement.iteration_snapshot import (
-    IterationSnapshotSpec,
     SnapshotParticleState,
     SnapshotReferenceState,
     SnapshotRunSpec,
@@ -212,15 +211,12 @@ from relax.refinement.mean_helpers import (
     DirectionPriorExecution,
     DirectionPriorGridSpec,
     DirectionPriorState,
-    DirectionPriorUpdateSpec,
     MeanAccumulatorState,
     MeanGeometrySpec,
     MeanPostprocessPolicy,
     MeanPriorSpec,
     MeanReconstructionData,
-    MeanReconstructionSpec,
     UnregularizedAccumulatorState,
-    UnregularizedMeanSpec,
     UnregularizedMeanState,
     UnregularizedReconstructionPolicy,
     _class_tau2_from_iref_power_spectrum,
@@ -3794,9 +3790,8 @@ def refine_single_volume(
 
         # --- Now reconstruct the regularized means ---
         _reconstruct_and_postprocess_means(
-            MeanReconstructionSpec(
-                data=MeanReconstructionData(means=means),
-                accumulators=MeanAccumulatorState(
+            data=MeanReconstructionData(means=means),
+            accumulators=MeanAccumulatorState(
                     Ft_y_0=Ft_y_0,
                     Ft_y_1=Ft_y_1,
                     Ft_ctf_0=Ft_ctf_0,
@@ -3804,8 +3799,8 @@ def refine_single_volume(
                     Ft_y_combined=Ft_y_combined if k_class_enabled else None,
                     Ft_ctf_combined=Ft_ctf_combined if k_class_enabled else None,
                     retained_Ft_y_0_device=retained_Ft_y_0_device,
-                ),
-                prior=MeanPriorSpec(
+            ),
+            prior=MeanPriorSpec(
                     mean_signal_variance=(
                         mean_signal_variance if k_class_enabled else None
                     ),
@@ -3824,8 +3819,8 @@ def refine_single_volume(
                     ),
                     tau2_fudge=tau2_fudge,
                     relion_minres_map=RELION_MINRES_MAP,
-                ),
-                geometry=MeanGeometrySpec(
+            ),
+            geometry=MeanGeometrySpec(
                     current_size=current_size,
                     grid_size=grid_size,
                     cryo=cryo,
@@ -3833,8 +3828,8 @@ def refine_single_volume(
                     padding_factor=PADDING_FACTOR,
                     projection_padding_factor=PROJECTION_PADDING_FACTOR,
                     accumulator_volume_shape=mstep_accumulator_shape,
-                ),
-                postprocess=MeanPostprocessPolicy(
+            ),
+            postprocess=MeanPostprocessPolicy(
                     n_classes=n_classes,
                     iteration=iteration,
                     particle_diameter_ang=particle_diameter_ang,
@@ -3846,8 +3841,7 @@ def refine_single_volume(
                     ),
                     relion_width_mask_edge=RELION_WIDTH_MASK_EDGE,
                     relion_fmask_edge=RELION_WIDTH_FMASK_EDGE,
-                ),
-            )
+            ),
         )
         retained_Ft_y_0_device = None
 
@@ -3965,14 +3959,13 @@ def refine_single_volume(
                 local_search_order=local_search_order,
             )
             update_learned_direction_priors(
-                DirectionPriorUpdateSpec(
-                    posterior=DirectionPosteriorState(
+                posterior=DirectionPosteriorState(
                         rotation_posterior_per_half=rotation_posterior_per_half,
                         class_rotation_posterior_per_half=(
                             class_rotation_posterior_per_half
                         ),
-                    ),
-                    priors=DirectionPriorState(
+                ),
+                priors=DirectionPriorState(
                         global_direction_prior_per_half=(
                             global_direction_prior_per_half
                         ),
@@ -3985,8 +3978,8 @@ def refine_single_volume(
                         class_direction_prior_order_per_half=(
                             class_direction_prior_order_per_half
                         ),
-                    ),
-                    grid=DirectionPriorGridSpec(
+                ),
+                grid=DirectionPriorGridSpec(
                         n_classes=n_classes,
                         use_local=use_local,
                         k1_direction_prior_order=k1_direction_prior_order,
@@ -4009,12 +4002,11 @@ def refine_single_volume(
                         ),
                         n_effective_rotations=effective_rotations.shape[0],
                         symmetry=symmetry,
-                    ),
-                    execution=DirectionPriorExecution(
+                ),
+                execution=DirectionPriorExecution(
                         dtype=_dense_global_scoring_dtype(),
                         log=logger,
-                    ),
-                )
+                ),
             )
         history.record_direction_prior(
             class_direction_prior_per_half,
@@ -4037,12 +4029,11 @@ def refine_single_volume(
             )
         )
         unreg_means = compute_unregularized_halfmaps_and_align_signs(
-            UnregularizedMeanSpec(
-                state=UnregularizedMeanState(
+            state=UnregularizedMeanState(
                     means=means,
                     previous_means=previous_means,
-                ),
-                accumulators=UnregularizedAccumulatorState(
+            ),
+            accumulators=UnregularizedAccumulatorState(
                     Ft_y_per_half=(Ft_y_0, Ft_y_1),
                     Ft_ctf_per_half=(Ft_ctf_0, Ft_ctf_1),
                     Ft_y_combined=(
@@ -4051,8 +4042,8 @@ def refine_single_volume(
                     Ft_ctf_combined=(
                         Ft_ctf_combined if k_class_enabled else None
                     ),
-                ),
-                policy=UnregularizedReconstructionPolicy(
+            ),
+            policy=UnregularizedReconstructionPolicy(
                     volume_shape=volume_shape,
                     n_classes=n_classes,
                     tau2_fudge=tau2_fudge,
@@ -4061,8 +4052,7 @@ def refine_single_volume(
                     minres_map=RELION_MINRES_MAP,
                     need_unreg_means=need_unreg_means,
                     accumulator_volume_shape=mstep_accumulator_shape,
-                ),
-            )
+            ),
         )
 
         # K>1 uses the shared per-class data_vs_prior curve to drive growth;
@@ -4645,15 +4635,14 @@ def refine_single_volume(
                 )
             checkpoint_writer(
                 capture_iteration_snapshot(
-                    IterationSnapshotSpec(
-                        run=SnapshotRunSpec(
+                    run=SnapshotRunSpec(
                             relion_iteration=numbered_relion_iteration,
                             n_classes=n_classes,
                             grid_size=grid_size,
                             voxel_size=cryo.voxel_size,
                             tau2_fudge=tau2_fudge,
-                        ),
-                        references=SnapshotReferenceState(
+                    ),
+                    references=SnapshotReferenceState(
                             means=means,
                             unfiltered_means=unreg_means,
                             tau2_shells=(
@@ -4683,8 +4672,8 @@ def refine_single_volume(
                                 if k_class_enabled
                                 else global_direction_prior_order_per_half
                             ),
-                        ),
-                        sampling=SnapshotSamplingState(
+                    ),
+                    sampling=SnapshotSamplingState(
                             sigma_offset_angstrom_per_half=(
                                 current_sigma_offset_angstrom_per_half
                             ),
@@ -4697,8 +4686,8 @@ def refine_single_volume(
                             acc_trans_per_class_angstrom=(
                                 model_acc_trans_per_class
                             ),
-                        ),
-                        particles=SnapshotParticleState(
+                    ),
+                    particles=SnapshotParticleState(
                             half_inputs=relion_half_inputs,
                             class_assignments=(
                                 class_assignments if k_class_enabled else None
@@ -4706,8 +4695,7 @@ def refine_single_volume(
                             max_posterior=max_posterior_per_half,
                             significant_counts=iter_significant_counts_per_half,
                             avg_norm_correction=avg_norm_corrections_for_dump,
-                        ),
-                    )
+                    ),
                 )
             )
 

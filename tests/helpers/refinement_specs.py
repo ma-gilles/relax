@@ -1,4 +1,4 @@
-"""Concise builders for production refinement specifications in unit tests."""
+"""Concise builders for production refinement owner arguments in unit tests."""
 
 from relax.refinement import half_scoring, local_search_iteration, mean_helpers
 
@@ -21,13 +21,13 @@ _LOCAL_ITERATION_POSITIONAL = (
 )
 
 
-def mean_reconstruction_spec(means, **values):
-    """Group concise reconstruction fixtures into the production specification."""
+def mean_reconstruction_owners(means, **values):
+    """Build the five owners of the production reconstruction boundary."""
 
     values = dict(values)
-    spec = mean_helpers.MeanReconstructionSpec(
-        data=mean_helpers.MeanReconstructionData(means=means),
-        accumulators=mean_helpers.MeanAccumulatorState(
+    owners = (
+        mean_helpers.MeanReconstructionData(means=means),
+        mean_helpers.MeanAccumulatorState(
             Ft_y_0=values.pop("Ft_y_0"),
             Ft_y_1=values.pop("Ft_y_1"),
             Ft_ctf_0=values.pop("Ft_ctf_0"),
@@ -36,7 +36,7 @@ def mean_reconstruction_spec(means, **values):
             Ft_ctf_combined=values.pop("Ft_ctf_combined"),
             retained_Ft_y_0_device=values.pop("retained_Ft_y_0_device", None),
         ),
-        prior=mean_helpers.MeanPriorSpec(
+        mean_helpers.MeanPriorSpec(
             mean_signal_variance=values.pop("mean_signal_variance"),
             mean_signal_variance_shells=values.pop("mean_signal_variance_shells"),
             mean_signal_variance_per_half=values.pop("mean_signal_variance_per_half"),
@@ -46,7 +46,7 @@ def mean_reconstruction_spec(means, **values):
             tau2_fudge=values.pop("tau2_fudge"),
             relion_minres_map=values.pop("relion_minres_map"),
         ),
-        geometry=mean_helpers.MeanGeometrySpec(
+        mean_helpers.MeanGeometrySpec(
             current_size=values.pop("cs"),
             grid_size=values.pop("grid_size"),
             cryo=values.pop("cryo"),
@@ -55,7 +55,7 @@ def mean_reconstruction_spec(means, **values):
             projection_padding_factor=values.pop("projection_padding_factor"),
             accumulator_volume_shape=values.pop("accumulator_volume_shape", None),
         ),
-        postprocess=mean_helpers.MeanPostprocessPolicy(
+        mean_helpers.MeanPostprocessPolicy(
             n_classes=values.pop("n_classes"),
             iteration=values.pop("iteration"),
             particle_diameter_ang=values.pop("particle_diameter_ang"),
@@ -70,7 +70,7 @@ def mean_reconstruction_spec(means, **values):
         ),
     )
     assert not values, f"unmapped mean reconstruction values: {sorted(values)}"
-    return spec
+    return owners
 
 
 def local_iteration_spec(*args, **values):

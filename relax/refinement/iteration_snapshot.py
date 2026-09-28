@@ -273,26 +273,17 @@ class SnapshotParticleState:
     avg_norm_correction: object
 
 
-@dataclass(frozen=True, kw_only=True)
-class IterationSnapshotSpec:
-    """Complete shallow input specification for snapshot capture."""
-
-    run: SnapshotRunSpec
-    references: SnapshotReferenceState
-    sampling: SnapshotSamplingState
-    particles: SnapshotParticleState
-
-
-def capture_iteration_snapshot(spec: IterationSnapshotSpec) -> IterationSnapshot:
+def capture_iteration_snapshot(
+    run: SnapshotRunSpec,
+    references: SnapshotReferenceState,
+    sampling: SnapshotSamplingState,
+    particles: SnapshotParticleState,
+) -> IterationSnapshot:
     """Copy the loop's end-of-iteration state to the host (see the module docstring).
 
     Every array is copied, so a background writer never sees the loop's later updates.
     """
 
-    run = spec.run
-    references = spec.references
-    sampling = spec.sampling
-    particles = spec.particles
     k_class = int(run.n_classes) > 1
     if k_class:
         tau2 = np.array(references.tau2_shells, dtype=np.float64)

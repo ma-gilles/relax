@@ -18,7 +18,6 @@ from relax.reconstruction import regularization_relion
 from relax.refinement.iteration_snapshot import (
     REFINEMENT_STATE_SCALAR_FIELDS,
     IterationSnapshot,
-    IterationSnapshotSpec,
     SnapshotParticleState,
     SnapshotReferenceState,
     SnapshotRunSpec,
@@ -42,7 +41,9 @@ N_SHELLS = BOX // 2 + 1
 
 
 def test_snapshot_capture_keeps_spec_ownership_visible():
-    assert tuple(inspect.signature(capture_iteration_snapshot).parameters) == ("spec",)
+    assert tuple(inspect.signature(capture_iteration_snapshot).parameters) == (
+        "run", "references", "sampling", "particles",
+    )
 
     tree = ast.parse(inspect.getsource(capture_iteration_snapshot))
     assigned_names = {
@@ -63,7 +64,6 @@ def test_snapshot_capture_keeps_spec_ownership_visible():
         for field in dataclasses.fields(owner)
     }
     assert assigned_names.isdisjoint(stable_field_names)
-    assert dataclasses.fields(IterationSnapshotSpec)
 
 _PARTICLES = """
 # version 30001

@@ -443,18 +443,11 @@ class DirectionPriorExecution:
     log: object
 
 
-@dataclass(frozen=True, kw_only=True)
-class DirectionPriorUpdateSpec:
-    """Complete shallow specification for learned direction-prior publication."""
-
-    posterior: DirectionPosteriorState
-    priors: DirectionPriorState
-    grid: DirectionPriorGridSpec
-    execution: DirectionPriorExecution
-
-
 def update_learned_direction_priors(
-    spec: DirectionPriorUpdateSpec,
+    posterior: DirectionPosteriorState,
+    priors: DirectionPriorState,
+    grid: DirectionPriorGridSpec,
+    execution: DirectionPriorExecution,
 ) -> None:
     """Learn the next iteration's direction priors from this iteration's posteriors.
 
@@ -469,10 +462,6 @@ def update_learned_direction_priors(
     single source of grid geometry.
     """
 
-    posterior = spec.posterior
-    priors = spec.priors
-    grid = spec.grid
-    execution = spec.execution
     if grid.n_classes <= 1 and all(
         np.asarray(rot_sum).shape[0] == grid.k1_direction_prior_size for rot_sum in posterior.rotation_posterior_per_half
     ):
@@ -1089,19 +1078,12 @@ class MeanPostprocessPolicy:
     relion_fmask_edge: int
 
 
-@dataclass(frozen=True, kw_only=True)
-class MeanReconstructionSpec:
-    """Complete shallow specification for regularized mean reconstruction."""
-
-    data: MeanReconstructionData
-    accumulators: MeanAccumulatorState
-    prior: MeanPriorSpec
-    geometry: MeanGeometrySpec
-    postprocess: MeanPostprocessPolicy
-
-
 def _reconstruct_and_postprocess_means(
-    spec: MeanReconstructionSpec,
+    data: MeanReconstructionData,
+    accumulators: MeanAccumulatorState,
+    prior: MeanPriorSpec,
+    geometry: MeanGeometrySpec,
+    postprocess: MeanPostprocessPolicy,
 ) -> None:
     """Run one iteration's regularized reconstruction + post-processing.
 
@@ -1115,11 +1097,6 @@ def _reconstruct_and_postprocess_means(
     Mixing the two produces a softer Fourier filter than RELION applies.
     """
 
-    data = spec.data
-    accumulators = spec.accumulators
-    prior = spec.prior
-    geometry = spec.geometry
-    postprocess = spec.postprocess
     # This reference is deliberately released after half 0 reconstruction.
     retained_Ft_y_0_device = accumulators.retained_Ft_y_0_device
     _t_recon = time.time()
@@ -1322,17 +1299,10 @@ class UnregularizedReconstructionPolicy:
     accumulator_volume_shape: tuple | None = None
 
 
-@dataclass(frozen=True, kw_only=True)
-class UnregularizedMeanSpec:
-    """Complete shallow specification for unregularized map publication."""
-
-    state: UnregularizedMeanState
-    accumulators: UnregularizedAccumulatorState
-    policy: UnregularizedReconstructionPolicy
-
-
 def compute_unregularized_halfmaps_and_align_signs(
-    spec: UnregularizedMeanSpec,
+    state: UnregularizedMeanState,
+    accumulators: UnregularizedAccumulatorState,
+    policy: UnregularizedReconstructionPolicy,
 ) -> list:
     """Reconstruct unregularized half-maps (only when diagnostics need them)
     and apply the legacy K=1 sign-continuity check.
@@ -1351,9 +1321,6 @@ def compute_unregularized_halfmaps_and_align_signs(
     reconstruction convention.
     """
 
-    state = spec.state
-    accumulators = spec.accumulators
-    policy = spec.policy
     _t_unreg = time.time()
     if policy.need_unreg_means:
         if policy.n_classes > 1:

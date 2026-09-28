@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
-from helpers.refinement_specs import mean_reconstruction_spec
+from helpers.refinement_specs import mean_reconstruction_owners
 from recovar.core import fourier_transform_utils as ftu
 from recovar.reconstruction import relion_functions as rf
 
@@ -24,7 +24,9 @@ def test_mean_reconstruction_core_keeps_spec_ownership_visible():
     from relax.refinement import mean_helpers as mean_helpers_module
 
     function = mean_helpers_module._reconstruct_and_postprocess_means
-    assert tuple(inspect.signature(function).parameters) == ("spec",)
+    assert tuple(inspect.signature(function).parameters) == (
+        "data", "accumulators", "prior", "geometry", "postprocess",
+    )
 
     tree = ast.parse(inspect.getsource(function))
     assigned_names = {
@@ -52,7 +54,9 @@ def test_unregularized_reconstruction_keeps_spec_ownership_visible():
     from relax.refinement import mean_helpers as mean_helpers_module
 
     function = mean_helpers_module.compute_unregularized_halfmaps_and_align_signs
-    assert tuple(inspect.signature(function).parameters) == ("spec",)
+    assert tuple(inspect.signature(function).parameters) == (
+        "state", "accumulators", "policy",
+    )
 
     tree = ast.parse(inspect.getsource(function))
     assigned_names = {
@@ -101,7 +105,7 @@ class TestReconstructionOwnership:
         tau_shells = [jnp.arange(n_shells, dtype=jnp.float32) + 101.0, jnp.arange(n_shells, dtype=jnp.float32) + 201.0]
         retained_half0 = object()
         means = [None, None]
-        mean_helpers_module._reconstruct_and_postprocess_means(mean_reconstruction_spec(
+        mean_helpers_module._reconstruct_and_postprocess_means(*mean_reconstruction_owners(
             means,
             Ft_y_0=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
             Ft_y_1=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
@@ -411,7 +415,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         mean_helpers_module, "_finish_host_staged_reconstruction", lambda result, *_accumulators: result
     )
     means = [None, None]
-    mean_helpers_module._reconstruct_and_postprocess_means(mean_reconstruction_spec(
+    mean_helpers_module._reconstruct_and_postprocess_means(*mean_reconstruction_owners(
         means,
         Ft_y_0=joined[0],
         Ft_y_1=joined[1],

@@ -25,7 +25,7 @@ import jax.numpy as jnp
 from helpers.em_arrays import _hermitian_volume, _make_rotations
 from helpers.refinement_specs import (
     local_half_spec,
-    mean_reconstruction_spec,
+    mean_reconstruction_owners,
 )
 
 import recovar.core.fourier_transform_utils as ftu
@@ -11646,7 +11646,7 @@ class TestRelionModeSmokeTest:
         )
 
         means = [None, None]
-        mean_helpers_module._reconstruct_and_postprocess_means(mean_reconstruction_spec(
+        mean_helpers_module._reconstruct_and_postprocess_means(*mean_reconstruction_owners(
             means,
             Ft_y_0=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
             Ft_y_1=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
@@ -11709,7 +11709,7 @@ class TestRelionModeSmokeTest:
             axis=0,
         )
         means = [None, None]
-        mean_helpers_module._reconstruct_and_postprocess_means(mean_reconstruction_spec(
+        mean_helpers_module._reconstruct_and_postprocess_means(*mean_reconstruction_owners(
             means,
             Ft_y_0=None,
             Ft_y_1=None,
@@ -12789,8 +12789,12 @@ def test_local_search_uses_lazy_parent_expanded_fine_rotation_grid_when_oversamp
             best_trans = np.zeros((experiment_dataset.n_units, 2), dtype=np.float32)
             best_pose_details = (best_rots, best_trans)
         return _mock_local_search_result(
-            base_outputs, relion_stats, noise_stats, kwargs,
-            experiment_dataset.n_units, best_pose_details,
+            base_outputs,
+            relion_stats,
+            noise_stats,
+            kwargs,
+            experiment_dataset.n_units,
+            best_pose_details,
         )
 
     monkeypatch.setattr(refine_mod, "rotation_grid_size", fake_rotation_grid_size)
@@ -13115,12 +13119,8 @@ def test_local_search_uses_negative_previous_offsets_for_translation_prior(
             best_trans = np.zeros((experiment_dataset.n_units, 2), dtype=np.float32)
             best_pose_details = (best_rots, best_trans)
         return _mock_local_search_result(
-            base_outputs,
-            relion_stats,
-            noise_stats,
-            kwargs,
-            experiment_dataset.n_units,
-            best_pose_details,
+            base_outputs, relion_stats, noise_stats, kwargs,
+            experiment_dataset.n_units, best_pose_details,
         )
 
     monkeypatch.setattr(refine_mod, "rotation_grid_size", fake_rotation_grid_size)
@@ -14871,18 +14871,17 @@ def test_k_class_reconstruction_preserves_data_determined_volume_signs(monkeypat
 
     monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", reconstruct)
     result = mean_helpers_module.compute_unregularized_halfmaps_and_align_signs(
-        mean_helpers_module.UnregularizedMeanSpec(
-            state=mean_helpers_module.UnregularizedMeanState(
+        state=mean_helpers_module.UnregularizedMeanState(
                 means=means,
                 previous_means=[jnp.asarray(previous), jnp.asarray(previous)],
-            ),
-            accumulators=mean_helpers_module.UnregularizedAccumulatorState(
+        ),
+        accumulators=mean_helpers_module.UnregularizedAccumulatorState(
                 Ft_y_per_half=(None, None),
                 Ft_ctf_per_half=(None, None),
                 Ft_y_combined=jnp.asarray(unregularized),
                 Ft_ctf_combined=jnp.ones_like(jnp.asarray(unregularized).real),
-            ),
-            policy=mean_helpers_module.UnregularizedReconstructionPolicy(
+        ),
+        policy=mean_helpers_module.UnregularizedReconstructionPolicy(
                 volume_shape=(2, 1, 1),
                 n_classes=n_classes,
                 tau2_fudge=1.0,
@@ -14890,8 +14889,7 @@ def test_k_class_reconstruction_preserves_data_determined_volume_signs(monkeypat
                 projection_padding_factor=1,
                 minres_map=1,
                 need_unreg_means=need_unreg,
-            ),
-        )
+        ),
     )
     assert_matches(means[0], reconstructed)
     assert_matches(means[1], reconstructed)
