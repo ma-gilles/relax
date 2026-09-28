@@ -438,7 +438,9 @@ def score_tomo_half(
         half_spectrum_scoring=True,
         projection_padding_factor=int(padding_factor),
         reconstruction_padding_factor=int(padding_factor),
-        image_corrections=None,  # RELION neither normalises nor pre-shifts a tilt image (acc :429-476)
+        # RELION neither normalises nor pre-shifts a tilt image (acc :429-476), but backprojects it with its
+        # group-scaled CTF (ctf * scale, acc_ml_optimiser_impl.h:4370-4404): the image correction is the scale.
+        image_corrections=image_scale,
         scale_corrections=image_scale,
         image_pre_shifts=None,
         use_float64_scoring=False,
