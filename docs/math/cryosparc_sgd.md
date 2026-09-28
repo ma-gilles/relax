@@ -8,6 +8,21 @@ It is an experimental alternative to RELAX's native VDAM update, not a
 reproduction of the proprietary cryoSPARC implementation. Native VDAM remains
 the default. Positivity is disabled; signed maps are allowed.
 
+The published SGD objective and gradient explicitly include a volume prior
+(supplement equations3 and8). That description gives positivity and suppression
+of high-frequency noise as examples, but does not specify the concrete volume
+prior formula and strength used in the experiments. This implementation adds no
+volume-prior gradient. It therefore reproduces selected optimizer mechanisms,
+not a demonstrated unregularized cryoSPARC objective.
+
+The current [official Ab-Initio guide](https://guide.cryosparc.com/processing-data/all-job-types-in-cryosparc/3d-reconstruction/job-ab-initio-reconstruction)
+says it uses no half-set or other regularization, while separately documenting
+a soft volume window and a maximum-frequency cutoff. The saved v5.0.6 job
+specification exposes a zero default sparsity strength and enabled positivity.
+These support an interpretation with no default Wiener volume penalty; they do
+not identify the optional sparsity formula or prove the proprietary update.
+See the [saved parameters](/scratch/gpfs/CRYOEM/gilleslab/em_work/ppca_speed_20260925/csparc_sgd/abinit_params_v506.tsv).
+
 Implementation owners are [the optimizer](../../relax/sgd_initial_model/optimizer.py),
 [noise estimation](../../relax/sgd_initial_model/noise.py), and
 [the shared iteration loop](../../relax/vdam/iteration_loop.py). Mathematical
@@ -51,6 +66,23 @@ describe the fixed prior. Report posterior class fractions from E-step
 metadata separately as the occupancy diagnostic. Evaluate all K class maps;
 the automatically selected single output map has an arbitrary prior tie.
 
+Each iteration selects the common image minibatch, refreshes the K projectors,
+scores the fixed coarse class/rotation/shift grid, selects significant support,
+and accumulates residual backprojections and noise statistics. It then applies
+the selected optimizer, updates the shared nuisance parameters and its noise
+model, and masks the K maps. Both scoring and reconstruction use the prescribed
+active Fourier band. There is no finer pose grid in this mode.
+
+The existing gradient InitialModel search caps coarse support at 100 × K joint
+class/rotation/shift hypotheses per image (300 for K3), even when the target
+retained mass of 0.999 needs more candidates. Pass 2 normalizes on the selected
+support. Metadata called `class_posterior_sums_full` is therefore full within
+that pass-2 support; it is not the posterior over all coarse hypotheses.
+Reconstruction pruning has a separate retained-mass statistic. Neither saved
+class fraction measures probability discarded by the initial coarse cap.
+This shared approximation must be distinguished from the optimizer comparison,
+especially during the candidate's inflated-noise initialization.
+
 ## Map update
 
 Let G_k be the pooled residual backprojection for class k, and H_k its pooled
@@ -92,6 +124,13 @@ no positivity projection, explicit tau-squared volume penalty, VDAM shell gate,
 VDAM disagreement second moment, or class-occupancy step multiplier. Projector
 power and tau-squared metadata used elsewhere in the native infrastructure do
 not constitute a candidate volume prior.
+
+The common post-update solvent operation multiplies the map by a soft spherical
+mask. In the reported box64 experiments, it is one inside radius24 pixels,
+has a five-pixel cosine edge, and is zero outside radius29. This volume mask
+differs from image preprocessing: masked scoring images blend their background
+with a measured background mean. The native outer-box soft-mask operation is
+also retained before the common volume mask.
 
 ## Noise update
 
@@ -146,10 +185,11 @@ errors, and maps. Confidence alone is not an alignment metric. Two failed
 controls cannot establish candidate equivalence; additional seeds or a more
 informative control are then necessary.
 
-The fixed coarse-grid baseline must be rerun. Earlier successful native K3
-results used a different sampling schedule and provide context only. This
-document specifies the method; measured scientific acceptance and timing belong
-to the associated immutable run receipts and comparison report.
+The fixed coarse-grid baseline was rerun with matched seeds and hardware; see
+the [science scorecard](cryosparc_sgd_science_scorecard.md) and
+[validation and reproduction report](../benchmarks/cryosparc_sgd_coarse_20260928.md).
+Earlier successful native K3 results used a different sampling schedule and
+provide context only.
 
 The trajectory files are evaluation artifacts. General restart of the
 candidate's momentum and running noise statistics is not implemented; native

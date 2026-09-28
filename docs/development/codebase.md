@@ -188,12 +188,12 @@ baselines and scientific gates are unchanged.
 | Controller and schedules | 1,781 | 1,797 | Driver, iteration/subset schedules, options and launcher defaults |
 | Initialization | 500 | 500 | Bootstrap, initial state and shared initial-reference filter |
 | Sampling and layout | 940 | 950 | Native sampling updates, canonical pose metadata and frame conversions |
-| E-step | 1,882 | 1,936 | Adaptive E-step, configuration, statistics, support, projector setup and probability updates |
+| E-step | 1,880 | 1,936 | Adaptive E-step, configuration, statistics, support, projector setup and probability updates |
 | SGD optimizer and noise | 309 | 309 | Scalar-curvature momentum update and discounted masked-noise estimator |
 | Reconstruction and state | 777 | 790 | Single-class M-step transaction, precision checks, state and class dispatch |
 | Input/output | 1,329 | 1,330 | STAR metadata, startup artifacts, RELION checkpoint import and initial noise |
 | Diagnostics | 1,092 | 1,240 | GT registration, native moment/reference replay and coarse report bookkeeping |
-| **Total** | **8,610** | **8,852** | **242 lines of total headroom** |
+| **Total** | **8,608** | **8,852** | **244 lines of total headroom** |
 
 The September 28 architectural review charges the new functionality explicitly.
 Relative to `e2401c4c`, the controller adds 24 lines in the driver for SGD noise
@@ -204,7 +204,7 @@ headroom at the pre-removal review. Uniform joint class/direction priors add 36
 lines to probability updates; their E-step allowance grows by 36 over the
 upstream 1,900-line ceiling. The upstream exact-local VDAM removal integrates
 `adaptive_estep.py` into that responsibility and removes `sparse_pass2_estep.py`;
-its merged E-step count is 1,882 lines. All 309 lines of the new
+its merged E-step count is 1,880 lines. All 309 lines of the new
 `sgd_initial_model` package have a separate owner and allowance, and the
 inventory guard checks that package dynamically. Other responsibility limits
 are unchanged. These are reviewed allowances for
