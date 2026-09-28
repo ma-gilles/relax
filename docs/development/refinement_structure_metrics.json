@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
   "baseline": {
-    "recorded_date": "2026-09-24",
-    "source_commit": "1f530682c9087c304012cd75376ca71fdd604e43",
+    "recorded_date": "2026-09-28",
+    "source_commit": "363ed495c1692e521f243bf6c0b6b2a35841f5a2",
     "metrics": {
-      "file_count": 10,
-      "physical_lines": 10397,
-      "nonblank_noncomment_lines": 9232,
-      "function_count": 100,
-      "large_argument_function_count": 13,
-      "very_large_argument_function_count": 5,
-      "maximum_parameter_count": 63,
-      "maximum_function_line_span": 4753
+      "file_count": 15,
+      "physical_lines": 14184,
+      "nonblank_noncomment_lines": 12410,
+      "function_count": 223,
+      "large_argument_function_count": 17,
+      "very_large_argument_function_count": 8,
+      "maximum_parameter_count": 67,
+      "maximum_function_line_span": 5233
     }
   },
   "current": {
-    "package": "initial-coarse-grid-request",
-    "source_commit": "1f530682c9087c304012cd75376ca71fdd604e43",
+    "package": "initial-coarse-grid-spec",
+    "source_commit": "80a10a56a10cd9348a2c617bf959ec63315916f9",
     "metrics": {
       "schema_version": 1,
       "scope": {
@@ -29,26 +29,26 @@
         "very_large_argument_threshold": 20
       },
       "totals": {
-        "file_count": 11,
-        "physical_lines": 10434,
-        "nonblank_noncomment_lines": 9261,
-        "function_count": 100,
-        "large_argument_function_count": 12,
-        "very_large_argument_function_count": 5,
-        "maximum_parameter_count": 63,
-        "maximum_function_line_span": 4755
+        "file_count": 16,
+        "physical_lines": 14221,
+        "nonblank_noncomment_lines": 12439,
+        "function_count": 223,
+        "large_argument_function_count": 16,
+        "very_large_argument_function_count": 8,
+        "maximum_parameter_count": 67,
+        "maximum_function_line_span": 5235
       },
       "files": [
         {
           "path": "relax/refinement/finalization_policy.py",
-          "physical_lines": 48,
-          "nonblank_noncomment_lines": 39,
-          "function_count": 2
+          "physical_lines": 35,
+          "nonblank_noncomment_lines": 30,
+          "function_count": 1
         },
         {
           "path": "relax/refinement/firstiter_cc.py",
-          "physical_lines": 229,
-          "nonblank_noncomment_lines": 216,
+          "physical_lines": 228,
+          "nonblank_noncomment_lines": 213,
           "function_count": 2
         },
         {
@@ -59,15 +59,15 @@
         },
         {
           "path": "relax/refinement/half_scoring.py",
-          "physical_lines": 1517,
-          "nonblank_noncomment_lines": 1393,
-          "function_count": 11
+          "physical_lines": 1609,
+          "nonblank_noncomment_lines": 1461,
+          "function_count": 15
         },
         {
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 5247,
-          "nonblank_noncomment_lines": 4709,
-          "function_count": 16
+          "physical_lines": 5904,
+          "nonblank_noncomment_lines": 5275,
+          "function_count": 26
         },
         {
           "path": "relax/refinement/iteration_planning.py",
@@ -76,192 +76,250 @@
           "function_count": 1
         },
         {
+          "path": "relax/refinement/iteration_snapshot.py",
+          "physical_lines": 311,
+          "nonblank_noncomment_lines": 255,
+          "function_count": 11
+        },
+        {
           "path": "relax/refinement/local_search_iteration.py",
-          "physical_lines": 568,
-          "nonblank_noncomment_lines": 510,
+          "physical_lines": 515,
+          "nonblank_noncomment_lines": 452,
           "function_count": 2
         },
         {
           "path": "relax/refinement/mean_helpers.py",
-          "physical_lines": 1592,
-          "nonblank_noncomment_lines": 1370,
-          "function_count": 42
+          "physical_lines": 1742,
+          "nonblank_noncomment_lines": 1497,
+          "function_count": 45
         },
         {
           "path": "relax/refinement/noise_updates.py",
-          "physical_lines": 385,
-          "nonblank_noncomment_lines": 324,
-          "function_count": 8
+          "physical_lines": 460,
+          "nonblank_noncomment_lines": 388,
+          "function_count": 11
+        },
+        {
+          "path": "relax/refinement/optics_shapes.py",
+          "physical_lines": 572,
+          "nonblank_noncomment_lines": 466,
+          "function_count": 25
         },
         {
           "path": "relax/refinement/projector_preparation.py",
-          "physical_lines": 268,
-          "nonblank_noncomment_lines": 236,
+          "physical_lines": 278,
+          "nonblank_noncomment_lines": 245,
           "function_count": 4
         },
         {
           "path": "relax/refinement/refinement_options.py",
-          "physical_lines": 345,
-          "nonblank_noncomment_lines": 265,
-          "function_count": 5
+          "physical_lines": 389,
+          "nonblank_noncomment_lines": 291,
+          "function_count": 6
+        },
+        {
+          "path": "relax/refinement/run_files.py",
+          "physical_lines": 992,
+          "nonblank_noncomment_lines": 852,
+          "function_count": 38
+        },
+        {
+          "path": "relax/refinement/tomo_half.py",
+          "physical_lines": 755,
+          "nonblank_noncomment_lines": 672,
+          "function_count": 17
+        },
+        {
+          "path": "relax/refinement/tomo_particles.py",
+          "physical_lines": 196,
+          "nonblank_noncomment_lines": 143,
+          "function_count": 12
         }
       ],
       "large_argument_functions": [
         {
           "path": "relax/refinement/local_search_iteration.py",
-          "line": 62,
+          "line": 65,
           "name": "_run_local_search_iteration",
-          "parameter_count": 63,
-          "line_span": 507
+          "parameter_count": 67,
+          "line_span": 451
         },
         {
           "path": "relax/refinement/half_scoring.py",
-          "line": 250,
-          "name": "_score_half_dense",
-          "parameter_count": 55,
-          "line_span": 612
+          "line": 251,
+          "name": "_score_half_dense_one_shape",
+          "parameter_count": 58,
+          "line_span": 657
         },
         {
           "path": "relax/refinement/half_scoring.py",
-          "line": 914,
-          "name": "_score_half_local",
-          "parameter_count": 48,
-          "line_span": 589
+          "line": 1008,
+          "name": "_score_half_local_one_shape",
+          "parameter_count": 49,
+          "line_span": 587
         },
         {
           "path": "relax/refinement/mean_helpers.py",
-          "line": 884,
+          "line": 995,
           "name": "_reconstruct_and_postprocess_means",
           "parameter_count": 28,
           "line_span": 204
         },
         {
           "path": "relax/refinement/firstiter_cc.py",
-          "line": 37,
+          "line": 34,
           "name": "_score_kclass_firstiter_cc_pass2",
           "parameter_count": 26,
-          "line_span": 193
+          "line_span": 195
+        },
+        {
+          "path": "relax/refinement/iteration_snapshot.py",
+          "line": 215,
+          "name": "capture_iteration_snapshot",
+          "parameter_count": 26,
+          "line_span": 97
+        },
+        {
+          "path": "relax/refinement/tomo_half.py",
+          "line": 495,
+          "name": "score_tomo_half_in_loop",
+          "parameter_count": 21,
+          "line_span": 129
+        },
+        {
+          "path": "relax/refinement/tomo_half.py",
+          "line": 286,
+          "name": "score_tomo_half",
+          "parameter_count": 20,
+          "line_span": 207
         },
         {
           "path": "relax/refinement/mean_helpers.py",
-          "line": 473,
+          "line": 532,
           "name": "_reconstruct_volume_eager",
           "parameter_count": 17,
-          "line_span": 337
+          "line_span": 389
         },
         {
           "path": "relax/refinement/mean_helpers.py",
-          "line": 393,
+          "line": 405,
           "name": "update_learned_direction_priors",
           "parameter_count": 16,
           "line_span": 70
         },
         {
           "path": "relax/refinement/mean_helpers.py",
-          "line": 1095,
+          "line": 1206,
           "name": "compute_unregularized_halfmaps_and_align_signs",
           "parameter_count": 14,
           "line_span": 96
         },
         {
           "path": "relax/refinement/half_scoring.py",
-          "line": 192,
+          "line": 193,
           "name": "_adaptive_engine_shared_kwargs",
           "parameter_count": 13,
           "line_span": 42
         },
         {
           "path": "relax/refinement/mean_helpers.py",
-          "line": 238,
+          "line": 240,
           "name": "join_half_accumulators_at_low_resolution",
           "parameter_count": 13,
           "line_span": 48
         },
         {
           "path": "relax/refinement/iteration_loop.py",
-          "line": 763,
+          "line": 982,
           "name": "_safe_batch_sizes",
           "parameter_count": 10,
           "line_span": 45
         },
         {
           "path": "relax/refinement/noise_updates.py",
-          "line": 275,
+          "line": 337,
           "name": "update_posterior_noise_variance",
           "parameter_count": 10,
-          "line_span": 111
+          "line_span": 124
+        },
+        {
+          "path": "relax/refinement/run_files.py",
+          "line": 234,
+          "name": "__init__",
+          "parameter_count": 10,
+          "line_span": 42
         }
       ],
       "largest_functions": [
         {
           "path": "relax/refinement/iteration_loop.py",
-          "line": 493,
+          "line": 670,
           "name": "refine_single_volume",
           "parameter_count": 6,
-          "line_span": 4755
-        },
-        {
-          "path": "relax/refinement/half_scoring.py",
-          "line": 250,
-          "name": "_score_half_dense",
-          "parameter_count": 55,
-          "line_span": 612
+          "line_span": 5235
         },
         {
           "path": "relax/refinement/iteration_loop.py",
-          "line": 2121,
+          "line": 2478,
           "name": "_run_half_estep",
           "parameter_count": 1,
-          "line_span": 592
+          "line_span": 703
         },
         {
           "path": "relax/refinement/half_scoring.py",
-          "line": 914,
-          "name": "_score_half_local",
-          "parameter_count": 48,
-          "line_span": 589
+          "line": 251,
+          "name": "_score_half_dense_one_shape",
+          "parameter_count": 58,
+          "line_span": 657
+        },
+        {
+          "path": "relax/refinement/half_scoring.py",
+          "line": 1008,
+          "name": "_score_half_local_one_shape",
+          "parameter_count": 49,
+          "line_span": 587
         },
         {
           "path": "relax/refinement/local_search_iteration.py",
-          "line": 62,
+          "line": 65,
           "name": "_run_local_search_iteration",
-          "parameter_count": 63,
-          "line_span": 507
+          "parameter_count": 67,
+          "line_span": 451
         },
         {
           "path": "relax/refinement/mean_helpers.py",
-          "line": 473,
+          "line": 532,
           "name": "_reconstruct_volume_eager",
           "parameter_count": 17,
-          "line_span": 337
+          "line_span": 389
+        },
+        {
+          "path": "relax/refinement/tomo_half.py",
+          "line": 286,
+          "name": "score_tomo_half",
+          "parameter_count": 20,
+          "line_span": 207
         },
         {
           "path": "relax/refinement/mean_helpers.py",
-          "line": 884,
+          "line": 995,
           "name": "_reconstruct_and_postprocess_means",
           "parameter_count": 28,
           "line_span": 204
         },
         {
           "path": "relax/refinement/firstiter_cc.py",
-          "line": 37,
+          "line": 34,
           "name": "_score_kclass_firstiter_cc_pass2",
           "parameter_count": 26,
-          "line_span": 193
+          "line_span": 195
         },
         {
-          "path": "relax/refinement/projector_preparation.py",
-          "line": 88,
-          "name": "_relion_projector_half_maps_for_scoring",
-          "parameter_count": 8,
-          "line_span": 141
-        },
-        {
-          "path": "relax/refinement/noise_updates.py",
-          "line": 275,
-          "name": "update_posterior_noise_variance",
-          "parameter_count": 10,
-          "line_span": 111
+          "path": "relax/refinement/run_files.py",
+          "line": 779,
+          "name": "read_run_files",
+          "parameter_count": 3,
+          "line_span": 183
         }
       ]
     }

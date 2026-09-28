@@ -60,7 +60,7 @@ def _initial_grids(**overrides):
         log=logging.getLogger("test_initial_coarse_grid_owner"),
     )
     kwargs.update(overrides)
-    return iteration_planning.build_initial_coarse_grids(iteration_planning.InitialCoarseGridRequest(**kwargs))
+    return iteration_planning.build_initial_coarse_grids(iteration_planning.InitialCoarseGridSpec(**kwargs))
 
 
 @pytest.mark.parametrize("n_classes", [1, 4])
@@ -117,7 +117,7 @@ def test_caller_translation_table_is_kept_as_the_base_grid(monkeypatch):
 def test_controller_materializes_coarse_grids_through_the_owners():
     source = inspect.getsource(iteration_loop.refine_single_volume)
     assert source.count("build_initial_coarse_grids(") == 1
-    assert source.count("InitialCoarseGridRequest(") == 1
+    assert source.count("InitialCoarseGridSpec(") == 1
     assert "_sealed_sampling_base_grids(" not in source
     assert "_translation_grid_for_class_count(" not in source
     assert source.count("_relion_base_translation_grid(") == 6

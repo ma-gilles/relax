@@ -15,10 +15,10 @@ from relax.diagnostics.relion_replay import _sealed_sampling_base_grids
 
 
 @dataclass(frozen=True)
-class InitialCoarseGridRequest:
-    """Inputs that select the first exhaustive RELION trial grid.
+class InitialCoarseGridSpec:
+    """Specification selecting the first exhaustive RELION trial grid.
 
-    Array payloads are retained by reference. Constructing this request does
+    Array payloads are retained by reference. Constructing this specification does
     not cast, copy or transfer them.
     """
 
@@ -45,7 +45,7 @@ class InitialCoarseGrids:
     healpix_order: int
 
 
-def build_initial_coarse_grids(request: InitialCoarseGridRequest) -> InitialCoarseGrids:
+def build_initial_coarse_grids(spec: InitialCoarseGridSpec) -> InitialCoarseGrids:
     """Materialize the first exhaustive coarse grid of a RELION refinement.
 
     A schema-v3 sealed sampling state supplies its own restricted Euler rows
@@ -56,21 +56,21 @@ def build_initial_coarse_grids(request: InitialCoarseGridRequest) -> InitialCoar
     """
 
     dtype = _dense_global_scoring_dtype()
-    healpix_order = request.healpix_order
-    if request.sealed_sampling_state is not None:
+    healpix_order = spec.healpix_order
+    if spec.sealed_sampling_state is not None:
         rotations, rotation_eulers, current_translations = _sealed_sampling_base_grids(
-            request.sealed_sampling_state,
-            voxel_size_angstrom=request.voxel_size,
+            spec.sealed_sampling_state,
+            voxel_size_angstrom=spec.voxel_size,
             dtype=dtype,
         )
         base_translations = np.asarray(current_translations, dtype=np.float64)
-        healpix_order = int(request.sealed_sampling_state["healpix_order_original"])
-        if healpix_order != int(request.init_healpix_order):
+        healpix_order = int(spec.sealed_sampling_state["healpix_order_original"])
+        if healpix_order != int(spec.init_healpix_order):
             raise ValueError(
                 "sealed sampling HEALPix order does not match initialized boundary: "
-                f"sealed={healpix_order} init={request.init_healpix_order}"
+                f"sealed={healpix_order} init={spec.init_healpix_order}"
             )
-        request.log.info(
+        spec.log.info(
             "Frozen-boundary v3 directly materialized %d Euler rows and %d translations",
             int(rotation_eulers.shape[0]),
             int(current_translations.shape[0]),
@@ -79,15 +79,15 @@ def build_initial_coarse_grids(request: InitialCoarseGridRequest) -> InitialCoar
         rotations, rotation_eulers = sampling._relion_rotation_grid_float32(
             healpix_order,
             dtype=dtype,
-            **({"symmetry": request.symmetry} if request.symmetry != "C1" else {}),
+            **({"symmetry": spec.symmetry} if spec.symmetry != "C1" else {}),
         )
-        translations = request.translations
+        translations = spec.translations
         if translations is None:
             translations = sampling._relion_base_translation_grid(
-                request.init_translation_range,
-                request.init_translation_step,
-                n_classes=request.n_classes,
-                voxel_size=request.voxel_size,
+                spec.init_translation_range,
+                spec.init_translation_step,
+                n_classes=spec.n_classes,
+                voxel_size=spec.voxel_size,
             )
         base_translations = np.asarray(translations, dtype=np.float64)
         current_translations = jnp.asarray(translations, dtype=dtype)

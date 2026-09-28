@@ -54,7 +54,7 @@ to make a check pass.
 The intended flow is:
 
 ```text
-RefinementRequest + resolved policies
+RefinementSpec + resolved policies
                 |
           initialize run
                 v
@@ -79,15 +79,15 @@ RefinementRequest + resolved policies
 
 Ownership rules:
 
-- Requests and policies are frozen shallow containers. Their constructors do
+- Specifications and policies are frozen shallow containers. Their constructors do
   not cast, copy, synchronize or transfer arrays.
 - `RefinementRunState` is the sole mutable owner of evolving maps, noise,
   priors, poses, corrections, convergence state and history.
-- Helpers receive the smallest cohesive request or substate, not the whole run
-  state as a service locator.
+- Helpers receive the smallest cohesive specification or substate, not the
+  whole run state as a service locator.
 - Results retain the existing array objects, layouts and precision. Creating a
   result must not extend device-buffer lifetime unintentionally.
-- Request objects remain outside JIT boundaries. Numerical kernels receive the
+- Specification objects remain outside JIT boundaries. Numerical kernels receive the
   same dynamic arrays and static arguments in the same order.
 - Direct dense, adaptive coarse-to-fine, exact local, first-iteration CC,
   K-class and final all-data execution remain explicit variants.
@@ -117,14 +117,14 @@ execution route's selection, engine-call arguments, array identity, dtype,
 error order, update order and result keys. Replace source-text tests that block
 safe code movement with behavioral or AST ownership checks.
 
-### 1. Cohesive request, state, policy and result contracts
+### 1. Cohesive specification, state, policy and result contracts
 
 Introduce small contracts for initial inputs, model state, iteration plans,
 accumulator layout and run/iteration results. Migrate maintained callers in the
 same package and remove superseded APIs rather than keeping two permanent
 interfaces. Constructors remain shallow and host-only.
 
-### 2. Half-scoring requests and explicit variants
+### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring
 plans with a common per-half context plus explicit direct-dense,

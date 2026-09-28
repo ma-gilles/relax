@@ -175,7 +175,7 @@ from relax.refinement.half_inputs import (
     _normalize_sigma_offset_per_half,
 )
 from relax.refinement.half_scoring import _score_half_dense_in_bpref_scope, _score_half_local_in_bpref_scope
-from relax.refinement.iteration_planning import InitialCoarseGridRequest, build_initial_coarse_grids
+from relax.refinement.iteration_planning import InitialCoarseGridSpec, build_initial_coarse_grids
 from relax.refinement.iteration_snapshot import (
     capture_iteration_snapshot,
     noise_pixel_rows,
@@ -942,7 +942,7 @@ def refine_single_volume(
         int(schedule.init_healpix_order) if resume is None else _exhaustive_grid_order_for_state(state)
     )
     initial_grids = build_initial_coarse_grids(
-        InitialCoarseGridRequest(
+        InitialCoarseGridSpec(
             healpix_order=current_healpix_order,
             sealed_sampling_state=sealed_sampling_state,
             translations=translations if resume is None else None,

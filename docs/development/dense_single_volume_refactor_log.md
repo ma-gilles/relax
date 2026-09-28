@@ -61,7 +61,7 @@ before moving production code.
   development guides are unavailable in this checkout. The new plan/log link
   is valid; no agent guide was edited.
 
-## 2026-09-24 — initial coarse-grid request boundary
+## 2026-09-24 — initial coarse-grid specification boundary
 
 ### Objective
 
@@ -70,12 +70,12 @@ the first 10-parameter controller helper without changing grid construction.
 
 ### Change
 
-- Added `refinement.iteration_planning.InitialCoarseGridRequest` and
+- Added `refinement.iteration_planning.InitialCoarseGridSpec` and
   `InitialCoarseGrids`, both frozen shallow containers.
 - Moved initial sealed/canonical coarse-grid construction from the controller
   to `build_initial_coarse_grids`.
-- The controller constructs one request and consumes the returned grid fields
-  in the same order. No casts, grid calls or array conversions changed.
+- The controller constructs one specification and consumes the returned grid
+  fields in the same order. No casts, grid calls or array conversions changed.
 - Migrated the focused ownership tests to the new owner.
 
 ### Structural delta
@@ -87,8 +87,8 @@ the first 10-parameter controller helper without changing grid construction.
 | Functions with at least 10 parameters | 13 | 12 | -1 |
 | Largest function span | 4,753 | 4,755 | +2 |
 
-The line increase is request/result documentation, explicit field names and
-module ownership; the moved calculation itself is unchanged.
+The line increase is specification/result documentation, explicit field names
+and module ownership; the moved calculation itself is unchanged.
 
 ### Validation
 
@@ -104,3 +104,38 @@ module ownership; the moved calculation itself is unchanged.
   reached the mandatory fixture check, which reported all five pinned fixture
   sets unavailable under `/scratch/gpfs/...`. No smoke tests ran and no test
   receipt or Slurm job ID exists; the fixture check was not bypassed.
+
+## 2026-09-28 — rebase onto current `origin/main`
+
+### Rebase result
+
+- Rebased from `1f530682c9087c304012cd75376ca71fdd604e43` onto
+  `363ed495c1692e521f243bf6c0b6b2a35841f5a2`.
+- Preserved current `origin/main` continuation, multi-shape optics, projection
+  scaling, exact-coarse scoring, batching and regression behavior.
+- Replayed the initial coarse-grid ownership boundary with the continuation's
+  restored sampling values.
+- Dropped seven later historical implementation/receipt commits whose
+  pre-multi-shape scoring bodies conflicted with current production behavior.
+  Their ownership changes will be reimplemented against the current code rather
+  than overriding upstream behavior.
+- Renamed the surviving owner from `InitialCoarseGridRequest` to
+  `InitialCoarseGridSpec`; production specification bodies retain field
+  ownership instead of flattening their contents into parallel locals.
+
+### Active structural baseline
+
+| Metric | Current `origin/main` | Coarse-grid spec | Delta |
+| --- | ---: | ---: | ---: |
+| Production files | 15 | 16 | +1 |
+| Physical production lines | 14,184 | 14,221 | +37 |
+| Nonblank, non-comment lines | 12,410 | 12,439 | +29 |
+| Production functions | 223 | 223 | 0 |
+| Functions with at least 10 parameters | 17 | 16 | -1 |
+| Functions with at least 20 parameters | 8 | 8 | 0 |
+| Largest parameter count | 67 | 67 | 0 |
+| Largest function span | 5,233 | 5,235 | +2 |
+
+The checked snapshot now uses the rebased `origin/main` tree as its comparison
+baseline. Historical measurements above remain the record of the original
+work package rather than a comparison against today's production tree.
