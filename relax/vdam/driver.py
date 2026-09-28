@@ -7,8 +7,8 @@ artifact writing are coordinated here through their implementation owners.
 
 from __future__ import annotations
 
-import logging
 import hashlib
+import logging
 import os
 import time
 from dataclasses import dataclass, replace
@@ -95,9 +95,7 @@ def _native_expectation_step(
         sampling_kwargs = {"defer_fine_rotations": True}  # the adaptive route builds its own grids
         iteration = max(1, int(state.iter))
         do_grad = bool(opts.stochastic_all_iterations) or schedules._native_initialmodel_do_grad(
-            state,
-            iteration,
-            grad_em_iters=int(opts.grad_em_iters),
+            state, iteration, grad_em_iters=int(opts.grad_em_iters)
         )
         accuracy_meta = None
         prepared_projector_inputs = (
@@ -136,9 +134,11 @@ def _native_expectation_step(
                 padding_factor=int(opts.padding_factor),
                 sigma2_fudge=DEFAULT_SIGMA2_FUDGE,
             )
-        sampling_updated = _prepare_native_sampling_for_iteration(
-            sampling_state, state, iteration=iteration, do_grad=do_grad,
-        ) if opts.fixed_healpix_order is None else False
+        sampling_updated = (
+            _prepare_native_sampling_for_iteration(sampling_state, state, iteration=iteration, do_grad=do_grad)
+            if opts.fixed_healpix_order is None
+            else False
+        )
         sampling_plan = _build_sampling_plan(
             opts,
             iteration=iteration,
@@ -408,7 +408,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
 
         corner_count = min(int(opts.sigma2_min_particles), int(dataset.n_images))
         corner_images = _load_raw_images(
-            dataset, particle_order[:corner_count], batch_size=max(1, int(opts.image_batch_size)),
+            dataset, particle_order[:corner_count], batch_size=max(1, int(opts.image_batch_size))
         )
         state = initialize_sgd_noise(
             state,
@@ -534,6 +534,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         sgd_learning_rate=float(opts.sgd_learning_rate),
         fourier_radius_schedule=opts.fourier_radius_schedule,
         stochastic_all_iterations=bool(opts.stochastic_all_iterations),
+        uniform_class_direction_prior=bool(opts.uniform_class_direction_prior),
     )
     profile.record("iterations")
     if opts.pilot_controls is not None:

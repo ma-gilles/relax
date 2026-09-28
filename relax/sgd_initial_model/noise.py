@@ -15,8 +15,8 @@ from dataclasses import replace
 
 import numpy as np
 
-from relax.reconstruction.noise_relion import normalize_wsum_to_sigma2_noise
 from relax.helpers.half_spectrum import _host_half_spectrum_plan
+from relax.reconstruction.noise_relion import normalize_wsum_to_sigma2_noise
 from relax.vdam.state import InitialModelState
 
 GAMMA = 0.9999
@@ -39,7 +39,11 @@ def corner_white_sigma2(images: np.ndarray, image_mask: np.ndarray, *, image_mul
         raise ValueError("corner noise needs a nonempty stack of square raw images")
     n = int(images.shape[1])
     image_mask = np.asarray(image_mask, dtype=np.float64)
-    if image_mask.shape != (n, n) or not np.all(np.isfinite(image_mask)) or np.any((image_mask < 0.0) | (image_mask > 1.0)):
+    if (
+        image_mask.shape != (n, n)
+        or not np.all(np.isfinite(image_mask))
+        or np.any((image_mask < 0.0) | (image_mask > 1.0))
+    ):
         raise ValueError("image_mask must be a finite square mask in [0, 1]")
     corners = image_mask <= 1e-6
     if np.count_nonzero(corners) < 4:
@@ -55,14 +59,14 @@ def corner_white_sigma2(images: np.ndarray, image_mask: np.ndarray, *, image_mul
     w_fft = np.fft.rfft2(w)
     c = w_fft / W
     mw_fft = np.fft.rfft2(m * w)
-    transfer_power = float(np.sum(m * m)) + np.abs(c) ** 2 * float(np.sum(w * w)) + 2.0 * np.real(
-        np.conj(c) * mw_fft
-    )
+    transfer_power = float(np.sum(m * m)) + np.abs(c) ** 2 * float(np.sum(w * w)) + 2.0 * np.real(np.conj(c) * mw_fft)
     transfer_power = np.fft.fftshift(transfer_power, axes=(0,))
     n_shells = n // 2 + 1
     shell_ids = _host_half_spectrum_plan((n, n)).relion_noise_shell_indices.reshape(n, n // 2 + 1)
     selected = shell_ids < n_shells
-    power_sum = np.bincount(shell_ids[selected].reshape(-1), weights=transfer_power[selected].reshape(-1), minlength=n_shells)
+    power_sum = np.bincount(
+        shell_ids[selected].reshape(-1), weights=transfer_power[selected].reshape(-1), minlength=n_shells
+    )
     count = np.bincount(shell_ids[selected].reshape(-1), minlength=n_shells)
     sigma2 = float(pixel_variance) * power_sum / (2.0 * float(n**4) * np.maximum(count, 1))
     if not np.all(np.isfinite(sigma2)) or np.any(sigma2 <= 0.0):

@@ -47,7 +47,10 @@ def _inverse_bpref_fourier(volume_half, *, ori_size, padding_factor):
 def _bandlimit_real_map(volume_relion, radius, *, ori_size, padding_factor):
     """Project a map onto the same Fourier support used by its BPref."""
     projector, _ = setup_relion_projector_uncorrected(
-        volume_relion, radius, ori_size=ori_size, padding_factor=padding_factor,
+        volume_relion,
+        radius,
+        ori_size=ori_size,
+        padding_factor=padding_factor,
         compute_dtype=jnp.float32,
     )
     return _inverse_bpref_fourier(projector, ori_size=ori_size, padding_factor=padding_factor)
@@ -70,7 +73,10 @@ def _class_step(reference, previous_update, residual, curvature, radius, learnin
     # applies the same self-adjoint real-space correction to the raw BPref gradient.
     gradient_relion = gridding_correct_volume_real(gradient_relion, ori_size, padding_factor)
     gradient_relion = _bandlimit_real_map(
-        gradient_relion, radius, ori_size=ori_size, padding_factor=padding_factor,
+        gradient_relion,
+        radius,
+        ori_size=ori_size,
+        padding_factor=padding_factor,
     )
     gradient = swap_relion_volume_layout(gradient_relion, jnp.float32)
     previous_relion = swap_relion_volume_layout(previous_update, jnp.float32)
@@ -92,9 +98,7 @@ def _pooled_class_accumulators(accumulators: list[VdamAccumulator], K: int, clas
     """Sum both pseudo-halfsets before using the joint class gradient/curvature."""
     first = accumulators[class_idx]
     second = accumulators[K + class_idx]
-    if (first.class_idx, first.halfset_idx, second.class_idx, second.halfset_idx) != (
-        class_idx, 0, class_idx, 1
-    ):
+    if (first.class_idx, first.halfset_idx, second.class_idx, second.halfset_idx) != (class_idx, 0, class_idx, 1):
         raise ValueError("SGD requires halfset-major K-class BPref accumulators")
     if first.data.shape != second.data.shape or first.weight.shape != second.weight.shape:
         raise ValueError("SGD halfset BPref shapes differ")
@@ -146,8 +150,12 @@ def sgd_m_step(
         reference, update, maximum, grad_norm, delta_norm = _class_step(
             jnp.asarray(state.Iref[k], jnp.float32),
             jnp.asarray(previous[k], jnp.float32),
-            residual, curvature, np.int32(radius), np.float32(learning_rate),
-            ori_size=int(state.ori_size), padding_factor=int(padding_factor),
+            residual,
+            curvature,
+            np.int32(radius),
+            np.float32(learning_rate),
+            ori_size=int(state.ori_size),
+            padding_factor=int(padding_factor),
         )
         if not bool(jnp.all(jnp.isfinite(reference))) or not bool(jnp.all(jnp.isfinite(update))):
             raise ValueError("SGD reference/update became non-finite")

@@ -32,6 +32,26 @@ def _my_mu(mu: float, do_grad: bool, subset_size: int) -> float:
     return my_mu
 
 
+def with_uniform_class_direction_priors(
+    state: InitialModelState, *, n_directions: int | None = None
+) -> InitialModelState:
+    """Set the joint class/direction prior to 1/(K*D), including restarts."""
+    if n_directions is None:
+        direction = np.asarray(state.pdf_direction)
+        if direction.ndim != 2 or direction.shape[0] != state.K:
+            raise ValueError("uniform class/direction prior requires a (K, D) direction grid")
+        n_directions = int(direction.shape[1])
+    if int(n_directions) < 1:
+        raise ValueError("uniform class/direction prior requires at least one direction")
+    return replace(
+        state,
+        pdf_class=np.full(state.K, 1.0 / float(state.K), dtype=np.float64),
+        pdf_direction=np.full(
+            (state.K, n_directions), 1.0 / float(state.K * n_directions), dtype=np.float64
+        ),
+    )
+
+
 def update_noise_from_estep_meta(
     state: InitialModelState,
     meta: dict,
@@ -104,6 +124,7 @@ def update_probabilities_from_estep_meta(
     *,
     do_grad: bool,
     mu: float = DEFAULT_GRAD_MU,
+    uniform_class_direction_prior: bool = False,
 ) -> InitialModelState:
     """``MlOptimiser::maximizationOtherParameters`` for pdf_class / pdf_direction / sigma2_offset."""
     class_sums = _posterior_sums_from_meta(meta, "class_posterior_sums")
@@ -119,15 +140,30 @@ def update_probabilities_from_estep_meta(
     my_mu = _my_mu(mu, do_grad, state.subset_size)
 
     new_state = replace(state)
-    new_pdf_class = np.asarray(state.pdf_class, dtype=np.float64) * my_mu
-    new_pdf_class += (1.0 - my_mu) * class_sums / sum_weight
-    pdf_class_sum = float(np.sum(new_pdf_class))
-    if pdf_class_sum > 0.0:
-        new_pdf_class /= pdf_class_sum
-    new_state.pdf_class = new_pdf_class
+    if not uniform_class_direction_prior:
+        new_pdf_class = np.asarray(state.pdf_class, dtype=np.float64) * my_mu
+        new_pdf_class += (1.0 - my_mu) * class_sums / sum_weight
+        pdf_class_sum = float(np.sum(new_pdf_class))
+        if pdf_class_sum > 0.0:
+            new_pdf_class /= pdf_class_sum
+        new_state.pdf_class = new_pdf_class
 
     direction_sums = _posterior_sums_from_meta(meta, "class_direction_posterior_sums")
-    if direction_sums is not None and state.pdf_direction is not None:
+    if uniform_class_direction_prior:
+        if direction_sums is not None:
+            if direction_sums.ndim != 2 or direction_sums.shape[0] != state.K:
+                raise ValueError("class_direction_posterior_sums must have shape (K, n_directions)")
+            if not np.all(np.isfinite(direction_sums)) or np.any(direction_sums < 0.0):
+                raise ValueError("class_direction_posterior_sums must be non-negative and finite")
+            n_directions = int(direction_sums.shape[1])
+        elif state.pdf_direction is not None and np.asarray(state.pdf_direction).ndim == 2:
+            n_directions = int(np.asarray(state.pdf_direction).shape[1])
+        else:
+            raise ValueError("uniform class/direction prior requires a direction grid")
+        if n_directions < 1:
+            raise ValueError("uniform class/direction prior requires at least one direction")
+        new_state = with_uniform_class_direction_priors(new_state, n_directions=n_directions)
+    elif direction_sums is not None and state.pdf_direction is not None:
         if direction_sums.ndim != 2 or direction_sums.shape[0] != state.K:
             raise ValueError(
                 f"class_direction_posterior_sums must have shape ({state.K}, n_directions), got {direction_sums.shape}"

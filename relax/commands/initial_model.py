@@ -142,24 +142,36 @@ def make_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--K", dest="nr_classes", type=_positive_int, default=DEFAULTS.nr_classes)
     parser.add_argument(
-        "--optimizer", choices=("vdam", "cryosparc_sgd"), default=DEFAULTS.optimizer,
+        "--optimizer",
+        choices=("vdam", "cryosparc_sgd"),
+        default=DEFAULTS.optimizer,
         help="InitialModel update rule; cryosparc_sgd is opt in and requires oversampling 0",
     )
     parser.add_argument(
-        "--sgd-learning-rate", type=_positive_float, default=DEFAULTS.sgd_learning_rate,
+        "--sgd-learning-rate",
+        type=_positive_float,
+        default=DEFAULTS.sgd_learning_rate,
         help="Multiplier on cryosparc_sgd's inverse maximum-curvature step",
     )
     parser.add_argument(
-        "--fourier-radius-schedule", type=_fourier_radius_schedule,
+        "--fourier-radius-schedule",
+        type=_fourier_radius_schedule,
         help="Shared per-iteration Fourier radii, e.g. 15x50,24x150",
     )
     parser.add_argument(
-        "--fixed-healpix-order", type=_nonnegative_int,
+        "--fixed-healpix-order",
+        type=_nonnegative_int,
         help="Hold the angular grid at --healpix-order in both optimizers",
     )
     parser.add_argument(
-        "--stochastic-all-iterations", action="store_true",
+        "--stochastic-all-iterations",
+        action="store_true",
         help="Keep the fixed stochastic batch, including the terminal K-class iteration",
+    )
+    parser.add_argument(
+        "--uniform-class-direction-prior",
+        action="store_true",
+        help="Keep the joint class/direction prior uniform during InitialModel refinement",
     )
     parser.add_argument(
         "--tau2-fudge",
@@ -481,6 +493,7 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
         "fourier_radius_schedule": args.fourier_radius_schedule,
         "fixed_healpix_order": args.fixed_healpix_order,
         "stochastic_all_iterations": args.stochastic_all_iterations,
+        "uniform_class_direction_prior": args.uniform_class_direction_prior,
         "mstep_compute_dtype": args.mstep_compute_dtype,
         "diagnostic_continue_optimiser": args.diagnostic_continue_optimiser,
         "diagnostic_stop_after_iteration": args.diagnostic_stop_after_iteration,

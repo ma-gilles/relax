@@ -66,6 +66,7 @@ class InitialModelDefaults:
     fourier_radius_schedule: tuple[int, ...] | None = None
     fixed_healpix_order: int | None = None
     stochastic_all_iterations: bool = False
+    uniform_class_direction_prior: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -107,15 +108,12 @@ class NativeInitialModelOptions(InitialModelDefaults):
         if not (0.0 < self.sgd_learning_rate < float("inf")):
             raise ValueError("sgd_learning_rate must be positive and finite")
         if self.fourier_radius_schedule is not None:
-            if len(self.fourier_radius_schedule) != self.nr_iter or any(
-                r < 1 for r in self.fourier_radius_schedule
-            ):
+            if len(self.fourier_radius_schedule) != self.nr_iter or any(r < 1 for r in self.fourier_radius_schedule):
                 raise ValueError("fourier_radius_schedule needs one positive radius per iteration")
         if self.fixed_healpix_order is not None and self.fixed_healpix_order != self.healpix_order:
             raise ValueError("fixed_healpix_order must equal the initial healpix_order")
         if self.stochastic_all_iterations and (
-            self.grad_em_iters != 0 or self.pilot_controls is None
-            or self.pilot_controls.stochastic_batch_size is None
+            self.grad_em_iters != 0 or self.pilot_controls is None or self.pilot_controls.stochastic_batch_size is None
         ):
             raise ValueError("stochastic_all_iterations requires grad_em_iters=0 and a fixed stochastic batch")
         if self.grad_write_iter < 1:

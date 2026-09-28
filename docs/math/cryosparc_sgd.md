@@ -36,6 +36,21 @@ with responsibilities held fixed. It must not be described as the exact
 derivative of the marginal masked-image likelihood. The two arms retain this
 same convention so that the comparison tests the update rule and noise model.
 
+The shared opt-in `--uniform-class-direction-prior` holds class probabilities
+at 1/K and joint class/direction probabilities at 1/(K D), where D is the
+number of angular directions. The separate class log prior remains zero:
+adding another factor of 1/K would count class probability twice. In-plane
+angles retain their uniform prior. Shift-prior estimation is unchanged, so
+this option does not reproduce the paper's uniform translation prior.
+Without the option, both optimizers retain native probability updates.
+
+This control also fixes the class probability used in native VDAM's map
+update; changing only the scoring prior would leave an inconsistent
+class-dependent update. Under the uniform option, model STAR class fractions
+describe the fixed prior. Report posterior class fractions from E-step
+metadata separately as the occupancy diagnostic. Evaluate all K class maps;
+the automatically selected single output map has an arbitrary prior tie.
+
 ## Map update
 
 Let G_k be the pooled residual backprojection for class k, and H_k its pooled

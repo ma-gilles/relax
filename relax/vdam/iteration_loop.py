@@ -21,8 +21,8 @@ module is the pure orchestrator.
 
 from __future__ import annotations
 
-import os
 import hashlib
+import os
 import time
 from dataclasses import replace
 from typing import Callable, Literal, Sequence
@@ -31,7 +31,11 @@ import numpy as np
 
 from relax.helpers.convergence import _relion_optimizer_average_pmax
 from relax.reconstruction.regularization_relion import resolution_from_data_vs_prior
-from relax.vdam.estep_meta_updates import update_noise_from_estep_meta, update_probabilities_from_estep_meta
+from relax.vdam.estep_meta_updates import (
+    update_noise_from_estep_meta,
+    update_probabilities_from_estep_meta,
+    with_uniform_class_direction_priors,
+)
 from relax.vdam.m_step import vdam_m_step
 from relax.vdam.schedules import (
     DEFAULT_GRAD_EM_ITERS,
@@ -231,6 +235,7 @@ def run_vdam_iterations(
     sgd_learning_rate: float = 1.0,
     fourier_radius_schedule: tuple[int, ...] | None = None,
     stochastic_all_iterations: bool = False,
+    uniform_class_direction_prior: bool = False,
 ) -> InitialModelState:
     """Full VDAM loop; ``state`` must come from ``initialise_denovo_state`` + ``seed_noise_from_mavg``."""
     phase_lengths = _resolve_phase_lengths(
@@ -251,8 +256,7 @@ def run_vdam_iterations(
     if fourier_radius_schedule is not None and len(fourier_radius_schedule) != int(state.nr_iter):
         raise ValueError("fourier_radius_schedule must have one radius per iteration")
     if stochastic_all_iterations and (
-        grad_em_iters != 0 or pilot_controls is None
-        or pilot_controls.stochastic_batch_size is None
+        grad_em_iters != 0 or pilot_controls is None or pilot_controls.stochastic_batch_size is None
     ):
         raise ValueError("stochastic_all_iterations requires a fixed batch and no EM tail")
     final_iteration = int(state.nr_iter)
@@ -263,7 +267,7 @@ def run_vdam_iterations(
                 "diagnostic_stop_after_iteration must be greater than start_iteration "
                 "and no greater than state.nr_iter"
             )
-    current = state
+    current = with_uniform_class_direction_priors(state) if uniform_class_direction_prior else state
     profile_iterations = bool(os.environ.get("RECOVAR_INITIAL_MODEL_PROFILE"))
 
     for it in range(start_iteration + 1, final_iteration + 1):
@@ -368,12 +372,45 @@ def run_vdam_iterations(
             from relax.sgd_initial_model.optimizer import sgd_m_step
 
             current = sgd_m_step(
-                current, accumulators, learning_rate=sgd_learning_rate,
-                padding_factor=projector_padding_factor, meta=meta,
+                current,
+                accumulators,
+                learning_rate=sgd_learning_rate,
+                padding_factor=projector_padding_factor,
+                meta=meta,
             )
         if profile_iterations:
             _record_stage("mstep")
-        current = update_probabilities_from_estep_meta(current, meta, do_grad=do_grad, mu=mu)
+        current = update_probabilities_from_estep_meta(
+            current,
+            meta,
+            do_grad=do_grad,
+            mu=mu,
+            uniform_class_direction_prior=uniform_class_direction_prior,
+        )
+        full_class_sums = meta.get("class_posterior_sums_full")
+        if full_class_sums is None:
+            full_class_sums = meta.get("class_posterior_sums")
+            fraction_source = "retained_fallback"
+        else:
+            fraction_source = "full"
+        if full_class_sums is not None:
+            full_class_sums = np.asarray(full_class_sums, dtype=np.float64)
+            class_mass = float(np.sum(full_class_sums))
+            if full_class_sums.shape == (current.K,) and np.isfinite(class_mass) and class_mass > 0.0:
+                meta["class_posterior_fraction_by_class"] = (full_class_sums / class_mass).tolist()
+                meta["class_posterior_fraction_source"] = fraction_source
+        retained_class_sums = meta.get("class_posterior_sums")
+        if retained_class_sums is not None:
+            retained_class_sums = np.asarray(retained_class_sums, dtype=np.float64)
+            retained_mass = float(np.sum(retained_class_sums))
+            if retained_class_sums.shape == (current.K,) and np.isfinite(retained_mass) and retained_mass > 0.0:
+                meta["class_retained_mass_fraction_by_class"] = (retained_class_sums / retained_mass).tolist()
+        if uniform_class_direction_prior:
+            n_directions = int(np.asarray(current.pdf_direction).shape[1])
+            meta["uniform_class_direction_prior"] = True
+            meta["effective_pdf_class_prior_by_class"] = np.asarray(current.pdf_class, dtype=np.float64).tolist()
+            meta["effective_joint_direction_prior_per_class_direction"] = 1.0 / float(current.K * n_directions)
+            meta["effective_joint_direction_count"] = n_directions
         if optimizer == "vdam":
             current = update_noise_from_estep_meta(current, meta, do_grad=do_grad, mu=mu)
         else:
