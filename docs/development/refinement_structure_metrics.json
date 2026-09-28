@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "exact-local-half-scoring-spec-ownership",
-    "source_commit": "8be72f334e4a7c6dcd6c0715a22da0f83e86c1f6",
+    "package": "local-search-iteration-spec-ownership",
+    "source_commit": "f4237f0f530e1f30d60f12e1354f5dd6095f2104",
     "metrics": {
       "schema_version": 1,
       "scope": {
@@ -30,12 +30,12 @@
       },
       "totals": {
         "file_count": 16,
-        "physical_lines": 14815,
-        "nonblank_noncomment_lines": 12956,
+        "physical_lines": 14878,
+        "nonblank_noncomment_lines": 12998,
         "function_count": 225,
-        "large_argument_function_count": 12,
-        "very_large_argument_function_count": 5,
-        "maximum_parameter_count": 67,
+        "large_argument_function_count": 11,
+        "very_large_argument_function_count": 4,
+        "maximum_parameter_count": 28,
         "maximum_function_line_span": 5369
       },
       "files": [
@@ -59,8 +59,8 @@
         },
         {
           "path": "relax/refinement/half_scoring.py",
-          "physical_lines": 1999,
-          "nonblank_noncomment_lines": 1790,
+          "physical_lines": 2004,
+          "nonblank_noncomment_lines": 1795,
           "function_count": 17
         },
         {
@@ -83,8 +83,8 @@
         },
         {
           "path": "relax/refinement/local_search_iteration.py",
-          "physical_lines": 515,
-          "nonblank_noncomment_lines": 452,
+          "physical_lines": 573,
+          "nonblank_noncomment_lines": 489,
           "function_count": 2
         },
         {
@@ -137,13 +137,6 @@
         }
       ],
       "large_argument_functions": [
-        {
-          "path": "relax/refinement/local_search_iteration.py",
-          "line": 65,
-          "name": "_run_local_search_iteration",
-          "parameter_count": 67,
-          "line_span": 451
-        },
         {
           "path": "relax/refinement/mean_helpers.py",
           "line": 995,
@@ -239,24 +232,24 @@
         },
         {
           "path": "relax/refinement/half_scoring.py",
-          "line": 374,
+          "line": 377,
           "name": "_score_half_dense_one_shape",
           "parameter_count": 1,
-          "line_span": 626
+          "line_span": 623
         },
         {
           "path": "relax/refinement/half_scoring.py",
-          "line": 1437,
+          "line": 1425,
           "name": "_score_half_local_one_shape",
           "parameter_count": 1,
-          "line_span": 550
+          "line_span": 569
         },
         {
           "path": "relax/refinement/local_search_iteration.py",
-          "line": 65,
+          "line": 178,
           "name": "_run_local_search_iteration",
-          "parameter_count": 67,
-          "line_span": 451
+          "parameter_count": 1,
+          "line_span": 396
         },
         {
           "path": "relax/refinement/mean_helpers.py",

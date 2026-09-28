@@ -312,3 +312,67 @@ consolidate identical construction without recreating a forwarding layer.
   `/scratch/gpfs` fixture sets are absent on this host, as recorded in the
   preceding package. No new submission was attempted against the same missing
   inventory.
+
+## 2026-09-28 — local-search iteration specification ownership
+
+### Change
+
+- Replaced the remaining 67-parameter production boundary,
+  `_run_local_search_iteration`, with `LocalSearchIterationSpec` and cohesive
+  owners for data, grids, batching, numerical-kernel policy, posterior/support
+  policy and diagnostics.
+- The implementation keeps those six owners visible. It introduces locals only
+  for image and rotation batch sizes and the two prior arrays because those
+  values are deliberately normalized or replanned inside the function. An AST
+  ownership regression rejects flattening the stable fields back into locals.
+- Exact-local parent, broad-denominator diagnostic and final fine passes now
+  derive named variants from one shallow base specification with
+  `dataclasses.replace`. Their distinct precision, projection, support,
+  accumulation, returned-detail and debug policies remain explicit.
+- Direct tests use a rejecting test-only builder for concise fixtures. Production
+  has no compatibility wrapper, legacy kwargs adapter or field-unpacking layer.
+
+### Structural delta from the active upstream baseline
+
+| Metric | Baseline | Current | Delta |
+| --- | ---: | ---: | ---: |
+| Production files | 15 | 16 | +1 |
+| Physical production lines | 14,185 | 14,878 | +693 |
+| Nonblank, non-comment lines | 12,410 | 12,998 | +588 |
+| Production functions | 223 | 225 | +2 |
+| Functions with at least 10 parameters | 17 | 11 | -6 |
+| Functions with at least 20 parameters | 8 | 4 | -4 |
+| Largest parameter count | 67 | 28 | -39 |
+| Largest function span | 5,234 | 5,369 | +135 |
+
+This package adds 63 physical production lines while removing the largest
+argument boundary in the counted package. The remaining maximum is the
+28-parameter reconstruction/postprocessing boundary in `mean_helpers.py`.
+
+### Validation
+
+- Implementation commit:
+  `f4237f0f530e1f30d60f12e1354f5dd6095f2104`.
+- AST-normalized comparison against its parent: passed. After removing the six
+  owner aliases and the four mutable planning initializers, then translating
+  `owner.field` back to its former parameter name, the complete local-search
+  control/numerical body is identical.
+- Focused owner, call-contract and exact-local variant tests: 23 passed across
+  the direct controller and half-scoring selections.
+- Resident local dispatch: 23 passed and 12 CUDA-only cases skipped. The
+  independent RELION reference file passed 4 CPU cases and skipped 16
+  CUDA-only cases.
+- Broadened dense/local, BPref, symmetry, optics, firstiter and controller set:
+  594 passed and 28 CUDA-only cases skipped. Five replay cases could not set up
+  because their pinned `/scratch/gpfs/...` RELION fixture is absent; this is the
+  same external fixture block recorded for smoke.
+- Production and affected-helper Ruff lint, Python compilation, snapshot check
+  and diff checks: passed.
+- CPU EM fast guard: 102 passed in 57.50 seconds on the implementation commit
+  after loading `FFTW/3.3.10-GCC-12.2.0`. The first invocation intentionally
+  documented the repository setup trap: 98 passed and four C4 cases failed to
+  load the existing binding without `libfftw3.so.3`; the corrected invocation
+  passed all cases.
+- GPU smoke remains infrastructure-blocked because the five mandatory
+  `/scratch/gpfs` fixture sets are still absent. No Slurm job or GPU receipt was
+  produced.
