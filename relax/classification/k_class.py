@@ -1052,6 +1052,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
             False,
         ),
         score_mode="normalized_cc",
+        relion_coarse_gaussian_default=bool(engine_kwargs.get("relion_exact_coarse", False)),
         collect_significance=_significance_debug_dump_matches(
             current_size=engine_kwargs.get("current_size"),
             debug_iteration=engine_kwargs.get("debug_iteration"),

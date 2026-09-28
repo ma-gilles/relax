@@ -1050,6 +1050,7 @@ def _compute_k_class_significance_batched(
         _e_step_block_scores_normalized_cc,
         _e_step_block_scores_windowed,
         _e_step_block_scores_windowed_normalized_cc,
+        _relion_coarse_normalized_cc_gemm_scores_jit,
         _relion_coarse_normalized_cc_rescore,
         _update_logsumexp,
     )
@@ -2181,6 +2182,52 @@ def _compute_k_class_significance_batched(
             tree_rescore_max_margin,
             score_size,
         )
+    # --firstiter_cc on RELION's exact coarse operands (em_status coarse-scorer
+    # TODO): the tree rescore's per-image FFT, RFLOAT CTF and corr_img operands,
+    # translated with RELION's sincosf for every translation and scored by the
+    # coarse GEMMs (_relion_coarse_normalized_cc_gemm_scores_jit).
+    exact_cc_enabled = bool(
+        score_mode == "normalized_cc"
+        and relion_coarse_gaussian_default
+        and use_relion_projector
+        and coarse_texture_interp
+        and half_spectrum_scoring
+        and not use_float64_scoring
+        and not tree_rescore_enabled
+        # The raw score dumps read the generic operands.
+        and not (
+            collect_significance
+            and _significance_debug_dump_matches(current_size=current_size, debug_iteration=debug_iteration)
+        )
+    )
+    exact_cc_score_indices = None
+    exact_cc_translation_angles = None
+    if exact_cc_enabled:
+        from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star
+        from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
+
+        exact_cc_score_indices = jnp.asarray(
+            np.arange(n_half) if window_spec.score_indices_np is None else window_spec.score_indices_np,
+            dtype=jnp.int32,
+        )
+        exact_cc_translation_angles = jnp.asarray(
+            _relion_translation_angles_f32(
+                translations_source,
+                image_shape,
+                angle_scale=relion_translation_angle_scale,
+            ),
+            dtype=jnp.float32,
+        )
+        logger.info(
+            "RELION normalized-CC coarse pass on the exact operands: classes=%d current_size=%d "
+            "score_pixels=%d translations=%d",
+            n_classes,
+            score_size,
+            int(exact_cc_score_indices.shape[0]),
+            n_trans,
+        )
+    # Both exact paths leave the generic half-image score operands unbuilt.
+    generic_operands_skipped = exact_compact_preprocess_enabled or exact_cc_enabled
     track_class_second = return_class_second or tree_rescore_enabled
     if use_window:
         half_weights_windowed = window_spec.score_values(half_weights)
@@ -2613,6 +2660,20 @@ def _compute_k_class_significance_batched(
         *,
         rotation_start,
     ):
+        if exact_cc_enabled:
+            proj_half_b, _proj_abs2_half_b = _project_block_once(
+                class_index, mean_for_proj, rots_b, rotation_start=rotation_start
+            )
+            if use_window and not projector_returns_compact:
+                proj_half_b = proj_half_b[:, window_indices]
+            return _relion_coarse_normalized_cc_gemm_scores_jit(
+                jnp.asarray(proj_half_b, dtype=jnp.complex64),
+                exact_cc_shifted,
+                jnp.asarray(exact_cc_pixel_weight, dtype=jnp.float32),
+                actual_batch_size,
+                n_images=int(batch_size),
+                n_trans=int(n_trans),
+            )
         if coarse_gaussian_gemm_hybrid_batch_result is not None:
             if int(class_index) != 0:
                 raise RuntimeError("certified coarse GEMM hybrid is restricted to K=1")
@@ -3068,7 +3129,7 @@ def _compute_k_class_significance_batched(
                     )
                 batch_translation_log_prior = jnp.asarray(batch_translation_log_prior_np)
 
-            if exact_compact_preprocess_enabled:
+            if generic_operands_skipped:
                 shifted_half = None
                 batch_norm = None
                 ctf2_over_nv_half = None
@@ -3136,7 +3197,7 @@ def _compute_k_class_significance_batched(
                 else:
                     shifted_half, batch_norm, ctf2_over_nv_half = preprocess_result
             batch_scale = jnp.asarray(batch_scale_np)
-            if image_corrections is not None and not exact_compact_preprocess_enabled:
+            if image_corrections is not None and not generic_operands_skipped:
                 batch_corr = jnp.asarray(batch_corr_np)
                 applied_corr = batch_scale if relion_cuda_preprocess else batch_corr
                 corr_expanded = jnp.repeat(applied_corr, n_trans)
@@ -3163,14 +3224,14 @@ def _compute_k_class_significance_batched(
                 if not relion_cuda_preprocess:
                     norm_corr = batch_corr / batch_scale
                     batch_norm = batch_norm * (norm_corr**2)[:, None]
-            if scale_corrections is not None and not exact_compact_preprocess_enabled:
+            if scale_corrections is not None and not generic_operands_skipped:
                 ctf2_over_nv_half = ctf2_over_nv_half * (batch_scale**2)[:, None]
                 if score_mode == "normalized_cc":
                     ctf2_half_score = ctf2_half_score * (batch_scale**2)[:, None]
             if (
                 image_pre_shifts is not None
                 and not real_space_pre_shift_applied
-                and not exact_compact_preprocess_enabled
+                and not generic_operands_skipped
             ):
                 batch_shifts_np = np.asarray(image_pre_shifts)[np.asarray(indices)]
                 if batch_size > actual_batch_size:
@@ -3197,7 +3258,7 @@ def _compute_k_class_significance_batched(
                             dtype=batch_shifts.dtype,
                         )
                     )
-            if score_mode == "normalized_cc":
+            if score_mode == "normalized_cc" and not generic_operands_skipped:
                 inv_xi2 = 1.0 / jnp.maximum(batch_norm, jnp.asarray(1e-30, dtype=batch_norm.dtype))
                 score_weight_half = ctf2_half_score * inv_xi2
                 shifted_half = shifted_half * jnp.repeat(inv_xi2, n_trans, axis=0)
@@ -3205,14 +3266,14 @@ def _compute_k_class_significance_batched(
                     tree_rescore_unshifted_half = (
                         tree_rescore_unshifted_half * inv_xi2
                     )
-            elif not exact_compact_preprocess_enabled:
+            elif not generic_operands_skipped:
                 score_weight_half = ctf2_over_nv_half
             else:
                 score_weight_half = None
             if (
                 half_spectrum_scoring
                 and score_mode != "normalized_cc"
-                and not exact_compact_preprocess_enabled
+                and not generic_operands_skipped
             ):
                 from relax.helpers.half_spectrum import make_shell_indices_half as _mshi
 
@@ -3228,10 +3289,10 @@ def _compute_k_class_significance_batched(
             fused_window_operands = (
                 jit_stage_glue_enabled()
                 and use_window
-                and not exact_compact_preprocess_enabled
+                and not generic_operands_skipped
                 and not (score_mode == "normalized_cc" and tree_rescore_enabled)
             )
-            if exact_compact_preprocess_enabled:
+            if generic_operands_skipped:
                 shifted_data = None
                 ctf2_data = None
             elif fused_window_operands:
@@ -3254,7 +3315,7 @@ def _compute_k_class_significance_batched(
                 ctf2_data = score_weight_half
                 if score_mode == "normalized_cc" and tree_rescore_enabled:
                     tree_rescore_unshifted_data = tree_rescore_unshifted_half
-            if exact_compact_preprocess_enabled or fused_window_operands:
+            if generic_operands_skipped or fused_window_operands:
                 # ``_windowed_score_operands`` already cast both operands.
                 pass
             elif use_float64_scoring:
@@ -3317,6 +3378,54 @@ def _compute_k_class_significance_batched(
                 )
                 tree_rescore_unshifted_data = exact_cc_operands.windowed_unshifted
                 tree_rescore_corr_img_data = exact_cc_operands.windowed_corr_img
+
+            if exact_cc_enabled:
+                if not relion_cuda_preprocess or relion_preprocess_kwargs is None:
+                    raise ValueError(
+                        "the exact normalized-CC coarse pass requires RELION CUDA image preprocessing",
+                    )
+                from relax.cuda import kernels as em_cuda_kernels
+
+                exact_cc_processed = _process_relion_exact_coarse_half_image(
+                    experiment_dataset,
+                    batch_data,
+                    score_with_masked_images,
+                    relion_preprocess_kwargs=relion_preprocess_kwargs,
+                )
+                exact_cc_phase_factors = None
+                if image_pre_shifts is not None and not real_space_pre_shift_applied:
+                    exact_cc_shifts = np.asarray(image_pre_shifts)[np.asarray(indices)]
+                    exact_cc_phase_factors = tiled_half_image_phase_factors(
+                        image_shape,
+                        jnp.asarray(_repeat_pad_batch_axis(exact_cc_shifts, batch_size)),
+                        1,
+                    )
+                # The padded rows of a short last batch repeat its first image's CTF row.
+                exact_cc_operands = assemble_relion_cc_coarse_operands(
+                    exact_cc_processed,
+                    _relion_exact_ctf_half_from_source_star(
+                        experiment_dataset,
+                        _repeat_pad_batch_axis(np.asarray(indices), batch_size),
+                        image_shape,
+                    ),
+                    _relion_cc_inverse_power_from_processed(
+                        exact_cc_processed,
+                        window_indices if use_window else None,
+                    ),
+                    jnp.asarray(batch_scale_np, dtype=jnp.float32),
+                    phase_factors=exact_cc_phase_factors,
+                    window_indices=window_indices if use_window else None,
+                    scale_corrections_enabled=scale_corrections is not None,
+                )
+                exact_cc_shifted = em_cuda_kernels.relion_translate_score_f32(
+                    exact_cc_operands.windowed_unshifted,
+                    exact_cc_translation_angles,
+                    exact_cc_score_indices,
+                    image_shape,
+                ).reshape(batch_size, n_trans, -1)
+                exact_cc_pixel_weight = exact_cc_operands.windowed_corr_img * (
+                    half_weights_windowed if use_window else half_weights
+                )
 
             if coarse_gaussian_ffi_enabled:
                 coarse_preprocess_kwargs = relion_preprocess_kwargs
@@ -4703,9 +4812,10 @@ def _compute_k_class_significance_batched(
                 dtype=np.int32,
             )[:actual_batch_size]
 
+            # The exact scorers score without the generic image-energy offset.
             log_score_offset = (
                 np.zeros(batch_size, dtype=np.float64)
-                if coarse_gaussian_ffi_enabled
+                if coarse_gaussian_ffi_enabled or exact_cc_enabled
                 else -0.5
                 * np.asarray(jnp.squeeze(batch_norm, axis=1), dtype=np.float64)
             )

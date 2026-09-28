@@ -42,7 +42,8 @@ def _relion_coarse_cc_atomic_score_from_components(numerator, norm):
     ``cuda_kernel_diff2_CC_coarse`` deliberately has every one of its 128
     threads atomically add the same reduced score divided by 128.  The
     repeated float32 rounding is observable at near ties and is not equivalent
-    to multiplying one rounded contribution by 128.
+    to multiplying one rounded contribution by 128. The loop is unrolled so the
+    additions fuse into one elementwise pass over a full coarse score cube.
     """
 
     numerator = jnp.asarray(numerator, dtype=jnp.float32)
@@ -60,6 +61,7 @@ def _relion_coarse_cc_atomic_score_from_components(numerator, norm):
         128,
         add_once,
         jnp.zeros_like(contribution),
+        unroll=True,
     )
 
 
@@ -950,40 +952,27 @@ def _coarse_gemm_float64_requested() -> bool:
     return token == "1"
 
 
-@partial(
-    jax.jit,
-    static_argnames=("n_images", "n_trans", "image_shape", "volume_shape", "float64"),
-)
-def _relion_coarse_gaussian_gemm_scores_jit(
+def _relion_coarse_gemm_terms(
     projected_reference,
-    projected_reference_abs2,
     shifted_corrected,
     pixel_weight,
-    initial_diff2,
     actual_image_count,
     *,
     n_images: int,
     n_trans: int,
-    image_shape: tuple[int, int],
-    volume_shape: tuple[int, int, int],
-    float64: bool = False,
+    wide,
 ):
-    """Score exact RELION coarse operands with two real-packed GEMMs.
+    """RELION's coarse cross and model-energy terms as two real-packed GEMMs.
 
-    RELION's direct square ``d0 + 0.5 sum_k w_k |p_k - y_k|^2`` expands into
-    ``d0 + 0.5 A + 0.5 C - X`` with the model energy ``A = w . |p|^2``, the
-    image energy ``C = w . |y|^2`` and the cross term ``X = Re(conj(w y) . p)``.
-    ``X`` is one real GEMM over ``[Re, Im]``-packed operands (the complex
-    product's imaginary half is never formed) and ``A`` is a second GEMM.
-    Both run at the operands' precision with an explicit full-precision dot
-    algorithm (float32 never falls to TF32). ``RELAX_COARSE_GEMM_FLOAT64=1``
-    promotes the stored operands to binary64 instead, for measuring the
-    expansion's cancellation; float32 is the production arithmetic.
+    Returns ``X = Re(conj(w y) . p)`` as ``[B, T, R]``, the model energy
+    ``A = w . |p|^2`` as ``[B, R]``, the image energy ``C = w . |y|^2`` as
+    ``[B, T]`` and the active-image mask; images past ``actual_image_count``
+    carry zero weight. ``X`` is one real GEMM over ``[Re, Im]``-packed operands
+    (the complex product's imaginary half is never formed) and ``A`` is a second
+    GEMM. Both run at ``wide`` precision with an explicit full-precision dot
+    algorithm (float32 never falls to TF32).
     """
 
-    del projected_reference_abs2, image_shape, volume_shape
-    out_dtype = pixel_weight.dtype
-    wide = jnp.float64 if float64 else out_dtype
     active = jnp.arange(n_images, dtype=jnp.int32) < jnp.asarray(
         actual_image_count,
         dtype=jnp.int32,
@@ -991,7 +980,6 @@ def _relion_coarse_gaussian_gemm_scores_jit(
     weight = jnp.where(active[:, None], pixel_weight, 0).astype(wide)
     shifted_re = jnp.where(active[:, None, None], shifted_corrected.real, 0).astype(wide)
     shifted_im = jnp.where(active[:, None, None], shifted_corrected.imag, 0).astype(wide)
-    initial = jnp.where(active, initial_diff2, 0).astype(wide)
     reference_re = projected_reference.real.astype(wide)
     reference_im = projected_reference.imag.astype(wide)
 
@@ -1024,6 +1012,49 @@ def _relion_coarse_gaussian_gemm_scores_jit(
         (shifted_re * shifted_re + shifted_im * shifted_im) * weight[:, None, :],
         axis=-1,
     )
+    return cross, model_energy, image_energy, active
+
+
+@partial(
+    jax.jit,
+    static_argnames=("n_images", "n_trans", "image_shape", "volume_shape", "float64"),
+)
+def _relion_coarse_gaussian_gemm_scores_jit(
+    projected_reference,
+    projected_reference_abs2,
+    shifted_corrected,
+    pixel_weight,
+    initial_diff2,
+    actual_image_count,
+    *,
+    n_images: int,
+    n_trans: int,
+    image_shape: tuple[int, int],
+    volume_shape: tuple[int, int, int],
+    float64: bool = False,
+):
+    """Score exact RELION coarse operands with two real-packed GEMMs.
+
+    RELION's direct square ``d0 + 0.5 sum_k w_k |p_k - y_k|^2`` expands into
+    ``d0 + 0.5 A + 0.5 C - X`` over the terms of
+    :func:`_relion_coarse_gemm_terms`. ``RELAX_COARSE_GEMM_FLOAT64=1``
+    promotes the stored operands to binary64 instead, for measuring the
+    expansion's cancellation; float32 is the production arithmetic.
+    """
+
+    del projected_reference_abs2, image_shape, volume_shape
+    out_dtype = pixel_weight.dtype
+    wide = jnp.float64 if float64 else out_dtype
+    cross, model_energy, image_energy, active = _relion_coarse_gemm_terms(
+        projected_reference,
+        shifted_corrected,
+        pixel_weight,
+        actual_image_count,
+        n_images=n_images,
+        n_trans=n_trans,
+        wide=wide,
+    )
+    initial = jnp.where(active, initial_diff2, 0).astype(wide)
     half = jnp.asarray(0.5, dtype=wide)
     scores = (
         cross.swapaxes(1, 2)
@@ -1032,6 +1063,42 @@ def _relion_coarse_gaussian_gemm_scores_jit(
         - initial[:, None, None]
     )
     return jnp.where(active[:, None, None], scores, 0).astype(out_dtype)
+
+
+@partial(jax.jit, static_argnames=("n_images", "n_trans"))
+def _relion_coarse_normalized_cc_gemm_scores_jit(
+    projected_reference,
+    shifted_corrected,
+    pixel_weight,
+    actual_image_count,
+    *,
+    n_images: int,
+    n_trans: int,
+):
+    """Score exact RELION ``--firstiter_cc`` coarse operands with the coarse GEMMs.
+
+    ``cuda_kernel_diff2_CC_coarse`` weights both its numerator and its norm by
+    ``corr_img``; with ``pixel_weight = corr_img * half_weights`` they are the
+    cross term ``X`` and model energy ``A`` of :func:`_relion_coarse_gemm_terms`,
+    and the score is ``X / sqrt(A)`` through RELION's 128 atomic additions
+    (:func:`_relion_coarse_cc_atomic_score_from_components`). Returns
+    ``[B, R, T]`` float32 scores; padded images score zero.
+    """
+
+    cross, model_energy, _image_energy, active = _relion_coarse_gemm_terms(
+        projected_reference,
+        shifted_corrected,
+        pixel_weight,
+        actual_image_count,
+        n_images=n_images,
+        n_trans=n_trans,
+        wide=jnp.float32,
+    )
+    scores = _relion_coarse_cc_atomic_score_from_components(
+        cross.swapaxes(1, 2),
+        model_energy[:, :, None],
+    )
+    return jnp.where(active[:, None, None], scores, 0)
 
 
 def _relion_coarse_gaussian_gemm_scores(

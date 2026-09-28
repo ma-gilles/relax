@@ -556,3 +556,57 @@ def test_native_cc_rescore_limits_support_to_current_image(model_radius, padding
     y = np.where(y > size // 2, y - size, y)
     count = np.count_nonzero(x*x + y*y <= (size // 2)**2)
     assert_matches(result[0, 1:], [count, count])
+
+
+def test_normalized_cc_gemm_scores_every_pose_within_the_float32_reorder_bound():
+    """The exact-operand CC GEMM scores the tree replay's formula for every pose.
+
+    Both weight the numerator and the norm by ``corr_img * half_weights``; only the
+    reduction order differs, so each score sits within the float32 reordering bound
+    of a binary64 reference. Padded images score zero.
+    """
+
+    pytest.importorskip("jax")
+    import jax.numpy as jnp
+
+    from relax.scoring.scoring import _relion_coarse_normalized_cc_gemm_scores_jit
+
+    rng = np.random.default_rng(7190)
+    n_images, n_trans, n_rot, n_pixels = 3, 4, 5, 56 * 29
+    shifted = (
+        rng.normal(size=(n_images, n_trans, n_pixels)) + 1j * rng.normal(size=(n_images, n_trans, n_pixels))
+    ).astype(np.complex64)
+    projections = (rng.normal(size=(n_rot, n_pixels)) + 1j * rng.normal(size=(n_rot, n_pixels))).astype(np.complex64)
+    corr_img = rng.uniform(0.1, 1.5, size=(n_images, n_pixels)).astype(np.float32)
+    half_weights = rng.choice(np.asarray([1.0, 2.0], dtype=np.float32), size=n_pixels)
+    pixel_weight = (corr_img * half_weights).astype(np.float32)
+
+    actual = np.asarray(
+        _relion_coarse_normalized_cc_gemm_scores_jit(
+            jnp.asarray(projections),
+            jnp.asarray(shifted),
+            jnp.asarray(pixel_weight),
+            n_images - 1,
+            n_images=n_images,
+            n_trans=n_trans,
+        )
+    )
+    assert actual.shape == (n_images, n_rot, n_trans)
+    assert not np.any(actual[-1])
+
+    w = pixel_weight.astype(np.float64)
+    y = shifted.astype(np.complex128)
+    p = projections.astype(np.complex128)
+    numerator_terms = w[:, None, None, :] * np.real(np.conj(y)[:, None, :, :] * p[None, :, None, :])
+    norm_terms = w[:, None, :] * np.abs(p[None, :, :]) ** 2
+    numerator = numerator_terms.sum(axis=-1)
+    norm = norm_terms.sum(axis=-1)[:, :, None]
+    expected = numerator / np.sqrt(norm)
+    # Recursive float32 summation of n terms errs by at most (n - 1) eps sum|terms|;
+    # the division, square root and 128 atomic additions add a few more ulps.
+    eps = float(np.finfo(np.float32).eps)
+    numerator_bound = n_pixels * eps * np.abs(numerator_terms).sum(axis=-1)
+    norm_bound = n_pixels * eps * norm_terms.sum(axis=-1)[:, :, None]
+    bound = numerator_bound / np.sqrt(norm) + 0.5 * np.abs(expected) * norm_bound / norm + 256 * eps * np.abs(expected)
+    error = np.abs(actual[:-1].astype(np.float64) - expected[:-1])
+    assert np.all(error <= bound[:-1])
