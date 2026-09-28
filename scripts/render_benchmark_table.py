@@ -19,7 +19,9 @@ the row's two wall times, and a time ratio without its like-for-like record
 scope, GPU model per job). A masked value must name the dataset's frozen mask
 from docs/benchmarks/frozen_masks.json by key and SHA-256.
 
-Optional per-row fields: ``result_marker`` ({symbol, note}) flags the relax
+Optional per-row fields: ``label`` is the short dataset name the results table
+shows (default ``dataset``; the provenance page keeps the full ``dataset``),
+``result_marker`` ({symbol, note}) flags the relax
 result and adds a footnote; ``cross_engine_by_relion_run`` and
 ``relion_vs_relion`` list the band FSC-AUCs of relax against every same-command
 RELION run and of the RELION runs against each other (``render_per_reference``).
@@ -388,7 +390,7 @@ def _line(row, letters):
     tag = "real" if row["section"] == "real" else "synthetic"
     cells = [
         status(row),
-        f"{row['dataset']} <sub>{tag}</sub> [notes]({PROVENANCE_LINK}#{row['id']})",
+        f"{row.get('label', row['dataset'])} <sub>{tag}</sub> [notes]({PROVENANCE_LINK}#{row['id']})",
         f"{row['particles']:,} / {row['box']}",
         *res,
         row["quality_reason"],
