@@ -2,21 +2,21 @@
   "schema_version": 1,
   "baseline": {
     "recorded_date": "2026-09-28",
-    "source_commit": "363ed495c1692e521f243bf6c0b6b2a35841f5a2",
+    "source_commit": "e2401c4c53182f6aed4e12b060b28257ef86894f",
     "metrics": {
       "file_count": 15,
-      "physical_lines": 14184,
+      "physical_lines": 14185,
       "nonblank_noncomment_lines": 12410,
       "function_count": 223,
       "large_argument_function_count": 17,
       "very_large_argument_function_count": 8,
       "maximum_parameter_count": 67,
-      "maximum_function_line_span": 5233
+      "maximum_function_line_span": 5234
     }
   },
   "current": {
     "package": "firstiter-cc-spec-ownership",
-    "source_commit": "677f794546c3af71830eebe85dcd139abc5d6b88",
+    "source_commit": "eaea7b617ff793cc3701b2ced7373ecf3a671f57",
     "metrics": {
       "schema_version": 1,
       "scope": {
@@ -30,13 +30,13 @@
       },
       "totals": {
         "file_count": 16,
-        "physical_lines": 14308,
+        "physical_lines": 14309,
         "nonblank_noncomment_lines": 12507,
         "function_count": 223,
         "large_argument_function_count": 15,
         "very_large_argument_function_count": 7,
         "maximum_parameter_count": 67,
-        "maximum_function_line_span": 5235
+        "maximum_function_line_span": 5236
       },
       "files": [
         {
@@ -65,7 +65,7 @@
         },
         {
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 5904,
+          "physical_lines": 5905,
           "nonblank_noncomment_lines": 5275,
           "function_count": 26
         },
@@ -249,7 +249,7 @@
           "line": 670,
           "name": "refine_single_volume",
           "parameter_count": 6,
-          "line_span": 5235
+          "line_span": 5236
         },
         {
           "path": "relax/refinement/iteration_loop.py",

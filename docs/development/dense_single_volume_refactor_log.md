@@ -157,7 +157,7 @@ work package rather than a comparison against today's production tree.
 
 | Metric | Baseline | Current | Delta |
 | --- | ---: | ---: | ---: |
-| Physical production lines | 14,184 | 14,308 | +124 |
+| Physical production lines | 14,185 | 14,309 | +124 |
 | Nonblank, non-comment lines | 12,410 | 12,507 | +97 |
 | Functions with at least 10 parameters | 17 | 15 | -2 |
 | Functions with at least 20 parameters | 8 | 7 | -1 |
@@ -174,3 +174,16 @@ dispatch has one parameter and no forwarding/compatibility layer.
 - Ruff lint, Python compilation, structural snapshot and diff checks: passed.
 - The attempted historical regression command named a test file removed on
   current `origin/main`; the current test inventory was used instead.
+
+## 2026-09-28 — periodic rebase onto `e2401c4c`
+
+- Rebased all four refactor commits onto
+  `e2401c4c53182f6aed4e12b060b28257ef86894f`.
+- Conflicts: none.
+- The three upstream commits changed tomography execution and status
+  documentation; they replayed unchanged and did not require an EM resolution
+  choice.
+- The active upstream structural baseline is now 14,185 physical production
+  lines, 12,410 nonblank/non-comment lines, 17 functions with at least 10
+  parameters and 8 with at least 20. The first-iteration package remains a
+  reduction to 15 and 7 respectively.
