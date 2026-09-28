@@ -604,9 +604,8 @@ def relion_sampling_perturbation_for_iteration(
 def _relion_euler_angles_to_matrix(eulers_deg: np.ndarray) -> np.ndarray:
     """Vectorized port of RELION ``Euler_angles2matrix``.
 
-    This returns RELION's projector matrix ``A``. RECOVAR's rotation matrices
-    are the transpose of this representation; use ``utils.R_from_relion`` when
-    a RECOVAR-frame matrix is needed.
+    This returns RELION's projector matrix ``A``. The pinned RECOVAR
+    ``utils.R_from_relion`` returns the same matrix for these Euler angles.
     """
     eulers = np.asarray(eulers_deg, dtype=np.float64).reshape(-1, 3)
     alpha = np.deg2rad(eulers[:, 0])
