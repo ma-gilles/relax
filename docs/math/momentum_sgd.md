@@ -70,7 +70,8 @@ Its continuous-grid mode is `δ = -b/a`; therefore the total pixel offset
 `b + δ` need not be zero when `b ≠ 0` and `a ≠ 1`. The sampled grid can move
 the mode further. This unchanged shared convention is separate from image
 pre-shifts and offset-variance statistics; see the
-[RELION prior convention](relion_initial_model_em_parity_conventions.md#prior-preparation).
+[RELION prior convention](relion_initial_model_em_parity_conventions.md#prior-preparation)
+and the [documented nonzero-offset example](https://github.com/ma-gilles/relax/issues/6#issuecomment-5875803217).
 
 This control also fixes the class probability used in native VDAM's map
 update; changing only the scoring prior would leave an inconsistent
@@ -201,6 +202,10 @@ informative control are then necessary.
 The fixed coarse-grid baseline was rerun with matched seeds and hardware; see
 the [science scorecard](momentum_sgd_science_scorecard.md) and
 [validation and reproduction report](../benchmarks/momentum_sgd_coarse_20260928.md).
+The fixed-settings [robustness scorecard](momentum_sgd_robustness_scorecard.md)
+and [report](../benchmarks/momentum_sgd_robustness_20260928.md) cover noise,
+preferred orientations and nonzero shifts. They find condition-dependent
+recovery, not general three-state robustness.
 Earlier successful native K3 results used a different sampling schedule and
 provide context only.
 

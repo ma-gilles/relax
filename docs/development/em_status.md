@@ -1,6 +1,6 @@
 # Current EM/VDAM development scope
 
-Updated September 21, 2026. Cleanup and scientific qualification remain in
+Updated September 28, 2026. Cleanup and scientific qualification remain in
 progress. The [task queue](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/pr179_coordination/CURRENT_TASK.md)
 contains the active work list; detailed experiment histories live in the private
 `ma-gilles/recovar-experiments` repository.
@@ -8,13 +8,17 @@ contains the active work list; detailed experiment histories live in the private
 ## Coarse K3 SGD comparison (September28,2026)
 
 The opt-in momentum SGD/noise implementation has passed scoped numerical checks,
-the medium tier and fresh integration smoke. Matched fixed-HP3,600-update runs
-with positivity off recover state2 in both seeds; states0/1 remain poorly
-separated. This establishes limited repeatability, not broad robustness. See
-[method](../math/momentum_sgd.md), [per-state scorecard](../math/momentum_sgd_science_scorecard.md)
-and [source, validation, timing and reproduction](../benchmarks/momentum_sgd_coarse_20260928.md).
-The user-requested next package holds settings fixed while varying noise,
-preferred orientations and shifts. Native VDAM defaults are unchanged.
+the medium tier and fresh integration smoke. Matched fixed-HP3, 600-update
+noise-1 runs with positivity off recover state 2 in both seeds; states 0/1
+remain poorly separated. The completed fixed-settings robustness matrix finds
+condition-dependent recovery: preferred orientations improve the candidate's
+three-state result, while high noise and nonzero shifts leave both arms with
+poor poses. General robustness is not established. See the
+[method](../math/momentum_sgd.md), [noise-1 scorecard](../math/momentum_sgd_science_scorecard.md),
+[robustness scorecard](../math/momentum_sgd_robustness_scorecard.md),
+[source and validation report](../benchmarks/momentum_sgd_coarse_20260928.md),
+and [robustness report](../benchmarks/momentum_sgd_robustness_20260928.md).
+Native VDAM defaults are unchanged.
 
 ## Opt-in dense GEMM K1 experiment (September 28)
 

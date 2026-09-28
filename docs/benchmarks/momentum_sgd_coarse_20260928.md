@@ -147,12 +147,11 @@ Python import identities. Evaluation scripts and full invocation manifests are
 in `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/protocol_r3` and `protocol_pose_v4`; reruns need new evaluation output
 paths as well. Do not overwrite the saved protocols, runs or evaluation files.
 
-The next user-requested package freezes this algorithm/settings and compares
-noise variance factors .5/2, preferred orientations, and nonzero shifts, each
-with two matched optimizer seeds. Results will live at
-`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_robustness_20260928`.
-No claim of robustness is made before those comparisons. Posterior-support
-sensitivity is a separate follow-up so it cannot confound this matrix.
+The completed [robustness comparison](momentum_sgd_robustness_20260928.md)
+holds these settings fixed across noise variance factors .5/2, preferred
+orientations and nonzero shifts, with two matched seeds each. It does not
+establish general three-state robustness. Posterior-support sensitivity is a
+separate follow-up so it cannot confound that matrix.
 
 All jobs from this first package are terminal; job 14627542 failed as recorded,
 all subsequent required checks completed. [Job registry](/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/JOBS.json)
