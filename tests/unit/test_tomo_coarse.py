@@ -202,3 +202,29 @@ def test_the_per_image_kernel_matches_the_one_image_calls(gpu_device):
                 padding_factor=pad,
             )
             assert_matches(np.asarray(batched[b]), np.asarray(single), err_msg=f"image {b}")
+
+
+def test_padded_particles_with_their_own_rotation_priors_cut_as_one_by_one():
+    """A local search's batch: per-particle rotation priors, padded rotations (a -inf prior) never significant."""
+
+    rng = np.random.default_rng(9)
+    n_trans, counts = 6, (10, 7, 4)
+    r_pad = max(counts)
+    diff2 = rng.uniform(1000.0, 1004.0, size=(3, r_pad, n_trans)).astype(np.float32)
+    priors = [np.log(rng.uniform(0.5, 1.0, size=n)).astype(np.float32) for n in counts]
+    offset_prior = np.log(rng.uniform(0.1, 1.0, size=(3, n_trans))).astype(np.float32)
+    padded_prior = np.full((3, r_pad), -np.inf, dtype=np.float32)
+    for p, n in enumerate(counts):
+        diff2[p, n:] = diff2[p, n - 1]  # padded rotations repeat the particle's last one
+        padded_prior[p, :n] = priors[p]
+    batched = tomo_coarse.particle_coarse_significance(
+        diff2, padded_prior, offset_prior, adaptive_fraction=0.999, max_significants=None
+    )
+    for p, n in enumerate(counts):
+        alone = tomo_coarse.particle_coarse_significance(
+            diff2[p : p + 1, :n], priors[p], offset_prior[p : p + 1], adaptive_fraction=0.999, max_significants=None
+        )
+        mask = np.asarray(batched["mask"][p]).reshape(r_pad, n_trans)
+        assert not mask[n:].any()
+        np.testing.assert_array_equal(mask[:n].reshape(-1), np.asarray(alone["mask"][0]))
+        assert_matches(np.asarray(batched["pmax"][p]), np.asarray(alone["pmax"][0]))

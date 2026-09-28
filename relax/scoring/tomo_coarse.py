@@ -322,19 +322,26 @@ def particle_coarse_significance(
     The subtomogram coarse pass converts the particle's summed diff2 exactly as the SPA pass
     converts one image's (convertAllSquaredDifferencesToWeights, acc_ml_optimiser_impl.h:2245-2345):
     the log weight is ``log prior + min_diff2 - diff2`` in float32, then RELION's sort, scan and
-    tail cut. ``rotation_log_prior`` is ``[R]`` (or ``None``) and ``translation_log_prior``
-    ``[P, T]``, the particle's 3D offset prior. The SPA posterior primitive is reused, so the two
-    paths cannot drift apart. Returns its statistics dict (``mask [P, R * T]``, ``n_significant``,
-    ``pmax``, ``winner``, ...).
+    tail cut. ``rotation_log_prior`` is ``[R]``, ``[P, R]`` (each particle's own, a local search) or
+    ``None``, and ``translation_log_prior`` ``[P, T]``, the particle's 3D offset prior. The SPA
+    posterior primitive is reused, so the two paths cannot drift apart. Returns its statistics dict
+    (``mask [P, R * T]``, ``n_significant``, ``pmax``, ``winner``, ...).
     """
 
     from relax.scoring.coarse_publication import _dense_prior_scores, _posterior_statistics
 
     raw = -jnp.asarray(particle_diff2, dtype=jnp.float32)
     n_particles = int(raw.shape[0])
-    values = _dense_prior_scores(
-        raw, jnp.float32(0.0), rotation_log_prior, translation_log_prior, jnp.int32(n_particles)
-    )
+    if rotation_log_prior is not None and np.ndim(rotation_log_prior) == 2:
+        # _dense_prior_scores' additions in its order, with a per-particle rotation prior.
+        values = raw + jnp.float32(0.0)
+        values = values + jnp.asarray(rotation_log_prior, jnp.float32)[:, :, None]
+        values = values + jnp.asarray(translation_log_prior, jnp.float32)[:, None, :]
+        values = values.reshape(n_particles, -1)
+    else:
+        values = _dense_prior_scores(
+            raw, jnp.float32(0.0), rotation_log_prior, translation_log_prior, jnp.int32(n_particles)
+        )
     raw_max = jnp.max(raw.reshape(n_particles, -1), axis=1)
     return _posterior_statistics(
         values,
@@ -393,7 +400,6 @@ def particle_coarse_supports(
     offsets = np.asarray(unit_image_offsets, dtype=np.int64)
     image_projections = np.asarray(image_projections, dtype=np.float64)
     old = tomo_particles.relion_gpu_old_offsets(np.asarray(unit_old_offsets_px, dtype=np.float64))
-    supports, pmax = [], np.zeros(offsets.size - 1, dtype=np.float64)
     local = unit_rotation_ids is not None
     if local != (unit_rotation_log_priors is not None) or (local and rotation_log_prior is not None):
         raise ValueError("a local search takes each particle's rotations and priors, and no shared prior")
@@ -416,11 +422,52 @@ def particle_coarse_supports(
         if local and (rows.size == 0 or np.any(np.diff(rows) <= 0)):
             raise ValueError(f"particle {u}'s local rotations must be ascending and non-empty")
     rotation_counts = [coarse_eulers_deg.shape[0] if rows is None else rows.size for rows in unit_rotations]
-    for units, r_pad, p_pad, slot_block in _coarse_batches(rotation_counts, n_slots=slots, n_trans=n_coarse_trans):
+    batches = _coarse_batches(rotation_counts, n_slots=slots, n_trans=n_coarse_trans)
+    r_pad_all = batches[0][1] if batches else 0
+    # The significance of several batches' particles runs as one call, [P_sig, R_pad * T] values
+    # within the batch budget; a particle's padded rotations carry a -inf prior and are never significant.
+    significance_batch = max(1, _COARSE_BATCH_BYTES // max(r_pad_all * n_coarse_trans * 4, 1))
+    supports, pmax_by_unit = {}, {}
+    pending = []
+
+    def flush():
+        if not pending:
+            return
+        units_all = np.concatenate([u for u, _ in pending])
+        totals = jnp.concatenate([t for _, t in pending], axis=0)
+        pending.clear()
+        if local:
+            rotation_prior = np.full((units_all.size, r_pad_all), -np.inf, dtype=np.float32)
+            for i, unit in enumerate(units_all):
+                rotation_prior[i, : int(rotation_counts[unit])] = np.asarray(unit_rotation_log_priors[unit], np.float32)
+        elif r_pad_all > coarse_eulers_deg.shape[0]:
+            rotation_prior = np.full(r_pad_all, -np.inf, dtype=np.float32)
+            rotation_prior[: coarse_eulers_deg.shape[0]] = (
+                0.0 if rotation_log_prior is None else np.asarray(rotation_log_prior, np.float32)
+            )
+        else:
+            rotation_prior = rotation_log_prior
+        stats = particle_coarse_significance(
+            totals,
+            rotation_prior,
+            np.asarray(unit_translation_log_prior, dtype=np.float32)[units_all],
+            adaptive_fraction=adaptive_fraction,
+            max_significants=max_significants,
+        )
+        masks, particle_pmax = np.asarray(stats["mask"]), np.asarray(stats["pmax"], dtype=np.float64)
+        for i, unit in enumerate(units_all):
+            cells = np.flatnonzero(masks[i])
+            if cells.size and int(cells[-1]) // n_coarse_trans >= int(rotation_counts[unit]):
+                raise RuntimeError(f"particle {unit}: a padded coarse rotation came out significant")
+            if local:
+                cells = unit_rotations[unit][cells // n_coarse_trans] * n_coarse_trans + cells % n_coarse_trans
+            supports[int(unit)] = cells.astype(np.int32)
+            pmax_by_unit[int(unit)] = float(particle_pmax[i])
+
+    for units, r_pad, p_pad, slot_block in batches:
         # Host operands of the batch, padded to [P_pad, S, R_pad, ...]: padded rotations repeat the particle's
         # last one, padded slots and particles carry zero weight (their diff2 adds zeros and is not read).
         rotations = np.zeros((p_pad, slots, r_pad, 3, 3), dtype=np.float32)
-        rotations[:] = np.eye(3, dtype=np.float32)
         angles = np.zeros((p_pad, slots, n_coarse_trans, 2), dtype=np.float32)
         image_index = np.zeros((p_pad, slots), dtype=np.int64)
         image_valid = np.zeros((p_pad, slots), dtype=bool)
@@ -468,17 +515,10 @@ def particle_coarse_supports(
                 padding_factor=int(padding_factor),
                 n_chunks=int(n_chunks),
             )
-        for p, unit in enumerate(units):
-            stats = particle_coarse_significance(
-                total[p : p + 1, : int(rotation_counts[unit])],
-                rotation_log_prior if not local else np.asarray(unit_rotation_log_priors[unit], dtype=np.float32),
-                np.asarray(unit_translation_log_prior, dtype=np.float32)[unit : unit + 1],
-                adaptive_fraction=adaptive_fraction,
-                max_significants=max_significants,
-            )
-            cells = np.flatnonzero(np.asarray(stats["mask"][0]))
-            if local:
-                cells = unit_rotations[unit][cells // n_coarse_trans] * n_coarse_trans + cells % n_coarse_trans
-            supports.append(cells.astype(np.int32))
-            pmax[unit] = float(stats["pmax"][0])
-    return supports, pmax
+        pending.append((units, total[: units.size]))
+        if sum(int(u.size) for u, _ in pending) >= significance_batch:
+            flush()
+    flush()
+    return [supports[u] for u in range(n_units)], np.asarray(
+        [pmax_by_unit[u] for u in range(n_units)], dtype=np.float64
+    )
