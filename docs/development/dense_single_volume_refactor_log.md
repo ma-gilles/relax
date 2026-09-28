@@ -695,3 +695,21 @@ single-volume boundary has 17 parameters.
 - GPU smoke remains infrastructure-blocked by the unchanged absence of the five
   mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
   produced.
+
+## 2026-09-28 — owner-visible low-resolution half join
+
+- Commit `c913f37` replaced the 13-argument pre-Wiener half-join boundary with
+  three explicit owners: `HalfAccumulatorPair`, `HalfJoinGeometry` and
+  `HalfJoinPolicy`.
+- The implementation reads the owners at their points of use. It does not
+  flatten their fields into local aliases, and the two numbered/final callers
+  show the accumulator, geometry and policy construction directly.
+- Numerical argument order, previous-resolution selection, input preservation
+  and retained-device-numerator behavior are unchanged.
+- Focused ownership, strict numerical comparison and resolution-scheduling
+  tests: 37 passed.
+- CPU EM fast guard: 102 passed in 57.22 seconds with
+  `FFTW/3.3.10-GCC-12.2.0` loaded.
+- Production totals are 15,105 physical and 13,156 nonblank lines. Functions
+  with at least 10 parameters fell from 17 on `origin/main` to 6; excluding the
+  two out-of-scope tomography boundaries, four remain.

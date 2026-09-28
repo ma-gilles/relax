@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "owner-visible-scoring-boundaries",
-    "source_commit": "79ef49aa64ab8521e959557d0057f58b3a38c452",
+    "package": "owner-visible-half-join",
+    "source_commit": "c913f37d19c16c45a407b14623b184b2f551a675",
     "metrics": {
       "files": [
         {
@@ -45,9 +45,9 @@
         },
         {
           "function_count": 26,
-          "nonblank_noncomment_lines": 5487,
+          "nonblank_noncomment_lines": 5502,
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 6127
+          "physical_lines": 6142
         },
         {
           "function_count": 1,
@@ -69,9 +69,9 @@
         },
         {
           "function_count": 45,
-          "nonblank_noncomment_lines": 1544,
+          "nonblank_noncomment_lines": 1559,
           "path": "relax/refinement/mean_helpers.py",
-          "physical_lines": 1826
+          "physical_lines": 1850
         },
         {
           "function_count": 11,
@@ -132,21 +132,14 @@
           "path": "relax/refinement/tomo_half.py"
         },
         {
-          "line": 560,
+          "line": 584,
           "line_span": 389,
           "name": "_reconstruct_volume_eager",
           "parameter_count": 17,
           "path": "relax/refinement/mean_helpers.py"
         },
         {
-          "line": 241,
-          "line_span": 48,
-          "name": "join_half_accumulators_at_low_resolution",
-          "parameter_count": 13,
-          "path": "relax/refinement/mean_helpers.py"
-        },
-        {
-          "line": 1021,
+          "line": 1024,
           "line_span": 45,
           "name": "_safe_batch_sizes",
           "parameter_count": 10,
@@ -169,14 +162,14 @@
       ],
       "largest_functions": [
         {
-          "line": 709,
-          "line_span": 5419,
+          "line": 712,
+          "line_span": 5431,
           "name": "refine_single_volume",
           "parameter_count": 6,
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 2528,
+          "line": 2531,
           "line_span": 726,
           "name": "_run_half_estep",
           "parameter_count": 1,
@@ -197,7 +190,7 @@
           "path": "relax/refinement/half_scoring.py"
         },
         {
-          "line": 560,
+          "line": 584,
           "line_span": 389,
           "name": "_reconstruct_volume_eager",
           "parameter_count": 17,
@@ -232,7 +225,7 @@
           "path": "relax/refinement/run_files.py"
         },
         {
-          "line": 1081,
+          "line": 1105,
           "line_span": 182,
           "name": "_reconstruct_and_postprocess_means",
           "parameter_count": 5,
@@ -252,11 +245,11 @@
       "totals": {
         "file_count": 16,
         "function_count": 226,
-        "large_argument_function_count": 7,
-        "maximum_function_line_span": 5419,
+        "large_argument_function_count": 6,
+        "maximum_function_line_span": 5431,
         "maximum_parameter_count": 22,
-        "nonblank_noncomment_lines": 13126,
-        "physical_lines": 15066,
+        "nonblank_noncomment_lines": 13156,
+        "physical_lines": 15105,
         "very_large_argument_function_count": 2
       }
     }
