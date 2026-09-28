@@ -27,6 +27,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 from helpers.em_arrays import _hermitian_volume
+from helpers.refinement_specs import local_iteration_owners
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, VOLUME_SHAPE, MockDataset
 
 import recovar.core.fourier_transform_utils as ftu
@@ -196,7 +197,7 @@ def _run(
         image_corrections = rng.uniform(0.9, 1.1, N_IMAGES).astype(np.float32)
         scale_corrections = rng.uniform(0.9, 1.1, N_IMAGES).astype(np.float32)
         trans_centers = rng.uniform(-0.5, 0.5, (N_IMAGES, 2)).astype(np.float32)
-    return local_search_iteration._run_local_search_iteration(
+    return local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         case["dataset"],
         case["volume"],
         case["noise_variance"],
@@ -239,7 +240,7 @@ def _run(
         return_best_pose_details=True,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         pass2_layout=layout,
-    )
+    ))
 
 
 @pytest.fixture

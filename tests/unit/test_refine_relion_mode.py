@@ -25,6 +25,7 @@ import jax.numpy as jnp
 from helpers.em_arrays import _hermitian_volume, _make_rotations
 from helpers.refinement_specs import (
     local_half_spec,
+    local_iteration_owners,
     mean_reconstruction_owners,
 )
 
@@ -2225,9 +2226,8 @@ def test_score_half_local_forwards_mstep_grid(monkeypatch, rng):
     class DispatchCaptured(Exception):
         pass
 
-    def fake_run_local_search_iteration(*args, **kwargs):
-        captured["mean_shape"] = args[1].shape
-        captured.update(kwargs)
+    def fake_run_local_search_iteration(data, grid, batching, kernel, support, diagnostics):
+        captured.update(data=data, grid=grid, batching=batching, kernel=kernel, support=support, diagnostics=diagnostics)
         raise DispatchCaptured
 
     monkeypatch.setitem(scoring_policy._DENSE_EM_STATIC_KWARGS, "use_float64_scoring", True)
@@ -2274,13 +2274,11 @@ def test_score_half_local_forwards_mstep_grid(monkeypatch, rng):
             local_profile_history=[],
         ))
 
-    assert captured["mean_shape"] == (VOLUME_SIZE,)
-    assert_matches(captured["rotation_grid_mstep_rotations"], mstep_grid)
-    assert captured["generate_relion_mstep_rotations"] is True
-    assert "class_log_priors" not in captured
-    assert "return_significant_counts" not in captured
-    assert captured["use_float64_scoring"] is True
-    assert captured["use_float64_projections"] is True
+    assert captured["data"].mean.shape == (VOLUME_SIZE,)
+    assert_matches(captured["grid"].rotation_grid_mstep_rotations, mstep_grid)
+    assert captured["grid"].generate_relion_mstep_rotations is True
+    assert captured["kernel"].use_float64_scoring is True
+    assert captured["kernel"].use_float64_projections is True
 
 
 def test_build_local_hypothesis_layout_parent_expands_translation_grid_and_priors():
@@ -4122,7 +4120,7 @@ def test_run_local_search_iteration_fine_pass_uses_model_sigma_for_translation_p
     translations = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=np.float32)
     reference_translations = np.array([[0.0, 0.0], [2.0, 0.0]], dtype=np.float32)
 
-    outputs = local_search_iteration._run_local_search_iteration(
+    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -4141,7 +4139,7 @@ def test_run_local_search_iteration_fine_pass_uses_model_sigma_for_translation_p
         accumulate_noise=True,
         relion_exact_score_translation=True,
         translation_prior_reference_translations=reference_translations,
-    )
+    ))
 
     assert captured["offset_range_pixels"] is None
     assert captured["sigma_offset_angstrom"] == 1.25
@@ -4185,7 +4183,7 @@ def test_run_local_search_iteration_dispatches_aligned_mstep_grid(monkeypatch, r
     monkeypatch.setattr(local_iteration_module, "compute_local_search_resident", capture_dispatch)
 
     with pytest.raises(DispatchCaptured):
-        local_search_iteration._run_local_search_iteration(
+        local_search_iteration._run_local_search_iteration(*local_iteration_owners(
             dataset,
             jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -4204,7 +4202,7 @@ def test_run_local_search_iteration_dispatches_aligned_mstep_grid(monkeypatch, r
             relion_exact_score_translation=True,
             rotation_grid_mstep_rotations=mstep_grid,
             generate_relion_mstep_rotations=True,
-        )
+        ))
 
     layout = captured["layout"]
     assert_matches(layout.rotations_flat, score_grid[layout.rotation_ids_flat])
@@ -4263,7 +4261,7 @@ def test_run_local_search_iteration_plumbs_normalization_log_evidence(monkeypatc
 
     monkeypatch.setattr(local_iteration_module, "compute_local_search_resident", fake_resident_local_search)
 
-    outputs = local_search_iteration._run_local_search_iteration(
+    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -4282,7 +4280,7 @@ def test_run_local_search_iteration_plumbs_normalization_log_evidence(monkeypatc
         accumulate_noise=False,
         pass2_layout=layout,
         normalization_log_evidence=normalization_log_evidence,
-    )
+    ))
 
     np.testing.assert_allclose(captured["normalization_log_evidence"], normalization_log_evidence)
     assert isinstance(outputs, _LocalSearchIterationResult)
@@ -4327,7 +4325,7 @@ def test_run_local_search_iteration_plumbs_stats_use_reconstruction_probs(monkey
 
     monkeypatch.setattr(local_iteration_module, "compute_local_search_resident", fake_resident_local_search)
 
-    outputs = local_search_iteration._run_local_search_iteration(
+    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -4347,7 +4345,7 @@ def test_run_local_search_iteration_plumbs_stats_use_reconstruction_probs(monkey
         pass2_layout=layout,
         reconstruct_significant_only=True,
         stats_use_reconstruction_probs=True,
-    )
+    ))
 
     assert captured["stats_use_reconstruction_probs"] is True
     assert isinstance(outputs, _LocalSearchIterationResult)
@@ -4452,7 +4450,7 @@ def test_run_local_search_iteration_fine_pass_uses_factorized_prior_metadata_for
         == "full"
     )
 
-    outputs = local_search_iteration._run_local_search_iteration(
+    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -4469,7 +4467,7 @@ def test_run_local_search_iteration_fine_pass_uses_factorized_prior_metadata_for
         rotation_block_size=4,
         current_size=4,
         accumulate_noise=True,
-    )
+    ))
 
     assert captured["grid_metadata_mode"] == "factorized"
     assert captured["n_pixels"] == hp.nside2npix(2**healpix_order)
@@ -14723,7 +14721,7 @@ def test_run_local_search_iteration_plumbs_score_only_and_reuses_batch_planner(
 
     monkeypatch.setattr(local_search_iteration, "_estimate_relion_em_batch_sizes", batch_size_planner)
 
-    outputs = local_search_iteration._run_local_search_iteration(
+    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -14745,7 +14743,7 @@ def test_run_local_search_iteration_plumbs_score_only_and_reuses_batch_planner(
         disable_adjoint_y=True,
         disable_adjoint_ctf=True,
         score_only=True,
-    )
+    ))
 
     assert planner_calls == [{
         "requested_image_batch_size": 2,
@@ -14950,7 +14948,7 @@ def test_local_search_reuses_caller_planner_without_growing_batches(
 
     monkeypatch.setattr(local_search_iteration, "_estimate_relion_em_batch_sizes", lambda **kwargs: pytest.fail("caller planner bypassed"))
 
-    outputs = local_search_iteration._run_local_search_iteration(
+    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -14973,7 +14971,7 @@ def test_local_search_reuses_caller_planner_without_growing_batches(
         disable_adjoint_ctf=True,
         score_only=True,
         batch_size_planner=batch_size_planner,
-    )
+    ))
 
     assert planner_calls == [(2, 2, {
         "classes": 1, "image_shape_for_batch": mock_dataset.image_shape,

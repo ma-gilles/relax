@@ -64,7 +64,6 @@ from relax.refinement.firstiter_cc import (
     FirstIterCCExecution,
     FirstIterCCGridSpec,
     FirstIterCCPolicy,
-    FirstIterCCSpec,
     _score_kclass_firstiter_cc_pass2,
 )
 from relax.refinement.local_search_iteration import (
@@ -72,7 +71,6 @@ from relax.refinement.local_search_iteration import (
     LocalSearchData,
     LocalSearchDiagnosticPolicy,
     LocalSearchGridSpec,
-    LocalSearchIterationSpec,
     LocalSearchKernelPolicy,
     LocalSearchSupportPolicy,
     _run_local_search_iteration,
@@ -503,16 +501,15 @@ def _score_half_dense_one_shape(
     )
     if variant.relion_firstiter_cc_this_iter:
         # Shared first-iteration inputs; means, layouts and pose IDs remain route-specific.
-        firstiter_spec = FirstIterCCSpec(
-            data=FirstIterCCData(
+        firstiter_data = FirstIterCCData(
                 logger=logger,
                 experiment_dataset=half.experiment_dataset,
                 mean=half.means_k,
                 mean_variance=half.mean_variance,
                 noise_variance=half.noise_variance_k,
                 image_shape=half.experiment_dataset.image_shape,
-            ),
-            grid=FirstIterCCGridSpec(
+        )
+        firstiter_grid = FirstIterCCGridSpec(
                 effective_rotations=sampling.effective_rotations,
                 current_translations=sampling.current_translations,
                 base_translations=sampling.base_translations,
@@ -520,25 +517,24 @@ def _score_half_dense_one_shape(
                 state=sampling.state,
                 random_perturbation=sampling.random_perturbation,
                 symmetry=symmetry,
-            ),
-            policy=FirstIterCCPolicy(
+        )
+        firstiter_policy = FirstIterCCPolicy(
                 disc_type=sampling.disc_type,
                 class_log_priors=priors.class_log_priors,
-            ),
-            batching=FirstIterCCBatching(
+        )
+        firstiter_batching = FirstIterCCBatching(
                 image_batch_size=batching.image_batch_size,
                 em_kwargs=em_kwargs,
                 safe_batch_sizes=batching.safe_batch_sizes,
                 significance_safe_batch_sizes=batching.significance_safe_batch_sizes,
                 coarse_current_size=firstiter_coarse_current_size,
                 fine_current_size=firstiter_fine_current_size,
-            ),
-            execution=FirstIterCCExecution(
+        )
+        firstiter_execution = FirstIterCCExecution(
                 log_label=variant.firstiter_log_label,
                 update_em_kwargs_image_batch_size=variant.firstiter_updates_em_kwargs_ibs,
                 bpref_device_signature_active=execution.bpref_device_signature_active,
                 debug_iteration=execution.debug_iteration,
-            ),
         )
 
     if variant.k_class_enabled:
@@ -570,13 +566,11 @@ def _score_half_dense_one_shape(
                 n_trans_fine_for_collapse,
                 adaptive_os_local,
             ) = _score_kclass_firstiter_cc_pass2(
-                replace(
-                    firstiter_spec,
-                    grid=replace(
-                        firstiter_spec.grid,
-                        coarse_rotation_ids=sampling.coarse_rotation_ids,
-                    ),
-                )
+                firstiter_data,
+                replace(firstiter_grid, coarse_rotation_ids=sampling.coarse_rotation_ids),
+                firstiter_policy,
+                firstiter_batching,
+                firstiter_execution,
             )
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
         elif _dense_uses_adaptive_engine(sampling.state.adaptive_oversampling, half.group_ids_k):
@@ -781,15 +775,14 @@ def _score_half_dense_one_shape(
                 n_trans_fine_for_collapse,
                 adaptive_os_local,
             ) = _score_kclass_firstiter_cc_pass2(
+                replace(firstiter_data, mean=means_single),
+                firstiter_grid,
+                firstiter_policy,
                 replace(
-                    firstiter_spec,
-                    data=replace(firstiter_spec.data, mean=means_single),
-                    batching=replace(
-                        firstiter_spec.batching,
-                        em_kwargs=({**em_kwargs, "mstep_relion_x_half": True} if k1_relion_x_half_mstep else em_kwargs),
-                    ),
-                    execution=replace(firstiter_spec.execution, log_label="K=1 "),
-                )
+                    firstiter_batching,
+                    em_kwargs=({**em_kwargs, "mstep_relion_x_half": True} if k1_relion_x_half_mstep else em_kwargs),
+                ),
+                replace(firstiter_execution, log_label="K=1 "),
             )
         else:
             pass2_grids = _adaptive_pass2_grids(
@@ -1561,10 +1554,9 @@ def _score_half_local_one_shape(
             int(sampling.current_translations.shape[0]),
             int(local_n_trans),
         )
-    # One shared typed pass. Parent, denominator and final execution derive
-    # their intentional differences with ``replace`` below.
-    local_iteration_spec = LocalSearchIterationSpec(
-        data=LocalSearchData(
+    # Shared owners for one typed pass. Parent, denominator and final execution
+    # derive their intentional differences with ``replace`` below.
+    local_data = LocalSearchData(
             experiment_dataset=half.experiment_dataset,
             mean=half.means_k,
             noise_variance=half.noise_variance_k,
@@ -1575,8 +1567,8 @@ def _score_half_local_one_shape(
             scale_correction_data_vs_prior=half.scale_correction_data_vs_prior,
             image_pre_shifts=priors.translation_search_base,
             optics_group_ids=half.optics_group_ids_k,
-        ),
-        grid=LocalSearchGridSpec(
+    )
+    local_grid = LocalSearchGridSpec(
             prior_rotations=half.previous_best_rotation_eulers_k,
             rotation_grid_rotations=sampling.local_search_rotations,
             healpix_order=sampling.local_search_order,
@@ -1593,13 +1585,13 @@ def _score_half_local_one_shape(
             rotation_grid_mstep_rotations=sampling.local_search_mstep_rotations,
             generate_relion_mstep_rotations=True,
             symmetry=sampling.symmetry,
-        ),
-        batching=LocalSearchBatchPolicy(
+    )
+    local_batching = LocalSearchBatchPolicy(
             image_batch_size=safe_ibs,
             rotation_block_size=safe_rbs,
             batch_size_planner=batching.safe_batch_sizes,
-        ),
-        kernel=LocalSearchKernelPolicy(
+    )
+    local_kernel = LocalSearchKernelPolicy(
             disc_type=sampling.disc_type,
             current_size=sampling.cs_for_engine,
             reconstruction_current_size=reconstruction_current_size_for_engine,
@@ -1618,18 +1610,17 @@ def _score_half_local_one_shape(
                 optics.reference_current_size,
                 optics.projection_scale,
             ),
-        ),
-        support=LocalSearchSupportPolicy(
+    )
+    local_support = LocalSearchSupportPolicy(
             disable_adjoint_y=execution.disable_adjoint_y,
             disable_adjoint_ctf=execution.disable_adjoint_ctf,
             adaptive_fraction=RELION_ADAPTIVE_FRACTION,
             max_significants=batching.max_significants,
-        ),
-        diagnostics=LocalSearchDiagnosticPolicy(
+    )
+    local_diagnostics = LocalSearchDiagnosticPolicy(
             return_profile=diagnostics.collect_local_search_profile,
             debug_iteration=local_debug_iteration,
             debug_pass_label="pass2_final",
-        ),
     )
     pass2_layout = None
     relion_significant_counts_k = None
@@ -1696,53 +1687,43 @@ def _score_half_local_one_shape(
         )
         logger.info("RELION local adaptive pass 1: using manual supplied-PPref interpolation")
         parent_outputs = _run_local_search_iteration(
+            local_data,
             replace(
-                local_iteration_spec,
-                grid=replace(
-                    local_iteration_spec.grid,
-                    rotation_grid_rotations=None,
-                    healpix_order=parent_order,
-                    pass2_layout=parent_layout,
-                    rotation_grid_random_perturbation=0.0,
-                    rotation_grid_angular_sampling_deg=None,
-                    local_parent_oversampling_order=0,
-                    rotation_grid_mstep_rotations=None,
-                    generate_relion_mstep_rotations=False,
+                local_grid,
+                rotation_grid_rotations=None,
+                healpix_order=parent_order,
+                pass2_layout=parent_layout,
+                rotation_grid_random_perturbation=0.0,
+                rotation_grid_angular_sampling_deg=None,
+                local_parent_oversampling_order=0,
+                rotation_grid_mstep_rotations=None,
+                generate_relion_mstep_rotations=False,
+            ),
+            replace(local_batching, image_batch_size=parent_ibs, rotation_block_size=parent_rbs),
+            replace(
+                local_kernel,
+                current_size=sampling.local_pass1_current_size,
+                reconstruction_current_size=None,
+                use_float64_scoring=parent_use_float64_scoring,
+                use_float64_projections=parent_use_float64_projections,
+                relion_exact_score_translation=bool(
+                    _DENSE_EM_STATIC_KWARGS["relion_exact_fine_gaussian"] and not parent_use_float64_scoring
                 ),
-                batching=replace(
-                    local_iteration_spec.batching,
-                    image_batch_size=parent_ibs,
-                    rotation_block_size=parent_rbs,
-                ),
-                kernel=replace(
-                    local_iteration_spec.kernel,
-                    current_size=sampling.local_pass1_current_size,
-                    reconstruction_current_size=None,
-                    use_float64_scoring=parent_use_float64_scoring,
-                    use_float64_projections=parent_use_float64_projections,
-                    relion_exact_score_translation=bool(
-                        _DENSE_EM_STATIC_KWARGS["relion_exact_fine_gaussian"] and not parent_use_float64_scoring
-                    ),
-                    projection_relion_texture_interp=False,
-                    projection_relion_acc_double_floorf_quirk=RELION_ACC_DOUBLE_FLOORF_QUIRK,
-                    # RELION pass 1 uses the coarse diff2 kernel's row rule.
-                    projection_relion_kernel="coarse",
-                ),
-                support=replace(
-                    local_iteration_spec.support,
-                    disable_adjoint_y=True,
-                    disable_adjoint_ctf=True,
-                    reconstruct_significant_only=True,
-                    return_reconstruction_sample_indices=True,
-                    apply_max_significants_to_support=True,
-                    score_only=True,
-                ),
-                diagnostics=replace(
-                    local_iteration_spec.diagnostics,
-                    return_profile=True,
-                    debug_pass_label="pass1_parent",
-                ),
-            )
+                projection_relion_texture_interp=False,
+                projection_relion_acc_double_floorf_quirk=RELION_ACC_DOUBLE_FLOORF_QUIRK,
+                # RELION pass 1 uses the coarse diff2 kernel's row rule.
+                projection_relion_kernel="coarse",
+            ),
+            replace(
+                local_support,
+                disable_adjoint_y=True,
+                disable_adjoint_ctf=True,
+                reconstruct_significant_only=True,
+                return_reconstruction_sample_indices=True,
+                apply_max_significants_to_support=True,
+                score_only=True,
+            ),
+            replace(local_diagnostics, return_profile=True, debug_pass_label="pass1_parent"),
         )
         parent_profile = parent_outputs.profile_summary
         significant_sample_indices = parent_profile["reconstruction_sample_indices_by_image"]
@@ -1836,42 +1817,36 @@ def _score_half_local_one_shape(
         saved_local_debug_env = {name: os.environ.pop(name) for name in local_debug_env_names}
         try:
             denominator_outputs = _run_local_search_iteration(
+                local_data,
                 replace(
-                    local_iteration_spec,
-                    grid=replace(
-                        local_iteration_spec.grid,
-                        pass2_layout=local_adaptive_pass2_denominator_layout,
-                        rotation_grid_angular_sampling_deg=relion_angular_sampling_deg(
-                            sampling.local_search_order,
-                            adaptive_oversampling=0,
-                        ),
-                        local_parent_oversampling_order=0,
-                        rotation_grid_mstep_rotations=None,
-                        generate_relion_mstep_rotations=False,
+                    local_grid,
+                    pass2_layout=local_adaptive_pass2_denominator_layout,
+                    rotation_grid_angular_sampling_deg=relion_angular_sampling_deg(
+                        sampling.local_search_order,
+                        adaptive_oversampling=0,
                     ),
-                    kernel=replace(
-                        local_iteration_spec.kernel,
-                        accumulate_noise=False,
-                        use_float64_scoring=fine_use_float64_scoring,
-                        use_float64_projections=fine_use_float64_projections,
-                        relion_exact_score_translation=bool(
-                            _DENSE_EM_STATIC_KWARGS["relion_exact_fine_gaussian"] and not fine_use_float64_scoring
-                        ),
+                    local_parent_oversampling_order=0,
+                    rotation_grid_mstep_rotations=None,
+                    generate_relion_mstep_rotations=False,
+                ),
+                local_batching,
+                replace(
+                    local_kernel,
+                    accumulate_noise=False,
+                    use_float64_scoring=fine_use_float64_scoring,
+                    use_float64_projections=fine_use_float64_projections,
+                    relion_exact_score_translation=bool(
+                        _DENSE_EM_STATIC_KWARGS["relion_exact_fine_gaussian"] and not fine_use_float64_scoring
                     ),
-                    support=replace(
-                        local_iteration_spec.support,
-                        disable_adjoint_y=True,
-                        disable_adjoint_ctf=True,
-                        reconstruct_significant_only=False,
-                        score_only=True,
-                    ),
-                    diagnostics=replace(
-                        local_iteration_spec.diagnostics,
-                        return_profile=False,
-                        debug_iteration=None,
-                        debug_pass_label=None,
-                    ),
-                )
+                ),
+                replace(
+                    local_support,
+                    disable_adjoint_y=True,
+                    disable_adjoint_ctf=True,
+                    reconstruct_significant_only=False,
+                    score_only=True,
+                ),
+                replace(local_diagnostics, return_profile=False, debug_iteration=None, debug_pass_label=None),
             )
         finally:
             os.environ.update(saved_local_debug_env)
@@ -1900,35 +1875,35 @@ def _score_half_local_one_shape(
         "RELAX_RELION_PROJECTOR_TEXTURE_INTERP (default texture)"
     )
     local_outputs = _run_local_search_iteration(
+        local_data,
+        replace(local_grid, pass2_layout=pass2_layout),
+        local_batching,
         replace(
-            local_iteration_spec,
-            grid=replace(local_iteration_spec.grid, pass2_layout=pass2_layout),
-            kernel=replace(
-                local_iteration_spec.kernel,
-                accumulate_noise=local_accumulate_noise,
-                use_float64_scoring=fine_use_float64_scoring,
-                use_float64_projections=fine_use_float64_projections,
-                relion_exact_score_translation=bool(
-                    _DENSE_EM_STATIC_KWARGS["relion_exact_fine_gaussian"] and not fine_use_float64_scoring
-                ),
-                # RELION local execution is intentionally hybrid: parent pass
-                # 1 uses manual supplied-PPref projection, while fine pass 2
-                # follows the user-switchable texture default.
-                projection_relion_texture_interp=None,
-                projection_relion_acc_double_floorf_quirk=RELION_ACC_DOUBLE_FLOORF_QUIRK,
+            local_kernel,
+            accumulate_noise=local_accumulate_noise,
+            use_float64_scoring=fine_use_float64_scoring,
+            use_float64_projections=fine_use_float64_projections,
+            relion_exact_score_translation=bool(
+                _DENSE_EM_STATIC_KWARGS["relion_exact_fine_gaussian"] and not fine_use_float64_scoring
             ),
-            support=replace(
-                local_iteration_spec.support,
-                mstep_relion_x_half=local_relion_x_half_mstep,
-                disable_adjoint_y=local_disable_adjoint_y,
-                disable_adjoint_ctf=local_disable_adjoint_ctf,
-                reconstruct_significant_only=local_reconstruct_significant_only,
-                return_best_pose_details=True,
-                normalization_log_evidence=local_normalization_log_evidence,
-                stats_use_reconstruction_probs=local_reconstruct_significant_only,
-                score_only=diagnostics.diagnostic_score_only,
-            ),
-        )
+            # RELION local execution is intentionally hybrid: parent pass 1
+            # uses manual supplied-PPref projection, while fine pass 2 follows
+            # the user-switchable texture default.
+            projection_relion_texture_interp=None,
+            projection_relion_acc_double_floorf_quirk=RELION_ACC_DOUBLE_FLOORF_QUIRK,
+        ),
+        replace(
+            local_support,
+            mstep_relion_x_half=local_relion_x_half_mstep,
+            disable_adjoint_y=local_disable_adjoint_y,
+            disable_adjoint_ctf=local_disable_adjoint_ctf,
+            reconstruct_significant_only=local_reconstruct_significant_only,
+            return_best_pose_details=True,
+            normalization_log_evidence=local_normalization_log_evidence,
+            stats_use_reconstruction_probs=local_reconstruct_significant_only,
+            score_only=diagnostics.diagnostic_score_only,
+        ),
+        local_diagnostics,
     )
     Ft_y_k = local_outputs.Ft_y
     Ft_ctf_k = local_outputs.Ft_ctf

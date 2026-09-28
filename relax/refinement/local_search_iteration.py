@@ -154,20 +154,13 @@ class LocalSearchDiagnosticPolicy:
     debug_pass_label: str | None = None
 
 
-@dataclass(frozen=True, kw_only=True)
-class LocalSearchIterationSpec:
-    """Complete shallow specification for one exact/resident local pass."""
-
-    data: LocalSearchData
-    grid: LocalSearchGridSpec
-    batching: LocalSearchBatchPolicy
-    kernel: LocalSearchKernelPolicy
-    support: LocalSearchSupportPolicy = LocalSearchSupportPolicy()
-    diagnostics: LocalSearchDiagnosticPolicy = LocalSearchDiagnosticPolicy()
-
-
 def _run_local_search_iteration(
-    spec: LocalSearchIterationSpec,
+    data: LocalSearchData,
+    grid: LocalSearchGridSpec,
+    batching: LocalSearchBatchPolicy,
+    kernel: LocalSearchKernelPolicy,
+    support: LocalSearchSupportPolicy,
+    diagnostics: LocalSearchDiagnosticPolicy,
 ) -> _LocalSearchIterationResult:
     """Run exact local search and return named halfset statistics and pose fields.
 
@@ -183,12 +176,6 @@ def _run_local_search_iteration(
     Arrays retain the engine's layouts and identities; profile metadata is copied
     and augmented with this wrapper's timings.
     """
-    data = spec.data
-    grid = spec.grid
-    batching = spec.batching
-    kernel = spec.kernel
-    support = spec.support
-    diagnostics = spec.diagnostics
     # These four values are normalized or reduced by planning below. Stable
     # values remain visibly owned by their specification group.
     image_batch_size = batching.image_batch_size

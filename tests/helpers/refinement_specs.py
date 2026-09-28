@@ -73,8 +73,8 @@ def mean_reconstruction_owners(means, **values):
     return owners
 
 
-def local_iteration_spec(*args, **values):
-    """Group concise kernel fixtures into the local-iteration production spec."""
+def local_iteration_owners(*args, **values):
+    """Build the six owners of the production local-iteration boundary."""
 
     if len(args) > len(_LOCAL_ITERATION_POSITIONAL):
         raise TypeError(f"expected at most {len(_LOCAL_ITERATION_POSITIONAL)} positional values")
@@ -83,8 +83,8 @@ def local_iteration_spec(*args, **values):
         if name in values:
             raise TypeError(f"multiple values for {name}")
         values[name] = value
-    spec = local_search_iteration.LocalSearchIterationSpec(
-        data=local_search_iteration.LocalSearchData(
+    owners = (
+        local_search_iteration.LocalSearchData(
             experiment_dataset=values.pop("experiment_dataset"),
             mean=values.pop("mean"),
             noise_variance=values.pop("noise_variance"),
@@ -96,7 +96,7 @@ def local_iteration_spec(*args, **values):
             image_pre_shifts=values.pop("image_pre_shifts", None),
             optics_group_ids=values.pop("optics_group_ids", None),
         ),
-        grid=local_search_iteration.LocalSearchGridSpec(
+        local_search_iteration.LocalSearchGridSpec(
             prior_rotations=values.pop("prior_rotations"),
             rotation_grid_rotations=values.pop("rotation_grid_rotations"),
             healpix_order=values.pop("healpix_order"),
@@ -115,12 +115,12 @@ def local_iteration_spec(*args, **values):
             generate_relion_mstep_rotations=values.pop("generate_relion_mstep_rotations", False),
             symmetry=values.pop("symmetry", "C1"),
         ),
-        batching=local_search_iteration.LocalSearchBatchPolicy(
+        local_search_iteration.LocalSearchBatchPolicy(
             image_batch_size=values.pop("image_batch_size"),
             rotation_block_size=values.pop("rotation_block_size"),
             batch_size_planner=values.pop("batch_size_planner", None),
         ),
-        kernel=local_search_iteration.LocalSearchKernelPolicy(
+        local_search_iteration.LocalSearchKernelPolicy(
             disc_type=values.pop("disc_type"),
             current_size=values.pop("current_size"),
             reconstruction_current_size=values.pop("reconstruction_current_size", None),
@@ -144,7 +144,7 @@ def local_iteration_spec(*args, **values):
             reconstruction_volume_current_size=values.pop("reconstruction_volume_current_size", None),
             reconstruction_image_radius=values.pop("reconstruction_image_radius", None),
         ),
-        support=local_search_iteration.LocalSearchSupportPolicy(
+        local_search_iteration.LocalSearchSupportPolicy(
             mstep_relion_x_half=values.pop("mstep_relion_x_half", False),
             disable_adjoint_y=values.pop("disable_adjoint_y", False),
             disable_adjoint_ctf=values.pop("disable_adjoint_ctf", False),
@@ -158,14 +158,14 @@ def local_iteration_spec(*args, **values):
             stats_use_reconstruction_probs=values.pop("stats_use_reconstruction_probs", False),
             score_only=values.pop("score_only", False),
         ),
-        diagnostics=local_search_iteration.LocalSearchDiagnosticPolicy(
+        local_search_iteration.LocalSearchDiagnosticPolicy(
             return_profile=values.pop("return_profile", False),
             debug_iteration=values.pop("debug_iteration", None),
             debug_pass_label=values.pop("debug_pass_label", None),
         ),
     )
-    assert not values, f"unmapped local iteration spec values: {sorted(values)}"
-    return spec
+    assert not values, f"unmapped local iteration owner values: {sorted(values)}"
+    return owners
 
 
 def local_half_spec(**values):

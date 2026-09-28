@@ -79,17 +79,6 @@ class FirstIterCCExecution:
     debug_iteration: int | None = None
 
 
-@dataclass(frozen=True, kw_only=True)
-class FirstIterCCSpec:
-    """Complete first-iteration CC adaptive-dispatch specification."""
-
-    data: FirstIterCCData
-    grid: FirstIterCCGridSpec
-    policy: FirstIterCCPolicy
-    batching: FirstIterCCBatching
-    execution: FirstIterCCExecution
-
-
 def single_class_bucketed_pass2_selected(*, firstiter: bool) -> bool:
     """Whether K=1 plans its batches for the sparse projector/BPref lifetime.
 
@@ -100,7 +89,11 @@ def single_class_bucketed_pass2_selected(*, firstiter: bool) -> bool:
 
 
 def _score_kclass_firstiter_cc_pass2(
-    spec: FirstIterCCSpec,
+    data: FirstIterCCData,
+    grid: FirstIterCCGridSpec,
+    policy: FirstIterCCPolicy,
+    batching: FirstIterCCBatching,
+    execution: FirstIterCCExecution,
 ):
     """RELION iter-1 ``--firstiter_cc`` adaptive two-pass dispatch.
 
@@ -116,12 +109,6 @@ def _score_kclass_firstiter_cc_pass2(
 
     Return ``(k_class_result, rot_pmap, trans_pmap, n_trans_fine, adaptive_os)``.
     """
-
-    data = spec.data
-    grid = spec.grid
-    policy = spec.policy
-    batching = spec.batching
-    execution = spec.execution
 
     adaptive_os_local = int(grid.state.adaptive_oversampling)
     (

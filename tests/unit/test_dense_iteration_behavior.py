@@ -194,7 +194,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
         max_posterior_per_image = np.array([1.0], dtype=np.float32)
         rotation_posterior_sums = np.array([1.0], dtype=np.float32)
 
-    def fake_run_local_search_iteration(spec):
+    def fake_run_local_search_iteration(data, grid, batching, kernel, support, diagnostics):
         best_rotation = np.array(
             [
                 [0.93629336, -0.27509585, 0.21835066],
@@ -203,7 +203,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
             ],
             dtype=np.float32,
         )
-        captured["spec"] = spec
+        captured["support"] = support
         current_size_shape = (19, 19, 19)
         outputs = _LocalSearchIterationResult(
             Ft_y=np.zeros(int(np.prod(current_size_shape)), dtype=np.complex64),
@@ -263,7 +263,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
         local_profile_history=[],
     ))
 
-    assert captured["spec"].support.mstep_relion_x_half is True
+    assert captured["support"].mstep_relion_x_half is True
     assert result.significant_counts is None
     assert result.mstep_full_half_axis == 0
     assert result.mstep_accumulator_shape == (19, 19, 19)
@@ -303,9 +303,17 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         translation_grid=np.zeros((4, 2), dtype=np.float32),
     )
 
-    def fake_run_local_search_iteration(spec):
-        calls.append(spec)
-        if spec.support.score_only:
+    def fake_run_local_search_iteration(data, grid, batching, kernel, support, diagnostics):
+        call = SimpleNamespace(
+            data=data,
+            grid=grid,
+            batching=batching,
+            kernel=kernel,
+            support=support,
+            diagnostics=diagnostics,
+        )
+        calls.append(call)
+        if support.score_only:
             return _LocalSearchIterationResult(
                 Ft_y="parent_ft_y",
                 Ft_ctf="parent_ft_ctf",
