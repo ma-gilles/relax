@@ -5624,20 +5624,55 @@ def refine_single_volume(
     final_Ft_y_1 = final_outs.Ft_y[1]
     final_Ft_ctf_0 = final_outs.Ft_ctf[0]
     final_Ft_ctf_1 = final_outs.Ft_ctf[1]
-    # RELION writes the converged half BackProjectors to temporary files before
-    # joinTwoHalvesAtLowResolution mutates their low-frequency voxels.  Those
-    # saved, pre-join arrays are later used for run_half*_class001_unfil.mrc.
-    # Keep both boundaries explicit: the joined arrays below drive FSC/tau2 and
-    # the final joined reconstruction, while these arrays drive unfiltered
-    # half-map output.
-    final_unfiltered_Ft_y_0 = final_Ft_y_0
-    final_unfiltered_Ft_y_1 = final_Ft_y_1
-    final_unfiltered_Ft_ctf_0 = final_Ft_ctf_0
-    final_unfiltered_Ft_ctf_1 = final_Ft_ctf_1
     final_mstep_accumulator_shape = _resolve_mstep_accumulator_shape(
         final_outs.mstep_accumulator_shape,
         padded_volume_shape,
     )
+    # Every final map is gridding-corrected, as RELION's
+    # BackProjector::reconstruct always calls griddingCorrect
+    # (backprojector.cpp, projector.cpp Projector::griddingCorrect).
+    final_reconstruction_kwargs = dict(
+        tau2_fudge=tau2_fudge,
+        projection_padding_factor=PROJECTION_PADDING_FACTOR,
+        minres_map=RELION_MINRES_MAP,
+        current_size=final_current_size,
+        accumulator_volume_shape=final_mstep_accumulator_shape,
+    )
+    final_reconstruct_t0 = time.time()
+    final_unfiltered_means_for_output = None
+    if not k_class_enabled:
+        # RELION writes run_half{1,2}_class001_unfil.mrc from the converged half
+        # BackProjectors saved before joinTwoHalvesAtLowResolution mutates their
+        # low-frequency voxels, with do_map=false.  Keep this separate from the
+        # Wiener-regularized half maps below so parity audits compare like
+        # products.  Default RELION refinement sets BackProjector's
+        # skip_gridding=true, so reconstruct uses the radial denominator floor
+        # and direct division path before its final real-space gridding
+        # correction and always applies softMaskOutsideMap inside
+        # windowToOridimRealSpace; do_map=false only omits the tau2 prior.
+        # They are reconstructed first, from the pre-join arrays, so the join
+        # below can update those arrays in place instead of copying them: at
+        # EMPIAR-10202's full box a copy of both halves' accumulators is 49 GB
+        # of host memory (bigbox 14592943, 14594535). Each map is kept on the
+        # host so the device holds only the reconstruction in progress.
+        final_unfiltered_means_for_output = [
+            np.asarray(
+                _reconstruct_volume_eager(
+                    half_ctf,
+                    half_y,
+                    volume_shape,
+                    PADDING_FACTOR,
+                    tau=None,
+                    **final_reconstruction_kwargs,
+                    use_spherical_mask=True,
+                    grid_correct=True,
+                ).reshape(-1)
+            )
+            for half_ctf, half_y in (
+                (final_Ft_ctf_0, final_Ft_y_0),
+                (final_Ft_ctf_1, final_Ft_y_1),
+            )
+        ]
     if not k_class_enabled and parity.low_resol_join_halves_angstrom is not None and parity.low_resol_join_halves_angstrom > 0:
         final_Ft_y_0, final_Ft_y_1, final_Ft_ctf_0, final_Ft_ctf_1 = join_half_accumulators_at_low_resolution(
             final_Ft_y_0,
@@ -5651,7 +5686,13 @@ def refine_single_volume(
             pixel_resolutions=history.pixel_resolutions,
             current_resolution=getattr(state, "current_resolution", float("inf")),
             padding_factor=PADDING_FACTOR,
+            preserve_inputs=False,
         )
+    if not k_class_enabled:
+        # The unfiltered maps are made; drop the pass outputs' references so the
+        # pre-join accumulators live only as long as the joined ones do.
+        final_outs.Ft_y[0] = final_outs.Ft_y[1] = None
+        final_outs.Ft_ctf[0] = final_outs.Ft_ctf[1] = None
 
     final_ft_y = final_Ft_y_0 + final_Ft_y_1
     final_ft_ctf = final_Ft_ctf_0 + final_Ft_ctf_1
@@ -5808,23 +5849,11 @@ def refine_single_volume(
     # Reconstruct the final volume from the COMBINED Ft_y/Ft_ctf accumulators
     # at the full Nyquist resolution. Skip the join_halves step (we're already
     # combining the two halves into one dataset for this final iter).
-    # Every final map is gridding-corrected, as RELION's
-    # BackProjector::reconstruct always calls griddingCorrect
-    # (backprojector.cpp, projector.cpp Projector::griddingCorrect).
-    final_reconstruct_t0 = time.time()
     logger.info(
         "RELION final all-data reconstruction start: current_size=%d n_classes=%d",
         final_current_size,
         n_classes,
     )
-    final_reconstruction_kwargs = dict(
-        tau2_fudge=tau2_fudge,
-        projection_padding_factor=PROJECTION_PADDING_FACTOR,
-        minres_map=RELION_MINRES_MAP,
-        current_size=final_current_size,
-        accumulator_volume_shape=final_mstep_accumulator_shape,
-    )
-    final_unfiltered_means_for_output = None
     if k_class_enabled:
         final_class_means = jnp.stack(
             [
@@ -5848,52 +5877,40 @@ def refine_single_volume(
         class_assignments = final_outs.class_assignments
     else:
         final_class_means = None
-        merged_mean = _reconstruct_volume_eager(
-            final_ft_ctf,
-            final_ft_y,
-            volume_shape,
-            PADDING_FACTOR,
-            tau=final_mean_variance,
-            **final_reconstruction_kwargs,
-        ).reshape(-1)
-        final_means_for_output = [
+        # Each final map goes to the host as it is made, and each accumulator is
+        # released after its last use (the merged sums here, each joined half in
+        # the loop below), so the host and the device never hold every map and
+        # every accumulator of EMPIAR-10202's full box at once.
+        merged_mean = np.asarray(
             _reconstruct_volume_eager(
-                half_ctf,
-                half_y,
+                final_ft_ctf,
+                final_ft_y,
                 volume_shape,
                 PADDING_FACTOR,
                 tau=final_mean_variance,
                 **final_reconstruction_kwargs,
             ).reshape(-1)
-            for half_ctf, half_y in (
-                (final_Ft_ctf_0, final_Ft_y_0),
-                (final_Ft_ctf_1, final_Ft_y_1),
+        )
+        del final_ft_ctf, final_ft_y
+        final_half_accumulators = [(final_Ft_ctf_0, final_Ft_y_0), (final_Ft_ctf_1, final_Ft_y_1)]
+        del final_Ft_ctf_0, final_Ft_y_0, final_Ft_ctf_1, final_Ft_y_1
+        final_means_for_output = []
+        for half in range(2):
+            half_ctf, half_y = final_half_accumulators[half]
+            final_half_accumulators[half] = None
+            final_means_for_output.append(
+                np.asarray(
+                    _reconstruct_volume_eager(
+                        half_ctf,
+                        half_y,
+                        volume_shape,
+                        PADDING_FACTOR,
+                        tau=final_mean_variance,
+                        **final_reconstruction_kwargs,
+                    ).reshape(-1)
+                )
             )
-        ]
-        # RELION writes run_half{1,2}_class001_unfil.mrc from each final
-        # BackProjector with do_map=false.  Keep this separate from the
-        # Wiener-regularized half maps above so parity audits compare like
-        # products.  Default RELION refinement sets BackProjector's
-        # skip_gridding=true, so reconstruct uses the radial denominator floor
-        # and direct division path before its final real-space gridding
-        # correction and always applies softMaskOutsideMap inside
-        # windowToOridimRealSpace; do_map=false only omits the tau2 prior.
-        final_unfiltered_means_for_output = [
-            _reconstruct_volume_eager(
-                half_ctf,
-                half_y,
-                volume_shape,
-                PADDING_FACTOR,
-                tau=None,
-                **final_reconstruction_kwargs,
-                use_spherical_mask=True,
-                grid_correct=True,
-            ).reshape(-1)
-            for half_ctf, half_y in (
-                (final_unfiltered_Ft_ctf_0, final_unfiltered_Ft_y_0),
-                (final_unfiltered_Ft_ctf_1, final_unfiltered_Ft_y_1),
-            )
-        ]
+            del half_ctf, half_y
     logger.info(
         "RELION final all-data reconstruction done: wall=%.1fs",
         time.time() - final_reconstruct_t0,

@@ -8812,16 +8812,17 @@ class TestRelionModeSmokeTest:
         assert result["final_all_data_expected_accuracy_status"] == "ok"
         assert result["final_all_data_acc_rot"] == pytest.approx(1.25)
 
-        # Final reconstruction produces a merged map, two regularized halves,
-        # then two unfiltered halves, all at Nyquist. Check executed calls so
-        # grouping half pairs cannot silently omit or reorder a saved product.
+        # Final reconstruction produces two unfiltered halves (first, from the
+        # pre-join accumulators, so the join can update them in place), then a
+        # merged map and two regularized halves, all at Nyquist. Check executed
+        # calls so grouping half pairs cannot silently omit or reorder a saved product.
         final_calls = reconstruction_calls[-5:]
         assert len(final_calls) == 5
-        assert [call[0]["tau"] is None for call in final_calls] == [False, False, False, True, True]
+        assert [call[0]["tau"] is None for call in final_calls] == [True, True, False, False, False]
         assert all(call[0]["current_size"] == IMAGE_SHAPE[0] for call in final_calls)
-        assert all(call[0]["use_spherical_mask"] is True for call in final_calls[-2:])
-        assert all(call[0]["grid_correct"] is True for call in final_calls[-2:])
-        products = [result["mean"], *result["means"], *result["unfiltered_means"]]
+        assert all(call[0]["use_spherical_mask"] is True for call in final_calls[:2])
+        assert all(call[0]["grid_correct"] is True for call in final_calls[:2])
+        products = [*result["unfiltered_means"], result["mean"], *result["means"]]
         for product, (_, reconstructed) in zip(products, final_calls, strict=True):
             assert_matches(np.asarray(product), np.asarray(reconstructed).reshape(-1))
 
