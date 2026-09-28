@@ -4141,7 +4141,8 @@
     "gpu_count": 1,
     "iterations": 20,
     "jobs": [
-     "14547997"
+     "14547997",
+     "14593473"
     ],
     "masked_band_auc": null
    },
@@ -4158,9 +4159,18 @@
      "repeat seed 20260926",
      "repeat seed 20260927",
      "repeat seed 20260928"
+    ],
+    "relax_band": [
+     0.934589,
+     0.936676
+    ],
+    "relax_band_runs": [
+     "343399e seed 20260925 (14547997)",
+     "799c24b seed 20260926 (14593473)",
+     "799c24b seed 20260927 (14593473)"
     ]
    },
-   "cross_engine": "unmasked relax-vs-RELION map FSC-AUC 0.9697-0.9784 against the four RELION runs (RELION-vs-RELION 0.972-0.989)",
+   "cross_engine": "unmasked relax-vs-RELION map FSC-AUC 0.965-0.992 over 3 relax x 4 RELION runs (RELION-vs-RELION 0.972-0.989, relax-vs-relax 0.974-0.980)",
    "cross_engine_masked_band_auc": null,
    "time_ratio_relax_over_relion": null,
    "matched": "no",
@@ -4175,7 +4185,7 @@
    "notes": [
     "First cryo-ET row: relax's RELION 5 tomo refinement port (S4.2: 3D offsets, tilt-summed diff2) run standalone from the fixture's particles/tomograms/optimisation-set STAR files with the fixture's RELION command (--ios, --ini_high 40, healpix 2, auto local healpix 4, offset range 5 step 1).",
     "Both engines converge after iteration 20 and report a final unmasked resolution of 8.63 A, shell 63 of 64 at 4.25 A (one shell below Nyquist), so resolution cannot separate them; the GT FSC-AUC is the row's metric.",
-    "relax GT FSC-AUC 0.9346 is 0.0035 below the RELION band 0.9381-0.9409 (reference run and three seed repeats); FSC 0.5 against GT is 8.77 A for relax and all four RELION runs. relax repeats (et's landing gate, job 14576994) will show whether the gap is systematic.",
+    "Three relax runs (343399e seed 20260925 in 14547997; 799c24b, the same S4.2 change before its rebase onto main as 1cdf2bb1, seeds 20260926 and 20260927 in et's landing gate 14593473) give GT FSC-AUC 0.9346-0.9367, all below the RELION band 0.9381-0.9409 (reference run and three seed repeats) by 0.0014-0.0035; FSC 0.5 against GT is 8.77 A for every run. This is an open item in em_status.",
     "Walls are from separate jobs and CPU layouts (relax 8 CPUs, RELION 3 MPI ranks x 4 threads), so there is no speed ratio; relax is currently about 2.4x RELION's wall (order-9 tomo iterations: per-particle coarse host loop and streamed tilt projections).",
     "Fixture: 1200 particles, 41 tilts each (46,779 images), effective B about 180 A^2 (S1 source volume B 80 + preset 100)."
    ],
@@ -4192,17 +4202,20 @@
     "run_roots": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/tomo_standalone_343399e/out",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_s1_offsets_depthfix_20260925/relion_ref",
-     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_s1_offsets_depthfix_20260925/relion_repeats"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_s1_offsets_depthfix_20260925/relion_repeats",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_799c24b_seed20260926/out",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_799c24b_seed20260927/out"
     ],
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/tomo_standalone_343399e/compare.json",
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/compare_s1_standalone.py",
-    "handoff": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/HANDOFF.json"
+    "handoff": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/HANDOFF.json",
+    "band_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_s42_20260925/land_band_1f3f7d1.json"
    },
-   "date": "2026-09-27",
+   "date": "2026-09-28",
    "history": [],
    "mask": null,
    "quality_pass": false,
-   "quality_reason": "GT FSC-AUC 0.9346 below RELION band 0.9381-0.9409 (0.0035); resolution 8.63 = RELION; single relax run; 2 repeats in 14576994"
+   "quality_reason": "3 relax runs GT FSC-AUC 0.9346-0.9367, all below RELION band 0.9381-0.9409 (0.0014-0.0035); resolution 8.63 = RELION"
   }
  ],
  "initial_model_intro": [
