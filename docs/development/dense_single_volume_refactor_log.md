@@ -713,3 +713,20 @@ single-volume boundary has 17 parameters.
 - Production totals are 15,105 physical and 13,156 nonblank lines. Functions
   with at least 10 parameters fell from 17 on `origin/main` to 6; excluding the
   two out-of-scope tomography boundaries, four remain.
+
+## 2026-09-28 — owner-visible posterior-noise update
+
+- Commit `f4c3c0b` replaced the 10-argument posterior-noise boundary with
+  `NoisePosteriorState`, `NoiseUpdateContext` and the explicit optional debug
+  hook.
+- The state owner retains the existing shallow ownership of the mutable
+  per-half variance list. K1 updates still replace its entries, K-class still
+  returns a new shared pair, and first-iteration CC still returns the original
+  state objects.
+- Focused K1, per-optics-group, K-class and controller tests: 15 passed, with
+  368 unrelated cases deselected. CPU EM fast guard: 102 passed in 57.11
+  seconds with `FFTW/3.3.10-GCC-12.2.0` loaded.
+- Production totals are 15,136 physical and 13,181 nonblank lines. Functions
+  with at least 10 parameters fell to 5; excluding the two tomography scoring
+  boundaries, `_reconstruct_volume_eager`, nested `_safe_batch_sizes` and the
+  run-file reader constructor remain.

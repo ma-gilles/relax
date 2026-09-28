@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "owner-visible-half-join",
-    "source_commit": "c913f37d19c16c45a407b14623b184b2f551a675",
+    "package": "owner-visible-noise-update",
+    "source_commit": "f4c3c0be9a7a7b05d045d2442a22ff240c216e3c",
     "metrics": {
       "files": [
         {
@@ -45,9 +45,9 @@
         },
         {
           "function_count": 26,
-          "nonblank_noncomment_lines": 5502,
+          "nonblank_noncomment_lines": 5508,
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 6142
+          "physical_lines": 6148
         },
         {
           "function_count": 1,
@@ -75,9 +75,9 @@
         },
         {
           "function_count": 11,
-          "nonblank_noncomment_lines": 388,
+          "nonblank_noncomment_lines": 407,
           "path": "relax/refinement/noise_updates.py",
-          "physical_lines": 460
+          "physical_lines": 485
         },
         {
           "function_count": 25,
@@ -139,18 +139,11 @@
           "path": "relax/refinement/mean_helpers.py"
         },
         {
-          "line": 1024,
+          "line": 1026,
           "line_span": 45,
           "name": "_safe_batch_sizes",
           "parameter_count": 10,
           "path": "relax/refinement/iteration_loop.py"
-        },
-        {
-          "line": 337,
-          "line_span": 124,
-          "name": "update_posterior_noise_variance",
-          "parameter_count": 10,
-          "path": "relax/refinement/noise_updates.py"
         },
         {
           "line": 234,
@@ -162,14 +155,14 @@
       ],
       "largest_functions": [
         {
-          "line": 712,
-          "line_span": 5431,
+          "line": 714,
+          "line_span": 5435,
           "name": "refine_single_volume",
           "parameter_count": 6,
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 2531,
+          "line": 2533,
           "line_span": 726,
           "name": "_run_half_estep",
           "parameter_count": 1,
@@ -245,11 +238,11 @@
       "totals": {
         "file_count": 16,
         "function_count": 226,
-        "large_argument_function_count": 6,
-        "maximum_function_line_span": 5431,
+        "large_argument_function_count": 5,
+        "maximum_function_line_span": 5435,
         "maximum_parameter_count": 22,
-        "nonblank_noncomment_lines": 13156,
-        "physical_lines": 15105,
+        "nonblank_noncomment_lines": 13181,
+        "physical_lines": 15136,
         "very_large_argument_function_count": 2
       }
     }
