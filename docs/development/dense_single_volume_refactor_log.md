@@ -626,3 +626,72 @@ direction-prior updates, unregularized means and iteration snapshots. The
 aggregate wrappers will be removed; their existing data/state/policy owner
 types remain the unit of ownership. Numerical statements, JAX boundaries and
 call order are not changed by this correction.
+
+## 2026-09-28 — periodic rebase onto `5c965cf2`
+
+- `origin/main` advanced from `e0f50017` to `5c965cf2`; all 26 feature commits
+  were replayed.
+- Conflicts occurred in `relax/refinement/local_search_iteration.py`,
+  `tests/unit/test_refine_relion_mode.py` and
+  `tests/unit/test_resident_local_pass2.py`.
+- Resolution prioritized upstream behavior: the fine-pass fallback to the
+  exact-local implementation remains deleted, score-only parent evaluation
+  remains exact, fine scoring remains resident, and unsupported configurations
+  continue to fail. Tests removed upstream were not restored. Surviving callers
+  and tests were migrated to the explicit owner APIs.
+- Post-rebase focused checks passed after migrating three surviving local-pass
+  tests. The fresh CPU EM fast guard passed all 102 cases.
+
+## 2026-09-28 — owner-visible boundary audit completed
+
+### Change
+
+- Removed the remaining call-only `InitialCoarseGridSpec`,
+  `DenseHalfScoringSpec` and `LocalHalfScoringSpec` aggregates.
+- Initial-grid construction now exposes sampling, sealed replay state and the
+  logger. Dense scoring exposes data, sampling, priors, batching, variant,
+  execution and optics owners; exact-local scoring exposes the analogous seven
+  owners with diagnostics in place of the dense variant policy.
+- Shape-class derivation returns those same owner groups instead of rebuilding
+  an all-input specification. `DenseHalfScoringPlan` remains because it has a
+  real lifecycle: both half plans are materialized before execution to preserve
+  the overlap seam.
+- The complete corrective audit now covers all nine boundaries listed in the
+  plan. No production function introduced by the refactor accepts a single
+  call-only aggregate, and none immediately unpacks owner fields into aliases.
+
+### Structural delta from `origin/main` at `5c965cf2`
+
+| Metric | Baseline | Current | Delta |
+| --- | ---: | ---: | ---: |
+| Production files | 15 | 16 | +1 |
+| Physical production lines | 14,222 | 15,066 | +844 |
+| Nonblank, non-comment lines | 12,424 | 13,126 | +702 |
+| Production functions | 224 | 226 | +2 |
+| Functions with at least 10 parameters | 17 | 7 | -10 |
+| Functions with at least 20 parameters | 8 | 2 | -6 |
+| Largest parameter count | 67 | 22 | -45 |
+| Largest function span | 5,271 | 5,419 | +148 |
+
+The only 20+ argument functions are the two tomography scoring boundaries,
+which are outside the current single-volume scope. The largest remaining
+single-volume boundary has 17 parameters.
+
+### Validation
+
+- Initial-grid implementation commit: `8d1ff202153759e5a6ffb896004ec2925d14d85b`;
+  eight focused tests passed.
+- Half-scoring implementation commit: `5781475`; owner-construction readability
+  commit: `79ef49a`.
+- Scoring, adaptive ownership, diagnostic scope, optics-shape, symmetry and
+  loop behavior suite: 555 passed. Five additional cases could not start
+  because the pinned RELION fixture
+  `/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_noise1_5k_normalized/relion_ref_os0/run_class001.mrc`
+  is absent. The nine directly affected loop/source cases passed separately.
+- Production and affected-test Ruff lint, Python compilation, diff checks and
+  the refreshed metrics snapshot check passed.
+- CPU EM fast guard: 102 passed in 57.02 seconds with
+  `FFTW/3.3.10-GCC-12.2.0` loaded.
+- GPU smoke remains infrastructure-blocked by the unchanged absence of the five
+  mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
+  produced.
