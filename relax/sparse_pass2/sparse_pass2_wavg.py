@@ -66,6 +66,7 @@ def weighted_image_power_from_shells(
     norm_unweighted_shell_cutoff: "int | jax.Array | None",
     include_unweighted_high_shell: bool,
     deterministic_norm_reduction: bool,
+    high_shell_mass=None,
 ):
     """:func:`_weighted_image_power_shells_and_per_image_core` from per-image shell powers.
 
@@ -75,6 +76,10 @@ def weighted_image_power_from_shells(
     the sums are grouped by shell first, per image, and accumulated in float64.
     Returns float64 shells and the per-image norm power in the norm reduction
     dtype (float64 when deterministic, float32 otherwise), as the pixel form does.
+
+    Shells above the cutoff take each image's power with mass one (the valid images), or with
+    ``high_shell_mass`` when given: a subtomogram's tilt images each carry 1 / n_images of their
+    particle (acc_ml_optimiser_impl.h:3490-3491).
     """
 
     power_shells = jnp.asarray(power_shells, dtype=jnp.float64)
@@ -86,6 +91,8 @@ def weighted_image_power_from_shells(
         if valid_image_mask is None
         else jnp.asarray(valid_image_mask).astype(jnp.float64)
     )
+    if high_shell_mass is not None:
+        full_mass = full_mass * jnp.asarray(high_shell_mass).astype(jnp.float64)
     unweighted_shell = None
     if norm_unweighted_shell_cutoff is not None:
         # A Python int or a traced int32 scalar (the resident engine's logical cutoff).

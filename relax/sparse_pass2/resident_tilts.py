@@ -677,17 +677,18 @@ def accumulate_tilt_chunk_terms(
             unit_mass.astype(jnp.float64), unit_optics_groups, num_segments=n_optics_groups
         )
 
-    # --- 3. image power: each image with its particle's mass / n_images ----
+    # --- 3. image power: each image with its particle's mass / n_images (1 / n_images above the cutoff)
     safe_unit = jnp.minimum(image_unit_local, jnp.int32(unit_capacity - 1))
     image_mass = jnp.where(valid_image, unit_mass[safe_unit] * scale, jnp.zeros((), unit_mass.dtype))
     weighted_img_shells, weighted_img_per_image = weighted_image_power_from_shells(
         operands.image_power_shells,
         image_mass,
-        jnp.where(valid_image, operands.relion_norm_high_shell * scale, 0.0),
+        jnp.where(valid_image, operands.relion_norm_high_shell, 0.0),
         valid_image,
         norm_unweighted_shell_cutoff=config.norm_unweighted_shell_cutoff,
         include_unweighted_high_shell=config.include_unweighted_high_shell,
         deterministic_norm_reduction=config.deterministic_norm_reduction,
+        high_shell_mass=scale,
     )
 
     # --- 4/7. norm correction: the particle's images, / n_images -----------
@@ -717,11 +718,12 @@ def accumulate_tilt_chunk_terms(
             group_img_shells, _ = weighted_image_power_from_shells(
                 operands.image_power_shells,
                 jnp.where(in_group, image_mass, jnp.zeros((), image_mass.dtype)),
-                jnp.where(in_group, operands.relion_norm_high_shell * scale, 0.0),
+                jnp.where(in_group, operands.relion_norm_high_shell, 0.0),
                 in_group,
                 norm_unweighted_shell_cutoff=config.norm_unweighted_shell_cutoff,
                 include_unweighted_high_shell=config.include_unweighted_high_shell,
                 deterministic_norm_reduction=config.deterministic_norm_reduction,
+                high_shell_mass=scale,
             )
             group_residual, group_power = rp._replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
                 jnp.asarray(mstep.noise_shells[group], dtype=jnp.float64),

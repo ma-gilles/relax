@@ -266,3 +266,30 @@ def test_final_pass_local_tomo_sampling_without_a_parent_pass_size(pass1_size):
     assert sampling.healpix_order == 9 and sampling.fine_size == 128
     assert sampling.coarse_size == (128 if pass1_size is None else pass1_size)
     assert_matches(np.array([sampling.offset_range_angst, sampling.offset_step_angst]), np.array([1.7, 0.6375]))
+
+
+@pytest.mark.unit
+def test_tilt_image_power_above_the_cutoff_carries_one_over_n_images():
+    """Above the norm cutoff a tilt image adds its power with 1 / n_images, not 1 (14547997 kept it at 1:
+    the noise above the current size came out n_images times RELION's)."""
+    from relax.sparse_pass2.sparse_pass2_wavg import weighted_image_power_from_shells
+
+    rng = np.random.default_rng(3)
+    power = rng.uniform(1.0, 2.0, size=(5, 8))
+    scale = np.array([0.5, 0.5, 1 / 3, 1 / 3, 1 / 3])  # two particles with 2 and 3 tilt images
+    mass = 0.9 * scale
+    replacement = rng.uniform(1.0, 2.0, size=5)
+    valid = np.ones(5, dtype=bool)
+    shells, per_image = weighted_image_power_from_shells(
+        power,
+        mass,
+        replacement,
+        valid,
+        norm_unweighted_shell_cutoff=4,
+        include_unweighted_high_shell=True,
+        deterministic_norm_reduction=True,
+        high_shell_mass=scale,
+    )
+    assert_matches(np.asarray(shells)[:5], np.sum(power[:, :5] * mass[:, None], axis=0))
+    assert_matches(np.asarray(shells)[5:], np.sum(power[:, 5:] * scale[:, None], axis=0))
+    assert_matches(np.asarray(per_image), np.sum(power[:, :5] * mass[:, None], axis=1) + scale * replacement)
