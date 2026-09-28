@@ -5568,12 +5568,15 @@ def main():
 
     print("-" * 70)
     print(f"Total wall time: {total_time:.1f}s")
-    print(f"Final current_size: {result['current_sizes'][-1]}")
-    print(f"Final pixel resolution: {result['pixel_resolutions'][-1]:.1f}")
-    print(
-        "Final resolution: "
-        f"{_shell_index_to_resolution_angstrom(result['pixel_resolutions'][-1], ds.image_shape[0], ds.voxel_size):.2f} A"
-    )
+    # A continuation from a converged state runs only the final all-data pass,
+    # which records no per-iteration row.
+    if result["current_sizes"]:
+        print(f"Final current_size: {result['current_sizes'][-1]}")
+        print(f"Final pixel resolution: {result['pixel_resolutions'][-1]:.1f}")
+        print(
+            "Final resolution: "
+            f"{_shell_index_to_resolution_angstrom(result['pixel_resolutions'][-1], ds.image_shape[0], ds.voxel_size):.2f} A"
+        )
     print("=" * 70)
 
 
