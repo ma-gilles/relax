@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "unregularized-mean-spec-ownership",
-    "source_commit": "37ac32c76815a68d65b22c1c6c78e69458091ac8",
+    "package": "owner-visible-state-boundaries",
+    "source_commit": "1811ebe8378802dd3d829c52cc9dfba15744b331",
     "metrics": {
       "schema_version": 1,
       "scope": {
@@ -30,13 +30,13 @@
       },
       "totals": {
         "file_count": 16,
-        "physical_lines": 15150,
-        "nonblank_noncomment_lines": 13207,
+        "physical_lines": 15094,
+        "nonblank_noncomment_lines": 13163,
         "function_count": 225,
         "large_argument_function_count": 7,
         "very_large_argument_function_count": 2,
         "maximum_parameter_count": 21,
-        "maximum_function_line_span": 5464
+        "maximum_function_line_span": 5456
       },
       "files": [
         {
@@ -65,8 +65,8 @@
         },
         {
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 6163,
-          "nonblank_noncomment_lines": 5537,
+          "physical_lines": 6151,
+          "nonblank_noncomment_lines": 5525,
           "function_count": 26
         },
         {
@@ -77,8 +77,8 @@
         },
         {
           "path": "relax/refinement/iteration_snapshot.py",
-          "physical_lines": 349,
-          "nonblank_noncomment_lines": 278,
+          "physical_lines": 338,
+          "nonblank_noncomment_lines": 270,
           "function_count": 11
         },
         {
@@ -89,8 +89,8 @@
         },
         {
           "path": "relax/refinement/mean_helpers.py",
-          "physical_lines": 1859,
-          "nonblank_noncomment_lines": 1568,
+          "physical_lines": 1826,
+          "nonblank_noncomment_lines": 1544,
           "function_count": 45
         },
         {
@@ -153,7 +153,7 @@
         },
         {
           "path": "relax/refinement/mean_helpers.py",
-          "line": 571,
+          "line": 560,
           "name": "_reconstruct_volume_eager",
           "parameter_count": 17,
           "line_span": 389
@@ -167,7 +167,7 @@
         },
         {
           "path": "relax/refinement/iteration_loop.py",
-          "line": 1012,
+          "line": 1008,
           "name": "_safe_batch_sizes",
           "parameter_count": 10,
           "line_span": 45
@@ -190,14 +190,14 @@
       "largest_functions": [
         {
           "path": "relax/refinement/iteration_loop.py",
-          "line": 700,
+          "line": 696,
           "name": "refine_single_volume",
           "parameter_count": 6,
-          "line_span": 5464
+          "line_span": 5456
         },
         {
           "path": "relax/refinement/iteration_loop.py",
-          "line": 2508,
+          "line": 2504,
           "name": "_run_half_estep",
           "parameter_count": 1,
           "line_span": 759
@@ -225,7 +225,7 @@
         },
         {
           "path": "relax/refinement/mean_helpers.py",
-          "line": 571,
+          "line": 560,
           "name": "_reconstruct_volume_eager",
           "parameter_count": 17,
           "line_span": 389
@@ -245,18 +245,18 @@
           "line_span": 187
         },
         {
-          "path": "relax/refinement/mean_helpers.py",
-          "line": 1103,
-          "name": "_reconstruct_and_postprocess_means",
-          "parameter_count": 1,
-          "line_span": 183
-        },
-        {
           "path": "relax/refinement/run_files.py",
           "line": 779,
           "name": "read_run_files",
           "parameter_count": 3,
           "line_span": 183
+        },
+        {
+          "path": "relax/refinement/mean_helpers.py",
+          "line": 1081,
+          "name": "_reconstruct_and_postprocess_means",
+          "parameter_count": 5,
+          "line_span": 182
         }
       ]
     }
