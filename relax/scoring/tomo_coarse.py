@@ -98,6 +98,7 @@ def tilt_image_coarse_operands(
     CTF, as for SPA (:1244-1263).
     """
 
+    from relax.helpers.batch_fetch import fetch_indexed_batch
     from relax.helpers.optics_noise import noise_rows
     from relax.helpers.preprocessing import prepare_batch_preprocess_operands
     from relax.relion.relion_coarse_operands import (
@@ -108,9 +109,8 @@ def tilt_image_coarse_operands(
     from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_powerclass_highres_xi2_half
 
     image_indices = np.asarray(image_indices, dtype=np.int64)
-    (batch_data, *_rest, fetched) = next(
-        iter(experiment_dataset.iter_batches(int(image_indices.size), indices=image_indices, by_image=True))
-    )
+    # One vectorized host read (the dataset's batch iterator collates image by image, 15x slower).
+    batch_data, _ctf_params, fetched = fetch_indexed_batch(experiment_dataset, image_indices)
     if not np.array_equal(np.asarray(fetched), image_indices):
         raise RuntimeError("the dataset returned the tilt images in another order")
     batch_data = np.asarray(batch_data)
