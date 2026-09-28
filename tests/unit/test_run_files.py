@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import dataclasses
+import inspect
 from pathlib import Path
 
 import jax.numpy as jnp
@@ -16,6 +18,12 @@ from relax.reconstruction import regularization_relion
 from relax.refinement.iteration_snapshot import (
     REFINEMENT_STATE_SCALAR_FIELDS,
     IterationSnapshot,
+    IterationSnapshotSpec,
+    SnapshotParticleState,
+    SnapshotReferenceState,
+    SnapshotRunSpec,
+    SnapshotSamplingState,
+    capture_iteration_snapshot,
     radial_shell_volume,
     refinement_state_fields,
     tau2_mean_variance,
@@ -31,6 +39,31 @@ pytestmark = pytest.mark.unit
 
 BOX = 16
 N_SHELLS = BOX // 2 + 1
+
+
+def test_snapshot_capture_keeps_spec_ownership_visible():
+    assert tuple(inspect.signature(capture_iteration_snapshot).parameters) == ("spec",)
+
+    tree = ast.parse(inspect.getsource(capture_iteration_snapshot))
+    assigned_names = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in ([*node.targets] if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name)
+    }
+    stable_field_names = {
+        field.name
+        for owner in (
+            SnapshotRunSpec,
+            SnapshotReferenceState,
+            SnapshotSamplingState,
+            SnapshotParticleState,
+        )
+        for field in dataclasses.fields(owner)
+    }
+    assert assigned_names.isdisjoint(stable_field_names)
+    assert dataclasses.fields(IterationSnapshotSpec)
 
 _PARTICLES = """
 # version 30001
