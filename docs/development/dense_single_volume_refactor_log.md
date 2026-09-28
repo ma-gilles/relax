@@ -230,7 +230,7 @@ growth rather than moving code outside the counted package.
 ### Validation
 
 - Implementation commit:
-  `f628d5aa2b2352f32f058a5517d95f54f6af1548`.
+  `f05a396949946e2963d6f89f431f075acbba448e`.
 - Dense routing, multi-shape, firstiter-CC, BPref-scope, zero-coarse and
   K-class focused set: 149 passed.
 - Numbered/final controller handoff and tau2/scoring-prior probes: 18 passed,
@@ -240,7 +240,7 @@ growth rather than moving code outside the counted package.
   `test_refine_relion_mode.py` retains unrelated pre-existing import-order
   findings; it was not broadly reformatted.
 - CPU EM fast guard: 102 passed in 57.80 seconds on committed source
-  `a2a1b6eaa0e2d21b48c3c228296d27e6a663aa48` after loading
+  `25ac2dd356202b591767b766427c889086c1b934` after loading
   `FFTW/3.3.10-GCC-12.2.0`; exit 0. The initial sandboxed invocation could not
   acquire Pixi's shared-prefix lock, so the identical command was rerun with
   access to that lock.
@@ -292,7 +292,7 @@ consolidate identical construction without recreating a forwarding layer.
 ### Validation
 
 - Implementation commit:
-  `8be72f334e4a7c6dcd6c0715a22da0f83e86c1f6`.
+  `58b371d59b88bbca9ff6ef39f576e3ed9cd5c594`.
 - AST-normalized comparison against the parent commit: passed. After removing
   only the seven owner aliases and mapping `owner.field` to its former parameter
   name, the entire exact-local numerical/control body is identical.
@@ -305,7 +305,7 @@ consolidate identical construction without recreating a forwarding layer.
   passed. Unrelated pre-existing import-order findings in the large legacy test
   modules were left untouched.
 - CPU EM fast guard: 102 passed in 59.92 seconds on implementation commit
-  `8be72f334e4a7c6dcd6c0715a22da0f83e86c1f6`; exit 0. The host has no CUDA
+  `58b371d59b88bbca9ff6ef39f576e3ed9cd5c594`; exit 0. The host has no CUDA
   device, so the expected JAX CUDA-plugin discovery warning preceded the
   forced-CPU run without affecting the checks.
 - GPU smoke remains infrastructure-blocked because the five mandatory
@@ -352,7 +352,7 @@ argument boundary in the counted package. The remaining maximum is the
 ### Validation
 
 - Implementation commit:
-  `f4237f0f530e1f30d60f12e1354f5dd6095f2104`.
+  `0d053e4365a78924127f57979ec109cadcf78e32`.
 - AST-normalized comparison against its parent: passed. After removing the six
   owner aliases and the four mutable planning initializers, then translating
   `owner.field` back to its former parameter name, the complete local-search
@@ -416,7 +416,7 @@ iteration snapshot capture.
 ### Validation
 
 - Implementation commit:
-  `e75a07fd356876a209011204d802758ab4c1a635`.
+  `0d1247a8305978dcf86a9d952922babc8083752e`.
 - AST-normalized comparison against its parent: passed. After removing the five
   owner aliases and the retained-buffer initializer, then translating
   `owner.field` back to its former parameter name, the complete reconstruction
@@ -452,7 +452,7 @@ iteration snapshot capture.
 | Metric | Baseline | Current | Delta |
 | --- | ---: | ---: | ---: |
 | Production files | 15 | 16 | +1 |
-| Physical production lines | 14,185 | 15,025 | +840 |
+| Physical production lines | 14,187 | 15,027 | +840 |
 | Nonblank, non-comment lines | 12,410 | 13,111 | +701 |
 | Production functions | 223 | 225 | +2 |
 | Functions with at least 10 parameters | 17 | 9 | -8 |
@@ -468,7 +468,7 @@ single-volume boundary has 17 parameters.
 ### Validation
 
 - Implementation commit:
-  `7f91db404d02100bba4701f6d32e252088908ec7`.
+  `b7afa62dd8e859e36fc4838def343a42d0440951`.
 - AST-normalized comparison against its parent: passed. After removing only the
   four owner aliases and translating `owner.field` back to its former parameter
   name, the complete snapshot capture body is identical.
@@ -480,3 +480,22 @@ single-volume boundary has 17 parameters.
 - GPU smoke remains infrastructure-blocked by the unchanged absence of the five
   mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
   produced.
+
+## 2026-09-28 — periodic rebase onto `e0f50017`
+
+- `origin/main` advanced from `e2401c4c53182f6aed4e12b060b28257ef86894f`
+  to `e0f5001739058ff894895857dddb938196031632`.
+- Conflicts: none. All 16 refactor commits replayed unchanged, so no manual
+  resolution was required and upstream was retained wholesale.
+- The three upstream commits fix tomography group scaling and update its
+  benchmark/status evidence. They do not overlap the single-volume refactor.
+- Upstream adds two physical lines to `tomo_half.py` without changing the
+  nonblank count or any tracked argument metric. The active baseline is now
+  14,187 physical lines; the rebased candidate is 15,027.
+- Rebased implementation receipts and the checked snapshot now reference the
+  rewritten commit IDs. The frozen smoke worktree path retains its historical
+  pre-rebase hash because that path names the run that actually occurred.
+- Fresh post-rebase ownership, reconstruction, snapshot, local-controller and
+  resident-reference selection: 124 passed and 28 CUDA-only cases skipped.
+- Fresh post-rebase CPU EM fast guard: 102 passed in 56.88 seconds with
+  `FFTW/3.3.10-GCC-12.2.0` loaded.

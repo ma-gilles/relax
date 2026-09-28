@@ -2,10 +2,10 @@
   "schema_version": 1,
   "baseline": {
     "recorded_date": "2026-09-28",
-    "source_commit": "e2401c4c53182f6aed4e12b060b28257ef86894f",
+    "source_commit": "e0f5001739058ff894895857dddb938196031632",
     "metrics": {
       "file_count": 15,
-      "physical_lines": 14185,
+      "physical_lines": 14187,
       "nonblank_noncomment_lines": 12410,
       "function_count": 223,
       "large_argument_function_count": 17,
@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "iteration-snapshot-spec-ownership",
-    "source_commit": "7f91db404d02100bba4701f6d32e252088908ec7",
+    "package": "iteration-snapshot-spec-ownership-rebased",
+    "source_commit": "b7afa62dd8e859e36fc4838def343a42d0440951",
     "metrics": {
       "schema_version": 1,
       "scope": {
@@ -30,7 +30,7 @@
       },
       "totals": {
         "file_count": 16,
-        "physical_lines": 15025,
+        "physical_lines": 15027,
         "nonblank_noncomment_lines": 13111,
         "function_count": 225,
         "large_argument_function_count": 9,
@@ -125,7 +125,7 @@
         },
         {
           "path": "relax/refinement/tomo_half.py",
-          "physical_lines": 755,
+          "physical_lines": 757,
           "nonblank_noncomment_lines": 672,
           "function_count": 17
         },
@@ -139,7 +139,7 @@
       "large_argument_functions": [
         {
           "path": "relax/refinement/tomo_half.py",
-          "line": 495,
+          "line": 497,
           "name": "score_tomo_half_in_loop",
           "parameter_count": 21,
           "line_span": 129
@@ -149,7 +149,7 @@
           "line": 286,
           "name": "score_tomo_half",
           "parameter_count": 20,
-          "line_span": 207
+          "line_span": 209
         },
         {
           "path": "relax/refinement/mean_helpers.py",
@@ -249,7 +249,7 @@
           "line": 286,
           "name": "score_tomo_half",
           "parameter_count": 20,
-          "line_span": 207
+          "line_span": 209
         },
         {
           "path": "relax/refinement/firstiter_cc.py",
