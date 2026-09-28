@@ -215,8 +215,13 @@ mapping (particles.star units, 3D offsets, the 2D-stack STAR blocks). The loop-s
 OPEN (2026-09-28, cryo-ET S4.2): relax's ground-truth FSC-AUC on the S1 depth-fix fixture is systematically 0.003-0.004 below
 RELION's. Three relax runs (seeds 20260925-27; 14547997 on 343399e, landing gate 14593473) give 0.9346-0.9367 against
 0.9381-0.9409 for RELION's four runs. The resolution matches (8.77 A at FSC 0.5 against the ground truth, for all of them).
-Relax-vs-RELION agreement (0.965-0.992) lies within RELION-vs-RELION (0.972-0.989). Next: find the first iteration
-where relax diverges from RELION, comparing each iteration against RELION's `_model.star` and `_data.star` on the fixture.
+Relax-vs-RELION agreement (0.965-0.992) lies within RELION-vs-RELION (0.972-0.989). Per-iteration comparison against
+RELION's `_model.star` and `_data.star` (poses equal to same-seed RELION through iteration 4) found the tilt fold adding
+tilt-image power above the norm cutoff with mass 1 instead of 1 / n_images, so the noise beyond the current size was 39x
+RELION's. Fixed in 3409d7bc (gate 14605082: 110 GPU tests and replay green): the noise now matches RELION's in every shell at
+iteration 1 and the three runs give 0.9348-0.9380 (0.9365 mean). Still about 0.001-0.002 low at iteration 2 with equal poses and
+Pmax, and relax's sigma_offset is 1-1.5% below RELION's from iteration 1. Next: find what still lowers the iteration-2
+gold-standard FSC.
 
 RELION float32 BPref accumulation band (2026-09-25, not reproduced; lead decision). RELION's GPU backprojector adds every
 particle of a half into one float32 volume with `atomicAdd` (acc/acc_backprojector.h:41; acc/cuda/cuda_kernels/BP.cuh:157-169)
