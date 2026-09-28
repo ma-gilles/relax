@@ -139,3 +139,38 @@ and module ownership; the moved calculation itself is unchanged.
 The checked snapshot now uses the rebased `origin/main` tree as its comparison
 baseline. Historical measurements above remain the record of the original
 work package rather than a comparison against today's production tree.
+
+## 2026-09-28 — first-iteration CC specification ownership
+
+### Change
+
+- Replaced the 26-parameter first-iteration CC dispatch with
+  `FirstIterCCSpec` and five cohesive owners for data, grid, scoring policy,
+  batching and execution controls.
+- The scoring body keeps those five owners visible; it does not unpack their
+  fields into parallel local variables. An AST regression enforces that rule.
+- K=1 and K-class differences are derived with `dataclasses.replace`, while
+  preserving the current exact-coarse preprocessing decision, batch mutation,
+  grid construction and engine-call order.
+
+### Structural delta from the rebased baseline
+
+| Metric | Baseline | Current | Delta |
+| --- | ---: | ---: | ---: |
+| Physical production lines | 14,184 | 14,308 | +124 |
+| Nonblank, non-comment lines | 12,410 | 12,507 | +97 |
+| Functions with at least 10 parameters | 17 | 15 | -2 |
+| Functions with at least 20 parameters | 8 | 7 | -1 |
+| Largest parameter count | 67 | 67 | 0 |
+| Largest function span | 5,233 | 5,235 | +2 |
+
+The line increase is explicit ownership documentation and construction. The
+dispatch has one parameter and no forwarding/compatibility layer.
+
+### Validation
+
+- First-iteration CC focused suite: 19 passed.
+- First-iteration, projector, BPref-scope and K-class regression set: 77 passed.
+- Ruff lint, Python compilation, structural snapshot and diff checks: passed.
+- The attempted historical regression command named a test file removed on
+  current `origin/main`; the current test inventory was used instead.
