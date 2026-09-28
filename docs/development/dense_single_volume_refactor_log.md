@@ -251,3 +251,64 @@ growth rather than moving code outside the counted package.
   runner froze the committed source and then failed mandatory verification for
   all five pinned K1/K2 fixture sets because their `/scratch/gpfs/...` inputs
   are absent. No GPU test ran; no Slurm job ID or test receipt exists.
+
+## 2026-09-28 — exact-local half-scoring specification ownership
+
+### Change
+
+- Replaced the 49-parameter exact-local scorer and its `**kwargs` wrappers with
+  `LocalHalfScoringSpec` and cohesive owners for half data, sampling, priors,
+  batching, execution, diagnostics and optics adaptations.
+- The scorer keeps those seven owners visible and does not unpack their stable
+  fields. An AST ownership regression enforces the boundary.
+- Numbered and final all-data local-search calls construct the same typed spec.
+  Multi-shape execution continues to use `optics_shapes.class_kwargs` for the
+  authoritative per-image slicing, translation scaling, Fourier sizes and
+  reference-grid projection controls, then derives shallow per-shape specs with
+  `dataclasses.replace`.
+- Device-signature scope now reads its diagnostic policy directly; no local
+  scorer compatibility/forwarding API remains. Test-only concise fixtures use a
+  rejecting builder that fails on any unmapped former argument.
+
+### Structural delta from the active upstream baseline
+
+| Metric | Baseline | Current | Delta |
+| --- | ---: | ---: | ---: |
+| Production files | 15 | 16 | +1 |
+| Physical production lines | 14,185 | 14,815 | +630 |
+| Nonblank, non-comment lines | 12,410 | 12,956 | +546 |
+| Production functions | 223 | 225 | +2 |
+| Functions with at least 10 parameters | 17 | 12 | -5 |
+| Functions with at least 20 parameters | 8 | 5 | -3 |
+| Largest parameter count | 67 | 67 | 0 |
+| Largest function span | 5,234 | 5,369 | +135 |
+
+This package adds 290 physical production lines while removing the 49-argument
+boundary. The increase is the explicit local ownership contracts, two typed
+controller constructions and the per-shape derivation. It is accepted
+provisionally for ownership clarity; later controller extraction must
+consolidate identical construction without recreating a forwarding layer.
+
+### Validation
+
+- Implementation commit:
+  `8be72f334e4a7c6dcd6c0715a22da0f83e86c1f6`.
+- AST-normalized comparison against the parent commit: passed. After removing
+  only the seven owner aliases and mapping `owner.field` to its former parameter
+  name, the entire exact-local numerical/control body is identical.
+- Broad selected local-search/controller run: 194 behavioral cases passed; its
+  sole failure was a source-text assertion expecting the former one-line
+  diagnostic argument. The assertion was migrated to the typed policy.
+- Corrected dense/local, BPref, multi-shape, ownership, complete symmetry and
+  two direct local-controller regressions: 439 passed.
+- Production and affected-helper Ruff lint, Python compilation and diff checks:
+  passed. Unrelated pre-existing import-order findings in the large legacy test
+  modules were left untouched.
+- CPU EM fast guard: 102 passed in 59.92 seconds on implementation commit
+  `8be72f334e4a7c6dcd6c0715a22da0f83e86c1f6`; exit 0. The host has no CUDA
+  device, so the expected JAX CUDA-plugin discovery warning preceded the
+  forced-CPU run without affecting the checks.
+- GPU smoke remains infrastructure-blocked because the five mandatory
+  `/scratch/gpfs` fixture sets are absent on this host, as recorded in the
+  preceding package. No new submission was attempted against the same missing
+  inventory.
