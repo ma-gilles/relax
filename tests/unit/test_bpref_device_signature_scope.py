@@ -2,18 +2,18 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
-
 from recovar import cuda_backproject
-from relax.cuda import kernels as em_cuda_kernels
+
 from relax.classification import k_class
-from relax.refinement import half_scoring
+from relax.cuda import kernels as em_cuda_kernels
 from relax.diagnostics import bpref_diagnostics, local_bpref_capture
 from relax.diagnostics import iteration as debug_dumps
 from relax.local import local_em_engine
-from relax.refinement import iteration_loop
+from relax.refinement import half_scoring, iteration_loop
 
 pytestmark = pytest.mark.unit
 
@@ -284,14 +284,14 @@ def test_target_dense_half_keeps_block_topology_inactive_for_live_work(monkeypat
     monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "/tmp/device")
     monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY", "1")
 
-    def fake_dense(**kwargs):
-        assert kwargs.pop("bpref_device_signature_active") is True
+    def fake_dense(spec):
+        assert spec.execution.bpref_device_signature_active is True
         assert not cuda_backproject.relion_x_half_bp_block_topology_enabled()
         return "ordinary-live"
 
     monkeypatch.setattr(half_scoring, "_score_half_dense", fake_dense)
     assert half_scoring._score_half_dense_in_bpref_scope(
-        bpref_device_signature_active=True,
+        SimpleNamespace(execution=SimpleNamespace(bpref_device_signature_active=True)),
     ) == "ordinary-live"
     assert not cuda_backproject.relion_x_half_bp_block_topology_enabled()
 
@@ -586,5 +586,3 @@ def test_later_capture_support_excludes_dense_full_support_fallback():
     support_end = source.index("fused_atomic_diagnostic_supported =", support_start)
     support_block = source[support_start:support_end]
     assert "and not skip_significance_pruning" in support_block
-
-

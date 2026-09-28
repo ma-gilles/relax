@@ -9,7 +9,7 @@ by the ownership boundary.
 
 import logging
 import os
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import NamedTuple
 
 import jax.numpy as jnp
@@ -201,19 +201,14 @@ def _dense_uses_adaptive_engine(adaptive_oversampling, group_ids) -> bool:
 
 def _adaptive_engine_shared_kwargs(
     pass2_grids: _AdaptivePass2Grids,
+    spec: "DenseHalfScoringSpec",
     *,
-    class_log_priors,
-    max_significants,
     sparse_pass2: bool,
     significance_image_batch_size,
     significance_rotation_block_size,
     coarse_current_size,
     fine_current_size,
-    coarse_healpix_order,
     oversampling_order,
-    return_best_pose_details: bool,
-    bpref_device_signature_active: bool,
-    debug_iteration,
 ) -> dict:
     """Keywords the K=1 and K-class routes pass identically to ``run_dense_k_class_em_adaptive``.
 
@@ -225,21 +220,23 @@ def _adaptive_engine_shared_kwargs(
     """
 
     return dict(
-        class_log_priors=class_log_priors,
+        class_log_priors=spec.priors.class_log_priors,
         accumulate_noise=True,
         adaptive_fraction=RELION_ADAPTIVE_FRACTION,
-        max_significants=-1 if max_significants is None else int(max_significants),
+        max_significants=(
+            -1 if spec.batching.max_significants is None else int(spec.batching.max_significants)
+        ),
         relion_fine_mstep_prune=bool(sparse_pass2),
         significance_image_batch_size=significance_image_batch_size,
         significance_rotation_block_size=significance_rotation_block_size,
         coarse_current_size=coarse_current_size,
         fine_current_size=fine_current_size,
-        coarse_healpix_order=int(coarse_healpix_order),
+        coarse_healpix_order=int(spec.sampling.current_healpix_order),
         oversampling_order=int(oversampling_order),
         fine_mstep_rotations_override=(pass2_grids.fine_mstep_rotations if sparse_pass2 else None),
-        return_best_pose_details=return_best_pose_details,
-        bpref_device_signature_active=bpref_device_signature_active,
-        debug_iteration=debug_iteration,
+        return_best_pose_details=spec.execution.return_best_pose_details,
+        bpref_device_signature_active=spec.execution.bpref_device_signature_active,
+        debug_iteration=spec.execution.debug_iteration,
     )
 
 
@@ -257,84 +254,147 @@ def _coarse_pose_assignments(ha, *, rot_parent_map, trans_parent_map, n_trans_co
     )
 
 
+@dataclass(frozen=True, kw_only=True)
+class DenseHalfData:
+    """Per-half arrays and output slots retained by a dense scoring call."""
+
+    k: int
+    experiment_dataset: object
+    means_k: object
+    mean_variance: object
+    noise_variance_k: object
+    image_corrections_k: object
+    scale_corrections_k: object
+    outputs: PerHalfOutputs
+    group_ids_k: object | None = None
+    group_count_k: object | None = None
+    scale_correction_data_vs_prior: object | None = None
+    optics_group_ids_k: object | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class DenseSamplingSpec:
+    """Sampling grids, reconstruction sizes and state for one dense half."""
+
+    effective_rotations: object
+    current_translations: object
+    base_translations: object
+    current_healpix_order: int
+    state: object
+    random_perturbation: float
+    disc_type: str
+    cs_for_engine: int | None
+    model_current_size_for_engine: int | None = None
+    coarse_rotation_ids: object | None = None
+    coarse_scoring_rotations: object | None = None
+    symmetry: str = "C1"
+
+
+@dataclass(frozen=True, kw_only=True)
+class DensePriorSpec:
+    """Direction, translation and class priors for one dense half."""
+
+    rotation_log_prior_k: object
+    class_rotation_log_prior_k: object
+    translation_log_prior: object
+    translation_search_base: object
+    trans_prior_center_for_engine: object
+    class_log_priors: object
+
+
+@dataclass(frozen=True, kw_only=True)
+class DenseBatchPolicy:
+    """Existing batch planners and route-specific overrides."""
+
+    image_batch_size: int
+    safe_batch_sizes: object
+    max_significants: int | None
+    significance_safe_batch_sizes: object | None = None
+    k_class_image_batch_size_override: int | None = None
+    k_class_rotation_block_size_override: int | None = None
+    significance_image_batch_size_override: int | None = None
+    significance_rotation_block_size_override: int | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class DenseVariantPolicy:
+    """Explicit dense, adaptive and first-iteration route selections."""
+
+    firstiter_score_mode_this_iter: str
+    firstiter_winner_take_all_this_iter: bool
+    k_class_enabled: bool
+    relion_firstiter_cc_this_iter: bool
+    firstiter_coarse_current_size: int | None = None
+    firstiter_fine_current_size: int | None = None
+    firstiter_log_label: str = "(non-adaptive site) "
+    firstiter_updates_em_kwargs_ibs: bool = False
+
+
+@dataclass(frozen=True, kw_only=True)
+class DenseExecutionPolicy:
+    """Ablation, projector and diagnostic choices for dense scoring."""
+
+    disable_adjoint_y: bool
+    disable_adjoint_ctf: bool
+    relion_projector_half: object | None = None
+    relion_projector_r_max: int | None = None
+    return_best_pose_details: bool = True
+    bpref_device_signature_active: bool = False
+    debug_iteration: int | None = None
+    preserve_bpref_particle_order: bool = False
+    source_faithful_spectrum_norm: bool = False
+    relion_translation_angle_scale: float = 1.0
+
+
+@dataclass(frozen=True, kw_only=True)
+class DenseOpticsSpec:
+    """Multi-shape adaptations, absent for an ordinary single-shape half."""
+
+    noise_radial_k: object | None = None
+    coarse_sizing: tuple[float, float | None] | None = None
+    class_batch_overrides: tuple[dict, ...] | None = None
+    class_translation_overrides: tuple[dict, ...] | None = None
+    projection_scale: float = 1.0
+    reference_current_size: int | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class DenseHalfScoringSpec:
+    """Complete shallow specification for one dense half-set scoring call."""
+
+    half: DenseHalfData
+    sampling: DenseSamplingSpec
+    priors: DensePriorSpec
+    batching: DenseBatchPolicy
+    variant: DenseVariantPolicy
+    execution: DenseExecutionPolicy
+    optics: DenseOpticsSpec = DenseOpticsSpec()
+
+
 def _score_half_dense_one_shape(
-    *,
-    k: int,
-    experiment_dataset,
-    means_k,
-    mean_variance,
-    noise_variance_k,
-    effective_rotations,
-    current_translations,
-    base_translations,
-    current_healpix_order: int,
-    state,
-    random_perturbation,
-    disc_type,
-    image_batch_size: int,
-    rotation_log_prior_k,
-    class_rotation_log_prior_k,
-    translation_log_prior,
-    translation_search_base,
-    trans_prior_center_for_engine,
-    image_corrections_k,
-    scale_corrections_k,
-    firstiter_score_mode_this_iter: str,
-    firstiter_winner_take_all_this_iter: bool,
-    cs_for_engine,
-    model_current_size_for_engine=None,
-    class_log_priors,
-    k_class_enabled: bool,
-    relion_firstiter_cc_this_iter: bool,
-    disable_adjoint_y: bool,
-    disable_adjoint_ctf: bool,
-    safe_batch_sizes,
-    max_significants,
-    # Output lists are owned by the caller and mutated in place:
-    outputs: "PerHalfOutputs",
-    group_ids_k=None,
-    group_count_k=None,
-    scale_correction_data_vs_prior=None,
-    # Mode-specific overrides (adaptive site sets these; single-pass uses
-    # the defaults):
-    k_class_image_batch_size_override: int | None = None,
-    k_class_rotation_block_size_override: int | None = None,
-    significance_safe_batch_sizes=None,
-    significance_image_batch_size_override: int | None = None,
-    significance_rotation_block_size_override: int | None = None,
-    firstiter_coarse_current_size: int | None = None,
-    firstiter_fine_current_size: int | None = None,
-    firstiter_log_label: str = "(non-adaptive site) ",
-    firstiter_updates_em_kwargs_ibs: bool = False,
-    relion_projector_half=None,
-    relion_projector_r_max: int | None = None,
-    return_best_pose_details: bool = True,
-    bpref_device_signature_active: bool = False,
-    debug_iteration: int | None = None,
-    coarse_rotation_ids=None,
-    preserve_bpref_particle_order: bool = False,
-    source_faithful_spectrum_norm: bool = False,
-    relion_translation_angle_scale: float = 1.0,
-    coarse_scoring_rotations=None,
-    symmetry: str = "C1",
-    optics_group_ids_k=None,
-    projection_scale: float = 1.0,
-    reference_current_size=None,
+    spec: DenseHalfScoringSpec,
 ) -> HalfScoreResult:
     """Dense (non-local-search) E+M scoring for one half-set.
 
-    ``optics_group_ids_k`` gives each image's row of a per-optics-group
-    ``noise_variance_k`` table (:mod:`relax.helpers.optics_noise`); only the K=1
-    adaptive route carries it, every other engine refuses it.
+    The specification keeps per-half data, sampling, priors, batching, route
+    selection, execution controls and optics adaptations under their owning
+    groups. Stable fields are read through those groups; only values changed by
+    route planning become local variables.
 
-    ``projection_scale`` and ``reference_current_size`` describe images on another grid
-    than the reference (one shape class of :mod:`relax.refinement.optics_shapes`): the
-    projection and backprojection matrices are divided by the scale and the
-    backprojector keeps the reference model size; reported poses stay unscaled.
+    ``spec.half.optics_group_ids_k`` gives each image's row of a
+    per-optics-group ``noise_variance_k`` table
+    (:mod:`relax.helpers.optics_noise`); only the K=1 adaptive route carries it,
+    every other engine refuses it.
+
+    ``spec.optics.projection_scale`` and ``reference_current_size`` describe
+    images on another grid than the reference (one shape class of
+    :mod:`relax.refinement.optics_shapes`): the projection and backprojection
+    matrices are divided by the scale and the backprojector keeps the reference
+    model size; reported poses stay unscaled.
 
     Used by both the single-pass (``else``) and adaptive-2-pass
     (``elif use_adaptive``) branches of the half-set loop. The two modes
-    differ in five places, all controlled by trailing parameters:
+    differ in five places, all controlled by explicit policy fields:
 
     1. ``k_class_image_batch_size_override`` /
        ``k_class_rotation_block_size_override`` — adaptive overrides
@@ -350,121 +410,136 @@ def _score_half_dense_one_shape(
        em_kwargs["image_batch_size"] with the firstiter clamp; single-pass
        leaves em_kwargs untouched.
 
-    Stores K-class summaries and explicit best poses in ``outputs``. The
+    Stores K-class summaries and explicit best poses in ``spec.half.outputs``. The
     caller records the common payload from the returned ``HalfScoreResult``.
-    ``safe_batch_sizes`` is the closure-bound batch sizer from
+    ``spec.batching.safe_batch_sizes`` is the closure-bound batch sizer from
     ``refine_single_volume``.
     """
 
+    half = spec.half
+    sampling = spec.sampling
+    priors = spec.priors
+    batching = spec.batching
+    variant = spec.variant
+    execution = spec.execution
+    optics = spec.optics
+
+    # These values are refined by route-specific planning below. All other
+    # stable values retain their owning specification object.
+    firstiter_coarse_current_size = variant.firstiter_coarse_current_size
+    firstiter_fine_current_size = variant.firstiter_fine_current_size
+    significance_image_batch_size_override = batching.significance_image_batch_size_override
+    significance_rotation_block_size_override = batching.significance_rotation_block_size_override
+
     from relax.symmetry import canonicalize_rotational_symmetry
 
-    symmetry = canonicalize_rotational_symmetry(symmetry)
-    if symmetry != "C1" and int(state.adaptive_oversampling) <= 0:
+    symmetry = canonicalize_rotational_symmetry(sampling.symmetry)
+    if symmetry != "C1" and int(sampling.state.adaptive_oversampling) <= 0:
         raise NotImplementedError(
             f"{symmetry} non-adaptive dense reconstruction is unsupported; "
             "use the adaptive sparse or exact-local RELION x-half M-step"
         )
-    safe_ibs, safe_rbs = safe_batch_sizes(
-        effective_rotations.shape[0],
-        current_translations.shape[0],
-        current_size_for_batch=cs_for_engine,
+    safe_ibs, safe_rbs = batching.safe_batch_sizes(
+        sampling.effective_rotations.shape[0],
+        sampling.current_translations.shape[0],
+        current_size_for_batch=sampling.cs_for_engine,
     )
     em_kwargs = {
         **_DENSE_EM_STATIC_KWARGS,
         "image_batch_size": safe_ibs,
         "rotation_block_size": safe_rbs,
-        "current_size": cs_for_engine,
-        "rotation_log_prior": rotation_log_prior_k,
-        "translation_log_prior": translation_log_prior,
-        "image_corrections": image_corrections_k,
-        "scale_corrections": scale_corrections_k,
-        "group_ids": group_ids_k,
-        "scale_correction_group_count": group_count_k,
-        "scale_correction_data_vs_prior": scale_correction_data_vs_prior,
-        "image_pre_shifts": translation_search_base,
-        "translation_prior_centers": trans_prior_center_for_engine,
-        "relion_firstiter_score_mode": firstiter_score_mode_this_iter,
-        "relion_firstiter_winner_take_all": firstiter_winner_take_all_this_iter,
+        "current_size": sampling.cs_for_engine,
+        "rotation_log_prior": priors.rotation_log_prior_k,
+        "translation_log_prior": priors.translation_log_prior,
+        "image_corrections": half.image_corrections_k,
+        "scale_corrections": half.scale_corrections_k,
+        "group_ids": half.group_ids_k,
+        "scale_correction_group_count": half.group_count_k,
+        "scale_correction_data_vs_prior": half.scale_correction_data_vs_prior,
+        "image_pre_shifts": priors.translation_search_base,
+        "translation_prior_centers": priors.trans_prior_center_for_engine,
+        "relion_firstiter_score_mode": variant.firstiter_score_mode_this_iter,
+        "relion_firstiter_winner_take_all": variant.firstiter_winner_take_all_this_iter,
     }
     if symmetry != "C1":
         em_kwargs["symmetry_label"] = symmetry
-    if optics_group_ids_k is not None:
-        em_kwargs["optics_group_ids"] = optics_group_ids_k
-    if model_current_size_for_engine is not None:
-        em_kwargs["reconstruction_current_size"] = model_current_size_for_engine
-    if preserve_bpref_particle_order and k_class_enabled:
+    if half.optics_group_ids_k is not None:
+        em_kwargs["optics_group_ids"] = half.optics_group_ids_k
+    if sampling.model_current_size_for_engine is not None:
+        em_kwargs["reconstruction_current_size"] = sampling.model_current_size_for_engine
+    if execution.preserve_bpref_particle_order and variant.k_class_enabled:
         raise ValueError("RELION BPref particle-order preservation is K=1-only")
-    if preserve_bpref_particle_order:
+    if execution.preserve_bpref_particle_order:
         em_kwargs["preserve_bpref_particle_order"] = True
-    if source_faithful_spectrum_norm:
+    if execution.source_faithful_spectrum_norm:
         em_kwargs["source_faithful_spectrum_norm"] = True
-    if float(relion_translation_angle_scale) != 1.0:
-        if k_class_enabled:
+    if float(execution.relion_translation_angle_scale) != 1.0:
+        if variant.k_class_enabled:
             raise ValueError("the RELION model/optics translation-angle scale is K=1-only")
-        em_kwargs["relion_translation_angle_scale"] = float(relion_translation_angle_scale)
-    diagnostic_float64_pass2 = _diagnostic_float64_pass2_matches(debug_iteration)
+        em_kwargs["relion_translation_angle_scale"] = float(execution.relion_translation_angle_scale)
+    diagnostic_float64_pass2 = _diagnostic_float64_pass2_matches(execution.debug_iteration)
     if diagnostic_float64_pass2:
         logger.info(
             "Diagnostic genuine-float64 adaptive pass 2 at iteration %d; pass 1 and prior boundaries remain f32",
-            int(debug_iteration),
+            int(execution.debug_iteration),
         )
-    if k_class_image_batch_size_override is not None:
-        em_kwargs["image_batch_size"] = k_class_image_batch_size_override
-    if k_class_rotation_block_size_override is not None:
-        em_kwargs["rotation_block_size"] = k_class_rotation_block_size_override
-    if class_rotation_log_prior_k is not None:
+    if batching.k_class_image_batch_size_override is not None:
+        em_kwargs["image_batch_size"] = batching.k_class_image_batch_size_override
+    if batching.k_class_rotation_block_size_override is not None:
+        em_kwargs["rotation_block_size"] = batching.k_class_rotation_block_size_override
+    if priors.class_rotation_log_prior_k is not None:
         em_kwargs["rotation_log_prior"] = None
-        em_kwargs["class_rotation_log_prior"] = class_rotation_log_prior_k
-    if relion_projector_half is not None:
-        em_kwargs["relion_projector_half"] = relion_projector_half
-        em_kwargs["relion_projector_r_max"] = relion_projector_r_max
+        em_kwargs["class_rotation_log_prior"] = priors.class_rotation_log_prior_k
+    if execution.relion_projector_half is not None:
+        em_kwargs["relion_projector_half"] = execution.relion_projector_half
+        em_kwargs["relion_projector_r_max"] = execution.relion_projector_r_max
     logger.info(
         "Dense half-set projector handoff: supplied_ppref=%s state_oversampling=%d",
-        relion_projector_half is not None,
-        int(state.adaptive_oversampling),
+        execution.relion_projector_half is not None,
+        int(sampling.state.adaptive_oversampling),
     )
-    if relion_firstiter_cc_this_iter:
+    if variant.relion_firstiter_cc_this_iter:
         # Shared first-iteration inputs; means, layouts and pose IDs remain route-specific.
         firstiter_spec = FirstIterCCSpec(
             data=FirstIterCCData(
                 logger=logger,
-                experiment_dataset=experiment_dataset,
-                mean=means_k,
-                mean_variance=mean_variance,
-                noise_variance=noise_variance_k,
-                image_shape=experiment_dataset.image_shape,
+                experiment_dataset=half.experiment_dataset,
+                mean=half.means_k,
+                mean_variance=half.mean_variance,
+                noise_variance=half.noise_variance_k,
+                image_shape=half.experiment_dataset.image_shape,
             ),
             grid=FirstIterCCGridSpec(
-                effective_rotations=effective_rotations,
-                current_translations=current_translations,
-                base_translations=base_translations,
-                current_healpix_order=current_healpix_order,
-                state=state,
-                random_perturbation=random_perturbation,
+                effective_rotations=sampling.effective_rotations,
+                current_translations=sampling.current_translations,
+                base_translations=sampling.base_translations,
+                current_healpix_order=sampling.current_healpix_order,
+                state=sampling.state,
+                random_perturbation=sampling.random_perturbation,
                 symmetry=symmetry,
             ),
             policy=FirstIterCCPolicy(
-                disc_type=disc_type,
-                class_log_priors=class_log_priors,
+                disc_type=sampling.disc_type,
+                class_log_priors=priors.class_log_priors,
             ),
             batching=FirstIterCCBatching(
-                image_batch_size=image_batch_size,
+                image_batch_size=batching.image_batch_size,
                 em_kwargs=em_kwargs,
-                safe_batch_sizes=safe_batch_sizes,
-                significance_safe_batch_sizes=significance_safe_batch_sizes,
+                safe_batch_sizes=batching.safe_batch_sizes,
+                significance_safe_batch_sizes=batching.significance_safe_batch_sizes,
                 coarse_current_size=firstiter_coarse_current_size,
                 fine_current_size=firstiter_fine_current_size,
             ),
             execution=FirstIterCCExecution(
-                log_label=firstiter_log_label,
-                update_em_kwargs_image_batch_size=firstiter_updates_em_kwargs_ibs,
-                bpref_device_signature_active=bpref_device_signature_active,
-                debug_iteration=debug_iteration,
+                log_label=variant.firstiter_log_label,
+                update_em_kwargs_image_batch_size=variant.firstiter_updates_em_kwargs_ibs,
+                bpref_device_signature_active=execution.bpref_device_signature_active,
+                debug_iteration=execution.debug_iteration,
             ),
         )
 
-    if k_class_enabled:
-        if disable_adjoint_y or disable_adjoint_ctf:
+    if variant.k_class_enabled:
+        if execution.disable_adjoint_y or execution.disable_adjoint_ctf:
             raise NotImplementedError("K-class refine does not support adjoint ablation flags")
         # K-class uses RELION's x-half BackProjector accumulator layout by
         # default, matching the K=1 parity path. The explicit selector can
@@ -484,7 +559,7 @@ def _score_half_dense_one_shape(
         # adaptive 2-pass engine with normalized-CC scoring. Pass 2 retains the
         # oversampled children of the single best coarse class/pose, matching
         # RELION's firstiter-CC binarized coarse support.
-        if relion_firstiter_cc_this_iter:
+        if variant.relion_firstiter_cc_this_iter:
             (
                 k_class_result,
                 rot_pmap_for_collapse,
@@ -496,12 +571,12 @@ def _score_half_dense_one_shape(
                     firstiter_spec,
                     grid=replace(
                         firstiter_spec.grid,
-                        coarse_rotation_ids=coarse_rotation_ids,
+                        coarse_rotation_ids=sampling.coarse_rotation_ids,
                     ),
                 )
             )
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
-        elif _dense_uses_adaptive_engine(state.adaptive_oversampling, group_ids_k):
+        elif _dense_uses_adaptive_engine(sampling.state.adaptive_oversampling, half.group_ids_k):
             # RELION keeps its two-pass adaptive expectation whenever
             # adaptive_oversampling > 0, with coarse_size clamped to current_size
             # (updateImageSizeAndResolutionPointers); a coarse size equal to the
@@ -510,42 +585,42 @@ def _score_half_dense_one_shape(
             # adaptive engine's single pass on the current grid so group XA/AA and
             # norm corrections are accumulated (the strict follower-scale topology
             # requires them at every numbered M-step).
-            adaptive_os_local = int(state.adaptive_oversampling)
+            adaptive_os_local = int(sampling.state.adaptive_oversampling)
             if adaptive_os_local <= 0:
-                firstiter_coarse_current_size = cs_for_engine
-                firstiter_fine_current_size = cs_for_engine
+                firstiter_coarse_current_size = sampling.cs_for_engine
+                firstiter_fine_current_size = sampling.cs_for_engine
                 logger.info(
                     "RELION K-class scale groups at oversampling 0: routing the single pass through the "
                     "adaptive engine (current_size=%s)",
-                    cs_for_engine,
+                    sampling.cs_for_engine,
                 )
             pass2_grids = _adaptive_pass2_grids(
-                effective_rotations,
-                current_translations,
-                base_translations,
-                healpix_order=current_healpix_order,
+                sampling.effective_rotations,
+                sampling.current_translations,
+                sampling.base_translations,
+                healpix_order=sampling.current_healpix_order,
                 adaptive_oversampling=adaptive_os_local,
-                translation_step=state.translation_step,
-                random_perturbation=random_perturbation,
-                coarse_rotation_ids=coarse_rotation_ids,
+                translation_step=sampling.state.translation_step,
+                random_perturbation=sampling.random_perturbation,
+                coarse_rotation_ids=sampling.coarse_rotation_ids,
                 **({"symmetry": symmetry} if symmetry != "C1" else {}),
             )
             rot_pmap_for_collapse = pass2_grids.rotation_parent_map
             trans_pmap_for_collapse = pass2_grids.translation_parent_map
             n_trans_fine_for_collapse = pass2_grids.n_fine_translations
             adaptive_em_kwargs = dict(em_kwargs)
-            n_classes_local = int(np.asarray(means_k).shape[0]) if np.asarray(means_k).ndim >= 2 else 1
+            n_classes_local = int(np.asarray(half.means_k).shape[0]) if np.asarray(half.means_k).ndim >= 2 else 1
             grid_batch_plan = _plan_kclass_adaptive_grid_batch_sizes(
                 coarse_rotations=pass2_grids.coarse_rotations,
                 coarse_translations=pass2_grids.coarse_translations,
                 fine_rotations=pass2_grids.fine_rotations,
                 fine_translations=pass2_grids.fine_translations,
                 n_classes=n_classes_local,
-                image_shape=experiment_dataset.image_shape,
+                image_shape=half.experiment_dataset.image_shape,
                 coarse_current_size=firstiter_coarse_current_size,
                 fine_current_size=firstiter_fine_current_size,
-                safe_batch_sizes=safe_batch_sizes,
-                significance_safe_batch_sizes=significance_safe_batch_sizes,
+                safe_batch_sizes=batching.safe_batch_sizes,
+                significance_safe_batch_sizes=batching.significance_safe_batch_sizes,
             )
             adaptive_em_kwargs["image_batch_size"] = grid_batch_plan.pass2_image_batch_size
             adaptive_em_kwargs["rotation_block_size"] = grid_batch_plan.pass2_rotation_block_size
@@ -566,7 +641,7 @@ def _score_half_dense_one_shape(
             adaptive_em_kwargs["sparse_pass2"] = kclass_sparse_pass2
             # Class3D pass 1 scores RELION's exact coarse operands; a normalized-CC
             # pass keeps the generic scorer, which the exact path leaves dormant.
-            adaptive_em_kwargs["relion_exact_coarse"] = uses_relion_cuda_image_preprocessing(experiment_dataset)
+            adaptive_em_kwargs["relion_exact_coarse"] = uses_relion_cuda_image_preprocessing(half.experiment_dataset)
             logger.info(
                 "RELION adaptive K-class routing through run_dense_k_class_em_adaptive "
                 "(oversampling=%d, pass2_backend=%s, fine_mstep_prune=%s)",
@@ -576,31 +651,26 @@ def _score_half_dense_one_shape(
             )
             shared_kwargs = _adaptive_engine_shared_kwargs(
                 pass2_grids,
-                class_log_priors=class_log_priors,
-                max_significants=max_significants,
+                spec,
                 sparse_pass2=kclass_sparse_pass2,
                 significance_image_batch_size=significance_image_batch_size_override,
                 significance_rotation_block_size=significance_rotation_block_size_override,
                 coarse_current_size=firstiter_coarse_current_size,
                 fine_current_size=firstiter_fine_current_size,
-                coarse_healpix_order=current_healpix_order,
                 oversampling_order=adaptive_os_local,
-                return_best_pose_details=return_best_pose_details,
-                bpref_device_signature_active=bpref_device_signature_active,
-                debug_iteration=debug_iteration,
             )
             k_class_result = run_dense_k_class_em_adaptive(
-                experiment_dataset,
-                means_k,
-                mean_variance,
-                noise_variance_k,
+                half.experiment_dataset,
+                half.means_k,
+                half.mean_variance,
+                half.noise_variance_k,
                 pass2_grids.coarse_rotations,
                 pass2_grids.coarse_translations,
                 pass2_grids.fine_rotations,
                 pass2_grids.fine_translations,
                 rot_pmap_for_collapse,
                 trans_pmap_for_collapse,
-                disc_type,
+                sampling.disc_type,
                 **shared_kwargs,
                 **adaptive_em_kwargs,
             )
@@ -625,34 +695,34 @@ def _score_half_dense_one_shape(
             dense_em_kwargs.pop("relion_exact_fine_gaussian", None)
             dense_em_kwargs.pop("reconstruction_current_size", None)
             k_class_result = run_dense_k_class_em(
-                experiment_dataset,
-                means_k,
-                mean_variance,
-                noise_variance_k,
-                effective_rotations,
-                current_translations,
-                disc_type,
-                class_log_priors=class_log_priors,
+                half.experiment_dataset,
+                half.means_k,
+                half.mean_variance,
+                half.noise_variance_k,
+                sampling.effective_rotations,
+                sampling.current_translations,
+                sampling.disc_type,
+                class_log_priors=priors.class_log_priors,
                 accumulate_noise=True,
-                return_best_pose_details=return_best_pose_details,
+                return_best_pose_details=execution.return_best_pose_details,
                 **dense_em_kwargs,
             )
             k_class_mstep_full_half_axis_this_score = None
         ha_k, Ft_y_k, Ft_ctf_k, em_stats_k, noise_stats_k = _scatter_dense_k_class_result(
             k_class_result,
-            k=k,
-            effective_rotations=effective_rotations,
+            k=half.k,
+            effective_rotations=sampling.effective_rotations,
             rot_pmap_for_collapse=rot_pmap_for_collapse,
             adaptive_os_local=adaptive_os_local,
-            outputs=outputs,
-            require_best_pose_details=return_best_pose_details,
+            outputs=half.outputs,
+            require_best_pose_details=execution.return_best_pose_details,
             pose_dtype=_dense_global_scoring_dtype(),
         )
         coarse_ha_k = _coarse_pose_assignments(
             ha_k,
             rot_parent_map=rot_pmap_for_collapse,
             trans_parent_map=trans_pmap_for_collapse,
-            n_trans_coarse=current_translations.shape[0],
+            n_trans_coarse=sampling.current_translations.shape[0],
             n_trans_fine=n_trans_fine_for_collapse,
         )
         return HalfScoreResult(
@@ -672,19 +742,19 @@ def _score_half_dense_one_shape(
             mstep_accumulator_shape=getattr(k_class_result, "mstep_accumulator_shape", None),
         )
 
-    if preserve_bpref_particle_order or _dense_uses_adaptive_engine(state.adaptive_oversampling, group_ids_k):
-        if disable_adjoint_y or disable_adjoint_ctf:
+    if execution.preserve_bpref_particle_order or _dense_uses_adaptive_engine(sampling.state.adaptive_oversampling, half.group_ids_k):
+        if execution.disable_adjoint_y or execution.disable_adjoint_ctf:
             raise NotImplementedError("K=1 adaptive oversampling does not support adjoint ablation flags")
-        adaptive_os_local = int(state.adaptive_oversampling)
+        adaptive_os_local = int(sampling.state.adaptive_oversampling)
         if adaptive_os_local <= 0:
             # The sparse engine supplies group statistics and per-particle
             # BPref launches even for a single pass on the current grid.
-            firstiter_coarse_current_size = cs_for_engine
-            firstiter_fine_current_size = cs_for_engine
+            firstiter_coarse_current_size = sampling.cs_for_engine
+            firstiter_fine_current_size = sampling.cs_for_engine
             logger.info(
                 "RELION K=1 group statistics or BPref order at oversampling 0: single pass through the "
                 "adaptive engine (current_size=%s)",
-                cs_for_engine,
+                sampling.cs_for_engine,
             )
         k1_relion_x_half_mstep = _k1_relion_x_half_mstep_enabled()
         if symmetry != "C1" and not k1_relion_x_half_mstep:
@@ -693,12 +763,12 @@ def _score_half_dense_one_shape(
                 "RELAX_K1_RELION_X_HALF_MSTEP=0, CPU-only execution, or disabled "
                 "custom CUDA is unsupported for non-C1 symmetry"
             )
-        means_single = jnp.asarray(means_k)[None, :]
+        means_single = jnp.asarray(half.means_k)[None, :]
         rot_pmap_for_collapse = None
         trans_pmap_for_collapse = None
         n_trans_fine_for_collapse = None
         fine_rotations_for_pose = None
-        if relion_firstiter_cc_this_iter:
+        if variant.relion_firstiter_cc_this_iter:
             (
                 k1_adaptive_result,
                 rot_pmap_for_collapse,
@@ -722,14 +792,14 @@ def _score_half_dense_one_shape(
             )
         else:
             pass2_grids = _adaptive_pass2_grids(
-                effective_rotations,
-                current_translations,
-                base_translations,
-                healpix_order=current_healpix_order,
+                sampling.effective_rotations,
+                sampling.current_translations,
+                sampling.base_translations,
+                healpix_order=sampling.current_healpix_order,
                 adaptive_oversampling=adaptive_os_local,
-                translation_step=state.translation_step,
-                random_perturbation=random_perturbation,
-                coarse_rotation_ids=coarse_rotation_ids,
+                translation_step=sampling.state.translation_step,
+                random_perturbation=sampling.random_perturbation,
+                coarse_rotation_ids=sampling.coarse_rotation_ids,
                 **({"symmetry": symmetry} if symmetry != "C1" else {}),
             )
             rot_pmap_for_collapse = pass2_grids.rotation_parent_map
@@ -745,16 +815,16 @@ def _score_half_dense_one_shape(
             # Every K=1 start scores RELION's exact coarse operands, as Class3D and
             # VDAM do; a fresh start requires the RELION CUDA preprocessing anyway.
             adaptive_em_kwargs["relion_exact_coarse"] = bool(
-                preserve_bpref_particle_order or uses_relion_cuda_image_preprocessing(experiment_dataset)
+                execution.preserve_bpref_particle_order or uses_relion_cuda_image_preprocessing(half.experiment_dataset)
             )
-            if group_ids_k is not None:
-                adaptive_em_kwargs["group_ids"] = group_ids_k
+            if half.group_ids_k is not None:
+                adaptive_em_kwargs["group_ids"] = half.group_ids_k
             if k1_relion_x_half_mstep:
                 adaptive_em_kwargs["mstep_relion_x_half"] = True
-            if reference_current_size is not None:
-                adaptive_em_kwargs["reconstruction_volume_current_size"] = int(reference_current_size)
+            if optics.reference_current_size is not None:
+                adaptive_em_kwargs["reconstruction_volume_current_size"] = int(optics.reference_current_size)
                 adaptive_em_kwargs["reconstruction_image_radius"] = _reconstruction_image_radius(
-                    reference_current_size, projection_scale
+                    optics.reference_current_size, optics.projection_scale
                 )
             logger.info(
                 "RELION adaptive K=1 routing through run_dense_k_class_em_adaptive "
@@ -766,50 +836,45 @@ def _score_half_dense_one_shape(
                 bool(k1_skip_significance_pruning),
                 bool(k1_sparse_pass2),
                 bool(k1_relion_x_half_mstep),
-                relion_projector_half is not None,
+                execution.relion_projector_half is not None,
                 adaptive_em_kwargs.get("relion_projector_half") is not None,
             )
             shared_kwargs = _adaptive_engine_shared_kwargs(
                 pass2_grids,
-                class_log_priors=class_log_priors,
-                max_significants=max_significants,
+                spec,
                 sparse_pass2=k1_sparse_pass2,
                 significance_image_batch_size=significance_image_batch_size_override,
                 significance_rotation_block_size=significance_rotation_block_size_override,
                 coarse_current_size=firstiter_coarse_current_size,
                 fine_current_size=firstiter_fine_current_size,
-                coarse_healpix_order=current_healpix_order,
                 oversampling_order=adaptive_os_local,
-                return_best_pose_details=return_best_pose_details,
-                bpref_device_signature_active=bpref_device_signature_active,
-                debug_iteration=debug_iteration,
             )
-            if projection_scale != 1.0:
+            if optics.projection_scale != 1.0:
                 shared_kwargs["fine_mstep_rotations_override"] = _projection_rotations(
-                    shared_kwargs["fine_mstep_rotations_override"], projection_scale
+                    shared_kwargs["fine_mstep_rotations_override"], optics.projection_scale
                 )
             k1_adaptive_result = run_dense_k_class_em_adaptive(
-                experiment_dataset,
+                half.experiment_dataset,
                 means_single,
-                mean_variance,
-                noise_variance_k,
+                half.mean_variance,
+                half.noise_variance_k,
                 _projection_rotations(
-                    coarse_scoring_rotations
-                    if coarse_scoring_rotations is not None
+                    sampling.coarse_scoring_rotations
+                    if sampling.coarse_scoring_rotations is not None
                     and adaptive_os_local == 0
                     and k1_sparse_pass2
                     and k1_relion_x_half_mstep
-                    and firstiter_score_mode_this_iter == "gaussian"
+                    and variant.firstiter_score_mode_this_iter == "gaussian"
                     and not diagnostic_float64_pass2
                     else pass2_grids.coarse_rotations,
-                    projection_scale,
+                    optics.projection_scale,
                 ),
                 pass2_grids.coarse_translations,
-                _projection_rotations(pass2_grids.fine_rotations, projection_scale),
+                _projection_rotations(pass2_grids.fine_rotations, optics.projection_scale),
                 pass2_grids.fine_translations,
                 rot_pmap_for_collapse,
                 trans_pmap_for_collapse,
-                disc_type,
+                sampling.disc_type,
                 skip_significance_pruning=k1_skip_significance_pruning,
                 pass2_use_float64_scoring=True if diagnostic_float64_pass2 else None,
                 pass2_use_float64_projections=True if diagnostic_float64_pass2 else None,
@@ -823,7 +888,7 @@ def _score_half_dense_one_shape(
         em_stats_k = _collapse_single_class_stats_to_coarse(
             k1_adaptive_result.stats,
             rot_parent_map=rot_pmap_for_collapse,
-            n_rot_coarse=effective_rotations.shape[0],
+            n_rot_coarse=sampling.effective_rotations.shape[0],
             dtype=_dense_global_scoring_dtype(),
         )
         noise_stats_k = k1_adaptive_result.aggregate_noise_stats
@@ -835,10 +900,10 @@ def _score_half_dense_one_shape(
             ha_k,
             rot_parent_map=rot_pmap_for_collapse,
             trans_parent_map=trans_pmap_for_collapse,
-            n_trans_coarse=current_translations.shape[0],
+            n_trans_coarse=sampling.current_translations.shape[0],
             n_trans_fine=n_trans_fine_for_collapse,
         )
-        if return_best_pose_details:
+        if execution.return_best_pose_details:
             if (
                 k1_adaptive_result.best_pose_rotations is None
                 or k1_adaptive_result.best_pose_translations is None
@@ -846,26 +911,26 @@ def _score_half_dense_one_shape(
                 raise RuntimeError("K=1 adaptive path did not return best pose details")
             pose_dtype = _dense_global_scoring_dtype()
             best_rots = np.asarray(k1_adaptive_result.best_pose_rotations, dtype=pose_dtype)
-            if projection_scale != 1.0:
+            if optics.projection_scale != 1.0:
                 # Poses are reported unscaled; only projection used the scaled matrices.
-                best_rots = np.asarray(best_rots * projection_scale, dtype=pose_dtype)
-            outputs.best_pose_rotations[k] = best_rots
-            outputs.best_pose_rotation_eulers[k] = (
+                best_rots = np.asarray(best_rots * optics.projection_scale, dtype=pose_dtype)
+            half.outputs.best_pose_rotations[half.k] = best_rots
+            half.outputs.best_pose_rotation_eulers[half.k] = (
                 np.asarray(k1_adaptive_result.best_pose_eulers_deg, dtype=np.float64)
                 if k1_adaptive_result.best_pose_eulers_deg is not None
                 else utils.R_to_relion(best_rots, degrees=True).astype(pose_dtype)
             )
-            outputs.best_pose_translations[k] = np.asarray(k1_adaptive_result.best_pose_translations, dtype=pose_dtype)
+            half.outputs.best_pose_translations[half.k] = np.asarray(k1_adaptive_result.best_pose_translations, dtype=pose_dtype)
         if fine_rotations_for_pose is None and rot_pmap_for_collapse is not None:
             fine_rotations_for_pose = _adaptive_pass2_grids(
-                effective_rotations,
-                current_translations,
-                base_translations,
-                healpix_order=current_healpix_order,
+                sampling.effective_rotations,
+                sampling.current_translations,
+                sampling.base_translations,
+                healpix_order=sampling.current_healpix_order,
                 adaptive_oversampling=adaptive_os_local,
-                translation_step=state.translation_step,
-                random_perturbation=random_perturbation,
-                coarse_rotation_ids=coarse_rotation_ids,
+                translation_step=sampling.state.translation_step,
+                random_perturbation=sampling.random_perturbation,
+                coarse_rotation_ids=sampling.coarse_rotation_ids,
                 **({"symmetry": symmetry} if symmetry != "C1" else {}),
             ).fine_rotations
         fine_rotation_eulers_for_pose = None
@@ -880,9 +945,9 @@ def _score_half_dense_one_shape(
             Ft_ctf=Ft_ctf_k,
             em_stats=em_stats_k,
             noise_stats=noise_stats_k,
-            best_pose_rotations=outputs.best_pose_rotations[k],
-            best_pose_rotation_eulers=outputs.best_pose_rotation_eulers[k],
-            best_pose_translations=outputs.best_pose_translations[k],
+            best_pose_rotations=half.outputs.best_pose_rotations[half.k],
+            best_pose_rotation_eulers=half.outputs.best_pose_rotation_eulers[half.k],
+            best_pose_translations=half.outputs.best_pose_translations[half.k],
             coarse_ha=coarse_ha_k,
             pose_rotations=fine_rotations_for_pose,
             pose_rotation_eulers=fine_rotation_eulers_for_pose,
@@ -896,7 +961,7 @@ def _score_half_dense_one_shape(
             mstep_accumulator_shape=getattr(k1_adaptive_result, "mstep_accumulator_shape", None),
         )
 
-    if optics_group_ids_k is not None:
+    if half.optics_group_ids_k is not None:
         raise NotImplementedError("the single-pass dense engine keeps one optics group's noise spectrum")
     # Scale groups never reach the direct dense engine: see _dense_uses_adaptive_engine.
     warn_deprecated_engine(
@@ -911,17 +976,17 @@ def _score_half_dense_one_shape(
     direct_em_kwargs.pop("relion_exact_fine_gaussian", None)
     direct_em_kwargs.pop("reconstruction_current_size", None)
     em_result = run_em(
-        experiment_dataset,
-        means_k,
-        mean_variance,
-        noise_variance_k,
-        effective_rotations,
-        current_translations,
-        disc_type,
+        half.experiment_dataset,
+        half.means_k,
+        half.mean_variance,
+        half.noise_variance_k,
+        sampling.effective_rotations,
+        sampling.current_translations,
+        sampling.disc_type,
         return_stats=True,
         accumulate_noise=True,
-        disable_adjoint_y=disable_adjoint_y,
-        disable_adjoint_ctf=disable_adjoint_ctf,
+        disable_adjoint_y=execution.disable_adjoint_y,
+        disable_adjoint_ctf=execution.disable_adjoint_ctf,
         **direct_em_kwargs,
     )
     return HalfScoreResult(
@@ -959,15 +1024,132 @@ def _projection_rotations(rotations, scale: float):
     return np.asarray(rotations) / float(scale)
 
 
-def _score_half_dense(**kwargs) -> HalfScoreResult:
-    """Dense E+M scoring for one half; a half of several image shapes runs per shape class."""
+def _dense_spec_for_shape(spec: DenseHalfScoringSpec, shape_class, class_index: int) -> DenseHalfScoringSpec:
+    """Derive one shape class without changing the shared scoring owners."""
 
-    from relax.refinement.optics_shapes import MultiShapeHalf, score_half_by_shape
+    from relax.refinement import optics_shapes
 
-    if isinstance(kwargs["experiment_dataset"], MultiShapeHalf):
-        return score_half_by_shape(_score_half_dense_one_shape, kwargs)
-    kwargs.pop("noise_radial_k", None)
-    return _score_half_dense_one_shape(**kwargs)
+    half = spec.half
+    sampling = spec.sampling
+    priors = spec.priors
+    variant = spec.variant
+    optics = spec.optics
+    shape_values = optics_shapes.class_kwargs(
+        {
+            "experiment_dataset": half.experiment_dataset,
+            "image_corrections_k": half.image_corrections_k,
+            "scale_corrections_k": half.scale_corrections_k,
+            "group_ids_k": half.group_ids_k,
+            "optics_group_ids_k": half.optics_group_ids_k,
+            "rotation_log_prior_k": priors.rotation_log_prior_k,
+            "class_rotation_log_prior_k": priors.class_rotation_log_prior_k,
+            "translation_log_prior": priors.translation_log_prior,
+            "translation_search_base": priors.translation_search_base,
+            "trans_prior_center_for_engine": priors.trans_prior_center_for_engine,
+            "current_translations": sampling.current_translations,
+            "base_translations": sampling.base_translations,
+            "state": sampling.state,
+            "cs_for_engine": sampling.cs_for_engine,
+            "model_current_size_for_engine": sampling.model_current_size_for_engine,
+            "firstiter_coarse_current_size": variant.firstiter_coarse_current_size,
+            "firstiter_fine_current_size": variant.firstiter_fine_current_size,
+            "coarse_sizing": optics.coarse_sizing,
+        },
+        shape_class,
+        half.experiment_dataset.n_units,
+    )
+    if optics.class_translation_overrides is not None:
+        shape_values.update(
+            {
+                key: value
+                for key, value in optics.class_translation_overrides[class_index].items()
+                if key in shape_values
+            }
+        )
+
+    batch_overrides = (
+        {}
+        if optics.class_batch_overrides is None
+        else optics.class_batch_overrides[class_index]
+    )
+    return replace(
+        spec,
+        half=replace(
+            half,
+            experiment_dataset=shape_values["experiment_dataset"],
+            noise_variance_k=optics_shapes.class_noise_table(
+                optics.noise_radial_k,
+                shape_class,
+                int(half.experiment_dataset.image_shape[0]),
+            ),
+            image_corrections_k=shape_values["image_corrections_k"],
+            scale_corrections_k=shape_values["scale_corrections_k"],
+            group_ids_k=shape_values["group_ids_k"],
+            optics_group_ids_k=shape_values["optics_group_ids_k"],
+            outputs=PerHalfOutputs(),
+        ),
+        sampling=replace(
+            sampling,
+            current_translations=shape_values["current_translations"],
+            base_translations=shape_values["base_translations"],
+            state=shape_values["state"],
+            cs_for_engine=shape_values["cs_for_engine"],
+            model_current_size_for_engine=shape_values["model_current_size_for_engine"],
+        ),
+        priors=replace(
+            priors,
+            rotation_log_prior_k=shape_values["rotation_log_prior_k"],
+            class_rotation_log_prior_k=shape_values["class_rotation_log_prior_k"],
+            translation_log_prior=shape_values["translation_log_prior"],
+            translation_search_base=shape_values["translation_search_base"],
+            trans_prior_center_for_engine=shape_values["trans_prior_center_for_engine"],
+        ),
+        batching=replace(spec.batching, **batch_overrides),
+        variant=replace(
+            variant,
+            firstiter_coarse_current_size=shape_values["firstiter_coarse_current_size"],
+            firstiter_fine_current_size=shape_values["firstiter_fine_current_size"],
+        ),
+        optics=replace(
+            optics,
+            noise_radial_k=None,
+            class_batch_overrides=None,
+            class_translation_overrides=None,
+            projection_scale=shape_values["projection_scale"],
+            reference_current_size=shape_values["reference_current_size"],
+        ),
+    )
+
+
+def _score_half_dense(spec: DenseHalfScoringSpec) -> HalfScoreResult:
+    """Dense E+M scoring for one half; several image shapes run per shape class."""
+
+    from relax.refinement import optics_shapes
+
+    half = spec.half.experiment_dataset
+    if not isinstance(half, optics_shapes.MultiShapeHalf):
+        return _score_half_dense_one_shape(spec)
+    if spec.optics.noise_radial_k is None:
+        raise ValueError("a half with several image shapes needs reference-shell noise spectra")
+    if spec.half.optics_group_ids_k is None:
+        raise ValueError("a half with several image shapes needs each image's optics group")
+    if spec.optics.class_batch_overrides is not None and len(spec.optics.class_batch_overrides) != len(half.classes):
+        raise ValueError("class_batch_overrides needs one entry per shape class")
+
+    results = [
+        _score_half_dense_one_shape(_dense_spec_for_shape(spec, shape_class, index))
+        for index, shape_class in enumerate(half.classes)
+    ]
+    merged = optics_shapes.merge_class_results(
+        results,
+        half.classes,
+        half.n_units,
+        int(half.image_shape[0]),
+    )
+    spec.half.outputs.best_pose_rotations[spec.half.k] = merged.best_pose_rotations
+    spec.half.outputs.best_pose_rotation_eulers[spec.half.k] = merged.best_pose_rotation_eulers
+    spec.half.outputs.best_pose_translations[spec.half.k] = merged.best_pose_translations
+    return merged
 
 
 def _score_half_local(**kwargs) -> HalfScoreResult:
@@ -983,17 +1165,12 @@ def _score_half_local(**kwargs) -> HalfScoreResult:
 
 
 def _score_half_dense_in_bpref_scope(
-    *,
-    bpref_device_signature_active: bool,
-    **kwargs,
+    spec: DenseHalfScoringSpec,
 ) -> HalfScoreResult:
     """Keep all authoritative dense-half work outside diagnostic CUDA scope."""
 
     with em_cuda_kernels.bpref_device_signature_scope(False):
-        return _score_half_dense(
-            bpref_device_signature_active=bpref_device_signature_active,
-            **kwargs,
-        )
+        return _score_half_dense(spec)
 
 
 def _local_translation_prior_reference_translations(

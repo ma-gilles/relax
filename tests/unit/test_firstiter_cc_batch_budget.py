@@ -21,6 +21,68 @@ from relax.helpers.types import NoiseStats, make_relion_stats
 from relax.refinement import firstiter_cc, half_scoring, iteration_loop
 
 
+def _dense_spec(**values):
+    """Build the production dense spec from concise test values."""
+
+    spec = half_scoring.DenseHalfScoringSpec(
+        half=half_scoring.DenseHalfData(
+            k=values.pop("k"),
+            experiment_dataset=values.pop("experiment_dataset"),
+            means_k=values.pop("means_k"),
+            mean_variance=values.pop("mean_variance"),
+            noise_variance_k=values.pop("noise_variance_k"),
+            image_corrections_k=values.pop("image_corrections_k"),
+            scale_corrections_k=values.pop("scale_corrections_k"),
+            outputs=values.pop("outputs"),
+        ),
+        sampling=half_scoring.DenseSamplingSpec(
+            effective_rotations=values.pop("effective_rotations"),
+            current_translations=values.pop("current_translations"),
+            base_translations=values.pop("base_translations"),
+            current_healpix_order=values.pop("current_healpix_order"),
+            state=values.pop("state"),
+            random_perturbation=values.pop("random_perturbation"),
+            disc_type=values.pop("disc_type"),
+            cs_for_engine=values.pop("cs_for_engine"),
+            coarse_rotation_ids=values.pop("coarse_rotation_ids", None),
+        ),
+        priors=half_scoring.DensePriorSpec(
+            rotation_log_prior_k=values.pop("rotation_log_prior_k"),
+            class_rotation_log_prior_k=values.pop("class_rotation_log_prior_k"),
+            translation_log_prior=values.pop("translation_log_prior"),
+            translation_search_base=values.pop("translation_search_base"),
+            trans_prior_center_for_engine=values.pop("trans_prior_center_for_engine"),
+            class_log_priors=values.pop("class_log_priors"),
+        ),
+        batching=half_scoring.DenseBatchPolicy(
+            image_batch_size=values.pop("image_batch_size"),
+            safe_batch_sizes=values.pop("safe_batch_sizes"),
+            max_significants=values.pop("max_significants"),
+            significance_safe_batch_sizes=values.pop("significance_safe_batch_sizes", None),
+            k_class_image_batch_size_override=values.pop("k_class_image_batch_size_override", None),
+            k_class_rotation_block_size_override=values.pop("k_class_rotation_block_size_override", None),
+        ),
+        variant=half_scoring.DenseVariantPolicy(
+            firstiter_score_mode_this_iter=values.pop("firstiter_score_mode_this_iter"),
+            firstiter_winner_take_all_this_iter=values.pop("firstiter_winner_take_all_this_iter"),
+            k_class_enabled=values.pop("k_class_enabled"),
+            relion_firstiter_cc_this_iter=values.pop("relion_firstiter_cc_this_iter"),
+            firstiter_coarse_current_size=values.pop("firstiter_coarse_current_size", None),
+            firstiter_fine_current_size=values.pop("firstiter_fine_current_size", None),
+            firstiter_log_label=values.pop("firstiter_log_label", "(non-adaptive site) "),
+            firstiter_updates_em_kwargs_ibs=values.pop("firstiter_updates_em_kwargs_ibs", False),
+        ),
+        execution=half_scoring.DenseExecutionPolicy(
+            disable_adjoint_y=values.pop("disable_adjoint_y"),
+            disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
+            bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
+            debug_iteration=values.pop("debug_iteration", None),
+        ),
+    )
+    assert not values, f"unmapped dense spec values: {sorted(values)}"
+    return spec
+
+
 def test_firstiter_cc_core_keeps_spec_ownership_visible():
     function = firstiter_cc._score_kclass_firstiter_cc_pass2
     assert tuple(inspect.signature(function).parameters) == ("spec",)
@@ -47,6 +109,41 @@ def test_firstiter_cc_core_keeps_spec_ownership_visible():
         for field in dataclasses.fields(owner)
     }
     assert assigned_names.isdisjoint(stable_field_names)
+
+
+def test_dense_half_core_keeps_spec_ownership_visible():
+    function = half_scoring._score_half_dense_one_shape
+    assert tuple(inspect.signature(function).parameters) == ("spec",)
+
+    tree = ast.parse(inspect.getsource(function))
+    assigned_names = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in ([*node.targets] if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name)
+    }
+    stable_field_names = {
+        field.name
+        for owner in (
+            half_scoring.DenseHalfData,
+            half_scoring.DenseSamplingSpec,
+            half_scoring.DensePriorSpec,
+            half_scoring.DenseBatchPolicy,
+            half_scoring.DenseVariantPolicy,
+            half_scoring.DenseExecutionPolicy,
+            half_scoring.DenseOpticsSpec,
+        )
+        for field in dataclasses.fields(owner)
+    }
+    route_planning_locals = {
+        "firstiter_coarse_current_size",
+        "firstiter_fine_current_size",
+        "significance_image_batch_size_override",
+        "significance_rotation_block_size_override",
+        "symmetry",
+    }
+    assert assigned_names & stable_field_names == route_planning_locals
 
 
 def test_firstiter_winner_take_all_assembly_reports_unit_pmax_across_score_normalizations():
@@ -323,7 +420,7 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
     means = jnp.zeros(4 if n_classes == 1 else (n_classes, 4), dtype=jnp.complex64)
     coarse_ids = np.arange(576, dtype=np.int32)
 
-    result = half_scoring._score_half_dense(
+    result = half_scoring._score_half_dense(_dense_spec(
         k=0,
         experiment_dataset=TinyDataset(),
         means_k=means,
@@ -363,7 +460,7 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
         firstiter_updates_em_kwargs_ibs=update_batch,
         firstiter_log_label="test K-class ",
         coarse_rotation_ids=coarse_ids,
-    )
+    ))
 
     assert calls == [
         (576, 29, None, None, 90),
@@ -464,7 +561,7 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
     monkeypatch.setattr(half_scoring, "build_adaptive_pass2_grids", fake_grids)
     monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
 
-    result = half_scoring._score_half_dense(
+    result = half_scoring._score_half_dense(_dense_spec(
         k=0,
         experiment_dataset=TinyDataset(),
         means_k=jnp.zeros((4, 4), dtype=jnp.complex64),
@@ -500,7 +597,7 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
         k_class_rotation_block_size_override=2000,
         firstiter_coarse_current_size=40,
         firstiter_fine_current_size=90,
-    )
+    ))
 
     assert captured["image_batch_size"] == 44
     assert captured["rotation_block_size"] == 275

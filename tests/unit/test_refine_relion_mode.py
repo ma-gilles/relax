@@ -11410,11 +11410,13 @@ class TestRelionModeSmokeTest:
         )
         score_half = iteration_loop_module._score_half_dense_in_bpref_scope
 
-        def record_scoring_prior(**kwargs):
-            scoring_priors.append(np.asarray(kwargs["mean_variance"]))
-            scoring_rotations.append(kwargs["coarse_scoring_rotations"])
-            scoring_grids.append((kwargs["effective_rotations"], kwargs["current_translations"]))
-            return score_half(**kwargs)
+        def record_scoring_prior(spec):
+            scoring_priors.append(np.asarray(spec.half.mean_variance))
+            scoring_rotations.append(spec.sampling.coarse_scoring_rotations)
+            scoring_grids.append(
+                (spec.sampling.effective_rotations, spec.sampling.current_translations)
+            )
+            return score_half(spec)
 
         monkeypatch.setattr(iteration_loop_module, "_score_half_dense_in_bpref_scope", record_scoring_prior)
         initial_tau2 = jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0
@@ -11793,8 +11795,8 @@ class TestRelionModeSmokeTest:
 
         captured = {}
 
-        def capture(**kwargs):
-            captured.update(kwargs)
+        def capture(spec):
+            captured["spec"] = spec
             raise _Captured
 
         monkeypatch.setattr(iteration_loop_module, "_score_half_dense_in_bpref_scope", capture)
@@ -11828,7 +11830,7 @@ class TestRelionModeSmokeTest:
                     parity=parity,
                 ),
             )
-        assert captured["relion_translation_angle_scale"] == expected_scale
+        assert captured["spec"].execution.relion_translation_angle_scale == expected_scale
 
 
     @pytest.mark.parametrize("n_classes", [1, 2])

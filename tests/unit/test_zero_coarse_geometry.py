@@ -88,15 +88,15 @@ def test_only_coarse_engine_operand_changes(os, sparse, xhalf, mode, double, ove
     coarse, fine, native = object(), object(), object()
     scope = dict(
         pass2_grids=SimpleNamespace(coarse_rotations=coarse, fine_rotations=fine),
-        coarse_scoring_rotations=native if override else None,
+        sampling=SimpleNamespace(coarse_scoring_rotations=native if override else None),
         adaptive_os_local=os,
         k1_sparse_pass2=sparse,
         k1_relion_x_half_mstep=xhalf,
-        firstiter_score_mode_this_iter=mode,
+        variant=SimpleNamespace(firstiter_score_mode_this_iter=mode),
         diagnostic_float64_pass2=double,
         # Images on the reference grid: applyScaleDifference is the identity.
         _projection_rotations=half_scoring._projection_rotations,
-        projection_scale=1.0,
+        optics=SimpleNamespace(projection_scale=1.0),
     )
     assert evaluate(calls[0].args[4], **scope) is (native if expected else coarse)
     assert evaluate(calls[0].args[6], **scope) is fine
@@ -104,11 +104,12 @@ def test_only_coarse_engine_operand_changes(os, sparse, xhalf, mode, double, ove
 
 def test_loop_transports_geometry_separately_from_effective_rotations():
     calls = [
-        n.value
+        n
         for n in ast.walk(tree("iteration_loop.py"))
-        if isinstance(n, ast.Assign)
-        and any(isinstance(t, ast.Name) and t.id == "dense_half_kwargs" for t in n.targets)
-        and isinstance(n.value, ast.Call)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == "DenseSamplingSpec"
+        and any(keyword.arg == "coarse_scoring_rotations" for keyword in n.keywords)
     ]
     assert len(calls) == 1
     keywords = {k.arg: k.value for k in calls[0].keywords}

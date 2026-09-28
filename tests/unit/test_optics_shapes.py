@@ -5,6 +5,7 @@ translations in class pixels, remapped Fourier sizes, scaled projection) and tha
 per-image outputs return to the half's order by index while sums add.
 """
 
+from dataclasses import dataclass
 from types import SimpleNamespace
 
 import numpy as np
@@ -13,7 +14,7 @@ from helpers.float_compare import assert_matches
 
 from relax.dense.score_outputs import HalfScoreResult, PerHalfOutputs
 from relax.helpers.types import RelionStats, make_noise_stats
-from relax.refinement import optics_shapes
+from relax.refinement import half_scoring, optics_shapes
 
 REF_BOX, REF_PIX = 32, 4.0
 
@@ -162,6 +163,88 @@ def test_score_half_by_shape_places_images_and_adds_sums():
     assert outputs.best_pose_translations[0] is merged.best_pose_translations
     # Both classes' noise shells land on the 17 reference shells.
     assert merged.noise_stats.wsum_sigma2_noise.shape == (2, 17)
+
+
+@pytest.mark.unit
+def test_dense_spec_shape_derivation_preserves_multi_shape_merge(monkeypatch):
+    @dataclass(frozen=True)
+    class State:
+        adaptive_oversampling: int
+        translation_step: float
+
+    half = _half()
+    outputs = PerHalfOutputs()
+    seen = []
+
+    def fake_score(spec):
+        seen.append(spec)
+        images = np.asarray(spec.half.image_corrections_k).astype(int)
+        return _fake_result(
+            images.size,
+            images,
+            1.0,
+            box=spec.half.experiment_dataset.image_shape[0],
+        )
+
+    monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", fake_score)
+    spec = half_scoring.DenseHalfScoringSpec(
+        half=half_scoring.DenseHalfData(
+            k=0,
+            experiment_dataset=half,
+            means_k=np.zeros(4),
+            mean_variance=np.ones(4),
+            noise_variance_k=None,
+            image_corrections_k=np.arange(5.0),
+            scale_corrections_k=np.ones(5),
+            outputs=outputs,
+            optics_group_ids_k=np.array([0, 1, 1, 0, 0]),
+        ),
+        sampling=half_scoring.DenseSamplingSpec(
+            effective_rotations=np.eye(3)[None],
+            current_translations=np.zeros((1, 2)),
+            base_translations=np.zeros((1, 2)),
+            current_healpix_order=0,
+            state=State(adaptive_oversampling=1, translation_step=1.0),
+            random_perturbation=0.0,
+            disc_type="linear_interp",
+            cs_for_engine=None,
+        ),
+        priors=half_scoring.DensePriorSpec(
+            rotation_log_prior_k=None,
+            class_rotation_log_prior_k=None,
+            translation_log_prior=None,
+            translation_search_base=np.zeros((5, 2)),
+            trans_prior_center_for_engine=np.zeros((5, 2)),
+            class_log_priors=None,
+        ),
+        batching=half_scoring.DenseBatchPolicy(
+            image_batch_size=1,
+            safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),
+            max_significants=-1,
+        ),
+        variant=half_scoring.DenseVariantPolicy(
+            firstiter_score_mode_this_iter="gaussian",
+            firstiter_winner_take_all_this_iter=False,
+            k_class_enabled=False,
+            relion_firstiter_cc_this_iter=False,
+        ),
+        execution=half_scoring.DenseExecutionPolicy(
+            disable_adjoint_y=False,
+            disable_adjoint_ctf=False,
+        ),
+        optics=half_scoring.DenseOpticsSpec(
+            noise_radial_k=np.ones((2, 17)) * REF_BOX**4,
+        ),
+    )
+
+    merged = half_scoring._score_half_dense(spec)
+
+    assert [getattr(item.half.experiment_dataset, "_dataset", item.half.experiment_dataset) for item in seen] == [
+        shape_class.dataset for shape_class in half.classes
+    ]
+    assert seen[1].half.noise_variance_k.shape == (2, 28 * 28)
+    assert_matches(merged.ha, np.arange(5))
+    assert outputs.best_pose_translations[0] is merged.best_pose_translations
 
 
 @pytest.mark.unit
