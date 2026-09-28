@@ -143,15 +143,15 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--K", dest="nr_classes", type=_positive_int, default=DEFAULTS.nr_classes)
     parser.add_argument(
         "--optimizer",
-        choices=("vdam", "cryosparc_sgd"),
+        choices=("vdam", "momentum_sgd"),
         default=DEFAULTS.optimizer,
-        help="InitialModel update rule; cryosparc_sgd is opt in and requires oversampling 0",
+        help="InitialModel update rule; momentum_sgd is opt in and requires oversampling 0",
     )
     parser.add_argument(
         "--sgd-learning-rate",
         type=_positive_float,
         default=DEFAULTS.sgd_learning_rate,
-        help="Multiplier on cryosparc_sgd's inverse maximum-curvature step",
+        help="Multiplier on momentum_sgd's inverse maximum-curvature step",
     )
     parser.add_argument(
         "--fourier-radius-schedule",

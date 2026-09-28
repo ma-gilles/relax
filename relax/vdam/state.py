@@ -32,7 +32,7 @@ class InitialModelState:
     Iref: np.ndarray
     Igrad1: np.ndarray
     Igrad2: np.ndarray
-    # Opt-in cryoSPARC-style SGD keeps its previous real-space update here.
+    # Opt-in momentum SGD keeps its previous real-space update here.
     sgd_previous_update: Optional[np.ndarray] = None
     sgd_noise_sum: Optional[np.ndarray] = None
     sgd_noise_count: Optional[np.ndarray] = None

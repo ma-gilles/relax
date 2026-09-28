@@ -294,8 +294,9 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
         "--uniform-class-direction-prior",
     ]
     parser = make_parser()
+    assert parser._option_string_actions["--optimizer"].choices == ("vdam", "momentum_sgd")
     opts = {}
-    for optimizer in ("vdam", "cryosparc_sgd"):
+    for optimizer in ("vdam", "momentum_sgd"):
         args = parser.parse_args(common + ["--optimizer", optimizer])
         opts[optimizer] = NativeInitialModelOptions(**_native_options_dict(args))
         opts[optimizer].validate_run()
@@ -376,8 +377,8 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
             uniform_class_direction_prior=True,
         )
         histories[optimizer] = history
-    assert len(histories["vdam"]) == len(histories["cryosparc_sgd"]) == 3
-    for control, candidate in zip(histories["vdam"], histories["cryosparc_sgd"]):
+    assert len(histories["vdam"]) == len(histories["momentum_sgd"]) == 3
+    for control, candidate in zip(histories["vdam"], histories["momentum_sgd"]):
         for arm in (control, candidate):
             iteration, ids, halves, meta = arm
             assert len(ids) == len(halves) == meta["subset_size"] == 5

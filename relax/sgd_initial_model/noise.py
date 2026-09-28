@@ -6,7 +6,7 @@ converted to per-component RELION variance before accumulating. Only observed
 Fourier shells accrue data count; the scalar baseline is measured from raw
 particle corners, without GT or model images.
 
-See ``docs/math/cryosparc_sgd.md`` for the observation-space adaptation.
+See ``docs/math/momentum_sgd.md`` for the observation-space adaptation.
 """
 
 from __future__ import annotations

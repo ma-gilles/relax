@@ -1,10 +1,14 @@
 # Coarse K3 momentum SGD: implementation and first comparison
 
-The opt-in optimizer supplies a scalar-curvature momentum map update and a
-discounted noise estimator through the existing RELAX engine. Native VDAM
-remains the default. Positivity is off. The method follows the 2017 cryoSPARC
-paper with the documented adaptations in [the formulation](../math/cryosparc_sgd.md);
-it does not reproduce current proprietary cryoSPARC software.
+The opt-in optimizer independently implements a scalar-curvature momentum map
+update and discounted noise estimator from
+[Punjani et al. (2017)](https://www.nature.com/articles/nmeth.4169)
+using existing RELAX primitives. Native VDAM remains the default. Positivity
+is off. The adaptations are in [the formulation](../math/momentum_sgd.md);
+this does not reproduce proprietary cryoSPARC software. The current CLI selects
+it with `--optimizer momentum_sgd`. Frozen r1–r3 runs used the historical
+`cryosparc_sgd` identifier in their invocations and saved JSON; their labels,
+paths and hashes remain unchanged.
 
 ## Outcome and interpretation
 
@@ -24,7 +28,7 @@ GT is evaluation-only.
 | 11 | .190189 | .313329 | .164577 | .301398 | .884294 | .977046 |
 | 12 | .154521 | .293602 | .173180 | .281066 | .891961 | .978009 |
 
-The [standing scorecard](../math/cryosparc_sgd_science_scorecard.md) retains all
+The [standing scorecard](../math/momentum_sgd_science_scorecard.md) retains all
 three rounds, including failed small-grid starts. Correctly assigned state 2
 particles have median angular error 3.7 degrees in SGD and 3.9–4.0 degrees in VDAM;
 SGD state 2 recall is .935/.990 versus .997/.998. States 0/1 have poor poses.

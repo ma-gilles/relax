@@ -61,7 +61,7 @@ class InitialModelDefaults:
     grad_em_iters: int = DEFAULT_GRAD_EM_ITERS
     stepsize: float = DEFAULT_STEPSIZE_3D_INITIAL_MODEL
     mu: float = DEFAULT_GRAD_MU
-    optimizer: Literal["vdam", "cryosparc_sgd"] = "vdam"
+    optimizer: Literal["vdam", "momentum_sgd"] = "vdam"
     sgd_learning_rate: float = 1.0
     fourier_radius_schedule: tuple[int, ...] | None = None
     fixed_healpix_order: int | None = None
@@ -93,18 +93,18 @@ class NativeInitialModelOptions(InitialModelDefaults):
             raise ValueError("nr_classes must be >= 1")
         if self.nr_iter < 1:
             raise ValueError("nr_iter must be >= 1")
-        if self.optimizer not in {"vdam", "cryosparc_sgd"}:
+        if self.optimizer not in {"vdam", "momentum_sgd"}:
             raise ValueError(f"unknown InitialModel optimizer: {self.optimizer!r}")
-        if self.optimizer == "cryosparc_sgd" and self.oversampling != 0:
-            raise ValueError("cryosparc_sgd requires --oversampling 0 (one coarse pose grid)")
-        if self.optimizer == "cryosparc_sgd" and self.mstep_compute_dtype != "float32":
-            raise ValueError("cryosparc_sgd is a production float32 optimizer")
-        if self.optimizer == "cryosparc_sgd" and self.fourier_radius_schedule is None:
-            raise ValueError("cryosparc_sgd requires an explicit Fourier radius schedule")
-        if self.optimizer == "cryosparc_sgd" and self.fixed_healpix_order is None:
-            raise ValueError("cryosparc_sgd requires a fixed coarse HEALPix grid")
-        if self.optimizer == "cryosparc_sgd" and self.diagnostic_continue_optimiser is not None:
-            raise ValueError("cryosparc_sgd cannot continue a VDAM optimizer checkpoint")
+        if self.optimizer == "momentum_sgd" and self.oversampling != 0:
+            raise ValueError("momentum_sgd requires --oversampling 0 (one coarse pose grid)")
+        if self.optimizer == "momentum_sgd" and self.mstep_compute_dtype != "float32":
+            raise ValueError("momentum_sgd is a production float32 optimizer")
+        if self.optimizer == "momentum_sgd" and self.fourier_radius_schedule is None:
+            raise ValueError("momentum_sgd requires an explicit Fourier radius schedule")
+        if self.optimizer == "momentum_sgd" and self.fixed_healpix_order is None:
+            raise ValueError("momentum_sgd requires a fixed coarse HEALPix grid")
+        if self.optimizer == "momentum_sgd" and self.diagnostic_continue_optimiser is not None:
+            raise ValueError("momentum_sgd cannot continue a VDAM optimizer checkpoint")
         if not (0.0 < self.sgd_learning_rate < float("inf")):
             raise ValueError("sgd_learning_rate must be positive and finite")
         if self.fourier_radius_schedule is not None:

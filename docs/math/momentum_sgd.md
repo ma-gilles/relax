@@ -1,19 +1,22 @@
 # Coarse K-class momentum SGD
 
-This opt-in InitialModel optimizer is inspired by the ab-initio method in
+This opt-in InitialModel optimizer independently implements selected equations
+from the ab-initio method in
 [Punjani et al. (2017)](https://www.nature.com/articles/nmeth.4169), particularly
 equations 8–11 of its
 [supplement](https://www.cs.toronto.edu/~fleet/research/Papers/cryoSPARC-Suppl-1.pdf).
+It uses RELAX's existing projection, scoring and backprojection primitives.
 It is an experimental alternative to RELAX's native VDAM update, not a
-reproduction of the proprietary cryoSPARC implementation. Native VDAM remains
-the default. Positivity is disabled; signed maps are allowed.
+reproduction of proprietary cryoSPARC software. Native VDAM remains the default.
+Positivity is disabled; signed maps are allowed.
 
 The published SGD objective and gradient explicitly include a volume prior
 (supplement equations3 and8). That description gives positivity and suppression
 of high-frequency noise as examples, but does not specify the concrete volume
 prior formula and strength used in the experiments. This implementation adds no
-volume-prior gradient. It therefore reproduces selected optimizer mechanisms,
-not a demonstrated unregularized cryoSPARC objective.
+volume-prior gradient. It therefore implements only selected mechanisms
+described in the paper; it is not a demonstrated unregularized cryoSPARC
+objective.
 
 The current [official Ab-Initio guide](https://guide.cryosparc.com/processing-data/all-job-types-in-cryosparc/3d-reconstruction/job-ab-initio-reconstruction)
 says it uses no half-set or other regularization, while separately documenting
@@ -58,6 +61,16 @@ adding another factor of 1/K would count class probability twice. In-plane
 angles retain their uniform prior. Shift-prior estimation is unchanged, so
 this option does not reproduce the paper's uniform translation prior.
 Without the option, both optimizers retain native probability updates.
+
+The shared [translation prior](../../relax/vdam/native_sampling.py) also retains
+RELION InitialModel's mixed-unit arithmetic. For pixel size `a` Å/pixel,
+rounded old offset `b` in pixels, candidate increment `δ` in pixels and a
+zero prior center, its log weight is `-a² ||b + aδ||² / (2σ²)`, with `σ` in Å.
+Its continuous-grid mode is `δ = -b/a`; therefore the total pixel offset
+`b + δ` need not be zero when `b ≠ 0` and `a ≠ 1`. The sampled grid can move
+the mode further. This unchanged shared convention is separate from image
+pre-shifts and offset-variance statistics; see the
+[RELION prior convention](relion_initial_model_em_parity_conventions.md#prior-preparation).
 
 This control also fixes the class probability used in native VDAM's map
 update; changing only the scoring prior would leave an inconsistent
@@ -186,8 +199,8 @@ controls cannot establish candidate equivalence; additional seeds or a more
 informative control are then necessary.
 
 The fixed coarse-grid baseline was rerun with matched seeds and hardware; see
-the [science scorecard](cryosparc_sgd_science_scorecard.md) and
-[validation and reproduction report](../benchmarks/cryosparc_sgd_coarse_20260928.md).
+the [science scorecard](momentum_sgd_science_scorecard.md) and
+[validation and reproduction report](../benchmarks/momentum_sgd_coarse_20260928.md).
 Earlier successful native K3 results used a different sampling schedule and
 provide context only.
 

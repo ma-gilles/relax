@@ -231,7 +231,7 @@ def run_vdam_iterations(
     projector_interpolator: int = 1,
     start_iteration: int = 0,
     diagnostic_stop_after_iteration: int | None = None,
-    optimizer: Literal["vdam", "cryosparc_sgd"] = "vdam",
+    optimizer: Literal["vdam", "momentum_sgd"] = "vdam",
     sgd_learning_rate: float = 1.0,
     fourier_radius_schedule: tuple[int, ...] | None = None,
     stochastic_all_iterations: bool = False,
@@ -251,7 +251,7 @@ def run_vdam_iterations(
         raise ValueError(
             f"state.iter must equal start_iteration ({int(state.iter)} != {start_iteration})"
         )
-    if optimizer not in {"vdam", "cryosparc_sgd"}:
+    if optimizer not in {"vdam", "momentum_sgd"}:
         raise ValueError(f"unknown InitialModel optimizer {optimizer!r}")
     if fourier_radius_schedule is not None and len(fourier_radius_schedule) != int(state.nr_iter):
         raise ValueError("fourier_radius_schedule must have one radius per iteration")

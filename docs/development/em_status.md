@@ -11,8 +11,8 @@ The opt-in momentum SGD/noise implementation has passed scoped numerical checks,
 the medium tier and fresh integration smoke. Matched fixed-HP3,600-update runs
 with positivity off recover state2 in both seeds; states0/1 remain poorly
 separated. This establishes limited repeatability, not broad robustness. See
-[method](../math/cryosparc_sgd.md), [per-state scorecard](../math/cryosparc_sgd_science_scorecard.md)
-and [source, validation, timing and reproduction](../benchmarks/cryosparc_sgd_coarse_20260928.md).
+[method](../math/momentum_sgd.md), [per-state scorecard](../math/momentum_sgd_science_scorecard.md)
+and [source, validation, timing and reproduction](../benchmarks/momentum_sgd_coarse_20260928.md).
 The user-requested next package holds settings fixed while varying noise,
 preferred orientations and shifts. Native VDAM defaults are unchanged.
 

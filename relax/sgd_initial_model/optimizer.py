@@ -7,7 +7,7 @@ The Fourier-to-map transform uses the RELION InitialModel M-step convention;
 the map and momentum remain float32 on device. No VDAM half-difference or
 voxelwise inverse-curvature operation enters this update.
 
-See ``docs/math/cryosparc_sgd.md`` for the exact surrogate objective and units.
+See ``docs/math/momentum_sgd.md`` for the exact surrogate objective and units.
 """
 
 from __future__ import annotations
@@ -117,7 +117,7 @@ def sgd_m_step(
     padding_factor: int,
     meta: dict,
 ) -> InitialModelState:
-    """Apply the cryoSPARC-style scalar-curvature momentum update to all K maps."""
+    """Apply the paper-described scalar-curvature momentum update to all K maps."""
     if not state.pseudo_halfsets or len(accumulators) != 2 * state.K:
         raise ValueError("SGD expects two pseudo-halfset accumulators per class")
     if state.Iref.dtype != np.dtype(np.float32):

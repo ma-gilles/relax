@@ -208,7 +208,7 @@ its merged E-step count is 1,880 lines. All 309 lines of the new
 `sgd_initial_model` package have a separate owner and allowance, and the
 inventory guard checks that package dynamically. Other responsibility limits
 are unchanged. These are reviewed allowances for
-the [new optimizer and shared controls](../math/cryosparc_sgd.md), not changes
+the [new optimizer and shared controls](../math/momentum_sgd.md), not changes
 to accuracy thresholds or exclusions of extracted code from accounting.
 
 Noise failure reports and optional noise-boundary captures now live in

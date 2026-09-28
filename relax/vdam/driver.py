@@ -402,7 +402,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         )
         sampling_state = continuation.sampling_state
     state = _prepare_mstep_state_precision(state, opts.mstep_compute_dtype)
-    if opts.optimizer == "cryosparc_sgd":
+    if opts.optimizer == "momentum_sgd":
         from relax.sgd_initial_model.noise import corner_white_sigma2, initialize_sgd_noise
         from relax.vdam.bootstrap_iref import _load_raw_images
 
