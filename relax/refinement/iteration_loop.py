@@ -1135,6 +1135,17 @@ def refine_single_volume(
         group_ids=replay.init_group_ids,
         group_count=replay.init_group_count,
     )
+    # RELION measures the first iteration's orientation changes from the input angles, as its offset
+    # changes from the input offsets (updateOverallChangesInHiddenVariables); they seed the smallest-change
+    # trackers of the hidden-variable stall counter.
+    previous_best_rotations = [
+        None
+        if eulers is None
+        else np.zeros((0, 3, 3), dtype=_dense_global_scoring_dtype())
+        if len(eulers) == 0
+        else np.asarray(utils.R_from_relion(np.asarray(eulers), degrees=True), dtype=_dense_global_scoring_dtype())
+        for eulers in relion_half_inputs.previous_best_rotation_eulers
+    ]
     previous_data_vs_prior_for_scheduling = (
         None
         if schedule.init_data_vs_prior is None
