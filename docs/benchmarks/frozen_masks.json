@@ -511,16 +511,6 @@
    "generation": "recipe",
    "sanity": "PASS: box fraction 0.189, 1 component(s), captures 0.957 of positive density, strong density outside hard mask 0.0000, edge-clear True"
   },
-  "synth_pdb_k2_50k256_c1": {
-   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/synth_pdb_k2_50k256_20260927/masks/synth_pdb_k2_50k256_c1/MASK.json",
-   "mask_sha256": "babe27c751e81f2477221de36d49f239bb74f423b7b382de365ab0a385c8d196",
-   "symmetry": "C1",
-   "box": 256,
-   "pixel_size_A": 2.125,
-   "source_role": "mean of the ground-truth class maps (relax file frame)",
-   "generation": "recipe",
-   "sanity": "PASS: box fraction 0.042, 1 component(s), captures 0.825 of positive density, strong density outside hard mask 0.0000, edge-clear True"
-  },
   "synth_pdb_k2_50k256_snr05_c1": {
    "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/synth_pdb_k2_50k256_snr05_20260927/masks/synth_pdb_k2_50k256_snr05_c1/MASK.json",
    "mask_sha256": "845d54f8877884441940a2e48aa19edc0ab248821ebc913a2f4288aa6dc2c786",
@@ -530,16 +520,6 @@
    "source_role": "mean of the ground-truth class maps (relax file frame)",
    "generation": "adopted",
    "sanity": "PASS: box fraction 0.103, 1 component(s), captures 0.856 of positive density, strong density outside hard mask 0.0000, edge-clear True"
-  },
-  "synth_ribo_k4_100k256_c1": {
-   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/synth_ribo_k4_100k256_20260927/masks/synth_ribo_k4_100k256_c1/MASK.json",
-   "mask_sha256": "1959e3ecdd9fcef85e07fbfe8d58ad0d68e5542cf6c35467c9c60053154db323",
-   "symmetry": "C1",
-   "box": 256,
-   "pixel_size_A": 2.125,
-   "source_role": "mean of the ground-truth class maps (relax file frame)",
-   "generation": "recipe",
-   "sanity": "PASS: box fraction 0.018, 1 component(s), captures 0.765 of positive density, strong density outside hard mask 0.0000, edge-clear True"
   },
   "synth_ribo_k4_100k256_snr05_c1": {
    "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/synth_ribo_k4_100k256_snr05_20260927/masks/synth_ribo_k4_100k256_snr05_c1/MASK.json",
