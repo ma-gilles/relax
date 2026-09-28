@@ -1266,10 +1266,12 @@ def test_sparse_pass2_windowed_projection_uses_relion_projector_branch(monkeypat
         projector_output_size=None,
         mask_current_image_disk=True,
         relion_kernel=None,
+        pixel_indices=None,
     ):
         del projector_output_size
         # Sparse pass 2 scores with RELION's fine diff2 kernel.
         assert relion_kernel == "fine"
+        assert pixel_indices is None
         calls.append(
             {
                 "n_rot": int(rotations_block.shape[0]),
