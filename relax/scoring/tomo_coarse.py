@@ -280,18 +280,31 @@ def _coarse_batches(rotation_counts, *, n_slots: int, n_trans: int, budget_bytes
 _OPERAND_IMAGE_BATCH = 1024
 
 
+# Bytes of coarse image operands (unshifted, pixel weight, initial diff2) held at once: the pass
+# prepares them for a block of consecutive particles at a time (a box-320 half's all at once was
+# 15 GiB, the final all-data pass at the full box; etbench w2_10_box320).
+_COARSE_OPERAND_BLOCK_BYTES = 4 << 30
+
+
 def _all_image_coarse_operands(
-    experiment_dataset, n_images: int, layout, *, noise_variance_half, optics_group_ids, scale_corrections
+    experiment_dataset,
+    image_start: int,
+    image_stop: int,
+    layout,
+    *,
+    noise_variance_half,
+    optics_group_ids,
+    scale_corrections,
 ):
-    """:func:`tilt_image_coarse_operands` of every dataset image, in batches of ``_OPERAND_IMAGE_BATCH``.
+    """:func:`tilt_image_coarse_operands` of dataset images ``image_start:image_stop``, in batches of ``_OPERAND_IMAGE_BATCH``.
 
     The last batch is padded with repeats of its last image (dropped after), so every batch runs
     the same programs.
     """
 
     parts = ([], [], [])
-    for start in range(0, int(n_images), _OPERAND_IMAGE_BATCH):
-        indices = np.arange(start, min(start + _OPERAND_IMAGE_BATCH, int(n_images)))
+    for start in range(int(image_start), int(image_stop), _OPERAND_IMAGE_BATCH):
+        indices = np.arange(start, min(start + _OPERAND_IMAGE_BATCH, int(image_stop)))
         n_valid = indices.size
         padded = np.concatenate([indices, np.full(_OPERAND_IMAGE_BATCH - n_valid, indices[-1])])
         for part, values in zip(
@@ -407,15 +420,33 @@ def particle_coarse_supports(
     n_coarse_trans = int(np.asarray(coarse_translations_px).shape[0])
     n_units = int(offsets.size - 1)
     slots = int(np.max(np.diff(offsets))) if n_units else 1
-    # Every tilt image's coarse operands, in fixed image batches (one preprocessing program).
-    unshifted, weight, initial = _all_image_coarse_operands(
-        experiment_dataset,
-        int(offsets[-1]),
-        layout,
-        noise_variance_half=noise_variance_half,
-        optics_group_ids=optics_group_ids,
-        scale_corrections=scale_corrections,
-    )
+    # The tilt images' coarse operands, in fixed image batches (one preprocessing program), prepared for
+    # a block of consecutive particles at a time (_COARSE_OPERAND_BLOCK_BYTES); the coarse batches are
+    # consecutive particles, so each batch reads one block.
+    operand_bytes_per_image = int(layout.score_indices_np.size) * (8 + 4) + 4
+    block_images = max(1, _COARSE_OPERAND_BLOCK_BYTES // operand_bytes_per_image)
+    operand_block = None  # (first image, image stop, unshifted, weight, initial)
+
+    def operands_for(units):
+        nonlocal operand_block
+        lo, hi = int(offsets[units[0]]), int(offsets[units[-1] + 1])
+        if operand_block is None or lo < operand_block[0] or hi > operand_block[1]:
+            operand_block = None
+            stop_unit = int(np.searchsorted(offsets, lo + block_images, side="right")) - 1
+            stop = int(offsets[max(stop_unit, int(units[-1]) + 1)])
+            operand_block = (lo, stop) + tuple(
+                _all_image_coarse_operands(
+                    experiment_dataset,
+                    lo,
+                    stop,
+                    layout,
+                    noise_variance_half=noise_variance_half,
+                    optics_group_ids=optics_group_ids,
+                    scale_corrections=scale_corrections,
+                )
+            )
+        return operand_block
+
     n_chunks = -(-n_coarse_trans // _FUSED_TRANSLATION_CAPACITY)
     unit_rotations = [None if not local else np.asarray(unit_rotation_ids[u], dtype=np.int64) for u in range(n_units)]
     for u, rows in enumerate(unit_rotations):
@@ -492,7 +523,8 @@ def particle_coarse_supports(
             )
             image_index[p, : images.size] = images
             image_valid[p, : images.size] = True
-        index = jnp.asarray(image_index)
+        block_start, _block_stop, unshifted, weight, initial = operands_for(units)
+        index = jnp.asarray(np.where(image_valid, image_index - block_start, 0))
         valid = jnp.asarray(image_valid)
         batch_unshifted = jnp.where(valid[..., None], unshifted[index], jnp.zeros((), unshifted.dtype))
         batch_weight = jnp.where(valid[..., None], weight[index], jnp.zeros((), weight.dtype))
