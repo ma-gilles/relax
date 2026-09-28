@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "mean-reconstruction-spec-ownership",
-    "source_commit": "e75a07fd356876a209011204d802758ab4c1a635",
+    "package": "iteration-snapshot-spec-ownership",
+    "source_commit": "7f91db404d02100bba4701f6d32e252088908ec7",
     "metrics": {
       "schema_version": 1,
       "scope": {
@@ -30,13 +30,13 @@
       },
       "totals": {
         "file_count": 16,
-        "physical_lines": 14959,
-        "nonblank_noncomment_lines": 13060,
+        "physical_lines": 15025,
+        "nonblank_noncomment_lines": 13111,
         "function_count": 225,
-        "large_argument_function_count": 10,
-        "very_large_argument_function_count": 3,
-        "maximum_parameter_count": 26,
-        "maximum_function_line_span": 5395
+        "large_argument_function_count": 9,
+        "very_large_argument_function_count": 2,
+        "maximum_parameter_count": 21,
+        "maximum_function_line_span": 5418
       },
       "files": [
         {
@@ -65,8 +65,8 @@
         },
         {
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 6080,
-          "nonblank_noncomment_lines": 5454,
+          "physical_lines": 6108,
+          "nonblank_noncomment_lines": 5482,
           "function_count": 26
         },
         {
@@ -77,8 +77,8 @@
         },
         {
           "path": "relax/refinement/iteration_snapshot.py",
-          "physical_lines": 311,
-          "nonblank_noncomment_lines": 255,
+          "physical_lines": 349,
+          "nonblank_noncomment_lines": 278,
           "function_count": 11
         },
         {
@@ -138,13 +138,6 @@
       ],
       "large_argument_functions": [
         {
-          "path": "relax/refinement/iteration_snapshot.py",
-          "line": 215,
-          "name": "capture_iteration_snapshot",
-          "parameter_count": 26,
-          "line_span": 97
-        },
-        {
           "path": "relax/refinement/tomo_half.py",
           "line": 495,
           "name": "score_tomo_half_in_loop",
@@ -188,7 +181,7 @@
         },
         {
           "path": "relax/refinement/iteration_loop.py",
-          "line": 998,
+          "line": 1003,
           "name": "_safe_batch_sizes",
           "parameter_count": 10,
           "line_span": 45
@@ -211,14 +204,14 @@
       "largest_functions": [
         {
           "path": "relax/refinement/iteration_loop.py",
-          "line": 686,
+          "line": 691,
           "name": "refine_single_volume",
           "parameter_count": 6,
-          "line_span": 5395
+          "line_span": 5418
         },
         {
           "path": "relax/refinement/iteration_loop.py",
-          "line": 2494,
+          "line": 2499,
           "name": "_run_half_estep",
           "parameter_count": 1,
           "line_span": 759

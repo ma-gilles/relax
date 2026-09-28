@@ -431,3 +431,52 @@ iteration snapshot capture.
 - GPU smoke remains infrastructure-blocked by the unchanged absence of the five
   mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
   produced.
+
+## 2026-09-28 — iteration-snapshot specification ownership
+
+### Change
+
+- Replaced the 26-parameter snapshot capture boundary with
+  `IterationSnapshotSpec` and cohesive owners for run identity, reference/model
+  state, sampling/convergence state and per-particle state.
+- `capture_iteration_snapshot` keeps all four owners visible and does not unpack
+  any stable field. An AST ownership regression enforces the one-spec boundary
+  and rejects field flattening.
+- The numbered-iteration checkpoint branch constructs the snapshot spec at the
+  existing `writer.due` boundary. Host copies, dtype recording, K1/K-class
+  aliasing, scalar conversion and direction-prior metadata remain in their
+  original order.
+
+### Structural delta from the active upstream baseline
+
+| Metric | Baseline | Current | Delta |
+| --- | ---: | ---: | ---: |
+| Production files | 15 | 16 | +1 |
+| Physical production lines | 14,185 | 15,025 | +840 |
+| Nonblank, non-comment lines | 12,410 | 13,111 | +701 |
+| Production functions | 223 | 225 | +2 |
+| Functions with at least 10 parameters | 17 | 9 | -8 |
+| Functions with at least 20 parameters | 8 | 2 | -6 |
+| Largest parameter count | 67 | 21 | -46 |
+| Largest function span | 5,234 | 5,418 | +184 |
+
+This package adds 66 physical production lines. The only remaining 20+
+argument functions are the 21- and 20-parameter tomography scoring boundaries,
+which are outside the current dense single-volume scope. The largest remaining
+single-volume boundary has 17 parameters.
+
+### Validation
+
+- Implementation commit:
+  `7f91db404d02100bba4701f6d32e252088908ec7`.
+- AST-normalized comparison against its parent: passed. After removing only the
+  four owner aliases and translating `owner.field` back to its former parameter
+  name, the complete snapshot capture body is identical.
+- Snapshot/run-file ownership and round-trip suite: 13 passed.
+- Production and affected-test Ruff lint, Python compilation, snapshot check
+  and diff checks: passed.
+- CPU EM fast guard: 102 passed in 57.92 seconds on the implementation commit
+  with `FFTW/3.3.10-GCC-12.2.0` loaded.
+- GPU smoke remains infrastructure-blocked by the unchanged absence of the five
+  mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
+  produced.
