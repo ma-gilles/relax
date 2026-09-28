@@ -305,6 +305,7 @@ def score_tomo_half(
     reconstruction_current_size=None,
     rotation_index_order: str = "recovar",
     local_rotations=None,
+    symmetry: str = "C1",
 ) -> TomoScoreResult:
     """RELION's adaptive two-pass E-step and M-step of subtomogram particles (global search).
 
@@ -341,13 +342,13 @@ def score_tomo_half(
     if local_rotations is not None and rotation_log_prior is not None:
         raise ValueError("a local search's priors are the particles' own")
     coarse_ids = (
-        np.arange(int(relax_sampling.rotation_grid_size(sampling.healpix_order)))
+        np.arange(int(relax_sampling.rotation_grid_size(sampling.healpix_order, symmetry)))
         if local_rotations is None
         else local_rotations.coarse_rotation_ids
     )
     n_rot = int(coarse_ids.size)
     coarse_eulers_deg = relax_sampling.rotation_indices_to_relion_eulers(
-        coarse_ids, sampling.healpix_order, rotation_index_order=rotation_index_order
+        coarse_ids, sampling.healpix_order, rotation_index_order=rotation_index_order, symmetry=symmetry
     )
     fine_rot, rot_parent, fine_mstep, fine_eulers = relax_sampling.get_oversampled_rotation_grid_from_samples(
         coarse_ids,
@@ -357,6 +358,7 @@ def score_tomo_half(
         return_mstep_rotations=True,
         return_source_eulers=True,
         rotation_index_order=rotation_index_order,
+        symmetry=symmetry,
         dtype=np.float32,
     )
     unit_coarse_prior = tomo_particles.relion_offset_log_prior_3d(
@@ -423,6 +425,8 @@ def score_tomo_half(
         translations=coarse_px,
         significant_sample_indices=supports,
         nside_level=sampling.healpix_order,
+        # RELION's asymmetric-unit grid and its symmetrised BPref (symmetriseReconstructions).
+        symmetry_label=symmetry,
         disc_type="linear_interp",
         oversampling_order=sampling.oversampling_order,
         current_size=sampling.fine_size,
@@ -517,6 +521,7 @@ def score_tomo_half_in_loop(
     outputs,
     k: int,
     local_search=None,
+    symmetry: str = "C1",
 ):
     """The refinement loop's E+M step for a tomo half: :func:`score_tomo_half` as a ``HalfScoreResult``.
 
@@ -562,10 +567,11 @@ def score_tomo_half_in_loop(
             healpix_order=int(sampling.healpix_order),
             random_perturbation=float(sampling.random_perturbation),
             voxel_size=half.voxel_size,
+            symmetry=symmetry,
         )
         prior = None
     else:
-        n_rot = int(rotation_grid_size(sampling.healpix_order))
+        n_rot = int(rotation_grid_size(sampling.healpix_order, symmetry))
         prior = (
             np.zeros(n_rot, dtype=np.float32)
             if rotation_log_prior is None
@@ -601,6 +607,7 @@ def score_tomo_half_in_loop(
         scale_correction_data_vs_prior=scale_correction_data_vs_prior,
         reconstruction_current_size=reconstruction_current_size,
         local_rotations=local_rotations,
+        symmetry=symmetry,
     )
     pass2 = result.pass2
     outputs.best_pose_rotations[k] = np.asarray(pass2.best_rotations, dtype=np.float32)
@@ -711,7 +718,14 @@ class TomoLocalRotations:
 
 
 def tomo_local_rotations(
-    previous_eulers_deg, *, sigma_rot, sigma_psi, healpix_order: int, random_perturbation: float, voxel_size: float
+    previous_eulers_deg,
+    *,
+    sigma_rot,
+    sigma_psi,
+    healpix_order: int,
+    random_perturbation: float,
+    voxel_size: float,
+    symmetry: str = "C1",
 ) -> TomoLocalRotations:
     """Every particle's local orientations and log priors around its previous pose (subtomogram local search).
 
@@ -736,7 +750,7 @@ def tomo_local_rotations(
         1.0,
         None,
         float(voxel_size),
-        grid_metadata=build_local_search_grid_metadata(int(healpix_order)),
+        grid_metadata=build_local_search_grid_metadata(int(healpix_order), symmetry=symmetry),
         rotation_log_prior=None,
         rotation_grid_random_perturbation=float(random_perturbation),
         rotation_grid_angular_sampling_deg=relion_angular_sampling_deg(int(healpix_order), adaptive_oversampling=0),

@@ -568,7 +568,8 @@ def _prepare_per_image_pass2_inputs(
     from relax.symmetry import canonicalize_rotational_symmetry
 
     symmetry_label = canonicalize_rotational_symmetry(symmetry_label)
-    if symmetry_label != "C1":
+    # A compact coarse grid (coarse_rotation_ids) is checked against the symmetric grid above.
+    if symmetry_label != "C1" and coarse_rotation_ids is None:
         expected_coarse_rot = rotation_grid_size(nside_level, symmetry_label)
         if int(n_coarse_rot) != int(expected_coarse_rot):
             raise ValueError(

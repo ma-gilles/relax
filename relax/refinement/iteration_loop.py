@@ -2935,6 +2935,7 @@ def refine_single_volume(
                     reconstruction_current_size=model_current_size_for_engine,
                     outputs=per_half,
                     k=k,
+                    symmetry=symmetry,
                 )
                 ha_k = score_result.ha
                 Ft_y_k = score_result.Ft_y
@@ -5383,6 +5384,7 @@ def refine_single_volume(
                 reconstruction_current_size=int(final_current_size),
                 outputs=final_outs,
                 k=k,
+                symmetry=symmetry,
             )
         else:
             final_translation_prior_inputs = relion_half_translation_prior_inputs(
