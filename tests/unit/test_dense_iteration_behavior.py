@@ -194,7 +194,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
         max_posterior_per_image = np.array([1.0], dtype=np.float32)
         rotation_posterior_sums = np.array([1.0], dtype=np.float32)
 
-    def fake_run_local_search_iteration(*_args, **kwargs):
+    def fake_run_local_search_iteration(spec):
         best_rotation = np.array(
             [
                 [0.93629336, -0.27509585, 0.21835066],
@@ -203,7 +203,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
             ],
             dtype=np.float32,
         )
-        captured.update(kwargs)
+        captured["spec"] = spec
         current_size_shape = (19, 19, 19)
         outputs = _LocalSearchIterationResult(
             Ft_y=np.zeros(int(np.prod(current_size_shape)), dtype=np.complex64),
@@ -263,7 +263,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
         local_profile_history=[],
     ))
 
-    assert captured["mstep_relion_x_half"] is True
+    assert captured["spec"].support.mstep_relion_x_half is True
     assert result.significant_counts is None
     assert result.mstep_full_half_axis == 0
     assert result.mstep_accumulator_shape == (19, 19, 19)
@@ -303,9 +303,9 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         translation_grid=np.zeros((4, 2), dtype=np.float32),
     )
 
-    def fake_run_local_search_iteration(*_args, **kwargs):
-        calls.append(dict(kwargs))
-        if kwargs["score_only"]:
+    def fake_run_local_search_iteration(spec):
+        calls.append(spec)
+        if spec.support.score_only:
             return _LocalSearchIterationResult(
                 Ft_y="parent_ft_y",
                 Ft_ctf="parent_ft_ctf",
@@ -386,26 +386,24 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
 
     assert len(calls) == (2 if denominator_mode is None else 3)
     parent_call, fine_call = calls[0], calls[-1]
-    assert all(call["source_faithful_spectrum_norm"] is spectrum_norm for call in calls)
-    assert all(call["max_significants"] == 23 for call in calls)
+    assert all(call.kernel.source_faithful_spectrum_norm is spectrum_norm for call in calls)
+    assert all(call.support.max_significants == 23 for call in calls)
     if denominator_mode is None:
-        assert fine_call["normalization_log_evidence"] is None
+        assert fine_call.support.normalization_log_evidence is None
     else:
         denominator_call = calls[1]
-        assert denominator_call["score_only"] is True
-        assert denominator_call["accumulate_noise"] is False
-        assert denominator_call["disable_adjoint_y"] is True
-        assert denominator_call["disable_adjoint_ctf"] is True
-        assert denominator_call["return_best_pose_details"] is False
-        assert_matches(fine_call["normalization_log_evidence"], _Stats.log_evidence_per_image)
-    assert parent_call["score_only"] is True
-    assert "return_significant_counts" not in parent_call
-    assert parent_call["apply_max_significants_to_support"] is True
-    assert parent_call["max_significants"] == 23
-    assert fine_call["score_only"] is False
-    assert fine_call["reconstruct_significant_only"] is True
-    assert fine_call["stats_use_reconstruction_probs"] is True
-    assert "return_significant_counts" not in fine_call
+        assert denominator_call.support.score_only is True
+        assert denominator_call.kernel.accumulate_noise is False
+        assert denominator_call.support.disable_adjoint_y is True
+        assert denominator_call.support.disable_adjoint_ctf is True
+        assert denominator_call.support.return_best_pose_details is False
+        assert_matches(fine_call.support.normalization_log_evidence, _Stats.log_evidence_per_image)
+    assert parent_call.support.score_only is True
+    assert parent_call.support.apply_max_significants_to_support is True
+    assert parent_call.support.max_significants == 23
+    assert fine_call.support.score_only is False
+    assert fine_call.support.reconstruct_significant_only is True
+    assert fine_call.support.stats_use_reconstruction_probs is True
     assert result.Ft_y == "fine_ft_y"
     assert result.Ft_ctf == "fine_ft_ctf"
     assert result.noise_stats == "fine_noise"

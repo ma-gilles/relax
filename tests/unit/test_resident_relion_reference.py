@@ -26,6 +26,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 from helpers import relion_estep_reference as ref
+from helpers.refinement_specs import local_iteration_spec
 
 pytestmark = pytest.mark.unit
 
@@ -553,7 +554,7 @@ def _run_local(case, current_size: int):
 
     from relax.refinement import local_search_iteration
 
-    return local_search_iteration._run_local_search_iteration(
+    return local_search_iteration._run_local_search_iteration(local_iteration_spec(
         case["dataset"],
         case["volume"],
         case["noise_variance"],
@@ -590,7 +591,7 @@ def _run_local(case, current_size: int):
         max_significants=-1,
         return_best_pose_details=True,
         pass2_layout=case["layout"],
-    )
+    ))
 
 
 @requires_resident_gpu

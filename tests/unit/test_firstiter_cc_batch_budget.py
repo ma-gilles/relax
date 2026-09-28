@@ -18,7 +18,7 @@ from relax.helpers.batch_planning import (
     _safe_firstiter_cc_image_batch_size,
 )
 from relax.helpers.types import NoiseStats, make_relion_stats
-from relax.refinement import firstiter_cc, half_scoring, iteration_loop
+from relax.refinement import firstiter_cc, half_scoring, iteration_loop, local_search_iteration
 
 
 def _dense_spec(**values):
@@ -172,6 +172,39 @@ def test_local_half_core_keeps_spec_ownership_visible():
         for field in dataclasses.fields(owner)
     }
     assert assigned_names.isdisjoint(stable_field_names)
+
+
+def test_local_iteration_core_keeps_spec_ownership_visible():
+    function = local_search_iteration._run_local_search_iteration
+    assert tuple(inspect.signature(function).parameters) == ("spec",)
+
+    tree = ast.parse(inspect.getsource(function))
+    assigned_names = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in ([*node.targets] if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name)
+    }
+    stable_field_names = {
+        field.name
+        for owner in (
+            local_search_iteration.LocalSearchData,
+            local_search_iteration.LocalSearchGridSpec,
+            local_search_iteration.LocalSearchBatchPolicy,
+            local_search_iteration.LocalSearchKernelPolicy,
+            local_search_iteration.LocalSearchSupportPolicy,
+            local_search_iteration.LocalSearchDiagnosticPolicy,
+        )
+        for field in dataclasses.fields(owner)
+    }
+    normalized_or_planned_locals = {
+        "image_batch_size",
+        "rotation_block_size",
+        "prior_rotations",
+        "prior_translations",
+    }
+    assert assigned_names & stable_field_names == normalized_or_planned_locals
 
 
 def test_firstiter_winner_take_all_assembly_reports_unit_pmax_across_score_normalizations():

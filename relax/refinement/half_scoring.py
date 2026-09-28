@@ -67,7 +67,16 @@ from relax.refinement.firstiter_cc import (
     FirstIterCCSpec,
     _score_kclass_firstiter_cc_pass2,
 )
-from relax.refinement.local_search_iteration import _run_local_search_iteration
+from relax.refinement.local_search_iteration import (
+    LocalSearchBatchPolicy,
+    LocalSearchData,
+    LocalSearchDiagnosticPolicy,
+    LocalSearchGridSpec,
+    LocalSearchIterationSpec,
+    LocalSearchKernelPolicy,
+    LocalSearchSupportPolicy,
+    _run_local_search_iteration,
+)
 from relax.sampling import (
     apply_relion_translation_perturbation,
     build_local_search_grid_metadata,
@@ -158,11 +167,7 @@ def _adaptive_pass2_grids(
         float(translation_step),
         random_perturbation,
         return_mstep_rotations=True,
-        **(
-            {"coarse_rotation_ids": coarse_rotation_ids}
-            if coarse_rotation_ids is not None
-            else {}
-        ),
+        **({"coarse_rotation_ids": coarse_rotation_ids} if coarse_rotation_ids is not None else {}),
         **({"symmetry": symmetry} if symmetry != "C1" else {}),
     )
     coarse_translation_phase_source = apply_relion_translation_perturbation(
@@ -223,9 +228,7 @@ def _adaptive_engine_shared_kwargs(
         class_log_priors=spec.priors.class_log_priors,
         accumulate_noise=True,
         adaptive_fraction=RELION_ADAPTIVE_FRACTION,
-        max_significants=(
-            -1 if spec.batching.max_significants is None else int(spec.batching.max_significants)
-        ),
+        max_significants=(-1 if spec.batching.max_significants is None else int(spec.batching.max_significants)),
         relion_fine_mstep_prune=bool(sparse_pass2),
         significance_image_batch_size=significance_image_batch_size,
         significance_rotation_block_size=significance_rotation_block_size,
@@ -742,7 +745,9 @@ def _score_half_dense_one_shape(
             mstep_accumulator_shape=getattr(k_class_result, "mstep_accumulator_shape", None),
         )
 
-    if execution.preserve_bpref_particle_order or _dense_uses_adaptive_engine(sampling.state.adaptive_oversampling, half.group_ids_k):
+    if execution.preserve_bpref_particle_order or _dense_uses_adaptive_engine(
+        sampling.state.adaptive_oversampling, half.group_ids_k
+    ):
         if execution.disable_adjoint_y or execution.disable_adjoint_ctf:
             raise NotImplementedError("K=1 adaptive oversampling does not support adjoint ablation flags")
         adaptive_os_local = int(sampling.state.adaptive_oversampling)
@@ -781,11 +786,7 @@ def _score_half_dense_one_shape(
                     data=replace(firstiter_spec.data, mean=means_single),
                     batching=replace(
                         firstiter_spec.batching,
-                        em_kwargs=(
-                            {**em_kwargs, "mstep_relion_x_half": True}
-                            if k1_relion_x_half_mstep
-                            else em_kwargs
-                        ),
+                        em_kwargs=({**em_kwargs, "mstep_relion_x_half": True} if k1_relion_x_half_mstep else em_kwargs),
                     ),
                     execution=replace(firstiter_spec.execution, log_label="K=1 "),
                 )
@@ -904,10 +905,7 @@ def _score_half_dense_one_shape(
             n_trans_fine=n_trans_fine_for_collapse,
         )
         if execution.return_best_pose_details:
-            if (
-                k1_adaptive_result.best_pose_rotations is None
-                or k1_adaptive_result.best_pose_translations is None
-            ):
+            if k1_adaptive_result.best_pose_rotations is None or k1_adaptive_result.best_pose_translations is None:
                 raise RuntimeError("K=1 adaptive path did not return best pose details")
             pose_dtype = _dense_global_scoring_dtype()
             best_rots = np.asarray(k1_adaptive_result.best_pose_rotations, dtype=pose_dtype)
@@ -920,7 +918,9 @@ def _score_half_dense_one_shape(
                 if k1_adaptive_result.best_pose_eulers_deg is not None
                 else utils.R_to_relion(best_rots, degrees=True).astype(pose_dtype)
             )
-            half.outputs.best_pose_translations[half.k] = np.asarray(k1_adaptive_result.best_pose_translations, dtype=pose_dtype)
+            half.outputs.best_pose_translations[half.k] = np.asarray(
+                k1_adaptive_result.best_pose_translations, dtype=pose_dtype
+            )
         if fine_rotations_for_pose is None and rot_pmap_for_collapse is not None:
             fine_rotations_for_pose = _adaptive_pass2_grids(
                 sampling.effective_rotations,
@@ -1067,11 +1067,7 @@ def _dense_spec_for_shape(spec: DenseHalfScoringSpec, shape_class, class_index: 
             }
         )
 
-    batch_overrides = (
-        {}
-        if optics.class_batch_overrides is None
-        else optics.class_batch_overrides[class_index]
-    )
+    batch_overrides = {} if optics.class_batch_overrides is None else optics.class_batch_overrides[class_index]
     return replace(
         spec,
         half=replace(
@@ -1358,9 +1354,7 @@ def _local_spec_for_shape(
                 shape_class,
                 int(half.experiment_dataset.image_shape[0]),
             ),
-            previous_best_rotation_eulers_k=shape_values[
-                "previous_best_rotation_eulers_k"
-            ],
+            previous_best_rotation_eulers_k=shape_values["previous_best_rotation_eulers_k"],
             image_corrections_k=shape_values["image_corrections_k"],
             scale_corrections_k=shape_values["scale_corrections_k"],
             group_ids_k=shape_values["group_ids_k"],
@@ -1372,17 +1366,13 @@ def _local_spec_for_shape(
             current_translations=shape_values["current_translations"],
             base_translations=shape_values["base_translations"],
             cs_for_engine=shape_values["cs_for_engine"],
-            model_current_size_for_engine=shape_values[
-                "model_current_size_for_engine"
-            ],
+            model_current_size_for_engine=shape_values["model_current_size_for_engine"],
             local_pass1_current_size=shape_values["local_pass1_current_size"],
         ),
         priors=replace(
             priors,
             trans_prior_center=shape_values["trans_prior_center"],
-            trans_prior_center_for_engine=shape_values[
-                "trans_prior_center_for_engine"
-            ],
+            trans_prior_center_for_engine=shape_values["trans_prior_center_for_engine"],
             translation_search_base=shape_values["translation_search_base"],
             replay_prior_translations=shape_values["replay_prior_translations"],
         ),
@@ -1427,9 +1417,7 @@ def _score_half_local(spec: LocalHalfScoringSpec) -> HalfScoreResult:
         int(half.image_shape[0]),
     )
     spec.half.outputs.best_pose_rotations[spec.half.k] = merged.best_pose_rotations
-    spec.half.outputs.best_pose_rotation_eulers[spec.half.k] = (
-        merged.best_pose_rotation_eulers
-    )
+    spec.half.outputs.best_pose_rotation_eulers[spec.half.k] = merged.best_pose_rotation_eulers
     spec.half.outputs.best_pose_translations[spec.half.k] = merged.best_pose_translations
     return merged
 
@@ -1492,7 +1480,9 @@ def _score_half_local_one_shape(
     local_n_trans = int(sampling.current_translations.shape[0])
     if int(sampling.local_parent_oversampling_order) > 0:
         local_n_trans *= int(4 ** int(sampling.local_parent_oversampling_order))
-    local_debug_iteration = diagnostics.iteration + 1 if diagnostics.debug_iteration is None else int(diagnostics.debug_iteration)
+    local_debug_iteration = (
+        diagnostics.iteration + 1 if diagnostics.debug_iteration is None else int(diagnostics.debug_iteration)
+    )
     parent_use_float64_scoring, parent_use_float64_projections = _local_search_precision_flags(
         local_debug_iteration,
         pass_index=1,
@@ -1505,13 +1495,10 @@ def _score_half_local_one_shape(
     )
     # Adaptive pass-2 (fine, oversampled) hypothesis layout precision; see
     # ``parent_local_layout_dtype`` below for the matching pass-1 value.
-    fine_local_layout_dtype = (
-        np.float64 if (fine_use_float64_scoring or fine_use_float64_projections) else np.float32
-    )
+    fine_local_layout_dtype = np.float64 if (fine_use_float64_scoring or fine_use_float64_projections) else np.float32
     if fine_use_float64_scoring or fine_use_float64_projections:
         logger.info(
-            "Local-search precision iteration %d: pass1 scoring/projections=%s/%s "
-            "pass2 scoring/projections=%s/%s",
+            "Local-search precision iteration %d: pass1 scoring/projections=%s/%s pass2 scoring/projections=%s/%s",
             local_debug_iteration,
             parent_use_float64_scoring,
             parent_use_float64_projections,
@@ -1574,40 +1561,76 @@ def _score_half_local_one_shape(
             int(sampling.current_translations.shape[0]),
             int(local_n_trans),
         )
-    # Shared operands and options for parent, denominator and final scoring.
-    # Pass-specific precision, support, reconstruction and profiling stay below.
-    common_local_kwargs = {
-        "projection_padding_factor": PROJECTION_PADDING_FACTOR,
-        "reconstruction_padding_factor": PADDING_FACTOR,
-        "relion_projector_half": execution.relion_projector_half,
-        "relion_projector_r_max": execution.relion_projector_r_max,
-        "do_gridding_correction": True,
-        "square_window": RELION_FOURIER_WINDOW_SQUARE,
-        "half_spectrum_scoring": True,
-        "image_corrections": half.image_corrections_k,
-        "scale_corrections": half.scale_corrections_k,
-        "group_ids": half.group_ids_k,
-        "scale_correction_group_count": half.group_count_k,
-        "scale_correction_data_vs_prior": half.scale_correction_data_vs_prior,
-        "image_pre_shifts": priors.translation_search_base,
-        "adaptive_fraction": RELION_ADAPTIVE_FRACTION,
-        "max_significants": batching.max_significants,
-        "translation_prior_reference_translations": translation_prior_reference_translations,
-        "translation_prior_centers": priors.trans_prior_center_for_engine,
-        "source_faithful_spectrum_norm": execution.source_faithful_spectrum_norm,
-        **({} if half.optics_group_ids_k is None else {"optics_group_ids": half.optics_group_ids_k}),
-        **(
-            {}
-            if optics.projection_scale == 1.0 and optics.reference_current_size is None
-            else {
-                "projection_scale": float(optics.projection_scale),
-                "reconstruction_volume_current_size": optics.reference_current_size,
-                "reconstruction_image_radius": _reconstruction_image_radius(optics.reference_current_size, optics.projection_scale),
-            }
+    # One shared typed pass. Parent, denominator and final execution derive
+    # their intentional differences with ``replace`` below.
+    local_iteration_spec = LocalSearchIterationSpec(
+        data=LocalSearchData(
+            experiment_dataset=half.experiment_dataset,
+            mean=half.means_k,
+            noise_variance=half.noise_variance_k,
+            image_corrections=half.image_corrections_k,
+            scale_corrections=half.scale_corrections_k,
+            group_ids=half.group_ids_k,
+            scale_correction_group_count=half.group_count_k,
+            scale_correction_data_vs_prior=half.scale_correction_data_vs_prior,
+            image_pre_shifts=priors.translation_search_base,
+            optics_group_ids=half.optics_group_ids_k,
         ),
-    }
-    if float(execution.relion_translation_angle_scale) != 1.0:
-        common_local_kwargs["relion_translation_angle_scale"] = float(execution.relion_translation_angle_scale)
+        grid=LocalSearchGridSpec(
+            prior_rotations=half.previous_best_rotation_eulers_k,
+            rotation_grid_rotations=sampling.local_search_rotations,
+            healpix_order=sampling.local_search_order,
+            sigma_rot=sampling.sigma_rot,
+            sigma_psi=sampling.sigma_psi,
+            translations=sampling.current_translations,
+            prior_translations=priors.trans_prior_center,
+            sigma_offset_angstrom=priors.current_sigma_offset_angstrom,
+            translation_prior_reference_translations=translation_prior_reference_translations,
+            translation_prior_centers=priors.trans_prior_center_for_engine,
+            rotation_grid_random_perturbation=sampling.local_search_random_perturbation,
+            rotation_grid_angular_sampling_deg=sampling.local_search_angular_sampling_deg,
+            local_parent_oversampling_order=sampling.local_parent_oversampling_order,
+            rotation_grid_mstep_rotations=sampling.local_search_mstep_rotations,
+            generate_relion_mstep_rotations=True,
+            symmetry=sampling.symmetry,
+        ),
+        batching=LocalSearchBatchPolicy(
+            image_batch_size=safe_ibs,
+            rotation_block_size=safe_rbs,
+            batch_size_planner=batching.safe_batch_sizes,
+        ),
+        kernel=LocalSearchKernelPolicy(
+            disc_type=sampling.disc_type,
+            current_size=sampling.cs_for_engine,
+            reconstruction_current_size=reconstruction_current_size_for_engine,
+            projection_padding_factor=PROJECTION_PADDING_FACTOR,
+            reconstruction_padding_factor=PADDING_FACTOR,
+            do_gridding_correction=True,
+            square_window=RELION_FOURIER_WINDOW_SQUARE,
+            half_spectrum_scoring=True,
+            relion_projector_half=execution.relion_projector_half,
+            relion_projector_r_max=execution.relion_projector_r_max,
+            source_faithful_spectrum_norm=execution.source_faithful_spectrum_norm,
+            relion_translation_angle_scale=float(execution.relion_translation_angle_scale),
+            projection_scale=float(optics.projection_scale),
+            reconstruction_volume_current_size=optics.reference_current_size,
+            reconstruction_image_radius=_reconstruction_image_radius(
+                optics.reference_current_size,
+                optics.projection_scale,
+            ),
+        ),
+        support=LocalSearchSupportPolicy(
+            disable_adjoint_y=execution.disable_adjoint_y,
+            disable_adjoint_ctf=execution.disable_adjoint_ctf,
+            adaptive_fraction=RELION_ADAPTIVE_FRACTION,
+            max_significants=batching.max_significants,
+        ),
+        diagnostics=LocalSearchDiagnosticPolicy(
+            return_profile=diagnostics.collect_local_search_profile,
+            debug_iteration=local_debug_iteration,
+            debug_pass_label="pass2_final",
+        ),
+    )
     pass2_layout = None
     relion_significant_counts_k = None
     local_adaptive_pass2_parent_mode = "none"
@@ -1621,7 +1644,10 @@ def _score_half_local_one_shape(
         parent_prior_translations = priors.trans_prior_center
         if parent_prior_translations is None:
             parent_prior_translations = np.zeros(
-                (np.asarray(half.previous_best_rotation_eulers_k).shape[0], np.asarray(sampling.current_translations).shape[1]),
+                (
+                    np.asarray(half.previous_best_rotation_eulers_k).shape[0],
+                    np.asarray(sampling.current_translations).shape[1],
+                ),
                 dtype=parent_local_layout_dtype,
             )
         parent_order = int(sampling.local_search_order) - int(sampling.local_parent_oversampling_order)
@@ -1631,7 +1657,9 @@ def _score_half_local_one_shape(
                 f"got {sampling.local_search_order} and "
                 f"{sampling.local_parent_oversampling_order}",
             )
-        parent_grid_metadata = build_local_search_grid_metadata(parent_order, **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {}))
+        parent_grid_metadata = build_local_search_grid_metadata(
+            parent_order, **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {})
+        )
         parent_layout = build_local_hypothesis_layout(
             half.previous_best_rotation_eulers_k,
             None,
@@ -1668,46 +1696,53 @@ def _score_half_local_one_shape(
         )
         logger.info("RELION local adaptive pass 1: using manual supplied-PPref interpolation")
         parent_outputs = _run_local_search_iteration(
-            half.experiment_dataset,
-            half.means_k,
-            half.noise_variance_k,
-            half.previous_best_rotation_eulers_k,
-            None,
-            parent_order,
-            sampling.sigma_rot,
-            sampling.sigma_psi,
-            sampling.current_translations,
-            priors.trans_prior_center,
-            priors.current_sigma_offset_angstrom,
-            sampling.disc_type,
-            image_batch_size=parent_ibs,
-            rotation_block_size=parent_rbs,
-            current_size=sampling.local_pass1_current_size,
-            accumulate_noise=False,
-            projection_relion_texture_interp=False,
-            projection_relion_acc_double_floorf_quirk=RELION_ACC_DOUBLE_FLOORF_QUIRK,
-            # The parent pass is RELION's pass 1: the coarse diff2 kernel's row rule.
-            projection_relion_kernel="coarse",
-            use_float64_scoring=parent_use_float64_scoring,
-            use_float64_projections=parent_use_float64_projections,
-            relion_exact_score_translation=bool(
-                _DENSE_EM_STATIC_KWARGS["relion_exact_fine_gaussian"]
-                and not parent_use_float64_scoring
-            ),
-            return_profile=True,
-            disable_adjoint_y=True,
-            disable_adjoint_ctf=True,
-            reconstruct_significant_only=True,
-            debug_iteration=local_debug_iteration,
-            debug_pass_label="pass1_parent",
-            pass2_layout=parent_layout,
-            return_best_pose_details=False,
-            return_reconstruction_sample_indices=True,
-            apply_max_significants_to_support=True,
-            score_only=True,
-            **common_local_kwargs,
-            **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {}),
-            batch_size_planner=batching.safe_batch_sizes,
+            replace(
+                local_iteration_spec,
+                grid=replace(
+                    local_iteration_spec.grid,
+                    rotation_grid_rotations=None,
+                    healpix_order=parent_order,
+                    pass2_layout=parent_layout,
+                    rotation_grid_random_perturbation=0.0,
+                    rotation_grid_angular_sampling_deg=None,
+                    local_parent_oversampling_order=0,
+                    rotation_grid_mstep_rotations=None,
+                    generate_relion_mstep_rotations=False,
+                ),
+                batching=replace(
+                    local_iteration_spec.batching,
+                    image_batch_size=parent_ibs,
+                    rotation_block_size=parent_rbs,
+                ),
+                kernel=replace(
+                    local_iteration_spec.kernel,
+                    current_size=sampling.local_pass1_current_size,
+                    reconstruction_current_size=None,
+                    use_float64_scoring=parent_use_float64_scoring,
+                    use_float64_projections=parent_use_float64_projections,
+                    relion_exact_score_translation=bool(
+                        _DENSE_EM_STATIC_KWARGS["relion_exact_fine_gaussian"] and not parent_use_float64_scoring
+                    ),
+                    projection_relion_texture_interp=False,
+                    projection_relion_acc_double_floorf_quirk=RELION_ACC_DOUBLE_FLOORF_QUIRK,
+                    # RELION pass 1 uses the coarse diff2 kernel's row rule.
+                    projection_relion_kernel="coarse",
+                ),
+                support=replace(
+                    local_iteration_spec.support,
+                    disable_adjoint_y=True,
+                    disable_adjoint_ctf=True,
+                    reconstruct_significant_only=True,
+                    return_reconstruction_sample_indices=True,
+                    apply_max_significants_to_support=True,
+                    score_only=True,
+                ),
+                diagnostics=replace(
+                    local_iteration_spec.diagnostics,
+                    return_profile=True,
+                    debug_pass_label="pass1_parent",
+                ),
+            )
         )
         parent_profile = parent_outputs.profile_summary
         significant_sample_indices = parent_profile["reconstruction_sample_indices_by_image"]
@@ -1716,9 +1751,7 @@ def _score_half_local_one_shape(
         # coarse hypotheses from pass 1, not the number of fine hypotheses
         # used for reconstruction in pass 2. Preserve this before any
         # diagnostic expansion of the pass-2 parent support.
-        relion_significant_counts_k = _relion_coarse_significant_counts(
-            pruned_parent_significant_sample_indices
-        )
+        relion_significant_counts_k = _relion_coarse_significant_counts(pruned_parent_significant_sample_indices)
         if relion_significant_counts_k is None:
             logger.warning(
                 "RELION local adaptive pass 1 did not return explicit retained support; "
@@ -1727,8 +1760,7 @@ def _score_half_local_one_shape(
         if local_adaptive_pass2_full_parent:
             significant_sample_indices = [None] * len(significant_sample_indices)
             logger.info(
-                "RELION local adaptive pass 2: expanding all parent samples; "
-                "set %s=0 for pruned-parent support",
+                "RELION local adaptive pass 2: expanding all parent samples; set %s=0 for pruned-parent support",
                 _LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV,
             )
         elif local_adaptive_pass2_rotation_only:
@@ -1793,9 +1825,7 @@ def _score_half_local_one_shape(
             "RELION local K=1 M-step: using x-half BPref-layout backprojection",
         )
     if local_adaptive_pass2_denominator_layout is not None:
-        logger.info(
-            "RELION local adaptive pass 2 diagnostic: running score-only broad-denominator probe"
-        )
+        logger.info("RELION local adaptive pass 2 diagnostic: running score-only broad-denominator probe")
         local_debug_env_names = [
             name
             for name in os.environ
@@ -1806,45 +1836,42 @@ def _score_half_local_one_shape(
         saved_local_debug_env = {name: os.environ.pop(name) for name in local_debug_env_names}
         try:
             denominator_outputs = _run_local_search_iteration(
-                half.experiment_dataset,
-                half.means_k,
-                half.noise_variance_k,
-                half.previous_best_rotation_eulers_k,
-                sampling.local_search_rotations,
-                sampling.local_search_order,
-                sampling.sigma_rot,
-                sampling.sigma_psi,
-                sampling.current_translations,
-                priors.trans_prior_center,
-                priors.current_sigma_offset_angstrom,
-                sampling.disc_type,
-                image_batch_size=safe_ibs,
-                rotation_block_size=safe_rbs,
-                current_size=sampling.cs_for_engine,
-                reconstruction_current_size=reconstruction_current_size_for_engine,
-                accumulate_noise=False,
-                use_float64_scoring=fine_use_float64_scoring,
-                use_float64_projections=fine_use_float64_projections,
-                relion_exact_score_translation=bool(
-                    _DENSE_EM_STATIC_KWARGS["relion_exact_fine_gaussian"]
-                    and not fine_use_float64_scoring
-                ),
-                return_profile=False,
-                disable_adjoint_y=True,
-                disable_adjoint_ctf=True,
-                reconstruct_significant_only=False,
-                debug_iteration=None,
-                pass2_layout=local_adaptive_pass2_denominator_layout,
-                return_best_pose_details=False,
-                rotation_grid_random_perturbation=sampling.local_search_random_perturbation,
-                rotation_grid_angular_sampling_deg=relion_angular_sampling_deg(
-                    sampling.local_search_order,
-                    adaptive_oversampling=0,
-                ),
-                score_only=True,
-                **common_local_kwargs,
-                **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {}),
-                batch_size_planner=batching.safe_batch_sizes,
+                replace(
+                    local_iteration_spec,
+                    grid=replace(
+                        local_iteration_spec.grid,
+                        pass2_layout=local_adaptive_pass2_denominator_layout,
+                        rotation_grid_angular_sampling_deg=relion_angular_sampling_deg(
+                            sampling.local_search_order,
+                            adaptive_oversampling=0,
+                        ),
+                        local_parent_oversampling_order=0,
+                        rotation_grid_mstep_rotations=None,
+                        generate_relion_mstep_rotations=False,
+                    ),
+                    kernel=replace(
+                        local_iteration_spec.kernel,
+                        accumulate_noise=False,
+                        use_float64_scoring=fine_use_float64_scoring,
+                        use_float64_projections=fine_use_float64_projections,
+                        relion_exact_score_translation=bool(
+                            _DENSE_EM_STATIC_KWARGS["relion_exact_fine_gaussian"] and not fine_use_float64_scoring
+                        ),
+                    ),
+                    support=replace(
+                        local_iteration_spec.support,
+                        disable_adjoint_y=True,
+                        disable_adjoint_ctf=True,
+                        reconstruct_significant_only=False,
+                        score_only=True,
+                    ),
+                    diagnostics=replace(
+                        local_iteration_spec.diagnostics,
+                        return_profile=False,
+                        debug_iteration=None,
+                        debug_pass_label=None,
+                    ),
+                )
             )
         finally:
             os.environ.update(saved_local_debug_env)
@@ -1854,8 +1881,7 @@ def _score_half_local_one_shape(
             dtype=np.float64,
         )
         logger.info(
-            "RELION local adaptive pass 2 diagnostic: broad-denominator evidence ready "
-            "(finite=%d/%d)",
+            "RELION local adaptive pass 2 diagnostic: broad-denominator evidence ready (finite=%d/%d)",
             int(np.count_nonzero(np.isfinite(local_normalization_log_evidence))),
             int(local_normalization_log_evidence.size),
         )
@@ -1874,54 +1900,35 @@ def _score_half_local_one_shape(
         "RELAX_RELION_PROJECTOR_TEXTURE_INTERP (default texture)"
     )
     local_outputs = _run_local_search_iteration(
-        half.experiment_dataset,
-        half.means_k,
-        half.noise_variance_k,
-        half.previous_best_rotation_eulers_k,
-        sampling.local_search_rotations,
-        sampling.local_search_order,
-        sampling.sigma_rot,
-        sampling.sigma_psi,
-        sampling.current_translations,
-        priors.trans_prior_center,
-        priors.current_sigma_offset_angstrom,
-        sampling.disc_type,
-        image_batch_size=safe_ibs,
-        rotation_block_size=safe_rbs,
-        current_size=sampling.cs_for_engine,
-        reconstruction_current_size=reconstruction_current_size_for_engine,
-        accumulate_noise=local_accumulate_noise,
-        # RELION's local adaptive path is intentionally hybrid: parent pass 1
-        # uses the manual supplied-PPref projector above, while fine pass 2
-        # follows the user-switchable texture default.
-        projection_relion_texture_interp=None,
-        projection_relion_acc_double_floorf_quirk=RELION_ACC_DOUBLE_FLOORF_QUIRK,
-        use_float64_scoring=fine_use_float64_scoring,
-        use_float64_projections=fine_use_float64_projections,
-        relion_exact_score_translation=bool(
-            _DENSE_EM_STATIC_KWARGS["relion_exact_fine_gaussian"]
-            and not fine_use_float64_scoring
-        ),
-        mstep_relion_x_half=local_relion_x_half_mstep,
-        return_profile=diagnostics.collect_local_search_profile,
-        disable_adjoint_y=local_disable_adjoint_y,
-        disable_adjoint_ctf=local_disable_adjoint_ctf,
-        reconstruct_significant_only=local_reconstruct_significant_only,
-        stats_use_reconstruction_probs=local_reconstruct_significant_only,
-        debug_iteration=local_debug_iteration,
-        debug_pass_label="pass2_final",
-        pass2_layout=pass2_layout,
-        return_best_pose_details=True,
-        normalization_log_evidence=local_normalization_log_evidence,
-        rotation_grid_random_perturbation=sampling.local_search_random_perturbation,
-        rotation_grid_angular_sampling_deg=sampling.local_search_angular_sampling_deg,
-        local_parent_oversampling_order=sampling.local_parent_oversampling_order,
-        score_only=diagnostics.diagnostic_score_only,
-        rotation_grid_mstep_rotations=sampling.local_search_mstep_rotations,
-        generate_relion_mstep_rotations=True,
-        **common_local_kwargs,
-        **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {}),
-        batch_size_planner=batching.safe_batch_sizes,
+        replace(
+            local_iteration_spec,
+            grid=replace(local_iteration_spec.grid, pass2_layout=pass2_layout),
+            kernel=replace(
+                local_iteration_spec.kernel,
+                accumulate_noise=local_accumulate_noise,
+                use_float64_scoring=fine_use_float64_scoring,
+                use_float64_projections=fine_use_float64_projections,
+                relion_exact_score_translation=bool(
+                    _DENSE_EM_STATIC_KWARGS["relion_exact_fine_gaussian"] and not fine_use_float64_scoring
+                ),
+                # RELION local execution is intentionally hybrid: parent pass
+                # 1 uses manual supplied-PPref projection, while fine pass 2
+                # follows the user-switchable texture default.
+                projection_relion_texture_interp=None,
+                projection_relion_acc_double_floorf_quirk=RELION_ACC_DOUBLE_FLOORF_QUIRK,
+            ),
+            support=replace(
+                local_iteration_spec.support,
+                mstep_relion_x_half=local_relion_x_half_mstep,
+                disable_adjoint_y=local_disable_adjoint_y,
+                disable_adjoint_ctf=local_disable_adjoint_ctf,
+                reconstruct_significant_only=local_reconstruct_significant_only,
+                return_best_pose_details=True,
+                normalization_log_evidence=local_normalization_log_evidence,
+                stats_use_reconstruction_probs=local_reconstruct_significant_only,
+                score_only=diagnostics.diagnostic_score_only,
+            ),
+        )
     )
     Ft_y_k = local_outputs.Ft_y
     Ft_ctf_k = local_outputs.Ft_ctf
@@ -1992,8 +1999,6 @@ def _score_half_local_in_bpref_scope(
     """Run local scoring with device-capture flags disabled or fail closed."""
 
     if spec.diagnostics.bpref_device_signature_active:
-        raise RuntimeError(
-            "BPref device signature capture is supported only by sparse adaptive pass 2"
-        )
+        raise RuntimeError("BPref device signature capture is supported only by sparse adaptive pass 2")
     with em_cuda_kernels.bpref_device_signature_scope(False):
         return _score_half_local(spec)
