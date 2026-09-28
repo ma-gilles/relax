@@ -9,6 +9,7 @@ and the policy switches both read them.
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import os
 import subprocess
@@ -228,9 +229,83 @@ def _device_memory_limit_bytes() -> int | None:
     return None
 
 
-def _device_free_memory_bytes() -> int | None:
-    """Return current free memory for the selected physical GPU, if known."""
+class _NvmlMemory(ctypes.Structure):
+    _fields_ = [("total", ctypes.c_ulonglong), ("free", ctypes.c_ulonglong), ("used", ctypes.c_ulonglong)]
 
+
+# (NVML library, {nvidia-smi index or uuid: device handle}) once loaded, False when
+# NVML is unavailable here.
+_NVML_DEVICES = None
+
+
+def _nvml_devices():
+    """NVML's handle for every GPU, keyed as nvidia-smi's rows are (index and uuid)."""
+
+    global _NVML_DEVICES
+    if _NVML_DEVICES is None:
+        try:
+            lib = ctypes.CDLL("libnvidia-ml.so.1")
+            if lib.nvmlInit_v2() != 0:
+                raise OSError("nvmlInit_v2 failed")
+            count = ctypes.c_uint()
+            if lib.nvmlDeviceGetCount_v2(ctypes.byref(count)) != 0:
+                raise OSError("nvmlDeviceGetCount_v2 failed")
+            handles = {}
+            for index in range(count.value):
+                handle = ctypes.c_void_p()
+                if lib.nvmlDeviceGetHandleByIndex_v2(index, ctypes.byref(handle)) != 0:
+                    raise OSError("nvmlDeviceGetHandleByIndex_v2 failed")
+                uuid = ctypes.create_string_buffer(96)
+                if lib.nvmlDeviceGetUUID(handle, uuid, 96) != 0:
+                    raise OSError("nvmlDeviceGetUUID failed")
+                handles[str(index)] = handle
+                handles[uuid.value.decode()] = handle
+            _NVML_DEVICES = (lib, handles)
+        except (OSError, AttributeError):
+            _NVML_DEVICES = False
+    return _NVML_DEVICES
+
+
+def _nvml_free_memory_bytes(visible_devices: str | None) -> int | None:
+    """Free memory of the first visible GPU from NVML, the reading nvidia-smi prints.
+
+    Selects the device as :func:`_nvidia_smi_visible_device_memory_bytes` does;
+    ``None`` when NVML is unavailable or the device is not found.
+    """
+
+    devices = _nvml_devices()
+    if not devices:
+        return None
+    lib, handles = devices
+    if visible_devices is None:
+        handle = handles.get("0")
+    else:
+        tokens = [
+            part.strip()
+            for part in visible_devices.split(",")
+            if part.strip() and part.strip() not in {"-1", "none", "NoDevFiles"}
+        ]
+        handle = next((handles[token] for token in tokens if token in handles), None)
+    if handle is None:
+        return None
+    memory = _NvmlMemory()
+    if lib.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(memory)) != 0:
+        return None
+    return int(memory.free)
+
+
+def _device_free_memory_bytes() -> int | None:
+    """Return current free memory for the selected physical GPU, if known.
+
+    NVML answers in microseconds; the ``nvidia-smi`` subprocess it replaces took
+    15-20 ms and was read per chunk by the exact-CTF device cache's budget, 33 s
+    of two late Class3D K4 100k iterations (py-spy, job 14594324). The subprocess
+    stays the fallback where NVML cannot be loaded.
+    """
+
+    free = _nvml_free_memory_bytes(os.environ.get("CUDA_VISIBLE_DEVICES"))
+    if free is not None:
+        return free
     try:
         query = subprocess.run(
             [
