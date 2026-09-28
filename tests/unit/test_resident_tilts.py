@@ -136,7 +136,14 @@ def test_slot_views_visit_every_chunk_image_once_and_their_partials_land_on_it()
             a2_per_image=jnp.arange(4, dtype=jnp.float32) + 10 * slot,
             xa_per_image=-(jnp.arange(4, dtype=jnp.float32) + 10 * slot),
         )
-        full = resident_tilts._fold_slot_carry(full, partial, views[slot], image_capacity=12)
+        placed = resident_tilts._place_slot_partials(
+            {name: getattr(full, name) for name in resident_tilts._SLOT_PARTIAL_FIELDS},
+            {name: getattr(partial, name) for name in resident_tilts._SLOT_PARTIAL_FIELDS},
+            full.noise_shells,
+            partial.noise_shells,
+            jnp.asarray(np.where(views[slot] >= 0, views[slot], 12), dtype=jnp.int32),
+        )
+        full = full._replace(Ft_y=partial.Ft_y, Ft_ctf=partial.Ft_ctf, **placed)
     expected = np.zeros(12)
     for slot in range(3):
         for unit in range(4):
@@ -293,3 +300,36 @@ def test_tilt_image_power_above_the_cutoff_carries_one_over_n_images():
     assert_matches(np.asarray(shells)[:5], np.sum(power[:, :5] * mass[:, None], axis=0))
     assert_matches(np.asarray(shells)[5:], np.sum(power[:, 5:] * scale[:, None], axis=0))
     assert_matches(np.asarray(per_image), np.sum(power[:, :5] * mass[:, None], axis=1) + scale * replacement)
+
+
+@pytest.mark.unit
+def test_slot_tables_visit_the_rows_with_mass_and_an_image_first():
+    """Per slot: active rows (mass and an image in the slot) first and ascending, blocks cover them, padding drops."""
+
+    views = np.array([[0, 3, 4, -1], [1, -1, 5, -1], [2, -1, -1, -1]])
+    row_unit = np.array([0, 1, 2, 2, 0])
+    row_has_mass = np.array([True, True, False, True, True])
+    angles = np.arange(12 * 6 * 2, dtype=np.float32).reshape(12, 6, 2)
+    kept = resident_tilts.MstepTranslations(index=np.array([1, 4]), valid=np.array([True, True]))
+    tables = resident_tilts._slot_mstep_tables(
+        views,
+        row_unit=row_unit,
+        row_has_mass=row_has_mass,
+        n_valid_rows=5,
+        row_capacity=8,
+        block_rows=2,
+        image_angles=angles,
+        layout_image_ids=np.arange(12),
+        translation_blocks=(kept,),
+        image_capacity=12,
+    )
+    order, active = np.asarray(tables.order), np.asarray(tables.active)
+    # slot 0: every unit has an image; rows 0, 1, 3, 4 have mass. slot 1: units 0 and 2 (rows 0, 3, 4).
+    # slot 2: unit 0 only (rows 0, 4).
+    for slot, rows in enumerate(([0, 1, 3, 4], [0, 3, 4], [0, 4])):
+        np.testing.assert_array_equal(order[slot, : len(rows)], rows)
+        assert active[slot].sum() == len(rows) and np.all(active[slot, : len(rows)])
+        assert sorted(order[slot]) == list(range(8))
+    np.testing.assert_array_equal(np.asarray(tables.n_blocks), [2, 2, 1])
+    np.testing.assert_array_equal(np.asarray(tables.targets), np.where(views >= 0, views, 12))
+    assert_matches(np.asarray(tables.angles)[1, 0, 2], angles[5][[1, 4]])
