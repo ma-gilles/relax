@@ -1,20 +1,18 @@
-"""The RELION-vs-relax benchmark pages (results, provenance and coloured HTML) stay in sync with their JSON baseline."""
+"""The RELION-vs-relax benchmark pages (results and provenance) stay in sync with their JSON baseline."""
 
 import json
 
 import pytest
 
 from scripts.render_benchmark_table import (
-    DEFAULT_HTML,
     DEFAULT_JSON,
     DEFAULT_MARKDOWN,
     DEFAULT_PROVENANCE,
     TABLE_HEADER,
     load_and_validate,
-    render_html,
+    status,
     render_markdown,
     render_provenance,
-    status,
 )
 
 
@@ -23,7 +21,6 @@ def test_markdown_matches_json_baseline():
     table = load_and_validate(DEFAULT_JSON)
     assert DEFAULT_MARKDOWN.read_text() == render_markdown(table), "run python scripts/render_benchmark_table.py"
     assert DEFAULT_PROVENANCE.read_text() == render_provenance(table), "run python scripts/render_benchmark_table.py"
-    assert DEFAULT_HTML.read_text() == render_html(table), "run python scripts/render_benchmark_table.py"
 
 
 @pytest.mark.unit
@@ -153,15 +150,7 @@ def test_status_mark_follows_quality_and_ratio():
     table = load_and_validate(DEFAULT_JSON)
     rendered = render_markdown(table)
     base = next(r for r in table["rows"] if r["matched"] == "yes" and r["time_ratio_relax_over_relion"] is not None)
-    cases = [
-        (True, 0.44, "🟢"),
-        (True, 0.6, "🟢"),
-        (True, 0.61, "🟠"),
-        (True, 1.2, "🟠"),
-        (True, 3.9, "🟠"),
-        (False, 0.3, "🔴"),
-        (None, 0.3, "⚪"),
-    ]
+    cases = [(True, 0.44, "🟢"), (True, 0.6, "🟢"), (True, 0.61, "🟠"), (True, 1.2, "🟠"), (True, 3.9, "🟠"), (False, 0.3, "🔴"), (None, 0.3, "⚪")]
     for passed, ratio, mark in cases:
         row = dict(base, quality_pass=passed, time_ratio_relax_over_relion=ratio)
         assert status(row) == mark, (passed, ratio)
@@ -205,12 +194,7 @@ def test_initialmodel_rows_keep_every_auc_on_the_provenance_page():
         if im["relion"]["res_05_A"] is not None:
             assert f"| {im['relion']['res_05_A']:.2f} {letter} / " in line
         comparisons = after.partition(f"`{row['id']}`: FSC-AUC of rigidly registered")[2].partition("###")[0]
-        for value in (
-            im["relion"]["fsc_auc"],
-            im["relax"]["fsc_auc"],
-            im["cross"]["fsc_auc"],
-            im["cross"]["masked_fsc_auc"],
-        ):
+        for value in (im["relion"]["fsc_auc"], im["relax"]["fsc_auc"], im["cross"]["fsc_auc"], im["cross"]["masked_fsc_auc"]):
             if value is not None:
                 assert f"| {value:.4f} |" in comparisons
 
@@ -279,17 +263,3 @@ def test_small_fixtures_are_debug_rows_off_both_pages(tmp_path):
     path.write_text(json.dumps(raw))
     with pytest.raises(ValueError, match="benchmark_note"):
         load_and_validate(path)
-
-
-@pytest.mark.unit
-def test_html_page_colours_every_row_by_its_status():
-    """Each page row appears once in the HTML table with the background class of its status mark."""
-    table = load_and_validate(DEFAULT_JSON)
-    page = render_html(table)
-    classes = {"🟢": "green", "🟠": "orange", "🔴": "red", "⚪": "grey"}
-    for row in (r for r in table["rows"] if r.get("benchmark", True)):
-        lines = [x for x in page.splitlines() if f'#{row["id"]}"' in x]
-        assert len(lines) == 1, row["id"]
-        assert lines[0].startswith(f'<tr class="{classes[status(row)]}"><td>{status(row)}</td>'), row["id"]
-    assert "prefers-color-scheme: dark" in page
-    assert "relion_vs_relax.html" in render_markdown(table)
