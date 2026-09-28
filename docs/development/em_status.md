@@ -212,18 +212,15 @@ writer is skipped for them (`scripts/run_full_refinement.py::_validate_tomo_run`
 `read_run_files` (`relax/refinement/run_files.py`) map half rows onto the SPA particles.star; they need a TomoHalf row
 mapping (particles.star units, 3D offsets, the 2D-stack STAR blocks). The loop-side restore is path-agnostic.
 
-OPEN (2026-09-28, cryo-ET S4.2): relax's ground-truth FSC-AUC on the S1 depth-fix fixture is systematically 0.003-0.004 below
-RELION's. Three relax runs (seeds 20260925-27; 14547997 on 343399e, landing gate 14593473) give 0.9346-0.9367 against
-0.9381-0.9409 for RELION's four runs. The resolution matches (8.77 A at FSC 0.5 against the ground truth, for all of them).
-Relax-vs-RELION agreement (0.965-0.992) lies within RELION-vs-RELION (0.972-0.989). Per-iteration comparison against
-RELION's `_model.star` and `_data.star` (poses equal to same-seed RELION through iteration 4) found the tilt fold adding
-tilt-image power above the norm cutoff with mass 1 instead of 1 / n_images, so the noise beyond the current size was 39x
-RELION's. Fixed in 3409d7bc (gate 14605082: 110 GPU tests and replay green): the noise now matches RELION's in every shell at
-iteration 1 and the three runs give 0.9348-0.9380 (0.9365 mean). Still about 0.001-0.002 low at iteration 2 with equal poses and
-Pmax. Ruled out: sigma_offset (relax's trajectory pools both halves, RELION's model.star is per half; the per-half values match in
-the it001 replay) and norm correction (RELION switches it off for tomo, ml_optimiser.cpp:2688-2693; relax does too since 608a997b,
-and the group scales now equal RELION's to 6 digits at it2; the band did not move, gate 14622150). Next: find what still lowers
-the iteration-2 gold-standard FSC.
+Resolved (2026-09-28, cryo-ET S4.2): relax's ground-truth FSC-AUC on the S1 depth-fix fixture was 0.003-0.004 below RELION's
+(0.9346-0.9367 against 0.9381-0.9409). Two bugs, both found by comparing each iteration with RELION's `_model.star`/`_data.star`
+and by one-iteration replays from RELION's state: the tilt fold added tilt-image power above the norm cutoff with mass 1 instead
+of 1 / n_images (noise beyond the current size 39x RELION's; 3409d7bc), and pass 2 backprojected the tilt images without their
+group scale (RELION's ctfs = Fctf * scale, acc_ml_optimiser_impl.h:4370-4404; the it002 replay from RELION's it001 state had
+BPref data 4.9% off, 1.5% after the fix, the rest being a few particles' pose flips; 9f8efc89). Gate 14624974: relax GT
+0.9354-0.9409 against RELION 0.9381-0.9409; seeds 20260926 and 20260927 reproduce the same-seed RELION maps (relax-vs-RELION
+FSC-AUC 1.0000), seed 20260925 leaves RELION's trajectory at iteration 5 (0.9354). Also RELION-matched on the way: no norm
+correction for subtomograms (608a997b).
 
 RELION float32 BPref accumulation band (2026-09-25, not reproduced; lead decision). RELION's GPU backprojector adds every
 particle of a half into one float32 volume with `atomicAdd` (acc/acc_backprojector.h:41; acc/cuda/cuda_kernels/BP.cuh:157-169)
