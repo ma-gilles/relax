@@ -432,6 +432,51 @@ iteration snapshot capture.
   mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
   produced.
 
+## 2026-09-28 — unregularized-mean specification ownership
+
+### Change
+
+- Replaced the 14-parameter unregularized-map/sign-publication boundary with
+  `UnregularizedMeanSpec` and owners for current/previous means, M-step
+  accumulators and reconstruction policy.
+- The function keeps all three owners visible and does not unpack stable fields;
+  an AST ownership regression enforces the boundary.
+- K1 versus K-class accumulator selection, optional diagnostic reconstruction,
+  shared K-class map identity, sign alignment and log order remain unchanged.
+
+### Structural delta from the active upstream baseline
+
+| Metric | Baseline | Current | Delta |
+| --- | ---: | ---: | ---: |
+| Production files | 15 | 16 | +1 |
+| Physical production lines | 14,187 | 15,150 | +963 |
+| Nonblank, non-comment lines | 12,410 | 13,207 | +797 |
+| Production functions | 223 | 225 | +2 |
+| Functions with at least 10 parameters | 17 | 7 | -10 |
+| Functions with at least 20 parameters | 8 | 2 | -6 |
+| Largest parameter count | 67 | 21 | -46 |
+| Largest function span | 5,234 | 5,464 | +230 |
+
+This package adds 46 physical production lines. Excluding the two tomography
+boundaries, five single-volume functions remain at 10+ parameters.
+
+### Validation
+
+- Implementation commit:
+  `37ac32c76815a68d65b22c1c6c78e69458091ac8`.
+- AST-normalized comparison against its parent: passed after removing the three
+  owner aliases and translating `owner.field` back to its former parameter
+  name; the complete reconstruction/sign body is identical.
+- Reconstruction ownership and K-class sign-publication tests: 16 passed; 379
+  unrelated cases deselected.
+- Production and affected-test Ruff lint, Python compilation, snapshot check
+  and diff checks: passed.
+- CPU EM fast guard: 102 passed in 57.40 seconds on the implementation commit
+  with `FFTW/3.3.10-GCC-12.2.0` loaded.
+- GPU smoke remains infrastructure-blocked by the unchanged absence of the five
+  mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
+  produced.
+
 ## 2026-09-28 — iteration-snapshot specification ownership
 
 ### Change
