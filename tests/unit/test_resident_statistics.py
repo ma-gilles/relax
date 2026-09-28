@@ -490,12 +490,23 @@ def test_image_capacity_holds_what_an_image_count_axis_holds():
 
 @pytest.mark.parametrize(
     "n_images,capacity",
-    [(1, 256), (256, 256), (257, 512), (650, 768), (1024, 1024), (1025, 1280), (2049, 2560), (13000, 14336)],
+    [
+        (1, 256),
+        (256, 256),
+        (257, 512),
+        (650, 1024),
+        (1024, 1024),
+        (1025, 2048),
+        (2049, 4096),
+        (4097, 6144),
+        (13000, 14336),
+        (20000, 20480),
+    ],
 )
 def test_resident_image_capacity_classes(n_images, capacity):
     assert resident_image_capacity(n_images) == capacity
     assert resident_image_capacity(n_images) >= n_images
-    assert resident_image_capacity(n_images) - n_images <= max(255, n_images // 4)
+    assert resident_image_capacity(n_images) - n_images <= max(255, min(n_images - 1, 2047), n_images // 4)
 
 
 def test_padded_rows_and_images_contribute_nothing():

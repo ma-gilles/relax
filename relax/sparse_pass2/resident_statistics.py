@@ -205,25 +205,35 @@ class ChunkStatisticsOperands(NamedTuple):
 # of a half (resident_operands), is a capacity, not the half's image count:
 # VDAM's subset size changes every iteration, and an image-count-shaped axis
 # re-traced every program that touches it. Capacities are multiples of 256 with
-# four classes per octave, so at most 25% of the axis is padding.
+# four classes per octave, so at most 25% of the axis is padding, except that a
+# class is at least as wide as the smaller of its octave and 2048 rows: below
+# 8192 images the padding may reach 2047 rows. VDAM's subset grows through these
+# small counts over its first hundred iterations, and each new class compiled
+# the resident chunk programs again (13 classes on noise1 50k, six now).
 _RESIDENT_IMAGE_QUANTUM = 256
 _RESIDENT_IMAGE_CLASSES_PER_OCTAVE = 4
+_RESIDENT_IMAGE_MIN_CLASS_ROWS = 2048
 
 
 def resident_image_capacity(n_images: int) -> int:
     """The image-axis capacity of a half with ``n_images`` images.
 
-    A multiple of 256 and of a quarter of the largest power of two not above
-    ``n_images``, so the classes are 256, 512, 768, 1024, 1280, ..., 2048,
-    2560, ... Rows past ``n_images`` are padding that no chunk addresses:
-    chunk image slots are real image ids or negative.
+    A multiple of the class width, the largest of 256, a quarter of the largest
+    power of two not above ``n_images`` (the octave), and the smaller of the
+    octave and 2048. The classes are 256, 512, 1024, 2048, 4096, 6144, 8192,
+    10240, ..., 16384, 20480, ... Rows past ``n_images`` are padding that no
+    chunk addresses: chunk image slots are real image ids or negative.
     """
 
     n_images = int(n_images)
     if n_images <= 0:
         raise ValueError(f"n_images must be positive, got {n_images}")
     octave = 1 << (n_images.bit_length() - 1)
-    step = max(_RESIDENT_IMAGE_QUANTUM, octave // _RESIDENT_IMAGE_CLASSES_PER_OCTAVE)
+    step = max(
+        _RESIDENT_IMAGE_QUANTUM,
+        octave // _RESIDENT_IMAGE_CLASSES_PER_OCTAVE,
+        min(octave, _RESIDENT_IMAGE_MIN_CLASS_ROWS),
+    )
     return -(-n_images // step) * step
 
 

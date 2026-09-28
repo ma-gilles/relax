@@ -29,6 +29,7 @@ from relax.helpers.particle_io import (
 from relax.relion import initial_model_io, vdam_checkpoint
 from relax.relion.initial_model_io import _experiment_read_order, _particle_state_from_star, _write_model_star
 from relax.relion.relion_metadata import refuse_unsupported_optics
+from relax.sparse_pass2.resident_pass2 import stable_window_class_history
 from relax.vdam import dense_adapter, estep_meta_updates, native_sampling, output, schedules
 from relax.vdam.bootstrap_iref import _initial_state_from_particles
 from relax.vdam.dense_adapter import (
@@ -506,36 +507,38 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             )
     profile.record("iteration_setup")
 
-    final_state = run_vdam_iterations(
-        state,
-        nr_particles=int(dataset.n_images),
-        optics_group_by_particle=optics_group_by_particle,
-        grad_ini_subset_size=grad_ini_subset_size,
-        grad_fin_subset_size=grad_fin_subset_size,
-        pilot_controls=opts.pilot_controls,
-        tau2_fudge_arg=float(opts.tau2_fudge),
-        grad_em_iters=int(opts.grad_em_iters),
-        random_seed=int(opts.random_seed),
-        expectation_step=expectation_step,
-        iter_artifact_sink=artifact_sink,
-        post_mstep_update=post_mstep_update,
-        particle_order=particle_order,
-        grad_ini_frac=grad_ini_frac,
-        grad_fin_frac=grad_fin_frac,
-        phase_lengths=continuation_phase_lengths,
-        grad_stepsize=float(opts.stepsize),
-        mu=float(opts.mu),
-        projector_padding_factor=int(opts.padding_factor),
-        mstep_compute_dtype=opts.mstep_compute_dtype,
-        projector_refresh_fn=None if projector_context is None else projector_context.refresh,
-        start_iteration=int(state.iter),
-        diagnostic_stop_after_iteration=opts.diagnostic_stop_after_iteration,
-        optimizer=opts.optimizer,
-        sgd_learning_rate=float(opts.sgd_learning_rate),
-        fourier_radius_schedule=opts.fourier_radius_schedule,
-        stochastic_all_iterations=bool(opts.stochastic_all_iterations),
-        uniform_class_direction_prior=bool(opts.uniform_class_direction_prior),
-    )
+    # One stable-window class history for the run, as refinements have.
+    with stable_window_class_history():
+        final_state = run_vdam_iterations(
+            state,
+            nr_particles=int(dataset.n_images),
+            optics_group_by_particle=optics_group_by_particle,
+            grad_ini_subset_size=grad_ini_subset_size,
+            grad_fin_subset_size=grad_fin_subset_size,
+            pilot_controls=opts.pilot_controls,
+            tau2_fudge_arg=float(opts.tau2_fudge),
+            grad_em_iters=int(opts.grad_em_iters),
+            random_seed=int(opts.random_seed),
+            expectation_step=expectation_step,
+            iter_artifact_sink=artifact_sink,
+            post_mstep_update=post_mstep_update,
+            particle_order=particle_order,
+            grad_ini_frac=grad_ini_frac,
+            grad_fin_frac=grad_fin_frac,
+            phase_lengths=continuation_phase_lengths,
+            grad_stepsize=float(opts.stepsize),
+            mu=float(opts.mu),
+            projector_padding_factor=int(opts.padding_factor),
+            mstep_compute_dtype=opts.mstep_compute_dtype,
+            projector_refresh_fn=None if projector_context is None else projector_context.refresh,
+            start_iteration=int(state.iter),
+            diagnostic_stop_after_iteration=opts.diagnostic_stop_after_iteration,
+            optimizer=opts.optimizer,
+            sgd_learning_rate=float(opts.sgd_learning_rate),
+            fourier_radius_schedule=opts.fourier_radius_schedule,
+            stochastic_all_iterations=bool(opts.stochastic_all_iterations),
+            uniform_class_direction_prior=bool(opts.uniform_class_direction_prior),
+        )
     profile.record("iterations")
     if opts.pilot_controls is not None:
         opts.pilot_controls.check_completed(final_state.iter, opts.nr_iter)
