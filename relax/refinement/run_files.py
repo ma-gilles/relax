@@ -776,6 +776,21 @@ def _state_value(name, text):
     return float(text)
 
 
+# State fields added to relax.run_files.v1 after run files were first written, with
+# the value every earlier file implies: before subtomogram refinement (1cdf2bb) only
+# single-particle runs wrote run files.
+_STATE_FIELDS_ADDED_TO_V1 = {"subtomogram": "0"}
+
+
+def _state_text(relax_state, name):
+    key = f"relax_state_{name}"
+    if key in relax_state:
+        return relax_state[key]
+    if name in _STATE_FIELDS_ADDED_TO_V1:
+        return _STATE_FIELDS_ADDED_TO_V1[name]
+    raise KeyError(f"run files have no {key}")
+
+
 def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapshot:
     """Read the ``run_itNNN_*`` files named by ``optimiser_star`` into a snapshot.
 
@@ -806,7 +821,7 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
     pixel_size = float(relax_state["relax_pixel_size"])
     frame = float(ori_size) ** 4
     state_fields = {
-        name: _state_value(name, relax_state[f"relax_state_{name}"]) for name in REFINEMENT_STATE_SCALAR_FIELDS
+        name: _state_value(name, _state_text(relax_state, name)) for name in REFINEMENT_STATE_SCALAR_FIELDS
     }
     extra = {
         key[len("relax_") :]: value

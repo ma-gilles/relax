@@ -247,6 +247,27 @@ def test_healpix_cap_round_trips_and_the_continuing_run_keeps_its_own(tmp_path):
             assert restored.healpix_order == snapshot.state_fields["healpix_order"]
 
 
+def test_v1_files_written_before_the_subtomogram_field_read_as_single_particle(tmp_path):
+    """relax.run_files.v1 files from before subtomogram refinement (1cdf2bb) have no
+    relax_state_subtomogram; they are single-particle runs (EMPIAR-10202 it026 state,
+    bigbox 14605497). Any other missing state field is still an error."""
+
+    rng = np.random.default_rng(2)
+    input_star = _write_input_star(tmp_path, 7)
+    half_rows = [np.array([4, 0, 2, 6]), np.array([5, 1, 3])]
+    names = read_star_blocks(input_star)["particles"]["rlnImageName"]
+    optimiser = _writer(tmp_path, input_star, half_rows)(_k1_snapshot([4, 3], rng))
+    text = Path(optimiser).read_text()
+    lines = text.splitlines(keepends=True)
+    older = "".join(line for line in lines if not line.startswith("_relax_state_subtomogram "))
+    assert older != text
+    Path(optimiser).write_text(older)
+    assert read_run_files(optimiser, image_names=names, half_rows=half_rows).state_fields["subtomogram"] is False
+    Path(optimiser).write_text("".join(line for line in lines if not line.startswith("_relax_state_healpix_order ")))
+    with pytest.raises(KeyError, match="relax_state_healpix_order"):
+        read_run_files(optimiser, image_names=names, half_rows=half_rows)
+
+
 def test_run_files_use_relion_blocks_and_keep_input_columns(tmp_path):
     rng = np.random.default_rng(1)
     input_star = _write_input_star(tmp_path, 7)
