@@ -206,7 +206,31 @@ worst numerator/denominator relative L2 errors were 2.80e-5/1.51e-5. Sampled
 process memory stayed below the experiment's 4 GiB budget (largest 2956 MiB).
 These warmed timings exclude staging, compilation and reconstruction. They compare
 fully dense schedules; they do not estimate a normal adaptive production run.
-Current-control full-trajectory quality and profiling remain in progress.
+The paired full-grid run 14634727 evaluated all 5000 particles with R36864/T29
+for three exact iterations. Process wall times were 271.34 s for the row control
+and 41.43 s for GEMM (6.55×). Process time includes launch/import, preparation,
+compilation, transfers, reconstruction/FSC, reference refresh and output saving;
+it excludes preflight, paired barriers and the separate profiler runs.
+Worst Fourier-map relative L2 difference was 2.75e-5; cross-map FSC AUC over shells
+1–28 was at least 0.99999999788, the largest half-map FSC difference was 1.55e-6,
+and the largest ground-truth FSC AUC difference was 1.67e-7. These describe this
+fixed-grid/noise/tau comparison; they are not a stock AutoRefine acceptance row.
+
+Both warmed B100 profiles had no H2D/D2H copies, CUDA allocation/free calls or
+explicit host synchronization. Across three control calls, indexed backprojection
+alone used 690.5 ms of GPU kernel time in 1824 launches. The experiment's gain largely
+comes from summing images before backprojection; both scorers already use GEMM.
+Full-process B512 profiling measured traced allocation peaks of 1368.33 MiB for
+the row control and 2392.32 MiB for GEMM; sampled process peaks were 1960/2984 MiB.
+Traces exclude untraced driver/context overhead; 200 ms samples can miss transients.
+Setup and teardown do allocate, transfer and synchronize; the warm-region claim
+does not apply to the whole process or exclude GPU allocator pool suballocations.
+
+A tiny B4/R8/T3 pilot failed its exploratory raw-FSC bound (shell15 delta 0.002539).
+Canonical voxel analysis isolated one zero-versus-tiny-positive downsampled weight
+per half; unregularized division amplified the difference. The failed check remains
+recorded. No tolerance, denominator clamp or production formula was changed; the
+full-grid comparison above uses the unchanged canonical FSC calculation.
 
 The historical `native` control invokes CUDA primitives in this experiment's
 two-sweep dense schedule. Its fused score/projector is used in tomography and
@@ -214,7 +238,7 @@ repeats projection across images; its ordered per-particle adjoint comes from th
 deprecated physical-grid route. Current SPA CUDA shares projections and batches
 row adjoints differently. Thus this historical ratio is not a current SPA-resident
 performance comparison. A control using the current SPA scoring and row-accumulation owners while
-retaining all dense matches is implemented and undergoing GPU qualification. No adaptive pruning is introduced.
+retaining all dense matches is implemented and measured above. No adaptive pruning is introduced.
 
 The historical control backprojects per-image/orientation rows, whereas GEMM sums
 images before backprojection. Its ratio includes this accumulation reorganization
@@ -263,20 +287,23 @@ visibility. The fixture defaults resolve the 5,000-particle iteration-1 checkpoi
   --rotation-tile 3072 --translation-tile 29 --translation-side image \
   --warmup 2 --repeats 7 --save-arrays --output /path/to/gemm.json
 
-# Same dense matches, existing CUDA scorer and per-image-row adjoint control.
+# Same dense matches, current SPA GEMM scorer and CUDA row-accumulation control.
 .pixi/envs/default/bin/python scripts/benchmark_dense_gemm_trajectory.py \
-  --benchmark-batch --engine native --mode exact \
+  --benchmark-batch --engine resident_cuda --mode exact \
   --images 100 --rotations 6144 --translations 29 \
-  --rotation-tile 256 --translation-tile 29 --translation-side image \
-  --warmup 2 --repeats 7 --save-arrays --output /path/to/native.json
+  --rotation-tile 768 --row-tile 2048 --translation-tile 29 --translation-side image \
+  --warmup 2 --repeats 7 --save-arrays --output /path/to/resident_cuda.json
 
 # Full-grid exact changing-reference trajectory on all particles in both halves.
 .pixi/envs/default/bin/python scripts/benchmark_dense_gemm_trajectory.py \
   --engine gemm --mode exact --iterations 3 --half-particles 5000 \
   --images 100 --rotations 36864 --translations 29 \
-  --rotation-tile 768 --translation-tile 29 --translation-side image \
+  --rotation-tile 3072 --translation-tile 29 --translation-side image \
   --save-arrays --output /path/to/trajectory.json
 ```
+
+For the companion full-grid control, use `--engine resident_cuda`,
+`--rotation-tile 768` and `--row-tile 2048`, keeping the other trajectory settings.
 
 For the layout sweep, vary `--translation-side image|projection` and
 `--translation-tile 1|7|29`, then B and Q. For the requested approximation, use

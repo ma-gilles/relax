@@ -1,12 +1,16 @@
 # Dense resident GEMM EM experiment
 
-Status: exact/lagged CUDA-backed cores, real-operand tile sweeps, matched H100
-native comparisons, residency traces and three-iteration reconstruction comparisons
-are complete. Exact mode closely agrees with the native dense control; lagged
-absolute normalization overflows at iteration two. Smoke and medium tiers pass.
-The final shared raw-batch staging change passes full/tail real GPU operand checks;
-raw-image uploads fall from two to one. The branch includes main df5d0118. Final
-medium validation of this shared-owner change is in progress. Full dense support without adaptive pruning is the requested endpoint.
+Status: the exact/lagged cores, translation-layout sweeps and GPU-residency
+measurements are complete. Lagged absolute normalization overflows at iteration
+two. Medium14632505 and integrated smoke14633325 passed, including final shared
+raw-batch staging. The corrected current-SPA dense comparison14634396 passed all
+operator checks and measured about 20.3×/27.9× warmed speedups at B100/B512.
+Full-grid current-control reconstruction and profiling 14634727 completed; all 5000
+particles and three exact iterations agree closely (map relative L2 ≤ 2.75e-5).
+Historical native timings used a different CUDA schedule and do not represent
+current SPA or ordinary production-driver runtime. The live branch is based on
+main d02b2c46; final smoke 14634842 and focused CPU checks passed. Full dense support without
+adaptive pruning remains the requested endpoint.
 User decisions (2026-09-28): K=1 first, fixed dense pose grid, no coarse pruning;
 about 100 resident images initially; exact two rotation sweeps while images stay
 resident; lagged one sweep after one exact initialization iteration. Compare
@@ -18,7 +22,7 @@ unchanged. The lagged algorithm is an explicitly requested approximation.
 
 ## Source, ownership and delivery
 
-- Active base and immutable control: fetched `origin/main`
+- Original immutable control: fetched `origin/main`
   `e2401c4c53182f6aed4e12b060b28257ef86894f` (2026-09-28 10:09 EDT);
   control checkout
   `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/relax_dense_gemm_control_20260928`.
@@ -27,14 +31,17 @@ unchanged. The lagged algorithm is an explicitly requested approximation.
 - Implementation worktree:
   `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/relax_dense_gemm_experiment_20260928`,
   branch `codex/dense-gemm-experiment-20260928`, current base
-  `df5d01182b9ecae70cca92a6f767ea9592452cee`. The branch fast-forwarded from
+  `d02b2c46ef4cd990a5d7cd501eb37f587c28331e`. The branch fast-forwarded from
   the initial e240 control before v2 qualification; those intervening main
   commits did not overlap the K1 engine, native sources or environment.
   Subsequent integration from e0f50017 to df5d0118 preserved all 16 dirty/untracked
   experiment file hashes; backup `pre_main_d2277_backup/`. Transitive import checks,
   104 focused CPU tests, fixture inspection and the 102-test fast guard pass.
-  Frozen v2 performance/quality evidence remains on e0f50017; new medium14632505
-  covers the current shared operand owner and upstream integration.
+  Frozen historical v2 performance/quality evidence remains on e0f50017; medium14632505
+  passed for the current shared operand owner. Current-SPA v3/v4 runs freeze the
+  corrected benchmark on46e6035a plus its recorded diff. Later rebases preserve
+  the experiment code; source proofs and fresh integration checks are recorded
+  separately from immutable benchmark provenance.
 - The original discussion checkout `relax_controls_independent_20260928` at
   `e8c14ecd2309d85f54b9167c0448d38be539a575` remains untouched, but is not the
   experiment's timing/scientific control. On the user's request to stay close

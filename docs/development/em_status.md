@@ -31,8 +31,13 @@ pinned comparisons passed; detailed receipts record the optional fixture skips.
 The historical timing control used tomography scoring and a deprecated adjoint
 schedule, so its speed ratio does not measure current SPA performance. A corrected
 control now uses production-selected GEMM scoring and SPA CUDA row accumulation,
-retaining every dense hypothesis. Its full performance/quality qualification is
-in progress; production-runtime extrapolations from the historical ratio are withdrawn.
+retaining every dense hypothesis. Its matched H100 benchmark 14634396 measured 20.3×/27.9× warmed dense-operator gains
+at B100/B512. Full5000-particle, three-iteration run 14634727 measured 271.34 s versus
+41.43 s process time, with worst map relative L2 difference 2.75e-5 and half-FSC
+difference 1.55e-6. Both warmed profiles show no host transfers or CUDA allocations.
+Final post-rebase smoke 14634842 and focused CPU checks passed on main d02b2c46.
+These are controlled dense comparisons; historical production-runtime extrapolations
+remain withdrawn. The optional experiment does not change production defaults.
 
 ## Scope and invariants
 
