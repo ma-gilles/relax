@@ -597,7 +597,11 @@ def _write_data_star(root: Path, snapshot: IterationSnapshot, particles, optics,
 
     n_rows = len(particles["rlnImageName"])
     eulers = np.zeros((n_rows, 3), dtype=np.float64)
-    offsets = np.zeros((n_rows, 2), dtype=np.float64)
+    # Subtomogram particles carry 3D offsets (rlnOriginZAngst), single particles 2D.
+    offset_dims = max(
+        [np.asarray(t).reshape(len(t), -1).shape[1] for t in snapshot.translations if t is not None and len(t)] or [2]
+    )
+    offsets = np.zeros((n_rows, offset_dims), dtype=np.float64)
     for rows, e, t in zip(half_rows, snapshot.rotation_eulers, snapshot.translations):
         if rows.size:
             if e is not None:
@@ -620,6 +624,7 @@ def _write_data_star(root: Path, snapshot: IterationSnapshot, particles, optics,
         "rlnAnglePsi": eulers[:, 2],
         "rlnOriginXAngst": offsets[:, 0],
         "rlnOriginYAngst": offsets[:, 1],
+        **({"rlnOriginZAngst": offsets[:, 2]} if offset_dims == 3 else {}),
         "rlnNormCorrection": norm,
         "rlnGroupNumber": _per_row(
             [None if g is None else np.asarray(g) + 1 for g in snapshot.group_ids], half_rows, n_rows, 1, np.int64
@@ -915,7 +920,9 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
             f"{general['rlnExperimentalDataStarFile']} does not list the input particles in the input order"
         )
     eulers = np.stack([_floats(data[c]) for c in ("rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi")], axis=1)
-    offsets = np.stack([_floats(data[c]) for c in ("rlnOriginXAngst", "rlnOriginYAngst")], axis=1) / pixel_size
+    # A subtomogram run's data.star carries rlnOriginZAngst (3D offsets).
+    offset_labels = ("rlnOriginXAngst", "rlnOriginYAngst") + (("rlnOriginZAngst",) if "rlnOriginZAngst" in data else ())
+    offsets = np.stack([_floats(data[c]) for c in offset_labels], axis=1) / pixel_size
     norm = _floats(data["rlnNormCorrection"])
     group_number = _ints(data["rlnGroupNumber"])
     class_number = _ints(data["rlnClassNumber"]) if k_class else None

@@ -226,6 +226,28 @@ def test_auto_refine_run_files_round_trip(tmp_path):
         assert_matches(read.unfiltered_means[h], snapshot.unfiltered_means[h], rtol=1e-6)
 
 
+def test_subtomogram_run_files_round_trip_3d_offsets(tmp_path):
+    """Subtomogram particles' 3D offsets go to rlnOriginXAngst/Y/Z and come back (--continue)."""
+
+    import dataclasses
+
+    rng = np.random.default_rng(4)
+    input_star = _write_input_star(tmp_path, 7)
+    half_rows = [np.array([4, 0, 2, 6]), np.array([5, 1, 3])]
+    snapshot = _k1_snapshot([4, 3], rng)
+    snapshot = dataclasses.replace(
+        snapshot, translations=[rng.uniform(-3, 3, (n, 3)).astype(np.float32) for n in (4, 3)]
+    )
+    optimiser = _writer(tmp_path, input_star, half_rows)(snapshot)
+    data = read_star_blocks(tmp_path / "out" / "run_it005_data.star")["particles"]
+    assert "rlnOriginZAngst" in data
+    names = read_star_blocks(input_star)["particles"]["rlnImageName"]
+    read = read_run_files(optimiser, image_names=names, half_rows=half_rows)
+    for h in range(2):
+        assert read.translations[h].shape == (half_rows[h].size, 3)
+        assert_matches(read.translations[h], snapshot.translations[h])
+
+
 def test_healpix_cap_round_trips_and_the_continuing_run_keeps_its_own(tmp_path):
     """An uncapped run writes max_healpix_order as None and reads it back; a continued run
     keeps its own command-line limit (a restored cap of 7 overrode --max_healpix_order 12,

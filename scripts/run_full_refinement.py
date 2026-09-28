@@ -1880,8 +1880,6 @@ def _validate_tomo_run(args, frozen_boundary, double_image_preprocessing):
         raise SystemExit("subtomogram particles have no float64 scoring diagnostic")
     if args.relion_softmask_reduction != "control":
         raise SystemExit("subtomogram particles have no soft-mask reduction probe")
-    if getattr(args, "continue_optimiser_star", None) is not None:
-        raise SystemExit("--continue does not map subtomogram particles' run files yet")
 
 
 def _initial_current_size(voxel_size: float, grid_size: int, init_resolution: float) -> int:
@@ -4796,10 +4794,6 @@ def main():
     if int(args.write_iteration_every) > 0:
         if shape_class_rows is not None:
             logger.warning("RELION run files are not written for particle STARs with several image shapes")
-        elif tomo_run:
-            # The writer maps half rows onto the SPA particles.star; subtomogram particles' 3D offsets and
-            # 2D-stack STAR blocks are not mapped yet (resume's RunFileWriter, S4.2 follow-up).
-            logger.warning("RELION run files are not written for subtomogram (2D-stack) particles yet")
         else:
             run_file_writer = RunFileWriter(
                 args.output,
