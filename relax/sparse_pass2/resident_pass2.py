@@ -821,6 +821,7 @@ def plan_resident_chunk_memory(
     projection_transient_bytes: int = 0,
     fixed_bytes: int = 0,
     max_image_rows: int = 0,
+    lone_row_bytes: int | None = None,
 ) -> ResidentChunkMemoryPlan:
     """Shrink the three per-chunk classes until their sum fits one budget.
 
@@ -848,6 +849,10 @@ def plan_resident_chunk_memory(
     (:func:`chunk_runs_alone`), so it is counted without a pipelined neighbour.
     Uncounted, the EMPIAR-10202 final pass planned 1024-row chunks at 16.05 of a
     16.16 GiB budget and ran out of memory in a 2048-row one (bigbox 14607861).
+    ``lone_row_bytes`` is set where that chunk runs in blocks of the largest row
+    class (the global pass, :func:`_run_lone_resident_chunk`): it is then a
+    largest-class chunk of the smallest image class plus ``lone_row_bytes`` for
+    each of its rows (the posterior cells every row keeps).
     """
 
     rows = tuple(int(v) for v in row_capacity_ladder)
@@ -876,6 +881,13 @@ def plan_resident_chunk_memory(
         overflow_rows = overflow_row_capacity(max_image_rows, rows)
         if not overflow_rows:
             return 0
+        if lone_row_bytes is not None:
+            return resident_chunk_bytes(
+                row_capacity=max(rows),
+                image_capacity=min(images),
+                mstep_block_rows=block,
+                **{**kwargs, "pipelined": False},
+            ) + overflow_rows * int(lone_row_bytes)
         return resident_chunk_bytes(
             row_capacity=overflow_rows,
             image_capacity=min(images),
@@ -977,6 +989,22 @@ def max_image_rows(row_offsets) -> int:
 
     row_offsets = np.asarray(row_offsets)
     return int(np.max(np.diff(row_offsets))) if row_offsets.size > 1 else 0
+
+
+# Per posterior cell of a lone overflow chunk: the kernel diff2 and the scores,
+# the segmented posterior's probabilities, weights, reconstruction
+# probabilities and mask, and the M-step order's copy of the posterior.
+_LONE_CHUNK_CELL_BYTES = 4 * 7 + 1
+
+
+def lone_chunk_row_bytes(n_fine_trans: int) -> int:
+    """Device bytes each row of a lone overflow chunk keeps beyond its block (:func:`_run_lone_resident_chunk`).
+
+    A row's projections live only while its block is scored or reconstructed;
+    its ``T`` posterior cells and its row tables live for the whole chunk.
+    """
+
+    return int(n_fine_trans) * _LONE_CHUNK_CELL_BYTES + 64
 
 
 def chunk_runs_alone(chunk, row_capacity_ladder) -> bool:
@@ -3322,6 +3350,8 @@ def _resident_pass2(
             pipelined=tilt is None and _global_chunk_loop_pipelined(stream_projections),
             fixed_bytes=accumulator_bytes,
             max_image_rows=max_image_rows(tables.row_offsets),
+            # The tilt loop has no row-blocked lone chunk; its overflow chunks hold their rows.
+            lone_row_bytes=None if tilt is not None else lone_chunk_row_bytes(int(plan_translations)),
             **chunk_translated_tile_pixels(
                 unshifted_operands=unshifted_operands,
                 n_score_pixels=n_windowed if windowed_prepare else n_half_pixels,
@@ -3616,7 +3646,8 @@ def _resident_pass2(
                         )
                         warmup = _submit_resident_chunk_warmup(
                             warm_pool,
-                            chunks=chunks,
+                            # A lone overflow chunk runs its own row-blocked stages.
+                            chunks=[chunk for chunk in chunks if not chunk_runs_alone(chunk, row_ladder)],
                             tables=tables,
                             n_fine_trans=int(n_fine_trans),
                             half_operand_avals=warm_predicted,
@@ -3939,6 +3970,7 @@ def _resident_pass2(
                 native_fft_size if (union_score_take is not None and relion_native_fine_units) else 0
             ),
             deferred=deferred,
+            lone_block_rows=max(int(v) for v in row_ladder),
         )
         if not deferred:
             Ft_y_total, Ft_ctf_total, stats = result
@@ -6478,6 +6510,32 @@ def _resident_chunk_posterior(
         score_take=tables.union_score_take,
         native_fft_size=int(spec.union_native_fft_size),
     )
+    return _chunk_posterior_from_scores(
+        scored,
+        rows,
+        tables,
+        spec=spec,
+        cuda_backproject=cuda_backproject,
+        row_is_valid=row_is_valid,
+        kernel_row_image_ids=kernel_row_image_ids,
+    )
+
+
+def _chunk_posterior_from_scores(
+    scored,
+    rows: _ChunkRowArrays,
+    tables: _ChunkStageTables,
+    *,
+    spec: _ChunkProgramSpec,
+    cuda_backproject,
+    row_is_valid,
+    kernel_row_image_ids,
+) -> _ChunkPosterior:
+    """The segmented RELION posterior of a scored chunk (:func:`_resident_chunk_posterior`'s tail)."""
+
+    row_capacity = int(spec.row_capacity)
+    image_capacity = int(spec.image_capacity)
+    n_fine_trans = int(spec.n_fine_trans)
     scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
 
     reuse = bool(spec.reuse_coarse_normalization)
@@ -7540,15 +7598,28 @@ def _resident_chunk_stages_front(rows, operands, tables, *, spec, timing_hook=No
     return posterior, _make_mstep_block_inputs(rows, posterior, n_slots=int(spec.n_slots))
 
 
-def _resident_chunk_stages_finish(front, rows, operands, tables, carry, *, spec, timing_hook=None):
-    """The per-stage path after its front: the live row ranges, the M-step blocks, the statistics."""
+def _resident_chunk_stages_finish(
+    front, rows, operands, tables, carry, *, spec, timing_hook=None, block_projections=None, projection_dtypes=None
+):
+    """The per-stage path after its front: the live row ranges, the M-step blocks, the statistics.
+
+    ``block_projections(start, block_rows)``, when given, returns the M-step
+    block's ``(proj, |proj|^2, M-step rotations)`` for the block at ``start`` of
+    the M-step order, instead of the block gathering them out of the tables'
+    caches: a lone overflow chunk of a streamed pass projects each live block's
+    rows (:func:`_run_lone_resident_chunk`); ``projection_dtypes`` are then
+    the ``(proj, |proj|^2)`` dtypes it returns, which the tables' caches
+    (absent there) would otherwise give.
+    """
 
     from relax.cuda import kernels as em_cuda_kernels
 
     glue_jit = _resident_glue_jit_enabled()
     posterior, blocks = front
     Ft_y_total, Ft_ctf_total, stats = carry
-    mstep = _initial_mstep_carry(Ft_y_total[0], Ft_ctf_total[0], operands, tables, spec=spec)
+    mstep = _initial_mstep_carry(
+        Ft_y_total[0], Ft_ctf_total[0], operands, tables, spec=spec, projection_dtypes=projection_dtypes
+    )
     slot_offsets = np.asarray(jax.device_get(blocks.slot_offsets), dtype=np.int64)
     Ft_y_out, Ft_ctf_out = [], []
     for slot_index in range(int(spec.n_slots)):
@@ -7561,14 +7632,19 @@ def _resident_chunk_stages_finish(front, rows, operands, tables, carry, *, spec,
         # this slot or another: the weighted sums, the Wavg terms, the noise
         # partials and both adjoint scatters would add exact zeros.
         for start in range((row_lo // block_rows) * block_rows, row_hi, block_rows):
+            start_blocks = (
+                class_blocks
+                if block_projections is None
+                else class_blocks._replace(row_fine_rot=None, projections=block_projections(start, block_rows))
+            )
             if glue_jit:
                 mstep = _resident_mstep_block_program(
-                    _device_int32(start), class_blocks, operands, tables, mstep, spec=block_spec
+                    _device_int32(start), start_blocks, operands, tables, mstep, spec=block_spec
                 )
                 continue
             mstep = _resident_mstep_block_at(
                 _device_int32(start),
-                class_blocks,
+                start_blocks,
                 operands,
                 tables,
                 mstep,
@@ -7668,8 +7744,13 @@ def _run_resident_chunk(
     union_recon_take=None,
     union_native_fft_size=0,
     deferred=False,
+    lone_block_rows=None,
 ):
     """Run every resident stage for one capacity chunk.
+
+    ``lone_block_rows`` is the plan's largest row class: a chunk past it is one
+    image's overflow chunk, which runs alone and is scored and reconstructed in
+    blocks of that many rows (:func:`_run_lone_resident_chunk`).
 
     ``union_score_take`` / ``union_recon_take`` / ``union_native_fft_size``
     describe a union projection cache (see ``_ChunkStageTables``); they are
@@ -7707,7 +7788,8 @@ def _run_resident_chunk(
     rows = _make_chunk_row_arrays(
         tables, chunk, n_fine_trans, place=_PLACE_ON_DEVICE, n_fine_rot=n_fine_rot
     )
-    if stream_projection_fn is not None:
+    lone = lone_block_rows is not None and row_capacity > int(lone_block_rows)
+    if stream_projection_fn is not None and not lone:
         (
             rows,
             cache_slot_fine_rot,
@@ -7908,6 +7990,22 @@ def _run_resident_chunk(
         presum_adjoint=_carries_projection_sums(Ft_y_total),
     )
 
+    if lone:
+        return _run_lone_resident_chunk(
+            rows,
+            operands,
+            stage_tables,
+            spec=spec,
+            host_projection_ids=_row_projection_ids(
+                _chunk_host_rows(tables, chunk)[1], n_fine_rot if n_classes > 1 else None
+            ),
+            n_valid_rows=n_valid_rows,
+            block_rows=int(lone_block_rows),
+            stream_projection_fn=stream_projection_fn,
+            deferred=deferred,
+            carry=(Ft_y_total, Ft_ctf_total, stats),
+        )
+
     if submitted_keys is not None:
         submitted_keys.update(chunk_program_keys(chunk_program_path(), spec))
 
@@ -7967,6 +8065,127 @@ def _run_resident_chunk(
             total,
         )
     return Ft_y_total, Ft_ctf_total, stats
+
+
+def _run_lone_resident_chunk(
+    rows: _ChunkRowArrays,
+    operands: _ChunkStageOperands,
+    tables: _ChunkStageTables,
+    *,
+    spec: _ChunkProgramSpec,
+    host_projection_ids,
+    n_valid_rows: int,
+    block_rows: int,
+    stream_projection_fn,
+    deferred: bool,
+    carry: tuple,
+):
+    """One image's overflow chunk, scored and reconstructed ``block_rows`` rows at a time.
+
+    An image whose candidates exceed the largest row class (a flat coarse
+    posterior keeps every coarse sample, so every fine rotation: 294,912 rows at
+    HEALPix 3 in bench 14641043) is one chunk that runs alone. Holding all its
+    rows' projections at once does not fit the device, so the rows are scored in
+    blocks (:func:`~relax.sparse_pass2.resident_scoring.score_resident_chunk_in_row_blocks`),
+    keeping only their ``[C_R, T]`` diff2; the image's posterior is then formed
+    over all of its rows at once, and each live M-step block gathers (cached
+    pass) or projects (streamed pass) its own rows' projections. RELION scores
+    such an image the same way, in orientation batches against one normalizer.
+    The numbers are those of the one-call chunk: only the grouping of the
+    projector calls changes.
+    """
+
+    from relax.cuda import kernels as em_cuda_kernels
+    from relax.sparse_pass2.resident_scoring import cached_score_reference, score_resident_chunk_in_row_blocks
+
+    if spec.firstiter_cc or (spec.presum_adjoint and stream_projection_fn is not None):
+        raise ResidentConfigurationUnsupported(
+            "an image past the largest row class runs in row blocks, which the first-iteration "
+            "cross-correlation pass and the streamed per-rotation projection sums do not implement"
+        )
+    host_ids = np.asarray(host_projection_ids, dtype=np.int64)
+    block_rows = int(block_rows)
+
+    def block_ids(ids):
+        padded = np.full(block_rows, ids[0] if ids.size else 0, dtype=np.int64)
+        padded[: ids.size] = ids
+        return padded
+
+    def block_reference(start):
+        ids = block_ids(host_ids[start : start + block_rows])
+        if stream_projection_fn is not None:
+            return stream_projection_fn(ids, block_rows)[0]
+        return cached_score_reference(
+            tables.projection_score_cache,
+            jnp.asarray(ids, dtype=jnp.int32),
+            score_take=tables.union_score_take,
+            native_fft_size=int(spec.union_native_fft_size),
+        )
+
+    row_index = jnp.arange(int(spec.row_capacity), dtype=jnp.int32)
+    row_is_valid = row_index < rows.n_valid_rows
+    kernel_row_image_ids = jnp.where(row_is_valid, rows.row_image_local, jnp.int32(-1))
+    image_index = jnp.arange(int(spec.image_capacity), dtype=jnp.int32)
+    scored = score_resident_chunk_in_row_blocks(
+        block_reference,
+        rows.row_image_local,
+        rows.row_log_prior,
+        rows.row_mask_bits,
+        rows.row_mask_mode,
+        int(n_valid_rows),
+        jnp.where(image_index < rows.n_valid_images, image_index, jnp.int32(-1)),
+        operands.score_input,
+        operands.corr_img_score,
+        operands.highres_xi2_half,
+        operands.translation_prior,
+        block_rows=block_rows,
+        half_weights=tables.half_weights,
+        translation_angles=tables.translation_angles,
+        full_to_compact=tables.full_to_compact,
+        fine_translation_parent=tables.fine_translation_parent,
+        logical_current_size=_logical_current_size(tables, spec),
+        row_capacity=int(spec.row_capacity),
+        image_capacity=int(spec.image_capacity),
+        n_fine_trans=int(spec.n_fine_trans),
+    )
+    posterior = _chunk_posterior_from_scores(
+        scored,
+        rows,
+        tables,
+        spec=spec,
+        cuda_backproject=em_cuda_kernels,
+        row_is_valid=row_is_valid,
+        kernel_row_image_ids=kernel_row_image_ids,
+    )
+    blocks = _make_mstep_block_inputs(rows, posterior, n_slots=int(spec.n_slots))
+
+    block_projections = projection_dtypes = None
+    if stream_projection_fn is not None:
+
+        def block_projections(start, n_rows):
+            ids = np.asarray(jax.device_get(blocks.row_fine_rot[start : start + n_rows]), dtype=np.int64)
+            _, recon, recon_abs2 = stream_projection_fn(block_ids(ids)[:n_rows], n_rows)
+            return recon, recon_abs2, tables.mstep_grid[jnp.asarray(ids, dtype=jnp.int32)]
+
+        # A streamed pass has no caches to read the projection dtypes from; one
+        # row's projection gives them (the projector call converts on the host,
+        # so it cannot be shape-traced).
+        _, recon_one, abs2_one = stream_projection_fn(host_ids[:1], 1)
+        projection_dtypes = (recon_one.dtype, abs2_one.dtype)
+
+    def finish(Ft_y_total, Ft_ctf_total, stats):
+        return _resident_chunk_stages_finish(
+            (posterior, blocks),
+            rows,
+            operands,
+            tables,
+            (Ft_y_total, Ft_ctf_total, stats),
+            spec=spec,
+            block_projections=block_projections,
+            projection_dtypes=projection_dtypes,
+        )
+
+    return finish if deferred else finish(*carry)
 
 
 def run_resident_mstep_blocks(

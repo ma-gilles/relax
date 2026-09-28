@@ -469,24 +469,14 @@ def score_resident_chunk(
         raise ValueError(f"translation_angles must have {n_fine_trans} rows")
 
     # --- stage 1: gather ---------------------------------------------------
-    safe_image_ids = jnp.where(image_ids >= 0, image_ids, jnp.int32(0))
-    chunk_image = jnp.asarray(score_input, dtype=jnp.complex64)[safe_image_ids]
-    chunk_corr = corr_img_score[safe_image_ids]
-    chunk_translation_prior = translation_prior[safe_image_ids]
-    chunk_initial_diff2 = (
-        jnp.zeros((image_capacity,), dtype=jnp.float32)
-        if highres_xi2_half is None
-        else jnp.asarray(highres_xi2_half, dtype=jnp.float32)[safe_image_ids]
+    chunk_image, chunk_corr, chunk_translation_prior, chunk_initial_diff2 = _gather_chunk_image_operands(
+        image_ids, score_input, corr_img_score, highres_xi2_half, translation_prior, image_capacity=image_capacity
     )
 
     # --- stage 2: "project" = gather the cached fine-rotation projections ---
-    reference = jnp.asarray(projection_score_cache, dtype=jnp.complex64)[row_fine_rot]
-    if score_take is not None:
-        reference = reference[:, jnp.asarray(score_take, dtype=jnp.int32)]
-        if native_fft_size:
-            from relax.sparse_pass2.sparse_pass2_scoring import _relion_native_fine_units
-
-            reference = _relion_native_fine_units(reference, int(native_fft_size))
+    reference = cached_score_reference(
+        projection_score_cache, row_fine_rot, score_take=score_take, native_fft_size=native_fft_size
+    )
 
     # --- stage 3: score ----------------------------------------------------
     row_is_valid = jnp.arange(row_capacity, dtype=jnp.int32) < jnp.asarray(
@@ -510,6 +500,117 @@ def score_resident_chunk(
         full_to_compact=full_to_compact,
         logical_current_size=logical_current_size,
         image_capacity=image_capacity,
+    )
+
+
+def _gather_chunk_image_operands(
+    image_ids, score_input, corr_img_score, highres_xi2_half, translation_prior, *, image_capacity: int
+):
+    """A chunk's image slots gathered out of the half's score operands (padded slots read image 0)."""
+
+    safe_image_ids = jnp.where(image_ids >= 0, image_ids, jnp.int32(0))
+    chunk_image = jnp.asarray(score_input, dtype=jnp.complex64)[safe_image_ids]
+    chunk_corr = corr_img_score[safe_image_ids]
+    chunk_translation_prior = translation_prior[safe_image_ids]
+    chunk_initial_diff2 = (
+        jnp.zeros((image_capacity,), dtype=jnp.float32)
+        if highres_xi2_half is None
+        else jnp.asarray(highres_xi2_half, dtype=jnp.float32)[safe_image_ids]
+    )
+    return chunk_image, chunk_corr, chunk_translation_prior, chunk_initial_diff2
+
+
+def cached_score_reference(projection_score_cache, row_fine_rot, *, score_take=None, native_fft_size: int = 0):
+    """Rows' score projections gathered out of a projection cache, in the score window's units.
+
+    ``score_take`` reads a union cache (score and reconstruction windows in one
+    row) and a non-zero ``native_fft_size`` then applies RELION's native-unit
+    division that the three-cache build applied to its score cache.
+    """
+
+    reference = jnp.asarray(projection_score_cache, dtype=jnp.complex64)[jnp.asarray(row_fine_rot, dtype=jnp.int32)]
+    if score_take is not None:
+        reference = reference[:, jnp.asarray(score_take, dtype=jnp.int32)]
+        if native_fft_size:
+            from relax.sparse_pass2.sparse_pass2_scoring import _relion_native_fine_units
+
+            reference = _relion_native_fine_units(reference, int(native_fft_size))
+    return reference
+
+
+def score_resident_chunk_in_row_blocks(
+    block_reference,  # callable: row start -> complex64 [block_rows, N] the block's score projections
+    row_image_local,  # int32 [C_R]
+    row_log_prior,  # float32 [C_R]
+    row_mask_bits,  # uint32 [C_R, n_mask_words]
+    row_mask_mode,  # int8 [C_R]
+    n_valid_rows: int,  # host int: the rows past it are padding
+    image_ids,  # int32 [C_B]
+    score_input,
+    corr_img_score,
+    highres_xi2_half,
+    translation_prior,
+    *,
+    block_rows: int,
+    half_weights,
+    translation_angles,
+    full_to_compact,
+    fine_translation_parent,
+    logical_current_size,
+    row_capacity: int,
+    image_capacity: int,
+    n_fine_trans: int,
+):
+    """:func:`score_resident_chunk` for a chunk whose rows' projections do not fit at once.
+
+    A single image past the largest row class (EMPIAR-10202-like flat posteriors:
+    every one of 294,912 fine rotations a candidate, bench 14641043) would hold
+    every row's projection. Here each block of ``block_rows`` rows is projected
+    (``block_reference``), scored by the same fused kernel and dropped; only the
+    kernel's ``[C_R, T]`` diff2 is kept, and the per-image common minimum and the
+    log-weight conversion then run once over all rows, exactly as for a chunk
+    scored in one call. The kernel's per-row output does not depend on the other
+    rows of its call, so the scores are those of the one-call chunk.
+    """
+
+    row_image_local = jnp.asarray(row_image_local, dtype=jnp.int32)
+    image_ids = jnp.asarray(image_ids, dtype=jnp.int32)
+    chunk_image, chunk_corr, chunk_translation_prior, chunk_initial_diff2 = _gather_chunk_image_operands(
+        image_ids, score_input, corr_img_score, highres_xi2_half, translation_prior, image_capacity=image_capacity
+    )
+    row_is_valid = jnp.arange(row_capacity, dtype=jnp.int32) < jnp.int32(int(n_valid_rows))
+    candidate_mask = expand_chunk_mask_jnp(row_mask_bits, row_mask_mode, fine_translation_parent)
+    kernel_row_image_ids = jnp.where(row_is_valid, row_image_local, jnp.int32(-1))
+    raw_blocks = []
+    for start in range(0, int(row_capacity), int(block_rows)):
+        stop = min(start + int(block_rows), int(row_capacity))
+        if start >= int(n_valid_rows):
+            # Padded rows only: the kernel writes +inf for them without reading a projection.
+            raw_blocks.append(jnp.full((stop - start, int(n_fine_trans)), jnp.inf, dtype=jnp.float32))
+            continue
+        block_mask = None if candidate_mask is None else candidate_mask[start:stop]
+        raw_blocks.append(
+            _flat_rows_kernel_diff2(
+                block_reference(start)[: stop - start],
+                kernel_row_image_ids[start:stop],
+                chunk_image,
+                chunk_corr,
+                chunk_initial_diff2,
+                half_weights=half_weights,
+                translation_angles=translation_angles,
+                full_to_compact=full_to_compact,
+                logical_current_size=logical_current_size,
+                translation_chunk_live=_translation_chunk_live(block_mask, row_is_valid[start:stop]),
+            )
+        )
+    return _flat_rows_scores(
+        jnp.concatenate(raw_blocks, axis=0),
+        row_image_local,
+        jnp.asarray(row_log_prior),
+        chunk_translation_prior,
+        candidate_mask,
+        row_is_valid,
+        segment_capacity=image_capacity,
     )
 
 

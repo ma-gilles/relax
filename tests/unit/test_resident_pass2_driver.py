@@ -1663,3 +1663,76 @@ def test_plan_counts_a_lone_overflow_chunk():
     assert fitted.peak_bytes <= lone - 1
     with pytest.raises(ResidentConfigurationUnsupported):
         rp.plan_resident_chunk_memory(**{**kwargs, "budget_bytes": 3072 * 10 * p}, max_image_rows=2500)
+
+
+def test_plan_counts_a_row_blocked_lone_chunk_by_its_posterior_cells():
+    """bench 14641043: a flat-posterior image kept all 294,912 fine rotations. The global
+    pass scores and reconstructs such an image in blocks of its largest row class, so the
+    plan counts a largest-class chunk plus the posterior cells of every row, not every
+    row's projections (147 GiB there)."""
+
+    t, p = 84, 1000
+    kwargs = dict(
+        row_capacity_ladder=(8192, 32768), image_capacity_ladder=(32, 128), mstep_block_rows=512,
+        row_bytes=96 * 1024, n_fine_trans=t, n_recon_pixels=p, budget_bytes=None, pipelined=True,
+    )
+    lone_row_bytes = rp.lone_chunk_row_bytes(t)
+    plan = rp.plan_resident_chunk_memory(**kwargs, max_image_rows=294912, lone_row_bytes=lone_row_bytes)
+    block = rp.resident_chunk_bytes(
+        row_capacity=32768, image_capacity=32, mstep_block_rows=512, row_bytes=96 * 1024, n_fine_trans=t,
+        n_recon_pixels=p,
+    )
+    regular = rp.plan_resident_chunk_memory(**kwargs)
+    assert plan.peak_bytes == max(regular.peak_bytes, block + 294912 * lone_row_bytes)
+    assert plan.peak_bytes < rp.plan_resident_chunk_memory(**kwargs, max_image_rows=294912).peak_bytes / 2
+
+
+@requires_resident_gpu
+@pytest.mark.parametrize("streamed", [False, True], ids=["cached", "streamed"])
+def test_lone_overflow_chunks_match_the_whole_chunk_pass(_resident_production_env, monkeypatch, streamed):
+    """An image past the largest row class is scored and reconstructed in row blocks.
+
+    With a 16-row ladder most images of the fixture overflow and run alone; the scores
+    are the one-call chunk's, so the discrete state is identical, and the floats differ
+    only by the changed grouping of the M-step blocks and the per-chunk sums.
+    """
+
+    args = _driver_fixture_args()
+    if streamed:
+        monkeypatch.setattr(rp, "_projection_cache_fits_budget", lambda *a, **k: False)
+    whole = rp.compute_pass2_stats_resident(**args)
+    lone_calls = []
+    real_lone = rp._run_lone_resident_chunk
+
+    def spy(*a, **k):
+        lone_calls.append(int(k["spec"].row_capacity))
+        return real_lone(*a, **k)
+
+    monkeypatch.setattr(rp, "_run_lone_resident_chunk", spy)
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", "16")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "16")
+    lone = rp.compute_pass2_stats_resident(**args)
+    assert lone_calls, "the 16-row ladder made no lone chunk"
+
+    assert_matches(whole.hard_assignment, lone.hard_assignment)
+    assert_matches(whole.best_rotation_indices, lone.best_rotation_indices)
+    np.testing.assert_allclose(whole.best_rotations, lone.best_rotations, rtol=0, atol=1e-6)
+    np.testing.assert_allclose(whole.best_translations, lone.best_translations, rtol=0, atol=1e-6)
+
+    def rel_l2(a, b):
+        a = np.asarray(a)
+        b = np.asarray(b)
+        den = float(np.linalg.norm(a))
+        return float(np.linalg.norm(a - b) / den) if den else 0.0
+
+    bound = _float32_atomic_order_bound(args)
+    diffs = {
+        "Ft_y": rel_l2(whole.Ft_y, lone.Ft_y),
+        "Ft_ctf": rel_l2(whole.Ft_ctf, lone.Ft_ctf),
+        **{
+            field: rel_l2(getattr(whole.noise_stats, field), getattr(lone.noise_stats, field))
+            for field in ("wsum_sigma2_noise", "wsum_norm_correction", "wsum_img_power")
+        },
+    }
+    print("lone vs whole rel_l2:", diffs, "bound", bound)
+    assert all(value < bound for value in diffs.values()), diffs
