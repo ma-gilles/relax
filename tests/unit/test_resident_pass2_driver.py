@@ -36,6 +36,7 @@ from relax.sparse_pass2 import resident_pass2 as rp
 from relax.sparse_pass2.resident_candidates import (
     CapacityChunk,
     ResidentCandidateTables,
+    plan_capacity_chunks,
 )
 from relax.sparse_pass2.sparse_pass2_policy import ResidentConfigurationUnsupported
 from relax.sparse_pass2.sparse_pass2_wavg import (
@@ -1624,3 +1625,41 @@ def test_pass_headroom_asks_for_the_accumulators_and_the_smallest_chunks_rows(mo
         accumulators, min_row_capacity=1024, n_score_pixels=30, n_recon_pixels=20
     )
     assert asked == [accumulators + 1024 * resident_row_projection_bytes(n_score_pixels=30, n_recon_pixels=20)]
+
+
+def test_plan_counts_a_lone_overflow_chunk():
+    """bigbox 14607861: the EMPIAR-10202 final pass planned 1024-row chunks (16.05 of a
+    16.16 GiB budget) and ran out of memory projecting a 2048-row one-image chunk next to
+    the previous chunk. The chunk loops now run an overflow chunk alone, and the plan
+    counts it; past three times the largest row class it is the plan's peak."""
+
+    from types import SimpleNamespace
+
+    row_offsets = np.array([0, 300, 2800, 3183, 3483], dtype=np.int64)
+    tables = SimpleNamespace(n_images=4, row_offsets=row_offsets)
+    chunks = plan_capacity_chunks(tables, row_capacity_ladder=(1024,), image_capacity_ladder=(2, 4))
+    overflow = [chunk for chunk in chunks if rp.chunk_runs_alone(chunk, (1024,))]
+    assert [(c.image_start, c.row_capacity, c.image_capacity) for c in overflow] == [(1, 3072, 2)]
+    assert rp.max_image_rows(row_offsets) == 2500
+    assert rp.overflow_row_capacity(2500, (1024,)) == 3072
+    assert rp.overflow_row_capacity(1024, (1024,)) == 0
+
+    t, p = 36, 1000
+    kwargs = dict(
+        row_capacity_ladder=(1024,), image_capacity_ladder=(2, 4), mstep_block_rows=32, row_bytes=10 * p,
+        n_fine_trans=t, n_recon_pixels=p, budget_bytes=None, pipelined=True,
+    )
+    lone = rp.resident_chunk_bytes(
+        row_capacity=3072, image_capacity=2, mstep_block_rows=32, row_bytes=10 * p, n_fine_trans=t,
+        n_recon_pixels=p,
+    )
+    regular = rp.plan_resident_chunk_memory(**kwargs)
+    assert regular.peak_bytes < lone
+    assert rp.plan_resident_chunk_memory(**kwargs, max_image_rows=2500).peak_bytes == lone
+
+    # Over budget, the lone chunk shrinks its M-step block; its rows cannot shrink.
+    fitted = rp.plan_resident_chunk_memory(**{**kwargs, "budget_bytes": lone - 1}, max_image_rows=2500)
+    assert fitted.mstep_block_rows < 32
+    assert fitted.peak_bytes <= lone - 1
+    with pytest.raises(ResidentConfigurationUnsupported):
+        rp.plan_resident_chunk_memory(**{**kwargs, "budget_bytes": 3072 * 10 * p}, max_image_rows=2500)

@@ -820,6 +820,7 @@ def plan_resident_chunk_memory(
     pipelined: bool = False,
     projection_transient_bytes: int = 0,
     fixed_bytes: int = 0,
+    max_image_rows: int = 0,
 ) -> ResidentChunkMemoryPlan:
     """Shrink the three per-chunk classes until their sum fits one budget.
 
@@ -840,6 +841,13 @@ def plan_resident_chunk_memory(
     ``fixed_bytes`` (the pass's accumulators, allocated before the budget is
     read) is recorded in the plan, whose ``pass_bytes`` is the pass's total
     device need.
+
+    ``max_image_rows`` is the largest single image's row count. An image past
+    the largest row class is a one-image chunk of the smallest image class
+    (:func:`overflow_row_capacity`), which the chunk loops run alone
+    (:func:`chunk_runs_alone`), so it is counted without a pipelined neighbour.
+    Uncounted, the EMPIAR-10202 final pass planned 1024-row chunks at 16.05 of a
+    16.16 GiB budget and ran out of memory in a 2048-row one (bigbox 14607861).
     """
 
     rows = tuple(int(v) for v in row_capacity_ladder)
@@ -859,16 +867,51 @@ def plan_resident_chunk_memory(
     held_pixels = 3 * max(int(n_recon_pixels), 1) if held_tile_pixels is None else int(held_tile_pixels)
     projection = int(projection_transient_bytes)
 
-    def peak():
+    def regular_peak():
         return resident_chunk_bytes(
             row_capacity=max(rows), image_capacity=max(images), mstep_block_rows=block, **kwargs
         )
+
+    def overflow_peak():
+        overflow_rows = overflow_row_capacity(max_image_rows, rows)
+        if not overflow_rows:
+            return 0
+        return resident_chunk_bytes(
+            row_capacity=overflow_rows,
+            image_capacity=min(images),
+            mstep_block_rows=block,
+            **{**kwargs, "pipelined": False},
+        )
+
+    def peak():
+        return max(regular_peak(), overflow_peak())
 
     if budget_bytes is not None:
         while peak() > int(budget_bytes):
             t, p = max(int(n_fine_trans), 1), max(int(n_recon_pixels), 1)
             images_can_shrink = len(images) > 1 or max(images) > 1
             mstep_bytes = block * _mstep_block_row_bytes(t, p, mstep_tile_pixels)
+            if overflow_peak() > regular_peak():
+                # A lone overflow chunk is the peak: its rows are the image's own,
+                # so only its M-step block and the rounding to the largest row
+                # class can shrink.
+                terms = {
+                    "mstep": mstep_bytes if block > 1 and mstep_bytes > projection else -1,
+                    "rows": 1 if len(rows) > 1 else -1,
+                }
+                largest = max(terms, key=terms.get)
+                if terms[largest] < 0:
+                    raise ResidentConfigurationUnsupported(
+                        "The device-resident pass 2 cannot fit this configuration: its largest image "
+                        f"({int(max_image_rows)} rows, run alone) needs {peak() / float(1024 ** 3):.2f} GiB "
+                        f"against a {int(budget_bytes) / float(1024 ** 3):.2f} GiB budget. There is no other "
+                        "pass-2 engine; run on a GPU with more memory."
+                    )
+                if largest == "mstep":
+                    block //= 2
+                else:
+                    rows = rows[:-1]
+                continue
             rows_bytes = max(rows) * int(row_bytes)
             held_bytes = max(images) * t * held_pixels * 8
             prepare_bytes = max(images) * t * int(prepare_tile_pixels) * 8
@@ -915,6 +958,37 @@ def plan_resident_chunk_memory(
         budget_bytes=None if budget_bytes is None else int(budget_bytes),
         fixed_bytes=int(fixed_bytes),
     )
+
+
+def overflow_row_capacity(max_image_rows: int, row_capacity_ladder) -> int:
+    """Row capacity of the largest one-image overflow chunk; 0 when every image fits a class.
+
+    :func:`relax.sparse_pass2.resident_candidates.plan_capacity_chunks` rounds
+    an image past the largest row class up to a multiple of that class.
+    """
+
+    largest = max(int(v) for v in row_capacity_ladder)
+    n_rows = int(max_image_rows)
+    return 0 if n_rows <= largest else -(-n_rows // largest) * largest
+
+
+def max_image_rows(row_offsets) -> int:
+    """The largest single image's row count in a CSR ``row_offsets`` table."""
+
+    row_offsets = np.asarray(row_offsets)
+    return int(np.max(np.diff(row_offsets))) if row_offsets.size > 1 else 0
+
+
+def chunk_runs_alone(chunk, row_capacity_ladder) -> bool:
+    """Whether ``chunk`` is a one-image overflow chunk, which a pipelined loop runs alone.
+
+    Its rows (the image's own, past the largest row class) are not overlapped
+    with a neighbouring chunk's: the loop finishes the previous chunk before
+    starting it and finishes it before starting the next, as
+    :func:`plan_resident_chunk_memory` counts it.
+    """
+
+    return int(chunk.row_capacity) > max(int(v) for v in row_capacity_ladder)
 
 
 def resident_image_capacity_start(
@@ -3247,6 +3321,7 @@ def _resident_pass2(
             rows_live_during_prepare=True,
             pipelined=tilt is None and _global_chunk_loop_pipelined(stream_projections),
             fixed_bytes=accumulator_bytes,
+            max_image_rows=max_image_rows(tables.row_offsets),
             **chunk_translated_tile_pixels(
                 unshifted_operands=unshifted_operands,
                 n_score_pixels=n_windowed if windowed_prepare else n_half_pixels,
@@ -3785,7 +3860,12 @@ def _resident_pass2(
             Ft_y_total, Ft_ctf_total = (Ft_y_chunk,), (Ft_ctf_chunk,)
     deferred = _global_chunk_loop_pipelined(stream_projections)
     pending = None
+    pending_alone = False
     for chunk in chunks if tilt is None else ():
+        alone = chunk_runs_alone(chunk, row_ladder)
+        if pending is not None and (alone or pending_alone):
+            Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
+            pending = None
         result = _run_resident_chunk(
             chunk,
             tables=tables,
@@ -3865,7 +3945,7 @@ def _resident_pass2(
             continue
         if pending is not None:
             Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
-        pending = result
+        pending, pending_alone = result, alone
     if pending is not None:
         Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
     if presum_adjoint:

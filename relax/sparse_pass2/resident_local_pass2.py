@@ -834,6 +834,7 @@ def compute_local_search_resident(
             pipelined=_local_chunk_loop_pipelined(),
             projection_transient_bytes=projection_block_rows * projection_row_bytes,
             fixed_bytes=accumulator_bytes,
+            max_image_rows=rp.max_image_rows(tables.row_offsets),
             **tile_pixels,
         )
         row_ladder = memory_plan.row_capacity_ladder
@@ -939,7 +940,12 @@ def compute_local_search_resident(
         # every chunk at once so its stage timers stay per chunk.
         pipelined = _local_chunk_loop_pipelined()
         pending = None
+        pending_alone = False
         for chunk in chunks:
+            alone = rp.chunk_runs_alone(chunk, row_ladder)
+            if pending is not None and (alone or pending_alone):
+                Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
+                pending = None
             finish = _start_resident_local_chunk(
                 chunk,
                 tables=tables,
@@ -999,7 +1005,7 @@ def compute_local_search_resident(
             )
             if pending is not None:
                 Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
-            pending = finish
+            pending, pending_alone = finish, alone
             if not pipelined:
                 Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
                 pending = None
