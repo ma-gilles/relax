@@ -305,12 +305,14 @@ class TestLayoutGoldenValues:
 
 
 # NativeOpticsState is counted with state; both serialization owners and shared
-# STAR/scalar definitions remain counted in I/O. Existing ceilings are unchanged.
+# STAR/scalar definitions remain counted in I/O. The coarse InitialModel SGD
+# feature adds reviewed controller, E-step metadata, and optimizer/noise ownership.
 # User-approved revision after auditing fbdf23f9 (5014 lines) against afa3d6d46
 # (8626). See docs/development/codebase.md#vdam-code-budgets for retained growth
 # and the accounting contract. Current audited counts are documented there.
 LOC_BUDGETS = {
-    "controller": (1655, (
+    # Coarse SGD adds shared schedule/prior/occupancy controls (+142 from 1655).
+    "controller": (1797, (
         "__init__.py", "driver.py", "iteration_loop.py", "native_options.py",
         "schedules.py", "subset.py", "subset_schedule.py",
     )),
@@ -318,10 +320,16 @@ LOC_BUDGETS = {
     "sampling_layout": (950, ("native_sampling.py", "layout.py")),
     # The exact-local VDAM route (sparse_pass2_estep.py, 1062 lines) was removed on
     # 2026-09-27; the adaptive-route E-step joins this budget with the helpers it shared
-    # (1844 counted lines then, with the shared projector setup), and the cap comes down from
-    # 2525 to keep the reviewed headroom small.
-    "estep": (1900, (
+    # (1846 counted lines at integration, with the shared projector setup). The reviewed
+    # uniform-prior metadata adds 36 lines to the upstream 1900-line ceiling.
+    "estep": (1936, (
         "dense_adapter.py", "estep_common.py", "estep_meta_updates.py", "adaptive_estep.py",
+    )),
+    # Scalar-curvature momentum and masked observation-noise adaptation are an
+    # opt-in package with its own exact reviewed budget and complete inventory.
+    "sgd_optimizer_noise": (309, (
+        "../sgd_initial_model/__init__.py", "../sgd_initial_model/noise.py",
+        "../sgd_initial_model/optimizer.py",
     )),
     "reconstruction_state": (790, ("m_step.py", "mstep_single_class.py", "state.py")),
     # relion/initial_noise.py gained 53 lines bringing an optics group on another pixel
@@ -352,6 +360,9 @@ def test_loc_budget_inventory_covers_every_vdam_module():
     assert all(path.is_file() for path in paths), "Update budget ownership when moving a module"
     listed = {path for path in paths if path.is_relative_to(PACKAGE_DIR)}
     assert listed == set(PACKAGE_DIR.rglob("*.py")), "Assign every VDAM module to a responsibility budget"
+    sgd_package_dir = PACKAGE_DIR.parent / "sgd_initial_model"
+    listed_sgd = {path for path in paths if path.is_relative_to(sgd_package_dir)}
+    assert listed_sgd == set(sgd_package_dir.rglob("*.py")), "Assign every SGD module to its responsibility budget"
 
 
 @pytest.mark.parametrize("responsibility", LOC_BUDGETS)

@@ -179,21 +179,37 @@ The original `fbdf23f9` InitialModel snapshot contains 5,014 Python lines.
 At `afa3d6d46`, the same accounting scope contains 8,626, including code moved
 into shared owners. The user approved replacing the inherited 6,100-line cap
 with audited responsibility budgets on September 13, 2026. The table below
-reflects the September 21 package-A ownership split, including the later
-diagnostic allowance already present at its execution base. All package-A
-ceilings are unchanged; numerical tolerances, baselines and scientific gates
-are unchanged.
+reflects the September 28 audit, including the intervening adaptive E-step and
+multi-optics owners and the new opt-in SGD optimizer. Numerical tolerances,
+baselines and scientific gates are unchanged.
 
 | Responsibility | Audited lines | Budget | Retained scope |
 | --- | ---: | ---: | --- |
-| Controller and schedules | 1,618 | 1,655 | Driver, iteration/subset schedules, options and launcher defaults |
-| Initialization | 468 | 500 | Bootstrap, initial state and shared initial-reference filter |
-| Sampling and layout | 910 | 950 | Native sampling updates, canonical pose metadata and frame conversions |
-| E-step | 2,415 | 2,525 | E-step configuration, batching, dense/local/compact routing, statistics, support and projector setup |
-| Reconstruction and state | 782 | 790 | Single-class M-step transaction, precision checks, state and class dispatch |
-| Input/output | 1,269 | 1,270 | STAR metadata, startup artifacts, RELION checkpoint import and initial noise |
-| Diagnostics | 1,218 | 1,240 | GT registration, native moment/reference replay and coarse report bookkeeping |
-| **Total** | **8,680** | **8,930** | **250 lines of total headroom** |
+| Controller and schedules | 1,781 | 1,797 | Driver, iteration/subset schedules, options and launcher defaults |
+| Initialization | 500 | 500 | Bootstrap, initial state and shared initial-reference filter |
+| Sampling and layout | 940 | 950 | Native sampling updates, canonical pose metadata and frame conversions |
+| E-step | 1,882 | 1,936 | Adaptive E-step, configuration, statistics, support, projector setup and probability updates |
+| SGD optimizer and noise | 309 | 309 | Scalar-curvature momentum update and discounted masked-noise estimator |
+| Reconstruction and state | 777 | 790 | Single-class M-step transaction, precision checks, state and class dispatch |
+| Input/output | 1,329 | 1,330 | STAR metadata, startup artifacts, RELION checkpoint import and initial noise |
+| Diagnostics | 1,092 | 1,240 | GT registration, native moment/reference replay and coarse report bookkeeping |
+| **Total** | **8,610** | **8,852** | **242 lines of total headroom** |
+
+The September 28 architectural review charges the new functionality explicitly.
+Relative to `e2401c4c`, the controller adds 24 lines in the driver for SGD noise
+initialization and wiring, 89 in the loop for optimizer selection, fixed
+bandwidth/subsets and prior/occupancy reporting, and 29 in typed options.
+The controller allowance therefore grows by exactly 142 lines, with no added
+headroom at the pre-removal review. Uniform joint class/direction priors add 36
+lines to probability updates; their E-step allowance grows by 36 over the
+upstream 1,900-line ceiling. The upstream exact-local VDAM removal integrates
+`adaptive_estep.py` into that responsibility and removes `sparse_pass2_estep.py`;
+its merged E-step count is 1,882 lines. All 309 lines of the new
+`sgd_initial_model` package have a separate owner and allowance, and the
+inventory guard checks that package dynamically. Other responsibility limits
+are unchanged. These are reviewed allowances for
+the [new optimizer and shared controls](../math/cryosparc_sgd.md), not changes
+to accuracy thresholds or exclusions of extracted code from accounting.
 
 Noise failure reports and optional noise-boundary captures now live in
 [`diagnostics/vdam_noise.py`](../../relax/diagnostics/vdam_noise.py);
@@ -219,9 +235,10 @@ serialization modules in full, the shared column/scalar definitions with their
 spacing allowance, and `NativeOpticsState` once in reconstruction/state. Its
 net accounting change is +9 lines (module/import overhead); no ceiling increased.
 
-The largest retained routine grew from 228 to 733 lines before the recent
-11-line dead-prior cleanup: sparse pass-2 orchestration now covers additional
-compact/local, zero-oversampling, exact-operand and execution-policy cases.
+Before its removal, the largest exact-local routine grew from 228 to 733 lines:
+sparse pass-2 orchestration had accumulated compact/local, zero-oversampling,
+exact-operand and execution-policy cases. The current InitialModel route uses
+the shared adaptive E-step.
 Other identifiable additions include the 430-line native checkpoint adapter,
 96-line continuation subset-order replay, 409-line rigid-registration owner,
 and native M-step/reference replay diagnostics. These have distinct scientific

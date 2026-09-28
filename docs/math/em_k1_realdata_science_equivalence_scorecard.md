@@ -294,15 +294,16 @@ No gate reads these values. All rows, including synthetic data: `docs/benchmarks
 Rows from `tests/baselines/relion_vs_relax_benchmarks.json` whose RELION reference has same-command
 repeats. These are the current relax runs, not the frozen calibration runs above.
 
-### EMPIAR-10073 (flip pair) (relax `64499e87c`)
+### EMPIAR-10073 (flip pair) (relax `b6b38b9fe`)
 
 relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
 
 | RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| flip-job RELION arm | 14397072 | 0.9918 | 0.9840 | 0.9843 | 0.9989 | 0.9968 | 0.9970 | met |
-| repeat 14397251 | 14397251 | 0.9904 | 0.9812 | 0.9820 | 0.9987 | 0.9962 | 0.9965 | met |
-| speedbench r1 (--preread_images) | 14331579 | 0.9913 | 0.9826 | 0.9838 | 0.9989 | 0.9965 | 0.9968 | met |
+| relion_flipqual | — | 0.9917 | 0.9835 | 0.9842 | 0.9989 | 0.9968 | 0.9969 | met |
+| relion_rep | — | 0.9901 | 0.9803 | 0.9815 | — | — | — | met |
+| relion_speedbench | — | 0.9916 | 0.9835 | 0.9841 | — | — | — | met |
+| this job's RELION arm | 14563026 | 0.9841 | 0.9709 | 0.9715 | — | — | — | met |
 
 RELION against RELION (same band FSC-AUCs):
 
