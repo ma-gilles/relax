@@ -202,16 +202,25 @@ def _dense_uses_adaptive_engine(adaptive_oversampling, group_ids) -> bool:
     return int(adaptive_oversampling) > 0 or group_ids is not None
 
 
+@dataclass(frozen=True, kw_only=True)
+class AdaptivePassPlan:
+    """Route-derived batch, size and support choices for one adaptive pass."""
+
+    sparse_pass2: bool
+    significance_image_batch_size: int | None
+    significance_rotation_block_size: int | None
+    coarse_current_size: int | None
+    fine_current_size: int | None
+    oversampling_order: int
+
+
 def _adaptive_engine_shared_kwargs(
     pass2_grids: _AdaptivePass2Grids,
-    spec: "DenseHalfScoringSpec",
-    *,
-    sparse_pass2: bool,
-    significance_image_batch_size,
-    significance_rotation_block_size,
-    coarse_current_size,
-    fine_current_size,
-    oversampling_order,
+    pass_plan: AdaptivePassPlan,
+    priors: "DensePriorSpec",
+    batching: "DenseBatchPolicy",
+    sampling: "DenseSamplingSpec",
+    execution: "DenseExecutionPolicy",
 ) -> dict:
     """Keywords the K=1 and K-class routes pass identically to ``run_dense_k_class_em_adaptive``.
 
@@ -223,21 +232,21 @@ def _adaptive_engine_shared_kwargs(
     """
 
     return dict(
-        class_log_priors=spec.priors.class_log_priors,
+        class_log_priors=priors.class_log_priors,
         accumulate_noise=True,
         adaptive_fraction=RELION_ADAPTIVE_FRACTION,
-        max_significants=(-1 if spec.batching.max_significants is None else int(spec.batching.max_significants)),
-        relion_fine_mstep_prune=bool(sparse_pass2),
-        significance_image_batch_size=significance_image_batch_size,
-        significance_rotation_block_size=significance_rotation_block_size,
-        coarse_current_size=coarse_current_size,
-        fine_current_size=fine_current_size,
-        coarse_healpix_order=int(spec.sampling.current_healpix_order),
-        oversampling_order=int(oversampling_order),
-        fine_mstep_rotations_override=(pass2_grids.fine_mstep_rotations if sparse_pass2 else None),
-        return_best_pose_details=spec.execution.return_best_pose_details,
-        bpref_device_signature_active=spec.execution.bpref_device_signature_active,
-        debug_iteration=spec.execution.debug_iteration,
+        max_significants=(-1 if batching.max_significants is None else int(batching.max_significants)),
+        relion_fine_mstep_prune=bool(pass_plan.sparse_pass2),
+        significance_image_batch_size=pass_plan.significance_image_batch_size,
+        significance_rotation_block_size=pass_plan.significance_rotation_block_size,
+        coarse_current_size=pass_plan.coarse_current_size,
+        fine_current_size=pass_plan.fine_current_size,
+        coarse_healpix_order=int(sampling.current_healpix_order),
+        oversampling_order=int(pass_plan.oversampling_order),
+        fine_mstep_rotations_override=(pass2_grids.fine_mstep_rotations if pass_plan.sparse_pass2 else None),
+        return_best_pose_details=execution.return_best_pose_details,
+        bpref_device_signature_active=execution.bpref_device_signature_active,
+        debug_iteration=execution.debug_iteration,
     )
 
 
@@ -359,35 +368,28 @@ class DenseOpticsSpec:
     reference_current_size: int | None = None
 
 
-@dataclass(frozen=True, kw_only=True)
-class DenseHalfScoringSpec:
-    """Complete shallow specification for one dense half-set scoring call."""
-
-    half: DenseHalfData
-    sampling: DenseSamplingSpec
-    priors: DensePriorSpec
-    batching: DenseBatchPolicy
-    variant: DenseVariantPolicy
-    execution: DenseExecutionPolicy
-    optics: DenseOpticsSpec = DenseOpticsSpec()
-
-
 def _score_half_dense_one_shape(
-    spec: DenseHalfScoringSpec,
+    half: DenseHalfData,
+    sampling: DenseSamplingSpec,
+    priors: DensePriorSpec,
+    batching: DenseBatchPolicy,
+    variant: DenseVariantPolicy,
+    execution: DenseExecutionPolicy,
+    optics: DenseOpticsSpec,
 ) -> HalfScoreResult:
     """Dense (non-local-search) E+M scoring for one half-set.
 
-    The specification keeps per-half data, sampling, priors, batching, route
-    selection, execution controls and optics adaptations under their owning
-    groups. Stable fields are read through those groups; only values changed by
-    route planning become local variables.
+    The signature exposes per-half data, sampling, priors, batching, route
+    selection, execution controls and optics adaptations as cohesive owners.
+    Stable fields are read through those owners; only values changed by route
+    planning become local variables.
 
-    ``spec.half.optics_group_ids_k`` gives each image's row of a
+    ``half.optics_group_ids_k`` gives each image's row of a
     per-optics-group ``noise_variance_k`` table
     (:mod:`relax.helpers.optics_noise`); only the K=1 adaptive route carries it,
     every other engine refuses it.
 
-    ``spec.optics.projection_scale`` and ``reference_current_size`` describe
+    ``optics.projection_scale`` and ``reference_current_size`` describe
     images on another grid than the reference (one shape class of
     :mod:`relax.refinement.optics_shapes`): the projection and backprojection
     matrices are divided by the scale and the backprojector keeps the reference
@@ -411,19 +413,11 @@ def _score_half_dense_one_shape(
        em_kwargs["image_batch_size"] with the firstiter clamp; single-pass
        leaves em_kwargs untouched.
 
-    Stores K-class summaries and explicit best poses in ``spec.half.outputs``. The
+    Stores K-class summaries and explicit best poses in ``half.outputs``. The
     caller records the common payload from the returned ``HalfScoreResult``.
-    ``spec.batching.safe_batch_sizes`` is the closure-bound batch sizer from
+    ``batching.safe_batch_sizes`` is the closure-bound batch sizer from
     ``refine_single_volume``.
     """
-
-    half = spec.half
-    sampling = spec.sampling
-    priors = spec.priors
-    batching = spec.batching
-    variant = spec.variant
-    execution = spec.execution
-    optics = spec.optics
 
     # These values are refined by route-specific planning below. All other
     # stable values retain their owning specification object.
@@ -648,13 +642,18 @@ def _score_half_dense_one_shape(
             )
             shared_kwargs = _adaptive_engine_shared_kwargs(
                 pass2_grids,
-                spec,
-                sparse_pass2=kclass_sparse_pass2,
-                significance_image_batch_size=significance_image_batch_size_override,
-                significance_rotation_block_size=significance_rotation_block_size_override,
-                coarse_current_size=firstiter_coarse_current_size,
-                fine_current_size=firstiter_fine_current_size,
-                oversampling_order=adaptive_os_local,
+                AdaptivePassPlan(
+                    sparse_pass2=kclass_sparse_pass2,
+                    significance_image_batch_size=significance_image_batch_size_override,
+                    significance_rotation_block_size=significance_rotation_block_size_override,
+                    coarse_current_size=firstiter_coarse_current_size,
+                    fine_current_size=firstiter_fine_current_size,
+                    oversampling_order=adaptive_os_local,
+                ),
+                priors,
+                batching,
+                sampling,
+                execution,
             )
             k_class_result = run_dense_k_class_em_adaptive(
                 half.experiment_dataset,
@@ -835,13 +834,18 @@ def _score_half_dense_one_shape(
             )
             shared_kwargs = _adaptive_engine_shared_kwargs(
                 pass2_grids,
-                spec,
-                sparse_pass2=k1_sparse_pass2,
-                significance_image_batch_size=significance_image_batch_size_override,
-                significance_rotation_block_size=significance_rotation_block_size_override,
-                coarse_current_size=firstiter_coarse_current_size,
-                fine_current_size=firstiter_fine_current_size,
-                oversampling_order=adaptive_os_local,
+                AdaptivePassPlan(
+                    sparse_pass2=k1_sparse_pass2,
+                    significance_image_batch_size=significance_image_batch_size_override,
+                    significance_rotation_block_size=significance_rotation_block_size_override,
+                    coarse_current_size=firstiter_coarse_current_size,
+                    fine_current_size=firstiter_fine_current_size,
+                    oversampling_order=adaptive_os_local,
+                ),
+                priors,
+                batching,
+                sampling,
+                execution,
             )
             if optics.projection_scale != 1.0:
                 shared_kwargs["fine_mstep_rotations_override"] = _projection_rotations(
@@ -1017,16 +1021,21 @@ def _projection_rotations(rotations, scale: float):
     return np.asarray(rotations) / float(scale)
 
 
-def _dense_spec_for_shape(spec: DenseHalfScoringSpec, shape_class, class_index: int) -> DenseHalfScoringSpec:
+def _dense_owners_for_shape(
+    half: DenseHalfData,
+    sampling: DenseSamplingSpec,
+    priors: DensePriorSpec,
+    batching: DenseBatchPolicy,
+    variant: DenseVariantPolicy,
+    execution: DenseExecutionPolicy,
+    optics: DenseOpticsSpec,
+    shape_class,
+    class_index: int,
+) -> tuple:
     """Derive one shape class without changing the shared scoring owners."""
 
     from relax.refinement import optics_shapes
 
-    half = spec.half
-    sampling = spec.sampling
-    priors = spec.priors
-    variant = spec.variant
-    optics = spec.optics
     shape_values = optics_shapes.class_kwargs(
         {
             "experiment_dataset": half.experiment_dataset,
@@ -1061,9 +1070,8 @@ def _dense_spec_for_shape(spec: DenseHalfScoringSpec, shape_class, class_index: 
         )
 
     batch_overrides = {} if optics.class_batch_overrides is None else optics.class_batch_overrides[class_index]
-    return replace(
-        spec,
-        half=replace(
+    return (
+        replace(
             half,
             experiment_dataset=shape_values["experiment_dataset"],
             noise_variance_k=optics_shapes.class_noise_table(
@@ -1077,7 +1085,7 @@ def _dense_spec_for_shape(spec: DenseHalfScoringSpec, shape_class, class_index: 
             optics_group_ids_k=shape_values["optics_group_ids_k"],
             outputs=PerHalfOutputs(),
         ),
-        sampling=replace(
+        replace(
             sampling,
             current_translations=shape_values["current_translations"],
             base_translations=shape_values["base_translations"],
@@ -1085,7 +1093,7 @@ def _dense_spec_for_shape(spec: DenseHalfScoringSpec, shape_class, class_index: 
             cs_for_engine=shape_values["cs_for_engine"],
             model_current_size_for_engine=shape_values["model_current_size_for_engine"],
         ),
-        priors=replace(
+        replace(
             priors,
             rotation_log_prior_k=shape_values["rotation_log_prior_k"],
             class_rotation_log_prior_k=shape_values["class_rotation_log_prior_k"],
@@ -1093,13 +1101,14 @@ def _dense_spec_for_shape(spec: DenseHalfScoringSpec, shape_class, class_index: 
             translation_search_base=shape_values["translation_search_base"],
             trans_prior_center_for_engine=shape_values["trans_prior_center_for_engine"],
         ),
-        batching=replace(spec.batching, **batch_overrides),
-        variant=replace(
+        replace(batching, **batch_overrides),
+        replace(
             variant,
             firstiter_coarse_current_size=shape_values["firstiter_coarse_current_size"],
             firstiter_fine_current_size=shape_values["firstiter_fine_current_size"],
         ),
-        optics=replace(
+        execution,
+        replace(
             optics,
             noise_radial_k=None,
             class_batch_overrides=None,
@@ -1110,34 +1119,54 @@ def _dense_spec_for_shape(spec: DenseHalfScoringSpec, shape_class, class_index: 
     )
 
 
-def _score_half_dense(spec: DenseHalfScoringSpec) -> HalfScoreResult:
+def _score_half_dense(
+    half: DenseHalfData,
+    sampling: DenseSamplingSpec,
+    priors: DensePriorSpec,
+    batching: DenseBatchPolicy,
+    variant: DenseVariantPolicy,
+    execution: DenseExecutionPolicy,
+    optics: DenseOpticsSpec,
+) -> HalfScoreResult:
     """Dense E+M scoring for one half; several image shapes run per shape class."""
 
     from relax.refinement import optics_shapes
 
-    half = spec.half.experiment_dataset
-    if not isinstance(half, optics_shapes.MultiShapeHalf):
-        return _score_half_dense_one_shape(spec)
-    if spec.optics.noise_radial_k is None:
+    experiment_half = half.experiment_dataset
+    if not isinstance(experiment_half, optics_shapes.MultiShapeHalf):
+        return _score_half_dense_one_shape(half, sampling, priors, batching, variant, execution, optics)
+    if optics.noise_radial_k is None:
         raise ValueError("a half with several image shapes needs reference-shell noise spectra")
-    if spec.half.optics_group_ids_k is None:
+    if half.optics_group_ids_k is None:
         raise ValueError("a half with several image shapes needs each image's optics group")
-    if spec.optics.class_batch_overrides is not None and len(spec.optics.class_batch_overrides) != len(half.classes):
+    if optics.class_batch_overrides is not None and len(optics.class_batch_overrides) != len(experiment_half.classes):
         raise ValueError("class_batch_overrides needs one entry per shape class")
 
     results = [
-        _score_half_dense_one_shape(_dense_spec_for_shape(spec, shape_class, index))
-        for index, shape_class in enumerate(half.classes)
+        _score_half_dense_one_shape(
+            *_dense_owners_for_shape(
+                half,
+                sampling,
+                priors,
+                batching,
+                variant,
+                execution,
+                optics,
+                shape_class,
+                index,
+            )
+        )
+        for index, shape_class in enumerate(experiment_half.classes)
     ]
     merged = optics_shapes.merge_class_results(
         results,
-        half.classes,
-        half.n_units,
-        int(half.image_shape[0]),
+        experiment_half.classes,
+        experiment_half.n_units,
+        int(experiment_half.image_shape[0]),
     )
-    spec.half.outputs.best_pose_rotations[spec.half.k] = merged.best_pose_rotations
-    spec.half.outputs.best_pose_rotation_eulers[spec.half.k] = merged.best_pose_rotation_eulers
-    spec.half.outputs.best_pose_translations[spec.half.k] = merged.best_pose_translations
+    half.outputs.best_pose_rotations[half.k] = merged.best_pose_rotations
+    half.outputs.best_pose_rotation_eulers[half.k] = merged.best_pose_rotation_eulers
+    half.outputs.best_pose_translations[half.k] = merged.best_pose_translations
     return merged
 
 
@@ -1236,26 +1265,19 @@ class LocalOpticsSpec:
     reference_current_size: int | None = None
 
 
-@dataclass(frozen=True, kw_only=True)
-class LocalHalfScoringSpec:
-    """Complete shallow specification for one exact-local half-set call."""
-
-    half: LocalHalfData
-    sampling: LocalSamplingSpec
-    priors: LocalPriorSpec
-    batching: LocalBatchPolicy
-    execution: LocalExecutionPolicy
-    diagnostics: LocalDiagnosticPolicy
-    optics: LocalOpticsSpec = LocalOpticsSpec()
-
-
 def _score_half_dense_in_bpref_scope(
-    spec: DenseHalfScoringSpec,
+    half: DenseHalfData,
+    sampling: DenseSamplingSpec,
+    priors: DensePriorSpec,
+    batching: DenseBatchPolicy,
+    variant: DenseVariantPolicy,
+    execution: DenseExecutionPolicy,
+    optics: DenseOpticsSpec,
 ) -> HalfScoreResult:
     """Keep all authoritative dense-half work outside diagnostic CUDA scope."""
 
     with em_cuda_kernels.bpref_device_signature_scope(False):
-        return _score_half_dense(spec)
+        return _score_half_dense(half, sampling, priors, batching, variant, execution, optics)
 
 
 def _local_translation_prior_reference_translations(
@@ -1294,19 +1316,21 @@ def _relion_coarse_significant_counts(significant_sample_indices):
     )
 
 
-def _local_spec_for_shape(
-    spec: LocalHalfScoringSpec,
+def _local_owners_for_shape(
+    half: LocalHalfData,
+    sampling: LocalSamplingSpec,
+    priors: LocalPriorSpec,
+    batching: LocalBatchPolicy,
+    execution: LocalExecutionPolicy,
+    diagnostics: LocalDiagnosticPolicy,
+    optics: LocalOpticsSpec,
     shape_class,
     class_index: int,
-) -> LocalHalfScoringSpec:
+) -> tuple:
     """Derive one exact-local shape class through the optics owner."""
 
     from relax.refinement import optics_shapes
 
-    half = spec.half
-    sampling = spec.sampling
-    priors = spec.priors
-    optics = spec.optics
     shape_values = optics_shapes.class_kwargs(
         {
             "experiment_dataset": half.experiment_dataset,
@@ -1337,9 +1361,8 @@ def _local_spec_for_shape(
                 if key in shape_values
             }
         )
-    return replace(
-        spec,
-        half=replace(
+    return (
+        replace(
             half,
             experiment_dataset=shape_values["experiment_dataset"],
             noise_variance_k=optics_shapes.class_noise_table(
@@ -1354,7 +1377,7 @@ def _local_spec_for_shape(
             optics_group_ids_k=shape_values["optics_group_ids_k"],
             outputs=PerHalfOutputs(),
         ),
-        sampling=replace(
+        replace(
             sampling,
             current_translations=shape_values["current_translations"],
             base_translations=shape_values["base_translations"],
@@ -1362,14 +1385,17 @@ def _local_spec_for_shape(
             model_current_size_for_engine=shape_values["model_current_size_for_engine"],
             local_pass1_current_size=shape_values["local_pass1_current_size"],
         ),
-        priors=replace(
+        replace(
             priors,
             trans_prior_center=shape_values["trans_prior_center"],
             trans_prior_center_for_engine=shape_values["trans_prior_center_for_engine"],
             translation_search_base=shape_values["translation_search_base"],
             replay_prior_translations=shape_values["replay_prior_translations"],
         ),
-        optics=replace(
+        batching,
+        execution,
+        diagnostics,
+        replace(
             optics,
             noise_radial_k=None,
             class_translation_overrides=None,
@@ -1379,44 +1405,70 @@ def _local_spec_for_shape(
     )
 
 
-def _score_half_local(spec: LocalHalfScoringSpec) -> HalfScoreResult:
+def _score_half_local(
+    half: LocalHalfData,
+    sampling: LocalSamplingSpec,
+    priors: LocalPriorSpec,
+    batching: LocalBatchPolicy,
+    execution: LocalExecutionPolicy,
+    diagnostics: LocalDiagnosticPolicy,
+    optics: LocalOpticsSpec,
+) -> HalfScoreResult:
     """Exact-local scoring for one half; several shapes run per shape class."""
 
     from relax.refinement import optics_shapes
 
-    half = spec.half.experiment_dataset
-    if not isinstance(half, optics_shapes.MultiShapeHalf):
-        return _score_half_local_one_shape(spec)
-    if spec.optics.noise_radial_k is None:
+    experiment_half = half.experiment_dataset
+    if not isinstance(experiment_half, optics_shapes.MultiShapeHalf):
+        return _score_half_local_one_shape(half, sampling, priors, batching, execution, diagnostics, optics)
+    if optics.noise_radial_k is None:
         raise ValueError("a half with several image shapes needs reference-shell noise spectra")
-    if spec.half.optics_group_ids_k is None:
+    if half.optics_group_ids_k is None:
         raise ValueError("a half with several image shapes needs each image's optics group")
     optics_shapes.require_exact_local_parent_windows(
         {
-            "experiment_dataset": half,
-            "cs_for_engine": spec.sampling.cs_for_engine,
-            "local_pass1_current_size": spec.sampling.local_pass1_current_size,
-            "coarse_sizing": spec.optics.coarse_sizing,
+            "experiment_dataset": experiment_half,
+            "cs_for_engine": sampling.cs_for_engine,
+            "local_pass1_current_size": sampling.local_pass1_current_size,
+            "coarse_sizing": optics.coarse_sizing,
         }
     )
     results = [
-        _score_half_local_one_shape(_local_spec_for_shape(spec, shape_class, index))
-        for index, shape_class in enumerate(half.classes)
+        _score_half_local_one_shape(
+            *_local_owners_for_shape(
+                half,
+                sampling,
+                priors,
+                batching,
+                execution,
+                diagnostics,
+                optics,
+                shape_class,
+                index,
+            )
+        )
+        for index, shape_class in enumerate(experiment_half.classes)
     ]
     merged = optics_shapes.merge_class_results(
         results,
-        half.classes,
-        half.n_units,
-        int(half.image_shape[0]),
+        experiment_half.classes,
+        experiment_half.n_units,
+        int(experiment_half.image_shape[0]),
     )
-    spec.half.outputs.best_pose_rotations[spec.half.k] = merged.best_pose_rotations
-    spec.half.outputs.best_pose_rotation_eulers[spec.half.k] = merged.best_pose_rotation_eulers
-    spec.half.outputs.best_pose_translations[spec.half.k] = merged.best_pose_translations
+    half.outputs.best_pose_rotations[half.k] = merged.best_pose_rotations
+    half.outputs.best_pose_rotation_eulers[half.k] = merged.best_pose_rotation_eulers
+    half.outputs.best_pose_translations[half.k] = merged.best_pose_translations
     return merged
 
 
 def _score_half_local_one_shape(
-    spec: LocalHalfScoringSpec,
+    half: LocalHalfData,
+    sampling: LocalSamplingSpec,
+    priors: LocalPriorSpec,
+    batching: LocalBatchPolicy,
+    execution: LocalExecutionPolicy,
+    diagnostics: LocalDiagnosticPolicy,
+    optics: LocalOpticsSpec,
 ) -> HalfScoreResult:
     """Local-search E+M scoring for one half-set.
 
@@ -1434,14 +1486,6 @@ def _score_half_local_one_shape(
     Caller handles ``noise_stats_per_half[k]``, ``pose_rotations[k] = None``,
     and ``coarse_ha[k] = ha_k`` from the returned ``HalfScoreResult``.
     """
-
-    half = spec.half
-    sampling = spec.sampling
-    priors = spec.priors
-    batching = spec.batching
-    execution = spec.execution
-    diagnostics = spec.diagnostics
-    optics = spec.optics
 
     # RELION's convertAllSquaredDifferencesToWeights uses mymodel.pdf_direction
     # only when orientational_prior_mode == NOPRIOR. Local searches run through
@@ -1969,11 +2013,17 @@ def _score_half_local_one_shape(
 
 
 def _score_half_local_in_bpref_scope(
-    spec: LocalHalfScoringSpec,
+    half: LocalHalfData,
+    sampling: LocalSamplingSpec,
+    priors: LocalPriorSpec,
+    batching: LocalBatchPolicy,
+    execution: LocalExecutionPolicy,
+    diagnostics: LocalDiagnosticPolicy,
+    optics: LocalOpticsSpec,
 ) -> HalfScoreResult:
     """Run local scoring with device-capture flags disabled or fail closed."""
 
-    if spec.diagnostics.bpref_device_signature_active:
+    if diagnostics.bpref_device_signature_active:
         raise RuntimeError("BPref device signature capture is supported only by sparse adaptive pass 2")
     with em_cuda_kernels.bpref_device_signature_scope(False):
-        return _score_half_local(spec)
+        return _score_half_local(half, sampling, priors, batching, execution, diagnostics, optics)

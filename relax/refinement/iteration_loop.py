@@ -178,7 +178,6 @@ from relax.refinement.half_scoring import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
     DenseHalfData,
-    DenseHalfScoringSpec,
     DenseOpticsSpec,
     DensePriorSpec,
     DenseSamplingSpec,
@@ -187,7 +186,6 @@ from relax.refinement.half_scoring import (
     LocalDiagnosticPolicy,
     LocalExecutionPolicy,
     LocalHalfData,
-    LocalHalfScoringSpec,
     LocalOpticsSpec,
     LocalPriorSpec,
     LocalSamplingSpec,
@@ -425,22 +423,36 @@ class DenseHalfScoringPlan(NamedTuple):
     The two halves are independent inside the E-step, so holding each call's
     arguments in one value lets both plans be built before either call runs.
     That is the seam an overlapped driver needs; on its own it changes nothing.
-    ``spec`` owns the stable dense-scoring inputs; route-specific differences
-    remain explicit in its policy objects.
+    The named fields keep each owner visible at both construction and execution;
+    route-specific differences remain explicit in the policy objects.
     """
 
     half_index: int
     use_adaptive: bool
-    spec: DenseHalfScoringSpec
+    half: DenseHalfData
+    sampling: DenseSamplingSpec
+    priors: DensePriorSpec
+    batching: DenseBatchPolicy
+    variant: DenseVariantPolicy
+    execution: DenseExecutionPolicy
+    optics: DenseOpticsSpec
 
 
 def _run_dense_half_scoring(plan: DenseHalfScoringPlan):
     """Execute one half's dense E-step from its plan.
 
-    The scorer reads stable values through their owning specification groups.
+    The scorer receives each stable owner explicitly.
     """
 
-    return _score_half_dense_in_bpref_scope(plan.spec)
+    return _score_half_dense_in_bpref_scope(
+        plan.half,
+        plan.sampling,
+        plan.priors,
+        plan.batching,
+        plan.variant,
+        plan.execution,
+        plan.optics,
+    )
 
 
 class DenseHalfScoringOutputs(NamedTuple):
@@ -2938,8 +2950,7 @@ def refine_single_volume(
                     zero_cold_center=not k_class_enabled,
                 )
                 local_result = _score_half_local_in_bpref_scope(
-                    LocalHalfScoringSpec(
-                        half=LocalHalfData(
+                    half=LocalHalfData(
                             k=k,
                             experiment_dataset=experiment_datasets[k],
                             means_k=means[k],
@@ -3028,7 +3039,6 @@ def refine_single_volume(
                                 "class_translation_overrides"
                             ),
                         ),
-                    ),
                 )
                 ha_k = local_result.ha
                 Ft_y_k = local_result.Ft_y
@@ -3067,8 +3077,7 @@ def refine_single_volume(
                 dense_half_plans[k] = DenseHalfScoringPlan(
                     half_index=k,
                     use_adaptive=bool(use_adaptive),
-                    spec=DenseHalfScoringSpec(
-                        half=DenseHalfData(
+                    half=DenseHalfData(
                             k=k,
                             experiment_dataset=experiment_datasets[k],
                             means_k=means[k],
@@ -3155,7 +3164,6 @@ def refine_single_volume(
                                 "class_translation_overrides"
                             ),
                         ),
-                    ),
                 )
                 dense_result = _run_dense_half_scoring(dense_half_plans[k])
                 dense_outputs = _dense_half_scoring_outputs(
@@ -3184,7 +3192,7 @@ def refine_single_volume(
                     _manifest = {
                         "effective_rotations": np.asarray(effective_rotations),
                         "coarse_scoring_rotations": _replay_manifest_array(
-                            dense_half_plans[k].spec.sampling.coarse_scoring_rotations,
+                            dense_half_plans[k].sampling.coarse_scoring_rotations,
                         ),
                         "current_translations": np.asarray(current_translations),
                         "rotation_log_prior": _replay_manifest_array(rotation_log_prior_k, dtype=np.float64),
@@ -5572,8 +5580,7 @@ def refine_single_volume(
                     zero_cold_center=False,
                 )
                 final_result = _score_half_local_in_bpref_scope(
-                    LocalHalfScoringSpec(
-                        half=LocalHalfData(
+                    half=LocalHalfData(
                             k=k,
                             experiment_dataset=experiment_datasets[k],
                             means_k=final_join_means[k],
@@ -5668,7 +5675,6 @@ def refine_single_volume(
                                 )
                             ),
                         ),
-                    )
                 )
             else:
                 final_optics_values = _optics_group_kwargs(
@@ -5686,8 +5692,7 @@ def refine_single_volume(
                     zero_cold_center=False,
                 )
                 final_result = _score_half_dense_in_bpref_scope(
-                    DenseHalfScoringSpec(
-                        half=DenseHalfData(
+                    half=DenseHalfData(
                             k=k,
                             experiment_dataset=experiment_datasets[k],
                             means_k=final_join_means[k],
@@ -5755,7 +5760,6 @@ def refine_single_volume(
                                 "class_translation_overrides"
                             ),
                         ),
-                    ),
                 )
         if final_result.best_pose_translations is not None:
             final_result.best_pose_translations = _relion_metadata_translations(

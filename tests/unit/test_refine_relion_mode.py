@@ -24,7 +24,7 @@ import healpy as hp
 import jax.numpy as jnp
 from helpers.em_arrays import _hermitian_volume, _make_rotations
 from helpers.refinement_specs import (
-    local_half_spec,
+    local_half_owners,
     local_iteration_owners,
     mean_reconstruction_owners,
 )
@@ -2175,7 +2175,7 @@ def test_score_half_local_parent_layout_ignores_global_rotation_prior_for_adapti
     monkeypatch.setattr(half_scoring, "build_local_hypothesis_layout", fake_build_local_hypothesis_layout)
 
     with pytest.raises(StopAfterParentLayout):
-        half_scoring._score_half_local(local_half_spec(
+        half_scoring._score_half_local(*local_half_owners(
             k=0,
             experiment_dataset=dataset,
             means_k=jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
@@ -2235,7 +2235,7 @@ def test_score_half_local_forwards_mstep_grid(monkeypatch, rng):
     monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
     with pytest.raises(DispatchCaptured):
-        half_scoring._score_half_local(local_half_spec(
+        half_scoring._score_half_local(*local_half_owners(
             k=0,
             experiment_dataset=dataset,
             means_k=jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
@@ -11412,13 +11412,13 @@ class TestRelionModeSmokeTest:
         )
         score_half = iteration_loop_module._score_half_dense_in_bpref_scope
 
-        def record_scoring_prior(spec):
-            scoring_priors.append(np.asarray(spec.half.mean_variance))
-            scoring_rotations.append(spec.sampling.coarse_scoring_rotations)
+        def record_scoring_prior(half, sampling, priors, batching, variant, execution, optics):
+            scoring_priors.append(np.asarray(half.mean_variance))
+            scoring_rotations.append(sampling.coarse_scoring_rotations)
             scoring_grids.append(
-                (spec.sampling.effective_rotations, spec.sampling.current_translations)
+                (sampling.effective_rotations, sampling.current_translations)
             )
-            return score_half(spec)
+            return score_half(half, sampling, priors, batching, variant, execution, optics)
 
         monkeypatch.setattr(iteration_loop_module, "_score_half_dense_in_bpref_scope", record_scoring_prior)
         initial_tau2 = jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0
@@ -11797,8 +11797,9 @@ class TestRelionModeSmokeTest:
 
         captured = {}
 
-        def capture(spec):
-            captured["spec"] = spec
+        def capture(half, sampling, priors, batching, variant, execution, optics):
+            del half, sampling, priors, batching, variant, optics
+            captured["execution"] = execution
             raise _Captured
 
         monkeypatch.setattr(iteration_loop_module, "_score_half_dense_in_bpref_scope", capture)
@@ -11832,7 +11833,7 @@ class TestRelionModeSmokeTest:
                     parity=parity,
                 ),
             )
-        assert captured["spec"].execution.relion_translation_angle_scale == expected_scale
+        assert captured["execution"].relion_translation_angle_scale == expected_scale
 
 
     @pytest.mark.parametrize("n_classes", [1, 2])

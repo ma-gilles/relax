@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from helpers.float_compare import assert_matches, matches
-from helpers.refinement_specs import local_half_spec
+from helpers.refinement_specs import local_half_owners
 from relax.symmetry import (
     canonicalize_rotational_symmetry,
     parse_rotational_symmetry,
@@ -762,7 +762,7 @@ def test_non_c1_nonadaptive_dense_reconstruction_fails_before_run_em(
         symmetry="I1",
     )
     with pytest.raises(NotImplementedError, match="non-adaptive dense"):
-        iteration_loop._score_half_dense(_symmetric_dense_spec(iteration_loop, common))
+        iteration_loop._score_half_dense(*_symmetric_dense_owners(iteration_loop, common))
 
 
 @pytest.mark.parametrize("label", ["C1", "C7", "D5", "T", "O", "I1", "I2", "I3", "I4"])
@@ -916,12 +916,12 @@ def _k1_symmetric_dense_half_kwargs(**overrides):
     return kwargs
 
 
-def _symmetric_dense_spec(half_scoring, values):
-    """Group concise symmetry-test values into the production specification."""
+def _symmetric_dense_owners(half_scoring, values):
+    """Build the seven dense-scoring owners from concise symmetry-test values."""
 
     values = dict(values)
-    spec = half_scoring.DenseHalfScoringSpec(
-        half=half_scoring.DenseHalfData(
+    owners = (
+        half_scoring.DenseHalfData(
             k=values.pop("k"),
             experiment_dataset=values.pop("experiment_dataset"),
             means_k=values.pop("means_k"),
@@ -931,7 +931,7 @@ def _symmetric_dense_spec(half_scoring, values):
             scale_corrections_k=values.pop("scale_corrections_k"),
             outputs=values.pop("outputs"),
         ),
-        sampling=half_scoring.DenseSamplingSpec(
+        half_scoring.DenseSamplingSpec(
             effective_rotations=values.pop("effective_rotations"),
             current_translations=values.pop("current_translations"),
             base_translations=values.pop("base_translations"),
@@ -942,7 +942,7 @@ def _symmetric_dense_spec(half_scoring, values):
             cs_for_engine=values.pop("cs_for_engine"),
             symmetry=values.pop("symmetry"),
         ),
-        priors=half_scoring.DensePriorSpec(
+        half_scoring.DensePriorSpec(
             rotation_log_prior_k=values.pop("rotation_log_prior_k"),
             class_rotation_log_prior_k=values.pop("class_rotation_log_prior_k"),
             translation_log_prior=values.pop("translation_log_prior"),
@@ -950,24 +950,25 @@ def _symmetric_dense_spec(half_scoring, values):
             trans_prior_center_for_engine=values.pop("trans_prior_center_for_engine"),
             class_log_priors=values.pop("class_log_priors"),
         ),
-        batching=half_scoring.DenseBatchPolicy(
+        half_scoring.DenseBatchPolicy(
             image_batch_size=values.pop("image_batch_size"),
             safe_batch_sizes=values.pop("safe_batch_sizes"),
             max_significants=values.pop("max_significants"),
         ),
-        variant=half_scoring.DenseVariantPolicy(
+        half_scoring.DenseVariantPolicy(
             firstiter_score_mode_this_iter=values.pop("firstiter_score_mode_this_iter"),
             firstiter_winner_take_all_this_iter=values.pop("firstiter_winner_take_all_this_iter"),
             k_class_enabled=values.pop("k_class_enabled"),
             relion_firstiter_cc_this_iter=values.pop("relion_firstiter_cc_this_iter"),
         ),
-        execution=half_scoring.DenseExecutionPolicy(
+        half_scoring.DenseExecutionPolicy(
             disable_adjoint_y=values.pop("disable_adjoint_y"),
             disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
         ),
+        half_scoring.DenseOpticsSpec(),
     )
-    assert not values, f"unmapped dense spec values: {sorted(values)}"
-    return spec
+    assert not values, f"unmapped dense owner values: {sorted(values)}"
+    return owners
 
 
 @pytest.mark.parametrize("firstiter_cc", [False, True])
@@ -990,7 +991,7 @@ def test_non_c1_k1_adaptive_refinement_without_x_half_fails_before_scoring(monke
         )
     kwargs = _k1_symmetric_dense_half_kwargs(relion_firstiter_cc_this_iter=firstiter_cc)
     with pytest.raises(RuntimeError, match="O reconstruction requires RELION x-half BPref accumulation"):
-        half_scoring._score_half_dense(_symmetric_dense_spec(half_scoring, kwargs))
+        half_scoring._score_half_dense(*_symmetric_dense_owners(half_scoring, kwargs))
 
 
 def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monkeypatch):
@@ -1044,7 +1045,7 @@ def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monke
         symmetry="C4",
     )
     with pytest.raises(RuntimeError, match="C4 exact-local reconstruction requires RELION x-half BPref"):
-        half_scoring._score_half_local(local_half_spec(**kwargs))
+        half_scoring._score_half_local(*local_half_owners(**kwargs))
 
 
 @pytest.mark.parametrize("label", ["C4", "O", "I1"])

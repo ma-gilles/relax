@@ -1217,7 +1217,7 @@ def test_stop_after_local_search_score_only_is_diagnostic_score_only_path():
     assert "diagnostic_score_only=bool(" in source
     assert "debug.stop_after_local_search_score_only" in source
     assert "_score_half_local_in_bpref_scope(" in source
-    assert "return _score_half_local(spec)" in half_scoring_source
+    assert "return _score_half_local(half, sampling, priors, batching, execution, diagnostics, optics)" in half_scoring_source
     assert "score_only=diagnostics.diagnostic_score_only" in half_scoring_source
     assert "accumulate_noise=local_accumulate_noise" in half_scoring_source
     assert '"stop_after_local_search_score_only": bool(debug.stop_after_local_search_score_only)' in source

@@ -34,20 +34,51 @@ def _grids(fine_mstep):
 
 def test_shared_engine_keywords_follow_the_sparse_switch():
     fine_mstep = np.ones((4, 3, 3), dtype=np.float32)
-    common = dict(
-        class_log_priors="priors",
-        significance_image_batch_size=8,
-        significance_rotation_block_size=16,
-        coarse_current_size=32,
-        fine_current_size=48,
-        coarse_healpix_order=np.int64(2),
-        oversampling_order=np.int64(1),
-        return_best_pose_details=True,
-        bpref_device_signature_active=False,
-        debug_iteration=3,
-    )
-    sparse = half_scoring._adaptive_engine_shared_kwargs(_grids(fine_mstep), max_significants=None, sparse_pass2=True, **common)
-    dense = half_scoring._adaptive_engine_shared_kwargs(_grids(fine_mstep), max_significants=5, sparse_pass2=False, **common)
+    def shared_kwargs(*, sparse_pass2, max_significants):
+        return half_scoring._adaptive_engine_shared_kwargs(
+            _grids(fine_mstep),
+            half_scoring.AdaptivePassPlan(
+                sparse_pass2=sparse_pass2,
+                significance_image_batch_size=8,
+                significance_rotation_block_size=16,
+                coarse_current_size=32,
+                fine_current_size=48,
+                oversampling_order=np.int64(1),
+            ),
+            half_scoring.DensePriorSpec(
+                rotation_log_prior_k=None,
+                class_rotation_log_prior_k=None,
+                translation_log_prior=None,
+                translation_search_base=None,
+                trans_prior_center_for_engine=None,
+                class_log_priors="priors",
+            ),
+            half_scoring.DenseBatchPolicy(
+                image_batch_size=1,
+                safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),
+                max_significants=max_significants,
+            ),
+            half_scoring.DenseSamplingSpec(
+                effective_rotations=None,
+                current_translations=None,
+                base_translations=None,
+                current_healpix_order=np.int64(2),
+                state=None,
+                random_perturbation=0.0,
+                disc_type="linear_interp",
+                cs_for_engine=None,
+            ),
+            half_scoring.DenseExecutionPolicy(
+                disable_adjoint_y=False,
+                disable_adjoint_ctf=False,
+                return_best_pose_details=True,
+                bpref_device_signature_active=False,
+                debug_iteration=3,
+            ),
+        )
+
+    sparse = shared_kwargs(sparse_pass2=True, max_significants=None)
+    dense = shared_kwargs(sparse_pass2=False, max_significants=5)
     expected_keys = {
         "class_log_priors", "accumulate_noise", "adaptive_fraction", "max_significants",
         "relion_fine_mstep_prune", "significance_image_batch_size", "significance_rotation_block_size",

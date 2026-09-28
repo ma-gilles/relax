@@ -168,11 +168,11 @@ def local_iteration_owners(*args, **values):
     return owners
 
 
-def local_half_spec(**values):
-    """Group legacy-sized test fixtures into the exact-local production spec."""
+def local_half_owners(**values):
+    """Build the seven explicit exact-local owners from concise test values."""
 
-    spec = half_scoring.LocalHalfScoringSpec(
-        half=half_scoring.LocalHalfData(
+    owners = (
+        half_scoring.LocalHalfData(
             k=values.pop("k"),
             experiment_dataset=values.pop("experiment_dataset"),
             means_k=values.pop("means_k"),
@@ -186,7 +186,7 @@ def local_half_spec(**values):
             scale_correction_data_vs_prior=values.pop("scale_correction_data_vs_prior", None),
             optics_group_ids_k=values.pop("optics_group_ids_k", None),
         ),
-        sampling=half_scoring.LocalSamplingSpec(
+        half_scoring.LocalSamplingSpec(
             local_search_rotations=values.pop("local_search_rotations"),
             local_search_mstep_rotations=values.pop("local_search_mstep_rotations", None),
             local_search_order=values.pop("local_search_order"),
@@ -203,7 +203,7 @@ def local_half_spec(**values):
             local_parent_oversampling_order=values.pop("local_parent_oversampling_order"),
             symmetry=values.pop("symmetry", "C1"),
         ),
-        priors=half_scoring.LocalPriorSpec(
+        half_scoring.LocalPriorSpec(
             trans_prior_center=values.pop("trans_prior_center"),
             trans_prior_center_for_engine=values.pop("trans_prior_center_for_engine"),
             current_sigma_offset_angstrom=values.pop("current_sigma_offset_angstrom"),
@@ -211,11 +211,11 @@ def local_half_spec(**values):
             local_search_translation_prior_mode=values.pop("local_search_translation_prior_mode"),
             replay_prior_translations=values.pop("replay_prior_translations"),
         ),
-        batching=half_scoring.LocalBatchPolicy(
+        half_scoring.LocalBatchPolicy(
             max_significants=values.pop("max_significants"),
             safe_batch_sizes=values.pop("safe_batch_sizes"),
         ),
-        execution=half_scoring.LocalExecutionPolicy(
+        half_scoring.LocalExecutionPolicy(
             disable_adjoint_y=values.pop("disable_adjoint_y"),
             disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
             relion_projector_half=values.pop("relion_projector_half", None),
@@ -223,7 +223,7 @@ def local_half_spec(**values):
             source_faithful_spectrum_norm=values.pop("source_faithful_spectrum_norm", False),
             relion_translation_angle_scale=values.pop("relion_translation_angle_scale", 1.0),
         ),
-        diagnostics=half_scoring.LocalDiagnosticPolicy(
+        half_scoring.LocalDiagnosticPolicy(
             iteration=values.pop("iteration"),
             debug_iteration=values.pop("debug_iteration", None),
             save_intermediates_dir=values.pop("save_intermediates_dir"),
@@ -232,7 +232,7 @@ def local_half_spec(**values):
             local_profile_history=values.pop("local_profile_history"),
             bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
         ),
-        optics=half_scoring.LocalOpticsSpec(
+        half_scoring.LocalOpticsSpec(
             noise_radial_k=values.pop("noise_radial_k", None),
             coarse_sizing=values.pop("coarse_sizing", None),
             class_translation_overrides=values.pop("class_translation_overrides", None),
@@ -240,5 +240,5 @@ def local_half_spec(**values):
             reference_current_size=values.pop("reference_current_size", None),
         ),
     )
-    assert not values, f"unmapped local spec values: {sorted(values)}"
-    return spec
+    assert not values, f"unmapped local owner values: {sorted(values)}"
+    return owners

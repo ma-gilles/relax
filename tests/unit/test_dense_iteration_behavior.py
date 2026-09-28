@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
-from helpers.refinement_specs import local_half_spec
+from helpers.refinement_specs import local_half_owners
 
 import relax.refinement.iteration_loop as iteration_loop
 from relax.dense import score_outputs, scoring_policy
@@ -220,7 +220,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
     monkeypatch.setattr(scoring_policy, "_k1_relion_x_half_mstep_default_available", lambda: True)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
 
-    result = half_scoring._score_half_local(local_half_spec(
+    result = half_scoring._score_half_local(*local_half_owners(
         k=0,
         experiment_dataset=SimpleNamespace(
             voxel_size=1.0,
@@ -349,7 +349,7 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
     monkeypatch.setattr(half_scoring, "_k1_relion_x_half_mstep_enabled", lambda: False)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
 
-    result = half_scoring._score_half_local(local_half_spec(
+    result = half_scoring._score_half_local(*local_half_owners(
         k=0,
         experiment_dataset=SimpleNamespace(
             voxel_size=1.0,
