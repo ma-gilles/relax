@@ -1242,6 +1242,22 @@ def test_sparse_pass2_windowed_projection_cap_keeps_only_requested_pixels(monkey
     )
     assert no_recon is None and no_abs2 is None
     assert_matches(np.asarray(score_only), np.asarray(score))
+    padded, padded_recon, padded_abs2 = _compute_sparse_pass2_windowed_projections_block(
+        jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
+        jnp.asarray(rotations),
+        IMAGE_SHAPE,
+        VOLUME_SHAPE,
+        "linear_interp",
+        score_indices=jnp.asarray([0, 2], dtype=jnp.int32),
+        recon_indices=jnp.asarray([1, 5], dtype=jnp.int32),
+        max_projected_rotations=3,
+        output_rows=10,
+    )
+    # output_rows: the outputs are that long, zero past the rotations (bench 14576794).
+    for full, rows7 in ((padded, score), (padded_recon, recon), (padded_abs2, recon_abs2)):
+        assert full.shape == (10, 2)
+        assert_matches(np.asarray(full)[:7], np.asarray(rows7))
+        assert not np.any(np.asarray(full)[7:])
 
 
 def test_sparse_pass2_windowed_projection_uses_relion_projector_branch(monkeypatch):

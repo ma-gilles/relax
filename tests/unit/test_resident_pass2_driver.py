@@ -1277,7 +1277,10 @@ def test_streamed_chunk_projections_gather_the_cached_arrays():
         host_ids,
         n_valid_rows=n_valid,
         row_capacity=row_capacity,
-        project=lambda ids: project(fine_grid[ids]),
+        project=lambda ids, n_rows: tuple(
+            jnp.pad(values, [(0, n_rows - values.shape[0])] + [(0, 0)] * (values.ndim - 1))
+            for values in project(fine_grid[ids])
+        ),
         n_fine_rot=n_fine,
         mstep_grid=mstep_grid,
         coarse_parent_grid=coarse_parent,
@@ -1582,10 +1585,12 @@ def test_stream_parts_gather_rows_from_the_padded_class_calls():
     )
     # ids of classes [1, 0, 1, 0, 0]: class 0's rows 0-2 of call 0, class 1's rows 0-1 of call 1.
     rows = np.array([8 + 0, 0, 8 + 1, 1, 2], dtype=np.int32)
-    gathered = rp._gather_stream_parts(parts, jnp.asarray(rows))
+    gathered = rp._gather_stream_parts(parts, jnp.asarray(rows), n_rows=8)
     for field in range(3):
         expected = np.concatenate([np.asarray(parts[0][field]), np.asarray(parts[1][field])])[rows]
-        assert_matches(np.asarray(gathered[field]), expected)
+        assert gathered[field].shape == (8, 5)
+        assert_matches(np.asarray(gathered[field])[: rows.size], expected)
+        assert not np.any(np.asarray(gathered[field])[rows.size :])
 
 
 def test_accumulators_exist_before_the_chunk_budget_is_read():

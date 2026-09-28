@@ -189,9 +189,14 @@ def _compute_sparse_pass2_windowed_projections_block(
     relion_projector_r_max: int | None = None,
     projection_padding_factor: int = 1,
     window_union: "ProjectionWindowUnion | None" = None,
+    output_rows: int | None = None,
     **projection_kwargs,
 ):
     """Project in capped chunks and retain only score/reconstruction windows.
+
+    ``output_rows`` (at least the number of rotations) makes the outputs that
+    many rows long, zero past the projected rotations, so a caller that needs
+    a fixed-length array never pads a second copy.
 
     With ``window_union`` (:func:`projection_window_union` of these windows) a
     RELION projector projects only the union's pixels and the windows are
@@ -219,6 +224,9 @@ def _compute_sparse_pass2_windowed_projections_block(
     recon_indices = None if recon_indices is None else jnp.asarray(recon_indices, dtype=jnp.int32)
 
     n_rotations = int(rotations_block.shape[0])
+    n_output_rows = n_rotations if output_rows is None else int(output_rows)
+    if n_output_rows < n_rotations:
+        raise ValueError(f"output_rows={n_output_rows} is fewer than the {n_rotations} rotations")
     if max_projected_rotations is None:
         chunk_ranges = [(0, n_rotations)]
     else:
@@ -254,10 +262,10 @@ def _compute_sparse_pass2_windowed_projections_block(
             abs2_dtype = jnp.dtype(
                 jnp.finfo(complex_dtype).dtype if output_abs2_dtype is None else output_abs2_dtype
             )
-            score_proj = jnp.zeros((n_rotations, int(score_indices.shape[0])), dtype=complex_dtype)
+            score_proj = jnp.zeros((n_output_rows, int(score_indices.shape[0])), dtype=complex_dtype)
             if recon_indices is not None:
-                recon_proj = jnp.zeros((n_rotations, int(recon_indices.shape[0])), dtype=complex_dtype)
-                recon_abs2 = jnp.zeros((n_rotations, int(recon_indices.shape[0])), dtype=abs2_dtype)
+                recon_proj = jnp.zeros((n_output_rows, int(recon_indices.shape[0])), dtype=complex_dtype)
+                recon_abs2 = jnp.zeros((n_output_rows, int(recon_indices.shape[0])), dtype=abs2_dtype)
         if recon_indices is None:
             score_proj = _place_score_window_block(
                 score_proj, proj_chunk, score_indices, np.int32(start), output_complex_dtype=complex_dtype

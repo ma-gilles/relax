@@ -2906,8 +2906,11 @@ def _resident_pass2(
         else None
     )
 
-    def project_fine_rotations(rotations, class_index=0):
-        """(score, recon, |recon|^2) projections of ``rotations``, as the cache holds them."""
+    def project_fine_rotations(rotations, class_index=0, n_rows=None):
+        """(score, recon, |recon|^2) projections of ``rotations``, as the cache holds them.
+
+        ``n_rows`` makes them that many rows long, zero past the rotations.
+        """
 
         score, recon, recon_abs2 = _compute_sparse_pass2_windowed_projections_block(
             class_means_for_proj[class_index],
@@ -2927,6 +2930,7 @@ def _resident_pass2(
             relion_projector_r_max=relion_projector_r_max,
             projection_padding_factor=projection_padding_factor,
             window_union=fine_window_union,
+            output_rows=n_rows,
             **projection_kwargs,
         )
         recon, recon_abs2 = precision_policy.cast_local_noise_projection_scores(recon, recon_abs2)
@@ -2936,8 +2940,10 @@ def _resident_pass2(
             score = _relion_native_fine_units_in_place(score, native_fft_size)
         return score, recon, recon_abs2
 
-    def project_ids(ids):
+    def project_ids(ids, n_rows):
         """Projections of the host projection ids ``class * n_fine_rot + rotation``, in order.
+
+        The arrays are ``n_rows`` long, zero past the ids.
 
         With K>1 each class projects its own ids from its own reference; a
         class's call is padded to a whole number of stream quanta so the
@@ -2946,7 +2952,7 @@ def _resident_pass2(
 
         ids = np.asarray(ids, dtype=np.int64)
         if n_classes == 1:
-            return project_fine_rotations(fine_grid[jnp.asarray(ids, dtype=jnp.int32)])
+            return project_fine_rotations(fine_grid[jnp.asarray(ids, dtype=jnp.int32)], n_rows=int(n_rows))
         klass = ids // n_fine_rot
         parts = []
         # Each id's row in the concatenation of the classes' padded calls. The
@@ -2966,7 +2972,7 @@ def _resident_pass2(
             )
             gather_rows[positions] = offset + np.arange(class_ids.size)
             offset += n_call
-        return _gather_stream_parts(tuple(parts), jnp.asarray(gather_rows, dtype=jnp.int32))
+        return _gather_stream_parts(tuple(parts), jnp.asarray(gather_rows, dtype=jnp.int32), n_rows=int(n_rows))
 
     # The whole fine grid is cached when it fits. At healpix order 3 and a real
     # current size it does not (294912 rotations at 136 px is ~40 GiB), so each
@@ -4488,13 +4494,20 @@ def _resident_operands_fit(operand_peak_bytes, available_bytes) -> bool:
     return int(operand_peak_bytes) <= resident_operands_max_bytes(available_bytes)
 
 
-@jax.jit
-def _gather_stream_parts(parts, gather_rows):
-    """The fields of the classes' padded projection calls, concatenated and gathered by row."""
+@partial(jax.jit, static_argnames=("n_rows",))
+def _gather_stream_parts(parts, gather_rows, *, n_rows):
+    """The fields of the classes' padded projection calls, concatenated and gathered by row.
 
-    return tuple(
-        jnp.concatenate([part[field] for part in parts], axis=0)[gather_rows] for field in range(3)
-    )
+    Each field is ``n_rows`` long, zero past the gathered rows, formed in the
+    same program so the chunk never holds a gathered and a padded copy.
+    """
+
+    def gathered(field):
+        values = jnp.concatenate([part[field] for part in parts], axis=0)[gather_rows]
+        widths = [(0, int(n_rows) - int(gather_rows.shape[0]))] + [(0, 0)] * (values.ndim - 1)
+        return jnp.pad(values, widths)
+
+    return tuple(gathered(field) for field in range(3))
 
 
 def _stream_projection_budget_bytes(
@@ -4595,8 +4608,9 @@ def _stream_chunk_projections(
     """Project one chunk's distinct fine rotations and re-index its rows to them.
 
     ``host_row_fine_rot`` holds the rows' projection ids (the fine rotation, or
-    ``class * n_fine_rot + rotation`` with K>1 classes) and ``project`` maps
-    projection ids to the three projection arrays.
+    ``class * n_fine_rot + rotation`` with K>1 classes) and ``project(ids, n_rows)``
+    maps projection ids to the three projection arrays, ``n_rows`` long and zero
+    past the ids.
 
     Returns ``(rows, slot_fine_rot, caches, mstep_grid, coarse_parent_grid)``
     where ``rows.row_fine_rot`` now holds each row's chunk-local cache slot,
@@ -4624,16 +4638,10 @@ def _stream_chunk_projections(
     row_slot[: valid.size] = inverse.astype(np.int32, copy=False)
 
     slot_ids_device = jnp.asarray(slot_fine_rot, dtype=jnp.int32)
-    projected = project(slot_fine_rot[:n_project])
-    pad = int(row_capacity) - n_project
-
-    def full_length(values):
-        if pad == 0:
-            return values
-        widths = [(0, pad)] + [(0, 0)] * (values.ndim - 1)
-        return jnp.pad(values, widths)
-
-    caches = tuple(full_length(values) for values in projected)
+    # Projected straight into row_capacity-long arrays: padding the projection
+    # call's arrays afterwards held both copies, 9.73 GiB past the plan at K=1
+    # 50k/256 (bench 14576794).
+    caches = tuple(project(slot_fine_rot[:n_project], int(row_capacity)))
     return (
         rows._replace(row_fine_rot=jnp.asarray(row_slot, dtype=jnp.int32)),
         jnp.asarray(slot_fine_rot % int(n_fine_rot), dtype=jnp.int32),
