@@ -1,6 +1,6 @@
 """Concise builders for production refinement specifications in unit tests."""
 
-from relax.refinement import half_scoring, local_search_iteration
+from relax.refinement import half_scoring, local_search_iteration, mean_helpers
 
 _LOCAL_ITERATION_POSITIONAL = (
     "experiment_dataset",
@@ -19,6 +19,58 @@ _LOCAL_ITERATION_POSITIONAL = (
     "rotation_block_size",
     "current_size",
 )
+
+
+def mean_reconstruction_spec(means, **values):
+    """Group concise reconstruction fixtures into the production specification."""
+
+    values = dict(values)
+    spec = mean_helpers.MeanReconstructionSpec(
+        data=mean_helpers.MeanReconstructionData(means=means),
+        accumulators=mean_helpers.MeanAccumulatorState(
+            Ft_y_0=values.pop("Ft_y_0"),
+            Ft_y_1=values.pop("Ft_y_1"),
+            Ft_ctf_0=values.pop("Ft_ctf_0"),
+            Ft_ctf_1=values.pop("Ft_ctf_1"),
+            Ft_y_combined=values.pop("Ft_y_combined"),
+            Ft_ctf_combined=values.pop("Ft_ctf_combined"),
+            retained_Ft_y_0_device=values.pop("retained_Ft_y_0_device", None),
+        ),
+        prior=mean_helpers.MeanPriorSpec(
+            mean_signal_variance=values.pop("mean_signal_variance"),
+            mean_signal_variance_shells=values.pop("mean_signal_variance_shells"),
+            mean_signal_variance_per_half=values.pop("mean_signal_variance_per_half"),
+            mean_signal_variance_shells_per_half=values.pop(
+                "mean_signal_variance_shells_per_half", None
+            ),
+            tau2_fudge=values.pop("tau2_fudge"),
+            relion_minres_map=values.pop("relion_minres_map"),
+        ),
+        geometry=mean_helpers.MeanGeometrySpec(
+            current_size=values.pop("cs"),
+            grid_size=values.pop("grid_size"),
+            cryo=values.pop("cryo"),
+            volume_shape=values.pop("volume_shape"),
+            padding_factor=values.pop("padding_factor"),
+            projection_padding_factor=values.pop("projection_padding_factor"),
+            accumulator_volume_shape=values.pop("accumulator_volume_shape", None),
+        ),
+        postprocess=mean_helpers.MeanPostprocessPolicy(
+            n_classes=values.pop("n_classes"),
+            iteration=values.pop("iteration"),
+            particle_diameter_ang=values.pop("particle_diameter_ang"),
+            relion_firstiter_cc_this_iter=values.pop(
+                "relion_firstiter_cc_this_iter"
+            ),
+            relion_firstiter_ini_high_angstrom=values.pop(
+                "relion_firstiter_ini_high_angstrom"
+            ),
+            relion_width_mask_edge=values.pop("relion_width_mask_edge"),
+            relion_fmask_edge=values.pop("relion_fmask_edge"),
+        ),
+    )
+    assert not values, f"unmapped mean reconstruction values: {sorted(values)}"
+    return spec
 
 
 def local_iteration_spec(*args, **values):

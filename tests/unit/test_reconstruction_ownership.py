@@ -1,18 +1,51 @@
 """Donor reconstruction ownership and authoritative per-half shell priors."""
 
+import ast
+import dataclasses
+import inspect
+
 import jax.numpy as jnp
 import numpy as np
 import pytest
-
-from recovar.core import fourier_transform_utils as ftu
-from relax.reconstruction import regularization_relion
-from recovar.reconstruction import relion_functions as rf
 from helpers.float_compare import assert_matches
+from helpers.refinement_specs import mean_reconstruction_spec
+from recovar.core import fourier_transform_utils as ftu
+from recovar.reconstruction import relion_functions as rf
+
+from relax.reconstruction import regularization_relion
 
 pytestmark = pytest.mark.unit
 
 VOLUME_SHAPE = (8, 8, 8)
 VOLUME_SIZE = 512
+
+
+def test_mean_reconstruction_core_keeps_spec_ownership_visible():
+    from relax.refinement import mean_helpers as mean_helpers_module
+
+    function = mean_helpers_module._reconstruct_and_postprocess_means
+    assert tuple(inspect.signature(function).parameters) == ("spec",)
+
+    tree = ast.parse(inspect.getsource(function))
+    assigned_names = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in ([*node.targets] if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name)
+    }
+    stable_field_names = {
+        field.name
+        for owner in (
+            mean_helpers_module.MeanReconstructionData,
+            mean_helpers_module.MeanAccumulatorState,
+            mean_helpers_module.MeanPriorSpec,
+            mean_helpers_module.MeanGeometrySpec,
+            mean_helpers_module.MeanPostprocessPolicy,
+        )
+        for field in dataclasses.fields(owner)
+    }
+    assert assigned_names & stable_field_names == {"retained_Ft_y_0_device"}
 
 
 class TestReconstructionOwnership:
@@ -42,7 +75,7 @@ class TestReconstructionOwnership:
         tau_shells = [jnp.arange(n_shells, dtype=jnp.float32) + 101.0, jnp.arange(n_shells, dtype=jnp.float32) + 201.0]
         retained_half0 = object()
         means = [None, None]
-        mean_helpers_module._reconstruct_and_postprocess_means(
+        mean_helpers_module._reconstruct_and_postprocess_means(mean_reconstruction_spec(
             means,
             Ft_y_0=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
             Ft_y_1=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
@@ -70,7 +103,7 @@ class TestReconstructionOwnership:
             relion_fmask_edge=2,
             mean_signal_variance_shells_per_half=tau_shells,
             retained_Ft_y_0_device=retained_half0,
-        )
+        ))
         assert len(calls) == 2
         assert events == ["reconstruct", "finish", "reconstruct", "finish"]
         assert calls[0]["retained_device_numerator"] is retained_half0
@@ -108,9 +141,10 @@ class TestReconstructionOwnership:
 
     def test_large_host_reconstruction_reuses_retained_numerator_and_releases_stage_a(self, monkeypatch, caplog):
         """The retained half-0 buffer must feed Stage A and release before the iFFT."""
-        from relax.refinement import mean_helpers as mean_helpers_module
         from recovar.reconstruction import relion_functions
+
         from relax.reconstruction import relion_functions_relion
+        from relax.refinement import mean_helpers as mean_helpers_module
 
         events = []
         host_boundary = np.ones((5, 5, 3), dtype=np.complex64)
@@ -181,9 +215,10 @@ class TestReconstructionOwnership:
 
     def test_large_host_reconstruction_stages_numpy_numerator_for_donation(self, monkeypatch, caplog):
         """Half 2 must see half 1 freed, then stage/delete its host numerator."""
-        from relax.refinement import mean_helpers as mean_helpers_module
         from recovar.reconstruction import relion_functions
+
         from relax.reconstruction import relion_functions_relion
+        from relax.refinement import mean_helpers as mean_helpers_module
 
         volume_shape = (2, 2, 2)
         accumulator_shape = (5, 5, 5)
@@ -350,7 +385,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         mean_helpers_module, "_finish_host_staged_reconstruction", lambda result, *_accumulators: result
     )
     means = [None, None]
-    mean_helpers_module._reconstruct_and_postprocess_means(
+    mean_helpers_module._reconstruct_and_postprocess_means(mean_reconstruction_spec(
         means,
         Ft_y_0=joined[0],
         Ft_y_1=joined[1],
@@ -379,7 +414,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         accumulator_volume_shape=accumulator_shape,
         mean_signal_variance_shells_per_half=[jnp.ones(3, dtype=jnp.float32), jnp.ones(3, dtype=jnp.float32)],
         retained_Ft_y_0_device=retained_half0,
-    )
+    ))
     assert len(calls) == 2
     assert calls[0][0][1] is joined[0]
     assert calls[0][1]["retained_device_numerator"] is retained_half0

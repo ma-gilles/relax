@@ -203,6 +203,12 @@ from relax.refinement.iteration_snapshot import (
 from relax.refinement.iteration_snapshot import validate_resume_snapshot as _validate_resume_snapshot
 from relax.refinement.local_search_iteration import _precompute_exact_local_fine_grid_enabled
 from relax.refinement.mean_helpers import (
+    MeanAccumulatorState,
+    MeanGeometrySpec,
+    MeanPostprocessPolicy,
+    MeanPriorSpec,
+    MeanReconstructionData,
+    MeanReconstructionSpec,
     _class_tau2_from_iref_power_spectrum,
     _class_tau2_update_details,
     _class_weights_from_posterior,
@@ -3774,34 +3780,60 @@ def refine_single_volume(
 
         # --- Now reconstruct the regularized means ---
         _reconstruct_and_postprocess_means(
-            means,
-            Ft_y_0=Ft_y_0,
-            Ft_y_1=Ft_y_1,
-            Ft_ctf_0=Ft_ctf_0,
-            Ft_ctf_1=Ft_ctf_1,
-            Ft_y_combined=Ft_y_combined if k_class_enabled else None,
-            Ft_ctf_combined=Ft_ctf_combined if k_class_enabled else None,
-            mean_signal_variance=mean_signal_variance if k_class_enabled else None,
-            mean_signal_variance_shells=mean_signal_variance_shells if k_class_enabled else None,
-            mean_signal_variance_per_half=mean_signal_variance_per_half if not k_class_enabled else None,
-            mean_signal_variance_shells_per_half=mean_signal_variance_shells_per_half if not k_class_enabled else None,
-            n_classes=n_classes,
-            cs=current_size,
-            iteration=iteration,
-            grid_size=grid_size,
-            cryo=cryo,
-            volume_shape=volume_shape,
-            tau2_fudge=tau2_fudge,
-            padding_factor=PADDING_FACTOR,
-            projection_padding_factor=PROJECTION_PADDING_FACTOR,
-            relion_minres_map=RELION_MINRES_MAP,
-            particle_diameter_ang=particle_diameter_ang,
-            relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-            relion_firstiter_ini_high_angstrom=parity.relion_firstiter_ini_high_angstrom,
-            relion_width_mask_edge=RELION_WIDTH_MASK_EDGE,
-            relion_fmask_edge=RELION_WIDTH_FMASK_EDGE,
-            accumulator_volume_shape=mstep_accumulator_shape,
-            **({"retained_Ft_y_0_device": retained_Ft_y_0_device} if retained_Ft_y_0_device is not None else {}),
+            MeanReconstructionSpec(
+                data=MeanReconstructionData(means=means),
+                accumulators=MeanAccumulatorState(
+                    Ft_y_0=Ft_y_0,
+                    Ft_y_1=Ft_y_1,
+                    Ft_ctf_0=Ft_ctf_0,
+                    Ft_ctf_1=Ft_ctf_1,
+                    Ft_y_combined=Ft_y_combined if k_class_enabled else None,
+                    Ft_ctf_combined=Ft_ctf_combined if k_class_enabled else None,
+                    retained_Ft_y_0_device=retained_Ft_y_0_device,
+                ),
+                prior=MeanPriorSpec(
+                    mean_signal_variance=(
+                        mean_signal_variance if k_class_enabled else None
+                    ),
+                    mean_signal_variance_shells=(
+                        mean_signal_variance_shells if k_class_enabled else None
+                    ),
+                    mean_signal_variance_per_half=(
+                        mean_signal_variance_per_half
+                        if not k_class_enabled
+                        else None
+                    ),
+                    mean_signal_variance_shells_per_half=(
+                        mean_signal_variance_shells_per_half
+                        if not k_class_enabled
+                        else None
+                    ),
+                    tau2_fudge=tau2_fudge,
+                    relion_minres_map=RELION_MINRES_MAP,
+                ),
+                geometry=MeanGeometrySpec(
+                    current_size=current_size,
+                    grid_size=grid_size,
+                    cryo=cryo,
+                    volume_shape=volume_shape,
+                    padding_factor=PADDING_FACTOR,
+                    projection_padding_factor=PROJECTION_PADDING_FACTOR,
+                    accumulator_volume_shape=mstep_accumulator_shape,
+                ),
+                postprocess=MeanPostprocessPolicy(
+                    n_classes=n_classes,
+                    iteration=iteration,
+                    particle_diameter_ang=particle_diameter_ang,
+                    relion_firstiter_cc_this_iter=(
+                        relion_firstiter_cc_this_iter
+                    ),
+                    relion_firstiter_ini_high_angstrom=(
+                        parity.relion_firstiter_ini_high_angstrom
+                    ),
+                    relion_width_mask_edge=RELION_WIDTH_MASK_EDGE,
+                    relion_fmask_edge=RELION_WIDTH_FMASK_EDGE,
+                ),
+            )
         )
         retained_Ft_y_0_device = None
 

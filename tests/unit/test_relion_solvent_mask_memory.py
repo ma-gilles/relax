@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.refinement_specs import mean_reconstruction_spec
 
 jnp = pytest.importorskip("jax.numpy")
 mask = pytest.importorskip("recovar.core.mask")
@@ -263,7 +264,7 @@ def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeyp
     )
 
     means = [None, None]
-    mean_helpers._reconstruct_and_postprocess_means(
+    mean_helpers._reconstruct_and_postprocess_means(mean_reconstruction_spec(
         means,
         Ft_y_0=jnp.ones(volume_size, dtype=jnp.complex64),
         Ft_y_1=jnp.ones(volume_size, dtype=jnp.complex64),
@@ -292,7 +293,7 @@ def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeyp
         relion_firstiter_ini_high_angstrom=None,
         relion_width_mask_edge=1,
         relion_fmask_edge=2,
-    )
+    ))
 
     assert len(reconstruction_sources) == len(masks) == 2
     assert all(isinstance(mean, np.ndarray) for mean in means)
