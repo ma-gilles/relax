@@ -376,3 +376,58 @@ argument boundary in the counted package. The remaining maximum is the
 - GPU smoke remains infrastructure-blocked because the five mandatory
   `/scratch/gpfs` fixture sets are still absent. No Slurm job or GPU receipt was
   produced.
+
+## 2026-09-28 — mean-reconstruction specification ownership
+
+### Change
+
+- Replaced the 28-parameter regularized reconstruction/post-processing
+  boundary with `MeanReconstructionSpec` and explicit owners for caller-owned
+  means, M-step accumulators, tau2/regularization inputs, Fourier geometry and
+  post-processing policy.
+- `_reconstruct_and_postprocess_means` keeps all five owners visible. The only
+  former field copied to a local is the retained half-0 device numerator,
+  because its deliberate release between half reconstructions is part of the
+  memory-lifetime contract. An AST ownership regression enforces this rule.
+- The numbered-iteration controller constructs the specification at the
+  reconstruction boundary. Direct unit tests use a rejecting test-only builder;
+  production has no legacy adapter or field-unpacking layer.
+- K=1 versus K-class reconstruction, per-half versus class tau2, host staging,
+  initial low-pass filtering, solvent flattening, debug capture and retained
+  buffer release remain in their original order.
+
+### Structural delta from the active upstream baseline
+
+| Metric | Baseline | Current | Delta |
+| --- | ---: | ---: | ---: |
+| Production files | 15 | 16 | +1 |
+| Physical production lines | 14,185 | 14,959 | +774 |
+| Nonblank, non-comment lines | 12,410 | 13,060 | +650 |
+| Production functions | 223 | 225 | +2 |
+| Functions with at least 10 parameters | 17 | 10 | -7 |
+| Functions with at least 20 parameters | 8 | 3 | -5 |
+| Largest parameter count | 67 | 26 | -41 |
+| Largest function span | 5,234 | 5,395 | +161 |
+
+This package adds 81 physical production lines while eliminating the previous
+28-parameter maximum. The largest remaining boundary is the 26-parameter
+iteration snapshot capture.
+
+### Validation
+
+- Implementation commit:
+  `e75a07fd356876a209011204d802758ab4c1a635`.
+- AST-normalized comparison against its parent: passed. After removing the five
+  owner aliases and the retained-buffer initializer, then translating
+  `owner.field` back to its former parameter name, the complete reconstruction
+  and post-processing body is identical.
+- Reconstruction ownership, retained-buffer, solvent-mask and K1/K-class
+  policy tests: 25 passed; 381 unrelated cases deselected.
+- K1 mean lifetime and controller ordering guards: 5 passed.
+- Production and affected-helper Ruff lint, Python compilation, snapshot check
+  and diff checks: passed.
+- CPU EM fast guard: 102 passed in 57.59 seconds on the implementation commit
+  with `FFTW/3.3.10-GCC-12.2.0` loaded.
+- GPU smoke remains infrastructure-blocked by the unchanged absence of the five
+  mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
+  produced.
