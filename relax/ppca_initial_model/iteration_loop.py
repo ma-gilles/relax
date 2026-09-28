@@ -75,6 +75,21 @@ def _merge_statistics(parts):
     )
 
 
+def _select_halves(rng, order, count, balanced):
+    """Draw one fresh permutation, optionally stratified by stable pseudo-half ID."""
+    shuffled = rng.permutation(order)
+    if balanced:
+        if count % 2:
+            raise ValueError("Balanced stochastic batch requires an even effective image count")
+        half_count = count // 2
+        halves = [shuffled[shuffled % 2 == half][:half_count] for half in range(2)]
+        if any(len(ids) != half_count for ids in halves):
+            raise ValueError("Fixed stochastic batch exceeds an even/odd pseudo-half population")
+        return np.concatenate(halves), halves
+    selected = shuffled[:count]
+    return selected, [selected[selected % 2 == half] for half in range(2)]
+
+
 def _fine_devices(config):
     devices = jax.local_devices()
     if len(devices) < config.fine_devices:
@@ -192,6 +207,55 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
     common = dict(noise_variance=nv, geometry=geometry, schedule=schedule, scoring=scoring, image_indices=ids)
     mu, W = state.theta[:, 0], state.theta[:, 1:]
     if config.oversampling == 0:
+        if config.stream_coarse_recompute:
+            # One artificial coarse parent represents the full coarse pose grid.
+            # It keeps the shared full-row mask Bx1x1 instead of BxRxT.
+            stream = prepare_full_row_stream(
+                dataset,
+                mu,
+                W,
+                noise_variance=nv,
+                rotations=rotations,
+                translations=translations,
+                rotation_log_prior=rotation_log_prior,
+                translation_log_prior=np.asarray(prior),
+                rotation_parent=np.zeros(len(rotations), np.int32),
+                translation_parent=np.zeros(len(translations), np.int32),
+                n_coarse_rotations=1,
+                n_coarse_translations=1,
+                geometry=geometry,
+                schedule=schedule,
+                scoring=scoring,
+            )
+            parts = []
+            for begin in range(0, len(ids), config.image_batch_size):
+                tile_ids = np.asarray(ids[begin : begin + config.image_batch_size])
+                support = [None] * len(tile_ids)
+                if embeddings_only:
+                    part = full_row_tile_embeddings(stream, tile_ids, support, recompute=True)
+                else:
+                    part = accumulate_full_row_tile(
+                        stream, tile_ids, support, factor_once=len(tile_ids) > 1, recompute=True
+                    )
+                parts.append(part)
+            if embeddings_only:
+                return DensePPCAEmbeddings(
+                    jnp.concatenate([part.embeddings for part in parts]),
+                    np.concatenate([part.original_image_ids for part in parts]),
+                    sum(part.n_images for part in parts),
+                )
+            stats = _merge_statistics(parts)
+            stats.diagnostics.update(
+                {
+                    "rotation_mass": sum(np.asarray(part.diagnostics["rotation_mass"]) for part in parts),
+                    "coarse_omitted_mass_bound": 0.0,
+                    "canonical_euler_count": len(canonical_eulers),
+                    "engine": "full_row_coarse_recompute",
+                    "scored_image_rows": sum(part.diagnostics["scored_image_rows"] for part in parts),
+                    "supported_image_rows": sum(part.diagnostics["supported_image_rows"] for part in parts),
+                }
+            )
+            return stats
         function = compute_dense_ppca_embeddings if embeddings_only else accumulate_dense_ppca_statistics
         options = {} if embeddings_only else {"sparse_pass2": SparsePass2Config(enabled=False), "collect_residuals": True}
         stats = function(
@@ -446,9 +510,8 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
         rng = np.random.default_rng()
         rng.bit_generator.state = state.rng_state
         # Persistent random order; each iteration takes a fresh uniformly selected batch.
-        selected = rng.permutation(state.order)[:count]
         # Stable pseudo-half identity, independent of poses and labels.
-        halves = [selected[selected % 2 == half] for half in range(2)]
+        selected, halves = _select_halves(rng, state.order, count, config.balanced_stochastic_halves)
         if any(len(ids) == 0 for ids in halves):
             raise ValueError("Selected batch has an empty pseudo-halfset")
         stats = [expectation(dataset, state, config, ids, iteration) for ids in halves]
@@ -598,7 +661,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
             checkpoint.save(output / f"checkpoint_{iteration:04d}.npz", state, config, identity)
         if stop_file is not None and Path(stop_file).exists():
             break
-    if state.iteration == config.iterations:
+    if state.iteration == config.iterations and not config.skip_final_embeddings:
         ids = np.arange(dataset.n_images)
         final = expectation(dataset, state, config, ids, config.iterations, embeddings_only=True)
         if not np.array_equal(np.sort(final.original_image_ids), ids):

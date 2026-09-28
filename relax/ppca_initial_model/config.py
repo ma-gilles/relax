@@ -27,9 +27,13 @@ class Config:
     rotation_block_size: int = 128
     fine_image_tile_size: int = 1
     stream_full_fine_rows: bool = False
+    stream_coarse_recompute: bool = False
     fine_devices: int = 1
     stochastic_batch_size: int | None = None
+    stochastic_all_iterations: bool = False
+    balanced_stochastic_halves: bool = False
     checkpoint_interval: int = 1
+    skip_final_embeddings: bool = False
     optimizer: str = "vdam"
     sgd_learning_rate: float = 0.4
 
@@ -46,8 +50,21 @@ class Config:
             raise ValueError("Batch/checkpoint sizes must be positive")
         if self.fine_devices < 1 or (self.fine_devices > 1 and not self.stream_full_fine_rows):
             raise ValueError("Multiple fine devices require the streamed fine engine")
+        if self.stream_coarse_recompute and (
+            self.oversampling != 0 or self.fine_devices != 1 or self.stream_full_fine_rows
+        ):
+            raise ValueError("Coarse recomputation requires oversampling=0 and one device")
         if self.stochastic_batch_size is not None and self.stochastic_batch_size <= 0:
             raise ValueError("Stochastic batch size must be positive")
+        if self.stochastic_all_iterations and self.stochastic_batch_size is None:
+            raise ValueError("Stochastic all iterations requires a fixed stochastic batch size")
+        if self.balanced_stochastic_halves and (
+            not self.stochastic_all_iterations
+            or self.stochastic_batch_size is None
+            or self.stochastic_batch_size < 2
+            or self.stochastic_batch_size % 2
+        ):
+            raise ValueError("Balanced stochastic halves require an even fixed batch on all iterations")
         if self.shift_range < 0 or self.shift_step <= 0:
             raise ValueError("Shift range must be nonnegative and step positive")
         if self.optimizer not in ("vdam", "momentum_sgd"):
@@ -62,9 +79,9 @@ class Config:
         phases = compute_phase_lengths(self.iterations)
         first, last = default_subset_sizes_for_3d_initial_model(n_images)
         count = compute_subset_size(iteration, phases, first, last, n_images, self.iterations)
-        if self.stochastic_batch_size is not None and iteration != self.iterations:
+        if self.stochastic_batch_size is not None and (iteration != self.iterations or self.stochastic_all_iterations):
             count = self.stochastic_batch_size
-        if iteration == self.iterations or count < 0:
+        if (iteration == self.iterations and not self.stochastic_all_iterations) or count < 0:
             count = n_images
         return (
             min(count, n_images),

@@ -162,13 +162,14 @@ def tile_problem():
 
 
 @pytest.mark.parametrize("factor_once", [True, False])
-def test_device_resident_tile_matches_host_mask_statistics(tile_problem, factor_once):
+@pytest.mark.parametrize("recompute", [False, True])
+def test_device_resident_tile_matches_host_mask_statistics(tile_problem, factor_once, recompute):
     dataset, mu, W, stream, host = tile_problem
     expected = full_float32(accumulate_dense_ppca_statistics)(
         dataset, mu, W, sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True,
         factor_once_score=factor_once, **host,
     )
-    actual = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT, factor_once=factor_once)
+    actual = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT, factor_once=factor_once, recompute=recompute)
     assert actual.diagnostics["engine"] == FULL_ROW_ENGINE
     assert actual.n_images == expected.n_images == 3
     assert np.array_equal(actual.original_image_ids, expected.original_image_ids)
@@ -181,14 +182,54 @@ def test_device_resident_tile_matches_host_mask_statistics(tile_problem, factor_
         assert_matches(np.float32(actual.diagnostics[key]), np.float32(expected.diagnostics[key]))
     for key in ("best_rotation_idx", "best_translation_idx", "n_significant_per_image"):
         assert np.array_equal(np.asarray(actual.diagnostics[key]), np.asarray(expected.diagnostics[key]))
+    assert_matches(np.sum(actual.diagnostics["rotation_mass"]), np.float32(actual.n_images))
 
 
-def test_device_resident_tile_embeddings_match_host_mask(tile_problem):
+@pytest.mark.parametrize("recompute", [False, True])
+def test_device_resident_tile_embeddings_match_host_mask(tile_problem, recompute):
     dataset, mu, W, stream, host = tile_problem
     expected = full_float32(compute_dense_ppca_embeddings)(dataset, mu, W, **host)
-    actual = full_row_tile_embeddings(stream, np.arange(3), SIGNIFICANT)
+    actual = full_row_tile_embeddings(stream, np.arange(3), SIGNIFICANT, recompute=recompute)
     assert actual.n_images == 3 and np.array_equal(actual.original_image_ids, expected.original_image_ids)
     assert_matches(np.asarray(actual.embeddings), np.asarray(expected.embeddings))
+
+
+@pytest.mark.parametrize("factor_once", [False, True])
+def test_one_artificial_parent_recompute_matches_full_coarse_reference(tile_problem, factor_once):
+    dataset, mu, W, _stream, host = tile_problem
+    rotations, translations = host["rotations"], host["translations"]
+    stream = prepare_full_row_stream(
+        dataset,
+        mu,
+        W,
+        rotations=rotations,
+        translations=translations,
+        rotation_log_prior=host["rotation_log_prior"],
+        translation_log_prior=host["translation_log_prior"],
+        rotation_parent=np.zeros(len(rotations), np.int32),
+        translation_parent=np.zeros(len(translations), np.int32),
+        n_coarse_rotations=1,
+        n_coarse_translations=1,
+        noise_variance=host["noise_variance"],
+        geometry=host["geometry"],
+        schedule=host["schedule"],
+        scoring=host["scoring"],
+    )
+    expected = full_float32(accumulate_dense_ppca_statistics)(
+        dataset,
+        mu,
+        W,
+        sparse_pass2=SparsePass2Config(enabled=False),
+        collect_residuals=True,
+        factor_once_score=factor_once,
+        **{key: value for key, value in host.items() if key != "rotation_translation_mask"},
+    )
+    actual = accumulate_full_row_tile(stream, np.arange(3), [None] * 3, factor_once=factor_once, recompute=True)
+    assert actual.diagnostics["supported_image_rows"] == 3 * len(rotations)
+    for name in ("rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
+        assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
+    assert_matches(actual.diagnostics["rotation_mass"], expected.diagnostics["rotation_mass"])
+    assert_matches(np.sum(actual.diagnostics["rotation_mass"]), np.float32(actual.n_images))
 
 
 def test_full_row_stream_rejects_parents_outside_coarse_grid(tile_problem):
@@ -262,10 +303,11 @@ def test_moment_image_residuals_match_direct_residual_statistics_f64():
 PRUNED = [np.asarray([0, 1], np.int32), np.asarray([3, 5], np.int32), np.asarray([1, 4], np.int32)]
 
 
-def test_device_resident_union_rows_match_per_image_host_layout(tile_problem):
+@pytest.mark.parametrize("recompute", [False, True])
+def test_device_resident_union_rows_match_per_image_host_layout(tile_problem, recompute):
     dataset, mu, W, stream, host = tile_problem
     reference = build_pass2_hypothesis_layout(PRUNED, **LAYOUT_KWARGS)
-    actual = accumulate_full_row_tile(stream, np.arange(3), PRUNED, factor_once=False)
+    actual = accumulate_full_row_tile(stream, np.arange(3), PRUNED, factor_once=False, recompute=recompute)
     assert actual.diagnostics["supported_image_rows"] == reference.total_local_rotations == 32
     assert actual.diagnostics["scored_image_rows"] == 3 * 20  # union of 16 rows in four 5-row blocks
     parts = []

@@ -215,8 +215,10 @@ def _score_window_projection(arrays: _StreamArrays, rotations_block, static: _St
     return proj if arrays.score_indices is None else proj[:, :, arrays.score_indices]
 
 
-@partial(jax.jit, static_argnames=("static", "block_size", "score_kind", "keep_second_moment"))
-def _score_block(arrays, tile, start, top, *, static, block_size, score_kind, keep_second_moment):
+@partial(jax.jit, static_argnames=("static", "block_size", "score_kind", "keep_second_moment", "return_projection"))
+def _score_block(
+    arrays, tile, start, top, *, static, block_size, score_kind, keep_second_moment, return_projection=False
+):
     """Pass 1 for one rotation block: scores, moments and the running top pose."""
     rows = _block_rows(tile, start, block_size)
     proj = _score_window_projection(arrays, arrays.rotations[rows], static)
@@ -240,7 +242,8 @@ def _score_block(arrays, tile, start, top, *, static, block_size, score_kind, ke
         rotation=jnp.where(better, rows[block_rotation[:, 0]], top.rotation),
         translation=jnp.where(better, block_translation[:, 0], top.translation),
     )
-    return full.score, full.alpha, (full.G_tri if keep_second_moment else None), top
+    result = (full.score, full.alpha, full.G_tri if keep_second_moment else None, top)
+    return (*result, proj) if return_projection else result
 
 
 @jax.jit
@@ -248,15 +251,43 @@ def _add_block_partition(partition, score, center):
     return partition + jnp.sum(jnp.exp(score - center[:, None, None]), axis=(1, 2))
 
 
+@jax.jit
+def _add_block_partition_online(partition, score, old_center, new_center):
+    """Stable block-ordered partition without retaining earlier pose scores.
+
+    Images may have no supported pose in early blocks. Their center is -inf
+    and their partition stays zero until the first supported block.
+    """
+    valid = jnp.isfinite(new_center)
+    center = jnp.where(valid, new_center, 0)
+    old_scale = jnp.where(jnp.isfinite(old_center), jnp.exp(old_center - center), 0)
+    block = jnp.sum(jnp.where(jnp.isfinite(score), jnp.exp(score - center[:, None, None]), 0), axis=(1, 2))
+    return jnp.where(valid, partition * old_scale + block, 0)
+
+
 @partial(jax.jit, static_argnames=("static", "block_size"), donate_argnums=(0,))
-def _backproject_block(carry, arrays, tile, score, alpha, G_tri, center, centered_logZ, start, *, static, block_size):
+def _backproject_block(
+    carry,
+    arrays,
+    tile,
+    score,
+    alpha,
+    G_tri,
+    center,
+    centered_logZ,
+    start,
+    *,
+    static,
+    block_size,
+    projected=None,
+):
     """Pass 2 for one rotation block: residual, moments and diagnostics.
 
     ``proj`` is recomputed from the same deterministic projection as pass 1
-    instead of retaining it across the tile.
+    unless the opt-in recomputation caller supplies its pass-2 projection.
     """
     rotations_block = arrays.rotations[_block_rows(tile, start, block_size)]
-    proj = _score_window_projection(arrays, rotations_block, static)
+    proj = _score_window_projection(arrays, rotations_block, static) if projected is None else projected
     centered = score - center[:, None, None]
     gamma = jnp.exp(centered - centered_logZ[:, None, None])
     rhs_images, lhs_images = pose_moment_images(
@@ -523,6 +554,34 @@ def _score_tile(stream: FullRowStream, tile: _TileArrays, n_blocks: int, *, scor
     return retained, top, jnp.log(partition)
 
 
+def _score_tile_recompute(stream: FullRowStream, tile: _TileArrays, n_blocks: int, *, score_kind: str):
+    """First pass: keep only top poses and the online centered partition."""
+    n_images = int(tile.y_norm.shape[0])
+    top = _TopPose(
+        center=jnp.full((n_images,), -jnp.inf, jnp.float32),
+        score=jnp.full((n_images,), -jnp.inf, jnp.float32),
+        rotation=jnp.full((n_images,), -1, jnp.int32),
+        translation=jnp.full((n_images,), -1, jnp.int32),
+    )
+    partition = jnp.zeros((n_images,), jnp.float32)
+    for start in stream.block_starts[:n_blocks]:
+        old_center = top.center
+        score, _alpha, _G_tri, top = _score_block(
+            stream.arrays,
+            tile,
+            start,
+            top,
+            static=stream.static,
+            block_size=stream.rotation_block_size,
+            score_kind=score_kind,
+            keep_second_moment=False,
+        )
+        partition = _add_block_partition_online(partition, score, old_center, top.center)
+    if not bool(jnp.all(jnp.isfinite(top.center))) or not bool(jnp.all(partition > 0)):
+        raise ValueError("Every full-row image needs a finite supported pose and partition")
+    return top, jnp.log(partition)
+
+
 def _top_pose_posterior(top_centered_score: np.ndarray, centered_logZ: np.ndarray) -> np.ndarray:
     """Host float64 top-1 posterior, as in ``select_distinct_top_poses``."""
     with np.errstate(over="ignore", invalid="ignore"):
@@ -532,7 +591,13 @@ def _top_pose_posterior(top_centered_score: np.ndarray, centered_logZ: np.ndarra
 
 @full_float32
 def accumulate_full_row_tile(
-    stream: FullRowStream, image_indices, significant_rows, *, factor_once: bool, enforce_x0: bool = True
+    stream: FullRowStream,
+    image_indices,
+    significant_rows,
+    *,
+    factor_once: bool,
+    enforce_x0: bool = True,
+    recompute: bool = False,
 ) -> AugmentedPPCAStats:
     """Accumulate unregularized PPCA statistics for one full-row image tile.
 
@@ -543,15 +608,25 @@ def accumulate_full_row_tile(
     """
     with jax.default_device(stream.device):
         return _accumulate_full_row_tile(
-            stream, image_indices, significant_rows, factor_once=factor_once, enforce_x0=enforce_x0
+            stream,
+            image_indices,
+            significant_rows,
+            factor_once=factor_once,
+            enforce_x0=enforce_x0,
+            recompute=recompute,
         )
 
 
-def _accumulate_full_row_tile(stream, image_indices, significant_rows, *, factor_once, enforce_x0):
+def _accumulate_full_row_tile(stream, image_indices, significant_rows, *, factor_once, enforce_x0, recompute):
     tile, observation_power, layout = _load_tile(stream, image_indices, significant_rows, collect_observation=True)
-    retained, top, centered_logZ = _score_tile(
-        stream, tile, layout["n_blocks"], score_kind="factor_once" if factor_once else "blocked", keep_second_moment=True
-    )
+    score_kind = "factor_once" if factor_once else "blocked"
+    if recompute:
+        retained = None
+        top, centered_logZ = _score_tile_recompute(stream, tile, layout["n_blocks"], score_kind=score_kind)
+    else:
+        retained, top, centered_logZ = _score_tile(
+            stream, tile, layout["n_blocks"], score_kind=score_kind, keep_second_moment=True
+        )
     arrays, static = stream.arrays, stream.static
     P = static.basis_size
     half_size = int(arrays.augmented.shape[1])
@@ -572,11 +647,35 @@ def _accumulate_full_row_tile(stream, image_indices, significant_rows, *, factor
     )
     rotation_mass = []
     for index, start in enumerate(stream.block_starts[: layout["n_blocks"]]):
-        score, alpha, G_tri = retained[index]
-        retained[index] = None  # release the block's moments once consumed
+        if recompute:
+            score, alpha, G_tri, _ignored_top, projected = _score_block(
+                arrays,
+                tile,
+                start,
+                top,
+                static=static,
+                block_size=stream.rotation_block_size,
+                score_kind=score_kind,
+                keep_second_moment=True,
+                return_projection=True,
+            )
+        else:
+            score, alpha, G_tri = retained[index]
+            retained[index] = None  # release the block's moments once consumed
+            projected = None
         carry, block_mass = _backproject_block(
-            carry, arrays, tile, score, alpha, G_tri, top.center, centered_logZ, start,
-            static=static, block_size=stream.rotation_block_size,
+            carry,
+            arrays,
+            tile,
+            score,
+            alpha,
+            G_tri,
+            top.center,
+            centered_logZ,
+            start,
+            static=static,
+            block_size=stream.rotation_block_size,
+            projected=projected,
         )
         rotation_mass.append(block_mass)
     rhs, lhs_tri = carry.rhs, carry.lhs_tri
@@ -613,6 +712,7 @@ def _accumulate_full_row_tile(stream, image_indices, significant_rows, *, factor
     original_ids = stream.dataset.original_image_indices_from_local(np.asarray(image_indices))
     diagnostics = {
         "engine": FULL_ROW_ENGINE,
+        "recompute_blocks": recompute,
         "rotation_block_size": stream.rotation_block_size,
         "pmax_mean": float(jnp.mean(jnp.asarray(pmax))),
         "nsig_mean": float(jnp.mean(jnp.asarray(host["n_significant"]))),
@@ -644,21 +744,39 @@ def _accumulate_full_row_tile(stream, image_indices, significant_rows, *, factor
 
 
 @full_float32
-def full_row_tile_embeddings(stream: FullRowStream, image_indices, significant_rows) -> DensePPCAEmbeddings:
+def full_row_tile_embeddings(
+    stream: FullRowStream, image_indices, significant_rows, *, recompute: bool = False
+) -> DensePPCAEmbeddings:
     """Pose-marginal embeddings of one full-row tile, as ``compute_dense_ppca_embeddings``."""
     with jax.default_device(stream.device):
-        return _full_row_tile_embeddings(stream, image_indices, significant_rows)
+        return _full_row_tile_embeddings(stream, image_indices, significant_rows, recompute=recompute)
 
 
-def _full_row_tile_embeddings(stream, image_indices, significant_rows):
+def _full_row_tile_embeddings(stream, image_indices, significant_rows, *, recompute):
     tile, _, layout = _load_tile(stream, image_indices, significant_rows, collect_observation=False)
-    retained, top, centered_logZ = _score_tile(
-        stream, tile, layout["n_blocks"], score_kind="blocked", keep_second_moment=False
-    )
+    if recompute:
+        retained = None
+        top, centered_logZ = _score_tile_recompute(stream, tile, layout["n_blocks"], score_kind="blocked")
+    else:
+        retained, top, centered_logZ = _score_tile(
+            stream, tile, layout["n_blocks"], score_kind="blocked", keep_second_moment=False
+        )
     embedding = jnp.zeros((int(tile.y_norm.shape[0]), stream.static.basis_size - 1), jnp.float32)
-    for index in range(len(retained)):
-        score, alpha, _G_tri = retained[index]
-        retained[index] = None
+    for index, start in enumerate(stream.block_starts[: layout["n_blocks"]]):
+        if recompute:
+            score, alpha, _G_tri, _ignored_top = _score_block(
+                stream.arrays,
+                tile,
+                start,
+                top,
+                static=stream.static,
+                block_size=stream.rotation_block_size,
+                score_kind="blocked",
+                keep_second_moment=False,
+            )
+        else:
+            score, alpha, _G_tri = retained[index]
+            retained[index] = None
         embedding = _add_block_embedding(embedding, score, alpha, top.center, centered_logZ)
     image_indices = np.asarray(image_indices, dtype=np.int64)
     original_ids = stream.dataset.original_image_indices_from_local(image_indices)

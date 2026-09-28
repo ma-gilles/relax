@@ -78,6 +78,51 @@ radius-31 trial retains 91.68% of the pinned truth triplet's between-state
 Fourier power versus 50.25% at radius 24; these are input-spectrum diagnostics,
 not a recovery guarantee. Grid adequacy is being measured separately.
 
+## Opt-in coarse two-pass residency
+
+The --stream-coarse-recompute flag requires --oversampling 0 and one device.
+It routes both optimizers through the existing PPCA full-row score and moment
+kernels with a single artificial coarse parent for every rotation and shift.
+That parent means all coarse poses are supported, while keeping the support
+mask only B×1×1; the padded sentinel row remains unsupported. The existing
+--image-batch-size bounds resident images per tile and
+--rotation-block-size bounds rotations per score kernel. The flag is off by
+default, so the current coarse dense path and the fine streamed path retain
+their existing behavior.
+
+For each image tile, pass one keeps only the best pose, running score center
+and centered partition. If block \(b\) has scores \(s_b\), the recurrence is
+
+\[
+c_b=\max(c_{b-1},\max s_b),\qquad
+Z_b=e^{c_{b-1}-c_b}Z_{b-1}+\sum_{\phi\in b}e^{s_\phi-c_b}.
+\]
+
+An image with no supported pose in an early block carries \(c=-\infty\) and
+\(Z=0\) until its first supported block. Pass two recomputes one block's
+scores and augmented moments, normalizes by the final \(c+\log Z\), and
+backprojects through the existing residual and moment owners. Its projected
+mean/loadings are reused by the block backprojection. This retains no
+all-rotation score/moment tensor, but it scores latent moments twice and
+changes the float32 partition reduction order. Per-block Kahan
+backprojection order remains; changing image tile size also changes the
+within-block particle reduction order. It is a GEMM-inspired reuse of the
+existing PPCA engine, not a new dense CUDA/GEMM implementation or a speed
+qualification.
+
+For a matched stochastic comparison, `--stochastic-batch-size 300
+--stochastic-all-iterations` keeps the same 300-particle update policy through
+iteration 600 for either optimizer; by default the final update still uses all
+training particles. Final saved embeddings remain a separate all-particle
+evaluation after the updates.
+`--balanced-stochastic-halves` additionally draws 150 even and 150 odd local
+particle IDs from one fresh shuffled order at each update, fixing both GPU
+shapes for a batch of 300. This parity stratification is independent of
+simulated states or poses and is shared by VDAM and Momentum SGD. The default
+unstratified sampling remains unchanged. `--checkpoint-interval 10` limits
+checkpoint writes, and `--skip-final-embeddings` omits the separate all-particle
+E-step when evaluation is performed in a dedicated run.
+
 An older, unmerged branch at `eb3f383f` introduced opt-in gridding-corrected
 E-step projection (`cf4e9276`) and a separate native-noise mode
 (`a5f747fb`, `775ab854`). Neither option is present in the current main PPCA

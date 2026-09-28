@@ -31,9 +31,21 @@ def add_args(parser):
                         help="Batch identical full-support fine rows; 1 keeps the reference path")
     parser.add_argument("--stream-full-fine-rows", action="store_true",
                         help="Stream rows of the shared fine grid with exact per-image support masks on the device")
+    parser.add_argument(
+        "--stream-coarse-recompute",
+        action="store_true",
+        help="Recompute coarse PPCA score blocks in pass 2; use image/rotation batch-size flags",
+    )
     parser.add_argument("--fine-devices", type=int, default=1,
                         help="Local GPUs for the streamed pass; image tiles are split across them")
     parser.add_argument("--stochastic-batch-size", type=int)
+    parser.add_argument("--stochastic-all-iterations", action="store_true",
+                        help="Keep the fixed stochastic batch on the final update as well")
+    parser.add_argument("--balanced-stochastic-halves", action="store_true",
+                        help="Draw equal-sized even/odd pseudo-halves from one shuffled batch order")
+    parser.add_argument("--checkpoint-interval", type=int, default=1)
+    parser.add_argument("--skip-final-embeddings", action="store_true",
+                        help="Skip the separate all-particle embedding E-step after the final update")
     parser.add_argument("--optimizer", choices=("vdam", "momentum_sgd"), default="vdam")
     parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
     parser.add_argument("--resume")
@@ -147,8 +159,13 @@ def main(args=None):
         rotation_block_size=args.rotation_block_size,
         fine_image_tile_size=args.fine_image_tile_size,
         stream_full_fine_rows=args.stream_full_fine_rows,
+        stream_coarse_recompute=args.stream_coarse_recompute,
         fine_devices=args.fine_devices,
         stochastic_batch_size=args.stochastic_batch_size,
+        stochastic_all_iterations=args.stochastic_all_iterations,
+        balanced_stochastic_halves=args.balanced_stochastic_halves,
+        checkpoint_interval=args.checkpoint_interval,
+        skip_final_embeddings=args.skip_final_embeddings,
         optimizer=args.optimizer,
         sgd_learning_rate=args.sgd_learning_rate,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
