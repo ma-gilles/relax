@@ -343,6 +343,21 @@ def test_duplicated_class_is_the_k1_pass(_resident_production_env):
     )
 
 
+@pytest.mark.parametrize(
+    ("operand_peak_gib", "sums_gib", "displaced"),
+    [(25.0, 12.0, True), (25.0, 1.0, False), (40.0, 12.0, False), (10.0, 12.0, False)],
+)
+def test_projection_sums_yield_to_the_resident_operands(monkeypatch, operand_peak_gib, sums_gib, displaced):
+    """The sums are refused only when they alone would push admitted operands out of budget."""
+
+    gib = float(1024**3)
+    monkeypatch.setattr(rp, "_resident_operands_requested", lambda: True)
+    monkeypatch.setattr(rp, "_resident_half_operand_sizes", lambda **_: (0, int(operand_peak_gib * gib)))
+    monkeypatch.setattr(rp, "device_available_bytes", lambda *_: 60.0 * gib)
+    monkeypatch.setattr(rp, "resident_operands_max_bytes", lambda available: 0.5 * float(available))
+    assert rp._projection_sums_displace_resident_operands(int(sums_gib * gib)) is displaced
+
+
 def _count_projection_sum_flushes(monkeypatch):
     flushes = []
     backproject = rp._backproject_projection_sums

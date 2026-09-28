@@ -2641,6 +2641,17 @@ def _resident_pass2(
         n_classes > 1
         and free_bytes is not None
         and sums_bytes <= _PRESUM_ADJOINT_FREE_FRACTION * float(free_bytes)
+        and not _projection_sums_displace_resident_operands(
+            sums_bytes,
+            n_images=n_images,
+            n_windowed=n_windowed,
+            n_recon_windowed=n_recon_windowed,
+            n_rect=n_rect,
+            n_shells=n_shells,
+            n_fine_trans=n_fine_trans,
+            precision_policy=precision_policy,
+            resolved_spectrum_norm=resolved_spectrum_norm,
+        )
     )
     accumulator_shape = (n_fine_rot, int(n_recon_windowed)) if presum_adjoint else (program_recon_volume_size,)
     Ft_y_total = tuple(
@@ -3716,6 +3727,29 @@ def _projection_sums_bytes(*, n_slots, n_fine_rot, n_recon_pixels, y_dtype, ctf_
 
     per_row = int(n_recon_pixels) * (np.dtype(y_dtype).itemsize + np.dtype(ctf_dtype).itemsize)
     return int(n_slots) * int(n_fine_rot) * per_row
+
+
+def _projection_sums_displace_resident_operands(sums_bytes, **operand_size_kwargs) -> bool:
+    """Whether the sums would push one half's resident operands out of their budget.
+
+    The resident operands are worth more than the sums: at Class3D K4 100k/256
+    current size 90, 5.9 GiB of sums next to 21.2 GiB of operands sent the pass
+    to the per-chunk operand preparation, and its pass 2 went from 57 to 89 s
+    (job 14589109). The same predicate as the operand admission
+    (_resident_operands_fit), read before either is allocated.
+    """
+
+    if not _resident_operands_requested():
+        return False
+    _, operand_peak_bytes = _resident_half_operand_sizes(**operand_size_kwargs)
+    available = device_available_bytes(
+        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
+    )
+    if available is None:
+        return False
+    return _resident_operands_fit(operand_peak_bytes, available) and not _resident_operands_fit(
+        operand_peak_bytes, float(available) - float(sums_bytes)
+    )
 
 
 def _carries_projection_sums(Ft_y_total) -> bool:
