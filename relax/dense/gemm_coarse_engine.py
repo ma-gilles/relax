@@ -9,13 +9,19 @@ Wavg/noise statistics, and result finalization use their existing owners.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 
+from relax.dense.gemm_coarse_statistics import (
+    DenseGemmStatisticsOperands,
+    DenseGemmStatisticsPlan,
+    accumulate_batch_statistics,
+    initial_statistics_carry,
+    make_statistics_callbacks,
+)
 from relax.dense.gemm_experiment import (
     DenseGemmTileConfig,
     make_joint_k_batch_program,
@@ -23,13 +29,6 @@ from relax.dense.gemm_experiment import (
     native_relion_callbacks,
     pad_batch,
     pad_grid,
-)
-from relax.dense.gemm_coarse_statistics import (
-    DenseGemmStatisticsOperands,
-    DenseGemmStatisticsPlan,
-    accumulate_batch_statistics,
-    initial_statistics_carry,
-    make_statistics_callbacks,
 )
 
 
@@ -99,12 +98,14 @@ def _memory_tiles(
 ):
     """Conservative bounded workspace policy, including statistics and priors."""
 
-    from relax.sparse_pass2.sparse_pass2_budget import (
-        _device_free_memory_bytes, _jax_allocator_free_memory_bytes,
-        _jax_allocator_pool_free_bytes, device_available_bytes,
-    )
     from relax.sparse_pass2.resident_operands import resident_half_operand_bytes
     from relax.sparse_pass2.resident_statistics import posterior_translation_bucket_scratch_bytes
+    from relax.sparse_pass2.sparse_pass2_budget import (
+        _device_free_memory_bytes,
+        _jax_allocator_free_memory_bytes,
+        _jax_allocator_pool_free_bytes,
+        device_available_bytes,
+    )
 
     available = device_available_bytes(
         _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(),
@@ -260,29 +261,28 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
     """Return the resident driver's private result after exact full-grid E/M."""
 
     from recovar.reconstruction import noise as noise_utils
+
+    from relax.helpers.adjoint import mstep_adjoint_max_r
     from relax.helpers.half_spectrum import (
         make_relion_noise_shell_indices_half,
         mask_relion_noise_shell_indices_to_current_window,
     )
+    from relax.helpers.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
     from relax.helpers.scale_groups import prepare_scale_correction_groups
     from relax.sparse_pass2.resident_operands import prepare_resident_half_operands
     from relax.sparse_pass2.resident_pass2 import (
-        _ResidentPass2Result,
         _make_chunk_translation_sqdist,
         _relion_native_fine_units_in_place,
         _relion_scale_correction_pixel_mask,
     )
     from relax.sparse_pass2.resident_statistics import (
-        finalize_statistics,
         make_resident_statistics,
         resolve_statistics_config,
     )
     from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_cuda_score_translation_angles_if_available
     from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_pixel_weights
-    from relax.sparse_pass2.sparse_pass2_window import _pass2_half_weights, _sparse_pass2_window_setup
     from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle
-    from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape, half_volume_accumulator_shape
-    from relax.helpers.adjoint import mstep_adjoint_max_r
+    from relax.sparse_pass2.sparse_pass2_window import _pass2_half_weights, _sparse_pass2_window_setup
 
     dataset = state.dataset
     image_shape = tuple(dataset.image_shape)
@@ -576,11 +576,11 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
 def _finalize_dense_result(state, numerator, denominator, stats, stats_config, bp_shape, *, n_groups):
     """Use the resident BPref/statistics finalizers, with one terminal host pull."""
 
-    from relax.helpers.types import make_noise_stats
     from relax.helpers.half_volume_mstep import (
         finalize_half_volume_bpref,
         relion_x_half_accumulators_to_public_layout,
     )
+    from relax.helpers.types import make_noise_stats
     from relax.sparse_pass2.resident_pass2 import _ResidentPass2Result
     from relax.sparse_pass2.resident_statistics import finalize_statistics
 

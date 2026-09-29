@@ -17,10 +17,10 @@ import jax.numpy as jnp
 
 from relax.cuda import kernels as cuda_backproject
 from relax.sparse_pass2.resident_pass2 import (
-    _ChunkImageOperands,
-    _ChunkImageTables,
     _accumulate_chunk_image_terms,
     _add_wavg_rectangle_image_power,
+    _ChunkImageOperands,
+    _ChunkImageTables,
     _fold_class_scale_sums,
     _resident_block_noise_and_norm,
     _resident_block_wavg_algebraic_terms,
