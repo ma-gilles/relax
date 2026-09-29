@@ -123,6 +123,11 @@ rotation_mass[i,r] = sum_t posterior[i,r,t]
 slice_weight[r,p] = sum_i rotation_mass[i,r] H[i,p]
 ```
 
+For image expansion, the numerator packs the real and imaginary parts of the
+translated `D` side by side, then uses one full-precision float32 GEMM of shape
+`(Q,B*U) @ (B*U,2*Pr)`. Splitting its output recovers the complex slices;
+the posterior operand is real, so no complex multiplication is needed.
+
 The denominator GEMM and one native Q-slice backprojection follow all translation
 tiles. No tensor with shape `(B,Q,T,P)` is formed. Score and reconstruction phases
 use their respective coordinate layouts; BPref adjoint indices are a separate

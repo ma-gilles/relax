@@ -163,22 +163,33 @@ def cc_score_tile(
     return jnp.where(valid, scores, -jnp.inf)
 
 
+def _real_weighted_complex_dot(weights, values):
+    """Contract real weights with complex pixels in one float32 GEMM.
+
+    See ``docs/math/dense_gemm_experiment.md#translation-layouts-and-accumulation``.
+    """
+    p = values.shape[1]
+    packed = jnp.concatenate((values.real, values.imag), axis=1)
+    result = jax.lax.dot(
+        weights, packed,
+        precision=jax.lax.DotAlgorithmPreset.F32_F32_F32,
+        preferred_element_type=jnp.float32,
+    )
+    return jax.lax.complex(result[:, :p], result[:, p:])
+
+
 def weighted_numerator_slices(q, rec_image, rec_phase, *, translation_side: str):
     """Reduce images/translations to complex slices; denominator is tile-invariant."""
     b, r, u = q.shape
     p = rec_image.shape[1]
     if translation_side == "image":
         shifted = rec_image[:, None, :] * rec_phase[None, :, :]
-        numerator = jnp.matmul(
-            q.swapaxes(0, 1).reshape(r, b * u),
-            shifted.reshape(b * u, p),
-            precision=jax.lax.Precision.HIGHEST,
+        numerator = _real_weighted_complex_dot(
+            q.swapaxes(0, 1).reshape(r, b * u), shifted.reshape(b * u, p)
         )
     elif translation_side == "projection":
-        by_translation = jnp.matmul(
-            q.reshape(b, r * u).T,
-            rec_image,
-            precision=jax.lax.Precision.HIGHEST,
+        by_translation = _real_weighted_complex_dot(
+            q.reshape(b, r * u).T, rec_image
         ).reshape(r, u, p)
         numerator = jnp.sum(by_translation * rec_phase[None, :, :], axis=1)
     else:
