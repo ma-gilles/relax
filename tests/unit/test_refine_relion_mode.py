@@ -11145,6 +11145,8 @@ class TestRelionModeSmokeTest:
 
         if exact_gemm:
             assert full_stats["executed_coarse_backend"] == "exact_cc_gemm"
+        else:
+            assert full_stats["executed_coarse_backend"] != "exact_cc_gemm"
         assert_matches(
             np.asarray(full_stats["class_hard_assignments"]),
             np.full((1, dataset.n_units), expected_pose, dtype=np.int32),
