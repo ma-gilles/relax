@@ -770,7 +770,10 @@ def test_public_k2_dense_engine_runs_joint_full_grid(monkeypatch):
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("class_fixture", ["skew", "balanced"])
-def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(monkeypatch, class_fixture):
+@pytest.mark.parametrize("reconstruction_groups", [1, 2])
+def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
+    monkeypatch, class_fixture, reconstruction_groups,
+):
     assert jax.default_backend() == "gpu"
     from helpers.em_arrays import _hermitian_volume
     from helpers.sparse_pass2_mock import VOLUME_SHAPE
@@ -821,6 +824,12 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(monkeypatch, cl
         adaptive_fraction=1.0,
         relion_fine_mstep_prune=False,
     )
+    if reconstruction_groups == 2:
+        args.update(
+            reconstruction_group_ids=np.arange(dataset.n_units, dtype=np.int32) % 2,
+            reconstruction_group_count=2,
+            mstep_subtract_ctf_projection=True,
+        )
     supports = [[None] * dataset.n_units for _ in range(4)]
 
     def call(dense):
