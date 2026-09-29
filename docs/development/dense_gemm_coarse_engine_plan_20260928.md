@@ -27,6 +27,15 @@ side tile, while Q around 3072 beat Q around the 100-image batch. The planner
 reduces B/Q/U when the memory estimate demands it; these choices are not
 universal throughput claims.
 
+A second synthetic-operand probe at box 256/current-size 128, B100/R768/T29,
+again favored full image-side expansion: Q768/U29 34.13 ms versus projection-
+side U29 39.88 ms, mixed U7 58.52 ms and serial U1 76.94 ms. Q96/U29 took
+79.27 ms and changed the synthetic volume numerator by 3.22e-4 relative L2
+on absolute scores near -3.3e5; it is a negative numerical diagnostic, not a
+quality pass. These are warmed exact two-sweep kernel timings that exclude
+preprocessing, staging, full statistics and reconstruction. The complete
+record is `box256_tile_probe_v31/SUMMARY.md` under the artifact root.
+
 The new dense-versus-resident fixed-state K1/K4 tests use the user's approved
 existing float32 reference gates; production FSC gates and baselines have not
 changed. Box-128 K1 full-grid tests at R36,864/T29 pass the score, BPref,
