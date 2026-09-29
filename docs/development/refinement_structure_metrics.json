@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "explicit-direct-dense-variants-rebased",
-    "source_commit": "8c0eb03100c32c15918be9f8395432bd47ce0626",
+    "package": "explicit-adaptive-kclass-route",
+    "source_commit": "55ee5c96d48129bbd3903b51b8ced89ff36edf6b",
     "metrics": {
       "files": [
         {
@@ -38,10 +38,10 @@
           "physical_lines": 135
         },
         {
-          "function_count": 19,
-          "nonblank_noncomment_lines": 1834,
+          "function_count": 20,
+          "nonblank_noncomment_lines": 1863,
           "path": "relax/refinement/half_scoring.py",
-          "physical_lines": 2041
+          "physical_lines": 2065
         },
         {
           "function_count": 24,
@@ -183,16 +183,16 @@
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 446,
-          "line_span": 563,
-          "name": "_score_half_dense_one_shape",
+          "line": 1500,
+          "line_span": 549,
+          "name": "_score_half_local_one_shape",
           "parameter_count": 7,
           "path": "relax/refinement/half_scoring.py"
         },
         {
-          "line": 1476,
-          "line_span": 549,
-          "name": "_score_half_local_one_shape",
+          "line": 556,
+          "line_span": 477,
+          "name": "_score_half_dense_one_shape",
           "parameter_count": 7,
           "path": "relax/refinement/half_scoring.py"
         },
@@ -251,12 +251,12 @@
       },
       "totals": {
         "file_count": 16,
-        "function_count": 237,
+        "function_count": 238,
         "large_argument_function_count": 7,
         "maximum_function_line_span": 5457,
         "maximum_parameter_count": 22,
-        "nonblank_noncomment_lines": 13099,
-        "physical_lines": 15008,
+        "nonblank_noncomment_lines": 13128,
+        "physical_lines": 15032,
         "very_large_argument_function_count": 2
       }
     }

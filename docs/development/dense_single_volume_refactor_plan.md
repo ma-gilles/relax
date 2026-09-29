@@ -227,6 +227,15 @@ batch planning, parent-map collapse, x-half layout reporting and score-result
 publication together. The adaptive K=1 route follows only after that contract
 has a focused characterization test.
 
+The ordinary adaptive K-class engine call is now a named implementation. It
+owns grid derivation, actual-grid batch sizing, backend selection and the
+engine invocation; the dispatcher retains first-iteration substitution,
+parent-map collapse and result publication. This preserves one publication
+path for first-iteration, ordinary adaptive and direct K-class results without
+hiding it behind a result wrapper. The next extraction is adaptive K=1, whose
+additional optics scaling, retained particle order, diagnostic float64 route
+and pose-grid reporting must remain explicit.
+
 ### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring

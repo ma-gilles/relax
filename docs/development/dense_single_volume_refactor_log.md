@@ -953,3 +953,25 @@ single-volume boundary has 17 parameters.
   nonblank lines across 237 functions. Seven functions have at least 10
   parameters and the two 20+ functions remain out-of-scope tomography
   boundaries.
+
+## 2026-09-29 — explicit adaptive K-class route
+
+- Commit `55ee5c9` extracted ordinary adaptive K-class grid planning, batch
+  sizing, sparse/dense backend selection and engine invocation into
+  `_score_adaptive_kclass_dense`.
+- The helper receives the existing half, sampling, prior, batching, variant and
+  execution owners plus the already-resolved engine keywords and symmetry. It
+  returns the unchanged engine result and the exact pass-2 grid object; the
+  dispatcher still performs parent-map collapse and publishes the common
+  K-class result. First-iteration CC remains a visibly separate route.
+- Focused structural, final all-data, finite-output and significant-count tests
+  passed 4 cases with 390 deselected and 2 expected gimbal-lock warnings.
+  Broader K-class semantics, adaptive-owner and first-iteration batching suites
+  passed 76 cases with 9 expected gimbal-lock warnings. Ruff, Python
+  compilation and diff checks passed. CPU EM fast guard: 102 passed in 59.34
+  seconds with `FFTW/3.3.10-GCC-12.2.0` loaded.
+- Production totals are 15,032 physical and 13,128 nonblank lines across 238
+  functions. Seven functions have at least 10 parameters and the two 20+
+  functions remain out-of-scope tomography boundaries. The additional helper
+  makes an intentional algorithm variant visible; argument statistics are
+  unchanged.
