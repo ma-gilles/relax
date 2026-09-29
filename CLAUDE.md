@@ -122,9 +122,10 @@ and paper-data paths, and [benchmark contracts](docs/development/benchmarks.md)
 for reusable accuracy and performance evidence. Use Slurm for integration,
 multi-iteration, long or contention-sensitive GPU work. Reserve local GPUs for
 short checks following the user's device policy.
-For Polar as an alternate Slurm target, follow the [Polar runbook](docs/development/polar.md):
-stage a lock-matched environment and frozen source on its Math-visible share,
-and keep job inputs and outputs on Polar's shared `/scratch/network`.
+For Polar as an alternate Slurm target, follow the [agent quick guide](docs/development/polar_agents.md)
+and its linked runbook. Stage a lock-matched environment and frozen source on
+the Math-visible share, and keep job inputs and outputs on Polar's shared
+`/scratch/network`.
 
 For EM-only work, use the scoped EM validation ladder. Shared pipeline or
 repository-wide cleanup requires the applicable SPA/ET and downstream checks
