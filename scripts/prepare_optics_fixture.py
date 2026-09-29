@@ -30,6 +30,13 @@ applied, so relax and RELION can be compared on data that exercises it:
     ObservationModel (relion_bind optics_ctf_images_batch). The base image's noise is
     kept. Needs a GPU for the projections.
 
+``--mag-matrix M00 M01 M10 M11``
+    The optics group gets ``rlnMagMat00..11``. The signal is re-simulated as above,
+    now ``a * idft(CTF_mag * P_mag - CTF * P)`` with ``P_mag`` projected with RELION's
+    magnified matrix (``applyAnisoMag``: relax's projection matrix times ``M3^T`` on the
+    left, :func:`relax.relion.optics_aberrations.projection_rotations`) and ``CTF_mag``
+    RELION's CTF at the magnified frequency.
+
 The base fixture's ground truth, initial reference and masks stay valid because
 the particles, their poses and the maps are unchanged. The output directory gets a
 README.md and GENERATION.json (command, source SHA, input and output sha256).
@@ -157,8 +164,13 @@ def relion_half_to_recovar_full(half: np.ndarray) -> np.ndarray:
     return -half[:, rows, cols].reshape(count, size * size)
 
 
-def even_zernike_signal_change(base_dir, particles, star_plain, star_even, images, *, batch: int, threads: int):
-    """``a * idft((CTF_even - CTF) * P)`` per image, fitted to the base images (see the module docstring)."""
+def optics_signal_change(
+    base_dir, particles, star_plain, star_even, images, *, batch: int, threads: int, magnification=None
+):
+    """``a * idft(CTF_new * P_new - CTF * P)`` per image, fitted to the base images (see the module docstring).
+
+    ``star_even`` holds the new optics table; ``magnification`` is its 2x2 matrix or None.
+    """
 
     import jax.numpy as jnp
     from recovar import utils
@@ -167,6 +179,7 @@ def even_zernike_signal_change(base_dir, particles, star_plain, star_even, image
     from recovar.core.slicing import slice_volume
     from recovar.data_io.cryoem_dataset import load_dataset
 
+    from relax.relion.optics_aberrations import projection_rotations, relax_projection_magnification
     from relax.relion_bind import _relion_bind_core as relion_bind
 
     count = images.shape[0]
@@ -205,10 +218,19 @@ def even_zernike_signal_change(base_dir, particles, star_plain, star_even, image
         report["recovar_vs_relion_plain_ctf_max_abs"] = max(
             report["recovar_vs_relion_plain_ctf_max_abs"], float(np.abs(generic - plain)[:, inside].max())
         )
-        slices = slice_volume(volume, jnp.asarray(dataset.rotation_matrices[rows]), config.image_shape,
-                              config.volume_shape, "cubic")
+        rotations = np.asarray(dataset.rotation_matrices[rows])
+        slices = slice_volume(volume, jnp.asarray(rotations), config.image_shape, config.volume_shape, "cubic")
         clean = np.asarray(ftu.get_idft2((jnp.asarray(plain) * slices).reshape(-1, size, size)).real)
-        delta = np.asarray(ftu.get_idft2((jnp.asarray(even - plain) * slices).reshape(-1, size, size)).real)
+        if magnification is None:
+            new_slices = slices
+        else:
+            magnified = projection_rotations(rotations, 1.0, relax_projection_magnification(magnification))
+            new_slices = slice_volume(
+                volume, jnp.asarray(magnified, dtype=rotations.dtype), config.image_shape, config.volume_shape, "cubic"
+            )
+        delta = np.asarray(
+            ftu.get_idft2((jnp.asarray(even) * new_slices - jnp.asarray(plain) * slices).reshape(-1, size, size)).real
+        )
         base = np.asarray(images[start:stop], dtype=np.float64)
         for local, index in enumerate(rows):
             design = np.stack([clean[local].reshape(-1), np.ones(size * size)], axis=1)
@@ -230,14 +252,18 @@ def main(argv=None) -> int:
     parser.add_argument("--beam-tilt", type=float, nargs=2, metavar=("TX", "TY"), help="beam tilt in mrad")
     parser.add_argument("--odd-zernike", type=str, help='RELION odd Zernike coefficients, "[c0,c1,...]"')
     parser.add_argument("--even-zernike", type=str, help='RELION even Zernike coefficients, "[c0,c1,...]"')
+    parser.add_argument("--mag-matrix", type=float, nargs=4, metavar=("M00", "M01", "M10", "M11"))
     parser.add_argument("--batch", type=int, default=500)
     parser.add_argument("--threads", type=int, default=8)
     args = parser.parse_args(argv)
 
     odd = args.beam_tilt is not None or args.odd_zernike is not None
     even = args.even_zernike is not None
-    if not (args.premultiply_ctf or odd or even):
-        parser.error("choose an optics feature (--premultiply-ctf, --beam-tilt, --odd-zernike, --even-zernike)")
+    mag = None if args.mag_matrix is None else np.asarray(args.mag_matrix, dtype=np.float64).reshape(2, 2)
+    if not (args.premultiply_ctf or odd or even or mag is not None):
+        parser.error(
+            "choose an optics feature (--premultiply-ctf, --beam-tilt, --odd-zernike, --even-zernike, --mag-matrix)"
+        )
     base = args.base_dir.resolve()
     out = args.output_dir.resolve()
     if out.exists() and any(out.iterdir()):
@@ -266,6 +292,9 @@ def main(argv=None) -> int:
         optics["rlnOddZernike"] = str(args.odd_zernike).replace(" ", "")
     if even:
         optics["rlnEvenZernike"] = str(args.even_zernike).replace(" ", "")
+    if mag is not None:
+        for (i, j), value in np.ndenumerate(mag):
+            optics[f"rlnMagMat{i}{j}"] = float(value)
     source_names = particles["rlnImageName"].copy()
     particles["rlnImageName"] = [f"{row + 1}@{out_stack_name}" for row in range(len(particles))]
     # Written before the images: the even-Zernike CTF is read from it (RELION's ObservationModel).
@@ -285,8 +314,8 @@ def main(argv=None) -> int:
         )
         change = None
         signal_report = None
-        if even:
-            change, signal_report = even_zernike_signal_change(
+        if even or mag is not None:
+            change, signal_report = optics_signal_change(
                 base,
                 particles.assign(rlnImageName=source_names),
                 base / "particles.star",
@@ -294,8 +323,9 @@ def main(argv=None) -> int:
                 np.asarray(data[slices]),
                 batch=int(args.batch),
                 threads=int(args.threads),
+                magnification=mag,
             )
-            print(json.dumps({"even_zernike_signal_change": signal_report}))
+            print(json.dumps({"optics_signal_change": signal_report}))
         with mrcfile.new_mmap(
             out / out_stack_name, shape=(len(slices), box, box), mrc_mode=2, overwrite=False
         ) as target:
@@ -337,8 +367,9 @@ def main(argv=None) -> int:
             "beam_tilt_mrad": None if args.beam_tilt is None else [float(v) for v in args.beam_tilt],
             "odd_zernike": args.odd_zernike,
             "even_zernike": args.even_zernike,
+            "mag_matrix": None if mag is None else mag.tolist(),
         },
-        "even_zernike_signal_change": signal_report,
+        "optics_signal_change": signal_report,
         "ctf": "relax.relion_bind get_ctf_images_batch (CTF::setValues + getFftwImage, damping on, no padding)",
         "outputs_sha256": {path.name: _sha256(path) for path in sorted(out.iterdir()) if path.is_file()},
     }
