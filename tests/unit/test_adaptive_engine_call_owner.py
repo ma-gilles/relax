@@ -32,19 +32,11 @@ def _grids(fine_mstep):
     )
 
 
-def test_shared_engine_keywords_follow_the_sparse_switch():
+def test_common_engine_keywords_follow_the_sparse_switch():
     fine_mstep = np.ones((4, 3, 3), dtype=np.float32)
-    def shared_kwargs(*, sparse_pass2, max_significants):
-        return half_scoring._adaptive_engine_shared_kwargs(
+    def common_kwargs(*, sparse_pass2, max_significants):
+        return half_scoring._adaptive_engine_common_kwargs(
             _grids(fine_mstep),
-            half_scoring.AdaptivePassPlan(
-                sparse_pass2=sparse_pass2,
-                significance_image_batch_size=8,
-                significance_rotation_block_size=16,
-                coarse_current_size=32,
-                fine_current_size=48,
-                oversampling_order=np.int64(1),
-            ),
             half_scoring.DensePriorSpec(
                 rotation_log_prior_k=None,
                 class_rotation_log_prior_k=None,
@@ -75,16 +67,15 @@ def test_shared_engine_keywords_follow_the_sparse_switch():
                 bpref_device_signature_active=False,
                 debug_iteration=3,
             ),
+            sparse_pass2=sparse_pass2,
         )
 
-    sparse = shared_kwargs(sparse_pass2=True, max_significants=None)
-    dense = shared_kwargs(sparse_pass2=False, max_significants=5)
+    sparse = common_kwargs(sparse_pass2=True, max_significants=None)
+    dense = common_kwargs(sparse_pass2=False, max_significants=5)
     expected_keys = {
         "class_log_priors", "accumulate_noise", "adaptive_fraction", "max_significants",
-        "relion_fine_mstep_prune", "significance_image_batch_size", "significance_rotation_block_size",
-        "coarse_current_size", "fine_current_size", "coarse_healpix_order", "oversampling_order",
-        "fine_mstep_rotations_override", "return_best_pose_details", "bpref_device_signature_active",
-        "debug_iteration",
+        "relion_fine_mstep_prune", "coarse_healpix_order", "fine_mstep_rotations_override",
+        "return_best_pose_details", "bpref_device_signature_active", "debug_iteration",
     }
     assert set(sparse) == set(dense) == expected_keys
     assert sparse["accumulate_noise"] is True
@@ -93,7 +84,6 @@ def test_shared_engine_keywords_follow_the_sparse_switch():
     assert sparse["relion_fine_mstep_prune"] is True and dense["relion_fine_mstep_prune"] is False
     assert sparse["fine_mstep_rotations_override"] is fine_mstep and dense["fine_mstep_rotations_override"] is None
     assert type(sparse["coarse_healpix_order"]) is int and sparse["coarse_healpix_order"] == 2
-    assert type(sparse["oversampling_order"]) is int and sparse["oversampling_order"] == 1
     assert sparse["class_log_priors"] == "priors" and sparse["debug_iteration"] == 3
 
 

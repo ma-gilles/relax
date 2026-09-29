@@ -202,33 +202,21 @@ def _dense_uses_adaptive_engine(adaptive_oversampling, group_ids) -> bool:
     return int(adaptive_oversampling) > 0 or group_ids is not None
 
 
-@dataclass(frozen=True, kw_only=True)
-class AdaptivePassPlan:
-    """Route-derived batch, size and support choices for one adaptive pass."""
-
-    sparse_pass2: bool
-    significance_image_batch_size: int | None
-    significance_rotation_block_size: int | None
-    coarse_current_size: int | None
-    fine_current_size: int | None
-    oversampling_order: int
-
-
-def _adaptive_engine_shared_kwargs(
+def _adaptive_engine_common_kwargs(
     pass2_grids: _AdaptivePass2Grids,
-    pass_plan: AdaptivePassPlan,
     priors: "DensePriorSpec",
     batching: "DenseBatchPolicy",
     sampling: "DenseSamplingSpec",
     execution: "DenseExecutionPolicy",
+    *,
+    sparse_pass2,
 ) -> dict:
-    """Keywords the K=1 and K-class routes pass identically to ``run_dense_k_class_em_adaptive``.
+    """Owner-derived keywords shared by both adaptive dense routes.
 
     Both routes accumulate noise, keep RELION's adaptive significance fraction
-    and prune the fine M-step rotations only when pass 2 is sparse. Route-specific
-    keywords stay at the call sites: K=1 adds significance skipping, the
-    diagnostic float64 pass 2 and the host-double coarse translation phases;
-    K-class plans its own pass-1/pass-2 batches from the grids.
+    and prune the fine M-step rotations only when pass 2 is sparse. Route-local
+    batch sizes, Fourier sizes and oversampling order stay beside each engine
+    call rather than being hidden in a one-call plan.
     """
 
     return dict(
@@ -236,14 +224,9 @@ def _adaptive_engine_shared_kwargs(
         accumulate_noise=True,
         adaptive_fraction=RELION_ADAPTIVE_FRACTION,
         max_significants=(-1 if batching.max_significants is None else int(batching.max_significants)),
-        relion_fine_mstep_prune=bool(pass_plan.sparse_pass2),
-        significance_image_batch_size=pass_plan.significance_image_batch_size,
-        significance_rotation_block_size=pass_plan.significance_rotation_block_size,
-        coarse_current_size=pass_plan.coarse_current_size,
-        fine_current_size=pass_plan.fine_current_size,
+        relion_fine_mstep_prune=bool(sparse_pass2),
         coarse_healpix_order=int(sampling.current_healpix_order),
-        oversampling_order=int(pass_plan.oversampling_order),
-        fine_mstep_rotations_override=(pass2_grids.fine_mstep_rotations if pass_plan.sparse_pass2 else None),
+        fine_mstep_rotations_override=(pass2_grids.fine_mstep_rotations if sparse_pass2 else None),
         return_best_pose_details=execution.return_best_pose_details,
         bpref_device_signature_active=execution.bpref_device_signature_active,
         debug_iteration=execution.debug_iteration,
@@ -640,20 +623,13 @@ def _score_half_dense_one_shape(
                 "sparse" if kclass_sparse_pass2 else "dense",
                 bool(kclass_sparse_pass2),
             )
-            shared_kwargs = _adaptive_engine_shared_kwargs(
+            common_kwargs = _adaptive_engine_common_kwargs(
                 pass2_grids,
-                AdaptivePassPlan(
-                    sparse_pass2=kclass_sparse_pass2,
-                    significance_image_batch_size=significance_image_batch_size_override,
-                    significance_rotation_block_size=significance_rotation_block_size_override,
-                    coarse_current_size=firstiter_coarse_current_size,
-                    fine_current_size=firstiter_fine_current_size,
-                    oversampling_order=adaptive_os_local,
-                ),
                 priors,
                 batching,
                 sampling,
                 execution,
+                sparse_pass2=kclass_sparse_pass2,
             )
             k_class_result = run_dense_k_class_em_adaptive(
                 half.experiment_dataset,
@@ -667,7 +643,12 @@ def _score_half_dense_one_shape(
                 rot_pmap_for_collapse,
                 trans_pmap_for_collapse,
                 sampling.disc_type,
-                **shared_kwargs,
+                significance_image_batch_size=significance_image_batch_size_override,
+                significance_rotation_block_size=significance_rotation_block_size_override,
+                coarse_current_size=firstiter_coarse_current_size,
+                fine_current_size=firstiter_fine_current_size,
+                oversampling_order=int(adaptive_os_local),
+                **common_kwargs,
                 **adaptive_em_kwargs,
             )
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
@@ -832,24 +813,17 @@ def _score_half_dense_one_shape(
                 execution.relion_projector_half is not None,
                 adaptive_em_kwargs.get("relion_projector_half") is not None,
             )
-            shared_kwargs = _adaptive_engine_shared_kwargs(
+            common_kwargs = _adaptive_engine_common_kwargs(
                 pass2_grids,
-                AdaptivePassPlan(
-                    sparse_pass2=k1_sparse_pass2,
-                    significance_image_batch_size=significance_image_batch_size_override,
-                    significance_rotation_block_size=significance_rotation_block_size_override,
-                    coarse_current_size=firstiter_coarse_current_size,
-                    fine_current_size=firstiter_fine_current_size,
-                    oversampling_order=adaptive_os_local,
-                ),
                 priors,
                 batching,
                 sampling,
                 execution,
+                sparse_pass2=k1_sparse_pass2,
             )
             if optics.projection_scale != 1.0:
-                shared_kwargs["fine_mstep_rotations_override"] = _projection_rotations(
-                    shared_kwargs["fine_mstep_rotations_override"], optics.projection_scale
+                common_kwargs["fine_mstep_rotations_override"] = _projection_rotations(
+                    common_kwargs["fine_mstep_rotations_override"], optics.projection_scale
                 )
             k1_adaptive_result = run_dense_k_class_em_adaptive(
                 half.experiment_dataset,
@@ -877,7 +851,12 @@ def _score_half_dense_one_shape(
                 pass2_use_float64_scoring=True if diagnostic_float64_pass2 else None,
                 pass2_use_float64_projections=True if diagnostic_float64_pass2 else None,
                 coarse_translation_phase_source=pass2_grids.coarse_translation_phase_source,
-                **shared_kwargs,
+                significance_image_batch_size=significance_image_batch_size_override,
+                significance_rotation_block_size=significance_rotation_block_size_override,
+                coarse_current_size=firstiter_coarse_current_size,
+                fine_current_size=firstiter_fine_current_size,
+                oversampling_order=int(adaptive_os_local),
+                **common_kwargs,
                 **adaptive_em_kwargs,
             )
         ha_k = np.asarray(k1_adaptive_result.pose_assignments, dtype=np.int32)
