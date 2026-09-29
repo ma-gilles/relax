@@ -53,7 +53,7 @@ from relax.dense.scoring_policy import (
 from relax.diagnostics import parity_dump as _parity_dump
 from relax.diagnostics.local_debug import log_local_adaptive_support, log_local_denominator_support
 from relax.helpers.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
-from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches, _local_search_precision_flags
+from relax.helpers.dtype_policy import _local_search_precision_flags
 from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
 from relax.helpers.oversampling import build_adaptive_pass2_grids
 from relax.helpers.preprocessing import uses_relion_cuda_image_preprocessing
@@ -334,6 +334,7 @@ class DenseExecutionPolicy:
     return_best_pose_details: bool = True
     bpref_device_signature_active: bool = False
     debug_iteration: int | None = None
+    diagnostic_float64_pass2: bool = False
     preserve_bpref_particle_order: bool = False
     source_faithful_spectrum_norm: bool = False
     relion_translation_angle_scale: float = 1.0
@@ -657,8 +658,7 @@ def _score_half_dense_one_shape(
         if variant.k_class_enabled:
             raise ValueError("the RELION model/optics translation-angle scale is K=1-only")
         em_kwargs["relion_translation_angle_scale"] = float(execution.relion_translation_angle_scale)
-    diagnostic_float64_pass2 = _diagnostic_float64_pass2_matches(execution.debug_iteration)
-    if diagnostic_float64_pass2:
+    if execution.diagnostic_float64_pass2:
         logger.info(
             "Diagnostic genuine-float64 adaptive pass 2 at iteration %d; pass 1 and prior boundaries remain f32",
             int(execution.debug_iteration),
@@ -929,7 +929,7 @@ def _score_half_dense_one_shape(
                     and k1_sparse_pass2
                     and k1_relion_x_half_mstep
                     and variant.firstiter_score_mode_this_iter == "gaussian"
-                    and not diagnostic_float64_pass2
+                    and not execution.diagnostic_float64_pass2
                     else pass2_grids.coarse_rotations,
                     optics.projection_scale,
                 ),
@@ -940,8 +940,8 @@ def _score_half_dense_one_shape(
                 trans_pmap_for_collapse,
                 sampling.disc_type,
                 skip_significance_pruning=k1_skip_significance_pruning,
-                pass2_use_float64_scoring=True if diagnostic_float64_pass2 else None,
-                pass2_use_float64_projections=True if diagnostic_float64_pass2 else None,
+                pass2_use_float64_scoring=True if execution.diagnostic_float64_pass2 else None,
+                pass2_use_float64_projections=True if execution.diagnostic_float64_pass2 else None,
                 coarse_translation_phase_source=pass2_grids.coarse_translation_phase_source,
                 significance_image_batch_size=significance_image_batch_size_override,
                 significance_rotation_block_size=significance_rotation_block_size_override,

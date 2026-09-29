@@ -107,7 +107,7 @@ from relax.helpers.convergence import (
     update_angular_sampling,
     update_refinement_state,
 )
-from relax.helpers.dtype_policy import _local_search_precision_flags
+from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches, _local_search_precision_flags
 from relax.helpers.env_flags import parse_env_true_flag
 from relax.helpers.expected_accuracy import (
     RELION_DEFAULT_SIGMA2_FUDGE,
@@ -3057,6 +3057,9 @@ def refine_single_volume(
                     relion_projector_r_max=relion_projector_r_max_by_half[k],
                     bpref_device_signature_active=bpref_device_signature_active,
                     debug_iteration=numbered_relion_iteration,
+                    diagnostic_float64_pass2=_diagnostic_float64_pass2_matches(
+                        numbered_relion_iteration
+                    ),
                     preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
                     source_faithful_spectrum_norm=source_faithful_spectrum_norm,
                     relion_translation_angle_scale=relion_translation_angle_scale,
@@ -5619,6 +5622,9 @@ def refine_single_volume(
                         return_best_pose_details=not k_class_enabled,
                         bpref_device_signature_active=False,
                         debug_iteration=final_sampling_relion_iteration,
+                        diagnostic_float64_pass2=_diagnostic_float64_pass2_matches(
+                            final_sampling_relion_iteration
+                        ),
                         preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
                         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
                         relion_translation_angle_scale=relion_translation_angle_scale,

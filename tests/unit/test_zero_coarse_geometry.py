@@ -243,13 +243,39 @@ def test_only_coarse_engine_operand_changes(os, sparse, xhalf, mode, double, ove
         k1_sparse_pass2=sparse,
         k1_relion_x_half_mstep=xhalf,
         variant=SimpleNamespace(firstiter_score_mode_this_iter=mode),
-        diagnostic_float64_pass2=double,
+        execution=SimpleNamespace(diagnostic_float64_pass2=double),
         # Images on the reference grid: applyScaleDifference is the identity.
         _projection_rotations=half_scoring._projection_rotations,
         optics=SimpleNamespace(projection_scale=1.0),
     )
     assert evaluate(calls[0].args[4], **scope) is (native if expected else coarse)
     assert evaluate(calls[0].args[6], **scope) is fine
+
+
+def test_dense_float64_diagnostic_is_resolved_by_the_iteration_controller():
+    scorer_source = tree("half_scoring.py")
+    assert not any(
+        isinstance(node, ast.Name) and node.id == "_diagnostic_float64_pass2_matches"
+        for node in ast.walk(scorer_source)
+    )
+
+    execution_policies = [
+        node
+        for node in ast.walk(tree("iteration_loop.py"))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "DenseExecutionPolicy"
+    ]
+    assert len(execution_policies) == 2
+    for policy in execution_policies:
+        diagnostic = next(
+            keyword.value
+            for keyword in policy.keywords
+            if keyword.arg == "diagnostic_float64_pass2"
+        )
+        assert isinstance(diagnostic, ast.Call)
+        assert isinstance(diagnostic.func, ast.Name)
+        assert diagnostic.func.id == "_diagnostic_float64_pass2_matches"
 
 
 def test_loop_transports_geometry_separately_from_effective_rotations():
