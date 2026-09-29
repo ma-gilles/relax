@@ -402,6 +402,47 @@ def _score_direct_k1_dense(
     )
 
 
+def _score_direct_kclass_dense(
+    half: DenseHalfData,
+    sampling: DenseSamplingSpec,
+    priors: DensePriorSpec,
+    execution: DenseExecutionPolicy,
+    em_kwargs,
+):
+    """Run the legacy single-pass K-class dense engine."""
+
+    warn_deprecated_engine(
+        "dense",
+        "global",
+        "a K-class pass at oversampling 0 without scale groups takes the direct dense engine",
+    )
+    dense_em_kwargs = dict(em_kwargs)
+    # The direct dense K-class wrapper delegates to run_em, which does not
+    # implement RELION x-half accumulators. Keep that branch on its historical
+    # layout and avoid tagging its full-volume output as x-half-expanded.
+    dense_em_kwargs.pop("mstep_relion_x_half", None)
+    dense_em_kwargs.pop("group_ids", None)
+    dense_em_kwargs.pop("scale_correction_group_count", None)
+    dense_em_kwargs.pop("scale_correction_data_vs_prior", None)
+    # Exact fine-Gaussian scoring is implemented only by sparse pass 2. A
+    # non-adaptive dense iteration has no fine pass to select.
+    dense_em_kwargs.pop("relion_exact_fine_gaussian", None)
+    dense_em_kwargs.pop("reconstruction_current_size", None)
+    return run_dense_k_class_em(
+        half.experiment_dataset,
+        half.means_k,
+        half.mean_variance,
+        half.noise_variance_k,
+        sampling.effective_rotations,
+        sampling.current_translations,
+        sampling.disc_type,
+        class_log_priors=priors.class_log_priors,
+        accumulate_noise=True,
+        return_best_pose_details=execution.return_best_pose_details,
+        **dense_em_kwargs,
+    )
+
+
 def _score_half_dense_one_shape(
     half: DenseHalfData,
     sampling: DenseSamplingSpec,
@@ -704,36 +745,12 @@ def _score_half_dense_one_shape(
             )
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
         else:
-            warn_deprecated_engine(
-                "dense",
-                "global",
-                "a K-class pass at oversampling 0 without scale groups takes the direct dense engine",
-            )
-            dense_em_kwargs = dict(em_kwargs)
-            # The direct dense K-class wrapper delegates to run_em, which does
-            # not implement RELION x-half accumulators. Keep that branch on its
-            # historical layout and avoid tagging its full-volume output as
-            # x-half-expanded.
-            dense_em_kwargs.pop("mstep_relion_x_half", None)
-            dense_em_kwargs.pop("group_ids", None)
-            dense_em_kwargs.pop("scale_correction_group_count", None)
-            dense_em_kwargs.pop("scale_correction_data_vs_prior", None)
-            # Exact fine-Gaussian scoring is implemented only by sparse pass 2.
-            # A non-adaptive dense iteration has no fine pass to select.
-            dense_em_kwargs.pop("relion_exact_fine_gaussian", None)
-            dense_em_kwargs.pop("reconstruction_current_size", None)
-            k_class_result = run_dense_k_class_em(
-                half.experiment_dataset,
-                half.means_k,
-                half.mean_variance,
-                half.noise_variance_k,
-                sampling.effective_rotations,
-                sampling.current_translations,
-                sampling.disc_type,
-                class_log_priors=priors.class_log_priors,
-                accumulate_noise=True,
-                return_best_pose_details=execution.return_best_pose_details,
-                **dense_em_kwargs,
+            k_class_result = _score_direct_kclass_dense(
+                half,
+                sampling,
+                priors,
+                execution,
+                em_kwargs,
             )
             k_class_mstep_full_half_axis_this_score = None
         ha_k, Ft_y_k, Ft_ctf_k, em_stats_k, noise_stats_k = _scatter_dense_k_class_result(
