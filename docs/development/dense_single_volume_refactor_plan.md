@@ -218,6 +218,15 @@ split the large one-shape scorer into named direct, adaptive K=1, adaptive
 K-class and first-iteration variants while preserving the existing owner and
 JAX boundaries.
 
+The direct K=1 and direct K-class fallbacks are now named implementations.
+Their helpers receive four and five story-telling inputs respectively; common
+validation and engine-keyword resolution remains before route selection so
+error and override order is unchanged. The next extraction is the adaptive
+K-class route. It must keep first-iteration CC substitution, adaptive grid and
+batch planning, parent-map collapse, x-half layout reporting and score-result
+publication together. The adaptive K=1 route follows only after that contract
+has a focused characterization test.
+
 ### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring

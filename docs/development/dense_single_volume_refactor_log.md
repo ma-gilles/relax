@@ -906,3 +906,25 @@ single-volume boundary has 17 parameters.
   verification or Slurm submission because this host cannot create the required
   `/scratch/gpfs/CRYOEM/.../relax_test_tiers` run root (`PermissionError` at
   `/scratch`). No GPU tests ran and no receipt or job ID was produced.
+
+## 2026-09-29 — explicit direct dense variants
+
+- Commit `e7a29b1` extracted the legacy direct K=1 single-pass route as
+  `_score_direct_k1_dense`. Its four inputs name the half data, sampling,
+  execution controls and already-resolved engine keywords; unsupported optics,
+  keyword removal, engine call and result construction retain their original
+  order.
+- Commit `cbfec1e` extracted the distinct direct K-class fallback as
+  `_score_direct_kclass_dense`. It keeps K-class priors and best-pose policy
+  explicit while the dispatcher continues to own common K-class result
+  collapse and publication.
+- Direct K=1 structural and controller tests passed 2 cases with 390 unrelated
+  cases deselected and 2 existing complex-cast warnings. Direct K-class
+  structural, prior, best-pose and single-class tests passed 4 cases with 67
+  deselected. Ruff, Python compilation and diff checks passed. CPU EM fast
+  guards passed all 102 cases in 59.00 and 58.78 seconds.
+- Production totals are 14,968 physical and 13,064 nonblank lines across 237
+  functions. Seven functions have at least 10 parameters; the two 20+
+  functions remain the out-of-scope tomography boundaries. The extra lines and
+  functions make intentionally different algorithms visible; they are not a
+  metric improvement.
