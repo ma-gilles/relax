@@ -92,8 +92,10 @@ class _ReplaceableNamespace(SimpleNamespace):
         return type(self)(**{**vars(self), **updates})
 
 
-def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch):
-    """VDAM K=2: one adaptive pass over the subset; each particle's half is its slot group.
+@pytest.mark.parametrize("n_classes", [2, 4])
+@pytest.mark.parametrize("coarse_engine", ["auto", "gemm_hybrid", "gemm_dense"])
+def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_classes, coarse_engine):
+    """VDAM K>1: one adaptive pass over the subset; each particle's half is its slot group.
 
     RELION backprojects particle p of class k into BPref[k + (part_id % 2) * K]
     (acc_ml_optimiser_impl.h:4800-4804); the subset schedule's halves go straight
@@ -107,7 +109,7 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch):
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", healpix_order=1, oversampling=1)
     plan = native_sampling._build_sampling_plan(opts, iteration=2, defer_fine_rotations=True)
     key = adaptive_estep.relion_order_of_recovar_rotations(1)
-    prior_relion = np.arange(2 * key.size, dtype=np.float32).reshape(2, key.size)
+    prior_relion = np.arange(n_classes * key.size, dtype=np.float32).reshape(n_classes, key.size)
 
     def fake_route(dataset, *args, **kwargs):
         calls.append(dict(kwargs, n_images=int(dataset.n_images)))
@@ -119,7 +121,9 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch):
             host_arrays=True,
         )
         return _ReplaceableNamespace(
-            Ft_y=[np.zeros(2), np.ones(2)], Ft_ctf=[np.zeros(2), np.ones(2)], per_class_stats=(stats, stats)
+            Ft_y=[np.full(2, k) for k in range(n_classes * 2)],
+            Ft_ctf=[np.full(2, k) for k in range(n_classes * 2)],
+            per_class_stats=(stats,) * n_classes,
         )
 
     accumulator_calls = []
@@ -128,17 +132,18 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch):
     def fake_accumulators(*args, **kwargs):
         accumulator_calls.append(kwargs)
         # The grouped adapter's own order: class-major.
-        return [SimpleNamespace(class_idx=k, halfset_idx=h) for k in range(2) for h in range(2)]
+        return [SimpleNamespace(class_idx=k, halfset_idx=h) for k in range(n_classes) for h in range(2)]
 
     monkeypatch.setattr(adaptive_estep, "_arrays_to_accumulators", fake_accumulators)
     monkeypatch.setattr(adaptive_estep, "_sparse_pass2_estep_meta", lambda results, selected: {})
     monkeypatch.setattr(adaptive_estep, "_add_accumulator_weight_meta", lambda meta, acc, K: None)
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=2, nr_iter=4, n_directions=4, pseudo_halfsets=True)
+    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=n_classes, nr_iter=4, n_directions=4, pseudo_halfsets=True)
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(64, dtype=np.float32),
         rotations=None,
         translations=plan.translations,
         relion_bpref_frame=True,
+        coarse_engine=coarse_engine,
         engine_kwargs={},
     )
     engine_kwargs = {
@@ -162,16 +167,17 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch):
         _Dataset(),
         state,
         config,
-        class_log_priors=np.zeros(2),
+        class_log_priors=np.zeros(n_classes),
         joint_particle_ids=np.array([3, 0, 2], dtype=np.int64),
         joint_halfset_ids=np.array([1, 0, 1], dtype=np.int32),
         means=None,
         mean_variance=None,
-        relion_projector_half_by_class=np.zeros((2, 1)),
+        relion_projector_half_by_class=np.zeros((n_classes, 1)),
         relion_projector_r_max=1,
         engine_kwargs=engine_kwargs,
     )
     assert len(calls) == 1 and calls[0]["n_images"] == 3
+    assert calls[0]["coarse_engine"] == coarse_engine
     np.testing.assert_array_equal(calls[0]["reconstruction_group_ids"], [1, 0, 1])
     assert calls[0]["reconstruction_group_count"] == 2
     assert calls[0]["max_significants"] == 200
@@ -180,4 +186,6 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch):
     assert accumulator_calls[0]["halfset_idx"] is None and accumulator_calls[0]["reconstruction_group_count"] == 2
     assert result.meta["halfset_ids"] == (0, 1)
     # vdam_m_step's positional contract: halfset 0 of each class, then halfset 1.
-    assert [(a.halfset_idx, a.class_idx) for a in result.accumulators] == [(0, 0), (0, 1), (1, 0), (1, 1)]
+    assert [(a.halfset_idx, a.class_idx) for a in result.accumulators] == [
+        (h, k) for h in range(2) for k in range(n_classes)
+    ]
