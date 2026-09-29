@@ -351,6 +351,57 @@ class DenseOpticsSpec:
     reference_current_size: int | None = None
 
 
+def _score_direct_k1_dense(
+    half: DenseHalfData,
+    sampling: DenseSamplingSpec,
+    execution: DenseExecutionPolicy,
+    em_kwargs,
+) -> HalfScoreResult:
+    """Run the legacy single-pass K=1 dense engine."""
+
+    if half.optics_group_ids_k is not None:
+        raise NotImplementedError(
+            "the single-pass dense engine keeps one optics group's noise spectrum"
+        )
+    # Scale groups never reach the direct dense engine: see
+    # _dense_uses_adaptive_engine.
+    warn_deprecated_engine(
+        "dense",
+        "global",
+        "a K=1 pass at oversampling 0 without scale groups takes the direct dense engine",
+    )
+    direct_em_kwargs = dict(em_kwargs)
+    direct_em_kwargs.pop("group_ids", None)
+    direct_em_kwargs.pop("scale_correction_group_count", None)
+    direct_em_kwargs.pop("scale_correction_data_vs_prior", None)
+    # Exact fine-Gaussian scoring is implemented only by sparse pass 2. This
+    # branch is the single dense pass used when adaptive oversampling is off.
+    direct_em_kwargs.pop("relion_exact_fine_gaussian", None)
+    direct_em_kwargs.pop("reconstruction_current_size", None)
+    em_result = run_em(
+        half.experiment_dataset,
+        half.means_k,
+        half.mean_variance,
+        half.noise_variance_k,
+        sampling.effective_rotations,
+        sampling.current_translations,
+        sampling.disc_type,
+        return_stats=True,
+        accumulate_noise=True,
+        disable_adjoint_y=execution.disable_adjoint_y,
+        disable_adjoint_ctf=execution.disable_adjoint_ctf,
+        **direct_em_kwargs,
+    )
+    return HalfScoreResult(
+        ha=em_result.hard_assignments,
+        Ft_y=em_result.Ft_y,
+        Ft_ctf=em_result.Ft_ctf,
+        em_stats=em_result.stats,
+        noise_stats=em_result.noise_stats,
+        mstep_accumulator_shape=None,
+    )
+
+
 def _score_half_dense_one_shape(
     half: DenseHalfData,
     sampling: DenseSamplingSpec,
@@ -937,42 +988,7 @@ def _score_half_dense_one_shape(
             mstep_accumulator_shape=getattr(k1_adaptive_result, "mstep_accumulator_shape", None),
         )
 
-    if half.optics_group_ids_k is not None:
-        raise NotImplementedError("the single-pass dense engine keeps one optics group's noise spectrum")
-    # Scale groups never reach the direct dense engine: see _dense_uses_adaptive_engine.
-    warn_deprecated_engine(
-        "dense", "global", "a K=1 pass at oversampling 0 without scale groups takes the direct dense engine"
-    )
-    direct_em_kwargs = dict(em_kwargs)
-    direct_em_kwargs.pop("group_ids", None)
-    direct_em_kwargs.pop("scale_correction_group_count", None)
-    direct_em_kwargs.pop("scale_correction_data_vs_prior", None)
-    # Exact fine-Gaussian scoring is implemented only by sparse pass 2.  This
-    # branch is the single dense pass used when adaptive oversampling is off.
-    direct_em_kwargs.pop("relion_exact_fine_gaussian", None)
-    direct_em_kwargs.pop("reconstruction_current_size", None)
-    em_result = run_em(
-        half.experiment_dataset,
-        half.means_k,
-        half.mean_variance,
-        half.noise_variance_k,
-        sampling.effective_rotations,
-        sampling.current_translations,
-        sampling.disc_type,
-        return_stats=True,
-        accumulate_noise=True,
-        disable_adjoint_y=execution.disable_adjoint_y,
-        disable_adjoint_ctf=execution.disable_adjoint_ctf,
-        **direct_em_kwargs,
-    )
-    return HalfScoreResult(
-        ha=em_result.hard_assignments,
-        Ft_y=em_result.Ft_y,
-        Ft_ctf=em_result.Ft_ctf,
-        em_stats=em_result.stats,
-        noise_stats=em_result.noise_stats,
-        mstep_accumulator_shape=None,
-    )
+    return _score_direct_k1_dense(half, sampling, execution, em_kwargs)
 
 
 def _reconstruction_image_radius(reference_current_size, scale: float):

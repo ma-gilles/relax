@@ -54,6 +54,41 @@ def test_numbered_dense_scoring_exposes_owners_without_a_call_only_plan():
     ]
 
 
+def test_direct_k1_dense_route_is_an_explicit_four_input_variant():
+    scorer = tree("half_scoring.py")
+    helper = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_score_direct_k1_dense"
+    )
+    assert [argument.arg for argument in helper.args.args] == [
+        "half",
+        "sampling",
+        "execution",
+        "em_kwargs",
+    ]
+    dispatcher = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_half_dense_one_shape"
+    )
+    calls = [
+        node
+        for node in ast.walk(dispatcher)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_score_direct_k1_dense"
+    ]
+    assert len(calls) == 1
+    assert [argument.id for argument in calls[0].args] == [
+        "half",
+        "sampling",
+        "execution",
+        "em_kwargs",
+    ]
+
+
 @pytest.mark.parametrize(
     "os,local,k,mode,hard,double,expected",
     [
