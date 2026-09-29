@@ -1498,6 +1498,61 @@ def _prepare_local_adaptive_pass2_support(
     return pass2_layout, relion_significant_counts, denominator_layout, parent_mode
 
 
+def _build_local_adaptive_parent_layout(
+    half: LocalHalfData,
+    sampling: LocalSamplingSpec,
+    priors: LocalPriorSpec,
+    translation_prior_reference_translations,
+    layout_dtype,
+):
+    """Build the coarse parent layout used by exact-local adaptive pass 1."""
+
+    parent_prior_translations = priors.trans_prior_center
+    if parent_prior_translations is None:
+        parent_prior_translations = np.zeros(
+            (
+                np.asarray(half.previous_best_rotation_eulers_k).shape[0],
+                np.asarray(sampling.current_translations).shape[1],
+            ),
+            dtype=layout_dtype,
+        )
+    parent_order = int(sampling.local_search_order) - int(
+        sampling.local_parent_oversampling_order
+    )
+    if parent_order < 0:
+        raise ValueError(
+            "local_search_order must be >= local_parent_oversampling_order; "
+            f"got {sampling.local_search_order} and "
+            f"{sampling.local_parent_oversampling_order}",
+        )
+    parent_grid_metadata = build_local_search_grid_metadata(
+        parent_order,
+        **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {}),
+    )
+    parent_layout = build_local_hypothesis_layout(
+        half.previous_best_rotation_eulers_k,
+        None,
+        sampling.sigma_rot,
+        sampling.sigma_psi,
+        parent_order,
+        sampling.current_translations,
+        parent_prior_translations,
+        priors.current_sigma_offset_angstrom,
+        None,
+        half.experiment_dataset.voxel_size,
+        grid_metadata=parent_grid_metadata,
+        translation_prior_reference_translations=translation_prior_reference_translations,
+        rotation_log_prior=None,
+        rotation_grid_random_perturbation=sampling.local_search_random_perturbation,
+        rotation_grid_angular_sampling_deg=relion_angular_sampling_deg(
+            parent_order,
+            adaptive_oversampling=0,
+        ),
+        dtype=layout_dtype,
+    )
+    return parent_layout, parent_order
+
+
 def _local_owners_for_shape(
     half: LocalHalfData,
     sampling: LocalSamplingSpec,
@@ -1848,42 +1903,12 @@ def _score_half_local_one_shape(
     local_adaptive_pass2_denominator_layout = None
     local_normalization_log_evidence = None
     if int(sampling.local_parent_oversampling_order) > 0:
-        parent_prior_translations = priors.trans_prior_center
-        if parent_prior_translations is None:
-            parent_prior_translations = np.zeros(
-                (
-                    np.asarray(half.previous_best_rotation_eulers_k).shape[0],
-                    np.asarray(sampling.current_translations).shape[1],
-                ),
-                dtype=parent_local_layout_dtype,
-            )
-        parent_order = int(sampling.local_search_order) - int(sampling.local_parent_oversampling_order)
-        if parent_order < 0:
-            raise ValueError(
-                "local_search_order must be >= local_parent_oversampling_order; "
-                f"got {sampling.local_search_order} and "
-                f"{sampling.local_parent_oversampling_order}",
-            )
-        parent_grid_metadata = build_local_search_grid_metadata(
-            parent_order, **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {})
-        )
-        parent_layout = build_local_hypothesis_layout(
-            half.previous_best_rotation_eulers_k,
-            None,
-            sampling.sigma_rot,
-            sampling.sigma_psi,
-            parent_order,
-            sampling.current_translations,
-            parent_prior_translations,
-            priors.current_sigma_offset_angstrom,
-            None,
-            half.experiment_dataset.voxel_size,
-            grid_metadata=parent_grid_metadata,
-            translation_prior_reference_translations=translation_prior_reference_translations,
-            rotation_log_prior=None,
-            rotation_grid_random_perturbation=sampling.local_search_random_perturbation,
-            rotation_grid_angular_sampling_deg=relion_angular_sampling_deg(parent_order, adaptive_oversampling=0),
-            dtype=parent_local_layout_dtype,
+        parent_layout, parent_order = _build_local_adaptive_parent_layout(
+            half,
+            sampling,
+            priors,
+            translation_prior_reference_translations,
+            parent_local_layout_dtype,
         )
         parent_local_rot_max = (
             int(np.max(np.asarray(parent_layout.rotation_counts, dtype=np.int64)))

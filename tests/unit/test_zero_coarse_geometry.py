@@ -397,6 +397,46 @@ def test_local_adaptive_support_helper_exposes_six_story_inputs():
     ]
 
 
+def test_local_adaptive_parent_layout_exposes_five_story_inputs():
+    scorer = tree("half_scoring.py")
+    helper = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_build_local_adaptive_parent_layout"
+    )
+    expected_inputs = [
+        "half",
+        "sampling",
+        "priors",
+        "translation_prior_reference_translations",
+        "layout_dtype",
+    ]
+    assert [argument.arg for argument in helper.args.args] == expected_inputs
+
+    local_scorer = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_half_local_one_shape"
+    )
+    calls = [
+        node
+        for node in ast.walk(local_scorer)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_build_local_adaptive_parent_layout"
+    ]
+    assert len(calls) == 1
+    assert [argument.id for argument in calls[0].args] == [
+        "half",
+        "sampling",
+        "priors",
+        "translation_prior_reference_translations",
+        "parent_local_layout_dtype",
+    ]
+
+
 def test_loop_transports_geometry_separately_from_effective_rotations():
     calls = [
         n
