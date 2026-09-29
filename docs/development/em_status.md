@@ -282,10 +282,10 @@ through iteration 6. Also OPEN: a coarse window strictly between
 sphere. Only the fused coarse scorer, the global default, reproduces it. The
 non-fused coarse projection and the local parent pass refuse it.
 
-TODO (2026-09-27, cryo-ET): subtomogram runs cannot be continued. `--continue` refuses 2D-stack projects and the run-file
-writer is skipped for them (`scripts/run_full_refinement.py::_validate_tomo_run`), because `RunFileWriter` and
-`read_run_files` (`relax/refinement/run_files.py`) map half rows onto the SPA particles.star; they need a TomoHalf row
-mapping (particles.star units, 3D offsets, the 2D-stack STAR blocks). The loop-side restore is path-agnostic.
+Resolved (2026-09-29, cryo-ET): subtomogram runs write RELION's run files and continue from them (e435bfa4). The half
+rows already map the particles onto the tomo particles.star; data.star now carries rlnOriginZAngst for the 3D offsets.
+Check 14643890 (S1 seed 20260925): a run continued from iteration 6 ends on the uninterrupted run's map (FSC-AUC 1.0,
+same iterations 7-9).
 
 Resolved (2026-09-28, cryo-ET S4.2): relax's ground-truth FSC-AUC on the S1 depth-fix fixture was 0.003-0.004 below RELION's
 (0.9346-0.9367 against 0.9381-0.9409). Two bugs, both found by comparing each iteration with RELION's `_model.star`/`_data.star`
