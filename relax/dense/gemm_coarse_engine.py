@@ -10,6 +10,7 @@ Wavg/noise statistics, and result finalization use their existing owners.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 
 import jax.numpy as jnp
@@ -92,9 +93,15 @@ class DenseGemmPreparedState:
     symmetry_label: str
 
 
+def _score_cache_bytes(k: int, b: int, r: int, t: int, q: int, u: int) -> int:
+    """Float32 K-class score storage, including the tile-padded grid."""
+    return k * b * ((r + q - 1) // q * q) * ((t + u - 1) // u * u) * 4
+
+
 def _memory_tiles(
     state: DenseGemmPreparedState, *, n_score: int, n_recon: int,
     n_rect: int, n_groups: int, bp_size: int,
+    class_batch_scores: bool = False, cache_scores: bool = False,
 ):
     """Conservative bounded workspace policy, including statistics and priors.
 
@@ -152,12 +159,16 @@ def _memory_tiles(
         # The statistics rows use a bounded Q_stat. The 40-byte term covers the translated/projected row arrays
         # and Wavg triplet; both are doubled below for XLA/native temporaries.
         # The 2x margin covers XLA fused temporaries and native workspaces.
+        score_cache = (_score_cache_bytes(k, b, r, t, q, u) if cache_scores else 0)
+        class_score_workspace = ((k - 1) * (b * q * u * 16 + q * n_score * 24)
+                                 if class_batch_scores else 0)
         tile = (prepared + b * q * u * 16 + b * u * n_rect * 16
                 + b * qs * n_recon * 40 + b * n_rect * 16
                 + q * (n_score + n_recon) * 24
                 + (k * b * r * 4 if not shared_priors else 0) + k * b * t * 4
                 + posterior_translation_bucket_scratch_bytes(b * k, b, t)
-                + 2 * posterior_translation_bucket_scratch_bytes(b * qs, b, 1))
+                + 2 * posterior_translation_bucket_scratch_bytes(b * qs, b, 1)
+                + class_score_workspace + score_cache)
         if fixed + 2 * tile <= budget:
             break
         if u > 1 and b * u * n_rect >= b * qs * n_recon:
@@ -179,6 +190,19 @@ def _memory_tiles(
         b, q, u, qs, fixed / 1024**3, tile / 1024**3, budget / 1024**3,
     )
     return b, q, u, qs
+
+
+def _experimental_class_batch_flags() -> tuple[bool, bool]:
+    """Explicit diagnostic switches for the opt-in dense engine's GEMM layout."""
+    def enabled(name: str) -> bool:
+        value = os.environ.get(name, "0")
+        if value not in {"0", "1"}:
+            raise ValueError(f"{name} must be 0 or 1")
+        return value == "1"
+
+    cache_scores = enabled("RELAX_DENSE_GEMM_SCORE_CACHE")
+    class_batch_scores = enabled("RELAX_DENSE_GEMM_CLASS_BATCH_SCORES") or cache_scores
+    return class_batch_scores, cache_scores
 
 
 def _expanded_rotation_priors(priors, parent, image_indices, n_images: int, n_classes: int, rpad: int):
@@ -291,6 +315,7 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
     image_shape = tuple(dataset.image_shape)
     n_images = int(dataset.n_units)
     k = len(state.class_volumes)
+    class_batch_scores, cache_scores = _experimental_class_batch_flags()
     if n_images <= 0 or k <= 0:
         raise ValueError("dense GEMM needs images and classes")
     if state.precision_policy.score_real_dtype != jnp.float32:
@@ -390,6 +415,7 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
     b, q, u, qs = _memory_tiles(
         state, n_score=n_score, n_recon=n_recon, n_rect=n_rect,
         n_groups=n_groups, bp_size=bp_size,
+        class_batch_scores=class_batch_scores, cache_scores=cache_scores,
     )
     score_phase = native_phase_table(angles, score_indices, image_shape)
     rec_phase = native_phase_table(angles, recon_indices, image_shape)
@@ -442,6 +468,12 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
         project_reconstruction=project_rec,
         mstep_subtract_ctf_projection=state.mstep_subtract_ctf_projection,
         statistics_step=step, statistics_finish_class=finish_class,
+        class_batch_scores=class_batch_scores,
+        cache_scores=cache_scores,
+        score_cache_max_bytes=(
+            _score_cache_bytes(k, b, len(state.fine_rotations), len(state.fine_translations), q, u)
+            if cache_scores else 512 << 20
+        ),
     )
     numerator = jnp.zeros((k, n_groups, bp_size), jnp.complex64)
     denominator = jnp.zeros((k, n_groups, bp_size), jnp.float32)

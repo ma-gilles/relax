@@ -165,6 +165,18 @@ For multiple optics groups or non-RFLOAT Wavg operands, the adapter keeps the
 resident row-statistics callbacks. In both routes the score grid and posterior
 support remain full; an exactly zero float32 posterior may skip pixel work.
 
+For K classes, the exact denominator is joint over `(class, rotation,
+translation)` for each image. The optional class-batched first sweep projects
+each class in turn, stacks their `K*Q` slices, and scores that stack against the
+same translated image batch in one GEMM. It retains separate class normalizers
+and best poses, then merges the normalizers across K. The second sweep still
+visits classes in order so Wavg masks, statistics, and the native adjoint follow
+their established reduction schedule. With score caching enabled, it reads the
+first-sweep float32 scores instead of projecting and scoring again in the second
+sweep; the posterior and reconstruction work are otherwise unchanged. The cache
+contains `K*B*R_padded*T_padded` scores, not per-image volume accumulators. The
+adapter admits that cache only within its doubled tile-workspace memory budget.
+
 ## Buffer ownership and measurement boundaries
 
 The table below describes the experimental trajectory adapter. The production

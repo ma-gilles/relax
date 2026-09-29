@@ -20,6 +20,7 @@ import numpy as np
 
 from relax.dense.gemm_experiment_kernels import (
     cc_score_tile,
+    class_score_tile,
     empty_normalizer_table,
     merge_normalizers,
     normalizer_logz,
@@ -268,13 +269,19 @@ def make_joint_k_batch_program(
     mstep_subtract_ctf_projection: bool = False,
     statistics_step: Callable | None = None,
     statistics_finish_class: Callable | None = None,
+    class_batch_scores: bool = False,
+    cache_scores: bool = False,
+    score_cache_max_bytes: int = 512 << 20,
 ):
     """Compile an exact dense K-class E/M batch with one joint normalizer.
 
     The class-specific rotation prior must already contain ``log(pdf_class)``.
     ``reconstruction_groups`` is a per-image 0-based group id; for VDAM its
     two values select pseudo-halfset BackProjectors without duplicating the
-    E-step. The full grid is scored twice and no candidate is pruned.
+    E-step. By default the full grid is scored twice and no candidate is pruned.
+    ``class_batch_scores`` combines K projections in first-sweep score GEMMs.
+    ``cache_scores`` also retains those float32 scores, subject to a byte cap,
+    and reuses them in the unchanged class-ordered reconstruction sweep.
     """
     if config.mode != "exact":
         raise ValueError("the production K-class route requires exact two-sweep normalization")
@@ -284,6 +291,8 @@ def make_joint_k_batch_program(
         raise ValueError("gradient BPref and row statistics require a reconstruction-window projector")
     if (statistics_step is None) != (statistics_finish_class is None):
         raise ValueError("statistics_step and statistics_finish_class must be supplied together")
+    if cache_scores and score_cache_max_bytes <= 0:
+        raise ValueError("score_cache_max_bytes must be positive")
     qsize = config.rotation_tile
     usize = config.translation_tile
     side = config.translation_side
@@ -304,6 +313,14 @@ def make_joint_k_batch_program(
         n_groups = numerator.shape[1]
         nrot = grid.score_rotations.shape[0] // qsize
         ntrans = grid.score_phase.shape[0] // usize
+        if cache_scores:
+            cache_bytes = (n_classes * config.image_capacity
+                           * grid.score_rotations.shape[0] * grid.score_phase.shape[0] * 4)
+            if cache_bytes > score_cache_max_bytes:
+                raise MemoryError(
+                    f"dense GEMM score cache needs {cache_bytes} bytes, "
+                    f"above its {score_cache_max_bytes}-byte cap"
+                )
         real_translations = jnp.sum(grid.valid_translations).astype(jnp.int32)
         group_mask = (reconstruction_groups[:, None] == jnp.arange(n_groups)[None, :]) & batch.valid_images[:, None]
         class_pairs = jnp.broadcast_to(
@@ -373,9 +390,71 @@ def make_joint_k_batch_program(
                 pose.at[class_id].set(class_winner),
             )
 
-        class_pairs, class_best, class_pose = jax.lax.fori_loop(
-            0, n_classes, first_class, (class_pairs, class_best, class_pose)
-        )
+        if class_batch_scores or cache_scores:
+            def first_rotation_batched(rot_index, rotation_state):
+                pairs, best, pose, cached = rotation_state
+                rot_start = rot_index * qsize
+                rotations = jax.lax.dynamic_slice_in_dim(grid.score_rotations, rot_start, qsize, axis=0)
+                _, projections = jax.lax.scan(
+                    lambda unused, reference: (unused, project(reference, rotations)),
+                    None, references,
+                )
+                k, q, p = projections.shape
+                model_power = score_model_power(projections.reshape(k * q, p), batch.score_weight)
+                prior = jax.lax.dynamic_slice_in_dim(class_rotation_prior, rot_start, qsize, axis=2)
+                valid_rot = jax.lax.dynamic_slice_in_dim(grid.valid_rotations, rot_start, qsize, axis=0)
+
+                def first_translation_batched(trans_index, translation_state):
+                    current_pairs, current_best, current_pose, current_cache = translation_state
+                    trans_start = trans_index * usize
+                    phase = jax.lax.dynamic_slice_in_dim(grid.score_phase, trans_start, usize, axis=0)
+                    tprior = jax.lax.dynamic_slice_in_dim(batch.translation_prior, trans_start, usize, axis=1)
+                    valid_trans = jax.lax.dynamic_slice_in_dim(grid.valid_translations, trans_start, usize, axis=0)
+                    scores = class_score_tile(
+                        projections, batch.score_image, batch.score_weight, batch.initial_diff2,
+                        phase, prior, tprior, batch.valid_images, valid_rot, valid_trans,
+                        translation_side=side, score_mode=score_mode, model_power=model_power,
+                    )
+                    if cache_scores:
+                        current_cache = jax.lax.dynamic_update_slice(
+                            current_cache, scores, (0, 0, rot_start, trans_start)
+                        )
+                    current_pairs = jax.vmap(merge_normalizers)(
+                        current_pairs, jax.vmap(tile_normalizer)(scores)
+                    )
+                    flat = scores.reshape(n_classes, config.image_capacity, qsize * usize)
+                    winner = jnp.argmax(flat, axis=2)
+                    maximum = jnp.take_along_axis(flat, winner[:, :, None], axis=2)[:, :, 0]
+                    pose_id = ((rot_start + winner // usize) * real_translations
+                               + trans_start + winner % usize).astype(jnp.int32)
+                    better = (maximum > current_best) | (
+                        jnp.isfinite(maximum)
+                        & (maximum == current_best)
+                        & ((current_pose < 0) | (pose_id < current_pose))
+                    )
+                    return (
+                        current_pairs,
+                        jnp.where(better, maximum, current_best),
+                        jnp.where(better, pose_id, current_pose),
+                        current_cache,
+                    )
+
+                return jax.lax.fori_loop(
+                    0, ntrans, first_translation_batched, (pairs, best, pose, cached)
+                )
+
+            score_cache = (
+                jnp.full((n_classes, config.image_capacity, grid.score_rotations.shape[0],
+                          grid.score_phase.shape[0]), -jnp.inf, jnp.float32)
+                if cache_scores else jnp.empty((0,), jnp.float32)
+            )
+            class_pairs, class_best, class_pose, score_cache = jax.lax.fori_loop(
+                0, nrot, first_rotation_batched, (class_pairs, class_best, class_pose, score_cache)
+            )
+        else:
+            class_pairs, class_best, class_pose = jax.lax.fori_loop(
+                0, n_classes, first_class, (class_pairs, class_best, class_pose)
+            )
         joint_pair = jax.lax.fori_loop(
             0, n_classes, lambda k, pair: merge_normalizers(pair, class_pairs[k]),
             empty_normalizer_table(config.image_capacity),
@@ -397,19 +476,25 @@ def make_joint_k_batch_program(
                 rot_start = rot_index * qsize
                 rotations = jax.lax.dynamic_slice_in_dim(grid.score_rotations, rot_start, qsize, axis=0)
                 bp_rotations = jax.lax.dynamic_slice_in_dim(grid.backprojection_rotations, rot_start, qsize, axis=0)
-                projection = project(references[class_id], rotations)
+                projection = None if cache_scores else project(references[class_id], rotations)
                 rec_projection = (
                     project_reconstruction(references[class_id], rotations)
                     if project_reconstruction is not None else None
                 )
-                model_power = score_model_power(projection, batch.score_weight)
+                model_power = None if cache_scores else score_model_power(projection, batch.score_weight)
                 y_slices = jnp.zeros((n_groups, qsize, batch.rec_image.shape[1]), jnp.complex64)
                 rotation_mass = jnp.zeros((n_groups, config.image_capacity, qsize), jnp.float32)
 
                 def second_translation(trans_index, tile_state):
                     y_sum, mass_sum, trans_total, image_total, tile_stats = tile_state
                     trans_start = trans_index * usize
-                    scores = score_for(projection, model_power, class_id, rot_start, trans_start)
+                    scores = (
+                        jax.lax.dynamic_slice(
+                            score_cache, (class_id, 0, rot_start, trans_start),
+                            (1, config.image_capacity, qsize, usize),
+                        )[0]
+                        if cache_scores else score_for(projection, model_power, class_id, rot_start, trans_start)
+                    )
                     if score_mode == "normalized_cc":
                         rot_ids = rot_start + jnp.arange(qsize, dtype=jnp.int32)
                         trans_ids = trans_start + jnp.arange(usize, dtype=jnp.int32)

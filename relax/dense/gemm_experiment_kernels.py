@@ -163,6 +163,53 @@ def cc_score_tile(
     return jnp.where(valid, scores, -jnp.inf)
 
 
+def class_score_tile(
+    projections,
+    score_image,
+    pixel_weight,
+    initial_diff2,
+    phase,
+    class_rotation_prior,
+    translation_prior,
+    valid_images,
+    valid_rotations,
+    valid_translations,
+    *,
+    translation_side: str,
+    score_mode: str,
+    model_power,
+):
+    """Score K classes in one GEMM, retaining separate class/pose scores.
+
+    The native projector still supplies one [Q, P] block per class. Flattening
+    those blocks to [K*Q, P] shares the translated image operand across K.
+    Priors are added only after the GEMM; normalized CC ignores them.
+    """
+    k, q, p = projections.shape
+    flat_projections = projections.reshape(k * q, p)
+    flat_valid_rotations = jnp.tile(valid_rotations, k)
+    if score_mode == "normalized_cc":
+        flat_scores = cc_score_tile(
+            flat_projections, score_image, pixel_weight, phase,
+            valid_images, flat_valid_rotations, valid_translations,
+            translation_side=translation_side, model_power=model_power,
+        )
+    elif score_mode == "gaussian":
+        b = score_image.shape[0]
+        flat_prior = jnp.broadcast_to(class_rotation_prior, (k, b, q))
+        flat_prior = flat_prior.transpose(1, 0, 2).reshape(b, k * q)
+        flat_scores = score_tile(
+            flat_projections, score_image, pixel_weight, initial_diff2,
+            phase, flat_prior, translation_prior, valid_images,
+            flat_valid_rotations, valid_translations,
+            translation_side=translation_side, model_power=model_power,
+        )
+    else:
+        raise ValueError(f"unsupported dense GEMM score mode {score_mode!r}")
+    b, _, u = flat_scores.shape
+    return flat_scores.reshape(b, k, q, u).transpose(1, 0, 2, 3)
+
+
 def _real_weighted_complex_dot(weights, values):
     """Contract real weights with complex pixels in one float32 GEMM.
 
