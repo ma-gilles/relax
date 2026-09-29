@@ -786,9 +786,12 @@ def _score_half_dense_one_shape(
         raise ValueError("RELION BPref particle-order preservation is K=1-only")
     if half.image_seed_classes is not None and (
         not variant.k_class_enabled
-        or not _dense_uses_adaptive_engine(sampling.state.adaptive_oversampling, half.group_ids_k)
+        or not (
+            variant.relion_firstiter_cc_this_iter
+            or _dense_uses_adaptive_engine(sampling.state.adaptive_oversampling, half.group_ids_k)
+        )
     ):
-        raise NotImplementedError("a seed iteration runs on the adaptive K-class route")
+        raise NotImplementedError("a seed iteration runs on the adaptive or first-iteration CC K-class route")
     if execution.preserve_bpref_particle_order:
         em_kwargs["preserve_bpref_particle_order"] = True
     if execution.source_faithful_spectrum_norm:
@@ -826,6 +829,7 @@ def _score_half_dense_one_shape(
                 mean_variance=half.mean_variance,
                 noise_variance=half.noise_variance_k,
                 image_shape=half.experiment_dataset.image_shape,
+                image_seed_classes=half.image_seed_classes,
         )
         firstiter_grid = FirstIterCCGridSpec(
                 effective_rotations=sampling.effective_rotations,

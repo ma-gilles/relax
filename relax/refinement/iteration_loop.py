@@ -583,6 +583,14 @@ def _class_adaptive_batch_overrides(half, *, plan, cs_for_engine, coarse_cs, coa
     return tuple(overrides)
 
 
+def _copy_first_class(stacked):
+    """``stacked`` (a leading class axis) with every class set to class 0, as the input's array type."""
+
+    if isinstance(stacked, np.ndarray):
+        return np.broadcast_to(stacked[:1], stacked.shape).copy()
+    return jnp.broadcast_to(stacked[:1], stacked.shape)
+
+
 def _host_tau2_volumes(mean_variance, mean_variance_per_half, mean_signal_variance, mean_signal_variance_per_half):
     """Move the K=1 tau2 volumes to the host, keeping which names share one array."""
 
@@ -1312,13 +1320,15 @@ def refine_single_volume(
         # A continued run's first iteration follows the snapshot's iteration.
         has_previous_iteration = iteration > 0 or resume is not None
         # RELION's Class3D from one reference scores each particle against one random class in its first
-        # iteration (do_generate_seeds, ml_optimiser.cpp:4626-4633, :4880-4898).
-        seed_iteration = (
-            k_class.first_iteration_seed_classes is not None
-            and iteration == 0
-            and resume is None
-            and int(init_relion_iteration) == 0
+        # iteration (do_generate_seeds, ml_optimiser.cpp:4626-4633, :4880-4898). With --firstiter_cc the
+        # first iteration scores class 0 alone (CC), its model is then copied to every class, and the random
+        # classes are seeded in the second iteration.
+        seeded_start = (
+            k_class.first_iteration_seed_classes is not None and resume is None and int(init_relion_iteration) == 0
         )
+        seed_after_cc = seeded_start and bool(parity.emulate_relion_firstiter_cc)
+        single_class_iteration = seed_after_cc and iteration == 0
+        seed_iteration = seeded_start and iteration == (1 if seed_after_cc else 0)
         if perturb_replay_relion_dir is not None and replay_policy._past_perturb_replay_max_iter(
             iteration, perturb_replay_max_iter
         ):
@@ -2846,7 +2856,8 @@ def refine_single_volume(
                     original_image_indices=np.zeros(0, dtype=np.int64),
                 )
                 return
-            # The half's units' classes in RELION's seed iteration, by particle row.
+            # The half's units' classes in RELION's seed iteration, by particle row (all class 0 in the CC
+            # iteration before it).
             seed_classes_k = (
                 np.asarray(k_class.first_iteration_seed_classes)[
                     experiment_datasets[k]._index_layout.original_image_indices_for_local(
@@ -2854,6 +2865,8 @@ def refine_single_volume(
                     )
                 ]
                 if seed_iteration
+                else np.zeros(experiment_datasets[k].n_units, dtype=np.int64)
+                if single_class_iteration
                 else None
             )
             if tomo_halves:
@@ -3977,6 +3990,27 @@ def refine_single_volume(
                         dtype=_dense_global_scoring_dtype(),
                         symmetry=symmetry,
                     )
+        if single_class_iteration:
+            # After the CC iteration RELION copies class 0's model to every class for the seed iteration:
+            # Iref, tau2_class, data_vs_prior_class and pdf_direction, each class taking pdf_class[0] / K
+            # (maximizationOtherParameters, ml_optimiser.cpp:6423-6437).
+            means = [None if mean is None else _copy_first_class(mean) for mean in means]
+            mean_signal_variance = _copy_first_class(mean_signal_variance)
+            mean_variance = mean_signal_variance
+            mean_variance_per_half = [mean_variance, mean_variance]
+            mean_signal_variance_shells = _copy_first_class(mean_signal_variance_shells)
+            data_vs_prior_iter = _copy_first_class(data_vs_prior_iter)
+            history.data_vs_prior_trajectory[-1] = data_vs_prior_iter
+            previous_data_vs_prior_for_scheduling = data_vs_prior_iter
+            tau2_update_details = {
+                key: None if value is None else _copy_first_class(value) for key, value in tau2_update_details.items()
+            }
+            class_direction_prior_per_half = [
+                None if prior is None else _copy_first_class(prior) for prior in class_direction_prior_per_half
+            ]
+            class_weights = np.full(n_classes, float(class_weights[0]) / n_classes, dtype=np.float64)
+            class_log_priors = np.log(class_weights)
+            logger.info("Class3D one-reference start: copied class 1 to every class after the CC iteration")
         history.record_direction_prior(
             class_direction_prior_per_half,
             global_direction_prior_per_half,

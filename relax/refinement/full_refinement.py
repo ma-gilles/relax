@@ -3804,12 +3804,10 @@ def main(command=None):
     else:
         if args.init_volume is not None:
             # relion_refine --K K with one --ref map: every class starts from it and the first iteration scores
-            # each particle against one random class (do_generate_seeds, ml_model.cpp:1007-1010).
+            # each particle against one random class (do_generate_seeds, ml_model.cpp:1007-1010); with
+            # --firstiter_cc that is the second iteration, after a CC iteration against class 1 alone.
             if args.ref_star is not None or args.init_class_volumes:
                 raise SystemExit("--init_volume is Class3D's one reference; --ref_star and --init_class_volumes list K")
-            if args.firstiter_cc:
-                # RELION then seeds at iteration 2, after a one-reference CC iteration.
-                raise SystemExit("the single-reference Class3D start (--init_volume with --n_classes K) needs --no-firstiter_cc")
             class_paths = [args.init_volume] * int(args.n_classes)
         elif args.ref_star is not None:
             if args.init_class_volumes:

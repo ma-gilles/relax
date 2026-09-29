@@ -33,6 +33,9 @@ class FirstIterCCData:
     mean_variance: object
     noise_variance: object
     image_shape: tuple[int, ...]
+    # A one-reference Class3D run's CC iteration scores every image against class 1 alone
+    # (k_class_inputs.seed_iteration_supports).
+    image_seed_classes: object | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -266,6 +269,7 @@ def _score_kclass_firstiter_cc_pass2(
         return_best_pose_details=True,
         firstiter_cc_pass2_only_best_coarse=True,
         skip_significance_pruning=False,
+        image_seed_classes=data.image_seed_classes,
         relion_fine_mstep_prune=True,
         significance_image_batch_size=firstiter_significance_image_batch_size,
         significance_rotation_block_size=firstiter_significance_rotation_block_size,

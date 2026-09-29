@@ -2348,8 +2348,10 @@ def run_dense_k_class_em_adaptive(
     significance_means, significance_log_priors = means_array, log_priors
     significance_rotation_prior, significance_projector_half = pass1_rotation_prior, relion_projector_half
     if image_seed_classes is not None:
-        if n_classes == 1 or firstiter_cc_pass2_only_best_coarse or skip_significance_pruning:
-            raise ValueError("a seed iteration is a Gaussian K-class pass with coarse significance")
+        # With --firstiter_cc RELION scores its first iteration against class 0 alone (every image's seed is 0)
+        # and seeds the random classes at iteration 2 (ml_optimiser.cpp:4626, :4880-4898).
+        if n_classes == 1 or skip_significance_pruning:
+            raise ValueError("a seed iteration is a K-class pass with coarse significance")
         significance_means, class_prior = seed_iteration_first_class(
             means_array, pass1_rotation_prior if np.ndim(pass1_rotation_prior) == 2 else None
         )
@@ -2397,17 +2399,25 @@ def run_dense_k_class_em_adaptive(
             coarse_probe_kwargs["translation_phase_source"] = (
                 coarse_translation_phase_source
             )
+        probe_means, probe_class_log_priors = means_array, class_log_priors
+        if image_seed_classes is not None:
+            probe_means, probe_class_log_priors = significance_means, significance_log_priors
+            class_rotation_prior = coarse_probe_kwargs.get("class_rotation_log_prior")
+            if class_rotation_prior is not None and np.ndim(class_rotation_prior) == 2:
+                coarse_probe_kwargs["class_rotation_log_prior"] = seed_iteration_first_class(
+                    means_array, class_rotation_prior
+                )[1]
         with score_dump_label("coarse"):
             with nvtx.annotate("kclass.adaptive.coarse_probe", color="yellow", domain=NVTX_DOMAIN_EM):
                 coarse_result = _run_dense_k_class_score_probe(
                     experiment_dataset,
-                    means_array,
+                    probe_means,
                     mean_variance,
                     noise_variance,
                     coarse_rotations_np,
                     coarse_translations_np,
                     disc_type,
-                    class_log_priors=class_log_priors,
+                    class_log_priors=probe_class_log_priors,
                     **coarse_probe_kwargs,
                 )
         coarse_selector_audit = coarse_result.coarse_selector_audit
@@ -2423,8 +2433,13 @@ def run_dense_k_class_em_adaptive(
         )
         sig_sample_indices_by_class = [
             [np.array([int(coarse_per_class_assn[k, i])], dtype=np.int32) for i in range(n_images)]
-            for k in range(n_classes)
+            for k in range(int(coarse_per_class_assn.shape[0]))
         ]
+        if image_seed_classes is not None:
+            sig_sample_indices_by_class = seed_iteration_supports(
+                sig_sample_indices_by_class[0], image_seed_classes, n_classes
+            )
+            coarse_class_assignments = np.asarray(image_seed_classes, dtype=np.int32)
         # RELION one-hot encodes the joint class/pose coarse posterior in
         # firstiter_cc and serializes one retained sample, even though the
         # per-class child lists above remain convenient for pass-2 routing.
