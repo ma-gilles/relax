@@ -978,11 +978,11 @@ single-volume boundary has 17 parameters.
 
 ## 2026-09-29 — explicit adaptive K=1 route and diagnostic ownership
 
-- Commit `2ece206` moved the dense pass-2 float64 environment lookup from the
+- Commit `6caf34d` moved the dense pass-2 float64 environment lookup from the
   scorer to the two iteration-controller construction sites. The resolved
   boolean is carried by `DenseExecutionPolicy`; a structural test prevents the
   environment selector from returning to dense scoring.
-- Commit `dae40fa` extracted ordinary adaptive K=1 grid construction, backend
+- Commit `4495c6f` extracted ordinary adaptive K=1 grid construction, backend
   selection, optics scaling and engine invocation into
   `_score_adaptive_k1_dense`. Its explicit inputs reuse the seven persistent
   scoring owners plus the base engine keywords and normalized symmetry. It
@@ -999,3 +999,14 @@ single-volume boundary has 17 parameters.
   package. Seven functions still have at least 10 parameters and the two 20+
   functions remain out-of-scope tomography boundaries; these counts are
   descriptive evidence, not the design target.
+
+## 2026-09-29 — rebase onto current main after adaptive K=1
+
+- Fetched and rebased all 63 branch commits from `a021081` onto
+  `origin/main` `836a37f`. There were no conflicts and therefore no manual
+  resolutions. Main's intervening commit refreshed the frozen real-data
+  scorecard Markdown only; refinement production metrics were unchanged.
+- The rebase rewrote the diagnostic-ownership and adaptive K=1 commits to
+  `6caf34d` and `4495c6f`. Post-rebase Ruff and Python compilation passed, as
+  did 13 focused adaptive K=1 cases and the 102-case CPU EM fast guard in
+  59.27 seconds with `FFTW/3.3.10-GCC-12.2.0` loaded.
