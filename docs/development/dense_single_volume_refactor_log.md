@@ -772,3 +772,16 @@ single-volume boundary has 17 parameters.
 - GPU smoke remains infrastructure-blocked by the unchanged absence of the five
   mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
   produced.
+
+## 2026-09-29 — periodic rebase onto `c4f7a4b`
+
+- `origin/main` advanced from `5c965cf2` to `c4f7a4b`; all 40 feature commits
+  were replayed.
+- One conflict occurred in `relax/refinement/local_search_iteration.py`. Main
+  now permits `current_size=None` for a regular full-box resident local pass;
+  an older refactor commit tried to restore the superseded `ValueError`. The
+  resolution kept main's full-box behavior and comment while retaining the
+  refactored owner-based call structure.
+- No other conflicts occurred. On the rebased candidate, the 37 focused
+  half-join tests passed and the CPU EM fast guard passed all 102 cases in
+  59.52 seconds.
