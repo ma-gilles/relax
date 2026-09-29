@@ -481,16 +481,6 @@
    "generation": "recipe",
    "sanity": "PASS: box fraction 0.013, 1 component(s), captures 0.928 of positive density, strong density outside hard mask 0.0000, edge-clear True"
   },
-  "synth_k1_50k256_c1": {
-   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/synth_k1_50k256_20260927/masks/synth_k1_50k256_c1/MASK.json",
-   "mask_sha256": "2dd4afddb94c0084c48b1bde04d2b049372be817934e21b972067c6034f21a8f",
-   "symmetry": "C1",
-   "box": 256,
-   "pixel_size_A": 2.125,
-   "source_role": "mean of the ground-truth class maps (relax file frame)",
-   "generation": "recipe",
-   "sanity": "PASS: box fraction 0.015, 1 component(s), captures 0.670 of positive density, strong density outside hard mask 0.0000, edge-clear True"
-  },
   "synth_k1_50k256_snr05_c1": {
    "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/synth_k1_50k256_snr05_20260927/masks/synth_k1_50k256_snr05_c1/MASK.json",
    "mask_sha256": "853c8cfc28311aa934a4da951635e7888f70026c68872f812e2cc10efb22a3ee",
