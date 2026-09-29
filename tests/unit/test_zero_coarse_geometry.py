@@ -171,6 +171,49 @@ def test_adaptive_kclass_dense_route_keeps_owner_inputs_visible():
     ]
 
 
+def test_adaptive_k1_dense_route_keeps_owner_inputs_visible():
+    scorer = tree("half_scoring.py")
+    helper = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_adaptive_k1_dense"
+    )
+    expected_inputs = [
+        "half",
+        "sampling",
+        "priors",
+        "batching",
+        "variant",
+        "execution",
+        "optics",
+        "base_em_kwargs",
+    ]
+    assert [argument.arg for argument in helper.args.args] == expected_inputs
+    assert [argument.arg for argument in helper.args.kwonlyargs] == ["symmetry"]
+    dispatcher = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_half_dense_one_shape"
+    )
+    calls = [
+        node
+        for node in ast.walk(dispatcher)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_score_adaptive_k1_dense"
+    ]
+    assert len(calls) == 1
+    assert [argument.id for argument in calls[0].args] == [
+        *expected_inputs[:-1],
+        "em_kwargs",
+    ]
+    assert len(calls[0].keywords) == 1
+    assert calls[0].keywords[0].arg == "symmetry"
+    assert calls[0].keywords[0].value.id == "symmetry"
+
+
 @pytest.mark.parametrize(
     "os,local,k,mode,hard,double,expected",
     [
@@ -239,9 +282,9 @@ def test_only_coarse_engine_operand_changes(os, sparse, xhalf, mode, double, ove
     scope = dict(
         pass2_grids=SimpleNamespace(coarse_rotations=coarse, fine_rotations=fine),
         sampling=SimpleNamespace(coarse_scoring_rotations=native if override else None),
-        adaptive_os_local=os,
-        k1_sparse_pass2=sparse,
-        k1_relion_x_half_mstep=xhalf,
+        adaptive_os=os,
+        sparse_pass2=sparse,
+        relion_x_half_mstep=xhalf,
         variant=SimpleNamespace(firstiter_score_mode_this_iter=mode),
         execution=SimpleNamespace(diagnostic_float64_pass2=double),
         # Images on the reference grid: applyScaleDifference is the identity.
