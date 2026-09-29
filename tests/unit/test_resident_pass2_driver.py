@@ -428,11 +428,18 @@ def test_joint_chunk_plan_fits_the_10202_iteration_14_shape():
     assert plan.mstep_block_rows < 64
     assert max(plan.image_capacity_ladder) >= 4  # more than the 2-image fixed fallback
     assert 1024 % plan.mstep_block_rows == 0
+    # A single row class halves until the chunk fits (bigbox 14640954: the 10202 final pass of a
+    # cold run had 13.81 GiB for a 13.90 GiB 1024-row chunk).
+    halved = rp.plan_resident_chunk_memory(
+        row_capacity_ladder=(1024,), image_capacity_ladder=(1,), mstep_block_rows=1,
+        row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, budget_bytes=1 * gib,
+    )
+    assert max(halved.row_capacity_ladder) < 1024 and halved.peak_bytes <= 1 * gib
     # A budget below the smallest chunk is a refusal (there is no other pass-2 engine to run it on).
     with pytest.raises(rp.ResidentConfigurationUnsupported, match="smallest chunk"):
         rp.plan_resident_chunk_memory(
             row_capacity_ladder=(1024,), image_capacity_ladder=(1,), mstep_block_rows=1,
-            row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, budget_bytes=1 * gib,
+            row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, budget_bytes=row_bytes * 32,
         )
 
 

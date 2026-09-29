@@ -805,6 +805,10 @@ def chunk_translated_tile_pixels(
     }
 
 
+# The smallest row class the memory plan halves a single class down to.
+_MIN_PLANNED_ROW_CAPACITY = 64
+
+
 def plan_resident_chunk_memory(
     *,
     row_capacity_ladder: tuple,
@@ -832,13 +836,12 @@ def plan_resident_chunk_memory(
     its translation axis, bigbox 14475506). While the largest chunk exceeds the
     budget, the largest of the three terms shrinks: the M-step block halves, the
     image ladder drops its largest class and then halves a single class, the row
-    ladder drops its largest class. When the preparation stage is the chunk's
-    peak (:func:`resident_chunk_bytes`), only its own terms shrink: the image
-    ladder, and the row ladder where the rows are live during it. Plans that
-    already fit are unchanged; an
-    unknown budget does not cap. A row ladder that cannot shrink further is a
-    :class:`ResidentConfigurationUnsupported`, which the default route runs on
-    the compact engine.
+    ladder does the same down to :data:`_MIN_PLANNED_ROW_CAPACITY` rows. When the
+    preparation stage is the chunk's peak (:func:`resident_chunk_bytes`), only
+    its own terms shrink: the image ladder, and the row ladder where the rows
+    are live during it. Plans that already fit are unchanged; an unknown budget
+    does not cap. A plan that cannot shrink further is a
+    :class:`ResidentConfigurationUnsupported`: there is no other pass-2 engine.
 
     ``fixed_bytes`` (the pass's accumulators, allocated before the budget is
     read) is recorded in the plan, whose ``pass_bytes`` is the pass's total
@@ -932,19 +935,24 @@ def plan_resident_chunk_memory(
             # A pipelined loop holds the previous chunk's rows and held tiles
             # next to either stage (resident_chunk_bytes).
             copies = 2 if pipelined else 1
+            # The row ladder drops its largest class, then halves a single class
+            # down to _MIN_PLANNED_ROW_CAPACITY: the EMPIAR-10202 final pass of a
+            # cold run had a 13.81 GiB budget for a 13.90 GiB 1024-row chunk
+            # (bigbox 14640954), which 512 rows fit.
+            rows_can_shrink = len(rows) > 1 or max(rows) > _MIN_PLANNED_ROW_CAPACITY
             rows_in_prepare = rows_bytes * (int(rows_live_during_prepare) + int(pipelined))
             if prepare_stage > rows_bytes + held_bytes + max(mstep_bytes, projection):
                 # The preparation stage is the peak; only its own terms shrink it.
                 terms = {
                     "images": prepare_bytes + (held_bytes if pipelined else 0) if images_can_shrink else -1,
-                    "rows": rows_in_prepare if rows_in_prepare and len(rows) > 1 else -1,
+                    "rows": rows_in_prepare if rows_in_prepare and rows_can_shrink else -1,
                 }
             else:
                 terms = {
                     # A smaller M-step block helps only while it outweighs the projector call.
                     "mstep": mstep_bytes if block > 1 and mstep_bytes > projection else -1,
                     "images": held_bytes * copies if images_can_shrink else -1,
-                    "rows": rows_bytes * copies if len(rows) > 1 else -1,
+                    "rows": rows_bytes * copies if rows_can_shrink else -1,
                 }
             largest = max(terms, key=terms.get)
             if terms[largest] < 0:
@@ -959,7 +967,7 @@ def plan_resident_chunk_memory(
             elif largest == "images":
                 images = images[:-1] if len(images) > 1 else (max(images) // 2,)
             else:
-                rows = rows[:-1]
+                rows = rows[:-1] if len(rows) > 1 else (max(rows) // 2,)
     block = min(block, min(rows))
     while block > 1 and min(rows) % block:
         block //= 2
