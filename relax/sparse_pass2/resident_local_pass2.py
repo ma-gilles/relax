@@ -882,11 +882,17 @@ def compute_local_search_resident(
         )
 
         # ---- statistics accumulators ------------------------------------------
+        # The rotation posterior is accumulated over the bins the rows use, not the
+        # layout's whole rotation histogram: at MS2 box 512's final pass (I2,
+        # HEALPix 9) that histogram is 9.60 GiB of float64 on the device, which
+        # ran it out of memory (bench 14684161). It is expanded on the host.
+        posterior_bin_ids, row_posterior_bin = np.unique(tables.row_posterior_id, return_inverse=True)
+        row_posterior_bin = row_posterior_bin.astype(np.int32, copy=False)
         stats_config = resolve_statistics_config(
             n_shells=n_shells,
             n_fine_trans=n_fine_trans,
             n_images=n_images,
-            n_coarse_rot=tables.n_posterior_bins,
+            n_coarse_rot=int(posterior_bin_ids.size),
             n_scale_groups=n_scale_groups,
             current_size=current_size,
             include_unweighted_high_shell=include_unweighted_norm_high_shell,
@@ -949,6 +955,7 @@ def compute_local_search_resident(
             finish = _start_resident_local_chunk(
                 chunk,
                 tables=tables,
+                posterior_bins=row_posterior_bin,
                 experiment_dataset=experiment_dataset,
                 bucket_io_kwargs=bucket_io_kwargs,
                 fine_translation_prior_2d=fine_translation_prior_2d,
@@ -1054,7 +1061,9 @@ def compute_local_search_resident(
         log_evidence_per_image=finalized.log_evidence_per_image,
         best_log_score_per_image=finalized.best_log_score_per_image,
         max_posterior_per_image=finalized.max_posterior_per_image,
-        rotation_posterior_sums=finalized.rotation_posterior_sums,
+        rotation_posterior_sums=_expand_posterior_bins(
+            finalized.rotation_posterior_sums, posterior_bin_ids, tables.n_posterior_bins
+        ),
     )
     noise_stats = make_noise_stats(
         wsum_sigma2_noise=finalized.wsum_sigma2_noise,
@@ -1213,10 +1222,19 @@ def _open_capacity_texture(
     )
 
 
+def _expand_posterior_bins(sums, posterior_bin_ids, n_posterior_bins: int) -> np.ndarray:
+    """The rotation posterior over the layout's whole histogram, from its used bins (host float64)."""
+
+    dense = np.zeros(int(n_posterior_bins), dtype=np.float64)
+    dense[np.asarray(posterior_bin_ids, dtype=np.int64)] = np.asarray(jax.device_get(sums), dtype=np.float64)
+    return dense
+
+
 def _start_resident_local_chunk(
     chunk,
     *,
     tables,
+    posterior_bins,
     experiment_dataset,
     bucket_io_kwargs,
     fine_translation_prior_2d,
@@ -1597,12 +1615,14 @@ def _start_resident_local_chunk(
         # rotations, M-step rotations, fine ids and source Eulers at that row.
         best_global_row = jnp.int64(int(chunk.row_start)) + best_chunk_row.astype(jnp.int64)
 
-        row_posterior_bin = jnp.asarray(host_chunk["row_posterior_id"], dtype=jnp.int32)
+        chunk_posterior_bin = np.full(row_capacity, int(stats_config.n_coarse_rot), dtype=np.int32)
+        chunk_posterior_bin[:n_valid_rows] = posterior_bins[int(chunk.row_start) : int(chunk.row_stop)]
+        chunk_posterior_bin = jnp.asarray(chunk_posterior_bin)
         chunk_operands = rp._ChunkImageOperands(
             row_posterior=row_posterior,
             row_image_local=row_image_local,
             row_coarse_rot=jnp.where(
-                row_is_valid, row_posterior_bin, jnp.int32(int(stats_config.n_coarse_rot))
+                row_is_valid, chunk_posterior_bin, jnp.int32(int(stats_config.n_coarse_rot))
             ),
             image_ids=image_ids,
             group_ids=recon["group_ids"],

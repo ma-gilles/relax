@@ -763,3 +763,20 @@ def test_full_box_iteration_without_a_current_size_runs_resident(monkeypatch, _r
     b = np.asarray(unset.Ft_y, dtype=np.float64)
     # The same pass twice: only the float32 BPref atomics' order may differ.
     assert np.linalg.norm(a - b) <= np.sqrt(N_IMAGES) * np.finfo(np.float32).eps * np.linalg.norm(a)
+
+
+def test_rotation_posterior_is_accumulated_over_the_used_bins():
+    """MS2 box 512's final pass (bench 14684161): a dense device histogram of the layout's
+    rotations was 9.60 GiB. The pass accumulates over the bins its rows use and expands
+    them on the host; the expanded histogram is the dense one."""
+
+    rng = np.random.default_rng(7)
+    n_bins = 10_000
+    row_ids = rng.choice(n_bins, size=500).astype(np.int32)
+    mass = rng.random(500)
+    dense = np.zeros(n_bins)
+    np.add.at(dense, row_ids, mass)
+    bins, row_bins = np.unique(row_ids, return_inverse=True)
+    compact = np.zeros(bins.size)
+    np.add.at(compact, row_bins, mass)
+    np.testing.assert_allclose(rlp._expand_posterior_bins(compact, bins, n_bins), dense, rtol=1e-12, atol=0)
