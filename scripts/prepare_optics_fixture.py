@@ -21,6 +21,15 @@ applied, so relax and RELION can be compared on data that exercises it:
     ``getPhaseCorrection``). White noise modulated by a pure phase is the same
     white noise, so the result is a draw from the aberrated forward model.
 
+``--even-zernike "[c0,c1,...]"``
+    The optics group gets ``rlnEvenZernike``, which changes the CTF itself, so the
+    signal of every image is re-simulated: the base image ``x`` is fitted per image
+    as ``a * idft(CTF * P) + b`` against the recovar simulator's clean projection
+    ``P`` of the ground-truth map (the base fixture's forward model), and
+    ``a * idft((CTF_even - CTF) * P)`` is added, with both CTFs from RELION's
+    ObservationModel (relion_bind optics_ctf_images_batch). The base image's noise is
+    kept. Needs a GPU for the projections.
+
 The base fixture's ground truth, initial reference and masks stay valid because
 the particles, their poses and the maps are unchanged. The output directory gets a
 README.md and GENERATION.json (command, source SHA, input and output sha256).
@@ -133,6 +142,85 @@ def odd_phase(optics_row, box: int) -> np.ndarray:
     )
 
 
+def relion_half_to_recovar_full(half: np.ndarray) -> np.ndarray:
+    """RELION FFTW-half CTFs ``(B, N, N // 2 + 1)`` as RECOVAR's full centered ``(B, N * N)`` operand.
+
+    RECOVAR's frame negates RELION's CTF (relion_ctf._evaluate_exact_ctf_rows); the
+    CTF is point-symmetric, so a negative-x pixel takes its mirror's value.
+    """
+
+    count, size, _ = half.shape
+    k = np.arange(size) - size // 2
+    ky, kx = np.meshgrid(k, k, indexing="ij")
+    rows = np.where(kx >= 0, ky, -ky) % size
+    cols = np.abs(kx)
+    return -half[:, rows, cols].reshape(count, size * size)
+
+
+def even_zernike_signal_change(base_dir, particles, star_plain, star_even, images, *, batch: int, threads: int):
+    """``a * idft((CTF_even - CTF) * P)`` per image, fitted to the base images (see the module docstring)."""
+
+    import jax.numpy as jnp
+    from recovar import utils
+    from recovar.core import fourier_transform_utils as ftu
+    from recovar.core.configs import ForwardModelConfig
+    from recovar.core.slicing import slice_volume
+    from recovar.data_io.cryoem_dataset import load_dataset
+
+    from relax.relion_bind import _relion_bind_core as relion_bind
+
+    count = images.shape[0]
+    dataset = load_dataset(str(base_dir / "particles.star"), ind=np.arange(count), lazy=True, absent_angles_zero=True)
+    config = ForwardModelConfig.from_dataset(dataset, disc_type="cubic")
+    volume = jnp.asarray(ftu.get_dft3(utils.load_mrc(str(base_dir / "reference_gt_class001.mrc"))).reshape(-1))
+    size = int(images.shape[-1])
+    params = np.stack(
+        [
+            np.asarray(particles["rlnDefocusU"], dtype=np.float64),
+            np.asarray(particles["rlnDefocusV"], dtype=np.float64),
+            np.asarray(particles["rlnDefocusAngle"], dtype=np.float64),
+            np.zeros(count),
+            np.ones(count),
+            np.asarray(particles.get("rlnPhaseShift", np.zeros(count)), dtype=np.float64),
+            np.asarray(particles["rlnOpticsGroup"], dtype=np.float64),
+        ],
+        axis=1,
+    )
+    k = np.arange(size) - size // 2
+    inside = ((k[:, None] ** 2 + k[None, :] ** 2) < (size // 2 - 1) ** 2).reshape(-1)
+    change = np.empty_like(images, dtype=np.float32)
+    report = {"fit_correlation_min": 1.0, "recovar_vs_relion_plain_ctf_max_abs": 0.0, "scale_mean": 0.0}
+    for start in range(0, count, batch):
+        stop = min(count, start + batch)
+        rows = np.arange(start, stop)
+        plain = relion_half_to_recovar_full(
+            np.asarray(relion_bind.optics_ctf_images_batch(str(star_plain), params[rows], size, size, False, threads))
+        )
+        even = relion_half_to_recovar_full(
+            np.asarray(relion_bind.optics_ctf_images_batch(str(star_even), params[rows], size, size, False, threads))
+        )
+        # The base fixture was simulated with RECOVAR's own CTF; inside the Nyquist
+        # circle it must be RELION's (the edge row and column alias differently).
+        generic = np.asarray(config.compute_ctf(jnp.asarray(dataset.CTF_params[rows])))
+        report["recovar_vs_relion_plain_ctf_max_abs"] = max(
+            report["recovar_vs_relion_plain_ctf_max_abs"], float(np.abs(generic - plain)[:, inside].max())
+        )
+        slices = slice_volume(volume, jnp.asarray(dataset.rotation_matrices[rows]), config.image_shape,
+                              config.volume_shape, "cubic")
+        clean = np.asarray(ftu.get_idft2((jnp.asarray(plain) * slices).reshape(-1, size, size)).real)
+        delta = np.asarray(ftu.get_idft2((jnp.asarray(even - plain) * slices).reshape(-1, size, size)).real)
+        base = np.asarray(images[start:stop], dtype=np.float64)
+        for local, index in enumerate(rows):
+            design = np.stack([clean[local].reshape(-1), np.ones(size * size)], axis=1)
+            (scale, offset), *_ = np.linalg.lstsq(design, base[local].reshape(-1), rcond=None)
+            fit = scale * clean[local].reshape(-1) + offset
+            corr = float(np.corrcoef(fit, base[local].reshape(-1))[0, 1])
+            report["fit_correlation_min"] = min(report["fit_correlation_min"], corr)
+            report["scale_mean"] += float(scale) / count
+            change[index] = (scale * delta[local]).astype(np.float32)
+    return change, report
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base-dir", type=Path, required=True, help="curated fixture with particles.star")
@@ -141,13 +229,15 @@ def main(argv=None) -> int:
     parser.add_argument("--premultiply-ctf", action="store_true")
     parser.add_argument("--beam-tilt", type=float, nargs=2, metavar=("TX", "TY"), help="beam tilt in mrad")
     parser.add_argument("--odd-zernike", type=str, help='RELION odd Zernike coefficients, "[c0,c1,...]"')
+    parser.add_argument("--even-zernike", type=str, help='RELION even Zernike coefficients, "[c0,c1,...]"')
     parser.add_argument("--batch", type=int, default=500)
     parser.add_argument("--threads", type=int, default=8)
     args = parser.parse_args(argv)
 
     odd = args.beam_tilt is not None or args.odd_zernike is not None
-    if not (args.premultiply_ctf or odd):
-        parser.error("choose an optics feature (--premultiply-ctf, --beam-tilt, --odd-zernike)")
+    even = args.even_zernike is not None
+    if not (args.premultiply_ctf or odd or even):
+        parser.error("choose an optics feature (--premultiply-ctf, --beam-tilt, --odd-zernike, --even-zernike)")
     base = args.base_dir.resolve()
     out = args.output_dir.resolve()
     if out.exists() and any(out.iterdir()):
@@ -174,6 +264,12 @@ def main(argv=None) -> int:
         optics["rlnBeamTiltX"], optics["rlnBeamTiltY"] = float(args.beam_tilt[0]), float(args.beam_tilt[1])
     if args.odd_zernike is not None:
         optics["rlnOddZernike"] = str(args.odd_zernike).replace(" ", "")
+    if even:
+        optics["rlnEvenZernike"] = str(args.even_zernike).replace(" ", "")
+    source_names = particles["rlnImageName"].copy()
+    particles["rlnImageName"] = [f"{row + 1}@{out_stack_name}" for row in range(len(particles))]
+    # Written before the images: the even-Zernike CTF is read from it (RELION's ObservationModel).
+    starfile.write({"optics": optics, "particles": particles}, out / "particles.star", overwrite=True)
     # 1 when the images keep their phase; exp(i phase) of the odd aberrations otherwise.
     modulation = np.exp(1j * odd_phase(optics.iloc[0], box)) if odd else 1.0
 
@@ -187,20 +283,33 @@ def main(argv=None) -> int:
             if args.premultiply_ctf
             else np.ones((len(slices), 1, 1))
         )
+        change = None
+        signal_report = None
+        if even:
+            change, signal_report = even_zernike_signal_change(
+                base,
+                particles.assign(rlnImageName=source_names),
+                base / "particles.star",
+                out / "particles.star",
+                np.asarray(data[slices]),
+                batch=int(args.batch),
+                threads=int(args.threads),
+            )
+            print(json.dumps({"even_zernike_signal_change": signal_report}))
         with mrcfile.new_mmap(
             out / out_stack_name, shape=(len(slices), box, box), mrc_mode=2, overwrite=False
         ) as target:
             for start in range(0, len(slices), int(args.batch)):
                 stop = min(start + int(args.batch), len(slices))
-                target.data[start:stop] = premultiply(
-                    np.asarray(data[slices[start:stop]]), ctf[start:stop] * modulation
-                )
+                images = np.asarray(data[slices[start:stop]], dtype=np.float64)
+                if change is not None:
+                    images = images + change[start:stop]
+                target.data[start:stop] = premultiply(images, ctf[start:stop] * modulation)
             target.voxel_size = voxel_size
 
     if args.premultiply_ctf:
         optics["rlnCtfDataAreCtfPremultiplied"] = 1
-    particles["rlnImageName"] = [f"{row + 1}@{out_stack_name}" for row in range(len(particles))]
-    starfile.write({"optics": optics, "particles": particles}, out / "particles.star", overwrite=True)
+        starfile.write({"optics": optics, "particles": particles}, out / "particles.star", overwrite=True)
 
     for name in COPIED_MAPS:
         if (base / name).is_file():
@@ -227,7 +336,9 @@ def main(argv=None) -> int:
             "ctf_premultiplied": bool(args.premultiply_ctf),
             "beam_tilt_mrad": None if args.beam_tilt is None else [float(v) for v in args.beam_tilt],
             "odd_zernike": args.odd_zernike,
+            "even_zernike": args.even_zernike,
         },
+        "even_zernike_signal_change": signal_report,
         "ctf": "relax.relion_bind get_ctf_images_batch (CTF::setValues + getFftwImage, damping on, no padding)",
         "outputs_sha256": {path.name: _sha256(path) for path in sorted(out.iterdir()) if path.is_file()},
     }
