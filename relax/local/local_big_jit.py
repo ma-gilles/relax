@@ -2111,6 +2111,9 @@ def run_local_bucket_big_jit(
     # Each image's optics group (a traced operand, not a static option); keyword-only
     # so the mature positional signature ends at runtime_projector_r_max.
     noise_optics_groups=None,
+    # Each image's exp(-i phase) of its optics group's beam tilt / odd Zernike terms,
+    # [B, P] complex, or None (relax.relion.optics_aberrations.demodulate_odd_aberrations).
+    image_demodulation=None,
     mask_mode: str,
     score_with_masked_images: bool,
     apply_integer_pre_shift: bool,
@@ -2446,6 +2449,16 @@ def run_local_bucket_big_jit(
             ).astype(precision_policy.score_complex_dtype)
         else:
             processed_recon_half = processed_score_half
+    if image_demodulation is not None:
+        # RELION's demodulatePhase, in RFLOAT as its image is (optics_aberrations).
+        demodulation = jnp.asarray(image_demodulation, dtype=jnp.complex128)
+        processed_score_half = (processed_score_half.astype(jnp.complex128) * demodulation).astype(
+            precision_policy.score_complex_dtype
+        )
+        if processed_recon_half is not None:
+            processed_recon_half = (processed_recon_half.astype(jnp.complex128) * demodulation).astype(
+                precision_policy.score_complex_dtype
+            )
 
     batch_size = processed_score_half.shape[0]
     n_trans = translation_phases_half.shape[0]

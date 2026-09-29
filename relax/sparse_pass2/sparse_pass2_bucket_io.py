@@ -458,6 +458,7 @@ def prepare_unshifted_bucket_operands(
         batch,
         score_with_masked_images,
         relion_preprocess_kwargs=relion_preprocess_kwargs,
+        image_indices=image_indices,
     )
     if score_with_masked_images:
         processed_recon_half_raw = process_half_image(
@@ -465,6 +466,7 @@ def prepare_unshifted_bucket_operands(
             batch,
             False,
             relion_preprocess_kwargs=relion_preprocess_kwargs,
+            image_indices=image_indices,
         )
     else:
         processed_recon_half_raw = processed_score_half_raw

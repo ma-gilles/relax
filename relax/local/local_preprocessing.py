@@ -28,6 +28,7 @@ from relax.helpers.timing import block_until_ready as _block_until_ready
 from relax.local.local_big_jit import _preprocess_half as _big_jit_preprocess_half
 from relax.local.local_caches import _LocalProcessedHalfCache
 from relax.relion import relion_ctf
+from relax.relion.optics_aberrations import demodulate_odd_aberrations
 
 
 def _translate_bpref_images(images, weighted_ctf_half, translation_angles, image_shape):
@@ -105,12 +106,16 @@ def prepare_local_bucket(
             # particular, do not fall back through the image-source backend:
             # a relion_cuda source requires separate normalization/shift
             # operands and would introduce a different preprocessing graph.
-            return _big_jit_preprocess_half(
-                jnp.asarray(batch),
-                jnp.asarray(exact_image_mask),
-                config,
-                apply_image_mask=apply_image_mask,
-                mask_mode=exact_image_mask_mode,
+            return demodulate_odd_aberrations(
+                experiment_dataset,
+                _big_jit_preprocess_half(
+                    jnp.asarray(batch),
+                    jnp.asarray(exact_image_mask),
+                    config,
+                    apply_image_mask=apply_image_mask,
+                    mask_mode=exact_image_mask_mode,
+                ),
+                image_indices,
             )
         # Integer shifts are applied to ``batch`` above and image/scale
         # corrections are applied to the Fourier result by the caller.  The
@@ -127,6 +132,7 @@ def prepare_local_bucket(
             batch,
             apply_image_mask,
             relion_preprocess_kwargs=relion_preprocess_kwargs,
+            image_indices=image_indices,
         )
 
     ctf_t0 = time.time()

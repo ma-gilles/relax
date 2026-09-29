@@ -225,6 +225,7 @@ from relax.local.local_timing import (
     _prefixed_timer_profile,
 )
 from relax.relion import relion_ctf
+from relax.relion.optics_aberrations import odd_demodulation_rows, require_ordinary_optics
 from relax.relion.relion_projector_setup import prepare_local_projector_slab
 from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_cuda_score_translation_angles_if_available
 from relax.sparse_pass2.sparse_pass2_posterior import _relion_f32_fine_reconstruction_probs
@@ -536,10 +537,10 @@ def run_local_em_exact(
     the model sphere.
     """
 
-    if not score_only and relion_ctf.dataset_has_premultiplied_ctf(experiment_dataset, experiment_dataset.image_shape):
-        # The pass-1 parent probe (score_only) scores premultiplied images with the
-        # exact CTF rows, which hold CTF^2; backprojecting them needs the resident pass 2.
-        raise NotImplementedError("the exact local engine does not backproject CTF-premultiplied images")
+    if not score_only:
+        # The pass-1 parent probe (score_only) scores premultiplied images with the exact
+        # CTF rows (CTF^2) and demodulated images; backprojecting them needs the resident pass 2.
+        require_ordinary_optics(experiment_dataset, where="the exact local engine's backprojection")
 
     resolved_exact_local_bucket_radix = _resolve_exact_local_bucket_radix(exact_local_bucket_radix)
     score_only = bool(score_only)
@@ -2853,6 +2854,9 @@ def run_local_em_exact(
             big_jit_optics_kwargs = (
                 {} if optics_groups_np is None else {"noise_optics_groups": bucket_optics_groups_arg}
             )
+            bucket_demodulation = odd_demodulation_rows(experiment_dataset, bucket_image_indices, batch_size)
+            if bucket_demodulation is not None:
+                big_jit_optics_kwargs["image_demodulation"] = bucket_demodulation
             big_jit_static_options = dict(
                 n_classes=n_classes,
                 class_segment_rotation_count=(bucket.segment_rotation_count if n_classes > 1 else None),

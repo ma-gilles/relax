@@ -2333,10 +2333,13 @@ def _compute_k_class_significance_batched(
         batch_size,
         *,
         return_unshifted_score_weighted=False,
+        image_indices=None,
     ):
-        processed_half = experiment_dataset.process_images_half(
+        processed_half = process_half_image(
+            experiment_dataset,
             np.asarray(batch_data),
-            apply_image_mask=score_with_masked_images,
+            score_with_masked_images,
+            image_indices=image_indices,
         )
         processed_half = jnp.asarray(processed_half)
         ctf_half = config.compute_ctf_half(jnp.asarray(ctf_params, dtype=score_real_dtype))
@@ -3062,6 +3065,8 @@ def _compute_k_class_significance_batched(
                     target_size=int(image_batch_size),
                 )
             batch_size = int(batch_data.shape[0])
+            # The batch's dataset images, repeat-padded as batch_data is.
+            batch_image_indices = _repeat_pad_batch_axis(np.asarray(indices), batch_size)
             # Each image's own optics-group spectrum; the one shared spectrum otherwise.
             batch_noise_half = noise_variance_half
             if noise_variance_half.ndim == 2:
@@ -3180,6 +3185,7 @@ def _compute_k_class_significance_batched(
                     norm_real_dtype=jnp.float64,
                     relion_preprocess_kwargs=relion_preprocess_kwargs,
                     return_unshifted_score_weighted=tree_rescore_enabled,
+                    image_indices=batch_image_indices,
                 )
                 if tree_rescore_enabled:
                     (
@@ -3200,6 +3206,7 @@ def _compute_k_class_significance_batched(
                         ctf_params,
                         batch_size,
                         return_unshifted_score_weighted=coarse_gaussian_sincosf_enabled,
+                        image_indices=batch_image_indices,
                     )
                 else:
                     if exact_coarse_assembly_profile_enabled:
@@ -3214,6 +3221,7 @@ def _compute_k_class_significance_batched(
                         score_with_masked_images,
                         relion_preprocess_kwargs=relion_preprocess_kwargs,
                         return_unshifted_score_weighted=coarse_gaussian_sincosf_enabled,
+                        image_indices=batch_image_indices,
                     )
                 if coarse_gaussian_sincosf_enabled:
                     (
@@ -3370,6 +3378,7 @@ def _compute_k_class_significance_batched(
                     batch_data,
                     score_with_masked_images,
                     relion_preprocess_kwargs=exact_cc_preprocess_kwargs,
+                    image_indices=batch_image_indices,
                 )
                 exact_cc_inv_xi2 = _relion_cc_inverse_power_from_processed(
                     exact_cc_processed,
@@ -3419,6 +3428,7 @@ def _compute_k_class_significance_batched(
                     batch_data,
                     score_with_masked_images,
                     relion_preprocess_kwargs=relion_preprocess_kwargs,
+                    image_indices=batch_image_indices,
                 )
                 exact_cc_phase_factors = None
                 if image_pre_shifts is not None and not real_space_pre_shift_applied:
@@ -3470,6 +3480,7 @@ def _compute_k_class_significance_batched(
                         batch_data,
                         score_with_masked_images,
                         relion_preprocess_kwargs=relion_preprocess_kwargs,
+                        image_indices=batch_image_indices,
                     )
                 else:
                     processed_direct = process_half_image(
@@ -3477,6 +3488,7 @@ def _compute_k_class_significance_batched(
                         batch_data,
                         score_with_masked_images,
                         relion_preprocess_kwargs=coarse_preprocess_kwargs,
+                        image_indices=batch_image_indices,
                     )
                 processed_for_powerclass = processed_direct
                 if image_corrections is not None and not relion_cuda_preprocess:

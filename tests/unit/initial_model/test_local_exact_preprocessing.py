@@ -23,7 +23,7 @@ class _CapturedPreprocess(RuntimeError):
 def _exercise_prepare(monkeypatch: pytest.MonkeyPatch, *, backend: str):
     captured = {}
 
-    def capture_process(_dataset, batch, apply_image_mask, *, relion_preprocess_kwargs=None):
+    def capture_process(_dataset, batch, apply_image_mask, *, relion_preprocess_kwargs=None, image_indices=None):
         captured.update(
             batch=np.asarray(batch),
             apply_image_mask=apply_image_mask,

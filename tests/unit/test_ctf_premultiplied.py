@@ -179,6 +179,6 @@ def test_refinement_accepts_premultiplied_optics_only_where_supported():
     import pandas as pd
 
     optics = pd.DataFrame({"_rlnOpticsGroup": [1, 2], "_rlnCtfDataAreCtfPremultiplied": [1, 0]})
-    refuse_unsupported_optics(optics, source="refine3d.star", ctf_premultiplied_supported=True)
+    refuse_unsupported_optics(optics, source="refine3d.star", supported={"ctf_premultiplied"})
     with pytest.raises(NotImplementedError, match="rlnCtfDataAreCtfPremultiplied"):
         refuse_unsupported_optics(optics, source="class3d.star")

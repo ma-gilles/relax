@@ -369,6 +369,7 @@ def _build_local_processed_half_cache(
                     experiment_dataset,
                     batch_np,
                     score_with_masked_images,
+                    image_indices=chunk_indices,
                 )
             )
         )
@@ -379,6 +380,7 @@ def _build_local_processed_half_cache(
                         experiment_dataset,
                         batch_np,
                         False,
+                        image_indices=chunk_indices,
                     )
                 )
             )

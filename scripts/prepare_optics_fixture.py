@@ -13,6 +13,14 @@ applied, so relax and RELION can be compared on data that exercises it:
     ``CTF * (CTF * projection + noise)``: exactly what this produces from the
     source image.
 
+``--beam-tilt TX TY`` / ``--odd-zernike "[c0,c1,...]"``
+    The optics group gets ``rlnBeamTiltX/Y`` (mrad) and ``rlnOddZernike``, and
+    each image is phase-modulated by their odd phase ``exp(i phase)``
+    (``ObservationModel::modulatePhase``; the phase of
+    :mod:`relax.relion.optics_aberrations`, which matches RELION's
+    ``getPhaseCorrection``). White noise modulated by a pure phase is the same
+    white noise, so the result is a draw from the aberrated forward model.
+
 The base fixture's ground truth, initial reference and masks stay valid because
 the particles, their poses and the maps are unchanged. The output directory gets a
 README.md and GENERATION.json (command, source SHA, input and output sha256).
@@ -97,16 +105,32 @@ def relion_ctf_images(particles, optics, box: int, *, n_threads: int) -> np.ndar
     )
 
 
-def premultiply(images: np.ndarray, ctf_fftw_half: np.ndarray) -> np.ndarray:
-    """``irfft2(rfft2(image) * Fctf)`` in float64, returned as float32.
+def premultiply(images: np.ndarray, factor_fftw_half: np.ndarray) -> np.ndarray:
+    """``irfft2(rfft2(image) * factor)`` in float64, returned as float32.
 
-    ``Fctf`` is real and point-symmetric, so the product does not depend on where
-    the transform puts the image origin.
+    ``factor`` is the CTF (real, point-symmetric) and/or the odd-aberration
+    modulation ``exp(i phase)`` (Hermitian: the phase is odd). Either commutes with
+    the ``(-1)^(x+y)`` factor that moves the transform origin to the image centre, so
+    the product does not depend on where the transform puts the image origin.
     """
 
     box = images.shape[-1]
     spectrum = np.fft.rfft2(np.asarray(images, dtype=np.float64), axes=(-2, -1))
-    return np.fft.irfft2(spectrum * ctf_fftw_half, s=(box, box), axes=(-2, -1)).astype(np.float32)
+    return np.fft.irfft2(spectrum * factor_fftw_half, s=(box, box), axes=(-2, -1)).astype(np.float32)
+
+
+def odd_phase(optics_row, box: int) -> np.ndarray:
+    """The optics group's odd aberration phase on the FFTW half grid ``(box, box // 2 + 1)``."""
+
+    from relax.relion import optics_aberrations as oa
+
+    labels = set(optics_row.index)
+    coefficients = oa.optics_group_odd_coefficients(
+        optics_row, has_odd="rlnOddZernike" in labels, has_tilt=bool({"rlnBeamTiltX", "rlnBeamTiltY"} & labels)
+    )
+    return oa.zernike_phase_fftw_half(
+        coefficients, oa.odd_index_to_mn, box, float(optics_row["rlnImagePixelSize"]), int(optics_row["rlnImageSize"])
+    )
 
 
 def main(argv=None) -> int:
@@ -115,12 +139,15 @@ def main(argv=None) -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--n-images", type=int, required=True)
     parser.add_argument("--premultiply-ctf", action="store_true")
+    parser.add_argument("--beam-tilt", type=float, nargs=2, metavar=("TX", "TY"), help="beam tilt in mrad")
+    parser.add_argument("--odd-zernike", type=str, help='RELION odd Zernike coefficients, "[c0,c1,...]"')
     parser.add_argument("--batch", type=int, default=500)
     parser.add_argument("--threads", type=int, default=8)
     args = parser.parse_args(argv)
 
-    if not args.premultiply_ctf:
-        parser.error("choose an optics feature (--premultiply-ctf)")
+    odd = args.beam_tilt is not None or args.odd_zernike is not None
+    if not (args.premultiply_ctf or odd):
+        parser.error("choose an optics feature (--premultiply-ctf, --beam-tilt, --odd-zernike)")
     base = args.base_dir.resolve()
     out = args.output_dir.resolve()
     if out.exists() and any(out.iterdir()):
@@ -143,22 +170,35 @@ def main(argv=None) -> int:
     slices = np.asarray([int(index) - 1 for index, _ in locations], dtype=np.int64)
     box = int(optics["rlnImageSize"].iloc[0])
     out_stack_name = f"particles.{box}.mrcs"
+    if args.beam_tilt is not None:
+        optics["rlnBeamTiltX"], optics["rlnBeamTiltY"] = float(args.beam_tilt[0]), float(args.beam_tilt[1])
+    if args.odd_zernike is not None:
+        optics["rlnOddZernike"] = str(args.odd_zernike).replace(" ", "")
+    # 1 when the images keep their phase; exp(i phase) of the odd aberrations otherwise.
+    modulation = np.exp(1j * odd_phase(optics.iloc[0], box)) if odd else 1.0
 
     with mrcfile.mmap(base / stack_name, mode="r", permissive=True) as source:
         data = source.data
         voxel_size = source.voxel_size.copy()
         if data.shape[1:] != (box, box):
             raise SystemExit(f"stack images are {data.shape[1:]}, the optics table says {box}")
-        ctf = relion_ctf_images(particles, optics, box, n_threads=int(args.threads))
+        ctf = (
+            relion_ctf_images(particles, optics, box, n_threads=int(args.threads))
+            if args.premultiply_ctf
+            else np.ones((len(slices), 1, 1))
+        )
         with mrcfile.new_mmap(
             out / out_stack_name, shape=(len(slices), box, box), mrc_mode=2, overwrite=False
         ) as target:
             for start in range(0, len(slices), int(args.batch)):
                 stop = min(start + int(args.batch), len(slices))
-                target.data[start:stop] = premultiply(np.asarray(data[slices[start:stop]]), ctf[start:stop])
+                target.data[start:stop] = premultiply(
+                    np.asarray(data[slices[start:stop]]), ctf[start:stop] * modulation
+                )
             target.voxel_size = voxel_size
 
-    optics["rlnCtfDataAreCtfPremultiplied"] = 1
+    if args.premultiply_ctf:
+        optics["rlnCtfDataAreCtfPremultiplied"] = 1
     particles["rlnImageName"] = [f"{row + 1}@{out_stack_name}" for row in range(len(particles))]
     starfile.write({"optics": optics, "particles": particles}, out / "particles.star", overwrite=True)
 
@@ -183,7 +223,11 @@ def main(argv=None) -> int:
         "base_dir": str(base),
         "base_particles_star_sha256": _sha256(base / "particles.star"),
         "n_images": int(args.n_images),
-        "features": {"ctf_premultiplied": bool(args.premultiply_ctf)},
+        "features": {
+            "ctf_premultiplied": bool(args.premultiply_ctf),
+            "beam_tilt_mrad": None if args.beam_tilt is None else [float(v) for v in args.beam_tilt],
+            "odd_zernike": args.odd_zernike,
+        },
         "ctf": "relax.relion_bind get_ctf_images_batch (CTF::setValues + getFftwImage, damping on, no padding)",
         "outputs_sha256": {path.name: _sha256(path) for path in sorted(out.iterdir()) if path.is_file()},
     }

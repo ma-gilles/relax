@@ -596,24 +596,34 @@ def resolve_relion_runtime_max_significants(
     }
 
 
-def refuse_unsupported_optics(optics_table, *, source, ctf_premultiplied_supported: bool = False) -> None:
-    """Refuse optics-group features relax does not model yet (deferred by the user, 2026-09-24).
+# The optics features relax implements, and the job types they are qualified for.
+OPTICS_FEATURE_LABELS = {
+    "ctf_premultiplied": ("rlnCtfDataAreCtfPremultiplied",),
+    "odd_aberrations": ("rlnBeamTiltX", "rlnBeamTiltY", "rlnOddZernike"),
+    "even_aberrations": ("rlnEvenZernike",),
+    "magnification": ("rlnMagMat00", "rlnMagMat01", "rlnMagMat10", "rlnMagMat11"),
+}
+REFINE3D_OPTICS_FEATURES = frozenset({"ctf_premultiplied", "odd_aberrations"})
 
-    RELION applies beam tilt and odd/even Zernike aberrations to the CTF phase and
-    anisotropic magnification to every projection (``obs_model.cpp``). relax
-    implements none of them yet, so a table that uses one raises instead of being
-    silently ignored. Columns that have no effect (zero tilt and coefficients,
-    identity magnification) are accepted.
 
-    CTF-premultiplied images (``rlnCtfDataAreCtfPremultiplied 1``) are implemented
-    for Refine3D (``relax.relion.relion_ctf``, the resident sparse pass 2); a caller
-    whose job does not support them (Class3D and InitialModel, which also need
-    RELION's average-CTF^2 tau2 correction) leaves ``ctf_premultiplied_supported``
-    False and they raise too.
+def refuse_unsupported_optics(optics_table, *, source, supported=frozenset()) -> None:
+    """Refuse optics-group features the calling job does not implement (deferred by the user, 2026-09-24).
+
+    RELION multiplies CTF-premultiplied images' CTF into itself, demodulates each image
+    by its beam tilt and odd Zernike phase, adds the even Zernike terms to the CTF phase
+    and applies the anisotropic magnification to every projection (``obs_model.cpp``).
+    ``supported`` names the :data:`OPTICS_FEATURE_LABELS` the job implements
+    (Refine3D: :data:`REFINE3D_OPTICS_FEATURES`); a table that uses any other one
+    raises instead of being silently ignored. Columns that have no effect (zero tilt
+    and coefficients, identity magnification, ``rlnCtfDataAreCtfPremultiplied 0``) are
+    accepted.
     """
 
     if optics_table is None:
         return
+    unknown = set(supported) - set(OPTICS_FEATURE_LABELS)
+    if unknown:
+        raise ValueError(f"unknown optics features {sorted(unknown)}")
     columns = {str(name).lstrip("_"): name for name in optics_table.columns}
     found = []
 
@@ -635,20 +645,21 @@ def refuse_unsupported_optics(optics_table, *, source, ctf_premultiplied_support
         if column is not None and np.any(np.asarray(column, dtype=np.float64) != identity):
             found.append(label)
     column = values("rlnCtfDataAreCtfPremultiplied")
-    if column is not None and np.any(np.asarray(column, dtype=np.float64) != 0.0) and not ctf_premultiplied_supported:
+    if column is not None and np.any(np.asarray(column, dtype=np.float64) != 0.0):
         found.append("rlnCtfDataAreCtfPremultiplied")
-    # Refused for good (not implemented): phase-flipped / CTF-corrected images change how
-    # RELION reads the data, and several different detector MTFs make RELION rescale each
-    # image by average MTF / its MTF (ObservationModel::divideByMtf; one MTF is a no-op).
+    allowed = {label for feature in supported for label in OPTICS_FEATURE_LABELS[feature]}
+    refused = [label for label in found if label not in allowed]
+    # Refused for good (not implemented): CTF-corrected images change how RELION reads the
+    # data, and several different detector MTFs make RELION rescale each image by average
+    # MTF / its MTF (ObservationModel::divideByMtf; one MTF is a no-op).
     column = values("rlnCtfDataAreCtfCorrected")
     if column is not None and np.any(np.asarray(column, dtype=np.float64) != 0.0):
-        found.append("rlnCtfDataAreCtfCorrected")
+        refused.append("rlnCtfDataAreCtfCorrected (not implemented)")
     column = values("rlnMtfFileName")
     if column is not None and len({str(name) for name in column}) > 1:
-        found.append("rlnMtfFileName (several different MTFs)")
-    if found:
+        refused.append("rlnMtfFileName with several different MTFs (not implemented)")
+    if refused:
         raise NotImplementedError(
-            f"{source}: optics table uses {', '.join(found)}; beam tilt, Zernike aberrations and "
-            "anisotropic magnification are not supported by relax yet, CTF-premultiplied images "
-            "only in Refine3D, and CTF-corrected images and per-group detector MTFs are not implemented"
+            f"{source}: optics table uses {', '.join(refused)}, which this job does not implement "
+            f"(it implements: {', '.join(sorted(supported)) or 'none'})"
         )

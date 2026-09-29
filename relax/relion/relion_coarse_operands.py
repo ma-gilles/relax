@@ -528,6 +528,7 @@ def _process_relion_exact_coarse_half_image(
     score_with_masked_images: bool,
     *,
     relion_preprocess_kwargs,
+    image_indices=None,
 ):
     """Run the one canonical per-image RELION FFT used by exact coarse scoring."""
 
@@ -545,6 +546,7 @@ def _process_relion_exact_coarse_half_image(
         batch_data,
         score_with_masked_images,
         relion_preprocess_kwargs=exact_preprocess_kwargs,
+        image_indices=image_indices,
     )
 
 
