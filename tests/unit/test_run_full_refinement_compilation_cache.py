@@ -5,7 +5,7 @@ import os
 import jax
 import pytest
 
-import scripts.run_full_refinement as run_full_refinement
+import relax.refinement.full_refinement as run_full_refinement
 from relax.helpers import compilation_cache
 
 pytestmark = pytest.mark.unit

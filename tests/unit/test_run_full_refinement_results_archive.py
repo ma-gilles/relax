@@ -5,8 +5,8 @@ import zipfile
 import numpy as np
 import pytest
 
-import scripts.run_full_refinement as run_full_refinement
-from scripts.run_full_refinement import _savez_deflate_fast
+import relax.refinement.full_refinement as run_full_refinement
+from relax.refinement.full_refinement import _savez_deflate_fast
 
 pytestmark = pytest.mark.unit
 

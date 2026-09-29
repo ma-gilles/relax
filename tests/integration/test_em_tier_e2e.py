@@ -31,7 +31,8 @@ from helpers.map_sign import assert_same_sign_convention
 from relax.helpers.map_io import load_relax_map
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-REFINE_SCRIPT = REPO_ROOT / "scripts" / "run_full_refinement.py"
+# ``relax refine`` (relax/commands/refine.py) runs through the test interpreter.
+REFINE_COMMAND = ("-m", "relax.commands.refine")
 THRESHOLDS = REPO_ROOT / "tests" / "tiers" / "fsc_thresholds.json"
 sys.path.insert(0, str(REPO_ROOT))
 from scripts.fsc_metrics import normalized_fsc_auc, shell_fsc  # noqa: E402
@@ -90,7 +91,7 @@ def test_k1_5k128_standalone_autorefine(tmp_path):
     output_dir = tmp_path / "k1_e2e_5k_standalone"
     cmd = [
         sys.executable,
-        str(REFINE_SCRIPT),
+        *REFINE_COMMAND,
         "--data_dir",
         str(data),
         "--output",
@@ -131,7 +132,7 @@ def test_k1_5k128_standalone_autorefine(tmp_path):
     proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
-        f"run_full_refinement.py exited {proc.returncode}\n{proc.stdout[-4000:]}\n{proc.stderr[-4000:]}"
+        f"relax refine/class3d exited {proc.returncode}\n{proc.stdout[-4000:]}\n{proc.stderr[-4000:]}"
     )
 
     npz = np.load(output_dir / "refinement_results.npz")

@@ -956,7 +956,7 @@ fi
 set +e
 # K=1 firstiter_cc defaults enable RELION's coarse-tree top-2 rescoring, which
 # requires RELION CUDA image preprocessing; the host_numpy default cannot run it.
-"\${PIXI_PY}" -m scripts.run_full_refinement \\
+"\${PIXI_PY}" -m relax.commands.refine \\
   --data_dir "${K1_DATA_DIR}" \\
   --output "\${OUTPUT_DIR}" \\
   --max_iter "${K1_MAX_ITER}" \\
@@ -1066,7 +1066,7 @@ if [[ "${EM_COMPLETION_TIMING_PROBE}" == "1" ]]; then
   REFINEMENT_EXTRA_ARGS+=(--skip-large-outputs)
 fi
 set +e
-"\${PIXI_PY}" -m scripts.run_full_refinement \\
+"\${PIXI_PY}" -m relax.commands.class3d \\
   --data_dir "${K4_DATA_DIR}" \\
   --output "\${OUTPUT_DIR}" \\
   --max_iter "${K4_MAX_ITER}" \\

@@ -37,7 +37,9 @@ logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PARITY_SCRIPT = REPO_ROOT / "scripts" / "run_multi_iter_parity.py"
-REFINE_SCRIPT = REPO_ROOT / "scripts" / "run_full_refinement.py"
+# ``relax refine`` / ``relax class3d`` (relax/commands/) run through the test interpreter.
+REFINE_COMMAND = ("-m", "relax.commands.refine")
+CLASS3D_COMMAND = ("-m", "relax.commands.class3d")
 ABINITIO_SCRIPT = REPO_ROOT / "relax" / "commands" / "initial_model.py"
 
 # External fixtures come from tests/fixtures/em_fixture_manifest.json; each test verifies the
@@ -281,7 +283,7 @@ K1_LONG_START_ARGS = {
 def test_em_parity_long_k1_full(tmp_path, start):
     """K=1 256² 50k full auto-refine (~3.5 hr on A100).
 
-    Runs ``run_full_refinement.py --max_iter 15`` with the RELION reference's
+    Runs ``relax refine --max_iter 15`` with the RELION reference's
     auto-refine command and compares iter-by-iter Pmax to RELION auto-refine's
     ``rlnAveragePmax`` plus the final gold-standard FSC@0.5 resolution. The
     standalone start rebuilds relion_refine's split, groups and order from the
@@ -296,7 +298,7 @@ def test_em_parity_long_k1_full(tmp_path, start):
     _assert_parity_ancestors_or_skip()
     relion_optimiser = K1_LONG_RELION_DIR / "run_it000_optimiser.star"
     require_fixture_sets("k1_50k256_data", "k1_50k256_relion_os0")
-    _require_fixture(REFINE_SCRIPT, K1_LONG_FIXTURE_DIR, K1_LONG_RELION_DIR, K1_LONG_DATA_STAR, K1_LONG_RELION_DATA_STAR)
+    _require_fixture(K1_LONG_FIXTURE_DIR, K1_LONG_RELION_DIR, K1_LONG_DATA_STAR, K1_LONG_RELION_DATA_STAR)
     # Every value in the command below mirrors this RELION auto-refine header.
     # --tau2_fudge is absent there, so RELION used its auto-refine default 1
     # (checked in the iteration-0 model). --ctf, --flatten_solvent, --zero_mask,
@@ -337,7 +339,7 @@ def test_em_parity_long_k1_full(tmp_path, start):
 
     cmd = [
         sys.executable,
-        str(REFINE_SCRIPT),
+        *REFINE_COMMAND,
         "--data_dir",
         str(K1_LONG_FIXTURE_DIR),
         "--output",
@@ -389,7 +391,7 @@ def test_em_parity_long_k1_full(tmp_path, start):
     elapsed = time.time() - t0
 
     assert proc.returncode == 0, (
-        f"run_full_refinement.py exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        f"relax refine/class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     )
 
     npz_path = output_dir / "refinement_results.npz"
@@ -508,7 +510,7 @@ def test_em_parity_long_k1_native_initialmodel_quality(tmp_path):
     """K=1 256² 50k native InitialModel quality gate.
 
     This is intentionally separate from ``test_em_parity_long_k1_full``.
-    ``run_full_refinement.py`` and replay-style tests can pass while the
+    ``relax refine`` and replay-style tests can pass while the
     GUI-facing native InitialModel path in ``recovar.commands.initial_model`` stalls
     after the first few VDAM iterations. This test guards the exact production
     command shape users get from RELION InitialModel parity work.
@@ -744,7 +746,7 @@ KCLASS_LONG_START_ARGS = {
 def test_em_parity_long_kclass_full(tmp_path, start):
     """K=4 256² 50k 15-iteration Class3D trajectory against RELION (~2-4 hr on H100).
 
-    Runs ``run_full_refinement.py --n_classes 4 --max_iter 15`` with the RELION
+    Runs ``relax class3d --n_classes 4 --max_iter 15`` with the RELION
     reference's Class3D command. The ``standalone`` start reads no RELION output
     and runs its own trajectory; its maps are judged functionally, since its
     random draws need not follow RELION's. ``relion_replay_debug`` is a controlled
@@ -775,7 +777,6 @@ def test_em_parity_long_kclass_full(tmp_path, start):
     generation_record = K4_LONG_FIXTURE_DIR / "GENERATION.json"
     require_fixture_sets("k4_50k256_data", "k4_50k256_relion_os0")
     _require_fixture(
-        REFINE_SCRIPT,
         K4_LONG_FIXTURE_DIR,
         K4_LONG_RELION_DIR,
         K4_LONG_DATA_STAR,
@@ -820,7 +821,7 @@ def test_em_parity_long_kclass_full(tmp_path, start):
     output_dir.mkdir()
     cmd = [
         sys.executable,
-        str(REFINE_SCRIPT),
+        *CLASS3D_COMMAND,
         "--data_dir",
         str(K4_LONG_FIXTURE_DIR),
         "--output",
@@ -861,7 +862,7 @@ def test_em_parity_long_kclass_full(tmp_path, start):
     proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
-        f"run_full_refinement.py exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        f"relax refine/class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     )
 
     npz_path = output_dir / "refinement_results.npz"
@@ -1112,7 +1113,7 @@ def test_em_parity_long_class3d_hp4_global(tmp_path):
     output_dir = tmp_path / "class3d_hp4"
     output_dir.mkdir()
     cmd = [
-        sys.executable, str(REFINE_SCRIPT), "--data_dir", str(CLASS3D_HP4_DATA), "--output", str(output_dir),
+        sys.executable, *CLASS3D_COMMAND, "--data_dir", str(CLASS3D_HP4_DATA), "--output", str(output_dir),
         "--n_classes", str(n_classes), "--ref_star", str(CLASS3D_HP4_DATA / "reference_init_classes_relion.star"),
         "--healpix_order", "4", "--offset_range", "6", "--offset_step", "2", "--adaptive_oversampling", "1",
         "--tau2_fudge", "4.0", "--perturb_factor", "0.5", "--particle_diameter_ang", "200", "--seed", "29",

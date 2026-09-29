@@ -1,17 +1,17 @@
-"""CLI-level sampling contract tests for ``scripts/run_full_refinement.py``."""
+"""CLI-level sampling contract tests for ``relax/refinement/full_refinement.py``."""
 
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
-from relax.helpers.iteration_history import add_significant_count_artifacts
-from relax.sampling import (
-    advance_relion_perturbation_from_seed,
-    relion_sampling_perturbation_for_iteration,
+from relax.helpers.iteration_history import (
+    _pose_history_by_image,
+    add_significant_count_artifacts,
 )
-from scripts.run_full_refinement import (
+from relax.refinement.full_refinement import (
     _configure_relion_firstiter_controls,
     _effective_perturb_seed,
     _explicit_relion_optimiser_for_seed,
@@ -22,12 +22,12 @@ from scripts.run_full_refinement import (
     _resolve_relion_sampling_orders,
     _rotation_posterior_arrays,
 )
-from relax.helpers.iteration_history import (
-    _pose_history_by_image,
+from relax.sampling import (
+    advance_relion_perturbation_from_seed,
+    relion_sampling_perturbation_for_iteration,
 )
-from helpers.float_compare import assert_matches
 
-RUN_FULL_REFINEMENT = Path(__file__).resolve().parents[2] / "scripts" / "run_full_refinement.py"
+RUN_FULL_REFINEMENT = Path(__file__).resolve().parents[2] / "relax" / "refinement" / "full_refinement.py"
 
 
 def test_k1_firstiter_cc_defaults_to_relion_reference_and_tree_controls():
@@ -213,7 +213,7 @@ def test_optimizer_seed_inherits_explicit_relion_star_when_omitted(tmp_path):
 
 
 def test_optimizer_seed_omitted_without_relion_state_is_the_time(monkeypatch):
-    import scripts.run_full_refinement as driver
+    import relax.refinement.full_refinement as driver
 
     monkeypatch.setattr(driver.time, "time", lambda: 1700000000.2)
     assert _resolve_optimizer_random_seed(None, None) == (1700000000, "RELION default -1: the time")

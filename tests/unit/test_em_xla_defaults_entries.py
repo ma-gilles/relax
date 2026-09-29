@@ -18,7 +18,7 @@ REPO = Path(__file__).resolve().parents[2]
 # Every EM entry point must opt in, so the entry assertions below run over all
 # of them rather than over one named script.
 ENTRIES = (
-    REPO / "scripts" / "run_full_refinement.py",
+    REPO / "relax" / "refinement" / "full_refinement.py",
     REPO / "relax" / "commands" / "initial_model.py",
 )
 MARKER = "RECOVAR_EM_XLA_DEFAULTS"

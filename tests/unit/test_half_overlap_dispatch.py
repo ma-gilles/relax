@@ -132,7 +132,7 @@ def _runner_path():
 
     import relax
 
-    return Path(relax.__file__).resolve().parent.parent / "scripts" / "run_full_refinement.py"
+    return Path(relax.__file__).resolve().parent.parent / "relax" / "refinement" / "full_refinement.py"
 
 
 def test_runner_registers_the_overlap_flag():
@@ -142,18 +142,15 @@ def test_runner_registers_the_overlap_flag():
     and the harness invoked a checkout whose parser did not know the flag, so
     every overlapped arm died at argparse.
 
-    The child must import this checkout: ``python scripts/...`` does not put
-    the repo root on ``sys.path``, so without the pin a shared environment's
-    editable finder resolves ``recovar`` to whichever checkout it was built for.
+    The child must import this checkout: without the pin a shared environment's
+    editable finder resolves ``relax`` to whichever checkout it was built for.
     """
     import subprocess
 
     from conftest import repo_python_command, repo_subprocess_env
 
-    runner = _runner_path()
-    assert runner.is_file(), runner
     proc = subprocess.run(
-        repo_python_command(str(runner), "--help"),
+        repo_python_command("-m", "relax.commands.refine", "--help"),
         env=repo_subprocess_env(),
         capture_output=True,
         text=True,

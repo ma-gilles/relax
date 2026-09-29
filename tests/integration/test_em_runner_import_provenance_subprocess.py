@@ -21,7 +21,7 @@ def _subprocess_env(expected_root: Path) -> dict[str, str]:
 
 @pytest.mark.integration
 def test_module_entry_point_checks_concrete_imports(tmp_path):
-    command = [sys.executable, "-m", "scripts.run_full_refinement", "--help"]
+    command = [sys.executable, "-m", "relax.commands.refine", "--help"]
 
     accepted = subprocess.run(
         command,

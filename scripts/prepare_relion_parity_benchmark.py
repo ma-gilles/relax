@@ -9,7 +9,7 @@ comparison scripts:
 - ``reference_init.mrc`` (low-pass initial reference)
 - ``reference_gt.mrc`` (ground-truth map)
 
-The output layout matches what ``scripts/run_full_refinement.py`` expects.
+The output layout matches what ``relax refine`` and ``relax class3d`` expect as ``--data_dir``.
 """
 
 import argparse
@@ -18,7 +18,6 @@ import os
 from importlib.resources import files
 
 import numpy as np
-
 import recovar
 from recovar import utils
 from recovar.data_io.cryoem_dataset import load_dataset
@@ -50,10 +49,10 @@ def _write_reference_volumes(output_dir, grid_size):
       see commit history around 2026-04-08). The RELION reference run
       must use ``--ref reference_init_relion.mrc``.
     """
+    import jax.numpy as jnp
+    from recovar.core import fourier_transform_utils as ftu
     from recovar.output.output import save_volume
     from recovar.utils.helpers import write_relion_mrc
-    from recovar.core import fourier_transform_utils as ftu
-    import jax.numpy as jnp
 
     dataset = load_dataset(
         os.path.join(output_dir, f"particles.{grid_size}.mrcs"),

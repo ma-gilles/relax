@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from scripts import run_full_refinement
+from relax.refinement import full_refinement as run_full_refinement
 
 pytestmark = pytest.mark.unit
 

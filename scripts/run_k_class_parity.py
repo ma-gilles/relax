@@ -21,7 +21,7 @@ from pathlib import Path
 
 # This is an EM entry point, so it opts in to recovar's EM-scoped XLA defaults
 # (currently --xla_gpu_autotune_level=0; see recovar/jax_config.py and
-# scripts/run_full_refinement.py). It must be set before the first import that
+# relax/refinement/full_refinement.py). It must be set before the first import that
 # reaches jax, which recovar.jax_config performs, and with `setdefault` so an
 # explicit RECOVAR_EM_XLA_DEFAULTS=0 in the environment still wins.
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
@@ -689,8 +689,10 @@ def _relion_bpref_maps_from_sparse_support(
 
     import jax
     import jax.numpy as jnp
-
     from recovar.core.configs import ForwardModelConfig
+    from recovar.reconstruction import noise as noise_utils
+    from recovar.utils import helpers
+
     from relax.helpers.batch_fetch import fetch_indexed_batch
     from relax.helpers.fourier_window import make_fourier_window_spec
     from relax.helpers.half_spectrum import make_scoring_half_image_weights
@@ -700,6 +702,7 @@ def _relion_bpref_maps_from_sparse_support(
         compute_local_weighted_sums,
         flatten_bucket_rotations,
     )
+    from relax.relion_bind import _relion_bind_core as bind
     from relax.sampling import get_oversampled_translation_grid, rotation_grid_size
     from relax.scoring.sparse_bucket_arrays import (
         _bucket_pass2_inputs,
@@ -709,9 +712,6 @@ def _relion_bpref_maps_from_sparse_support(
     from relax.sparse_pass2.sparse_pass2_bucket_io import _prepare_bucket_io, _reorder_to_indices
     from relax.sparse_pass2.sparse_pass2_posterior import _normalize_pass2_bucket_with_log_z
     from relax.sparse_pass2.sparse_pass2_scoring import _score_pass2_bucket_relion_gpu_diff2
-    from recovar.reconstruction import noise as noise_utils
-    from relax.relion_bind import _relion_bind_core as bind
-    from recovar.utils import helpers
 
     image_shape = tuple(map(int, experiment_dataset.image_shape))
     volume_shape = tuple(map(int, experiment_dataset.volume_shape))
@@ -1294,20 +1294,26 @@ def main() -> None:
     import jax
     import jax.numpy as jnp
     import starfile
-
     from recovar import utils
     from recovar.core import fourier_transform_utils as ftu
     from recovar.core import mask
     from recovar.data_io.cryoem_dataset import load_dataset
+    from recovar.reconstruction import noise as recon_noise
+    from recovar.utils import helpers
+
     from relax.classification.k_class import run_dense_k_class_em
+    from relax.helpers.map_io import write_map
     from relax.helpers.orientation_priors import (
         make_relion_direction_log_prior,
         make_relion_translation_log_prior,
         relion_translation_prior_center,
         relion_translation_search_base,
     )
-    from relax.sparse_pass2.dispatch import compute_pass2_stats_sparse
     from relax.refinement.iteration_loop import RELION_MINRES_MAP, _reconstruct_volume_eager
+    from relax.relion.relion_metadata import (
+        read_relion_optimiser_metadata,
+        read_relion_sampling_metadata,
+    )
     from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps
     from relax.sampling import (
         apply_relion_rotation_perturbation_to_eulers,
@@ -1316,14 +1322,8 @@ def main() -> None:
         get_translation_grid,
         relion_angular_sampling_deg,
     )
-    from relax.relion.relion_metadata import (
-        read_relion_optimiser_metadata,
-        read_relion_sampling_metadata,
-    )
-    from relax.helpers.map_io import write_map
     from relax.scoring.significance import _compute_k_class_significance_batched
-    from recovar.reconstruction import noise as recon_noise
-    from recovar.utils import helpers
+    from relax.sparse_pass2.dispatch import compute_pass2_stats_sparse
 
     relion_dir = args.relion_dir
     prev_prefix = relion_dir / f"run_it{args.prev_iter:03d}"

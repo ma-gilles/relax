@@ -2,7 +2,7 @@
 
 ``scripts/run_k_class_parity.py`` and ``scripts/run_multi_iter_parity.py`` are
 EM entry points: the fast and long parity tiers launch them as child
-processes. Like ``scripts/run_full_refinement.py`` they must set
+processes. Like ``relax/refinement/full_refinement.py`` they must set
 ``RECOVAR_EM_XLA_DEFAULTS`` before the first import that reaches jax, because
 ``recovar.jax_config`` reads it when it is imported. Without it their children
 ran with XLA autotuning (and its fusion autotuner) on, which is not the

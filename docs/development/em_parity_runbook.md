@@ -178,7 +178,7 @@ A K1 auto-refine that counts as qualification evidence reads only what
 map and the values on the RELION command line. For a real-data run the input
 STAR may be a RELION InitialModel/VDAM `run_itNNN_data.star`, since RELION's
 own auto-refine starts from it. The RELION auto-refine run is read only
-afterwards, for comparison. Map the RELION command to `run_full_refinement.py`
+afterwards, for comparison. Map the RELION command to `relax refine`
 as follows. A fresh K1 run given no RELION output is standalone by default.
 relax's defaults are RELION's start-up methods and the RELION GUI's job
 defaults ([audit](relion_defaults.md)), not relion_refine's command-line
@@ -222,7 +222,7 @@ Standalone is the default Class3D (K>1) start. A run reads only what a
 non-MPI `relion_refine` Class3D reads: `<data_dir>/particles.star` with its
 origins, its stacks, the `--ref` STAR and its maps, and the values on the
 RELION command line. The RELION run is read only afterwards, for comparison.
-Map the RELION command to `run_full_refinement.py` as follows:
+Map the RELION command to `relax class3d` as follows:
 
 | RELION | relax |
 | --- | --- |

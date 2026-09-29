@@ -120,7 +120,7 @@ def test_kclass_weight_trajectories_record_mstep_and_full_posterior_provenance()
     source = inspect.getsource(iteration_loop.refine_single_volume)
     assert "history.record_class_weights(" in source
 
-    import scripts.run_full_refinement as run_full_refinement
+    import relax.refinement.full_refinement as run_full_refinement
 
     save_source = inspect.getsource(run_full_refinement)
     assert "iteration_history.add_class_history_artifacts(save_dict, result" in save_source

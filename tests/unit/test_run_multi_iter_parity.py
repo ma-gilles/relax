@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import starfile
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics.relion_replay import _validate_bpref_particle_order_scope
 from relax.helpers.iteration_history import add_significant_count_artifacts
@@ -21,7 +22,6 @@ from scripts.run_multi_iter_parity import (
     final_only_replay_override,
     final_output_fourier_volumes,
     initial_scoring_noise_pair,
-    relion_noise_state_label,
     keep_stack_rows_mask,
     load_initial_direction_prior,
     load_initial_fourier_volume,
@@ -36,6 +36,7 @@ from scripts.run_multi_iter_parity import (
     read_relion_model_pixel_size,
     read_relion_optics_image_geometry,
     relion_final_gt_series,
+    relion_noise_state_label,
     replay_control_relion_iteration,
     replay_override_is_before_cutoff,
     replay_override_iteration_pairs,
@@ -49,7 +50,6 @@ from scripts.run_multi_iter_parity import (
     validate_fresh_particle_order_args,
     validate_native_relion_particle_order_args,
 )
-from helpers.float_compare import assert_matches
 
 
 def test_read_relion_model_pixel_size_uses_mrc_header(tmp_path):
@@ -936,7 +936,7 @@ def test_iteration_overrides_use_the_replay_scale_keys():
 
 def test_final_only_replay_reports_empty_numbered_assignments():
     """A final-only replay runs no numbered iteration; the result still carries
-    per-half assignments (None), which run_full_refinement indexes. 14381025
+    per-half assignments (None), which full_refinement indexes. 14381025
     finished the forced final at 10097 it22 and then stopped on an unbound
     hard_assignments."""
 

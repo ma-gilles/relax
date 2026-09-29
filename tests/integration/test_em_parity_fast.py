@@ -34,7 +34,6 @@ import starfile
 from conftest import gpu_subprocess_env
 from helpers.em_fixtures import fixture_root, require_fixture_sets
 from helpers.em_parity_oracles import k4_oracle
-
 from helpers.map_sign import SIGN_CORRELATION_MIN, assert_same_sign_convention, file_correlation
 
 from relax.helpers.map_io import load_relax_map
@@ -44,7 +43,9 @@ logger = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PARITY_SCRIPT = REPO_ROOT / "scripts" / "run_multi_iter_parity.py"
 KCLASS_SCRIPT = REPO_ROOT / "scripts" / "run_k_class_parity.py"
-REFINE_SCRIPT = REPO_ROOT / "scripts" / "run_full_refinement.py"
+# ``relax refine`` / ``relax class3d`` (relax/commands/) run through the test interpreter.
+REFINE_COMMAND = ("-m", "relax.commands.refine")
+CLASS3D_COMMAND = ("-m", "relax.commands.class3d")
 BASELINES_DIR = REPO_ROOT / "tests" / "baselines"
 
 # External fixtures come from tests/fixtures/em_fixture_manifest.json. Each test verifies the
@@ -702,14 +703,14 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling, gui_default=False):
         case = "k1_os1_coldstart" if oversampling else "k1_coldstart"
         sampling_args = K1_COLDSTART_SAMPLING_ARGS
     require_fixture_sets("k1_5k128_data", relion_set)
-    _require_fixture(REFINE_SCRIPT, K1_FIXTURE_DIR, relion_dir, K1_DATA_STAR)
+    _require_fixture(K1_FIXTURE_DIR, relion_dir, K1_DATA_STAR)
 
     output_dir = tmp_path / f"{case}_{start}"
     output_dir.mkdir(parents=True)
 
     cmd = [
         sys.executable,
-        str(REFINE_SCRIPT),
+        *REFINE_COMMAND,
         "--data_dir",
         str(K1_FIXTURE_DIR),
         "--output",
@@ -744,7 +745,7 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling, gui_default=False):
     proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
-        f"run_full_refinement.py exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        f"relax refine/class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     )
 
     npz = np.load(output_dir / "refinement_results.npz")
@@ -875,14 +876,14 @@ def test_em_parity_fast_k1_perturbreplay(tmp_path):
     """
     _assert_parity_ancestors_or_skip()
     require_fixture_sets("k1_5k128_data", "k1_5k128_relion_os0")
-    _require_fixture(REFINE_SCRIPT, K1_FIXTURE_DIR, K1_RELION_DIR, K1_DATA_STAR)
+    _require_fixture(K1_FIXTURE_DIR, K1_RELION_DIR, K1_DATA_STAR)
 
     output_dir = tmp_path / "k1_perturbreplay"
     output_dir.mkdir(parents=True)
 
     cmd = [
         sys.executable,
-        str(REFINE_SCRIPT),
+        *REFINE_COMMAND,
         "--data_dir",
         str(K1_FIXTURE_DIR),
         "--output",
@@ -925,7 +926,7 @@ def test_em_parity_fast_k1_perturbreplay(tmp_path):
     proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
-        f"run_full_refinement.py exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        f"relax refine/class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     )
     _assert_resident_engines_ran(
         proc.stdout + proc.stderr, global_pass=True, local_pass=False, case="K=1 perturbation replay"
@@ -991,14 +992,14 @@ def test_em_parity_fast_kclass_coldstart(tmp_path):
     _assert_parity_ancestors_or_skip()
     relion_dir, dispatch_args = k4_oracle(2, 1)
     require_fixture_sets("k4_5k128_data")
-    _require_fixture(REFINE_SCRIPT, K4_FIXTURE_DIR, relion_dir, K4_DATA_STAR)
+    _require_fixture(K4_FIXTURE_DIR, relion_dir, K4_DATA_STAR)
 
     output_dir = tmp_path / "kclass_coldstart"
     output_dir.mkdir(parents=True)
 
     cmd = [
         sys.executable,
-        str(REFINE_SCRIPT),
+        *CLASS3D_COMMAND,
         "--data_dir",
         str(K4_FIXTURE_DIR),
         "--output",
@@ -1037,14 +1038,13 @@ def test_em_parity_fast_kclass_coldstart(tmp_path):
     proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
-        f"run_full_refinement.py exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        f"relax refine/class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     )
     assert not any(output_dir.glob("final_half*_class*.mrc")), "K>1 writer should not emit per-half class MRCs"
 
     # Hungarian-match recovar's per-class output to RELION's per-class it003.
-    from scipy.optimize import linear_sum_assignment
-
     from recovar.utils import helpers as _recovar_helpers
+    from scipy.optimize import linear_sum_assignment
 
     recov_classes = [
         np.asarray(load_relax_map(str(output_dir / f"final_class{c + 1:03d}.mrc")), dtype=np.float64)
@@ -1103,14 +1103,14 @@ def test_em_parity_fast_kclass_nonadaptive_replay(tmp_path):
     # remains cross-grid regression coverage against its OS1 reference.
     relion_dir, dispatch_args = k4_oracle(1, 1)
     require_fixture_sets("k4_5k128_data")
-    _require_fixture(REFINE_SCRIPT, K4_FIXTURE_DIR, relion_dir, K4_DATA_STAR)
+    _require_fixture(K4_FIXTURE_DIR, relion_dir, K4_DATA_STAR)
 
     output_dir = tmp_path / "kclass_strict"
     output_dir.mkdir(parents=True)
 
     cmd = [
         sys.executable,
-        str(REFINE_SCRIPT),
+        *CLASS3D_COMMAND,
         "--data_dir",
         str(K4_FIXTURE_DIR),
         "--output",
@@ -1149,12 +1149,11 @@ def test_em_parity_fast_kclass_nonadaptive_replay(tmp_path):
     proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
-        f"run_full_refinement.py exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        f"relax refine/class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     )
 
-    from scipy.optimize import linear_sum_assignment
-
     from recovar.utils import helpers as _recovar_helpers
+    from scipy.optimize import linear_sum_assignment
 
     recov_classes = [
         np.asarray(load_relax_map(str(output_dir / f"final_class{c + 1:03d}.mrc")), dtype=np.float64)
@@ -1257,14 +1256,14 @@ def test_em_parity_fast_kclass_strict_oversample_coldstart(tmp_path):
     _assert_parity_ancestors_or_skip()
     relion_dir, dispatch_args = k4_oracle(1, 1)
     require_fixture_sets("k4_5k128_data")
-    _require_fixture(REFINE_SCRIPT, K4_FIXTURE_DIR, relion_dir, K4_DATA_STAR)
+    _require_fixture(K4_FIXTURE_DIR, relion_dir, K4_DATA_STAR)
 
     output_dir = tmp_path / "kclass_strict_os1"
     output_dir.mkdir(parents=True)
 
     cmd = [
         sys.executable,
-        str(REFINE_SCRIPT),
+        *CLASS3D_COMMAND,
         "--data_dir",
         str(K4_FIXTURE_DIR),
         "--output",
@@ -1303,12 +1302,11 @@ def test_em_parity_fast_kclass_strict_oversample_coldstart(tmp_path):
     proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
-        f"run_full_refinement.py exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        f"relax refine/class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     )
 
-    from scipy.optimize import linear_sum_assignment
-
     from recovar.utils import helpers as _recovar_helpers
+    from scipy.optimize import linear_sum_assignment
 
     recov_classes = [
         np.asarray(load_relax_map(str(output_dir / f"final_class{c + 1:03d}.mrc")), dtype=np.float64)
@@ -1389,7 +1387,7 @@ def test_em_parity_fast_k1_multioptics_coldstart(tmp_path):
     output_dir.mkdir(parents=True)
     cmd = [
         sys.executable,
-        str(REFINE_SCRIPT),
+        *REFINE_COMMAND,
         "--data_dir",
         str(MULTIOPTICS_FIXTURE_DIR),
         "--output",
@@ -1411,7 +1409,7 @@ def test_em_parity_fast_k1_multioptics_coldstart(tmp_path):
     proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
-        f"run_full_refinement.py exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        f"relax refine/class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     )
     npz = np.load(output_dir / "refinement_results.npz")
     pmax_traj = np.asarray(npz["ave_Pmax_trajectory"], dtype=np.float64)

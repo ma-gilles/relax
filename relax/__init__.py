@@ -5,23 +5,29 @@ Import functions and types directly from their owning modules.
 
 The launch hooks below run before any submodule imports ``recovar`` (and
 with it ``recovar.jax_config``), so every relax process reaches JAX with the
-EM XLA defaults, and ``relax initial_model`` and
-``python -m relax.commands.initial_model`` with the requested allocator.
+EM XLA defaults, ``relax initial_model`` and
+``python -m relax.commands.initial_model`` with the requested allocator, and
+``relax refine`` / ``relax class3d`` with an XLA pool sized for the RELION
+projector texture.
 """
 
 import os
 import sys
 
 
-def _initial_model_cli_requested(argv=None, orig_argv=None) -> bool:
-    """Return whether this interpreter was launched for InitialModel."""
+def _cli_command_requested(command, argv=None, orig_argv=None) -> bool:
+    """Return whether this interpreter was launched for ``relax <command>``.
+
+    ``relax <command>`` puts the command in ``argv[1]``; ``python -m
+    relax.commands.<command>`` names its module in ``orig_argv``.
+    """
 
     argv = tuple(sys.argv if argv is None else argv)
     orig_argv = tuple(getattr(sys, "orig_argv", ()) if orig_argv is None else orig_argv)
-    if len(argv) > 1 and argv[1] == "initial_model":
+    if len(argv) > 1 and argv[1] == command:
         return True
     return any(
-        orig_argv[index] == "-m" and orig_argv[index + 1] == "relax.commands.initial_model"
+        orig_argv[index] == "-m" and orig_argv[index + 1] == f"relax.commands.{command}"
         for index in range(len(orig_argv) - 1)
     )
 
@@ -30,7 +36,7 @@ def _configure_initial_model_cuda_allocator(*, argv=None, orig_argv=None, enviro
     """Apply an InitialModel allocator override before JAX initializes."""
 
     environ = os.environ if environ is None else environ
-    if not _initial_model_cli_requested(argv=argv, orig_argv=orig_argv):
+    if not _cli_command_requested("initial_model", argv=argv, orig_argv=orig_argv):
         return environ.get("TF_GPU_ALLOCATOR")
     requested = environ.get(
         "RELAX_INITIAL_MODEL_CUDA_ALLOCATOR",
@@ -54,6 +60,24 @@ def _configure_em_xla_defaults(*, environ=None):
     environ = os.environ if environ is None else environ
     environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
     return environ.get("RECOVAR_EM_XLA_DEFAULTS")
+
+
+def _reserve_refinement_projector_memory(*, argv=None, orig_argv=None) -> str | None:
+    """Size the XLA pool for a refinement's RELION projector texture; return a log line.
+
+    The pool limit is fixed when the backend starts, and ``recovar.jax_config``
+    (imported below) starts it, so ``relax refine`` and ``relax class3d`` size it
+    here, from the reference maps their command line names. The reserve module
+    imports only the standard library.
+    """
+
+    if not any(_cli_command_requested(command, argv, orig_argv) for command in ("refine", "class3d")):
+        return None
+    from relax.helpers import xla_memory_reserve as reserve
+
+    argv = sys.argv if argv is None else argv
+    record = reserve.reserve_for_reference_maps(reserve.reference_maps_from_argv(argv[1:]))
+    return None if record is None else reserve.format_reserve_record(record)
 
 
 def _reject_renamed_environment(*, environ=None):
@@ -96,6 +120,7 @@ def _reject_renamed_environment(*, environ=None):
 _reject_renamed_environment()
 _configure_initial_model_cuda_allocator()
 _configure_em_xla_defaults()
+_XLA_RESERVE_LOG_LINE = _reserve_refinement_projector_memory()
 
 try:
     # recovar's package import applies the XLA configuration (including the EM defaults marker set above);

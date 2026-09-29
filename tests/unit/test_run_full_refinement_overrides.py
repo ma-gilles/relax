@@ -18,6 +18,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from helpers.em_fixtures import fixture_dir, fixture_root
+from helpers.float_compare import assert_matches, matches
 
 from relax.diagnostics.frozen_boundary import (
     FROZEN_BOUNDARY_NUMERICAL_CLASSIFICATION_SCOPE,
@@ -25,14 +26,16 @@ from relax.diagnostics.frozen_boundary import (
     _assert_frozen_scoring_state_unchanged,
     _frozen_scoring_state_arrays,
 )
-from relax.refinement.mean_helpers import _mean_variance_for_scoring_half, _updated_mean_variance_per_half
-from relax.relion.initial_noise import (
-    compute_avg_unaligned_and_sigma2,
-    read_relion_single_optics_sigma2_noise,
-    relion_mpi_process_start_scoring_noise_pair,
+from relax.diagnostics.relion_replay import (
+    _build_replay_iteration_overrides,
+    _format_replay_mean_for_log,
 )
-from scripts import run_full_refinement
-from scripts.run_full_refinement import (
+from relax.helpers.iteration_history import (
+    _load_init_noise_radial_npz,
+    _load_init_previous_best_poses_npz,
+)
+from relax.refinement import full_refinement as run_full_refinement
+from relax.refinement.full_refinement import (
     _assert_frozen_replay_slots_projector_only,
     _attach_relion_projector_capture,
     _build_frozen_replay_slots,
@@ -57,20 +60,17 @@ from scripts.run_full_refinement import (
     _verify_fixed_diagnostic_provenance_manifests,
     _verify_frozen_boundary_source_hashes,
 )
-from relax.helpers.iteration_history import (
-    _load_init_noise_radial_npz,
-    _load_init_previous_best_poses_npz,
-)
-from relax.diagnostics.relion_replay import (
-    _build_replay_iteration_overrides,
-    _format_replay_mean_for_log,
+from relax.refinement.mean_helpers import _mean_variance_for_scoring_half, _updated_mean_variance_per_half
+from relax.relion.initial_noise import (
+    compute_avg_unaligned_and_sigma2,
+    read_relion_single_optics_sigma2_noise,
+    relion_mpi_process_start_scoring_noise_pair,
 )
 from relax.relion.relion_metadata import (
     _load_relion_it000_model_stars,
     _parse_relion_cli_ini_high,
     _parse_relion_tau2_fudge,
 )
-from helpers.float_compare import assert_matches, matches
 
 FIXTURE = fixture_root("k1_5k128_relion_os0")
 
@@ -79,7 +79,7 @@ FIXTURE = fixture_root("k1_5k128_relion_os0")
 def verified_k1_relion_os0():
     """Fail, not skip, when the RELION 5k run is missing or differs from the manifest."""
     return fixture_dir("k1_5k128_relion_os0")
-RUN_FULL_REFINEMENT = Path(__file__).resolve().parents[2] / "scripts" / "run_full_refinement.py"
+RUN_FULL_REFINEMENT = Path(__file__).resolve().parents[2] / "relax" / "refinement" / "full_refinement.py"
 
 
 def test_full_refinement_supports_stop_after_coarse_significance_dump():
@@ -2551,8 +2551,7 @@ def test_initial_current_size_is_relions_ini_high_pixel_without_a_floor():
     # RELION's first iteration at ini_high 60 A on 128 px / 4.25 A runs at current size 38
     # (2 * (ROUND(9.07) + incr_size 10)); the old 32-pixel floor gave 52.
     from relax.helpers.resolution import _bootstrap_current_size_relion
-
-    from scripts.run_full_refinement import _initial_current_size
+    from relax.refinement.full_refinement import _initial_current_size
 
     assert _initial_current_size(4.25, 128, 60.0) == 18
     assert _bootstrap_current_size_relion(_initial_current_size(4.25, 128, 60.0), 128) == 38

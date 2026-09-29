@@ -1,24 +1,15 @@
-#!/usr/bin/env python
-"""Run a full multi-iteration EM refinement and save per-iteration results.
+"""RELION-equivalent 3D auto-refine (K=1) and 3D classification (K>1).
 
-This script loads the synthetic benchmark dataset (5000 images, 128px),
-initializes from the low-pass filtered reference volume, and calls
-refine_single_volume() with parameters matching the RELION auto-refine run.
-
-Results are saved as a single .npz file with per-iteration arrays for
-downstream comparisons.
-
-Usage:
-    CUDA_VISIBLE_DEVICES=1 XLA_PYTHON_CLIENT_PREALLOCATE=false \
-        pixi run python scripts/run_full_refinement.py [--output DIR] [--max_iter N]
-
-Environment variables:
-    CUDA_VISIBLE_DEVICES: GPU to use
-    XLA_PYTHON_CLIENT_PREALLOCATE: set to false for dynamic allocation
+``relax refine`` and ``relax class3d`` (``relax/commands/``) run
+:func:`run_from_command_line`. The run reads RELION inputs from ``--data_dir``
+(``particles.star`` and its stacks, and the reference maps), refines them with
+:func:`relax.refinement.iteration_loop.refine_single_volume` and saves the
+per-iteration arrays and RELION-style run files under ``--output``.
+``docs/user_guide.md`` has runnable examples.
 """
 
-# The XLA pool reserve (_reserve_projector_texture_memory) runs before the jax, recovar and
-# relax imports, so the imports below it are not at the top of the file.
+# The EM environment markers below are set before the jax, recovar and relax imports,
+# so the imports below them are not at the top of the file.
 # ruff: noqa: E402
 import argparse
 import importlib
@@ -42,50 +33,16 @@ from typing import NamedTuple
 # RECOVAR_EM_XLA_DEFAULTS=0 in the environment still wins.
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 
-
-def _reserve_projector_texture_memory(argv) -> str | None:
-    """Size the XLA pool for this run's RELION projector texture before JAX starts; return a log line.
-
-    The pool limit is fixed when the backend starts, and ``import relax`` imports
-    recovar, whose ``jax_config`` starts it. So the standard-library-only
-    ``relax/helpers/xla_memory_reserve.py`` is loaded by path here, before the
-    first ``jax``, ``recovar`` or ``relax`` import, instead of through the package.
-    """
-
-    import importlib.util
-
-    package = importlib.util.find_spec("relax")
-    if package is None or not package.submodule_search_locations:
-        return None
-    path = Path(next(iter(package.submodule_search_locations))) / "helpers" / "xla_memory_reserve.py"
-    spec = importlib.util.spec_from_file_location("_relax_xla_memory_reserve", path)
-    reserve = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(reserve)
-    record = reserve.reserve_for_reference_maps(reserve.reference_maps_from_argv(argv))
-    return None if record is None else reserve.format_reserve_record(record)
-
-
-_XLA_RESERVE_LOG_LINE = _reserve_projector_texture_memory(sys.argv[1:])
-
-# isort: split
-
 import jax
 import jax.numpy as jnp
 import jaxlib
 import numpy as np
-
-from relax.relion import input_poses, relion_metadata
-from relax.diagnostics import parity_dump, relion_replay
-from relax.helpers import iteration_history
-from relax.helpers.compilation_cache import activate_recovar_compilation_cache
-from relax.helpers.particle_io import (
-    ParticleReadPolicy,
-    add_particle_read_arguments,
-    assert_reads_from_scratch,
-    prepare_particle_reads,
-)
 from recovar import utils
 from recovar.core import fourier_transform_utils as ftu
+from recovar.utils.file_hash import sha256_file as _sha256_file
+
+import relax
+from relax.diagnostics import parity_dump, relion_replay
 from relax.diagnostics.frozen_boundary import (
     FROZEN_BOUNDARY_FIXED_DIAGNOSTIC_ARM,
     FROZEN_BOUNDARY_FIXED_MATH_ENVIRONMENT_CONTRACT,
@@ -103,15 +60,24 @@ from relax.diagnostics.state_swap_probe import (
     state_swap_probe_loop_index,
     validate_state_swap_probe_application,
 )
+from relax.helpers import iteration_history
+from relax.helpers.compilation_cache import activate_recovar_compilation_cache
+from relax.helpers.particle_io import (
+    ParticleReadPolicy,
+    add_particle_read_arguments,
+    assert_reads_from_scratch,
+    prepare_particle_reads,
+)
+from relax.refinement.iteration_snapshot import noise_pixel_rows
+from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
+from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
+from relax.refinement.run_files import RunFileWriter, RunSettings, read_run_files, read_star_blocks
+from relax.refinement.tomo_half import TomoDataset, is_relion5_2d_stack_star
+from relax.relion import input_poses, relion_metadata
 from relax.relion.initial_noise import (
     compute_avg_unaligned_and_sigma2,
     read_relion_single_optics_sigma2_noise,
 )
-from relax.refinement.iteration_snapshot import noise_pixel_rows
-from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
-from relax.refinement.run_files import RunFileWriter, RunSettings, read_run_files, read_star_blocks
-from relax.refinement.tomo_half import TomoDataset, is_relion5_2d_stack_star
-from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.relion.relion_worker_scale import (
     load_relion_dispatch_schedule,
     load_relion_follower_scale_replay,
@@ -121,7 +87,6 @@ from relax.relion.relion_worker_scale import (
     validate_relion_follower_scale_replay,
     verify_relion_dispatch_schedule_oracle,
 )
-from recovar.utils.file_hash import sha256_file as _sha256_file
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1271,6 +1236,7 @@ def _relion_k1_start_tau2_and_data_vs_prior(
     """
 
     from recovar.utils.helpers import recovar_volume_to_relion
+
     from relax.vdam.init import relion_initial_tau2_and_data_vs_prior
 
     n4 = float(grid_size) ** 4
@@ -2001,7 +1967,10 @@ def _parse_args(argv=None):
     _assert_expected_repo_imports()
     from relax.symmetry import canonicalize_rotational_symmetry
 
-    parser = argparse.ArgumentParser(description="Run full EM refinement on synthetic data")
+    parser = argparse.ArgumentParser(
+        description="RELION-equivalent 3D auto-refine (relax refine, K=1) and 3D classification "
+        "(relax class3d, K>1). See docs/user_guide.md."
+    )
     input_poses._add_initial_pose_source_argument(parser)
     parser.add_argument(
         "--sym", default="C1", type=canonicalize_rotational_symmetry,
@@ -2730,10 +2699,25 @@ def _savez_deflate_fast(path, arrays):
                 np.lib.format.write_array(member, value, allow_pickle=True)
 
 
-def main():
-    # This script imports JAX before recovar, so recovar's cache environment must be applied to the live config.
+def _require_command_n_classes(command: str, n_classes: int) -> None:
+    """``relax refine`` runs K=1 auto-refine and ``relax class3d`` K>1 classification."""
+
+    if command == "refine" and n_classes != 1:
+        raise SystemExit(f"relax refine runs 3D auto-refine (K=1); use relax class3d --n_classes {n_classes}")
+    if command == "class3d" and n_classes < 2:
+        raise SystemExit("relax class3d needs --n_classes K with K >= 2; use relax refine for K=1")
+    if command not in {"refine", "class3d"}:
+        raise ValueError(f"unknown refinement command {command!r}")
+
+
+def main(command=None):
+    """Run a refinement from ``sys.argv``; ``command`` (``refine``/``class3d``) checks ``--n_classes``."""
+
+    # This module imports JAX before recovar, so recovar's cache environment must be applied to the live config.
     cache_directory = activate_recovar_compilation_cache()
     args = _parse_args()
+    if command is not None:
+        _require_command_n_classes(command, int(args.n_classes))
     if cache_directory:
         logger.info("Persistent JAX compilation cache: %s", cache_directory)
     if int(args.n_classes) == 1:
@@ -2917,8 +2901,9 @@ def main():
     else:
         timing_dir_path = None
 
-    if _XLA_RESERVE_LOG_LINE is not None:
-        logger.info("%s", _XLA_RESERVE_LOG_LINE)
+    # relax/__init__.py sized the XLA pool for the projector texture before the backend started.
+    if relax._XLA_RESERVE_LOG_LINE is not None:
+        logger.info("%s", relax._XLA_RESERVE_LOG_LINE)
 
     # Verify GPU
     devices = jax.devices()
@@ -4256,19 +4241,19 @@ def main():
     # ---- Run refinement ----
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.refinement_options import (
-        CheckpointOptions,
         AdaptiveOptions,
+        CheckpointOptions,
         EngineDebugOptions,
         ExpectedAccuracyOptions,
+        HalfOverlapOptions,
         KClassOptions,
         LocalSearchOptions,
-        HalfOverlapOptions,
         RefinementBatching,
         RefinementOptions,
-        SymmetryOptions,
         RefinementSchedule,
         RelionParityOptions,
         ReplayState,
+        SymmetryOptions,
     )
 
     experiment_datasets = [ds_half1, ds_half2]
@@ -4810,7 +4795,7 @@ def main():
                     offset_range_original_angstrom=float(args.offset_range) * float(ds.voxel_size),
                     offset_step_original_angstrom=float(args.offset_step) * float(ds.voxel_size),
                     perturbation_factor=float(args.perturb_factor),
-                    command_line=" ".join(sys.argv),
+                    command_line=" ".join(sys.orig_argv),
                 ),
                 input_star=os.path.join(args.data_dir, "particles.star"),
                 half_rows=[half1_idx, half2_idx],
@@ -5574,9 +5559,14 @@ def main():
     print("=" * 70)
 
 
-if __name__ == "__main__":
+def run_from_command_line(command):
+    """Run ``relax <command>`` (``refine`` or ``class3d``) on ``sys.argv``.
+
+    A requested diagnostic dump that stops the run early exits with status 0.
+    """
+
     try:
-        main()
+        main(command=command)
     except RuntimeError as exc:
         if (
             exc.__class__.__name__ == "SignificanceDumpComplete"

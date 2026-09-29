@@ -13,7 +13,6 @@ GUI-style Class3D defaults, evaluates both against GT, and writes artifacts that
 from __future__ import annotations
 
 import argparse
-from scripts.file_hash import sha256_file as _sha256_file
 import json
 import math
 import os
@@ -23,6 +22,8 @@ import subprocess
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
+
+from scripts.file_hash import sha256_file as _sha256_file
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RIBO_PDB_DIR = Path("/home/mg6942/mytigress/cryobench2/Ribosembly/pdbs")
@@ -2142,7 +2143,7 @@ mkdir -p "${{RELAX_INTERMEDIATES_DIR}}"
 START_EPOCH="$(date +%s)"
 start_engine_gpu_monitor "${{CASE_ROOT}}/recovar_gpu_monitor.csv"
 set +e
-"${{PIXI_PY}}" -m scripts.run_full_refinement \\
+"${{PIXI_PY}}" -m relax.commands.{"refine" if case.n_classes == 1 else "class3d"} \\
   --data_dir "${{DATA_DIR}}" \\
   --output "${{RELAX_DIR}}" \\
   --max_iter {case.max_iter} \\

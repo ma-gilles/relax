@@ -8,9 +8,9 @@ entirely by AI coding tools, with a lot of human supervision.
 | RELION job | relax entry point |
 | --- | --- |
 | 3D initial model (VDAM), K=1 and K>1 | `relax initial_model --K K` |
-| 3D auto-refine (Refine3D), K=1 | `python -m scripts.run_full_refinement` |
-| 3D classification (Class3D), K>1 | `python -m scripts.run_full_refinement --n_classes K` |
-| Subtomogram auto-refine (RELION 5 tilt series), K=1 | `python -m scripts.run_full_refinement` on a RELION 5 particles.star |
+| 3D auto-refine (Refine3D), K=1 | `relax refine` |
+| 3D classification (Class3D), K>1 | `relax class3d --n_classes K` |
+| Subtomogram auto-refine (RELION 5 tilt series), K=1 | `relax refine` on a RELION 5 particles.star |
 
 - Single GPU (CUDA). Handles both single-particle and tilt-series data. 
 - It reproduces RELION's results on a number of datasets; see the
@@ -27,6 +27,8 @@ pixi install
 pixi run build-cuda
 RELION_SRC_DIR=/path/to/relion/src pixi run build-relion-bind
 ```
+
+The [user guide](docs/user_guide.md) has the required inputs and one runnable example per job.
 
 ## Commands
 

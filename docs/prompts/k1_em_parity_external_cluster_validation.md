@@ -159,7 +159,7 @@ candidate-versus-GT FSC-AUC with the same mask and shell convention.
 
 ## B. K=1 EM-path validation when a RELION fixture is available
 
-This requires a data directory compatible with `scripts.run_full_refinement`
+This requires a data directory compatible with `relax refine`
 and the corresponding RELION `run_it000_data.star`, optimiser, initial
 reference, masks/CTF metadata, and fixed half sets. Preserve the dataset's
 RELION seed, particle diameter, optics groups, sampling, offset range/step,
@@ -224,7 +224,7 @@ trajectory. Save per-iteration intermediates and parity dumps. The command
 shape is:
 
 ```bash
-pixi run python -m scripts.run_full_refinement \
+pixi run relax refine \
   --data_dir /absolute/path/to/em_fixture/data \
   --output /absolute/scratch/path/to/output \
   --max_iter 3 \

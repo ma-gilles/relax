@@ -21,7 +21,7 @@ from pathlib import Path
 
 # This is an EM entry point, so it opts in to recovar's EM-scoped XLA defaults
 # (currently --xla_gpu_autotune_level=0; see recovar/jax_config.py and
-# scripts/run_full_refinement.py). It must be set before the first import that
+# relax/refinement/full_refinement.py). It must be set before the first import that
 # reaches jax, which recovar.jax_config performs, and with `setdefault` so an
 # explicit RECOVAR_EM_XLA_DEFAULTS=0 in the environment still wins.
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
@@ -1446,10 +1446,12 @@ def main():
     import jax.numpy as jnp
     import jaxlib
     import starfile
-
     from recovar import utils
     from recovar.core import fourier_transform_utils as ftu
     from recovar.data_io.cryoem_dataset import load_dataset
+    from recovar.reconstruction import regularization
+    from recovar.utils import helpers
+
     from relax.helpers.map_io import write_map_from_ft
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
@@ -1469,8 +1471,6 @@ def main():
         read_relion_sampling_metadata,
         read_relion_sampling_symmetry,
     )
-    from recovar.reconstruction import regularization
-    from recovar.utils import helpers
 
     def _rotation_matrices_from_eulers_deg(eulers_deg):
         return utils.R_from_relion(np.asarray(eulers_deg, dtype=np.float64))
@@ -1745,7 +1745,7 @@ def main():
     # to RFLOAT (double, in our ACC_DOUBLE_PRECISION oracle build) as part of
     # the read itself, and every downstream step -- including the FFT that
     # builds Projector::data -- runs at that same double precision (see
-    # scripts/run_full_refinement.py's matching fix and
+    # relax/refinement/full_refinement.py's matching fix and
     # docs/math/relion_parity_agent_notes.md's 2026-08-27 "round 3" entry for
     # the RELION source citations). Widen real-space inputs to float64 *before*
     # ftu.get_dft3: casting an already-computed complex64 result cannot recover
@@ -1839,7 +1839,7 @@ def main():
             f"{optimizer_random_seed} (production K=1 arithmetic)"
         )
     # The preserved RELION order runs the production K=1 arithmetic, which scores
-    # from RELION's CUDA image preprocessing (as run_full_refinement's auto does).
+    # from RELION's CUDA image preprocessing (as full_refinement's auto does).
     if args.image_fourier_backend == "auto":
         args.image_fourier_backend = (
             "relion_cuda"
@@ -1849,7 +1849,7 @@ def main():
             )
             else "host_numpy"
         )
-    # Optics groups on several image shapes load one dataset per shape (run_full_refinement's rule).
+    # Optics groups on several image shapes load one dataset per shape (full_refinement's rule).
     shape_class_rows = optics_shape_class_rows(args.data_star)
     if shape_class_rows is None:
         ds = load_dataset(

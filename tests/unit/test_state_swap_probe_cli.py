@@ -222,7 +222,7 @@ def test_state_swap_application_telemetry_fails_closed(applied):
 
 
 def test_full_runner_propagates_and_serializes_state_swap_probe():
-    tree = ast.parse((REPO_ROOT / "scripts/run_full_refinement.py").read_text())
+    tree = ast.parse((REPO_ROOT / "relax/refinement/full_refinement.py").read_text())
     calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
     called_names = {
         node.func.id
@@ -258,7 +258,7 @@ def test_full_runner_propagates_and_serializes_state_swap_probe():
     assert isinstance(state_swap_keywords[0].value, ast.Name)
     assert state_swap_keywords[0].value.id == "state_swap_probe"
 
-    source = (REPO_ROOT / "scripts/run_full_refinement.py").read_text()
+    source = (REPO_ROOT / "relax/refinement/full_refinement.py").read_text()
     for field in (
         "state_swap_probe_target_relion_iteration",
         "state_swap_probe_loop_index",

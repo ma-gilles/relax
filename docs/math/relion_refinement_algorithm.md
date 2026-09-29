@@ -3,12 +3,12 @@
 ## Start-up noise
 
 Every refinement starts from RELION's start-up noise estimate from the images;
-`scripts/run_full_refinement.py` has no other estimator. It computes only the
+`relax/refinement/full_refinement.py` has no other estimator. It computes only the
 initial noise from the particles: up to 1000 particles per optics group and
 rounded-radius half-spectrum shell power. K1 takes the stable subset-1 then
 subset-2 source order of its half sets. Class3D (K>1) splits no halves, so
 RELION's `sorted_idx` is the micrograph-sorted input order itself
-([`_relion_class3d_initial_noise_layout`](../../scripts/run_full_refinement.py),
+([`_relion_class3d_initial_noise_layout`](../../relax/refinement/full_refinement.py),
 `ml_optimiser.cpp:2804-2808`, `exp_model.cpp:900-901`). It does not load oracle
 tau2, poses, priors or normalization corrections. On the K4 50k/256 and 5k/128
 fixtures the Class3D spectrum agrees with RELION's `run_it000_model.star` to its
@@ -22,7 +22,7 @@ loads RELION's `run_it000` model noise. A `--perturb_replay_relion_dir` replay
 starts from the estimate and injects RELION's model noise from its first loaded
 state on. K1 without half sets and multiple optics groups are rejected.
 
-[`_compute_relion_startup_noise`](../../scripts/run_full_refinement.py)
+[`_compute_relion_startup_noise`](../../relax/refinement/full_refinement.py)
 uses the host float64 estimate, scales its native sigma2 by the image side
 length to the fourth power, and supplies a float32 pixel-noise array to the
 controller (float64 for double-scoring diagnostics). Tests in
@@ -76,7 +76,7 @@ The pieces:
 - No RELION output: without `--relion_optimiser`, `--relion_init_dir`,
   `--perturb_replay_relion_dir` or `--relion_half_sets`, a Class3D run does not
   pick up a RELION optimiser STAR found next to the data
-  ([`_find_relion_optimiser_star`](../../scripts/run_full_refinement.py)). The
+  ([`_find_relion_optimiser_star`](../../relax/refinement/full_refinement.py)). The
   mask, `ini_high` and `max_significants` then come from `--particle_diameter_ang`,
   `--apply-initial-lowpass --init_resolution` and relion_refine's `--maxsig -1`.
 - Fixed schedule: Class3D keeps `--healpix_order` and runs every `--iter`
@@ -162,7 +162,7 @@ A fresh K1 start builds RELION's iteration-0 model from `relion_refine`'s own
 inputs rather than from a RELION `run_it000` output. This is the default when
 the run is given no RELION output (no `--relion_half_sets`, `--relion_init_dir`,
 replay directory or frozen boundary):
-[`_resolve_standalone_k1_start`](../../scripts/run_full_refinement.py) turns on
+[`_resolve_standalone_k1_start`](../../relax/refinement/full_refinement.py) turns on
 `--relion-half-sets-from-input`. The mt19937 order and RELION's start-up noise
 are the defaults of every run. A run given RELION output is a debug start and
 must supply `--relion_half_sets`; relax has no other K1 half split.
@@ -182,7 +182,7 @@ must supply `--relion_half_sets`; relax has no other K1 half split.
   half set's particle count and the initial noise.
   [`relion_initial_tau2_and_data_vs_prior`](../../relax/vdam/init.py) implements
   one class and is shared with the InitialModel start;
-  [`_relion_k1_start_tau2_and_data_vs_prior`](../../scripts/run_full_refinement.py)
+  [`_relion_k1_start_tau2_and_data_vs_prior`](../../relax/refinement/full_refinement.py)
   applies it to every fresh K1 start that does not load a noise or tau2 state
   (frozen boundary, `--init_noise_from_npz`, `--relion_init_dir`). The start-up `data_vs_prior` selects the iteration-1
   scale-correction shells (`data_vs_prior > 3`), which matters for starts
@@ -572,7 +572,7 @@ The files carry RELION's values where relax's internal frame differs: spectra an
 sum to the class fraction (ml_optimiser.cpp:5325; relax scores with per-class conditionals
 and a separate class prior), and each class's own expected accuracy in `model_classes`,
 zero before the first estimate as in `MlModel` (ml_model.cpp:68).
-`run_full_refinement.py --write-iteration-every N` (default 1) sets the frequency and
+`relax refine --write-iteration-every N` (default 1) sets the frequency and
 `--keep-iterations N` (default 0, keep all, as RELION) keeps only the newest N iterations'
 files. A background thread writes each iteration's files while the next one runs.
 

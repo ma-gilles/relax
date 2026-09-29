@@ -3,15 +3,15 @@ import inspect
 
 import pytest
 
-from relax.refinement.iteration_loop import refine_single_volume
-from relax.refinement.refinement_options import RelionParityOptions, ReplayState
 from relax.diagnostics.relion_replay import (
     _complete_relion_numbered_state_iterations,
     _resolve_final_replay_source_iteration,
 )
-from scripts.run_full_refinement import (
+from relax.refinement.full_refinement import (
     _select_final_replay_override,
 )
+from relax.refinement.iteration_loop import refine_single_volume
+from relax.refinement.refinement_options import RelionParityOptions, ReplayState
 
 
 def _source_override():

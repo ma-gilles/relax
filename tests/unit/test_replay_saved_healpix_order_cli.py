@@ -10,7 +10,7 @@ sized pass-1 images at 28 instead of 56 pixels.
 
 import pytest
 
-from scripts import run_full_refinement
+from relax.refinement import full_refinement as run_full_refinement
 
 pytestmark = pytest.mark.unit
 

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from scripts import run_full_refinement as driver
+from relax.refinement import full_refinement as driver
 
 pytestmark = pytest.mark.unit
 

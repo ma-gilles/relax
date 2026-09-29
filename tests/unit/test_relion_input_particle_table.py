@@ -93,7 +93,7 @@ def test_input_random_subsets_are_kept_and_validated():
 
 @pytest.mark.parametrize("case", sorted(RELION_START_CASES))
 def test_rebuilt_table_reproduces_relion_run_it000(case):
-    from scripts.run_full_refinement import _relion_fresh_initial_noise_layout
+    from relax.refinement.full_refinement import _relion_fresh_initial_noise_layout
 
     input_star, target_star, optimiser_star = _case_paths(case)
     particles = starfile.read(input_star, always_dict=True)["particles"]
@@ -114,7 +114,7 @@ def test_rebuilt_table_reproduces_relion_run_it000(case):
 def test_from_input_flag_rejects_combinations_relion_would_not_build():
     from types import SimpleNamespace
 
-    from scripts.run_full_refinement import _validate_relion_half_sets_from_input
+    from relax.refinement.full_refinement import _validate_relion_half_sets_from_input
 
     base = dict(relion_half_sets_from_input=True, relion_half_sets=None, n_classes=1, seed=11, frozen_boundary_dir=None)
     _validate_relion_half_sets_from_input(SimpleNamespace(**base))
@@ -131,7 +131,7 @@ def test_fresh_k1_start_without_relion_output_resolves_to_standalone():
     """A fresh K=1 start rebuilds RELION's particle table; debug starts supply their own half sets."""
     from types import SimpleNamespace
 
-    from scripts.run_full_refinement import _resolve_standalone_k1_start
+    from relax.refinement.full_refinement import _resolve_standalone_k1_start
 
     def resolve(**change):
         args = SimpleNamespace(
@@ -167,7 +167,7 @@ def test_fresh_k1_start_without_relion_output_resolves_to_standalone():
 def test_from_input_flag_does_not_discover_relion_optimiser_outputs(tmp_path):
     from types import SimpleNamespace
 
-    from scripts.run_full_refinement import _find_relion_optimiser_star
+    from relax.refinement.full_refinement import _find_relion_optimiser_star
 
     discovered = tmp_path / "relion_ref_os0" / "run_optimiser.star"
     discovered.parent.mkdir()
@@ -184,7 +184,7 @@ def test_from_input_flag_does_not_discover_relion_optimiser_outputs(tmp_path):
 def test_class3d_without_relion_state_does_not_discover_relion_optimiser_outputs(tmp_path):
     from types import SimpleNamespace
 
-    from scripts.run_full_refinement import _find_relion_optimiser_star
+    from relax.refinement.full_refinement import _find_relion_optimiser_star
 
     discovered = tmp_path / "relion_pdb_k4_os0_ref" / "run_it015_optimiser.star"
     discovered.parent.mkdir()
@@ -200,7 +200,7 @@ def test_class3d_without_relion_state_does_not_discover_relion_optimiser_outputs
 
 
 def test_written_table_round_trips_input_values(tmp_path):
-    from scripts.run_full_refinement import _write_relion_start_particle_table
+    from relax.refinement.full_refinement import _write_relion_start_particle_table
 
     input_star, _target_star, optimiser_star = _case_paths("k1_5k_128")
     our_star = starfile.read(input_star, always_dict=True)

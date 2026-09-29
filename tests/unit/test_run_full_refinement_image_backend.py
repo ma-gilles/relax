@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-RUNNER = Path(__file__).resolve().parents[2] / "scripts" / "run_full_refinement.py"
+RUNNER = Path(__file__).resolve().parents[2] / "relax" / "refinement" / "full_refinement.py"
 
 
 def _runner_tree() -> ast.Module:

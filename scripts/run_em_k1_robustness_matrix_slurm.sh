@@ -1388,7 +1388,7 @@ cat > "\${CASE_ROOT}/paired_gpu_uuid.json" <<JSON
 JSON
 START_EPOCH="\$(date +%s)"
 set +e
-"\${PIXI_PY}" -m scripts.run_full_refinement \\
+"\${PIXI_PY}" -m relax.commands.refine \\
   --data_dir "\${DATA_DIR}" \\
   --output "\${RELAX_DIR}" \\
   --max_iter "\${RELAX_MAX_ITER}" \\

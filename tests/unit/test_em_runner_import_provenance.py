@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts import run_full_refinement
+from relax.refinement import full_refinement as run_full_refinement
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ACTIVE_RUNNERS = (
@@ -24,7 +24,8 @@ def test_active_em_runners_use_module_invocations():
         assert '}" "${REPO_ROOT}/scripts/' not in source, runner
 
     combined = "\n".join(runner.read_text() for runner in ACTIVE_RUNNERS)
-    assert "-m scripts.run_full_refinement" in combined
+    assert "-m relax.commands.refine" in combined
+    assert "-m relax.commands.class3d" in combined
     assert "RECOVAR_EXPECTED_REPO_ROOT" in combined
 
 

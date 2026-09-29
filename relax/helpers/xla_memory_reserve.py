@@ -14,14 +14,14 @@ JAX backend initialises: the texture of the largest local-search slab
 
 ``import recovar`` initialises the backend (``recovar.jax_config`` queries the
 devices), and ``import relax`` imports recovar, so the reserve has to run before
-either. Entry points call :func:`reserve_projector_texture_memory` with the
-model box (or :func:`reserve_for_reference_maps` with the reference maps) before
-their first ``jax``, ``recovar`` or ``relax`` import. This module therefore
-imports only the standard library (and ``mrcfile`` inside a function), so an
-entry point can load it by file path without starting the package:
-:func:`scripts/run_full_refinement.py <_reserve_projector_texture_memory>` does
-exactly that. Called after the backend has started, the reserve does nothing
-and says so in its record.
+either. ``relax/__init__.py`` (``_reserve_refinement_projector_memory``) calls
+:func:`reserve_for_reference_maps` for ``relax refine`` and ``relax class3d``
+before it imports recovar; other entry points call
+:func:`reserve_projector_texture_memory` with the model box before their first
+``jax``, ``recovar`` or ``relax`` import. This module therefore imports only the
+standard library (and ``mrcfile`` inside a function), so it can run while the
+package is still initialising, or be loaded by file path. Called after the
+backend has started, the reserve does nothing and says so in its record.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ MEM_FRACTION_ENV = "XLA_PYTHON_CLIENT_MEM_FRACTION"
 _CONTEXT_AND_SCRATCH_BYTES = 3 * 1024**3
 # Never hand XLA less than this share of the card.
 _MIN_FRACTION = 0.5
-# Padding of relax's projectors (run_full_refinement's projection_padding_factor, RELION's --pad 2).
+# Padding of relax's projectors (full_refinement's projection_padding_factor, RELION's --pad 2).
 PROJECTION_PADDING_FACTOR = 2
 
 

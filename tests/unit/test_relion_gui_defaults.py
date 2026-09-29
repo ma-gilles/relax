@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts import run_full_refinement as driver
+from relax.refinement import full_refinement as driver
 
 pytestmark = pytest.mark.unit
 

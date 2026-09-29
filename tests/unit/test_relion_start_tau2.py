@@ -6,8 +6,8 @@ import starfile
 from helpers.em_fixtures import fixture_file
 from helpers.float_compare import assert_matches
 
+from relax.refinement import full_refinement as run_full_refinement
 from relax.vdam.init import relion_initial_tau2_and_data_vs_prior
-from scripts import run_full_refinement
 
 pytestmark = pytest.mark.unit
 

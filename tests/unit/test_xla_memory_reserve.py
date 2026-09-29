@@ -131,9 +131,11 @@ def _raw_mrc_header(path, box):
     path.write_bytes(bytes(header))
 
 
-def test_refine_driver_reserves_before_the_jax_backend_starts(tmp_path):
-    """The refine entry point loads the reserve by path and applies it before its jax,
-    recovar and relax imports: a 640-pixel reference lowers the fraction below 0.90."""
+@pytest.mark.parametrize("launch", ["console", "module"])
+def test_refine_command_reserves_before_the_jax_backend_starts(tmp_path, launch):
+    """``relax refine`` (console script or ``python -m relax.commands.refine``) applies the reserve
+    in ``relax/__init__.py``, before recovar starts the backend: a 640-pixel reference lowers the
+    fraction below 0.90."""
 
     data_dir = tmp_path / "inputs"
     data_dir.mkdir()
@@ -143,19 +145,18 @@ def test_refine_driver_reserves_before_the_jax_backend_starts(tmp_path):
     smi = fake_bin / "nvidia-smi"
     smi.write_text("#!/bin/sh\necho '0, GPU-fake, 81559'\n")
     smi.chmod(0o755)
-    driver = Path(__file__).resolve().parents[2] / "scripts" / "run_full_refinement.py"
-    code = (
-        "import importlib.util, os, sys\n"
-        f"sys.argv = [{str(driver)!r}, '--data_dir', {str(data_dir)!r}]\n"
-        f"spec = importlib.util.spec_from_file_location('refine_driver', {str(driver)!r})\n"
-        "module = importlib.util.module_from_spec(spec)\n"
-        "spec.loader.exec_module(module)\n"
-        "print(os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'])\n"
-        "print(module._XLA_RESERVE_LOG_LINE)\n"
-    )
+    report = "import os, relax; print(os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION']); print(relax._XLA_RESERVE_LOG_LINE)"
+    if launch == "console":
+        command = [sys.executable, "-c", f"import sys; sys.argv = ['relax', 'refine', '--data_dir', {str(data_dir)!r}]; {report}"]
+    else:
+        # ``python -m relax.commands.refine`` names the command in sys.orig_argv; this child
+        # imports the package the way that launch does, with the command's arguments in argv.
+        launcher = tmp_path / "launch_module.py"
+        launcher.write_text(f"import sys\nsys.orig_argv = [sys.executable, '-m', 'relax.commands.refine']\n{report}\n")
+        command = [sys.executable, str(launcher), "--data_dir", str(data_dir)]
     env = {k: v for k, v in os.environ.items() if k != reserve.MEM_FRACTION_ENV}
     env.update(PATH=f"{fake_bin}:{env.get('PATH', '')}", CUDA_VISIBLE_DEVICES="0", JAX_PLATFORMS="cpu")
-    result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=600)
+    result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=600)
     assert result.returncode == 0, result.stderr[-2000:]
     fraction_line, log_line = result.stdout.strip().splitlines()[-2:]
     expected = reserve.xla_memory_fraction(640, 2, H100_TOTAL_BYTES)

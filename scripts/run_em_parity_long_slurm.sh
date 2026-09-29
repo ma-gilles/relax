@@ -2,7 +2,7 @@
 # EM-scoped long parity Slurm launcher.
 #
 # Runs ONLY the EM-long parity regression tests:
-#   - K=1 256² 50k run_full_refinement parity against RELION auto-refine
+#   - K=1 256² 50k relax refine parity against RELION auto-refine
 #   - K=1 256² 50k native InitialModel quality against a
 #     RELION --grad --denovo_3dref reference
 #   - K=4 256² 50k K-class parity
@@ -39,7 +39,7 @@ env -u PYTHONPATH PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES= JAX_PLATFORMS=cpu "${
   k1_50k256_data k1_50k256_relion_os0 k1_50k256_relion_initialmodel_it008 k4_50k256_data k4_50k256_relion_os0
 
 # Build the native libraries once, here, and point every job at them: the custom CUDA
-# libraries (recovar and relax) and the RELION binding that run_full_refinement.py imports
+# libraries (recovar and relax) and the RELION binding that relax refine imports
 # for the RELION half-set ordering. A per-job build would hold a GPU allocation while
 # waiting on a build lock and could give the jobs of one tier different binaries; the
 # digests are in ${NATIVES}/NATIVE.json. RELAX_TEST_NATIVES_DIR reuses an existing build.
