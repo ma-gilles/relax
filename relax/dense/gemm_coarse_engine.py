@@ -96,7 +96,10 @@ def _memory_tiles(
     state: DenseGemmPreparedState, *, n_score: int, n_recon: int,
     n_rect: int, n_groups: int, bp_size: int,
 ):
-    """Conservative bounded workspace policy, including statistics and priors."""
+    """Conservative bounded workspace policy, including statistics and priors.
+
+    See ``docs/math/dense_gemm_experiment.md#buffer-ownership-and-measurement-boundaries``.
+    """
 
     from relax.sparse_pass2.resident_operands import resident_half_operand_bytes
     from relax.sparse_pass2.resident_statistics import posterior_translation_bucket_scratch_bytes
@@ -131,7 +134,7 @@ def _memory_tiles(
     n_rotation_tiles = (r + 3071) // 3072
     q = (r + n_rotation_tiles - 1) // n_rotation_tiles
     u = t
-    b = min(int(state.dataset.n_units), 128)
+    b = min(int(state.dataset.n_units), 256)
     while True:
         # Keep statistics rows bounded even when the score/adjoint Q is large.
         # Choose a divisor so every Q tile uses the same native row shape.

@@ -167,6 +167,14 @@ support remain full; an exactly zero float32 posterior may skip pixel work.
 
 ## Buffer ownership and measurement boundaries
 
+The table below describes the experimental trajectory adapter. The production
+full-grid adapter in [`_memory_tiles`](../../relax/dense/gemm_coarse_engine.py)
+starts with at most 256 images per batch, up to 3,072 rotations per tile and all
+translations per tile. It reduces the translation, image and rotation tiles as
+needed until fixed storage plus twice its estimated tile workspace fits 60% of
+available device memory. Its reference and volume accumulators remain on device
+across image batches; each EM iteration creates its own adapter invocation.
+
 | Storage | Extent | Lifetime |
 | --- | --- | --- |
 | Score and reconstruction images/weights | `B*Ps`, `B*Pr` | Resident batch |
