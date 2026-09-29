@@ -443,6 +443,116 @@ def _score_direct_kclass_dense(
     )
 
 
+def _score_adaptive_kclass_dense(
+    half: DenseHalfData,
+    sampling: DenseSamplingSpec,
+    priors: DensePriorSpec,
+    batching: DenseBatchPolicy,
+    variant: DenseVariantPolicy,
+    execution: DenseExecutionPolicy,
+    em_kwargs,
+    symmetry,
+):
+    """Run the ordinary adaptive K-class engine and return its trial grids."""
+
+    adaptive_os = int(sampling.state.adaptive_oversampling)
+    coarse_current_size = variant.firstiter_coarse_current_size
+    fine_current_size = variant.firstiter_fine_current_size
+    if adaptive_os <= 0:
+        coarse_current_size = sampling.cs_for_engine
+        fine_current_size = sampling.cs_for_engine
+        logger.info(
+            "RELION K-class scale groups at oversampling 0: routing the single pass through the "
+            "adaptive engine (current_size=%s)",
+            sampling.cs_for_engine,
+        )
+    pass2_grids = _adaptive_pass2_grids(
+        sampling.effective_rotations,
+        sampling.current_translations,
+        sampling.base_translations,
+        healpix_order=sampling.current_healpix_order,
+        adaptive_oversampling=adaptive_os,
+        translation_step=sampling.state.translation_step,
+        random_perturbation=sampling.random_perturbation,
+        coarse_rotation_ids=sampling.coarse_rotation_ids,
+        **({"symmetry": symmetry} if symmetry != "C1" else {}),
+    )
+    adaptive_em_kwargs = dict(em_kwargs)
+    n_classes = (
+        int(np.asarray(half.means_k).shape[0])
+        if np.asarray(half.means_k).ndim >= 2
+        else 1
+    )
+    grid_batch_plan = _plan_kclass_adaptive_grid_batch_sizes(
+        coarse_rotations=pass2_grids.coarse_rotations,
+        coarse_translations=pass2_grids.coarse_translations,
+        fine_rotations=pass2_grids.fine_rotations,
+        fine_translations=pass2_grids.fine_translations,
+        n_classes=n_classes,
+        image_shape=half.experiment_dataset.image_shape,
+        coarse_current_size=coarse_current_size,
+        fine_current_size=fine_current_size,
+        safe_batch_sizes=batching.safe_batch_sizes,
+        significance_safe_batch_sizes=batching.significance_safe_batch_sizes,
+    )
+    adaptive_em_kwargs["image_batch_size"] = grid_batch_plan.pass2_image_batch_size
+    adaptive_em_kwargs["rotation_block_size"] = grid_batch_plan.pass2_rotation_block_size
+    logger.info(
+        "RELION adaptive K-class grid batch sizing: "
+        "coarse image_batch_size=%d rotation_block_size=%d; "
+        "fine image_batch_size=%d rotation_block_size=%d",
+        grid_batch_plan.significance_image_batch_size,
+        grid_batch_plan.significance_rotation_block_size,
+        adaptive_em_kwargs["image_batch_size"],
+        adaptive_em_kwargs["rotation_block_size"],
+    )
+    sparse_pass2 = _sparse_pass2_selected("RELAX_K_CLASS_DENSE_PASS2")
+    if symmetry != "C1" and not sparse_pass2:
+        raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
+    adaptive_em_kwargs["sparse_pass2"] = sparse_pass2
+    # Class3D pass 1 scores RELION's exact coarse operands; a normalized-CC
+    # pass keeps the generic scorer, which the exact path leaves dormant.
+    adaptive_em_kwargs["relion_exact_coarse"] = uses_relion_cuda_image_preprocessing(
+        half.experiment_dataset
+    )
+    logger.info(
+        "RELION adaptive K-class routing through run_dense_k_class_em_adaptive "
+        "(oversampling=%d, pass2_backend=%s, fine_mstep_prune=%s)",
+        adaptive_os,
+        "sparse" if sparse_pass2 else "dense",
+        bool(sparse_pass2),
+    )
+    common_kwargs = _adaptive_engine_common_kwargs(
+        pass2_grids,
+        priors,
+        batching,
+        sampling,
+        execution,
+        sparse_pass2=sparse_pass2,
+    )
+    result = run_dense_k_class_em_adaptive(
+        half.experiment_dataset,
+        half.means_k,
+        half.mean_variance,
+        half.noise_variance_k,
+        pass2_grids.coarse_rotations,
+        pass2_grids.coarse_translations,
+        pass2_grids.fine_rotations,
+        pass2_grids.fine_translations,
+        pass2_grids.rotation_parent_map,
+        pass2_grids.translation_parent_map,
+        sampling.disc_type,
+        significance_image_batch_size=grid_batch_plan.significance_image_batch_size,
+        significance_rotation_block_size=grid_batch_plan.significance_rotation_block_size,
+        coarse_current_size=coarse_current_size,
+        fine_current_size=fine_current_size,
+        oversampling_order=adaptive_os,
+        **common_kwargs,
+        **adaptive_em_kwargs,
+    )
+    return result, pass2_grids
+
+
 def _score_half_dense_one_shape(
     half: DenseHalfData,
     sampling: DenseSamplingSpec,
@@ -643,106 +753,20 @@ def _score_half_dense_one_shape(
             )
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
         elif _dense_uses_adaptive_engine(sampling.state.adaptive_oversampling, half.group_ids_k):
-            # RELION keeps its two-pass adaptive expectation whenever
-            # adaptive_oversampling > 0, with coarse_size clamped to current_size
-            # (updateImageSizeAndResolutionPointers); a coarse size equal to the
-            # box therefore means pass 1 at the current size, not a single
-            # non-oversampled pass. Scale groups at oversampling 0 take the
-            # adaptive engine's single pass on the current grid so group XA/AA and
-            # norm corrections are accumulated (the strict follower-scale topology
-            # requires them at every numbered M-step).
-            adaptive_os_local = int(sampling.state.adaptive_oversampling)
-            if adaptive_os_local <= 0:
-                firstiter_coarse_current_size = sampling.cs_for_engine
-                firstiter_fine_current_size = sampling.cs_for_engine
-                logger.info(
-                    "RELION K-class scale groups at oversampling 0: routing the single pass through the "
-                    "adaptive engine (current_size=%s)",
-                    sampling.cs_for_engine,
-                )
-            pass2_grids = _adaptive_pass2_grids(
-                sampling.effective_rotations,
-                sampling.current_translations,
-                sampling.base_translations,
-                healpix_order=sampling.current_healpix_order,
-                adaptive_oversampling=adaptive_os_local,
-                translation_step=sampling.state.translation_step,
-                random_perturbation=sampling.random_perturbation,
-                coarse_rotation_ids=sampling.coarse_rotation_ids,
-                **({"symmetry": symmetry} if symmetry != "C1" else {}),
+            k_class_result, pass2_grids = _score_adaptive_kclass_dense(
+                half,
+                sampling,
+                priors,
+                batching,
+                variant,
+                execution,
+                em_kwargs,
+                symmetry,
             )
+            adaptive_os_local = int(sampling.state.adaptive_oversampling)
             rot_pmap_for_collapse = pass2_grids.rotation_parent_map
             trans_pmap_for_collapse = pass2_grids.translation_parent_map
             n_trans_fine_for_collapse = pass2_grids.n_fine_translations
-            adaptive_em_kwargs = dict(em_kwargs)
-            n_classes_local = int(np.asarray(half.means_k).shape[0]) if np.asarray(half.means_k).ndim >= 2 else 1
-            grid_batch_plan = _plan_kclass_adaptive_grid_batch_sizes(
-                coarse_rotations=pass2_grids.coarse_rotations,
-                coarse_translations=pass2_grids.coarse_translations,
-                fine_rotations=pass2_grids.fine_rotations,
-                fine_translations=pass2_grids.fine_translations,
-                n_classes=n_classes_local,
-                image_shape=half.experiment_dataset.image_shape,
-                coarse_current_size=firstiter_coarse_current_size,
-                fine_current_size=firstiter_fine_current_size,
-                safe_batch_sizes=batching.safe_batch_sizes,
-                significance_safe_batch_sizes=batching.significance_safe_batch_sizes,
-            )
-            adaptive_em_kwargs["image_batch_size"] = grid_batch_plan.pass2_image_batch_size
-            adaptive_em_kwargs["rotation_block_size"] = grid_batch_plan.pass2_rotation_block_size
-            significance_image_batch_size_override = grid_batch_plan.significance_image_batch_size
-            significance_rotation_block_size_override = grid_batch_plan.significance_rotation_block_size
-            logger.info(
-                "RELION adaptive K-class grid batch sizing: "
-                "coarse image_batch_size=%d rotation_block_size=%d; "
-                "fine image_batch_size=%d rotation_block_size=%d",
-                significance_image_batch_size_override,
-                significance_rotation_block_size_override,
-                adaptive_em_kwargs["image_batch_size"],
-                adaptive_em_kwargs["rotation_block_size"],
-            )
-            kclass_sparse_pass2 = _sparse_pass2_selected("RELAX_K_CLASS_DENSE_PASS2")
-            if symmetry != "C1" and not kclass_sparse_pass2:
-                raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
-            adaptive_em_kwargs["sparse_pass2"] = kclass_sparse_pass2
-            # Class3D pass 1 scores RELION's exact coarse operands; a normalized-CC
-            # pass keeps the generic scorer, which the exact path leaves dormant.
-            adaptive_em_kwargs["relion_exact_coarse"] = uses_relion_cuda_image_preprocessing(half.experiment_dataset)
-            logger.info(
-                "RELION adaptive K-class routing through run_dense_k_class_em_adaptive "
-                "(oversampling=%d, pass2_backend=%s, fine_mstep_prune=%s)",
-                adaptive_os_local,
-                "sparse" if kclass_sparse_pass2 else "dense",
-                bool(kclass_sparse_pass2),
-            )
-            common_kwargs = _adaptive_engine_common_kwargs(
-                pass2_grids,
-                priors,
-                batching,
-                sampling,
-                execution,
-                sparse_pass2=kclass_sparse_pass2,
-            )
-            k_class_result = run_dense_k_class_em_adaptive(
-                half.experiment_dataset,
-                half.means_k,
-                half.mean_variance,
-                half.noise_variance_k,
-                pass2_grids.coarse_rotations,
-                pass2_grids.coarse_translations,
-                pass2_grids.fine_rotations,
-                pass2_grids.fine_translations,
-                rot_pmap_for_collapse,
-                trans_pmap_for_collapse,
-                sampling.disc_type,
-                significance_image_batch_size=significance_image_batch_size_override,
-                significance_rotation_block_size=significance_rotation_block_size_override,
-                coarse_current_size=firstiter_coarse_current_size,
-                fine_current_size=firstiter_fine_current_size,
-                oversampling_order=int(adaptive_os_local),
-                **common_kwargs,
-                **adaptive_em_kwargs,
-            )
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
         else:
             k_class_result = _score_direct_kclass_dense(

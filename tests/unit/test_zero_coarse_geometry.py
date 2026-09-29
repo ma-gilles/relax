@@ -127,6 +127,50 @@ def test_direct_kclass_dense_route_is_an_explicit_five_input_variant():
     ]
 
 
+def test_adaptive_kclass_dense_route_keeps_owner_inputs_visible():
+    scorer = tree("half_scoring.py")
+    helper = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_adaptive_kclass_dense"
+    )
+    assert [argument.arg for argument in helper.args.args] == [
+        "half",
+        "sampling",
+        "priors",
+        "batching",
+        "variant",
+        "execution",
+        "em_kwargs",
+        "symmetry",
+    ]
+    dispatcher = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_half_dense_one_shape"
+    )
+    calls = [
+        node
+        for node in ast.walk(dispatcher)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_score_adaptive_kclass_dense"
+    ]
+    assert len(calls) == 1
+    assert [argument.id for argument in calls[0].args] == [
+        "half",
+        "sampling",
+        "priors",
+        "batching",
+        "variant",
+        "execution",
+        "em_kwargs",
+        "symmetry",
+    ]
+
+
 @pytest.mark.parametrize(
     "os,local,k,mode,hard,double,expected",
     [
