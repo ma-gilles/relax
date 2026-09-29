@@ -221,134 +221,179 @@ def validate_resume_snapshot(snapshot: IterationSnapshot, *, init_relion_iterati
         raise ValueError("cannot continue from the run files: " + "; ".join(problems))
 
 
-@dataclass(frozen=True, kw_only=True)
-class SnapshotRunSpec:
-    """Run identity and scalar settings serialized with every snapshot."""
+@dataclass
+class _SnapshotAssembly:
+    """Host-owned fields accumulated before one complete snapshot is published."""
 
-    relion_iteration: int
+    values: dict
+    direction_prior_order: list | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class SnapshotCapture:
+    """Run-level snapshot settings reused for every numbered checkpoint."""
+
     n_classes: int
     grid_size: int
     voxel_size: float
     tau2_fudge: float
 
+    def begin(
+        self,
+        relion_iteration,
+        state,
+        *,
+        sigma_offset_angstrom_per_half,
+        current_size,
+        incr_size,
+        has_high_fsc_at_limit,
+        random_perturbation,
+        acc_rot_per_class,
+        acc_trans_per_class_angstrom,
+    ) -> _SnapshotAssembly:
+        """Capture scalar run and sampling state for one numbered iteration."""
 
-@dataclass(frozen=True, kw_only=True)
-class SnapshotReferenceState:
-    """Reference volumes and spectra published by one numbered iteration."""
+        return _SnapshotAssembly(
+            values={
+                "relion_iteration": int(relion_iteration),
+                "n_classes": int(self.n_classes),
+                "ori_size": int(self.grid_size),
+                "pixel_size": float(self.voxel_size),
+                "tau2_fudge": float(self.tau2_fudge),
+                "sigma_offset_angstrom": tuple(
+                    float(v) for v in sigma_offset_angstrom_per_half
+                ),
+                "current_size": int(current_size),
+                "incr_size": int(incr_size),
+                "has_high_fsc_at_limit": bool(has_high_fsc_at_limit),
+                "random_perturbation": float(random_perturbation),
+                "state_fields": refinement_state_fields(state),
+                "acc_rot_per_class": np.array(
+                    acc_rot_per_class,
+                    dtype=np.float64,
+                ),
+                "acc_trans_per_class_angstrom": np.array(
+                    acc_trans_per_class_angstrom,
+                    dtype=np.float64,
+                ),
+            }
+        )
 
-    means: list
-    unfiltered_means: list | None
-    tau2_shells: object
-    data_vs_prior: object
-    fsc: object | None
-    fsc_for_growth: object | None
-    noise_shells: list
-    class_weights: object | None
-    direction_prior: list | None
-    direction_prior_order: list
+    def capture_maps_and_spectra(
+        self,
+        assembly,
+        means,
+        unfiltered_means,
+        tau2_shells,
+        data_vs_prior,
+        noise_shells,
+        *,
+        fsc,
+        fsc_for_growth,
+    ) -> None:
+        """Copy reference maps and radial spectra into the assembly."""
 
+        k_class = int(self.n_classes) > 1
+        tau2 = (
+            np.array(tau2_shells, dtype=np.float64)
+            if k_class
+            else np.stack(
+                [np.asarray(shells, dtype=np.float64) for shells in tau2_shells]
+            )
+        )
+        assembly.values.update(
+            means=[host_array(means[0])] * 2 if k_class else host_half_pair(means),
+            tau2_shells=tau2,
+            data_vs_prior=np.array(data_vs_prior, dtype=np.float64),
+            noise_shells=[np.array(shells, dtype=np.float64) for shells in noise_shells],
+            fsc=None if fsc is None or k_class else np.array(fsc, dtype=np.float64),
+            fsc_for_growth=(
+                None
+                if fsc_for_growth is None or k_class
+                else np.array(fsc_for_growth, dtype=np.float64)
+            ),
+            unfiltered_means=(
+                None
+                if unfiltered_means is None or all(m is None for m in unfiltered_means)
+                else host_half_pair(unfiltered_means)
+            ),
+        )
 
-@dataclass(frozen=True, kw_only=True)
-class SnapshotSamplingState:
-    """Sampling, convergence and perturbation state for the next iteration."""
+    def capture_priors(
+        self,
+        assembly,
+        class_weights,
+        direction_prior,
+        direction_prior_order,
+    ) -> None:
+        """Copy class weights and learned direction priors into the assembly."""
 
-    sigma_offset_angstrom_per_half: object
-    current_size: int
-    incr_size: int
-    has_high_fsc_at_limit: bool
-    random_perturbation: float
-    state: RefinementState
-    acc_rot_per_class: object
-    acc_trans_per_class_angstrom: object
+        k_class = int(self.n_classes) > 1
+        assembly.values.update(
+            class_weights=(
+                None if not k_class else np.array(class_weights, dtype=np.float64)
+            ),
+            direction_prior=(
+                host_half_pair(direction_prior)
+                if direction_prior is not None
+                and any(prior is not None for prior in direction_prior)
+                else None
+            ),
+        )
+        assembly.direction_prior_order = direction_prior_order
 
+    def capture_particles(
+        self,
+        assembly,
+        half_inputs,
+        class_assignments,
+        max_posterior,
+        significant_counts,
+        avg_norm_correction,
+    ) -> None:
+        """Copy per-half particle state and posterior summaries."""
 
-@dataclass(frozen=True, kw_only=True)
-class SnapshotParticleState:
-    """Per-half particle state and posterior summaries."""
+        eulers = host_half_pair(half_inputs.previous_best_rotation_eulers)
+        translations = host_half_pair(half_inputs.previous_best_translations)
+        image_corrections = host_half_pair(half_inputs.image_corrections)
 
-    half_inputs: object
-    class_assignments: list | None
-    max_posterior: list | None
-    significant_counts: list | None
-    avg_norm_correction: object
+        def dtype_name(values):
+            present = [value for value in values if value is not None]
+            return str(present[0].dtype) if present else "float32"
 
-
-def capture_iteration_snapshot(
-    run: SnapshotRunSpec,
-    references: SnapshotReferenceState,
-    sampling: SnapshotSamplingState,
-    particles: SnapshotParticleState,
-) -> IterationSnapshot:
-    """Copy the loop's end-of-iteration state to the host (see the module docstring).
-
-    Every array is copied, so a background writer never sees the loop's later updates.
-    """
-
-    k_class = int(run.n_classes) > 1
-    if k_class:
-        tau2 = np.array(references.tau2_shells, dtype=np.float64)
-    else:
-        tau2 = np.stack([np.asarray(shells, dtype=np.float64) for shells in references.tau2_shells])
-    eulers = host_half_pair(particles.half_inputs.previous_best_rotation_eulers)
-    translations = host_half_pair(particles.half_inputs.previous_best_translations)
-    image_corrections = host_half_pair(particles.half_inputs.image_corrections)
-
-    def _dtype_name(values):
-        present = [v for v in values if v is not None]
-        return str(present[0].dtype) if present else "float32"
-
-    avg_norm = tuple(1.0 if value is None else float(value) for value in particles.avg_norm_correction)
-    return IterationSnapshot(
-        relion_iteration=int(run.relion_iteration),
-        n_classes=int(run.n_classes),
-        ori_size=int(run.grid_size),
-        pixel_size=float(run.voxel_size),
-        tau2_fudge=float(run.tau2_fudge),
-        means=[host_array(references.means[0])] * 2 if k_class else host_half_pair(references.means),
-        tau2_shells=tau2,
-        data_vs_prior=np.array(references.data_vs_prior, dtype=np.float64),
-        noise_shells=[np.array(shells, dtype=np.float64) for shells in references.noise_shells],
-        sigma_offset_angstrom=tuple(float(v) for v in sampling.sigma_offset_angstrom_per_half),
-        current_size=int(sampling.current_size),
-        incr_size=int(sampling.incr_size),
-        has_high_fsc_at_limit=bool(sampling.has_high_fsc_at_limit),
-        random_perturbation=float(sampling.random_perturbation),
-        state_fields=refinement_state_fields(sampling.state),
-        rotation_eulers=eulers,
-        translations=translations,
-        image_corrections=image_corrections,
-        scale_corrections=host_half_pair(particles.half_inputs.scale_corrections),
-        group_ids=[
-            np.zeros(0 if e is None else len(e), dtype=np.int64) if g is None else np.array(g, dtype=np.int64)
-            for g, e in zip(particles.half_inputs.group_ids, eulers)
-        ],
-        fsc=None if references.fsc is None or k_class else np.array(references.fsc, dtype=np.float64),
-        fsc_for_growth=None if references.fsc_for_growth is None or k_class else np.array(references.fsc_for_growth, dtype=np.float64),
-        class_weights=None if not k_class else np.array(references.class_weights, dtype=np.float64),
-        direction_prior=host_half_pair(references.direction_prior)
-        if references.direction_prior is not None and any(p is not None for p in references.direction_prior)
-        else None,
-        class_assignments=host_half_pair(particles.class_assignments) if k_class else None,
-        max_posterior=host_half_pair(particles.max_posterior),
-        significant_counts=host_half_pair(particles.significant_counts),
-        avg_norm_correction=avg_norm,
-        acc_rot_per_class=np.array(sampling.acc_rot_per_class, dtype=np.float64),
-        acc_trans_per_class_angstrom=np.array(
-            sampling.acc_trans_per_class_angstrom,
-            dtype=np.float64,
-        ),
-        unfiltered_means=None
-        if references.unfiltered_means is None or all(m is None for m in references.unfiltered_means)
-        else host_half_pair(references.unfiltered_means),
-        extra={
-            "euler_dtype": _dtype_name(eulers),
-            "translation_dtype": _dtype_name(translations),
-            "correction_dtype": _dtype_name(image_corrections),
-            # The HEALPix order a direction prior indexes; its length alone is ambiguous
-            # under symmetry. -1: no prior.
-            **{
-                f"direction_prior_order_half{h + 1}": -1 if order is None else int(order)
-                for h, order in enumerate(references.direction_prior_order)
+        assembly.values.update(
+            rotation_eulers=eulers,
+            translations=translations,
+            image_corrections=image_corrections,
+            scale_corrections=host_half_pair(half_inputs.scale_corrections),
+            group_ids=[
+                np.zeros(0 if euler is None else len(euler), dtype=np.int64)
+                if group_ids is None
+                else np.array(group_ids, dtype=np.int64)
+                for group_ids, euler in zip(half_inputs.group_ids, eulers)
+            ],
+            class_assignments=(
+                host_half_pair(class_assignments) if int(self.n_classes) > 1 else None
+            ),
+            max_posterior=host_half_pair(max_posterior),
+            significant_counts=host_half_pair(significant_counts),
+            avg_norm_correction=tuple(
+                1.0 if value is None else float(value) for value in avg_norm_correction
+            ),
+            extra={
+                "euler_dtype": dtype_name(eulers),
+                "translation_dtype": dtype_name(translations),
+                "correction_dtype": dtype_name(image_corrections),
+                **{
+                    f"direction_prior_order_half{h + 1}": (
+                        -1 if order is None else int(order)
+                    )
+                    for h, order in enumerate(assembly.direction_prior_order or [])
+                },
             },
-        },
-    )
+        )
+
+    def finish(self, assembly) -> IterationSnapshot:
+        """Publish a complete snapshot after every capture phase has run."""
+
+        return IterationSnapshot(**assembly.values)

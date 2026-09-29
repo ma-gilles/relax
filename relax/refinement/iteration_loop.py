@@ -197,11 +197,7 @@ from relax.refinement.iteration_planning import (
     build_sealed_initial_coarse_grids,
 )
 from relax.refinement.iteration_snapshot import (
-    SnapshotParticleState,
-    SnapshotReferenceState,
-    SnapshotRunSpec,
-    SnapshotSamplingState,
-    capture_iteration_snapshot,
+    SnapshotCapture,
     noise_pixel_rows,
     tau2_mean_variance,
 )
@@ -882,6 +878,12 @@ def refine_single_volume(
         minres_map=RELION_MINRES_MAP,
         width_mask_edge=RELION_WIDTH_MASK_EDGE,
         fmask_edge=RELION_WIDTH_FMASK_EDGE,
+    )
+    snapshot_capture = SnapshotCapture(
+        n_classes=n_classes,
+        grid_size=grid_size,
+        voxel_size=cryo.voxel_size,
+        tau2_fudge=tau2_fudge,
     )
 
 
@@ -4630,71 +4632,57 @@ def refine_single_volume(
                     incr_size=relion_incr_size,
                     has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
                 )
-            checkpoint_writer(
-                capture_iteration_snapshot(
-                    run=SnapshotRunSpec(
-                            relion_iteration=numbered_relion_iteration,
-                            n_classes=n_classes,
-                            grid_size=grid_size,
-                            voxel_size=cryo.voxel_size,
-                            tau2_fudge=tau2_fudge,
-                    ),
-                    references=SnapshotReferenceState(
-                            means=means,
-                            unfiltered_means=unreg_means,
-                            tau2_shells=(
-                                mean_signal_variance_shells
-                                if k_class_enabled
-                                else [
-                                    details["prior_shells"]
-                                    for details in tau2_update_details_per_half
-                                ]
-                            ),
-                            data_vs_prior=previous_data_vs_prior_for_scheduling,
-                            fsc=fsc,
-                            fsc_for_growth=(
-                                None if k_class_enabled else tau2_fsc_for_update
-                            ),
-                            noise_shells=previous_noise_radial_per_half,
-                            class_weights=(
-                                class_weights if k_class_enabled else None
-                            ),
-                            direction_prior=(
-                                class_direction_prior_per_half
-                                if k_class_enabled
-                                else global_direction_prior_per_half
-                            ),
-                            direction_prior_order=(
-                                class_direction_prior_order_per_half
-                                if k_class_enabled
-                                else global_direction_prior_order_per_half
-                            ),
-                    ),
-                    sampling=SnapshotSamplingState(
-                            sigma_offset_angstrom_per_half=(
-                                current_sigma_offset_angstrom_per_half
-                            ),
-                            current_size=current_size,
-                            incr_size=incr_size_after,
-                            has_high_fsc_at_limit=high_fsc_after,
-                            random_perturbation=random_perturbation,
-                            state=state,
-                            acc_rot_per_class=model_acc_rot_per_class,
-                            acc_trans_per_class_angstrom=(
-                                model_acc_trans_per_class
-                            ),
-                    ),
-                    particles=SnapshotParticleState(
-                            half_inputs=relion_half_inputs,
-                            class_assignments=(
-                                class_assignments if k_class_enabled else None
-                            ),
-                            max_posterior=max_posterior_per_half,
-                            significant_counts=iter_significant_counts_per_half,
-                            avg_norm_correction=avg_norm_corrections_for_dump,
-                    ),
-                )
+            snapshot = snapshot_capture.begin(
+                numbered_relion_iteration,
+                state,
+                sigma_offset_angstrom_per_half=current_sigma_offset_angstrom_per_half,
+                current_size=current_size,
+                incr_size=incr_size_after,
+                has_high_fsc_at_limit=high_fsc_after,
+                random_perturbation=random_perturbation,
+                acc_rot_per_class=model_acc_rot_per_class,
+                acc_trans_per_class_angstrom=model_acc_trans_per_class,
             )
+            snapshot_capture.capture_maps_and_spectra(
+                snapshot,
+                means,
+                unreg_means,
+                (
+                    mean_signal_variance_shells
+                    if k_class_enabled
+                    else [
+                        details["prior_shells"]
+                        for details in tau2_update_details_per_half
+                    ]
+                ),
+                previous_data_vs_prior_for_scheduling,
+                previous_noise_radial_per_half,
+                fsc=fsc,
+                fsc_for_growth=(None if k_class_enabled else tau2_fsc_for_update),
+            )
+            snapshot_capture.capture_priors(
+                snapshot,
+                class_weights if k_class_enabled else None,
+                (
+                    class_direction_prior_per_half
+                    if k_class_enabled
+                    else global_direction_prior_per_half
+                ),
+                (
+                    class_direction_prior_order_per_half
+                    if k_class_enabled
+                    else global_direction_prior_order_per_half
+                ),
+            )
+            snapshot_capture.capture_particles(
+                snapshot,
+                relion_half_inputs,
+                class_assignments if k_class_enabled else None,
+                max_posterior_per_half,
+                iter_significant_counts_per_half,
+                avg_norm_corrections_for_dump,
+            )
+            checkpoint_writer(snapshot_capture.finish(snapshot))
 
         if _parity_dump.is_active():
             try:
