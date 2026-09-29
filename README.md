@@ -9,12 +9,12 @@
 | 3D classification (Class3D), K>1 | `python -m scripts.run_full_refinement --n_classes K` |
 | Subtomogram auto-refine (RELION 5 tilt series), K=1 | `python -m scripts.run_full_refinement` on a RELION 5 particles.star |
 
-- Single GPU (CUDA). Handles both single-particle (SPA) and tilt-series data. More to come.
+- Single GPU (CUDA). Handles both single-particle and tilt-series data. More to come.
 - It reproduces RELION's results on a number of datasets; see the
   [benchmarks](docs/benchmarks/relion_vs_relax.md).
 
 relax is a reproduction of RELION's code in JAX/Python, with CUDA backends. It was written nearly
-entirely by AI coding tools, with a lot of human supervision.
+entirely by AI coding tools, with a lot of human supervision. More to come.
 
 ## Install (development)
 
