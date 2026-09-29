@@ -334,8 +334,9 @@ def _run_local_search_iteration(
         engine_outputs = None
         exact_local_reason = "parent probe"
     else:
-        if current_size is None:
-            raise ValueError("the resident local pass 2 scores RELION's window and needs a current size")
+        # A regular iteration at the full box hands current_size=None (full-box support;
+        # MS2 box 512 it25, bench 14641044); the resident driver scores RELION's radial
+        # window at the box for it, as for the final all-data pass's explicit box size.
         # The device-resident local pass 2 is relax's one local fine pass; a configuration
         # it does not implement is an error (ResidentConfigurationUnsupported).
         logger.info(

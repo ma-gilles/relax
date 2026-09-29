@@ -747,3 +747,19 @@ def test_block_row_program_matches_the_slicing_callback(monkeypatch, _resident_l
     assert rel_l2(
         off.noise_stats.wsum_sigma2_noise, on.noise_stats.wsum_sigma2_noise
     ) < 1e-6
+
+
+@requires_resident_gpu
+def test_full_box_iteration_without_a_current_size_runs_resident(monkeypatch, _resident_local_env):
+    """A regular iteration at the full box passes current_size=None (MS2 box 512 it25,
+    bench 14641044, which the dispatcher refused); it is the box-size pass."""
+
+    case = _case()
+    box = int(case["dataset"].image_shape[0])
+    unset = _run(case, monkeypatch=monkeypatch, current_size=None)
+    explicit = _run(case, monkeypatch=monkeypatch, current_size=box)
+    assert_matches(np.asarray(explicit.hard_assignment), np.asarray(unset.hard_assignment))
+    a = np.asarray(explicit.Ft_y, dtype=np.float64)
+    b = np.asarray(unset.Ft_y, dtype=np.float64)
+    # The same pass twice: only the float32 BPref atomics' order may differ.
+    assert np.linalg.norm(a - b) <= np.sqrt(N_IMAGES) * np.finfo(np.float32).eps * np.linalg.norm(a)
