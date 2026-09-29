@@ -158,6 +158,10 @@ labeled diagnostic only.
   been made yet.
 - Refused permanently, with a clear message: `rlnCtfDataAreCtfCorrected` and several different
   `rlnMtfFileName` values.
+- Subtomogram particles (RELION 5 2D stacks) have no first-iteration cross-correlation
+  (`--firstiter_cc`), for K=1 or K>1, which RELION uses when the reference is not on the
+  images' absolute greyscale; they run with `--no-firstiter_cc`. Planned after subtomogram
+  Class3D qualifies (branch `et/tomo-class3d`).
 
 ## RELION binding removal (started 2026-09-29)
 
