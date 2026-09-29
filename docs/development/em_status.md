@@ -92,6 +92,17 @@ maintained callers migrate together; main heterogeneity APIs and serialized
 formats remain compatible. Production EM is float32; double precision is a
 labeled diagnostic only.
 
+## Feature gaps (moved from the README, 2026-09-29)
+
+- Several optics groups: Refine3D (K=1) accepts them, including groups on other pixel sizes and
+  boxes, but the default command refuses them until end-to-end GPU qualification against RELION
+  is done. They run only on the device-resident pass 2 and without the first-iteration
+  cross-correlation (`--no-firstiter_cc` with
+  `RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM=1 RELAX_K1_RELION_EXACT_BPREF_OPERANDS=1`).
+  InitialModel and Class3D take one optics group.
+- Not yet supported: CTF-premultiplied particles, beam tilt, higher-order aberrations and
+  magnification.
+
 ## Architecture and ownership
 
 `relax/` is the implementation root. Standard refinement and VDAM retain
