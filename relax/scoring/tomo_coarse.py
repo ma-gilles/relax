@@ -286,6 +286,35 @@ _OPERAND_IMAGE_BATCH = 1024
 _COARSE_OPERAND_BLOCK_BYTES = 4 << 30
 
 
+def _coarse_operand_block_bytes() -> int:
+    """At most ``_COARSE_OPERAND_BLOCK_BYTES`` and a quarter of what the device can still hand out.
+
+    The coarse pass runs next to the refinement's resident state; a fixed 4 GiB block did not fit
+    beside it at iteration 12 of a 5k-particle box-256 run (etbench w2_02_n5k, 3.09 GiB refused).
+    """
+
+    from relax.sparse_pass2.sparse_pass2_budget import (
+        _device_free_memory_bytes,
+        _jax_allocator_free_memory_bytes,
+        _jax_allocator_pool_free_bytes,
+        device_available_bytes,
+    )
+
+    available = device_available_bytes(
+        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
+    )
+    if available is None:
+        return _COARSE_OPERAND_BLOCK_BYTES
+    return int(min(_COARSE_OPERAND_BLOCK_BYTES, max(256 << 20, 0.25 * float(available))))
+
+
+@partial(jax.jit, donate_argnums=(0,))
+def _put_rows(buffer, values, start):
+    """``buffer`` with ``values`` written at row ``start``, in place (the buffer is donated)."""
+
+    return jax.lax.dynamic_update_slice_in_dim(buffer, values.astype(buffer.dtype), start, axis=0)
+
+
 def _all_image_coarse_operands(
     experiment_dataset,
     image_start: int,
@@ -298,28 +327,31 @@ def _all_image_coarse_operands(
 ):
     """:func:`tilt_image_coarse_operands` of dataset images ``image_start:image_stop``, in batches of ``_OPERAND_IMAGE_BATCH``.
 
-    The last batch is padded with repeats of its last image (dropped after), so every batch runs
-    the same programs.
+    The last batch is padded with repeats of its last image, so every batch runs the same programs.
+    The batches are written into buffers of whole batches (rows past ``image_stop - image_start`` are
+    padding), so the block is held once, not once in parts and once concatenated.
     """
 
-    parts = ([], [], [])
-    for start in range(int(image_start), int(image_stop), _OPERAND_IMAGE_BATCH):
-        indices = np.arange(start, min(start + _OPERAND_IMAGE_BATCH, int(image_stop)))
-        n_valid = indices.size
-        padded = np.concatenate([indices, np.full(_OPERAND_IMAGE_BATCH - n_valid, indices[-1])])
-        for part, values in zip(
-            parts,
-            tilt_image_coarse_operands(
-                experiment_dataset,
-                padded,
-                layout,
-                noise_variance_half=noise_variance_half,
-                optics_group_ids=optics_group_ids,
-                scale_corrections=scale_corrections,
-            ),
-        ):
-            part.append(values[:n_valid])
-    return tuple(jnp.concatenate(part, axis=0) for part in parts)
+    n_images = int(image_stop) - int(image_start)
+    n_rows = -(-n_images // _OPERAND_IMAGE_BATCH) * _OPERAND_IMAGE_BATCH
+    buffers = None
+    for offset in range(0, n_images, _OPERAND_IMAGE_BATCH):
+        indices = np.arange(
+            int(image_start) + offset, min(int(image_start) + offset + _OPERAND_IMAGE_BATCH, int(image_stop))
+        )
+        padded = np.concatenate([indices, np.full(_OPERAND_IMAGE_BATCH - indices.size, indices[-1])])
+        values = tilt_image_coarse_operands(
+            experiment_dataset,
+            padded,
+            layout,
+            noise_variance_half=noise_variance_half,
+            optics_group_ids=optics_group_ids,
+            scale_corrections=scale_corrections,
+        )
+        if buffers is None:
+            buffers = [jnp.zeros((n_rows,) + v.shape[1:], dtype=v.dtype) for v in values]
+        buffers = [_put_rows(b, v, jnp.int32(offset)) for b, v in zip(buffers, values)]
+    return tuple(buffers)
 
 
 def particle_coarse_significance(
@@ -424,7 +456,7 @@ def particle_coarse_supports(
     # a block of consecutive particles at a time (_COARSE_OPERAND_BLOCK_BYTES); the coarse batches are
     # consecutive particles, so each batch reads one block.
     operand_bytes_per_image = int(layout.score_indices_np.size) * (8 + 4) + 4
-    block_images = max(1, _COARSE_OPERAND_BLOCK_BYTES // operand_bytes_per_image)
+    block_images = max(1, _coarse_operand_block_bytes() // operand_bytes_per_image)
     operand_block = None  # (first image, image stop, unshifted, weight, initial)
 
     def operands_for(units):
@@ -548,6 +580,8 @@ def particle_coarse_supports(
                 n_chunks=int(n_chunks),
             )
         pending.append((units, total[: units.size]))
+        # Only operands_for keeps the block, so a new block is allocated after the old one is freed.
+        del unshifted, weight, initial, batch_unshifted, batch_weight, batch_initial
         if sum(int(u.size) for u, _ in pending) >= significance_batch:
             flush()
     flush()
