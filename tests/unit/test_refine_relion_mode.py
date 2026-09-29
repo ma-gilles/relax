@@ -7195,9 +7195,15 @@ def _assert_significance_stats_allclose(actual, expected):
     assert actual.keys() == expected.keys()
     assert actual["coarse_selector_audit"] == expected["coarse_selector_audit"]
     for key in actual.keys() - {"coarse_selector_audit"}:
+        actual_value = np.asarray(actual[key])
+        expected_value = np.asarray(expected[key])
+        if not (np.issubdtype(actual_value.dtype, np.number)
+                and np.issubdtype(expected_value.dtype, np.number)):
+            np.testing.assert_array_equal(actual_value, expected_value, err_msg=key)
+            continue
         np.testing.assert_allclose(
-            np.asarray(actual[key]),
-            np.asarray(expected[key]),
+            actual_value,
+            expected_value,
             rtol=1e-6,
             atol=1e-6,
             err_msg=key,
