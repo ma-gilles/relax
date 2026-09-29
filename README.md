@@ -1,6 +1,6 @@
 # RELAX! It's [RELION](https://github.com/3dem/relion) ... in JAX.
 
-relax is a reproduction of RELION's code in JAX/Python, with CUDA backends. It was written nearly
+relax is a reproduction of RELION's algorithms in JAX/Python, with CUDA backends. It was written nearly
 entirely by AI coding tools, with a lot of human supervision.
 
 ## What exists
