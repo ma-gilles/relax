@@ -26,7 +26,7 @@ from helpers.em_arrays import _hermitian_volume, _make_rotations
 from helpers.refinement_specs import (
     local_half_owners,
     local_iteration_owners,
-    mean_reconstruction_owners,
+    run_mean_reconstruction,
 )
 
 import recovar.core.fourier_transform_utils as ftu
@@ -11644,7 +11644,7 @@ class TestRelionModeSmokeTest:
         )
 
         means = [None, None]
-        mean_helpers_module._reconstruct_and_postprocess_means(*mean_reconstruction_owners(
+        run_mean_reconstruction(
             means,
             Ft_y_0=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
             Ft_y_1=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
@@ -11670,7 +11670,7 @@ class TestRelionModeSmokeTest:
             relion_firstiter_ini_high_angstrom=30.0,
             relion_width_mask_edge=5,
             relion_fmask_edge=2,
-        ))
+        )
 
         assert events[:3] == ["lowpass", "flatten_idft", "flatten_dft"]
         assert len(reconstruct_calls) == 2
@@ -11707,7 +11707,7 @@ class TestRelionModeSmokeTest:
             axis=0,
         )
         means = [None, None]
-        mean_helpers_module._reconstruct_and_postprocess_means(*mean_reconstruction_owners(
+        run_mean_reconstruction(
             means,
             Ft_y_0=None,
             Ft_y_1=None,
@@ -11733,7 +11733,7 @@ class TestRelionModeSmokeTest:
             relion_firstiter_ini_high_angstrom=None,
             relion_width_mask_edge=5,
             relion_fmask_edge=2,
-        ))
+        )
 
         assert len(calls) == n_classes
         assert all(call["tau_is_1d"] is True for call in calls)

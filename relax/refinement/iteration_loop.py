@@ -208,11 +208,7 @@ from relax.refinement.iteration_snapshot import (
 from relax.refinement.iteration_snapshot import validate_resume_snapshot as _validate_resume_snapshot
 from relax.refinement.local_search_iteration import _precompute_exact_local_fine_grid_enabled
 from relax.refinement.mean_helpers import (
-    MeanAccumulatorState,
-    MeanGeometrySpec,
-    MeanPostprocessPolicy,
-    MeanPriorSpec,
-    MeanReconstructionData,
+    ReconstructionSettings,
     _class_tau2_from_iref_power_spectrum,
     _class_tau2_update_details,
     _class_weights_from_posterior,
@@ -220,14 +216,16 @@ from relax.refinement.mean_helpers import (
     _mean_variance_for_scoring_half,
     _merged_mean_from_halves,
     _normalize_initial_means,
-    _reconstruct_and_postprocess_means,
     _reconstruct_volume_eager,
     _snapshot_and_release_previous_k1_means,
     _stack_class_tau2_update_details,
     _updated_mean_variance_per_half,
     align_k1_volume_signs,
     join_half_accumulators_at_low_resolution,
+    postprocess_reconstructed_means,
     prepare_initial_mean_variance,
+    reconstruct_class_means,
+    reconstruct_k1_means,
     reconstruct_unregularized_class_means,
     reconstruct_unregularized_k1_halfmaps,
     share_kclass_volume_signs,
@@ -874,6 +872,17 @@ def refine_single_volume(
     # with the real-space ``--maskedge`` mask edge above. They have different
     # semantic units and different RELION defaults (2 vs 5).
     RELION_WIDTH_FMASK_EDGE = 2
+
+    reconstruction_settings = ReconstructionSettings(
+        grid_size=grid_size,
+        voxel_size=cryo.voxel_size,
+        volume_shape=volume_shape,
+        padding_factor=PADDING_FACTOR,
+        projection_padding_factor=PROJECTION_PADDING_FACTOR,
+        minres_map=RELION_MINRES_MAP,
+        width_mask_edge=RELION_WIDTH_MASK_EDGE,
+        fmask_edge=RELION_WIDTH_FMASK_EDGE,
+    )
 
 
     # A half of several image shapes sets up each shape class's images, masked with
@@ -3774,59 +3783,59 @@ def refine_single_volume(
             means[k] = None
 
         # --- Now reconstruct the regularized means ---
-        _reconstruct_and_postprocess_means(
-            data=MeanReconstructionData(means=means),
-            accumulators=MeanAccumulatorState(
-                    Ft_y_0=Ft_y_0,
-                    Ft_y_1=Ft_y_1,
-                    Ft_ctf_0=Ft_ctf_0,
-                    Ft_ctf_1=Ft_ctf_1,
-                    Ft_y_combined=Ft_y_combined if k_class_enabled else None,
-                    Ft_ctf_combined=Ft_ctf_combined if k_class_enabled else None,
-                    retained_Ft_y_0_device=retained_Ft_y_0_device,
+        _t_recon = time.time()
+        if k_class_enabled:
+            class_tau = (
+                mean_signal_variance_shells
+                if mean_signal_variance_shells is not None
+                else mean_signal_variance
+            )
+            shared_class_means = reconstruct_class_means(
+                Ft_y_combined,
+                Ft_ctf_combined,
+                class_tau,
+                reconstruction_settings,
+                n_classes=n_classes,
+                iteration=iteration,
+                current_size=current_size,
+                tau2_fudge=tau2_fudge,
+                accumulator_volume_shape=mstep_accumulator_shape,
+                tau_is_1d=mean_signal_variance_shells is not None,
+            )
+            means[0] = shared_class_means
+            means[1] = shared_class_means
+        else:
+            tau_by_half = (
+                mean_signal_variance_shells_per_half
+                if mean_signal_variance_shells_per_half is not None
+                else mean_signal_variance_per_half
+            )
+            means[:] = reconstruct_k1_means(
+                (Ft_y_0, Ft_y_1),
+                (Ft_ctf_0, Ft_ctf_1),
+                tau_by_half,
+                reconstruction_settings,
+                current_size=current_size,
+                tau2_fudge=tau2_fudge,
+                accumulator_volume_shape=mstep_accumulator_shape,
+                tau_is_1d=mean_signal_variance_shells_per_half is not None,
+                retained_first_numerator=retained_Ft_y_0_device,
+            )
+        postprocess_reconstructed_means(
+            means,
+            reconstruction_settings,
+            n_classes=n_classes,
+            iteration=iteration,
+            current_size=current_size,
+            particle_diameter_ang=particle_diameter_ang,
+            relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+            relion_firstiter_ini_high_angstrom=(
+                parity.relion_firstiter_ini_high_angstrom
             ),
-            prior=MeanPriorSpec(
-                    mean_signal_variance=(
-                        mean_signal_variance if k_class_enabled else None
-                    ),
-                    mean_signal_variance_shells=(
-                        mean_signal_variance_shells if k_class_enabled else None
-                    ),
-                    mean_signal_variance_per_half=(
-                        mean_signal_variance_per_half
-                        if not k_class_enabled
-                        else None
-                    ),
-                    mean_signal_variance_shells_per_half=(
-                        mean_signal_variance_shells_per_half
-                        if not k_class_enabled
-                        else None
-                    ),
-                    tau2_fudge=tau2_fudge,
-                    relion_minres_map=RELION_MINRES_MAP,
-            ),
-            geometry=MeanGeometrySpec(
-                    current_size=current_size,
-                    grid_size=grid_size,
-                    cryo=cryo,
-                    volume_shape=volume_shape,
-                    padding_factor=PADDING_FACTOR,
-                    projection_padding_factor=PROJECTION_PADDING_FACTOR,
-                    accumulator_volume_shape=mstep_accumulator_shape,
-            ),
-            postprocess=MeanPostprocessPolicy(
-                    n_classes=n_classes,
-                    iteration=iteration,
-                    particle_diameter_ang=particle_diameter_ang,
-                    relion_firstiter_cc_this_iter=(
-                        relion_firstiter_cc_this_iter
-                    ),
-                    relion_firstiter_ini_high_angstrom=(
-                        parity.relion_firstiter_ini_high_angstrom
-                    ),
-                    relion_width_mask_edge=RELION_WIDTH_MASK_EDGE,
-                    relion_fmask_edge=RELION_WIDTH_FMASK_EDGE,
-            ),
+        )
+        logger.info(
+            "Regularized reconstruction (2 halves + flatten): %.1fs",
+            time.time() - _t_recon,
         )
         retained_Ft_y_0_device = None
 

@@ -991,173 +991,149 @@ def _align_fourier_volume_sign_to_reference(volume_ft_flat, reference_ft_flat, v
 
 
 @dataclass(frozen=True, kw_only=True)
-class MeanReconstructionData:
-    """Caller-owned output references for one reconstruction phase."""
+class ReconstructionSettings:
+    """Run-level geometry and RELION constants reused by reconstruction phases."""
 
-    means: list
-
-
-@dataclass(frozen=True, kw_only=True)
-class MeanAccumulatorState:
-    """Per-half and combined M-step accumulators consumed by reconstruction."""
-
-    Ft_y_0: object
-    Ft_y_1: object
-    Ft_ctf_0: object
-    Ft_ctf_1: object
-    Ft_y_combined: object
-    Ft_ctf_combined: object
-    retained_Ft_y_0_device: object | None = None
-
-
-@dataclass(frozen=True, kw_only=True)
-class MeanPriorSpec:
-    """Tau2 operands and regularization policy for one reconstruction."""
-
-    mean_signal_variance: object
-    mean_signal_variance_shells: object
-    mean_signal_variance_per_half: object
-    tau2_fudge: float
-    relion_minres_map: int
-    mean_signal_variance_shells_per_half: object | None = None
-
-
-@dataclass(frozen=True, kw_only=True)
-class MeanGeometrySpec:
-    """Fourier sizing, padding and dataset geometry for reconstruction."""
-
-    current_size: int | None
     grid_size: int
-    cryo: object
+    voxel_size: object
     volume_shape: tuple
     padding_factor: int
     projection_padding_factor: int
-    accumulator_volume_shape: tuple | None = None
+    minres_map: int
+    width_mask_edge: int
+    fmask_edge: int
 
 
-@dataclass(frozen=True, kw_only=True)
-class MeanPostprocessPolicy:
-    """Class routing, first-iteration filtering and solvent-mask choices."""
+def reconstruct_k1_means(
+    numerators_by_half,
+    denominators_by_half,
+    tau_by_half,
+    settings: ReconstructionSettings,
+    *,
+    current_size,
+    tau2_fudge,
+    accumulator_volume_shape,
+    tau_is_1d,
+    retained_first_numerator=None,
+) -> list:
+    """Reconstruct both K=1 halves while preserving RELION buffer lifetime."""
 
-    n_classes: int
-    iteration: int
-    particle_diameter_ang: float | None
-    relion_firstiter_cc_this_iter: bool
-    relion_firstiter_ini_high_angstrom: float | None
-    relion_width_mask_edge: int
-    relion_fmask_edge: int
+    if len(tau_by_half) != 2:
+        raise ValueError("K=1 reconstruction tau2 requires exactly two halves")
+    cs_int = int(current_size) if current_size is not None else None
+    reconstructed_means = []
+    retained_device_numerator = retained_first_numerator
+    for k, (Ft_y_half, Ft_ctf_half, tau_half) in enumerate(
+        zip(numerators_by_half, denominators_by_half, tau_by_half)
+    ):
+        # This RELION build uses double RFLOAT in BackProjector::reconstruct.
+        # Keep the stored/controller tau2 state compact, but promote the
+        # reconstruction operand so 1 / (padding_factor**3 * tau2) is not
+        # rounded in float32 before it enters the Wiener denominator.
+        reconstruction_tau = jnp.asarray(tau_half, dtype=jnp.float64)
+        reconstructed = _reconstruct_volume_eager(
+            Ft_ctf_half,
+            Ft_y_half,
+            settings.volume_shape,
+            settings.padding_factor,
+            tau=reconstruction_tau,
+            tau2_fudge=tau2_fudge,
+            projection_padding_factor=settings.projection_padding_factor,
+            minres_map=settings.minres_map,
+            current_size=cs_int,
+            accumulator_volume_shape=accumulator_volume_shape,
+            tau_is_1d=tau_is_1d,
+            preserve_output_precision=True,
+            relion_filter_scale=float(settings.volume_shape[0] ** 4),
+            **(
+                {"retained_device_numerator": retained_device_numerator}
+                if k == 0 and retained_device_numerator is not None
+                else {}
+            ),
+        ).reshape(-1)
+        reconstructed_means.append(
+            _finish_host_staged_reconstruction(reconstructed, Ft_ctf_half, Ft_y_half)
+        )
+        if k == 0 and retained_device_numerator is not None:
+            retained_device_numerator = None
+            gc.collect()
+    return reconstructed_means
 
 
-def _reconstruct_and_postprocess_means(
-    data: MeanReconstructionData,
-    accumulators: MeanAccumulatorState,
-    prior: MeanPriorSpec,
-    geometry: MeanGeometrySpec,
-    postprocess: MeanPostprocessPolicy,
-) -> None:
-    """Run one iteration's regularized reconstruction + post-processing.
+def reconstruct_class_means(
+    combined_numerators,
+    combined_denominators,
+    tau_by_class,
+    settings: ReconstructionSettings,
+    *,
+    n_classes,
+    iteration,
+    current_size,
+    tau2_fudge,
+    accumulator_volume_shape,
+    tau_is_1d,
+):
+    """Reconstruct the shared Class3D stack from combined accumulators."""
 
-    Mutates ``means`` in place. Performs Wiener reconstruction (per-class for
-    K>1, per-half for K=1), optional pre-mask debug dump, RELION solvent
-    flatten, and iter-1 firstiter_cc low-pass filter.
-
-    ``relion_width_mask_edge`` is the real-space mask edge (RELION's
-    ``--maskedge`` = 5). ``relion_fmask_edge`` is the Fourier mask edge for
-    the iter-1 ``ini_high`` low-pass filter (RELION's ``WIDTH_FMASK_EDGE`` = 2).
-    Mixing the two produces a softer Fourier filter than RELION applies.
-    """
-
-    # This reference is deliberately released after half 0 reconstruction.
-    retained_Ft_y_0_device = accumulators.retained_Ft_y_0_device
     _t_recon = time.time()
-    cs_int = int(geometry.current_size) if geometry.current_size is not None else None
-    if postprocess.n_classes > 1 and retained_Ft_y_0_device is not None:
-        raise ValueError("The retained half-0 numerator path is only valid for K=1")
-    if postprocess.n_classes > 1:
-        shared_class_maps = []
-        for class_idx in range(postprocess.n_classes):
-            logger.info(
-                "Class3D reconstruction start: iter=%d class=%d/%d current_size=%s",
-                postprocess.iteration + 1,
-                class_idx + 1,
-                postprocess.n_classes,
-                cs_int,
-            )
-            class_map = _reconstruct_volume_eager(
-                accumulators.Ft_ctf_combined[class_idx],
-                accumulators.Ft_y_combined[class_idx],
-                geometry.volume_shape,
-                geometry.padding_factor,
-                tau=(
-                    prior.mean_signal_variance_shells[class_idx]
-                    if prior.mean_signal_variance_shells is not None
-                    else prior.mean_signal_variance[class_idx]
-                ),
-                tau2_fudge=prior.tau2_fudge,
-                projection_padding_factor=geometry.projection_padding_factor,
-                minres_map=prior.relion_minres_map,
-                current_size=cs_int,
-                accumulator_volume_shape=geometry.accumulator_volume_shape,
-                tau_is_1d=prior.mean_signal_variance_shells is not None,
-            ).reshape(-1)
-            shared_class_maps.append(class_map)
-            logger.info(
-                "Class3D reconstruction done: iter=%d class=%d/%d elapsed=%.1fs",
-                postprocess.iteration + 1,
-                class_idx + 1,
-                postprocess.n_classes,
-                time.time() - _t_recon,
-            )
-        shared_classes = jnp.stack(shared_class_maps, axis=0)
+    cs_int = int(current_size) if current_size is not None else None
+    shared_class_maps = []
+    for class_idx in range(n_classes):
         logger.info(
-            "Class3D reconstruction stack complete: iter=%d classes=%d elapsed=%.1fs",
-            postprocess.iteration + 1,
-            postprocess.n_classes,
+            "Class3D reconstruction start: iter=%d class=%d/%d current_size=%s",
+            iteration + 1,
+            class_idx + 1,
+            n_classes,
+            cs_int,
+        )
+        class_map = _reconstruct_volume_eager(
+            combined_denominators[class_idx],
+            combined_numerators[class_idx],
+            settings.volume_shape,
+            settings.padding_factor,
+            tau=tau_by_class[class_idx],
+            tau2_fudge=tau2_fudge,
+            projection_padding_factor=settings.projection_padding_factor,
+            minres_map=settings.minres_map,
+            current_size=cs_int,
+            accumulator_volume_shape=accumulator_volume_shape,
+            tau_is_1d=tau_is_1d,
+        ).reshape(-1)
+        shared_class_maps.append(class_map)
+        logger.info(
+            "Class3D reconstruction done: iter=%d class=%d/%d elapsed=%.1fs",
+            iteration + 1,
+            class_idx + 1,
+            n_classes,
             time.time() - _t_recon,
         )
-        data.means[0] = shared_classes
-        data.means[1] = shared_classes
-    else:
-        if prior.mean_signal_variance_shells_per_half is not None and len(prior.mean_signal_variance_shells_per_half) != 2:
-            raise ValueError("K=1 reconstruction tau2 shells require exactly two halves")
-        for k in range(2):
-            Ft_y_k_local = accumulators.Ft_y_0 if k == 0 else accumulators.Ft_y_1
-            Ft_ctf_k_local = accumulators.Ft_ctf_0 if k == 0 else accumulators.Ft_ctf_1
-            # This RELION build uses double RFLOAT in BackProjector::reconstruct.
-            # Keep the stored/controller tau2 state compact, but promote the
-            # reconstruction operand so 1 / (padding_factor**3 * tau2) is not
-            # rounded in float32 before it enters the Wiener denominator.
-            reconstruction_tau_source = (
-                prior.mean_signal_variance_shells_per_half[k]
-                if prior.mean_signal_variance_shells_per_half is not None
-                else prior.mean_signal_variance_per_half[k]
-            )
-            reconstruction_tau = jnp.asarray(
-                reconstruction_tau_source,
-                dtype=jnp.float64,
-            )
-            reconstructed = _reconstruct_volume_eager(
-                Ft_ctf_k_local,
-                Ft_y_k_local,
-                geometry.volume_shape,
-                geometry.padding_factor,
-                tau=reconstruction_tau,
-                tau2_fudge=prior.tau2_fudge,
-                projection_padding_factor=geometry.projection_padding_factor,
-                minres_map=prior.relion_minres_map,
-                current_size=cs_int,
-                accumulator_volume_shape=geometry.accumulator_volume_shape,
-                tau_is_1d=prior.mean_signal_variance_shells_per_half is not None,
-                preserve_output_precision=True,
-                relion_filter_scale=float(geometry.volume_shape[0] ** 4),
-                **({"retained_device_numerator": retained_Ft_y_0_device} if k == 0 and retained_Ft_y_0_device is not None else {}),
-            ).reshape(-1)
-            data.means[k] = _finish_host_staged_reconstruction(
-                reconstructed, Ft_ctf_k_local, Ft_y_k_local,
-            )
-            if k == 0 and retained_Ft_y_0_device is not None:
-                retained_Ft_y_0_device = None
-                gc.collect()
+    shared_classes = jnp.stack(shared_class_maps, axis=0)
+    logger.info(
+        "Class3D reconstruction stack complete: iter=%d classes=%d elapsed=%.1fs",
+        iteration + 1,
+        n_classes,
+        time.time() - _t_recon,
+    )
+    return shared_classes
+
+
+def postprocess_reconstructed_means(
+    means,
+    settings: ReconstructionSettings,
+    *,
+    n_classes,
+    iteration,
+    current_size,
+    particle_diameter_ang,
+    relion_firstiter_cc_this_iter,
+    relion_firstiter_ini_high_angstrom,
+) -> None:
+    """Apply premask capture, first-iteration filtering and solvent flattening.
+
+    ``width_mask_edge`` is the real-space mask edge (RELION ``--maskedge``).
+    ``fmask_edge`` is the Fourier edge of ``initialLowPassFilterReferences``;
+    preserving their distinct units is part of the reconstruction contract.
+    """
 
     for k in range(2):
         # Diagnostic: dump pre-mask Wiener output when env var set.
@@ -1166,70 +1142,71 @@ def _reconstruct_and_postprocess_means(
             from relax.diagnostics.reconstruction import write_premask_mean
 
             write_premask_mean(
-                data.means[k], output_dir=_premask_dump, half_index=k, iteration=postprocess.iteration,
-                current_size=geometry.current_size, grid_size=geometry.grid_size, voxel_size=geometry.cryo.voxel_size,
-                volume_shape=geometry.volume_shape, n_classes=postprocess.n_classes,
+                means[k], output_dir=_premask_dump, half_index=k, iteration=iteration,
+                current_size=current_size, grid_size=settings.grid_size, voxel_size=settings.voxel_size,
+                volume_shape=settings.volume_shape, n_classes=n_classes,
             )
 
         # RELION filters Iref inside maximizationOtherParameters, then calls
         # solventFlatten from the outer iteration loop.  These operations do
         # not commute: masking in real space after the Fourier low-pass adds a
         # small, deterministic high-shell tail.
-        if postprocess.relion_firstiter_cc_this_iter:
-            if postprocess.n_classes > 1:
-                data.means[k] = jnp.stack(
+        if relion_firstiter_cc_this_iter:
+            if n_classes > 1:
+                means[k] = jnp.stack(
                     [
                         _apply_relion_initial_lowpass_filter(
-                            data.means[k][class_idx],
-                            geometry.volume_shape,
-                            geometry.cryo.voxel_size,
-                            postprocess.relion_firstiter_ini_high_angstrom,
-                            filter_edgewidth=postprocess.relion_fmask_edge,
+                            means[k][class_idx],
+                            settings.volume_shape,
+                            settings.voxel_size,
+                            relion_firstiter_ini_high_angstrom,
+                            filter_edgewidth=settings.fmask_edge,
                         )
-                        for class_idx in range(postprocess.n_classes)
+                        for class_idx in range(n_classes)
                     ],
                     axis=0,
                 )
             else:
-                data.means[k] = _apply_relion_initial_lowpass_filter(
-                    data.means[k],
-                    geometry.volume_shape,
-                    geometry.cryo.voxel_size,
-                    postprocess.relion_firstiter_ini_high_angstrom,
-                    filter_edgewidth=postprocess.relion_fmask_edge,
+                means[k] = _apply_relion_initial_lowpass_filter(
+                    means[k],
+                    settings.volume_shape,
+                    settings.voxel_size,
+                    relion_firstiter_ini_high_angstrom,
+                    filter_edgewidth=settings.fmask_edge,
                 )
-        if postprocess.particle_diameter_ang is not None and postprocess.particle_diameter_ang > 0:
+        if particle_diameter_ang is not None and particle_diameter_ang > 0:
             flatten_radius = (
-                float(postprocess.particle_diameter_ang) / (2.0 * float(geometry.cryo.voxel_size))
-                if postprocess.n_classes == 1 else postprocess.particle_diameter_ang / (2.0 * geometry.cryo.voxel_size)
+                float(particle_diameter_ang) / (2.0 * float(settings.voxel_size))
+                if n_classes == 1 else particle_diameter_ang / (2.0 * settings.voxel_size)
             )
             solvent_mask = _make_relion_solvent_mask(
-                geometry.volume_shape,
+                settings.volume_shape,
                 radius=flatten_radius,
-                radius_p=flatten_radius + postprocess.relion_width_mask_edge,
+                radius_p=flatten_radius + settings.width_mask_edge,
                 offset=jnp.zeros(3),
-                dtype=(data.means[k].real.dtype if postprocess.n_classes <= 1 else data.means[k][0].real.dtype),
+                dtype=(means[k].real.dtype if n_classes <= 1 else means[k][0].real.dtype),
             )
-            if postprocess.n_classes > 1:
+            if n_classes > 1:
                 flattened_classes = []
-                for class_idx in range(postprocess.n_classes):
-                    vol_real = fourier_transform_utils.get_idft3(data.means[k][class_idx].reshape(geometry.volume_shape))
+                for class_idx in range(n_classes):
+                    vol_real = fourier_transform_utils.get_idft3(
+                        means[k][class_idx].reshape(settings.volume_shape)
+                    )
                     flattened_classes.append(
                         fourier_transform_utils.get_dft3(vol_real * solvent_mask).reshape(-1),
                     )
-                data.means[k] = jnp.stack(flattened_classes, axis=0)
+                means[k] = jnp.stack(flattened_classes, axis=0)
             else:
-                data.means[k] = _apply_relion_solvent_flatten_k1(
-                    data.means[k], solvent_mask, geometry.volume_shape, half_index=k,
+                means[k] = _apply_relion_solvent_flatten_k1(
+                    means[k], solvent_mask, settings.volume_shape, half_index=k,
                 )
-                if _large_relion_solvent_mask_uses_compiled_builder(geometry.volume_shape):
+                if _large_relion_solvent_mask_uses_compiled_builder(settings.volume_shape):
                     solvent_mask = None
-    if postprocess.relion_firstiter_cc_this_iter and postprocess.relion_firstiter_ini_high_angstrom is not None:
+    if relion_firstiter_cc_this_iter and relion_firstiter_ini_high_angstrom is not None:
         logger.info(
             "RELION iter-1 CC emulation: reapplying ini_high low-pass filter at %.2f A",
-            float(postprocess.relion_firstiter_ini_high_angstrom),
+            float(relion_firstiter_ini_high_angstrom),
         )
-    logger.info("Regularized reconstruction (2 halves + flatten): %.1fs", time.time() - _t_recon)
 
 
 # ---------------------------------------------------------------------------

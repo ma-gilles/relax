@@ -41,7 +41,7 @@ def test_k1_mean_release_precedes_tau_and_reconstruction():
         release,
     )
     reconstruction = source.index(
-        "_reconstruct_and_postprocess_means(",
+        "reconstruct_k1_means(",
         tau_update,
     )
 

@@ -21,56 +21,89 @@ _LOCAL_ITERATION_POSITIONAL = (
 )
 
 
-def mean_reconstruction_owners(means, **values):
-    """Build the five owners of the production reconstruction boundary."""
+def run_mean_reconstruction(means, **values):
+    """Exercise the production reconstruction phases with concise test inputs."""
 
     values = dict(values)
-    owners = (
-        mean_helpers.MeanReconstructionData(means=means),
-        mean_helpers.MeanAccumulatorState(
-            Ft_y_0=values.pop("Ft_y_0"),
-            Ft_y_1=values.pop("Ft_y_1"),
-            Ft_ctf_0=values.pop("Ft_ctf_0"),
-            Ft_ctf_1=values.pop("Ft_ctf_1"),
-            Ft_y_combined=values.pop("Ft_y_combined"),
-            Ft_ctf_combined=values.pop("Ft_ctf_combined"),
-            retained_Ft_y_0_device=values.pop("retained_Ft_y_0_device", None),
-        ),
-        mean_helpers.MeanPriorSpec(
-            mean_signal_variance=values.pop("mean_signal_variance"),
-            mean_signal_variance_shells=values.pop("mean_signal_variance_shells"),
-            mean_signal_variance_per_half=values.pop("mean_signal_variance_per_half"),
-            mean_signal_variance_shells_per_half=values.pop(
-                "mean_signal_variance_shells_per_half", None
-            ),
-            tau2_fudge=values.pop("tau2_fudge"),
-            relion_minres_map=values.pop("relion_minres_map"),
-        ),
-        mean_helpers.MeanGeometrySpec(
-            current_size=values.pop("cs"),
-            grid_size=values.pop("grid_size"),
-            cryo=values.pop("cryo"),
-            volume_shape=values.pop("volume_shape"),
-            padding_factor=values.pop("padding_factor"),
-            projection_padding_factor=values.pop("projection_padding_factor"),
-            accumulator_volume_shape=values.pop("accumulator_volume_shape", None),
-        ),
-        mean_helpers.MeanPostprocessPolicy(
-            n_classes=values.pop("n_classes"),
-            iteration=values.pop("iteration"),
-            particle_diameter_ang=values.pop("particle_diameter_ang"),
-            relion_firstiter_cc_this_iter=values.pop(
-                "relion_firstiter_cc_this_iter"
-            ),
-            relion_firstiter_ini_high_angstrom=values.pop(
-                "relion_firstiter_ini_high_angstrom"
-            ),
-            relion_width_mask_edge=values.pop("relion_width_mask_edge"),
-            relion_fmask_edge=values.pop("relion_fmask_edge"),
-        ),
+    Ft_y_by_half = (values.pop("Ft_y_0"), values.pop("Ft_y_1"))
+    Ft_ctf_by_half = (values.pop("Ft_ctf_0"), values.pop("Ft_ctf_1"))
+    Ft_y_combined = values.pop("Ft_y_combined")
+    Ft_ctf_combined = values.pop("Ft_ctf_combined")
+    mean_signal_variance = values.pop("mean_signal_variance")
+    mean_signal_variance_shells = values.pop("mean_signal_variance_shells")
+    mean_signal_variance_per_half = values.pop("mean_signal_variance_per_half")
+    mean_signal_variance_shells_per_half = values.pop(
+        "mean_signal_variance_shells_per_half", None
+    )
+    tau2_fudge = values.pop("tau2_fudge")
+    n_classes = values.pop("n_classes")
+    iteration = values.pop("iteration")
+    current_size = values.pop("cs")
+    cryo = values.pop("cryo")
+    accumulator_volume_shape = values.pop("accumulator_volume_shape", None)
+    retained_first_numerator = values.pop("retained_Ft_y_0_device", None)
+    particle_diameter_ang = values.pop("particle_diameter_ang")
+    relion_firstiter_cc_this_iter = values.pop("relion_firstiter_cc_this_iter")
+    relion_firstiter_ini_high_angstrom = values.pop(
+        "relion_firstiter_ini_high_angstrom"
+    )
+    settings = mean_helpers.ReconstructionSettings(
+        grid_size=values.pop("grid_size"),
+        voxel_size=cryo.voxel_size,
+        volume_shape=values.pop("volume_shape"),
+        padding_factor=values.pop("padding_factor"),
+        projection_padding_factor=values.pop("projection_padding_factor"),
+        minres_map=values.pop("relion_minres_map"),
+        width_mask_edge=values.pop("relion_width_mask_edge"),
+        fmask_edge=values.pop("relion_fmask_edge"),
+    )
+    if n_classes > 1:
+        tau_by_class = (
+            mean_signal_variance_shells
+            if mean_signal_variance_shells is not None
+            else mean_signal_variance
+        )
+        shared = mean_helpers.reconstruct_class_means(
+            Ft_y_combined,
+            Ft_ctf_combined,
+            tau_by_class,
+            settings,
+            n_classes=n_classes,
+            iteration=iteration,
+            current_size=current_size,
+            tau2_fudge=tau2_fudge,
+            accumulator_volume_shape=accumulator_volume_shape,
+            tau_is_1d=mean_signal_variance_shells is not None,
+        )
+        means[0] = means[1] = shared
+    else:
+        tau_by_half = (
+            mean_signal_variance_shells_per_half
+            if mean_signal_variance_shells_per_half is not None
+            else mean_signal_variance_per_half
+        )
+        means[:] = mean_helpers.reconstruct_k1_means(
+            Ft_y_by_half,
+            Ft_ctf_by_half,
+            tau_by_half,
+            settings,
+            current_size=current_size,
+            tau2_fudge=tau2_fudge,
+            accumulator_volume_shape=accumulator_volume_shape,
+            tau_is_1d=mean_signal_variance_shells_per_half is not None,
+            retained_first_numerator=retained_first_numerator,
+        )
+    mean_helpers.postprocess_reconstructed_means(
+        means,
+        settings,
+        n_classes=n_classes,
+        iteration=iteration,
+        current_size=current_size,
+        particle_diameter_ang=particle_diameter_ang,
+        relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+        relion_firstiter_ini_high_angstrom=relion_firstiter_ini_high_angstrom,
     )
     assert not values, f"unmapped mean reconstruction values: {sorted(values)}"
-    return owners
 
 
 def local_iteration_owners(*args, **values):

@@ -1,6 +1,5 @@
 """Donor reconstruction ownership and authoritative per-half shell priors."""
 
-import ast
 import dataclasses
 import inspect
 
@@ -8,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
-from helpers.refinement_specs import mean_reconstruction_owners
+from helpers.refinement_specs import run_mean_reconstruction
 from recovar.core import fourier_transform_utils as ftu
 from recovar.reconstruction import relion_functions as rf
 
@@ -20,34 +19,42 @@ VOLUME_SHAPE = (8, 8, 8)
 VOLUME_SIZE = 512
 
 
-def test_mean_reconstruction_core_keeps_spec_ownership_visible():
+def test_mean_reconstruction_variants_share_run_level_settings():
+    from relax.refinement import iteration_loop as iteration_loop_module
     from relax.refinement import mean_helpers as mean_helpers_module
 
-    function = mean_helpers_module._reconstruct_and_postprocess_means
-    assert tuple(inspect.signature(function).parameters) == (
-        "data", "accumulators", "prior", "geometry", "postprocess",
+    assert tuple(inspect.signature(mean_helpers_module.reconstruct_k1_means).parameters) == (
+        "numerators_by_half", "denominators_by_half", "tau_by_half", "settings",
+        "current_size", "tau2_fudge", "accumulator_volume_shape", "tau_is_1d",
+        "retained_first_numerator",
     )
+    assert tuple(inspect.signature(mean_helpers_module.reconstruct_class_means).parameters) == (
+        "combined_numerators", "combined_denominators", "tau_by_class", "settings",
+        "n_classes", "iteration", "current_size", "tau2_fudge",
+        "accumulator_volume_shape", "tau_is_1d",
+    )
+    assert tuple(inspect.signature(mean_helpers_module.postprocess_reconstructed_means).parameters) == (
+        "means", "settings", "n_classes", "iteration", "current_size",
+        "particle_diameter_ang", "relion_firstiter_cc_this_iter",
+        "relion_firstiter_ini_high_angstrom",
+    )
+    assert tuple(field.name for field in dataclasses.fields(mean_helpers_module.ReconstructionSettings)) == (
+        "grid_size", "voxel_size", "volume_shape", "padding_factor",
+        "projection_padding_factor", "minres_map", "width_mask_edge", "fmask_edge",
+    )
+    for name in (
+        "MeanReconstructionData", "MeanAccumulatorState", "MeanPriorSpec",
+        "MeanGeometrySpec", "MeanPostprocessPolicy",
+    ):
+        assert not hasattr(mean_helpers_module, name)
 
-    tree = ast.parse(inspect.getsource(function))
-    assigned_names = {
-        target.id
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.Assign, ast.AnnAssign))
-        for target in ([*node.targets] if isinstance(node, ast.Assign) else [node.target])
-        if isinstance(target, ast.Name)
-    }
-    stable_field_names = {
-        field.name
-        for owner in (
-            mean_helpers_module.MeanReconstructionData,
-            mean_helpers_module.MeanAccumulatorState,
-            mean_helpers_module.MeanPriorSpec,
-            mean_helpers_module.MeanGeometrySpec,
-            mean_helpers_module.MeanPostprocessPolicy,
-        )
-        for field in dataclasses.fields(owner)
-    }
-    assert assigned_names & stable_field_names == {"retained_Ft_y_0_device"}
+    source = inspect.getsource(iteration_loop_module.refine_single_volume)
+    settings = source.index("reconstruction_settings = ReconstructionSettings(")
+    loop = source.index("while (schedule.force_max_iter_after_convergence")
+    reconstruction = source.index("reconstruct_k1_means(", loop)
+    postprocess = source.index("postprocess_reconstructed_means(", reconstruction)
+    assert source.count("ReconstructionSettings(") == 1
+    assert settings < loop < reconstruction < postprocess
 
 
 def test_unregularized_reconstruction_variants_expose_dependencies():
@@ -104,7 +111,7 @@ class TestReconstructionOwnership:
         tau_shells = [jnp.arange(n_shells, dtype=jnp.float32) + 101.0, jnp.arange(n_shells, dtype=jnp.float32) + 201.0]
         retained_half0 = object()
         means = [None, None]
-        mean_helpers_module._reconstruct_and_postprocess_means(*mean_reconstruction_owners(
+        run_mean_reconstruction(
             means,
             Ft_y_0=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
             Ft_y_1=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
@@ -132,7 +139,7 @@ class TestReconstructionOwnership:
             relion_fmask_edge=2,
             mean_signal_variance_shells_per_half=tau_shells,
             retained_Ft_y_0_device=retained_half0,
-        ))
+        )
         assert len(calls) == 2
         assert events == ["reconstruct", "finish", "reconstruct", "finish"]
         assert calls[0]["retained_device_numerator"] is retained_half0
@@ -414,7 +421,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         mean_helpers_module, "_finish_host_staged_reconstruction", lambda result, *_accumulators: result
     )
     means = [None, None]
-    mean_helpers_module._reconstruct_and_postprocess_means(*mean_reconstruction_owners(
+    run_mean_reconstruction(
         means,
         Ft_y_0=joined[0],
         Ft_y_1=joined[1],
@@ -443,7 +450,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         accumulator_volume_shape=accumulator_shape,
         mean_signal_variance_shells_per_half=[jnp.ones(3, dtype=jnp.float32), jnp.ones(3, dtype=jnp.float32)],
         retained_Ft_y_0_device=retained_half0,
-    ))
+    )
     assert len(calls) == 2
     assert calls[0][0][1] is joined[0]
     assert calls[0][1]["retained_device_numerator"] is retained_half0
