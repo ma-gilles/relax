@@ -333,32 +333,16 @@ class NoiseUpdateResult:
     previous_noise_radial_per_half: list
 
 
-@_dataclass(frozen=True, kw_only=True)
-class NoisePosteriorState:
-    """Per-half sufficient statistics and the previous noise model."""
-
-    stats_per_half: object
-    variance_per_half: list
-    previous_radial_per_half: list
-    previous_radial: object
-
-
-@_dataclass(frozen=True, kw_only=True)
-class NoiseUpdateContext:
-    """Algorithm-variant and iteration identity for one posterior update."""
-
-    cryo: object
-    k_class_enabled: bool
-    firstiter_cc: bool
-    iteration: int
-    current_size: int
-
-
-
 def update_posterior_noise_variance(
-    posterior: NoisePosteriorState,
-    context: NoiseUpdateContext,
-    maybe_dump_noise_update_debug=None,
+    noise_stats_per_half,
+    noise_variance_per_half: list,
+    previous_noise_radial_per_half: list,
+    previous_noise_radial,
+    image_shape,
+    *,
+    k_class_enabled: bool,
+    firstiter_cc: bool,
+    dump_debug=None,
 ) -> NoiseUpdateResult:
     """RELION-style posterior-weighted noise update.
 
@@ -367,7 +351,7 @@ def update_posterior_noise_variance(
     refinement shares one sigma2_noise across classes (Class3D ordering);
     K=1 keeps independent per-half sigma2_noise.
 
-    When ``relion_firstiter_cc_this_iter`` is true, keeps the previous
+    When ``firstiter_cc`` is true, keeps the previous
     sigma2_noise (matching RELION's iter-1 CC emulation, which skips the
     first-iter noise update).
     """
@@ -376,16 +360,16 @@ def update_posterior_noise_variance(
 
     from relax.reconstruction import noise_relion
 
-    if posterior.stats_per_half[0] is None or posterior.stats_per_half[1] is None:
+    if noise_stats_per_half[0] is None or noise_stats_per_half[1] is None:
         raise RuntimeError(
             "RELION mode expected per-half NoiseStats from the EM engine; "
             "ensure accumulate_noise=True is plumbed through pass 2.",
         )
 
-    if context.firstiter_cc:
+    if firstiter_cc:
         noise_from_res_per_half = [
             np.asarray(noise_k, dtype=np.float64)
-            for noise_k in posterior.previous_radial_per_half
+            for noise_k in previous_noise_radial_per_half
         ]
         noise_from_res = np.mean(np.stack(noise_from_res_per_half, axis=0), axis=0)
         logger.info(
@@ -394,59 +378,59 @@ def update_posterior_noise_variance(
         return NoiseUpdateResult(
             noise_from_res=noise_from_res,
             noise_from_res_per_half=noise_from_res_per_half,
-            noise_variance_per_half=posterior.variance_per_half,
-            noise_variance=_mean_noise_variance(posterior.variance_per_half),
-            previous_noise_radial=posterior.previous_radial,
-            previous_noise_radial_per_half=posterior.previous_radial_per_half,
+            noise_variance_per_half=noise_variance_per_half,
+            noise_variance=_mean_noise_variance(noise_variance_per_half),
+            previous_noise_radial=previous_noise_radial,
+            previous_noise_radial_per_half=previous_noise_radial_per_half,
         )
 
-    if context.k_class_enabled:
-        combined_noise_stats = _combined_noise_stats(posterior.stats_per_half)
+    if k_class_enabled:
+        combined_noise_stats = _combined_noise_stats(noise_stats_per_half)
         if combined_noise_stats is None:
             raise RuntimeError("K-class noise update expected at least one NoiseStats object")
         noise_shared = noise_relion.normalize_wsum_to_sigma2_noise(
             np.asarray(combined_noise_stats.wsum_sigma2_noise, dtype=np.float64),
             np.asarray(combined_noise_stats.wsum_img_power, dtype=np.float64),
             combined_noise_stats.sumw,
-            context.cryo.image_shape,
+            image_shape,
         )
         noise_from_res = np.asarray(noise_shared, dtype=np.float64)
         noise_from_res_per_half = [noise_from_res.copy(), noise_from_res.copy()]
         noise_variance_shared = jnp.asarray(
-            noise.make_radial_noise(noise_shared, context.cryo.image_shape),
+            noise.make_radial_noise(noise_shared, image_shape),
         ).reshape(-1)
         noise_variance_per_half = [noise_variance_shared, noise_variance_shared]
-    elif np.ndim(posterior.stats_per_half[0].wsum_sigma2_noise) == 2:
+    elif np.ndim(noise_stats_per_half[0].wsum_sigma2_noise) == 2:
         noise_from_res_per_half = []
-        for k_noise, stats_k in enumerate(posterior.stats_per_half):
+        for k_noise, stats_k in enumerate(noise_stats_per_half):
             noise_k, noise_rows_k = _per_optics_group_sigma2_noise(
                 stats_k,
                 np.asarray(
-                    posterior.previous_radial_per_half[k_noise], dtype=np.float64
+                    previous_noise_radial_per_half[k_noise], dtype=np.float64
                 ),
-                posterior.variance_per_half[k_noise],
-                context.cryo.image_shape,
+                noise_variance_per_half[k_noise],
+                image_shape,
             )
             noise_from_res_per_half.append(noise_k)
-            posterior.variance_per_half[k_noise] = noise_rows_k
+            noise_variance_per_half[k_noise] = noise_rows_k
         noise_from_res = np.mean(np.stack(noise_from_res_per_half, axis=0), axis=0)
     else:
         noise_from_res_per_half = []
-        for k_noise, stats_k in enumerate(posterior.stats_per_half):
+        for k_noise, stats_k in enumerate(noise_stats_per_half):
             noise_k = noise_relion.normalize_wsum_to_sigma2_noise(
                 np.asarray(stats_k.wsum_sigma2_noise, dtype=np.float64),
                 np.asarray(stats_k.wsum_img_power, dtype=np.float64),
                 stats_k.sumw,
-                context.cryo.image_shape,
+                image_shape,
             )
             noise_from_res_per_half.append(np.asarray(noise_k, dtype=np.float64))
-            posterior.variance_per_half[k_noise] = jnp.asarray(
-                noise.make_radial_noise(noise_k, context.cryo.image_shape),
+            noise_variance_per_half[k_noise] = jnp.asarray(
+                noise.make_radial_noise(noise_k, image_shape),
             ).reshape(-1)
         noise_from_res = np.mean(np.stack(noise_from_res_per_half, axis=0), axis=0)
 
     # Log per-shell noise comparison (first 10 shells) for convergence diagnostics.
-    old_noise_radial = np.asarray(posterior.previous_radial).reshape(
+    old_noise_radial = np.asarray(previous_noise_radial).reshape(
         -1, np.shape(noise_from_res)[-1]
     )[0]
     new_noise_radial = np.asarray(noise_from_res).reshape(-1, np.shape(noise_from_res)[-1])[0]
@@ -457,28 +441,20 @@ def update_posterior_noise_variance(
         ", ".join(f"{float(x):.3e}" for x in old_noise_radial[:n_log]),
         ", ".join(f"{float(x):.3e}" for x in new_noise_radial[:n_log]),
     )
-    if maybe_dump_noise_update_debug is not None:
-        maybe_dump_noise_update_debug(
-            iteration=context.iteration,
-            current_size=context.current_size,
-            image_shape=context.cryo.image_shape,
-            noise_stats_per_half=posterior.stats_per_half,
-            previous_noise_radial_per_half=posterior.previous_radial_per_half,
+    if dump_debug is not None:
+        dump_debug(
+            noise_stats_per_half=noise_stats_per_half,
+            previous_noise_radial_per_half=previous_noise_radial_per_half,
             noise_from_res_per_half=noise_from_res_per_half,
             noise_from_res=noise_from_res,
         )
 
     new_previous_noise_radial = jnp.asarray(noise_from_res)
-    updated_variance_per_half = (
-        noise_variance_per_half
-        if context.k_class_enabled
-        else posterior.variance_per_half
-    )
-    noise_variance = _mean_noise_variance(updated_variance_per_half)
+    noise_variance = _mean_noise_variance(noise_variance_per_half)
     return NoiseUpdateResult(
         noise_from_res=noise_from_res,
         noise_from_res_per_half=noise_from_res_per_half,
-        noise_variance_per_half=updated_variance_per_half,
+        noise_variance_per_half=noise_variance_per_half,
         noise_variance=noise_variance,
         previous_noise_radial=new_previous_noise_radial,
         previous_noise_radial_per_half=noise_from_res_per_half,

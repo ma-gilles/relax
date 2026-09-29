@@ -238,8 +238,6 @@ from relax.refinement.mean_helpers import (
     update_learned_direction_priors,
 )
 from relax.refinement.noise_updates import (
-    NoisePosteriorState,
-    NoiseUpdateContext,
     _mean_noise_variance,
     _noise_radial_history,
     _normalize_noise_variance_per_half,
@@ -4328,21 +4326,21 @@ def refine_single_volume(
         # K-class (shared) / K=1 (per-half) / firstiter_cc-skip variants;
         # returns updated radial sigma2_noise + the unrolled
         # ``noise_variance`` representation consumed by the engine.
+        noise_debug_dump = partial(
+            _maybe_dump_noise_update_debug,
+            iteration=iteration,
+            current_size=current_size,
+            image_shape=cryo.image_shape,
+        )
         noise_update = update_posterior_noise_variance(
-            NoisePosteriorState(
-                stats_per_half=noise_stats_per_half,
-                variance_per_half=noise_variance_per_half,
-                previous_radial_per_half=previous_noise_radial_per_half,
-                previous_radial=previous_noise_radial,
-            ),
-            NoiseUpdateContext(
-                cryo=cryo,
-                k_class_enabled=k_class_enabled,
-                firstiter_cc=relion_firstiter_cc_this_iter,
-                iteration=iteration,
-                current_size=current_size,
-            ),
-            maybe_dump_noise_update_debug=_maybe_dump_noise_update_debug,
+            noise_stats_per_half,
+            noise_variance_per_half,
+            previous_noise_radial_per_half,
+            previous_noise_radial,
+            cryo.image_shape,
+            k_class_enabled=k_class_enabled,
+            firstiter_cc=relion_firstiter_cc_this_iter,
+            dump_debug=noise_debug_dump,
         )
         noise_from_res = noise_update.noise_from_res
         noise_from_res_per_half = noise_update.noise_from_res_per_half

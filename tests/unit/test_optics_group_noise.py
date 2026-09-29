@@ -6,10 +6,7 @@ with that group's own weight (``maximizationOtherParameters``, ml_optimiser.cpp
 group g's sums would, and a one-group run must keep the flat layout.
 """
 
-import ast
-import dataclasses
 import inspect
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -34,44 +31,28 @@ def _stats(rng, n_groups=None, sumw=None):
 
 def _update(stats_per_half, noise_per_half, radial_per_half):
     return noise_updates.update_posterior_noise_variance(
-        noise_updates.NoisePosteriorState(
-            stats_per_half=stats_per_half,
-            variance_per_half=list(noise_per_half),
-            previous_radial_per_half=radial_per_half,
-            previous_radial=np.mean(np.stack(radial_per_half), axis=0),
-        ),
-        noise_updates.NoiseUpdateContext(
-            cryo=SimpleNamespace(image_shape=SHAPE),
-            k_class_enabled=False,
-            firstiter_cc=False,
-            iteration=3,
-            current_size=SHAPE[0],
-        ),
+        stats_per_half,
+        list(noise_per_half),
+        radial_per_half,
+        np.mean(np.stack(radial_per_half), axis=0),
+        SHAPE,
+        k_class_enabled=False,
+        firstiter_cc=False,
     )
 
 
-def test_noise_update_signature_keeps_state_and_context_visible():
+def test_noise_update_signature_keeps_dependencies_visible():
     function = noise_updates.update_posterior_noise_variance
     assert tuple(inspect.signature(function).parameters) == (
-        "posterior",
-        "context",
-        "maybe_dump_noise_update_debug",
+        "noise_stats_per_half",
+        "noise_variance_per_half",
+        "previous_noise_radial_per_half",
+        "previous_noise_radial",
+        "image_shape",
+        "k_class_enabled",
+        "firstiter_cc",
+        "dump_debug",
     )
-
-    tree = ast.parse(inspect.getsource(function))
-    assigned_names = {
-        target.id
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.Assign, ast.AnnAssign))
-        for target in ([*node.targets] if isinstance(node, ast.Assign) else [node.target])
-        if isinstance(target, ast.Name)
-    }
-    owner_fields = {
-        field.name
-        for owner in (noise_updates.NoisePosteriorState, noise_updates.NoiseUpdateContext)
-        for field in dataclasses.fields(owner)
-    }
-    assert assigned_names.isdisjoint(owner_fields)
 
 
 @pytest.mark.unit
