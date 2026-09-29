@@ -68,6 +68,42 @@ def glibc_rand_sequence(seed: int, count: int) -> np.ndarray:
     return out
 
 
+def glibc_first_rand(seeds) -> np.ndarray:
+    """``rand()``'s first value after ``srand(seed)`` for each seed: :func:`glibc_rand_sequence` over many seeds."""
+    seeds = np.asarray(seeds, dtype=np.int64).reshape(-1) & 0xFFFFFFFF
+    seeds = np.where(seeds == 0, 1, seeds)
+    word = np.where(seeds >= (1 << 31), seeds - (1 << 32), seeds)  # int32_t in glibc
+    state = [word]
+    for _ in range(1, 31):
+        hi = np.trunc(word / 127773).astype(np.int64)  # C division truncates toward zero
+        lo = word - hi * 127773
+        word = 16807 * lo - 2836 * hi
+        word = np.where(word < 0, word + _GLIBC_MODULUS, word)
+        state.append(word)
+    state = [value & 0xFFFFFFFF for value in state]
+    for i in range(31, 34):
+        state.append(state[i - 31])
+    for i in range(34, 345):
+        state.append((state[i - 31] + state[i - 3]) & 0xFFFFFFFF)
+    return state[344] >> 1
+
+
+def relion_class3d_seed_classes(expectation_order, random_seed: int, n_classes: int) -> np.ndarray:
+    """Each input row's class in RELION's first Class3D iteration from one reference (0-based).
+
+    ``relion_refine --K K`` with a single ``--ref`` map copies it to every class and scores each
+    particle against one random class in the first iteration (``do_generate_seeds``,
+    ml_model.cpp:1007-1010): for the particle at sorted position ``j``,
+    ``init_random_generator(random_seed + j)`` then ``rand() % K`` (ml_optimiser.cpp:4626-4633,
+    :4880-4898). ``expectation_order[j]`` is the input row at sorted position ``j``
+    (``relax.helpers.expected_accuracy.relion_class3d_trial_layout``).
+    """
+    order = np.asarray(expectation_order, dtype=np.int64).reshape(-1)
+    classes = np.empty(order.size, dtype=np.int64)
+    classes[order] = glibc_first_rand(int(random_seed) + np.arange(order.size, dtype=np.int64)) % int(n_classes)
+    return classes
+
+
 def relion_particle_order(particles: pd.DataFrame) -> np.ndarray:
     """Return input row indices in RELION's post-read order (stable byte-wise micrograph sort)."""
     n_rows = len(particles)

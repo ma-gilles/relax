@@ -422,6 +422,7 @@ def particle_coarse_supports(
     scale_corrections=None,
     unit_rotation_ids=None,
     unit_rotation_log_priors=None,
+    unit_classes=None,
 ):
     """Each particle's coarse significant samples, ``rot * T + t`` int32 ids per unit, and its coarse Pmax.
 
@@ -437,11 +438,30 @@ def particle_coarse_supports(
     rows of ``coarse_eulers_deg``) with the log prior ``unit_rotation_log_priors[u]`` (RELION's
     orientations with a nonzero prior, selectOrientationsWithNonZeroPriorProbability); the returned
     ids keep indexing ``coarse_eulers_deg``.
+
+    Class3D (K>1) passes a tuple of K ``projector_full`` and ``rotation_log_prior`` ``[K, R]`` (each class's
+    ``log pdf_class`` folded into its direction prior): every image is scored against each class, and the
+    particle's weights over (class, rotation, translation) are cut jointly, as RELION's
+    convertAllSquaredDifferencesToWeights sorts all classes' weights of the particle together
+    (acc_ml_optimiser_impl.h:2245-2345). The supports are then a list per class. ``unit_classes`` ``[U]``,
+    when given, is RELION's first iteration from one reference: each particle is scored against its
+    random class only (``exp_iclass_min = exp_iclass_max``, ml_optimiser.cpp:4880-4898), so its other
+    classes have no weight and take no part in its minimum diff2.
     """
 
     from relax.refinement import tomo_particles
     from relax.sampling import _relion_adaptive_pass1_rotations
 
+    class_projectors = tuple(projector_full) if isinstance(projector_full, (tuple, list)) else (projector_full,)
+    n_classes = len(class_projectors)
+    if n_classes > 1 and (
+        unit_rotation_ids is not None or rotation_log_prior is None or np.ndim(rotation_log_prior) != 2
+    ):
+        raise ValueError("a K-class coarse pass is a global search with one rotation log prior per class, [K, R]")
+    if unit_classes is not None:
+        unit_classes = np.asarray(unit_classes, dtype=np.int64).reshape(-1)
+        if n_classes == 1 or unit_classes.size != int(np.asarray(unit_image_offsets).size - 1):
+            raise ValueError("a seed iteration gives each particle of a K-class pass one class")
     offsets = np.asarray(unit_image_offsets, dtype=np.int64)
     image_projections = np.asarray(image_projections, dtype=np.float64)
     old = tomo_particles.relion_gpu_old_offsets(np.asarray(unit_old_offsets_px, dtype=np.float64))
@@ -489,8 +509,8 @@ def particle_coarse_supports(
     r_pad_all = batches[0][1] if batches else 0
     # The significance of several batches' particles runs as one call, [P_sig, R_pad * T] values
     # within the batch budget; a particle's padded rotations carry a -inf prior and are never significant.
-    significance_batch = max(1, _COARSE_BATCH_BYTES // max(r_pad_all * n_coarse_trans * 4, 1))
-    supports, pmax_by_unit = {}, {}
+    significance_batch = max(1, _COARSE_BATCH_BYTES // max(n_classes * r_pad_all * n_coarse_trans * 4, 1))
+    supports, pmax_by_unit = [{} for _ in range(n_classes)], {}
     pending = []
 
     def flush():
@@ -499,10 +519,19 @@ def particle_coarse_supports(
         units_all = np.concatenate([u for u, _ in pending])
         totals = jnp.concatenate([t for _, t in pending], axis=0)
         pending.clear()
+        if unit_classes is not None:
+            # A class the particle is not scored against: diff2 +inf, so no weight and no part in the minimum.
+            scored = np.repeat(np.arange(n_classes)[None, :] == unit_classes[units_all][:, None], r_pad_all, axis=1)
+            totals = jnp.where(jnp.asarray(scored)[:, :, None], totals, jnp.float32(jnp.inf))
         if local:
             rotation_prior = np.full((units_all.size, r_pad_all), -np.inf, dtype=np.float32)
             for i, unit in enumerate(units_all):
                 rotation_prior[i, : int(rotation_counts[unit])] = np.asarray(unit_rotation_log_priors[unit], np.float32)
+        elif n_classes > 1:
+            # The classes' rotations side by side, class-major (class k at k * R_pad), padding at -inf.
+            rotation_prior = np.full((n_classes, r_pad_all), -np.inf, dtype=np.float32)
+            rotation_prior[:, : coarse_eulers_deg.shape[0]] = np.asarray(rotation_log_prior, np.float32)
+            rotation_prior = rotation_prior.reshape(-1)
         elif r_pad_all > coarse_eulers_deg.shape[0]:
             rotation_prior = np.full(r_pad_all, -np.inf, dtype=np.float32)
             rotation_prior[: coarse_eulers_deg.shape[0]] = (
@@ -519,12 +548,15 @@ def particle_coarse_supports(
         )
         masks, particle_pmax = np.asarray(stats["mask"]), np.asarray(stats["pmax"], dtype=np.float64)
         for i, unit in enumerate(units_all):
-            cells = np.flatnonzero(masks[i])
-            if cells.size and int(cells[-1]) // n_coarse_trans >= int(rotation_counts[unit]):
-                raise RuntimeError(f"particle {unit}: a padded coarse rotation came out significant")
-            if local:
-                cells = unit_rotations[unit][cells // n_coarse_trans] * n_coarse_trans + cells % n_coarse_trans
-            supports[int(unit)] = cells.astype(np.int32)
+            all_cells = np.flatnonzero(masks[i])
+            cell_class = all_cells // (r_pad_all * n_coarse_trans)
+            for class_index in range(n_classes):
+                cells = all_cells[cell_class == class_index] - class_index * r_pad_all * n_coarse_trans
+                if cells.size and int(cells[-1]) // n_coarse_trans >= int(rotation_counts[unit]):
+                    raise RuntimeError(f"particle {unit}: a padded coarse rotation came out significant")
+                if local:
+                    cells = unit_rotations[unit][cells // n_coarse_trans] * n_coarse_trans + cells % n_coarse_trans
+                supports[class_index][int(unit)] = cells.astype(np.int32)
             pmax_by_unit[int(unit)] = float(particle_pmax[i])
 
     for units, r_pad, p_pad, slot_block in batches:
@@ -561,30 +593,35 @@ def particle_coarse_supports(
         batch_unshifted = jnp.where(valid[..., None], unshifted[index], jnp.zeros((), unshifted.dtype))
         batch_weight = jnp.where(valid[..., None], weight[index], jnp.zeros((), weight.dtype))
         batch_initial = jnp.where(valid, initial[index], jnp.zeros((), initial.dtype))
-        total = jnp.zeros((p_pad, r_pad, n_coarse_trans), dtype=jnp.float32)
-        for first in range(0, slots, slot_block):
-            block = slice(first, first + slot_block)
-            total = _particles_coarse_diff2(
-                total,
-                projector_full,
-                jnp.asarray(rotations[:, block]),
-                batch_unshifted[:, block],
-                batch_weight[:, block],
-                batch_initial[:, block],
-                jnp.asarray(angles[:, block]),
-                layout.full_to_compact,
-                current_size=int(layout.current_size),
-                physical_image_size=int(layout.image_shape[0]),
-                model_max_r=int(model_max_r),
-                padding_factor=int(padding_factor),
-                n_chunks=int(n_chunks),
-            )
-        pending.append((units, total[: units.size]))
+        class_totals = []
+        for class_projector in class_projectors:
+            total = jnp.zeros((p_pad, r_pad, n_coarse_trans), dtype=jnp.float32)
+            for first in range(0, slots, slot_block):
+                block = slice(first, first + slot_block)
+                total = _particles_coarse_diff2(
+                    total,
+                    class_projector,
+                    jnp.asarray(rotations[:, block]),
+                    batch_unshifted[:, block],
+                    batch_weight[:, block],
+                    batch_initial[:, block],
+                    jnp.asarray(angles[:, block]),
+                    layout.full_to_compact,
+                    current_size=int(layout.current_size),
+                    physical_image_size=int(layout.image_shape[0]),
+                    model_max_r=int(model_max_r),
+                    padding_factor=int(padding_factor),
+                    n_chunks=int(n_chunks),
+                )
+            class_totals.append(total[: units.size])
+        # K>1: [P, K * R_pad, T], class-major along the rotation axis.
+        pending.append((units, class_totals[0] if n_classes == 1 else jnp.concatenate(class_totals, axis=1)))
         # Only operands_for keeps the block, so a new block is allocated after the old one is freed.
         del unshifted, weight, initial, batch_unshifted, batch_weight, batch_initial
         if sum(int(u.size) for u, _ in pending) >= significance_batch:
             flush()
     flush()
-    return [supports[u] for u in range(n_units)], np.asarray(
+    class_supports = [[supports[k][u] for u in range(n_units)] for k in range(n_classes)]
+    return class_supports[0] if n_classes == 1 else class_supports, np.asarray(
         [pmax_by_unit[u] for u in range(n_units)], dtype=np.float64
     )

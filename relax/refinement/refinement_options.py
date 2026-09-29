@@ -198,6 +198,9 @@ class KClassOptions:
 
     n_classes: int = 1
     init_class_log_priors: Any | None = None
+    # RELION's Class3D from one reference (do_generate_seeds): each particle's class in the first
+    # iteration, 0-based, per input particle row (input_particle_table.relion_class3d_seed_classes).
+    first_iteration_seed_classes: Any | None = None
 
 
 @dataclass(frozen=True)

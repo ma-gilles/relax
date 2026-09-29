@@ -465,8 +465,15 @@ def _assemble_result(
         # and there is no per-class noise to combine. Its sum_weight is RELION's
         # joint class-by-pose mass, which is what the per-class path reconstructs by
         # rescaling. Take it as given rather than splitting it back into classes.
+        # With several optics groups the pass's sum_weight is per group (sumw_group[g],
+        # subtomogram Class3D), the same mass split by group: it is kept as it is.
+        override_sumw = aggregate_noise_stats_override.sumw
         aggregate_noise_stats = aggregate_noise_stats_override._replace(
-            sumw=float(np.sum(np.asarray(class_mstep_posterior_sums, dtype=np.float64))),
+            sumw=(
+                float(np.sum(np.asarray(class_mstep_posterior_sums, dtype=np.float64)))
+                if np.ndim(override_sumw) == 0
+                else override_sumw
+            ),
         )
     else:
         aggregate_noise_stats = _sum_k_class_noise_stats(

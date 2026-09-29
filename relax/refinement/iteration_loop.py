@@ -1311,6 +1311,16 @@ def refine_single_volume(
     while (schedule.force_max_iter_after_convergence or not state.has_converged) and iteration < schedule.max_iter:
         # A continued run's first iteration follows the snapshot's iteration.
         has_previous_iteration = iteration > 0 or resume is not None
+        # RELION's Class3D from one reference scores each particle against one random class in its first
+        # iteration (do_generate_seeds, ml_optimiser.cpp:4626-4633, :4880-4898).
+        seed_iteration = (
+            k_class.first_iteration_seed_classes is not None
+            and iteration == 0
+            and resume is None
+            and int(init_relion_iteration) == 0
+        )
+        if seed_iteration and not tomo_halves:
+            raise NotImplementedError("the single-reference Class3D start is implemented for subtomograms")
         if perturb_replay_relion_dir is not None and replay_policy._past_perturb_replay_max_iter(
             iteration, perturb_replay_max_iter
         ):
@@ -2882,6 +2892,17 @@ def refine_single_volume(
                     outputs=per_half,
                     k=k,
                     symmetry=symmetry,
+                    class_log_priors=class_log_priors if k_class_enabled else None,
+                    class_rotation_log_prior=class_rotation_log_prior_k if k_class_enabled else None,
+                    unit_seed_classes=(
+                        np.asarray(k_class.first_iteration_seed_classes)[
+                            experiment_datasets[k]._index_layout.original_image_indices_for_local(
+                                np.arange(experiment_datasets[k].n_units)
+                            )
+                        ]
+                        if seed_iteration
+                        else None
+                    ),
                 )
                 ha_k = score_result.ha
                 Ft_y_k = score_result.Ft_y

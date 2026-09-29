@@ -78,6 +78,7 @@ from relax.relion.initial_noise import (
     compute_avg_unaligned_and_sigma2,
     read_relion_single_optics_sigma2_noise,
 )
+from relax.relion.input_particle_table import relion_class3d_seed_classes
 from relax.relion.relion_ctf import refuse_generic_ctf_for_optics
 from relax.relion.relion_worker_scale import (
     load_relion_dispatch_schedule,
@@ -1839,8 +1840,6 @@ def _validate_continue_cli(args) -> int:
 def _validate_tomo_run(args, frozen_boundary, double_image_preprocessing):
     """Refuse options the subtomogram (2D-stack) path does not implement yet (S4.2)."""
 
-    if int(args.n_classes) != 1:
-        raise SystemExit("subtomogram particles run the K=1 auto-refine only (S4.2)")
     if frozen_boundary is not None or args.relion_init_dir is not None or args.init_noise_from_npz is not None:
         raise SystemExit("subtomogram particles start fresh from RELION's inputs (no frozen, replayed or loaded state)")
     if double_image_preprocessing:
@@ -3803,7 +3802,18 @@ def main(command=None):
             relion_model_pixel_size,
         )
     else:
-        if args.ref_star is not None:
+        if args.init_volume is not None:
+            # relion_refine --K K with one --ref map: every class starts from it and the first iteration scores
+            # each particle against one random class (do_generate_seeds, ml_model.cpp:1007-1010).
+            if args.ref_star is not None or args.init_class_volumes:
+                raise SystemExit("--init_volume is Class3D's one reference; --ref_star and --init_class_volumes list K")
+            if not tomo_run or args.firstiter_cc:
+                raise SystemExit(
+                    "the single-reference Class3D start (--init_volume with --n_classes K) is implemented for "
+                    "subtomograms without --firstiter_cc"
+                )
+            class_paths = [args.init_volume] * int(args.n_classes)
+        elif args.ref_star is not None:
             if args.init_class_volumes:
                 raise SystemExit("--ref_star and --init_class_volumes are exclusive")
             class_paths, star_distribution = relion_metadata.read_relion_reference_star(args.ref_star)
@@ -4897,6 +4907,13 @@ def main(command=None):
             ),
             k_class=KClassOptions(
                 n_classes=args.n_classes,
+                first_iteration_seed_classes=(
+                    relion_class3d_seed_classes(
+                        expected_accuracy_half1_trial_order_local, int(args.seed), int(args.n_classes)
+                    )
+                    if args.n_classes > 1 and args.init_volume is not None and resume_snapshot is None
+                    else None
+                ),
             ),
             checkpoint=CheckpointOptions(writer=run_file_writer, resume=resume_snapshot),
             replay=ReplayState(
