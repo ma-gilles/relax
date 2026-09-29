@@ -283,6 +283,11 @@ def test_live_projection_blocks_divide_the_capacity():
     assert live_projection_block_rows(65536, 3000) == 2048
     assert live_projection_block_rows(256, 16256) == 256
     assert live_projection_block_rows(100, 16256) == 100
+    # An overflow chunk's capacity past the projector call is cut into power-of-two
+    # blocks that divide it (bigbox 14684083: 1536 rows in one 2.88 GiB call).
+    assert live_projection_block_rows(1536, 609) == 512
+    assert live_projection_block_rows(1536, 300) == 256
+    assert 1536 % live_projection_block_rows(1536, 609) == 0
 
 
 @pytest.mark.parametrize("n_valid_rows", [1, 9, 16])

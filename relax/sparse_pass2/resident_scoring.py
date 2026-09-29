@@ -1094,17 +1094,28 @@ def live_projection_block_rows(row_capacity: int, max_projected_rotations: int) 
     """Rows per projector call when only a chunk's valid rows are projected.
 
     A power of two dividing ``row_capacity`` (the local capacity ladder is
-    powers of two; any other capacity projects in one block), at most
-    ``max_projected_rotations`` and ``row_capacity / 16`` but at least
-    :data:`_MIN_LIVE_PROJECTION_ROWS`, so every call of a capacity class has one
-    shape and the unused tail is at most one block.
+    powers of two), at most ``max_projected_rotations`` and ``row_capacity /
+    16`` but at least :data:`_MIN_LIVE_PROJECTION_ROWS`, so every call of a
+    capacity class has one shape and the unused tail is at most one block.
+    Any other capacity projects in one block if that is within
+    ``max_projected_rotations``, and otherwise in blocks of the largest power
+    of two dividing it: an overflow chunk's capacity is a multiple of the
+    largest row class, and projected in one call a 1536-row EMPIAR-10202
+    final-pass chunk held a 2.88 GiB crop past the plan's 609-row projector
+    call (bigbox 14684083).
     """
 
     row_capacity = int(row_capacity)
-    if row_capacity <= 0 or row_capacity & (row_capacity - 1):
-        return max(row_capacity, 1)
-    block = max(row_capacity // 16, _MIN_LIVE_PROJECTION_ROWS)
-    while block > max(int(max_projected_rotations), 1):
+    max_rows = max(int(max_projected_rotations), 1)
+    if row_capacity <= 0:
+        return 1
+    if row_capacity & (row_capacity - 1):
+        if row_capacity <= max_rows:
+            return row_capacity
+        block = row_capacity & -row_capacity
+    else:
+        block = max(row_capacity // 16, _MIN_LIVE_PROJECTION_ROWS)
+    while block > max_rows:
         block //= 2
     return max(min(block, row_capacity), 1)
 
