@@ -5,6 +5,40 @@ progress. The [task queue](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/pr179_co
 contains the active work list; detailed experiment histories live in the private
 `ma-gilles/recovar-experiments` repository.
 
+## PPCA coarse optimizer comparison (September 28, 2026)
+
+The opt-in [PPCA momentum SGD and two-pass coarse route](../math/ppca_momentum_sgd.md)
+are on relax main at `2abfe2b2`; VDAM and the existing engine remain defaults.
+At noise level 1, two paired 600-update runs used one mean plus two loadings,
+20,000 particles, radius 31, HP3, 29 shifts, batch 300 and positivity off.
+The metric is per-state rigid+hand-fitted mean FSC over shells 1–15 on the
+same fixed 600-particle evaluation subset. GT labels were used only to score
+state maps, not during refinement.
+
+| Seed | PPCA VDAM state FSC | PPCA momentum SGD state FSC | Median pose error, VDAM / SGD |
+| --- | --- | --- | --- |
+| 11 | .181 / .230 / .200 | .282 / .323 / .235 | 130.2° / 125.1° |
+| 12 | .202 / .238 / .239 | .300 / .264 / .269 | 134.6° / 128.7° |
+
+SGD has higher final fitted FSC in all six comparisons and avoids VDAM's late
+high-band map-power growth. Neither optimizer recovers reliable poses or three
+states; latent between-state R² remains at most .106. The archived native K3
+VDAM run recovers state 2 in both seeds (FSC .884/.892) but is a different model
+and protocol, so it is context rather than a matched optimizer arm. Whole-update
+medians were 3.017/3.026 seconds for VDAM and 2.980/2.988 seconds for SGD
+(seeds 11/12). Training used 2.074 allocated A100 GPU-hours. Full science
+scorecard, registered plots, signed MRCs, exact jobs and reproduction commands
+are in `/scratch/gpfs/CRYOEM/gilleslab/em_work/ppca_momentum_gemm_20260928/science_compare/REVIEW.md`.
+
+The integrated source passed local A100 smoke, all 28 medium-tier items and a
+source-exact full-grid PPCA gate (24/24 float32 comparison fields, zero pose
+flips). Medium job 14643773 passed its tier but its appended gate launcher
+failed before execution; gate retry 14654414 passed. The two-pass route saves
+residency but was slower than retained scoring at matched B150 (2.89 vs 2.17 s
+warm); no dense CUDA/GEMM PPCA adapter was integrated. The next bounded science
+check is the curvature-maximum frequency and per-band gradient distribution at
+a saved checkpoint before changing the optimizer.
+
 ## Coarse K3 SGD comparison (September28,2026)
 
 The opt-in momentum SGD/noise implementation has passed scoped numerical checks,
