@@ -37,11 +37,12 @@ unfiltered half-map relative L2 near `2.2e-7`. These are route checks, not
 multi-iteration science gates.
 
 The clean selected-hybrid smoke tier passed on A100 (job `14660387`, source
-`e2080b5a`, receipt `tier_smoke_hybrid_v27/RECEIPT.json`). Medium is running
-at test-only head `297b55b1` (job `14660797`); the required H100 long tier is
-pending as job `14661067` with a verified `afterok:14660797` dependency. Earlier medium at
-`967d1aa2` passed, but its long run exposed the now-repaired CC/top-two route
-conflict. No current long or 100k completion pass exists yet.
+`e2080b5a`, receipt `tier_smoke_hybrid_v27/RECEIPT.json`). Medium passed all
+items in 30.2 minutes on three A100s at test-only head `297b55b1` (job
+`14660797`, receipt `tier_medium_hybrid_v28/RECEIPT.json`). The required long
+tier started after that pass as job `14661067`, on one H100 node with four GPUs.
+Earlier medium at `967d1aa2` passed, but its long run exposed the now-repaired
+CC/top-two route conflict. No current long or 100k completion pass exists yet.
 
 Matched A100 timings bound the performance claim. K2 first-iteration CC at
 5k/128 was 1.49x faster warm with hybrid, K4 Gaussian 1.07x faster, and K1
