@@ -153,7 +153,7 @@ def _score_kclass_firstiter_cc_pass2(
     firstiter_significance_image_batch_size = None
     firstiter_significance_rotation_block_size = None
     firstiter_sparse_pass2 = _sparse_pass2_selected("RELAX_K_CLASS_DENSE_PASS2")
-    if grid.symmetry != "C1":
+    if grid.symmetry != "C1" and batching.em_kwargs.get("coarse_engine") != "gemm_dense":
         if not firstiter_sparse_pass2 or not batching.em_kwargs.get("mstep_relion_x_half", False):
             raise RuntimeError(f"{grid.symmetry} requires sparse RELION x-half BPref reconstruction")
     if batching.safe_batch_sizes is not None:
@@ -272,7 +272,9 @@ def _score_kclass_firstiter_cc_pass2(
         coarse_healpix_order=int(grid.current_healpix_order),
         coarse_rotation_ids=grid.coarse_rotation_ids,
         oversampling_order=int(adaptive_os_local),
-        fine_mstep_rotations_override=(fine_mstep_rot if firstiter_sparse_pass2 else None),
+        fine_mstep_rotations_override=(
+            fine_mstep_rot if firstiter_sparse_pass2 or batching.em_kwargs.get("coarse_engine") == "gemm_dense" else None
+        ),
         bpref_device_signature_active=execution.bpref_device_signature_active,
         debug_iteration=execution.debug_iteration,
         coarse_translation_phase_source=(

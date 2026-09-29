@@ -388,13 +388,19 @@ def make_resident_statistics(
     )
 
 
-def segment_sum_by_image(values, row_image_local, image_capacity: int):
+def segment_sum_by_image(
+    values, row_image_local, image_capacity: int, *,
+    float32_posterior_bucket_size: int | None = None,
+    float32_scalar_bucket_size: int | None = None,
+):
     """Sum candidate rows into their image slots.
 
     ``values`` has the row axis first and any trailing axes; the result has the
     image axis first. Uses the same duplicate-index scatter as the host path,
     or the fixed-order masked reduction under
-    ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1``.
+    ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1``. The SPA float32 posterior can opt
+    into bounded row buckets. The SPA A2/XA scalar norm terms may opt in
+    separately; the default and all other callers retain the original scatter.
     """
 
     values = jnp.asarray(values)
@@ -403,8 +409,43 @@ def segment_sum_by_image(values, row_image_local, image_capacity: int):
     if deterministic_reductions_enabled():
         moved = jnp.moveaxis(values, 0, -1)
         return jnp.moveaxis(fixed_order_segment_sum(moved, row_image_local, image_capacity), -1, 0)
+    if float32_posterior_bucket_size is not None or float32_scalar_bucket_size is not None:
+        if (float32_posterior_bucket_size is not None) == (float32_scalar_bucket_size is not None):
+            raise ValueError("choose exactly one float32 image reduction bucket mode")
+        scalar = float32_scalar_bucket_size is not None
+        bucket_size = int(float32_scalar_bucket_size if scalar else float32_posterior_bucket_size)
+        if bucket_size <= 0 or values.dtype != jnp.float32 or values.ndim != (1 if scalar else 2):
+            kind = "scalar rows" if scalar else "[rows, translations]"
+            raise ValueError(f"bucketed image reduction needs positive bucket size and float32 {kind}")
+        # `.at[ids].add` wraps valid negative indices; segment_sum drops all
+        # negatives. Normalize only the original valid negative range.
+        ids = jnp.where(
+            (row_image_local < 0) & (row_image_local >= -image_capacity),
+            row_image_local + image_capacity,
+            row_image_local,
+        )
+        return jax.ops.segment_sum(
+            values, ids, num_segments=image_capacity, bucket_size=bucket_size,
+        )
     accumulator = jnp.zeros((image_capacity,) + values.shape[1:], dtype=values.dtype)
     return accumulator.at[row_image_local].add(values)
+
+
+def posterior_translation_bucket_scratch_bytes(
+    row_capacity: int, image_capacity: int, n_fine_trans: int, *, bucket_size: int = 128,
+) -> int:
+    """Conservative device reserve for a bucketed float32 ``[rows,T]`` sum.
+
+    JAX materializes ``ceil(rows/bucket_size) × images × T`` float32 bucket
+    partials. Reserve two such arrays plus the final ``[images,T]`` output
+    beside the resident row stage, including its pipelined neighbour.
+    """
+
+    if min(row_capacity, image_capacity, n_fine_trans, bucket_size) <= 0:
+        raise ValueError("posterior bucket capacities and size must be positive")
+    partial = ((int(row_capacity) + int(bucket_size) - 1) // int(bucket_size)
+               * int(image_capacity) * int(n_fine_trans) * 4)
+    return 2 * partial + int(image_capacity) * int(n_fine_trans) * 4
 
 
 def _drop_index(ids, length: int):
@@ -479,7 +520,10 @@ def _accumulate_chunk_statistics_jit(
     # distances. The per-image intermediate is kept so only the sum *across*
     # images changes order.
     sigma2_offset = stats.sigma2_offset
-    translation_posterior = segment_sum_by_image(probs, row_image, image_capacity)
+    translation_posterior = segment_sum_by_image(
+        probs, row_image, image_capacity,
+        float32_posterior_bucket_size=128 if probs.dtype == jnp.float32 else None,
+    )
     if tables.translation_sqdist_ang is not None:
         sqdist = jnp.asarray(tables.translation_sqdist_ang, dtype=jnp.float64)
         sigma2_offset = sigma2_offset + jnp.sum(

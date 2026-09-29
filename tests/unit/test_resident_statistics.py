@@ -306,6 +306,49 @@ def test_segment_sum_by_image_matches_numpy_add_at():
     np.testing.assert_allclose(got, expected, rtol=1e-14, atol=0.0)
 
 
+def test_bucketed_float32_posterior_keeps_image_mass_and_index_semantics(monkeypatch):
+    """Only the opted-in F32 [rows,T] sum uses bounded row buckets."""
+
+    from relax.sparse_pass2.resident_statistics import posterior_translation_bucket_scratch_bytes
+
+    capacity, translations, rows = 4, 3, 4097
+    rng = np.random.default_rng(20260928)
+    ids = rng.choice([0, 1, 2, 3], size=rows, p=[0.02, 0.03, 0.90, 0.05]).astype(np.int32)
+    ids[-4:] = [-1, -capacity, -capacity - 1, capacity]
+    values = rng.uniform(0, 0.01, size=(rows, translations)).astype(np.float32)
+    values[-2:] = 1.0  # Out-of-range rows must be discarded.
+    canonical_ids = ids.copy()
+    canonical_ids[(canonical_ids < 0) & (canonical_ids >= -capacity)] += capacity
+    expected = np.zeros((capacity, translations), np.float64)
+    live = (canonical_ids >= 0) & (canonical_ids < capacity)
+    np.add.at(expected, canonical_ids[live], values[live].astype(np.float64))
+    got = np.asarray(segment_sum_by_image(
+        jnp.asarray(values), jnp.asarray(ids), capacity, float32_posterior_bucket_size=128,
+    ))
+    np.testing.assert_allclose(got, expected, rtol=5e-7, atol=2e-7)
+    assert got.dtype == np.float32
+    # Norm A2/XA are scalar F32 rows with the same image IDs. Their optional
+    # bucket path must retain the translated-posterior padding semantics.
+    got_scalar = np.asarray(segment_sum_by_image(
+        jnp.asarray(values[:, 0]), jnp.asarray(ids), capacity,
+        float32_scalar_bucket_size=128,
+    ))
+    np.testing.assert_allclose(got_scalar, expected[:, 0], rtol=5e-7, atol=2e-7)
+    assert got_scalar.dtype == np.float32
+    assert posterior_translation_bucket_scratch_bytes(rows, capacity, translations) == (
+        2 * ((rows + 127) // 128) * capacity * translations * 4 + capacity * translations * 4
+    )
+    with pytest.raises(ValueError, match="float32"):
+        segment_sum_by_image(jnp.asarray(values, jnp.float64), jnp.asarray(ids), capacity,
+                             float32_posterior_bucket_size=128)
+    monkeypatch.setenv("RELAX_EM_DETERMINISTIC_REDUCTIONS", "1")
+    fixed = np.asarray(segment_sum_by_image(jnp.asarray(values), jnp.asarray(ids), capacity))
+    opted_fixed = np.asarray(segment_sum_by_image(
+        jnp.asarray(values), jnp.asarray(ids), capacity, float32_posterior_bucket_size=128,
+    ))
+    np.testing.assert_allclose(opted_fixed, fixed, rtol=5e-7, atol=2e-7)
+
+
 def test_flat_row_norm_residual_matches_host_per_image_helper():
     """The flat-row A2/XA partials reproduce ``compute_norm_residual_per_image``."""
 
@@ -640,5 +683,3 @@ def test_finalize_reports_images_no_chunk_covered():
     stats = accumulate_chunk_statistics(stats, operands, _resident_tables(tables), config=config)
     with pytest.raises(RuntimeError, match="never written by a chunk"):
         finalize_statistics(stats, config=config, n_images=N_IMAGES)
-
-

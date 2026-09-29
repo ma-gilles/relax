@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import itertools
 import json
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -25,6 +24,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from conftest import gpu_subprocess_env
+from helpers.coarse_engine_selection import run_selected_command
 from helpers.em_fixtures import fixture_root, require_fixture_sets
 from helpers.map_sign import assert_same_sign_convention
 
@@ -129,7 +129,7 @@ def test_k1_5k128_standalone_autorefine(tmp_path):
         "8192",
     ]
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    proc = run_selected_command(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
         f"relax refine/class3d exited {proc.returncode}\n{proc.stdout[-4000:]}\n{proc.stderr[-4000:]}"

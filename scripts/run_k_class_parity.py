@@ -1000,6 +1000,10 @@ def main() -> None:
     parser.add_argument("--prev-iter", type=int, default=0)
     parser.add_argument("--target-iter", type=int, default=1)
     parser.add_argument(
+        "--coarse-engine", "--coarse_engine",
+        choices=("auto", "gemm_hybrid", "gemm_dense"), default="auto",
+    )
+    parser.add_argument(
         "--perturb-replay-precision",
         choices=("seed_exact", "star"),
         default="seed_exact",
@@ -1720,6 +1724,7 @@ def main() -> None:
             rot_parent_map,
             trans_parent_map,
             args.disc_type,
+            coarse_engine=args.coarse_engine,
             adaptive_fraction=args.significance_adaptive_fraction,
             max_significants=int(max_significants["active_max_significants"]),
             coarse_current_size=coarse_engine_current_size,
@@ -2092,7 +2097,10 @@ def main() -> None:
     relion_pmax = np.asarray(target_data_ordered["rlnMaxValueProbDistribution"], dtype=np.float64)
     pmax_abs = np.abs(recovar_pmax - relion_pmax)
 
+    from relax.sparse_pass2.engine_record import take_coarse_engine_calls
+
     summary = {
+        "coarse_engine_calls": take_coarse_engine_calls(),
         "relion_dir": str(relion_dir),
         "data_star": str(args.data_star),
         "prev_iter": int(args.prev_iter),

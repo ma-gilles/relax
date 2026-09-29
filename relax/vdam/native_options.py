@@ -46,6 +46,7 @@ class InitialModelDefaults:
     rotation_block_size: int = 5000
     pilot_controls: object | None = None  # relax.ppca_initial_model.vdam_controls.VdamPilotControls
     pass2_engine: str = "auto"
+    coarse_engine: Literal["auto", "gemm_hybrid", "gemm_dense"] = "auto"
     bootstrap_min_particles: int = 1000
     sigma2_min_particles: int = 1000
     padding_factor: int = 1

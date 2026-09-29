@@ -1621,7 +1621,8 @@ def test_lazy_k_class_adaptive_mask_matches_dense_blocks_without_materializing()
             assert_matches(np.asarray(actual), expected)
 
 
-def test_sparse_k1_adapter_forwards_source_faithful_spectrum_norm(monkeypatch):
+@pytest.mark.parametrize("dense_full_grid", [False, True])
+def test_sparse_k1_adapter_forwards_source_faithful_spectrum_norm(monkeypatch, dense_full_grid):
     """The K=1-through-K-class adapter must not drop the fresh-run guard."""
 
     from recovar import cuda_backproject
@@ -1687,7 +1688,7 @@ def test_sparse_k1_adapter_forwards_source_faithful_spectrum_norm(monkeypatch):
         fine_translations_np=np.zeros((2, 2), dtype=np.float32),
         trans_parent_map_np=np.asarray([0, 0], dtype=np.int64),
         sig_sample_indices_by_class=[
-            [np.asarray([0], dtype=np.int32)] * n_images,
+            ([None] * n_images if dense_full_grid else [np.asarray([0], dtype=np.int32)] * n_images),
         ],
         disc_type="linear_interp",
         class_log_priors=np.zeros(1, dtype=np.float64),
@@ -1698,11 +1699,14 @@ def test_sparse_k1_adapter_forwards_source_faithful_spectrum_norm(monkeypatch):
         engine_kwargs={
             "relion_exact_fine_gaussian": False,
             "source_faithful_spectrum_norm": True,
+            "dense_gemm_full_grid": dense_full_grid,
         },
     )
 
     assert len(calls) == 1
     assert calls[0]["source_faithful_spectrum_norm"] is True
+    assert calls[0]["normalization_score_mode"] == (None if dense_full_grid else "gaussian")
+    assert ("normalization_other_score_log_z" in calls[0]) is not dense_full_grid
 
 
 def test_firstiter_adaptive_translation_perturbation_uses_coarse_step():

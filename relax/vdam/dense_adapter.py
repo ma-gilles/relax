@@ -22,7 +22,7 @@ from relax.helpers.orientation_priors import (
     relion_sigma_offset_prior_center,
 )
 from relax.relion import relion_projector_setup
-from relax.sparse_pass2.engine_record import take_pass_engines, warn_deprecated_engine
+from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines, warn_deprecated_engine
 from relax.vdam import native_sampling
 from relax.vdam.adaptive_estep import run_adaptive_initial_model_estep
 from relax.vdam.estep_common import (
@@ -282,6 +282,7 @@ def _dense_estep_config(
         image_batch_size=effective_image_batch_size,
         rotation_block_size=int(opts.rotation_block_size),
         pass2_engine=str(opts.pass2_engine),
+        coarse_engine=str(opts.coarse_engine),
         padding_factor=int(opts.padding_factor),
         relion_bpref_frame=True,
         relion_projector_frame=True,
@@ -630,6 +631,7 @@ def run_dense_initial_model_estep(
         )
         result.meta["pass2_engine"] = "adaptive"
         result.meta["pass2_engines"] = take_pass_engines()
+        result.meta["coarse_engine_calls"] = take_coarse_engine_calls()
         return result
 
     # Sparse execution constructs its own coarse/local rotation operands.

@@ -89,6 +89,7 @@ def compute_pass2_stats_sparse(
     reconstruction_image_radius=None,
     reconstruction_group_ids=None,
     reconstruction_group_count=None,
+    dense_gemm_full_grid: bool = False,
 ):
     """Exact sparse pass 2 over per-image significant coarse samples.
 
@@ -183,7 +184,7 @@ def compute_pass2_stats_sparse(
 
         # The device-resident pass 2 is relax's one pass-2 engine: a configuration its
         # checks refuse (ResidentConfigurationUnsupported) is an error, not a fallback.
-        record_pass_engine("global", "resident")
+        record_pass_engine("global", "gemm_dense" if dense_gemm_full_grid else "resident")
         return compute_pass2_stats_resident(
             experiment_dataset,
             volume,
@@ -247,6 +248,7 @@ def compute_pass2_stats_sparse(
             relion_projector_half=relion_projector_half,
             relion_projector_r_max=relion_projector_r_max,
             adaptive_fraction=adaptive_fraction,
+            dense_gemm_full_grid=dense_gemm_full_grid,
             bpref_device_signature_active=bpref_device_signature_active,
             bpref_class_index=bpref_class_index,
             include_unweighted_norm_high_shell=include_unweighted_norm_high_shell,

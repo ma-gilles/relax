@@ -412,6 +412,7 @@ def run_adaptive_initial_model_estep(
         grids.rotation_parent_map,
         grids.translation_parent_map,
         config.disc_type,
+        coarse_engine=config.coarse_engine,
         class_log_priors=class_log_priors,
         accumulate_noise=True,
         adaptive_fraction=float(options.get("adaptive_fraction", 0.999)),

@@ -58,6 +58,7 @@ TIERS_DIR = REPO_ROOT / "tests" / "tiers"
 RUN_BASE = Path("/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_test_tiers")
 BUDGET_S = {"smoke": 5 * 60, "medium": 2 * 3600, "long": 8 * 3600}
 LOCAL_GPUS = ("1", "2", "3")  # physical GPU 0 of the development machine stays free
+COARSE_ENGINES = ("auto", "gemm_hybrid", "gemm_dense")
 FAST = "tests/integration/test_em_parity_fast.py"
 LONG = "tests/long_test/test_em_parity_long.py"
 E2E = "tests/integration/test_em_tier_e2e.py"
@@ -479,13 +480,32 @@ def run_item(item: Item, run_root: Path, src: Path, gpu: str | None) -> dict:
     t0 = time.time()
     with open(out / "log.txt", "w") as log:
         rc = subprocess.run(argv, cwd=src, env=env, stdout=log, stderr=subprocess.STDOUT).returncode
+    audit_rc = None
+    completion_dirs = {
+        "completion_k1": "k1_100k256_recovar",
+        "completion_k4": "k4_100k256_recovar",
+    }
+    coarse_engine = item.env.get("RELAX_TIER_COARSE_ENGINE", "auto")
+    if rc == 0 and item.name in completion_dirs and coarse_engine != "auto":
+        audit_env = dict(env, CUDA_VISIBLE_DEVICES="", JAX_PLATFORMS="cpu", RECOVAR_DISABLE_CUDA="1")
+        audit_env.pop("JAX_PLATFORM_NAME", None)
+        audit_cmd = [
+            str(src / ".pixi" / "envs" / "default" / "bin" / "python"),
+            str(src / "tests" / "helpers" / "coarse_engine_selection.py"),
+            "--assert-standard", str(run_root / "completion" / completion_dirs[item.name]),
+            "--coarse-engine", coarse_engine,
+        ]
+        with open(out / "log.txt", "a") as log:
+            log.write("\ncoarse-engine execution audit: " + shlex.join(audit_cmd) + "\n")
+            log.flush()
+            audit_rc = subprocess.run(audit_cmd, cwd=src, env=audit_env, stdout=log, stderr=subprocess.STDOUT).returncode
     counts = _junit_counts(out / "junit.xml")
-    status = "pass" if rc == 0 else "fail"
+    status = "pass" if rc == 0 and audit_rc in (None, 0) else "fail"
     if status == "pass" and item.required and counts.get("skipped", 0):
         status = "fail"  # a required case that did not execute is not a pass
     if status == "pass" and "pytest" in argv and not counts.get("tests"):
         status = "fail"
-    return {
+    result = {
         "name": item.name,
         "gpu": gpu,
         "rc": rc,
@@ -495,6 +515,9 @@ def run_item(item: Item, run_root: Path, src: Path, gpu: str | None) -> dict:
         "required": item.required,
         "junit": counts,
     }
+    if audit_rc is not None:
+        result["coarse_audit_rc"] = audit_rc
+    return result
 
 
 def execute(items: list[Item], run_root: Path, src: Path, gpus: list[str]) -> list[dict]:
@@ -640,6 +663,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         failed.append("pinned_fsc")
     summary = {
         "tier": spec["tier"],
+        "coarse_engine": spec.get("coarse_engine", "auto"),
         "status": "fail" if failed else "pass",
         "failed_items": failed,
         "wall_s": round(wall, 1),
@@ -830,7 +854,7 @@ def idle_local_gpu(gpu_model: str = "any") -> str | None:
     return None
 
 
-def prepare_long(run_root: Path, src: Path) -> None:
+def prepare_long(run_root: Path, src: Path, coarse_engine: str = "auto") -> None:
     """Write the completion arms' job scripts (launcher --dry-run) and their summary command."""
     from importlib.util import module_from_spec, spec_from_file_location
 
@@ -850,6 +874,7 @@ def prepare_long(run_root: Path, src: Path) -> None:
         K1_RELION_REPEAT_DIRS=f"{repeats / 'rep1'} {repeats / 'rep2'}",
         K4_RELION_DIR=str(oracle / "run"),
         K4_RELION_DISPATCH_SCHEDULE=str(oracle / "schedule" / "dispatch_schedule.npz"),
+        EM_COMPLETION_COARSE_ENGINE=coarse_engine,
     )
     proc = subprocess.run(["bash", "scripts/run_em_completion_bench_slurm.sh", "--dry-run"], cwd=src, env=env,
                           capture_output=True, text=True)
@@ -879,6 +904,15 @@ cd {src}
 """)
 
 
+def select_coarse_engine(items: list[Item], coarse_engine: str) -> None:
+    """Forward an explicit tier choice to GPU tests, which invoke the public CLI."""
+    if coarse_engine not in COARSE_ENGINES:
+        raise ValueError(f"unknown tier coarse engine {coarse_engine!r}")
+    for item in items:
+        if item.gpu:
+            item.env["RELAX_TIER_COARSE_ENGINE"] = coarse_engine
+
+
 def cmd_submit(args: argparse.Namespace) -> int:
     tier = args.tier
     stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -889,10 +923,12 @@ def cmd_submit(args: argparse.Namespace) -> int:
     source = freeze_source(run_root)
     src = Path(source["src"])
     verify_fixtures(tier, src)
-    if tier == "long":
-        prepare_long(run_root, src)
+    if tier == "long" and not args.dry_run:
+        prepare_long(run_root, src, args.coarse_engine)
     items = plan(tier, src, args.base, run_root)
-    spec = {"tier": tier, "source": source, "base": args.base, "created": stamp, "items": [asdict(i) for i in items]}
+    select_coarse_engine(items, args.coarse_engine)
+    spec = {"tier": tier, "source": source, "base": args.base, "created": stamp,
+            "coarse_engine": args.coarse_engine, "items": [asdict(i) for i in items]}
     (run_root / "PLAN.json").write_text(json.dumps(spec, indent=1) + "\n")
     for i in items:
         print(f"  {'GPU' if i.gpu else 'CPU'} {i.name:36s} ~{i.seconds / 60:6.1f} min", flush=True)
@@ -950,6 +986,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--queue", choices=["cryoem", "general"], default="cryoem",
                    help="cryoem (all GPU jobs); general only when the user explicitly allows another partition")
     p.add_argument("--dry-run", action="store_true", help="write the plan, build and submit nothing")
+    p.add_argument("--coarse-engine", choices=COARSE_ENGINES, default="auto",
+                   help="forward an optional coarse-engine choice through the public CLIs in tier cases")
     p = sub.add_parser("run", help="execute a planned tier inside its allocation")
     p.add_argument("tier", choices=["smoke", "medium", "long"])
     p.add_argument("--run-root", type=Path, required=True)

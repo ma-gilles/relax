@@ -12,7 +12,10 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 
-from relax.scoring.scoring import _relion_coarse_gemm_terms
+from relax.scoring.scoring import (
+    _relion_coarse_cc_atomic_score_from_components,
+    _relion_coarse_gemm_terms,
+)
 
 
 def score_model_power(projection, pixel_weight):
@@ -100,6 +103,61 @@ def score_tile(
         - initial_diff2[:, None, None]
         + rotation_prior[:, :, None]
         + translation_prior[:, None, :]
+    )
+    valid = valid_images[:, None, None] & valid_rotations[None, :, None] & valid_translations[None, None, :]
+    return jnp.where(valid, scores, -jnp.inf)
+
+
+def cc_score_tile(
+    projection,
+    score_image,
+    pixel_weight,
+    phase,
+    valid_images,
+    valid_rotations,
+    valid_translations,
+    *,
+    translation_side: str,
+    model_power=None,
+):
+    """RELION first-iteration normalized CC on one complete-grid tile.
+
+    The shared coarse CC reduction owns the score algebra.  Priors are
+    deliberately absent: RELION's first-iteration CC winner ignores them.
+    """
+    b, p = score_image.shape
+    q, u = projection.shape[0], phase.shape[0]
+    if translation_side == "image":
+        shifted = score_image[:, None, :] * phase[None, :, :]
+        cross_buq, calculated_power, _, _ = _relion_coarse_gemm_terms(
+            projection,
+            shifted,
+            pixel_weight,
+            jnp.sum(valid_images),
+            n_images=b,
+            n_trans=u,
+            wide=jnp.float32,
+        )
+        cross = cross_buq.swapaxes(1, 2)
+        power = calculated_power if model_power is None else model_power
+    elif translation_side == "projection":
+        weighted = score_image * pixel_weight
+        shifted_projection = projection[:, None, :] * jnp.conj(phase)[None, :, :]
+        weighted_packed = jnp.concatenate([weighted.real, weighted.imag], axis=1)
+        shifted_packed = jnp.concatenate([shifted_projection.real, shifted_projection.imag], axis=2).reshape(
+            q * u, 2 * p
+        )
+        cross = jax.lax.dot(
+            weighted_packed,
+            shifted_packed.T,
+            precision=jax.lax.DotAlgorithmPreset.F32_F32_F32,
+            preferred_element_type=jnp.float32,
+        ).reshape(b, q, u)
+        power = score_model_power(projection, pixel_weight) if model_power is None else model_power
+    else:
+        raise ValueError(f"unknown translation_side {translation_side!r}")
+    scores = _relion_coarse_cc_atomic_score_from_components(
+        cross, power[:, :, None]
     )
     valid = valid_images[:, None, None] & valid_rotations[None, :, None] & valid_translations[None, None, :]
     return jnp.where(valid, scores, -jnp.inf)

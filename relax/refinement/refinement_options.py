@@ -51,8 +51,13 @@ class AdaptiveOptions:
 
     adaptive_oversampling: int = 0
     max_significants: int = 500
+    coarse_engine: Literal["auto", "gemm_hybrid", "gemm_dense"] = "auto"
     relion_current_sizes: tuple[int, ...] | None = None
     relion_healpix_orders: tuple[int, ...] | None = None
+
+    def __post_init__(self):
+        if self.coarse_engine not in {"auto", "gemm_hybrid", "gemm_dense"}:
+            raise ValueError(f"unknown coarse engine {self.coarse_engine!r}")
 
 
 @dataclass(frozen=True)

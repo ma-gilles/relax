@@ -679,6 +679,32 @@ def prepare_unshifted_bucket_operands(
     )
 
 
+def normalized_cc_direct_corr_img(unshifted, *, score_real_dtype, scale_corrections):
+    """Build the direct fine-CC correlation operand from unshifted image power.
+
+    Both the translated bucket path and a resident direct scorer use this
+    post-preparation operand. The unshifted CTF/noise ratio is Gaussian even
+    when ``score_mode`` is normalized CC.
+    """
+    batch_norm = unshifted.batch_norm
+    inv_xi2 = (1.0 / jnp.maximum(batch_norm, jnp.asarray(1e-30, dtype=batch_norm.dtype))).astype(
+        score_real_dtype,
+    )
+    if unshifted.folded_normalized_cc_operands:
+        return inv_xi2, unshifted.ctf2_score_half * inv_xi2
+    # buildCorrImage squares the RFLOAT CTF before the one XFLOAT cast.
+    corr_ctf_rfloat = (
+        unshifted.ctf_half.astype(jnp.float64)
+        if unshifted.ctf_half_rfloat is None
+        else unshifted.ctf_half_rfloat
+    )
+    return inv_xi2, _relion_cuda_corr_img_from_rfloat_ctf(
+        inv_xi2,
+        corr_ctf_rfloat,
+        unshifted.batch_scale[:, None] if scale_corrections is not None else None,
+    )
+
+
 def _prepare_bucket_io(
     experiment_dataset,
     batch,
@@ -1026,28 +1052,13 @@ def _prepare_bucket_io(
     _add_sparse_group_timing(stage_timing, "prepare_translate", time.time() - substage_t0)
     substage_t0 = time.time()
     if return_direct_scoring_io and use_normalized_cc:
-        inv_xi2 = (1.0 / jnp.maximum(batch_norm, jnp.asarray(1e-30, dtype=batch_norm.dtype))).astype(
-            precision_policy.score_real_dtype,
+        inv_xi2, ctf2_over_nv_half = normalized_cc_direct_corr_img(
+            unshifted,
+            score_real_dtype=precision_policy.score_real_dtype,
+            scale_corrections=scale_corrections,
         )
         if folded_normalized_cc_operands:
             shifted_corrected_score_half = shifted_corrected_score_half * jnp.repeat(inv_xi2, n_trans, axis=0)
-            ctf2_over_nv_half = ctf2_score_half * inv_xi2
-        else:
-            # buildCorrImage evaluates CTF * CTF in RFLOAT and casts the full
-            # product to XFLOAT once.  Reusing the generic float32 CTF-square
-            # path changes most corr_img pixels by one or two ULPs.  Preserve
-            # the source order here; the existing RECOVAR FFT normalization
-            # is already encoded in ``inv_xi2``.
-            corr_ctf_rfloat = (
-                ctf_half.astype(jnp.float64)
-                if ctf_half_rfloat is None
-                else ctf_half_rfloat
-            )
-            ctf2_over_nv_half = _relion_cuda_corr_img_from_rfloat_ctf(
-                inv_xi2,
-                corr_ctf_rfloat,
-                batch_scale[:, None] if scale_corrections is not None else None,
-            )
     if return_windowed_shifted:
         score_indices = jnp.asarray(window_indices, dtype=jnp.int32)
         ctf2_over_nv_half = _take_columns(ctf2_over_nv_half, score_indices)
@@ -1122,5 +1133,4 @@ def _prepare_bucket_io(
             / np.float64(fft_size * fft_size)
         ).astype(jnp.float32),
     )
-
 

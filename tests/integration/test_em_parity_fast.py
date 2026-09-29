@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -32,6 +31,7 @@ import numpy as np
 import pytest
 import starfile
 from conftest import gpu_subprocess_env
+from helpers.coarse_engine_selection import run_selected_command
 from helpers.em_fixtures import fixture_root, require_fixture_sets
 from helpers.em_parity_oracles import k4_oracle
 from helpers.map_sign import SIGN_CORRELATION_MIN, assert_same_sign_convention, file_correlation
@@ -229,7 +229,7 @@ def test_em_parity_fast_k1_replay(tmp_path):
     ]
     logger.info("K=1 replay cmd: %s", " ".join(cmd))
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    proc = run_selected_command(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
 
     if proc.returncode == 2:
@@ -322,7 +322,7 @@ def test_em_parity_fast_k1_local_replay(tmp_path):
     ]
     logger.info("K=1 local replay cmd: %s", " ".join(cmd))
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    proc = run_selected_command(cmd, require_global=False, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
 
     if proc.returncode == 2:
@@ -420,7 +420,7 @@ def test_em_parity_fast_k1_adaptive_replay(tmp_path):
     ]
     logger.info("K=1 adaptive replay cmd: %s", " ".join(cmd))
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    proc = run_selected_command(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
 
     if proc.returncode == 2:
@@ -523,7 +523,7 @@ def test_em_parity_fast_kclass_replay(tmp_path):
     ]
     logger.info("K-class replay cmd: %s", " ".join(cmd))
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    proc = run_selected_command(cmd, output_kind="kclass", capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
 
     assert proc.returncode == 0, (
@@ -742,7 +742,7 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling, gui_default=False):
     ]
     logger.info("K=1 cold-start cmd: %s", " ".join(cmd))
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    proc = run_selected_command(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
         f"relax refine/class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
@@ -923,7 +923,7 @@ def test_em_parity_fast_k1_perturbreplay(tmp_path):
     ]
     logger.info("K=1 perturb-replay cmd: %s", " ".join(cmd))
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    proc = run_selected_command(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
         f"relax refine/class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
@@ -1035,7 +1035,7 @@ def test_em_parity_fast_kclass_coldstart(tmp_path):
     ]
     logger.info("K-class cold-start cmd: %s", " ".join(cmd))
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    proc = run_selected_command(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
         f"relax refine/class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
@@ -1146,7 +1146,7 @@ def test_em_parity_fast_kclass_nonadaptive_replay(tmp_path):
     ]
     logger.info("K-class nonadaptive replay cmd: %s", " ".join(cmd))
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    proc = run_selected_command(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
         f"relax refine/class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
@@ -1299,7 +1299,7 @@ def test_em_parity_fast_kclass_strict_oversample_coldstart(tmp_path):
     ]
     logger.info("K-class STRICT-PARITY oversample cold-start cmd: %s", " ".join(cmd))
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    proc = run_selected_command(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
         f"relax refine/class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
@@ -1397,7 +1397,7 @@ def test_em_parity_fast_k1_multioptics_coldstart(tmp_path):
     ]
     env = gpu_subprocess_env()  # the default command: several optics groups need no settings
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    proc = run_selected_command(cmd, capture_output=True, text=True, env=env)
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
         f"relax refine/class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"

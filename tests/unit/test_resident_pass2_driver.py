@@ -443,6 +443,52 @@ def test_joint_chunk_plan_fits_the_10202_iteration_14_shape():
         )
 
 
+def test_float32_posterior_bucket_scratch_is_admitted_for_regular_pipeline_and_overflow():
+    """The row-stage plan includes two bucket partials and output at each capacity."""
+
+    from relax.sparse_pass2.resident_statistics import posterior_translation_bucket_scratch_bytes
+
+    base = dict(row_bytes=1, n_fine_trans=8, n_recon_pixels=1, mstep_block_rows=1,
+                held_tile_pixels=0, prepare_tile_pixels=0, projection_transient_bytes=0)
+    row, image = 4096, 32
+    scratch = posterior_translation_bucket_scratch_bytes(row, image, 8)
+    plain = rp.resident_chunk_bytes(row_capacity=row, image_capacity=image, **base)
+    bucket = rp.resident_chunk_bytes(
+        row_capacity=row, image_capacity=image, float32_posterior_buckets=True, **base,
+    )
+    assert bucket == row + scratch
+    assert bucket > plain
+    pipelined = rp.resident_chunk_bytes(
+        row_capacity=row, image_capacity=image, float32_posterior_buckets=True,
+        pipelined=True, **base,
+    )
+    assert pipelined == bucket + row
+    plan = rp.plan_resident_chunk_memory(
+        row_capacity_ladder=(4096, 131072), image_capacity_ladder=(32,),
+        budget_bytes=bucket + 100, float32_posterior_buckets=True, **base,
+    )
+    assert plan.row_capacity_ladder == (4096,)
+    assert plan.peak_bytes == bucket
+    minimum = rp.resident_chunk_bytes(
+        row_capacity=row, image_capacity=1, float32_posterior_buckets=True, **base,
+    )
+    with pytest.raises(rp.ResidentConfigurationUnsupported, match="smallest chunk"):
+        rp.plan_resident_chunk_memory(
+            row_capacity_ladder=(4096,), image_capacity_ladder=(1,),
+            budget_bytes=minimum - 1, float32_posterior_buckets=True, **base,
+        )
+    overflow_row = rp.overflow_row_capacity(5000, (4096,))
+    overflow = rp.resident_chunk_bytes(
+        row_capacity=overflow_row, image_capacity=image, float32_posterior_buckets=True, **base,
+    )
+    overflow_plan = rp.plan_resident_chunk_memory(
+        row_capacity_ladder=(4096,), image_capacity_ladder=(32,),
+        max_image_rows=5000, budget_bytes=overflow,
+        float32_posterior_buckets=True, **base,
+    )
+    assert overflow_plan.peak_bytes == overflow
+
+
 def test_joint_chunk_plan_counts_the_local_preparation_stage():
     """10202 it22 (14509861): T=84, 153857 recon and 155355 score pixels, a 626 x 314 Wavg
     rectangle. Three recon tiles per image put 32 images and an 18.55 GiB peak inside a

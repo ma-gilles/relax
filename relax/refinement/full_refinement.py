@@ -2050,6 +2050,11 @@ def _parse_args(argv=None):
     )
     parser.add_argument("--adaptive_oversampling", type=int, default=1, help="Oversampling levels (0=off, 1=2x)")
     parser.add_argument(
+        "--coarse-engine", "--coarse_engine",
+        choices=("auto", "gemm_hybrid", "gemm_dense"), default="auto",
+        help="Global E/M strategy; gemm_hybrid uses the existing GEMM coarse scorer and resident fine pass.",
+    )
+    parser.add_argument(
         "--max_significants",
         type=int,
         default=None,
@@ -4860,6 +4865,7 @@ def main(command=None):
                 relion_current_sizes=oracle_current_sizes,
                 relion_healpix_orders=oracle_healpix_orders,
                 adaptive_oversampling=args.adaptive_oversampling,
+                coarse_engine=args.coarse_engine,
                 max_significants=args.max_significants,
             ),
             parity=RelionParityOptions(
@@ -5238,7 +5244,10 @@ def main(command=None):
         )
     # Which E-step engine each pass ran on, per iteration and for the final all-data
     # pass (relax.sparse_pass2.engine_record), as JSON: resident vs fallback per run.
-    for key in ("pass2_engine_trajectory", "final_all_data_pass2_engines"):
+    for key in (
+        "pass2_engine_trajectory", "final_all_data_pass2_engines",
+        "coarse_engine_trajectory", "final_all_data_coarse_engines",
+    ):
         if result.get(key) is not None:
             save_dict[key] = np.asarray(json.dumps(result[key]))
     for key, dtype in (

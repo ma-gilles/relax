@@ -181,6 +181,21 @@ def test_relion_wavg_rectangle_matches_native_size60_topology_and_order():
     )
 
 
+def test_relion_wavg_rectangle_maps_complete_square_cc_reconstruction():
+    image_shape = (128, 128)
+    current_size = 56
+    square_exact, _ = make_fourier_window_indices_np(
+        image_shape, current_size, square=True,
+        include_dc=True, exact_radius=True,
+    )
+    layout = _make_relion_wavg_rectangle(image_shape, current_size, square_exact)
+    assert layout.centered_indices.size == current_size * (current_size // 2 + 1)
+    assert layout.exact_positions.size == square_exact.size == 1254
+    assert_matches(layout.centered_indices[layout.exact_positions], square_exact)
+    with np.testing.assert_raises_regex(ValueError, "complete exact-radius"):
+        _make_relion_wavg_rectangle(image_shape, current_size, square_exact[:-1])
+
+
 def test_relion_wavg_rectangle_separates_optics_image_and_model_sizes():
     image_shape = (384, 384)
     image_current_size = 58

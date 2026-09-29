@@ -29,6 +29,11 @@ def _source(run_root: Path) -> dict:
     return {"head": head, "dirty": dirty, "src": str(src)}
 
 
+def _coarse_engine(run_root: Path) -> str:
+    plan = run_root / "PLAN.json"
+    return json.loads(plan.read_text()).get("coarse_engine", "auto") if plan.exists() else "auto"
+
+
 def _json(path: Path) -> dict:
     return json.loads(path.read_text()) if path.is_file() else {}
 
@@ -48,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         "dirty": source.get("dirty"),
         "diff_sha256": source.get("diff_sha256"),
         "tier": args.tier,
+        "coarse_engine": _coarse_engine(args.run_root),
         "status": args.status,
         "job": args.job,
         "gpu_model": args.gpu_model,

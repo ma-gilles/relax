@@ -3,11 +3,13 @@
 import json
 import subprocess
 import sys
+from argparse import Namespace
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-from scripts import em_tier_noise_envelope, em_tier_pinned, run_test_tier
+from scripts import em_tier_noise_envelope, em_tier_pinned, run_test_tier, write_test_receipt
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.unit
@@ -33,6 +35,40 @@ def test_smoke_plan_covers_local_search_and_global_k1():
     nodes = [a.split("::")[1] for a in items["replays"].argv if "::" in a]
     assert nodes == [run_test_tier.FAST_CASES[c] for c in run_test_tier.SMOKE_REPLAYS]
     assert {"k1_local_replay", "k1_adaptive_replay", "kclass_replay"} == set(run_test_tier.SMOKE_REPLAYS)
+
+
+def test_selected_coarse_engine_reaches_gpu_items_only():
+    items = [
+        run_test_tier.Item("guard", ["true"], False, 1),
+        run_test_tier.Item("replays", ["true"], True, 1),
+    ]
+    run_test_tier.select_coarse_engine(items, "auto")
+    assert items[0].env == {}
+    assert items[1].env["RELAX_TIER_COARSE_ENGINE"] == "auto"
+    run_test_tier.select_coarse_engine(items, "gemm_dense")
+    assert items[0].env == {}
+    assert items[1].env["RELAX_TIER_COARSE_ENGINE"] == "gemm_dense"
+    with pytest.raises(ValueError, match="unknown tier coarse engine"):
+        run_test_tier.select_coarse_engine(items, "misspelled")
+
+
+def test_long_dry_run_never_prepares_completion_or_builds(tmp_path, monkeypatch):
+    source = {"head": "abc", "dirty": False, "diff_sha256": "empty", "untracked": {}, "src": str(tmp_path)}
+    monkeypatch.setattr(run_test_tier, "freeze_source", lambda _root: source)
+    monkeypatch.setattr(run_test_tier, "verify_fixtures", lambda *_args: None)
+    monkeypatch.setattr(run_test_tier, "plan", lambda *_args: [run_test_tier.Item("global", ["true"], True, 1)])
+
+    def forbidden(*_args):
+        raise AssertionError("a dry-run must not prepare completion or build natives")
+
+    monkeypatch.setattr(run_test_tier, "prepare_long", forbidden)
+    monkeypatch.setattr(run_test_tier, "build_natives", forbidden)
+    root = tmp_path / "dry"
+    args = Namespace(tier="long", run_root=root, base="HEAD", coarse_engine="gemm_hybrid", dry_run=True)
+    assert run_test_tier.cmd_submit(args) == 0
+    spec = json.loads((root / "PLAN.json").read_text())
+    assert spec["coarse_engine"] == "gemm_hybrid"
+    assert spec["items"][0]["env"]["RELAX_TIER_COARSE_ENGINE"] == "gemm_hybrid"
 
 
 def test_touched_gpu_tests_follow_imports(tmp_path):
@@ -66,7 +102,8 @@ def test_skipped_required_item_fails(tmp_path):
 
 
 def test_receipt_is_written_and_appended(tmp_path):
-    (tmp_path / "PLAN.json").write_text(json.dumps({"source": {"head": "abc", "dirty": False, "diff_sha256": "d"}}))
+    (tmp_path / "PLAN.json").write_text(json.dumps({"coarse_engine": "gemm_hybrid",
+                                                 "source": {"head": "abc", "dirty": False, "diff_sha256": "d"}}))
     log = tmp_path / "receipts.jsonl"
     subprocess.run(
         [
@@ -90,7 +127,77 @@ def test_receipt_is_written_and_appended(tmp_path):
     receipt = json.loads((tmp_path / "RECEIPT.json").read_text())
     assert (receipt["sha"], receipt["tier"], receipt["status"], receipt["job"]) == ("abc", "smoke", "pass", "123")
     assert receipt["gpu_model"] == "NVIDIA A100-SXM4-80GB"
+    assert receipt["coarse_engine"] == "gemm_hybrid"
     assert json.loads(log.read_text().splitlines()[0]) == receipt
+
+
+def _completion_record(choice: str) -> dict:
+    dense = choice == "gemm_dense"
+    return {
+        "requested": choice, "resolved": choice, "strategy": "dense" if dense else "hybrid",
+        "fine_engine": None if dense else "resident", "images": 1, "classes": 1,
+        "rotations": 2, "translations": 2, "hypotheses_per_image": 4,
+        "coarse_candidates_per_image": 4, "fine_candidates_per_image": 4 if dense else 8,
+        "evaluated_fine_candidates_total": 4,
+        "selected_fine_candidates_total": 4,
+        "selected_fine_candidates_known": True,
+        "current_size": 32, "reconstruction_current_size": 64,
+        "score_mode": "gaussian", "posterior_policy": "gaussian", "pruned": not dense,
+        "precision": {"score": "float32", "projection": "float32", "mstep": "float32"},
+    }
+
+
+@pytest.mark.parametrize("arm", ["completion_k1", "completion_k4"])
+@pytest.mark.parametrize("choice", ["gemm_hybrid", "gemm_dense"])
+def test_selected_completion_requires_executed_record(tmp_path, arm, choice):
+    output = tmp_path / "completion" / ("k1_100k256_recovar" if arm == "completion_k1" else "k4_100k256_recovar")
+    output.mkdir(parents=True)
+    np.savez(output / "refinement_results.npz", coarse_engine_trajectory=json.dumps([[_completion_record(choice)]]))
+    item = run_test_tier.Item(arm, [sys.executable, "-c", "pass"], True, 1,
+                              env={"RELAX_TIER_COARSE_ENGINE": choice})
+    good = run_test_tier.run_item(item, tmp_path, REPO_ROOT, "test-gpu")
+    assert good["status"] == "pass" and good["coarse_audit_rc"] == 0
+    (output / "refinement_results.npz").unlink()
+    bad = run_test_tier.run_item(item, tmp_path, REPO_ROOT, "test-gpu")
+    assert bad["rc"] == 0 and bad["status"] == "fail" and bad["coarse_audit_rc"] != 0
+    assert "coarse-engine execution audit failed" in (tmp_path / "items" / arm / "log.txt").read_text()
+
+
+def test_auto_completion_skips_record_audit(tmp_path):
+    item = run_test_tier.Item("completion_k1", [sys.executable, "-c", "pass"], True, 1,
+                              env={"RELAX_TIER_COARSE_ENGINE": "auto"})
+    result = run_test_tier.run_item(item, tmp_path, REPO_ROOT, "test-gpu")
+    assert result["status"] == "pass" and "coarse_audit_rc" not in result
+
+
+def test_completion_audit_failure_blocks_dependent_summary(tmp_path):
+    items = [
+        run_test_tier.Item("completion_k1", [sys.executable, "-c", "pass"], True, 1,
+                           env={"RELAX_TIER_COARSE_ENGINE": "gemm_dense"}),
+        run_test_tier.Item("completion_summary", [sys.executable, "-c", "pass"], False, 1,
+                           after=["completion_k1"]),
+    ]
+    results = {r["name"]: r for r in run_test_tier.execute(items, tmp_path, REPO_ROOT, ["test-gpu"])}
+    assert results["completion_k1"]["status"] == "fail"
+    assert results["completion_summary"]["rc"] is None and results["completion_summary"]["status"] == "fail"
+
+
+def test_selected_mode_reaches_summary_and_older_receipt_defaults_auto(tmp_path, monkeypatch):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "PLAN.json").write_text(json.dumps({"tier": "long", "coarse_engine": "gemm_dense",
+                                                  "source": {"head": "abc"}, "items": []}))
+    monkeypatch.setattr(run_test_tier, "check_native_sources", lambda *_args: None)
+    monkeypatch.setattr(run_test_tier, "check_imports", lambda *_args: ({}, None))
+    monkeypatch.setattr(run_test_tier, "gpu_models", lambda *_args: {"test-gpu": "A100"})
+    monkeypatch.setattr(run_test_tier, "execute", lambda *_args: [])
+    monkeypatch.setattr(run_test_tier, "write_receipt", lambda *_args: None)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "test-gpu")
+    assert run_test_tier.cmd_run(Namespace(run_root=tmp_path, tier="long")) == 0
+    assert json.loads((tmp_path / "SUMMARY.json").read_text())["coarse_engine"] == "gemm_dense"
+    (tmp_path / "PLAN.json").write_text(json.dumps({"source": {"head": "abc"}}))
+    assert write_test_receipt.main(["--run-root", str(tmp_path), "--tier", "long", "--status", "pass",
+                                    "--job", "123", "--gpu-model", "A100"]) == 0
+    assert json.loads((tmp_path / "RECEIPT.json").read_text())["coarse_engine"] == "auto"
 
 
 def _case(auc, shell):

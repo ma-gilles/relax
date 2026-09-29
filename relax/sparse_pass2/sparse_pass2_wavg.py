@@ -182,14 +182,22 @@ def _make_relion_wavg_rectangle(
         if full_box_unwindowed
         else np.asarray(recon_window_indices, dtype=np.int32).reshape(-1)
     )
+    # Historical K-class first-iteration CC replays use a square image crop
+    # with the BackProjector radius applied inside that crop. Keep that
+    # complete support when mapping projected terms into the Wavg rectangle.
+    square_exact_indices, _ = make_fourier_window_indices_np(
+        image_shape, model_current_size, square=True,
+        include_dc=True, exact_radius=True,
+    )
     exact_support = np.array_equal(np.sort(recon_indices), exact_indices)
     rounded_support = np.array_equal(np.sort(recon_indices), rounded_indices)
-    if not (full_box_unwindowed or exact_support or rounded_support):
+    square_exact_support = np.array_equal(np.sort(recon_indices), square_exact_indices)
+    if not (full_box_unwindowed or exact_support or rounded_support or square_exact_support):
         raise ValueError(
-            "RELION Wavg rectangle requires a complete exact-radius or rounded-shell "
+            "RELION Wavg rectangle requires a complete exact-radius, square exact-radius, or rounded-shell "
             "reconstruction window: "
-            f"got {recon_indices.size} pixels, expected {exact_indices.size} or "
-            f"{rounded_indices.size}"
+            f"got {recon_indices.size} pixels, expected {exact_indices.size}, "
+            f"{square_exact_indices.size}, or {rounded_indices.size}"
         )
 
     rectangle_position = {
@@ -643,5 +651,4 @@ def relion_cuda_translate_wavg_norm_window(
         translation_angles.shape[0],
         window_indices.shape[0],
     )
-
 

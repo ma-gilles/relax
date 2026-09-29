@@ -319,6 +319,12 @@ def make_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--coarse-engine", "--coarse_engine",
+        choices=("auto", "gemm_hybrid", "gemm_dense"),
+        default=DEFAULTS.coarse_engine,
+        help="Global E/M strategy; the hybrid is the existing GEMM coarse scorer plus resident fine pass.",
+    )
+    parser.add_argument(
         "--bootstrap-min-particles",
         "--bootstrap_min_particles",
         dest="bootstrap_min_particles",
@@ -526,6 +532,7 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
             args.stochastic_batch_size, args.max_fourier_radius, args.max_healpix_order, args.stop_file
         ),
         "pass2_engine": args.pass2_engine,
+        "coarse_engine": args.coarse_engine,
         "bootstrap_min_particles": args.bootstrap_min_particles,
         "sigma2_min_particles": args.sigma2_min_particles,
         "padding_factor": args.padding_factor,

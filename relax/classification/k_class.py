@@ -58,6 +58,7 @@ class _DenseKClassScoreProbeResult(NamedTuple):
     per_class_stats: tuple[RelionStats, ...]
     class_assignments: np.ndarray
     coarse_selector_audit: dict | None = None
+    coarse_score_backend: str | None = None
 
 
 def _env_value_or_none(name: str) -> str | None:
@@ -253,6 +254,7 @@ def _fine_support_stats(
         "pose_median": pose_median,
         "pose_mean": pose_mean,
         "pose_max": pose_max,
+        "pose_total": int(np.sum(pose_counts, dtype=np.int64)),
         "pose_median_fraction": pose_median / n_fine_poses,
         "pose_mean_fraction": pose_mean / n_fine_poses,
         "pose_max_fraction": pose_max / n_fine_poses,
@@ -567,6 +569,7 @@ def _run_sparse_k_class_adaptive_pass2(
         # The exact normalized-CC tree is a deliberately K=1-scoped parity
         # candidate. Keep the K>1 route byte-preserving until K=1 closes.
         relion_exact_fine_normalized_cc=n_classes == 1,
+        dense_gemm_full_grid=bool(base_engine_kwargs.get("dense_gemm_full_grid", False)),
         relion_firstiter_winner_take_all=bool(
             base_engine_kwargs.get("relion_firstiter_winner_take_all", False)
         ),
@@ -650,8 +653,14 @@ def _run_sparse_k_class_adaptive_pass2(
         rotation_log_prior=_class_rotation_prior(0),
         accumulate_noise=accumulate_noise,
         # No other classes: the degenerate cross-class normalizer of the production K=1 pass.
-        normalization_other_score_log_z=np.full(_dataset_image_count(experiment_dataset), -np.inf, dtype=np.float64),
-        normalization_score_mode=common["relion_firstiter_score_mode"],
+        **({} if common["dense_gemm_full_grid"] else {
+            "normalization_other_score_log_z": np.full(
+                _dataset_image_count(experiment_dataset), -np.inf, dtype=np.float64,
+            ),
+        }),
+        normalization_score_mode=(
+            None if common["dense_gemm_full_grid"] else common["relion_firstiter_score_mode"]
+        ),
         return_score_log_z=True,
         relion_projector_half=_select_projector_half_for_class(relion_projector_half_by_class, 0, n_classes),
         relion_projector_r_max=relion_projector_r_max,
@@ -748,7 +757,8 @@ def _run_resident_k_class_pass2(
         )
     n_classes = int(means_array.shape[0])
     options = _resident_production_arithmetic(common)
-    options.pop("relion_exact_fine_normalized_cc")
+    if not options.get("dense_gemm_full_grid", False):
+        options.pop("relion_exact_fine_normalized_cc")
     options.update(
         relion_projector_half=relion_projector_half_by_class,
         relion_projector_r_max=relion_projector_r_max,
@@ -766,7 +776,7 @@ def _run_resident_k_class_pass2(
         rotation_log_priors_by_class=class_rotation_priors,
         **options,
     )
-    record_pass_engine("global", "resident")
+    record_pass_engine("global", "gemm_dense" if options.get("dense_gemm_full_grid", False) else "resident")
     logger.info(
         "Resident K-class pass2: classes=%d images=%d total=%.1fs",
         n_classes,
@@ -1082,6 +1092,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         ),
         score_mode="normalized_cc",
         relion_coarse_gaussian_default=bool(engine_kwargs.get("relion_exact_coarse", False)),
+        require_plain_gemm_coarse=bool(engine_kwargs.get("require_plain_gemm_coarse", False)),
         collect_significance=_significance_debug_dump_matches(
             current_size=engine_kwargs.get("current_size"),
             debug_iteration=engine_kwargs.get("debug_iteration"),
@@ -1128,6 +1139,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         per_class_stats=per_class_stats,
         class_assignments=class_assignments,
         coarse_selector_audit=coarse_selector_audit,
+        coarse_score_backend=full_stats.get("executed_coarse_backend"),
     )
 
 
@@ -2058,6 +2070,7 @@ def run_dense_k_class_em_adaptive(
     pass2_use_float64_scoring: bool | None = None,
     pass2_use_float64_projections: bool | None = None,
     coarse_translation_phase_source=None,
+    coarse_engine: str = "auto",
     **engine_kwargs,
 ) -> KClassEMResult:
     """K-class adaptive 2-pass EM: coarse pass-1 significance + fine pass-2 masked.
@@ -2115,15 +2128,15 @@ def run_dense_k_class_em_adaptive(
         engine_kwargs.get("symmetry_label", "C1")
     )
     non_c1_symmetry = symmetry_label != "C1"
-    requested_sparse_pass2 = bool(engine_kwargs.get("sparse_pass2", False))
-    if non_c1_symmetry and not bool(
+    requested_sparse_pass2 = bool(engine_kwargs.get("sparse_pass2", False) or coarse_engine == "gemm_hybrid")
+    if non_c1_symmetry and coarse_engine != "gemm_dense" and not bool(
         engine_kwargs.get("mstep_relion_x_half", False)
     ):
         raise RuntimeError(
             f"{symmetry_label} adaptive reconstruction requires RELION x-half BPref "
             "accumulation; full/native-half M-step routes are unsupported"
         )
-    if non_c1_symmetry and not requested_sparse_pass2:
+    if non_c1_symmetry and not requested_sparse_pass2 and coarse_engine != "gemm_dense":
         raise RuntimeError(
             f"{symmetry_label} adaptive reconstruction requires sparse pass 2; "
             "the dense pass-2 backend cannot apply point-group symmetry"
@@ -2153,7 +2166,7 @@ def run_dense_k_class_em_adaptive(
     if (
         engine_kwargs.get("optics_group_ids") is not None
         or engine_kwargs.get("reconstruction_volume_current_size") is not None
-    ) and n_classes != 1:
+    ) and coarse_engine != "gemm_dense" and n_classes != 1:
         raise NotImplementedError(
             "per-optics-group noise is implemented for K=1 (coarse significance or the "
             "firstiter_cc coarse winner, then the device-resident pass 2)"
@@ -2216,6 +2229,70 @@ def run_dense_k_class_em_adaptive(
     if int(trans_parent_map_np.max(initial=-1)) >= n_trans_coarse:
         raise ValueError("trans_parent_map values must be < n_trans_coarse")
     n_images = _dataset_image_count(experiment_dataset)
+    if coarse_engine not in {"auto", "gemm_hybrid", "gemm_dense"}:
+        raise ValueError(f"unknown coarse engine {coarse_engine!r}")
+    if coarse_engine == "gemm_hybrid":
+        if relion_projector_half is None or not engine_kwargs.get("mstep_relion_x_half", False):
+            raise ValueError("gemm_hybrid requires the RELION projector and resident x-half fine pass")
+        if skip_significance_pruning:
+            raise ValueError("gemm_hybrid requires the executed coarse significance scorer")
+        if pass2_use_float64_scoring or pass2_use_float64_projections or engine_kwargs.get("use_float64_scoring"):
+            raise ValueError("gemm_hybrid requires float32 production arithmetic")
+        engine_kwargs["sparse_pass2"] = True
+    if coarse_engine == "gemm_dense":
+        if bool(pass2_use_float64_scoring) or bool(pass2_use_float64_projections) or bool(engine_kwargs.get("use_float64_scoring")):
+            raise ValueError("gemm_dense is a float32 production engine")
+        complete_support = [[None] * n_images for _ in range(n_classes)]
+        dense_kwargs = dict(engine_kwargs)
+        if "current_size" not in dense_kwargs and fine_current_size is not None:
+            dense_kwargs["current_size"] = fine_current_size
+        # The selected full-grid engine computes its own joint normalizer and
+        # accumulates native x-half BPref volumes. These legacy coarse fields
+        # describe the caller's adaptive route, which this branch bypasses.
+        for field in (
+            "relion_f32_normalization_sum_weight",
+            "relion_coarse_hard_assignment",
+            "relion_coarse_max_posterior",
+        ):
+            dense_kwargs.pop(field, None)
+        dense_kwargs["mstep_relion_x_half"] = True
+        dense_kwargs["dense_gemm_full_grid"] = True
+        dense_kwargs["relion_firstiter_score_mode"] = (
+            "normalized_cc" if firstiter_cc_pass2_only_best_coarse else dense_kwargs.get("relion_firstiter_score_mode", "gaussian")
+        )
+        dense_result = _run_sparse_k_class_adaptive_pass2(
+            experiment_dataset, means_array, mean_variance, noise_variance,
+            coarse_rotations_np, coarse_translations_np, fine_rotations_np,
+            fine_mstep_rotations_np, rot_parent_map_np, sparse_fine_translations_np,
+            trans_parent_map_np, complete_support, disc_type,
+            class_log_priors=log_priors, accumulate_noise=accumulate_noise,
+            return_best_pose_details=return_best_pose_details,
+            coarse_healpix_order=_resolved_coarse_healpix_order(),
+            oversampling_order=_resolved_oversampling_order(),
+            random_perturbation=0.0, engine_kwargs=dense_kwargs,
+        )
+        from relax.sparse_pass2.engine_record import record_coarse_engine_call
+
+        score_mode = dense_kwargs["relion_firstiter_score_mode"]
+        record_coarse_engine_call(
+            requested="gemm_dense", resolved="gemm_dense", strategy="dense", fine_engine=None,
+            images=n_images, classes=n_classes, rotations=n_rot_fine, translations=n_trans_fine,
+            coarse_candidates_per_image=n_classes * n_rot_coarse * n_trans_coarse,
+            fine_candidates_per_image=n_classes * n_rot_fine * n_trans_fine,
+            evaluated_fine_candidates_total=n_images * n_classes * n_rot_fine * n_trans_fine,
+            selected_fine_candidates_total=(n_images if score_mode == "normalized_cc"
+                                            else n_images * n_classes * n_rot_fine * n_trans_fine),
+            current_size=int(fine_current_size or engine_kwargs.get("current_size") or experiment_dataset.image_shape[0]),
+            reconstruction_current_size=int(engine_kwargs.get("reconstruction_current_size") or fine_current_size
+                                            or engine_kwargs.get("current_size") or experiment_dataset.image_shape[0]),
+            score_mode=score_mode,
+            posterior_policy="cc_winner" if score_mode == "normalized_cc" else "gaussian",
+            pruned=False,
+            precision={"score": "float32", "projection": "float32", "mstep": "float32"},
+        )
+        return dense_result._replace(significant_counts=jnp.full(
+            (n_images,), n_classes * n_rot_coarse * n_trans_coarse, jnp.int32
+        ))
     sparse_pass2_requested = bool(engine_kwargs.get("sparse_pass2", False))
     strict_exact_fine_gaussian = _strict_exact_fine_gaussian_requested(
         engine_kwargs,
@@ -2262,6 +2339,7 @@ def run_dense_k_class_em_adaptive(
     coarse_significance_support_audit = None
     coarse_gaussian_gemm_hybrid_stats = None
     exact_coarse_operand_assembly = None
+    coarse_actual_backend = None
     pass1_t0 = time.time()
     if firstiter_cc_pass2_only_best_coarse:
         # RELION firstiter_cc branch: restrict pass-2 to children of each
@@ -2277,6 +2355,9 @@ def run_dense_k_class_em_adaptive(
         coarse_probe_kwargs["rotation_block_size"] = sig_rbs
         coarse_probe_kwargs["relion_firstiter_score_mode"] = "normalized_cc"
         coarse_probe_kwargs["relion_firstiter_winner_take_all"] = True
+        if coarse_engine == "gemm_hybrid":
+            coarse_probe_kwargs["relion_exact_coarse"] = True
+            coarse_probe_kwargs["require_plain_gemm_coarse"] = True
         coarse_probe_kwargs["coarse_relion_projector_texture_interp"] = (
             coarse_relion_projector_texture_interp
         )
@@ -2307,6 +2388,7 @@ def run_dense_k_class_em_adaptive(
                     **coarse_probe_kwargs,
                 )
         coarse_selector_audit = coarse_result.coarse_selector_audit
+        coarse_actual_backend = coarse_result.coarse_score_backend
         # ``per_class_hard_assignments[k, i]`` is class k's best coarse pose
         # (independently scored per class). For each class, restrict pass-2
         # to that single pose's children.
@@ -2362,10 +2444,11 @@ def run_dense_k_class_em_adaptive(
             # Refine3D, Class3D and VDAM routes ask for it (relion_exact_coarse); the
             # generic dense scorer stays for every normalized-CC pass until it moves.
             relion_coarse_gaussian_default=bool(
-                engine_kwargs.get(
+                coarse_engine == "gemm_hybrid" or engine_kwargs.get(
                     "relion_exact_coarse", engine_kwargs.get("preserve_bpref_particle_order", False)
                 )
             ),
+            require_plain_gemm_coarse=coarse_engine == "gemm_hybrid",
             optics_group_ids=engine_kwargs.get("optics_group_ids"),
             pad_final_image_batch=bool(significance_pad_final_image_batch),
         )
@@ -2401,6 +2484,7 @@ def run_dense_k_class_em_adaptive(
         coarse_selector_audit = _coarse_selector_audit_from_full_stats(
             _full_coarse_stats
         )
+        coarse_actual_backend = _full_coarse_stats.get("executed_coarse_backend")
         coarse_significance_support_audit = _full_coarse_stats.get(
             "coarse_significance_support_audit",
         )
@@ -2410,6 +2494,8 @@ def run_dense_k_class_em_adaptive(
         exact_coarse_operand_assembly = _full_coarse_stats.get(
             "exact_coarse_operand_assembly",
         )
+    if coarse_engine == "gemm_hybrid" and coarse_actual_backend not in {"gemm_macro", "exact_cc_gemm"}:
+        raise RuntimeError(f"gemm_hybrid selected but coarse scorer executed {coarse_actual_backend!r}")
     pass1_s = time.time() - pass1_t0
 
     def _with_significant_counts(result: KClassEMResult) -> KClassEMResult:
@@ -2420,13 +2506,52 @@ def run_dense_k_class_em_adaptive(
                     dtype=jnp.int32,
                 ),
             )
-        return _with_coarse_significance_diagnostics(
+        result = _with_coarse_significance_diagnostics(
             result,
             selector_audit=coarse_selector_audit,
             support_audit=coarse_significance_support_audit,
             hybrid_stats=coarse_gaussian_gemm_hybrid_stats,
             exact_coarse_operand_assembly=exact_coarse_operand_assembly,
         )
+        if coarse_engine == "gemm_hybrid":
+            from relax.sparse_pass2.engine_record import record_coarse_engine_call
+
+            support = sig_sample_indices_by_class
+            if firstiter_cc_pass2_only_best_coarse:
+                winners = np.asarray(coarse_class_assignments, dtype=np.int32)
+                support = [
+                    [samples if int(winners[i]) == class_id else np.empty(0, np.int32)
+                     for i, samples in enumerate(by_image)]
+                    for class_id, by_image in enumerate(sig_sample_indices_by_class)
+                ]
+            evaluated = _fine_support_stats(
+                support,
+                n_rot_coarse=n_rot_coarse, n_trans_coarse=n_trans_coarse,
+                rot_parent_map=rot_parent_map_np, trans_parent_map=trans_parent_map_np,
+                n_rot_fine=n_rot_fine, n_trans_fine=n_trans_fine,
+            )["pose_total"]
+            mode = "normalized_cc" if firstiter_cc_pass2_only_best_coarse else "gaussian"
+            record_coarse_engine_call(
+                requested="gemm_hybrid", resolved="gemm_hybrid", strategy="hybrid",
+                fine_engine="resident", images=n_images, classes=n_classes,
+                rotations=n_rot_coarse, translations=n_trans_coarse,
+                coarse_candidates_per_image=n_classes * n_rot_coarse * n_trans_coarse,
+                fine_candidates_per_image=n_classes * n_rot_fine * n_trans_fine,
+                evaluated_fine_candidates_total=evaluated,
+                # The resident fine posterior owns a further adaptive M-step
+                # cutoff and currently does not publish its retained cell count.
+                selected_fine_candidates_total=None,
+                current_size=int(coarse_current_size or fine_current_size
+                                 or engine_kwargs.get("current_size") or experiment_dataset.image_shape[0]),
+                reconstruction_current_size=int(engine_kwargs.get("reconstruction_current_size")
+                                                or fine_current_size or engine_kwargs.get("current_size")
+                                                or experiment_dataset.image_shape[0]),
+                score_mode=mode,
+                posterior_policy="cc_winner" if mode == "normalized_cc" else "gaussian",
+                pruned=True,
+                precision={"score": "float32", "projection": "float32", "mstep": "float32"},
+            )
+        return result
 
     mask_t0 = time.time()
     pass2_kwargs = dict(engine_kwargs)

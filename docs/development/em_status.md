@@ -54,6 +54,18 @@ poor poses. General robustness is not established. See the
 and [robustness report](../benchmarks/momentum_sgd_robustness_20260928.md).
 Native VDAM defaults are unchanged.
 
+## Dense GEMM coarse engine integration (September 28)
+
+The completed K1 experiment is being integrated as a typed, opt-in coarse engine
+for standard EM and VDAM, including K>1. This package must supply all production
+statistics, joint class/pose normalization, first-iteration CC behavior and
+changing-resolution support. The proposed `coarse_engine=auto|gemm_hybrid|gemm_dense` keeps `auto` as default. Hybrid uses
+GEMM coarse scoring followed by the existing fine engine; full dense executes
+the complete configured fine grid without adaptive pruning. Both strategies will be measured. Existing local refinement remains separately dispatched.
+The earlier speedups do not establish robustness or runtime for this broader path.
+See the [integration and qualification plan](dense_gemm_coarse_engine_plan_20260928.md).
+Implementation and validation are in progress; no replacement claim is made.
+
 ## Opt-in dense GEMM K1 experiment (September 28)
 
 The requested full dense grid experiment has exact two-sweep and lagged one-sweep

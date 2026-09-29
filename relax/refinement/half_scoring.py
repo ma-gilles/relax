@@ -207,6 +207,7 @@ def _adaptive_engine_common_kwargs(
     execution: "DenseExecutionPolicy",
     *,
     sparse_pass2,
+    full_grid_mstep: bool = False,
 ) -> dict:
     """Owner-derived keywords shared by both adaptive dense routes.
 
@@ -223,7 +224,7 @@ def _adaptive_engine_common_kwargs(
         max_significants=(-1 if batching.max_significants is None else int(batching.max_significants)),
         relion_fine_mstep_prune=bool(sparse_pass2),
         coarse_healpix_order=int(sampling.current_healpix_order),
-        fine_mstep_rotations_override=(pass2_grids.fine_mstep_rotations if sparse_pass2 else None),
+        fine_mstep_rotations_override=(pass2_grids.fine_mstep_rotations if sparse_pass2 or full_grid_mstep else None),
         return_best_pose_details=execution.return_best_pose_details,
         bpref_device_signature_active=execution.bpref_device_signature_active,
         debug_iteration=execution.debug_iteration,
@@ -274,6 +275,7 @@ class DenseSamplingSpec:
     random_perturbation: float
     disc_type: str
     cs_for_engine: int | None
+    coarse_engine: str = "auto"
     model_current_size_for_engine: int | None = None
     coarse_rotation_ids: object | None = None
     coarse_scoring_rotations: object | None = None
@@ -507,7 +509,7 @@ def _score_adaptive_kclass_dense(
         adaptive_em_kwargs["rotation_block_size"],
     )
     sparse_pass2 = _sparse_pass2_selected("RELAX_K_CLASS_DENSE_PASS2")
-    if symmetry != "C1" and not sparse_pass2:
+    if symmetry != "C1" and not sparse_pass2 and sampling.coarse_engine != "gemm_dense":
         raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
     adaptive_em_kwargs["sparse_pass2"] = sparse_pass2
     # Class3D pass 1 scores RELION's exact coarse operands; a normalized-CC
@@ -529,6 +531,7 @@ def _score_adaptive_kclass_dense(
         sampling,
         execution,
         sparse_pass2=sparse_pass2,
+        full_grid_mstep=sampling.coarse_engine == "gemm_dense",
     )
     result = run_dense_k_class_em_adaptive(
         half.experiment_dataset,
@@ -601,7 +604,7 @@ def _score_adaptive_k1_dense(
     )
     adaptive_em_kwargs = dict(base_em_kwargs)
     sparse_pass2 = _sparse_pass2_selected("RELAX_K1_DENSE_PASS2")
-    if symmetry != "C1" and not sparse_pass2:
+    if symmetry != "C1" and not sparse_pass2 and sampling.coarse_engine != "gemm_dense":
         raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
     skip_significance_pruning = _k1_skip_significance_pruning_enabled()
     adaptive_em_kwargs["sparse_pass2"] = sparse_pass2
@@ -636,6 +639,7 @@ def _score_adaptive_k1_dense(
         sampling,
         execution,
         sparse_pass2=sparse_pass2,
+        full_grid_mstep=sampling.coarse_engine == "gemm_dense",
     )
     magnification = dataset_projection_magnification(half.experiment_dataset)
     if optics.projection_scale != 1.0 or magnification is not None:
@@ -739,7 +743,7 @@ def _score_half_dense_one_shape(
     from relax.symmetry import canonicalize_rotational_symmetry
 
     symmetry = canonicalize_rotational_symmetry(sampling.symmetry)
-    if symmetry != "C1" and int(sampling.state.adaptive_oversampling) <= 0:
+    if symmetry != "C1" and int(sampling.state.adaptive_oversampling) <= 0 and sampling.coarse_engine != "gemm_dense":
         raise NotImplementedError(
             f"{symmetry} non-adaptive dense reconstruction is unsupported; "
             "use the adaptive sparse or exact-local RELION x-half M-step"
@@ -766,6 +770,8 @@ def _score_half_dense_one_shape(
         "relion_firstiter_score_mode": variant.firstiter_score_mode_this_iter,
         "relion_firstiter_winner_take_all": variant.firstiter_winner_take_all_this_iter,
     }
+    if sampling.coarse_engine != "auto":
+        em_kwargs["coarse_engine"] = sampling.coarse_engine
     if symmetry != "C1":
         em_kwargs["symmetry_label"] = symmetry
     if half.optics_group_ids_k is not None:
@@ -878,7 +884,7 @@ def _score_half_dense_one_shape(
                 firstiter_execution,
             )
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
-        elif _dense_uses_adaptive_engine(sampling.state.adaptive_oversampling, half.group_ids_k):
+        elif sampling.coarse_engine != "auto" or _dense_uses_adaptive_engine(sampling.state.adaptive_oversampling, half.group_ids_k):
             k_class_result, pass2_grids = _score_adaptive_kclass_dense(
                 half,
                 sampling,
@@ -937,7 +943,7 @@ def _score_half_dense_one_shape(
             mstep_accumulator_shape=getattr(k_class_result, "mstep_accumulator_shape", None),
         )
 
-    if execution.preserve_bpref_particle_order or _dense_uses_adaptive_engine(
+    if sampling.coarse_engine != "auto" or execution.preserve_bpref_particle_order or _dense_uses_adaptive_engine(
         sampling.state.adaptive_oversampling, half.group_ids_k
     ):
         if execution.disable_adjoint_y or execution.disable_adjoint_ctf:

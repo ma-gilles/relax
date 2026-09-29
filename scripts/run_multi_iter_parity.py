@@ -1043,6 +1043,10 @@ def main():
     parser.add_argument("--iter", type=int, default=3, help="RELION iteration to start from")
     parser.add_argument("--max_iter", type=int, default=15)
     parser.add_argument(
+        "--coarse-engine", "--coarse_engine",
+        choices=("auto", "gemm_hybrid", "gemm_dense"), default="auto",
+    )
+    parser.add_argument(
         "--replay-override-max-iter",
         type=int,
         default=None,
@@ -2471,7 +2475,10 @@ def main():
                 image_batch_size=args.image_batch_size,
                 rotation_block_size=args.rotation_block_size,
             ),
-            adaptive=AdaptiveOptions(adaptive_oversampling=oversampling, max_significants=max_significants),
+            adaptive=AdaptiveOptions(
+                adaptive_oversampling=oversampling, max_significants=max_significants,
+                coarse_engine=args.coarse_engine,
+            ),
             parity=RelionParityOptions(
                 tau2_fudge=1.0,
                 perturb_factor=0.5,
@@ -2603,7 +2610,10 @@ def main():
         save_dict["healpix_order_trajectory"] = np.array(result["healpix_order_trajectory"])
     # Which E-step engine each pass ran on, per iteration and for the final all-data
     # pass (relax.sparse_pass2.engine_record), as JSON: resident vs fallback per run.
-    for key in ("pass2_engine_trajectory", "final_all_data_pass2_engines"):
+    for key in (
+        "pass2_engine_trajectory", "final_all_data_pass2_engines",
+        "coarse_engine_trajectory", "final_all_data_coarse_engines",
+    ):
         if result.get(key) is not None:
             save_dict[key] = np.asarray(json.dumps(result[key]))
     if result.get("wall_times"):

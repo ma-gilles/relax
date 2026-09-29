@@ -79,6 +79,15 @@ K4_MAX_ITER="${K4_MAX_ITER:-15}"
 K4_TRAJECTORY_MODE="${K4_TRAJECTORY_MODE:-standalone}"
 K1_TRAJECTORY_MODE="${K1_TRAJECTORY_MODE:-standalone}"
 K1_SAVE_INTERMEDIATES="${K1_SAVE_INTERMEDIATES:-1}"
+EM_COMPLETION_COARSE_ENGINE="${EM_COMPLETION_COARSE_ENGINE:-auto}"
+case "${EM_COMPLETION_COARSE_ENGINE}" in
+  auto) COARSE_ENGINE_SETUP="" ;;
+  gemm_hybrid|gemm_dense)
+    COARSE_ENGINE_SETUP="REFINEMENT_EXTRA_ARGS+=(--coarse-engine ${EM_COMPLETION_COARSE_ENGINE})" ;;
+  *)
+    echo "EM_COMPLETION_COARSE_ENGINE must be auto, gemm_hybrid or gemm_dense" >&2
+    exit 2 ;;
+esac
 # Sized from measured peak RSS (sacct MaxRSS): K1 100k/256 135 GB (Q 14320204), K4 100k/256
 # 98 GB (Q 14320218, 14299479).
 K1_MEM="${K1_MEM:-180G}"
@@ -157,6 +166,8 @@ Environment overrides:
   K1_SAVE_INTERMEDIATES      Save regularized per-iteration K=1 maps/metadata for full
                              FSC trajectories (default: ${K1_SAVE_INTERMEDIATES}); set 0 for
                              timing-only runs. Unregularized maps and local profiles stay off.
+  EM_COMPLETION_COARSE_ENGINE
+                             Optional public coarse-engine choice (default: auto)
   K1_MEM                     K=1 Slurm memory request (default: ${K1_MEM})
   K1_TIME_LIMIT              K=1 Slurm time limit (default: ${K1_TIME_LIMIT})
   K4_IMAGE_BATCH_SIZE        K=4 image batch size (default: ${K4_IMAGE_BATCH_SIZE})
@@ -934,6 +945,7 @@ PY
 
 START_EPOCH="\$(date +%s)"
 REFINEMENT_EXTRA_ARGS=()
+${COARSE_ENGINE_SETUP}
 if [[ "${K1_TRAJECTORY_MODE}" == "standalone" ]]; then
     # relion_refine's inputs only; the RELION run is read after the run, for comparison.
     TRAJECTORY_ARGS=(--relion-half-sets-from-input)
@@ -1050,6 +1062,7 @@ PY
 
 START_EPOCH="\$(date +%s)"
 REFINEMENT_EXTRA_ARGS=()
+${COARSE_ENGINE_SETUP}
 if [[ "${K4_TRAJECTORY_MODE}" == "standalone" ]]; then
   # relion_refine's inputs only; the RELION run is read after the run, for comparison.
   TRAJECTORY_ARGS=(--ref_star "${K4_DATA_DIR}/reference_init_classes_relion.star")
@@ -1339,6 +1352,7 @@ K1_ROTATION_BLOCK_SIZE=${K1_ROTATION_BLOCK_SIZE}
 K1_MAX_ITER=${K1_MAX_ITER}
 K1_TRAJECTORY_MODE=${K1_TRAJECTORY_MODE}
 K1_SAVE_INTERMEDIATES=${K1_SAVE_INTERMEDIATES}
+EM_COMPLETION_COARSE_ENGINE=${EM_COMPLETION_COARSE_ENGINE}
 K1_MEM=${K1_MEM}
 K1_TIME_LIMIT=${K1_TIME_LIMIT}
 K4_DATA_DIR=${K4_DATA_DIR}

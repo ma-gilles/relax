@@ -39,6 +39,7 @@ class DenseInitialModelEstepConfig:
     image_batch_size: int = 500
     rotation_block_size: int = 5000
     pass2_engine: str = "auto"
+    coarse_engine: str = "auto"
     padding_factor: int = 1
     class_log_priors: Any | None = None
     relion_bpref_frame: bool = True

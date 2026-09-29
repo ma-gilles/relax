@@ -62,7 +62,10 @@ from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.half_spectrum import make_shell_indices_half
 from relax.helpers.optics_noise import pixel_rows
 from relax.sparse_pass2.resident_statistics import resident_image_capacity
-from relax.sparse_pass2.sparse_pass2_bucket_io import prepare_unshifted_bucket_operands
+from relax.sparse_pass2.sparse_pass2_bucket_io import (
+    normalized_cc_direct_corr_img,
+    prepare_unshifted_bucket_operands,
+)
 from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_native_fine_units,
     _relion_native_score_corr_img,
@@ -180,6 +183,9 @@ class ResidentHalfOperands:
     # (relax.helpers.optics_noise); None keeps the one-group programs unchanged.
     optics_groups: jax.Array | None = None
     bpref_ctf2_over_nv_recon: jax.Array | None = None
+    # Explicit dense normalized-CC caller only; the resident chunk path keeps
+    # its existing translated CC operand preparation.
+    cc_half_batch_norm: jax.Array | None = None
 
     def __post_init__(self):
         if self.n_image_capacity < self.n_images:
@@ -225,6 +231,7 @@ class ResidentHalfOperands:
             "group_ids",
             "optics_groups",
             "bpref_ctf2_over_nv_recon",
+            "cc_half_batch_norm",
         ):
             value = getattr(self, name)
             parts[name] = 0 if value is None else int(value.size) * int(value.dtype.itemsize)
@@ -596,7 +603,10 @@ def _batch_window_operands(
     return batch_arrays
 
 
-def require_unshifted_operand_support(bucket_io_kwargs: dict, *, window_indices, recon_window_indices) -> None:
+def require_unshifted_operand_support(
+    bucket_io_kwargs: dict, *, window_indices, recon_window_indices,
+    allow_normalized_cc: bool = False,
+) -> None:
     """Raise :class:`ResidentOperandsUnsupported` for a configuration the unshifted operands do not cover.
 
     The configuration checks of :func:`prepare_resident_half_operands`, callable
@@ -616,7 +626,10 @@ def require_unshifted_operand_support(bucket_io_kwargs: dict, *, window_indices,
         bool(kwargs.get("score_with_masked_images", False)), "unmasked scoring (score_with_masked_images=0)"
     )
     _require_supported(not bool(kwargs.get("use_float64_scoring", False)), "float64 scoring")
-    _require_supported(score_mode == "gaussian", f"score_mode={score_mode!r}")
+    _require_supported(
+        score_mode == "gaussian" or (allow_normalized_cc and score_mode == "normalized_cc"),
+        f"score_mode={score_mode!r}",
+    )
     _require_supported(
         kwargs.get("relion_score_translation_angles", None) is not None,
         "a pass without RELION translation angles",
@@ -651,6 +664,7 @@ def prepare_resident_half_operands(
     relion_native_fine_units: bool = False,
     log_summary: bool = True,
     staged_batch=None,
+    allow_normalized_cc: bool = False,
 ) -> ResidentHalfOperands:
     """Run the per-image preparation once for ``image_indices`` and keep it resident.
 
@@ -692,7 +706,9 @@ def prepare_resident_half_operands(
         raise ValueError("image_indices must not repeat an image")
 
     require_unshifted_operand_support(
-        bucket_io_kwargs, window_indices=window_indices, recon_window_indices=recon_window_indices
+        bucket_io_kwargs, window_indices=window_indices,
+        recon_window_indices=recon_window_indices,
+        allow_normalized_cc=allow_normalized_cc,
     )
     kwargs = dict(bucket_io_kwargs)
     relion_exact_bpref_operands = bool(kwargs.get("relion_exact_bpref_operands", False))
@@ -745,6 +761,7 @@ def prepare_resident_half_operands(
         "bpref_ctf2_over_nv_recon": None,
         "highres_xi2_half": None,
         "relion_norm_high_shell": None,
+        "cc_half_batch_norm": None,
     }
     batch_size = int(image_batch_size or _prepare_image_batch_size())
     if staged_batch is not None:
@@ -810,9 +827,20 @@ def prepare_resident_half_operands(
                 **unshifted_kwargs,
             )
             score_corr_img_half = unshifted.ctf2_over_nv_half
-            if relion_native_fine_units:
-                # The native corr_img the compact engine scores with; the DC mask
-                # and window gather below apply to it exactly as to the RECOVAR one.
+            if unshifted.use_normalized_cc:
+                _require_supported(
+                    not unshifted.folded_normalized_cc_operands,
+                    "resident normalized CC requires direct fine-score operands",
+                )
+                _, score_corr_img_half = normalized_cc_direct_corr_img(
+                    unshifted,
+                    score_real_dtype=score_real_dtype,
+                    scale_corrections=kwargs["scale_corrections"],
+                )
+            elif relion_native_fine_units:
+                # Gaussian fine scoring uses RELION's native corr_img. Fine
+                # normalized CC instead uses the direct invXi2-weighted operand
+                # from the canonical bucket path above.
                 score_corr_img_half = _relion_native_score_corr_img(
                     pixel_rows(unshifted.noise_variance_half),
                     unshifted.ctf_half_rfloat,
@@ -862,6 +890,10 @@ def prepare_resident_half_operands(
                 batch_arrays["score_input"] = _relion_native_fine_units(
                     batch_arrays["score_input"], native_fft_size
                 )
+            if score_mode == "normalized_cc":
+                batch_arrays["cc_half_batch_norm"] = (
+                    0.5 * jnp.reshape(unshifted.batch_norm, (batch_size,)).real
+                ).astype(jnp.float32)
 
             batch_arrays["image_power_shells"] = image_power_shells(
                 unshifted.processed_score_half_for_noise,
@@ -969,6 +1001,7 @@ def prepare_resident_half_operands(
         group_ids=jnp.asarray(group_ids),
         optics_groups=None if optics_groups is None else jnp.asarray(optics_groups),
         bpref_ctf2_over_nv_recon=stack("bpref_ctf2_over_nv_recon"),
+        cc_half_batch_norm=stack("cc_half_batch_norm"),
     )
     if not log_summary:
         return operands

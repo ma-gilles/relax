@@ -1026,6 +1026,7 @@ def _compute_k_class_significance_batched(
     coarse_gemm_diagnostic_scope: CoarseGaussianGemmDiagnosticScope | None = None,
     relion_translation_angle_scale: float = 1.0,
     optics_group_ids=None,
+    require_plain_gemm_coarse: bool = False,
 ):
     """Find significant samples from one posterior over ``class x rotation x translation``.
 
@@ -1227,6 +1228,15 @@ def _compute_k_class_significance_batched(
             and coarse_gaussian_sincosf_enabled
         ),
     )
+    if require_plain_gemm_coarse:
+        if use_float64_scoring or use_float64_projections:
+            raise ValueError("gemm_hybrid requires float32 coarse scoring and projection")
+        if _coarse_gaussian_gemm_hybrid_enabled():
+            raise ValueError("gemm_hybrid conflicts with the certified coarse GEMM diagnostic hybrid")
+        if score_mode == "gaussian":
+            if _COARSE_GAUSSIAN_GEMM_MACRO_ENV in os.environ and not coarse_gaussian_gemm_macro_requested:
+                raise ValueError("gemm_hybrid conflicts with an explicit disabled GEMM macro backend")
+            coarse_gaussian_gemm_macro_requested = True
     coarse_fused_projector_requested = _k1_coarse_fused_projector_enabled(
         default=(
             relion_coarse_gaussian_default
@@ -2220,6 +2230,8 @@ def _compute_k_class_significance_batched(
             and _significance_debug_dump_matches(current_size=current_size, debug_iteration=debug_iteration)
         )
     )
+    if require_plain_gemm_coarse and score_mode == "normalized_cc" and not exact_cc_enabled:
+        raise ValueError("gemm_hybrid firstiter CC requires the native exact-operand GEMM scorer")
     exact_cc_score_indices = None
     exact_cc_translation_angles = None
     if exact_cc_enabled:
@@ -5303,6 +5315,9 @@ def _compute_k_class_significance_batched(
         # expand the pass-2/M-step support represented by ``n_sig_all``.
         "significant_cutoff_counts": cutoff_count_all,
         "coarse_selector_audit": coarse_selector_audit,
+        "executed_coarse_backend": (
+            "exact_cc_gemm" if exact_cc_enabled else coarse_gaussian_score_backend.value
+        ),
     }
     if coarse_gaussian_square_layout is not None:
         full_stats["coarse_gaussian_square_layout"] = coarse_square_layout_metadata(

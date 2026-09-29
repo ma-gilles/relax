@@ -54,6 +54,7 @@ ARRAY_FIELDS = (
     "recon_image", "recon_weight", "noise_image", "ctf2_over_nv_recon",
     "direct_ctf_rfloat_recon", "wavg_image_rect", "image_power_shells", "relion_norm_high_shell",
     "scale", "group_ids", "optics_groups", "bpref_ctf2_over_nv_recon",
+    "cc_half_batch_norm",
 )
 
 

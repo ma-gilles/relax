@@ -266,7 +266,7 @@ from relax.sampling import (
     rotation_grid_size,
 )
 from relax.sparse_pass2 import firstiter_bpref, sparse_pass2_budget
-from relax.sparse_pass2.engine_record import take_pass_engines
+from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines
 from relax.sparse_pass2.resident_pass2 import stable_window_class_history
 
 logger = logging.getLogger(__name__)
@@ -1035,6 +1035,7 @@ def refine_single_volume(
     # per-iteration trajectory (see helpers/iteration_history.py).
     history = RefinementHistory()
     take_pass_engines()  # entries from before this run's first iteration belong to no iteration
+    take_coarse_engine_calls()
     previous_assignments = [None, None]
     class_assignments = [None, None]
     previous_class_assignments = [None, None]
@@ -2377,11 +2378,12 @@ def refine_single_volume(
         # again on the host (RELION computes both in one computeFourierTransformMap).
         relion_projector_power_by_half = [None, None]
         captured_projector_state = replay_result.relion_projector_state
-        if captured_projector_state is not None and not (use_local or use_adaptive):
+        selected_gemm_global = adaptive.coarse_engine in {"gemm_hybrid", "gemm_dense"}
+        if captured_projector_state is not None and not (use_local or use_adaptive or selected_gemm_global):
             raise RuntimeError(
                 "captured RELION Projector::data was supplied but this iteration has no projector scoring path"
             )
-        if use_local or use_adaptive:
+        if use_local or use_adaptive or selected_gemm_global:
             projector_t0 = time.time()
             if captured_projector_state is not None:
                 (
@@ -3035,6 +3037,7 @@ def refine_single_volume(
                     base_translations=base_translations,
                     current_healpix_order=current_healpix_order,
                     state=state,
+                    coarse_engine=adaptive.coarse_engine,
                     random_perturbation=random_perturbation,
                     disc_type=options.disc_type,
                     cs_for_engine=cs_for_engine,
@@ -4081,6 +4084,7 @@ def refine_single_volume(
             )
         history.record_pmax(ave_pmax, ave_pmax_denominator, combined_max_posterior.copy())
         history.record_pass2_engines(take_pass_engines())
+        history.record_coarse_engines(take_coarse_engine_calls())
 
         # --- Track per-image best assignments for convergence detection ---
         # Combine both half-sets' assignments into a single array for
@@ -5347,7 +5351,7 @@ def refine_single_volume(
     final_relion_projector_half_by_half = [None, None]
     final_relion_projector_r_max_by_half = [None, None]
     final_relion_projector_power_by_half = [None, None]
-    if final_use_local or int(state.adaptive_oversampling) > 0:
+    if final_use_local or int(state.adaptive_oversampling) > 0 or adaptive.coarse_engine in {"gemm_hybrid", "gemm_dense"}:
         projector_t0 = time.time()
         for _half_idx in range(2):
             projector_half, projector_r_max, projector_power = _relion_projector_half_maps_for_scoring(
@@ -5648,6 +5652,7 @@ def refine_single_volume(
                         base_translations=final_base_translations,
                         current_healpix_order=final_current_healpix_order,
                         state=state,
+                        coarse_engine=adaptive.coarse_engine,
                         random_perturbation=(final_random_perturbation if final_perturbation_applied else 0.0),
                         disc_type=options.disc_type,
                         cs_for_engine=final_current_size,
@@ -6087,6 +6092,7 @@ def refine_single_volume(
         **history.to_dict(),
         "final_all_data_ran": True,
         "final_all_data_pass2_engines": take_pass_engines(),
+        "final_all_data_coarse_engines": take_coarse_engine_calls(),
         "final_all_data_expected_accuracy_status": final_expected_accuracy_status,
         "final_all_data_acc_rot": (
             None if final_expected_accuracy is None else float(final_expected_accuracy.acc_rot)

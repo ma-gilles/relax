@@ -23,7 +23,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -31,6 +30,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from conftest import gpu_subprocess_env
+from helpers.coarse_engine_selection import run_selected_command
 from helpers.em_fixtures import fixture_root, require_fixture_sets
 
 logger = logging.getLogger(__name__)
@@ -387,7 +387,7 @@ def test_em_parity_long_k1_full(tmp_path, start):
     logger.info("K=1 long refinement cmd: %s", " ".join(cmd))
 
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    proc = run_selected_command(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
 
     assert proc.returncode == 0, (
@@ -596,7 +596,7 @@ def test_em_parity_long_k1_native_initialmodel_quality(tmp_path):
     logger.info("K=1 native InitialModel cmd: %s", " ".join(cmd))
 
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    proc = run_selected_command(cmd, output_kind="vdam", capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
         f"initial_model exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
@@ -859,7 +859,7 @@ def test_em_parity_long_kclass_full(tmp_path, start):
     logger.info("K-class long cmd: %s", " ".join(cmd))
 
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    proc = run_selected_command(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
         f"relax refine/class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
@@ -1026,7 +1026,7 @@ def test_em_parity_long_realdata_hp3_replay(tmp_path, arm):
     ]
     env = gpu_subprocess_env() | {"RECOVAR_PREREAD_IMAGES": "1", "RECOVAR_PREREAD_MAX_GB": "64"} | REALDATA_HP3_ARMS[arm]
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    proc = run_selected_command(cmd, capture_output=True, text=True, env=env)
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
         f"10097 hp3 one-iteration replay ({arm}) exited {proc.returncode}\n"
@@ -1116,7 +1116,7 @@ def test_em_parity_long_class3d_hp4_global(tmp_path):
         "--firstiter_cc", "--apply-initial-lowpass", "--init_resolution", "30.0", "--max_iter", str(final_iter),
     ]
     t0 = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    proc = run_selected_command(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     elapsed = time.time() - t0
     assert proc.returncode == 0, (
         f"Class3D hp4 run exited {proc.returncode}\nstdout:\n{proc.stdout[-4000:]}\nstderr:\n{proc.stderr[-4000:]}"

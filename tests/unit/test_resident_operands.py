@@ -46,6 +46,7 @@ from relax.helpers.preprocessing import (
     half_translation_phase_table,
 )
 from relax.sparse_pass2 import resident_operands as resident_module
+from relax.sparse_pass2 import sparse_pass2_bucket_io as bucket_io_module
 from relax.sparse_pass2.resident_operands import (
     ResidentOperandsUnsupported,
     gather_resident_chunk_operands,
@@ -359,6 +360,86 @@ def _resident_operands(case, image_indices=None, *, staged_batch=None):
         image_batch_size=4,
         staged_batch=staged_batch,
     )
+
+
+@pytest.mark.parametrize("score_mode", ["gaussian", "normalized_cc"])
+def test_native_fine_units_keep_the_score_modes_distinct(monkeypatch, score_mode):
+    """The N² image conversion must not replace fine-CC's invXi2 corr_img."""
+
+    case = _case(relion_angles=False)
+    kwargs = case["bucket_io_kwargs"]
+    kwargs["score_mode"] = score_mode
+    kwargs["relion_exact_normalized_cc_operands"] = score_mode == "normalized_cc"
+    kwargs["relion_exact_bpref_operands"] = True
+    kwargs["relion_score_translation_angles"] = np.asarray(
+        _relion_translation_angles_f64(case["fine_translations"], case["image_shape"]),
+        np.float32,
+    )
+    # The mock has no source STAR or native preprocessor. Supply only the
+    # RFLOAT CTF and raw BPref fields required to exercise the score-table
+    # selection; the paired native GPU test covers the full preparation path.
+    original_prepare = resident_module.prepare_unshifted_bucket_operands
+
+    def synthetic_exact_bpref(*args, **options):
+        unshifted = original_prepare(*args, **dict(options, relion_exact_bpref_operands=False))
+        return unshifted._replace(
+            ctf_half_rfloat=jnp.ones_like(unshifted.ctf_half, dtype=jnp.float64),
+            recon_bpref_input_half=unshifted.processed_recon_half_raw,
+        )
+
+    monkeypatch.setattr(resident_module, "prepare_unshifted_bucket_operands", synthetic_exact_bpref)
+    monkeypatch.setattr(bucket_io_module, "prepare_unshifted_bucket_operands", synthetic_exact_bpref)
+    gaussian_corr_calls = []
+    original_native_corr = resident_module._relion_native_score_corr_img
+
+    def native_gaussian_corr(*args, **options):
+        gaussian_corr_calls.append(True)
+        return original_native_corr(*args, **options)
+
+    monkeypatch.setattr(resident_module, "_relion_native_score_corr_img", native_gaussian_corr)
+
+    def prepared(native_units):
+        return prepare_resident_half_operands(
+            case["dataset"], np.arange(2), bucket_io_kwargs=kwargs,
+            window_indices=case["window_indices"],
+            recon_window_indices=case["window_indices"],
+            wavg_rect_indices=case["window_indices"],
+            noise_shell_indices_half=make_relion_noise_shell_indices_half(case["image_shape"]),
+            n_noise_shells=case["image_shape"][0] // 2 + 1,
+            image_shape=case["image_shape"], current_size=case["current_size"],
+            n_fine_trans=N_FINE_TRANS, use_exact_relion_gaussian=False,
+            accumulate_noise=False, source_faithful_spectrum_norm=False,
+            image_batch_size=2, relion_native_fine_units=native_units,
+            allow_normalized_cc=True,
+        )
+
+    ordinary, native = prepared(False), prepared(True)
+    fft_size = int(np.prod(case["image_shape"]))
+    _assert_matches(native.score_input[:2], ordinary.score_input[:2] / fft_size, "native score image units")
+    if score_mode == "normalized_cc":
+        assert not gaussian_corr_calls
+        _assert_matches(native.corr_img_score[:2], ordinary.corr_img_score[:2], "fine CC corr_img")
+        # The CPU oracle needs only the direct score operands; skip the
+        # reconstruction translation primitive, which is GPU-only.
+        kwargs["score_only"] = True
+        kwargs["relion_score_translation_angles"] = None
+        _fetched, direct, _batch, _ctf = _prepared(case, np.arange(2))
+        score_window = np.asarray(case["window_indices"])
+        _assert_matches(
+            native.corr_img_score[:2],
+            np.asarray(direct[3])[:, score_window],
+            "fine CC corr_img versus canonical direct bucket",
+        )
+        _assert_matches(
+            ordinary.score_input[:2],
+            np.asarray(direct[8])[:, score_window],
+            "fine CC image versus canonical direct bucket",
+        )
+    else:
+        assert gaussian_corr_calls == [True]
+        assert not matches(
+            np.asarray(native.corr_img_score[:2]), np.asarray(ordinary.corr_img_score[:2]),
+        ), "Gaussian native corr_img was not selected"
 
 
 @pytest.mark.parametrize("count", [4, 3], ids=["full-batch", "short-tail"])

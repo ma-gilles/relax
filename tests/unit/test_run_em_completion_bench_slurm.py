@@ -44,6 +44,27 @@ def _run_launcher(env, scope):
     assert proc.returncode == 0, proc.stdout
 
 
+def test_completion_coarse_engine_is_literal_in_both_generated_commands(tmp_path):
+    for choice in ("gemm_hybrid", "gemm_dense"):
+        scratch = tmp_path / choice
+        env = _launcher_env(tmp_path, scratch)
+        env["EM_COMPLETION_COARSE_ENGINE"] = choice
+        _run_launcher(env, "--dry-run")
+        for arm in ("k1", "k4"):
+            path = scratch / "jobs" / f"em_completion_{arm}_100k256.sh"
+            assert f"REFINEMENT_EXTRA_ARGS+=(--coarse-engine {choice})" in path.read_text()
+        assert f"EM_COMPLETION_COARSE_ENGINE={choice}" in (scratch / "submission.env").read_text()
+
+
+def test_completion_rejects_unknown_coarse_engine_before_generation(tmp_path):
+    env = _launcher_env(tmp_path, tmp_path / "bad")
+    env["EM_COMPLETION_COARSE_ENGINE"] = "misspelled"
+    proc = subprocess.run(["bash", str(LAUNCHER), "--dry-run", "--k1-only"], cwd=REPO_ROOT,
+                          env=env, text=True, capture_output=True)
+    assert proc.returncode == 2
+    assert "EM_COMPLETION_COARSE_ENGINE must be" in proc.stderr
+
+
 def test_completion_jobs_reuse_setup_relion_binding_build_dir(tmp_path):
     scratch = tmp_path / "scratch"
     runtime = tmp_path / "runtime"
