@@ -99,6 +99,15 @@ Ownership rules:
   arguments into one. A one-argument boundary is appropriate only when the
   function genuinely operates on that one domain object and the object has an
   independent lifecycle such as storage, reuse, validation or serialization.
+- Construction immediately before a single call does not establish an
+  independent lifecycle. This applies equally to a constructor nested in the
+  call and to a container assigned to a throwaway local on the preceding line.
+  Such a container obscures the dependency map without creating ownership.
+- An input container is justified only when the caller stores it for later,
+  reuses it in multiple operations, deliberately derives variants from it,
+  serializes it, or relies on it to enforce a domain invariant. Otherwise pass
+  the meaningful dependencies explicitly or split the callee into phases whose
+  smaller signatures describe coherent work.
 - Helpers receive the smallest cohesive owners or substates, not the whole run
   state as a service locator. They use owner fields at the point of need; they
   do not immediately unpack stable fields back into a long local-parameter list.
@@ -165,6 +174,21 @@ boundaries and remove synthetic aggregate call bundles. The audit covers:
 Each amended boundary gets an AST signature/ownership guard. The guard checks
 the owner names and rejects immediate field flattening. Removing the aggregate
 must not move casts, copies, mutation, environment reads or numerical work.
+
+The constructor-lifecycle audit found three different cases that must not be
+treated alike:
+
+| Case | Disposition |
+| --- | --- |
+| First-iteration CC and local-search owner groups reused across multiple route calls, including deliberate `replace(...)` variants | Keep: these objects have a visible planning lifecycle. |
+| Dense half-scoring plans stored during scheduling and executed later | Keep the plan; review its nested owners only as part of the dense-planning redesign. |
+| Low-resolution half join, initial-grid sampling, adaptive-pass assembly, mean reconstruction, direction-prior update, unregularized means and snapshot inputs constructed only for one immediate call | Remove or redesign: expose readable dependencies, split phases, or make persistent state real and reuse it later. |
+
+This audit is semantic, not syntactic. Moving an inline constructor into a
+temporary variable is not a resolution. Conversely, expanding every object
+into a long argument list is also not a resolution: when explicit dependencies
+would make a function too broad, split responsibility first or introduce a
+real longer-lived owner at the point where that state begins to exist.
 
 ### 2. Half-scoring specifications and explicit variants
 
