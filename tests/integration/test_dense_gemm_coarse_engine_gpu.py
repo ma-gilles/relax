@@ -704,6 +704,71 @@ def test_k2_square_cc_full_grid_maps_wavg_and_keeps_one_winner(monkeypatch):
 
 
 @pytest.mark.gpu
+def test_public_k2_dense_engine_runs_joint_full_grid(monkeypatch):
+    """The selected EM entry point reaches the native joint K-class engine."""
+    assert jax.default_backend() == "gpu"
+    from helpers.em_arrays import _hermitian_volume
+    from helpers.sparse_pass2_mock import VOLUME_SHAPE
+    from relax.classification.k_class import run_dense_k_class_em_adaptive
+    from relax.relion import relion_ctf
+    from relax.sparse_pass2.engine_record import take_coarse_engine_calls
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "unit"))
+    from unit.test_resident_pass2_driver import _driver_fixture_args
+    from unit.test_resident_relion_reference import _ppref, _tie_free_noise
+
+    monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
+    args = _driver_fixture_args(seed=20260929)
+    dataset = args.pop("experiment_dataset")
+    _install_native_preprocessing(dataset)
+    monkeypatch.setattr(relion_ctf, "_relion_exact_ctf_half_from_source_star", _variable_ctf_rows)
+    args.pop("volume")
+    args.pop("noise_variance")
+    args.pop("significant_sample_indices")
+    args.pop("normalization_other_score_log_z")
+    args.pop("normalization_score_mode")
+    args.pop("relion_x_half_mstep")
+    args.pop("return_score_log_z")
+    args.pop("preserve_bpref_particle_order")
+    fine_rotations = args.pop("fine_rotations_override")
+    rot_parent = args.pop("fine_rotation_parent_override")
+    fine_translations = args.pop("fine_translations_override")
+    trans_parent = args.pop("fine_translation_parent_override")
+    translations = args.pop("translations")
+    noise = jnp.asarray(_tie_free_noise(6, 200.0).reshape(-1), jnp.float32)
+    volumes = jnp.stack([_hermitian_volume(VOLUME_SHAPE, seed=17 + i) for i in range(2)])
+    slabs = [_ppref(volumes[i]) for i in range(2)]
+    args.update(
+        score_with_masked_images=True,
+        relion_projector_half=np.stack([slab for slab, _ in slabs]),
+        relion_projector_r_max=slabs[0][1],
+        mstep_relion_x_half=True,
+    )
+    take_coarse_engine_calls()
+    result = run_dense_k_class_em_adaptive(
+        dataset, volumes, None, noise,
+        fine_rotations[::2], translations, fine_rotations, fine_translations,
+        rot_parent, trans_parent, args.pop("disc_type"),
+        class_log_priors=np.log(np.array([0.5, 0.5])),
+        accumulate_noise=args.pop("accumulate_noise"),
+        coarse_healpix_order=args.pop("nside_level"),
+        oversampling_order=args.pop("oversampling_order"),
+        fine_current_size=args["current_size"],
+        coarse_engine="gemm_dense", **args,
+    )
+    assert np.all(np.isfinite(np.asarray(result.stats.log_evidence_per_image)))
+    assert np.sum(np.asarray(result.class_posterior_sums)) == pytest.approx(
+        dataset.n_units, rel=1e-6
+    )
+    assert all(np.linalg.norm(np.asarray(value)) > 0 for value in result.Ft_ctf)
+    calls = take_coarse_engine_calls()
+    assert len(calls) == 1
+    assert calls[0]["resolved"] == "gemm_dense"
+    assert calls[0]["evaluated_fine_candidates_total"] == (
+        dataset.n_units * 2 * len(fine_rotations) * len(fine_translations)
+    )
+
+
+@pytest.mark.gpu
 @pytest.mark.parametrize("class_fixture", ["skew", "balanced"])
 def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(monkeypatch, class_fixture):
     assert jax.default_backend() == "gpu"
