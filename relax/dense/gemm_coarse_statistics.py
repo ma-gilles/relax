@@ -1,9 +1,10 @@
 """Bounded resident statistics for the exact full-grid dense GEMM E/M pass.
 
 The GEMM engine owns posterior normalization and collapsed BPref slices.  This
-module feeds its same posterior tiles through the resident engine's native
-translate/Wavg/noise primitives, then hands their partials to the resident
-image-level reducer.  No RELION statistic formula is reimplemented here.
+module contracts the full posterior into per-image Wavg/noise expectations for
+the common single-optics RFLOAT path. Other operand layouts use the resident
+native row primitives. Both routes feed the established image-level reducer.
+See ``docs/math/dense_gemm_experiment.md`` for the full-grid expectation algebra.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import jax
 import jax.numpy as jnp
 
 from relax.cuda import kernels as cuda_backproject
+from relax.helpers.half_spectrum import bin_shell_values_jax
 from relax.sparse_pass2.resident_pass2 import (
     _accumulate_chunk_image_terms,
     _add_wavg_rectangle_image_power,
@@ -27,7 +29,10 @@ from relax.sparse_pass2.resident_pass2 import (
     _resident_block_weighted_sums_kernel,
 )
 from relax.sparse_pass2.resident_statistics import ResidentStatisticsConfig
-from relax.sparse_pass2.sparse_pass2_wavg import relion_cuda_translate_wavg_norm_window
+from relax.sparse_pass2.sparse_pass2_wavg import (
+    _relion_wavg_shifted_power,
+    relion_cuda_translate_wavg_norm_window,
+)
 
 
 class DenseGemmStatisticsOperands(NamedTuple):
@@ -139,7 +144,13 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
             image_slot = jnp.repeat(jnp.arange(b, dtype=jnp.int32), qs)
             # Invalid rotation and image rows have zero posterior. The native
             # translate kernel still receives -1 for padded image slots.
-            kernel_ids = jnp.where(batch.valid_images[image_slot], image_slot, -1)
+            # The native row kernels already treat -1 as a zero contribution.
+            # Exact-zero posterior rows can therefore skip their pixel work;
+            # all hypotheses were scored before this mask is formed.
+            kernel_ids = jnp.where(
+                batch.valid_images[image_slot] & jnp.any(row_probs != 0.0, axis=1),
+                image_slot, -1,
+            )
             summed, summed_masked, ctf_probs, _ = _resident_block_weighted_sums_kernel(
                 row_probs, kernel_ids, image_slot,
                 ops.recon_image, ops.recon_weight, ops.noise_image,
@@ -201,6 +212,99 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
         if plan.n_classes == 1:
             return carry
         return _fold_class_scale_sums(carry, ops.wavg_scale_pixel_mask[class_id])
+
+    if plan.n_optics_groups == 1 and plan.use_rfloat_ctf_wavg:
+        def factorized_step(carry, ops, posterior, rec_projection, _class_id, rot_start, trans_start, batch, grid):
+            """Contract all scored rotations before forming per-image Wavg/noise terms.
+
+            See ``docs/math/dense_gemm_experiment.md#production-full-grid-statistics``.
+            """
+            del _class_id, rot_start, grid
+            angles = jax.lax.dynamic_slice_in_dim(ops.translation_angles, trans_start, u, axis=0)
+            posterior = jnp.where(batch.valid_images[:, None, None], posterior, 0.0)
+            # One full-precision GEMM per real component contracts all scored
+            # rotations into per-image, per-translation expected projections.
+            btq = posterior.transpose(0, 2, 1).reshape(b * u, q)
+            precision = jax.lax.DotAlgorithmPreset.F32_F32_F32
+            expected_real = jax.lax.dot(
+                btq, rec_projection.real, precision=precision,
+                preferred_element_type=jnp.float32,
+            ).reshape(b, u, plan.n_recon_pixels)
+            expected_imag = jax.lax.dot(
+                btq, rec_projection.imag, precision=precision,
+                preferred_element_type=jnp.float32,
+            ).reshape(b, u, plan.n_recon_pixels)
+            mass_bq = jnp.sum(posterior, axis=2)
+            mass_bu = jnp.sum(posterior, axis=1)
+            projection_power = rec_projection.real * rec_projection.real + rec_projection.imag * rec_projection.imag
+            expected_power = jax.lax.dot(
+                mass_bq, projection_power, precision=precision,
+                preferred_element_type=jnp.float32,
+            )
+
+            raw_rect = relion_cuda_translate_wavg_norm_window(
+                ops.wavg_image_rect, angles, ops.rect_indices, plan.image_shape
+            )
+            raw_exact = raw_rect[:, :, ops.exact_positions]
+            raw_cross = jnp.sum(
+                expected_real * raw_exact.real + expected_imag * raw_exact.imag, axis=1
+            )
+            scale = jnp.asarray(ops.scale, jnp.float32)
+            scaled_ctf = jnp.asarray(ops.direct_ctf_rfloat_recon, jnp.float32) * scale[:, None]
+            xa_raw = scaled_ctf * raw_cross
+            aa_raw = (scaled_ctf * scaled_ctf) * expected_power
+            image_power_exact = jnp.sum(
+                mass_bu[:, :, None] * _relion_wavg_shifted_power(raw_exact), axis=1
+            )
+            safe_scale = jnp.maximum(scale, jnp.asarray(1e-30, jnp.float32))
+            exact_triplet = jnp.stack((
+                xa_raw / safe_scale[:, None],
+                aa_raw / (safe_scale[:, None] * safe_scale[:, None]),
+                aa_raw - 2.0 * xa_raw + image_power_exact,
+            ), axis=-1)
+            live_exact = (
+                (jnp.arange(plan.n_recon_pixels) < ops.logical_recon_pixels)
+                & (ops.exact_positions < ops.logical_rect_pixels)
+            )
+            wavg = carry.wavg_triplet_pixels.at[:, ops.exact_positions, :].add(
+                jnp.where(live_exact[None, :, None], exact_triplet, jnp.float32(0.0))
+            )
+            rectangle_power = jnp.sum(
+                mass_bu[:, :, None] * _relion_wavg_shifted_power(raw_rect), axis=1
+            )
+            outside_exact = (
+                jnp.arange(plan.n_rect_pixels) < ops.logical_rect_pixels
+            ).at[ops.exact_positions].set(False)
+            wavg = wavg.at[..., 2].add(jnp.where(outside_exact[None, :], rectangle_power, 0.0))
+
+            shifted_noise = cuda_backproject.relion_translate_score_f32(
+                ops.noise_image, angles, ops.recon_pixel_indices, plan.image_shape
+            ).reshape(b, u, plan.n_recon_pixels)
+            noise_cross = jnp.sum(
+                expected_real * shifted_noise.real + expected_imag * shifted_noise.imag,
+                axis=1,
+            )
+            noise = jnp.asarray(ops.noise_variance).reshape(-1)
+            a2 = expected_power * ops.ctf2_over_nv_recon * noise[None, :]
+            xa = noise_cross * noise[None, :]
+            if ops.image_noise_scale is not None:
+                a2 = a2 * ops.image_noise_scale[:, None]
+                xa = xa * ops.image_noise_scale[:, None]
+            live = jnp.arange(plan.n_recon_pixels) < ops.logical_recon_pixels
+            a2 = jnp.where(live[None, :], a2, 0.0)
+            xa = jnp.where(live[None, :], xa, 0.0)
+            noise_pixels = jnp.sum(a2, axis=0) - 2.0 * jnp.sum(xa, axis=0)
+            shells = bin_shell_values_jax(
+                noise_pixels, ops.shell_indices_noise, plan.n_shells
+            ).astype(jnp.float64)
+            return carry._replace(
+                wavg_triplet_pixels=wavg,
+                noise_shells=carry.noise_shells + shells,
+                a2_per_image=carry.a2_per_image + jnp.sum(a2, axis=1),
+                xa_per_image=carry.xa_per_image + jnp.sum(xa, axis=1),
+            )
+
+        return factorized_step, finish_class
 
     return step, finish_class
 

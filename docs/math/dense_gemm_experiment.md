@@ -11,6 +11,13 @@ with tile arithmetic in [`gemm_experiment_kernels.py`](../../relax/dense/gemm_ex
 The real-data adapter is
 [`benchmark_dense_gemm_trajectory.py`](../../scripts/benchmark_dense_gemm_trajectory.py).
 
+The selectable production EM/VDAM full-grid route is
+[`run_dense_gemm_full_grid`](../../relax/dense/gemm_coarse_engine.py), using the
+joint-class two-sweep program
+[`make_joint_k_batch_program`](../../relax/dense/gemm_experiment.py). It does not
+prune configured poses. The experimental trajectory adapter described above
+has a different lifetime and benchmark scope.
+
 ## Scores and the per-image denominator
 
 Let `i` index images, `r` rotations, `t` translations and `p` Fourier pixels.
@@ -121,6 +128,37 @@ tiles. No tensor with shape `(B,Q,T,P)` is formed. Score and reconstruction phas
 use their respective coordinate layouts; BPref adjoint indices are a separate
 native layout. The real-data adapter reuses the canonical Hermitian finalizer
 and regularized map solver, not a numerator/denominator division.
+
+## Production full-grid statistics
+
+The EM/VDAM adapter also needs per-image noise, normalization and Wavg statistics.
+The single-optics, RFLOAT-CTF route in
+[`make_statistics_callbacks`](../../relax/dense/gemm_coarse_statistics.py)
+uses the full posterior tile `w[i,r,t]` without selecting significant poses.
+For reconstruction-window projection `P[r,p]`, it forms two expectations:
+
+```text
+E[i,t,p] = sum_r w[i,r,t] P[r,p]          # (B*T,Q) @ (Q,P) GEMM
+M[i,p]   = sum_r (sum_t w[i,r,t]) |P[r,p]|²  # (B,Q) @ (Q,P) GEMM
+```
+
+If `Y[i,t,p]` is the canonically translated noise image, `v[p]` its noise
+variance and `h[i,p]` the prepared CTF²/noise operand, the row-summed noise
+terms are `A2[i,p] = M[i,p] h[i,p] v[p]` and
+`XA[i,p] = v[p] sum_t Re(E[i,t,p] conj(Y[i,t,p]))`. The established shell and
+image reducers consume their sums. For Wavg, let `X[i,t,p]` be the native
+translated raw image and `c[i,p]` the raw CTF times the image scale. Its exact
+pixels receive `xa_raw = c sum_t Re(E conj(X))`, `aa_raw = c² M`, and
+`diff2 = aa_raw - 2 xa_raw + sum_t (sum_r w[i,r,t]) |X[i,t,p]|²`; the existing
+scale divisions and rectangle power convention then apply. K classes share one
+joint normalizer and fold their Wavg masks class by class. Full-precision
+float32 GEMMs avoid TF32; existing higher-precision noise metadata remains in
+its established dtype. This changes reduction order, so the resident-reference
+float32 gates and trajectory checks remain required.
+
+For multiple optics groups or non-RFLOAT Wavg operands, the adapter keeps the
+resident row-statistics callbacks. In both routes the score grid and posterior
+support remain full; an exactly zero float32 posterior may skip pixel work.
 
 ## Buffer ownership and measurement boundaries
 
