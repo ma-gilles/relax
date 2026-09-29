@@ -277,3 +277,19 @@ def test_multiseed_rule_ties_small_gt_gaps_only_when_maps_reproduce():
     assert not hit
     hit, _ = multiseed_quality({1: 0.9379, 2: 0.9408}, relion, band, {1: 0.99998, 2: 0.99993})
     assert not hit
+
+
+@pytest.mark.unit
+def test_matched_speed_row_needs_the_same_gpu_model_on_both_arms(tmp_path):
+    table = json.loads(DEFAULT_JSON.read_text())
+    row = next(r for r in table["rows"] if r["matched"] == "yes" and r["time_ratio_relax_over_relion"] is not None)
+    row["relax"]["gpu_model"] = "A100 80GB"
+    path = tmp_path / "table.json"
+    path.write_text(json.dumps(table))
+    with pytest.raises(ValueError, match="same GPU model"):
+        load_and_validate(path)
+    row["relax"]["gpu_model"] = row["relion"]["gpu_model"]
+    row["relax"]["gpu_count"] = None
+    path.write_text(json.dumps(table))
+    with pytest.raises(ValueError, match="gpu_count|GPU model and count"):
+        load_and_validate(path)

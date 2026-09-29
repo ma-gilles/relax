@@ -86,7 +86,8 @@ DEBUG_MAX_PARTICLES = 10_000
 GREEN_MAX = 0.6
 STATUS_LEGEND = (
     "🟢 accuracy hit and ratio ≤ 0.6x · 🟠 accuracy hit, ratio > 0.6x · 🔴 accuracy missed, whatever the speed"
-    " · ⚪ accuracy hit (or not scored), not a speed comparison (arms not timed in one job, or a wall is missing)."
+    " · ⚪ accuracy hit (or not scored), not a speed comparison (the arms were not both run cold on the same hardware, same GPU"
+    " model and node type, or a wall is missing). Separate jobs, nodes or dates are fine for a speed row."
     " Accuracy hit: relax inside or above"
     " the RELION band by the row's metric (Quality column). Multi-seed rows: every relax seed inside or above the"
     " across-seed RELION band (all RELION runs of all seeds), and relax not below its same-seed RELION run on a majority"
@@ -106,8 +107,8 @@ LETTER_LEGEND = {
     "vdam_fsc05_vs_reference": "InitialModel: FSC 0.5 of the registered final map against the reference (K>1: most populated class)",
 }
 MATCHED_LEGEND = {
-    "yes": "both arms in one job on the same node and GPU model (or ABBA repeats); the ratio is a speed comparison",
-    "workload": "same GPU model and workload, timing not controlled (separate jobs, nodes or dates)",
+    "yes": "both arms run cold (empty compile cache, standalone start-up) on the same hardware (GPU model and node type); the ratio is a speed comparison",
+    "workload": "same workload, but an arm was not cold or the hardware differs; the ratio is not a speed comparison",
     "no": "workload, schedule or CPU layout differs, or a wall is missing; the ratio is not a speed comparison",
 }
 RATIO_TOLERANCE = 0.006
@@ -272,6 +273,12 @@ def _validate_ratio(row):
             raise ValueError(f"{rid}: time ratio without both wall times")
         if abs(walls[1] / walls[0] - ratio) > RATIO_TOLERANCE:
             raise ValueError(f"{rid}: time ratio {ratio} != {walls[1]}/{walls[0]}")
+    if row["matched"] == "yes":
+        arms = [(row[e].get("gpu_model"), row[e].get("gpu_count")) for e in ENGINES]
+        if None in (x for arm in arms for x in arm):
+            raise ValueError(f"{rid}: a matched speed row records each arm's GPU model and count")
+        if arms[0][0] != arms[1][0]:
+            raise ValueError(f"{rid}: a matched speed row needs the same GPU model on both arms ({arms[0][0]} vs {arms[1][0]})")
 
 
 def render_markdown(table):
@@ -368,7 +375,8 @@ def multiseed_quality(relax, same_seed_relion, band_values, same_seed_map_auc=No
 
 def status(row):
     """🟢 accuracy hit and ratio <= 0.6x; 🟠 accuracy hit and ratio > 0.6x; 🔴 accuracy missed, whatever the speed;
-    ⚪ accuracy hit or not scored, and the ratio is not a speed comparison (Matched workload or no, or a wall missing)."""
+    ⚪ accuracy hit or not scored, and the ratio is not a speed comparison (Matched workload or no, or a wall missing).
+    Matched yes means both arms ran cold on the same hardware (GPU model and node type), in one job or not (user, 2026-09-29)."""
     ratio = row["time_ratio_relax_over_relion"]
     comparable = row["matched"] == "yes" and ratio is not None
     if row["quality_pass"] is False:

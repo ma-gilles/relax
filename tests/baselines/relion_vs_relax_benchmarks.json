@@ -17,8 +17,8 @@
   "vdam_fsc05_vs_reference": "InitialModel (VDAM): FSC 0.5 of the rigidly registered final map against the reference (ground truth for synthetic data, RELION's auto-refine map of the same data for real data); first shell below 0.5, as box * pixel / shell; K>1: the most populated class. No half maps, so not a gold-standard resolution."
  },
  "matched_definition": {
-  "yes": "Same GPU model, box, particles, schedule and flags, with both arms in one job on the same node (--gres=gpu:2, one arm per GPU, simultaneous or with swapped GPUs across rounds), or ABBA/sequential repeats on matched hardware. Earlier rows measured on exclusive nodes remain valid.",
-  "workload": "Same GPU model, box, particles and schedule, but timing not controlled (separate jobs, nodes or dates).",
+  "yes": "Same GPU model and node type, box, particles, schedule and flags, with both arms run cold (empty compile cache, standalone start-up); the arms may run in one job (--gres=gpu:2, one arm per GPU) or in separate jobs, nodes or dates (user, 2026-09-29). Earlier rows measured on exclusive nodes or as ABBA repeats remain valid.",
+  "workload": "Same GPU model, box, particles and schedule, but an arm was not run cold (for example a shared or warm compile cache) or the hardware differs, so the time ratio is not a speed comparison.",
   "no": "Workload or schedule differs, or one side has no wall time, so the time ratio is not a speed comparison.",
   "check": "For every row with a ratio, time_check records (a) RELION GPU count and MPI ranks and relax GPU count, (b) relax diagnostic, capture, deterministic-reduction, RELION-state replay and per-iteration dump options, (c) whether each wall is end-to-end including start-up and compilation, (d) the GPU model per job from sacct node and nvidia-smi records."
  },
@@ -5432,7 +5432,7 @@
     "relion.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "relax.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "cross_engine_masked_band_auc": "cross-engine agreement is the full-spectrum map FSC-AUC in cross_engine; no scorecard-band value",
-    "time_ratio_relax_over_relion": "relax and RELION ran in separate jobs on different nodes; not a speed comparison"
+    "time_ratio_relax_over_relion": "the relax arm ran with the wave's shared JAX compilation cache (cryoet_bench_20260926/relax_arms/jax_cache), so it was not cold; separate jobs on the same GPU model would otherwise make a speed row (user, 2026-09-29)"
    },
    "mask": {
     "dataset": "etbench_w2_02_n5k_c1",
@@ -5559,7 +5559,7 @@
     "relion.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "relax.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "cross_engine_masked_band_auc": "cross-engine agreement is the full-spectrum map FSC-AUC in cross_engine; no scorecard-band value",
-    "time_ratio_relax_over_relion": "relax and RELION ran in separate jobs on different nodes; not a speed comparison"
+    "time_ratio_relax_over_relion": "the relax arm ran with the wave's shared JAX compilation cache (cryoet_bench_20260926/relax_arms/jax_cache), so it was not cold; separate jobs on the same GPU model would otherwise make a speed row (user, 2026-09-29)"
    },
    "mask": {
     "dataset": "etbench_w2_05_snr_low_c1",
@@ -5686,7 +5686,7 @@
     "relion.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "relax.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "cross_engine_masked_band_auc": "cross-engine agreement is the full-spectrum map FSC-AUC in cross_engine; no scorecard-band value",
-    "time_ratio_relax_over_relion": "relax and RELION ran in separate jobs on different nodes; not a speed comparison"
+    "time_ratio_relax_over_relion": "the relax arm ran with the wave's shared JAX compilation cache (cryoet_bench_20260926/relax_arms/jax_cache), so it was not cold; separate jobs on the same GPU model would otherwise make a speed row (user, 2026-09-29)"
    },
    "mask": {
     "dataset": "etbench_w2_06_snr_high_c1",
@@ -5813,7 +5813,7 @@
     "relion.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "relax.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "cross_engine_masked_band_auc": "cross-engine agreement is the full-spectrum map FSC-AUC in cross_engine; no scorecard-band value",
-    "time_ratio_relax_over_relion": "relax and RELION ran in separate jobs on different nodes; not a speed comparison"
+    "time_ratio_relax_over_relion": "the relax arm ran with the wave's shared JAX compilation cache (cryoet_bench_20260926/relax_arms/jax_cache), so it was not cold; separate jobs on the same GPU model would otherwise make a speed row (user, 2026-09-29)"
    },
    "mask": {
     "dataset": "etbench_w2_07_tilt45_c1",
@@ -5940,7 +5940,7 @@
     "relion.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "relax.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "cross_engine_masked_band_auc": "cross-engine agreement is the full-spectrum map FSC-AUC in cross_engine; no scorecard-band value",
-    "time_ratio_relax_over_relion": "relax and RELION ran in separate jobs on different nodes; not a speed comparison"
+    "time_ratio_relax_over_relion": "the relax arm ran with the wave's shared JAX compilation cache (cryoet_bench_20260926/relax_arms/jax_cache), so it was not cold; separate jobs on the same GPU model would otherwise make a speed row (user, 2026-09-29)"
    },
    "mask": {
     "dataset": "etbench_w2_08_tilt6_c1",
@@ -6067,7 +6067,7 @@
     "relion.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "relax.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "cross_engine_masked_band_auc": "cross-engine agreement is the full-spectrum map FSC-AUC in cross_engine; no scorecard-band value",
-    "time_ratio_relax_over_relion": "relax and RELION ran in separate jobs on different nodes; not a speed comparison"
+    "time_ratio_relax_over_relion": "the relax arm ran with the wave's shared JAX compilation cache (cryoet_bench_20260926/relax_arms/jax_cache), so it was not cold; separate jobs on the same GPU model would otherwise make a speed row (user, 2026-09-29)"
    },
    "mask": {
     "dataset": "etbench_w2_09_box192_c1",
@@ -6203,7 +6203,7 @@
     "relion.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "relax.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "cross_engine_masked_band_auc": "cross-engine agreement is the full-spectrum map FSC-AUC in cross_engine; no scorecard-band value",
-    "time_ratio_relax_over_relion": "relax and RELION ran in separate jobs on different nodes; not a speed comparison"
+    "time_ratio_relax_over_relion": "the relax arm ran with the wave's shared JAX compilation cache (cryoet_bench_20260926/relax_arms/jax_cache), so it was not cold; separate jobs on the same GPU model would otherwise make a speed row (user, 2026-09-29)"
    },
    "mask": {
     "dataset": "etbench_w2_10_box320_c1",
@@ -6331,7 +6331,7 @@
     "relion.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "relax.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "cross_engine_masked_band_auc": "cross-engine agreement is the full-spectrum map FSC-AUC in cross_engine; no scorecard-band value",
-    "time_ratio_relax_over_relion": "relax and RELION ran in separate jobs on different nodes; not a speed comparison"
+    "time_ratio_relax_over_relion": "the relax arm ran with the wave's shared JAX compilation cache (cryoet_bench_20260926/relax_arms/jax_cache), so it was not cold; separate jobs on the same GPU model would otherwise make a speed row (user, 2026-09-29)"
    },
    "mask": {
     "dataset": "etbench_w2_11_optics2_c1",
@@ -6461,7 +6461,7 @@
     "relion.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "relax.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "cross_engine_masked_band_auc": "cross-engine agreement is the full-spectrum map FSC-AUC in cross_engine; no scorecard-band value",
-    "time_ratio_relax_over_relion": "relax and RELION ran in separate jobs on different nodes; not a speed comparison"
+    "time_ratio_relax_over_relion": "the relax arm ran with the wave's shared JAX compilation cache (cryoet_bench_20260926/relax_arms/jax_cache), so it was not cold; separate jobs on the same GPU model would otherwise make a speed row (user, 2026-09-29)"
    },
    "mask": {
     "dataset": "etbench_w2_12_c4_c4",
@@ -6589,7 +6589,7 @@
     "relion.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "relax.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "cross_engine_masked_band_auc": "cross-engine agreement is the full-spectrum map FSC-AUC in cross_engine; no scorecard-band value",
-    "time_ratio_relax_over_relion": "relax and RELION ran in separate jobs on different nodes; not a speed comparison"
+    "time_ratio_relax_over_relion": "the relax arm ran with the wave's shared JAX compilation cache (cryoet_bench_20260926/relax_arms/jax_cache), so it was not cold; separate jobs on the same GPU model would otherwise make a speed row (user, 2026-09-29)"
    },
    "mask": {
     "dataset": "etbench_w2_13_noise_colored_c1",
@@ -6729,7 +6729,7 @@
     "relion.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "relax.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "cross_engine_masked_band_auc": "cross-engine agreement is the full-spectrum map FSC-AUC in cross_engine; no scorecard-band value",
-    "time_ratio_relax_over_relion": "relax and RELION ran in separate jobs on different nodes; not a speed comparison"
+    "time_ratio_relax_over_relion": "the relax arm ran with the wave's shared JAX compilation cache (cryoet_bench_20260926/relax_arms/jax_cache), so it was not cold; separate jobs on the same GPU model would otherwise make a speed row (user, 2026-09-29)"
    },
    "mask": {
     "dataset": "etbench_w2_14_prefori_c1",
@@ -6857,7 +6857,7 @@
     "relion.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "relax.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
     "cross_engine_masked_band_auc": "cross-engine agreement is the full-spectrum map FSC-AUC in cross_engine; no scorecard-band value",
-    "time_ratio_relax_over_relion": "relax and RELION ran in separate jobs on different nodes; not a speed comparison"
+    "time_ratio_relax_over_relion": "the relax arm ran with the wave's shared JAX compilation cache (cryoet_bench_20260926/relax_arms/jax_cache), so it was not cold; separate jobs on the same GPU model would otherwise make a speed row (user, 2026-09-29)"
    },
    "mask": {
     "dataset": "etbench_w2_15_offsets_large_c1",
