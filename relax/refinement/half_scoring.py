@@ -1404,6 +1404,100 @@ def _relion_coarse_significant_counts(significant_sample_indices):
     )
 
 
+def _prepare_local_adaptive_pass2_support(
+    parent_layout,
+    significant_sample_indices,
+    sampling: LocalSamplingSpec,
+    diagnostics: LocalDiagnosticPolicy,
+    parent_order: int,
+    fine_layout_dtype,
+):
+    """Derive fine and diagnostic support from retained parent samples."""
+
+    pruned_parent_significant_sample_indices = significant_sample_indices
+    # RELION's rlnNrOfSignificantSamples records the number of retained
+    # coarse hypotheses from pass 1, not the number of fine hypotheses used
+    # for reconstruction in pass 2. Preserve this before any diagnostic
+    # expansion of the pass-2 parent support.
+    relion_significant_counts = _relion_coarse_significant_counts(
+        pruned_parent_significant_sample_indices
+    )
+    if relion_significant_counts is None:
+        logger.warning(
+            "RELION local adaptive pass 1 did not return explicit retained support; "
+            "rlnNrOfSignificantSamples-compatible counts are unavailable"
+        )
+
+    parent_mode = "full_parent" if diagnostics.adaptive_pass2_full_parent else "pruned_parent"
+    if diagnostics.adaptive_pass2_full_parent:
+        significant_sample_indices = [None] * len(significant_sample_indices)
+        logger.info(
+            "RELION local adaptive pass 2: expanding all parent samples; set %s=0 for pruned-parent support",
+            _LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV,
+        )
+    elif diagnostics.adaptive_pass2_rotation_only:
+        significant_sample_indices = _expand_significant_samples_to_full_parent_translations(
+            significant_sample_indices,
+            int(sampling.current_translations.shape[0]),
+        )
+        parent_mode = "significant_rotation_full_translation"
+        logger.info(
+            "RELION local adaptive pass 2 diagnostic: expanding significant parent rotations to all "
+            "parent translations via %s=1",
+            _LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV,
+        )
+
+    layout_kwargs = dict(
+        oversampling_order=int(sampling.local_parent_oversampling_order),
+        random_perturbation=float(sampling.local_search_random_perturbation),
+        dtype=fine_layout_dtype,
+        **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {}),
+    )
+    pass2_layout = build_local_adaptive_pass2_hypothesis_layout(
+        parent_layout,
+        significant_sample_indices,
+        parent_order,
+        **layout_kwargs,
+    )
+
+    denominator_layout = None
+    denominator_mode = diagnostics.adaptive_pass2_denominator_mode
+    if denominator_mode is not None:
+        if denominator_mode == "full_parent":
+            denominator_significant_sample_indices = [None] * len(
+                pruned_parent_significant_sample_indices
+            )
+        elif denominator_mode == "rotation_only":
+            denominator_significant_sample_indices = (
+                _expand_significant_samples_to_full_parent_translations(
+                    pruned_parent_significant_sample_indices,
+                    int(sampling.current_translations.shape[0]),
+                )
+            )
+        else:  # Defensive only; parser restricts values.
+            raise AssertionError(f"unexpected denominator mode {denominator_mode!r}")
+        denominator_layout = build_local_adaptive_pass2_hypothesis_layout(
+            parent_layout,
+            denominator_significant_sample_indices,
+            parent_order,
+            **layout_kwargs,
+        )
+        log_local_denominator_support(
+            logger,
+            denominator_layout,
+            denominator_mode,
+            _LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV,
+        )
+    log_local_adaptive_support(
+        logger,
+        parent_layout,
+        significant_sample_indices,
+        sampling.current_translations,
+        pass2_layout,
+    )
+    return pass2_layout, relion_significant_counts, denominator_layout, parent_mode
+
+
 def _local_owners_for_shape(
     half: LocalHalfData,
     sampling: LocalSamplingSpec,
@@ -1754,10 +1848,6 @@ def _score_half_local_one_shape(
     local_adaptive_pass2_denominator_layout = None
     local_normalization_log_evidence = None
     if int(sampling.local_parent_oversampling_order) > 0:
-        local_adaptive_pass2_full_parent = diagnostics.adaptive_pass2_full_parent
-        local_adaptive_pass2_rotation_only = diagnostics.adaptive_pass2_rotation_only
-        local_adaptive_pass2_denominator_mode = diagnostics.adaptive_pass2_denominator_mode
-        local_adaptive_pass2_parent_mode = "full_parent" if local_adaptive_pass2_full_parent else "pruned_parent"
         parent_prior_translations = priors.trans_prior_center
         if parent_prior_translations is None:
             parent_prior_translations = np.zeros(
@@ -1853,70 +1943,18 @@ def _score_half_local_one_shape(
         )
         parent_profile = parent_outputs.profile_summary
         significant_sample_indices = parent_profile["reconstruction_sample_indices_by_image"]
-        pruned_parent_significant_sample_indices = significant_sample_indices
-        # RELION's rlnNrOfSignificantSamples records the number of retained
-        # coarse hypotheses from pass 1, not the number of fine hypotheses
-        # used for reconstruction in pass 2. Preserve this before any
-        # diagnostic expansion of the pass-2 parent support.
-        relion_significant_counts_k = _relion_coarse_significant_counts(pruned_parent_significant_sample_indices)
-        if relion_significant_counts_k is None:
-            logger.warning(
-                "RELION local adaptive pass 1 did not return explicit retained support; "
-                "rlnNrOfSignificantSamples-compatible counts are unavailable"
-            )
-        if local_adaptive_pass2_full_parent:
-            significant_sample_indices = [None] * len(significant_sample_indices)
-            logger.info(
-                "RELION local adaptive pass 2: expanding all parent samples; set %s=0 for pruned-parent support",
-                _LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV,
-            )
-        elif local_adaptive_pass2_rotation_only:
-            significant_sample_indices = _expand_significant_samples_to_full_parent_translations(
-                significant_sample_indices,
-                int(sampling.current_translations.shape[0]),
-            )
-            local_adaptive_pass2_parent_mode = "significant_rotation_full_translation"
-            logger.info(
-                "RELION local adaptive pass 2 diagnostic: expanding significant parent rotations to all "
-                "parent translations via %s=1",
-                _LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV,
-            )
-        pass2_layout = build_local_adaptive_pass2_hypothesis_layout(
+        (
+            pass2_layout,
+            relion_significant_counts_k,
+            local_adaptive_pass2_denominator_layout,
+            local_adaptive_pass2_parent_mode,
+        ) = _prepare_local_adaptive_pass2_support(
             parent_layout,
             significant_sample_indices,
+            sampling,
+            diagnostics,
             parent_order,
-            oversampling_order=int(sampling.local_parent_oversampling_order),
-            random_perturbation=float(sampling.local_search_random_perturbation),
-            dtype=fine_local_layout_dtype,
-            **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {}),
-        )
-        if local_adaptive_pass2_denominator_mode is not None:
-            if local_adaptive_pass2_denominator_mode == "full_parent":
-                denominator_significant_sample_indices = [None] * len(pruned_parent_significant_sample_indices)
-            elif local_adaptive_pass2_denominator_mode == "rotation_only":
-                denominator_significant_sample_indices = _expand_significant_samples_to_full_parent_translations(
-                    pruned_parent_significant_sample_indices,
-                    int(sampling.current_translations.shape[0]),
-                )
-            else:  # Defensive only; parser restricts values.
-                raise AssertionError(f"unexpected denominator mode {local_adaptive_pass2_denominator_mode!r}")
-            local_adaptive_pass2_denominator_layout = build_local_adaptive_pass2_hypothesis_layout(
-                parent_layout,
-                denominator_significant_sample_indices,
-                parent_order,
-                oversampling_order=int(sampling.local_parent_oversampling_order),
-                random_perturbation=float(sampling.local_search_random_perturbation),
-                dtype=fine_local_layout_dtype,
-                **({"symmetry": sampling.symmetry} if sampling.symmetry != "C1" else {}),
-            )
-            log_local_denominator_support(
-                logger,
-                local_adaptive_pass2_denominator_layout,
-                local_adaptive_pass2_denominator_mode,
-                _LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV,
-            )
-        log_local_adaptive_support(
-            logger, parent_layout, significant_sample_indices, sampling.current_translations, pass2_layout
+            fine_local_layout_dtype,
         )
     local_relion_x_half_mstep = _k1_relion_x_half_mstep_enabled()
     if diagnostics.diagnostic_score_only:

@@ -355,6 +355,48 @@ def test_local_experimental_overrides_are_resolved_by_the_iteration_controller()
         assert resolved_fields <= {keyword.arg for keyword in policy.keywords}
 
 
+def test_local_adaptive_support_helper_exposes_six_story_inputs():
+    scorer = tree("half_scoring.py")
+    helper = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_prepare_local_adaptive_pass2_support"
+    )
+    expected_inputs = [
+        "parent_layout",
+        "significant_sample_indices",
+        "sampling",
+        "diagnostics",
+        "parent_order",
+        "fine_layout_dtype",
+    ]
+    assert [argument.arg for argument in helper.args.args] == expected_inputs
+
+    local_scorer = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_half_local_one_shape"
+    )
+    calls = [
+        node
+        for node in ast.walk(local_scorer)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_prepare_local_adaptive_pass2_support"
+    ]
+    assert len(calls) == 1
+    assert [argument.id for argument in calls[0].args] == [
+        "parent_layout",
+        "significant_sample_indices",
+        "sampling",
+        "diagnostics",
+        "parent_order",
+        "fine_local_layout_dtype",
+    ]
+
+
 def test_loop_transports_geometry_separately_from_effective_rotations():
     calls = [
         n

@@ -416,6 +416,103 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
     assert_matches(result.significant_counts, parent_counts)
 
 
+@pytest.mark.parametrize(
+    "full_parent,rotation_only,denominator_mode,expected_parent_mode,expected_support_kind",
+    [
+        (False, False, None, "pruned_parent", "pruned"),
+        (True, True, "rotation_only", "full_parent", "full"),
+        (False, True, "full_parent", "significant_rotation_full_translation", "rotation"),
+    ],
+)
+def test_local_adaptive_support_preparation_keeps_variants_explicit(
+    monkeypatch,
+    full_parent,
+    rotation_only,
+    denominator_mode,
+    expected_parent_mode,
+    expected_support_kind,
+):
+    retained = (
+        np.array([0, 2], dtype=np.int64),
+        np.array([1], dtype=np.int64),
+    )
+    layout_calls = []
+
+    def fake_expand(indices, n_translations):
+        return ("rotation_only", indices, n_translations)
+
+    def fake_layout(parent_layout, support, parent_order, **kwargs):
+        layout = SimpleNamespace(call_index=len(layout_calls))
+        layout_calls.append((parent_layout, support, parent_order, kwargs, layout))
+        return layout
+
+    monkeypatch.setattr(
+        half_scoring,
+        "_expand_significant_samples_to_full_parent_translations",
+        fake_expand,
+    )
+    monkeypatch.setattr(
+        half_scoring,
+        "build_local_adaptive_pass2_hypothesis_layout",
+        fake_layout,
+    )
+    monkeypatch.setattr(half_scoring, "log_local_adaptive_support", lambda *_args: None)
+    monkeypatch.setattr(half_scoring, "log_local_denominator_support", lambda *_args: None)
+
+    pass2_layout, counts, denominator_layout, parent_mode = (
+        half_scoring._prepare_local_adaptive_pass2_support(
+            "parent_layout",
+            retained,
+            SimpleNamespace(
+                current_translations=np.zeros((3, 2), dtype=np.float32),
+                local_parent_oversampling_order=1,
+                local_search_random_perturbation=0.25,
+                symmetry="C1",
+            ),
+            SimpleNamespace(
+                adaptive_pass2_full_parent=full_parent,
+                adaptive_pass2_rotation_only=rotation_only,
+                adaptive_pass2_denominator_mode=denominator_mode,
+            ),
+            2,
+            np.float32,
+        )
+    )
+
+    assert pass2_layout is layout_calls[0][-1]
+    assert_matches(counts, np.array([2, 1], dtype=np.int32))
+    assert parent_mode == expected_parent_mode
+    support = layout_calls[0][1]
+    if expected_support_kind == "pruned":
+        assert support is retained
+    elif expected_support_kind == "full":
+        assert support == [None, None]
+    else:
+        assert support[0] == "rotation_only"
+        assert support[1] is retained
+        assert support[2] == 3
+    if denominator_mode is None:
+        assert denominator_layout is None
+        assert len(layout_calls) == 1
+    else:
+        assert denominator_layout is layout_calls[1][-1]
+        assert len(layout_calls) == 2
+        denominator_support = layout_calls[1][1]
+        if denominator_mode == "full_parent":
+            assert denominator_support == [None, None]
+        else:
+            assert denominator_support[0] == "rotation_only"
+            assert denominator_support[1] is retained
+            assert denominator_support[2] == 3
+    for _, _, parent_order, kwargs, _ in layout_calls:
+        assert parent_order == 2
+        assert kwargs == {
+            "oversampling_order": 1,
+            "random_perturbation": 0.25,
+            "dtype": np.float32,
+        }
+
+
 def test_native_final_perturbation_uses_active_local_order_but_preserves_global_order():
     local_state = SimpleNamespace(do_local_search=True, healpix_order=4)
     global_state = SimpleNamespace(do_local_search=False, healpix_order=4)
