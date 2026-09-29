@@ -902,3 +902,7 @@ single-volume boundary has 17 parameters.
   functions. Seven functions have at least 10 parameters and the two 20+
   functions remain the out-of-scope tomography boundaries. The unchanged large
   argument count is expected: this package removed false lifecycle objects.
+- The smoke-tier invocation at candidate `60089fb` stopped before fixture
+  verification or Slurm submission because this host cannot create the required
+  `/scratch/gpfs/CRYOEM/.../relax_test_tiers` run root (`PermissionError` at
+  `/scratch`). No GPU tests ran and no receipt or job ID was produced.
