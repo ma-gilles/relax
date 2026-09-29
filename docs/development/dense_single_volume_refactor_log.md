@@ -785,3 +785,25 @@ single-volume boundary has 17 parameters.
 - No other conflicts occurred. On the rebased candidate, the 37 focused
   half-join tests passed and the CPU EM fast guard passed all 102 cases in
   59.52 seconds.
+
+## 2026-09-29 — explicit initial-grid and adaptive-pass variants
+
+- Commit `041e325` removed the call-only `InitialGridSampling` object. Startup
+  now chooses explicitly between ordinary RELION coarse-grid construction and
+  sealed replay-grid materialization. The returned `InitialCoarseGrids` remains
+  because it is a real multi-value result consumed after either branch.
+- Commit `246f9d5` removed the call-only `AdaptivePassPlan`. The common helper
+  now derives only genuinely shared keywords from the existing dense owners;
+  route-local batch sizes, Fourier sizes, oversampling order and sparse M-step
+  choice are visible beside each adaptive engine call.
+- Initial-grid ownership and behavior tests: 8 passed. Adaptive K1/K-class
+  routing, symmetry, BPref signature and zero-coarse-geometry tests: 470 passed
+  with 9 expected gimbal-lock warnings. Ruff and Python compilation passed.
+  The combined CPU EM fast guard passed all 102 cases in 57.97 seconds.
+- Production totals are 15,059 physical and 13,120 nonblank lines across 227
+  functions. Six functions have at least 10 parameters and the two 20+
+  functions remain the out-of-scope tomography boundaries. These statistics
+  did not drive either design.
+- GPU smoke remains infrastructure-blocked by the unchanged absence of the five
+  mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
+  produced.
