@@ -37,10 +37,7 @@ def main() -> None:
     if sha256(manifest_file) != record["source_manifest_sha256"]:
         raise RuntimeError("source and staged fixture manifests differ")
     manifest = json.loads(manifest_file.read_text())
-    roots = {
-        name: run_root / "fixtures" / name
-        for name in record["sets"]
-    }
+    roots = {name: run_root / "fixtures" / name for name in record["sets"]}
     replacements = sorted(
         ((entry["root"], str(roots[name])) for name, entry in record["sets"].items()),
         key=lambda pair: len(pair[0]),

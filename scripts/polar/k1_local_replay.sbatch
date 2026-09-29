@@ -3,8 +3,8 @@
 #SBATCH --partition=main
 #SBATCH --gres=gpu:nvidia_a100-pcie-40gb:1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=128G
-#SBATCH --time=00:30:00
+#SBATCH --mem=32G
+#SBATCH --time=00:10:00
 
 set -euo pipefail
 : "${POLAR_SOURCE_ROOT:?submit with scripts/polar/submit.py}"
@@ -39,6 +39,7 @@ ln -s "$POLAR_ENV_ROOT" "$POLAR_RUN_ROOT/source/.pixi/envs/default"
 git -C "$POLAR_RUN_ROOT/source" init -q
 git -C "$POLAR_RUN_ROOT/source" fetch -q "$POLAR_GIT_BUNDLE" HEAD
 git -C "$POLAR_RUN_ROOT/source" reset -q --mixed FETCH_HEAD
+git -C "$POLAR_RUN_ROOT/source" branch -m polar-snapshot
 test "$(git -C "$POLAR_RUN_ROOT/source" rev-parse HEAD)" = \
     "$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["head"])' "$POLAR_SOURCE_ROOT/.polar-source.json")"
 

@@ -23,7 +23,9 @@ from submit import DEFAULT_DATA_ROOT, digest, remote, run
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("sets", nargs="+", help="names in tests/fixtures/em_fixture_manifest.json")
-    parser.add_argument("--manifest", type=Path, default=Path(__file__).resolve().parents[2] / "tests/fixtures/em_fixture_manifest.json")
+    parser.add_argument(
+        "--manifest", type=Path, default=Path(__file__).resolve().parents[2] / "tests/fixtures/em_fixture_manifest.json"
+    )
     parser.add_argument("--host", default="polar")
     parser.add_argument("--root", default=f"{DEFAULT_DATA_ROOT}/data/fixture_sets")
     args = parser.parse_args()
@@ -47,7 +49,10 @@ def main() -> None:
     encoded = (json.dumps(record, sort_keys=True, indent=2) + "\n").encode()
     identity = hashlib.sha256(encoded).hexdigest()
     target = f"{args.root.rstrip('/')}/{identity}"
-    if subprocess.run(["ssh", args.host, shlex.join(["test", "-f", f"{target}/.polar-ready"])], check=False).returncode == 0:
+    if (
+        subprocess.run(["ssh", args.host, shlex.join(["test", "-f", f"{target}/.polar-ready"])], check=False).returncode
+        == 0
+    ):
         remote(args.host, "bash", "-lc", f"cd {shlex.quote(target)} && sha256sum -c .polar-sha256 >/dev/null")
     else:
         staging = f"{target}.uploading-{uuid.uuid4().hex[:10]}"
@@ -58,7 +63,15 @@ def main() -> None:
                 listing = Path(temp) / f"{name}.files"
                 listing.write_bytes(b"\0".join(rel.encode() for rel in entry["files"]) + b"\0")
                 remote(args.host, "mkdir", "-p", f"{staging}/raw/{name}")
-                run("rsync", "-a", "--partial", "--from0", f"--files-from={listing}", f"{entry['root']}/", f"{args.host}:{staging}/raw/{name}/")
+                run(
+                    "rsync",
+                    "-a",
+                    "--partial",
+                    "--from0",
+                    f"--files-from={listing}",
+                    f"{entry['root']}/",
+                    f"{args.host}:{staging}/raw/{name}/",
+                )
                 checksums.extend(f"{sha}  raw/{name}/{rel}\n" for rel, (_, sha) in entry["files"].items())
             file = Path(temp) / "fixture-provenance.json"
             file.write_bytes(encoded)
@@ -71,7 +84,17 @@ def main() -> None:
         remote(args.host, "touch", f"{staging}/.polar-ready")
         remote(args.host, "chmod", "-R", "a-w", staging)
         remote(args.host, "mv", "-T", staging, target)
-    print(json.dumps({"fixture_path": target, "identity": identity, "sets": names, "files": sum(len(s["files"]) for s in selected.values())}, indent=2))
+    print(
+        json.dumps(
+            {
+                "fixture_path": target,
+                "identity": identity,
+                "sets": names,
+                "files": sum(len(s["files"]) for s in selected.values()),
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -152,6 +152,16 @@ run-local adapted fixture manifest all live under the printed `run_root` on
 Polar `/scratch/network`. This is one cross-cluster integration case; it does
 not replace the full K1 and exactly K4 quality or performance qualification.
 
+The first run on 2026-09-29 used source `675e19d`, RECOVAR `5514ac6`, the
+packed lock `12fa63045fb8`, and one Polar A100. Native build `413246` passed;
+K1 replay `413247` passed in 1:34, with FSC-AUC 0.99999996 or higher for both
+halves (floor 0.99954) and mean |dPmax| 5.98e-05 (bound 0.0035). CPU guard
+`413248` passed 102 tests. Full replay evidence is in
+`/scratch/network/mg6942/relax-polar/runs/13c8c62d5954`, with a Della copy at
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/polar_runs/13c8c62d5954`.
+The job's 4.95 GB peak host RSS and 1:34 elapsed time support the script's
+subsequent 32 GB and 10 minute requests.
+
 Polar's partition is `main`; the initial A100 probe used
 `--gres=gpu:nvidia_a100-pcie-40gb:1`. Request realistic CPU, memory and time
 limits for each job. Preserve Slurm's `CUDA_VISIBLE_DEVICES` setting inside the
