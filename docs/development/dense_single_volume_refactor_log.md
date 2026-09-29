@@ -730,3 +730,19 @@ single-volume boundary has 17 parameters.
   with at least 10 parameters fell to 5; excluding the two tomography scoring
   boundaries, `_reconstruct_volume_eager`, nested `_safe_batch_sizes` and the
   run-file reader constructor remain.
+
+## 2026-09-29 — posterior-noise readability correction
+
+- Commit `036942f` supersedes the call-only `NoisePosteriorState` and
+  `NoiseUpdateContext` design from `f4c3c0b`. The helper now exposes the four
+  noise-state values, image shape, two algorithm choices and diagnostic callback
+  directly.
+- Iteration number and current size are diagnostic metadata, not numerical
+  dependencies. The controller now binds them to the dump callback before the
+  call; the numerical helper neither receives nor hides them in a context.
+- This correction leaves the tracked large-argument count unchanged at 5. It
+  was accepted because the signature and call site are easier to read, not
+  because it improves a metric. Production size fell to 15,110 physical and
+  13,162 nonblank lines as a secondary effect.
+- Focused K1, optics-group, K-class and controller tests: 15 passed. CPU EM fast
+  guard: 102 passed in 57.60 seconds with `FFTW/3.3.10-GCC-12.2.0` loaded.

@@ -49,6 +49,14 @@ snapshot is `docs/development/refinement_structure_metrics.json`. Update the
 snapshot and the execution log after each accepted work package, never merely
 to make a check pass.
 
+These metrics are descriptive statistics, not optimization targets. Readability
+and truthful dependency visibility decide whether a refactor is accepted. A
+lower argument count does not justify constructing a call-only container,
+hiding unrelated values behind a context object, or making the call site harder
+to read. It is preferable to retain several explicit arguments—and even to
+leave a reported large-argument function temporarily unchanged—when no cohesive
+owner with an independent lifecycle exists.
+
 ## Target ownership model
 
 The intended flow is:
@@ -103,9 +111,13 @@ Ownership rules:
 
 ## Acceptance targets
 
+- Readability is the primary acceptance criterion. A reviewer should be able to
+  understand a function's required data, algorithm choices and side channels
+  from its signature and call site without opening an aggregate container.
 - No production function has 20 or more parameters.
 - Prefer no production function with 10 or more parameters. Any remaining
-  exception must be a documented functional/JAX boundary with a focused test.
+  exception must be a documented functional/JAX boundary with a focused test;
+  this statistic must never be improved by obscuring dependencies.
 - Production line totals are reported after every package. The final total
   should not exceed the initial total without a responsibility-level
   explanation; line reduction never justifies compressed or hidden flow.

@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "owner-visible-noise-update",
-    "source_commit": "f4c3c0be9a7a7b05d045d2442a22ff240c216e3c",
+    "package": "readable-noise-update-signature",
+    "source_commit": "036942f082f2873a0029d052deda300858058c5d",
     "metrics": {
       "files": [
         {
@@ -45,9 +45,9 @@
         },
         {
           "function_count": 26,
-          "nonblank_noncomment_lines": 5508,
+          "nonblank_noncomment_lines": 5506,
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 6148
+          "physical_lines": 6146
         },
         {
           "function_count": 1,
@@ -75,9 +75,9 @@
         },
         {
           "function_count": 11,
-          "nonblank_noncomment_lines": 407,
+          "nonblank_noncomment_lines": 390,
           "path": "relax/refinement/noise_updates.py",
-          "physical_lines": 485
+          "physical_lines": 461
         },
         {
           "function_count": 25,
@@ -139,7 +139,7 @@
           "path": "relax/refinement/mean_helpers.py"
         },
         {
-          "line": 1026,
+          "line": 1024,
           "line_span": 45,
           "name": "_safe_batch_sizes",
           "parameter_count": 10,
@@ -155,14 +155,14 @@
       ],
       "largest_functions": [
         {
-          "line": 714,
+          "line": 712,
           "line_span": 5435,
           "name": "refine_single_volume",
           "parameter_count": 6,
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 2533,
+          "line": 2531,
           "line_span": 726,
           "name": "_run_half_estep",
           "parameter_count": 1,
@@ -241,8 +241,8 @@
         "large_argument_function_count": 5,
         "maximum_function_line_span": 5435,
         "maximum_parameter_count": 22,
-        "nonblank_noncomment_lines": 13181,
-        "physical_lines": 15136,
+        "nonblank_noncomment_lines": 13162,
+        "physical_lines": 15110,
         "very_large_argument_function_count": 2
       }
     }
