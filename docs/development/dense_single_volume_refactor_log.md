@@ -877,3 +877,28 @@ single-volume boundary has 17 parameters.
 - GPU smoke remains infrastructure-blocked by the unchanged absence of the five
   mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
   produced.
+
+## 2026-09-29 — truthful dense-scoring lifecycle
+
+- Commit `9190234` removed `DenseHalfScoringPlan` and its forwarding executor.
+  Contrary to its old documentation, both half plans were never materialized
+  before execution: each half constructed and consumed its plan immediately
+  inside its worker. The controller now calls dense scoring with the seven
+  actual owners visible, and retains the sampling owner for the parity manifest.
+- Commit `df15c92` removed `DenseHalfScoringOutputs`, which copied the real
+  score result into a second object only to be immediately unpacked. The
+  controller now publishes score fields directly and shows the adaptive versus
+  single-pass pose and coarse-assignment choice in place.
+- The 17-parameter eager reconstruction boundary was audited and deliberately
+  retained. Its explicit options select independently tested monolithic,
+  stable-window and host-staged numerical paths; grouping them would improve a
+  statistic without establishing truthful ownership.
+- Dense ownership, adaptive-engine, overlap and BPref-scope tests passed 62
+  cases after each implementation commit. Seven controller tests that
+  intercept the dense boundary also passed, with 8 existing complex-cast
+  warnings. Ruff, Python compilation and diff checks passed. CPU EM fast guards
+  passed all 102 cases in 58.83 and 58.28 seconds.
+- Production totals are 14,935 physical and 13,037 nonblank lines across 235
+  functions. Seven functions have at least 10 parameters and the two 20+
+  functions remain the out-of-scope tomography boundaries. The unchanged large
+  argument count is expected: this package removed false lifecycle objects.

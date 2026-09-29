@@ -207,6 +207,17 @@ is clear, split the numbered-iteration controller by the phase boundaries
 already made explicit here. Environment and diagnostic extraction remains a
 separate package so it cannot silently change read timing or array lifetime.
 
+The eager reconstruction audit retained its 17-parameter boundary: those
+parameters directly select tested monolithic, stable-window and host-staged
+paths, and no smaller persistent owner currently exists. The first scoring
+correction removed the transient `DenseHalfScoringPlan` and
+`DenseHalfScoringOutputs`; neither represented state beyond one forwarding
+operation. The seven dense scoring owners remain because multi-shape execution
+derives and executes per-shape variants from them. The next scoring step is to
+split the large one-shape scorer into named direct, adaptive K=1, adaptive
+K-class and first-iteration variants while preserving the existing owner and
+JAX boundaries.
+
 ### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring

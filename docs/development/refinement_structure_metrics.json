@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "mean-reconstruction-and-snapshot-lifecycles",
-    "source_commit": "ed485965ee1e27444b9b789d51c9f8d5d25255aa",
+    "package": "truthful-dense-scoring-lifecycle",
+    "source_commit": "df15c92d70223ce53af249860e3b2b0e28961b75",
     "metrics": {
       "files": [
         {
@@ -44,10 +44,10 @@
           "physical_lines": 2008
         },
         {
-          "function_count": 26,
-          "nonblank_noncomment_lines": 5493,
+          "function_count": 24,
+          "nonblank_noncomment_lines": 5434,
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 6134
+          "physical_lines": 6060
         },
         {
           "function_count": 2,
@@ -146,7 +146,7 @@
           "path": "relax/refinement/mean_helpers.py"
         },
         {
-          "line": 1041,
+          "line": 954,
           "line_span": 45,
           "name": "_safe_batch_sizes",
           "parameter_count": 10,
@@ -169,15 +169,15 @@
       ],
       "largest_functions": [
         {
-          "line": 703,
-          "line_span": 5432,
+          "line": 616,
+          "line_span": 5445,
           "name": "refine_single_volume",
           "parameter_count": 6,
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 2548,
-          "line_span": 726,
+          "line": 2460,
+          "line_span": 740,
           "name": "_run_half_estep",
           "parameter_count": 1,
           "path": "relax/refinement/iteration_loop.py"
@@ -251,12 +251,12 @@
       },
       "totals": {
         "file_count": 16,
-        "function_count": 237,
+        "function_count": 235,
         "large_argument_function_count": 7,
-        "maximum_function_line_span": 5432,
+        "maximum_function_line_span": 5445,
         "maximum_parameter_count": 22,
-        "nonblank_noncomment_lines": 13096,
-        "physical_lines": 15009,
+        "nonblank_noncomment_lines": 13037,
+        "physical_lines": 14935,
         "very_large_argument_function_count": 2
       }
     }
