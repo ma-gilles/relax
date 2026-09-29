@@ -25,7 +25,13 @@ def test_numbered_dense_scoring_exposes_owners_without_a_call_only_plan():
     loop = tree("iteration_loop.py")
     assert all(
         not isinstance(node, (ast.ClassDef, ast.FunctionDef))
-        or node.name not in {"DenseHalfScoringPlan", "_run_dense_half_scoring"}
+        or node.name
+        not in {
+            "DenseHalfScoringPlan",
+            "_run_dense_half_scoring",
+            "DenseHalfScoringOutputs",
+            "_dense_half_scoring_outputs",
+        }
         for node in ast.walk(loop)
     )
     direct_calls = [

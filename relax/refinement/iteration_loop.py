@@ -15,7 +15,6 @@ import os
 import time
 from functools import partial, wraps
 from types import SimpleNamespace
-from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -409,54 +408,6 @@ def _run_halves_overlapped(run_half, diagnostic_half_indices) -> None:
     for k in diagnostic_half_indices:
         if int(k) in errors:
             raise errors[int(k)]
-
-
-class DenseHalfScoringOutputs(NamedTuple):
-    """The per-half values the driver reads out of one dense E-step result."""
-
-    ha: object
-    Ft_y: object
-    Ft_ctf: object
-    em_stats: object
-    noise_stats: object
-    pose_rotations: object
-    pose_rotation_eulers: object
-    coarse_ha: object
-
-
-def _dense_half_scoring_outputs(
-    dense_result,
-    *,
-    use_adaptive: bool,
-    effective_rotations,
-    effective_rotation_eulers,
-) -> DenseHalfScoringOutputs:
-    """Read one half's dense result into the values the driver stores.
-
-    Single-pass scoring keeps the scoring grid as the pose grid and reuses the
-    fine assignment as the coarse one, which is what the driver did inline.
-    """
-
-    if use_adaptive and dense_result.pose_rotations is not None:
-        pose_rotations = dense_result.pose_rotations
-        pose_rotation_eulers = dense_result.pose_rotation_eulers
-    else:
-        pose_rotations = effective_rotations
-        pose_rotation_eulers = effective_rotation_eulers
-    return DenseHalfScoringOutputs(
-        ha=dense_result.ha,
-        Ft_y=dense_result.Ft_y,
-        Ft_ctf=dense_result.Ft_ctf,
-        em_stats=dense_result.em_stats,
-        noise_stats=dense_result.noise_stats,
-        pose_rotations=pose_rotations,
-        pose_rotation_eulers=pose_rotation_eulers,
-        coarse_ha=(
-            dense_result.coarse_ha
-            if use_adaptive and dense_result.coarse_ha is not None
-            else dense_result.ha  # single pass: same grid, no oversampling
-        ),
-    )
 
 
 def _should_use_adaptive_search(
@@ -3129,21 +3080,23 @@ def refine_single_volume(
                     dense_execution,
                     dense_optics,
                 )
-                dense_outputs = _dense_half_scoring_outputs(
-                    dense_result,
-                    use_adaptive=use_adaptive,
-                    effective_rotations=effective_rotations,
-                    effective_rotation_eulers=effective_rotation_eulers,
-                )
-                ha_k = dense_outputs.ha
-                Ft_y_k = dense_outputs.Ft_y
-                Ft_ctf_k = dense_outputs.Ft_ctf
-                em_stats_k = dense_outputs.em_stats
-                noise_stats_k = dense_outputs.noise_stats
+                ha_k = dense_result.ha
+                Ft_y_k = dense_result.Ft_y
+                Ft_ctf_k = dense_result.Ft_ctf
+                em_stats_k = dense_result.em_stats
+                noise_stats_k = dense_result.noise_stats
                 noise_stats_per_half[k] = noise_stats_k
-                pose_rotations[k] = dense_outputs.pose_rotations
-                pose_rotation_eulers[k] = dense_outputs.pose_rotation_eulers
-                coarse_ha[k] = dense_outputs.coarse_ha
+                if use_adaptive and dense_result.pose_rotations is not None:
+                    pose_rotations[k] = dense_result.pose_rotations
+                    pose_rotation_eulers[k] = dense_result.pose_rotation_eulers
+                else:
+                    pose_rotations[k] = effective_rotations
+                    pose_rotation_eulers[k] = effective_rotation_eulers
+                coarse_ha[k] = (
+                    dense_result.coarse_ha
+                    if use_adaptive and dense_result.coarse_ha is not None
+                    else dense_result.ha  # single pass: same grid, no oversampling
+                )
                 score_result = dense_result
 
                 # --- Manifest dump for deterministic replay (Phase 0.1) ---
