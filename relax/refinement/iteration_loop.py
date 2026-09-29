@@ -411,44 +411,6 @@ def _run_halves_overlapped(run_half, diagnostic_half_indices) -> None:
             raise errors[int(k)]
 
 
-class DenseHalfScoringPlan(NamedTuple):
-    """One half's dense E-step call, gathered as a value before it runs.
-
-    The two halves are independent inside the E-step, so holding each call's
-    arguments in one value lets both plans be built before either call runs.
-    That is the seam an overlapped driver needs; on its own it changes nothing.
-    The named fields keep each owner visible at both construction and execution;
-    route-specific differences remain explicit in the policy objects.
-    """
-
-    half_index: int
-    use_adaptive: bool
-    half: DenseHalfData
-    sampling: DenseSamplingSpec
-    priors: DensePriorSpec
-    batching: DenseBatchPolicy
-    variant: DenseVariantPolicy
-    execution: DenseExecutionPolicy
-    optics: DenseOpticsSpec
-
-
-def _run_dense_half_scoring(plan: DenseHalfScoringPlan):
-    """Execute one half's dense E-step from its plan.
-
-    The scorer receives each stable owner explicitly.
-    """
-
-    return _score_half_dense_in_bpref_scope(
-        plan.half,
-        plan.sampling,
-        plan.priors,
-        plan.batching,
-        plan.variant,
-        plan.execution,
-        plan.optics,
-    )
-
-
 class DenseHalfScoringOutputs(NamedTuple):
     """The per-half values the driver reads out of one dense E-step result."""
 
@@ -2394,7 +2356,6 @@ def refine_single_volume(
         # Coarse-grid assignments for local search tracking (always indexed
         # into effective_rotations, even when adaptive oversampling is used).
         coarse_ha = per_half.coarse_ha
-        dense_half_plans: list[DenseHalfScoringPlan | None] = [None, None]
         if use_adaptive:
             # --- TWO-PASS ADAPTIVE OVERSAMPLING (RELION parity) ---
             # Pass 1: coarse E-step at reduced resolution to find
@@ -3070,92 +3031,104 @@ def refine_single_volume(
                     if use_adaptive and adaptive_pass1_rotations is not None
                     else effective_rotations
                 )
-                dense_half_plans[k] = DenseHalfScoringPlan(
-                    half_index=k,
-                    use_adaptive=bool(use_adaptive),
-                    half=DenseHalfData(
-                        k=k,
-                        experiment_dataset=experiment_datasets[k],
-                        means_k=means[k],
-                        mean_variance=mean_variance_k,
-                        noise_variance_k=noise_variance_k,
-                        image_corrections_k=relion_half_inputs.image_corrections[k],
-                        scale_corrections_k=relion_half_inputs.scale_corrections[k],
-                        outputs=per_half,
-                        group_ids_k=follower_setup.scale_stats_group_ids_per_half[k],
-                        group_count_k=follower_setup.scale_stats_group_count_per_half[k],
-                        scale_correction_data_vs_prior=scale_correction_data_vs_prior_this_iter,
-                        optics_group_ids_k=optics_values.get("optics_group_ids_k"),
+                dense_half = DenseHalfData(
+                    k=k,
+                    experiment_dataset=experiment_datasets[k],
+                    means_k=means[k],
+                    mean_variance=mean_variance_k,
+                    noise_variance_k=noise_variance_k,
+                    image_corrections_k=relion_half_inputs.image_corrections[k],
+                    scale_corrections_k=relion_half_inputs.scale_corrections[k],
+                    outputs=per_half,
+                    group_ids_k=follower_setup.scale_stats_group_ids_per_half[k],
+                    group_count_k=follower_setup.scale_stats_group_count_per_half[k],
+                    scale_correction_data_vs_prior=scale_correction_data_vs_prior_this_iter,
+                    optics_group_ids_k=optics_values.get("optics_group_ids_k"),
+                )
+                dense_sampling = DenseSamplingSpec(
+                    effective_rotations=dense_effective_rotations,
+                    current_translations=current_translations,
+                    base_translations=base_translations,
+                    current_healpix_order=current_healpix_order,
+                    state=state,
+                    random_perturbation=random_perturbation,
+                    disc_type=options.disc_type,
+                    cs_for_engine=cs_for_engine,
+                    model_current_size_for_engine=model_current_size_for_engine,
+                    coarse_rotation_ids=coarse_rotation_ids_for_scoring,
+                    coarse_scoring_rotations=(
+                        adaptive_pass1_rotations
+                        if int(state.adaptive_oversampling) == 0
+                        else None
                     ),
-                    sampling=DenseSamplingSpec(
-                        effective_rotations=dense_effective_rotations,
-                        current_translations=current_translations,
-                        base_translations=base_translations,
-                        current_healpix_order=current_healpix_order,
-                        state=state,
-                        random_perturbation=random_perturbation,
-                        disc_type=options.disc_type,
-                        cs_for_engine=cs_for_engine,
-                        model_current_size_for_engine=model_current_size_for_engine,
-                        coarse_rotation_ids=coarse_rotation_ids_for_scoring,
-                        coarse_scoring_rotations=(
-                            adaptive_pass1_rotations if int(state.adaptive_oversampling) == 0 else None
-                        ),
-                        symmetry=symmetry,
+                    symmetry=symmetry,
+                )
+                dense_priors = DensePriorSpec(
+                    rotation_log_prior_k=rotation_log_prior_k,
+                    class_rotation_log_prior_k=class_rotation_log_prior_k,
+                    translation_log_prior=translation_log_prior,
+                    translation_search_base=translation_search_base,
+                    trans_prior_center_for_engine=trans_prior_center_for_engine,
+                    class_log_priors=class_log_priors,
+                )
+                dense_batching = DenseBatchPolicy(
+                    image_batch_size=batching.image_batch_size,
+                    safe_batch_sizes=safe_batch_sizes_for_half,
+                    max_significants=adaptive.max_significants,
+                    significance_safe_batch_sizes=significance_safe_batch_sizes_for_half,
+                    k_class_image_batch_size_override=(
+                        k_class_image_batch_size if use_adaptive else None
                     ),
-                    priors=DensePriorSpec(
-                        rotation_log_prior_k=rotation_log_prior_k,
-                        class_rotation_log_prior_k=class_rotation_log_prior_k,
-                        translation_log_prior=translation_log_prior,
-                        translation_search_base=translation_search_base,
-                        trans_prior_center_for_engine=trans_prior_center_for_engine,
-                        class_log_priors=class_log_priors,
+                    k_class_rotation_block_size_override=(
+                        dense_k_class_rotation_block_size if use_adaptive else None
                     ),
-                    batching=DenseBatchPolicy(
-                        image_batch_size=batching.image_batch_size,
-                        safe_batch_sizes=safe_batch_sizes_for_half,
-                        max_significants=adaptive.max_significants,
-                        significance_safe_batch_sizes=significance_safe_batch_sizes_for_half,
-                        k_class_image_batch_size_override=(k_class_image_batch_size if use_adaptive else None),
-                        k_class_rotation_block_size_override=(
-                            dense_k_class_rotation_block_size if use_adaptive else None
-                        ),
-                        significance_image_batch_size_override=(
-                            significance_image_batch_size if use_adaptive else None
-                        ),
-                        significance_rotation_block_size_override=(
-                            significance_rotation_block_size if use_adaptive else None
-                        ),
+                    significance_image_batch_size_override=(
+                        significance_image_batch_size if use_adaptive else None
                     ),
-                    variant=DenseVariantPolicy(
-                        firstiter_score_mode_this_iter=firstiter_score_mode_this_iter,
-                        firstiter_winner_take_all_this_iter=firstiter_winner_take_all_this_iter,
-                        k_class_enabled=k_class_enabled,
-                        relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-                        firstiter_coarse_current_size=coarse_cs if use_adaptive else None,
-                        firstiter_fine_current_size=cs_for_engine if use_adaptive else None,
-                        firstiter_log_label="" if use_adaptive else "(non-adaptive site) ",
-                        firstiter_updates_em_kwargs_ibs=bool(use_adaptive),
-                    ),
-                    execution=DenseExecutionPolicy(
-                        disable_adjoint_y=debug.disable_adjoint_y,
-                        disable_adjoint_ctf=debug.disable_adjoint_ctf,
-                        relion_projector_half=relion_projector_half_by_half[k],
-                        relion_projector_r_max=relion_projector_r_max_by_half[k],
-                        bpref_device_signature_active=bpref_device_signature_active,
-                        debug_iteration=numbered_relion_iteration,
-                        preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
-                        source_faithful_spectrum_norm=source_faithful_spectrum_norm,
-                        relion_translation_angle_scale=relion_translation_angle_scale,
-                    ),
-                    optics=DenseOpticsSpec(
-                        noise_radial_k=optics_values.get("noise_radial_k"),
-                        coarse_sizing=optics_values.get("coarse_sizing"),
-                        class_batch_overrides=(class_batch_overrides if use_adaptive else None),
-                        class_translation_overrides=translation_values.get("class_translation_overrides"),
+                    significance_rotation_block_size_override=(
+                        significance_rotation_block_size if use_adaptive else None
                     ),
                 )
-                dense_result = _run_dense_half_scoring(dense_half_plans[k])
+                dense_variant = DenseVariantPolicy(
+                    firstiter_score_mode_this_iter=firstiter_score_mode_this_iter,
+                    firstiter_winner_take_all_this_iter=firstiter_winner_take_all_this_iter,
+                    k_class_enabled=k_class_enabled,
+                    relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+                    firstiter_coarse_current_size=coarse_cs if use_adaptive else None,
+                    firstiter_fine_current_size=cs_for_engine if use_adaptive else None,
+                    firstiter_log_label="" if use_adaptive else "(non-adaptive site) ",
+                    firstiter_updates_em_kwargs_ibs=bool(use_adaptive),
+                )
+                dense_execution = DenseExecutionPolicy(
+                    disable_adjoint_y=debug.disable_adjoint_y,
+                    disable_adjoint_ctf=debug.disable_adjoint_ctf,
+                    relion_projector_half=relion_projector_half_by_half[k],
+                    relion_projector_r_max=relion_projector_r_max_by_half[k],
+                    bpref_device_signature_active=bpref_device_signature_active,
+                    debug_iteration=numbered_relion_iteration,
+                    preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
+                    source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+                    relion_translation_angle_scale=relion_translation_angle_scale,
+                )
+                dense_optics = DenseOpticsSpec(
+                    noise_radial_k=optics_values.get("noise_radial_k"),
+                    coarse_sizing=optics_values.get("coarse_sizing"),
+                    class_batch_overrides=(
+                        class_batch_overrides if use_adaptive else None
+                    ),
+                    class_translation_overrides=translation_values.get(
+                        "class_translation_overrides"
+                    ),
+                )
+                dense_result = _score_half_dense_in_bpref_scope(
+                    dense_half,
+                    dense_sampling,
+                    dense_priors,
+                    dense_batching,
+                    dense_variant,
+                    dense_execution,
+                    dense_optics,
+                )
                 dense_outputs = _dense_half_scoring_outputs(
                     dense_result,
                     use_adaptive=use_adaptive,
@@ -3182,7 +3155,7 @@ def refine_single_volume(
                     _manifest = {
                         "effective_rotations": np.asarray(effective_rotations),
                         "coarse_scoring_rotations": _replay_manifest_array(
-                            dense_half_plans[k].sampling.coarse_scoring_rotations,
+                            dense_sampling.coarse_scoring_rotations,
                         ),
                         "current_translations": np.asarray(current_translations),
                         "rotation_log_prior": _replay_manifest_array(rotation_log_prior_k, dtype=np.float64),

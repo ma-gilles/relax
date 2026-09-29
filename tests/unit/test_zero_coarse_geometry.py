@@ -21,6 +21,33 @@ def evaluate(node, **scope):
     return eval(compile(ast.Expression(node), "<production-route>", "eval"), scope)
 
 
+def test_numbered_dense_scoring_exposes_owners_without_a_call_only_plan():
+    loop = tree("iteration_loop.py")
+    assert all(
+        not isinstance(node, (ast.ClassDef, ast.FunctionDef))
+        or node.name not in {"DenseHalfScoringPlan", "_run_dense_half_scoring"}
+        for node in ast.walk(loop)
+    )
+    direct_calls = [
+        node
+        for node in ast.walk(loop)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_score_half_dense_in_bpref_scope"
+        and node.args
+    ]
+    assert len(direct_calls) == 1
+    assert [argument.id for argument in direct_calls[0].args] == [
+        "dense_half",
+        "dense_sampling",
+        "dense_priors",
+        "dense_batching",
+        "dense_variant",
+        "dense_execution",
+        "dense_optics",
+    ]
+
+
 @pytest.mark.parametrize(
     "os,local,k,mode,hard,double,expected",
     [
