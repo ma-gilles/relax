@@ -1031,3 +1031,23 @@ single-volume boundary has 17 parameters.
   the top-level controller grew to make ownership explicit. Seven functions
   still have at least 10 parameters. These statistics record the structural
   movement; they did not drive the design.
+
+## 2026-09-29 — exact-local parent geometry and support
+
+- Commit `e7105af` extracted the post-parent support transformation into
+  `_prepare_local_adaptive_pass2_support`. Six explicit inputs produce the
+  fine layout, retained coarse counts, optional denominator layout and
+  parent-mode label. Direct tests cover pruned, full-parent, rotation-only and
+  both denominator-support variants; no call-only container was added.
+- Commit `f52d528` extracted parent-grid geometry into
+  `_build_local_adaptive_parent_layout`. Its five inputs expose half data,
+  sampling, priors, the selected translation-prior grid and layout dtype; batch
+  planning and the parent engine call remain visible in the dispatcher.
+- Ruff and Python compilation passed. Each extraction passed 11 focused cases
+  and 44 broader local controller/result-contract cases. CPU EM fast guard
+  passed 102 cases after each change, in 59.01 and 61.16 seconds respectively,
+  with `FFTW/3.3.10-GCC-12.2.0` loaded.
+- Production totals are 15,209 physical and 13,291 nonblank lines across 241
+  functions. The exact-local one-shape scorer fell from 543 to 457 lines;
+  total lines increased because the named boundaries and their contracts are
+  explicit. Seven functions still have at least 10 parameters, unchanged.

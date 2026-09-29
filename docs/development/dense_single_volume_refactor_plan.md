@@ -263,6 +263,18 @@ parent-pass block and its four downstream products (fine layout, retained
 counts, denominator layout and parent-mode label) before deciding whether that
 state has a coherent extraction boundary.
 
+The adaptive parent block now has two explicit pure boundaries. Parent-grid
+geometry is built by `_build_local_adaptive_parent_layout` from five inputs and
+returns only the layout and parent order. After the still-visible parent engine
+call, `_prepare_local_adaptive_pass2_support` maps its retained indices to the
+fine layout, RELION retained counts, optional denominator layout and explicit
+parent-mode label through six inputs and direct tuple unpacking. No new owner
+or result class was added. The exact-local dispatcher is now 457 lines. The
+next audit is the optional broad-denominator diagnostic probe: its temporary
+debug-environment suppression and score-only execution should move only if a
+boundary can keep the reusable pass objects visible without a large forwarding
+signature.
+
 ### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring

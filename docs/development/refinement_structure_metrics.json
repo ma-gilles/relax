@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "local-overrides-controller-owned",
-    "source_commit": "8929943d8eb90c1b961bacf6c9546d5ba4aa27bf",
+    "package": "local-adaptive-parent-boundaries",
+    "source_commit": "f52d5289efebf24ea1957666014171acb2fa8554",
     "metrics": {
       "files": [
         {
@@ -38,10 +38,10 @@
           "physical_lines": 135
         },
         {
-          "function_count": 21,
-          "nonblank_noncomment_lines": 1904,
+          "function_count": 23,
+          "nonblank_noncomment_lines": 1958,
           "path": "relax/refinement/half_scoring.py",
-          "physical_lines": 2111
+          "physical_lines": 2174
         },
         {
           "function_count": 24,
@@ -183,8 +183,8 @@
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 1552,
-          "line_span": 543,
+          "line": 1701,
+          "line_span": 457,
           "name": "_score_half_local_one_shape",
           "parameter_count": 7,
           "path": "relax/refinement/half_scoring.py"
@@ -251,12 +251,12 @@
       },
       "totals": {
         "file_count": 16,
-        "function_count": 239,
+        "function_count": 241,
         "large_argument_function_count": 7,
         "maximum_function_line_span": 5522,
         "maximum_parameter_count": 22,
-        "nonblank_noncomment_lines": 13237,
-        "physical_lines": 15146,
+        "nonblank_noncomment_lines": 13291,
+        "physical_lines": 15209,
         "very_large_argument_function_count": 2
       }
     }
