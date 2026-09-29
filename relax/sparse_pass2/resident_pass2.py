@@ -1706,31 +1706,16 @@ def _accumulate_chunk_image_terms(
     # its pruned M-step mass (thr_wsum_pdf_class, ml_optimiser.cpp:10497).
     classes = stats.classes
     if classes is not None:
-        n_classes = int(config.n_classes)
-        class_best = jnp.asarray(operands.per_class_best_log_score, dtype=jnp.float64).reshape(
-            image_capacity, n_classes
-        )
-        class_absolute = (
-            jnp.asarray(operands.per_class_log_z, dtype=jnp.float64).reshape(image_capacity, n_classes)
-            + log_score_offset[:, None]
-        )
-        class_mass = jax.ops.segment_sum(
-            probs_sum_t.astype(jnp.float64),
-            jnp.asarray(operands.row_class, dtype=jnp.int32),
-            num_segments=n_classes,
-        )
-        classes = classes._replace(
-            log_evidence=classes.log_evidence.at[image_slot].set(
-                jnp.where(jnp.isfinite(class_best), class_absolute, neg_inf), mode="drop"
-            ),
-            best_log_score=classes.best_log_score.at[image_slot].set(
-                class_best + log_score_offset[:, None], mode="drop"
-            ),
-            best_cell=classes.best_cell.at[image_slot].set(
-                jnp.asarray(operands.per_class_best_cell, dtype=jnp.int64).reshape(image_capacity, n_classes),
-                mode="drop",
-            ),
-            posterior_sums=classes.posterior_sums + class_mass,
+        classes = _fold_class_axis(
+            classes,
+            image_slot,
+            log_score_offset,
+            per_class_log_z=operands.per_class_log_z,
+            per_class_best_log_score=operands.per_class_best_log_score,
+            per_class_best_cell=operands.per_class_best_cell,
+            row_mass=probs_sum_t,
+            row_class=operands.row_class,
+            n_classes=int(config.n_classes),
         )
 
     return ResidentStatistics(
@@ -1750,6 +1735,50 @@ def _accumulate_chunk_image_terms(
         best_local_rot=best_local_rot_out,
         invalid_best_rows=stats.invalid_best_rows,
         classes=classes,
+    )
+
+
+def _fold_class_axis(
+    classes,
+    unit_slot,
+    log_score_offset,
+    *,
+    per_class_log_z,
+    per_class_best_log_score,
+    per_class_best_cell,
+    row_mass,
+    row_class,
+    n_classes: int,
+):
+    """Fold a chunk's class axis (K>1) into the per-class statistics.
+
+    Each class's evidence and winner in the unit's absolute coordinates (``log_score_offset`` is the
+    unit's ``-min_diff2``), and its pruned M-step mass (thr_wsum_pdf_class, ml_optimiser.cpp:10497).
+    ``per_class_*`` are flat ``unit * K + class``; ``row_mass`` is each row's posterior summed over
+    translations. The unit is an image (SPA) or a subtomogram particle (resident_tilts).
+    """
+
+    n_units = int(log_score_offset.shape[0])
+    neg_inf = jnp.asarray(-jnp.inf, dtype=jnp.float64)
+    class_best = jnp.asarray(per_class_best_log_score, dtype=jnp.float64).reshape(n_units, n_classes)
+    class_absolute = (
+        jnp.asarray(per_class_log_z, dtype=jnp.float64).reshape(n_units, n_classes) + log_score_offset[:, None]
+    )
+    class_mass = jax.ops.segment_sum(
+        jnp.asarray(row_mass).astype(jnp.float64),
+        jnp.asarray(row_class, dtype=jnp.int32),
+        num_segments=n_classes,
+    )
+    return classes._replace(
+        log_evidence=classes.log_evidence.at[unit_slot].set(
+            jnp.where(jnp.isfinite(class_best), class_absolute, neg_inf), mode="drop"
+        ),
+        best_log_score=classes.best_log_score.at[unit_slot].set(class_best + log_score_offset[:, None], mode="drop"),
+        best_cell=classes.best_cell.at[unit_slot].set(
+            jnp.asarray(per_class_best_cell, dtype=jnp.int64).reshape(n_units, n_classes),
+            mode="drop",
+        ),
+        posterior_sums=classes.posterior_sums + class_mass,
     )
 
 
@@ -2454,8 +2483,9 @@ def _resident_pass2(
             relion_f32_normalization_sum_weight is None,
             "the K-class resident pass has no zero-oversampling coarse reuse",
         )
+        # Subtomogram Class3D keeps its per-optics-group noise; the SPA K-class pass has one group.
         if not dense_gemm_full_grid:
-            _require(optics_group_ids is None, "the K-class resident pass has one optics group")
+            _require(optics_group_ids is None or tilt is not None, "the K-class resident pass has one optics group")
 
     n_images = experiment_dataset.n_units
     # Subtomogram particles (S4.2, resident_tilts): the posterior unit is the particle; the dataset's
@@ -2463,8 +2493,8 @@ def _resident_pass2(
     n_units = n_images if tilt is None else int(np.asarray(tilt.unit_image_offsets).size - 1)
     if tilt is not None:
         _require(
-            classes is None and not firstiter_cc and relion_f32_normalization_sum_weight is None,
-            "subtomogram particles run the K=1 Gaussian fine pass without zero-oversampling reuse",
+            not firstiter_cc and relion_f32_normalization_sum_weight is None,
+            "subtomogram particles run the Gaussian fine pass without zero-oversampling reuse",
         )
         _require(
             int(np.asarray(tilt.unit_image_offsets)[-1]) == n_images,
@@ -3042,8 +3072,10 @@ def _resident_pass2(
         ctf_dtype=recon_ctf_accum_dtype,
     )
     free_bytes = _device_free_memory_bytes()
+    # A tilt chunk backprojects each (image, row) with its own matrix (resident_tilts), never per projection.
     presum_adjoint = (
         n_classes > 1
+        and tilt is None
         and free_bytes is not None
         and sums_bytes <= _PRESUM_ADJOINT_FREE_FRACTION * float(free_bytes)
         and not _projection_sums_displace_resident_operands(
@@ -4066,6 +4098,7 @@ def _resident_pass2(
             max_adjoint_block_bytes=max_adjoint_block_bytes,
             stats_config=stats_config,
             use_translate_sum_kernel=True,
+            n_classes=n_classes,
         )
         unit_image_offsets = np.asarray(tilt.unit_image_offsets, dtype=np.int64)
         for chunk in chunks:
@@ -4093,8 +4126,9 @@ def _resident_pass2(
                 n_fine_trans=n_fine_trans,
                 spec_kwargs=tilt_spec_kwargs,
                 stats=stats,
-                Ft_y_total=Ft_y_total[0],
-                Ft_ctf_total=Ft_ctf_total[0],
+                Ft_y_total=Ft_y_total,
+                Ft_ctf_total=Ft_ctf_total,
+                n_fine_rot=n_fine_rot,
                 image_shape=image_shape,
                 rect_indices_device=rect_indices_device,
                 exact_positions_device=exact_positions_device,
@@ -4102,7 +4136,7 @@ def _resident_pass2(
                     device_memory_bytes, has_external_normalization=False
                 ),
             )
-            Ft_y_total, Ft_ctf_total = (Ft_y_chunk,), (Ft_ctf_chunk,)
+            Ft_y_total, Ft_ctf_total = Ft_y_chunk, Ft_ctf_chunk
     deferred = _global_chunk_loop_pipelined(stream_projections)
     pending = None
     pending_alone = False

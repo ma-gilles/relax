@@ -7,6 +7,7 @@ must reproduce ``_resident_pass2`` on the SPA driver fixture: the discrete state
 float band, and the maps and sums inside the resident driver's own repeat band.
 """
 
+import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
@@ -113,3 +114,128 @@ def _assert_tilt_pass_matches_spa(spa, tomo):
     ):
         assert rel_l2(getattr(spa.noise_stats, field), getattr(tomo.noise_stats, field)) < 1e-7, field
     assert abs(float(spa.noise_stats.sumw) - float(tomo.noise_stats.sumw)) <= 1e-6 * abs(float(spa.noise_stats.sumw))
+
+
+# ---------------------------------------------------------------------------
+# K>1 classes (RELION subtomogram Class3D)
+# ---------------------------------------------------------------------------
+
+
+@requires_resident_gpu
+def test_one_image_particles_reproduce_the_spa_k_class_pass(_resident_production_env, monkeypatch):  # noqa: F811
+    """Class3D through the tilt runner, one image per particle, is the SPA K-class pass.
+
+    Both score every class in the particle's one segment and backproject each class into its own
+    BPref. The SPA pass backprojects every row here (no per-projection sums), as the tilt runner does.
+    """
+
+    from test_resident_k_class_pass2 import _k_class_args, _resident
+
+    from relax.sparse_pass2 import resident_pass2 as rp
+
+    monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
+    args, volumes, supports, priors = _k_class_args(2)
+    args = dict(args, score_with_masked_images=True)
+    spa = _resident(args, volumes, supports, priors)
+    tomo = _resident(
+        dict(args, translation_log_prior=None, tilt=_one_image_tilt_inputs(args)), volumes, supports, priors
+    )
+
+    assert_matches(spa.per_class_hard_assignments, tomo.per_class_hard_assignments)
+    for field in (
+        "class_log_evidence_per_image",
+        "class_best_log_score_per_image",
+        "class_rotation_posterior_sums",
+        "class_reconstruction_posterior_sums",
+    ):
+        assert_matches(np.asarray(getattr(spa, field)), np.asarray(getattr(tomo, field)), err_msg=field)
+    for field in ("log_evidence_per_image", "best_log_score_per_image", "max_posterior_per_image"):
+        assert_matches(np.asarray(getattr(spa.stats, field)), np.asarray(getattr(tomo.stats, field)), err_msg=field)
+    for k in range(2):
+        assert _rel_l2(spa.Ft_y[k], tomo.Ft_y[k]) < 1e-7, f"Ft_y class {k}"
+        assert _rel_l2(spa.Ft_ctf[k], tomo.Ft_ctf[k]) < 1e-7, f"Ft_ctf class {k}"
+    _assert_noise_stats_match(spa.noise_stats, tomo.noise_stats)
+
+
+def _two_image_particles(args):
+    """The driver fixture's 12 images as 6 particles of 2 images (identity left matrices)."""
+
+    one_image = _one_image_tilt_inputs(args)
+    n_images = args["experiment_dataset"].n_units
+    n_units = n_images // 2
+    return one_image._replace(
+        unit_image_offsets=np.arange(0, n_images + 1, 2, dtype=np.int64),
+        image_noise_scale=np.full(n_images, 0.5, dtype=np.float32),
+        unit_translation_prior=one_image.unit_translation_prior[::2].copy(),
+        slot_capacity=2,
+    ), n_units
+
+
+@requires_resident_gpu
+def test_duplicated_class_of_tilt_particles_is_the_k1_pass(_resident_production_env):  # noqa: F811
+    """Two copies of one class at prior 1/2 each: every particle's K=1 posterior split in half.
+
+    With two images per particle, each class's BPref is half the K=1 BPref, its mass half of
+    ``sumw``, its evidence ``log 1/2`` below the K=1 evidence, and the per-image noise, norm and
+    scale sums (added over the classes' M-step passes) are the K=1 ones.
+    """
+
+    from test_resident_k_class_pass2 import _resident
+
+    from relax.sparse_pass2 import resident_pass2 as rp
+
+    args = dict(_driver_fixture_args(), score_with_masked_images=True)
+    tilt, n_units = _two_image_particles(args)
+    support = args.pop("significant_sample_indices")[:n_units]
+    args["translation_log_prior"] = None
+    single = rp.compute_tilt_pass2_stats_resident(tilt=tilt, significant_sample_indices=support, **args)
+
+    k_args = dict(args, tilt=tilt)
+    prior = k_args.pop("rotation_log_prior")
+    volume = k_args.pop("volume")
+    for name in ("normalization_other_score_log_z", "normalization_score_mode"):
+        k_args.pop(name)
+    half = (prior + np.float32(np.log(0.5))).astype(np.float32)
+    doubled = _resident(k_args, jnp.stack([volume, volume]), [support, support], [half, half])
+
+    for k in range(2):
+        assert_matches(doubled.per_class_best_pose_rotation_ids[k], single.best_rotation_indices)
+        # log 1/2 is folded into the float32 row prior: compare at float32 (test_resident_k_class_pass2).
+        assert_matches(
+            np.float32(doubled.class_log_evidence_per_image[k]),
+            np.float32(np.asarray(single.relion_stats.log_evidence_per_image, dtype=np.float64) + np.log(0.5)),
+        )
+        assert _rel_l2(0.5 * np.asarray(single.Ft_y), doubled.Ft_y[k]) < 1e-6, f"Ft_y class {k}"
+        assert _rel_l2(0.5 * np.asarray(single.Ft_ctf), doubled.Ft_ctf[k]) < 1e-6, f"Ft_ctf class {k}"
+    assert_matches(
+        np.float32(doubled.class_reconstruction_posterior_sums),
+        np.float32(np.full(2, 0.5 * float(single.noise_stats.sumw))),
+    )
+    for field in ("wsum_sigma2_noise", "wsum_img_power", "wsum_norm_correction"):
+        measured = _rel_l2(getattr(single.noise_stats, field), getattr(doubled.noise_stats, field))
+        print(f"duplicated tilt class {field} rel L2 {measured:.3e}")
+    for field in ("wsum_scale_correction_xa", "wsum_scale_correction_aa"):
+        measured = _rel_l2(getattr(single.noise_stats, field), getattr(doubled.noise_stats, field))
+        print(f"duplicated tilt class {field} rel L2 {measured:.3e}")
+    assert abs(float(single.noise_stats.sumw) - float(doubled.noise_stats.sumw)) <= 1e-6 * float(
+        single.noise_stats.sumw
+    )
+
+
+def _rel_l2(a, b):
+    a, b = np.asarray(a), np.asarray(b)
+    den = float(np.linalg.norm(a))
+    return float(np.linalg.norm(a - b) / den) if den else float(np.linalg.norm(b))
+
+
+def _assert_noise_stats_match(want, got):
+    for field in (
+        "wsum_sigma2_noise",
+        "wsum_img_power",
+        "wsum_norm_correction",
+        "wsum_scale_correction_xa",
+        "wsum_scale_correction_aa",
+    ):
+        measured = _rel_l2(getattr(want, field), getattr(got, field))
+        print(f"{field} rel L2 {measured:.3e}")
+    assert abs(float(want.sumw) - float(got.sumw)) <= 1e-6 * abs(float(want.sumw))
