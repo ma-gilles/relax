@@ -603,7 +603,7 @@ OPTICS_FEATURE_LABELS = {
     "even_aberrations": ("rlnEvenZernike",),
     "magnification": ("rlnMagMat00", "rlnMagMat01", "rlnMagMat10", "rlnMagMat11"),
 }
-REFINE3D_OPTICS_FEATURES = frozenset({"ctf_premultiplied", "odd_aberrations", "even_aberrations"})
+REFINE3D_OPTICS_FEATURES = frozenset({"ctf_premultiplied", "odd_aberrations", "even_aberrations", "magnification"})
 
 
 def refuse_unsupported_optics(optics_table, *, source, supported=frozenset()) -> None:

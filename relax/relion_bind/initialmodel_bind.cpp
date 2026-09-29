@@ -1090,7 +1090,9 @@ static py::dict vdam_expected_angular_errors(
     py::object image_offsets_obj,
     py::object image_projections_obj,
     py::object image_ctf_obj,
-    int n_threads
+    int n_threads,
+    py::object trial_ctf_obj,
+    py::object projection_left_obj
 ) {
     if (model_pixel_size <= 0.0)
         model_pixel_size = pixel_size;
@@ -1139,6 +1141,31 @@ static py::dict vdam_expected_angular_errors(
         throw std::runtime_error("pdf_class must have shape (K,)");
     if (sigma_buf.ndim != 1)
         throw std::runtime_error("sigma2_noise must be a 1D shell spectrum");
+    // Single-particle optics (the caller's CTF): trial_ctf holds each trial particle's Fctf on the
+    // FFTW half grid of image_full_size, as relion_refine forms it (CTF^2 for a premultiplied group,
+    // even Zernike terms, magnification; ml_optimiser.cpp:9410-9441), and projection_left is
+    // ObservationModel::applyAnisoMag's inv(M3), applied to both matrices (:9526, :9589).
+    py::array_t<double, py::array::c_style | py::array::forcecast> trial_ctf;
+    const double *trial_ctf_ptr = nullptr;
+    if (!trial_ctf_obj.is_none()) {
+        trial_ctf = trial_ctf_obj.cast<py::array_t<double, py::array::c_style | py::array::forcecast>>();
+        auto trial_ctf_buf = trial_ctf.request();
+        if (trial_ctf_buf.ndim != 3 || trial_ctf_buf.shape[0] != euler_buf.shape[0]
+            || trial_ctf_buf.shape[1] != image_full_size || trial_ctf_buf.shape[2] != image_full_size / 2 + 1)
+            throw std::runtime_error("trial_ctf must have shape (n_trials, image_full_size, image_full_size / 2 + 1)");
+        trial_ctf_ptr = static_cast<double*>(trial_ctf_buf.ptr);
+    }
+    Matrix2D<RFLOAT> projection_left;
+    const bool have_projection_left = !projection_left_obj.is_none();
+    if (have_projection_left) {
+        auto left = projection_left_obj.cast<py::array_t<double, py::array::c_style | py::array::forcecast>>();
+        if (left.ndim() != 2 || left.shape(0) != 3 || left.shape(1) != 3)
+            throw std::runtime_error("projection_left must have shape (3, 3)");
+        projection_left.resize(3, 3);
+        for (int r = 0; r < 3; r++)
+            for (int c = 0; c < 3; c++)
+                projection_left(r, c) = left.at(r, c);
+    }
     // Subtomogram particles (RELION 5 2D stacks): each particle owns several tilt images, each with its
     // own Aproj and CTF (ml_optimiser.cpp calculateExpectedAngularErrors, is_tomo branches). A
     // single-particle image is the one-image case with the identity Aproj.
@@ -1290,7 +1317,18 @@ static py::dict vdam_expected_angular_errors(
                 MultidimArray<RFLOAT>& Fctf = Fctfs[(size_t)img];
                 Fctf.resize(current_image_size, current_image_size / 2 + 1);
                 Fctf.initConstant(1.0);
-                if (do_ctf_correction) {
+                if (do_ctf_correction && trial_ctf_ptr != nullptr) {
+                    // getFftwImage fills Fctf's own (current-size) FFTW grid at the full box's
+                    // frequency spacing (ctf.cpp:398-452): the central window of the full grid.
+                    const long full_x = image_full_size / 2 + 1;
+                    const double *full = trial_ctf_ptr + trial * (long) image_full_size * full_x;
+                    for (long i = 0; i < YSIZE(Fctf); i++) {
+                        const long ip = (i < XSIZE(Fctf)) ? i : i - YSIZE(Fctf);
+                        const long row = ip >= 0 ? ip : ip + image_full_size;
+                        for (long j = 0; j < XSIZE(Fctf); j++)
+                            DIRECT_A2D_ELEM(Fctf, i, j) = full[row * full_x + j];
+                    }
+                } else if (do_ctf_correction) {
                     const double *c = tomo ? image_ctf_ptr + (first_image + img) * 7 : nullptr;
                     CTF ctf;
                     ctf.setValues(
@@ -1389,6 +1427,8 @@ static py::dict vdam_expected_angular_errors(
                         Euler_angles2matrix(rot1, tilt1, psi1, A1, false);
                         if (tomo)
                             A1 = Aproj * A1;
+                        if (have_projection_left)
+                            A1 = projection_left * A1;
                         A1 *= scale_difference;
                         projectors[(size_t)k].get2DFourierTransform(F1, A1);
 
@@ -1420,6 +1460,8 @@ static py::dict vdam_expected_angular_errors(
                             Euler_angles2matrix(rot2, tilt2, psi2, A2, false);
                             if (tomo)
                                 A2 = Aproj * A2;
+                            if (have_projection_left)
+                                A2 = projection_left * A2;
                             A2 *= scale_difference;
                             projectors[(size_t)k].get2DFourierTransform(F2, A2);
                         } else {
@@ -1931,6 +1973,8 @@ Returns -1 when subset should span all particles.
           py::arg("image_projections") = py::none(),
           py::arg("image_ctf") = py::none(),
           py::arg("n_threads") = 1,
+          py::arg("trial_ctf") = py::none(),
+          py::arg("projection_left") = py::none(),
           R"doc(
 3D InitialModel accuracy estimator from MlOptimiser::calculateExpectedAngularErrors.
 Returns acc_rot/acc_trans plus per-class arrays. ``projector_data`` (complex128
@@ -1941,6 +1985,9 @@ image_projections (Aproj per tilt image) and image_ctf (defU, defV, defAngle, Bf
 scale, phase_shift, dose per tilt image) the particles are subtomograms: the SNR sums
 over their tilt images and the shift error is 3D.
 The trials run on ``n_threads`` worker threads; the result does not depend on it.
+trial_ctf (n_trials, image_full_size, image_full_size/2+1) replaces the single-particle CTFs
+with the caller's (premultiplied, even Zernike, magnification), and projection_left (3x3,
+applyAnisoMag's inv(M3)) multiplies both projection matrices on the left.
 )doc");
 
     m.def("vdam_bootstrap_iref", &vdam_bootstrap_iref,

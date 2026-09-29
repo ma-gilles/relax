@@ -331,3 +331,125 @@ def require_ordinary_optics(experiment_dataset, *, where: str) -> None:
     if dataset_has_premultiplied_ctf(experiment_dataset, image_shape):
         raise NotImplementedError(f"{where} does not implement CTF-premultiplied images")
     require_no_odd_aberrations(experiment_dataset, where=where)
+
+
+def relax_projection_magnification(mag_matrix) -> np.ndarray:
+    """relax's left factor for RELION's ``applyAnisoMag`` (obs_model.cpp:1309-1330).
+
+    RELION projects and backprojects with ``inv(M3) A``, ``M3`` the 2x2 magnification
+    embedded in a 3x3 identity (acc_ml_optimiser_impl.h:1098, 1721, 3221). relax's
+    projection matrices are ``inv(A)^T`` (``sampling._relion_mstep_rotations_from_eulers``),
+    so the magnified ones are ``inv(inv(M3) A)^T = M3^T inv(A)^T``: ``M3^T`` on the left.
+    """
+
+    matrix = np.eye(3)
+    matrix[:2, :2] = np.asarray(mag_matrix, dtype=np.float64)
+    return matrix.T
+
+
+def dataset_projection_magnification(experiment_dataset) -> np.ndarray | None:
+    """The dataset's :func:`relax_projection_magnification`, or None without magnification.
+
+    Every optics group of the dataset must share one magnification matrix: the
+    projection matrices are transformed per scoring call, not per image.
+    """
+
+    from relax.relion.relion_ctf import _relion_exact_ctf_source_star
+
+    try:
+        _relion_exact_ctf_source_star(experiment_dataset)
+    except ValueError:
+        return None
+    _, cache = _source_tables(experiment_dataset, tuple(int(s) for s in experiment_dataset.image_shape))
+    labels = {str(label).lstrip("_") for row in cache["optics"].values() for label in row.keys()}
+    if not any(label.startswith("rlnMagMat") for label in labels):
+        return None
+    matrices = {group: optics_group_mag_matrix(row) for group, row in cache["optics"].items()}
+    first = next(iter(matrices.values()))
+    if any(not np.array_equal(m, first) for m in matrices.values()):
+        raise NotImplementedError(
+            "optics groups with different magnification matrices are not supported by relax yet"
+        )
+    if np.array_equal(first, np.eye(2)):
+        return None
+    return relax_projection_magnification(first)
+
+
+def dataset_needs_exact_ctf(experiment_dataset) -> bool:
+    """Whether the dataset's CTF is only right in RELION's exact rows (premultiplied, even Zernike, magnification).
+
+    The generic CTF evaluator knows none of these optics-table features.
+    """
+
+    from relax.relion.relion_ctf import _relion_exact_ctf_source_star, dataset_has_premultiplied_ctf
+
+    try:
+        _relion_exact_ctf_source_star(experiment_dataset)
+    except ValueError:
+        return False
+    image_shape = tuple(int(s) for s in experiment_dataset.image_shape)
+    if dataset_has_premultiplied_ctf(experiment_dataset, image_shape):
+        return True
+    _, cache = _source_tables(experiment_dataset, image_shape)
+    for row in cache["optics"].values():
+        if any(parse_relion_vector(_optics_value(row, "rlnEvenZernike", "[]"))):
+            return True
+    return dataset_projection_magnification(experiment_dataset) is not None
+
+
+def projection_rotations(rotations, scale: float, magnification=None):
+    """Projection matrices for the images' optics (RELION applyAnisoMag, applyScaleDifference).
+
+    The projector samples the reference at image pixel ``k`` times the matrix, so a grid
+    ``s`` times coarser in reference voxels per image pixel divides the matrix by ``s``.
+    ``magnification`` is the left factor of an anisotropic magnification
+    (:func:`relax_projection_magnification`), None without.
+    """
+
+    if rotations is None or (scale == 1.0 and magnification is None):
+        return rotations
+    rotations = np.asarray(rotations)
+    if magnification is not None:
+        rotations = np.einsum("ij,njk->nik", np.asarray(magnification), rotations).astype(rotations.dtype)
+    return rotations / float(scale) if scale != 1.0 else rotations
+
+
+def reported_rotations(rotations, scale: float, magnification=None):
+    """Undo :func:`projection_rotations` on the engine's best poses: poses are reported unmagnified."""
+
+    rotations = np.asarray(rotations)
+    if scale != 1.0:
+        rotations = rotations * float(scale)
+    if magnification is not None:
+        inverse = np.linalg.inv(np.asarray(magnification, dtype=np.float64))
+        rotations = np.einsum("ij,njk->nik", inverse, rotations).astype(rotations.dtype)
+    return rotations
+
+
+def expected_accuracy_optics(experiment_dataset, trial_local_indices):
+    """The expected-accuracy binding's optics inputs for these trial particles, or None.
+
+    ``trial_ctf``: each trial particle's RELION ``Fctf`` on the FFTW half grid of its
+    image (relax's exact CTF rows, :mod:`relax.relion.relion_ctf`: CTF^2 for a
+    premultiplied group, even Zernike terms, magnification); ``projection_left``:
+    ``applyAnisoMag``'s ``inv(M3)``, or absent. None when the dataset's CTF needs no
+    optics table (:func:`dataset_needs_exact_ctf`).
+    """
+
+    from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star_host
+
+    if not dataset_needs_exact_ctf(experiment_dataset):
+        return None
+    size, width = (int(s) for s in experiment_dataset.image_shape)
+    rows = np.asarray(
+        _relion_exact_ctf_half_from_source_star_host(
+            experiment_dataset, np.asarray(trial_local_indices, dtype=np.int64), (size, width)
+        ),
+        dtype=np.float64,
+    ).reshape(-1, size, width // 2 + 1)
+    # Undo RECOVAR's frame (centered rows, opposite sign) for RELION's.
+    inputs = {"trial_ctf": np.ascontiguousarray(-np.fft.ifftshift(rows, axes=1))}
+    magnification = dataset_projection_magnification(experiment_dataset)
+    if magnification is not None:
+        inputs["projection_left"] = np.linalg.inv(np.asarray(magnification).T)
+    return inputs

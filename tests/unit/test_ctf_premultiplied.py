@@ -85,14 +85,14 @@ def test_premultiplied_rows_follow_the_optics_group_flag(star_dataset, tmp_path,
         particles_file=str(_write_star(tmp_path / "ordinary.star", premultiplied=(0, 0))), image_shape=(BOX, BOX)
     )
     assert relion_ctf.premultiplied_ctf_rows(ordinary, np.arange(4), (BOX, BOX)) is None
-    assert not relion_ctf.refuse_generic_ctf_for_premultiplied(ordinary)
+    assert not relion_ctf.refuse_generic_ctf_for_optics(ordinary)
     assert relion_ctf.premultiplied_ctf_rows(SimpleNamespace(particles_file=None), np.arange(4), (BOX, BOX)) is None
 
 
 @pytest.mark.unit
 def test_generic_ctf_fails_closed_on_premultiplied_data(star_dataset):
     star_dataset._ctf_evaluator = object()
-    assert relion_ctf.refuse_generic_ctf_for_premultiplied(star_dataset)
+    assert relion_ctf.refuse_generic_ctf_for_optics(star_dataset)
     with pytest.raises(NotImplementedError, match="premultipli"):
         star_dataset._ctf_evaluator(np.zeros((1, 9)), (BOX, BOX), 2.0, half_image=True)
 

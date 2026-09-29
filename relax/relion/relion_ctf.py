@@ -239,24 +239,28 @@ def require_no_premultiplied_ctf(experiment_dataset, image_indices, image_shape,
 
 def _refuse_generic_ctf(ctf_params, image_shape, voxel_size, *, half_image=False, **kwargs):
     raise NotImplementedError(
-        "CTF-premultiplied images need RELION's exact CTF operands; this path evaluates the "
-        "dataset's generic CTF, which knows nothing of premultiplication"
+        "CTF-premultiplied images, even Zernike aberrations and magnification need RELION's exact CTF "
+        "operands; this path evaluates the dataset's generic CTF, which knows none of them"
     )
 
 
-def refuse_generic_ctf_for_premultiplied(experiment_dataset) -> bool:
-    """Make the dataset's generic CTF evaluator raise when its STAR has premultiplied images.
+def refuse_generic_ctf_for_optics(experiment_dataset) -> bool:
+    """Make the dataset's generic CTF evaluator raise when its CTF needs the optics table.
 
     The generic evaluator (``ForwardModelConfig.compute_ctf``) returns the plain
-    CTF. For a premultiplied image RELION scores and backprojects with ``CTF^2``
-    and its own weights, which only the exact operands of this module and the
-    sparse pass 2 carry, so every other use fails closed instead of silently
-    treating the images as ordinary ones. Returns whether the evaluator was replaced.
+    CTF. CTF-premultiplied images (scored with ``CTF^2`` and their own BPref
+    weights), even Zernike terms and anisotropic magnification are carried only by
+    the exact operands of this module
+    (:func:`relax.relion.optics_aberrations.dataset_needs_exact_ctf`), so every other
+    use fails closed instead of silently ignoring them. Returns whether the evaluator
+    was replaced.
     """
 
     from recovar import core
 
-    if not dataset_has_premultiplied_ctf(experiment_dataset, experiment_dataset.image_shape):
+    from relax.relion.optics_aberrations import dataset_needs_exact_ctf
+
+    if not dataset_needs_exact_ctf(experiment_dataset):
         return False
     experiment_dataset._ctf_evaluator = core.as_ctf_evaluator(_refuse_generic_ctf)
     return True

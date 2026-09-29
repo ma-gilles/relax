@@ -71,6 +71,7 @@ from relax.refinement.local_search_iteration import (
     LocalSearchSupportPolicy,
     _run_local_search_iteration,
 )
+from relax.relion.optics_aberrations import dataset_projection_magnification, projection_rotations, reported_rotations
 from relax.sampling import (
     apply_relion_translation_perturbation,
     build_local_search_grid_metadata,
@@ -360,6 +361,8 @@ def _score_direct_k1_dense(
         raise NotImplementedError(
             "the single-pass dense engine keeps one optics group's noise spectrum"
         )
+    if dataset_projection_magnification(half.experiment_dataset) is not None:
+        raise NotImplementedError("the single-pass dense engine does not implement anisotropic magnification")
     # Scale groups never reach the direct dense engine: see
     # _dense_uses_adaptive_engine.
     warn_deprecated_engine(
@@ -634,16 +637,17 @@ def _score_adaptive_k1_dense(
         execution,
         sparse_pass2=sparse_pass2,
     )
-    if optics.projection_scale != 1.0:
-        common_kwargs["fine_mstep_rotations_override"] = _projection_rotations(
-            common_kwargs["fine_mstep_rotations_override"], optics.projection_scale
+    magnification = dataset_projection_magnification(half.experiment_dataset)
+    if optics.projection_scale != 1.0 or magnification is not None:
+        common_kwargs["fine_mstep_rotations_override"] = projection_rotations(
+            common_kwargs["fine_mstep_rotations_override"], optics.projection_scale, magnification
         )
     k1_adaptive_result = run_dense_k_class_em_adaptive(
         half.experiment_dataset,
         means_single,
         half.mean_variance,
         half.noise_variance_k,
-        _projection_rotations(
+        projection_rotations(
             sampling.coarse_scoring_rotations
             if sampling.coarse_scoring_rotations is not None
             and adaptive_os == 0
@@ -653,9 +657,10 @@ def _score_adaptive_k1_dense(
             and not execution.diagnostic_float64_pass2
             else pass2_grids.coarse_rotations,
             optics.projection_scale,
+            magnification,
         ),
         pass2_grids.coarse_translations,
-        _projection_rotations(pass2_grids.fine_rotations, optics.projection_scale),
+        projection_rotations(pass2_grids.fine_rotations, optics.projection_scale, magnification),
         pass2_grids.fine_translations,
         pass2_grids.rotation_parent_map,
         pass2_grids.translation_parent_map,
@@ -838,6 +843,8 @@ def _score_half_dense_one_shape(
     if variant.k_class_enabled:
         if execution.disable_adjoint_y or execution.disable_adjoint_ctf:
             raise NotImplementedError("K-class refine does not support adjoint ablation flags")
+        if dataset_projection_magnification(half.experiment_dataset) is not None:
+            raise NotImplementedError("K-class refine does not implement anisotropic magnification")
         # K-class uses RELION's x-half BackProjector accumulator layout by
         # default, matching the K=1 parity path. The explicit selector can
         # still choose the dense full-volume path.
@@ -968,7 +975,12 @@ def _score_half_dense_one_shape(
                 replace(firstiter_data, mean=jnp.asarray(half.means_k)[None, :]),
                 replace(
                     firstiter_grid,
-                    projection_rotations=lambda rotations: _projection_rotations(rotations, optics.projection_scale),
+                    # Images on another grid (applyScaleDifference) or magnified (applyAnisoMag).
+                    projection_rotations=lambda rotations: projection_rotations(
+                        rotations,
+                        optics.projection_scale,
+                        dataset_projection_magnification(half.experiment_dataset),
+                    ),
                 ),
                 firstiter_policy,
                 replace(
@@ -1023,9 +1035,12 @@ def _score_half_dense_one_shape(
                 raise RuntimeError("K=1 adaptive path did not return best pose details")
             pose_dtype = _dense_global_scoring_dtype()
             best_rots = np.asarray(k1_adaptive_result.best_pose_rotations, dtype=pose_dtype)
-            if optics.projection_scale != 1.0:
-                # Poses are reported unscaled; only projection used the scaled matrices.
-                best_rots = np.asarray(best_rots * optics.projection_scale, dtype=pose_dtype)
+            magnification = dataset_projection_magnification(half.experiment_dataset)
+            if optics.projection_scale != 1.0 or magnification is not None:
+                # Poses are reported unscaled and unmagnified; only projection used the transformed matrices.
+                best_rots = np.asarray(
+                    reported_rotations(best_rots, optics.projection_scale, magnification), dtype=pose_dtype
+                )
             half.outputs.best_pose_rotations[half.k] = best_rots
             half.outputs.best_pose_rotation_eulers[half.k] = (
                 np.asarray(k1_adaptive_result.best_pose_eulers_deg, dtype=np.float64)
@@ -1100,18 +1115,6 @@ def _reference_grid_kwargs(reference_current_size, scale: float) -> dict:
         "reconstruction_volume_current_size": int(reference_current_size),
         "reconstruction_image_radius": _reconstruction_image_radius(reference_current_size, scale),
     }
-
-
-def _projection_rotations(rotations, scale: float):
-    """Rotation matrices for projection of images on another grid (RELION applyScaleDifference).
-
-    The projector samples the reference at image pixel ``k`` times the matrix, so a grid
-    ``s`` times coarser in reference voxels per image pixel divides the matrix by ``s``.
-    """
-
-    if rotations is None or scale == 1.0:
-        return rotations
-    return np.asarray(rotations) / float(scale)
 
 
 def _dense_owners_for_shape(

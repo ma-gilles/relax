@@ -78,7 +78,7 @@ from relax.relion.initial_noise import (
     compute_avg_unaligned_and_sigma2,
     read_relion_single_optics_sigma2_noise,
 )
-from relax.relion.relion_ctf import refuse_generic_ctf_for_premultiplied
+from relax.relion.relion_ctf import refuse_generic_ctf_for_optics
 from relax.relion.relion_worker_scale import (
     load_relion_dispatch_schedule,
     load_relion_follower_scale_replay,
@@ -2963,7 +2963,7 @@ def main(command=None):
             absent_angles_zero=True,
         )
         assert_reads_from_scratch(ds, particle_scratch)
-        refuse_generic_ctf_for_premultiplied(ds)
+        refuse_generic_ctf_for_optics(ds)
     else:
         _validate_multi_shape_run(args, frozen_boundary, _double_image_preprocessing)
         # One dataset per image shape (optics groups sharing box and pixel size).
@@ -2982,7 +2982,7 @@ def main(command=None):
         )
         for class_dataset in ds.datasets:
             assert_reads_from_scratch(class_dataset, particle_scratch)
-            refuse_generic_ctf_for_premultiplied(class_dataset)
+            refuse_generic_ctf_for_optics(class_dataset)
         logger.info(
             "Optics groups on %d image shapes: %s",
             len(ds.datasets),

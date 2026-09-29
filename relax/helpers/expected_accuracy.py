@@ -137,6 +137,7 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     group_grid=None,
     projector_data=None,
     tilt_images=None,
+    optics=None,
 ) -> ExpectedAccuracy:
     """Call RELION's expected-accuracy binding from prepared native inputs.
 
@@ -146,6 +147,9 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     ``tilt_images`` (``image_offsets``, ``image_projections``, ``image_ctf``; see
     :func:`relax.refinement.tomo_half.tilt_image_accuracy_inputs`) makes the particles
     subtomograms over their tilt images; the per-particle defocus arrays are then unused.
+    ``optics`` (:func:`relax.relion.optics_aberrations.expected_accuracy_optics`) gives the trial
+    particles' CTFs and the magnification's projection factor (CTF-premultiplied groups, even
+    Zernike terms, magnification), in trial order.
     ``group_grid`` (``model_pixel_size``, ``image_full_size``,
     ``projector_current_size``) describes trials of an optics group on another
     pixel size or box (``pixel_size`` and ``current_image_size`` are then the
@@ -206,6 +210,7 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
             if projector_data is None
             else {"projector_data": np.ascontiguousarray(projector_data, dtype=np.complex128)}
         ),
+        **({} if optics is None else dict(optics)),
         **(
             {}
             if tilt_images is None
@@ -688,7 +693,14 @@ def estimate_relion_expected_accuracy(
         random_seed_particle_ids=trial_particle_ids,
         group_grid=group_grid,
         projector_data=projector_data,
+        optics=_expected_accuracy_optics(dataset, trial_local),
     )
+
+
+def _expected_accuracy_optics(dataset, trial_local):
+    from relax.relion.optics_aberrations import expected_accuracy_optics
+
+    return expected_accuracy_optics(dataset, trial_local)
 
 
 def _estimate_by_shape_class(half, *, best_eulers_deg, class_ids, trial_order_local, current_image_size,

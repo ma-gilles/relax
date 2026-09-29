@@ -19,6 +19,7 @@ from relax.helpers.batch_planning import (
 )
 from relax.helpers.types import NoiseStats, make_relion_stats
 from relax.refinement import firstiter_cc, half_scoring, iteration_loop, local_search_iteration
+from relax.relion import optics_aberrations
 
 
 def _dense_owners(**values):
@@ -763,7 +764,7 @@ def test_firstiter_cc_dispatch_projects_every_grid_through_the_shape_class_matri
             current_healpix_order=1,
             state=SimpleNamespace(adaptive_oversampling=1, translation_step=2.0),
             random_perturbation=0.0,
-            projection_rotations=lambda rotations: half_scoring._projection_rotations(rotations, 2.0),
+            projection_rotations=lambda rotations: optics_aberrations.projection_rotations(rotations, 2.0),
         ),
         firstiter_cc.FirstIterCCPolicy(disc_type="linear_interp", class_log_priors=None),
         firstiter_cc.FirstIterCCBatching(

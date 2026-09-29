@@ -26,7 +26,7 @@ ODD = "[0.12,-0.25,0.05,0.3,0.02,-0.04]"
 EVEN = "[0,0.2,-0.1,0.3,0.05,-0.02,0.01,0.1,0.02]"
 
 
-def _write_star(path, *, tilt=(0.9, -0.6), odd=ODD, even=None, mag=None):
+def _write_star(path, *, tilt=(0.9, -0.6), odd=ODD, even=None, mag=None, mag_both=False):
     labels = [
         "_rlnOpticsGroup",
         "_rlnOpticsGroupName",
@@ -53,7 +53,7 @@ def _write_star(path, *, tilt=(0.9, -0.6), odd=ODD, even=None, mag=None):
         aberrated.append(even)
     if mag is not None:
         labels += ["_rlnMagMat00", "_rlnMagMat01", "_rlnMagMat10", "_rlnMagMat11"]
-        ordinary += ["1", "0", "0", "1"]
+        ordinary += [str(v) for v in np.asarray(mag if mag_both else np.eye(2)).reshape(-1)]
         aberrated += [str(v) for v in np.asarray(mag).reshape(-1)]
     lines = ["data_optics", "", "loop_", *labels, " ".join(ordinary), " ".join(aberrated), ""]
     lines += ["data_particles", "", "loop_", "_rlnImageName", "_rlnDefocusU", "_rlnDefocusV"]
@@ -189,11 +189,14 @@ def test_refinement_accepts_the_implemented_optics_features():
         source="refine3d.star",
         supported=REFINE3D_OPTICS_FEATURES,
     )
+    refuse_unsupported_optics(
+        pd.DataFrame({"_rlnOpticsGroup": [1], "_rlnMagMat00": [1.01]}),
+        source="refine3d.star",
+        supported=REFINE3D_OPTICS_FEATURES,
+    )
     with pytest.raises(NotImplementedError, match="rlnMagMat00"):
         refuse_unsupported_optics(
-            pd.DataFrame({"_rlnOpticsGroup": [1], "_rlnMagMat00": [1.01]}),
-            source="refine3d.star",
-            supported=REFINE3D_OPTICS_FEATURES,
+            pd.DataFrame({"_rlnOpticsGroup": [1], "_rlnMagMat00": [1.01]}), source="class3d.star"
         )
 
 
@@ -235,3 +238,101 @@ def test_exact_ctf_rows_carry_the_even_zernike_gamma_offset(tmp_path):
     ]
     # RECOVAR's frame: centered rows, opposite sign (relion_ctf._evaluate_exact_ctf_rows).
     assert_matches(rows, np.stack([-np.fft.fftshift(e, axes=0).reshape(-1) for e in expected]), rtol=1e-12)
+
+
+MAG = np.asarray([[1.012, 0.006], [-0.004, 0.991]])
+
+
+@pytest.mark.unit
+def test_exact_ctf_rows_carry_the_magnification(tmp_path):
+    relion_bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
+    if not hasattr(relion_bind, "optics_ctf_images_batch"):
+        pytest.skip("the RELION binding predates the optics bindings")
+    star = _write_star(tmp_path / "particles.star", tilt=None, odd=None, even=EVEN, mag=MAG)
+    dataset = SimpleNamespace(particles_file=str(star), image_shape=(BOX, BOX))
+    rows = relion_ctf._relion_exact_ctf_half_from_source_star_host(dataset, np.asarray([0]), (BOX, BOX))
+    gamma = oa.zernike_phase_fftw_half(oa.parse_relion_vector(EVEN), oa.even_index_to_mn, BOX, PIXEL, BOX, MAG)
+    expected = _relion_ctf_reference(20000.0, 19000.0, 40.0, 200.0, 2.0, 0.1, BOX, PIXEL, gamma, mag=MAG)
+    assert_matches(rows[0], -np.fft.fftshift(expected, axes=0).reshape(-1), rtol=1e-12)
+    assert oa.dataset_needs_exact_ctf(dataset)
+    # Projection matrices are transformed per scoring call: one magnification for every group.
+    with pytest.raises(NotImplementedError, match="different magnification"):
+        oa.dataset_projection_magnification(dataset)
+    shared = SimpleNamespace(
+        particles_file=str(_write_star(tmp_path / "shared.star", tilt=None, odd=None, mag=MAG, mag_both=True)),
+        image_shape=(BOX, BOX),
+    )
+    assert_matches(oa.dataset_projection_magnification(shared), oa.relax_projection_magnification(MAG))
+
+
+@pytest.mark.unit
+def test_magnified_projection_matrices_match_relion_left_matrix():
+    """relax projects with inv(A)^T; RELION's magnified matrix is inv(M3) A (applyAnisoMag)."""
+
+    relion_bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
+    rng = np.random.default_rng(11)
+    eulers = rng.uniform([-180, 0, -180], [180, 180, 180], size=(7, 3))
+    m3 = np.eye(3)
+    m3[:2, :2] = MAG
+    left = np.broadcast_to(np.linalg.inv(m3), (7, 3, 3)).copy()
+    relion = np.swapaxes(np.asarray(relion_bind.euler_angles_to_inverse_matrices(eulers, left)), 1, 2)
+    plain = np.swapaxes(np.asarray(relion_bind.euler_angles_to_inverse_matrices(eulers)), 1, 2)
+    magnified = oa.projection_rotations(plain, 1.0, oa.relax_projection_magnification(MAG))
+    assert_matches(magnified, relion, rtol=1e-13)
+    assert_matches(oa.reported_rotations(magnified, 1.0, oa.relax_projection_magnification(MAG)), plain, rtol=1e-13)
+    # With the optics scale: applyScaleDifference multiplies inv(M3) A by s (obs_model.cpp:1332-1339).
+    scaled = np.swapaxes(np.asarray(relion_bind.euler_angles_to_inverse_matrices(eulers, 1.1 * left)), 1, 2)
+    assert_matches(oa.projection_rotations(plain, 1.1, oa.relax_projection_magnification(MAG)), scaled, rtol=1e-13)
+
+
+@pytest.mark.unit
+def test_expected_accuracy_with_caller_ctfs_is_the_plain_one_for_an_ordinary_group():
+    relion_bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
+    box = 16
+    rng = np.random.default_rng(5)
+    common = dict(
+        references=rng.standard_normal((1, box, box, box)),
+        eulers_deg=np.asarray([[10.0, 40.0, 70.0], [100.0, 120.0, -30.0]]),
+        particle_ids=np.asarray([0, 1]),
+        class_ids=np.asarray([0, 0], dtype=np.int32),
+        pdf_class=np.asarray([1.0]),
+        sigma2_noise=np.full(box // 2 + 1, 0.5),
+        defU=np.asarray([15000.0, 21000.0]),
+        defV=np.asarray([14000.0, 20500.0]),
+        defAngle=np.asarray([30.0, 80.0]),
+        phase_shift=np.zeros(2),
+        voltage=300.0,
+        Cs=2.7,
+        Q0=0.07,
+        pixel_size=3.0,
+        ori_size=box,
+        current_image_size=12,
+    )
+    if "trial_ctf" not in relion_bind.vdam_expected_angular_errors.__doc__:
+        pytest.skip("the RELION binding predates caller CTFs")
+    plain = relion_bind.vdam_expected_angular_errors(**common)
+    rows = np.asarray(
+        [
+            [15000.0, 14000.0, 30.0, 300.0, 2.7, 0.07, 0.0, 1.0, 0.0],
+            [21000.0, 20500.0, 80.0, 300.0, 2.7, 0.07, 0.0, 1.0, 0.0],
+        ]
+    )
+    trial_ctf = relion_ctf.relion_ctf_fftw_half(rows, box, 3.0)  # relax's CTF, in RELION's frame
+    caller = relion_bind.vdam_expected_angular_errors(**common, trial_ctf=trial_ctf, projection_left=np.eye(3))
+    assert_matches(np.asarray([caller["acc_rot"], caller["acc_trans"]]), np.asarray([plain["acc_rot"], plain["acc_trans"]]))
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("even, mag", [(None, None), (EVEN, None), (None, MAG), (EVEN, MAG)])
+def test_relax_ctf_rows_match_relion_observation_model(tmp_path, even, mag):
+    """relax's CTF (relion_ctf.relion_ctf_fftw_half) against RELION's CTF::getFftwImage via ObservationModel."""
+
+    relion_bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
+    if not hasattr(relion_bind, "optics_ctf_images_batch"):
+        pytest.skip("the RELION binding predates the optics bindings")
+    star = _write_star(tmp_path / "particles.star", tilt=None, odd=None, even=even, mag=mag, mag_both=True)
+    dataset = SimpleNamespace(particles_file=str(star), image_shape=(BOX, BOX))
+    rows = relion_ctf._relion_exact_ctf_half_from_source_star_host(dataset, np.asarray([0, 1, 2]), (BOX, BOX))
+    params = np.asarray([[20000.0, 19000.0, 40.0, 0.0, 1.0, 0.0, g] for g in (2, 1, 2)])
+    relion = np.asarray(relion_bind.optics_ctf_images_batch(str(star), params, BOX, BOX, False, 1))
+    assert_matches(rows, np.stack([-np.fft.fftshift(r, axes=0).reshape(-1) for r in relion]), rtol=1e-12)
