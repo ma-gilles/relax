@@ -19,6 +19,7 @@ from relax.helpers.batch_planning import _estimate_relion_em_batch_sizes
 from relax.helpers.types import NoiseStats, RelionStats
 from relax.local.local_em_engine import run_local_em_exact
 from relax.local.local_layout import _local_search_engine_rotation_block_size, build_local_hypothesis_layout
+from relax.relion import relion_ctf
 from relax.sampling import build_local_search_grid_metadata
 from relax.sparse_pass2.engine_record import record_pass_engine
 from relax.sparse_pass2.resident_local_pass2 import compute_local_search_resident
@@ -500,6 +501,11 @@ def _run_local_search_iteration(
             reconstruction_image_radius=kernel.reconstruction_image_radius,
             # RELION's radial window at the box too, as the resident drivers score it.
             window_at_box=True,
+            # CTF-premultiplied images are scored with RELION's exact CTF rows, which
+            # hold their CTF^2 (relion_ctf); the generic CTF refuses them.
+            relion_exact_bpref_operands=relion_ctf.dataset_has_premultiplied_ctf(
+                data.experiment_dataset, tuple(data.experiment_dataset.image_shape)
+            ),
         )
 
     result = _LocalSearchIterationResult(

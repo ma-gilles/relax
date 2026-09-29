@@ -536,6 +536,10 @@ def run_local_em_exact(
     the model sphere.
     """
 
+    if not score_only and relion_ctf.dataset_has_premultiplied_ctf(experiment_dataset, experiment_dataset.image_shape):
+        # The pass-1 parent probe (score_only) scores premultiplied images with the
+        # exact CTF rows, which hold CTF^2; backprojecting them needs the resident pass 2.
+        raise NotImplementedError("the exact local engine does not backproject CTF-premultiplied images")
 
     resolved_exact_local_bucket_radix = _resolve_exact_local_bucket_radix(exact_local_bucket_radix)
     score_only = bool(score_only)
@@ -2390,9 +2394,6 @@ def run_local_em_exact(
                 return build() if bucket_constants is None else bucket_constants[name]
 
             if relion_exact_bpref_operands:
-                relion_ctf.require_no_premultiplied_ctf(
-                    experiment_dataset, bucket_image_indices, image_shape, where="the exact local engine"
-                )
                 ctf_rfloat_unpadded = np.asarray(
                     relion_ctf._relion_exact_ctf_half_from_source_star_host(
                         experiment_dataset,
