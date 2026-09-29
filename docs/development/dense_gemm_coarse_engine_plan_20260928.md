@@ -5,59 +5,61 @@ VDAM and K>1, and determine robustness across resolution. This is a new producti
 integration package, beyond the completed fixed-state K1 experiment. The measured
 6.55x process gain at one early checkpoint is evidence, not a universal promise.
 
-## Baseline and ownership
+## Current checkpoint and evidence
 
-Start clean from main ecf60ff5ba011f92d72bb98a30f516fe8c8bf7f1 in
-/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/relax_dense_gemm_experiment_20260928,
-branch codex/dense-gemm-coarse-engine-20260928. Previous experiment and pinned
-controls are immutable. Root owns design, scientific acceptance, resource allocation,
-tracked documentation and integration. Fresh Sol/high dense_coarse_integration is
-production source writer after root approves its exact file set. Sol/medium
-dense_coarse_validation owns the reserved tier/harness files. Source edits are
-serialized. The first core/harness checkpoint was refreshed without conflicts to
-main abfaa0ad6f056550157afd794943c5157040393f; its 21 focused CPU checks pass.
-The next adapter checkpoint passes 28 focused CPU checks, including native
-preprocessing operand forwarding. Initial local GPU attempts exposed fixture
-setup failures before candidate execution. The first executable comparison (v3)
-reported different hard-assignment IDs; v4 proved that global winning poses
-agreed and exposed a local-slot versus global-index output bug, now repaired.
-The live checkout subsequently refreshed conflict-free to main
-30a4a0fcae8519da13d3b58ff8ae62a8d6ae93b3, including resident memory fixes;
-84 focused CPU checks pass there. Frozen debugging candidates are unchanged.
-
-The user approved existing float32 reference gates for the new dense/resident
-comparison only; production and FSC gates are unchanged. The v5 native K1
-full-grid comparison passes. K4 poses and backprojection accumulators pass,
-but noise/norm metadata qualification remains open. The v7 capture traces a
-resident posterior-mass undercount to its float32 row scatter; an isolated A100
-bucketed-reduction probe reduces mass relative L2 error from 1.695e-6 to
-4.86e-8 without changing arithmetic dtype. A bounded-memory repair is under
-review; this probe does not qualify production performance.
-
-The v8 first-iteration CC diagnostic identifies a separate operand bug: the
-dense adapter supplies Gaussian pixel weights to CC scoring. Projections match
-and same-operand scorers agree within 1.79e-6, but the wrong weights change 9/12
-winning poses. The v9 attempt to preserve the unshifted weights did not fix it:
-canonical CC weights are actually constructed later in the direct-scoring
-preparation path. Reusing that canonical step is the next correction. The v9
-gradient case, with valid distinct windows and two reconstruction groups, agrees
-on poses and passes both raw backprojection group gates; its norm statistic
-remains outside the approved gate (1.291e-6 relative L2 versus 1e-6). These focused
-checks do not replace smoke, medium, long, EM/VDAM trajectory or resolution
-qualification. The older 6.55x result excludes this production statistics adapter.
-Immutable captures and current results are indexed in
+The integration branch is `codex/dense-gemm-coarse-engine-20260928` in
+`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/relax_dense_gemm_experiment_20260928`.
+Its production code at `e2080b5a` is based on current main `a2f87236`; the next
+commit `297b55b1` strengthens a CPU assertion without changing execution. The
+pinned recovar commit is `5514ac6e`, and the native source digest is `3dbcd1e4`.
+Run outputs and immutable source/native identities are indexed in
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/dense_gemm_coarse_engine_20260928/STATUS.md`.
 
-The v10 native checkpoint passes Gaussian K1 and CC. Canonical CC correlation
-construction is now shared by the two preparation paths. Bucketed SPA posterior
-reduction fixes the support-mass discrepancy with explicit scratch accounting;
-scalar and ET reductions are unchanged. The balanced K4 case passes saved
-numerical gates with all four classes populated, but its final total-mass
-assertion still needed the already-approved explicit float32 tolerance.
-Skewed K4 and gradient norm errors remain 1.054e-6 and 1.326e-6 relative L2.
-Saved component audits locate about 99% of the residual difference in aggregated
-A2. A test-only row capture is next to distinguish differing inputs, scalar
-scatter and outer-loop accumulation before any further numerical change.
+Both public selections are implemented across global EM and VDAM, including K>1:
+`gemm_hybrid` uses exact coarse GEMM with the canonical resident fine pass and its
+existing support pruning; `gemm_dense` evaluates every class/rotation/translation
+on the configured expanded grid with exact two-pass per-image normalization and
+no pruning. `auto` remains the production default. The lagged-normalizer
+one-pass experiment overflowed and is not a selectable production engine.
+Translation tiling was measured with serial, mixed and full expansion; on the
+recorded box-128 A100 workload, a full image-side U=29 tile beat a projection-
+side tile, while Q around 3072 beat Q around the 100-image batch. The planner
+reduces B/Q/U when the memory estimate demands it; these choices are not
+universal throughput claims.
+
+The new dense-versus-resident fixed-state K1/K4 tests use the user's approved
+existing float32 reference gates; production FSC gates and baselines have not
+changed. Box-128 K1 full-grid tests at R36,864/T29 pass the score, BPref,
+noise and scale gates. The selected hybrid's first-iteration CC/top-two route
+also passed one-iteration K1 5k/128 and 50k/256 CUDA runs: against the default
+route, all best rotations, translations and per-image Pmax agree, with 50k
+unfiltered half-map relative L2 near `2.2e-7`. These are route checks, not
+multi-iteration science gates.
+
+The clean selected-hybrid smoke tier passed on A100 (job `14660387`, source
+`e2080b5a`, receipt `tier_smoke_hybrid_v27/RECEIPT.json`). Medium is running
+at test-only head `297b55b1` (job `14660797`); the required H100 long tier is
+pending as job `14661067` with a verified `afterok:14660797` dependency. Earlier medium at
+`967d1aa2` passed, but its long run exposed the now-repaired CC/top-two route
+conflict. No current long or 100k completion pass exists yet.
+
+Matched A100 timings bound the performance claim. K2 first-iteration CC at
+5k/128 was 1.49x faster warm with hybrid, K4 Gaussian 1.07x faster, and K1
+Gaussian showed no process gain. The no-pruning full dense path was 2.66x
+slower warm than `auto` on K1 5k/128 os0 at current size 80, and its
+cross-engine FSC-AUC `0.997783` missed the unchanged `0.99987` floor; `auto`
+passed. Full dense had slightly higher GT FSC-AUC in that one case, which
+cannot establish a general scientific advantage. The earlier 6.55x controlled
+fixed-spectrum benchmark did not include this production path and must not
+be extrapolated to full refinement. Exact summaries are
+`paired_hybrid_perf_v20/SUMMARY.md`, `paired_k4_gaussian_perf_v24/SUMMARY.md`
+and `paired_k1_os0_fullgrid_v23/SUMMARY.md` under the artifact root above.
+
+Publication remains conditional on the required medium/long science gates.
+The full dense option needs a separate quality and speed decision. Its
+no-pruning posterior has different support from RELION, but the cause of the
+measured FSC gap is not yet isolated. A passing hybrid tier will not qualify
+that option. Do not describe hybrid as a no-pruning engine.
 
 ## Required behavior
 
