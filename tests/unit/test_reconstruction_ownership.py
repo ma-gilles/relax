@@ -50,32 +50,31 @@ def test_mean_reconstruction_core_keeps_spec_ownership_visible():
     assert assigned_names & stable_field_names == {"retained_Ft_y_0_device"}
 
 
-def test_unregularized_reconstruction_keeps_spec_ownership_visible():
+def test_unregularized_reconstruction_variants_expose_dependencies():
     from relax.refinement import mean_helpers as mean_helpers_module
 
-    function = mean_helpers_module.compute_unregularized_halfmaps_and_align_signs
-    assert tuple(inspect.signature(function).parameters) == (
-        "state", "accumulators", "policy",
+    assert tuple(inspect.signature(mean_helpers_module.reconstruct_unregularized_k1_halfmaps).parameters) == (
+        "Ft_y_per_half", "Ft_ctf_per_half", "volume_shape", "tau2_fudge",
+        "padding_factor", "projection_padding_factor", "minres_map",
+        "accumulator_volume_shape",
     )
-
-    tree = ast.parse(inspect.getsource(function))
-    assigned_names = {
-        target.id
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.Assign, ast.AnnAssign))
-        for target in ([*node.targets] if isinstance(node, ast.Assign) else [node.target])
-        if isinstance(target, ast.Name)
-    }
-    stable_field_names = {
-        field.name
-        for owner in (
-            mean_helpers_module.UnregularizedMeanState,
-            mean_helpers_module.UnregularizedAccumulatorState,
-            mean_helpers_module.UnregularizedReconstructionPolicy,
-        )
-        for field in dataclasses.fields(owner)
-    }
-    assert assigned_names.isdisjoint(stable_field_names)
+    assert tuple(inspect.signature(mean_helpers_module.reconstruct_unregularized_class_means).parameters) == (
+        "Ft_y_combined", "Ft_ctf_combined", "volume_shape", "n_classes",
+        "tau2_fudge", "padding_factor", "projection_padding_factor", "minres_map",
+        "accumulator_volume_shape",
+    )
+    assert tuple(inspect.signature(mean_helpers_module.align_k1_volume_signs).parameters) == (
+        "means", "previous_means", "unregularized_means", "volume_shape",
+    )
+    assert tuple(inspect.signature(mean_helpers_module.share_kclass_volume_signs).parameters) == (
+        "means", "unregularized_means",
+    )
+    for name in (
+        "UnregularizedMeanState",
+        "UnregularizedAccumulatorState",
+        "UnregularizedReconstructionPolicy",
+    ):
+        assert not hasattr(mean_helpers_module, name)
 
 
 class TestReconstructionOwnership:

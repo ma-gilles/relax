@@ -213,9 +213,6 @@ from relax.refinement.mean_helpers import (
     MeanPostprocessPolicy,
     MeanPriorSpec,
     MeanReconstructionData,
-    UnregularizedAccumulatorState,
-    UnregularizedMeanState,
-    UnregularizedReconstructionPolicy,
     _class_tau2_from_iref_power_spectrum,
     _class_tau2_update_details,
     _class_weights_from_posterior,
@@ -228,9 +225,12 @@ from relax.refinement.mean_helpers import (
     _snapshot_and_release_previous_k1_means,
     _stack_class_tau2_update_details,
     _updated_mean_variance_per_half,
-    compute_unregularized_halfmaps_and_align_signs,
+    align_k1_volume_signs,
     join_half_accumulators_at_low_resolution,
     prepare_initial_mean_variance,
+    reconstruct_unregularized_class_means,
+    reconstruct_unregularized_k1_halfmaps,
+    share_kclass_volume_signs,
     update_class_direction_priors,
     update_k1_direction_priors,
 )
@@ -3999,31 +3999,44 @@ def refine_single_volume(
                 and options.checkpoint.writer.wants_unfiltered_maps(numbered_relion_iteration, n_classes=n_classes)
             )
         )
-        unreg_means = compute_unregularized_halfmaps_and_align_signs(
-            state=UnregularizedMeanState(
-                    means=means,
-                    previous_means=previous_means,
-            ),
-            accumulators=UnregularizedAccumulatorState(
-                    Ft_y_per_half=(Ft_y_0, Ft_y_1),
-                    Ft_ctf_per_half=(Ft_ctf_0, Ft_ctf_1),
-                    Ft_y_combined=(
-                        Ft_y_combined if k_class_enabled else None
-                    ),
-                    Ft_ctf_combined=(
-                        Ft_ctf_combined if k_class_enabled else None
-                    ),
-            ),
-            policy=UnregularizedReconstructionPolicy(
-                    volume_shape=volume_shape,
-                    n_classes=n_classes,
+        _t_unreg = time.time()
+        if k_class_enabled:
+            unreg_means = (
+                reconstruct_unregularized_class_means(
+                    Ft_y_combined,
+                    Ft_ctf_combined,
+                    volume_shape,
+                    n_classes,
                     tau2_fudge=tau2_fudge,
                     padding_factor=PADDING_FACTOR,
                     projection_padding_factor=PROJECTION_PADDING_FACTOR,
                     minres_map=RELION_MINRES_MAP,
-                    need_unreg_means=need_unreg_means,
                     accumulator_volume_shape=mstep_accumulator_shape,
-            ),
+                )
+                if need_unreg_means
+                else [None, None]
+            )
+            share_kclass_volume_signs(means, unreg_means)
+        else:
+            unreg_means = (
+                reconstruct_unregularized_k1_halfmaps(
+                    (Ft_y_0, Ft_y_1),
+                    (Ft_ctf_0, Ft_ctf_1),
+                    volume_shape,
+                    tau2_fudge=tau2_fudge,
+                    padding_factor=PADDING_FACTOR,
+                    projection_padding_factor=PROJECTION_PADDING_FACTOR,
+                    minres_map=RELION_MINRES_MAP,
+                    accumulator_volume_shape=mstep_accumulator_shape,
+                )
+                if need_unreg_means
+                else [None, None]
+            )
+            align_k1_volume_signs(means, previous_means, unreg_means, volume_shape)
+        logger.info(
+            "Unregularized reconstruction (2 halves): %.1fs%s",
+            time.time() - _t_unreg,
+            "" if need_unreg_means else " (skipped; diagnostics disabled)",
         )
 
         # K>1 uses the shared per-class data_vs_prior curve to drive growth;

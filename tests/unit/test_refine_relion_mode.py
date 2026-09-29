@@ -14869,27 +14869,21 @@ def test_k_class_reconstruction_preserves_data_determined_volume_signs(monkeypat
         return numerator
 
     monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", reconstruct)
-    result = mean_helpers_module.compute_unregularized_halfmaps_and_align_signs(
-        state=mean_helpers_module.UnregularizedMeanState(
-                means=means,
-                previous_means=[jnp.asarray(previous), jnp.asarray(previous)],
-        ),
-        accumulators=mean_helpers_module.UnregularizedAccumulatorState(
-                Ft_y_per_half=(None, None),
-                Ft_ctf_per_half=(None, None),
-                Ft_y_combined=jnp.asarray(unregularized),
-                Ft_ctf_combined=jnp.ones_like(jnp.asarray(unregularized).real),
-        ),
-        policy=mean_helpers_module.UnregularizedReconstructionPolicy(
-                volume_shape=(2, 1, 1),
-                n_classes=n_classes,
-                tau2_fudge=1.0,
-                padding_factor=1,
-                projection_padding_factor=1,
-                minres_map=1,
-                need_unreg_means=need_unreg,
-        ),
+    result = (
+        mean_helpers_module.reconstruct_unregularized_class_means(
+            jnp.asarray(unregularized),
+            jnp.ones_like(jnp.asarray(unregularized).real),
+            (2, 1, 1),
+            n_classes,
+            tau2_fudge=1.0,
+            padding_factor=1,
+            projection_padding_factor=1,
+            minres_map=1,
+        )
+        if need_unreg
+        else [None, None]
     )
+    mean_helpers_module.share_kclass_volume_signs(means, result)
     assert_matches(means[0], reconstructed)
     assert_matches(means[1], reconstructed)
     assert means[0] is means[1]

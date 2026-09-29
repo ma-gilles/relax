@@ -1237,122 +1237,90 @@ def _reconstruct_and_postprocess_means(
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, kw_only=True)
-class UnregularizedMeanState:
-    """Caller-owned current means and immutable previous-reference snapshots."""
-
-    means: list
-    previous_means: list
-
-
-@dataclass(frozen=True, kw_only=True)
-class UnregularizedAccumulatorState:
-    """Per-half and combined accumulators available for diagnostic maps."""
-
-    Ft_y_per_half: tuple
-    Ft_ctf_per_half: tuple
-    Ft_y_combined: object
-    Ft_ctf_combined: object
-
-
-@dataclass(frozen=True, kw_only=True)
-class UnregularizedReconstructionPolicy:
-    """Geometry, class route and diagnostic reconstruction decision."""
-
-    volume_shape: tuple
-    n_classes: int
-    tau2_fudge: float
-    padding_factor: int
-    projection_padding_factor: int
-    minres_map: int
-    need_unreg_means: bool
-    accumulator_volume_shape: tuple | None = None
-
-
-def compute_unregularized_halfmaps_and_align_signs(
-    state: UnregularizedMeanState,
-    accumulators: UnregularizedAccumulatorState,
-    policy: UnregularizedReconstructionPolicy,
+def reconstruct_unregularized_k1_halfmaps(
+    Ft_y_per_half,
+    Ft_ctf_per_half,
+    volume_shape,
+    *,
+    tau2_fudge,
+    padding_factor,
+    projection_padding_factor,
+    minres_map,
+    accumulator_volume_shape=None,
 ) -> list:
-    """Reconstruct unregularized half-maps (only when diagnostics need them)
-    and apply the legacy K=1 sign-continuity check.
+    """Reconstruct each K=1 half from its own unregularized accumulator."""
 
-    Mutates the caller-owned ``means`` list in place and returns the two
-    unregularized maps (or ``[None, None]`` when diagnostics are disabled).
+    return [
+        _reconstruct_volume_eager(
+            Ft_ctf_half,
+            Ft_y_half,
+            volume_shape,
+            padding_factor,
+            tau=None,
+            tau2_fudge=tau2_fudge,
+            projection_padding_factor=projection_padding_factor,
+            minres_map=minres_map,
+            accumulator_volume_shape=accumulator_volume_shape,
+        )
+        for Ft_ctf_half, Ft_y_half in zip(Ft_ctf_per_half, Ft_y_per_half)
+    ]
 
-    For K-class refinement both halves share the same Iref-derived
-    prior, so the unregularized accumulator is the combined Ft_y/Ft_ctf
-    rather than the per-half pair; the K=1 path reconstructs from each
-    half's own accumulators.
 
-    K-class maps preserve the sign fixed by the image/CTF convention; both
-    half-slots share that K-stack. K=1 retains sign alignment against its
-    previous reference. See docs/math/relion_refinement_algorithm.md for the
-    reconstruction convention.
-    """
+def reconstruct_unregularized_class_means(
+    Ft_y_combined,
+    Ft_ctf_combined,
+    volume_shape,
+    n_classes,
+    *,
+    tau2_fudge,
+    padding_factor,
+    projection_padding_factor,
+    minres_map,
+    accumulator_volume_shape=None,
+) -> list:
+    """Reconstruct the shared K-class stack from combined accumulators."""
 
-    _t_unreg = time.time()
-    if policy.need_unreg_means:
-        if policy.n_classes > 1:
-            unreg_shared = jnp.stack(
-                [
-                    _reconstruct_volume_eager(
-                        accumulators.Ft_ctf_combined[class_idx],
-                        accumulators.Ft_y_combined[class_idx],
-                        policy.volume_shape,
-                        policy.padding_factor,
-                        tau=None,
-                        tau2_fudge=policy.tau2_fudge,
-                        projection_padding_factor=policy.projection_padding_factor,
-                        minres_map=policy.minres_map,
-                        accumulator_volume_shape=policy.accumulator_volume_shape,
-                    ).reshape(-1)
-                    for class_idx in range(policy.n_classes)
-                ],
-                axis=0,
-            )
-            unreg_means: list = [unreg_shared, unreg_shared]
-        else:
-            unreg_means = [
-                _reconstruct_volume_eager(
-                    Ft_ctf_half,
-                    Ft_y_half,
-                    policy.volume_shape,
-                    policy.padding_factor,
-                    tau=None,
-                    tau2_fudge=policy.tau2_fudge,
-                    projection_padding_factor=policy.projection_padding_factor,
-                    minres_map=policy.minres_map,
-                    accumulator_volume_shape=policy.accumulator_volume_shape,
-                )
-                for Ft_ctf_half, Ft_y_half in zip(accumulators.Ft_ctf_per_half, accumulators.Ft_y_per_half)
-            ]
-    else:
-        unreg_means = [None, None]
-
-    if policy.n_classes > 1:
-        # The image/CTF convention fixes K-class reconstruction signs.
-        # Weak overlap with a previous reference must not negate a class.
-        state.means[1] = state.means[0]
-        if unreg_means[0] is not None:
-            unreg_means[1] = unreg_means[0]
-    else:
-        for k in range(2):
-            state.means[k], sign_flipped = _align_fourier_volume_sign_to_reference(
-                state.means[k],
-                state.previous_means[k],
-                policy.volume_shape,
-            )
-            if sign_flipped and unreg_means[k] is not None:
-                unreg_means[k] = -unreg_means[k]
-            if sign_flipped:
-                logger.info("Aligned half-%d volume sign to the previous reference", k + 1)
-    logger.info(
-        "Unregularized reconstruction (2 halves): %.1fs%s",
-        time.time() - _t_unreg,
-        "" if policy.need_unreg_means else " (skipped; diagnostics disabled)",
+    unreg_shared = jnp.stack(
+        [
+            _reconstruct_volume_eager(
+                Ft_ctf_combined[class_idx],
+                Ft_y_combined[class_idx],
+                volume_shape,
+                padding_factor,
+                tau=None,
+                tau2_fudge=tau2_fudge,
+                projection_padding_factor=projection_padding_factor,
+                minres_map=minres_map,
+                accumulator_volume_shape=accumulator_volume_shape,
+            ).reshape(-1)
+            for class_idx in range(n_classes)
+        ],
+        axis=0,
     )
-    return unreg_means
+    return [unreg_shared, unreg_shared]
+
+
+def align_k1_volume_signs(means, previous_means, unregularized_means, volume_shape) -> None:
+    """Align K=1 means and matching diagnostic maps to previous references."""
+
+    for k in range(2):
+        means[k], sign_flipped = _align_fourier_volume_sign_to_reference(
+            means[k],
+            previous_means[k],
+            volume_shape,
+        )
+        if sign_flipped and unregularized_means[k] is not None:
+            unregularized_means[k] = -unregularized_means[k]
+        if sign_flipped:
+            logger.info("Aligned half-%d volume sign to the previous reference", k + 1)
+
+
+def share_kclass_volume_signs(means, unregularized_means) -> None:
+    """Keep the image/CTF-determined K-class sign and share its class stack."""
+
+    means[1] = means[0]
+    if unregularized_means[0] is not None:
+        unregularized_means[1] = unregularized_means[0]
 
 
 def _large_irfft_requires_explicit_normalization(volume_shape) -> bool:
