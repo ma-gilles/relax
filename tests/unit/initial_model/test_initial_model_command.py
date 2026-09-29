@@ -80,6 +80,18 @@ def test_parser_resolves_gui_defaults_and_auto_gpu_backend():
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("coarse_engine", ["gemm_hybrid", "gemm_dense"])
+def test_selected_gemm_uses_cuda_preprocessing_without_gpu_id(coarse_engine):
+    args = initial_model.make_parser().parse_args([
+        "--i", "particles.star", "--gpu", "", "--coarse-engine", coarse_engine,
+    ])
+    assert initial_model._native_options_dict(args)["image_fourier_backend"] == "relion_cuda"
+    args.image_fourier_backend = "host_numpy"
+    with pytest.raises(ValueError, match="requires --image-fourier-backend relion_cuda"):
+        initial_model._native_options_dict(args)
+
+
+@pytest.mark.unit
 def test_parser_accepts_important_overrides():
     args = initial_model.make_parser().parse_args(
         [

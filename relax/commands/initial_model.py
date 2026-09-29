@@ -492,7 +492,9 @@ def _require_custom_cuda_runtime() -> dict[str, object]:
 def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
     backend = args.image_fourier_backend
     if backend == "auto":
-        backend = "relion_cuda" if args.gpu_ids else "host_numpy"
+        backend = "relion_cuda" if args.gpu_ids or args.coarse_engine != "auto" else "host_numpy"
+    if args.coarse_engine != "auto" and backend != "relion_cuda":
+        raise ValueError(f"{args.coarse_engine} requires --image-fourier-backend relion_cuda")
     return {
         "optimizer": args.optimizer,
         "sgd_learning_rate": args.sgd_learning_rate,
