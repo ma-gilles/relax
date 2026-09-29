@@ -197,7 +197,7 @@ def test_batched_relion_f32_posterior_primitives_match_scalar_rows(
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("zero_fraction", [0.2, 0.995])
-@pytest.mark.parametrize("rows,count", [(37, 24192), (500, 777), (1, 5)])
+@pytest.mark.parametrize("rows,count", [(37, 24192), (500, 777), (1, 5), (70001, 6)])
 def test_batched_cub_sort_scan_matches_scalar_rows_at_pass1_sizes(
     monkeypatch,
     custom_cuda_lib,
@@ -211,7 +211,8 @@ def test_batched_cub_sort_scan_matches_scalar_rows_at_pass1_sizes(
     Pass-1 significance sorts batches of 500 images of about 24k coarse
     weights; ties, zeros and a signed zero are planted so the sort order of
     equal keys is exercised. Most weights underflow to zero late in a run, so
-    rows that are nearly all zeros exercise the positive-only sort.
+    rows that are nearly all zeros exercise the positive-only sort; more rows
+    than a launch's grid height exercise the row-based relaunches.
     """
 
     import recovar.cuda_backproject as cuda_backproject

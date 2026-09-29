@@ -83,24 +83,32 @@ struct RelionBatchedPositiveF32
     }
 };
 
+// Counts are integer sums, so the per-block atomics give the same counts in any order.
+constexpr int kRelionPositiveCountBlock = 256;
+// gridDim.y limit: rows beyond it launch again from a row base.
+constexpr int kRelionMaxGridRows = 65535;
+constexpr int kRelionPositiveCountSpan = kRelionPositiveCountBlock * 16;
+
 __global__ void relion_row_positive_counts_kernel(
-    const float* values, int32_t* counts, int count)
+    const float* values, int32_t* counts, int count, int row_base)
 {
-    const int row = blockIdx.x;
+    const int row = row_base + static_cast<int>(blockIdx.y);
     const float* row_values = values + static_cast<int64_t>(row) * count;
+    const int begin = static_cast<int>(blockIdx.x) * kRelionPositiveCountSpan;
+    const int end = min(count, begin + kRelionPositiveCountSpan);
     int positive = 0;
-    for (int i = threadIdx.x; i < count; i += blockDim.x)
+    for (int i = begin + threadIdx.x; i < end; i += blockDim.x)
         positive += row_values[i] > 0.0f;
-    using Reduce = cub::BlockReduce<int, 256>;
+    using Reduce = cub::BlockReduce<int, kRelionPositiveCountBlock>;
     __shared__ typename Reduce::TempStorage temp;
     const int total = Reduce(temp).Sum(positive);
-    if (threadIdx.x == 0) counts[row] = total;
+    if (threadIdx.x == 0 && total != 0) atomicAdd(counts + row, total);
 }
 
 __global__ void relion_zero_fill_right_align_kernel(
-    const float* packed, const int32_t* offsets, float* rows_out, int count)
+    const float* packed, const int32_t* offsets, float* rows_out, int count, int row_base)
 {
-    const int row = blockIdx.y;
+    const int row = row_base + static_cast<int>(blockIdx.y);
     const int64_t column = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (column >= count) return;
     const int begin = offsets[row];
@@ -205,9 +213,21 @@ ffi::Error RelionCubSortScanBatchedF32Impl(
     {
         const int rows = static_cast<int>(std::min<int64_t>(group_rows, row_count - first));
         const int64_t offset = first * static_cast<int64_t>(count);
-        relion_row_positive_counts_kernel<<<rows, 256, 0, stream>>>(
-            input_ptr + offset, counts, count);
-        error = cudaGetLastError();
+        // One block per 4096-weight span of a row: a block per row read a
+        // K15 row of about 20 M weights alone (17.6 ms per batch, nsys 14693142).
+        error = cudaMemsetAsync(counts, 0, static_cast<size_t>(rows) * sizeof(int32_t), stream);
+        if (error == cudaSuccess)
+        {
+            for (int row_base = 0; row_base < rows && error == cudaSuccess; row_base += kRelionMaxGridRows)
+            {
+                const dim3 count_grid(
+                    static_cast<unsigned>((count + kRelionPositiveCountSpan - 1) / kRelionPositiveCountSpan),
+                    static_cast<unsigned>(std::min(kRelionMaxGridRows, rows - row_base)));
+                relion_row_positive_counts_kernel<<<count_grid, kRelionPositiveCountBlock, 0, stream>>>(
+                    input_ptr + offset, counts, count, row_base);
+                error = cudaGetLastError();
+            }
+        }
         if (error == cudaSuccess)
             error = cudaMemsetAsync(offsets, 0, sizeof(int32_t), stream);
         if (error == cudaSuccess)
@@ -223,10 +243,15 @@ ffi::Error RelionCubSortScanBatchedF32Impl(
                 rows * count, rows, offsets, offsets + 1, 0, sizeof(float) * 8, stream);
         if (error == cudaSuccess)
         {
-            const dim3 grid(static_cast<unsigned>((count + 255) / 256), static_cast<unsigned>(rows));
-            relion_zero_fill_right_align_kernel<<<grid, 256, 0, stream>>>(
-                sorted_ptr + offset, offsets, cumulative_ptr + offset, count);
-            error = cudaGetLastError();
+            for (int row_base = 0; row_base < rows && error == cudaSuccess; row_base += kRelionMaxGridRows)
+            {
+                const dim3 grid(
+                    static_cast<unsigned>((count + 255) / 256),
+                    static_cast<unsigned>(std::min(kRelionMaxGridRows, rows - row_base)));
+                relion_zero_fill_right_align_kernel<<<grid, 256, 0, stream>>>(
+                    sorted_ptr + offset, offsets, cumulative_ptr + offset, count, row_base);
+                error = cudaGetLastError();
+            }
         }
         if (error == cudaSuccess)
             error = cudaMemcpyAsync(
