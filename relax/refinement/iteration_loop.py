@@ -2469,6 +2469,30 @@ def refine_single_volume(
         # order; it makes the two callable independently, which is what the
         # overlap option uses. Serial dispatch stays the default.
         Ft_y_0 = Ft_ctf_0 = Ft_y_1 = Ft_ctf_1 = None
+        if use_local:
+            local_parent_oversampling_order = (
+                int(state.adaptive_oversampling) if state.adaptive_oversampling > 0 else 0
+            )
+            local_parent_precision = _local_search_precision_flags(
+                numbered_relion_iteration,
+                pass_index=1,
+                static_em_kwargs=_DENSE_EM_STATIC_KWARGS,
+            )
+            local_fine_precision = _local_search_precision_flags(
+                numbered_relion_iteration,
+                pass_index=2,
+                static_em_kwargs=_DENSE_EM_STATIC_KWARGS,
+            )
+            if local_parent_oversampling_order > 0:
+                local_adaptive_full_parent = _local_adaptive_pass2_full_parent_enabled()
+                local_adaptive_rotation_only = _local_adaptive_pass2_rotation_only_enabled()
+                local_adaptive_denominator_mode = (
+                    _local_adaptive_pass2_denominator_support_mode()
+                )
+            else:
+                local_adaptive_full_parent = False
+                local_adaptive_rotation_only = False
+                local_adaptive_denominator_mode = None
 
         def _run_half_estep(k):
             nonlocal Ft_y_0, Ft_ctf_0, Ft_y_1, Ft_ctf_1
@@ -2867,7 +2891,6 @@ def refine_single_volume(
                 pose_rotation_eulers[k] = None
                 coarse_ha[k] = score_result.coarse_ha
             elif use_local:
-                local_parent_oversampling_order = int(state.adaptive_oversampling) if state.adaptive_oversampling > 0 else 0
                 local_optics_values = _optics_group_kwargs(
                     optics_group_ids_per_half[k],
                     experiment_datasets[k],
@@ -2884,26 +2907,6 @@ def refine_single_volume(
                     with_log_prior=False,
                     zero_cold_center=not k_class_enabled,
                 )
-                local_parent_precision = _local_search_precision_flags(
-                    numbered_relion_iteration,
-                    pass_index=1,
-                    static_em_kwargs=_DENSE_EM_STATIC_KWARGS,
-                )
-                local_fine_precision = _local_search_precision_flags(
-                    numbered_relion_iteration,
-                    pass_index=2,
-                    static_em_kwargs=_DENSE_EM_STATIC_KWARGS,
-                )
-                if local_parent_oversampling_order > 0:
-                    local_adaptive_full_parent = _local_adaptive_pass2_full_parent_enabled()
-                    local_adaptive_rotation_only = _local_adaptive_pass2_rotation_only_enabled()
-                    local_adaptive_denominator_mode = (
-                        _local_adaptive_pass2_denominator_support_mode()
-                    )
-                else:
-                    local_adaptive_full_parent = False
-                    local_adaptive_rotation_only = False
-                    local_adaptive_denominator_mode = None
                 local_result = _score_half_local_in_bpref_scope(
                     half=LocalHalfData(
                         k=k,
@@ -5371,6 +5374,26 @@ def refine_single_volume(
         pass_index=2,
         static_em_kwargs=_DENSE_EM_STATIC_KWARGS,
     )
+    if final_use_local:
+        final_local_parent_precision = _local_search_precision_flags(
+            final_sampling_relion_iteration,
+            pass_index=1,
+            static_em_kwargs=_DENSE_EM_STATIC_KWARGS,
+        )
+        final_local_fine_precision = (
+            final_use_float64_scoring,
+            final_use_float64_projections,
+        )
+        if final_local_parent_oversampling_order > 0:
+            final_local_adaptive_full_parent = _local_adaptive_pass2_full_parent_enabled()
+            final_local_adaptive_rotation_only = _local_adaptive_pass2_rotation_only_enabled()
+            final_local_adaptive_denominator_mode = (
+                _local_adaptive_pass2_denominator_support_mode()
+            )
+        else:
+            final_local_adaptive_full_parent = False
+            final_local_adaptive_rotation_only = False
+            final_local_adaptive_denominator_mode = None
     final_outs = PerHalfOutputs()
     for k in range(2):
         bpref_diagnostics.clear_bpref_contribution_dump_context()
@@ -5515,25 +5538,6 @@ def refine_single_volume(
                     with_log_prior=False,
                     zero_cold_center=False,
                 )
-                final_local_parent_precision = _local_search_precision_flags(
-                    final_sampling_relion_iteration,
-                    pass_index=1,
-                    static_em_kwargs=_DENSE_EM_STATIC_KWARGS,
-                )
-                final_local_fine_precision = (
-                    final_use_float64_scoring,
-                    final_use_float64_projections,
-                )
-                if final_local_parent_oversampling_order > 0:
-                    final_local_adaptive_full_parent = _local_adaptive_pass2_full_parent_enabled()
-                    final_local_adaptive_rotation_only = _local_adaptive_pass2_rotation_only_enabled()
-                    final_local_adaptive_denominator_mode = (
-                        _local_adaptive_pass2_denominator_support_mode()
-                    )
-                else:
-                    final_local_adaptive_full_parent = False
-                    final_local_adaptive_rotation_only = False
-                    final_local_adaptive_denominator_mode = None
                 final_result = _score_half_local_in_bpref_scope(
                     half=LocalHalfData(
                         k=k,
