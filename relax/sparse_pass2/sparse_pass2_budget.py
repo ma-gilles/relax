@@ -386,6 +386,35 @@ def _jax_allocator_pool_free_bytes() -> int | None:
     return max(0, int(pool) - int(bytes_in_use))
 
 
+def jax_allocator_largest_allocation_bytes() -> int | None:
+    """The largest single array the JAX GPU allocator can allocate now, if it reports enough.
+
+    Either its largest free block, or a new region grown from physically free
+    memory up to its limit. The free totals above do not bound one array: after
+    a 18 GiB cache was freed, EMPIAR-10345 iteration 13 had over 40 GiB free in
+    the pool and on the device but could not allocate its 20.19 GiB cache
+    (bench 14643272). ``None`` when the allocator does not report its largest
+    free block.
+    """
+
+    try:
+        devices = [device for device in jax.devices() if getattr(device, "platform", "") in {"gpu", "cuda"}]
+        if not devices:
+            return None
+        stats = devices[0].memory_stats()
+    except Exception:
+        return None
+    if not stats or stats.get("largest_free_block_bytes") is None:
+        return None
+    largest = int(stats["largest_free_block_bytes"])
+    limit, pool = stats.get("bytes_limit"), stats.get("pool_bytes")
+    growth = 0 if limit is None or pool is None else max(0, int(limit) - int(pool))
+    physical = _device_free_memory_bytes()
+    if physical is not None:
+        growth = min(growth, int(physical))
+    return max(largest, growth)
+
+
 def _dtype_itemsize(dtype) -> int:
     return int(np.dtype(dtype).itemsize)
 

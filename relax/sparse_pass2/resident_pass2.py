@@ -175,6 +175,7 @@ from relax.sparse_pass2.sparse_pass2_budget import (
     _projection_cache_max_bytes_for_pass,
     _projection_cache_transient_bytes,
     device_available_bytes,
+    jax_allocator_largest_allocation_bytes,
 )
 from relax.sparse_pass2.sparse_pass2_policy import (
     _RELION_WAVG_ATOMIC_SCALE_AA_ENV,
@@ -3144,6 +3145,23 @@ def _resident_pass2(
             operands_yield_to_cache = True
             stream_projection_budget_bytes = unreserved_budget_bytes
         reserved_operand_bytes = 0
+    # The whole-grid cache is one array: it must also fit the largest block the
+    # allocator can hand out, which after an earlier half's cache can be far
+    # below the free total (EMPIAR-10345 it13 half 2, bench 14643272).
+    largest_allocation_bytes = jax_allocator_largest_allocation_bytes()
+    if (
+        not stream_projections
+        and largest_allocation_bytes is not None
+        and cache_projection_bytes > largest_allocation_bytes
+    ):
+        logger.info(
+            "Resident pass-2 streams its projections: the %.2f GiB whole-grid cache is larger than the "
+            "%.2f GiB the allocator can hand out as one block",
+            cache_projection_bytes / float(1024**3),
+            largest_allocation_bytes / float(1024**3),
+        )
+        stream_projections = True
+        operands_yield_to_cache = False
     stream_keeps_chunk_operands = tilt is None and (stream_projections or operands_yield_to_cache)
     if stream_projections:
         score_cache = recon_cache = recon_abs2_cache = None

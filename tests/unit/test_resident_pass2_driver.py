@@ -1736,3 +1736,33 @@ def test_lone_overflow_chunks_match_the_whole_chunk_pass(_resident_production_en
     }
     print("lone vs whole rel_l2:", diffs, "bound", bound)
     assert all(value < bound for value in diffs.values()), diffs
+
+
+def test_largest_allocation_is_the_free_block_or_the_pool_growth(monkeypatch):
+    """bench 14643272 (EMPIAR-10345 it13 half 2): over 40 GiB free in total, but no block for
+    a 20.19 GiB cache. The largest single allocation is the largest free block or what the
+    pool can still grow by from physically free memory."""
+
+    from relax.sparse_pass2 import sparse_pass2_budget as budget
+
+    gib = 1024**3
+
+    class Device:
+        platform = "gpu"
+
+        def __init__(self, stats):
+            self._stats = stats
+
+        def memory_stats(self):
+            return self._stats
+
+    stats = {"largest_free_block_bytes": 18 * gib, "bytes_limit": 60 * gib, "pool_bytes": 50 * gib}
+    monkeypatch.setattr(budget.jax, "devices", lambda: [Device(stats)])
+    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 13 * gib)
+    assert budget.jax_allocator_largest_allocation_bytes() == 18 * gib
+    stats["pool_bytes"] = 40 * gib
+    assert budget.jax_allocator_largest_allocation_bytes() == 18 * gib  # growth capped by 13 GiB free
+    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 30 * gib)
+    assert budget.jax_allocator_largest_allocation_bytes() == 20 * gib
+    del stats["largest_free_block_bytes"]
+    assert budget.jax_allocator_largest_allocation_bytes() is None
