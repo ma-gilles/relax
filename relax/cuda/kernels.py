@@ -796,7 +796,9 @@ def relion_cub_sort_scan_batched_f32(
 
     Rows remain serialized on the caller's XLA stream. The implementation
     reuses one stream-ordered scratch allocation, so this changes dispatch and
-    allocation topology without changing any row's CUB arithmetic.
+    allocation topology without changing any row's CUB arithmetic. Rows must be
+    posterior weights (zero or positive, no NaN): only the positive weights are
+    radix-sorted and the zeros are written in front of them.
     """
 
     if values.dtype != jnp.float32 or values.ndim != 2:

@@ -73,13 +73,16 @@ def test_relion_f32_posterior_cuda_source_pins_deployed_arithmetic():
     batched_sort_start = source.index("ffi::Error RelionCubSortScanBatchedF32Impl")
     batched_sort_end = source.index("// Opt-in grouped coarse score-to-support transaction.", batched_sort_start)
     batched_sort = source[batched_sort_start:batched_sort_end]
-    # One segmented radix sort per group of rows (an exact permutation of the
-    # per-row sort's keys), then RELION's Ampere scan once per row.
+    # One segmented radix sort of the positive weights per group of rows (an
+    # exact permutation of the per-row sort's keys behind the row's zeros),
+    # then RELION's Ampere scan once per whole row.
+    assert "cub::DeviceSelect::If(" in batched_sort
     assert "cub::DeviceSegmentedRadixSort::SortKeys(" in batched_sort
     assert "cub::DeviceRadixSort::SortKeys(" not in batched_sort
     assert "for (int64_t row = 0; row < row_count" in batched_sort
     assert "relion_ampere_inclusive_sum_f32(" in batched_sort
-    assert "cudaMallocAsync(&temporary, aligned_cub_bytes + offsets_bytes, stream)" in batched_sort
+    assert "cumulative_ptr + offset, count, stream)" in batched_sort
+    assert "cudaMallocAsync(&temporary, aligned_cub_bytes + index_bytes, stream)" in batched_sort
     assert "cudaFreeAsync(temporary, stream)" in batched_sort
     assert "cudaStreamSynchronize" not in batched_sort
 
@@ -193,6 +196,7 @@ def test_batched_relion_f32_posterior_primitives_match_scalar_rows(
 
 
 @pytest.mark.gpu
+@pytest.mark.parametrize("zero_fraction", [0.2, 0.995])
 @pytest.mark.parametrize("rows,count", [(37, 24192), (500, 777), (1, 5)])
 def test_batched_cub_sort_scan_matches_scalar_rows_at_pass1_sizes(
     monkeypatch,
@@ -200,12 +204,14 @@ def test_batched_cub_sort_scan_matches_scalar_rows_at_pass1_sizes(
     gpu_device,
     rows,
     count,
+    zero_fraction,
 ):
     """The batch's segmented sort gives every row the per-row sort's keys and scan.
 
     Pass-1 significance sorts batches of 500 images of about 24k coarse
     weights; ties, zeros and a signed zero are planted so the sort order of
-    equal keys is exercised.
+    equal keys is exercised. Most weights underflow to zero late in a run, so
+    rows that are nearly all zeros exercise the positive-only sort.
     """
 
     import recovar.cuda_backproject as cuda_backproject
@@ -217,7 +223,7 @@ def test_batched_cub_sort_scan_matches_scalar_rows_at_pass1_sizes(
 
     rng = np.random.default_rng(rows * 7919 + count)
     weights = np.exp(rng.normal(scale=4.0, size=(rows, count))).astype(np.float32)
-    weights[:, : max(count // 5, 1)] = 0.0
+    weights[:, : max(int(count * zero_fraction), 1)] = 0.0
     weights[:, -1] = -0.0
     weights[:, count // 2 :: 7] = weights[:, count // 2 : count // 2 + 1]
     for row in weights:

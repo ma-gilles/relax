@@ -68,10 +68,46 @@ ffi::Error RelionCubSortScanF32Impl(
     return ffi::Error::Success();
 }
 
-__global__ void relion_row_offsets_kernel(int32_t* offsets, int row_count, int count)
+// Rows of the batched sort are posterior weights: zero or positive, never NaN
+// (relion_exponentiate_*_f32 writes 0 below the underflow exponent). Their
+// ascending sort is the row's zeros followed by its sorted positive weights, so
+// only the positives are radix-sorted, as RELION's filterGreaterZeroOnDevice
+// does before sortOnDevice; the zeros are written back in front. The sorted rows
+// are the same values as a sort of the whole row, and the scans still run over
+// whole rows.
+struct RelionBatchedPositiveF32
 {
-    const int row = static_cast<int>(blockIdx.x) * blockDim.x + threadIdx.x;
-    if (row <= row_count) offsets[row] = row * count;
+    __device__ __forceinline__ bool operator()(const float& value) const
+    {
+        return value > 0.0f;
+    }
+};
+
+__global__ void relion_row_positive_counts_kernel(
+    const float* values, int32_t* counts, int count)
+{
+    const int row = blockIdx.x;
+    const float* row_values = values + static_cast<int64_t>(row) * count;
+    int positive = 0;
+    for (int i = threadIdx.x; i < count; i += blockDim.x)
+        positive += row_values[i] > 0.0f;
+    using Reduce = cub::BlockReduce<int, 256>;
+    __shared__ typename Reduce::TempStorage temp;
+    const int total = Reduce(temp).Sum(positive);
+    if (threadIdx.x == 0) counts[row] = total;
+}
+
+__global__ void relion_zero_fill_right_align_kernel(
+    const float* packed, const int32_t* offsets, float* rows_out, int count)
+{
+    const int row = blockIdx.y;
+    const int64_t column = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (column >= count) return;
+    const int begin = offsets[row];
+    const int positive = offsets[row + 1] - begin;
+    const int zeros = count - positive;
+    rows_out[static_cast<int64_t>(row) * count + column] =
+        column < zeros ? 0.0f : packed[begin + (column - zeros)];
 }
 
 ffi::Error RelionCubSortScanBatchedF32Impl(
@@ -107,12 +143,15 @@ ffi::Error RelionCubSortScanBatchedF32Impl(
     float* cumulative_ptr = static_cast<float*>(cumulative->untyped_data());
 
     // Rows are sorted by one segmented radix sort per group of rows whose
-    // cells fit CUB's int item count. A sort is an exact permutation of its
-    // keys, so each row's sorted run is bitwise the per-row
-    // cub::DeviceRadixSort::SortKeys result; only the launch structure
-    // changes (a per-row sort was six launches). The scans stay one
-    // relion_ampere_inclusive_sum_f32 per row: its host item count fixes the
-    // float32 decoupled-lookback order the significance boundary is defined by.
+    // cells fit CUB's int item count. Each group's positive weights are
+    // selected in order into the cumulative buffer (free until the scans),
+    // sorted by row segment into the sorted buffer, and written back right
+    // aligned behind the row's zeros through the cumulative buffer. A sort is
+    // an exact permutation of its keys, so each row's sorted run is bitwise
+    // the per-row cub::DeviceRadixSort::SortKeys result of the whole row; only
+    // the launch structure changes. The scans stay one
+    // relion_ampere_inclusive_sum_f32 per whole row: its host item count fixes
+    // the float32 decoupled-lookback order the significance boundary is defined by.
     const int64_t group_rows = std::max<int64_t>(
         1, std::min<int64_t>(
                row_count,
@@ -120,10 +159,21 @@ ffi::Error RelionCubSortScanBatchedF32Impl(
     const int group_cells = static_cast<int>(group_rows * count);
     size_t sort_bytes = 0;
     size_t scan_bytes = 0;
+    size_t select_bytes = 0;
+    size_t offsets_scan_bytes = 0;
     cudaError_t error = cub::DeviceSegmentedRadixSort::SortKeys(
         nullptr, sort_bytes, input_ptr, sorted_ptr, group_cells,
         static_cast<int>(group_rows), static_cast<const int32_t*>(nullptr),
         static_cast<const int32_t*>(nullptr), 0, sizeof(float) * 8, stream);
+    if (error == cudaSuccess)
+        error = cub::DeviceSelect::If(
+            nullptr, select_bytes, input_ptr, cumulative_ptr,
+            static_cast<int32_t*>(nullptr), group_cells,
+            RelionBatchedPositiveF32(), stream);
+    if (error == cudaSuccess)
+        error = cub::DeviceScan::InclusiveSum(
+            nullptr, offsets_scan_bytes, static_cast<const int32_t*>(nullptr),
+            static_cast<int32_t*>(nullptr), static_cast<int>(group_rows), stream);
     if (error != cudaSuccess)
         return ffi::Error::Internal(
             std::string("RelionCubSortScanBatchedF32 sort query: ") +
@@ -135,30 +185,54 @@ ffi::Error RelionCubSortScanBatchedF32Impl(
             std::string("RelionCubSortScanBatchedF32 scan query: ") +
             cudaGetErrorString(error));
 
-    const size_t cub_bytes = std::max<size_t>(1, std::max(sort_bytes, scan_bytes));
+    const size_t cub_bytes = std::max<size_t>(
+        1, std::max(std::max(sort_bytes, scan_bytes), std::max(select_bytes, offsets_scan_bytes)));
     const size_t aligned_cub_bytes = (cub_bytes + 255) & ~static_cast<size_t>(255);
-    const size_t offsets_bytes = (static_cast<size_t>(group_rows) + 1) * sizeof(int32_t);
+    // offsets (group_rows + 1), counts (group_rows) and the selected count.
+    const size_t index_bytes = (2 * static_cast<size_t>(group_rows) + 2) * sizeof(int32_t);
     void* temporary = nullptr;
-    error = cudaMallocAsync(&temporary, aligned_cub_bytes + offsets_bytes, stream);
+    error = cudaMallocAsync(&temporary, aligned_cub_bytes + index_bytes, stream);
     if (error != cudaSuccess)
         return ffi::Error::Internal(
             std::string("RelionCubSortScanBatchedF32 cudaMallocAsync: ") +
             cudaGetErrorString(error));
     int32_t* offsets = reinterpret_cast<int32_t*>(
         static_cast<char*>(temporary) + aligned_cub_bytes);
-    // Every group but the last has group_rows rows; the offsets of a shorter
-    // last group are a prefix of the same table.
-    relion_row_offsets_kernel<<<static_cast<int>((group_rows + 1 + 255) / 256), 256, 0, stream>>>(
-        offsets, static_cast<int>(group_rows), count);
-    error = cudaGetLastError();
+    int32_t* counts = offsets + group_rows + 1;
+    int32_t* selected = counts + group_rows;
 
     for (int64_t first = 0; first < row_count && error == cudaSuccess; first += group_rows)
     {
         const int rows = static_cast<int>(std::min<int64_t>(group_rows, row_count - first));
         const int64_t offset = first * static_cast<int64_t>(count);
-        error = cub::DeviceSegmentedRadixSort::SortKeys(
-            temporary, sort_bytes, input_ptr + offset, sorted_ptr + offset,
-            rows * count, rows, offsets, offsets + 1, 0, sizeof(float) * 8, stream);
+        relion_row_positive_counts_kernel<<<rows, 256, 0, stream>>>(
+            input_ptr + offset, counts, count);
+        error = cudaGetLastError();
+        if (error == cudaSuccess)
+            error = cudaMemsetAsync(offsets, 0, sizeof(int32_t), stream);
+        if (error == cudaSuccess)
+            error = cub::DeviceScan::InclusiveSum(
+                temporary, offsets_scan_bytes, counts, offsets + 1, rows, stream);
+        if (error == cudaSuccess)
+            error = cub::DeviceSelect::If(
+                temporary, select_bytes, input_ptr + offset, cumulative_ptr + offset,
+                selected, rows * count, RelionBatchedPositiveF32(), stream);
+        if (error == cudaSuccess)
+            error = cub::DeviceSegmentedRadixSort::SortKeys(
+                temporary, sort_bytes, cumulative_ptr + offset, sorted_ptr + offset,
+                rows * count, rows, offsets, offsets + 1, 0, sizeof(float) * 8, stream);
+        if (error == cudaSuccess)
+        {
+            const dim3 grid(static_cast<unsigned>((count + 255) / 256), static_cast<unsigned>(rows));
+            relion_zero_fill_right_align_kernel<<<grid, 256, 0, stream>>>(
+                sorted_ptr + offset, offsets, cumulative_ptr + offset, count);
+            error = cudaGetLastError();
+        }
+        if (error == cudaSuccess)
+            error = cudaMemcpyAsync(
+                sorted_ptr + offset, cumulative_ptr + offset,
+                static_cast<size_t>(rows) * count * sizeof(float),
+                cudaMemcpyDeviceToDevice, stream);
     }
     for (int64_t row = 0; row < row_count && error == cudaSuccess; ++row)
     {
