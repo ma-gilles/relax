@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 
 import numpy as np
 import pytest
@@ -142,3 +143,18 @@ def test_auto_has_no_extra_assertion_and_selected_flag_is_public(monkeypatch, tm
     monkeypatch.setenv(selection.ENV_NAME, "invalid")
     with pytest.raises(ValueError, match=selection.ENV_NAME):
         selection.selected_cli_args()
+
+
+@pytest.mark.parametrize("choice", ["gemm_hybrid", "gemm_dense"])
+def test_selected_kclass_replay_uses_cuda_operands(monkeypatch, choice):
+    monkeypatch.setenv(selection.ENV_NAME, choice)
+    seen = []
+
+    def capture(argv, **_kwargs):
+        seen.append(argv)
+        return subprocess.CompletedProcess(argv, 1)
+
+    monkeypatch.setattr(selection.subprocess, "run", capture)
+    selection.run_selected_command(["python", "run_k_class_parity.py"], output_kind="kclass")
+    assert seen == [["python", "run_k_class_parity.py", "--coarse-engine", choice,
+                     "--image-fourier-backend", "relion_cuda", "--accumulate-noise"]]

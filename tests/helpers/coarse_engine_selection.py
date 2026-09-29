@@ -121,6 +121,13 @@ def run_selected_command(
 ) -> subprocess.CompletedProcess:
     """Launch a parity subprocess through its public selector and verify real work."""
     argv = [*cmd, *selected_cli_args()]
+    if selected_coarse_engine() != "auto" and output_kind == "kclass":
+        # This diagnostic replay defaults to host images and omits noise sums;
+        # the selected CUDA paths require their production operands.
+        if "--image-fourier-backend" not in argv:
+            argv.extend(["--image-fourier-backend", "relion_cuda"])
+        if "--accumulate-noise" not in argv:
+            argv.append("--accumulate-noise")
     proc = subprocess.run(argv, **kwargs)
     if proc.returncode or not require_global or selected_coarse_engine() == "auto":
         return proc

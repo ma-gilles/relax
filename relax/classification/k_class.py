@@ -2232,12 +2232,13 @@ def run_dense_k_class_em_adaptive(
     if coarse_engine not in {"auto", "gemm_hybrid", "gemm_dense"}:
         raise ValueError(f"unknown coarse engine {coarse_engine!r}")
     if coarse_engine == "gemm_hybrid":
-        if relion_projector_half is None or not engine_kwargs.get("mstep_relion_x_half", False):
-            raise ValueError("gemm_hybrid requires the RELION projector and resident x-half fine pass")
+        if relion_projector_half is None:
+            raise ValueError("gemm_hybrid requires the RELION projector")
         if skip_significance_pruning:
             raise ValueError("gemm_hybrid requires the executed coarse significance scorer")
         if pass2_use_float64_scoring or pass2_use_float64_projections or engine_kwargs.get("use_float64_scoring"):
             raise ValueError("gemm_hybrid requires float32 production arithmetic")
+        engine_kwargs["mstep_relion_x_half"] = True
         engine_kwargs["sparse_pass2"] = True
     if coarse_engine == "gemm_dense":
         if bool(pass2_use_float64_scoring) or bool(pass2_use_float64_projections) or bool(engine_kwargs.get("use_float64_scoring")):
