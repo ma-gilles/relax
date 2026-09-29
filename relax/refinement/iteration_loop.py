@@ -192,7 +192,10 @@ from relax.refinement.half_scoring import (
     _score_half_dense_in_bpref_scope,
     _score_half_local_in_bpref_scope,
 )
-from relax.refinement.iteration_planning import InitialGridSampling, build_initial_coarse_grids
+from relax.refinement.iteration_planning import (
+    build_initial_coarse_grids,
+    build_sealed_initial_coarse_grids,
+)
 from relax.refinement.iteration_snapshot import (
     SnapshotParticleState,
     SnapshotReferenceState,
@@ -979,20 +982,29 @@ def refine_single_volume(
     current_healpix_order = (
         int(schedule.init_healpix_order) if resume is None else _exhaustive_grid_order_for_state(state)
     )
-    initial_grids = build_initial_coarse_grids(
-        InitialGridSampling(
-            healpix_order=current_healpix_order,
-            translations=translations if resume is None else None,
-            init_healpix_order=schedule.init_healpix_order if resume is None else state.healpix_order,
-            init_translation_range=schedule.init_translation_range if resume is None else state.translation_range,
-            init_translation_step=schedule.init_translation_step if resume is None else state.translation_step,
+    if sealed_sampling_state is not None:
+        initial_grids = build_sealed_initial_coarse_grids(
+            sealed_sampling_state,
+            initialized_healpix_order=(
+                schedule.init_healpix_order if resume is None else state.healpix_order
+            ),
+            voxel_size=cryo.voxel_size,
+            log=logger,
+        )
+    else:
+        initial_grids = build_initial_coarse_grids(
+            current_healpix_order,
+            translations if resume is None else None,
+            translation_range=(
+                schedule.init_translation_range if resume is None else state.translation_range
+            ),
+            translation_step=(
+                schedule.init_translation_step if resume is None else state.translation_step
+            ),
             n_classes=n_classes,
             voxel_size=cryo.voxel_size,
             symmetry=symmetry,
-        ),
-        sealed_sampling_state,
-        logger,
-    )
+        )
     current_rotations = initial_grids.rotations
     current_rotation_eulers = initial_grids.rotation_eulers
     base_translations = initial_grids.base_translations

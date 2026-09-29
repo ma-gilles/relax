@@ -59,10 +59,22 @@ def _initial_grids(**overrides):
     )
     kwargs.update(overrides)
     sealed_sampling_state = kwargs.pop("sealed_sampling_state", None)
+    initialized_healpix_order = kwargs.pop("init_healpix_order")
+    translation_range = kwargs.pop("init_translation_range")
+    translation_step = kwargs.pop("init_translation_step")
+    if sealed_sampling_state is not None:
+        return iteration_planning.build_sealed_initial_coarse_grids(
+            sealed_sampling_state,
+            initialized_healpix_order=initialized_healpix_order,
+            voxel_size=kwargs["voxel_size"],
+            log=logging.getLogger("test_initial_coarse_grid_owner"),
+        )
     return iteration_planning.build_initial_coarse_grids(
-        iteration_planning.InitialGridSampling(**kwargs),
-        sealed_sampling_state,
-        logging.getLogger("test_initial_coarse_grid_owner"),
+        kwargs.pop("healpix_order"),
+        kwargs.pop("translations"),
+        translation_range=translation_range,
+        translation_step=translation_step,
+        **kwargs,
     )
 
 
@@ -117,15 +129,28 @@ def test_caller_translation_table_is_kept_as_the_base_grid(monkeypatch):
     assert _same(grids.translations, jnp.asarray(table, dtype=iteration_planning._dense_global_scoring_dtype()))
 
 
-def test_controller_materializes_coarse_grids_through_the_owners():
+def test_controller_materializes_explicit_coarse_grid_variants():
     assert tuple(inspect.signature(iteration_planning.build_initial_coarse_grids).parameters) == (
-        "sampling_plan",
+        "healpix_order",
+        "translations",
+        "translation_range",
+        "translation_step",
+        "n_classes",
+        "voxel_size",
+        "symmetry",
+    )
+    assert tuple(
+        inspect.signature(iteration_planning.build_sealed_initial_coarse_grids).parameters
+    ) == (
         "sealed_sampling_state",
+        "initialized_healpix_order",
+        "voxel_size",
         "log",
     )
     source = inspect.getsource(iteration_loop.refine_single_volume)
     assert source.count("build_initial_coarse_grids(") == 1
-    assert source.count("InitialGridSampling(") == 1
+    assert source.count("build_sealed_initial_coarse_grids(") == 1
+    assert "InitialGridSampling(" not in source
     assert "_sealed_sampling_base_grids(" not in source
     assert "_translation_grid_for_class_count(" not in source
     assert source.count("_relion_base_translation_grid(") == 6
