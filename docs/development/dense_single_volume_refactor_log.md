@@ -807,3 +807,32 @@ single-volume boundary has 17 parameters.
 - GPU smoke remains infrastructure-blocked by the unchanged absence of the five
   mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
   produced.
+
+## 2026-09-29 — explicit direction-prior and unregularized-map variants
+
+- Commit `c8c222f` removed four call-only direction-prior input classes and
+  split learning into the intentionally distinct K=1 per-half collapse and
+  K-class combined-prior algorithms. Grid eligibility remains explicit in the
+  controller, and each helper names only the values its algorithm uses.
+- Commit `0447c4b` removed three call-only unregularized-reconstruction input
+  classes. K=1 half reconstruction, K-class shared reconstruction, K=1 sign
+  alignment and K-class sign sharing are now separate operations; the
+  controller shows which sequence runs and when diagnostic reconstruction is
+  skipped.
+- Direction-prior unit tests: 11 passed. The learned-prior controller handoff:
+  1 passed with 2 existing complex-cast warnings. Focused reconstruction,
+  diagnostic-map and sign tests: 4 passed, 381 deselected, with 6 existing
+  complex-cast warnings. Production and focused ownership-test Ruff checks and
+  Python compilation passed. The combined CPU EM fast guard passed all 102
+  cases in 58.97 seconds.
+- Production totals are 14,991 physical and 13,068 nonblank lines across 231
+  functions. Six functions have at least 10 parameters; the two 20+ functions
+  remain the out-of-scope tomography boundaries. The higher function count is
+  the deliberate result of separating distinct algorithms, not a target.
+- Snapshot capture still has four call-only shadow inputs. It is deferred to
+  the controller-state split because flattening them would create a
+  25-argument serializer; the correction needs a real longer-lived checkpoint
+  owner rather than another cosmetic signature change.
+- GPU smoke remains infrastructure-blocked by the unchanged absence of the five
+  mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
+  produced.
