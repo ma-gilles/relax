@@ -93,7 +93,8 @@ STATUS_LEGEND = (
     " across-seed RELION band (all RELION runs of all seeds), and relax not below its same-seed RELION run on a majority"
     " of seeds; the Quality column shows the worst per-seed gap to the same-seed RELION run. A seed whose relax map"
     " reproduces its same-seed RELION map (map FSC-AUC ≥ 0.9999) counts GT differences under 1e-4 as ties; the numbers"
-    " are still shown. The page lists full-size"
+    " are still shown. A row may carry its own tie tolerance, decided by the user from measured relax spread (see its"
+    " provenance note). The page lists full-size"
     " datasets only: single-particle and VDAM rows need more than 10k particles (smaller fixtures are for testing and"
     " debugging and stay in the JSON with benchmark: false); cryo-ET rows count from 1k particles (about 40 tilts each)."
 )
@@ -172,6 +173,12 @@ def _validate_quality(row):
     reason = row.get("quality_reason")
     if not reason or "|" in reason or "\n" in reason:
         raise ValueError(f"{row['id']}: quality_reason must be one non-empty line without '|'")
+    tt = row.get("tie_tolerance")
+    if tt is not None:
+        if set(tt) != {"value", "evidence", "decision"} or not all(tt.values()):
+            raise ValueError(f"{row['id']}: tie_tolerance needs value, evidence and decision")
+        if not 0 < float(tt["value"]) <= REPRODUCED_TIE:
+            raise ValueError(f"{row['id']}: tie_tolerance must be in (0, {REPRODUCED_TIE:g}]")
 
 
 def _is_initialmodel(row):
@@ -337,24 +344,34 @@ def _gap(x):
     return "−" + text[1:] if text.startswith("-") else text
 
 
-def multiseed_quality(relax, same_seed_relion, band_values, same_seed_map_auc=None):
+def row_tie(row):
+    """A row-level GT tie tolerance decided by the user for one row (row field ``tie_tolerance``: value, evidence and
+    decision), or None. It widens the multi-seed rule's tie for that row only."""
+    tt = row.get("tie_tolerance")
+    return None if tt is None else float(tt["value"])
+
+
+def multiseed_quality(relax, same_seed_relion, band_values, same_seed_map_auc=None, row_tie_value=None):
     """The multi-seed accuracy rule of STATUS_LEGEND. Returns (hit, reason).
 
     relax, same_seed_relion: {seed: value of the row's metric}; band_values: every RELION value of the row (all
     seeds); same_seed_map_auc: optional {seed: relax-vs-same-seed-RELION map FSC-AUC}. Hit when every relax seed is
     inside or above the across-seed RELION band and relax is not below its same-seed RELION run on a majority of
     seeds. Differences below TIE count as equal, and below REPRODUCED_TIE for a seed whose map reproduces its
-    same-seed RELION map (map FSC-AUC >= REPRODUCED_MAP_AUC). The reason states the worst per-seed gap.
+    same-seed RELION map (map FSC-AUC >= REPRODUCED_MAP_AUC). row_tie_value (a row's ``tie_tolerance``, see row_tie)
+    raises the tie for every seed of that row. The reason states the worst per-seed gap.
     """
     lo, hi = min(band_values), max(band_values)
     maps = same_seed_map_auc or {}
-    tie = {s: REPRODUCED_TIE if maps.get(s, 0.0) >= REPRODUCED_MAP_AUC else TIE for s in relax}
+    tie = {s: max(REPRODUCED_TIE if maps.get(s, 0.0) >= REPRODUCED_MAP_AUC else TIE, row_tie_value or 0.0) for s in relax}
     gaps = {s: relax[s] - same_seed_relion[s] for s in relax}
     worst = min(gaps, key=gaps.get)
     below_band = [s for s in relax if relax[s] < lo - tie[s]]
     n_below = sum(gaps[s] < -tie[s] for s in gaps)
     worst_txt = f"worst s{worst} {_gap(gaps[worst])} vs same-seed RELION"
-    reproduced = [s for s in relax if tie[s] == REPRODUCED_TIE]
+    if row_tie_value:
+        worst_txt += f"; row tie {row_tie_value:.0e}".replace("e-0", "e-")
+    reproduced = [s for s in relax if maps.get(s, 0.0) >= REPRODUCED_MAP_AUC]
     if reproduced:
         worst_txt += (
             f"; same-seed maps reproduced (map FSC-AUC ≥ {min(maps[s] for s in reproduced):.6f}) at"
@@ -615,6 +632,9 @@ def _gpu(row):
 def _note(row):
     relax = row["relax"]
     text = [f"`{row['id']}`: relax source `{relax['source_sha'][:9]}`, {relax['source_repo']}."]
+    if row.get("tie_tolerance"):
+        tt = row["tie_tolerance"]
+        text.append(f"Row tie tolerance {float(tt['value']):g} ({tt['decision']}; evidence `{tt['evidence']}`).")
     if _is_initialmodel(row):
         return " ".join(text + _initialmodel_note(row))
     if row["mask"] is not None:

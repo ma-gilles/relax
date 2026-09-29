@@ -293,3 +293,22 @@ def test_matched_speed_row_needs_the_same_gpu_model_on_both_arms(tmp_path):
     path.write_text(json.dumps(table))
     with pytest.raises(ValueError, match="gpu_count|GPU model and count"):
         load_and_validate(path)
+
+
+@pytest.mark.unit
+def test_row_tie_tolerance_needs_evidence_and_only_widens_its_row(tmp_path):
+    relax, relion, band = {1: 0.239676, 2: 0.240736}, {1: 0.239765, 2: 0.240749}, [0.239765, 0.241146]
+    assert not multiseed_quality(relax, relion, band)[0]
+    hit, reason = multiseed_quality(relax, relion, band, row_tie_value=1e-4)
+    assert hit and "row tie 1e-4" in reason
+    table = json.loads(DEFAULT_JSON.read_text())
+    row = next(r for r in table["rows"] if not r.get("tie_tolerance"))
+    row["tie_tolerance"] = {"value": 1e-4, "evidence": "", "decision": "user"}
+    path = tmp_path / "table.json"
+    path.write_text(json.dumps(table))
+    with pytest.raises(ValueError, match="tie_tolerance"):
+        load_and_validate(path)
+    row["tie_tolerance"] = {"value": 1e-3, "evidence": "x.json", "decision": "user"}
+    path.write_text(json.dumps(table))
+    with pytest.raises(ValueError, match="tie_tolerance"):
+        load_and_validate(path)

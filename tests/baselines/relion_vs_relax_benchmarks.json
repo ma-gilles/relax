@@ -3175,8 +3175,13 @@
     "dataset": "pdb_k4_50k256_c1",
     "sha256": "72b04bea86924aa5240d3245d5c40a0ba110c40120346b718ec5326e366cd0d2"
    },
-   "quality_pass": false,
-   "quality_reason": "worst s29 −8.9e-5 vs same-seed RELION; s29 below across-seed RELION band 0.239765-0.241146 (masked mean GT FSC-AUC)"
+   "quality_pass": true,
+   "quality_reason": "worst s29 −8.9e-5 vs same-seed RELION; row tie 1e-4; inside across-seed band; per-seed gaps s1775735620 −1.3e-5, s29 −8.9e-5, s41 −3.1e-5, s61 −2.0e-6, s67 +1.5e-5, mean −2.4e-5 (masked mean GT FSC-AUC)",
+   "tie_tolerance": {
+    "value": 0.0001,
+    "evidence": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_kspeed_20260925/k4_50k_s29_deficit_20260929/SCORE2.json",
+    "decision": "user 2026-09-29: GT FSC-AUC gaps under 1e-4 are ties for this row, because two relax runs continued from the identical iteration-1 state spread by 1.0e-4"
+   }
   },
   {
    "id": "synth_pdb_k2_50k256_snr05_class3d_25it",
