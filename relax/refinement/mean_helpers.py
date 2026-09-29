@@ -238,41 +238,19 @@ def _previous_resolution_angstrom_for_half_join(
     return None
 
 
-@dataclass(frozen=True, kw_only=True)
-class HalfAccumulatorPair:
-    """The two half-set numerators and denominators joined as one operation."""
-
-    numerator_0: object
-    numerator_1: object
-    denominator_0: object
-    denominator_1: object
-
-
-@dataclass(frozen=True, kw_only=True)
-class HalfJoinGeometry:
-    """Fourier layout and physical scale used to locate join shells."""
-
-    accumulator_volume_shape: tuple[int, ...]
-    grid_size: int
-    voxel_size: float
-    padding_factor: int
-
-
-@dataclass(frozen=True, kw_only=True)
-class HalfJoinPolicy:
-    """Resolution cap and ownership choices for a low-resolution half join."""
-
-    low_resolution_angstrom: float
-    pixel_resolutions: object
-    current_resolution: float
-    preserve_inputs: bool = True
-    return_retained_first_numerator: bool = False
-
-
 def join_half_accumulators_at_low_resolution(
-    accumulators: HalfAccumulatorPair,
-    geometry: HalfJoinGeometry,
-    policy: HalfJoinPolicy,
+    numerators_by_half,
+    denominators_by_half,
+    *,
+    accumulator_volume_shape,
+    grid_size,
+    voxel_size,
+    padding_factor,
+    low_resolution_angstrom,
+    pixel_resolutions,
+    current_resolution,
+    preserve_inputs=True,
+    return_retained_first_numerator=False,
 ):
     """Apply RELION's ``--low_resol_join_halves`` to K=1 half accumulators before the Wiener solve.
 
@@ -287,26 +265,26 @@ def join_half_accumulators_at_low_resolution(
     """
 
     previous_resolution_angstrom = _previous_resolution_angstrom_for_half_join(
-        policy.pixel_resolutions,
-        policy.current_resolution,
-        grid_size=geometry.grid_size,
-        voxel_size=geometry.voxel_size,
+        pixel_resolutions,
+        current_resolution,
+        grid_size=grid_size,
+        voxel_size=voxel_size,
     )
     return regularization_relion.join_halves_at_low_resolution(
-        accumulators.numerator_0,
-        accumulators.numerator_1,
-        accumulators.denominator_0,
-        accumulators.denominator_1,
-        geometry.accumulator_volume_shape,
-        geometry.voxel_size,
-        geometry.grid_size,
-        policy.low_resolution_angstrom,
+        numerators_by_half[0],
+        numerators_by_half[1],
+        denominators_by_half[0],
+        denominators_by_half[1],
+        accumulator_volume_shape,
+        voxel_size,
+        grid_size,
+        low_resolution_angstrom,
         current_resolution_angstrom=previous_resolution_angstrom,
-        padding_factor=geometry.padding_factor,
-        **({"preserve_inputs": False} if not policy.preserve_inputs else {}),
+        padding_factor=padding_factor,
+        **({"preserve_inputs": False} if not preserve_inputs else {}),
         **(
             {"return_retained_first_numerator": True}
-            if policy.return_retained_first_numerator
+            if return_retained_first_numerator
             else {}
         ),
     )

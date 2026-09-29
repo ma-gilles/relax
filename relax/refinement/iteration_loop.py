@@ -209,9 +209,6 @@ from relax.refinement.mean_helpers import (
     DirectionPriorExecution,
     DirectionPriorGridSpec,
     DirectionPriorState,
-    HalfAccumulatorPair,
-    HalfJoinGeometry,
-    HalfJoinPolicy,
     MeanAccumulatorState,
     MeanGeometrySpec,
     MeanPostprocessPolicy,
@@ -3417,25 +3414,17 @@ def refine_single_volume(
             Ft_ctf_combined = _combine_optional_half_accumulators(Ft_ctf_0, Ft_ctf_1, label="Ft_ctf")
         elif parity.low_resol_join_halves_angstrom is not None and parity.low_resol_join_halves_angstrom > 0:
             Ft_y_0, Ft_y_1, Ft_ctf_0, Ft_ctf_1, retained_Ft_y_0_device = join_half_accumulators_at_low_resolution(
-                HalfAccumulatorPair(
-                    numerator_0=Ft_y_0,
-                    numerator_1=Ft_y_1,
-                    denominator_0=Ft_ctf_0,
-                    denominator_1=Ft_ctf_1,
-                ),
-                HalfJoinGeometry(
-                    accumulator_volume_shape=mstep_accumulator_shape,
-                    grid_size=grid_size,
-                    voxel_size=cryo.voxel_size,
-                    padding_factor=PADDING_FACTOR,
-                ),
-                HalfJoinPolicy(
-                    low_resolution_angstrom=parity.low_resol_join_halves_angstrom,
-                    pixel_resolutions=history.pixel_resolutions,
-                    current_resolution=getattr(state, "current_resolution", float("inf")),
-                    preserve_inputs=False,
-                    return_retained_first_numerator=True,
-                ),
+                (Ft_y_0, Ft_y_1),
+                (Ft_ctf_0, Ft_ctf_1),
+                accumulator_volume_shape=mstep_accumulator_shape,
+                grid_size=grid_size,
+                voxel_size=cryo.voxel_size,
+                padding_factor=PADDING_FACTOR,
+                low_resolution_angstrom=parity.low_resol_join_halves_angstrom,
+                pixel_resolutions=history.pixel_resolutions,
+                current_resolution=getattr(state, "current_resolution", float("inf")),
+                preserve_inputs=False,
+                return_retained_first_numerator=True,
             )
 
         # --- RELION-exact M-step ordering ---
@@ -5825,24 +5814,16 @@ def refine_single_volume(
         ]
     if not k_class_enabled and parity.low_resol_join_halves_angstrom is not None and parity.low_resol_join_halves_angstrom > 0:
         final_Ft_y_0, final_Ft_y_1, final_Ft_ctf_0, final_Ft_ctf_1 = join_half_accumulators_at_low_resolution(
-            HalfAccumulatorPair(
-                numerator_0=final_Ft_y_0,
-                numerator_1=final_Ft_y_1,
-                denominator_0=final_Ft_ctf_0,
-                denominator_1=final_Ft_ctf_1,
-            ),
-            HalfJoinGeometry(
-                accumulator_volume_shape=final_mstep_accumulator_shape,
-                grid_size=grid_size,
-                voxel_size=cryo.voxel_size,
-                padding_factor=PADDING_FACTOR,
-            ),
-            HalfJoinPolicy(
-                low_resolution_angstrom=parity.low_resol_join_halves_angstrom,
-                pixel_resolutions=history.pixel_resolutions,
-                current_resolution=getattr(state, "current_resolution", float("inf")),
-                preserve_inputs=False,
-            ),
+            (final_Ft_y_0, final_Ft_y_1),
+            (final_Ft_ctf_0, final_Ft_ctf_1),
+            accumulator_volume_shape=final_mstep_accumulator_shape,
+            grid_size=grid_size,
+            voxel_size=cryo.voxel_size,
+            padding_factor=PADDING_FACTOR,
+            low_resolution_angstrom=parity.low_resol_join_halves_angstrom,
+            pixel_resolutions=history.pixel_resolutions,
+            current_resolution=getattr(state, "current_resolution", float("inf")),
+            preserve_inputs=False,
         )
     if not k_class_enabled:
         # The unfiltered maps are made; drop the pass outputs' references so the

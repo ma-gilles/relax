@@ -8,18 +8,16 @@ mapping, the previous-resolution cap, dtypes and the detail-record layout.
 
 from __future__ import annotations
 
-import ast
-import dataclasses
 import inspect
 
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.resolution import shell_index_to_resolution_angstrom
-from relax.refinement import mean_helpers
 from relax.reconstruction import regularization_relion
-from helpers.float_compare import assert_matches
+from relax.refinement import mean_helpers
 
 pytestmark = pytest.mark.unit
 
@@ -75,34 +73,24 @@ class TestPreviousResolutionForHalfJoin:
 
 
 class TestJoinHalfAccumulatorsAtLowResolution:
-    def test_signature_keeps_the_three_owners_visible(self):
+    def test_signature_exposes_dependencies_without_call_only_owners(self):
         function = mean_helpers.join_half_accumulators_at_low_resolution
         assert tuple(inspect.signature(function).parameters) == (
-            "accumulators",
-            "geometry",
-            "policy",
+            "numerators_by_half",
+            "denominators_by_half",
+            "accumulator_volume_shape",
+            "grid_size",
+            "voxel_size",
+            "padding_factor",
+            "low_resolution_angstrom",
+            "pixel_resolutions",
+            "current_resolution",
+            "preserve_inputs",
+            "return_retained_first_numerator",
         )
-
-        tree = ast.parse(inspect.getsource(function))
-        assigned_names = {
-            target.id
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.Assign, ast.AnnAssign))
-            for target in (
-                [*node.targets] if isinstance(node, ast.Assign) else [node.target]
-            )
-            if isinstance(target, ast.Name)
-        }
-        owner_fields = {
-            field.name
-            for owner in (
-                mean_helpers.HalfAccumulatorPair,
-                mean_helpers.HalfJoinGeometry,
-                mean_helpers.HalfJoinPolicy,
-            )
-            for field in dataclasses.fields(owner)
-        }
-        assert assigned_names.isdisjoint(owner_fields)
+        assert not hasattr(mean_helpers, "HalfAccumulatorPair")
+        assert not hasattr(mean_helpers, "HalfJoinGeometry")
+        assert not hasattr(mean_helpers, "HalfJoinPolicy")
 
     def test_delegates_positional_layout_and_previous_resolution_cap(self, monkeypatch):
         calls = []
@@ -115,23 +103,15 @@ class TestJoinHalfAccumulatorsAtLowResolution:
         monkeypatch.setattr(regularization_relion, "join_halves_at_low_resolution", spy)
         ft_y, ft_ctf = _random_accumulators(0)
         result = mean_helpers.join_half_accumulators_at_low_resolution(
-            mean_helpers.HalfAccumulatorPair(
-                numerator_0=ft_y[0],
-                numerator_1=ft_y[1],
-                denominator_0=ft_ctf[0],
-                denominator_1=ft_ctf[1],
-            ),
-            mean_helpers.HalfJoinGeometry(
-                accumulator_volume_shape=ACCUMULATOR_SHAPE,
-                grid_size=GRID_SIZE,
-                voxel_size=1.5,
-                padding_factor=PADDING_FACTOR,
-            ),
-            mean_helpers.HalfJoinPolicy(
-                low_resolution_angstrom=40.0,
-                pixel_resolutions=[2],
-                current_resolution=float("inf"),
-            ),
+            ft_y,
+            ft_ctf,
+            accumulator_volume_shape=ACCUMULATOR_SHAPE,
+            grid_size=GRID_SIZE,
+            voxel_size=1.5,
+            padding_factor=PADDING_FACTOR,
+            low_resolution_angstrom=40.0,
+            pixel_resolutions=[2],
+            current_resolution=float("inf"),
         )
 
         assert result is sentinel
@@ -166,23 +146,15 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             padding_factor=PADDING_FACTOR,
         )
         result = mean_helpers.join_half_accumulators_at_low_resolution(
-            mean_helpers.HalfAccumulatorPair(
-                numerator_0=ft_y[0],
-                numerator_1=ft_y[1],
-                denominator_0=ft_ctf[0],
-                denominator_1=ft_ctf[1],
-            ),
-            mean_helpers.HalfJoinGeometry(
-                accumulator_volume_shape=ACCUMULATOR_SHAPE,
-                grid_size=GRID_SIZE,
-                voxel_size=1.5,
-                padding_factor=PADDING_FACTOR,
-            ),
-            mean_helpers.HalfJoinPolicy(
-                low_resolution_angstrom=40.0,
-                pixel_resolutions=pixel_resolutions,
-                current_resolution=current_resolution,
-            ),
+            ft_y,
+            ft_ctf,
+            accumulator_volume_shape=ACCUMULATOR_SHAPE,
+            grid_size=GRID_SIZE,
+            voxel_size=1.5,
+            padding_factor=PADDING_FACTOR,
+            low_resolution_angstrom=40.0,
+            pixel_resolutions=pixel_resolutions,
+            current_resolution=current_resolution,
         )
         assert len(result) == 4
         for got, want in zip(result, expected):

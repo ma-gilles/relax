@@ -456,9 +456,6 @@ def test_iteration1_half_join_is_capped_by_the_ini_high_resolution(ini_high, las
     At the GUI default of 60 A an unseeded start joined up to 40 A instead.
     """
     from relax.refinement.mean_helpers import (
-        HalfAccumulatorPair,
-        HalfJoinGeometry,
-        HalfJoinPolicy,
         join_half_accumulators_at_low_resolution,
     )
 
@@ -480,23 +477,15 @@ def test_iteration1_half_join_is_capped_by_the_ini_high_resolution(ini_high, las
     ft_ctf = np.ones(volume_shape, dtype=np.float32).reshape(-1)
 
     joined0, joined1, _, _ = join_half_accumulators_at_low_resolution(
-        HalfAccumulatorPair(
-            numerator_0=ft_y_0.reshape(-1),
-            numerator_1=ft_y_1.reshape(-1),
-            denominator_0=ft_ctf.copy(),
-            denominator_1=ft_ctf.copy(),
-        ),
-        HalfJoinGeometry(
-            accumulator_volume_shape=volume_shape,
-            grid_size=grid_size,
-            voxel_size=voxel_size,
-            padding_factor=1,
-        ),
-        HalfJoinPolicy(
-            low_resolution_angstrom=40.0,
-            pixel_resolutions=[],
-            current_resolution=state.current_resolution,
-        ),
+        (ft_y_0.reshape(-1), ft_y_1.reshape(-1)),
+        (ft_ctf.copy(), ft_ctf.copy()),
+        accumulator_volume_shape=volume_shape,
+        grid_size=grid_size,
+        voxel_size=voxel_size,
+        padding_factor=1,
+        low_resolution_angstrom=40.0,
+        pixel_resolutions=[],
+        current_resolution=state.current_resolution,
     )
     joined0 = np.asarray(joined0).reshape(volume_shape)
     joined1 = np.asarray(joined1).reshape(volume_shape)
