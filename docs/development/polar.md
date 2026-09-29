@@ -101,6 +101,57 @@ RELION or binding source. The guard creates a private copy of the submitted
 source because its existing runner expects the environment under
 `.pixi/envs/default`.
 
+## K1 local replay with staged real fixtures
+
+Stage the two checksum-pinned sets from the committed fixture manifest. This
+copies their original bytes to Polar's `/scratch/network`; the command verifies
+the Della files before transfer and the Polar files afterwards. Keep the
+`fixture_path` from its JSON output.
+
+```bash
+python scripts/polar/stage_fixture_sets.py k1_5k128_data k1_5k128_relion_os0
+python scripts/polar/stage_git_bundle.py
+```
+
+The second command places committed Git history on `/scratch/universal` and
+prints its bundle path and SHA256. The parity runner checks commit ancestry, so
+its job restores this history in a private copy of the submitted source. The
+job also makes private STAR files with Della absolute references rewritten to
+the staged network paths. `fixture-relocation.json` records each changed text
+file and its old and new hashes; raw data and oracle bytes stay untouched.
+
+Polar lacks `nvcc`. The first A100 build used Della's CUDA 12.8 toolkit,
+packed as a 137 MB minimal archive and copied through Math to
+`/scratch/universal/mg6942/relax-polar/toolchains/cuda-12.8-minimal.tar.gz`
+(SHA256 `0be47ce0abff78240b1dc63cc0dfcd8fa45327a51eb7cb34a0eb2ead4b738d99`).
+The archive contains `bin`, `nvvm`, CUDA headers, driver stubs and CUDA runtime
+link libraries. The CPU Slurm build job verifies and unpacks it on universal
+scratch, then builds RECOVAR and relax CUDA libraries for `sm_80`. It copies the
+RELION binding from a verified prior build and records all binary and source
+hashes. Do not load the build toolkit into a GPU run; the packed pixi
+environment supplies its runtime libraries.
+
+```bash
+python scripts/polar/submit.py scripts/polar/build_cuda_natives.sbatch \
+  --set POLAR_CUDA_ARCHIVE=/scratch/universal/mg6942/relax-polar/toolchains/cuda-12.8-minimal.tar.gz \
+  --set POLAR_CUDA_ARCHIVE_SHA256=0be47ce0abff78240b1dc63cc0dfcd8fa45327a51eb7cb34a0eb2ead4b738d99 \
+  --set POLAR_RELION_BIND_BUILD_DIR=/scratch/network/mg6942/relax-polar/runs/BUILD_RUN_ID/relion_bind
+
+python scripts/polar/submit.py scripts/polar/k1_local_replay.sbatch \
+  --set POLAR_FIXTURE_ROOT=FIXTURE_PATH \
+  --set POLAR_GIT_BUNDLE=BUNDLE_PATH \
+  --set POLAR_GIT_BUNDLE_SHA256=BUNDLE_SHA256 \
+  --set POLAR_NATIVE_ROOT=/scratch/network/mg6942/relax-polar/runs/NATIVE_RUN_ID/natives
+```
+
+Replace the upper-case placeholders with the paths and hashes printed by the
+staging and build commands. The replay job verifies fixture and binary hashes,
+uses one Slurm-assigned A100, and runs the float32 K1 iteration 6→7 local
+replay against the RELION oracle. Its log, pytest output, quality ledger, and
+run-local adapted fixture manifest all live under the printed `run_root` on
+Polar `/scratch/network`. This is one cross-cluster integration case; it does
+not replace the full K1 and exactly K4 quality or performance qualification.
+
 Polar's partition is `main`; the initial A100 probe used
 `--gres=gpu:nvidia_a100-pcie-40gb:1`. Request realistic CPU, memory and time
 limits for each job. Preserve Slurm's `CUDA_VISIBLE_DEVICES` setting inside the
