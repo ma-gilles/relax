@@ -975,3 +975,27 @@ single-volume boundary has 17 parameters.
   functions remain out-of-scope tomography boundaries. The additional helper
   makes an intentional algorithm variant visible; argument statistics are
   unchanged.
+
+## 2026-09-29 — explicit adaptive K=1 route and diagnostic ownership
+
+- Commit `2ece206` moved the dense pass-2 float64 environment lookup from the
+  scorer to the two iteration-controller construction sites. The resolved
+  boolean is carried by `DenseExecutionPolicy`; a structural test prevents the
+  environment selector from returning to dense scoring.
+- Commit `dae40fa` extracted ordinary adaptive K=1 grid construction, backend
+  selection, optics scaling and engine invocation into
+  `_score_adaptive_k1_dense`. Its explicit inputs reuse the seven persistent
+  scoring owners plus the base engine keywords and normalized symmetry. It
+  returns the existing engine result and trial grid, both of which remain live
+  in the dispatcher; no call-only specification or result wrapper was added.
+  First-iteration CC and common K=1 result publication remain visibly separate.
+- Ruff, Python compilation and 13 focused route cases passed. The broader
+  adaptive-route, optics and symmetry suites passed 402 cases. CPU EM fast
+  guard passed 102 cases in 59.00 seconds. Binding-dependent commands initially
+  failed to load `libfftw3.so.3`; their unchanged reruns passed with
+  `FFTW/3.3.10-GCC-12.2.0` loaded.
+- Production totals are 15,087 physical and 13,178 nonblank lines across 239
+  functions. The dense one-shape dispatcher fell from 477 to 394 lines in this
+  package. Seven functions still have at least 10 parameters and the two 20+
+  functions remain out-of-scope tomography boundaries; these counts are
+  descriptive evidence, not the design target.

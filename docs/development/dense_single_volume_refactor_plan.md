@@ -236,6 +236,22 @@ hiding it behind a result wrapper. The next extraction is adaptive K=1, whose
 additional optics scaling, retained particle order, diagnostic float64 route
 and pose-grid reporting must remain explicit.
 
+The ordinary adaptive K=1 engine call is now also a named implementation. Its
+inputs are the seven existing, long-lived scoring owners, the already-resolved
+base engine keywords and keyword-only normalized symmetry; no call-site-only
+container was added. It returns both the unchanged engine result and the
+pass-2 grid because the dispatcher later uses that exact grid for parent-map
+collapse and parity pose reporting. The diagnostic float64 environment
+selector is resolved by the iteration controller and carried as an execution
+policy boolean instead of being parsed inside the scorer. The dense dispatcher
+is now 394 lines, down from 563 before the named dense variants.
+
+The next scoring audit starts with the 549-line exact-local one-shape scorer.
+Characterize its intentionally distinct pass-1, pass-2 and diagnostic routes
+before extracting anything; prefer a few explicit existing owners and values,
+and do not introduce a route object merely to shorten that function or improve
+the statistics.
+
 ### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring
