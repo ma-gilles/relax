@@ -397,6 +397,35 @@ def relion_ctf_fftw_half(params, image_size: int, pixel_size: float, *, gamma_of
     return out.reshape(-1, size, size // 2 + 1)
 
 
+def _optics_group_ctf_geometry(cache, group: int, size: int):
+    """``(gamma_offset, mag_matrix)`` of one optics group on a ``size`` grid, each None when absent.
+
+    The even Zernike gamma offset is ``ObservationModel::getGammaOffset`` on the FFTW
+    half grid (obs_model.cpp:1263-1307), evaluated by relax
+    (:func:`relax.relion.optics_aberrations.zernike_phase_fftw_half`).
+    """
+
+    from relax.relion import optics_aberrations as oa
+
+    geometry = cache.setdefault("group_geometry", {})
+    key = (int(group), int(size))
+    if key not in geometry:
+        row = cache["optics"][int(group)]
+        labels = {str(label).lstrip("_") for optics in cache["optics"].values() for label in optics.keys()}
+        mag = oa.optics_group_mag_matrix(row) if any(label.startswith("rlnMagMat") for label in labels) else None
+        even = oa.parse_relion_vector(oa._optics_value(row, "rlnEvenZernike", "[]"))
+        gamma = None
+        if any(even):
+            box = int(oa._optics_value(row, "rlnImageSize", size))
+            if box != size:
+                raise ValueError(f"even Zernike terms need the optics group's box {box}, got an image of {size}")
+            gamma = oa.zernike_phase_fftw_half(
+                even, oa.even_index_to_mn, size, float(oa._optics_value(row, "rlnImagePixelSize")), box, mag
+            )
+        geometry[key] = (gamma, mag)
+    return geometry[key]
+
+
 def _evaluate_exact_ctf_rows(cache, original_indices, image_h: int, image_w: int) -> np.ndarray:
     """Evaluate the particles' missing CTF rows into the block; return their row slots."""
 
@@ -404,18 +433,26 @@ def _evaluate_exact_ctf_rows(cache, original_indices, image_h: int, image_w: int
     missing = np.unique(original_indices[slots[original_indices] < 0])
     if missing.size:
         # RELION's CTF of every missing particle, evaluated by relax on the host
-        # (relion_ctf_fftw_half), one call per pixel size.
+        # (relion_ctf_fftw_half), one call per optics group: its pixel size, even
+        # Zernike gamma offset and anisotropic magnification (ml_optimiser.cpp:6461-6484).
         if image_h != image_w:
             raise ValueError("RELION's CTF rows need square images")
         n_new = int(missing.size)
         params = _relion_ctf_batch_params(cache, missing)
+        groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)[missing]
         native = np.empty((n_new, image_h, image_w // 2 + 1), dtype=np.float64)
-        for pixel in np.unique(params[:, 7]):
-            rows = np.flatnonzero(params[:, 7] == pixel)
+        for group in np.unique(groups):
+            rows = np.flatnonzero(groups == group)
+            pixel = np.unique(params[rows, 7])
+            if pixel.size != 1:
+                raise ValueError(f"optics group {int(group)} has several pixel sizes")
+            gamma, mag = _optics_group_ctf_geometry(cache, int(group), image_h)
             columns = params[rows][:, [0, 1, 2, 3, 4, 5, 6, 9, 8]]  # ..., Q0, Bfac, scale, phase shift
             if cache.get("tomo", False):
                 columns[:, 6] = 0.0  # dose-weighted: damped by the dose below, as RELION does for dose >= 0
-            native[rows] = relion_ctf_fftw_half(columns, image_h, float(pixel))
+            native[rows] = relion_ctf_fftw_half(
+                columns, image_h, float(pixel[0]), gamma_offset=gamma, mag_matrix=mag
+            )
         if cache.get("tomo", False):
             # A RELION tomo image (one row per particle-tilt): relion_refine damps its
             # CTF by the tilt's cumulative dose (tomo_input.relion_tomo_damping). RELION

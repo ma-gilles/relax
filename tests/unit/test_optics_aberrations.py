@@ -184,9 +184,54 @@ def test_refinement_accepts_the_implemented_optics_features():
     refuse_unsupported_optics(optics, source="refine3d.star", supported=REFINE3D_OPTICS_FEATURES)
     with pytest.raises(NotImplementedError, match="rlnBeamTiltX"):
         refuse_unsupported_optics(optics, source="class3d.star")
-    with pytest.raises(NotImplementedError, match="rlnEvenZernike"):
+    refuse_unsupported_optics(
+        pd.DataFrame({"_rlnOpticsGroup": [1], "_rlnEvenZernike": ["[0,0.1]"]}),
+        source="refine3d.star",
+        supported=REFINE3D_OPTICS_FEATURES,
+    )
+    with pytest.raises(NotImplementedError, match="rlnMagMat00"):
         refuse_unsupported_optics(
-            pd.DataFrame({"_rlnOpticsGroup": [1], "_rlnEvenZernike": ["[0,0.1]"]}),
+            pd.DataFrame({"_rlnOpticsGroup": [1], "_rlnMagMat00": [1.01]}),
             source="refine3d.star",
             supported=REFINE3D_OPTICS_FEATURES,
         )
+
+
+def _relion_ctf_reference(du, dv, angle, voltage, cs, q0, size, pixel, gamma_offset, mag=None):
+    """CTF::initialise + getCTF (ctf.cpp:211-262, ctf.h:184-257) on the FFTW half grid, no damping."""
+
+    lam = 12.2643247 / np.sqrt(voltage * 1e3 * (1.0 + voltage * 1e3 * 0.978466e-6))
+    k1 = np.pi / 2 * 2 * lam
+    k2 = np.pi / 2 * cs * 1e7 * lam**3
+    k3 = np.arctan(q0 / np.sqrt(1 - q0 * q0))
+    az = np.deg2rad(angle)
+    q = np.array([[np.cos(az), np.sin(az)], [-np.sin(az), np.cos(az)]])
+    a = q.T @ np.diag([-du, -dv]) @ q
+    half = size // 2 + 1
+    rows = np.arange(size)
+    y = np.where(rows <= size // 2, rows, rows - size)[:, None] / (size * pixel)
+    x = np.arange(half)[None, :] / (size * pixel)
+    x, y = np.broadcast_to(x, (size, half)), np.broadcast_to(y, (size, half))
+    if mag is not None:
+        x, y = mag[0, 0] * x + mag[0, 1] * y, mag[1, 0] * x + mag[1, 1] * y
+    u2 = x * x + y * y
+    gamma = k1 * (a[0, 0] * x * x + 2 * a[0, 1] * x * y + a[1, 1] * y * y) + k2 * u2 * u2 - k3 + gamma_offset
+    ctf = -np.sin(gamma)
+    return np.where(np.abs(ctf) < 1e-8, np.sign(ctf) * 1e-8, ctf)
+
+
+@pytest.mark.unit
+def test_exact_ctf_rows_carry_the_even_zernike_gamma_offset(tmp_path):
+    relion_bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
+    if not hasattr(relion_bind, "optics_ctf_images_batch"):
+        pytest.skip("the RELION binding predates the optics bindings")
+    star = _write_star(tmp_path / "particles.star", tilt=None, odd=None, even=EVEN)
+    dataset = SimpleNamespace(particles_file=str(star), image_shape=(BOX, BOX))
+    rows = relion_ctf._relion_exact_ctf_half_from_source_star_host(dataset, np.asarray([0, 1]), (BOX, BOX))
+    gamma = oa.zernike_phase_fftw_half(oa.parse_relion_vector(EVEN), oa.even_index_to_mn, BOX, PIXEL, BOX)
+    expected = [
+        _relion_ctf_reference(20000.0, 19000.0, 40.0, 200.0, 2.0, 0.1, BOX, PIXEL, gamma),  # group 2
+        _relion_ctf_reference(20000.0, 19000.0, 40.0, 300.0, 2.7, 0.07, BOX, PIXEL, 0.0),  # group 1
+    ]
+    # RECOVAR's frame: centered rows, opposite sign (relion_ctf._evaluate_exact_ctf_rows).
+    assert_matches(rows, np.stack([-np.fft.fftshift(e, axes=0).reshape(-1) for e in expected]), rtol=1e-12)
