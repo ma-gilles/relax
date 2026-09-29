@@ -343,9 +343,6 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         "build_local_adaptive_pass2_hypothesis_layout",
         lambda *_args, **_kwargs: fine_layout,
     )
-    monkeypatch.setattr(half_scoring, "_local_adaptive_pass2_full_parent_enabled", lambda: False)
-    monkeypatch.setattr(half_scoring, "_local_adaptive_pass2_rotation_only_enabled", lambda: False)
-    monkeypatch.setattr(half_scoring, "_local_adaptive_pass2_denominator_support_mode", lambda: denominator_mode)
     monkeypatch.setattr(half_scoring, "_k1_relion_x_half_mstep_enabled", lambda: False)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
 
@@ -390,6 +387,7 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         safe_batch_sizes=lambda *_args, **_kwargs: (2, 3),
         outputs=score_outputs.PerHalfOutputs(),
         local_profile_history=[],
+        adaptive_pass2_denominator_mode=denominator_mode,
     ))
 
     assert len(calls) == (2 if denominator_mode is None else 3)

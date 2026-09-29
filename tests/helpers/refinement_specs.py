@@ -264,6 +264,13 @@ def local_half_owners(**values):
             diagnostic_score_only=values.pop("diagnostic_score_only"),
             local_profile_history=values.pop("local_profile_history"),
             bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
+            parent_use_float64_scoring=values.pop("parent_use_float64_scoring", False),
+            parent_use_float64_projections=values.pop("parent_use_float64_projections", False),
+            fine_use_float64_scoring=values.pop("fine_use_float64_scoring", False),
+            fine_use_float64_projections=values.pop("fine_use_float64_projections", False),
+            adaptive_pass2_full_parent=values.pop("adaptive_pass2_full_parent", False),
+            adaptive_pass2_rotation_only=values.pop("adaptive_pass2_rotation_only", False),
+            adaptive_pass2_denominator_mode=values.pop("adaptive_pass2_denominator_mode", None),
         ),
         half_scoring.LocalOpticsSpec(
             noise_radial_k=values.pop("noise_radial_k", None),

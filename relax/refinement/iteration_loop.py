@@ -40,6 +40,9 @@ from relax.dense.scoring_policy import (
     PROJECTION_PADDING_FACTOR,
     _dense_global_scoring_dtype,
     _k1_relion_x_half_mstep_enabled,
+    _local_adaptive_pass2_denominator_support_mode,
+    _local_adaptive_pass2_full_parent_enabled,
+    _local_adaptive_pass2_rotation_only_enabled,
 )
 from relax.diagnostics import bpref_diagnostics, finite_check
 from relax.diagnostics import parity_dump as _parity_dump
@@ -2881,6 +2884,26 @@ def refine_single_volume(
                     with_log_prior=False,
                     zero_cold_center=not k_class_enabled,
                 )
+                local_parent_precision = _local_search_precision_flags(
+                    numbered_relion_iteration,
+                    pass_index=1,
+                    static_em_kwargs=_DENSE_EM_STATIC_KWARGS,
+                )
+                local_fine_precision = _local_search_precision_flags(
+                    numbered_relion_iteration,
+                    pass_index=2,
+                    static_em_kwargs=_DENSE_EM_STATIC_KWARGS,
+                )
+                if local_parent_oversampling_order > 0:
+                    local_adaptive_full_parent = _local_adaptive_pass2_full_parent_enabled()
+                    local_adaptive_rotation_only = _local_adaptive_pass2_rotation_only_enabled()
+                    local_adaptive_denominator_mode = (
+                        _local_adaptive_pass2_denominator_support_mode()
+                    )
+                else:
+                    local_adaptive_full_parent = False
+                    local_adaptive_rotation_only = False
+                    local_adaptive_denominator_mode = None
                 local_result = _score_half_local_in_bpref_scope(
                     half=LocalHalfData(
                         k=k,
@@ -2941,6 +2964,13 @@ def refine_single_volume(
                         diagnostic_score_only=bool(debug.stop_after_local_search_score_only),
                         local_profile_history=history.local_profile_history,
                         bpref_device_signature_active=(bpref_device_signature_active),
+                        parent_use_float64_scoring=local_parent_precision[0],
+                        parent_use_float64_projections=local_parent_precision[1],
+                        fine_use_float64_scoring=local_fine_precision[0],
+                        fine_use_float64_projections=local_fine_precision[1],
+                        adaptive_pass2_full_parent=local_adaptive_full_parent,
+                        adaptive_pass2_rotation_only=local_adaptive_rotation_only,
+                        adaptive_pass2_denominator_mode=local_adaptive_denominator_mode,
                     ),
                     optics=LocalOpticsSpec(
                         noise_radial_k=local_optics_values.get("noise_radial_k"),
@@ -5485,6 +5515,25 @@ def refine_single_volume(
                     with_log_prior=False,
                     zero_cold_center=False,
                 )
+                final_local_parent_precision = _local_search_precision_flags(
+                    final_sampling_relion_iteration,
+                    pass_index=1,
+                    static_em_kwargs=_DENSE_EM_STATIC_KWARGS,
+                )
+                final_local_fine_precision = (
+                    final_use_float64_scoring,
+                    final_use_float64_projections,
+                )
+                if final_local_parent_oversampling_order > 0:
+                    final_local_adaptive_full_parent = _local_adaptive_pass2_full_parent_enabled()
+                    final_local_adaptive_rotation_only = _local_adaptive_pass2_rotation_only_enabled()
+                    final_local_adaptive_denominator_mode = (
+                        _local_adaptive_pass2_denominator_support_mode()
+                    )
+                else:
+                    final_local_adaptive_full_parent = False
+                    final_local_adaptive_rotation_only = False
+                    final_local_adaptive_denominator_mode = None
                 final_result = _score_half_local_in_bpref_scope(
                     half=LocalHalfData(
                         k=k,
@@ -5543,6 +5592,15 @@ def refine_single_volume(
                         diagnostic_score_only=False,
                         local_profile_history=history.local_profile_history,
                         bpref_device_signature_active=False,
+                        parent_use_float64_scoring=final_local_parent_precision[0],
+                        parent_use_float64_projections=final_local_parent_precision[1],
+                        fine_use_float64_scoring=final_local_fine_precision[0],
+                        fine_use_float64_projections=final_local_fine_precision[1],
+                        adaptive_pass2_full_parent=final_local_adaptive_full_parent,
+                        adaptive_pass2_rotation_only=final_local_adaptive_rotation_only,
+                        adaptive_pass2_denominator_mode=(
+                            final_local_adaptive_denominator_mode
+                        ),
                     ),
                     optics=LocalOpticsSpec(
                         noise_radial_k=final_local_optics_values.get("noise_radial_k"),

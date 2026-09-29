@@ -321,6 +321,40 @@ def test_dense_float64_diagnostic_is_resolved_by_the_iteration_controller():
         assert diagnostic.func.id == "_diagnostic_float64_pass2_matches"
 
 
+def test_local_experimental_overrides_are_resolved_by_the_iteration_controller():
+    scorer_source = tree("half_scoring.py")
+    controller_helpers = {
+        "_local_search_precision_flags",
+        "_local_adaptive_pass2_full_parent_enabled",
+        "_local_adaptive_pass2_rotation_only_enabled",
+        "_local_adaptive_pass2_denominator_support_mode",
+    }
+    assert not any(
+        isinstance(node, ast.Name) and node.id in controller_helpers
+        for node in ast.walk(scorer_source)
+    )
+
+    diagnostic_policies = [
+        node
+        for node in ast.walk(tree("iteration_loop.py"))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "LocalDiagnosticPolicy"
+    ]
+    assert len(diagnostic_policies) == 2
+    resolved_fields = {
+        "parent_use_float64_scoring",
+        "parent_use_float64_projections",
+        "fine_use_float64_scoring",
+        "fine_use_float64_projections",
+        "adaptive_pass2_full_parent",
+        "adaptive_pass2_rotation_only",
+        "adaptive_pass2_denominator_mode",
+    }
+    for policy in diagnostic_policies:
+        assert resolved_fields <= {keyword.arg for keyword in policy.keywords}
+
+
 def test_loop_transports_geometry_separately_from_effective_rotations():
     calls = [
         n

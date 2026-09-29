@@ -46,14 +46,10 @@ from relax.dense.scoring_policy import (
     _k1_relion_x_half_mstep_enabled,
     _k1_skip_significance_pruning_enabled,
     _k_class_relion_x_half_mstep_enabled,
-    _local_adaptive_pass2_denominator_support_mode,
-    _local_adaptive_pass2_full_parent_enabled,
-    _local_adaptive_pass2_rotation_only_enabled,
 )
 from relax.diagnostics import parity_dump as _parity_dump
 from relax.diagnostics.local_debug import log_local_adaptive_support, log_local_denominator_support
 from relax.helpers.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
-from relax.helpers.dtype_policy import _local_search_precision_flags
 from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
 from relax.helpers.oversampling import build_adaptive_pass2_grids
 from relax.helpers.preprocessing import uses_relion_cuda_image_preprocessing
@@ -1337,6 +1333,13 @@ class LocalDiagnosticPolicy:
     local_profile_history: object
     debug_iteration: int | None = None
     bpref_device_signature_active: bool = False
+    parent_use_float64_scoring: bool = False
+    parent_use_float64_projections: bool = False
+    fine_use_float64_scoring: bool = False
+    fine_use_float64_projections: bool = False
+    adaptive_pass2_full_parent: bool = False
+    adaptive_pass2_rotation_only: bool = False
+    adaptive_pass2_denominator_mode: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1605,16 +1608,10 @@ def _score_half_local_one_shape(
     local_debug_iteration = (
         diagnostics.iteration + 1 if diagnostics.debug_iteration is None else int(diagnostics.debug_iteration)
     )
-    parent_use_float64_scoring, parent_use_float64_projections = _local_search_precision_flags(
-        local_debug_iteration,
-        pass_index=1,
-        static_em_kwargs=_DENSE_EM_STATIC_KWARGS,
-    )
-    fine_use_float64_scoring, fine_use_float64_projections = _local_search_precision_flags(
-        local_debug_iteration,
-        pass_index=2,
-        static_em_kwargs=_DENSE_EM_STATIC_KWARGS,
-    )
+    parent_use_float64_scoring = diagnostics.parent_use_float64_scoring
+    parent_use_float64_projections = diagnostics.parent_use_float64_projections
+    fine_use_float64_scoring = diagnostics.fine_use_float64_scoring
+    fine_use_float64_projections = diagnostics.fine_use_float64_projections
     # Adaptive pass-2 (fine, oversampled) hypothesis layout precision; see
     # ``parent_local_layout_dtype`` below for the matching pass-1 value.
     fine_local_layout_dtype = np.float64 if (fine_use_float64_scoring or fine_use_float64_projections) else np.float32
@@ -1757,9 +1754,9 @@ def _score_half_local_one_shape(
     local_adaptive_pass2_denominator_layout = None
     local_normalization_log_evidence = None
     if int(sampling.local_parent_oversampling_order) > 0:
-        local_adaptive_pass2_full_parent = _local_adaptive_pass2_full_parent_enabled()
-        local_adaptive_pass2_rotation_only = _local_adaptive_pass2_rotation_only_enabled()
-        local_adaptive_pass2_denominator_mode = _local_adaptive_pass2_denominator_support_mode()
+        local_adaptive_pass2_full_parent = diagnostics.adaptive_pass2_full_parent
+        local_adaptive_pass2_rotation_only = diagnostics.adaptive_pass2_rotation_only
+        local_adaptive_pass2_denominator_mode = diagnostics.adaptive_pass2_denominator_mode
         local_adaptive_pass2_parent_mode = "full_parent" if local_adaptive_pass2_full_parent else "pruned_parent"
         parent_prior_translations = priors.trans_prior_center
         if parent_prior_translations is None:
