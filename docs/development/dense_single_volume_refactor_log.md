@@ -1010,3 +1010,24 @@ single-volume boundary has 17 parameters.
   `6caf34d` and `4495c6f`. Post-rebase Ruff and Python compilation passed, as
   did 13 focused adaptive K=1 cases and the 102-case CPU EM fast guard in
   59.27 seconds with `FFTW/3.3.10-GCC-12.2.0` loaded.
+
+## 2026-09-29 — exact-local override ownership
+
+- Commit `423e33b` moved local pass-1/pass-2 precision and the full-parent,
+  rotation-only and denominator-support experimental choices out of
+  `_score_half_local_one_shape`. They are explicit fields of the existing
+  `LocalDiagnosticPolicy`; no additional request or call-only bundle was
+  introduced.
+- Commit `8929943` tightened the placement after review: each choice is now
+  resolved once per numbered iteration and once per final all-data iteration,
+  then shared by both halves and all shape classes. Support overrides retain
+  their original condition and are not parsed when parent oversampling is off.
+- Ruff and Python compilation passed. Sixteen focused local-policy cases and
+  41 broader controller/result-contract cases passed; the placement follow-up
+  passed 5 selected cases. CPU EM fast guard passed 102 cases in 58.70 seconds
+  with `FFTW/3.3.10-GCC-12.2.0` loaded.
+- Production totals are 15,146 physical and 13,237 nonblank lines across 239
+  functions. The exact-local one-shape scorer fell from 549 to 543 lines while
+  the top-level controller grew to make ownership explicit. Seven functions
+  still have at least 10 parameters. These statistics record the structural
+  movement; they did not drive the design.

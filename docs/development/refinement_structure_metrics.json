@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "explicit-adaptive-k1-route-rebased",
-    "source_commit": "4495c6f7e3a4f867ba91fa0bdcc00132ff35dce0",
+    "package": "local-overrides-controller-owned",
+    "source_commit": "8929943d8eb90c1b961bacf6c9546d5ba4aa27bf",
     "metrics": {
       "files": [
         {
@@ -39,15 +39,15 @@
         },
         {
           "function_count": 21,
-          "nonblank_noncomment_lines": 1907,
+          "nonblank_noncomment_lines": 1904,
           "path": "relax/refinement/half_scoring.py",
-          "physical_lines": 2114
+          "physical_lines": 2111
         },
         {
           "function_count": 24,
-          "nonblank_noncomment_lines": 5450,
+          "nonblank_noncomment_lines": 5512,
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 6078
+          "physical_lines": 6140
         },
         {
           "function_count": 2,
@@ -146,7 +146,7 @@
           "path": "relax/refinement/mean_helpers.py"
         },
         {
-          "line": 954,
+          "line": 957,
           "line_span": 45,
           "name": "_safe_batch_sizes",
           "parameter_count": 10,
@@ -169,28 +169,28 @@
       ],
       "largest_functions": [
         {
-          "line": 616,
-          "line_span": 5463,
+          "line": 619,
+          "line_span": 5522,
           "name": "refine_single_volume",
           "parameter_count": 6,
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 2470,
-          "line_span": 743,
+          "line": 2497,
+          "line_span": 749,
           "name": "_run_half_estep",
           "parameter_count": 1,
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 1549,
-          "line_span": 549,
+          "line": 1552,
+          "line_span": 543,
           "name": "_score_half_local_one_shape",
           "parameter_count": 7,
           "path": "relax/refinement/half_scoring.py"
         },
         {
-          "line": 688,
+          "line": 684,
           "line_span": 394,
           "name": "_score_half_dense_one_shape",
           "parameter_count": 7,
@@ -253,10 +253,10 @@
         "file_count": 16,
         "function_count": 239,
         "large_argument_function_count": 7,
-        "maximum_function_line_span": 5463,
+        "maximum_function_line_span": 5522,
         "maximum_parameter_count": 22,
-        "nonblank_noncomment_lines": 13178,
-        "physical_lines": 15087,
+        "nonblank_noncomment_lines": 13237,
+        "physical_lines": 15146,
         "very_large_argument_function_count": 2
       }
     }

@@ -252,6 +252,17 @@ before extracting anything; prefer a few explicit existing owners and values,
 and do not introduce a route object merely to shorten that function or improve
 the statistics.
 
+The first exact-local cleanup moved precision and adaptive-support override
+resolution to the iteration controller. The controller resolves one stable set
+per numbered iteration and one per final all-data iteration; both halves and
+all shape classes receive those values through the existing diagnostic policy.
+The scorer's reusable data, grid, batching, kernel, support and diagnostic pass
+objects remain in place because they are genuinely reused and specialized for
+parent, denominator and final execution. Next, characterize the adaptive
+parent-pass block and its four downstream products (fine layout, retained
+counts, denominator layout and parent-mode label) before deciding whether that
+state has a coherent extraction boundary.
+
 ### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring
