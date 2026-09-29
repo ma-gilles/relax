@@ -1,28 +1,25 @@
-# RELAX! It's RELION ... in JAX.
-
-
+# RELAX! It's [RELION](https://github.com/3dem/relion) ... in JAX.
 
 ## What exists
 
 | RELION job | relax entry point |
 | --- | --- |
-| 3D initial model (VDAM), K=1 and K>1 | `relax initial_model` (`--K`) |
+| 3D initial model (VDAM), K=1 and K>1 | `relax initial_model --K K` |
 | 3D auto-refine (Refine3D), K=1 | `python -m scripts.run_full_refinement` |
 | 3D classification (Class3D), K>1 | `python -m scripts.run_full_refinement --n_classes K` |
+| Subtomogram auto-refine (RELION 5 tilt series), K=1 | `python -m scripts.run_full_refinement` on a RELION 5 particles.star |
 
-Single GPU. Refine3D (K=1) accepts several optics groups, including groups on other pixel sizes
-and boxes, but the default command refuses them for now: they run only on the device-resident
-pass 2 (the K=1 default) and without the first-iteration cross-correlation, i.e. with
-`--no-firstiter_cc` and `RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM=1 RELAX_K1_RELION_EXACT_BPREF_OPERANDS=1`
-(end-to-end GPU qualification against RELION in progress).
+- Single GPU (CUDA). Handles both single-particle (SPA) and tilt-series data.
+- It reproduces RELION's results on a number of datasets; see the
+  [benchmarks](docs/benchmarks/relion_vs_relax.md).
+- Refine3D takes several optics groups, including other pixel sizes and boxes, but the default
+  command still refuses them while they are qualified against RELION. InitialModel and Class3D
+  take one optics group.
+- Not yet: CTF-premultiplied particles, beam tilt, higher-order aberrations and magnification.
+  More to come.
 
-Refine3D (K=1) and Class3D (K>1) run their pass 2 on the device-resident engine, relax's one
-pass-2 engine (a CUDA GPU is required; there is no CPU pass 2). VDAM runs its E-step on the
-same engine for every K. Only the local-search parent probe still uses the deprecated exact-local
-engine; each run's
-`refinement_results.npz` records the engine of every pass (`pass2_engine_trajectory`).
-InitialModel and Class3D take one optics group. Not yet: cryo-ET subtomograms,
-CTF-premultiplied particles, beam tilt, higher-order aberrations and magnification. More to come.
+relax is a reproduction of RELION's code in JAX/Python, with CUDA backends. It was written nearly
+entirely by AI coding tools, with a lot of human supervision.
 
 ## Install (development)
 
@@ -42,10 +39,6 @@ relax initial_model ...
 relax build_cuda
 relax build_relion_bind
 ```
-
-## Benchmarks
-
-RELION vs relax resolution and wall time for every synthetic and real dataset run: [docs/benchmarks/relion_vs_relax.md](docs/benchmarks/relion_vs_relax.md).
 
 License: GPL-2.0-or-later
 
