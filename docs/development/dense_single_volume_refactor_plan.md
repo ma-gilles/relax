@@ -190,6 +190,23 @@ into a long argument list is also not a resolution: when explicit dependencies
 would make a function too broad, split responsibility first or introduce a
 real longer-lived owner at the point where that state begins to exist.
 
+The corrective lifecycle audit is now complete. Low-resolution joining uses
+explicit dependencies; initial-grid, adaptive-pass, direction-prior,
+unregularized-map and regularized-reconstruction flow is split into named
+algorithm phases; snapshot capture has a persistent run-level owner reused for
+every numbered checkpoint and an iteration assembly that exists across the
+scalar, map, prior and particle capture phases before serialization. None of
+these corrections is accepted because it lowers an argument-count statistic.
+
+The next implementation step is package 2: audit the still-large eager
+reconstruction kernel boundary, then simplify the dense and exact-local scoring
+owners without collapsing their intentionally different routes. Start with
+call-site and lifecycle characterization; retain a large explicit signature
+when no truthful owner or responsibility split exists. After scoring ownership
+is clear, split the numbered-iteration controller by the phase boundaries
+already made explicit here. Environment and diagnostic extraction remains a
+separate package so it cannot silently change read timing or array lifetime.
+
 ### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring

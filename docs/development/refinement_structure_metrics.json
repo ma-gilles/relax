@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "explicit-direction-and-unregularized-variants",
-    "source_commit": "0447c4b235e7fd37d296a12a5cf93a1ef47a3b4e",
+    "package": "mean-reconstruction-and-snapshot-lifecycles",
+    "source_commit": "ed485965ee1e27444b9b789d51c9f8d5d25255aa",
     "metrics": {
       "files": [
         {
@@ -45,9 +45,9 @@
         },
         {
           "function_count": 26,
-          "nonblank_noncomment_lines": 5495,
+          "nonblank_noncomment_lines": 5493,
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 6135
+          "physical_lines": 6134
         },
         {
           "function_count": 2,
@@ -56,10 +56,10 @@
           "physical_lines": 93
         },
         {
-          "function_count": 11,
-          "nonblank_noncomment_lines": 270,
+          "function_count": 15,
+          "nonblank_noncomment_lines": 314,
           "path": "relax/refinement/iteration_snapshot.py",
-          "physical_lines": 338
+          "physical_lines": 380
         },
         {
           "function_count": 2,
@@ -68,10 +68,10 @@
           "physical_lines": 527
         },
         {
-          "function_count": 49,
-          "nonblank_noncomment_lines": 1498,
+          "function_count": 51,
+          "nonblank_noncomment_lines": 1484,
           "path": "relax/refinement/mean_helpers.py",
-          "physical_lines": 1764
+          "physical_lines": 1741
         },
         {
           "function_count": 11,
@@ -146,11 +146,18 @@
           "path": "relax/refinement/mean_helpers.py"
         },
         {
-          "line": 1030,
+          "line": 1041,
           "line_span": 45,
           "name": "_safe_batch_sizes",
           "parameter_count": 10,
           "path": "relax/refinement/iteration_loop.py"
+        },
+        {
+          "line": 1063,
+          "line_span": 55,
+          "name": "reconstruct_class_means",
+          "parameter_count": 10,
+          "path": "relax/refinement/mean_helpers.py"
         },
         {
           "line": 234,
@@ -162,14 +169,14 @@
       ],
       "largest_functions": [
         {
-          "line": 709,
-          "line_span": 5427,
+          "line": 703,
+          "line_span": 5432,
           "name": "refine_single_volume",
           "parameter_count": 6,
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 2537,
+          "line": 2548,
           "line_span": 726,
           "name": "_run_half_estep",
           "parameter_count": 1,
@@ -225,11 +232,11 @@
           "path": "relax/refinement/run_files.py"
         },
         {
-          "line": 1051,
-          "line_span": 182,
-          "name": "_reconstruct_and_postprocess_means",
-          "parameter_count": 5,
-          "path": "relax/refinement/mean_helpers.py"
+          "line": 88,
+          "line_span": 151,
+          "name": "_relion_projector_half_maps_for_scoring",
+          "parameter_count": 8,
+          "path": "relax/refinement/projector_preparation.py"
         }
       ],
       "schema_version": 1,
@@ -244,12 +251,12 @@
       },
       "totals": {
         "file_count": 16,
-        "function_count": 231,
-        "large_argument_function_count": 6,
-        "maximum_function_line_span": 5427,
+        "function_count": 237,
+        "large_argument_function_count": 7,
+        "maximum_function_line_span": 5432,
         "maximum_parameter_count": 22,
-        "nonblank_noncomment_lines": 13068,
-        "physical_lines": 14991,
+        "nonblank_noncomment_lines": 13096,
+        "physical_lines": 15009,
         "very_large_argument_function_count": 2
       }
     }

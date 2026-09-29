@@ -836,3 +836,44 @@ single-volume boundary has 17 parameters.
 - GPU smoke remains infrastructure-blocked by the unchanged absence of the five
   mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
   produced.
+
+## 2026-09-29 — explicit regularized-reconstruction phases
+
+- Commit `9856080` removed the five call-only mean-reconstruction input
+  classes. The controller now selects the K=1 or K-class reconstruction
+  algorithm explicitly, publishes the resulting maps, and invokes a separate
+  post-processing phase.
+- `ReconstructionSettings` is retained because it has a real lifecycle: it is
+  created once before the iteration loop and reused by reconstruction and
+  post-processing on every iteration. Inputs are read where they are used
+  rather than flattened into aliases at helper entry.
+- Accumulator release, retained-device-numerator release, post-processing
+  order and K=1 versus K-class reconstruction calls are unchanged.
+- Focused reconstruction-ownership, solvent-mask-memory and K=1 lifecycle
+  tests: 29 passed. The initial targeted controller subset passed 7 cases with
+  395 deselected and 4 existing complex-cast warnings. Production and focused
+  test Ruff checks, Python compilation and diff checks passed. CPU EM fast
+  guard: 102 passed in 58.61 seconds with `FFTW/3.3.10-GCC-12.2.0` loaded.
+
+## 2026-09-29 — staged iteration-snapshot lifecycle
+
+- Commit `ed48596` removed the four input classes created solely for
+  `capture_iteration_snapshot`. `SnapshotCapture` now owns only run-level
+  settings, is created once before the loop and is reused for every numbered
+  checkpoint.
+- One snapshot assembly persists across explicit scalar, map/spectrum, prior
+  and particle capture phases before `finish` publishes the serialized
+  `IterationSnapshot`. Each phase exposes its actual inputs and retains the
+  prior host-copy, dtype and K=1/K-class serialization behavior.
+- Run-file and lifecycle tests: 16 passed. Ruff, Python compilation and diff
+  checks passed. A first guard invocation without the FFTW module failed four
+  C4 loader cases with missing `libfftw3.so.3`; the correctly configured CPU EM
+  fast guard passed all 102 cases in 58.63 seconds.
+- The completed lifecycle audit leaves 15,009 physical and 13,096 nonblank
+  production lines across 237 functions. Seven functions have at least 10
+  parameters; the two 20+ functions remain the out-of-scope tomography
+  boundaries. The increase reflects explicit phases and the truthful
+  10-parameter K-class reconstruction boundary, not a metric target.
+- GPU smoke remains infrastructure-blocked by the unchanged absence of the five
+  mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
+  produced.
