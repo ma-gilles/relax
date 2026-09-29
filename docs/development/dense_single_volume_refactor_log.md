@@ -928,3 +928,28 @@ single-volume boundary has 17 parameters.
   functions remain the out-of-scope tomography boundaries. The extra lines and
   functions make intentionally different algorithms visible; they are not a
   metric improvement.
+
+## 2026-09-29 — periodic rebase onto `a021081`
+
+- `origin/main` advanced from `c4f7a4b` to `a021081`; all 57 feature commits
+  were replayed.
+- Conflicts occurred only in `relax/refinement/iteration_loop.py` and
+  `relax/refinement/iteration_snapshot.py`, during three historical snapshot
+  commits. Main added per-class `MlModel::acc_rot` and `acc_trans` checkpoint
+  state while the branch changed snapshot ownership.
+- The resolution retained main's initialization, expected-accuracy updates,
+  resume behavior, float64 host copies and serialized
+  `acc_rot_per_class`/`acc_trans_per_class_angstrom` fields. The final staged
+  design captures those values in `SnapshotCapture.begin` before its existing
+  map, prior and particle phases. Obsolete intermediate snapshot specifications
+  were not restored.
+- No scoring conflicts occurred. The rebased direct K=1 and K-class route
+  extractions are commits `b750eab` and `8c0eb03`.
+- Ruff and Python compilation passed. The complete run-file suite passed 16
+  cases; 8 focused snapshot and direct-route cases passed with 452 deselected
+  and 2 existing complex-cast warnings. CPU EM fast guard: 102 passed in 58.96
+  seconds with `FFTW/3.3.10-GCC-12.2.0` loaded.
+- Production totals after incorporating main are 15,008 physical and 13,099
+  nonblank lines across 237 functions. Seven functions have at least 10
+  parameters and the two 20+ functions remain out-of-scope tomography
+  boundaries.

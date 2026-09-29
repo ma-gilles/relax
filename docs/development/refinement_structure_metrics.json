@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "explicit-direct-dense-variants",
-    "source_commit": "cbfec1e5ba86dc98602290250bd5b4bcaac69218",
+    "package": "explicit-direct-dense-variants-rebased",
+    "source_commit": "8c0eb03100c32c15918be9f8395432bd47ce0626",
     "metrics": {
       "files": [
         {
@@ -45,9 +45,9 @@
         },
         {
           "function_count": 24,
-          "nonblank_noncomment_lines": 5434,
+          "nonblank_noncomment_lines": 5444,
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 6060
+          "physical_lines": 6072
         },
         {
           "function_count": 2,
@@ -57,9 +57,9 @@
         },
         {
           "function_count": 15,
-          "nonblank_noncomment_lines": 314,
+          "nonblank_noncomment_lines": 333,
           "path": "relax/refinement/iteration_snapshot.py",
-          "physical_lines": 380
+          "physical_lines": 399
         },
         {
           "function_count": 2,
@@ -99,9 +99,9 @@
         },
         {
           "function_count": 39,
-          "nonblank_noncomment_lines": 865,
+          "nonblank_noncomment_lines": 871,
           "path": "relax/refinement/run_files.py",
-          "physical_lines": 1014
+          "physical_lines": 1023
         },
         {
           "function_count": 17,
@@ -170,13 +170,13 @@
       "largest_functions": [
         {
           "line": 616,
-          "line_span": 5445,
+          "line_span": 5457,
           "name": "refine_single_volume",
           "parameter_count": 6,
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 2460,
+          "line": 2470,
           "line_span": 740,
           "name": "_run_half_estep",
           "parameter_count": 1,
@@ -218,18 +218,18 @@
           "path": "relax/refinement/tomo_half.py"
         },
         {
+          "line": 802,
+          "line_span": 191,
+          "name": "read_run_files",
+          "parameter_count": 3,
+          "path": "relax/refinement/run_files.py"
+        },
+        {
           "line": 91,
           "line_span": 185,
           "name": "_score_kclass_firstiter_cc_pass2",
           "parameter_count": 5,
           "path": "relax/refinement/firstiter_cc.py"
-        },
-        {
-          "line": 799,
-          "line_span": 185,
-          "name": "read_run_files",
-          "parameter_count": 3,
-          "path": "relax/refinement/run_files.py"
         },
         {
           "line": 88,
@@ -253,10 +253,10 @@
         "file_count": 16,
         "function_count": 237,
         "large_argument_function_count": 7,
-        "maximum_function_line_span": 5445,
+        "maximum_function_line_span": 5457,
         "maximum_parameter_count": 22,
-        "nonblank_noncomment_lines": 13064,
-        "physical_lines": 14968,
+        "nonblank_noncomment_lines": 13099,
+        "physical_lines": 15008,
         "very_large_argument_function_count": 2
       }
     }
