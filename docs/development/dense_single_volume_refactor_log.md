@@ -746,3 +746,29 @@ single-volume boundary has 17 parameters.
   13,162 nonblank lines as a secondary effect.
 - Focused K1, optics-group, K-class and controller tests: 15 passed. CPU EM fast
   guard: 102 passed in 57.60 seconds with `FFTW/3.3.10-GCC-12.2.0` loaded.
+
+## 2026-09-29 — container-lifecycle rule and half-join correction
+
+- Plan commit `a8daf3e` makes container lifecycle an acceptance rule. A
+  constructor nested in a call and a container assigned to a throwaway local
+  before one call are the same design problem. Containers now require real
+  storage, reuse, variant derivation, serialization or invariant ownership.
+- Implementation commit `e854f8d` supersedes the call-only
+  `HalfAccumulatorPair`, `HalfJoinGeometry` and `HalfJoinPolicy` design from
+  `c913f37`. The join receives the two natural half sequences and names its
+  geometry, resolution and buffer-lifetime dependencies explicitly at both
+  call sites.
+- The tracked count of functions with at least 10 parameters rises from 5 to 6
+  because the truthful 11-parameter join boundary is easier to understand than
+  three objects created solely for that call. This is an intentional example of
+  readability taking priority over the structural statistics.
+- Production totals are 15,069 physical and 13,130 nonblank lines. There are
+  226 functions; 6 have at least 10 parameters and the 2 functions with at
+  least 20 parameters remain the out-of-scope tomography boundaries.
+- Focused argument-forwarding, strict numerical comparison and
+  resolution-scheduling tests: 37 passed. Ruff and Python compilation passed.
+  CPU EM fast guard: 102 passed in 57.92 seconds with
+  `FFTW/3.3.10-GCC-12.2.0` loaded.
+- GPU smoke remains infrastructure-blocked by the unchanged absence of the five
+  mandatory `/scratch/gpfs` fixture sets. No Slurm job or GPU receipt was
+  produced.
