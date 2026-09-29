@@ -230,12 +230,10 @@ def test_padded_particles_with_their_own_rotation_priors_cut_as_one_by_one():
         assert_matches(np.asarray(batched["pmax"][p]), np.asarray(alone["pmax"][0]))
 
 
-@pytest.mark.parametrize("seeded", [False, True])
-def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatch, seeded):
+def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatch):
     """Class3D: every image is scored against each class; the particle's (class, rotation, translation) weights
     are cut once (convertAllSquaredDifferencesToWeights sorts all classes' weights together), and each cell
-    goes back to its class's support. In a seed iteration (one reference) a particle is scored against its
-    random class only: that class's minimum and cut, nothing in the others."""
+    goes back to its class's support."""
 
     rng = np.random.default_rng(11)
     offsets = np.array([0, 2, 5, 6])
@@ -277,7 +275,6 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
         (8, 8), 6, np.arange(4), jnp.ones(4, bool), jnp.zeros(1, jnp.int32), jnp.ones(40)
     )
     class_prior = np.log(rng.uniform(0.2, 1.0, size=(2, n_rot))).astype(np.float32)
-    unit_classes = np.array([1, 0, 1]) if seeded else None
     supports, pmax = tomo_coarse.particle_coarse_supports(
         None,
         unit_image_offsets=offsets,
@@ -297,7 +294,6 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
         model_max_r=3,
         padding_factor=2,
         image_size=8,
-        unit_classes=unit_classes,
     )
     assert len(supports) == 2 and all(len(class_supports) == 3 for class_supports in supports)
     (diff2, rotation_prior, translation_prior), = captured
@@ -307,14 +303,10 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
     assert np.all(np.isneginf(rotation_prior.reshape(2, r_pad)[:, n_rot:]))
     n_significant = 0
     for p in range(3):
-        if seeded:
-            assert np.all(np.isposinf(diff2[p].reshape(2, r_pad, n_trans)[1 - unit_classes[p]]))
         log_weight = (rotation_prior[:, None] + translation_prior[p][None, :]) + (diff2[p].min() - diff2[p])
         expected = _relion_coarse_cut(log_weight.astype(np.float32).reshape(-1), 0.999).reshape(2, r_pad, n_trans)
         for k in range(2):
             np.testing.assert_array_equal(supports[k][p], np.flatnonzero(expected[k]))
             n_significant += supports[k][p].size
-        if seeded:
-            assert supports[1 - unit_classes[p]][p].size == 0
     assert n_significant > 3  # the cut keeps more than each particle's winner
     assert pmax.shape == (3,)

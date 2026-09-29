@@ -75,3 +75,44 @@ def _select_required_class_value(value, class_index: int, n_classes: int, name: 
     return value_array[class_index]
 
 
+
+
+def seed_iteration_first_class(means, class_rotation_log_prior=None):
+    """Check that a seed iteration's classes are copies of one reference; return its first class's slices.
+
+    RELION's Class3D from one reference (``do_generate_seeds``, ml_model.cpp:1007-1010) copies it to every class
+    and, in the first iteration, scores each particle against one random class only (ml_optimiser.cpp:4880-4898).
+    Every copy gives the same diff2, so pass 1 scores the first class alone; its ``log pdf_class`` shifts every
+    weight of the particle equally, so the significance cut and Pmax are the random class's
+    (:func:`seed_iteration_supports`). Returns ``(means[:1], class_rotation_log_prior[:1] or None)``.
+    """
+
+    host = np.asarray(means)
+    if host.ndim < 2 or not all(np.array_equal(host[k], host[0]) for k in range(1, host.shape[0])):
+        raise ValueError("a seed iteration's classes must be copies of one reference")
+    if class_rotation_log_prior is not None:
+        prior = np.asarray(class_rotation_log_prior)
+        if prior.ndim == 2:
+            if not all(np.array_equal(prior[k], prior[0]) for k in range(1, prior.shape[0])):
+                raise ValueError("a seed iteration's classes must share one direction prior")
+            class_rotation_log_prior = prior[:1]
+    return means[:1], class_rotation_log_prior
+
+
+def seed_iteration_supports(first_class_supports, unit_seed_classes, n_classes: int):
+    """Per-class pass-1 supports of a seed iteration: each unit's first-class support in its random class only.
+
+    ``first_class_supports[u]`` is unit ``u``'s coarse support scored against the first class
+    (:func:`seed_iteration_first_class`) and ``unit_seed_classes[u]`` its random class (0-based,
+    ``relax.relion.input_particle_table.relion_class3d_seed_classes``); the other classes get no candidates, as
+    RELION scores none of them.
+    """
+
+    seeds = np.asarray(unit_seed_classes, dtype=np.int64).reshape(-1)
+    if seeds.size != len(first_class_supports) or np.any((seeds < 0) | (seeds >= int(n_classes))):
+        raise ValueError("a seed iteration gives every unit one class in range")
+    empty = np.zeros(0, dtype=np.int32)
+    return [
+        [support if seeds[u] == k else empty for u, support in enumerate(first_class_supports)]
+        for k in range(int(n_classes))
+    ]

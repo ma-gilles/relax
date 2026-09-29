@@ -20,6 +20,8 @@ from relax.classification.k_class_inputs import (
     _select_class_value,
     _select_projector_half_for_class,
     _select_required_class_value,
+    seed_iteration_first_class,
+    seed_iteration_supports,
 )
 from relax.classification.k_class_results import (
     KClassEMResult,
@@ -2071,6 +2073,7 @@ def run_dense_k_class_em_adaptive(
     pass2_use_float64_projections: bool | None = None,
     coarse_translation_phase_source=None,
     coarse_engine: str = "auto",
+    image_seed_classes=None,
     **engine_kwargs,
 ) -> KClassEMResult:
     """K-class adaptive 2-pass EM: coarse pass-1 significance + fine pass-2 masked.
@@ -2340,6 +2343,21 @@ def run_dense_k_class_em_adaptive(
                  else engine_kwargs.get("use_float64_scoring", False))
     )
     significant_counts_for_result = None
+    # RELION's seed iteration (Class3D from one reference): pass 1 scores the first copy of the reference and
+    # each image's support goes to its random class (k_class_inputs.seed_iteration_supports).
+    significance_means, significance_log_priors = means_array, log_priors
+    significance_rotation_prior, significance_projector_half = pass1_rotation_prior, relion_projector_half
+    if image_seed_classes is not None:
+        if n_classes == 1 or firstiter_cc_pass2_only_best_coarse or skip_significance_pruning:
+            raise ValueError("a seed iteration is a Gaussian K-class pass with coarse significance")
+        significance_means, class_prior = seed_iteration_first_class(
+            means_array, pass1_rotation_prior if np.ndim(pass1_rotation_prior) == 2 else None
+        )
+        if class_prior is not None:
+            significance_rotation_prior = class_prior
+        significance_log_priors = log_priors[:1]
+        if relion_projector_half is not None:
+            significance_projector_half = seed_iteration_first_class(relion_projector_half)[0]
     coarse_selector_audit = None
     coarse_significance_support_audit = None
     coarse_gaussian_gemm_hybrid_stats = None
@@ -2427,7 +2445,7 @@ def run_dense_k_class_em_adaptive(
             rotation_block_size=sig_rbs,
             current_size=(coarse_current_size if coarse_current_size is not None else fine_current_size),
             score_with_masked_images=engine_kwargs.get("score_with_masked_images", True),
-            rotation_log_prior=pass1_rotation_prior,
+            rotation_log_prior=significance_rotation_prior,
             translation_log_prior=coarse_translation_log_prior,
             image_corrections=engine_kwargs.get("image_corrections"),
             scale_corrections=engine_kwargs.get("scale_corrections"),
@@ -2440,7 +2458,7 @@ def run_dense_k_class_em_adaptive(
             use_float64_scoring=engine_kwargs.get("use_float64_scoring", False),
             use_float64_projections=_projection_float64_from_kwargs(engine_kwargs),
             score_mode=engine_kwargs.get("relion_firstiter_score_mode", "gaussian"),
-            relion_projector_half=relion_projector_half,
+            relion_projector_half=significance_projector_half,
             relion_projector_r_max=relion_projector_r_max,
             relion_projector_texture_interp=coarse_relion_projector_texture_interp,
             debug_iteration=debug_iteration,
@@ -2470,15 +2488,19 @@ def run_dense_k_class_em_adaptive(
                 _full_coarse_stats,
             ) = _compute_k_class_significance_batched(
                 experiment_dataset,
-                means_array,
+                significance_means,
                 noise_variance,
                 coarse_rotations_np,
                 coarse_translations_np,
                 disc_type,
-                class_log_priors=log_priors,
+                class_log_priors=significance_log_priors,
                 **sig_kwargs,
                 **({"symmetry_label": engine_kwargs["symmetry_label"]} if engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),
                 **_translation_angle_scale_kwargs(engine_kwargs),
+            )
+        if image_seed_classes is not None:
+            sig_sample_indices_by_class = seed_iteration_supports(
+                sig_sample_indices_by_class[0], image_seed_classes, n_classes
             )
         if _full_coarse_stats is None or "significant_cutoff_counts" not in _full_coarse_stats:
             raise RuntimeError("K-class significance did not return RELION cutoff-rank counts")

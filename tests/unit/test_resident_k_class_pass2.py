@@ -471,3 +471,27 @@ def test_lone_overflow_chunks_match_the_whole_chunk_k_class_pass(_resident_produ
     assert _rel_l2(whole.class_log_evidence_per_image, lone.class_log_evidence_per_image) < 1e-6
     for field in ("wsum_sigma2_noise", "wsum_img_power", "wsum_norm_correction"):
         assert _rel_l2(getattr(whole.noise_stats, field), getattr(lone.noise_stats, field)) < bound, field
+
+
+def test_seed_iteration_scores_the_first_copy_and_gives_each_support_to_its_class():
+    """RELION's seed iteration: the classes are copies of one reference; each image keeps its support in its class."""
+
+    from relax.classification.k_class_inputs import seed_iteration_first_class, seed_iteration_supports
+
+    means = jnp.stack([jnp.arange(4.0)] * 3)
+    prior = np.zeros((3, 5), dtype=np.float32)
+    first, first_prior = seed_iteration_first_class(means, prior)
+    assert first.shape == (1, 4) and first_prior.shape == (1, 5)
+    with pytest.raises(ValueError, match="copies of one reference"):
+        seed_iteration_first_class(means.at[2, 0].set(9.0))
+    with pytest.raises(ValueError, match="one direction prior"):
+        seed_iteration_first_class(means, prior + np.arange(3, dtype=np.float32)[:, None])
+
+    supports = [np.array([1, 4], np.int32), None, np.array([2], np.int32)]
+    by_class = seed_iteration_supports(supports, [2, 0, 2], 3)
+    assert by_class[0][1] is None and by_class[0][0].size == 0 and by_class[0][2].size == 0
+    assert all(s.size == 0 for s in by_class[1])
+    assert_matches(by_class[2][0], supports[0])
+    assert_matches(by_class[2][2], supports[2])
+    with pytest.raises(ValueError, match="one class in range"):
+        seed_iteration_supports(supports, [0, 3, 1], 3)

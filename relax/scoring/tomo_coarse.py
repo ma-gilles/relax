@@ -422,7 +422,6 @@ def particle_coarse_supports(
     scale_corrections=None,
     unit_rotation_ids=None,
     unit_rotation_log_priors=None,
-    unit_classes=None,
 ):
     """Each particle's coarse significant samples, ``rot * T + t`` int32 ids per unit, and its coarse Pmax.
 
@@ -443,10 +442,7 @@ def particle_coarse_supports(
     ``log pdf_class`` folded into its direction prior): every image is scored against each class, and the
     particle's weights over (class, rotation, translation) are cut jointly, as RELION's
     convertAllSquaredDifferencesToWeights sorts all classes' weights of the particle together
-    (acc_ml_optimiser_impl.h:2245-2345). The supports are then a list per class. ``unit_classes`` ``[U]``,
-    when given, is RELION's first iteration from one reference: each particle is scored against its
-    random class only (``exp_iclass_min = exp_iclass_max``, ml_optimiser.cpp:4880-4898), so its other
-    classes have no weight and take no part in its minimum diff2.
+    (acc_ml_optimiser_impl.h:2245-2345). The supports are then a list per class.
     """
 
     from relax.refinement import tomo_particles
@@ -458,10 +454,6 @@ def particle_coarse_supports(
         unit_rotation_ids is not None or rotation_log_prior is None or np.ndim(rotation_log_prior) != 2
     ):
         raise ValueError("a K-class coarse pass is a global search with one rotation log prior per class, [K, R]")
-    if unit_classes is not None:
-        unit_classes = np.asarray(unit_classes, dtype=np.int64).reshape(-1)
-        if n_classes == 1 or unit_classes.size != int(np.asarray(unit_image_offsets).size - 1):
-            raise ValueError("a seed iteration gives each particle of a K-class pass one class")
     offsets = np.asarray(unit_image_offsets, dtype=np.int64)
     image_projections = np.asarray(image_projections, dtype=np.float64)
     old = tomo_particles.relion_gpu_old_offsets(np.asarray(unit_old_offsets_px, dtype=np.float64))
@@ -519,10 +511,6 @@ def particle_coarse_supports(
         units_all = np.concatenate([u for u, _ in pending])
         totals = jnp.concatenate([t for _, t in pending], axis=0)
         pending.clear()
-        if unit_classes is not None:
-            # A class the particle is not scored against: diff2 +inf, so no weight and no part in the minimum.
-            scored = np.repeat(np.arange(n_classes)[None, :] == unit_classes[units_all][:, None], r_pad_all, axis=1)
-            totals = jnp.where(jnp.asarray(scored)[:, :, None], totals, jnp.float32(jnp.inf))
         if local:
             rotation_prior = np.full((units_all.size, r_pad_all), -np.inf, dtype=np.float32)
             for i, unit in enumerate(units_all):

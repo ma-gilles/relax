@@ -3807,11 +3807,9 @@ def main(command=None):
             # each particle against one random class (do_generate_seeds, ml_model.cpp:1007-1010).
             if args.ref_star is not None or args.init_class_volumes:
                 raise SystemExit("--init_volume is Class3D's one reference; --ref_star and --init_class_volumes list K")
-            if not tomo_run or args.firstiter_cc:
-                raise SystemExit(
-                    "the single-reference Class3D start (--init_volume with --n_classes K) is implemented for "
-                    "subtomograms without --firstiter_cc"
-                )
+            if args.firstiter_cc:
+                # RELION then seeds at iteration 2, after a one-reference CC iteration.
+                raise SystemExit("the single-reference Class3D start (--init_volume with --n_classes K) needs --no-firstiter_cc")
             class_paths = [args.init_volume] * int(args.n_classes)
         elif args.ref_star is not None:
             if args.init_class_volumes:

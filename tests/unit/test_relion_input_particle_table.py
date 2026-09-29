@@ -12,7 +12,9 @@ from helpers.float_compare import assert_matches
 
 from relax.relion.input_particle_table import (
     build_relion_start_particle_table,
+    glibc_first_rand,
     glibc_rand_sequence,
+    relion_class3d_seed_classes,
     relion_particle_order,
     relion_random_subsets,
     relion_scale_group_numbers,
@@ -58,6 +60,32 @@ def test_glibc_rand_sequence_matches_libc(seed):
     libc.srand(ctypes.c_uint(seed))
     expected = np.asarray([libc.rand() for _ in range(2000)], dtype=np.int64)
     assert_matches(glibc_rand_sequence(seed, 2000), expected)
+
+
+def _libc():
+    name = ctypes.util.find_library("c")
+    libc = ctypes.CDLL(name) if name else None
+    if libc is None or not hasattr(libc, "gnu_get_libc_version"):
+        pytest.skip("glibc is required as the reference")
+    return libc
+
+
+def test_class3d_seed_classes_are_libc_rand_after_srand_of_seed_plus_sorted_position():
+    """RELION's single-reference Class3D seed: srand(random_seed + j), rand() % K for sorted position j."""
+
+    libc = _libc()
+    seeds = np.concatenate([[0, 1, 2**31 - 1, 2**31, 2**32 - 1], np.random.default_rng(3).integers(0, 2**32, 64)])
+    expected = []
+    for seed in seeds:
+        libc.srand(ctypes.c_uint(int(seed)))
+        expected.append(libc.rand())
+    assert_matches(glibc_first_rand(seeds), np.asarray(expected, dtype=np.int64))
+
+    order = np.random.default_rng(5).permutation(50)
+    classes = relion_class3d_seed_classes(order, 7, 3)
+    for j, row in enumerate(order):
+        libc.srand(ctypes.c_uint(7 + j))
+        assert classes[row] == libc.rand() % 3
 
 
 def test_order_split_and_groups_follow_relion_rules():

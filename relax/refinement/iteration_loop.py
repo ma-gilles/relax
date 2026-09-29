@@ -1319,8 +1319,6 @@ def refine_single_volume(
             and resume is None
             and int(init_relion_iteration) == 0
         )
-        if seed_iteration and not tomo_halves:
-            raise NotImplementedError("the single-reference Class3D start is implemented for subtomograms")
         if perturb_replay_relion_dir is not None and replay_policy._past_perturb_replay_max_iter(
             iteration, perturb_replay_max_iter
         ):
@@ -2848,6 +2846,16 @@ def refine_single_volume(
                     original_image_indices=np.zeros(0, dtype=np.int64),
                 )
                 return
+            # The half's units' classes in RELION's seed iteration, by particle row.
+            seed_classes_k = (
+                np.asarray(k_class.first_iteration_seed_classes)[
+                    experiment_datasets[k]._index_layout.original_image_indices_for_local(
+                        np.arange(experiment_datasets[k].n_units)
+                    )
+                ]
+                if seed_iteration
+                else None
+            )
             if tomo_halves:
                 tomo_oversampling = int(state.adaptive_oversampling)
                 tomo_coarse_size = local_pass1_current_size if use_local else coarse_cs
@@ -2894,15 +2902,7 @@ def refine_single_volume(
                     symmetry=symmetry,
                     class_log_priors=class_log_priors if k_class_enabled else None,
                     class_rotation_log_prior=class_rotation_log_prior_k if k_class_enabled else None,
-                    unit_seed_classes=(
-                        np.asarray(k_class.first_iteration_seed_classes)[
-                            experiment_datasets[k]._index_layout.original_image_indices_for_local(
-                                np.arange(experiment_datasets[k].n_units)
-                            )
-                        ]
-                        if seed_iteration
-                        else None
-                    ),
+                    unit_seed_classes=seed_classes_k,
                 )
                 ha_k = score_result.ha
                 Ft_y_k = score_result.Ft_y
@@ -3051,6 +3051,7 @@ def refine_single_volume(
                     group_count_k=follower_setup.scale_stats_group_count_per_half[k],
                     scale_correction_data_vs_prior=scale_correction_data_vs_prior_this_iter,
                     optics_group_ids_k=optics_values.get("optics_group_ids_k"),
+                    image_seed_classes=seed_classes_k,
                 )
                 dense_sampling = DenseSamplingSpec(
                     effective_rotations=dense_effective_rotations,

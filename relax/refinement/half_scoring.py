@@ -261,6 +261,9 @@ class DenseHalfData:
     group_count_k: object | None = None
     scale_correction_data_vs_prior: object | None = None
     optics_group_ids_k: object | None = None
+    # RELION's seed iteration of a Class3D run from one reference: each image's class
+    # (k_class_inputs.seed_iteration_supports); the adaptive K-class route takes it.
+    image_seed_classes: object | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -550,6 +553,7 @@ def _score_adaptive_kclass_dense(
         coarse_current_size=coarse_current_size,
         fine_current_size=fine_current_size,
         oversampling_order=adaptive_os,
+        image_seed_classes=half.image_seed_classes,
         **common_kwargs,
         **adaptive_em_kwargs,
     )
@@ -780,6 +784,11 @@ def _score_half_dense_one_shape(
         em_kwargs["reconstruction_current_size"] = sampling.model_current_size_for_engine
     if execution.preserve_bpref_particle_order and variant.k_class_enabled:
         raise ValueError("RELION BPref particle-order preservation is K=1-only")
+    if half.image_seed_classes is not None and (
+        not variant.k_class_enabled
+        or not _dense_uses_adaptive_engine(sampling.state.adaptive_oversampling, half.group_ids_k)
+    ):
+        raise NotImplementedError("a seed iteration runs on the adaptive K-class route")
     if execution.preserve_bpref_particle_order:
         em_kwargs["preserve_bpref_particle_order"] = True
     if execution.source_faithful_spectrum_norm:
@@ -1145,6 +1154,7 @@ def _dense_owners_for_shape(
             "scale_corrections_k": half.scale_corrections_k,
             "group_ids_k": half.group_ids_k,
             "optics_group_ids_k": half.optics_group_ids_k,
+            "image_seed_classes": half.image_seed_classes,
             "rotation_log_prior_k": priors.rotation_log_prior_k,
             "class_rotation_log_prior_k": priors.class_rotation_log_prior_k,
             "translation_log_prior": priors.translation_log_prior,
@@ -1185,6 +1195,7 @@ def _dense_owners_for_shape(
             scale_corrections_k=shape_values["scale_corrections_k"],
             group_ids_k=shape_values["group_ids_k"],
             optics_group_ids_k=shape_values["optics_group_ids_k"],
+            image_seed_classes=shape_values["image_seed_classes"],
             outputs=PerHalfOutputs(),
         ),
         replace(

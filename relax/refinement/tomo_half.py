@@ -333,13 +333,14 @@ def score_tomo_half(
     particle's one posterior segment, each class backprojecting into its own BPref
     (``resident_pass2.compute_k_class_pass2_stats_resident``). A global search only. ``unit_seed_classes``
     ``[P]`` is RELION's first iteration from one reference: each particle is scored against that class
-    only (``tomo_coarse.particle_coarse_supports``; its other classes have no candidates in pass 2).
+    only (``k_class_inputs.seed_iteration_supports``; its other classes have no candidates).
     """
 
     import jax.numpy as jnp
     from recovar.reconstruction import noise as recon_noise
 
     from relax import sampling as relax_sampling
+    from relax.classification.k_class_inputs import seed_iteration_first_class, seed_iteration_supports
     from relax.helpers.projection import relion_projector_half_to_texture_full
     from relax.scoring import tomo_coarse
     from relax.sparse_pass2.resident_pass2 import (
@@ -392,6 +393,13 @@ def score_tomo_half(
     image_scale = None if scale_corrections is None else np.repeat(
         np.asarray(scale_corrections, dtype=np.float32), np.diff(half.unit_image_offsets)
     )
+    # A seed iteration scores every particle against its random class alone: pass 1 against the first copy of
+    # the one reference (k_class_inputs.seed_iteration_first_class), each support then in the particle's class.
+    coarse_halves, coarse_prior = relion_projector_half, rotation_log_prior
+    if unit_seed_classes is not None:
+        if n_classes == 1:
+            raise ValueError("a seed iteration is a K-class pass")
+        (coarse_halves,), (coarse_prior,) = seed_iteration_first_class(relion_projector_half, rotation_log_prior)
     supports, coarse_pmax = tomo_coarse.particle_coarse_supports(
         half.images,
         unit_image_offsets=half.unit_image_offsets,
@@ -402,16 +410,16 @@ def score_tomo_half(
         angular_sampling_deg=relax_sampling.relion_angular_sampling_deg(sampling.healpix_order),
         coarse_translations_px=coarse_px,
         projector_full=(
-            relion_projector_half_to_texture_full(jnp.asarray(relion_projector_half)).astype(jnp.complex64)
-            if n_classes == 1
+            relion_projector_half_to_texture_full(jnp.asarray(coarse_halves)).astype(jnp.complex64)
+            if np.ndim(coarse_halves) == 3
             else tuple(
                 relion_projector_half_to_texture_full(jnp.asarray(class_half)).astype(jnp.complex64)
-                for class_half in relion_projector_half
+                for class_half in coarse_halves
             )
         ),
         layout=layout,
         noise_variance_half=noise_half,
-        rotation_log_prior=rotation_log_prior,
+        rotation_log_prior=coarse_prior,
         unit_translation_log_prior=unit_coarse_prior,
         adaptive_fraction=adaptive_fraction,
         max_significants=max_significants,
@@ -420,7 +428,6 @@ def score_tomo_half(
         image_size=size,
         optics_group_ids=image_groups,
         scale_corrections=image_scale,
-        unit_classes=unit_seed_classes,
         **(
             {}
             if local_rotations is None
@@ -430,6 +437,8 @@ def score_tomo_half(
             }
         ),
     )
+    if unit_seed_classes is not None:
+        supports = seed_iteration_supports(supports, unit_seed_classes, n_classes)
     tilt = tilt_pass_inputs(
         half,
         fine_px=fine_px,
