@@ -650,6 +650,16 @@
    "source_role": "ground truth (class mean for K=2), simulator output on optics group 1's grid",
    "generation": "recipe",
    "sanity": "PASS: box fraction 0.016, 1 component(s), captures 0.956 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "synth_k1_100k256_1a_b18_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/synth_k1_100k256_1A_b18_20260928/masks/synth_k1_100k256_1a_b18_c1/MASK.json",
+   "mask_sha256": "7f61a2314fe63215f252de840174b405b636a418f31a4ed7b54043211f1ba669",
+   "symmetry": "C1",
+   "box": 256,
+   "pixel_size_A": 1.0,
+   "source_role": "mean of the ground-truth class maps (relax file frame)",
+   "generation": "adopted",
+   "sanity": "PASS: box fraction 0.290, 1 component(s), captures 0.958 of positive density, strong density outside hard mask 0.0000, edge-clear True"
   }
  }
 }
