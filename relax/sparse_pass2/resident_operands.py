@@ -129,6 +129,10 @@ class ResidentHalfOperands:
         reconstruction window), always in the score convention.
     ctf2_over_nv_recon, direct_ctf_rfloat_recon
         The M-step CTF operands on the reconstruction window.
+    bpref_ctf2_over_nv_recon
+        The backprojected CTF weight when some image is CTF-premultiplied
+        (:func:`~relax.sparse_pass2.sparse_pass2_bucket_io.premultiplied_bpref_weights`);
+        ``None`` otherwise, when ``ctf2_over_nv_recon`` is that weight too.
     wavg_image_rect
         The raw processed image on RELION's Wavg rectangle, the window the Wavg
         terms translate (``processed_score_half_for_noise[:, rect_indices]``).
@@ -175,6 +179,7 @@ class ResidentHalfOperands:
     # Optics-group row of each image, only with a per-group noise table
     # (relax.helpers.optics_noise); None keeps the one-group programs unchanged.
     optics_groups: jax.Array | None = None
+    bpref_ctf2_over_nv_recon: jax.Array | None = None
 
     def __post_init__(self):
         if self.n_image_capacity < self.n_images:
@@ -194,7 +199,7 @@ class ResidentHalfOperands:
             value = getattr(self, name)
             if tuple(value.shape) != expected:
                 raise ValueError(f"{name} must have shape {expected}, got {tuple(value.shape)}")
-        for name in ("recon_weight", "direct_ctf_rfloat_recon"):
+        for name in ("recon_weight", "direct_ctf_rfloat_recon", "bpref_ctf2_over_nv_recon"):
             value = getattr(self, name)
             if value is not None and tuple(value.shape) != recon_shape:
                 raise ValueError(f"{name} must have shape {recon_shape}, got {tuple(value.shape)}")
@@ -219,6 +224,7 @@ class ResidentHalfOperands:
             "scale",
             "group_ids",
             "optics_groups",
+            "bpref_ctf2_over_nv_recon",
         ):
             value = getattr(self, name)
             parts[name] = 0 if value is None else int(value.size) * int(value.dtype.itemsize)
@@ -238,6 +244,7 @@ def resident_half_operand_bytes(
     real_bytes: int = 4,
     rfloat_ctf_bytes: int = 8,
     norm_high_shell_bytes: int | None = None,
+    premultiplied_ctf: bool = False,
 ) -> int:
     """Host estimate of the resident operand bytes, before any device work.
 
@@ -257,7 +264,11 @@ def resident_half_operand_bytes(
         * (
             int(n_score_pixels) * (int(score_complex_bytes) + int(real_bytes))
             + int(n_recon_pixels)
-            * (2 * int(score_complex_bytes) + 2 * int(real_bytes) + int(rfloat_ctf_bytes))
+            * (
+                2 * int(score_complex_bytes)
+                + (3 if premultiplied_ctf else 2) * int(real_bytes)
+                + int(rfloat_ctf_bytes)
+            )
             + int(n_rect_pixels) * int(score_complex_bytes)
             + int(n_noise_shells) * 8
             + int(n_fine_trans) * int(real_bytes)
@@ -365,6 +376,7 @@ def resident_half_operand_avals(
     has_highres_xi2: bool = True,
     has_relion_norm_high_shell: bool = True,
     has_optics_groups: bool = False,
+    has_bpref_ctf2_over_nv: bool = False,
 ) -> "ResidentHalfOperands":
     """The half's operands as avals, without preparing them (P4-J).
 
@@ -445,6 +457,7 @@ def resident_half_operand_avals(
         scale=aval(per_image, jnp.float32),
         group_ids=aval(per_image, jnp.int32),
         optics_groups=aval(per_image, jnp.int32) if has_optics_groups else None,
+        bpref_ctf2_over_nv_recon=aval(recon_shape, acc_real_dtype) if has_bpref_ctf2_over_nv else None,
     )
 
 
@@ -523,6 +536,8 @@ class _BatchWindowInputs(NamedTuple):
     score_indices: jax.Array
     recon_indices: jax.Array
     rect_indices: jax.Array
+    # CTF-premultiplied images only (sparse_pass2_bucket_io.premultiplied_bpref_weights).
+    bpref_ctf2_over_nv_recon_half: jax.Array | None = None
 
 
 @partial(
@@ -576,6 +591,8 @@ def _batch_window_operands(
         )
     if arrays.ctf_half_rfloat is not None:
         batch_arrays["direct_ctf_rfloat_recon"] = arrays.ctf_half_rfloat[:, recon_indices]
+    if arrays.bpref_ctf2_over_nv_recon_half is not None:
+        batch_arrays["bpref_ctf2_over_nv_recon"] = arrays.bpref_ctf2_over_nv_recon_half[:, recon_indices]
     return batch_arrays
 
 
@@ -725,6 +742,7 @@ def prepare_resident_half_operands(
     optional_available: dict[str, bool | None] = {
         "recon_weight": None,
         "direct_ctf_rfloat_recon": None,
+        "bpref_ctf2_over_nv_recon": None,
         "highres_xi2_half": None,
         "relion_norm_high_shell": None,
     }
@@ -818,11 +836,14 @@ def prepare_resident_half_operands(
                         else unshifted.recon_weighted_half
                     ),
                     weighted_ctf_half=(
-                        unshifted.weighted_ctf_half if relion_exact_bpref_operands else None
+                        unshifted.bpref_weighted_ctf_half if relion_exact_bpref_operands else None
                     ),
                     score_weighted_half=unshifted.score_weighted_half,
                     ctf2_over_nv_recon_half=unshifted.ctf2_over_nv_recon_half,
                     ctf_half_rfloat=unshifted.ctf_half_rfloat,
+                    bpref_ctf2_over_nv_recon_half=(
+                        None if unshifted.ctf_premultiplied is None else unshifted.bpref_ctf2_over_nv_half
+                    ),
                     dc_mask=dc_mask,
                     score_indices=score_indices,
                     recon_indices=recon_indices,
@@ -947,6 +968,7 @@ def prepare_resident_half_operands(
         scale=jnp.asarray(scale),
         group_ids=jnp.asarray(group_ids),
         optics_groups=None if optics_groups is None else jnp.asarray(optics_groups),
+        bpref_ctf2_over_nv_recon=stack("bpref_ctf2_over_nv_recon"),
     )
     if not log_summary:
         return operands
@@ -1003,6 +1025,7 @@ def _gather_chunk_arrays(
     scale,
     group_ids,
     optics_groups,
+    bpref_ctf2_over_nv_recon,
     translation_angles,
     rect_indices,
     exact_positions,
@@ -1049,6 +1072,7 @@ def _gather_chunk_arrays(
         _gather_rows(scale, safe_slots, valid, fill=1.0),
         _gather_rows(group_ids, safe_slots, valid, fill=-1),
         _gather_rows(optics_groups, safe_slots, valid),
+        _gather_rows(bpref_ctf2_over_nv_recon, safe_slots, valid),
         raw_translated_wavg_rectangle,
         raw_translated_wavg_rectangle[:, :, jnp.asarray(exact_positions, dtype=jnp.int32)],
     )
@@ -1086,6 +1110,7 @@ def gather_resident_chunk_operands(
         scale,
         group_ids,
         optics_groups,
+        bpref_ctf2_over_nv_recon,
         raw_translated_wavg_rectangle,
         raw_translated_wavg_for_atomic,
     ) = _gather_chunk_arrays(
@@ -1105,6 +1130,7 @@ def gather_resident_chunk_operands(
         operands.scale,
         operands.group_ids,
         operands.optics_groups,
+        operands.bpref_ctf2_over_nv_recon,
         jnp.asarray(translation_angles, dtype=jnp.float32),
         jnp.asarray(rect_indices, dtype=jnp.int32),
         jnp.asarray(exact_positions, dtype=jnp.int32),
@@ -1127,4 +1153,5 @@ def gather_resident_chunk_operands(
         "scale": scale,
         "group_ids": group_ids,
         "optics_groups": optics_groups,
+        "bpref_ctf2_over_nv_recon": bpref_ctf2_over_nv_recon,
     }

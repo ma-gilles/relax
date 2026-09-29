@@ -78,6 +78,7 @@ from relax.relion.initial_noise import (
     compute_avg_unaligned_and_sigma2,
     read_relion_single_optics_sigma2_noise,
 )
+from relax.relion.relion_ctf import refuse_generic_ctf_for_premultiplied
 from relax.relion.relion_worker_scale import (
     load_relion_dispatch_schedule,
     load_relion_follower_scale_replay,
@@ -2962,6 +2963,7 @@ def main(command=None):
             absent_angles_zero=True,
         )
         assert_reads_from_scratch(ds, particle_scratch)
+        refuse_generic_ctf_for_premultiplied(ds)
     else:
         _validate_multi_shape_run(args, frozen_boundary, _double_image_preprocessing)
         # One dataset per image shape (optics groups sharing box and pixel size).
@@ -2980,6 +2982,7 @@ def main(command=None):
         )
         for class_dataset in ds.datasets:
             assert_reads_from_scratch(class_dataset, particle_scratch)
+            refuse_generic_ctf_for_premultiplied(class_dataset)
         logger.info(
             "Optics groups on %d image shapes: %s",
             len(ds.datasets),
@@ -3035,7 +3038,9 @@ def main(command=None):
     our_star = _starfile.read(os.path.join(args.data_dir, "particles.star"))
     our_particles = our_star["particles"] if isinstance(our_star, dict) else our_star
     relion_metadata.refuse_unsupported_optics(
-        our_star.get("optics") if isinstance(our_star, dict) else None, source="particles.star"
+        our_star.get("optics") if isinstance(our_star, dict) else None,
+        source="particles.star",
+        ctf_premultiplied_supported=args.n_classes == 1,
     )
     # Keep the input-STAR particle identities available for replay mapping.
     # RELION data STAR rows can be permuted relative to this table, so callers

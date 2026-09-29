@@ -205,6 +205,7 @@ def _chunk_operand_rows_loose(arrays, permutation, valid_images, exact_positions
         take(arrays.relion_norm_high_shell),
         raw,
         raw[:, :, exact_positions],
+        take(arrays.bpref_ctf2_over_nv_recon),
     )
 
 

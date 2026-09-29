@@ -181,6 +181,87 @@ def _relion_ctf_column(cache, name: str, default: float | None, *, optics_only: 
     return column
 
 
+def _premultiplied_particles(cache) -> np.ndarray:
+    """Per particle: its optics group stores CTF-premultiplied images (``rlnCtfDataAreCtfPremultiplied``)."""
+
+    column = cache.get("premultiplied")
+    if column is None:
+        values = _relion_ctf_column(cache, "rlnCtfDataAreCtfPremultiplied", 0.0, optics_only=True)
+        column = np.asarray(values != 0.0, dtype=bool)
+        cache["premultiplied"] = column
+    return column
+
+
+def premultiplied_ctf_rows(experiment_dataset, image_indices, image_shape) -> np.ndarray | None:
+    """Which of these images are CTF-premultiplied, or ``None`` when no optics group is.
+
+    RELION reads ``rlnCtfDataAreCtfPremultiplied`` per optics group
+    (``ObservationModel::getCtfPremultiplied``). For such an image the exact CTF
+    rows of this module already hold RELION's ``Fctf = CTF^2``
+    (:func:`_evaluate_exact_ctf_rows`); the backprojection operands then differ
+    as well (:func:`relax.sparse_pass2.sparse_pass2_bucket_io.premultiplied_bpref_weights`).
+    ``None`` keeps every ordinary dataset on its unchanged programs. A dataset
+    without a source STAR has no optics table and so no premultiplied images.
+    """
+
+    try:
+        _, cache = _exact_ctf_source_cache(experiment_dataset, image_shape)
+    except ValueError:
+        return None
+    flags = _premultiplied_particles(cache)
+    if not flags.any():
+        return None
+    original_indices = np.asarray(
+        original_image_indices(experiment_dataset, np.asarray(image_indices, dtype=np.int64)), dtype=np.int64
+    )
+    return flags[original_indices]
+
+
+def dataset_has_premultiplied_ctf(experiment_dataset, image_shape) -> bool:
+    """Whether any optics group of the dataset's source STAR stores CTF-premultiplied images."""
+
+    try:
+        _, cache = _exact_ctf_source_cache(experiment_dataset, image_shape)
+    except ValueError:
+        return False
+    return bool(_premultiplied_particles(cache).any())
+
+
+def require_no_premultiplied_ctf(experiment_dataset, image_indices, image_shape, *, where: str) -> None:
+    """Refuse CTF-premultiplied images on a path that backprojects them as ordinary ones."""
+
+    flags = premultiplied_ctf_rows(experiment_dataset, image_indices, image_shape)
+    if flags is not None and flags.any():
+        raise NotImplementedError(
+            f"{where} does not implement CTF-premultiplied images; they run on the resident sparse pass 2"
+        )
+
+
+def _refuse_generic_ctf(ctf_params, image_shape, voxel_size, *, half_image=False, **kwargs):
+    raise NotImplementedError(
+        "CTF-premultiplied images need RELION's exact CTF operands; this path evaluates the "
+        "dataset's generic CTF, which knows nothing of premultiplication"
+    )
+
+
+def refuse_generic_ctf_for_premultiplied(experiment_dataset) -> bool:
+    """Make the dataset's generic CTF evaluator raise when its STAR has premultiplied images.
+
+    The generic evaluator (``ForwardModelConfig.compute_ctf``) returns the plain
+    CTF. For a premultiplied image RELION scores and backprojects with ``CTF^2``
+    and its own weights, which only the exact operands of this module and the
+    sparse pass 2 carry, so every other use fails closed instead of silently
+    treating the images as ordinary ones. Returns whether the evaluator was replaced.
+    """
+
+    from recovar import core
+
+    if not dataset_has_premultiplied_ctf(experiment_dataset, experiment_dataset.image_shape):
+        return False
+    experiment_dataset._ctf_evaluator = core.as_ctf_evaluator(_refuse_generic_ctf)
+    return True
+
+
 def _relion_ctf_batch_params(cache, original_indices: np.ndarray) -> np.ndarray:
     """``get_ctf_images_batch`` rows for these particles, in the get_ctf_image argument order."""
 
@@ -347,6 +428,12 @@ def _evaluate_exact_ctf_rows(cache, original_indices, image_h: int, image_w: int
                 native[row] = native[row] * relion_tomo_damping(
                     fftw_half_freq_sq(image_h, image_w, params[row, 7]), dose[row], dose_bfactor[row]
                 )
+        premultiplied = _premultiplied_particles(cache)[missing]
+        if premultiplied.any():
+            # CTF-premultiplied images: RELION squares its CTF image right after
+            # getFftwImage and then uses the ordinary scoring kernels with it
+            # (ml_optimiser.cpp:6486-6492, acc_ml_optimiser_impl.h:840-847).
+            native[premultiplied] = native[premultiplied] * native[premultiplied]
         # RELION/FFTW stores y in standard order and uses the opposite CTF
         # sign from RECOVAR's forward-model convention: one roll and negation
         # of the row axis, written straight into the cache block.

@@ -53,7 +53,7 @@ ARRAY_FIELDS = (
     "score_input", "corr_img_score", "highres_xi2_half", "translation_prior",
     "recon_image", "recon_weight", "noise_image", "ctf2_over_nv_recon",
     "direct_ctf_rfloat_recon", "wavg_image_rect", "image_power_shells", "relion_norm_high_shell",
-    "scale", "group_ids", "optics_groups",
+    "scale", "group_ids", "optics_groups", "bpref_ctf2_over_nv_recon",
 )
 
 
@@ -210,6 +210,7 @@ def test_the_avals_match_the_real_preparation(monkeypatch, custom_cuda_lib, gpu_
         has_highres_xi2=real.highres_xi2_half is not None,
         has_relion_norm_high_shell=real.relion_norm_high_shell is not None,
         has_optics_groups=real.optics_groups is not None,
+        has_bpref_ctf2_over_nv=real.bpref_ctf2_over_nv_recon is not None,
     )
 
     mismatches = []

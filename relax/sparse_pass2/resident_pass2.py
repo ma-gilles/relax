@@ -115,6 +115,7 @@ from relax.local.local_backprojection import (
     compute_local_ctf_sums_from_probs_sum_t,
     compute_local_weighted_sums,
 )
+from relax.relion import relion_ctf
 from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.sparse_pass2.compile_ahead import (
     CompileAheadPool,
@@ -168,6 +169,7 @@ from relax.sparse_pass2.sparse_pass2_adjoint import _accumulate_adjoint_block_ch
 from relax.sparse_pass2.sparse_pass2_bucket_io import (
     _prepare_bucket_io,
     _relion_cuda_score_translation_angles_if_available,
+    premultiplied_bpref_weights,
 )
 from relax.sparse_pass2.sparse_pass2_budget import (
     _device_free_memory_bytes,
@@ -1793,6 +1795,7 @@ class _ChunkOperandRowInputs(NamedTuple):
     processed_score_half_for_noise: jax.Array
     relion_norm_high_shell: jax.Array | None
     raw_translated_wavg_rectangle: jax.Array
+    bpref_ctf2_over_nv_recon: jax.Array | None = None
 
 
 @partial(jax.jit, static_argnames=("image_capacity", "n_fine_trans"))
@@ -1834,6 +1837,7 @@ def _chunk_operand_rows(
         take(arrays.relion_norm_high_shell),
         raw_translated_wavg_rectangle,
         raw_translated_wavg_rectangle[:, :, exact_positions],
+        take(arrays.bpref_ctf2_over_nv_recon),
     )
 
 
@@ -2397,6 +2401,8 @@ def _resident_pass2(
         if coarse_rotation_ids is not None:
             n_coarse_rot = int(np.asarray(coarse_rotation_ids).size)
     image_shape = experiment_dataset.image_shape
+    # Some images CTF-premultiplied: the resident operands carry one more array.
+    ctf_premultiplied_pass = relion_ctf.dataset_has_premultiplied_ctf(experiment_dataset, image_shape)
     volume_shape = experiment_dataset.volume_shape
 
     if current_size is None:
@@ -2894,6 +2900,7 @@ def _resident_pass2(
             n_fine_trans=n_fine_trans,
             precision_policy=precision_policy,
             resolved_spectrum_norm=resolved_spectrum_norm,
+            premultiplied_ctf=ctf_premultiplied_pass,
         )
     )
     accumulator_shape = (n_fine_rot, int(n_recon_windowed)) if presum_adjoint else (program_recon_volume_size,)
@@ -3113,6 +3120,7 @@ def _resident_pass2(
             n_fine_trans=n_fine_trans,
             precision_policy=precision_policy,
             resolved_spectrum_norm=resolved_spectrum_norm,
+            premultiplied_ctf=ctf_premultiplied_pass,
         )
         if _resident_operands_fit(
             operand_peak_bytes,
@@ -3612,6 +3620,7 @@ def _resident_pass2(
             n_fine_trans=n_fine_trans,
             precision_policy=precision_policy,
             resolved_spectrum_norm=resolved_spectrum_norm,
+            premultiplied_ctf=ctf_premultiplied_pass,
         )
         _, _norm_high_shell_dtype = relion_powerclass_noise_dtypes(
             real_dtype=precision_policy.score_real_dtype,
@@ -3688,6 +3697,7 @@ def _resident_pass2(
                             has_highres_xi2=presence.has_highres_xi2,
                             has_relion_norm_high_shell=presence.has_relion_norm_high_shell,
                             has_optics_groups=optics_groups_np is not None,
+                            has_bpref_ctf2_over_nv=ctf_premultiplied_pass,
                         )
                         warmup = _submit_resident_chunk_warmup(
                             warm_pool,
@@ -4613,6 +4623,7 @@ def _resident_half_operand_sizes(
     n_fine_trans,
     precision_policy,
     resolved_spectrum_norm,
+    premultiplied_ctf=False,
 ):
     """``(bytes, peak bytes)`` of one half's resident operands.
 
@@ -4634,6 +4645,7 @@ def _resident_half_operand_sizes(
         score_complex_bytes=np.dtype(precision_policy.score_complex_dtype).itemsize,
         real_bytes=np.dtype(precision_policy.score_real_dtype).itemsize,
         norm_high_shell_bytes=np.dtype(norm_high_shell_dtype).itemsize,
+        premultiplied_ctf=bool(premultiplied_ctf),
     )
     peak_bytes = operand_bytes + resident_image_capacity(int(n_images)) * max(
         int(n_windowed), int(n_recon_windowed), int(n_rect)
@@ -4991,6 +5003,7 @@ def _make_chunk_stage_operands(recon, translation_sqdist_ang) -> _ChunkStageOper
         optics_groups=recon.get("optics_groups"),
         score_shifted_cc=recon.get("score_shifted_cc"),
         cc_half_batch_norm=recon.get("cc_half_batch_norm"),
+        bpref_ctf2_over_nv_recon=recon.get("bpref_ctf2_over_nv_recon"),
     )
 
 
@@ -5708,6 +5721,22 @@ def _prepare_chunk_reconstruction_operands(
     direct_ctf_rfloat_recon = (
         None if direct_ctf_rfloat_half is None else direct_ctf_rfloat_half[:, gather_recon]
     )
+    bpref_ctf2_over_nv_recon = None
+    ctf_premultiplied = relion_ctf.premultiplied_ctf_rows(experiment_dataset, padded_fetched_indices, image_shape)
+    if ctf_premultiplied is not None:
+        # The same weights prepare_unshifted_bucket_operands gives the resident operands.
+        _, premultiplied_ctf_weight = premultiplied_bpref_weights(
+            jnp.asarray(direct_ctf_rfloat_half, dtype=ctf2_over_nv_recon.dtype),
+            _direct_inverse_noise_half,
+            (
+                jnp.asarray(direct_batch_scale_corrections, dtype=ctf2_over_nv_recon.dtype)
+                if bucket_io_kwargs["scale_corrections"] is not None
+                else None
+            ),
+        )
+        bpref_ctf2_over_nv_recon = jnp.where(
+            jnp.asarray(ctf_premultiplied)[:, None], premultiplied_ctf_weight[:, gather_recon], ctf2_over_nv_recon
+        )
 
     # Score-side operands come from this same call. The driver used to make a
     # second pass over the whole half for them; the preparation is per-image
@@ -5795,6 +5824,7 @@ def _prepare_chunk_reconstruction_operands(
         relion_norm_high_shell,
         raw_translated_wavg_rectangle,
         raw_translated_wavg_for_atomic,
+        bpref_ctf2_over_nv_recon,
     ) = _chunk_operand_rows(
         _ChunkOperandRowInputs(
             score_input=score_input,
@@ -5807,6 +5837,7 @@ def _prepare_chunk_reconstruction_operands(
             processed_score_half_for_noise=processed_score_half_for_noise,
             relion_norm_high_shell=relion_norm_high_shell,
             raw_translated_wavg_rectangle=raw_translated_wavg_rectangle,
+            bpref_ctf2_over_nv_recon=bpref_ctf2_over_nv_recon,
         ),
         permutation,
         valid_images,
@@ -5872,6 +5903,7 @@ def _prepare_chunk_reconstruction_operands(
         "optics_groups": None if optics_groups_chunk is None else jnp.asarray(optics_groups_chunk),
         "score_shifted_cc": score_shifted_cc,
         "cc_half_batch_norm": cc_half_batch_norm,
+        "bpref_ctf2_over_nv_recon": bpref_ctf2_over_nv_recon,
     }
 
 
@@ -6413,6 +6445,10 @@ class _ChunkStageOperands(NamedTuple):
     # subtomogram's noise and norm sums, not its backprojection, by the particle's image count
     # (acc_ml_optimiser_impl.h:3490-3491, :3512-3516; resident_tilts).
     image_noise_scale: jax.Array | None = None
+    # CTF-premultiplied images only: the backprojected CTF weight [C_B, P]
+    # (sparse_pass2_bucket_io.premultiplied_bpref_weights). None: ctf2_over_nv_recon
+    # is both the backprojected weight and the noise statistics' CTF^2 / sigma2.
+    bpref_ctf2_over_nv_recon: jax.Array | None = None
 
 
 class _CoarseNormalizationReuse(NamedTuple):
@@ -6931,6 +6967,14 @@ def _resident_mstep_block(
             operands.ctf2_over_nv_recon,
         )
 
+    # The backprojected CTF sum. For CTF-premultiplied images its weight is not
+    # the noise statistics' CTF^2 / sigma2 (sparse_pass2_bucket_io.premultiplied_bpref_weights).
+    bpref_ctf2_over_nv = operands.ctf2_over_nv_recon
+    bpref_ctf_probs = ctf_probs
+    if operands.bpref_ctf2_over_nv_recon is not None:
+        bpref_ctf2_over_nv = operands.bpref_ctf2_over_nv_recon
+        bpref_ctf_probs, _ = _resident_block_ctf_probs(block_posterior, block_row_image, bpref_ctf2_over_nv)
+
     if spec.stable_window:
         # The physical tail holds real pixels above RELION's cutoff: they add
         # nothing to the weighted sums, the Wavg terms, the noise or either
@@ -6939,11 +6983,10 @@ def _resident_mstep_block(
         summed = jnp.where(recon_live, summed, jnp.zeros((), summed.dtype))
         summed_masked = jnp.where(recon_live, summed_masked, jnp.zeros((), summed_masked.dtype))
         ctf_probs = jnp.where(recon_live, ctf_probs, jnp.zeros((), ctf_probs.dtype))
+        bpref_ctf_probs = jnp.where(recon_live, bpref_ctf_probs, jnp.zeros((), bpref_ctf_probs.dtype))
 
     if spec.mstep_subtract_ctf_projection:
-        summed = _resident_block_residual(
-            summed, _probs_sum_t, proj, operands.ctf2_over_nv_recon, block_row_image
-        )
+        summed = _resident_block_residual(summed, _probs_sum_t, proj, bpref_ctf2_over_nv, block_row_image)
 
     # RELION Wavg triplet in the flat-row layout, then its rotation atomics.
     # The host tail picks the sequential RELION reducer when the pass carries
@@ -7005,7 +7048,7 @@ def _resident_mstep_block(
         # here and backprojected once per pass (_backproject_projection_sums).
         # Padded and other-slot rows carry zero sums.
         Ft_y = carry.Ft_y.at[block_sum_ids].add(summed.astype(carry.Ft_y.dtype))
-        Ft_ctf = carry.Ft_ctf.at[block_sum_ids].add(ctf_probs.astype(carry.Ft_ctf.dtype))
+        Ft_ctf = carry.Ft_ctf.at[block_sum_ids].add(bpref_ctf_probs.astype(carry.Ft_ctf.dtype))
         return carry._replace(
             Ft_y=Ft_y,
             Ft_ctf=Ft_ctf,
@@ -7035,7 +7078,7 @@ def _resident_mstep_block(
         runtime_max_r=runtime_mstep_max_r,
     )
     Ft_ctf = _accumulate_adjoint_block_chunked(
-        ctf_probs,
+        bpref_ctf_probs,
         block_mstep_rotations,
         carry.Ft_ctf,
         window_indices=tables.relion_x_half_recon_indices,
@@ -8449,6 +8492,7 @@ def run_resident_mstep_blocks(
         group_ids=None,
         translation_sqdist_ang=None,
         optics_groups=recon.get("optics_groups"),
+        bpref_ctf2_over_nv_recon=recon.get("bpref_ctf2_over_nv_recon"),
     )
     tables = _ChunkStageTables(
         projection_score_cache=None,

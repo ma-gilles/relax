@@ -596,15 +596,20 @@ def resolve_relion_runtime_max_significants(
     }
 
 
-def refuse_unsupported_optics(optics_table, *, source) -> None:
+def refuse_unsupported_optics(optics_table, *, source, ctf_premultiplied_supported: bool = False) -> None:
     """Refuse optics-group features relax does not model yet (deferred by the user, 2026-09-24).
 
-    RELION applies beam tilt and odd/even Zernike aberrations to the CTF phase,
-    anisotropic magnification to every projection (``obs_model.cpp``), and treats
-    CTF-premultiplied images differently throughout. relax implements none of them,
-    so a table that uses one raises instead of being silently ignored. Columns that
-    have no effect (zero tilt and coefficients, identity magnification,
-    ``rlnCtfDataAreCtfPremultiplied 0``) are accepted.
+    RELION applies beam tilt and odd/even Zernike aberrations to the CTF phase and
+    anisotropic magnification to every projection (``obs_model.cpp``). relax
+    implements none of them yet, so a table that uses one raises instead of being
+    silently ignored. Columns that have no effect (zero tilt and coefficients,
+    identity magnification) are accepted.
+
+    CTF-premultiplied images (``rlnCtfDataAreCtfPremultiplied 1``) are implemented
+    for Refine3D (``relax.relion.relion_ctf``, the resident sparse pass 2); a caller
+    whose job does not support them (Class3D and InitialModel, which also need
+    RELION's average-CTF^2 tau2 correction) leaves ``ctf_premultiplied_supported``
+    False and they raise too.
     """
 
     if optics_table is None:
@@ -630,7 +635,7 @@ def refuse_unsupported_optics(optics_table, *, source) -> None:
         if column is not None and np.any(np.asarray(column, dtype=np.float64) != identity):
             found.append(label)
     column = values("rlnCtfDataAreCtfPremultiplied")
-    if column is not None and np.any(np.asarray(column, dtype=np.float64) != 0.0):
+    if column is not None and np.any(np.asarray(column, dtype=np.float64) != 0.0) and not ctf_premultiplied_supported:
         found.append("rlnCtfDataAreCtfPremultiplied")
     # Refused for good (not implemented): phase-flipped / CTF-corrected images change how
     # RELION reads the data, and several different detector MTFs make RELION rescale each
@@ -643,7 +648,7 @@ def refuse_unsupported_optics(optics_table, *, source) -> None:
         found.append("rlnMtfFileName (several different MTFs)")
     if found:
         raise NotImplementedError(
-            f"{source}: optics table uses {', '.join(found)}; beam tilt, Zernike aberrations, "
-            "anisotropic magnification and CTF-premultiplied images are not supported by relax yet, "
-            "and CTF-corrected images and per-group detector MTFs are not implemented"
+            f"{source}: optics table uses {', '.join(found)}; beam tilt, Zernike aberrations and "
+            "anisotropic magnification are not supported by relax yet, CTF-premultiplied images "
+            "only in Refine3D, and CTF-corrected images and per-group detector MTFs are not implemented"
         )

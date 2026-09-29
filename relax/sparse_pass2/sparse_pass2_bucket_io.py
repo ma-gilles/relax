@@ -227,6 +227,33 @@ def _generic_inverse_noise_operands(noise_variance_half, *, optics_group_rows: b
     return optics_group_rows or int(jnp.ndim(noise_variance_half)) == 1
 
 
+def premultiplied_bpref_weights(ctf_half, inverse_noise_half, batch_scale=None):
+    """RELION's backprojection weights of CTF-premultiplied images, in RECOVAR's frame.
+
+    For a premultiplied image RELION's ``Fctf`` holds ``CTF^2`` and its BPref
+    kernels take the ``CTF_PREMULTIPLIED`` branch (``BP.cuh``:98-104, :280-286,
+    :533-539; ``ml_optimiser.cpp``:8774-8786): the image is weighted by
+    ``Minvsigma2`` alone and the weight by ``Fctf * scale * Minvsigma2``, where an
+    ordinary image has ``Fctf * scale * Minvsigma2`` and its square. RECOVAR's CTF
+    operand is the negated RELION ``Fctf`` (:mod:`relax.relion.relion_ctf`), so in
+    this frame the image weight is ``-Minvsigma2`` and the CTF weight
+    ``-ctf * Minvsigma2 * scale``; both keep the reconstruction's sign convention.
+
+    Returns ``(image_weight, ctf_weight)``, one row per image. ``batch_scale`` is
+    the per-image scale correction, ``None`` when scale correction is off. The
+    image weight carries no scale: RELION backprojects the premultiplied image as
+    read.
+    """
+
+    inverse_noise = pixel_rows(inverse_noise_half)
+    weighted_ctf_half = ctf_half * inverse_noise
+    ctf_weight = -weighted_ctf_half
+    if batch_scale is not None:
+        ctf_weight = ctf_weight * jnp.asarray(batch_scale, dtype=ctf_weight.dtype).reshape(-1, 1)
+    image_weight = jnp.broadcast_to(-inverse_noise, weighted_ctf_half.shape)
+    return image_weight, ctf_weight
+
+
 @jax.jit
 def _divide_by_safe_ctf(sparse_score_input_half, ctf_half):
     """Divide by the CTF where it is safely non-zero, else pass through."""
@@ -279,6 +306,13 @@ class UnshiftedBucketOperands(NamedTuple):
     sparse_score_input_half: object
     processed_score_half_for_noise: object
     noise_variance_half: object
+    # Backprojection operands. They are ``weighted_ctf_half`` and
+    # ``ctf2_over_nv_recon_half`` themselves unless some image is
+    # CTF-premultiplied (``ctf_premultiplied``, one flag per image, else None),
+    # whose rows then hold :func:`premultiplied_bpref_weights`.
+    bpref_weighted_ctf_half: object
+    bpref_ctf2_over_nv_half: object
+    ctf_premultiplied: object
 
 
 def prepare_unshifted_bucket_operands(
@@ -357,6 +391,13 @@ def prepare_unshifted_bucket_operands(
         else config.compute_ctf_half(jnp.asarray(ctf_params, dtype=acc_real_dtype))
     )
     batch_scale = jnp.asarray(batch_scale_np, dtype=ctf_half.dtype)
+    # CTF-premultiplied images (a per-optics-group flag): their exact CTF rows
+    # already hold RELION's CTF^2; only the backprojection operands differ.
+    ctf_premultiplied = relion_ctf.premultiplied_ctf_rows(experiment_dataset, image_indices, image_shape)
+    if ctf_premultiplied is not None and not relion_exact_bpref_operands:
+        raise NotImplementedError(
+            "CTF-premultiplied images need RELION's exact CTF operands (the exact-BPref sparse pass 2)"
+        )
     relion_score_corr_img_half = None
     direct_pixel_correction_full = None
     if relion_exact_bpref_operands:
@@ -383,6 +424,13 @@ def prepare_unshifted_bucket_operands(
             output_dtype=acc_real_dtype,
         )
         ctf2_score_half = ctf_half**2
+        bpref_weighted_ctf_half = weighted_ctf_half
+        if ctf_premultiplied is not None:
+            premultiplied_rows = jnp.asarray(ctf_premultiplied)[:, None]
+            premultiplied_image_weight, premultiplied_ctf_weight = premultiplied_bpref_weights(
+                ctf_half, inverse_noise_half, batch_scale if scale_corrections is not None else None
+            )
+            bpref_weighted_ctf_half = jnp.where(premultiplied_rows, premultiplied_image_weight, weighted_ctf_half)
     elif _generic_inverse_noise_operands(noise_variance_half, optics_group_rows=optics_group_rows):
         # Preserve RELION's binary64 reciprocal -> accumulation-precision cast.
         inverse_noise_half = jnp.reciprocal(
@@ -395,6 +443,8 @@ def prepare_unshifted_bucket_operands(
         inverse_noise_half = None
         weighted_ctf_half = None
         ctf2_over_nv_half, ctf2_score_half = _ctf2_over_noise_and_ctf2(ctf_half, noise_variance_half)
+    if not relion_exact_bpref_operands:
+        bpref_weighted_ctf_half = weighted_ctf_half
     generic_inverse_noise = inverse_noise_half is not None and not relion_exact_bpref_operands
 
     _add_sparse_group_timing(stage_timing, "prepare_ctf_noise", time.time() - substage_t0)
@@ -451,7 +501,7 @@ def prepare_unshifted_bucket_operands(
 
     if relion_exact_bpref_operands:
         score_weighted_half = processed_score_half_raw * weighted_ctf_half
-        recon_weighted_half = processed_recon_half_raw * weighted_ctf_half
+        recon_weighted_half = processed_recon_half_raw * bpref_weighted_ctf_half
         recon_bpref_input_half = processed_recon_half_raw
     elif generic_inverse_noise:
         score_weighted_half, recon_weighted_half = _weighted_ctf_pair(
@@ -484,10 +534,17 @@ def prepare_unshifted_bucket_operands(
         # run_em, but multiplication by a per-image scalar commutes with the
         # tiling and shifting so we apply it before tiling for efficiency.
         applied_corr = batch_scale if relion_cuda_preprocess else batch_corr
+        # A premultiplied image is backprojected without the scale correction
+        # (premultiplied_bpref_weights); it keeps only the image correction.
+        recon_corr = (
+            applied_corr
+            if ctf_premultiplied is None
+            else jnp.where(jnp.asarray(ctf_premultiplied), applied_corr / batch_scale, applied_corr)
+        )
         score_weighted_half = score_weighted_half * applied_corr[:, None]
-        recon_weighted_half = recon_weighted_half * applied_corr[:, None]
+        recon_weighted_half = recon_weighted_half * recon_corr[:, None]
         if relion_exact_bpref_operands:
-            recon_bpref_input_half = recon_bpref_input_half * applied_corr[:, None]
+            recon_bpref_input_half = recon_bpref_input_half * recon_corr[:, None]
         if return_direct_scoring_io:
             direct_raw_corr = batch_corr / batch_scale
             if folded_normalized_cc_operands:
@@ -509,6 +566,11 @@ def prepare_unshifted_bucket_operands(
     # BPref operands remain in their demonstrated native XFLOAT order. Only
     # fine-score corr_img uses RELION's distinct RFLOAT-square construction.
     ctf2_over_nv_recon_half = ctf2_over_nv_half
+    # The backprojected CTF weight (Ft_ctf and the --grad residual); the noise
+    # and norm statistics keep ctf2_over_nv_recon_half for every image.
+    bpref_ctf2_over_nv_half = ctf2_over_nv_recon_half
+    if ctf_premultiplied is not None:
+        bpref_ctf2_over_nv_half = jnp.where(premultiplied_rows, premultiplied_ctf_weight, ctf2_over_nv_recon_half)
     if relion_score_corr_img_half is not None:
         ctf2_over_nv_half = relion_score_corr_img_half
 
@@ -609,6 +671,9 @@ def prepare_unshifted_bucket_operands(
         sparse_score_input_half=sparse_score_input_half,
         processed_score_half_for_noise=processed_score_half_for_noise,
         noise_variance_half=noise_variance_half,
+        bpref_weighted_ctf_half=bpref_weighted_ctf_half,
+        bpref_ctf2_over_nv_half=bpref_ctf2_over_nv_half,
+        ctf_premultiplied=ctf_premultiplied,
     )
 
 
@@ -707,6 +772,9 @@ def _prepare_bucket_io(
         sparse_score_input_half,
         processed_score_half_for_noise,
         noise_variance_half,
+        bpref_weighted_ctf_half,
+        _bpref_ctf2_over_nv_half,
+        _ctf_premultiplied,
     ) = unshifted
 
 
@@ -791,7 +859,7 @@ def _prepare_bucket_io(
                 complex_dtype = jnp.complex128 if use_float64_scoring else jnp.complex64
                 shifted_recon_half = translate_bpref(
                     jnp.asarray(recon_bpref_input_half[:, recon_indices], dtype=complex_dtype),
-                    jnp.asarray(weighted_ctf_half[:, recon_indices], dtype=acc_real_dtype),
+                    jnp.asarray(bpref_weighted_ctf_half[:, recon_indices], dtype=acc_real_dtype),
                     jnp.asarray(relion_score_translation_angles, dtype=acc_real_dtype),
                     recon_indices,
                     image_shape,
@@ -836,7 +904,7 @@ def _prepare_bucket_io(
                 complex_dtype = jnp.complex128 if use_float64_scoring else jnp.complex64
                 exact_shifted_recon_half = translate_bpref(
                     jnp.asarray(recon_bpref_input_half, dtype=complex_dtype),
-                    jnp.asarray(weighted_ctf_half, dtype=acc_real_dtype),
+                    jnp.asarray(bpref_weighted_ctf_half, dtype=acc_real_dtype),
                     jnp.asarray(relion_score_translation_angles, dtype=acc_real_dtype),
                     jnp.arange(recon_bpref_input_half.shape[1], dtype=jnp.int32),
                     image_shape,
