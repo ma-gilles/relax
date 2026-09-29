@@ -2223,7 +2223,9 @@ def _compute_k_class_significance_batched(
         and coarse_texture_interp
         and half_spectrum_scoring
         and not use_float64_scoring
-        and not tree_rescore_enabled
+        # Keep the default top-two route unchanged. An explicitly selected
+        # hybrid engine uses the exact GEMM coarse scorer before the rescore.
+        and (not tree_rescore_enabled or require_plain_gemm_coarse)
         # The raw score dumps read the generic operands.
         and not (
             collect_significance
@@ -3378,7 +3380,7 @@ def _compute_k_class_significance_batched(
                         jnp.complex64
                     )
 
-            if score_mode == "normalized_cc" and tree_rescore_enabled:
+            if score_mode == "normalized_cc" and tree_rescore_enabled and not exact_cc_enabled:
                 if not relion_cuda_preprocess or relion_preprocess_kwargs is None:
                     raise ValueError(
                         f"{_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV} requires "
@@ -3477,6 +3479,12 @@ def _compute_k_class_significance_batched(
                 exact_cc_pixel_weight = exact_cc_operands.windowed_corr_img * (
                     half_weights_windowed if use_window else half_weights
                 )
+                if tree_rescore_enabled:
+                    # The bounded top-two rescore uses these same exact CUDA
+                    # operands. Reuse the per-image FFT/CTF assembly instead of
+                    # preparing a second copy before the GEMM coarse pass.
+                    tree_rescore_unshifted_data = exact_cc_operands.windowed_unshifted
+                    tree_rescore_corr_img_data = exact_cc_operands.windowed_corr_img
 
             if coarse_gaussian_ffi_enabled:
                 coarse_preprocess_kwargs = relion_preprocess_kwargs

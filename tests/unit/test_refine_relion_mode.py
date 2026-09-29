@@ -10996,6 +10996,7 @@ class TestRelionModeSmokeTest:
             ((1.0, 1.0 - 2e-7), (0.5, 0.75), 1, 0, "all"),
         ],
     )
+    @pytest.mark.parametrize("gemm_mode", ["legacy", "default", "selected"])
     def test_k1_firstiter_cc_tree_top2_rescore_replaces_bounded_winner(
         self,
         half_datasets,
@@ -11006,6 +11007,7 @@ class TestRelionModeSmokeTest:
         expected_pose,
         expected_ties,
         expected_changes,
+        gemm_mode,
     ):
         """The direct-texture replay replaces every bounded native winner."""
 
@@ -11095,6 +11097,22 @@ class TestRelionModeSmokeTest:
             "_e_step_block_scores_windowed_normalized_cc",
             fake_gemm_scores,
         )
+        exact_gemm = gemm_mode == "selected"
+        if exact_gemm:
+            monkeypatch.setattr(
+                scoring_module,
+                "_relion_coarse_normalized_cc_gemm_scores_jit",
+                lambda _proj, _shifted, _weight, _count, *, n_images, n_trans:
+                jnp.broadcast_to(
+                    jnp.asarray(original_scores, dtype=jnp.float32)[None, :, None],
+                    (n_images, 2, n_trans),
+                ),
+            )
+            monkeypatch.setattr(
+                em_cuda_kernels,
+                "relion_translate_score_f32",
+                lambda images, _angles, _indices, _shape: images,
+            )
         monkeypatch.setattr(
             scoring_module,
             "_relion_coarse_normalized_cc_rescore",
@@ -11121,8 +11139,12 @@ class TestRelionModeSmokeTest:
             score_mode="normalized_cc",
             collect_significance=False,
             return_class_best=True,
+            relion_coarse_gaussian_default=gemm_mode != "legacy",
+            require_plain_gemm_coarse=exact_gemm,
         )
 
+        if exact_gemm:
+            assert full_stats["executed_coarse_backend"] == "exact_cc_gemm"
         assert_matches(
             np.asarray(full_stats["class_hard_assignments"]),
             np.full((1, dataset.n_units), expected_pose, dtype=np.int32),
