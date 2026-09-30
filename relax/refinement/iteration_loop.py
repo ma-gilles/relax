@@ -3193,30 +3193,11 @@ def refine_single_volume(
                 iteration_index=iteration, half_index=k
             )
 
-            # Capture original-stack image indices for the half so dumps can be
-            # matched to RELION's data.star image_name ordering.
-            try:
-                _half_orig_idx = np.asarray(
-                    experiment_datasets[k]._index_layout.original_image_indices_for_local(
-                        np.arange(experiment_datasets[k].n_images, dtype=np.int32)
-                    ),
-                    dtype=np.int64,
-                )
-            except Exception:
-                _half_orig_idx = None
-            _parity_dump.collect_e_step(
-                half=k,
-                em_stats=em_stats_k,
-                hard_assignment=ha_k,
-                coarse_hard_assignment=coarse_ha[k],
-                noise_stats=noise_stats_per_half[k],
-                Ft_y=Ft_y_k,
-                Ft_ctf=Ft_ctf_k,
-                pose_rotation_eulers=pose_rotation_eulers[k],
-                best_pose_rotation_eulers=best_pose_rotation_eulers[k],
-                best_pose_translations=best_pose_translations[k],
-                translation_search_base=translation_search_bases[k],
-                original_image_indices=_half_orig_idx,
+            _parity_dump.collect_half_score_result(
+                k,
+                score_result,
+                per_half,
+                experiment_datasets[k],
             )
 
 

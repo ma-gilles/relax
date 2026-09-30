@@ -171,6 +171,35 @@ def collect_e_step(
     }
 
 
+def collect_half_score_result(half_index, score_result, outputs, dataset) -> None:
+    """Capture one completed half score using the controller's existing owners."""
+
+    try:
+        original_image_indices = np.asarray(
+            dataset._index_layout.original_image_indices_for_local(
+                np.arange(dataset.n_images, dtype=np.int32)
+            ),
+            dtype=np.int64,
+        )
+    except Exception:
+        original_image_indices = None
+
+    collect_e_step(
+        half=half_index,
+        em_stats=score_result.em_stats,
+        hard_assignment=score_result.ha,
+        coarse_hard_assignment=outputs.coarse_ha[half_index],
+        noise_stats=score_result.noise_stats,
+        Ft_y=score_result.Ft_y,
+        Ft_ctf=score_result.Ft_ctf,
+        pose_rotation_eulers=outputs.pose_rotation_eulers[half_index],
+        best_pose_rotation_eulers=outputs.best_pose_rotation_eulers[half_index],
+        best_pose_translations=outputs.best_pose_translations[half_index],
+        translation_search_base=outputs.translation_search_bases[half_index],
+        original_image_indices=original_image_indices,
+    )
+
+
 def _voxel_magnitude(arr) -> np.ndarray | None:
     if arr is None:
         return None

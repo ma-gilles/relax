@@ -3,9 +3,61 @@
 from __future__ import annotations
 
 import time
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
+
+
+def test_collect_half_score_result_reads_existing_result_and_output_owners(monkeypatch):
+    from relax.diagnostics import parity_dump as p
+
+    captured = {}
+    monkeypatch.setattr(p, "collect_e_step", lambda **values: captured.update(values))
+    mapped_indices = np.array([7, 3], dtype=np.int64)
+    dataset = SimpleNamespace(
+        n_images=2,
+        _index_layout=SimpleNamespace(
+            original_image_indices_for_local=lambda local: mapped_indices[local],
+        ),
+    )
+    score_result = SimpleNamespace(
+        em_stats=object(),
+        ha=object(),
+        noise_stats=object(),
+        Ft_y=object(),
+        Ft_ctf=object(),
+    )
+    outputs = SimpleNamespace(
+        coarse_ha=[None, object()],
+        pose_rotation_eulers=[None, object()],
+        best_pose_rotation_eulers=[None, object()],
+        best_pose_translations=[None, object()],
+        translation_search_bases=[None, object()],
+    )
+
+    p.collect_half_score_result(1, score_result, outputs, dataset)
+
+    assert captured["half"] == 1
+    assert captured["em_stats"] is score_result.em_stats
+    assert captured["hard_assignment"] is score_result.ha
+    assert captured["noise_stats"] is score_result.noise_stats
+    assert captured["Ft_y"] is score_result.Ft_y
+    assert captured["Ft_ctf"] is score_result.Ft_ctf
+    assert captured["coarse_hard_assignment"] is outputs.coarse_ha[1]
+    assert captured["pose_rotation_eulers"] is outputs.pose_rotation_eulers[1]
+    assert captured["best_pose_rotation_eulers"] is outputs.best_pose_rotation_eulers[1]
+    assert captured["best_pose_translations"] is outputs.best_pose_translations[1]
+    assert captured["translation_search_base"] is outputs.translation_search_bases[1]
+    np.testing.assert_array_equal(captured["original_image_indices"], mapped_indices)
+
+    p.collect_half_score_result(
+        1,
+        score_result,
+        outputs,
+        SimpleNamespace(n_images=2),
+    )
+    assert captured["original_image_indices"] is None
 
 
 @pytest.fixture()
