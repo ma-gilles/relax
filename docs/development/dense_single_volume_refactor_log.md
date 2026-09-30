@@ -1074,3 +1074,19 @@ single-volume boundary has 17 parameters.
   package, accounting for the large increase from the prior checkpoint. This
   change itself reduced the exact-local scorer from 457 to 447 lines. Seven
   functions still have at least 10 parameters, unchanged.
+
+## 2026-09-30 — exact-local profile publication
+
+- Commit `e3d79aa` moved local profile-history mutation and optional `.npz`
+  capture to `diagnostics.local_debug.record_local_search_profile`. Its four
+  inputs are the engine outputs, existing diagnostic policy, half index and
+  parent-mode label. Numerical pose, accumulator and score-result publication
+  remain in `_score_half_local_one_shape`.
+- Tests preserve the profile array identity stored in history, metadata dtypes
+  and values, archive filename and archive payload. They also verify that the
+  disabled route does not inspect an engine profile. Ruff, Python compilation
+  and 49 local controller, result-contract and diagnostic cases passed. The
+  102-case CPU guard had passed immediately before this diagnostic-only package.
+- Production totals are 20,796 physical and 18,350 nonblank lines across 305
+  functions. The exact-local one-shape scorer fell from 447 to 436 lines.
+  Seven functions still have at least 10 parameters, unchanged.

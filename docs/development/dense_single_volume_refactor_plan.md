@@ -284,6 +284,14 @@ next local-scoring boundary to audit is result publication and profile capture;
 separate them only if their inputs remain explicit and device-buffer lifetimes
 are unchanged.
 
+Local profile publication is now owned by `diagnostics.local_debug`. The helper
+receives the engine outputs, existing diagnostic policy, half index and parent
+mode; it owns history mutation and the optional compressed capture while the
+scorer retains all numerical result publication. The next audit is the final
+pose/result assembly at the bottom of the local scorer. Keep it in place unless
+a small signature can preserve output-array identity, Euler fallback behavior,
+accumulator layout reporting and buffer lifetime.
+
 ### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring
