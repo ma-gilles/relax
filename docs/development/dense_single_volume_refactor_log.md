@@ -1183,16 +1183,16 @@ single-volume boundary has 17 parameters.
 
 ## 2026-09-30 — precision, BPREF and batch-policy ownership
 
-- Commit `ab4ea13` centralized the raw float64 pass-2 diagnostic presence check
+- Commit `e78027c` centralized the raw float64 pass-2 diagnostic presence check
   in `helpers.dtype_policy`. Both batch-planning sites retain their original
   call-time reads, and malformed nonblank requests remain conservatively true
   until the existing numbered-iteration selector performs validation. Six
   selector tests and all 44 compact/first-iteration batching tests passed.
-- Commit `9aa666b` moved numbered-half BPREF context mutation, device-signature
+- Commit `69c1ece` moved numbered-half BPREF context mutation, device-signature
   selection and activation logging into `diagnostics.iteration`. The helper has
   three explicit inputs and returns the one boolean scoring needs; flush timing
   remains in the controller. Nineteen focused BPREF tests passed.
-- Commit `177b7de` moved `LocalBatchPolicy` and `DenseBatchPolicy` construction
+- Commit `5ca151b` moved `LocalBatchPolicy` and `DenseBatchPolicy` construction
   from the engine-call expressions to the point where per-half planning is
   complete. The retained policies cross prior preparation and are consumed by
   scoring; empty halves preserve the earlier no-construction path. An AST guard
@@ -1203,3 +1203,30 @@ single-volume boundary has 17 parameters.
   physical and 18,290 nonblank lines across 307 functions. `_run_half_estep`
   is 631 lines and `refine_single_volume` is 5,459 lines. Argument-count
   statistics remain unchanged and did not drive these boundaries.
+
+## 2026-09-30 — rebase onto Refine3D optics features
+
+- `origin/main` advanced from `64f92d7` to `39a6dc0`. Nineteen refactor commits
+  were replayed. Eight conflicts occurred, all in the standing structural
+  metrics JSON as historical snapshots crossed main's newer
+  `optics-refine3d-features` measurements.
+- Each conflict was resolved in favor of main's newer snapshot at that replay
+  point, preserving its Refine3D optics, CTF premultiplication, beam-tilt,
+  Zernike, anisotropic-magnification, expected-accuracy and resident pass-2
+  work unchanged. There were no source, test, plan or prose-log conflicts.
+- The three latest implementation commits were rewritten to `e78027c`,
+  `69c1ece` and `5ca151b`. The standing snapshot was then regenerated from the
+  combined tree rather than retaining either side's stale historical counts.
+  It records 20,767 physical and 18,307 nonblank production lines across 306
+  functions, with seven 10+ and two 20+ argument functions.
+- Post-rebase controller, diagnostics, batching and first-iteration tests passed
+  all 70 cases; the six focused precision-policy tests also passed. The CPU EM
+  fast guard passed all 102 cases in 64.63 seconds.
+- Main's focused optics/CTF overlap ran 10 cases successfully and skipped 13
+  cases whose oracle lacks newer exports. One additional oracle comparison was
+  blocked by the same stale native setup: the loaded
+  `relax/relion_bind/build/_relion_bind_core.cpython-311-x86_64-linux-gnu.so`
+  (SHA256 `9c430a025892736ac5b2ef69b4087fb53eb9d4c56fd0943be8e3a38741c133e7`)
+  exposes only the old one-argument `euler_angles_to_inverse_matrices`, while
+  rebased main's source and test require its new left-matrix argument. No
+  numerical comparison ran for that case.
