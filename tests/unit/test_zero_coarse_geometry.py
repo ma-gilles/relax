@@ -194,6 +194,53 @@ def test_final_local_scoring_reuses_iteration_owners_across_halves():
     )
 
 
+def test_final_dense_scoring_reuses_iteration_owners_across_halves():
+    loop = tree("iteration_loop.py")
+    dense_calls = [
+        node
+        for node in ast.walk(loop)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_score_half_dense_in_bpref_scope"
+    ]
+    assert len(dense_calls) == 2
+    final_call = max(dense_calls, key=lambda node: node.lineno)
+    assert {
+        keyword.arg: keyword.value.id
+        for keyword in final_call.keywords
+    } == {
+        "half": "final_dense_half",
+        "sampling": "final_dense_sampling",
+        "priors": "final_dense_priors",
+        "batching": "final_dense_batching",
+        "variant": "final_dense_variant",
+        "execution": "final_dense_execution",
+        "optics": "final_dense_optics",
+    }
+
+    final_loop = next(
+        node
+        for node in ast.walk(loop)
+        if isinstance(node, ast.For)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "k"
+        and node.lineno < final_call.lineno < node.end_lineno
+    )
+    iteration_owned = {
+        "DenseSamplingSpec",
+        "DenseBatchPolicy",
+        "DenseVariantPolicy",
+    }
+    assert all(
+        not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in iteration_owned
+        )
+        for node in ast.walk(final_loop)
+    )
+
+
 def test_direct_k1_dense_route_is_an_explicit_four_input_variant():
     scorer = tree("half_scoring.py")
     helper = next(

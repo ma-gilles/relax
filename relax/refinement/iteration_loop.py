@@ -5323,6 +5323,7 @@ def refine_single_volume(
             final_local_adaptive_rotation_only = False
             final_local_adaptive_denominator_mode = None
     final_local_sampling = final_local_batching = final_local_diagnostics = None
+    final_dense_sampling = final_dense_batching = final_dense_variant = None
     if final_use_local and not tomo_halves:
         # These final-pass owners are identical for both halves. Build them
         # once at final-iteration scope and retain them through both dispatches.
@@ -5361,6 +5362,38 @@ def refine_single_volume(
             adaptive_pass2_full_parent=final_local_adaptive_full_parent,
             adaptive_pass2_rotation_only=final_local_adaptive_rotation_only,
             adaptive_pass2_denominator_mode=final_local_adaptive_denominator_mode,
+        )
+    elif not tomo_halves:
+        # Final global sampling, batching and variant selection are identical
+        # for both halves; data, priors, projector execution and optics are not.
+        final_dense_sampling = DenseSamplingSpec(
+            effective_rotations=final_effective_rotations,
+            current_translations=final_current_translations,
+            base_translations=final_base_translations,
+            current_healpix_order=final_current_healpix_order,
+            state=state,
+            coarse_engine=adaptive.coarse_engine,
+            random_perturbation=(
+                final_random_perturbation if final_perturbation_applied else 0.0
+            ),
+            disc_type=options.disc_type,
+            cs_for_engine=final_current_size,
+            symmetry=symmetry,
+        )
+        final_dense_batching = DenseBatchPolicy(
+            image_batch_size=batching.image_batch_size,
+            safe_batch_sizes=_safe_batch_sizes,
+            max_significants=adaptive.max_significants,
+        )
+        final_dense_variant = DenseVariantPolicy(
+            firstiter_score_mode_this_iter="gaussian",
+            firstiter_winner_take_all_this_iter=False,
+            k_class_enabled=k_class_enabled,
+            relion_firstiter_cc_this_iter=False,
+            firstiter_coarse_current_size=final_adaptive_pass1_current_size,
+            firstiter_fine_current_size=final_adaptive_pass2_current_size,
+            firstiter_log_label="final all-data ",
+            firstiter_updates_em_kwargs_ibs=True,
         )
     final_outs = PerHalfOutputs()
     for k in range(2):
@@ -5570,75 +5603,57 @@ def refine_single_volume(
                     with_log_prior=True,
                     zero_cold_center=False,
                 )
+                final_dense_half = DenseHalfData(
+                    k=k,
+                    experiment_dataset=experiment_datasets[k],
+                    means_k=final_join_means[k],
+                    mean_variance=mean_variance,
+                    noise_variance_k=final_noise_variance_per_half[k],
+                    image_corrections_k=relion_half_inputs.image_corrections[k],
+                    scale_corrections_k=relion_half_inputs.scale_corrections[k],
+                    outputs=final_outs,
+                    group_ids_k=follower_setup.scale_stats_group_ids_per_half[k],
+                    group_count_k=follower_setup.scale_stats_group_count_per_half[k],
+                    scale_correction_data_vs_prior=previous_data_vs_prior_for_scheduling,
+                    optics_group_ids_k=final_optics_values.get("optics_group_ids_k"),
+                )
+                final_dense_priors = DensePriorSpec(
+                    rotation_log_prior_k=final_rotation_log_prior_k,
+                    class_rotation_log_prior_k=final_class_rotation_log_prior_k,
+                    translation_log_prior=final_translation_log_prior,
+                    translation_search_base=translation_search_base,
+                    trans_prior_center_for_engine=final_trans_prior_center_for_engine,
+                    class_log_priors=class_log_priors,
+                )
+                final_dense_execution = DenseExecutionPolicy(
+                    disable_adjoint_y=debug.disable_adjoint_y,
+                    disable_adjoint_ctf=debug.disable_adjoint_ctf,
+                    relion_projector_half=final_relion_projector_half_by_half[k],
+                    relion_projector_r_max=final_relion_projector_r_max_by_half[k],
+                    return_best_pose_details=not k_class_enabled,
+                    bpref_device_signature_active=False,
+                    debug_iteration=final_sampling_relion_iteration,
+                    diagnostic_float64_pass2=_diagnostic_float64_pass2_matches(
+                        final_sampling_relion_iteration
+                    ),
+                    preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
+                    source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+                    relion_translation_angle_scale=relion_translation_angle_scale,
+                )
+                final_dense_optics = DenseOpticsSpec(
+                    noise_radial_k=final_optics_values.get("noise_radial_k"),
+                    class_translation_overrides=final_translation_values.get(
+                        "class_translation_overrides"
+                    ),
+                )
                 final_result = _score_half_dense_in_bpref_scope(
-                    half=DenseHalfData(
-                        k=k,
-                        experiment_dataset=experiment_datasets[k],
-                        means_k=final_join_means[k],
-                        mean_variance=mean_variance,
-                        noise_variance_k=final_noise_variance_per_half[k],
-                        image_corrections_k=relion_half_inputs.image_corrections[k],
-                        scale_corrections_k=relion_half_inputs.scale_corrections[k],
-                        outputs=final_outs,
-                        group_ids_k=follower_setup.scale_stats_group_ids_per_half[k],
-                        group_count_k=follower_setup.scale_stats_group_count_per_half[k],
-                        scale_correction_data_vs_prior=previous_data_vs_prior_for_scheduling,
-                        optics_group_ids_k=final_optics_values.get("optics_group_ids_k"),
-                    ),
-                    sampling=DenseSamplingSpec(
-                        effective_rotations=final_effective_rotations,
-                        current_translations=final_current_translations,
-                        base_translations=final_base_translations,
-                        current_healpix_order=final_current_healpix_order,
-                        state=state,
-                        coarse_engine=adaptive.coarse_engine,
-                        random_perturbation=(final_random_perturbation if final_perturbation_applied else 0.0),
-                        disc_type=options.disc_type,
-                        cs_for_engine=final_current_size,
-                        symmetry=symmetry,
-                    ),
-                    priors=DensePriorSpec(
-                        rotation_log_prior_k=final_rotation_log_prior_k,
-                        class_rotation_log_prior_k=final_class_rotation_log_prior_k,
-                        translation_log_prior=final_translation_log_prior,
-                        translation_search_base=translation_search_base,
-                        trans_prior_center_for_engine=final_trans_prior_center_for_engine,
-                        class_log_priors=class_log_priors,
-                    ),
-                    batching=DenseBatchPolicy(
-                        image_batch_size=batching.image_batch_size,
-                        safe_batch_sizes=_safe_batch_sizes,
-                        max_significants=adaptive.max_significants,
-                    ),
-                    variant=DenseVariantPolicy(
-                        firstiter_score_mode_this_iter="gaussian",
-                        firstiter_winner_take_all_this_iter=False,
-                        k_class_enabled=k_class_enabled,
-                        relion_firstiter_cc_this_iter=False,
-                        firstiter_coarse_current_size=final_adaptive_pass1_current_size,
-                        firstiter_fine_current_size=final_adaptive_pass2_current_size,
-                        firstiter_log_label="final all-data ",
-                        firstiter_updates_em_kwargs_ibs=True,
-                    ),
-                    execution=DenseExecutionPolicy(
-                        disable_adjoint_y=debug.disable_adjoint_y,
-                        disable_adjoint_ctf=debug.disable_adjoint_ctf,
-                        relion_projector_half=final_relion_projector_half_by_half[k],
-                        relion_projector_r_max=final_relion_projector_r_max_by_half[k],
-                        return_best_pose_details=not k_class_enabled,
-                        bpref_device_signature_active=False,
-                        debug_iteration=final_sampling_relion_iteration,
-                        diagnostic_float64_pass2=_diagnostic_float64_pass2_matches(
-                            final_sampling_relion_iteration
-                        ),
-                        preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
-                        source_faithful_spectrum_norm=source_faithful_spectrum_norm,
-                        relion_translation_angle_scale=relion_translation_angle_scale,
-                    ),
-                    optics=DenseOpticsSpec(
-                        noise_radial_k=final_optics_values.get("noise_radial_k"),
-                        class_translation_overrides=final_translation_values.get("class_translation_overrides"),
-                    ),
+                    half=final_dense_half,
+                    sampling=final_dense_sampling,
+                    priors=final_dense_priors,
+                    batching=final_dense_batching,
+                    variant=final_dense_variant,
+                    execution=final_dense_execution,
+                    optics=final_dense_optics,
                 )
         if final_result.best_pose_translations is not None:
             final_result.best_pose_translations = _relion_metadata_translations(
