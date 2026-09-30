@@ -1066,6 +1066,8 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         image_corrections=engine_kwargs.get("image_corrections"),
         scale_corrections=engine_kwargs.get("scale_corrections"),
         image_pre_shifts=engine_kwargs.get("image_pre_shifts"),
+        # The normalized CC does not weight by the noise, but the scorer reads each image's row.
+        optics_group_ids=engine_kwargs.get("optics_group_ids"),
         half_spectrum_scoring=bool(engine_kwargs.get("half_spectrum_scoring", False)),
         projection_padding_factor=int(engine_kwargs.get("projection_padding_factor", 1)),
         do_gridding_correction=bool(engine_kwargs.get("do_gridding_correction", False)),
