@@ -175,8 +175,8 @@ def test_resident_local_call_carries_the_point_group():
     ]
     assert len(calls) == 1
     keywords = {keyword.arg: keyword.value for keyword in calls[0].keywords}
-    assert isinstance(keywords.get("symmetry_label"), ast.Name)
-    assert keywords["symmetry_label"].id == "symmetry"
+    assert isinstance(keywords.get("symmetry_label"), ast.Attribute)
+    assert ast.unparse(keywords["symmetry_label"]) == "grid.symmetry"
     assert "symmetry_label" in inspect.signature(rlp.compute_local_search_resident).parameters
 
 

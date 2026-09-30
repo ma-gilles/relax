@@ -255,7 +255,7 @@ def test_dispatch_routes_only_the_fine_pass():
     import inspect
 
     source = inspect.getsource(local_search_iteration._run_local_search_iteration)
-    assert "if score_only:" in source
+    assert "if support.score_only:" in source
     # the zero-oversampling route (every scored sample) is routed too
     assert "and reconstruct_significant_only" not in source
     # at every current size, RELION's final all-data full box included

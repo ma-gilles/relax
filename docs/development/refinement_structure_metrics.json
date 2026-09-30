@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "local-adaptive-parent-boundaries",
-    "source_commit": "f52d5289efebf24ea1957666014171acb2fa8554",
+    "package": "merge-main-full-refinement-move",
+    "source_commit": "2a91f81a2005ab44e433218cae8531d996422914",
     "metrics": {
       "files": [
         {
@@ -30,6 +30,12 @@
           "nonblank_noncomment_lines": 245,
           "path": "relax/refinement/firstiter_cc.py",
           "physical_lines": 275
+        },
+        {
+          "function_count": 64,
+          "nonblank_noncomment_lines": 5076,
+          "path": "relax/refinement/full_refinement.py",
+          "physical_lines": 5604
         },
         {
           "function_count": 7,
@@ -176,11 +182,25 @@
           "path": "relax/refinement/iteration_loop.py"
         },
         {
+          "line": 2713,
+          "line_span": 2847,
+          "name": "main",
+          "parameter_count": 1,
+          "path": "relax/refinement/full_refinement.py"
+        },
+        {
           "line": 2497,
           "line_span": 749,
           "name": "_run_half_estep",
           "parameter_count": 1,
           "path": "relax/refinement/iteration_loop.py"
+        },
+        {
+          "line": 1966,
+          "line_span": 705,
+          "name": "_parse_args",
+          "parameter_count": 1,
+          "path": "relax/refinement/full_refinement.py"
         },
         {
           "line": 1701,
@@ -223,20 +243,6 @@
           "name": "read_run_files",
           "parameter_count": 3,
           "path": "relax/refinement/run_files.py"
-        },
-        {
-          "line": 91,
-          "line_span": 185,
-          "name": "_score_kclass_firstiter_cc_pass2",
-          "parameter_count": 5,
-          "path": "relax/refinement/firstiter_cc.py"
-        },
-        {
-          "line": 88,
-          "line_span": 151,
-          "name": "_relion_projector_half_maps_for_scoring",
-          "parameter_count": 8,
-          "path": "relax/refinement/projector_preparation.py"
         }
       ],
       "schema_version": 1,
@@ -250,13 +256,13 @@
         "very_large_argument_threshold": 20
       },
       "totals": {
-        "file_count": 16,
-        "function_count": 241,
+        "file_count": 17,
+        "function_count": 305,
         "large_argument_function_count": 7,
         "maximum_function_line_span": 5522,
         "maximum_parameter_count": 22,
-        "nonblank_noncomment_lines": 13291,
-        "physical_lines": 15209,
+        "nonblank_noncomment_lines": 18367,
+        "physical_lines": 20813,
         "very_large_argument_function_count": 2
       }
     }

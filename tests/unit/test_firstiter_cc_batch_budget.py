@@ -144,8 +144,6 @@ def test_dense_half_core_keeps_owner_dependencies_visible():
     route_planning_locals = {
         "firstiter_coarse_current_size",
         "firstiter_fine_current_size",
-        "significance_image_batch_size_override",
-        "significance_rotation_block_size_override",
         "symmetry",
     }
     assert assigned_names & stable_field_names == route_planning_locals
@@ -178,7 +176,14 @@ def test_local_half_core_keeps_owner_dependencies_visible():
         )
         for field in dataclasses.fields(owner)
     }
-    assert assigned_names.isdisjoint(stable_field_names)
+    # The pass-1/pass-2 precision flags are read once from the diagnostic policy.
+    precision_locals = {
+        "fine_use_float64_projections",
+        "fine_use_float64_scoring",
+        "parent_use_float64_projections",
+        "parent_use_float64_scoring",
+    }
+    assert assigned_names & stable_field_names == precision_locals
 
 
 def test_local_iteration_core_keeps_owner_dependencies_visible():
