@@ -67,6 +67,29 @@ def log_local_adaptive_support(logger, parent_layout, significant_sample_indices
     )
 
 
+def record_local_search_profile(local_outputs, diagnostics, *, half_index: int, parent_mode: str) -> None:
+    """Publish one requested local-search profile without touching scoring."""
+
+    if not diagnostics.collect_local_search_profile:
+        return
+    profile = local_outputs.profile_summary
+    profile_row = dict(profile)
+    profile_row["iteration"] = np.int32(diagnostics.iteration)
+    profile_row["half_index"] = np.int32(half_index)
+    profile_row["local_adaptive_pass2_parent_mode"] = parent_mode
+    profile_row["local_adaptive_pass2_full_parent"] = np.bool_(parent_mode == "full_parent")
+    profile_row["diagnostic_score_only"] = np.bool_(diagnostics.diagnostic_score_only)
+    diagnostics.local_profile_history.append(profile_row)
+    if diagnostics.save_intermediates_dir is not None:
+        np.savez_compressed(
+            os.path.join(
+                diagnostics.save_intermediates_dir,
+                f"it{diagnostics.iteration:03d}_half{half_index + 1}_local_profile.npz",
+            ),
+            **profile,
+        )
+
+
 @dataclass(frozen=True)
 class DensePerPoseScoreDumpRequest:
     """Dense/global per-pose score dump request parsed from environment."""

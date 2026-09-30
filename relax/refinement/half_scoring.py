@@ -8,7 +8,6 @@ by the ownership boundary.
 """
 
 import logging
-import os
 from dataclasses import dataclass, replace
 from typing import NamedTuple
 
@@ -51,6 +50,7 @@ from relax.diagnostics import parity_dump as _parity_dump
 from relax.diagnostics.local_debug import (
     log_local_adaptive_support,
     log_local_denominator_support,
+    record_local_search_profile,
     suppress_local_debug_dumps,
 )
 from relax.helpers.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
@@ -2116,23 +2116,12 @@ def _score_half_local_one_shape(
     best_trans_k = local_outputs.best_pose_translations
     em_stats_k = local_outputs.relion_stats
     noise_stats_k = local_outputs.noise_stats
-    if diagnostics.collect_local_search_profile:
-        local_profile_k = local_outputs.profile_summary
-        profile_row = dict(local_profile_k)
-        profile_row["iteration"] = np.int32(diagnostics.iteration)
-        profile_row["half_index"] = np.int32(half.k)
-        profile_row["local_adaptive_pass2_parent_mode"] = local_adaptive_pass2_parent_mode
-        profile_row["local_adaptive_pass2_full_parent"] = np.bool_(local_adaptive_pass2_parent_mode == "full_parent")
-        profile_row["diagnostic_score_only"] = np.bool_(diagnostics.diagnostic_score_only)
-        diagnostics.local_profile_history.append(profile_row)
-        if diagnostics.save_intermediates_dir is not None:
-            np.savez_compressed(
-                os.path.join(
-                    diagnostics.save_intermediates_dir,
-                    f"it{diagnostics.iteration:03d}_half{half.k + 1}_local_profile.npz",
-                ),
-                **local_profile_k,
-            )
+    record_local_search_profile(
+        local_outputs,
+        diagnostics,
+        half_index=half.k,
+        parent_mode=local_adaptive_pass2_parent_mode,
+    )
     pose_dtype = _dense_global_scoring_dtype()
     half.outputs.best_pose_rotations[half.k] = np.asarray(best_rots_k, dtype=pose_dtype)
     half.outputs.best_pose_rotation_eulers[half.k] = (
