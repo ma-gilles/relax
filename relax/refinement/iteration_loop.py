@@ -2832,7 +2832,10 @@ def refine_single_volume(
                     noise_stats=noise_stats_k,
                     best_pose_rotations=np.zeros((0, 3, 3), dtype=np.float32),
                     best_pose_rotation_eulers=np.zeros((0, 3), dtype=np.float32),
-                    best_pose_translations=np.zeros((0, current_translations.shape[1]), dtype=np.float32),
+                    # Subtomogram offsets are 3D (the loop's coarse grid is not the particles' grid).
+                    best_pose_translations=np.zeros(
+                        (0, 3 if tomo_halves else current_translations.shape[1]), dtype=np.float32
+                    ),
                     mstep_full_half_axis=0 if empty_k1_x_half_mstep else None,
                     mstep_accumulator_shape=empty_mstep_accumulator_shape,
                 )

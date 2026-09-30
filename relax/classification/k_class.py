@@ -2442,6 +2442,13 @@ def run_dense_k_class_em_adaptive(
                 sig_sample_indices_by_class[0], image_seed_classes, n_classes
             )
             coarse_class_assignments = np.asarray(image_seed_classes, dtype=np.int32)
+            # Each image's coarse evidence belongs to its class; a class it is not scored against has none.
+            probe_evidence = np.asarray(coarse_result.class_log_evidence)[0]
+            scored = np.arange(n_classes)[:, None] == coarse_class_assignments[None, :]
+            coarse_result = coarse_result._replace(
+                class_log_evidence=np.where(scored, probe_evidence[None, :], -np.inf).astype(probe_evidence.dtype),
+                class_assignments=coarse_class_assignments,
+            )
         # RELION one-hot encodes the joint class/pose coarse posterior in
         # firstiter_cc and serializes one retained sample, even though the
         # per-class child lists above remain convenient for pass-2 routing.
