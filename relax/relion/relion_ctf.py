@@ -9,9 +9,11 @@ coordinates, signs and caller-selected cast boundaries are preserved.
 from __future__ import annotations
 
 import collections
+import functools
 import os
 from pathlib import Path
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from recovar.data_io.starfile import star_column
@@ -144,15 +146,6 @@ def _relion_exact_ctf_source_star(experiment_dataset) -> Path:
             "RELAX_K1_RELION_EXACT_CTF_STAR"
         )
     return Path(source_star).expanduser().resolve()
-
-
-def _relion_ctf_threads() -> int:
-    """Worker threads for the host CTF evaluation: the CPUs this process may use."""
-
-    try:
-        return max(1, len(os.sched_getaffinity(0)))
-    except AttributeError:  # pragma: no cover - non-Linux
-        return max(1, os.cpu_count() or 1)
 
 
 def _relion_ctf_column(cache, name: str, default: float | None, *, optics_only: bool = False) -> np.ndarray:
@@ -324,47 +317,46 @@ def _exact_ctf_source_cache(experiment_dataset, image_shape):
     return source_path, cache
 
 
-# Particles per CTF evaluation chunk: 64 rows of a box-256 half grid are 17 MB of float64.
-_CTF_ROW_CHUNK = 64
+# Particles per CTF evaluation: a fixed row count, so each grid compiles one program (the
+# last chunk repeats its first row); 256 rows of a box-256 half grid are 68 MB of float64.
+_CTF_ROW_CHUNK = 256
+_CTF_CHUNKS_IN_FLIGHT = 8
 
 
-def _relion_ctf_rows(params, size: int, extent: float, gamma_offset, mag):
-    """The body of :func:`relion_ctf_fftw_half` for one chunk of rows, flattened ``(n, size * (size // 2 + 1))``."""
+@functools.partial(jax.jit, static_argnames=("has_offset", "has_bfactor"))
+def _relion_ctf_rows(params, y, x, gamma_offset, *, has_offset: bool, has_bfactor: bool):
+    """The body of :func:`relion_ctf_fftw_half` for one chunk of rows, flattened ``(rows, pixels)``.
+
+    ``y``/``x`` are the (magnified) frequencies of the grid's pixels; one fused float64
+    XLA program on the host CPU device, which splits it over the process's CPUs.
+    """
 
     du, dv, angle, voltage, cs, q0, bfactor, scale, phase = (params[:, i, None] for i in range(9))
     # CTF::initialise (ctf.cpp:211-262).
     volts = voltage * 1e3
-    lam = 12.2643247 / np.sqrt(volts * (1.0 + volts * 0.978466e-6))
-    k1 = np.pi / 2 * 2 * lam
-    k2 = np.pi / 2 * (cs * 1e7) * lam * lam * lam
-    k3 = np.arctan(q0 / np.sqrt(1 - q0 * q0))
-    k5 = phase * np.pi / 180
-    az = angle * np.pi / 180
-    sin_az, cos_az = np.sin(az), np.cos(az)
+    lam = 12.2643247 / jnp.sqrt(volts * (1.0 + volts * 0.978466e-6))
+    k1 = jnp.pi / 2 * 2 * lam
+    k2 = jnp.pi / 2 * (cs * 1e7) * lam * lam * lam
+    k3 = jnp.arctan(q0 / jnp.sqrt(1 - q0 * q0))
+    k5 = phase * jnp.pi / 180
+    az = angle * jnp.pi / 180
+    sin_az, cos_az = jnp.sin(az), jnp.cos(az)
     # A = Qt D Q, Q = [[cos, sin], [-sin, cos]], D = diag(-defU, -defV).
     axx = cos_az * cos_az * -du + sin_az * sin_az * -dv
     axy = cos_az * sin_az * -du - sin_az * cos_az * -dv
     ayy = sin_az * sin_az * -du + cos_az * cos_az * -dv
-    # getFftwImage (ctf.cpp:398-452): row i is frequency i up to size / 2, i - size after, in
-    # units of 1 / (size * angpix); getCTF (ctf.h:184-257) applies the magnification first.
-    rows = np.arange(size)
-    y0 = (np.where(rows <= size // 2, rows, rows - size) / extent)[:, None]
-    x0 = (np.arange(size // 2 + 1) / extent)[None, :]
-    if mag is None:
-        x, y = np.broadcast_to(x0, (size, size // 2 + 1)), np.broadcast_to(y0, (size, size // 2 + 1))
-    else:
-        x, y = mag[0, 0] * x0 + mag[0, 1] * y0, mag[1, 0] * x0 + mag[1, 1] * y0
-    x, y = x.reshape(1, -1), y.reshape(1, -1)
+    x, y = x[None, :], y[None, :]
     u2 = x * x + y * y
     gamma = k1 * (axx * x * x + 2.0 * axy * x * y + ayy * y * y) + k2 * (u2 * u2) - k5 - k3
-    if gamma_offset is not None:
-        gamma = gamma + gamma_offset.reshape(1, -1)
+    if has_offset:
+        gamma = gamma + gamma_offset[None, :]
     # do_damping (relion_refine always damps): the B-factor envelope exp(K4 u2), K4 = -Bfac / 4,
     # before the scale (ctf.h:219-246). A dose-weighted (tomo) image is damped by its dose
     # instead (relion_tomo_damping) and passes Bfac 0, for which the envelope is exactly 1.
-    ctf = -np.sin(gamma) * np.exp(-bfactor / 4.0 * u2) * scale
+    # Without a B-factor in the call the envelope is exp(0) = 1, which is skipped.
+    ctf = -jnp.sin(gamma) * jnp.exp(-bfactor / 4.0 * u2) * scale if has_bfactor else -jnp.sin(gamma) * scale
     # |CTF| >= 1e-8 with SGN(0) = 1 (ctf.h:250-253, macros.h:143).
-    return np.where(np.abs(ctf) < 1e-8, np.where(ctf >= 0, 1e-8, -1e-8), ctf)
+    return jnp.where(jnp.abs(ctf) < 1e-8, jnp.where(ctf >= 0, 1e-8, -1e-8), ctf)
 
 
 def relion_ctf_fftw_half(params, image_size: int, pixel_size: float, *, gamma_offset=None, mag_matrix=None):
@@ -377,27 +369,54 @@ def relion_ctf_fftw_half(params, image_size: int, pixel_size: float, *, gamma_of
     particle's CTF B-factor (rlnCtfBfactor, A^2), scale (rlnCtfScalefactor), phase shift
     (degrees). ``gamma_offset`` (the group's even Zernike phase on this grid,
     ``ObservationModel::getGammaOffset``) and ``mag_matrix`` (its 2x2 anisotropic
-    magnification) are the optics-table terms. No RELION code runs here: the binding's
-    ``get_ctf_images_batch`` / ``optics_ctf_images_batch`` are the test oracles
-    (tests/unit/test_relion_ctf_formula.py). Rows are split over host threads.
+    magnification) are the optics-table terms. It runs as a float64 XLA program on the
+    host CPU device, never on the GPU; the rows are cast to float32 where they are scored.
+    No RELION code runs here: the binding's ``get_ctf_images_batch`` /
+    ``optics_ctf_images_batch`` are the test oracles (tests/unit/test_relion_ctf_formula.py).
     """
 
-    from concurrent.futures import ThreadPoolExecutor
-
+    if not jax.config.x64_enabled:
+        raise RuntimeError("relax's exact CTF needs JAX float64 (jax_enable_x64)")
     params = np.ascontiguousarray(params, dtype=np.float64).reshape(-1, 9)
     size = int(image_size)
     extent = float(size) * float(pixel_size)
-    offset = None if gamma_offset is None else np.asarray(gamma_offset, dtype=np.float64)
-    mag = None if mag_matrix is None else np.asarray(mag_matrix, dtype=np.float64)
-    out = np.empty((params.shape[0], size * (size // 2 + 1)), dtype=np.float64)
-    starts = range(0, params.shape[0], _CTF_ROW_CHUNK)
-
-    def fill(start):
-        stop = min(start + _CTF_ROW_CHUNK, params.shape[0])
-        out[start:stop] = _relion_ctf_rows(params[start:stop], size, extent, offset, mag)
-
-    with ThreadPoolExecutor(max_workers=_relion_ctf_threads()) as pool:
-        list(pool.map(fill, starts))
+    # getFftwImage (ctf.cpp:398-452): row i is frequency i up to size / 2, i - size after, in
+    # units of 1 / (size * angpix); getCTF (ctf.h:184-257) applies the magnification first.
+    rows = np.arange(size)
+    y0 = np.broadcast_to((np.where(rows <= size // 2, rows, rows - size) / extent)[:, None], (size, size // 2 + 1))
+    x0 = np.broadcast_to((np.arange(size // 2 + 1) / extent)[None, :], (size, size // 2 + 1))
+    if mag_matrix is None:
+        x, y = x0, y0
+    else:
+        mag = np.asarray(mag_matrix, dtype=np.float64)
+        x, y = mag[0, 0] * x0 + mag[0, 1] * y0, mag[1, 0] * x0 + mag[1, 1] * y0
+    cpu = jax.devices("cpu")[0]
+    x = jax.device_put(np.ascontiguousarray(x, dtype=np.float64).reshape(-1), cpu)
+    y = jax.device_put(np.ascontiguousarray(y, dtype=np.float64).reshape(-1), cpu)
+    has_offset = gamma_offset is not None
+    offset = jax.device_put(
+        np.asarray(gamma_offset, dtype=np.float64).reshape(-1) if has_offset else np.zeros(1), cpu
+    )
+    n = params.shape[0]
+    has_bfactor = bool(np.any(params[:, 6] != 0.0))
+    out = np.empty((n, size * (size // 2 + 1)), dtype=np.float64)
+    pending = collections.deque()
+    # Up to _CTF_CHUNKS_IN_FLIGHT chunks are dispatched ahead of the one read back, so the
+    # host copies overlap the evaluation without holding every chunk's output at once.
+    for start in range(0, n, _CTF_ROW_CHUNK):
+        stop = min(start + _CTF_ROW_CHUNK, n)
+        chunk = params[start:stop]
+        if stop - start < _CTF_ROW_CHUNK:
+            chunk = np.concatenate([chunk, np.repeat(chunk[:1], _CTF_ROW_CHUNK - (stop - start), axis=0)])
+        rows_out = _relion_ctf_rows(
+            jax.device_put(chunk, cpu), y, x, offset, has_offset=has_offset, has_bfactor=has_bfactor
+        )
+        pending.append((start, stop, rows_out))
+        if len(pending) > _CTF_CHUNKS_IN_FLIGHT:
+            first, last, rows_out = pending.popleft()
+            out[first:last] = np.asarray(rows_out)[: last - first]
+    for first, last, rows_out in pending:
+        out[first:last] = np.asarray(rows_out)[: last - first]
     return out.reshape(-1, size, size // 2 + 1)
 
 
