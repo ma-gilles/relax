@@ -1,5 +1,7 @@
 """Concise builders for production refinement owner arguments in unit tests."""
 
+import dataclasses
+
 from relax.refinement import half_scoring, local_search_iteration, mean_helpers
 
 _LOCAL_ITERATION_POSITIONAL = (
@@ -199,6 +201,23 @@ def local_iteration_owners(*args, **values):
     )
     assert not values, f"unmapped local iteration owner values: {sorted(values)}"
     return owners
+
+
+def local_iteration_keywords(fake):
+    """Adapt a keyword-style fake to the six-owner local-iteration boundary.
+
+    Every owner field carries its former keyword name, so the fake receives the
+    same names it read before the owners existed.
+    """
+
+    def call_with_keywords(*owners):
+        values = {}
+        for owner in owners:
+            for field in dataclasses.fields(owner):
+                values[field.name] = getattr(owner, field.name)
+        return fake(**values)
+
+    return call_with_keywords
 
 
 def local_half_owners(**values):

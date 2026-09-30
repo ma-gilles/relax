@@ -25,6 +25,7 @@ import jax.numpy as jnp
 from helpers.em_arrays import _hermitian_volume, _make_rotations
 from helpers.refinement_specs import (
     local_half_owners,
+    local_iteration_keywords,
     local_iteration_owners,
     run_mean_reconstruction,
 )
@@ -370,10 +371,10 @@ def test_sealed_sampling_base_grids_honors_explicit_float64_dtype():
         "translations_y_angstrom": np.array([0.0, -1.5], dtype=np.float64),
     }
 
-    rotations_f32, eulers_f32, translations_f32 = iteration_loop_module._sealed_sampling_base_grids(
+    rotations_f32, eulers_f32, translations_f32 = relion_replay_module._sealed_sampling_base_grids(
         sealed_state, voxel_size_angstrom=1.0
     )
-    rotations_f64, eulers_f64, translations_f64 = iteration_loop_module._sealed_sampling_base_grids(
+    rotations_f64, eulers_f64, translations_f64 = relion_replay_module._sealed_sampling_base_grids(
         sealed_state, voxel_size_angstrom=1.0, dtype=np.float64
     )
 
@@ -2234,8 +2235,14 @@ def test_score_half_local_forwards_mstep_grid(monkeypatch, rng):
     monkeypatch.setitem(scoring_policy._DENSE_EM_STATIC_KWARGS, "use_float64_projections", True)
     monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
+    # The iteration controller resolves the local precision flags (iteration_loop.py).
+    fine_precision = dtype_policy_module._local_search_precision_flags(
+        4, pass_index=2, static_em_kwargs=scoring_policy._DENSE_EM_STATIC_KWARGS
+    )
     with pytest.raises(DispatchCaptured):
         half_scoring._score_half_local(*local_half_owners(
+            fine_use_float64_scoring=fine_precision[0],
+            fine_use_float64_projections=fine_precision[1],
             k=0,
             experiment_dataset=dataset,
             means_k=jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
@@ -9320,7 +9327,7 @@ class TestRelionModeSmokeTest:
             "rotation_grid_n_in_planes",
             fake_rotation_grid_n_in_planes,
         )
-        monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_local_search)
+        monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_local_search))
 
         result = refine_single_volume(
             half_datasets,
@@ -13359,7 +13366,7 @@ def test_local_search_os0_keeps_full_local_support_for_mstep(
         ),
     )
     monkeypatch.setattr(half_scoring, "run_em", _mock_run_dense_em)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_local_search)
+    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_local_search))
     monkeypatch.setattr(
         mean_helpers_module,
         "collapse_rotation_posterior_to_direction_prior",
@@ -13445,7 +13452,7 @@ def _run_refine_with_stubbed_exact_local_batch_sizes(
         ),
     )
     monkeypatch.setattr(half_scoring, "run_em", _mock_run_dense_em)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_local_search)
+    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_local_search))
     monkeypatch.setattr(
         mean_helpers_module,
         "collapse_rotation_posterior_to_direction_prior",
