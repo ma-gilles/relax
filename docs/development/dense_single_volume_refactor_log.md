@@ -1173,6 +1173,10 @@ single-volume boundary has 17 parameters.
   cases passed with only the existing complex-cast and gimbal-lock warnings.
   Ruff, Python compilation and diff checks passed; CPU EM fast guard passed all
   102 cases in 59.85 seconds.
+- The required smoke-tier attempt at candidate `f25beac` failed before fixture
+  verification or Slurm submission because this host cannot create
+  `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_test_tiers/smoke_f25beac_20260930_103424`.
+  No GPU test ran, job ID was issued or smoke receipt was produced.
 - Production totals are 20,747 physical and 18,291 nonblank lines across 307
   functions. `_run_half_estep` is now 632 lines and `refine_single_volume` is
   5,460 lines. Argument-count statistics are unchanged.
