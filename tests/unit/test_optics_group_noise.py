@@ -89,6 +89,33 @@ def test_per_group_update_equals_one_group_updates():
 
 
 @pytest.mark.unit
+def test_class3d_update_keeps_one_spectrum_per_group_and_ignores_the_empty_accumulator():
+    """Class3D (subtomograms, several groups): the all-data half's per-group update; the empty second
+    accumulator (one flat placeholder, no mass) adds nothing."""
+
+    rng = np.random.default_rng(2)
+    stats = _stats(rng, n_groups=2, sumw=np.array([6.0, 4.0]))
+    empty = make_noise_stats(
+        wsum_sigma2_noise=np.zeros(N_SHELLS), wsum_img_power=np.zeros(N_SHELLS), wsum_sigma2_offset=0.0, sumw=0.0
+    )
+    previous_radial = np.ones((2, N_SHELLS))
+    previous_rows = np.ones((2, SHAPE[0] * SHAPE[1]))
+    result = noise_updates.update_posterior_noise_variance(
+        [stats, empty],
+        [previous_rows, previous_rows],
+        [previous_radial, previous_radial],
+        previous_radial,
+        SHAPE,
+        k_class_enabled=True,
+        firstiter_cc=False,
+    )
+    k1 = _update([stats, stats], [previous_rows, previous_rows], [previous_radial, previous_radial])
+    for k in range(2):
+        assert_matches(result.noise_from_res_per_half[k], k1.noise_from_res_per_half[0])
+        assert_matches(np.asarray(result.noise_variance_per_half[k]), np.asarray(k1.noise_variance_per_half[0]))
+
+
+@pytest.mark.unit
 def test_group_without_noise_sums_keeps_its_spectrum():
     rng = np.random.default_rng(1)
     stats = _stats(rng, n_groups=2, sumw=np.array([6.0, 0.0]))

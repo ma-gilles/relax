@@ -124,13 +124,17 @@ def test_startup_noise_rejects_missing_or_unsupported_inputs(overrides):
             args=_args(), **params)
 
 
-def test_per_optics_group_startup_noise_is_k1_only():
-    # K=1 takes one spectrum per optics group; Class3D keeps one.
-    with pytest.raises(ValueError, match='K=1 only'):
-        driver._compute_relion_startup_noise(SimpleNamespace(grid_size=8),
-            args=_args(n_classes=4, relion_half_sets=None), frozen_boundary=None,
-            source_rows=np.arange(3), optics_group_ids=np.array([1, 2, 1]), mask_params=(12., 3),
-            optics_pixel_sizes=np.array([1.25, 1.25]))
+def test_class3d_startup_noise_has_one_spectrum_per_optics_group(monkeypatch):
+    # Class3D keeps one sigma2_noise per optics group, as K=1 does (subtomogram Class3D, two groups).
+    monkeypatch.setattr(
+        driver, '_compute_relion_fresh_k1_initial_sigma2',
+        lambda ds, **kwargs: np.array([[.5, .4, .3, .2, .1], [.6, .5, .4, .3, .2]], dtype=np.float64),
+    )
+    radial, noise = driver._compute_relion_startup_noise(SimpleNamespace(grid_size=8),
+        args=_args(n_classes=4, relion_half_sets=None), frozen_boundary=None,
+        source_rows=np.arange(3), optics_group_ids=np.array([1, 2, 1]), mask_params=(12., 3),
+        optics_pixel_sizes=np.array([1.25, 1.25]))
+    assert radial.shape[0] == 2 and noise.shape[0] == 2
 
 
 def test_class3d_startup_noise_takes_unsplit_order(monkeypatch):

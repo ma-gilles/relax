@@ -223,11 +223,19 @@ def _noise_radial_history(noise_variance_per_half, image_shape, *, dtype):
 
 
 def _combined_noise_stats(noise_stats_per_half):
-    """Sum half-set noise sufficient statistics before RELION Class3D normalization."""
+    """Sum half-set noise sufficient statistics before RELION Class3D normalization.
+
+    Class3D's second accumulator holds no particles; a half without mass adds exact zeros, and with
+    several optics groups its placeholder sums need not have the scored half's ``[G, n]`` layout, so
+    it is left out. ``sumw`` keeps the per-group ``[G]`` layout when the sums have one.
+    """
 
     stats = [stats_k for stats_k in noise_stats_per_half if stats_k is not None]
     if not stats:
         return None
+    with_mass = [stats_k for stats_k in stats if total_sumw(stats_k.sumw) > 0.0]
+    if with_mass:
+        stats = with_mass
     wsum_sigma2_noise = np.sum(
         [np.asarray(stats_k.wsum_sigma2_noise, dtype=np.float64) for stats_k in stats],
         axis=0,
@@ -237,7 +245,8 @@ def _combined_noise_stats(noise_stats_per_half):
         axis=0,
     )
     wsum_sigma2_offset = float(sum(float(stats_k.wsum_sigma2_offset) for stats_k in stats))
-    sumw = float(sum(float(stats_k.sumw) for stats_k in stats))
+    sumw = sum(np.asarray(stats_k.sumw, dtype=np.float64) for stats_k in stats)
+    sumw = float(sumw) if np.ndim(sumw) == 0 else np.asarray(sumw, dtype=np.float64)
 
     def _sum_optional_field(name: str, like):
         values = [getattr(stats_k, name, None) for stats_k in stats]
@@ -387,18 +396,29 @@ def update_posterior_noise_variance(
         combined_noise_stats = _combined_noise_stats(noise_stats_per_half)
         if combined_noise_stats is None:
             raise RuntimeError("K-class noise update expected at least one NoiseStats object")
-        noise_shared = noise_relion.normalize_wsum_to_sigma2_noise(
-            np.asarray(combined_noise_stats.wsum_sigma2_noise, dtype=np.float64),
-            np.asarray(combined_noise_stats.wsum_img_power, dtype=np.float64),
-            combined_noise_stats.sumw,
-            image_shape,
-        )
-        noise_from_res = np.asarray(noise_shared, dtype=np.float64)
-        noise_from_res_per_half = [noise_from_res.copy(), noise_from_res.copy()]
-        noise_variance_shared = jnp.asarray(
-            noise.make_radial_noise(noise_shared, image_shape),
-        ).reshape(-1)
-        noise_variance_per_half = [noise_variance_shared, noise_variance_shared]
+        if np.ndim(combined_noise_stats.wsum_sigma2_noise) == 2:
+            # Several optics groups (subtomogram Class3D): one spectrum per group, as for K=1.
+            noise_from_res, noise_rows = _per_optics_group_sigma2_noise(
+                combined_noise_stats,
+                np.asarray(previous_noise_radial_per_half[0], dtype=np.float64),
+                noise_variance_per_half[0],
+                image_shape,
+            )
+            noise_from_res_per_half = [noise_from_res.copy(), noise_from_res.copy()]
+            noise_variance_per_half = [noise_rows, noise_rows]
+        else:
+            noise_shared = noise_relion.normalize_wsum_to_sigma2_noise(
+                np.asarray(combined_noise_stats.wsum_sigma2_noise, dtype=np.float64),
+                np.asarray(combined_noise_stats.wsum_img_power, dtype=np.float64),
+                combined_noise_stats.sumw,
+                image_shape,
+            )
+            noise_from_res = np.asarray(noise_shared, dtype=np.float64)
+            noise_from_res_per_half = [noise_from_res.copy(), noise_from_res.copy()]
+            noise_variance_shared = jnp.asarray(
+                noise.make_radial_noise(noise_shared, image_shape),
+            ).reshape(-1)
+            noise_variance_per_half = [noise_variance_shared, noise_variance_shared]
     elif np.ndim(noise_stats_per_half[0].wsum_sigma2_noise) == 2:
         noise_from_res_per_half = []
         for k_noise, stats_k in enumerate(noise_stats_per_half):
