@@ -817,14 +817,8 @@ def test_resolve_class_inputs_relion_projector_uses_exact_path_by_default(monkey
     assert exact_rmax == 2
 
     monkeypatch.setenv("RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR", "0")
-    # assert_matches also calls np.abs, so count only this call's variances.
-    calls_before = len(computed_variances)
-    _means, _mean_variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)
-
-    assert len(computed_variances) == calls_before + 1
-    assert_matches(_mean_variance, expected_variance)
-    assert exact_half is None
-    assert exact_rmax is None
+    with pytest.raises(ValueError, match="was removed"):
+        _resolve_class_inputs(state, config)
 
 
 def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):

@@ -115,7 +115,6 @@ def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monke
         relion_projector_frame=True,
     )
     assert not hasattr(config, "projector_setup_backend")
-    monkeypatch.setenv(adapter._EXACT_RELION_PROJECTOR_ENV, "1")
 
     def native_inputs():
         half, r_max = native_reference_to_relion_projector_half_maps(state.Iref, current_size=8, padding_factor=1)

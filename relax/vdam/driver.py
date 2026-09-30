@@ -420,13 +420,8 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             ),
         )
     profile.record("state_setup")
-    exact_projector_setting = os.environ.get(
-        "RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR", "1"
-    ).strip().lower()
-    projector_context = (
-        None if exact_projector_setting in {"0", "false", "no", "off"}
-        else dense_adapter._IterationProjectorContext()
-    )
+    dense_adapter.refuse_retired_projector_switch()
+    projector_context = dense_adapter._IterationProjectorContext()
     expectation_step = _native_expectation_step(
         dataset,
         opts,
