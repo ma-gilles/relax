@@ -104,7 +104,6 @@ def vdam_m_step(
     tau2_fudge_factor: float,
     grad_min_resol_shell: float | None = None,
     padding_factor: int = 1,
-    use_native_transaction: bool = True,
     mstep_compute_dtype: Literal["float32", "float64"] = "float32",
 ) -> InitialModelState:
     """Full VDAM M-step over K classes.
@@ -128,7 +127,6 @@ def vdam_m_step(
             tau2_fudge_factor=tau2_fudge_factor,
             grad_min_resol_shell=grad_min_resol_shell,
             padding_factor=padding_factor,
-            use_native_transaction=use_native_transaction,
             mstep_compute_dtype=mstep_compute_dtype,
         )
     return out

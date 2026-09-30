@@ -1,9 +1,9 @@
 """Single-class VDAM M-step of the native InitialModel driver.
 
 The per-class M-step transaction, its precision-route validation, the RELION
-reconstruction-weight and resolution-shell rules live here. Optional native
-replay readers live in ``diagnostics.vdam_mstep_replay``;
-``m_step`` keeps the multi-class driver.
+reconstruction-weight and resolution-shell rules live here. RELION's own
+step-by-step M-step with its dumps and replays is the oracle in
+``diagnostics.vdam_native_mstep``; ``m_step`` keeps the multi-class driver.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from typing import Literal, Optional
 import jax.numpy as jnp
 import numpy as np
 
-from relax.diagnostics import vdam_mstep_replay as replay
 from relax.vdam.state import InitialModelState, VdamAccumulator, half_slot_index
 
 XMIPP_EQUAL_ACCURACY: float = 1e-6
@@ -54,28 +53,15 @@ def _prepare_mstep_state_precision(state, mstep_compute_dtype):
     )
 
 
-def _validate_mstep_precision_route(
-    mstep_compute_dtype: Literal["float32", "float64"],
-    *,
-    use_native_transaction: bool = True,
-) -> None:
-    """Reject precision-changing diagnostic diversions before reading overrides."""
+def _validate_mstep_precision_route(mstep_compute_dtype: Literal["float32", "float64"]) -> None:
+    """Reject an unknown precision and the native parity replays, which only the diagnostics runner takes."""
     if mstep_compute_dtype not in {"float32", "float64"}:
         raise ValueError(f"Unknown mstep_compute_dtype: {mstep_compute_dtype!r}")
-    if mstep_compute_dtype == "float64":
-        return
-    if not use_native_transaction:
-        raise ValueError("float32 M-step requires the transaction route")
-    for name in (
-        "RELAX_MSTEP_DUMP_DIR",
-        replay.VDAM_NATIVE_SECOND_MOMENT_REPLAY_ENV,
-        replay.VDAM_NATIVE_FIRST_MOMENT_REPLAY_ENV,
-        replay.VDAM_NATIVE_BPREF_DATA_REPLAY_ENV,
-        replay.VDAM_NATIVE_BPREF_WEIGHT_REPLAY_ENV,
-        replay.VDAM_NATIVE_IREF_INPUT_REPLAY_ENV,
-    ):
-        if name in os.environ and (name == "RELAX_MSTEP_DUMP_DIR" or os.environ[name].strip()):
-            raise ValueError(f"float32 M-step is incompatible with {name}")
+    requested = [name for name in NATIVE_PARITY_REPLAY_ENVS if os.environ.get(name, "").strip()]
+    if requested:
+        raise ValueError(
+            f"{requested} replay RELION's M-step; run python -m relax.diagnostics.vdam_native_mstep instead"
+        )
 
 
 def _validate_mstep_state_precision(state: InitialModelState) -> None:
@@ -87,15 +73,24 @@ def _validate_mstep_state_precision(state: InitialModelState) -> None:
             raise ValueError(f"float32 M-step requires state.{name} dtype {np.dtype(dtype)}")
 
 
-def _get_bindings():
-    """Import the RELION binding module; raise a clear error if unbuilt."""
-    try:
-        from relax.relion_bind import _relion_bind_core as m
-    except ImportError as e:  # pragma: no cover
-        raise RuntimeError(
-            "VDAM M-step requires the RELION bindings. Run:\n  pixi run python recovar/relion_bind/build.py"
-        ) from e
-    return m
+# The native replays of RELION's M-step intermediates (relax.diagnostics.vdam_mstep_replay).
+NATIVE_PARITY_REPLAY_ENVS = (
+    "RELAX_VDAM_NATIVE_SECOND_MOMENT_REPLAY_BIN",
+    "RELAX_VDAM_NATIVE_FIRST_MOMENT_REPLAY_BIN",
+    "RELAX_VDAM_NATIVE_BPREF_DATA_REPLAY_BIN",
+    "RELAX_VDAM_NATIVE_BPREF_WEIGHT_REPLAY_BIN",
+    "RELAX_VDAM_NATIVE_IREF_INPUT_REPLAY_BIN",
+)
+
+
+def validate_mstep_inputs(state: InitialModelState, k: int, accum_h1) -> None:
+    """The class index and the half-set accumulator layout of one class's M-step."""
+    if not (0 <= k < state.K):
+        raise ValueError(f"class index {k} out of range")
+    if state.pseudo_halfsets and accum_h1 is None:
+        raise ValueError("pseudo_halfsets=True requires accum_h1")
+    if not state.pseudo_halfsets and accum_h1 is not None:
+        raise ValueError("pseudo_halfsets=False must have accum_h1=None")
 
 
 def _relion_resolution_shell(ori_size: int, pixel_size: float, resolution_angstrom: float) -> int:
@@ -228,278 +223,43 @@ def vdam_m_step_single_class(
     tau2_fudge_factor: float,
     grad_min_resol_shell: float | None = None,
     padding_factor: int = 1,
-    use_native_transaction: bool = True,
     mstep_compute_dtype: Literal["float32", "float64"] = "float32",
 ) -> InitialModelState:
-    """VDAM M-step for one class (per-class loop matches RELION's binding shape).
+    """VDAM M-step for one class: the transaction of
+    :func:`relax.relion.relion_vdam_mstep.relion_vdam_m_step_host`.
+
+    RELION's own step-by-step M-step, with its intermediate dumps and parity
+    replays, is the oracle in :mod:`relax.diagnostics.vdam_native_mstep`.
 
     Pseudo-halfsets: FSC/noise-power is derived from the halfset-data difference
     in ``applyMomenta``; ``reconstructGrad`` then uses ``mom1_noise_power``.
     """
-    _validate_mstep_precision_route(
-        mstep_compute_dtype, use_native_transaction=use_native_transaction
-    )
+    _validate_mstep_precision_route(mstep_compute_dtype)
     if mstep_compute_dtype == "float32":
         _validate_mstep_state_precision(state)
-    if not (0 <= k < state.K):
-        raise ValueError(f"class index {k} out of range")
-    if state.pseudo_halfsets and accum_h1 is None:
-        raise ValueError("pseudo_halfsets=True requires accum_h1")
-    if not state.pseudo_halfsets and accum_h1 is not None:
-        raise ValueError("pseudo_halfsets=False must have accum_h1=None")
-    accum_h0, accum_h1 = replay._maybe_replay_native_bpref_accumulators(
-        accum_h0,
-        accum_h1,
-        iteration=int(getattr(state, "iter", 0)),
-        class_idx=k,
-    )
+    validate_mstep_inputs(state, k, accum_h1)
     if not _has_relion_reconstruction_weight(state, k, accum_h0):
         return state
 
-    bind = _get_bindings()
-    if mstep_compute_dtype == "float32" and not hasattr(bind, "vdam_m_step_transaction"):
-        raise RuntimeError("float32 M-step requires transaction-capable native certificates")
-    ori_size = state.ori_size
     # Pass the current-size radius explicitly instead of initZeros(-1)
     # (backprojector.cpp::initZeros; ml_optimiser.cpp:5846).
     r_max = state.current_size // 2
     min_resol_shell = _grad_min_resol_shell_from_state(state, grad_min_resol_shell)
-    # backprojector.h:335/343 EMA defaults
-    mu_first, mu_second = 0.9, 0.999
+    from relax.relion.relion_vdam_mstep import relion_vdam_m_step_host
 
-    _dump_dir = os.environ.get("RELAX_MSTEP_DUMP_DIR")
-    _do_dump = _dump_dir is not None and int(getattr(state, "iter", 0)) == int(
-        os.environ.get("RELAX_MSTEP_DUMP_ITER", "1")
+    transaction = partial(relion_vdam_m_step_host, recovar_layout=True, device_volumes=True)
+    if mstep_compute_dtype == "float32":
+        transaction = partial(transaction, compute_dtype=np.float32)
+    return _run_m_step_transaction(
+        transaction,
+        state,
+        k,
+        accum_h0,
+        accum_h1,
+        grad_current_stepsize=grad_current_stepsize,
+        tau2_fudge_factor=tau2_fudge_factor,
+        padding_factor=padding_factor,
+        r_max=r_max,
+        min_resol_shell=min_resol_shell,
+        mstep_compute_dtype=mstep_compute_dtype,
     )
-    _dump_prefix = f"c{k}_" if state.K > 1 else ""
-
-    # Replay and intermediate dump diagnostics retain their original boundaries.
-    replay_requested = any(
-        os.environ.get(name, "").strip()
-        for name in (
-            replay.VDAM_NATIVE_SECOND_MOMENT_REPLAY_ENV,
-            replay.VDAM_NATIVE_FIRST_MOMENT_REPLAY_ENV,
-            replay.VDAM_NATIVE_BPREF_DATA_REPLAY_ENV,
-            replay.VDAM_NATIVE_BPREF_WEIGHT_REPLAY_ENV,
-            replay.VDAM_NATIVE_IREF_INPUT_REPLAY_ENV,
-        )
-    )
-    if (
-        use_native_transaction
-        and not _do_dump
-        and not replay_requested
-        and hasattr(bind, "vdam_m_step_transaction")
-    ):
-        if not hasattr(bind, "vdam_first_moment_initializes"):
-            raise RuntimeError("JAX M-step requires the native moment initialization binding")
-        from relax.relion.relion_vdam_mstep import relion_vdam_m_step_host
-
-        transaction = partial(relion_vdam_m_step_host, recovar_layout=True, device_volumes=True)
-        if mstep_compute_dtype == "float32":
-            transaction = partial(transaction, compute_dtype=np.float32)
-        return _run_m_step_transaction(
-            transaction,
-            state,
-            k,
-            accum_h0,
-            accum_h1,
-            grad_current_stepsize=grad_current_stepsize,
-            tau2_fudge_factor=tau2_fudge_factor,
-            padding_factor=padding_factor,
-            r_max=r_max,
-            min_resol_shell=min_resol_shell,
-            mstep_compute_dtype=mstep_compute_dtype,
-        )
-
-    def _dump(name, arr):
-        if not _do_dump:
-            return
-        from pathlib import Path as _Path
-
-        _Path(_dump_dir).mkdir(parents=True, exist_ok=True)
-        np.save(f"{_dump_dir}/{_dump_prefix}{name}.npy", np.asarray(arr))
-
-    _dump("accum_h0_data", accum_h0.data)
-    _dump("accum_h0_weight", accum_h0.weight)
-    if state.pseudo_halfsets:
-        _dump("accum_h1_data", accum_h1.data)
-        _dump("accum_h1_weight", accum_h1.weight)
-    _dump("iref_in", state.Iref[k])
-    _dump("Igrad1_in_h0", state.Igrad1[half_slot_index(k, 0, state.K, state.pseudo_halfsets)])
-    if state.pseudo_halfsets:
-        _dump("Igrad1_in_h1", state.Igrad1[half_slot_index(k, 1, state.K, state.pseudo_halfsets)])
-    _dump("Igrad2_in", state.Igrad2[k])
-    _dump("fsc_halves_in", state.fsc_halves_class[k])
-
-    # Step 2. reweightGrad per halfset
-    data_h0 = np.asarray(bind.vdam_reweight_grad(accum_h0.data, accum_h0.weight, ori_size, padding_factor, 1, r_max))
-    if state.pseudo_halfsets:
-        data_h1 = np.asarray(
-            bind.vdam_reweight_grad(accum_h1.data, accum_h1.weight, ori_size, padding_factor, 1, r_max)
-        )
-    else:
-        data_h1 = None
-    _dump("data_h0_post_reweight", data_h0)
-    if data_h1 is not None:
-        _dump("data_h1_post_reweight", data_h1)
-
-    # Step 3. getFristMoment per halfset
-    slot_h0 = half_slot_index(k, 0, state.K, state.pseudo_halfsets)
-    new_Igrad1 = np.array(state.Igrad1, order="C")
-
-    new_Igrad1[slot_h0] = np.asarray(
-        bind.vdam_first_moment(
-            data_h0,
-            state.Igrad1[slot_h0],
-            ori_size,
-            padding_factor,
-            1,
-            r_max,
-            **{"lambda": mu_first},
-        )
-    )
-    if state.pseudo_halfsets:
-        slot_h1 = half_slot_index(k, 1, state.K, state.pseudo_halfsets)
-        new_Igrad1[slot_h1] = np.asarray(
-            bind.vdam_first_moment(
-                data_h1,
-                state.Igrad1[slot_h1],
-                ori_size,
-                padding_factor,
-                1,
-                r_max,
-                **{"lambda": mu_first},
-            )
-        )
-    replay_h0, replay_h1 = replay._maybe_replay_native_first_moments(
-        new_Igrad1[slot_h0],
-        new_Igrad1[slot_h1] if state.pseudo_halfsets else None,
-        iteration=int(getattr(state, "iter", 0)),
-        class_idx=k,
-    )
-    new_Igrad1[slot_h0] = replay_h0
-    if state.pseudo_halfsets:
-        new_Igrad1[slot_h1] = replay_h1
-    _dump("m1_h0_post", new_Igrad1[slot_h0])
-    if state.pseudo_halfsets:
-        _dump("m1_h1_post", new_Igrad1[slot_h1])
-
-    # Step 4. getSecondMoment (uses both halfset accumulators)
-    new_Igrad2 = np.array(state.Igrad2, order="C")
-    if state.pseudo_halfsets:
-        computed_Igrad2 = np.asarray(
-            bind.vdam_second_moment(
-                data_h0,
-                data_h1,
-                state.Igrad2[k],
-                ori_size,
-                padding_factor,
-                1,
-                r_max,
-                **{"lambda": mu_second},
-            )
-        )
-        new_Igrad2[k] = replay._maybe_replay_native_second_moment(
-            computed_Igrad2,
-            iteration=int(getattr(state, "iter", 0)),
-            class_idx=k,
-        )
-        _dump("m2_computed_before_replay", computed_Igrad2)
-        _dump("m2_post", new_Igrad2[k])
-
-    # Step 5. applyMomenta. Non-halfset: pass m1 twice to trigger do_half=false.
-    m1_h0 = new_Igrad1[slot_h0]
-    m1_h1 = new_Igrad1[slot_h1] if state.pseudo_halfsets else m1_h0
-    _post_data, mom1_noise_power = bind.vdam_apply_momenta(
-        data_h0, m1_h0, m1_h1, new_Igrad2[k], ori_size, padding_factor, 1, r_max
-    )
-    _post_data = np.asarray(_post_data)
-    mom1_noise_power = np.asarray(mom1_noise_power)
-    _dump("post_apply_data", _post_data)
-    _dump("mom1_noise_power", mom1_noise_power)
-
-    # Step 6. updateSSNRarrays (update_tau2_with_fsc=false in gradient mode);
-    # drives updateCurrentResolution for the next expectation step.
-    new_tau2_class = state.tau2_class.copy()
-    new_sigma2_class = state.sigma2_class.copy()
-    new_fourier_coverage_class = state.fourier_coverage_class.copy()
-    new_data_vs_prior_class = state.data_vs_prior_class.copy()
-    # RELION's gradient InitialModel path routes class 0 FSC into the common
-    # updateSSNRarrays call, then passes per-class FSC to reconstructGrad below.
-    fsc_for_ssnr = np.asarray(state.fsc_halves_class[0], dtype=np.float64)
-    # RELION calls updateSSNRarrays on BPref[iclass], not on an average with
-    # the pseudo-halfset BPref[iclass + nr_classes].  The latter contributes
-    # to gradient moments only.  Captured native K=1 buffers confirm that
-    # BPref[0].weight matches accum_h0.weight shell-by-shell.
-    weight_for_ssnr = accum_h0.weight
-    tau2, sigma2, data_vs_prior, fourier_coverage = bind.vdam_update_ssnr_arrays_from_bpref(
-        weight_for_ssnr,
-        fsc_for_ssnr,
-        state.tau2_class[k],
-        tau2_fudge_factor,
-        ori_size,
-        padding_factor,
-        1,
-        r_max,
-        False,
-        False,
-        False,
-    )
-    new_tau2_class[k] = np.asarray(tau2, dtype=np.float64)
-    new_sigma2_class[k] = np.asarray(sigma2, dtype=np.float64)
-    new_data_vs_prior_class[k] = np.asarray(data_vs_prior, dtype=np.float64)
-    new_fourier_coverage_class[k] = np.asarray(fourier_coverage, dtype=np.float64)
-    _dump("tau2_post_ssnr", new_tau2_class[k])
-    _dump("sigma2_post_ssnr", new_sigma2_class[k])
-    _dump("data_vs_prior_post_ssnr", new_data_vs_prior_class[k])
-    _dump("fourier_coverage_post_ssnr", new_fourier_coverage_class[k])
-
-    # Step 7. reconstructGrad updates Iref[k] (RELION pseudo-halfset path —
-    # mom1_noise_power required for correct FSC/tau weighting). Convert
-    # recovar↔RELION at the boundary so the gradient is in the same frame as the accumulators.
-    from recovar.utils.helpers import recovar_volume_to_relion, relion_volume_to_recovar
-
-    iref_relion_in = recovar_volume_to_relion(np.asarray(state.Iref[k]))
-    iref_relion_in = replay._maybe_replay_native_reference_input(
-        iref_relion_in,
-        iteration=int(getattr(state, "iter", 0)),
-        class_idx=k,
-    )
-    _dump("iref_relion_in", iref_relion_in)
-    effective_stepsize = float(grad_current_stepsize) * (
-        1.0 - np.exp(-float(3 * state.K + 10) * float(np.asarray(state.pdf_class)[k]))
-    )
-    _dump("effective_stepsize", np.asarray([effective_stepsize], dtype=np.float64))
-    new_Iref = np.array(state.Iref, order="C")
-    new_Iref[k] = relion_volume_to_recovar(
-        np.asarray(
-            bind.vdam_reconstruct_grad(
-                iref_relion_in,
-                _post_data,
-                accum_h0.weight,
-                state.fsc_halves_class[k],
-                effective_stepsize,
-                tau2_fudge_factor,
-                ori_size,
-                padding_factor,
-                1,
-                r_max,
-                min_resol_shell,
-                False,
-                True,
-                mom1_noise_power,
-            )
-        )
-    )
-    _dump("iref_out_recovar_frame", new_Iref[k])
-    _dump("iref_out_relion_frame", recovar_volume_to_relion(new_Iref[k]))
-
-    new_state = replace(state)
-    new_state.Iref = new_Iref
-    new_state.Igrad1 = new_Igrad1
-    new_state.Igrad2 = new_Igrad2
-    new_state.tau2_class = new_tau2_class
-    new_state.sigma2_class = new_sigma2_class
-    new_state.data_vs_prior_class = new_data_vs_prior_class
-    new_state.fourier_coverage_class = new_fourier_coverage_class
-    return new_state

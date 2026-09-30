@@ -85,6 +85,11 @@ def test_complete_device_transaction_native_fp64(bind, size, padding, full, pseu
 
 def _assert_case(bind, case):
     size, padding = case["ori_size"], case["padding_factor"]
+    if size * padding < 16:
+        # RELION's M-step (the oracle) takes these grids; relax's transaction refuses them.
+        with pytest.raises(ValueError, match="FFT grid"):
+            relion_vdam_m_step_host(**case)
+        return
     pseudo = case["data_h1"] is not None
     before = deepcopy(case)
     expected = _native(bind, case)
@@ -136,15 +141,20 @@ def test_nan_tau2_fudge_selects_the_fsc_spectrum_like_native(bind, pseudo):
         assert np.all(metrics < 1e-12), (key, metrics)
 
 
-def test_native_branch_certificate_real_only_and_serial_order(bind):
+def test_branch_certificate_real_only_and_serial_order_like_native(bind):
+    from relax.relion.relion_vdam_mstep import _serial_real_sum_is_zero
+
     values = np.zeros((8, 8, 5), np.complex128)
     values.imag[:] = 1.0
-    assert bind.vdam_first_moment_initializes(values)
+    cases = [(values.copy(), True)]
     values.ravel()[:4] = [1e16, 1, -1e16, 0]
-    assert bind.vdam_first_moment_initializes(values)
+    cases.append((values.copy(), True))
     values.ravel()[:4] = [1e16, -1e16, 1, 0]
-    assert not bind.vdam_first_moment_initializes(values)
-    assert bind.vdam_first_moment_initializes(values[:, :, ::-1])
+    cases += [(values.copy(), False), (values[:, :, ::-1], True)]
+    cases += [(value.astype(np.complex64), expected) for value, expected in cases[:1]]
+    for value, expected in cases:
+        assert bool(bind.vdam_first_moment_initializes(value)) is expected
+        assert _serial_real_sum_is_zero(value) is expected
 
 
 def test_dynamic_radius_reuses_device_executable(bind):
@@ -183,7 +193,7 @@ def test_physical_hermitian_transaction_native_fp64(bind, size, padding, full, p
     case = _case(size, padding, size // (2 if full else 4), pseudo, moments)
     # Half-volume inputs require Hermitian symmetry on the x=0 plane. Generate
     # that physical contract explicitly. The arbitrary-input panel also remains;
-    # its FFT8 cases now verify the original native capability fallback.
+    # its FFT8 cases verify that relax refuses grids below 16.
     for key in ("data_h0", "weight_h0", "data_h1", "weight_h1", "mom1_h0", "mom1_h1", "mom2"):
         value = case[key]
         if value is None:
@@ -194,7 +204,7 @@ def test_physical_hermitian_transaction_native_fp64(bind, size, padding, full, p
     _assert_case(bind, case)
 
 
-@pytest.mark.parametrize("size,padding,expected_backend", [(8, 1, "native"), (8, 2, "device"), (16, 1, "device")])
+@pytest.mark.parametrize("size,padding,expected_backend", [(8, 1, "refused"), (8, 2, "device"), (16, 1, "device")])
 def test_host_backend_capability_attestation(bind, monkeypatch, size, padding, expected_backend):
     from relax.relion import relion_vdam_mstep as helper
 
@@ -216,12 +226,11 @@ def test_host_backend_capability_attestation(bind, monkeypatch, size, padding, e
 
     monkeypatch.setattr(bind, "vdam_m_step_transaction", native)
     monkeypatch.setattr(helper, "relion_vdam_m_step_device", device)
-    if expected_backend == "native":
-
-        def forbidden_certificate(*args, **kwargs):
-            raise AssertionError("native fallback must not prepare device inputs")
-
-        monkeypatch.setattr(bind, "vdam_first_moment_initializes", forbidden_certificate)
+    if expected_backend == "refused":
+        with pytest.raises(ValueError, match="FFT grid"):
+            helper.relion_vdam_m_step_host(**case)
+        assert calls == []
+        return
     actual = helper.relion_vdam_m_step_host(**case)
     assert calls == [expected_backend]
     for key in expected:

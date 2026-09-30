@@ -1,18 +1,19 @@
 """Typed M precision routing and publication; not full-trajectory qualification."""
 
+import sys
 from dataclasses import fields
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.commands import initial_model as initial_model_command
 from relax.diagnostics import vdam_mstep_replay
-from relax.vdam import dense_adapter, driver, iteration_loop, m_step, mstep_single_class, native_options
 from relax.relion import initial_model_io
+from relax.vdam import dense_adapter, driver, iteration_loop, m_step, mstep_single_class, native_options
 from relax.vdam.init import initialise_denovo_state
-from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -170,8 +171,8 @@ def _call(state, **kwargs):
     )
 
 
-@pytest.mark.parametrize("env", REPLAYS)
-def test_float32_rejects_diagnostics_before_replay_consumption(monkeypatch, env):
+@pytest.mark.parametrize("env", REPLAYS[:-1])
+def test_production_refuses_native_replays_before_consumption(monkeypatch, env):
     monkeypatch.setenv(env, "missing")
     monkeypatch.setattr(
         vdam_mstep_replay, "_maybe_replay_native_bpref_accumulators", lambda *a, **k: pytest.fail("consumed replay")
@@ -180,12 +181,11 @@ def test_float32_rejects_diagnostics_before_replay_consumption(monkeypatch, env)
         _call(mstep_single_class._prepare_mstep_state_precision(_state(), "float32"))
 
 
-def test_float32_rejects_primitive_route_before_overrides(monkeypatch):
-    monkeypatch.setattr(
-        vdam_mstep_replay, "_maybe_replay_native_bpref_accumulators", lambda *a, **k: pytest.fail("consumed replay")
-    )
-    with pytest.raises(ValueError, match="transaction"):
-        _call(mstep_single_class._prepare_mstep_state_precision(_state(), "float32"), use_native_transaction=False)
+def test_mstep_dump_variable_does_not_divert_production(monkeypatch, tmp_path):
+    monkeypatch.setenv("RELAX_MSTEP_DUMP_DIR", str(tmp_path))
+    monkeypatch.setitem(sys.modules, "relax.relion_bind._relion_bind_core", None)
+    _call(mstep_single_class._prepare_mstep_state_precision(_state(), "float32"))
+    assert not any(tmp_path.iterdir())
 
 
 @pytest.mark.parametrize("field", list(F32_STATE))
@@ -193,7 +193,7 @@ def test_float32_rejects_mixed_publication_state_before_execution(monkeypatch, f
     state = mstep_single_class._prepare_mstep_state_precision(_state(), "float32")
     value = getattr(state, field)
     setattr(state, field, value.astype(np.complex128 if np.iscomplexobj(value) else np.float64))
-    monkeypatch.setattr(mstep_single_class, "_get_bindings", lambda: pytest.fail("entered transaction"))
+    monkeypatch.setattr(mstep_single_class, "_run_m_step_transaction", lambda *a, **k: pytest.fail("entered transaction"))
     with pytest.raises(ValueError, match=field):
         _call(state)
 
@@ -204,14 +204,8 @@ def test_real_host_device_transaction_publishes_f32_and_preserves_k4_other_slots
     state = mstep_single_class._prepare_mstep_state_precision(_state(4), "float32")
     state.Iref[:] = np.arange(1, 5, dtype=np.float32)[:, None, None, None]
     before = {name: getattr(state, name).copy() for name in F32_STATE}
-    # Exact-zero first moments have an unambiguous native initialization certificate.
-    bind = SimpleNamespace(
-        vdam_m_step_transaction=lambda *a: pytest.fail("native executed"), vdam_first_moment_initializes=lambda *_: True
-    )
-    monkeypatch.setattr(mstep_single_class, "_get_bindings", lambda: bind)
-    from relax.relion_bind import _relion_bind_core
-
-    monkeypatch.setattr(_relion_bind_core, "vdam_first_moment_initializes", bind.vdam_first_moment_initializes)
+    # Exact-zero first moments take the host serial-sum certificate; the binding is never needed.
+    monkeypatch.setitem(sys.modules, "relax.relion_bind._relion_bind_core", None)
     actual = _call(state)
     for name, dtype in F32_STATE.items():
         assert getattr(actual, name).dtype == np.dtype(dtype)
@@ -300,13 +294,8 @@ def test_solvent_route_uses_explicit_f32_product_and_preserves_default():
         m_step.relion_solvent_flatten_state(_state(), mask=mask, compute_dtype="float32")
 
 
-@pytest.mark.parametrize("missing", ["vdam_m_step_transaction", "vdam_first_moment_initializes"])
-def test_float32_missing_native_certificate_capability_never_falls_back(monkeypatch, missing):
-    bindings = {
-        "vdam_m_step_transaction": lambda *a: pytest.fail("native executed"),
-        "vdam_first_moment_initializes": lambda *a: True,
-    }
-    del bindings[missing]
-    monkeypatch.setattr(mstep_single_class, "_get_bindings", lambda: SimpleNamespace(**bindings))
-    with pytest.raises(RuntimeError, match="requires"):
-        _call(mstep_single_class._prepare_mstep_state_precision(_state(), "float32"))
+def test_float32_transaction_runs_without_the_relion_binding(monkeypatch):
+    monkeypatch.setitem(sys.modules, "relax.relion_bind._relion_bind_core", None)
+    state = mstep_single_class._prepare_mstep_state_precision(_state(), "float32")
+    out = _call(state)
+    assert out.Iref.dtype == np.float32

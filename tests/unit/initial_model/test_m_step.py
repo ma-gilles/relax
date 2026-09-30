@@ -277,10 +277,12 @@ def test_m_step_matches_relion_fsc_routing_for_ssnr_and_reconstruct(monkeypatch)
             captured["reconstruct_fsc"] = np.asarray(fsc, dtype=np.float64).copy()
             return np.asarray(iref_relion)
 
-    monkeypatch.setattr(mstep_single_class, "_get_bindings", lambda: FakeBindings)
+    from relax.diagnostics import vdam_native_mstep
+
+    monkeypatch.setattr(vdam_native_mstep, "_bindings", lambda: FakeBindings)
     accum = _make_accumulator(k=1, h=0, ori_size=ori, seed=4)
 
-    vdam_m_step_single_class(
+    vdam_native_mstep.vdam_m_step_single_class_native(
         state,
         k=1,
         accum_h0=accum,

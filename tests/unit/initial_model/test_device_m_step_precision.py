@@ -109,17 +109,18 @@ def test_invalid_precision_rejected_before_native_or_device_work(dtype):
         relion_vdam_m_step_host(**host, compute_dtype=dtype)
 
 
-def test_float32_small_fft_cannot_fall_back_to_native_double():
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_small_fft_grid_is_refused(dtype):
     case = _case()
     case["ori_size"] = 8
     with pytest.raises(ValueError, match="FFT grid >=16"):
-        relion_vdam_m_step_device(**case, compute_dtype=np.float32)
+        relion_vdam_m_step_device(**case, compute_dtype=dtype)
     case.pop("first_initializes_h0")
     case.pop("first_initializes_h1")
     case.pop("return_intermediates")
     case["fsc_ssnr"] = case["fsc_reconstruct"]
-    with pytest.raises(ValueError, match="native fallback is float64"):
-        relion_vdam_m_step_host(**case, compute_dtype=np.float32)
+    with pytest.raises(ValueError, match="FFT grid"):
+        relion_vdam_m_step_host(**case, compute_dtype=dtype)
 
 
 def test_float32_fft_ir_has_no_double_payload():

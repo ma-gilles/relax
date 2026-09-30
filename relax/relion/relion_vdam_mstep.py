@@ -113,7 +113,7 @@ def relion_vdam_m_step_device(
         raise ValueError("device M-step supports positive even boxes and padding 1/2")
     fft_size = padding_factor * ori_size
     if fft_size < 16:
-        raise ValueError("device M-step requires FFT grid >=16; use the native host fallback")
+        raise ValueError("device M-step requires FFT grid >=16")
     capacity = fft_size + 3
     half_shape = (capacity, capacity, capacity // 2 + 1)
     moment_shape = (fft_size, fft_size, fft_size // 2 + 1)
@@ -290,21 +290,29 @@ def relion_vdam_m_step_device(
 def _first_moment_initializes(moment) -> bool:
     """RELION's first-moment branch: the serial RFLOAT sum of the real parts is zero.
 
-    The native certificate sums on the host (``vdam_first_moment_initializes``).
-    For a device moment, a device sum ``s`` and ``a = sum |re|`` decide without a
-    read-back when ``|s|`` exceeds twice the worst-case rounding of either
-    summation order (``(n - 1) eps a`` each): the serial sum is then nonzero too.
-    Otherwise, as for an all-zero moment, the moment comes back for the native sum.
+    ``MultidimArray<Complex>::sum()`` adds the real parts one by one in double
+    (backprojector.cpp getFristMoment); :func:`_serial_real_sum_is_zero` repeats
+    that order on the host. For a device moment, a device sum ``s`` and
+    ``a = sum |re|`` decide without a read-back when ``|s|`` exceeds twice the
+    worst-case rounding of either summation order (``(n - 1) eps a`` each): the
+    serial sum is then nonzero too. Otherwise, as for an all-zero moment, the
+    moment comes back for the serial sum.
     """
-
-    from relax.relion_bind import _relion_bind_core as bind
 
     if isinstance(moment, jax.Array):
         total, magnitude = (float(value) for value in _moment_real_sum_and_magnitude(moment))
         if abs(total) > 4.0 * moment.size * np.finfo(np.float64).eps * magnitude:
             return False
         moment = np.asarray(moment)
-    return bool(bind.vdam_first_moment_initializes(moment))
+    return _serial_real_sum_is_zero(moment)
+
+
+def _serial_real_sum_is_zero(moment) -> bool:
+    """Whether the left-to-right double sum of ``moment``'s real parts is exactly zero."""
+
+    real = np.asarray(moment).real.astype(np.float64, copy=False).reshape(-1)
+    # ``cumsum`` accumulates strictly in order, like RELION's serial loop.
+    return real.size == 0 or float(np.cumsum(real)[-1]) == 0.0
 
 
 @jax.jit
@@ -337,7 +345,7 @@ def relion_vdam_m_step_host(
     recovar_layout: bool = False,
     device_volumes: bool = False,
 ):
-    """Host-facing oracle adapter with native fallback for FFT grids <16.
+    """Host-facing adapter of the device VDAM M-step transaction (FFT grids of at least 16).
 
     ``fsc_ssnr`` is unused with native update_tau2_with_fsc=false.
     ``min_resol_shell`` is unused in the pinned native reconstructGrad body.
@@ -354,40 +362,8 @@ def relion_vdam_m_step_host(
     iterations this way instead of reading back and re-uploading them.
     """
     real_dtype, complex_dtype = _compute_dtypes(compute_dtype)
-    if real_dtype == jnp.float32 and ori_size * padding_factor < 16:
-        raise ValueError("float32 M-step requires FFT grid >=16; native fallback is float64")
-    from recovar.utils.helpers import recovar_volume_to_relion
-
-    from relax.relion_bind import _relion_bind_core as bind
-
-    # Preserve all native arithmetic for the unsupported small FFT capability.
-    # Do this before certificate/packing/device setup: no GPU work is required.
     if ori_size * padding_factor < 16:
-        if recovar_layout:
-            reference_relion = recovar_volume_to_relion(np.asarray(reference_relion))
-        result = bind.vdam_m_step_transaction(
-            reference_relion,
-            data_h0,
-            weight_h0,
-            data_h1,
-            weight_h1,
-            mom1_h0,
-            mom1_h1,
-            mom2,
-            fsc_ssnr,
-            fsc_reconstruct,
-            tau2,
-            grad_stepsize,
-            tau2_fudge,
-            ori_size,
-            padding_factor,
-            interpolator,
-            r_max,
-            min_resol_shell,
-        )
-        if recovar_layout:
-            result["iref"] = np.ascontiguousarray(recovar_volume_to_relion(np.asarray(result["iref"])))
-        return result
+        raise ValueError("the VDAM M-step requires an FFT grid (ori_size * padding_factor) of at least 16")
     if interpolator != 1 or r_max > ori_size // 2:
         raise ValueError("unsupported interpolator or radius")
     pseudo = data_h1 is not None

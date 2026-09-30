@@ -734,8 +734,11 @@ PY
   RELAX_BPREF_CONTRIBUTION_STACK_SHA256=$(sha256sum "${contribution_stack}" | awk '{print $1}')
 fi
 
+# RELION's step-by-step M-step with the dumps and replays above is a diagnostics oracle,
+# not a production route (relax/diagnostics/vdam_native_mstep.py); it runs in double.
 RELAX_COMMAND=(
-  "${PIXI_PY}" -m relax.commands.initial_model
+  "${PIXI_PY}" -m relax.diagnostics.vdam_native_mstep
+  --mstep-compute-dtype float64
   --i "${DATA_DIR}/particles.star"
   --o "${RELAX_OUTPUT}/run"
   --nr_iter "${NR_ITER_SCHEDULE}"

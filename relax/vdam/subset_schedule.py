@@ -12,6 +12,7 @@ from typing import Sequence
 
 import numpy as np
 
+from relax.helpers import relion_random
 from relax.vdam.schedules import (
     DEFAULT_GRAD_EM_ITERS,
     VdamPhaseLengths,
@@ -99,12 +100,8 @@ def select_subset_for_iter(
         shuffled = base_order.copy()
         shuffled_halfset_ids = base_halfset_ids.copy()
     else:
-        # Preserve RELION's std::shuffle ordering; missing bindings must fail.
-        from relax.relion_bind import _relion_bind_core as _bind
-
-        permutation = np.asarray(
-            _bind.vdam_randomise_particles_order(int(nr_particles), int(random_seed + iter)), dtype=np.int64
-        )
+        # RELION's std::shuffle(sorted_idx, std::mt19937(seed + iter)) ordering.
+        permutation = relion_random.shuffled_orders([int(nr_particles)], int(random_seed + iter))[0]
         shuffled = base_order[permutation]
         shuffled_halfset_ids = base_halfset_ids[permutation]
 

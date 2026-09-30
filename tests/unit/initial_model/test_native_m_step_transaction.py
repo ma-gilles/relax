@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.diagnostics.vdam_native_mstep import vdam_m_step_single_class_native
 from relax.vdam.init import initialise_denovo_state
 from relax.vdam.mstep_single_class import vdam_m_step_single_class
 from relax.vdam.state import VdamAccumulator
@@ -94,8 +95,8 @@ def test_transaction_matches_primitives_exactly(
         tau2_fudge_factor=4.0,
         padding_factor=padding_factor,
     )
-    expected = vdam_m_step_single_class(state, **args, use_native_transaction=False)
-    actual = vdam_m_step_single_class(state, **args, use_native_transaction=True)
+    expected = vdam_m_step_single_class_native(state, **args)
+    actual = vdam_m_step_single_class(state, **args)
     _assert_state_exact(actual, expected)
     _assert_state_exact(state, original)
     for a, e in zip(accumulators, original_accum):
@@ -112,7 +113,7 @@ def test_dump_keeps_primitive_boundaries(transaction_bind, monkeypatch, tmp_path
         raise AssertionError("dump bypassed primitive boundaries")
 
     monkeypatch.setattr(transaction_bind, "vdam_m_step_transaction", forbidden)
-    vdam_m_step_single_class(
+    vdam_m_step_single_class_native(
         state,
         k=0,
         accum_h0=accumulators[0],
@@ -166,20 +167,3 @@ def test_device_backend_preserves_complete_state_and_inputs(transaction_bind, K,
     for a, e in zip(accumulators, original_accum):
         assert_matches(a.data, e.data)
         assert_matches(a.weight, e.weight)
-
-
-def test_device_request_keeps_native_dump_boundaries(transaction_bind, monkeypatch, tmp_path):
-    from relax.relion import relion_vdam_mstep
-
-    state, accumulators = _case(1, True, 8, False)
-    monkeypatch.setenv("RELAX_MSTEP_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RELAX_MSTEP_DUMP_ITER", "48")
-
-    def forbidden(*args, **kwargs):
-        raise AssertionError("device request bypassed native diagnostic boundaries")
-
-    monkeypatch.setattr(relion_vdam_mstep, "relion_vdam_m_step_host", forbidden)
-    monkeypatch.setattr(transaction_bind, "vdam_m_step_transaction", forbidden)
-    vdam_m_step_single_class(state, k=0, accum_h0=accumulators[0], accum_h1=accumulators[1],
-                            grad_current_stepsize=0.3, tau2_fudge_factor=4.0)
-    assert (tmp_path / "data_h0_post_reweight.npy").is_file()

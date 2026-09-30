@@ -71,28 +71,21 @@ def refresh_tau2_from_projector_power(
     padding_factor: int = 1,
     interpolator: int = 1,
 ) -> InitialModelState:
-    """``MlModel::setFourierTransformMaps(!fix_tau)``."""
-    from recovar.utils.helpers import recovar_volume_to_relion
+    """``MlModel::setFourierTransformMaps(!fix_tau)``: tau2 from the projector setup's power spectrum.
 
-    from relax.relion_bind import _relion_bind_core as bind
+    The same device transform the default projector context runs
+    (:func:`relax.vdam.dense_adapter.prepare_relion_projector_class_inputs_and_power`),
+    without keeping the scoring operands.
+    """
+    from relax.relion import relion_projector_setup
 
-    current_size = int(state.current_size if state.current_size > 0 else state.ori_size)
-    new_tau2 = np.asarray(state.tau2_class, dtype=np.float64).copy()
-    for k in range(int(state.K)):
-        new_tau2[k] = np.asarray(
-            bind.vdam_projector_power_spectrum(
-                np.ascontiguousarray(
-                    recovar_volume_to_relion(np.asarray(state.Iref[k], dtype=np.float64))
-                ),
-                int(state.ori_size),
-                int(padding_factor),
-                int(interpolator),
-                current_size,
-                True,
-                2,
-            ),
-            dtype=np.float64,
-        )
+    _, power, _ = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
+        state.Iref,
+        current_size=int(state.current_size if state.current_size > 0 else state.ori_size),
+        padding_factor=int(padding_factor),
+        interpolator=int(interpolator),
+    )
+    new_tau2 = np.asarray(power, dtype=np.float64)
     return replace(state, tau2_class=new_tau2)
 
 

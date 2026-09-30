@@ -16,19 +16,16 @@ cannot be intercepted at the Python binding attribute.
 
 from __future__ import annotations
 
-from functools import partial
-
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.diagnostics.vdam_native_mstep import vdam_m_step_single_class_native
 from relax.vdam.init import initialise_denovo_state
-from relax.vdam.mstep_single_class import vdam_m_step_single_class
 from relax.vdam.state import VdamAccumulator
 
 # These tests pin the M-step against RELION's float64 C++ primitives, so they run
 # the float64 diagnostic precision; production runs in float32.
-vdam_m_step_single_class = partial(vdam_m_step_single_class, mstep_compute_dtype="float64")
 
 pytestmark = pytest.mark.unit
 
@@ -86,14 +83,13 @@ def test_k1_pseudo_halfsets_uses_primary_weight(_bind_module, monkeypatch):
     a0 = _make_accumulator(k=0, h=0, ori_size=ori, seed=1, weight_scale=1.0)
     a1 = _make_accumulator(k=0, h=1, ori_size=ori, seed=2, weight_scale=2.0)
 
-    vdam_m_step_single_class(
+    vdam_m_step_single_class_native(
         state,
         k=0,
         accum_h0=a0,
         accum_h1=a1,
         grad_current_stepsize=0.5,
         tau2_fudge_factor=1.0,
-        use_native_transaction=False,
     )
 
     assert rec.call_count == 1
@@ -111,14 +107,13 @@ def test_k1_no_halfsets_uses_h0_weight(_bind_module, monkeypatch):
     state.Iref[0] = np.random.default_rng(0).standard_normal((ori, ori, ori))
     a0 = _make_accumulator(k=0, h=0, ori_size=ori, seed=1, weight_scale=1.0)
 
-    vdam_m_step_single_class(
+    vdam_m_step_single_class_native(
         state,
         k=0,
         accum_h0=a0,
         accum_h1=None,
         grad_current_stepsize=0.5,
         tau2_fudge_factor=1.0,
-        use_native_transaction=False,
     )
 
     assert rec.call_count == 1
@@ -137,14 +132,13 @@ def test_k_class_pseudo_halfsets_uses_h0_weight(_bind_module, monkeypatch, K):
     a0 = _make_accumulator(k=0, h=0, ori_size=ori, seed=1, weight_scale=1.0)
     a1 = _make_accumulator(k=0, h=1, ori_size=ori, seed=2, weight_scale=2.0)
 
-    vdam_m_step_single_class(
+    vdam_m_step_single_class_native(
         state,
         k=0,
         accum_h0=a0,
         accum_h1=a1,
         grad_current_stepsize=0.5,
         tau2_fudge_factor=1.0,
-        use_native_transaction=False,
     )
 
     assert rec.call_count == 1
