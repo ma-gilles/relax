@@ -17,13 +17,14 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 import relax.vdam as init_model
 from relax.commands.initial_model import GuiInitialModelDefaults
 from relax.diagnostics import vdam_mstep_replay
 from relax.helpers.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
 from relax.refinement.mean_helpers import initial_low_pass_filter_references
-from relax.relion import relion_projector_setup
+from relax.relion import initial_model_io, relion_projector_setup
 from relax.vdam import (
     adaptive_estep,
     dense_adapter,
@@ -35,11 +36,10 @@ from relax.vdam import (
     mstep_single_class,
     native_options,
     native_sampling,
+    output,
     state,
     subset_schedule,
 )
-from relax.relion import initial_model_io
-from relax.vdam import output
 from relax.vdam.init import compute_current_size_for_denovo, compute_ini_high_angstrom, compute_ini_high_shell
 from relax.vdam.layout import relion_bpref_frame_scales
 from relax.vdam.schedules import (
@@ -49,7 +49,6 @@ from relax.vdam.schedules import (
     compute_tau2_fudge,
     default_subset_sizes_for_3d_initial_model,
 )
-from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -316,7 +315,12 @@ LOC_BUDGETS = {
         "__init__.py", "driver.py", "iteration_loop.py", "native_options.py",
         "schedules.py", "subset.py", "subset_schedule.py",
     )),
-    "initialization": (500, ("bootstrap_iref.py", "init.py")),
+    # bootstrap_reconstruction.py (419 lines, 2026-09-29) is relax's own port of the
+    # bootstrap RELION's C++ ran through relax.relion_bind (vdam_bootstrap_iref and
+    # vdam_postprocess_initial_iref, about 320 C++ lines): code moved out of RELION, a
+    # real raise. RELION's step-by-step M-step left reconstruction_state for
+    # diagnostics/vdam_native_mstep.py the same day (-240 lines there).
+    "initialization": (920, ("bootstrap_iref.py", "bootstrap_reconstruction.py", "init.py")),
     "sampling_layout": (950, ("native_sampling.py", "layout.py")),
     # The exact-local VDAM route (sparse_pass2_estep.py, 1062 lines) was removed on
     # 2026-09-27; the adaptive-route E-step joins this budget with the helpers it shared
@@ -331,7 +335,7 @@ LOC_BUDGETS = {
         "../sgd_initial_model/__init__.py", "../sgd_initial_model/noise.py",
         "../sgd_initial_model/optimizer.py",
     )),
-    "reconstruction_state": (790, ("m_step.py", "mstep_single_class.py", "state.py")),
+    "reconstruction_state": (550, ("m_step.py", "mstep_single_class.py", "state.py")),
     # relion/initial_noise.py gained 53 lines bringing an optics group on another pixel
     # size or box onto the model grid for the start-up noise (RELION resizeMap and
     # window, ml_optimiser.cpp:2934-2955; S3b multi-optics, 2026-09-24): a real raise.
@@ -369,6 +373,7 @@ def test_loc_budget_inventory_covers_every_vdam_module():
 def test_responsibility_loc_budget(responsibility):
     """Moving code must preserve its accounting; review growth before revising a cap."""
     from recovar.data_io.starfile import star_column
+
     from relax.relion.relion_metadata import _relion_star_list_value
 
     def source_lines(fn):
@@ -470,6 +475,7 @@ def test_mstep_single_class_definition_ownership():
 
 def test_initial_model_serialization_owners_and_driver_imports():
     from recovar.data_io.starfile import star_column
+
     from relax.relion import relion_ctf, relion_metadata, vdam_checkpoint
 
     driver_src = inspect.getsource(driver)
