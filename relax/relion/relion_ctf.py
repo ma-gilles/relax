@@ -229,6 +229,102 @@ def dataset_has_premultiplied_ctf(experiment_dataset, image_shape) -> bool:
     return bool(_premultiplied_particles(cache).any())
 
 
+def _fftw_shell_labels(size: int, window: int, *, centered_rows: bool) -> np.ndarray:
+    """RELION's ``Mresol_fine`` of a ``window``-pixel current size on a ``size``-pixel half grid.
+
+    Per half-grid pixel ``(ip, jp)``: ``ROUND(|(ip, jp)|)`` for the pixels of the
+    ``window``-sized FFTW transform (rows ``ip`` in ``[window//2 + 1 - window, window//2]``,
+    ``jp <= window//2``) with ``ires < window//2 + 1``, and -1 for the rest and for the
+    redundant half of the ``jp = 0`` column (``ip < 0``; ml_optimiser.cpp:6958-6968).
+    ``centered_rows`` lays the rows out as RECOVAR's half images (fftshifted; its row
+    ``-size/2`` is FFTW's ``+size/2``), otherwise in FFTW order. Flattened.
+    """
+
+    rows = np.arange(size)
+    if centered_rows:
+        ip = rows - size // 2
+        ip = np.where(ip == -(size // 2), size // 2, ip)
+    else:
+        ip = np.where(rows <= size // 2, rows, rows - size)
+    jp = np.arange(size // 2 + 1)
+    ip, jp = np.meshgrid(ip, jp, indexing="ij")
+    ires = np.floor(np.sqrt(ip * ip + jp * jp) + 0.5).astype(np.int64)
+    inside = (ip >= window // 2 + 1 - window) & (ip <= window // 2) & (jp <= window // 2)
+    keep = inside & (ires < window // 2 + 1) & ~((jp == 0) & (ip < 0))
+    return np.where(keep, ires, -1).reshape(-1)
+
+
+def premultiplied_ctf2_shell_sums(experiment_dataset, image_indices, image_shape, window: int, *, chunk: int = 1024):
+    """Per image, RELION's ``Fctf`` summed over each ``Mresol_fine`` shell of the current size.
+
+    ``Fctf`` is the image's exact CTF row (CTF^2 for a premultiplied optics group); the
+    shells are those of :func:`_fftw_shell_labels` at ``window``. Returns an
+    ``(images, window // 2 + 1)`` float64 array, the per-image term RELION adds to
+    ``wsum_model.sumw_ctf2`` for premultiplied images (acc_ml_optimiser_impl.h, the
+    ``getCtfPremultiplied`` block of storeWeightedSums).
+    """
+
+    size = int(image_shape[0])
+    labels = _fftw_shell_labels(size, int(window), centered_rows=True)
+    pixels = np.flatnonzero(labels >= 0)
+    order = np.argsort(labels[pixels], kind="stable")
+    pixels = pixels[order]
+    shells = labels[pixels]
+    starts = np.flatnonzero(np.r_[True, shells[1:] != shells[:-1]])
+    image_indices = np.asarray(image_indices, dtype=np.int64)
+    sums = np.zeros((image_indices.size, int(window) // 2 + 1), dtype=np.float64)
+    for begin in range(0, image_indices.size, int(chunk)):
+        block = image_indices[begin : begin + int(chunk)]
+        # RECOVAR's frame holds -Fctf (relion_ctf._evaluate_exact_ctf_rows).
+        rows = -np.asarray(
+            _relion_exact_ctf_half_from_source_star_host(experiment_dataset, block, image_shape, pixel_indices=pixels),
+            dtype=np.float64,
+        )
+        sums[begin : begin + block.size, shells[starts]] = np.add.reduceat(rows, starts, axis=1)
+    return sums
+
+
+def premultiplied_average_ctf2(experiment_datasets, scale_corrections, window: int, ori_size: int):
+    """RELION's ``setAverageCTF2`` (ml_optimiser.cpp:5697-5740), or ``None`` without premultiplied images.
+
+    ``avgctf2[ires] = sum_images max(0.001, scale) * sum_{shell} Fctf / (N * Npix_per_shell[ires])``
+    over every image of ``experiment_datasets`` (one per half), the numerator only over
+    CTF-premultiplied images and the denominator over all of them (each image's weights
+    sum to one, so ``sumw_group`` counts images). ``scale_corrections`` holds each
+    half's per-image scale correction of this iteration's E-step (``None``: 1).
+    ``window`` is the E-step's image current size, ``ori_size`` the model's box. RELION
+    uses it without split halves and with tau2 not fixed (Class3D and InitialModel):
+    it divides ``invtau2`` by ``avgctf2`` in ``BackProjector::updateSSNRarrays``
+    (backprojector.cpp:1277-1279), which scales ``data_vs_prior`` by ``avgctf2``.
+    """
+
+    n_shells = int(ori_size) // 2 + 1
+    numerator = np.zeros(n_shells, dtype=np.float64)
+    n_images = 0
+    found = False
+    for dataset, scales in zip(experiment_datasets, scale_corrections):
+        count = int(dataset.n_units)
+        n_images += count
+        image_shape = tuple(int(v) for v in dataset.image_shape)
+        flags = premultiplied_ctf_rows(dataset, np.arange(count), image_shape)
+        if flags is None:
+            continue
+        found = True
+        indices = np.flatnonzero(flags)
+        weights = np.ones(count) if scales is None else np.asarray(scales, dtype=np.float64).reshape(-1)
+        sums = premultiplied_ctf2_shell_sums(dataset, indices, image_shape, window)
+        term = np.maximum(0.001, weights[indices]) @ sums
+        numerator[: min(n_shells, term.size)] += term[:n_shells]
+    if not found:
+        return None
+    npix = np.bincount(
+        (labels := _fftw_shell_labels(int(ori_size), int(ori_size), centered_rows=False))[labels >= 0],
+        minlength=n_shells,
+    )[:n_shells].astype(np.float64)
+    denominator = n_images * npix
+    return np.where(denominator > 0, numerator / np.where(denominator > 0, denominator, 1.0), numerator)
+
+
 def require_no_premultiplied_ctf(experiment_dataset, image_indices, image_shape, *, where: str) -> None:
     """Refuse CTF-premultiplied images on a path that backprojects them as ordinary ones."""
 

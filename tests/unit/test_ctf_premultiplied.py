@@ -202,3 +202,66 @@ def test_dense_preprocessing_scores_premultiplied_batches_with_the_exact_rows(st
     )
     _dense_batch_ctf_half(ordinary, np.zeros((4, 9)), config, np.float32, order)
     assert len(generic_calls) == 1
+
+
+def _relion_sumw_ctf2(fctf_fftw, window):
+    """RELION's per-image sumw_ctf2 term, literally: Mresol_fine over the window of Fctf."""
+
+    size = fctf_fftw.shape[0]
+    sums = np.zeros(window // 2 + 1)
+    for i in range(window):
+        ip = i if i < window // 2 + 1 else i - window
+        for jp in range(window // 2 + 1):
+            ires = int(np.floor(np.sqrt(ip * ip + jp * jp) + 0.5))
+            if ires < window // 2 + 1 and not (jp == 0 and ip < 0):
+                sums[ires] += fctf_fftw[ip % size, jp]
+    return sums
+
+
+def _relion_npix_per_shell(ori_size):
+    npix = np.zeros(ori_size // 2 + 1)
+    for i in range(ori_size):
+        ip = i if i < ori_size // 2 + 1 else i - ori_size
+        for jp in range(ori_size // 2 + 1):
+            ires = int(np.floor(np.sqrt(ip * ip + jp * jp) + 0.5))
+            if ires < ori_size // 2 + 1 and not (jp == 0 and ip < 0):
+                npix[ires] += 1
+    return npix
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("window", [BOX, 10])
+def test_average_ctf2_is_relions_set_average_ctf2(star_dataset, window):
+    """ml_optimiser.cpp:5697-5740 with the storeWeightedSums sumw_ctf2 term, written out literally."""
+
+    star_dataset.n_units = len(PARTICLES)
+    scales = np.asarray([1.2, 0.0005, 0.9, 1.1])
+    rows = relion_ctf._relion_exact_ctf_half_from_source_star_host(star_dataset, np.arange(4), (BOX, BOX))
+    # RECOVAR frame -> RELION's FFTW Fctf (relion_ctf._evaluate_exact_ctf_rows).
+    fctf = -np.fft.ifftshift(np.asarray(rows).reshape(4, BOX, BOX // 2 + 1), axes=1)
+    premultiplied = [group == 2 for *_, group in PARTICLES]
+    numerator = sum(
+        max(0.001, scales[p]) * _relion_sumw_ctf2(fctf[p], window) for p in range(4) if premultiplied[p]
+    )
+    npix = _relion_npix_per_shell(BOX)
+    expected = np.zeros(BOX // 2 + 1)
+    expected[: window // 2 + 1] = numerator
+    expected = expected / (4 * npix)
+
+    sums = relion_ctf.premultiplied_ctf2_shell_sums(star_dataset, np.arange(4), (BOX, BOX), window)
+    for p in range(4):
+        assert_matches(sums[p], _relion_sumw_ctf2(fctf[p], window), rtol=1e-12)
+    average = relion_ctf.premultiplied_average_ctf2([star_dataset], [scales], window, BOX)
+    assert_matches(average, expected, rtol=1e-12)
+    assert np.all(average[: window // 2 + 1] > 0)
+
+
+@pytest.mark.unit
+def test_average_ctf2_is_none_without_premultiplied_images(tmp_path, monkeypatch):
+    monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
+    ordinary = SimpleNamespace(
+        particles_file=str(_write_star(tmp_path / "ordinary.star", premultiplied=(0, 0))),
+        image_shape=(BOX, BOX),
+        n_units=len(PARTICLES),
+    )
+    assert relion_ctf.premultiplied_average_ctf2([ordinary], [None], BOX, BOX) is None

@@ -246,6 +246,7 @@ from relax.refinement.projector_preparation import (
 from relax.refinement.refinement_options import RefinementOptions, with_validated_sampling_schedule
 from relax.refinement.tomo_half import TomoHalf, TomoSampling, local_tomo_sampling
 from relax.refinement.tomo_half import score_tomo_half_in_loop as _score_tomo_half_in_loop
+from relax.relion import relion_ctf
 from relax.relion.relion_metadata import _relion_metadata_translations, read_relion_sampling_metadata
 from relax.relion.relion_normalization import update_relion_norm_scale_corrections
 from relax.relion.relion_worker_scale import (
@@ -3497,6 +3498,11 @@ def refine_single_volume(
                         iteration + 1,
                         tuple(mean_variance_arr.shape),
                     )
+            # CTF-premultiplied images: RELION's average CTF^2 correction of data_vs_prior
+            # (setAverageCTF2; Class3D has no split halves and does not fix tau2).
+            average_ctf2 = relion_ctf.premultiplied_average_ctf2(
+                experiment_datasets, relion_half_inputs.scale_corrections, image_current_size, grid_size
+            )
             for class_idx in range(n_classes):
                 logger.info(
                     "Class3D tau2 update start: iter=%d class=%d/%d current_size=%d source=%s spectrum=%s",
@@ -3560,6 +3566,7 @@ def refine_single_volume(
                     current_size=current_size,
                     full_half_axis=mstep_full_half_axis,
                     accumulator_volume_shape=mstep_accumulator_shape,
+                    average_ctf2=average_ctf2,
                 )
                 mean_signal_variance_per_class.append(mean_signal_variance_k)
                 mean_signal_variance_shells_per_class.append(tau2_shells_recovar_frame_k)

@@ -356,12 +356,16 @@ def _class_tau2_update_details(
     current_size: int,
     full_half_axis,
     accumulator_volume_shape,
+    average_ctf2=None,
 ):
     """Data-vs-prior and the host tau2 detail record for one class.
 
     ``shell_stats`` are the round-shell weight statistics of ``Ft_ctf_class``.
-    The record uses the K=1 per-half key layout with ``fsc_shells`` set to
-    ``None``. Returns ``(data_vs_prior, details)``.
+    ``average_ctf2`` is RELION's average CTF^2 of CTF-premultiplied images
+    (:func:`relax.relion.relion_ctf.premultiplied_average_ctf2`), or None: RELION
+    divides ``invtau2`` by it where it is positive (backprojector.cpp:1277-1279), which
+    multiplies ``data_vs_prior`` by it. The record uses the K=1 per-half key layout with
+    ``fsc_shells`` set to ``None``. Returns ``(data_vs_prior, details)``.
     """
 
     data_vs_prior = regularization_relion.compute_data_vs_prior(
@@ -374,6 +378,11 @@ def _class_tau2_update_details(
         full_half_axis=full_half_axis,
         accumulator_volume_shape=accumulator_volume_shape,
     )
+    if average_ctf2 is not None:
+        count = min(int(data_vs_prior.shape[0]), int(np.asarray(average_ctf2).shape[0]))
+        factor = np.ones(int(data_vs_prior.shape[0]))
+        factor[:count] = np.where(np.asarray(average_ctf2[:count]) > 0.0, average_ctf2[:count], 1.0)
+        data_vs_prior = data_vs_prior * jnp.asarray(factor, dtype=data_vs_prior.dtype)
     details = {
         "prior_shells": np.asarray(tau2_shells_recovar_frame, dtype=np.float64),
         "sigma2_shells": np.asarray(
