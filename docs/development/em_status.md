@@ -114,6 +114,24 @@ labeled diagnostic only.
   demodulation), even Zernike aberrations and anisotropic magnification (`rlnMagMat*`).
   Class3D and InitialModel refuse these inputs until they are extended there (including
   RELION's average-CTF² tau2 correction for premultiplied data).
+  Qualification, 2026-09-30: 10k/256 fixtures under
+  `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/optics_*_k1_10k256_20260929`, one relax run
+  (cand_ccb229f, H100) against same-command, same-seed RELION 5.0.1 runs (patched MPI build,
+  3 ranks x 4 threads, H100); map gate from `scripts/score_k1_map_gate.py`, masked GT FSC-AUC
+  from `scripts/masked_fsc.py` (mask `synth_k1_50k256_snr05_c1`).
+
+  | Feature | Status | relax GT FSC-AUC | RELION runs | Map gate |
+  | --- | --- | --- | --- | --- |
+  | Premultiplied (job 14744731) | qualified | 0.94516 | 0.94464, 0.94460 | pass |
+  | Even Zernike (14744732) | qualified | 0.94908 | 0.94891, 0.94829 | pass |
+  | Beam tilt + odd Zernike (14720565, 14735008) | provisional | 0.94858, 0.94891 | 0.95462, 0.94915, 0.94901 | pass |
+  | Magnification (14744733) | provisional | 0.94954 | 0.95099, 0.94966, 0.94985 | pass |
+
+  Beam tilt: relax is 1.0e-4 and 4.3e-4 below the three-run RELION band; relax's own spread is
+  3.3e-4, and its map agrees with the third RELION run at 0.998 (masked merged FSC band AUC).
+  Its phase matches RELION's code in unit tests. Magnification: relax is 1.2e-4 below the
+  three-run band, with 0.998 map agreement against the third RELION run. Whether sub-5e-4 gaps
+  where relax's map reproduces a RELION run count as ties is with the user.
 - CTF: relax evaluates RELION's CTF rows (`CTF::getFftwImage`, including the per-particle
   `rlnCtfBfactor` and `rlnCtfScalefactor`) in its own host float64 code
   (`relax/relion/relion_ctf.py`), cast to float32 before GPU scoring. Production CTF no longer
