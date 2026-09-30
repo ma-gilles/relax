@@ -67,6 +67,7 @@ set(RELION_SOURCES
     ${RELION_SRC_DIR}/strings.cpp
     ${RELION_SRC_DIR}/metadata_table.cpp
     ${RELION_SRC_DIR}/metadata_container.cpp
+    ${RELION_SRC_DIR}/metadata_label.cpp
     ${RELION_SRC_DIR}/symmetries.cpp
     ${RELION_SRC_DIR}/mask.cpp
     ${RELION_SRC_DIR}/complex.cpp
@@ -81,6 +82,7 @@ set(RELION_SOURCES
     ${RELION_SRC_DIR}/healpix_sampling.cpp
     ${RELION_SRC_DIR}/Healpix_2.15a/healpix_base.cc
     ${RELION_SRC_DIR}/Healpix_2.15a/cxxutils.cc
+    ${RELION_SRC_DIR}/jaz/math/Zernike.cpp
 )
 
 # ── The pybind11 module ─────────────────────────────────────────────
@@ -88,6 +90,7 @@ pybind11_add_module(_relion_bind_core
     ${CMAKE_CURRENT_SOURCE_DIR}/module.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/projector_bind.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ctf_bind.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/optics_bind.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/fftw_bind.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sampling_bind.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/backprojector_bind.cpp

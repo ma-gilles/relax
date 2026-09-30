@@ -659,6 +659,7 @@ def test_relion_coarse_prehalf_shared_body_is_built_packaged_and_stale_checked()
         assert f"include relax/cuda/{source_name}" in manifest
 
     from recovar.cuda_build import include_dir
+
     from relax.cuda import kernels as em_cuda_kernels
 
     assert em_cuda_kernels._RELAX_CUDA_BUILD_SOURCE_NAMES == (
@@ -883,6 +884,7 @@ def test_relion_coarse_prehalf_rejects_non_atomic_reductions(
 
 def test_relion_coarse_multistream_reduction_mode_is_one_static_trace(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     trace_count = 0
@@ -1163,10 +1165,11 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
 
     import pandas as pd
 
-    class RelionBinding:
-        @staticmethod
-        def get_ctf_images_batch(params, *_args):
-            return np.broadcast_to(np.arange(12, dtype=np.float64).reshape(4, 3), (len(params), 4, 3)).copy()
+    monkeypatch.setattr(
+        relion_ctf,
+        "relion_ctf_fftw_half",
+        lambda params, *_a, **_k: np.broadcast_to(np.arange(12, dtype=np.float64).reshape(4, 3), (len(params), 4, 3)).copy(),
+    )
 
     source = (tmp_path / "particles.star").resolve()
     cache_key = (str(source), (4, 4))
@@ -1194,7 +1197,6 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
         {
             "particles": pd.DataFrame([particle]),
             "optics": {1: optics},
-            "relion_bind": RelionBinding(),
             "slots": np.asarray([-1], dtype=np.int64),
             "rows": None,
             "n_cached": 0,
@@ -1398,6 +1400,7 @@ def test_coarse_gaussian_sincosf_operands_run_cuda_translation(
     gpu_device,
 ):
     from recovar import cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
     from relax.relion.relion_coarse_operands import _relion_coarse_gaussian_square_operands_sincosf
     from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
@@ -1461,6 +1464,7 @@ def test_relion_coarse_diff2_rectangular_matches_atomic_envelope(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -1528,6 +1532,7 @@ def test_relion_coarse_diff2_rotation_blocks_matches_atomic_envelope(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -1613,6 +1618,7 @@ def test_relion_coarse_vdam_projector_lane_capture_matches_atomic_envelope(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -1715,6 +1721,7 @@ def test_relion_coarse_vdam_prehalf_source_order_across_dispatchers(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -1837,6 +1844,7 @@ def test_relion_coarse_vdam_multistream_atomic_stays_in_lane_envelope(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -1996,6 +2004,7 @@ def test_relion_coarse_vdam_multistream_skips_poisoned_padding(
     single_lane_canonical,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -2171,6 +2180,7 @@ def test_relion_fine_diff2_rectangular_matches_production_tree(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -2206,6 +2216,7 @@ def test_relion_fused_translate_fine_diff2_adds_highres_in_native_order(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -2246,6 +2257,7 @@ def test_relion_runtime_cutoff_fine_diff2_matches_static_paths_and_reuses_compil
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -2327,6 +2339,7 @@ def test_relion_flat_rows_skip_invalid_rows_with_positive_infinity(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -2385,6 +2398,7 @@ def test_relion_runtime_flat_rows_match_shared_rectangular_tree_and_reuse_compil
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -2496,6 +2510,7 @@ def test_relion_fused_translate_jobs_match_rectangular_tree(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -2627,6 +2642,7 @@ def test_relion_fine_diff2_pairs_matches_production_tree(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -2656,6 +2672,7 @@ def test_relion_fine_diff2_rectangular_f64_matches_acc_double_tree(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -2700,6 +2717,7 @@ def test_relion_fine_diff2_f64_uses_double_ffi_target(
     monkeypatch, function_name, expected_target, expected_shape
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     call = {}
@@ -2740,6 +2758,7 @@ def test_relion_fine_diff2_f64_uses_double_ffi_target(
 )
 def test_relion_fine_diff2_fails_closed_without_gpu(monkeypatch, function_name):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -2756,6 +2775,7 @@ def test_relion_fine_diff2_fails_closed_without_gpu(monkeypatch, function_name):
 
 def test_relion_fused_translate_fine_diff2_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -2773,6 +2793,7 @@ def test_relion_fused_translate_fine_diff2_fails_closed_without_gpu(monkeypatch)
 @pytest.mark.parametrize("dtype", [jnp.float32, jnp.float64])
 def test_relion_coarse_diff2_fails_closed_without_gpu(monkeypatch, dtype):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -2796,6 +2817,7 @@ def test_relion_coarse_diff2_rotation_blocks_fails_closed_without_gpu(
     monkeypatch,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -2826,6 +2848,7 @@ def test_relion_coarse_diff2_rotation_blocks_rejects_noninteger_ids():
 
 def test_relion_coarse_normalized_cc_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -2843,6 +2866,7 @@ def test_relion_coarse_normalized_cc_native_texture_fails_closed_without_gpu(
     monkeypatch,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -2862,6 +2886,7 @@ def test_relion_coarse_normalized_cc_native_texture_fails_closed_without_gpu(
 
 def test_relion_projector_half_texture_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -2877,6 +2902,7 @@ def test_relion_projector_half_texture_fails_closed_without_gpu(monkeypatch):
 
 def test_relion_coarse_native_texture_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -2897,6 +2923,7 @@ def test_relion_coarse_native_texture_fails_closed_without_gpu(monkeypatch):
 
 def test_relion_coarse_vdam_projector_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -2919,6 +2946,7 @@ def test_relion_coarse_vdam_projector_lane_capture_fails_closed_without_gpu(
     monkeypatch,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -3043,6 +3071,7 @@ def test_relion_powerclass_highres_matches_single_block_tree(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -3091,6 +3120,7 @@ def test_relion_wavg_sequential_triplet_matches_jax_loop(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
     from relax.sparse_pass2.sparse_pass2_wavg import _relion_wavg_sequential_triplet_terms_jax
 
@@ -3133,6 +3163,7 @@ def test_relion_wavg_sequential_triplet_matches_jax_loop(
 
 def test_relion_runtime_cutoff_fine_diff2_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -3149,6 +3180,7 @@ def test_relion_runtime_cutoff_fine_diff2_fails_closed_without_gpu(monkeypatch):
 
 def test_relion_runtime_flat_rows_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -3166,6 +3198,7 @@ def test_relion_runtime_flat_rows_fails_closed_without_gpu(monkeypatch):
 
 def test_relion_runtime_jobs_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -3183,6 +3216,7 @@ def test_relion_runtime_jobs_fails_closed_without_gpu(monkeypatch):
 
 def test_relion_powerclass_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -3267,6 +3301,7 @@ def test_relion_half_texture_projection_matches_legacy_full_staging(
     """The compact production projector must preserve every projected value."""
 
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
     from relax.helpers.projection import (
         compute_relion_projector_projections_block,
@@ -3388,6 +3423,7 @@ def test_relion_half_texture_full_even_indexed_projection_matches_full_scatter(
     """The full-box Nyquist alias must survive compact indexed projection."""
 
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.helpers.projection import (
         compute_relion_projector_projections_block,
     )
@@ -3483,6 +3519,7 @@ def test_relion_half_texture_projection_uses_native_rotated_image_radius_cutoff(
     """The rounded outer shell must use RELION's float32/int cutoff."""
 
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -3535,6 +3572,7 @@ def test_relion_half_texture_projection_is_invariant_to_host_support_crop(
     """Compacting PPref to every consumed square pixel must preserve values."""
 
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.helpers.fourier_window import (
         make_fourier_window_spec,
     )
@@ -3630,6 +3668,7 @@ def test_relion_runtime_masked_flat_rows_skip_chunks_without_candidates(
     """Live translation chunks score as the unmasked kernel does; skipped ones are +inf."""
 
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))

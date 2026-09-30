@@ -11,14 +11,18 @@ from relax.relion import relion_ctf
 pytestmark = pytest.mark.unit
 
 
-def _cache(n_particles, image_size):
-    class Binding:
-        @staticmethod
-        def get_ctf_images_batch(params, image_w, image_h, *_args):
-            # Row values depend on the particle's defocus so a wrong slot shows up.
-            base = np.arange(image_h * (image_w // 2 + 1), dtype=np.float64).reshape(image_h, image_w // 2 + 1)
-            return np.stack([base * 1.0e-3 + row[0] for row in params])
+def _fake_ctf(params, size, pixel_size, **_kwargs):
+    # Row values depend on the particle's defocus so a wrong slot shows up.
+    base = np.arange(size * (size // 2 + 1), dtype=np.float64).reshape(size, size // 2 + 1)
+    return np.stack([base * 1.0e-3 + row[0] for row in params])
 
+
+@pytest.fixture(autouse=True)
+def _relax_ctf(monkeypatch):
+    monkeypatch.setattr(relion_ctf, "relion_ctf_fftw_half", _fake_ctf)
+
+
+def _cache(n_particles, image_size):
     particles = pd.DataFrame(
         {
             "rlnDefocusU": np.arange(n_particles, dtype=np.float64) + 1.0e4,
@@ -33,7 +37,6 @@ def _cache(n_particles, image_size):
     return {
         "particles": particles,
         "optics": {1: optics},
-        "relion_bind": Binding(),
         "slots": np.full(n_particles, -1, dtype=np.int64),
         "rows": None,
         "n_cached": 0,

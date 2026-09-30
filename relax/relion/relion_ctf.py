@@ -147,7 +147,7 @@ def _relion_exact_ctf_source_star(experiment_dataset) -> Path:
 
 
 def _relion_ctf_threads() -> int:
-    """Worker threads for the batched RELION CTF binding: the CPUs this process may use."""
+    """Worker threads for the host CTF evaluation: the CPUs this process may use."""
 
     try:
         return max(1, len(os.sched_getaffinity(0)))
@@ -211,8 +211,6 @@ def _exact_ctf_source_cache(experiment_dataset, image_shape):
     if cache is None:
         from recovar.data_io.starfile import read_star
 
-        from relax.relion_bind import _relion_bind_core as relion_bind
-
         particles, optics = read_star(str(source_path))
         if optics is None:
             raise ValueError(f"RELION source STAR has no optics table: {source_path}")
@@ -230,7 +228,6 @@ def _exact_ctf_source_cache(experiment_dataset, image_shape):
                 int(group): optics.iloc[row]
                 for row, group in enumerate(optics_ids)
             },
-            "relion_bind": relion_bind,
             # Per-tilt rows of RELION tomo particles (tomo_input.flatten_relion5_tomo).
             "tomo": star_column(particles, "rlnMicrographPreExposure") is not None,
             "slots": np.full(len(particles), -1, dtype=np.int64),
@@ -242,22 +239,96 @@ def _exact_ctf_source_cache(experiment_dataset, image_shape):
     return source_path, cache
 
 
+# Particles per CTF evaluation chunk: 64 rows of a box-256 half grid are 17 MB of float64.
+_CTF_ROW_CHUNK = 64
+
+
+def _relion_ctf_rows(params, size: int, extent: float, gamma_offset, mag):
+    """The body of :func:`relion_ctf_fftw_half` for one chunk of rows, flattened ``(n, size * (size // 2 + 1))``."""
+
+    du, dv, angle, voltage, cs, q0, scale, phase = (params[:, i, None] for i in range(8))
+    # CTF::initialise (ctf.cpp:211-262).
+    volts = voltage * 1e3
+    lam = 12.2643247 / np.sqrt(volts * (1.0 + volts * 0.978466e-6))
+    k1 = np.pi / 2 * 2 * lam
+    k2 = np.pi / 2 * (cs * 1e7) * lam * lam * lam
+    k3 = np.arctan(q0 / np.sqrt(1 - q0 * q0))
+    k5 = phase * np.pi / 180
+    az = angle * np.pi / 180
+    sin_az, cos_az = np.sin(az), np.cos(az)
+    # A = Qt D Q, Q = [[cos, sin], [-sin, cos]], D = diag(-defU, -defV).
+    axx = cos_az * cos_az * -du + sin_az * sin_az * -dv
+    axy = cos_az * sin_az * -du - sin_az * cos_az * -dv
+    ayy = sin_az * sin_az * -du + cos_az * cos_az * -dv
+    # getFftwImage (ctf.cpp:398-452): row i is frequency i up to size / 2, i - size after, in
+    # units of 1 / (size * angpix); getCTF (ctf.h:184-257) applies the magnification first.
+    rows = np.arange(size)
+    y0 = (np.where(rows <= size // 2, rows, rows - size) / extent)[:, None]
+    x0 = (np.arange(size // 2 + 1) / extent)[None, :]
+    if mag is None:
+        x, y = np.broadcast_to(x0, (size, size // 2 + 1)), np.broadcast_to(y0, (size, size // 2 + 1))
+    else:
+        x, y = mag[0, 0] * x0 + mag[0, 1] * y0, mag[1, 0] * x0 + mag[1, 1] * y0
+    x, y = x.reshape(1, -1), y.reshape(1, -1)
+    u2 = x * x + y * y
+    gamma = k1 * (axx * x * x + 2.0 * axy * x * y + ayy * y * y) + k2 * (u2 * u2) - k5 - k3
+    if gamma_offset is not None:
+        gamma = gamma + gamma_offset.reshape(1, -1)
+    ctf = -np.sin(gamma) * scale
+    # |CTF| >= 1e-8 with SGN(0) = 1 (ctf.h:250-253, macros.h:143).
+    return np.where(np.abs(ctf) < 1e-8, np.where(ctf >= 0, 1e-8, -1e-8), ctf)
+
+
+def relion_ctf_fftw_half(params, image_size: int, pixel_size: float, *, gamma_offset=None, mag_matrix=None):
+    """RELION's ``CTF::getFftwImage`` for particles of one optics group, ``(N, size, size // 2 + 1)`` float64.
+
+    relax's own host implementation of the CTF relion_refine evaluates per particle
+    (``setValuesByGroup`` + ``getFftwImage``, ml_optimiser.cpp:6461-6484) in RELION's
+    double precision, without CTF padding and without damping, as relax scores it.
+    ``params`` rows are defU, defV, defAng (degrees), voltage (kV), Cs (mm), Q0, scale,
+    phase shift (degrees). ``gamma_offset`` (the group's even Zernike phase on this grid,
+    ``ObservationModel::getGammaOffset``) and ``mag_matrix`` (its 2x2 anisotropic
+    magnification) are the optics-table terms. No RELION code runs here: the binding's
+    ``get_ctf_images_batch`` / ``optics_ctf_images_batch`` are the test oracles
+    (tests/unit/test_relion_ctf_formula.py). Rows are split over host threads.
+    """
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    params = np.ascontiguousarray(params, dtype=np.float64).reshape(-1, 8)
+    size = int(image_size)
+    extent = float(size) * float(pixel_size)
+    offset = None if gamma_offset is None else np.asarray(gamma_offset, dtype=np.float64)
+    mag = None if mag_matrix is None else np.asarray(mag_matrix, dtype=np.float64)
+    out = np.empty((params.shape[0], size * (size // 2 + 1)), dtype=np.float64)
+    starts = range(0, params.shape[0], _CTF_ROW_CHUNK)
+
+    def fill(start):
+        stop = min(start + _CTF_ROW_CHUNK, params.shape[0])
+        out[start:stop] = _relion_ctf_rows(params[start:stop], size, extent, offset, mag)
+
+    with ThreadPoolExecutor(max_workers=_relion_ctf_threads()) as pool:
+        list(pool.map(fill, starts))
+    return out.reshape(-1, size, size // 2 + 1)
+
+
 def _evaluate_exact_ctf_rows(cache, original_indices, image_h: int, image_w: int) -> np.ndarray:
     """Evaluate the particles' missing CTF rows into the block; return their row slots."""
 
     slots = cache["slots"]
     missing = np.unique(original_indices[slots[original_indices] < 0])
     if missing.size:
-        # One threaded RELION call evaluates every missing particle
-        # (get_ctf_images_batch: get_ctf_image's arithmetic per row).
+        # RELION's CTF of every missing particle, evaluated by relax on the host
+        # (relion_ctf_fftw_half), one call per pixel size.
+        if image_h != image_w:
+            raise ValueError("RELION's CTF rows need square images")
         n_new = int(missing.size)
         params = _relion_ctf_batch_params(cache, missing)
-        native = np.asarray(
-            cache["relion_bind"].get_ctf_images_batch(
-                params, image_w, image_h, False, False, False, _relion_ctf_threads()
-            ),
-            dtype=np.float64,
-        )
+        native = np.empty((n_new, image_h, image_w // 2 + 1), dtype=np.float64)
+        for pixel in np.unique(params[:, 7]):
+            rows = np.flatnonzero(params[:, 7] == pixel)
+            # defU, defV, defAng, voltage, Cs, Q0, scale, phase shift.
+            native[rows] = relion_ctf_fftw_half(params[rows][:, [0, 1, 2, 3, 4, 5, 9, 8]], image_h, float(pixel))
         if cache.get("tomo", False):
             # A RELION tomo image (one row per particle-tilt): relion_refine damps its
             # CTF by the tilt's cumulative dose (tomo_input.relion_tomo_damping). RELION
