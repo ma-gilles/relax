@@ -242,6 +242,19 @@ def centered_relion_projector_crop_mask(pixel_indices, *, image_shape, projector
     )
 
 
+def _host_pixel_indices(pixel_indices) -> bool:
+    """Whether per-call pixel indices are host values, which are validated on every call.
+
+    Device indices come from a producer that builds them valid, the resident
+    passes' :func:`~relax.sparse_pass2.sparse_pass2_projection_blocks.projection_window_union`
+    (it keeps only in-crop pixels); reading them back to validate synchronized
+    every projector call, about 70 s per half of the EMPIAR-10202 pass-1 probe
+    (py-spy, bigbox 14747301). Traced indices cannot be read.
+    """
+
+    return not isinstance(pixel_indices, (jax.Array, jax.core.Tracer))
+
+
 def _validate_centered_relion_projector_pixel_indices(
     pixel_indices,
     *,
@@ -842,7 +855,7 @@ def compute_relion_projector_projections_block(
     if use_texture:
         if not centered_rows and pixel_indices is not None:
             raise ValueError("pixel_indices are only supported with centered_rows=True")
-        if pixel_indices is not None and not isinstance(pixel_indices, jax.core.Tracer):
+        if pixel_indices is not None and _host_pixel_indices(pixel_indices):
             _validate_centered_relion_projector_pixel_indices(
                 pixel_indices,
                 image_shape=image_shape,
@@ -894,7 +907,7 @@ def compute_relion_projector_projections_block(
     elif pixel_indices is not None:
         if not centered_rows:
             raise ValueError("pixel_indices are only supported with centered_rows=True")
-        if resolved_output_size < image_size and not isinstance(pixel_indices, jax.core.Tracer):
+        if resolved_output_size < image_size and _host_pixel_indices(pixel_indices):
             _validate_centered_relion_projector_pixel_indices(
                 pixel_indices,
                 image_shape=image_shape,

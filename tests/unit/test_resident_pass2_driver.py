@@ -1177,13 +1177,45 @@ def test_chunk_operands_are_padded_on_the_host():
     import inspect
 
     source = inspect.getsource(rp._prepare_chunk_reconstruction_operands)
-    assert "_pad_batch_to_capacity(batch_data, image_capacity)" in source
-    assert "_pad_batch_to_capacity(ctf_params, image_capacity)" in source
+    assert "fetch_capacity_batch(" in source
     assert "_zero_padded_images" in source
     # jnp.pad with an occupancy-dependent width is what this replaced.
     assert "jnp.pad" not in source
     driver = inspect.getsource(rp)
     assert "def _pad_image_axis" not in driver
+
+
+def test_capacity_batch_is_the_padded_fetch(monkeypatch):
+    """The chunk fetch reads the host images in sub-batches into one reused capacity buffer
+    (bigbox 14747301: fresh 1.3 GB fetches and pads were ~95 s per half of host time); the
+    upload is the one-call fetch padded with its first image, as _pad_batch_to_capacity pads."""
+
+    from types import SimpleNamespace
+
+    stack = np.arange(7 * 3 * 3, dtype=np.float32).reshape(7, 3, 3)
+    ctf = np.arange(7 * 2, dtype=np.float64).reshape(7, 2)
+    calls = []
+
+    def host_images(indices):
+        calls.append(len(indices))
+        return stack[np.asarray(indices)]
+
+    dataset = SimpleNamespace(
+        image_source=SimpleNamespace(host_images=host_images, tilt_series=False),
+        metadata=SimpleNamespace(get_batch=lambda indices: (None, None, ctf[np.asarray(indices)])),
+    )
+    monkeypatch.setattr(rp, "_FETCH_SUB_BATCH_BYTES", 2 * stack[0].nbytes)
+    indices = np.array([5, 1, 3, 0, 6], dtype=np.int64)
+    for _ in range(2):  # the second call refills the reused buffer
+        images, ctf_rows, fetched, padded = rp.fetch_capacity_batch(dataset, indices, 8)
+        want = rp._pad_batch_to_capacity(stack[indices], 8)
+        np.testing.assert_allclose(np.asarray(images), want, rtol=0, atol=0)
+        np.testing.assert_allclose(ctf_rows, rp._pad_batch_to_capacity(ctf[indices], 8), rtol=0, atol=0)
+        assert fetched.tolist() == indices.tolist()
+        assert padded.tolist() == indices.tolist() + [5, 5, 5]
+    assert max(calls) <= 2
+    with pytest.raises(ValueError, match="cannot pad"):
+        rp.fetch_capacity_batch(dataset, indices, 4)
 
 
 def test_pad_batch_to_capacity_repeats_the_first_row():
@@ -1833,3 +1865,13 @@ def test_row_blocked_projection_cache_matches_the_one_array_pass(_resident_produ
     assert rel_l2(whole.Ft_ctf, blocked.Ft_ctf) < bound
     for field in ("wsum_sigma2_noise", "wsum_norm_correction", "wsum_img_power"):
         assert rel_l2(getattr(whole.noise_stats, field), getattr(blocked.noise_stats, field)) < bound, field
+
+
+def test_only_host_pixel_indices_are_validated_per_call():
+    """Device indices are built valid (projection_window_union); reading them back to validate
+    synchronized every projector call of the resident passes (bigbox 14747301)."""
+
+    from relax.helpers.projection import _host_pixel_indices
+
+    assert _host_pixel_indices(np.arange(4, dtype=np.int32))
+    assert not _host_pixel_indices(jnp.arange(4, dtype=jnp.int32))

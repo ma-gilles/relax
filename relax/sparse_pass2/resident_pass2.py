@@ -1748,6 +1748,61 @@ def _pad_batch_to_capacity(values, capacity: int):
     return np.concatenate([values, pad], axis=0)
 
 
+# Host images are fetched in sub-batches below glibc's largest dynamic mmap
+# threshold (32 MiB), so each fetch reuses heap memory, and are copied into one
+# reused capacity-sized buffer. A 512-image fetch at box 800 (1.3 GB) otherwise
+# faulted in fresh pages twice per chunk, for the gather and for the padding:
+# about 95 s per half of host time in the EMPIAR-10202 pass-1 probe
+# (py-spy, bigbox 14747301), against 5 s for the exact engine's per-image reads.
+_FETCH_SUB_BATCH_BYTES = 24 << 20
+_CAPACITY_BATCH_BUFFERS: dict = {}
+
+
+def fetch_capacity_batch(experiment_dataset, image_indices, capacity: int):
+    """One chunk's host images padded to ``capacity`` and uploaded, with its CTF rows and indices.
+
+    Returns ``(images, ctf_params, fetched_indices, padded_fetched_indices)``:
+    the device images ``[capacity, ...]`` in fetched order, padded with the first
+    fetched image as :func:`_pad_batch_to_capacity` pads, the padded CTF rows,
+    and the fetched indices without and with that padding. The values are the
+    unpadded fetch's; only where the host copies live changes.
+    """
+
+    image_indices = np.asarray(image_indices)
+    capacity = int(capacity)
+    n = int(image_indices.shape[0])
+    if n > capacity or n == 0:
+        raise ValueError(f"cannot pad a batch of {n} rows to capacity {capacity}")
+    buffer = None
+    ctf_parts, fetched_parts = [], []
+    start, step = 0, 1
+    while start < n:
+        images, ctf_params, fetched = fetch_indexed_batch(experiment_dataset, image_indices[start : start + step])
+        images = np.asarray(images)
+        if buffer is None:
+            key = ((capacity,) + tuple(images.shape[1:]), images.dtype.str)
+            buffer = _CAPACITY_BATCH_BUFFERS.get(key)
+            if buffer is None:
+                _CAPACITY_BATCH_BUFFERS.clear()
+                buffer = _CAPACITY_BATCH_BUFFERS[key] = np.empty(key[0], dtype=images.dtype)
+            step = max(1, _FETCH_SUB_BATCH_BYTES // max(int(images[0].nbytes), 1))
+        buffer[start : start + images.shape[0]] = images
+        ctf_parts.append(np.asarray(ctf_params))
+        fetched_parts.append(np.asarray(fetched))
+        start += int(images.shape[0])
+    buffer[n:] = buffer[0]
+    # The upload is waited for: the buffer is refilled by the next chunk.
+    device_images = jax.device_put(buffer)
+    device_images.block_until_ready()
+    fetched_indices = np.concatenate(fetched_parts)
+    return (
+        device_images,
+        _pad_batch_to_capacity(np.concatenate(ctf_parts), capacity),
+        fetched_indices,
+        _pad_batch_to_capacity(fetched_indices, capacity),
+    )
+
+
 def _reorder_permutation(fetched_indices, requested_indices, capacity: int) -> np.ndarray:
     """Host permutation from the fetched batch order to the table order.
 
@@ -5676,15 +5731,14 @@ def _prepare_chunk_reconstruction_operands(
     n_valid_images = int(chunk.n_valid_images)
     image_indices = np.asarray(image_indices)
 
-    batch_data, ctf_params, fetched_indices = fetch_indexed_batch(
-        experiment_dataset, image_indices
+    batch_images, padded_ctf_params, fetched_indices, padded_fetched_indices = fetch_capacity_batch(
+        experiment_dataset, image_indices, image_capacity
     )
     order = _reorder_permutation(fetched_indices, image_indices, image_capacity)
-    padded_fetched_indices = _pad_batch_to_capacity(np.asarray(fetched_indices), image_capacity)
     prepared = _prepare_bucket_io(
         experiment_dataset,
-        jnp.asarray(_pad_batch_to_capacity(batch_data, image_capacity)),
-        _pad_batch_to_capacity(ctf_params, image_capacity),
+        batch_images,
+        padded_ctf_params,
         padded_fetched_indices,
         return_direct_scoring_io=True,
         **bucket_io_kwargs,
