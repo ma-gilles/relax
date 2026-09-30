@@ -1165,7 +1165,7 @@ def _relion_coarse_gaussian_gemm_scores(
             "coarse GEMM projection and shifted images must share a complex "
             f"dtype, got {projected_reference.dtype} and {shifted_corrected.dtype}",
         )
-    expected_real_dtype = jnp.asarray(projected_reference.real).dtype
+    expected_real_dtype = np.empty(0, dtype=projected_reference.dtype).real.dtype
     if (
         projected_reference_abs2.dtype != expected_real_dtype
         or pixel_weight.dtype != expected_real_dtype

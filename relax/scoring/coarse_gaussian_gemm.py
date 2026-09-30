@@ -8,6 +8,7 @@ pass and calls it per image batch.
 
 import operator
 import os
+from functools import partial
 from typing import NamedTuple
 
 import jax
@@ -641,21 +642,27 @@ def _project_coarse_gaussian_gemm_projection_cache_block_once(
             "and contain at least one row",
         )
     stop = min(start + requested_rows, int(cache.shape[1]))
-    projected_reference = cache[table_index, start:stop]
-    padding_rows = requested_rows - int(projected_reference.shape[0])
-    if padding_rows:
-        # The shared significance loop masks these physical tail rows to -inf.
-        # Zero padding preserves its fixed score-block shape without projecting
-        # synthetic identity rotations or changing any valid cached row.
-        projected_reference = jnp.pad(
-            projected_reference,
-            ((0, padding_rows), (0, 0)),
-        )
-    # This is the same C64 expression used by the mature projector callback.
-    # The promoted certificate deliberately ignores this companion and forms
-    # its two component squares explicitly after conversion to FP64.
-    projected_reference_abs2 = jnp.abs(projected_reference) ** 2
-    return projected_reference, projected_reference_abs2
+    return _projection_cache_block(cache, table_index, start, rows=stop - start, padded_rows=requested_rows)
+
+
+@partial(jax.jit, static_argnames=("rows", "padded_rows"))
+def _projection_cache_block(cache, table_index, start, *, rows, padded_rows):
+    """One cached block and its squared modulus in one program.
+
+    The block is a slice of one table, zero-padded to ``padded_rows`` rows: the
+    shared significance loop masks those physical tail rows to -inf, and zero
+    padding keeps its fixed score-block shape without projecting synthetic
+    identity rotations or changing any valid cached row. The squared modulus
+    is the same C64 expression as the projector callback's; the promoted
+    certificate ignores this companion and forms its two component squares in
+    FP64. Eager, the slice, pad and square were four programs per class and
+    rotation block, and the device idled between them (K15 50k, nsys 14693142).
+    """
+
+    projected_reference = jax.lax.dynamic_slice_in_dim(cache[table_index], start, rows, axis=0)
+    if padded_rows > rows:
+        projected_reference = jnp.pad(projected_reference, ((0, padded_rows - rows), (0, 0)))
+    return projected_reference, jnp.abs(projected_reference) ** 2
 
 
 def _validate_coarse_gaussian_gemm_hybrid_request(
