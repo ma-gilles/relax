@@ -1051,3 +1051,26 @@ single-volume boundary has 17 parameters.
   functions. The exact-local one-shape scorer fell from 543 to 457 lines;
   total lines increased because the named boundaries and their contracts are
   explicit. Seven functions still have at least 10 parameters, unchanged.
+
+## 2026-09-30 — merged-main rebase and denominator diagnostic boundary
+
+- The refactor branch rebased from merged tip `7721e33` onto `origin/main`
+  `eb20394`. The former tip was already an ancestor of main, so this was a
+  conflict-free fast-forward with no manual resolutions. Main's intervening
+  changes included shared pass-2 fixes and performance work; it did not modify
+  `half_scoring.py`.
+- Commit `e37ce66` moved the broad-denominator probe's temporary local dump
+  environment suppression into `diagnostics.local_debug`. The score-only
+  engine call and its explicit pass-object specializations remain in the local
+  scorer because extracting them would require a large forwarding signature.
+  The context manager preserves restoration on exceptions and the historical
+  behavior for matching variables first created inside the scope.
+- Ruff and Python compilation passed. Fourteen focused denominator/parent
+  cases and 47 broader local controller, result-contract and diagnostic cases
+  passed. Post-rebase CPU EM fast guard passed 102 cases in 59.26 seconds with
+  `FFTW/3.3.10-GCC-12.2.0` loaded.
+- Production totals are now 20,807 physical and 18,361 nonblank lines across
+  305 functions. Main added `refinement/full_refinement.py` to the counted
+  package, accounting for the large increase from the prior checkpoint. This
+  change itself reduced the exact-local scorer from 457 to 447 lines. Seven
+  functions still have at least 10 parameters, unchanged.

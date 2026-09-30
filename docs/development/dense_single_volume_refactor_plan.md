@@ -275,6 +275,15 @@ debug-environment suppression and score-only execution should move only if a
 boundary can keep the reusable pass objects visible without a large forwarding
 signature.
 
+The denominator audit retained the score-only engine call in the local scorer:
+extracting it would forward the six reusable pass owners plus layout, sampling
+and precision state, making the dependency story worse. Only its temporary
+debug-dump environment suppression moved to `diagnostics.local_debug`, behind
+a context manager that preserves the prior restore and exception behavior. The
+next local-scoring boundary to audit is result publication and profile capture;
+separate them only if their inputs remain explicit and device-buffer lifetimes
+are unchanged.
+
 ### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring
