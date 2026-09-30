@@ -182,3 +182,23 @@ def test_refinement_accepts_premultiplied_optics_only_where_supported():
     refuse_unsupported_optics(optics, source="refine3d.star", supported={"ctf_premultiplied"})
     with pytest.raises(NotImplementedError, match="rlnCtfDataAreCtfPremultiplied"):
         refuse_unsupported_optics(optics, source="class3d.star")
+
+
+@pytest.mark.unit
+def test_dense_preprocessing_scores_premultiplied_batches_with_the_exact_rows(star_dataset, tmp_path, monkeypatch):
+    from relax.helpers.preprocessing import _dense_batch_ctf_half
+
+    generic_calls = []
+    config = SimpleNamespace(image_shape=(BOX, BOX), compute_ctf_half=lambda params: generic_calls.append(params))
+    order = np.asarray([2, 0, 3, 1])
+    rows = np.asarray(_dense_batch_ctf_half(star_dataset, np.zeros((4, 9)), config, np.float32, order))
+    assert rows.dtype == np.float32 and not generic_calls
+    expected = relion_ctf._relion_exact_ctf_half_from_source_star_host(star_dataset, order, (BOX, BOX))
+    assert_matches(rows, expected, rtol=1e-6)  # the float32 cast
+
+    monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
+    ordinary = SimpleNamespace(
+        particles_file=str(_write_star(tmp_path / "ordinary.star", premultiplied=(0, 0))), image_shape=(BOX, BOX)
+    )
+    _dense_batch_ctf_half(ordinary, np.zeros((4, 9)), config, np.float32, order)
+    assert len(generic_calls) == 1

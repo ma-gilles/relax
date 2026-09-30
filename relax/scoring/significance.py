@@ -1050,6 +1050,7 @@ def _compute_k_class_significance_batched(
     from relax.helpers.image_shifts import apply_relion_integer_pre_shifts, tiled_half_image_phase_factors
     from relax.helpers.oversampling import find_significant_rotations as _find_sig
     from relax.helpers.preprocessing import (
+        _dense_batch_ctf_half,
         jit_stage_glue_enabled,
         prepare_batch_preprocess_operands,
         process_half_image,
@@ -2342,7 +2343,7 @@ def _compute_k_class_significance_batched(
             image_indices=image_indices,
         )
         processed_half = jnp.asarray(processed_half)
-        ctf_half = config.compute_ctf_half(jnp.asarray(ctf_params, dtype=score_real_dtype))
+        ctf_half = _dense_batch_ctf_half(experiment_dataset, ctf_params, config, score_real_dtype, image_indices)
         ctf2_over_nv_half = ctf_half**2 / batch_noise_half
         ctf_weighted = processed_half * ctf_half / batch_noise_half
         translations_tiled = jnp.repeat(jnp.asarray(translations)[None], batch_size, axis=0).reshape(

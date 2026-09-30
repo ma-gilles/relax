@@ -100,6 +100,28 @@ def process_half_image(
     return demodulate_odd_aberrations(experiment_dataset, processed, image_indices)
 
 
+def _dense_batch_ctf_half(experiment_dataset, ctf_params, config, ctf_real_dtype, image_indices):
+    """The batch's CTF on RECOVAR's centered half spectrum.
+
+    Datasets whose CTF needs the optics table (CTF-premultiplied images, even Zernike
+    terms, magnification; :func:`relax.relion.optics_aberrations.dataset_needs_exact_ctf`)
+    take relax's exact RELION CTF rows of the batch's ``image_indices``
+    (:mod:`relax.relion.relion_ctf`), as RELION scores them; the generic evaluator
+    refuses those datasets. Other datasets keep the generic CTF of ``ctf_params``.
+    """
+
+    from relax.relion.optics_aberrations import dataset_needs_exact_ctf
+
+    if image_indices is not None and dataset_needs_exact_ctf(experiment_dataset):
+        from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star
+
+        rows = _relion_exact_ctf_half_from_source_star(experiment_dataset, image_indices, config.image_shape)
+        return rows.astype(jnp.float32 if ctf_real_dtype is None else ctf_real_dtype)
+    if ctf_real_dtype is not None:
+        ctf_params = jnp.asarray(ctf_params, dtype=ctf_real_dtype)
+    return config.compute_ctf_half(ctf_params)
+
+
 def _dense_batch_half_inputs(
     experiment_dataset,
     batch,
@@ -120,9 +142,7 @@ def _dense_batch_half_inputs(
         relion_preprocess_kwargs=relion_preprocess_kwargs,
         image_indices=image_indices,
     )
-    if ctf_real_dtype is not None:
-        ctf_params = jnp.asarray(ctf_params, dtype=ctf_real_dtype)
-    ctf_half = config.compute_ctf_half(ctf_params)
+    ctf_half = _dense_batch_ctf_half(experiment_dataset, ctf_params, config, ctf_real_dtype, image_indices)
     noise_variance_half = jnp.asarray(noise_variance)
     translation_phases_half = half_translation_phase_table(translations, config.image_shape)
     return processed_half, ctf_half, noise_variance_half, translation_phases_half
