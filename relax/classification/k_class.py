@@ -1340,6 +1340,13 @@ class _PerClassSubsetResults:
     def assemble(self, class_log_evidence, *, profile_summary, **assemble_kwargs):
         """The winner-take-all K-class result of a subset pass; the subset counts are its class posterior sums."""
 
+        if self.per_class_noise is not None and any(self.subset_counts):
+            # A class without images adds zeros in the scored classes' layout (per shell, not per pixel):
+            # a seed iteration's CC pass puts every image in class 1.
+            template = self.per_class_noise[next(k for k, n in enumerate(self.subset_counts) if n)]
+            for k, n in enumerate(self.subset_counts):
+                if not n:
+                    self.per_class_noise[k] = _zero_noise_stats_like(template)
         return _assemble_result(
             class_log_evidence=class_log_evidence,
             new_means=None,
@@ -1489,6 +1496,17 @@ def _run_firstiter_global_winner_subset_pass2(
     return results.assemble(
         coarse_result.class_log_evidence,
         profile_summary={"firstiter_subset_pass2_s": np.float64(time.time() - t0)},
+    )
+
+
+def _zero_noise_stats_like(stats):
+    """``stats`` with every sum zero, in its layout."""
+
+    return stats._replace(
+        **{
+            name: (None if value is None else 0.0 if np.ndim(value) == 0 else np.zeros_like(np.asarray(value)))
+            for name, value in stats._asdict().items()
+        }
     )
 
 
