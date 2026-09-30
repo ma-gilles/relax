@@ -94,12 +94,11 @@ labeled diagnostic only.
 
 ## Feature gaps (moved from the README, 2026-09-29)
 
-- Several optics groups: Refine3D (K=1) accepts them, including groups on other pixel sizes and
-  boxes, but the default command refuses them until end-to-end GPU qualification against RELION
-  is done. They run only on the device-resident pass 2 and without the first-iteration
-  cross-correlation (`--no-firstiter_cc` with
-  `RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM=1 RELAX_K1_RELION_EXACT_BPREF_OPERANDS=1`).
-  InitialModel and Class3D take one optics group.
+- Several optics groups: the default Refine3D (K=1) command runs them, including groups on other
+  pixel sizes and boxes, with or without the first-iteration cross-correlation (2026-09-29). The
+  fresh K=1 pass always uses RELION's powerClass spectrum and exact BPref operands; the
+  `RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM` and `RELAX_K1_RELION_EXACT_BPREF_OPERANDS` switches
+  are retired. Qualification: PAIR_RESULT_PENDING. InitialModel and Class3D take one optics group.
 - Not yet supported: CTF-premultiplied particles, beam tilt, higher-order aberrations and
   magnification.
 - CTF: relax evaluates RELION's CTF rows (`CTF::getFftwImage`, including the per-particle

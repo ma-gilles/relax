@@ -217,7 +217,6 @@ def test_compact_k1_route_gate_requires_host_c64_and_no_diagnostics(monkeypatch)
     monkeypatch.setattr(sparse.sparse_pass2_budget, "_device_memory_limit_bytes", lambda: 85 * 1024**3)
     monkeypatch.setattr(sparse.sparse_pass2_budget, "_jax_allocator_free_memory_bytes", lambda: 40 * 1024**3)
     for name in (
-        "RELAX_K1_RELION_EXACT_BPREF_OPERANDS",
         "RELAX_K1_RELION_FIRSTITER_FUSED_BPREF",
         "RELAX_RELION_FIRSTITER_DEFERRED_BPREF",
         "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",

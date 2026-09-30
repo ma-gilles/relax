@@ -612,13 +612,7 @@ def _score_adaptive_k1_dense(
         adaptive_em_kwargs["group_ids"] = half.group_ids_k
     if relion_x_half_mstep:
         adaptive_em_kwargs["mstep_relion_x_half"] = True
-    if optics.reference_current_size is not None:
-        adaptive_em_kwargs["reconstruction_volume_current_size"] = int(
-            optics.reference_current_size
-        )
-        adaptive_em_kwargs["reconstruction_image_radius"] = _reconstruction_image_radius(
-            optics.reference_current_size, optics.projection_scale
-        )
+    adaptive_em_kwargs.update(_reference_grid_kwargs(optics.reference_current_size, optics.projection_scale))
     logger.info(
         "RELION adaptive K=1 routing through run_dense_k_class_em_adaptive "
         "(oversampling=%d, pass2_backend=%s, skip_significance_pruning=%s, "
@@ -972,11 +966,18 @@ def _score_half_dense_one_shape(
                 adaptive_os_local,
             ) = _score_kclass_firstiter_cc_pass2(
                 replace(firstiter_data, mean=jnp.asarray(half.means_k)[None, :]),
-                firstiter_grid,
+                replace(
+                    firstiter_grid,
+                    projection_rotations=lambda rotations: _projection_rotations(rotations, optics.projection_scale),
+                ),
                 firstiter_policy,
                 replace(
                     firstiter_batching,
-                    em_kwargs=({**em_kwargs, "mstep_relion_x_half": True} if k1_relion_x_half_mstep else em_kwargs),
+                    em_kwargs={
+                        **em_kwargs,
+                        **({"mstep_relion_x_half": True} if k1_relion_x_half_mstep else {}),
+                        **_reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
+                    },
                 ),
                 replace(firstiter_execution, log_label="K=1 "),
             )
@@ -1088,6 +1089,17 @@ def _reconstruction_image_radius(reference_current_size, scale: float):
     if reference_current_size is None:
         return None
     return float(int(reference_current_size) // 2) * float(scale)
+
+
+def _reference_grid_kwargs(reference_current_size, scale: float) -> dict:
+    """Engine kwargs of images on another grid: the reference-model M-step size and image radius."""
+
+    if reference_current_size is None:
+        return {}
+    return {
+        "reconstruction_volume_current_size": int(reference_current_size),
+        "reconstruction_image_radius": _reconstruction_image_radius(reference_current_size, scale),
+    }
 
 
 def _projection_rotations(rotations, scale: float):

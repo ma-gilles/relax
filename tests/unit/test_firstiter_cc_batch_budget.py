@@ -723,3 +723,107 @@ def test_dense_global_k1_high_current_size_keeps_pose_pixel_tile_below_large_all
     assert plan.active_score_tile_gb <= plan.active_score_tile_budget_gb * 1.01
     assert plan.rotation_block_size < 250
     assert plan.pose_pixel_tile_gb < 1.7
+
+
+def test_firstiter_cc_dispatch_projects_every_grid_through_the_shape_class_matrices(monkeypatch):
+    """Images on another grid score, and back-project, with the class's projection matrices."""
+    captured = {}
+    fine_trans = np.zeros((9, 2), dtype=np.float32)
+
+    def fake_grids(*args, **kwargs):
+        coarse_rot = np.full((12, 3, 3), 2.0, dtype=np.float32)
+        fine_rot = np.full((96, 3, 3), 4.0, dtype=np.float32)
+        outputs = (
+            coarse_rot, np.zeros((5, 2), dtype=np.float32), fine_rot, fine_trans,
+            np.zeros(96, dtype=np.int64), np.zeros(9, dtype=np.int64),
+        )
+        return (*outputs, np.full_like(fine_rot, 8.0))
+
+    def fake_adaptive(*args, **kwargs):
+        captured["coarse_rot"], captured["fine_rot"] = args[4], args[6]
+        captured.update(kwargs)
+        return "result"
+
+    monkeypatch.setattr(firstiter_cc, "build_adaptive_pass2_grids", fake_grids)
+    monkeypatch.setattr(firstiter_cc, "run_dense_k_class_em_adaptive", fake_adaptive)
+
+    firstiter_cc._score_kclass_firstiter_cc_pass2(
+        logger=iteration_loop.logger,
+        experiment_dataset=object(),
+        mean=np.zeros((1, 4), dtype=np.complex64),
+        mean_variance=None,
+        noise_variance_k=None,
+        effective_rotations=np.zeros((12, 3, 3), dtype=np.float32),
+        current_translations=np.zeros((5, 2), dtype=np.float32),
+        base_translations=np.zeros((5, 2), dtype=np.float32),
+        current_healpix_order=1,
+        state=SimpleNamespace(adaptive_oversampling=1, translation_step=2.0),
+        random_perturbation=0.0,
+        disc_type="linear_interp",
+        class_log_priors=None,
+        image_batch_size=20,
+        image_shape_k=(64, 64),
+        em_kwargs={"image_batch_size": 20, "rotation_block_size": 96},
+        projection_rotations=lambda rotations: half_scoring._projection_rotations(rotations, 2.0),
+    )
+
+    assert np.all(captured["coarse_rot"] == 1.0)
+    assert np.all(captured["fine_rot"] == 2.0)
+    assert np.all(captured["fine_mstep_rotations_override"] == 4.0)
+
+
+def test_firstiter_cc_global_winner_pass2_carries_each_images_optics_group(monkeypatch):
+    """The --firstiter_cc fine pass gives the resident engine each subset image's optics group."""
+    from relax.classification import k_class
+    from relax.sparse_pass2 import dispatch
+
+    captured = {}
+
+    class _Stop(Exception):
+        pass
+
+    def fake_pass2(dataset, *args, **kwargs):
+        captured.update(kwargs, dataset=dataset)
+        raise _Stop
+
+    class _Dataset:
+        volume_shape = (16, 16, 16)
+
+        def subset(self, indices):
+            return ("subset", tuple(int(i) for i in indices))
+
+    monkeypatch.setattr(dispatch, "compute_pass2_stats_sparse", fake_pass2)
+    optics = np.array([0, 1, 1, 0, 1], dtype=np.int32)
+    with pytest.raises(_Stop):
+        k_class._run_sparse_firstiter_global_winner_subset_pass2(
+            _Dataset(),
+            np.zeros((1, 4), dtype=np.complex64),
+            np.ones((1, 4), dtype=np.float32),
+            np.ones((2, 3), dtype=np.float32),
+            np.zeros((1, 2), dtype=np.float32),
+            np.zeros((1, 3, 3), dtype=np.float32),
+            None,
+            np.zeros((1, 2), dtype=np.float32),
+            np.zeros(1, dtype=np.int64),
+            np.zeros(1, dtype=np.int64),
+            [[np.zeros(1, dtype=np.int64)] * 5],
+            "linear_interp",
+            coarse_result=SimpleNamespace(class_log_evidence=np.zeros((1, 5))),
+            coarse_class_assignments=np.zeros(5, dtype=np.int32),
+            n_rot_coarse=1,
+            n_fine_trans=1,
+            healpix_order=1,
+            oversampling_order=0,
+            accumulate_noise=True,
+            return_best_pose_details=False,
+            pass2_kwargs={
+                "optics_group_ids": optics,
+                "reconstruction_volume_current_size": 12,
+                "reconstruction_image_radius": 5.5,
+            },
+        )
+
+    assert captured["dataset"] == ("subset", (0, 1, 2, 3, 4))
+    np.testing.assert_array_equal(captured["optics_group_ids"], optics)
+    assert captured["reconstruction_volume_current_size"] == 12
+    assert captured["reconstruction_image_radius"] == 5.5

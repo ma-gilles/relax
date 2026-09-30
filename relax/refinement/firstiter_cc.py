@@ -47,6 +47,9 @@ class FirstIterCCGridSpec:
     random_perturbation: float
     coarse_rotation_ids: object | None = None
     symmetry: str = "C1"
+    # Maps the grids' rotation matrices to the projection matrices of images on another grid
+    # (``half_scoring._projection_rotations``); the returned parent maps are unchanged.
+    projection_rotations: object | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -135,6 +138,12 @@ def _score_kclass_firstiter_cc_pass2(
         ),
         **({"symmetry": grid.symmetry} if grid.symmetry != "C1" else {}),
     )
+    if grid.projection_rotations is not None:
+        coarse_rot, fine_rot, fine_mstep_rot = (
+            grid.projection_rotations(coarse_rot),
+            grid.projection_rotations(fine_rot),
+            grid.projection_rotations(fine_mstep_rot),
+        )
     coarse_translation_phase_source = apply_relion_translation_perturbation(
         np.asarray(grid.base_translations, dtype=np.float64),
         float(grid.random_perturbation),

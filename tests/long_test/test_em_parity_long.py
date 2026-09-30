@@ -990,10 +990,6 @@ REALDATA_HP3_RESIDENT_ENV = {
     "RELAX_K1_RELION_WAVG_SEQUENTIAL_CUDA": "1",
     "RELAX_EM_BPREF_FINITE_GUARD": "1",
     "RELAX_LOCAL_IMAGE_CAPACITY_LADDER": "16,32,64,128,256",
-    # The resident statistics stage needs the fresh-K1 arithmetic (it does not consume the
-    # atomic Wavg triplet of the older replay arithmetic).
-    "RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM": "1",
-    "RELAX_K1_RELION_EXACT_BPREF_OPERANDS": "1",
 }
 REALDATA_HP3_ARMS = {"default": {}, "resident": REALDATA_HP3_RESIDENT_ENV}
 

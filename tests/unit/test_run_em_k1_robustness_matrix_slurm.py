@@ -821,8 +821,7 @@ def test_k1_coarse_gaussian_native_texture_env_is_forwarded(tmp_path):
 
 def test_k1_selected_treatment_env_is_forwarded_and_recorded(tmp_path):
     treatment = {
-        "RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM": "1",
-        "RELAX_K1_RELION_EXACT_BPREF_OPERANDS": "1",
+        "RELAX_K1_RELION_EXACT_TRANSLATION_GRID": "0",
         "RELAX_K1_RELION_LIVE_INITIAL_NOISE": "0",
     }
     proc, scratch = _dry_run_launcher(

@@ -3055,12 +3055,6 @@ def main(command=None):
     relion_startup_noise_needed = (
         frozen_boundary is None and args.init_noise_from_npz is None and args.relion_init_dir is None
     )
-    exact_relion_bpref_operands_requested = (
-        os.environ.get("RELAX_K1_RELION_EXACT_BPREF_OPERANDS", "")
-        .strip()
-        .lower()
-        in {"1", "true", "yes", "on"}
-    )
     relion_fresh_initial_noise_source_rows = None
     relion_fresh_initial_noise_optics_group_ids = None
     class3d_noise_optics_pixel_sizes = None
@@ -4061,9 +4055,8 @@ def main(command=None):
         relion_live_initial_noise_variance = _relion_sigma2_to_native_noise_variance(
             relion_live_initial_sigma2,
             grid_size=int(ds.grid_size),
-            output_dtype=(
-                np.float64 if exact_relion_bpref_operands_requested else np.float32
-            ),
+            # The fresh K=1 pass scores with RELION's exact (double) BPref operands.
+            output_dtype=np.float64,
         )
         logger.warning(
             "STRICT-PARITY: fresh K=1 RELION live initial noise enabled: particles=%d "
@@ -4443,14 +4436,9 @@ def main(command=None):
                 )
             elif relion_live_initial_noise_variance is not None:
                 initial_overrides[0] = dict(initial_overrides[0])
-                initial_noise_dtype = (
-                    np.float64
-                    if exact_relion_bpref_operands_requested
-                    else np.float32
-                )
                 initial_overrides[0]["noise_variance"] = [
-                    np.asarray(relion_live_initial_noise_variance, dtype=initial_noise_dtype).copy(),
-                    np.asarray(relion_live_initial_noise_variance, dtype=initial_noise_dtype).copy(),
+                    np.asarray(relion_live_initial_noise_variance, dtype=np.float64).copy(),
+                    np.asarray(relion_live_initial_noise_variance, dtype=np.float64).copy(),
                 ]
                 logger.info(
                     "STRICT-PARITY: first expectation consumes computed live "

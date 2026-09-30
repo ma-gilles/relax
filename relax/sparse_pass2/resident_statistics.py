@@ -63,7 +63,6 @@ from relax.helpers.deterministic_reduce import (
 from relax.helpers.env_flags import parse_env_flag
 from relax.helpers.optics_noise import pixel_rows
 from relax.helpers.projection import compute_noise_block
-from relax.sparse_pass2.sparse_pass2_policy import _RELION_POWERCLASS_SPECTRUM_NORM_ENV
 from relax.sparse_pass2.sparse_pass2_wavg import (
     _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
     weighted_image_power_from_shells,
@@ -310,7 +309,7 @@ def resolve_statistics_config(
     relion_wavg_atomic_direct_noise: bool = True,
     relion_wavg_atomic_scale_aa: bool = True,
     accumulate_scale: bool = True,
-    source_faithful_spectrum_norm: bool | None = None,
+    source_faithful_spectrum_norm: bool = False,
     n_optics_groups: int = 1,
     n_classes: int = 1,
 ) -> ResidentStatisticsConfig:
@@ -319,15 +318,9 @@ def resolve_statistics_config(
     ``source_faithful_spectrum_norm`` mirrors
     ``sparse_pass2_wavg._weighted_image_power_shells_and_per_image``: it selects
     RELION's powerClass shell spectrum and, with it, the deterministic float64
-    norm reduction. Resolving it here (rather than inside the traced function)
-    keeps a later environment change from silently reusing a stale program.
+    norm reduction.
     """
 
-    if source_faithful_spectrum_norm is None:
-        source_faithful_spectrum_norm = parse_env_flag(
-            _RELION_POWERCLASS_SPECTRUM_NORM_ENV,
-            default=False,
-        )
     source_faithful_spectrum_norm = bool(source_faithful_spectrum_norm)
     deterministic_norm_reduction = source_faithful_spectrum_norm or parse_env_flag(
         "RELAX_K1_RELION_DETERMINISTIC_NORM_REDUCTION",

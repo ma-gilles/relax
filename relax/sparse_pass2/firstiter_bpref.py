@@ -15,7 +15,7 @@ import numpy as np
 
 from relax.diagnostics import bpref_diagnostics, finite_check
 from relax.helpers.env_flags import parse_env_flag as _env_flag_enabled
-from relax.sparse_pass2 import sparse_pass2_budget, sparse_pass2_policy
+from relax.sparse_pass2 import sparse_pass2_budget
 
 _RELION_FIRSTITER_FUSED_BPREF_ENV = "RELAX_K1_RELION_FIRSTITER_FUSED_BPREF"
 _RELION_FIRSTITER_DEFERRED_BPREF_ENV = "RELAX_RELION_FIRSTITER_DEFERRED_BPREF"
@@ -229,10 +229,7 @@ def _relion_firstiter_compact_batch_planning_decision(
         )
     )
     fresh_k1_guard = bool(source_faithful_spectrum_norm)
-    relion_exact_bpref_operands = sparse_pass2_policy._relion_exact_bpref_operands_enabled(
-        fresh_k1_guard=fresh_k1_guard,
-        source_faithful_spectrum_norm=source_faithful_spectrum_norm,
-    )
+    relion_exact_bpref_operands = fresh_k1_guard
     relion_firstiter_fused_bpref = _relion_firstiter_fused_bpref_enabled(
         fresh_k1_guard=fresh_k1_guard,
         winner_take_all=winner_take_all,

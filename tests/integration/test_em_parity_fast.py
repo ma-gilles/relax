@@ -1359,15 +1359,6 @@ def test_em_parity_fast_kclass_strict_oversample_coldstart(tmp_path):
     _assert_fsc_gate("kclass_strict_oversample_coldstart", output_dir)
 
 
-# Several optics groups need the device-resident pass 2 on main (README); the flags are explicit here
-# until auto-routing lands.
-MULTIOPTICS_RESIDENT_ENV = {
-    "RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF": "1",
-    "RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM": "1",
-    "RELAX_K1_RELION_EXACT_BPREF_OPERANDS": "1",
-}
-
-
 @pytest.mark.gpu
 @pytest.mark.integration
 @pytest.mark.slow
@@ -1404,7 +1395,7 @@ def test_em_parity_fast_k1_multioptics_coldstart(tmp_path):
         "--image-fourier-backend",
         "relion_cuda",
     ]
-    env = {**gpu_subprocess_env(), **MULTIOPTICS_RESIDENT_ENV}
+    env = gpu_subprocess_env()  # the default command: several optics groups need no settings
     t0 = time.time()
     proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     elapsed = time.time() - t0
@@ -1446,3 +1437,54 @@ def test_em_parity_fast_k1_multioptics_coldstart(tmp_path):
     _assert_fsc_gate("k1_multioptics_coldstart", output_dir)
     for h in (1, 2):
         assert_same_sign_convention(output_dir / f"final_half{h}.mrc", MULTIOPTICS_RELION_DIR / f"run_it003_half{h}_class001.mrc")
+
+
+@pytest.mark.gpu
+@pytest.mark.integration
+@pytest.mark.slow
+def test_em_parity_fast_k1_multioptics_firstiter_cc(tmp_path):
+    """The default command with --firstiter_cc on two optics groups of different pixel sizes and boxes.
+
+    RELION's GUI Refine3D scores iteration 1 by normalized cross-correlation unless the reference is
+    on the absolute greyscale. That pass projects each shape class through its own matrices and
+    accumulates each optics group's noise; before 2026-09-29 it refused several optics groups. Three
+    iterations on the 600-particle S3b fixture must complete with one finite noise spectrum per group
+    and finite half maps. There is no RELION --firstiter_cc oracle for this fixture yet, so the maps
+    are not compared with RELION here (the multi-optics cold-start case above is).
+    """
+    _assert_parity_ancestors_or_skip()
+    require_fixture_sets("multioptics_s3b_600_data")
+
+    output_dir = tmp_path / "k1_multioptics_firstiter_cc"
+    output_dir.mkdir(parents=True)
+    cmd = [
+        sys.executable,
+        *REFINE_COMMAND,
+        "--data_dir",
+        str(MULTIOPTICS_FIXTURE_DIR),
+        "--output",
+        str(output_dir),
+        "--init_volume",
+        str(MULTIOPTICS_FIXTURE_DIR / "reference_init_relion_greyscale.mrc"),
+        "--max_iter",
+        "3",
+        "--init_resolution",
+        "30",
+        "--seed",
+        "20260924",
+        "--image-fourier-backend",
+        "relion_cuda",
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    assert proc.returncode == 0, (
+        f"relax refine exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    npz = np.load(output_dir / "refinement_results.npz")
+    assert np.asarray(npz["ave_Pmax_trajectory"]).size >= 3
+    for it in range(3):
+        noise = np.asarray(npz[f"noise_radial_iter_{it:03d}"], dtype=np.float64)
+        assert noise.shape[0] == 2, f"iteration {it}: expected one noise spectrum per optics group, got {noise.shape}"
+        assert np.all(np.isfinite(noise)) and np.all(noise[:, 1:] > 0)
+    for h in (1, 2):
+        half = np.asarray(load_relax_map(str(output_dir / f"final_half{h}.mrc")), dtype=np.float64)
+        assert np.all(np.isfinite(half)) and np.linalg.norm(half) > 0

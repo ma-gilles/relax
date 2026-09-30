@@ -1555,6 +1555,10 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
             pass2_kwargs.get("bpref_device_signature_active", False)
         ),
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+        # Images on another grid (K=1 shape classes): the reference-model M-step size and
+        # image radius, as the Gaussian route passes them.
+        reconstruction_volume_current_size=pass2_kwargs.get("reconstruction_volume_current_size"),
+        reconstruction_image_radius=pass2_kwargs.get("reconstruction_image_radius"),
         **({"symmetry_label": pass2_kwargs["symmetry_label"]}
            if pass2_kwargs.get("symmetry_label", "C1") != "C1" else {}),
         **_translation_angle_scale_kwargs(pass2_kwargs),
@@ -1643,6 +1647,10 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
             **scale_groups,
             image_pre_shifts=class_kwargs.get("image_pre_shifts"),
             translation_prior_centers=class_kwargs.get("translation_prior_centers"),
+            # Each image's noise row; run_em's kwargs filter above does not carry it.
+            optics_group_ids=_subset_image_axis_engine_kwargs(
+                {"optics_group_ids": pass2_kwargs.get("optics_group_ids")}, image_indices, n_images
+            )["optics_group_ids"],
             relion_projector_half=_select_projector_half_for_class(
                 relion_projector_half_by_class,
                 class_index,
@@ -2143,10 +2151,10 @@ def run_dense_k_class_em_adaptive(
     if (
         engine_kwargs.get("optics_group_ids") is not None
         or engine_kwargs.get("reconstruction_volume_current_size") is not None
-    ) and (n_classes != 1 or firstiter_cc_pass2_only_best_coarse):
+    ) and n_classes != 1:
         raise NotImplementedError(
-            "per-optics-group noise is implemented for the K=1 Gaussian adaptive route "
-            "(coarse significance + device-resident pass 2)"
+            "per-optics-group noise is implemented for K=1 (coarse significance or the "
+            "firstiter_cc coarse winner, then the device-resident pass 2)"
         )
 
     coarse_rotations_np = np.asarray(coarse_rotations)

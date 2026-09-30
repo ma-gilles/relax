@@ -28,18 +28,12 @@ _RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY_ENV = (
 )
 
 
-_RELION_POWERCLASS_SPECTRUM_NORM_ENV = "RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM"
-
-
 class ResidentConfigurationUnsupported(NotImplementedError):
     """A device-resident K=1 driver does not implement this pass's configuration.
 
     Raised by the resident drivers' configuration checks, which run before any
     device work. It stops the run: there is no other pass-2 engine to fall back to.
     """
-
-
-_RELION_EXACT_BPREF_OPERANDS_ENV = "RELAX_K1_RELION_EXACT_BPREF_OPERANDS"
 
 
 _BPREF_EXECUTION_ORDER_LOCAL_FILE_ENV = "RELAX_K1_BPREF_EXECUTION_ORDER_LOCAL_FILE"
@@ -83,31 +77,6 @@ def _native_dual_weighted_sums_supported_for_operands(
         and np.dtype(probability_dtype) == np.dtype(np.float32)
         and np.dtype(reconstruction_dtype) == np.dtype(np.complex64)
         and np.dtype(noise_dtype) == np.dtype(np.complex64)
-    )
-
-
-def _relion_powerclass_spectrum_norm_enabled(
-    *,
-    fresh_k1_guard: bool,
-) -> bool:
-    """Use RELION's shell spectrum by default only in the fresh K=1 guard."""
-
-    return parse_env_flag(
-        _RELION_POWERCLASS_SPECTRUM_NORM_ENV,
-        default=bool(fresh_k1_guard),
-    )
-
-
-def _relion_exact_bpref_operands_enabled(
-    *,
-    fresh_k1_guard: bool,
-    source_faithful_spectrum_norm: bool,
-) -> bool:
-    """Pair exact BPref with the qualified fresh-K=1 spectrum path."""
-
-    return parse_env_flag(
-        _RELION_EXACT_BPREF_OPERANDS_ENV,
-        default=bool(fresh_k1_guard and source_faithful_spectrum_norm),
     )
 
 

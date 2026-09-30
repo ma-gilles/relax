@@ -185,8 +185,6 @@ from relax.sparse_pass2.sparse_pass2_policy import (
     _RELION_WAVG_ATOMIC_SCALE_AA_ENV,
     ResidentConfigurationUnsupported,
     _projection_cache_enabled_for_pass,
-    _relion_exact_bpref_operands_enabled,
-    _relion_powerclass_spectrum_norm_enabled,
     _relion_wavg_direct_modes,
 )
 from relax.sparse_pass2.sparse_pass2_posterior import (
@@ -367,12 +365,9 @@ def _resident_wavg_arithmetic(
     """
 
     del preserve_bpref_particle_order
-    fresh_k1_guard = bool(source_faithful_spectrum_norm)
-    spectrum_norm = _relion_powerclass_spectrum_norm_enabled(fresh_k1_guard=fresh_k1_guard)
-    exact_bpref_operands = _relion_exact_bpref_operands_enabled(
-        fresh_k1_guard=fresh_k1_guard,
-        source_faithful_spectrum_norm=spectrum_norm,
-    )
+    # A pass that preserves RELION's BPref order (every fresh K=1 pass) runs RELION's
+    # powerClass spectrum with its exact BPref operands; there is no other variant.
+    spectrum_norm = exact_bpref_operands = bool(source_faithful_spectrum_norm)
     direct_noise_default = True
     atomic_scale_aa = bool(
         accumulate_noise

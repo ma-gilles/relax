@@ -9,7 +9,7 @@ from relax.helpers.fourier_window import (
     make_frequency_coords_half_np,
 )
 from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle, _relion_wavg_rectangle_triplet_terms, _relion_wavg_sequential_triplet_terms
-from relax.sparse_pass2.sparse_pass2_policy import _relion_exact_bpref_operands_enabled, _relion_powerclass_spectrum_norm_enabled, _relion_wavg_direct_modes
+from relax.sparse_pass2.sparse_pass2_policy import _relion_wavg_direct_modes
 from scripts.analyze_k1_scale_aa_pixels import analyze
 from helpers.float_compare import assert_matches
 
@@ -46,66 +46,6 @@ def test_fresh_k1_default_enables_direct_noise_but_explicit_zero_disables(monkey
 
     monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "0")
     assert _relion_wavg_direct_modes(**kwargs) == (False, False)
-
-
-@pytest.mark.parametrize("fresh_k1_guard", (False, True))
-def test_powerclass_spectrum_norm_defaults_to_explicit_fresh_k1_guard(
-    monkeypatch,
-    fresh_k1_guard,
-):
-    monkeypatch.delenv("RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM", raising=False)
-
-    assert (
-        _relion_powerclass_spectrum_norm_enabled(fresh_k1_guard=fresh_k1_guard)
-        is fresh_k1_guard
-    )
-
-
-def test_powerclass_spectrum_norm_explicit_env_overrides_guard(monkeypatch):
-    monkeypatch.setenv("RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM", "0")
-    assert not _relion_powerclass_spectrum_norm_enabled(fresh_k1_guard=True)
-
-    monkeypatch.setenv("RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM", "1")
-    assert _relion_powerclass_spectrum_norm_enabled(fresh_k1_guard=False)
-
-
-@pytest.mark.parametrize(
-    ("fresh_k1_guard", "spectrum_norm", "expected"),
-    [
-        (True, True, True),
-        (True, False, False),
-        (False, True, False),
-        (False, False, False),
-    ],
-)
-def test_exact_bpref_defaults_only_with_fresh_k1_spectrum(
-    monkeypatch,
-    fresh_k1_guard,
-    spectrum_norm,
-    expected,
-):
-    monkeypatch.delenv("RELAX_K1_RELION_EXACT_BPREF_OPERANDS", raising=False)
-
-    assert (
-        _relion_exact_bpref_operands_enabled(
-            fresh_k1_guard=fresh_k1_guard,
-            source_faithful_spectrum_norm=spectrum_norm,
-        )
-        is expected
-    )
-
-
-@pytest.mark.parametrize(("override", "expected"), [("0", False), ("1", True)])
-def test_exact_bpref_explicit_env_overrides_default(monkeypatch, override, expected):
-    monkeypatch.setenv("RELAX_K1_RELION_EXACT_BPREF_OPERANDS", override)
-
-    assert (
-        _relion_exact_bpref_operands_enabled(
-            fresh_k1_guard=True,
-            source_faithful_spectrum_norm=True,
-        )
-        is expected
-    )
 
 
 def test_wavg_direct_modes_reject_overlapping_factorial_arms(monkeypatch):
