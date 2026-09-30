@@ -93,6 +93,7 @@ from relax.helpers.projection import (
 )
 from relax.helpers.scale_groups import prepare_scale_correction_groups
 from relax.helpers.types import LocalEMResult, make_noise_stats, make_relion_stats
+from relax.relion.optics_aberrations import dataset_needs_exact_ctf
 from relax.relion.relion_projector_setup import (
     cast_relion_projector_for_execution,
     prepare_local_projector_slab,
@@ -751,7 +752,10 @@ def compute_local_search_resident(
             # The exact local engine runs its production path with the plain
             # ``CTF^2 / sigma2`` operand order, not RELION's RFLOAT-square order,
             # so keep that here rather than silently switching operand families.
-            relion_exact_bpref_operands=False,
+            # Datasets whose CTF needs the optics table (CTF-premultiplied images,
+            # even Zernike terms, magnification) take the exact family, the only one
+            # built from relax's exact RELION CTF rows, as the global pass 2 does.
+            relion_exact_bpref_operands=dataset_needs_exact_ctf(experiment_dataset),
             noise_optics_groups=optics_groups_np,
         )
         # The operand family decides what a chunk holds, so it is chosen before the
