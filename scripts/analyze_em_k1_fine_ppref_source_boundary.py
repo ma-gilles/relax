@@ -243,13 +243,13 @@ def build_report(
 ) -> dict[str, Any]:
     import jax
     import jax.numpy as jnp
-
     from recovar.cuda_backproject import cuda_available
+
+    from relax.diagnostics.native_projector_setup import native_reference_to_relion_projector_half_maps
     from relax.helpers.projection import (
         _relion_projector_texture_enabled,
         compute_relion_projector_projections_block,
     )
-    from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps
     from relax.relion_bind import _relion_bind_core as relion_bind
 
     paths = [
@@ -306,18 +306,14 @@ def build_report(
     relion_map = _read_relion_map(relion_map_mrc)
     recovar_map = _read_recovar_map(recovar_map_mrc)
     _require(relion_map.shape == recovar_map.shape == (full_image_size,) * 3, "map geometry mismatch")
-    rebuilt_relion_ppref, rebuilt_relion_r_max = reference_to_relion_projector_half_maps(
+    rebuilt_relion_ppref, rebuilt_relion_r_max = native_reference_to_relion_projector_half_maps(
         relion_map[np.newaxis, ...],
         current_size=expected_current_size,
-        padding_factor=inputs["padding_factor"],
-        projector_setup_backend="native",
-    )
-    rebuilt_recovar_ppref, rebuilt_recovar_r_max = reference_to_relion_projector_half_maps(
+        padding_factor=inputs["padding_factor"],    )
+    rebuilt_recovar_ppref, rebuilt_recovar_r_max = native_reference_to_relion_projector_half_maps(
         recovar_map[np.newaxis, ...],
         current_size=expected_current_size,
-        padding_factor=inputs["padding_factor"],
-        projector_setup_backend="native",
-    )
+        padding_factor=inputs["padding_factor"],    )
     _require(
         rebuilt_relion_r_max == rebuilt_recovar_r_max == inputs["r_max"],
         "rebuilt PPref r_max differs from frozen capture",

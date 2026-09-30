@@ -2,9 +2,9 @@
 
 The user's rule (2026-09-29): relax's production paths do not rely on RELION
 code. ``relax.relion_bind`` is the oracle of tests, diagnostics and parity
-tools only. ``ALLOWED`` lists the places that may import it; ``PENDING`` lists
-production modules whose port is still open (docs/development/em_status.md,
-"RELION binding removal") and shrinks with each port.
+tools only. ``ALLOWED_PREFIXES`` and ``ALLOWED_FILES`` list the places that may
+import it; ``PENDING`` (empty since the last port) would name a production module
+whose port is still open (docs/development/em_status.md, "RELION binding removal").
 """
 
 from __future__ import annotations
@@ -18,9 +18,7 @@ PACKAGE = ROOT / "relax"
 ALLOWED_PREFIXES = ("relax/relion_bind/", "relax/diagnostics/", "relax/reference/")
 # Builds the oracle; it is a tool, not a refinement path.
 ALLOWED_FILES = {"relax/commands/build_relion_bind.py"}
-PENDING = {
-    "relax/relion/relion_projector_setup.py",
-}
+PENDING: set[str] = set()
 
 
 def _imports_binding(path: Path) -> bool:

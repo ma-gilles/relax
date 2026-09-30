@@ -226,7 +226,7 @@ def test_jax_backend_builds_on_the_device_at_every_size(monkeypatch):
     monkeypatch.setattr(setup, "_CHUNK_BYTES", 1)
     reference = np.random.default_rng(64).normal(size=(1, 16, 16, 16)).astype(np.float64)
     slab, power, r_max = setup.reference_to_relion_projector_half_maps_and_power(
-        reference, current_size=12, padding_factor=2, projector_setup_backend="jax", projector_data_dtype="complex128"
+        reference, current_size=12, padding_factor=2, projector_data_dtype="complex128"
     )
     assert called == [1]
     native, native_power, *_ = bind.compute_fourier_transform_map(

@@ -1306,6 +1306,7 @@ def main() -> None:
     from recovar.utils import helpers
 
     from relax.classification.k_class import run_dense_k_class_em
+    from relax.diagnostics.native_projector_setup import native_reference_to_relion_projector_half_maps
     from relax.helpers.map_io import write_map
     from relax.helpers.orientation_priors import (
         make_relion_direction_log_prior,
@@ -1318,7 +1319,6 @@ def main() -> None:
         read_relion_optimiser_metadata,
         read_relion_sampling_metadata,
     )
-    from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps
     from relax.sampling import (
         apply_relion_rotation_perturbation_to_eulers,
         apply_relion_translation_perturbation,
@@ -1538,12 +1538,10 @@ def main() -> None:
             f"coarse_current_size={coarse_engine_current_size}, fine_current_size={current_size}"
         )
     projector_current_size = current_size
-    relion_projector_half_by_class, relion_projector_r_max = reference_to_relion_projector_half_maps(
+    relion_projector_half_by_class, relion_projector_r_max = native_reference_to_relion_projector_half_maps(
         prev_reference_real,
         current_size=projector_current_size,
-        padding_factor=args.projection_padding_factor,
-        projector_setup_backend="native",
-    )
+        padding_factor=args.projection_padding_factor,    )
     print(
         "  exact RELION Projector::data: "
         f"current_size={projector_current_size}, r_max={relion_projector_r_max}, "

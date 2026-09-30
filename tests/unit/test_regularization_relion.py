@@ -605,7 +605,6 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_relion_transform()
             current_size=current_size,
             padding_factor=2,
             n_classes=1,
-            projector_setup_backend="jax",
         )
         _, relion_power, *_ = bind.compute_fourier_transform_map(
             recovar_volume_to_relion(np.asarray(vol_real, dtype=np.float64)),

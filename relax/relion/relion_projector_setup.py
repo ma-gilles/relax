@@ -3,19 +3,19 @@
 Matches Projector::computeFourierTransformMap for a 3-D RELION-frame real
 reference, data_dim=2 and trilinear gridding correction. No axis/contrast
 conversion is performed by the device kernel. Host wrappers below convert
-RECOVAR references and select the native or JAX implementation.
+RECOVAR references.
 
 There is one device build (``_build_projector_window``): the padded transform
 taken one axis at a time inside a static window of radius w, giving a
 ``(L, L, L // 2 + 1)`` slab with ``L = 2 (pf w + 1) + 1``. Jitted callers keep
 the fixed capacity w = N / 2, ``(M + 3, M + 3, M // 2 + 2)`` for
 ``M = padding_factor * ori_size``, so the logical radius remains a device scalar;
-the host wrapper uses w = r_max and runs large boxes in chunks. The native binding
-is the test reference and the default of the host wrapper.
+the host wrapper uses w = r_max and runs large boxes in chunks. RELION's own
+transform (through the binding) is the test oracle, in
+``relax.diagnostics.native_projector_setup``.
 """
 
 from functools import partial
-from typing import Literal
 
 import jax
 import jax.numpy as jnp
@@ -323,16 +323,12 @@ def _mask_and_shell_power(block, r_max, *, ori_size: int, padding_factor: int, s
     return projector, sums, counts
 
 
-ProjectorSetupBackend = Literal["native", "jax"]
-
-
 def reference_to_relion_projector_half_maps(
     references: np.ndarray,
     *,
     current_size: int,
     padding_factor: int = 1,
     interpolator: int = 1,
-    projector_setup_backend: ProjectorSetupBackend = "jax",
     projector_data_dtype=None,
     compute_dtype=np.float64,
 ) -> tuple[np.ndarray, int]:
@@ -343,7 +339,6 @@ def reference_to_relion_projector_half_maps(
         padding_factor=padding_factor,
         interpolator=interpolator,
         projector_data_dtype=projector_data_dtype,
-        projector_setup_backend=projector_setup_backend,
         compute_dtype=compute_dtype,
     )
     return half_maps, r_max
@@ -355,91 +350,50 @@ def reference_to_relion_projector_half_maps_and_power(
     current_size: int,
     padding_factor: int = 1,
     interpolator: int = 1,
-    projector_setup_backend: ProjectorSetupBackend = "jax",
     projector_data_dtype=None,
     compute_dtype=np.float64,
 ) -> tuple[np.ndarray, np.ndarray, int]:
     """Convert references to native-layout half maps and their corrected spectrum.
 
-    The JAX backend (the default) is the device build of
-    :func:`setup_relion_projector_on_host` and uses ``compute_dtype`` for
-    gridding correction, FFT and power. The native binding is the test
-    reference; unsupported geometry (odd box, padding other than 1 or 2, an
-    interpolator other than trilinear) also takes it, for the float64 route only.
+    The device build of :func:`setup_relion_projector_on_host`, which uses
+    ``compute_dtype`` for gridding correction, FFT and power. It reproduces
+    ``Projector::computeFourierTransformMap`` for even boxes, padding 1 or 2 and
+    trilinear interpolation, and refuses other geometry; RELION's own transform is
+    the oracle in :mod:`relax.diagnostics.native_projector_setup`.
 
-    ``projector_data_dtype`` is what the caller wants the slab in. ``None``
-    keeps each backend's own output: complex64 from the JAX path, whose
-    consumer is the InitialModel engine, and complex128 from the native
-    binding, which is what refinement consumes. A caller that needs one
-    precision from either backend must say so, because the two backends do not
-    agree by default and switching backend would otherwise change precision
-    silently.
+    ``projector_data_dtype`` is what the caller wants the slab in; ``None`` keeps
+    complex64, whose consumer is the InitialModel engine. Refinement asks for
+    complex128 explicitly.
     """
-    from recovar.utils.helpers import recovar_volume_to_relion
-
-    if projector_setup_backend not in {"native", "jax"}:
-        raise ValueError(f"Unknown projector_setup_backend: {projector_setup_backend!r}")
     compute_dtype = np.dtype(compute_dtype)
     if compute_dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
         raise ValueError("Projector computation dtype must be float32 or float64")
-    # VDAM's references are device arrays; reading them back here is not needed on the JAX backend.
+    # VDAM's references are device arrays; reading them back here is not needed.
     refs = references if isinstance(references, jax.Array) else np.asarray(references)
     if refs.ndim != 4:
         raise ValueError(f"references must have shape (K, N, N, N), got {refs.shape}")
     n = int(refs.shape[-1])
-    use_jax = (
-        projector_setup_backend == "jax"
-        and n > 0 and n % 2 == 0
-        and refs.shape[1:] == (n, n, n)
-        and int(padding_factor) in {1, 2}
-        and int(interpolator) == 1
-    )
-    if compute_dtype == np.dtype(np.float32) and not use_jax:
-        raise ValueError("Float32 projector setup requires supported JAX geometry and backend")
-    if not use_jax:
-        from relax.relion_bind import _relion_bind_core as bind
+    if not (n > 0 and n % 2 == 0 and refs.shape[1:] == (n, n, n)):
+        raise ValueError(f"projector setup needs cubic references of an even box, got {refs.shape[1:]}")
+    if int(padding_factor) not in {1, 2}:
+        raise ValueError(f"projector setup supports padding factor 1 or 2, got {padding_factor}")
+    if int(interpolator) != 1:
+        raise ValueError("projector setup supports trilinear interpolation only (interpolator 1)")
 
     halves = []
     power_spectra = []
-    r_max_values = []
+    # Projector::initialiseData uses a negative size for full resolution;
+    # zero means radius zero here (state wrappers retain their defaults).
+    r_max = n // 2 if int(current_size) < 0 else min(int(current_size) // 2, n // 2)
     for ref in refs:
-        if use_jax:
-            # Projector::initialiseData uses a negative size for full resolution;
-            # zero means radius zero here (state wrappers retain their defaults).
-            r_max = n // 2 if int(current_size) < 0 else min(int(current_size) // 2, n // 2)
-            projector_data, power = setup_relion_projector_on_host(
-                swap_relion_volume_layout(ref), r_max, ori_size=n,
-                padding_factor=int(padding_factor), compute_dtype=compute_dtype.type,
-            )
-            if projector_data_dtype is None:
-                projector_data = projector_data.astype(np.complex64)
-        else:
-            (
-                projector_data, power, _ori_size, _padding_factor_out,
-                r_max, _r_min_nn, _interpolator_out,
-            ) = bind.compute_fourier_transform_map(
-                np.asarray(recovar_volume_to_relion(ref), dtype=np.float64),
-                n,
-                int(padding_factor),
-                int(interpolator),
-                int(current_size),
-                True,
-                2,
-            )
-        if projector_data_dtype is not None:
-            projector_data = np.asarray(projector_data).astype(
-                np.dtype(projector_data_dtype), copy=False
-            )
-        halves.append(np.asarray(projector_data))
+        projector_data, power = setup_relion_projector_on_host(
+            swap_relion_volume_layout(ref), r_max, ori_size=n,
+            padding_factor=int(padding_factor), compute_dtype=compute_dtype.type,
+        )
+        dtype = np.complex64 if projector_data_dtype is None else np.dtype(projector_data_dtype)
+        halves.append(np.asarray(projector_data).astype(dtype, copy=False))
         power_spectra.append(np.asarray(power, dtype=np.float64))
-        r_max_values.append(int(r_max))
-    if len(set(r_max_values)) != 1:
-        raise ValueError(f"RELION projector maps disagree on r_max: {r_max_values}")
-    return (
-        np.asarray(halves),
-        np.asarray(power_spectra, dtype=np.float64),
-        int(r_max_values[0]),
-    )
+    return np.asarray(halves), np.asarray(power_spectra, dtype=np.float64), int(r_max)
 
 
 def cast_relion_projector_for_execution(projector_half, *, use_float64_projections=False):

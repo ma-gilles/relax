@@ -8,9 +8,9 @@ import struct
 from pathlib import Path
 
 import numpy as np
-
-from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps
 from recovar.utils import helpers
+
+from relax.diagnostics.native_projector_setup import native_reference_to_relion_projector_half_maps
 
 MAGIC = b"RLNPPREFV1".ljust(16, b"\0")
 HEADER_WORDS = 16
@@ -93,12 +93,10 @@ def main() -> None:
 
     reference = _load_map(args.map, args.map_convention)
     _require(reference.ndim == 3 and len(set(reference.shape)) == 1, "map must be cubic")
-    projectors, r_max = reference_to_relion_projector_half_maps(
+    projectors, r_max = native_reference_to_relion_projector_half_maps(
         reference[None],
         current_size=args.current_size,
-        padding_factor=args.padding_factor,
-        projector_setup_backend="native",
-    )
+        padding_factor=args.padding_factor,    )
     write_ppref_capture(
         args.output,
         projectors[0],

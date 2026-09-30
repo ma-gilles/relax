@@ -129,7 +129,6 @@ def _relion_projector(volume_real, current_size):
         current_size=int(current_size),
         padding_factor=1,
         interpolator=1,
-        projector_setup_backend="jax",
     )
     return jnp.asarray(halves[0], dtype=jnp.complex64), int(r_max)
 

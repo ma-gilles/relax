@@ -50,7 +50,6 @@ _RELION_PROJECTOR_DUMP_DIR_ENV = "RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR"
 # the complex64 slab that RELION's GPU projector holds as a float texture
 # (the single float32 texture path of a7977c8). The corrected power spectrum
 # that seeds tau2 stays double.
-VDAM_PROJECTOR_SETUP_BACKEND = "jax"
 
 
 logger = logging.getLogger(__name__)
@@ -469,7 +468,6 @@ def prepare_relion_projector_class_inputs(
         state.Iref,
         current_size=state.current_size if state.current_size > 0 else state.ori_size,
         padding_factor=padding_factor,
-        projector_setup_backend=VDAM_PROJECTOR_SETUP_BACKEND,
     )
     return _finish_relion_projector_class_inputs(
         state, padding_factor, projector_half_by_class, projector_r_max
@@ -488,7 +486,6 @@ def prepare_relion_projector_class_inputs_and_power(
         state.Iref,
         current_size=state.current_size if state.current_size > 0 else state.ori_size,
         padding_factor=padding_factor,
-        projector_setup_backend=VDAM_PROJECTOR_SETUP_BACKEND,
         interpolator=interpolator,
     )
     inputs = _finish_relion_projector_class_inputs(state, padding_factor, half_maps, r_max, dense_means=dense_means)

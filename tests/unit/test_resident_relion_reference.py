@@ -54,7 +54,7 @@ def _ppref(volume_ft):
 
     volume_real = np.asarray(ftu.get_idft3(np.asarray(volume_ft).reshape(N, N, N)).real, dtype=np.float64)
     halves, r_max = reference_to_relion_projector_half_maps(
-        volume_real[None], current_size=N, padding_factor=2, interpolator=1, projector_setup_backend="jax"
+        volume_real[None], current_size=N, padding_factor=2, interpolator=1
     )
     return np.asarray(halves[0]), int(r_max)
 

@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 
 from relax.local.local_layout import LocalHypothesisLayout
-from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps
 from relax.vdam.adaptive_estep import _resolve_sparse_pass1_current_size, _safe_coarse_significance_image_batch_size
 from relax.vdam.dense_adapter import (
     _relion_projector_to_dense_volume,
@@ -716,8 +715,10 @@ def test_projector_conversion_uses_relion_frame(monkeypatch):
     monkeypatch.setattr("relax.vdam.dense_adapter._relion_projector_to_dense_volume", fake_embed)
 
     refs = np.zeros((1, 4, 4, 4), dtype=np.float32)
-    projector_maps, _ = reference_to_relion_projector_half_maps(
-        refs, current_size=2, padding_factor=1, projector_setup_backend="native"
+    from relax.diagnostics.native_projector_setup import native_reference_to_relion_projector_half_maps
+
+    projector_maps, _ = native_reference_to_relion_projector_half_maps(
+        refs, current_size=2, padding_factor=1, projector_data_dtype=np.complex64
     )
     means = relion_projector_half_maps_to_dense_means(projector_maps, refs.shape[-1])
 

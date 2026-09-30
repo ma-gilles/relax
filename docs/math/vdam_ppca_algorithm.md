@@ -1041,7 +1041,7 @@ three float32 RELION-frame maps. The VDAM override skips its native double
 bootstrap when these maps are supplied; later projection and M-step backends
 must still be selected explicitly for production float32 execution.
 VDAM has one projector setup
-([`VDAM_PROJECTOR_SETUP_BACKEND`](../../relax/vdam/dense_adapter.py)): the device
+([`reference_to_relion_projector_half_maps_and_power`](../../relax/relion/relion_projector_setup.py)): the device
 FFT in double, narrowed to the complex64 slab RELION's GPU projector holds as a
 float texture, with the tau2 shell power kept in double. It does not follow the
 M-step dtype, and `--projector-setup-backend` is gone from InitialModel; a

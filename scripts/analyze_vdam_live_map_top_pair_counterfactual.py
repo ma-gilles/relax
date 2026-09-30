@@ -66,14 +66,14 @@ def analyze(
 ) -> dict[str, object]:
     import jax
     import jax.numpy as jnp
+    from recovar.utils.helpers import load_relion_volume
 
     from relax.cuda import kernels as em_cuda_kernels
+    from relax.diagnostics.native_projector_setup import native_reference_to_relion_projector_half_maps
     from relax.helpers.fourier_window import make_fourier_window_indices_np
     from relax.helpers.half_spectrum import make_scoring_half_image_weights
     from relax.helpers.projection import compute_relion_projector_projections_block
-    from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps
     from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_full_to_compact_lookup
-    from recovar.utils.helpers import load_relion_volume
 
     with np.load(live_score_path, allow_pickle=False) as archive:
         live = {name: np.asarray(archive[name]) for name in archive.files}
@@ -167,12 +167,10 @@ def analyze(
         expected_shape = (full_image_size,) * 3
         if volume.shape != expected_shape:
             raise ValueError(f"map {label!r} has shape {volume.shape}, expected {expected_shape}")
-        projector, r_max = reference_to_relion_projector_half_maps(
+        projector, r_max = native_reference_to_relion_projector_half_maps(
             volume[None],
             current_size=current_size,
-            padding_factor=padding_factor,
-            projector_setup_backend="native",
-        )
+            padding_factor=padding_factor,        )
         projected, _ = compute_relion_projector_projections_block(
             jnp.asarray(projector[0], dtype=jnp.complex64),
             jnp.asarray(rotations, dtype=jnp.float32),

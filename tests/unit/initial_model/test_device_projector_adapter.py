@@ -5,6 +5,10 @@ import numpy as np
 import pytest
 from helpers.vdam import relative_metrics
 
+from relax.diagnostics.native_projector_setup import (
+    native_reference_to_relion_projector_half_maps,
+    native_reference_to_relion_projector_half_maps_and_power,
+)
 from relax.relion import relion_projector_setup
 from relax.vdam import dense_adapter as adapter
 from relax.vdam.init import initialise_denovo_state
@@ -54,13 +58,11 @@ def test_adapter_native_radius_layout_frame_and_consumer_policy(size, padding, c
     monkeypatch.setattr(setup, "setup_relion_projector_on_host", capture)
     kwargs = dict(current_size=current_size, padding_factor=padding)
     controls = [
-        relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
-            references, **kwargs, projector_setup_backend="native"
-        )
+        native_reference_to_relion_projector_half_maps_and_power(references, **kwargs)
         for _ in range(2)
     ]
     candidates = [
-        relion_projector_setup.reference_to_relion_projector_half_maps_and_power(references, **kwargs, projector_setup_backend="jax")
+        relion_projector_setup.reference_to_relion_projector_half_maps_and_power(references, **kwargs)
         for _ in range(2)
     ]
     assert len(raw) == 4  # The native controls never enter the device helper.
@@ -94,21 +96,12 @@ def test_adapter_native_radius_layout_frame_and_consumer_policy(size, padding, c
 
 
 @pytest.mark.parametrize("size,padding,interpolator", [(8, 1, 0), (8, 3, 1), (9, 1, 1)])
-def test_unsupported_projector_geometry_uses_native(size, padding, interpolator, monkeypatch):
-    from relax.relion import relion_projector_setup as setup
-
-    def forbidden(*args, **kwargs):
-        raise AssertionError("Unsupported geometry must stay native")
-
-    monkeypatch.setattr(setup, "setup_relion_projector_on_host", forbidden)
+def test_unsupported_projector_geometry_is_refused(size, padding, interpolator):
     refs = np.random.default_rng(31).normal(size=(1, size, size, size))
-    kwargs = dict(current_size=size, padding_factor=padding, interpolator=interpolator)
-    native = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
-        refs, **kwargs, projector_setup_backend="native"
-    )
-    requested = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(refs, **kwargs, projector_setup_backend="jax")
-    for left, right in zip(native, requested):
-        assert_matches(left, right)
+    with pytest.raises(ValueError, match="projector setup"):
+        relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
+            refs, current_size=size, padding_factor=padding, interpolator=interpolator
+        )
 
 
 def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monkeypatch, tmp_path):
@@ -125,9 +118,7 @@ def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monke
     monkeypatch.setenv(adapter._EXACT_RELION_PROJECTOR_ENV, "1")
 
     def native_inputs():
-        half, r_max = relion_projector_setup.reference_to_relion_projector_half_maps(
-            state.Iref, current_size=8, padding_factor=1, projector_setup_backend="native"
-        )
+        half, r_max = native_reference_to_relion_projector_half_maps(state.Iref, current_size=8, padding_factor=1)
         return adapter._finish_relion_projector_class_inputs(state, 1, half, r_max)
 
     natives = [native_inputs() for _ in range(2)]
@@ -146,14 +137,7 @@ def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monke
     assert power.shape == (1, 5)
 
 
-def test_unknown_backend_rejected():
-    with pytest.raises(ValueError, match="Unknown projector_setup_backend"):
-        relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
-            np.zeros((1, 8, 8, 8)), current_size=8, projector_setup_backend="typo"
-        )
-
-
-def test_float32_projector_route_rejects_native_fallback(monkeypatch):
+def test_float32_projector_route(monkeypatch):
     refs = np.random.default_rng(41).normal(size=(1, 8, 8, 8)).astype(np.float32)
     captured = []
     original = relion_projector_setup.setup_relion_projector_on_host
@@ -165,18 +149,14 @@ def test_float32_projector_route_rejects_native_fallback(monkeypatch):
 
     monkeypatch.setattr(relion_projector_setup, "setup_relion_projector_on_host", capture)
     halves, power, radius = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
-        refs, current_size=8, projector_setup_backend="jax", compute_dtype=np.float32,
+        refs, current_size=8, compute_dtype=np.float32,
     )
     assert radius == 4
     assert halves.dtype == np.complex64
     assert captured[0][0].dtype == np.complex64
     assert captured[0][1].dtype == np.float32
     assert power.dtype == np.float64  # tau2 host metadata keeps its precision.
-    with pytest.raises(ValueError, match="Float32 projector setup requires"):
+    with pytest.raises(ValueError, match="trilinear"):
         relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
-            refs, current_size=8, projector_setup_backend="native", compute_dtype=np.float32,
-        )
-    with pytest.raises(ValueError, match="Float32 projector setup requires"):
-        relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
-            refs, current_size=8, interpolator=0, projector_setup_backend="jax", compute_dtype=np.float32,
+            refs, current_size=8, interpolator=0, compute_dtype=np.float32,
         )

@@ -14,7 +14,6 @@ import numpy as np
 import starfile
 
 from relax.cuda import kernels as em_cuda_kernels
-from relax.cuda import kernels as em_cuda_kernels
 from relax.diagnostics.bpref_contribution_replay import native_current_fft_rows  # noqa: E402
 from relax.helpers.fourier_window import make_fourier_window_indices_np
 from relax.helpers.half_spectrum import make_relion_noise_shell_indices_half, make_scoring_half_image_weights
@@ -497,9 +496,10 @@ def _projection_source_boundary(
 ) -> dict[str, object]:
     """Locate a projected-reference gap across map, PPref, and texture stages."""
 
-    from relax.helpers.projection import compute_relion_projector_projections_block
-    from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps
     from recovar.utils.helpers import load_relion_volume
+
+    from relax.diagnostics.native_projector_setup import native_reference_to_relion_projector_half_maps
+    from relax.helpers.projection import compute_relion_projector_projections_block
     from scripts.analyze_em_k1_fine_ppref_source_boundary import (
         classify_source_boundary,
     )
@@ -515,17 +515,15 @@ def _projection_source_boundary(
         )
 
     frozen_projector, r_max, padding_factor, projector_dims = _load_native_projector(native_dir)
-    rebuilt_native, native_r_max = reference_to_relion_projector_half_maps(
+    rebuilt_native, native_r_max = native_reference_to_relion_projector_half_maps(
         native_map[None],
         current_size=int(current_size),
         padding_factor=int(padding_factor),
-        projector_setup_backend="native",
     )
-    rebuilt_recovar, recovar_r_max = reference_to_relion_projector_half_maps(
+    rebuilt_recovar, recovar_r_max = native_reference_to_relion_projector_half_maps(
         recovar_map[None],
         current_size=int(current_size),
         padding_factor=int(padding_factor),
-        projector_setup_backend="native",
     )
     if int(native_r_max) != int(r_max) or int(recovar_r_max) != int(r_max):
         raise ValueError(

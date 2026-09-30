@@ -3768,9 +3768,8 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
     calls = []
 
     def fake_projector_builder(
-        refs_real, *, current_size, padding_factor, projector_setup_backend, projector_data_dtype,
+        refs_real, *, current_size, padding_factor, projector_data_dtype,
     ):
-        assert projector_setup_backend == "jax"
         assert projector_data_dtype == "complex128"
         calls.append(np.asarray(refs_real).copy())
         projector_half = np.full((refs_real.shape[0], 3, 3, 2), 7.0 + len(calls), dtype=np.complex64)
@@ -3812,9 +3811,8 @@ def test_relion_projector_direct_real_reference_bypasses_fourier_roundtrip(monke
     captured_real = []
 
     def fake_projector_builder(
-        refs_real, *, current_size, padding_factor, projector_setup_backend, projector_data_dtype,
+        refs_real, *, current_size, padding_factor, projector_data_dtype,
     ):
-        assert projector_setup_backend == "jax"
         assert projector_data_dtype == "complex128"
         captured_real.append(np.asarray(refs_real).copy())
         projector_half = np.ones((refs_real.shape[0], 3, 3, 2), dtype=np.complex64)

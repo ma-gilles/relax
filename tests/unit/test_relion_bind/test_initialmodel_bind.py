@@ -410,12 +410,17 @@ class TestAutoRefineExpectedAccuracyBinding:
         }
         direct = estimate_relion_expected_accuracy_from_prepared_inputs(**kwargs)
         recovar_frame = np.stack([relion_volume_to_recovar(volume) for volume in references])
-        for backend in ("native", "jax"):
-            slabs, _power, _r_max = reference_to_relion_projector_half_maps_and_power(
+        from relax.diagnostics.native_projector_setup import native_reference_to_relion_projector_half_maps_and_power
+
+        builders = {
+            "native": native_reference_to_relion_projector_half_maps_and_power,
+            "jax": reference_to_relion_projector_half_maps_and_power,
+        }
+        for backend, build in builders.items():
+            slabs, _power, _r_max = build(
                 recovar_frame,
                 current_size=12,
                 padding_factor=2,
-                projector_setup_backend=backend,
                 projector_data_dtype="complex128",
             )
             supplied = estimate_relion_expected_accuracy_from_prepared_inputs(**kwargs, projector_data=slabs)
