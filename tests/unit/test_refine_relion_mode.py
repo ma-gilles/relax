@@ -4530,7 +4530,7 @@ def test_run_local_search_iteration_fallback_planner_uses_resolved_score_precisi
     assert captured["use_float64_scoring"] is use_float64_scoring
 
 
-def test_run_local_search_iteration_plumbs_score_only_to_exact_engine(monkeypatch, rng):
+def test_run_local_search_iteration_plumbs_score_only_to_the_resident_probe(monkeypatch, rng):
     from relax.refinement import local_search_iteration as local_iteration_module
 
     mock_dataset = MockDataset(2, rng)
@@ -4564,7 +4564,7 @@ def test_run_local_search_iteration_plumbs_score_only_to_exact_engine(monkeypatc
             profile={"score_only": kwargs["score_only"]},
         )
 
-    monkeypatch.setattr(local_iteration_module, "run_local_em_exact", fake_run_local_em_exact)
+    monkeypatch.setattr(local_iteration_module, "compute_local_search_resident", fake_run_local_em_exact)
 
     outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
@@ -14753,7 +14753,7 @@ def test_run_local_search_iteration_plumbs_score_only_and_reuses_batch_planner(
             profile={"score_only": kwargs["score_only"]},
         )
 
-    monkeypatch.setattr(local_search_iteration, "run_local_em_exact", fake_run_local_em_exact)
+    monkeypatch.setattr(local_search_iteration, "compute_local_search_resident", fake_run_local_em_exact)
 
     monkeypatch.setattr(local_search_iteration, "_estimate_relion_em_batch_sizes", batch_size_planner)
 
@@ -14789,8 +14789,9 @@ def test_run_local_search_iteration_plumbs_score_only_and_reuses_batch_planner(
         "volume_shape": mock_dataset.volume_shape,
         "padding_factor": 1, "current_size": 4, "use_float64_scoring": False,
     }]
-    assert captured["image_batch_size"] == 1
-    assert captured["rotation_block_size"] == 1
+    # The resident probe sizes its chunks from its own capacity plan; the planned
+    # batch sizes are only logged (the exact engine used to take them).
+    assert "image_batch_size" not in captured and "rotation_block_size" not in captured
     assert captured["score_only"] is True
     assert captured["disable_adjoint_y"] is True
     assert captured["disable_adjoint_ctf"] is True
@@ -14974,7 +14975,7 @@ def test_local_search_reuses_caller_planner_without_growing_batches(
             profile={"score_only": kwargs["score_only"]},
         )
 
-    monkeypatch.setattr(local_search_iteration, "run_local_em_exact", fake_run_local_em_exact)
+    monkeypatch.setattr(local_search_iteration, "compute_local_search_resident", fake_run_local_em_exact)
 
     monkeypatch.setattr(local_search_iteration, "_estimate_relion_em_batch_sizes", lambda **kwargs: pytest.fail("caller planner bypassed"))
 
@@ -15007,7 +15008,9 @@ def test_local_search_reuses_caller_planner_without_growing_batches(
         "classes": 1, "image_shape_for_batch": mock_dataset.image_shape,
         "current_size_for_batch": 4,
     })]
-    assert (captured["image_batch_size"], captured["rotation_block_size"]) == expected
+    # The resident probe sizes its chunks from its own capacity plan; the caller's
+    # planned batch sizes are only logged (the exact engine used to take them).
+    del expected
     assert captured["score_only"] is True
     assert captured["disable_adjoint_y"] is True
     assert captured["disable_adjoint_ctf"] is True
