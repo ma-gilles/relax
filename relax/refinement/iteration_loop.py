@@ -2763,6 +2763,38 @@ def refine_single_volume(
                         coarse_cs,
                         cs_for_engine,
                     )
+            # These policies begin their lifetime when this half's planning is
+            # complete and remain intact until the selected scorer executes.
+            # Empty halves retain the historical early return without creating
+            # scoring-only policy objects.
+            local_batching = dense_batching = None
+            if experiment_datasets[k].n_units != 0:
+                if use_local:
+                    local_batching = LocalBatchPolicy(
+                        max_significants=adaptive.max_significants,
+                        safe_batch_sizes=safe_batch_sizes_for_half,
+                    )
+                elif not tomo_halves:
+                    dense_batching = DenseBatchPolicy(
+                        image_batch_size=batching.image_batch_size,
+                        safe_batch_sizes=safe_batch_sizes_for_half,
+                        max_significants=adaptive.max_significants,
+                        significance_safe_batch_sizes=(
+                            significance_safe_batch_sizes_for_half
+                        ),
+                        k_class_image_batch_size_override=(
+                            k_class_image_batch_size if use_adaptive else None
+                        ),
+                        k_class_rotation_block_size_override=(
+                            dense_k_class_rotation_block_size if use_adaptive else None
+                        ),
+                        significance_image_batch_size_override=(
+                            significance_image_batch_size if use_adaptive else None
+                        ),
+                        significance_rotation_block_size_override=(
+                            significance_rotation_block_size if use_adaptive else None
+                        ),
+                    )
             # RELION translation priors: relion_half_translation_prior_inputs
             # documents the pdf_offset / wsum_sigma2_offset centers, the
             # cold-start engine center and the prior-grid selection.
@@ -2976,10 +3008,7 @@ def refine_single_volume(
                         local_search_translation_prior_mode=(local_search.local_search_translation_prior_mode),
                         replay_prior_translations=_replay_prior_translations,
                     ),
-                    batching=LocalBatchPolicy(
-                        max_significants=adaptive.max_significants,
-                        safe_batch_sizes=safe_batch_sizes_for_half,
-                    ),
+                    batching=local_batching,
                     execution=LocalExecutionPolicy(
                         disable_adjoint_y=debug.disable_adjoint_y,
                         disable_adjoint_ctf=debug.disable_adjoint_ctf,
@@ -3053,24 +3082,6 @@ def refine_single_volume(
                     translation_search_base=translation_search_base,
                     trans_prior_center_for_engine=trans_prior_center_for_engine,
                     class_log_priors=class_log_priors,
-                )
-                dense_batching = DenseBatchPolicy(
-                    image_batch_size=batching.image_batch_size,
-                    safe_batch_sizes=safe_batch_sizes_for_half,
-                    max_significants=adaptive.max_significants,
-                    significance_safe_batch_sizes=significance_safe_batch_sizes_for_half,
-                    k_class_image_batch_size_override=(
-                        k_class_image_batch_size if use_adaptive else None
-                    ),
-                    k_class_rotation_block_size_override=(
-                        dense_k_class_rotation_block_size if use_adaptive else None
-                    ),
-                    significance_image_batch_size_override=(
-                        significance_image_batch_size if use_adaptive else None
-                    ),
-                    significance_rotation_block_size_override=(
-                        significance_rotation_block_size if use_adaptive else None
-                    ),
                 )
                 dense_execution = DenseExecutionPolicy(
                     disable_adjoint_y=debug.disable_adjoint_y,

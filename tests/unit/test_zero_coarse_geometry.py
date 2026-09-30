@@ -54,6 +54,46 @@ def test_numbered_dense_scoring_exposes_owners_without_a_call_only_plan():
     ]
 
 
+def test_numbered_half_batch_policies_have_a_planning_lifecycle():
+    loop = tree("iteration_loop.py")
+    half_step = next(
+        node
+        for node in ast.walk(loop)
+        if isinstance(node, ast.FunctionDef) and node.name == "_run_half_estep"
+    )
+    constructors = {
+        node.func.id: node
+        for node in ast.walk(half_step)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in {"DenseBatchPolicy", "LocalBatchPolicy"}
+    }
+    assert set(constructors) == {"DenseBatchPolicy", "LocalBatchPolicy"}
+
+    dense_call = next(
+        node
+        for node in ast.walk(half_step)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_score_half_dense_in_bpref_scope"
+    )
+    local_call = next(
+        node
+        for node in ast.walk(half_step)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_score_half_local_in_bpref_scope"
+    )
+    assert constructors["DenseBatchPolicy"].lineno < dense_call.lineno
+    assert constructors["LocalBatchPolicy"].lineno < local_call.lineno
+    assert dense_call.args[3].id == "dense_batching"
+    assert next(
+        keyword.value.id
+        for keyword in local_call.keywords
+        if keyword.arg == "batching"
+    ) == "local_batching"
+
+
 def test_direct_k1_dense_route_is_an_explicit_four_input_variant():
     scorer = tree("half_scoring.py")
     helper = next(
