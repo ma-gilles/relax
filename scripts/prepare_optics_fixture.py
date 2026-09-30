@@ -56,13 +56,27 @@ import mrcfile
 import numpy as np
 import starfile
 
-COPIED_MAPS = (
-    "reference_gt.mrc",
-    "reference_gt_class001.mrc",
-    "reference_gt_relion.mrc",
-    "reference_init_class001.mrc",
-    "reference_init_class001_relion.mrc",
-)
+# Maps the particles' poses still fit (the ground truth and initial references), per class.
+COPIED_MAPS = ("reference_gt.mrc", "reference_gt_relion.mrc", "reference_gt_class*.mrc", "reference_init_class*.mrc")
+
+
+def class_assignment(base_dir: Path, count: int) -> np.ndarray:
+    """Each of the first ``count`` particles' zero-based ground-truth class.
+
+    A multi-class fixture (``reference_gt_class002.mrc`` present) records it in the
+    simulator's ``simulation_info.pkl`` (``image_assignment``, in particles.star order);
+    a single-class fixture has class 0 throughout.
+    """
+
+    if not (base_dir / "reference_gt_class002.mrc").is_file():
+        return np.zeros(count, dtype=np.int64)
+    import pickle
+
+    with open(base_dir / "simulation_info.pkl", "rb") as handle:
+        assignment = np.asarray(pickle.load(handle)["image_assignment"], dtype=np.int64)
+    if assignment.shape[0] < count:
+        raise SystemExit(f"{base_dir} records {assignment.shape[0]} class labels for {count} particles")
+    return assignment[:count]
 
 
 def _sha256(path: Path) -> str:
@@ -185,7 +199,11 @@ def optics_signal_change(
     count = images.shape[0]
     dataset = load_dataset(str(base_dir / "particles.star"), ind=np.arange(count), lazy=True, absent_angles_zero=True)
     config = ForwardModelConfig.from_dataset(dataset, disc_type="cubic")
-    volume = jnp.asarray(ftu.get_dft3(utils.load_mrc(str(base_dir / "reference_gt_class001.mrc"))).reshape(-1))
+    assignment = class_assignment(base_dir, count)
+    volumes = [
+        jnp.asarray(ftu.get_dft3(utils.load_mrc(str(base_dir / f"reference_gt_class{label + 1:03d}.mrc"))).reshape(-1))
+        for label in range(int(assignment.max()) + 1)
+    ]
     size = int(images.shape[-1])
     params = np.stack(
         [
@@ -219,15 +237,27 @@ def optics_signal_change(
             report["recovar_vs_relion_plain_ctf_max_abs"], float(np.abs(generic - plain)[:, inside].max())
         )
         rotations = np.asarray(dataset.rotation_matrices[rows])
-        slices = slice_volume(volume, jnp.asarray(rotations), config.image_shape, config.volume_shape, "cubic")
+        labels = assignment[rows]
+
+        def project(matrices):
+            # Each image's projection of its own ground-truth class.
+            out = None
+            for label, volume in enumerate(volumes):
+                if not np.any(labels == label):
+                    continue
+                part = np.asarray(
+                    slice_volume(volume, jnp.asarray(matrices), config.image_shape, config.volume_shape, "cubic")
+                )
+                out = part if out is None else np.where((labels == label)[:, None], part, out)
+            return jnp.asarray(out)
+
+        slices = project(rotations)
         clean = np.asarray(ftu.get_idft2((jnp.asarray(plain) * slices).reshape(-1, size, size)).real)
         if magnification is None:
             new_slices = slices
         else:
             magnified = projection_rotations(rotations, 1.0, relax_projection_magnification(magnification))
-            new_slices = slice_volume(
-                volume, jnp.asarray(magnified, dtype=rotations.dtype), config.image_shape, config.volume_shape, "cubic"
-            )
+            new_slices = project(np.asarray(magnified, dtype=rotations.dtype))
         delta = np.asarray(
             ftu.get_idft2((jnp.asarray(even) * new_slices - jnp.asarray(plain) * slices).reshape(-1, size, size)).real
         )
@@ -341,9 +371,9 @@ def main(argv=None) -> int:
         optics["rlnCtfDataAreCtfPremultiplied"] = 1
         starfile.write({"optics": optics, "particles": particles}, out / "particles.star", overwrite=True)
 
-    for name in COPIED_MAPS:
-        if (base / name).is_file():
-            shutil.copy2(base / name, out / name)
+    for pattern in COPIED_MAPS:
+        for path in sorted(base.glob(pattern)):
+            shutil.copy2(path, out / path.name)
     for name in ("reference_init_classes_relion.star",):
         if (base / name).is_file():
             text = (base / name).read_text().replace(str(base), str(out))
