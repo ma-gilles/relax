@@ -2472,6 +2472,7 @@ def refine_single_volume(
         # order; it makes the two callable independently, which is what the
         # overlap option uses. Serial dispatch stays the default.
         Ft_y_0 = Ft_ctf_0 = Ft_y_1 = Ft_ctf_1 = None
+        local_sampling = None
         if use_local:
             local_parent_oversampling_order = (
                 int(state.adaptive_oversampling) if state.adaptive_oversampling > 0 else 0
@@ -2496,6 +2497,61 @@ def refine_single_volume(
                 local_adaptive_full_parent = False
                 local_adaptive_rotation_only = False
                 local_adaptive_denominator_mode = None
+
+            # Sampling is fixed for the iteration and shared by both halves.
+            local_sampling = LocalSamplingSpec(
+                local_search_rotations=local_search_rotations,
+                local_search_mstep_rotations=local_search_mstep_rotations,
+                local_search_order=local_search_order,
+                sigma_rot=sigma_rot,
+                sigma_psi=sigma_psi,
+                current_translations=current_translations,
+                base_translations=base_translations,
+                disc_type=options.disc_type,
+                cs_for_engine=cs_for_engine,
+                model_current_size_for_engine=model_current_size_for_engine,
+                local_pass1_current_size=local_pass1_current_size,
+                local_search_random_perturbation=local_search_random_perturbation,
+                local_search_angular_sampling_deg=local_search_angular_sampling_deg,
+                local_parent_oversampling_order=local_parent_oversampling_order,
+                symmetry=symmetry,
+            )
+
+        dense_sampling = dense_variant = None
+        if not use_local and not tomo_halves:
+            dense_sampling = DenseSamplingSpec(
+                effective_rotations=(
+                    adaptive_pass1_rotations
+                    if use_adaptive and adaptive_pass1_rotations is not None
+                    else effective_rotations
+                ),
+                current_translations=current_translations,
+                base_translations=base_translations,
+                current_healpix_order=current_healpix_order,
+                state=state,
+                coarse_engine=adaptive.coarse_engine,
+                random_perturbation=random_perturbation,
+                disc_type=options.disc_type,
+                cs_for_engine=cs_for_engine,
+                model_current_size_for_engine=model_current_size_for_engine,
+                coarse_rotation_ids=coarse_rotation_ids_for_scoring,
+                coarse_scoring_rotations=(
+                    adaptive_pass1_rotations
+                    if int(state.adaptive_oversampling) == 0
+                    else None
+                ),
+                symmetry=symmetry,
+            )
+            dense_variant = DenseVariantPolicy(
+                firstiter_score_mode_this_iter=firstiter_score_mode_this_iter,
+                firstiter_winner_take_all_this_iter=firstiter_winner_take_all_this_iter,
+                k_class_enabled=k_class_enabled,
+                relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+                firstiter_coarse_current_size=coarse_cs if use_adaptive else None,
+                firstiter_fine_current_size=cs_for_engine if use_adaptive else None,
+                firstiter_log_label="" if use_adaptive else "(non-adaptive site) ",
+                firstiter_updates_em_kwargs_ibs=bool(use_adaptive),
+            )
 
         def _run_half_estep(k):
             nonlocal Ft_y_0, Ft_ctf_0, Ft_y_1, Ft_ctf_1
@@ -2925,23 +2981,7 @@ def refine_single_volume(
                         scale_correction_data_vs_prior=(scale_correction_data_vs_prior_this_iter),
                         optics_group_ids_k=local_optics_values.get("optics_group_ids_k"),
                     ),
-                    sampling=LocalSamplingSpec(
-                        local_search_rotations=local_search_rotations,
-                        local_search_mstep_rotations=local_search_mstep_rotations,
-                        local_search_order=local_search_order,
-                        sigma_rot=sigma_rot,
-                        sigma_psi=sigma_psi,
-                        current_translations=current_translations,
-                        base_translations=base_translations,
-                        disc_type=options.disc_type,
-                        cs_for_engine=cs_for_engine,
-                        model_current_size_for_engine=model_current_size_for_engine,
-                        local_pass1_current_size=local_pass1_current_size,
-                        local_search_random_perturbation=(local_search_random_perturbation),
-                        local_search_angular_sampling_deg=(local_search_angular_sampling_deg),
-                        local_parent_oversampling_order=(local_parent_oversampling_order),
-                        symmetry=symmetry,
-                    ),
+                    sampling=local_sampling,
                     priors=LocalPriorSpec(
                         trans_prior_center=local_trans_prior_center,
                         trans_prior_center_for_engine=trans_prior_center_for_engine,
@@ -3013,11 +3053,6 @@ def refine_single_volume(
                     with_log_prior=not use_local,
                     zero_cold_center=not k_class_enabled,
                 )
-                dense_effective_rotations = (
-                    adaptive_pass1_rotations
-                    if use_adaptive and adaptive_pass1_rotations is not None
-                    else effective_rotations
-                )
                 dense_half = DenseHalfData(
                     k=k,
                     experiment_dataset=experiment_datasets[k],
@@ -3031,25 +3066,6 @@ def refine_single_volume(
                     group_count_k=follower_setup.scale_stats_group_count_per_half[k],
                     scale_correction_data_vs_prior=scale_correction_data_vs_prior_this_iter,
                     optics_group_ids_k=optics_values.get("optics_group_ids_k"),
-                )
-                dense_sampling = DenseSamplingSpec(
-                    effective_rotations=dense_effective_rotations,
-                    current_translations=current_translations,
-                    base_translations=base_translations,
-                    current_healpix_order=current_healpix_order,
-                    state=state,
-                    coarse_engine=adaptive.coarse_engine,
-                    random_perturbation=random_perturbation,
-                    disc_type=options.disc_type,
-                    cs_for_engine=cs_for_engine,
-                    model_current_size_for_engine=model_current_size_for_engine,
-                    coarse_rotation_ids=coarse_rotation_ids_for_scoring,
-                    coarse_scoring_rotations=(
-                        adaptive_pass1_rotations
-                        if int(state.adaptive_oversampling) == 0
-                        else None
-                    ),
-                    symmetry=symmetry,
                 )
                 dense_priors = DensePriorSpec(
                     rotation_log_prior_k=rotation_log_prior_k,
@@ -3076,16 +3092,6 @@ def refine_single_volume(
                     significance_rotation_block_size_override=(
                         significance_rotation_block_size if use_adaptive else None
                     ),
-                )
-                dense_variant = DenseVariantPolicy(
-                    firstiter_score_mode_this_iter=firstiter_score_mode_this_iter,
-                    firstiter_winner_take_all_this_iter=firstiter_winner_take_all_this_iter,
-                    k_class_enabled=k_class_enabled,
-                    relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-                    firstiter_coarse_current_size=coarse_cs if use_adaptive else None,
-                    firstiter_fine_current_size=cs_for_engine if use_adaptive else None,
-                    firstiter_log_label="" if use_adaptive else "(non-adaptive site) ",
-                    firstiter_updates_em_kwargs_ibs=bool(use_adaptive),
                 )
                 dense_execution = DenseExecutionPolicy(
                     disable_adjoint_y=debug.disable_adjoint_y,

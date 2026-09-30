@@ -11443,6 +11443,7 @@ class TestRelionModeSmokeTest:
         scoring_priors = []
         scoring_rotations = []
         scoring_grids = []
+        scoring_sampling_ids = []
         monkeypatch.setattr(
             iteration_loop_module, "_relion_adaptive_pass1_rotations",
             lambda eulers, *args, **kwargs: sampling_module._relion_euler_angles_to_matrix(eulers).astype(np.float32),
@@ -11452,6 +11453,7 @@ class TestRelionModeSmokeTest:
         def record_scoring_prior(half, sampling, priors, batching, variant, execution, optics):
             scoring_priors.append(np.asarray(half.mean_variance))
             scoring_rotations.append(sampling.coarse_scoring_rotations)
+            scoring_sampling_ids.append(id(sampling))
             scoring_grids.append(
                 (sampling.effective_rotations, sampling.current_translations)
             )
@@ -11487,6 +11489,7 @@ class TestRelionModeSmokeTest:
 
         assert called["tau2"] >= 1
         assert len(scoring_priors) == 2
+        assert len(set(scoring_sampling_ids)) == 1
         for half, prior in enumerate(scoring_priors):
             with np.load(tmp_path / f"manifest_iter0_half{half}.npz") as manifest:
                 assert_matches(manifest["mean_variance"], prior)
