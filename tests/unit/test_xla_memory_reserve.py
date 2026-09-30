@@ -11,6 +11,7 @@ from pathlib import Path
 import mrcfile
 import numpy as np
 import pytest
+from conftest import repo_subprocess_env
 
 from relax.helpers import xla_memory_reserve as reserve
 
@@ -154,7 +155,9 @@ def test_refine_command_reserves_before_the_jax_backend_starts(tmp_path, launch)
         launcher = tmp_path / "launch_module.py"
         launcher.write_text(f"import sys\nsys.orig_argv = [sys.executable, '-m', 'relax.commands.refine']\n{report}\n")
         command = [sys.executable, str(launcher), "--data_dir", str(data_dir)]
-    env = {k: v for k, v in os.environ.items() if k != reserve.MEM_FRACTION_ENV}
+    # The launcher script's directory, not the repo root, heads the child's sys.path, so pin the import root:
+    # a shared environment's editable install can otherwise resolve ``relax`` to another checkout.
+    env = repo_subprocess_env({k: v for k, v in os.environ.items() if k != reserve.MEM_FRACTION_ENV})
     env.update(PATH=f"{fake_bin}:{env.get('PATH', '')}", CUDA_VISIBLE_DEVICES="0", JAX_PLATFORMS="cpu")
     result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=600)
     assert result.returncode == 0, result.stderr[-2000:]
