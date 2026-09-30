@@ -1764,3 +1764,72 @@ def test_projection_cache_allocation_refusal_streams_and_other_errors_raise(monk
     monkeypatch.setattr(rp.jnp, "zeros", broken)
     with pytest.raises(RuntimeError, match="INTERNAL"):
         rp._allocate_projection_cache(3, 5, np.complex64)
+
+
+def test_projection_cache_row_blocks_gather_the_one_array_rows(monkeypatch):
+    """Class3D K4 100k from iteration 19 (bench 14719385): a 6.32 GiB cache against a 5.25 GiB
+    largest block. A cache the allocator refuses whole is allocated in row blocks, built in
+    place across them, and gathered row for row as the one array."""
+
+    from relax.sparse_pass2.resident_scoring import cache_dtype, cache_rows
+
+    n_rows, n_pixels = 10, 4
+    real_allocate = rp._allocate_projection_cache
+    monkeypatch.setattr(
+        rp, "_allocate_projection_cache",
+        lambda rows, pixels, dtype: None if rows > 3 else real_allocate(rows, pixels, dtype),
+    )
+    blocks = rp._allocate_projection_cache_blocks(n_rows, n_pixels, np.complex64)
+    assert isinstance(blocks, tuple) and len(blocks) == 4 and all(b.shape == (3, n_pixels) for b in blocks)
+    rng = np.random.default_rng(5)
+    full = (rng.standard_normal((n_rows, n_pixels)) + 1j * rng.standard_normal((n_rows, n_pixels))).astype(np.complex64)
+
+    def project_rows(class_index, start, stop):
+        return jnp.asarray(full[class_index * 5 + start : class_index * 5 + stop])
+
+    built = rp.build_projection_cache_in_place(
+        project_rows, n_classes=2, n_rows_per_class=5, n_pixels=n_pixels, rows_per_call=2,
+        dtype=np.complex64, cache=blocks,
+    )
+    ids = np.array([0, 9, 3, 4, 7, 2, 2, 5], dtype=np.int32)
+    np.testing.assert_allclose(np.asarray(cache_rows(built, ids)), full[ids], rtol=0, atol=0)
+    assert cache_dtype(built) == np.complex64
+    whole = rp.build_projection_cache_in_place(
+        project_rows, n_classes=2, n_rows_per_class=5, n_pixels=n_pixels, rows_per_call=2, dtype=np.complex64,
+    )
+    np.testing.assert_allclose(np.asarray(cache_rows(whole, ids)), full[ids], rtol=0, atol=0)
+    monkeypatch.setattr(rp, "_allocate_projection_cache", lambda rows, pixels, dtype: None)
+    assert rp._allocate_projection_cache_blocks(n_rows, n_pixels, np.complex64) is None
+
+
+@requires_resident_gpu
+def test_row_blocked_projection_cache_matches_the_one_array_pass(_resident_production_env, monkeypatch):
+    """The global pass with its union cache in row blocks gives the one-array pass."""
+
+    args = _driver_fixture_args()
+    whole = rp.compute_pass2_stats_resident(**args)
+    real_allocate = rp._allocate_projection_cache
+    heights = []
+
+    def refuse_whole(rows, pixels, dtype):
+        heights.append(int(rows))
+        return None if len(heights) == 1 else real_allocate(rows, pixels, dtype)
+
+    monkeypatch.setattr(rp, "_allocate_projection_cache", refuse_whole)
+    blocked = rp.compute_pass2_stats_resident(**args)
+    assert len(heights) >= 3, "the pass must allocate its cache in row blocks"
+
+    assert_matches(whole.hard_assignment, blocked.hard_assignment)
+    assert_matches(whole.best_rotation_indices, blocked.best_rotation_indices)
+
+    def rel_l2(a, b):
+        a = np.asarray(a)
+        b = np.asarray(b)
+        den = float(np.linalg.norm(a))
+        return float(np.linalg.norm(a - b) / den) if den else 0.0
+
+    bound = _float32_atomic_order_bound(args)
+    assert rel_l2(whole.Ft_y, blocked.Ft_y) < bound
+    assert rel_l2(whole.Ft_ctf, blocked.Ft_ctf) < bound
+    for field in ("wsum_sigma2_noise", "wsum_norm_correction", "wsum_img_power"):
+        assert rel_l2(getattr(whole.noise_stats, field), getattr(blocked.noise_stats, field)) < bound, field

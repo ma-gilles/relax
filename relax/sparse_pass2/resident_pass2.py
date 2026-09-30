@@ -140,7 +140,12 @@ from relax.sparse_pass2.resident_operands import (
     resident_half_operand_presence,
     resident_operands_max_bytes,
 )
-from relax.sparse_pass2.resident_scoring import resident_row_projection_bytes, score_resident_chunk
+from relax.sparse_pass2.resident_scoring import (
+    cache_dtype,
+    cache_rows,
+    resident_row_projection_bytes,
+    score_resident_chunk,
+)
 from relax.sparse_pass2.resident_significance import (
     build_resident_candidate_tables_from_csr,
     csr_candidate_rows_per_image,
@@ -3161,17 +3166,25 @@ def _resident_pass2(
     # iteration time (bench 14719385).
     union_cache = None
     if not stream_projections and union_indices is not None:
-        union_cache = _allocate_projection_cache(
+        union_cache = _allocate_projection_cache_blocks(
             n_classes * int(n_fine_rot), int(union_indices.shape[0]), precision_policy.score_complex_dtype
         )
         if union_cache is None:
             logger.info(
                 "Resident pass-2 streams its projections: the allocator could not hand out the "
-                "%.2f GiB whole-grid cache as one block",
+                "%.2f GiB whole-grid cache in %d blocks or fewer",
                 cache_projection_bytes / float(1024**3),
+                _MAX_PROJECTION_CACHE_BLOCKS,
             )
             stream_projections = True
             operands_yield_to_cache = False
+        elif isinstance(union_cache, tuple):
+            logger.info(
+                "Resident pass-2 holds its %.2f GiB whole-grid cache as %d row blocks: the allocator "
+                "could not hand it out as one",
+                cache_projection_bytes / float(1024**3),
+                len(union_cache),
+            )
     stream_keeps_chunk_operands = tilt is None and (stream_projections or operands_yield_to_cache)
     if stream_projections:
         score_cache = recon_cache = recon_abs2_cache = None
@@ -3286,6 +3299,9 @@ def _resident_pass2(
     # budgets at current size 108 and its 19.8 GiB gather ran out of memory
     # (union 5008 vs score 3690 pixels, job 14592696).
     gathered_row_pixels = int(n_windowed) if union_indices is None else int(union_indices.shape[0])
+    # A row-blocked cache's gather holds the rows taken so far next to the next
+    # block's (resident_scoring.cache_rows): two row copies instead of one.
+    gathered_row_copies = 2 if isinstance(score_cache, tuple) else 1
     row_ladder = parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER)
     if stream_projections:
         row_ladder = _stream_row_capacity_ladder(
@@ -3307,7 +3323,9 @@ def _resident_pass2(
         )
         row_ladder = _cached_row_capacity_ladder(
             row_ladder,
-            bytes_per_row=gathered_row_pixels * np.dtype(precision_policy.score_complex_dtype).itemsize,
+            bytes_per_row=gathered_row_copies
+            * gathered_row_pixels
+            * np.dtype(precision_policy.score_complex_dtype).itemsize,
             max_gather_bytes=gather_budget_bytes,
         )
         logger.info(
@@ -3328,7 +3346,7 @@ def _resident_pass2(
     # each of its rows is projected once per image slot; the M-step's translated tiles are sized per
     # chunk in translation blocks (resident_tilts.run_tilt_chunk, mstep_translation_blocks).
     plan_translations = n_fine_trans if tilt is None else int(tilt.slot_capacity)
-    row_projection_factor = 1 if tilt is None else int(tilt.slot_capacity)
+    row_projection_factor = (1 if tilt is None else int(tilt.slot_capacity)) * gathered_row_copies
     if tilt is not None:
         from relax.sparse_pass2.resident_tilts import tilt_capacity_ladders
 
@@ -3503,7 +3521,9 @@ def _resident_pass2(
         if not stream_projections:
             cached_slot_fine_rot = jnp.asarray(np.tile(np.arange(n_fine_rot, dtype=np.int32), n_classes))
     coarse_parent_grid = jnp.asarray(coarse_parent_np, dtype=jnp.int32)
-    projection_score_cache = None if score_cache is None else jnp.asarray(score_cache)
+    projection_score_cache = (
+        None if score_cache is None else score_cache if isinstance(score_cache, tuple) else jnp.asarray(score_cache)
+    )
     projection_recon_cache = None if recon_cache is None else jnp.asarray(recon_cache)
     projection_recon_abs2_cache = None if recon_abs2_cache is None else jnp.asarray(recon_abs2_cache)
     fine_translation_parent_device = jnp.asarray(fine_translation_parent, dtype=jnp.int32)
@@ -5860,6 +5880,38 @@ def _prepare_chunk_reconstruction_operands(
     }
 
 
+# The most row blocks a whole-grid cache is split into before the pass streams
+# its projections instead; each block adds one gather to every cached read.
+_MAX_PROJECTION_CACHE_BLOCKS = 4
+
+
+def _allocate_projection_cache_blocks(n_rows: int, n_pixels: int, dtype):
+    """The zero whole-grid cache: one array, else a tuple of 2 or 4 equal row blocks, else ``None``.
+
+    A fragmented pool can hold far more free memory than any one block
+    (Class3D K4 100k from iteration 19: a 6.32 GiB cache against a 5.25 GiB
+    largest block with 56 GiB free, bench 14719385), so a cache the allocator
+    refuses whole is tried in row blocks (:func:`~relax.sparse_pass2.resident_scoring.cache_rows`)
+    before the pass streams; ``None`` means even the blocks were refused
+    (EMPIAR-10345 it13 half 2, bench 14643272).
+    """
+
+    n_blocks = 1
+    while n_blocks <= _MAX_PROJECTION_CACHE_BLOCKS:
+        height = -(-int(n_rows) // n_blocks)
+        blocks = []
+        for _ in range(n_blocks):
+            block = _allocate_projection_cache(height, n_pixels, dtype)
+            if block is None:
+                break
+            blocks.append(block)
+        if len(blocks) == n_blocks:
+            return blocks[0] if n_blocks == 1 else tuple(blocks)
+        del blocks
+        n_blocks *= 2
+    return None
+
+
 def _allocate_projection_cache(n_rows: int, n_pixels: int, dtype):
     """A zero ``[n_rows, n_pixels]`` cache, or ``None`` when the allocator cannot hand it out.
 
@@ -5891,15 +5943,24 @@ def build_projection_cache_in_place(
 
     if cache is None:
         cache = jnp.zeros((int(n_classes) * int(n_rows_per_class), int(n_pixels)), dtype=dtype)
+    blocks = list(cache) if isinstance(cache, tuple) else [cache]
+    height = int(blocks[0].shape[0])
     for class_index in range(int(n_classes)):
         for start in range(0, int(n_rows_per_class), int(rows_per_call)):
             stop = min(start + int(rows_per_call), int(n_rows_per_class))
-            cache = _write_projection_cache_rows(
-                cache,
-                project_rows(class_index, start, stop),
-                np.int32(class_index * int(n_rows_per_class) + start),
-            )
-    return cache
+            rows = project_rows(class_index, start, stop)
+            row = class_index * int(n_rows_per_class) + start
+            # A call's rows go to the row blocks they fall in (one block when the cache is one array).
+            offset = 0
+            while offset < int(rows.shape[0]):
+                index, local = divmod(row + offset, height)
+                count = min(int(rows.shape[0]) - offset, height - local)
+                part = rows if count == int(rows.shape[0]) else rows[offset : offset + count]
+                blocks[index] = _write_projection_cache_rows(blocks[index], part, np.int32(local))
+                del part
+                offset += count
+            del rows
+    return blocks[0] if len(blocks) == 1 else tuple(blocks)
 
 
 @partial(jax.jit, donate_argnums=0)
@@ -6805,7 +6866,7 @@ def _cached_block_projections(tables: _ChunkStageTables, block_fine_rot):
         # The union cache: the reconstruction window is taken out of the
         # gathered rows and |recon|^2 is formed as the three-cache build formed
         # it (_place_windowed_projection_block).
-        recon = tables.projection_score_cache[block_fine_rot][:, tables.union_recon_take]
+        recon = cache_rows(tables.projection_score_cache, block_fine_rot)[:, tables.union_recon_take]
         recon_abs2 = (jnp.abs(recon) ** 2).astype(jnp.real(recon).dtype)
         return recon, recon_abs2, tables.mstep_grid[block_fine_rot]
     return (
@@ -7038,8 +7099,8 @@ def _mstep_block_operand_dtypes(
         # cache and hands the dtypes of the projections it just computed.
         projection_dtypes = (
             (
-                tables.projection_score_cache.dtype,
-                jnp.real(jnp.zeros((), dtype=tables.projection_score_cache.dtype)).dtype,
+                cache_dtype(tables.projection_score_cache),
+                jnp.real(jnp.zeros((), dtype=cache_dtype(tables.projection_score_cache))).dtype,
             )
             if tables.union_recon_take is not None
             else (

@@ -520,6 +520,34 @@ def _gather_chunk_image_operands(
     return chunk_image, chunk_corr, chunk_translation_prior, chunk_initial_diff2
 
 
+def cache_rows(cache, row_ids):
+    """Rows ``row_ids`` of a projection cache: one array, or a tuple of equal-height row blocks.
+
+    A whole-grid cache the allocator cannot hand out as one block is held as
+    row blocks (:func:`relax.sparse_pass2.resident_pass2._allocate_projection_cache_blocks`);
+    each block is gathered at the row's in-block position and the row's own
+    block is selected, so the rows are the one-array gather's.
+    """
+
+    row_ids = jnp.asarray(row_ids, dtype=jnp.int32)
+    if not isinstance(cache, tuple):
+        return jnp.asarray(cache)[row_ids]
+    block_height = int(cache[0].shape[0])
+    block = row_ids // jnp.int32(block_height)
+    local = row_ids - block * jnp.int32(block_height)
+    rows = cache[0][jnp.clip(local, 0, block_height - 1)]
+    for index, part in enumerate(cache[1:], start=1):
+        taken = part[jnp.clip(local, 0, int(part.shape[0]) - 1)]
+        rows = jnp.where((block == index)[:, None], taken, rows)
+    return rows
+
+
+def cache_dtype(cache):
+    """The element dtype of a projection cache (:func:`cache_rows`)."""
+
+    return (cache[0] if isinstance(cache, tuple) else cache).dtype
+
+
 def cached_score_reference(projection_score_cache, row_fine_rot, *, score_take=None, native_fft_size: int = 0):
     """Rows' score projections gathered out of a projection cache, in the score window's units.
 
@@ -528,7 +556,7 @@ def cached_score_reference(projection_score_cache, row_fine_rot, *, score_take=N
     division that the three-cache build applied to its score cache.
     """
 
-    reference = jnp.asarray(projection_score_cache, dtype=jnp.complex64)[jnp.asarray(row_fine_rot, dtype=jnp.int32)]
+    reference = cache_rows(projection_score_cache, row_fine_rot).astype(jnp.complex64)
     if score_take is not None:
         reference = reference[:, jnp.asarray(score_take, dtype=jnp.int32)]
         if native_fft_size:
