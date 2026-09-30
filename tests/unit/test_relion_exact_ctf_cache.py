@@ -137,7 +137,7 @@ def test_exact_ctf_takes_relion_defaults_for_absent_ctf_columns(monkeypatch, tmp
         SimpleNamespace(particles_file=str(star)), np.asarray([0, 1], dtype=np.int64), (4, 4)
     )
 
-    # relion_ctf_fftw_half rows: defU, defV, defAng, voltage, Cs, Q0, scale, phase shift.
-    assert len(calls) == 1 and calls[0].shape == (2, 8)
+    # relion_ctf_fftw_half rows: defU, defV, defAng, voltage, Cs, Q0, Bfac, scale, phase shift.
+    assert len(calls) == 1 and calls[0].shape == (2, 9)
     for row in calls[0]:
-        assert (row[3], row[4], row[5], row[6], row[7]) == (300.0, 2.7, 0.1, 0.75, 0.0)
+        assert tuple(row[3:]) == (300.0, 2.7, 0.1, 0.0, 0.75, 0.0)

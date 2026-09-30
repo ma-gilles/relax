@@ -632,8 +632,18 @@ def refuse_unsupported_optics(optics_table, *, source) -> None:
     column = values("rlnCtfDataAreCtfPremultiplied")
     if column is not None and np.any(np.asarray(column, dtype=np.float64) != 0.0):
         found.append("rlnCtfDataAreCtfPremultiplied")
+    # Refused for good (not implemented): phase-flipped / CTF-corrected images change how
+    # RELION reads the data, and several different detector MTFs make RELION rescale each
+    # image by average MTF / its MTF (ObservationModel::divideByMtf; one MTF is a no-op).
+    column = values("rlnCtfDataAreCtfCorrected")
+    if column is not None and np.any(np.asarray(column, dtype=np.float64) != 0.0):
+        found.append("rlnCtfDataAreCtfCorrected")
+    column = values("rlnMtfFileName")
+    if column is not None and len({str(name) for name in column}) > 1:
+        found.append("rlnMtfFileName (several different MTFs)")
     if found:
         raise NotImplementedError(
             f"{source}: optics table uses {', '.join(found)}; beam tilt, Zernike aberrations, "
-            "anisotropic magnification and CTF-premultiplied images are not supported by relax yet"
+            "anisotropic magnification and CTF-premultiplied images are not supported by relax yet, "
+            "and CTF-corrected images and per-group detector MTFs are not implemented"
         )

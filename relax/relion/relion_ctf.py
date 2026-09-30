@@ -246,7 +246,7 @@ _CTF_ROW_CHUNK = 64
 def _relion_ctf_rows(params, size: int, extent: float, gamma_offset, mag):
     """The body of :func:`relion_ctf_fftw_half` for one chunk of rows, flattened ``(n, size * (size // 2 + 1))``."""
 
-    du, dv, angle, voltage, cs, q0, scale, phase = (params[:, i, None] for i in range(8))
+    du, dv, angle, voltage, cs, q0, bfactor, scale, phase = (params[:, i, None] for i in range(9))
     # CTF::initialise (ctf.cpp:211-262).
     volts = voltage * 1e3
     lam = 12.2643247 / np.sqrt(volts * (1.0 + volts * 0.978466e-6))
@@ -274,7 +274,10 @@ def _relion_ctf_rows(params, size: int, extent: float, gamma_offset, mag):
     gamma = k1 * (axx * x * x + 2.0 * axy * x * y + ayy * y * y) + k2 * (u2 * u2) - k5 - k3
     if gamma_offset is not None:
         gamma = gamma + gamma_offset.reshape(1, -1)
-    ctf = -np.sin(gamma) * scale
+    # do_damping (relion_refine always damps): the B-factor envelope exp(K4 u2), K4 = -Bfac / 4,
+    # before the scale (ctf.h:219-246). A dose-weighted (tomo) image is damped by its dose
+    # instead (relion_tomo_damping) and passes Bfac 0, for which the envelope is exactly 1.
+    ctf = -np.sin(gamma) * np.exp(-bfactor / 4.0 * u2) * scale
     # |CTF| >= 1e-8 with SGN(0) = 1 (ctf.h:250-253, macros.h:143).
     return np.where(np.abs(ctf) < 1e-8, np.where(ctf >= 0, 1e-8, -1e-8), ctf)
 
@@ -284,9 +287,10 @@ def relion_ctf_fftw_half(params, image_size: int, pixel_size: float, *, gamma_of
 
     relax's own host implementation of the CTF relion_refine evaluates per particle
     (``setValuesByGroup`` + ``getFftwImage``, ml_optimiser.cpp:6461-6484) in RELION's
-    double precision, without CTF padding and without damping, as relax scores it.
-    ``params`` rows are defU, defV, defAng (degrees), voltage (kV), Cs (mm), Q0, scale,
-    phase shift (degrees). ``gamma_offset`` (the group's even Zernike phase on this grid,
+    double precision, with its B-factor damping and without CTF padding.
+    ``params`` rows are defU, defV, defAng (degrees), voltage (kV), Cs (mm), Q0, the
+    particle's CTF B-factor (rlnCtfBfactor, A^2), scale (rlnCtfScalefactor), phase shift
+    (degrees). ``gamma_offset`` (the group's even Zernike phase on this grid,
     ``ObservationModel::getGammaOffset``) and ``mag_matrix`` (its 2x2 anisotropic
     magnification) are the optics-table terms. No RELION code runs here: the binding's
     ``get_ctf_images_batch`` / ``optics_ctf_images_batch`` are the test oracles
@@ -295,7 +299,7 @@ def relion_ctf_fftw_half(params, image_size: int, pixel_size: float, *, gamma_of
 
     from concurrent.futures import ThreadPoolExecutor
 
-    params = np.ascontiguousarray(params, dtype=np.float64).reshape(-1, 8)
+    params = np.ascontiguousarray(params, dtype=np.float64).reshape(-1, 9)
     size = int(image_size)
     extent = float(size) * float(pixel_size)
     offset = None if gamma_offset is None else np.asarray(gamma_offset, dtype=np.float64)
@@ -327,8 +331,10 @@ def _evaluate_exact_ctf_rows(cache, original_indices, image_h: int, image_w: int
         native = np.empty((n_new, image_h, image_w // 2 + 1), dtype=np.float64)
         for pixel in np.unique(params[:, 7]):
             rows = np.flatnonzero(params[:, 7] == pixel)
-            # defU, defV, defAng, voltage, Cs, Q0, scale, phase shift.
-            native[rows] = relion_ctf_fftw_half(params[rows][:, [0, 1, 2, 3, 4, 5, 9, 8]], image_h, float(pixel))
+            columns = params[rows][:, [0, 1, 2, 3, 4, 5, 6, 9, 8]]  # ..., Q0, Bfac, scale, phase shift
+            if cache.get("tomo", False):
+                columns[:, 6] = 0.0  # dose-weighted: damped by the dose below, as RELION does for dose >= 0
+            native[rows] = relion_ctf_fftw_half(columns, image_h, float(pixel))
         if cache.get("tomo", False):
             # A RELION tomo image (one row per particle-tilt): relion_refine damps its
             # CTF by the tilt's cumulative dose (tomo_input.relion_tomo_damping). RELION

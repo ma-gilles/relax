@@ -25,7 +25,7 @@ MAG = np.asarray([[1.012, 0.006], [-0.004, 0.991]])
 
 
 def _params(rng, n):
-    """defU, defV, defAng, voltage, Cs, Q0, scale, phase shift."""
+    """defU, defV, defAng, voltage, Cs, Q0, Bfac, scale, phase shift."""
 
     du = rng.uniform(5000.0, 35000.0, n)
     return np.stack(
@@ -36,6 +36,7 @@ def _params(rng, n):
             rng.choice([200.0, 300.0], n),
             rng.choice([0.01, 2.0, 2.7], n),
             rng.choice([0.07, 0.1], n),
+            rng.choice([0.0, 0.0, 60.0, 150.0], n),
             rng.uniform(0.8, 1.2, n),
             rng.choice([0.0, 0.0, 35.0], n),
         ],
@@ -52,14 +53,14 @@ def _relion_plain(params, box, pixel):
             params[:, 3],
             params[:, 4],
             params[:, 5],
-            np.zeros(len(params)),
-            np.full(len(params), pixel),
-            params[:, 7],
             params[:, 6],
+            np.full(len(params), pixel),
+            params[:, 8],
+            params[:, 7],
         ],
         axis=1,
     )
-    return np.asarray(relion_bind.get_ctf_images_batch(batch, box, box, False, False, False, 1))
+    return np.asarray(relion_bind.get_ctf_images_batch(batch, box, box, False, False, True, 1))
 
 
 @pytest.mark.unit
@@ -111,9 +112,9 @@ def test_optics_table_ctf_matches_relion_observation_model(tmp_path, even, mag):
     gamma = None if even is None else np.asarray(relion_bind.optics_gamma_offset(str(star), 1, box))
     relax = relion_ctf.relion_ctf_fftw_half(params, box, pixel, gamma_offset=gamma, mag_matrix=mag)
     by_group = np.stack(
-        [params[:, 0], params[:, 1], params[:, 2], np.zeros(6), params[:, 6], params[:, 7], np.ones(6)], axis=1
+        [params[:, 0], params[:, 1], params[:, 2], params[:, 6], params[:, 7], params[:, 8], np.ones(6)], axis=1
     )
-    relion = np.asarray(relion_bind.optics_ctf_images_batch(str(star), by_group, box, box, False, 1))
+    relion = np.asarray(relion_bind.optics_ctf_images_batch(str(star), by_group, box, box, True, 1))
     assert_matches(relax, relion, rtol=RTOL)
     if even is not None or mag is not None:
         assert np.abs(relax - relion_ctf.relion_ctf_fftw_half(params, box, pixel)).max() > 1e-3
@@ -128,13 +129,16 @@ def test_exact_ctf_rows_are_relions_in_recovar_frame(tmp_path, monkeypatch):
         "data_optics\n\nloop_\n_rlnOpticsGroup\n_rlnVoltage\n_rlnSphericalAberration\n_rlnAmplitudeContrast\n"
         f"_rlnImagePixelSize\n_rlnImageSize\n1 300 2.7 0.07 {pixel} {box}\n2 200 2.0 0.1 {pixel} {box}\n\n"
         "data_particles\n\nloop_\n_rlnImageName\n_rlnDefocusU\n_rlnDefocusV\n_rlnDefocusAngle\n_rlnPhaseShift\n"
-        "_rlnCtfScalefactor\n_rlnOpticsGroup\n"
-        "1@s.mrcs 21000 20000 30 0 1.0 1\n2@s.mrcs 15000 15800 110 20 0.9 2\n"
+        "_rlnCtfScalefactor\n_rlnCtfBfactor\n_rlnOpticsGroup\n"
+        "1@s.mrcs 21000 20000 30 0 1.0 0 1\n2@s.mrcs 15000 15800 110 20 0.9 80 2\n"
     )
     dataset = SimpleNamespace(particles_file=str(star))
     rows = relion_ctf._relion_exact_ctf_half_from_source_star_host(dataset, np.asarray([1, 0]), (box, box))
     params = np.asarray(
-        [[15000.0, 15800.0, 110.0, 200.0, 2.0, 0.1, 0.9, 20.0], [21000.0, 20000.0, 30.0, 300.0, 2.7, 0.07, 1.0, 0.0]]
+        [
+            [15000.0, 15800.0, 110.0, 200.0, 2.0, 0.1, 80.0, 0.9, 20.0],
+            [21000.0, 20000.0, 30.0, 300.0, 2.7, 0.07, 0.0, 1.0, 0.0],
+        ]
     )
     relion = _relion_plain(params, box, pixel)
     # RECOVAR's frame: centered rows, opposite sign (relion_ctf._evaluate_exact_ctf_rows).

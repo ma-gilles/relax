@@ -29,3 +29,14 @@ def test_unsupported_optics_features_are_refused_and_neutral_values_accepted():
     ):
         with pytest.raises(NotImplementedError, match=label.lstrip("_")):
             refuse_unsupported_optics(pd.DataFrame({**base, label: value}), source="bad.star")
+
+
+@pytest.mark.unit
+def test_ctf_corrected_images_and_several_mtfs_are_refused():
+    base = {"_rlnOpticsGroup": [1, 2]}
+    refuse_unsupported_optics(pd.DataFrame({**base, "_rlnCtfDataAreCtfCorrected": [0, 0]}), source="ok.star")
+    refuse_unsupported_optics(pd.DataFrame({**base, "_rlnMtfFileName": ["k3.star", "k3.star"]}), source="ok.star")
+    with pytest.raises(NotImplementedError, match="rlnCtfDataAreCtfCorrected"):
+        refuse_unsupported_optics(pd.DataFrame({**base, "_rlnCtfDataAreCtfCorrected": [0, 1]}), source="bad.star")
+    with pytest.raises(NotImplementedError, match="several different MTFs"):
+        refuse_unsupported_optics(pd.DataFrame({**base, "_rlnMtfFileName": ["k2.star", "k3.star"]}), source="bad.star")
