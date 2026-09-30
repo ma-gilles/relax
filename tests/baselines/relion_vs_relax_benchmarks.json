@@ -553,7 +553,7 @@
    }
   },
   {
-   "id": "empiar10202_k1_autorefine_i1_accuracy",
+   "id": "empiar10202_k1_autorefine_i1",
    "section": "real",
    "dataset": "EMPIAR-10202 set 6 (I1, box 800, 0.788 Å/px)",
    "label": "EMPIAR-10202",
@@ -567,88 +567,107 @@
    "relion_dependence": "standalone",
    "status": "current",
    "relion": {
-    "version": "stock RELION 5.0.1 (/projects/MOLBIO) relion_refine_mpi 3 ranks x 4 threads, --gpu 0:1 (2 H100); affected by relax issue #1 (MPI scale-sum bug, --scale with 176 groups)",
+    "version": "RELION 5.0.1 + MPI scale-sum patch (relax #1), relion_refine_mpi 3 ranks x 4 threads, --gpu on 2 H100s",
     "resolution_A": 2.512,
     "resolution_definition": "scorecard_band",
     "relion_reported_resolution_A": null,
-    "masked_resolution_A": 2.152,
-    "wall_s": 52831.0,
-    "wall_definition": "job wall of the RELION reference (WALL.json)",
+    "masked_resolution_A": 2.159,
+    "wall_s": 52520.0,
+    "wall_definition": "arm-script wall (WALL.json) of relion_refine_mpi in the pair job",
     "gpu_model": "H100 80GB",
     "gpu_count": 2,
     "iterations": 27,
     "jobs": [
-     "14475516"
+     "14640954"
     ],
-    "masked_band_auc": 0.9373,
+    "masked_band_auc": 0.9368,
     "masked_resolution_definition": "relion_postprocess_masked_frozen"
    },
    "relax": {
-    "source_sha": "da4f9c351cc4f9eb75ec5ff1295182f9e643303f",
-    "source_repo": "final all-data pass on bigbox's candidate da4f9c3 (the one-image overflow chunk fix before its rebase onto main as f47291c9, job 14621334); earlier iterations of the same trajectory on relax main 6f0b66f (it1-21, job 14480549) and cde59d1 (it22-26, job 14560923, continued from run_it021)",
+    "source_sha": "30a4a0fcae8519da13d3b58ff8ae62a8d6ae93b3",
+    "source_repo": "relax main 30a4a0f for iterations 1-26 (pair job 14640954); final all-data pass on bigbox's candidate 2c3a0f4 (2c3a0f42236714abe9d4056d39f83a8aef472050) as a separate cold job 14687663",
     "resolution_A": 2.443,
     "resolution_definition": "scorecard_band",
-    "masked_resolution_A": 2.108,
-    "wall_s": null,
-    "wall_definition": "none: the run was continued across three candidates",
+    "masked_resolution_A": 2.067,
+    "wall_s": 17524.0,
+    "wall_definition": "sum of the pair arm's wall to iteration 26 and the separate final-pass job's wall (both WALL.json, cold)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 26,
     "jobs": [
-     "14480549",
-     "14560923",
-     "14621334"
+     "14640954",
+     "14687663"
     ],
-    "masked_band_auc": 0.9548,
+    "masked_band_auc": 0.9546,
     "masked_resolution_definition": "relion_postprocess_masked_frozen"
    },
    "gt": null,
-   "cross_engine": "half-vs-half masked FSC-AUC (frozen mask): relax vs RELION same half 0.9664/0.9669, cross half 0.9443/0.9438; within relax 0.9550, within RELION 0.9375",
-   "cross_engine_masked_band_auc": 0.9438,
-   "time_ratio_relax_over_relion": null,
-   "matched": "no",
+   "cross_engine": "half-vs-half masked FSC-AUC (frozen mask): relax vs patched RELION same half 0.9664/0.9669, cross half 0.9441/0.9435; within relax 0.9548, within RELION 0.9371",
+   "cross_engine_masked_band_auc": 0.9435,
+   "time_ratio_relax_over_relion": 0.334,
+   "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
     "box": true,
     "particles": true,
     "schedule": true,
     "flags": true,
-    "timing_controlled": false
+    "timing_controlled": true
    },
    "notes": [
-    "Accuracy-only row (team-lead 2026-09-29): the first EMPIAR-10202 row. relax followed one trajectory across three mains (it1-21 6f0b66f, it22-26 cde59d1, final all-data pass on candidate da4f9c3), converging after iteration 26 at HEALPix 9 (RELION converged at iteration 27).",
-    "RELION reference: stock RELION 5.0.1 relion_refine_mpi (sha 92cf3ba5, /projects/MOLBIO), 3 ranks x 4 threads on 2 H100s, the original launcher's command and seed 10202 (em_fixtures/empiar10202_set6_relion_ref, README). Stock MPI RELION is affected by relax issue #1 (per-group scale sums are only carried for optics group 1 under MPI; this dataset runs --scale with 176 groups), so it is not the patched reference the other real-data rows use.",
-    "Patched RELION (MPI scale-sum fix, bigbox pair10202_20260928 RELION arm, 52,520 s on 2 H100s) scores the same as stock on this dataset: patched masked 2.159 Å / band AUC 0.9368 vs stock 2.152 Å / 0.9373 (bigbox pair10202_20260928/score_relion_only/masked/masked_fsc.json, job 14687703). So issue #1 does not explain relax's edge; the speed row will use patched RELION as the reference.",
-    "Scores (bigbox job 14621336): masked resolution relax 2.108 Å / RELION 2.152 Å (sustained 2.060 / 2.144); masked corrected band AUC 0.9548 / 0.9373; unmasked band AUC 0.8265 / 0.7926.",
-    "Half-vs-half masked band FSC-AUC: relax vs RELION same half 0.9664/0.9669, cross half 0.9443/0.9438, within relax 0.9550, within RELION 0.9375: relax agrees with RELION across halves as well as RELION's halves agree with each other.",
-    "Speed: the same-hardware pair against patched RELION (bigbox pair10202_20260928: relax 15466 s to iteration 26 plus the final pass of job 14687663 (14684083 ran out of GPU memory; fixed in 2c3a0f4), RELION 52520 s) makes this a speed row once scored."
+    "Same-hardware speed pair (bigbox pair10202_20260928, 2026-09-29): relax 17524 s (15466 s to iteration 26 on main 30a4a0f plus a 2058 s final all-data pass on 2c3a0f4 as a separate cold job) against patched RELION 52520 s on 2 H100s.",
+    "Scores against patched RELION (frozen mask empiar10202_set6_i1): masked resolution relax 2.067 Å / RELION 2.159 Å; masked corrected band AUC 0.9546 / 0.9368; unmasked band AUC 0.8262 / 0.7922; unmasked scorecard-band resolution 2.44 / 2.51 Å.",
+    "Earlier record (accuracy-only row before the speed pair): Accuracy-only row (team-lead 2026-09-29): the first EMPIAR-10202 row. relax followed one trajectory across three mains (it1-21 6f0b66f, it22-26 cde59d1, final all-data pass on candidate da4f9c3), converging after iteration 26 at HEALPix 9 (RELION converged at iteration 27).",
+    "Earlier record (accuracy-only row before the speed pair): RELION reference: stock RELION 5.0.1 relion_refine_mpi (sha 92cf3ba5, /projects/MOLBIO), 3 ranks x 4 threads on 2 H100s, the original launcher's command and seed 10202 (em_fixtures/empiar10202_set6_relion_ref, README). Stock MPI RELION is affected by relax issue #1 (per-group scale sums are only carried for optics group 1 under MPI; this dataset runs --scale with 176 groups), so it is not the patched reference the other real-data rows use.",
+    "Earlier record (accuracy-only row before the speed pair): Patched RELION (MPI scale-sum fix, bigbox pair10202_20260928 RELION arm, 52,520 s on 2 H100s) scores the same as stock on this dataset: patched masked 2.159 Å / band AUC 0.9368 vs stock 2.152 Å / 0.9373 (bigbox pair10202_20260928/score_relion_only/masked/masked_fsc.json, job 14687703). So issue #1 does not explain relax's edge; the speed row will use patched RELION as the reference.",
+    "Earlier record (accuracy-only row before the speed pair): Scores (bigbox job 14621336): masked resolution relax 2.108 Å / RELION 2.152 Å (sustained 2.060 / 2.144); masked corrected band AUC 0.9548 / 0.9373; unmasked band AUC 0.8265 / 0.7926.",
+    "Earlier record (accuracy-only row before the speed pair): Half-vs-half masked band FSC-AUC: relax vs RELION same half 0.9664/0.9669, cross half 0.9443/0.9438, within relax 0.9550, within RELION 0.9375: relax agrees with RELION across halves as well as RELION's halves agree with each other.",
+    "Earlier record (accuracy-only row before the speed pair): Speed: the same-hardware pair against patched RELION (bigbox pair10202_20260928: relax 15466 s to iteration 26 plus the final pass of job 14687663 (14684083 ran out of GPU memory; fixed in 2c3a0f4), RELION 52520 s) makes this a speed row once scored."
    ],
    "null_reasons": {
     "gt": "real data: no ground truth",
-    "relax.wall_s": "no end-to-end relax wall: the run was continued from run_it021 and run_it026 on newer candidates",
-    "time_ratio_relax_over_relion": "no end-to-end relax wall; the same-hardware speed pair (bigbox pair10202_20260928) replaces this row when scored",
     "relion.relion_reported_resolution_A": "not extracted from the RELION reference log; the table's values are the scorecard-band and frozen-mask values"
    },
    "evidence": {
     "run_roots": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/runs/final10202_it026_da4f9c3",
-     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar10202_set6_relion_ref/relion_full"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/pair10202_20260928/relax",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/pair10202_20260928/relax_final4",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/pair10202_20260928/relion"
     ],
-    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/cmp10202_final_vs_relion/masked/masked_fsc.json",
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/pair10202_20260928/score/masked/masked_fsc.json",
     "masked_fsc_json": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/cmp10202_final_vs_relion/masked/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/pair10202_20260928/score/masked/masked_fsc.json"
     ],
-    "cross_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/cmp10202_final_vs_relion/cross_final.json",
+    "cross_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/pair10202_20260928/score/cross_relax_vs_patched.json",
     "unmasked_json": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/e10202/relax_unmasked.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/e10202/relion_unmasked.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/e10202/pair_relax_unmasked.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/e10202/pair_relion_unmasked.json"
     ],
-    "handoff": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/HANDOFF.json",
     "relion_runs": [
-     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar10202_set6_relion_ref/relion_full"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/pair10202_20260928/relion"
     ],
     "scorer": "relax scripts/masked_fsc.py score + bigbox cross_final.py",
-    "relion_patched_score": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/pair10202_20260928/score_relion_only"
+    "earlier": {
+     "run_roots": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/runs/final10202_it026_da4f9c3",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar10202_set6_relion_ref/relion_full"
+     ],
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/cmp10202_final_vs_relion/masked/masked_fsc.json",
+     "masked_fsc_json": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/cmp10202_final_vs_relion/masked/masked_fsc.json"
+     ],
+     "cross_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/cmp10202_final_vs_relion/cross_final.json",
+     "unmasked_json": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/e10202/relax_unmasked.json",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/e10202/relion_unmasked.json"
+     ],
+     "handoff": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/HANDOFF.json",
+     "relion_runs": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar10202_set6_relion_ref/relion_full"
+     ],
+     "scorer": "relax scripts/masked_fsc.py score + bigbox cross_final.py",
+     "relion_patched_score": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bigbox_20260925/pair10202_20260928/score_relion_only"
+    }
    },
    "date": "2026-09-29",
    "mask": {
@@ -656,7 +675,22 @@
     "sha256": "dcc3fd17e7f728b3164416f695b257fef5fceeca7c2a4ba04ea6d82c9a933b17"
    },
    "quality_pass": true,
-   "quality_reason": "masked 2.108 vs RELION 2.152 Å; masked AUC 0.955 vs 0.937; cross-half 0.944 vs RELION's own 0.938"
+   "quality_reason": "masked 2.067 vs RELION 2.159 Å; masked AUC 0.955 vs 0.937; cross-half 0.944 vs RELION's own 0.937",
+   "time_check": {
+    "a": "RELION: 2 H100, relion_refine_mpi 3 ranks x 4 threads (patched build). relax: 1 H100. Pair job 14640954 on della-h19g2: both arms started together; relax's final all-data pass reran alone in job 14687663 on della-h19g2.",
+    "b": "relax production defaults on 30a4a0f (final pass on 2c3a0f4, which only fixes the final pass's memory plan); no diagnostic options.",
+    "c": "relax 15466 s to iteration 26 plus 2058 s final pass (the separate job restarts, loads the state and compiles cold, so the sum is conservative for relax); RELION end to end.",
+    "d": "H100 80GB HBM3 for every arm (GPU.csv); same node type."
+   },
+   "history": [
+    {
+     "date": "2026-09-29",
+     "note": "accuracy-only row against stock RELION 14475516",
+     "relax_masked_resolution_A": 2.108,
+     "relion_masked_resolution_A": 2.152,
+     "quality_pass": true
+    }
+   ]
   },
   {
    "id": "empiar10345_k1_autorefine_flipqual_cd26a5e",
