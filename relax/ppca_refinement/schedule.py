@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 
 import numpy as np
+import recovar.core.fourier_transform_utils as ftu
 
 
 @dataclass(frozen=True)
@@ -52,12 +53,24 @@ def _compute_pose_change_fraction(current_best, previous_best) -> float:
     return float(np.mean(current != previous))
 
 
-def loading_subspace_agreement(W_a, W_b, *, rtol: float = 1e-12) -> float:
-    """Return a sign/rotation-invariant loading-subspace agreement in [0, 1]."""
+def loading_subspace_agreement(W_a, W_b, *, volume_shape=None, rtol: float = 1e-12) -> float:
+    """Return a sign/rotation-invariant loading-subspace agreement in [0, 1].
+
+    Pass ``volume_shape`` when ``W_a``/``W_b`` are packed half-Fourier
+    volumes (leading component axis, flattened trailing frequency axis);
+    they are then expanded to the full spectrum before comparison. Omit it
+    for real-valued volumes (K-class/GT fixtures).
+    """
     if W_a is None or W_b is None:
         return float("nan")
-    A = np.asarray(W_a).reshape(np.asarray(W_a).shape[0], -1)
-    B = np.asarray(W_b).reshape(np.asarray(W_b).shape[0], -1)
+    A = np.asarray(W_a)
+    B = np.asarray(W_b)
+    if volume_shape is not None:
+        volume_shape = tuple(int(x) for x in volume_shape)
+        A = np.asarray(ftu.half_volume_to_full_volume(A, volume_shape))
+        B = np.asarray(ftu.half_volume_to_full_volume(B, volume_shape))
+    A = A.reshape(A.shape[0], -1)
+    B = B.reshape(B.shape[0], -1)
     if A.shape[0] != B.shape[0]:
         raise ValueError(f"loading banks must have same q, got {A.shape[0]} and {B.shape[0]}")
     q = A.shape[0]
@@ -68,7 +81,7 @@ def loading_subspace_agreement(W_a, W_b, *, rtol: float = 1e-12) -> float:
         norms = np.linalg.norm(X, axis=1)
         keep = norms > rtol
         if not np.any(keep):
-            return np.zeros((0, X.shape[1]), dtype=np.float64)
+            return np.zeros((0, X.shape[1]), dtype=X.dtype)
         Q, _ = np.linalg.qr(X[keep].T)
         return Q.T
 
@@ -78,7 +91,7 @@ def loading_subspace_agreement(W_a, W_b, *, rtol: float = 1e-12) -> float:
         return 1.0
     if Qa.shape[0] != Qb.shape[0]:
         return 0.0
-    singular_values = np.linalg.svd(Qa @ Qb.T, compute_uv=False)
+    singular_values = np.linalg.svd(Qa @ Qb.conj().T, compute_uv=False)
     if singular_values.size == 0:
         return 1.0
     return float(np.clip(np.min(singular_values), 0.0, 1.0))
