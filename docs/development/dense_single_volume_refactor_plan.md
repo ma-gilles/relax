@@ -292,6 +292,15 @@ pose/result assembly at the bottom of the local scorer. Keep it in place unless
 a small signature can preserve output-array identity, Euler fallback behavior,
 accumulator layout reporting and buffer lifetime.
 
+Best-pose publication now has a two-input boundary over the persistent half
+owner and the local engine result. It preserves the supplied-Euler and
+matrix-to-Euler fallback routes and publishes the same rotation and translation
+arrays when their dtype already matches. The final `HalfScoreResult` assembly
+remains visible in the scorer because it documents accumulator layout and
+reconstruction ownership. With the local scorer reduced to 422 lines, the next
+orchestration audit returns to `_run_half_estep`, separating only phases whose
+inputs are already stable across both halves.
+
 ### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring

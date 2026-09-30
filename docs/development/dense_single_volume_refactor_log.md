@@ -1090,3 +1090,17 @@ single-volume boundary has 17 parameters.
 - Production totals are 20,796 physical and 18,350 nonblank lines across 305
   functions. The exact-local one-shape scorer fell from 447 to 436 lines.
   Seven functions still have at least 10 parameters, unchanged.
+
+## 2026-09-30 — exact-local pose publication
+
+- Commit `da31bdd` extracted best-pose publication into
+  `_publish_local_best_poses`, which receives only the persistent half owner and
+  local engine result. The final score result remains assembled visibly in the
+  scorer; no result wrapper or call-only input container was added.
+- Focused tests preserve the supplied-Euler route, matrix-to-Euler fallback,
+  half-slot selection and rotation/translation array identity for matching
+  dtypes. Ruff, Python compilation and 51 local controller, result-contract,
+  optics and diagnostic cases passed.
+- Production totals are 20,799 physical and 18,350 nonblank lines across 306
+  functions. The exact-local one-shape scorer fell from 436 to 422 lines.
+  Seven functions still have at least 10 parameters, unchanged.
