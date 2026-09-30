@@ -7,8 +7,9 @@ asymmetric-unit pruning of ``removeSymmetryEquivalentPoints`` for the proper
 point groups, and ``getOrientations`` with its random perturbation.
 
 The arithmetic follows RELION's operation order (``DEG2RAD(d) = d * PI / 180``,
-``ACOSD``, ``Matrix2D`` products summed from zero over ``k``) so the angles agree
-with RELION's to libm rounding. ``relax.relion_bind`` is the unit-test oracle
+``ACOSD``, ``Matrix2D`` products summed from zero over ``k``), and ``acos`` and
+``atan2`` come from the C library (:mod:`relax.helpers.libm`), so the angles equal
+RELION's. ``relax.relion_bind`` is the unit-test oracle
 (``tests/unit/test_healpix_sampling_vs_relion_bind.py``); nothing here calls it.
 """
 
@@ -19,6 +20,7 @@ import math
 
 import numpy as np
 
+from relax.helpers import libm
 from relax.symmetry import canonicalize_rotational_symmetry, parse_rotational_symmetry, relion_symmetry_operators
 
 # macros.h PI and Healpix lsconstants.h pi/halfpi, as doubles.
@@ -165,7 +167,7 @@ def pixel_rot_tilt(order: int, pix):
 
     z, phi = pix_to_z_phi(order, pix)
     rot = _rad2deg(phi)
-    tilt = np.arccos(z) * 180.0 / _PI
+    tilt = libm.acos(z) * 180.0 / _PI
     # checkDirection: acos keeps tilt >= 0 and phi >= 0 keeps rot >= 0.
     rot = np.where(rot > 180.0, rot - 360.0, rot)
     return rot, tilt
@@ -222,16 +224,16 @@ def euler_matrix_to_angles(matrices) -> np.ndarray:
     a = np.asarray(matrices, dtype=np.float64).reshape(-1, 3, 3)
     abs_sb = np.sqrt(a[:, 0, 2] * a[:, 0, 2] + a[:, 1, 2] * a[:, 1, 2])
     regular = abs_sb > 16 * _FLT_EPSILON
-    gamma = np.arctan2(a[:, 1, 2], -a[:, 0, 2])
-    alpha = np.arctan2(a[:, 2, 1], a[:, 2, 0])
+    gamma = libm.atan2(a[:, 1, 2], -a[:, 0, 2])
+    alpha = libm.atan2(a[:, 2, 1], a[:, 2, 0])
     sin_gamma = np.sin(gamma)
     with np.errstate(divide="ignore", invalid="ignore"):
         sign_small = np.where(-a[:, 0, 2] / np.cos(gamma) >= 0, 1.0, -1.0)
     sgn_12 = np.where(a[:, 1, 2] >= 0, 1.0, -1.0)
     sign_sb = np.where(np.abs(sin_gamma) < _FLT_EPSILON, sign_small, np.where(sin_gamma > 0, sgn_12, -sgn_12))
-    beta = np.arctan2(sign_sb * abs_sb, a[:, 2, 2])
+    beta = libm.atan2(sign_sb * abs_sb, a[:, 2, 2])
     upright = a[:, 2, 2] >= 0
-    singular_gamma = np.where(upright, np.arctan2(-a[:, 1, 0], a[:, 0, 0]), np.arctan2(a[:, 1, 0], -a[:, 0, 0]))
+    singular_gamma = np.where(upright, libm.atan2(-a[:, 1, 0], a[:, 0, 0]), libm.atan2(a[:, 1, 0], -a[:, 0, 0]))
     alpha = np.where(regular, alpha, 0.0)
     beta = np.where(regular, beta, np.where(upright, 0.0, _PI))
     gamma = np.where(regular, gamma, singular_gamma)
