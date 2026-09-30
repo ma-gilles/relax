@@ -325,9 +325,19 @@ remain live across prior preparation and empty-half selection, and are consumed
 later by scoring. Empty halves still construct neither policy. This is the
 required lifecycle for retaining those containers; other local execution,
 diagnostic and optics objects remain call-site constructions and must be
-audited independently rather than justified by the batching change. The next
-controller step is the empty-half branch, but only if it can be split without a
-broad geometry/context input object or a change to allocation and capture order.
+audited independently rather than justified by the batching change.
+
+The empty-half numerical variant is now built by `score_outputs` from seven
+explicit dimensions and layout choices. Its returned `EmptyHalfResult` remains
+live while the controller publishes class summaries, common per-half outputs,
+accumulators and the parity capture; it is a produced result, not a request
+object assembled merely to shorten a call. The helper preserves the previous
+accumulator, assignment, posterior, statistic and pose allocation order. The
+controller retains selection of the x-half shape and every publication side
+effect. The next audit returns to the remaining local call-site-only execution,
+diagnostic and optics containers: either give each an honest planning-to-use
+lifecycle or replace it with a small explicit boundary, rather than only moving
+its constructor above the scorer call.
 
 ### 2. Half-scoring specifications and explicit variants
 

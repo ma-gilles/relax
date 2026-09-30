@@ -1230,3 +1230,26 @@ single-volume boundary has 17 parameters.
   exposes only the old one-argument `euler_angles_to_inverse_matrices`, while
   rebased main's source and test require its new left-matrix argument. No
   numerical comparison ran for that case.
+- The required smoke attempt at committed candidate `7739fcf` again stopped
+  before fixture verification or submission because this host cannot create
+  `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_test_tiers/smoke_7739fcf_20260930_140952`.
+  No GPU job ran, no job ID was issued and no receipt was produced.
+
+## 2026-09-30 — empty-half result ownership
+
+- Commit `f743b78` moved construction of the empty-half numerical variant from
+  `_run_half_estep` to `dense.score_outputs`. The factory has seven explicit
+  layout/dimension inputs and returns an `EmptyHalfResult` that stays live while
+  the controller publishes class summaries, common score state, accumulators
+  and parity data. It is not passed back as an opaque scorer input.
+- K-class no-accumulator, ordinary padded-accumulator and RELION x-half
+  accumulator variants remain explicit. The original accumulator, assignment,
+  class-posterior, statistic and pose allocation sequence is preserved; the
+  controller still owns x-half selection and all publication/capture effects.
+- Focused iteration behavior passed all 28 cases. The broader empty-half,
+  controller and K-class set passed all 117 cases. Ruff and diff checks passed,
+  and the CPU EM fast guard passed all 102 cases in 61.67 seconds.
+- Production totals are 20,736 physical and 18,276 nonblank lines across 306
+  functions. `_run_half_estep` is 601 lines and `refine_single_volume` is 5,429
+  lines. Argument-count statistics remain unchanged and did not select this
+  ownership boundary.
