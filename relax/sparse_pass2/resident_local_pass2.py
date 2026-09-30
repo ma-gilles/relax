@@ -72,7 +72,6 @@ import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
 from relax.helpers.adjoint import mstep_adjoint_max_r
-from relax.helpers.batch_fetch import fetch_indexed_batch
 from relax.helpers.env_flags import parse_env_capacity_ladder, parse_env_flag
 from relax.helpers.half_spectrum import (
     make_relion_noise_shell_indices_half,
@@ -1244,13 +1243,14 @@ def _prepare_chunk_score_operands(
     image_capacity = int(chunk.image_capacity)
     n_valid_images = int(chunk.n_valid_images)
     image_indices = np.asarray(image_indices)
-    batch_data, ctf_params, fetched_indices = fetch_indexed_batch(experiment_dataset, image_indices)
+    batch_images, padded_ctf_params, fetched_indices, padded_fetched_indices = rp.fetch_capacity_batch(
+        experiment_dataset, image_indices, image_capacity
+    )
     order = rp._reorder_permutation(fetched_indices, image_indices, image_capacity)
-    padded_fetched_indices = rp._pad_batch_to_capacity(np.asarray(fetched_indices), image_capacity)
     prepared = _prepare_bucket_io(
         experiment_dataset,
-        jnp.asarray(rp._pad_batch_to_capacity(batch_data, image_capacity)),
-        rp._pad_batch_to_capacity(ctf_params, image_capacity),
+        batch_images,
+        padded_ctf_params,
         padded_fetched_indices,
         return_direct_scoring_io=True,
         **bucket_io_kwargs,
