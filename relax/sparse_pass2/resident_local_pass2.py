@@ -1478,9 +1478,11 @@ def _run_resident_parent_probe(
             current_size=current_size,
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         )
+        # Host rotations: the coarse kernel's wrapped-row check reads each
+        # block's first rotation, which on a device array waits for the queue.
         score_proj, _, _, _ = project_resident_live_rows(
             mean,
-            jnp.asarray(host_chunk["rotations"], dtype=precision_policy.score_real_dtype),
+            np.asarray(host_chunk["rotations"], dtype=np.dtype(precision_policy.score_real_dtype)),
             image_shape,
             volume_shape,
             disc_type,
