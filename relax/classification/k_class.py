@@ -2402,6 +2402,8 @@ def run_dense_k_class_em_adaptive(
         probe_means, probe_class_log_priors = means_array, class_log_priors
         if image_seed_classes is not None:
             probe_means, probe_class_log_priors = significance_means, significance_log_priors
+            if coarse_probe_kwargs.get("relion_projector_half") is not None:
+                coarse_probe_kwargs["relion_projector_half"] = significance_projector_half
             class_rotation_prior = coarse_probe_kwargs.get("class_rotation_log_prior")
             if class_rotation_prior is not None and np.ndim(class_rotation_prior) == 2:
                 coarse_probe_kwargs["class_rotation_log_prior"] = seed_iteration_first_class(

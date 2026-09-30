@@ -211,12 +211,19 @@ def test_duplicated_class_of_tilt_particles_is_the_k1_pass(_resident_production_
         np.float32(doubled.class_reconstruction_posterior_sums),
         np.float32(np.full(2, 0.5 * float(single.noise_stats.sumw))),
     )
-    for field in ("wsum_sigma2_noise", "wsum_img_power", "wsum_norm_correction"):
+    # The SPA duplicated-class bounds (test_resident_k_class_pass2.test_duplicated_class_is_the_k1_pass): the Wavg
+    # residual cancels most of its magnitude, so its reduction order shows at 1e-4; the other sums at 1e-6
+    # (measured on 2aeae7f, job 14696158: at most 8.5e-8).
+    for field, bound in (
+        ("wsum_sigma2_noise", 1e-4),
+        ("wsum_img_power", 1e-6),
+        ("wsum_norm_correction", 1e-6),
+        ("wsum_scale_correction_xa", 1e-6),
+        ("wsum_scale_correction_aa", 1e-6),
+    ):
         measured = _rel_l2(getattr(single.noise_stats, field), getattr(doubled.noise_stats, field))
         print(f"duplicated tilt class {field} rel L2 {measured:.3e}")
-    for field in ("wsum_scale_correction_xa", "wsum_scale_correction_aa"):
-        measured = _rel_l2(getattr(single.noise_stats, field), getattr(doubled.noise_stats, field))
-        print(f"duplicated tilt class {field} rel L2 {measured:.3e}")
+        assert measured < bound, field
     assert abs(float(single.noise_stats.sumw) - float(doubled.noise_stats.sumw)) <= 1e-6 * float(
         single.noise_stats.sumw
     )
@@ -238,4 +245,7 @@ def _assert_noise_stats_match(want, got):
     ):
         measured = _rel_l2(getattr(want, field), getattr(got, field))
         print(f"{field} rel L2 {measured:.3e}")
+        # The resident driver's repeat band, as for K=1 (_assert_tilt_pass_matches_spa); measured at most
+        # 3.5e-9 on 2aeae7f (job 14696158).
+        assert measured < 1e-7, field
     assert abs(float(want.sumw) - float(got.sumw)) <= 1e-6 * abs(float(want.sumw))

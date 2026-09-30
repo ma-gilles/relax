@@ -41,6 +41,20 @@ def test_kclass_sigma_offset_is_shared_across_halves():
     assert result.current_sigma_offset_angstrom_per_half == pytest.approx([expected, expected])
 
 
+def test_subtomogram_kclass_sigma_offset_divides_by_three_dimensions():
+    """Class3D of subtomograms: one shared sigma2_offset = wsum / (3 sum_weight) (ml_optimiser.cpp:5222-5227)."""
+
+    result = update_c1_sigma_offset_from_posterior(
+        noise_stats_per_half=[_noise_stats(60.0, 2.0), None],
+        noise_stats_per_half_per_class=[None, None],
+        current_sigma_offset_angstrom_per_half=[10.0, 10.0],
+        n_classes=2,
+        state_fallback_offsets_angstrom=float("nan"),
+        offset_dims=3,
+    )
+    assert result.current_sigma_offset_angstrom_per_half == pytest.approx([np.sqrt(10.0), np.sqrt(10.0)])
+
+
 @pytest.mark.parametrize("missing_stats", [None, _noise_stats(0.0, 0.0)])
 def test_missing_half_uses_hard_assignment_fallback_independently(missing_stats):
     result = update_c1_sigma_offset_from_posterior(

@@ -94,14 +94,13 @@ def update_c1_sigma_offset_from_posterior(
     if len(per_half_values) != 2:
         raise ValueError(f"noise_stats_per_half must contain two halves, got {len(per_half_values)}")
     per_half_sigma_offset = np.asarray(per_half_values, dtype=np.float64)
-    if n_classes > 1 and offset_dims != 2:
-        raise NotImplementedError("Class3D sigma offsets are two-dimensional")
     if n_classes > 1:
         shared_sigma_offset = _sigma_offset_from_moment(
             pooled_wsum,
             pooled_sumw,
             current_sigma_offset_angstrom=float(np.mean(current_per_half)),
             state_fallback_offsets_angstrom=state_fallback_offsets_angstrom,
+            offset_dims=offset_dims,
         )
         per_half_sigma_offset[:] = shared_sigma_offset
     current_sigma_offset_angstrom = float(np.mean(per_half_sigma_offset))
@@ -125,7 +124,7 @@ def update_c1_sigma_offset_from_posterior(
         per_class_sigma_offset = np.full(n_classes, current_sigma_offset_angstrom, dtype=np.float64)
         for c in range(n_classes):
             if per_class_w[c] > 0.0 and per_class_n[c] > 0.0:
-                s2 = max(per_class_w[c] / (2.0 * per_class_n[c]), min_sigma2)
+                s2 = max(per_class_w[c] / (float(offset_dims) * per_class_n[c]), min_sigma2)
                 per_class_sigma_offset[c] = float(np.sqrt(s2))
         logger.info(
             "C1: per-class sigma_offset = [%s] (cross-class aggregate %.3f Å)",
