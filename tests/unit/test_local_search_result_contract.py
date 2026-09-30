@@ -6,8 +6,9 @@ import numpy as np
 import pytest
 from helpers.refinement_specs import local_iteration_owners
 
+from relax.dense.score_outputs import PerHalfOutputs
 from relax.helpers.types import LocalEMResult
-from relax.refinement import local_search_iteration
+from relax.refinement import half_scoring, local_search_iteration
 
 pytestmark = pytest.mark.unit
 
@@ -59,3 +60,36 @@ def test_local_sample_capture_preserves_profile_visibility(monkeypatch, return_p
     else:
         assert result.profile_summary is None
     assert set(profile) == {"reconstruction_sample_indices_by_image"}
+
+
+@pytest.mark.parametrize("supplied_eulers", [False, True])
+def test_local_best_pose_publication_preserves_euler_route(monkeypatch, supplied_eulers):
+    rotations = np.eye(3, dtype=np.float32)[None]
+    translations = np.array([[1.0, -2.0]], dtype=np.float32)
+    eulers = np.array([[3.0, 4.0, 5.0]], dtype=np.float64) if supplied_eulers else None
+    fallback_eulers = np.array([[6.0, 7.0, 8.0]], dtype=np.float32)
+    fallback_calls = []
+
+    def fake_to_relion(value, *, degrees):
+        fallback_calls.append((value, degrees))
+        return fallback_eulers
+
+    monkeypatch.setattr(half_scoring.utils, "R_to_relion", fake_to_relion)
+    outputs = PerHalfOutputs()
+    half_scoring._publish_local_best_poses(
+        SimpleNamespace(k=1, outputs=outputs),
+        SimpleNamespace(
+            best_pose_rotations=rotations,
+            best_pose_eulers_deg=eulers,
+            best_pose_translations=translations,
+        ),
+    )
+
+    assert outputs.best_pose_rotations[1] is rotations
+    assert outputs.best_pose_translations[1] is translations
+    if supplied_eulers:
+        assert outputs.best_pose_rotation_eulers[1] is eulers
+        assert fallback_calls == []
+    else:
+        np.testing.assert_array_equal(outputs.best_pose_rotation_eulers[1], fallback_eulers)
+        assert fallback_calls == [(rotations, True)]

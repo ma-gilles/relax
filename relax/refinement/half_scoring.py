@@ -1667,6 +1667,23 @@ def _local_owners_for_shape(
     )
 
 
+def _publish_local_best_poses(half: LocalHalfData, local_outputs) -> None:
+    """Publish one local engine result's best poses to its persistent half outputs."""
+
+    pose_dtype = _dense_global_scoring_dtype()
+    best_rotations = np.asarray(local_outputs.best_pose_rotations, dtype=pose_dtype)
+    half.outputs.best_pose_rotations[half.k] = best_rotations
+    half.outputs.best_pose_rotation_eulers[half.k] = (
+        np.asarray(local_outputs.best_pose_eulers_deg, dtype=np.float64)
+        if local_outputs.best_pose_eulers_deg is not None
+        else utils.R_to_relion(best_rotations, degrees=True).astype(pose_dtype)
+    )
+    half.outputs.best_pose_translations[half.k] = np.asarray(
+        local_outputs.best_pose_translations,
+        dtype=pose_dtype,
+    )
+
+
 def _score_half_local(
     half: LocalHalfData,
     sampling: LocalSamplingSpec,
@@ -2109,33 +2126,19 @@ def _score_half_local_one_shape(
         ),
         local_diagnostics,
     )
-    Ft_y_k = local_outputs.Ft_y
-    Ft_ctf_k = local_outputs.Ft_ctf
-    ha_k = local_outputs.hard_assignment
-    best_rots_k = local_outputs.best_pose_rotations
-    best_trans_k = local_outputs.best_pose_translations
-    em_stats_k = local_outputs.relion_stats
-    noise_stats_k = local_outputs.noise_stats
     record_local_search_profile(
         local_outputs,
         diagnostics,
         half_index=half.k,
         parent_mode=local_adaptive_pass2_parent_mode,
     )
-    pose_dtype = _dense_global_scoring_dtype()
-    half.outputs.best_pose_rotations[half.k] = np.asarray(best_rots_k, dtype=pose_dtype)
-    half.outputs.best_pose_rotation_eulers[half.k] = (
-        np.asarray(local_outputs.best_pose_eulers_deg, dtype=np.float64)
-        if local_outputs.best_pose_eulers_deg is not None
-        else utils.R_to_relion(np.asarray(best_rots_k), degrees=True).astype(pose_dtype)
-    )
-    half.outputs.best_pose_translations[half.k] = np.asarray(best_trans_k, dtype=pose_dtype)
+    _publish_local_best_poses(half, local_outputs)
     return HalfScoreResult(
-        ha=ha_k,
-        Ft_y=Ft_y_k,
-        Ft_ctf=Ft_ctf_k,
-        em_stats=em_stats_k,
-        noise_stats=noise_stats_k,
+        ha=local_outputs.hard_assignment,
+        Ft_y=local_outputs.Ft_y,
+        Ft_ctf=local_outputs.Ft_ctf,
+        em_stats=local_outputs.relion_stats,
+        noise_stats=local_outputs.noise_stats,
         best_pose_rotations=half.outputs.best_pose_rotations[half.k],
         best_pose_rotation_eulers=half.outputs.best_pose_rotation_eulers[half.k],
         best_pose_translations=half.outputs.best_pose_translations[half.k],
