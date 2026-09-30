@@ -1745,31 +1745,22 @@ def test_lone_overflow_chunks_match_the_whole_chunk_pass(_resident_production_en
     assert all(value < bound for value in diffs.values()), diffs
 
 
-def test_largest_allocation_is_the_free_block_or_the_pool_growth(monkeypatch):
-    """bench 14643272 (EMPIAR-10345 it13 half 2): over 40 GiB free in total, but no block for
-    a 20.19 GiB cache. The largest single allocation is the largest free block or what the
-    pool can still grow by from physically free memory."""
+def test_projection_cache_allocation_refusal_streams_and_other_errors_raise(monkeypatch):
+    """The union cache is allocated before it is built: an allocator refusal returns None
+    (EMPIAR-10345 it13, bench 14643272), so the pass streams; any other error is raised."""
 
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    cache = rp._allocate_projection_cache(3, 5, np.complex64)
+    assert cache.shape == (3, 5) and cache.dtype == np.complex64
 
-    gib = 1024**3
+    def refuse(*a, **k):
+        raise RuntimeError("RESOURCE_EXHAUSTED: Out of memory while trying to allocate 20.19GiB.")
 
-    class Device:
-        platform = "gpu"
+    monkeypatch.setattr(rp.jnp, "zeros", refuse)
+    assert rp._allocate_projection_cache(3, 5, np.complex64) is None
 
-        def __init__(self, stats):
-            self._stats = stats
+    def broken(*a, **k):
+        raise RuntimeError("INTERNAL: something else")
 
-        def memory_stats(self):
-            return self._stats
-
-    stats = {"largest_free_block_bytes": 18 * gib, "bytes_limit": 60 * gib, "pool_bytes": 50 * gib}
-    monkeypatch.setattr(budget.jax, "devices", lambda: [Device(stats)])
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 13 * gib)
-    assert budget.jax_allocator_largest_allocation_bytes() == 18 * gib
-    stats["pool_bytes"] = 40 * gib
-    assert budget.jax_allocator_largest_allocation_bytes() == 18 * gib  # growth capped by 13 GiB free
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 30 * gib)
-    assert budget.jax_allocator_largest_allocation_bytes() == 20 * gib
-    del stats["largest_free_block_bytes"]
-    assert budget.jax_allocator_largest_allocation_bytes() is None
+    monkeypatch.setattr(rp.jnp, "zeros", broken)
+    with pytest.raises(RuntimeError, match="INTERNAL"):
+        rp._allocate_projection_cache(3, 5, np.complex64)

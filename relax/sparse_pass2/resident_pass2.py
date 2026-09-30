@@ -175,7 +175,6 @@ from relax.sparse_pass2.sparse_pass2_budget import (
     _projection_cache_max_bytes_for_pass,
     _projection_cache_transient_bytes,
     device_available_bytes,
-    jax_allocator_largest_allocation_bytes,
 )
 from relax.sparse_pass2.sparse_pass2_policy import (
     _RELION_WAVG_ATOMIC_SCALE_AA_ENV,
@@ -3153,23 +3152,26 @@ def _resident_pass2(
             operands_yield_to_cache = True
             stream_projection_budget_bytes = unreserved_budget_bytes
         reserved_operand_bytes = 0
-    # The whole-grid cache is one array: it must also fit the largest block the
-    # allocator can hand out, which after an earlier half's cache can be far
-    # below the free total (EMPIAR-10345 it13 half 2, bench 14643272).
-    largest_allocation_bytes = jax_allocator_largest_allocation_bytes()
-    if (
-        not stream_projections
-        and largest_allocation_bytes is not None
-        and cache_projection_bytes > largest_allocation_bytes
-    ):
-        logger.info(
-            "Resident pass-2 streams its projections: the %.2f GiB whole-grid cache is larger than the "
-            "%.2f GiB the allocator can hand out as one block",
-            cache_projection_bytes / float(1024**3),
-            largest_allocation_bytes / float(1024**3),
+    # The union cache is one array. The free totals above do not promise one block
+    # that large (EMPIAR-10345 it13 half 2 could not allocate 20.19 GiB with over
+    # 40 GiB free, bench 14643272), so it is allocated now, and a pass whose
+    # allocator refuses it streams its projections instead. Deciding from the
+    # allocator's largest free block instead streamed Class3D K4 100k from
+    # iteration 19, a 5.50 GiB cache against a 5.25 GiB block, at 3.5x the
+    # iteration time (bench 14719385).
+    union_cache = None
+    if not stream_projections and union_indices is not None:
+        union_cache = _allocate_projection_cache(
+            n_classes * int(n_fine_rot), int(union_indices.shape[0]), precision_policy.score_complex_dtype
         )
-        stream_projections = True
-        operands_yield_to_cache = False
+        if union_cache is None:
+            logger.info(
+                "Resident pass-2 streams its projections: the allocator could not hand out the "
+                "%.2f GiB whole-grid cache as one block",
+                cache_projection_bytes / float(1024**3),
+            )
+            stream_projections = True
+            operands_yield_to_cache = False
     stream_keeps_chunk_operands = tilt is None and (stream_projections or operands_yield_to_cache)
     if stream_projections:
         score_cache = recon_cache = recon_abs2_cache = None
@@ -3232,7 +3234,9 @@ def _resident_pass2(
             n_pixels=int(union_indices.shape[0]),
             rows_per_call=rows_per_call,
             dtype=precision_policy.score_complex_dtype,
+            cache=union_cache,
         )
+        del union_cache
         recon_cache = recon_abs2_cache = None
         logger.info(
             "Resident pass-2 projection cache: cached %d fine rotations in %.2fs as one "
@@ -5856,17 +5860,37 @@ def _prepare_chunk_reconstruction_operands(
     }
 
 
-def build_projection_cache_in_place(project_rows, *, n_classes, n_rows_per_class, n_pixels, rows_per_call, dtype):
+def _allocate_projection_cache(n_rows: int, n_pixels: int, dtype):
+    """A zero ``[n_rows, n_pixels]`` cache, or ``None`` when the allocator cannot hand it out.
+
+    Only an out-of-memory refusal returns ``None``; any other error is raised.
+    """
+
+    try:
+        cache = jnp.zeros((int(n_rows), int(n_pixels)), dtype=dtype)
+        cache.block_until_ready()
+    except Exception as exc:  # noqa: BLE001 - JAX raises its runtime error for an allocation refusal
+        if "RESOURCE_EXHAUSTED" not in str(exc):
+            raise
+        return None
+    return cache
+
+
+def build_projection_cache_in_place(
+    project_rows, *, n_classes, n_rows_per_class, n_pixels, rows_per_call, dtype, cache=None
+):
     """A ``[n_classes * n_rows_per_class, n_pixels]`` cache, class-major, filled one projector call at a time.
 
     ``project_rows(class_index, start, stop)`` returns that class's rows
     ``[start, stop)``. Each call's rows are written into the one cache in place,
     so the cache is never held twice: concatenating the per-class caches (and
     the per-call chunks inside each) held it twice, 19 GiB past the plan at
-    VDAM pdb K=2 (main 46b4f64, iteration 96).
+    VDAM pdb K=2 (main 46b4f64, iteration 96). ``cache``, when given, is that
+    array already allocated (:func:`_allocate_projection_cache`).
     """
 
-    cache = jnp.zeros((int(n_classes) * int(n_rows_per_class), int(n_pixels)), dtype=dtype)
+    if cache is None:
+        cache = jnp.zeros((int(n_classes) * int(n_rows_per_class), int(n_pixels)), dtype=dtype)
     for class_index in range(int(n_classes)):
         for start in range(0, int(n_rows_per_class), int(rows_per_call)):
             stop = min(start + int(rows_per_call), int(n_rows_per_class))
