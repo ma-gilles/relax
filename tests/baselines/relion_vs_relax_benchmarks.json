@@ -3678,36 +3678,59 @@
     "relion": 0.354544,
     "relax": 0.354185,
     "relion_band": [
-     0.354544,
-     0.354544
+     0.354207,
+     0.360931
     ],
     "relion_band_runs": [
-     "bpd_relion_s29"
+     "bpd_relion_s29",
+     "bpd_relion_s29_r2",
+     "bpd_relion_s29_r3",
+     "bpd_relion_s41",
+     "bpd_relion_s53"
     ],
     "relax_per_seed": {
-     "29": 0.354185
+     "29": 0.354185,
+     "41": 0.360823,
+     "53": 0.360029
     },
     "relion_per_seed": {
-     "29": 0.354544
+     "29": 0.354544,
+     "41": 0.360931,
+     "53": 0.360164
     },
     "class_accuracy_relax_per_seed": {
-     "29": 0.80163
+     "29": 0.80163,
+     "41": 0.82558,
+     "53": 0.81014
     },
     "class_accuracy_relion_per_seed": {
-     "29": 0.80195
+     "29": 0.80195,
+     "41": 0.82601,
+     "53": 0.8097
     },
     "unmasked_relax_per_seed": {
-     "29": 0.349945
+     "29": 0.349945,
+     "41": 0.356762,
+     "53": 0.355958
     },
     "unmasked_relion_per_seed": {
-     "29": 0.350245
+     "29": 0.350245,
+     "41": 0.356903,
+     "53": 0.356108
     },
     "class_accuracy_relion_band": [
      0.80195,
-     0.80195
-    ]
+     0.82601
+    ],
+    "relion_fixed_seed_band": {
+     "29": [
+      0.354207,
+      0.354544,
+      3
+     ]
+    }
    },
-   "cross_engine": "same-seed masked relax-vs-RELION (double BP accumulation) FSC-AUC per GT class: seed 29 0.9713/0.9766/0.9140/0.9914",
+   "cross_engine": "same-seed masked relax-vs-RELION (double BP accumulation) FSC-AUC per GT class: seed 29 0.9713/0.9766/0.9140/0.9914; seed 41 0.9725/0.9747/0.9329/0.9921; seed 53 0.9696/0.9739/0.9176/0.9907",
    "cross_engine_masked_band_auc": null,
    "time_ratio_relax_over_relion": 0.47,
    "matched": "yes",
@@ -3721,7 +3744,9 @@
    },
    "notes": [
     "Re-judged 2026-09-30 against RELION 5.0.1 + MPI scale-sum patch + double-precision back-projection accumulation (non-MPI --j 12, one fresh run per seed, plus same-command repeats where listed): RELION's float32 atomic BP accumulation drops increments at low-Pmax iterations, so the float build is not the RELION method's reference for K>1. relax arms, walls and the speed ratio are unchanged (same-node pairs against the float build).",
-    "seed 29: masked mean GT FSC-AUC relax 0.354185 / RELION double-accumulation 0.354544 (float build 0.354357); class accuracy 0.80163 / 0.80195; masked relax-vs-RELION per GT class 0.9713/0.9766/0.9140/0.9914",
+    "seed 29: masked mean GT FSC-AUC relax 0.354185 / RELION double-accumulation 0.354544 (fixed-seed band of 3 runs 0.354207-0.354544) (float build 0.354357); class accuracy 0.80163 / 0.80195; masked relax-vs-RELION per GT class 0.9713/0.9766/0.9140/0.9914",
+    "seed 41: masked mean GT FSC-AUC relax 0.360823 / RELION double-accumulation 0.360931 (seed added 2026-09-30); class accuracy 0.82558 / 0.82601; masked relax-vs-RELION per GT class 0.9725/0.9747/0.9329/0.9921",
+    "seed 53: masked mean GT FSC-AUC relax 0.360029 / RELION double-accumulation 0.360164 (seed added 2026-09-30); class accuracy 0.81014 / 0.80970; masked relax-vs-RELION per GT class 0.9696/0.9739/0.9176/0.9907",
     "Before the 2026-09-30 re-judge: New-generation synthetic fixture synth_ribo_k4_100k256_snr05_20260927 (curated, README in the fixture): 100000 particles, box 256, 2.125 Å/px, noise_level 0.2, total B 40.0 Å² (README), seed 42.",
     "Before the 2026-09-30 re-judge: Standalone Class3D from the fixture's reference_init_classes_relion.star on both engines. RELION command: --i particles.star --ref reference_init_classes_relion.star --K 4 --tau2_fudge 4 --iter 25 --sym C1 --healpix_order 2 --offset_range 5 --offset_step 2 --particle_diameter 380 --ini_high 60 --firstiter_cc --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --pool 3 --dont_combine_weights_via_disc --random_seed 29; relax the same settings with production defaults on main 7d1af75.",
     "Before the 2026-09-30 re-judge: seed 29: masked mean GT FSC-AUC relax 0.354185 / RELION 0.354357 (unmasked 0.349945 / 0.350080); class accuracy 0.80163 / 0.80022; masked relax-vs-RELION per GT class 0.9620/0.9749/0.9054/0.9917; walls relax 3199 s / RELION 6816 s",
@@ -3738,7 +3763,7 @@
     "run_roots": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_c3d_k4_100k_7d1af75/s29"
     ],
-    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/SCORE_bpd_c3d_ribo_k4_100k.json",
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/SCORE_bpd_c3d_ribo_k4_100k_v2.json",
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py",
     "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/synth_ribo_k4_100k256_snr05_20260927",
     "score_json_float_reference": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/SCORE_ng_c3d_k4_100k_7d1af75.json",
@@ -3815,7 +3840,7 @@
     "sha256": "bc2c6a35e2dbc6374c03051e6c1fcea7ef6e59f3e6b864f8b2b06146607cc394"
    },
    "quality_pass": false,
-   "quality_reason": "worst s29 −3.6e-4 vs same-seed RELION; s29 below across-seed RELION band 0.354544-0.354544 (masked mean GT FSC-AUC; RELION reference with double BP accumulation)"
+   "quality_reason": "worst s53 −1.3e-4 vs same-seed RELION; s29 below across-seed RELION band 0.354207-0.360931 (masked mean GT FSC-AUC; RELION reference with double BP accumulation)"
   },
   {
    "id": "noise1_k1_50k256_initialmodel_vdam_200it",
