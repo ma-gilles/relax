@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "optics-refine3d-features",
-    "source_commit": "d6709975e6d5162f2febb0b579f01bf8711a5ee4",
+    "package": "dense-gemm-optin-20260930",
+    "source_commit": "66a109b42aaaf8f314c14b0e9e4e694ad8e271e1",
     "metrics": {
       "files": [
         {
@@ -27,15 +27,15 @@
         },
         {
           "function_count": 2,
-          "nonblank_noncomment_lines": 252,
+          "nonblank_noncomment_lines": 254,
           "path": "relax/refinement/firstiter_cc.py",
-          "physical_lines": 284
+          "physical_lines": 286
         },
         {
           "function_count": 64,
-          "nonblank_noncomment_lines": 5068,
+          "nonblank_noncomment_lines": 5078,
           "path": "relax/refinement/full_refinement.py",
-          "physical_lines": 5597
+          "physical_lines": 5607
         },
         {
           "function_count": 7,
@@ -45,15 +45,15 @@
         },
         {
           "function_count": 23,
-          "nonblank_noncomment_lines": 1973,
+          "nonblank_noncomment_lines": 1979,
           "path": "relax/refinement/half_scoring.py",
-          "physical_lines": 2189
+          "physical_lines": 2195
         },
         {
           "function_count": 24,
-          "nonblank_noncomment_lines": 5512,
+          "nonblank_noncomment_lines": 5518,
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 6140
+          "physical_lines": 6146
         },
         {
           "function_count": 2,
@@ -98,10 +98,10 @@
           "physical_lines": 278
         },
         {
-          "function_count": 6,
-          "nonblank_noncomment_lines": 291,
+          "function_count": 7,
+          "nonblank_noncomment_lines": 295,
           "path": "relax/refinement/refinement_options.py",
-          "physical_lines": 389
+          "physical_lines": 395
         },
         {
           "function_count": 39,
@@ -176,42 +176,42 @@
       "largest_functions": [
         {
           "line": 619,
-          "line_span": 5522,
+          "line_span": 5528,
           "name": "refine_single_volume",
           "parameter_count": 6,
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 2714,
-          "line_span": 2839,
+          "line": 2720,
+          "line_span": 2843,
           "name": "main",
           "parameter_count": 1,
           "path": "relax/refinement/full_refinement.py"
         },
         {
-          "line": 2497,
-          "line_span": 749,
+          "line": 2499,
+          "line_span": 750,
           "name": "_run_half_estep",
           "parameter_count": 1,
           "path": "relax/refinement/iteration_loop.py"
         },
         {
           "line": 1967,
-          "line_span": 705,
+          "line_span": 711,
           "name": "_parse_args",
           "parameter_count": 1,
           "path": "relax/refinement/full_refinement.py"
         },
         {
-          "line": 1716,
+          "line": 1722,
           "line_span": 457,
           "name": "_score_half_local_one_shape",
           "parameter_count": 7,
           "path": "relax/refinement/half_scoring.py"
         },
         {
-          "line": 683,
-          "line_span": 411,
+          "line": 687,
+          "line_span": 413,
           "name": "_score_half_dense_one_shape",
           "parameter_count": 7,
           "path": "relax/refinement/half_scoring.py"
@@ -239,7 +239,7 @@
         },
         {
           "line": 94,
-          "line_span": 191,
+          "line_span": 193,
           "name": "_score_kclass_firstiter_cc_pass2",
           "parameter_count": 5,
           "path": "relax/refinement/firstiter_cc.py"
@@ -257,12 +257,12 @@
       },
       "totals": {
         "file_count": 17,
-        "function_count": 305,
+        "function_count": 306,
         "large_argument_function_count": 7,
-        "maximum_function_line_span": 5522,
+        "maximum_function_line_span": 5528,
         "maximum_parameter_count": 22,
-        "nonblank_noncomment_lines": 18387,
-        "physical_lines": 20839,
+        "nonblank_noncomment_lines": 18415,
+        "physical_lines": 20869,
         "very_large_argument_function_count": 2
       }
     }
