@@ -339,6 +339,20 @@ diagnostic and optics containers: either give each an honest planning-to-use
 lifecycle or replace it with a small explicit boundary, rather than only moving
 its constructor above the scorer call.
 
+The local audit now gives every numbered-iteration owner a visible
+planning-to-dispatch lifecycle: sampling remains shared by both halves;
+batching, execution and diagnostics begin after each nonempty half's batch
+planning; priors begin after translation-prior preparation; and half data plus
+optics are named before dispatch. The final all-data local implementation stays
+distinct. Its sampling, batching and diagnostics are genuinely invariant and
+are constructed once for reuse by both halves, while half data, priors,
+execution/projector selection and optics remain per-half owners. Neither local
+call constructs a container in its argument expression. This deliberately adds
+some source lines to expose ownership; line counts are observations, not an
+optimization target. The next call-site audit is the final all-data dense
+dispatch, where only owners proven invariant across both halves should move to
+final-iteration scope.
+
 ### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring

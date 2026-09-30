@@ -1253,3 +1253,26 @@ single-volume boundary has 17 parameters.
   functions. `_run_half_estep` is 601 lines and `refine_single_volume` is 5,429
   lines. Argument-count statistics remain unchanged and did not select this
   ownership boundary.
+
+## 2026-09-30 — local scoring owner lifecycles
+
+- Commit `577d579` removed all call-expression construction from the numbered
+  exact-local dispatch. Sampling remains iteration-owned; per-half batching,
+  execution and diagnostics begin after nonempty-half planning and survive
+  translation-prior preparation; priors, half data and optics begin when their
+  inputs become complete. The scorer receives seven named owners.
+- Commit `b75251d` kept final all-data local scoring distinct while moving its
+  truly half-invariant sampling, batching and diagnostic owners outside the
+  two-half loop. Per-half data, priors, projector execution and optics remain
+  per-half and are all named before dispatch. No input object was broadened and
+  no constructor was merely hidden behind a forwarding helper.
+- The numbered structural/behavior set passed 56 cases, followed by 432 local,
+  optics-shape, symmetry, first-iteration and controller cases in 16m47s. The
+  final-pass structural set passed 61 cases and four focused final all-data
+  controller cases passed with the existing complex-cast and gimbal-lock
+  warnings. Ruff, compilation and diff checks passed. The combined CPU EM fast
+  guard passed all 102 cases in 61.30 seconds.
+- Production totals are 20,764 physical and 18,302 nonblank lines across 306
+  functions. `_run_half_estep` is 614 lines and `refine_single_volume` is 5,457
+  lines. The added lines make object lifetimes explicit; the unchanged seven
+  10+ and two 20+ argument counts were not used to justify the change.
