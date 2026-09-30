@@ -102,6 +102,17 @@ labeled diagnostic only.
   InitialModel and Class3D take one optics group.
 - Not yet supported: CTF-premultiplied particles, beam tilt, higher-order aberrations and
   magnification.
+- CTF: relax evaluates RELION's CTF rows (`CTF::getFftwImage`, including the per-particle
+  `rlnCtfBfactor` and `rlnCtfScalefactor`) in its own host float64 code
+  (`relax/relion/relion_ctf.py`), cast to float32 before GPU scoring. Production CTF no longer
+  calls RELION code; the RELION binding is only the unit-test oracle
+  (`tests/unit/test_relion_ctf_formula.py`).
+- Follow-up: the exact-CTF device row cache (`relion_ctf._exact_ctf_device_rows`) still keeps
+  float64 rows on the GPU, and the elementwise ops on them run in float64 before the cast to
+  float32. They are cheap. Moving them to float32 is a parity-qualified change that has not
+  been made yet.
+- Refused permanently, with a clear message: `rlnCtfDataAreCtfCorrected` and several different
+  `rlnMtfFileName` values.
 
 ## Architecture and ownership
 
