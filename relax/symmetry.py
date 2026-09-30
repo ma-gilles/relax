@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import functools
 import hashlib
+import math
 import re
 from dataclasses import dataclass
 
@@ -101,24 +102,192 @@ def is_identity_symmetry(label: str) -> bool:
     return canonicalize_rotational_symmetry(label) == "C1"
 
 
+# RELION symmetries.h point-group codes and SymList::fill_symmetry_class
+# generator axes (symmetries.cpp:606-767), written as RELION writes them.
+_PG_CN, _PG_DN, _PG_T, _PG_O, _PG_I, _PG_I1, _PG_I2, _PG_I3, _PG_I4 = 202, 206, 209, 212, 214, 216, 217, 218, 219
+_ICOSAHEDRAL_GENERATORS = {
+    "I2": ((2, (0.0, 0.0, 1.0)), (5, (0.525731114, 0.0, 0.850650807)), (3, (0.0, 0.356822076, 0.934172364))),
+    "I1": (
+        (2, (1.0, 0.0, 0.0)),
+        (5, (0.85065080702670, 0.0, -0.5257311142635)),
+        (3, (0.9341723640, 0.3568220765, 0.0)),
+    ),
+    "I3": (
+        (2, (-0.5257311143, 0.0, 0.8506508070)),
+        (5, (0.0, 0.0, 1.0)),
+        (3, (-0.4911234778630044, 0.3568220764705179, 0.7946544753759428)),
+    ),
+    "I4": (
+        (2, (0.5257311143, 0.0, 0.8506508070)),
+        (5, (0.8944271932547096, 0.0, 0.4472135909903704)),
+        (3, (0.4911234778630044, 0.3568220764705179, 0.7946544753759428)),
+    ),
+}
+_ICOSAHEDRAL_CODES = {"I2": _PG_I2, "I1": _PG_I1, "I3": _PG_I3, "I4": _PG_I4}
+# XMIPP_EQUAL_ACCURACY for RELION's double-precision CPU build (macros.h:115).
+_EQUAL_ACCURACY = 1e-6
+
+
+def _point_group_and_generators(parsed: RelionRotationalSymmetry):
+    """``SymList::isSymmetryGroup`` code and order plus the ``rot_axis`` generators."""
+
+    if parsed.family == "cyclic":
+        return _PG_CN, parsed.order, ((parsed.order, (0.0, 0.0, 1.0)),)
+    if parsed.family == "dihedral":
+        generators = ((2, (1.0, 0.0, 0.0)),)
+        if parsed.order > 1:
+            generators = ((parsed.order, (0.0, 0.0, 1.0)),) + generators
+        return _PG_DN, parsed.order, generators
+    if parsed.family == "tetrahedral":
+        return _PG_T, -1, ((3, (0.0, 0.0, 1.0)), (2, (0.0, 0.816496, 0.577350)))
+    if parsed.family == "octahedral":
+        return _PG_O, -1, ((3, (0.5773502, 0.5773502, 0.5773502)), (4, (0.0, 0.0, 1.0)))
+    return _ICOSAHEDRAL_CODES[parsed.label], -1, _ICOSAHEDRAL_GENERATORS[parsed.label]
+
+
+def _matmul4(a, b):
+    """``Matrix2D::operator*``: each entry accumulates from zero over k in order."""
+
+    out = [[0.0] * 4 for _ in range(4)]
+    for i in range(4):
+        for j in range(4):
+            total = 0.0
+            for k in range(4):
+                total += a[i][k] * b[k][j]
+            out[i][j] = total
+    return out
+
+
+def _transpose4(a):
+    return [[a[j][i] for j in range(4)] for i in range(4)]
+
+
+def _set_small_values_to_zero(a):
+    return [[0.0 if abs(value) < _EQUAL_ACCURACY else value for value in row] for row in a]
+
+
+def _align_with_z(axis):
+    """``alignWithZ`` (transformations.cpp:137-179), homogeneous 4x4."""
+
+    module = math.sqrt(0.0 + axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2])
+    if abs(module) > _EQUAL_ACCURACY:
+        inverse = 1.0 / module
+        x, y, z = axis[0] * inverse, axis[1] * inverse, axis[2] * inverse
+    else:
+        x = y = z = 0.0
+    result = [[0.0] * 4 for _ in range(4)]
+    result[3][3] = 1.0
+    proj_mod = math.sqrt(y * y + z * z)
+    if proj_mod > _EQUAL_ACCURACY:
+        result[0][0] = proj_mod
+        result[0][1] = -x * y / proj_mod
+        result[0][2] = -x * z / proj_mod
+        result[1][1] = z / proj_mod
+        result[1][2] = -y / proj_mod
+        result[2][0], result[2][1], result[2][2] = x, y, z
+    else:
+        result[0][2] = -1.0 if x > 0 else 1.0
+        result[1][1] = 1.0
+        result[2][0] = 1.0 if x > 0 else -1.0
+    return result
+
+
+def _rotation_about_axis(angle_deg, axis):
+    """``rotation3DMatrix(ang, axis, R)``: ``A^T Rz A`` (transformations.cpp:184-193)."""
+
+    angle = angle_deg * math.pi / 180
+    cosine, sine = math.cos(angle), math.sin(angle)
+    rz = [[cosine, -sine, 0.0, 0.0], [sine, cosine, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]]
+    align = _align_with_z(axis)
+    return _matmul4(_matmul4(_transpose4(align), rz), align)
+
+
+def _is_identity(a, size):
+    return all(abs(a[i][j] - (1.0 if i == j else 0.0)) <= _EQUAL_ACCURACY for i in range(size) for j in range(size))
+
+
+def _equal(a, b):
+    return all(abs(a[i][j] - b[i][j]) <= _EQUAL_ACCURACY for i in range(4) for j in range(4))
+
+
+def _found_not_tried(tried, size):
+    """``found_not_tried`` (symmetries.cpp:243-270): the next untried ``(i, j)`` pair."""
+
+    i = j = n = 0
+    while n != size:
+        if not tried[i][j]:
+            return i, j
+        if i != n:
+            i += 1
+        else:
+            j -= 1
+            if j == -1:
+                n += 1
+                j = n
+                i = 0
+    return None
+
+
+def _symlist_matrices(generators):
+    """``SymList::read_sym_file`` for ``rot_axis`` lines then ``compute_subgroup``.
+
+    Returns RELION's ordered ``(L, R)`` 4x4 list without the implicit identity.
+    """
+
+    identity = [[1.0 if i == j else 0.0 for j in range(4)] for i in range(4)]
+    left, right, chain = [], [], []
+    for fold, axis in generators:
+        increment = 360.0 / fold
+        angle = increment
+        for _ in range(1, fold):
+            rotation = _set_small_values_to_zero(_rotation_about_axis(angle, axis))
+            left.append(identity)
+            right.append(_transpose4(rotation))
+            chain.append(1)
+            angle += increment
+    tried = [[0] * len(left) for _ in range(len(left))]
+    while (pair := _found_not_tried(tried, len(tried))) is not None:
+        i, j = pair
+        tried[i][j] = 1
+        new_left = _matmul4(left[i], left[j])
+        new_right = _matmul4(right[i], right[j])
+        if _is_identity(new_left, 4) and _is_identity(new_right, 3):
+            continue
+        if any(_equal(new_left, left[m]) and _equal(new_right, right[m]) for m in range(len(left))):
+            continue
+        left.append(_set_small_values_to_zero(new_left))
+        right.append(_set_small_values_to_zero(new_right))
+        chain.append(chain[i] + chain[j])
+        for row in tried:
+            row.append(0)
+        tried.append([0] * (len(tried) + 1))
+    return left, right
+
+
 @functools.lru_cache(maxsize=None)
 def _operators_float64(canonical_label: str) -> tuple[np.ndarray, np.ndarray, int, int]:
-    from relax.relion_bind._relion_bind_core import get_symmetry_operators
+    """RELION's ordered ``SymList`` operators with the identity prepended.
 
-    result = get_symmetry_operators(canonical_label)
-    left = np.asarray(result["left"], dtype=np.float64)
-    right = np.asarray(result["right"], dtype=np.float64)
-    if left.shape != right.shape or left.ndim != 3 or left.shape[1:] != (3, 3):
+    Ports ``SymList::isSymmetryGroup``, ``fill_symmetry_class``, ``read_sym_file``
+    and ``compute_subgroup`` (RELION 5.0.1 symmetries.cpp) for the proper groups;
+    C1 is the identity alone, as RELION never builds a list for it.
+    """
+
+    parsed = parse_rotational_symmetry(canonical_label)
+    point_group, point_group_order, generators = _point_group_and_generators(parsed)
+    left = [np.eye(3)]
+    right = [np.eye(3)]
+    if parsed.label != "C1":
+        sym_left, sym_right = _symlist_matrices(generators)
+        left += [np.asarray(matrix, dtype=np.float64)[:3, :3] for matrix in sym_left]
+        right += [np.asarray(matrix, dtype=np.float64)[:3, :3] for matrix in sym_right]
+    left = np.stack(left)
+    right = np.stack(right)
+    if left.shape[0] != parsed.operator_count:
         raise RuntimeError(
-            "RELION symmetry binding returned inconsistent operator shapes: "
-            f"left={left.shape}, right={right.shape}"
+            f"RELION {canonical_label} closure gave {left.shape[0]} operators; expected {parsed.operator_count}"
         )
-    expected = parse_rotational_symmetry(canonical_label).operator_count
-    if left.shape[0] != expected:
-        raise RuntimeError(
-            f"RELION {canonical_label} returned {left.shape[0]} operators; expected {expected}"
-        )
-    return left, right, int(result["point_group"]), int(result["point_group_order"])
+    return left, right, point_group, point_group_order
 
 
 def relion_symmetry_operators(
@@ -128,7 +297,7 @@ def relion_symmetry_operators(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return ordered ``(L, R)`` operators, with identity first.
 
-    The matrices come directly from RELION's ``SymList`` implementation.
+    The matrices follow RELION's ``SymList`` construction (:func:`_operators_float64`).
     Copies are returned so callers cannot mutate the cached source arrays.
     """
 
