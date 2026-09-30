@@ -2940,12 +2940,6 @@ def refine_single_volume(
                     k=k,
                     symmetry=symmetry,
                 )
-                ha_k = score_result.ha
-                Ft_y_k = score_result.Ft_y
-                Ft_ctf_k = score_result.Ft_ctf
-                em_stats_k = score_result.em_stats
-                noise_stats_k = score_result.noise_stats
-                noise_stats_per_half[k] = noise_stats_k
                 pose_rotations[k] = None
                 pose_rotation_eulers[k] = None
                 coarse_ha[k] = score_result.coarse_ha
@@ -2966,7 +2960,7 @@ def refine_single_volume(
                     with_log_prior=False,
                     zero_cold_center=not k_class_enabled,
                 )
-                local_result = _score_half_local_in_bpref_scope(
+                score_result = _score_half_local_in_bpref_scope(
                     half=LocalHalfData(
                         k=k,
                         experiment_dataset=experiment_datasets[k],
@@ -3024,15 +3018,8 @@ def refine_single_volume(
                         class_translation_overrides=local_translation_values.get("class_translation_overrides"),
                     ),
                 )
-                ha_k = local_result.ha
-                Ft_y_k = local_result.Ft_y
-                Ft_ctf_k = local_result.Ft_ctf
-                em_stats_k = local_result.em_stats
-                noise_stats_k = local_result.noise_stats
-                noise_stats_per_half[k] = noise_stats_k
                 pose_rotations[k] = None
-                coarse_ha[k] = ha_k
-                score_result = local_result
+                coarse_ha[k] = score_result.ha
 
             else:
                 # Shared dense half-scoring operands; the adaptive branch adds its
@@ -3117,7 +3104,7 @@ def refine_single_volume(
                         "class_translation_overrides"
                     ),
                 )
-                dense_result = _score_half_dense_in_bpref_scope(
+                score_result = _score_half_dense_in_bpref_scope(
                     dense_half,
                     dense_sampling,
                     dense_priors,
@@ -3126,24 +3113,17 @@ def refine_single_volume(
                     dense_execution,
                     dense_optics,
                 )
-                ha_k = dense_result.ha
-                Ft_y_k = dense_result.Ft_y
-                Ft_ctf_k = dense_result.Ft_ctf
-                em_stats_k = dense_result.em_stats
-                noise_stats_k = dense_result.noise_stats
-                noise_stats_per_half[k] = noise_stats_k
-                if use_adaptive and dense_result.pose_rotations is not None:
-                    pose_rotations[k] = dense_result.pose_rotations
-                    pose_rotation_eulers[k] = dense_result.pose_rotation_eulers
+                if use_adaptive and score_result.pose_rotations is not None:
+                    pose_rotations[k] = score_result.pose_rotations
+                    pose_rotation_eulers[k] = score_result.pose_rotation_eulers
                 else:
                     pose_rotations[k] = effective_rotations
                     pose_rotation_eulers[k] = effective_rotation_eulers
                 coarse_ha[k] = (
-                    dense_result.coarse_ha
-                    if use_adaptive and dense_result.coarse_ha is not None
-                    else dense_result.ha  # single pass: same grid, no oversampling
+                    score_result.coarse_ha
+                    if use_adaptive and score_result.coarse_ha is not None
+                    else score_result.ha  # single pass: same grid, no oversampling
                 )
-                score_result = dense_result
 
                 # --- Manifest dump for deterministic replay (Phase 0.1) ---
                 if not use_adaptive and debug.save_intermediates_dir is not None:
@@ -3154,7 +3134,7 @@ def refine_single_volume(
                         dense_sampling,
                         dense_priors,
                         previous_translations_k,
-                        dense_result,
+                        score_result,
                         perturbation_factor=parity.perturb_factor,
                     )
 
