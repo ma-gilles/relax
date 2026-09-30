@@ -1168,7 +1168,9 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
     monkeypatch.setattr(
         relion_ctf,
         "relion_ctf_fftw_half",
-        lambda params, *_a, **_k: np.broadcast_to(np.arange(12, dtype=np.float64).reshape(4, 3), (len(params), 4, 3)).copy(),
+        lambda params, *_a, finish, **_k: finish(
+            0, len(params), np.broadcast_to(np.arange(12, dtype=np.float64), (len(params), 12)).copy()
+        ),
     )
 
     source = (tmp_path / "particles.star").resolve()

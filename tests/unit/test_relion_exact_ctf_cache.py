@@ -113,9 +113,9 @@ def test_exact_ctf_takes_relion_defaults_for_absent_ctf_columns(monkeypatch, tmp
     relion_ctf.clear_exact_ctf_result_cache()
     calls = []
 
-    def fake_ctf(params, size, pixel_size, **_kwargs):
+    def fake_ctf(params, size, pixel_size, *, finish, **_kwargs):
         calls.append(np.asarray(params))
-        return np.zeros((len(params), size, size // 2 + 1), dtype=np.float64)
+        finish(0, len(params), np.zeros((len(params), size * (size // 2 + 1)), dtype=np.float64))
 
     monkeypatch.setattr(relion_ctf, "relion_ctf_fftw_half", fake_ctf)
     particles = pd.DataFrame(

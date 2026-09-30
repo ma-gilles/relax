@@ -276,8 +276,7 @@ def _trial_ctf_images(trial_local, *, defocus, optics, pixel_size, image_full_si
         rows = relion_ctf_fftw_half(params, image_full_size, pixel_size)
         if np.any(dosed):
             freq_sq = fftw_half_freq_sq(image_full_size, image_full_size, pixel_size)
-            for row in np.flatnonzero(dosed):
-                rows[row] = rows[row] * relion_tomo_damping(freq_sq, c[row, 6])
+            rows[dosed] = rows[dosed] * relion_tomo_damping(freq_sq, c[dosed, 6])
     return _window_fftw_half(rows, int(current_image_size))
 
 

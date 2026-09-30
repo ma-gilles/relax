@@ -37,15 +37,24 @@ def relion_tomo_damping(freq_sq, dose, bfactor_per_electron_dose=0.0):
 
     The tilt series' own ``rlnCtfBfactor`` is not passed on by ``relion_refine``.
     ``freq_sq`` is ``k^2`` in 1/A^2 and ``dose`` in e/A^2. At ``k = 0`` ``Ne`` is
-    infinite and the weight is 1.
+    infinite and the weight is 1. ``dose`` (and ``bfactor_per_electron_dose``) may be
+    one value per image, shape ``(n,)``; the result is then ``(n, *freq_sq.shape)``.
     """
 
     freq_sq = np.asarray(freq_sq, dtype=np.float64)
-    if bfactor_per_electron_dose > 0.0:
-        return np.exp(-0.25 * bfactor_per_electron_dose * float(dose) * freq_sq)
-    with np.errstate(divide="ignore"):
-        critical_exposure = 0.245 * np.power(freq_sq, -0.8325) + 2.81
-    return np.exp(-0.5 * float(dose) / critical_exposure)
+    dose = np.asarray(dose, dtype=np.float64)
+    bfactor = np.broadcast_to(np.asarray(bfactor_per_electron_dose, dtype=np.float64), dose.shape)
+    per_image = (...,) + (None,) * freq_sq.ndim
+    by_bfactor = bfactor > 0.0
+    damping = np.empty(dose.shape + freq_sq.shape)
+    if np.any(by_bfactor):
+        damping[by_bfactor] = np.exp(-0.25 * bfactor[by_bfactor][per_image] * dose[by_bfactor][per_image] * freq_sq)
+    if not np.all(by_bfactor):
+        with np.errstate(divide="ignore"):
+            critical_exposure = 0.245 * np.power(freq_sq, -0.8325) + 2.81
+        by_dose = ~by_bfactor
+        damping[by_dose] = np.exp(-0.5 * dose[by_dose][per_image] / critical_exposure)
+    return damping
 
 
 def fftw_half_freq_sq(image_h: int, image_w: int, pixel_size: float) -> np.ndarray:

@@ -11,10 +11,10 @@ from relax.relion import relion_ctf
 pytestmark = pytest.mark.unit
 
 
-def _fake_ctf(params, size, pixel_size, **_kwargs):
+def _fake_ctf(params, size, pixel_size, *, finish, **_kwargs):
     # Row values depend on the particle's defocus so a wrong slot shows up.
-    base = np.arange(size * (size // 2 + 1), dtype=np.float64).reshape(size, size // 2 + 1)
-    return np.stack([base * 1.0e-3 + row[0] for row in params])
+    base = np.arange(size * (size // 2 + 1), dtype=np.float64)
+    finish(0, len(params), np.stack([base * 1.0e-3 + row[0] for row in params]))
 
 
 @pytest.fixture(autouse=True)

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import collections
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import jax.numpy as jnp
@@ -324,15 +326,36 @@ def _exact_ctf_source_cache(experiment_dataset, image_shape):
     return source_path, cache
 
 
-# Particles per CTF evaluation chunk: 64 rows of a box-256 half grid are 17 MB of float64.
-_CTF_ROW_CHUNK = 64
+# Particles per CTF evaluation chunk: 8 rows of a box-256 half grid are 2.1 MB of float64,
+# so a chunk and its scratch stay in one core's cache.
+_CTF_ROW_CHUNK = 8
 
 
-def _relion_ctf_rows(params, size: int, extent: float, gamma_offset, mag):
-    """The body of :func:`relion_ctf_fftw_half` for one chunk of rows, flattened ``(n, size * (size // 2 + 1))``."""
+def _relion_ctf_grid(size: int, extent: float, mag):
+    """The pixel coordinates of ``CTF::getCTF`` on the FFTW half grid, shared by every particle.
 
-    du, dv, angle, voltage, cs, q0, bfactor, scale, phase = (params[:, i, None] for i in range(9))
-    # CTF::initialise (ctf.cpp:211-262).
+    ``x``, ``y``, ``u^2 = x^2 + y^2`` and ``u^4``, each flattened to ``size * (size // 2 + 1)``. getFftwImage (ctf.cpp:398-452): row i is frequency i up
+    to size / 2, i - size after, in units of 1 / (size * angpix); getCTF (ctf.h:184-257)
+    applies the magnification first.
+    """
+
+    rows = np.arange(size)
+    y0 = (np.where(rows <= size // 2, rows, rows - size) / extent)[:, None]
+    x0 = (np.arange(size // 2 + 1) / extent)[None, :]
+    if mag is None:
+        x, y = np.broadcast_to(x0, (size, size // 2 + 1)), np.broadcast_to(y0, (size, size // 2 + 1))
+    else:
+        x, y = mag[0, 0] * x0 + mag[0, 1] * y0, mag[1, 0] * x0 + mag[1, 1] * y0
+    x, y = np.ascontiguousarray(x).reshape(-1), np.ascontiguousarray(y).reshape(-1)
+    u2 = x * x + y * y
+    return x, y, u2, u2 * u2
+
+
+def _relion_ctf_coefficients(params):
+    """Per-particle constants of gamma, ``(Axx, 2 Axy, Ayy, K1, K2, K5, K3)``, from CTF::initialise (ctf.cpp:211-262)."""
+
+    du, dv, angle, voltage, cs, q0 = (params[:, i] for i in range(6))
+    phase = params[:, 8]
     volts = voltage * 1e3
     lam = 12.2643247 / np.sqrt(volts * (1.0 + volts * 0.978466e-6))
     k1 = np.pi / 2 * 2 * lam
@@ -345,29 +368,71 @@ def _relion_ctf_rows(params, size: int, extent: float, gamma_offset, mag):
     axx = cos_az * cos_az * -du + sin_az * sin_az * -dv
     axy = cos_az * sin_az * -du - sin_az * cos_az * -dv
     ayy = sin_az * sin_az * -du + cos_az * cos_az * -dv
-    # getFftwImage (ctf.cpp:398-452): row i is frequency i up to size / 2, i - size after, in
-    # units of 1 / (size * angpix); getCTF (ctf.h:184-257) applies the magnification first.
-    rows = np.arange(size)
-    y0 = (np.where(rows <= size // 2, rows, rows - size) / extent)[:, None]
-    x0 = (np.arange(size // 2 + 1) / extent)[None, :]
-    if mag is None:
-        x, y = np.broadcast_to(x0, (size, size // 2 + 1)), np.broadcast_to(y0, (size, size // 2 + 1))
-    else:
-        x, y = mag[0, 0] * x0 + mag[0, 1] * y0, mag[1, 0] * x0 + mag[1, 1] * y0
-    x, y = x.reshape(1, -1), y.reshape(1, -1)
-    u2 = x * x + y * y
-    gamma = k1 * (axx * x * x + 2.0 * axy * x * y + ayy * y * y) + k2 * (u2 * u2) - k5 - k3
-    if gamma_offset is not None:
-        gamma = gamma + gamma_offset.reshape(1, -1)
-    # do_damping (relion_refine always damps): the B-factor envelope exp(K4 u2), K4 = -Bfac / 4,
-    # before the scale (ctf.h:219-246). A dose-weighted (tomo) image is damped by its dose
-    # instead (relion_tomo_damping) and passes Bfac 0, for which the envelope is exactly 1.
-    ctf = -np.sin(gamma) * np.exp(-bfactor / 4.0 * u2) * scale
-    # |CTF| >= 1e-8 with SGN(0) = 1 (ctf.h:250-253, macros.h:143).
-    return np.where(np.abs(ctf) < 1e-8, np.where(ctf >= 0, 1e-8, -1e-8), ctf)
+    return axx, 2.0 * axy, ayy, k1, k2, k5, k3
 
 
-def relion_ctf_fftw_half(params, image_size: int, pixel_size: float, *, gamma_offset=None, mag_matrix=None):
+def _relion_ctf_chunks(params, image_size: int, pixel_size: float, gamma_offset, mag_matrix, *, out=None, finish=None):
+    """Evaluate ``CTF::getFftwImage`` rows in chunks over host threads.
+
+    A chunk of rows ``start:stop`` is computed into ``out[start:stop]`` (``(N, size * (size // 2 + 1))``
+    float64) or, without ``out``, into per-thread scratch; ``finish(start, stop, ctf)``, when
+    given, consumes it in the same worker. The pixel coordinates are computed once per call and
+    every chunk operation writes in place, in RELION's order of operations; NumPy releases
+    the GIL inside each operation, so the chunks run in parallel.
+    """
+
+    params = np.ascontiguousarray(params, dtype=np.float64).reshape(-1, 9)
+    size = int(image_size)
+    x, y, u2, u4 = _relion_ctf_grid(size, float(size) * float(pixel_size), mag_matrix)
+    offset = None if gamma_offset is None else np.asarray(gamma_offset, dtype=np.float64).reshape(1, -1)
+    axx, axy2, ayy, k1, k2, k5, k3 = (c[:, None] for c in _relion_ctf_coefficients(params))
+    bfactor, neg_scale = params[:, 6, None], -params[:, 7, None]
+    n = params.shape[0]
+    local = threading.local()
+
+    def fill(start):
+        stop = min(start + _CTF_ROW_CHUNK, n)
+        rows = slice(start, stop)
+        if not hasattr(local, "tmp"):
+            local.tmp = np.empty((_CTF_ROW_CHUNK, x.size))
+            local.ctf = None if out is not None else np.empty((_CTF_ROW_CHUNK, x.size))
+        tmp = local.tmp[: stop - start]
+        ctf = out[rows] if out is not None else local.ctf[: stop - start]
+        # gamma = K1 * (Axx * X * X + 2.0 * Axy * X * Y + Ayy * Y * Y) + K2 * u4 - K5 - K3 (ctf.h:209-217).
+        np.multiply(axx[rows], x, out=ctf)
+        ctf *= x
+        np.multiply(axy2[rows], x, out=tmp)
+        tmp *= y
+        ctf += tmp
+        np.multiply(ayy[rows], y, out=tmp)
+        tmp *= y
+        ctf += tmp
+        ctf *= k1[rows]
+        ctf += np.multiply(k2[rows], u4, out=tmp)
+        ctf -= k5[rows]
+        ctf -= k3[rows]
+        if offset is not None:
+            ctf += offset
+        np.sin(ctf, out=ctf)
+        # do_damping (relion_refine always damps): the B-factor envelope exp(K4 u2), K4 = -Bfac / 4,
+        # before the scale (ctf.h:219-246). A dose-weighted (tomo) image is damped by its dose
+        # instead (relion_tomo_damping) and passes Bfac 0, for which the envelope is exactly 1,
+        # so chunks without a B-factor skip it.
+        if np.any(bfactor[rows]):
+            ctf *= np.exp(np.multiply(-bfactor[rows] / 4.0, u2, out=tmp), out=tmp)
+        ctf *= neg_scale[rows]  # CTF = -sin(gamma) * envelope * scale
+        # |CTF| >= 1e-8 with SGN(0) = 1 (ctf.h:250-253, macros.h:143).
+        small = np.abs(ctf, out=tmp) < 1e-8
+        if small.any():
+            ctf[small] = np.where(ctf[small] >= 0, 1e-8, -1e-8)
+        if finish is not None:
+            finish(start, stop, ctf)
+
+    with ThreadPoolExecutor(max_workers=_relion_ctf_threads()) as pool:
+        list(pool.map(fill, range(0, n, _CTF_ROW_CHUNK)))
+
+
+def relion_ctf_fftw_half(params, image_size: int, pixel_size: float, *, gamma_offset=None, mag_matrix=None, finish=None):
     """RELION's ``CTF::getFftwImage`` for particles of one optics group, ``(N, size, size // 2 + 1)`` float64.
 
     relax's own host implementation of the CTF relion_refine evaluates per particle
@@ -379,25 +444,20 @@ def relion_ctf_fftw_half(params, image_size: int, pixel_size: float, *, gamma_of
     ``ObservationModel::getGammaOffset``) and ``mag_matrix`` (its 2x2 anisotropic
     magnification) are the optics-table terms. No RELION code runs here: the binding's
     ``get_ctf_images_batch`` / ``optics_ctf_images_batch`` are the test oracles
-    (tests/unit/test_relion_ctf_formula.py). Rows are split over host threads.
+    (tests/unit/test_relion_ctf_formula.py). Rows are split over host threads. With
+    ``finish``, each chunk of rows is handed to ``finish(start, stop, ctf)`` in its worker
+    thread, ``ctf`` flattened to ``(stop - start, size * (size // 2 + 1))`` in per-thread
+    scratch, and nothing is returned.
     """
-
-    from concurrent.futures import ThreadPoolExecutor
 
     params = np.ascontiguousarray(params, dtype=np.float64).reshape(-1, 9)
     size = int(image_size)
-    extent = float(size) * float(pixel_size)
-    offset = None if gamma_offset is None else np.asarray(gamma_offset, dtype=np.float64)
     mag = None if mag_matrix is None else np.asarray(mag_matrix, dtype=np.float64)
+    if finish is not None:
+        _relion_ctf_chunks(params, size, pixel_size, gamma_offset, mag, finish=finish)
+        return None
     out = np.empty((params.shape[0], size * (size // 2 + 1)), dtype=np.float64)
-    starts = range(0, params.shape[0], _CTF_ROW_CHUNK)
-
-    def fill(start):
-        stop = min(start + _CTF_ROW_CHUNK, params.shape[0])
-        out[start:stop] = _relion_ctf_rows(params[start:stop], size, extent, offset, mag)
-
-    with ThreadPoolExecutor(max_workers=_relion_ctf_threads()) as pool:
-        list(pool.map(fill, starts))
+    _relion_ctf_chunks(params, size, pixel_size, gamma_offset, mag, out=out)
     return out.reshape(-1, size, size // 2 + 1)
 
 
@@ -441,43 +501,17 @@ def _evaluate_exact_ctf_rows(cache, original_indices, image_h: int, image_w: int
         # Zernike gamma offset and anisotropic magnification (ml_optimiser.cpp:6461-6484).
         if image_h != image_w:
             raise ValueError("RELION's CTF rows need square images")
+        groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)[missing]
+        # Each optics group fills one contiguous run of new cache rows.
+        missing = missing[np.argsort(groups, kind="stable")]
+        groups = np.sort(groups, kind="stable")
         n_new = int(missing.size)
         params = _relion_ctf_batch_params(cache, missing)
-        groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)[missing]
-        native = np.empty((n_new, image_h, image_w // 2 + 1), dtype=np.float64)
-        for group in np.unique(groups):
-            rows = np.flatnonzero(groups == group)
-            pixel = np.unique(params[rows, 7])
-            if pixel.size != 1:
-                raise ValueError(f"optics group {int(group)} has several pixel sizes")
-            gamma, mag = _optics_group_ctf_geometry(cache, int(group), image_h)
-            columns = params[rows][:, [0, 1, 2, 3, 4, 5, 6, 9, 8]]  # ..., Q0, Bfac, scale, phase shift
-            if cache.get("tomo", False):
-                columns[:, 6] = 0.0  # dose-weighted: damped by the dose below, as RELION does for dose >= 0
-            native[rows] = relion_ctf_fftw_half(
-                columns, image_h, float(pixel[0]), gamma_offset=gamma, mag_matrix=mag
-            )
-        if cache.get("tomo", False):
-            # A RELION tomo image (one row per particle-tilt): relion_refine damps its
-            # CTF by the tilt's cumulative dose (tomo_input.relion_tomo_damping). RELION
-            # multiplies before the scale factor and before the |CTF| >= 1e-8 floor
-            # (src/ctf.h:219-253); applying it here reorders one product and moves the
-            # floor, both below 1e-8 absolute.
+        tomo = cache.get("tomo", False)
+        if tomo:
             dose = _relion_ctf_column(cache, "rlnMicrographPreExposure", None)[missing]
             dose_bfactor = _relion_ctf_column(cache, "rlnCtfBfactorPerElectronDose", 0.0)[missing]
-            for row in range(n_new):
-                native[row] = native[row] * relion_tomo_damping(
-                    fftw_half_freq_sq(image_h, image_w, params[row, 7]), dose[row], dose_bfactor[row]
-                )
         premultiplied = _premultiplied_particles(cache)[missing]
-        if premultiplied.any():
-            # CTF-premultiplied images: RELION squares its CTF image right after
-            # getFftwImage and then uses the ordinary scoring kernels with it
-            # (ml_optimiser.cpp:6486-6492, acc_ml_optimiser_impl.h:840-847).
-            native[premultiplied] = native[premultiplied] * native[premultiplied]
-        # RELION/FFTW stores y in standard order and uses the opposite CTF
-        # sign from RECOVAR's forward-model convention: one roll and negation
-        # of the row axis, written straight into the cache block.
         rows = cache["rows"]
         used = cache["n_cached"]
         width = image_h * (image_w // 2 + 1)
@@ -489,8 +523,40 @@ def _evaluate_exact_ctf_rows(cache, original_indices, image_h: int, image_w: int
         shift = image_h // 2            # np.fft.fftshift is np.roll(x, image_h // 2)
         split = image_h - shift
         block = rows[used : used + n_new].reshape(n_new, image_h, image_w // 2 + 1)
-        np.negative(native[:, split:], out=block[:, :shift])
-        np.negative(native[:, :split], out=block[:, shift:])
+        for group in np.unique(groups):
+            first, last = np.searchsorted(groups, [group, group + 1])
+            pixel = np.unique(params[first:last, 7])
+            if pixel.size != 1:
+                raise ValueError(f"optics group {int(group)} has several pixel sizes")
+            gamma, mag = _optics_group_ctf_geometry(cache, int(group), image_h)
+            columns = params[first:last][:, [0, 1, 2, 3, 4, 5, 6, 9, 8]]  # ..., Q0, Bfac, scale, phase shift
+            if tomo:
+                columns[:, 6] = 0.0  # dose-weighted: damped by the dose below, as RELION does for dose >= 0
+                freq_sq = fftw_half_freq_sq(image_h, image_w, float(pixel[0]))
+
+            def finish(start, stop, ctf, first=first):
+                chunk = slice(first + start, first + stop)
+                ctf = ctf.reshape(stop - start, image_h, image_w // 2 + 1)
+                if tomo:
+                    # A RELION tomo image (one row per particle-tilt): relion_refine damps its
+                    # CTF by the tilt's cumulative dose (tomo_input.relion_tomo_damping). RELION
+                    # multiplies before the scale factor and before the |CTF| >= 1e-8 floor
+                    # (src/ctf.h:219-253); applying it here reorders one product and moves the
+                    # floor, both below 1e-8 absolute.
+                    ctf *= relion_tomo_damping(freq_sq, dose[chunk], dose_bfactor[chunk])
+                if premultiplied[chunk].any():
+                    # CTF-premultiplied images: RELION squares its CTF image right after
+                    # getFftwImage and then uses the ordinary scoring kernels with it
+                    # (ml_optimiser.cpp:6486-6492, acc_ml_optimiser_impl.h:840-847).
+                    square = premultiplied[chunk]
+                    ctf[square] = ctf[square] * ctf[square]
+                # RELION/FFTW stores y in standard order and uses the opposite CTF
+                # sign from RECOVAR's forward-model convention: one roll and negation
+                # of the row axis, written straight into the cache block.
+                np.negative(ctf[:, split:], out=block[chunk, :shift])
+                np.negative(ctf[:, :split], out=block[chunk, shift:])
+
+            relion_ctf_fftw_half(columns, image_h, float(pixel[0]), gamma_offset=gamma, mag_matrix=mag, finish=finish)
         cache["rows"] = rows
         cache["n_cached"] = used + n_new
         slots[missing] = np.arange(used, used + n_new, dtype=np.int64)
