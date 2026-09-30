@@ -748,23 +748,28 @@ def test_firstiter_cc_dispatch_projects_every_grid_through_the_shape_class_matri
     monkeypatch.setattr(firstiter_cc, "run_dense_k_class_em_adaptive", fake_adaptive)
 
     firstiter_cc._score_kclass_firstiter_cc_pass2(
-        logger=iteration_loop.logger,
-        experiment_dataset=object(),
-        mean=np.zeros((1, 4), dtype=np.complex64),
-        mean_variance=None,
-        noise_variance_k=None,
-        effective_rotations=np.zeros((12, 3, 3), dtype=np.float32),
-        current_translations=np.zeros((5, 2), dtype=np.float32),
-        base_translations=np.zeros((5, 2), dtype=np.float32),
-        current_healpix_order=1,
-        state=SimpleNamespace(adaptive_oversampling=1, translation_step=2.0),
-        random_perturbation=0.0,
-        disc_type="linear_interp",
-        class_log_priors=None,
-        image_batch_size=20,
-        image_shape_k=(64, 64),
-        em_kwargs={"image_batch_size": 20, "rotation_block_size": 96},
-        projection_rotations=lambda rotations: half_scoring._projection_rotations(rotations, 2.0),
+        firstiter_cc.FirstIterCCData(
+            logger=iteration_loop.logger,
+            experiment_dataset=object(),
+            mean=np.zeros((1, 4), dtype=np.complex64),
+            mean_variance=None,
+            noise_variance=None,
+            image_shape=(64, 64),
+        ),
+        firstiter_cc.FirstIterCCGridSpec(
+            effective_rotations=np.zeros((12, 3, 3), dtype=np.float32),
+            current_translations=np.zeros((5, 2), dtype=np.float32),
+            base_translations=np.zeros((5, 2), dtype=np.float32),
+            current_healpix_order=1,
+            state=SimpleNamespace(adaptive_oversampling=1, translation_step=2.0),
+            random_perturbation=0.0,
+            projection_rotations=lambda rotations: half_scoring._projection_rotations(rotations, 2.0),
+        ),
+        firstiter_cc.FirstIterCCPolicy(disc_type="linear_interp", class_log_priors=None),
+        firstiter_cc.FirstIterCCBatching(
+            image_batch_size=20, em_kwargs={"image_batch_size": 20, "rotation_block_size": 96}
+        ),
+        firstiter_cc.FirstIterCCExecution(),
     )
 
     assert np.all(captured["coarse_rot"] == 1.0)
