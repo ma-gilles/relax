@@ -21,6 +21,11 @@ import os
 
 import numpy as np
 
+from relax.dense.scoring_policy import (
+    _DENSE_EM_STATIC_KWARGS,
+    PADDING_FACTOR,
+    PROJECTION_PADDING_FACTOR,
+)
 from relax.helpers.env_flags import parse_int_set
 from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.relion.relion_metadata import _relion_half_plane_shell_counts
@@ -206,6 +211,80 @@ def _save_bpref_accumulators(
 def _replay_manifest_array(value, dtype=None):
     """Replay manifests use a float64 empty sentinel regardless of field dtype."""
     return np.array([]) if value is None else np.asarray(value, dtype=dtype)
+
+
+def save_dense_replay_manifest(
+    save_dir,
+    iteration: int,
+    half,
+    sampling,
+    priors,
+    previous_translations,
+    score_result,
+    *,
+    perturbation_factor: float,
+) -> None:
+    """Write deterministic-replay inputs for one non-adaptive dense half.
+
+    ``half``, ``sampling``, and ``priors`` are the same objects passed to the
+    dense scorer. Keeping that ownership visible avoids a second manifest-only
+    request object and prevents the controller from spelling out every array a
+    second time.
+    """
+
+    output_path = os.path.join(
+        save_dir,
+        f"manifest_iter{iteration}_half{half.k}.npz",
+    )
+    payload = {
+        "effective_rotations": np.asarray(sampling.effective_rotations),
+        "coarse_scoring_rotations": _replay_manifest_array(
+            sampling.coarse_scoring_rotations,
+        ),
+        "current_translations": np.asarray(sampling.current_translations),
+        "rotation_log_prior": _replay_manifest_array(
+            priors.rotation_log_prior_k, dtype=np.float64,
+        ),
+        "translation_log_prior": _replay_manifest_array(
+            priors.translation_log_prior, dtype=np.float64,
+        ),
+        "image_corrections": _replay_manifest_array(
+            half.image_corrections_k, dtype=np.float64,
+        ),
+        "scale_corrections": _replay_manifest_array(
+            half.scale_corrections_k, dtype=np.float64,
+        ),
+        "image_pre_shifts": _replay_manifest_array(
+            priors.translation_search_base, dtype=np.float32,
+        ),
+        "absolute_previous_translations": _replay_manifest_array(
+            previous_translations, dtype=np.float32,
+        ),
+        "mean_vol_ft": np.asarray(half.means_k),
+        "mean_variance": np.asarray(half.mean_variance),
+        "noise_variance": np.asarray(half.noise_variance_k),
+        "current_size": (
+            np.int32(sampling.cs_for_engine)
+            if sampling.cs_for_engine is not None
+            else np.int32(-1)
+        ),
+        "half_spectrum_scoring": np.bool_(True),
+        "use_float64_scoring": np.bool_(
+            _DENSE_EM_STATIC_KWARGS["use_float64_scoring"]
+        ),
+        "projection_padding_factor": np.int32(PROJECTION_PADDING_FACTOR),
+        "reconstruction_padding_factor": np.int32(PADDING_FACTOR),
+        "score_with_masked_images": np.bool_(True),
+        "perturbation_instance": np.float64(sampling.random_perturbation),
+        "perturbation_factor": np.float64(perturbation_factor),
+        "iteration": np.int32(iteration),
+        "half_index": np.int32(half.k),
+        "ave_Pmax": np.float64(
+            float(np.mean(score_result.em_stats.max_posterior_per_image))
+        ),
+    }
+    np.savez(output_path, **payload)
+    logger.info("Manifest dumped: %s", output_path)
 
 
 def _dump_array_or_empty(arr):

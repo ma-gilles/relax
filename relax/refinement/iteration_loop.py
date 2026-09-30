@@ -62,6 +62,7 @@ from relax.diagnostics.iteration import (
     _save_iteration_particle_states,
     _significance_dump_half_indices,
     _source_image_indices,
+    save_dense_replay_manifest,
 )
 from relax.diagnostics.relion_replay import (
     _apply_replay_correction_overrides,
@@ -3140,45 +3141,16 @@ def refine_single_volume(
 
                 # --- Manifest dump for deterministic replay (Phase 0.1) ---
                 if not use_adaptive and debug.save_intermediates_dir is not None:
-                    _manifest_path = os.path.join(
+                    save_dense_replay_manifest(
                         debug.save_intermediates_dir,
-                        f"manifest_iter{iteration}_half{k}.npz",
+                        iteration,
+                        dense_half,
+                        dense_sampling,
+                        dense_priors,
+                        previous_translations_k,
+                        dense_result,
+                        perturbation_factor=parity.perturb_factor,
                     )
-                    _manifest = {
-                        "effective_rotations": np.asarray(effective_rotations),
-                        "coarse_scoring_rotations": _replay_manifest_array(
-                            dense_sampling.coarse_scoring_rotations,
-                        ),
-                        "current_translations": np.asarray(current_translations),
-                        "rotation_log_prior": _replay_manifest_array(rotation_log_prior_k, dtype=np.float64),
-                        "translation_log_prior": _replay_manifest_array(translation_log_prior, dtype=np.float64),
-                        "image_corrections": _replay_manifest_array(
-                            relion_half_inputs.image_corrections[k], dtype=np.float64,
-                        ),
-                        "scale_corrections": _replay_manifest_array(
-                            relion_half_inputs.scale_corrections[k], dtype=np.float64,
-                        ),
-                        "image_pre_shifts": _replay_manifest_array(translation_search_base, dtype=np.float32),
-                        "absolute_previous_translations": _replay_manifest_array(
-                            previous_translations_k, dtype=np.float32,
-                        ),
-                        "mean_vol_ft": np.asarray(means[k]),
-                        "mean_variance": np.asarray(mean_variance_k),
-                        "noise_variance": np.asarray(noise_variance_k),
-                        "current_size": np.int32(cs_for_engine) if cs_for_engine is not None else np.int32(-1),
-                        "half_spectrum_scoring": np.bool_(True),
-                        "use_float64_scoring": np.bool_(_DENSE_EM_STATIC_KWARGS["use_float64_scoring"]),
-                        "projection_padding_factor": np.int32(PROJECTION_PADDING_FACTOR),
-                        "reconstruction_padding_factor": np.int32(PADDING_FACTOR),
-                        "score_with_masked_images": np.bool_(True),
-                        "perturbation_instance": np.float64(random_perturbation),
-                        "perturbation_factor": np.float64(parity.perturb_factor),
-                        "iteration": np.int32(iteration),
-                        "half_index": np.int32(k),
-                        "ave_Pmax": np.float64(float(np.mean(em_stats_k.max_posterior_per_image))),
-                    }
-                    np.savez(_manifest_path, **_manifest)
-                    logger.info("Manifest dumped: %s", _manifest_path)
 
             # NOTE: means[k] reconstruction is DEFERRED until after the
             # low_resol_join_halves step below — we need both halves'
