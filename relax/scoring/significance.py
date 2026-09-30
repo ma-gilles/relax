@@ -896,6 +896,25 @@ def _fused_score_priors_logsumexp_block(
     return scores, class_max, class_sum, global_max, global_sum
 
 
+@jax.jit
+def _add_coarse_prior_terms(scores, class_log_prior, rotation_log_prior_block, translation_log_prior):
+    """``scores`` plus the class, rotation and translation log priors, in that order.
+
+    The rotation block runs along the rotation axis; a 1-D translation prior is
+    shared by every image, a 2-D one is per image. ``None`` skips a term.
+    """
+
+    scores = scores + class_log_prior
+    if rotation_log_prior_block is not None:
+        scores = scores + rotation_log_prior_block[None, :, None]
+    if translation_log_prior is not None:
+        if translation_log_prior.ndim == 1:
+            scores = scores + translation_log_prior[None, None, :]
+        else:
+            scores = scores + translation_log_prior[:, None, :]
+    return scores
+
+
 def _significance_score_cache_enabled(n_images, n_classes, n_rot, n_trans, *, use_float64_scoring: bool) -> bool:
     """Whether to keep pass-1 score blocks for reuse in pass 2.
 
@@ -1613,7 +1632,7 @@ def _compute_k_class_significance_batched(
     device_significance_starts = [[] for _ in range(int(n_classes))]
     if coarse_significance_device_enabled:
         from relax.sparse_pass2.resident_significance import (
-            compact_batch_significance,
+            compact_batch_significance_classes,
         )
     if coarse_gaussian_gemm_hybrid_requested:
         _validate_coarse_gaussian_gemm_hybrid_request(
@@ -2881,18 +2900,27 @@ def _compute_k_class_significance_batched(
             n_trans,
         )
 
+    # Device copies of the class and rotation prior terms, made once per pass:
+    # uploading and broadcasting them for every class, block and image batch
+    # left the device idle between those small programs (K15 50k).
+    prior_device_terms = {}
+
     def _add_priors(scores, class_index, r0, r1, batch_translation_log_prior):
         if score_mode == "normalized_cc":
             return scores
-        scores = scores + jnp.asarray(class_log_priors_np[class_index], dtype=scores.real.dtype)
-        if rotation_log_prior_padded is not None:
-            scores = scores + jnp.asarray(rotation_log_prior_padded[class_index, r0:r1])[None, :, None]
-        if batch_translation_log_prior is not None:
-            if translation_log_prior.ndim == 1:
-                scores = scores + batch_translation_log_prior[None, None, :]
-            else:
-                scores = scores + batch_translation_log_prior[:, None, :]
-        return scores
+        key = (int(class_index), int(r0), int(r1), np.dtype(scores.real.dtype))
+        terms = prior_device_terms.get(key)
+        if terms is None:
+            terms = (
+                jnp.asarray(class_log_priors_np[class_index], dtype=scores.real.dtype),
+                (
+                    None
+                    if rotation_log_prior_padded is None
+                    else jnp.asarray(rotation_log_prior_padded[class_index, r0:r1])
+                ),
+            )
+            prior_device_terms[key] = terms
+        return _add_coarse_prior_terms(scores, *terms, batch_translation_log_prior)
 
     sig_rot_any = np.zeros((n_classes, n_rot), dtype=bool)
     n_sig_all = np.empty(n_images, dtype=np.int32)
@@ -4563,27 +4591,20 @@ def _compute_k_class_significance_batched(
                             "dataset order",
                         )
                     batch_sig_mask_np = None
-                    samples_per_class = n_rot * n_trans
-                    class_masks = batch_sig_mask.reshape(batch_size, n_classes, samples_per_class)
-                    for class_index in range(n_classes):
-                        class_mask = class_masks[:, class_index, :]
-                        class_n_sig = (
-                            batch_n_sig
-                            if n_classes == 1
-                            else jnp.sum(class_mask, axis=1, dtype=jnp.int32)
-                        )
-                        (
-                            batch_device_counts,
-                            batch_device_polarity,
-                            batch_device_ids,
-                            _batch_device_rot_any,
-                        ) = compact_batch_significance(
-                            class_mask,
-                            actual_batch_size=actual_batch_size,
-                            n_coarse_rot=n_rot,
-                            n_coarse_trans=n_trans,
-                            batch_n_sig=class_n_sig,
-                        )
+                    class_results = compact_batch_significance_classes(
+                        batch_sig_mask,
+                        n_classes=n_classes,
+                        actual_batch_size=actual_batch_size,
+                        n_coarse_rot=n_rot,
+                        n_coarse_trans=n_trans,
+                        batch_n_sig=batch_n_sig if n_classes == 1 else None,
+                    )
+                    for class_index, (
+                        batch_device_counts,
+                        batch_device_polarity,
+                        batch_device_ids,
+                        _batch_device_rot_any,
+                    ) in enumerate(class_results):
                         device_significance_counts[class_index].append(batch_device_counts)
                         device_significance_polarity[class_index].append(batch_device_polarity)
                         device_significance_ids[class_index].append(batch_device_ids)

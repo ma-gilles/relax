@@ -67,6 +67,7 @@ __all__ = [
     "build_coarse_significance_csr",
     "build_resident_candidate_tables_from_csr",
     "compact_batch_significance",
+    "compact_batch_significance_classes",
     "csr_candidate_rows_per_image",
     "csr_capacity_for_total",
     "fine_rotation_children",
@@ -114,8 +115,12 @@ def _compact_program():
     import jax
     import jax.numpy as jnp
 
-    @partial(jax.jit, static_argnames=("capacity", "n_coarse_trans"))
-    def _run(mask, image_valid, store_excluded, *, capacity, n_coarse_trans):
+    @partial(jax.jit, static_argnames=("capacity", "n_coarse_trans", "n_classes"))
+    def _run(mask, class_index, image_valid, store_excluded, *, capacity, n_coarse_trans, n_classes):
+        # ``mask`` is the batch's class-major ``[batch, n_classes * n_samples]``
+        # support; the class is sliced here, inside the program.
+        mask = mask.reshape(mask.shape[0], n_classes, -1)
+        mask = jax.lax.dynamic_index_in_dim(mask, class_index, axis=1, keepdims=False)
         # ``image_valid`` clears the padded rows of a short final batch, so
         # every batch of a given shape reuses one program.  ``store_excluded``
         # flips an image whose support is dense, so the ids compacted for it
@@ -150,6 +155,26 @@ def _compact_program():
 
     _compact_jitted = _run
     return _run
+
+
+_class_counts_jitted = None
+
+
+def _class_counts_program():
+    """Per-class significant-sample counts ``[n_classes, batch]`` of a class-major mask, jitted once."""
+
+    global _class_counts_jitted
+    if _class_counts_jitted is None:
+        import jax
+        import jax.numpy as jnp
+
+        @partial(jax.jit, static_argnames=("n_classes",))
+        def _counts(mask, *, n_classes):
+            mask = jnp.asarray(mask, dtype=bool).reshape(mask.shape[0], n_classes, -1)
+            return jnp.sum(mask, axis=2, dtype=jnp.int32).T
+
+        _class_counts_jitted = _counts
+    return _class_counts_jitted
 
 
 @dataclass(frozen=True)
@@ -239,6 +264,11 @@ class DeviceCompactedSignificantSamples(list):
         self.csr = csr
 
 
+# The compacted id buffers of the classes awaiting their read-back together stay
+# within this many bytes; each class's buffer is batch * n_samples / 2 int32.
+_PENDING_CLASS_ID_BYTES = 512 * 1024**2
+
+
 def compact_batch_significance(
     batch_sig_mask,
     *,
@@ -247,76 +277,123 @@ def compact_batch_significance(
     n_coarse_trans: int,
     batch_n_sig,
 ):
-    """Compact one batch's coarse significance mask on the device.
+    """One class's :func:`compact_batch_significance_classes` result."""
 
-    ``batch_sig_mask`` is the posterior's ``[batch, n_rot * n_trans]`` support
-    for a single class and ``batch_n_sig`` its per-image count, which the
-    posterior already returns, so the compaction capacity is chosen without an
-    extra device synchronization.
+    return compact_batch_significance_classes(
+        batch_sig_mask,
+        n_classes=1,
+        actual_batch_size=actual_batch_size,
+        n_coarse_rot=n_coarse_rot,
+        n_coarse_trans=n_coarse_trans,
+        batch_n_sig=batch_n_sig,
+    )[0]
 
-    Returns ``(n_significant, store_excluded, ids, rot_any)``.
+
+def compact_batch_significance_classes(
+    batch_sig_mask,
+    *,
+    n_classes: int,
+    actual_batch_size: int,
+    n_coarse_rot: int,
+    n_coarse_trans: int,
+    batch_n_sig=None,
+):
+    """Compact one batch's coarse significance mask on the device, one result per class.
+
+    ``batch_sig_mask`` is the posterior's class-major
+    ``[batch, n_classes * n_rot * n_trans]`` support. ``batch_n_sig`` is the
+    per-image count the posterior already returns, used for one class; for
+    several classes the per-class counts are one device program and one read-back.
+
+    Returns one ``(n_significant, store_excluded, ids, rot_any)`` per class.
     ``n_significant`` is the per-image support size, ``store_excluded`` marks
     the images whose ids are their *excluded* cells (the host encoder's
     sparse-complement choice, taken for exactly the same images), ``ids`` is
     the concatenated image-major ascending id array, and ``rot_any`` marks the
     coarse rotations carrying any significant sample.  The full mask never
     reaches the host, and the ids stored per image are always the smaller of
-    the included and excluded sets.
+    the included and excluded sets. The classes' compactions are enqueued
+    before their results are read back, a group of classes at a time, so the
+    device does not wait on the host between classes (K15: three read-backs
+    per class and batch left the GPU idle between them).
     """
 
+    import jax
     import jax.numpy as jnp
 
+    n_classes = int(n_classes)
     n_coarse_rot = int(n_coarse_rot)
     n_coarse_trans = int(n_coarse_trans)
     actual_batch_size = int(actual_batch_size)
     mask = jnp.asarray(batch_sig_mask)
     if mask.ndim != 2:
         raise ValueError(f"coarse significance mask must be rank 2, got {mask.shape}")
-    batch_size, n_samples = int(mask.shape[0]), int(mask.shape[1])
-    if n_samples != n_coarse_rot * n_coarse_trans:
+    batch_size = int(mask.shape[0])
+    n_samples = n_coarse_rot * n_coarse_trans
+    if n_classes < 1 or int(mask.shape[1]) != n_classes * n_samples:
         raise ValueError(
-            "coarse significance mask width does not match one class's coarse grid: "
-            f"{n_samples} vs {n_coarse_rot * n_coarse_trans}",
+            "coarse significance mask width does not match the classes' coarse grids: "
+            f"{int(mask.shape[1])} vs {n_classes} x {n_samples}",
         )
     if not 0 <= actual_batch_size <= batch_size:
         raise ValueError("actual batch size is outside the mask's image axis")
+    if batch_n_sig is not None:
+        if n_classes != 1:
+            raise ValueError("batch_n_sig is one class's per-image count")
+        class_n_sig = np.asarray(batch_n_sig, dtype=np.int32)[None, :]
+    else:
+        class_n_sig = np.asarray(_class_counts_program()(mask, n_classes=n_classes), dtype=np.int32)
 
-    n_significant = np.asarray(batch_n_sig, dtype=np.int32)[:actual_batch_size].copy()
-    # The host encoder keeps the included ids unless more than half the grid is
-    # significant, in which case it keeps the excluded ones. Reproduce that
-    # choice exactly, per image, so the two paths encode identically.
-    store_excluded = (n_significant.astype(np.int64) * 2) > n_samples
-    stored = np.where(
-        store_excluded, n_samples - n_significant.astype(np.int64), n_significant,
-    ).astype(np.int32)
-    total = int(stored.sum(dtype=np.int64))
     # An image stores at most half its grid (the smaller of the included and
     # excluded sets), so this bound depends only on the batch's shape: one
     # program per mask shape, where a capacity sized to each batch's total
     # compiled the same shape again whenever the total crossed a power of two.
     capacity = max(batch_size * (n_samples // 2), 1)
     image_valid = jnp.asarray(np.arange(batch_size, dtype=np.int32) < actual_batch_size)
-    padded_polarity = np.zeros(batch_size, dtype=bool)
-    padded_polarity[:actual_batch_size] = store_excluded
-
-    ids, device_counts, rot_any = _compact_program()(
-        mask,
-        image_valid,
-        jnp.asarray(padded_polarity),
-        capacity=capacity,
-        n_coarse_trans=n_coarse_trans,
-    )
-    device_counts = np.asarray(device_counts, dtype=np.int32)[:actual_batch_size]
-    if not np.array_equal(device_counts, stored):
-        raise RuntimeError(
-            "the device significance compaction disagrees with the posterior's "
-            "significant-sample counts",
-        )
-    # Only the power-of-two prefix holding the ids leaves the device.
-    ids = np.asarray(ids[: min(capacity, csr_capacity_for_total(total))], dtype=np.int32)[:total].copy()
-    if ids.size and (int(ids.min()) < 0 or int(ids.max()) >= n_samples):
-        raise RuntimeError("a compacted significance id is outside the coarse pose grid")
-    return n_significant, store_excluded, ids, np.asarray(rot_any, dtype=bool)
+    group = max(1, _PENDING_CLASS_ID_BYTES // (4 * capacity))
+    results = []
+    for first in range(0, n_classes, group):
+        pending = []
+        for class_index in range(first, min(n_classes, first + group)):
+            n_significant = class_n_sig[class_index, :actual_batch_size].copy()
+            # The host encoder keeps the included ids unless more than half the
+            # grid is significant, in which case it keeps the excluded ones.
+            # Reproduce that choice exactly, per image, so the two paths encode
+            # identically.
+            store_excluded = (n_significant.astype(np.int64) * 2) > n_samples
+            stored = np.where(
+                store_excluded, n_samples - n_significant.astype(np.int64), n_significant,
+            ).astype(np.int32)
+            total = int(stored.sum(dtype=np.int64))
+            padded_polarity = np.zeros(batch_size, dtype=bool)
+            padded_polarity[:actual_batch_size] = store_excluded
+            ids, device_counts, rot_any = _compact_program()(
+                mask,
+                class_index,
+                image_valid,
+                jnp.asarray(padded_polarity),
+                capacity=capacity,
+                n_coarse_trans=n_coarse_trans,
+                n_classes=n_classes,
+            )
+            # Only the power-of-two prefix holding the ids leaves the device.
+            ids = ids[: min(capacity, csr_capacity_for_total(total))]
+            pending.append((n_significant, store_excluded, stored, total, ids, device_counts, rot_any))
+        fetched = jax.device_get([(ids, counts, rot_any) for *_, ids, counts, rot_any in pending])
+        for (n_significant, store_excluded, stored, total, *_), (ids, device_counts, rot_any) in zip(
+            pending, fetched
+        ):
+            device_counts = np.asarray(device_counts, dtype=np.int32)[:actual_batch_size]
+            if not np.array_equal(device_counts, stored):
+                raise RuntimeError(
+                    "the device significance compaction disagrees with the posterior's "
+                    "significant-sample counts",
+                )
+            ids = np.asarray(ids, dtype=np.int32)[:total].copy()
+            if ids.size and (int(ids.min()) < 0 or int(ids.max()) >= n_samples):
+                raise RuntimeError("a compacted significance id is outside the coarse pose grid")
+            results.append((n_significant, store_excluded, ids, np.asarray(rot_any, dtype=bool)))
+    return results
 
 
 def build_coarse_significance_csr(

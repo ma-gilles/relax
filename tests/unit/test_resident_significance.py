@@ -29,6 +29,7 @@ from relax.sparse_pass2.resident_significance import (
     build_coarse_significance_csr,
     build_resident_candidate_tables_from_csr,
     compact_batch_significance,
+    compact_batch_significance_classes,
     csr_capacity_for_total,
     host_support_rows,
 )
@@ -181,6 +182,44 @@ def test_compaction_matches_flatnonzero_per_image_bitwise():
         rot_any,
         mask.reshape(mask.shape[0], N_COARSE_ROT, N_COARSE_TRANS).any(axis=(0, 2)),
     )
+
+
+def test_class_compaction_matches_each_class_alone(monkeypatch):
+    """A class-major K-class mask compacts to each class's single-class result.
+
+    A one-class read-back group exercises the grouping as well as one group.
+    """
+
+    import relax.sparse_pass2.resident_significance as resident_significance
+
+    n_samples = N_COARSE_ROT * N_COARSE_TRANS
+    n_classes, actual = 3, 5
+    masks = [_mask_from_supports(_supports(7, n_samples), n_samples) for _ in range(n_classes)]
+    masks[1][2] = True  # a dense image stores its excluded cells
+    class_major = np.concatenate(masks, axis=1)
+    expected = [
+        compact_batch_significance(
+            mask,
+            actual_batch_size=actual,
+            n_coarse_rot=N_COARSE_ROT,
+            n_coarse_trans=N_COARSE_TRANS,
+            batch_n_sig=mask.sum(axis=1).astype(np.int32),
+        )
+        for mask in masks
+    ]
+    for pending_bytes in (resident_significance._PENDING_CLASS_ID_BYTES, 1):
+        monkeypatch.setattr(resident_significance, "_PENDING_CLASS_ID_BYTES", pending_bytes)
+        got = compact_batch_significance_classes(
+            class_major,
+            n_classes=n_classes,
+            actual_batch_size=actual,
+            n_coarse_rot=N_COARSE_ROT,
+            n_coarse_trans=N_COARSE_TRANS,
+        )
+        assert len(got) == n_classes
+        for class_got, class_expected in zip(got, expected):
+            for value, reference in zip(class_got, class_expected):
+                assert_matches(value, reference)
 
 
 def test_compaction_ignores_padded_image_rows():
