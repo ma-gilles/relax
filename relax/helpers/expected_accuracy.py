@@ -5,7 +5,6 @@ from __future__ import annotations
 import dataclasses
 import logging
 import multiprocessing
-import os
 import traceback
 from dataclasses import dataclass
 from typing import Any, NamedTuple
@@ -97,20 +96,6 @@ def _expected_accuracy_class_ids(class_assignments_half1, *, k_class_enabled, n_
     return np.zeros(int(n_units), dtype=np.int32)
 
 
-def _accuracy_threads() -> int:
-    """Worker threads for the binding's trials: the CPUs this process may use.
-
-    The trials are independent and summed in trial order afterwards, so the
-    result does not depend on the count; at EMPIAR-10202 the 100 serial trials
-    took 13.4 s of every iteration (bigbox py-spy 14561585).
-    """
-
-    try:
-        return max(1, len(os.sched_getaffinity(0)))
-    except AttributeError:  # pragma: no cover - non-Linux
-        return max(1, os.cpu_count() or 1)
-
-
 def estimate_relion_expected_accuracy_from_prepared_inputs(
     *,
     references_relion,
@@ -139,11 +124,11 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     tilt_images=None,
     optics=None,
 ) -> ExpectedAccuracy:
-    """Call RELION's expected-accuracy binding from prepared native inputs.
+    """RELION's ``calculateExpectedAngularErrors`` from prepared inputs.
 
     Supplied-map EM and InitialModel have different state containers and noise
-    conventions, but the native calculation itself must have one owner.
-    Callers prepare their layouts, then cross this shared binding boundary.
+    conventions, but the calculation has one owner
+    (:func:`relax.helpers.relion_expected_accuracy.expected_angular_errors`).
     ``tilt_images`` (``image_offsets``, ``image_projections``, ``image_ctf``; see
     :func:`relax.refinement.tomo_half.tilt_image_accuracy_inputs`) makes the particles
     subtomograms over their tilt images; the per-particle defocus arrays are then unused.
@@ -156,9 +141,9 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     group's); None is the model grid. ``projector_data`` (complex128
     ``[K, pad, pad, pad // 2 + 1]``) is the references' ``Projector::data`` at the
     projector current size when the caller already built it (the scoring
-    projector setup); the binding then skips its own transform of each class.
+    projector setup); otherwise each class's transform is built here.
     """
-    from relax.relion_bind import _relion_bind_core as bind
+    from relax.helpers.relion_expected_accuracy import expected_angular_errors
 
     trial_local = np.asarray(trial_local_indices, dtype=np.int64).reshape(-1)
     trial_particles = np.asarray(random_seed_particle_ids, dtype=np.int64).reshape(-1)
@@ -178,58 +163,122 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
             "random_seed_particle_ids must have shape "
             f"{trial_local.shape}, got {trial_particles.shape}"
         )
-
-    out = bind.vdam_expected_angular_errors(
-        np.ascontiguousarray(references_relion, dtype=np.float64),
-        np.ascontiguousarray(eulers),
-        np.ascontiguousarray(trial_local),
-        np.ascontiguousarray(classes),
-        np.ascontiguousarray(class_weights, dtype=np.float64),
-        np.ascontiguousarray(sigma2_noise_relion, dtype=np.float64),
-        np.ascontiguousarray(defocus_u, dtype=np.float64),
-        np.ascontiguousarray(defocus_v, dtype=np.float64),
-        np.ascontiguousarray(defocus_angle, dtype=np.float64),
-        np.ascontiguousarray(phase_shift, dtype=np.float64),
-        float(voltage),
-        float(spherical_aberration),
-        float(amplitude_contrast),
-        float(pixel_size),
-        int(ori_size),
-        int(current_image_size),
-        int(padding_factor),
-        1,
-        float(sigma2_fudge),
-        int(random_seed),
-        bool(do_ctf_correction),
-        False,
-        np.ascontiguousarray(trial_particles),
-        n_threads=_accuracy_threads(),
-        **({} if group_grid is None else dict(group_grid)),
-        **(
-            {}
-            if projector_data is None
-            else {"projector_data": np.ascontiguousarray(projector_data, dtype=np.complex128)}
-        ),
-        **({} if optics is None else dict(optics)),
-        **(
-            {}
-            if tilt_images is None
-            else {
-                "image_offsets": np.ascontiguousarray(tilt_images["image_offsets"], dtype=np.int64),
-                "image_projections": np.ascontiguousarray(tilt_images["image_projections"], dtype=np.float64),
-                "image_ctf": np.ascontiguousarray(tilt_images["image_ctf"], dtype=np.float64),
-            }
-        ),
+    grid = {} if group_grid is None else dict(group_grid)
+    model_pixel_size = float(grid.get("model_pixel_size", pixel_size) or pixel_size)
+    image_full_size = int(grid.get("image_full_size", ori_size) or ori_size)
+    projector_current_size = int(grid.get("projector_current_size", current_image_size) or current_image_size)
+    references = np.ascontiguousarray(references_relion, dtype=np.float64)
+    if projector_data is None:
+        projector_data = _projector_data(references, projector_current_size, int(padding_factor))
+    tilt = None if tilt_images is None else {key: np.asarray(value) for key, value in tilt_images.items()}
+    optics = {} if optics is None else dict(optics)
+    ctf_images = None
+    if do_ctf_correction and "trial_ctf" in optics:
+        # The caller's exact CTF rows (premultiplied groups, even Zernike terms, magnification).
+        ctf_images = _window_fftw_half(np.asarray(optics["trial_ctf"], dtype=np.float64), int(current_image_size))
+    elif do_ctf_correction:
+        ctf_images = _trial_ctf_images(
+            trial_local,
+            defocus=(defocus_u, defocus_v, defocus_angle, phase_shift),
+            optics=(float(voltage), float(spherical_aberration), float(amplitude_contrast)),
+            pixel_size=float(pixel_size),
+            image_full_size=image_full_size,
+            current_image_size=int(current_image_size),
+            tilt_images=tilt,
+        )
+    out = expected_angular_errors(
+        projector_data=np.asarray(projector_data, dtype=np.complex128),
+        projector_r_max=min(projector_current_size // 2, int(ori_size) // 2),
+        padding_factor=int(padding_factor),
+        eulers_deg=eulers,
+        particle_ids=trial_local,
+        pdf_class=np.asarray(class_weights, dtype=np.float64),
+        sigma2_noise=np.asarray(sigma2_noise_relion, dtype=np.float64),
+        ctf_images=ctf_images,
+        pixel_size=float(pixel_size),
+        ori_size=int(ori_size),
+        current_image_size=int(current_image_size),
+        sigma2_fudge=float(sigma2_fudge),
+        random_seed=int(random_seed),
+        random_seed_particle_ids=trial_particles,
+        model_pixel_size=model_pixel_size,
+        image_full_size=image_full_size,
+        image_offsets=None if tilt is None else tilt["image_offsets"].astype(np.int64),
+        image_projections=None if tilt is None else tilt["image_projections"].astype(np.float64),
+        projection_left=optics.get("projection_left"),
     )
     return ExpectedAccuracy(
-        acc_rot=float(out["acc_rot"]),
-        acc_trans_angstrom=float(out["acc_trans"]),
-        acc_rot_per_class=np.asarray(out["acc_rot_class"], dtype=np.float64),
-        acc_trans_per_class_angstrom=np.asarray(out["acc_trans_class"], dtype=np.float64),
-        class_counts=np.asarray(out["class_counts"], dtype=np.int64),
+        acc_rot=out.acc_rot,
+        acc_trans_angstrom=out.acc_trans,
+        acc_rot_per_class=np.asarray(out.acc_rot_class, dtype=np.float64),
+        acc_trans_per_class_angstrom=np.asarray(out.acc_trans_class, dtype=np.float64),
+        class_counts=np.asarray(out.class_counts, dtype=np.int64),
         trial_local_indices=trial_local.copy(),
         trial_particle_ids=trial_particles.copy(),
     )
+
+
+def _projector_data(references_relion, current_size: int, padding_factor: int) -> np.ndarray:
+    """Each class's ``Projector::data`` (data_dim 2, gridding-corrected) at ``current_size``."""
+
+    from relax.relion.relion_projector_setup import setup_relion_projector_on_host
+
+    ori_size = int(references_relion.shape[-1])
+    return np.asarray(
+        [
+            setup_relion_projector_on_host(
+                reference, int(current_size) // 2, ori_size=ori_size, padding_factor=int(padding_factor)
+            )[0]
+            for reference in references_relion
+        ],
+        dtype=np.complex128,
+    )
+
+
+def _window_fftw_half(rows, size: int) -> np.ndarray:
+    """The ``[N, size, size // 2 + 1]`` low-frequency window of full FFTW-half images (``getFftwImage`` on a smaller grid)."""
+
+    full = rows.shape[-2]
+    if size == full:
+        return rows
+    half = size // 2 + 1
+    y = np.arange(size)
+    source_rows = np.where(y < half, y, y - size + full)
+    return rows[:, source_rows, :half]
+
+
+def _trial_ctf_images(trial_local, *, defocus, optics, pixel_size, image_full_size, current_image_size, tilt_images):
+    """RELION's ``Fctf`` of every trial image (``CTF::setValues`` + ``getFftwImage`` with damping).
+
+    Evaluated on the full image by :func:`relax.relion.relion_ctf.relion_ctf_fftw_half` and
+    windowed to the current size. A tilt image with a cumulative dose takes RELION's dose
+    damping (ctf.h:219-233) through :func:`relax.relion.tomo_input.relion_tomo_damping`.
+    """
+
+    from relax.relion.relion_ctf import relion_ctf_fftw_half
+    from relax.relion.tomo_input import fftw_half_freq_sq, relion_tomo_damping
+
+    voltage, cs, q0 = optics
+    if tilt_images is None:
+        du, dv, da, phase = (np.asarray(values, dtype=np.float64)[trial_local] for values in defocus)
+        ones = np.ones(trial_local.size)
+        params = np.column_stack([du, dv, da, voltage * ones, cs * ones, q0 * ones, 0.0 * ones, ones, phase])
+        rows = relion_ctf_fftw_half(params, image_full_size, pixel_size)
+    else:
+        offsets = np.asarray(tilt_images["image_offsets"], dtype=np.int64)
+        images = np.concatenate([np.arange(offsets[p], offsets[p + 1]) for p in trial_local])
+        c = np.asarray(tilt_images["image_ctf"], dtype=np.float64)[images]
+        dosed = c[:, 6] >= 0.0
+        ones = np.ones(images.size)
+        params = np.column_stack(
+            [c[:, 0], c[:, 1], c[:, 2], voltage * ones, cs * ones, q0 * ones, np.where(dosed, 0.0, c[:, 3]), c[:, 4], c[:, 5]]
+        )
+        rows = relion_ctf_fftw_half(params, image_full_size, pixel_size)
+        if np.any(dosed):
+            freq_sq = fftw_half_freq_sq(image_full_size, image_full_size, pixel_size)
+            for row in np.flatnonzero(dosed):
+                rows[row] = rows[row] * relion_tomo_damping(freq_sq, c[row, 6])
+    return _window_fftw_half(rows, int(current_image_size))
 
 
 def _estimate_relion_expected_accuracy_spawn_worker(

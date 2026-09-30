@@ -315,3 +315,112 @@ def test_optics_group_on_another_grid_matches():
         image_full_size=full,
     )
     _assert_same(ours, oracle)
+
+
+@pytest.mark.parametrize("tomo", [False, True])
+@pytest.mark.parametrize("current_size", [32, 20])
+def test_prepared_inputs_with_relax_ctf_match(tomo, current_size):
+    """The production entry point, with relax's own CTF and projector, against the binding."""
+
+    from relax.helpers.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
+
+    size, n_particles = 32, 30
+    rng = np.random.default_rng(51 + current_size)
+    case = _case(rng, n_particles=n_particles)
+    tilt = None
+    extra = {}
+    if tomo:
+        counts = rng.integers(1, 4, size=n_particles)
+        offsets = np.concatenate([[0], np.cumsum(counts)]).astype(np.int64)
+        n_images = int(offsets[-1])
+        image_ctf = np.column_stack(
+            [
+                rng.uniform(8000, 20000, n_images),
+                rng.uniform(8000, 20000, n_images),
+                rng.uniform(-90, 90, n_images),
+                rng.uniform(0, 60, n_images),
+                rng.uniform(0.7, 1.0, n_images),
+                np.zeros(n_images),
+                np.where(rng.uniform(size=n_images) < 0.5, rng.uniform(0, 80, n_images), -1.0),
+            ]
+        )
+        tilt = dict(
+            image_offsets=offsets,
+            image_projections=np.asarray([_rotation(rng) for _ in range(n_images)]),
+            image_ctf=image_ctf,
+        )
+        extra = dict(tilt)
+    oracle = bind.vdam_expected_angular_errors(
+        case["references"], case["eulers"], case["particles"], np.zeros(len(case["particles"]), dtype=np.int32),
+        case["pdf"], case["sigma2"], case["defU"], case["defV"], case["defA"], case["phase"],
+        300.0, 2.7, 0.1, 2.1, size, current_size, 2, 1, 1.0, 11, True, False, case["seed_particles"],
+        n_threads=4, **extra,
+    )
+    ours = estimate_relion_expected_accuracy_from_prepared_inputs(
+        references_relion=case["references"],
+        trial_eulers_deg=case["eulers"],
+        trial_local_indices=case["particles"],
+        trial_class_ids=np.zeros(len(case["particles"]), dtype=np.int32),
+        class_weights=case["pdf"],
+        sigma2_noise_relion=case["sigma2"],
+        defocus_u=case["defU"],
+        defocus_v=case["defV"],
+        defocus_angle=case["defA"],
+        phase_shift=case["phase"],
+        voltage=300.0,
+        spherical_aberration=2.7,
+        amplitude_contrast=0.1,
+        pixel_size=2.1,
+        ori_size=size,
+        current_image_size=current_size,
+        padding_factor=2,
+        sigma2_fudge=1.0,
+        random_seed=11,
+        do_ctf_correction=True,
+        random_seed_particle_ids=case["seed_particles"],
+        tilt_images=tilt,
+    )
+    assert ours.acc_rot == float(oracle["acc_rot"])
+    assert ours.acc_trans_angstrom == float(oracle["acc_trans"])
+    np.testing.assert_array_equal(ours.acc_rot_per_class, np.asarray(oracle["acc_rot_class"]))
+    np.testing.assert_array_equal(ours.acc_trans_per_class_angstrom, np.asarray(oracle["acc_trans_class"]))
+
+
+@pytest.mark.parametrize("magnified", [False, True])
+def test_prepared_inputs_with_optics_rows_match(magnified):
+    """The caller's CTF rows (premultiplied, Zernike, magnification) and ``inv(M3)`` against the binding."""
+
+    from relax.helpers.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
+
+    size, current_size = 32, 24
+    rng = np.random.default_rng(71)
+    case = _case(rng)
+    ctf = np.asarray(
+        [
+            bind.get_ctf_image(u, v, a, 300.0, 2.7, 0.1, 0.0, 2.1, size, size, False, False, True, p, 1.0) ** 2
+            for u, v, a, p in (
+                (case["defU"][q], case["defV"][q], case["defA"][q], case["phase"][q]) for q in case["particles"]
+            )
+        ]
+    )
+    optics = {"trial_ctf": ctf}
+    if magnified:
+        optics["projection_left"] = np.linalg.inv(np.array([[1.012, 0.004, 0.0], [0.003, 0.991, 0.0], [0.0, 0.0, 1.0]]).T)
+    oracle = bind.vdam_expected_angular_errors(
+        case["references"], case["eulers"], case["particles"], np.zeros(len(case["particles"]), dtype=np.int32),
+        case["pdf"], case["sigma2"], case["defU"], case["defV"], case["defA"], case["phase"],
+        300.0, 2.7, 0.1, 2.1, size, current_size, 2, 1, 1.0, 11, True, False, case["seed_particles"],
+        n_threads=4, **optics,
+    )
+    ours = estimate_relion_expected_accuracy_from_prepared_inputs(
+        references_relion=case["references"], trial_eulers_deg=case["eulers"], trial_local_indices=case["particles"],
+        trial_class_ids=np.zeros(len(case["particles"]), dtype=np.int32), class_weights=case["pdf"],
+        sigma2_noise_relion=case["sigma2"], defocus_u=case["defU"], defocus_v=case["defV"],
+        defocus_angle=case["defA"], phase_shift=case["phase"], voltage=300.0, spherical_aberration=2.7,
+        amplitude_contrast=0.1, pixel_size=2.1, ori_size=size, current_image_size=current_size, padding_factor=2,
+        sigma2_fudge=1.0, random_seed=11, do_ctf_correction=True, random_seed_particle_ids=case["seed_particles"],
+        optics=optics,
+    )
+    assert ours.acc_rot == float(oracle["acc_rot"])
+    assert ours.acc_trans_angstrom == float(oracle["acc_trans"])
+    np.testing.assert_array_equal(ours.acc_rot_per_class, np.asarray(oracle["acc_rot_class"]))

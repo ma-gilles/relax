@@ -207,7 +207,7 @@ def test_initial_model_consumers_receive_one_loaded_scalar(tmp_path, monkeypatch
         raise CapturedBootstrap
 
     monkeypatch.setattr(bootstrap_iref, "compute_avg_unaligned_and_sigma2", average)
-    monkeypatch.setattr(bootstrap_iref, "compute_bootstrap_iref_via_cpp", bootstrap)
+    monkeypatch.setattr(bootstrap_iref, "compute_bootstrap_iref", bootstrap)
     with pytest.raises(CapturedBootstrap):
         bootstrap_iref._initial_state_from_particles(ds, sf.df, sf.data_optics, opts)
     assert seen["average"]["pixel_size"] == PIXEL

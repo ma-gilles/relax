@@ -684,27 +684,16 @@ def test_particle_state_from_star_seeds_input_euler_orientations_for_all_particl
 
 
 def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(monkeypatch):
-    import relax.relion_bind as relion_bind
+    from relax.helpers import relion_expected_accuracy
 
     captured = {}
 
-    def fake_expected_accuracy(*args, **_kwargs):
-        captured["eulers"] = np.asarray(args[1]).copy()
-        captured["particle_ids"] = np.asarray(args[2]).copy()
-        return {
-            "acc_rot": 2.5,
-            "acc_trans": 1.25,
-            "acc_rot_class": np.asarray([2.5]),
-            "acc_trans_class": np.asarray([1.25]),
-            "class_counts": np.asarray([2]),
-        }
+    def fake_expected_accuracy(**kwargs):
+        captured["eulers"] = np.asarray(kwargs["eulers_deg"]).copy()
+        captured["particle_ids"] = np.asarray(kwargs["particle_ids"]).copy()
+        return relion_expected_accuracy.ExpectedErrors(2.5, 1.25, np.asarray([2.5]), np.asarray([1.25]), np.asarray([2]))
 
-    monkeypatch.setattr(
-        relion_bind,
-        "_relion_bind_core",
-        SimpleNamespace(vdam_expected_angular_errors=fake_expected_accuracy),
-        raising=False,
-    )
+    monkeypatch.setattr(relion_expected_accuracy, "expected_angular_errors", fake_expected_accuracy)
     main = pd.DataFrame(
         {
             "_rlnImageName": ["1@stack.mrcs", "2@stack.mrcs", "3@stack.mrcs"],
@@ -1427,17 +1416,18 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
         assert kwargs["nr_classes"] == 1
         assert kwargs["particle_diameter_ang"] == 16.0
         assert kwargs.get("particle_seed_ids") is None
-        return raw_iref.copy()
+        return raw_iref.copy(), "rand-state"
 
     def fake_postprocess(iref, **kwargs):
         assert_matches(iref, raw_iref)
+        assert kwargs.pop("rand_state") == "rand-state"
         calls.append(kwargs)
         return post_iref.copy()
 
     monkeypatch.setattr(bootstrap_iref, "compute_avg_unaligned_and_sigma2", fake_avg)
     monkeypatch.setattr(bootstrap_iref, "_load_raw_images", fake_load_raw_images)
-    monkeypatch.setattr(bootstrap_iref, "compute_bootstrap_iref_via_cpp", fake_bootstrap)
-    monkeypatch.setattr(bootstrap_iref, "postprocess_bootstrap_iref_via_cpp", fake_postprocess)
+    monkeypatch.setattr(bootstrap_iref, "compute_bootstrap_iref", fake_bootstrap)
+    monkeypatch.setattr(bootstrap_iref, "postprocess_bootstrap_iref", fake_postprocess)
 
     main = pd.DataFrame(
         {
@@ -1509,8 +1499,8 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
     monkeypatch.setenv("RELAX_INITIAL_IREF_OVERRIDE", "seed.mrc")
     monkeypatch.setattr(
         bootstrap_iref,
-        "compute_bootstrap_iref_via_cpp",
-        lambda **_kwargs: pytest.fail("Override must bypass native double bootstrap"),
+        "compute_bootstrap_iref",
+        lambda **_kwargs: pytest.fail("Override must bypass the bootstrap"),
     )
     monkeypatch.setattr(helpers, "load_relion_volume", lambda _path: post_iref[0].copy())
     overridden, _ = bootstrap_iref._initial_state_from_particles(dataset, main, optics, opts)
@@ -1954,29 +1944,19 @@ def test_expected_accuracy_subprocess_diagnostic_is_explicit_and_strict(monkeypa
         native_sampling._isolate_native_sampling_accuracy_diagnostic()
 
 
-def test_sampling_accuracy_binding_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_path):
-    import relax.relion_bind as relion_bind
+def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_path):
+    from relax.helpers import relion_expected_accuracy
 
     captured = {}
 
-    def fake_expected_accuracy(*args, **_kwargs):
-        captured["interpolator"] = args[17]
-        captured["sigma2_fudge"] = args[18]
-        captured["random_seed_particle_ids"] = np.asarray(args[22]).copy()
-        return {
-            "acc_rot": 1.823,
-            "acc_trans": 1.717,
-            "acc_rot_class": np.asarray([1.823]),
-            "acc_trans_class": np.asarray([1.717]),
-            "class_counts": np.asarray([2]),
-        }
+    def fake_expected_accuracy(**kwargs):
+        captured["sigma2_fudge"] = kwargs["sigma2_fudge"]
+        captured["random_seed_particle_ids"] = np.asarray(kwargs["random_seed_particle_ids"]).copy()
+        return relion_expected_accuracy.ExpectedErrors(
+            1.823, 1.717, np.asarray([1.823]), np.asarray([1.717]), np.asarray([2])
+        )
 
-    monkeypatch.setattr(
-        relion_bind,
-        "_relion_bind_core",
-        SimpleNamespace(vdam_expected_angular_errors=fake_expected_accuracy),
-        raising=False,
-    )
+    monkeypatch.setattr(relion_expected_accuracy, "expected_angular_errors", fake_expected_accuracy)
     state = initialise_denovo_state(
         ori_size=8,
         pixel_size=2.125,
@@ -2027,7 +2007,6 @@ def test_sampling_accuracy_binding_uses_sigma2_fudge_not_dynamic_tau2(monkeypatc
 
     assert captured["sigma2_fudge"] == pytest.approx(1.0)
     assert captured["sigma2_fudge"] != pytest.approx(state.tau2_fudge_factor)
-    assert captured["interpolator"] == 1
     assert_matches(captured["random_seed_particle_ids"], np.asarray([9, 4]))
     assert not np.array_equal(captured["random_seed_particle_ids"], np.asarray([1, 0]))
     assert meta["estimated_acc_sigma2_fudge"] == pytest.approx(1.0)

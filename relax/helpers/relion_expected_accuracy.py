@@ -317,6 +317,7 @@ def expected_angular_errors(
     image_full_size: int | None = None,
     image_offsets=None,
     image_projections=None,
+    projection_left=None,
 ) -> ExpectedErrors:
     """``calculateExpectedAngularErrors`` over the trials, as the binding's oracle computes it.
 
@@ -325,6 +326,8 @@ def expected_angular_errors(
     one ``[current_image_size, current_image_size // 2 + 1]`` CTF per image of the
     trial particles (in trial-image order). Tilt images: ``image_offsets``
     ``[n_particles + 1]`` and ``image_projections`` ``[n_images, 3, 3]`` (``Aproj``).
+    ``projection_left`` (3x3, ``ObservationModel::applyAnisoMag``'s ``inv(M3)``)
+    multiplies both projection matrices on the left (ml_optimiser.cpp:9526, 9589).
     """
 
     model_pixel_size = float(pixel_size if model_pixel_size is None or model_pixel_size <= 0 else model_pixel_size)
@@ -367,12 +370,15 @@ def expected_angular_errors(
         int(current_image_size), image_full_size, sigma2_noise, float(sigma2_fudge), remap_image_sizes
     )
     ctf = None if ctf_images is None else np.asarray(ctf_images, dtype=np.float64)
+    left = None if projection_left is None else np.asarray(projection_left, dtype=np.float64).reshape(3, 3)
     image_eulers = eulers[image_trial]
 
     def matrices(rows_eulers, rows):
         a = _euler_matrices(rows_eulers)
         if tomo:
             a = _matmul3(aproj[rows], a)
+        if left is not None:
+            a = _matmul3(left, a)
         return a * scale_difference
 
     acc_rot_class = np.full(n_classes, 999.0)

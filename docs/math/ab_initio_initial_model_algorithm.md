@@ -170,7 +170,7 @@ pdf_direction[k, r] = direction prior
 This state is created by
 [`init.py::initialise_denovo_state`](../../recovar/em/vdam/init.py)
 and bootstrapped by
-[`bootstrap_iref.py::compute_bootstrap_iref_via_cpp`](../../recovar/em/vdam/bootstrap_iref.py).
+[`bootstrap_iref.py::compute_bootstrap_iref`](../../relax/vdam/bootstrap_iref.py).
 The dense E-step bridge in
 [`dense_adapter.py`](../../recovar/em/vdam/dense_adapter.py)
 converts `Iref` to dense Fourier means, runs dense or sparse K-class EM, packs
@@ -231,7 +231,7 @@ Use this index only after reading the algorithm sections above.
   [`init.py::initialise_denovo_state`](../../recovar/em/vdam/init.py)
 - Bootstrap and noise:
   [`initial_noise.py::compute_avg_unaligned_and_sigma2`](../../recovar/em/relion/initial_noise.py),
-  [`bootstrap_iref.py::compute_bootstrap_iref_via_cpp`](../../recovar/em/vdam/bootstrap_iref.py)
+  [`bootstrap_iref.py::compute_bootstrap_iref`](../../relax/vdam/bootstrap_iref.py)
 - VDAM loop and schedules:
   [`iteration_loop.py::run_vdam_iterations`](../../recovar/em/vdam/iteration_loop.py),
   [`schedules.py`](../../recovar/em/vdam/schedules.py),
@@ -284,9 +284,9 @@ sigma2_noise[g, s] = particle_power_g[s] / 2 - Mavg_power[s] / 2
 Non-positive shells are repaired by copying a positive neighbor, matching the
 RELION source behavior.
 
-`compute_bootstrap_iref_via_cpp` is the recommended bootstrap path. It calls the
-local RELION binding so the following C++ operations are not reimplemented in
-Python:
+`compute_bootstrap_iref` is the bootstrap path. It runs relax's NumPy port of
+RELION's C++ ([`bootstrap_reconstruction.py`](../../relax/vdam/bootstrap_reconstruction.py);
+the RELION binding is only its test oracle), which reproduces:
 
 - per-particle RNG reset with `random_seed + part_id`,
 - random Euler angle draw,
@@ -296,7 +296,7 @@ Python:
 - `BackProjector::set2DFourierTransform`,
 - `BackProjector::reconstruct(..., do_map=false)`.
 
-The Python wrapper currently defaults the bootstrap binding to `padding_factor=2`
+The Python wrapper currently defaults the bootstrap to `padding_factor=2`
 because that matches the available RELION fixture better than `1`, even though
 the GUI command uses `--pad 1` for the later refinement. Treat this as a known
 bootstrap parity quirk, not as a license to change the VDAM E/M padding.
@@ -813,8 +813,8 @@ These are code-level limitations in the current branch:
 - Native execution does not spawn RELION's post-run symmetry-alignment tool.
 - `run_native_initial_model` rejects tilt-series datasets.
 - `_initial_state_from_particles` rejects multiple optics groups because
-  `compute_bootstrap_iref_via_cpp` currently takes scalar optics parameters.
-- `compute_bootstrap_iref_via_cpp` carries a documented bootstrap
+  `compute_bootstrap_iref` currently takes scalar optics parameters.
+- `compute_bootstrap_iref` carries a documented bootstrap
   `padding_factor=2` fixture quirk.
 - Sparse pass 2 currently rejects empty pseudo-halfsets.
 - The dense adapter is K-aware, but multiclass quality parity still depends on

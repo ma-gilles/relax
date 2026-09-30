@@ -1,8 +1,8 @@
 """Denovo Iref seeding (RELION ``--pad 1`` parity).
 
-Production path is ``compute_bootstrap_iref_via_cpp`` (C++ binding mirrors
-``calculateSumOfPowerSpectraAndAverageImage`` ml_optimiser.cpp:3127-3205 +
-reconstruct :3265 + ``initialLowPassFilterReferences`` :3336-3372).
+``compute_bootstrap_iref`` and ``postprocess_bootstrap_iref`` run relax's port of
+``calculateSumOfPowerSpectraAndAverageImage`` (ml_optimiser.cpp:3127-3205), the
+reconstruct and ``initialLowPassFilterReferences`` (:mod:`relax.vdam.bootstrap_reconstruction`).
 Parity target: ``run_it000_class001.mrc`` (|CC|>0.998).
 """
 
@@ -15,14 +15,14 @@ import numpy as np
 from relax.relion import initial_model_io
 from relax.relion.initial_model_io import _experiment_read_order
 from relax.relion.initial_noise import _image_sigma2_iter, compute_avg_unaligned_and_sigma2
-from relax.vdam import output
+from relax.vdam import bootstrap_reconstruction, output
 from relax.vdam.init import initialise_data_vs_prior_from_references, initialise_denovo_state, seed_noise_from_mavg
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import _n_directions_for_healpix_order
 from relax.vdam.state import InitialModelState
 
 
-def compute_bootstrap_iref_via_cpp(
+def compute_bootstrap_iref(
     *,
     images: np.ndarray,
     defU: np.ndarray,
@@ -44,48 +44,57 @@ def compute_bootstrap_iref_via_cpp(
     current_size: int = -1,
     minimum_nr_particles: int = 1000,
     particle_seed_ids: np.ndarray | None = None,
-) -> np.ndarray:
-    """Run the full RELION InitialModel bootstrap in C++; returns Iref in recovar frame."""
+):
+    """RELION's random-orientation bootstrap reference per class, in RECOVAR's frame.
+
+    Returns ``(Iref, rand_state)``: the C ``rand()`` stream where the particle loop
+    leaves it, which :func:`postprocess_bootstrap_iref` continues for the blobs.
+    """
     from recovar.utils.helpers import relion_volume_to_recovar
 
-    from relax.relion_bind import _relion_bind_core as bind
+    from relax.relion.relion_ctf import relion_ctf_fftw_half
 
-    if current_size <= 0:
-        # RELION wsum_model.current_size = ROUND(0.07 * ori_size) (shell count, not Å).
-        current_size = int(np.floor(0.07 * ori_size + 0.5))
-    seed_ids = None if particle_seed_ids is None else np.ascontiguousarray(particle_seed_ids, dtype=np.int64)
-
-    iref_relion = np.asarray(
-        bind.vdam_bootstrap_iref(
-            np.ascontiguousarray(images.astype(np.float64)),
-            np.ascontiguousarray(defU.astype(np.float64)),
-            np.ascontiguousarray(defV.astype(np.float64)),
-            np.ascontiguousarray(defAngle.astype(np.float64)),
-            np.ascontiguousarray(phase_shift.astype(np.float64)),
-            voltage,
-            Cs,
-            Q0,
-            pixel_size,
-            ori_size,
-            nr_classes,
-            particle_diameter_ang,
-            width_mask_edge_px,
-            do_zero_mask,
-            do_ctf_correction,
-            random_seed,
-            padding_factor,
-            1,  # TRILINEAR
-            current_size,
-            minimum_nr_particles,
-            seed_ids,
+    if current_size > 0 and current_size != ori_size:
+        raise NotImplementedError("the InitialModel bootstrap reconstructs at the full box (current_size -1)")
+    todo = min(max(int(minimum_nr_particles), int(nr_classes) * 5), int(images.shape[0]))
+    ctf_images = None
+    if do_ctf_correction:
+        ones = np.ones(todo)
+        params = np.column_stack(
+            [
+                np.asarray(defU, dtype=np.float64)[:todo],
+                np.asarray(defV, dtype=np.float64)[:todo],
+                np.asarray(defAngle, dtype=np.float64)[:todo],
+                voltage * ones,
+                Cs * ones,
+                Q0 * ones,
+                0.0 * ones,
+                ones,
+                np.asarray(phase_shift, dtype=np.float64)[:todo],
+            ]
         )
+        ctf_images = relion_ctf_fftw_half(params, int(ori_size), float(pixel_size))
+    iref_relion, rand_state = bootstrap_reconstruction.bootstrap_references(
+        images=np.asarray(images[:todo], dtype=np.float64),
+        ctf_images=ctf_images,
+        ori_size=int(ori_size),
+        pixel_size=float(pixel_size),
+        nr_classes=int(nr_classes),
+        particle_diameter_ang=float(particle_diameter_ang),
+        width_mask_edge_px=float(width_mask_edge_px),
+        do_zero_mask=bool(do_zero_mask),
+        random_seed=int(random_seed),
+        padding_factor=int(padding_factor),
+        minimum_nr_particles=int(minimum_nr_particles),
+        particle_seed_ids=particle_seed_ids,
     )
-    return np.asarray([relion_volume_to_recovar(vol) for vol in iref_relion], dtype=np.float64)
+    return np.asarray([relion_volume_to_recovar(vol) for vol in iref_relion], dtype=np.float64), rand_state
 
 
-def postprocess_bootstrap_iref_via_cpp(
+def postprocess_bootstrap_iref(
     Iref: np.ndarray,
     *,
+    rand_state,
     pixel_size: float,
     ini_high_ang: float,
     particle_diameter_ang: float,
@@ -93,31 +102,25 @@ def postprocess_bootstrap_iref_via_cpp(
     do_init_blobs: bool = True,
     is_helical_segment: bool = False,
 ) -> np.ndarray:
-    """Apply RELION's post-bootstrap blobs+LP+softMask pipeline (ml_optimiser.cpp:2940-2980).
+    """RELION's post-bootstrap low-pass, blobs and soft mask (ml_optimiser.cpp:2940-2980).
 
-    Call immediately after ``compute_bootstrap_iref_via_cpp`` to preserve RELION's
-    global ``rand()`` state for the blob draws.
+    ``rand_state`` is the second value :func:`compute_bootstrap_iref` returns.
     """
     from recovar.utils.helpers import recovar_volume_to_relion, relion_volume_to_recovar
 
-    from relax.relion_bind import _relion_bind_core as bind
-
+    if is_helical_segment:
+        raise NotImplementedError("helical InitialModel blobs are not ported")
     arr = np.asarray(Iref, dtype=np.float64)
     if arr.ndim != 4 or arr.shape[1] != arr.shape[2] or arr.shape[2] != arr.shape[3]:
         raise ValueError(f"Iref must have shape (K, N, N, N), got {arr.shape}")
-
-    iref_relion = np.asarray([recovar_volume_to_relion(vol) for vol in arr], dtype=np.float64)
-    post_relion = np.asarray(
-        bind.vdam_postprocess_initial_iref(
-            np.ascontiguousarray(iref_relion),
-            float(pixel_size),
-            float(ini_high_ang),
-            float(particle_diameter_ang),
-            float(width_mask_edge_px),
-            bool(do_init_blobs),
-            bool(is_helical_segment),
-        ),
-        dtype=np.float64,
+    post_relion = bootstrap_reconstruction.postprocess_references(
+        np.asarray([recovar_volume_to_relion(vol) for vol in arr], dtype=np.float64),
+        generator=rand_state,
+        pixel_size=float(pixel_size),
+        ini_high_ang=float(ini_high_ang),
+        particle_diameter_ang=float(particle_diameter_ang),
+        width_mask_edge_px=float(width_mask_edge_px),
+        do_init_blobs=bool(do_init_blobs),
     )
     return np.asarray([relion_volume_to_recovar(vol) for vol in post_relion], dtype=np.float64)
 
@@ -202,7 +205,7 @@ def _initial_state_from_particles(
         current_size=-1,
         minimum_nr_particles=int(opts.bootstrap_min_particles),
     )
-    iref = None if override_path else compute_bootstrap_iref_via_cpp(**bootstrap_kwargs)
+    iref, rand_state = (None, None) if override_path else compute_bootstrap_iref(**bootstrap_kwargs)
     profile.record("bootstrap")
 
     state = initialise_denovo_state(
@@ -241,8 +244,9 @@ def _initial_state_from_particles(
             raise ValueError(f"RELAX_INITIAL_IREF_OVERRIDE volume shape {vols.shape[1:]} != {(ori_size,) * 3}")
         state.Iref = np.broadcast_to(vols, (K, ori_size, ori_size, ori_size)).copy() if len(paths) == 1 else vols
     else:
-        state.Iref = postprocess_bootstrap_iref_via_cpp(
+        state.Iref = postprocess_bootstrap_iref(
             iref,
+            rand_state=rand_state,
             pixel_size=pixel_size,
             ini_high_ang=float(state.ini_high),
             particle_diameter_ang=float(opts.particle_diameter),

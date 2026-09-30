@@ -102,3 +102,36 @@ def test_bootstrap_and_postprocess_match(size, padding, do_ctf, classes, n):
     assert _relative(actual, expected) < RTOL
     actual_post = br.postprocess_references(actual, generator=generator, **post)
     assert _relative(actual_post, expected_post) < RTOL
+
+
+def test_production_bootstrap_with_relax_ctf_matches():
+    """bootstrap_iref's entry points, with relax's own CTF, against the binding (RECOVAR frame)."""
+
+    from recovar.utils.helpers import relion_volume_to_recovar
+
+    from relax.vdam import bootstrap_iref
+
+    size, n, pixel = 32, 60, 3.0
+    case = _case(size, n, seed=8)
+    args = dict(voltage=300.0, Cs=2.7, Q0=0.1, pixel_size=pixel, ori_size=size, nr_classes=2,
+                particle_diameter_ang=0.7 * size * pixel, width_mask_edge_px=5.0, do_zero_mask=True,
+                do_ctf_correction=True, random_seed=23, padding_factor=1, minimum_nr_particles=50)
+    expected = np.asarray(
+        bind.vdam_bootstrap_iref(
+            case["images"], case["defU"], case["defV"], case["defAngle"], case["phase_shift"], 300.0, 2.7, 0.1,
+            pixel, size, 2, args["particle_diameter_ang"], 5.0, True, True, 23, 1, 1, -1, 50, None,
+        )
+    )
+    expected_post = np.asarray(
+        bind.vdam_postprocess_initial_iref(expected, pixel, 4.0 * pixel, args["particle_diameter_ang"], 5.0, True, False)
+    )
+    iref, rand_state = bootstrap_iref.compute_bootstrap_iref(**case, **args)
+    post = bootstrap_iref.postprocess_bootstrap_iref(
+        iref, rand_state=rand_state, pixel_size=pixel, ini_high_ang=4.0 * pixel,
+        particle_diameter_ang=args["particle_diameter_ang"], width_mask_edge_px=5.0,
+    )
+    to_recovar = np.asarray([relion_volume_to_recovar(v) for v in expected])
+    post_recovar = np.asarray([relion_volume_to_recovar(v) for v in expected_post])
+    # relax's CTF agrees with RELION's to about 1e-11 relative (test_relion_ctf_formula.py).
+    assert _relative(iref, to_recovar) < 1e-10
+    assert _relative(post, post_recovar) < 1e-10

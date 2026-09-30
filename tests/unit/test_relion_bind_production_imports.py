@@ -20,8 +20,6 @@ ALLOWED_PREFIXES = ("relax/relion_bind/", "relax/diagnostics/", "relax/reference
 ALLOWED_FILES = {"relax/commands/build_relion_bind.py"}
 PENDING = {
     "relax/relion/relion_projector_setup.py",
-    "relax/helpers/expected_accuracy.py",
-    "relax/vdam/bootstrap_iref.py",
 }
 
 
