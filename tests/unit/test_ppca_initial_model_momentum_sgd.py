@@ -1,12 +1,14 @@
 """Independent CPU contracts for PPCA's opt-in augmented momentum step."""
 
 import argparse
+import json
 from types import SimpleNamespace
 
 import jax.numpy as jnp
 import numpy as np
 import pytest
 from recovar.core import fourier_transform_utils as ftu
+from helpers.float_compare import assert_matches, assert_trees_match
 
 from relax.commands.ppca_initial_model import add_args
 from relax.ppca_initial_model import iteration_loop
@@ -228,3 +230,17 @@ def test_controller_pools_direct_residual_and_restarts_with_velocity(tmp_path, m
     np.testing.assert_allclose(state.sgd_momentum, state.theta, rtol=1e-6, atol=1e-7)
     restored = load(tmp_path / "checkpoint_0001.npz", config, identity)
     np.testing.assert_allclose(restored.sgd_momentum, state.sgd_momentum, rtol=1e-6, atol=1e-7)
+    compact = iteration_loop.run(
+        dataset, config, tmp_path / "compact", identity, diameter_ang=2.0,
+        log_direction_prior=False,
+    )
+    assert_matches(compact.theta, state.theta)
+    assert_matches(compact.sgd_momentum, state.sgd_momentum)
+    assert_matches(compact.direction_prior, state.direction_prior)
+    full_log = json.loads((tmp_path / "iterations.jsonl").read_text().strip())
+    compact_log = json.loads((tmp_path / "compact/iterations.jsonl").read_text().strip())
+    assert "direction_prior" in full_log
+    assert "direction_prior" not in compact_log
+    for log in (full_log, compact_log):
+        log.pop("elapsed_seconds")
+    assert_trees_match({key: value for key, value in full_log.items() if key != "direction_prior"}, compact_log)

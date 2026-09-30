@@ -472,7 +472,8 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
     return stats
 
 
-def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_after=None, stop_file=None):
+def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_after=None,
+        stop_file=None, log_direction_prior=True):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     if resume:
@@ -655,6 +656,10 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 vdam_scheduled_step_unused=step,
                 vdam_scheduled_fudge_unused=fudge,
             )
+        if not log_direction_prior:
+            # The full angular prior is checkpointed in State. Large stochastic
+            # sweeps can omit its per-update JSON duplicate without changing it.
+            diagnostics.pop("direction_prior")
         with open(output / "iterations.jsonl", "a") as stream:
             stream.write(json.dumps(diagnostics, default=_json) + "\n")
         if iteration % config.checkpoint_interval == 0 or iteration == end:

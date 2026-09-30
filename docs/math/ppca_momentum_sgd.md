@@ -59,6 +59,9 @@ valid gauge of \(z\sim N(0,I_2)\). Scaling or translating latent coordinates
 would change this fixed-prior model unless a separate prior transformation is
 specified. Implementation: [`sgd_update.py`](../../relax/ppca_initial_model/sgd_update.py)
 and [`iteration_loop.py`](../../relax/ppca_initial_model/iteration_loop.py).
+The controller's opt-in `log_direction_prior=False` omits only the large
+per-update JSON copy of the angular prior; the state and checkpoints still
+retain it, and the optimizer update is unchanged.
 
 This first boundary deliberately retains the current PPCA noise estimator
 and observation-space convention. Its noise state is total coefficient
