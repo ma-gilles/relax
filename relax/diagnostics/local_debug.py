@@ -128,6 +128,29 @@ def parse_debug_noise_component_dump_request():
     return _parse_dump_request("RELAX_LOCAL_NOISE_COMPONENT_DUMP")
 
 
+@contextmanager
+def suppress_local_debug_dumps():
+    """Temporarily hide local dump requests from a diagnostic engine pass.
+
+    Existing matching variables are restored after the pass. Variables first
+    created inside the scope retain the historical behavior and are left in
+    place.
+    """
+
+    names = [
+        name
+        for name in os.environ
+        if name.startswith("RELAX_LOCAL_SCORE_DUMP_")
+        or name.startswith("RELAX_LOCAL_FUSED_POSTERIOR_DUMP_")
+        or name.startswith("RELAX_LOCAL_NOISE_COMPONENT_DUMP_")
+    ]
+    saved = {name: os.environ.pop(name) for name in names}
+    try:
+        yield
+    finally:
+        os.environ.update(saved)
+
+
 def current_size_matches_request(requested_current_sizes: set[int] | None, current_size) -> bool:
     """Return whether a local debug dump should run for ``current_size``.
 

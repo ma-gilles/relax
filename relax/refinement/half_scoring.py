@@ -48,7 +48,11 @@ from relax.dense.scoring_policy import (
     _k_class_relion_x_half_mstep_enabled,
 )
 from relax.diagnostics import parity_dump as _parity_dump
-from relax.diagnostics.local_debug import log_local_adaptive_support, log_local_denominator_support
+from relax.diagnostics.local_debug import (
+    log_local_adaptive_support,
+    log_local_denominator_support,
+    suppress_local_debug_dumps,
+)
 from relax.helpers.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
 from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
 from relax.helpers.oversampling import build_adaptive_pass2_grids
@@ -2017,15 +2021,7 @@ def _score_half_local_one_shape(
         )
     if local_adaptive_pass2_denominator_layout is not None:
         logger.info("RELION local adaptive pass 2 diagnostic: running score-only broad-denominator probe")
-        local_debug_env_names = [
-            name
-            for name in os.environ
-            if name.startswith("RELAX_LOCAL_SCORE_DUMP_")
-            or name.startswith("RELAX_LOCAL_FUSED_POSTERIOR_DUMP_")
-            or name.startswith("RELAX_LOCAL_NOISE_COMPONENT_DUMP_")
-        ]
-        saved_local_debug_env = {name: os.environ.pop(name) for name in local_debug_env_names}
-        try:
+        with suppress_local_debug_dumps():
             denominator_outputs = _run_local_search_iteration(
                 local_data,
                 replace(
@@ -2058,8 +2054,6 @@ def _score_half_local_one_shape(
                 ),
                 replace(local_diagnostics, return_profile=False, debug_iteration=None, debug_pass_label=None),
             )
-        finally:
-            os.environ.update(saved_local_debug_env)
         denominator_stats = denominator_outputs.relion_stats
         local_normalization_log_evidence = np.asarray(
             denominator_stats.log_evidence_per_image,
