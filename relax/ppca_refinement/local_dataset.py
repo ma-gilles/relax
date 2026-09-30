@@ -2026,7 +2026,7 @@ def run_local_ppca_halfset_fused_em_iteration(
         )
     mu_half = (results[0].mu_half, results[1].mu_half)
     W_half = (results[0].W_half, results[1].W_half)
-    mu_score, W_score = combine_halfset_scoring_model(mu_half, W_half)
+    mu_score, W_score = combine_halfset_scoring_model(mu_half, W_half, halfset_datasets[0].volume_shape)
     pose_diagnostics = {
         "halfset0": results[0].diagnostics,
         "halfset1": results[1].diagnostics,
