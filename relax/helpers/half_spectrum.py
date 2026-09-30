@@ -100,6 +100,39 @@ def make_half_image_weights(image_shape):
     return jnp.asarray(plan.hermitian_weights)
 
 
+def _normalize_volume_shape(volume_shape):
+    volume_shape = tuple(int(size) for size in volume_shape)
+    if len(volume_shape) != 3:
+        raise ValueError(f"volume_shape must have 3 dims, got {volume_shape}")
+    if any(size <= 0 for size in volume_shape):
+        raise ValueError(f"volume_shape entries must be positive, got {volume_shape}")
+    return volume_shape
+
+
+@functools.lru_cache(maxsize=None)
+def _host_half_volume_weights(volume_shape):
+    """Construct exact static Hermitian half-volume weights without eager JAX calls."""
+
+    depth = volume_shape[-1]
+    half_depth = depth // 2 + 1
+    weights = np.full(volume_shape[:-1] + (half_depth,), 2.0, dtype=np.float32)
+    weights[..., 0] = 1.0
+    if depth % 2 == 0:
+        weights[..., -1] = 1.0
+    return _readonly(weights)
+
+
+def make_half_volume_weights(volume_shape):
+    """Return Hermitian weights for packed half-volume inner products."""
+
+    volume_shape = _normalize_volume_shape(volume_shape)
+    expected = fourier_transform_utils.volume_shape_to_half_volume_shape(volume_shape)
+    weights = _host_half_volume_weights(volume_shape)
+    if weights.shape != expected:
+        raise AssertionError(f"half-volume weight shape {weights.shape} != {expected}")
+    return jnp.asarray(weights)
+
+
 def make_scoring_half_image_weights(
     image_shape,
     *,

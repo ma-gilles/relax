@@ -24,7 +24,7 @@ from recovar.ppca.triangular import tri_size as _tri_size
 from recovar.reconstruction import noise as noise_utils
 
 from relax.helpers.fourier_window import make_fourier_window_spec
-from relax.helpers.half_spectrum import make_scoring_half_image_weights
+from relax.helpers.half_spectrum import make_half_volume_weights, make_scoring_half_image_weights
 from relax.helpers.oversampling import find_significant_mask, top_k_rows
 from relax.helpers.preprocessing import prepare_reconstruction_batch, preprocess_batch
 from relax.ppca_refinement.config import (
@@ -1595,9 +1595,8 @@ def combine_halfset_scoring_model(mu_half, W_half, volume_shape):
     if W0.shape[-1] == 0:
         return mu_score, W0
     volume_shape = tuple(int(x) for x in volume_shape)
-    W0_full = ftu.half_volume_to_full_volume(jnp.swapaxes(W0, 0, 1), volume_shape)
-    W1_full = ftu.half_volume_to_full_volume(jnp.swapaxes(W1, 0, 1), volume_shape)
-    dots = jnp.sum(jnp.conj(W0_full) * W1_full, axis=-1).real
+    weights = make_half_volume_weights(volume_shape).reshape(-1)
+    dots = jnp.sum(weights[:, None] * jnp.conj(W0) * W1, axis=0).real
     signs = jnp.where(dots < 0.0, -1.0, 1.0).astype(W1.real.dtype)
     W_score = 0.5 * (W0 + W1 * signs[None, :])
     return mu_score, W_score

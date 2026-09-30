@@ -32,6 +32,7 @@ from relax.helpers.half_spectrum import (
     bin_shell_values_jax,
     bin_shell_values_np,
     make_half_image_weights,
+    make_half_volume_weights,
     make_relion_noise_shell_indices_half,
     make_scoring_half_image_weights,
     make_shell_indices_half,
@@ -88,6 +89,43 @@ def test_relion_normalized_cc_half_weights_keep_rectangular_x0_rows():
 def test_non_relion_scoring_half_weights_keep_hermitian_multiplicity():
     actual = make_scoring_half_image_weights(IMAGE_SHAPE, relion_half_sum=False)
     assert_matches(np.asarray(actual), np.asarray(make_half_image_weights(IMAGE_SHAPE)))
+
+
+@pytest.mark.parametrize("volume_shape", [(4, 4, 4), (4, 4, 5), (6, 5, 8), VOLUME_SHAPE])
+def test_half_volume_weights_are_one_on_axis_two_off_axis(volume_shape):
+    weights = np.asarray(make_half_volume_weights(volume_shape))
+    depth = volume_shape[-1]
+    half_depth = depth // 2 + 1
+    assert weights.shape == volume_shape[:-1] + (half_depth,)
+    assert np.all(weights[..., 0] == 1.0)
+    if depth % 2 == 0:
+        assert np.all(weights[..., -1] == 1.0)
+        assert np.all(weights[..., 1:-1] == 2.0)
+    else:
+        assert np.all(weights[..., 1:] == 2.0)
+
+
+@pytest.mark.parametrize("volume_shape", [(4, 4, 4), (4, 4, 5), (6, 5, 8), VOLUME_SHAPE])
+def test_half_volume_weighted_real_dot_matches_full_expansion(volume_shape):
+    """The real part of a Hermitian-weighted half-volume dot product must equal
+    the real part of the same dot product over the Hermitian-expanded full volume
+    (independent of make_half_volume_weights: this expands via
+    fourier_transform_utils.half_volume_to_full_volume, the ground-truth
+    convention every other half-volume caller in this codebase relies on)."""
+
+    rng = np.random.default_rng(0)
+    half_shape = ftu.volume_shape_to_half_volume_shape(volume_shape)
+    a = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
+    b = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
+
+    weights = np.asarray(make_half_volume_weights(volume_shape))
+    weighted_half_dot = float(np.sum(weights * np.conj(a) * b).real)
+
+    a_full = np.asarray(ftu.half_volume_to_full_volume(jnp.asarray(a), volume_shape))
+    b_full = np.asarray(ftu.half_volume_to_full_volume(jnp.asarray(b), volume_shape))
+    full_dot = float(np.sum(np.conj(a_full) * b_full).real)
+
+    assert_matches(weighted_half_dot, full_dot, rtol=1e-5)
 
 
 @pytest.mark.parametrize(
