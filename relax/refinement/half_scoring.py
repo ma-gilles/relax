@@ -2011,7 +2011,9 @@ def _score_half_local_one_shape(
                 relion_exact_score_translation=bool(
                     _DENSE_EM_STATIC_KWARGS["relion_exact_fine_gaussian"] and not parent_use_float64_scoring
                 ),
-                projection_relion_texture_interp=False,
+                # RELION's GPU pass 1 projects through the projector texture, as the
+                # global pass 1 and pass 2 do.
+                projection_relion_texture_interp=None,
                 projection_relion_acc_double_floorf_quirk=RELION_ACC_DOUBLE_FLOORF_QUIRK,
                 # RELION pass 1 uses the coarse diff2 kernel's row rule.
                 projection_relion_kernel="coarse",
