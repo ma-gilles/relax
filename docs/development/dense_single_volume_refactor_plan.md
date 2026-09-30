@@ -311,6 +311,12 @@ batching, projectors and diagnostic activation remain in the half function.
 The next controller audit targets batch-planning and empty-half handling. It
 must split an actual phase with a small explicit boundary; replacing the
 closure with one comprehensive iteration context is not an acceptable result.
+Before that larger split, common `HalfScoreResult` publication was made
+literal: dense, local and tomography branches now retain only their distinct
+pose/coarse-grid updates, and the existing common path reads accumulators,
+statistics and significance data from the result once. Future phase extraction
+should follow this pattern—remove false aliases and forwarding first, then add
+a boundary only when distinct ownership remains.
 
 ### 2. Half-scoring specifications and explicit variants
 

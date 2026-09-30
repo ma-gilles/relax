@@ -1161,3 +1161,18 @@ single-volume boundary has 17 parameters.
   nonblank lines across 307 functions. The seven 10+ and two 20+ argument
   counts remain unchanged. `_run_half_estep` remains 652 lines; main's changes
   account for the remaining snapshot differences.
+
+## 2026-09-30 — common half-score result publication
+
+- Commit `589026b` removed the five repeated score-result aliases from the
+  tomography, exact-local and dense branches of `_run_half_estep`. Each branch
+  now keeps only its distinct pose and coarse-assignment publication; the
+  existing common path reads accumulators and statistics directly from the
+  completed `HalfScoreResult`.
+- No helper or input container was added. Six focused dense/local controller
+  cases passed with only the existing complex-cast and gimbal-lock warnings.
+  Ruff, Python compilation and diff checks passed; CPU EM fast guard passed all
+  102 cases in 59.85 seconds.
+- Production totals are 20,747 physical and 18,291 nonblank lines across 307
+  functions. `_run_half_estep` is now 632 lines and `refine_single_volume` is
+  5,460 lines. Argument-count statistics are unchanged.
