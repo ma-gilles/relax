@@ -320,8 +320,9 @@ LOC_BUDGETS = {
     # vdam_postprocess_initial_iref, about 320 C++ lines): code moved out of RELION, a
     # real raise. RELION's step-by-step M-step left reconstruction_state for
     # diagnostics/vdam_native_mstep.py the same day (-240 lines there). bootstrap_iref.py
-    # now builds the bootstrap's CTF rows itself (+4).
-    "initialization": (925, ("bootstrap_iref.py", "bootstrap_reconstruction.py", "init.py")),
+    # now builds the bootstrap's CTF rows itself (+4), and the bootstrap windows images,
+    # CTF and back-projector to RELION's ROUND(0.07 ori_size) (+18).
+    "initialization": (945, ("bootstrap_iref.py", "bootstrap_reconstruction.py", "init.py")),
     "sampling_layout": (950, ("native_sampling.py", "layout.py")),
     # The exact-local VDAM route (sparse_pass2_estep.py, 1062 lines) was removed on
     # 2026-09-27; the adaptive-route E-step joins this budget with the helpers it shared
