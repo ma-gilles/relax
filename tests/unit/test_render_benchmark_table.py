@@ -11,9 +11,9 @@ from scripts.render_benchmark_table import (
     TABLE_HEADER,
     load_and_validate,
     multiseed_quality,
-    status,
     render_markdown,
     render_provenance,
+    status,
 )
 
 
@@ -277,6 +277,27 @@ def test_multiseed_rule_ties_small_gt_gaps_only_when_maps_reproduce():
     assert not hit
     hit, _ = multiseed_quality({1: 0.9379, 2: 0.9408}, relion, band, {1: 0.99998, 2: 0.99993})
     assert not hit
+
+
+@pytest.mark.unit
+def test_multiseed_rule_compares_run_ranges_where_both_engines_repeat_a_seed():
+    # VDAM pdb K2 s29 (2026-09-30): each engine separates the classes in one of three runs.
+    relax, relion = {29: 0.0334, 41: 0.1905}, {29: 0.0356, 41: 0.1880}
+    band = [0.2487, 0.0356, 0.0362, 0.1880]
+    hit, reason = multiseed_quality(relax, relion, band)
+    assert not hit and "s29 below across-seed RELION band" in reason
+    ranges = {29: [0.0334, 0.0357, 0.2581]}, {29: [0.2487, 0.0356, 0.0362]}
+    hit, reason = multiseed_quality(relax, relion, band, relax_repeats=ranges[0], relion_repeats=ranges[1])
+    assert hit and "run ranges compared at s29" in reason
+    # relax repeats wholly below RELION's lowest run still miss; one engine's repeats alone keep the single-run rule
+    low = {29: [0.0334, 0.0340]}
+    assert not multiseed_quality(relax, relion, band, relax_repeats=low, relion_repeats=ranges[1])[0]
+    assert not multiseed_quality(relax, relion, band, relax_repeats=ranges[0])[0]
+    # the majority-below check still applies to ranged seeds
+    relax3, relion3 = {1: 0.30, 2: 0.30, 3: 0.40}, {1: 0.31, 2: 0.31, 3: 0.39}
+    reps = {1: [0.30, 0.302]}, {1: [0.31, 0.312]}
+    hit, reason = multiseed_quality(relax3, relion3, [0.29, 0.40], relax_repeats=reps[0], relion_repeats=reps[1])
+    assert not hit and "systematic" in reason
 
 
 @pytest.mark.unit

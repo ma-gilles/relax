@@ -4990,7 +4990,7 @@
    },
    "notes": [
     "Re-judged 2026-09-30 against RELION 5.0.1 + MPI scale-sum patch + double-precision back-projection accumulation (build relion_patched_bpdouble_20260930, relion_refine --j 12 non-MPI, one fresh run per seed, arms bpd_relion_20260930): RELION's float32 atomic BP accumulation drops increments at low-Pmax iterations, so the float build is not the RELION method's reference for K>1. relax arms, walls and the ratio are the same-node pairs against the float build.",
-    "s29 is a basin lottery for both engines (same-command repeats, jobs 14774833/14774834, pairs/ng_vdam_k2_50k_s29_repeats_20260930): masked reference FSC-AUC relax 0.0334 / 0.0357 / 0.2581 and double-accumulation RELION 0.2487 / 0.0356 / 0.0362; each engine separates the two classes in one of three runs. The verdict uses relax's first run against the lowest RELION run of the seed.",
+    "s29 is a basin lottery for both engines (same-command repeats, jobs 14774833/14774834, pairs/ng_vdam_k2_50k_s29_repeats_20260930): masked reference FSC-AUC relax 0.0334 / 0.0357 / 0.2581 and double-accumulation RELION 0.2487 / 0.0356 / 0.0362; each engine separates the two classes in one of three runs. With both engines repeated, s29 compares the run ranges (user, 2026-09-30).",
     "seed 29: masked reference FSC-AUC relax 0.0334 / RELION 0.2487 (mean GT 0.0334 / 0.2475); relax-vs-RELION masked X-AUC 0.1707; fixed-seed RELION band (3 runs) masked ref 0.0356-0.2487, mean GT 0.0356-0.2475; occupied classes (> 1%) relax 2 / RELION 2; walls relax 1282 s / RELION 2195 s",
     "seed 41: masked reference FSC-AUC relax 0.1905 / RELION 0.1880 (mean GT 0.1899 / 0.1874); relax-vs-RELION masked X-AUC 0.5247; occupied classes (> 1%) relax 2 / RELION 2; walls relax 1225 s / RELION 1992 s",
     "seed 53: masked reference FSC-AUC relax 0.2318 / RELION 0.2313 (mean GT 0.2307 / 0.2300); relax-vs-RELION masked X-AUC 0.7046; occupied classes (> 1%) relax 2 / RELION 2; walls relax 1322 s / RELION 1913 s",
@@ -5048,8 +5048,8 @@
     "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, compilation and final writes included",
     "d": "H100 80GB HBM3 on both GPUs (GPU.csv per arm); same node, same time for each pair"
    },
-   "quality_pass": false,
-   "quality_reason": "masked ref FSC-AUC: worst s29 −0.0021 vs same-seed RELION; s29 below across-seed RELION band 0.0355964-0.248664",
+   "quality_pass": true,
+   "quality_reason": "masked ref FSC-AUC: worst s67 +3.3e-4 vs same-seed RELION; run ranges compared at s29 (both engines repeated); inside or above across-seed band",
    "history": [
     {
      "date": "2026-09-28",

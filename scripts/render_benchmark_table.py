@@ -93,7 +93,10 @@ STATUS_LEGEND = (
     " across-seed RELION band (all RELION runs of all seeds), and relax not below its same-seed RELION run on a majority"
     " of seeds; the Quality column shows the worst per-seed gap to the same-seed RELION run. A seed whose relax map"
     " reproduces its same-seed RELION map (map FSC-AUC ≥ 0.9999) counts GT differences under 1e-4 as ties; the numbers"
-    " are still shown. A row may carry its own tie tolerance, decided by the user from measured relax spread (see its"
+    " are still shown. A seed where both engines have same-command repeats compares run ranges: it counts as not below"
+    " when relax's best run reaches RELION's lowest run (the ranges overlap, or relax lies above), and its relax range"
+    " enters the across-seed band the same way; seeds without relax repeats compare relax's run with RELION's lowest"
+    " same-seed run. A row may carry its own tie tolerance, decided by the user from measured relax spread (see its"
     " provenance note). The page lists full-size"
     " datasets only: single-particle and VDAM rows need more than 10k particles (smaller fixtures are for testing and"
     " debugging and stay in the JSON with benchmark: false); cryo-ET rows count from 1k particles (about 40 tilts each)."
@@ -351,7 +354,15 @@ def row_tie(row):
     return None if tt is None else float(tt["value"])
 
 
-def multiseed_quality(relax, same_seed_relion, band_values, same_seed_map_auc=None, row_tie_value=None):
+def multiseed_quality(
+    relax,
+    same_seed_relion,
+    band_values,
+    same_seed_map_auc=None,
+    row_tie_value=None,
+    relax_repeats=None,
+    relion_repeats=None,
+):
     """The multi-seed accuracy rule of STATUS_LEGEND. Returns (hit, reason).
 
     relax, same_seed_relion: {seed: value of the row's metric}; band_values: every RELION value of the row (all
@@ -359,11 +370,20 @@ def multiseed_quality(relax, same_seed_relion, band_values, same_seed_map_auc=No
     inside or above the across-seed RELION band and relax is not below its same-seed RELION run on a majority of
     seeds. Differences below TIE count as equal, and below REPRODUCED_TIE for a seed whose map reproduces its
     same-seed RELION map (map FSC-AUC >= REPRODUCED_MAP_AUC). row_tie_value (a row's ``tie_tolerance``, see row_tie)
-    raises the tie for every seed of that row. The reason states the worst per-seed gap.
+    raises the tie for every seed of that row. relax_repeats / relion_repeats: optional {seed: [every run's value]}
+    of same-command repeats (user, 2026-09-30); a seed with at least two runs on both engines passes when relax's run
+    range overlaps RELION's (or lies above it): its gap is relax's best run minus RELION's lowest run, and relax's best
+    run is what enters the across-seed band check. Other seeds keep relax[s] against same_seed_relion[s]. The reason
+    states the worst per-seed gap.
     """
     lo, hi = min(band_values), max(band_values)
     maps = same_seed_map_auc or {}
     tie = {s: max(REPRODUCED_TIE if maps.get(s, 0.0) >= REPRODUCED_MAP_AUC else TIE, row_tie_value or 0.0) for s in relax}
+    ranged = [
+        s for s in relax if len((relax_repeats or {}).get(s, [])) >= 2 and len((relion_repeats or {}).get(s, [])) >= 2
+    ]
+    relax = {**relax, **{s: max(relax_repeats[s]) for s in ranged}}
+    same_seed_relion = {**same_seed_relion, **{s: min(relion_repeats[s]) for s in ranged}}
     gaps = {s: relax[s] - same_seed_relion[s] for s in relax}
     worst = min(gaps, key=gaps.get)
     below_band = [s for s in relax if relax[s] < lo - tie[s]]
@@ -371,6 +391,8 @@ def multiseed_quality(relax, same_seed_relion, band_values, same_seed_map_auc=No
     worst_txt = f"worst s{worst} {_gap(gaps[worst])} vs same-seed RELION"
     if row_tie_value:
         worst_txt += f"; row tie {row_tie_value:.0e}".replace("e-0", "e-")
+    if ranged:
+        worst_txt += f"; run ranges compared at s{'/s'.join(map(str, ranged))} (both engines repeated)"
     reproduced = [s for s in relax if maps.get(s, 0.0) >= REPRODUCED_MAP_AUC]
     if reproduced:
         worst_txt += (
