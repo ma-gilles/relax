@@ -8,6 +8,8 @@ import jax.numpy as jnp
 import numpy as np
 from recovar import utils
 
+from relax import healpix_sampling
+from relax.helpers import relion_random
 from relax.symmetry import canonicalize_rotational_symmetry
 
 # Cached per-order geometry used by the exact RELION local-search selector.
@@ -34,33 +36,11 @@ def _get_relion_grid_metadata(
     if cached is not None:
         return cached
 
-    from relax.relion_bind._relion_bind_core import get_healpix_directions
-
-    if symmetry == "C1":
-        # Preserve the historical C1 binding path exactly.  Besides protecting
-        # numerical parity, this avoids requiring symmetry-file lookup for the
-        # trivial group.
-        directions = np.asarray(
-            get_healpix_directions(healpix_order),
-            dtype=np.float64,
-        )
-        directions_ipix = np.arange(directions.shape[0], dtype=np.int64)
-        n_psi = rotation_grid_n_in_planes(healpix_order)
-        psi_step = 360.0 / float(max(1, n_psi))
-        psi_deg = np.arange(n_psi, dtype=np.float64) * psi_step
-    else:
-        from relax.relion_bind._relion_bind_core import get_healpix_sampling_metadata
-
-        source = get_healpix_sampling_metadata(healpix_order, -1.0, symmetry)
-        directions = np.column_stack(
-            [
-                np.asarray(source["rot"], dtype=np.float64),
-                np.asarray(source["tilt"], dtype=np.float64),
-            ]
-        )
-        directions_ipix = np.asarray(source["directions_ipix"], dtype=np.int64)
-        psi_deg = np.asarray(source["psi"], dtype=np.float64)
-        n_psi = int(psi_deg.shape[0])
+    source = healpix_sampling.healpix_sampling(healpix_order, symmetry)
+    directions = np.column_stack([source["rot"], source["tilt"]])
+    directions_ipix = np.asarray(source["directions_ipix"], dtype=np.int64)
+    psi_deg = np.asarray(source["psi"], dtype=np.float64)
+    n_psi = int(psi_deg.shape[0])
 
     n_pixels = int(directions.shape[0])
     if n_pixels < 1:
@@ -479,33 +459,10 @@ def _relion_rnd_unif_scaled_first_draw(seed, low, high):
     scaling inside the C++ function.  Scaling a separately rounded
     ``rnd_unif(0, 1)`` result in Python is not equivalent: the difference is
     observable in SamplingPerturbation Euler matrices at the outer M-step
-    radius.  Prefer the binding that calls the source function directly and
-    retain a glibc-compatible fallback for environments without rebuilt
-    bindings.
+    radius. :func:`relax.helpers.relion_random.rnd_unif` keeps each float
+    operation of funcs.cpp::rnd_unif.
     """
-    try:
-        from relax.relion_bind import _relion_bind_core as bind
-
-        return float(
-            np.asarray(
-                bind.vdam_rnd_unif_range_sequence(int(seed), 1, float(low), float(high)),
-                dtype=np.float64,
-            )[0]
-        )
-    except (AttributeError, ImportError):
-        import ctypes
-
-        libc = ctypes.CDLL(None)
-        libc.srand(ctypes.c_uint(int(seed)))
-        low_f = np.float32(low)
-        high_f = np.float32(high)
-        if low_f == high_f:
-            return float(low_f)
-        # RELION/Princeton Linux uses glibc RAND_MAX == 2**31 - 1.  Preserve
-        # each float32 conversion and operation from funcs.cpp::rnd_unif.
-        rand_max_f = np.float32((2**31) - 1)
-        denominator = np.float32(rand_max_f / np.float32(high_f - low_f))
-        return float(np.float32(low_f + np.float32(libc.rand()) / denominator))
+    return float(relion_random.rnd_unif_sequence(int(seed), 1, float(low), float(high))[0])
 
 
 def advance_relion_perturbation(prev_random_perturbation, perturbation_factor, rng):
@@ -602,85 +559,17 @@ def relion_sampling_perturbation_for_iteration(
 
 
 def _relion_euler_angles_to_matrix(eulers_deg: np.ndarray) -> np.ndarray:
-    """Vectorized port of RELION ``Euler_angles2matrix``.
+    """RELION ``Euler_angles2matrix`` (:func:`relax.healpix_sampling.euler_angles_to_matrix`).
 
     This returns RELION's projector matrix ``A``. The pinned RECOVAR
     ``utils.R_from_relion`` returns the same matrix for these Euler angles.
     """
-    eulers = np.asarray(eulers_deg, dtype=np.float64).reshape(-1, 3)
-    alpha = np.deg2rad(eulers[:, 0])
-    beta = np.deg2rad(eulers[:, 1])
-    gamma = np.deg2rad(eulers[:, 2])
-
-    ca = np.cos(alpha)
-    cb = np.cos(beta)
-    cg = np.cos(gamma)
-    sa = np.sin(alpha)
-    sb = np.sin(beta)
-    sg = np.sin(gamma)
-    cc = cb * ca
-    cs = cb * sa
-    sc = sb * ca
-    ss = sb * sa
-
-    A = np.empty((eulers.shape[0], 3, 3), dtype=np.float64)
-    A[:, 0, 0] = cg * cc - sg * sa
-    A[:, 0, 1] = cg * cs + sg * ca
-    A[:, 0, 2] = -cg * sb
-    A[:, 1, 0] = -sg * cc - cg * sa
-    A[:, 1, 1] = -sg * cs + cg * ca
-    A[:, 1, 2] = sg * sb
-    A[:, 2, 0] = sc
-    A[:, 2, 1] = ss
-    A[:, 2, 2] = cb
-    return A
+    return healpix_sampling.euler_angles_to_matrix(eulers_deg)
 
 
 def _relion_matrix_to_euler_angles(A: np.ndarray) -> np.ndarray:
-    """Vectorized port of RELION ``Euler_matrix2angles``."""
-    A = np.asarray(A, dtype=np.float64).reshape(-1, 3, 3)
-    out = np.empty((A.shape[0], 3), dtype=np.float64)
-    abs_sb = np.sqrt(A[:, 0, 2] * A[:, 0, 2] + A[:, 1, 2] * A[:, 1, 2])
-    nonsingular = abs_sb > (16.0 * np.finfo(np.float32).eps)
-
-    def relion_sgn(x):
-        # RELION's SGN macro returns +1 for zero.
-        return np.where(x >= 0.0, 1.0, -1.0)
-
-    if np.any(nonsingular):
-        An = A[nonsingular]
-        gamma = np.arctan2(An[:, 1, 2], -An[:, 0, 2])
-        alpha = np.arctan2(An[:, 2, 1], An[:, 2, 0])
-        sign_sb = np.empty_like(gamma)
-        small_sin_gamma = np.abs(np.sin(gamma)) < np.finfo(np.float32).eps
-        if np.any(small_sin_gamma):
-            sign_sb[small_sin_gamma] = relion_sgn(
-                -An[small_sin_gamma, 0, 2] / np.cos(gamma[small_sin_gamma])
-            )
-        if np.any(~small_sin_gamma):
-            sign_sb[~small_sin_gamma] = np.where(
-                np.sin(gamma[~small_sin_gamma]) > 0.0,
-                relion_sgn(An[~small_sin_gamma, 1, 2]),
-                -relion_sgn(An[~small_sin_gamma, 1, 2]),
-            )
-        beta = np.arctan2(sign_sb * abs_sb[nonsingular], An[:, 2, 2])
-        out[nonsingular, 0] = np.rad2deg(alpha)
-        out[nonsingular, 1] = np.rad2deg(beta)
-        out[nonsingular, 2] = np.rad2deg(gamma)
-
-    if np.any(~nonsingular):
-        As = A[~nonsingular]
-        positive = As[:, 2, 2] >= 0.0
-        alpha = np.zeros(As.shape[0], dtype=np.float64)
-        beta = np.where(positive, 0.0, np.pi)
-        gamma = np.empty(As.shape[0], dtype=np.float64)
-        gamma[positive] = np.arctan2(-As[positive, 1, 0], As[positive, 0, 0])
-        gamma[~positive] = np.arctan2(As[~positive, 1, 0], -As[~positive, 0, 0])
-        out[~nonsingular, 0] = np.rad2deg(alpha)
-        out[~nonsingular, 1] = np.rad2deg(beta)
-        out[~nonsingular, 2] = np.rad2deg(gamma)
-
-    return out
+    """RELION ``Euler_matrix2angles`` (:func:`relax.healpix_sampling.euler_matrix_to_angles`)."""
+    return healpix_sampling.euler_matrix_to_angles(A)
 
 
 def _relion_mstep_rotations_from_eulers(
@@ -705,11 +594,11 @@ def _relion_mstep_rotations_from_eulers(
 
     ``dtype`` controls only the final cast (default float32, matching
     RELION's single-precision ACC build, where this host-computed RFLOAT
-    matrix is cast to XFLOAT before use on the device). When the native
-    RELION binding is available, it performs both Euler construction and the
-    inverse so host-libm rounding also matches RELION. The NumPy formula below
-    remains the portable fallback. Under ``ACC_DOUBLE_PRECISION`` the final
-    cast is a no-op -- pass ``np.float64`` to match.
+    matrix is cast to XFLOAT before use on the device). The Euler matrix keeps
+    RELION's ``DEG2RAD`` operation order, so host-libm trig rounding matches
+    RELION's; that rounding can decide the strict radius predicate on an exact
+    outer-shell pixel in an ACC double-precision run. Under
+    ``ACC_DOUBLE_PRECISION`` the final cast is a no-op -- pass ``np.float64`` to match.
 
     ``left_matrices`` ``[N, 3, 3]`` is ``generateEulerMatrices``' ``L`` for each row: a
     tilt image's ``Aproj`` times its optics scale (acc_ml_optimiser_impl.h:1709-1734,
@@ -720,28 +609,6 @@ def _relion_mstep_rotations_from_eulers(
         left_matrices = np.asarray(left_matrices, dtype=np.float64)
         if left_matrices.shape != (eulers.shape[0], 3, 3):
             raise ValueError(f"left_matrices must have shape {(eulers.shape[0], 3, 3)}, got {left_matrices.shape}")
-    try:
-        from relax.relion_bind import _relion_bind_core as relion_bind
-
-        native_inverse = getattr(relion_bind, "euler_angles_to_inverse_matrices", None)
-    except (ImportError, OSError):
-        native_inverse = None
-    if native_inverse is not None:
-        # RELION constructs and numerically inverts these matrices on the CPU.
-        # Keeping that work in its C++ implementation also preserves libm trig
-        # rounding, which can decide the strict radius predicate on an exact
-        # outer-shell pixel in an ACC double-precision run.
-        inverse = np.asarray(
-            native_inverse(eulers) if left_matrices is None else native_inverse(eulers, left_matrices),
-            dtype=np.float64,
-        )
-        if inverse.shape != (eulers.shape[0], 3, 3):
-            raise RuntimeError(
-                "RELION Euler inverse binding returned an invalid shape: "
-                f"{inverse.shape}"
-            )
-        return np.swapaxes(inverse, 1, 2).astype(dtype)
-
     matrix = _relion_euler_angles_to_matrix(eulers)
     if left_matrices is not None:
         # Matrix2D operator*: each entry sums over k in order.
@@ -870,21 +737,9 @@ def _relion_adaptive_pass1_rotations(
     right_matrix = None
     if abs(float(random_perturbation)) >= 1e-12:
         perturbation_deg = float(random_perturbation) * float(angular_sampling_deg)
-        try:
-            from relax.relion_bind import _relion_bind_core as relion_bind
-
-            native_euler_matrix = getattr(relion_bind, "euler_angles_to_matrix", None)
-        except (ImportError, OSError):
-            native_euler_matrix = None
-        if native_euler_matrix is not None:
-            right_matrix = np.asarray(
-                native_euler_matrix(perturbation_deg, perturbation_deg, perturbation_deg),
-                dtype=np.float64,
-            )
-        else:
-            right_matrix = _relion_euler_angles_to_matrix(
-                np.asarray([[perturbation_deg, perturbation_deg, perturbation_deg]], dtype=np.float64)
-            )[0]
+        right_matrix = _relion_euler_angles_to_matrix(
+            np.asarray([[perturbation_deg, perturbation_deg, perturbation_deg]], dtype=np.float64)
+        )[0]
     if left_matrices is not None:
         return _relion_device_scoring_rotations_left_f32(source_eulers_deg, right_matrix, left_matrices)
     if use_float64:
@@ -949,7 +804,7 @@ def apply_relion_rotation_perturbation_to_eulers(
     myperturb = float(random_perturbation) * float(angular_sampling_deg)
     A = _relion_euler_angles_to_matrix(eulers)
     R_perturb = _relion_euler_angles_to_matrix(np.array([[myperturb, myperturb, myperturb]], dtype=np.float64))[0]
-    perturbed_A = np.einsum("nij,jk->nik", A, R_perturb)
+    perturbed_A = healpix_sampling.matmul3(A, R_perturb)
     perturbed_eulers = _relion_matrix_to_euler_angles(perturbed_A)
     perturbed_rotations = _relion_mstep_rotations_from_eulers(perturbed_eulers, dtype=dtype)
     return perturbed_rotations, perturbed_eulers.astype(dtype)
@@ -1162,8 +1017,8 @@ def _compute_oversampled_rotation_grid_rows(
     expands into 4 child directions and 2 child in-plane angles, yielding
     ``8`` child orientations per parent sample.
 
-    ``return_source_eulers=True`` appends the unmodified native RFLOAT Euler
-    rows (or ``None`` when native provenance is unavailable). Matrix outputs
+    ``return_source_eulers=True`` appends the unmodified RFLOAT Euler rows of
+    RELION's ``getOrientations`` (:func:`relax.healpix_sampling.oversampled_orientations`). Matrix outputs
     and legacy tuple layouts are unchanged. These rows are host metadata only.
 
     Parameters
@@ -1280,7 +1135,6 @@ def _compute_oversampled_rotation_grid_rows(
     fine_n_in_planes = rotation_grid_n_in_planes(fine_nside_level)
     fine_psi_step = 2.0 * np.pi / fine_n_in_planes
 
-    theta, phi = hp.pix2ang(fine_nside, current_pixels, nest=True)
     current_parent_psi = parent_psi[parent_map]
     # Match RELION's pushbackOversampledPsiAngles(): oversampled psi samples
     # are midpoints inside the parent psi bin, not rows of the fine global grid.
@@ -1299,66 +1153,16 @@ def _compute_oversampled_rotation_grid_rows(
     else:
         child_rotation_indices = child_pixels * fine_n_in_planes + nearest_child_psi.reshape(-1)
 
-    native_euler_angles = None
-    try:
-        from relax.relion_bind import _relion_bind_core as relion_bind
-
-        native_oversampling = getattr(relion_bind, "get_oversampled_orientations_batch", None)
-    except (ImportError, OSError):
-        native_oversampling = None
-    if symmetry != "C1" and native_oversampling is None:
-        raise RuntimeError("Non-C1 oversampling requires the symmetry-aware RELION batch binding")
-    if native_oversampling is not None:
-        native_euler_angles = np.asarray(
-            native_oversampling(
-                int(parent_nside_level),
-                int(oversampling_order),
-                np.asarray(parent_directions, dtype=np.int64),
-                np.asarray(parent_psi, dtype=np.int64),
-                float(random_perturbation),
-                **({} if symmetry == "C1" else {"symmetry": symmetry}),
-            ),
-            dtype=np.float64,
-        )
-        expected_rows = int(parent_rotation_indices.size) * int(8**oversampling_order)
-        if native_euler_angles.shape != (expected_rows, 3):
-            raise RuntimeError(
-                "RELION oversampled-orientation binding returned an invalid shape: "
-                f"{native_euler_angles.shape}, expected {(expected_rows, 3)}"
-            )
-
-    if native_euler_angles is not None:
-        euler_angles = native_euler_angles
-        matrices = _relion_mstep_rotations_from_eulers(euler_angles, dtype=dtype)
-        mstep_rotations = matrices if return_mstep_rotations else None
-    else:
-        euler_angles = np.stack(
-            [
-                np.repeat(phi, psi_factor),
-                np.repeat(theta, psi_factor),
-                psi_child_angles.reshape(-1),
-            ],
-            axis=-1,
-        )
-        euler_angles = euler_angles / (2 * np.pi) * 360
-    if native_euler_angles is None and abs(float(random_perturbation)) > 1e-12:
-        perturbed = apply_relion_rotation_perturbation_to_eulers(
-            euler_angles,
-            random_perturbation,
-            relion_angular_sampling_deg(parent_nside_level, adaptive_oversampling=0),
-            dtype=dtype,
-        )
-        matrices = perturbed[0]
-        mstep_rotations = matrices if return_mstep_rotations else None
-    elif native_euler_angles is None:
-        unperturbed = apply_relion_rotation_perturbation_to_eulers(
-            euler_angles,
-            0.0,
-            0.0,
-            dtype=dtype,
-        )
-        matrices = unperturbed[0]
-        mstep_rotations = matrices if return_mstep_rotations else None
+    euler_angles = healpix_sampling.oversampled_orientations(
+        int(parent_nside_level),
+        int(oversampling_order),
+        parent_directions,
+        parent_psi,
+        float(random_perturbation),
+        symmetry,
+    )
+    matrices = _relion_mstep_rotations_from_eulers(euler_angles, dtype=dtype)
+    mstep_rotations = matrices if return_mstep_rotations else None
     parent_map = np.repeat(parent_map, psi_factor)
 
     outputs = [matrices, parent_map]
@@ -1367,7 +1171,7 @@ def _compute_oversampled_rotation_grid_rows(
     if return_mstep_rotations:
         outputs.append(mstep_rotations)
     if return_source_eulers:
-        outputs.append(None if native_euler_angles is None else native_euler_angles.copy())
+        outputs.append(euler_angles.copy())
     return tuple(outputs)
 
 
@@ -1424,7 +1228,7 @@ def get_relion_rotation_grid(
     rotation_index_order: str = "recovar",
     symmetry: str = "C1",
 ):
-    """Generate the exact RELION HEALPix rotation grid via the C++ binding.
+    """Generate the exact RELION HEALPix rotation grid (:func:`relax.healpix_sampling.coarse_orientations`).
 
     Returns rotation matrices in recovar's frame that correspond to exactly
     the same set of orientations RELION uses at the given healpix_order.
@@ -1435,10 +1239,8 @@ def get_relion_rotation_grid(
     ``rotation_index_order="relion"`` to preserve RELION's native flattened
     order for source-level InitialModel parity.
     """
-    from relax.relion_bind._relion_bind_core import get_coarse_orientations
-
     symmetry = canonicalize_rotational_symmetry(symmetry)
-    relion_euler = get_coarse_orientations(order, -1.0, symmetry)
+    relion_euler = healpix_sampling.coarse_orientations(int(order), symmetry)
     R = utils.R_from_relion(relion_euler, degrees=True)
     if rotation_index_order == "relion":
         return R
@@ -1492,13 +1294,8 @@ def _get_relion_rotation_grid_eulers_float64(
 ):
     """Return source-precision RELION Euler rows without public float32 truncation."""
 
-    from relax.relion_bind._relion_bind_core import get_coarse_orientations
-
     symmetry = canonicalize_rotational_symmetry(symmetry)
-    relion_euler = np.asarray(
-        get_coarse_orientations(order, -1.0, symmetry),
-        dtype=np.float64,
-    )
+    relion_euler = healpix_sampling.coarse_orientations(int(order), symmetry)
     if rotation_index_order == "relion":
         return relion_euler
     if rotation_index_order != "recovar":

@@ -13,6 +13,8 @@ from typing import Any, NamedTuple
 import numpy as np
 from recovar.core.ctf import CTFParamIndex
 
+from relax.helpers import relion_random
+
 logger = logging.getLogger(__name__)
 
 
@@ -302,8 +304,6 @@ def relion_auto_refine_half_orders(
     table, including the first 100 trials consumed by the expected-accuracy
     estimator.
     """
-    from relax.relion_bind import _relion_bind_core as bind
-
     subsets = np.asarray(random_subsets, dtype=np.int64).reshape(-1)
     if set(subsets.tolist()) != {1, 2}:
         raise ValueError("random_subsets must contain exactly RELION half labels 1 and 2")
@@ -311,14 +311,8 @@ def relion_auto_refine_half_orders(
         np.flatnonzero(subsets == 1).astype(np.int64),
         np.flatnonzero(subsets == 2).astype(np.int64),
     )
-    shuffle = getattr(bind, "auto_refine_randomise_half_orders_mt19937", None)
-    if shuffle is None:
-        raise RuntimeError(
-            "RELION binding lacks auto_refine_randomise_half_orders_mt19937; rebuild relax/relion_bind"
-        )
-    positions = shuffle(
-        int(base_orders[0].size),
-        int(base_orders[1].size),
+    positions = relion_random.shuffled_orders(
+        [base_orders[0].size, base_orders[1].size],
         int(random_seed) + int(first_iteration),
     )
     orders = [
@@ -354,18 +348,7 @@ def relion_half1_trial_order(
     Full-data AutoRefine performs that shuffle only once per process; a fresh
     refinement therefore uses ``first_iteration=1``.
     """
-    from relax.relion_bind import _relion_bind_core as bind
-
-    if not hasattr(bind, "auto_refine_randomise_half_orders_mt19937"):
-        raise RuntimeError(
-            "RELION binding lacks auto_refine_randomise_half_orders_mt19937; rebuild relax/relion_bind"
-        )
-    shuffled_positions = np.asarray(
-        bind.auto_refine_randomise_half_orders_mt19937(
-            int(n_particles), 0, int(random_seed) + int(first_iteration)
-        )[0],
-        dtype=np.int64,
-    )
+    shuffled_positions = relion_random.shuffled_orders([int(n_particles)], int(random_seed) + int(first_iteration))[0]
     if base_order_local is None:
         base_order = np.arange(int(n_particles), dtype=np.int64)
     else:
@@ -404,18 +387,11 @@ def relion_class3d_trial_layout(
     the trial order over input rows and each input row's ``part_id``, which
     seeds the per-trial random draws.
     """
-    from relax.relion_bind import _relion_bind_core as bind
-
     rows = np.asarray(sorted_rows, dtype=np.int64).reshape(-1)
     n_particles = int(rows.size)
     if not np.array_equal(np.sort(rows), np.arange(n_particles, dtype=np.int64)):
         raise ValueError("sorted_rows must be a permutation of input rows")
-    positions = np.asarray(
-        bind.auto_refine_randomise_half_orders_mt19937(
-            n_particles, 0, int(random_seed) + int(first_iteration)
-        )[0],
-        dtype=np.int64,
-    )
+    positions = relion_random.shuffled_orders([n_particles], int(random_seed) + int(first_iteration))[0]
     order = rows[positions]
     if optics_group_ids is not None:
         optics = np.asarray(optics_group_ids, dtype=np.int64).reshape(-1)

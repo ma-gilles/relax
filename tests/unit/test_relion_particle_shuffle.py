@@ -1,6 +1,4 @@
 """Pin RELION 5.0.1 (f2c1a384) AutoRefine and Class3D particle orders."""
-from types import SimpleNamespace
-
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
@@ -21,29 +19,29 @@ def test_mt19937_paired_reference():
 
 
 def test_python_dispatch_and_stable_optics_sort(monkeypatch):
-    from relax import relion_bind
+    from relax.helpers import relion_random
 
     calls = []
 
-    def shuffled(n1, n2, seed):
-        calls.append((n1, n2, seed))
-        return [2, 0, 1], [1, 0]
+    def shuffled(sizes, seed):
+        calls.append((*sizes, seed))
+        return [np.array([2, 0, 1]), np.array([1, 0])]
 
-    monkeypatch.setattr(
-        relion_bind, '_relion_bind_core', SimpleNamespace(auto_refine_randomise_half_orders_mt19937=shuffled)
-    )
+    monkeypatch.setattr(relion_random, 'shuffled_orders', shuffled)
     first, second = relion_auto_refine_half_orders([1, 2, 1, 2, 1], 42, optics_group_ids=[2, 1, 1, 1, 2])
     assert calls == [(3, 2, 43)]
     assert_matches(first, [2, 4, 0])
     assert_matches(second, [3, 1])
 
 
-def test_missing_binding_fails_closed(monkeypatch):
-    from relax import relion_bind
+def test_half_orders_need_no_binding(monkeypatch):
+    import sys
 
-    monkeypatch.setattr(relion_bind, '_relion_bind_core', SimpleNamespace())
-    with pytest.raises(RuntimeError, match='mt19937'):
-        relion_auto_refine_half_orders([1, 2], 42)
+    monkeypatch.setitem(sys.modules, 'relax.relion_bind._relion_bind_core', None)
+    # The paired reference above: seed 1712 = random_seed 1711 + first iteration 1.
+    first, second = relion_auto_refine_half_orders([1] * 10 + [2] * 7, 1711)
+    assert_matches(first, [5, 6, 8, 4, 7, 0, 2, 1, 9, 3])
+    assert_matches(second, np.array([5, 0, 2, 3, 4, 1, 6]) + 10)
 
 
 def test_half1_trial_order_is_the_paired_first_half():
@@ -64,17 +62,15 @@ def test_class3d_whole_vector_shuffle_is_the_first_half_generator():
 
 
 def test_class3d_layout_maps_part_ids_to_input_rows_then_sorts_optics(monkeypatch):
-    from relax import relion_bind
+    from relax.helpers import relion_random
 
     calls = []
 
-    def shuffled(n1, n2, seed):
-        calls.append((n1, n2, seed))
-        return [3, 0, 2, 1], []
+    def shuffled(sizes, seed):
+        calls.append((*sizes, 0, seed))
+        return [np.array([3, 0, 2, 1])]
 
-    monkeypatch.setattr(
-        relion_bind, '_relion_bind_core', SimpleNamespace(auto_refine_randomise_half_orders_mt19937=shuffled)
-    )
+    monkeypatch.setattr(relion_random, 'shuffled_orders', shuffled)
     # part_id j lives at input row sorted_rows[j].
     order, particle_ids = relion_class3d_trial_layout(
         [2, 0, 3, 1], 42, first_iteration=3, optics_group_ids=[1, 2, 1, 1]
