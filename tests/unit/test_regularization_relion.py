@@ -6,10 +6,10 @@ from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp  # noqa: E402
-
 import recovar.core.fourier_transform_utils as fourier_transform_utils
-from relax.reconstruction import regularization_relion
 from recovar.reconstruction import regularization
+
+from relax.reconstruction import regularization_relion
 
 pytestmark = pytest.mark.unit
 
@@ -578,23 +578,27 @@ def test_compute_relion_tau2_from_iref_power_spectrum_matches_relion_binding_sca
     np.testing.assert_allclose(np.asarray(details["tau2_shells"][: len(expected_tau2)]), expected_tau2, rtol=2e-2, atol=2e-6)
 
 
-def test_tau2_from_the_scoring_projector_spectrum_matches_the_host_transform():
-    """Class3D tau2 reads the spectrum the scoring projector setup already computed.
+def test_tau2_from_the_scoring_projector_spectrum_matches_the_relion_transform():
+    """Class3D tau2 from the scoring projector's spectrum matches RELION's own transform.
 
     The device projector setup reproduces ``computeFourierTransformMap``, power
-    spectrum included, so tau2 from its spectrum must match tau2 from the host
-    binding's second transform of the same reference.
+    spectrum included, so tau2 from its spectrum (passed in, or rebuilt when not
+    passed) must match tau2 from RELION's ``data_dim=3`` transform of the same
+    reference, taken through the binding as the oracle.
     """
+    bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
     from helpers.em_fixtures import fixture_file
-    from recovar.utils.helpers import load_relion_volume
+    from recovar.utils.helpers import load_relion_volume, recovar_volume_to_relion
 
     from relax.refinement.projector_preparation import _relion_projector_half_maps_for_scoring
 
     volume_path = fixture_file("k4_5k128_relion_os0", "run_it000_class001.mrc")
     vol_recovar = np.asarray(load_relion_volume(str(volume_path)), dtype=np.float64)
     ft_recovar = np.asarray(fourier_transform_utils.get_dft3(jnp.asarray(vol_recovar)).reshape(-1))
+    n = vol_recovar.shape[0]
+    vol_real = np.asarray(fourier_transform_utils.get_idft3(jnp.asarray(ft_recovar).reshape(vol_recovar.shape)).real)
 
-    for current_size in (56, vol_recovar.shape[0]):
+    for current_size in (56, n):
         _slab, _r_max, power = _relion_projector_half_maps_for_scoring(
             ft_recovar[None, :],
             volume_shape=vol_recovar.shape,
@@ -603,7 +607,22 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_host_transform():
             n_classes=1,
             projector_setup_backend="jax",
         )
-        host = regularization_relion.compute_relion_tau2_from_iref_power_spectrum(
+        _, relion_power, *_ = bind.compute_fourier_transform_map(
+            recovar_volume_to_relion(np.asarray(vol_real, dtype=np.float64)),
+            ori_size=n,
+            padding_factor=2,
+            current_size=current_size,
+            do_gridding=True,
+        )
+        oracle = regularization_relion.compute_relion_tau2_from_iref_power_spectrum(
+            None,
+            vol_recovar.shape,
+            padding_factor=2,
+            current_size=current_size,
+            return_details=True,
+            projector_power_spectrum=np.asarray(relion_power) * float(n) ** 2,
+        )
+        rebuilt = regularization_relion.compute_relion_tau2_from_iref_power_spectrum(
             ft_recovar, vol_recovar.shape, padding_factor=2, current_size=current_size, return_details=True
         )
         reused = regularization_relion.compute_relion_tau2_from_iref_power_spectrum(
@@ -614,8 +633,9 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_host_transform():
             return_details=True,
             projector_power_spectrum=power[0],
         )
-        assert_matches(np.asarray(reused[0]), np.asarray(host[0]))
-        assert_matches(np.asarray(reused[1]["tau2_shells"]), np.asarray(host[1]["tau2_shells"]))
+        for candidate in (reused, rebuilt):
+            assert_matches(np.asarray(candidate[0]), np.asarray(oracle[0]))
+            assert_matches(np.asarray(candidate[1]["tau2_shells"]), np.asarray(oracle[1]["tau2_shells"]))
 
 
 def test_streamed_packed_half_backprojector_fsc_avoids_padded_full_allocation(

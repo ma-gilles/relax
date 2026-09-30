@@ -225,8 +225,8 @@ def compute_relion_tau2_from_iref_power_spectrum(
     """Compute RELION-style tau2 from a previous Iref Fourier volume.
 
     Mirrors RELION's ``Projector::computeFourierTransformMap`` path by
-    converting the reference back to real space and delegating the power-
-    spectrum accumulation to the RELION projector binding. The returned
+    converting the reference back to real space and taking the power spectrum
+    of relax's projector setup of it. The returned
     spectrum is expanded back into RECOVAR's centered Fourier layout.
 
     The output is in the same Fourier-amplitude scale RECOVAR uses for
@@ -242,9 +242,9 @@ def compute_relion_tau2_from_iref_power_spectrum(
     ``computeFourierTransformMap`` call per class; passing it skips a second,
     host, transform, and ``Iref_padded_fourier`` is then not read. That
     projector scales the transform by ``normfft = pf^3 * ori_size``
-    (``data_dim=2``), where the host transform below uses ``data_dim=3``
-    (``normfft = pf^3``), so its power is ``ori_size^2`` times larger and is
-    divided back here.
+    (``data_dim=2``) where RELION's ``ReferenceTau2`` uses the ``data_dim=3``
+    scale (``normfft = pf^3``), so its power is ``ori_size^2`` times larger and
+    is divided back here. Without it, the same projector setup is built here.
     """
 
     volume_shape = tuple(int(s) for s in volume_shape)
@@ -253,20 +253,17 @@ def compute_relion_tau2_from_iref_power_spectrum(
         relion_power_spectrum = np.asarray(projector_power_spectrum, dtype=np.float64) / float(volume_shape[0]) ** 2
     else:
         from recovar.core import fourier_transform_utils as _ftu
-        from recovar.utils.helpers import recovar_volume_to_relion
 
-        from relax.relion_bind._relion_bind_core import compute_fourier_transform_map
+        from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps_and_power
 
         vol_ft = jnp.asarray(Iref_padded_fourier).reshape(volume_shape)
         vol_real = np.asarray(_ftu.get_idft3(vol_ft).real, dtype=np.float64)
-        relion_volume = recovar_volume_to_relion(vol_real)
-        _, relion_power_spectrum, *_ = compute_fourier_transform_map(
-            relion_volume,
-            ori_size=volume_shape[0],
-            padding_factor=int(padding_factor),
+        _, projector_power, _ = reference_to_relion_projector_half_maps_and_power(
+            vol_real[None],
             current_size=-1 if current_size is None else current_size,
-            do_gridding=True,
+            padding_factor=int(padding_factor),
         )
+        relion_power_spectrum = projector_power[0] / float(volume_shape[0]) ** 2
 
     # RELION stores ReferenceTau2 on the projector's shell-average scale:
     # getSpectrum(..., POWER_SPECTRUM) is normalized by the padded FFT volume
