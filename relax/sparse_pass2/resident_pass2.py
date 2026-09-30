@@ -942,7 +942,7 @@ def plan_resident_chunk_memory(
             # (bigbox 14640954), which 512 rows fit.
             rows_can_shrink = len(rows) > 1 or max(rows) > _MIN_PLANNED_ROW_CAPACITY
             rows_in_prepare = rows_bytes * (int(rows_live_during_prepare) + int(pipelined))
-            if prepare_stage > rows_bytes + held_bytes + max(mstep_bytes, projection, posterior_scratch):
+            if prepare_stage > rows_bytes + held_bytes + max(mstep_bytes, projection):
                 # The preparation stage is the peak; only its own terms shrink it.
                 terms = {
                     "images": prepare_bytes + (held_bytes if pipelined else 0) if images_can_shrink else -1,
@@ -951,9 +951,9 @@ def plan_resident_chunk_memory(
             else:
                 terms = {
                     # A smaller M-step block helps only while it outweighs the projector call.
-                    "mstep": mstep_bytes if block > 1 and mstep_bytes > max(projection, posterior_scratch) else -1,
-                    "images": held_bytes * copies + posterior_scratch if images_can_shrink else -1,
-                    "rows": rows_bytes * copies + posterior_scratch if rows_can_shrink else -1,
+                    "mstep": mstep_bytes if block > 1 and mstep_bytes > projection else -1,
+                    "images": held_bytes * copies if images_can_shrink else -1,
+                    "rows": rows_bytes * copies if rows_can_shrink else -1,
                 }
             largest = max(terms, key=terms.get)
             if terms[largest] < 0:

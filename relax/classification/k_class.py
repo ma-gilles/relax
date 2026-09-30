@@ -2241,6 +2241,10 @@ def run_dense_k_class_em_adaptive(
         engine_kwargs["mstep_relion_x_half"] = True
         engine_kwargs["sparse_pass2"] = True
     if coarse_engine == "gemm_dense":
+        logger.warning(
+            "gemm_dense is experimental: it evaluates the full pose grid without pruning; "
+            "RELION-parity quality and end-to-end speed are not qualified"
+        )
         if bool(pass2_use_float64_scoring) or bool(pass2_use_float64_projections) or bool(engine_kwargs.get("use_float64_scoring")):
             raise ValueError("gemm_dense is a float32 production engine")
         complete_support = [[None] * n_images for _ in range(n_classes)]

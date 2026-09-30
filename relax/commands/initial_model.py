@@ -322,7 +322,8 @@ def make_parser() -> argparse.ArgumentParser:
         "--coarse-engine", "--coarse_engine",
         choices=("auto", "gemm_hybrid", "gemm_dense"),
         default=DEFAULTS.coarse_engine,
-        help="Global E/M strategy; the hybrid is the existing GEMM coarse scorer plus resident fine pass.",
+        help=("Global E/M strategy (default: auto). gemm_hybrid retains fine-support pruning; "
+              "gemm_dense is an experimental full-grid, no-pruning route with unqualified quality and speed."),
     )
     parser.add_argument(
         "--bootstrap-min-particles",

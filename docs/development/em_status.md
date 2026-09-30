@@ -54,17 +54,20 @@ poor poses. General robustness is not established. See the
 and [robustness report](../benchmarks/momentum_sgd_robustness_20260928.md).
 Native VDAM defaults are unchanged.
 
-## Dense GEMM coarse engine integration (September 28)
+## Dense GEMM coarse engine options (September 30)
 
-The completed K1 experiment is being integrated as a typed, opt-in coarse engine
-for standard EM and VDAM, including K>1. This package must supply all production
-statistics, joint class/pose normalization, first-iteration CC behavior and
-changing-resolution support. The proposed `coarse_engine=auto|gemm_hybrid|gemm_dense` keeps `auto` as default. Hybrid uses
-GEMM coarse scoring followed by the existing fine engine; full dense executes
-the complete configured fine grid without adaptive pruning. Both strategies will be measured. Existing local refinement remains separately dispatched.
-The earlier speedups do not establish robustness or runtime for this broader path.
-See the [integration and qualification plan](dense_gemm_coarse_engine_plan_20260928.md).
-Implementation and validation are in progress; no replacement claim is made.
+`coarse_engine=auto|gemm_hybrid|gemm_dense` keeps `auto` as the production default
+in standard EM and VDAM, including K>1. `gemm_hybrid` selects GEMM coarse
+scoring followed by the existing pruned fine pass. `gemm_dense` is an explicitly
+experimental no-pruning route over the full configured pose grid, with exact
+per-image normalization; it is not a RELION-parity or performance-qualified
+replacement. On the matched 5k-image, box-128, K4 os1 A100 update, warmed
+whole-process times were 37.64 s for `auto` and 37.55 s for cached full dense
+(job 14694770). Their minimum per-class one-update RELION FSC-AUC was
+0.999999993 versus 0.963218, respectively. Neither the measured process tie
+nor the divergent result supports using full dense by default. The isolated
+kernel speedups are not end-to-end production speedups. Detailed source and
+evidence are in the [integration record](dense_gemm_coarse_engine_plan_20260928.md).
 
 ## Opt-in dense GEMM K1 experiment (September 28)
 

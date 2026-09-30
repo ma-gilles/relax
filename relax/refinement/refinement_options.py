@@ -51,6 +51,7 @@ class AdaptiveOptions:
 
     adaptive_oversampling: int = 0
     max_significants: int = 500
+    # gemm_dense is an experimental, no-pruning global route; auto remains the production default.
     coarse_engine: Literal["auto", "gemm_hybrid", "gemm_dense"] = "auto"
     relion_current_sizes: tuple[int, ...] | None = None
     relion_healpix_orders: tuple[int, ...] | None = None

@@ -2052,7 +2052,8 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--coarse-engine", "--coarse_engine",
         choices=("auto", "gemm_hybrid", "gemm_dense"), default="auto",
-        help="Global E/M strategy; gemm_hybrid uses the existing GEMM coarse scorer and resident fine pass.",
+        help=("Global E/M strategy (default: auto). gemm_hybrid retains fine-support pruning; "
+              "gemm_dense is an experimental full-grid, no-pruning route with unqualified quality and speed."),
     )
     parser.add_argument(
         "--max_significants",

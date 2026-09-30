@@ -1,5 +1,26 @@
 # Dense GEMM coarse engine — integration and qualification plan
 
+## Final experiment decision (September 30, 2026)
+
+The integrated `gemm_dense` route is retained only as an **experimental,
+off-by-default option**. It evaluates every configured class, rotation and
+translation without adaptive pruning. The production default stays `auto`;
+selecting `gemm_dense` explicitly logs its unqualified status. The separately
+qualified `gemm_hybrid` still prunes fine support and is a different algorithm.
+
+The matched same-source A100 K4/5k/128 os1 one-update comparison (job 14694770,
+source `efc18e4f`) found 37.64 s warm whole-process for `auto` and 37.55 s
+for cached full dense, an effective tie. Minimum per-class FSC-AUC against the
+RELION iteration-2 oracle was 0.999999993 versus 0.963218, and mean absolute
+Pmax error was 7.97e-6 versus 0.1132. This is an intentionally different
+no-pruning posterior, but its ground-truth and multi-iteration quality remain
+unqualified. The earlier isolated GEMM gains must not be quoted as production
+speedups. The detailed K4 result is the scratch artifact
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/k4_class_batch_experiment_20260929/END_TO_END_RESULTS.md`;
+the source and job ID above identify the frozen run.
+The remaining sections document the historical integration plan and earlier
+source checkpoints, not current qualification claims.
+
 User request: make the dense engine a selectable coarse engine across standard EM,
 VDAM and K>1, and determine robustness across resolution. This is a new production
 integration package, beyond the completed fixed-state K1 experiment. The measured
