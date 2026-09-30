@@ -660,6 +660,16 @@
    "source_role": "ground truth (class mean for K=2), simulator output on optics group 1's grid",
    "generation": "recipe",
    "sanity": "PASS: box fraction 0.015, 1 component(s), captures 0.955 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "multioptics_s3b_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_s3b_masks_20260929/multioptics_s3b_c1/MASK.json",
+   "mask_sha256": "9bddef24ad702b3246c106945cd0b4a8ea075cbef901d6489aa1cd295b518c0c",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth (reference_gt.mrc, relax file frame)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.014, 1 component(s), captures 0.863 of positive density, strong density outside hard mask 0.0000, edge-clear True"
   }
  }
 }
