@@ -12814,7 +12814,7 @@ def test_local_search_uses_lazy_parent_expanded_fine_rotation_grid_when_oversamp
             fake_get_grid_eulers(order).astype(dtype),
         ),
     )
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_grouped_local_search)
+    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         mean_helpers_module,
         "collapse_rotation_posterior_to_direction_prior",
@@ -13011,7 +13011,7 @@ def test_local_search_applies_perturbation_to_generated_fine_rotation_grid(
         fake_apply_relion_rotation_perturbation_to_eulers,
     )
     monkeypatch.setattr(refine_mod.utils, "R_to_relion", fake_r_to_relion)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_grouped_local_search)
+    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         mean_helpers_module,
         "collapse_rotation_posterior_to_direction_prior",
@@ -13141,7 +13141,7 @@ def test_local_search_uses_negative_previous_offsets_for_translation_prior(
         ),
     )
     monkeypatch.setattr(half_scoring, "run_em", _mock_run_dense_em)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_grouped_local_search)
+    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         mean_helpers_module,
         "collapse_rotation_posterior_to_direction_prior",
@@ -13270,7 +13270,7 @@ def test_local_search_coarse_translation_prior_mode_uses_unperturbed_base_grid(
         ),
     )
     monkeypatch.setattr(half_scoring, "run_em", _mock_run_dense_em)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_grouped_local_search)
+    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         mean_helpers_module,
         "collapse_rotation_posterior_to_direction_prior",
@@ -13587,7 +13587,7 @@ def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_wh
         ),
     )
     monkeypatch.setattr(half_scoring, "run_em", _mock_run_dense_em)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_grouped_local_search)
+    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         mean_helpers_module,
         "collapse_rotation_posterior_to_direction_prior",
@@ -13753,7 +13753,7 @@ def test_previous_best_rotations_skip_first_local_dense_bootstrap(
         )
 
     monkeypatch.setattr(half_scoring, "run_em", fake_run_em)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_grouped_local_search)
+    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         mean_helpers_module,
         "collapse_rotation_posterior_to_direction_prior",
@@ -14356,7 +14356,7 @@ def test_local_search_decodes_hard_assignments_on_fine_grid(
         ),
     )
     monkeypatch.setattr(half_scoring, "run_em", _mock_run_dense_em)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_grouped_local_search)
+    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         mean_helpers_module,
         "collapse_rotation_posterior_to_direction_prior",
