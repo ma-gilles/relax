@@ -21,6 +21,199 @@ def evaluate(node, **scope):
     return eval(compile(ast.Expression(node), "<production-route>", "eval"), scope)
 
 
+def test_numbered_dense_scoring_exposes_owners_without_a_call_only_plan():
+    loop = tree("iteration_loop.py")
+    assert all(
+        not isinstance(node, (ast.ClassDef, ast.FunctionDef))
+        or node.name
+        not in {
+            "DenseHalfScoringPlan",
+            "_run_dense_half_scoring",
+            "DenseHalfScoringOutputs",
+            "_dense_half_scoring_outputs",
+        }
+        for node in ast.walk(loop)
+    )
+    direct_calls = [
+        node
+        for node in ast.walk(loop)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_score_half_dense_in_bpref_scope"
+        and node.args
+    ]
+    assert len(direct_calls) == 1
+    assert [argument.id for argument in direct_calls[0].args] == [
+        "dense_half",
+        "dense_sampling",
+        "dense_priors",
+        "dense_batching",
+        "dense_variant",
+        "dense_execution",
+        "dense_optics",
+    ]
+
+
+def test_direct_k1_dense_route_is_an_explicit_four_input_variant():
+    scorer = tree("half_scoring.py")
+    helper = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_score_direct_k1_dense"
+    )
+    assert [argument.arg for argument in helper.args.args] == [
+        "half",
+        "sampling",
+        "execution",
+        "em_kwargs",
+    ]
+    dispatcher = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_half_dense_one_shape"
+    )
+    calls = [
+        node
+        for node in ast.walk(dispatcher)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_score_direct_k1_dense"
+    ]
+    assert len(calls) == 1
+    assert [argument.id for argument in calls[0].args] == [
+        "half",
+        "sampling",
+        "execution",
+        "em_kwargs",
+    ]
+
+
+def test_direct_kclass_dense_route_is_an_explicit_five_input_variant():
+    scorer = tree("half_scoring.py")
+    helper = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_direct_kclass_dense"
+    )
+    assert [argument.arg for argument in helper.args.args] == [
+        "half",
+        "sampling",
+        "priors",
+        "execution",
+        "em_kwargs",
+    ]
+    dispatcher = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_half_dense_one_shape"
+    )
+    calls = [
+        node
+        for node in ast.walk(dispatcher)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_score_direct_kclass_dense"
+    ]
+    assert len(calls) == 1
+    assert [argument.id for argument in calls[0].args] == [
+        "half",
+        "sampling",
+        "priors",
+        "execution",
+        "em_kwargs",
+    ]
+
+
+def test_adaptive_kclass_dense_route_keeps_owner_inputs_visible():
+    scorer = tree("half_scoring.py")
+    helper = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_adaptive_kclass_dense"
+    )
+    assert [argument.arg for argument in helper.args.args] == [
+        "half",
+        "sampling",
+        "priors",
+        "batching",
+        "variant",
+        "execution",
+        "em_kwargs",
+        "symmetry",
+    ]
+    dispatcher = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_half_dense_one_shape"
+    )
+    calls = [
+        node
+        for node in ast.walk(dispatcher)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_score_adaptive_kclass_dense"
+    ]
+    assert len(calls) == 1
+    assert [argument.id for argument in calls[0].args] == [
+        "half",
+        "sampling",
+        "priors",
+        "batching",
+        "variant",
+        "execution",
+        "em_kwargs",
+        "symmetry",
+    ]
+
+
+def test_adaptive_k1_dense_route_keeps_owner_inputs_visible():
+    scorer = tree("half_scoring.py")
+    helper = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_adaptive_k1_dense"
+    )
+    expected_inputs = [
+        "half",
+        "sampling",
+        "priors",
+        "batching",
+        "variant",
+        "execution",
+        "optics",
+        "base_em_kwargs",
+    ]
+    assert [argument.arg for argument in helper.args.args] == expected_inputs
+    assert [argument.arg for argument in helper.args.kwonlyargs] == ["symmetry"]
+    dispatcher = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_half_dense_one_shape"
+    )
+    calls = [
+        node
+        for node in ast.walk(dispatcher)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_score_adaptive_k1_dense"
+    ]
+    assert len(calls) == 1
+    assert [argument.id for argument in calls[0].args] == [
+        *expected_inputs[:-1],
+        "em_kwargs",
+    ]
+    assert len(calls[0].keywords) == 1
+    assert calls[0].keywords[0].arg == "symmetry"
+    assert calls[0].keywords[0].value.id == "symmetry"
+
+
 @pytest.mark.parametrize(
     "os,local,k,mode,hard,double,expected",
     [
@@ -88,27 +281,170 @@ def test_only_coarse_engine_operand_changes(os, sparse, xhalf, mode, double, ove
     coarse, fine, native = object(), object(), object()
     scope = dict(
         pass2_grids=SimpleNamespace(coarse_rotations=coarse, fine_rotations=fine),
-        coarse_scoring_rotations=native if override else None,
-        adaptive_os_local=os,
-        k1_sparse_pass2=sparse,
-        k1_relion_x_half_mstep=xhalf,
-        firstiter_score_mode_this_iter=mode,
-        diagnostic_float64_pass2=double,
+        sampling=SimpleNamespace(coarse_scoring_rotations=native if override else None),
+        adaptive_os=os,
+        sparse_pass2=sparse,
+        relion_x_half_mstep=xhalf,
+        variant=SimpleNamespace(firstiter_score_mode_this_iter=mode),
+        execution=SimpleNamespace(diagnostic_float64_pass2=double),
         # Images on the reference grid: applyScaleDifference is the identity.
         _projection_rotations=half_scoring._projection_rotations,
-        projection_scale=1.0,
+        optics=SimpleNamespace(projection_scale=1.0),
     )
     assert evaluate(calls[0].args[4], **scope) is (native if expected else coarse)
     assert evaluate(calls[0].args[6], **scope) is fine
 
 
+def test_dense_float64_diagnostic_is_resolved_by_the_iteration_controller():
+    scorer_source = tree("half_scoring.py")
+    assert not any(
+        isinstance(node, ast.Name) and node.id == "_diagnostic_float64_pass2_matches"
+        for node in ast.walk(scorer_source)
+    )
+
+    execution_policies = [
+        node
+        for node in ast.walk(tree("iteration_loop.py"))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "DenseExecutionPolicy"
+    ]
+    assert len(execution_policies) == 2
+    for policy in execution_policies:
+        diagnostic = next(
+            keyword.value
+            for keyword in policy.keywords
+            if keyword.arg == "diagnostic_float64_pass2"
+        )
+        assert isinstance(diagnostic, ast.Call)
+        assert isinstance(diagnostic.func, ast.Name)
+        assert diagnostic.func.id == "_diagnostic_float64_pass2_matches"
+
+
+def test_local_experimental_overrides_are_resolved_by_the_iteration_controller():
+    scorer_source = tree("half_scoring.py")
+    controller_helpers = {
+        "_local_search_precision_flags",
+        "_local_adaptive_pass2_full_parent_enabled",
+        "_local_adaptive_pass2_rotation_only_enabled",
+        "_local_adaptive_pass2_denominator_support_mode",
+    }
+    assert not any(
+        isinstance(node, ast.Name) and node.id in controller_helpers
+        for node in ast.walk(scorer_source)
+    )
+
+    diagnostic_policies = [
+        node
+        for node in ast.walk(tree("iteration_loop.py"))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "LocalDiagnosticPolicy"
+    ]
+    assert len(diagnostic_policies) == 2
+    resolved_fields = {
+        "parent_use_float64_scoring",
+        "parent_use_float64_projections",
+        "fine_use_float64_scoring",
+        "fine_use_float64_projections",
+        "adaptive_pass2_full_parent",
+        "adaptive_pass2_rotation_only",
+        "adaptive_pass2_denominator_mode",
+    }
+    for policy in diagnostic_policies:
+        assert resolved_fields <= {keyword.arg for keyword in policy.keywords}
+
+
+def test_local_adaptive_support_helper_exposes_six_story_inputs():
+    scorer = tree("half_scoring.py")
+    helper = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_prepare_local_adaptive_pass2_support"
+    )
+    expected_inputs = [
+        "parent_layout",
+        "significant_sample_indices",
+        "sampling",
+        "diagnostics",
+        "parent_order",
+        "fine_layout_dtype",
+    ]
+    assert [argument.arg for argument in helper.args.args] == expected_inputs
+
+    local_scorer = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_half_local_one_shape"
+    )
+    calls = [
+        node
+        for node in ast.walk(local_scorer)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_prepare_local_adaptive_pass2_support"
+    ]
+    assert len(calls) == 1
+    assert [argument.id for argument in calls[0].args] == [
+        "parent_layout",
+        "significant_sample_indices",
+        "sampling",
+        "diagnostics",
+        "parent_order",
+        "fine_local_layout_dtype",
+    ]
+
+
+def test_local_adaptive_parent_layout_exposes_five_story_inputs():
+    scorer = tree("half_scoring.py")
+    helper = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_build_local_adaptive_parent_layout"
+    )
+    expected_inputs = [
+        "half",
+        "sampling",
+        "priors",
+        "translation_prior_reference_translations",
+        "layout_dtype",
+    ]
+    assert [argument.arg for argument in helper.args.args] == expected_inputs
+
+    local_scorer = next(
+        node
+        for node in scorer.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_score_half_local_one_shape"
+    )
+    calls = [
+        node
+        for node in ast.walk(local_scorer)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_build_local_adaptive_parent_layout"
+    ]
+    assert len(calls) == 1
+    assert [argument.id for argument in calls[0].args] == [
+        "half",
+        "sampling",
+        "priors",
+        "translation_prior_reference_translations",
+        "parent_local_layout_dtype",
+    ]
+
+
 def test_loop_transports_geometry_separately_from_effective_rotations():
     calls = [
-        n.value
+        n
         for n in ast.walk(tree("iteration_loop.py"))
-        if isinstance(n, ast.Assign)
-        and any(isinstance(t, ast.Name) and t.id == "dense_half_kwargs" for t in n.targets)
-        and isinstance(n.value, ast.Call)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == "DenseSamplingSpec"
+        and any(keyword.arg == "coarse_scoring_rotations" for keyword in n.keywords)
     ]
     assert len(calls) == 1
     keywords = {k.arg: k.value for k in calls[0].keywords}

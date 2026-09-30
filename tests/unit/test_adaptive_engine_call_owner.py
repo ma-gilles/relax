@@ -32,28 +32,50 @@ def _grids(fine_mstep):
     )
 
 
-def test_shared_engine_keywords_follow_the_sparse_switch():
+def test_common_engine_keywords_follow_the_sparse_switch():
     fine_mstep = np.ones((4, 3, 3), dtype=np.float32)
-    common = dict(
-        class_log_priors="priors",
-        significance_image_batch_size=8,
-        significance_rotation_block_size=16,
-        coarse_current_size=32,
-        fine_current_size=48,
-        coarse_healpix_order=np.int64(2),
-        oversampling_order=np.int64(1),
-        return_best_pose_details=True,
-        bpref_device_signature_active=False,
-        debug_iteration=3,
-    )
-    sparse = half_scoring._adaptive_engine_shared_kwargs(_grids(fine_mstep), max_significants=None, sparse_pass2=True, **common)
-    dense = half_scoring._adaptive_engine_shared_kwargs(_grids(fine_mstep), max_significants=5, sparse_pass2=False, **common)
+    def common_kwargs(*, sparse_pass2, max_significants):
+        return half_scoring._adaptive_engine_common_kwargs(
+            _grids(fine_mstep),
+            half_scoring.DensePriorSpec(
+                rotation_log_prior_k=None,
+                class_rotation_log_prior_k=None,
+                translation_log_prior=None,
+                translation_search_base=None,
+                trans_prior_center_for_engine=None,
+                class_log_priors="priors",
+            ),
+            half_scoring.DenseBatchPolicy(
+                image_batch_size=1,
+                safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),
+                max_significants=max_significants,
+            ),
+            half_scoring.DenseSamplingSpec(
+                effective_rotations=None,
+                current_translations=None,
+                base_translations=None,
+                current_healpix_order=np.int64(2),
+                state=None,
+                random_perturbation=0.0,
+                disc_type="linear_interp",
+                cs_for_engine=None,
+            ),
+            half_scoring.DenseExecutionPolicy(
+                disable_adjoint_y=False,
+                disable_adjoint_ctf=False,
+                return_best_pose_details=True,
+                bpref_device_signature_active=False,
+                debug_iteration=3,
+            ),
+            sparse_pass2=sparse_pass2,
+        )
+
+    sparse = common_kwargs(sparse_pass2=True, max_significants=None)
+    dense = common_kwargs(sparse_pass2=False, max_significants=5)
     expected_keys = {
         "class_log_priors", "accumulate_noise", "adaptive_fraction", "max_significants",
-        "relion_fine_mstep_prune", "significance_image_batch_size", "significance_rotation_block_size",
-        "coarse_current_size", "fine_current_size", "coarse_healpix_order", "oversampling_order",
-        "fine_mstep_rotations_override", "return_best_pose_details", "bpref_device_signature_active",
-        "debug_iteration",
+        "relion_fine_mstep_prune", "coarse_healpix_order", "fine_mstep_rotations_override",
+        "return_best_pose_details", "bpref_device_signature_active", "debug_iteration",
     }
     assert set(sparse) == set(dense) == expected_keys
     assert sparse["accumulate_noise"] is True
@@ -62,7 +84,6 @@ def test_shared_engine_keywords_follow_the_sparse_switch():
     assert sparse["relion_fine_mstep_prune"] is True and dense["relion_fine_mstep_prune"] is False
     assert sparse["fine_mstep_rotations_override"] is fine_mstep and dense["fine_mstep_rotations_override"] is None
     assert type(sparse["coarse_healpix_order"]) is int and sparse["coarse_healpix_order"] == 2
-    assert type(sparse["oversampling_order"]) is int and sparse["oversampling_order"] == 1
     assert sparse["class_log_priors"] == "priors" and sparse["debug_iteration"] == 3
 
 

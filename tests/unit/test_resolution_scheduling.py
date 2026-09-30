@@ -455,7 +455,9 @@ def test_iteration1_half_join_is_capped_by_the_ini_high_resolution(ini_high, las
     ``max(low_resol_join_halves, 1 / current_resolution)`` (ml_optimiser_mpi.cpp:3280).
     At the GUI default of 60 A an unseeded start joined up to 40 A instead.
     """
-    from relax.refinement.mean_helpers import join_half_accumulators_at_low_resolution
+    from relax.refinement.mean_helpers import (
+        join_half_accumulators_at_low_resolution,
+    )
 
     grid_size, voxel_size = 32, 17.0
     state = SimpleNamespace(current_resolution=float("inf"), previous_resolution=float("inf"))
@@ -475,17 +477,15 @@ def test_iteration1_half_join_is_capped_by_the_ini_high_resolution(ini_high, las
     ft_ctf = np.ones(volume_shape, dtype=np.float32).reshape(-1)
 
     joined0, joined1, _, _ = join_half_accumulators_at_low_resolution(
-        ft_y_0.reshape(-1),
-        ft_y_1.reshape(-1),
-        ft_ctf.copy(),
-        ft_ctf.copy(),
+        (ft_y_0.reshape(-1), ft_y_1.reshape(-1)),
+        (ft_ctf.copy(), ft_ctf.copy()),
         accumulator_volume_shape=volume_shape,
         grid_size=grid_size,
         voxel_size=voxel_size,
-        low_resol_join_halves_angstrom=40.0,
+        padding_factor=1,
+        low_resolution_angstrom=40.0,
         pixel_resolutions=[],
         current_resolution=state.current_resolution,
-        padding_factor=1,
     )
     joined0 = np.asarray(joined0).reshape(volume_shape)
     joined1 = np.asarray(joined1).reshape(volume_shape)

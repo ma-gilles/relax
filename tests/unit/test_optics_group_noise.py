@@ -6,7 +6,7 @@ with that group's own weight (``maximizationOtherParameters``, ml_optimiser.cpp
 group g's sums would, and a one-group run must keep the flat layout.
 """
 
-from types import SimpleNamespace
+import inspect
 
 import numpy as np
 import pytest
@@ -31,15 +31,27 @@ def _stats(rng, n_groups=None, sumw=None):
 
 def _update(stats_per_half, noise_per_half, radial_per_half):
     return noise_updates.update_posterior_noise_variance(
-        noise_stats_per_half=stats_per_half,
-        noise_variance_per_half=list(noise_per_half),
-        previous_noise_radial_per_half=radial_per_half,
-        previous_noise_radial=np.mean(np.stack(radial_per_half), axis=0),
-        cryo=SimpleNamespace(image_shape=SHAPE),
+        stats_per_half,
+        list(noise_per_half),
+        radial_per_half,
+        np.mean(np.stack(radial_per_half), axis=0),
+        SHAPE,
         k_class_enabled=False,
-        relion_firstiter_cc_this_iter=False,
-        iteration=3,
-        cs=SHAPE[0],
+        firstiter_cc=False,
+    )
+
+
+def test_noise_update_signature_keeps_dependencies_visible():
+    function = noise_updates.update_posterior_noise_variance
+    assert tuple(inspect.signature(function).parameters) == (
+        "noise_stats_per_half",
+        "noise_variance_per_half",
+        "previous_noise_radial_per_half",
+        "previous_noise_radial",
+        "image_shape",
+        "k_class_enabled",
+        "firstiter_cc",
+        "dump_debug",
     )
 
 

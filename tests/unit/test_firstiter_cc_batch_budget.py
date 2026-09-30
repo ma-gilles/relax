@@ -1,12 +1,15 @@
+import ast
+import dataclasses
+import inspect
 from types import SimpleNamespace
 
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.classification import k_class_results
 from relax.classification.k_class_results import KClassEMResult
-from relax.refinement import firstiter_cc, half_scoring
 from relax.dense import score_outputs
 from relax.helpers import batch_planning
 from relax.helpers.batch_planning import (
@@ -15,8 +18,202 @@ from relax.helpers.batch_planning import (
     _safe_firstiter_cc_image_batch_size,
 )
 from relax.helpers.types import NoiseStats, make_relion_stats
-from relax.refinement import iteration_loop
-from helpers.float_compare import assert_matches
+from relax.refinement import firstiter_cc, half_scoring, iteration_loop, local_search_iteration
+
+
+def _dense_owners(**values):
+    """Build the seven explicit dense-scoring owners from concise test values."""
+
+    owners = (
+        half_scoring.DenseHalfData(
+            k=values.pop("k"),
+            experiment_dataset=values.pop("experiment_dataset"),
+            means_k=values.pop("means_k"),
+            mean_variance=values.pop("mean_variance"),
+            noise_variance_k=values.pop("noise_variance_k"),
+            image_corrections_k=values.pop("image_corrections_k"),
+            scale_corrections_k=values.pop("scale_corrections_k"),
+            outputs=values.pop("outputs"),
+        ),
+        half_scoring.DenseSamplingSpec(
+            effective_rotations=values.pop("effective_rotations"),
+            current_translations=values.pop("current_translations"),
+            base_translations=values.pop("base_translations"),
+            current_healpix_order=values.pop("current_healpix_order"),
+            state=values.pop("state"),
+            random_perturbation=values.pop("random_perturbation"),
+            disc_type=values.pop("disc_type"),
+            cs_for_engine=values.pop("cs_for_engine"),
+            coarse_rotation_ids=values.pop("coarse_rotation_ids", None),
+        ),
+        half_scoring.DensePriorSpec(
+            rotation_log_prior_k=values.pop("rotation_log_prior_k"),
+            class_rotation_log_prior_k=values.pop("class_rotation_log_prior_k"),
+            translation_log_prior=values.pop("translation_log_prior"),
+            translation_search_base=values.pop("translation_search_base"),
+            trans_prior_center_for_engine=values.pop("trans_prior_center_for_engine"),
+            class_log_priors=values.pop("class_log_priors"),
+        ),
+        half_scoring.DenseBatchPolicy(
+            image_batch_size=values.pop("image_batch_size"),
+            safe_batch_sizes=values.pop("safe_batch_sizes"),
+            max_significants=values.pop("max_significants"),
+            significance_safe_batch_sizes=values.pop("significance_safe_batch_sizes", None),
+            k_class_image_batch_size_override=values.pop("k_class_image_batch_size_override", None),
+            k_class_rotation_block_size_override=values.pop("k_class_rotation_block_size_override", None),
+        ),
+        half_scoring.DenseVariantPolicy(
+            firstiter_score_mode_this_iter=values.pop("firstiter_score_mode_this_iter"),
+            firstiter_winner_take_all_this_iter=values.pop("firstiter_winner_take_all_this_iter"),
+            k_class_enabled=values.pop("k_class_enabled"),
+            relion_firstiter_cc_this_iter=values.pop("relion_firstiter_cc_this_iter"),
+            firstiter_coarse_current_size=values.pop("firstiter_coarse_current_size", None),
+            firstiter_fine_current_size=values.pop("firstiter_fine_current_size", None),
+            firstiter_log_label=values.pop("firstiter_log_label", "(non-adaptive site) "),
+            firstiter_updates_em_kwargs_ibs=values.pop("firstiter_updates_em_kwargs_ibs", False),
+        ),
+        half_scoring.DenseExecutionPolicy(
+            disable_adjoint_y=values.pop("disable_adjoint_y"),
+            disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
+            bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
+            debug_iteration=values.pop("debug_iteration", None),
+        ),
+        half_scoring.DenseOpticsSpec(),
+    )
+    assert not values, f"unmapped dense owner values: {sorted(values)}"
+    return owners
+
+
+def test_firstiter_cc_core_keeps_owner_dependencies_visible():
+    function = firstiter_cc._score_kclass_firstiter_cc_pass2
+    assert tuple(inspect.signature(function).parameters) == (
+        "data", "grid", "policy", "batching", "execution",
+    )
+
+    tree = ast.parse(inspect.getsource(function))
+    assigned_names = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in (
+            [*node.targets] if isinstance(node, ast.Assign) else [node.target]
+        )
+        if isinstance(target, ast.Name)
+    }
+    stable_field_names = {
+        field.name
+        for owner in (
+            firstiter_cc.FirstIterCCData,
+            firstiter_cc.FirstIterCCGridSpec,
+            firstiter_cc.FirstIterCCPolicy,
+            firstiter_cc.FirstIterCCBatching,
+            firstiter_cc.FirstIterCCExecution,
+        )
+        for field in dataclasses.fields(owner)
+    }
+    assert assigned_names.isdisjoint(stable_field_names)
+
+
+def test_dense_half_core_keeps_owner_dependencies_visible():
+    function = half_scoring._score_half_dense_one_shape
+    assert tuple(inspect.signature(function).parameters) == (
+        "half", "sampling", "priors", "batching", "variant", "execution", "optics",
+    )
+
+    tree = ast.parse(inspect.getsource(function))
+    assigned_names = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in ([*node.targets] if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name)
+    }
+    stable_field_names = {
+        field.name
+        for owner in (
+            half_scoring.DenseHalfData,
+            half_scoring.DenseSamplingSpec,
+            half_scoring.DensePriorSpec,
+            half_scoring.DenseBatchPolicy,
+            half_scoring.DenseVariantPolicy,
+            half_scoring.DenseExecutionPolicy,
+            half_scoring.DenseOpticsSpec,
+        )
+        for field in dataclasses.fields(owner)
+    }
+    route_planning_locals = {
+        "firstiter_coarse_current_size",
+        "firstiter_fine_current_size",
+        "significance_image_batch_size_override",
+        "significance_rotation_block_size_override",
+        "symmetry",
+    }
+    assert assigned_names & stable_field_names == route_planning_locals
+
+
+def test_local_half_core_keeps_owner_dependencies_visible():
+    function = half_scoring._score_half_local_one_shape
+    assert tuple(inspect.signature(function).parameters) == (
+        "half", "sampling", "priors", "batching", "execution", "diagnostics", "optics",
+    )
+
+    tree = ast.parse(inspect.getsource(function))
+    assigned_names = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in ([*node.targets] if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name)
+    }
+    stable_field_names = {
+        field.name
+        for owner in (
+            half_scoring.LocalHalfData,
+            half_scoring.LocalSamplingSpec,
+            half_scoring.LocalPriorSpec,
+            half_scoring.LocalBatchPolicy,
+            half_scoring.LocalExecutionPolicy,
+            half_scoring.LocalDiagnosticPolicy,
+            half_scoring.LocalOpticsSpec,
+        )
+        for field in dataclasses.fields(owner)
+    }
+    assert assigned_names.isdisjoint(stable_field_names)
+
+
+def test_local_iteration_core_keeps_owner_dependencies_visible():
+    function = local_search_iteration._run_local_search_iteration
+    assert tuple(inspect.signature(function).parameters) == (
+        "data", "grid", "batching", "kernel", "support", "diagnostics",
+    )
+
+    tree = ast.parse(inspect.getsource(function))
+    assigned_names = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in ([*node.targets] if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name)
+    }
+    stable_field_names = {
+        field.name
+        for owner in (
+            local_search_iteration.LocalSearchData,
+            local_search_iteration.LocalSearchGridSpec,
+            local_search_iteration.LocalSearchBatchPolicy,
+            local_search_iteration.LocalSearchKernelPolicy,
+            local_search_iteration.LocalSearchSupportPolicy,
+            local_search_iteration.LocalSearchDiagnosticPolicy,
+        )
+        for field in dataclasses.fields(owner)
+    }
+    normalized_or_planned_locals = {
+        "image_batch_size",
+        "rotation_block_size",
+        "prior_rotations",
+        "prior_translations",
+    }
+    assert assigned_names & stable_field_names == normalized_or_planned_locals
 
 
 def test_firstiter_winner_take_all_assembly_reports_unit_pmax_across_score_normalizations():
@@ -139,27 +336,38 @@ def test_firstiter_cc_adaptive_dispatch_clamps_against_fine_translation_grid(mon
             return 120, 700
         raise AssertionError((n_rot, n_trans, current_size_for_batch))
 
-    result, _rot_parent, _trans_parent, n_trans_fine, _adaptive_os = firstiter_cc._score_kclass_firstiter_cc_pass2(
-        logger=iteration_loop.logger,
-        experiment_dataset=object(),
-        mean=np.zeros((2, 4), dtype=np.complex64),
-        mean_variance=None,
-        noise_variance_k=None,
-        effective_rotations=np.zeros((576, 3, 3), dtype=np.float32),
-        current_translations=np.zeros((29, 2), dtype=np.float32),
-        base_translations=np.zeros((29, 2), dtype=np.float32),
-        current_healpix_order=1,
-        state=SimpleNamespace(adaptive_oversampling=1, translation_step=2.0),
-        random_perturbation=0.0,
-        disc_type="linear_interp",
-        class_log_priors=None,
-        image_batch_size=200,
-        image_shape_k=(256, 256),
-        em_kwargs={"image_batch_size": 88, "rotation_block_size": 576},
-        safe_batch_sizes=fake_safe_batch_sizes,
-        coarse_current_size=40,
-        fine_current_size=90,
-        update_em_kwargs_image_batch_size=True,
+    data = firstiter_cc.FirstIterCCData(
+            logger=iteration_loop.logger,
+            experiment_dataset=object(),
+            mean=np.zeros((2, 4), dtype=np.complex64),
+            mean_variance=None,
+            noise_variance=None,
+            image_shape=(256, 256),
+    )
+    grid = firstiter_cc.FirstIterCCGridSpec(
+            effective_rotations=np.zeros((576, 3, 3), dtype=np.float32),
+            current_translations=np.zeros((29, 2), dtype=np.float32),
+            base_translations=np.zeros((29, 2), dtype=np.float32),
+            current_healpix_order=1,
+            state=SimpleNamespace(adaptive_oversampling=1, translation_step=2.0),
+            random_perturbation=0.0,
+    )
+    policy = firstiter_cc.FirstIterCCPolicy(
+            disc_type="linear_interp",
+            class_log_priors=None,
+    )
+    batching = firstiter_cc.FirstIterCCBatching(
+            image_batch_size=200,
+            em_kwargs={"image_batch_size": 88, "rotation_block_size": 576},
+            safe_batch_sizes=fake_safe_batch_sizes,
+            coarse_current_size=40,
+            fine_current_size=90,
+    )
+    execution = firstiter_cc.FirstIterCCExecution(
+            update_em_kwargs_image_batch_size=True,
+    )
+    result, _rot_parent, _trans_parent, n_trans_fine, _adaptive_os = (
+        firstiter_cc._score_kclass_firstiter_cc_pass2(data, grid, policy, batching, execution)
     )
 
     assert result == "result"
@@ -187,9 +395,15 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
     dispatch = {}
     original_dispatch = half_scoring._score_kclass_firstiter_cc_pass2
 
-    def capture_dispatch(**kwargs):
-        dispatch.update(kwargs)
-        return original_dispatch(**kwargs)
+    def capture_dispatch(data, grid, policy, batching, execution):
+        dispatch.update(
+            data=data,
+            grid=grid,
+            policy=policy,
+            batching=batching,
+            execution=execution,
+        )
+        return original_dispatch(data, grid, policy, batching, execution)
     calls = []
 
     class TinyDataset:
@@ -280,7 +494,7 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
     means = jnp.zeros(4 if n_classes == 1 else (n_classes, 4), dtype=jnp.complex64)
     coarse_ids = np.arange(576, dtype=np.int32)
 
-    result = half_scoring._score_half_dense(
+    result = half_scoring._score_half_dense(*_dense_owners(
         k=0,
         experiment_dataset=TinyDataset(),
         means_k=means,
@@ -320,7 +534,7 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
         firstiter_updates_em_kwargs_ibs=update_batch,
         firstiter_log_label="test K-class ",
         coarse_rotation_ids=coarse_ids,
-    )
+    ))
 
     assert calls == [
         (576, 29, None, None, 90),
@@ -338,16 +552,18 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
     assert result.ha.shape == (3,)
     assert result.coarse_ha.shape == (3,)
 
-    assert dispatch["mean"].shape == (n_classes, 4)
-    assert dispatch["log_label"] == ("K=1 " if n_classes == 1 else "test K-class ")
-    assert dispatch["update_em_kwargs_image_batch_size"] is update_batch
-    assert dispatch["em_kwargs"]["image_batch_size"] == (captured["image_batch_size"] if update_batch else 187)
+    assert dispatch["data"].mean.shape == (n_classes, 4)
+    assert dispatch["execution"].log_label == ("K=1 " if n_classes == 1 else "test K-class ")
+    assert dispatch["execution"].update_em_kwargs_image_batch_size is update_batch
+    assert dispatch["batching"].em_kwargs["image_batch_size"] == (
+        captured["image_batch_size"] if update_batch else 187
+    )
     if n_classes == 1:
-        assert "coarse_rotation_ids" not in dispatch
+        assert dispatch["grid"].coarse_rotation_ids is None
         assert captured["coarse_rotation_ids"] is None
     else:
-        assert dispatch["mean"] is means
-        assert dispatch["coarse_rotation_ids"] is coarse_ids
+        assert dispatch["data"].mean is means
+        assert dispatch["grid"].coarse_rotation_ids is coarse_ids
         assert captured["coarse_rotation_ids"] is coarse_ids
 
 
@@ -418,7 +634,7 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
     monkeypatch.setattr(half_scoring, "build_adaptive_pass2_grids", fake_grids)
     monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
 
-    result = half_scoring._score_half_dense(
+    result = half_scoring._score_half_dense(*_dense_owners(
         k=0,
         experiment_dataset=TinyDataset(),
         means_k=jnp.zeros((4, 4), dtype=jnp.complex64),
@@ -454,7 +670,7 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
         k_class_rotation_block_size_override=2000,
         firstiter_coarse_current_size=40,
         firstiter_fine_current_size=90,
-    )
+    ))
 
     assert captured["image_batch_size"] == 44
     assert captured["rotation_block_size"] == 275

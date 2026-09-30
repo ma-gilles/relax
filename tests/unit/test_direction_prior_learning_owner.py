@@ -1,12 +1,13 @@
-"""Learned direction-prior updates have one owner; history formats their snapshots.
+"""Learned direction-prior updates expose cohesive owners; history formats snapshots.
 
-``mean_helpers.update_learned_direction_priors`` mutates the caller-owned
-per-half prior lists; ``RefinementHistory.record_direction_prior`` and
+The explicit K=1 and K-class helpers mutate the caller-owned per-half prior
+lists; ``RefinementHistory.record_direction_prior`` and
 ``record_rotation_posterior`` own the float64 snapshot copies.
 """
 
 from __future__ import annotations
 
+import inspect
 import logging
 
 import numpy as np
@@ -48,7 +49,78 @@ def _update(rotation_posterior_per_half, lists, **overrides):
         log=logging.getLogger(__name__),
     )
     kwargs.update(overrides)
-    return mean_helpers.update_learned_direction_priors(**kwargs)
+    rotation_posterior_per_half = kwargs.pop("rotation_posterior_per_half")
+    class_rotation_posterior_per_half = kwargs.pop("class_rotation_posterior_per_half")
+    global_direction_prior_per_half = kwargs.pop("global_direction_prior_per_half")
+    global_direction_prior_order_per_half = kwargs.pop("global_direction_prior_order_per_half")
+    class_direction_prior_per_half = kwargs.pop("class_direction_prior_per_half")
+    class_direction_prior_order_per_half = kwargs.pop("class_direction_prior_order_per_half")
+    n_classes = kwargs.pop("n_classes")
+    use_local = kwargs.pop("use_local")
+    k1_direction_prior_order = kwargs.pop("k1_direction_prior_order")
+    k1_direction_prior_size = kwargs.pop("k1_direction_prior_size")
+    current_healpix_order = kwargs.pop("current_healpix_order")
+    exhaustive_grid_size = kwargs.pop("exhaustive_grid_size")
+    n_effective_rotations = kwargs.pop("n_effective_rotations")
+    symmetry = kwargs.pop("symmetry", "C1")
+    dtype = kwargs.pop("dtype")
+    log = kwargs.pop("log")
+    assert not kwargs, f"unmapped direction-prior values: {sorted(kwargs)}"
+    if n_classes <= 1:
+        return mean_helpers.update_k1_direction_priors(
+            rotation_posterior_per_half,
+            global_direction_prior_per_half,
+            global_direction_prior_order_per_half,
+            direction_prior_order=k1_direction_prior_order,
+            expected_rotation_count=k1_direction_prior_size,
+            dtype=dtype,
+            log=log,
+            symmetry=symmetry,
+        )
+    if (
+        not use_local
+        and n_effective_rotations == exhaustive_grid_size
+        and all(rot_sum is not None for rot_sum in class_rotation_posterior_per_half)
+    ):
+        return mean_helpers.update_class_direction_priors(
+            class_rotation_posterior_per_half,
+            class_direction_prior_per_half,
+            class_direction_prior_order_per_half,
+            n_classes=n_classes,
+            healpix_order=current_healpix_order,
+            dtype=dtype,
+            symmetry=symmetry,
+        )
+    return None
+
+
+def test_direction_prior_variants_expose_their_dependencies():
+    assert tuple(inspect.signature(mean_helpers.update_k1_direction_priors).parameters) == (
+        "rotation_posterior_per_half",
+        "global_direction_prior_per_half",
+        "global_direction_prior_order_per_half",
+        "direction_prior_order",
+        "expected_rotation_count",
+        "dtype",
+        "log",
+        "symmetry",
+    )
+    assert tuple(inspect.signature(mean_helpers.update_class_direction_priors).parameters) == (
+        "class_rotation_posterior_per_half",
+        "class_direction_prior_per_half",
+        "class_direction_prior_order_per_half",
+        "n_classes",
+        "healpix_order",
+        "dtype",
+        "symmetry",
+    )
+    for name in (
+        "DirectionPosteriorState",
+        "DirectionPriorState",
+        "DirectionPriorGridSpec",
+        "DirectionPriorExecution",
+    ):
+        assert not hasattr(mean_helpers, name)
 
 
 def test_k1_learns_one_prior_per_half_at_the_scoring_order():

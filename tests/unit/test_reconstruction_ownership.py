@@ -1,18 +1,87 @@
 """Donor reconstruction ownership and authoritative per-half shell priors."""
 
+import dataclasses
+import inspect
+
 import jax.numpy as jnp
 import numpy as np
 import pytest
-
-from recovar.core import fourier_transform_utils as ftu
-from relax.reconstruction import regularization_relion
-from recovar.reconstruction import relion_functions as rf
 from helpers.float_compare import assert_matches
+from helpers.refinement_specs import run_mean_reconstruction
+from recovar.core import fourier_transform_utils as ftu
+from recovar.reconstruction import relion_functions as rf
+
+from relax.reconstruction import regularization_relion
 
 pytestmark = pytest.mark.unit
 
 VOLUME_SHAPE = (8, 8, 8)
 VOLUME_SIZE = 512
+
+
+def test_mean_reconstruction_variants_share_run_level_settings():
+    from relax.refinement import iteration_loop as iteration_loop_module
+    from relax.refinement import mean_helpers as mean_helpers_module
+
+    assert tuple(inspect.signature(mean_helpers_module.reconstruct_k1_means).parameters) == (
+        "numerators_by_half", "denominators_by_half", "tau_by_half", "settings",
+        "current_size", "tau2_fudge", "accumulator_volume_shape", "tau_is_1d",
+        "retained_first_numerator",
+    )
+    assert tuple(inspect.signature(mean_helpers_module.reconstruct_class_means).parameters) == (
+        "combined_numerators", "combined_denominators", "tau_by_class", "settings",
+        "n_classes", "iteration", "current_size", "tau2_fudge",
+        "accumulator_volume_shape", "tau_is_1d",
+    )
+    assert tuple(inspect.signature(mean_helpers_module.postprocess_reconstructed_means).parameters) == (
+        "means", "settings", "n_classes", "iteration", "current_size",
+        "particle_diameter_ang", "relion_firstiter_cc_this_iter",
+        "relion_firstiter_ini_high_angstrom",
+    )
+    assert tuple(field.name for field in dataclasses.fields(mean_helpers_module.ReconstructionSettings)) == (
+        "grid_size", "voxel_size", "volume_shape", "padding_factor",
+        "projection_padding_factor", "minres_map", "width_mask_edge", "fmask_edge",
+    )
+    for name in (
+        "MeanReconstructionData", "MeanAccumulatorState", "MeanPriorSpec",
+        "MeanGeometrySpec", "MeanPostprocessPolicy",
+    ):
+        assert not hasattr(mean_helpers_module, name)
+
+    source = inspect.getsource(iteration_loop_module.refine_single_volume)
+    settings = source.index("reconstruction_settings = ReconstructionSettings(")
+    loop = source.index("while (schedule.force_max_iter_after_convergence")
+    reconstruction = source.index("reconstruct_k1_means(", loop)
+    postprocess = source.index("postprocess_reconstructed_means(", reconstruction)
+    assert source.count("ReconstructionSettings(") == 1
+    assert settings < loop < reconstruction < postprocess
+
+
+def test_unregularized_reconstruction_variants_expose_dependencies():
+    from relax.refinement import mean_helpers as mean_helpers_module
+
+    assert tuple(inspect.signature(mean_helpers_module.reconstruct_unregularized_k1_halfmaps).parameters) == (
+        "Ft_y_per_half", "Ft_ctf_per_half", "volume_shape", "tau2_fudge",
+        "padding_factor", "projection_padding_factor", "minres_map",
+        "accumulator_volume_shape",
+    )
+    assert tuple(inspect.signature(mean_helpers_module.reconstruct_unregularized_class_means).parameters) == (
+        "Ft_y_combined", "Ft_ctf_combined", "volume_shape", "n_classes",
+        "tau2_fudge", "padding_factor", "projection_padding_factor", "minres_map",
+        "accumulator_volume_shape",
+    )
+    assert tuple(inspect.signature(mean_helpers_module.align_k1_volume_signs).parameters) == (
+        "means", "previous_means", "unregularized_means", "volume_shape",
+    )
+    assert tuple(inspect.signature(mean_helpers_module.share_kclass_volume_signs).parameters) == (
+        "means", "unregularized_means",
+    )
+    for name in (
+        "UnregularizedMeanState",
+        "UnregularizedAccumulatorState",
+        "UnregularizedReconstructionPolicy",
+    ):
+        assert not hasattr(mean_helpers_module, name)
 
 
 class TestReconstructionOwnership:
@@ -42,7 +111,7 @@ class TestReconstructionOwnership:
         tau_shells = [jnp.arange(n_shells, dtype=jnp.float32) + 101.0, jnp.arange(n_shells, dtype=jnp.float32) + 201.0]
         retained_half0 = object()
         means = [None, None]
-        mean_helpers_module._reconstruct_and_postprocess_means(
+        run_mean_reconstruction(
             means,
             Ft_y_0=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
             Ft_y_1=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
@@ -108,9 +177,10 @@ class TestReconstructionOwnership:
 
     def test_large_host_reconstruction_reuses_retained_numerator_and_releases_stage_a(self, monkeypatch, caplog):
         """The retained half-0 buffer must feed Stage A and release before the iFFT."""
-        from relax.refinement import mean_helpers as mean_helpers_module
         from recovar.reconstruction import relion_functions
+
         from relax.reconstruction import relion_functions_relion
+        from relax.refinement import mean_helpers as mean_helpers_module
 
         events = []
         host_boundary = np.ones((5, 5, 3), dtype=np.complex64)
@@ -181,9 +251,10 @@ class TestReconstructionOwnership:
 
     def test_large_host_reconstruction_stages_numpy_numerator_for_donation(self, monkeypatch, caplog):
         """Half 2 must see half 1 freed, then stage/delete its host numerator."""
-        from relax.refinement import mean_helpers as mean_helpers_module
         from recovar.reconstruction import relion_functions
+
         from relax.reconstruction import relion_functions_relion
+        from relax.refinement import mean_helpers as mean_helpers_module
 
         volume_shape = (2, 2, 2)
         accumulator_shape = (5, 5, 5)
@@ -350,7 +421,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         mean_helpers_module, "_finish_host_staged_reconstruction", lambda result, *_accumulators: result
     )
     means = [None, None]
-    mean_helpers_module._reconstruct_and_postprocess_means(
+    run_mean_reconstruction(
         means,
         Ft_y_0=joined[0],
         Ft_y_1=joined[1],

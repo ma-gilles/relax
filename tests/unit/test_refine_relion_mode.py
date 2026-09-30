@@ -23,6 +23,11 @@ pytest.importorskip("jax")
 import healpy as hp
 import jax.numpy as jnp
 from helpers.em_arrays import _hermitian_volume, _make_rotations
+from helpers.refinement_specs import (
+    local_half_owners,
+    local_iteration_owners,
+    run_mean_reconstruction,
+)
 
 import recovar.core.fourier_transform_utils as ftu
 import relax.diagnostics.relion_replay as relion_replay_module
@@ -2170,7 +2175,7 @@ def test_score_half_local_parent_layout_ignores_global_rotation_prior_for_adapti
     monkeypatch.setattr(half_scoring, "build_local_hypothesis_layout", fake_build_local_hypothesis_layout)
 
     with pytest.raises(StopAfterParentLayout):
-        half_scoring._score_half_local(
+        half_scoring._score_half_local(*local_half_owners(
             k=0,
             experiment_dataset=dataset,
             means_k=jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
@@ -2206,7 +2211,7 @@ def test_score_half_local_parent_layout_ignores_global_rotation_prior_for_adapti
             safe_batch_sizes=lambda *args, **kwargs: (1, 1),
             outputs=score_outputs.PerHalfOutputs(),
             local_profile_history=[],
-        )
+        ))
 
     assert captured["rotation_log_prior"] is None
 
@@ -2221,9 +2226,8 @@ def test_score_half_local_forwards_mstep_grid(monkeypatch, rng):
     class DispatchCaptured(Exception):
         pass
 
-    def fake_run_local_search_iteration(*args, **kwargs):
-        captured["mean_shape"] = args[1].shape
-        captured.update(kwargs)
+    def fake_run_local_search_iteration(data, grid, batching, kernel, support, diagnostics):
+        captured.update(data=data, grid=grid, batching=batching, kernel=kernel, support=support, diagnostics=diagnostics)
         raise DispatchCaptured
 
     monkeypatch.setitem(scoring_policy._DENSE_EM_STATIC_KWARGS, "use_float64_scoring", True)
@@ -2231,7 +2235,7 @@ def test_score_half_local_forwards_mstep_grid(monkeypatch, rng):
     monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
     with pytest.raises(DispatchCaptured):
-        half_scoring._score_half_local(
+        half_scoring._score_half_local(*local_half_owners(
             k=0,
             experiment_dataset=dataset,
             means_k=jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
@@ -2268,15 +2272,13 @@ def test_score_half_local_forwards_mstep_grid(monkeypatch, rng):
             safe_batch_sizes=lambda *args, **kwargs: (1, 16),
             outputs=score_outputs.PerHalfOutputs(),
             local_profile_history=[],
-        )
+        ))
 
-    assert captured["mean_shape"] == (VOLUME_SIZE,)
-    assert_matches(captured["rotation_grid_mstep_rotations"], mstep_grid)
-    assert captured["generate_relion_mstep_rotations"] is True
-    assert "class_log_priors" not in captured
-    assert "return_significant_counts" not in captured
-    assert captured["use_float64_scoring"] is True
-    assert captured["use_float64_projections"] is True
+    assert captured["data"].mean.shape == (VOLUME_SIZE,)
+    assert_matches(captured["grid"].rotation_grid_mstep_rotations, mstep_grid)
+    assert captured["grid"].generate_relion_mstep_rotations is True
+    assert captured["kernel"].use_float64_scoring is True
+    assert captured["kernel"].use_float64_projections is True
 
 
 def test_build_local_hypothesis_layout_parent_expands_translation_grid_and_priors():
@@ -4118,7 +4120,7 @@ def test_run_local_search_iteration_fine_pass_uses_model_sigma_for_translation_p
     translations = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=np.float32)
     reference_translations = np.array([[0.0, 0.0], [2.0, 0.0]], dtype=np.float32)
 
-    outputs = local_search_iteration._run_local_search_iteration(
+    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -4137,7 +4139,7 @@ def test_run_local_search_iteration_fine_pass_uses_model_sigma_for_translation_p
         accumulate_noise=True,
         relion_exact_score_translation=True,
         translation_prior_reference_translations=reference_translations,
-    )
+    ))
 
     assert captured["offset_range_pixels"] is None
     assert captured["sigma_offset_angstrom"] == 1.25
@@ -4181,7 +4183,7 @@ def test_run_local_search_iteration_dispatches_aligned_mstep_grid(monkeypatch, r
     monkeypatch.setattr(local_iteration_module, "compute_local_search_resident", capture_dispatch)
 
     with pytest.raises(DispatchCaptured):
-        local_search_iteration._run_local_search_iteration(
+        local_search_iteration._run_local_search_iteration(*local_iteration_owners(
             dataset,
             jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -4200,7 +4202,7 @@ def test_run_local_search_iteration_dispatches_aligned_mstep_grid(monkeypatch, r
             relion_exact_score_translation=True,
             rotation_grid_mstep_rotations=mstep_grid,
             generate_relion_mstep_rotations=True,
-        )
+        ))
 
     layout = captured["layout"]
     assert_matches(layout.rotations_flat, score_grid[layout.rotation_ids_flat])
@@ -4259,7 +4261,7 @@ def test_run_local_search_iteration_plumbs_normalization_log_evidence(monkeypatc
 
     monkeypatch.setattr(local_iteration_module, "compute_local_search_resident", fake_resident_local_search)
 
-    outputs = local_search_iteration._run_local_search_iteration(
+    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -4278,7 +4280,7 @@ def test_run_local_search_iteration_plumbs_normalization_log_evidence(monkeypatc
         accumulate_noise=False,
         pass2_layout=layout,
         normalization_log_evidence=normalization_log_evidence,
-    )
+    ))
 
     np.testing.assert_allclose(captured["normalization_log_evidence"], normalization_log_evidence)
     assert isinstance(outputs, _LocalSearchIterationResult)
@@ -4323,7 +4325,7 @@ def test_run_local_search_iteration_plumbs_stats_use_reconstruction_probs(monkey
 
     monkeypatch.setattr(local_iteration_module, "compute_local_search_resident", fake_resident_local_search)
 
-    outputs = local_search_iteration._run_local_search_iteration(
+    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -4343,7 +4345,7 @@ def test_run_local_search_iteration_plumbs_stats_use_reconstruction_probs(monkey
         pass2_layout=layout,
         reconstruct_significant_only=True,
         stats_use_reconstruction_probs=True,
-    )
+    ))
 
     assert captured["stats_use_reconstruction_probs"] is True
     assert isinstance(outputs, _LocalSearchIterationResult)
@@ -4448,7 +4450,7 @@ def test_run_local_search_iteration_fine_pass_uses_factorized_prior_metadata_for
         == "full"
     )
 
-    outputs = local_search_iteration._run_local_search_iteration(
+    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -4465,7 +4467,7 @@ def test_run_local_search_iteration_fine_pass_uses_factorized_prior_metadata_for
         rotation_block_size=4,
         current_size=4,
         accumulate_noise=True,
-    )
+    ))
 
     assert captured["grid_metadata_mode"] == "factorized"
     assert captured["n_pixels"] == hp.nside2npix(2**healpix_order)
@@ -4501,7 +4503,7 @@ def test_run_local_search_iteration_fallback_planner_uses_resolved_score_precisi
     monkeypatch.setattr(local_iteration_module, "_estimate_relion_em_batch_sizes", capture_planner)
 
     with pytest.raises(PlannerCaptured):
-        local_search_iteration._run_local_search_iteration(
+        local_search_iteration._run_local_search_iteration(*local_iteration_owners(
             MockDataset(1, rng),
             jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -4518,7 +4520,7 @@ def test_run_local_search_iteration_fallback_planner_uses_resolved_score_precisi
             rotation_block_size=16,
             current_size=4,
             use_float64_scoring=use_float64_scoring,
-        )
+        ))
 
     assert captured["use_float64_scoring"] is use_float64_scoring
 
@@ -4559,7 +4561,7 @@ def test_run_local_search_iteration_plumbs_score_only_to_exact_engine(monkeypatc
 
     monkeypatch.setattr(local_iteration_module, "run_local_em_exact", fake_run_local_em_exact)
 
-    outputs = local_search_iteration._run_local_search_iteration(
+    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -4581,7 +4583,7 @@ def test_run_local_search_iteration_plumbs_score_only_to_exact_engine(monkeypatc
         disable_adjoint_y=True,
         disable_adjoint_ctf=True,
         score_only=True,
-    )
+    ))
 
     assert captured["score_only"] is True
     assert captured["disable_adjoint_y"] is True
@@ -11410,11 +11412,13 @@ class TestRelionModeSmokeTest:
         )
         score_half = iteration_loop_module._score_half_dense_in_bpref_scope
 
-        def record_scoring_prior(**kwargs):
-            scoring_priors.append(np.asarray(kwargs["mean_variance"]))
-            scoring_rotations.append(kwargs["coarse_scoring_rotations"])
-            scoring_grids.append((kwargs["effective_rotations"], kwargs["current_translations"]))
-            return score_half(**kwargs)
+        def record_scoring_prior(half, sampling, priors, batching, variant, execution, optics):
+            scoring_priors.append(np.asarray(half.mean_variance))
+            scoring_rotations.append(sampling.coarse_scoring_rotations)
+            scoring_grids.append(
+                (sampling.effective_rotations, sampling.current_translations)
+            )
+            return score_half(half, sampling, priors, batching, variant, execution, optics)
 
         monkeypatch.setattr(iteration_loop_module, "_score_half_dense_in_bpref_scope", record_scoring_prior)
         initial_tau2 = jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0
@@ -11640,7 +11644,7 @@ class TestRelionModeSmokeTest:
         )
 
         means = [None, None]
-        mean_helpers_module._reconstruct_and_postprocess_means(
+        run_mean_reconstruction(
             means,
             Ft_y_0=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
             Ft_y_1=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
@@ -11703,7 +11707,7 @@ class TestRelionModeSmokeTest:
             axis=0,
         )
         means = [None, None]
-        mean_helpers_module._reconstruct_and_postprocess_means(
+        run_mean_reconstruction(
             means,
             Ft_y_0=None,
             Ft_y_1=None,
@@ -11793,8 +11797,9 @@ class TestRelionModeSmokeTest:
 
         captured = {}
 
-        def capture(**kwargs):
-            captured.update(kwargs)
+        def capture(half, sampling, priors, batching, variant, execution, optics):
+            del half, sampling, priors, batching, variant, optics
+            captured["execution"] = execution
             raise _Captured
 
         monkeypatch.setattr(iteration_loop_module, "_score_half_dense_in_bpref_scope", capture)
@@ -11828,7 +11833,7 @@ class TestRelionModeSmokeTest:
                     parity=parity,
                 ),
             )
-        assert captured["relion_translation_angle_scale"] == expected_scale
+        assert captured["execution"].relion_translation_angle_scale == expected_scale
 
 
     @pytest.mark.parametrize("n_classes", [1, 2])
@@ -12783,8 +12788,12 @@ def test_local_search_uses_lazy_parent_expanded_fine_rotation_grid_when_oversamp
             best_trans = np.zeros((experiment_dataset.n_units, 2), dtype=np.float32)
             best_pose_details = (best_rots, best_trans)
         return _mock_local_search_result(
-            base_outputs, relion_stats, noise_stats, kwargs,
-            experiment_dataset.n_units, best_pose_details,
+            base_outputs,
+            relion_stats,
+            noise_stats,
+            kwargs,
+            experiment_dataset.n_units,
+            best_pose_details,
         )
 
     monkeypatch.setattr(refine_mod, "rotation_grid_size", fake_rotation_grid_size)
@@ -13109,12 +13118,8 @@ def test_local_search_uses_negative_previous_offsets_for_translation_prior(
             best_trans = np.zeros((experiment_dataset.n_units, 2), dtype=np.float32)
             best_pose_details = (best_rots, best_trans)
         return _mock_local_search_result(
-            base_outputs,
-            relion_stats,
-            noise_stats,
-            kwargs,
-            experiment_dataset.n_units,
-            best_pose_details,
+            base_outputs, relion_stats, noise_stats, kwargs,
+            experiment_dataset.n_units, best_pose_details,
         )
 
     monkeypatch.setattr(refine_mod, "rotation_grid_size", fake_rotation_grid_size)
@@ -14717,7 +14722,7 @@ def test_run_local_search_iteration_plumbs_score_only_and_reuses_batch_planner(
 
     monkeypatch.setattr(local_search_iteration, "_estimate_relion_em_batch_sizes", batch_size_planner)
 
-    outputs = local_search_iteration._run_local_search_iteration(
+    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -14739,7 +14744,7 @@ def test_run_local_search_iteration_plumbs_score_only_and_reuses_batch_planner(
         disable_adjoint_y=True,
         disable_adjoint_ctf=True,
         score_only=True,
-    )
+    ))
 
     assert planner_calls == [{
         "requested_image_batch_size": 2,
@@ -14864,15 +14869,21 @@ def test_k_class_reconstruction_preserves_data_determined_volume_signs(monkeypat
         return numerator
 
     monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", reconstruct)
-    result = mean_helpers_module.compute_unregularized_halfmaps_and_align_signs(
-        means=means, previous_means=[jnp.asarray(previous), jnp.asarray(previous)],
-        Ft_y_per_half=(None, None), Ft_ctf_per_half=(None, None),
-        Ft_y_combined=jnp.asarray(unregularized),
-        Ft_ctf_combined=jnp.ones_like(jnp.asarray(unregularized).real),
-        volume_shape=(2, 1, 1), n_classes=n_classes,
-        tau2_fudge=1.0, padding_factor=1, projection_padding_factor=1,
-        minres_map=1, need_unreg_means=need_unreg,
+    result = (
+        mean_helpers_module.reconstruct_unregularized_class_means(
+            jnp.asarray(unregularized),
+            jnp.ones_like(jnp.asarray(unregularized).real),
+            (2, 1, 1),
+            n_classes,
+            tau2_fudge=1.0,
+            padding_factor=1,
+            projection_padding_factor=1,
+            minres_map=1,
+        )
+        if need_unreg
+        else [None, None]
     )
+    mean_helpers_module.share_kclass_volume_signs(means, result)
     assert_matches(means[0], reconstructed)
     assert_matches(means[1], reconstructed)
     assert means[0] is means[1]
@@ -14932,7 +14943,7 @@ def test_local_search_reuses_caller_planner_without_growing_batches(
 
     monkeypatch.setattr(local_search_iteration, "_estimate_relion_em_batch_sizes", lambda **kwargs: pytest.fail("caller planner bypassed"))
 
-    outputs = local_search_iteration._run_local_search_iteration(
+    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -14955,7 +14966,7 @@ def test_local_search_reuses_caller_planner_without_growing_batches(
         disable_adjoint_ctf=True,
         score_only=True,
         batch_size_planner=batch_size_planner,
-    )
+    ))
 
     assert planner_calls == [(2, 2, {
         "classes": 1, "image_shape_for_batch": mock_dataset.image_shape,

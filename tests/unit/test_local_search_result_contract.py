@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.refinement_specs import local_iteration_owners
 
 from relax.helpers.types import LocalEMResult
 from relax.refinement import local_search_iteration
@@ -39,7 +40,7 @@ def test_local_sample_capture_preserves_profile_visibility(monkeypatch, return_p
     )
     rotations = np.repeat(np.eye(3, dtype=np.float32)[None], 2, axis=0)
     translations = np.zeros((2, 2), dtype=np.float32)
-    result = local_search_iteration._run_local_search_iteration(
+    result = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
         SimpleNamespace(image_shape=(2, 2), volume_shape=(2, 2, 2)),
         None, None, rotations, rotations,
         healpix_order=0, sigma_rot=1.0, sigma_psi=1.0,
@@ -50,7 +51,7 @@ def test_local_sample_capture_preserves_profile_visibility(monkeypatch, return_p
         pass2_layout=SimpleNamespace(rotation_counts=np.ones(2, dtype=np.int32), translation_grid=translations[:1]),
         return_reconstruction_sample_indices=True,
         return_profile=return_profile,
-    )
+    ))
     assert result.relion_stats is stats
     if return_profile:
         assert result.profile_summary is not profile

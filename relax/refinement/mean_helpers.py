@@ -13,6 +13,7 @@ import logging
 import math
 import os
 import time
+from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
@@ -238,18 +239,16 @@ def _previous_resolution_angstrom_for_half_join(
 
 
 def join_half_accumulators_at_low_resolution(
-    Ft_y_0,
-    Ft_y_1,
-    Ft_ctf_0,
-    Ft_ctf_1,
+    numerators_by_half,
+    denominators_by_half,
     *,
     accumulator_volume_shape,
-    grid_size: int,
-    voxel_size: float,
-    low_resol_join_halves_angstrom: float,
+    grid_size,
+    voxel_size,
+    padding_factor,
+    low_resolution_angstrom,
     pixel_resolutions,
     current_resolution,
-    padding_factor,
     preserve_inputs=True,
     return_retained_first_numerator=False,
 ):
@@ -272,18 +271,22 @@ def join_half_accumulators_at_low_resolution(
         voxel_size=voxel_size,
     )
     return regularization_relion.join_halves_at_low_resolution(
-        Ft_y_0,
-        Ft_y_1,
-        Ft_ctf_0,
-        Ft_ctf_1,
+        numerators_by_half[0],
+        numerators_by_half[1],
+        denominators_by_half[0],
+        denominators_by_half[1],
         accumulator_volume_shape,
         voxel_size,
         grid_size,
-        low_resol_join_halves_angstrom,
+        low_resolution_angstrom,
         current_resolution_angstrom=previous_resolution_angstrom,
         padding_factor=padding_factor,
         **({"preserve_inputs": False} if not preserve_inputs else {}),
-        **({"return_retained_first_numerator": True} if return_retained_first_numerator else {}),
+        **(
+            {"return_retained_first_numerator": True}
+            if return_retained_first_numerator
+            else {}
+        ),
     )
 
 
@@ -402,76 +405,71 @@ def _stack_class_tau2_update_details(details_per_class):
     }
 
 
-def update_learned_direction_priors(
-    *,
+def update_k1_direction_priors(
     rotation_posterior_per_half,
-    class_rotation_posterior_per_half,
     global_direction_prior_per_half,
     global_direction_prior_order_per_half,
-    class_direction_prior_per_half,
-    class_direction_prior_order_per_half,
-    n_classes: int,
-    use_local: bool,
-    k1_direction_prior_order: int,
-    k1_direction_prior_size: int,
-    current_healpix_order: int,
-    exhaustive_grid_size: int,
-    n_effective_rotations: int,
+    *,
+    direction_prior_order,
+    expected_rotation_count,
     dtype,
     log,
-    symmetry: str = "C1",
+    symmetry="C1",
 ) -> None:
-    """Learn the next iteration's direction priors from this iteration's posteriors.
+    """Collapse each K=1 half's rotation posterior into its next direction prior."""
 
-    Mutates the four caller-owned per-half lists in place. K=1 collapses each
-    half's rotation posterior at ``k1_direction_prior_order`` when both halves
-    report posteriors of ``k1_direction_prior_size`` rotations; a half whose
-    collapsed prior cannot form a RELION log prior is skipped with a warning
-    on ``log``. K-class combines both halves' per-class posteriors on the
-    exhaustive grid only for global scoring whose scorer grid has
-    ``exhaustive_grid_size`` rotations, and stores an independent copy per
-    half. The caller supplies the grid sizes so its sampling policy stays the
-    single source of grid geometry.
-    """
-
-    if n_classes <= 1 and all(
-        np.asarray(rot_sum).shape[0] == k1_direction_prior_size for rot_sum in rotation_posterior_per_half
+    if not all(
+        np.asarray(rot_sum).shape[0] == expected_rotation_count
+        for rot_sum in rotation_posterior_per_half
     ):
-        for k in range(2):
-            direction_prior_k = collapse_rotation_posterior_to_direction_prior(
-                np.asarray(rotation_posterior_per_half[k], dtype=np.float64),
-                k1_direction_prior_order,
-                dtype=dtype,
-                **({"symmetry": symmetry} if symmetry != "C1" else {}),
-            )
-            try:
-                make_relion_direction_log_prior(direction_prior_k, k1_direction_prior_order, **({"symmetry": symmetry} if symmetry != "C1" else {}))
-            except ValueError as exc:
-                log.warning(
-                    "Skipping K=1 direction prior update for half-%d at healpix_order=%d: %s",
-                    k + 1,
-                    k1_direction_prior_order,
-                    exc,
-                )
-                continue
-            global_direction_prior_per_half[k] = direction_prior_k
-            global_direction_prior_order_per_half[k] = k1_direction_prior_order
-    elif (
-        not use_local
-        and n_classes > 1
-        and n_effective_rotations == exhaustive_grid_size
-        and all(rot_sum is not None for rot_sum in class_rotation_posterior_per_half)
-    ):
-        combined_class_direction_prior = _combined_class_direction_prior_from_halves(
-            class_rotation_posterior_per_half,
-            n_classes,
-            current_healpix_order,
+        return
+    for k in range(2):
+        direction_prior_k = collapse_rotation_posterior_to_direction_prior(
+            np.asarray(rotation_posterior_per_half[k], dtype=np.float64),
+            direction_prior_order,
             dtype=dtype,
             **({"symmetry": symmetry} if symmetry != "C1" else {}),
         )
-        for k in range(2):
-            class_direction_prior_per_half[k] = combined_class_direction_prior.copy()
-            class_direction_prior_order_per_half[k] = current_healpix_order
+        try:
+            make_relion_direction_log_prior(
+                direction_prior_k,
+                direction_prior_order,
+                **({"symmetry": symmetry} if symmetry != "C1" else {}),
+            )
+        except ValueError as exc:
+            log.warning(
+                "Skipping K=1 direction prior update for half-%d at healpix_order=%d: %s",
+                k + 1,
+                direction_prior_order,
+                exc,
+            )
+            continue
+        global_direction_prior_per_half[k] = direction_prior_k
+        global_direction_prior_order_per_half[k] = direction_prior_order
+
+
+def update_class_direction_priors(
+    class_rotation_posterior_per_half,
+    class_direction_prior_per_half,
+    class_direction_prior_order_per_half,
+    *,
+    n_classes,
+    healpix_order,
+    dtype,
+    symmetry="C1",
+) -> None:
+    """Combine both K-class halves into a shared prior copied to each half."""
+
+    combined_class_direction_prior = _combined_class_direction_prior_from_halves(
+        class_rotation_posterior_per_half,
+        n_classes,
+        healpix_order,
+        dtype=dtype,
+        **({"symmetry": symmetry} if symmetry != "C1" else {}),
+    )
+    for k in range(2):
+        class_direction_prior_per_half[k] = combined_class_direction_prior.copy()
+        class_direction_prior_order_per_half[k] = healpix_order
 
 
 def _merged_mean_from_halves(means, class_weights=None):
@@ -992,138 +990,150 @@ def _align_fourier_volume_sign_to_reference(volume_ft_flat, reference_ft_flat, v
     return volume_ft_flat, False
 
 
-def _reconstruct_and_postprocess_means(
-    means,
+@dataclass(frozen=True, kw_only=True)
+class ReconstructionSettings:
+    """Run-level geometry and RELION constants reused by reconstruction phases."""
+
+    grid_size: int
+    voxel_size: object
+    volume_shape: tuple
+    padding_factor: int
+    projection_padding_factor: int
+    minres_map: int
+    width_mask_edge: int
+    fmask_edge: int
+
+
+def reconstruct_k1_means(
+    numerators_by_half,
+    denominators_by_half,
+    tau_by_half,
+    settings: ReconstructionSettings,
     *,
-    Ft_y_0,
-    Ft_y_1,
-    Ft_ctf_0,
-    Ft_ctf_1,
-    Ft_y_combined,
-    Ft_ctf_combined,
-    mean_signal_variance,
-    mean_signal_variance_shells,
-    mean_signal_variance_per_half,
-    n_classes: int,
-    cs,
-    iteration: int,
-    grid_size: int,
-    cryo,
-    volume_shape,
-    tau2_fudge: float,
-    padding_factor: int,
-    projection_padding_factor: int,
-    relion_minres_map: int,
-    particle_diameter_ang,
-    relion_firstiter_cc_this_iter: bool,
-    relion_firstiter_ini_high_angstrom,
-    relion_width_mask_edge: int,
-    relion_fmask_edge: int,
-    accumulator_volume_shape=None,
-    mean_signal_variance_shells_per_half=None,
-    retained_Ft_y_0_device=None,
-) -> None:
-    """Run one iteration's regularized reconstruction + post-processing.
+    current_size,
+    tau2_fudge,
+    accumulator_volume_shape,
+    tau_is_1d,
+    retained_first_numerator=None,
+) -> list:
+    """Reconstruct both K=1 halves while preserving RELION buffer lifetime."""
 
-    Mutates ``means`` in place. Performs Wiener reconstruction (per-class for
-    K>1, per-half for K=1), optional pre-mask debug dump, RELION solvent
-    flatten, and iter-1 firstiter_cc low-pass filter.
+    if len(tau_by_half) != 2:
+        raise ValueError("K=1 reconstruction tau2 requires exactly two halves")
+    cs_int = int(current_size) if current_size is not None else None
+    reconstructed_means = []
+    retained_device_numerator = retained_first_numerator
+    for k, (Ft_y_half, Ft_ctf_half, tau_half) in enumerate(
+        zip(numerators_by_half, denominators_by_half, tau_by_half)
+    ):
+        # This RELION build uses double RFLOAT in BackProjector::reconstruct.
+        # Keep the stored/controller tau2 state compact, but promote the
+        # reconstruction operand so 1 / (padding_factor**3 * tau2) is not
+        # rounded in float32 before it enters the Wiener denominator.
+        reconstruction_tau = jnp.asarray(tau_half, dtype=jnp.float64)
+        reconstructed = _reconstruct_volume_eager(
+            Ft_ctf_half,
+            Ft_y_half,
+            settings.volume_shape,
+            settings.padding_factor,
+            tau=reconstruction_tau,
+            tau2_fudge=tau2_fudge,
+            projection_padding_factor=settings.projection_padding_factor,
+            minres_map=settings.minres_map,
+            current_size=cs_int,
+            accumulator_volume_shape=accumulator_volume_shape,
+            tau_is_1d=tau_is_1d,
+            preserve_output_precision=True,
+            relion_filter_scale=float(settings.volume_shape[0] ** 4),
+            **(
+                {"retained_device_numerator": retained_device_numerator}
+                if k == 0 and retained_device_numerator is not None
+                else {}
+            ),
+        ).reshape(-1)
+        reconstructed_means.append(
+            _finish_host_staged_reconstruction(reconstructed, Ft_ctf_half, Ft_y_half)
+        )
+        if k == 0 and retained_device_numerator is not None:
+            retained_device_numerator = None
+            gc.collect()
+    return reconstructed_means
 
-    ``relion_width_mask_edge`` is the real-space mask edge (RELION's
-    ``--maskedge`` = 5). ``relion_fmask_edge`` is the Fourier mask edge for
-    the iter-1 ``ini_high`` low-pass filter (RELION's ``WIDTH_FMASK_EDGE`` = 2).
-    Mixing the two produces a softer Fourier filter than RELION applies.
-    """
+
+def reconstruct_class_means(
+    combined_numerators,
+    combined_denominators,
+    tau_by_class,
+    settings: ReconstructionSettings,
+    *,
+    n_classes,
+    iteration,
+    current_size,
+    tau2_fudge,
+    accumulator_volume_shape,
+    tau_is_1d,
+):
+    """Reconstruct the shared Class3D stack from combined accumulators."""
 
     _t_recon = time.time()
-    cs_int = int(cs) if cs is not None else None
-    if n_classes > 1 and retained_Ft_y_0_device is not None:
-        raise ValueError("The retained half-0 numerator path is only valid for K=1")
-    if n_classes > 1:
-        shared_class_maps = []
-        for class_idx in range(n_classes):
-            logger.info(
-                "Class3D reconstruction start: iter=%d class=%d/%d current_size=%s",
-                iteration + 1,
-                class_idx + 1,
-                n_classes,
-                cs_int,
-            )
-            class_map = _reconstruct_volume_eager(
-                Ft_ctf_combined[class_idx],
-                Ft_y_combined[class_idx],
-                volume_shape,
-                padding_factor,
-                tau=(
-                    mean_signal_variance_shells[class_idx]
-                    if mean_signal_variance_shells is not None
-                    else mean_signal_variance[class_idx]
-                ),
-                tau2_fudge=tau2_fudge,
-                projection_padding_factor=projection_padding_factor,
-                minres_map=relion_minres_map,
-                current_size=cs_int,
-                accumulator_volume_shape=accumulator_volume_shape,
-                tau_is_1d=mean_signal_variance_shells is not None,
-            ).reshape(-1)
-            shared_class_maps.append(class_map)
-            logger.info(
-                "Class3D reconstruction done: iter=%d class=%d/%d elapsed=%.1fs",
-                iteration + 1,
-                class_idx + 1,
-                n_classes,
-                time.time() - _t_recon,
-            )
-        shared_classes = jnp.stack(shared_class_maps, axis=0)
+    cs_int = int(current_size) if current_size is not None else None
+    shared_class_maps = []
+    for class_idx in range(n_classes):
         logger.info(
-            "Class3D reconstruction stack complete: iter=%d classes=%d elapsed=%.1fs",
+            "Class3D reconstruction start: iter=%d class=%d/%d current_size=%s",
             iteration + 1,
+            class_idx + 1,
+            n_classes,
+            cs_int,
+        )
+        class_map = _reconstruct_volume_eager(
+            combined_denominators[class_idx],
+            combined_numerators[class_idx],
+            settings.volume_shape,
+            settings.padding_factor,
+            tau=tau_by_class[class_idx],
+            tau2_fudge=tau2_fudge,
+            projection_padding_factor=settings.projection_padding_factor,
+            minres_map=settings.minres_map,
+            current_size=cs_int,
+            accumulator_volume_shape=accumulator_volume_shape,
+            tau_is_1d=tau_is_1d,
+        ).reshape(-1)
+        shared_class_maps.append(class_map)
+        logger.info(
+            "Class3D reconstruction done: iter=%d class=%d/%d elapsed=%.1fs",
+            iteration + 1,
+            class_idx + 1,
             n_classes,
             time.time() - _t_recon,
         )
-        means[0] = shared_classes
-        means[1] = shared_classes
-    else:
-        if mean_signal_variance_shells_per_half is not None and len(mean_signal_variance_shells_per_half) != 2:
-            raise ValueError("K=1 reconstruction tau2 shells require exactly two halves")
-        for k in range(2):
-            Ft_y_k_local = Ft_y_0 if k == 0 else Ft_y_1
-            Ft_ctf_k_local = Ft_ctf_0 if k == 0 else Ft_ctf_1
-            # This RELION build uses double RFLOAT in BackProjector::reconstruct.
-            # Keep the stored/controller tau2 state compact, but promote the
-            # reconstruction operand so 1 / (padding_factor**3 * tau2) is not
-            # rounded in float32 before it enters the Wiener denominator.
-            reconstruction_tau_source = (
-                mean_signal_variance_shells_per_half[k]
-                if mean_signal_variance_shells_per_half is not None
-                else mean_signal_variance_per_half[k]
-            )
-            reconstruction_tau = jnp.asarray(
-                reconstruction_tau_source,
-                dtype=jnp.float64,
-            )
-            reconstructed = _reconstruct_volume_eager(
-                Ft_ctf_k_local,
-                Ft_y_k_local,
-                volume_shape,
-                padding_factor,
-                tau=reconstruction_tau,
-                tau2_fudge=tau2_fudge,
-                projection_padding_factor=projection_padding_factor,
-                minres_map=relion_minres_map,
-                current_size=cs_int,
-                accumulator_volume_shape=accumulator_volume_shape,
-                tau_is_1d=mean_signal_variance_shells_per_half is not None,
-                preserve_output_precision=True,
-                relion_filter_scale=float(volume_shape[0] ** 4),
-                **({"retained_device_numerator": retained_Ft_y_0_device} if k == 0 and retained_Ft_y_0_device is not None else {}),
-            ).reshape(-1)
-            means[k] = _finish_host_staged_reconstruction(
-                reconstructed, Ft_ctf_k_local, Ft_y_k_local,
-            )
-            if k == 0 and retained_Ft_y_0_device is not None:
-                retained_Ft_y_0_device = None
-                gc.collect()
+    shared_classes = jnp.stack(shared_class_maps, axis=0)
+    logger.info(
+        "Class3D reconstruction stack complete: iter=%d classes=%d elapsed=%.1fs",
+        iteration + 1,
+        n_classes,
+        time.time() - _t_recon,
+    )
+    return shared_classes
+
+
+def postprocess_reconstructed_means(
+    means,
+    settings: ReconstructionSettings,
+    *,
+    n_classes,
+    iteration,
+    current_size,
+    particle_diameter_ang,
+    relion_firstiter_cc_this_iter,
+    relion_firstiter_ini_high_angstrom,
+) -> None:
+    """Apply premask capture, first-iteration filtering and solvent flattening.
+
+    ``width_mask_edge`` is the real-space mask edge (RELION ``--maskedge``).
+    ``fmask_edge`` is the Fourier edge of ``initialLowPassFilterReferences``;
+    preserving their distinct units is part of the reconstruction contract.
+    """
 
     for k in range(2):
         # Diagnostic: dump pre-mask Wiener output when env var set.
@@ -1133,8 +1143,8 @@ def _reconstruct_and_postprocess_means(
 
             write_premask_mean(
                 means[k], output_dir=_premask_dump, half_index=k, iteration=iteration,
-                current_size=cs, grid_size=grid_size, voxel_size=cryo.voxel_size,
-                volume_shape=volume_shape, n_classes=n_classes,
+                current_size=current_size, grid_size=settings.grid_size, voxel_size=settings.voxel_size,
+                volume_shape=settings.volume_shape, n_classes=n_classes,
             )
 
         # RELION filters Iref inside maximizationOtherParameters, then calls
@@ -1147,10 +1157,10 @@ def _reconstruct_and_postprocess_means(
                     [
                         _apply_relion_initial_lowpass_filter(
                             means[k][class_idx],
-                            volume_shape,
-                            cryo.voxel_size,
+                            settings.volume_shape,
+                            settings.voxel_size,
                             relion_firstiter_ini_high_angstrom,
-                            filter_edgewidth=relion_fmask_edge,
+                            filter_edgewidth=settings.fmask_edge,
                         )
                         for class_idx in range(n_classes)
                     ],
@@ -1159,43 +1169,44 @@ def _reconstruct_and_postprocess_means(
             else:
                 means[k] = _apply_relion_initial_lowpass_filter(
                     means[k],
-                    volume_shape,
-                    cryo.voxel_size,
+                    settings.volume_shape,
+                    settings.voxel_size,
                     relion_firstiter_ini_high_angstrom,
-                    filter_edgewidth=relion_fmask_edge,
+                    filter_edgewidth=settings.fmask_edge,
                 )
         if particle_diameter_ang is not None and particle_diameter_ang > 0:
             flatten_radius = (
-                float(particle_diameter_ang) / (2.0 * float(cryo.voxel_size))
-                if n_classes == 1 else particle_diameter_ang / (2.0 * cryo.voxel_size)
+                float(particle_diameter_ang) / (2.0 * float(settings.voxel_size))
+                if n_classes == 1 else particle_diameter_ang / (2.0 * settings.voxel_size)
             )
             solvent_mask = _make_relion_solvent_mask(
-                volume_shape,
+                settings.volume_shape,
                 radius=flatten_radius,
-                radius_p=flatten_radius + relion_width_mask_edge,
+                radius_p=flatten_radius + settings.width_mask_edge,
                 offset=jnp.zeros(3),
                 dtype=(means[k].real.dtype if n_classes <= 1 else means[k][0].real.dtype),
             )
             if n_classes > 1:
                 flattened_classes = []
                 for class_idx in range(n_classes):
-                    vol_real = fourier_transform_utils.get_idft3(means[k][class_idx].reshape(volume_shape))
+                    vol_real = fourier_transform_utils.get_idft3(
+                        means[k][class_idx].reshape(settings.volume_shape)
+                    )
                     flattened_classes.append(
                         fourier_transform_utils.get_dft3(vol_real * solvent_mask).reshape(-1),
                     )
                 means[k] = jnp.stack(flattened_classes, axis=0)
             else:
                 means[k] = _apply_relion_solvent_flatten_k1(
-                    means[k], solvent_mask, volume_shape, half_index=k,
+                    means[k], solvent_mask, settings.volume_shape, half_index=k,
                 )
-                if _large_relion_solvent_mask_uses_compiled_builder(volume_shape):
+                if _large_relion_solvent_mask_uses_compiled_builder(settings.volume_shape):
                     solvent_mask = None
     if relion_firstiter_cc_this_iter and relion_firstiter_ini_high_angstrom is not None:
         logger.info(
             "RELION iter-1 CC emulation: reapplying ini_high low-pass filter at %.2f A",
             float(relion_firstiter_ini_high_angstrom),
         )
-    logger.info("Regularized reconstruction (2 halves + flatten): %.1fs", time.time() - _t_recon)
 
 
 # ---------------------------------------------------------------------------
@@ -1203,102 +1214,90 @@ def _reconstruct_and_postprocess_means(
 # ---------------------------------------------------------------------------
 
 
-def compute_unregularized_halfmaps_and_align_signs(
+def reconstruct_unregularized_k1_halfmaps(
+    Ft_y_per_half,
+    Ft_ctf_per_half,
+    volume_shape,
     *,
-    means: list,
-    previous_means: list,
-    Ft_y_per_half: tuple,
-    Ft_ctf_per_half: tuple,
+    tau2_fudge,
+    padding_factor,
+    projection_padding_factor,
+    minres_map,
+    accumulator_volume_shape=None,
+) -> list:
+    """Reconstruct each K=1 half from its own unregularized accumulator."""
+
+    return [
+        _reconstruct_volume_eager(
+            Ft_ctf_half,
+            Ft_y_half,
+            volume_shape,
+            padding_factor,
+            tau=None,
+            tau2_fudge=tau2_fudge,
+            projection_padding_factor=projection_padding_factor,
+            minres_map=minres_map,
+            accumulator_volume_shape=accumulator_volume_shape,
+        )
+        for Ft_ctf_half, Ft_y_half in zip(Ft_ctf_per_half, Ft_y_per_half)
+    ]
+
+
+def reconstruct_unregularized_class_means(
     Ft_y_combined,
     Ft_ctf_combined,
     volume_shape,
-    n_classes: int,
-    tau2_fudge: float,
-    padding_factor: int,
-    projection_padding_factor: int,
-    minres_map: int,
-    need_unreg_means: bool,
+    n_classes,
+    *,
+    tau2_fudge,
+    padding_factor,
+    projection_padding_factor,
+    minres_map,
     accumulator_volume_shape=None,
 ) -> list:
-    """Reconstruct unregularized half-maps (only when diagnostics need them)
-    and apply the legacy K=1 sign-continuity check.
+    """Reconstruct the shared K-class stack from combined accumulators."""
 
-    Mutates the caller-owned ``means`` list in place and returns the two
-    unregularized maps (or ``[None, None]`` when diagnostics are disabled).
-
-    For K-class refinement both halves share the same Iref-derived
-    prior, so the unregularized accumulator is the combined Ft_y/Ft_ctf
-    rather than the per-half pair; the K=1 path reconstructs from each
-    half's own accumulators.
-
-    K-class maps preserve the sign fixed by the image/CTF convention; both
-    half-slots share that K-stack. K=1 retains sign alignment against its
-    previous reference. See docs/math/relion_refinement_algorithm.md for the
-    reconstruction convention.
-    """
-
-    _t_unreg = time.time()
-    if need_unreg_means:
-        if n_classes > 1:
-            unreg_shared = jnp.stack(
-                [
-                    _reconstruct_volume_eager(
-                        Ft_ctf_combined[class_idx],
-                        Ft_y_combined[class_idx],
-                        volume_shape,
-                        padding_factor,
-                        tau=None,
-                        tau2_fudge=tau2_fudge,
-                        projection_padding_factor=projection_padding_factor,
-                        minres_map=minres_map,
-                        accumulator_volume_shape=accumulator_volume_shape,
-                    ).reshape(-1)
-                    for class_idx in range(n_classes)
-                ],
-                axis=0,
-            )
-            unreg_means: list = [unreg_shared, unreg_shared]
-        else:
-            unreg_means = [
-                _reconstruct_volume_eager(
-                    Ft_ctf_half,
-                    Ft_y_half,
-                    volume_shape,
-                    padding_factor,
-                    tau=None,
-                    tau2_fudge=tau2_fudge,
-                    projection_padding_factor=projection_padding_factor,
-                    minres_map=minres_map,
-                    accumulator_volume_shape=accumulator_volume_shape,
-                )
-                for Ft_ctf_half, Ft_y_half in zip(Ft_ctf_per_half, Ft_y_per_half)
-            ]
-    else:
-        unreg_means = [None, None]
-
-    if n_classes > 1:
-        # The image/CTF convention fixes K-class reconstruction signs.
-        # Weak overlap with a previous reference must not negate a class.
-        means[1] = means[0]
-        if unreg_means[0] is not None:
-            unreg_means[1] = unreg_means[0]
-    else:
-        for k in range(2):
-            means[k], sign_flipped = _align_fourier_volume_sign_to_reference(
-                means[k],
-                previous_means[k],
+    unreg_shared = jnp.stack(
+        [
+            _reconstruct_volume_eager(
+                Ft_ctf_combined[class_idx],
+                Ft_y_combined[class_idx],
                 volume_shape,
-            )
-            if sign_flipped and unreg_means[k] is not None:
-                unreg_means[k] = -unreg_means[k]
-            if sign_flipped:
-                logger.info("Aligned half-%d volume sign to the previous reference", k + 1)
-    logger.info(
-        "Unregularized reconstruction (2 halves): %.1fs%s",
-        time.time() - _t_unreg,
-        "" if need_unreg_means else " (skipped; diagnostics disabled)",
+                padding_factor,
+                tau=None,
+                tau2_fudge=tau2_fudge,
+                projection_padding_factor=projection_padding_factor,
+                minres_map=minres_map,
+                accumulator_volume_shape=accumulator_volume_shape,
+            ).reshape(-1)
+            for class_idx in range(n_classes)
+        ],
+        axis=0,
     )
-    return unreg_means
+    return [unreg_shared, unreg_shared]
+
+
+def align_k1_volume_signs(means, previous_means, unregularized_means, volume_shape) -> None:
+    """Align K=1 means and matching diagnostic maps to previous references."""
+
+    for k in range(2):
+        means[k], sign_flipped = _align_fourier_volume_sign_to_reference(
+            means[k],
+            previous_means[k],
+            volume_shape,
+        )
+        if sign_flipped and unregularized_means[k] is not None:
+            unregularized_means[k] = -unregularized_means[k]
+        if sign_flipped:
+            logger.info("Aligned half-%d volume sign to the previous reference", k + 1)
+
+
+def share_kclass_volume_signs(means, unregularized_means) -> None:
+    """Keep the image/CTF-determined K-class sign and share its class stack."""
+
+    means[1] = means[0]
+    if unregularized_means[0] is not None:
+        unregularized_means[1] = unregularized_means[0]
 
 
 def _large_irfft_requires_explicit_normalization(volume_shape) -> bool:

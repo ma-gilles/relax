@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.refinement_specs import run_mean_reconstruction
 
 jnp = pytest.importorskip("jax.numpy")
 mask = pytest.importorskip("recovar.core.mask")
@@ -263,7 +264,7 @@ def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeyp
     )
 
     means = [None, None]
-    mean_helpers._reconstruct_and_postprocess_means(
+    run_mean_reconstruction(
         means,
         Ft_y_0=jnp.ones(volume_size, dtype=jnp.complex64),
         Ft_y_1=jnp.ones(volume_size, dtype=jnp.complex64),

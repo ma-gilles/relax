@@ -6,15 +6,16 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
+from helpers.refinement_specs import local_half_owners
 
 import relax.refinement.iteration_loop as iteration_loop
-from relax.refinement import half_scoring
 from relax.dense import score_outputs, scoring_policy
 from relax.diagnostics import local_debug
 from relax.helpers.convergence import _native_final_perturbation_healpix_order
+from relax.refinement import half_scoring
 from relax.refinement.local_search_iteration import _LocalSearchIterationResult
 from relax.relion import relion_worker_scale
-from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -193,7 +194,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
         max_posterior_per_image = np.array([1.0], dtype=np.float32)
         rotation_posterior_sums = np.array([1.0], dtype=np.float32)
 
-    def fake_run_local_search_iteration(*_args, **kwargs):
+    def fake_run_local_search_iteration(data, grid, batching, kernel, support, diagnostics):
         best_rotation = np.array(
             [
                 [0.93629336, -0.27509585, 0.21835066],
@@ -202,7 +203,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
             ],
             dtype=np.float32,
         )
-        captured.update(kwargs)
+        captured["support"] = support
         current_size_shape = (19, 19, 19)
         outputs = _LocalSearchIterationResult(
             Ft_y=np.zeros(int(np.prod(current_size_shape)), dtype=np.complex64),
@@ -219,7 +220,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
     monkeypatch.setattr(scoring_policy, "_k1_relion_x_half_mstep_default_available", lambda: True)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
 
-    result = half_scoring._score_half_local(
+    result = half_scoring._score_half_local(*local_half_owners(
         k=0,
         experiment_dataset=SimpleNamespace(
             voxel_size=1.0,
@@ -260,9 +261,9 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
         safe_batch_sizes=lambda *_args, **_kwargs: (2, 3),
         outputs=score_outputs.PerHalfOutputs(),
         local_profile_history=[],
-    )
+    ))
 
-    assert captured["mstep_relion_x_half"] is True
+    assert captured["support"].mstep_relion_x_half is True
     assert result.significant_counts is None
     assert result.mstep_full_half_axis == 0
     assert result.mstep_accumulator_shape == (19, 19, 19)
@@ -302,9 +303,17 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         translation_grid=np.zeros((4, 2), dtype=np.float32),
     )
 
-    def fake_run_local_search_iteration(*_args, **kwargs):
-        calls.append(dict(kwargs))
-        if kwargs["score_only"]:
+    def fake_run_local_search_iteration(data, grid, batching, kernel, support, diagnostics):
+        call = SimpleNamespace(
+            data=data,
+            grid=grid,
+            batching=batching,
+            kernel=kernel,
+            support=support,
+            diagnostics=diagnostics,
+        )
+        calls.append(call)
+        if support.score_only:
             return _LocalSearchIterationResult(
                 Ft_y="parent_ft_y",
                 Ft_ctf="parent_ft_ctf",
@@ -334,13 +343,10 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         "build_local_adaptive_pass2_hypothesis_layout",
         lambda *_args, **_kwargs: fine_layout,
     )
-    monkeypatch.setattr(half_scoring, "_local_adaptive_pass2_full_parent_enabled", lambda: False)
-    monkeypatch.setattr(half_scoring, "_local_adaptive_pass2_rotation_only_enabled", lambda: False)
-    monkeypatch.setattr(half_scoring, "_local_adaptive_pass2_denominator_support_mode", lambda: denominator_mode)
     monkeypatch.setattr(half_scoring, "_k1_relion_x_half_mstep_enabled", lambda: False)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
 
-    result = half_scoring._score_half_local(
+    result = half_scoring._score_half_local(*local_half_owners(
         k=0,
         experiment_dataset=SimpleNamespace(
             voxel_size=1.0,
@@ -381,34 +387,130 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         safe_batch_sizes=lambda *_args, **_kwargs: (2, 3),
         outputs=score_outputs.PerHalfOutputs(),
         local_profile_history=[],
-    )
+        adaptive_pass2_denominator_mode=denominator_mode,
+    ))
 
     assert len(calls) == (2 if denominator_mode is None else 3)
     parent_call, fine_call = calls[0], calls[-1]
-    assert all(call["source_faithful_spectrum_norm"] is spectrum_norm for call in calls)
-    assert all(call["max_significants"] == 23 for call in calls)
+    assert all(call.kernel.source_faithful_spectrum_norm is spectrum_norm for call in calls)
+    assert all(call.support.max_significants == 23 for call in calls)
     if denominator_mode is None:
-        assert fine_call["normalization_log_evidence"] is None
+        assert fine_call.support.normalization_log_evidence is None
     else:
         denominator_call = calls[1]
-        assert denominator_call["score_only"] is True
-        assert denominator_call["accumulate_noise"] is False
-        assert denominator_call["disable_adjoint_y"] is True
-        assert denominator_call["disable_adjoint_ctf"] is True
-        assert denominator_call["return_best_pose_details"] is False
-        assert_matches(fine_call["normalization_log_evidence"], _Stats.log_evidence_per_image)
-    assert parent_call["score_only"] is True
-    assert "return_significant_counts" not in parent_call
-    assert parent_call["apply_max_significants_to_support"] is True
-    assert parent_call["max_significants"] == 23
-    assert fine_call["score_only"] is False
-    assert fine_call["reconstruct_significant_only"] is True
-    assert fine_call["stats_use_reconstruction_probs"] is True
-    assert "return_significant_counts" not in fine_call
+        assert denominator_call.support.score_only is True
+        assert denominator_call.kernel.accumulate_noise is False
+        assert denominator_call.support.disable_adjoint_y is True
+        assert denominator_call.support.disable_adjoint_ctf is True
+        assert denominator_call.support.return_best_pose_details is False
+        assert_matches(fine_call.support.normalization_log_evidence, _Stats.log_evidence_per_image)
+    assert parent_call.support.score_only is True
+    assert parent_call.support.apply_max_significants_to_support is True
+    assert parent_call.support.max_significants == 23
+    assert fine_call.support.score_only is False
+    assert fine_call.support.reconstruct_significant_only is True
+    assert fine_call.support.stats_use_reconstruction_probs is True
     assert result.Ft_y == "fine_ft_y"
     assert result.Ft_ctf == "fine_ft_ctf"
     assert result.noise_stats == "fine_noise"
     assert_matches(result.significant_counts, parent_counts)
+
+
+@pytest.mark.parametrize(
+    "full_parent,rotation_only,denominator_mode,expected_parent_mode,expected_support_kind",
+    [
+        (False, False, None, "pruned_parent", "pruned"),
+        (True, True, "rotation_only", "full_parent", "full"),
+        (False, True, "full_parent", "significant_rotation_full_translation", "rotation"),
+    ],
+)
+def test_local_adaptive_support_preparation_keeps_variants_explicit(
+    monkeypatch,
+    full_parent,
+    rotation_only,
+    denominator_mode,
+    expected_parent_mode,
+    expected_support_kind,
+):
+    retained = (
+        np.array([0, 2], dtype=np.int64),
+        np.array([1], dtype=np.int64),
+    )
+    layout_calls = []
+
+    def fake_expand(indices, n_translations):
+        return ("rotation_only", indices, n_translations)
+
+    def fake_layout(parent_layout, support, parent_order, **kwargs):
+        layout = SimpleNamespace(call_index=len(layout_calls))
+        layout_calls.append((parent_layout, support, parent_order, kwargs, layout))
+        return layout
+
+    monkeypatch.setattr(
+        half_scoring,
+        "_expand_significant_samples_to_full_parent_translations",
+        fake_expand,
+    )
+    monkeypatch.setattr(
+        half_scoring,
+        "build_local_adaptive_pass2_hypothesis_layout",
+        fake_layout,
+    )
+    monkeypatch.setattr(half_scoring, "log_local_adaptive_support", lambda *_args: None)
+    monkeypatch.setattr(half_scoring, "log_local_denominator_support", lambda *_args: None)
+
+    pass2_layout, counts, denominator_layout, parent_mode = (
+        half_scoring._prepare_local_adaptive_pass2_support(
+            "parent_layout",
+            retained,
+            SimpleNamespace(
+                current_translations=np.zeros((3, 2), dtype=np.float32),
+                local_parent_oversampling_order=1,
+                local_search_random_perturbation=0.25,
+                symmetry="C1",
+            ),
+            SimpleNamespace(
+                adaptive_pass2_full_parent=full_parent,
+                adaptive_pass2_rotation_only=rotation_only,
+                adaptive_pass2_denominator_mode=denominator_mode,
+            ),
+            2,
+            np.float32,
+        )
+    )
+
+    assert pass2_layout is layout_calls[0][-1]
+    assert_matches(counts, np.array([2, 1], dtype=np.int32))
+    assert parent_mode == expected_parent_mode
+    support = layout_calls[0][1]
+    if expected_support_kind == "pruned":
+        assert support is retained
+    elif expected_support_kind == "full":
+        assert support == [None, None]
+    else:
+        assert support[0] == "rotation_only"
+        assert support[1] is retained
+        assert support[2] == 3
+    if denominator_mode is None:
+        assert denominator_layout is None
+        assert len(layout_calls) == 1
+    else:
+        assert denominator_layout is layout_calls[1][-1]
+        assert len(layout_calls) == 2
+        denominator_support = layout_calls[1][1]
+        if denominator_mode == "full_parent":
+            assert denominator_support == [None, None]
+        else:
+            assert denominator_support[0] == "rotation_only"
+            assert denominator_support[1] is retained
+            assert denominator_support[2] == 3
+    for _, _, parent_order, kwargs, _ in layout_calls:
+        assert parent_order == 2
+        assert kwargs == {
+            "oversampling_order": 1,
+            "random_perturbation": 0.25,
+            "dtype": np.float32,
+        }
 
 
 def test_native_final_perturbation_uses_active_local_order_but_preserves_global_order():
