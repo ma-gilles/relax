@@ -1117,3 +1117,30 @@ single-volume boundary has 17 parameters.
   Python compilation passed, along with 77 focused local/structural cases and
   the 102-case CPU EM fast guard in 60.42 seconds with
   `FFTW/3.3.10-GCC-12.2.0` loaded.
+
+## 2026-09-30 — half E-step diagnostic and sampling ownership
+
+- Commit `7dcf25e` moved deterministic dense replay-manifest schema assembly
+  and file I/O from `_run_half_estep` to `diagnostics.iteration`. The helper
+  reuses the dense half, sampling and prior objects already passed to scoring;
+  only previous translations and the perturbation factor remain explicit
+  diagnostic inputs. Five focused and end-to-end manifest cases passed.
+- Commit `ee88457` gave half E-step parity capture to
+  `diagnostics.parity_dump`. Its four inputs are the completed score result,
+  the persistent per-half outputs, the dataset and half index. It preserves
+  original-stack index mapping and the existing failure fallback. The parity
+  and per-half output suites passed all 32 cases.
+- Commit `5effc38` moved iteration-invariant local sampling, dense sampling and
+  dense variant policy construction outside `_run_half_estep`. The same frozen
+  objects are now reused by both halves; half-specific data, priors, batching,
+  execution and optics remain visibly constructed per half. The four-mode
+  dense regression verifies sampling identity across halves.
+- Ruff passed for every changed production file, Python compilation and diff
+  checks passed, and the CPU EM fast guard passed 102 cases in 61.98 seconds.
+  The broad legacy `test_refine_relion_mode.py` still has unrelated pre-existing
+  import-order findings and was not mechanically reformatted.
+- Production totals are 20,758 physical and 18,308 nonblank lines across 306
+  functions. `_run_half_estep` fell from 749 to 652 lines and
+  `refine_single_volume` from 5,522 to 5,480 lines. Argument-count statistics
+  remain unchanged; these measurements did not choose the extracted
+  boundaries.

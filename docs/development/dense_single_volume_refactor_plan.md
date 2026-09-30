@@ -301,6 +301,17 @@ reconstruction ownership. With the local scorer reduced to 422 lines, the next
 orchestration audit returns to `_run_half_estep`, separating only phases whose
 inputs are already stable across both halves.
 
+The first `_run_half_estep` package moved the non-adaptive replay-manifest
+schema and parity capture to their diagnostic owners. Both helpers consume
+objects that already exist for scoring and publication; neither introduces a
+diagnostic-only request object. Dense sampling and dense variant policy, and
+local sampling, now begin at iteration scope and are reused by both halves
+instead of being reconstructed at each call. Half-specific data, priors,
+batching, projectors and diagnostic activation remain in the half function.
+The next controller audit targets batch-planning and empty-half handling. It
+must split an actual phase with a small explicit boundary; replacing the
+closure with one comprehensive iteration context is not an acceptable result.
+
 ### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring
