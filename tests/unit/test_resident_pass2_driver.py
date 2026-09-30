@@ -469,12 +469,14 @@ def test_float32_posterior_bucket_scratch_is_admitted_for_regular_pipeline_and_o
     )
     assert plan.row_capacity_ladder == (4096,)
     assert plan.peak_bytes == bucket
+    # Main's row planner can halve a lone class to its 64-row floor.
+    minimum_row = rp._MIN_PLANNED_ROW_CAPACITY
     minimum = rp.resident_chunk_bytes(
-        row_capacity=row, image_capacity=1, float32_posterior_buckets=True, **base,
+        row_capacity=minimum_row, image_capacity=1, float32_posterior_buckets=True, **base,
     )
     with pytest.raises(rp.ResidentConfigurationUnsupported, match="smallest chunk"):
         rp.plan_resident_chunk_memory(
-            row_capacity_ladder=(4096,), image_capacity_ladder=(1,),
+            row_capacity_ladder=(minimum_row,), image_capacity_ladder=(1,),
             budget_bytes=minimum - 1, float32_posterior_buckets=True, **base,
         )
     overflow_row = rp.overflow_row_capacity(5000, (4096,))

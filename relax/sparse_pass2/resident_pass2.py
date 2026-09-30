@@ -161,6 +161,7 @@ from relax.sparse_pass2.resident_statistics import (
     _flat_row_norm_and_scale_terms,
     finalize_statistics,
     make_resident_statistics,
+    posterior_translation_bucket_scratch_bytes,
     resident_image_capacity,
     resolve_statistics_config,
     segment_sum_by_image,
@@ -645,6 +646,7 @@ def resident_chunk_bytes(
     mstep_tile_pixels: int | None = None,
     pipelined: bool = False,
     projection_transient_bytes: int = 0,
+    float32_posterior_buckets: bool = False,
 ) -> int:
     """Device bytes one chunk holds at its peak, the larger of its two stages.
 
@@ -687,11 +689,22 @@ def resident_chunk_bytes(
     rows = int(row_capacity) * int(row_bytes)
     tiles = int(image_capacity) * t * held * 8
     mstep = int(mstep_block_rows) * _mstep_block_row_bytes(n_fine_trans, n_recon_pixels, mstep_tile_pixels)
+    posterior_scratch = (
+        posterior_translation_bucket_scratch_bytes(row_capacity, image_capacity, n_fine_trans)
+        if float32_posterior_buckets else 0
+    )
+    # A2 and XA each bucket one M-step block of scalar F32 rows. Keep room
+    # for both while their producer arrays are live; this is much smaller than
+    # the translation-posterior scratch but overlaps the M-step stage.
+    norm_scratch = (
+        2 * posterior_translation_bucket_scratch_bytes(mstep_block_rows, image_capacity, 1)
+        if float32_posterior_buckets else 0
+    )
     prepare = int(image_capacity) * t * int(prepare_tile_pixels) * 8
     if rows_live_during_prepare:
         prepare += rows
     previous_chunk = rows + tiles if pipelined else 0
-    return max(rows + tiles + max(mstep, int(projection_transient_bytes)), prepare) + previous_chunk
+    return max(rows + tiles + max(mstep + norm_scratch, int(projection_transient_bytes), posterior_scratch), prepare) + previous_chunk
 
 
 def projection_call_row_bytes(
@@ -828,6 +841,7 @@ def plan_resident_chunk_memory(
     fixed_bytes: int = 0,
     max_image_rows: int = 0,
     lone_row_bytes: int | None = None,
+    float32_posterior_buckets: bool = False,
 ) -> ResidentChunkMemoryPlan:
     """Shrink the three per-chunk classes until their sum fits one budget.
 
@@ -873,6 +887,7 @@ def plan_resident_chunk_memory(
         mstep_tile_pixels=mstep_tile_pixels,
         pipelined=pipelined,
         projection_transient_bytes=projection_transient_bytes,
+        float32_posterior_buckets=float32_posterior_buckets,
     )
     held_pixels = 3 * max(int(n_recon_pixels), 1) if held_tile_pixels is None else int(held_tile_pixels)
     projection = int(projection_transient_bytes)
@@ -908,12 +923,16 @@ def plan_resident_chunk_memory(
             t, p = max(int(n_fine_trans), 1), max(int(n_recon_pixels), 1)
             images_can_shrink = len(images) > 1 or max(images) > 1
             mstep_bytes = block * _mstep_block_row_bytes(t, p, mstep_tile_pixels)
+            posterior_scratch = (
+                posterior_translation_bucket_scratch_bytes(max(rows), max(images), t)
+                if float32_posterior_buckets else 0
+            )
             if overflow_peak() > regular_peak():
                 # A lone overflow chunk is the peak: its rows are the image's own,
                 # so only its M-step block and the rounding to the largest row
                 # class can shrink.
                 terms = {
-                    "mstep": mstep_bytes if block > 1 and mstep_bytes > projection else -1,
+                    "mstep": mstep_bytes if block > 1 and mstep_bytes > max(projection, posterior_scratch) else -1,
                     "rows": 1 if len(rows) > 1 else -1,
                 }
                 largest = max(terms, key=terms.get)
@@ -942,7 +961,7 @@ def plan_resident_chunk_memory(
             # (bigbox 14640954), which 512 rows fit.
             rows_can_shrink = len(rows) > 1 or max(rows) > _MIN_PLANNED_ROW_CAPACITY
             rows_in_prepare = rows_bytes * (int(rows_live_during_prepare) + int(pipelined))
-            if prepare_stage > rows_bytes + held_bytes + max(mstep_bytes, projection):
+            if prepare_stage > rows_bytes + held_bytes + max(mstep_bytes, projection, posterior_scratch):
                 # The preparation stage is the peak; only its own terms shrink it.
                 terms = {
                     "images": prepare_bytes + (held_bytes if pipelined else 0) if images_can_shrink else -1,
@@ -951,9 +970,9 @@ def plan_resident_chunk_memory(
             else:
                 terms = {
                     # A smaller M-step block helps only while it outweighs the projector call.
-                    "mstep": mstep_bytes if block > 1 and mstep_bytes > projection else -1,
-                    "images": held_bytes * copies if images_can_shrink else -1,
-                    "rows": rows_bytes * copies if rows_can_shrink else -1,
+                    "mstep": mstep_bytes if block > 1 and mstep_bytes > max(projection, posterior_scratch) else -1,
+                    "images": held_bytes * copies + posterior_scratch if images_can_shrink else -1,
+                    "rows": rows_bytes * copies + posterior_scratch if rows_can_shrink else -1,
                 }
             largest = max(terms, key=terms.get)
             if terms[largest] < 0:
@@ -1293,8 +1312,17 @@ def _resident_block_noise_and_norm(
     a2_per_row, xa_per_row = _flat_row_norm_and_scale_terms(
         proj, proj_abs2, summed_masked, ctf_probs, row_noise
     )
-    a2_per_image = segment_sum_by_image(a2_per_row, row_image_local, int(image_capacity))
-    xa_per_image = segment_sum_by_image(xa_per_row, row_image_local, int(image_capacity))
+    # These nonnegative F32 row terms can occupy thousands of candidate rows
+    # per image. Bucket them before the image sum so atomic addition order does
+    # not lose the same small contributions that the norm correction needs.
+    a2_bucket = 128 if a2_per_row.dtype == jnp.float32 else None
+    xa_bucket = 128 if xa_per_row.dtype == jnp.float32 else None
+    a2_per_image = segment_sum_by_image(
+        a2_per_row, row_image_local, int(image_capacity), float32_scalar_bucket_size=a2_bucket,
+    )
+    xa_per_image = segment_sum_by_image(
+        xa_per_row, row_image_local, int(image_capacity), float32_scalar_bucket_size=xa_bucket,
+    )
     return block_noise_shells.astype(jnp.float64), a2_per_image, xa_per_image
 
 
@@ -1513,7 +1541,10 @@ def _accumulate_chunk_image_terms(
     image_slot = _drop_index(image_ids, int(config.image_capacity))
 
     # --- 1/2. sigma2 offset and support mass -------------------------------
-    translation_posterior = segment_sum_by_image(probs, row_image, image_capacity)
+    translation_posterior = segment_sum_by_image(
+        probs, row_image, image_capacity,
+        float32_posterior_bucket_size=128 if probs.dtype == jnp.float32 else None,
+    )
     sigma2_offset = stats.sigma2_offset
     if tables.translation_sqdist_ang is not None:
         sqdist = jnp.asarray(tables.translation_sqdist_ang, dtype=jnp.float64)
@@ -2347,6 +2378,7 @@ def _resident_pass2(
     tilt=None,
     coarse_rotation_ids=None,
     unit_rotation_log_prior=None,
+    dense_gemm_full_grid: bool = False,
 ):
     """The device-resident sparse pass 2 over one or K classes; returns ``_ResidentPass2Result``.
 
@@ -2416,12 +2448,14 @@ def _resident_pass2(
     if n_classes > 1:
         # RELION's Class3D E-step; the zero-oversampling reuse and the
         # --firstiter_cc winner are the auto-refine K=1 iterations.
-        _require(not firstiter_cc, "the K-class resident pass scores the Gaussian likelihood")
+        if not dense_gemm_full_grid:
+            _require(not firstiter_cc, "the K-class resident pass scores the Gaussian likelihood")
         _require(
             relion_f32_normalization_sum_weight is None,
             "the K-class resident pass has no zero-oversampling coarse reuse",
         )
-        _require(optics_group_ids is None, "the K-class resident pass has one optics group")
+        if not dense_gemm_full_grid:
+            _require(optics_group_ids is None, "the K-class resident pass has one optics group")
 
     n_images = experiment_dataset.n_units
     # Subtomogram particles (S4.2, resident_tilts): the posterior unit is the particle; the dataset's
@@ -2536,7 +2570,8 @@ def _resident_pass2(
         fine_rotations_override=fine_rotations_override,
         dump_pass2_operands=False,
     )
-    require_resident_production_configuration(
+    if not dense_gemm_full_grid:
+        require_resident_production_configuration(
         relion_x_half_mstep=relion_x_half_mstep,
         relion_exact_fine_gaussian=relion_exact_fine_gaussian,
         relion_exact_fine_normalized_cc=relion_exact_fine_normalized_cc,
@@ -2564,16 +2599,16 @@ def _resident_pass2(
         relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
         relion_wavg_atomic_direct_norm=relion_wavg_atomic_direct_norm,
         relion_projector_texture=relion_projector_texture,
-    )
-    _require(
-        bool(use_relion_f32_fine_posterior) or firstiter_cc,
-        "the RELION float32 fine posterior is the segmented kernel's contract "
-        "(the --firstiter_cc pass takes the winner instead)",
-    )
-    _require(
-        bool(relion_fine_mstep_prune) or bool(relion_x_half_mstep),
-        "the resident M-step reconstructs from RELION's pruned fine weights",
-    )
+        )
+        _require(
+            bool(use_relion_f32_fine_posterior) or firstiter_cc,
+            "the RELION float32 fine posterior is the segmented kernel's contract "
+            "(the --firstiter_cc pass takes the winner instead)",
+        )
+        _require(
+            bool(relion_fine_mstep_prune) or bool(relion_x_half_mstep),
+            "the resident M-step reconstructs from RELION's pruned fine weights",
+        )
     # ---- accumulator layout (identical to the compact engine) -------------
     volume_current_size = (
         mstep_current_size
@@ -2684,6 +2719,72 @@ def _resident_pass2(
         n_fine_trans=n_fine_trans,
         dtype=precision_policy.score_real_dtype,
     )
+
+    if dense_gemm_full_grid:
+        from relax.dense.gemm_coarse_engine import DenseGemmPreparedState, run_dense_gemm_full_grid
+
+        if tilt is not None:
+            raise NotImplementedError("dense GEMM global pass currently requires SPA")
+        if any(support is not None and any(item is not None for item in support)
+               for support in class_supports):
+            raise ValueError("dense GEMM global pass requires the complete unpruned expanded grid")
+        if use_float64_scoring or not relion_x_half_mstep:
+            raise ValueError("dense GEMM global pass requires float32 scoring and RELION x-half BPref")
+        if normalization_log_z is not None or normalization_other_score_log_z is not None or relion_f32_normalization_sum_weight is not None:
+            raise ValueError("dense GEMM global pass does not consume external/coarse normalizers")
+        return run_dense_gemm_full_grid(DenseGemmPreparedState(
+            dataset=experiment_dataset,
+            class_volumes=tuple(class_volumes),
+            class_projector_halves=tuple(class_projector_halves),
+            class_rotation_priors=tuple(class_rotation_priors),
+            fine_rotations=fine_rotations_override,
+            fine_mstep_rotations=(fine_rotations_override if fine_mstep_rotations_override is None
+                                  else fine_mstep_rotations_override),
+            fine_rotation_parent=fine_rotation_parent_override,
+            fine_translations_source=fine_translations_source,
+            fine_translations=fine_translations,
+            fine_translation_parent=fine_translation_parent,
+            fine_translation_prior=fine_translation_prior_2d,
+            translation_prior_centers=translation_prior_centers_np,
+            noise_variance_half=noise_variance,
+            n_coarse_rot=n_coarse_rot,
+            nside_level=nside_level,
+            oversampling_order=oversampling_order,
+            random_perturbation=random_perturbation,
+            relion_parent_execution_order=_relion_fine_parent_execution_order_enabled(
+                use_relion_f32_fine_posterior=use_relion_f32_fine_posterior,
+            ),
+            current_size=int(current_size), mstep_current_size=int(mstep_current_size),
+            n_half=n_half, window_spec_kwargs=window_spec_kwargs,
+            disc_type=disc_type, projector_r_max=relion_projector_r_max,
+            projection_padding_factor=projection_padding_factor,
+            reconstruction_padding_factor=reconstruction_padding_factor,
+            reconstruction_volume_current_size=reconstruction_volume_current_size,
+            reconstruction_image_radius=reconstruction_image_radius,
+            image_corrections=image_corrections, scale_corrections=scale_corrections,
+            image_pre_shifts=image_pre_shifts, group_ids=group_ids,
+            scale_correction_group_count=scale_correction_group_count,
+            scale_correction_data_vs_prior=scale_correction_data_vs_prior,
+            optics_group_ids=optics_group_ids,
+            reconstruction_group_ids=reconstruction_group_ids,
+            reconstruction_group_count=reconstruction_group_count,
+            score_with_masked_images=score_with_masked_images,
+            half_spectrum_scoring=half_spectrum_scoring, square_window=square_window,
+            accumulate_noise=accumulate_noise,
+            use_exact_relion_gaussian=use_exact_relion_gaussian,
+            source_faithful_spectrum_norm=resolved_spectrum_norm,
+            relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
+            relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
+            accumulate_scale=scale_groups_available,
+            relion_exact_bpref_operands=relion_exact_bpref_operands,
+            relion_native_fine_units=relion_native_fine_units,
+            relion_firstiter_score_mode=relion_firstiter_score_mode,
+            mstep_subtract_ctf_projection=mstep_subtract_ctf_projection,
+            include_unweighted_norm_high_shell=include_unweighted_norm_high_shell,
+            relion_translation_angle_scale=relion_translation_angle_scale,
+            precision_policy=precision_policy,
+            symmetry_label=symmetry_label,
+        ))
 
     # ---- per-image hypotheses and candidate tables, one per class ---------
     # A K-class table joins the classes' own tables in RELION's class-major
@@ -3454,6 +3555,9 @@ def _resident_pass2(
             budget_bytes=chunk_budget_bytes,
             rows_live_during_prepare=True,
             pipelined=tilt is None and _global_chunk_loop_pipelined(stream_projections),
+            float32_posterior_buckets=(
+                tilt is None and np.dtype(precision_policy.score_real_dtype) == np.dtype(np.float32)
+            ),
             fixed_bytes=accumulator_bytes,
             max_image_rows=max_image_rows(tables.row_offsets),
             # The tilt loop has no row-blocked lone chunk; its overflow chunks hold their rows.
@@ -4390,6 +4494,7 @@ def compute_pass2_stats_resident(
     reconstruction_image_radius=None,
     reconstruction_group_ids=None,
     reconstruction_group_count=None,
+    dense_gemm_full_grid: bool = False,
 ):
     """Device-resident K=1 sparse pass 2, relax's one pass-2 engine.
 
